@@ -5,7 +5,7 @@
 //! depend on a concrete runtime backend; those responsibilities belong to CLI
 //! and solver adapter crates.
 
-use arcweft_compiler::lower_source_line_tasks;
+use arcweft_compiler::lower::lower_source_line_tasks;
 use arcweft_lang_hir::model::{
     HirAwait, HirBorrow, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf, HirIfLet, HirLoop,
     HirMatch, HirModule, HirScope, HirScopeExpr, HirSelect, HirTopLevelDecl, HirWhile, HirWhileLet,

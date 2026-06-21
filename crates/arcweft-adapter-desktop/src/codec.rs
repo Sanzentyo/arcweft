@@ -1,19 +1,165 @@
 use arcweft_core::task::{HostTaskRequest, TaskSpec};
-use arcweft_core::value::{RuntimePayload, RuntimeValue};
-use arcweft_desktop_contract::{DesktopError, DesktopRequest, DesktopResponse};
-use arcweft_host_adapter::{HostTaskMetrics, HostTaskOutcome};
+use arcweft_core::value::RuntimePayload;
+use arcweft_desktop_contract::{
+    CursorIcon, DesktopError, DesktopRequest, DesktopResponse, OwnedCursorRequest,
+    OwnedWindowRequest, PhysicalPosition, PhysicalRect, PhysicalSize, WindowMode, WindowTarget,
+};
+use arcweft_host_adapter::{HostCallArgs, HostCallVariantArg, HostTaskMetrics, HostTaskOutcome};
+
+use crate::{
+    DESKTOP_CAPABILITIES_CALL, DESKTOP_CURSOR_ICON_TYPE, DESKTOP_OWNED_CURSOR_SET_ICON_CALL,
+    DESKTOP_OWNED_CURSOR_SET_POSITION_CALL, DESKTOP_OWNED_CURSOR_SET_VISIBLE_CALL,
+    DESKTOP_OWNED_WINDOW_REQUEST_CLOSE_CALL, DESKTOP_OWNED_WINDOW_REQUEST_FOCUS_CALL,
+    DESKTOP_OWNED_WINDOW_SET_BOUNDS_CALL, DESKTOP_OWNED_WINDOW_SET_MODE_CALL,
+    DESKTOP_OWNED_WINDOW_SET_TITLE_CALL, DESKTOP_WINDOW_MODE_TYPE,
+};
 
 pub(crate) fn decode_request(task: &TaskSpec) -> Result<DesktopRequest, String> {
-    let HostTaskRequest::Custom { args, .. } = &task.request else {
+    let HostTaskRequest::Custom { .. } = &task.request else {
         return Err("desktop adapter expected a custom host request".to_owned());
     };
-    if args.is_empty() && task.request.host_call_id() == "desktop.platform.capabilities" {
+    let args = HostCallArgs::from_custom_request(&task.request)
+        .expect("custom host task request has typed arguments");
+    if task.request.host_call_id() == DESKTOP_CAPABILITIES_CALL {
+        args.expect_len(0)?;
         return Ok(DesktopRequest::Capabilities);
     }
-    let [RuntimePayload(RuntimeValue::String(json))] = args.as_slice() else {
-        return Err("desktop host call expects exactly one JSON string argument".to_owned());
+    if let Some(request) = decode_typed_owned_request(task, &args)? {
+        return Ok(request);
+    }
+    Err(format!(
+        "desktop host call `{}` has no typed decoder",
+        task.request.host_call_id()
+    ))
+}
+
+fn decode_typed_owned_request(
+    task: &TaskSpec,
+    args: &HostCallArgs<'_>,
+) -> Result<Option<DesktopRequest>, String> {
+    let call = task.request.host_call_id();
+    let target = WindowTarget::PrimaryOwned;
+    let request = match call.as_str() {
+        DESKTOP_OWNED_WINDOW_SET_TITLE_CALL => {
+            args.expect_len(1)?;
+            DesktopRequest::OwnedWindow(OwnedWindowRequest::SetTitle {
+                target,
+                title: args.string(0)?,
+            })
+        }
+        DESKTOP_OWNED_WINDOW_SET_BOUNDS_CALL => {
+            args.expect_len(4)?;
+            DesktopRequest::OwnedWindow(OwnedWindowRequest::SetBounds {
+                target,
+                bounds: PhysicalRect {
+                    position: PhysicalPosition {
+                        x: args.i32(0)?,
+                        y: args.i32(1)?,
+                    },
+                    size: PhysicalSize {
+                        width: args.u32(2)?,
+                        height: args.u32(3)?,
+                    },
+                },
+            })
+        }
+        DESKTOP_OWNED_WINDOW_SET_MODE_CALL => {
+            args.expect_len(1)?;
+            DesktopRequest::OwnedWindow(OwnedWindowRequest::SetMode {
+                target,
+                mode: window_mode(args.variant(0)?)?,
+            })
+        }
+        DESKTOP_OWNED_WINDOW_REQUEST_FOCUS_CALL => {
+            args.expect_len(0)?;
+            DesktopRequest::OwnedWindow(OwnedWindowRequest::RequestFocus { target })
+        }
+        DESKTOP_OWNED_WINDOW_REQUEST_CLOSE_CALL => {
+            args.expect_len(0)?;
+            DesktopRequest::OwnedWindow(OwnedWindowRequest::RequestClose { target })
+        }
+        DESKTOP_OWNED_CURSOR_SET_ICON_CALL => {
+            args.expect_len(1)?;
+            DesktopRequest::OwnedCursor(OwnedCursorRequest::SetIcon {
+                target,
+                icon: cursor_icon(args.variant(0)?)?,
+            })
+        }
+        DESKTOP_OWNED_CURSOR_SET_VISIBLE_CALL => {
+            args.expect_len(1)?;
+            DesktopRequest::OwnedCursor(OwnedCursorRequest::SetVisible {
+                target,
+                visible: args.bool(0)?,
+            })
+        }
+        DESKTOP_OWNED_CURSOR_SET_POSITION_CALL => {
+            args.expect_len(2)?;
+            DesktopRequest::OwnedCursor(OwnedCursorRequest::SetPosition {
+                target,
+                position: PhysicalPosition {
+                    x: args.i32(0)?,
+                    y: args.i32(1)?,
+                },
+            })
+        }
+        _ => return Ok(None),
     };
-    serde_json::from_str(json).map_err(|error| format!("invalid desktop request JSON: {error}"))
+    Ok(Some(request))
+}
+
+fn window_mode(value: HostCallVariantArg<'_>) -> Result<WindowMode, String> {
+    expect_unit_variant(DESKTOP_WINDOW_MODE_TYPE, value)?;
+    match value.name {
+        "Normal" => Ok(WindowMode::Normal),
+        "Minimized" => Ok(WindowMode::Minimized),
+        "Maximized" => Ok(WindowMode::Maximized),
+        "BorderlessFullscreen" => Ok(WindowMode::BorderlessFullscreen),
+        "Fullscreen" => Ok(WindowMode::Fullscreen),
+        other => Err(format!("unknown owned window mode `{other}`")),
+    }
+}
+
+fn cursor_icon(value: HostCallVariantArg<'_>) -> Result<CursorIcon, String> {
+    expect_unit_variant(DESKTOP_CURSOR_ICON_TYPE, value)?;
+    match value.name {
+        "Default" => Ok(CursorIcon::Default),
+        "Pointer" => Ok(CursorIcon::Pointer),
+        "Text" => Ok(CursorIcon::Text),
+        "Crosshair" => Ok(CursorIcon::Crosshair),
+        "Move" => Ok(CursorIcon::Move),
+        "NotAllowed" => Ok(CursorIcon::NotAllowed),
+        "Wait" => Ok(CursorIcon::Wait),
+        "Progress" => Ok(CursorIcon::Progress),
+        "Help" => Ok(CursorIcon::Help),
+        "ZoomIn" => Ok(CursorIcon::ZoomIn),
+        "ZoomOut" => Ok(CursorIcon::ZoomOut),
+        "Grab" => Ok(CursorIcon::Grab),
+        "Grabbing" => Ok(CursorIcon::Grabbing),
+        "ResizeHorizontal" => Ok(CursorIcon::ResizeHorizontal),
+        "ResizeVertical" => Ok(CursorIcon::ResizeVertical),
+        "ResizeDiagonalNorthEastSouthWest" => Ok(CursorIcon::ResizeDiagonalNorthEastSouthWest),
+        "ResizeDiagonalNorthWestSouthEast" => Ok(CursorIcon::ResizeDiagonalNorthWestSouthEast),
+        "Hidden" => Ok(CursorIcon::Hidden),
+        other => Err(format!("unknown owned cursor icon `{other}`")),
+    }
+}
+
+fn expect_unit_variant(expected_type: &str, value: HostCallVariantArg<'_>) -> Result<(), String> {
+    if let Some(path) = value.path
+        && path != expected_type
+    {
+        return Err(format!(
+            "host-call variant `{}` belongs to `{path}`, expected `{expected_type}`",
+            value.name
+        ));
+    }
+    if value.payload.is_some() {
+        return Err(format!(
+            "host-call variant `{}.{}` must not carry a payload",
+            expected_type, value.name
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn outcome(
@@ -68,5 +214,81 @@ fn metrics(request: &DesktopRequest, response: &DesktopResponse) -> HostTaskMetr
             }
         }
         _ => HostTaskMetrics::default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcweft_core::task::{
+        CancelScopeId, HostTaskRequest, TaskClass, TaskId, TaskKey, TaskPolicy, TaskPriority,
+    };
+    use arcweft_core::value::RuntimeValue;
+
+    #[test]
+    fn typed_owned_window_mode_decodes_from_variant_payload() {
+        let request = decode_request(&task(
+            "desktop.window.owned",
+            "set_mode",
+            [variant_arg(None, "BorderlessFullscreen")],
+        ))
+        .expect("variant mode decodes");
+
+        assert_eq!(
+            request,
+            DesktopRequest::OwnedWindow(OwnedWindowRequest::SetMode {
+                target: WindowTarget::PrimaryOwned,
+                mode: WindowMode::BorderlessFullscreen,
+            })
+        );
+    }
+
+    #[test]
+    fn typed_owned_cursor_icon_rejects_string_payload() {
+        let error = decode_request(&task(
+            "desktop.cursor.owned",
+            "set_icon",
+            [RuntimePayload::from("pointer")],
+        ))
+        .expect_err("string icon payload is not a typed enum variant");
+
+        assert!(error.contains("must be Variant"));
+    }
+
+    #[test]
+    fn desktop_decoder_has_no_json_request_fallback() {
+        let error = decode_request(&task(
+            "desktop.files.user",
+            "read",
+            [RuntimePayload::from("{\"operation\":\"read_text\"}")],
+        ))
+        .expect_err("JSON request fallback is removed");
+
+        assert!(error.contains("has no typed decoder"));
+    }
+
+    fn variant_arg(path: Option<&str>, name: &str) -> RuntimePayload {
+        RuntimePayload(RuntimeValue::Variant {
+            path: path.map(str::to_owned),
+            name: name.to_owned(),
+            payload: None,
+        })
+    }
+
+    fn task<const N: usize>(
+        capability: &str,
+        operation: &str,
+        args: [RuntimePayload; N],
+    ) -> TaskSpec {
+        let id = format!("{capability}.{operation}");
+        TaskSpec::new(
+            TaskId(id.clone()),
+            TaskKey(id),
+            TaskClass::Background,
+            TaskPriority(0),
+            CancelScopeId("desktop-codec-test".to_owned()),
+            TaskPolicy::JoinSameKey,
+            HostTaskRequest::custom(capability, operation, args),
+        )
     }
 }

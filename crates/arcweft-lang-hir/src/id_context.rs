@@ -7,7 +7,7 @@
 
 use arcweft_lang_syntax::{
     ast::common::TextRange,
-    cst::{CstLineKind, cst_lines, parse_flat_fence},
+    cst::{CstLineKind, cst_lines, text::parse_flat_fence},
     parser::parse_source,
     source::ParsedSource,
 };

@@ -27,6 +27,13 @@ Phase 0 / Phase 1 minimal Rust workspace:
   declared `effects { ... }` are enforced against the active flow/function
   effect scope, and filesystem capability calls reject direct OS absolute path
   string literals in favor of `VirtualPath` constructors.
+- First-order effect closure, explicit `effects` upper-bound validation,
+  `no_effect` checks, verified Agent artifact effect summaries, and runner
+  preflight policy are tracked in `docs/implementation/effect-system.md`.
+- Structural audit gates, current hotspot measurements, and the first
+  interaction-boundary refactor from
+  `arcweft-structure-refactor-2026-06-21.zip` are tracked in
+  `docs/implementation/structure-refactor-2026-06-21.md`.
 - `arcweft-core` no longer depends on dialogue or presentation; the facade
   crate `arcweft` exposes crate-family namespaces instead of a flat prelude.
 - `arcweft-render-text` owns the Sans I/O rich text display sidecar model.
@@ -235,7 +242,16 @@ Phase 0 / Phase 1 minimal Rust workspace:
   library and a binary for argv-compatible execution through
   `run_with_native_adapters`.
 - `arcweft-bundle` owns the first Sans I/O `.awfb` data model and deterministic
-  JSON codec. `arcw bundle` and `arcw build bundle` package source text,
+  bundle codec entrypoints. JSON remains the default `.awfb` compatibility
+  codec, while explicit TOML, YAML, MessagePack, CBOR, and Avro bundle artifact
+  formats are available through `BundleFormat` and CLI `--format`.
+  Arcweft DSL runtime serialization now uses built-in `DataFormat` enum values
+  such as `.Json` rather than string format labels when the expected enum type
+  is unambiguous; `data.encode`, `data.decode`, and `data.shape` lower through
+  the runtime external-call boundary and execute JSON, TOML, YAML, MessagePack,
+  CBOR, dynamic-envelope Avro, CSV, Arrow IPC, Parquet, and Arcweft Binary in
+  the native pure accelerator.
+  `arcw bundle` and `arcw build bundle` package source text,
   executable structured bytecode, runtime summary counters, required host-call
   ids, adapter manifest bodies, adapter manifest ids, and relative virtual
   files without recording host absolute paths. `arcw run-bundle` decodes that

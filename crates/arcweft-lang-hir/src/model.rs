@@ -438,6 +438,36 @@ impl HirAgent {
 }
 
 impl HirDialogue {
+    pub fn expression_call(
+        callee: String,
+        content: DialogueContent,
+        plan: Option<LinePlan>,
+    ) -> Self {
+        Self {
+            callee,
+            id: None,
+            text_key: None,
+            voice: None,
+            look: None,
+            stage: None,
+            portrait: None,
+            focus: None,
+            cleanup: None,
+            window: None,
+            source_locale: None,
+            hooks: Vec::new(),
+            style: None,
+            style_raw: None,
+            style_range: None,
+            rich_text: None,
+            rich_text_raw: None,
+            rich_text_range: None,
+            args: Vec::new(),
+            content,
+            plan,
+        }
+    }
+
     pub fn callee(&self) -> &str {
         &self.callee
     }

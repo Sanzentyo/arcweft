@@ -17,6 +17,7 @@ arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
 arcweft-source = { path = "../arcweft-source" }
 
+blake3.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

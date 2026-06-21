@@ -71,6 +71,7 @@ pub enum WindowMode {
     Normal,
     Minimized,
     Maximized,
+    BorderlessFullscreen,
     Fullscreen,
 }
 
@@ -162,5 +163,14 @@ mod tests {
         let error =
             serde_json::from_str::<WindowId>("\"\"").expect_err("empty window id is invalid");
         assert!(error.to_string().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn borderless_fullscreen_mode_uses_stable_snake_case_wire_name() {
+        let json = serde_json::to_string(&WindowMode::BorderlessFullscreen)
+            .expect("window mode serializes");
+        assert_eq!(json, "\"borderless_fullscreen\"");
+        let decoded = serde_json::from_str::<WindowMode>(&json).expect("window mode decodes");
+        assert_eq!(decoded, WindowMode::BorderlessFullscreen);
     }
 }

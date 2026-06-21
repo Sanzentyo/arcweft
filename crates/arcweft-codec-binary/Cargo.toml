@@ -1,0 +1,20 @@
+[package]
+name = "arcweft-codec-binary"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version = "0.1.0"
+description = "Arcweft binary codec and bincode interop boundary."
+
+[features]
+default = []
+bincode-legacy = ["dep:bincode", "dep:arcweft-codec-json", "dep:serde_json"]
+
+[dependencies]
+arcweft-data = { path = "../arcweft-data" }
+bincode = { version = "=2.0.1", features = ["serde"], optional = true }
+arcweft-codec-json = { path = "../arcweft-codec-json", optional = true }
+serde_json = { workspace = true, optional = true }
+
+[lints]
+workspace = true

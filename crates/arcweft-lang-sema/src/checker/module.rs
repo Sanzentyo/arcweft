@@ -8,7 +8,10 @@ use super::{
     type_ref_kind, validate_typecheck_ready,
 };
 use crate::checker::helpers::{type_kind_label, type_ref_label};
-use crate::diagnostics::TypeCheckWarning;
+use crate::effect_model::{
+    CallableId, CallableKind, EffectContract, Visibility as EffectVisibility,
+};
+use crate::effects::EffectSet;
 use arcweft_lang_hir::model::{HirAgent, HirFlow, HirFunction};
 use arcweft_lang_syntax::ast::common::Visibility;
 use arcweft_lang_syntax::ast::items::{
@@ -38,6 +41,7 @@ impl TypeChecker<'_> {
         self.bind_top_level_type_aliases(module);
         self.bind_top_level_functions(module);
         self.bind_extern_capability_functions(module);
+        self.register_effect_callables(module);
         self.flow_params = collect_flow_params(module);
 
         self.check_module_agents(module.agents());
@@ -80,6 +84,9 @@ impl TypeChecker<'_> {
             }
             let effect_scope = EffectScope::from_contracts(item.contracts());
             let effect_snapshot = self.apply_effect_scope(&effect_scope);
+            let previous_callable = self
+                .effect_collector
+                .enter(CallableId::new(format!("agent.{}", item.name())));
             let actual = self.with_expected_return(expected_return.as_ref(), |this| {
                 this.check_function_body_expr(
                     item.body_statements(),
@@ -87,6 +94,7 @@ impl TypeChecker<'_> {
                     expected_return.as_ref(),
                 )
             });
+            self.effect_collector.restore(previous_callable);
             self.effect_capabilities = effect_snapshot;
             if let (Some(expected), Some(actual)) = (expected_return, actual)
                 && !self.types_compatible(&expected, &actual)
@@ -136,9 +144,16 @@ impl TypeChecker<'_> {
             }
             let effect_scope = EffectScope::from_contracts(flow.contracts());
             let effect_snapshot = self.apply_effect_scope(&effect_scope);
+            let previous_callable = flow
+                .name()
+                .map(flow_callable_id)
+                .map(|id| self.effect_collector.enter(id));
             self.with_expected_return(expected_return.as_ref(), |this| {
                 this.check_flow_items(flow.body());
             });
+            if let Some(previous_callable) = previous_callable {
+                self.effect_collector.restore(previous_callable);
+            }
             self.effect_capabilities = effect_snapshot;
         }
     }
@@ -162,8 +177,12 @@ impl TypeChecker<'_> {
             }
             let effect_scope = EffectScope::from_contracts(function.contracts());
             let effect_snapshot = self.apply_effect_scope(&effect_scope);
+            let previous_callable = self
+                .effect_collector
+                .enter(function_callable_id(function.name()));
             if function.kind() == FunctionKind::Stream {
                 self.check_stream_function(function);
+                self.effect_collector.restore(previous_callable);
                 self.effect_capabilities = effect_snapshot;
                 continue;
             }
@@ -175,6 +194,7 @@ impl TypeChecker<'_> {
                     expected_return.as_ref(),
                 )
             });
+            self.effect_collector.restore(previous_callable);
             self.effect_capabilities = effect_snapshot;
             if let (Some(expected), Some(actual)) = (expected_return, actual)
                 && !self.types_compatible(&expected, &actual)
@@ -232,10 +252,12 @@ impl TypeChecker<'_> {
         if !type_ref_contains_choice(ty) {
             return;
         }
-        self.warnings.push(TypeCheckWarning::new(format!(
-            "{context} exposes anonymous sum `{}`; public ABI and save data are more stable with a nominal enum",
-            type_ref_label(ty)
-        )));
+        self.warnings.push(
+            crate::diagnostics::TypeCheckWarning::public_abi_anonymous_sum(
+                context,
+                type_ref_label(ty),
+            ),
+        );
     }
 
     fn with_expected_return<R>(
@@ -318,6 +340,77 @@ impl TypeChecker<'_> {
                 function.name().to_owned(),
                 function_signature_type(function.signature()),
             );
+        }
+    }
+
+    fn register_effect_callables(&mut self, module: &HirModule) {
+        for agent in module.agents() {
+            let item = agent.item();
+            let contract = effect_contract_from_contracts(
+                item.contracts(),
+                agent.has_attribute("pure"),
+                true,
+                &mut self.errors,
+            );
+            let source_name = format!("agent.{}", item.name());
+            self.register_effect_callable(
+                &source_name,
+                CallableId::new(format!("agent.{}", item.name())),
+                CallableKind::Agent,
+                EffectVisibility::Boundary,
+                contract,
+            );
+        }
+        for flow in module.flows() {
+            if let Some(name) = flow.name() {
+                let contract = effect_contract_from_contracts(
+                    flow.contracts(),
+                    flow.has_attribute("pure"),
+                    false,
+                    &mut self.errors,
+                );
+                self.register_effect_callable(
+                    name,
+                    flow_callable_id(name),
+                    match flow.kind() {
+                        FlowKind::Flow => CallableKind::Flow,
+                        FlowKind::Fragment => CallableKind::Fragment,
+                    },
+                    EffectVisibility::Private,
+                    contract,
+                );
+            }
+        }
+        for function in module.functions() {
+            let contract = effect_contract_from_contracts(
+                function.contracts(),
+                function.has_attribute("pure"),
+                matches!(function.visibility(), Some(Visibility::Public)),
+                &mut self.errors,
+            );
+            self.register_effect_callable(
+                function.name(),
+                function_callable_id(function.name()),
+                CallableKind::Function,
+                effect_visibility_from_syntax(function.visibility()),
+                contract,
+            );
+        }
+    }
+
+    fn register_effect_callable(
+        &mut self,
+        source_name: &str,
+        id: CallableId,
+        kind: CallableKind,
+        visibility: EffectVisibility,
+        contract: EffectContract,
+    ) {
+        if let Err(error) =
+            self.effect_collector
+                .register_callable(source_name, id, kind, visibility, contract)
+        {
+            self.errors.push(TypeCheckError::new(error.to_string()));
         }
     }
 
@@ -1031,6 +1124,85 @@ fn route_path_params(path: &str) -> HashSet<String> {
         .filter(|name| !name.is_empty())
         .map(ToOwned::to_owned)
         .collect()
+}
+
+fn function_callable_id(name: &str) -> CallableId {
+    CallableId::new(format!("fn.{name}"))
+}
+
+fn flow_callable_id(name: &str) -> CallableId {
+    CallableId::new(format!("flow.{name}"))
+}
+
+fn effect_visibility_from_syntax(visibility: Option<Visibility>) -> EffectVisibility {
+    match visibility {
+        Some(Visibility::Public) => EffectVisibility::Public,
+        Some(Visibility::Crate | Visibility::Super) | None => EffectVisibility::Private,
+    }
+}
+
+fn effect_contract_from_contracts(
+    contracts: &[super::ContractClause],
+    pure: bool,
+    require_explicit_nonempty: bool,
+    errors: &mut Vec<TypeCheckError>,
+) -> EffectContract {
+    let declared = declared_effect_set_from_contracts(contracts, errors);
+    let mut forbidden = EffectSet::new();
+    for contract in contracts {
+        let super::ContractClause::NoEffect(expr) = contract else {
+            continue;
+        };
+        match crate::effect_contract::effect_id_from_expr(expr) {
+            Ok(effect) => {
+                forbidden.insert(effect);
+            }
+            Err(error) => errors.push(TypeCheckError::new(error.to_string())),
+        }
+    }
+    if pure && declared.as_ref().is_some_and(|effects| !effects.is_empty()) {
+        errors.push(TypeCheckError::new(format!(
+            "pure callable cannot declare non-empty effects {}",
+            declared
+                .as_ref()
+                .expect("checked non-empty declared effects")
+        )));
+    }
+
+    let mut contract = if pure {
+        EffectContract::pure()
+    } else if let Some(declared) = declared {
+        EffectContract::bounded(declared)
+    } else {
+        EffectContract::inferred()
+    }
+    .with_forbidden(forbidden);
+    if require_explicit_nonempty {
+        contract = contract.requiring_explicit_nonempty();
+    }
+    contract
+}
+
+fn declared_effect_set_from_contracts(
+    contracts: &[super::ContractClause],
+    errors: &mut Vec<TypeCheckError>,
+) -> Option<EffectSet> {
+    let mut declared = None::<EffectSet>;
+    for contract in contracts {
+        let super::ContractClause::Effects(items) = contract else {
+            continue;
+        };
+        let effects = declared.get_or_insert_with(EffectSet::new);
+        for item in items {
+            match crate::effect_contract::effect_id_from_expr(item) {
+                Ok(effect) => {
+                    effects.insert(effect);
+                }
+                Err(error) => errors.push(TypeCheckError::new(error.to_string())),
+            }
+        }
+    }
+    declared
 }
 
 fn extern_rust_crate_name(source: &str) -> Option<&str> {

@@ -2,6 +2,13 @@ use crate::diagnostics::DocumentAnalysis;
 use crate::documents::DocumentSnapshot;
 use crate::features::cascade::effective_dialogue_cascade_at;
 use crate::profiles::LspProfile;
+use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_sema::{
+    check::analyze_types,
+    effect_diagnostics::{EffectDiagnosticKind, EffectSeverity},
+    effect_model::CallableId,
+    effects::EffectSet,
+};
 use arcweft_lang_syntax::{
     ast::{
         common::TextRange,
@@ -10,7 +17,7 @@ use arcweft_lang_syntax::{
             BorrowBlock, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, ScopeBlock,
             SourceLocaleBlock, Stmt, WhileBlock, WhileLetBlock,
         },
-        items::{EntityDeclItem, EntityDeclKind, Item},
+        items::{AgentItem, EntityDeclItem, EntityDeclKind, FunctionItem, Item},
         pattern::Pattern,
     },
     expr::Expr,
@@ -23,7 +30,7 @@ use arcweft_verify_lsp::source_code_actions_with_mapper;
 use arcweft_verify_lsp::workspace_edit_from_tooling_edit;
 use lsp_types::{CodeAction, CodeActionKind, Position, Uri};
 
-use arcweft_tooling::TextEdit;
+use arcweft_tooling::model::TextEdit;
 
 /// Computes code actions for one open Arcweft document.
 pub fn actions(
@@ -34,8 +41,97 @@ pub fn actions(
     position: Position,
 ) -> Vec<CodeAction> {
     let mut actions = source_code_actions_with_mapper(uri, document.text(), document.line_index());
+    actions.extend(effect_contract_actions(profile, uri, document));
     actions.extend(dialogue_override_actions(profile, uri, document, position));
     actions
+}
+
+fn effect_contract_actions(
+    profile: &LspProfile,
+    uri: &Uri,
+    document: &DocumentSnapshot,
+) -> Vec<CodeAction> {
+    let parsed = parse_source(document.text().to_owned());
+    if !parsed.errors().is_empty() {
+        return Vec::new();
+    }
+    let Ok(hir) = lower_to_hir(parsed.typed_tree()) else {
+        return Vec::new();
+    };
+    let report = analyze_types(&hir, &profile.typecheck_env());
+    report
+        .effects
+        .diagnostics()
+        .iter()
+        .filter(|diagnostic| diagnostic.severity() == EffectSeverity::Error)
+        .filter_map(|diagnostic| match diagnostic.kind() {
+            EffectDiagnosticKind::MissingDeclaration { missing, declared } => {
+                let effects = declared.union(missing);
+                effect_set_edit(
+                    document.text(),
+                    parsed.typed_tree().items(),
+                    diagnostic.callable(),
+                    &effects,
+                )
+                .map(|edit| {
+                    quickfix_code_action(
+                        uri,
+                        document,
+                        format!(
+                            "Add missing effect declaration for `{}`",
+                            diagnostic.callable()
+                        ),
+                        &edit,
+                    )
+                })
+            }
+            EffectDiagnosticKind::ExplicitDeclarationRequired { inferred } => effect_set_edit(
+                document.text(),
+                parsed.typed_tree().items(),
+                diagnostic.callable(),
+                inferred,
+            )
+            .map(|edit| {
+                quickfix_code_action(
+                    uri,
+                    document,
+                    format!("Declare inferred effects for `{}`", diagnostic.callable()),
+                    &edit,
+                )
+            }),
+            EffectDiagnosticKind::ForbiddenEffect { .. }
+            | EffectDiagnosticKind::PureCallableEffect { .. }
+            | EffectDiagnosticKind::UnknownLocalCallable { .. }
+            | EffectDiagnosticKind::DynamicSignatureRequired { .. }
+            | EffectDiagnosticKind::CapabilityUnavailable { .. }
+            | EffectDiagnosticKind::OverdeclaredEffect { .. } => None,
+        })
+        .chain(report.effects.warnings().filter_map(|diagnostic| {
+            let EffectDiagnosticKind::OverdeclaredEffect { unused } = diagnostic.kind() else {
+                return None;
+            };
+            let summary = report.effects.summary(diagnostic.callable())?;
+            let declared = summary.declared()?;
+            let effects = declared.difference(unused);
+            effect_set_edit(
+                document.text(),
+                parsed.typed_tree().items(),
+                diagnostic.callable(),
+                &effects,
+            )
+            .map(|edit| {
+                quickfix_code_action(
+                    uri,
+                    document,
+                    format!(
+                        "Remove unused effect declaration from `{}`",
+                        diagnostic.callable()
+                    ),
+                    &edit,
+                )
+            })
+        }))
+        .collect()
 }
 
 fn dialogue_override_actions(
@@ -218,6 +314,174 @@ fn extraction_code_action(
         )),
         ..CodeAction::default()
     }
+}
+
+fn quickfix_code_action(
+    uri: &Uri,
+    document: &DocumentSnapshot,
+    title: String,
+    edit: &TextEdit,
+) -> CodeAction {
+    CodeAction {
+        title,
+        kind: Some(CodeActionKind::QUICKFIX),
+        edit: Some(workspace_edit_from_tooling_edit(
+            uri,
+            edit,
+            document.line_index(),
+        )),
+        ..CodeAction::default()
+    }
+}
+
+fn effect_set_edit(
+    source: &str,
+    items: &[Item],
+    callable: &CallableId,
+    effects: &EffectSet,
+) -> Option<TextEdit> {
+    let item_range = callable_item_range(items, callable)?;
+    let replacement = format_effects_clause(effects);
+    if let Some(range) = find_effects_clause(source, item_range) {
+        return Some(TextEdit {
+            start: range.start(),
+            end: range.end(),
+            replacement,
+        });
+    }
+    let body_open = find_body_open(source, item_range)?;
+    Some(TextEdit {
+        start: body_open,
+        end: body_open,
+        replacement: format!("\n{replacement}\n"),
+    })
+}
+
+fn callable_item_range(items: &[Item], callable: &CallableId) -> Option<TextRange> {
+    items.iter().find_map(|item| match item {
+        Item::Agent(agent) if callable.as_str() == agent_callable_name(agent) => {
+            Some(*agent.range())
+        }
+        Item::Function(function) if callable.as_str() == function_callable_name(function) => {
+            Some(*function.range())
+        }
+        Item::Flow(flow)
+            if flow
+                .name()
+                .is_some_and(|name| callable.as_str() == flow_callable_name(name)) =>
+        {
+            Some(*flow.range())
+        }
+        Item::Flow(_)
+        | Item::Function(_)
+        | Item::Agent(_)
+        | Item::Callable(_)
+        | Item::State(_)
+        | Item::Trait(_)
+        | Item::Impl(_)
+        | Item::Enum(_)
+        | Item::Struct(_)
+        | Item::TypeAlias(_)
+        | Item::EntityDecl(_)
+        | Item::Entry(_)
+        | Item::ExternCapability(_)
+        | Item::ExternMod(_)
+        | Item::Hook(_)
+        | Item::DialogueDefaults(_)
+        | Item::MemoFn(_)
+        | Item::Proof(_)
+        | Item::TrustedAxiom(_)
+        | Item::Test(_)
+        | Item::Bench(_)
+        | Item::Parser(_)
+        | Item::Source(_)
+        | Item::FlowItem(_)
+        | Item::Raw(_) => None,
+    })
+}
+
+fn agent_callable_name(agent: &AgentItem) -> String {
+    format!("agent.{}", agent.name())
+}
+
+fn function_callable_name(function: &FunctionItem) -> String {
+    format!("fn.{}", function.signature().name())
+}
+
+fn flow_callable_name(name: &str) -> String {
+    format!("flow.{name}")
+}
+
+fn format_effects_clause(effects: &EffectSet) -> String {
+    let labels = effects.to_labels();
+    if labels.is_empty() {
+        "effects { }".to_owned()
+    } else {
+        format!("effects {{ {} }}", labels.join(", "))
+    }
+}
+
+fn find_effects_clause(source: &str, range: TextRange) -> Option<TextRange> {
+    let mut cursor = range.start();
+    while cursor < range.end() {
+        let offset = source[cursor..range.end()].find("effects")?;
+        let start = cursor + offset;
+        let after_keyword = start + "effects".len();
+        if is_identifier_boundary(source, start, after_keyword) {
+            let open = skip_ascii_whitespace(source, after_keyword, range.end());
+            if source.as_bytes().get(open) == Some(&b'{') {
+                let end = matching_brace_end(source, open, range.end())?;
+                return Some(TextRange::new(start, end));
+            }
+        }
+        cursor = after_keyword;
+    }
+    None
+}
+
+fn find_body_open(source: &str, range: TextRange) -> Option<usize> {
+    source[range.start()..range.end()]
+        .find('{')
+        .map(|offset| range.start() + offset)
+}
+
+fn skip_ascii_whitespace(source: &str, mut offset: usize, end: usize) -> usize {
+    while offset < end && source.as_bytes()[offset].is_ascii_whitespace() {
+        offset += 1;
+    }
+    offset
+}
+
+fn matching_brace_end(source: &str, open: usize, end: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (offset, ch) in source[open..end].char_indices() {
+        match ch {
+            '{' => depth = depth.saturating_add(1),
+            '}' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(open + offset + ch.len_utf8());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn is_identifier_boundary(source: &str, start: usize, end: usize) -> bool {
+    !source[..start]
+        .chars()
+        .next_back()
+        .is_some_and(is_identifier_continue)
+        && !source[end..]
+            .chars()
+            .next()
+            .is_some_and(is_identifier_continue)
+}
+
+fn is_identifier_continue(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphanumeric()
 }
 
 fn extractable_line_override(contribution: &RichTextStyleContribution) -> bool {

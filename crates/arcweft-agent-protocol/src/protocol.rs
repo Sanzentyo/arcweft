@@ -1,10 +1,8 @@
-use crate::{
-    AgentActionTarget,
-    artifact::RequiredEntity,
-    ids::{AgentResourceUri, PublicId},
-    predicate::Predicate,
-    value::AgentValue,
-};
+use crate::action::AgentActionTarget;
+use crate::artifact::RequiredEntity;
+use crate::ids::{AgentResourceUri, PublicId};
+use crate::predicate::Predicate;
+use crate::value::AgentValue;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 

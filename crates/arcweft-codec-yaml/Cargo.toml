@@ -1,0 +1,15 @@
+[package]
+name = "arcweft-codec-yaml"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version = "0.1.0"
+description = "YAML codec adapter for Arcweft data."
+
+[dependencies]
+arcweft-data = { path = "../arcweft-data" }
+base64.workspace = true
+yaml-rust2.workspace = true
+
+[lints]
+workspace = true

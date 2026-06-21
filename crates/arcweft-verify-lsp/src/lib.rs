@@ -579,7 +579,7 @@ pub fn code_actions_from_report_with_mapper(
 
 /// Converts source-level Arcweft tooling actions into LSP code actions.
 pub fn source_code_actions(uri: &Uri, source: &str) -> Vec<CodeAction> {
-    arcweft_tooling::source_code_actions(source)
+    arcweft_tooling::code_actions::source_code_actions(source)
         .into_iter()
         .map(|action| CodeAction {
             title: action.label,
@@ -603,7 +603,7 @@ pub fn source_code_actions_with_mapper(
     source: &str,
     mapper: &impl LspPositionMapper,
 ) -> Vec<CodeAction> {
-    arcweft_tooling::source_code_actions(source)
+    arcweft_tooling::code_actions::source_code_actions(source)
         .into_iter()
         .map(|action| {
             let edit = action
@@ -624,7 +624,7 @@ pub fn source_code_actions_with_mapper(
 /// Converts one Arcweft tooling edit into an LSP workspace edit.
 pub fn workspace_edit_from_tooling_edit(
     uri: &Uri,
-    edit: &arcweft_tooling::TextEdit,
+    edit: &arcweft_tooling::model::TextEdit,
     mapper: &impl LspPositionMapper,
 ) -> WorkspaceEdit {
     let text_edit = TextEdit::new(
@@ -639,7 +639,7 @@ pub fn inferred_id_inlay_hints_with_mapper(
     source: &str,
     mapper: &impl LspPositionMapper,
 ) -> Vec<InlayHint> {
-    arcweft_tooling::inferred_id_hints(source)
+    arcweft_tooling::id_context::inferred_id_hints(source)
         .into_iter()
         .map(|hint| InlayHint {
             position: mapper

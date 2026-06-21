@@ -1,9 +1,14 @@
-//! Sans I/O bundle data model and deterministic JSON codec.
+//! Sans I/O bundle data model and deterministic codecs.
 
+use apache_avro::types::Value as AvroValue;
+use apache_avro::{Reader, Schema, Writer};
 use arcweft_agent_protocol::artifact::AgentArtifactManifest;
 use arcweft_core::bytecode::BytecodeProgram;
+use arcweft_data::{BytesFormat, Codec, DecodeOptions, EncodeOptions, TypeShape};
 use arcweft_render_text::LineDisplayCatalog;
 use serde::{Deserialize, Serialize};
+use std::io::Cursor;
+use std::path::Path;
 use thiserror::Error;
 
 pub const ARCWEFT_BUNDLE_SCHEMA_VERSION: u32 = 2;
@@ -61,6 +66,18 @@ pub struct BundleBytecodeProgram {
 #[serde(rename_all = "snake_case")]
 pub enum BundleBytecodeEncoding {
     StructuredJson,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BundleFormat {
+    #[default]
+    Json,
+    Toml,
+    Yaml,
+    MessagePack,
+    Cbor,
+    Avro,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -175,6 +192,18 @@ pub enum BundleCodecError {
     Encode(#[source] serde_json::Error),
     #[error("failed to decode Arcweft bundle JSON: {0}")]
     Decode(#[source] serde_json::Error),
+    #[error("failed to encode Arcweft bundle {format}: {message}")]
+    EncodeFormat {
+        format: BundleFormat,
+        message: String,
+    },
+    #[error("failed to decode Arcweft bundle {format}: {message}")]
+    DecodeFormat {
+        format: BundleFormat,
+        message: String,
+    },
+    #[error("unsupported Arcweft bundle format `{format}`")]
+    UnsupportedFormat { format: String },
     #[error("bundle image asset `{asset_id}` references missing virtual file {space}:{path}")]
     MissingImageFile {
         asset_id: String,
@@ -259,14 +288,123 @@ impl ArcweftBundle {
 
     pub fn from_json_slice(bytes: &[u8]) -> Result<Self, BundleCodecError> {
         let bundle: Self = serde_json::from_slice(bytes).map_err(BundleCodecError::Decode)?;
-        if bundle.schema_version != ARCWEFT_BUNDLE_SCHEMA_VERSION {
-            return Err(BundleCodecError::UnsupportedSchema {
-                actual: bundle.schema_version,
-                expected: ARCWEFT_BUNDLE_SCHEMA_VERSION,
-            });
-        }
-        bundle.validate_kind()?;
+        bundle.validate_schema_and_kind()?;
         Ok(bundle)
+    }
+
+    pub fn to_format_bytes(&self, format: BundleFormat) -> Result<Vec<u8>, BundleCodecError> {
+        self.validate_kind()?;
+        match format {
+            BundleFormat::Json => self.to_json_bytes(),
+            BundleFormat::Toml => toml::to_string_pretty(self)
+                .map(String::into_bytes)
+                .map_err(|error| BundleCodecError::EncodeFormat {
+                    format,
+                    message: error.to_string(),
+                }),
+            BundleFormat::Yaml => {
+                let value = arcweft_serde_bridge::to_arcweft_value(self).map_err(|error| {
+                    BundleCodecError::EncodeFormat {
+                        format,
+                        message: error.to_string(),
+                    }
+                })?;
+                arcweft_codec_yaml::YamlCodec
+                    .encode_value(
+                        &value,
+                        &TypeShape::Named("ArcweftBundle".to_owned()),
+                        &EncodeOptions {
+                            pretty: true,
+                            bytes_format: BytesFormat::Array,
+                        },
+                    )
+                    .map_err(|error| BundleCodecError::EncodeFormat {
+                        format,
+                        message: error.to_string(),
+                    })
+            }
+            BundleFormat::MessagePack => {
+                rmp_serde::to_vec_named(self).map_err(|error| BundleCodecError::EncodeFormat {
+                    format,
+                    message: error.to_string(),
+                })
+            }
+            BundleFormat::Cbor => {
+                let mut bytes = Vec::new();
+                ciborium::ser::into_writer(self, &mut bytes).map_err(|error| {
+                    BundleCodecError::EncodeFormat {
+                        format,
+                        message: error.to_string(),
+                    }
+                })?;
+                Ok(bytes)
+            }
+            BundleFormat::Avro => self.to_avro_envelope_bytes(),
+        }
+    }
+
+    pub fn from_format_slice(format: BundleFormat, bytes: &[u8]) -> Result<Self, BundleCodecError> {
+        let bundle = match format {
+            BundleFormat::Json => return Self::from_json_slice(bytes),
+            BundleFormat::Toml => {
+                let source =
+                    std::str::from_utf8(bytes).map_err(|error| BundleCodecError::DecodeFormat {
+                        format,
+                        message: error.to_string(),
+                    })?;
+                toml::from_str(source).map_err(|error| BundleCodecError::DecodeFormat {
+                    format,
+                    message: error.to_string(),
+                })?
+            }
+            BundleFormat::Yaml => {
+                let value = arcweft_codec_yaml::YamlCodec
+                    .decode_value(
+                        bytes,
+                        &TypeShape::Named("ArcweftBundle".to_owned()),
+                        &DecodeOptions::default(),
+                    )
+                    .map_err(|error| BundleCodecError::DecodeFormat {
+                        format,
+                        message: error.to_string(),
+                    })?;
+                arcweft_serde_bridge::from_arcweft_value(&value).map_err(|error| {
+                    BundleCodecError::DecodeFormat {
+                        format,
+                        message: error.to_string(),
+                    }
+                })?
+            }
+            BundleFormat::MessagePack => {
+                rmp_serde::from_slice(bytes).map_err(|error| BundleCodecError::DecodeFormat {
+                    format,
+                    message: error.to_string(),
+                })?
+            }
+            BundleFormat::Cbor => {
+                ciborium::de::from_reader(Cursor::new(bytes)).map_err(|error| {
+                    BundleCodecError::DecodeFormat {
+                        format,
+                        message: error.to_string(),
+                    }
+                })?
+            }
+            BundleFormat::Avro => Self::from_avro_envelope_slice(bytes)?,
+        };
+        bundle.validate_schema_and_kind()?;
+        Ok(bundle)
+    }
+
+    pub fn from_path_slice(path: &Path, bytes: &[u8]) -> Result<Self, BundleCodecError> {
+        let Some(format) = BundleFormat::from_path(path) else {
+            return Self::from_json_slice(bytes).or_else(|json_error| {
+                Self::from_format_slice(BundleFormat::MessagePack, bytes)
+                    .or_else(|_| Self::from_format_slice(BundleFormat::Cbor, bytes))
+                    .or_else(|_| Self::from_format_slice(BundleFormat::Avro, bytes))
+                    .map_err(|_| json_error)
+            });
+        };
+        Self::from_format_slice(format, bytes)
     }
 
     pub fn virtual_file(&self, file: &BundleVirtualFileRef) -> Option<&BundleVirtualFile> {
@@ -300,6 +438,165 @@ impl ArcweftBundle {
             (BundleKind::Game, true) => Err(BundleCodecError::UnexpectedAgentManifest),
         }
     }
+
+    fn validate_schema_and_kind(&self) -> Result<(), BundleCodecError> {
+        if self.schema_version != ARCWEFT_BUNDLE_SCHEMA_VERSION {
+            return Err(BundleCodecError::UnsupportedSchema {
+                actual: self.schema_version,
+                expected: ARCWEFT_BUNDLE_SCHEMA_VERSION,
+            });
+        }
+        self.validate_kind()
+    }
+
+    fn to_avro_envelope_bytes(&self) -> Result<Vec<u8>, BundleCodecError> {
+        let schema = bundle_avro_envelope_schema()?;
+        let payload_json = serde_json::to_string(self).map_err(BundleCodecError::Encode)?;
+        let mut writer = Writer::new(&schema, Vec::new());
+        writer
+            .append(AvroValue::Record(vec![
+                (
+                    "schema_version".to_owned(),
+                    AvroValue::Int(
+                        i32::try_from(ARCWEFT_BUNDLE_SCHEMA_VERSION)
+                            .expect("Arcweft bundle schema version fits in Avro int"),
+                    ),
+                ),
+                (
+                    "payload_format".to_owned(),
+                    AvroValue::String(BundleFormat::Json.as_str().to_owned()),
+                ),
+                ("payload_json".to_owned(), AvroValue::String(payload_json)),
+            ]))
+            .map_err(|error| BundleCodecError::EncodeFormat {
+                format: BundleFormat::Avro,
+                message: error.to_string(),
+            })?;
+        writer
+            .into_inner()
+            .map_err(|error| BundleCodecError::EncodeFormat {
+                format: BundleFormat::Avro,
+                message: error.to_string(),
+            })
+    }
+
+    fn from_avro_envelope_slice(bytes: &[u8]) -> Result<Self, BundleCodecError> {
+        let reader = Reader::new(bytes).map_err(|error| BundleCodecError::DecodeFormat {
+            format: BundleFormat::Avro,
+            message: error.to_string(),
+        })?;
+        let mut values = reader.into_iter();
+        let Some(value) = values.next() else {
+            return Err(BundleCodecError::DecodeFormat {
+                format: BundleFormat::Avro,
+                message: "Avro bundle envelope is empty".to_owned(),
+            });
+        };
+        let value = value.map_err(|error| BundleCodecError::DecodeFormat {
+            format: BundleFormat::Avro,
+            message: error.to_string(),
+        })?;
+        let fields = match value {
+            AvroValue::Record(fields) => fields,
+            other => {
+                return Err(BundleCodecError::DecodeFormat {
+                    format: BundleFormat::Avro,
+                    message: format!("expected Avro record envelope, found {other:?}"),
+                });
+            }
+        };
+        let payload_format = avro_string_field(&fields, "payload_format")?;
+        if payload_format != BundleFormat::Json.as_str() {
+            return Err(BundleCodecError::DecodeFormat {
+                format: BundleFormat::Avro,
+                message: format!("unsupported Avro payload format `{payload_format}`"),
+            });
+        }
+        Self::from_json_slice(avro_string_field(&fields, "payload_json")?.as_bytes())
+    }
+}
+
+impl BundleFormat {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Json => "json",
+            Self::Toml => "toml",
+            Self::Yaml => "yaml",
+            Self::MessagePack => "msgpack",
+            Self::Cbor => "cbor",
+            Self::Avro => "avro",
+        }
+    }
+
+    pub fn parse(value: &str) -> Result<Self, BundleCodecError> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "json" => Ok(Self::Json),
+            "toml" => Ok(Self::Toml),
+            "yaml" | "yml" => Ok(Self::Yaml),
+            "messagepack" | "msgpack" | "mpk" => Ok(Self::MessagePack),
+            "cbor" => Ok(Self::Cbor),
+            "avro" => Ok(Self::Avro),
+            other => Err(BundleCodecError::UnsupportedFormat {
+                format: other.to_owned(),
+            }),
+        }
+    }
+
+    #[must_use]
+    pub fn from_path(path: &Path) -> Option<Self> {
+        let extension = path.extension()?.to_str()?;
+        Self::parse(extension).ok()
+    }
+}
+
+impl std::fmt::Display for BundleFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+fn bundle_avro_envelope_schema() -> Result<Schema, BundleCodecError> {
+    Schema::parse_str(
+        r#"{
+          "type": "record",
+          "name": "ArcweftBundleEnvelope",
+          "namespace": "org.arcweft.bundle",
+          "fields": [
+            {"name": "schema_version", "type": "int"},
+            {"name": "payload_format", "type": "string"},
+            {"name": "payload_json", "type": "string"}
+          ]
+        }"#,
+    )
+    .map_err(|error| BundleCodecError::EncodeFormat {
+        format: BundleFormat::Avro,
+        message: error.to_string(),
+    })
+}
+
+fn avro_string_field(
+    fields: &[(String, AvroValue)],
+    name: &str,
+) -> Result<String, BundleCodecError> {
+    fields
+        .iter()
+        .find_map(|(field_name, value)| {
+            (field_name == name).then(|| match value {
+                AvroValue::String(value) => Ok(value.clone()),
+                other => Err(BundleCodecError::DecodeFormat {
+                    format: BundleFormat::Avro,
+                    message: format!(
+                        "Avro envelope field `{name}` must be string, found {other:?}"
+                    ),
+                }),
+            })
+        })
+        .unwrap_or_else(|| {
+            Err(BundleCodecError::DecodeFormat {
+                format: BundleFormat::Avro,
+                message: format!("Avro envelope missing field `{name}`"),
+            })
+        })
 }
 
 impl BundleVirtualFile {
@@ -366,6 +663,7 @@ mod tests {
             ProjectBindingMode, RequiredEntity,
         },
         ids::{PublicId, StableHash},
+        verified_effects::VerifiedEffectSummary,
     };
 
     #[test]
@@ -497,6 +795,7 @@ mod tests {
         assert!(json.contains("\"bundle_kind\": \"agent_controller\""));
         assert!(json.contains("\"agent\""));
         assert!(json.contains("\"declared_effects\""));
+        assert!(json.contains("\"verified_effects\""));
         assert!(json.contains("\"semantic_hash\""));
         assert!(!json.contains("\"type_fingerprint\""));
 
@@ -534,6 +833,51 @@ mod tests {
             .expect_err("game bundle cannot carry agent manifest");
 
         assert!(matches!(error, BundleCodecError::UnexpectedAgentManifest));
+    }
+
+    #[test]
+    fn bundle_format_codecs_round_trip_supported_formats() {
+        let bundle = empty_test_bundle().with_virtual_files([BundleVirtualFile {
+            space: BundleVirtualFileSpace::Asset,
+            path: "dialogue/opening.txt".to_owned(),
+            bytes: b"hello".to_vec(),
+        }]);
+
+        for format in [
+            BundleFormat::Json,
+            BundleFormat::Toml,
+            BundleFormat::Yaml,
+            BundleFormat::MessagePack,
+            BundleFormat::Cbor,
+            BundleFormat::Avro,
+        ] {
+            let bytes = bundle
+                .to_format_bytes(format)
+                .unwrap_or_else(|error| panic!("{format} encodes: {error}"));
+            let decoded = ArcweftBundle::from_format_slice(format, &bytes)
+                .unwrap_or_else(|error| panic!("{format} decodes: {error}"));
+            assert_eq!(decoded, bundle, "{format} should round-trip bundle data");
+        }
+    }
+
+    #[test]
+    fn bundle_format_can_be_inferred_from_common_extensions() {
+        assert_eq!(
+            BundleFormat::from_path(Path::new("game.toml")),
+            Some(BundleFormat::Toml)
+        );
+        assert_eq!(
+            BundleFormat::from_path(Path::new("game.yaml")),
+            Some(BundleFormat::Yaml)
+        );
+        assert_eq!(
+            BundleFormat::from_path(Path::new("game.msgpack")),
+            Some(BundleFormat::MessagePack)
+        );
+        assert_eq!(
+            BundleFormat::from_path(Path::new("game.avro")),
+            Some(BundleFormat::Avro)
+        );
     }
 
     fn empty_test_bundle() -> ArcweftBundle {
@@ -585,6 +929,15 @@ mod tests {
                 EffectCapability::new("agent.observe"),
                 EffectCapability::new("agent.act.semantic"),
             ],
+            verified_effects: VerifiedEffectSummary::new(
+                1,
+                vec![
+                    EffectCapability::new("agent.observe"),
+                    EffectCapability::new("agent.act.semantic"),
+                ],
+                vec![EffectCapability::new("agent.observe")],
+                stable_hash("blake3:agent-effects"),
+            ),
             budget: AgentBudget::default(),
             debug_map_hash: Some(stable_hash("sha256:debug-map")),
         }

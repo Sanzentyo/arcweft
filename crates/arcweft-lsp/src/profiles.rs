@@ -101,7 +101,7 @@ impl LspProfile {
 
     /// Builds the semantic environment selected by this profile.
     pub fn typecheck_env(&self) -> TypeCheckEnv {
-        self.adapter.apply_to_env(TypeCheckEnv::new())
+        self.adapter.apply_to_env(TypeCheckEnv::standard())
     }
 }
 
@@ -696,6 +696,7 @@ params = [{ name = "value", ty = "String" }]
 
 [[host_calls]]
 id = "custom.echo"
+return_type = "Unit"
 "#,
         );
         let rust_manifest = ArcweftRustManifest::new(ArcweftRustPackage {
@@ -722,7 +723,11 @@ id = "custom.echo"
         let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
         let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
 
-        assert!(profile.diagnostics().is_empty());
+        assert!(
+            profile.diagnostics().is_empty(),
+            "unexpected diagnostics: {:?}",
+            profile.diagnostics()
+        );
         assert_eq!(profile.adapter().id().as_str(), "custom-echo");
         assert!(
             profile

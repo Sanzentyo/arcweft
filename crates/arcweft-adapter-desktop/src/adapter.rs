@@ -3,8 +3,8 @@ use crate::manifest::{
     DESKTOP_CAPABILITIES_CALL, DESKTOP_EXTERNAL_CONTROL_CALL, DESKTOP_EXTERNAL_OBSERVE_CALL,
     DESKTOP_FILES_READ_CALL, DESKTOP_FILES_WRITE_CALL, DESKTOP_GLOBAL_POINTER_CONTROL_CALL,
     DESKTOP_GLOBAL_POINTER_OBSERVE_CALL, DESKTOP_KNOWN_READ_CALL, DESKTOP_KNOWN_WRITE_CALL,
-    DESKTOP_OWNED_CURSOR_CALL, DESKTOP_OWNED_WINDOW_CALL, desktop_external_control_manifest,
-    desktop_external_observe_manifest, desktop_files_read_manifest, desktop_files_write_manifest,
+    desktop_external_control_manifest, desktop_external_observe_manifest,
+    desktop_files_read_manifest, desktop_files_write_manifest,
     desktop_known_directory_read_manifest, desktop_known_directory_write_manifest,
     desktop_owned_window_manifest, desktop_platform_manifest,
     desktop_pointer_global_control_manifest, desktop_pointer_global_observe_manifest,
@@ -87,17 +87,21 @@ struct DesktopArcweftAdapter<B: DesktopBackend> {
 }
 
 impl<B: DesktopBackend> DesktopArcweftAdapter<B> {
-    fn new(
+    fn new<I, S>(
         manifest: AdapterManifest,
-        domains: impl IntoIterator<Item = (&'static str, RequestDomain)>,
+        domains: I,
         coordinator: Arc<DesktopCoordinator<B>>,
         pumps_main_thread: bool,
-    ) -> Self {
+    ) -> Self
+    where
+        I: IntoIterator<Item = (S, RequestDomain)>,
+        S: Into<String>,
+    {
         Self {
             manifest,
             domains: domains
                 .into_iter()
-                .map(|(call, domain)| (call.to_owned(), domain))
+                .map(|(call, domain)| (call.into(), domain))
                 .collect(),
             coordinator,
             pending: Mutex::new(BTreeMap::new()),
@@ -227,6 +231,19 @@ pub struct DesktopAdapterSet<B: DesktopBackend> {
 impl<B: DesktopBackend> DesktopAdapterSet<B> {
     pub fn bind_current_thread(backend: B) -> Self {
         let coordinator = Arc::new(DesktopCoordinator::bind_current_thread(backend));
+        let owned_window_manifest = desktop_owned_window_manifest();
+        let owned_window_domains = owned_window_manifest
+            .host_calls()
+            .iter()
+            .map(|call| {
+                let domain = if call.id().starts_with("desktop.cursor.") {
+                    RequestDomain::OwnedCursor
+                } else {
+                    RequestDomain::OwnedWindow
+                };
+                (call.id().to_owned(), domain)
+            })
+            .collect::<Vec<_>>();
         let adapters = vec![
             DesktopArcweftAdapter::new(
                 desktop_platform_manifest(),
@@ -235,11 +252,8 @@ impl<B: DesktopBackend> DesktopAdapterSet<B> {
                 true,
             ),
             DesktopArcweftAdapter::new(
-                desktop_owned_window_manifest(),
-                [
-                    (DESKTOP_OWNED_WINDOW_CALL, RequestDomain::OwnedWindow),
-                    (DESKTOP_OWNED_CURSOR_CALL, RequestDomain::OwnedCursor),
-                ],
+                owned_window_manifest,
+                owned_window_domains,
                 coordinator.clone(),
                 false,
             ),

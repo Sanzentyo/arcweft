@@ -170,6 +170,8 @@ arcweft-launch
   cleanup registry を持つ Sans I/O data/model crate とする。renderer、
   filesystem、asset loading、windowing、clock には依存しない。
 - Data-format crate は Sans I/O を保つ。manifest、schema、bytecode、bundle、save snapshot は構造体と bytes/string codec までを担当し、path read/write、network、clock、backend resource 確保は CLI / build / player adapter に置く。
+- `arcweft-data` は format-neutral な `Value`、type shape、Encode / Decode、decode limits、codec registry を所有する builtin data contract とする。`arcweft-codec-json`、`arcweft-codec-toml`、`arcweft-codec-yaml`、`arcweft-codec-msgpack`、`arcweft-codec-cbor`、`arcweft-codec-csv`、`arcweft-codec-arrow`、`arcweft-codec-avro`、`arcweft-codec-binary` は concrete external format adapter crate として分離し、`arcweft-save`、`arcweft-config`、`arcweft-http-codec` はこの registry 境界を使う。
+- `arcweft-bundle` は bundle data model と deterministic codec entrypoints を所有する。JSON は `.awfb` 互換の default codec、TOML/YAML/MessagePack/CBOR/Avro は explicit alternate artifact format とする。Avro bundle artifact は stable JSON payload を Avro Object Container envelope に包む。
 - UI / shader / audio / Activity は `Command` / `TaskSpec` / `Need` / `EffectRequest` を介する。
 - Hook は phase ごとの構造化 action を返し、直接 host API を呼ばない。
 - Memoization は pure computation または TaskKey deduplication に限定し、cache は決定性に影響してはならない。

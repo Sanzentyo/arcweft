@@ -19,6 +19,7 @@ members = [
     "crates/arcweft-dialogue",
     "crates/arcweft-id",
     "crates/arcweft-image",
+    "crates/arcweft-interaction-model",
     "crates/arcweft-memory",
     "crates/arcweft-ref",
     "crates/arcweft",
@@ -40,6 +41,21 @@ members = [
     "crates/arcweft-runtime-accelerator",
     "crates/arcweft-browser-bench",
     "crates/arcweft-bundle",
+    "crates/arcweft-data",
+    "crates/arcweft-data-derive",
+    "crates/arcweft-codec-json",
+    "crates/arcweft-codec-yaml",
+    "crates/arcweft-codec-toml",
+    "crates/arcweft-codec-msgpack",
+    "crates/arcweft-codec-cbor",
+    "crates/arcweft-codec-csv",
+    "crates/arcweft-codec-arrow",
+    "crates/arcweft-codec-avro",
+    "crates/arcweft-codec-binary",
+    "crates/arcweft-serde-bridge",
+    "crates/arcweft-save",
+    "crates/arcweft-config",
+    "crates/arcweft-http-codec",
     "crates/arcweft-runtime-host",
     "crates/arcweft-runtime-scheduler",
     "crates/arcweft-source",
@@ -63,9 +79,26 @@ license = "MIT OR Apache-2.0"
 repository = "https://example.invalid/arcweft"
 
 [workspace.dependencies]
+arcweft-data = { path = "crates/arcweft-data" }
+arcweft-data-derive = { path = "crates/arcweft-data-derive" }
+arcweft-codec-json = { path = "crates/arcweft-codec-json" }
+arcweft-codec-yaml = { path = "crates/arcweft-codec-yaml" }
+arcweft-codec-toml = { path = "crates/arcweft-codec-toml" }
+arcweft-codec-msgpack = { path = "crates/arcweft-codec-msgpack" }
+arcweft-codec-cbor = { path = "crates/arcweft-codec-cbor" }
+arcweft-codec-csv = { path = "crates/arcweft-codec-csv" }
+arcweft-codec-arrow = { path = "crates/arcweft-codec-arrow" }
+arcweft-codec-avro = { path = "crates/arcweft-codec-avro" }
+arcweft-codec-binary = { path = "crates/arcweft-codec-binary" }
+arcweft-serde-bridge = { path = "crates/arcweft-serde-bridge" }
+arcweft-save = { path = "crates/arcweft-save" }
+arcweft-config = { path = "crates/arcweft-config" }
+arcweft-http-codec = { path = "crates/arcweft-http-codec" }
+arcweft-interaction-model = { path = "crates/arcweft-interaction-model" }
 base64 = "0.22.1"
 blake3 = "1.8.5"
 bytemuck = "1.25.0"
+bytes = "1.11.0"
 clap = "4.6.1"
 cranelift = { version = "0.121.2", features = ["jit", "module", "native"] }
 cranelift-object = "0.121.2"
@@ -75,6 +108,7 @@ enigo = "0.6.1"
 futures-channel = "0.3.32"
 glam = "0.33.0"
 getrandom = "0.4.3"
+http = "1.3.1"
 js-sys = "0.3.99"
 lsp-server = "0.7.9"
 lsp-types = "0.97.0"
@@ -88,16 +122,25 @@ rfd = "0.17.2"
 rowan = "0.16.1"
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
+serde_json = "1.0.150"
+serde_bytes = "0.11.19"
+serde_repr = "0.1.20"
 proc-macro2 = "1.0.106"
 quote = "1.0.45"
-syn = "2.0.117"
+syn = { version = "2.0.117", features = ["full", "extra-traits"] }
 thiserror = "2.0.18"
 toml = "1.1.2"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 unicode-linebreak = "0.1.5"
 unicode-segmentation = "1.13.3"
+yaml-rust2 = "0.11.0"
+rmp-serde = "1.3.1"
+ciborium = "0.2.2"
+csv = "1.4.0"
+arrow = { version = "59.0.0", default-features = false, features = ["ipc", "csv", "json"] }
+parquet = { version = "59.0.0", default-features = false, features = ["arrow"] }
+apache-avro = { version = "0.21.0", default-features = false, features = ["snappy", "zstandard"] }
 wasm-bindgen = "0.2.122"
 wasm-bindgen-futures = "0.4.72"
 web-sys = "0.3.99"

@@ -1,5 +1,5 @@
 use crate::documents::DocumentSnapshot;
-use arcweft_compiler::{RuntimePlanLowerOptions, lower_source_runtime_plan_with_stats_and_options};
+use arcweft_compiler::lower::lower_source_runtime_plan_with_stats_and_options;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_hir::model::{HirDialogue, HirFlowItem, HirModule};
 use arcweft_lang_syntax::ast::common::TextRange;
@@ -13,6 +13,7 @@ use arcweft_lang_syntax::parser::parse_source;
 use arcweft_render_text::{
     LineDisplaySpec, RichTextSettingSource, RichTextSourceRange, RichTextStyleContribution,
 };
+use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
 use std::ops::Range;
 
 /// Effective dialogue display context at a document byte offset.

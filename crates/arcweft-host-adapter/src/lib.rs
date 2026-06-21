@@ -4,8 +4,8 @@
 //! network, or OS integration belongs in adapter crates or application hosts.
 
 use arcweft_adapter_context::manifest::AdapterManifest;
-use arcweft_core::task::{HostTaskRequest, TaskId, TaskSpec};
-use arcweft_core::value::RuntimePayload;
+use arcweft_core::task::{HostTaskRequest, NamedHostTaskArg, TaskId, TaskSpec};
+use arcweft_core::value::{RuntimePayload, RuntimeValue};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use thiserror::Error;
@@ -94,6 +94,12 @@ pub struct HostTaskMetrics {
     pub system_info_ops: usize,
     pub bytes_read: usize,
     pub bytes_written: usize,
+}
+
+/// Shared typed view over generic custom host-call payloads.
+pub struct HostCallArgs<'a> {
+    positional: &'a [RuntimePayload],
+    named: &'a [NamedHostTaskArg],
 }
 
 /// Host adapter registration error.
@@ -277,6 +283,149 @@ impl HostAdapterRegistryBuilder {
     }
 }
 
+impl<'a> HostCallArgs<'a> {
+    pub fn new(positional: &'a [RuntimePayload], named: &'a [NamedHostTaskArg]) -> Self {
+        Self { positional, named }
+    }
+
+    pub fn from_custom_request(request: &'a HostTaskRequest) -> Option<Self> {
+        let HostTaskRequest::Custom {
+            args, named_args, ..
+        } = request
+        else {
+            return None;
+        };
+        Some(Self::new(args, named_args))
+    }
+
+    pub fn expect_len(&self, len: usize) -> Result<(), String> {
+        if self.positional.len() == len {
+            Ok(())
+        } else {
+            Err(format!(
+                "expected {len} positional host-call arguments, got {}",
+                self.positional.len()
+            ))
+        }
+    }
+
+    pub fn string(&self, index: usize) -> Result<String, String> {
+        match self.positional.get(index).map(|payload| &payload.0) {
+            Some(RuntimeValue::String(value)) => Ok(value.clone()),
+            Some(value) => Err(format!(
+                "host-call argument #{index} must be String, got {}",
+                runtime_value_kind(value)
+            )),
+            None => Err(format!("missing positional host-call argument #{index}")),
+        }
+    }
+
+    pub fn bool(&self, index: usize) -> Result<bool, String> {
+        match self.positional.get(index).map(|payload| &payload.0) {
+            Some(RuntimeValue::Bool(value)) => Ok(*value),
+            Some(value) => Err(format!(
+                "host-call argument #{index} must be Bool, got {}",
+                runtime_value_kind(value)
+            )),
+            None => Err(format!("missing positional host-call argument #{index}")),
+        }
+    }
+
+    pub fn i32(&self, index: usize) -> Result<i32, String> {
+        match self.positional.get(index).map(|payload| &payload.0) {
+            Some(RuntimeValue::Int(value)) => value
+                .try_into_i32()
+                .ok_or_else(|| format!("host-call argument #{index} is outside the i32 range")),
+            Some(value) => Err(format!(
+                "host-call argument #{index} must be i32, got {}",
+                runtime_value_kind(value)
+            )),
+            None => Err(format!("missing positional host-call argument #{index}")),
+        }
+    }
+
+    pub fn u32(&self, index: usize) -> Result<u32, String> {
+        match self.positional.get(index).map(|payload| &payload.0) {
+            Some(RuntimeValue::UInt(value)) => value
+                .try_into_u32()
+                .ok_or_else(|| format!("host-call argument #{index} is outside the u32 range")),
+            Some(RuntimeValue::Int(value)) => value
+                .try_into_i64()
+                .and_then(|value| u32::try_from(value).ok())
+                .ok_or_else(|| format!("host-call argument #{index} is outside the u32 range")),
+            Some(value) => Err(format!(
+                "host-call argument #{index} must be u32, got {}",
+                runtime_value_kind(value)
+            )),
+            None => Err(format!("missing positional host-call argument #{index}")),
+        }
+    }
+
+    pub fn variant(&self, index: usize) -> Result<HostCallVariantArg<'a>, String> {
+        match self.positional.get(index).map(|payload| &payload.0) {
+            Some(RuntimeValue::Variant {
+                path,
+                name,
+                payload,
+            }) => Ok(HostCallVariantArg {
+                path: path.as_deref(),
+                name,
+                payload: payload.as_deref(),
+            }),
+            Some(value) => Err(format!(
+                "host-call argument #{index} must be Variant, got {}",
+                runtime_value_kind(value)
+            )),
+            None => Err(format!("missing positional host-call argument #{index}")),
+        }
+    }
+
+    pub fn named_string(&self, name: &str) -> Result<Option<String>, String> {
+        self.named
+            .iter()
+            .find(|arg| arg.name == name)
+            .map(|arg| match &arg.value.0 {
+                RuntimeValue::String(value) => Ok(value.clone()),
+                value => Err(format!(
+                    "host-call argument `{name}` must be String, got {}",
+                    runtime_value_kind(value)
+                )),
+            })
+            .transpose()
+    }
+}
+
+/// Borrowed enum-like variant argument decoded from a host-call payload.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HostCallVariantArg<'a> {
+    pub path: Option<&'a str>,
+    pub name: &'a str,
+    pub payload: Option<&'a RuntimeValue>,
+}
+
+fn runtime_value_kind(value: &RuntimeValue) -> &'static str {
+    match value {
+        RuntimeValue::Unit => "Unit",
+        RuntimeValue::Bool(_) => "Bool",
+        RuntimeValue::Int(_) => "Int",
+        RuntimeValue::UInt(_) => "UInt",
+        RuntimeValue::F32(_) => "F32",
+        RuntimeValue::F64(_) => "F64",
+        RuntimeValue::MatrixF32(_) => "MatrixF32",
+        RuntimeValue::MatrixF64(_) => "MatrixF64",
+        RuntimeValue::TensorF32(_) => "TensorF32",
+        RuntimeValue::TensorF64(_) => "TensorF64",
+        RuntimeValue::String(_) => "String",
+        RuntimeValue::Char(_) => "Char",
+        RuntimeValue::Duration(_) => "Duration",
+        RuntimeValue::EntityRef(_) => "Ref",
+        RuntimeValue::Tuple(_) => "Tuple",
+        RuntimeValue::Seq(_) => "Seq",
+        RuntimeValue::Record(_) => "Record",
+        RuntimeValue::Variant { .. } => "Variant",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -366,6 +515,53 @@ mod tests {
         assert!(policy.contains("fixture.echo"));
         assert!(policy.allows(&task("fixture", "echo").request));
         assert!(!policy.contains("fixture.missing"));
+    }
+
+    #[test]
+    fn custom_host_call_args_preserve_positional_and_named_payloads() {
+        let request = HostTaskRequest::custom_with_named_args(
+            "fixture",
+            "op",
+            [RuntimePayload::from("title")],
+            [("mode".to_owned(), RuntimePayload::from("fullscreen"))],
+        );
+        let args = HostCallArgs::from_custom_request(&request).expect("custom args");
+
+        assert_eq!(args.string(0).expect("positional string"), "title");
+        assert_eq!(
+            args.named_string("mode").expect("named string"),
+            Some("fullscreen".to_owned())
+        );
+        assert_eq!(args.named_string("missing").expect("missing named"), None);
+    }
+
+    #[test]
+    fn custom_host_call_args_decode_variant_payloads() {
+        let request = HostTaskRequest::custom(
+            "fixture",
+            "op",
+            [RuntimePayload(RuntimeValue::Variant {
+                path: Some("WindowMode".to_owned()),
+                name: "Fullscreen".to_owned(),
+                payload: None,
+            })],
+        );
+        let args = HostCallArgs::from_custom_request(&request).expect("custom args");
+        let variant = args.variant(0).expect("variant arg");
+
+        assert_eq!(
+            variant,
+            HostCallVariantArg {
+                path: Some("WindowMode"),
+                name: "Fullscreen",
+                payload: None,
+            }
+        );
+        assert!(
+            args.string(0)
+                .expect_err("variant is not string")
+                .contains("Variant")
+        );
     }
 
     fn manifest(id: &str, host_call_id: &str) -> AdapterManifest {

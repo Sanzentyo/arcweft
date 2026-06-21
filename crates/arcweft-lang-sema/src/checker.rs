@@ -3,6 +3,9 @@ use crate::borrow::{
     BorrowStateJournalEntry, merge_borrow_local_states,
 };
 use crate::diagnostics::{TypeCheckError, TypeCheckReadinessError, TypeCheckWarning};
+use crate::effect_analysis::EffectAnalysisReport;
+use crate::effect_collector::EffectCollector;
+use crate::effects::{EffectId, EffectSet};
 use crate::env::{
     AgentActionEnvParam, DebugPathKind, EffectCapability, FunctionParam, FunctionSignature,
     TypeCheckEnv,
@@ -185,6 +188,7 @@ pub struct TypeCheckReport {
     pub warnings: Vec<TypeCheckWarning>,
     pub stats: TypeCheckStats,
     pub judgments: Vec<TypeJudgment>,
+    pub effects: EffectAnalysisReport,
 }
 
 impl TypeCheckReport {
@@ -201,11 +205,19 @@ impl TypeCheckReport {
 pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport {
     let mut checker = TypeChecker::new(env);
     checker.check_module(module);
+    let effects = std::mem::take(&mut checker.effect_collector).finish();
+    checker
+        .errors
+        .extend(effects.errors().cloned().map(TypeCheckError::effect));
+    checker
+        .warnings
+        .extend(effects.warnings().cloned().map(TypeCheckWarning::effect));
     TypeCheckReport {
         diagnostics: checker.errors,
         warnings: checker.warnings,
         stats: checker.stats,
         judgments: checker.judgments,
+        effects,
     }
 }
 
@@ -244,6 +256,7 @@ struct TypeChecker<'a> {
     dropped_lifetime_keys: HashSet<LifetimeKey>,
     available_lifetimes: Vec<LifetimeScopeKind>,
     effect_capabilities: HashSet<String>,
+    effect_collector: EffectCollector,
     expected_returns: Vec<TypeKind>,
     yield_stack: Vec<YieldContext>,
     stats: TypeCheckStats,
@@ -319,6 +332,7 @@ impl TypeChecker<'_> {
                 .iter()
                 .map(|capability| capability.as_str().to_owned())
                 .collect(),
+            effect_collector: EffectCollector::new(available_effect_set(env)),
             expected_returns: Vec::new(),
             yield_stack: Vec::new(),
             stats: TypeCheckStats::default(),
@@ -466,6 +480,15 @@ impl TypeChecker<'_> {
     }
 }
 
+fn available_effect_set(env: &TypeCheckEnv) -> Option<EffectSet> {
+    let effects = env
+        .capabilities
+        .iter()
+        .filter_map(|capability| EffectId::parse(capability.as_str()).ok())
+        .collect::<EffectSet>();
+    (!effects.is_empty()).then_some(effects)
+}
+
 fn function_signature_type(signature: &FnSignature) -> FunctionSignature {
     let return_type = signature
         .return_type()
@@ -511,6 +534,9 @@ fn types_compatible(expected: &TypeKind, actual: &TypeKind) -> bool {
         return true;
     }
     match (expected, actual) {
+        (TypeKind::Bytes, TypeKind::Vec(inner) | TypeKind::Slice(inner) | TypeKind::Seq(inner)) => {
+            matches!(inner.as_ref(), TypeKind::U8)
+        }
         (TypeKind::ActionName, TypeKind::String | TypeKind::Named(_)) => true,
         (TypeKind::AgentValue, actual) => is_agent_value_type(actual),
         (TypeKind::Choice(alternatives), TypeKind::Choice(actual_alternatives)) => {
@@ -565,6 +591,7 @@ fn is_agent_value_type(ty: &TypeKind) -> bool {
         | TypeKind::F64
         | TypeKind::String
         | TypeKind::Char
+        | TypeKind::Bytes
         | TypeKind::Duration
         | TypeKind::DisplayText
         | TypeKind::ActionName

@@ -10,6 +10,7 @@ use arcweft_lang_syntax::ast::{
     flow::{FlowItem, WaitTarget},
     line_plan::LinePlan,
 };
+use arcweft_lang_syntax::expr::parse_expr;
 use std::collections::HashSet;
 
 impl TypeChecker<'_> {
@@ -69,7 +70,7 @@ impl TypeChecker<'_> {
                 None
             }
             LinePlanItem::Let { pattern, expr } => {
-                let ty = self.check_expr(expr);
+                let ty = self.check_line_plan_let_expr(expr);
                 for (name, ty) in let_else_bindings(pattern, ty.as_ref()) {
                     self.bind_local(name, ty);
                 }
@@ -130,6 +131,25 @@ impl TypeChecker<'_> {
             self.merge_optional_line_output(&mut output, item_output);
         }
         output
+    }
+
+    fn check_line_plan_let_expr(&mut self, expr: &Expr) -> Option<TypeKind> {
+        let Expr::NamedBlock {
+            name,
+            statements,
+            value,
+        } = expr
+        else {
+            return self.check_expr(expr);
+        };
+        let Some(anchor) = parse_timed_cue_block_anchor(name, &mut self.errors) else {
+            return self.check_expr(expr);
+        };
+        self.expect_expr_type(&anchor, &TypeKind::Duration, "timeline anchor");
+        self.with_child_task_scope(false, |checker| {
+            checker.check_block_expr(statements, value.as_deref());
+        });
+        Some(TypeKind::Named("CueHandle".to_owned()))
     }
 
     fn merge_optional_line_output(
@@ -599,6 +619,25 @@ fn unknown_inline_fallback_field(namespace: &str, field: &str) -> Option<String>
     (namespace == "InlineFallback"
         && !matches!(field, "expr_source" | "call_source" | "value_plain"))
     .then(|| format!("{namespace}.{field}"))
+}
+
+fn parse_timed_cue_block_anchor(name: &str, errors: &mut Vec<TypeCheckError>) -> Option<Expr> {
+    let anchor = name.strip_prefix("at(")?.strip_suffix(')')?.trim();
+    if anchor.is_empty() {
+        errors.push(TypeCheckError::new(
+            "timed cue anchor cannot be empty".to_owned(),
+        ));
+        return None;
+    }
+    match parse_expr(anchor) {
+        Ok(anchor) => Some(anchor),
+        Err(error) => {
+            errors.push(TypeCheckError::new(format!(
+                "timed cue anchor is not a valid expression: {error}"
+            )));
+            None
+        }
+    }
 }
 
 fn inline_callable_label(expr: &Expr) -> String {

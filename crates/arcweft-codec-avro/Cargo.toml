@@ -1,0 +1,15 @@
+[package]
+name = "arcweft-codec-avro"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version = "0.1.0"
+description = "Apache Avro adapter for Arcweft data."
+
+[dependencies]
+arcweft-data = { path = "../arcweft-data" }
+apache-avro.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

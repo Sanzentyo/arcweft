@@ -35,6 +35,23 @@ flow opening {
 }
 
 #[test]
+fn typechecks_data_codec_builtins_with_format_enum() {
+    let tree = parse_ok(
+        r#"
+flow @flow.opening opening {
+    let payload = ["hello"]
+    let bytes: Bytes = data.encode(payload, .Json)
+    let decoded: AgentValue = data.decode(bytes, .Json)
+    let shape: DataShape = data.shape(decoded)
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("data codec fixture lowers");
+    validate_typecheck_ready(&hir).expect("data codec fixture is typecheck-ready");
+    typecheck_hir(&hir, &TypeCheckEnv::standard()).expect("data codec builtins typecheck");
+}
+
+#[test]
 fn adapter_function_signature_checks_arguments() {
     let tree = parse_ok(
         r"
@@ -77,7 +94,9 @@ flow @flow.opening opening {
 fn adapter_function_effects_require_matching_capability() {
     let tree = parse_ok(
         r#"
-flow @flow.opening opening {
+flow @flow.opening opening
+effects { }
+{
     let body = adapter.read_text(path = "story.arcw")
 }
 "#,
@@ -95,9 +114,14 @@ flow @flow.opening opening {
 
     let errors = typecheck_hir(&hir, &env).expect_err("missing adapter effect is rejected");
     assert!(errors.iter().any(|error| {
-        error
-            .message()
-            .contains("calling `adapter.read_text` requires effect capability `fs.read`")
+        matches!(
+            error.kind(),
+            TypeCheckErrorKind::Effect { diagnostic }
+                if diagnostic.code()
+                    == crate::effect_diagnostics::EffectDiagnosticCode::MissingDeclaration
+                    && diagnostic.message().contains("flow.opening")
+                    && diagnostic.message().contains("fs.read")
+        )
     }));
 
     let allowed_tree = parse_ok(
@@ -111,6 +135,142 @@ effects { fs.read }
     );
     let allowed_hir = lower_to_hir(&allowed_tree).expect("allowed adapter effect fixture lowers");
     typecheck_hir(&allowed_hir, &env).expect("flow effect contract grants adapter call");
+}
+
+#[test]
+fn effect_closure_reaches_callers_through_user_helpers() {
+    let tree = parse_ok(
+        r#"
+fn load_profile() -> String
+effects { fs.read }
+{
+    adapter.read_text(path = "profile.json")
+}
+
+flow @flow.opening opening
+effects { }
+{
+    let profile = load_profile()
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("transitive effect fixture lowers");
+    let env = TypeCheckEnv::new()
+        .with_function_signature(
+            "adapter.read_text",
+            FunctionSignature::new(
+                TypeKind::String,
+                [FunctionParam::required("path", TypeKind::String)],
+            ),
+        )
+        .with_function_effects("adapter.read_text", ["fs.read".to_owned()]);
+
+    let errors = typecheck_hir(&hir, &env).expect_err("caller under-declaration is rejected");
+    assert!(errors.iter().any(|error| {
+        matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+            && error
+                .message()
+                .contains("callable `flow.opening` infers effect `fs.read`")
+    }));
+}
+
+#[test]
+fn environment_capability_does_not_replace_source_effect_declaration() {
+    let tree = parse_ok(
+        r#"
+flow @flow.opening opening
+effects { }
+{
+    let body = adapter.read_text(path = "story.arcw")
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("availability separation fixture lowers");
+    let env = TypeCheckEnv::new()
+        .with_function_signature(
+            "adapter.read_text",
+            FunctionSignature::new(
+                TypeKind::String,
+                [FunctionParam::required("path", TypeKind::String)],
+            ),
+        )
+        .with_function_effects("adapter.read_text", ["fs.read".to_owned()])
+        .with_capability("fs.read");
+
+    let errors =
+        typecheck_hir(&hir, &env).expect_err("host availability must not grant source declaration");
+    assert!(errors.iter().any(|error| {
+        matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+            && error
+                .message()
+                .contains("callable `flow.opening` infers effect `fs.read`")
+    }));
+}
+
+#[test]
+fn no_effect_rejects_transitive_helper_effect() {
+    let tree = parse_ok(
+        r#"
+fn load_profile() -> String
+effects { fs.read }
+{
+    adapter.read_text(path = "profile.json")
+}
+
+flow @flow.opening opening
+effects { fs.read }
+ensures no_effect fs.read
+{
+    let profile = load_profile()
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("no_effect fixture lowers");
+    let env = TypeCheckEnv::new()
+        .with_function_signature(
+            "adapter.read_text",
+            FunctionSignature::new(
+                TypeKind::String,
+                [FunctionParam::required("path", TypeKind::String)],
+            ),
+        )
+        .with_function_effects("adapter.read_text", ["fs.read".to_owned()]);
+
+    let errors = typecheck_hir(&hir, &env).expect_err("forbidden transitive effect is rejected");
+    assert!(errors.iter().any(|error| {
+        matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+            && error.message().contains("forbids effect `fs.read`")
+    }));
+}
+
+#[test]
+fn overdeclared_effect_is_reported_as_warning() {
+    let tree = parse_ok(
+        r#"
+flow @flow.opening opening
+effects { fs.read }
+{
+    return "ok"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("overdeclared effect fixture lowers");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+
+    assert!(
+        report.diagnostics.is_empty(),
+        "overdeclaration should warn, not fail: {:?}",
+        report.diagnostics
+    );
+    assert!(report.warnings.iter().any(|warning| {
+        matches!(
+            warning.kind(),
+            crate::diagnostics::TypeCheckWarningKind::Effect { diagnostic }
+                if diagnostic.code()
+                    == crate::effect_diagnostics::EffectDiagnosticCode::OverdeclaredEffect
+                    && diagnostic.message().contains("fs.read")
+        )
+    }));
 }
 
 #[test]

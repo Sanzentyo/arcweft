@@ -6,8 +6,9 @@ use crate::ast::items::RawSyntax;
 use crate::ast::line_plan::{
     BlockStyle, CancelRuleSyntax, DeferOutcome, LinePlan, LinePlanItem, TriggerPattern,
 };
+use crate::cst::text::parse_flat_fence;
 use crate::cst::{
-    find_top_level_matching_punctuation, parse_flat_fence, split_top_level_punctuation,
+    find_top_level_matching_punctuation, split_top_level_punctuation,
     split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
 };
 use crate::expr::{Expr, parse_expr};

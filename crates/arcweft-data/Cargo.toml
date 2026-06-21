@@ -1,0 +1,17 @@
+[package]
+name = "arcweft-data"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version = "0.1.0"
+description = "Arcweft builtin data reflection and codec boundary."
+
+[features]
+default = []
+derive = ["dep:arcweft-data-derive"]
+
+[dependencies]
+arcweft-data-derive = { path = "../arcweft-data-derive", optional = true }
+
+[lints]
+workspace = true

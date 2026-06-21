@@ -1,4 +1,7 @@
-use crate::ids::{PublicId, StableHash};
+use crate::{
+    ids::{PublicId, StableHash},
+    verified_effects::VerifiedEffectSummary,
+};
 use serde::{Deserialize, Serialize};
 
 /// Canonical capability name declared by a compiled Agent controller.
@@ -71,6 +74,7 @@ pub struct AgentArtifactManifest {
     pub compiler_version: String,
     pub project_binding: ProjectBinding,
     pub declared_effects: Vec<EffectCapability>,
+    pub verified_effects: VerifiedEffectSummary,
     pub budget: AgentBudget,
     pub debug_map_hash: Option<StableHash>,
 }

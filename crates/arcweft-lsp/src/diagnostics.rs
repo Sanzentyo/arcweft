@@ -4,7 +4,9 @@ use crate::profiles::LspProfile;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::{
     check::{analyze_types, validate_typecheck_ready},
-    diagnostics::{TypeCheckError, TypeCheckReadinessError, TypeCheckWarning},
+    diagnostics::{
+        TypeCheckError, TypeCheckReadinessError, TypeCheckWarning, TypeCheckWarningKind,
+    },
     resolve::{NameResolutionError, registry_from_hir, validate_hir_references},
 };
 use arcweft_lang_syntax::{
@@ -248,15 +250,24 @@ fn typecheck_warnings(warnings: &[TypeCheckWarning]) -> Vec<Diagnostic> {
         .map(|(index, warning)| Diagnostic {
             range: start_range(),
             severity: Some(DiagnosticSeverity::WARNING),
-            code: Some(NumberOrString::String(format!(
-                "sema.typecheck.warning.{}",
-                index + 1
+            code: Some(NumberOrString::String(typecheck_warning_code(
+                warning,
+                index + 1,
             ))),
             source: Some("arcweft-sema".to_owned()),
             message: warning.message().to_owned(),
             ..Diagnostic::default()
         })
         .collect()
+}
+
+fn typecheck_warning_code(warning: &TypeCheckWarning, _index: usize) -> String {
+    match warning.kind() {
+        TypeCheckWarningKind::Effect { diagnostic } => diagnostic.code().as_str().to_owned(),
+        TypeCheckWarningKind::PublicAbiAnonymousSum { .. } => {
+            "sema.public_abi.anonymous_sum".to_owned()
+        }
+    }
 }
 
 fn profile_diagnostics(profile: &LspProfile) -> Vec<Diagnostic> {
@@ -325,6 +336,31 @@ flow @.main main {
                 .message
                 .contains("unknown function `custom_echo`")
         }));
+    }
+
+    #[test]
+    fn diagnostics_accept_standard_enum_variant_shorthand() {
+        let source = r#"
+flow @flow.opening opening {
+    let payload = ["hello"]
+    let bytes: Bytes = data.encode(payload, .Json)
+    let decoded: AgentValue = data.decode(bytes, .Json)
+    let shape: DataShape = data.shape(decoded)
+}
+"#;
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+
+        assert!(
+            !analysis.diagnostics().iter().any(|diagnostic| {
+                diagnostic.message.contains("data.encode")
+                    || diagnostic.message.contains("data.decode")
+                    || diagnostic.message.contains(".Json")
+                    || diagnostic.message.contains("DataFormat")
+            }),
+            "unexpected data enum diagnostic: {:?}",
+            analysis.diagnostics()
+        );
     }
 
     #[test]
@@ -408,5 +444,32 @@ flow @flow.opening start {
             diagnostic.code == Some(NumberOrString::String("AWF0102".into()))
                 && diagnostic.severity == Some(DiagnosticSeverity::ERROR)
         }));
+    }
+
+    #[test]
+    fn diagnostics_surface_overdeclared_effect_warning() {
+        let source = r#"
+flow @flow.opening opening
+effects { fs.read }
+{
+    return "ok"
+}
+"#;
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+
+        let diagnostic = analysis
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| {
+                diagnostic.code == Some(NumberOrString::String("AWF-EFX-008".to_owned()))
+            })
+            .expect("overdeclared effect warning is surfaced");
+        assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::WARNING));
+        assert!(
+            diagnostic
+                .message
+                .contains("declares unused effects {fs.read}")
+        );
     }
 }

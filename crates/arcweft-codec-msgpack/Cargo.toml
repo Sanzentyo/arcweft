@@ -1,0 +1,16 @@
+[package]
+name = "arcweft-codec-msgpack"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version = "0.1.0"
+description = "MSGPACK codec adapter for Arcweft data."
+
+[dependencies]
+arcweft-data = { path = "../arcweft-data" }
+arcweft-codec-json = { path = "../arcweft-codec-json" }
+serde_json.workspace = true
+rmp-serde.workspace = true
+
+[lints]
+workspace = true

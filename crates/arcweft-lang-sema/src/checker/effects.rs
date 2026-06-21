@@ -4,6 +4,8 @@ use super::{
     ContractClause, EffectCapability, EffectScope, Expr, TypeCheckError, TypeChecker, TypeKind,
     capability_from_expr,
 };
+use crate::effect_model::EffectSite;
+use crate::effects::{EffectId, EffectSet};
 use std::collections::HashSet;
 
 impl TypeChecker<'_> {
@@ -11,22 +13,29 @@ impl TypeChecker<'_> {
         let source_effects = self
             .global_function_effects
             .get(name)
-            .map_or(&[][..], Vec::as_slice);
-        let env_effects = self.env.function_effects(name).unwrap_or(&[]);
-        let missing = source_effects
-            .iter()
-            .map(String::as_str)
-            .chain(env_effects.iter().map(EffectCapability::as_str))
-            .filter(|capability| {
-                !self.effect_capabilities.contains(*capability)
-                    && !self.env.has_capability(capability)
-            })
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        for capability in missing {
-            self.errors.push(TypeCheckError::new(format!(
-                "calling `{name}` requires effect capability `{capability}`"
-            )));
+            .into_iter()
+            .flatten()
+            .map(String::as_str);
+        let env_effects = self
+            .env
+            .function_effects(name)
+            .into_iter()
+            .flatten()
+            .map(EffectCapability::as_str);
+        let external = effect_set_from_labels(source_effects.chain(env_effects), &mut self.errors);
+        self.effect_collector.record_named_call(
+            name,
+            external,
+            EffectSite::new(format!("call `{name}`")),
+        );
+    }
+
+    pub(super) fn record_static_effect(&mut self, effect: &str, site: impl Into<String>) {
+        match EffectId::parse(effect) {
+            Ok(effect) => self
+                .effect_collector
+                .record_effect(effect, EffectSite::new(site)),
+            Err(error) => self.errors.push(TypeCheckError::new(error.to_string())),
         }
     }
 
@@ -38,7 +47,8 @@ impl TypeChecker<'_> {
             | ContractClause::Assume { expr } => {
                 self.expect_expr_type(expr, &TypeKind::Bool, "contract expression");
             }
-            ContractClause::NoEffect(expr) | ContractClause::Decreases(expr) => {
+            ContractClause::NoEffect(_) => {}
+            ContractClause::Decreases(expr) => {
                 self.check_expr(expr);
             }
             ContractClause::Reads(items)
@@ -70,4 +80,20 @@ impl TypeChecker<'_> {
         );
         snapshot
     }
+}
+
+fn effect_set_from_labels<'a>(
+    labels: impl IntoIterator<Item = &'a str>,
+    errors: &mut Vec<TypeCheckError>,
+) -> Option<EffectSet> {
+    let mut effects = EffectSet::new();
+    for label in labels {
+        match EffectId::parse(label) {
+            Ok(effect) => {
+                effects.insert(effect);
+            }
+            Err(error) => errors.push(TypeCheckError::new(error.to_string())),
+        }
+    }
+    (!effects.is_empty()).then_some(effects)
 }

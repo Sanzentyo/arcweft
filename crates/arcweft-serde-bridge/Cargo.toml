@@ -1,0 +1,18 @@
+[package]
+name = "arcweft-serde-bridge"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version = "0.1.0"
+description = "Optional serde bridge for external Rust ecosystem interop."
+
+[dependencies]
+arcweft-data = { path = "../arcweft-data" }
+arcweft-codec-json = { path = "../arcweft-codec-json" }
+serde.workspace = true
+serde_json.workspace = true
+serde_bytes.workspace = true
+serde_repr.workspace = true
+
+[lints]
+workspace = true

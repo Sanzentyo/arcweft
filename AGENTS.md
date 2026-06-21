@@ -49,6 +49,12 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 - Prefer responsibility modules as public boundaries (`pub mod`) when a crate has multiple stable subsystems. Avoid flattening every type through root-level `pub use`; root re-exports should be deliberate facade API, not compatibility shims.
 - Do not leave workspace-external directories that look like active `crates/`, `tests/`, or fixtures. Archive true historical material under docs only when explicitly requested; otherwise remove obsolete migration scratch directories.
 - Prefer typed APIs over stringly typed APIs.
+- Do not solve language, parser, type-checker, lowering, or runtime-plan
+  behavior by hard-coding one-off names when the rule can be represented
+  generically. For example, expected-type enum shorthand, builtin namespaces,
+  and variant resolution should be implemented through shared typed registries
+  or grammar/type rules, not by special-casing a single enum such as
+  `DataFormat.Json` / `.Json`.
 - Prefer deterministic runtime behavior.
 - Do not use `unsafe` unless isolated in a clearly named crate/module with an explanation.
 - Do not implement speculative full features before creating minimal stable interfaces.
@@ -64,6 +70,86 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 - Parser tests should cover complete documented syntax families, including success cases, malformed input, recovery spans, and ambiguity rules.
 - Public parser and AST types should have concise documentation comments suitable for generated Rust documentation.
 - Comments in parser code should explain grammar decisions, ambiguity handling, and recovery strategy; avoid restating obvious control flow.
+
+## Structural audit and decomposition gate
+
+Repository structure is part of the implementation result. Do not treat
+compilation and test success alone as sufficient evidence that a change has an
+appropriate ownership boundary.
+
+### Audit triggers
+
+Run a structural audit when any of the following applies:
+
+- a task explicitly requests an architecture, dependency, test-structure,
+  duplication, naming, or maintainability review;
+- a production Rust file exceeds 1,200 physical LOC or grows by more than
+  300 physical LOC in one coherent change;
+- a `lib.rs` or `main.rs` exceeds 1,000 physical LOC;
+- an integration-test file exceeds 2,500 physical LOC;
+- a production file above 1,200 LOC contains an embedded `#[cfg(test)]` module;
+- a workspace dependency, public contract, root re-export, Cargo feature, or
+  crate boundary is added or materially changed;
+- one change touches orchestration together with transport, persistence,
+  rendering, protocol conversion, pixel processing, or platform I/O;
+- the same boundary type, identifier, payload shape, or conversion logic
+  appears in multiple crates;
+- a manual field-by-field projection, statistics delta, descriptor inventory,
+  or schema mapping is added or extended.
+
+At reviewable push cut points, run the audit even when only warnings are
+expected. Do not wait until a file crosses an error threshold before examining
+its responsibilities.
+
+### Required measurement
+
+Use exact data from the current checkout. Do not use diff additions as a
+substitute for current file size.
+
+For changed Rust files and the largest workspace Rust files, record:
+
+- repository revision or Jujutsu change identifier;
+- path and owning crate;
+- exact byte size;
+- physical LOC;
+- whether the file is production, unit test, integration test, generated data,
+  benchmark, or facade;
+- embedded test LOC when `#[cfg(test)]` is present;
+- major responsibilities present in the file;
+- workspace dependency fan-in and fan-out when relevant.
+
+Exclude `target/`, VCS internals, vendored upstream source, generated artifacts,
+and historical documentation unless the task explicitly audits them. Generated
+source must be marked as generated rather than silently mixed into production
+hotspot rankings.
+
+Use these values as review triggers:
+
+- production Rust file:
+  - warning above 1,200 physical LOC;
+  - error above 2,500 physical LOC;
+- `lib.rs` / `main.rs`:
+  - warning above 1,000 physical LOC;
+  - post-split facade target of at most 250 LOC;
+- integration-test file:
+  - warning above 2,500 physical LOC;
+  - error above 8,000 physical LOC;
+- ordinary responsibility module:
+  - preferred target range of 300-800 LOC.
+
+These are ownership-review thresholds, not a license to split cohesive code
+arbitrarily. Generated lookup tables and genuinely cohesive algorithms may be
+exempted, but the reason must be documented in a module-level comment and in
+the relevant implementation audit. An error-level exception requires an
+explicit repository-visible rationale.
+
+### Automated audit command
+
+The checked-in structural audit script is the canonical first pass:
+
+```bash
+cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .
+```
 
 ## Rust conventions
 

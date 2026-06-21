@@ -1,0 +1,16 @@
+[package]
+name = "arcweft-codec-arrow"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version = "0.1.0"
+description = "Apache Arrow IPC and Parquet adapters for Arcweft tabular data."
+
+[dependencies]
+arcweft-data = { path = "../arcweft-data" }
+arrow.workspace = true
+parquet.workspace = true
+bytes.workspace = true
+
+[lints]
+workspace = true

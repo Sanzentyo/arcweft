@@ -1,0 +1,15 @@
+[package]
+name = "arcweft-codec-json"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version = "0.1.0"
+description = "JSON codec adapter for Arcweft data."
+
+[dependencies]
+arcweft-data = { path = "../arcweft-data" }
+base64.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

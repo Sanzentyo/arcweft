@@ -1,0 +1,14 @@
+[package]
+name = "arcweft-codec-csv"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version = "0.1.0"
+description = "CSV codec adapter for Arcweft row data."
+
+[dependencies]
+arcweft-data = { path = "../arcweft-data" }
+csv.workspace = true
+
+[lints]
+workspace = true

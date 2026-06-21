@@ -8,12 +8,13 @@ use crate::ast::flow::{
 use crate::ast::ids::{IdRef, RelativeId, RelativeIdSpelling};
 use crate::ast::items::{Attribute, Item, RawSyntax, TypedSyntaxTree};
 use crate::ast::line_plan::{BlockStyle, DeferOutcome, LinePlan};
+use crate::cst::text::parse_flat_fence;
 use crate::cst::{
     CstBlockEvent, CstBlockOpenRule, CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineEvents,
     CstPunctuationDeltas, CstStmtKind, CstStructuredFlowBlockKind, CstTopLevelItemKind,
     CstTopLevelLineKind, SyntaxNode, SyntaxParseStats, classify_stmt, cst_lines_for_source,
-    find_matching_punctuation, find_top_level_punctuation, parse_flat_fence, source_line_iter,
-    split_leading_ident, split_top_level_keyword_once, split_top_level_punctuation_once,
+    find_matching_punctuation, find_top_level_punctuation, source_line_iter, split_leading_ident,
+    split_top_level_keyword_once, split_top_level_punctuation_once,
     split_top_level_punctuation_sequence_once,
 };
 use crate::expr::Expr;
@@ -75,6 +76,19 @@ use statements::{
 #[must_use]
 pub fn parse_source(source: impl Into<String>) -> ParsedSource {
     parse_document(source, ParseOptions::default())
+}
+
+/// Parses dialogue text content outside a full source document.
+///
+/// This preserves the same token model used by speaker-line and content-call
+/// parsing. Diagnostics are intentionally discarded because callers already
+/// have an expression-level source range rather than a dialogue-text range.
+#[must_use]
+pub fn parse_dialogue_content_lossy(raw: impl Into<String>) -> DialogueContent {
+    let raw = raw.into();
+    let parsed = parse_dialogue_text(&raw);
+    let range = TextRange::new(0, raw.len());
+    DialogueContent::new(raw, parsed.into_tokens(), range)
 }
 
 fn parse_source_with_options(source: impl Into<String>, options: ParseOptions) -> ParsedSource {

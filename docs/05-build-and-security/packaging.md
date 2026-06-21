@@ -96,13 +96,25 @@ game.awfb
       height
 ```
 
-The implemented `.awfb` codec is deterministic JSON owned by
-`arcweft-bundle`. The crate performs no filesystem, clock, network, signing, or
+The implemented `.awfb` codec defaults to deterministic JSON owned by
+`arcweft-bundle`, and the same Sans I/O bundle model now also exposes explicit
+TOML, YAML, MessagePack, CBOR, and Avro encode/decode entrypoints. JSON remains
+the compatibility default for `.awfb`; CLI/build/player adapters may select an
+alternate bundle artifact format with an explicit format option or by using a
+format-specific extension such as `.toml`, `.yaml`, `.msgpack`, `.cbor`, or
+`.avro`.
+
+`arcweft-bundle` performs no filesystem, clock, network, signing, or
 compression work. CLI/build/player adapters are responsible for turning source
 trees and virtual file roots into bundle values, and for materializing bundle
 values into a runnable host workspace. `arcw run-bundle` executes the decoded
 bytecode section directly and does not parse, typecheck, or lower the source
 text again.
+
+The Avro bundle codec uses an Avro Object Container envelope whose payload is
+the stable JSON bundle representation. Full schema-native Avro sections remain
+available through the separate `arcweft-codec-avro` data adapter when a caller
+has a concrete Avro schema for tabular or streaming data.
 
 The CLI includes `.arcweft/asset` by default and can opt into `.arcweft/save`,
 `.arcweft/temp`, and `.arcweft/export`. Packaged virtual paths use only normal

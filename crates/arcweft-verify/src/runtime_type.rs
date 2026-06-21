@@ -13,6 +13,8 @@ use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeExpr, RuntimeExprMatchArm, RuntimeUnaryOp, RuntimeValue,
 };
 use arcweft_lang_sema::check::{TypeCheckReport, TypeJudgmentRule, TypeJudgmentSubject};
+#[cfg(test)]
+use arcweft_lang_sema::effect_analysis::EffectAnalysisReport;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -754,6 +756,7 @@ mod tests {
             warnings: Vec::new(),
             stats: TypeCheckStats::default(),
             judgments: Vec::new(),
+            effects: EffectAnalysisReport::default(),
         }));
     }
 
@@ -791,6 +794,7 @@ mod tests {
                 ..TypeCheckStats::default()
             },
             judgments,
+            effects: EffectAnalysisReport::default(),
         }
     }
 }

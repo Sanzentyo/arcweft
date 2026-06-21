@@ -1,4 +1,4 @@
-use crate::types::TypeKind;
+use crate::types::{EntityType, TypeKind};
 use arcweft_lang_syntax::types::FnParamKind;
 use std::collections::{HashMap, HashSet};
 
@@ -74,6 +74,7 @@ pub struct EffectCapabilityParts {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TypeCheckEnv {
     pub(crate) symbols: HashMap<String, TypeKind>,
+    pub(crate) enum_variants: HashMap<TypeKind, HashSet<String>>,
     pub(crate) functions: HashMap<String, TypeKind>,
     pub(crate) function_signatures: HashMap<String, FunctionSignature>,
     pub(crate) function_effects: HashMap<String, Vec<EffectCapability>>,
@@ -89,8 +90,8 @@ impl FunctionSignature {
     /// Creates a fixed-arity function signature.
     pub fn new(return_type: TypeKind, params: impl IntoIterator<Item = FunctionParam>) -> Self {
         Self {
-            return_type,
-            params: params.into_iter().collect(),
+            return_type: normalize_type_kind(return_type),
+            params: params.into_iter().map(normalize_function_param).collect(),
             checks_args: true,
         }
     }
@@ -99,7 +100,7 @@ impl FunctionSignature {
     /// model is supplied by a later typed metadata pass.
     pub fn return_only(return_type: TypeKind) -> Self {
         Self {
-            return_type,
+            return_type: normalize_type_kind(return_type),
             params: Vec::new(),
             checks_args: false,
         }
@@ -126,7 +127,7 @@ impl FunctionParam {
     pub fn required(name: impl Into<String>, ty: TypeKind) -> Self {
         Self {
             name: Some(name.into()),
-            ty,
+            ty: normalize_type_kind(ty),
             kind: FnParamKind::Fixed,
             has_default: false,
         }
@@ -136,7 +137,7 @@ impl FunctionParam {
     pub fn defaulted(name: impl Into<String>, ty: TypeKind) -> Self {
         Self {
             name: Some(name.into()),
-            ty,
+            ty: normalize_type_kind(ty),
             kind: FnParamKind::Fixed,
             has_default: true,
         }
@@ -146,7 +147,7 @@ impl FunctionParam {
     pub fn rest(name: impl Into<String>, ty: TypeKind) -> Self {
         Self {
             name: Some(name.into()),
-            ty,
+            ty: normalize_type_kind(ty),
             kind: FnParamKind::Rest,
             has_default: false,
         }
@@ -222,8 +223,11 @@ impl AgentActionEnvSignature {
     ) -> Self {
         Self {
             action: action.into(),
-            params: params.into_iter().collect(),
-            return_type,
+            params: params
+                .into_iter()
+                .map(normalize_agent_action_param)
+                .collect(),
+            return_type: normalize_type_kind(return_type),
         }
     }
 
@@ -248,7 +252,7 @@ impl AgentActionEnvParam {
     pub fn new(name: impl Into<String>, ty: TypeKind, has_default: bool) -> Self {
         Self {
             name: name.into(),
-            ty,
+            ty: normalize_type_kind(ty),
             has_default,
         }
     }
@@ -296,19 +300,94 @@ impl TypeCheckEnv {
     #[must_use]
     pub fn with_standard_builtins(self) -> Self {
         self.with_function("fmt", TypeKind::DisplayText)
+            .with_symbol("data", TypeKind::Named("DataNamespace".to_owned()))
+            .with_data_format_symbols()
+            .with_enum_variants(TypeKind::DataFormat, data_format_variant_names())
+            .with_function_signature(
+                "data.encode",
+                FunctionSignature::new(
+                    TypeKind::Bytes,
+                    [
+                        FunctionParam::required("value", TypeKind::Named("_".to_owned())),
+                        FunctionParam::required("format", TypeKind::DataFormat),
+                    ],
+                ),
+            )
+            .with_function_signature(
+                "data.decode",
+                FunctionSignature::new(
+                    TypeKind::AgentValue,
+                    [
+                        FunctionParam::required("bytes", TypeKind::Bytes),
+                        FunctionParam::required("format", TypeKind::DataFormat),
+                    ],
+                ),
+            )
+            .with_function_signature(
+                "data.shape",
+                FunctionSignature::new(
+                    TypeKind::DataShape,
+                    [FunctionParam::required(
+                        "value",
+                        TypeKind::Named("_".to_owned()),
+                    )],
+                ),
+            )
+    }
+
+    #[must_use]
+    fn with_data_format_symbols(self) -> Self {
+        data_format_variant_names()
+            .into_iter()
+            .fold(self, |env, variant| {
+                env.with_symbol(format!("DataFormat.{variant}"), TypeKind::DataFormat)
+            })
+    }
+
+    /// Registers the unit variants available for an enum-like type.
+    #[must_use]
+    pub fn with_enum_variants(
+        mut self,
+        ty: TypeKind,
+        variants: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.enum_variants
+            .entry(normalize_type_kind(ty))
+            .or_default()
+            .extend(variants.into_iter().map(Into::into));
+        self
+    }
+
+    /// Returns registered enum-like unit variants grouped by semantic type in
+    /// deterministic order for tooling surfaces such as LSP completion.
+    pub fn enum_variant_sets(&self) -> Vec<(TypeKind, Vec<String>)> {
+        let mut sets = self
+            .enum_variants
+            .iter()
+            .map(|(ty, variants)| {
+                let mut variants = variants.iter().cloned().collect::<Vec<_>>();
+                variants.sort();
+                (format!("{ty:?}"), ty.clone(), variants)
+            })
+            .collect::<Vec<_>>();
+        sets.sort_by(|left, right| left.0.cmp(&right.0));
+        sets.into_iter()
+            .map(|(_, ty, variants)| (ty, variants))
+            .collect()
     }
 
     /// Registers a variable, constant, or resolved path.
     #[must_use]
     pub fn with_symbol(mut self, name: impl Into<String>, ty: TypeKind) -> Self {
-        self.symbols.insert(name.into(), ty);
+        self.symbols.insert(name.into(), normalize_type_kind(ty));
         self
     }
 
     /// Registers a free function return type.
     #[must_use]
     pub fn with_function(mut self, name: impl Into<String>, return_type: TypeKind) -> Self {
-        self.functions.insert(name.into(), return_type);
+        self.functions
+            .insert(name.into(), normalize_type_kind(return_type));
         self
     }
 
@@ -320,6 +399,7 @@ impl TypeCheckEnv {
         signature: FunctionSignature,
     ) -> Self {
         let name = name.into();
+        let signature = normalize_function_signature(signature);
         self.functions
             .insert(name.clone(), signature.return_type().clone());
         self.function_signatures.insert(name, signature);
@@ -346,6 +426,8 @@ impl TypeCheckEnv {
         method: impl Into<String>,
         return_type: TypeKind,
     ) -> Self {
+        let receiver = normalize_type_kind(receiver);
+        let return_type = normalize_type_kind(return_type);
         self.methods.insert(
             (receiver, method.into()),
             MethodSignature {
@@ -363,6 +445,8 @@ impl TypeCheckEnv {
         method: impl Into<String>,
         signature: FunctionSignature,
     ) -> Self {
+        let receiver = normalize_type_kind(receiver);
+        let signature = normalize_function_signature(signature);
         self.methods
             .insert((receiver, method.into()), MethodSignature { signature });
         self
@@ -371,7 +455,10 @@ impl TypeCheckEnv {
     /// Registers index result type for a collection-like type.
     #[must_use]
     pub fn with_index(mut self, target: TypeKind, return_type: TypeKind) -> Self {
-        self.indexes.insert(target, return_type);
+        self.indexes.insert(
+            normalize_type_kind(target),
+            normalize_type_kind(return_type),
+        );
         self
     }
 
@@ -385,7 +472,7 @@ impl TypeCheckEnv {
         self.agent_actions
             .entry(target.into())
             .or_default()
-            .push(action);
+            .push(normalize_agent_action(action));
         self
     }
 
@@ -397,7 +484,8 @@ impl TypeCheckEnv {
         path: impl Into<String>,
         value_type: TypeKind,
     ) -> Self {
-        self.debug_paths.insert((kind, path.into()), value_type);
+        self.debug_paths
+            .insert((kind, path.into()), normalize_type_kind(value_type));
         self
     }
 
@@ -416,6 +504,7 @@ impl TypeCheckEnv {
         name: impl Into<String>,
         signature: FunctionSignature,
     ) -> Self {
+        let signature = normalize_function_signature(signature);
         self.rust_packages
             .entry(package.into())
             .or_default()
@@ -441,6 +530,12 @@ impl TypeCheckEnv {
 
     pub(crate) fn symbol_type(&self, name: &str) -> Option<&TypeKind> {
         self.symbols.get(name)
+    }
+
+    pub(crate) fn enum_has_variant(&self, ty: &TypeKind, variant: &str) -> bool {
+        self.enum_variants
+            .get(ty)
+            .is_some_and(|variants| variants.contains(variant))
     }
 
     pub(crate) fn function_type(&self, name: &str) -> Option<&TypeKind> {
@@ -492,6 +587,120 @@ impl TypeCheckEnv {
 
     pub(crate) fn rust_package(&self, package: &str) -> Option<&RustPackageExports> {
         self.rust_packages.get(package)
+    }
+}
+
+fn data_format_variant_names() -> [&'static str; 10] {
+    [
+        "Json",
+        "Toml",
+        "Yaml",
+        "MessagePack",
+        "Cbor",
+        "Avro",
+        "Csv",
+        "ArrowIpc",
+        "Parquet",
+        "ArcweftBinary",
+    ]
+}
+
+fn normalize_function_signature(mut signature: FunctionSignature) -> FunctionSignature {
+    signature.return_type = normalize_type_kind(signature.return_type);
+    signature.params = signature
+        .params
+        .into_iter()
+        .map(normalize_function_param)
+        .collect();
+    signature
+}
+
+fn normalize_function_param(mut param: FunctionParam) -> FunctionParam {
+    param.ty = normalize_type_kind(param.ty);
+    param
+}
+
+fn normalize_agent_action(mut action: AgentActionEnvSignature) -> AgentActionEnvSignature {
+    action.params = action
+        .params
+        .into_iter()
+        .map(normalize_agent_action_param)
+        .collect();
+    action.return_type = normalize_type_kind(action.return_type);
+    action
+}
+
+fn normalize_agent_action_param(mut param: AgentActionEnvParam) -> AgentActionEnvParam {
+    param.ty = normalize_type_kind(param.ty);
+    param
+}
+
+fn normalize_type_kind(ty: TypeKind) -> TypeKind {
+    match ty {
+        TypeKind::Named(name) => TypeKind::primitive_name(&name).unwrap_or(TypeKind::Named(name)),
+        TypeKind::Ref(entity) => TypeKind::Ref(EntityType::new(
+            entity.kind().clone(),
+            entity.value().cloned().map(normalize_type_kind),
+        )),
+        TypeKind::Probe(inner) => TypeKind::Probe(Box::new(normalize_type_kind(*inner))),
+        TypeKind::Vec(inner) => TypeKind::Vec(Box::new(normalize_type_kind(*inner))),
+        TypeKind::Array { item, len } => TypeKind::Array {
+            item: Box::new(normalize_type_kind(*item)),
+            len,
+        },
+        TypeKind::Slice(inner) => TypeKind::Slice(Box::new(normalize_type_kind(*inner))),
+        TypeKind::Seq(inner) => TypeKind::Seq(Box::new(normalize_type_kind(*inner))),
+        TypeKind::Map { kind, key, value } => TypeKind::Map {
+            kind,
+            key: Box::new(normalize_type_kind(*key)),
+            value: Box::new(normalize_type_kind(*value)),
+        },
+        TypeKind::BorrowRef { lifetime, inner } => TypeKind::BorrowRef {
+            lifetime,
+            inner: Box::new(normalize_type_kind(*inner)),
+        },
+        TypeKind::Need { ready, error } => TypeKind::Need {
+            ready: Box::new(normalize_type_kind(*ready)),
+            error: Box::new(normalize_type_kind(*error)),
+        },
+        TypeKind::Stream { item, error } => TypeKind::Stream {
+            item: Box::new(normalize_type_kind(*item)),
+            error: Box::new(normalize_type_kind(*error)),
+        },
+        TypeKind::Source { item, error } => TypeKind::Source {
+            item: Box::new(normalize_type_kind(*item)),
+            error: Box::new(normalize_type_kind(*error)),
+        },
+        TypeKind::Result { ok, error } => TypeKind::Result {
+            ok: Box::new(normalize_type_kind(*ok)),
+            error: Box::new(normalize_type_kind(*error)),
+        },
+        TypeKind::Option(inner) => TypeKind::Option(Box::new(normalize_type_kind(*inner))),
+        TypeKind::Handle {
+            name,
+            lifetime,
+            state,
+            must_drop,
+        } => TypeKind::Handle {
+            name,
+            lifetime,
+            state,
+            must_drop,
+        },
+        TypeKind::ThreadHandle(inner) => {
+            TypeKind::ThreadHandle(Box::new(normalize_type_kind(*inner)))
+        }
+        TypeKind::Shared(inner) => TypeKind::Shared(Box::new(normalize_type_kind(*inner))),
+        TypeKind::Function { return_type } => TypeKind::Function {
+            return_type: Box::new(normalize_type_kind(*return_type)),
+        },
+        TypeKind::Tuple(items) => {
+            TypeKind::Tuple(items.into_iter().map(normalize_type_kind).collect())
+        }
+        TypeKind::Choice(alternatives) => {
+            TypeKind::Choice(alternatives.into_iter().map(normalize_type_kind).collect())
+        }
+        other => other,
     }
 }
 

@@ -216,17 +216,31 @@ pub(super) fn let_else_bindings(
                 variant_payload_type_for_name(name, expr_type).map(|ty| (binding, ty))
             })
             .collect(),
-        Pattern::Tuple(items) => items
-            .iter()
-            .flat_map(|item| let_else_bindings(item, None))
-            .collect(),
+        Pattern::Tuple(items) => {
+            let tuple_items = match expr_type {
+                Some(TypeKind::Tuple(items)) => Some(items.as_slice()),
+                _ => None,
+            };
+            items
+                .iter()
+                .enumerate()
+                .flat_map(|(index, item)| {
+                    let item_type = tuple_items.and_then(|types| types.get(index));
+                    let_else_bindings(item, item_type)
+                })
+                .collect()
+        }
         Pattern::BracketSeq { items, rest } => {
+            let item_type = sequence_pattern_item_type(expr_type);
             let mut bindings = items
                 .iter()
-                .flat_map(|item| let_else_bindings(item, None))
+                .flat_map(|item| let_else_bindings(item, item_type))
                 .collect::<Vec<_>>();
             if let Some(rest) = rest.as_ref().filter(|name| is_local_ident(name)) {
-                bindings.push((rest.to_owned(), TypeKind::Unit));
+                let rest_ty = item_type
+                    .cloned()
+                    .map_or(TypeKind::Unit, |ty| TypeKind::Vec(Box::new(ty)));
+                bindings.push((rest.to_owned(), rest_ty));
             }
             bindings
         }
@@ -258,6 +272,18 @@ pub(super) fn pattern_bindings_with_fallback(
         }
     }
     bindings
+}
+
+fn sequence_pattern_item_type(expr_type: Option<&TypeKind>) -> Option<&TypeKind> {
+    match expr_type {
+        Some(
+            TypeKind::Vec(item)
+            | TypeKind::Array { item, .. }
+            | TypeKind::Slice(item)
+            | TypeKind::Seq(item),
+        ) => Some(item.as_ref()),
+        _ => None,
+    }
 }
 
 pub(super) fn collect_pattern_binding_names(pattern: &Pattern) -> Vec<String> {
@@ -448,7 +474,7 @@ pub(super) fn well_known_static_capacity_method_type(name: &str) -> Option<TypeK
     match name {
         "Vec.with_capacity" => Some(TypeKind::Vec(Box::new(TypeKind::Named("_".to_owned())))),
         "String.with_capacity" => Some(TypeKind::String),
-        "Bytes.with_capacity" => Some(TypeKind::Named("Bytes".to_owned())),
+        "Bytes.with_capacity" => Some(TypeKind::Bytes),
         _ => None,
     }
 }
@@ -499,8 +525,7 @@ pub(super) fn well_known_capacity_method_type(
 }
 
 pub(super) fn is_reservable_type(ty: &TypeKind) -> bool {
-    matches!(ty, TypeKind::Vec(_) | TypeKind::String)
-        || matches!(ty, TypeKind::Named(name) if name == "Bytes")
+    matches!(ty, TypeKind::Vec(_) | TypeKind::String | TypeKind::Bytes)
 }
 
 pub(super) fn collection_index_type(target_type: &TypeKind) -> Option<TypeKind> {
@@ -892,6 +917,7 @@ fn atomic_type_kind_label(ty: &TypeKind) -> Option<&'static str> {
         TypeKind::F64 => Some("f64"),
         TypeKind::String => Some("String"),
         TypeKind::Char => Some("Char"),
+        TypeKind::Bytes => Some("Bytes"),
         TypeKind::TextCluster => Some("TextCluster"),
         TypeKind::Duration => Some("Duration"),
         TypeKind::Range => Some("Range"),
@@ -906,6 +932,8 @@ fn atomic_type_kind_label(ty: &TypeKind) -> Option<&'static str> {
         TypeKind::ActionTarget => Some("ActionTarget"),
         TypeKind::ActionResult => Some("ActionResult"),
         TypeKind::AgentValue => Some("AgentValue"),
+        TypeKind::DataFormat => Some("DataFormat"),
+        TypeKind::DataShape => Some("DataShape"),
         TypeKind::CaptureTarget => Some("CaptureTarget"),
         TypeKind::CaptureRef => Some("CaptureRef"),
         TypeKind::AgentResource => Some("AgentResource"),

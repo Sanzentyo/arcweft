@@ -1,4 +1,4 @@
-use crate::types::TypeKind;
+use crate::{effect_diagnostics::EffectDiagnostic, types::TypeKind};
 use thiserror::Error;
 
 /// Semantic type-checking diagnostic.
@@ -38,6 +38,8 @@ pub enum TypeCheckErrorKind {
     InlineFailurePolicyConflict { function: String },
     /// An inline dialogue function call declared an unknown failure policy.
     UnknownInlineFailurePolicy { function: String, policy: String },
+    /// A structured error or warning from transitive effect analysis.
+    Effect { diagnostic: EffectDiagnostic },
 }
 
 /// Non-fatal semantic lint emitted by type analysis.
@@ -45,6 +47,21 @@ pub enum TypeCheckErrorKind {
 #[error("{message}")]
 pub struct TypeCheckWarning {
     message: String,
+    kind: TypeCheckWarningKind,
+}
+
+/// Machine-readable type-checking warning family.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TypeCheckWarningKind {
+    /// A public signature exposes an anonymous sum type that should be nominal.
+    PublicAbiAnonymousSum {
+        /// Public signature position that exposes the anonymous sum.
+        context: String,
+        /// Source-level type expression for the anonymous sum.
+        type_ref: String,
+    },
+    /// A structured warning from transitive effect analysis.
+    Effect { diagnostic: EffectDiagnostic },
 }
 
 /// Syntax-to-HIR readiness error for the future type checker.
@@ -129,6 +146,13 @@ impl TypeCheckError {
         }
     }
 
+    pub(crate) fn effect(diagnostic: EffectDiagnostic) -> Self {
+        Self {
+            message: diagnostic.message().to_owned(),
+            kind: TypeCheckErrorKind::Effect { diagnostic },
+        }
+    }
+
     pub(crate) fn missing_rust_package_metadata(package: impl Into<String>) -> Self {
         let package = package.into();
         Self {
@@ -188,12 +212,34 @@ impl TypeCheckError {
 }
 
 impl TypeCheckWarning {
-    pub(crate) fn new(message: String) -> Self {
-        Self { message }
+    pub(crate) fn public_abi_anonymous_sum(
+        context: impl Into<String>,
+        type_ref: impl Into<String>,
+    ) -> Self {
+        let context = context.into();
+        let type_ref = type_ref.into();
+        Self {
+            message: format!(
+                "{context} exposes anonymous sum `{type_ref}`; public ABI and save data are more stable with a nominal enum"
+            ),
+            kind: TypeCheckWarningKind::PublicAbiAnonymousSum { context, type_ref },
+        }
+    }
+
+    pub(crate) fn effect(diagnostic: EffectDiagnostic) -> Self {
+        Self {
+            message: diagnostic.message().to_owned(),
+            kind: TypeCheckWarningKind::Effect { diagnostic },
+        }
     }
 
     /// Human-readable type-analysis warning.
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    /// Machine-readable warning family and structured fields.
+    pub const fn kind(&self) -> &TypeCheckWarningKind {
+        &self.kind
     }
 }

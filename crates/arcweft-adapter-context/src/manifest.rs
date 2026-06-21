@@ -4,7 +4,7 @@ use arcweft_lang_sema::env::{EffectCapability, FunctionParam, FunctionSignature,
 use arcweft_lang_sema::types::TypeKind;
 use arcweft_rust_abi::{
     ArcweftRustFunction, ArcweftRustManifest, ArcweftRustParam, ArcweftRustTypeDecl,
-    ArcweftRustTypeRef,
+    ArcweftRustTypeKind, ArcweftRustTypeRef,
 };
 
 /// Stable adapter identifier used by launch profiles and tooling.
@@ -44,6 +44,7 @@ pub struct AdapterEffectCapability {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdapterHostCall {
     id: AdapterHostCallId,
+    signature: FunctionSignature,
     effects: Vec<AdapterEffectCapability>,
 }
 
@@ -188,6 +189,20 @@ impl AdapterHostCall {
     ) -> Self {
         Self {
             id: AdapterHostCallId::new(id),
+            signature: FunctionSignature::return_only(TypeKind::Unit),
+            effects: effects.into_iter().collect(),
+        }
+    }
+
+    /// Creates a host call with explicit ABI parameter and result types.
+    pub fn with_signature(
+        id: impl Into<String>,
+        signature: FunctionSignature,
+        effects: impl IntoIterator<Item = AdapterEffectCapability>,
+    ) -> Self {
+        Self {
+            id: AdapterHostCallId::new(id),
+            signature,
             effects: effects.into_iter().collect(),
         }
     }
@@ -200,6 +215,11 @@ impl AdapterHostCall {
     /// Effects touched by this host call.
     pub fn effects(&self) -> &[AdapterEffectCapability] {
         &self.effects
+    }
+
+    /// Runtime ABI signature used by host adapters to decode payloads.
+    pub const fn signature(&self) -> &FunctionSignature {
+        &self.signature
     }
 }
 
@@ -423,9 +443,7 @@ impl AdapterManifest {
                     function.signature.clone(),
                 )
         });
-        self.rust_types.iter().fold(env, |env, ty| {
-            env.with_rust_type_export(ty.package.clone(), ty.decl.name.clone())
-        })
+        self.rust_types.iter().fold(env, apply_rust_type_to_env)
     }
 
     /// Injected symbols, preserved for tooling and diagnostics.
@@ -539,6 +557,21 @@ fn adapter_function_param(param: &ArcweftRustParam) -> FunctionParam {
     FunctionParam::required(param.name.clone(), rust_type_ref_to_type_kind(&param.ty))
 }
 
+fn apply_rust_type_to_env(env: TypeCheckEnv, ty: &AdapterRustType) -> TypeCheckEnv {
+    let type_kind = TypeKind::Named(ty.decl.name.clone());
+    let env = env.with_rust_type_export(ty.package.clone(), ty.decl.name.clone());
+    match &ty.decl.kind {
+        ArcweftRustTypeKind::Enum { variants } => env.with_enum_variants(
+            type_kind,
+            variants
+                .iter()
+                .filter(|variant| variant.fields.is_empty())
+                .map(|variant| variant.name.clone()),
+        ),
+        ArcweftRustTypeKind::Struct { .. } | ArcweftRustTypeKind::Newtype { .. } => env,
+    }
+}
+
 fn rust_type_ref_to_type_kind(ty: &ArcweftRustTypeRef) -> TypeKind {
     match ty {
         ArcweftRustTypeRef::Unit => TypeKind::Unit,
@@ -575,7 +608,9 @@ fn rust_type_ref_to_type_kind(ty: &ArcweftRustTypeRef) -> TypeKind {
         ArcweftRustTypeRef::Tuple { items } => {
             TypeKind::Tuple(items.iter().map(rust_type_ref_to_type_kind).collect())
         }
-        ArcweftRustTypeRef::Named { name } => TypeKind::Named(name.clone()),
+        ArcweftRustTypeRef::Named { name } => {
+            TypeKind::primitive_name(name).unwrap_or_else(|| TypeKind::Named(name.clone()))
+        }
     }
 }
 
@@ -584,7 +619,8 @@ mod tests {
     use super::*;
     use arcweft_rust_abi::{
         ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage, ArcweftRustParam,
-        ArcweftRustPurity, ArcweftRustTypeRef,
+        ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypeRef,
+        ArcweftRustVariant,
     };
 
     #[test]
@@ -619,6 +655,25 @@ mod tests {
             name: "truck_game".to_owned(),
             version: "0.1.0".to_owned(),
             metadata_hash: None,
+        })
+        .with_type(ArcweftRustTypeDecl {
+            name: "Rank".to_owned(),
+            rust_path: "truck_game::Rank".to_owned(),
+            kind: ArcweftRustTypeKind::Enum {
+                variants: vec![
+                    ArcweftRustVariant {
+                        name: "Bronze".to_owned(),
+                        fields: Vec::new(),
+                    },
+                    ArcweftRustVariant {
+                        name: "Custom".to_owned(),
+                        fields: vec![arcweft_rust_abi::ArcweftRustField {
+                            name: "label".to_owned(),
+                            ty: ArcweftRustTypeRef::String,
+                        }],
+                    },
+                ],
+            },
         })
         .with_function(ArcweftRustFunction {
             name: "mini_games.truck.score_to_rank".to_owned(),
@@ -657,6 +712,8 @@ mod tests {
                         [FunctionParam::required("score", TypeKind::I32)]
                     )
                 )
+                .with_rust_type_export("truck_game", "Rank")
+                .with_enum_variants(TypeKind::Named("Rank".to_owned()), ["Bronze"])
         );
     }
 }

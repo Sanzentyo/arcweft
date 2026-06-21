@@ -65,6 +65,9 @@ struct AdapterParamFile {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct AdapterHostCallFile {
     id: String,
+    return_type: String,
+    #[serde(default)]
+    params: Vec<AdapterParamFile>,
     #[serde(default)]
     effects: Vec<String>,
 }
@@ -143,8 +146,12 @@ impl AdapterManifestFile {
             .host_calls
             .into_iter()
             .fold(manifest, |manifest, host_call| {
-                manifest.with_host_call(AdapterHostCall::new(
+                manifest.with_host_call(AdapterHostCall::with_signature(
                     host_call.id,
+                    FunctionSignature::new(
+                        parse_type_kind_label(&host_call.return_type),
+                        host_call.params.into_iter().map(function_param_from_file),
+                    ),
                     effect_capabilities(host_call.effects),
                 ))
             });
@@ -179,25 +186,26 @@ fn effect_capabilities(
 
 fn parse_type_kind_label(label: &str) -> TypeKind {
     let label = label.trim();
+    if let Some(ty) = TypeKind::primitive_name(label) {
+        return ty;
+    }
     match label {
-        "()" | "Unit" | "unit" => TypeKind::Unit,
-        "Bool" | "bool" => TypeKind::Bool,
-        "i8" | "I8" => TypeKind::I8,
-        "i16" | "I16" => TypeKind::I16,
-        "i32" | "I32" => TypeKind::I32,
-        "i64" | "I64" => TypeKind::I64,
-        "i128" | "I128" => TypeKind::I128,
-        "isize" | "ISize" => TypeKind::ISize,
-        "u8" | "U8" => TypeKind::U8,
-        "u16" | "U16" => TypeKind::U16,
-        "u32" | "U32" => TypeKind::U32,
-        "u64" | "U64" => TypeKind::U64,
-        "u128" | "U128" => TypeKind::U128,
-        "usize" | "USize" => TypeKind::USize,
-        "f32" | "F32" => TypeKind::F32,
-        "f64" | "F64" => TypeKind::F64,
-        "String" | "string" => TypeKind::String,
-        "Char" | "char" => TypeKind::Char,
+        "unit" => TypeKind::Unit,
+        "I8" => TypeKind::I8,
+        "I16" => TypeKind::I16,
+        "I32" => TypeKind::I32,
+        "I64" => TypeKind::I64,
+        "I128" => TypeKind::I128,
+        "ISize" => TypeKind::ISize,
+        "U8" => TypeKind::U8,
+        "U16" => TypeKind::U16,
+        "U32" => TypeKind::U32,
+        "U64" => TypeKind::U64,
+        "U128" => TypeKind::U128,
+        "USize" => TypeKind::USize,
+        "F32" => TypeKind::F32,
+        "F64" => TypeKind::F64,
+        "string" => TypeKind::String,
         other => parse_generic_type_label(other)
             .unwrap_or_else(|| TypeKind::Named(other.trim().to_owned())),
     }
@@ -249,7 +257,9 @@ params = [{ name = "path", ty = "String" }]
 
 [[host_calls]]
 id = "custom.read"
+return_type = "String"
 effects = ["custom.read"]
+params = [{ name = "path", ty = "String" }]
 
 [[tooling_docs]]
 subject = "custom.read"
@@ -266,6 +276,11 @@ docs = "Read custom content."
         assert_eq!(manifest.functions().len(), 1);
         assert_eq!(manifest.effects()[0].as_str(), "custom.read");
         assert_eq!(manifest.host_calls()[0].id(), "custom.read");
+        assert_eq!(manifest.host_calls()[0].signature().params().len(), 1);
+        assert_eq!(
+            manifest.host_calls()[0].signature().return_type(),
+            &TypeKind::String
+        );
         assert_eq!(manifest.tooling_docs()[0].subject(), "custom.read");
     }
 
@@ -281,6 +296,7 @@ docs = "Read custom content."
   "host_calls": [
     {
       "id": "http.respond",
+      "return_type": "Unit",
       "effects": ["http.respond"]
     }
   ],

@@ -203,6 +203,36 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn typechecks_bound_timed_cue_line_result_and_outer_use() {
+    let tree = parse_ok(
+        r#"
+flow @flow.line_handles line_handles {
+    let (_, cue) = alice.say(voice=auto)[聞いて。[p]]
+    with:
+        let actor = alice.stage.acquire(scope=line)
+        let cue = at(0.42s):
+            actor.look(.worried, crossfade=120ms)
+        let voice = line.voice_handle()
+        out (voice, cue)
+
+    log.info("cue kept", cue = cue)
+    return "done"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("bound timed cue line result lowers");
+    validate_typecheck_ready(&hir).expect("bound timed cue line result is typecheck-ready");
+    typecheck_hir(
+        &hir,
+        &TypeCheckEnv::new()
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
+            .with_symbol("auto", TypeKind::Named("VoicePolicy".to_owned()))
+            .with_function("log.info", TypeKind::Unit),
+    )
+    .expect("bound timed cue line result typechecks");
+}
+
+#[test]
 fn rejects_at_bracket_timed_cue_as_raw_line_plan_item() {
     let tree = parse_ok(
         r"

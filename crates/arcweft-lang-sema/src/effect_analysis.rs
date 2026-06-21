@@ -1,0 +1,408 @@
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+
+use crate::{
+    effect_diagnostics::{
+        EffectDiagnostic, EffectDiagnosticCode, EffectDiagnosticKind, EffectSeverity, EffectTrace,
+        EffectTraceStep,
+    },
+    effect_model::{CallTarget, CallableId, EffectProgram},
+    effects::{EffectId, EffectSet},
+};
+
+/// Final effect summary for one callable.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EffectSummary {
+    callable: CallableId,
+    declared: Option<EffectSet>,
+    forbidden: EffectSet,
+    inferred: EffectSet,
+}
+
+/// Result of first-order effect closure and contract validation.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct EffectAnalysisReport {
+    summaries: BTreeMap<CallableId, EffectSummary>,
+    diagnostics: Vec<EffectDiagnostic>,
+    fixed_point_iterations: usize,
+}
+
+/// Computes the least fixed-point effect closure and validates all contracts.
+pub fn analyze_effects(program: &EffectProgram) -> EffectAnalysisReport {
+    let mut diagnostics = collect_graph_diagnostics(program);
+    let mut summaries = initial_summaries(program);
+    let fixed_point_iterations = propagate_local_effects(program, &mut summaries);
+
+    diagnostics.extend(validate_contracts(program, &summaries));
+    diagnostics.sort_by(|left, right| diagnostic_sort_key(left).cmp(&diagnostic_sort_key(right)));
+
+    EffectAnalysisReport {
+        summaries,
+        diagnostics,
+        fixed_point_iterations,
+    }
+}
+
+impl EffectSummary {
+    pub const fn callable(&self) -> &CallableId {
+        &self.callable
+    }
+
+    pub const fn declared(&self) -> Option<&EffectSet> {
+        self.declared.as_ref()
+    }
+
+    pub const fn forbidden(&self) -> &EffectSet {
+        &self.forbidden
+    }
+
+    pub const fn inferred(&self) -> &EffectSet {
+        &self.inferred
+    }
+}
+
+impl EffectAnalysisReport {
+    pub fn summary(&self, callable: &CallableId) -> Option<&EffectSummary> {
+        self.summaries.get(callable)
+    }
+
+    pub fn summaries(&self) -> impl ExactSizeIterator<Item = (&CallableId, &EffectSummary)> {
+        self.summaries.iter()
+    }
+
+    pub fn diagnostics(&self) -> &[EffectDiagnostic] {
+        &self.diagnostics
+    }
+
+    pub fn errors(&self) -> impl Iterator<Item = &EffectDiagnostic> {
+        self.diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.severity() == EffectSeverity::Error)
+    }
+
+    pub fn warnings(&self) -> impl Iterator<Item = &EffectDiagnostic> {
+        self.diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.severity() == EffectSeverity::Warning)
+    }
+
+    pub fn has_errors(&self) -> bool {
+        self.errors().next().is_some()
+    }
+
+    pub const fn fixed_point_iterations(&self) -> usize {
+        self.fixed_point_iterations
+    }
+}
+
+fn initial_summaries(program: &EffectProgram) -> BTreeMap<CallableId, EffectSummary> {
+    program
+        .callables()
+        .map(|(id, facts)| {
+            let mut inferred = facts
+                .direct_effects()
+                .iter()
+                .map(|effect_use| effect_use.effect().clone())
+                .collect::<EffectSet>();
+            for edge in facts.calls() {
+                match edge.target() {
+                    CallTarget::External(callee) => {
+                        inferred.union_with(callee.effects());
+                    }
+                    CallTarget::Dynamic {
+                        effects: Some(effects),
+                        ..
+                    } => {
+                        inferred.union_with(effects);
+                    }
+                    CallTarget::Local(_) | CallTarget::Dynamic { effects: None, .. } => {}
+                }
+            }
+            (
+                id.clone(),
+                EffectSummary {
+                    callable: id.clone(),
+                    declared: facts.contract().upper_bound().cloned(),
+                    forbidden: facts.contract().forbidden().clone(),
+                    inferred,
+                },
+            )
+        })
+        .collect()
+}
+
+fn propagate_local_effects(
+    program: &EffectProgram,
+    summaries: &mut BTreeMap<CallableId, EffectSummary>,
+) -> usize {
+    let mut iterations = 0;
+    loop {
+        iterations += 1;
+        let mut changed = false;
+        for (caller, facts) in program.callables() {
+            let propagated = facts
+                .calls()
+                .iter()
+                .filter_map(|edge| match edge.target() {
+                    CallTarget::Local(callee) => summaries.get(callee).map(EffectSummary::inferred),
+                    CallTarget::External(_) | CallTarget::Dynamic { .. } => None,
+                })
+                .fold(EffectSet::new(), |mut effects, callee_effects| {
+                    effects.union_with(callee_effects);
+                    effects
+                });
+            if let Some(summary) = summaries.get_mut(caller) {
+                changed |= summary.inferred.union_with(&propagated);
+            }
+        }
+        if !changed {
+            return iterations;
+        }
+    }
+}
+
+fn collect_graph_diagnostics(program: &EffectProgram) -> Vec<EffectDiagnostic> {
+    program
+        .callables()
+        .flat_map(|(caller, facts)| {
+            facts.calls().iter().filter_map(move |edge| match edge.target() {
+                CallTarget::Local(callee) if program.callable(callee).is_none() => {
+                    Some(EffectDiagnostic::new(
+                        EffectDiagnosticCode::UnknownLocalCallable,
+                        EffectSeverity::Error,
+                        caller.clone(),
+                        format!("callable `{caller}` references unknown callable `{callee}`"),
+                        EffectDiagnosticKind::UnknownLocalCallable {
+                            callee: callee.clone(),
+                        },
+                        None,
+                    ))
+                }
+                CallTarget::Dynamic {
+                    label,
+                    effects: None,
+                } => Some(EffectDiagnostic::new(
+                    EffectDiagnosticCode::DynamicSignatureRequired,
+                    EffectSeverity::Error,
+                    caller.clone(),
+                    format!(
+                        "dynamic call `{label}` in `{caller}` requires a function effect signature"
+                    ),
+                    EffectDiagnosticKind::DynamicSignatureRequired {
+                        target: label.clone(),
+                    },
+                    None,
+                )),
+                CallTarget::Local(_)
+                | CallTarget::External(_)
+                | CallTarget::Dynamic {
+                    effects: Some(_), ..
+                } => None,
+            })
+        })
+        .collect()
+}
+
+fn validate_contracts(
+    program: &EffectProgram,
+    summaries: &BTreeMap<CallableId, EffectSummary>,
+) -> Vec<EffectDiagnostic> {
+    let mut diagnostics = Vec::new();
+    for (id, facts) in program.callables() {
+        let Some(summary) = summaries.get(id) else {
+            continue;
+        };
+        let inferred = summary.inferred();
+
+        if facts.contract().is_pure() && !inferred.is_empty() {
+            let effect = first_effect(inferred);
+            diagnostics.push(EffectDiagnostic::new(
+                EffectDiagnosticCode::PureCallableEffect,
+                EffectSeverity::Error,
+                id.clone(),
+                format!("pure callable `{id}` performs effects {inferred}"),
+                EffectDiagnosticKind::PureCallableEffect {
+                    inferred: inferred.clone(),
+                },
+                effect.and_then(|effect| trace_for(program, summaries, id, effect)),
+            ));
+        } else if let Some(declared) = summary.declared() {
+            let missing = inferred.difference(declared);
+            for effect in &missing {
+                let missing_one = std::iter::once(effect.clone()).collect();
+                diagnostics.push(EffectDiagnostic::new(
+                    EffectDiagnosticCode::MissingDeclaration,
+                    EffectSeverity::Error,
+                    id.clone(),
+                    format!(
+                        "callable `{id}` infers effect `{effect}`, but declares only {declared}"
+                    ),
+                    EffectDiagnosticKind::MissingDeclaration {
+                        missing: missing_one,
+                        declared: declared.clone(),
+                    },
+                    trace_for(program, summaries, id, effect),
+                ));
+            }
+
+            let unused = declared.difference(inferred);
+            if !unused.is_empty() {
+                diagnostics.push(EffectDiagnostic::new(
+                    EffectDiagnosticCode::OverdeclaredEffect,
+                    if program.strict_overdeclaration() {
+                        EffectSeverity::Error
+                    } else {
+                        EffectSeverity::Warning
+                    },
+                    id.clone(),
+                    format!("callable `{id}` declares unused effects {unused}"),
+                    EffectDiagnosticKind::OverdeclaredEffect { unused },
+                    None,
+                ));
+            }
+        } else if facts.contract().requires_explicit_nonempty() && !inferred.is_empty() {
+            let effect = first_effect(inferred);
+            diagnostics.push(EffectDiagnostic::new(
+                EffectDiagnosticCode::ExplicitDeclarationRequired,
+                EffectSeverity::Error,
+                id.clone(),
+                format!(
+                    "public/boundary callable `{id}` must explicitly declare inferred effects {inferred}"
+                ),
+                EffectDiagnosticKind::ExplicitDeclarationRequired {
+                    inferred: inferred.clone(),
+                },
+                effect.and_then(|effect| trace_for(program, summaries, id, effect)),
+            ));
+        }
+
+        let forbidden = inferred.intersection(summary.forbidden());
+        for effect in &forbidden {
+            let forbidden_one = std::iter::once(effect.clone()).collect();
+            diagnostics.push(EffectDiagnostic::new(
+                EffectDiagnosticCode::ForbiddenEffect,
+                EffectSeverity::Error,
+                id.clone(),
+                format!("callable `{id}` forbids effect `{effect}`, but it is reachable"),
+                EffectDiagnosticKind::ForbiddenEffect {
+                    forbidden: forbidden_one,
+                },
+                trace_for(program, summaries, id, effect),
+            ));
+        }
+
+        if let Some(available) = program.available_capabilities() {
+            let unavailable = inferred.difference(available);
+            if !unavailable.is_empty() {
+                let effect = first_effect(&unavailable).cloned();
+                diagnostics.push(EffectDiagnostic::new(
+                    EffectDiagnosticCode::CapabilityUnavailable,
+                    EffectSeverity::Error,
+                    id.clone(),
+                    format!(
+                        "target environment cannot provide effects {unavailable} required by `{id}`"
+                    ),
+                    EffectDiagnosticKind::CapabilityUnavailable { unavailable },
+                    effect
+                        .as_ref()
+                        .and_then(|effect| trace_for(program, summaries, id, effect)),
+                ));
+            }
+        }
+    }
+    diagnostics
+}
+
+fn trace_for(
+    program: &EffectProgram,
+    summaries: &BTreeMap<CallableId, EffectSummary>,
+    root: &CallableId,
+    effect: &EffectId,
+) -> Option<EffectTrace> {
+    let mut queue = VecDeque::from([(root.clone(), Vec::new())]);
+    let mut visited = BTreeSet::from([root.clone()]);
+
+    while let Some((current, path)) = queue.pop_front() {
+        let facts = program.callable(&current)?;
+        if let Some(effect_use) = facts
+            .direct_effects()
+            .iter()
+            .find(|effect_use| effect_use.effect() == effect)
+        {
+            let mut steps = path;
+            steps.push(EffectTraceStep::Perform {
+                callable: current,
+                effect: effect.clone(),
+                site: effect_use.site().clone(),
+            });
+            return Some(EffectTrace::new(effect.clone(), steps));
+        }
+
+        let mut calls = facts.calls().iter().collect::<Vec<_>>();
+        calls.sort_by_key(|edge| call_target_label(edge.target()));
+        for edge in calls {
+            match edge.target() {
+                CallTarget::External(callee) if callee.effects().contains(effect) => {
+                    let mut steps = path.clone();
+                    steps.push(EffectTraceStep::ExternalCall {
+                        caller: current.clone(),
+                        callee: callee.name().to_owned(),
+                        site: edge.site().clone(),
+                    });
+                    return Some(EffectTrace::new(effect.clone(), steps));
+                }
+                CallTarget::Dynamic {
+                    label,
+                    effects: Some(effects),
+                } if effects.contains(effect) => {
+                    let mut steps = path.clone();
+                    steps.push(EffectTraceStep::DynamicCall {
+                        caller: current.clone(),
+                        target: label.clone(),
+                        site: edge.site().clone(),
+                    });
+                    return Some(EffectTrace::new(effect.clone(), steps));
+                }
+                CallTarget::Local(callee)
+                    if summaries
+                        .get(callee)
+                        .is_some_and(|summary| summary.inferred().contains(effect))
+                        && visited.insert(callee.clone()) =>
+                {
+                    let mut steps = path.clone();
+                    steps.push(EffectTraceStep::Call {
+                        caller: current.clone(),
+                        callee: callee.clone(),
+                        site: edge.site().clone(),
+                    });
+                    queue.push_back((callee.clone(), steps));
+                }
+                CallTarget::Local(_) | CallTarget::External(_) | CallTarget::Dynamic { .. } => {}
+            }
+        }
+    }
+    None
+}
+
+fn first_effect(effects: &EffectSet) -> Option<&EffectId> {
+    effects.iter().next()
+}
+
+fn call_target_label(target: &CallTarget) -> String {
+    match target {
+        CallTarget::Local(callee) => format!("0:{callee}"),
+        CallTarget::External(callee) => format!("1:{}", callee.name()),
+        CallTarget::Dynamic { label, .. } => format!("2:{label}"),
+    }
+}
+
+fn diagnostic_sort_key(diagnostic: &EffectDiagnostic) -> (u8, &'static str, String, String) {
+    (
+        match diagnostic.severity() {
+            EffectSeverity::Error => 0,
+            EffectSeverity::Warning => 1,
+        },
+        diagnostic.code().as_str(),
+        diagnostic.callable().as_str().to_owned(),
+        diagnostic.message().to_owned(),
+    )
+}
