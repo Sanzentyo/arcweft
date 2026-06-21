@@ -73,6 +73,9 @@ Existing implementation:
 - TOML/YAML/CSV/Arrow/Parquet/Avro already apply some caps or shape validation
   after parse, and several codecs check `max_input_len` before invoking their
   parser.
+- TOML now consumes `DecodeBudget` through serde deserialization before
+  building public `toml::Value` shape-projection helpers. Strict budget checks
+  before `toml::Deserializer::parse` builds its internal `DeTable` remain open.
 - JSON now uses a `serde_json::Deserializer` seed/visitor that consumes
   `DecodeBudget` while parsing dynamic raw values, before any
   `serde_json::Value` shape-projection helper is built.
@@ -82,8 +85,10 @@ Existing implementation:
 
 具体的に未実装な動作:
 
-- TOML/YAML は format-native document/value を作った後に Arcweft raw shape
-  validation へ進むため、深い nesting や巨大 node count を parse 中に止めない。
+- YAML は format-native document/value を作った後に Arcweft raw shape validation
+  へ進むため、深い nesting や巨大 node count を parse 中に止めない。
+- TOML は public `toml::Value` 生成前に budgeted visitor を通るが、crate 内部
+  parser の `DeTable` 生成より前の厳密な source-level budget enforcement はない。
 - CSV は reader iteration 中に row count、record field count、string length、
   decoded byte length を `DecodeBudget` へ消費するようになった。ただし、strict
   pre-allocation の観点では `csv` crate が返す `StringRecord` materialization
@@ -149,6 +154,10 @@ some of them leave related items open:
 - JSON decoding now consumes `DecodeBudget` through a serde visitor before
   `serde_json::Value` shape projection. Focused tests cover input length,
   string length, sequence length, and node budget exhaustion.
+- TOML decoding now consumes `DecodeBudget` through serde deserialization
+  before public `toml::Value` shape projection. Focused tests cover input
+  length, string length, array length, and node budget exhaustion. Strict
+  pre-`DeTable` parser-internal allocation remains tracked under ZG-D-001.
 - Raw shape conversion plus JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow,
   Parquet, and Avro reject non-finite floats, float-to-integer recovery, and
   signed/unsigned bounds violations through focused numeric edge tests.

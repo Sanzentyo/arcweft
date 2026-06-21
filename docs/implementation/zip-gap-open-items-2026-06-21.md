@@ -126,10 +126,13 @@ For a concise explanation of the concrete unfinished items, see
   during parsing. MsgPack and CBOR now parse directly into budgeted raw values
   through low-level readers. JSON now consumes budget through a
   `serde_json::Deserializer` visitor before `serde_json::Value` shape
-  projection. CSV now consumes row/string/byte budget during reader iteration,
-  but strict pre-`StringRecord` field allocation remains unproven. TOML, YAML,
-  Arrow, Parquet, and Avro still materialize format-native values before final
-  `DecodeLimits::validate` or equivalent shape validation.
+  projection. TOML now consumes budget through serde deserialization before
+  public `toml::Value` shape projection, but strict pre-`DeTable`
+  parser-internal allocation remains unproven. CSV now consumes row/string/byte
+  budget during reader iteration, but strict pre-`StringRecord` field
+  allocation remains unproven. YAML, Arrow, Parquet, and Avro still materialize
+  format-native values before final `DecodeLimits::validate` or equivalent
+  shape validation.
 - Why this matters: hostile inputs can allocate large intermediate documents
   before Arcweft limits run.
 - Completion evidence needed: parser-integrated visitors/readers or equivalent

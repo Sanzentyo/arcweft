@@ -4,10 +4,11 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use arcweft_data::{
-    BytesFormat, Codec, DataError, DataErrorKind, DecodeOptions, EncodeOptions, FormatId, Number,
-    RawValue, Result, TypeShape, Value, decode_with_shape, encode_with_shape,
+    BytesFormat, Codec, DataError, DataErrorKind, DecodeBudget, DecodeOptions, EncodeOptions,
+    FormatId, Number, RawValue, Result, TypeShape, Value, decode_with_shape, encode_with_shape,
 };
 use base64::prelude::{BASE64_STANDARD, Engine as _};
+use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use toml::Value as TomlValue;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -45,21 +46,196 @@ impl Codec for TomlCodec {
         shape: &TypeShape,
         options: &DecodeOptions,
     ) -> Result<Value> {
-        if input.len() > options.limits.max_input_len {
-            return Err(DataError::limit(format!(
-                "input length {} exceeds {}",
-                input.len(),
-                options.limits.max_input_len
-            )));
-        }
+        let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
         let source = std::str::from_utf8(input)
             .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
-        let toml = toml::from_str::<TomlValue>(source)
+        let deserializer = toml::Deserializer::parse(source)
             .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
+        let dynamic_raw = BudgetedTomlRawSeed {
+            budget: &mut budget,
+        }
+        .deserialize(deserializer)
+        .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))??;
+        let toml = raw_dynamic_to_toml(&dynamic_raw)?;
         let raw = toml_to_raw_value(&toml, shape)?;
         let value = decode_with_shape(&raw, shape)?;
         options.limits.validate(&value)?;
         Ok(value)
+    }
+}
+
+struct BudgetedTomlRawSeed<'budget, 'limits> {
+    budget: &'budget mut DecodeBudget<'limits>,
+}
+
+impl<'de> DeserializeSeed<'de> for BudgetedTomlRawSeed<'_, '_> {
+    type Value = Result<RawValue>;
+
+    fn deserialize<D>(self, deserializer: D) -> std::result::Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(BudgetedTomlRawVisitor {
+            budget: self.budget,
+        })
+    }
+}
+
+struct BudgetedTomlRawVisitor<'budget, 'limits> {
+    budget: &'budget mut DecodeBudget<'limits>,
+}
+
+impl<'de> Visitor<'de> for BudgetedTomlRawVisitor<'_, '_> {
+    type Value = Result<RawValue>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("a TOML value")
+    }
+
+    fn visit_bool<E>(self, value: bool) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(self.scalar(RawValue::Bool(value)))
+    }
+
+    fn visit_i64<E>(self, value: i64) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(self.scalar(RawValue::Signed(i128::from(value))))
+    }
+
+    fn visit_i128<E>(self, value: i128) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(self.scalar(RawValue::Signed(value)))
+    }
+
+    fn visit_u64<E>(self, value: u64) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(self.scalar(RawValue::Unsigned(u128::from(value))))
+    }
+
+    fn visit_u128<E>(self, value: u128) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(self.scalar(RawValue::Unsigned(value)))
+    }
+
+    fn visit_f64<E>(self, value: f64) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(self.scalar(RawValue::F64(value)))
+    }
+
+    fn visit_borrowed_str<E>(self, value: &'de str) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(self.string(value))
+    }
+
+    fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(self.string(value))
+    }
+
+    fn visit_string<E>(self, value: String) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(self.string(value.as_str()))
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> std::result::Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        if let Err(error) = self.budget.enter_node() {
+            return Ok(Err(error));
+        }
+        let mut values = Vec::new();
+        while let Some(value) = seq.next_element_seed(BudgetedTomlRawSeed {
+            budget: self.budget,
+        })? {
+            if let Err(error) = self.budget.sequence_item(values.len().saturating_add(1)) {
+                self.budget.exit_node();
+                return Ok(Err(error));
+            }
+            match value {
+                Ok(value) => values.push(value),
+                Err(error) => {
+                    self.budget.exit_node();
+                    return Ok(Err(error.at_index(values.len())));
+                }
+            }
+        }
+        self.budget.exit_node();
+        Ok(Ok(RawValue::Seq(values)))
+    }
+
+    fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        if let Err(error) = self.budget.enter_node() {
+            return Ok(Err(error));
+        }
+        let mut entries = Vec::new();
+        while let Some(key) = map.next_key_seed(BudgetedTomlRawSeed {
+            budget: self.budget,
+        })? {
+            if let Err(error) = self.budget.map_item(entries.len().saturating_add(1)) {
+                self.budget.exit_node();
+                return Ok(Err(error));
+            }
+            let key = match key {
+                Ok(key) => key,
+                Err(error) => {
+                    self.budget.exit_node();
+                    return Ok(Err(error));
+                }
+            };
+            let value = map.next_value_seed(BudgetedTomlRawSeed {
+                budget: self.budget,
+            })?;
+            let value = match value {
+                Ok(value) => value,
+                Err(error) => {
+                    self.budget.exit_node();
+                    return Ok(Err(error));
+                }
+            };
+            entries.push((key, value));
+        }
+        self.budget.exit_node();
+        Ok(Ok(RawValue::Map(entries)))
+    }
+}
+
+impl BudgetedTomlRawVisitor<'_, '_> {
+    fn scalar(self, raw: RawValue) -> Result<RawValue> {
+        self.budget.enter_node()?;
+        self.budget.exit_node();
+        Ok(raw)
+    }
+
+    fn string(self, value: &str) -> Result<RawValue> {
+        self.budget.enter_node()?;
+        if let Err(error) = self.budget.string_len(value.len()) {
+            self.budget.exit_node();
+            return Err(error);
+        }
+        self.budget.exit_node();
+        Ok(RawValue::String(value.to_owned()))
     }
 }
 

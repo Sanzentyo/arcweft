@@ -141,6 +141,7 @@ arcweft-codec-msgpack,rmp,normal,crates/arcweft-codec-msgpack/Cargo.toml
 arcweft-codec-msgpack,rmpv,normal,crates/arcweft-codec-msgpack/Cargo.toml
 arcweft-codec-toml,arcweft-data,normal,crates/arcweft-codec-toml/Cargo.toml
 arcweft-codec-toml,base64,normal,crates/arcweft-codec-toml/Cargo.toml
+arcweft-codec-toml,serde,normal,crates/arcweft-codec-toml/Cargo.toml
 arcweft-codec-toml,toml,normal,crates/arcweft-codec-toml/Cargo.toml
 arcweft-codec-yaml,arcweft-data,normal,crates/arcweft-codec-yaml/Cargo.toml
 arcweft-codec-yaml,base64,normal,crates/arcweft-codec-yaml/Cargo.toml
