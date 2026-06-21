@@ -70,6 +70,12 @@ impl EffectId {
                 .strip_prefix(namespace)
                 .is_some_and(|rest| rest.starts_with('.'))
     }
+
+    pub fn covers(&self, required: &Self) -> bool {
+        self == required
+            || (self.path() == required.path()
+                && (self.scope_count() == 0 || required.scope_count() == 0))
+    }
 }
 
 impl FromStr for EffectId {
@@ -174,6 +180,14 @@ impl EffectSet {
     #[must_use]
     pub fn difference(&self, other: &Self) -> Self {
         self.0.difference(&other.0).cloned().collect()
+    }
+
+    #[must_use]
+    pub fn effects_not_covered_by(&self, covering: &Self) -> Self {
+        self.iter()
+            .filter(|effect| !covering.iter().any(|candidate| candidate.covers(effect)))
+            .cloned()
+            .collect()
     }
 
     #[must_use]
@@ -307,6 +321,30 @@ mod tests {
         assert!(EffectId::parse(" fs.read").is_err());
         assert!(EffectId::parse("fs.read ").is_err());
         assert!(EffectId::parse("fs.read(save").is_err());
+    }
+
+    #[test]
+    fn effect_coverage_matches_scoped_and_unscoped_path_bounds() {
+        let read = EffectId::parse("fs.read").expect("valid effect");
+        let read_save = EffectId::parse("fs.read(save)").expect("valid effect");
+        let read_asset = EffectId::parse("fs.read(asset)").expect("valid effect");
+
+        assert!(read.covers(&read_save));
+        assert!(read_save.covers(&read));
+        assert!(!read_save.covers(&read_asset));
+        assert!(!read_asset.covers(&read_save));
+    }
+
+    #[test]
+    fn effect_set_reports_only_uncovered_effects() {
+        let inferred =
+            EffectSet::from_labels(["fs.read", "log.write"]).expect("valid inferred effects");
+        let declared = EffectSet::from_labels(["fs.read(save)"]).expect("valid declared effects");
+
+        assert_eq!(
+            inferred.effects_not_covered_by(&declared).to_labels(),
+            vec!["log.write"]
+        );
     }
 
     #[test]

@@ -71,6 +71,14 @@ fn call_data_external(
             runtime_value_to_bytes(label, bytes)
                 .and_then(|bytes| decode_runtime_data(&bytes, format))
         }),
+        ("data.decode", [bytes, format, shape]) => {
+            data_format_arg(label, format).and_then(|format| {
+                runtime_value_to_bytes(label, bytes).and_then(|bytes| {
+                    runtime_value_to_type_shape(shape)
+                        .and_then(|shape| decode_runtime_data_with_shape(&bytes, format, &shape))
+                })
+            })
+        }
         ("data.shape", [value]) => runtime_value_to_data_value(value)
             .map(|value| type_shape_to_runtime_value(&infer_data_shape(&value))),
         ("data.encode" | "data.decode" | "data.shape", _) => {
@@ -129,42 +137,76 @@ fn encode_runtime_data(
 }
 
 fn decode_runtime_data(input: &[u8], format: DataFormat) -> Result<RuntimeValue, RuntimeEvalError> {
-    let shape = TypeShape::Named("DataValue".to_owned());
     let value = match format {
-        DataFormat::Json => {
-            arcweft_codec_json::JsonCodec.decode_value(input, &shape, &DecodeOptions::default())
-        }
-        DataFormat::Toml => {
-            arcweft_codec_toml::TomlCodec.decode_value(input, &shape, &DecodeOptions::default())
-        }
-        DataFormat::Yaml => {
-            arcweft_codec_yaml::YamlCodec.decode_value(input, &shape, &DecodeOptions::default())
-        }
+        DataFormat::Json => decode_dynamic_json(input),
+        DataFormat::Avro => decode_dynamic_avro(input),
+        DataFormat::Toml
+        | DataFormat::Yaml
+        | DataFormat::MessagePack
+        | DataFormat::Cbor
+        | DataFormat::Csv
+        | DataFormat::ArrowIpc
+        | DataFormat::Parquet
+        | DataFormat::ArcweftBinary => Err(dynamic_decode_shape_error(format)),
+    }
+    .map_err(|error| data_runtime_error(format.id(), error.to_string()))?;
+    Ok(data_value_to_runtime_value(value))
+}
+
+fn decode_runtime_data_with_shape(
+    input: &[u8],
+    format: DataFormat,
+    shape: &TypeShape,
+) -> Result<RuntimeValue, RuntimeEvalError> {
+    let value = match format {
+        DataFormat::Json => arcweft_codec_json::JsonCodec.decode_value(
+            input,
+            shape,
+            &DecodeOptions::default(),
+        ),
+        DataFormat::Toml => arcweft_codec_toml::TomlCodec.decode_value(
+            input,
+            shape,
+            &DecodeOptions::default(),
+        ),
+        DataFormat::Yaml => arcweft_codec_yaml::YamlCodec.decode_value(
+            input,
+            shape,
+            &DecodeOptions::default(),
+        ),
         DataFormat::MessagePack => arcweft_codec_msgpack::MessagePackCodec.decode_value(
             input,
-            &shape,
+            shape,
             &DecodeOptions::default(),
         ),
-        DataFormat::Cbor => {
-            arcweft_codec_cbor::CborCodec.decode_value(input, &shape, &DecodeOptions::default())
-        }
-        DataFormat::Avro => decode_dynamic_avro(input),
-        DataFormat::Csv => {
-            arcweft_codec_csv::CsvCodec.decode_value(input, &shape, &DecodeOptions::default())
-        }
+        DataFormat::Cbor => arcweft_codec_cbor::CborCodec.decode_value(
+            input,
+            shape,
+            &DecodeOptions::default(),
+        ),
+        DataFormat::Csv => arcweft_codec_csv::CsvCodec.decode_value(
+            input,
+            shape,
+            &DecodeOptions::default(),
+        ),
         DataFormat::ArrowIpc => arcweft_codec_arrow::ArrowIpcCodec.decode_value(
             input,
-            &shape,
+            shape,
             &DecodeOptions::default(),
         ),
-        DataFormat::Parquet => {
-            arcweft_codec_arrow::ParquetCodec.decode_value(input, &shape, &DecodeOptions::default())
-        }
+        DataFormat::Parquet => arcweft_codec_arrow::ParquetCodec.decode_value(
+            input,
+            shape,
+            &DecodeOptions::default(),
+        ),
         DataFormat::ArcweftBinary => arcweft_codec_binary::ArcweftBinaryCodec.decode_value(
             input,
-            &shape,
+            shape,
             &DecodeOptions::default(),
         ),
+        DataFormat::Avro => Err(DataError::unsupported(
+            "runtime Avro data.decode with explicit TypeShape requires an Avro schema-bearing codec",
+        )),
     }
     .map_err(|error| data_runtime_error(format.id(), error.to_string()))?;
     Ok(data_value_to_runtime_value(value))
@@ -429,6 +471,155 @@ fn type_shape_to_runtime_value(shape: &TypeShape) -> RuntimeValue {
     }
 }
 
+fn runtime_value_to_type_shape(value: &RuntimeValue) -> Result<TypeShape, RuntimeEvalError> {
+    let fields = runtime_record_fields(value, "data.decode shape")?;
+    let kind = runtime_record_string_field(fields, "kind", "data.decode shape")?;
+    match kind {
+        "unit" => Ok(TypeShape::Unit),
+        "bool" => Ok(TypeShape::Bool),
+        "i8" => Ok(TypeShape::I8),
+        "i16" => Ok(TypeShape::I16),
+        "i32" => Ok(TypeShape::I32),
+        "i64" => Ok(TypeShape::I64),
+        "i128" => Ok(TypeShape::I128),
+        "isize" => Ok(TypeShape::Isize),
+        "u8" => Ok(TypeShape::U8),
+        "u16" => Ok(TypeShape::U16),
+        "u32" => Ok(TypeShape::U32),
+        "u64" => Ok(TypeShape::U64),
+        "u128" => Ok(TypeShape::U128),
+        "usize" => Ok(TypeShape::Usize),
+        "f32" => Ok(TypeShape::F32),
+        "f64" => Ok(TypeShape::F64),
+        "string" => Ok(TypeShape::String),
+        "char" => Ok(TypeShape::Char),
+        "bytes" => Ok(TypeShape::Bytes {
+            format: BytesFormat::Binary,
+        }),
+        "seq" => runtime_record_field(fields, "item", "data.decode seq shape")
+            .and_then(runtime_value_to_type_shape)
+            .map(|item| TypeShape::Seq(Box::new(item))),
+        "record" => runtime_record_to_record_shape(fields),
+        "enum" => runtime_record_to_enum_shape(fields),
+        "named" | "option" | "map" => Err(data_runtime_error(
+            "data.decode",
+            format!("runtime shape kind `{kind}` is not supported for explicit decode"),
+        )),
+        other => Err(data_runtime_error(
+            "data.decode",
+            format!("unknown runtime shape kind `{other}`"),
+        )),
+    }
+}
+
+fn runtime_record_to_record_shape(
+    fields: &[arcweft_core::value::RuntimeFieldValue],
+) -> Result<TypeShape, RuntimeEvalError> {
+    let name = runtime_record_string_field(fields, "name", "data.decode record shape")?.to_owned();
+    let RuntimeValue::Seq(field_values) =
+        runtime_record_field(fields, "fields", "data.decode record shape")?
+    else {
+        return Err(data_runtime_error(
+            "data.decode",
+            "record shape field `fields` must be a sequence",
+        ));
+    };
+    let fields = field_values
+        .clone()
+        .into_values()
+        .into_iter()
+        .map(|field| {
+            let field_record = runtime_record_fields(&field, "data.decode record field shape")?;
+            let name =
+                runtime_record_string_field(field_record, "name", "data.decode record field")?
+                    .to_owned();
+            let shape = runtime_record_field(field_record, "shape", "data.decode record field")
+                .and_then(runtime_value_to_type_shape)?;
+            Ok(FieldShape::new(name.clone(), name, shape))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(TypeShape::Record {
+        name,
+        fields,
+        policy: RecordPolicy::default(),
+    })
+}
+
+fn runtime_record_to_enum_shape(
+    fields: &[arcweft_core::value::RuntimeFieldValue],
+) -> Result<TypeShape, RuntimeEvalError> {
+    let name = runtime_record_string_field(fields, "name", "data.decode enum shape")?.to_owned();
+    let RuntimeValue::Seq(variants) =
+        runtime_record_field(fields, "variants", "data.decode enum shape")?
+    else {
+        return Err(data_runtime_error(
+            "data.decode",
+            "enum shape field `variants` must be a sequence",
+        ));
+    };
+    let variants = variants
+        .clone()
+        .into_values()
+        .into_iter()
+        .map(|variant| match variant {
+            RuntimeValue::String(name) => Ok(arcweft_data::VariantShape::unit(name.clone(), name)),
+            other => Err(data_runtime_error(
+                "data.decode",
+                format!(
+                    "enum shape variants must be strings, found {}",
+                    runtime_value_label_for_data(&other)
+                ),
+            )),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(TypeShape::enumeration(name, variants))
+}
+
+fn runtime_record_fields<'a>(
+    value: &'a RuntimeValue,
+    context: &str,
+) -> Result<&'a [arcweft_core::value::RuntimeFieldValue], RuntimeEvalError> {
+    match value {
+        RuntimeValue::Record(fields) => Ok(fields),
+        other => Err(data_runtime_error(
+            "data.decode",
+            format!(
+                "{context} must be a record, found {}",
+                runtime_value_label_for_data(other)
+            ),
+        )),
+    }
+}
+
+fn runtime_record_field<'a>(
+    fields: &'a [arcweft_core::value::RuntimeFieldValue],
+    name: &str,
+    context: &str,
+) -> Result<&'a RuntimeValue, RuntimeEvalError> {
+    fields
+        .iter()
+        .find(|field| field.name == name)
+        .map(|field| &field.value)
+        .ok_or_else(|| data_runtime_error("data.decode", format!("{context} is missing `{name}`")))
+}
+
+fn runtime_record_string_field<'a>(
+    fields: &'a [arcweft_core::value::RuntimeFieldValue],
+    name: &str,
+    context: &str,
+) -> Result<&'a str, RuntimeEvalError> {
+    match runtime_record_field(fields, name, context)? {
+        RuntimeValue::String(value) => Ok(value),
+        other => Err(data_runtime_error(
+            "data.decode",
+            format!(
+                "{context} field `{name}` must be a string, found {}",
+                runtime_value_label_for_data(other)
+            ),
+        )),
+    }
+}
+
 fn type_shape_kind_label(shape: &TypeShape) -> &'static str {
     match shape {
         TypeShape::Unit => "unit",
@@ -509,11 +700,7 @@ fn decode_dynamic_avro(input: &[u8]) -> arcweft_data::Result<Value> {
             "Avro data envelope is missing json bytes",
         ));
     };
-    arcweft_codec_json::JsonCodec.decode_value(
-        &json,
-        &TypeShape::Named("DataValue".to_owned()),
-        &DecodeOptions::default(),
-    )
+    decode_dynamic_json(&json)
 }
 
 fn dynamic_avro_schema() -> arcweft_data::Result<Schema> {
@@ -521,6 +708,19 @@ fn dynamic_avro_schema() -> arcweft_data::Result<Schema> {
         r#"{"type":"record","name":"ArcweftDataEnvelope","fields":[{"name":"json","type":"bytes"}]}"#,
     )
     .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))
+}
+
+fn decode_dynamic_json(input: &[u8]) -> arcweft_data::Result<Value> {
+    let json = serde_json::from_slice(input)
+        .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
+    arcweft_codec_json::from_json_value(&json)
+}
+
+fn dynamic_decode_shape_error(format: DataFormat) -> DataError {
+    DataError::unsupported(format!(
+        "{} runtime data.decode requires an explicit TypeShape and is not a dynamic data format",
+        format.id()
+    ))
 }
 
 fn runtime_int_to_i128(value: arcweft_core::value::RuntimeInt) -> i128 {

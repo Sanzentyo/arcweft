@@ -58,7 +58,6 @@ arcweft-browser-bench,wasm-bindgen-futures,target,crates/arcweft-browser-bench/C
 arcweft-browser-bench,web-sys,target,crates/arcweft-browser-bench/Cargo.toml
 arcweft-bundle,apache-avro,normal,crates/arcweft-bundle/Cargo.toml
 arcweft-bundle,arcweft-agent-protocol,normal,crates/arcweft-bundle/Cargo.toml
-arcweft-bundle,arcweft-codec-yaml,normal,crates/arcweft-bundle/Cargo.toml
 arcweft-bundle,arcweft-core,normal,crates/arcweft-bundle/Cargo.toml
 arcweft-bundle,arcweft-data,normal,crates/arcweft-bundle/Cargo.toml
 arcweft-bundle,arcweft-render-text,normal,crates/arcweft-bundle/Cargo.toml
@@ -69,6 +68,7 @@ arcweft-bundle,serde,normal,crates/arcweft-bundle/Cargo.toml
 arcweft-bundle,serde_json,normal,crates/arcweft-bundle/Cargo.toml
 arcweft-bundle,thiserror,normal,crates/arcweft-bundle/Cargo.toml
 arcweft-bundle,toml,normal,crates/arcweft-bundle/Cargo.toml
+arcweft-bundle,yaml-rust2,normal,crates/arcweft-bundle/Cargo.toml
 arcweft-cli,arcweft-adapter-context,normal,crates/arcweft-cli/Cargo.toml
 arcweft-cli,arcweft-adapter-desktop,normal,crates/arcweft-cli/Cargo.toml
 arcweft-cli,arcweft-agent-mcp,normal,crates/arcweft-cli/Cargo.toml

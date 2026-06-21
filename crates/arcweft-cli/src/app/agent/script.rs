@@ -11,9 +11,14 @@ use super::{
     EntityKind, EntitySymbol, EntityType, ExitCode, Infallible, NativeAdapterRegistrar,
     NoopRagService, ObservationEnvelope, ObserveRequest, Path, PathBuf, ProgramHash,
     ProjectSemanticIndex, RequiredEntity, RuntimeAgentCapability, RuntimeAgentPolicy, SemaPublicId,
-    SemanticHash, SessionId, SourceAnchor, SourceName, StableHash, SystemTime, TypeKind,
-    UNIX_EPOCH, agent, agent_project, fs, load_and_check_selection, native, print_json,
-    project_semantic_index_from_hir, resolve_source_selection,
+    SemanticHash, SessionId, SourceAnchor, StableHash, SystemTime, TypeKind, UNIX_EPOCH, agent,
+    agent_project, fs, print_json,
+};
+
+#[cfg(feature = "native-capture")]
+use super::{
+    SourceName, load_and_check_selection, native, project_semantic_index_from_hir,
+    resolve_source_selection,
 };
 
 pub(super) fn agent_script_command(

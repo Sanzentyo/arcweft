@@ -300,7 +300,6 @@ version = "0.1.0"
 dependencies = [
  "apache-avro",
  "arcweft-agent-protocol",
- "arcweft-codec-yaml",
  "arcweft-core",
  "arcweft-data",
  "arcweft-render-text",
@@ -311,6 +310,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "toml",
+ "yaml-rust2",
 ]
 
 [[package]]

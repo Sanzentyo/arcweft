@@ -4,12 +4,15 @@ use apache_avro::types::Value as AvroValue;
 use apache_avro::{Reader, Schema, Writer};
 use arcweft_agent_protocol::artifact::AgentArtifactManifest;
 use arcweft_core::bytecode::BytecodeProgram;
-use arcweft_data::{BytesFormat, Codec, DecodeOptions, EncodeOptions, TypeShape};
+use arcweft_data::{Number, Value};
 use arcweft_render_text::LineDisplayCatalog;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::io::Cursor;
 use std::path::Path;
 use thiserror::Error;
+use yaml_rust2::yaml::Hash;
+use yaml_rust2::{Yaml, YamlEmitter, YamlLoader};
 
 pub const ARCWEFT_BUNDLE_SCHEMA_VERSION: u32 = 2;
 
@@ -212,6 +215,94 @@ pub enum BundleCodecError {
     },
 }
 
+fn bundle_value_to_yaml(value: &Value) -> Result<Yaml, String> {
+    match value {
+        Value::Unit => Ok(Yaml::Null),
+        Value::Bool(value) => Ok(Yaml::Boolean(*value)),
+        Value::Number(Number::I(value)) => i64::try_from(*value)
+            .map(Yaml::Integer)
+            .map_err(|_| "YAML bundle integer is out of i64 range".to_owned()),
+        Value::Number(Number::U(value)) => i64::try_from(*value)
+            .map(Yaml::Integer)
+            .map_err(|_| "YAML bundle unsigned integer is out of i64 range".to_owned()),
+        Value::Number(Number::F32(value)) if value.is_finite() => Ok(Yaml::Real(value.to_string())),
+        Value::Number(Number::F64(value)) if value.is_finite() => Ok(Yaml::Real(value.to_string())),
+        Value::Number(Number::F32(_) | Number::F64(_)) => {
+            Err("YAML bundle floats must be finite".to_owned())
+        }
+        Value::String(value) => Ok(Yaml::String(value.clone())),
+        Value::Char(value) => Ok(Yaml::String(value.to_string())),
+        Value::Bytes(bytes) => Ok(Yaml::Array(
+            bytes
+                .as_slice()
+                .iter()
+                .copied()
+                .map(i64::from)
+                .map(Yaml::Integer)
+                .collect(),
+        )),
+        Value::Seq(values) => values
+            .iter()
+            .map(bundle_value_to_yaml)
+            .collect::<Result<Vec<_>, _>>()
+            .map(Yaml::Array),
+        Value::Map(entries) | Value::Record(entries) => {
+            let mut hash = Hash::new();
+            for (key, value) in entries {
+                hash.insert(Yaml::String(key.clone()), bundle_value_to_yaml(value)?);
+            }
+            Ok(Yaml::Hash(hash))
+        }
+        Value::Enum { variant, payload } => match payload {
+            Some(payload) => {
+                let mut hash = Hash::new();
+                hash.insert(
+                    Yaml::String(variant.clone()),
+                    bundle_value_to_yaml(payload)?,
+                );
+                Ok(Yaml::Hash(hash))
+            }
+            None => Ok(Yaml::String(variant.clone())),
+        },
+    }
+}
+
+fn bundle_yaml_to_value(yaml: &Yaml) -> Result<Value, String> {
+    match yaml {
+        Yaml::Null => Ok(Value::Unit),
+        Yaml::Boolean(value) => Ok(Value::Bool(*value)),
+        Yaml::Integer(value) => Ok(Value::Number(Number::I(i128::from(*value)))),
+        Yaml::Real(value) => value
+            .parse::<f64>()
+            .map_err(|error| error.to_string())
+            .and_then(|value| {
+                if value.is_finite() {
+                    Ok(Value::Number(Number::F64(value)))
+                } else {
+                    Err("YAML bundle floats must be finite".to_owned())
+                }
+            }),
+        Yaml::String(value) => Ok(Value::String(value.clone())),
+        Yaml::Array(values) => values
+            .iter()
+            .map(bundle_yaml_to_value)
+            .collect::<Result<Vec<_>, _>>()
+            .map(Value::Seq),
+        Yaml::Hash(entries) => entries
+            .iter()
+            .map(|(key, value)| {
+                let Yaml::String(key) = key else {
+                    return Err("YAML bundle map keys must be strings".to_owned());
+                };
+                bundle_yaml_to_value(value).map(|value| (key.clone(), value))
+            })
+            .collect::<Result<BTreeMap<_, _>, _>>()
+            .map(Value::Record),
+        Yaml::Alias(_) => Err("YAML bundle aliases are not supported".to_owned()),
+        Yaml::BadValue => Err("YAML bundle contains an invalid value".to_owned()),
+    }
+}
+
 impl ArcweftBundle {
     pub fn new(
         manifest: BundleManifest,
@@ -309,19 +400,16 @@ impl ArcweftBundle {
                         message: error.to_string(),
                     }
                 })?;
-                arcweft_codec_yaml::YamlCodec
-                    .encode_value(
-                        &value,
-                        &TypeShape::Named("ArcweftBundle".to_owned()),
-                        &EncodeOptions {
-                            pretty: true,
-                            bytes_format: BytesFormat::Array,
-                        },
-                    )
-                    .map_err(|error| BundleCodecError::EncodeFormat {
+                let yaml = bundle_value_to_yaml(&value)
+                    .map_err(|message| BundleCodecError::EncodeFormat { format, message })?;
+                let mut out = String::new();
+                YamlEmitter::new(&mut out).dump(&yaml).map_err(|error| {
+                    BundleCodecError::EncodeFormat {
                         format,
                         message: error.to_string(),
-                    })
+                    }
+                })?;
+                Ok(out.into_bytes())
             }
             BundleFormat::MessagePack => {
                 rmp_serde::to_vec_named(self).map_err(|error| BundleCodecError::EncodeFormat {
@@ -358,16 +446,26 @@ impl ArcweftBundle {
                 })?
             }
             BundleFormat::Yaml => {
-                let value = arcweft_codec_yaml::YamlCodec
-                    .decode_value(
-                        bytes,
-                        &TypeShape::Named("ArcweftBundle".to_owned()),
-                        &DecodeOptions::default(),
-                    )
-                    .map_err(|error| BundleCodecError::DecodeFormat {
+                let source =
+                    std::str::from_utf8(bytes).map_err(|error| BundleCodecError::DecodeFormat {
                         format,
                         message: error.to_string(),
                     })?;
+                let documents = YamlLoader::load_from_str(source).map_err(|error| {
+                    BundleCodecError::DecodeFormat {
+                        format,
+                        message: error.to_string(),
+                    }
+                })?;
+                let [document] = documents.as_slice() else {
+                    let message = match documents.len() {
+                        0 => "YAML bundle document is empty".to_owned(),
+                        _ => "YAML bundle accepts exactly one document".to_owned(),
+                    };
+                    return Err(BundleCodecError::DecodeFormat { format, message });
+                };
+                let value = bundle_yaml_to_value(document)
+                    .map_err(|message| BundleCodecError::DecodeFormat { format, message })?;
                 arcweft_serde_bridge::from_arcweft_value(&value).map_err(|error| {
                     BundleCodecError::DecodeFormat {
                         format,

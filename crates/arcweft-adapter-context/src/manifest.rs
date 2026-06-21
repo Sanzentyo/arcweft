@@ -446,6 +446,18 @@ impl AdapterManifest {
         self.rust_types.iter().fold(env, apply_rust_type_to_env)
     }
 
+    /// Marks this manifest's effects as provided by the selected target.
+    pub fn grant_effect_availability(&self, env: TypeCheckEnv) -> TypeCheckEnv {
+        self.effects.iter().fold(env, |env, effect| {
+            env.with_available_effect(effect.id().clone())
+        })
+    }
+
+    /// Applies this manifest and marks its effects as target-provided.
+    pub fn apply_to_target_env(&self, env: TypeCheckEnv) -> TypeCheckEnv {
+        self.grant_effect_availability(self.apply_to_env(env))
+    }
+
     /// Injected symbols, preserved for tooling and diagnostics.
     pub fn symbols(&self) -> &[AdapterSymbol] {
         &self.symbols
@@ -646,6 +658,17 @@ mod tests {
                     .collect::<Vec<_>>()
             }),
             Some(vec!["fs.read"])
+        );
+        assert!(
+            env.available_effects().is_none(),
+            "surface application must not select target availability"
+        );
+
+        let target_env = manifest.apply_to_target_env(TypeCheckEnv::new());
+        assert!(
+            target_env
+                .available_effects()
+                .is_some_and(|effects| effects.contains(&EffectCapability::new("fs.read")))
         );
     }
 

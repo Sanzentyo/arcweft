@@ -83,7 +83,7 @@ fn data_external_call_round_trips_dynamic_avro() {
 }
 
 #[test]
-fn data_external_call_round_trips_remaining_builtin_formats() {
+fn data_external_call_encodes_shape_required_formats_and_rejects_dynamic_decode() {
     for variant in ["Csv", "ArrowIpc", "Parquet", "ArcweftBinary"] {
         let mut accelerator =
             RuntimePureAccelerator::with_config(RuntimePureAcceleratorConfig::default(), &[]);
@@ -110,15 +110,67 @@ fn data_external_call_round_trips_remaining_builtin_formats() {
             )
             .unwrap_or_else(|| panic!("{variant} data encode is handled"))
             .unwrap_or_else(|error| panic!("{variant} data encode succeeds: {error}"));
-        let decoded = accelerator
+        let error = accelerator
             .call_external(
                 &RuntimeCallTarget::from_label("data.decode"),
                 &[encoded, format],
             )
             .unwrap_or_else(|| panic!("{variant} data decode is handled"))
+            .expect_err("shape-required formats need an explicit decode shape");
+
+        let RuntimeEvalError::UnsupportedPure { reason, .. } = error else {
+            panic!("expected UnsupportedPure for {variant} dynamic decode");
+        };
+        assert!(
+            reason.contains("requires an explicit TypeShape"),
+            "{variant} should explain why dynamic decode is unavailable: {reason}"
+        );
+    }
+}
+
+#[test]
+fn data_external_call_decodes_shape_required_formats_with_explicit_shape() {
+    for variant in ["Csv", "ArrowIpc", "Parquet", "ArcweftBinary"] {
+        let mut accelerator =
+            RuntimePureAccelerator::with_config(RuntimePureAcceleratorConfig::default(), &[]);
+        let value = RuntimeValue::Seq(RuntimeSeq::Values(vec![RuntimeValue::Record(vec![
+            RuntimeFieldValue {
+                name: "line".to_owned(),
+                value: RuntimeValue::String("hello".to_owned()),
+            },
+            RuntimeFieldValue {
+                name: "speaker".to_owned(),
+                value: RuntimeValue::String("alice".to_owned()),
+            },
+        ])]));
+        let format = RuntimeValue::Variant {
+            path: None,
+            name: variant.to_owned(),
+            payload: None,
+        };
+        let shape = accelerator
+            .call_external(
+                &RuntimeCallTarget::from_label("data.shape"),
+                std::slice::from_ref(&value),
+            )
+            .unwrap_or_else(|| panic!("{variant} data shape is handled"))
+            .unwrap_or_else(|error| panic!("{variant} data shape succeeds: {error}"));
+        let encoded = accelerator
+            .call_external(
+                &RuntimeCallTarget::from_label("data.encode"),
+                &[value.clone(), format.clone()],
+            )
+            .unwrap_or_else(|| panic!("{variant} data encode is handled"))
+            .unwrap_or_else(|error| panic!("{variant} data encode succeeds: {error}"));
+        let decoded = accelerator
+            .call_external(
+                &RuntimeCallTarget::from_label("data.decode"),
+                &[encoded, format, shape],
+            )
+            .unwrap_or_else(|| panic!("{variant} data decode is handled"))
             .unwrap_or_else(|error| panic!("{variant} data decode succeeds: {error}"));
 
-        assert_eq!(decoded, value, "{variant} round-trip");
+        assert_eq!(decoded, value, "{variant} explicit shape decode roundtrip");
     }
 }
 

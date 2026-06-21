@@ -138,13 +138,28 @@ For the current requirement-by-requirement open-item ledger, see
 
 ## Current unfinished inventory
 
-As of `b64be3ec Add zip gap platform validation workflow`, no concrete
-open source-behavior implementation item is currently identified from the ZIP
-audit. The remaining blocker is verification evidence for the platform matrix:
-Linux/macOS/Windows CI or recorded local runs for the remote REPL, stdio MCP,
-data-codec, workspace, clippy, and structural-audit gates. The first CI run for
-that evidence is
-`https://github.com/Sanzentyo/arcweft/actions/runs/27915654960`.
+As of `fa7a89e2 Document current ZIP gap unfinished items` plus the current
+uncommitted validation fixes, the earlier "no concrete open source-behavior
+implementation item" conclusion is superseded. The strict current ledger is
+`docs/implementation/zip-gap-open-items-2026-06-21.md`; the readable
+explanation is
+`docs/implementation/zip-gap-unimplemented-items-2026-06-22.md`.
+
+The current unfinished item is:
+
+- `ZG-A-004`: platform matrix validation remains incomplete. GitHub Actions run
+  `27915737840` for `fa7a89e2` collected partial evidence but did not pass all
+  matrix gates. macOS failed workspace fast tests on the bundle YAML
+  named-shape issue, Ubuntu failed workspace clippy because EGL development
+  packages were missing, and Windows workspace fast tests were still running
+  when the unfinished inventory was recorded.
+
+The CLI target-effect availability gap and runtime explicit-shape
+`data.decode` gap are now resolved in the current checkout. `TypeCheckEnv`
+separates checker capabilities from target effect availability, entry-target
+flows require explicit effect declarations, and runtime calls can pass a
+third `DataShape` argument to `data.decode` for shape-required non-Avro
+formats.
 
 The bullets below summarize the implementation areas that were previously open
 and are now covered by current source and focused tests.

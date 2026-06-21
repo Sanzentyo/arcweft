@@ -43,6 +43,7 @@ flow @flow.opening opening {
     let bytes: Bytes = data.encode(payload, .Json)
     let decoded: AgentValue = data.decode(bytes, .Json)
     let shape: DataShape = data.shape(decoded)
+    let shaped: AgentValue = data.decode(bytes, .Json, shape)
 }
 "#,
     );
@@ -204,6 +205,118 @@ effects { }
             && error
                 .message()
                 .contains("callable `flow.opening` infers effect `fs.read`")
+    }));
+}
+
+#[test]
+fn entry_target_flow_requires_explicit_effects_for_extern_capability_calls() {
+    let tree = parse_ok(
+        r#"
+extern capability cli { fn stdout(text: String) effects { stdio.write } }
+entry cli @entry.main { run(@flow.main) }
+flow @flow.main main {
+    cli.stdout("missing effects declaration")
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("entry effect fixture lowers");
+
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
+        .expect_err("entry target flow must explicitly declare effects");
+    assert!(errors.iter().any(|error| {
+        matches!(
+            error.kind(),
+            TypeCheckErrorKind::Effect { diagnostic }
+                if diagnostic.code()
+                    == crate::effect_diagnostics::EffectDiagnosticCode::ExplicitDeclarationRequired
+                    && diagnostic.message().contains("flow.main")
+                    && diagnostic.message().contains("stdio.write")
+        )
+    }));
+}
+
+#[test]
+fn target_effect_availability_is_separate_from_checker_capabilities() {
+    let tree = parse_ok(
+        r#"
+flow @flow.opening opening
+effects { fs.read }
+{
+    let body = adapter.read_text(path = "story.arcw")
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("availability fixture lowers");
+    let env = TypeCheckEnv::new()
+        .with_function_signature(
+            "adapter.read_text",
+            FunctionSignature::new(
+                TypeKind::String,
+                [FunctionParam::required("path", TypeKind::String)],
+            ),
+        )
+        .with_function_effects("adapter.read_text", ["fs.read".to_owned()])
+        .with_available_effects(["fs.write"]);
+
+    let errors = typecheck_hir(&hir, &env).expect_err("unavailable target effect is rejected");
+    assert!(errors.iter().any(|error| {
+        matches!(
+            error.kind(),
+            TypeCheckErrorKind::Effect { diagnostic }
+                if diagnostic.code()
+                    == crate::effect_diagnostics::EffectDiagnosticCode::CapabilityUnavailable
+                    && diagnostic.message().contains("fs.read")
+        )
+    }));
+}
+
+#[test]
+fn target_effect_availability_covers_same_path_scoped_effects_only() {
+    let read_tree = parse_ok(
+        r#"
+flow @flow.opening opening
+effects { fs.read(save) }
+{
+    let body = adapter.read_text(path = "story.arcw")
+}
+"#,
+    );
+    let read_hir = lower_to_hir(&read_tree).expect("scoped availability fixture lowers");
+    let read_env = TypeCheckEnv::new()
+        .with_function_signature(
+            "adapter.read_text",
+            FunctionSignature::new(
+                TypeKind::String,
+                [FunctionParam::required("path", TypeKind::String)],
+            ),
+        )
+        .with_function_effects("adapter.read_text", ["fs.read(save)".to_owned()])
+        .with_available_effects(["fs.read(save)"]);
+
+    typecheck_hir(&read_hir, &read_env)
+        .expect("same-path scoped availability covers unscoped inferred effect");
+
+    let asset_env = TypeCheckEnv::new()
+        .with_function_signature(
+            "adapter.read_text",
+            FunctionSignature::new(
+                TypeKind::String,
+                [FunctionParam::required("path", TypeKind::String)],
+            ),
+        )
+        .with_function_effects("adapter.read_text", ["fs.read(save)".to_owned()])
+        .with_available_effects(["fs.read(asset)"]);
+
+    let errors = typecheck_hir(&read_hir, &asset_env)
+        .expect_err("different scoped availability does not cover save reads");
+    assert!(errors.iter().any(|error| {
+        matches!(
+            error.kind(),
+            TypeCheckErrorKind::Effect { diagnostic }
+                if diagnostic.code()
+                    == crate::effect_diagnostics::EffectDiagnosticCode::CapabilityUnavailable
+                    && diagnostic.message().contains("fs.read")
+        )
     }));
 }
 

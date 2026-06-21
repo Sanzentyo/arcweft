@@ -23,15 +23,66 @@ For a concise explanation of the concrete unfinished items, see
 ### ZG-A-004: Linux/macOS platform validation is not recorded
 
 - ZIP tasks: T-009, A-21.
-- Current evidence: the repository records Windows validation for the focused
-  cuts, but no current Linux/macOS CI or local run evidence is recorded for the
-  remote REPL and data-codec changes.
+- Current evidence:
+  GitHub Actions run `27915737840` for `fa7a89e2` records partial platform
+  evidence. macOS passed formatting, remote REPL/stdio MCP focused gates, data
+  codec focused gates, and workspace clippy, then failed workspace fast tests
+  on the bundle YAML named-shape issue. Ubuntu passed formatting, remote
+  REPL/stdio MCP focused gates, and data codec focused gates, then failed
+  workspace clippy because EGL development packages were missing. Windows had
+  passed formatting, focused gates, and workspace clippy while workspace fast
+  tests were still in progress when the unfinished inventory was recorded.
 - Why this matters: stdio process behavior, line endings, and CLI shell
   invocation differ across platforms.
 - Completion evidence needed: focused remote REPL gates and workspace gates on
   Linux, Windows, and macOS, either through CI or explicit recorded runs.
 
 ## Resolved Agent Items
+
+### ZG-E-001: CLI target-effect availability is fully integrated
+
+- Current evidence:
+  `TypeCheckEnv` now separates checker capabilities from target effect
+  availability. `AdapterManifest::apply_to_env` applies symbols, functions,
+  function effects, checker capabilities, and Rust metadata without selecting a
+  target availability set; `AdapterManifest::apply_to_target_env` additionally
+  marks manifest effects as target-provided.
+- CLI behavior:
+  direct source checks no longer turn standard desktop helper manifests into a
+  partial target environment. Entry-target flows are treated as boundary
+  callables for effect analysis, so extern capability calls still require
+  explicit source `effects { ... }` declarations.
+- Scoped behavior:
+  same-path scoped/unscoped effect coverage remains structural, while a
+  different scoped capability does not cover a scoped inferred effect.
+- Validation evidence:
+  `cargo test -p arcweft-lang-sema entry_target_flow_requires_explicit_effects_for_extern_capability_calls -- --nocapture`,
+  `cargo test -p arcweft-lang-sema target_effect_availability -- --nocapture`,
+  and `cargo test -p arcweft-cli --test arcw_fixtures_check_run --quiet`
+  passed on Windows in this checkout.
+
+## Resolved Runtime Data Adapter Items
+
+### ZG-R-001: runtime `data.decode` carries explicit shapes
+
+- Current evidence:
+  runtime external calls now accept `data.decode(bytes, format, shape)`, where
+  `shape` is a runtime `DataShape` value such as the value returned by
+  `data.shape(value)`. The runtime converts that record into a real
+  `TypeShape` and calls the core codec `decode_value` path.
+- Covered formats:
+  JSON, TOML, YAML, MessagePack, CBOR, CSV, Arrow IPC, Parquet, and Arcweft
+  Binary decode through the explicit shape path. The existing dynamic JSON and
+  dynamic Avro envelope path remains available for 2-argument
+  `data.decode(bytes, format)`.
+- Non-goal:
+  schema-bound Avro decode still requires an Avro schema-bearing codec surface;
+  it is not modeled as a `TypeShape`-only runtime call.
+- Validation evidence:
+  `cargo test -p arcweft-runtime-accelerator data_external_call_ -- --nocapture`
+  and
+  `cargo test -p arcweft-lang-sema typechecks_data_codec_builtins_with_format_enum -- --nocapture`
+  passed on Windows in this checkout.
 
 ### ZG-A-001: REPL project-bound binding policy is explicit
 
@@ -116,11 +167,14 @@ For a concise explanation of the concrete unfinished items, see
   Broader Agent completion still depends on project-bound REPL binding
   diagnostics, formatter golden coverage, and Linux/macOS validation evidence.
 
-## Open Data Items
+## Open Core Data Codec Items
 
-None currently identified. The data-codec implementation gaps from the ZIP
-audit are closed in the current source. Goal completion is still blocked by
-the platform validation evidence tracked under ZG-A-004.
+None currently identified. The core data-codec implementation gaps from the
+ZIP audit are closed in the current source. The runtime external-call surface
+for shape-required decode is tracked separately under `ZG-R-001`, because it is
+an adapter/API integration gap rather than a core codec behavior gap. Goal
+completion is still blocked by the platform validation evidence tracked under
+ZG-A-004 and the open implementation items above.
 
 ## Resolved Data Items
 

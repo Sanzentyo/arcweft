@@ -25,6 +25,7 @@ when the expected type makes the enum unambiguous:
 let bytes: Bytes = data.encode(["hello"], .Json)
 let value: AgentValue = data.decode(bytes, .Json)
 let shape: DataShape = data.shape(value)
+let shaped: AgentValue = data.decode(bytes, .Json, shape)
 ```
 
 Runtime execution handles `Json`, `Toml`, `Yaml`, `MessagePack`, `Cbor`, and
@@ -33,3 +34,12 @@ dynamic-value envelope so DSL calls can round-trip without a source-level Avro
 schema argument. `Csv`, `ArrowIpc`, `Parquet`, and `ArcweftBinary` are also
 available through the same DSL runtime boundary; the tabular formats expect a
 sequence of records.
+
+Two-argument `data.decode(bytes, format)` is the dynamic decode form. It is
+available for JSON and the current dynamic Avro envelope. Shape-required
+formats use the explicit form `data.decode(bytes, format, shape)`, where
+`shape` is a `DataShape` value such as `data.shape(value)`. The runtime converts
+that value into a real `TypeShape` and dispatches through the same core codec
+`decode_value` path used by save/config/http adapters. Schema-bound Avro decode
+still belongs to an Avro-schema-bearing adapter surface rather than this
+`TypeShape`-only call.

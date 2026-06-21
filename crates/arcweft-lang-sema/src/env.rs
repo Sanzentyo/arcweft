@@ -83,6 +83,7 @@ pub struct TypeCheckEnv {
     pub(crate) agent_actions: HashMap<String, Vec<AgentActionEnvSignature>>,
     pub(crate) debug_paths: HashMap<(DebugPathKind, String), TypeKind>,
     pub(crate) capabilities: HashSet<EffectCapability>,
+    pub(crate) available_effects: Option<HashSet<EffectCapability>>,
     pub(crate) rust_packages: HashMap<String, RustPackageExports>,
 }
 
@@ -320,6 +321,7 @@ impl TypeCheckEnv {
                     [
                         FunctionParam::required("bytes", TypeKind::Bytes),
                         FunctionParam::required("format", TypeKind::DataFormat),
+                        FunctionParam::defaulted("shape", TypeKind::DataShape),
                     ],
                 ),
             )
@@ -496,6 +498,32 @@ impl TypeCheckEnv {
         self
     }
 
+    /// Sets the target environment effects available to the checked program.
+    ///
+    /// This is deliberately separate from `with_capability`: a checker
+    /// capability can discharge semantic operations such as registry writes,
+    /// while target availability states which runtime effects the selected
+    /// adapter/runner can actually provide.
+    #[must_use]
+    pub fn with_available_effects<I, E>(mut self, effects: I) -> Self
+    where
+        I: IntoIterator<Item = E>,
+        E: Into<EffectCapability>,
+    {
+        self.available_effects = Some(effects.into_iter().map(Into::into).collect());
+        self
+    }
+
+    /// Adds one target environment effect while preserving existing
+    /// availability state.
+    #[must_use]
+    pub fn with_available_effect(mut self, effect: impl Into<EffectCapability>) -> Self {
+        self.available_effects
+            .get_or_insert_with(HashSet::new)
+            .insert(effect.into());
+        self
+    }
+
     /// Registers one Rust function export under the adapter crate package.
     #[must_use]
     pub fn with_rust_function_export(
@@ -583,6 +611,12 @@ impl TypeCheckEnv {
     pub fn has_capability(&self, capability: &str) -> bool {
         self.capabilities
             .contains(&EffectCapability::new(capability))
+    }
+
+    /// Returns the target environment effect set, when target availability is
+    /// being enforced.
+    pub fn available_effects(&self) -> Option<&HashSet<EffectCapability>> {
+        self.available_effects.as_ref()
     }
 
     pub(crate) fn rust_package(&self, package: &str) -> Option<&RustPackageExports> {

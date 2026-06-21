@@ -108,10 +108,10 @@ Phase 0 / Phase 1 minimal Rust workspace:
   transport, authentication, session lifecycle, and real renderer readback to
   future adapter crates.
 - `docs/implementation/zip-gap-unimplemented-items-2026-06-22.md` lists the
-  concrete unfinished Agent and data-format items for
-  `arcweft-zip-gap-audit-2026-06-21.zip`, separated into open implementation,
-  partial implementation, and verification debt. Use it as the readable
-  checklist before claiming that ZIP-driven goal is complete.
+  concrete unfinished items for `arcweft-zip-gap-audit-2026-06-21.zip`,
+  separating resolved CLI target-effect availability and runtime shape-carrying
+  `data.decode` evidence from the remaining platform validation debt. Use it
+  as the readable checklist before claiming that ZIP-driven goal is complete.
 - Awaited capability calls now carry typed `HostTaskRequest` data through
   `AwaitTarget` into emitted `TaskSpec`s. The core remains Sans I/O; adapters
   consume the request data and later return deterministic `TaskEvent`s.

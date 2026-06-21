@@ -48,6 +48,12 @@ stringly boundary field: pub action: String,
 
 **Fix:** replace kind/payload strings with a tagged enum and typed payload
 
+## warning SIZE002 — `crates/arcweft-bundle/src/lib.rs`
+
+facade file has 1051 physical LOC; target is below 250 LOC
+
+**Fix:** move implementations to named modules and keep intentional re-exports
+
 ## warning SIZE001 — `crates/arcweft-cli/src/app/agent/native/capture.rs`
 
 1741 physical LOC exceeds the 1200 LOC review threshold
@@ -116,7 +122,7 @@ stringly boundary field: pub action: String,
 
 ## warning SIZE001 — `crates/arcweft-cli/src/app/agent/script.rs`
 
-1879 physical LOC exceeds the 1200 LOC review threshold
+1884 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -290,7 +296,7 @@ facade file has 2153 physical LOC; target is below 250 LOC
 
 ## warning SIZE001 — `crates/arcweft-lang-sema/src/checker/module.rs`
 
-1227 physical LOC exceeds the 1200 LOC review threshold
+1270 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -381,6 +387,12 @@ large production file contains an embedded #[cfg(test)] module
 ## warning SIZE001 — `crates/arcweft-runtime-accelerator/src/compile.rs`
 
 1529 physical LOC exceeds the 1200 LOC review threshold
+
+**Fix:** review responsibility boundaries before adding more code
+
+## warning SIZE001 — `crates/arcweft-runtime-accelerator/src/external.rs`
+
+1254 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 

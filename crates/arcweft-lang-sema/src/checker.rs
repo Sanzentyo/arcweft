@@ -481,12 +481,12 @@ impl TypeChecker<'_> {
 }
 
 fn available_effect_set(env: &TypeCheckEnv) -> Option<EffectSet> {
-    let effects = env
-        .capabilities
-        .iter()
-        .filter_map(|capability| EffectId::parse(capability.as_str()).ok())
-        .collect::<EffectSet>();
-    (!effects.is_empty()).then_some(effects)
+    env.available_effects().map(|available| {
+        available
+            .iter()
+            .filter_map(|capability| EffectId::parse(capability.as_str()).ok())
+            .collect::<EffectSet>()
+    })
 }
 
 fn function_signature_type(signature: &FnSignature) -> FunctionSignature {

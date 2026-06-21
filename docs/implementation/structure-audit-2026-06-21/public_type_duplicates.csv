@@ -110,7 +110,7 @@ _name,type,crates/arcweft-agent-protocol/src/proxy.rs,27,3
 _name,type,crates/arcweft-render-text/src/rich_effects.rs,305,3
 _name,struct,crates/arcweft-render-text/src/rich_effects.rs,321,3
 _name,type,crates/arcweft-runtime-plan/src/render_text/defaults.rs,47,3
-check_report,type,crates/arcweft-cli/src/app/project.rs,361,2
+check_report,type,crates/arcweft-cli/src/app/project.rs,365,2
 check_report,type,crates/arcweft-cli/src/app/runtime/profile.rs,23,2
 check_report,type,crates/arcweft-compiler/src/types.rs,15,2
 check_report,type,crates/arcweft-compiler/src/types.rs,29,2

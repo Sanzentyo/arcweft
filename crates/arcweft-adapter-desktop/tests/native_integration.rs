@@ -1,7 +1,9 @@
 use arcweft_core::task::{
     CancelScopeId, HostTaskRequest, TaskClass, TaskId, TaskKey, TaskPolicy, TaskPriority, TaskSpec,
 };
-use arcweft_desktop_contract::{DesktopFeature, DesktopResponse, PlatformKind, SupportLevel};
+#[cfg(target_os = "windows")]
+use arcweft_desktop_contract::PlatformKind;
+use arcweft_desktop_contract::{DesktopFeature, DesktopResponse, SupportLevel};
 use arcweft_host_adapter::{HostAdapterRegistry, HostTaskSubmission};
 
 #[test]

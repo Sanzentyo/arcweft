@@ -8,7 +8,6 @@ repository.workspace = true
 
 [dependencies]
 arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
-arcweft-codec-yaml = { workspace = true }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-data = { workspace = true }
 arcweft-render-text = { path = "../arcweft-render-text" }
@@ -20,6 +19,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 toml.workspace = true
+yaml-rust2.workspace = true
 
 [lints]
 workspace = true

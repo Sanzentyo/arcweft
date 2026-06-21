@@ -226,39 +226,14 @@ fn validate_contracts(
                 effect.and_then(|effect| trace_for(program, summaries, id, effect)),
             ));
         } else if let Some(declared) = summary.declared() {
-            let missing = inferred.difference(declared);
-            for effect in &missing {
-                let missing_one = std::iter::once(effect.clone()).collect();
-                diagnostics.push(EffectDiagnostic::new(
-                    EffectDiagnosticCode::MissingDeclaration,
-                    EffectSeverity::Error,
-                    id.clone(),
-                    format!(
-                        "callable `{id}` infers effect `{effect}`, but declares only {declared}"
-                    ),
-                    EffectDiagnosticKind::MissingDeclaration {
-                        missing: missing_one,
-                        declared: declared.clone(),
-                    },
-                    trace_for(program, summaries, id, effect),
-                ));
-            }
-
-            let unused = declared.difference(inferred);
-            if !unused.is_empty() {
-                diagnostics.push(EffectDiagnostic::new(
-                    EffectDiagnosticCode::OverdeclaredEffect,
-                    if program.strict_overdeclaration() {
-                        EffectSeverity::Error
-                    } else {
-                        EffectSeverity::Warning
-                    },
-                    id.clone(),
-                    format!("callable `{id}` declares unused effects {unused}"),
-                    EffectDiagnosticKind::OverdeclaredEffect { unused },
-                    None,
-                ));
-            }
+            push_declared_effect_diagnostics(
+                program,
+                summaries,
+                id,
+                inferred,
+                declared,
+                &mut diagnostics,
+            );
         } else if facts.contract().requires_explicit_nonempty() && !inferred.is_empty() {
             let effect = first_effect(inferred);
             diagnostics.push(EffectDiagnostic::new(
@@ -275,41 +250,126 @@ fn validate_contracts(
             ));
         }
 
-        let forbidden = inferred.intersection(summary.forbidden());
-        for effect in &forbidden {
-            let forbidden_one = std::iter::once(effect.clone()).collect();
-            diagnostics.push(EffectDiagnostic::new(
-                EffectDiagnosticCode::ForbiddenEffect,
-                EffectSeverity::Error,
-                id.clone(),
-                format!("callable `{id}` forbids effect `{effect}`, but it is reachable"),
-                EffectDiagnosticKind::ForbiddenEffect {
-                    forbidden: forbidden_one,
-                },
-                trace_for(program, summaries, id, effect),
-            ));
-        }
+        push_forbidden_effect_diagnostics(
+            program,
+            summaries,
+            id,
+            inferred,
+            summary,
+            &mut diagnostics,
+        );
 
         if let Some(available) = program.available_capabilities() {
-            let unavailable = inferred.difference(available);
-            if !unavailable.is_empty() {
-                let effect = first_effect(&unavailable).cloned();
-                diagnostics.push(EffectDiagnostic::new(
-                    EffectDiagnosticCode::CapabilityUnavailable,
-                    EffectSeverity::Error,
-                    id.clone(),
-                    format!(
-                        "target environment cannot provide effects {unavailable} required by `{id}`"
-                    ),
-                    EffectDiagnosticKind::CapabilityUnavailable { unavailable },
-                    effect
-                        .as_ref()
-                        .and_then(|effect| trace_for(program, summaries, id, effect)),
-                ));
-            }
+            push_capability_availability_diagnostic(
+                program,
+                summaries,
+                id,
+                inferred,
+                available,
+                &mut diagnostics,
+            );
         }
     }
     diagnostics
+}
+
+fn push_declared_effect_diagnostics(
+    program: &EffectProgram,
+    summaries: &BTreeMap<CallableId, EffectSummary>,
+    id: &CallableId,
+    inferred: &EffectSet,
+    declared: &EffectSet,
+    diagnostics: &mut Vec<EffectDiagnostic>,
+) {
+    let missing = inferred.effects_not_covered_by(declared);
+    for effect in &missing {
+        let missing_one = std::iter::once(effect.clone()).collect();
+        diagnostics.push(EffectDiagnostic::new(
+            EffectDiagnosticCode::MissingDeclaration,
+            EffectSeverity::Error,
+            id.clone(),
+            format!("callable `{id}` infers effect `{effect}`, but declares only {declared}"),
+            EffectDiagnosticKind::MissingDeclaration {
+                missing: missing_one,
+                declared: declared.clone(),
+            },
+            trace_for(program, summaries, id, effect),
+        ));
+    }
+
+    let unused = declared.effects_not_covered_by(inferred);
+    if !unused.is_empty() {
+        diagnostics.push(EffectDiagnostic::new(
+            EffectDiagnosticCode::OverdeclaredEffect,
+            if program.strict_overdeclaration() {
+                EffectSeverity::Error
+            } else {
+                EffectSeverity::Warning
+            },
+            id.clone(),
+            format!("callable `{id}` declares unused effects {unused}"),
+            EffectDiagnosticKind::OverdeclaredEffect { unused },
+            None,
+        ));
+    }
+}
+
+fn push_forbidden_effect_diagnostics(
+    program: &EffectProgram,
+    summaries: &BTreeMap<CallableId, EffectSummary>,
+    id: &CallableId,
+    inferred: &EffectSet,
+    summary: &EffectSummary,
+    diagnostics: &mut Vec<EffectDiagnostic>,
+) {
+    let forbidden = inferred
+        .iter()
+        .filter(|effect| {
+            summary
+                .forbidden()
+                .iter()
+                .any(|forbidden| forbidden.covers(effect))
+        })
+        .cloned()
+        .collect::<EffectSet>();
+    for effect in &forbidden {
+        let forbidden_one = std::iter::once(effect.clone()).collect();
+        diagnostics.push(EffectDiagnostic::new(
+            EffectDiagnosticCode::ForbiddenEffect,
+            EffectSeverity::Error,
+            id.clone(),
+            format!("callable `{id}` forbids effect `{effect}`, but it is reachable"),
+            EffectDiagnosticKind::ForbiddenEffect {
+                forbidden: forbidden_one,
+            },
+            trace_for(program, summaries, id, effect),
+        ));
+    }
+}
+
+fn push_capability_availability_diagnostic(
+    program: &EffectProgram,
+    summaries: &BTreeMap<CallableId, EffectSummary>,
+    id: &CallableId,
+    inferred: &EffectSet,
+    available: &EffectSet,
+    diagnostics: &mut Vec<EffectDiagnostic>,
+) {
+    let unavailable = inferred.effects_not_covered_by(available);
+    if unavailable.is_empty() {
+        return;
+    }
+    let effect = first_effect(&unavailable).cloned();
+    diagnostics.push(EffectDiagnostic::new(
+        EffectDiagnosticCode::CapabilityUnavailable,
+        EffectSeverity::Error,
+        id.clone(),
+        format!("target environment cannot provide effects {unavailable} required by `{id}`"),
+        EffectDiagnosticKind::CapabilityUnavailable { unavailable },
+        effect
+            .as_ref()
+            .and_then(|effect| trace_for(program, summaries, id, effect)),
+    ));
 }
 
 fn trace_for(

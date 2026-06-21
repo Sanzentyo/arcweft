@@ -244,7 +244,11 @@ pub(in crate::app) fn typecheck_env_for_selection(
             manifest = manifest.with_rust_manifest(&rust_manifest);
         }
     }
-    let env = manifest.apply_to_env(TypeCheckEnv::standard());
+    let env = if adapter_override.is_some() || selection.profile().is_some() {
+        manifest.apply_to_target_env(TypeCheckEnv::standard())
+    } else {
+        manifest.apply_to_env(TypeCheckEnv::standard())
+    };
     Ok(arcweft_adapter_desktop::standard_desktop_manifests()
         .into_iter()
         .fold(env, |env, manifest| manifest.apply_to_env(env)))

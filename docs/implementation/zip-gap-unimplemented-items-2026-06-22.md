@@ -7,7 +7,8 @@ It is the readable companion to
 strict requirement ledger.
 
 Implementation baseline used for this inventory:
-`b64be3ec Add zip gap platform validation workflow`.
+`fa7a89e2 Document current ZIP gap unfinished items`, plus the current
+uncommitted checkout while the ZIP gap fixes are being validated.
 
 This document is the concrete "what is still not implemented" answer for the
 ZIP gap goal as of that baseline.
@@ -17,7 +18,7 @@ Current conclusion:
 - **Open source-behavior implementation items: none currently identified.**
 - **Partial implementation items: none currently identified.**
 - **Verification debt that still blocks goal completion: one item,
-  `ZG-A-004 / T-009 / A-21`, Linux/macOS platform validation evidence.**
+  `ZG-A-004 / T-009 / A-21`, platform matrix validation evidence.**
 
 Everything else from the ZIP is either recorded as resolved in
 `zip-gap-open-items-2026-06-21.md`, or is a related validation follow-up that
@@ -38,9 +39,164 @@ depends on one of the items above.
 
 | Area | Item | Status | Missing thing that blocks completion |
 | --- | --- | --- | --- |
-| Data codecs | ZIP data shape/budget implementation items | Resolved implementation evidence | No current source-behavior gap is identified for JSON/TOML/YAML/MsgPack/CBOR/CSV/Arrow IPC/Parquet/Avro/Arcweft Binary in the ZIP scope |
+| Effect/CLI | ZG-E-001 typed target-effect availability integration | Resolved implementation evidence | No current source-behavior gap is identified; target availability is separate from checker capabilities and CLI fixtures pass |
+| Runtime data adapter | ZG-R-001 explicit-shape runtime `data.decode` for shape-required formats | Resolved implementation evidence | No current source-behavior gap is identified for explicit `TypeShape` runtime decode of shape-required non-Avro formats |
+| Data codecs | ZIP data shape/budget implementation items | Resolved implementation evidence | No current core codec behavior gap is identified for JSON/TOML/YAML/MsgPack/CBOR/CSV/Arrow IPC/Parquet/Avro/Arcweft Binary in the ZIP scope |
 | Agent/CLI | Remote REPL binding policy, stdio MCP hardening, `.awfagent` formatter routing | Resolved implementation evidence | No current source-behavior gap is identified; platform validation evidence remains separate |
 | Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外での remote REPL / stdio MCP / data codec focused gates と workspace gates の記録 |
+
+## ZG-E-001: Typed Target-Effect Availability Integration
+
+Status: **Resolved implementation evidence**.
+
+What was missing:
+
+- CLI `check` and `run` need a typed target-environment model that can state
+  which effects are available for the selected adapter/profile.
+- That model must cover source-declared `extern capability` effects such as
+  `fs.read(save)` and standard runtime/CLI effects such as `stdio.write`,
+  `process.exit`, and `control.suspend`.
+- Scoped effect coverage must remain structural. For example, `fs.read(save)`
+  can cover the same path with an unscoped inferred `fs.read` where the current
+  checker intentionally treats scoped and unscoped same-path effects as a
+  bound relationship, but `fs.read(save)` must not silently cover
+  `fs.read(asset)`.
+- The fix must not be a broad legacy fallback such as "allow every effect
+  whenever a CLI fixture is running". It needs to use the same typed capability
+  and adapter manifest concepts that other adapters can consume.
+
+Resolved behavior:
+
+- `TypeCheckEnv` now separates checker capabilities from target effect
+  availability.
+- Adapter manifests can apply their surface independently from marking their
+  effects as target-provided.
+- CLI direct source checks no longer accidentally turn desktop helper manifests
+  into a partial target availability set.
+- Entry-target flows are boundary callables for effect analysis, so extern
+  capability calls still require explicit source `effects { ... }`
+  declarations instead of being hidden by absent target availability.
+- Scoped availability remains structural: focused sema tests cover same-scope
+  coverage and different-scope rejection.
+
+Previous failure evidence:
+
+```bash
+cargo run -p arcweft-cli --quiet -- check tests\fixtures\arcw\spec_should_pass\check\010_capability_fs_read.arcw
+```
+
+Result:
+
+```text
+warning[AWF0101 style::redundant_decl_identity]: `flow @flow.main main` repeats the same declaration identity twice
+error: target environment cannot provide effects {fs.read} required by `flow.main`
+```
+
+```bash
+cargo run -p arcweft-cli --quiet -- run tests\fixtures\arcw\spec_should_pass\run\001_cli_stdout_entry.arcw
+```
+
+Result:
+
+```text
+warning[AWF0101 style::redundant_decl_identity]: `flow @flow.main main` repeats the same declaration identity twice
+error: target environment cannot provide effects {process.exit, stdio.write} required by `flow.main`
+```
+
+```bash
+cargo run -p arcweft-cli --quiet -- check tests\fixtures\arcw\current_pass\check\013_task_fn_await_shape.arcw
+```
+
+Result:
+
+```text
+warning[AWF0101 style::redundant_decl_identity]: `flow @flow.main main` repeats the same declaration identity twice
+error: target environment cannot provide effects {control.suspend} required by `fn.load_opening_assets`
+```
+
+Fixture-level failure:
+
+```bash
+cargo test -p arcweft-cli --test arcw_fixtures_check_run --quiet
+```
+
+Result: 3 failures, covering the three commands above.
+
+Current validation evidence:
+
+```bash
+cargo test -p arcweft-lang-sema entry_target_flow_requires_explicit_effects_for_extern_capability_calls -- --nocapture
+cargo test -p arcweft-lang-sema target_effect_availability -- --nocapture
+cargo test -p arcweft-cli --test arcw_fixtures_check_run --quiet
+```
+
+Result: all passed on Windows in this checkout.
+
+Why this is not just validation debt:
+
+The commands fail in the current checkout. That means the source cannot yet
+prove the effect-system target-environment behavior through the CLI entry
+points that ZIP validation uses. The sema-level scoped effect coverage exists,
+but the CLI adapter/profile environment does not yet expose the right typed
+availability set.
+
+Completion evidence:
+
+- The three commands above now pass through the CLI fixture test.
+- `cargo test -p arcweft-cli --test arcw_fixtures_check_run --quiet` passes.
+- Focused sema tests prove a scoped capability does not grant a
+  different scope by accident.
+- The implementation separates source declarations, checker capabilities, and
+  adapter target availability in typed APIs.
+
+## ZG-R-001: Runtime `data.decode` Needs Explicit Shapes for Shape-Required Formats
+
+Status: **Resolved implementation evidence**.
+
+What was missing:
+
+- Runtime external `data.decode` had no typed API path that carries an
+  explicit `TypeShape` argument for shape-required formats.
+- The old dynamic fallback based on `TypeShape::Named("DataValue")` was removed
+  because it was a legacy fallback and did not represent the real codec
+  contract.
+- JSON and Avro can still be decoded dynamically by the runtime helper.
+- CSV, Arrow IPC, Parquet, Arcweft Binary, and other shape-required codecs
+  rejected dynamic runtime decode until the runtime call surface could pass an
+  explicit shape.
+
+Resolved behavior:
+
+- `data.decode(bytes, format)` remains available for dynamic JSON and the
+  current dynamic Avro envelope.
+- `data.decode(bytes, format, shape)` now accepts a runtime `DataShape` value
+  and converts it to `TypeShape`.
+- JSON, TOML, YAML, MessagePack, CBOR, CSV, Arrow IPC, Parquet, and Arcweft
+  Binary use the explicit shape path through their core codec `decode_value`
+  implementations.
+- Dynamic decode for shape-required formats still rejects missing shape with a
+  structured unsupported error.
+- Avro's schema-bound codec remains intentionally outside this `TypeShape`-only
+  runtime path; the existing dynamic Avro envelope is still covered.
+
+Why this is not a core codec gap:
+
+The core codecs already have shape-driven encode/decode behavior and focused
+tests. The missing piece is the runtime external-call surface that should carry
+the same typed shape information instead of relying on a fake dynamic
+`DataValue` name.
+
+Completion evidence:
+
+- Runtime data external calls expose a typed shape-bearing decode request as
+  the third `data.decode` argument.
+- Shape-required non-Avro formats decode through the same explicit `TypeShape`
+  path used by the core codecs.
+- `cargo test -p arcweft-runtime-accelerator data_external_call_ -- --nocapture`
+  passes and covers successful explicit-shape runtime decode plus missing-shape
+  rejection.
+- `cargo test -p arcweft-lang-sema typechecks_data_codec_builtins_with_format_enum -- --nocapture`
+  passes and covers the 3-argument source signature.
 
 ## ZG-A-004: Linux/macOS Validation
 
@@ -70,10 +226,23 @@ lifecycle、path handling、stdio framing も対象にしているため、Windo
 Current action:
 
 - `.github/workflows/zip-gap-platform-validation.yml` was added at
-  `b64be3ec` to collect Linux/macOS/Windows CI evidence for this item.
-- GitHub Actions run `27915654960` is currently in progress for that workflow.
+  `b64be3ec` to collect Linux/macOS/Windows CI evidence for this item, and has
+  local uncommitted fixes for Linux native package setup.
+- GitHub Actions run `27915737840` for `fa7a89e2` is the current external
+  evidence run.
   The run URL is
-  `https://github.com/Sanzentyo/arcweft/actions/runs/27915654960`.
+  `https://github.com/Sanzentyo/arcweft/actions/runs/27915737840`.
+- In that run, macOS passed formatting, remote REPL/stdio MCP focused gates,
+  data codec focused gates, and workspace clippy, then failed workspace fast
+  tests on the bundle YAML named-shape issue. That issue has a local
+  uncommitted fix.
+- In that run, Ubuntu passed formatting, remote REPL/stdio MCP focused gates,
+  and data codec focused gates, then failed workspace clippy because EGL
+  development packages were missing. The workflow has a local uncommitted
+  Linux dependency-install fix.
+- Windows passed formatting, focused gates, and workspace clippy in that run;
+  its workspace fast-test step was still in progress when this inventory was
+  recorded.
 
 必要なテスト・証跡:
 
@@ -156,12 +325,13 @@ Existing implementation/evidence:
 
 - なし。JSON/TOML/YAML/MsgPack/CBOR/CSV/Arrow IPC/Parquet/Avro/Arcweft
   Binary の ZIP 対象 budget/shape items は current source と focused tests で
-  resolved として記録済み。
+  resolved として記録済み。runtime `data.decode` の explicit-shape API は
+  `ZG-R-001` の adapter/API integration gap として別に扱う。
 
 なぜ完了扱いにできないか:
 
 data behavior は current implementation evidence で完了扱いにできる。ZIP goal
-全体は、Linux/macOS validation evidence がまだ記録完了していないため完了扱いに
+全体は、platform matrix validation evidence がまだ記録完了していないため完了扱いに
 しない。
 
 ## Already Covered Slices
@@ -248,6 +418,40 @@ some of them leave related items open:
   tagged newtype variants, and invalid repr discriminants.
 - JSON, TOML, YAML, MsgPack, and CBOR have moved away from the earlier broad
   JSON bridge for the covered raw-shape paths.
+
+## Current Local Validation Cut
+
+Revision basis: working tree after `fa7a89e2`, before the next push.
+
+Passed on Windows in this checkout:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features
+cargo test --workspace --lib --tests --exclude arcweft-cli --quiet
+cargo test -p arcweft-cli --lib --bins --quiet
+cargo test -p arcweft-cli --test regression_harness --quiet
+cargo test -p arcweft-cli --test arcw_fixtures_check_run --quiet
+just test-workspace
+cargo test -p arcweft-cli agent_repl_stdio_connect_reports_project_hash_binding_policy --all-features -- --nocapture
+cargo test -p arcweft-cli stdio_transport_ --all-features -- --nocapture
+cargo test -p arcweft-codec-arrow --all-features
+cargo test -p arcweft-codec-avro --all-features
+cargo test -p arcweft-bundle --all-features
+cargo test -p arcweft-runtime-accelerator data_external_call_ -- --nocapture
+cargo +nightly -Zscript tools\arcweft-structure-audit.rs --root . --write docs\implementation\structure-audit-2026-06-21
+```
+
+Structural audit result:
+
+```text
+files scanned: 1186
+Rust files: 654
+Rust physical LOC: 334923
+package manifests: 71
+violations: 0 error(s), 85 warning(s)
+reports written to docs\implementation\structure-audit-2026-06-21
+```
 
 ## Completion Rule
 

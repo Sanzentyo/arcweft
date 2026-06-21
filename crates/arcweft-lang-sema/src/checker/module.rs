@@ -344,6 +344,7 @@ impl TypeChecker<'_> {
     }
 
     fn register_effect_callables(&mut self, module: &HirModule) {
+        let entry_flow_names = entry_target_flow_names(module);
         for agent in module.agents() {
             let item = agent.item();
             let contract = effect_contract_from_contracts(
@@ -363,10 +364,11 @@ impl TypeChecker<'_> {
         }
         for flow in module.flows() {
             if let Some(name) = flow.name() {
+                let entry_boundary = entry_flow_names.contains(name);
                 let contract = effect_contract_from_contracts(
                     flow.contracts(),
                     flow.has_attribute("pure"),
-                    false,
+                    entry_boundary,
                     &mut self.errors,
                 );
                 self.register_effect_callable(
@@ -376,7 +378,11 @@ impl TypeChecker<'_> {
                         FlowKind::Flow => CallableKind::Flow,
                         FlowKind::Fragment => CallableKind::Fragment,
                     },
-                    EffectVisibility::Private,
+                    if entry_boundary {
+                        EffectVisibility::Boundary
+                    } else {
+                        EffectVisibility::Private
+                    },
                     contract,
                 );
             }
@@ -1124,6 +1130,43 @@ fn route_path_params(path: &str) -> HashSet<String> {
         .filter(|name| !name.is_empty())
         .map(ToOwned::to_owned)
         .collect()
+}
+
+fn entry_target_flow_names(module: &HirModule) -> HashSet<String> {
+    let targets = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| match declaration {
+            HirTopLevelDecl::Entry(entry) => Some(entry.items()),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(entry_item_flow_target)
+        .map(|target| target.body().to_owned())
+        .collect::<HashSet<_>>();
+
+    module
+        .flows()
+        .iter()
+        .filter_map(|flow| {
+            let name = flow.name()?;
+            let matched = flow.id().is_some_and(|id| targets.contains(id.body()))
+                || targets
+                    .iter()
+                    .filter_map(|target| target.rsplit_once('.').map(|(_, suffix)| suffix))
+                    .any(|suffix| suffix == name);
+            matched.then_some(name.to_owned())
+        })
+        .collect()
+}
+
+fn entry_item_flow_target(item: &EntryItem) -> Option<&arcweft_lang_syntax::ast::ids::EntityRef> {
+    match item {
+        EntryItem::Start(target) | EntryItem::Run(target) | EntryItem::Route { target, .. } => {
+            Some(target)
+        }
+        EntryItem::Option { .. } | EntryItem::Raw(_) => None,
+    }
 }
 
 fn function_callable_id(name: &str) -> CallableId {
