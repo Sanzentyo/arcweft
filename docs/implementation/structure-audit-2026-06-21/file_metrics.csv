@@ -346,7 +346,8 @@ crates/arcweft-glyphon/src/lib.rs,44663,1240,1103,production,true,false,false,tr
 crates/arcweft-host-adapter/Cargo.toml,345,15,13,text,false,false,false,false
 crates/arcweft-host-adapter/src/lib.rs,19955,583,470,production,true,false,false,true
 crates/arcweft-http-codec/Cargo.toml,321,14,12,text,false,false,false,false
-crates/arcweft-http-codec/src/lib.rs,1917,64,59,production,true,false,false,false
+crates/arcweft-http-codec/src/lib.rs,9407,312,287,production,true,false,false,false
+crates/arcweft-http-codec/tests/negotiation.rs,5406,209,180,test,true,true,false,false
 crates/arcweft-id/Cargo.toml,252,16,13,text,false,false,false,false
 crates/arcweft-id/src/lib.rs,4228,170,137,production,true,false,false,true
 crates/arcweft-image/Cargo.toml,378,21,17,text,false,false,false,false
@@ -878,8 +879,8 @@ docs/implementation/visual-sample-review-issues/2026-06-17/README.md,50907,60,57
 docs/implementation/visual-sample-review-issues/2026-06-18/README.md,7294,24,20,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-hotspot-capture-metadata.json,2420,113,113,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-param-choice-presentation-tree.json,18532,626,626,text,false,false,false,false
-docs/implementation/zip-gap-audit-2026-06-21.md,10888,165,156,text,false,false,false,false
-docs/implementation/zip-gap-open-items-2026-06-21.md,11673,239,201,text,false,false,false,false
+docs/implementation/zip-gap-audit-2026-06-21.md,11838,179,170,text,false,false,false,false
+docs/implementation/zip-gap-open-items-2026-06-21.md,11914,243,205,text,false,false,false,false
 docs/reviews/pro_review1.md,22523,670,495,text,false,false,false,false
 docs/reviews/pro_review10.md,24274,938,713,text,false,false,false,false
 docs/reviews/pro_review11.md,62235,3442,2511,text,false,false,false,false

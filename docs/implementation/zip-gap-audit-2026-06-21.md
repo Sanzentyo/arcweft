@@ -80,6 +80,13 @@ For the current requirement-by-requirement open-item ledger, see
   conversion for bools, integers, finite floats, strings, chars, options, and
   scalar byte encodings, and reject missing/unknown/duplicate columns according
   to the record policy instead of silently dropping or stringifying data.
+- Hardened `arcweft-http-codec` negotiation. Request decoding now accepts
+  parameterized `Content-Type` values only when parameters are syntactically
+  valid, rejects wildcard content types, and enforces `DecodeOptions`
+  `max_input_len` before codec decode. Response encoding now evaluates all
+  `Accept` header values with q weights, wildcard ranges, `q=0` rejection,
+  specificity, and header order, returning a concrete registered media type
+  rather than the client wildcard range.
 
 ## Remaining implementation debt
 
@@ -117,6 +124,10 @@ For the current requirement-by-requirement open-item ledger, see
   `Seq<Record>` scalar rows. Remaining tabular work includes Arrow IPC,
   Parquet, and Avro shape-guided schemas plus parser/reader-integrated budget
   enforcement.
+- HTTP negotiation now covers the T-112 `Accept` q/wildcard/q=0/content
+  parameter/body cap matrix for the codec adapter boundary. Remaining data
+  adapter policy work is mostly in config provenance, codec-registry duplicate
+  rejection, and non-CSV tabular formats.
 
 ## Validation
 
@@ -154,6 +165,9 @@ cargo clippy -p arcweft-data -p arcweft-codec-msgpack -p arcweft-codec-cbor --al
 cargo check -p arcweft-codec-csv --all-targets --all-features
 cargo test -p arcweft-codec-csv --test shape_codec
 cargo clippy -p arcweft-codec-csv --all-targets --all-features -- -D warnings
+cargo check -p arcweft-http-codec --all-targets --all-features
+cargo test -p arcweft-http-codec --test negotiation
+cargo clippy -p arcweft-http-codec --all-targets --all-features -- -D warnings
 cargo test -p arcweft-agent-mcp -p arcweft-agent-mcp-client -p arcweft-test --all-features
 cargo test -p arcweft-tooling agent_format --all-features
 cargo test -p arcweft-cli stdio_transport_roundtrips_agent_session_calls_through_fake_child --all-features

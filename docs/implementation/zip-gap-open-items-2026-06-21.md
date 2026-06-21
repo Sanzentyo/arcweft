@@ -146,21 +146,6 @@ validation evidence prove the ZIP acceptance criteria.
   unknown-field enforcement, list strategy tests, redaction/provenance tests,
   and source precedence tests.
 
-### ZG-D-007: HTTP codec negotiation and body limits are incomplete
-
-- ZIP tasks: T-112, D-23.
-- Current evidence:
-  `crates/arcweft-http-codec/src/lib.rs` strips Accept parameters, chooses the
-  first registered exact media type, does not implement q weights, wildcards,
-  `q=0`, content-type parameter policy, or a body-size cap before codec decode.
-  The crate has no tests.
-- Why this matters: HTTP clients can receive a less preferred format or a
-  format they explicitly rejected, and oversized request bodies are delegated
-  to codec parsing before adapter-level limits run.
-- Completion evidence needed: standards-aware Accept sorting, wildcard and
-  `q=0` rejection, content parameter tests, request/response body cap tests,
-  and structured negotiation errors.
-
 ### ZG-D-008: CodecRegistry allows ambiguous registrations
 
 - ZIP tasks: D-24.
@@ -222,6 +207,25 @@ validation evidence prove the ZIP acceptance criteria.
 - Remaining related work: this resolves the CSV slice only. Arrow IPC,
   Parquet, Avro, and parser/reader-integrated decode budgets remain open under
   their own items.
+
+### ZG-D-007: HTTP codec negotiation and body limits are strict
+
+- ZIP tasks: T-112, D-23.
+- Current evidence:
+  `crates/arcweft-http-codec/src/lib.rs` now exposes options-aware request and
+  response helpers, validates `Content-Type` parameters, rejects wildcard
+  content types, checks `DecodeOptions::limits.max_input_len` before codec
+  decode, and negotiates `Accept` with q weights, wildcards, `q=0`,
+  specificity, and header order.
+- Validation evidence:
+  `cargo check -p arcweft-http-codec --all-targets --all-features`,
+  `cargo test -p arcweft-http-codec --test negotiation`,
+  `cargo clippy -p arcweft-http-codec --all-targets --all-features -- -D warnings`,
+  `cargo test -p arcweft-http-codec --all-features`, and
+  `cargo clippy --workspace --all-targets --all-features` passed on Windows.
+- Remaining related work: this resolves the HTTP adapter negotiation/body-cap
+  slice. `CodecRegistry` duplicate registration policy remains open separately
+  because HTTP still trusts registry uniqueness.
 
 ## Verification Debt That Blocks Goal Completion
 
