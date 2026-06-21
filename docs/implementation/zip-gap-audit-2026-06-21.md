@@ -75,6 +75,11 @@ For the current requirement-by-requirement open-item ledger, see
   the input cap before parsing, reject trailing bytes after one top-level
   value, and reject extension/tag values explicitly instead of silently
   reshaping them.
+- Made `CsvCodec` require a top-level `Seq<Record>` shape, derive CSV columns
+  from `FieldShape` instead of observed row data, perform strict scalar cell
+  conversion for bools, integers, finite floats, strings, chars, options, and
+  scalar byte encodings, and reject missing/unknown/duplicate columns according
+  to the record policy instead of silently dropping or stringifying data.
 
 ## Remaining implementation debt
 
@@ -89,8 +94,8 @@ For the current requirement-by-requirement open-item ledger, see
   producing, but it is not yet a full lossless canonical formatter with golden
   coverage for comments/trivia and all Agent item families.
 - Data raw transcoding covers the initial shape/value bridge. Parser-integrated
-  JSON/TOML/YAML decode budgets and strict binary raw coverage remain separate
-  data-format tasks.
+  JSON/TOML/YAML/CSV decode budgets and strict binary raw coverage remain
+  separate data-format tasks.
 - The derive parser now rejects malformed attributes and covers the main
   container/field/variant grammar. Remaining derive work includes precise
   generic bounds, tuple/unit struct policy, multi-field tuple enum policy, and
@@ -108,6 +113,10 @@ For the current requirement-by-requirement open-item ledger, see
   including central enum adjacent/internal/repr raw forms. Remaining
   JSON/TOML/YAML work includes parser-integrated budget visitors and deeper
   enum payload byte-policy coverage.
+- CSV shape decoding now covers the first T-108 tabular cut for strict
+  `Seq<Record>` scalar rows. Remaining tabular work includes Arrow IPC,
+  Parquet, and Avro shape-guided schemas plus parser/reader-integrated budget
+  enforcement.
 
 ## Validation
 
@@ -142,6 +151,9 @@ cargo check -p arcweft-data -p arcweft-codec-msgpack -p arcweft-codec-cbor --all
 cargo test -p arcweft-codec-msgpack --test native_mapping
 cargo test -p arcweft-codec-cbor --test native_mapping
 cargo clippy -p arcweft-data -p arcweft-codec-msgpack -p arcweft-codec-cbor --all-targets --all-features -- -D warnings
+cargo check -p arcweft-codec-csv --all-targets --all-features
+cargo test -p arcweft-codec-csv --test shape_codec
+cargo clippy -p arcweft-codec-csv --all-targets --all-features -- -D warnings
 cargo test -p arcweft-agent-mcp -p arcweft-agent-mcp-client -p arcweft-test --all-features
 cargo test -p arcweft-tooling agent_format --all-features
 cargo test -p arcweft-cli stdio_transport_roundtrips_agent_session_calls_through_fake_child --all-features

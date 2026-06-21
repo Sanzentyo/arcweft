@@ -406,6 +406,7 @@ name = "arcweft-codec-csv"
 version = "0.1.0"
 dependencies = [
  "arcweft-data",
+ "base64",
  "csv",
 ]
 

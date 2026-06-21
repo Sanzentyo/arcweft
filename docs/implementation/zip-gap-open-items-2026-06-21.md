@@ -101,21 +101,6 @@ validation evidence prove the ZIP acceptance criteria.
 - Completion evidence needed: pass/fail trybuild fixtures for generic bounds,
   tuple/unit structs, multi-field tuple enum variants, and repr range errors.
 
-### ZG-D-003: CSV is not schema-driven
-
-- ZIP tasks: T-108, D-17.
-- Current evidence:
-  `crates/arcweft-codec-csv/src/lib.rs` ignores the `shape` parameter, derives
-  headers from the first encoded row, decodes every cell as `Value::String`,
-  and has no tests in the crate.
-- Why this matters: extra columns, missing columns, nested values, null-like
-  cells, and numeric/bool/bytes cells can be silently reshaped instead of being
-  checked against the declared schema.
-- Completion evidence needed: require `Seq<Record>` shape, derive columns from
-  `FieldShape`, reject unknown/missing columns according to `RecordPolicy`,
-  perform checked scalar conversion, reject unsupported nested shapes, and add
-  roundtrip/error tests.
-
 ### ZG-D-004: Arrow IPC and Parquet still infer schemas from values
 
 - ZIP tasks: T-108, T-109, D-18.
@@ -216,6 +201,27 @@ validation evidence prove the ZIP acceptance criteria.
 - Completion evidence needed: multi-step migration chain model/tests,
   migration schema/version checks across more than one hop, and an ADR or
   versioned contract for checksum metadata scope.
+
+## Resolved Data Items
+
+### ZG-D-003: CSV is schema-driven for scalar row data
+
+- ZIP tasks: T-108, D-17.
+- Current evidence:
+  `crates/arcweft-codec-csv/src/lib.rs` now requires a top-level
+  `Seq<Record>` shape, derives headers from `FieldShape`, performs strict
+  scalar conversion, rejects duplicate headers, rejects missing required
+  columns, and applies `RecordPolicy::deny_unknown_fields` to unknown columns
+  and encode fields.
+- Validation evidence:
+  `cargo check -p arcweft-codec-csv --all-targets --all-features` and
+  `cargo test -p arcweft-codec-csv --test shape_codec`,
+  `cargo test -p arcweft-codec-csv --all-features`, and
+  `cargo clippy -p arcweft-codec-csv --all-targets --all-features -- -D warnings`
+  passed on Windows.
+- Remaining related work: this resolves the CSV slice only. Arrow IPC,
+  Parquet, Avro, and parser/reader-integrated decode budgets remain open under
+  their own items.
 
 ## Verification Debt That Blocks Goal Completion
 

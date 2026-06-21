@@ -128,6 +128,7 @@ arcweft-codec-binary,serde_json,normal,crates/arcweft-codec-binary/Cargo.toml
 arcweft-codec-cbor,arcweft-data,normal,crates/arcweft-codec-cbor/Cargo.toml
 arcweft-codec-cbor,ciborium,normal,crates/arcweft-codec-cbor/Cargo.toml
 arcweft-codec-csv,arcweft-data,normal,crates/arcweft-codec-csv/Cargo.toml
+arcweft-codec-csv,base64,normal,crates/arcweft-codec-csv/Cargo.toml
 arcweft-codec-csv,csv,normal,crates/arcweft-codec-csv/Cargo.toml
 arcweft-codec-json,arcweft-data,normal,crates/arcweft-codec-json/Cargo.toml
 arcweft-codec-json,base64,normal,crates/arcweft-codec-json/Cargo.toml
