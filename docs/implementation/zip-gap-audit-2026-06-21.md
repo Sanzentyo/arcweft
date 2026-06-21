@@ -39,6 +39,11 @@ This note records the implementation cut for
   parse-time input, node, depth, collection length, string length, and bytes
   length checks before value allocation. Arcweft Binary now rejects duplicate
   map keys and enum payload flags other than `0` or `1`.
+- Hardened `arcweft-save` envelope decoding with explicit `SaveDecodeOptions`,
+  envelope/schema id/codec id/payload length caps, trailing-data rejection,
+  exact expected schema id checks, future-version rejection, required migration
+  for older versions, migration schema/version checks, and post-migration shape
+  validation.
 
 ## Remaining implementation debt
 
@@ -63,6 +68,10 @@ This note records the implementation cut for
   shared `DecodeBudget` API. JSON/TOML/YAML/MsgPack/CBOR and tabular codecs
   still need parser-integrated visitors/readers rather than post-parse-only
   validation.
+- Save decoding now enforces the envelope identity/version gates from the ZIP
+  guide. Remaining save work is to model explicit multi-step migration chains
+  and decide whether the checksum contract should cover canonical header
+  metadata in addition to the payload for a future envelope version.
 
 ## Validation
 
@@ -78,6 +87,9 @@ cargo test -p arcweft-data --features derive derive_attribute_ui
 cargo clippy -p arcweft-data -p arcweft-data-derive --all-targets --all-features -- -D warnings
 cargo test -p arcweft-codec-binary --test strict_decode
 cargo clippy -p arcweft-data -p arcweft-codec-binary --all-targets --all-features -- -D warnings
+cargo check -p arcweft-save --all-targets --all-features
+cargo test -p arcweft-save --test strict_decode
+cargo clippy -p arcweft-save --all-targets --all-features -- -D warnings
 cargo test -p arcweft-agent-mcp -p arcweft-agent-mcp-client -p arcweft-test --all-features
 cargo test -p arcweft-tooling agent_format --all-features
 cargo test -p arcweft-cli stdio_transport_roundtrips_agent_session_calls_through_fake_child --all-features

@@ -1,11 +1,35 @@
 #![forbid(unsafe_code)]
 
 use arcweft_data::{
-    CodecRegistry, DataError, DataErrorKind, DecodeOptions, EncodeOptions, Result, TypeShape, Value,
+    CodecRegistry, DataError, DataErrorKind, DecodeOptions, EncodeOptions, Result, TypeShape,
+    Value, encode_with_shape,
 };
 
 const MAGIC: &[u8; 8] = b"AWFS\0\0\0\x01";
-const HEADER_LEN: usize = MAGIC.len() + 4 + 4 + 4 + 32;
+const HEADER_LEN: usize = MAGIC.len() + 4 + 4 + 4 + 32 + 4;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SaveDecodeOptions {
+    pub max_envelope_bytes: u64,
+    pub max_schema_id_bytes: u32,
+    pub max_codec_id_bytes: u32,
+    pub max_payload_bytes: u64,
+    pub allow_trailing_data: bool,
+    pub codec: DecodeOptions,
+}
+
+impl Default for SaveDecodeOptions {
+    fn default() -> Self {
+        Self {
+            max_envelope_bytes: 512 * 1024 * 1024,
+            max_schema_id_bytes: 1024,
+            max_codec_id_bytes: 256,
+            max_payload_bytes: 256 * 1024 * 1024,
+            allow_trailing_data: false,
+            codec: DecodeOptions::default(),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SaveSchemaId(String);
@@ -72,12 +96,19 @@ impl SaveEnvelope {
         Ok(out)
     }
 
-    pub fn decode_bytes(input: &[u8]) -> Result<Self> {
+    pub fn decode_bytes(input: &[u8], options: &SaveDecodeOptions) -> Result<Self> {
+        if u64::try_from(input.len()).is_ok_and(|len| len > options.max_envelope_bytes) {
+            return Err(DataError::limit(format!(
+                "save envelope length {} exceeds {}",
+                input.len(),
+                options.max_envelope_bytes
+            )));
+        }
         let mut cursor = Cursor::new(input);
         cursor.expect(MAGIC)?;
-        let schema_len = cursor.u32()? as usize;
-        let codec_len = cursor.u32()? as usize;
-        let payload_len = cursor.u32()? as usize;
+        let schema_len = cursor.bounded_len("schema id", u64::from(options.max_schema_id_bytes))?;
+        let codec_len = cursor.bounded_len("codec id", u64::from(options.max_codec_id_bytes))?;
+        let payload_len = cursor.bounded_len("payload", options.max_payload_bytes)?;
         let checksum = cursor.array::<32>()?;
         let schema_version = cursor.u32()?;
         let schema_id = String::from_utf8(cursor.bytes(schema_len)?.to_vec())
@@ -91,6 +122,7 @@ impl SaveEnvelope {
                 "save payload checksum mismatch",
             ));
         }
+        cursor.finish(options.allow_trailing_data)?;
         Ok(Self {
             schema_id: SaveSchemaId::new(schema_id),
             schema_version,
@@ -125,18 +157,72 @@ pub fn encode_save(
 pub fn decode_save(
     input: &[u8],
     shape: &TypeShape,
+    expected_schema_id: &SaveSchemaId,
+    current_schema_version: u32,
     registry: &CodecRegistry,
+    options: &SaveDecodeOptions,
     migration: Option<&dyn SaveMigration>,
 ) -> Result<Value> {
-    let envelope = SaveEnvelope::decode_bytes(input)?;
-    let codec = registry.by_id(&envelope.codec_id)?;
-    let value = codec.decode_value(&envelope.payload, shape, &DecodeOptions::default())?;
-    match migration {
-        Some(migration) if envelope.schema_version != migration.current_version() => {
-            migration.migrate(envelope.schema_version, value)
-        }
-        _ => Ok(value),
+    let envelope = SaveEnvelope::decode_bytes(input, options)?;
+    if &envelope.schema_id != expected_schema_id {
+        return Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            format!(
+                "save schema id `{}` does not match expected `{}`",
+                envelope.schema_id.as_str(),
+                expected_schema_id.as_str()
+            ),
+        ));
     }
+    if envelope.schema_version > current_schema_version {
+        return Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            format!(
+                "save schema version {} is newer than supported {}",
+                envelope.schema_version, current_schema_version
+            ),
+        ));
+    }
+    let codec = registry.by_id(&envelope.codec_id)?;
+    let value = codec.decode_value(&envelope.payload, shape, &options.codec)?;
+    let value = match envelope.schema_version.cmp(&current_schema_version) {
+        std::cmp::Ordering::Equal => value,
+        std::cmp::Ordering::Less => {
+            let Some(migration) = migration else {
+                return Err(DataError::new(
+                    DataErrorKind::InvalidEncoding,
+                    format!(
+                        "save schema version {} requires migration to {}",
+                        envelope.schema_version, current_schema_version
+                    ),
+                ));
+            };
+            if migration.schema_id() != expected_schema_id {
+                return Err(DataError::new(
+                    DataErrorKind::InvalidEncoding,
+                    format!(
+                        "save migration schema id `{}` does not match expected `{}`",
+                        migration.schema_id().as_str(),
+                        expected_schema_id.as_str()
+                    ),
+                ));
+            }
+            if migration.current_version() != current_schema_version {
+                return Err(DataError::new(
+                    DataErrorKind::InvalidEncoding,
+                    format!(
+                        "save migration current version {} does not match expected {}",
+                        migration.current_version(),
+                        current_schema_version
+                    ),
+                ));
+            }
+            migration.migrate(envelope.schema_version, value)?
+        }
+        std::cmp::Ordering::Greater => unreachable!("future version rejected before decode"),
+    };
+    encode_with_shape(&value, shape)?;
+    Ok(value)
 }
 
 struct Cursor<'a> {
@@ -165,6 +251,21 @@ impl<'a> Cursor<'a> {
         Ok(u32::from_le_bytes(self.array()?))
     }
 
+    fn bounded_len(&mut self, label: &str, max: u64) -> Result<usize> {
+        let len = u64::from(self.u32()?);
+        if len > max {
+            return Err(DataError::limit(format!(
+                "save {label} length {len} exceeds {max}"
+            )));
+        }
+        usize::try_from(len).map_err(|_| {
+            DataError::new(
+                DataErrorKind::NumberOutOfRange,
+                format!("save {label} length does not fit usize"),
+            )
+        })
+    }
+
     fn array<const N: usize>(&mut self) -> Result<[u8; N]> {
         let bytes = self.bytes(N)?;
         let mut out = [0; N];
@@ -186,5 +287,16 @@ impl<'a> Cursor<'a> {
         let bytes = &self.input[self.offset..end];
         self.offset = end;
         Ok(bytes)
+    }
+
+    fn finish(&self, allow_trailing_data: bool) -> Result<()> {
+        if allow_trailing_data || self.offset == self.input.len() {
+            Ok(())
+        } else {
+            Err(DataError::new(
+                DataErrorKind::TrailingData,
+                "save envelope has trailing data",
+            ))
+        }
     }
 }
