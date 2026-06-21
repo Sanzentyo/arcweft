@@ -172,8 +172,9 @@ For the current requirement-by-requirement open-item ledger, see
   enum payload byte-policy coverage.
 - CSV, Arrow IPC, Parquet, and Avro now cover strict shape-guided rows or datum
   streams, including the scalar numeric edge matrix and Avro payload enum
-  fidelity. Remaining tabular/data-format work is parser/reader-integrated
-  budget enforcement.
+  fidelity. CSV also consumes row/string/byte budgets during reader iteration.
+  Remaining tabular/data-format work is strict pre-materialization budget
+  enforcement for parser-owned row/column/datum allocation.
 - HTTP negotiation now covers the T-112 `Accept` q/wildcard/q=0/content
   parameter/body cap matrix for the codec adapter boundary. Remaining data
   adapter policy work is now concentrated in parser/reader-integrated budgets.

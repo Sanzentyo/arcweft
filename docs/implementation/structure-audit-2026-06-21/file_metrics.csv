@@ -182,8 +182,8 @@ crates/arcweft-codec-cbor/Cargo.toml,359,16,14,text,false,false,false,false
 crates/arcweft-codec-cbor/src/lib.rs,9139,279,262,production,true,false,false,false
 crates/arcweft-codec-cbor/tests/native_mapping.rs,4760,154,138,test,true,true,false,false
 crates/arcweft-codec-csv/Cargo.toml,322,15,13,text,false,false,false,false
-crates/arcweft-codec-csv/src/lib.rs,18975,561,532,production,true,false,false,false
-crates/arcweft-codec-csv/tests/shape_codec.rs,5746,174,157,test,true,true,false,false
+crates/arcweft-codec-csv/src/lib.rs,19985,594,563,production,true,false,false,false
+crates/arcweft-codec-csv/tests/shape_codec.rs,7291,231,208,test,true,true,false,false
 crates/arcweft-codec-json/Cargo.toml,327,15,13,text,false,false,false,false
 crates/arcweft-codec-json/src/lib.rs,23667,636,604,production,true,false,false,false
 crates/arcweft-codec-json/tests/shape_codec.rs,5291,174,159,test,true,true,false,false
@@ -261,7 +261,7 @@ crates/arcweft-data/src/decode.rs,6311,190,174,production,true,false,false,false
 crates/arcweft-data/src/encode.rs,4877,220,189,production,true,false,false,false
 crates/arcweft-data/src/error.rs,4983,195,163,production,true,false,false,false
 crates/arcweft-data/src/lib.rs,1123,36,27,production,true,false,false,false
-crates/arcweft-data/src/limits.rs,6923,212,195,production,true,false,false,false
+crates/arcweft-data/src/limits.rs,7013,216,198,production,true,false,false,false
 crates/arcweft-data/src/raw.rs,29492,811,781,production,true,false,false,false
 crates/arcweft-data/src/shape.rs,9812,385,347,production,true,false,false,false
 crates/arcweft-data/src/value.rs,3640,148,127,production,true,false,false,false
@@ -894,9 +894,9 @@ docs/implementation/visual-sample-review-issues/2026-06-17/README.md,50907,60,57
 docs/implementation/visual-sample-review-issues/2026-06-18/README.md,7294,24,20,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-hotspot-capture-metadata.json,2420,113,113,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-param-choice-presentation-tree.json,18532,626,626,text,false,false,false,false
-docs/implementation/zip-gap-audit-2026-06-21.md,17360,256,247,text,false,false,false,false
-docs/implementation/zip-gap-open-items-2026-06-21.md,17766,336,296,text,false,false,false,false
-docs/implementation/zip-gap-unimplemented-items-2026-06-22.md,8739,168,134,text,false,false,false,false
+docs/implementation/zip-gap-audit-2026-06-21.md,17476,257,248,text,false,false,false,false
+docs/implementation/zip-gap-open-items-2026-06-21.md,17895,338,298,text,false,false,false,false
+docs/implementation/zip-gap-unimplemented-items-2026-06-22.md,9140,173,139,text,false,false,false,false
 docs/reviews/pro_review1.md,22523,670,495,text,false,false,false,false
 docs/reviews/pro_review10.md,24274,938,713,text,false,false,false,false
 docs/reviews/pro_review11.md,62235,3442,2511,text,false,false,false,false

@@ -81,8 +81,10 @@ Existing implementation:
 
 - JSON/TOML/YAML は format-native document/value を作った後に Arcweft raw shape
   validation へ進むため、深い nesting や巨大 node count を parse 中に止めない。
-- CSV は input cap と shape-driven row policy はあるが、reader iteration 中の
-  row/field/string/byte budget を Arcweft budget として統合していない。
+- CSV は reader iteration 中に row count、record field count、string length、
+  decoded byte length を `DecodeBudget` へ消費するようになった。ただし、strict
+  pre-allocation の観点では `csv` crate が返す `StringRecord` materialization
+  より前の per-field cap はまだ codec-owned parser として証明できていない。
 - Arrow IPC / Parquet は input cap と shape-driven schema validation はあるが、
   reader が column/row data を materialize する前の Arcweft budget 連携がない。
 - Avro は input cap と schema/value validation はあるが、Avro datum stream を
@@ -117,7 +119,10 @@ Existing implementation:
 The following slices should not be counted as currently unimplemented, though
 some of them leave related items open:
 
-- CSV is schema-driven for scalar `Seq<Record>` rows.
+- CSV is schema-driven for scalar `Seq<Record>` rows and now consumes
+  `DecodeBudget` during reader iteration for row count, record field count,
+  string cells, and hex/base64 byte cells. Strict pre-`StringRecord`
+  materialization remains tracked under ZG-D-001.
 - HTTP codec negotiation rejects ambiguous content and enforces body caps at
   the adapter boundary.
 - `CodecRegistry` rejects duplicate ids, media types, extensions, and aliases.

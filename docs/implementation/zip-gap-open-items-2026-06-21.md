@@ -124,9 +124,11 @@ For a concise explanation of the concrete unfinished items, see
 - Current evidence:
   `arcweft-data::DecodeBudget` exists, and Arcweft Binary uses budget checks
   during parsing. MsgPack and CBOR now parse directly into budgeted raw values
-  through low-level readers. JSON, TOML, YAML, CSV, Arrow, Parquet, and Avro
-  still materialize format-native values before final `DecodeLimits::validate`
-  or equivalent shape validation.
+  through low-level readers. CSV now consumes row/string/byte budget during
+  reader iteration, but strict pre-`StringRecord` field allocation remains
+  unproven. JSON, TOML, YAML, Arrow, Parquet, and Avro still materialize
+  format-native values before final `DecodeLimits::validate` or equivalent
+  shape validation.
 - Why this matters: hostile inputs can allocate large intermediate documents
   before Arcweft limits run.
 - Completion evidence needed: parser-integrated visitors/readers or equivalent

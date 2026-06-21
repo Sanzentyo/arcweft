@@ -9,7 +9,10 @@ use arcweft_data::{
     Bytes, BytesFormat, Codec, DataError, DataErrorKind, DecodeBudget, DecodeOptions,
     EncodeOptions, FieldShape, FormatId, Number, RecordPolicy, Result, TypeShape, Value,
 };
-use base64::prelude::{BASE64_STANDARD, Engine as _};
+use base64::{
+    decoded_len_estimate,
+    prelude::{BASE64_STANDARD, Engine as _},
+};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CsvCodec;
@@ -65,10 +68,12 @@ impl Codec for CsvCodec {
             .collect::<Vec<_>>();
         validate_headers(&headers, row_shape)?;
         let row_indexes = row_indexes(&headers, row_shape.fields);
+        budget.enter_node()?;
         let rows = reader
             .records()
             .enumerate()
             .map(|(row_index, record)| {
+                budget.sequence_item(row_index.saturating_add(1))?;
                 let record = record.map_err(|error| {
                     DataError::new(DataErrorKind::InvalidEncoding, error.to_string())
                         .at_index(row_index)
@@ -82,7 +87,7 @@ impl Codec for CsvCodec {
                 )
             })
             .collect::<Result<Vec<_>>>()?;
-        budget.sequence_len(rows.len())?;
+        budget.exit_node();
         let value = Value::Seq(rows);
         options.limits.validate(&value)?;
         Ok(value)
@@ -362,8 +367,8 @@ fn decode_cell(value: &str, shape: &TypeShape, budget: &DecodeBudget<'_>) -> Res
         }
         TypeShape::Char => parse_char(value),
         TypeShape::Bytes { format } => {
-            let bytes = decode_bytes(value, *format)?;
-            budget.bytes_len(bytes.len())?;
+            budget.string_len(value.len())?;
+            let bytes = decode_bytes(value, *format, budget)?;
             Ok(Value::Bytes(Bytes::new(bytes)))
         }
         TypeShape::F32 | TypeShape::F64 => parse_float(value, shape),
@@ -529,16 +534,44 @@ fn encode_bytes(bytes: &[u8], format: BytesFormat) -> Result<String> {
     }
 }
 
-fn decode_bytes(value: &str, format: BytesFormat) -> Result<Vec<u8>> {
-    match format {
-        BytesFormat::Binary | BytesFormat::Base64 => BASE64_STANDARD
-            .decode(value.as_bytes())
-            .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string())),
-        BytesFormat::Hex => decode_hex(value),
+fn decode_bytes(value: &str, format: BytesFormat, budget: &DecodeBudget<'_>) -> Result<Vec<u8>> {
+    let bytes = match format {
+        BytesFormat::Binary | BytesFormat::Base64 => {
+            reject_base64_len_over_budget(value, budget)?;
+            BASE64_STANDARD.decode(value.as_bytes()).map_err(|error| {
+                DataError::new(DataErrorKind::InvalidEncoding, error.to_string())
+            })?
+        }
+        BytesFormat::Hex => {
+            reject_hex_len_over_budget(value, budget)?;
+            decode_hex(value)?
+        }
         BytesFormat::Array => Err(DataError::unsupported(
             "CSV bytes cannot use array representation",
-        )),
+        ))?,
+    };
+    budget.bytes_len(bytes.len())?;
+    Ok(bytes)
+}
+
+fn reject_base64_len_over_budget(value: &str, budget: &DecodeBudget<'_>) -> Result<()> {
+    let max_encoded_len = budget
+        .max_bytes_len()
+        .saturating_add(2)
+        .checked_div(3)
+        .unwrap_or(usize::MAX)
+        .saturating_mul(4);
+    if value.len() > max_encoded_len {
+        return budget.bytes_len(decoded_len_estimate(value.len()));
     }
+    Ok(())
+}
+
+fn reject_hex_len_over_budget(value: &str, budget: &DecodeBudget<'_>) -> Result<()> {
+    if value.len() > budget.max_bytes_len().saturating_mul(2) {
+        return budget.bytes_len(value.len().saturating_add(1) / 2);
+    }
+    Ok(())
 }
 
 fn decode_hex(value: &str) -> Result<Vec<u8>> {

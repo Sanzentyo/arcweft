@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use arcweft_codec_csv::CsvCodec;
 use arcweft_data::{
-    Bytes, BytesFormat, Codec, DataErrorKind, DecodeOptions, EncodeOptions, FieldShape, Number,
-    RecordPolicy, TypeShape, Value,
+    Bytes, BytesFormat, Codec, DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions,
+    FieldShape, Number, RecordPolicy, TypeShape, Value,
 };
 
 fn row_shape() -> TypeShape {
@@ -171,4 +171,61 @@ fn csv_codec_enforces_numeric_edge_policy() {
         .decode_value(b"ratio\ninf\n", &float_shape, &DecodeOptions::default())
         .expect_err("non-finite float rejected");
     assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+}
+
+#[test]
+fn csv_decode_consumes_row_budget_during_reader_iteration() {
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_sequence_len: 2,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = CsvCodec
+        .decode_value(
+            b"active,score,name,hash,nickname\ntrue,1,a,00,\ntrue,2,b,00,\ntrue,3,c,00,\n",
+            &row_shape(),
+            &options,
+        )
+        .expect_err("row budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn csv_decode_consumes_cell_string_budget_during_reader_iteration() {
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_string_len: 3,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = CsvCodec
+        .decode_value(
+            b"active,score,name,hash,nickname\ntrue,1,hero,00,\n",
+            &row_shape(),
+            &options,
+        )
+        .expect_err("string budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn csv_decode_checks_hex_bytes_budget_before_decode_allocation() {
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_bytes_len: 1,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = CsvCodec
+        .decode_value(
+            b"active,score,name,hash,nickname\ntrue,1,hero,0000,\n",
+            &row_shape(),
+            &options,
+        )
+        .expect_err("bytes budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
 }

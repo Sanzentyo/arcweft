@@ -141,6 +141,10 @@ impl<'a> DecodeBudget<'a> {
         Ok(())
     }
 
+    pub const fn max_bytes_len(&self) -> usize {
+        self.limits.max_bytes_len
+    }
+
     fn consume_collection_items(&mut self, len: usize) -> Result<()> {
         self.remaining_collection_items = self
             .remaining_collection_items
