@@ -109,7 +109,7 @@ fn raw_to_json_value(raw: &RawValue, shape: &TypeShape) -> Result<JsonValue> {
         (TypeShape::Record { fields, .. }, RawValue::Map(entries)) => {
             raw_record_to_json(entries, fields)
         }
-        (TypeShape::Enum { .. }, RawValue::Map(entries)) => raw_map_to_json(entries),
+        (TypeShape::Enum { .. }, raw) => raw_dynamic_to_json(raw),
         (TypeShape::Named(_), _) => Err(DataError::unsupported(
             "named shape must be resolved before JSON encoding",
         )),
@@ -245,7 +245,7 @@ fn json_to_raw_value(value: &JsonValue, shape: &TypeShape) -> Result<RawValue> {
                 .map(RawValue::Map),
             other => Err(DataError::invalid_type("object", json_type_name(other))),
         },
-        TypeShape::Enum { .. } => json_object_to_raw_map(value),
+        TypeShape::Enum { .. } => json_dynamic_to_raw(value),
         TypeShape::Named(_) => Err(DataError::unsupported(
             "named shape must be resolved before JSON decoding",
         )),
@@ -278,21 +278,6 @@ fn json_object_entries(value: &JsonValue, shape: &TypeShape) -> Result<Vec<(RawV
                     .map_err(|error| error.at_field(key.clone()))
             })
             .collect(),
-        other => Err(DataError::invalid_type("object", json_type_name(other))),
-    }
-}
-
-fn json_object_to_raw_map(value: &JsonValue) -> Result<RawValue> {
-    match value {
-        JsonValue::Object(entries) => entries
-            .iter()
-            .map(|(key, value)| {
-                json_dynamic_to_raw(value)
-                    .map(|raw| (RawValue::String(key.clone()), raw))
-                    .map_err(|error| error.at_field(key.clone()))
-            })
-            .collect::<Result<Vec<_>>>()
-            .map(RawValue::Map),
         other => Err(DataError::invalid_type("object", json_type_name(other))),
     }
 }

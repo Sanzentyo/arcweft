@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use arcweft_codec_json::JsonCodec;
 use arcweft_data::{
-    Bytes, BytesFormat, Codec, DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions,
-    FieldShape, RecordPolicy, TypeShape, Value,
+    Bytes, BytesFormat, Codec, DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions, EnumRepr,
+    EnumTagStyle, FieldShape, Number, RecordPolicy, TypeShape, Value, VariantShape,
 };
 
 fn asset_shape() -> TypeShape {
@@ -81,4 +81,63 @@ fn json_codec_rejects_trailing_non_whitespace() {
         .decode_value(br"null true", &TypeShape::Unit, &DecodeOptions::default())
         .expect_err("trailing");
     assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+}
+
+#[test]
+fn json_codec_uses_adjacent_enum_tag_shape() {
+    let shape = TypeShape::Enum {
+        name: "Event".to_owned(),
+        variants: vec![VariantShape::unit("Score", "score").with_payload(TypeShape::U32)],
+        tag: EnumTagStyle::Adjacent {
+            tag: "kind".to_owned(),
+            content: "value".to_owned(),
+        },
+        repr: None,
+    };
+    let value = Value::Enum {
+        variant: "score".to_owned(),
+        payload: Some(Box::new(Value::Number(Number::U(42)))),
+    };
+
+    let json = JsonCodec
+        .encode_value(&value, &shape, &EncodeOptions::default())
+        .expect("encode");
+    assert_eq!(
+        std::str::from_utf8(&json).expect("utf8"),
+        r#"{"kind":"score","value":42}"#
+    );
+    assert_eq!(
+        JsonCodec
+            .decode_value(&json, &shape, &DecodeOptions::default())
+            .expect("decode"),
+        value
+    );
+}
+
+#[test]
+fn json_codec_roundtrips_repr_enum_as_number() {
+    let shape = TypeShape::Enum {
+        name: "SaveKind".to_owned(),
+        variants: vec![
+            VariantShape::unit("Full", "full").with_discriminant(1),
+            VariantShape::unit("Quick", "quick").with_discriminant(2),
+        ],
+        tag: EnumTagStyle::External,
+        repr: Some(EnumRepr::U8),
+    };
+    let value = Value::Enum {
+        variant: "quick".to_owned(),
+        payload: None,
+    };
+
+    let json = JsonCodec
+        .encode_value(&value, &shape, &EncodeOptions::default())
+        .expect("encode");
+    assert_eq!(std::str::from_utf8(&json).expect("utf8"), "2");
+    assert_eq!(
+        JsonCodec
+            .decode_value(&json, &shape, &DecodeOptions::default())
+            .expect("decode"),
+        value
+    );
 }

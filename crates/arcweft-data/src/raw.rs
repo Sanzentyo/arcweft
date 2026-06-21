@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     Bytes, DataError, DataErrorKind, Number, Result,
-    shape::{FieldShape, TypeShape, VariantShape},
+    shape::{EnumRepr, EnumTagStyle, FieldShape, TypeShape, VariantShape},
     value::Value,
 };
 
@@ -98,7 +98,12 @@ pub fn encode_with_shape(value: &Value, shape: &TypeShape) -> Result<RawValue> {
             }
         }
         TypeShape::Record { fields, policy, .. } => encode_record(value, fields, *policy),
-        TypeShape::Enum { variants, .. } => encode_enum(value, variants),
+        TypeShape::Enum {
+            variants,
+            tag,
+            repr,
+            ..
+        } => encode_enum(value, variants, tag, *repr),
         TypeShape::Named(name) => Err(DataError::unsupported(format!(
             "named shape `{name}` must be resolved before raw transcoding"
         ))),
@@ -195,7 +200,12 @@ pub fn decode_with_shape(raw: &RawValue, shape: &TypeShape) -> Result<Value> {
             }
         }
         TypeShape::Record { fields, policy, .. } => decode_record(raw, fields, *policy),
-        TypeShape::Enum { variants, .. } => decode_enum(raw, variants),
+        TypeShape::Enum {
+            variants,
+            tag,
+            repr,
+            ..
+        } => decode_enum(raw, variants, tag, *repr),
         TypeShape::Named(name) => Err(DataError::unsupported(format!(
             "named shape `{name}` must be resolved before raw transcoding"
         ))),
@@ -301,7 +311,25 @@ fn decode_record(
         .map(Value::Record)
 }
 
-fn encode_enum(value: &Value, variants: &[VariantShape]) -> Result<RawValue> {
+fn encode_enum(
+    value: &Value,
+    variants: &[VariantShape],
+    tag: &EnumTagStyle,
+    repr: Option<EnumRepr>,
+) -> Result<RawValue> {
+    if let Some(repr) = repr {
+        return encode_repr_enum(value, variants, repr);
+    }
+    match tag {
+        EnumTagStyle::External => encode_external_enum(value, variants),
+        EnumTagStyle::Internal { tag } => encode_internal_enum(value, variants, tag),
+        EnumTagStyle::Adjacent { tag, content } => {
+            encode_adjacent_enum(value, variants, tag, content)
+        }
+    }
+}
+
+fn encode_external_enum(value: &Value, variants: &[VariantShape]) -> Result<RawValue> {
     let Value::Enum { variant, payload } = value else {
         return Err(DataError::invalid_type("enum", value.type_name()));
     };
@@ -340,7 +368,180 @@ fn encode_enum(value: &Value, variants: &[VariantShape]) -> Result<RawValue> {
     Ok(RawValue::Map(entries))
 }
 
-fn decode_enum(raw: &RawValue, variants: &[VariantShape]) -> Result<Value> {
+fn encode_adjacent_enum(
+    value: &Value,
+    variants: &[VariantShape],
+    tag: &str,
+    content: &str,
+) -> Result<RawValue> {
+    let (variant, payload, shape) = enum_parts(value, variants)?;
+    let mut entries = vec![(
+        RawValue::String(tag.to_owned()),
+        RawValue::String(variant.to_owned()),
+    )];
+    match (&shape.payload, payload) {
+        (Some(shape), Some(payload)) => {
+            entries.push((
+                RawValue::String(content.to_owned()),
+                encode_with_shape(payload, shape).map_err(|error| error.at_variant(variant))?,
+            ));
+        }
+        (None, None) => {}
+        (Some(_), None) => {
+            return Err(DataError::new(
+                DataErrorKind::MissingField,
+                format!("missing payload for enum variant `{variant}`"),
+            )
+            .at_variant(variant));
+        }
+        (None, Some(_)) => {
+            return Err(DataError::invalid_type("unit enum variant", "payload").at_variant(variant));
+        }
+    }
+    Ok(RawValue::Map(entries))
+}
+
+fn encode_internal_enum(value: &Value, variants: &[VariantShape], tag: &str) -> Result<RawValue> {
+    let (variant, payload, shape) = enum_parts(value, variants)?;
+    let mut entries = vec![(
+        RawValue::String(tag.to_owned()),
+        RawValue::String(variant.to_owned()),
+    )];
+    match (&shape.payload, payload) {
+        (Some(shape), Some(payload)) => {
+            let RawValue::Map(payload_entries) =
+                encode_with_shape(payload, shape).map_err(|error| error.at_variant(variant))?
+            else {
+                return Err(DataError::unsupported(
+                    "internally tagged enum payload must be a record",
+                )
+                .at_variant(variant));
+            };
+            if payload_entries
+                .iter()
+                .any(|(key, _)| matches!(key, RawValue::String(key) if key == tag))
+            {
+                return Err(DataError::new(
+                    DataErrorKind::DuplicateField,
+                    format!("internal enum payload duplicates tag field `{tag}`"),
+                )
+                .at_variant(variant)
+                .at_field(tag.to_owned()));
+            }
+            entries.extend(payload_entries);
+        }
+        (None, None) => {}
+        (Some(_), None) => {
+            return Err(DataError::new(
+                DataErrorKind::MissingField,
+                format!("missing payload for enum variant `{variant}`"),
+            )
+            .at_variant(variant));
+        }
+        (None, Some(_)) => {
+            return Err(DataError::invalid_type("unit enum variant", "payload").at_variant(variant));
+        }
+    }
+    Ok(RawValue::Map(entries))
+}
+
+fn encode_repr_enum(value: &Value, variants: &[VariantShape], repr: EnumRepr) -> Result<RawValue> {
+    let discriminant = match value {
+        Value::Enum { variant, payload } => {
+            if payload.is_some() {
+                return Err(DataError::invalid_type("unit repr enum variant", "payload")
+                    .at_variant(variant));
+            }
+            enum_shape(variants, variant)?.discriminant.ok_or_else(|| {
+                DataError::new(
+                    DataErrorKind::MissingField,
+                    format!("missing discriminant for enum variant `{variant}`"),
+                )
+                .at_variant(variant)
+            })?
+        }
+        Value::Number(Number::I(value)) => *value,
+        Value::Number(Number::U(value)) => i128::try_from(*value).map_err(|_| {
+            DataError::new(
+                DataErrorKind::NumberOutOfRange,
+                "repr enum discriminant exceeds i128",
+            )
+        })?,
+        other => return Err(DataError::invalid_type("repr enum", other.type_name())),
+    };
+    let shape = enum_shape_by_discriminant(variants, discriminant)?;
+    let number = if repr.is_unsigned() {
+        let value = u128::try_from(discriminant).map_err(|_| {
+            DataError::new(
+                DataErrorKind::NumberOutOfRange,
+                "negative discriminant cannot encode as unsigned repr enum",
+            )
+            .at_variant(shape.wire_name.clone())
+        })?;
+        Value::Number(Number::U(value))
+    } else {
+        Value::Number(Number::I(discriminant))
+    };
+    encode_number(&number, &repr.type_shape()).map_err(|error| error.at_variant(&shape.wire_name))
+}
+
+fn enum_parts<'a>(
+    value: &'a Value,
+    variants: &'a [VariantShape],
+) -> Result<(&'a str, Option<&'a Value>, &'a VariantShape)> {
+    let Value::Enum { variant, payload } = value else {
+        return Err(DataError::invalid_type("enum", value.type_name()));
+    };
+    let shape = enum_shape(variants, variant)?;
+    Ok((variant, payload.as_deref(), shape))
+}
+
+fn enum_shape<'a>(variants: &'a [VariantShape], variant: &str) -> Result<&'a VariantShape> {
+    variants
+        .iter()
+        .find(|shape| shape.wire_name == variant)
+        .ok_or_else(|| {
+            DataError::new(
+                DataErrorKind::InvalidEnumTag,
+                format!("unknown enum variant `{variant}`"),
+            )
+        })
+}
+
+fn enum_shape_by_discriminant(
+    variants: &[VariantShape],
+    discriminant: i128,
+) -> Result<&VariantShape> {
+    variants
+        .iter()
+        .find(|shape| shape.discriminant == Some(discriminant))
+        .ok_or_else(|| {
+            DataError::new(
+                DataErrorKind::InvalidEnumTag,
+                format!("unknown enum discriminant `{discriminant}`"),
+            )
+        })
+}
+
+fn decode_enum(
+    raw: &RawValue,
+    variants: &[VariantShape],
+    tag: &EnumTagStyle,
+    repr: Option<EnumRepr>,
+) -> Result<Value> {
+    if let Some(repr) = repr {
+        return decode_repr_enum(raw, variants, repr);
+    }
+    match tag {
+        EnumTagStyle::External => decode_external_enum(raw, variants),
+        EnumTagStyle::Internal { tag } => decode_internal_enum(raw, variants, tag),
+        EnumTagStyle::Adjacent { tag, content } => {
+            decode_adjacent_enum(raw, variants, tag, content)
+        }
+    }
+}
+
+fn decode_external_enum(raw: &RawValue, variants: &[VariantShape]) -> Result<Value> {
     let RawValue::Map(entries) = raw else {
         return Err(DataError::invalid_type("enum map", raw.type_name()));
     };
@@ -389,6 +590,108 @@ fn decode_enum(raw: &RawValue, variants: &[VariantShape]) -> Result<Value> {
         variant: variant.clone(),
         payload,
     })
+}
+
+fn decode_adjacent_enum(
+    raw: &RawValue,
+    variants: &[VariantShape],
+    tag: &str,
+    content: &str,
+) -> Result<Value> {
+    let RawValue::Map(entries) = raw else {
+        return Err(DataError::invalid_type("enum map", raw.type_name()));
+    };
+    let fields = string_map(entries)?;
+    let variant = enum_tag_field(&fields, tag)?;
+    let shape = enum_shape(variants, variant)?;
+    let payload = match (&shape.payload, fields.get(content)) {
+        (Some(shape), Some(raw)) => Some(Box::new(
+            decode_with_shape(raw, shape).map_err(|error| error.at_variant(variant))?,
+        )),
+        (None, None) => None,
+        (Some(_), None) => {
+            return Err(DataError::new(
+                DataErrorKind::MissingField,
+                format!("missing enum content field `{content}`"),
+            )
+            .at_variant(variant)
+            .at_field(content.to_owned()));
+        }
+        (None, Some(_)) => {
+            return Err(DataError::invalid_type("unit enum variant", "payload").at_variant(variant));
+        }
+    };
+    Ok(Value::Enum {
+        variant: variant.to_owned(),
+        payload,
+    })
+}
+
+fn decode_internal_enum(raw: &RawValue, variants: &[VariantShape], tag: &str) -> Result<Value> {
+    let RawValue::Map(entries) = raw else {
+        return Err(DataError::invalid_type("enum map", raw.type_name()));
+    };
+    let fields = string_map(entries)?;
+    let variant = enum_tag_field(&fields, tag)?;
+    let shape = enum_shape(variants, variant)?;
+    let payload = match &shape.payload {
+        Some(shape) => {
+            let payload_entries = entries
+                .iter()
+                .filter(|(key, _)| !matches!(key, RawValue::String(key) if key == tag))
+                .cloned()
+                .collect::<Vec<_>>();
+            Some(Box::new(
+                decode_with_shape(&RawValue::Map(payload_entries), shape)
+                    .map_err(|error| error.at_variant(variant))?,
+            ))
+        }
+        None if fields.len() == 1 => None,
+        None => {
+            return Err(DataError::new(
+                DataErrorKind::UnknownField,
+                format!("unexpected fields for unit enum variant `{variant}`"),
+            )
+            .at_variant(variant));
+        }
+    };
+    Ok(Value::Enum {
+        variant: variant.to_owned(),
+        payload,
+    })
+}
+
+fn decode_repr_enum(raw: &RawValue, variants: &[VariantShape], repr: EnumRepr) -> Result<Value> {
+    let decoded = decode_number(raw, &repr.type_shape())?;
+    let discriminant = match decoded {
+        Value::Number(Number::I(value)) => value,
+        Value::Number(Number::U(value)) => i128::try_from(value).map_err(|_| {
+            DataError::new(
+                DataErrorKind::NumberOutOfRange,
+                "repr enum discriminant exceeds i128",
+            )
+        })?,
+        other => unreachable!("decode_number returned {}", other.type_name()),
+    };
+    let shape = enum_shape_by_discriminant(variants, discriminant)?;
+    Ok(Value::Enum {
+        variant: shape.wire_name.clone(),
+        payload: None,
+    })
+}
+
+fn enum_tag_field<'a>(fields: &'a BTreeMap<String, &RawValue>, tag: &str) -> Result<&'a str> {
+    match fields.get(tag) {
+        Some(RawValue::String(value)) => Ok(value),
+        Some(other) => Err(
+            DataError::invalid_type("enum tag string", other.type_name()).at_field(tag.to_owned()),
+        ),
+        None => Err(DataError::new(
+            DataErrorKind::MissingField,
+            format!("missing enum tag field `{tag}`"),
+        )
+        .at_field(tag.to_owned())),
+    }
 }
 
 fn string_map(entries: &[(RawValue, RawValue)]) -> Result<BTreeMap<String, &RawValue>> {
@@ -450,6 +753,24 @@ fn decode_number(raw: &RawValue, shape: &TypeShape) -> Result<Value> {
         {
             Ok(Value::Number(Number::I(*value)))
         }
+        (shape, RawValue::Signed(value))
+            if shape
+                .unsigned_max()
+                .is_some_and(|max| signed_fits_unsigned(*value, max)) =>
+        {
+            Ok(Value::Number(Number::U(
+                u128::try_from(*value).expect("guard checked unsigned range"),
+            )))
+        }
+        (shape, RawValue::Unsigned(value))
+            if shape
+                .signed_bounds()
+                .is_some_and(|(_, max)| unsigned_fits_signed(*value, max)) =>
+        {
+            Ok(Value::Number(Number::I(
+                i128::try_from(*value).expect("guard checked signed range"),
+            )))
+        }
         (shape, RawValue::Unsigned(value))
             if shape.unsigned_max().is_some_and(|max| *value <= max) =>
         {
@@ -465,4 +786,12 @@ fn decode_number(raw: &RawValue, shape: &TypeShape) -> Result<Value> {
         )),
         (_, other) => Err(DataError::invalid_type("number", other.type_name())),
     }
+}
+
+fn signed_fits_unsigned(value: i128, max: u128) -> bool {
+    value >= 0 && u128::try_from(value).is_ok_and(|value| value <= max)
+}
+
+fn unsigned_fits_signed(value: u128, max: i128) -> bool {
+    i128::try_from(value).is_ok_and(|value| value <= max)
 }

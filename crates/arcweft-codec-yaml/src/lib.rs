@@ -113,7 +113,7 @@ fn raw_to_yaml(raw: &RawValue, shape: &TypeShape) -> Result<Yaml> {
         (TypeShape::Record { fields, .. }, RawValue::Map(entries)) => {
             raw_record_to_yaml(entries, fields)
         }
-        (TypeShape::Enum { .. }, RawValue::Map(entries)) => raw_map_to_yaml(entries),
+        (TypeShape::Enum { .. }, raw) => raw_dynamic_to_yaml(raw),
         (TypeShape::Named(_), _) => Err(DataError::unsupported(
             "named shape must be resolved before YAML encoding",
         )),
@@ -242,7 +242,7 @@ fn yaml_to_raw(value: &Yaml, shape: &TypeShape) -> Result<RawValue> {
                 .map(RawValue::Map),
             other => Err(DataError::invalid_type("hash", yaml_type_name(other))),
         },
-        TypeShape::Enum { .. } => yaml_hash_to_raw_map(value),
+        TypeShape::Enum { .. } => yaml_dynamic_to_raw(value),
         TypeShape::Named(_) => Err(DataError::unsupported(
             "named shape must be resolved before YAML decoding",
         )),
@@ -281,24 +281,6 @@ fn yaml_hash_entries(value: &Yaml, shape: &TypeShape) -> Result<Vec<(RawValue, R
                     .map_err(|error| error.at_field(key))
             })
             .collect(),
-        other => Err(DataError::invalid_type("hash", yaml_type_name(other))),
-    }
-}
-
-fn yaml_hash_to_raw_map(value: &Yaml) -> Result<RawValue> {
-    match value {
-        Yaml::Hash(entries) => entries
-            .iter()
-            .map(|(key, value)| {
-                let Some(key) = key.as_str() else {
-                    return Err(DataError::invalid_type("hash key", yaml_type_name(key)));
-                };
-                yaml_dynamic_to_raw(value)
-                    .map(|raw| (RawValue::String(key.to_owned()), raw))
-                    .map_err(|error| error.at_field(key))
-            })
-            .collect::<Result<Vec<_>>>()
-            .map(RawValue::Map),
         other => Err(DataError::invalid_type("hash", yaml_type_name(other))),
     }
 }

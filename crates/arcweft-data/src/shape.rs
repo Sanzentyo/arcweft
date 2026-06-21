@@ -26,6 +26,34 @@ pub enum EnumRepr {
     Usize,
 }
 
+impl EnumRepr {
+    #[must_use]
+    pub const fn type_shape(self) -> TypeShape {
+        match self {
+            Self::I8 => TypeShape::I8,
+            Self::I16 => TypeShape::I16,
+            Self::I32 => TypeShape::I32,
+            Self::I64 => TypeShape::I64,
+            Self::I128 => TypeShape::I128,
+            Self::Isize => TypeShape::Isize,
+            Self::U8 => TypeShape::U8,
+            Self::U16 => TypeShape::U16,
+            Self::U32 => TypeShape::U32,
+            Self::U64 => TypeShape::U64,
+            Self::U128 => TypeShape::U128,
+            Self::Usize => TypeShape::Usize,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_unsigned(self) -> bool {
+        matches!(
+            self,
+            Self::U8 | Self::U16 | Self::U32 | Self::U64 | Self::U128 | Self::Usize
+        )
+    }
+}
+
 /// External tag strategy for enum payloads.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum EnumTagStyle {

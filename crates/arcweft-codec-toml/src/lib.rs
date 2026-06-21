@@ -101,7 +101,7 @@ fn raw_to_toml_value(raw: &RawValue, shape: &TypeShape) -> Result<TomlValue> {
         (TypeShape::Record { fields, .. }, RawValue::Map(entries)) => {
             raw_record_to_toml(entries, fields)
         }
-        (TypeShape::Enum { .. }, RawValue::Map(entries)) => raw_map_to_toml(entries),
+        (TypeShape::Enum { .. }, raw) => raw_dynamic_to_toml(raw),
         (TypeShape::Named(_), _) => Err(DataError::unsupported(
             "named shape must be resolved before TOML encoding",
         )),
@@ -235,7 +235,7 @@ fn toml_to_raw_value(value: &TomlValue, shape: &TypeShape) -> Result<RawValue> {
                 .map(RawValue::Map),
             other => Err(DataError::invalid_type("table", toml_type_name(other))),
         },
-        TypeShape::Enum { .. } => toml_table_to_raw_map(value),
+        TypeShape::Enum { .. } => toml_dynamic_to_raw(value),
         TypeShape::Named(_) => Err(DataError::unsupported(
             "named shape must be resolved before TOML decoding",
         )),
@@ -268,21 +268,6 @@ fn toml_table_entries(value: &TomlValue, shape: &TypeShape) -> Result<Vec<(RawVa
                     .map_err(|error| error.at_field(key.clone()))
             })
             .collect(),
-        other => Err(DataError::invalid_type("table", toml_type_name(other))),
-    }
-}
-
-fn toml_table_to_raw_map(value: &TomlValue) -> Result<RawValue> {
-    match value {
-        TomlValue::Table(entries) => entries
-            .iter()
-            .map(|(key, value)| {
-                toml_dynamic_to_raw(value)
-                    .map(|raw| (RawValue::String(key.clone()), raw))
-                    .map_err(|error| error.at_field(key.clone()))
-            })
-            .collect::<Result<Vec<_>>>()
-            .map(RawValue::Map),
         other => Err(DataError::invalid_type("table", toml_type_name(other))),
     }
 }

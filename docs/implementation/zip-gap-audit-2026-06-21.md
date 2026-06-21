@@ -60,6 +60,11 @@ This note records the implementation cut for
   current external enum raw representation. YAML decoding now checks the input
   cap before parsing and rejects empty or multi-document inputs instead of
   silently decoding only the first document.
+- Extended the central raw shape transcoder with enum adjacent/internal tag
+  styles and numeric `EnumRepr` discriminants. JSON enum encoding/decoding now
+  accepts scalar repr raw values as well as map-shaped tagged enum values, and
+  signed/unsigned integer recovery performs checked cross-signedness conversion
+  so JSON's single integer syntax can decode into unsigned Arcweft shapes.
 
 ## Remaining implementation debt
 
@@ -88,9 +93,10 @@ This note records the implementation cut for
   guide. Remaining save work is to model explicit multi-step migration chains
   and decide whether the checksum contract should cover canonical header
   metadata in addition to the payload for a future envelope version.
-- JSON, TOML, and YAML shape decoding now cover the first concrete T-105 cuts.
-  Remaining JSON/TOML/YAML work includes enum internal/adjacent/repr wire forms
-  and parser-integrated budget visitors.
+- JSON, TOML, and YAML shape decoding now cover the first concrete T-105 cuts,
+  including central enum adjacent/internal/repr raw forms. Remaining
+  JSON/TOML/YAML work includes parser-integrated budget visitors and deeper
+  enum payload byte-policy coverage.
 
 ## Validation
 
@@ -118,6 +124,9 @@ cargo clippy -p arcweft-data -p arcweft-codec-toml --all-targets --all-features 
 cargo check -p arcweft-data -p arcweft-codec-yaml --all-targets --all-features
 cargo test -p arcweft-codec-yaml --test shape_codec
 cargo clippy -p arcweft-data -p arcweft-codec-yaml --all-targets --all-features -- -D warnings
+cargo check -p arcweft-data -p arcweft-codec-json -p arcweft-codec-toml -p arcweft-codec-yaml --all-targets --all-features
+cargo test -p arcweft-data raw_shape --test raw_shape
+cargo test -p arcweft-data --features derive --test derive_attrs
 cargo test -p arcweft-agent-mcp -p arcweft-agent-mcp-client -p arcweft-test --all-features
 cargo test -p arcweft-tooling agent_format --all-features
 cargo test -p arcweft-cli stdio_transport_roundtrips_agent_session_calls_through_fake_child --all-features
