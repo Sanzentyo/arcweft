@@ -29,6 +29,12 @@ This note records the implementation cut for
 - Added `arcweft-data::raw` with shape-checked raw transcoding. Type labels now
   live on `RawValue`, `Number`, and `TypeShape`; the earlier external
   `raw_type_error`/label-helper shape was removed.
+- Hardened the `arcweft-data-derive` attribute parser so `#[arcweft(...)]`
+  parsing returns structured `syn::Result` errors instead of discarding parse
+  failures. Unknown attributes, invalid `rename_all` / `bytes` / `repr` values,
+  wrong container targets, `content` without `tag`, and duplicate final wire
+  names are compile errors covered by trybuild fixtures. Bare `bytes` and
+  `default = "path::factory"` are accepted as part of the typed grammar.
 
 ## Remaining implementation debt
 
@@ -45,15 +51,23 @@ This note records the implementation cut for
 - Data raw transcoding covers the initial shape/value bridge. Format-specific
   JSON/TOML/YAML raw codecs, parse-time decode budgets, and strict binary raw
   coverage remain separate data-format tasks.
+- The derive parser now rejects malformed attributes and covers the main
+  container/field/variant grammar. Remaining derive work includes precise
+  generic bounds, tuple/unit struct policy, multi-field tuple enum policy, and
+  repr discriminant range validation.
 
 ## Validation
 
 ```bash
 cargo check -p arcweft-data -p arcweft-test -p arcweft-agent-mcp -p arcweft-agent-mcp-client -p arcweft-tooling -p arcweft-cli --all-targets --all-features
+cargo check -p arcweft-data -p arcweft-data-derive --all-targets --all-features
 cargo check -p arcweft-core -p arcweft-cli -p arcweft-agent-runner -p arcweft-agent-mcp-client --all-targets --all-features
 cargo test -p arcweft-core --all-features
 cargo check -p arcweft-agent-mcp-client -p arcweft-cli --all-targets --all-features
 cargo test -p arcweft-data raw_shape --test raw_shape
+cargo test -p arcweft-data --features derive --test derive_attrs
+cargo test -p arcweft-data --features derive derive_attribute_ui
+cargo clippy -p arcweft-data -p arcweft-data-derive --all-targets --all-features -- -D warnings
 cargo test -p arcweft-agent-mcp -p arcweft-agent-mcp-client -p arcweft-test --all-features
 cargo test -p arcweft-tooling agent_format --all-features
 cargo test -p arcweft-cli stdio_transport_roundtrips_agent_session_calls_through_fake_child --all-features

@@ -1,0 +1,5 @@
+error: unsupported bytes format `gzip`
+ --> tests/derive/fail/invalid_bytes.rs:5:15
+  |
+5 |     #[arcweft(bytes = "gzip")]
+  |               ^^^^^^^^^^^^^^

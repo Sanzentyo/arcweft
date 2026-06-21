@@ -164,6 +164,7 @@ arcweft-core,arcweft-source,normal,crates/arcweft-core/Cargo.toml
 arcweft-core,serde,normal,crates/arcweft-core/Cargo.toml
 arcweft-core,thiserror,normal,crates/arcweft-core/Cargo.toml
 arcweft-data,arcweft-data-derive,normal,crates/arcweft-data/Cargo.toml
+arcweft-data,trybuild,development,crates/arcweft-data/Cargo.toml
 arcweft-data-derive,proc-macro2,normal,crates/arcweft-data-derive/Cargo.toml
 arcweft-data-derive,quote,normal,crates/arcweft-data-derive/Cargo.toml
 arcweft-data-derive,syn,normal,crates/arcweft-data-derive/Cargo.toml

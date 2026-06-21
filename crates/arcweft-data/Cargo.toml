@@ -13,5 +13,8 @@ derive = ["dep:arcweft-data-derive"]
 [dependencies]
 arcweft-data-derive = { path = "../arcweft-data-derive", optional = true }
 
+[dev-dependencies]
+trybuild.workspace = true
+
 [lints]
 workspace = true

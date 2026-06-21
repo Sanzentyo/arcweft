@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use proc_macro2::Span;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields, GenericParam, Generics, Ident, LitStr};
@@ -6,7 +8,13 @@ use crate::attrs::{ContainerAttrs, FieldAttrs, ReprAttr, TagStyleAttr, VariantAt
 
 pub(crate) fn encode(input: &DeriveInput) -> proc_macro2::TokenStream {
     let name = &input.ident;
-    let container = ContainerAttrs::from_attrs(&input.attrs);
+    let container = match ContainerAttrs::from_attrs(&input.attrs) {
+        Ok(attrs) => attrs,
+        Err(error) => return error.to_compile_error(),
+    };
+    if let Err(error) = validate_input_attrs(input, &container) {
+        return error.to_compile_error();
+    }
     let generics = add_trait_bounds(input.generics.clone(), &quote!(::arcweft_data::Encode));
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     match &input.data {
@@ -45,7 +53,13 @@ pub(crate) fn encode(input: &DeriveInput) -> proc_macro2::TokenStream {
 
 pub(crate) fn decode(input: &DeriveInput) -> proc_macro2::TokenStream {
     let name = &input.ident;
-    let container = ContainerAttrs::from_attrs(&input.attrs);
+    let container = match ContainerAttrs::from_attrs(&input.attrs) {
+        Ok(attrs) => attrs,
+        Err(error) => return error.to_compile_error(),
+    };
+    if let Err(error) = validate_input_attrs(input, &container) {
+        return error.to_compile_error();
+    }
     let generics = add_trait_bounds(input.generics.clone(), &quote!(::arcweft_data::Decode));
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     match &input.data {
@@ -85,7 +99,13 @@ pub(crate) fn decode(input: &DeriveInput) -> proc_macro2::TokenStream {
 pub(crate) fn reflect(input: &DeriveInput) -> proc_macro2::TokenStream {
     let name = &input.ident;
     let type_name = name.to_string();
-    let container = ContainerAttrs::from_attrs(&input.attrs);
+    let container = match ContainerAttrs::from_attrs(&input.attrs) {
+        Ok(attrs) => attrs,
+        Err(error) => return error.to_compile_error(),
+    };
+    if let Err(error) = validate_input_attrs(input, &container) {
+        return error.to_compile_error();
+    }
     let generics = add_trait_bounds(input.generics.clone(), &quote!(::arcweft_data::Reflect));
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     match &input.data {
@@ -155,7 +175,10 @@ fn encode_struct(
     };
     let inserts = fields.named.iter().filter_map(|field| {
         let ident = field.ident.as_ref()?;
-        let attrs = FieldAttrs::from_attrs(&field.attrs, ident, container.rename_all);
+        let attrs = match FieldAttrs::from_attrs(&field.attrs, ident, container.rename_all) {
+            Ok(attrs) => attrs,
+            Err(error) => return Some(error.to_compile_error()),
+        };
         if attrs.skip {
             return None;
         }
@@ -220,7 +243,10 @@ fn encode_enum(
     let tag_style = container.tag_style();
     let arms = variants.into_iter().map(|variant| {
         let ident = &variant.ident;
-        let wire = VariantAttrs::from_attrs(&variant.attrs, ident, container.rename_all).wire_name;
+        let wire = match VariantAttrs::from_attrs(&variant.attrs, ident, container.rename_all) {
+            Ok(attrs) => attrs.wire_name,
+            Err(error) => return error.to_compile_error(),
+        };
         encode_enum_variant_arm(ident, &wire, &variant.fields, &tag_style, container)
     });
     quote! {
@@ -286,7 +312,11 @@ fn encode_enum_variant_arm(
                 .collect();
             let insertions = fields.named.iter().filter_map(|field| {
                 let field_ident = field.ident.as_ref()?;
-                let attrs = FieldAttrs::from_attrs(&field.attrs, field_ident, container.rename_all);
+                let attrs =
+                    match FieldAttrs::from_attrs(&field.attrs, field_ident, container.rename_all) {
+                        Ok(attrs) => attrs,
+                        Err(error) => return Some(error.to_compile_error()),
+                    };
                 if attrs.skip {
                     return None;
                 }
@@ -350,17 +380,22 @@ fn decode_struct(
     let unknown_check = unknown_field_check(container.deny_unknown_fields, &known_fields);
     let initializers = fields.named.iter().filter_map(|field| {
         let ident = field.ident.as_ref()?;
-        let attrs = FieldAttrs::from_attrs(&field.attrs, ident, container.rename_all);
+        let attrs = match FieldAttrs::from_attrs(&field.attrs, ident, container.rename_all) {
+            Ok(attrs) => attrs,
+            Err(error) => return Some(error.to_compile_error()),
+        };
+        let has_default = attrs.has_default();
+        let default = attrs.default_value_tokens();
         let wire = attrs.wire_name;
         if attrs.skip {
             Some(quote! {
-                #ident: ::core::default::Default::default()
+                #ident: #default
             })
-        } else if attrs.default {
+        } else if has_default {
             Some(quote! {
                 #ident: match record.get(#wire) {
                     Some(value) => ::arcweft_data::Decode::decode(value).map_err(|err| err.at_field(#wire))?,
-                    None => ::core::default::Default::default(),
+                    None => #default,
                 }
             })
         } else {
@@ -436,7 +471,10 @@ fn decode_enum<'a>(
     let variants = variants.into_iter();
     let arms = variants.map(|variant| {
         let ident = &variant.ident;
-        let wire = VariantAttrs::from_attrs(&variant.attrs, ident, container.rename_all).wire_name;
+        let wire = match VariantAttrs::from_attrs(&variant.attrs, ident, container.rename_all) {
+            Ok(attrs) => attrs.wire_name,
+            Err(error) => return error.to_compile_error(),
+        };
         decode_enum_variant_arm(ident, &wire, &variant.fields, &tag_style, container)
     });
     let decode_body = match &tag_style {
@@ -566,17 +604,23 @@ fn decode_named_enum_variant_arm(
     let known_fields = known_named_fields(fields, container);
     let field_initializers = fields.named.iter().filter_map(|field| {
         let field_ident = field.ident.as_ref()?;
-        let attrs = FieldAttrs::from_attrs(&field.attrs, field_ident, container.rename_all);
+        let attrs =
+            match FieldAttrs::from_attrs(&field.attrs, field_ident, container.rename_all) {
+                Ok(attrs) => attrs,
+                Err(error) => return Some(error.to_compile_error()),
+            };
+        let has_default = attrs.has_default();
+        let default = attrs.default_value_tokens();
         let wire_name = attrs.wire_name;
         if attrs.skip {
             Some(quote! {
-                #field_ident: ::core::default::Default::default()
+                #field_ident: #default
             })
-        } else if attrs.default {
+        } else if has_default {
             Some(quote! {
                 #field_ident: match record.get(#wire_name) {
                     Some(value) => ::arcweft_data::Decode::decode(value).map_err(|err| err.at_field(#wire_name))?,
-                    None => ::core::default::Default::default(),
+                    None => #default,
                 }
             })
         } else {
@@ -649,10 +693,13 @@ fn reflected_named_fields(
         .filter_map(|field| {
             let ident = field.ident.as_ref()?;
             let ty = &field.ty;
-            let attrs = FieldAttrs::from_attrs(&field.attrs, ident, container.rename_all);
+            let attrs = match FieldAttrs::from_attrs(&field.attrs, ident, container.rename_all) {
+                Ok(attrs) => attrs,
+                Err(error) => return Some(error.to_compile_error()),
+            };
             let rust_name = ident.to_string();
+            let default_call = attrs.has_default().then(|| quote!(.with_default()));
             let wire_name = attrs.wire_name;
-            let default_call = attrs.default.then(|| quote!(.with_default()));
             let skip_call = attrs.skip.then(|| quote!(.skipped()));
             let bytes_call = attrs
                 .bytes_format
@@ -673,7 +720,10 @@ fn reflected_variant(
     container: &ContainerAttrs,
 ) -> proc_macro2::TokenStream {
     let ident = &variant.ident;
-    let wire = VariantAttrs::from_attrs(&variant.attrs, ident, container.rename_all).wire_name;
+    let wire = match VariantAttrs::from_attrs(&variant.attrs, ident, container.rename_all) {
+        Ok(attrs) => attrs.wire_name,
+        Err(error) => return error.to_compile_error(),
+    };
     let rust = ident.to_string();
     let discriminant = container
         .repr
@@ -715,13 +765,114 @@ fn add_trait_bounds(mut generics: Generics, bound: &proc_macro2::TokenStream) ->
     generics
 }
 
+fn validate_input_attrs(input: &DeriveInput, container: &ContainerAttrs) -> syn::Result<()> {
+    let mut errors = None;
+    if let Err(error) = container.validate_for_input(input) {
+        combine_error(&mut errors, error);
+    }
+    match &input.data {
+        Data::Struct(data) => {
+            if let Fields::Named(fields) = &data.fields
+                && let Err(error) = validate_field_wire_names(fields, container)
+            {
+                combine_error(&mut errors, error);
+            }
+        }
+        Data::Enum(data) => {
+            if let Err(error) = validate_variant_wire_names(data.variants.iter(), container) {
+                combine_error(&mut errors, error);
+            }
+            for variant in &data.variants {
+                if let Fields::Named(fields) = &variant.fields
+                    && let Err(error) = validate_field_wire_names(fields, container)
+                {
+                    combine_error(&mut errors, error);
+                }
+            }
+        }
+        Data::Union(_) => {}
+    }
+    errors.map_or(Ok(()), Err)
+}
+
+fn validate_field_wire_names(
+    fields: &syn::FieldsNamed,
+    container: &ContainerAttrs,
+) -> syn::Result<()> {
+    let mut seen = BTreeMap::<String, &Ident>::new();
+    let mut errors = None;
+    for field in &fields.named {
+        let Some(ident) = field.ident.as_ref() else {
+            continue;
+        };
+        match FieldAttrs::from_attrs(&field.attrs, ident, container.rename_all) {
+            Ok(attrs) if attrs.skip => {}
+            Ok(attrs) => {
+                if let Some(previous) = seen.insert(attrs.wire_name.clone(), ident) {
+                    combine_error(
+                        &mut errors,
+                        syn::Error::new_spanned(
+                            ident,
+                            format!(
+                                "duplicate Arcweft wire name `{}` also used by `{previous}`",
+                                attrs.wire_name
+                            ),
+                        ),
+                    );
+                }
+            }
+            Err(error) => combine_error(&mut errors, error),
+        }
+    }
+    errors.map_or(Ok(()), Err)
+}
+
+fn validate_variant_wire_names<'a>(
+    variants: impl IntoIterator<Item = &'a syn::Variant>,
+    container: &ContainerAttrs,
+) -> syn::Result<()> {
+    let mut seen = BTreeMap::<String, &Ident>::new();
+    let mut errors = None;
+    for variant in variants {
+        let ident = &variant.ident;
+        match VariantAttrs::from_attrs(&variant.attrs, ident, container.rename_all) {
+            Ok(attrs) => {
+                if let Some(previous) = seen.insert(attrs.wire_name.clone(), ident) {
+                    combine_error(
+                        &mut errors,
+                        syn::Error::new_spanned(
+                            ident,
+                            format!(
+                                "duplicate Arcweft variant wire name `{}` also used by `{previous}`",
+                                attrs.wire_name
+                            ),
+                        ),
+                    );
+                }
+            }
+            Err(error) => combine_error(&mut errors, error),
+        }
+    }
+    errors.map_or(Ok(()), Err)
+}
+
+fn combine_error(errors: &mut Option<syn::Error>, error: syn::Error) {
+    match errors {
+        Some(existing) => existing.combine(error),
+        None => *errors = Some(error),
+    }
+}
+
 fn known_named_fields(fields: &syn::FieldsNamed, container: &ContainerAttrs) -> Vec<String> {
     fields
         .named
         .iter()
         .filter_map(|field| {
             let ident = field.ident.as_ref()?;
-            let attrs = FieldAttrs::from_attrs(&field.attrs, ident, container.rename_all);
+            let Ok(attrs) = FieldAttrs::from_attrs(&field.attrs, ident, container.rename_all)
+            else {
+                return None;
+            };
             (!attrs.skip).then_some(attrs.wire_name)
         })
         .collect()

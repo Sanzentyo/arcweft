@@ -1,0 +1,5 @@
+error: unsupported rename rule `scream_case`
+ --> tests/derive/fail/invalid_rename_all.rs:4:11
+  |
+4 | #[arcweft(rename_all = "scream_case")]
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,5 @@
+error: `content` requires `tag` in #[arcweft(...)]
+ --> tests/derive/fail/content_without_tag.rs:5:6
+  |
+5 | enum Bad {
+  |      ^^^

@@ -1,0 +1,5 @@
+error: `repr` is only supported on enum derives
+ --> tests/derive/fail/repr_on_struct.rs:5:8
+  |
+5 | struct Bad {
+  |        ^^^

@@ -16,13 +16,13 @@ impl RenameRuleAttr {
     const PASCAL_CASE: &'static str = "PascalCase";
     const PASCAL_CASE_ALIAS: &'static str = "pascal_case";
 
-    pub(crate) fn parse(value: &str) -> Self {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
-            Self::SNAKE_CASE => Self::SnakeCase,
-            Self::KEBAB_CASE => Self::KebabCase,
-            Self::CAMEL_CASE | Self::CAMEL_CASE_ALIAS => Self::CamelCase,
-            Self::PASCAL_CASE | Self::PASCAL_CASE_ALIAS => Self::PascalCase,
-            _ => Self::None,
+            Self::SNAKE_CASE => Some(Self::SnakeCase),
+            Self::KEBAB_CASE => Some(Self::KebabCase),
+            Self::CAMEL_CASE | Self::CAMEL_CASE_ALIAS => Some(Self::CamelCase),
+            Self::PASCAL_CASE | Self::PASCAL_CASE_ALIAS => Some(Self::PascalCase),
+            _ => None,
         }
     }
 
