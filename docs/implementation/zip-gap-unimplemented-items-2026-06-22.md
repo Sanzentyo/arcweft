@@ -24,44 +24,8 @@ Implementation baseline used for this inventory:
 
 | Area | Item | Status | Missing thing that blocks completion |
 | --- | --- | --- | --- |
-| Agent | ZG-A-003 `.awfagent` formatter proof | Partial implementation | `.awfagent` の comments/trivia と Agent item 全体に対する lossless/canonical golden と idempotence 証跡 |
 | Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外での remote REPL / data codec focused gates と workspace gates の記録 |
 | Data | ZG-D-001 parse-time budgets outside Arcweft Binary | Open implementation | JSON/TOML/YAML/MsgPack/CBOR/CSV/Arrow/Parquet/Avro が format-native value を作る前に Arcweft decode budget で止める reader/visitor 実装 |
-
-## ZG-A-003: `.awfagent` Formatter Proof
-
-Status: **Partial implementation**.
-
-Existing implementation:
-
-- `crates/arcweft-cli/src/app/tooling.rs` は `.awfagent` を formatting target
-  として受け付ける。
-- formatter route は `SourceDialect::Agent` を通る。
-- Agent source では game-only sugar rewrite を避ける入口はある。
-
-具体的に未実装な動作・証跡:
-
-- `.awfagent` 専用の comments/trivia preserving golden が不足している。
-- Agent declarations, effects, waits, actions, captures, resources, RAG calls
-  をまとめて canonical form に整える golden が不足している。
-- formatter が `format(format(input)) == format(input)` を満たすことを
-  Agent dialect 全体で示す idempotence test が不足している。
-- `.arcw` と `.awfagent` の dialect 差分が regression として固定されていない。
-- 現在ある `.awfagent` 入口だけでは、lossless/canonical formatter である
-  ことの証明にならない。
-
-必要なテスト・証跡:
-
-- Agent syntax family ごとの before/after golden。
-- comments/trivia を含む roundtrip or lossless formatting golden。
-- `.awfagent` idempotence test。
-- `.arcw` 側の formatting regression。
-
-なぜ完了扱いにできないか:
-
-ZIP の要求は「拡張子を受け付けること」ではなく、
-Agent dialect の formatter として安全に使えること。入口があるだけでは、
-コメント欠落、trivia 破壊、Agent-only item の誤整形を防げない。
 
 ## ZG-A-004: Linux/macOS Validation
 
@@ -163,6 +127,11 @@ some of them leave related items open:
   and reports structured per-binding preserve/drop decisions. A focused test
   connects to two fake stdio MCP children with different program hashes and
   asserts the resulting `binding_policy`.
+- `.awfagent` formatting is dialect-aware, source-preserving, idempotent, and
+  covered by golden tests for comments/trivia, Agent declarations, effects,
+  waits, semantic and physical actions, captures, resources, debug recording,
+  and RAG calls. CLI `arcw fmt --json file.awfagent` preserves Agent source, and
+  `arcw fmt --expand-sugar file.awfagent` rejects game-dialect rewrites.
 - Raw shape conversion plus JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow,
   Parquet, and Avro reject non-finite floats, float-to-integer recovery, and
   signed/unsigned bounds violations through focused numeric edge tests.

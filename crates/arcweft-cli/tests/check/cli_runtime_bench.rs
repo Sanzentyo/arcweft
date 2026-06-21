@@ -2675,6 +2675,53 @@ fn fmt_preserves_sugar_by_default() {
 }
 
 #[test]
+fn fmt_accepts_awfagent_path_and_preserves_agent_source_json() {
+    let source = "#[agent(version = 1)]\nagent @agent.cli.format_smoke format_smoke()\neffects { agent.resource.read, debug.record }\n{\n    // Keep comments and Agent calls stable.\n    let resource = try read_resource(\"arcweft://session/cli/observation/latest.json\")\n    attach(resource)\n    return resource.uri\n}\n";
+    let path = temp_file("fmt-agent-preserve", "awfagent", source);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("fmt")
+        .arg(&path)
+        .arg("--json")
+        .output()
+        .expect("arcw fmt runs on .awfagent");
+
+    assert!(
+        output.status.success(),
+        "fmt .awfagent should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("fmt JSON report");
+    let file = &report["files"][0];
+    assert_eq!(file["changed"], false);
+    assert_eq!(file["edits"], 0);
+    assert_eq!(file["output"], source);
+    assert_eq!(fs::read_to_string(&path).expect("source remains"), source);
+}
+
+#[test]
+fn fmt_rejects_game_sugar_rewrites_for_awfagent_path() {
+    let source = "#[agent(version = 1)]\nagent @agent.cli.format_smoke format_smoke()\n{\n    return \"ok\"\n}\n";
+    let path = temp_file("fmt-agent-reject-expand", "awfagent", source);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("fmt")
+        .arg("--expand-sugar")
+        .arg(&path)
+        .output()
+        .expect("arcw fmt runs on .awfagent");
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("not supported for Agent"),
+        "Agent formatter should reject game sugar rewrites, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read_to_string(&path).expect("source remains"), source);
+}
+
+#[test]
 fn fmt_expand_sugar_accepts_flags_before_path_and_writes() {
     let path = temp_arcw(
         "fmt-expand",

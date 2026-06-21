@@ -146,9 +146,11 @@ For the current requirement-by-requirement open-item ledger, see
 - The CLI-owned stdio MCP transport is process-backed and now covers fake-child
   roundtrip, timeout enforcement, bounded stderr retention, and graceful
   shutdown-before-kill behavior.
-- The checked-in `.awfagent` formatter path is dialect-aware and diagnostic
-  producing, but it is not yet a full lossless canonical formatter with golden
-  coverage for comments/trivia and all Agent item families.
+- The checked-in `.awfagent` formatter path is dialect-aware, diagnostic
+  producing, source-preserving, and idempotent. Golden coverage now fixes
+  comments/trivia plus Agent declarations, effects, waits, actions, captures,
+  resources, debug recording, and RAG calls. CLI coverage fixes `.awfagent`
+  path routing and rejects game-dialect sugar rewrites for Agent sources.
 - Data raw transcoding covers the initial shape/value bridge. Parser-integrated
   JSON/TOML/YAML/CSV decode budgets and strict binary raw coverage remain
   separate data-format tasks.
@@ -241,6 +243,8 @@ cargo test -p arcweft-config --test shape_merge
 cargo clippy -p arcweft-config --all-targets --all-features -- -D warnings
 cargo test -p arcweft-agent-mcp -p arcweft-agent-mcp-client -p arcweft-test --all-features
 cargo test -p arcweft-tooling agent_format --all-features
+cargo test -p arcweft-cli fmt_accepts_awfagent_path_and_preserves_agent_source_json --test check --all-features -- --nocapture
+cargo test -p arcweft-cli fmt_rejects_game_sugar_rewrites_for_awfagent_path --test check --all-features -- --nocapture
 cargo test -p arcweft-cli stdio_transport_roundtrips_agent_session_calls_through_fake_child --all-features
 cargo test -p arcweft-cli stdio_transport_ --all-features -- --nocapture
 cargo clippy -p arcweft-cli --all-targets --all-features -- -D warnings

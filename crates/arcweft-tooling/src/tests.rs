@@ -47,6 +47,106 @@ fn agent_format_rejects_game_sugar_rewrites() {
 }
 
 #[test]
+fn agent_format_preserves_comments_trivia_and_item_golden() {
+    let source = r#"//! Agent formatter fixture
+/// Investigates route behavior while preserving docs.
+#[agent(version = 1)]
+
+// Launch metadata must stay attached to the agent item.
+#[launch(profile = "game.dev")]
+#[bind(program = compatible)]
+#[budget(timeout = 45s, steps = 192usize, captures = 8usize, rag_queries = 4usize)]
+agent @agent.debug.opening_route investigate_opening_route()
+effects {
+    agent.observe,
+    agent.act.semantic,
+    agent.wait,
+    agent.capture,
+    agent.resource.read,
+    debug.record,
+    rag.query,
+}
+{
+    // Observation and semantic action.
+    let before = try observe()
+    note(fmt("initial tick={before.tick} state={before.state_hash}"))
+    let result = try choose(@choice.opening.listen)
+    checkpoint("choice-dispatched")
+
+    // Composite wait with entity refs and diagnostics.
+    let after = try wait(
+        any([
+            signal(@signal.current_flow).eq(@flow.alice_intro),
+            diagnostics().has_error(),
+        ]),
+        timeout = 8s,
+    )
+
+    if after.signals.get(@signal.current_flow) != @flow.alice_intro {
+        let context = try rag.query(
+            "opening listen choice did not reach alice_intro",
+            roots = [@choice.opening.listen, @flow.alice_intro],
+            graph_depth = 2u32,
+            limit = 12usize,
+        )
+        note(context.summary())
+
+        let latest = try read_resource("arcweft://session/cli/observation/latest.json")
+        attach(latest)
+        let image = try capture(viewport(), name = "route-failure")
+        attach(image)
+
+        expect(false, message = "opening route failed; investigation context attached")
+    }
+
+    expect(result.accepted)
+    Ok(())
+}
+"#;
+
+    assert_agent_format_golden(source);
+}
+
+#[test]
+fn agent_format_is_idempotent_for_action_resource_and_rag_samples() {
+    let samples = [
+        include_str!("../../../samples/agent-script/cli-pointer-click-smoke.awfagent"),
+        include_str!("../../../samples/agent-script/cli-attach-resource-smoke.awfagent"),
+        include_str!("../../../samples/agent-script/failure-investigation.awfagent"),
+    ];
+
+    for sample in samples {
+        assert_agent_format_golden(sample);
+    }
+}
+
+fn assert_agent_format_golden(source: &str) {
+    let first = format_source_with_dialect(source, SourceDialect::Agent, FormatOptions::default())
+        .expect("agent format report");
+    assert!(!first.changed);
+    assert_eq!(first.output, source);
+    assert!(
+        first.diagnostics.is_empty(),
+        "Agent formatter should not report diagnostics for golden fixture: {:?}",
+        first.diagnostics
+    );
+
+    let second = format_source_with_dialect(
+        &first.output,
+        SourceDialect::Agent,
+        FormatOptions::default(),
+    )
+    .expect("second agent format report");
+    assert!(!second.changed);
+    assert_eq!(second.output, first.output);
+    assert!(
+        second.diagnostics.is_empty(),
+        "second Agent formatter pass should remain diagnostic-free: {:?}",
+        second.diagnostics
+    );
+}
+
+#[test]
 fn expands_speaker_with_and_parent_sugar() {
     let source = "pub surface character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    alice: hi[p]\n    with:\n        log.info(\"x\")\n    goto parent::next\n}\n";
     let report = format_source(

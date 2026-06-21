@@ -20,20 +20,6 @@ For a concise explanation of the concrete unfinished items, see
 
 ## Open Agent Items
 
-### ZG-A-003: `.awfagent` formatter is not yet proven lossless/canonical
-
-- ZIP tasks: T-007, A-14.
-- Current evidence:
-  `crates/arcweft-cli/src/app/tooling.rs` accepts `.awfagent`, and the current
-  formatter route is dialect-aware. The remaining audit still records that
-  comments/trivia and all Agent item families do not have full golden coverage.
-- Why this matters: accepting `.awfagent` in `arcw fmt` is only the entrypoint;
-  the ZIP target asks for idempotent, canonical formatting behavior for the
-  dialect.
-- Completion evidence needed: golden and idempotence tests for comments,
-  trivia, Agent declarations, effects, waits, actions, captures, resources,
-  RAG calls, and `.arcw` regression cases.
-
 ### ZG-A-004: Linux/macOS platform validation is not recorded
 
 - ZIP tasks: T-009, A-21.
@@ -74,6 +60,40 @@ For a concise explanation of the concrete unfinished items, see
   session-derived drop, and the structured `binding_policy` report.
 - Remaining related work: Linux/macOS platform validation for the remote REPL
   path remains tracked under ZG-A-004.
+
+### ZG-A-003: `.awfagent` formatter is lossless and idempotent for Agent dialect
+
+- ZIP tasks: T-007, A-14.
+- Current evidence:
+  `crates/arcweft-cli/src/app/tooling.rs` accepts `.awfagent`, dispatches those
+  files through `SourceDialect::Agent`, and rejects game-only sugar rewrites for
+  Agent sources. The current Agent formatter contract is source-preserving:
+  it reports Agent parser diagnostics but does not rewrite authored Agent
+  source, so its canonical form is the stable authored form.
+- Golden coverage:
+  `crates/arcweft-tooling/src/tests.rs` now has
+  `agent_format_preserves_comments_trivia_and_item_golden` for comments,
+  doc comments, blank lines, attributes, Agent declarations, effects, waits,
+  semantic actions, captures, resources, debug recording, and RAG calls. The
+  same test asserts no diagnostics, unchanged output, and a stable second pass.
+- Sample/idempotence coverage:
+  `agent_format_is_idempotent_for_action_resource_and_rag_samples` covers
+  physical pointer actions, resource read/attach, and the broader
+  failure-investigation Agent sample. Existing `.arcw` formatting tests still
+  cover game-source sugar behavior separately.
+- CLI coverage:
+  `crates/arcweft-cli/tests/check/cli_runtime_bench.rs` now asserts that
+  `arcw fmt --json file.awfagent` preserves Agent comments and calls without
+  edits, and that `arcw fmt --expand-sugar file.awfagent` is rejected instead
+  of applying game-dialect rewrites.
+- Validation evidence:
+  `cargo test -p arcweft-tooling agent_format --all-features -- --nocapture`,
+  `cargo test -p arcweft-cli fmt_accepts_awfagent_path_and_preserves_agent_source_json --test check --all-features -- --nocapture`,
+  and
+  `cargo test -p arcweft-cli fmt_rejects_game_sugar_rewrites_for_awfagent_path --test check --all-features -- --nocapture`
+  passed on Windows.
+- Remaining related work: Linux/macOS platform validation for this cut remains
+  tracked under ZG-A-004.
 
 ### ZG-A-002: stdio MCP transport is hardened for blocking children
 

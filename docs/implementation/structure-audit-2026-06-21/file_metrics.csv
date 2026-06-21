@@ -158,7 +158,7 @@ crates/arcweft-cli/tests/check/agent_observe_native/published_jlreq_units.rs,147
 crates/arcweft-cli/tests/check/agent_observe_native/shared.rs,46006,1245,1173,test,true,true,false,false
 crates/arcweft-cli/tests/check/agent_observe_native.rs,934,21,19,test,true,true,false,false
 crates/arcweft-cli/tests/check/agent_script_debug.rs,201078,5250,5034,test,true,true,false,false
-crates/arcweft-cli/tests/check/cli_runtime_bench.rs,253604,7651,7175,test,true,true,false,false
+crates/arcweft-cli/tests/check/cli_runtime_bench.rs,255533,7698,7216,test,true,true,false,false
 crates/arcweft-cli/tests/check/toolchain_jit.rs,41496,1552,1493,test,true,true,false,false
 crates/arcweft-cli/tests/check.rs,27104,786,726,test,true,true,false,false
 crates/arcweft-cli/tests/check_core_cli.rs,1343,43,37,test,true,true,false,false
@@ -677,7 +677,7 @@ crates/arcweft-tooling/src/line_sugar.rs,3917,126,118,production,true,false,fals
 crates/arcweft-tooling/src/model.rs,2409,72,56,production,true,false,false,false
 crates/arcweft-tooling/src/speaker_presets.rs,26487,660,640,production,true,false,false,false
 crates/arcweft-tooling/src/sugar_expansion.rs,3035,84,80,production,true,false,false,false
-crates/arcweft-tooling/src/tests.rs,17476,479,432,test,true,true,false,false
+crates/arcweft-tooling/src/tests.rs,20571,579,516,test,true,true,false,false
 crates/arcweft-tooling/src/util.rs,246,7,7,production,true,false,false,false
 crates/arcweft-ui/Cargo.toml,398,19,16,text,false,false,false,false
 crates/arcweft-ui/src/component.rs,3412,108,80,production,true,false,false,false
@@ -839,7 +839,7 @@ docs/implementation/refactor-checklist.md,4398,98,80,text,false,false,false,fals
 docs/implementation/rich-text-object-goal-audit.md,7148,82,67,text,false,false,false,false
 docs/implementation/rich-text-object-visual-evidence.md,4718,53,42,text,false,false,false,false
 docs/implementation/runtime-acceleration-goal-gap.md,9295,238,173,text,false,false,false,false
-docs/implementation/structure-audit-2026-06-21/violations.md,16710,500,250,text,false,false,false,false
+docs/implementation/structure-audit-2026-06-21/violations.md,16721,500,250,text,false,false,false,false
 docs/implementation/structure-refactor-2026-06-21.md,14768,247,228,text,false,false,false,false
 docs/implementation/test-execution-policy.md,25489,398,331,text,false,false,false,false
 docs/implementation/vertical-longterm-design-20260612/Cargo.toml,419,20,17,text,false,false,false,false
@@ -894,9 +894,9 @@ docs/implementation/visual-sample-review-issues/2026-06-17/README.md,50907,60,57
 docs/implementation/visual-sample-review-issues/2026-06-18/README.md,7294,24,20,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-hotspot-capture-metadata.json,2420,113,113,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-param-choice-presentation-tree.json,18532,626,626,text,false,false,false,false
-docs/implementation/zip-gap-audit-2026-06-21.md,16965,252,243,text,false,false,false,false
-docs/implementation/zip-gap-open-items-2026-06-21.md,16455,315,275,text,false,false,false,false
-docs/implementation/zip-gap-unimplemented-items-2026-06-22.md,9720,193,149,text,false,false,false,false
+docs/implementation/zip-gap-audit-2026-06-21.md,17371,256,247,text,false,false,false,false
+docs/implementation/zip-gap-open-items-2026-06-21.md,17681,335,295,text,false,false,false,false
+docs/implementation/zip-gap-unimplemented-items-2026-06-22.md,8387,162,128,text,false,false,false,false
 docs/reviews/pro_review1.md,22523,670,495,text,false,false,false,false
 docs/reviews/pro_review10.md,24274,938,713,text,false,false,false,false
 docs/reviews/pro_review11.md,62235,3442,2511,text,false,false,false,false

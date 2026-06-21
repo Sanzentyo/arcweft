@@ -200,7 +200,7 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-cli/tests/check/cli_runtime_bench.rs`
 
-7651 physical LOC exceeds the 2500 LOC review threshold
+7698 physical LOC exceeds the 2500 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
