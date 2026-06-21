@@ -173,12 +173,14 @@ For the current requirement-by-requirement open-item ledger, see
   upper bounds for bytes cells. Arrow IPC
   and Parquet now consume decode budget at batch conversion time for rows,
   record fields, value nodes, strings, and bytes, with Parquet row-count
-  metadata checked before reader build. Avro now consumes top-level datum-stream
+  metadata and variable-width column/page buffers checked before reader build.
+  Compressed Parquet variable-width columns are rejected under Arcweft limits.
+  Avro now consumes top-level datum-stream
   row budget during reader iteration and avoids collecting all scalar datums
   before enforcing single-datum scalar decode. Arrow IPC now preflights IPC
   footer/message metadata and Utf8/Binary offset buffers before `FileReader`
-  can materialize record-batch column buffers. Parquet and Avro still need
-  strict reader-internal pre-materialization budgets for format-owned buffers
+  can materialize record-batch column buffers. Avro still needs strict
+  reader-internal pre-materialization budgets for nested datum materialization
   where documented.
 - Save decoding now enforces the envelope identity/version gates from the ZIP
   guide and supports explicit multi-step migration chains. Envelope v1's
@@ -200,13 +202,14 @@ For the current requirement-by-requirement open-item ledger, see
   for bytes cells in the same preflight. Arrow IPC preflights record-batch
   Utf8/Binary offset buffers before `FileReader` materialization and consumes
   row/record/string/bytes budgets again before copying Arrow scalar buffers
-  into Arcweft values. Parquet preflights metadata row count and consumes
-  row/record/string/bytes budgets before copying Arrow scalar buffers into
-  Arcweft values. Avro consumes top-level row budget while iterating the datum stream, enforces
+  into Arcweft values. Parquet preflights metadata row count plus variable-width
+  column/page buffers before `ParquetRecordBatchReader` materialization and
+  consumes row/record/string/bytes budgets before copying Arrow scalar buffers
+  into Arcweft values. Avro consumes top-level row budget while iterating the datum stream, enforces
   scalar single-datum decode without collecting the whole stream, and checks
   record/string/bytes budgets before copying materialized `AvroValue` contents.
-  Remaining tabular/data-format work is strict pre-materialization budget
-  enforcement for parser-owned row/column/datum allocation.
+  Remaining tabular/data-format work is strict Avro pre-materialization budget
+  enforcement for parser-owned nested datum allocation.
 - HTTP negotiation now covers the T-112 `Accept` q/wildcard/q=0/content
   parameter/body cap matrix for the codec adapter boundary. Remaining data
   adapter policy work is now concentrated in parser/reader-integrated budgets.

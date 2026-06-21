@@ -16,8 +16,10 @@ use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use bytes::Bytes as ByteBuffer;
 use ipc_preflight::preflight_arrow_ipc_buffers;
+use parquet_preflight::preflight_parquet_buffers;
 
 mod ipc_preflight;
+mod parquet_preflight;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ArrowIpcCodec;
@@ -118,12 +120,14 @@ impl Codec for ParquetCodec {
         let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
         let row_shape = arrow_row_shape(shape)?;
         let bytes = ByteBuffer::copy_from_slice(input);
-        let builder = parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(bytes)
-            .map_err(arrow_error)?;
+        let builder =
+            parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(bytes.clone())
+                .map_err(arrow_error)?;
         reject_parquet_row_count(
             builder.metadata().file_metadata().num_rows(),
             &options.limits,
         )?;
+        preflight_parquet_buffers(&bytes, builder.metadata(), row_shape, &options.limits)?;
         let reader = builder
             .with_batch_size(parquet_decode_batch_size(options.limits.max_sequence_len))
             .build()

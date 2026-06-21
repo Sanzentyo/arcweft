@@ -144,21 +144,24 @@ For a concise explanation of the concrete unfinished items, see
   batch conversion time for rows, record field counts, value nodes, strings,
   and bytes before copying Arrow scalar buffers into Arcweft `Value`; Parquet
   also rejects metadata row-count overflow before building the record batch
-  reader. Avro now consumes top-level datum
+  reader, preflights declared shape variable-width columns before building
+  `ParquetRecordBatchReader`, rejects compressed variable-width column chunks
+  under Arcweft limits, and caps uncompressed column chunk, unencoded
+  byte-array data, and page buffers by the declared string/bytes limit. Avro
+  now consumes top-level datum
   stream row budget while iterating `apache_avro::Reader`, avoids collecting all
   scalar datums before enforcing the single-datum scalar policy, and consumes
   record/map/array/node/string/bytes budgets before copying materialized
   `AvroValue` contents into Arcweft `Value`.
 - Concrete unfinished slices:
-  Parquet still needs page/row-group string and binary budget checks before column buffers are
-  materialized by the record batch reader. Avro still needs a datum
-  visitor/reader budget before arrays, maps, records, strings, bytes, and
-  payload enum branches become `AvroValue` intermediates inside a single datum.
+  Avro still needs a datum visitor/reader budget before arrays, maps, records,
+  strings, bytes, and payload enum branches become `AvroValue` intermediates
+  inside a single datum.
 - Why this matters: hostile inputs can allocate large intermediate documents
   before Arcweft limits run.
-- Completion evidence needed: parser-integrated visitors/readers or equivalent
-  bounded readers for the remaining codecs, plus adversarial
-  input/depth/node/collection tests that fail before unbounded allocation.
+- Completion evidence needed: parser-integrated visitor/reader or equivalent
+  bounded reader for Avro, plus adversarial input/depth/node/collection tests
+  that fail before unbounded allocation.
 
 ## Resolved Data Items
 
@@ -209,12 +212,18 @@ For a concise explanation of the concrete unfinished items, see
   passed on Windows. The focused tests cover Arrow IPC and Parquet roundtrip,
   unknown/missing fields, option nulls, unsupported nested/enum shapes, decode
   input caps, row/record-field/string/bytes budget consumption during decode,
-  and numeric edge policy.
+  Arrow IPC pre-`RecordBatch` string/bytes preflight, Parquet pre-
+  `RecordBatch` string/bytes preflight, and numeric edge policy. The current
+  reviewable cut also passed `cargo clippy --workspace --all-targets
+  --all-features` and the structural audit script with `0 error(s), 83
+  warning(s)`.
 - Remaining related work: this resolves the Arrow IPC / Parquet shape-guided
   scalar-row slice, adds batch-conversion budget enforcement, and resolves
   Arrow IPC pre-`RecordBatch` string/binary buffer budget enforcement through
-  IPC metadata/body preflight. Strict Parquet row-group page buffer budget
-  enforcement remains tracked under ZG-D-001.
+  IPC metadata/body preflight. Parquet now also resolves strict pre-
+  `RecordBatch` variable-width column buffer enforcement through row-group/page
+  preflight under Arcweft limits; compressed variable-width Parquet columns are
+  rejected rather than decompressed outside that budget boundary.
 
 ### ZG-D-009: numeric edge-case policy is complete across current codecs
 

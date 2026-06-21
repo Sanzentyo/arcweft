@@ -7,7 +7,8 @@ It is the readable companion to
 strict requirement ledger.
 
 Implementation baseline used for this inventory:
-`5b1b6618 Preflight Arrow IPC buffers`.
+`5b1b6618 Preflight Arrow IPC buffers` plus the current Parquet
+variable-width preflight cut.
 
 This document is the concrete "what is still not implemented" answer for the
 ZIP gap goal as of that baseline. The current unfinished set is intentionally
@@ -15,16 +16,13 @@ small:
 
 - **ZG-A-004 / T-009 / A-21**: Linux and macOS validation evidence is still
   absent.
-- **ZG-D-001 / T-104 / D-13 / D-18**: Parquet still lacks strict page/row-group
-  string and binary budget enforcement before the Parquet/Arrow reader
-  materializes column buffers.
 - **ZG-D-001 / T-104 / D-13 / D-19**: Avro still lacks strict nested datum
   budget enforcement before `apache_avro::Reader` materializes nested
   `AvroValue` trees.
 
 Everything else from the ZIP is either recorded as resolved in
 `zip-gap-open-items-2026-06-21.md`, or is a related validation follow-up that
-depends on one of the three items above.
+depends on one of the items above.
 
 ## Status Model
 
@@ -42,7 +40,6 @@ depends on one of the three items above.
 | Area | Item | Status | Missing thing that blocks completion |
 | --- | --- | --- | --- |
 | Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外での remote REPL / stdio MCP / data codec focused gates と workspace gates の記録 |
-| Data | ZG-D-001-Parquet reader materialization budget | Partial implementation | metadata row count と batch conversion budget はあるが、row group/page decode が column buffers を materialize する前の string/binary cap はない |
 | Data | ZG-D-001-Avro datum materialization budget | Partial implementation | top-level datum stream と `AvroValue -> Arcweft Value` 変換時の budget はあるが、`apache_avro::Reader` が nested `AvroValue` を materialize する前の visitor/reader policy がない |
 
 ## ZG-A-004: Linux/macOS Validation
@@ -126,8 +123,12 @@ Existing implementation:
   and string/bytes budgets again while copying Arrow scalar buffers into
   Arcweft `Value`. Parquet creates `DecodeBudget` at decode entry, rejects
   total row count from metadata before building the record batch reader, caps
-  reader batch size by the sequence limit, and consumes row/map/node/string/
-  bytes budgets before copying Arrow scalar buffers into Arcweft `Value`.
+  reader batch size by the sequence limit, preflights declared shape
+  variable-width columns before building `ParquetRecordBatchReader`, rejects
+  compressed variable-width column chunks under Arcweft limits, caps
+  uncompressed column chunk, unencoded byte-array data, and page buffers by the
+  declared string/bytes limit, and consumes row/map/node/string/bytes budgets
+  before copying Arrow scalar buffers into Arcweft `Value`.
 - Avro now consumes top-level datum stream row budget while iterating
   `apache_avro::Reader`, avoids collecting all scalar datums before enforcing
   the single-datum top-level scalar policy, and consumes record/map/array,
@@ -140,19 +141,8 @@ Existing implementation:
   against `TypeShape` during preflight and checks hex/base64 decoded byte
   upper bounds for bytes cells before `StringRecord` materialization.
 
-具体的に未実装または部分実装に残っている動作は次の 2 つだけ:
+具体的に未実装または部分実装に残っている動作は次の 1 つだけ:
 
-- **Parquet reader materialization budget**:
-  Parquet も `max_input_len` と scalar row schema validation に加え、metadata
-  の total row count を reader build 前に確認し、reader batch size を sequence
-  limit に合わせ、`RecordBatch` から Arcweft `Value` を作る前に row/map/node/
-  string/bytes budget を消費する。未実装なのは、row group/page decode が
-  string/binary column buffers を materialize する前の budget gate と、metadata
-  だけでは分からない per-cell payload size を reader 内部 allocation 前に止める
-  経路である。
-  つまり、現在は「Parquet の row 数が多すぎる」「Arcweft `Value` へコピーする
-  string/bytes が大きすぎる」は止められるが、「Parquet reader が Arrow column
-  buffer を作る前に巨大 string/binary payload を止める」はまだできていない。
 - **Avro datum materialization budget**:
   Avro は `max_input_len`、schema validation、top-level datum stream の
   `sequence_item` 消費、top-level scalar の single-datum streaming check、
@@ -171,12 +161,6 @@ Existing implementation:
 
 必要な実装:
 
-- Parquet:
-  row-group/page metadata or page-reader preflight を reader build 前に走らせ、
-  shape 対象の string/binary columns について page/row-group 単位の encoded /
-  uncompressed / decoded byte upper bound を budget と照合する。metadata だけで
-  per-cell bound を証明できない場合は、page header/levels/offsets を読む
-  bounded preflight または crate-supported equivalent が必要。
 - Avro:
   supplied Avro schema と Arcweft `TypeShape` を使った datum scanner / bounded
   reader / visitor を `apache_avro::Reader` の nested materialization 前に入れ、
@@ -191,9 +175,8 @@ Existing implementation:
 
 必要なテスト・証跡:
 
-- 各 codec に adversarial input tests を追加する。Parquet は巨大
-  row/batch/column buffer、Avro は巨大
-  datum array/map/string/bytes を対象にする。
+- Avro に adversarial input tests を追加する。巨大 datum array/map/string/bytes
+  を対象にする。
 - 深い nesting、巨大 array/map/record、巨大 string/bytes、巨大 row/column などが
   unbounded intermediate allocation 前に失敗することを示す。
 - Arcweft Binary で済んでいる budget tests と同じ意味の matrix を、
@@ -201,8 +184,6 @@ Existing implementation:
 
 この項目が閉じたと言える条件:
 
-- Parquet の adversarial test が、`RecordBatch` / Arrow column buffer
-  materialization 前に Arcweft structured `LimitExceeded` 系の error で失敗する。
 - Avro の adversarial test が、nested `AvroValue` materialization 前またはそれと
   同等に allocation-bound な reader boundary で Arcweft structured
   `LimitExceeded` 系の error で失敗する。
@@ -273,9 +254,12 @@ some of them leave related items open:
   `FileReader` can materialize `RecordBatch` column buffers; focused tests
   cover oversized IPC string and bytes cells failing before record-batch
   decoding. Parquet rejects metadata row-count overflow before building the
-  record batch reader and consumes row/record/string/bytes budgets before
-  copying Arrow scalar buffers into Arcweft `Value`. Strict Parquet row-group
-  page buffer materialization remains tracked under ZG-D-001.
+  record batch reader, preflights declared shape variable-width columns before
+  building `ParquetRecordBatchReader`, rejects compressed variable-width column
+  chunks under Arcweft limits, caps uncompressed column chunk, unencoded
+  byte-array data, and page buffers by the declared string/bytes limit, then
+  consumes row/record/string/bytes budgets again before copying Arrow scalar
+  buffers into Arcweft `Value`.
 - Avro validates supplied schemas against `TypeShape`, maps scalar, record,
   option, array, map, native unit enum, and payload enum values
   bidirectionally, enforces top-level scalar versus datum-stream policy, and
