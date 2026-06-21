@@ -1,0 +1,5 @@
+error: Arcweft repr enum discriminants must be integer literals
+ --> tests/derive/fail/repr_discriminant_expression.rs:8:16
+  |
+8 |     Computed = VALUE,
+  |                ^^^^^

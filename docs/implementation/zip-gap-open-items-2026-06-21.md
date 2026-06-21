@@ -90,20 +90,6 @@ For a concise explanation of the concrete unfinished items, see
   bounded readers for each codec, plus adversarial input/depth/node/collection
   tests that fail before unbounded allocation.
 
-### ZG-D-002: derive shape generation still has known policy gaps
-
-- ZIP tasks: T-103, D-05, D-06, D-07.
-- Current evidence:
-  `arcweft-data-derive` now has a typed attribute parser and trybuild coverage,
-  but the remaining implementation note still lists precise generic bounds,
-  tuple/unit struct policy, multi-field tuple enum policy, and repr
-  discriminant range validation as open.
-- Why this matters: unsupported derive surfaces should either generate correct
-  shapes or fail with explicit compile errors; silent partial generation would
-  recreate the original package problem.
-- Completion evidence needed: pass/fail trybuild fixtures for generic bounds,
-  tuple/unit structs, multi-field tuple enum variants, and repr range errors.
-
 ### ZG-D-004: Arrow IPC and Parquet still infer schemas from values
 
 - ZIP tasks: T-108, T-109, D-18.
@@ -150,6 +136,26 @@ For a concise explanation of the concrete unfinished items, see
   NaN/infinity encode/decode behavior in every relevant codec.
 
 ## Resolved Data Items
+
+### ZG-D-002: derive shape generation policy gaps are closed
+
+- ZIP tasks: T-103, D-05, D-06, D-07.
+- Current evidence:
+  `arcweft-data-derive` now builds Encode/Decode/Reflect where predicates from
+  the concrete field types each generated impl uses instead of blindly bounding
+  every generic type parameter. Unsupported tuple structs, unit structs,
+  multi-field tuple enum variants, internally tagged newtype variants, repr
+  enum discriminant expressions, and out-of-range repr discriminants fail at
+  macro expansion with explicit compile errors instead of compiling into
+  runtime `unsupported` branches or silently truncated numeric shapes.
+- Validation evidence:
+  `cargo test -p arcweft-data --features derive --test derive_attrs`,
+  `cargo test -p arcweft-data --features derive derive_attribute_ui`, and
+  `cargo clippy -p arcweft-data -p arcweft-data-derive --all-targets --all-features -- -D warnings`
+  passed on Windows.
+- Remaining related work: this resolves the derive policy slice. Broader data
+  completion still depends on parser-integrated decode budgets, non-CSV
+  tabular codecs, Avro shape fidelity, and cross-codec numeric policy tests.
 
 ### ZG-D-003: CSV is schema-driven for scalar row data
 
@@ -223,8 +229,8 @@ For a concise explanation of the concrete unfinished items, see
   `cargo test -p arcweft-config --all-features`, and
   `cargo clippy --workspace --all-targets --all-features` passed on Windows.
 - Remaining related work: config merge provenance is covered. Broader
-  repository completion still depends on non-CSV tabular codecs, derive gaps,
-  parse-time budgets, and Agent REPL/MCP hardening.
+  repository completion still depends on non-CSV tabular codecs, parse-time
+  budgets, numeric policy, and Agent REPL/MCP hardening.
 
 ### ZG-D-010: save migration supports explicit multi-step chains
 
@@ -247,8 +253,8 @@ For a concise explanation of the concrete unfinished items, see
   checks. A future header-authenticated checksum would require a new versioned
   envelope contract rather than changing v1 semantics.
 - Remaining related work: save envelope migration chaining is covered. Broader
-  repository completion still depends on non-CSV tabular codecs, derive gaps,
-  parse-time budgets, and Agent REPL/MCP hardening.
+  repository completion still depends on non-CSV tabular codecs, parse-time
+  budgets, numeric policy, and Agent REPL/MCP hardening.
 
 ## Verification Debt That Blocks Goal Completion
 

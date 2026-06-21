@@ -26,7 +26,6 @@ ledger.
 | Agent | ZG-A-003 `.awfagent` formatter proof | Partial implementation | comments/trivia と Agent item 全体の lossless/canonical golden が不足 |
 | Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外の現在証跡が未記録 |
 | Data | ZG-D-001 parse-time budgets outside Arcweft Binary | Open implementation | 多くの codec が format-native value を先に materialize している |
-| Data | ZG-D-002 derive shape generation policy gaps | Partial implementation | generics、tuple/unit policy、repr range の trybuild 証跡が不足 |
 | Data | ZG-D-004 Arrow IPC / Parquet shape guidance | Open implementation | value inference から schema を作っており `TypeShape` 主導ではない |
 | Data | ZG-D-005 Avro shape fidelity | Open implementation | Avro schema と Arcweft `TypeShape` の対応検証が不足 |
 | Data | ZG-D-009 numeric edge-case policy matrix | Partial implementation | codec 横断の bounds / NaN / infinity policy test が不足 |
@@ -132,27 +131,6 @@ Why it is not complete:
 Post-parse validation is too late for hostile inputs that allocate huge native
 documents first.
 
-### ZG-D-002: derive shape generation policy gaps
-
-`arcweft-data-derive` now has a typed attribute parser and trybuild coverage for
-many malformed attributes, but several derive surfaces are still not nailed
-down.
-
-What remains:
-
-- Generate precise generic bounds or reject unsupported generic derive surfaces
-  with explicit compile errors and tests.
-- Define tuple struct and unit struct support policy, then cover it with
-  trybuild pass/fail fixtures.
-- Define multi-field tuple enum variant support policy and test it.
-- Validate repr enum discriminants against the selected repr range.
-
-Why it is not complete:
-
-Unsupported derive surfaces must either produce correct shapes or fail with
-clear compile errors. Silent partial generation would recreate the original
-package gap.
-
 ### ZG-D-004: Arrow IPC and Parquet shape guidance
 
 The Arrow/Parquet codec currently derives schema information from observed
@@ -222,6 +200,9 @@ some of them leave related items open:
 - `CodecRegistry` rejects duplicate ids, media types, extensions, and aliases.
 - Config merge is shape-aware and provenance-producing.
 - Save decoding supports explicit multi-step migration chains.
+- Derive shape generation now uses field-type where predicates and compile-time
+  policy errors for tuple/unit structs, unsupported tuple variants, internally
+  tagged newtype variants, and invalid repr discriminants.
 - JSON, TOML, YAML, MsgPack, and CBOR have moved away from the earlier broad
   JSON bridge for the covered raw-shape paths.
 

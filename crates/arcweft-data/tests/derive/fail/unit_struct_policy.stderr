@@ -1,0 +1,5 @@
+error: Arcweft derives support named-field structs only; unit structs require a manual implementation
+ --> tests/derive/fail/unit_struct_policy.rs:4:8
+  |
+4 | struct Bad;
+  |        ^^^

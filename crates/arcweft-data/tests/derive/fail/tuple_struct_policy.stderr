@@ -1,0 +1,5 @@
+error: Arcweft derives support named-field structs only; tuple structs require a manual implementation
+ --> tests/derive/fail/tuple_struct_policy.rs:4:11
+  |
+4 | struct Bad(u32);
+  |           ^^^^^

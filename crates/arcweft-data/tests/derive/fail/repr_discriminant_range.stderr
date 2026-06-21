@@ -1,0 +1,5 @@
+error: Arcweft repr enum discriminant 300 is outside the selected repr range 0..=255
+ --> tests/derive/fail/repr_discriminant_range.rs:6:5
+  |
+6 |     TooBig = 300,
+  |     ^^^^^^^^^^^^

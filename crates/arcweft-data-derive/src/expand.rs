@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use proc_macro2::Span;
 use quote::quote;
-use syn::{Data, DeriveInput, Fields, GenericParam, Generics, Ident, LitStr};
+use syn::{Data, DeriveInput, Expr, Fields, Generics, Ident, Lit, LitStr, Type, WherePredicate};
 
 use crate::attrs::{ContainerAttrs, FieldAttrs, ReprAttr, TagStyleAttr, VariantAttrs};
 
@@ -15,7 +15,11 @@ pub(crate) fn encode(input: &DeriveInput) -> proc_macro2::TokenStream {
     if let Err(error) = validate_input_attrs(input, &container) {
         return error.to_compile_error();
     }
-    let generics = add_trait_bounds(input.generics.clone(), &quote!(::arcweft_data::Encode));
+    let generics = add_data_trait_bounds(
+        input.generics.clone(),
+        encode_bound_types(&input.data, &container),
+        &quote!(::arcweft_data::Encode),
+    );
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     match &input.data {
         Data::Struct(data) => encode_struct(
@@ -60,7 +64,11 @@ pub(crate) fn decode(input: &DeriveInput) -> proc_macro2::TokenStream {
     if let Err(error) = validate_input_attrs(input, &container) {
         return error.to_compile_error();
     }
-    let generics = add_trait_bounds(input.generics.clone(), &quote!(::arcweft_data::Decode));
+    let generics = add_data_trait_bounds(
+        input.generics.clone(),
+        decode_bound_types(&input.data, &container),
+        &quote!(::arcweft_data::Decode),
+    );
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     match &input.data {
         Data::Struct(data) => decode_struct(
@@ -106,7 +114,11 @@ pub(crate) fn reflect(input: &DeriveInput) -> proc_macro2::TokenStream {
     if let Err(error) = validate_input_attrs(input, &container) {
         return error.to_compile_error();
     }
-    let generics = add_trait_bounds(input.generics.clone(), &quote!(::arcweft_data::Reflect));
+    let generics = add_data_trait_bounds(
+        input.generics.clone(),
+        reflect_bound_types(&input.data),
+        &quote!(::arcweft_data::Reflect),
+    );
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     match &input.data {
         Data::Struct(data) => {
@@ -754,14 +766,16 @@ fn reflected_variant(
     }
 }
 
-fn add_trait_bounds(mut generics: Generics, bound: &proc_macro2::TokenStream) -> Generics {
-    generics.params.iter_mut().for_each(|param| {
-        if let GenericParam::Type(type_param) = param {
-            type_param
-                .bounds
-                .push(syn::parse2(bound.clone()).expect("valid bound"));
-        }
-    });
+fn add_data_trait_bounds<'a>(
+    mut generics: Generics,
+    types: impl IntoIterator<Item = &'a Type>,
+    bound: &proc_macro2::TokenStream,
+) -> Generics {
+    let where_clause = generics.make_where_clause();
+    where_clause.predicates.extend(types.into_iter().map(|ty| {
+        syn::parse2::<WherePredicate>(quote!(#ty: #bound))
+            .expect("valid Arcweft derive where predicate")
+    }));
     generics
 }
 
@@ -771,15 +785,37 @@ fn validate_input_attrs(input: &DeriveInput, container: &ContainerAttrs) -> syn:
         combine_error(&mut errors, error);
     }
     match &input.data {
-        Data::Struct(data) => {
-            if let Fields::Named(fields) = &data.fields
-                && let Err(error) = validate_field_wire_names(fields, container)
-            {
-                combine_error(&mut errors, error);
+        Data::Struct(data) => match &data.fields {
+            Fields::Named(fields) => {
+                if let Err(error) = validate_field_wire_names(fields, container) {
+                    combine_error(&mut errors, error);
+                }
             }
-        }
+            Fields::Unnamed(fields) => combine_error(
+                &mut errors,
+                syn::Error::new_spanned(
+                    fields,
+                    "Arcweft derives support named-field structs only; tuple structs require a manual implementation",
+                ),
+            ),
+            Fields::Unit => combine_error(
+                &mut errors,
+                syn::Error::new_spanned(
+                    &input.ident,
+                    "Arcweft derives support named-field structs only; unit structs require a manual implementation",
+                ),
+            ),
+        },
         Data::Enum(data) => {
             if let Err(error) = validate_variant_wire_names(data.variants.iter(), container) {
+                combine_error(&mut errors, error);
+            }
+            if let Err(error) = validate_enum_variant_policy(data.variants.iter(), container) {
+                combine_error(&mut errors, error);
+            }
+            if let Some(repr) = &container.repr
+                && let Err(error) = validate_repr_discriminants(data.variants.iter(), repr)
+            {
                 combine_error(&mut errors, error);
             }
             for variant in &data.variants {
@@ -793,6 +829,169 @@ fn validate_input_attrs(input: &DeriveInput, container: &ContainerAttrs) -> syn:
         Data::Union(_) => {}
     }
     errors.map_or(Ok(()), Err)
+}
+
+fn encode_bound_types<'a>(data: &'a Data, container: &ContainerAttrs) -> Vec<&'a Type> {
+    match data {
+        Data::Struct(data) => encode_field_bound_types(&data.fields, container).collect(),
+        Data::Enum(data) => data
+            .variants
+            .iter()
+            .flat_map(|variant| encode_field_bound_types(&variant.fields, container))
+            .collect(),
+        Data::Union(_) => Vec::new(),
+    }
+}
+
+fn decode_bound_types<'a>(data: &'a Data, container: &ContainerAttrs) -> Vec<&'a Type> {
+    match data {
+        Data::Struct(data) => decode_field_bound_types(&data.fields, container).collect(),
+        Data::Enum(data) => data
+            .variants
+            .iter()
+            .flat_map(|variant| decode_field_bound_types(&variant.fields, container))
+            .collect(),
+        Data::Union(_) => Vec::new(),
+    }
+}
+
+fn reflect_bound_types(data: &Data) -> Vec<&Type> {
+    match data {
+        Data::Struct(data) => field_types(&data.fields).collect(),
+        Data::Enum(data) => data
+            .variants
+            .iter()
+            .flat_map(|variant| field_types(&variant.fields))
+            .collect(),
+        Data::Union(_) => Vec::new(),
+    }
+}
+
+fn encode_field_bound_types<'a>(
+    fields: &'a Fields,
+    container: &ContainerAttrs,
+) -> impl Iterator<Item = &'a Type> {
+    field_types_with_skip(fields, container).filter_map(|(ty, skip)| (!skip).then_some(ty))
+}
+
+fn decode_field_bound_types<'a>(
+    fields: &'a Fields,
+    container: &ContainerAttrs,
+) -> impl Iterator<Item = &'a Type> {
+    field_types_with_skip(fields, container).filter_map(|(ty, skip)| (!skip).then_some(ty))
+}
+
+fn field_types_with_skip<'a>(
+    fields: &'a Fields,
+    container: &ContainerAttrs,
+) -> impl Iterator<Item = (&'a Type, bool)> {
+    fields.iter().map(|field| {
+        let skip = field
+            .ident
+            .as_ref()
+            .and_then(|ident| {
+                FieldAttrs::from_attrs(&field.attrs, ident, container.rename_all).ok()
+            })
+            .is_some_and(|attrs| attrs.skip);
+        (&field.ty, skip)
+    })
+}
+
+fn field_types(fields: &Fields) -> impl Iterator<Item = &Type> {
+    fields.iter().map(|field| &field.ty)
+}
+
+fn validate_enum_variant_policy<'a>(
+    variants: impl IntoIterator<Item = &'a syn::Variant>,
+    container: &ContainerAttrs,
+) -> syn::Result<()> {
+    let mut errors = None;
+    let tag_style = container.tag_style();
+    for variant in variants {
+        match &variant.fields {
+            Fields::Unnamed(fields) if fields.unnamed.len() > 1 => combine_error(
+                &mut errors,
+                syn::Error::new_spanned(
+                    fields,
+                    "multi-field tuple enum variants are not supported by Arcweft derives; use a named-field variant or manual implementation",
+                ),
+            ),
+            Fields::Unnamed(fields) if matches!(tag_style, TagStyleAttr::Internal { .. }) => {
+                combine_error(
+                    &mut errors,
+                    syn::Error::new_spanned(
+                        fields,
+                        "internally tagged Arcweft enum variants must be unit or named-field variants",
+                    ),
+                );
+            }
+            Fields::Unnamed(_) | Fields::Named(_) | Fields::Unit => {}
+        }
+    }
+    errors.map_or(Ok(()), Err)
+}
+
+fn validate_repr_discriminants<'a>(
+    variants: impl IntoIterator<Item = &'a syn::Variant>,
+    repr: &ReprAttr,
+) -> syn::Result<()> {
+    let mut errors = None;
+    let (min, max) = repr.inclusive_i128_bounds();
+    let mut next_value = 0_i128;
+    for variant in variants {
+        let value = match &variant.discriminant {
+            Some((_, expr)) => {
+                if let Some(value) = integer_discriminant(expr) {
+                    value
+                } else {
+                    combine_error(
+                        &mut errors,
+                        syn::Error::new_spanned(
+                            expr,
+                            "Arcweft repr enum discriminants must be integer literals",
+                        ),
+                    );
+                    continue;
+                }
+            }
+            None => next_value,
+        };
+        if !(min..=max).contains(&value) {
+            combine_error(
+                &mut errors,
+                syn::Error::new_spanned(
+                    variant,
+                    format!(
+                        "Arcweft repr enum discriminant {value} is outside the selected repr range {min}..={max}"
+                    ),
+                ),
+            );
+        }
+        next_value = value.saturating_add(1);
+    }
+    errors.map_or(Ok(()), Err)
+}
+
+fn integer_discriminant(expr: &Expr) -> Option<i128> {
+    match expr {
+        Expr::Lit(expr) => match &expr.lit {
+            Lit::Int(value) => value.base10_parse::<i128>().ok(),
+            _ => None,
+        },
+        Expr::Unary(expr) if matches!(expr.op, syn::UnOp::Neg(_)) => {
+            let Expr::Lit(lit) = &*expr.expr else {
+                return None;
+            };
+            let Lit::Int(value) = &lit.lit else {
+                return None;
+            };
+            value
+                .base10_parse::<i128>()
+                .ok()
+                .and_then(i128::checked_neg)
+        }
+        _ => None,
+    }
 }
 
 fn validate_field_wire_names(

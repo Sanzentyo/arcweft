@@ -173,6 +173,10 @@ impl ReprAttr {
         self.kind.ty_tokens()
     }
 
+    pub(crate) fn inclusive_i128_bounds(&self) -> (i128, i128) {
+        self.kind.inclusive_i128_bounds()
+    }
+
     pub(crate) fn number_value_tokens(&self, value: &TokenStream) -> TokenStream {
         if self.kind.is_signed() {
             quote!(::arcweft_data::Number::I((#value) as i128))
@@ -305,6 +309,21 @@ impl IntegerRepr {
             Self::U64 => quote!(::arcweft_data::EnumRepr::U64),
             Self::U128 => quote!(::arcweft_data::EnumRepr::U128),
             Self::Usize => quote!(::arcweft_data::EnumRepr::Usize),
+        }
+    }
+
+    const fn inclusive_i128_bounds(self) -> (i128, i128) {
+        match self {
+            Self::I8 => (i8::MIN as i128, i8::MAX as i128),
+            Self::I16 => (i16::MIN as i128, i16::MAX as i128),
+            Self::I32 => (i32::MIN as i128, i32::MAX as i128),
+            Self::I64 | Self::Isize => (i64::MIN as i128, i64::MAX as i128),
+            Self::I128 => (i128::MIN, i128::MAX),
+            Self::U8 => (0, u8::MAX as i128),
+            Self::U16 => (0, u16::MAX as i128),
+            Self::U32 => (0, u32::MAX as i128),
+            Self::U64 | Self::Usize => (0, u64::MAX as i128),
+            Self::U128 => (0, i128::MAX),
         }
     }
 }

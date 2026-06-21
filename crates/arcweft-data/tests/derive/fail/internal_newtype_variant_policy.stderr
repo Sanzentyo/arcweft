@@ -1,0 +1,5 @@
+error: internally tagged Arcweft enum variants must be unit or named-field variants
+ --> tests/derive/fail/internal_newtype_variant_policy.rs:6:12
+  |
+6 |     Payload(u32),
+  |            ^^^^^

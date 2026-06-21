@@ -38,6 +38,13 @@ For the current requirement-by-requirement open-item ledger, see
   wrong container targets, `content` without `tag`, and duplicate final wire
   names are compile errors covered by trybuild fixtures. Bare `bytes` and
   `default = "path::factory"` are accepted as part of the typed grammar.
+- Hardened `arcweft-data-derive` shape policy so generated impls add
+  Encode/Decode/Reflect where predicates from concrete field types rather than
+  every generic type parameter, skipped generic marker fields do not require
+  Encode/Decode bounds, unsupported tuple/unit structs and tuple enum surfaces
+  are compile-time errors, internally tagged newtype variants are rejected at
+  macro expansion, and repr enum discriminants are literal/range checked before
+  shape generation.
 - Added `arcweft-data::DecodeBudget` and wired Arcweft Binary decoding through
   parse-time input, node, depth, collection length, string length, and bytes
   length checks before value allocation. Arcweft Binary now rejects duplicate
@@ -118,10 +125,9 @@ For the current requirement-by-requirement open-item ledger, see
 - Data raw transcoding covers the initial shape/value bridge. Parser-integrated
   JSON/TOML/YAML/CSV decode budgets and strict binary raw coverage remain
   separate data-format tasks.
-- The derive parser now rejects malformed attributes and covers the main
-  container/field/variant grammar. Remaining derive work includes precise
-  generic bounds, tuple/unit struct policy, multi-field tuple enum policy, and
-  repr discriminant range validation.
+- The derive parser now rejects malformed attributes, covers the main
+  container/field/variant grammar, uses field-type generic bounds, and rejects
+  unsupported tuple/unit/repr surfaces through trybuild-covered compile errors.
 - Parse-time budget coverage currently protects Arcweft Binary and provides the
   shared `DecodeBudget` API. JSON/TOML/YAML/MsgPack/CBOR and tabular codecs
   still need parser-integrated visitors/readers rather than post-parse-only
@@ -179,6 +185,8 @@ cargo clippy -p arcweft-data -p arcweft-codec-yaml --all-targets --all-features 
 cargo check -p arcweft-data -p arcweft-codec-json -p arcweft-codec-toml -p arcweft-codec-yaml --all-targets --all-features
 cargo test -p arcweft-data raw_shape --test raw_shape
 cargo test -p arcweft-data --features derive --test derive_attrs
+cargo test -p arcweft-data --features derive derive_attribute_ui
+cargo clippy -p arcweft-data -p arcweft-data-derive --all-targets --all-features -- -D warnings
 cargo check -p arcweft-data -p arcweft-codec-msgpack -p arcweft-codec-cbor --all-targets --all-features
 cargo test -p arcweft-codec-msgpack --test native_mapping
 cargo test -p arcweft-codec-cbor --test native_mapping

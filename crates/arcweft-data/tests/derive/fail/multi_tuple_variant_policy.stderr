@@ -1,0 +1,5 @@
+error: multi-field tuple enum variants are not supported by Arcweft derives; use a named-field variant or manual implementation
+ --> tests/derive/fail/multi_tuple_variant_policy.rs:5:9
+  |
+5 |     Pair(u32, u32),
+  |         ^^^^^^^^^^
