@@ -1,5 +1,4 @@
 use crate::app::project::CheckedModule;
-use arcweft_compiler::{LoweredLineTaskGroup, RuntimePlanLowerReport, RuntimePlanLowerStats};
 use arcweft_core::aot::AotProgramStats;
 use arcweft_core::bytecode::BytecodeStats;
 use arcweft_core::effect::LineEffectRequest;
@@ -19,6 +18,10 @@ use arcweft_render_text::LineDisplaySpec;
 use arcweft_runtime_host::{
     HostSystemInfo, NativeTaskStats, RuntimeExecutorPureCompileStatsSummary,
     RuntimeExecutorPureConfigSummary, RuntimeExecutorStats,
+};
+use arcweft_runtime_plan::{
+    flow::{RuntimePlanLowerReport, RuntimePlanLowerStats},
+    line_task::LoweredLineTaskGroup,
 };
 use arcweft_test::{ScriptBench, ScriptTest};
 use arcweft_verify::{

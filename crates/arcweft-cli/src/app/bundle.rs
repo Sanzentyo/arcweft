@@ -5,11 +5,13 @@ use super::project::{
     ProfileOptions, SourceSelection, adapter_manifest_for_selection, resolve_source_selection,
     typecheck_env_for_selection,
 };
-use super::runtime::{
-    BundleCommandReport, BundleRunReport, ProfileCompiledRuntimePlan, compile_profile_runtime_plan,
-    report_path, run_profile_phase,
+use super::runtime::options::{CliRuntimeExecutorTier, CliRuntimeStepMode};
+use super::runtime::parse::parse_runtime_binding_arg;
+use super::runtime::profile::report_path;
+use super::runtime::profile::{
+    ProfileCompiledRuntimePlan, compile_profile_runtime_plan, run_profile_phase,
 };
-use super::runtime::{CliRuntimeExecutorTier, CliRuntimeStepMode, parse_runtime_binding_arg};
+use super::runtime::reports::{BundleCommandReport, BundleRunReport};
 use super::shared::print_json;
 use crate::output::{RuntimeExecutorTier, RuntimeProfilePhase};
 use arcweft_adapter_context::{manifest::AdapterManifest, standard};
@@ -20,19 +22,19 @@ use arcweft_adapter_desktop::{
     DESKTOP_FILES_WRITE_CALL, DESKTOP_GLOBAL_POINTER_CONTROL_ADAPTER_ID,
     DESKTOP_GLOBAL_POINTER_CONTROL_CALL, DESKTOP_GLOBAL_POINTER_OBSERVE_ADAPTER_ID,
     DESKTOP_GLOBAL_POINTER_OBSERVE_CALL, DESKTOP_KNOWN_READ_ADAPTER_ID, DESKTOP_KNOWN_READ_CALL,
-    DESKTOP_KNOWN_WRITE_ADAPTER_ID, DESKTOP_KNOWN_WRITE_CALL, DESKTOP_OWNED_CURSOR_CALL,
-    DESKTOP_OWNED_WINDOW_ADAPTER_ID, DESKTOP_OWNED_WINDOW_CALL, DESKTOP_PLATFORM_ADAPTER_ID,
-    desktop_external_control_manifest, desktop_external_observe_manifest,
-    desktop_files_read_manifest, desktop_files_write_manifest,
+    DESKTOP_KNOWN_WRITE_ADAPTER_ID, DESKTOP_KNOWN_WRITE_CALL, DESKTOP_OWNED_WINDOW_ADAPTER_ID,
+    DESKTOP_PLATFORM_ADAPTER_ID, desktop_external_control_manifest,
+    desktop_external_observe_manifest, desktop_files_read_manifest, desktop_files_write_manifest,
     desktop_known_directory_read_manifest, desktop_known_directory_write_manifest,
     desktop_owned_window_manifest, desktop_platform_manifest,
     desktop_pointer_global_control_manifest, desktop_pointer_global_observe_manifest,
+    is_desktop_owned_window_host_call,
 };
 use arcweft_bundle::{
-    ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleImageAnimation,
-    BundleImageAsset, BundleImageDimensions, BundleImageFormat, BundleLaunchKind, BundleManifest,
-    BundleRuntimeSummary, BundleSource, BundleVirtualFile, BundleVirtualFileRef,
-    BundleVirtualFileSpace,
+    ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleFormat,
+    BundleImageAnimation, BundleImageAsset, BundleImageDimensions, BundleImageFormat,
+    BundleLaunchKind, BundleManifest, BundleRuntimeSummary, BundleSource, BundleVirtualFile,
+    BundleVirtualFileRef, BundleVirtualFileSpace,
 };
 use arcweft_core::{
     effect::{LineEffectRequest, RuntimeCall},
@@ -46,7 +48,7 @@ use arcweft_runtime_host::{
     BundleRunnerError, BundleRunnerOptions, INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar,
     internal_scheduler_manifest, run_bundle_file_with_native_adapters,
 };
-use clap::Args;
+use clap::{Args, ValueEnum};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -61,6 +63,8 @@ pub(in crate::app) struct BundleOptions {
     output: PathBuf,
     #[command(flatten)]
     virtual_files: BundleVirtualFileOptions,
+    #[arg(long, value_enum, default_value_t = BundleArtifactFormat::Json)]
+    format: BundleArtifactFormat,
     #[arg(long)]
     json: bool,
 }
@@ -92,8 +96,31 @@ pub(in crate::app) struct RunBundleOptions {
     max_ops: usize,
     #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
     values: Vec<RuntimeBinding>,
+    #[arg(long, value_enum, default_value_t = BundleInputFormat::Auto)]
+    format: BundleInputFormat,
     #[arg(long)]
     json: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum BundleArtifactFormat {
+    Json,
+    Toml,
+    Yaml,
+    Msgpack,
+    Cbor,
+    Avro,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum BundleInputFormat {
+    Auto,
+    Json,
+    Toml,
+    Yaml,
+    Msgpack,
+    Cbor,
+    Avro,
 }
 
 impl BundleOptions {
@@ -123,6 +150,34 @@ impl From<&RunBundleOptions> for BundleRunnerOptions {
             max_ops: options.max_ops,
             values: options.values.clone(),
             pure_config: RuntimePureAcceleratorConfig::default(),
+            bundle_format: options.format.bundle_format(),
+        }
+    }
+}
+
+impl From<BundleArtifactFormat> for BundleFormat {
+    fn from(format: BundleArtifactFormat) -> Self {
+        match format {
+            BundleArtifactFormat::Json => Self::Json,
+            BundleArtifactFormat::Toml => Self::Toml,
+            BundleArtifactFormat::Yaml => Self::Yaml,
+            BundleArtifactFormat::Msgpack => Self::MessagePack,
+            BundleArtifactFormat::Cbor => Self::Cbor,
+            BundleArtifactFormat::Avro => Self::Avro,
+        }
+    }
+}
+
+impl BundleInputFormat {
+    const fn bundle_format(self) -> Option<BundleFormat> {
+        match self {
+            Self::Auto => None,
+            Self::Json => Some(BundleFormat::Json),
+            Self::Toml => Some(BundleFormat::Toml),
+            Self::Yaml => Some(BundleFormat::Yaml),
+            Self::Msgpack => Some(BundleFormat::MessagePack),
+            Self::Cbor => Some(BundleFormat::Cbor),
+            Self::Avro => Some(BundleFormat::Avro),
         }
     }
 }
@@ -142,10 +197,12 @@ pub(super) fn bundle_command(options: &BundleOptions) -> Result<(), ExitCode> {
     let mut phases = Vec::new();
     let bundle = compile_bundle_artifact(&selection, options, &mut phases)?;
     let bytes = run_profile_phase(&mut phases, "encode_bundle", || {
-        bundle.to_json_bytes().map_err(|error| {
-            eprintln!("error: failed to encode bundle: {error}");
-            ExitCode::FAILURE
-        })
+        bundle
+            .to_format_bytes(options.format.into())
+            .map_err(|error| {
+                eprintln!("error: failed to encode bundle: {error}");
+                ExitCode::FAILURE
+            })
     })?;
     write_bundle_artifact(&options.output, bytes, &mut phases)?;
     if options.json {
@@ -768,7 +825,7 @@ fn bundle_adapter_manifests<'a>(
 fn desktop_manifest_id_for_host_call(host_call: &str) -> Option<&'static str> {
     match host_call {
         DESKTOP_CAPABILITIES_CALL => Some(DESKTOP_PLATFORM_ADAPTER_ID),
-        DESKTOP_OWNED_WINDOW_CALL | DESKTOP_OWNED_CURSOR_CALL => {
+        host_call if is_desktop_owned_window_host_call(host_call) => {
             Some(DESKTOP_OWNED_WINDOW_ADAPTER_ID)
         }
         DESKTOP_FILES_READ_CALL => Some(DESKTOP_FILES_READ_ADAPTER_ID),
@@ -786,7 +843,7 @@ fn desktop_manifest_id_for_host_call(host_call: &str) -> Option<&'static str> {
 fn desktop_manifest_for_host_call(host_call: &str) -> Option<AdapterManifest> {
     match host_call {
         DESKTOP_CAPABILITIES_CALL => Some(desktop_platform_manifest()),
-        DESKTOP_OWNED_WINDOW_CALL | DESKTOP_OWNED_CURSOR_CALL => {
+        host_call if is_desktop_owned_window_host_call(host_call) => {
             Some(desktop_owned_window_manifest())
         }
         DESKTOP_FILES_READ_CALL => Some(desktop_files_read_manifest()),

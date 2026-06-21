@@ -6,7 +6,7 @@ use crate::output::{
     ScriptBenchPureHelperStatsSummary, ScriptBenchPureHelperTimingSamples,
     ScriptBenchPureHelperTimingSummary, TypeCheckProfileStats,
 };
-use arcweft_compiler::{PureHelperCandidate, lower_source_pure_helper_candidates};
+use arcweft_compiler::lower::lower_source_pure_helper_candidates;
 use arcweft_core::{
     plan::{
         RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
@@ -27,6 +27,7 @@ use arcweft_lang_jit_cranelift::{
 };
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_runtime_host::{HostSystemInfo, host_system_info};
+use arcweft_runtime_plan::pure::PureHelperCandidate;
 use clap::{Args, ValueEnum};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};

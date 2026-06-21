@@ -1,11 +1,12 @@
-use super::runtime::{
+use super::runtime::options::{
     CliRuntimeMathBackend, CliRuntimePureBackend, CliRuntimePureWorkers,
-    parse_runtime_pure_workers, run_profile_phase,
 };
+use super::runtime::parse::parse_runtime_pure_workers;
+use super::runtime::profile::run_profile_phase;
 use super::shared::is_arcw_path;
 use crate::output::RuntimeProfilePhase;
 use arcweft_adapter_context::{codec::AdapterManifestFile, manifest::AdapterManifest, standard};
-use arcweft_compiler::{LoweredLineTaskGroup, RuntimePlanLowerOptions};
+use arcweft_compiler::{hir, parse};
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_lang_sema::{check::TypeCheckReport, env::TypeCheckEnv};
 use arcweft_launch::{
@@ -16,6 +17,7 @@ use arcweft_runtime_accelerator::{
     math::RuntimeMathBackend,
 };
 use arcweft_runtime_host::NativeTaskBridge;
+use arcweft_runtime_plan::{flow::RuntimePlanLowerOptions, line_task::LoweredLineTaskGroup};
 use arcweft_rust_abi::ArcweftRustManifest;
 use clap::Args;
 use std::fs;
@@ -242,7 +244,10 @@ pub(in crate::app) fn typecheck_env_for_selection(
             manifest = manifest.with_rust_manifest(&rust_manifest);
         }
     }
-    Ok(manifest.apply_to_env(TypeCheckEnv::standard()))
+    let env = manifest.apply_to_env(TypeCheckEnv::standard());
+    Ok(arcweft_adapter_desktop::standard_desktop_manifests()
+        .into_iter()
+        .fold(env, |env, manifest| manifest.apply_to_env(env)))
 }
 
 pub(in crate::app) fn adapter_manifest_for_selection(
@@ -374,10 +379,7 @@ pub(in crate::app) fn load_and_check_with_env(
     })?;
 
     let parsed = run_profile_phase(&mut phases, "parse", || {
-        catch_unwind(AssertUnwindSafe(|| {
-            arcweft_compiler::parse_source_text(source)
-        }))
-        .map_err(|_| {
+        catch_unwind(AssertUnwindSafe(|| parse::parse_source_text(source))).map_err(|_| {
             eprintln!("error: parser panicked while checking {}", path.display());
             ExitCode::FAILURE
         })
@@ -392,9 +394,7 @@ pub(in crate::app) fn load_and_check_with_env(
     let syntax_stats = parsed.syntax_stats();
     let tree = parsed.into_typed_tree();
     let lints = run_profile_phase(&mut phases, "lint", || {
-        Ok::<Vec<arcweft_lang_syntax::lint::SyntaxLint>, ExitCode>(
-            arcweft_compiler::lint_source_tree(&tree),
-        )
+        Ok::<Vec<arcweft_lang_syntax::lint::SyntaxLint>, ExitCode>(parse::lint_source_tree(&tree))
     })?;
     for lint in &lints {
         eprintln!(
@@ -405,12 +405,12 @@ pub(in crate::app) fn load_and_check_with_env(
             lint.message()
         );
     }
-    if arcweft_compiler::has_error_lints(&lints) {
+    if parse::has_error_lints(&lints) {
         return Err(ExitCode::FAILURE);
     }
 
     let hir = run_profile_phase(&mut phases, "lower_hir", || {
-        arcweft_compiler::lower_source_tree(&tree).map_err(|errors| {
+        hir::lower_source_tree(&tree).map_err(|errors| {
             for error in errors {
                 eprintln!("error: {}", error.message());
             }
@@ -419,7 +419,7 @@ pub(in crate::app) fn load_and_check_with_env(
     })?;
 
     run_profile_phase(&mut phases, "resolve", || {
-        arcweft_compiler::resolve_hir_references(&hir).map_err(|errors| {
+        hir::resolve_hir_references(&hir).map_err(|errors| {
             for error in errors {
                 eprintln!("error: {error}");
             }
@@ -427,7 +427,7 @@ pub(in crate::app) fn load_and_check_with_env(
         })
     })?;
     run_profile_phase(&mut phases, "readiness", || {
-        arcweft_compiler::validate_hir_typecheck_ready(&hir).map_err(|errors| {
+        hir::validate_hir_typecheck_ready(&hir).map_err(|errors| {
             for error in errors {
                 eprintln!("error: {}", error.message());
             }
@@ -435,7 +435,7 @@ pub(in crate::app) fn load_and_check_with_env(
         })
     })?;
     let typecheck_report = run_profile_phase(&mut phases, "typecheck", || {
-        arcweft_compiler::typecheck_hir_with_env(&hir, env).map_err(|errors| {
+        hir::typecheck_hir_with_env(&hir, env).map_err(|errors| {
             for error in errors {
                 eprintln!("error: {}", error.message());
             }
@@ -444,7 +444,7 @@ pub(in crate::app) fn load_and_check_with_env(
     })?;
 
     let line_task_groups = run_profile_phase(&mut phases, "line_task_lower", || {
-        arcweft_compiler::lower_source_line_tasks(&hir).map_err(|errors| {
+        arcweft_compiler::lower::lower_source_line_tasks(&hir).map_err(|errors| {
             for error in errors {
                 eprintln!("error: {}", error.message());
             }
@@ -455,7 +455,7 @@ pub(in crate::app) fn load_and_check_with_env(
     Ok(CheckedModule {
         hir,
         env: env.clone(),
-        syntax_warnings: arcweft_compiler::count_warning_lints(&lints),
+        syntax_warnings: parse::count_warning_lints(&lints),
         syntax_stats,
         line_task_groups,
         typecheck_report,

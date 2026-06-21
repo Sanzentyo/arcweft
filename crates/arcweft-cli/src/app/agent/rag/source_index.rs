@@ -1,0 +1,1813 @@
+use super::{DebugSourceFile, AgentRagCandidate, DebugGraphSymbol, DebugGraphEdge, BTreeMap, PathBuf, BTreeSet, Path, fs, parse, hir, SourceName, project_semantic_index_from_hir, ProgramHash, StableHash, AgentPublicId, ChunkSourceKind, SearchChannel, PrivacyClass, ProjectSemanticIndex, EntitySymbol, AgentActionSignature, QualifiedName, ProjectCallableSymbol, SemaPublicId, agent_program_graph_summary, agent_graph_symbol_kind_counts, agent_graph_edge_kind_counts, agent_graph_symbol_has_dynamic_control, DebugSourceAnchor, DebugChunk, ChunkId, SourceAnchor, AgentTraceRecord, SessionId, agent_trace_kind_name, RagQuery, SearchHit};
+
+pub(in crate::app::agent) struct AgentSourceRagIndex {
+    pub(in crate::app::agent) seed: String,
+    pub(in crate::app::agent) source_hash: String,
+    pub(in crate::app::agent) source_key_prefix: String,
+    pub(in crate::app::agent) source_file: DebugSourceFile,
+    pub(in crate::app::agent) candidates: Vec<AgentRagCandidate>,
+    pub(in crate::app::agent) graph_symbols: Vec<DebugGraphSymbol>,
+    pub(in crate::app::agent) graph_edges: Vec<DebugGraphEdge>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::app::agent) struct AgentProgramGraphSummary {
+    pub(in crate::app::agent) sources: usize,
+    pub(in crate::app::agent) source_graph_symbols: usize,
+    pub(in crate::app::agent) source_graph_edges: usize,
+    pub(in crate::app::agent) candidate_chunks: usize,
+    pub(in crate::app::agent) source_bytes: u64,
+    pub(in crate::app::agent) dynamic_control_flows: usize,
+    pub(in crate::app::agent) symbol_kinds: BTreeMap<String, usize>,
+    pub(in crate::app::agent) edge_kinds: BTreeMap<String, usize>,
+}
+
+pub(in crate::app::agent) fn agent_rag_source_paths(
+    inputs: &[PathBuf],
+) -> Result<Vec<PathBuf>, String> {
+    let mut files = BTreeSet::new();
+    for input in inputs {
+        if input.is_dir() {
+            for path in agent_rag_arcw_files_in_dir(input)? {
+                files.insert(path);
+            }
+        } else {
+            files.insert(input.clone());
+        }
+    }
+    Ok(files.into_iter().collect())
+}
+
+pub(in crate::app::agent) fn agent_rag_arcw_files_in_dir(
+    root: &Path,
+) -> Result<Vec<PathBuf>, String> {
+    let mut pending = vec![root.to_path_buf()];
+    let mut files = Vec::new();
+    while let Some(dir) = pending.pop() {
+        let entries = fs::read_dir(&dir).map_err(|error| {
+            format!("agent rag query failed to read {}: {error}", dir.display())
+        })?;
+        for entry in entries {
+            let entry = entry.map_err(|error| {
+                format!(
+                    "agent rag query failed to read entry under {}: {error}",
+                    dir.display()
+                )
+            })?;
+            let path = entry.path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if is_arcw_path(&path) {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+pub(in crate::app::agent) fn is_arcw_path(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("arcw"))
+}
+
+pub(in crate::app::agent) fn agent_source_rag_index(
+    path: &Path,
+) -> Result<AgentSourceRagIndex, String> {
+    let source = fs::read_to_string(path)
+        .map_err(|error| format!("agent rag query failed to read source: {error}"))?;
+    let parsed = parse::parse_source_text(source.clone());
+    if !parsed.errors().is_empty() {
+        return Err(format!(
+            "agent rag query source parse errors: {:?}",
+            parsed.errors()
+        ));
+    }
+    let hir = hir::lower_source_tree(parsed.typed_tree())
+        .map_err(|errors| format!("agent rag query source HIR errors: {errors:?}"))?;
+    let source_hash = agent_content_hash(&source);
+    let source_name = SourceName::path(path.display().to_string());
+    let project =
+        project_semantic_index_from_hir(&hir, ProgramHash::new(source_hash.clone()), &source_name)
+            .map_err(|error| format!("agent rag query failed to build project index: {error}"))?;
+    let source_file = DebugSourceFile {
+        program_hash: StableHash::new(project.program_hash().as_str())
+            .map_err(|error| format!("invalid source file program hash: {error}"))?,
+        path: path.display().to_string(),
+        language: "arcw".to_owned(),
+        content_hash: StableHash::new(source_hash.clone())
+            .map_err(|error| format!("invalid source file content hash: {error}"))?,
+        byte_len: u64::try_from(source.len())
+            .map_err(|_| "source file byte length overflowed u64".to_owned())?,
+        metadata: BTreeMap::from([("extension".to_owned(), serde_json::json!("arcw"))]),
+    };
+    let source_key_prefix = agent_source_rag_key_prefix(path);
+    let mut candidates = agent_source_text_rag_candidates(path, &source, &source_key_prefix)?;
+    candidates.extend(agent_project_semantic_rag_candidates(
+        path,
+        &project,
+        &source_key_prefix,
+    )?);
+    let mut graph_symbols = agent_project_graph_symbols(&project, &source_key_prefix)?;
+    graph_symbols.push(agent_source_file_graph_symbol(
+        &source_file,
+        &source_key_prefix,
+    ));
+    agent_attach_source_file_to_graph_symbols(&mut graph_symbols, &source_file);
+    let mut graph_edges = agent_project_graph_edges(&project, &source_key_prefix)?;
+    graph_edges.push(agent_source_file_project_graph_edge(
+        &source_file,
+        &source_key_prefix,
+    ));
+    Ok(AgentSourceRagIndex {
+        seed: format!("source:{}:{source_hash}", path.display()),
+        source_hash,
+        source_key_prefix,
+        source_file,
+        candidates,
+        graph_symbols,
+        graph_edges,
+    })
+}
+
+pub(in crate::app::agent) fn agent_source_file_graph_symbol(
+    source_file: &DebugSourceFile,
+    source_key_prefix: &str,
+) -> DebugGraphSymbol {
+    DebugGraphSymbol {
+        symbol_id: agent_source_file_graph_symbol_id(source_key_prefix),
+        program_hash: source_file.program_hash.clone(),
+        public_id: Some(
+            AgentPublicId::new(format!("source_file.{}", source_file.content_hash.as_str()))
+                .expect("source-file graph public id is nonempty"),
+        ),
+        qualified_name: Some(source_file.path.clone()),
+        kind: "source_file".to_owned(),
+        type_json: Some(serde_json::json!({
+            "language": source_file.language,
+            "byte_len": source_file.byte_len,
+        })),
+        source_path: Some(source_file.path.clone()),
+        source_content_hash: Some(source_file.content_hash.clone()),
+        start_byte: Some(0),
+        end_byte: Some(source_file.byte_len),
+        semantic_hash: Some(source_file.content_hash.clone()),
+        summary: format!(
+            "Source file `{}` language={} bytes={} hash={}",
+            source_file.path,
+            source_file.language,
+            source_file.byte_len,
+            source_file.content_hash.as_str()
+        ),
+        metadata: BTreeMap::from([
+            (
+                "language".to_owned(),
+                serde_json::json!(source_file.language),
+            ),
+            (
+                "content_hash".to_owned(),
+                serde_json::json!(source_file.content_hash.as_str()),
+            ),
+            (
+                "byte_len".to_owned(),
+                serde_json::json!(source_file.byte_len),
+            ),
+        ]),
+    }
+}
+
+pub(in crate::app::agent) fn agent_source_file_project_graph_edge(
+    source_file: &DebugSourceFile,
+    source_key_prefix: &str,
+) -> DebugGraphEdge {
+    DebugGraphEdge {
+        program_hash: source_file.program_hash.clone(),
+        from_symbol_id: agent_source_file_graph_symbol_id(source_key_prefix),
+        to_symbol_id: agent_project_summary_graph_symbol_id(source_key_prefix),
+        edge_kind: "contains_project_graph".to_owned(),
+        weight: 1.0,
+        metadata: BTreeMap::from([
+            (
+                "source_path".to_owned(),
+                serde_json::json!(source_file.path),
+            ),
+            (
+                "source_content_hash".to_owned(),
+                serde_json::json!(source_file.content_hash.as_str()),
+            ),
+        ]),
+    }
+}
+
+pub(in crate::app::agent) fn agent_program_graph_symbol(
+    program_hash: &StableHash,
+    summary: &AgentProgramGraphSummary,
+) -> DebugGraphSymbol {
+    DebugGraphSymbol {
+        symbol_id: agent_program_graph_symbol_id(program_hash),
+        program_hash: program_hash.clone(),
+        public_id: Some(
+            AgentPublicId::new(format!("program.{}", program_hash.as_str()))
+                .expect("program graph public id is nonempty"),
+        ),
+        qualified_name: Some(format!("program.{}", program_hash.as_str())),
+        kind: "program".to_owned(),
+        type_json: Some(serde_json::json!({
+            "source_count": summary.sources,
+            "source_graph_symbol_count": summary.source_graph_symbols,
+            "source_graph_edge_count": summary.source_graph_edges,
+            "candidate_chunk_count": summary.candidate_chunks,
+            "source_byte_count": summary.source_bytes,
+            "dynamic_control_flow_count": summary.dynamic_control_flows,
+            "source_graph_symbol_kinds": summary.symbol_kinds,
+            "source_graph_edge_kinds": summary.edge_kinds,
+        })),
+        source_path: None,
+        source_content_hash: None,
+        start_byte: None,
+        end_byte: None,
+        semantic_hash: Some(program_hash.clone()),
+        summary: format!(
+            "Program `{}` with {} indexed source files, {} candidate chunks, {} graph symbols, and {} graph edges",
+            program_hash.as_str(),
+            summary.sources,
+            summary.candidate_chunks,
+            summary.source_graph_symbols,
+            summary.source_graph_edges
+        ),
+        metadata: BTreeMap::from([
+            (
+                "source_count".to_owned(),
+                serde_json::json!(summary.sources),
+            ),
+            (
+                "source_graph_symbol_count".to_owned(),
+                serde_json::json!(summary.source_graph_symbols),
+            ),
+            (
+                "source_graph_edge_count".to_owned(),
+                serde_json::json!(summary.source_graph_edges),
+            ),
+            (
+                "candidate_chunk_count".to_owned(),
+                serde_json::json!(summary.candidate_chunks),
+            ),
+            (
+                "source_byte_count".to_owned(),
+                serde_json::json!(summary.source_bytes),
+            ),
+            (
+                "dynamic_control_flow_count".to_owned(),
+                serde_json::json!(summary.dynamic_control_flows),
+            ),
+            (
+                "source_graph_symbol_kinds".to_owned(),
+                serde_json::json!(summary.symbol_kinds),
+            ),
+            (
+                "source_graph_edge_kinds".to_owned(),
+                serde_json::json!(summary.edge_kinds),
+            ),
+        ]),
+    }
+}
+
+pub(in crate::app::agent) fn agent_program_source_file_graph_edge(
+    program_hash: &StableHash,
+    source_index: &AgentSourceRagIndex,
+) -> DebugGraphEdge {
+    DebugGraphEdge {
+        program_hash: program_hash.clone(),
+        from_symbol_id: agent_program_graph_symbol_id(program_hash),
+        to_symbol_id: agent_source_file_graph_symbol_id(&source_index.source_key_prefix),
+        edge_kind: "contains_source_file".to_owned(),
+        weight: 1.0,
+        metadata: BTreeMap::from([
+            (
+                "source_path".to_owned(),
+                serde_json::json!(source_index.source_file.path),
+            ),
+            (
+                "source_content_hash".to_owned(),
+                serde_json::json!(source_index.source_file.content_hash.as_str()),
+            ),
+        ]),
+    }
+}
+
+pub(in crate::app::agent) fn agent_attach_source_file_to_graph_symbols(
+    symbols: &mut [DebugGraphSymbol],
+    source_file: &DebugSourceFile,
+) {
+    for symbol in symbols {
+        symbol.source_path = Some(source_file.path.clone());
+        symbol.source_content_hash = Some(source_file.content_hash.clone());
+    }
+}
+
+pub(in crate::app::agent) fn agent_source_rag_key_prefix(path: &Path) -> String {
+    format!("source.{}", agent_content_hash(path.display().to_string()))
+}
+
+pub(in crate::app::agent) fn agent_source_text_rag_candidates(
+    path: &Path,
+    source: &str,
+    source_key_prefix: &str,
+) -> Result<Vec<AgentRagCandidate>, String> {
+    agent_source_text_ranges(source)
+        .into_iter()
+        .enumerate()
+        .map(|(index, range)| {
+            let body = source[range.clone()].trim().to_owned();
+            let source_key = format!("{source_key_prefix}.text.{index}");
+            let mut metadata = BTreeMap::new();
+            metadata.insert(
+                "path".to_owned(),
+                serde_json::Value::String(path.display().to_string()),
+            );
+            Ok(agent_rag_candidate(
+                &source_key,
+                &format!("Source text {}", path.display()),
+                ChunkSourceKind::Source,
+                SearchChannel::Lexical,
+                body,
+                AgentRagCandidateMeta {
+                    entity_ids: Vec::new(),
+                    privacy: PrivacyClass::Project,
+                    source_anchor: Some(debug_source_anchor(path, range)?),
+                    semantic_hash: None,
+                    metadata,
+                },
+            ))
+        })
+        .collect()
+}
+
+pub(in crate::app::agent) fn agent_source_text_ranges(source: &str) -> Vec<std::ops::Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut start = None;
+    let mut offset = 0usize;
+    for line in source.split_inclusive('\n') {
+        let line_start = offset;
+        let line_end = offset.saturating_add(line.len());
+        if line.trim().is_empty() {
+            if let Some(start) = start.take()
+                && start < line_start
+            {
+                ranges.push(agent_trim_source_range(source, start..line_start));
+            }
+        } else if start.is_none() {
+            start = Some(line_start);
+        }
+        offset = line_end;
+    }
+    if let Some(start) = start
+        && start < source.len()
+    {
+        ranges.push(agent_trim_source_range(source, start..source.len()));
+    }
+    if ranges.is_empty() && !source.is_empty() {
+        ranges.push(agent_trim_source_range(source, 0..source.len()));
+    }
+    ranges
+        .into_iter()
+        .filter(|range| range.start < range.end)
+        .collect()
+}
+
+pub(in crate::app::agent) fn agent_trim_source_range(
+    source: &str,
+    range: std::ops::Range<usize>,
+) -> std::ops::Range<usize> {
+    let mut start = range.start;
+    let mut end = range.end;
+    while start < end {
+        let Some(character) = source[start..end].chars().next() else {
+            break;
+        };
+        if !character.is_whitespace() {
+            break;
+        }
+        start = start.saturating_add(character.len_utf8());
+    }
+    while start < end {
+        let Some(character) = source[start..end].chars().next_back() else {
+            break;
+        };
+        if !character.is_whitespace() {
+            break;
+        }
+        end = end.saturating_sub(character.len_utf8());
+    }
+    start..end
+}
+
+pub(in crate::app::agent) fn agent_project_semantic_rag_candidates(
+    path: &Path,
+    project: &ProjectSemanticIndex,
+    source_key_prefix: &str,
+) -> Result<Vec<AgentRagCandidate>, String> {
+    let mut candidates = Vec::new();
+    candidates.push(agent_project_summary_rag_candidate(
+        path,
+        project,
+        source_key_prefix,
+    )?);
+    for entity in project.entities().values() {
+        candidates.push(agent_project_entity_rag_candidate(
+            entity,
+            source_key_prefix,
+            project,
+        )?);
+    }
+    for (name, callable) in project.project_callables() {
+        candidates.push(agent_project_callable_rag_candidate(
+            name,
+            callable,
+            source_key_prefix,
+        )?);
+    }
+    for (name, query) in project.debug_queries() {
+        candidates.push(agent_project_debug_query_rag_candidate(
+            name,
+            query,
+            source_key_prefix,
+        )?);
+    }
+    Ok(candidates)
+}
+
+pub(in crate::app::agent) fn agent_project_graph_symbols(
+    project: &ProjectSemanticIndex,
+    source_key_prefix: &str,
+) -> Result<Vec<DebugGraphSymbol>, String> {
+    let program_hash = StableHash::new(project.program_hash().as_str())
+        .map_err(|error| format!("invalid project graph program hash: {error}"))?;
+    let mut symbols = vec![agent_project_summary_graph_symbol(
+        project,
+        source_key_prefix,
+        &program_hash,
+    )?];
+    symbols.extend(
+        project
+            .entities()
+            .values()
+            .map(|entity| {
+                agent_project_entity_graph_symbol(entity, source_key_prefix, &program_hash, project)
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+    );
+    for entity in project.entities().values() {
+        symbols.extend(
+            entity
+                .agent_actions()
+                .iter()
+                .map(|action| {
+                    agent_project_action_graph_symbol(
+                        entity,
+                        action,
+                        source_key_prefix,
+                        &program_hash,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+    }
+    symbols.extend(
+        project
+            .project_callables()
+            .iter()
+            .map(|(name, callable)| {
+                agent_project_callable_graph_symbol(
+                    name,
+                    callable,
+                    source_key_prefix,
+                    &program_hash,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+    );
+    symbols.extend(
+        project
+            .debug_queries()
+            .iter()
+            .map(|(name, query)| {
+                agent_project_debug_query_graph_symbol(
+                    name,
+                    query,
+                    source_key_prefix,
+                    &program_hash,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+    );
+    Ok(symbols)
+}
+
+pub(in crate::app::agent) fn agent_project_graph_edges(
+    project: &ProjectSemanticIndex,
+    source_key_prefix: &str,
+) -> Result<Vec<DebugGraphEdge>, String> {
+    let program_hash = StableHash::new(project.program_hash().as_str())
+        .map_err(|error| format!("invalid project graph program hash: {error}"))?;
+    let summary_symbol_id = agent_project_summary_graph_symbol_id(source_key_prefix);
+    let mut edges = project
+        .entities()
+        .values()
+        .map(|entity| DebugGraphEdge {
+            program_hash: program_hash.clone(),
+            from_symbol_id: summary_symbol_id.clone(),
+            to_symbol_id: agent_project_entity_graph_symbol_id(source_key_prefix, entity.id()),
+            edge_kind: "contains_entity".to_owned(),
+            weight: 1.0,
+            metadata: BTreeMap::from([(
+                "entity_kind".to_owned(),
+                serde_json::json!(format!("{:?}", entity.ty().kind())),
+            )]),
+        })
+        .collect::<Vec<_>>();
+    for entity in project.entities().values() {
+        edges.extend(entity.agent_actions().iter().map(|action| DebugGraphEdge {
+            program_hash: program_hash.clone(),
+            from_symbol_id: agent_project_entity_graph_symbol_id(source_key_prefix, entity.id()),
+            to_symbol_id: agent_project_action_graph_symbol_id(
+                source_key_prefix,
+                entity.id(),
+                action.action().as_str(),
+            ),
+            edge_kind: "exposes_agent_action".to_owned(),
+            weight: 0.9,
+            metadata: BTreeMap::from([(
+                "action".to_owned(),
+                serde_json::json!(action.action().as_str()),
+            )]),
+        }));
+    }
+    edges.extend(
+        project
+            .project_callables()
+            .keys()
+            .map(|name| DebugGraphEdge {
+                program_hash: program_hash.clone(),
+                from_symbol_id: summary_symbol_id.clone(),
+                to_symbol_id: agent_project_callable_graph_symbol_id(
+                    source_key_prefix,
+                    name.as_str(),
+                ),
+                edge_kind: "contains_callable".to_owned(),
+                weight: 0.85,
+                metadata: BTreeMap::new(),
+            }),
+    );
+    edges.extend(project.debug_queries().keys().map(|name| DebugGraphEdge {
+        program_hash: program_hash.clone(),
+        from_symbol_id: summary_symbol_id.clone(),
+        to_symbol_id: agent_project_debug_query_graph_symbol_id(source_key_prefix, name.as_str()),
+        edge_kind: "contains_debug_query".to_owned(),
+        weight: 0.8,
+        metadata: BTreeMap::new(),
+    }));
+    edges.extend(project.relations().iter().map(|relation| DebugGraphEdge {
+        program_hash: program_hash.clone(),
+        from_symbol_id: agent_project_entity_graph_symbol_id(source_key_prefix, relation.from()),
+        to_symbol_id: agent_project_entity_graph_symbol_id(source_key_prefix, relation.to()),
+        edge_kind: relation.edge_kind().as_str().to_owned(),
+        weight: 0.95,
+        metadata: BTreeMap::new(),
+    }));
+    edges.extend(
+        project
+            .dependency_relations()
+            .iter()
+            .map(|relation| DebugGraphEdge {
+                program_hash: program_hash.clone(),
+                from_symbol_id: agent_project_graph_symbol_ref_id(
+                    source_key_prefix,
+                    relation.from(),
+                ),
+                to_symbol_id: agent_project_graph_symbol_ref_id(source_key_prefix, relation.to()),
+                edge_kind: relation.edge_kind().as_str().to_owned(),
+                weight: 0.9,
+                metadata: BTreeMap::new(),
+            }),
+    );
+    Ok(edges)
+}
+
+pub(in crate::app::agent) fn agent_project_summary_graph_symbol(
+    project: &ProjectSemanticIndex,
+    source_key_prefix: &str,
+    program_hash: &StableHash,
+) -> Result<DebugGraphSymbol, String> {
+    let entity_kind_counts = agent_project_entity_kind_counts(project);
+    let relation_kind_counts = agent_project_relation_kind_counts(project);
+    let dependency_edge_kind_counts = agent_project_dependency_edge_kind_counts(project);
+    let flow_control_counts = agent_project_flow_control_counts_json(project);
+    let agent_action_count = agent_project_action_count(project);
+    Ok(DebugGraphSymbol {
+        symbol_id: agent_project_summary_graph_symbol_id(source_key_prefix),
+        program_hash: program_hash.clone(),
+        public_id: None,
+        qualified_name: Some(format!("{source_key_prefix}.project")),
+        kind: "project_summary".to_owned(),
+        type_json: Some(serde_json::json!({
+            "schema_version": project.schema_version(),
+            "bundle_hash": project.bundle_hash().map(arcweft_lang_sema::project_index::BundleHash::as_str),
+        })),
+        source_path: None,
+        source_content_hash: None,
+        start_byte: None,
+        end_byte: None,
+        semantic_hash: Some(
+            StableHash::new(agent_content_hash(format!(
+                "{}:project_summary",
+                project.program_hash().as_str()
+            )))
+            .map_err(|error| format!("invalid graph project summary semantic hash: {error}"))?,
+        ),
+        summary: format!(
+            "Project semantic summary entities={} agent_actions={} project_callables={} relations={} dependency_edges={} dynamic_control_flows={} debug_queries={}",
+            project.entities().len(),
+            agent_action_count,
+            project.project_callables().len(),
+            project.relations().len(),
+            project.dependency_relations().len(),
+            agent_dynamic_control_flow_count(project),
+            project.debug_queries().len()
+        ),
+        metadata: BTreeMap::from([
+            (
+                "entity_count".to_owned(),
+                serde_json::json!(project.entities().len()),
+            ),
+            (
+                "project_callable_count".to_owned(),
+                serde_json::json!(project.project_callables().len()),
+            ),
+            (
+                "agent_action_count".to_owned(),
+                serde_json::json!(agent_action_count),
+            ),
+            (
+                "relation_count".to_owned(),
+                serde_json::json!(project.relations().len()),
+            ),
+            (
+                "dependency_edge_count".to_owned(),
+                serde_json::json!(project.dependency_relations().len()),
+            ),
+            (
+                "dynamic_control_flow_count".to_owned(),
+                serde_json::json!(agent_dynamic_control_flow_count(project)),
+            ),
+            (
+                "debug_query_count".to_owned(),
+                serde_json::json!(project.debug_queries().len()),
+            ),
+            (
+                "entity_kind_counts".to_owned(),
+                serde_json::json!(entity_kind_counts),
+            ),
+            (
+                "relation_kind_counts".to_owned(),
+                serde_json::json!(relation_kind_counts),
+            ),
+            (
+                "dependency_edge_kind_counts".to_owned(),
+                serde_json::json!(dependency_edge_kind_counts),
+            ),
+            ("flow_control_counts".to_owned(), flow_control_counts),
+        ]),
+    })
+}
+
+pub(in crate::app::agent) fn agent_project_entity_graph_symbol(
+    entity: &EntitySymbol,
+    source_key_prefix: &str,
+    program_hash: &StableHash,
+    project: &ProjectSemanticIndex,
+) -> Result<DebugGraphSymbol, String> {
+    let public_id = agent_public_id_from_sema(entity.id())?;
+    let source_anchor = debug_anchor_from_source_anchor(entity.source())?;
+    let flow_control = project_flow_control_summary_json(project.flow_control_summary(entity.id()));
+    Ok(DebugGraphSymbol {
+        symbol_id: agent_project_entity_graph_symbol_id(source_key_prefix, entity.id()),
+        program_hash: program_hash.clone(),
+        public_id: Some(public_id),
+        qualified_name: Some(entity.id().as_str().to_owned()),
+        kind: format!("{:?}", entity.ty().kind()),
+        type_json: Some(serde_json::json!({
+            "entity_kind": format!("{:?}", entity.ty().kind()),
+            "value_type": entity.ty().value().map(|ty| format!("{ty:?}")),
+            "flow_control": flow_control,
+        })),
+        source_path: None,
+        source_content_hash: None,
+        start_byte: source_anchor.as_ref().map(|anchor| anchor.start_byte),
+        end_byte: source_anchor.as_ref().map(|anchor| anchor.end_byte),
+        semantic_hash: Some(
+            StableHash::new(entity.semantic_hash().as_str())
+                .map_err(|error| format!("invalid graph entity semantic hash: {error}"))?,
+        ),
+        summary: format!(
+            "Project entity {} {:?}{}",
+            entity.id().as_str(),
+            entity.ty().kind(),
+            agent_flow_control_summary_text(project, entity.id())
+        ),
+        metadata: BTreeMap::from([
+            ("source".to_owned(), source_anchor_json(entity.source())),
+            ("flow_control".to_owned(), flow_control),
+            (
+                "agent_actions".to_owned(),
+                serde_json::json!(
+                    entity
+                        .agent_actions()
+                        .iter()
+                        .map(|action| action.action().as_str())
+                        .collect::<Vec<_>>()
+                ),
+            ),
+        ]),
+    })
+}
+
+pub(in crate::app::agent) fn agent_project_action_graph_symbol(
+    entity: &EntitySymbol,
+    action: &AgentActionSignature,
+    source_key_prefix: &str,
+    program_hash: &StableHash,
+) -> Result<DebugGraphSymbol, String> {
+    Ok(DebugGraphSymbol {
+        symbol_id: agent_project_action_graph_symbol_id(
+            source_key_prefix,
+            entity.id(),
+            action.action().as_str(),
+        ),
+        program_hash: program_hash.clone(),
+        public_id: None,
+        qualified_name: Some(format!(
+            "{}.{}",
+            entity.id().as_str(),
+            action.action().as_str()
+        )),
+        kind: "agent_action".to_owned(),
+        type_json: Some(serde_json::json!({
+            "entity": entity.id().as_str(),
+            "action": action.action().as_str(),
+            "params": action.params().iter().map(|param| serde_json::json!({
+                "name": param.name(),
+                "type": format!("{:?}", param.ty()),
+                "has_default": param.has_default(),
+            })).collect::<Vec<_>>(),
+            "return_type": format!("{:?}", action.return_type()),
+        })),
+        source_path: None,
+        source_content_hash: None,
+        start_byte: None,
+        end_byte: None,
+        semantic_hash: Some(
+            StableHash::new(agent_content_hash(format!(
+                "{}:{}",
+                entity.semantic_hash().as_str(),
+                action.action().as_str()
+            )))
+            .map_err(|error| format!("invalid graph action semantic hash: {error}"))?,
+        ),
+        summary: format!(
+            "Agent action {} on {}",
+            action.action().as_str(),
+            entity.id().as_str()
+        ),
+        metadata: BTreeMap::from([("entity".to_owned(), serde_json::json!(entity.id().as_str()))]),
+    })
+}
+
+pub(in crate::app::agent) fn agent_project_callable_graph_symbol(
+    name: &QualifiedName,
+    callable: &ProjectCallableSymbol,
+    source_key_prefix: &str,
+    program_hash: &StableHash,
+) -> Result<DebugGraphSymbol, String> {
+    let source_anchor = debug_anchor_from_source_anchor(callable.source())?;
+    Ok(DebugGraphSymbol {
+        symbol_id: agent_project_callable_graph_symbol_id(source_key_prefix, name.as_str()),
+        program_hash: program_hash.clone(),
+        public_id: None,
+        qualified_name: Some(name.as_str().to_owned()),
+        kind: format!("project_{}", callable.kind().as_str()),
+        type_json: Some(serde_json::json!({
+            "callable_kind": callable.kind().as_str(),
+            "signature": format!("{:?}", callable.signature()),
+        })),
+        source_path: None,
+        source_content_hash: None,
+        start_byte: source_anchor.as_ref().map(|anchor| anchor.start_byte),
+        end_byte: source_anchor.as_ref().map(|anchor| anchor.end_byte),
+        semantic_hash: Some(
+            StableHash::new(callable.semantic_hash().as_str())
+                .map_err(|error| format!("invalid graph callable semantic hash: {error}"))?,
+        ),
+        summary: format!(
+            "Project {} callable {}",
+            callable.kind().as_str(),
+            name.as_str()
+        ),
+        metadata: BTreeMap::from([("source".to_owned(), source_anchor_json(callable.source()))]),
+    })
+}
+
+pub(in crate::app::agent) fn agent_project_debug_query_graph_symbol(
+    name: &QualifiedName,
+    query: &arcweft_lang_sema::project_index::DebugQuerySymbol,
+    source_key_prefix: &str,
+    program_hash: &StableHash,
+) -> Result<DebugGraphSymbol, String> {
+    Ok(DebugGraphSymbol {
+        symbol_id: agent_project_debug_query_graph_symbol_id(source_key_prefix, name.as_str()),
+        program_hash: program_hash.clone(),
+        public_id: None,
+        qualified_name: Some(name.as_str().to_owned()),
+        kind: "debug_query".to_owned(),
+        type_json: Some(serde_json::json!({
+            "signature": format!("{:?}", query.signature()),
+        })),
+        source_path: None,
+        source_content_hash: None,
+        start_byte: None,
+        end_byte: None,
+        semantic_hash: Some(
+            StableHash::new(agent_content_hash(name.as_str()))
+                .map_err(|error| format!("invalid graph debug query semantic hash: {error}"))?,
+        ),
+        summary: format!("Project debug query {}", name.as_str()),
+        metadata: BTreeMap::new(),
+    })
+}
+
+pub(in crate::app::agent) fn agent_project_summary_graph_symbol_id(
+    source_key_prefix: &str,
+) -> String {
+    format!("{source_key_prefix}.project.summary")
+}
+
+pub(in crate::app::agent) fn agent_program_graph_symbol_id(program_hash: &StableHash) -> String {
+    format!("program.{}.summary", program_hash.as_str())
+}
+
+pub(in crate::app::agent) fn agent_source_file_graph_symbol_id(source_key_prefix: &str) -> String {
+    format!("{source_key_prefix}.source_file")
+}
+
+pub(in crate::app::agent) fn agent_project_entity_graph_symbol_id(
+    source_key_prefix: &str,
+    id: &SemaPublicId,
+) -> String {
+    format!("{source_key_prefix}.project.entity.{}", id.as_str())
+}
+
+pub(in crate::app::agent) fn agent_project_action_graph_symbol_id(
+    source_key_prefix: &str,
+    entity_id: &SemaPublicId,
+    action: &str,
+) -> String {
+    format!(
+        "{source_key_prefix}.project.entity.{}.action.{action}",
+        entity_id.as_str()
+    )
+}
+
+pub(in crate::app::agent) fn agent_project_callable_graph_symbol_id(
+    source_key_prefix: &str,
+    name: &str,
+) -> String {
+    format!("{source_key_prefix}.project.callable.{name}")
+}
+
+pub(in crate::app::agent) fn agent_project_debug_query_graph_symbol_id(
+    source_key_prefix: &str,
+    name: &str,
+) -> String {
+    format!("{source_key_prefix}.project.debug_query.{name}")
+}
+
+pub(in crate::app::agent) fn agent_project_graph_symbol_ref_id(
+    source_key_prefix: &str,
+    symbol_ref: &arcweft_lang_sema::project_index::ProjectGraphSymbolRef,
+) -> String {
+    match symbol_ref {
+        arcweft_lang_sema::project_index::ProjectGraphSymbolRef::Entity(id) => {
+            agent_project_entity_graph_symbol_id(source_key_prefix, id)
+        }
+        arcweft_lang_sema::project_index::ProjectGraphSymbolRef::Callable(name) => {
+            agent_project_callable_graph_symbol_id(source_key_prefix, name.as_str())
+        }
+    }
+}
+
+pub(in crate::app::agent) fn agent_dynamic_control_flow_count(
+    project: &ProjectSemanticIndex,
+) -> usize {
+    project
+        .flow_control_summaries()
+        .values()
+        .filter(|summary| summary.has_dynamic_control())
+        .count()
+}
+
+pub(in crate::app::agent) fn agent_project_action_count(project: &ProjectSemanticIndex) -> usize {
+    project
+        .entities()
+        .values()
+        .map(|entity| entity.agent_actions().len())
+        .sum()
+}
+
+pub(in crate::app::agent) fn agent_project_entity_kind_counts(
+    project: &ProjectSemanticIndex,
+) -> BTreeMap<String, usize> {
+    project
+        .entities()
+        .values()
+        .fold(BTreeMap::new(), |mut counts, entity| {
+            *counts
+                .entry(format!("{:?}", entity.ty().kind()))
+                .or_insert(0) += 1;
+            counts
+        })
+}
+
+pub(in crate::app::agent) fn agent_project_relation_kind_counts(
+    project: &ProjectSemanticIndex,
+) -> BTreeMap<String, usize> {
+    project
+        .relations()
+        .iter()
+        .fold(BTreeMap::new(), |mut counts, relation| {
+            *counts
+                .entry(relation.edge_kind().as_str().to_owned())
+                .or_insert(0) += 1;
+            counts
+        })
+}
+
+pub(in crate::app::agent) fn agent_project_dependency_edge_kind_counts(
+    project: &ProjectSemanticIndex,
+) -> BTreeMap<String, usize> {
+    project
+        .dependency_relations()
+        .iter()
+        .fold(BTreeMap::new(), |mut counts, relation| {
+            *counts
+                .entry(relation.edge_kind().as_str().to_owned())
+                .or_insert(0) += 1;
+            counts
+        })
+}
+
+pub(in crate::app::agent) fn agent_project_flow_control_counts_json(
+    project: &ProjectSemanticIndex,
+) -> serde_json::Value {
+    let summaries = project
+        .flow_control_summaries()
+        .values()
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "symbol_count": summaries
+            .iter()
+            .filter(|summary| {
+                summary.has_dynamic_control()
+                    || summary.static_goto_count() > 0
+                    || summary.dynamic_goto_count() > 0
+                    || summary.branch_count() > 0
+                    || summary.loop_count() > 0
+                    || summary.await_count() > 0
+                    || summary.thread_count() > 0
+                    || summary.select_branch_count() > 0
+            })
+            .count(),
+        "has_dynamic_control": summaries.iter().any(|summary| summary.has_dynamic_control()),
+        "static_goto_count": summaries.iter().map(|summary| summary.static_goto_count()).sum::<usize>(),
+        "dynamic_goto_count": summaries.iter().map(|summary| summary.dynamic_goto_count()).sum::<usize>(),
+        "branch_count": summaries.iter().map(|summary| summary.branch_count()).sum::<usize>(),
+        "loop_count": summaries.iter().map(|summary| summary.loop_count()).sum::<usize>(),
+        "await_count": summaries.iter().map(|summary| summary.await_count()).sum::<usize>(),
+        "thread_count": summaries.iter().map(|summary| summary.thread_count()).sum::<usize>(),
+        "select_branch_count": summaries.iter().map(|summary| summary.select_branch_count()).sum::<usize>(),
+    })
+}
+
+pub(in crate::app::agent) fn agent_flow_control_summary_text(
+    project: &ProjectSemanticIndex,
+    flow_id: &SemaPublicId,
+) -> String {
+    let Some(summary) = project.flow_control_summary(flow_id) else {
+        return String::new();
+    };
+    if !summary.has_dynamic_control() && summary.static_goto_count() == 0 {
+        return String::new();
+    }
+    format!(
+        " control(static_goto={}, dynamic_goto={}, branches={}, loops={}, awaits={}, threads={}, select_branches={})",
+        summary.static_goto_count(),
+        summary.dynamic_goto_count(),
+        summary.branch_count(),
+        summary.loop_count(),
+        summary.await_count(),
+        summary.thread_count(),
+        summary.select_branch_count()
+    )
+}
+
+pub(in crate::app::agent) fn project_flow_control_summary_json(
+    summary: Option<&arcweft_lang_sema::project_index::ProjectFlowControlSummary>,
+) -> serde_json::Value {
+    let Some(summary) = summary else {
+        return serde_json::json!({
+            "has_dynamic_control": false,
+            "static_goto_count": 0,
+            "dynamic_goto_count": 0,
+            "branch_count": 0,
+            "loop_count": 0,
+            "await_count": 0,
+            "thread_count": 0,
+            "select_branch_count": 0,
+        });
+    };
+    serde_json::json!({
+        "has_dynamic_control": summary.has_dynamic_control(),
+        "static_goto_count": summary.static_goto_count(),
+        "dynamic_goto_count": summary.dynamic_goto_count(),
+        "branch_count": summary.branch_count(),
+        "loop_count": summary.loop_count(),
+        "await_count": summary.await_count(),
+        "thread_count": summary.thread_count(),
+        "select_branch_count": summary.select_branch_count(),
+    })
+}
+
+pub(in crate::app::agent) fn agent_program_summary_rag_candidate(
+    program_hash: &StableHash,
+    source_indexes: &[&AgentSourceRagIndex],
+) -> Result<AgentRagCandidate, String> {
+    let summary = agent_program_graph_summary(source_indexes);
+    let sources = source_indexes
+        .iter()
+        .map(|source_index| {
+            serde_json::json!({
+                "path": source_index.source_file.path,
+                "content_hash": source_index.source_file.content_hash.as_str(),
+                "byte_len": source_index.source_file.byte_len,
+                "candidate_chunks": source_index.candidates.len(),
+                "graph_symbols": source_index.graph_symbols.len(),
+                "graph_edges": source_index.graph_edges.len(),
+                "dynamic_control_flows": agent_source_dynamic_control_flow_count(source_index),
+                "graph_symbol_kinds": agent_graph_symbol_kind_counts(&source_index.graph_symbols),
+                "graph_edge_kinds": agent_graph_edge_kind_counts(&source_index.graph_edges),
+                "flow_control_counts": agent_source_flow_control_counts_json(source_index),
+                "flow_control_symbols": agent_source_flow_control_symbols_json(source_index),
+                "project_summary": agent_source_project_summary_json(source_index),
+            })
+        })
+        .collect::<Vec<_>>();
+    let body = serde_json::to_string_pretty(&serde_json::json!({
+        "schema_version": 1,
+        "kind": "program_rag_index",
+        "program_hash": program_hash.as_str(),
+        "counts": {
+            "sources": summary.sources,
+            "candidate_chunks": summary.candidate_chunks,
+            "source_bytes": summary.source_bytes,
+            "source_graph_symbols": summary.source_graph_symbols,
+            "source_graph_edges": summary.source_graph_edges,
+            "dynamic_control_flows": summary.dynamic_control_flows,
+            "source_graph_symbol_kinds": summary.symbol_kinds,
+            "source_graph_edge_kinds": summary.edge_kinds,
+        },
+        "sources": sources,
+    }))
+    .map_err(|error| format!("failed to serialize program RAG summary: {error}"))?;
+    Ok(agent_rag_candidate(
+        &format!("program.{}.summary", program_hash.as_str()),
+        "Program RAG index summary",
+        ChunkSourceKind::GraphSummary,
+        SearchChannel::Summary,
+        body,
+        AgentRagCandidateMeta {
+            entity_ids: Vec::new(),
+            privacy: PrivacyClass::Project,
+            source_anchor: None,
+            semantic_hash: Some(program_hash.clone()),
+            metadata: BTreeMap::from([
+                (
+                    "program_hash".to_owned(),
+                    serde_json::json!(program_hash.as_str()),
+                ),
+                (
+                    "source_count".to_owned(),
+                    serde_json::json!(summary.sources),
+                ),
+                (
+                    "candidate_chunk_count".to_owned(),
+                    serde_json::json!(summary.candidate_chunks),
+                ),
+                (
+                    "source_graph_symbol_count".to_owned(),
+                    serde_json::json!(summary.source_graph_symbols),
+                ),
+                (
+                    "source_graph_edge_count".to_owned(),
+                    serde_json::json!(summary.source_graph_edges),
+                ),
+                (
+                    "source_graph_symbol_kinds".to_owned(),
+                    serde_json::json!(summary.symbol_kinds),
+                ),
+                (
+                    "source_graph_edge_kinds".to_owned(),
+                    serde_json::json!(summary.edge_kinds),
+                ),
+            ]),
+        },
+    ))
+}
+
+pub(in crate::app::agent) fn agent_source_dynamic_control_flow_count(
+    source_index: &AgentSourceRagIndex,
+) -> usize {
+    source_index
+        .graph_symbols
+        .iter()
+        .filter(|symbol| agent_graph_symbol_has_dynamic_control(symbol))
+        .count()
+}
+
+pub(in crate::app::agent) fn agent_source_flow_control_counts_json(
+    source_index: &AgentSourceRagIndex,
+) -> serde_json::Value {
+    let flow_controls = source_index
+        .graph_symbols
+        .iter()
+        .filter_map(|symbol| symbol.metadata.get("flow_control"))
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "symbol_count": flow_controls
+            .iter()
+            .filter(|flow_control| agent_flow_control_json_has_control(flow_control))
+            .count(),
+        "has_dynamic_control": flow_controls.iter().any(|flow_control| {
+            flow_control
+                .get("has_dynamic_control")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+        }),
+        "static_goto_count": agent_flow_control_json_sum(&flow_controls, "static_goto_count"),
+        "dynamic_goto_count": agent_flow_control_json_sum(&flow_controls, "dynamic_goto_count"),
+        "branch_count": agent_flow_control_json_sum(&flow_controls, "branch_count"),
+        "loop_count": agent_flow_control_json_sum(&flow_controls, "loop_count"),
+        "await_count": agent_flow_control_json_sum(&flow_controls, "await_count"),
+        "thread_count": agent_flow_control_json_sum(&flow_controls, "thread_count"),
+        "select_branch_count": agent_flow_control_json_sum(&flow_controls, "select_branch_count"),
+    })
+}
+
+pub(in crate::app::agent) fn agent_flow_control_json_sum(
+    flow_controls: &[&serde_json::Value],
+    field: &str,
+) -> u64 {
+    flow_controls
+        .iter()
+        .map(|flow_control| {
+            flow_control
+                .get(field)
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0)
+        })
+        .sum()
+}
+
+pub(in crate::app::agent) fn agent_source_flow_control_symbols_json(
+    source_index: &AgentSourceRagIndex,
+) -> Vec<serde_json::Value> {
+    source_index
+        .graph_symbols
+        .iter()
+        .filter_map(|symbol| {
+            let flow_control = symbol.metadata.get("flow_control")?;
+            if !agent_flow_control_json_has_control(flow_control) {
+                return None;
+            }
+            Some(serde_json::json!({
+                "symbol_id": symbol.symbol_id.as_str(),
+                "public_id": symbol.public_id.as_ref().map(AgentPublicId::as_str),
+                "qualified_name": symbol.qualified_name.as_deref(),
+                "kind": symbol.kind.as_str(),
+                "summary": symbol.summary.as_str(),
+                "flow_control": flow_control,
+            }))
+        })
+        .collect()
+}
+
+pub(in crate::app::agent) fn agent_flow_control_json_has_control(
+    flow_control: &serde_json::Value,
+) -> bool {
+    flow_control
+        .get("has_dynamic_control")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+        || [
+            "static_goto_count",
+            "dynamic_goto_count",
+            "branch_count",
+            "loop_count",
+            "await_count",
+            "thread_count",
+            "select_branch_count",
+        ]
+        .into_iter()
+        .any(|field| {
+            flow_control
+                .get(field)
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0)
+                > 0
+        })
+}
+
+pub(in crate::app::agent) fn agent_source_project_summary_json(
+    source_index: &AgentSourceRagIndex,
+) -> Option<serde_json::Value> {
+    source_index
+        .graph_symbols
+        .iter()
+        .find(|symbol| symbol.kind == "project_summary")
+        .map(|symbol| {
+            serde_json::json!({
+                "symbol_id": symbol.symbol_id.as_str(),
+                "qualified_name": symbol.qualified_name.as_deref(),
+                "summary": symbol.summary.as_str(),
+                "metadata": &symbol.metadata,
+            })
+        })
+}
+
+pub(in crate::app::agent) fn agent_project_summary_rag_candidate(
+    path: &Path,
+    project: &ProjectSemanticIndex,
+    source_key_prefix: &str,
+) -> Result<AgentRagCandidate, String> {
+    let entity_kind_counts = agent_project_entity_kind_counts(project);
+    let relation_kind_counts = agent_project_relation_kind_counts(project);
+    let dependency_edge_kind_counts = agent_project_dependency_edge_kind_counts(project);
+    let flow_control_counts = agent_project_flow_control_counts_json(project);
+    let agent_action_count = agent_project_action_count(project);
+    let body = serde_json::to_string_pretty(&serde_json::json!({
+        "schema_version": project.schema_version(),
+        "kind": "project_semantic_index",
+        "program_hash": project.program_hash().as_str(),
+        "bundle_hash": project.bundle_hash().map(arcweft_lang_sema::project_index::BundleHash::as_str),
+        "counts": {
+            "entities": project.entities().len(),
+            "callables": project.callables().len(),
+            "project_callables": project.project_callables().len(),
+            "agent_actions": agent_action_count,
+            "relations": project.relations().len(),
+            "dependency_edges": project.dependency_relations().len(),
+            "dynamic_control_flows": agent_dynamic_control_flow_count(project),
+            "types": project.types().len(),
+            "debug_queries": project.debug_queries().len(),
+            "entity_kinds": entity_kind_counts,
+            "relation_kinds": relation_kind_counts,
+            "dependency_edge_kinds": dependency_edge_kind_counts,
+            "flow_control": flow_control_counts,
+        },
+    }))
+    .map_err(|error| format!("failed to serialize project RAG summary: {error}"))?;
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "path".to_owned(),
+        serde_json::Value::String(path.display().to_string()),
+    );
+    metadata.insert(
+        "entity_kind_counts".to_owned(),
+        serde_json::json!(agent_project_entity_kind_counts(project)),
+    );
+    metadata.insert(
+        "relation_kind_counts".to_owned(),
+        serde_json::json!(agent_project_relation_kind_counts(project)),
+    );
+    metadata.insert(
+        "dependency_edge_kind_counts".to_owned(),
+        serde_json::json!(agent_project_dependency_edge_kind_counts(project)),
+    );
+    metadata.insert(
+        "flow_control_counts".to_owned(),
+        agent_project_flow_control_counts_json(project),
+    );
+    metadata.insert(
+        "agent_action_count".to_owned(),
+        serde_json::json!(agent_action_count),
+    );
+    Ok(agent_rag_candidate(
+        &format!("{source_key_prefix}.project.summary"),
+        "Project semantic index summary",
+        ChunkSourceKind::GraphSummary,
+        SearchChannel::Summary,
+        body,
+        AgentRagCandidateMeta {
+            entity_ids: Vec::new(),
+            privacy: PrivacyClass::Project,
+            source_anchor: None,
+            semantic_hash: Some(
+                StableHash::new(project.program_hash().as_str())
+                    .map_err(|error| format!("invalid project semantic hash: {error}"))?,
+            ),
+            metadata,
+        },
+    ))
+}
+
+pub(in crate::app::agent) fn agent_project_entity_rag_candidate(
+    entity: &EntitySymbol,
+    source_key_prefix: &str,
+    project: &ProjectSemanticIndex,
+) -> Result<AgentRagCandidate, String> {
+    let entity_id = agent_public_id_from_sema(entity.id())?;
+    let flow_control = project_flow_control_summary_json(project.flow_control_summary(entity.id()));
+    let actions = entity
+        .agent_actions()
+        .iter()
+        .map(|action| {
+            serde_json::json!({
+                "action": action.action().as_str(),
+                "params": action.params().iter().map(|param| {
+                    serde_json::json!({
+                        "name": param.name(),
+                        "type": format!("{:?}", param.ty()),
+                        "has_default": param.has_default(),
+                    })
+                }).collect::<Vec<_>>(),
+                "return_type": format!("{:?}", action.return_type()),
+            })
+        })
+        .collect::<Vec<_>>();
+    let body = serde_json::to_string_pretty(&serde_json::json!({
+        "kind": "project_entity",
+        "id": entity.id().as_str(),
+        "entity_kind": format!("{:?}", entity.ty().kind()),
+        "value_type": entity.ty().value().map(|ty| format!("{ty:?}")),
+        "source": source_anchor_json(entity.source()),
+        "semantic_hash": entity.semantic_hash().as_str(),
+        "agent_actions": actions,
+        "flow_control": flow_control,
+    }))
+    .map_err(|error| format!("failed to serialize project entity RAG chunk: {error}"))?;
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "entity_kind".to_owned(),
+        serde_json::Value::String(format!("{:?}", entity.ty().kind())),
+    );
+    metadata.insert("flow_control".to_owned(), flow_control);
+    Ok(agent_rag_candidate(
+        &format!(
+            "{source_key_prefix}.project.entity.{}",
+            entity.id().as_str()
+        ),
+        &format!(
+            "Project entity {} {:?}{}",
+            entity.id().as_str(),
+            entity.ty().kind(),
+            agent_flow_control_summary_text(project, entity.id())
+        ),
+        ChunkSourceKind::Symbol,
+        SearchChannel::Graph,
+        body,
+        AgentRagCandidateMeta {
+            entity_ids: vec![entity_id],
+            privacy: PrivacyClass::Project,
+            source_anchor: debug_anchor_from_source_anchor(entity.source())?,
+            semantic_hash: Some(
+                StableHash::new(entity.semantic_hash().as_str())
+                    .map_err(|error| format!("invalid entity semantic hash: {error}"))?,
+            ),
+            metadata,
+        },
+    ))
+}
+
+pub(in crate::app::agent) fn agent_project_callable_rag_candidate(
+    name: &QualifiedName,
+    callable: &ProjectCallableSymbol,
+    source_key_prefix: &str,
+) -> Result<AgentRagCandidate, String> {
+    let body = serde_json::to_string_pretty(&serde_json::json!({
+        "kind": "project_callable",
+        "name": name.as_str(),
+        "callable_kind": callable.kind().as_str(),
+        "signature": format!("{:?}", callable.signature()),
+        "source": source_anchor_json(callable.source()),
+        "semantic_hash": callable.semantic_hash().as_str(),
+    }))
+    .map_err(|error| format!("failed to serialize project callable RAG chunk: {error}"))?;
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "callable_kind".to_owned(),
+        serde_json::Value::String(callable.kind().as_str().to_owned()),
+    );
+    Ok(agent_rag_candidate(
+        &format!("{source_key_prefix}.project.callable.{}", name.as_str()),
+        &format!(
+            "Project {} callable {}",
+            callable.kind().as_str(),
+            name.as_str()
+        ),
+        ChunkSourceKind::Symbol,
+        SearchChannel::Graph,
+        body,
+        AgentRagCandidateMeta {
+            entity_ids: Vec::new(),
+            privacy: PrivacyClass::Project,
+            source_anchor: debug_anchor_from_source_anchor(callable.source())?,
+            semantic_hash: Some(
+                StableHash::new(callable.semantic_hash().as_str())
+                    .map_err(|error| format!("invalid callable semantic hash: {error}"))?,
+            ),
+            metadata,
+        },
+    ))
+}
+
+pub(in crate::app::agent) fn agent_project_debug_query_rag_candidate(
+    name: &arcweft_lang_sema::project_index::QualifiedName,
+    query: &arcweft_lang_sema::project_index::DebugQuerySymbol,
+    source_key_prefix: &str,
+) -> Result<AgentRagCandidate, String> {
+    let body = serde_json::to_string_pretty(&serde_json::json!({
+        "kind": "project_debug_query",
+        "name": name.as_str(),
+        "signature": format!("{:?}", query.signature()),
+    }))
+    .map_err(|error| format!("failed to serialize project debug query RAG chunk: {error}"))?;
+    Ok(agent_rag_candidate(
+        &format!("{source_key_prefix}.project.debug_query.{}", name.as_str()),
+        &format!("Project debug query {}", name.as_str()),
+        ChunkSourceKind::Symbol,
+        SearchChannel::Graph,
+        body,
+        AgentRagCandidateMeta {
+            entity_ids: Vec::new(),
+            privacy: PrivacyClass::Project,
+            source_anchor: None,
+            semantic_hash: Some(
+                StableHash::new(agent_content_hash(name.as_str()))
+                    .map_err(|error| format!("invalid debug query semantic hash: {error}"))?,
+            ),
+            metadata: BTreeMap::new(),
+        },
+    ))
+}
+
+pub(in crate::app::agent) struct AgentRagCandidateMeta {
+    pub(in crate::app::agent) entity_ids: Vec<AgentPublicId>,
+    pub(in crate::app::agent) privacy: PrivacyClass,
+    pub(in crate::app::agent) source_anchor: Option<DebugSourceAnchor>,
+    pub(in crate::app::agent) semantic_hash: Option<StableHash>,
+    pub(in crate::app::agent) metadata: BTreeMap<String, serde_json::Value>,
+}
+
+pub(in crate::app::agent) fn agent_rag_candidate(
+    source_key: &str,
+    title: &str,
+    source_kind: ChunkSourceKind,
+    preferred_channel: SearchChannel,
+    body: String,
+    meta: AgentRagCandidateMeta,
+) -> AgentRagCandidate {
+    let content_hash = agent_content_hash(&body);
+    AgentRagCandidate {
+        chunk: DebugChunk {
+            id: ChunkId::new(format!("cli:{source_key}:{content_hash}")),
+            program_hash: None,
+            source_kind,
+            source_key: source_key.to_owned(),
+            title: title.to_owned(),
+            body,
+            content_hash: StableHash::new(content_hash)
+                .expect("generated content hash is non-empty"),
+            semantic_hash: meta.semantic_hash,
+            source_anchor: meta.source_anchor,
+            entity_ids: meta.entity_ids,
+            privacy: meta.privacy,
+            metadata: meta.metadata,
+            created_unix_ms: 0,
+        },
+        preferred_channel,
+    }
+}
+
+pub(in crate::app::agent) fn agent_public_id_from_sema(
+    id: &SemaPublicId,
+) -> Result<AgentPublicId, String> {
+    AgentPublicId::new(id.as_str().to_owned())
+        .map_err(|error| format!("failed to convert project id `{}`: {error}", id.as_str()))
+}
+
+pub(in crate::app::agent) fn debug_anchor_from_source_anchor(
+    anchor: &SourceAnchor,
+) -> Result<Option<DebugSourceAnchor>, String> {
+    match anchor.source() {
+        SourceName::Path(path) => Ok(Some(DebugSourceAnchor {
+            path: path.clone(),
+            start_byte: u64::try_from(anchor.byte_range().start)
+                .map_err(|_| "source anchor start byte overflowed u64".to_owned())?,
+            end_byte: u64::try_from(anchor.byte_range().end)
+                .map_err(|_| "source anchor end byte overflowed u64".to_owned())?,
+        })),
+        SourceName::Generated => Ok(None),
+    }
+}
+
+pub(in crate::app::agent) fn debug_source_anchor(
+    path: &Path,
+    range: std::ops::Range<usize>,
+) -> Result<DebugSourceAnchor, String> {
+    Ok(DebugSourceAnchor {
+        path: path.display().to_string(),
+        start_byte: u64::try_from(range.start)
+            .map_err(|_| "source chunk start byte overflowed u64".to_owned())?,
+        end_byte: u64::try_from(range.end)
+            .map_err(|_| "source chunk end byte overflowed u64".to_owned())?,
+    })
+}
+
+pub(in crate::app::agent) fn source_anchor_json(anchor: &SourceAnchor) -> serde_json::Value {
+    match anchor.source() {
+        SourceName::Path(path) => serde_json::json!({
+            "path": path,
+            "start_byte": anchor.byte_range().start,
+            "end_byte": anchor.byte_range().end,
+        }),
+        SourceName::Generated => serde_json::json!({
+            "generated": true,
+        }),
+    }
+}
+
+pub(in crate::app::agent) fn agent_trace_record_privacy(record: &AgentTraceRecord) -> PrivacyClass {
+    record
+        .payload
+        .get("privacy_class")
+        .or_else(|| record.payload.get("privacy"))
+        .or_else(|| {
+            record
+                .payload
+                .get("payload")
+                .and_then(|payload| payload.get("privacy_class"))
+        })
+        .or_else(|| {
+            record
+                .payload
+                .get("payload")
+                .and_then(|payload| payload.get("privacy"))
+        })
+        .and_then(serde_json::Value::as_str)
+        .and_then(PrivacyClass::parse)
+        .unwrap_or(PrivacyClass::Project)
+}
+
+pub(in crate::app::agent) fn agent_trace_record_entity_ids(
+    record: &AgentTraceRecord,
+) -> Vec<AgentPublicId> {
+    [
+        Some(record.run_id.as_str()),
+        record.session_id.as_ref().map(SessionId::as_str),
+        Some(agent_trace_kind_name(record.kind)),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(|value| AgentPublicId::new(value.to_owned()).ok())
+    .collect()
+}
+
+pub(in crate::app::agent) fn agent_trace_rag_ranked_lists(
+    candidates: &[AgentRagCandidate],
+    query: &RagQuery,
+) -> Vec<Vec<SearchHit>> {
+    [
+        SearchChannel::ExactEntity,
+        SearchChannel::Lexical,
+        SearchChannel::Vector,
+        SearchChannel::Graph,
+        SearchChannel::History,
+        SearchChannel::Diagnostics,
+        SearchChannel::Trace,
+        SearchChannel::Summary,
+    ]
+    .into_iter()
+    .filter_map(|channel| {
+        let mut scored = candidates
+            .iter()
+            .filter_map(|candidate| {
+                agent_trace_rag_score(candidate, query, channel).map(|score| (candidate, score))
+            })
+            .collect::<Vec<_>>();
+        scored.sort_by(|left, right| {
+            right
+                .1
+                .total_cmp(&left.1)
+                .then_with(|| left.0.chunk.id.cmp(&right.0.chunk.id))
+        });
+        (!scored.is_empty()).then(|| {
+            scored
+                .into_iter()
+                .enumerate()
+                .map(|(index, (candidate, score))| SearchHit {
+                    chunk_id: candidate.chunk.id.clone(),
+                    channel,
+                    rank: index + 1,
+                    score: Some(score),
+                })
+                .collect()
+        })
+    })
+    .collect()
+}
+
+pub(in crate::app::agent) fn agent_trace_rag_score(
+    candidate: &AgentRagCandidate,
+    query: &RagQuery,
+    channel: SearchChannel,
+) -> Option<f64> {
+    let haystack = agent_trace_rag_haystack(candidate);
+    match channel {
+        SearchChannel::ExactEntity => {
+            let root_match = query.roots.iter().any(|root| {
+                candidate
+                    .chunk
+                    .entity_ids
+                    .iter()
+                    .any(|entity| entity == root)
+                    || candidate.chunk.source_key == root.as_str()
+                    || candidate.chunk.title.contains(root.as_str())
+            });
+            let query_match = candidate
+                .chunk
+                .entity_ids
+                .iter()
+                .any(|entity| entity.as_str() == query.text)
+                || candidate.chunk.source_key == query.text
+                || candidate.chunk.title == query.text;
+            (root_match || query_match).then_some(1.0)
+        }
+        SearchChannel::Lexical => {
+            let query_lower = query.text.to_lowercase();
+            let phrase = f64::from(u8::from(haystack.contains(&query_lower)));
+            let token_score = agent_count_as_f64(
+                agent_rag_tokens(&query.text)
+                    .into_iter()
+                    .filter(|token| haystack.contains(token))
+                    .count(),
+            );
+            (phrase + token_score > 0.0).then_some(phrase.mul_add(4.0, token_score))
+        }
+        SearchChannel::Graph => {
+            let root_score = if query.graph_depth > 0 {
+                agent_count_as_f64(
+                    query
+                        .roots
+                        .iter()
+                        .filter(|root| haystack.contains(&root.as_str().to_lowercase()))
+                        .count(),
+                )
+            } else {
+                0.0
+            };
+            let channel_score = f64::from(u8::from(
+                candidate.preferred_channel == SearchChannel::Graph,
+            ));
+            (root_score + channel_score > 0.0).then_some(root_score + channel_score)
+        }
+        SearchChannel::History
+        | SearchChannel::Diagnostics
+        | SearchChannel::Trace
+        | SearchChannel::Summary => {
+            if candidate.preferred_channel != channel {
+                return None;
+            }
+            let token_score = agent_count_as_f64(
+                agent_rag_tokens(&query.text)
+                    .into_iter()
+                    .filter(|token| haystack.contains(token))
+                    .count(),
+            );
+            (token_score > 0.0).then_some(token_score)
+        }
+        SearchChannel::Vector => {
+            if candidate.preferred_channel != SearchChannel::Vector {
+                return None;
+            }
+            candidate
+                .chunk
+                .metadata
+                .get("search_score")
+                .and_then(serde_json::Value::as_f64)
+                .filter(|score| score.is_finite())
+        }
+    }
+}
+
+pub(in crate::app::agent) const fn search_channel_label(channel: SearchChannel) -> &'static str {
+    match channel {
+        SearchChannel::ExactEntity => "exact_entity",
+        SearchChannel::Lexical => "lexical",
+        SearchChannel::Vector => "vector",
+        SearchChannel::Graph => "graph",
+        SearchChannel::History => "history",
+        SearchChannel::Diagnostics => "diagnostics",
+        SearchChannel::Trace => "trace",
+        SearchChannel::Summary => "summary",
+    }
+}
+
+pub(in crate::app::agent) fn agent_trace_rag_haystack(candidate: &AgentRagCandidate) -> String {
+    let mut haystack = format!(
+        "{}\n{}\n{}",
+        candidate.chunk.source_key, candidate.chunk.title, candidate.chunk.body
+    )
+    .to_lowercase();
+    for entity in &candidate.chunk.entity_ids {
+        haystack.push('\n');
+        haystack.push_str(&entity.as_str().to_lowercase());
+    }
+    haystack
+}
+
+pub(in crate::app::agent) fn agent_rag_roots(
+    values: &[String],
+) -> Result<Vec<AgentPublicId>, String> {
+    values
+        .iter()
+        .map(|root| {
+            let root = root.trim();
+            AgentPublicId::new(root.to_owned())
+                .map_err(|_| "agent rag query --root values must not be empty".to_owned())
+        })
+        .collect()
+}
+
+pub(in crate::app::agent) fn parse_agent_privacy_class(
+    value: &str,
+) -> Result<PrivacyClass, String> {
+    PrivacyClass::parse(value).ok_or_else(|| {
+        format!("privacy class must be one of public, project, sensitive, or secret: `{value}`")
+    })
+}
+
+pub(in crate::app::agent) fn agent_rag_tokens(text: &str) -> BTreeSet<String> {
+    text.split(|character: char| {
+        !(character.is_alphanumeric() || character == '.' || character == '_' || character == '-')
+    })
+    .map(str::trim)
+    .filter(|token| !token.is_empty())
+    .map(str::to_lowercase)
+    .collect()
+}
+
+pub(in crate::app::agent) fn agent_trace_rag_seed(
+    path: &Path,
+    records: &[AgentTraceRecord],
+) -> String {
+    let seed = records
+        .iter()
+        .map(|record| record.payload_hash.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("trace:{}:{seed}", path.display())
+}
+
+pub(in crate::app::agent) fn agent_rag_program_hash(
+    seed_parts: &[String],
+) -> Result<StableHash, String> {
+    StableHash::new(agent_content_hash(seed_parts.join("\n")))
+        .map_err(|_| "failed to build Agent RAG program hash".to_owned())
+}
+
+pub(in crate::app::agent) fn agent_content_hash(bytes: impl AsRef<[u8]>) -> String {
+    format!("blake3:{}", blake3::hash(bytes.as_ref()).to_hex())
+}
+
+pub(in crate::app::agent) fn agent_count_as_f64(value: usize) -> f64 {
+    f64::from(u32::try_from(value).unwrap_or(u32::MAX))
+}
+
+pub(in crate::app::agent) fn truncate_utf8(text: &str, max_bytes: usize) -> (String, bool) {
+    if text.len() <= max_bytes {
+        return (text.to_owned(), false);
+    }
+    let mut end = max_bytes;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    (text[..end].to_owned(), true)
+}

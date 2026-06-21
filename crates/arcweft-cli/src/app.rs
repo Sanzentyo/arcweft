@@ -17,10 +17,13 @@ use self::bundle::{bundle_command, run_bundle_command};
 use self::commands::{BuildCommand, Cli, CliCommand};
 use self::debug::debug_command;
 use self::jit::jit_command;
-use self::runtime::{
-    runtime_cli_command, runtime_plan_command, runtime_profile_command, runtime_run_command,
-    runtime_serve_command, script_bench_command, script_test_command,
-};
+use self::runtime::cli::runtime_cli_command;
+use self::runtime::plan::runtime_plan_command;
+use self::runtime::profile_cmd::runtime_profile_command;
+use self::runtime::run::runtime_run_command;
+use self::runtime::script_bench::script_bench_command;
+use self::runtime::script_test::script_test_command;
+use self::runtime::serve::runtime_serve_command;
 use self::tooling::{format_command, ids_command};
 use self::verify::{check_command, unsafe_command, verify_command, verify_types_command};
 use crate::toolchain_profile;

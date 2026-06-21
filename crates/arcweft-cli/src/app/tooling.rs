@@ -1,6 +1,10 @@
 use super::commands::IdsCommand;
 use super::shared::{is_arcw_path, print_json};
-use arcweft_tooling::{FormatOptions, ToolingEditReport, format_source, materialize_ids};
+use arcweft_tooling::{
+    format::format_source,
+    id_context::materialize_ids,
+    model::{FormatOptions, ToolingEditReport, ToolingError},
+};
 use clap::Args;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -88,7 +92,7 @@ pub(super) fn ids_command(command: IdsCommand) -> Result<(), ExitCode> {
 
 fn run_tooling_command(
     options: &ToolingCommandOptions,
-    mut run_one: impl FnMut(&str) -> Result<ToolingEditReport, arcweft_tooling::ToolingError>,
+    mut run_one: impl FnMut(&str) -> Result<ToolingEditReport, ToolingError>,
 ) -> Result<(), ExitCode> {
     let paths = collect_arcw_paths(&options.path)?;
     let mut reports = Vec::new();

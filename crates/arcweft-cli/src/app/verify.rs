@@ -3,19 +3,23 @@ use super::project::{
     native_host_policy_for_selection, resolve_source_selection, runtime_plan_options_for_selection,
     runtime_pure_config_for_selection,
 };
-use super::runtime::{
+use super::runtime::entry::apply_runtime_entry_selection;
+use super::runtime::executor::RuntimeExecutorInstance;
+use super::runtime::options::{
     CliRuntimeExecutorTier, CliRuntimeMathBackend, CliRuntimePureBackend, CliRuntimePureWorkers,
-    CliRuntimeStepMode, NativeRunHost, RuntimeExecutorInstance, apply_runtime_entry_selection,
-    parse_runtime_binding_arg, parse_runtime_pure_workers, report_path, run_profile_phase,
-    run_runtime_steps_with_executor,
+    CliRuntimeStepMode,
 };
+use super::runtime::parse::{parse_runtime_binding_arg, parse_runtime_pure_workers};
+use super::runtime::profile::report_path;
+use super::runtime::profile::run_profile_phase;
+use super::runtime::steps::{NativeRunHost, run_runtime_steps_with_executor};
 use super::shared::print_json;
 use crate::output::{
     BorrowCheckProfileStats, CheckReport, RuntimeExecutorTier, RuntimeTypeValidationProfileStats,
     RuntimeTypeValidationReportSummary, TypeCheckProfileStats, VerifyTypesReport,
     VerifyTypesRuntimeSelfCheck, VerifyTypesVerifierSummary, flow_status_label,
 };
-use arcweft_compiler::lower_source_runtime_plan_with_options;
+use arcweft_compiler::lower::lower_source_runtime_plan_with_options;
 use arcweft_core::{engine::FlowFiberStatus, plan::RuntimePlan, value::RuntimeBinding};
 use arcweft_runtime_host::NativeAdapterRegistrar;
 use arcweft_verify::{

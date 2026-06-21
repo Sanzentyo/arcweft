@@ -2,7 +2,7 @@ use super::agent::{AgentHitTestOptions, AgentMcpOptions, AgentObserveOptions, Ag
 use super::bundle::{BundleOptions, RunBundleOptions};
 use super::debug::DebugCommand;
 use super::jit::JitCheckOptions;
-use super::runtime::{
+use super::runtime::options::{
     CliRunOptions, PlanOptions, RuntimeProfileOptions, RuntimeRunOptions, ScriptBenchOptions,
     ScriptTestOptions, ServeOptions,
 };
