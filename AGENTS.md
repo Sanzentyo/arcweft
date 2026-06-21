@@ -155,6 +155,10 @@ cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .
 
 - Use `cargo fmt`.
 - Use `cargo clippy --workspace --all-targets --all-features` when feasible.
+- Remove wildcard imports when they are reported by the active clippy lint
+  configuration, including `clippy::wildcard_imports`. Do not treat every
+  private `use super::*` as a blanket structural violation unless clippy or the
+  local task calls it out.
 - Follow `docs/implementation/test-execution-policy.md` for test scope. Prefer
   focused changed-crate tests during tight loops, run workspace check/clippy at
   reviewable cut points, and reserve the ignored Tier 2 MCP stdio / exact visual
