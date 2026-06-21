@@ -6,6 +6,11 @@ on:
       - main
   workflow_dispatch:
 
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+
 jobs:
   platform-validation:
     name: ${{ matrix.os }}
@@ -48,6 +53,10 @@ jobs:
 
       - name: Workspace clippy
         run: cargo clippy --workspace --all-targets --all-features
+
+      - name: Free Linux clippy artifacts before tests
+        if: runner.os == 'Linux'
+        run: cargo clean
 
       - name: Workspace non-CLI lib and integration tests
         timeout-minutes: 45
