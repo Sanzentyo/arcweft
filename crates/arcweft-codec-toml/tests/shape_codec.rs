@@ -1,0 +1,113 @@
+use std::collections::BTreeMap;
+
+use arcweft_codec_toml::TomlCodec;
+use arcweft_data::{
+    Bytes, BytesFormat, Codec, DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions,
+    FieldShape, RecordPolicy, TypeShape, Value,
+};
+
+fn asset_shape() -> TypeShape {
+    TypeShape::Record {
+        name: "Asset".to_owned(),
+        fields: vec![
+            FieldShape::new(
+                "hash",
+                "hash",
+                TypeShape::Bytes {
+                    format: BytesFormat::Binary,
+                },
+            )
+            .with_bytes_format(BytesFormat::Hex),
+            FieldShape::new("name", "name", TypeShape::String),
+            FieldShape::new("tag", "tag", TypeShape::option(TypeShape::String)),
+        ],
+        policy: RecordPolicy {
+            deny_unknown_fields: true,
+        },
+    }
+}
+
+#[test]
+fn toml_codec_uses_shape_bytes_policy_for_records() {
+    let value = Value::Record(BTreeMap::from([
+        (
+            "hash".to_owned(),
+            Value::Bytes(Bytes::from([1_u8, 2, 255].as_slice())),
+        ),
+        ("name".to_owned(), Value::String("hero".to_owned())),
+        ("tag".to_owned(), Value::String("npc".to_owned())),
+    ]));
+
+    let toml = TomlCodec
+        .encode_value(&value, &asset_shape(), &EncodeOptions::default())
+        .expect("encode");
+    let text = std::str::from_utf8(&toml).expect("utf8");
+    assert!(text.contains("hash = \"0102ff\""));
+    assert!(text.contains("name = \"hero\""));
+
+    let decoded = TomlCodec
+        .decode_value(&toml, &asset_shape(), &DecodeOptions::default())
+        .expect("decode");
+    assert_eq!(decoded, value);
+}
+
+#[test]
+fn toml_codec_omits_record_option_none_and_decodes_missing_as_unit() {
+    let value = Value::Record(BTreeMap::from([
+        (
+            "hash".to_owned(),
+            Value::Bytes(Bytes::from([0_u8, 255].as_slice())),
+        ),
+        ("name".to_owned(), Value::String("hero".to_owned())),
+        ("tag".to_owned(), Value::Unit),
+    ]));
+
+    let toml = TomlCodec
+        .encode_value(&value, &asset_shape(), &EncodeOptions::default())
+        .expect("encode");
+    let text = std::str::from_utf8(&toml).expect("utf8");
+    assert!(!text.contains("tag"));
+
+    let decoded = TomlCodec
+        .decode_value(&toml, &asset_shape(), &DecodeOptions::default())
+        .expect("decode");
+    assert_eq!(decoded, value);
+}
+
+#[test]
+fn toml_codec_rejects_top_level_option_none() {
+    let error = TomlCodec
+        .encode_value(
+            &Value::Unit,
+            &TypeShape::option(TypeShape::String),
+            &EncodeOptions::default(),
+        )
+        .expect_err("top-level none unsupported");
+    assert_eq!(error.kind(), &DataErrorKind::UnsupportedFormat);
+}
+
+#[test]
+fn toml_codec_rejects_unknown_record_fields_through_shape() {
+    let error = TomlCodec
+        .decode_value(
+            b"hash = \"00\"\nname = \"hero\"\nextra = true\n",
+            &asset_shape(),
+            &DecodeOptions::default(),
+        )
+        .expect_err("unknown field");
+    assert_eq!(error.kind(), &DataErrorKind::UnknownField);
+}
+
+#[test]
+fn toml_codec_checks_input_limit_before_parse() {
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_input_len: 2,
+            ..DecodeLimits::default()
+        },
+    };
+    let error = TomlCodec
+        .decode_value(b"name = \"hero\"\n", &asset_shape(), &options)
+        .expect_err("input cap");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}

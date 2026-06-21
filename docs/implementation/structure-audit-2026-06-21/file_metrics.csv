@@ -182,7 +182,8 @@ crates/arcweft-codec-json/tests/shape_codec.rs,2471,84,77,test,true,true,false,f
 crates/arcweft-codec-msgpack/Cargo.toml,392,16,14,text,false,false,false,false
 crates/arcweft-codec-msgpack/src/lib.rs,1460,52,45,production,true,false,false,false
 crates/arcweft-codec-toml/Cargo.toml,333,15,13,text,false,false,false,false
-crates/arcweft-codec-toml/src/lib.rs,5159,140,130,production,true,false,false,false
+crates/arcweft-codec-toml/src/lib.rs,21894,572,542,production,true,false,false,false
+crates/arcweft-codec-toml/tests/shape_codec.rs,3484,113,102,test,true,true,false,false
 crates/arcweft-codec-yaml/Cargo.toml,327,15,13,text,false,false,false,false
 crates/arcweft-codec-yaml/src/lib.rs,5845,159,149,production,true,false,false,false
 crates/arcweft-compiler/Cargo.toml,829,30,25,text,false,false,false,false
@@ -873,7 +874,7 @@ docs/implementation/visual-sample-review-issues/2026-06-17/README.md,50907,60,57
 docs/implementation/visual-sample-review-issues/2026-06-18/README.md,7294,24,20,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-hotspot-capture-metadata.json,2420,113,113,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-param-choice-presentation-tree.json,18532,626,626,text,false,false,false,false
-docs/implementation/zip-gap-audit-2026-06-21.md,7147,113,105,text,false,false,false,false
+docs/implementation/zip-gap-audit-2026-06-21.md,7832,121,113,text,false,false,false,false
 docs/reviews/pro_review1.md,22523,670,495,text,false,false,false,false
 docs/reviews/pro_review10.md,24274,938,713,text,false,false,false,false
 docs/reviews/pro_review11.md,62235,3442,2511,text,false,false,false,false

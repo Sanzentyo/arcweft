@@ -49,6 +49,12 @@ This note records the implementation cut for
   current external enum raw representation. JSON decoding now checks the input
   cap before parsing and uses `TypeShape`/`FieldShape` bytes policy for
   base64/hex/array byte recovery instead of the previous dynamic `Value` bridge.
+- Moved `TomlCodec` encode/decode onto the shape-driven raw transcoder path for
+  primitive values, records, string-key maps, byte fields, and the current
+  external enum raw representation. TOML decoding now checks the input cap
+  before parsing and uses TOML document parsing rather than value-only parsing.
+  Because TOML has no null value, `Option::None` is encoded as record field
+  omission; top-level or sequence-contained `None` is rejected as unsupported.
 
 ## Remaining implementation debt
 
@@ -63,7 +69,7 @@ This note records the implementation cut for
   producing, but it is not yet a full lossless canonical formatter with golden
   coverage for comments/trivia and all Agent item families.
 - Data raw transcoding covers the initial shape/value bridge. Format-specific
-  JSON/TOML/YAML raw codecs, parse-time decode budgets, and strict binary raw
+  YAML raw codecs, parser-integrated JSON/TOML/YAML decode budgets, and strict binary raw
   coverage remain separate data-format tasks.
 - The derive parser now rejects malformed attributes and covers the main
   container/field/variant grammar. Remaining derive work includes precise
@@ -77,10 +83,9 @@ This note records the implementation cut for
   guide. Remaining save work is to model explicit multi-step migration chains
   and decide whether the checksum contract should cover canonical header
   metadata in addition to the payload for a future envelope version.
-- JSON shape decoding now covers the first concrete T-105 cut. Remaining
-  JSON/TOML/YAML work includes enum internal/adjacent/repr wire forms,
-  parser-integrated budget visitors, TOML option/null policy, and strict YAML
-  single-document handling.
+- JSON and TOML shape decoding now cover the first concrete T-105 cuts.
+  Remaining JSON/TOML/YAML work includes enum internal/adjacent/repr wire forms,
+  parser-integrated budget visitors, and strict YAML single-document handling.
 
 ## Validation
 
@@ -102,6 +107,9 @@ cargo clippy -p arcweft-save --all-targets --all-features -- -D warnings
 cargo check -p arcweft-data -p arcweft-codec-json --all-targets --all-features
 cargo test -p arcweft-codec-json --test shape_codec
 cargo clippy -p arcweft-data -p arcweft-codec-json --all-targets --all-features -- -D warnings
+cargo check -p arcweft-data -p arcweft-codec-toml --all-targets --all-features
+cargo test -p arcweft-codec-toml --test shape_codec
+cargo clippy -p arcweft-data -p arcweft-codec-toml --all-targets --all-features -- -D warnings
 cargo test -p arcweft-agent-mcp -p arcweft-agent-mcp-client -p arcweft-test --all-features
 cargo test -p arcweft-tooling agent_format --all-features
 cargo test -p arcweft-cli stdio_transport_roundtrips_agent_session_calls_through_fake_child --all-features
