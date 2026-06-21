@@ -7,8 +7,8 @@ It is the readable companion to
 strict requirement ledger.
 
 Implementation baseline used for this inventory:
-`c8f5f10e Preflight CSV bytes budgets` plus the TOML source preflight cut
-documented below.
+`fdd01d66 Preflight TOML source budgets` plus the YAML source scalar preflight
+cut documented below.
 
 ## Status Model
 
@@ -26,7 +26,6 @@ documented below.
 | Area | Item | Status | Missing thing that blocks completion |
 | --- | --- | --- | --- |
 | Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外での remote REPL / stdio MCP / data codec focused gates と workspace gates の記録 |
-| Data | ZG-D-001-YAML strict pre-scalar-event allocation | Partial implementation | public `Yaml` loader tree 前の event budget gate はあるが、event receiver が見る前に scalar `String` が parser 内部で確保される |
 | Data | ZG-D-001-Arrow IPC reader materialization budget | Partial implementation | `RecordBatch` から Arcweft `Value` を作る前の row/field/string/bytes budget はあるが、`FileReader` 内部の column buffer materialization 前 cap はない |
 | Data | ZG-D-001-Parquet reader materialization budget | Partial implementation | metadata row count と batch conversion budget はあるが、row group/page decode が column buffers を materialize する前の string/binary cap はない |
 | Data | ZG-D-001-Avro datum materialization budget | Partial implementation | top-level datum stream と `AvroValue -> Arcweft Value` 変換時の budget はあるが、`apache_avro::Reader` が nested `AvroValue` を materialize する前の visitor/reader policy がない |
@@ -73,7 +72,7 @@ Existing implementation:
 - `arcweft-data::DecodeBudget` exists.
 - Arcweft Binary decoding uses parse-time input/node/depth/collection/string/byte
   checks before allocating the full decoded value.
-- YAML/Arrow/Parquet/Avro already apply some caps or shape validation
+- Arrow/Parquet/Avro already apply some caps or shape validation
   after parse, and several codecs check `max_input_len` before invoking their
   parser.
 - TOML now runs a source-level preflight before `toml::Deserializer::parse`
@@ -87,8 +86,12 @@ Existing implementation:
 - MsgPack and CBOR now use bounded low-level readers that consume
   `arcweft-data::DecodeBudget` while parsing raw values, before building
   `rmpv::Value`, `ciborium::Value`, or Arcweft `Value` intermediates.
-- YAML now runs a low-level `yaml-rust2` event parser budget gate before the
-  public `Yaml` loader tree is built.
+- YAML now runs a source scalar preflight before invoking `yaml-rust2`, so
+  plain, quoted, and block scalar string limits are checked before parser
+  scalar event strings can be allocated. It then runs a low-level
+  `yaml-rust2` event parser budget gate before the public `Yaml` loader tree is
+  built, covering document tree nodes, sequences, mappings, and scalar strings
+  again at the parser event boundary.
 - Arrow IPC and Parquet now create `DecodeBudget` at decode entry, consume row
   sequence budget, record field map budget, decoded value node budget, and
   string/bytes limits before copying Arrow scalar buffers into Arcweft `Value`.
@@ -108,13 +111,6 @@ Existing implementation:
 
 具体的に未実装または部分実装に残っている動作:
 
-- **YAML strict pre-scalar-event allocation**:
-  YAML は public `YamlLoader` tree の前に event parser budget gate を通すため、
-  巨大 document tree の構築は抑止できる。一方で `MarkedEventReceiver` が
-  `Scalar` event を受け取る時点では parser 内部で scalar `String` がすでに
-  確保されている。ZIP の「unbounded intermediate allocation 前に失敗する」
-  条件を厳密に満たすには、scalar token payload を確保する前の cap、または
-  それと同等の scanner-level limit が必要である。
 - **Arrow IPC reader materialization budget**:
   Arrow IPC は `max_input_len` と `Seq<Record>` schema validation はあるが、
   `arrow::ipc::reader::FileReader` が `RecordBatch` と column buffers を返した
@@ -154,8 +150,8 @@ Existing implementation:
 
 必要なテスト・証跡:
 
-- 各 codec に adversarial input tests を追加する。YAML は巨大 scalar
-  や巨大 collection、Arrow/Parquet は巨大 row/batch/column buffer、Avro は巨大
+- 各 codec に adversarial input tests を追加する。Arrow/Parquet は巨大
+  row/batch/column buffer、Avro は巨大
   datum array/map/string/bytes を対象にする。
 - 深い nesting、巨大 array/map/record、巨大 string/bytes、巨大 row/column などが
   unbounded intermediate allocation 前に失敗することを示す。
@@ -210,11 +206,12 @@ some of them leave related items open:
   projection. Focused tests cover input length, string length, array length,
   node budget exhaustion, and malformed oversized string, bare-key, and array
   inputs that fail with `LimitExceeded` before TOML parse errors.
-- YAML decoding now runs a low-level `yaml-rust2` event parser budget gate
-  before constructing the public `Yaml` loader tree. Focused tests cover input
-  length, scalar string length, sequence length, and node budget exhaustion.
-  The event parser still allocates scalar event strings before the receiver
-  sees them, but unbounded `Yaml` document tree construction is budget-gated.
+- YAML decoding now runs a source scalar preflight before `yaml-rust2` parser
+  entry, then runs a low-level event parser budget gate before constructing the
+  public `Yaml` loader tree. Focused tests cover input length, scalar string
+  length, sequence length, node budget exhaustion, and oversized quoted, plain,
+  and block scalar inputs that fail with `LimitExceeded` before parser event
+  string allocation.
 - Raw shape conversion plus JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow,
   Parquet, and Avro reject non-finite floats, float-to-integer recovery, and
   signed/unsigned bounds violations through focused numeric edge tests.

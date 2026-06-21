@@ -9,10 +9,13 @@ use arcweft_data::{
     encode_with_shape,
 };
 use base64::prelude::{BASE64_STANDARD, Engine as _};
+use source_preflight::preflight_yaml_source_scalars;
 use yaml_rust2::parser::{Event, MarkedEventReceiver, Parser};
 use yaml_rust2::scanner::Marker;
 use yaml_rust2::yaml::Hash;
 use yaml_rust2::{Yaml, YamlEmitter, YamlLoader};
+
+mod source_preflight;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct YamlCodec;
@@ -54,6 +57,7 @@ impl Codec for YamlCodec {
         let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
         let source = std::str::from_utf8(input)
             .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
+        preflight_yaml_source_scalars(source, &options.limits)?;
         validate_yaml_budget(source, &mut budget)?;
         let documents = YamlLoader::load_from_str(source)
             .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;

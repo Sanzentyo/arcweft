@@ -134,10 +134,10 @@ For a concise explanation of the concrete unfinished items, see
   runs a `csv-core` byte-level preflight before constructing
   `csv::StringRecord` values, covering row count, record field count, unescaped
   field string length, header validation, and hex/base64 decoded byte upper
-  bounds for bytes cells. YAML
-  now uses an event parser budget gate before
-  constructing the public `Yaml` loader tree, though scalar event strings are
-  still parser-allocated before the receiver observes them. Arrow IPC and
+  bounds for bytes cells. YAML now runs a source scalar preflight before
+  `yaml-rust2` parser entry, covering plain, quoted, and block scalar string
+  limits before parser scalar event allocation; it then uses an event parser
+  budget gate before constructing the public `Yaml` loader tree. Arrow IPC and
   Parquet now consume decode budget at batch conversion time for rows, record
   field counts, value nodes, strings, and bytes before copying Arrow scalar
   buffers into Arcweft `Value`; Parquet also rejects metadata row-count overflow
@@ -147,8 +147,6 @@ For a concise explanation of the concrete unfinished items, see
   record/map/array/node/string/bytes budgets before copying materialized
   `AvroValue` contents into Arcweft `Value`.
 - Concrete unfinished slices:
-  YAML needs a scanner-level scalar cap before scalar event `String`
-  allocation, if the ZIP requirement is interpreted as strict pre-allocation.
   Arrow IPC still needs row/column/string/binary budget checks before
   `FileReader` materializes `RecordBatch` column buffers. Parquet still needs
   page/row-group string and binary budget checks before column buffers are

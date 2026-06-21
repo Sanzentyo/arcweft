@@ -154,6 +154,57 @@ fn yaml_decode_consumes_string_budget_before_loader_tree() {
 }
 
 #[test]
+fn yaml_decode_preflights_quoted_scalar_budget_before_event_allocation() {
+    let mut input = b"'".to_vec();
+    input.extend(std::iter::repeat_n(b'a', 16 * 1024));
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_string_len: 8,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = YamlCodec
+        .decode_value(&input, &TypeShape::String, &options)
+        .expect_err("source quoted scalar budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn yaml_decode_preflights_plain_scalar_budget_before_event_allocation() {
+    let mut input = Vec::new();
+    input.extend(std::iter::repeat_n(b'a', 16 * 1024));
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_string_len: 8,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = YamlCodec
+        .decode_value(&input, &TypeShape::String, &options)
+        .expect_err("source plain scalar budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn yaml_decode_preflights_block_scalar_budget_before_event_allocation() {
+    let mut input = b"|\n  ".to_vec();
+    input.extend(std::iter::repeat_n(b'a', 16 * 1024));
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_string_len: 8,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = YamlCodec
+        .decode_value(&input, &TypeShape::String, &options)
+        .expect_err("source block scalar budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
 fn yaml_decode_consumes_sequence_budget_before_loader_tree() {
     let shape = TypeShape::record(
         "Tags",
