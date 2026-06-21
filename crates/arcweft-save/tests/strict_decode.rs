@@ -61,7 +61,9 @@ impl SaveMigration for UnitMigration {
 }
 
 fn registry() -> CodecRegistry {
-    CodecRegistry::new().with(UnitCodec)
+    CodecRegistry::new()
+        .with(UnitCodec)
+        .expect("unit codec registers")
 }
 
 fn envelope(schema: &str, version: u32, payload: Vec<u8>) -> SaveEnvelope {

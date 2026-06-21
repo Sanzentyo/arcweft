@@ -249,7 +249,7 @@ crates/arcweft-core/src/value/env.rs,12551,412,375,production,true,false,false,f
 crates/arcweft-core/src/value/sequence_impls.rs,51830,1553,1357,production,true,false,false,false
 crates/arcweft-core/src/value.rs,81600,2434,2195,production,true,false,false,false
 crates/arcweft-data/Cargo.toml,423,20,16,text,false,false,false,false
-crates/arcweft-data/src/codec.rs,6759,254,216,production,true,false,false,false
+crates/arcweft-data/src/codec.rs,10409,368,321,production,true,false,false,false
 crates/arcweft-data/src/decode.rs,6311,190,174,production,true,false,false,false
 crates/arcweft-data/src/encode.rs,4877,220,189,production,true,false,false,false
 crates/arcweft-data/src/error.rs,4983,195,163,production,true,false,false,false
@@ -258,6 +258,7 @@ crates/arcweft-data/src/limits.rs,6211,192,177,production,true,false,false,false
 crates/arcweft-data/src/raw.rs,28881,797,767,production,true,false,false,false
 crates/arcweft-data/src/shape.rs,9812,385,347,production,true,false,false,false
 crates/arcweft-data/src/value.rs,3640,148,127,production,true,false,false,false
+crates/arcweft-data/tests/codec_registry.rs,3871,147,126,test,true,true,false,false
 crates/arcweft-data/tests/derive/fail/content_without_tag.rs,127,9,7,test,true,true,false,false
 crates/arcweft-data/tests/derive/fail/duplicate_wire_name.rs,191,11,9,test,true,true,false,false
 crates/arcweft-data/tests/derive/fail/invalid_bytes.rs,147,9,7,test,true,true,false,false
@@ -347,7 +348,7 @@ crates/arcweft-host-adapter/Cargo.toml,345,15,13,text,false,false,false,false
 crates/arcweft-host-adapter/src/lib.rs,19955,583,470,production,true,false,false,true
 crates/arcweft-http-codec/Cargo.toml,321,14,12,text,false,false,false,false
 crates/arcweft-http-codec/src/lib.rs,9407,312,287,production,true,false,false,false
-crates/arcweft-http-codec/tests/negotiation.rs,5406,209,180,test,true,true,false,false
+crates/arcweft-http-codec/tests/negotiation.rs,5525,212,183,test,true,true,false,false
 crates/arcweft-id/Cargo.toml,252,16,13,text,false,false,false,false
 crates/arcweft-id/src/lib.rs,4228,170,137,production,true,false,false,true
 crates/arcweft-image/Cargo.toml,378,21,17,text,false,false,false,false
@@ -627,7 +628,7 @@ crates/arcweft-rust-abi-macros/tests/ui/reject_reference_return.rs,165,8,6,test,
 crates/arcweft-rust-abi-macros/tests/ui/reject_self_receiver_export.rs,192,12,9,test,true,true,false,false
 crates/arcweft-save/Cargo.toml,311,14,12,text,false,false,false,false
 crates/arcweft-save/src/lib.rs,10210,302,278,production,true,false,false,false
-crates/arcweft-save/tests/strict_decode.rs,4143,162,143,test,true,true,false,false
+crates/arcweft-save/tests/strict_decode.rs,4192,164,145,test,true,true,false,false
 crates/arcweft-serde-bridge/Cargo.toml,463,18,16,text,false,false,false,false
 crates/arcweft-serde-bridge/src/lib.rs,1282,31,20,production,true,false,false,false
 crates/arcweft-source/Cargo.toml,213,13,11,text,false,false,false,false
@@ -879,8 +880,8 @@ docs/implementation/visual-sample-review-issues/2026-06-17/README.md,50907,60,57
 docs/implementation/visual-sample-review-issues/2026-06-18/README.md,7294,24,20,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-hotspot-capture-metadata.json,2420,113,113,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-param-choice-presentation-tree.json,18532,626,626,text,false,false,false,false
-docs/implementation/zip-gap-audit-2026-06-21.md,11838,179,170,text,false,false,false,false
-docs/implementation/zip-gap-open-items-2026-06-21.md,11914,243,205,text,false,false,false,false
+docs/implementation/zip-gap-audit-2026-06-21.md,12572,189,180,text,false,false,false,false
+docs/implementation/zip-gap-open-items-2026-06-21.md,12286,247,209,text,false,false,false,false
 docs/reviews/pro_review1.md,22523,670,495,text,false,false,false,false
 docs/reviews/pro_review10.md,24274,938,713,text,false,false,false,false
 docs/reviews/pro_review11.md,62235,3442,2511,text,false,false,false,false

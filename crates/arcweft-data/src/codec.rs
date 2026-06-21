@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
-use crate::error::{DataError, Result};
+use crate::error::{DataError, DataErrorKind, Result};
 use crate::limits::DecodeLimits;
 use crate::shape::{BytesFormat, TypeShape};
 use crate::value::Value;
@@ -205,18 +205,19 @@ impl CodecRegistry {
         Self { codecs: Vec::new() }
     }
 
-    #[must_use]
-    pub fn with(mut self, codec: impl Codec + 'static) -> Self {
-        self.register(codec);
-        self
+    pub fn with(mut self, codec: impl Codec + 'static) -> Result<Self> {
+        self.register(codec)?;
+        Ok(self)
     }
 
-    pub fn register(&mut self, codec: impl Codec + 'static) {
-        self.codecs.push(Arc::new(codec));
+    pub fn register(&mut self, codec: impl Codec + 'static) -> Result<()> {
+        self.register_arc(Arc::new(codec))
     }
 
-    pub fn register_arc(&mut self, codec: Arc<dyn Codec>) {
+    pub fn register_arc(&mut self, codec: Arc<dyn Codec>) -> Result<()> {
+        self.validate_registration(codec.as_ref())?;
         self.codecs.push(codec);
+        Ok(())
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Arc<dyn Codec>> {
@@ -232,12 +233,7 @@ impl CodecRegistry {
     }
 
     pub fn by_media_type(&self, media_type: &str) -> Result<Arc<dyn Codec>> {
-        let normalized = media_type
-            .split(';')
-            .next()
-            .unwrap_or(media_type)
-            .trim()
-            .to_ascii_lowercase();
+        let normalized = normalize_media_type(media_type)?;
         self.codecs
             .iter()
             .find(|codec| {
@@ -251,4 +247,122 @@ impl CodecRegistry {
                 DataError::unsupported(format!("media type '{media_type}' is not registered"))
             })
     }
+
+    fn validate_registration(&self, codec: &dyn Codec) -> Result<()> {
+        let id = codec.id();
+        if id.as_str().trim().is_empty() {
+            return Err(DataError::new(
+                DataErrorKind::InvalidEncoding,
+                "codec id must not be empty",
+            ));
+        }
+        if self
+            .codecs
+            .iter()
+            .any(|existing| existing.id().as_str() == id.as_str())
+        {
+            return Err(duplicate_registration("codec id", id.as_str()));
+        }
+
+        let media_types = codec
+            .media_types()
+            .iter()
+            .map(|media_type| normalize_media_type(media_type))
+            .collect::<Result<Vec<_>>>()?;
+        reject_duplicate_items("media type", media_types.iter().map(String::as_str))?;
+        if let Some(media_type) = media_types
+            .iter()
+            .find(|media_type| self.has_media_type(media_type))
+        {
+            return Err(duplicate_registration("media type", media_type));
+        }
+
+        let extensions = codec
+            .file_extensions()
+            .iter()
+            .map(|extension| normalize_extension(extension))
+            .collect::<Result<Vec<_>>>()?;
+        reject_duplicate_items("file extension", extensions.iter().map(String::as_str))?;
+        if let Some(extension) = extensions
+            .iter()
+            .find(|extension| self.has_file_extension(extension))
+        {
+            return Err(duplicate_registration("file extension", extension));
+        }
+        Ok(())
+    }
+
+    fn has_media_type(&self, media_type: &str) -> bool {
+        self.codecs.iter().any(|codec| {
+            codec
+                .media_types()
+                .iter()
+                .filter_map(|candidate| normalize_media_type(candidate).ok())
+                .any(|candidate| candidate == media_type)
+        })
+    }
+
+    fn has_file_extension(&self, extension: &str) -> bool {
+        self.codecs.iter().any(|codec| {
+            codec
+                .file_extensions()
+                .iter()
+                .filter_map(|candidate| normalize_extension(candidate).ok())
+                .any(|candidate| candidate == extension)
+        })
+    }
+}
+
+fn normalize_media_type(media_type: &str) -> Result<String> {
+    let normalized = media_type
+        .split(';')
+        .next()
+        .unwrap_or(media_type)
+        .trim()
+        .to_ascii_lowercase();
+    let valid = normalized
+        .split_once('/')
+        .is_some_and(|(type_, subtype)| !type_.is_empty() && !subtype.is_empty());
+    if valid {
+        Ok(normalized)
+    } else {
+        Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            format!("invalid media type `{media_type}`"),
+        ))
+    }
+}
+
+fn normalize_extension(extension: &str) -> Result<String> {
+    let normalized = extension
+        .trim()
+        .trim_start_matches('.')
+        .to_ascii_lowercase();
+    if normalized.is_empty() {
+        Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            "file extension must not be empty",
+        ))
+    } else {
+        Ok(normalized)
+    }
+}
+
+fn reject_duplicate_items<'a>(
+    label: &'static str,
+    items: impl Iterator<Item = &'a str>,
+) -> Result<()> {
+    let mut seen = BTreeSet::new();
+    items
+        .filter(|item| !seen.insert(*item))
+        .map(|item| duplicate_registration(label, item))
+        .next()
+        .map_or(Ok(()), Err)
+}
+
+fn duplicate_registration(label: &'static str, value: &str) -> DataError {
+    DataError::new(
+        DataErrorKind::DuplicateField,
+        format!("duplicate codec {label} `{value}`"),
+    )
 }

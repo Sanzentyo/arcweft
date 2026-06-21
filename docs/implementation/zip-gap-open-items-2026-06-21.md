@@ -146,19 +146,6 @@ validation evidence prove the ZIP acceptance criteria.
   unknown-field enforcement, list strategy tests, redaction/provenance tests,
   and source precedence tests.
 
-### ZG-D-008: CodecRegistry allows ambiguous registrations
-
-- ZIP tasks: D-24.
-- Current evidence:
-  `arcweft-data::CodecRegistry::register` and `register_arc` append codecs to a
-  vector and return `()`. Lookup returns the first matching id or media type,
-  so duplicate ids/media types/extensions are not rejected.
-- Why this matters: save/config/http adapters can become order-dependent when
-  two codecs claim the same format id or media type.
-- Completion evidence needed: fallible registration/builder APIs with
-  duplicate id, media type, and extension tests, while preserving intentional
-  aliases as explicit metadata.
-
 ### ZG-D-009: numeric edge-case policy is not complete across codecs
 
 - ZIP tasks: D-25.
@@ -224,8 +211,25 @@ validation evidence prove the ZIP acceptance criteria.
   `cargo test -p arcweft-http-codec --all-features`, and
   `cargo clippy --workspace --all-targets --all-features` passed on Windows.
 - Remaining related work: this resolves the HTTP adapter negotiation/body-cap
-  slice. `CodecRegistry` duplicate registration policy remains open separately
-  because HTTP still trusts registry uniqueness.
+  slice. Non-CSV tabular codecs and config provenance remain open separately.
+
+### ZG-D-008: CodecRegistry rejects ambiguous registrations
+
+- ZIP tasks: D-24.
+- Current evidence:
+  `arcweft-data::CodecRegistry::with`, `register`, and `register_arc` now
+  return `Result` and validate new codecs before insertion. Duplicate codec ids,
+  normalized media types, normalized file extensions, and duplicate aliases
+  inside a single codec are rejected with `DataErrorKind::DuplicateField`.
+- Validation evidence:
+  `cargo check -p arcweft-data -p arcweft-http-codec -p arcweft-save --all-targets --all-features`
+  and `cargo test -p arcweft-data --test codec_registry`,
+  `cargo clippy -p arcweft-data -p arcweft-http-codec -p arcweft-save --all-targets --all-features -- -D warnings`,
+  `cargo test -p arcweft-data --all-features`,
+  `cargo test -p arcweft-http-codec -p arcweft-save --all-features`, and
+  `cargo clippy --workspace --all-targets --all-features` passed on Windows.
+- Remaining related work: registry uniqueness is now enforced, but concrete
+  data adapters still need their own shape/budget work where listed above.
 
 ## Verification Debt That Blocks Goal Completion
 

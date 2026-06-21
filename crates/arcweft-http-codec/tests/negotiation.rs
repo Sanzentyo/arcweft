@@ -52,14 +52,17 @@ fn registry() -> CodecRegistry {
             id: "json",
             media_types: &["application/json"],
         })
+        .expect("json codec registers")
         .with(StaticCodec {
             id: "yaml",
             media_types: &["application/yaml"],
         })
+        .expect("yaml codec registers")
         .with(StaticCodec {
             id: "csv",
             media_types: &["text/csv"],
         })
+        .expect("csv codec registers")
 }
 
 #[test]

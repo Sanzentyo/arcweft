@@ -87,6 +87,10 @@ For the current requirement-by-requirement open-item ledger, see
   `Accept` header values with q weights, wildcard ranges, `q=0` rejection,
   specificity, and header order, returning a concrete registered media type
   rather than the client wildcard range.
+- Made `CodecRegistry` registration fallible and duplicate-aware. Registry
+  insertion now rejects duplicate codec ids, normalized media types, normalized
+  file extensions, and duplicate aliases within a single codec instead of
+  letting later HTTP/save/config lookups depend on registration order.
 
 ## Remaining implementation debt
 
@@ -126,8 +130,11 @@ For the current requirement-by-requirement open-item ledger, see
   enforcement.
 - HTTP negotiation now covers the T-112 `Accept` q/wildcard/q=0/content
   parameter/body cap matrix for the codec adapter boundary. Remaining data
-  adapter policy work is mostly in config provenance, codec-registry duplicate
-  rejection, and non-CSV tabular formats.
+  adapter policy work is mostly in config provenance and non-CSV tabular
+  formats.
+- Codec registry uniqueness now covers the D-24 duplicate id/media/extension
+  policy. Intentional format aliases remain explicit per-codec media type or
+  extension entries and must be distinct after normalization.
 
 ## Validation
 
@@ -168,6 +175,9 @@ cargo clippy -p arcweft-codec-csv --all-targets --all-features -- -D warnings
 cargo check -p arcweft-http-codec --all-targets --all-features
 cargo test -p arcweft-http-codec --test negotiation
 cargo clippy -p arcweft-http-codec --all-targets --all-features -- -D warnings
+cargo check -p arcweft-data -p arcweft-http-codec -p arcweft-save --all-targets --all-features
+cargo test -p arcweft-data --test codec_registry
+cargo clippy -p arcweft-data -p arcweft-http-codec -p arcweft-save --all-targets --all-features -- -D warnings
 cargo test -p arcweft-agent-mcp -p arcweft-agent-mcp-client -p arcweft-test --all-features
 cargo test -p arcweft-tooling agent_format --all-features
 cargo test -p arcweft-cli stdio_transport_roundtrips_agent_session_calls_through_fake_child --all-features
