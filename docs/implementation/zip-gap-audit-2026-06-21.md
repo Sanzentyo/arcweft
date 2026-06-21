@@ -44,6 +44,11 @@ This note records the implementation cut for
   exact expected schema id checks, future-version rejection, required migration
   for older versions, migration schema/version checks, and post-migration shape
   validation.
+- Moved `JsonCodec` encode/decode onto the shape-driven raw transcoder path for
+  primitive values, records, string-key maps, options, byte fields, and the
+  current external enum raw representation. JSON decoding now checks the input
+  cap before parsing and uses `TypeShape`/`FieldShape` bytes policy for
+  base64/hex/array byte recovery instead of the previous dynamic `Value` bridge.
 
 ## Remaining implementation debt
 
@@ -72,6 +77,10 @@ This note records the implementation cut for
   guide. Remaining save work is to model explicit multi-step migration chains
   and decide whether the checksum contract should cover canonical header
   metadata in addition to the payload for a future envelope version.
+- JSON shape decoding now covers the first concrete T-105 cut. Remaining
+  JSON/TOML/YAML work includes enum internal/adjacent/repr wire forms,
+  parser-integrated budget visitors, TOML option/null policy, and strict YAML
+  single-document handling.
 
 ## Validation
 
@@ -90,6 +99,9 @@ cargo clippy -p arcweft-data -p arcweft-codec-binary --all-targets --all-feature
 cargo check -p arcweft-save --all-targets --all-features
 cargo test -p arcweft-save --test strict_decode
 cargo clippy -p arcweft-save --all-targets --all-features -- -D warnings
+cargo check -p arcweft-data -p arcweft-codec-json --all-targets --all-features
+cargo test -p arcweft-codec-json --test shape_codec
+cargo clippy -p arcweft-data -p arcweft-codec-json --all-targets --all-features -- -D warnings
 cargo test -p arcweft-agent-mcp -p arcweft-agent-mcp-client -p arcweft-test --all-features
 cargo test -p arcweft-tooling agent_format --all-features
 cargo test -p arcweft-cli stdio_transport_roundtrips_agent_session_calls_through_fake_child --all-features

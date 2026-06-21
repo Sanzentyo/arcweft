@@ -248,7 +248,7 @@ fn encode_record(
                 )
                 .at_field(field.wire_name.clone()));
             };
-            encode_with_shape(value, &field.shape)
+            encode_with_shape(value, &field_value_shape(field))
                 .map(|raw| (RawValue::String(field.wire_name.clone()), raw))
                 .map_err(|error| error.at_field(field.wire_name.clone()))
         })
@@ -289,7 +289,7 @@ fn decode_record(
                 )
                 .at_field(field.wire_name.clone()));
             };
-            decode_with_shape(raw, &field.shape)
+            decode_with_shape(raw, &field_value_shape(field))
                 .map(|value| (field.wire_name.clone(), value))
                 .map_err(|error| error.at_field(field.wire_name.clone()))
         })
@@ -480,5 +480,12 @@ fn unsigned_max(shape: &TypeShape) -> Option<u128> {
         TypeShape::U128 => Some(u128::MAX),
         TypeShape::Usize => Some(usize::MAX as u128),
         _ => None,
+    }
+}
+
+fn field_value_shape(field: &FieldShape) -> TypeShape {
+    match (field.bytes_format, &field.shape) {
+        (Some(format), TypeShape::Bytes { .. }) => TypeShape::Bytes { format },
+        _ => field.shape.clone(),
     }
 }
