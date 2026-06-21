@@ -1,4 +1,3 @@
-
 use super::*;
 
 pub(super) fn agent_mcp_call_rag_query(

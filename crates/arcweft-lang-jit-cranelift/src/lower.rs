@@ -2,9 +2,9 @@ use super::{
     BTreeMap, Configurable, CraneliftCodegenError, FloatCC, FunctionBuilder, InstBuilder, IntCC,
     JITBuilder, JITModule, LoweredF32Binding, LoweredF64Binding, LoweredIntBinding,
     LoweredSmallIntBinding, ModuleError, ObjectBuilder, ObjectModule, OwnedTargetIsa,
-    PureFunctionStats, RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeExpr,
-    RuntimeInt, RuntimeIntrinsic, RuntimeUnaryOp, RuntimeValue, SmallIntKind, SmallIntLiteral,
-    Value, default_libcall_names, settings, types,
+    PureFunctionStats, RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeExpr, RuntimeInt,
+    RuntimeIntrinsic, RuntimeUnaryOp, RuntimeValue, SmallIntKind, SmallIntLiteral, Value,
+    default_libcall_names, settings, types,
 };
 
 pub(super) fn lower_input_value(

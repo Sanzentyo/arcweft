@@ -66,8 +66,9 @@ Results:
 - A long-lived product player daemon and real owned-window scheduling are
   product runtime work, not required to prove the Agent Script package's
   controller VM, CLI/MCP, trace, debug store, and RAG acceptance criteria.
-- Remote REPL endpoints such as `stdio:` and `mcp:` are intentionally rejected
-  until a concrete transport design exists. Local source/profile/trace REPL
-  behavior is the implemented package scope.
+- Long-lived remote event streaming is not required for this package.
+  Request/response MCP client endpoints such as `stdio:` remain an open
+  implementation requirement rather than a non-goal; see
+  `zip-gap-audit-2026-06-21.md`.
 - ANN vector search is not required for v1; exact normalized `f32` ranking is
   the specified baseline.

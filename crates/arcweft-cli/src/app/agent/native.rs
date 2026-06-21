@@ -2,6 +2,23 @@ use super::super::runtime::entry::apply_runtime_entry_selection;
 use super::super::runtime::executor::RuntimeExecutorInstance;
 use super::super::runtime::profile::report_path;
 use super::super::runtime::steps::NativeRunHost;
+use super::rag::source_index::{
+    AgentSourceRagIndex, agent_program_summary_rag_candidate, agent_rag_program_hash,
+    agent_rag_source_paths, agent_source_rag_index,
+};
+use super::rag::{
+    AgentRagCandidate, agent_rag_index_graph, agent_rag_index_program_graph,
+    agent_rag_select_context_chunk,
+};
+use super::script::{
+    AgentCaptureBlob, AgentScriptRunInput, AgentScriptRunReport, CliAgentSession,
+    CollectingDebugSink, agent_cli_session_id, agent_debug_finish_runtime_session,
+    agent_debug_start_runtime_session, agent_script_project_entities_metadata,
+    agent_script_project_graph_metadata, agent_script_project_index, agent_script_run_bundle,
+    agent_script_run_input, agent_script_run_report_from_result, agent_script_runtime_policy,
+    agent_script_runtime_policy_for_bundle, parse_agent_script_signal_arg,
+    parse_agent_script_state_arg, read_and_validate_agent_trace_records, write_agent_capture_blobs,
+};
 use super::{
     AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT, AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH, AgentCommand,
     AgentControllerRunConfig, AgentControllerRunReport, AgentHitTestOptions, AgentMcpOptions,
@@ -13,25 +30,8 @@ use super::{
     ProfileOptions, RuntimeStepInput, RuntimeStepResult, flow_status_label, fs,
     load_and_check_selection, lower_source_runtime_plan_with_stats_and_options,
     native_host_policy_for_selection, parse_runtime_binding_arg, parse_runtime_pure_workers,
-    print_json, resolve_source_selection,
-    runtime_plan_options_for_selection, runtime_pure_config_for_selection, step_options,
-};
-use super::rag::{
-    AgentRagCandidate, agent_rag_index_graph, agent_rag_index_program_graph,
-    agent_rag_select_context_chunk,
-};
-use super::rag::source_index::{
-    AgentSourceRagIndex, agent_program_summary_rag_candidate, agent_rag_program_hash,
-    agent_rag_source_paths, agent_source_rag_index,
-};
-use super::script::{
-    AgentCaptureBlob, AgentScriptRunInput, AgentScriptRunReport, CliAgentSession,
-    CollectingDebugSink, agent_cli_session_id, agent_debug_finish_runtime_session,
-    agent_debug_start_runtime_session, agent_script_project_entities_metadata,
-    agent_script_project_graph_metadata, agent_script_project_index, agent_script_run_bundle,
-    agent_script_run_input, agent_script_run_report_from_result, agent_script_runtime_policy,
-    agent_script_runtime_policy_for_bundle, parse_agent_script_signal_arg,
-    parse_agent_script_state_arg, read_and_validate_agent_trace_records, write_agent_capture_blobs,
+    print_json, resolve_source_selection, runtime_plan_options_for_selection,
+    runtime_pure_config_for_selection, step_options,
 };
 use crate::app::debug::debug_project_readback_json;
 use crate::app::image_declarations::{
@@ -181,16 +181,78 @@ mod runtime_observation;
 #[cfg(test)]
 mod tests;
 
-use capture::{AgentUiImageObservation, AgentStoredImageFrame, AgentStoredImagePlacement, agent_native_text_origin, AgentImageFrameStore, AgentCaptureReadRequest, agent_native_capture_resource_with_session_and_frame_store, agent_capture_request_from_uri, AgentCaptureScope, agent_observe_capture_resource, agent_image_object_for_capture_scope, agent_native_capture_image_with_frame_store, agent_native_capture_image};
-use image_mapping::{agent_observed_rich_text, agent_encode_png, hash_hex, agent_object_matches_layer, agent_object_id_color, agent_rich_text_ranges_overlap, agent_measure_frame_elements_with_session, agent_scoped_capture_name, agent_frame_capture_uri_for_page, agent_overlay_svg, agent_textbox_object, agent_native_textbox_capture_bbox_for_page, agent_object_capture_refs_for_page, agent_native_rich_text_element_bboxes, agent_rich_text_child_objects, agent_observed_layers, agent_image_observation_from_ui_frame, agent_capture_uri};
-use mcp_debug::{agent_mcp_call_debug_search, agent_mcp_call_debug_script_runs, agent_mcp_call_debug_close_stale_sessions, agent_mcp_call_debug_session_timeline, agent_mcp_call_debug_repl_cells, agent_mcp_call_debug_source_files, agent_mcp_call_debug_graph_inventory, agent_mcp_non_empty_string_argument, agent_mcp_debug_store_path, agent_mcp_search_channel_label};
-use mcp_protocol::{AgentMcpState, agent_mcp_bool_argument, agent_mcp_store_observation, agent_mcp_agent_value, AgentMcpObservation, agent_mcp_project_context_from_hir, NativeAgentRuntimeState, AgentObservationRunContext, AgentMcpFrame, AgentObservationRunOutput, AgentMcpProjectContext, AgentObservationState, NativeAgentObservedSnapshot, agent_mcp_command};
-use mcp_rag::{agent_mcp_privacy_class_argument, agent_mcp_max_privacy_argument, agent_mcp_call_rag_query, agent_mcp_call_rag_explain, agent_mcp_call_rag_context_read, agent_mcp_observation_debug_read_privacy_error, agent_mcp_optional_debug_store_path, agent_mcp_json_privacy, agent_mcp_content_hash, agent_mcp_rag_context_pack};
-use mcp_resources::{agent_mcp_usize_argument, agent_mcp_u32_argument, agent_mcp_json_tool_result, agent_mcp_u64_argument, agent_mcp_error_response, agent_mcp_success_response, agent_mcp_current_resources, agent_mcp_session_context_resource_for_uri, agent_mcp_resource_read_privacy_error, agent_mcp_resource_read_privacy_message, agent_mcp_cached_trace_resource, agent_mcp_cached_capture_resource, agent_mcp_uncached_resource_by_uri, agent_mcp_call_resource_read, agent_mcp_call_capture, agent_mcp_call_trace_read, agent_mcp_run_observation, agent_mcp_latest_capture_resource, agent_mcp_arguments_request_observe, agent_mcp_observe_if_requested, agent_mcp_observe_runtime, agent_mcp_predicate_matches, agent_mcp_wait_report_value, agent_mcp_json_tool_error, agent_mcp_capture_time_argument, agent_mcp_observation_state_summary, agent_json_path, agent_native_capture_session_for_hir, extend_agent_observation_with_runtime_images};
-use observe::{agent_report_capture_time_seconds, agent_capture_time_millis, agent_hit_test_report, native_agent_action_input_events, NativeAgentScriptSession, agent_assignment_value, validate_agent_observe_options, agent_observe_capture_time_seconds, agent_observe_resource_by_uri_with_page_and_time_and_session_and_frame_store, agent_capture_time_seconds_from_step, agent_observe_resource_by_uri, agent_observation_report_for_options, agent_observation_for_options, agent_observe_effective_steps, agent_observe_report_capture_time_millis, agent_observe_command, agent_hit_test_command};
-use observe_resources::{agent_observe_cached_image_resource, agent_observe_list_resources, agent_observe_mcp_resource_output, AgentObserveResourceOutput, agent_observe_resource, agent_json_error, agent_observe_image_resource};
+use capture::{
+    AgentCaptureReadRequest, AgentCaptureScope, AgentImageFrameStore, AgentStoredImageFrame,
+    AgentStoredImagePlacement, AgentUiImageObservation, agent_capture_request_from_uri,
+    agent_image_object_for_capture_scope, agent_native_capture_image,
+    agent_native_capture_image_with_frame_store,
+    agent_native_capture_resource_with_session_and_frame_store, agent_native_text_origin,
+    agent_observe_capture_resource,
+};
+use image_mapping::{
+    agent_capture_uri, agent_encode_png, agent_frame_capture_uri_for_page,
+    agent_image_observation_from_ui_frame, agent_measure_frame_elements_with_session,
+    agent_native_rich_text_element_bboxes, agent_native_textbox_capture_bbox_for_page,
+    agent_object_capture_refs_for_page, agent_object_id_color, agent_object_matches_layer,
+    agent_observed_layers, agent_observed_rich_text, agent_overlay_svg,
+    agent_rich_text_child_objects, agent_rich_text_ranges_overlap, agent_scoped_capture_name,
+    agent_textbox_object, hash_hex,
+};
+use mcp_debug::{
+    agent_mcp_call_debug_close_stale_sessions, agent_mcp_call_debug_graph_inventory,
+    agent_mcp_call_debug_repl_cells, agent_mcp_call_debug_script_runs, agent_mcp_call_debug_search,
+    agent_mcp_call_debug_session_timeline, agent_mcp_call_debug_source_files,
+    agent_mcp_debug_store_path, agent_mcp_non_empty_string_argument,
+    agent_mcp_search_channel_label,
+};
+use mcp_protocol::{
+    AgentMcpFrame, AgentMcpObservation, AgentMcpProjectContext, AgentMcpState,
+    AgentObservationRunContext, AgentObservationRunOutput, AgentObservationState,
+    NativeAgentObservedSnapshot, NativeAgentRuntimeState, agent_mcp_agent_value,
+    agent_mcp_bool_argument, agent_mcp_command, agent_mcp_project_context_from_hir,
+    agent_mcp_store_observation,
+};
+use mcp_rag::{
+    agent_mcp_call_rag_context_read, agent_mcp_call_rag_explain, agent_mcp_call_rag_query,
+    agent_mcp_content_hash, agent_mcp_json_privacy, agent_mcp_max_privacy_argument,
+    agent_mcp_observation_debug_read_privacy_error, agent_mcp_optional_debug_store_path,
+    agent_mcp_privacy_class_argument, agent_mcp_rag_context_pack,
+};
+use mcp_resources::{
+    agent_json_path, agent_mcp_arguments_request_observe, agent_mcp_cached_capture_resource,
+    agent_mcp_cached_trace_resource, agent_mcp_call_capture, agent_mcp_call_resource_read,
+    agent_mcp_call_trace_read, agent_mcp_capture_time_argument, agent_mcp_current_resources,
+    agent_mcp_error_response, agent_mcp_json_tool_error, agent_mcp_json_tool_result,
+    agent_mcp_latest_capture_resource, agent_mcp_observation_state_summary,
+    agent_mcp_observe_if_requested, agent_mcp_observe_runtime, agent_mcp_predicate_matches,
+    agent_mcp_resource_read_privacy_error, agent_mcp_resource_read_privacy_message,
+    agent_mcp_run_observation, agent_mcp_session_context_resource_for_uri,
+    agent_mcp_success_response, agent_mcp_u32_argument, agent_mcp_u64_argument,
+    agent_mcp_uncached_resource_by_uri, agent_mcp_usize_argument, agent_mcp_wait_report_value,
+    agent_native_capture_session_for_hir, extend_agent_observation_with_runtime_images,
+};
+use observe::{
+    NativeAgentScriptSession, agent_assignment_value, agent_capture_time_millis,
+    agent_capture_time_seconds_from_step, agent_hit_test_command, agent_hit_test_report,
+    agent_observation_for_options, agent_observation_report_for_options,
+    agent_observe_capture_time_seconds, agent_observe_command, agent_observe_effective_steps,
+    agent_observe_report_capture_time_millis, agent_observe_resource_by_uri,
+    agent_observe_resource_by_uri_with_page_and_time_and_session_and_frame_store,
+    agent_report_capture_time_seconds, native_agent_action_input_events,
+    validate_agent_observe_options,
+};
+use observe_resources::{
+    AgentObserveResourceOutput, agent_json_error, agent_observe_cached_image_resource,
+    agent_observe_image_resource, agent_observe_list_resources, agent_observe_mcp_resource_output,
+    agent_observe_resource,
+};
 use repl::agent_repl_command;
-use runtime_observation::{AgentRasterCapture, agent_image_kind, agent_image_scope_for_capture_scope, agent_native_visual_diagnostics, AgentImageOutput, run_agent_observation, agent_observe_image_output, agent_runtime_presentation_image_observation, agent_refresh_observation_object_indexes};
+use runtime_observation::{
+    AgentImageOutput, AgentRasterCapture, agent_image_kind, agent_image_scope_for_capture_scope,
+    agent_native_visual_diagnostics, agent_observe_image_output,
+    agent_refresh_observation_object_indexes, agent_runtime_presentation_image_observation,
+    run_agent_observation,
+};
 
 pub(super) fn agent_command(
     command: AgentCommand,

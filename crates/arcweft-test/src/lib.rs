@@ -12,6 +12,8 @@ use arcweft_lang_hir::syntax::ast::{
 };
 use serde::{Deserialize, Serialize};
 
+pub mod agent;
+
 /// Tool-facing manifest of script-level tests and benches.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ScriptTestManifest {

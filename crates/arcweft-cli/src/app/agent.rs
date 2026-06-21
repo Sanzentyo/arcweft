@@ -565,8 +565,8 @@ use script::{
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::rag::{AgentRagCandidate, agent_trace_rag_pack_from_candidates};
+    use super::*;
 
     fn test_hash(value: &str) -> StableHash {
         StableHash::new(format!("blake3:{value}")).expect("test hash is nonempty")

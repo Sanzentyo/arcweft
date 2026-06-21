@@ -1,5 +1,5 @@
 [package]
-name = "arcweft-test"
+name = "arcweft-agent-mcp-client"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -7,15 +7,12 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+arcweft-agent-mcp = { path = "../arcweft-agent-mcp" }
 arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
 arcweft-agent-runner = { path = "../arcweft-agent-runner" }
-arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-
-[dev-dependencies]
-arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 
 [lints]
 workspace = true

@@ -60,6 +60,12 @@ stringly boundary field: pub action: String,
 
 **Fix:** review responsibility boundaries before adding more code
 
+## warning SIZE001 — `crates/arcweft-cli/src/app/agent/native/mcp_protocol.rs`
+
+1235 physical LOC exceeds the 1200 LOC review threshold
+
+**Fix:** review responsibility boundaries before adding more code
+
 ## warning SIZE001 — `crates/arcweft-cli/src/app/agent/native/mcp_rag.rs`
 
 1378 physical LOC exceeds the 1200 LOC review threshold
@@ -80,7 +86,7 @@ stringly boundary field: pub action: String,
 
 ## warning SIZE001 — `crates/arcweft-cli/src/app/agent/native/repl.rs`
 
-2247 physical LOC exceeds the 1200 LOC review threshold
+2298 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -92,25 +98,25 @@ stringly boundary field: pub action: String,
 
 ## warning SIZE001 — `crates/arcweft-cli/src/app/agent/native/tests.rs`
 
-3342 physical LOC exceeds the 2500 LOC review threshold
+3365 physical LOC exceeds the 2500 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE001 — `crates/arcweft-cli/src/app/agent/rag.rs`
 
-1336 physical LOC exceeds the 1200 LOC review threshold
+1353 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE001 — `crates/arcweft-cli/src/app/agent/rag/source_index.rs`
 
-1815 physical LOC exceeds the 1200 LOC review threshold
+1822 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE001 — `crates/arcweft-cli/src/app/agent/script.rs`
 
-1865 physical LOC exceeds the 1200 LOC review threshold
+1879 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -248,25 +254,25 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-lang-jit-cranelift/src/batch.rs`
 
-1554 physical LOC exceeds the 1200 LOC review threshold
+1563 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE001 — `crates/arcweft-lang-jit-cranelift/src/lib.rs`
 
-2140 physical LOC exceeds the 1200 LOC review threshold
+2153 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE002 — `crates/arcweft-lang-jit-cranelift/src/lib.rs`
 
-facade file has 2140 physical LOC; target is below 250 LOC
+facade file has 2153 physical LOC; target is below 250 LOC
 
 **Fix:** move implementations to named modules and keep intentional re-exports
 
 ## warning SIZE001 — `crates/arcweft-lang-jit-cranelift/src/lower.rs`
 
-1431 physical LOC exceeds the 1200 LOC review threshold
+1438 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 

@@ -1,8 +1,26 @@
-
-use super::{DebugSourceFile, DebugGraphSymbol, DebugGraphEdge, BTreeMap, PathBuf, BTreeSet, Path, fs, parse, hir, SourceName, project_semantic_index_from_hir, ProgramHash, StableHash, AgentPublicId, ChunkSourceKind, SearchChannel, PrivacyClass, ProjectSemanticIndex, EntitySymbol, AgentActionSignature, QualifiedName, ProjectCallableSymbol, SemaPublicId, DebugSourceAnchor, DebugChunk, ChunkId, SourceAnchor, AgentTraceRecord, SessionId, agent_trace_kind_name, RagQuery, SearchHit, AgentRagCommand, ExitCode, AgentRagIndexOptions, print_json, AgentRagQueryOptions, AgentRagExplainOptions, AgentRagContextReadOptions, DebugStore, DebugSession, DebugSessionStatus, RagContextItem, RagContextPack, read_and_validate_agent_trace_records, validate_agent_trace, DebugDiagnostic, local_hash_query_embedding, EmbeddingModelDescriptor, MAX_LOCAL_EMBEDDING_DIMENSIONS, reciprocal_rank_fusion, FusionConfig, AgentScriptTraceReport};
+use super::{
+    AgentActionSignature, AgentPublicId, AgentRagCommand, AgentRagContextReadOptions,
+    AgentRagExplainOptions, AgentRagIndexOptions, AgentRagQueryOptions, AgentScriptTraceReport,
+    AgentTraceRecord, BTreeMap, BTreeSet, ChunkId, ChunkSourceKind, DebugChunk, DebugDiagnostic,
+    DebugGraphEdge, DebugGraphSymbol, DebugSession, DebugSessionStatus, DebugSourceAnchor,
+    DebugSourceFile, DebugStore, EmbeddingModelDescriptor, EntitySymbol, ExitCode, FusionConfig,
+    MAX_LOCAL_EMBEDDING_DIMENSIONS, Path, PathBuf, PrivacyClass, ProgramHash,
+    ProjectCallableSymbol, ProjectSemanticIndex, QualifiedName, RagContextItem, RagContextPack,
+    RagQuery, SearchChannel, SearchHit, SemaPublicId, SessionId, SourceAnchor, SourceName,
+    StableHash, agent_trace_kind_name, fs, hir, local_hash_query_embedding, parse, print_json,
+    project_semantic_index_from_hir, read_and_validate_agent_trace_records, reciprocal_rank_fusion,
+    validate_agent_trace,
+};
 
 pub(in crate::app::agent) mod source_index;
-use source_index::{agent_rag_source_paths, agent_source_rag_index, agent_rag_program_hash, AgentSourceRagIndex, agent_program_summary_rag_candidate, agent_program_graph_symbol, agent_program_source_file_graph_edge, AgentProgramGraphSummary, truncate_utf8, agent_content_hash, agent_rag_roots, agent_trace_rag_seed, search_channel_label, agent_trace_rag_ranked_lists, agent_trace_record_entity_ids, agent_trace_record_privacy, agent_rag_candidate, AgentRagCandidateMeta};
+use source_index::{
+    AgentProgramGraphSummary, AgentRagCandidateMeta, AgentSourceRagIndex, agent_content_hash,
+    agent_program_graph_symbol, agent_program_source_file_graph_edge,
+    agent_program_summary_rag_candidate, agent_rag_candidate, agent_rag_program_hash,
+    agent_rag_roots, agent_rag_source_paths, agent_source_rag_index, agent_trace_rag_ranked_lists,
+    agent_trace_rag_seed, agent_trace_record_entity_ids, agent_trace_record_privacy,
+    search_channel_label, truncate_utf8,
+};
 pub(super) fn agent_rag_command(command: AgentRagCommand) -> Result<(), ExitCode> {
     match command {
         AgentRagCommand::Index(options) => agent_rag_index_command(&options),

@@ -242,6 +242,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-agent-mcp-client"
+version = "0.1.0"
+dependencies = [
+ "arcweft-agent-mcp",
+ "arcweft-agent-protocol",
+ "arcweft-agent-runner",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arcweft-agent-protocol"
 version = "0.1.0"
 dependencies = [
@@ -892,9 +904,13 @@ version = "0.1.0"
 name = "arcweft-test"
 version = "0.1.0"
 dependencies = [
+ "arcweft-agent-protocol",
+ "arcweft-agent-runner",
  "arcweft-lang-hir",
  "arcweft-lang-syntax",
  "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

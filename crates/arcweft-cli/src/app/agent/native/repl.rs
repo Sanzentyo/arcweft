@@ -1,4 +1,3 @@
-
 use super::*;
 
 #[derive(Default)]
@@ -21,6 +20,7 @@ pub(super) struct AgentReplState {
 pub(super) enum AgentReplConnection {
     Source { path: String },
     Profile { id: String, manifest: String },
+    StdioMcp { program: String, args: Vec<String> },
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -772,6 +772,9 @@ pub(super) fn agent_repl_observe(
     state: &mut AgentReplState,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> AgentReplCellReport {
+    if let Some(message) = agent_repl_remote_execution_guard(state, ":observe") {
+        return agent_repl_error(index, input, "meta", message);
+    }
     match agent_observation_report_for_options(
         &agent_repl_observe_options(options, state),
         adapter_registrars,
@@ -963,13 +966,14 @@ pub(super) fn agent_repl_parse_connection(
         }
         return Ok(None);
     }
-    if let Some(endpoint) = target
-        .strip_prefix("stdio:")
-        .or_else(|| target.strip_prefix("mcp:"))
-    {
-        return Err(format!(
-            "remote REPL endpoint `{endpoint}` is not implemented; use `source PATH` or `profile ID`"
-        ));
+    if let Some(endpoint) = target.strip_prefix("stdio:") {
+        return agent_repl_parse_stdio_mcp_connection(endpoint);
+    }
+    if let Some(endpoint) = target.strip_prefix("mcp:") {
+        return agent_repl_parse_stdio_mcp_connection(endpoint);
+    }
+    if let Some(endpoint) = target.strip_prefix("stdio ") {
+        return agent_repl_parse_stdio_mcp_connection(endpoint);
     }
     if let Some(path) = target.strip_prefix("source ") {
         let path = path.trim();
@@ -994,6 +998,37 @@ pub(super) fn agent_repl_parse_connection(
     Ok(Some(AgentReplConnection::Profile {
         id: target.to_owned(),
         manifest: options.profile.manifest.display().to_string(),
+    }))
+}
+
+fn agent_repl_parse_stdio_mcp_connection(
+    endpoint: &str,
+) -> Result<Option<AgentReplConnection>, String> {
+    let mut parts = endpoint.split_whitespace();
+    let program = parts
+        .next()
+        .filter(|part| !part.is_empty())
+        .ok_or_else(|| ":connect stdio requires an executable name".to_owned())?;
+    if program.contains(['|', '>', '<', '&', ';']) {
+        return Err(
+            ":connect stdio accepts an executable plus whitespace-separated args, not shell syntax"
+                .to_owned(),
+        );
+    }
+    let args = parts
+        .map(|part| {
+            if part.contains(['|', '>', '<', '&', ';']) {
+                Err(format!(
+                    "unsupported shell metacharacter in stdio arg `{part}`"
+                ))
+            } else {
+                Ok(part.to_owned())
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(AgentReplConnection::StdioMcp {
+        program: program.to_owned(),
+        args,
     }))
 }
 
@@ -1138,6 +1173,9 @@ pub(super) fn agent_repl_capture(
     state: &AgentReplState,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> AgentReplCellReport {
+    if let Some(message) = agent_repl_remote_execution_guard(state, ":capture") {
+        return agent_repl_error(index, input, "meta", message);
+    }
     let mut observe_options = agent_repl_observe_options(options, state);
     observe_options.image = Some(AgentObserveImageKind::Png);
     observe_options.capture = Some(AgentObserveCaptureKind::Color);
@@ -1441,7 +1479,7 @@ pub(super) fn agent_repl_observe_options(
             observe_options.profile.profile = Some(id.clone());
             observe_options.profile.manifest = PathBuf::from(manifest);
         }
-        None => {}
+        Some(AgentReplConnection::StdioMcp { .. }) | None => {}
     }
     observe_options
 }
@@ -1521,6 +1559,9 @@ pub(super) fn agent_repl_eval_compiled_cell(
     input: &str,
     state: &mut AgentReplState,
 ) -> AgentReplCellReport {
+    if let Some(message) = agent_repl_remote_execution_guard(state, "cell execution") {
+        return agent_repl_error(index, input, "cell", message);
+    }
     let fragment = agent_repl_parse_fragment(input);
     let parse_report = agent_repl_fragment_report(&fragment);
     if !matches!(fragment.completion(), ParseCompletion::Complete) || !fragment.errors().is_empty()
@@ -1805,6 +1846,15 @@ pub(super) fn agent_repl_snapshot_escape_error_report(
         value,
         host_calls > 0,
     ))
+}
+
+fn agent_repl_remote_execution_guard(state: &AgentReplState, operation: &str) -> Option<String> {
+    match &state.connection {
+        Some(AgentReplConnection::StdioMcp { program, .. }) => Some(format!(
+            "{operation} is connected to stdio MCP endpoint `{program}`, but remote AgentSession execution is not wired into the REPL runner yet"
+        )),
+        _ => None,
+    }
 }
 
 pub(super) fn agent_repl_run_error_report(

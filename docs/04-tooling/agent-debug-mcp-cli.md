@@ -369,7 +369,9 @@ Tools:
 ```text
 arcweft.observe
 arcweft.action
+arcweft.act
 arcweft.wait
+arcweft.session.step_frames
 arcweft.script.run
 arcweft.capture
 arcweft.resource.read
@@ -387,6 +389,13 @@ arcweft.debug.session.timeline
 arcweft.debug.repl.cells
 arcweft.trace.read
 ```
+
+`arcweft.act` is the typed action alias for clients that use the shorter Agent
+verb. It shares the same input schema, capability checks, and result contract as
+`arcweft.action`. `arcweft.session.step_frames` advances the persistent native
+runtime by an explicit frame count and returns the resulting frame summary;
+clients should use it instead of emulating deterministic stepping through wait
+or observe polling.
 
 Observation-derived state, signal, and log readback accepts `max_privacy`
 (`public`, `project`, `sensitive`, or `secret`). The default is `project`;

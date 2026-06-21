@@ -11,6 +11,18 @@ pub enum Number {
     F64(f64),
 }
 
+impl Number {
+    #[must_use]
+    pub const fn type_name(&self) -> &'static str {
+        match self {
+            Self::I(_) => "signed integer",
+            Self::U(_) => "unsigned integer",
+            Self::F32(_) => "f32",
+            Self::F64(_) => "f64",
+        }
+    }
+}
+
 /// Owned byte buffer with explicit semantics.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Bytes(Vec<u8>);
@@ -68,9 +80,7 @@ impl Value {
         match self {
             Self::Unit => "unit",
             Self::Bool(_) => "bool",
-            Self::Number(Number::I(_)) => "signed integer",
-            Self::Number(Number::U(_)) => "unsigned integer",
-            Self::Number(Number::F32(_) | Number::F64(_)) => "float",
+            Self::Number(number) => number.type_name(),
             Self::String(_) => "string",
             Self::Char(_) => "char",
             Self::Bytes(_) => "bytes",

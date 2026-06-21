@@ -1,4 +1,3 @@
-
 use super::*;
 
 pub(super) fn agent_mcp_observe_if_requested(

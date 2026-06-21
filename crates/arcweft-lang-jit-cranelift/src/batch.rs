@@ -1,10 +1,9 @@
 use super::lower::{
     codegen_error, jit_module, lower_expr, lower_f32_expr, lower_f64_expr, lower_i32_expr,
-    lower_small_int_expr, lower_u32_expr, lower_u64_expr, small_int_bindings,
-    validate_param_names,
+    lower_small_int_expr, lower_u32_expr, lower_u64_expr, small_int_bindings, validate_param_names,
 };
 use super::{
-    AbiParam, BlockArg, BTreeMap, CraneliftCodegenError, DefinedPureSmallIntBatchInputs,
+    AbiParam, BTreeMap, BlockArg, CraneliftCodegenError, DefinedPureSmallIntBatchInputs,
     DefinedPureSmallIntInputs, FuncId, FunctionBuilder, FunctionBuilderContext, InstBuilder, IntCC,
     Linkage, LoweredF32Binding, LoweredF64Binding, LoweredIntBinding, LoweredSmallIntBinding,
     MemFlags, Module, PureFunctionRequest, PureFunctionStats, RuntimeExpr, SmallIntCompiledParts,

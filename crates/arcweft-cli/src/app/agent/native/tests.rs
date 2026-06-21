@@ -1,11 +1,9 @@
-use super::*;
 use super::capture::{
     AgentNativeCaptureContext, AgentNativeCaptureTarget, agent_native_debug_capture,
     agent_native_image_object_geometry_capture, agent_native_masked_framebuffer_capture,
 };
 use super::image_mapping::{
-    agent_image_objects_from_ui_frame, agent_rich_text_page_for_range,
-    agent_rich_text_page_ranges,
+    agent_image_objects_from_ui_frame, agent_rich_text_page_for_range, agent_rich_text_page_ranges,
 };
 use super::mcp_protocol::{
     agent_mcp_call_get_state, agent_mcp_call_log_query, agent_mcp_call_session_info,
@@ -20,9 +18,10 @@ use super::observe::{
 use super::repl::{AgentReplReedlineCompleter, AgentReplReedlineValidator};
 use super::runtime_observation::{
     AgentSourceImageDecodeCache, agent_action_targets, agent_asset_id_from_call_arg,
-    agent_image_alignment_component_milli, agent_image_call_alignment, agent_image_call_opacity_milli,
-    agent_image_call_playback,
+    agent_image_alignment_component_milli, agent_image_call_alignment,
+    agent_image_call_opacity_milli, agent_image_call_playback,
 };
+use super::*;
 use arcweft_debug_model::{
     diagnostic::DebugDiagnostic,
     graph::{DebugGraphEdge, DebugGraphSymbol},

@@ -1,4 +1,3 @@
-
 use super::*;
 
 pub(super) fn agent_observe_command(

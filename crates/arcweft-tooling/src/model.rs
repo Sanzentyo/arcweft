@@ -54,6 +54,11 @@ pub struct ToolingEditReport {
 /// Error returned when edit application would corrupt source coordinates.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum ToolingError {
+    #[error("format option `{option}` is not supported for {dialect} sources")]
+    UnsupportedFormatOption {
+        option: &'static str,
+        dialect: &'static str,
+    },
     #[error("text edit range {start}..{end} is outside source length {len}")]
     RangeOutOfBounds {
         start: usize,

@@ -1,5 +1,20 @@
-
-use super::{AgentScriptCommand, NativeAdapterRegistrar, ExitCode, AgentScriptBuildOptions, print_json, fs, agent, AgentScriptRunOptions, ProjectSemanticIndex, resolve_source_selection, load_and_check_selection, project_semantic_index_from_hir, ProgramHash, SourceName, SemaPublicId, Path, AgentScriptCheckOptions, AgentHostResponse, RequiredEntity, AgentProjectGraph, ArcweftBundle, SessionId, AgentRunId, BTreeMap, BundleKind, native, AgentRunner, NoopRagService, AgentRunnerConfig, AgentControllerRunConfig, RuntimeAgentPolicy, RuntimeAgentCapability, AgentControllerRunReport, DebugEvent, DebugEventSink, DebugStore, StableHash, DebugScriptRun, DebugScriptRunOutcome, DebugScriptRunFinish, DebugSessionStatus, DebugSession, AGENT_DEBUG_RUNTIME_STALE_AFTER_MILLIS, AGENT_DEBUG_RUNTIME_STALE_REASON, SystemTime, UNIX_EPOCH, PathBuf, AgentScriptReplayOptions, AgentTraceRecord, AgentScriptTraceOptions, AgentTraceKind, BTreeSet, AgentScriptSignalArg, AgentScriptStateArg, AgentValue, TypeKind, Infallible, DebugEventKind, agent_project, EntitySymbol, EntityType, EntityKind, SourceAnchor, SemanticHash, ObservationEnvelope, AgentSession, AgentSessionInfo, ObserveRequest, AgentAction, ActionResult, CaptureRequest, CaptureResult, AgentResourceUri, AgentResource, AgentResourceKind, AgentResourceBody, CaptureFormat};
+use super::{
+    AGENT_DEBUG_RUNTIME_STALE_AFTER_MILLIS, AGENT_DEBUG_RUNTIME_STALE_REASON, ActionResult,
+    AgentAction, AgentControllerRunConfig, AgentControllerRunReport, AgentHostResponse,
+    AgentProjectGraph, AgentResource, AgentResourceBody, AgentResourceKind, AgentResourceUri,
+    AgentRunId, AgentRunner, AgentRunnerConfig, AgentScriptBuildOptions, AgentScriptCheckOptions,
+    AgentScriptCommand, AgentScriptReplayOptions, AgentScriptRunOptions, AgentScriptSignalArg,
+    AgentScriptStateArg, AgentScriptTraceOptions, AgentSession, AgentSessionInfo, AgentTraceKind,
+    AgentTraceRecord, AgentValue, ArcweftBundle, BTreeMap, BTreeSet, BundleKind, CaptureFormat,
+    CaptureRequest, CaptureResult, DebugEvent, DebugEventKind, DebugEventSink, DebugScriptRun,
+    DebugScriptRunFinish, DebugScriptRunOutcome, DebugSession, DebugSessionStatus, DebugStore,
+    EntityKind, EntitySymbol, EntityType, ExitCode, Infallible, NativeAdapterRegistrar,
+    NoopRagService, ObservationEnvelope, ObserveRequest, Path, PathBuf, ProgramHash,
+    ProjectSemanticIndex, RequiredEntity, RuntimeAgentCapability, RuntimeAgentPolicy, SemaPublicId,
+    SemanticHash, SessionId, SourceAnchor, SourceName, StableHash, SystemTime, TypeKind,
+    UNIX_EPOCH, agent, agent_project, fs, load_and_check_selection, native, print_json,
+    project_semantic_index_from_hir, resolve_source_selection,
+};
 
 pub(super) fn agent_script_command(
     command: AgentScriptCommand,

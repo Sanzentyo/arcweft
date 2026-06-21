@@ -3,8 +3,8 @@ use super::{
     CompiledPureI32Inputs, CompiledPureI64, CompiledPureI64Batch, CompiledPureI64Inputs,
     CompiledPureI128BatchInputs, CompiledPureU8Inputs, CompiledPureU16Inputs,
     CompiledPureU32Inputs, CompiledPureU64Inputs, CompiledPureU128BatchInputs,
-    CraneliftCodegenError, PureFunctionStats, RuntimeI64Args, RuntimeISizeValue,
-    RuntimeUSizeValue, native_call,
+    CraneliftCodegenError, PureFunctionStats, RuntimeI64Args, RuntimeISizeValue, RuntimeUSizeValue,
+    native_call,
 };
 
 impl CompiledPureI64 {

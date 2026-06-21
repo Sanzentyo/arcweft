@@ -1,7 +1,10 @@
 use crate::{
-    code_actions::source_code_actions, format::format_source, id_context::materialize_ids,
-    model::FormatOptions,
+    code_actions::source_code_actions,
+    format::{format_source, format_source_with_dialect},
+    id_context::materialize_ids,
+    model::{FormatOptions, ToolingError},
 };
+use arcweft_lang_syntax::parser::SourceDialect;
 
 #[test]
 fn default_format_preserves_sugar() {
@@ -9,6 +12,38 @@ fn default_format_preserves_sugar() {
     let report = format_source(source, FormatOptions::default()).expect("format report");
     assert!(!report.changed);
     assert_eq!(report.output, source);
+}
+
+#[test]
+fn agent_format_accepts_awfagent_dialect_without_game_sugar() {
+    let source = "agent @agent.opening {\n    let frame = try observe(@flow.opening)\n}\n";
+    let report = format_source_with_dialect(source, SourceDialect::Agent, FormatOptions::default())
+        .expect("agent format report");
+
+    assert!(!report.changed);
+    assert_eq!(report.output, source);
+}
+
+#[test]
+fn agent_format_rejects_game_sugar_rewrites() {
+    let source = "agent @agent.opening {\n}\n";
+    let error = format_source_with_dialect(
+        source,
+        SourceDialect::Agent,
+        FormatOptions {
+            expand_sugar: true,
+            canonical_rich_text: false,
+        },
+    )
+    .expect_err("agent formatter rejects game sugar expansion");
+
+    assert!(matches!(
+        error,
+        ToolingError::UnsupportedFormatOption {
+            option: "expand_sugar",
+            dialect: "Agent",
+        }
+    ));
 }
 
 #[test]

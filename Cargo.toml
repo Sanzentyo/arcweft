@@ -4,6 +4,7 @@ members = [
     "crates/arcweft-compiler",
     "crates/arcweft-agent-protocol",
     "crates/arcweft-agent-mcp",
+    "crates/arcweft-agent-mcp-client",
     "crates/arcweft-debug-model",
     "crates/arcweft-rag",
     "crates/arcweft-agent-runner",

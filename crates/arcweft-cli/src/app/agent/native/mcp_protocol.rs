@@ -1,4 +1,3 @@
-
 use super::*;
 
 pub(super) fn agent_mcp_command(
@@ -268,10 +267,15 @@ pub(super) fn agent_mcp_tool_call(
         .unwrap_or_else(|| serde_json::json!({}));
     match name {
         "arcweft.observe" => agent_mcp_call_observe(&arguments, state, adapter_registrars),
-        "arcweft.action" => {
+        "arcweft.action" | "arcweft.act" => {
             let tool = agent_mcp_call_action(&arguments, state, adapter_registrars)?;
             serde_json::to_value(tool)
                 .map_err(|error| format!("failed to serialize MCP action result: {error}"))
+        }
+        "arcweft.session.step_frames" => {
+            let tool = agent_mcp_call_step_frames(&arguments, state, adapter_registrars)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP step result: {error}"))
         }
         "arcweft.wait" => {
             let tool = agent_mcp_call_wait(&arguments, state, adapter_registrars)?;
@@ -412,6 +416,7 @@ pub(super) fn agent_mcp_store_observation(
 pub(super) fn agent_mcp_call_session_info(
     state: &AgentMcpState,
 ) -> Result<McpCallToolResult, String> {
+    let capabilities = agent_mcp_session_capabilities();
     let info = if let Some(report) = &state.report {
         let resources = agent_mcp_current_resources(state)
             .map_err(|_| "failed to build Agent session resource list".to_owned())?;
@@ -421,6 +426,11 @@ pub(super) fn agent_mcp_call_session_info(
         serde_json::json!({
             "observed": true,
             "session_id": report.session_id,
+            "program_hash": agent_mcp_program_hash_for_state(state),
+            "profile": null,
+            "capabilities": capabilities,
+            "project_entities": [],
+            "project_graph": {},
             "tick": report.tick,
             "frame_id": report.frame_id,
             "source": report.source,
@@ -443,6 +453,12 @@ pub(super) fn agent_mcp_call_session_info(
         let descriptors = list_resources_result(&state.trace_resources).resources;
         serde_json::json!({
             "observed": false,
+            "session_id": "session.mcp.unobserved",
+            "program_hash": "program.mcp.unobserved",
+            "profile": null,
+            "capabilities": capabilities,
+            "project_entities": [],
+            "project_graph": {},
             "resource_count": descriptors.len(),
             "resources": descriptors,
             "resource_templates": list_resource_templates_result().resource_templates,
@@ -464,6 +480,25 @@ pub(super) fn agent_mcp_call_session_info(
         content: vec![McpContentBlock::Text { text }],
         is_error: false,
     })
+}
+
+fn agent_mcp_session_capabilities() -> Vec<&'static str> {
+    vec![
+        "observe",
+        "act",
+        "capture",
+        "resource_read",
+        "step_frames",
+        "hit_test",
+        "rag",
+    ]
+}
+
+fn agent_mcp_program_hash_for_state(state: &AgentMcpState) -> String {
+    state.runtime.as_ref().map_or_else(
+        || "program.mcp.unobserved".to_owned(),
+        |runtime| format!("native-source:{}", runtime.source_path.display()),
+    )
 }
 
 pub(super) fn agent_mcp_call_hit_test(
@@ -538,6 +573,46 @@ pub(super) fn agent_mcp_call_action(
     });
     agent_mcp_store_frame(state, frame);
     agent_mcp_json_tool_result(&value, "action")
+}
+
+pub(super) fn agent_mcp_call_step_frames(
+    arguments: &serde_json::Value,
+    state: &mut AgentMcpState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<McpCallToolResult, String> {
+    agent_mcp_observe_if_requested(arguments, state, adapter_registrars)?;
+    let count = agent_mcp_u32_argument(arguments, "count", "arcweft.session.step_frames")?
+        .unwrap_or(1)
+        .max(1);
+    let options = state
+        .observe_options
+        .clone()
+        .ok_or_else(|| {
+            "arcweft.session.step_frames requires an active native observation session".to_owned()
+        })
+        .map(|mut options| {
+            options.steps = usize::try_from(count).unwrap_or(usize::MAX);
+            options.capture_step = None;
+            options
+        })?;
+    let frame = {
+        let runtime = state.runtime.as_mut().ok_or_else(|| {
+            "arcweft.session.step_frames requires an active native runtime session".to_owned()
+        })?;
+        agent_mcp_observe_runtime(runtime, &options, Vec::new(), adapter_registrars)?
+    };
+    let value = serde_json::json!({
+        "count": count,
+        "tick": frame.report.tick,
+        "frame_id": frame.report.frame_id,
+        "state_hash": frame.report.state_hash,
+        "render_hash": frame.report.render_hash,
+        "final_status": frame.report.final_status,
+        "actions": frame.report.actions,
+        "resource_count": frame.resources.len(),
+    });
+    agent_mcp_store_frame(state, frame);
+    agent_mcp_json_tool_result(&value, "step_frames")
 }
 
 pub(super) fn agent_mcp_call_wait(

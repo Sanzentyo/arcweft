@@ -26,6 +26,12 @@ arcweft-adapter-desktop,serde_json,normal,crates/arcweft-adapter-desktop/Cargo.t
 arcweft-agent-mcp,arcweft-agent-protocol,normal,crates/arcweft-agent-mcp/Cargo.toml
 arcweft-agent-mcp,serde,normal,crates/arcweft-agent-mcp/Cargo.toml
 arcweft-agent-mcp,serde_json,normal,crates/arcweft-agent-mcp/Cargo.toml
+arcweft-agent-mcp-client,arcweft-agent-mcp,normal,crates/arcweft-agent-mcp-client/Cargo.toml
+arcweft-agent-mcp-client,arcweft-agent-protocol,normal,crates/arcweft-agent-mcp-client/Cargo.toml
+arcweft-agent-mcp-client,arcweft-agent-runner,normal,crates/arcweft-agent-mcp-client/Cargo.toml
+arcweft-agent-mcp-client,serde,normal,crates/arcweft-agent-mcp-client/Cargo.toml
+arcweft-agent-mcp-client,serde_json,normal,crates/arcweft-agent-mcp-client/Cargo.toml
+arcweft-agent-mcp-client,thiserror,normal,crates/arcweft-agent-mcp-client/Cargo.toml
 arcweft-agent-protocol,arcweft-core,normal,crates/arcweft-agent-protocol/Cargo.toml
 arcweft-agent-protocol,arcweft-render-text,normal,crates/arcweft-agent-protocol/Cargo.toml
 arcweft-agent-protocol,base64,normal,crates/arcweft-agent-protocol/Cargo.toml
@@ -348,9 +354,13 @@ arcweft-serde-bridge,serde,normal,crates/arcweft-serde-bridge/Cargo.toml
 arcweft-serde-bridge,serde_bytes,normal,crates/arcweft-serde-bridge/Cargo.toml
 arcweft-serde-bridge,serde_json,normal,crates/arcweft-serde-bridge/Cargo.toml
 arcweft-serde-bridge,serde_repr,normal,crates/arcweft-serde-bridge/Cargo.toml
+arcweft-test,arcweft-agent-protocol,normal,crates/arcweft-test/Cargo.toml
+arcweft-test,arcweft-agent-runner,normal,crates/arcweft-test/Cargo.toml
 arcweft-test,arcweft-lang-hir,normal,crates/arcweft-test/Cargo.toml
 arcweft-test,arcweft-lang-syntax,development,crates/arcweft-test/Cargo.toml
 arcweft-test,serde,normal,crates/arcweft-test/Cargo.toml
+arcweft-test,serde_json,normal,crates/arcweft-test/Cargo.toml
+arcweft-test,thiserror,normal,crates/arcweft-test/Cargo.toml
 arcweft-text-layout,arcweft-core,development,crates/arcweft-text-layout/Cargo.toml
 arcweft-text-layout,arcweft-render-text,normal,crates/arcweft-text-layout/Cargo.toml
 arcweft-text-layout,serde,normal,crates/arcweft-text-layout/Cargo.toml

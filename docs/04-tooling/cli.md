@@ -722,7 +722,9 @@ the metadata plus image/blob directly as a tool result. The tool also accepts a
 listed image `uri` directly; that URI determines PNG versus raw RGBA, color
 versus object-id versus mask, and viewport versus layer versus object scope,
 using the native renderer.
-`arcweft.session.info` returns the latest frame identifiers, resources, images,
+`arcweft.session.info` returns typed Agent session fields (`session_id`,
+`program_hash`, `profile`, `capabilities`, `project_entities`, and
+`project_graph`) together with the latest frame identifiers, resources, images,
 observed layers, observed objects, resource templates, and latest capture
 metadata. That lets a client discover rich-text child object ids and their
 capture refs before choosing an image URI. When a capture has already run,
@@ -737,12 +739,15 @@ dialogue defaults available to MCP debuggers. `arcweft.observe` and
 `arcweft.capture` use the same native full-viewport,
 layer-crop, and object-crop PNG/raw RGBA capture path exposed by the CLI flag.
 `arcweft.action` dispatches one enabled semantic action from the latest native
-observation, or observes a supplied `source`/`profile` first. Clients can pass
-an observed `action_id`, or a direct semantic `kind` with the required target
+observation, or observes a supplied `source`/`profile` first. `arcweft.act` is
+the same typed action surface under the shorter Agent verb. Clients can pass an
+observed `action_id`, or a direct semantic `kind` with the required target
 fields; direct invoke calls can include a JSON object `args` payload lowered to
 Agent protocol values. The tool returns accepted before/after ticks and state
 hashes plus the post-action frame summary. It intentionally does not synthesize
-physical pointer actions.
+physical pointer actions. `arcweft.session.step_frames` advances the persistent
+native runtime by an explicit frame count and returns the resulting frame
+summary, avoiding wait/poll loops for deterministic stepping.
 Both tools accept a non-negative capture time in seconds (`--capture-time` on
 the CLI, `capture_time` in MCP) as the native animation sample time for
 rich-text effects, shaders, registry-backed motion functions, typewriter

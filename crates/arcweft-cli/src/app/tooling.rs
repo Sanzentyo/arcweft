@@ -1,7 +1,8 @@
 use super::commands::IdsCommand;
 use super::shared::{is_arcw_path, print_json};
+use arcweft_lang_syntax::parser::SourceDialect;
 use arcweft_tooling::{
-    format::format_source,
+    format::format_source_with_dialect,
     id_context::materialize_ids,
     model::{FormatOptions, ToolingEditReport, ToolingError},
 };
@@ -24,10 +25,29 @@ pub(in crate::app) struct ToolingCommandOptions {
     json: bool,
 }
 
-fn collect_arcw_paths(path: &Path) -> Result<Vec<PathBuf>, ExitCode> {
+fn is_awfagent_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension == "awfagent")
+}
+
+fn source_dialect_for_path(path: &Path) -> Option<SourceDialect> {
+    if is_arcw_path(path) {
+        Some(SourceDialect::Game)
+    } else if is_awfagent_path(path) {
+        Some(SourceDialect::Agent)
+    } else {
+        None
+    }
+}
+
+fn collect_tooling_paths(path: &Path) -> Result<Vec<PathBuf>, ExitCode> {
     if path.is_file() {
-        if !is_arcw_path(path) {
-            eprintln!("error: {} is not an .arcw source file", path.display());
+        if source_dialect_for_path(path).is_none() {
+            eprintln!(
+                "error: {} is not an .arcw or .awfagent source file",
+                path.display()
+            );
             return Err(ExitCode::from(2));
         }
         return Ok(vec![path.to_path_buf()]);
@@ -50,7 +70,7 @@ fn collect_arcw_paths(path: &Path) -> Result<Vec<PathBuf>, ExitCode> {
             let entry_path = entry.path();
             if entry_path.is_dir() {
                 stack.push(entry_path);
-            } else if is_arcw_path(&entry_path) {
+            } else if source_dialect_for_path(&entry_path).is_some() {
                 paths.push(entry_path);
             }
         }
@@ -73,9 +93,11 @@ struct ToolingFileReport {
 }
 
 pub(super) fn format_command(options: &ToolingCommandOptions) -> Result<(), ExitCode> {
-    run_tooling_command(options, |source| {
-        format_source(
+    run_tooling_command(options, |path, source| {
+        let dialect = source_dialect_for_path(path).unwrap_or(SourceDialect::Game);
+        format_source_with_dialect(
             source,
+            dialect,
             FormatOptions {
                 expand_sugar: options.expand_sugar,
                 canonical_rich_text: options.canonical_rich_text,
@@ -86,22 +108,24 @@ pub(super) fn format_command(options: &ToolingCommandOptions) -> Result<(), Exit
 
 pub(super) fn ids_command(command: IdsCommand) -> Result<(), ExitCode> {
     match command {
-        IdsCommand::Materialize(options) => run_tooling_command(&options, materialize_ids),
+        IdsCommand::Materialize(options) => {
+            run_tooling_command(&options, |_path, source| materialize_ids(source))
+        }
     }
 }
 
 fn run_tooling_command(
     options: &ToolingCommandOptions,
-    mut run_one: impl FnMut(&str) -> Result<ToolingEditReport, ToolingError>,
+    mut run_one: impl FnMut(&Path, &str) -> Result<ToolingEditReport, ToolingError>,
 ) -> Result<(), ExitCode> {
-    let paths = collect_arcw_paths(&options.path)?;
+    let paths = collect_tooling_paths(&options.path)?;
     let mut reports = Vec::new();
     for path in paths {
         let source = fs::read_to_string(&path).map_err(|error| {
             eprintln!("error: failed to read {}: {error}", path.display());
             ExitCode::FAILURE
         })?;
-        let report = run_one(&source).map_err(|error| {
+        let report = run_one(&path, &source).map_err(|error| {
             eprintln!("error: failed to edit {}: {error}", path.display());
             ExitCode::FAILURE
         })?;

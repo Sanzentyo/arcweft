@@ -251,6 +251,37 @@ pub enum TypeShape {
 
 impl TypeShape {
     #[must_use]
+    pub const fn type_name(&self) -> &'static str {
+        match self {
+            Self::Unit => "unit",
+            Self::Bool => "bool",
+            Self::I8 => "i8",
+            Self::I16 => "i16",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::I128 => "i128",
+            Self::Isize => "isize",
+            Self::U8 => "u8",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+            Self::U128 => "u128",
+            Self::Usize => "usize",
+            Self::F32 => "f32",
+            Self::F64 => "f64",
+            Self::String => "string",
+            Self::Char => "char",
+            Self::Bytes { .. } => "bytes",
+            Self::Option(_) => "option",
+            Self::Seq(_) => "sequence",
+            Self::Map { .. } => "map",
+            Self::Record { .. } => "record",
+            Self::Enum { .. } => "enum",
+            Self::Named(_) => "named shape",
+        }
+    }
+
+    #[must_use]
     pub fn record(name: impl Into<String>, fields: impl IntoIterator<Item = FieldShape>) -> Self {
         Self::Record {
             name: name.into(),

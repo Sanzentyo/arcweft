@@ -10,6 +10,8 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
     vec![
         agent_observe_tool_descriptor(),
         agent_action_tool_descriptor(),
+        agent_act_alias_tool_descriptor(),
+        agent_session_step_frames_tool_descriptor(),
         agent_wait_tool_descriptor(),
         agent_script_run_tool_descriptor(),
         agent_resource_read_tool_descriptor(),
@@ -144,6 +146,38 @@ fn agent_action_tool_descriptor() -> McpToolDescriptor {
                 { "required": ["action_id"] },
                 { "required": ["kind"] }
             ]
+        }),
+    }
+}
+
+fn agent_act_alias_tool_descriptor() -> McpToolDescriptor {
+    let mut descriptor = agent_action_tool_descriptor();
+    "arcweft.act".clone_into(&mut descriptor.name);
+    descriptor.title = Some("Dispatch Arcweft Action Alias".to_owned());
+    "Alias for arcweft.action with the same input schema and result contract."
+        .clone_into(&mut descriptor.description);
+    descriptor
+}
+
+fn agent_session_step_frames_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: "arcweft.session.step_frames".to_owned(),
+        title: Some("Step Arcweft Session Frames".to_owned()),
+        description: "Steps the active native Agent session by a deterministic frame count and returns the resulting frame summary.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "source": { "type": "string", "description": "Optional .arcw source to observe before stepping. Mutually exclusive with profile." },
+                "manifest": { "type": "string", "description": "Launch manifest path for profile-based observe-before-step. Defaults to arcw.toml when profile is supplied." },
+                "profile": { "type": "string", "description": "Optional launch profile to resolve before stepping. Mutually exclusive with source." },
+                "entry": { "type": "string" },
+                "flow": { "type": "string" },
+                "count": { "type": "integer", "minimum": 1, "default": 1 },
+                "viewport_width": { "type": "integer", "minimum": 1, "default": 1280 },
+                "viewport_height": { "type": "integer", "minimum": 1, "default": 720 },
+                "textbox_height": { "type": "integer", "minimum": 1 },
+                "max_ops": { "type": "integer", "minimum": 1 }
+            }
         }),
     }
 }

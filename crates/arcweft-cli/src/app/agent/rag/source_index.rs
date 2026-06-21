@@ -1,4 +1,13 @@
-use super::{DebugSourceFile, AgentRagCandidate, DebugGraphSymbol, DebugGraphEdge, BTreeMap, PathBuf, BTreeSet, Path, fs, parse, hir, SourceName, project_semantic_index_from_hir, ProgramHash, StableHash, AgentPublicId, ChunkSourceKind, SearchChannel, PrivacyClass, ProjectSemanticIndex, EntitySymbol, AgentActionSignature, QualifiedName, ProjectCallableSymbol, SemaPublicId, agent_program_graph_summary, agent_graph_symbol_kind_counts, agent_graph_edge_kind_counts, agent_graph_symbol_has_dynamic_control, DebugSourceAnchor, DebugChunk, ChunkId, SourceAnchor, AgentTraceRecord, SessionId, agent_trace_kind_name, RagQuery, SearchHit};
+use super::{
+    AgentActionSignature, AgentPublicId, AgentRagCandidate, AgentTraceRecord, BTreeMap, BTreeSet,
+    ChunkId, ChunkSourceKind, DebugChunk, DebugGraphEdge, DebugGraphSymbol, DebugSourceAnchor,
+    DebugSourceFile, EntitySymbol, Path, PathBuf, PrivacyClass, ProgramHash, ProjectCallableSymbol,
+    ProjectSemanticIndex, QualifiedName, RagQuery, SearchChannel, SearchHit, SemaPublicId,
+    SessionId, SourceAnchor, SourceName, StableHash, agent_graph_edge_kind_counts,
+    agent_graph_symbol_has_dynamic_control, agent_graph_symbol_kind_counts,
+    agent_program_graph_summary, agent_trace_kind_name, fs, hir, parse,
+    project_semantic_index_from_hir,
+};
 
 pub(in crate::app::agent) struct AgentSourceRagIndex {
     pub(in crate::app::agent) seed: String,

@@ -789,6 +789,11 @@ fn debug_read_tool_schemas_expose_state_signal_and_log_filters() {
         .iter()
         .find(|tool| tool.name == "arcweft.action")
         .expect("action tool is described");
+    let action_alias = tools
+        .iter()
+        .find(|tool| tool.name == "arcweft.act")
+        .expect("action alias tool is described");
+    assert_eq!(action.input_schema, action_alias.input_schema);
     assert_eq!(
         action.input_schema["properties"]["kind"]["enum"],
         serde_json::json!(["advance_text", "select_choice", "invoke"])
@@ -798,6 +803,19 @@ fn debug_read_tool_schemas_expose_state_signal_and_log_filters() {
         "string"
     );
     assert_eq!(action.input_schema["properties"]["args"]["type"], "object");
+
+    let step_frames = tools
+        .iter()
+        .find(|tool| tool.name == "arcweft.session.step_frames")
+        .expect("step frames tool is described");
+    assert_eq!(
+        step_frames.input_schema["properties"]["count"]["minimum"],
+        serde_json::json!(1)
+    );
+    assert_eq!(
+        step_frames.input_schema["properties"]["count"]["default"],
+        serde_json::json!(1)
+    );
 
     let state = tools
         .iter()
