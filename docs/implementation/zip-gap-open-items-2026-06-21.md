@@ -100,39 +100,25 @@ For a concise explanation of the concrete unfinished items, see
   bounded readers for each codec, plus adversarial input/depth/node/collection
   tests that fail before unbounded allocation.
 
-### ZG-D-005: Avro is not shape-guided enough for record/enum/option fidelity
+### ZG-D-005: Avro payload enum fidelity is still incomplete
 
 - ZIP tasks: T-109, D-19.
 - Current evidence:
-  `crates/arcweft-codec-avro/src/lib.rs` uses the supplied Avro schema for the
-  writer/reader, but ignores the Arcweft `shape` parameter. Enum payloads are
-  encoded as ad hoc records with `variant`/`payload`, enum indices are not
-  checked against Arcweft `VariantShape`, and decode always returns a sequence
-  of rows. The crate has no tests.
+  `crates/arcweft-codec-avro/src/lib.rs` now validates the supplied Avro
+  schema against Arcweft `TypeShape`, distinguishes top-level scalar datums
+  from top-level `Seq` datum streams, maps records, options/unions, arrays,
+  maps, scalar fields, and native unit enums bidirectionally, and checks native
+  enum symbol order against Arcweft `VariantShape`. Payload enums are no longer
+  encoded through the old ad hoc `variant`/`payload` record form; they are
+  rejected explicitly.
 - Why this matters: Avro schema compatibility does not prove Arcweft shape
-  compatibility, especially for enums, options/unions, maps, and top-level
-  scalar versus row-set behavior.
-- Completion evidence needed: Avro schema generation or validation from
-  `TypeShape`, bidirectional enum/option/record mapping, top-level shape policy,
-  strict error cases, and limits tests.
-
-### ZG-D-009: numeric edge-case policy is not complete across codecs
-
-- ZIP tasks: D-25.
-- Current evidence:
-  central raw numeric conversion now uses checked integer bounds and rejects
-  non-finite floats. JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow IPC, and
-  Parquet have focused tests for signed/unsigned crossings, out-of-range
-  values, float-to-integer rejection, and NaN/infinity encode/decode rejection
-  where the format can express the case. Avro remains tied to the open
-  shape-guided codec work and does not yet have equivalent numeric matrix
-  evidence.
-- Why this matters: lossy casts, silently nulled cells, or non-finite floats
-  can produce format-specific behavior instead of a stable Arcweft data
-  contract.
-- Completion evidence needed: extend the same numeric matrix to Avro after its
-  shape-guided schema validation/generation is implemented, then run the
-  repository-wide codec validation set.
+  compatibility for Arcweft enum variants that carry payloads. Native Avro
+  enums are symbolic-only, so a payload enum contract needs an explicit
+  Arcweft-owned mapping rather than a fallback record shape.
+- Completion evidence needed: define and implement the final Avro mapping for
+  Arcweft payload enum variants, check payload shapes against `VariantShape`,
+  add strict malformed payload tests, and keep the native unit enum symbol-index
+  tests.
 
 ## Resolved Data Items
 
@@ -158,6 +144,25 @@ For a concise explanation of the concrete unfinished items, see
   scalar-row slice. Parser-integrated budget enforcement remains tracked under
   ZG-D-001, and Avro remains tracked under ZG-D-005.
 
+### ZG-D-009: numeric edge-case policy is complete across current codecs
+
+- ZIP tasks: D-25.
+- Current evidence:
+  central raw numeric conversion uses checked integer bounds and rejects
+  non-finite floats. JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow IPC, Parquet,
+  and Avro have focused tests for signed/unsigned crossings, out-of-range
+  values, float-to-integer rejection, and NaN/infinity encode/decode rejection
+  where the format can express the case.
+- Validation evidence:
+  Avro coverage is in
+  `cargo test -p arcweft-codec-avro --test shape_codec -- --nocapture` and
+  `cargo test -p arcweft-codec-avro --all-features`, which passed on Windows
+  together with
+  `cargo clippy -p arcweft-codec-avro --all-targets --all-features -- -D warnings`.
+- Remaining related work: parser/reader-integrated budget enforcement remains
+  tracked under ZG-D-001, and payload enum fidelity remains tracked under
+  ZG-D-005.
+
 ### ZG-D-002: derive shape generation policy gaps are closed
 
 - ZIP tasks: T-103, D-05, D-06, D-07.
@@ -175,8 +180,8 @@ For a concise explanation of the concrete unfinished items, see
   `cargo clippy -p arcweft-data -p arcweft-data-derive --all-targets --all-features -- -D warnings`
   passed on Windows.
 - Remaining related work: this resolves the derive policy slice. Broader data
-  completion still depends on parser-integrated decode budgets, non-CSV
-  tabular codecs, Avro shape fidelity, and cross-codec numeric policy tests.
+  completion still depends on parser-integrated decode budgets and Avro payload
+  enum fidelity.
 
 ### ZG-D-003: CSV is schema-driven for scalar row data
 
@@ -250,8 +255,8 @@ For a concise explanation of the concrete unfinished items, see
   `cargo test -p arcweft-config --all-features`, and
   `cargo clippy --workspace --all-targets --all-features` passed on Windows.
 - Remaining related work: config merge provenance is covered. Broader
-  repository completion still depends on non-CSV tabular codecs, parse-time
-  budgets, numeric policy, and Agent REPL/MCP hardening.
+  repository completion still depends on parse-time budgets, Avro payload enum
+  fidelity, and Agent REPL/MCP hardening.
 
 ### ZG-D-010: save migration supports explicit multi-step chains
 
@@ -274,8 +279,8 @@ For a concise explanation of the concrete unfinished items, see
   checks. A future header-authenticated checksum would require a new versioned
   envelope contract rather than changing v1 semantics.
 - Remaining related work: save envelope migration chaining is covered. Broader
-  repository completion still depends on non-CSV tabular codecs, parse-time
-  budgets, numeric policy, and Agent REPL/MCP hardening.
+  repository completion still depends on parse-time budgets, Avro payload enum
+  fidelity, and Agent REPL/MCP hardening.
 
 ## Verification Debt That Blocks Goal Completion
 

@@ -101,15 +101,24 @@ For the current requirement-by-requirement open-item ledger, see
   currently shape-driven codecs. `encode_with_shape` / `decode_with_shape` now
   reject non-finite floats, TOML/YAML negative integers flow through the shared
   signed-to-unsigned bounds policy instead of early invalid-type rejection, and
-  JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow IPC, and Parquet carry focused tests for
-  signed/unsigned crossings, out-of-range values, float-to-integer rejection,
-  and NaN/infinity rejection where the format can express them.
+  JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow IPC, Parquet, and Avro carry
+  focused tests for signed/unsigned crossings, out-of-range values,
+  float-to-integer rejection, and NaN/infinity rejection where the format can
+  express them.
 - Made Arrow IPC and Parquet shape-driven for supported scalar row data.
   `arcweft-codec-arrow` now requires `Seq<Record>` shapes, derives Arrow fields
   from `FieldShape`, performs strict row conversion instead of observed-value
   inference, rejects unknown/missing fields, preserves option/null policy,
   validates decoded columns against the declared shape, checks input length
   before parsing, and explicitly rejects nested or enum shapes.
+- Made Avro shape-aware for the supported schema/value surface.
+  `arcweft-codec-avro` now validates the supplied Avro schema against
+  `TypeShape`, encodes and decodes top-level scalar datums versus top-level
+  `Seq` datum streams deliberately, maps records, options/unions, arrays, maps,
+  bytes, chars, and native unit enums bidirectionally, checks enum symbol
+  ordering against `VariantShape`, rejects payload enums explicitly instead of
+  using ad hoc `variant`/`payload` records, and applies decode input caps before
+  parsing.
 - Hardened `arcweft-http-codec` negotiation. Request decoding now accepts
   parameterized `Content-Type` values only when parameters are syntactically
   valid, rejects wildcard content types, and enforces `DecodeOptions`
@@ -158,14 +167,14 @@ For the current requirement-by-requirement open-item ledger, see
   including central enum adjacent/internal/repr raw forms. Remaining
   JSON/TOML/YAML work includes parser-integrated budget visitors and deeper
   enum payload byte-policy coverage.
-- CSV, Arrow IPC, and Parquet shape decoding now cover strict `Seq<Record>`
-  scalar rows, including the scalar numeric edge matrix. Remaining tabular work
-  includes Avro shape-guided schemas plus parser/reader-integrated budget
-  enforcement.
+- CSV, Arrow IPC, Parquet, and the supported Avro surface now cover strict
+  shape-guided rows or datum streams, including the scalar numeric edge matrix.
+  Remaining tabular/data-format work includes Avro payload enum fidelity plus
+  parser/reader-integrated budget enforcement.
 - HTTP negotiation now covers the T-112 `Accept` q/wildcard/q=0/content
   parameter/body cap matrix for the codec adapter boundary. Remaining data
-  adapter policy work is mostly in config provenance and non-CSV tabular
-  formats.
+  adapter policy work is now concentrated in Avro payload enum fidelity and
+  parser/reader-integrated budgets.
 - Codec registry uniqueness now covers the D-24 duplicate id/media/extension
   policy. Intentional format aliases remain explicit per-codec media type or
   extension entries and must be distinct after normalization.

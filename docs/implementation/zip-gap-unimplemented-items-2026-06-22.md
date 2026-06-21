@@ -25,8 +25,7 @@ ledger.
 | Agent | ZG-A-003 `.awfagent` formatter proof | Partial implementation | comments/trivia と Agent item 全体の lossless/canonical golden が不足 |
 | Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外の現在証跡が未記録 |
 | Data | ZG-D-001 parse-time budgets outside Arcweft Binary | Open implementation | 多くの codec が format-native value を先に materialize している |
-| Data | ZG-D-005 Avro shape fidelity | Open implementation | Avro schema と Arcweft `TypeShape` の対応検証が不足 |
-| Data | ZG-D-009 numeric edge-case policy matrix | Partial implementation | Avro の bounds / NaN / infinity policy test が不足 |
+| Data | ZG-D-005 Avro payload enum fidelity | Partial implementation | Native Avro enum では表せない payload enum の最終 mapping が未定義 |
 
 ## Agent Items
 
@@ -110,43 +109,26 @@ Why it is not complete:
 Post-parse validation is too late for hostile inputs that allocate huge native
 documents first.
 
-### ZG-D-005: Avro shape fidelity
+### ZG-D-005: Avro payload enum fidelity
 
-The Avro codec uses an Avro schema for the reader/writer, but it does not yet
-prove that the schema corresponds to Arcweft `TypeShape` semantics.
-
-What remains:
-
-- Generate or validate Avro schemas from `TypeShape`.
-- Map Arcweft records, enums, options/unions, maps, and scalar rows
-  bidirectionally.
-- Check enum variant indices and payload shapes against `VariantShape`.
-- Define top-level scalar versus row-set behavior.
-- Add strict error-case tests and decode limit tests.
-
-Why it is not complete:
-
-Avro schema compatibility alone does not guarantee Arcweft shape compatibility.
-
-### ZG-D-009: numeric edge-case policy matrix
-
-Central raw numeric conversion now performs checked integer bounds and rejects
-non-finite floats. JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow IPC, and Parquet
-have focused tests for signed/unsigned crossings, out-of-range values,
-float-to-integer rejection, and NaN/infinity rejection where the format can
-express the case. The remaining gap is Avro.
+The Avro codec now validates the supplied Avro schema against Arcweft
+`TypeShape` and no longer uses the old shape-less `variant`/`payload` record
+fallback. It covers top-level scalar datums, top-level `Seq` datum streams,
+records, options/unions, arrays, maps, scalar fields, and native unit enums.
+The remaining fidelity gap is Arcweft enum variants that carry payload values.
 
 What remains:
 
-- Apply the same numeric matrix to Avro after Avro schema validation/generation
-  is tied to Arcweft `TypeShape`.
-- Re-run repository-wide codec validation once all relevant codecs carry the
-  same numeric edge policy evidence.
+- Define the final Avro representation for payload enum variants.
+- Map payload enum variants bidirectionally without reintroducing an untyped
+  compatibility record.
+- Check payload shapes against `VariantShape`.
+- Add malformed payload, unknown variant, and payload schema mismatch tests.
 
 Why it is not complete:
 
-Without the Avro coverage, one adapter can still silently cast, null, or
-preserve non-finite values differently.
+Native Avro enum values are symbolic-only. Payload variants need a deliberate
+Arcweft-owned schema mapping rather than an implicit ad hoc record fallback.
 
 ## Already Covered Slices
 
@@ -165,6 +147,10 @@ some of them leave related items open:
 - Arrow IPC and Parquet require `Seq<Record>` shapes, derive scalar schemas from
   `FieldShape`, reject malformed rows and unsupported nested/enum shapes, and
   carry the same numeric edge matrix for supported scalar rows.
+- Avro validates supplied schemas against `TypeShape`, maps supported scalar,
+  record, option, array, map, and native unit enum values bidirectionally,
+  enforces top-level scalar versus datum-stream policy, and carries the numeric
+  edge matrix for supported scalar values.
 - Config merge is shape-aware and provenance-producing.
 - Save decoding supports explicit multi-step migration chains.
 - Derive shape generation now uses field-type where predicates and compile-time
