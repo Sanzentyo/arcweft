@@ -16,15 +16,18 @@ use super::observe::{
     native_agent_invoke_input_events, native_runtime_input_event,
 };
 use super::repl::{
-    AgentReplConnection, AgentReplReedlineCompleter, AgentReplReedlineValidator,
-    agent_repl_parse_connection,
+    AgentReplBinding, AgentReplConnection, AgentReplReedlineCompleter, AgentReplReedlineValidator,
+    AgentReplState, agent_repl_apply_connection, agent_repl_parse_connection,
 };
+use super::repl_project_binding::agent_repl_reconcile_project_bound_bindings;
+use super::repl_snapshot::agent_repl_serialized_bindings;
 use super::runtime_observation::{
     AgentSourceImageDecodeCache, agent_action_targets, agent_asset_id_from_call_arg,
     agent_image_alignment_component_milli, agent_image_call_alignment,
     agent_image_call_opacity_milli, agent_image_call_playback,
 };
 use super::*;
+use arcweft_agent_protocol::protocol::{AgentProjectGraph, AgentSessionInfo};
 use arcweft_debug_model::{
     diagnostic::DebugDiagnostic,
     graph::{DebugGraphEdge, DebugGraphSymbol},
@@ -32,6 +35,7 @@ use arcweft_debug_model::{
     script::DebugScriptRunOutcome,
     test_result::DebugTestResult,
 };
+use serde::Serialize;
 
 #[test]
 fn agent_mcp_script_run_options_accept_native_runtime_arguments() {
@@ -1599,6 +1603,312 @@ fn agent_repl_parse_stdio_connection_rejects_shell_syntax() {
         .expect_err("shell metacharacters are rejected");
 
     assert!(error.contains("shell metacharacter"));
+}
+
+#[test]
+fn agent_repl_project_hash_change_preserves_only_literal_bindings() {
+    let mut state = AgentReplState::default();
+    state.bindings.insert(
+        "count".to_owned(),
+        test_repl_binding("count", "local", true, Some("literal")),
+    );
+    state.bindings.insert(
+        "hero".to_owned(),
+        test_repl_binding("hero", "local", true, Some("project_ref")),
+    );
+    state.bindings.insert(
+        "screen".to_owned(),
+        test_repl_binding("screen", "local", true, Some("observation")),
+    );
+    state.bindings.insert(
+        "doc".to_owned(),
+        test_repl_binding("doc", "local", true, Some("resource")),
+    );
+    state.bindings.insert(
+        "ctx".to_owned(),
+        test_repl_binding("ctx", "local", true, Some("rag_context")),
+    );
+    state.bindings.insert(
+        "tmp".to_owned(),
+        test_repl_binding("tmp", "cell", false, None),
+    );
+    state.bindings.insert(
+        "loaded".to_owned(),
+        test_repl_binding("loaded", "loaded_agent", false, None),
+    );
+
+    let decisions = agent_repl_reconcile_project_bound_bindings(
+        &mut state,
+        Some("program.old"),
+        Some("program.new"),
+    );
+
+    assert!(state.bindings.contains_key("count"));
+    assert!(!state.bindings.contains_key("hero"));
+    assert!(!state.bindings.contains_key("screen"));
+    assert!(!state.bindings.contains_key("doc"));
+    assert!(!state.bindings.contains_key("ctx"));
+    assert!(!state.bindings.contains_key("tmp"));
+    assert!(!state.bindings.contains_key("loaded"));
+    assert_eq!(decisions.len(), 7);
+    assert!(decisions.iter().any(|decision| {
+        decision.name == "count"
+            && decision.decision == "preserved"
+            && decision.old_program_hash == "program.old"
+            && decision.new_program_hash == "program.new"
+    }));
+    assert!(decisions.iter().any(|decision| {
+        decision.name == "screen"
+            && decision.decision == "dropped"
+            && decision.reason == "local binding snapshot is project-bound or session-derived"
+    }));
+    assert!(decisions.iter().any(|decision| {
+        decision.name == "tmp"
+            && decision.decision == "dropped"
+            && decision.reason == "cell artifact belongs to the previous program hash"
+    }));
+}
+
+#[test]
+fn agent_repl_project_hash_unchanged_keeps_bindings_without_decisions() {
+    let mut state = AgentReplState::default();
+    state.bindings.insert(
+        "screen".to_owned(),
+        test_repl_binding("screen", "local", true, Some("observation")),
+    );
+
+    let decisions = agent_repl_reconcile_project_bound_bindings(
+        &mut state,
+        Some("program.same"),
+        Some("program.same"),
+    );
+
+    assert!(decisions.is_empty());
+    assert!(state.bindings.contains_key("screen"));
+}
+
+#[test]
+fn agent_repl_stdio_connect_reports_project_hash_binding_policy() {
+    let mut state = AgentReplState::default();
+    let first = agent_repl_apply_connection(
+        1,
+        ":connect first",
+        Some(fake_repl_mcp_connection("program.old")),
+        &mut state,
+    );
+    assert_eq!(first.status, "ok");
+    assert_eq!(state.remote_program_hash.as_deref(), Some("program.old"));
+
+    state.bindings.insert(
+        "answer".to_owned(),
+        test_repl_binding("answer", "local", true, Some("literal")),
+    );
+    state.bindings.insert(
+        "frame".to_owned(),
+        test_repl_binding("frame", "local", true, Some("observation")),
+    );
+
+    let second = agent_repl_apply_connection(
+        2,
+        ":connect second",
+        Some(fake_repl_mcp_connection("program.new")),
+        &mut state,
+    );
+
+    assert_eq!(second.status, "ok");
+    assert_eq!(state.remote_program_hash.as_deref(), Some("program.new"));
+    assert!(state.bindings.contains_key("answer"));
+    assert!(!state.bindings.contains_key("frame"));
+    let value = second.value.expect("connect report value");
+    assert_eq!(
+        value["binding_policy"]["program_hash_changed"],
+        serde_json::json!(true)
+    );
+    assert_eq!(
+        value["binding_policy"]["old_program_hash"],
+        serde_json::json!("program.old")
+    );
+    assert_eq!(
+        value["binding_policy"]["new_program_hash"],
+        serde_json::json!("program.new")
+    );
+    let decisions = value["binding_policy"]["decisions"]
+        .as_array()
+        .expect("binding decisions are reported");
+    assert!(
+        decisions.iter().any(|decision| {
+            decision["name"] == "answer" && decision["decision"] == "preserved"
+        })
+    );
+    assert!(
+        decisions
+            .iter()
+            .any(|decision| { decision["name"] == "frame" && decision["decision"] == "dropped" })
+    );
+}
+
+#[test]
+fn agent_repl_serialized_bindings_separate_literals_from_project_refs() {
+    let count = agent_repl_serialized_bindings(&agent_repl_parse_fragment("let count = [1, 2, 3]"));
+    let hero =
+        agent_repl_serialized_bindings(&agent_repl_parse_fragment("let hero = @character.alice"));
+    let party = agent_repl_serialized_bindings(&agent_repl_parse_fragment(
+        "let party = [@character.alice, \"bob\"]",
+    ));
+
+    assert_eq!(
+        count
+            .get("count")
+            .map(|binding| binding.snapshot_kind.as_str()),
+        Some("literal")
+    );
+    assert_eq!(
+        hero.get("hero")
+            .map(|binding| binding.snapshot_kind.as_str()),
+        Some("project_ref")
+    );
+    assert_eq!(
+        party
+            .get("party")
+            .map(|binding| binding.snapshot_kind.as_str()),
+        Some("project_ref")
+    );
+}
+
+fn test_repl_binding(
+    name: &str,
+    binding_kind: &str,
+    serializable: bool,
+    snapshot_kind: Option<&str>,
+) -> AgentReplBinding {
+    AgentReplBinding {
+        name: name.to_owned(),
+        binding_kind: binding_kind.to_owned(),
+        source: "let value = 1".to_owned(),
+        status: "ok".to_owned(),
+        final_status: None,
+        host_calls: 0,
+        responses: 0,
+        serializable,
+        serialized_source: serializable.then(|| "1".to_owned()),
+        snapshot_kind: snapshot_kind.map(str::to_owned),
+        non_serializable_reason: (!serializable)
+            .then(|| "test binding is intentionally not serializable".to_owned()),
+    }
+}
+
+fn fake_repl_mcp_connection(program_hash: &str) -> AgentReplConnection {
+    let info = AgentSessionInfo {
+        session_id: format!("session.{program_hash}"),
+        program_hash: program_hash.to_owned(),
+        project_entities: Vec::new(),
+        project_graph: AgentProjectGraph::default(),
+        profile: Some("fake".to_owned()),
+        capabilities: Vec::new(),
+    };
+    fake_repl_mcp_connection_with_responses(vec![
+        rpc_result(
+            1,
+            &serde_json::json!({
+                "protocolVersion": "2024-11-05",
+                "serverInfo": { "name": "fake-repl-child" }
+            }),
+        ),
+        rpc_result(2, &serde_json::json!({ "tools": required_mcp_tools() })),
+        rpc_result(3, &tool_result(&info)),
+    ])
+}
+
+fn required_mcp_tools() -> Vec<serde_json::Value> {
+    [
+        "arcweft.session.info",
+        "arcweft.observe",
+        "arcweft.action",
+        "arcweft.capture",
+        "arcweft.resource.read",
+        "arcweft.session.step_frames",
+    ]
+    .into_iter()
+    .map(|name| {
+        serde_json::json!({
+            "name": name,
+            "title": null,
+            "description": "",
+            "inputSchema": { "type": "object" }
+        })
+    })
+    .collect()
+}
+
+fn tool_result(value: &impl Serialize) -> serde_json::Value {
+    serde_json::json!({
+        "content": [{
+            "type": "text",
+            "text": serde_json::to_string(value).expect("serializes")
+        }],
+        "isError": false
+    })
+}
+
+fn rpc_result(id: u64, result: &serde_json::Value) -> String {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": result
+    })
+    .to_string()
+}
+
+#[cfg(windows)]
+fn fake_repl_mcp_connection_with_responses(responses: Vec<String>) -> AgentReplConnection {
+    let cases = responses
+        .into_iter()
+        .enumerate()
+        .map(|(index, response)| {
+            format!(
+                "{} {{ [Console]::Out.WriteLine('{}') }}",
+                index + 1,
+                response.replace('\'', "''")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    AgentReplConnection::StdioMcp {
+        program: "powershell".to_owned(),
+        args: vec![
+            "-NoProfile".to_owned(),
+            "-Command".to_owned(),
+            format!(
+                "$i=0; while (($line=[Console]::In.ReadLine()) -ne $null) {{ $i++; switch ($i) {{ {cases} default {{ exit 0 }} }} [Console]::Out.Flush() }}"
+            ),
+        ],
+    }
+}
+
+#[cfg(not(windows))]
+fn fake_repl_mcp_connection_with_responses(responses: Vec<String>) -> AgentReplConnection {
+    let cases = responses
+        .into_iter()
+        .enumerate()
+        .map(|(index, response)| {
+            format!("{}) printf '%s\\n' '{}' ;;", index + 1, sh_quote(&response))
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    AgentReplConnection::StdioMcp {
+        program: "/bin/sh".to_owned(),
+        args: vec![
+            "-c".to_owned(),
+            format!(
+                "i=0; while IFS= read -r line; do i=$((i+1)); case $i in {cases} *) exit 0 ;; esac; done"
+            ),
+        ],
+    }
+}
+
+#[cfg(not(windows))]
+fn sh_quote(value: &str) -> String {
+    value.replace('\'', "'\"'\"'")
 }
 
 fn test_repl_options() -> AgentReplOptions {

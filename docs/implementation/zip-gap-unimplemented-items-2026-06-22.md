@@ -24,53 +24,9 @@ Implementation baseline used for this inventory:
 
 | Area | Item | Status | Missing thing that blocks completion |
 | --- | --- | --- | --- |
-| Agent | ZG-A-001 REPL project-bound binding policy | Partial implementation | `:connect` の `program_hash` 変更時に、project-independent binding と session-bound binding を分けて preserve/drop し、その判断を構造化診断として返す実装とテスト |
 | Agent | ZG-A-003 `.awfagent` formatter proof | Partial implementation | `.awfagent` の comments/trivia と Agent item 全体に対する lossless/canonical golden と idempotence 証跡 |
 | Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外での remote REPL / data codec focused gates と workspace gates の記録 |
 | Data | ZG-D-001 parse-time budgets outside Arcweft Binary | Open implementation | JSON/TOML/YAML/MsgPack/CBOR/CSV/Arrow/Parquet/Avro が format-native value を作る前に Arcweft decode budget で止める reader/visitor 実装 |
-
-## ZG-A-001: REPL Project-Bound Binding Policy
-
-Status: **Partial implementation**.
-
-Existing implementation:
-
-- `crates/arcweft-cli/src/app/agent/native/repl.rs` has typed remote MCP REPL
-  connection support through `AgentReplConnection::StdioMcp`.
-- Remote Agent cells can run through a retained `McpAgentSession`.
-- Local REPL bindings already carry snapshot metadata such as
-  `serialized_source`, `snapshot_kind`, `serializable`,
-  `non_serializable_reason`, and local/cell binding kind.
-
-具体的に未実装な動作:
-
-- Remote `:connect` が別の `program_hash` に切り替わるとき、既存 binding
-  を project boundary に基づいて再評価していない。
-- primitive / string / collection のような、古い remote session に依存しない
-  binding を明示的に preserve する処理がない。
-- observation / resource / RAG result / remote cell artifact / entity or
-  project-bound reference のような、古い project/session に依存する binding
-  を明示的に drop する処理がない。
-- preserve/drop の各判断を、binding name、binding kind、snapshot kind、
-  old/new `program_hash`、reason 付きの structured report/diagnostic として
-  REPL 応答に出していない。
-- `serialized_source` があることと project-independent であることを同一視しない
-  typed policy がまだない。特に entity ref や session-derived snapshot は
-  再実行可能に見えても別 project では意味が変わり得る。
-
-必要なテスト・証跡:
-
-- 異なる `program_hash` を返す 2 つの remote session に `:connect` し、
-  primitive/string/collection binding が残ること。
-- observation/resource/RAG/cell artifact/project-bound binding が削除されること。
-- 同じ `program_hash` へ再接続する場合は不要な drop が起きないこと。
-- REPL の JSON/meta report に、各 binding の preserve/drop と理由が出ること。
-
-なぜ完了扱いにできないか:
-
-今の状態だと、remote REPL state が互換性のない project をまたいでも有効に
-見える可能性がある。これは typed MCP session の導入後に必要になる
-state-boundary policy であり、単なる UX warning ではなく実行意味に関わる。
 
 ## ZG-A-003: `.awfagent` Formatter Proof
 
@@ -201,6 +157,12 @@ some of them leave related items open:
 - `CodecRegistry` rejects duplicate ids, media types, extensions, and aliases.
 - stdio MCP transport requests time out, retain bounded stderr tails, and try
   protocol shutdown plus exit before kill fallback.
+- Remote REPL `:connect` now records remote `program_hash`, preserves only
+  project-independent literal primitive/string/numeric collection bindings
+  across remote hash changes, drops project-bound and session-derived bindings,
+  and reports structured per-binding preserve/drop decisions. A focused test
+  connects to two fake stdio MCP children with different program hashes and
+  asserts the resulting `binding_policy`.
 - Raw shape conversion plus JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow,
   Parquet, and Avro reject non-finite floats, float-to-integer recovery, and
   signed/unsigned bounds violations through focused numeric edge tests.

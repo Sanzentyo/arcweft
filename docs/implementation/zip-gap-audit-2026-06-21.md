@@ -138,10 +138,11 @@ For the current requirement-by-requirement open-item ledger, see
 
 ## Remaining implementation debt
 
-- Remote REPL cells now execute through the typed MCP session, but the
-  project-bound binding policy is still coarse: primitive/string/collection
-  binding preservation versus session-bound binding drop on project-hash
-  changes needs explicit diagnostics and tests.
+- Remote REPL cells now execute through the typed MCP session, and remote
+  `:connect` now reconciles live bindings when `program_hash` changes.
+  Project-independent literal primitive/string/numeric collection snapshots are
+  preserved, project-bound and session-derived snapshots are dropped, and the
+  meta response reports structured per-binding decisions.
 - The CLI-owned stdio MCP transport is process-backed and now covers fake-child
   roundtrip, timeout enforcement, bounded stderr retention, and graceful
   shutdown-before-kill behavior.

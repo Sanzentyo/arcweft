@@ -1,3 +1,5 @@
+use super::repl_project_binding::agent_repl_reconcile_project_bound_bindings;
+use super::repl_snapshot::agent_repl_serialized_bindings;
 use super::*;
 
 #[derive(Default)]
@@ -7,6 +9,7 @@ pub(super) struct AgentReplState {
     pub(super) bindings: BTreeMap<String, AgentReplBinding>,
     pub(super) connection: Option<AgentReplConnection>,
     pub(super) remote_session: Option<McpAgentSession<StdioMcpTransport>>,
+    pub(super) remote_program_hash: Option<String>,
     pub(super) debug_store: Option<DebugStore>,
     pub(super) trace_path: Option<String>,
     pub(super) trace_records: usize,
@@ -56,12 +59,19 @@ pub(super) struct AgentReplSerializedBinding {
     pub(super) snapshot_kind: String,
 }
 
+#[derive(Debug)]
+struct AgentReplRemoteConnection {
+    session: Option<McpAgentSession<StdioMcpTransport>>,
+    program_hash: Option<String>,
+}
+
 #[derive(Debug, serde::Serialize)]
 pub(super) struct AgentReplRunReport {
     pub(super) ok: bool,
     pub(super) cells: Vec<AgentReplCellReport>,
     pub(super) final_tick: Option<usize>,
     pub(super) connection: Option<AgentReplConnection>,
+    pub(super) remote_program_hash: Option<String>,
     pub(super) debug_db: Option<String>,
     pub(super) trace_path: Option<String>,
     pub(super) trace_records: usize,
@@ -127,14 +137,15 @@ pub(super) fn agent_repl_initial_state(
     let (debug_store, debug_db_path) = agent_repl_debug_store(options)?;
     let trace = agent_repl_trace_resources(options)?;
     let connection = agent_repl_initial_connection(options)?;
-    let remote_session =
+    let remote_connection =
         agent_repl_connect_remote_session(connection.as_ref()).map_err(|message| {
             eprintln!("error: {message}");
             ExitCode::from(2)
         })?;
     Ok(AgentReplState {
         connection,
-        remote_session,
+        remote_session: remote_connection.session,
+        remote_program_hash: remote_connection.program_hash,
         debug_store,
         debug_db_path,
         trace_path: trace.path,
@@ -186,6 +197,7 @@ pub(super) fn agent_repl_scripted_command(
             cells,
             final_tick: state.report.as_ref().map(|report| report.tick),
             connection: state.connection.clone(),
+            remote_program_hash: state.remote_program_hash.clone(),
             debug_db: state.debug_db_path.clone(),
             trace_path: state.trace_path.clone(),
             trace_records: state.trace_records,
@@ -947,12 +959,29 @@ pub(super) fn agent_repl_connect(
         Ok(connection) => connection,
         Err(message) => return agent_repl_error(index, input, "meta", message),
     };
-    let remote_session = match agent_repl_connect_remote_session(connection.as_ref()) {
+    agent_repl_apply_connection(index, input, connection, state)
+}
+
+pub(super) fn agent_repl_apply_connection(
+    index: usize,
+    input: &str,
+    connection: Option<AgentReplConnection>,
+    state: &mut AgentReplState,
+) -> AgentReplCellReport {
+    let remote_connection = match agent_repl_connect_remote_session(connection.as_ref()) {
         Ok(session) => session,
         Err(message) => return agent_repl_error(index, input, "meta", message),
     };
+    let old_program_hash = state.remote_program_hash.clone();
+    let new_program_hash = remote_connection.program_hash.clone();
+    let binding_policy = agent_repl_reconcile_project_bound_bindings(
+        state,
+        old_program_hash.as_deref(),
+        new_program_hash.as_deref(),
+    );
     state.connection = connection;
-    state.remote_session = remote_session;
+    state.remote_session = remote_connection.session;
+    state.remote_program_hash.clone_from(&new_program_hash);
     state.report = None;
 
     agent_repl_ok(
@@ -962,6 +991,19 @@ pub(super) fn agent_repl_connect(
         serde_json::json!({
             "connected": true,
             "connection": state.connection,
+            "program_hash": state.remote_program_hash,
+            "binding_policy": {
+                "old_program_hash": old_program_hash,
+                "new_program_hash": new_program_hash,
+                "program_hash_changed": matches!(
+                    (
+                        old_program_hash.as_deref(),
+                        state.remote_program_hash.as_deref()
+                    ),
+                    (Some(old), Some(new)) if old != new
+                ),
+                "decisions": binding_policy,
+            },
         }),
     )
 }
@@ -1016,9 +1058,12 @@ pub(super) fn agent_repl_parse_connection(
 
 fn agent_repl_connect_remote_session(
     connection: Option<&AgentReplConnection>,
-) -> Result<Option<McpAgentSession<StdioMcpTransport>>, String> {
+) -> Result<AgentReplRemoteConnection, String> {
     let Some(AgentReplConnection::StdioMcp { program, args }) = connection else {
-        return Ok(None);
+        return Ok(AgentReplRemoteConnection {
+            session: None,
+            program_hash: None,
+        });
     };
     let endpoint = StdioMcpEndpoint {
         program: program.clone(),
@@ -1026,9 +1071,15 @@ fn agent_repl_connect_remote_session(
     };
     let transport = StdioMcpTransport::spawn(&endpoint)
         .map_err(|error| format!("failed to connect MCP stdio endpoint `{endpoint}`: {error}"))?;
-    McpAgentSession::connect(transport, ConnectOptions::default())
-        .map(Some)
-        .map_err(|error| format!("failed MCP stdio handshake for `{endpoint}`: {error}"))
+    let mut session = McpAgentSession::connect(transport, ConnectOptions::default())
+        .map_err(|error| format!("failed MCP stdio handshake for `{endpoint}`: {error}"))?;
+    let info = session
+        .info()
+        .map_err(|error| format!("failed MCP stdio session info for `{endpoint}`: {error}"))?;
+    Ok(AgentReplRemoteConnection {
+        session: Some(session),
+        program_hash: Some(info.program_hash),
+    })
 }
 
 fn agent_repl_parse_stdio_mcp_connection(
@@ -2189,141 +2240,6 @@ pub(super) fn agent_repl_live_binding_prelude(state: &AgentReplState) -> String 
         })
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-pub(super) fn agent_repl_serialized_bindings(
-    fragment: &ParsedFragment,
-) -> BTreeMap<String, AgentReplSerializedBinding> {
-    let Some(ParsedFragmentKind::Statements(statements)) = fragment.kind() else {
-        return BTreeMap::new();
-    };
-    statements
-        .iter()
-        .filter_map(agent_repl_serialized_stmt_binding)
-        .collect()
-}
-
-pub(super) fn agent_repl_serialized_stmt_binding(
-    statement: &Stmt,
-) -> Option<(String, AgentReplSerializedBinding)> {
-    let Stmt::Let {
-        pattern,
-        expr,
-        expr_source,
-        ..
-    } = statement
-    else {
-        return None;
-    };
-    let name = agent_repl_single_binding_name(pattern)?;
-    let binding = agent_repl_serialized_expr_binding(expr, expr_source.as_deref())?;
-    Some((name, binding))
-}
-
-pub(super) fn agent_repl_single_binding_name(pattern: &Pattern) -> Option<String> {
-    match pattern {
-        Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. } => {
-            Some(name.clone())
-        }
-        _ => None,
-    }
-}
-
-pub(super) fn agent_repl_serialized_expr_source(expr: &Expr) -> Option<String> {
-    match expr {
-        Expr::Literal(literal) => agent_repl_serialized_literal_source(literal),
-        Expr::EntityRef(entity) => agent_repl_serialized_entity_ref_source(entity),
-        Expr::BracketSeq(items) => items
-            .iter()
-            .map(agent_repl_serialized_expr_source)
-            .collect::<Option<Vec<_>>>()
-            .map(|items| format!("[{}]", items.join(", "))),
-        _ => None,
-    }
-}
-
-pub(super) fn agent_repl_serialized_expr_binding(
-    expr: &Expr,
-    expr_source: Option<&str>,
-) -> Option<AgentReplSerializedBinding> {
-    agent_repl_serialized_expr_source(expr)
-        .map(|source| AgentReplSerializedBinding {
-            source,
-            snapshot_kind: "literal".to_owned(),
-        })
-        .or_else(|| {
-            let snapshot_kind = agent_repl_snapshot_expr_kind(expr)?;
-            let source = expr_source?.trim();
-            (!source.is_empty()).then(|| AgentReplSerializedBinding {
-                source: source.to_owned(),
-                snapshot_kind: snapshot_kind.to_owned(),
-            })
-        })
-}
-
-pub(super) fn agent_repl_snapshot_expr_kind(expr: &Expr) -> Option<&'static str> {
-    match expr {
-        Expr::Try { expr } | Expr::Await { expr, .. } => agent_repl_snapshot_expr_kind(expr),
-        Expr::Call { callee, args } if agent_repl_snapshot_call_args_are_self_contained(args) => {
-            agent_repl_call_snapshot_kind(callee.as_ref())
-        }
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } if agent_repl_snapshot_call_args_are_self_contained(args) => {
-            agent_repl_method_snapshot_kind(receiver.as_ref(), method)
-        }
-        _ => None,
-    }
-}
-
-pub(super) fn agent_repl_call_snapshot_kind(callee: &Expr) -> Option<&'static str> {
-    match callee {
-        Expr::Path(name) if name == "observe" => Some("observation"),
-        Expr::Path(name) if name == "read_resource" => Some("resource"),
-        Expr::Field { target, field } if field == "query" => {
-            agent_repl_method_snapshot_kind(target.as_ref(), field)
-        }
-        _ => None,
-    }
-}
-
-pub(super) fn agent_repl_method_snapshot_kind(
-    receiver: &Expr,
-    method: &str,
-) -> Option<&'static str> {
-    match (receiver, method) {
-        (Expr::Path(namespace), "query") if namespace == "rag" => Some("rag_context"),
-        _ => None,
-    }
-}
-
-pub(super) fn agent_repl_snapshot_call_args_are_self_contained(args: &[CallArg]) -> bool {
-    args.iter().all(|arg| match arg {
-        CallArg::Positional(expr) => agent_repl_serialized_expr_source(expr).is_some(),
-        CallArg::Named { value, .. } | CallArg::Spread { value } => {
-            agent_repl_serialized_expr_source(value).is_some()
-        }
-    })
-}
-
-pub(super) fn agent_repl_serialized_literal_source(literal: &Literal) -> Option<String> {
-    match literal {
-        Literal::String(value) => serde_json::to_string(value).ok(),
-        Literal::Char { raw, .. } => Some(raw.clone()),
-        Literal::Int { raw, .. } | Literal::Float { raw, .. } | Literal::UnitNumber { raw, .. } => {
-            Some(raw.clone())
-        }
-        Literal::Bool(value) => Some(value.to_string()),
-        Literal::Duration { .. } => None,
-    }
-}
-
-pub(super) fn agent_repl_serialized_entity_ref_source(entity: &EntityRefSyntax) -> Option<String> {
-    entity
-        .as_absolute()
-        .map(|entity| format!("@{}", entity.body()))
 }
 
 pub(super) fn agent_repl_fragment_binding_names(fragment: &ParsedFragment) -> Vec<String> {

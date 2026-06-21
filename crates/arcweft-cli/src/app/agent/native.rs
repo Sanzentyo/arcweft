@@ -181,6 +181,8 @@ mod mcp_resources;
 pub(in crate::app::agent) mod observe;
 mod observe_resources;
 mod repl;
+mod repl_project_binding;
+mod repl_snapshot;
 mod runtime_observation;
 #[cfg(test)]
 mod tests;

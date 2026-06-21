@@ -20,22 +20,6 @@ For a concise explanation of the concrete unfinished items, see
 
 ## Open Agent Items
 
-### ZG-A-001: REPL project-bound binding policy is still coarse
-
-- ZIP tasks: T-004, A-10, A-12.
-- Current evidence:
-  `crates/arcweft-cli/src/app/agent/native/repl.rs` has remote session support
-  and serializable binding snapshots, but the connect path does not yet expose
-  explicit diagnostics for preserving primitive/string/collection bindings
-  versus dropping session-bound bindings when the remote `program_hash` changes.
-- Why this matters: remote `:connect` can otherwise appear to carry live REPL
-  state across incompatible projects without telling the user which bindings
-  remain meaningful.
-- Completion evidence needed: tests that connect to two different remote
-  project hashes, preserve self-contained primitive/string/collection bindings,
-  drop session-bound observation/resource/RAG bindings, and assert structured
-  diagnostics/report fields for each decision.
-
 ### ZG-A-003: `.awfagent` formatter is not yet proven lossless/canonical
 
 - ZIP tasks: T-007, A-14.
@@ -62,6 +46,34 @@ For a concise explanation of the concrete unfinished items, see
   Linux, Windows, and macOS, either through CI or explicit recorded runs.
 
 ## Resolved Agent Items
+
+### ZG-A-001: REPL project-bound binding policy is explicit
+
+- ZIP tasks: T-004, A-10, A-12.
+- Current evidence:
+  `crates/arcweft-cli/src/app/agent/native/repl.rs` now records the active
+  remote `program_hash` from `AgentSessionInfo`, classifies REPL snapshots as
+  project-independent `literal` values or project-bound/session-derived values,
+  and reconciles bindings when `:connect` switches between two remote sessions
+  with different hashes. Primitive/string/numeric collection literal bindings
+  are preserved. Entity references, observation/resource/RAG snapshots, cell
+  artifacts, loaded Agent sources, and unsupported local snapshots are dropped.
+- Structured report:
+  The `:connect` meta cell now returns `binding_policy` with
+  `old_program_hash`, `new_program_hash`, `program_hash_changed`, and one
+  decision per binding. Each decision includes binding name, kind, status,
+  snapshot kind, `preserved`/`dropped`, reason, and old/new program hashes.
+- Validation evidence:
+  `cargo test -p arcweft-cli agent_repl_project_hash --all-features -- --nocapture`,
+  `cargo test -p arcweft-cli agent_repl_serialized_bindings_separate_literals_from_project_refs --all-features -- --nocapture`,
+  `cargo test -p arcweft-cli agent_repl_stdio_connect_reports_project_hash_binding_policy --all-features -- --nocapture`,
+  and
+  `cargo clippy -p arcweft-cli --all-targets --all-features -- -D warnings`
+  passed on Windows. The stdio connect test uses two fake MCP child processes
+  with different `program_hash` values and asserts literal preservation,
+  session-derived drop, and the structured `binding_policy` report.
+- Remaining related work: Linux/macOS platform validation for the remote REPL
+  path remains tracked under ZG-A-004.
 
 ### ZG-A-002: stdio MCP transport is hardened for blocking children
 

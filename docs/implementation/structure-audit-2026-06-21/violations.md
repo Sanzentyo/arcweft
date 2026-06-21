@@ -86,7 +86,7 @@ stringly boundary field: pub action: String,
 
 ## warning SIZE001 — `crates/arcweft-cli/src/app/agent/native/repl.rs`
 
-2485 physical LOC exceeds the 1200 LOC review threshold
+2401 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -98,7 +98,7 @@ stringly boundary field: pub action: String,
 
 ## warning SIZE001 — `crates/arcweft-cli/src/app/agent/native/tests.rs`
 
-3421 physical LOC exceeds the 2500 LOC review threshold
+3731 physical LOC exceeds the 2500 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
