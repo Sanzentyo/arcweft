@@ -7,8 +7,24 @@ It is the readable companion to
 strict requirement ledger.
 
 Implementation baseline used for this inventory:
-`173df9db Preflight YAML source scalars` plus the Arrow IPC buffer preflight
-cut documented below.
+`5b1b6618 Preflight Arrow IPC buffers`.
+
+This document is the concrete "what is still not implemented" answer for the
+ZIP gap goal as of that baseline. The current unfinished set is intentionally
+small:
+
+- **ZG-A-004 / T-009 / A-21**: Linux and macOS validation evidence is still
+  absent.
+- **ZG-D-001 / T-104 / D-13 / D-18**: Parquet still lacks strict page/row-group
+  string and binary budget enforcement before the Parquet/Arrow reader
+  materializes column buffers.
+- **ZG-D-001 / T-104 / D-13 / D-19**: Avro still lacks strict nested datum
+  budget enforcement before `apache_avro::Reader` materializes nested
+  `AvroValue` trees.
+
+Everything else from the ZIP is either recorded as resolved in
+`zip-gap-open-items-2026-06-21.md`, or is a related validation follow-up that
+depends on one of the three items above.
 
 ## Status Model
 
@@ -31,6 +47,8 @@ cut documented below.
 
 ## ZG-A-004: Linux/macOS Validation
 
+ZIP mapping: `T-009`, `A-21`.
+
 Status: **Verification debt**.
 
 Existing implementation/evidence:
@@ -40,12 +58,17 @@ Existing implementation/evidence:
 - `zip-gap-open-items-2026-06-21.md` と
   `zip-gap-audit-2026-06-21.md` は Windows 実行結果を中心に記録している。
 
-具体的に未記録な証跡:
+具体的に未実装として残っているもの:
 
 - Linux での remote REPL / stdio MCP focused tests。
 - macOS での remote REPL / stdio MCP focused tests。
 - Linux/macOS/Windows の workspace gates または CI matrix evidence。
 - 各 platform の command、revision、result、失敗時の理由。
+
+ここは source behavior の未実装ではなく、検証証跡の未実装である。Windows
+での実行証跡はあるが、ZIP の platform matrix は Linux/macOS の process
+lifecycle、path handling、stdio framing も対象にしているため、Windows だけでは
+完了扱いにできない。
 
 必要なテスト・証跡:
 
@@ -64,7 +87,10 @@ Windows のみの成功では remote process adapter と CLI validation の ZIP 
 
 ## ZG-D-001: Parse-Time Budgets Outside Arcweft Binary
 
-Status: **Open implementation**.
+ZIP mapping: `T-104`, `D-13`; Parquet related surface: `D-18`; Avro related
+surface: `D-19`.
+
+Status: **Partial implementation**.
 
 Existing implementation:
 
@@ -114,7 +140,7 @@ Existing implementation:
   against `TypeShape` during preflight and checks hex/base64 decoded byte
   upper bounds for bytes cells before `StringRecord` materialization.
 
-具体的に未実装または部分実装に残っている動作:
+具体的に未実装または部分実装に残っている動作は次の 2 つだけ:
 
 - **Parquet reader materialization budget**:
   Parquet も `max_input_len` と scalar row schema validation に加え、metadata
@@ -124,6 +150,9 @@ Existing implementation:
   string/binary column buffers を materialize する前の budget gate と、metadata
   だけでは分からない per-cell payload size を reader 内部 allocation 前に止める
   経路である。
+  つまり、現在は「Parquet の row 数が多すぎる」「Arcweft `Value` へコピーする
+  string/bytes が大きすぎる」は止められるが、「Parquet reader が Arrow column
+  buffer を作る前に巨大 string/binary payload を止める」はまだできていない。
 - **Avro datum materialization budget**:
   Avro は `max_input_len`、schema validation、top-level datum stream の
   `sequence_item` 消費、top-level scalar の single-datum streaming check、
@@ -135,13 +164,28 @@ Existing implementation:
   で止める reader/visitor policy である。特に単一 datum 内の巨大 array/map/
   record/payload enum は、`AvroValue` 後の validation では reader 内部 allocation
   を防げない。
+  つまり、現在は「datum stream の件数が多すぎる」「`AvroValue` から Arcweft
+  `Value` に移す時点で値が大きすぎる」は止められるが、「1 datum の中に巨大な
+  nested array/map/string/bytes がある場合に `AvroValue` を作る前に止める」は
+  まだできていない。
 
 必要な実装:
 
-- Format ごとに parser-integrated visitor、bounded reader、streaming reader、
-  metadata preflight、または crate-supported equivalent を導入する。
-- 少なくとも input length、node count、nesting depth、collection length、
-  string length、byte length のうち format が表現できるものを parse 中に数える。
+- Parquet:
+  row-group/page metadata or page-reader preflight を reader build 前に走らせ、
+  shape 対象の string/binary columns について page/row-group 単位の encoded /
+  uncompressed / decoded byte upper bound を budget と照合する。metadata だけで
+  per-cell bound を証明できない場合は、page header/levels/offsets を読む
+  bounded preflight または crate-supported equivalent が必要。
+- Avro:
+  supplied Avro schema と Arcweft `TypeShape` を使った datum scanner / bounded
+  reader / visitor を `apache_avro::Reader` の nested materialization 前に入れ、
+  array/map/record/string/bytes/union branch を読む段階で `DecodeBudget` を
+  消費する。圧縮 codec を許す場合は展開後 byte budget も同じ boundary で扱う。
+- 共通:
+  少なくとも input length、node count、nesting depth、collection length、
+  string length、byte length のうち format が表現できるものを parse/materialize
+  中に数える。
 - Budget 超過は Arcweft data error として structured に返し、panic や allocator
   failure に依存しない。
 
@@ -154,6 +198,16 @@ Existing implementation:
   unbounded intermediate allocation 前に失敗することを示す。
 - Arcweft Binary で済んでいる budget tests と同じ意味の matrix を、
   対象 codec の表現能力に合わせて持つ。
+
+この項目が閉じたと言える条件:
+
+- Parquet の adversarial test が、`RecordBatch` / Arrow column buffer
+  materialization 前に Arcweft structured `LimitExceeded` 系の error で失敗する。
+- Avro の adversarial test が、nested `AvroValue` materialization 前またはそれと
+  同等に allocation-bound な reader boundary で Arcweft structured
+  `LimitExceeded` 系の error で失敗する。
+- その実装証跡、focused test、workspace clippy、structural audit が
+  `zip-gap-open-items-2026-06-21.md` に記録される。
 
 なぜ完了扱いにできないか:
 
