@@ -1,112 +1,194 @@
 # ZIP Gap Unimplemented Items 2026-06-22
 
 This note lists the concrete unfinished items for
-`D:/sanze/Downloads/arcweft-zip-gap-audit-2026-06-21.zip` as of the current
-checkout. It is a readable companion to
-`zip-gap-open-items-2026-06-21.md`, which remains the strict requirement
-ledger.
+`D:/sanze/Downloads/arcweft-zip-gap-audit-2026-06-21.zip`.
+It is the readable companion to
+`docs/implementation/zip-gap-open-items-2026-06-21.md`, which remains the
+strict requirement ledger.
+
+Implementation baseline used for this inventory:
+`b65fd3c3 Map Avro payload enums through typed unions`.
 
 ## Status Model
 
 未実装として扱う範囲を次の 3 種類に分ける。
 
 - **Open implementation**: 現在のソースが ZIP の対象仕様にまだ達していない。
-  入口や型はあっても、動作が不足している。
+  入口や型はあっても、要求された動作がない。
 - **Partial implementation**: 初期実装はあるが、ZIP の受け入れ条件を満たす
-  ほどの動作・エラー・テストがそろっていない。
+  動作・診断・テスト・証跡がそろっていない。
 - **Verification debt**: 実装はある可能性が高いが、要求された検証証跡がない
   ので完了扱いにできない。
 
-## Summary
+## Current Open List
 
-| Area | Item | Status | Current blocker |
+| Area | Item | Status | Missing thing that blocks completion |
 | --- | --- | --- | --- |
-| Agent | ZG-A-001 REPL project-bound binding policy | Partial implementation | Project hash change時の binding preserve/drop diagnostics とテストが不足 |
-| Agent | ZG-A-003 `.awfagent` formatter proof | Partial implementation | comments/trivia と Agent item 全体の lossless/canonical golden が不足 |
-| Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外の現在証跡が未記録 |
-| Data | ZG-D-001 parse-time budgets outside Arcweft Binary | Open implementation | 多くの codec が format-native value を先に materialize している |
+| Agent | ZG-A-001 REPL project-bound binding policy | Partial implementation | `:connect` の `program_hash` 変更時に、project-independent binding と session-bound binding を分けて preserve/drop し、その判断を構造化診断として返す実装とテスト |
+| Agent | ZG-A-003 `.awfagent` formatter proof | Partial implementation | `.awfagent` の comments/trivia と Agent item 全体に対する lossless/canonical golden と idempotence 証跡 |
+| Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外での remote REPL / data codec focused gates と workspace gates の記録 |
+| Data | ZG-D-001 parse-time budgets outside Arcweft Binary | Open implementation | JSON/TOML/YAML/MsgPack/CBOR/CSV/Arrow/Parquet/Avro が format-native value を作る前に Arcweft decode budget で止める reader/visitor 実装 |
 
-## Agent Items
+## ZG-A-001: REPL Project-Bound Binding Policy
 
-### ZG-A-001: REPL project-bound binding policy
+Status: **Partial implementation**.
 
-The REPL has remote session support and serializable binding snapshots, but it
-does not yet make the project boundary explicit enough. When a remote
-`:connect` targets a different `program_hash`, the implementation must
-distinguish between self-contained bindings and session-bound bindings.
+Existing implementation:
 
-What remains:
+- `crates/arcweft-cli/src/app/agent/native/repl.rs` has typed remote MCP REPL
+  connection support through `AgentReplConnection::StdioMcp`.
+- Remote Agent cells can run through a retained `McpAgentSession`.
+- Local REPL bindings already carry snapshot metadata such as
+  `serialized_source`, `snapshot_kind`, `serializable`,
+  `non_serializable_reason`, and local/cell binding kind.
 
-- Preserve primitive, string, and collection bindings that do not depend on the
-  old remote session.
-- Drop observation, resource, RAG, and other session-bound bindings when the
-  project hash changes.
-- Report structured diagnostics or report fields that explain every preserve
-  or drop decision.
-- Add tests that connect to two different remote project hashes and assert the
-  preservation, drop, and diagnostic behavior.
+具体的に未実装な動作:
 
-Why it is not complete:
+- Remote `:connect` が別の `program_hash` に切り替わるとき、既存 binding
+  を project boundary に基づいて再評価していない。
+- primitive / string / collection のような、古い remote session に依存しない
+  binding を明示的に preserve する処理がない。
+- observation / resource / RAG result / remote cell artifact / entity or
+  project-bound reference のような、古い project/session に依存する binding
+  を明示的に drop する処理がない。
+- preserve/drop の各判断を、binding name、binding kind、snapshot kind、
+  old/new `program_hash`、reason 付きの structured report/diagnostic として
+  REPL 応答に出していない。
+- `serialized_source` があることと project-independent であることを同一視しない
+  typed policy がまだない。特に entity ref や session-derived snapshot は
+  再実行可能に見えても別 project では意味が変わり得る。
 
-The current behavior can make remote REPL state look portable across
-incompatible projects without telling the user which bindings are still valid.
+必要なテスト・証跡:
 
-### ZG-A-003: `.awfagent` formatter proof
+- 異なる `program_hash` を返す 2 つの remote session に `:connect` し、
+  primitive/string/collection binding が残ること。
+- observation/resource/RAG/cell artifact/project-bound binding が削除されること。
+- 同じ `program_hash` へ再接続する場合は不要な drop が起きないこと。
+- REPL の JSON/meta report に、各 binding の preserve/drop と理由が出ること。
 
-The formatting entrypoint accepts `.awfagent`, and the route is dialect-aware.
-That is only the entrypoint slice, not proof that the Agent formatter is
-lossless and canonical.
+なぜ完了扱いにできないか:
 
-What remains:
+今の状態だと、remote REPL state が互換性のない project をまたいでも有効に
+見える可能性がある。これは typed MCP session の導入後に必要になる
+state-boundary policy であり、単なる UX warning ではなく実行意味に関わる。
 
-- Add golden formatting fixtures for comments and trivia.
-- Add golden fixtures for Agent declarations, effects, waits, actions,
-  captures, resources, and RAG calls.
-- Add idempotence tests showing that formatting already-formatted `.awfagent`
-  input produces stable output.
-- Keep `.arcw` regressions so Agent-specific formatting does not break game
-  syntax formatting.
+## ZG-A-003: `.awfagent` Formatter Proof
 
-Why it is not complete:
+Status: **Partial implementation**.
 
-The ZIP target is formatter behavior, not merely extension recognition.
+Existing implementation:
 
-### ZG-A-004: Linux/macOS validation
+- `crates/arcweft-cli/src/app/tooling.rs` は `.awfagent` を formatting target
+  として受け付ける。
+- formatter route は `SourceDialect::Agent` を通る。
+- Agent source では game-only sugar rewrite を避ける入口はある。
 
-The focused cuts have Windows validation, but there is no current recorded
-Linux/macOS evidence for the remote REPL and data-codec work.
+具体的に未実装な動作・証跡:
 
-What remains:
+- `.awfagent` 専用の comments/trivia preserving golden が不足している。
+- Agent declarations, effects, waits, actions, captures, resources, RAG calls
+  をまとめて canonical form に整える golden が不足している。
+- formatter が `format(format(input)) == format(input)` を満たすことを
+  Agent dialect 全体で示す idempotence test が不足している。
+- `.arcw` と `.awfagent` の dialect 差分が regression として固定されていない。
+- 現在ある `.awfagent` 入口だけでは、lossless/canonical formatter である
+  ことの証明にならない。
 
-- Run the focused remote REPL gates on Linux, macOS, and Windows.
-- Run the relevant workspace gates on all three platforms or record CI evidence.
-- Record the command, platform, and result in the implementation notes.
+必要なテスト・証跡:
 
-Why it is not complete:
+- Agent syntax family ごとの before/after golden。
+- comments/trivia を含む roundtrip or lossless formatting golden。
+- `.awfagent` idempotence test。
+- `.arcw` 側の formatting regression。
 
-Process behavior, line endings, stdio buffering, and shell invocation differ
-enough across platforms that Windows-only evidence cannot close this item.
+なぜ完了扱いにできないか:
 
-## Data Items
+ZIP の要求は「拡張子を受け付けること」ではなく、
+Agent dialect の formatter として安全に使えること。入口があるだけでは、
+コメント欠落、trivia 破壊、Agent-only item の誤整形を防げない。
 
-### ZG-D-001: parse-time budgets outside Arcweft Binary
+## ZG-A-004: Linux/macOS Validation
 
-`arcweft-data::DecodeBudget` exists and Arcweft Binary uses parse-time checks,
-but most other codecs still parse into format-native values before Arcweft's
-limits can reject hostile input.
+Status: **Verification debt**.
 
-What remains:
+Existing implementation/evidence:
 
-- Add parser-integrated visitors, bounded readers, or equivalent early budget
-  checks for JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow, Parquet, and Avro.
-- Cover input length, node count, nesting depth, collection length, string
-  length, and byte length where the format can express them.
-- Add adversarial tests that fail before unbounded intermediate allocation.
+- Windows では、stdio MCP transport、remote REPL parsing、data codec focused
+  gates、workspace clippy などの証跡が記録されている。
+- `zip-gap-open-items-2026-06-21.md` と
+  `zip-gap-audit-2026-06-21.md` は Windows 実行結果を中心に記録している。
 
-Why it is not complete:
+具体的に未記録な証跡:
 
-Post-parse validation is too late for hostile inputs that allocate huge native
-documents first.
+- Linux での remote REPL / stdio MCP focused tests。
+- macOS での remote REPL / stdio MCP focused tests。
+- Linux/macOS/Windows の workspace gates または CI matrix evidence。
+- 各 platform の command、revision、result、失敗時の理由。
+
+必要なテスト・証跡:
+
+- 少なくとも remote REPL / stdio MCP process behavior に関わる focused tests
+  を Linux/macOS/Windows で記録する。
+- data codec の open/changed slice に対する focused tests を platform matrix
+  か CI で確認する。
+- reviewable cut point で workspace check/clippy と structural audit の結果を
+  実装文書に残す。
+
+なぜ完了扱いにできないか:
+
+stdio process、line endings、shell invocation、path handling は OS 差が出る。
+Windows のみの成功では remote process adapter と CLI validation の ZIP 要求を
+閉じられない。
+
+## ZG-D-001: Parse-Time Budgets Outside Arcweft Binary
+
+Status: **Open implementation**.
+
+Existing implementation:
+
+- `arcweft-data::DecodeBudget` exists.
+- Arcweft Binary decoding uses parse-time input/node/depth/collection/string/byte
+  checks before allocating the full decoded value.
+- JSON/TOML/YAML/MsgPack/CBOR/CSV/Arrow/Parquet/Avro already apply some caps or
+  shape validation after parse, and several codecs check `max_input_len` before
+  invoking their parser.
+
+具体的に未実装な動作:
+
+- JSON/TOML/YAML は format-native document/value を作った後に Arcweft raw shape
+  validation へ進むため、深い nesting や巨大 node count を parse 中に止めない。
+- MsgPack/CBOR は native value bridge へ移行済みだが、native value を作る前の
+  node/depth/collection/string/byte budget enforcement がない。
+- CSV は input cap と shape-driven row policy はあるが、reader iteration 中の
+  row/field/string/byte budget を Arcweft budget として統合していない。
+- Arrow IPC / Parquet は input cap と shape-driven schema validation はあるが、
+  reader が column/row data を materialize する前の Arcweft budget 連携がない。
+- Avro は input cap と schema/value validation はあるが、Avro datum stream を
+  materialize する前の budget visitor/reader policy がない。
+
+必要な実装:
+
+- Format ごとに parser-integrated visitor、bounded reader、streaming reader、
+  または crate-supported equivalent を導入する。
+- 少なくとも input length、node count、nesting depth、collection length、
+  string length、byte length のうち format が表現できるものを parse 中に数える。
+- Budget 超過は Arcweft data error として structured に返し、panic や allocator
+  failure に依存しない。
+
+必要なテスト・証跡:
+
+- 各 codec に adversarial input tests を追加する。
+- 深い nesting、巨大 array/map/record、巨大 string/bytes、巨大 row/column などが
+  unbounded intermediate allocation 前に失敗することを示す。
+- Arcweft Binary で済んでいる budget tests と同じ意味の matrix を、
+  対象 codec の表現能力に合わせて持つ。
+
+なぜ完了扱いにできないか:
+
+`DecodeLimits::validate` のような post-parse validation は、悪意ある入力が
+巨大な native document を先に確保するケースには遅すぎる。ZIP の対象は
+「Arcweft value へ変換した後に弾く」ではなく「parse/materialize 中に弾く」
+ことである。
 
 ## Already Covered Slices
 
@@ -119,9 +201,9 @@ some of them leave related items open:
 - `CodecRegistry` rejects duplicate ids, media types, extensions, and aliases.
 - stdio MCP transport requests time out, retain bounded stderr tails, and try
   protocol shutdown plus exit before kill fallback.
-- Raw shape conversion plus JSON, TOML, YAML, MsgPack, CBOR, and CSV reject
-  non-finite floats, float-to-integer recovery, and signed/unsigned bounds
-  violations through focused numeric edge tests.
+- Raw shape conversion plus JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow,
+  Parquet, and Avro reject non-finite floats, float-to-integer recovery, and
+  signed/unsigned bounds violations through focused numeric edge tests.
 - Arrow IPC and Parquet require `Seq<Record>` shapes, derive scalar schemas from
   `FieldShape`, reject malformed rows and unsupported nested/enum shapes, and
   carry the same numeric edge matrix for supported scalar rows.
@@ -142,8 +224,8 @@ some of them leave related items open:
 ## Completion Rule
 
 Do not close the ZIP goal until every item above is either implemented and
-tested or intentionally moved out of scope in a repository-visible note. A
-workspace `cargo clippy --workspace --all-targets --all-features` pass is
+tested or intentionally moved out of scope in a repository-visible note.
+A workspace `cargo clippy --workspace --all-targets --all-features` pass is
 necessary at reviewable cut points, but it is not sufficient for items that
 require malformed input tests, cross-format roundtrips, process behavior tests,
 or platform matrix validation.
