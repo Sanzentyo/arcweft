@@ -7,15 +7,17 @@ It is the readable companion to
 strict requirement ledger.
 
 Implementation baseline used for this inventory:
-`5b1b6618 Preflight Arrow IPC buffers` plus the current Parquet
-variable-width preflight and Avro OCF datum preflight cuts.
+`b64be3ec Add zip gap platform validation workflow`.
 
 This document is the concrete "what is still not implemented" answer for the
-ZIP gap goal as of that baseline. The current unfinished set is intentionally
-small:
+ZIP gap goal as of that baseline.
 
-- **ZG-A-004 / T-009 / A-21**: Linux and macOS validation evidence is still
-  absent.
+Current conclusion:
+
+- **Open source-behavior implementation items: none currently identified.**
+- **Partial implementation items: none currently identified.**
+- **Verification debt that still blocks goal completion: one item,
+  `ZG-A-004 / T-009 / A-21`, Linux/macOS platform validation evidence.**
 
 Everything else from the ZIP is either recorded as resolved in
 `zip-gap-open-items-2026-06-21.md`, or is a related validation follow-up that
@@ -36,6 +38,8 @@ depends on one of the items above.
 
 | Area | Item | Status | Missing thing that blocks completion |
 | --- | --- | --- | --- |
+| Data codecs | ZIP data shape/budget implementation items | Resolved implementation evidence | No current source-behavior gap is identified for JSON/TOML/YAML/MsgPack/CBOR/CSV/Arrow IPC/Parquet/Avro/Arcweft Binary in the ZIP scope |
+| Agent/CLI | Remote REPL binding policy, stdio MCP hardening, `.awfagent` formatter routing | Resolved implementation evidence | No current source-behavior gap is identified; platform validation evidence remains separate |
 | Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外での remote REPL / stdio MCP / data codec focused gates と workspace gates の記録 |
 
 ## ZG-A-004: Linux/macOS Validation
@@ -51,17 +55,25 @@ Existing implementation/evidence:
 - `zip-gap-open-items-2026-06-21.md` と
   `zip-gap-audit-2026-06-21.md` は Windows 実行結果を中心に記録している。
 
-具体的に未実装として残っているもの:
+具体的に未完了として残っているもの:
 
 - Linux での remote REPL / stdio MCP focused tests。
 - macOS での remote REPL / stdio MCP focused tests。
 - Linux/macOS/Windows の workspace gates または CI matrix evidence。
 - 各 platform の command、revision、result、失敗時の理由。
 
-ここは source behavior の未実装ではなく、検証証跡の未実装である。Windows
+ここは source behavior の未実装ではなく、検証証跡の未完である。Windows
 での実行証跡はあるが、ZIP の platform matrix は Linux/macOS の process
 lifecycle、path handling、stdio framing も対象にしているため、Windows だけでは
 完了扱いにできない。
+
+Current action:
+
+- `.github/workflows/zip-gap-platform-validation.yml` was added at
+  `b64be3ec` to collect Linux/macOS/Windows CI evidence for this item.
+- GitHub Actions run `27915654960` is currently in progress for that workflow.
+  The run URL is
+  `https://github.com/Sanzentyo/arcweft/actions/runs/27915654960`.
 
 必要なテスト・証跡:
 
@@ -149,7 +161,8 @@ Existing implementation/evidence:
 なぜ完了扱いにできないか:
 
 data behavior は current implementation evidence で完了扱いにできる。ZIP goal
-全体は、Linux/macOS validation evidence がまだないため完了扱いにしない。
+全体は、Linux/macOS validation evidence がまだ記録完了していないため完了扱いに
+しない。
 
 ## Already Covered Slices
 

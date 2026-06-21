@@ -136,7 +136,18 @@ For the current requirement-by-requirement open-item ledger, see
   list replace/append policy deterministically, and returns per-path
   provenance showing which layer/source supplied the final value.
 
-## Remaining implementation debt
+## Current unfinished inventory
+
+As of `b64be3ec Add zip gap platform validation workflow`, no concrete
+open source-behavior implementation item is currently identified from the ZIP
+audit. The remaining blocker is verification evidence for the platform matrix:
+Linux/macOS/Windows CI or recorded local runs for the remote REPL, stdio MCP,
+data-codec, workspace, clippy, and structural-audit gates. The first CI run for
+that evidence is
+`https://github.com/Sanzentyo/arcweft/actions/runs/27915654960`.
+
+The bullets below summarize the implementation areas that were previously open
+and are now covered by current source and focused tests.
 
 - Remote REPL cells now execute through the typed MCP session, and remote
   `:connect` now reconciles live bindings when `program_hash` changes.

@@ -118,7 +118,13 @@ For a concise explanation of the concrete unfinished items, see
 
 ## Open Data Items
 
-### ZG-D-001: parse-time budgets are still incomplete outside Arcweft Binary
+None currently identified. The data-codec implementation gaps from the ZIP
+audit are closed in the current source. Goal completion is still blocked by
+the platform validation evidence tracked under ZG-A-004.
+
+## Resolved Data Items
+
+### ZG-D-001: parse-time budgets are complete for the ZIP data slice
 
 - ZIP tasks: T-104, D-13.
 - Current evidence:
@@ -160,11 +166,11 @@ For a concise explanation of the concrete unfinished items, see
 - Concrete unfinished slices:
   None in the data codec implementation slice.
 - Why this matters: hostile inputs can allocate large intermediate documents
-  before Arcweft limits run.
+  before Arcweft limits run; current covered codecs now put budget checks at
+  parser, preflight, or reader boundaries before the previously problematic
+  public value materialization points.
 - Completion evidence needed: broader ZIP completion still needs the platform
   validation evidence tracked under ZG-A-004 and final reviewable-cut gates.
-
-## Resolved Data Items
 
 ### ZG-D-005: Avro is shape-guided for supported records, options, and enums
 
