@@ -4,10 +4,11 @@ use apache_avro::schema::{RecordField, Schema};
 use apache_avro::types::Value as AvroValue;
 use apache_avro::{Reader, Writer};
 use arcweft_data::{
-    Bytes, Codec, DataError, DataErrorKind, DecodeBudget, DecodeOptions, EncodeOptions,
-    EnumTagStyle, FieldShape, FormatId, Number, RecordPolicy, Result, TypeShape, Value,
-    VariantShape,
+    Bytes, Codec, DataError, DataErrorKind, DecodeBudget, DecodeOptions, EncodeOptions, FieldShape,
+    FormatId, Number, RecordPolicy, Result, TypeShape, Value,
 };
+
+use crate::enum_value;
 
 #[derive(Clone, Debug)]
 pub struct AvroCodec {
@@ -126,7 +127,7 @@ fn invalid_encoding_error(error: impl std::fmt::Display) -> DataError {
     DataError::new(DataErrorKind::InvalidEncoding, error.to_string())
 }
 
-fn validate_schema(shape: &TypeShape, schema: &Schema) -> Result<()> {
+pub(super) fn validate_schema(shape: &TypeShape, schema: &Schema) -> Result<()> {
     match shape {
         TypeShape::Option(inner) => {
             let (_, _, inner_schema) = option_schema(schema)?;
@@ -181,7 +182,7 @@ fn validate_schema(shape: &TypeShape, schema: &Schema) -> Result<()> {
             tag,
             repr,
             ..
-        } => validate_enum_schema(variants, tag, repr.as_ref(), schema),
+        } => enum_value::validate_enum_schema(variants, tag, repr.as_ref(), schema),
         TypeShape::I128 | TypeShape::U64 | TypeShape::U128 | TypeShape::Usize => {
             Err(DataError::unsupported(format!(
                 "Avro cannot represent the full {} range",
@@ -241,50 +242,6 @@ fn validate_record_schema(
         })
 }
 
-fn validate_enum_schema(
-    variants: &[VariantShape],
-    tag: &EnumTagStyle,
-    repr: Option<&arcweft_data::EnumRepr>,
-    schema: &Schema,
-) -> Result<()> {
-    if repr.is_some() {
-        return Err(DataError::unsupported(
-            "Avro enum values are symbolic; numeric repr enum shapes are not supported",
-        ));
-    }
-    if !matches!(tag, EnumTagStyle::External) {
-        return Err(DataError::unsupported(
-            "Avro native enum mapping requires external enum tags",
-        ));
-    }
-    if let Some(variant) = variants.iter().find(|variant| variant.payload.is_some()) {
-        return Err(DataError::unsupported(format!(
-            "Avro native enum variant `{}` cannot carry an Arcweft payload",
-            variant.wire_name
-        )));
-    }
-    let Schema::Enum(avro_enum) = schema else {
-        return Err(schema_mismatch("Avro enum", schema));
-    };
-    let expected = variants
-        .iter()
-        .map(|variant| variant.wire_name.as_str())
-        .collect::<Vec<_>>();
-    let actual = avro_enum
-        .symbols
-        .iter()
-        .map(String::as_str)
-        .collect::<Vec<_>>();
-    if expected == actual {
-        Ok(())
-    } else {
-        Err(DataError::new(
-            DataErrorKind::InvalidEnumTag,
-            format!("Avro enum symbols {actual:?} do not match Arcweft variants {expected:?}"),
-        ))
-    }
-}
-
 fn expect_schema(schema: &Schema, matches: bool, expected: &str) -> Result<()> {
     if matches {
         Ok(())
@@ -293,7 +250,7 @@ fn expect_schema(schema: &Schema, matches: bool, expected: &str) -> Result<()> {
     }
 }
 
-fn schema_mismatch(expected: &str, schema: &Schema) -> DataError {
+pub(super) fn schema_mismatch(expected: &str, schema: &Schema) -> DataError {
     DataError::invalid_type(expected, schema_label(schema))
 }
 
@@ -351,7 +308,11 @@ fn option_schema(schema: &Schema) -> Result<(usize, usize, &Schema)> {
     Ok((null_index, *inner_index, inner_schema))
 }
 
-fn value_to_avro(value: &Value, shape: &TypeShape, schema: &Schema) -> Result<AvroValue> {
+pub(super) fn value_to_avro(
+    value: &Value,
+    shape: &TypeShape,
+    schema: &Schema,
+) -> Result<AvroValue> {
     match shape {
         TypeShape::Option(inner) => {
             let (null_index, value_index, inner_schema) = option_schema(schema)?;
@@ -378,7 +339,7 @@ fn value_to_avro(value: &Value, shape: &TypeShape, schema: &Schema) -> Result<Av
         TypeShape::Record { fields, policy, .. } => {
             value_to_avro_record(value, fields, *policy, schema)
         }
-        TypeShape::Enum { variants, .. } => value_to_avro_enum(value, variants, schema),
+        TypeShape::Enum { variants, .. } => enum_value::value_to_avro_enum(value, variants, schema),
         TypeShape::I8
         | TypeShape::I16
         | TypeShape::I32
@@ -565,53 +526,6 @@ fn reject_unknown_fields<'a>(
         .map_or(Ok(()), Err)
 }
 
-fn value_to_avro_enum(
-    value: &Value,
-    variants: &[VariantShape],
-    schema: &Schema,
-) -> Result<AvroValue> {
-    let Schema::Enum(avro_enum) = schema else {
-        return Err(schema_mismatch("Avro enum", schema));
-    };
-    let Value::Enum { variant, payload } = value else {
-        return Err(DataError::invalid_type("enum", value.type_name()));
-    };
-    if payload.is_some() {
-        return Err(DataError::unsupported(
-            "Avro native enum values cannot carry Arcweft payloads",
-        ));
-    }
-    let shape_index = variants
-        .iter()
-        .position(|candidate| candidate.wire_name == *variant)
-        .ok_or_else(|| {
-            DataError::new(
-                DataErrorKind::InvalidEnumTag,
-                format!("unknown enum variant `{variant}`"),
-            )
-        })?;
-    let schema_index = avro_enum
-        .symbols
-        .iter()
-        .position(|symbol| symbol == variant)
-        .ok_or_else(|| {
-            DataError::new(
-                DataErrorKind::InvalidEnumTag,
-                format!("Avro enum schema does not contain `{variant}`"),
-            )
-        })?;
-    if shape_index != schema_index {
-        return Err(DataError::new(
-            DataErrorKind::InvalidEnumTag,
-            format!("enum variant `{variant}` has mismatched Avro index"),
-        ));
-    }
-    Ok(AvroValue::Enum(
-        u32::try_from(schema_index).expect("enum index fits u32"),
-        variant.clone(),
-    ))
-}
-
 fn value_to_avro_integer(value: &Value, shape: &TypeShape, schema: &Schema) -> Result<AvroValue> {
     let Value::Number(number) = value else {
         return Err(DataError::invalid_type("number", value.type_name()));
@@ -683,7 +597,7 @@ fn value_to_avro_float(value: &Value, shape: &TypeShape) -> Result<AvroValue> {
     }
 }
 
-fn avro_to_value(
+pub(super) fn avro_to_value(
     value: &AvroValue,
     shape: &TypeShape,
     schema: &Schema,
@@ -729,7 +643,9 @@ fn avro_to_value_inner(
         TypeShape::Record { fields, policy, .. } => {
             avro_to_value_record(value, fields, *policy, schema, budget)
         }
-        TypeShape::Enum { variants, .. } => avro_to_value_enum(value, variants, schema),
+        TypeShape::Enum { variants, .. } => {
+            enum_value::avro_to_value_enum(value, variants, schema, budget)
+        }
         TypeShape::I8
         | TypeShape::I16
         | TypeShape::I32
@@ -909,48 +825,6 @@ fn reject_unknown_value_fields<'a>(
         .map_or(Ok(()), Err)
 }
 
-fn avro_to_value_enum(
-    value: &AvroValue,
-    variants: &[VariantShape],
-    schema: &Schema,
-) -> Result<Value> {
-    let Schema::Enum(avro_enum) = schema else {
-        return Err(schema_mismatch("Avro enum", schema));
-    };
-    let AvroValue::Enum(index, variant) = value else {
-        return Err(DataError::invalid_type("enum", avro_value_label(value)));
-    };
-    let schema_index = avro_enum
-        .symbols
-        .iter()
-        .position(|symbol| symbol == variant)
-        .ok_or_else(|| {
-            DataError::new(
-                DataErrorKind::InvalidEnumTag,
-                format!("Avro enum schema does not contain `{variant}`"),
-            )
-        })?;
-    let shape_index = variants
-        .iter()
-        .position(|candidate| candidate.wire_name == *variant)
-        .ok_or_else(|| {
-            DataError::new(
-                DataErrorKind::InvalidEnumTag,
-                format!("unknown enum variant `{variant}`"),
-            )
-        })?;
-    if *index as usize != schema_index || schema_index != shape_index {
-        return Err(DataError::new(
-            DataErrorKind::InvalidEnumTag,
-            format!("enum variant `{variant}` has mismatched Avro index"),
-        ));
-    }
-    Ok(Value::Enum {
-        variant: variant.clone(),
-        payload: None,
-    })
-}
-
 fn avro_to_value_integer(value: &AvroValue, shape: &TypeShape) -> Result<Value> {
     let integer = match value {
         AvroValue::Int(value) => i128::from(*value),
@@ -1014,7 +888,7 @@ fn parse_char(value: &str) -> Result<Value> {
     Ok(Value::Char(ch))
 }
 
-fn avro_value_label(value: &AvroValue) -> &'static str {
+pub(super) fn avro_value_label(value: &AvroValue) -> &'static str {
     match value {
         AvroValue::Null => "Avro null",
         AvroValue::Boolean(_) => "Avro boolean",

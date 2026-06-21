@@ -111,14 +111,14 @@ For the current requirement-by-requirement open-item ledger, see
   inference, rejects unknown/missing fields, preserves option/null policy,
   validates decoded columns against the declared shape, checks input length
   before parsing, and explicitly rejects nested or enum shapes.
-- Made Avro shape-aware for the supported schema/value surface.
+- Made Avro shape-aware for the schema/value surface.
   `arcweft-codec-avro` now validates the supplied Avro schema against
   `TypeShape`, encodes and decodes top-level scalar datums versus top-level
   `Seq` datum streams deliberately, maps records, options/unions, arrays, maps,
-  bytes, chars, and native unit enums bidirectionally, checks enum symbol
-  ordering against `VariantShape`, rejects payload enums explicitly instead of
-  using ad hoc `variant`/`payload` records, and applies decode input caps before
-  parsing.
+  bytes, chars, native unit enums, and payload enums bidirectionally, checks
+  enum branch ordering against `VariantShape`, maps payload variants as an Avro
+  union of variant records with a single typed `payload` field, and applies
+  decode input caps before parsing.
 - Hardened `arcweft-http-codec` negotiation. Request decoding now accepts
   parameterized `Content-Type` values only when parameters are syntactically
   valid, rejects wildcard content types, and enforces `DecodeOptions`
@@ -167,14 +167,13 @@ For the current requirement-by-requirement open-item ledger, see
   including central enum adjacent/internal/repr raw forms. Remaining
   JSON/TOML/YAML work includes parser-integrated budget visitors and deeper
   enum payload byte-policy coverage.
-- CSV, Arrow IPC, Parquet, and the supported Avro surface now cover strict
-  shape-guided rows or datum streams, including the scalar numeric edge matrix.
-  Remaining tabular/data-format work includes Avro payload enum fidelity plus
-  parser/reader-integrated budget enforcement.
+- CSV, Arrow IPC, Parquet, and Avro now cover strict shape-guided rows or datum
+  streams, including the scalar numeric edge matrix and Avro payload enum
+  fidelity. Remaining tabular/data-format work is parser/reader-integrated
+  budget enforcement.
 - HTTP negotiation now covers the T-112 `Accept` q/wildcard/q=0/content
   parameter/body cap matrix for the codec adapter boundary. Remaining data
-  adapter policy work is now concentrated in Avro payload enum fidelity and
-  parser/reader-integrated budgets.
+  adapter policy work is now concentrated in parser/reader-integrated budgets.
 - Codec registry uniqueness now covers the D-24 duplicate id/media/extension
   policy. Intentional format aliases remain explicit per-codec media type or
   extension entries and must be distinct after normalization.

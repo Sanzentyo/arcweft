@@ -25,7 +25,6 @@ ledger.
 | Agent | ZG-A-003 `.awfagent` formatter proof | Partial implementation | comments/trivia と Agent item 全体の lossless/canonical golden が不足 |
 | Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外の現在証跡が未記録 |
 | Data | ZG-D-001 parse-time budgets outside Arcweft Binary | Open implementation | 多くの codec が format-native value を先に materialize している |
-| Data | ZG-D-005 Avro payload enum fidelity | Partial implementation | Native Avro enum では表せない payload enum の最終 mapping が未定義 |
 
 ## Agent Items
 
@@ -109,27 +108,6 @@ Why it is not complete:
 Post-parse validation is too late for hostile inputs that allocate huge native
 documents first.
 
-### ZG-D-005: Avro payload enum fidelity
-
-The Avro codec now validates the supplied Avro schema against Arcweft
-`TypeShape` and no longer uses the old shape-less `variant`/`payload` record
-fallback. It covers top-level scalar datums, top-level `Seq` datum streams,
-records, options/unions, arrays, maps, scalar fields, and native unit enums.
-The remaining fidelity gap is Arcweft enum variants that carry payload values.
-
-What remains:
-
-- Define the final Avro representation for payload enum variants.
-- Map payload enum variants bidirectionally without reintroducing an untyped
-  compatibility record.
-- Check payload shapes against `VariantShape`.
-- Add malformed payload, unknown variant, and payload schema mismatch tests.
-
-Why it is not complete:
-
-Native Avro enum values are symbolic-only. Payload variants need a deliberate
-Arcweft-owned schema mapping rather than an implicit ad hoc record fallback.
-
 ## Already Covered Slices
 
 The following slices should not be counted as currently unimplemented, though
@@ -147,10 +125,12 @@ some of them leave related items open:
 - Arrow IPC and Parquet require `Seq<Record>` shapes, derive scalar schemas from
   `FieldShape`, reject malformed rows and unsupported nested/enum shapes, and
   carry the same numeric edge matrix for supported scalar rows.
-- Avro validates supplied schemas against `TypeShape`, maps supported scalar,
-  record, option, array, map, and native unit enum values bidirectionally,
-  enforces top-level scalar versus datum-stream policy, and carries the numeric
-  edge matrix for supported scalar values.
+- Avro validates supplied schemas against `TypeShape`, maps scalar, record,
+  option, array, map, native unit enum, and payload enum values
+  bidirectionally, enforces top-level scalar versus datum-stream policy, and
+  carries the numeric edge matrix for supported scalar values. Payload enum
+  variants use an Avro union of variant records in `VariantShape` order, with a
+  single typed `payload` field for payload variants.
 - Config merge is shape-aware and provenance-producing.
 - Save decoding supports explicit multi-step migration chains.
 - Derive shape generation now uses field-type where predicates and compile-time

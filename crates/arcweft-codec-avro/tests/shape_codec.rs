@@ -274,37 +274,79 @@ fn avro_codec_checks_input_limit_before_parse() {
 }
 
 #[test]
-fn avro_codec_rejects_payload_enums_and_symbol_mismatch_explicitly() {
-    let payload_shape = TypeShape::seq(TypeShape::record(
-        "PayloadRow",
-        [FieldShape::new(
-            "kind",
-            "kind",
-            TypeShape::enumeration(
-                "Kind",
-                [VariantShape::unit("Full", "full").with_payload(TypeShape::String)],
-            ),
-        )],
-    ));
-    let payload_schema = r#"
-    {
-      "type": "record",
-      "name": "PayloadRow",
-      "fields": [
-        {"name": "kind", "type": {"type": "enum", "name": "Kind", "symbols": ["full"]}}
-      ]
-    }
-    "#;
-    let codec = AvroCodec::new(payload_schema).expect("schema");
+fn avro_codec_roundtrips_payload_enums_as_variant_record_union() {
+    let codec = AvroCodec::new(payload_enum_schema()).expect("schema");
+    let value = payload_enum_rows();
+    let encoded = codec
+        .encode_value(&value, &payload_enum_shape(), &EncodeOptions::default())
+        .expect("encode");
+    let decoded = codec
+        .decode_value(&encoded, &payload_enum_shape(), &DecodeOptions::default())
+        .expect("decode");
+    assert_eq!(decoded, value);
+}
+
+#[test]
+fn avro_codec_rejects_payload_enum_schema_mismatch() {
+    let codec = AvroCodec::new(
+        r#"
+        {
+          "type": "record",
+          "name": "PayloadRow",
+          "fields": [
+            {"name": "kind", "type": [
+              {"type": "record", "name": "full", "fields": [{"name": "payload", "type": "long"}]},
+              {"type": "record", "name": "empty", "fields": []}
+            ]}
+          ]
+        }
+        "#,
+    )
+    .expect("schema");
     let error = codec
         .encode_value(
-            &Value::Seq(Vec::new()),
-            &payload_shape,
+            &payload_enum_rows(),
+            &payload_enum_shape(),
             &EncodeOptions::default(),
         )
-        .expect_err("payload enum unsupported");
-    assert_eq!(error.kind(), &DataErrorKind::UnsupportedFormat);
+        .expect_err("payload schema mismatch");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidType);
+}
 
+#[test]
+fn avro_codec_rejects_unknown_or_missing_payload_enum_values() {
+    let codec = AvroCodec::new(payload_enum_schema()).expect("schema");
+    let unknown = Value::Seq(vec![record([(
+        "kind",
+        Value::Enum {
+            variant: "missing".to_owned(),
+            payload: Some(Box::new(Value::String("x".to_owned()))),
+        },
+    )])]);
+    let error = codec
+        .encode_value(&unknown, &payload_enum_shape(), &EncodeOptions::default())
+        .expect_err("unknown variant");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidEnumTag);
+
+    let missing_payload = Value::Seq(vec![record([(
+        "kind",
+        Value::Enum {
+            variant: "full".to_owned(),
+            payload: None,
+        },
+    )])]);
+    let error = codec
+        .encode_value(
+            &missing_payload,
+            &payload_enum_shape(),
+            &EncodeOptions::default(),
+        )
+        .expect_err("missing payload");
+    assert_eq!(error.kind(), &DataErrorKind::MissingField);
+}
+
+#[test]
+fn avro_codec_rejects_native_enum_symbol_mismatch_explicitly() {
     let reversed_schema = r#"
     {
       "type": "record",
@@ -337,6 +379,57 @@ fn avro_codec_rejects_payload_enums_and_symbol_mismatch_explicitly() {
         )
         .expect_err("symbol order mismatch");
     assert_eq!(error.kind(), &DataErrorKind::InvalidEnumTag);
+}
+
+fn payload_enum_shape() -> TypeShape {
+    TypeShape::seq(TypeShape::record(
+        "PayloadRow",
+        [FieldShape::new(
+            "kind",
+            "kind",
+            TypeShape::enumeration(
+                "Kind",
+                [
+                    VariantShape::unit("Full", "full").with_payload(TypeShape::String),
+                    VariantShape::unit("Empty", "empty"),
+                ],
+            ),
+        )],
+    ))
+}
+
+fn payload_enum_schema() -> &'static str {
+    r#"
+    {
+      "type": "record",
+      "name": "PayloadRow",
+      "fields": [
+        {"name": "kind", "type": [
+          {"type": "record", "name": "full", "fields": [{"name": "payload", "type": "string"}]},
+          {"type": "record", "name": "empty", "fields": []}
+        ]}
+      ]
+    }
+    "#
+}
+
+fn payload_enum_rows() -> Value {
+    Value::Seq(vec![
+        record([(
+            "kind",
+            Value::Enum {
+                variant: "full".to_owned(),
+                payload: Some(Box::new(Value::String("ready".to_owned()))),
+            },
+        )]),
+        record([(
+            "kind",
+            Value::Enum {
+                variant: "empty".to_owned(),
+                payload: None,
+            },
+        )]),
+    ])
 }
 
 #[test]

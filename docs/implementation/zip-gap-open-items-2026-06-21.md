@@ -100,27 +100,34 @@ For a concise explanation of the concrete unfinished items, see
   bounded readers for each codec, plus adversarial input/depth/node/collection
   tests that fail before unbounded allocation.
 
-### ZG-D-005: Avro payload enum fidelity is still incomplete
+## Resolved Data Items
+
+### ZG-D-005: Avro is shape-guided for supported records, options, and enums
 
 - ZIP tasks: T-109, D-19.
 - Current evidence:
-  `crates/arcweft-codec-avro/src/lib.rs` now validates the supplied Avro
-  schema against Arcweft `TypeShape`, distinguishes top-level scalar datums
-  from top-level `Seq` datum streams, maps records, options/unions, arrays,
-  maps, scalar fields, and native unit enums bidirectionally, and checks native
-  enum symbol order against Arcweft `VariantShape`. Payload enums are no longer
-  encoded through the old ad hoc `variant`/`payload` record form; they are
-  rejected explicitly.
-- Why this matters: Avro schema compatibility does not prove Arcweft shape
-  compatibility for Arcweft enum variants that carry payloads. Native Avro
-  enums are symbolic-only, so a payload enum contract needs an explicit
-  Arcweft-owned mapping rather than a fallback record shape.
-- Completion evidence needed: define and implement the final Avro mapping for
-  Arcweft payload enum variants, check payload shapes against `VariantShape`,
-  add strict malformed payload tests, and keep the native unit enum symbol-index
-  tests.
-
-## Resolved Data Items
+  `crates/arcweft-codec-avro/src/codec.rs` validates the supplied Avro schema
+  against Arcweft `TypeShape`, distinguishes top-level scalar datums from
+  top-level `Seq` datum streams, maps records, options/unions, arrays, maps,
+  scalar fields, native unit enums, and payload enum variants bidirectionally,
+  and checks enum branch order against `VariantShape`.
+- Payload enum contract:
+  native Avro enum schemas are used for all-unit enums. Enums with any payload
+  variant use an Avro union whose branches are variant records in
+  `VariantShape` order. Unit variants use an empty record branch named by
+  `wire_name`; payload variants use a record branch named by `wire_name` with
+  exactly one `payload` field whose schema is validated against the variant
+  payload shape.
+- Validation evidence:
+  `cargo test -p arcweft-codec-avro --test shape_codec -- --nocapture`,
+  `cargo test -p arcweft-codec-avro --all-features`, and
+  `cargo clippy -p arcweft-codec-avro --all-targets --all-features -- -D warnings`
+  passed on Windows. The focused tests cover payload enum roundtrip, native
+  enum symbol mismatch, payload schema mismatch, unknown variants, missing
+  payloads, top-level scalar versus datum-stream policy, decode input caps, and
+  numeric edge policy.
+- Remaining related work: parser/reader-integrated budget enforcement remains
+  tracked under ZG-D-001.
 
 ### ZG-D-004: Arrow IPC and Parquet are schema-driven for scalar rows
 
@@ -142,7 +149,7 @@ For a concise explanation of the concrete unfinished items, see
   input caps, and numeric edge policy.
 - Remaining related work: this resolves the Arrow IPC / Parquet shape-guided
   scalar-row slice. Parser-integrated budget enforcement remains tracked under
-  ZG-D-001, and Avro remains tracked under ZG-D-005.
+  ZG-D-001.
 
 ### ZG-D-009: numeric edge-case policy is complete across current codecs
 
@@ -160,8 +167,7 @@ For a concise explanation of the concrete unfinished items, see
   together with
   `cargo clippy -p arcweft-codec-avro --all-targets --all-features -- -D warnings`.
 - Remaining related work: parser/reader-integrated budget enforcement remains
-  tracked under ZG-D-001, and payload enum fidelity remains tracked under
-  ZG-D-005.
+  tracked under ZG-D-001.
 
 ### ZG-D-002: derive shape generation policy gaps are closed
 
@@ -180,8 +186,7 @@ For a concise explanation of the concrete unfinished items, see
   `cargo clippy -p arcweft-data -p arcweft-data-derive --all-targets --all-features -- -D warnings`
   passed on Windows.
 - Remaining related work: this resolves the derive policy slice. Broader data
-  completion still depends on parser-integrated decode budgets and Avro payload
-  enum fidelity.
+  completion still depends on parser-integrated decode budgets.
 
 ### ZG-D-003: CSV is schema-driven for scalar row data
 
@@ -255,8 +260,8 @@ For a concise explanation of the concrete unfinished items, see
   `cargo test -p arcweft-config --all-features`, and
   `cargo clippy --workspace --all-targets --all-features` passed on Windows.
 - Remaining related work: config merge provenance is covered. Broader
-  repository completion still depends on parse-time budgets, Avro payload enum
-  fidelity, and Agent REPL/MCP hardening.
+  repository completion still depends on parse-time budgets and Agent REPL/MCP
+  hardening.
 
 ### ZG-D-010: save migration supports explicit multi-step chains
 
@@ -279,8 +284,8 @@ For a concise explanation of the concrete unfinished items, see
   checks. A future header-authenticated checksum would require a new versioned
   envelope contract rather than changing v1 semantics.
 - Remaining related work: save envelope migration chaining is covered. Broader
-  repository completion still depends on parse-time budgets, Avro payload enum
-  fidelity, and Agent REPL/MCP hardening.
+  repository completion still depends on parse-time budgets and Agent REPL/MCP
+  hardening.
 
 ## Verification Debt That Blocks Goal Completion
 

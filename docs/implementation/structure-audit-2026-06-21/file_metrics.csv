@@ -169,9 +169,10 @@ crates/arcweft-codec-arrow/Cargo.toml,374,16,14,text,false,false,false,false
 crates/arcweft-codec-arrow/src/lib.rs,24950,767,721,production,true,false,false,false
 crates/arcweft-codec-arrow/tests/shape_codec.rs,8324,257,234,test,true,true,false,false
 crates/arcweft-codec-avro/Cargo.toml,333,15,13,text,false,false,false,false
-crates/arcweft-codec-avro/src/codec.rs,37674,1046,1005,production,true,false,false,false
-crates/arcweft-codec-avro/src/lib.rs,40,3,2,production,true,false,false,false
-crates/arcweft-codec-avro/tests/shape_codec.rs,12011,365,347,test,true,true,false,false
+crates/arcweft-codec-avro/src/codec.rs,33643,920,881,production,true,false,false,false
+crates/arcweft-codec-avro/src/enum_value.rs,13239,392,378,production,true,false,false,false
+crates/arcweft-codec-avro/src/lib.rs,56,4,3,production,true,false,false,false
+crates/arcweft-codec-avro/tests/shape_codec.rs,14611,458,434,test,true,true,false,false
 crates/arcweft-codec-binary/Cargo.toml,589,20,17,text,false,false,false,false
 crates/arcweft-codec-binary/src/lib.rs,12857,394,358,production,true,false,false,false
 crates/arcweft-codec-binary/tests/strict_decode.rs,3594,127,108,test,true,true,false,false
@@ -836,7 +837,7 @@ docs/implementation/refactor-checklist.md,4398,98,80,text,false,false,false,fals
 docs/implementation/rich-text-object-goal-audit.md,7148,82,67,text,false,false,false,false
 docs/implementation/rich-text-object-visual-evidence.md,4718,53,42,text,false,false,false,false
 docs/implementation/runtime-acceleration-goal-gap.md,9295,238,173,text,false,false,false,false
-docs/implementation/structure-audit-2026-06-21/violations.md,16924,506,253,text,false,false,false,false
+docs/implementation/structure-audit-2026-06-21/violations.md,16910,506,253,text,false,false,false,false
 docs/implementation/structure-refactor-2026-06-21.md,14768,247,228,text,false,false,false,false
 docs/implementation/test-execution-policy.md,25489,398,331,text,false,false,false,false
 docs/implementation/vertical-longterm-design-20260612/Cargo.toml,419,20,17,text,false,false,false,false
@@ -891,9 +892,9 @@ docs/implementation/visual-sample-review-issues/2026-06-17/README.md,50907,60,57
 docs/implementation/visual-sample-review-issues/2026-06-18/README.md,7294,24,20,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-hotspot-capture-metadata.json,2420,113,113,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-param-choice-presentation-tree.json,18532,626,626,text,false,false,false,false
-docs/implementation/zip-gap-audit-2026-06-21.md,16920,252,243,text,false,false,false,false
-docs/implementation/zip-gap-open-items-2026-06-21.md,15414,298,258,text,false,false,false,false
-docs/implementation/zip-gap-unimplemented-items-2026-06-22.md,7710,169,126,text,false,false,false,false
+docs/implementation/zip-gap-audit-2026-06-21.md,16872,251,242,text,false,false,false,false
+docs/implementation/zip-gap-open-items-2026-06-21.md,15597,303,263,text,false,false,false,false
+docs/implementation/zip-gap-unimplemented-items-2026-06-22.md,6796,149,112,text,false,false,false,false
 docs/reviews/pro_review1.md,22523,670,495,text,false,false,false,false
 docs/reviews/pro_review10.md,24274,938,713,text,false,false,false,false
 docs/reviews/pro_review11.md,62235,3442,2511,text,false,false,false,false
