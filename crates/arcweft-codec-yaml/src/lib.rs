@@ -4,10 +4,13 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use arcweft_data::{
-    BytesFormat, Codec, DataError, DataErrorKind, DecodeOptions, EncodeOptions, FieldShape,
-    FormatId, Number, RawValue, Result, TypeShape, Value, decode_with_shape, encode_with_shape,
+    BytesFormat, Codec, DataError, DataErrorKind, DecodeBudget, DecodeOptions, EncodeOptions,
+    FieldShape, FormatId, Number, RawValue, Result, TypeShape, Value, decode_with_shape,
+    encode_with_shape,
 };
 use base64::prelude::{BASE64_STANDARD, Engine as _};
+use yaml_rust2::parser::{Event, MarkedEventReceiver, Parser};
+use yaml_rust2::scanner::Marker;
 use yaml_rust2::yaml::Hash;
 use yaml_rust2::{Yaml, YamlEmitter, YamlLoader};
 
@@ -48,15 +51,10 @@ impl Codec for YamlCodec {
         shape: &TypeShape,
         options: &DecodeOptions,
     ) -> Result<Value> {
-        if input.len() > options.limits.max_input_len {
-            return Err(DataError::limit(format!(
-                "input length {} exceeds {}",
-                input.len(),
-                options.limits.max_input_len
-            )));
-        }
+        let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
         let source = std::str::from_utf8(input)
             .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
+        validate_yaml_budget(source, &mut budget)?;
         let documents = YamlLoader::load_from_str(source)
             .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
         let [document] = documents.as_slice() else {
@@ -73,6 +71,115 @@ impl Codec for YamlCodec {
         options.limits.validate(&value)?;
         Ok(value)
     }
+}
+
+#[derive(Clone, Copy)]
+enum YamlBudgetFrame {
+    Sequence { len: usize },
+    Mapping { len: usize, expecting_key: bool },
+}
+
+struct YamlBudgetReceiver<'budget, 'limits> {
+    budget: &'budget mut DecodeBudget<'limits>,
+    stack: Vec<YamlBudgetFrame>,
+    error: Option<DataError>,
+}
+
+impl MarkedEventReceiver for YamlBudgetReceiver<'_, '_> {
+    fn on_event(&mut self, event: Event, _mark: Marker) {
+        if self.error.is_some() {
+            return;
+        }
+        if let Err(error) = self.consume_event(event) {
+            self.error = Some(error);
+        }
+    }
+}
+
+impl YamlBudgetReceiver<'_, '_> {
+    fn consume_event(&mut self, event: Event) -> Result<()> {
+        match event {
+            Event::Scalar(value, ..) => {
+                self.note_parent_child()?;
+                self.budget.enter_node()?;
+                let result = self.budget.string_len(value.len());
+                self.budget.exit_node();
+                result
+            }
+            Event::SequenceStart(..) => {
+                self.note_parent_child()?;
+                self.budget.enter_node()?;
+                self.stack.push(YamlBudgetFrame::Sequence { len: 0 });
+                Ok(())
+            }
+            Event::MappingStart(..) => {
+                self.note_parent_child()?;
+                self.budget.enter_node()?;
+                self.stack.push(YamlBudgetFrame::Mapping {
+                    len: 0,
+                    expecting_key: true,
+                });
+                Ok(())
+            }
+            Event::SequenceEnd | Event::MappingEnd => {
+                self.stack.pop();
+                self.budget.exit_node();
+                self.finish_parent_value();
+                Ok(())
+            }
+            Event::Alias(_) => Err(DataError::unsupported(
+                "YAML aliases are not supported by Arcweft data",
+            )),
+            Event::Nothing
+            | Event::StreamStart
+            | Event::StreamEnd
+            | Event::DocumentStart
+            | Event::DocumentEnd => Ok(()),
+        }
+    }
+
+    fn note_parent_child(&mut self) -> Result<()> {
+        match self.stack.last_mut() {
+            Some(YamlBudgetFrame::Sequence { len }) => {
+                *len = len.saturating_add(1);
+                self.budget.sequence_item(*len)
+            }
+            Some(YamlBudgetFrame::Mapping { len, expecting_key }) if *expecting_key => {
+                *len = len.saturating_add(1);
+                *expecting_key = false;
+                self.budget.map_item(*len)
+            }
+            Some(YamlBudgetFrame::Mapping { expecting_key, .. }) => {
+                *expecting_key = true;
+                Ok(())
+            }
+            None => Ok(()),
+        }
+    }
+
+    fn finish_parent_value(&mut self) {
+        if let Some(YamlBudgetFrame::Mapping { expecting_key, .. }) = self.stack.last_mut()
+            && !*expecting_key
+        {
+            *expecting_key = true;
+        }
+    }
+}
+
+fn validate_yaml_budget(source: &str, budget: &mut DecodeBudget<'_>) -> Result<()> {
+    let mut receiver = YamlBudgetReceiver {
+        budget,
+        stack: Vec::new(),
+        error: None,
+    };
+    let mut parser = Parser::new_from_str(source);
+    parser
+        .load(&mut receiver, true)
+        .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
+    if let Some(error) = receiver.error {
+        return Err(error);
+    }
+    Ok(())
 }
 
 fn raw_to_yaml(raw: &RawValue, shape: &TypeShape) -> Result<Yaml> {

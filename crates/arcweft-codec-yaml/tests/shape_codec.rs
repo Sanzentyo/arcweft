@@ -137,3 +137,56 @@ fn yaml_codec_enforces_numeric_edge_policy() {
         .expect_err("negative unsigned rejected");
     assert_eq!(error.kind(), &DataErrorKind::NumberOutOfRange);
 }
+
+#[test]
+fn yaml_decode_consumes_string_budget_before_loader_tree() {
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_string_len: 3,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = YamlCodec
+        .decode_value(b"hash: '00'\nname: hero\n", &asset_shape(), &options)
+        .expect_err("string budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn yaml_decode_consumes_sequence_budget_before_loader_tree() {
+    let shape = TypeShape::record(
+        "Tags",
+        [FieldShape::new(
+            "tags",
+            "tags",
+            TypeShape::seq(TypeShape::String),
+        )],
+    );
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_sequence_len: 2,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = YamlCodec
+        .decode_value(b"tags: [a, b, c]\n", &shape, &options)
+        .expect_err("sequence budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn yaml_decode_consumes_node_budget_before_loader_tree() {
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_nodes: 2,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = YamlCodec
+        .decode_value(b"hash: '00'\nname: hero\n", &asset_shape(), &options)
+        .expect_err("node budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}

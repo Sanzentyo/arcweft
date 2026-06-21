@@ -194,8 +194,8 @@ crates/arcweft-codec-toml/Cargo.toml,356,16,14,text,false,false,false,false
 crates/arcweft-codec-toml/src/lib.rs,26390,728,680,production,true,false,false,false
 crates/arcweft-codec-toml/tests/shape_codec.rs,5964,200,180,test,true,true,false,false
 crates/arcweft-codec-yaml/Cargo.toml,327,15,13,text,false,false,false,false
-crates/arcweft-codec-yaml/src/lib.rs,22322,583,554,production,true,false,false,false
-crates/arcweft-codec-yaml/tests/shape_codec.rs,4327,139,125,test,true,true,false,false
+crates/arcweft-codec-yaml/src/lib.rs,25753,690,654,production,true,false,false,false
+crates/arcweft-codec-yaml/tests/shape_codec.rs,5773,192,172,test,true,true,false,false
 crates/arcweft-compiler/Cargo.toml,829,30,25,text,false,false,false,false
 crates/arcweft-compiler/src/agent.rs,10805,257,241,production,true,false,false,false
 crates/arcweft-compiler/src/agent_effects.rs,3791,107,102,production,true,false,false,false
@@ -894,9 +894,9 @@ docs/implementation/visual-sample-review-issues/2026-06-17/README.md,50907,60,57
 docs/implementation/visual-sample-review-issues/2026-06-18/README.md,7294,24,20,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-hotspot-capture-metadata.json,2420,113,113,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-param-choice-presentation-tree.json,18532,626,626,text,false,false,false,false
-docs/implementation/zip-gap-audit-2026-06-21.md,17715,260,251,text,false,false,false,false
-docs/implementation/zip-gap-open-items-2026-06-21.md,18177,342,302,text,false,false,false,false
-docs/implementation/zip-gap-unimplemented-items-2026-06-22.md,10235,188,154,text,false,false,false,false
+docs/implementation/zip-gap-audit-2026-06-21.md,17878,262,253,text,false,false,false,false
+docs/implementation/zip-gap-open-items-2026-06-21.md,18358,344,304,text,false,false,false,false
+docs/implementation/zip-gap-unimplemented-items-2026-06-22.md,10434,191,157,text,false,false,false,false
 docs/reviews/pro_review1.md,22523,670,495,text,false,false,false,false
 docs/reviews/pro_review10.md,24274,938,713,text,false,false,false,false
 docs/reviews/pro_review11.md,62235,3442,2511,text,false,false,false,false

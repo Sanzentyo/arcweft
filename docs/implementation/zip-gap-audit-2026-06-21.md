@@ -170,8 +170,10 @@ For the current requirement-by-requirement open-item ledger, see
   including central enum adjacent/internal/repr raw forms. JSON now uses a
   budgeted serde visitor before `serde_json::Value` shape projection. TOML now
   uses a budgeted serde visitor before public `toml::Value` shape projection,
-  while strict pre-`DeTable` parser allocation remains open. Remaining
-  YAML/TOML work includes parser-integrated source-level budget gates and
+  while strict pre-`DeTable` parser allocation remains open. YAML now uses a
+  low-level event parser budget gate before public `Yaml` tree construction,
+  with parser-internal scalar event allocation noted as a residual caveat.
+  Remaining TOML work includes parser-integrated source-level budget gates and
   deeper enum payload byte-policy coverage.
 - CSV, Arrow IPC, Parquet, and Avro now cover strict shape-guided rows or datum
   streams, including the scalar numeric edge matrix and Avro payload enum

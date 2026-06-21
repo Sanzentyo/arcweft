@@ -130,9 +130,11 @@ For a concise explanation of the concrete unfinished items, see
   public `toml::Value` shape projection, but strict pre-`DeTable`
   parser-internal allocation remains unproven. CSV now consumes row/string/byte
   budget during reader iteration, but strict pre-`StringRecord` field
-  allocation remains unproven. YAML, Arrow, Parquet, and Avro still materialize
-  format-native values before final `DecodeLimits::validate` or equivalent
-  shape validation.
+  allocation remains unproven. YAML now uses an event parser budget gate before
+  constructing the public `Yaml` loader tree, though scalar event strings are
+  still parser-allocated before the receiver observes them. Arrow, Parquet, and
+  Avro still materialize format-native values before final
+  `DecodeLimits::validate` or equivalent shape validation.
 - Why this matters: hostile inputs can allocate large intermediate documents
   before Arcweft limits run.
 - Completion evidence needed: parser-integrated visitors/readers or equivalent

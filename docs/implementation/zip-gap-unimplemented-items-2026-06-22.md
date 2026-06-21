@@ -26,7 +26,7 @@ parse-time budget cut documented below.
 | Area | Item | Status | Missing thing that blocks completion |
 | --- | --- | --- | --- |
 | Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外での remote REPL / data codec focused gates と workspace gates の記録 |
-| Data | ZG-D-001 parse-time budgets outside Arcweft Binary | Open implementation | TOML/YAML/CSV/Arrow/Parquet/Avro が format-native value を作る前に Arcweft decode budget で止める reader/visitor 実装 |
+| Data | ZG-D-001 parse-time budgets outside Arcweft Binary | Open implementation | TOML/CSV/Arrow/Parquet/Avro が format-native value を作る前に Arcweft decode budget で止める reader/visitor 実装 |
 
 ## ZG-A-004: Linux/macOS Validation
 
@@ -70,7 +70,7 @@ Existing implementation:
 - `arcweft-data::DecodeBudget` exists.
 - Arcweft Binary decoding uses parse-time input/node/depth/collection/string/byte
   checks before allocating the full decoded value.
-- TOML/YAML/CSV/Arrow/Parquet/Avro already apply some caps or shape validation
+- TOML/CSV/Arrow/Parquet/Avro already apply some caps or shape validation
   after parse, and several codecs check `max_input_len` before invoking their
   parser.
 - TOML now consumes `DecodeBudget` through serde deserialization before
@@ -85,8 +85,6 @@ Existing implementation:
 
 具体的に未実装な動作:
 
-- YAML は format-native document/value を作った後に Arcweft raw shape validation
-  へ進むため、深い nesting や巨大 node count を parse 中に止めない。
 - TOML は public `toml::Value` 生成前に budgeted visitor を通るが、crate 内部
   parser の `DeTable` 生成より前の厳密な source-level budget enforcement はない。
 - CSV は reader iteration 中に row count、record field count、string length、
@@ -158,6 +156,11 @@ some of them leave related items open:
   before public `toml::Value` shape projection. Focused tests cover input
   length, string length, array length, and node budget exhaustion. Strict
   pre-`DeTable` parser-internal allocation remains tracked under ZG-D-001.
+- YAML decoding now runs a low-level `yaml-rust2` event parser budget gate
+  before constructing the public `Yaml` loader tree. Focused tests cover input
+  length, scalar string length, sequence length, and node budget exhaustion.
+  The event parser still allocates scalar event strings before the receiver
+  sees them, but unbounded `Yaml` document tree construction is budget-gated.
 - Raw shape conversion plus JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow,
   Parquet, and Avro reject non-finite floats, float-to-integer recovery, and
   signed/unsigned bounds violations through focused numeric edge tests.
