@@ -202,6 +202,110 @@ fn checks_input_limit_before_parse(codec: &impl Codec) {
 }
 
 #[test]
+fn arrow_ipc_codec_consumes_row_budget_during_decode() {
+    consumes_row_budget_during_decode(&ArrowIpcCodec);
+}
+
+#[test]
+fn parquet_codec_consumes_row_budget_during_decode() {
+    consumes_row_budget_during_decode(&ParquetCodec);
+}
+
+fn consumes_row_budget_during_decode(codec: &impl Codec) {
+    let encoded = codec
+        .encode_value(&sample_rows(), &row_shape(), &EncodeOptions::default())
+        .expect("encode");
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_sequence_len: 1,
+            ..DecodeLimits::default()
+        },
+    };
+    let error = codec
+        .decode_value(&encoded, &row_shape(), &options)
+        .expect_err("row budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn arrow_ipc_codec_consumes_record_field_budget_during_decode() {
+    consumes_record_field_budget_during_decode(&ArrowIpcCodec);
+}
+
+#[test]
+fn parquet_codec_consumes_record_field_budget_during_decode() {
+    consumes_record_field_budget_during_decode(&ParquetCodec);
+}
+
+fn consumes_record_field_budget_during_decode(codec: &impl Codec) {
+    let encoded = codec
+        .encode_value(&sample_rows(), &row_shape(), &EncodeOptions::default())
+        .expect("encode");
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_map_len: 2,
+            ..DecodeLimits::default()
+        },
+    };
+    let error = codec
+        .decode_value(&encoded, &row_shape(), &options)
+        .expect_err("record field budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn arrow_ipc_codec_consumes_string_budget_before_string_copy() {
+    consumes_string_budget_before_string_copy(&ArrowIpcCodec);
+}
+
+#[test]
+fn parquet_codec_consumes_string_budget_before_string_copy() {
+    consumes_string_budget_before_string_copy(&ParquetCodec);
+}
+
+fn consumes_string_budget_before_string_copy(codec: &impl Codec) {
+    let encoded = codec
+        .encode_value(&sample_rows(), &row_shape(), &EncodeOptions::default())
+        .expect("encode");
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_string_len: 3,
+            ..DecodeLimits::default()
+        },
+    };
+    let error = codec
+        .decode_value(&encoded, &row_shape(), &options)
+        .expect_err("string budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn arrow_ipc_codec_consumes_bytes_budget_before_bytes_copy() {
+    consumes_bytes_budget_before_bytes_copy(&ArrowIpcCodec);
+}
+
+#[test]
+fn parquet_codec_consumes_bytes_budget_before_bytes_copy() {
+    consumes_bytes_budget_before_bytes_copy(&ParquetCodec);
+}
+
+fn consumes_bytes_budget_before_bytes_copy(codec: &impl Codec) {
+    let encoded = codec
+        .encode_value(&sample_rows(), &row_shape(), &EncodeOptions::default())
+        .expect("encode");
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_bytes_len: 2,
+            ..DecodeLimits::default()
+        },
+    };
+    let error = codec
+        .decode_value(&encoded, &row_shape(), &options)
+        .expect_err("bytes budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
 fn arrow_ipc_codec_rejects_nested_or_enum_shapes_explicitly() {
     rejects_nested_or_enum_shapes_explicitly(&ArrowIpcCodec);
 }

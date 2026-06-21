@@ -5,8 +5,8 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use arcweft_data::{
-    Bytes, Codec, DataError, DataErrorKind, DecodeOptions, EncodeOptions, FieldShape, FormatId,
-    Number, RecordPolicy, Result, TypeShape, Value,
+    Bytes, Codec, DataError, DataErrorKind, DecodeBudget, DecodeOptions, EncodeOptions, FieldShape,
+    FormatId, Number, RecordPolicy, Result, TypeShape, Value,
 };
 use arrow::array::{
     Array, ArrayRef, BinaryArray, BooleanArray, Float32Array, Float64Array, Int64Array, NullArray,
@@ -57,26 +57,20 @@ impl Codec for ArrowIpcCodec {
         shape: &TypeShape,
         options: &DecodeOptions,
     ) -> Result<Value> {
-        if input.len() > options.limits.max_input_len {
-            return Err(DataError::limit(format!(
-                "input length {} exceeds {}",
-                input.len(),
-                options.limits.max_input_len
-            )));
-        }
+        let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
         let row_shape = arrow_row_shape(shape)?;
         let reader = arrow::ipc::reader::FileReader::try_new(Cursor::new(input), None)
             .map_err(arrow_error)?;
-        let rows = reader
-            .map(|batch| {
-                batch
-                    .map_err(arrow_error)
-                    .and_then(|batch| batch_to_rows(&batch, row_shape))
-            })
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
+        budget.enter_node()?;
+        let mut rows = Vec::new();
+        let mut rows_seen = 0;
+        for batch in reader {
+            let batch = batch.map_err(arrow_error)?;
+            let batch_rows = batch_to_rows(&batch, row_shape, &mut budget, rows_seen)?;
+            rows_seen += batch.num_rows();
+            rows.extend(batch_rows);
+        }
+        budget.exit_node();
         let value = Value::Seq(rows);
         options.limits.validate(&value)?;
         Ok(value)
@@ -117,28 +111,29 @@ impl Codec for ParquetCodec {
         shape: &TypeShape,
         options: &DecodeOptions,
     ) -> Result<Value> {
-        if input.len() > options.limits.max_input_len {
-            return Err(DataError::limit(format!(
-                "input length {} exceeds {}",
-                input.len(),
-                options.limits.max_input_len
-            )));
-        }
+        let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
         let row_shape = arrow_row_shape(shape)?;
         let bytes = ByteBuffer::copy_from_slice(input);
         let builder = parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(bytes)
             .map_err(arrow_error)?;
-        let reader = builder.build().map_err(arrow_error)?;
-        let rows = reader
-            .map(|batch| {
-                batch
-                    .map_err(arrow_error)
-                    .and_then(|batch| batch_to_rows(&batch, row_shape))
-            })
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
+        reject_parquet_row_count(
+            builder.metadata().file_metadata().num_rows(),
+            &options.limits,
+        )?;
+        let reader = builder
+            .with_batch_size(parquet_decode_batch_size(options.limits.max_sequence_len))
+            .build()
+            .map_err(arrow_error)?;
+        budget.enter_node()?;
+        let mut rows = Vec::new();
+        let mut rows_seen = 0;
+        for batch in reader {
+            let batch = batch.map_err(arrow_error)?;
+            let batch_rows = batch_to_rows(&batch, row_shape, &mut budget, rows_seen)?;
+            rows_seen += batch.num_rows();
+            rows.extend(batch_rows);
+        }
+        budget.exit_node();
         let value = Value::Seq(rows);
         options.limits.validate(&value)?;
         Ok(value)
@@ -547,24 +542,34 @@ fn bytes_cell(
     .map_err(|error| error.at_field(field.wire_name.clone()).at_index(row_index))
 }
 
-fn batch_to_rows(batch: &RecordBatch, row_shape: ArrowRowShape<'_>) -> Result<Vec<Value>> {
+fn batch_to_rows(
+    batch: &RecordBatch,
+    row_shape: ArrowRowShape<'_>,
+    budget: &mut DecodeBudget<'_>,
+    row_offset: usize,
+) -> Result<Vec<Value>> {
     reject_unknown_columns(batch, row_shape)?;
     (0..batch.num_rows())
         .map(|row| {
-            row_shape
-                .fields
-                .iter()
-                .filter(|field| !field.skip)
-                .map(|field| {
-                    let col = batch
-                        .schema()
-                        .index_of(&field.wire_name)
-                        .map_err(arrow_error)?;
-                    column_value(batch.column(col).as_ref(), field, row)
-                        .map(|value| (field.wire_name.clone(), value))
-                })
-                .collect::<Result<BTreeMap<_, _>>>()
-                .map(Value::Record)
+            budget.sequence_item(row_offset + row + 1)?;
+            with_budget_node(budget, |budget| {
+                let field_count = row_shape.fields.iter().filter(|field| !field.skip).count();
+                budget.map_len(field_count)?;
+                row_shape
+                    .fields
+                    .iter()
+                    .filter(|field| !field.skip)
+                    .map(|field| {
+                        let col = batch
+                            .schema()
+                            .index_of(&field.wire_name)
+                            .map_err(arrow_error)?;
+                        column_value(batch.column(col).as_ref(), field, row, budget)
+                            .map(|value| (field.wire_name.clone(), value))
+                    })
+                    .collect::<Result<BTreeMap<_, _>>>()
+                    .map(Value::Record)
+            })
         })
         .collect()
 }
@@ -594,34 +599,76 @@ fn reject_unknown_columns(batch: &RecordBatch, row_shape: ArrowRowShape<'_>) -> 
         .map_or(Ok(()), Err)
 }
 
-fn column_value(array: &dyn Array, field: &FieldShape, row: usize) -> Result<Value> {
+fn column_value(
+    array: &dyn Array,
+    field: &FieldShape,
+    row: usize,
+    budget: &mut DecodeBudget<'_>,
+) -> Result<Value> {
     let shape = field.value_shape();
-    if array.is_null(row) {
-        return if is_nullable_arrow_shape(&shape) {
-            Ok(Value::Unit)
-        } else {
-            Err(DataError::new(
-                DataErrorKind::MissingField,
-                format!("null in required Arrow column `{}`", field.wire_name),
-            )
-            .at_field(field.wire_name.clone())
-            .at_index(row))
-        };
+    with_budget_node(budget, |budget| {
+        if array.is_null(row) {
+            return if is_nullable_arrow_shape(&shape) {
+                Ok(Value::Unit)
+            } else {
+                Err(DataError::new(
+                    DataErrorKind::MissingField,
+                    format!("null in required Arrow column `{}`", field.wire_name),
+                )
+                .at_field(field.wire_name.clone())
+                .at_index(row))
+            };
+        }
+        let data_type = arrow_data_type(&shape)?;
+        match data_type {
+            DataType::Null => Ok(Value::Unit),
+            DataType::Boolean => decode_bool_column(array, row),
+            DataType::Int64 => decode_i64_column(array, row, &shape),
+            DataType::UInt64 => decode_u64_column(array, row, &shape),
+            DataType::Float32 => decode_f32_column(array, row),
+            DataType::Float64 => decode_f64_column(array, row),
+            DataType::Binary => decode_binary_column(array, row, budget),
+            DataType::Utf8 => decode_utf8_column(array, row, &shape, budget),
+            other => Err(DataError::unsupported(format!(
+                "Arrow type {other:?} is not mapped yet"
+            ))),
+        }
+    })
+}
+
+fn with_budget_node<T>(
+    budget: &mut DecodeBudget<'_>,
+    f: impl FnOnce(&mut DecodeBudget<'_>) -> Result<T>,
+) -> Result<T> {
+    budget.enter_node()?;
+    let result = f(budget);
+    budget.exit_node();
+    result
+}
+
+fn reject_parquet_row_count(row_count: i64, limits: &arcweft_data::DecodeLimits) -> Result<()> {
+    let row_count = usize::try_from(row_count).map_err(|_| {
+        DataError::new(
+            DataErrorKind::InvalidEncoding,
+            format!("Parquet row count {row_count} is negative or too large"),
+        )
+    })?;
+    if row_count > limits.max_sequence_len {
+        Err(DataError::limit(format!(
+            "sequence length {row_count} exceeds {}",
+            limits.max_sequence_len
+        )))
+    } else if row_count > limits.max_collection_items {
+        Err(DataError::limit(format!(
+            "collection item budget exhausted by length {row_count}"
+        )))
+    } else {
+        Ok(())
     }
-    let data_type = arrow_data_type(&shape)?;
-    match data_type {
-        DataType::Null => Ok(Value::Unit),
-        DataType::Boolean => decode_bool_column(array, row),
-        DataType::Int64 => decode_i64_column(array, row, &shape),
-        DataType::UInt64 => decode_u64_column(array, row, &shape),
-        DataType::Float32 => decode_f32_column(array, row),
-        DataType::Float64 => decode_f64_column(array, row),
-        DataType::Binary => decode_binary_column(array, row),
-        DataType::Utf8 => decode_utf8_column(array, row, &shape),
-        other => Err(DataError::unsupported(format!(
-            "Arrow type {other:?} is not mapped yet"
-        ))),
-    }
+}
+
+fn parquet_decode_batch_size(max_sequence_len: usize) -> usize {
+    max_sequence_len.clamp(1, 8192)
 }
 
 fn decode_bool_column(array: &dyn Array, row: usize) -> Result<Value> {
@@ -695,27 +742,31 @@ fn decode_f64_column(array: &dyn Array, row: usize) -> Result<Value> {
     }
 }
 
-fn decode_binary_column(array: &dyn Array, row: usize) -> Result<Value> {
-    Ok(Value::Bytes(Bytes::new(
-        array
-            .as_any()
-            .downcast_ref::<BinaryArray>()
-            .ok_or_else(|| type_error(&DataType::Binary))?
-            .value(row)
-            .to_vec(),
-    )))
+fn decode_binary_column(array: &dyn Array, row: usize, budget: &DecodeBudget<'_>) -> Result<Value> {
+    let value = array
+        .as_any()
+        .downcast_ref::<BinaryArray>()
+        .ok_or_else(|| type_error(&DataType::Binary))?
+        .value(row);
+    budget.bytes_len(value.len())?;
+    Ok(Value::Bytes(Bytes::new(value.to_vec())))
 }
 
-fn decode_utf8_column(array: &dyn Array, row: usize, shape: &TypeShape) -> Result<Value> {
+fn decode_utf8_column(
+    array: &dyn Array,
+    row: usize,
+    shape: &TypeShape,
+    budget: &DecodeBudget<'_>,
+) -> Result<Value> {
     let value = array
         .as_any()
         .downcast_ref::<StringArray>()
         .ok_or_else(|| type_error(&DataType::Utf8))?
-        .value(row)
-        .to_owned();
+        .value(row);
+    budget.string_len(value.len())?;
     match option_inner(shape) {
-        TypeShape::String => Ok(Value::String(value)),
-        TypeShape::Char => decode_char(&value),
+        TypeShape::String => Ok(Value::String(value.to_owned())),
+        TypeShape::Char => decode_char(value),
         _ => unreachable!("utf8 data type uses string-compatible shape"),
     }
 }

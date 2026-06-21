@@ -7,7 +7,8 @@ It is the readable companion to
 strict requirement ledger.
 
 Implementation baseline used for this inventory:
-`bc26feb3 Gate YAML loader budgets`.
+`a603ee0e Document concrete ZIP gap open items` plus the Arrow/Parquet batch
+budget cut documented below.
 
 ## Status Model
 
@@ -28,8 +29,8 @@ Implementation baseline used for this inventory:
 | Data | ZG-D-001-TOML strict pre-`DeTable` budget | Partial implementation | public `toml::Value` projection 前の budget はあるが、`toml::Deserializer::parse` 内部 `DeTable` 生成より前の source-level cap がない |
 | Data | ZG-D-001-CSV strict pre-`StringRecord` budget | Partial implementation | reader iteration 中の budget 消費はあるが、`csv` crate が `StringRecord` を materialize する前の per-field/string cap がない |
 | Data | ZG-D-001-YAML strict pre-scalar-event allocation | Partial implementation | public `Yaml` loader tree 前の event budget gate はあるが、event receiver が見る前に scalar `String` が parser 内部で確保される |
-| Data | ZG-D-001-Arrow IPC reader materialization budget | Open implementation | `FileReader` が `RecordBatch` / column buffers を materialize する前の row/column/string/bytes budget 連携がない |
-| Data | ZG-D-001-Parquet reader materialization budget | Open implementation | `ParquetRecordBatchReader` が row group / batch / column buffers を materialize する前の budget 連携がない |
+| Data | ZG-D-001-Arrow IPC reader materialization budget | Partial implementation | `RecordBatch` から Arcweft `Value` を作る前の row/field/string/bytes budget はあるが、`FileReader` 内部の column buffer materialization 前 cap はない |
+| Data | ZG-D-001-Parquet reader materialization budget | Partial implementation | metadata row count と batch conversion budget はあるが、row group/page decode が column buffers を materialize する前の string/binary cap はない |
 | Data | ZG-D-001-Avro datum materialization budget | Open implementation | `apache_avro::Reader` が `AvroValue` datum / arrays / maps / strings / bytes を materialize する前の budget visitor/reader policy がない |
 
 ## ZG-A-004: Linux/macOS Validation
@@ -88,6 +89,11 @@ Existing implementation:
   `rmpv::Value`, `ciborium::Value`, or Arcweft `Value` intermediates.
 - YAML now runs a low-level `yaml-rust2` event parser budget gate before the
   public `Yaml` loader tree is built.
+- Arrow IPC and Parquet now create `DecodeBudget` at decode entry, consume row
+  sequence budget, record field map budget, decoded value node budget, and
+  string/bytes limits before copying Arrow scalar buffers into Arcweft `Value`.
+  Parquet also rejects total row count from metadata before building the record
+  batch reader and caps reader batch size by the sequence limit.
 
 具体的に未実装または部分実装に残っている動作:
 
@@ -117,16 +123,19 @@ Existing implementation:
 - **Arrow IPC reader materialization budget**:
   Arrow IPC は `max_input_len` と `Seq<Record>` schema validation はあるが、
   `arrow::ipc::reader::FileReader` が `RecordBatch` と column buffers を返した
-  後に row conversion / shape validation を行う。未実装なのは、batch row
-  count、column count、string/binary buffer length、node count を reader
-  materialization 前または batch boundary で `DecodeBudget` に連携し、budget
-  超過を Arcweft structured error として返す経路である。
+  後に batch boundary budget を行う。row sequence、record map、value node、
+  scalar string/bytes length は Arcweft `Value` allocation 前に structured
+  error で止まる。未実装なのは、`FileReader` 内部が column buffers を
+  materialize する前に同じ string/binary/row cap を強制する lower-level reader
+  または crate-supported equivalent である。
 - **Parquet reader materialization budget**:
-  Parquet も `max_input_len` と scalar row schema validation はあるが、
-  `ParquetRecordBatchReaderBuilder` / reader が row group や batch buffer を
-  materialize する前の Arcweft budget gate はない。必要なのは metadata 由来の
-  row/column upper bound check、batch size policy、string/binary buffer budget、
-  そして adversarial Parquet fixtures である。
+  Parquet も `max_input_len` と scalar row schema validation に加え、metadata
+  の total row count を reader build 前に確認し、reader batch size を sequence
+  limit に合わせ、`RecordBatch` から Arcweft `Value` を作る前に row/map/node/
+  string/bytes budget を消費する。未実装なのは、row group/page decode が
+  string/binary column buffers を materialize する前の budget gate と、metadata
+  だけでは分からない per-cell payload size を reader 内部 allocation 前に止める
+  経路である。
 - **Avro datum materialization budget**:
   Avro は `max_input_len`、schema validation、`AvroValue` から Arcweft `Value`
   への変換時 budget 消費を持つ。しかし `apache_avro::Reader` が datum stream
@@ -207,7 +216,12 @@ some of them leave related items open:
   signed/unsigned bounds violations through focused numeric edge tests.
 - Arrow IPC and Parquet require `Seq<Record>` shapes, derive scalar schemas from
   `FieldShape`, reject malformed rows and unsupported nested/enum shapes, and
-  carry the same numeric edge matrix for supported scalar rows.
+  carry the same numeric edge matrix for supported scalar rows. They now also
+  consume decode budget at batch conversion time for rows, record fields, value
+  nodes, strings, and bytes before copying Arrow scalar buffers into Arcweft
+  `Value`; Parquet rejects metadata row-count overflow before building the
+  record batch reader. Strict pre-`RecordBatch` / row-group page buffer
+  materialization remains tracked under ZG-D-001.
 - Avro validates supplied schemas against `TypeShape`, maps scalar, record,
   option, array, map, native unit enum, and payload enum values
   bidirectionally, enforces top-level scalar versus datum-stream policy, and

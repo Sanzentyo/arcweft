@@ -132,20 +132,24 @@ For a concise explanation of the concrete unfinished items, see
   budget during reader iteration, but strict pre-`StringRecord` field
   allocation remains unproven. YAML now uses an event parser budget gate before
   constructing the public `Yaml` loader tree, though scalar event strings are
-  still parser-allocated before the receiver observes them. Arrow, Parquet, and
-  Avro still materialize format-native values before final
-  `DecodeLimits::validate` or equivalent shape validation.
+  still parser-allocated before the receiver observes them. Arrow IPC and
+  Parquet now consume decode budget at batch conversion time for rows, record
+  field counts, value nodes, strings, and bytes before copying Arrow scalar
+  buffers into Arcweft `Value`; Parquet also rejects metadata row-count overflow
+  before building the record batch reader. Avro still materializes
+  format-native values before final `DecodeLimits::validate` or equivalent
+  shape validation.
 - Concrete unfinished slices:
   TOML needs a source/tokenizer-level budget before `toml` builds `DeTable`.
   CSV needs a field/string cap before `csv::StringRecord` materialization.
   YAML needs a scanner-level scalar cap before scalar event `String`
   allocation, if the ZIP requirement is interpreted as strict pre-allocation.
-  Arrow IPC needs row/column/string/binary budget checks before or at
-  `RecordBatch` materialization boundaries. Parquet needs metadata/batch/buffer
-  budget checks before row group or batch materialization can allocate beyond
-  Arcweft limits. Avro needs a datum visitor/reader budget before arrays, maps,
-  records, strings, bytes, and payload enum branches become `AvroValue`
-  intermediates.
+  Arrow IPC still needs row/column/string/binary budget checks before
+  `FileReader` materializes `RecordBatch` column buffers. Parquet still needs
+  page/row-group string and binary budget checks before column buffers are
+  materialized by the record batch reader. Avro needs a datum visitor/reader
+  budget before arrays, maps, records, strings, bytes, and payload enum
+  branches become `AvroValue` intermediates.
 - Why this matters: hostile inputs can allocate large intermediate documents
   before Arcweft limits run.
 - Completion evidence needed: parser-integrated visitors/readers or equivalent
@@ -198,10 +202,12 @@ For a concise explanation of the concrete unfinished items, see
   `cargo clippy -p arcweft-codec-arrow --all-targets --all-features -- -D warnings`
   passed on Windows. The focused tests cover Arrow IPC and Parquet roundtrip,
   unknown/missing fields, option nulls, unsupported nested/enum shapes, decode
-  input caps, and numeric edge policy.
+  input caps, row/record-field/string/bytes budget consumption during decode,
+  and numeric edge policy.
 - Remaining related work: this resolves the Arrow IPC / Parquet shape-guided
-  scalar-row slice. Parser-integrated budget enforcement remains tracked under
-  ZG-D-001.
+  scalar-row slice and adds batch-conversion budget enforcement. Strict
+  pre-`RecordBatch` / row-group page buffer budget enforcement remains tracked
+  under ZG-D-001.
 
 ### ZG-D-009: numeric edge-case policy is complete across current codecs
 

@@ -162,9 +162,12 @@ For the current requirement-by-requirement open-item ledger, see
   low-level readers before building format-native values. JSON now consumes
   budget through serde parsing before `serde_json::Value` projection. TOML,
   CSV, and YAML have partial budget gates but still have strict pre-allocation
-  caveats documented in `zip-gap-unimplemented-items-2026-06-22.md`. Arrow IPC,
-  Parquet, and Avro still need reader/materialization-integrated budgets rather
-  than post-materialization-only validation.
+  caveats documented in `zip-gap-unimplemented-items-2026-06-22.md`. Arrow IPC
+  and Parquet now consume decode budget at batch conversion time for rows,
+  record fields, value nodes, strings, and bytes, with Parquet row-count
+  metadata checked before reader build. Arrow IPC, Parquet, and Avro still need
+  strict reader-internal pre-materialization budgets for format-owned buffers
+  where documented.
 - Save decoding now enforces the envelope identity/version gates from the ZIP
   guide and supports explicit multi-step migration chains. Envelope v1's
   checksum scope is documented as payload-only; any future header-authenticated
@@ -180,7 +183,9 @@ For the current requirement-by-requirement open-item ledger, see
   deeper enum payload byte-policy coverage.
 - CSV, Arrow IPC, Parquet, and Avro now cover strict shape-guided rows or datum
   streams, including the scalar numeric edge matrix and Avro payload enum
-  fidelity. CSV also consumes row/string/byte budgets during reader iteration.
+  fidelity. CSV consumes row/string/byte budgets during reader iteration. Arrow
+  IPC and Parquet consume row/record/string/bytes budgets before copying Arrow
+  scalar buffers into Arcweft values, and Parquet preflights metadata row count.
   Remaining tabular/data-format work is strict pre-materialization budget
   enforcement for parser-owned row/column/datum allocation.
 - HTTP negotiation now covers the T-112 `Accept` q/wildcard/q=0/content
