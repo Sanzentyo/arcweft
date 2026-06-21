@@ -47,6 +47,12 @@ For the current requirement-by-requirement open-item ledger, see
   exact expected schema id checks, future-version rejection, required migration
   for older versions, migration schema/version checks, and post-migration shape
   validation.
+- Added `arcweft-save` multi-step migration chains. `SaveMigrationChain`
+  validates schema id consistency, strictly advancing source/target versions,
+  duplicate source-version rejection, and current-version bounds before decode
+  uses the chain. Save envelope v1 keeps its checksum contract payload-only;
+  schema id, codec id, and schema version remain explicit header fields checked
+  by the decoder rather than folded into the payload checksum contract.
 - Moved `JsonCodec` encode/decode onto the shape-driven raw transcoder path for
   primitive values, records, string-key maps, options, byte fields, and the
   current external enum raw representation. JSON decoding now checks the input
@@ -122,9 +128,9 @@ For the current requirement-by-requirement open-item ledger, see
   validation; MsgPack/CBOR now at least avoid the previous JSON bridge and
   preserve native bytes/integer categories.
 - Save decoding now enforces the envelope identity/version gates from the ZIP
-  guide. Remaining save work is to model explicit multi-step migration chains
-  and decide whether the checksum contract should cover canonical header
-  metadata in addition to the payload for a future envelope version.
+  guide and supports explicit multi-step migration chains. Envelope v1's
+  checksum scope is documented as payload-only; any future header-authenticated
+  checksum would require a versioned envelope contract instead of changing v1.
 - JSON, TOML, and YAML shape decoding now cover the first concrete T-105 cuts,
   including central enum adjacent/internal/repr raw forms. Remaining
   JSON/TOML/YAML work includes parser-integrated budget visitors and deeper

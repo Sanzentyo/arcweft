@@ -141,6 +141,144 @@ pub trait SaveMigration {
     fn migrate(&self, from_version: u32, value: Value) -> Result<Value>;
 }
 
+pub trait SaveMigrationStep {
+    fn schema_id(&self) -> &SaveSchemaId;
+
+    fn source_version(&self) -> u32;
+
+    fn target_version(&self) -> u32;
+
+    fn migrate(&self, value: Value) -> Result<Value>;
+}
+
+pub struct SaveMigrationChain<'a> {
+    schema_id: SaveSchemaId,
+    current_version: u32,
+    steps: Vec<&'a dyn SaveMigrationStep>,
+}
+
+impl<'a> SaveMigrationChain<'a> {
+    pub fn new(
+        schema_id: SaveSchemaId,
+        current_version: u32,
+        steps: impl IntoIterator<Item = &'a dyn SaveMigrationStep>,
+    ) -> Result<Self> {
+        let steps = steps.into_iter().collect::<Vec<_>>();
+        validate_migration_steps(&schema_id, current_version, &steps)?;
+        Ok(Self {
+            schema_id,
+            current_version,
+            steps,
+        })
+    }
+
+    fn step_from(&self, version: u32) -> Result<&dyn SaveMigrationStep> {
+        self.steps
+            .iter()
+            .copied()
+            .find(|step| step.source_version() == version)
+            .ok_or_else(|| {
+                DataError::new(
+                    DataErrorKind::InvalidEncoding,
+                    format!(
+                        "save migration chain has no step from version {version} to {}",
+                        self.current_version
+                    ),
+                )
+            })
+    }
+}
+
+impl SaveMigration for SaveMigrationChain<'_> {
+    fn schema_id(&self) -> &SaveSchemaId {
+        &self.schema_id
+    }
+
+    fn current_version(&self) -> u32 {
+        self.current_version
+    }
+
+    fn migrate(&self, from_version: u32, mut value: Value) -> Result<Value> {
+        let mut version = from_version;
+        while version < self.current_version {
+            let step = self.step_from(version)?;
+            value = step.migrate(value).map_err(|error| {
+                error.at_field(format!(
+                    "migration_{}_to_{}",
+                    step.source_version(),
+                    step.target_version()
+                ))
+            })?;
+            version = step.target_version();
+        }
+        if version == self.current_version {
+            Ok(value)
+        } else {
+            Err(DataError::new(
+                DataErrorKind::InvalidEncoding,
+                format!(
+                    "save migration chain overshot version {version}; expected {}",
+                    self.current_version
+                ),
+            ))
+        }
+    }
+}
+
+fn validate_migration_steps(
+    schema_id: &SaveSchemaId,
+    current_version: u32,
+    steps: &[&dyn SaveMigrationStep],
+) -> Result<()> {
+    steps.iter().try_for_each(|step| {
+        if step.schema_id() != schema_id {
+            return Err(DataError::new(
+                DataErrorKind::InvalidEncoding,
+                format!(
+                    "save migration step schema id `{}` does not match expected `{}`",
+                    step.schema_id().as_str(),
+                    schema_id.as_str()
+                ),
+            ));
+        }
+        if step.source_version() >= step.target_version() {
+            return Err(DataError::new(
+                DataErrorKind::InvalidEncoding,
+                format!(
+                    "save migration step must advance versions: {} -> {}",
+                    step.source_version(),
+                    step.target_version()
+                ),
+            ));
+        }
+        if step.target_version() > current_version {
+            return Err(DataError::new(
+                DataErrorKind::InvalidEncoding,
+                format!(
+                    "save migration step target {} exceeds current version {}",
+                    step.target_version(),
+                    current_version
+                ),
+            ));
+        }
+        if steps
+            .iter()
+            .filter(|other| other.source_version() == step.source_version())
+            .count()
+            > 1
+        {
+            return Err(DataError::new(
+                DataErrorKind::DuplicateField,
+                format!(
+                    "duplicate save migration step from version {}",
+                    step.source_version()
+                ),
+            ));
+        }
+        Ok(())
+    })
+}
+
 pub fn encode_save(
     value: &Value,
     shape: &TypeShape,

@@ -628,8 +628,8 @@ crates/arcweft-rust-abi-macros/tests/ui/reject_reference_field.rs,130,8,6,test,t
 crates/arcweft-rust-abi-macros/tests/ui/reject_reference_return.rs,165,8,6,test,true,true,false,false
 crates/arcweft-rust-abi-macros/tests/ui/reject_self_receiver_export.rs,192,12,9,test,true,true,false,false
 crates/arcweft-save/Cargo.toml,311,14,12,text,false,false,false,false
-crates/arcweft-save/src/lib.rs,10210,302,278,production,true,false,false,false
-crates/arcweft-save/tests/strict_decode.rs,4192,164,145,test,true,true,false,false
+crates/arcweft-save/src/lib.rs,14377,440,405,production,true,false,false,false
+crates/arcweft-save/tests/strict_decode.rs,8475,339,303,test,true,true,false,false
 crates/arcweft-serde-bridge/Cargo.toml,463,18,16,text,false,false,false,false
 crates/arcweft-serde-bridge/src/lib.rs,1282,31,20,production,true,false,false,false
 crates/arcweft-source/Cargo.toml,213,13,11,text,false,false,false,false
@@ -881,8 +881,8 @@ docs/implementation/visual-sample-review-issues/2026-06-17/README.md,50907,60,57
 docs/implementation/visual-sample-review-issues/2026-06-18/README.md,7294,24,20,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-hotspot-capture-metadata.json,2420,113,113,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-param-choice-presentation-tree.json,18532,626,626,text,false,false,false,false
-docs/implementation/zip-gap-audit-2026-06-21.md,13286,200,191,text,false,false,false,false
-docs/implementation/zip-gap-open-items-2026-06-21.md,12715,253,215,text,false,false,false,false
+docs/implementation/zip-gap-audit-2026-06-21.md,13757,206,197,text,false,false,false,false
+docs/implementation/zip-gap-open-items-2026-06-21.md,13366,263,225,text,false,false,false,false
 docs/reviews/pro_review1.md,22523,670,495,text,false,false,false,false
 docs/reviews/pro_review10.md,24274,938,713,text,false,false,false,false
 docs/reviews/pro_review11.md,62235,3442,2511,text,false,false,false,false

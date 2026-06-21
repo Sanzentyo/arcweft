@@ -146,20 +146,6 @@ validation evidence prove the ZIP acceptance criteria.
   crossings, out-of-range values, float-to-integer rejection, and
   NaN/infinity encode/decode behavior in every relevant codec.
 
-### ZG-D-010: save migration is hardened but not fully chained
-
-- ZIP tasks: T-110, D-21.
-- Current evidence:
-  `arcweft-save` has strict envelope identity/version/limit/trailing checks
-  and migration hooks. The remaining audit still records explicit multi-step
-  migration chains and future checksum-header coverage decisions as open.
-- Why this matters: a single migration hook does not prove behavior for
-  multi-version save evolution, and checksum scope must be explicit before a
-  future envelope version depends on it.
-- Completion evidence needed: multi-step migration chain model/tests,
-  migration schema/version checks across more than one hop, and an ADR or
-  versioned contract for checksum metadata scope.
-
 ## Resolved Data Items
 
 ### ZG-D-003: CSV is schema-driven for scalar row data
@@ -235,7 +221,31 @@ validation evidence prove the ZIP acceptance criteria.
   `cargo clippy --workspace --all-targets --all-features` passed on Windows.
 - Remaining related work: config merge provenance is covered. Broader
   repository completion still depends on non-CSV tabular codecs, derive gaps,
-  parse-time budgets, save migration chaining, and Agent REPL/MCP hardening.
+  parse-time budgets, and Agent REPL/MCP hardening.
+
+### ZG-D-010: save migration supports explicit multi-step chains
+
+- ZIP tasks: T-110, D-21.
+- Current evidence:
+  `crates/arcweft-save/src/lib.rs` now exposes `SaveMigrationStep` and
+  `SaveMigrationChain`. Chain construction validates schema id consistency,
+  strictly advancing source/target versions, duplicate source-version rejection,
+  and target bounds against the current schema version. `decode_save` can run a
+  chain through the existing `SaveMigration` plan boundary and still validates
+  the migrated value against the current shape.
+- Validation evidence:
+  `cargo check -p arcweft-save --all-targets --all-features`,
+  `cargo test -p arcweft-save --test strict_decode`, and
+  `cargo clippy -p arcweft-save --all-targets --all-features -- -D warnings`,
+  `cargo test -p arcweft-save --all-features`, and
+  `cargo clippy --workspace --all-targets --all-features` passed on Windows.
+- Checksum decision: save envelope v1 checksum remains payload-only. Schema id,
+  codec id, schema version, length caps, and trailing data are explicit header
+  checks. A future header-authenticated checksum would require a new versioned
+  envelope contract rather than changing v1 semantics.
+- Remaining related work: save envelope migration chaining is covered. Broader
+  repository completion still depends on non-CSV tabular codecs, derive gaps,
+  parse-time budgets, and Agent REPL/MCP hardening.
 
 ## Verification Debt That Blocks Goal Completion
 
