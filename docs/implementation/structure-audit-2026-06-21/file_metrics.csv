@@ -804,7 +804,7 @@ docs/examples/touch-virtual-controller.md,1434,64,53,text,false,false,false,fals
 docs/examples/usb-and-virtual-controller.md,3566,147,120,text,false,false,false,false
 docs/examples/usb-devices-and-virtual-controller.md,3614,157,119,text,false,false,false,false
 docs/examples/virtual-controller.md,1500,65,51,text,false,false,false,false
-docs/implementation/README.md,125930,1798,1776,text,false,false,false,false
+docs/implementation/README.md,126272,1803,1781,text,false,false,false,false
 docs/implementation/agent-script-final-completion-audit.md,6039,73,61,text,false,false,false,false
 docs/implementation/agent-script-implementation.md,110903,507,495,text,false,false,false,false
 docs/implementation/data-codec-dependency-selection.md,2099,24,20,text,false,false,false,false
@@ -882,7 +882,8 @@ docs/implementation/visual-sample-review-issues/2026-06-18/README.md,7294,24,20,
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-hotspot-capture-metadata.json,2420,113,113,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-param-choice-presentation-tree.json,18532,626,626,text,false,false,false,false
 docs/implementation/zip-gap-audit-2026-06-21.md,13757,206,197,text,false,false,false,false
-docs/implementation/zip-gap-open-items-2026-06-21.md,13366,263,225,text,false,false,false,false
+docs/implementation/zip-gap-open-items-2026-06-21.md,13476,266,227,text,false,false,false,false
+docs/implementation/zip-gap-unimplemented-items-2026-06-22.md,9775,235,168,text,false,false,false,false
 docs/reviews/pro_review1.md,22523,670,495,text,false,false,false,false
 docs/reviews/pro_review10.md,24274,938,713,text,false,false,false,false
 docs/reviews/pro_review11.md,62235,3442,2511,text,false,false,false,false

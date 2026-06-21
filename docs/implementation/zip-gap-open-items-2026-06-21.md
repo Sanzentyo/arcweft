@@ -6,6 +6,9 @@ implementation cuts. It is intentionally stricter than
 `zip-gap-audit-2026-06-21.md`: items are left open unless current source and
 validation evidence prove the ZIP acceptance criteria.
 
+For a concise explanation of the concrete unfinished items, see
+`zip-gap-unimplemented-items-2026-06-22.md`.
+
 ## Status Terms
 
 - **Open implementation** means the current source contradicts the ZIP target
