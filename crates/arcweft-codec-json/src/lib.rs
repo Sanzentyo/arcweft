@@ -4,10 +4,12 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use arcweft_data::{
-    Bytes, BytesFormat, Codec, DataError, DataErrorKind, DecodeOptions, EncodeOptions, FieldShape,
-    FormatId, RawValue, Result, TypeShape, Value, decode_with_shape, encode_with_shape,
+    Bytes, BytesFormat, Codec, DataError, DataErrorKind, DecodeBudget, DecodeOptions,
+    EncodeOptions, FieldShape, FormatId, RawValue, Result, TypeShape, Value, decode_with_shape,
+    encode_with_shape,
 };
 use base64::prelude::{BASE64_STANDARD, Engine as _};
+use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde_json::{Map, Number as JsonNumber, Value as JsonValue};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -49,19 +51,189 @@ impl Codec for JsonCodec {
         shape: &TypeShape,
         options: &DecodeOptions,
     ) -> Result<Value> {
-        if input.len() > options.limits.max_input_len {
-            return Err(DataError::limit(format!(
-                "input length {} exceeds {}",
-                input.len(),
-                options.limits.max_input_len
-            )));
+        let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
+        let mut deserializer = serde_json::Deserializer::from_slice(input);
+        let dynamic_raw = BudgetedJsonRawSeed {
+            budget: &mut budget,
         }
-        let json =
-            serde_json::from_slice::<JsonValue>(input).map_err(|error| json_error(&error))?;
+        .deserialize(&mut deserializer)
+        .map_err(|error| json_error(&error))??;
+        if !options.limits.allow_trailing_data {
+            deserializer.end().map_err(|error| json_error(&error))?;
+        }
+        let json = raw_dynamic_to_json(&dynamic_raw)?;
         let raw = json_to_raw_value(&json, shape)?;
         let value = decode_with_shape(&raw, shape)?;
         options.limits.validate(&value)?;
         Ok(value)
+    }
+}
+
+struct BudgetedJsonRawSeed<'budget, 'limits> {
+    budget: &'budget mut DecodeBudget<'limits>,
+}
+
+impl<'de> DeserializeSeed<'de> for BudgetedJsonRawSeed<'_, '_> {
+    type Value = Result<RawValue>;
+
+    fn deserialize<D>(self, deserializer: D) -> std::result::Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(BudgetedJsonRawVisitor {
+            budget: self.budget,
+        })
+    }
+}
+
+struct BudgetedJsonRawVisitor<'budget, 'limits> {
+    budget: &'budget mut DecodeBudget<'limits>,
+}
+
+impl<'de> Visitor<'de> for BudgetedJsonRawVisitor<'_, '_> {
+    type Value = Result<RawValue>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("a JSON value")
+    }
+
+    fn visit_unit<E>(self) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(self.scalar(RawValue::Null))
+    }
+
+    fn visit_bool<E>(self, value: bool) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(self.scalar(RawValue::Bool(value)))
+    }
+
+    fn visit_i64<E>(self, value: i64) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(self.scalar(RawValue::Signed(i128::from(value))))
+    }
+
+    fn visit_u64<E>(self, value: u64) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(self.scalar(RawValue::Unsigned(u128::from(value))))
+    }
+
+    fn visit_f64<E>(self, value: f64) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(self.scalar(RawValue::F64(value)))
+    }
+
+    fn visit_borrowed_str<E>(self, value: &'de str) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(self.string(value))
+    }
+
+    fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(self.string(value))
+    }
+
+    fn visit_string<E>(self, value: String) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(self.string(value.as_str()))
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> std::result::Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        if let Err(error) = self.budget.enter_node() {
+            return Ok(Err(error));
+        }
+        let mut values = Vec::new();
+        while let Some(value) = seq.next_element_seed(BudgetedJsonRawSeed {
+            budget: self.budget,
+        })? {
+            if let Err(error) = self.budget.sequence_item(values.len().saturating_add(1)) {
+                self.budget.exit_node();
+                return Ok(Err(error));
+            }
+            match value {
+                Ok(value) => values.push(value),
+                Err(error) => {
+                    self.budget.exit_node();
+                    return Ok(Err(error.at_index(values.len())));
+                }
+            }
+        }
+        self.budget.exit_node();
+        Ok(Ok(RawValue::Seq(values)))
+    }
+
+    fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        if let Err(error) = self.budget.enter_node() {
+            return Ok(Err(error));
+        }
+        let mut entries = Vec::new();
+        while let Some(key) = map.next_key_seed(BudgetedJsonRawSeed {
+            budget: self.budget,
+        })? {
+            if let Err(error) = self.budget.map_item(entries.len().saturating_add(1)) {
+                self.budget.exit_node();
+                return Ok(Err(error));
+            }
+            let key = match key {
+                Ok(key) => key,
+                Err(error) => {
+                    self.budget.exit_node();
+                    return Ok(Err(error));
+                }
+            };
+            let value = map.next_value_seed(BudgetedJsonRawSeed {
+                budget: self.budget,
+            })?;
+            let value = match value {
+                Ok(value) => value,
+                Err(error) => {
+                    self.budget.exit_node();
+                    return Ok(Err(error));
+                }
+            };
+            entries.push((key, value));
+        }
+        self.budget.exit_node();
+        Ok(Ok(RawValue::Map(entries)))
+    }
+}
+
+impl BudgetedJsonRawVisitor<'_, '_> {
+    fn scalar(self, raw: RawValue) -> Result<RawValue> {
+        self.budget.enter_node()?;
+        self.budget.exit_node();
+        Ok(raw)
+    }
+
+    fn string(self, value: &str) -> Result<RawValue> {
+        self.budget.enter_node()?;
+        if let Err(error) = self.budget.string_len(value.len()) {
+            self.budget.exit_node();
+            return Err(error);
+        }
+        self.budget.exit_node();
+        Ok(RawValue::String(value.to_owned()))
     }
 }
 

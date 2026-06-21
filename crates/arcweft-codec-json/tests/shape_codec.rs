@@ -172,3 +172,56 @@ fn json_codec_enforces_numeric_edge_policy() {
         .expect_err("u128 beyond JSON number rejected");
     assert_eq!(error.kind(), &DataErrorKind::NumberOutOfRange);
 }
+
+#[test]
+fn json_decode_consumes_string_budget_during_parse() {
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_string_len: 3,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = JsonCodec
+        .decode_value(br#""hero""#, &TypeShape::String, &options)
+        .expect_err("string budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn json_decode_consumes_collection_budget_during_parse() {
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_sequence_len: 2,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = JsonCodec
+        .decode_value(
+            br"[null,null,null]",
+            &TypeShape::Seq(Box::new(TypeShape::Unit)),
+            &options,
+        )
+        .expect_err("array budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn json_decode_consumes_node_budget_during_parse() {
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_nodes: 2,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = JsonCodec
+        .decode_value(
+            br"[null,null]",
+            &TypeShape::Seq(Box::new(TypeShape::Unit)),
+            &options,
+        )
+        .expect_err("node budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}

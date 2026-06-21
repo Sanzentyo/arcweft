@@ -9,6 +9,7 @@ description = "JSON codec adapter for Arcweft data."
 [dependencies]
 arcweft-data = { path = "../arcweft-data" }
 base64.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 
 [lints]

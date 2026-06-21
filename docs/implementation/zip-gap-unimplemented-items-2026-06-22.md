@@ -26,7 +26,7 @@ parse-time budget cut documented below.
 | Area | Item | Status | Missing thing that blocks completion |
 | --- | --- | --- | --- |
 | Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外での remote REPL / data codec focused gates と workspace gates の記録 |
-| Data | ZG-D-001 parse-time budgets outside Arcweft Binary | Open implementation | JSON/TOML/YAML/CSV/Arrow/Parquet/Avro が format-native value を作る前に Arcweft decode budget で止める reader/visitor 実装 |
+| Data | ZG-D-001 parse-time budgets outside Arcweft Binary | Open implementation | TOML/YAML/CSV/Arrow/Parquet/Avro が format-native value を作る前に Arcweft decode budget で止める reader/visitor 実装 |
 
 ## ZG-A-004: Linux/macOS Validation
 
@@ -70,16 +70,19 @@ Existing implementation:
 - `arcweft-data::DecodeBudget` exists.
 - Arcweft Binary decoding uses parse-time input/node/depth/collection/string/byte
   checks before allocating the full decoded value.
-- JSON/TOML/YAML/CSV/Arrow/Parquet/Avro already apply some caps or shape
-  validation after parse, and several codecs check `max_input_len` before
-  invoking their parser.
+- TOML/YAML/CSV/Arrow/Parquet/Avro already apply some caps or shape validation
+  after parse, and several codecs check `max_input_len` before invoking their
+  parser.
+- JSON now uses a `serde_json::Deserializer` seed/visitor that consumes
+  `DecodeBudget` while parsing dynamic raw values, before any
+  `serde_json::Value` shape-projection helper is built.
 - MsgPack and CBOR now use bounded low-level readers that consume
   `arcweft-data::DecodeBudget` while parsing raw values, before building
   `rmpv::Value`, `ciborium::Value`, or Arcweft `Value` intermediates.
 
 具体的に未実装な動作:
 
-- JSON/TOML/YAML は format-native document/value を作った後に Arcweft raw shape
+- TOML/YAML は format-native document/value を作った後に Arcweft raw shape
   validation へ進むため、深い nesting や巨大 node count を parse 中に止めない。
 - CSV は reader iteration 中に row count、record field count、string length、
   decoded byte length を `DecodeBudget` へ消費するようになった。ただし、strict
@@ -143,6 +146,9 @@ some of them leave related items open:
   adversarial tests cover declared string/bytes length before payload reads,
   declared array length before item allocation, node budget exhaustion, and
   CBOR indefinite array item budget exhaustion.
+- JSON decoding now consumes `DecodeBudget` through a serde visitor before
+  `serde_json::Value` shape projection. Focused tests cover input length,
+  string length, sequence length, and node budget exhaustion.
 - Raw shape conversion plus JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow,
   Parquet, and Avro reject non-finite floats, float-to-integer recovery, and
   signed/unsigned bounds violations through focused numeric edge tests.

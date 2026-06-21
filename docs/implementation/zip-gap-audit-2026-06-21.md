@@ -167,9 +167,10 @@ For the current requirement-by-requirement open-item ledger, see
   checksum scope is documented as payload-only; any future header-authenticated
   checksum would require a versioned envelope contract instead of changing v1.
 - JSON, TOML, and YAML shape decoding now cover the first concrete T-105 cuts,
-  including central enum adjacent/internal/repr raw forms. Remaining
-  JSON/TOML/YAML work includes parser-integrated budget visitors and deeper
-  enum payload byte-policy coverage.
+  including central enum adjacent/internal/repr raw forms. JSON now uses a
+  budgeted serde visitor before `serde_json::Value` shape projection.
+  Remaining TOML/YAML work includes parser-integrated budget visitors and
+  deeper enum payload byte-policy coverage.
 - CSV, Arrow IPC, Parquet, and Avro now cover strict shape-guided rows or datum
   streams, including the scalar numeric edge matrix and Avro payload enum
   fidelity. CSV also consumes row/string/byte budgets during reader iteration.
