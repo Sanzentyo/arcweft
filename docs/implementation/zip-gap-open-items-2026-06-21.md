@@ -100,21 +100,6 @@ For a concise explanation of the concrete unfinished items, see
   bounded readers for each codec, plus adversarial input/depth/node/collection
   tests that fail before unbounded allocation.
 
-### ZG-D-004: Arrow IPC and Parquet still infer schemas from values
-
-- ZIP tasks: T-108, T-109, D-18.
-- Current evidence:
-  `crates/arcweft-codec-arrow/src/lib.rs` ignores `shape`, builds Arrow fields
-  from the union of observed record keys, infers column types from the first
-  matching value, writes nulls when a row value has the wrong type, and has no
-  crate tests.
-- Why this matters: schema fidelity is not guaranteed; row data can be widened,
-  nulled, or converted based on observed values rather than the declared
-  Arcweft shape.
-- Completion evidence needed: shape-to-Arrow schema mapping, strict row
-  conversion, decode validation back to `TypeShape`, option/null policy tests,
-  enum/record tests, and decode limit tests.
-
 ### ZG-D-005: Avro is not shape-guided enough for record/enum/option fidelity
 
 - ZIP tasks: T-109, D-19.
@@ -136,20 +121,42 @@ For a concise explanation of the concrete unfinished items, see
 - ZIP tasks: D-25.
 - Current evidence:
   central raw numeric conversion now uses checked integer bounds and rejects
-  non-finite floats. JSON, TOML, YAML, MsgPack, CBOR, and CSV have focused
-  tests for signed/unsigned crossings, out-of-range values, float-to-integer
-  rejection, and NaN/infinity encode/decode rejection where the format can
-  express the case. Arrow IPC, Parquet, and Avro remain tied to the open
-  shape-guided tabular work and do not yet have equivalent numeric matrix
+  non-finite floats. JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow IPC, and
+  Parquet have focused tests for signed/unsigned crossings, out-of-range
+  values, float-to-integer rejection, and NaN/infinity encode/decode rejection
+  where the format can express the case. Avro remains tied to the open
+  shape-guided codec work and does not yet have equivalent numeric matrix
   evidence.
 - Why this matters: lossy casts, silently nulled cells, or non-finite floats
   can produce format-specific behavior instead of a stable Arcweft data
   contract.
-- Completion evidence needed: extend the same numeric matrix to Arrow IPC,
-  Parquet, and Avro after their shape-guided schemas are implemented, then run
-  the repository-wide codec validation set.
+- Completion evidence needed: extend the same numeric matrix to Avro after its
+  shape-guided schema validation/generation is implemented, then run the
+  repository-wide codec validation set.
 
 ## Resolved Data Items
+
+### ZG-D-004: Arrow IPC and Parquet are schema-driven for scalar rows
+
+- ZIP tasks: T-108, T-109, D-18.
+- Current evidence:
+  `crates/arcweft-codec-arrow/src/lib.rs` now requires a top-level
+  `Seq<Record>` shape for both Arrow IPC and Parquet, derives fields and Arrow
+  data types from `FieldShape`, performs strict row conversion instead of
+  inferring from observed values, rejects unknown and missing required fields,
+  preserves option/null policy, validates decoded columns back through the
+  declared shape, enforces input length caps before parsing, and rejects nested
+  or enum shapes explicitly instead of stringifying or inferring them.
+- Validation evidence:
+  `cargo test -p arcweft-codec-arrow --all-features`,
+  `cargo test -p arcweft-codec-arrow --test shape_codec -- --nocapture`, and
+  `cargo clippy -p arcweft-codec-arrow --all-targets --all-features -- -D warnings`
+  passed on Windows. The focused tests cover Arrow IPC and Parquet roundtrip,
+  unknown/missing fields, option nulls, unsupported nested/enum shapes, decode
+  input caps, and numeric edge policy.
+- Remaining related work: this resolves the Arrow IPC / Parquet shape-guided
+  scalar-row slice. Parser-integrated budget enforcement remains tracked under
+  ZG-D-001, and Avro remains tracked under ZG-D-005.
 
 ### ZG-D-002: derive shape generation policy gaps are closed
 

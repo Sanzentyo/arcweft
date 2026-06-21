@@ -166,7 +166,8 @@ crates/arcweft-cli/tests/support/json.rs,427,15,13,test,true,true,false,false
 crates/arcweft-cli/tests/support/temp.rs,1271,49,44,test,true,true,false,false
 crates/arcweft-cli/tests/support/workspace.rs,662,29,25,test,true,true,false,false
 crates/arcweft-codec-arrow/Cargo.toml,374,16,14,text,false,false,false,false
-crates/arcweft-codec-arrow/src/lib.rs,11119,357,327,production,true,false,false,false
+crates/arcweft-codec-arrow/src/lib.rs,24950,767,721,production,true,false,false,false
+crates/arcweft-codec-arrow/tests/shape_codec.rs,8324,257,234,test,true,true,false,false
 crates/arcweft-codec-avro/Cargo.toml,333,15,13,text,false,false,false,false
 crates/arcweft-codec-avro/src/lib.rs,6791,181,170,production,true,false,false,false
 crates/arcweft-codec-binary/Cargo.toml,589,20,17,text,false,false,false,false
@@ -888,9 +889,9 @@ docs/implementation/visual-sample-review-issues/2026-06-17/README.md,50907,60,57
 docs/implementation/visual-sample-review-issues/2026-06-18/README.md,7294,24,20,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-hotspot-capture-metadata.json,2420,113,113,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-param-choice-presentation-tree.json,18532,626,626,text,false,false,false,false
-docs/implementation/zip-gap-audit-2026-06-21.md,15684,234,225,text,false,false,false,false
-docs/implementation/zip-gap-open-items-2026-06-21.md,14675,286,246,text,false,false,false,false
-docs/implementation/zip-gap-unimplemented-items-2026-06-22.md,8794,204,149,text,false,false,false,false
+docs/implementation/zip-gap-audit-2026-06-21.md,16314,243,234,text,false,false,false,false
+docs/implementation/zip-gap-open-items-2026-06-21.md,15220,293,253,text,false,false,false,false
+docs/implementation/zip-gap-unimplemented-items-2026-06-22.md,8033,183,134,text,false,false,false,false
 docs/reviews/pro_review1.md,22523,670,495,text,false,false,false,false
 docs/reviews/pro_review10.md,24274,938,713,text,false,false,false,false
 docs/reviews/pro_review11.md,62235,3442,2511,text,false,false,false,false

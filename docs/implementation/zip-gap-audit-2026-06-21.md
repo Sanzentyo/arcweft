@@ -101,9 +101,15 @@ For the current requirement-by-requirement open-item ledger, see
   currently shape-driven codecs. `encode_with_shape` / `decode_with_shape` now
   reject non-finite floats, TOML/YAML negative integers flow through the shared
   signed-to-unsigned bounds policy instead of early invalid-type rejection, and
-  JSON, TOML, YAML, MsgPack, CBOR, and CSV carry focused tests for
+  JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow IPC, and Parquet carry focused tests for
   signed/unsigned crossings, out-of-range values, float-to-integer rejection,
   and NaN/infinity rejection where the format can express them.
+- Made Arrow IPC and Parquet shape-driven for supported scalar row data.
+  `arcweft-codec-arrow` now requires `Seq<Record>` shapes, derives Arrow fields
+  from `FieldShape`, performs strict row conversion instead of observed-value
+  inference, rejects unknown/missing fields, preserves option/null policy,
+  validates decoded columns against the declared shape, checks input length
+  before parsing, and explicitly rejects nested or enum shapes.
 - Hardened `arcweft-http-codec` negotiation. Request decoding now accepts
   parameterized `Content-Type` values only when parameters are syntactically
   valid, rejects wildcard content types, and enforces `DecodeOptions`
@@ -152,10 +158,10 @@ For the current requirement-by-requirement open-item ledger, see
   including central enum adjacent/internal/repr raw forms. Remaining
   JSON/TOML/YAML work includes parser-integrated budget visitors and deeper
   enum payload byte-policy coverage.
-- CSV shape decoding now covers the first T-108 tabular cut for strict
-  `Seq<Record>` scalar rows, including the scalar numeric edge matrix.
-  Remaining tabular work includes Arrow IPC, Parquet, and Avro shape-guided
-  schemas plus parser/reader-integrated budget enforcement.
+- CSV, Arrow IPC, and Parquet shape decoding now cover strict `Seq<Record>`
+  scalar rows, including the scalar numeric edge matrix. Remaining tabular work
+  includes Avro shape-guided schemas plus parser/reader-integrated budget
+  enforcement.
 - HTTP negotiation now covers the T-112 `Accept` q/wildcard/q=0/content
   parameter/body cap matrix for the codec adapter boundary. Remaining data
   adapter policy work is mostly in config provenance and non-CSV tabular
@@ -211,6 +217,9 @@ cargo test -p arcweft-codec-cbor --test native_mapping
 cargo test -p arcweft-codec-csv --test shape_codec
 cargo check -p arcweft-codec-csv --all-targets --all-features
 cargo test -p arcweft-codec-csv --test shape_codec
+cargo test -p arcweft-codec-arrow --all-features
+cargo test -p arcweft-codec-arrow --test shape_codec -- --nocapture
+cargo clippy -p arcweft-codec-arrow --all-targets --all-features -- -D warnings
 cargo clippy -p arcweft-codec-csv --all-targets --all-features -- -D warnings
 cargo check -p arcweft-http-codec --all-targets --all-features
 cargo test -p arcweft-http-codec --test negotiation

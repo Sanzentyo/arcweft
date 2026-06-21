@@ -25,9 +25,8 @@ ledger.
 | Agent | ZG-A-003 `.awfagent` formatter proof | Partial implementation | comments/trivia と Agent item 全体の lossless/canonical golden が不足 |
 | Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外の現在証跡が未記録 |
 | Data | ZG-D-001 parse-time budgets outside Arcweft Binary | Open implementation | 多くの codec が format-native value を先に materialize している |
-| Data | ZG-D-004 Arrow IPC / Parquet shape guidance | Open implementation | value inference から schema を作っており `TypeShape` 主導ではない |
 | Data | ZG-D-005 Avro shape fidelity | Open implementation | Avro schema と Arcweft `TypeShape` の対応検証が不足 |
-| Data | ZG-D-009 numeric edge-case policy matrix | Partial implementation | Arrow/Parquet/Avro の bounds / NaN / infinity policy test が不足 |
+| Data | ZG-D-009 numeric edge-case policy matrix | Partial implementation | Avro の bounds / NaN / infinity policy test が不足 |
 
 ## Agent Items
 
@@ -111,27 +110,6 @@ Why it is not complete:
 Post-parse validation is too late for hostile inputs that allocate huge native
 documents first.
 
-### ZG-D-004: Arrow IPC and Parquet shape guidance
-
-The Arrow/Parquet codec currently derives schema information from observed
-values. It ignores the supplied Arcweft shape in the places that matter for
-schema fidelity.
-
-What remains:
-
-- Map `TypeShape` to Arrow schema fields.
-- Encode rows strictly against that schema rather than inferring from observed
-  keys or first values.
-- Decode back through `TypeShape` validation.
-- Define and test option/null policy.
-- Add record, enum, and malformed row tests.
-- Add decode limit tests.
-
-Why it is not complete:
-
-Value inference can widen, null, or reshape data based on the sample values
-instead of the declared Arcweft contract.
-
 ### ZG-D-005: Avro shape fidelity
 
 The Avro codec uses an Avro schema for the reader/writer, but it does not yet
@@ -153,15 +131,13 @@ Avro schema compatibility alone does not guarantee Arcweft shape compatibility.
 ### ZG-D-009: numeric edge-case policy matrix
 
 Central raw numeric conversion now performs checked integer bounds and rejects
-non-finite floats. JSON, TOML, YAML, MsgPack, CBOR, and CSV have focused tests
-for signed/unsigned crossings, out-of-range values, float-to-integer rejection,
-and NaN/infinity rejection where the format can express the case. The remaining
-gap is the non-CSV tabular family.
+non-finite floats. JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow IPC, and Parquet
+have focused tests for signed/unsigned crossings, out-of-range values,
+float-to-integer rejection, and NaN/infinity rejection where the format can
+express the case. The remaining gap is Avro.
 
 What remains:
 
-- Apply the same numeric matrix to Arrow IPC and Parquet after their schema is
-  generated from `TypeShape`.
 - Apply the same numeric matrix to Avro after Avro schema validation/generation
   is tied to Arcweft `TypeShape`.
 - Re-run repository-wide codec validation once all relevant codecs carry the
@@ -169,8 +145,8 @@ What remains:
 
 Why it is not complete:
 
-Without the non-CSV tabular coverage, individual adapters can still silently
-cast, null, or preserve non-finite values differently.
+Without the Avro coverage, one adapter can still silently cast, null, or
+preserve non-finite values differently.
 
 ## Already Covered Slices
 
@@ -186,6 +162,9 @@ some of them leave related items open:
 - Raw shape conversion plus JSON, TOML, YAML, MsgPack, CBOR, and CSV reject
   non-finite floats, float-to-integer recovery, and signed/unsigned bounds
   violations through focused numeric edge tests.
+- Arrow IPC and Parquet require `Seq<Record>` shapes, derive scalar schemas from
+  `FieldShape`, reject malformed rows and unsupported nested/enum shapes, and
+  carry the same numeric edge matrix for supported scalar rows.
 - Config merge is shape-aware and provenance-producing.
 - Save decoding supports explicit multi-step migration chains.
 - Derive shape generation now uses field-type where predicates and compile-time
