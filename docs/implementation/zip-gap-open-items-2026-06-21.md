@@ -123,14 +123,15 @@ For a concise explanation of the concrete unfinished items, see
 - ZIP tasks: T-104, D-13.
 - Current evidence:
   `arcweft-data::DecodeBudget` exists, and Arcweft Binary uses budget checks
-  during parsing. JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow, Parquet, and
-  Avro still materialize format-native values before final
-  `DecodeLimits::validate` or equivalent shape validation.
+  during parsing. MsgPack and CBOR now parse directly into budgeted raw values
+  through low-level readers. JSON, TOML, YAML, CSV, Arrow, Parquet, and Avro
+  still materialize format-native values before final `DecodeLimits::validate`
+  or equivalent shape validation.
 - Why this matters: hostile inputs can allocate large intermediate documents
   before Arcweft limits run.
 - Completion evidence needed: parser-integrated visitors/readers or equivalent
-  bounded readers for each codec, plus adversarial input/depth/node/collection
-  tests that fail before unbounded allocation.
+  bounded readers for the remaining codecs, plus adversarial
+  input/depth/node/collection tests that fail before unbounded allocation.
 
 ## Resolved Data Items
 

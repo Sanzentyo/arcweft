@@ -3,9 +3,11 @@
 use std::io::Cursor;
 
 use arcweft_data::{
-    Codec, DataError, DataErrorKind, DecodeOptions, EncodeOptions, FormatId, RawValue, Result,
-    TypeShape, Value, decode_with_shape, encode_with_shape,
+    Codec, DataError, DataErrorKind, DecodeBudget, DecodeOptions, EncodeOptions, FormatId,
+    RawValue, Result, TypeShape, Value, decode_with_shape, encode_with_shape,
 };
+use rmp::Marker;
+use rmp::decode::{RmpRead, read_marker};
 use rmpv::Value as MessagePackValue;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -44,23 +46,15 @@ impl Codec for MessagePackCodec {
         shape: &TypeShape,
         options: &DecodeOptions,
     ) -> Result<Value> {
-        if input.len() > options.limits.max_input_len {
-            return Err(DataError::limit(format!(
-                "input length {} exceeds {}",
-                input.len(),
-                options.limits.max_input_len
-            )));
-        }
+        let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
         let mut cursor = Cursor::new(input);
-        let message_pack = rmpv::decode::read_value(&mut cursor)
-            .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
+        let raw = read_message_pack_raw(&mut cursor, &mut budget)?;
         if usize::try_from(cursor.position()).ok() != Some(input.len()) {
             return Err(DataError::new(
                 DataErrorKind::TrailingData,
                 "trailing MessagePack bytes",
             ));
         }
-        let raw = message_pack_to_raw(message_pack)?;
         let value = decode_with_shape(&raw, shape)?;
         options.limits.validate(&value)?;
         Ok(value)
@@ -103,51 +97,104 @@ fn raw_to_message_pack(raw: RawValue) -> Result<MessagePackValue> {
     })
 }
 
-fn message_pack_to_raw(value: MessagePackValue) -> Result<RawValue> {
-    Ok(match value {
-        MessagePackValue::Nil => RawValue::Null,
-        MessagePackValue::Boolean(value) => RawValue::Bool(value),
-        MessagePackValue::Integer(value) => {
-            if let Some(value) = value.as_i64() {
-                RawValue::Signed(i128::from(value))
-            } else if let Some(value) = value.as_u64() {
-                RawValue::Unsigned(u128::from(value))
-            } else {
-                return Err(integer_range_error("MessagePack integer"));
-            }
+fn read_message_pack_raw<R: RmpRead>(
+    reader: &mut R,
+    budget: &mut DecodeBudget<'_>,
+) -> Result<RawValue> {
+    budget.enter_node()?;
+    let result = read_message_pack_raw_inner(reader, budget);
+    budget.exit_node();
+    result
+}
+
+fn read_message_pack_raw_inner<R: RmpRead>(
+    reader: &mut R,
+    budget: &mut DecodeBudget<'_>,
+) -> Result<RawValue> {
+    let marker = read_marker(reader).map_err(msgpack_error)?;
+    Ok(match marker {
+        Marker::FixPos(value) => RawValue::Unsigned(u128::from(value)),
+        Marker::FixNeg(value) => RawValue::Signed(i128::from(value)),
+        Marker::Null => RawValue::Null,
+        Marker::False => RawValue::Bool(false),
+        Marker::True => RawValue::Bool(true),
+        Marker::U8 => RawValue::Unsigned(u128::from(reader.read_data_u8().map_err(msgpack_error)?)),
+        Marker::U16 => {
+            RawValue::Unsigned(u128::from(reader.read_data_u16().map_err(msgpack_error)?))
         }
-        MessagePackValue::F32(value) => RawValue::F32(value),
-        MessagePackValue::F64(value) => RawValue::F64(value),
-        MessagePackValue::String(value) => {
-            let Some(value) = value.into_str() else {
-                return Err(DataError::new(
-                    DataErrorKind::InvalidEncoding,
-                    "MessagePack string is not valid UTF-8",
-                ));
-            };
-            RawValue::String(value)
+        Marker::U32 => {
+            RawValue::Unsigned(u128::from(reader.read_data_u32().map_err(msgpack_error)?))
         }
-        MessagePackValue::Binary(value) => RawValue::Bytes(value),
-        MessagePackValue::Array(values) => RawValue::Seq(
-            values
-                .into_iter()
-                .enumerate()
-                .map(|(index, value)| {
-                    message_pack_to_raw(value).map_err(|error| error.at_index(index))
-                })
-                .collect::<Result<Vec<_>>>()?,
-        ),
-        MessagePackValue::Map(entries) => RawValue::Map(
-            entries
-                .into_iter()
-                .map(|(key, value)| {
-                    let key = message_pack_to_raw(key)?;
-                    let value = message_pack_to_raw(value)?;
-                    Ok((key, value))
-                })
-                .collect::<Result<Vec<_>>>()?,
-        ),
-        MessagePackValue::Ext(_, _) => {
+        Marker::U64 => {
+            RawValue::Unsigned(u128::from(reader.read_data_u64().map_err(msgpack_error)?))
+        }
+        Marker::I8 => RawValue::Signed(i128::from(reader.read_data_i8().map_err(msgpack_error)?)),
+        Marker::I16 => RawValue::Signed(i128::from(reader.read_data_i16().map_err(msgpack_error)?)),
+        Marker::I32 => RawValue::Signed(i128::from(reader.read_data_i32().map_err(msgpack_error)?)),
+        Marker::I64 => RawValue::Signed(i128::from(reader.read_data_i64().map_err(msgpack_error)?)),
+        Marker::F32 => RawValue::F32(reader.read_data_f32().map_err(msgpack_error)?),
+        Marker::F64 => RawValue::F64(reader.read_data_f64().map_err(msgpack_error)?),
+        Marker::FixStr(len) => read_message_pack_string(reader, budget, usize::from(len))?,
+        Marker::Str8 => {
+            let len = usize::from(reader.read_data_u8().map_err(msgpack_error)?);
+            read_message_pack_string(reader, budget, len)?
+        }
+        Marker::Str16 => {
+            let len = usize::from(reader.read_data_u16().map_err(msgpack_error)?);
+            read_message_pack_string(reader, budget, len)?
+        }
+        Marker::Str32 => {
+            let len = usize::try_from(reader.read_data_u32().map_err(msgpack_error)?)
+                .map_err(|_| integer_range_error("MessagePack string length"))?;
+            read_message_pack_string(reader, budget, len)?
+        }
+        Marker::Bin8 => {
+            let len = usize::from(reader.read_data_u8().map_err(msgpack_error)?);
+            read_message_pack_bytes(reader, budget, len)?
+        }
+        Marker::Bin16 => {
+            let len = usize::from(reader.read_data_u16().map_err(msgpack_error)?);
+            read_message_pack_bytes(reader, budget, len)?
+        }
+        Marker::Bin32 => {
+            let len = usize::try_from(reader.read_data_u32().map_err(msgpack_error)?)
+                .map_err(|_| integer_range_error("MessagePack binary length"))?;
+            read_message_pack_bytes(reader, budget, len)?
+        }
+        Marker::FixArray(len) => read_message_pack_seq(reader, budget, usize::from(len))?,
+        Marker::Array16 => {
+            let len = usize::from(reader.read_data_u16().map_err(msgpack_error)?);
+            read_message_pack_seq(reader, budget, len)?
+        }
+        Marker::Array32 => {
+            let len = usize::try_from(reader.read_data_u32().map_err(msgpack_error)?)
+                .map_err(|_| integer_range_error("MessagePack array length"))?;
+            read_message_pack_seq(reader, budget, len)?
+        }
+        Marker::FixMap(len) => read_message_pack_map(reader, budget, usize::from(len))?,
+        Marker::Map16 => {
+            let len = usize::from(reader.read_data_u16().map_err(msgpack_error)?);
+            read_message_pack_map(reader, budget, len)?
+        }
+        Marker::Map32 => {
+            let len = usize::try_from(reader.read_data_u32().map_err(msgpack_error)?)
+                .map_err(|_| integer_range_error("MessagePack map length"))?;
+            read_message_pack_map(reader, budget, len)?
+        }
+        Marker::Reserved => {
+            return Err(DataError::new(
+                DataErrorKind::InvalidEncoding,
+                "reserved MessagePack marker",
+            ));
+        }
+        Marker::Ext8
+        | Marker::Ext16
+        | Marker::Ext32
+        | Marker::FixExt1
+        | Marker::FixExt2
+        | Marker::FixExt4
+        | Marker::FixExt8
+        | Marker::FixExt16 => {
             return Err(DataError::unsupported(
                 "MessagePack extension values are not supported by Arcweft data",
             ));
@@ -155,9 +202,70 @@ fn message_pack_to_raw(value: MessagePackValue) -> Result<RawValue> {
     })
 }
 
+fn read_message_pack_string<R: RmpRead>(
+    reader: &mut R,
+    budget: &DecodeBudget<'_>,
+    len: usize,
+) -> Result<RawValue> {
+    budget.string_len(len)?;
+    let bytes = read_message_pack_bytes_vec(reader, len)?;
+    String::from_utf8(bytes)
+        .map(RawValue::String)
+        .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))
+}
+
+fn read_message_pack_bytes<R: RmpRead>(
+    reader: &mut R,
+    budget: &DecodeBudget<'_>,
+    len: usize,
+) -> Result<RawValue> {
+    budget.bytes_len(len)?;
+    read_message_pack_bytes_vec(reader, len).map(RawValue::Bytes)
+}
+
+fn read_message_pack_bytes_vec<R: RmpRead>(reader: &mut R, len: usize) -> Result<Vec<u8>> {
+    let mut bytes = vec![0; len];
+    reader
+        .read_exact_buf(&mut bytes)
+        .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
+    Ok(bytes)
+}
+
+fn read_message_pack_seq<R: RmpRead>(
+    reader: &mut R,
+    budget: &mut DecodeBudget<'_>,
+    len: usize,
+) -> Result<RawValue> {
+    budget.sequence_len(len)?;
+    (0..len)
+        .map(|index| read_message_pack_raw(reader, budget).map_err(|error| error.at_index(index)))
+        .collect::<Result<Vec<_>>>()
+        .map(RawValue::Seq)
+}
+
+fn read_message_pack_map<R: RmpRead>(
+    reader: &mut R,
+    budget: &mut DecodeBudget<'_>,
+    len: usize,
+) -> Result<RawValue> {
+    budget.map_len(len)?;
+    (0..len)
+        .map(|_| {
+            let key = read_message_pack_raw(reader, budget)?;
+            let value = read_message_pack_raw(reader, budget)?;
+            Ok((key, value))
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(RawValue::Map)
+}
+
 fn integer_range_error(label: &str) -> DataError {
     DataError::new(
         DataErrorKind::NumberOutOfRange,
         format!("{label} is outside Arcweft MessagePack integer range"),
     )
+}
+
+fn msgpack_error(error: impl std::fmt::Debug) -> DataError {
+    DataError::new(DataErrorKind::InvalidEncoding, format!("{error:?}"))
 }

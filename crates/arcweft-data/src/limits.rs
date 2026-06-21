@@ -91,6 +91,16 @@ impl<'a> DecodeBudget<'a> {
         self.consume_collection_items(len)
     }
 
+    pub fn sequence_item(&mut self, len_after_item: usize) -> Result<()> {
+        if len_after_item > self.limits.max_sequence_len {
+            return Err(DataError::limit(format!(
+                "sequence length {len_after_item} exceeds {}",
+                self.limits.max_sequence_len
+            )));
+        }
+        self.consume_collection_items(1)
+    }
+
     pub fn map_len(&mut self, len: usize) -> Result<()> {
         if len > self.limits.max_map_len {
             return Err(DataError::limit(format!(
@@ -99,6 +109,16 @@ impl<'a> DecodeBudget<'a> {
             )));
         }
         self.consume_collection_items(len)
+    }
+
+    pub fn map_item(&mut self, len_after_item: usize) -> Result<()> {
+        if len_after_item > self.limits.max_map_len {
+            return Err(DataError::limit(format!(
+                "map length {len_after_item} exceeds {}",
+                self.limits.max_map_len
+            )));
+        }
+        self.consume_collection_items(1)
     }
 
     pub fn string_len(&self, len: usize) -> Result<()> {

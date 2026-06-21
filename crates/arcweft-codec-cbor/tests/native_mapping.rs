@@ -3,8 +3,8 @@ use std::io::Cursor;
 
 use arcweft_codec_cbor::CborCodec;
 use arcweft_data::{
-    Bytes, BytesFormat, Codec, DataErrorKind, DecodeOptions, EncodeOptions, FieldShape, Number,
-    RecordPolicy, TypeShape, Value,
+    Bytes, BytesFormat, Codec, DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions,
+    FieldShape, Number, RecordPolicy, TypeShape, Value,
 };
 use ciborium::Value as CborValue;
 
@@ -97,4 +97,58 @@ fn cbor_codec_enforces_numeric_edge_policy() {
         .decode_value(&encoded, &TypeShape::U8, &DecodeOptions::default())
         .expect_err("negative unsigned rejected");
     assert_eq!(error.kind(), &DataErrorKind::NumberOutOfRange);
+}
+
+#[test]
+fn cbor_decode_checks_declared_bytes_len_before_reading_payload() {
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_bytes_len: 4,
+            ..DecodeLimits::default()
+        },
+    };
+    let input = [0x45];
+
+    let error = CborCodec
+        .decode_value(
+            &input,
+            &TypeShape::Bytes {
+                format: BytesFormat::Binary,
+            },
+            &options,
+        )
+        .expect_err("bytes budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn cbor_decode_checks_declared_array_len_before_allocating_items() {
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_sequence_len: 2,
+            ..DecodeLimits::default()
+        },
+    };
+    let input = [0x83];
+
+    let error = CborCodec
+        .decode_value(&input, &TypeShape::Seq(Box::new(TypeShape::Unit)), &options)
+        .expect_err("array budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn cbor_decode_consumes_indefinite_array_budget_during_parse() {
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_sequence_len: 2,
+            ..DecodeLimits::default()
+        },
+    };
+    let input = [0x9f, 0xf6, 0xf6, 0xf6, 0xff];
+
+    let error = CborCodec
+        .decode_value(&input, &TypeShape::Seq(Box::new(TypeShape::Unit)), &options)
+        .expect_err("indefinite array budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
 }

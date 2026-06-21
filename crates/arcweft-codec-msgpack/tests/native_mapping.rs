@@ -3,8 +3,8 @@ use std::io::Cursor;
 
 use arcweft_codec_msgpack::MessagePackCodec;
 use arcweft_data::{
-    Bytes, BytesFormat, Codec, DataErrorKind, DecodeOptions, EncodeOptions, FieldShape, Number,
-    RecordPolicy, TypeShape, Value,
+    Bytes, BytesFormat, Codec, DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions,
+    FieldShape, Number, RecordPolicy, TypeShape, Value,
 };
 use rmpv::Value as MessagePackValue;
 
@@ -96,4 +96,52 @@ fn msgpack_codec_enforces_numeric_edge_policy() {
         .decode_value(&encoded, &TypeShape::U8, &DecodeOptions::default())
         .expect_err("negative unsigned rejected");
     assert_eq!(error.kind(), &DataErrorKind::NumberOutOfRange);
+}
+
+#[test]
+fn msgpack_decode_checks_declared_string_len_before_reading_payload() {
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_string_len: 4,
+            ..DecodeLimits::default()
+        },
+    };
+    let input = [0xdb, 0x00, 0x00, 0x00, 0x05];
+
+    let error = MessagePackCodec
+        .decode_value(&input, &TypeShape::String, &options)
+        .expect_err("string budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn msgpack_decode_checks_declared_array_len_before_allocating_items() {
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_sequence_len: 2,
+            ..DecodeLimits::default()
+        },
+    };
+    let input = [0xdd, 0x00, 0x00, 0x00, 0x03];
+
+    let error = MessagePackCodec
+        .decode_value(&input, &TypeShape::Seq(Box::new(TypeShape::Unit)), &options)
+        .expect_err("array budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn msgpack_decode_consumes_node_budget_during_parse() {
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_nodes: 2,
+            ..DecodeLimits::default()
+        },
+    };
+    let input = [0x92, 0xc0, 0xc0];
+
+    let error = MessagePackCodec
+        .decode_value(&input, &TypeShape::Seq(Box::new(TypeShape::Unit)), &options)
+        .expect_err("node budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
 }

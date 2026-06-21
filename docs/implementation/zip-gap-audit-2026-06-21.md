@@ -158,10 +158,10 @@ For the current requirement-by-requirement open-item ledger, see
   container/field/variant grammar, uses field-type generic bounds, and rejects
   unsupported tuple/unit/repr surfaces through trybuild-covered compile errors.
 - Parse-time budget coverage currently protects Arcweft Binary and provides the
-  shared `DecodeBudget` API. JSON/TOML/YAML/MsgPack/CBOR and tabular codecs
-  still need parser-integrated visitors/readers rather than post-parse-only
-  validation; MsgPack/CBOR now at least avoid the previous JSON bridge and
-  preserve native bytes/integer categories.
+  shared `DecodeBudget` API. MsgPack and CBOR now consume that budget through
+  low-level readers before building format-native values. JSON/TOML/YAML and
+  tabular codecs still need parser-integrated visitors/readers rather than
+  post-parse-only validation.
 - Save decoding now enforces the envelope identity/version gates from the ZIP
   guide and supports explicit multi-step migration chains. Envelope v1's
   checksum scope is documented as payload-only; any future header-authenticated

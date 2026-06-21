@@ -7,7 +7,8 @@ It is the readable companion to
 strict requirement ledger.
 
 Implementation baseline used for this inventory:
-`b65fd3c3 Map Avro payload enums through typed unions`.
+`761b431c Prove Agent formatter idempotence` plus the MsgPack/CBOR
+parse-time budget cut documented below.
 
 ## Status Model
 
@@ -25,7 +26,7 @@ Implementation baseline used for this inventory:
 | Area | Item | Status | Missing thing that blocks completion |
 | --- | --- | --- | --- |
 | Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外での remote REPL / data codec focused gates と workspace gates の記録 |
-| Data | ZG-D-001 parse-time budgets outside Arcweft Binary | Open implementation | JSON/TOML/YAML/MsgPack/CBOR/CSV/Arrow/Parquet/Avro が format-native value を作る前に Arcweft decode budget で止める reader/visitor 実装 |
+| Data | ZG-D-001 parse-time budgets outside Arcweft Binary | Open implementation | JSON/TOML/YAML/CSV/Arrow/Parquet/Avro が format-native value を作る前に Arcweft decode budget で止める reader/visitor 実装 |
 
 ## ZG-A-004: Linux/macOS Validation
 
@@ -69,16 +70,17 @@ Existing implementation:
 - `arcweft-data::DecodeBudget` exists.
 - Arcweft Binary decoding uses parse-time input/node/depth/collection/string/byte
   checks before allocating the full decoded value.
-- JSON/TOML/YAML/MsgPack/CBOR/CSV/Arrow/Parquet/Avro already apply some caps or
-  shape validation after parse, and several codecs check `max_input_len` before
+- JSON/TOML/YAML/CSV/Arrow/Parquet/Avro already apply some caps or shape
+  validation after parse, and several codecs check `max_input_len` before
   invoking their parser.
+- MsgPack and CBOR now use bounded low-level readers that consume
+  `arcweft-data::DecodeBudget` while parsing raw values, before building
+  `rmpv::Value`, `ciborium::Value`, or Arcweft `Value` intermediates.
 
 具体的に未実装な動作:
 
 - JSON/TOML/YAML は format-native document/value を作った後に Arcweft raw shape
   validation へ進むため、深い nesting や巨大 node count を parse 中に止めない。
-- MsgPack/CBOR は native value bridge へ移行済みだが、native value を作る前の
-  node/depth/collection/string/byte budget enforcement がない。
 - CSV は input cap と shape-driven row policy はあるが、reader iteration 中の
   row/field/string/byte budget を Arcweft budget として統合していない。
 - Arrow IPC / Parquet は input cap と shape-driven schema validation はあるが、
@@ -132,6 +134,10 @@ some of them leave related items open:
   waits, semantic and physical actions, captures, resources, debug recording,
   and RAG calls. CLI `arcw fmt --json file.awfagent` preserves Agent source, and
   `arcw fmt --expand-sugar file.awfagent` rejects game-dialect rewrites.
+- MsgPack and CBOR decoding now consume `DecodeBudget` during parse. Focused
+  adversarial tests cover declared string/bytes length before payload reads,
+  declared array length before item allocation, node budget exhaustion, and
+  CBOR indefinite array item budget exhaustion.
 - Raw shape conversion plus JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow,
   Parquet, and Avro reject non-finite floats, float-to-integer recovery, and
   signed/unsigned bounds violations through focused numeric edge tests.
