@@ -8,9 +8,7 @@ description = "MSGPACK codec adapter for Arcweft data."
 
 [dependencies]
 arcweft-data = { path = "../arcweft-data" }
-arcweft-codec-json = { path = "../arcweft-codec-json" }
-serde_json.workspace = true
-rmp-serde.workspace = true
+rmpv.workspace = true
 
 [lints]
 workspace = true

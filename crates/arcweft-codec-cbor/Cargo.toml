@@ -8,8 +8,6 @@ description = "CBOR codec adapter for Arcweft data."
 
 [dependencies]
 arcweft-data = { path = "../arcweft-data" }
-arcweft-codec-json = { path = "../arcweft-codec-json" }
-serde_json.workspace = true
 ciborium.workspace = true
 
 [lints]

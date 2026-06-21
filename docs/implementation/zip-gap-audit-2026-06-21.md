@@ -65,6 +65,13 @@ This note records the implementation cut for
   accepts scalar repr raw values as well as map-shaped tagged enum values, and
   signed/unsigned integer recovery performs checked cross-signedness conversion
   so JSON's single integer syntax can decode into unsigned Arcweft shapes.
+- Replaced the MessagePack and CBOR `serde_json::Value` bridge with native
+  value-to-`RawValue` mappings. MessagePack now preserves bin values and
+  signed/unsigned integer markers through `rmpv::Value`; CBOR now preserves
+  byte strings and integer values through `ciborium::Value`. Both codecs check
+  the input cap before parsing, reject trailing bytes after one top-level
+  value, and reject extension/tag values explicitly instead of silently
+  reshaping them.
 
 ## Remaining implementation debt
 
@@ -88,7 +95,8 @@ This note records the implementation cut for
 - Parse-time budget coverage currently protects Arcweft Binary and provides the
   shared `DecodeBudget` API. JSON/TOML/YAML/MsgPack/CBOR and tabular codecs
   still need parser-integrated visitors/readers rather than post-parse-only
-  validation.
+  validation; MsgPack/CBOR now at least avoid the previous JSON bridge and
+  preserve native bytes/integer categories.
 - Save decoding now enforces the envelope identity/version gates from the ZIP
   guide. Remaining save work is to model explicit multi-step migration chains
   and decide whether the checksum contract should cover canonical header
@@ -127,6 +135,10 @@ cargo clippy -p arcweft-data -p arcweft-codec-yaml --all-targets --all-features 
 cargo check -p arcweft-data -p arcweft-codec-json -p arcweft-codec-toml -p arcweft-codec-yaml --all-targets --all-features
 cargo test -p arcweft-data raw_shape --test raw_shape
 cargo test -p arcweft-data --features derive --test derive_attrs
+cargo check -p arcweft-data -p arcweft-codec-msgpack -p arcweft-codec-cbor --all-targets --all-features
+cargo test -p arcweft-codec-msgpack --test native_mapping
+cargo test -p arcweft-codec-cbor --test native_mapping
+cargo clippy -p arcweft-data -p arcweft-codec-msgpack -p arcweft-codec-cbor --all-targets --all-features -- -D warnings
 cargo test -p arcweft-agent-mcp -p arcweft-agent-mcp-client -p arcweft-test --all-features
 cargo test -p arcweft-tooling agent_format --all-features
 cargo test -p arcweft-cli stdio_transport_roundtrips_agent_session_calls_through_fake_child --all-features
