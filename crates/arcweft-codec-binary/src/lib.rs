@@ -3,8 +3,8 @@
 use std::collections::BTreeMap;
 
 use arcweft_data::{
-    Bytes, Codec, DataError, DataErrorKind, DecodeOptions, EncodeOptions, FormatId, Number, Result,
-    TypeShape, Value,
+    Bytes, Codec, DataError, DataErrorKind, DecodeBudget, DecodeOptions, EncodeOptions, FormatId,
+    Number, Result, TypeShape, Value,
 };
 
 const MAGIC: &[u8; 5] = b"AWBN1";
@@ -42,7 +42,7 @@ impl Codec for ArcweftBinaryCodec {
         _shape: &TypeShape,
         options: &DecodeOptions,
     ) -> Result<Value> {
-        let mut reader = Reader::new(input);
+        let mut reader = Reader::new(input, &options.limits)?;
         reader.expect_magic()?;
         let value = reader.read_value()?;
         if !options.limits.allow_trailing_data && !reader.is_eof() {
@@ -216,11 +216,16 @@ fn write_len(out: &mut Vec<u8>, len: usize) -> Result<()> {
 struct Reader<'a> {
     input: &'a [u8],
     offset: usize,
+    budget: DecodeBudget<'a>,
 }
 
 impl<'a> Reader<'a> {
-    const fn new(input: &'a [u8]) -> Self {
-        Self { input, offset: 0 }
+    fn new(input: &'a [u8], limits: &'a arcweft_data::DecodeLimits) -> Result<Self> {
+        Ok(Self {
+            input,
+            offset: 0,
+            budget: DecodeBudget::new(input.len(), limits)?,
+        })
     }
 
     fn expect_magic(&mut self) -> Result<()> {
@@ -240,6 +245,13 @@ impl<'a> Reader<'a> {
     }
 
     fn read_value(&mut self) -> Result<Value> {
+        self.budget.enter_node()?;
+        let value = self.read_value_body();
+        self.budget.exit_node();
+        value
+    }
+
+    fn read_value_body(&mut self) -> Result<Value> {
         match self.read_u8()? {
             0 => Ok(Value::Unit),
             1 => Ok(Value::Bool(false)),
@@ -256,13 +268,14 @@ impl<'a> Reader<'a> {
             6 => Ok(Value::Number(Number::F64(f64::from_le_bytes(
                 self.read_array()?,
             )))),
-            7 => String::from_utf8(self.read_bytes()?.to_vec())
+            7 => String::from_utf8(self.read_string_bytes()?.to_vec())
                 .map(Value::String)
                 .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string())),
             8 => {
-                let string = String::from_utf8(self.read_bytes()?.to_vec()).map_err(|error| {
-                    DataError::new(DataErrorKind::InvalidEncoding, error.to_string())
-                })?;
+                let string =
+                    String::from_utf8(self.read_string_bytes()?.to_vec()).map_err(|error| {
+                        DataError::new(DataErrorKind::InvalidEncoding, error.to_string())
+                    })?;
                 let mut chars = string.chars();
                 match (chars.next(), chars.next()) {
                     (Some(ch), None) => Ok(Value::Char(ch)),
@@ -272,28 +285,37 @@ impl<'a> Reader<'a> {
                     )),
                 }
             }
-            9 => Ok(Value::Bytes(Bytes::new(self.read_bytes()?.to_vec()))),
+            9 => Ok(Value::Bytes(Bytes::new(self.read_blob_bytes()?.to_vec()))),
             10 => {
                 let len = self.read_len()?;
-                (0..len)
-                    .map(|index| self.read_value().map_err(|err| err.at_index(index)))
-                    .collect::<Result<Vec<_>>>()
-                    .map(Value::Seq)
+                self.budget.sequence_len(len)?;
+                let mut values = Vec::with_capacity(len);
+                for index in 0..len {
+                    values.push(self.read_value().map_err(|err| err.at_index(index))?);
+                }
+                Ok(Value::Seq(values))
             }
             11 => self.read_map().map(Value::Map),
             12 => self.read_map().map(Value::Record),
             13 => {
-                let variant = String::from_utf8(self.read_bytes()?.to_vec()).map_err(|error| {
-                    DataError::new(DataErrorKind::InvalidEncoding, error.to_string())
-                })?;
+                let variant =
+                    String::from_utf8(self.read_string_bytes()?.to_vec()).map_err(|error| {
+                        DataError::new(DataErrorKind::InvalidEncoding, error.to_string())
+                    })?;
                 let has_payload = self.read_u8()?;
-                let payload = if has_payload == 0 {
-                    None
-                } else {
-                    Some(Box::new(
+                let payload = match has_payload {
+                    0 => None,
+                    1 => Some(Box::new(
                         self.read_value()
                             .map_err(|err| err.at_variant(variant.clone()))?,
-                    ))
+                    )),
+                    flag => {
+                        return Err(DataError::new(
+                            DataErrorKind::InvalidEncoding,
+                            format!("invalid enum payload flag {flag}"),
+                        )
+                        .at_variant(variant));
+                    }
                 };
                 Ok(Value::Enum { variant, payload })
             }
@@ -306,15 +328,22 @@ impl<'a> Reader<'a> {
 
     fn read_map(&mut self) -> Result<BTreeMap<String, Value>> {
         let len = self.read_len()?;
-        (0..len)
-            .map(|_| {
-                let key = String::from_utf8(self.read_bytes()?.to_vec()).map_err(|error| {
-                    DataError::new(DataErrorKind::InvalidEncoding, error.to_string())
-                })?;
-                let value = self.read_value().map_err(|err| err.at_field(key.clone()))?;
-                Ok((key, value))
-            })
-            .collect()
+        self.budget.map_len(len)?;
+        let mut out = BTreeMap::new();
+        for _ in 0..len {
+            let key = String::from_utf8(self.read_string_bytes()?.to_vec()).map_err(|error| {
+                DataError::new(DataErrorKind::InvalidEncoding, error.to_string())
+            })?;
+            let value = self.read_value().map_err(|err| err.at_field(key.clone()))?;
+            if out.insert(key.clone(), value).is_some() {
+                return Err(DataError::new(
+                    DataErrorKind::DuplicateField,
+                    format!("duplicate binary map key `{key}`"),
+                )
+                .at_field(key));
+            }
+        }
+        Ok(out)
     }
 
     fn read_len(&mut self) -> Result<usize> {
@@ -324,8 +353,15 @@ impl<'a> Reader<'a> {
         })
     }
 
-    fn read_bytes(&mut self) -> Result<&'a [u8]> {
+    fn read_string_bytes(&mut self) -> Result<&'a [u8]> {
         let len = self.read_len()?;
+        self.budget.string_len(len)?;
+        self.read_exact(len)
+    }
+
+    fn read_blob_bytes(&mut self) -> Result<&'a [u8]> {
+        let len = self.read_len()?;
+        self.budget.bytes_len(len)?;
         self.read_exact(len)
     }
 

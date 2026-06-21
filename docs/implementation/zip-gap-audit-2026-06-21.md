@@ -35,6 +35,10 @@ This note records the implementation cut for
   wrong container targets, `content` without `tag`, and duplicate final wire
   names are compile errors covered by trybuild fixtures. Bare `bytes` and
   `default = "path::factory"` are accepted as part of the typed grammar.
+- Added `arcweft-data::DecodeBudget` and wired Arcweft Binary decoding through
+  parse-time input, node, depth, collection length, string length, and bytes
+  length checks before value allocation. Arcweft Binary now rejects duplicate
+  map keys and enum payload flags other than `0` or `1`.
 
 ## Remaining implementation debt
 
@@ -55,6 +59,10 @@ This note records the implementation cut for
   container/field/variant grammar. Remaining derive work includes precise
   generic bounds, tuple/unit struct policy, multi-field tuple enum policy, and
   repr discriminant range validation.
+- Parse-time budget coverage currently protects Arcweft Binary and provides the
+  shared `DecodeBudget` API. JSON/TOML/YAML/MsgPack/CBOR and tabular codecs
+  still need parser-integrated visitors/readers rather than post-parse-only
+  validation.
 
 ## Validation
 
@@ -68,6 +76,8 @@ cargo test -p arcweft-data raw_shape --test raw_shape
 cargo test -p arcweft-data --features derive --test derive_attrs
 cargo test -p arcweft-data --features derive derive_attribute_ui
 cargo clippy -p arcweft-data -p arcweft-data-derive --all-targets --all-features -- -D warnings
+cargo test -p arcweft-codec-binary --test strict_decode
+cargo clippy -p arcweft-data -p arcweft-codec-binary --all-targets --all-features -- -D warnings
 cargo test -p arcweft-agent-mcp -p arcweft-agent-mcp-client -p arcweft-test --all-features
 cargo test -p arcweft-tooling agent_format --all-features
 cargo test -p arcweft-cli stdio_transport_roundtrips_agent_session_calls_through_fake_child --all-features

@@ -19,7 +19,7 @@ pub use codec::{
 pub use decode::Decode;
 pub use encode::Encode;
 pub use error::{DataError, DataErrorKind, DataPath, PathSegment, Result};
-pub use limits::DecodeLimits;
+pub use limits::{DecodeBudget, DecodeLimits};
 pub use raw::{RawValue, decode_with_shape, encode_with_shape};
 pub use shape::{
     BytesFormat, EnumRepr, EnumTagStyle, FieldShape, RecordPolicy, RenameRule, TypeShape,
