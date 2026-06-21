@@ -212,6 +212,43 @@ fn csv_decode_consumes_cell_string_budget_during_reader_iteration() {
 }
 
 #[test]
+fn csv_decode_preflights_quoted_field_budget_before_string_record() {
+    let mut input = b"active,score,name,hash,nickname\ntrue,1,\"".to_vec();
+    input.extend(std::iter::repeat_n(b'a', 16 * 1024));
+    input.extend_from_slice(b"\",00,\n");
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_string_len: 8,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = CsvCodec
+        .decode_value(&input, &row_shape(), &options)
+        .expect_err("pre-string-record field budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn csv_decode_preflights_record_field_budget_before_string_record() {
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_map_len: 2,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = CsvCodec
+        .decode_value(
+            b"active,score,name,hash,nickname\ntrue,1,hero,00,\n",
+            &row_shape(),
+            &options,
+        )
+        .expect_err("pre-string-record field count budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
 fn csv_decode_checks_hex_bytes_budget_before_decode_allocation() {
     let options = DecodeOptions {
         limits: DecodeLimits {

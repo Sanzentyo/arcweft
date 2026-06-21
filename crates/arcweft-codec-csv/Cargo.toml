@@ -10,6 +10,7 @@ description = "CSV codec adapter for Arcweft row data."
 arcweft-data = { path = "../arcweft-data" }
 base64.workspace = true
 csv.workspace = true
+csv-core.workspace = true
 
 [lints]
 workspace = true

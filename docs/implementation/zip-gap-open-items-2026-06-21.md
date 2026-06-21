@@ -128,9 +128,12 @@ For a concise explanation of the concrete unfinished items, see
   `serde_json::Deserializer` visitor before `serde_json::Value` shape
   projection. TOML now consumes budget through serde deserialization before
   public `toml::Value` shape projection, but strict pre-`DeTable`
-  parser-internal allocation remains unproven. CSV now consumes row/string/byte
-  budget during reader iteration, but strict pre-`StringRecord` field
-  allocation remains unproven. YAML now uses an event parser budget gate before
+  parser-internal allocation remains unproven. CSV now runs a `csv-core`
+  byte-level preflight before constructing `csv::StringRecord` values, covering
+  row count, record field count, and unescaped field string length; hex/base64
+  decoded byte limits are still checked during shape-aware cell decode after
+  `StringRecord` materialization but before byte allocation. YAML now uses an
+  event parser budget gate before
   constructing the public `Yaml` loader tree, though scalar event strings are
   still parser-allocated before the receiver observes them. Arrow IPC and
   Parquet now consume decode budget at batch conversion time for rows, record
@@ -143,7 +146,9 @@ For a concise explanation of the concrete unfinished items, see
   `AvroValue` contents into Arcweft `Value`.
 - Concrete unfinished slices:
   TOML needs a source/tokenizer-level budget before `toml` builds `DeTable`.
-  CSV needs a field/string cap before `csv::StringRecord` materialization.
+  CSV still needs a shape-aware decoded-byte policy before `csv::StringRecord`
+  materialization for bytes cells, if the ZIP requirement is interpreted as
+  requiring every byte-derived budget to run before record materialization.
   YAML needs a scanner-level scalar cap before scalar event `String`
   allocation, if the ZIP requirement is interpreted as strict pre-allocation.
   Arrow IPC still needs row/column/string/binary budget checks before
@@ -258,7 +263,9 @@ For a concise explanation of the concrete unfinished items, see
   `Seq<Record>` shape, derives headers from `FieldShape`, performs strict
   scalar conversion, rejects duplicate headers, rejects missing required
   columns, and applies `RecordPolicy::deny_unknown_fields` to unknown columns
-  and encode fields.
+  and encode fields. Decode now also runs a `csv-core` preflight before
+  `StringRecord` materialization for row count, record field count, and
+  unescaped field string length.
 - Validation evidence:
   `cargo check -p arcweft-codec-csv --all-targets --all-features` and
   `cargo test -p arcweft-codec-csv --test shape_codec`,
@@ -267,7 +274,8 @@ For a concise explanation of the concrete unfinished items, see
   passed on Windows.
 - Remaining related work: this resolves the CSV slice only. Arrow IPC,
   Parquet, Avro, and parser/reader-integrated decode budgets remain open under
-  their own items.
+  their own items. CSV's remaining related budget caveat is strict
+  pre-`StringRecord` decoded-byte policy for bytes cells.
 
 ### ZG-D-007: HTTP codec negotiation and body limits are strict
 

@@ -410,6 +410,7 @@ dependencies = [
  "arcweft-data",
  "base64",
  "csv",
+ "csv-core",
 ]
 
 [[package]]

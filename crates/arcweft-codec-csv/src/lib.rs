@@ -6,13 +6,14 @@ use std::{
 };
 
 use arcweft_data::{
-    Bytes, BytesFormat, Codec, DataError, DataErrorKind, DecodeBudget, DecodeOptions,
+    Bytes, BytesFormat, Codec, DataError, DataErrorKind, DecodeBudget, DecodeLimits, DecodeOptions,
     EncodeOptions, FieldShape, FormatId, Number, RecordPolicy, Result, TypeShape, Value,
 };
 use base64::{
     decoded_len_estimate,
     prelude::{BASE64_STANDARD, Engine as _},
 };
+use csv_core::ReadFieldResult;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CsvCodec;
@@ -58,6 +59,7 @@ impl Codec for CsvCodec {
         options: &DecodeOptions,
     ) -> Result<Value> {
         let row_shape = csv_row_shape(shape)?;
+        preflight_csv_budget(input, &options.limits)?;
         let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
         let mut reader = csv::Reader::from_reader(input);
         let headers = reader
@@ -92,6 +94,68 @@ impl Codec for CsvCodec {
         options.limits.validate(&value)?;
         Ok(value)
     }
+}
+
+fn preflight_csv_budget(input: &[u8], limits: &DecodeLimits) -> Result<()> {
+    let mut budget = DecodeBudget::new(input.len(), limits)?;
+    let mut reader = csv_core::Reader::new();
+    let mut remaining = input;
+    let mut output = [0_u8; 8 * 1024];
+    let mut field_len = 0_usize;
+    let mut field_count = 0_usize;
+    let mut record_index = 0_usize;
+    budget.enter_node()?;
+    let result = loop {
+        let (result, consumed, produced) = reader.read_field(remaining, &mut output);
+        remaining = &remaining[consumed..];
+        field_len = match field_len.checked_add(produced) {
+            Some(field_len) => field_len,
+            None => {
+                break Err(DataError::limit(
+                    "CSV field length overflow while preflighting budget",
+                ));
+            }
+        };
+        if let Err(error) = budget.string_len(field_len) {
+            break Err(error);
+        }
+        match result {
+            ReadFieldResult::InputEmpty | ReadFieldResult::OutputFull => {}
+            ReadFieldResult::Field { record_end } => {
+                field_count = match field_count.checked_add(1) {
+                    Some(field_count) => field_count,
+                    None => {
+                        break Err(DataError::limit(
+                            "CSV field count overflow while preflighting budget",
+                        ));
+                    }
+                };
+                field_len = 0;
+                if record_end {
+                    if record_index > 0 {
+                        if let Err(error) = budget.sequence_item(record_index) {
+                            break Err(error);
+                        }
+                        if let Err(error) = budget.map_len(field_count) {
+                            break Err(error);
+                        }
+                    }
+                    record_index = match record_index.checked_add(1) {
+                        Some(record_index) => record_index,
+                        None => {
+                            break Err(DataError::limit(
+                                "CSV record count overflow while preflighting budget",
+                            ));
+                        }
+                    };
+                    field_count = 0;
+                }
+            }
+            ReadFieldResult::End => break Ok(()),
+        }
+    };
+    budget.exit_node();
+    result
 }
 
 #[derive(Clone, Copy)]

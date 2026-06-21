@@ -161,8 +161,10 @@ For the current requirement-by-requirement open-item ledger, see
   shared `DecodeBudget` API. MsgPack and CBOR now consume that budget through
   low-level readers before building format-native values. JSON now consumes
   budget through serde parsing before `serde_json::Value` projection. TOML,
-  CSV, and YAML have partial budget gates but still have strict pre-allocation
-  caveats documented in `zip-gap-unimplemented-items-2026-06-22.md`. Arrow IPC
+  YAML have partial budget gates but still have strict pre-allocation caveats
+  documented in `zip-gap-unimplemented-items-2026-06-22.md`. CSV now uses a
+  `csv-core` preflight before `StringRecord` materialization for rows, field
+  counts, and unescaped field string length. Arrow IPC
   and Parquet now consume decode budget at batch conversion time for rows,
   record fields, value nodes, strings, and bytes, with Parquet row-count
   metadata checked before reader build. Avro now consumes top-level datum-stream
@@ -185,9 +187,11 @@ For the current requirement-by-requirement open-item ledger, see
   deeper enum payload byte-policy coverage.
 - CSV, Arrow IPC, Parquet, and Avro now cover strict shape-guided rows or datum
   streams, including the scalar numeric edge matrix and Avro payload enum
-  fidelity. CSV consumes row/string/byte budgets during reader iteration. Arrow
-  IPC and Parquet consume row/record/string/bytes budgets before copying Arrow
-  scalar buffers into Arcweft values, and Parquet preflights metadata row count.
+  fidelity. CSV consumes row/field/string budgets in a byte-level preflight
+  before `StringRecord` materialization and checks decoded bytes before byte
+  allocation during cell decode. Arrow IPC and Parquet consume
+  row/record/string/bytes budgets before copying Arrow scalar buffers into
+  Arcweft values, and Parquet preflights metadata row count.
   Avro consumes top-level row budget while iterating the datum stream, enforces
   scalar single-datum decode without collecting the whole stream, and checks
   record/string/bytes budgets before copying materialized `AvroValue` contents.

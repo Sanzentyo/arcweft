@@ -144,6 +144,7 @@ ciborium = "0.2.2"
 ciborium-io = "0.2.2"
 ciborium-ll = "0.2.2"
 csv = "1.4.0"
+csv-core = "0.1.13"
 arrow = { version = "59.0.0", default-features = false, features = ["ipc", "csv", "json"] }
 parquet = { version = "59.0.0", default-features = false, features = ["arrow"] }
 apache-avro = { version = "0.21.0", default-features = false, features = ["snappy", "zstandard"] }
