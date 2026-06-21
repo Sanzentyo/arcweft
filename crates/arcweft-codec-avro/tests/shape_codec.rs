@@ -274,6 +274,94 @@ fn avro_codec_checks_input_limit_before_parse() {
 }
 
 #[test]
+fn avro_codec_consumes_row_budget_during_stream_decode() {
+    let codec = AvroCodec::new(ROW_SCHEMA).expect("schema");
+    let encoded = codec
+        .encode_value(&sample_rows(), &row_shape(), &EncodeOptions::default())
+        .expect("encode");
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_sequence_len: 1,
+            ..DecodeLimits::default()
+        },
+    };
+    let error = codec
+        .decode_value(&encoded, &row_shape(), &options)
+        .expect_err("row budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn avro_codec_consumes_record_field_budget_during_decode() {
+    let codec = AvroCodec::new(ROW_SCHEMA).expect("schema");
+    let encoded = codec
+        .encode_value(&sample_rows(), &row_shape(), &EncodeOptions::default())
+        .expect("encode");
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_map_len: 2,
+            ..DecodeLimits::default()
+        },
+    };
+    let error = codec
+        .decode_value(&encoded, &row_shape(), &options)
+        .expect_err("record field budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn avro_codec_consumes_string_budget_before_arcweft_string_copy() {
+    let codec = AvroCodec::new(ROW_SCHEMA).expect("schema");
+    let encoded = codec
+        .encode_value(&sample_rows(), &row_shape(), &EncodeOptions::default())
+        .expect("encode");
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_string_len: 3,
+            ..DecodeLimits::default()
+        },
+    };
+    let error = codec
+        .decode_value(&encoded, &row_shape(), &options)
+        .expect_err("string budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn avro_codec_consumes_bytes_budget_before_arcweft_bytes_copy() {
+    let codec = AvroCodec::new(ROW_SCHEMA).expect("schema");
+    let encoded = codec
+        .encode_value(&sample_rows(), &row_shape(), &EncodeOptions::default())
+        .expect("encode");
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_bytes_len: 2,
+            ..DecodeLimits::default()
+        },
+    };
+    let error = codec
+        .decode_value(&encoded, &row_shape(), &options)
+        .expect_err("bytes budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn avro_codec_rejects_multiple_top_level_scalar_datums_without_collecting_all() {
+    let codec = AvroCodec::new(r#""boolean""#).expect("schema");
+    let encoded = codec
+        .encode_value(
+            &Value::Seq(vec![Value::Bool(true), Value::Bool(false)]),
+            &TypeShape::seq(TypeShape::Bool),
+            &EncodeOptions::default(),
+        )
+        .expect("encode scalar stream");
+    let error = codec
+        .decode_value(&encoded, &TypeShape::Bool, &DecodeOptions::default())
+        .expect_err("multiple scalar datums");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+}
+
+#[test]
 fn avro_codec_roundtrips_payload_enums_as_variant_record_union() {
     let codec = AvroCodec::new(payload_enum_schema()).expect("schema");
     let value = payload_enum_rows();

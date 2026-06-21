@@ -136,9 +136,11 @@ For a concise explanation of the concrete unfinished items, see
   Parquet now consume decode budget at batch conversion time for rows, record
   field counts, value nodes, strings, and bytes before copying Arrow scalar
   buffers into Arcweft `Value`; Parquet also rejects metadata row-count overflow
-  before building the record batch reader. Avro still materializes
-  format-native values before final `DecodeLimits::validate` or equivalent
-  shape validation.
+  before building the record batch reader. Avro now consumes top-level datum
+  stream row budget while iterating `apache_avro::Reader`, avoids collecting all
+  scalar datums before enforcing the single-datum scalar policy, and consumes
+  record/map/array/node/string/bytes budgets before copying materialized
+  `AvroValue` contents into Arcweft `Value`.
 - Concrete unfinished slices:
   TOML needs a source/tokenizer-level budget before `toml` builds `DeTable`.
   CSV needs a field/string cap before `csv::StringRecord` materialization.
@@ -147,9 +149,9 @@ For a concise explanation of the concrete unfinished items, see
   Arrow IPC still needs row/column/string/binary budget checks before
   `FileReader` materializes `RecordBatch` column buffers. Parquet still needs
   page/row-group string and binary budget checks before column buffers are
-  materialized by the record batch reader. Avro needs a datum visitor/reader
-  budget before arrays, maps, records, strings, bytes, and payload enum
-  branches become `AvroValue` intermediates.
+  materialized by the record batch reader. Avro still needs a datum
+  visitor/reader budget before arrays, maps, records, strings, bytes, and
+  payload enum branches become `AvroValue` intermediates inside a single datum.
 - Why this matters: hostile inputs can allocate large intermediate documents
   before Arcweft limits run.
 - Completion evidence needed: parser-integrated visitors/readers or equivalent
@@ -180,10 +182,12 @@ For a concise explanation of the concrete unfinished items, see
   `cargo clippy -p arcweft-codec-avro --all-targets --all-features -- -D warnings`
   passed on Windows. The focused tests cover payload enum roundtrip, native
   enum symbol mismatch, payload schema mismatch, unknown variants, missing
-  payloads, top-level scalar versus datum-stream policy, decode input caps, and
+  payloads, top-level scalar versus datum-stream policy, decode input caps,
+  top-level row budget, record-field budget, string budget, bytes budget, and
   numeric edge policy.
-- Remaining related work: parser/reader-integrated budget enforcement remains
-  tracked under ZG-D-001.
+- Remaining related work: top-level datum-stream and post-`AvroValue`
+  conversion budgets are covered. Strict reader-internal budget enforcement
+  before nested `AvroValue` materialization remains tracked under ZG-D-001.
 
 ### ZG-D-004: Arrow IPC and Parquet are schema-driven for scalar rows
 

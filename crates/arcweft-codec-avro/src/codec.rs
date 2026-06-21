@@ -81,9 +81,11 @@ impl Codec for AvroCodec {
             TypeShape::Seq(item_shape) => {
                 validate_schema(item_shape, &self.schema)?;
                 let reader = Reader::new(input).map_err(invalid_encoding_error)?;
+                budget.enter_node()?;
                 let rows = reader
                     .enumerate()
                     .map(|(index, value)| {
+                        budget.sequence_item(index.saturating_add(1))?;
                         value
                             .map_err(|error| {
                                 DataError::new(DataErrorKind::InvalidEncoding, error.to_string())
@@ -94,28 +96,35 @@ impl Codec for AvroCodec {
                                     .map_err(|error| error.at_index(index))
                             })
                     })
-                    .collect::<Result<Vec<_>>>()?;
-                budget.sequence_len(rows.len())?;
+                    .collect::<Result<Vec<_>>>();
+                budget.exit_node();
+                let rows = rows?;
                 let value = Value::Seq(rows);
                 options.limits.validate(&value)?;
                 Ok(value)
             }
             other => {
                 validate_schema(other, &self.schema)?;
-                let reader = Reader::new(input).map_err(invalid_encoding_error)?;
-                let values =
-                    reader
-                        .collect::<std::result::Result<Vec<_>, _>>()
-                        .map_err(|error| {
-                            DataError::new(DataErrorKind::InvalidEncoding, error.to_string())
-                        })?;
-                let [value] = values.as_slice() else {
+                let mut reader = Reader::new(input).map_err(invalid_encoding_error)?;
+                let Some(value) = reader.next() else {
                     return Err(DataError::new(
                         DataErrorKind::InvalidEncoding,
-                        format!("expected exactly one Avro datum, found {}", values.len()),
+                        "expected exactly one Avro datum, found 0",
                     ));
                 };
-                let value = avro_to_value(value, other, &self.schema, &mut budget)?;
+                let value = value.map_err(invalid_encoding_error)?;
+                if reader
+                    .next()
+                    .transpose()
+                    .map_err(invalid_encoding_error)?
+                    .is_some()
+                {
+                    return Err(DataError::new(
+                        DataErrorKind::InvalidEncoding,
+                        "expected exactly one Avro datum, found more than one",
+                    ));
+                }
+                let value = avro_to_value(&value, other, &self.schema, &mut budget)?;
                 options.limits.validate(&value)?;
                 Ok(value)
             }

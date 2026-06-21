@@ -165,9 +165,11 @@ For the current requirement-by-requirement open-item ledger, see
   caveats documented in `zip-gap-unimplemented-items-2026-06-22.md`. Arrow IPC
   and Parquet now consume decode budget at batch conversion time for rows,
   record fields, value nodes, strings, and bytes, with Parquet row-count
-  metadata checked before reader build. Arrow IPC, Parquet, and Avro still need
-  strict reader-internal pre-materialization budgets for format-owned buffers
-  where documented.
+  metadata checked before reader build. Avro now consumes top-level datum-stream
+  row budget during reader iteration and avoids collecting all scalar datums
+  before enforcing single-datum scalar decode. Arrow IPC, Parquet, and Avro
+  still need strict reader-internal pre-materialization budgets for format-owned
+  buffers where documented.
 - Save decoding now enforces the envelope identity/version gates from the ZIP
   guide and supports explicit multi-step migration chains. Envelope v1's
   checksum scope is documented as payload-only; any future header-authenticated
@@ -186,6 +188,9 @@ For the current requirement-by-requirement open-item ledger, see
   fidelity. CSV consumes row/string/byte budgets during reader iteration. Arrow
   IPC and Parquet consume row/record/string/bytes budgets before copying Arrow
   scalar buffers into Arcweft values, and Parquet preflights metadata row count.
+  Avro consumes top-level row budget while iterating the datum stream, enforces
+  scalar single-datum decode without collecting the whole stream, and checks
+  record/string/bytes budgets before copying materialized `AvroValue` contents.
   Remaining tabular/data-format work is strict pre-materialization budget
   enforcement for parser-owned row/column/datum allocation.
 - HTTP negotiation now covers the T-112 `Accept` q/wildcard/q=0/content

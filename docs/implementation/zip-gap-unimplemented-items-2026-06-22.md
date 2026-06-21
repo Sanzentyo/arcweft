@@ -7,7 +7,7 @@ It is the readable companion to
 strict requirement ledger.
 
 Implementation baseline used for this inventory:
-`a603ee0e Document concrete ZIP gap open items` plus the Arrow/Parquet batch
+`16676592 Budget Arrow and Parquet batch decoding` plus the Avro datum-stream
 budget cut documented below.
 
 ## Status Model
@@ -31,7 +31,7 @@ budget cut documented below.
 | Data | ZG-D-001-YAML strict pre-scalar-event allocation | Partial implementation | public `Yaml` loader tree 前の event budget gate はあるが、event receiver が見る前に scalar `String` が parser 内部で確保される |
 | Data | ZG-D-001-Arrow IPC reader materialization budget | Partial implementation | `RecordBatch` から Arcweft `Value` を作る前の row/field/string/bytes budget はあるが、`FileReader` 内部の column buffer materialization 前 cap はない |
 | Data | ZG-D-001-Parquet reader materialization budget | Partial implementation | metadata row count と batch conversion budget はあるが、row group/page decode が column buffers を materialize する前の string/binary cap はない |
-| Data | ZG-D-001-Avro datum materialization budget | Open implementation | `apache_avro::Reader` が `AvroValue` datum / arrays / maps / strings / bytes を materialize する前の budget visitor/reader policy がない |
+| Data | ZG-D-001-Avro datum materialization budget | Partial implementation | top-level datum stream と `AvroValue -> Arcweft Value` 変換時の budget はあるが、`apache_avro::Reader` が nested `AvroValue` を materialize する前の visitor/reader policy がない |
 
 ## ZG-A-004: Linux/macOS Validation
 
@@ -94,6 +94,11 @@ Existing implementation:
   string/bytes limits before copying Arrow scalar buffers into Arcweft `Value`.
   Parquet also rejects total row count from metadata before building the record
   batch reader and caps reader batch size by the sequence limit.
+- Avro now consumes top-level datum stream row budget while iterating
+  `apache_avro::Reader`, avoids collecting all scalar datums before enforcing
+  the single-datum top-level scalar policy, and consumes record/map/array,
+  node, string, and bytes budgets before copying `AvroValue` contents into
+  Arcweft `Value`.
 
 具体的に未実装または部分実装に残っている動作:
 
@@ -137,12 +142,16 @@ Existing implementation:
   だけでは分からない per-cell payload size を reader 内部 allocation 前に止める
   経路である。
 - **Avro datum materialization budget**:
-  Avro は `max_input_len`、schema validation、`AvroValue` から Arcweft `Value`
-  への変換時 budget 消費を持つ。しかし `apache_avro::Reader` が datum stream
-  を `AvroValue` として生成する前に、array/map length、string length、bytes
-  length、nesting depth、node count を Arcweft budget で止める visitor/reader
-  policy はない。特に array/map/record/payload enum の大きな datum は
-  materialized `AvroValue` 後の validation では遅い。
+  Avro は `max_input_len`、schema validation、top-level datum stream の
+  `sequence_item` 消費、top-level scalar の single-datum streaming check、
+  `AvroValue` から Arcweft `Value` への変換時 budget 消費を持つ。record/map/
+  array length、node count、string length、bytes length は Arcweft `Value`
+  allocation 前に structured error として返る。未実装なのは
+  `apache_avro::Reader` が nested `AvroValue::Array` / `Map` / `Record` /
+  `String` / `Bytes` / payload enum branch を materialize する前に同じ budget
+  で止める reader/visitor policy である。特に単一 datum 内の巨大 array/map/
+  record/payload enum は、`AvroValue` 後の validation では reader 内部 allocation
+  を防げない。
 
 必要な実装:
 
@@ -227,7 +236,12 @@ some of them leave related items open:
   bidirectionally, enforces top-level scalar versus datum-stream policy, and
   carries the numeric edge matrix for supported scalar values. Payload enum
   variants use an Avro union of variant records in `VariantShape` order, with a
-  single typed `payload` field for payload variants.
+  single typed `payload` field for payload variants. It now consumes top-level
+  row budget during reader iteration, avoids collecting all scalar datums before
+  enforcing single-datum scalar decode, and checks row/record/string/bytes
+  budgets before copying materialized `AvroValue` contents into Arcweft values.
+  Strict pre-`AvroValue` nested datum materialization remains tracked under
+  ZG-D-001.
 - Config merge is shape-aware and provenance-producing.
 - Save decoding supports explicit multi-step migration chains.
 - Derive shape generation now uses field-type where predicates and compile-time
