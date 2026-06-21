@@ -894,9 +894,9 @@ docs/implementation/visual-sample-review-issues/2026-06-17/README.md,50907,60,57
 docs/implementation/visual-sample-review-issues/2026-06-18/README.md,7294,24,20,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-hotspot-capture-metadata.json,2420,113,113,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-param-choice-presentation-tree.json,18532,626,626,text,false,false,false,false
-docs/implementation/zip-gap-audit-2026-06-21.md,17878,262,253,text,false,false,false,false
-docs/implementation/zip-gap-open-items-2026-06-21.md,18358,344,304,text,false,false,false,false
-docs/implementation/zip-gap-unimplemented-items-2026-06-22.md,10434,191,157,text,false,false,false,false
+docs/implementation/zip-gap-audit-2026-06-21.md,18132,265,256,text,false,false,false,false
+docs/implementation/zip-gap-open-items-2026-06-21.md,19084,355,315,text,false,false,false,false
+docs/implementation/zip-gap-unimplemented-items-2026-06-22.md,14282,232,198,text,false,false,false,false
 docs/reviews/pro_review1.md,22523,670,495,text,false,false,false,false
 docs/reviews/pro_review10.md,24274,938,713,text,false,false,false,false
 docs/reviews/pro_review11.md,62235,3442,2511,text,false,false,false,false

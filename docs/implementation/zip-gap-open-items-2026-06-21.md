@@ -135,6 +135,17 @@ For a concise explanation of the concrete unfinished items, see
   still parser-allocated before the receiver observes them. Arrow, Parquet, and
   Avro still materialize format-native values before final
   `DecodeLimits::validate` or equivalent shape validation.
+- Concrete unfinished slices:
+  TOML needs a source/tokenizer-level budget before `toml` builds `DeTable`.
+  CSV needs a field/string cap before `csv::StringRecord` materialization.
+  YAML needs a scanner-level scalar cap before scalar event `String`
+  allocation, if the ZIP requirement is interpreted as strict pre-allocation.
+  Arrow IPC needs row/column/string/binary budget checks before or at
+  `RecordBatch` materialization boundaries. Parquet needs metadata/batch/buffer
+  budget checks before row group or batch materialization can allocate beyond
+  Arcweft limits. Avro needs a datum visitor/reader budget before arrays, maps,
+  records, strings, bytes, and payload enum branches become `AvroValue`
+  intermediates.
 - Why this matters: hostile inputs can allocate large intermediate documents
   before Arcweft limits run.
 - Completion evidence needed: parser-integrated visitors/readers or equivalent

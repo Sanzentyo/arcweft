@@ -159,9 +159,12 @@ For the current requirement-by-requirement open-item ledger, see
   unsupported tuple/unit/repr surfaces through trybuild-covered compile errors.
 - Parse-time budget coverage currently protects Arcweft Binary and provides the
   shared `DecodeBudget` API. MsgPack and CBOR now consume that budget through
-  low-level readers before building format-native values. JSON/TOML/YAML and
-  tabular codecs still need parser-integrated visitors/readers rather than
-  post-parse-only validation.
+  low-level readers before building format-native values. JSON now consumes
+  budget through serde parsing before `serde_json::Value` projection. TOML,
+  CSV, and YAML have partial budget gates but still have strict pre-allocation
+  caveats documented in `zip-gap-unimplemented-items-2026-06-22.md`. Arrow IPC,
+  Parquet, and Avro still need reader/materialization-integrated budgets rather
+  than post-materialization-only validation.
 - Save decoding now enforces the envelope identity/version gates from the ZIP
   guide and supports explicit multi-step migration chains. Envelope v1's
   checksum scope is documented as payload-only; any future header-authenticated

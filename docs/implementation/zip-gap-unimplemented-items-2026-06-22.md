@@ -7,8 +7,7 @@ It is the readable companion to
 strict requirement ledger.
 
 Implementation baseline used for this inventory:
-`761b431c Prove Agent formatter idempotence` plus the MsgPack/CBOR
-parse-time budget cut documented below.
+`bc26feb3 Gate YAML loader budgets`.
 
 ## Status Model
 
@@ -25,8 +24,13 @@ parse-time budget cut documented below.
 
 | Area | Item | Status | Missing thing that blocks completion |
 | --- | --- | --- | --- |
-| Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外での remote REPL / data codec focused gates と workspace gates の記録 |
-| Data | ZG-D-001 parse-time budgets outside Arcweft Binary | Open implementation | TOML/CSV/Arrow/Parquet/Avro が format-native value を作る前に Arcweft decode budget で止める reader/visitor 実装 |
+| Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外での remote REPL / stdio MCP / data codec focused gates と workspace gates の記録 |
+| Data | ZG-D-001-TOML strict pre-`DeTable` budget | Partial implementation | public `toml::Value` projection 前の budget はあるが、`toml::Deserializer::parse` 内部 `DeTable` 生成より前の source-level cap がない |
+| Data | ZG-D-001-CSV strict pre-`StringRecord` budget | Partial implementation | reader iteration 中の budget 消費はあるが、`csv` crate が `StringRecord` を materialize する前の per-field/string cap がない |
+| Data | ZG-D-001-YAML strict pre-scalar-event allocation | Partial implementation | public `Yaml` loader tree 前の event budget gate はあるが、event receiver が見る前に scalar `String` が parser 内部で確保される |
+| Data | ZG-D-001-Arrow IPC reader materialization budget | Open implementation | `FileReader` が `RecordBatch` / column buffers を materialize する前の row/column/string/bytes budget 連携がない |
+| Data | ZG-D-001-Parquet reader materialization budget | Open implementation | `ParquetRecordBatchReader` が row group / batch / column buffers を materialize する前の budget 連携がない |
+| Data | ZG-D-001-Avro datum materialization budget | Open implementation | `apache_avro::Reader` が `AvroValue` datum / arrays / maps / strings / bytes を materialize する前の budget visitor/reader policy がない |
 
 ## ZG-A-004: Linux/macOS Validation
 
@@ -70,7 +74,7 @@ Existing implementation:
 - `arcweft-data::DecodeBudget` exists.
 - Arcweft Binary decoding uses parse-time input/node/depth/collection/string/byte
   checks before allocating the full decoded value.
-- TOML/CSV/Arrow/Parquet/Avro already apply some caps or shape validation
+- TOML/CSV/YAML/Arrow/Parquet/Avro already apply some caps or shape validation
   after parse, and several codecs check `max_input_len` before invoking their
   parser.
 - TOML now consumes `DecodeBudget` through serde deserialization before
@@ -82,24 +86,59 @@ Existing implementation:
 - MsgPack and CBOR now use bounded low-level readers that consume
   `arcweft-data::DecodeBudget` while parsing raw values, before building
   `rmpv::Value`, `ciborium::Value`, or Arcweft `Value` intermediates.
+- YAML now runs a low-level `yaml-rust2` event parser budget gate before the
+  public `Yaml` loader tree is built.
 
-具体的に未実装な動作:
+具体的に未実装または部分実装に残っている動作:
 
-- TOML は public `toml::Value` 生成前に budgeted visitor を通るが、crate 内部
-  parser の `DeTable` 生成より前の厳密な source-level budget enforcement はない。
-- CSV は reader iteration 中に row count、record field count、string length、
-  decoded byte length を `DecodeBudget` へ消費するようになった。ただし、strict
-  pre-allocation の観点では `csv` crate が返す `StringRecord` materialization
-  より前の per-field cap はまだ codec-owned parser として証明できていない。
-- Arrow IPC / Parquet は input cap と shape-driven schema validation はあるが、
-  reader が column/row data を materialize する前の Arcweft budget 連携がない。
-- Avro は input cap と schema/value validation はあるが、Avro datum stream を
-  materialize する前の budget visitor/reader policy がない。
+- **TOML strict pre-`DeTable` budget**:
+  `TomlCodec::decode_value` は `toml::Deserializer` と serde visitor 経由で
+  `DecodeBudget` を消費し、public `toml::Value` へ projection する前には
+  node/string/array budget を確認している。しかし現在の入口は
+  `toml::Deserializer::parse(source)` なので、`toml` crate 内部の `DeTable`
+  構築より前に Arcweft budget で止めることは証明できない。必要なのは
+  lower-level TOML tokenizer/parser、crate-supported streaming hook、または
+  `DeTable` より前に source-level cap を適用できる同等実装である。
+- **CSV strict pre-`StringRecord` budget**:
+  `CsvCodec::decode_value` は row count、record field count、string length、
+  hex/base64 decoded byte length を reader iteration 中に `DecodeBudget` へ
+  消費する。ただし budget check の単位は `csv::StringRecord` 取得後なので、
+  単一巨大 field や巨大 record が `StringRecord` として materialize される前に
+  codec-owned cap で止まる証跡はない。必要なのは bounded CSV reader、
+  byte-level field scanner、または `csv` crate の設定/APIで同じ性質を保証する
+  実装と adversarial tests である。
+- **YAML strict pre-scalar-event allocation**:
+  YAML は public `YamlLoader` tree の前に event parser budget gate を通すため、
+  巨大 document tree の構築は抑止できる。一方で `MarkedEventReceiver` が
+  `Scalar` event を受け取る時点では parser 内部で scalar `String` がすでに
+  確保されている。ZIP の「unbounded intermediate allocation 前に失敗する」
+  条件を厳密に満たすには、scalar token payload を確保する前の cap、または
+  それと同等の scanner-level limit が必要である。
+- **Arrow IPC reader materialization budget**:
+  Arrow IPC は `max_input_len` と `Seq<Record>` schema validation はあるが、
+  `arrow::ipc::reader::FileReader` が `RecordBatch` と column buffers を返した
+  後に row conversion / shape validation を行う。未実装なのは、batch row
+  count、column count、string/binary buffer length、node count を reader
+  materialization 前または batch boundary で `DecodeBudget` に連携し、budget
+  超過を Arcweft structured error として返す経路である。
+- **Parquet reader materialization budget**:
+  Parquet も `max_input_len` と scalar row schema validation はあるが、
+  `ParquetRecordBatchReaderBuilder` / reader が row group や batch buffer を
+  materialize する前の Arcweft budget gate はない。必要なのは metadata 由来の
+  row/column upper bound check、batch size policy、string/binary buffer budget、
+  そして adversarial Parquet fixtures である。
+- **Avro datum materialization budget**:
+  Avro は `max_input_len`、schema validation、`AvroValue` から Arcweft `Value`
+  への変換時 budget 消費を持つ。しかし `apache_avro::Reader` が datum stream
+  を `AvroValue` として生成する前に、array/map length、string length、bytes
+  length、nesting depth、node count を Arcweft budget で止める visitor/reader
+  policy はない。特に array/map/record/payload enum の大きな datum は
+  materialized `AvroValue` 後の validation では遅い。
 
 必要な実装:
 
 - Format ごとに parser-integrated visitor、bounded reader、streaming reader、
-  または crate-supported equivalent を導入する。
+  metadata preflight、または crate-supported equivalent を導入する。
 - 少なくとも input length、node count、nesting depth、collection length、
   string length、byte length のうち format が表現できるものを parse 中に数える。
 - Budget 超過は Arcweft data error として structured に返し、panic や allocator
@@ -107,7 +146,9 @@ Existing implementation:
 
 必要なテスト・証跡:
 
-- 各 codec に adversarial input tests を追加する。
+- 各 codec に adversarial input tests を追加する。TOML/CSV/YAML は巨大 scalar
+  や巨大 collection、Arrow/Parquet は巨大 row/batch/column buffer、Avro は巨大
+  datum array/map/string/bytes を対象にする。
 - 深い nesting、巨大 array/map/record、巨大 string/bytes、巨大 row/column などが
   unbounded intermediate allocation 前に失敗することを示す。
 - Arcweft Binary で済んでいる budget tests と同じ意味の matrix を、
