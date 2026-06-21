@@ -15,6 +15,9 @@ use arrow::array::{
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use bytes::Bytes as ByteBuffer;
+use ipc_preflight::preflight_arrow_ipc_buffers;
+
+mod ipc_preflight;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ArrowIpcCodec;
@@ -59,6 +62,7 @@ impl Codec for ArrowIpcCodec {
     ) -> Result<Value> {
         let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
         let row_shape = arrow_row_shape(shape)?;
+        preflight_arrow_ipc_buffers(input, row_shape, &options.limits)?;
         let reader = arrow::ipc::reader::FileReader::try_new(Cursor::new(input), None)
             .map_err(arrow_error)?;
         budget.enter_node()?;

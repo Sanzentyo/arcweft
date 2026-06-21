@@ -7,7 +7,7 @@ It is the readable companion to
 strict requirement ledger.
 
 Implementation baseline used for this inventory:
-`fdd01d66 Preflight TOML source budgets` plus the YAML source scalar preflight
+`173df9db Preflight YAML source scalars` plus the Arrow IPC buffer preflight
 cut documented below.
 
 ## Status Model
@@ -26,7 +26,6 @@ cut documented below.
 | Area | Item | Status | Missing thing that blocks completion |
 | --- | --- | --- | --- |
 | Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外での remote REPL / stdio MCP / data codec focused gates と workspace gates の記録 |
-| Data | ZG-D-001-Arrow IPC reader materialization budget | Partial implementation | `RecordBatch` から Arcweft `Value` を作る前の row/field/string/bytes budget はあるが、`FileReader` 内部の column buffer materialization 前 cap はない |
 | Data | ZG-D-001-Parquet reader materialization budget | Partial implementation | metadata row count と batch conversion budget はあるが、row group/page decode が column buffers を materialize する前の string/binary cap はない |
 | Data | ZG-D-001-Avro datum materialization budget | Partial implementation | top-level datum stream と `AvroValue -> Arcweft Value` 変換時の budget はあるが、`apache_avro::Reader` が nested `AvroValue` を materialize する前の visitor/reader policy がない |
 
@@ -72,7 +71,7 @@ Existing implementation:
 - `arcweft-data::DecodeBudget` exists.
 - Arcweft Binary decoding uses parse-time input/node/depth/collection/string/byte
   checks before allocating the full decoded value.
-- Arrow/Parquet/Avro already apply some caps or shape validation
+- Parquet/Avro already apply some caps or shape validation
   after parse, and several codecs check `max_input_len` before invoking their
   parser.
 - TOML now runs a source-level preflight before `toml::Deserializer::parse`
@@ -92,11 +91,17 @@ Existing implementation:
   `yaml-rust2` event parser budget gate before the public `Yaml` loader tree is
   built, covering document tree nodes, sequences, mappings, and scalar strings
   again at the parser event boundary.
-- Arrow IPC and Parquet now create `DecodeBudget` at decode entry, consume row
-  sequence budget, record field map budget, decoded value node budget, and
-  string/bytes limits before copying Arrow scalar buffers into Arcweft `Value`.
-  Parquet also rejects total row count from metadata before building the record
-  batch reader and caps reader batch size by the sequence limit.
+- Arrow IPC now preflights IPC file footer and record batch metadata before
+  constructing `arrow::ipc::reader::FileReader`. The preflight rejects unknown
+  columns for deny-unknown record shapes, unsupported dictionaries/compressed
+  record batches, oversized record-batch row counts, and Utf8/Binary per-cell
+  string/bytes lengths by reading offset buffers directly from the IPC body.
+  Arrow IPC then consumes row sequence, record field map, decoded value node,
+  and string/bytes budgets again while copying Arrow scalar buffers into
+  Arcweft `Value`. Parquet creates `DecodeBudget` at decode entry, rejects
+  total row count from metadata before building the record batch reader, caps
+  reader batch size by the sequence limit, and consumes row/map/node/string/
+  bytes budgets before copying Arrow scalar buffers into Arcweft `Value`.
 - Avro now consumes top-level datum stream row budget while iterating
   `apache_avro::Reader`, avoids collecting all scalar datums before enforcing
   the single-datum top-level scalar policy, and consumes record/map/array,
@@ -111,14 +116,6 @@ Existing implementation:
 
 具体的に未実装または部分実装に残っている動作:
 
-- **Arrow IPC reader materialization budget**:
-  Arrow IPC は `max_input_len` と `Seq<Record>` schema validation はあるが、
-  `arrow::ipc::reader::FileReader` が `RecordBatch` と column buffers を返した
-  後に batch boundary budget を行う。row sequence、record map、value node、
-  scalar string/bytes length は Arcweft `Value` allocation 前に structured
-  error で止まる。未実装なのは、`FileReader` 内部が column buffers を
-  materialize する前に同じ string/binary/row cap を強制する lower-level reader
-  または crate-supported equivalent である。
 - **Parquet reader materialization budget**:
   Parquet も `max_input_len` と scalar row schema validation に加え、metadata
   の total row count を reader build 前に確認し、reader batch size を sequence
@@ -150,7 +147,7 @@ Existing implementation:
 
 必要なテスト・証跡:
 
-- 各 codec に adversarial input tests を追加する。Arrow/Parquet は巨大
+- 各 codec に adversarial input tests を追加する。Parquet は巨大
   row/batch/column buffer、Avro は巨大
   datum array/map/string/bytes を対象にする。
 - 深い nesting、巨大 array/map/record、巨大 string/bytes、巨大 row/column などが
@@ -217,12 +214,14 @@ some of them leave related items open:
   signed/unsigned bounds violations through focused numeric edge tests.
 - Arrow IPC and Parquet require `Seq<Record>` shapes, derive scalar schemas from
   `FieldShape`, reject malformed rows and unsupported nested/enum shapes, and
-  carry the same numeric edge matrix for supported scalar rows. They now also
-  consume decode budget at batch conversion time for rows, record fields, value
-  nodes, strings, and bytes before copying Arrow scalar buffers into Arcweft
-  `Value`; Parquet rejects metadata row-count overflow before building the
-  record batch reader. Strict pre-`RecordBatch` / row-group page buffer
-  materialization remains tracked under ZG-D-001.
+  carry the same numeric edge matrix for supported scalar rows. Arrow IPC now
+  preflights footer/message metadata and Utf8/Binary offset buffers before
+  `FileReader` can materialize `RecordBatch` column buffers; focused tests
+  cover oversized IPC string and bytes cells failing before record-batch
+  decoding. Parquet rejects metadata row-count overflow before building the
+  record batch reader and consumes row/record/string/bytes budgets before
+  copying Arrow scalar buffers into Arcweft `Value`. Strict Parquet row-group
+  page buffer materialization remains tracked under ZG-D-001.
 - Avro validates supplied schemas against `TypeShape`, maps scalar, record,
   option, array, map, native unit enum, and payload enum values
   bidirectionally, enforces top-level scalar versus datum-stream policy, and

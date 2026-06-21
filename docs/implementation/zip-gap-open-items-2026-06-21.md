@@ -137,19 +137,20 @@ For a concise explanation of the concrete unfinished items, see
   bounds for bytes cells. YAML now runs a source scalar preflight before
   `yaml-rust2` parser entry, covering plain, quoted, and block scalar string
   limits before parser scalar event allocation; it then uses an event parser
-  budget gate before constructing the public `Yaml` loader tree. Arrow IPC and
-  Parquet now consume decode budget at batch conversion time for rows, record
-  field counts, value nodes, strings, and bytes before copying Arrow scalar
-  buffers into Arcweft `Value`; Parquet also rejects metadata row-count overflow
-  before building the record batch reader. Avro now consumes top-level datum
+  budget gate before constructing the public `Yaml` loader tree. Arrow IPC now
+  preflights IPC footer/message metadata and Utf8/Binary offset buffers before
+  `FileReader` materializes `RecordBatch` column buffers, then consumes decode
+  budget again at batch conversion time. Parquet consumes decode budget at
+  batch conversion time for rows, record field counts, value nodes, strings,
+  and bytes before copying Arrow scalar buffers into Arcweft `Value`; Parquet
+  also rejects metadata row-count overflow before building the record batch
+  reader. Avro now consumes top-level datum
   stream row budget while iterating `apache_avro::Reader`, avoids collecting all
   scalar datums before enforcing the single-datum scalar policy, and consumes
   record/map/array/node/string/bytes budgets before copying materialized
   `AvroValue` contents into Arcweft `Value`.
 - Concrete unfinished slices:
-  Arrow IPC still needs row/column/string/binary budget checks before
-  `FileReader` materializes `RecordBatch` column buffers. Parquet still needs
-  page/row-group string and binary budget checks before column buffers are
+  Parquet still needs page/row-group string and binary budget checks before column buffers are
   materialized by the record batch reader. Avro still needs a datum
   visitor/reader budget before arrays, maps, records, strings, bytes, and
   payload enum branches become `AvroValue` intermediates inside a single datum.
@@ -210,9 +211,10 @@ For a concise explanation of the concrete unfinished items, see
   input caps, row/record-field/string/bytes budget consumption during decode,
   and numeric edge policy.
 - Remaining related work: this resolves the Arrow IPC / Parquet shape-guided
-  scalar-row slice and adds batch-conversion budget enforcement. Strict
-  pre-`RecordBatch` / row-group page buffer budget enforcement remains tracked
-  under ZG-D-001.
+  scalar-row slice, adds batch-conversion budget enforcement, and resolves
+  Arrow IPC pre-`RecordBatch` string/binary buffer budget enforcement through
+  IPC metadata/body preflight. Strict Parquet row-group page buffer budget
+  enforcement remains tracked under ZG-D-001.
 
 ### ZG-D-009: numeric edge-case policy is complete across current codecs
 
@@ -271,9 +273,8 @@ For a concise explanation of the concrete unfinished items, see
   passed on Windows. The focused tests cover shape-driven rows, malformed
   headers, numeric edge cases, row/string/field-count budget limits, and quoted
   hex bytes budget failure before `StringRecord` materialization.
-- Remaining related work: this resolves the CSV slice. Arrow IPC, Parquet,
-  Avro, and parser/reader-integrated decode budgets remain open under their own
-  items.
+- Remaining related work: this resolves the CSV slice. Parquet, Avro, and
+  parser/reader-integrated decode budgets remain open under their own items.
 
 ### ZG-D-007: HTTP codec negotiation and body limits are strict
 

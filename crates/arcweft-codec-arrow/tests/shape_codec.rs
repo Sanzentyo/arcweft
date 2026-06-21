@@ -280,6 +280,33 @@ fn consumes_string_budget_before_string_copy(codec: &impl Codec) {
 }
 
 #[test]
+fn arrow_ipc_codec_preflights_string_budget_before_record_batch() {
+    let value = Value::Seq(vec![record([
+        ("active", Value::Bool(true)),
+        ("score", Value::Number(Number::U(1))),
+        ("ratio", Value::Number(Number::F64(1.0))),
+        ("name", Value::String("a".repeat(16 * 1024))),
+        ("initial", Value::Char('a')),
+        ("blob", Value::Bytes(Bytes::from([0_u8].as_slice()))),
+        ("nickname", Value::Unit),
+    ])]);
+    let encoded = ArrowIpcCodec
+        .encode_value(&value, &row_shape(), &EncodeOptions::default())
+        .expect("encode");
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_string_len: 8,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = ArrowIpcCodec
+        .decode_value(&encoded, &row_shape(), &options)
+        .expect_err("pre-record-batch string budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
 fn arrow_ipc_codec_consumes_bytes_budget_before_bytes_copy() {
     consumes_bytes_budget_before_bytes_copy(&ArrowIpcCodec);
 }
@@ -302,6 +329,33 @@ fn consumes_bytes_budget_before_bytes_copy(codec: &impl Codec) {
     let error = codec
         .decode_value(&encoded, &row_shape(), &options)
         .expect_err("bytes budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn arrow_ipc_codec_preflights_bytes_budget_before_record_batch() {
+    let value = Value::Seq(vec![record([
+        ("active", Value::Bool(true)),
+        ("score", Value::Number(Number::U(1))),
+        ("ratio", Value::Number(Number::F64(1.0))),
+        ("name", Value::String("hero".to_owned())),
+        ("initial", Value::Char('h')),
+        ("blob", Value::Bytes(Bytes::from(vec![1_u8; 16 * 1024]))),
+        ("nickname", Value::Unit),
+    ])]);
+    let encoded = ArrowIpcCodec
+        .encode_value(&value, &row_shape(), &EncodeOptions::default())
+        .expect("encode");
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_bytes_len: 8,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = ArrowIpcCodec
+        .decode_value(&encoded, &row_shape(), &options)
+        .expect_err("pre-record-batch bytes budget");
     assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
 }
 
