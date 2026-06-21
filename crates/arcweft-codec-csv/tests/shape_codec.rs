@@ -266,3 +266,22 @@ fn csv_decode_checks_hex_bytes_budget_before_decode_allocation() {
         .expect_err("bytes budget");
     assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
 }
+
+#[test]
+fn csv_decode_preflights_hex_bytes_budget_before_string_record() {
+    let mut input = b"active,score,name,hash,nickname\ntrue,1,hero,\"".to_vec();
+    input.extend(std::iter::repeat_n(b'0', 16 * 1024));
+    input.extend_from_slice(b"\",\n");
+    let options = DecodeOptions {
+        limits: DecodeLimits {
+            max_string_len: 64 * 1024,
+            max_bytes_len: 1,
+            ..DecodeLimits::default()
+        },
+    };
+
+    let error = CsvCodec
+        .decode_value(&input, &row_shape(), &options)
+        .expect_err("pre-string-record bytes budget");
+    assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}

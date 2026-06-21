@@ -130,10 +130,9 @@ For a concise explanation of the concrete unfinished items, see
   public `toml::Value` shape projection, but strict pre-`DeTable`
   parser-internal allocation remains unproven. CSV now runs a `csv-core`
   byte-level preflight before constructing `csv::StringRecord` values, covering
-  row count, record field count, and unescaped field string length; hex/base64
-  decoded byte limits are still checked during shape-aware cell decode after
-  `StringRecord` materialization but before byte allocation. YAML now uses an
-  event parser budget gate before
+  row count, record field count, unescaped field string length, header
+  validation, and hex/base64 decoded byte upper bounds for bytes cells. YAML
+  now uses an event parser budget gate before
   constructing the public `Yaml` loader tree, though scalar event strings are
   still parser-allocated before the receiver observes them. Arrow IPC and
   Parquet now consume decode budget at batch conversion time for rows, record
@@ -146,9 +145,6 @@ For a concise explanation of the concrete unfinished items, see
   `AvroValue` contents into Arcweft `Value`.
 - Concrete unfinished slices:
   TOML needs a source/tokenizer-level budget before `toml` builds `DeTable`.
-  CSV still needs a shape-aware decoded-byte policy before `csv::StringRecord`
-  materialization for bytes cells, if the ZIP requirement is interpreted as
-  requiring every byte-derived budget to run before record materialization.
   YAML needs a scanner-level scalar cap before scalar event `String`
   allocation, if the ZIP requirement is interpreted as strict pre-allocation.
   Arrow IPC still needs row/column/string/binary budget checks before
@@ -265,17 +261,19 @@ For a concise explanation of the concrete unfinished items, see
   columns, and applies `RecordPolicy::deny_unknown_fields` to unknown columns
   and encode fields. Decode now also runs a `csv-core` preflight before
   `StringRecord` materialization for row count, record field count, and
-  unescaped field string length.
+  unescaped field string length, plus shape-guided hex/base64 decoded byte
+  upper bounds for bytes cells.
 - Validation evidence:
   `cargo check -p arcweft-codec-csv --all-targets --all-features` and
   `cargo test -p arcweft-codec-csv --test shape_codec`,
   `cargo test -p arcweft-codec-csv --all-features`, and
   `cargo clippy -p arcweft-codec-csv --all-targets --all-features -- -D warnings`
-  passed on Windows.
-- Remaining related work: this resolves the CSV slice only. Arrow IPC,
-  Parquet, Avro, and parser/reader-integrated decode budgets remain open under
-  their own items. CSV's remaining related budget caveat is strict
-  pre-`StringRecord` decoded-byte policy for bytes cells.
+  passed on Windows. The focused tests cover shape-driven rows, malformed
+  headers, numeric edge cases, row/string/field-count budget limits, and quoted
+  hex bytes budget failure before `StringRecord` materialization.
+- Remaining related work: this resolves the CSV slice. Arrow IPC, Parquet,
+  Avro, and parser/reader-integrated decode budgets remain open under their own
+  items.
 
 ### ZG-D-007: HTTP codec negotiation and body limits are strict
 

@@ -7,8 +7,8 @@ It is the readable companion to
 strict requirement ledger.
 
 Implementation baseline used for this inventory:
-`98aebca9 Stream Avro decode budget checks` plus the CSV pre-`StringRecord`
-budget cut documented below.
+`36aa0af7 Preflight CSV decode budgets` plus the CSV decoded-byte preflight
+cut documented below.
 
 ## Status Model
 
@@ -27,7 +27,6 @@ budget cut documented below.
 | --- | --- | --- | --- |
 | Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外での remote REPL / stdio MCP / data codec focused gates と workspace gates の記録 |
 | Data | ZG-D-001-TOML strict pre-`DeTable` budget | Partial implementation | public `toml::Value` projection 前の budget はあるが、`toml::Deserializer::parse` 内部 `DeTable` 生成より前の source-level cap がない |
-| Data | ZG-D-001-CSV decoded byte pre-materialization budget | Partial implementation | `StringRecord` 前の row/field/string preflight はあるが、hex/base64 decoded byte policy は shape-aware cell decode 時点であり `StringRecord` 後 |
 | Data | ZG-D-001-YAML strict pre-scalar-event allocation | Partial implementation | public `Yaml` loader tree 前の event budget gate はあるが、event receiver が見る前に scalar `String` が parser 内部で確保される |
 | Data | ZG-D-001-Arrow IPC reader materialization budget | Partial implementation | `RecordBatch` から Arcweft `Value` を作る前の row/field/string/bytes budget はあるが、`FileReader` 内部の column buffer materialization 前 cap はない |
 | Data | ZG-D-001-Parquet reader materialization budget | Partial implementation | metadata row count と batch conversion budget はあるが、row group/page decode が column buffers を materialize する前の string/binary cap はない |
@@ -75,7 +74,7 @@ Existing implementation:
 - `arcweft-data::DecodeBudget` exists.
 - Arcweft Binary decoding uses parse-time input/node/depth/collection/string/byte
   checks before allocating the full decoded value.
-- TOML/CSV/YAML/Arrow/Parquet/Avro already apply some caps or shape validation
+- TOML/YAML/Arrow/Parquet/Avro already apply some caps or shape validation
   after parse, and several codecs check `max_input_len` before invoking their
   parser.
 - TOML now consumes `DecodeBudget` through serde deserialization before
@@ -102,8 +101,9 @@ Existing implementation:
 - CSV now runs a `csv-core` byte-level preflight before constructing
   `csv::StringRecord` values. The preflight consumes input length, top-level
   row sequence budget, per-record field-count budget, and unescaped field
-  string length budget with a fixed output buffer, so a huge quoted field is
-  rejected before `StringRecord` materialization.
+  string length budget with a fixed output buffer. It also validates headers
+  against `TypeShape` during preflight and checks hex/base64 decoded byte
+  upper bounds for bytes cells before `StringRecord` materialization.
 
 具体的に未実装または部分実装に残っている動作:
 
@@ -115,14 +115,6 @@ Existing implementation:
   構築より前に Arcweft budget で止めることは証明できない。必要なのは
   lower-level TOML tokenizer/parser、crate-supported streaming hook、または
   `DeTable` より前に source-level cap を適用できる同等実装である。
-- **CSV decoded byte pre-materialization budget**:
-  `CsvCodec::decode_value` は `csv-core` preflight により、`csv::StringRecord`
-  生成前に row count、record field count、unescaped field string length を
-  `DecodeBudget` へ消費する。巨大 quoted field や field 数過多の record は
-  fixed output buffer の byte-level scanner で structured error になる。残る
-  部分は hex/base64 bytes cell の decoded byte length policy で、これは現在も
-  shape-aware cell decode 時点で encoded field から見積もられ、actual decode
-  allocation 前には止まるが、`StringRecord` materialization 後である。
 - **YAML strict pre-scalar-event allocation**:
   YAML は public `YamlLoader` tree の前に event parser budget gate を通すため、
   巨大 document tree の構築は抑止できる。一方で `MarkedEventReceiver` が
@@ -169,7 +161,7 @@ Existing implementation:
 
 必要なテスト・証跡:
 
-- 各 codec に adversarial input tests を追加する。TOML/CSV/YAML は巨大 scalar
+- 各 codec に adversarial input tests を追加する。TOML/YAML は巨大 scalar
   や巨大 collection、Arrow/Parquet は巨大 row/batch/column buffer、Avro は巨大
   datum array/map/string/bytes を対象にする。
 - 深い nesting、巨大 array/map/record、巨大 string/bytes、巨大 row/column などが
@@ -192,9 +184,10 @@ some of them leave related items open:
 - CSV is schema-driven for scalar `Seq<Record>` rows and now consumes
   `DecodeBudget` during a `csv-core` preflight before `StringRecord`
   materialization for row count, record field count, and unescaped field string
-  length. It also checks hex/base64 decoded byte length before byte allocation
-  during shape-aware cell decode. Strict pre-`StringRecord` decoded-byte policy
-  for bytes cells remains tracked under ZG-D-001.
+  length. The preflight validates headers against `TypeShape` and checks
+  hex/base64 decoded byte upper bounds for bytes cells before `StringRecord`
+  materialization. Focused tests cover huge quoted fields, field-count limits,
+  and quoted hex bytes budget failure before record materialization.
 - HTTP codec negotiation rejects ambiguous content and enforces body caps at
   the adapter boundary.
 - `CodecRegistry` rejects duplicate ids, media types, extensions, and aliases.

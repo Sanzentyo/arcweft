@@ -59,7 +59,7 @@ impl Codec for CsvCodec {
         options: &DecodeOptions,
     ) -> Result<Value> {
         let row_shape = csv_row_shape(shape)?;
-        preflight_csv_budget(input, &options.limits)?;
+        preflight_csv_budget(input, row_shape, &options.limits)?;
         let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
         let mut reader = csv::Reader::from_reader(input);
         let headers = reader
@@ -96,7 +96,11 @@ impl Codec for CsvCodec {
     }
 }
 
-fn preflight_csv_budget(input: &[u8], limits: &DecodeLimits) -> Result<()> {
+fn preflight_csv_budget(
+    input: &[u8],
+    row_shape: CsvRowShape<'_>,
+    limits: &DecodeLimits,
+) -> Result<()> {
     let mut budget = DecodeBudget::new(input.len(), limits)?;
     let mut reader = csv_core::Reader::new();
     let mut remaining = input;
@@ -104,10 +108,16 @@ fn preflight_csv_budget(input: &[u8], limits: &DecodeLimits) -> Result<()> {
     let mut field_len = 0_usize;
     let mut field_count = 0_usize;
     let mut record_index = 0_usize;
+    let mut header_fields = Vec::new();
+    let mut header_field = Vec::new();
+    let mut byte_formats = Vec::new();
     budget.enter_node()?;
     let result = loop {
         let (result, consumed, produced) = reader.read_field(remaining, &mut output);
         remaining = &remaining[consumed..];
+        if record_index == 0 {
+            header_field.extend_from_slice(&output[..produced]);
+        }
         field_len = match field_len.checked_add(produced) {
             Some(field_len) => field_len,
             None => {
@@ -122,6 +132,25 @@ fn preflight_csv_budget(input: &[u8], limits: &DecodeLimits) -> Result<()> {
         match result {
             ReadFieldResult::InputEmpty | ReadFieldResult::OutputFull => {}
             ReadFieldResult::Field { record_end } => {
+                let field_index = field_count;
+                if record_index == 0 {
+                    let header = match std::str::from_utf8(&header_field) {
+                        Ok(header) => header.to_owned(),
+                        Err(error) => {
+                            break Err(DataError::new(
+                                DataErrorKind::InvalidEncoding,
+                                error.to_string(),
+                            ));
+                        }
+                    };
+                    header_fields.push(header);
+                    header_field.clear();
+                } else if let Some(Some(format)) = byte_formats.get(field_index)
+                    && let Err(error) =
+                        reject_encoded_csv_bytes_len_over_budget(field_len, *format, &budget)
+                {
+                    break Err(error);
+                }
                 field_count = match field_count.checked_add(1) {
                     Some(field_count) => field_count,
                     None => {
@@ -132,7 +161,12 @@ fn preflight_csv_budget(input: &[u8], limits: &DecodeLimits) -> Result<()> {
                 };
                 field_len = 0;
                 if record_end {
-                    if record_index > 0 {
+                    if record_index == 0 {
+                        if let Err(error) = validate_headers(&header_fields, row_shape) {
+                            break Err(error);
+                        }
+                        byte_formats = header_byte_formats(&header_fields, row_shape.fields);
+                    } else {
                         if let Err(error) = budget.sequence_item(record_index) {
                             break Err(error);
                         }
@@ -156,6 +190,58 @@ fn preflight_csv_budget(input: &[u8], limits: &DecodeLimits) -> Result<()> {
     };
     budget.exit_node();
     result
+}
+
+fn header_byte_formats(headers: &[String], fields: &[FieldShape]) -> Vec<Option<BytesFormat>> {
+    headers
+        .iter()
+        .map(|header| {
+            fields
+                .iter()
+                .find(|field| !field.skip && field.wire_name == *header)
+                .and_then(|field| bytes_format_for_shape(&field.value_shape()))
+        })
+        .collect()
+}
+
+fn bytes_format_for_shape(shape: &TypeShape) -> Option<BytesFormat> {
+    match shape {
+        TypeShape::Bytes { format } => Some(*format),
+        TypeShape::Option(inner) => bytes_format_for_shape(inner),
+        _ => None,
+    }
+}
+
+fn reject_encoded_csv_bytes_len_over_budget(
+    encoded_len: usize,
+    format: BytesFormat,
+    budget: &DecodeBudget<'_>,
+) -> Result<()> {
+    match format {
+        BytesFormat::Binary | BytesFormat::Base64 => {
+            let max_encoded_len = budget
+                .max_bytes_len()
+                .saturating_add(2)
+                .checked_div(3)
+                .unwrap_or(usize::MAX)
+                .saturating_mul(4);
+            if encoded_len > max_encoded_len {
+                budget.bytes_len(decoded_len_estimate(encoded_len))
+            } else {
+                Ok(())
+            }
+        }
+        BytesFormat::Hex => {
+            if encoded_len > budget.max_bytes_len().saturating_mul(2) {
+                budget.bytes_len(encoded_len.saturating_add(1) / 2)
+            } else {
+                Ok(())
+            }
+        }
+        BytesFormat::Array => Err(DataError::unsupported(
+            "CSV bytes cannot use array representation",
+        )),
+    }
 }
 
 #[derive(Clone, Copy)]

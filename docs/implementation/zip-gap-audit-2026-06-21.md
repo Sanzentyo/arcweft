@@ -152,8 +152,9 @@ For the current requirement-by-requirement open-item ledger, see
   resources, debug recording, and RAG calls. CLI coverage fixes `.awfagent`
   path routing and rejects game-dialect sugar rewrites for Agent sources.
 - Data raw transcoding covers the initial shape/value bridge. Parser-integrated
-  JSON/TOML/YAML/CSV decode budgets and strict binary raw coverage remain
-  separate data-format tasks.
+  TOML/YAML decode budgets and strict binary raw coverage remain separate
+  data-format tasks; JSON and CSV now have stronger parser/preflight budget
+  coverage as documented below.
 - The derive parser now rejects malformed attributes, covers the main
   container/field/variant grammar, uses field-type generic bounds, and rejects
   unsupported tuple/unit/repr surfaces through trybuild-covered compile errors.
@@ -164,7 +165,8 @@ For the current requirement-by-requirement open-item ledger, see
   YAML have partial budget gates but still have strict pre-allocation caveats
   documented in `zip-gap-unimplemented-items-2026-06-22.md`. CSV now uses a
   `csv-core` preflight before `StringRecord` materialization for rows, field
-  counts, and unescaped field string length. Arrow IPC
+  counts, unescaped field string length, header validation, and decoded byte
+  upper bounds for bytes cells. Arrow IPC
   and Parquet now consume decode budget at batch conversion time for rows,
   record fields, value nodes, strings, and bytes, with Parquet row-count
   metadata checked before reader build. Avro now consumes top-level datum-stream
@@ -188,8 +190,8 @@ For the current requirement-by-requirement open-item ledger, see
 - CSV, Arrow IPC, Parquet, and Avro now cover strict shape-guided rows or datum
   streams, including the scalar numeric edge matrix and Avro payload enum
   fidelity. CSV consumes row/field/string budgets in a byte-level preflight
-  before `StringRecord` materialization and checks decoded bytes before byte
-  allocation during cell decode. Arrow IPC and Parquet consume
+  before `StringRecord` materialization and checks decoded byte upper bounds
+  for bytes cells in the same preflight. Arrow IPC and Parquet consume
   row/record/string/bytes budgets before copying Arrow scalar buffers into
   Arcweft values, and Parquet preflights metadata row count.
   Avro consumes top-level row budget while iterating the datum stream, enforces
