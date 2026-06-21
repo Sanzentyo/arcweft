@@ -248,7 +248,7 @@ fn encode_record(
                 )
                 .at_field(field.wire_name.clone()));
             };
-            encode_with_shape(value, &field_value_shape(field))
+            encode_with_shape(value, &field.value_shape())
                 .map(|raw| (RawValue::String(field.wire_name.clone()), raw))
                 .map_err(|error| error.at_field(field.wire_name.clone()))
         })
@@ -282,14 +282,18 @@ fn decode_record(
         .iter()
         .filter(|field| !field.skip)
         .map(|field| {
+            let shape = field.value_shape();
             let Some(raw) = raw_fields.get(&field.wire_name) else {
-                return Err(DataError::new(
-                    DataErrorKind::MissingField,
-                    format!("missing record field `{}`", field.wire_name),
-                )
-                .at_field(field.wire_name.clone()));
+                return match shape {
+                    TypeShape::Option(_) => Ok((field.wire_name.clone(), Value::Unit)),
+                    _ => Err(DataError::new(
+                        DataErrorKind::MissingField,
+                        format!("missing record field `{}`", field.wire_name),
+                    )
+                    .at_field(field.wire_name.clone())),
+                };
             };
-            decode_with_shape(raw, &field_value_shape(field))
+            decode_with_shape(raw, &shape)
                 .map(|value| (field.wire_name.clone(), value))
                 .map_err(|error| error.at_field(field.wire_name.clone()))
         })
@@ -416,11 +420,13 @@ fn encode_number(value: &Value, shape: &TypeShape) -> Result<RawValue> {
             number.type_name(),
         )),
         (shape, Number::I(value))
-            if signed_bounds(shape).is_some_and(|(min, max)| *value >= min && *value <= max) =>
+            if shape
+                .signed_bounds()
+                .is_some_and(|(min, max)| *value >= min && *value <= max) =>
         {
             Ok(RawValue::Signed(*value))
         }
-        (shape, Number::U(value)) if unsigned_max(shape).is_some_and(|max| *value <= max) => {
+        (shape, Number::U(value)) if shape.unsigned_max().is_some_and(|max| *value <= max) => {
             Ok(RawValue::Unsigned(*value))
         }
         (shape, Number::I(_) | Number::U(_)) => Err(DataError::new(
@@ -438,12 +444,14 @@ fn decode_number(raw: &RawValue, shape: &TypeShape) -> Result<Value> {
         (TypeShape::F32, RawValue::F32(value)) => Ok(Value::Number(Number::F32(*value))),
         (TypeShape::F64, RawValue::F64(value)) => Ok(Value::Number(Number::F64(*value))),
         (shape, RawValue::Signed(value))
-            if signed_bounds(shape).is_some_and(|(min, max)| *value >= min && *value <= max) =>
+            if shape
+                .signed_bounds()
+                .is_some_and(|(min, max)| *value >= min && *value <= max) =>
         {
             Ok(Value::Number(Number::I(*value)))
         }
         (shape, RawValue::Unsigned(value))
-            if unsigned_max(shape).is_some_and(|max| *value <= max) =>
+            if shape.unsigned_max().is_some_and(|max| *value <= max) =>
         {
             Ok(Value::Number(Number::U(*value)))
         }
@@ -456,36 +464,5 @@ fn decode_number(raw: &RawValue, shape: &TypeShape) -> Result<Value> {
             format!("number is out of range for {}", shape.type_name()),
         )),
         (_, other) => Err(DataError::invalid_type("number", other.type_name())),
-    }
-}
-
-fn signed_bounds(shape: &TypeShape) -> Option<(i128, i128)> {
-    match shape {
-        TypeShape::I8 => Some((i128::from(i8::MIN), i128::from(i8::MAX))),
-        TypeShape::I16 => Some((i128::from(i16::MIN), i128::from(i16::MAX))),
-        TypeShape::I32 => Some((i128::from(i32::MIN), i128::from(i32::MAX))),
-        TypeShape::I64 => Some((i128::from(i64::MIN), i128::from(i64::MAX))),
-        TypeShape::I128 => Some((i128::MIN, i128::MAX)),
-        TypeShape::Isize => Some((isize::MIN as i128, isize::MAX as i128)),
-        _ => None,
-    }
-}
-
-fn unsigned_max(shape: &TypeShape) -> Option<u128> {
-    match shape {
-        TypeShape::U8 => Some(u128::from(u8::MAX)),
-        TypeShape::U16 => Some(u128::from(u16::MAX)),
-        TypeShape::U32 => Some(u128::from(u32::MAX)),
-        TypeShape::U64 => Some(u128::from(u64::MAX)),
-        TypeShape::U128 => Some(u128::MAX),
-        TypeShape::Usize => Some(usize::MAX as u128),
-        _ => None,
-    }
-}
-
-fn field_value_shape(field: &FieldShape) -> TypeShape {
-    match (field.bytes_format, &field.shape) {
-        (Some(format), TypeShape::Bytes { .. }) => TypeShape::Bytes { format },
-        _ => field.shape.clone(),
     }
 }

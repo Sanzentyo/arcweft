@@ -250,8 +250,8 @@ crates/arcweft-data/src/encode.rs,4877,220,189,production,true,false,false,false
 crates/arcweft-data/src/error.rs,4983,195,163,production,true,false,false,false
 crates/arcweft-data/src/lib.rs,1123,36,27,production,true,false,false,false
 crates/arcweft-data/src/limits.rs,6211,192,177,production,true,false,false,false
-crates/arcweft-data/src/raw.rs,18490,491,472,production,true,false,false,false
-crates/arcweft-data/src/shape.rs,7742,323,290,production,true,false,false,false
+crates/arcweft-data/src/raw.rs,17558,468,452,production,true,false,false,false
+crates/arcweft-data/src/shape.rs,8993,357,321,production,true,false,false,false
 crates/arcweft-data/src/value.rs,3640,148,127,production,true,false,false,false
 crates/arcweft-data/tests/derive/fail/content_without_tag.rs,127,9,7,test,true,true,false,false
 crates/arcweft-data/tests/derive/fail/duplicate_wire_name.rs,191,11,9,test,true,true,false,false
@@ -263,7 +263,7 @@ crates/arcweft-data/tests/derive/pass/bare_bytes.rs,354,14,12,test,true,true,fal
 crates/arcweft-data/tests/derive/pass/default_factory.rs,352,16,13,test,true,true,false,false
 crates/arcweft-data/tests/derive_attrs.rs,6470,210,185,test,true,true,false,false
 crates/arcweft-data/tests/derive_trybuild.rs,202,8,7,test,true,true,false,false
-crates/arcweft-data/tests/raw_shape.rs,2725,94,85,test,true,true,false,false
+crates/arcweft-data/tests/raw_shape.rs,3451,118,107,test,true,true,false,false
 crates/arcweft-data-derive/Cargo.toml,370,18,15,text,false,false,false,false
 crates/arcweft-data-derive/src/attrs.rs,15627,498,456,production,true,false,false,false
 crates/arcweft-data-derive/src/expand.rs,35590,904,881,production,true,false,false,false

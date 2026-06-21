@@ -170,6 +170,14 @@ impl FieldShape {
         self.bytes_format = Some(bytes_format);
         self
     }
+
+    #[must_use]
+    pub fn value_shape(&self) -> TypeShape {
+        match (self.bytes_format, &self.shape) {
+            (Some(format), TypeShape::Bytes { .. }) => TypeShape::Bytes { format },
+            _ => self.shape.clone(),
+        }
+    }
 }
 
 /// Reflected enum variant metadata.
@@ -318,6 +326,32 @@ impl TypeShape {
         Self::Map {
             key: Box::new(key),
             value: Box::new(value),
+        }
+    }
+
+    #[must_use]
+    pub fn signed_bounds(&self) -> Option<(i128, i128)> {
+        match self {
+            Self::I8 => Some((i128::from(i8::MIN), i128::from(i8::MAX))),
+            Self::I16 => Some((i128::from(i16::MIN), i128::from(i16::MAX))),
+            Self::I32 => Some((i128::from(i32::MIN), i128::from(i32::MAX))),
+            Self::I64 => Some((i128::from(i64::MIN), i128::from(i64::MAX))),
+            Self::I128 => Some((i128::MIN, i128::MAX)),
+            Self::Isize => Some((isize::MIN as i128, isize::MAX as i128)),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn unsigned_max(&self) -> Option<u128> {
+        match self {
+            Self::U8 => Some(u128::from(u8::MAX)),
+            Self::U16 => Some(u128::from(u16::MAX)),
+            Self::U32 => Some(u128::from(u32::MAX)),
+            Self::U64 => Some(u128::from(u64::MAX)),
+            Self::U128 => Some(u128::MAX),
+            Self::Usize => Some(usize::MAX as u128),
+            _ => None,
         }
     }
 }

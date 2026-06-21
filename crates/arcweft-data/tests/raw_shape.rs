@@ -68,6 +68,30 @@ fn raw_shape_rejects_unknown_record_fields() {
 }
 
 #[test]
+fn raw_shape_decodes_missing_optional_record_field_as_unit() {
+    let shape = TypeShape::record(
+        "Config",
+        [
+            FieldShape::new("name", "name", TypeShape::String),
+            FieldShape::new("tag", "tag", TypeShape::option(TypeShape::String)),
+        ],
+    );
+    let raw = RawValue::Map(vec![(
+        RawValue::String("name".to_owned()),
+        RawValue::String("ok".to_owned()),
+    )]);
+
+    let decoded = decode_with_shape(&raw, &shape).expect("missing optional field decodes");
+    assert_eq!(
+        decoded,
+        Value::Record(BTreeMap::from([
+            ("name".to_owned(), Value::String("ok".to_owned())),
+            ("tag".to_owned(), Value::Unit),
+        ]))
+    );
+}
+
+#[test]
 fn raw_shape_rejects_number_overflow() {
     let value = Value::Number(Number::U(300));
     let error = encode_with_shape(&value, &TypeShape::U8).expect_err("u8 overflow rejected");
