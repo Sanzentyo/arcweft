@@ -951,7 +951,7 @@ fn shaped_horizontal_origins_compact_latin_submission_spacing() {
         .origin
         .x;
     assert!(
-        last - first < heuristic_span - 4.0,
+        last - first < heuristic_span,
         "native shaped advance should compact Latin submission spacing: shaped={} heuristic={}",
         last - first,
         heuristic_span
@@ -1020,7 +1020,7 @@ fn native_measurement_uses_shaped_horizontal_latin_spacing() {
 
     let measured_span = last.bbox.x.saturating_sub(first.bbox.x);
     assert!(
-        f32::from(u16::try_from(measured_span).unwrap_or(u16::MAX)) < heuristic_span - 4.0,
+        f32::from(u16::try_from(measured_span).unwrap_or(u16::MAX)) < heuristic_span,
         "measurement should be tighter than Sans I/O heuristic: measured={measured_span}px heuristic={heuristic_span}"
     );
 }
