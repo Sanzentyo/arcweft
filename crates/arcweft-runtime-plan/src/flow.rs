@@ -35,9 +35,11 @@ use arcweft_lang_hir::syntax::ast::{
     flow::{AwaitBranchKind, FlowItem, Stmt, StmtMatchArm, ThreadBlock},
     ids::{EntityRef, EntityRefSyntax},
     items::{EntryItem, EntryKind, FunctionKind},
+    line_plan::LinePlan,
     pattern::Pattern,
 };
 use arcweft_lang_hir::syntax::expr::Expr;
+use arcweft_lang_hir::syntax::parser::parse_dialogue_content_lossy;
 use arcweft_render_text::LineDisplayCatalog;
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -1308,7 +1310,7 @@ fn lower_agent_controller_flow(
         || FlowRuntimeId(format!("agent.{}", agent.item().name())),
         flow_runtime_id,
     );
-    let mut ops = lowerer.lower_flow_stmt_list(agent.item().body_statements());
+    let mut ops = lowerer.lower_flow_stmt_list(&id, 0, agent.item().body_statements());
     if let Some(value) = agent.item().body_value() {
         if let Some(mut host_ops) = lowerer.lower_agent_host_call_expr(value) {
             ops.append(&mut host_ops);
@@ -1396,7 +1398,7 @@ impl FlowRuntimeLowerer<'_> {
                 }
                 HirFlowItem::Stmt(stmt) => {
                     self.register_speaker_preset(stmt);
-                    ops.extend(self.lower_flow_stmt(stmt));
+                    ops.extend(self.lower_flow_stmt(flow_id, flow_index, stmt));
                 }
                 HirFlowItem::Thread(thread) => {
                     ops.extend(self.lower_hir_thread(thread, flow_id, flow_index));
@@ -1409,7 +1411,7 @@ impl FlowRuntimeLowerer<'_> {
                     )));
                 }
                 HirFlowItem::LetScope { pattern, scope } => {
-                    ops.push(self.lower_scope_expr(pattern, scope));
+                    ops.push(self.lower_scope_expr(flow_id, flow_index, pattern, scope));
                 }
                 HirFlowItem::If(block) => {
                     ops.push(FlowOp::If {
@@ -1497,10 +1499,16 @@ impl FlowRuntimeLowerer<'_> {
             .collect()
     }
 
-    fn lower_scope_expr(&mut self, pattern: &Pattern, scope: &HirScopeExpr) -> FlowOp {
+    fn lower_scope_expr(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        flow_index: usize,
+        pattern: &Pattern,
+        scope: &HirScopeExpr,
+    ) -> FlowOp {
         FlowOp::LetScope {
             pattern: lower_runtime_pattern(pattern),
-            ops: self.lower_flow_stmt_list(scope.statements()),
+            ops: self.lower_flow_stmt_list(flow_id, flow_index, scope.statements()),
             value: scope
                 .value()
                 .map_or(RuntimeExpr::Value(RuntimeValue::Unit), |value| {
@@ -1717,21 +1725,19 @@ impl FlowRuntimeLowerer<'_> {
             .collect()
     }
 
-    fn lower_flow_stmt(&mut self, stmt: &Stmt) -> Vec<FlowOp> {
+    fn lower_flow_stmt(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        flow_index: usize,
+        stmt: &Stmt,
+    ) -> Vec<FlowOp> {
         match stmt {
             Stmt::Let { pattern, expr, .. } => {
-                if let Some(op) = self.lower_agent_host_call_let(pattern, expr) {
-                    vec![op]
-                } else {
-                    vec![FlowOp::Let {
-                        pattern: lower_runtime_pattern(pattern),
-                        expr: self.lower_runtime_expr(expr),
-                    }]
-                }
+                self.lower_let_stmt(flow_id, flow_index, pattern, expr)
             }
             Stmt::LetScope { pattern, scope } => vec![FlowOp::LetScope {
                 pattern: lower_runtime_pattern(pattern),
-                ops: self.lower_flow_stmt_list(scope.statements()),
+                ops: self.lower_flow_stmt_list(flow_id, flow_index, scope.statements()),
                 value: scope
                     .value()
                     .map_or(RuntimeExpr::Value(RuntimeValue::Unit), |value| {
@@ -1740,7 +1746,7 @@ impl FlowRuntimeLowerer<'_> {
             }],
             Stmt::LetLoop { pattern, block } => vec![FlowOp::LetLoop {
                 pattern: lower_runtime_pattern(pattern),
-                body: self.lower_syntax_flow_items(block.body()),
+                body: self.lower_syntax_flow_items(flow_id, flow_index, block.body()),
             }],
             Stmt::LetElse {
                 pattern,
@@ -1750,7 +1756,7 @@ impl FlowRuntimeLowerer<'_> {
             } => vec![FlowOp::LetElse {
                 pattern: lower_runtime_pattern(pattern),
                 expr: self.lower_runtime_expr(expr),
-                else_ops: self.lower_flow_stmt_list(else_body),
+                else_ops: self.lower_flow_stmt_list(flow_id, flow_index, else_body),
             }],
             Stmt::Goto(expr) => vec![FlowOp::GotoExpr(self.lower_runtime_expr(expr))],
             Stmt::Return(expr) => vec![FlowOp::ReturnExpr(
@@ -1768,15 +1774,15 @@ impl FlowRuntimeLowerer<'_> {
             }
             Stmt::If { condition, body } => vec![FlowOp::If {
                 condition: self.lower_runtime_expr(condition),
-                then_ops: self.lower_flow_stmt_list(body),
+                then_ops: self.lower_flow_stmt_list(flow_id, flow_index, body),
                 else_ops: Vec::new(),
             }],
             Stmt::Loop { body } => vec![FlowOp::Loop {
-                body: self.lower_flow_stmt_list(body),
+                body: self.lower_flow_stmt_list(flow_id, flow_index, body),
             }],
             Stmt::While { condition, body } => vec![FlowOp::While {
                 condition: self.lower_runtime_expr(condition),
-                body: self.lower_flow_stmt_list(body),
+                body: self.lower_flow_stmt_list(flow_id, flow_index, body),
             }],
             Stmt::WhileLet {
                 pattern,
@@ -1787,7 +1793,7 @@ impl FlowRuntimeLowerer<'_> {
                 pattern: lower_runtime_pattern(pattern),
                 expr: self.lower_runtime_expr(expr),
                 guard: self.lower_optional_runtime_expr(guard.as_ref()),
-                body: self.lower_flow_stmt_list(body),
+                body: self.lower_flow_stmt_list(flow_id, flow_index, body),
             }],
             Stmt::For {
                 pattern,
@@ -1796,12 +1802,12 @@ impl FlowRuntimeLowerer<'_> {
             } => vec![FlowOp::For {
                 pattern: lower_runtime_pattern(pattern),
                 source: self.lower_runtime_expr(source),
-                body: self.lower_flow_stmt_list(body),
+                body: self.lower_flow_stmt_list(flow_id, flow_index, body),
             }],
-            Stmt::Thread(thread) => self.lower_thread_stmt(thread),
+            Stmt::Thread(thread) => self.lower_thread_stmt(flow_id, flow_index, thread),
             Stmt::Match { expr, arms } => vec![FlowOp::Match {
                 scrutinee: self.lower_runtime_expr(expr),
-                arms: self.lower_stmt_match_arms(arms),
+                arms: self.lower_stmt_match_arms(flow_id, flow_index, arms),
             }],
             Stmt::Break { expr, .. } => {
                 vec![FlowOp::Break(
@@ -1818,17 +1824,46 @@ impl FlowRuntimeLowerer<'_> {
         }
     }
 
-    fn lower_stmt_match_arms(&mut self, arms: &[StmtMatchArm]) -> Vec<RuntimeMatchArm> {
+    fn lower_let_stmt(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        flow_index: usize,
+        pattern: &Pattern,
+        expr: &Expr,
+    ) -> Vec<FlowOp> {
+        if let Some(ops) = self.lower_dialogue_result_let(flow_id, flow_index, pattern, expr) {
+            ops
+        } else if let Some(op) = self.lower_agent_host_call_let(pattern, expr) {
+            vec![op]
+        } else {
+            vec![FlowOp::Let {
+                pattern: lower_runtime_pattern(pattern),
+                expr: self.lower_runtime_expr(expr),
+            }]
+        }
+    }
+
+    fn lower_stmt_match_arms(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        flow_index: usize,
+        arms: &[StmtMatchArm],
+    ) -> Vec<RuntimeMatchArm> {
         arms.iter()
             .map(|arm| RuntimeMatchArm {
                 pattern: lower_runtime_pattern(arm.pattern()),
                 guard: self.lower_optional_runtime_expr(arm.guard()),
-                ops: self.lower_flow_stmt_list(arm.body()),
+                ops: self.lower_flow_stmt_list(flow_id, flow_index, arm.body()),
             })
             .collect()
     }
 
-    fn lower_thread_stmt(&mut self, thread: &ThreadBlock) -> Vec<FlowOp> {
+    fn lower_thread_stmt(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        flow_index: usize,
+        thread: &ThreadBlock,
+    ) -> Vec<FlowOp> {
         if thread.is_detached() {
             self.errors.push(RuntimePlanLowerError::new(
                 "detached flow thread runtime lowering requires a checked detach contract"
@@ -1838,7 +1873,7 @@ impl FlowRuntimeLowerer<'_> {
         } else {
             vec![FlowOp::Thread {
                 name: thread.name().map(str::to_owned),
-                body: self.lower_syntax_flow_items(thread.body()),
+                body: self.lower_syntax_flow_items(flow_id, flow_index, thread.body()),
             }]
         }
     }
@@ -1863,11 +1898,38 @@ impl FlowRuntimeLowerer<'_> {
         }
     }
 
-    fn lower_flow_stmt_list(&mut self, statements: &[Stmt]) -> Vec<FlowOp> {
+    fn lower_flow_stmt_list(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        flow_index: usize,
+        statements: &[Stmt],
+    ) -> Vec<FlowOp> {
         statements
             .iter()
-            .flat_map(|statement| self.lower_flow_stmt(statement))
+            .flat_map(|statement| self.lower_flow_stmt(flow_id, flow_index, statement))
             .collect()
+    }
+
+    fn lower_dialogue_result_let(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        flow_index: usize,
+        pattern: &Pattern,
+        expr: &Expr,
+    ) -> Option<Vec<FlowOp>> {
+        let (callee, content, plan) = dialogue_call_parts(expr)?;
+        let dialogue = HirDialogue::expression_call(
+            expr_label(callee),
+            parse_dialogue_content_lossy(content.to_owned()),
+            plan.cloned(),
+        );
+        Some(vec![
+            self.lower_runtime_dialogue(flow_id, flow_index, &dialogue),
+            FlowOp::Let {
+                pattern: lower_runtime_pattern(pattern),
+                expr: self.lower_runtime_expr(expr),
+            },
+        ])
     }
 
     fn lower_agent_host_call_let(&mut self, pattern: &Pattern, expr: &Expr) -> Option<FlowOp> {
@@ -1904,11 +1966,16 @@ impl FlowRuntimeLowerer<'_> {
         }])
     }
 
-    fn lower_syntax_flow_items(&mut self, items: &[FlowItem]) -> Vec<FlowOp> {
+    fn lower_syntax_flow_items(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        flow_index: usize,
+        items: &[FlowItem],
+    ) -> Vec<FlowOp> {
         items
             .iter()
             .flat_map(|item| match item {
-                FlowItem::Stmt(statement) => self.lower_flow_stmt(statement),
+                FlowItem::Stmt(statement) => self.lower_flow_stmt(flow_id, flow_index, statement),
                 other => {
                     self.errors.push(RuntimePlanLowerError::new(format!(
                         "unsupported nested flow item for runtime lowering: {other:?}"
@@ -1931,6 +1998,18 @@ impl FlowRuntimeLowerer<'_> {
                 .into_iter()
                 .map(|error| RuntimePlanLowerError::new(error.message().to_owned())),
         );
+    }
+}
+
+fn dialogue_call_parts(expr: &Expr) -> Option<(&Expr, &str, Option<&LinePlan>)> {
+    match expr {
+        Expr::DialogueCall {
+            callee,
+            content,
+            plan,
+        } => Some((callee.as_ref(), content.as_str(), plan.as_ref())),
+        Expr::Try { expr } => dialogue_call_parts(expr),
+        _ => None,
     }
 }
 

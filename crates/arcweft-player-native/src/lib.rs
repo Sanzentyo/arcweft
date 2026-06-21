@@ -1,8 +1,13 @@
 //! Native/headless rich-text player host for Arcweft.
 
+mod window_driver;
+mod windowed;
+
+pub use windowed::run_bundle_windowed;
+
 use arcweft_bundle::ArcweftBundle;
 #[cfg(feature = "dev-source")]
-use arcweft_compiler::compile_source as compile_arcweft_source;
+use arcweft_compiler::source::compile_source as compile_arcweft_source;
 #[cfg(feature = "dev-source")]
 use arcweft_core::engine::{Engine, FlowFiberStatus};
 use arcweft_core::plan::FlowEvent;
@@ -74,9 +79,11 @@ pub struct NativePlayerCaptureMetadata {
 pub enum NativePlayerError {
     #[cfg(feature = "dev-source")]
     #[error(transparent)]
-    Compile(#[from] arcweft_compiler::CompileSourceError),
+    Compile(#[from] arcweft_compiler::error::CompileSourceError),
     #[error(transparent)]
     BundleRunner(#[from] arcweft_runtime_host::BundleRunnerError),
+    #[error(transparent)]
+    NativeWindow(#[from] arcweft_render_native::NativeWindowError),
     #[cfg(feature = "dev-source")]
     #[error("no display frame was produced")]
     NoDisplayFrame,

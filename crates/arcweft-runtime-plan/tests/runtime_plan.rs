@@ -8,7 +8,7 @@ use arcweft_core::{
     source::{SourceHandlerPlan, SourceOp},
     stream::StreamOp,
     time::LogicalDuration,
-    value::{RuntimeExpr, RuntimeValue},
+    value::{RuntimeCallTarget, RuntimeExpr, RuntimeValue},
 };
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::check::validate_typecheck_ready;
@@ -853,6 +853,54 @@ flow @flow.next next {
 }
 
 #[test]
+fn lowers_dialogue_result_let_and_bound_timed_cue() {
+    let tree = parse_ok(
+        r#"
+flow @flow.line_handles line_handles {
+    let (_, cue) = alice.say(voice=auto)[聞いて。[p]]
+    with:
+        let actor = alice.stage.acquire(scope=line)
+        let cue = at(0.42s):
+            actor.look(.worried, crossfade=120ms)
+        let voice = line.voice_handle()
+        out (voice, cue)
+
+    log.info("cue kept", cue = cue)
+    return "done"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("dialogue result let fixture lowers to HIR");
+    validate_typecheck_ready(&hir).expect("dialogue result let fixture is typecheck-ready");
+
+    let source_groups =
+        lower_line_task_groups(&hir).expect("dialogue result let line task group lowers");
+    assert_eq!(source_groups.len(), 1);
+
+    let plan = lower_runtime_plan(&hir).expect("dialogue result let lowers to runtime plan");
+
+    assert_eq!(plan.line_task_groups.len(), 1);
+    assert!(matches!(
+        &plan.flows[0].ops[0],
+        FlowOp::Dialogue { task_group: 0, .. }
+    ));
+    assert!(matches!(
+        &plan.flows[0].ops[1],
+        FlowOp::Let {
+            expr: RuntimeExpr::Tuple(items),
+            ..
+        } if items.len() == 2
+    ));
+    let children = direct_children(seq(&plan.line_task_groups[0].root.node));
+    assert_eq!(children.len(), 1);
+    assert_eq!(children[0].name.as_deref(), Some("at(0.42s)"));
+    assert_eq!(
+        children[0].trigger,
+        LineTaskTrigger::Delay(LogicalDuration::from_nanos(420_000_000))
+    );
+}
+
+#[test]
 fn runtime_plan_lowers_stream_and_source_plans_separately_from_flow_ops() {
     let tree = parse_ok(
         r"
@@ -1113,6 +1161,40 @@ flow @flow.main main {
         panic!("expected inferred pure call let");
     };
     assert!(matches!(expr, RuntimeExpr::PureCall { helper, .. } if helper.0 == 1));
+}
+
+#[test]
+fn runtime_plan_lowers_data_format_path_to_enum_variant() {
+    let tree = parse_ok(
+        r#"
+flow @flow.main main {
+    let bytes = data.encode(["hello"], .Json)
+    return bytes
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("data format fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("data format runtime plan lowers");
+
+    let FlowOp::Let { expr, .. } = &plan.flows[0].ops[0] else {
+        panic!("expected data encode let");
+    };
+    let RuntimeExpr::Call { callee, args } = expr else {
+        panic!("expected data encode call");
+    };
+    assert_eq!(callee, &RuntimeCallTarget::Named("data.encode".to_owned()));
+    assert!(matches!(
+        args.as_slice(),
+        [
+            _,
+            RuntimeExpr::Variant {
+                path: None,
+                name,
+                payload: None
+            }
+        ] if name == "Json"
+    ));
 }
 
 #[test]

@@ -47,10 +47,7 @@ fn line_cancel_rule_replaces_normal_line_body() {
     let output = run_line_task_group_for_input(
         &group,
         &RuntimeStepInput {
-            input_events: vec![InputEvent {
-                kind: "input".to_owned(),
-                payload: Some(".SkipLine".to_owned()),
-            }],
+            input_events: vec![super::input_event("input", Some(".SkipLine"))],
             ..RuntimeStepInput::default()
         },
     );
@@ -97,10 +94,7 @@ fn child_task_triggers_emit_task_request_and_scoped_body() {
         ..LineTaskGroup::default()
     };
     let input = RuntimeStepInput {
-        input_events: vec![InputEvent {
-            kind: "mark".to_owned(),
-            payload: Some(".seen".to_owned()),
-        }],
+        input_events: vec![super::input_event("mark", Some(".seen"))],
         ..RuntimeStepInput::default()
     };
 
@@ -114,7 +108,8 @@ fn child_task_triggers_emit_task_request_and_scoped_body() {
         HostTaskRequest::Custom {
             capability,
             operation,
-            args
+            args,
+            ..
         } if capability.0 == "line_task" && operation == "run_child" && args.len() == 1
     ));
     assert_eq!(

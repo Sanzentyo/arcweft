@@ -1257,10 +1257,7 @@ fn engine_waits_for_choice_input() {
     let selected = super::runtime_step(
         &mut engine,
         RuntimeStepInput {
-            input_events: vec![InputEvent {
-                kind: "choice".to_owned(),
-                payload: Some("choice.listen".to_owned()),
-            }],
+            input_events: vec![super::input_event("choice", Some("choice.listen"))],
             ..RuntimeStepInput::default()
         },
     );
@@ -2036,6 +2033,7 @@ fn custom_host_request_spread_preserves_concrete_payload_values() {
         capability,
         operation,
         args,
+        ..
     } = &output.requests.tasks[0].request
     else {
         panic!("expected custom host request");

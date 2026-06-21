@@ -45,10 +45,14 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
                 })
                 .collect(),
         ),
-        Expr::Field { target, field } => lower_std_float_constant(expr).map_or_else(
-            || lower_runtime_field_expr(target, field),
-            RuntimeExpr::Value,
-        ),
+        Expr::Field { target, field } => {
+            lower_enum_variant_field(target, field).unwrap_or_else(|| {
+                lower_std_float_constant(expr).map_or_else(
+                    || lower_runtime_field_expr(target, field),
+                    RuntimeExpr::Value,
+                )
+            })
+        }
         Expr::Unary { op, expr } => RuntimeExpr::Unary {
             op: lower_runtime_unary_op(*op),
             expr: Box::new(lower_runtime_expr(expr)),
@@ -163,9 +167,9 @@ fn lower_runtime_expr_strict_with_helpers(
             })
             .collect::<Result<Vec<_>, String>>()
             .map(RuntimeExpr::Record),
-        Expr::Field { target, field } => lower_std_float_constant(expr)
-            .map(RuntimeExpr::Value)
-            .map_or_else(|| lower_strict_field_expr(target, field, helpers), Ok),
+        Expr::Field { target, field } => {
+            lower_strict_field_or_constant(expr, target, field, helpers)
+        }
         Expr::Unary { op, expr } => Ok(RuntimeExpr::Unary {
             op: lower_runtime_unary_op(*op),
             expr: Box::new(lower_runtime_expr_strict_with_helpers(expr, helpers)?),
@@ -359,6 +363,34 @@ fn lower_runtime_field_expr(target: &Expr, field: &str) -> RuntimeExpr {
     )
 }
 
+fn lower_enum_variant_field(target: &Expr, field: &str) -> Option<RuntimeExpr> {
+    let Expr::Path(path) = target else {
+        return None;
+    };
+    is_uppercase_path_segment(path)
+        .then_some(field)
+        .filter(|field| is_uppercase_path_segment(field))
+        .map(|field| RuntimeExpr::Variant {
+            path: Some(path.clone()),
+            name: field.to_owned(),
+            payload: None,
+        })
+}
+
+fn lower_strict_field_or_constant(
+    expr: &Expr,
+    target: &Expr,
+    field: &str,
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
+    if let Some(value) = lower_enum_variant_field(target, field) {
+        return Ok(value);
+    }
+    lower_std_float_constant(expr)
+        .map(RuntimeExpr::Value)
+        .map_or_else(|| lower_strict_field_expr(target, field, helpers), Ok)
+}
+
 fn lower_strict_field_expr(
     target: &Expr,
     field: &str,
@@ -444,6 +476,7 @@ fn runtime_method_name(method: &str) -> &str {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RuntimeExternalNamespace {
     Conv2d,
+    Data,
     Infer,
 }
 
@@ -451,6 +484,7 @@ impl RuntimeExternalNamespace {
     fn from_receiver(receiver: &str) -> Option<Self> {
         match receiver {
             "conv2d" => Some(Self::Conv2d),
+            "data" => Some(Self::Data),
             "infer" => Some(Self::Infer),
             _ => None,
         }
@@ -459,6 +493,7 @@ impl RuntimeExternalNamespace {
     const fn as_label_prefix(self) -> &'static str {
         match self {
             Self::Conv2d => "conv2d",
+            Self::Data => "data",
             Self::Infer => "infer",
         }
     }
@@ -943,6 +978,17 @@ fn lower_constructor_call(
 }
 
 fn constructor_path(path: &str) -> Option<(Option<String>, String)> {
+    if let Some(name) = path.strip_prefix('.')
+        && is_uppercase_path_segment(name)
+    {
+        return Some((None, name.to_owned()));
+    }
+    if let Some((prefix, name)) = path.rsplit_once('.')
+        && is_uppercase_path_segment(prefix)
+        && is_uppercase_path_segment(name)
+    {
+        return Some((Some(prefix.to_owned()), name.to_owned()));
+    }
     let (prefix, name) = path
         .rsplit_once("::")
         .map_or((None, path), |(prefix, name)| {
@@ -956,9 +1002,15 @@ fn constructor_path(path: &str) -> Option<(Option<String>, String)> {
     (is_known_std_variant || is_uppercase_variant).then(|| (prefix, name.to_owned()))
 }
 
+fn is_uppercase_path_segment(name: &str) -> bool {
+    name.chars()
+        .next()
+        .is_some_and(|ch| ch.is_ascii_uppercase())
+}
+
 fn lower_runtime_literal(literal: &Literal) -> RuntimeValue {
     match literal {
-        Literal::String(value) => RuntimeValue::String(value.clone()),
+        Literal::String(value) => RuntimeValue::String(decode_string_literal_value(value)),
         Literal::Char { value, .. } => RuntimeValue::Char(*value),
         Literal::Int {
             value,
@@ -1057,6 +1109,56 @@ fn lower_runtime_literal(literal: &Literal) -> RuntimeValue {
             RuntimeValue::Duration,
         ),
     }
+}
+
+fn decode_string_literal_value(value: &str) -> String {
+    let mut decoded = String::with_capacity(value.len());
+    let mut chars = value.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            decoded.push(ch);
+            continue;
+        }
+        match chars.next() {
+            Some('"') => decoded.push('"'),
+            Some('\\') | None => decoded.push('\\'),
+            Some('n') => decoded.push('\n'),
+            Some('r') => decoded.push('\r'),
+            Some('t') => decoded.push('\t'),
+            Some('u') => decode_unicode_string_escape(&mut chars, &mut decoded),
+            Some(other) => {
+                decoded.push('\\');
+                decoded.push(other);
+            }
+        }
+    }
+    decoded
+}
+
+fn decode_unicode_string_escape(chars: &mut std::str::Chars<'_>, decoded: &mut String) {
+    if chars.next() != Some('{') {
+        decoded.push_str("\\u");
+        return;
+    }
+    let mut digits = String::new();
+    for ch in chars.by_ref() {
+        if ch == '}' {
+            if let Some(ch) = u32::from_str_radix(&digits, 16)
+                .ok()
+                .and_then(char::from_u32)
+            {
+                decoded.push(ch);
+            } else {
+                decoded.push_str("\\u{");
+                decoded.push_str(&digits);
+                decoded.push('}');
+            }
+            return;
+        }
+        digits.push(ch);
+    }
+    decoded.push_str("\\u{");
+    decoded.push_str(&digits);
 }
 
 fn lower_std_float_constant(expr: &Expr) -> Option<RuntimeValue> {

@@ -22,7 +22,7 @@ use arcweft_lang_hir::syntax::{
         line_plan::{DeferOutcome, LinePlan, LinePlanItem, TriggerPattern},
         pattern::Pattern,
     },
-    expr::{CallArg, Expr},
+    expr::{CallArg, Expr, parse_expr},
 };
 
 /// Runtime task plan produced from one checked dialogue line plan.
@@ -85,6 +85,7 @@ impl RuntimePlanLowerer {
         for item in items {
             match item {
                 HirFlowItem::Dialogue(dialogue) => self.lower_dialogue(flow_id, dialogue),
+                HirFlowItem::Stmt(stmt) => self.lower_stmt_dialogue(flow_id, stmt),
                 HirFlowItem::Scope(scope) => self.lower_flow_items(flow_id, scope.body()),
                 HirFlowItem::If(block) => {
                     self.lower_flow_items(flow_id, block.body());
@@ -110,6 +111,28 @@ impl RuntimePlanLowerer {
                 }
                 _ => {}
             }
+        }
+    }
+
+    fn lower_stmt_dialogue(&mut self, flow_id: Option<&EntityRef>, stmt: &Stmt) {
+        match stmt {
+            Stmt::Let { expr, .. } | Stmt::Expr(expr) => self.lower_dialogue_expr(flow_id, expr),
+            _ => {}
+        }
+    }
+
+    fn lower_dialogue_expr(&mut self, flow_id: Option<&EntityRef>, expr: &Expr) {
+        let Some((callee, plan)) = dialogue_expr_plan(expr) else {
+            return;
+        };
+        match lower_line_plan(plan) {
+            Ok(group) => self.groups.push(LoweredLineTaskGroup {
+                flow_id: flow_id.cloned(),
+                line_id: None,
+                callee: expr_label(callee),
+                group,
+            }),
+            Err(mut errors) => self.errors.append(&mut errors),
         }
     }
 
@@ -235,7 +258,11 @@ impl LinePlanGraphLowerer {
                     pattern: pattern_label(pattern),
                     value: expr_label(expr),
                 });
-                Vec::new()
+                if let Some(anchor) = parse_timed_cue_block_anchor(expr, &mut self.errors) {
+                    vec![LineTaskNode::Child(self.lower_timed_cue(&anchor, expr))]
+                } else {
+                    Vec::new()
+                }
             }
             LinePlanItem::Out(expr) => {
                 let out = LineOutRequest {
@@ -604,6 +631,36 @@ fn effect_nodes(effects: Vec<LineEffectRequest>) -> Vec<LineTaskNode> {
 
 fn flatten_defer_stack(defer_stack: Vec<Vec<LineEffectRequest>>) -> Vec<LineEffectRequest> {
     defer_stack.into_iter().rev().flatten().collect()
+}
+
+fn dialogue_expr_plan(expr: &Expr) -> Option<(&Expr, &LinePlan)> {
+    match expr {
+        Expr::DialogueCall { callee, plan, .. } => Some((callee.as_ref(), plan.as_ref()?)),
+        Expr::Try { expr } => dialogue_expr_plan(expr),
+        _ => None,
+    }
+}
+
+fn parse_timed_cue_block_anchor(expr: &Expr, errors: &mut Vec<LinePlanLowerError>) -> Option<Expr> {
+    let Expr::NamedBlock { name, .. } = expr else {
+        return None;
+    };
+    let anchor = name.strip_prefix("at(")?.strip_suffix(')')?.trim();
+    if anchor.is_empty() {
+        errors.push(LinePlanLowerError::new(
+            "timed cue anchor cannot be empty".to_owned(),
+        ));
+        return None;
+    }
+    match parse_expr(anchor) {
+        Ok(anchor) => Some(anchor),
+        Err(error) => {
+            errors.push(LinePlanLowerError::new(format!(
+                "timed cue anchor is not a valid expression: {error}"
+            )));
+            None
+        }
+    }
 }
 
 fn trigger_mark_name(trigger: &TriggerPattern) -> Option<String> {

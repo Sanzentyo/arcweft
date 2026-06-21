@@ -1,7 +1,7 @@
 use crate::native_task::{NativeAdapterRegistrar, NativeTaskBridge, NativeTaskStats};
 use crate::stats::{RuntimeExecutorStats, runtime_executor_stats};
 use arcweft_bundle::{
-    ArcweftBundle, BundleAdapterManifest, BundleImageAnimation, BundleImageAsset,
+    ArcweftBundle, BundleAdapterManifest, BundleFormat, BundleImageAnimation, BundleImageAsset,
     BundleImageDimensions, BundleImageFormat, BundleKind, BundleVirtualFile,
 };
 use arcweft_core::bytecode::BytecodeProgram;
@@ -19,6 +19,9 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
+
+mod session;
+pub use session::{BundleRunnerSession, BundleRunnerSessionStep};
 
 /// Executes a decoded Arcweft bundle with native adapters supplied by the host.
 pub fn run_bundle_with_native_adapters(
@@ -45,7 +48,11 @@ pub fn run_bundle_file_with_native_adapters(
         })
     })?;
     let bundle = run_bundle_runner_phase(&mut phases, "decode_bundle", || {
-        ArcweftBundle::from_json_slice(&bytes).map_err(BundleRunnerError::DecodeBundle)
+        match options.bundle_format {
+            Some(format) => ArcweftBundle::from_format_slice(format, &bytes),
+            None => ArcweftBundle::from_path_slice(path, &bytes),
+        }
+        .map_err(BundleRunnerError::DecodeBundle)
     })?;
     execute_bundle_with_native_adapters(&bundle, options, adapter_registrars, &mut phases)
 }
@@ -61,6 +68,7 @@ pub struct BundleRunnerOptions {
     pub max_ops: usize,
     pub values: Vec<RuntimeBinding>,
     pub pure_config: RuntimePureAcceleratorConfig,
+    pub bundle_format: Option<BundleFormat>,
 }
 
 impl Default for BundleRunnerOptions {
@@ -74,6 +82,7 @@ impl Default for BundleRunnerOptions {
             max_ops: 32,
             values: Vec::new(),
             pure_config: RuntimePureAcceleratorConfig::default(),
+            bundle_format: None,
         }
     }
 }
@@ -783,6 +792,36 @@ mod tests {
     use arcweft_core::line_task::LineTaskGroup;
     use arcweft_core::plan::{FlowOp, RuntimeFlow, RuntimeLineId};
     use arcweft_render_text::LineDisplayCatalog;
+
+    #[test]
+    fn bundle_runner_session_captures_per_run_host_state_and_steps_incrementally() {
+        let configured = std::cell::Cell::new(false);
+        let bundle = dialogue_bundle();
+        let mut session = BundleRunnerSession::with_adapter_installer(
+            &bundle,
+            &BundleRunnerOptions {
+                steps: 4,
+                mode: BundleRunnerStepMode::Game,
+                max_ops: 64,
+                ..BundleRunnerOptions::default()
+            },
+            |_source_path, builder| {
+                configured.set(true);
+                Ok(builder)
+            },
+        )
+        .expect("session starts with capturing adapter installer");
+
+        assert!(configured.get());
+        assert!(!session.is_finished());
+        let first = session
+            .step()
+            .expect("first step succeeds")
+            .expect("first step runs");
+
+        assert_eq!(first.summary.index, 0);
+        assert_eq!(session.steps().len(), 1);
+    }
 
     #[test]
     fn bundle_runner_preserves_typed_flow_events_for_embedding_hosts() {

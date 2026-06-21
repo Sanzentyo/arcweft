@@ -1,6 +1,6 @@
 # Desktop Adapter Implementation Status
 
-Last updated: 2026-06-19.
+Last updated: 2026-06-21.
 
 ## Implemented Boundary
 
@@ -12,7 +12,8 @@ The implementation is split into:
 - `arcweft-desktop-contract`: serializable request/response, platform, geometry, window, pointer, and file-grant value types.
 - `arcweft-desktop-host`: Sans I/O dispatch, host-main-thread queueing, pending completion, cancellation, and an in-memory backend for deterministic tests.
 - `arcweft-desktop-native`: native backend for capability negotiation, user file grants/dialogs, known-directory policy, optional global pointer, optional external window observation, and optional external-window control driver hooks.
-- `arcweft-adapter-desktop`: ten logical Arcweft adapter manifests plus JSON codec and host-adapter bindings.
+- `arcweft-adapter-desktop`: ten logical Arcweft adapter manifests plus typed host-call ABI metadata, payload decoders, and host-adapter bindings.
+- `arcweft-player-native`: winit event-loop owner for the product windowed `.awfb` path, including the concrete primary-owned-window/cursor driver.
 
 `arcweft-host-adapter` now supports both synchronous completion and pending host-main-thread work:
 
@@ -35,7 +36,62 @@ The CLI standard native policy includes only these desktop manifests:
 
 Bundle packaging adds desktop manifests only for required `desktop.*` host calls. High-authority calls such as global pointer and external-window control therefore require an explicit host call in the program and still remain disabled by native backend feature flags and host policy unless enabled by the embedding host.
 
-The current headless/offscreen native player has no owned-window driver. Owned-window and owned-cursor capabilities correctly report `unsupported`; no fake no-op window implementation is installed.
+Desktop owned-window source code uses adapter-injected typed functions, not
+JSON request strings. The standard desktop manifest exposes calls such as:
+
+- `desktop.window.owned.set_title(title: String)`
+- `desktop.window.owned.set_bounds(x: i32, y: i32, width: u32, height: u32)`
+- `desktop.window.owned.set_mode(mode: WindowMode)`
+- `desktop.window.owned.request_close()`
+- `desktop.cursor.owned.set_icon(icon: CursorIcon)`
+
+The generic custom host-call path preserves positional and named runtime
+payloads, and host adapters decode those payloads through shared typed helpers.
+`WindowMode` and `CursorIcon` are adapter-exported enum types, so source passes
+variants such as `.BorderlessFullscreen`, `.Fullscreen`, `.Normal`,
+`.Pointer`, and `.Default`. The desktop adapter then maps typed runtime
+payloads into the serializable `arcweft-desktop-contract` request enums
+internally. The previous generic desktop JSON request fallback has been
+removed; desktop host calls without a typed decoder fail explicitly.
+
+The headless/offscreen native player has no owned-window driver. Owned-window and owned-cursor capabilities correctly report `unsupported`; no fake no-op window implementation is installed.
+
+The windowed `.awfb` player creates its winit window first, then installs a
+`WinitOwnedWindowDriver` into `NativeDesktopBackend` on the same event-loop
+thread. The renderer drives a `BundleRunnerSession` once per event-loop turn,
+and `pump_main_thread` continues while presentation waits for user page
+advance. This keeps native window handles outside runtime/Sans I/O state while
+allowing desktop host calls to complete through the bound `HostMainThread`
+lane.
+
+The first concrete driver intentionally exposes only one owned window:
+`owned:primary`. `WindowTarget::PrimaryOwned` and `WindowTarget::Owned` with
+that id both resolve to the same primary window. No winit window id, native OS
+handle, pointer, or address is serialized across the adapter boundary.
+
+Owned-window requests implemented in the windowed path:
+
+- `List` and `Get`
+- `SetTitle`
+- `SetVisible`
+- `SetMode`, with `borderless_fullscreen` mapped to borderless fullscreen and `fullscreen` mapped to exclusive fullscreen using the best available current-monitor video mode
+- `SetBounds`
+- `RequestFocus`
+- `RequestClose`
+
+Owned-cursor requests implemented in the windowed path:
+
+- `SetIcon`
+- `SetVisible`
+- `SetGrab`
+- `SetPosition`
+
+Absolute owned-window placement is advertised only on Windows, macOS, and
+Linux X11. Linux Wayland keeps owned-window observe/control and cursor control
+available but returns `DesktopError::Unsupported` for owned absolute bounds.
+Cursor grab and cursor position failures are surfaced as
+`DesktopError::Platform`; the driver does not turn platform rejection into a
+successful no-op.
 
 ## Windows Validation
 
@@ -72,6 +128,28 @@ Observed results:
 - Bundle summary included two adapter manifests: the selected Sans I/O manifest and `desktop-platform`.
 - `run-bundle` completed one native desktop task and returned the Windows capabilities response.
 
+The windowed owned-window path was validated with
+`samples/desktop-owned-window-close.arcw` and
+`samples/desktop-owned-window-demo.arcw`:
+
+```bash
+cargo run -p arcweft-cli --bin arcw -- check samples/desktop-owned-window-close.arcw --json
+cargo run -p arcweft-cli --bin arcw -- bundle samples/desktop-owned-window-close.arcw --output target/codex-owned-window/owned-window-close.awfb --json
+target/debug/arcweft-player-native.exe target/codex-owned-window/owned-window-close.awfb
+cargo run -p arcweft-cli --bin arcw -- check samples/desktop-owned-window-demo.arcw --json
+cargo run -p arcweft-cli --bin arcw -- bundle samples/desktop-owned-window-demo.arcw --output target/codex-owned-window/owned-window-demo.awfb --json
+target/debug/arcweft-player-native.exe target/codex-owned-window/owned-window-demo.awfb
+```
+
+Observed results:
+
+- The samples checked successfully without source-local `extern capability` blocks.
+- The demo sample uses typed enum variants for window mode and cursor icon
+  instead of string names.
+- Bundle summary for the close sample included `required_host_calls: ["desktop.window.owned.request_close"]`.
+- Bundle summary for the demo sample included typed calls for owned title, bounds, mode, cursor icon, and close.
+- The native windowed player exited successfully through owned-window `RequestClose`.
+
 ## Other Platform Validation
 
 macOS, Linux X11, Linux Wayland, and Web were not live-validated in this Windows pass.
@@ -103,7 +181,11 @@ Known-directory validation requires host policy to allow a directory family firs
 
 ## Remaining Platform Work
 
-- Install a real owned-window driver in an event-loop native player before marking owned-window/cursor operations supported.
+- Live-validate the remaining owned window/cursor operations on Windows, macOS, Linux X11, and Linux Wayland.
+- Add direct windowed integration fixtures for owned-window/cursor host calls once the native test harness can drive a real event loop without requiring manual UI interaction.
+- Add typed source functions and decoders for the remaining desktop file/grant
+  host-call surfaces now that the generic desktop JSON request fallback is
+  removed.
 - Add live macOS/Linux validation results when those environments are available.
 - Keep persistent file grants unsupported until a sealed, platform-specific token store is designed and implemented.
 - Enable `global-pointer` and `external-window-observe` only in explicitly privileged builds and document the host policy used for each validation run.

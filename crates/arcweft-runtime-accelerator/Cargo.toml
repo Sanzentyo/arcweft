@@ -7,7 +7,17 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+apache-avro.workspace = true
+arcweft-codec-cbor.workspace = true
+arcweft-codec-arrow.workspace = true
+arcweft-codec-binary.workspace = true
+arcweft-codec-csv.workspace = true
+arcweft-codec-json.workspace = true
+arcweft-codec-msgpack.workspace = true
+arcweft-codec-toml.workspace = true
+arcweft-codec-yaml.workspace = true
 arcweft-core = { path = "../arcweft-core" }
+arcweft-data.workspace = true
 bytemuck = { workspace = true, optional = true }
 glam = { workspace = true, optional = true }
 ndarray = { workspace = true, optional = true }

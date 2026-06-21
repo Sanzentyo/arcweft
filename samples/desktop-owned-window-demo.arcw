@@ -1,0 +1,66 @@
+pub surface character narrator {
+    display = "Arcweft Window Demo"
+    default_voice = auto
+}
+
+entry game @entry.main {
+    start @flow.main
+}
+
+flow main effects { desktop.window.owned.control } {
+    narrator:
+        Owned window demo: starting in normal window mode.[p]
+
+    let _title = try await desktop.window.owned.set_title("Arcweft Owned Window Demo - normal") with {
+        error _ => return "set_title_failed"
+    }
+
+    let _bounds = try await desktop.window.owned.set_bounds(120i32, 90i32, 960u32, 540u32) with {
+        error _ => return "set_bounds_failed"
+    }
+
+    narrator:
+        Normal window: title and bounds have been applied.[p]
+
+    let _cursor_pointer = try await desktop.cursor.owned.set_icon(.Pointer) with {
+        error _ => return "cursor_pointer_failed"
+    }
+
+    narrator:
+        Cursor icon is now pointer.[p]
+
+    let _borderless = try await desktop.window.owned.set_mode(.BorderlessFullscreen) with {
+        error _ => return "borderless_failed"
+    }
+
+    narrator:
+        Borderless fullscreen: no title bar, no exclusive video mode switch.[p]
+
+    let _exclusive = try await desktop.window.owned.set_mode(.Fullscreen) with {
+        error _ => return "fullscreen_failed"
+    }
+
+    narrator:
+        Fullscreen: exclusive fullscreen using the current monitor video mode.[p]
+
+    let _normal = try await desktop.window.owned.set_mode(.Normal) with {
+        error _ => return "normal_failed"
+    }
+
+    let _title_done = try await desktop.window.owned.set_title("Arcweft Owned Window Demo - done") with {
+        error _ => return "set_done_title_failed"
+    }
+
+    let _cursor_default = try await desktop.cursor.owned.set_icon(.Default) with {
+        error _ => return "cursor_default_failed"
+    }
+
+    narrator:
+        Back to normal. The demo will close after the next page.[p]
+
+    let _close = try await desktop.window.owned.request_close() with {
+        error _ => return "close_failed"
+    }
+
+    return "desktop_owned_window_demo"
+}

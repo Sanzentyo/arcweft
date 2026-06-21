@@ -5,13 +5,18 @@ use crate::stream::RuntimeStreamEvent;
 use crate::task::{CancelScopeId, TaskEvent, TaskSpec};
 use crate::time::{LogicalDuration, TickId};
 use crate::value::RuntimeBinding;
+use arcweft_interaction_model::{
+    audio::AudioEvent,
+    input::{InputEventKind, RoutedInputEvent},
+    payload::InteractionPayload,
+};
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RuntimeStepInput {
     pub tick: TickId,
     pub dt: LogicalDuration,
     pub bindings: Vec<RuntimeBinding>,
-    pub input_events: Vec<InputEvent>,
+    pub input_events: Vec<RoutedInputEvent>,
     pub task_events: Vec<TaskEvent>,
     pub audio_events: Vec<AudioEvent>,
     pub source_events: Vec<RuntimeSourceEvent>,
@@ -27,7 +32,7 @@ pub struct RuntimeStepInputRef<'a> {
     tick: TickId,
     dt: LogicalDuration,
     bindings: &'a [RuntimeBinding],
-    input_events: &'a [InputEvent],
+    input_events: &'a [RoutedInputEvent],
     task_events: &'a [TaskEvent],
     audio_events: &'a [AudioEvent],
     source_events: &'a [RuntimeSourceEvent],
@@ -228,21 +233,6 @@ pub struct RuntimeDiagnostic {
     pub message: String,
 }
 
-/// Named value provided by adapters or earlier runtime operations.
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct InputEvent {
-    pub kind: String,
-    pub payload: Option<String>,
-}
-
-/// Audio event placeholder kept as Sans I/O data.
-#[derive(Clone, Debug, PartialEq)]
-pub struct AudioEvent {
-    pub kind: String,
-    pub payload: Option<String>,
-}
-
 impl RuntimeStepInput {
     pub fn as_view(&self) -> RuntimeStepInputRef<'_> {
         RuntimeStepInputRef {
@@ -254,6 +244,35 @@ impl RuntimeStepInput {
             audio_events: self.audio_events.as_slice(),
             source_events: self.source_events.as_slice(),
         }
+    }
+}
+
+pub(crate) fn input_event_trigger_name(event: &RoutedInputEvent) -> Option<&str> {
+    match &event.event {
+        InputEventKind::Custom { name } => Some(name.as_str()),
+        InputEventKind::Text { .. } => Some("text"),
+        InputEventKind::FocusGained => Some("focus_gained"),
+        InputEventKind::FocusLost => Some("focus_lost"),
+        InputEventKind::PointerMove { .. }
+        | InputEventKind::PointerDown { .. }
+        | InputEventKind::PointerUp { .. }
+        | InputEventKind::Scroll { .. }
+        | InputEventKind::KeyDown { .. }
+        | InputEventKind::KeyUp { .. } => None,
+    }
+}
+
+pub(crate) fn input_event_text_payload(event: &RoutedInputEvent) -> Option<&str> {
+    match event.payload.as_ref()? {
+        InteractionPayload::Text(value) => Some(value.as_str()),
+        InteractionPayload::Entity(value) => Some(value.as_str()),
+        InteractionPayload::Null
+        | InteractionPayload::Bool(_)
+        | InteractionPayload::I64(_)
+        | InteractionPayload::U64(_)
+        | InteractionPayload::F64(_)
+        | InteractionPayload::List(_)
+        | InteractionPayload::Map(_) => None,
     }
 }
 
@@ -270,7 +289,7 @@ impl<'a> RuntimeStepInputRef<'a> {
         self.bindings
     }
 
-    pub const fn input_events(&self) -> &'a [InputEvent] {
+    pub const fn input_events(&self) -> &'a [RoutedInputEvent] {
         self.input_events
     }
 

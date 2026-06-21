@@ -225,14 +225,16 @@ pub(crate) fn run_line_task_group_for_input(
 
 fn input_matches_trigger(input: &RuntimeStepInput, trigger: &str) -> bool {
     input.input_events.iter().any(|event| {
-        if event.kind == trigger {
-            return true;
-        }
-        let Some(payload) = event.payload.as_deref() else {
+        let Some(name) = crate::step::input_event_trigger_name(event) else {
             return false;
         };
-        trigger == format!("{} {payload}", event.kind)
-            || trigger == format!("{}:{payload}", event.kind)
+        if name == trigger {
+            return true;
+        }
+        let Some(payload) = crate::step::input_event_text_payload(event) else {
+            return false;
+        };
+        trigger == format!("{name} {payload}") || trigger == format!("{name}:{payload}")
     })
 }
 
@@ -286,8 +288,10 @@ fn trigger_is_ready(trigger: &LineTaskTrigger, input: &RuntimeStepInput) -> bool
     match trigger {
         LineTaskTrigger::Immediate => true,
         LineTaskTrigger::Mark(name) => input.input_events.iter().any(|event| {
-            (event.kind == "mark" && event.payload.as_deref() == Some(name.as_str()))
-                || event.kind == format!("mark:{name}")
+            let event_name = crate::step::input_event_trigger_name(event);
+            let payload = crate::step::input_event_text_payload(event);
+            (event_name == Some("mark") && payload == Some(name.as_str()))
+                || event_name == Some(format!("mark:{name}").as_str())
         }),
         LineTaskTrigger::Delay(duration) => input.dt.as_nanos() >= duration.as_nanos(),
     }

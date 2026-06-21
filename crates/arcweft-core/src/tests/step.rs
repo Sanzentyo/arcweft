@@ -4,8 +4,8 @@ use crate::engine::{Engine, FlowFiberStatus};
 use crate::line_task::{LineTaskGroup, LineTaskNode, LineTaskScope};
 use crate::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
 use crate::step::{
-    InputEvent, RuntimeDiagnostic, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode,
-    RuntimeStepOptions, RuntimeStepOutput, RuntimeStepStopReason,
+    RuntimeDiagnostic, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
+    RuntimeStepOutput, RuntimeStepStopReason,
 };
 use crate::time::{LogicalDuration, TickId};
 
@@ -14,10 +14,7 @@ fn runtime_step_input_ref_borrows_adapter_owned_events() {
     let input = RuntimeStepInput {
         tick: TickId(7),
         dt: LogicalDuration::from_nanos(16_000_000),
-        input_events: vec![InputEvent {
-            kind: "advance".to_owned(),
-            payload: None,
-        }],
+        input_events: vec![super::input_event("advance", None)],
         ..RuntimeStepInput::default()
     };
 
@@ -25,7 +22,10 @@ fn runtime_step_input_ref_borrows_adapter_owned_events() {
 
     assert_eq!(view.tick(), TickId(7));
     assert_eq!(view.dt(), LogicalDuration::from_nanos(16_000_000));
-    assert_eq!(view.input_events()[0].kind, "advance");
+    assert_eq!(
+        crate::step::input_event_trigger_name(&view.input_events()[0]),
+        Some("advance")
+    );
     assert!(view.bindings().is_empty());
 }
 

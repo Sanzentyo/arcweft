@@ -1,0 +1,10 @@
+entry game @entry.main {
+    start @flow.main
+}
+
+flow main effects { desktop.window.owned.control } {
+    let _close = try await desktop.window.owned.request_close() with {
+        error _ => return "owned_window_close_failed"
+    }
+    return "owned_window_close_requested"
+}

@@ -498,12 +498,16 @@ fn lower_evaluated_host_request(call: &EvaluatedHostCall<'_>) -> Result<HostTask
         ("system" | "runtime", "available_parallelism") => {
             Ok(system_info_request(SystemInfoKind::AvailableParallelism))
         }
-        _ => Ok(HostTaskRequest::custom(
+        _ => Ok(HostTaskRequest::custom_with_named_args(
             call.capability,
             call.operation,
             call.args
                 .iter()
+                .filter(|arg| arg.name.is_none())
                 .map(|arg| RuntimePayload::new(arg.value.clone())),
+            call.args.iter().filter_map(|arg| {
+                Some((arg.name.clone()?, RuntimePayload::new(arg.value.clone())))
+            }),
         )),
     }
 }
@@ -766,10 +770,12 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
 
 fn input_selects_choice(input: &RuntimeStepInput, option: &ChoiceRuntimeOption) -> bool {
     input.input_events.iter().any(|event| {
-        let Some(payload) = event.payload.as_deref() else {
+        let Some(payload) = crate::step::input_event_text_payload(event) else {
             return false;
         };
-        matches!(event.kind.as_str(), "choice" | "select")
-            && (option.id.as_deref() == Some(payload) || option.label == payload)
+        matches!(
+            crate::step::input_event_trigger_name(event),
+            Some("choice" | "select")
+        ) && (option.id.as_deref() == Some(payload) || option.label == payload)
     })
 }

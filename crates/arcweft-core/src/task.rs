@@ -129,7 +129,15 @@ pub enum HostTaskRequest {
         capability: HostCapabilityId,
         operation: String,
         args: Vec<RuntimePayload>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        named_args: Vec<NamedHostTaskArg>,
     },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct NamedHostTaskArg {
+    pub name: String,
+    pub value: RuntimePayload,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -353,6 +361,24 @@ impl HostTaskRequest {
             capability: HostCapabilityId(capability.into()),
             operation: operation.into(),
             args: args.into_iter().collect(),
+            named_args: Vec::new(),
+        }
+    }
+
+    pub fn custom_with_named_args(
+        capability: impl Into<String>,
+        operation: impl Into<String>,
+        args: impl IntoIterator<Item = RuntimePayload>,
+        named_args: impl IntoIterator<Item = (String, RuntimePayload)>,
+    ) -> Self {
+        Self::Custom {
+            capability: HostCapabilityId(capability.into()),
+            operation: operation.into(),
+            args: args.into_iter().collect(),
+            named_args: named_args
+                .into_iter()
+                .map(|(name, value)| NamedHostTaskArg { name, value })
+                .collect(),
         }
     }
 
