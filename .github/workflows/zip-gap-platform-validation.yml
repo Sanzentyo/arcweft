@@ -49,9 +49,18 @@ jobs:
       - name: Workspace clippy
         run: cargo clippy --workspace --all-targets --all-features
 
-      - name: Workspace fast tests
-        run: |
-          cargo test --workspace --lib --tests --exclude arcweft-cli --quiet
-          cargo test -p arcweft-cli --lib --bins --quiet
-          cargo test -p arcweft-cli --test regression_harness --quiet
-          cargo test -p arcweft-cli --test arcw_fixtures_check_run --quiet
+      - name: Workspace non-CLI lib and integration tests
+        timeout-minutes: 45
+        run: cargo test --workspace --lib --tests --exclude arcweft-cli
+
+      - name: CLI lib and bin tests
+        timeout-minutes: 20
+        run: cargo test -p arcweft-cli --lib --bins
+
+      - name: CLI regression harness
+        timeout-minutes: 10
+        run: cargo test -p arcweft-cli --test regression_harness
+
+      - name: CLI fixture check and run tests
+        timeout-minutes: 10
+        run: cargo test -p arcweft-cli --test arcw_fixtures_check_run
