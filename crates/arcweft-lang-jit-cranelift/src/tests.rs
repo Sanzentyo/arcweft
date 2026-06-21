@@ -88,6 +88,12 @@ fn f64_binding(name: &str, value: f64) -> RuntimeBinding {
     }
 }
 
+fn object_symbols_contain(symbols: &[&str], expected: &str) -> bool {
+    symbols
+        .iter()
+        .any(|symbol| *symbol == expected || symbol.strip_prefix('_') == Some(expected))
+}
+
 fn assert_object_symbols(object: &ObjectPureInputs) {
     assert!(!object.object_bytes.is_empty());
     assert!(
@@ -104,10 +110,10 @@ fn assert_object_symbols(object: &ObjectPureInputs) {
         .symbols()
         .filter_map(|symbol| symbol.name().ok())
         .collect::<Vec<_>>();
-    assert!(symbols.contains(&object.entry_symbol.as_str()));
-    assert!(symbols.contains(&object.batch_symbol.as_str()));
+    assert!(object_symbols_contain(&symbols, &object.entry_symbol));
+    assert!(object_symbols_contain(&symbols, &object.batch_symbol));
     if let Some(batch_sum_symbol) = object.batch_sum_symbol.as_deref() {
-        assert!(symbols.contains(&batch_sum_symbol));
+        assert!(object_symbols_contain(&symbols, batch_sum_symbol));
     }
 }
 
@@ -127,8 +133,8 @@ fn assert_batch_object_symbols(object: &ObjectPureBatchInputs) {
         .symbols()
         .filter_map(|symbol| symbol.name().ok())
         .collect::<Vec<_>>();
-    assert!(symbols.contains(&object.batch_symbol.as_str()));
-    assert!(symbols.contains(&object.batch_sum_symbol.as_str()));
+    assert!(object_symbols_contain(&symbols, &object.batch_symbol));
+    assert!(object_symbols_contain(&symbols, &object.batch_sum_symbol));
 }
 
 fn assert_bundle_object_symbols(object: &ObjectPureBundle) {
@@ -150,7 +156,7 @@ fn assert_bundle_object_symbols(object: &ObjectPureBundle) {
     for helper in &object.helpers {
         helper
             .entrypoints
-            .for_each_symbol(|symbol| assert!(symbols.contains(&symbol)));
+            .for_each_symbol(|symbol| assert!(object_symbols_contain(&symbols, symbol)));
     }
 }
 
@@ -186,7 +192,10 @@ fn cranelift_benchmark_batch_define_can_emit_object_symbol() {
         .symbols()
         .filter_map(|symbol| symbol.name().ok())
         .collect::<Vec<_>>();
-    assert!(symbols.contains(&"arcweft_test_i64_benchmark_batch"));
+    assert!(object_symbols_contain(
+        &symbols,
+        "arcweft_test_i64_benchmark_batch"
+    ));
 }
 
 #[test]
