@@ -22,7 +22,6 @@ ledger.
 | Area | Item | Status | Current blocker |
 | --- | --- | --- | --- |
 | Agent | ZG-A-001 REPL project-bound binding policy | Partial implementation | Project hash change時の binding preserve/drop diagnostics とテストが不足 |
-| Agent | ZG-A-002 stdio MCP transport hardening | Partial implementation | timeout、bounded stderr、graceful shutdown-before-kill が不足 |
 | Agent | ZG-A-003 `.awfagent` formatter proof | Partial implementation | comments/trivia と Agent item 全体の lossless/canonical golden が不足 |
 | Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外の現在証跡が未記録 |
 | Data | ZG-D-001 parse-time budgets outside Arcweft Binary | Open implementation | 多くの codec が format-native value を先に materialize している |
@@ -54,25 +53,6 @@ Why it is not complete:
 
 The current behavior can make remote REPL state look portable across
 incompatible projects without telling the user which bindings are still valid.
-
-### ZG-A-002: stdio MCP transport hardening
-
-The stdio MCP adapter can spawn a child process and pass a fake-child
-roundtrip, but it is not hardened as a production transport.
-
-What remains:
-
-- Add request timeout enforcement instead of blocking indefinitely on a line
-  read.
-- Retain stderr in a bounded buffer so failures have context without unbounded
-  memory growth.
-- Attempt protocol/process shutdown before falling back to killing the child.
-- Add fake-child tests for timeout, stderr retention, and shutdown-before-kill.
-
-Why it is not complete:
-
-A hung or noisy child process can still stall the REPL or lose the most useful
-failure context.
 
 ### ZG-A-003: `.awfagent` formatter proof
 
@@ -198,6 +178,8 @@ some of them leave related items open:
 - HTTP codec negotiation rejects ambiguous content and enforces body caps at
   the adapter boundary.
 - `CodecRegistry` rejects duplicate ids, media types, extensions, and aliases.
+- stdio MCP transport requests time out, retain bounded stderr tails, and try
+  protocol shutdown plus exit before kill fallback.
 - Config merge is shape-aware and provenance-producing.
 - Save decoding supports explicit multi-step migration chains.
 - Derive shape generation now uses field-type where predicates and compile-time

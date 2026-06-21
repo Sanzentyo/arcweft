@@ -36,19 +36,6 @@ For a concise explanation of the concrete unfinished items, see
   drop session-bound observation/resource/RAG bindings, and assert structured
   diagnostics/report fields for each decision.
 
-### ZG-A-002: stdio MCP transport lacks production hardening
-
-- ZIP tasks: T-003, T-004, A-08, A-09.
-- Current evidence:
-  `crates/arcweft-cli/src/app/agent/mcp_stdio.rs` spawns a child process and
-  passes a fake-child roundtrip, but `request` blocks on `read_line` without a
-  timeout, stderr is piped but not retained or bounded, and `shutdown` kills the
-  child immediately instead of trying protocol/process shutdown before kill.
-- Why this matters: a hung or noisy remote endpoint can stall the REPL and hide
-  useful failure context.
-- Completion evidence needed: timeout tests, bounded stderr retention tests,
-  and shutdown-before-kill tests against a fake child.
-
 ### ZG-A-003: `.awfagent` formatter is not yet proven lossless/canonical
 
 - ZIP tasks: T-007, A-14.
@@ -73,6 +60,29 @@ For a concise explanation of the concrete unfinished items, see
   invocation differ across platforms.
 - Completion evidence needed: focused remote REPL gates and workspace gates on
   Linux, Windows, and macOS, either through CI or explicit recorded runs.
+
+## Resolved Agent Items
+
+### ZG-A-002: stdio MCP transport is hardened for blocking children
+
+- ZIP tasks: T-003, T-004, A-08, A-09.
+- Current evidence:
+  `crates/arcweft-cli/src/app/agent/mcp_stdio.rs` now reads child stdout on a
+  dedicated line reader thread and uses request `recv_timeout` instead of
+  blocking directly on `read_line`. Child stderr is retained as a bounded tail
+  buffer and attached to write/read/timeout/closed errors. Shutdown now attempts
+  a JSON-RPC `shutdown` request and `exit` notification, waits for graceful
+  process exit, and only then falls back to kill.
+- Validation evidence:
+  `cargo test -p arcweft-cli stdio_transport_ --all-features -- --nocapture`
+  and
+  `cargo clippy -p arcweft-cli --all-targets --all-features -- -D warnings`
+  passed on Windows. The focused tests cover the existing fake-child
+  roundtrip, request timeout with bounded stderr tail retention, and
+  shutdown-before-kill through a marker-writing fake child.
+- Remaining related work: this closes the stdio transport hardening slice.
+  Broader Agent completion still depends on project-bound REPL binding
+  diagnostics, formatter golden coverage, and Linux/macOS validation evidence.
 
 ## Open Data Items
 
