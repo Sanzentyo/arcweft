@@ -890,7 +890,21 @@ impl RuntimePureScalar {
     }
 
     fn label(self) -> String {
-        runtime_value_label(&self.into_runtime_value())
+        match self {
+            Self::Bool(value) => value.to_string(),
+            Self::I8(value) => value.to_string(),
+            Self::I16(value) => value.to_string(),
+            Self::I32(value) => value.to_string(),
+            Self::I64(value) | Self::ISize(value) => value.to_string(),
+            Self::I128(value) => value.to_string(),
+            Self::U8(value) => value.to_string(),
+            Self::U16(value) => value.to_string(),
+            Self::U32(value) => value.to_string(),
+            Self::U64(value) | Self::USize(value) => value.to_string(),
+            Self::U128(value) => value.to_string(),
+            Self::F32(value) => value.to_string(),
+            Self::F64(value) => value.to_string(),
+        }
     }
 }
 
@@ -997,13 +1011,21 @@ fn evaluate_scalar_binary(
             (RuntimePureScalar::Bool(lhs), RuntimePureScalar::Bool(rhs)) => {
                 Ok(RuntimePureScalar::Bool(lhs && rhs))
             }
-            (lhs, rhs) => unsupported_scalar_binary(op, lhs, rhs),
+            (lhs, rhs) => Err(RuntimeEvalError::UnsupportedBinary {
+                op: op.as_label(),
+                lhs: lhs.label(),
+                rhs: rhs.label(),
+            }),
         },
         RuntimeBinaryOp::Or => match (lhs, rhs) {
             (RuntimePureScalar::Bool(lhs), RuntimePureScalar::Bool(rhs)) => {
                 Ok(RuntimePureScalar::Bool(lhs || rhs))
             }
-            (lhs, rhs) => unsupported_scalar_binary(op, lhs, rhs),
+            (lhs, rhs) => Err(RuntimeEvalError::UnsupportedBinary {
+                op: op.as_label(),
+                lhs: lhs.label(),
+                rhs: rhs.label(),
+            }),
         },
         RuntimeBinaryOp::Lt | RuntimeBinaryOp::Le | RuntimeBinaryOp::Gt | RuntimeBinaryOp::Ge => {
             evaluate_scalar_comparison(lhs, op, rhs)
@@ -1059,7 +1081,11 @@ fn evaluate_scalar_comparison(
         (RuntimePureScalar::F64(lhs), RuntimePureScalar::F64(rhs)) => Ok(RuntimePureScalar::Bool(
             compare_scalar_float(&lhs, op, &rhs),
         )),
-        (lhs, rhs) => unsupported_scalar_binary(op, lhs, rhs),
+        (lhs, rhs) => Err(RuntimeEvalError::UnsupportedBinary {
+            op: op.as_label(),
+            lhs: lhs.label(),
+            rhs: rhs.label(),
+        }),
     }
 }
 
@@ -1111,7 +1137,11 @@ fn evaluate_scalar_arithmetic(
         (RuntimePureScalar::F64(lhs), RuntimePureScalar::F64(rhs)) => Ok(RuntimePureScalar::F64(
             evaluate_scalar_numeric(lhs, op, rhs),
         )),
-        (lhs, rhs) => unsupported_scalar_binary(op, lhs, rhs),
+        (lhs, rhs) => Err(RuntimeEvalError::UnsupportedBinary {
+            op: op.as_label(),
+            lhs: lhs.label(),
+            rhs: rhs.label(),
+        }),
     }
 }
 
@@ -1141,18 +1171,6 @@ fn evaluate_scalar_numeric<T: crate::value::RuntimeDeterministicNumeric>(
     rhs: T,
 ) -> T {
     evaluate_numeric_op(lhs, op, rhs)
-}
-
-fn unsupported_scalar_binary(
-    op: RuntimeBinaryOp,
-    lhs: RuntimePureScalar,
-    rhs: RuntimePureScalar,
-) -> Result<RuntimePureScalar, RuntimeEvalError> {
-    Err(RuntimeEvalError::UnsupportedBinary {
-        op: op.as_label(),
-        lhs: lhs.label(),
-        rhs: rhs.label(),
-    })
 }
 
 struct PureScalarEvaluator<'a, T> {

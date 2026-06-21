@@ -320,6 +320,7 @@ dependencies = [
  "arcweft-adapter-context",
  "arcweft-adapter-desktop",
  "arcweft-agent-mcp",
+ "arcweft-agent-mcp-client",
  "arcweft-agent-protocol",
  "arcweft-agent-runner",
  "arcweft-bundle",

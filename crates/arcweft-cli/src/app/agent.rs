@@ -520,6 +520,8 @@ enum AgentObserveMcpFormat {
 }
 
 #[cfg(feature = "native-capture")]
+mod mcp_stdio;
+#[cfg(feature = "native-capture")]
 mod native;
 
 #[cfg(feature = "native-capture")]

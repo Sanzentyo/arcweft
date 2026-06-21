@@ -15,7 +15,10 @@ use super::observe::{
     NativeAgentScriptSessionError, native_agent_advance_text_input_events,
     native_agent_invoke_input_events, native_runtime_input_event,
 };
-use super::repl::{AgentReplReedlineCompleter, AgentReplReedlineValidator};
+use super::repl::{
+    AgentReplConnection, AgentReplReedlineCompleter, AgentReplReedlineValidator,
+    agent_repl_parse_connection,
+};
 use super::runtime_observation::{
     AgentSourceImageDecodeCache, agent_action_targets, agent_asset_id_from_call_arg,
     agent_image_alignment_component_milli, agent_image_call_alignment,
@@ -1574,6 +1577,59 @@ fn agent_repl_reedline_completer_uses_tooling_candidates() {
             && suggestion.span.start == 0
             && suggestion.span.end == 6
     }));
+}
+
+#[test]
+fn agent_repl_parse_stdio_connection_preserves_program_and_args() {
+    let options = test_repl_options();
+    let connection =
+        agent_repl_parse_connection("stdio:arcw agent mcp", &options).expect("connection");
+
+    assert!(matches!(
+        connection,
+        Some(AgentReplConnection::StdioMcp { program, args })
+            if program == "arcw" && args == ["agent", "mcp"]
+    ));
+}
+
+#[test]
+fn agent_repl_parse_stdio_connection_rejects_shell_syntax() {
+    let options = test_repl_options();
+    let error = agent_repl_parse_connection("stdio:arcw agent mcp | tee out", &options)
+        .expect_err("shell metacharacters are rejected");
+
+    assert!(error.contains("shell metacharacter"));
+}
+
+fn test_repl_options() -> AgentReplOptions {
+    AgentReplOptions {
+        path: None,
+        profile: ProfileOptions::default(),
+        entry: None,
+        flow: None,
+        executor: CliRuntimeExecutorTier::BytecodeVm,
+        pure_backend: None,
+        pure_workers: None,
+        pure_batch_min_len: None,
+        pure_object_artifacts: false,
+        math_backend: None,
+        math_wgpu_min_elements: None,
+        steps: 1,
+        capture_step: None,
+        mode: CliRuntimeStepMode::Drain,
+        max_ops: 64,
+        values: Vec::new(),
+        viewport_width: AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH,
+        viewport_height: AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT,
+        textbox_height: None,
+        capture_time_seconds: None,
+        debug_db: None,
+        trace: None,
+        read_only: false,
+        connect: None,
+        input: None,
+        json: true,
+    }
 }
 
 #[test]

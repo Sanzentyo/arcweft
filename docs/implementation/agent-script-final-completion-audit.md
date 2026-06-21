@@ -67,8 +67,7 @@ Results:
   product runtime work, not required to prove the Agent Script package's
   controller VM, CLI/MCP, trace, debug store, and RAG acceptance criteria.
 - Long-lived remote event streaming is not required for this package.
-  Request/response MCP client endpoints such as `stdio:` remain an open
-  implementation requirement rather than a non-goal; see
-  `zip-gap-audit-2026-06-21.md`.
+  Request/response MCP client endpoints such as `stdio:` are package scope and
+  are tracked in `zip-gap-audit-2026-06-21.md`.
 - ANN vector search is not required for v1; exact normalized `f32` ranking is
   the specified baseline.

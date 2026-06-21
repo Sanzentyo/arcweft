@@ -6,6 +6,7 @@ pub(super) struct AgentReplState {
     pub(super) history: Vec<AgentReplHistoryEntry>,
     pub(super) bindings: BTreeMap<String, AgentReplBinding>,
     pub(super) connection: Option<AgentReplConnection>,
+    pub(super) remote_session: Option<McpAgentSession<StdioMcpTransport>>,
     pub(super) debug_store: Option<DebugStore>,
     pub(super) trace_path: Option<String>,
     pub(super) trace_records: usize,
@@ -126,8 +127,14 @@ pub(super) fn agent_repl_initial_state(
     let (debug_store, debug_db_path) = agent_repl_debug_store(options)?;
     let trace = agent_repl_trace_resources(options)?;
     let connection = agent_repl_initial_connection(options)?;
+    let remote_session =
+        agent_repl_connect_remote_session(connection.as_ref()).map_err(|message| {
+            eprintln!("error: {message}");
+            ExitCode::from(2)
+        })?;
     Ok(AgentReplState {
         connection,
+        remote_session,
         debug_store,
         debug_db_path,
         trace_path: trace.path,
@@ -568,6 +575,7 @@ pub(super) fn agent_repl_eval_meta(
         }
         ":reset" => {
             state.report = None;
+            state.remote_session = None;
             state.history.clear();
             state.bindings.clear();
             state.connection = None;
@@ -605,7 +613,7 @@ pub(super) fn agent_repl_eval_inspection_meta(
     command: &str,
     rest: &str,
     options: &AgentReplOptions,
-    state: &AgentReplState,
+    state: &mut AgentReplState,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> AgentReplCellReport {
     match command {
@@ -772,8 +780,8 @@ pub(super) fn agent_repl_observe(
     state: &mut AgentReplState,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> AgentReplCellReport {
-    if let Some(message) = agent_repl_remote_execution_guard(state, ":observe") {
-        return agent_repl_error(index, input, "meta", message);
+    if state.remote_session.is_some() {
+        return agent_repl_remote_observe(index, input, state);
     }
     match agent_observation_report_for_options(
         &agent_repl_observe_options(options, state),
@@ -939,7 +947,12 @@ pub(super) fn agent_repl_connect(
         Ok(connection) => connection,
         Err(message) => return agent_repl_error(index, input, "meta", message),
     };
+    let remote_session = match agent_repl_connect_remote_session(connection.as_ref()) {
+        Ok(session) => session,
+        Err(message) => return agent_repl_error(index, input, "meta", message),
+    };
     state.connection = connection;
+    state.remote_session = remote_session;
     state.report = None;
 
     agent_repl_ok(
@@ -999,6 +1012,23 @@ pub(super) fn agent_repl_parse_connection(
         id: target.to_owned(),
         manifest: options.profile.manifest.display().to_string(),
     }))
+}
+
+fn agent_repl_connect_remote_session(
+    connection: Option<&AgentReplConnection>,
+) -> Result<Option<McpAgentSession<StdioMcpTransport>>, String> {
+    let Some(AgentReplConnection::StdioMcp { program, args }) = connection else {
+        return Ok(None);
+    };
+    let endpoint = StdioMcpEndpoint {
+        program: program.clone(),
+        args: args.clone(),
+    };
+    let transport = StdioMcpTransport::spawn(&endpoint)
+        .map_err(|error| format!("failed to connect MCP stdio endpoint `{endpoint}`: {error}"))?;
+    McpAgentSession::connect(transport, ConnectOptions::default())
+        .map(Some)
+        .map_err(|error| format!("failed MCP stdio handshake for `{endpoint}`: {error}"))
 }
 
 fn agent_repl_parse_stdio_mcp_connection(
@@ -1170,11 +1200,11 @@ pub(super) fn agent_repl_capture(
     input: &str,
     target: &str,
     options: &AgentReplOptions,
-    state: &AgentReplState,
+    state: &mut AgentReplState,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> AgentReplCellReport {
-    if let Some(message) = agent_repl_remote_execution_guard(state, ":capture") {
-        return agent_repl_error(index, input, "meta", message);
+    if state.remote_session.is_some() {
+        return agent_repl_remote_capture(index, input, target, state);
     }
     let mut observe_options = agent_repl_observe_options(options, state);
     observe_options.image = Some(AgentObserveImageKind::Png);
@@ -1222,6 +1252,103 @@ pub(super) fn agent_repl_capture(
             format!("capture failed with exit code {code:?}"),
         ),
     }
+}
+
+fn agent_repl_remote_observe(
+    index: usize,
+    input: &str,
+    state: &mut AgentReplState,
+) -> AgentReplCellReport {
+    let Some(session) = state.remote_session.as_mut() else {
+        return agent_repl_error(
+            index,
+            input,
+            "meta",
+            "remote MCP session is not connected".to_owned(),
+        );
+    };
+    match session.observe(ObserveRequest::default()) {
+        Ok(observation) => agent_repl_ok(
+            index,
+            input,
+            "meta",
+            serde_json::json!({
+                "remote": true,
+                "tick": observation.tick,
+                "frame_id": observation.frame_id,
+                "state_hash": observation.state_hash,
+                "render_hash": observation.render_hash,
+                "actions": observation.actions.len(),
+                "signals": observation.signals.len(),
+            }),
+        ),
+        Err(error) => agent_repl_error(index, input, "meta", error.to_string()),
+    }
+}
+
+fn agent_repl_remote_capture(
+    index: usize,
+    input: &str,
+    target: &str,
+    state: &mut AgentReplState,
+) -> AgentReplCellReport {
+    let request = match agent_repl_remote_capture_request(index, target) {
+        Ok(request) => request,
+        Err(message) => return agent_repl_error(index, input, "meta", message),
+    };
+    let Some(session) = state.remote_session.as_mut() else {
+        return agent_repl_error(
+            index,
+            input,
+            "meta",
+            "remote MCP session is not connected".to_owned(),
+        );
+    };
+    match session.capture(request) {
+        Ok(capture) => agent_repl_ok(
+            index,
+            input,
+            "meta",
+            serde_json::json!({
+                "remote": true,
+                "uri": capture.uri,
+                "content_hash": capture.content_hash,
+                "media_type": capture.media_type,
+                "byte_len": capture.byte_len,
+            }),
+        ),
+        Err(error) => agent_repl_error(index, input, "meta", error.to_string()),
+    }
+}
+
+fn agent_repl_remote_capture_request(index: usize, target: &str) -> Result<CaptureRequest, String> {
+    let target = target.trim();
+    let target = if target.is_empty() || target == "viewport" {
+        CaptureTarget::Viewport
+    } else {
+        let mut parts = target.split_whitespace();
+        let kind = parts.next().unwrap_or_default();
+        let id = parts
+            .next()
+            .ok_or_else(|| format!(":capture {kind} requires an id"))?;
+        if parts.next().is_some() {
+            return Err(":capture accepts only viewport, layer ID, or object ID".to_owned());
+        }
+        match kind {
+            "layer" => CaptureTarget::Layer {
+                id: AgentPublicId::new(id.to_owned())
+                    .map_err(|error| format!("invalid layer id `{id}`: {error}"))?,
+            },
+            "object" => CaptureTarget::Object { id: id.to_owned() },
+            _ => return Err(":capture accepts only viewport, layer ID, or object ID".to_owned()),
+        }
+    };
+    Ok(CaptureRequest {
+        target,
+        format: CaptureFormat::Png,
+        capture_kind: "color".to_owned(),
+        name: format!("repl.capture.{index}"),
+    })
 }
 
 pub(super) fn agent_repl_query(
@@ -1559,9 +1686,6 @@ pub(super) fn agent_repl_eval_compiled_cell(
     input: &str,
     state: &mut AgentReplState,
 ) -> AgentReplCellReport {
-    if let Some(message) = agent_repl_remote_execution_guard(state, "cell execution") {
-        return agent_repl_error(index, input, "cell", message);
-    }
     let fragment = agent_repl_parse_fragment(input);
     let parse_report = agent_repl_fragment_report(&fragment);
     if !matches!(fragment.completion(), ParseCompletion::Complete) || !fragment.errors().is_empty()
@@ -1605,6 +1729,17 @@ pub(super) fn agent_repl_eval_compiled_cell(
             Ok(graph) => graph,
             Err(error) => return agent_repl_error(index, input, "cell", error.to_string()),
         };
+    if state.remote_session.is_some() {
+        return agent_repl_eval_remote_compiled_cell(
+            index,
+            input,
+            state,
+            &parse_report,
+            &binding_names,
+            &serialized_bindings,
+            &compiled.bundle,
+        );
+    }
     let mut runner = AgentRunner::new(
         CliAgentSession::new(
             Vec::new(),
@@ -1647,6 +1782,67 @@ pub(super) fn agent_repl_eval_compiled_cell(
                 effect_summary,
             )
         }
+    }
+}
+
+fn agent_repl_eval_remote_compiled_cell(
+    index: usize,
+    input: &str,
+    state: &mut AgentReplState,
+    parse_report: &serde_json::Value,
+    binding_names: &[String],
+    serialized_bindings: &BTreeMap<String, AgentReplSerializedBinding>,
+    bundle: &ArcweftBundle,
+) -> AgentReplCellReport {
+    let Some(session) = state.remote_session.take() else {
+        return agent_repl_error(
+            index,
+            input,
+            "cell",
+            "remote MCP session is not connected".to_owned(),
+        );
+    };
+    let mut runner = AgentRunner::new(
+        session,
+        CollectingDebugSink::default(),
+        NoopRagService,
+        agent_script_runtime_policy_for_bundle(bundle),
+        AgentRunnerConfig::new(agent_cli_session_id()),
+    );
+    let run_result = runner.run_controller_bundle(
+        bundle,
+        AgentControllerRunConfig {
+            max_steps: 16,
+            max_ops_per_step: 128,
+        },
+    );
+    let effect_summary = run_result
+        .as_ref()
+        .err()
+        .map(|_| agent_repl_run_effect_summary(&runner.debug_mut().events));
+    state.remote_session = Some(runner.into_session());
+    match run_result {
+        Ok(report) => agent_repl_run_success_report(
+            index,
+            input,
+            state,
+            parse_report,
+            &report,
+            binding_names,
+            serialized_bindings,
+        ),
+        Err(error) => agent_repl_run_error_report(
+            index,
+            input,
+            state,
+            parse_report,
+            &error.to_string(),
+            effect_summary.unwrap_or(AgentReplRunEffectSummary {
+                host_calls: 0,
+                events_emitted: 0,
+                partially_effectful: false,
+            }),
+        ),
     }
 }
 
@@ -1846,15 +2042,6 @@ pub(super) fn agent_repl_snapshot_escape_error_report(
         value,
         host_calls > 0,
     ))
-}
-
-fn agent_repl_remote_execution_guard(state: &AgentReplState, operation: &str) -> Option<String> {
-    match &state.connection {
-        Some(AgentReplConnection::StdioMcp { program, .. }) => Some(format!(
-            "{operation} is connected to stdio MCP endpoint `{program}`, but remote AgentSession execution is not wired into the REPL runner yet"
-        )),
-        _ => None,
-    }
 }
 
 pub(super) fn agent_repl_run_error_report(

@@ -519,8 +519,13 @@ as `)`, `]`, `}`, or `"` for multiline continuation.
 `:connect source PATH` and `:connect profile ID [--manifest PATH]` switch the
 scripted REPL's native observation target for later `:observe` and `:capture`
 cells. `--connect <target>` accepts the same `current`, `source PATH`, direct
-`.arcw` path, or profile target at startup. Remote `stdio:`/`mcp:` endpoints
-are rejected until a real retained remote REPL transport exists. `--trace <file.arcwx>` validates a saved Agent execution trace
+`.arcw` path, profile target, or retained request/response MCP stdio endpoint
+at startup. `stdio:PROGRAM [ARG...]` and `mcp:PROGRAM [ARG...]` spawn the
+program without shell interpretation, run the MCP initialize/tools/session
+handshake, and install the resulting typed `McpAgentSession` only after the
+handshake succeeds. Remote Agent cells then execute through the same
+`arcweft-agent-runner` controller path against that session; `:observe` and
+`:capture` call the remote typed Agent session directly. `--trace <file.arcwx>` validates a saved Agent execution trace
 through the same `.arcwx` reader used by `agent script trace`, caches it as an
 Agent trace resource, and exposes the loaded resource through `:trace`.
 `:query TEXT` requires either a prior observation or a loaded trace and reuses

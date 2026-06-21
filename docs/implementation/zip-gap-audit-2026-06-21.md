@@ -18,9 +18,12 @@ This note records the implementation cut for
   preserving the existing debug/resource inventory payload.
 - Changed Agent REPL endpoint parsing so `stdio:` / `mcp:` endpoints are
   represented as structured `AgentReplConnection::StdioMcp` values instead of
-  being classified as a package non-goal. Remote execution operations currently
-  fail explicitly rather than silently falling back to local source/profile
-  execution.
+  being classified as a package non-goal.
+- Added CLI-owned `StdioMcpTransport` for line-delimited JSON-RPC MCP child
+  processes and wired retained remote `McpAgentSession` connections into
+  `--connect` / `:connect`. The REPL performs the remote handshake before
+  swapping session state, runs remote Agent cells through `AgentRunner`, and
+  routes remote `:observe` / `:capture` through typed `AgentSession` calls.
 - Extended `arcw fmt` path handling to include `.awfagent`, dispatch through
   `SourceDialect::Agent`, and reject game-only sugar rewrites for Agent sources.
 - Added `arcweft-data::raw` with shape-checked raw transcoding. Type labels now
@@ -29,11 +32,13 @@ This note records the implementation cut for
 
 ## Remaining implementation debt
 
-- `arcw agent repl --connect stdio:...` and `:connect stdio:...` now parse as
-  structured remote endpoints, but the CLI has not yet installed a process
-  transport and remote `McpAgentSession` into the REPL runner. Cell execution,
-  `:observe`, and `:capture` report this directly when connected to a remote
-  endpoint.
+- Remote REPL cells now execute through the typed MCP session, but the
+  project-bound binding policy is still coarse: primitive/string/collection
+  binding preservation versus session-bound binding drop on project-hash
+  changes needs explicit diagnostics and tests.
+- The CLI-owned stdio MCP transport is process-backed and covered by a fake
+  child roundtrip, but timeout enforcement, bounded stderr retention, and
+  graceful shutdown-before-kill behavior still need hardening coverage.
 - The checked-in `.awfagent` formatter path is dialect-aware and diagnostic
   producing, but it is not yet a full lossless canonical formatter with golden
   coverage for comments/trivia and all Agent item families.
@@ -45,10 +50,14 @@ This note records the implementation cut for
 
 ```bash
 cargo check -p arcweft-data -p arcweft-test -p arcweft-agent-mcp -p arcweft-agent-mcp-client -p arcweft-tooling -p arcweft-cli --all-targets --all-features
+cargo check -p arcweft-core -p arcweft-cli -p arcweft-agent-runner -p arcweft-agent-mcp-client --all-targets --all-features
+cargo test -p arcweft-core --all-features
 cargo check -p arcweft-agent-mcp-client -p arcweft-cli --all-targets --all-features
 cargo test -p arcweft-data raw_shape --test raw_shape
 cargo test -p arcweft-agent-mcp -p arcweft-agent-mcp-client -p arcweft-test --all-features
 cargo test -p arcweft-tooling agent_format --all-features
+cargo test -p arcweft-cli stdio_transport_roundtrips_agent_session_calls_through_fake_child --all-features
+cargo test -p arcweft-cli agent_repl_parse_stdio_connection --all-features
 cargo clippy --workspace --all-targets --all-features
 cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audit-2026-06-21
 ```

@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
 arcweft-agent-mcp = { path = "../arcweft-agent-mcp" }
+arcweft-agent-mcp-client = { path = "../arcweft-agent-mcp-client" }
 arcweft-agent-runner = { path = "../arcweft-agent-runner" }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-adapter-context = { path = "../arcweft-adapter-context" }

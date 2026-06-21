@@ -80,6 +80,10 @@ where
         &mut self.session
     }
 
+    pub fn into_session(self) -> S {
+        self.session
+    }
+
     pub fn debug_mut(&mut self) -> &mut D {
         &mut self.debug
     }

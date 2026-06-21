@@ -2,6 +2,7 @@ use super::super::runtime::entry::apply_runtime_entry_selection;
 use super::super::runtime::executor::RuntimeExecutorInstance;
 use super::super::runtime::profile::report_path;
 use super::super::runtime::steps::NativeRunHost;
+use super::mcp_stdio::{StdioMcpEndpoint, StdioMcpTransport};
 use super::rag::source_index::{
     AgentSourceRagIndex, agent_program_summary_rag_candidate, agent_rag_program_hash,
     agent_rag_source_paths, agent_source_rag_index,
@@ -51,6 +52,7 @@ use arcweft_agent_mcp::{
     },
     tools::agent_tool_descriptors,
 };
+use arcweft_agent_mcp_client::{ConnectOptions, McpAgentSession};
 use arcweft_agent_protocol::action::{AgentActionDispatch, AgentActionKind, AgentActionTarget};
 use arcweft_agent_protocol::artifact::RequiredEntity;
 use arcweft_agent_protocol::diagnostic::{AgentDiagnostic, AgentDiagnosticSeverity};
@@ -58,6 +60,7 @@ use arcweft_agent_protocol::geometry::{
     AgentBBox, AgentCoordinateSpace, AgentPoint, AgentRgbaColor, AgentViewport,
 };
 use arcweft_agent_protocol::hit_test::{AgentHitTestHit, AgentHitTestReport};
+use arcweft_agent_protocol::ids::PublicId as AgentPublicId;
 use arcweft_agent_protocol::ids::{AgentResourceUri, AgentRunId, PublicId, SessionId, StableHash};
 use arcweft_agent_protocol::image::{
     AgentImageAlignment, AgentImageComposition, AgentImageContentBBox, AgentImageCropOrigin,
@@ -89,6 +92,7 @@ use arcweft_agent_protocol::session::{AgentAssignment, AgentAudioState};
 use arcweft_agent_protocol::trace::AgentTraceRecord;
 use arcweft_agent_protocol::ui::AgentUiTree;
 use arcweft_agent_protocol::value::AgentValue;
+use arcweft_bundle::ArcweftBundle;
 use arcweft_core::effect::RuntimeCall;
 use arcweft_core::plan::FlowEvent;
 use arcweft_core::task::TaskEvent;

@@ -60,7 +60,7 @@ crates/arcweft-agent-runner/src/label_parse.rs,19745,562,532,production,true,fal
 crates/arcweft-agent-runner/src/lib.rs,594,24,16,production,true,false,false,false
 crates/arcweft-agent-runner/src/policy.rs,1517,53,45,production,true,false,false,false
 crates/arcweft-agent-runner/src/predicate.rs,6576,163,153,production,true,false,false,false
-crates/arcweft-agent-runner/src/runner.rs,23564,639,603,production,true,false,false,false
+crates/arcweft-agent-runner/src/runner.rs,23629,643,606,production,true,false,false,false
 crates/arcweft-agent-runner/src/runtime_args.rs,8084,232,213,production,true,false,false,false
 crates/arcweft-agent-runner/src/runtime_payload.rs,25161,666,640,production,true,false,false,false
 crates/arcweft-agent-runner/src/runtime_value.rs,14332,360,336,production,true,false,false,false
@@ -92,7 +92,8 @@ crates/arcweft-browser-bench/web/index.html,2104,94,85,text,false,false,false,fa
 crates/arcweft-browser-bench/web/run.js,5723,221,209,text,false,false,false,false
 crates/arcweft-bundle/Cargo.toml,701,25,23,text,false,false,false,false
 crates/arcweft-bundle/src/lib.rs,33256,953,876,production,true,false,false,true
-crates/arcweft-cli/Cargo.toml,2709,66,62,text,false,false,false,false
+crates/arcweft-cli/Cargo.toml,2777,67,63,text,false,false,false,false
+crates/arcweft-cli/src/app/agent/mcp_stdio.rs,15291,475,448,production,true,false,false,true
 crates/arcweft-cli/src/app/agent/native/capture.rs,59347,1741,1670,production,true,false,false,false
 crates/arcweft-cli/src/app/agent/native/image_mapping.rs,74078,2197,2099,production,true,false,false,false
 crates/arcweft-cli/src/app/agent/native/mcp_debug.rs,24420,613,587,production,true,false,false,false
@@ -101,14 +102,14 @@ crates/arcweft-cli/src/app/agent/native/mcp_rag.rs,49235,1378,1329,production,tr
 crates/arcweft-cli/src/app/agent/native/mcp_resources.rs,44716,1221,1169,production,true,false,false,false
 crates/arcweft-cli/src/app/agent/native/observe.rs,49088,1380,1310,production,true,false,false,false
 crates/arcweft-cli/src/app/agent/native/observe_resources.rs,11791,339,324,production,true,false,false,false
-crates/arcweft-cli/src/app/agent/native/repl.rs,73969,2298,2194,production,true,false,false,false
+crates/arcweft-cli/src/app/agent/native/repl.rs,79957,2485,2377,production,true,false,false,false
 crates/arcweft-cli/src/app/agent/native/runtime_observation.rs,50996,1403,1344,production,true,false,false,false
-crates/arcweft-cli/src/app/agent/native/tests.rs,117537,3365,3206,test,true,true,false,false
-crates/arcweft-cli/src/app/agent/native.rs,13488,271,265,production,true,false,false,false
+crates/arcweft-cli/src/app/agent/native/tests.rs,119207,3421,3257,test,true,true,false,false
+crates/arcweft-cli/src/app/agent/native.rs,13709,275,269,production,true,false,false,false
 crates/arcweft-cli/src/app/agent/rag/source_index.rs,67130,1822,1752,production,true,false,false,false
 crates/arcweft-cli/src/app/agent/rag.rs,48931,1353,1302,production,true,false,false,false
 crates/arcweft-cli/src/app/agent/script.rs,65210,1879,1779,production,true,false,false,false
-crates/arcweft-cli/src/app/agent.rs,23224,711,671,production,true,false,false,true
+crates/arcweft-cli/src/app/agent.rs,23274,713,673,production,true,false,false,true
 crates/arcweft-cli/src/app/bundle.rs,45406,1293,1218,production,true,false,false,true
 crates/arcweft-cli/src/app/commands.rs,2951,106,98,production,true,false,false,false
 crates/arcweft-cli/src/app/debug.rs,77792,2376,2260,production,true,false,false,true
@@ -219,7 +220,7 @@ crates/arcweft-core/src/pattern.rs,10388,325,311,production,true,false,false,fal
 crates/arcweft-core/src/plan.rs,10566,418,367,production,true,false,false,false
 crates/arcweft-core/src/pure/aot.rs,32688,940,880,production,true,false,false,false
 crates/arcweft-core/src/pure/runtime_backend.rs,37163,1057,1004,production,true,false,false,false
-crates/arcweft-core/src/pure.rs,66409,1837,1670,production,true,false,false,false
+crates/arcweft-core/src/pure.rs,67207,1855,1689,production,true,false,false,false
 crates/arcweft-core/src/source.rs,7169,261,233,production,true,false,false,false
 crates/arcweft-core/src/step.rs,12061,362,311,production,true,false,false,false
 crates/arcweft-core/src/stream.rs,2848,107,86,production,true,false,false,false
@@ -753,7 +754,7 @@ docs/03-presentation/wgsl-shaders.md,2317,110,91,text,false,false,false,false
 docs/04-tooling/README.md,328,9,8,text,false,false,false,false
 docs/04-tooling/agent-debug-mcp-cli.md,23207,430,395,text,false,false,false,false
 docs/04-tooling/agent-observe-capture-contract.md,19072,437,366,text,false,false,false,false
-docs/04-tooling/cli.md,77260,1281,1167,text,false,false,false,false
+docs/04-tooling/cli.md,77623,1286,1172,text,false,false,false,false
 docs/04-tooling/graph-rag-jj.md,2391,141,119,text,false,false,false,false
 docs/04-tooling/logging-signal-test-bench.md,4256,182,137,text,false,false,false,false
 docs/04-tooling/lsp.md,13482,308,268,text,false,false,false,false
@@ -784,7 +785,7 @@ docs/examples/usb-and-virtual-controller.md,3566,147,120,text,false,false,false,
 docs/examples/usb-devices-and-virtual-controller.md,3614,157,119,text,false,false,false,false
 docs/examples/virtual-controller.md,1500,65,51,text,false,false,false,false
 docs/implementation/README.md,125930,1798,1776,text,false,false,false,false
-docs/implementation/agent-script-final-completion-audit.md,6074,74,62,text,false,false,false,false
+docs/implementation/agent-script-final-completion-audit.md,6039,73,61,text,false,false,false,false
 docs/implementation/agent-script-implementation.md,110903,507,495,text,false,false,false,false
 docs/implementation/data-codec-dependency-selection.md,2099,24,20,text,false,false,false,false
 docs/implementation/data-codecs-reflection-adr-0008.md,3486,107,82,text,false,false,false,false
@@ -805,7 +806,7 @@ docs/implementation/refactor-checklist.md,4398,98,80,text,false,false,false,fals
 docs/implementation/rich-text-object-goal-audit.md,7148,82,67,text,false,false,false,false
 docs/implementation/rich-text-object-visual-evidence.md,4718,53,42,text,false,false,false,false
 docs/implementation/runtime-acceleration-goal-gap.md,9295,238,173,text,false,false,false,false
-docs/implementation/structure-audit-2026-06-21/violations.md,16515,494,247,text,false,false,false,false
+docs/implementation/structure-audit-2026-06-21/violations.md,16721,500,250,text,false,false,false,false
 docs/implementation/structure-refactor-2026-06-21.md,14768,247,228,text,false,false,false,false
 docs/implementation/test-execution-policy.md,25489,398,331,text,false,false,false,false
 docs/implementation/vertical-longterm-design-20260612/Cargo.toml,419,20,17,text,false,false,false,false
@@ -860,7 +861,7 @@ docs/implementation/visual-sample-review-issues/2026-06-17/README.md,50907,60,57
 docs/implementation/visual-sample-review-issues/2026-06-18/README.md,7294,24,20,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-hotspot-capture-metadata.json,2420,113,113,text,false,false,false,false
 docs/implementation/visual-sample-review-issues/2026-06-18/proxy-param-choice-presentation-tree.json,18532,626,626,text,false,false,false,false
-docs/implementation/zip-gap-audit-2026-06-21.md,2820,54,46,text,false,false,false,false
+docs/implementation/zip-gap-audit-2026-06-21.md,3761,65,57,text,false,false,false,false
 docs/reviews/pro_review1.md,22523,670,495,text,false,false,false,false
 docs/reviews/pro_review10.md,24274,938,713,text,false,false,false,false
 docs/reviews/pro_review11.md,62235,3442,2511,text,false,false,false,false

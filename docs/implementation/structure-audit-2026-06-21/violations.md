@@ -86,7 +86,7 @@ stringly boundary field: pub action: String,
 
 ## warning SIZE001 — `crates/arcweft-cli/src/app/agent/native/repl.rs`
 
-2298 physical LOC exceeds the 1200 LOC review threshold
+2485 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -98,7 +98,7 @@ stringly boundary field: pub action: String,
 
 ## warning SIZE001 — `crates/arcweft-cli/src/app/agent/native/tests.rs`
 
-3365 physical LOC exceeds the 2500 LOC review threshold
+3421 physical LOC exceeds the 2500 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
@@ -218,7 +218,7 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-core/src/pure.rs`
 
-1837 physical LOC exceeds the 1200 LOC review threshold
+1855 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
