@@ -91,6 +91,11 @@ For the current requirement-by-requirement open-item ledger, see
   insertion now rejects duplicate codec ids, normalized media types, normalized
   file extensions, and duplicate aliases within a single codec instead of
   letting later HTTP/save/config lookups depend on registration order.
+- Made `arcweft-config` shape-aware. Config layer merging now requires a
+  `TypeShape`, rejects unknown record fields through `FieldShape` /
+  `RecordPolicy`, validates scalar values against the declared shape, applies
+  list replace/append policy deterministically, and returns per-path
+  provenance showing which layer/source supplied the final value.
 
 ## Remaining implementation debt
 
@@ -135,6 +140,9 @@ For the current requirement-by-requirement open-item ledger, see
 - Codec registry uniqueness now covers the D-24 duplicate id/media/extension
   policy. Intentional format aliases remain explicit per-codec media type or
   extension entries and must be distinct after normalization.
+- Config merge now covers the T-111 / D-22 shape-aware provenance slice for
+  unknown fields, source precedence, list policy, required-field checking, and
+  recursive redaction.
 
 ## Validation
 
@@ -178,6 +186,9 @@ cargo clippy -p arcweft-http-codec --all-targets --all-features -- -D warnings
 cargo check -p arcweft-data -p arcweft-http-codec -p arcweft-save --all-targets --all-features
 cargo test -p arcweft-data --test codec_registry
 cargo clippy -p arcweft-data -p arcweft-http-codec -p arcweft-save --all-targets --all-features -- -D warnings
+cargo check -p arcweft-config --all-targets --all-features
+cargo test -p arcweft-config --test shape_merge
+cargo clippy -p arcweft-config --all-targets --all-features -- -D warnings
 cargo test -p arcweft-agent-mcp -p arcweft-agent-mcp-client -p arcweft-test --all-features
 cargo test -p arcweft-tooling agent_format --all-features
 cargo test -p arcweft-cli stdio_transport_roundtrips_agent_session_calls_through_fake_child --all-features

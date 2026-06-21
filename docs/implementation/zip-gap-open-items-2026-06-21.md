@@ -132,20 +132,6 @@ validation evidence prove the ZIP acceptance criteria.
   `TypeShape`, bidirectional enum/option/record mapping, top-level shape policy,
   strict error cases, and limits tests.
 
-### ZG-D-006: config merge lacks shape-aware provenance
-
-- ZIP tasks: T-111, D-22.
-- Current evidence:
-  `crates/arcweft-config/src/lib.rs` merges dynamic `Value` trees and has a
-  `deny_unknown_fields` flag in `ConfigMergePolicy`, but no `TypeShape`
-  parameter, field provenance model, source-precedence report, or tests.
-- Why this matters: config consumers cannot explain where a field came from,
-  reject unknown fields through schema, or distinguish override precedence from
-  accidental shape drift.
-- Completion evidence needed: shape-aware merge API, per-field provenance,
-  unknown-field enforcement, list strategy tests, redaction/provenance tests,
-  and source precedence tests.
-
 ### ZG-D-009: numeric edge-case policy is not complete across codecs
 
 - ZIP tasks: D-25.
@@ -230,6 +216,26 @@ validation evidence prove the ZIP acceptance criteria.
   `cargo clippy --workspace --all-targets --all-features` passed on Windows.
 - Remaining related work: registry uniqueness is now enforced, but concrete
   data adapters still need their own shape/budget work where listed above.
+
+### ZG-D-006: config merge is shape-aware and provenance-producing
+
+- ZIP tasks: T-111, D-22.
+- Current evidence:
+  `crates/arcweft-config/src/lib.rs` now requires a `TypeShape` for
+  `merge_config_layers`, validates incoming layer values against record fields
+  and scalar shapes, rejects unknown fields through `FieldShape` /
+  `RecordPolicy`, applies list replace/append policy, fills missing optional
+  fields as `Unit`, checks required fields after all layers, and returns a
+  `ConfigMergeReport` with per-path layer/source provenance.
+- Validation evidence:
+  `cargo check -p arcweft-config --all-targets --all-features`,
+  `cargo test -p arcweft-config --test shape_merge`, and
+  `cargo clippy -p arcweft-config --all-targets --all-features -- -D warnings`,
+  `cargo test -p arcweft-config --all-features`, and
+  `cargo clippy --workspace --all-targets --all-features` passed on Windows.
+- Remaining related work: config merge provenance is covered. Broader
+  repository completion still depends on non-CSV tabular codecs, derive gaps,
+  parse-time budgets, save migration chaining, and Agent REPL/MCP hardening.
 
 ## Verification Debt That Blocks Goal Completion
 
