@@ -3,7 +3,7 @@ use std::io::Cursor;
 
 use arcweft_codec_msgpack::MessagePackCodec;
 use arcweft_data::{
-    Bytes, BytesFormat, Codec, DataErrorKind, DecodeOptions, EncodeOptions, FieldShape,
+    Bytes, BytesFormat, Codec, DataErrorKind, DecodeOptions, EncodeOptions, FieldShape, Number,
     RecordPolicy, TypeShape, Value,
 };
 use rmpv::Value as MessagePackValue;
@@ -70,4 +70,30 @@ fn msgpack_codec_rejects_trailing_bytes() {
         .decode_value(&encoded, &TypeShape::Bool, &DecodeOptions::default())
         .expect_err("trailing bytes");
     assert_eq!(error.kind(), &DataErrorKind::TrailingData);
+}
+
+#[test]
+fn msgpack_codec_enforces_numeric_edge_policy() {
+    let error = MessagePackCodec
+        .encode_value(
+            &Value::Number(Number::F64(f64::INFINITY)),
+            &TypeShape::F64,
+            &EncodeOptions::default(),
+        )
+        .expect_err("infinity rejected");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+
+    let mut encoded = Vec::new();
+    rmpv::encode::write_value(&mut encoded, &MessagePackValue::F64(1.5)).expect("encode float");
+    let error = MessagePackCodec
+        .decode_value(&encoded, &TypeShape::U8, &DecodeOptions::default())
+        .expect_err("float to integer rejected");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidType);
+
+    let mut encoded = Vec::new();
+    rmpv::encode::write_value(&mut encoded, &MessagePackValue::from(-1)).expect("encode signed");
+    let error = MessagePackCodec
+        .decode_value(&encoded, &TypeShape::U8, &DecodeOptions::default())
+        .expect_err("negative unsigned rejected");
+    assert_eq!(error.kind(), &DataErrorKind::NumberOutOfRange);
 }

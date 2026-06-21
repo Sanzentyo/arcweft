@@ -135,15 +135,19 @@ For a concise explanation of the concrete unfinished items, see
 
 - ZIP tasks: D-25.
 - Current evidence:
-  central raw numeric conversion now uses checked integer bounds, but tabular
-  codecs still perform inference or optional conversions, and there is no
-  repository-wide NaN/infinity policy test matrix.
+  central raw numeric conversion now uses checked integer bounds and rejects
+  non-finite floats. JSON, TOML, YAML, MsgPack, CBOR, and CSV have focused
+  tests for signed/unsigned crossings, out-of-range values, float-to-integer
+  rejection, and NaN/infinity encode/decode rejection where the format can
+  express the case. Arrow IPC, Parquet, and Avro remain tied to the open
+  shape-guided tabular work and do not yet have equivalent numeric matrix
+  evidence.
 - Why this matters: lossy casts, silently nulled cells, or non-finite floats
   can produce format-specific behavior instead of a stable Arcweft data
   contract.
-- Completion evidence needed: shared numeric policy tests for signed/unsigned
-  crossings, out-of-range values, float-to-integer rejection, and
-  NaN/infinity encode/decode behavior in every relevant codec.
+- Completion evidence needed: extend the same numeric matrix to Arrow IPC,
+  Parquet, and Avro after their shape-guided schemas are implemented, then run
+  the repository-wide codec validation set.
 
 ## Resolved Data Items
 

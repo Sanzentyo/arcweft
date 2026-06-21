@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use arcweft_codec_yaml::YamlCodec;
 use arcweft_data::{
     Bytes, BytesFormat, Codec, DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions,
-    FieldShape, RecordPolicy, TypeShape, Value,
+    FieldShape, Number, RecordPolicy, TypeShape, Value,
 };
 
 fn asset_shape() -> TypeShape {
@@ -110,4 +110,30 @@ fn yaml_codec_rejects_multiple_documents() {
         )
         .expect_err("second document");
     assert_eq!(error.kind(), &DataErrorKind::TrailingData);
+}
+
+#[test]
+fn yaml_codec_enforces_numeric_edge_policy() {
+    let error = YamlCodec
+        .encode_value(
+            &Value::Number(Number::F32(f32::NAN)),
+            &TypeShape::F32,
+            &EncodeOptions::default(),
+        )
+        .expect_err("nan rejected");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+
+    let shape = TypeShape::record(
+        "Numeric",
+        [FieldShape::new("count", "count", TypeShape::U8)],
+    );
+    let error = YamlCodec
+        .decode_value(b"count: 1.5\n", &shape, &DecodeOptions::default())
+        .expect_err("float to integer rejected");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidType);
+
+    let error = YamlCodec
+        .decode_value(b"count: -1\n", &shape, &DecodeOptions::default())
+        .expect_err("negative unsigned rejected");
+    assert_eq!(error.kind(), &DataErrorKind::NumberOutOfRange);
 }

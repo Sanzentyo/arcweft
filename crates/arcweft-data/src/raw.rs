@@ -716,8 +716,12 @@ fn encode_number(value: &Value, shape: &TypeShape) -> Result<RawValue> {
         return Err(DataError::invalid_type("number", value.type_name()));
     };
     match (shape, number) {
-        (TypeShape::F32, Number::F32(value)) => Ok(RawValue::F32(*value)),
-        (TypeShape::F64, Number::F64(value)) => Ok(RawValue::F64(*value)),
+        (TypeShape::F32, Number::F32(value)) if value.is_finite() => Ok(RawValue::F32(*value)),
+        (TypeShape::F64, Number::F64(value)) if value.is_finite() => Ok(RawValue::F64(*value)),
+        (TypeShape::F32 | TypeShape::F64, Number::F32(_) | Number::F64(_)) => Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            "non-finite floats are not valid Arcweft data values",
+        )),
         (TypeShape::F32 | TypeShape::F64, _) => Err(DataError::invalid_type(
             shape.type_name(),
             number.type_name(),
@@ -744,8 +748,18 @@ fn encode_number(value: &Value, shape: &TypeShape) -> Result<RawValue> {
 
 fn decode_number(raw: &RawValue, shape: &TypeShape) -> Result<Value> {
     match (shape, raw) {
-        (TypeShape::F32, RawValue::F32(value)) => Ok(Value::Number(Number::F32(*value))),
-        (TypeShape::F64, RawValue::F64(value)) => Ok(Value::Number(Number::F64(*value))),
+        (TypeShape::F32, RawValue::F32(value)) if value.is_finite() => {
+            Ok(Value::Number(Number::F32(*value)))
+        }
+        (TypeShape::F64, RawValue::F64(value)) if value.is_finite() => {
+            Ok(Value::Number(Number::F64(*value)))
+        }
+        (TypeShape::F32 | TypeShape::F64, RawValue::F32(_) | RawValue::F64(_)) => {
+            Err(DataError::new(
+                DataErrorKind::InvalidEncoding,
+                "non-finite floats are not valid Arcweft data values",
+            ))
+        }
         (shape, RawValue::Signed(value))
             if shape
                 .signed_bounds()

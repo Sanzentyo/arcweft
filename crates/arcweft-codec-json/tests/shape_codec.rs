@@ -141,3 +141,34 @@ fn json_codec_roundtrips_repr_enum_as_number() {
         value
     );
 }
+
+#[test]
+fn json_codec_enforces_numeric_edge_policy() {
+    let error = JsonCodec
+        .encode_value(
+            &Value::Number(Number::F64(f64::NAN)),
+            &TypeShape::F64,
+            &EncodeOptions::default(),
+        )
+        .expect_err("nan rejected");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+
+    let error = JsonCodec
+        .decode_value(b"1.5", &TypeShape::U8, &DecodeOptions::default())
+        .expect_err("float to integer rejected");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+
+    let error = JsonCodec
+        .decode_value(b"-1", &TypeShape::U8, &DecodeOptions::default())
+        .expect_err("negative unsigned rejected");
+    assert_eq!(error.kind(), &DataErrorKind::NumberOutOfRange);
+
+    let error = JsonCodec
+        .encode_value(
+            &Value::Number(Number::U(u128::MAX)),
+            &TypeShape::U128,
+            &EncodeOptions::default(),
+        )
+        .expect_err("u128 beyond JSON number rejected");
+    assert_eq!(error.kind(), &DataErrorKind::NumberOutOfRange);
+}

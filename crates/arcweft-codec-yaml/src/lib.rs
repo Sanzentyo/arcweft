@@ -285,15 +285,10 @@ fn yaml_hash_entries(value: &Yaml, shape: &TypeShape) -> Result<Vec<(RawValue, R
     }
 }
 
-fn yaml_integer_to_raw(value: &Yaml, shape: &TypeShape) -> Result<RawValue> {
+fn yaml_integer_to_raw(value: &Yaml, _shape: &TypeShape) -> Result<RawValue> {
     let Yaml::Integer(value) = value else {
         return Err(DataError::invalid_type("integer", yaml_type_name(value)));
     };
-    if shape.unsigned_max().is_some() {
-        return u128::try_from(*value)
-            .map(RawValue::Unsigned)
-            .map_err(|_| DataError::invalid_type(shape.type_name(), "negative integer"));
-    }
     Ok(RawValue::Signed(i128::from(*value)))
 }
 

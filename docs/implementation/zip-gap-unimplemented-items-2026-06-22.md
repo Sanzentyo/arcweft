@@ -27,7 +27,7 @@ ledger.
 | Data | ZG-D-001 parse-time budgets outside Arcweft Binary | Open implementation | 多くの codec が format-native value を先に materialize している |
 | Data | ZG-D-004 Arrow IPC / Parquet shape guidance | Open implementation | value inference から schema を作っており `TypeShape` 主導ではない |
 | Data | ZG-D-005 Avro shape fidelity | Open implementation | Avro schema と Arcweft `TypeShape` の対応検証が不足 |
-| Data | ZG-D-009 numeric edge-case policy matrix | Partial implementation | codec 横断の bounds / NaN / infinity policy test が不足 |
+| Data | ZG-D-009 numeric edge-case policy matrix | Partial implementation | Arrow/Parquet/Avro の bounds / NaN / infinity policy test が不足 |
 
 ## Agent Items
 
@@ -152,22 +152,25 @@ Avro schema compatibility alone does not guarantee Arcweft shape compatibility.
 
 ### ZG-D-009: numeric edge-case policy matrix
 
-Central raw numeric conversion now performs checked integer bounds, but numeric
-behavior is not yet proven consistently across every relevant codec.
+Central raw numeric conversion now performs checked integer bounds and rejects
+non-finite floats. JSON, TOML, YAML, MsgPack, CBOR, and CSV have focused tests
+for signed/unsigned crossings, out-of-range values, float-to-integer rejection,
+and NaN/infinity rejection where the format can express the case. The remaining
+gap is the non-CSV tabular family.
 
 What remains:
 
-- Add shared policy tests for signed/unsigned crossings.
-- Reject out-of-range integer values consistently.
-- Reject float-to-integer recovery unless a codec policy explicitly allows it.
-- Define and test NaN and infinity encode/decode behavior.
-- Apply the matrix to JSON, TOML, YAML, MsgPack, CBOR, CSV, Arrow, Parquet, and
-  Avro as applicable.
+- Apply the same numeric matrix to Arrow IPC and Parquet after their schema is
+  generated from `TypeShape`.
+- Apply the same numeric matrix to Avro after Avro schema validation/generation
+  is tied to Arcweft `TypeShape`.
+- Re-run repository-wide codec validation once all relevant codecs carry the
+  same numeric edge policy evidence.
 
 Why it is not complete:
 
-Without a cross-codec matrix, individual adapters can still silently cast,
-null, or preserve non-finite values differently.
+Without the non-CSV tabular coverage, individual adapters can still silently
+cast, null, or preserve non-finite values differently.
 
 ## Already Covered Slices
 
@@ -180,6 +183,9 @@ some of them leave related items open:
 - `CodecRegistry` rejects duplicate ids, media types, extensions, and aliases.
 - stdio MCP transport requests time out, retain bounded stderr tails, and try
   protocol shutdown plus exit before kill fallback.
+- Raw shape conversion plus JSON, TOML, YAML, MsgPack, CBOR, and CSV reject
+  non-finite floats, float-to-integer recovery, and signed/unsigned bounds
+  violations through focused numeric edge tests.
 - Config merge is shape-aware and provenance-producing.
 - Save decoding supports explicit multi-step migration chains.
 - Derive shape generation now uses field-type where predicates and compile-time

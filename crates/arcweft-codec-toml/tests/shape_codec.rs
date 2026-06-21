@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use arcweft_codec_toml::TomlCodec;
 use arcweft_data::{
     Bytes, BytesFormat, Codec, DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions,
-    FieldShape, RecordPolicy, TypeShape, Value,
+    FieldShape, Number, RecordPolicy, TypeShape, Value,
 };
 
 fn asset_shape() -> TypeShape {
@@ -110,4 +110,30 @@ fn toml_codec_checks_input_limit_before_parse() {
         .decode_value(b"name = \"hero\"\n", &asset_shape(), &options)
         .expect_err("input cap");
     assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
+}
+
+#[test]
+fn toml_codec_enforces_numeric_edge_policy() {
+    let error = TomlCodec
+        .encode_value(
+            &Value::Number(Number::F64(f64::INFINITY)),
+            &TypeShape::F64,
+            &EncodeOptions::default(),
+        )
+        .expect_err("infinity rejected");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+
+    let shape = TypeShape::record(
+        "Numeric",
+        [FieldShape::new("count", "count", TypeShape::U8)],
+    );
+    let error = TomlCodec
+        .decode_value(b"count = 1.5\n", &shape, &DecodeOptions::default())
+        .expect_err("float to integer rejected");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidType);
+
+    let error = TomlCodec
+        .decode_value(b"count = -1\n", &shape, &DecodeOptions::default())
+        .expect_err("negative unsigned rejected");
+    assert_eq!(error.kind(), &DataErrorKind::NumberOutOfRange);
 }

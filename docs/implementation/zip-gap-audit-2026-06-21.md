@@ -97,6 +97,13 @@ For the current requirement-by-requirement open-item ledger, see
   conversion for bools, integers, finite floats, strings, chars, options, and
   scalar byte encodings, and reject missing/unknown/duplicate columns according
   to the record policy instead of silently dropping or stringifying data.
+- Hardened numeric edge policy across the central raw shape bridge and the
+  currently shape-driven codecs. `encode_with_shape` / `decode_with_shape` now
+  reject non-finite floats, TOML/YAML negative integers flow through the shared
+  signed-to-unsigned bounds policy instead of early invalid-type rejection, and
+  JSON, TOML, YAML, MsgPack, CBOR, and CSV carry focused tests for
+  signed/unsigned crossings, out-of-range values, float-to-integer rejection,
+  and NaN/infinity rejection where the format can express them.
 - Hardened `arcweft-http-codec` negotiation. Request decoding now accepts
   parameterized `Content-Type` values only when parameters are syntactically
   valid, rejects wildcard content types, and enforces `DecodeOptions`
@@ -146,9 +153,9 @@ For the current requirement-by-requirement open-item ledger, see
   JSON/TOML/YAML work includes parser-integrated budget visitors and deeper
   enum payload byte-policy coverage.
 - CSV shape decoding now covers the first T-108 tabular cut for strict
-  `Seq<Record>` scalar rows. Remaining tabular work includes Arrow IPC,
-  Parquet, and Avro shape-guided schemas plus parser/reader-integrated budget
-  enforcement.
+  `Seq<Record>` scalar rows, including the scalar numeric edge matrix.
+  Remaining tabular work includes Arrow IPC, Parquet, and Avro shape-guided
+  schemas plus parser/reader-integrated budget enforcement.
 - HTTP negotiation now covers the T-112 `Accept` q/wildcard/q=0/content
   parameter/body cap matrix for the codec adapter boundary. Remaining data
   adapter policy work is mostly in config provenance and non-CSV tabular
@@ -195,6 +202,13 @@ cargo check -p arcweft-data -p arcweft-codec-msgpack -p arcweft-codec-cbor --all
 cargo test -p arcweft-codec-msgpack --test native_mapping
 cargo test -p arcweft-codec-cbor --test native_mapping
 cargo clippy -p arcweft-data -p arcweft-codec-msgpack -p arcweft-codec-cbor --all-targets --all-features -- -D warnings
+cargo test -p arcweft-data raw_shape --test raw_shape
+cargo test -p arcweft-codec-json --test shape_codec
+cargo test -p arcweft-codec-toml --test shape_codec
+cargo test -p arcweft-codec-yaml --test shape_codec
+cargo test -p arcweft-codec-msgpack --test native_mapping
+cargo test -p arcweft-codec-cbor --test native_mapping
+cargo test -p arcweft-codec-csv --test shape_codec
 cargo check -p arcweft-codec-csv --all-targets --all-features
 cargo test -p arcweft-codec-csv --test shape_codec
 cargo clippy -p arcweft-codec-csv --all-targets --all-features -- -D warnings

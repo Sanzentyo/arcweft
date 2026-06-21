@@ -100,6 +100,28 @@ fn raw_shape_rejects_number_overflow() {
 }
 
 #[test]
+fn raw_shape_rejects_float_to_integer_recovery() {
+    let value = Value::Number(Number::F64(1.0));
+    let error = encode_with_shape(&value, &TypeShape::U8).expect_err("float cannot encode as u8");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidType);
+
+    let error = decode_with_shape(&RawValue::F64(1.0), &TypeShape::U8)
+        .expect_err("float cannot decode as u8");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidType);
+}
+
+#[test]
+fn raw_shape_rejects_non_finite_floats() {
+    let error = encode_with_shape(&Value::Number(Number::F32(f32::NAN)), &TypeShape::F32)
+        .expect_err("nan encode rejected");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+
+    let error = decode_with_shape(&RawValue::F64(f64::INFINITY), &TypeShape::F64)
+        .expect_err("infinity decode rejected");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+}
+
+#[test]
 fn raw_shape_roundtrips_enum_payload() {
     let shape = TypeShape::enumeration(
         "Route",

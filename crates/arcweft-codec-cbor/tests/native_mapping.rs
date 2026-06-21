@@ -3,7 +3,7 @@ use std::io::Cursor;
 
 use arcweft_codec_cbor::CborCodec;
 use arcweft_data::{
-    Bytes, BytesFormat, Codec, DataErrorKind, DecodeOptions, EncodeOptions, FieldShape,
+    Bytes, BytesFormat, Codec, DataErrorKind, DecodeOptions, EncodeOptions, FieldShape, Number,
     RecordPolicy, TypeShape, Value,
 };
 use ciborium::Value as CborValue;
@@ -71,4 +71,30 @@ fn cbor_codec_rejects_trailing_bytes() {
         .decode_value(&encoded, &TypeShape::Bool, &DecodeOptions::default())
         .expect_err("trailing bytes");
     assert_eq!(error.kind(), &DataErrorKind::TrailingData);
+}
+
+#[test]
+fn cbor_codec_enforces_numeric_edge_policy() {
+    let error = CborCodec
+        .encode_value(
+            &Value::Number(Number::F64(f64::INFINITY)),
+            &TypeShape::F64,
+            &EncodeOptions::default(),
+        )
+        .expect_err("infinity rejected");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+
+    let mut encoded = Vec::new();
+    ciborium::into_writer(&CborValue::Float(1.5), &mut encoded).expect("encode float");
+    let error = CborCodec
+        .decode_value(&encoded, &TypeShape::U8, &DecodeOptions::default())
+        .expect_err("float to integer rejected");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidType);
+
+    let mut encoded = Vec::new();
+    ciborium::into_writer(&CborValue::Integer((-1).into()), &mut encoded).expect("encode signed");
+    let error = CborCodec
+        .decode_value(&encoded, &TypeShape::U8, &DecodeOptions::default())
+        .expect_err("negative unsigned rejected");
+    assert_eq!(error.kind(), &DataErrorKind::NumberOutOfRange);
 }

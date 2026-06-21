@@ -136,3 +136,39 @@ fn csv_codec_rejects_nested_cell_shapes() {
         .expect_err("nested shapes are unsupported");
     assert_eq!(error.kind(), &DataErrorKind::UnsupportedFormat);
 }
+
+#[test]
+fn csv_codec_enforces_numeric_edge_policy() {
+    let int_shape = TypeShape::seq(TypeShape::record(
+        "Numeric",
+        [FieldShape::new("count", "count", TypeShape::U8)],
+    ));
+    let float_shape = TypeShape::seq(TypeShape::record(
+        "Floaty",
+        [FieldShape::new("ratio", "ratio", TypeShape::F64)],
+    ));
+
+    let value = Value::Seq(vec![record([(
+        "ratio",
+        Value::Number(Number::F64(f64::INFINITY)),
+    )])]);
+    let error = CsvCodec
+        .encode_value(&value, &float_shape, &EncodeOptions::default())
+        .expect_err("infinity rejected");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+
+    let error = CsvCodec
+        .decode_value(b"count\n1.5\n", &int_shape, &DecodeOptions::default())
+        .expect_err("float to integer rejected");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+
+    let error = CsvCodec
+        .decode_value(b"count\n-1\n", &int_shape, &DecodeOptions::default())
+        .expect_err("negative unsigned rejected");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+
+    let error = CsvCodec
+        .decode_value(b"ratio\ninf\n", &float_shape, &DecodeOptions::default())
+        .expect_err("non-finite float rejected");
+    assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+}
