@@ -92,7 +92,7 @@ flow @flow.opening opening {
 }
 
 #[test]
-fn adapter_function_effects_require_matching_capability() {
+fn explicit_empty_effect_bound_rejects_adapter_effect() {
     let tree = parse_ok(
         r#"
 flow @flow.opening opening
@@ -113,13 +113,13 @@ effects { }
         )
         .with_function_effects("adapter.read_text", ["fs.read".to_owned()]);
 
-    let errors = typecheck_hir(&hir, &env).expect_err("missing adapter effect is rejected");
+    let errors = typecheck_hir(&hir, &env).expect_err("excess adapter effect is rejected");
     assert!(errors.iter().any(|error| {
         matches!(
             error.kind(),
             TypeCheckErrorKind::Effect { diagnostic }
                 if diagnostic.code()
-                    == crate::effect_diagnostics::EffectDiagnosticCode::MissingDeclaration
+                    == crate::effect_diagnostics::EffectDiagnosticCode::UpperBoundExceeded
                     && diagnostic.message().contains("flow.opening")
                     && diagnostic.message().contains("fs.read")
         )
@@ -166,12 +166,11 @@ effects { }
         )
         .with_function_effects("adapter.read_text", ["fs.read".to_owned()]);
 
-    let errors = typecheck_hir(&hir, &env).expect_err("caller under-declaration is rejected");
+    let errors = typecheck_hir(&hir, &env).expect_err("caller upper-bound excess is rejected");
     assert!(errors.iter().any(|error| {
         matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
-            && error
-                .message()
-                .contains("callable `flow.opening` infers effect `fs.read`")
+            && error.message().contains("exceeding explicit upper bound")
+            && error.message().contains("fs.read")
     }));
 }
 
@@ -199,17 +198,16 @@ effects { }
         .with_capability("fs.read");
 
     let errors =
-        typecheck_hir(&hir, &env).expect_err("host availability must not grant source declaration");
+        typecheck_hir(&hir, &env).expect_err("host availability must not change source bound");
     assert!(errors.iter().any(|error| {
         matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
-            && error
-                .message()
-                .contains("callable `flow.opening` infers effect `fs.read`")
+            && error.message().contains("exceeding explicit upper bound")
+            && error.message().contains("fs.read")
     }));
 }
 
 #[test]
-fn entry_target_flow_requires_explicit_effects_for_extern_capability_calls() {
+fn omitted_entry_target_flow_effects_are_inferred_without_source_upper_bound() {
     let tree = parse_ok(
         r#"
 extern capability cli { fn stdout(text: String) effects { stdio.write } }
@@ -221,18 +219,22 @@ flow @flow.main main {
     );
     let hir = lower_to_hir(&tree).expect("entry effect fixture lowers");
 
-    let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
-        .expect_err("entry target flow must explicitly declare effects");
-    assert!(errors.iter().any(|error| {
-        matches!(
-            error.kind(),
-            TypeCheckErrorKind::Effect { diagnostic }
-                if diagnostic.code()
-                    == crate::effect_diagnostics::EffectDiagnosticCode::ExplicitDeclarationRequired
-                    && diagnostic.message().contains("flow.main")
-                    && diagnostic.message().contains("stdio.write")
-        )
-    }));
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "omitted effects should infer without imposing a bound: {:?}",
+        report.diagnostics
+    );
+    let summary = report
+        .effects
+        .summary(&crate::effect_model::CallableId::new("flow.main"))
+        .expect("entry target flow has an effect summary");
+    assert!(summary.declared().is_none());
+    assert!(
+        summary
+            .inferred()
+            .contains(&crate::effects::EffectId::parse("stdio.write").expect("valid effect"))
+    );
 }
 
 #[test]
@@ -357,7 +359,7 @@ ensures no_effect fs.read
 }
 
 #[test]
-fn overdeclared_effect_is_reported_as_warning() {
+fn unused_explicit_upper_bound_is_not_reported_as_warning() {
     let tree = parse_ok(
         r#"
 flow @flow.opening opening
@@ -372,18 +374,19 @@ effects { fs.read }
 
     assert!(
         report.diagnostics.is_empty(),
-        "overdeclaration should warn, not fail: {:?}",
+        "unused upper bound should not fail: {:?}",
         report.diagnostics
     );
-    assert!(report.warnings.iter().any(|warning| {
-        matches!(
-            warning.kind(),
-            crate::diagnostics::TypeCheckWarningKind::Effect { diagnostic }
-                if diagnostic.code()
-                    == crate::effect_diagnostics::EffectDiagnosticCode::OverdeclaredEffect
-                    && diagnostic.message().contains("fs.read")
-        )
-    }));
+    assert!(
+        report.warnings.is_empty(),
+        "unused upper bound should not warn: {:?}",
+        report.warnings
+    );
+    let summary = report
+        .effects
+        .summary(&crate::effect_model::CallableId::new("flow.opening"))
+        .expect("flow effect summary");
+    assert!(summary.inferred().is_empty());
 }
 
 #[test]
@@ -1245,7 +1248,7 @@ flow @flow.opening opening {
 }
 
 #[test]
-fn typecheck_tracks_lifetime_registry_scope_and_write_capabilities() {
+fn typecheck_tracks_lifetime_registry_writes_as_inferred_effects() {
     let tree = parse_ok(
         r"
 flow @flow.registry registry {
@@ -1254,19 +1257,21 @@ flow @flow.registry registry {
 ",
     );
     let hir = lower_to_hir(&tree).expect("flow registry write lowers");
-    let errors =
-        typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("flow writes need capability");
-    assert!(errors.iter().any(|error| {
-        error
-            .message()
-            .contains("requires effect capability `state.write(flow)`")
-    }));
-
-    typecheck_hir(
-        &hir,
-        &TypeCheckEnv::new().with_capability("state.write(flow)"),
-    )
-    .expect("capability permits flow lifetime registry writes");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "omitted effects infer lifetime writes without imposing a source bound: {:?}",
+        report.diagnostics
+    );
+    let summary = report
+        .effects
+        .summary(&crate::effect_model::CallableId::new("flow.registry"))
+        .expect("flow effect summary");
+    assert!(
+        summary
+            .inferred()
+            .contains(&crate::effects::EffectId::parse("state.write(flow)").expect("valid effect"))
+    );
 
     let tree = parse_ok(
         r"
@@ -1279,7 +1284,29 @@ effects { state.write('flow) }
     );
     let hir = lower_to_hir(&tree).expect("flow registry write with effects lowers");
     typecheck_hir(&hir, &TypeCheckEnv::new())
-        .expect("effects clause permits flow lifetime registry writes");
+        .expect("matching source upper bound permits flow lifetime registry writes");
+
+    let missing = parse_ok(
+        r"
+flow @flow.registry_contract registry_contract
+effects {}
+{
+    'flow.flags.seen <- 1i32
+}
+",
+    );
+    let missing_hir = lower_to_hir(&missing).expect("empty-bound lifetime write lowers");
+    let errors =
+        typecheck_hir(&missing_hir, &TypeCheckEnv::new()).expect_err("empty bound is exceeded");
+    assert!(errors.iter().any(|error| {
+        matches!(
+            error.kind(),
+            TypeCheckErrorKind::Effect { diagnostic }
+                if diagnostic.code()
+                    == crate::effect_diagnostics::EffectDiagnosticCode::UpperBoundExceeded
+                    && diagnostic.message().contains("state.write(flow)")
+        )
+    }));
 }
 
 #[test]

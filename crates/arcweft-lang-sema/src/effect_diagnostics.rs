@@ -6,14 +6,12 @@ use crate::{
 /// Stable machine-readable diagnostic code.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum EffectDiagnosticCode {
-    MissingDeclaration,
+    UpperBoundExceeded,
     ForbiddenEffect,
     PureCallableEffect,
-    ExplicitDeclarationRequired,
     UnknownLocalCallable,
     DynamicSignatureRequired,
     CapabilityUnavailable,
-    OverdeclaredEffect,
 }
 
 /// Diagnostic severity.
@@ -26,17 +24,14 @@ pub enum EffectSeverity {
 /// Structured effect diagnostic family.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EffectDiagnosticKind {
-    MissingDeclaration {
-        missing: EffectSet,
-        declared: EffectSet,
+    UpperBoundExceeded {
+        excess: EffectSet,
+        upper_bound: EffectSet,
     },
     ForbiddenEffect {
         forbidden: EffectSet,
     },
     PureCallableEffect {
-        inferred: EffectSet,
-    },
-    ExplicitDeclarationRequired {
         inferred: EffectSet,
     },
     UnknownLocalCallable {
@@ -47,9 +42,6 @@ pub enum EffectDiagnosticKind {
     },
     CapabilityUnavailable {
         unavailable: EffectSet,
-    },
-    OverdeclaredEffect {
-        unused: EffectSet,
     },
 }
 
@@ -99,14 +91,12 @@ pub struct EffectDiagnostic {
 impl EffectDiagnosticCode {
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::MissingDeclaration => "AWF-EFX-001",
+            Self::UpperBoundExceeded => "AWF-EFX-001",
             Self::ForbiddenEffect => "AWF-EFX-002",
             Self::PureCallableEffect => "AWF-EFX-003",
-            Self::ExplicitDeclarationRequired => "AWF-EFX-004",
             Self::UnknownLocalCallable => "AWF-EFX-005",
             Self::DynamicSignatureRequired => "AWF-EFX-006",
             Self::CapabilityUnavailable => "AWF-EFX-007",
-            Self::OverdeclaredEffect => "AWF-EFX-008",
         }
     }
 }

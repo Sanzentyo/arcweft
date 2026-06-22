@@ -58,7 +58,6 @@ pub struct EffectContract {
     upper_bound: Option<EffectSet>,
     forbidden: EffectSet,
     pure: bool,
-    require_explicit_nonempty: bool,
 }
 
 /// External callable with a trusted or separately verified effect summary.
@@ -102,7 +101,6 @@ pub struct CallableFacts {
 pub struct EffectProgram {
     callables: BTreeMap<CallableId, CallableFacts>,
     available_capabilities: Option<EffectSet>,
-    strict_overdeclaration: bool,
 }
 
 /// Duplicate callable identity while building an effect graph.
@@ -206,12 +204,6 @@ impl EffectContract {
         self
     }
 
-    #[must_use]
-    pub const fn requiring_explicit_nonempty(mut self) -> Self {
-        self.require_explicit_nonempty = true;
-        self
-    }
-
     pub const fn upper_bound(&self) -> Option<&EffectSet> {
         self.upper_bound.as_ref()
     }
@@ -222,10 +214,6 @@ impl EffectContract {
 
     pub const fn is_pure(&self) -> bool {
         self.pure
-    }
-
-    pub const fn requires_explicit_nonempty(&self) -> bool {
-        self.require_explicit_nonempty
     }
 }
 
@@ -282,28 +270,18 @@ impl CallEdge {
 
 impl CallableFacts {
     pub fn new(id: CallableId, kind: CallableKind, visibility: Visibility) -> Self {
-        let contract = if matches!(visibility, Visibility::Public | Visibility::Boundary) {
-            EffectContract::inferred().requiring_explicit_nonempty()
-        } else {
-            EffectContract::inferred()
-        };
         Self {
             id,
             kind,
             visibility,
-            contract,
+            contract: EffectContract::inferred(),
             direct_effects: Vec::new(),
             calls: Vec::new(),
         }
     }
 
     #[must_use]
-    pub fn with_contract(mut self, mut contract: EffectContract) -> Self {
-        if matches!(self.visibility, Visibility::Public | Visibility::Boundary)
-            && contract.upper_bound().is_none()
-        {
-            contract = contract.requiring_explicit_nonempty();
-        }
+    pub fn with_contract(mut self, contract: EffectContract) -> Self {
         self.contract = contract;
         self
     }
@@ -363,12 +341,6 @@ impl EffectProgram {
         self
     }
 
-    #[must_use]
-    pub const fn with_strict_overdeclaration(mut self, strict: bool) -> Self {
-        self.strict_overdeclaration = strict;
-        self
-    }
-
     pub fn callable(&self, id: &CallableId) -> Option<&CallableFacts> {
         self.callables.get(id)
     }
@@ -383,9 +355,5 @@ impl EffectProgram {
 
     pub const fn available_capabilities(&self) -> Option<&EffectSet> {
         self.available_capabilities.as_ref()
-    }
-
-    pub const fn strict_overdeclaration(&self) -> bool {
-        self.strict_overdeclaration
     }
 }

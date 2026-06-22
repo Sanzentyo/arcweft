@@ -31,7 +31,6 @@ pub enum EffectContractLowerError {
 pub fn lower_effect_contract(
     contracts: &[ContractClause],
     pure: bool,
-    require_explicit_nonempty: bool,
     catalog: &EffectCatalog,
 ) -> Result<EffectContract, Vec<EffectContractLowerError>> {
     let mut declared = None::<EffectSet>;
@@ -82,7 +81,7 @@ pub fn lower_effect_contract(
         return Err(errors);
     }
 
-    let mut contract = if pure {
+    let contract = if pure {
         EffectContract::pure()
     } else if let Some(declared) = declared {
         EffectContract::bounded(declared)
@@ -91,9 +90,6 @@ pub fn lower_effect_contract(
     }
     .with_forbidden(forbidden);
 
-    if require_explicit_nonempty {
-        contract = contract.requiring_explicit_nonempty();
-    }
     Ok(contract)
 }
 

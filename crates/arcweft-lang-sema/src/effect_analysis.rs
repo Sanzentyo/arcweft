@@ -234,20 +234,6 @@ fn validate_contracts(
                 declared,
                 &mut diagnostics,
             );
-        } else if facts.contract().requires_explicit_nonempty() && !inferred.is_empty() {
-            let effect = first_effect(inferred);
-            diagnostics.push(EffectDiagnostic::new(
-                EffectDiagnosticCode::ExplicitDeclarationRequired,
-                EffectSeverity::Error,
-                id.clone(),
-                format!(
-                    "public/boundary callable `{id}` must explicitly declare inferred effects {inferred}"
-                ),
-                EffectDiagnosticKind::ExplicitDeclarationRequired {
-                    inferred: inferred.clone(),
-                },
-                effect.and_then(|effect| trace_for(program, summaries, id, effect)),
-            ));
         }
 
         push_forbidden_effect_diagnostics(
@@ -285,31 +271,17 @@ fn push_declared_effect_diagnostics(
     for effect in &missing {
         let missing_one = std::iter::once(effect.clone()).collect();
         diagnostics.push(EffectDiagnostic::new(
-            EffectDiagnosticCode::MissingDeclaration,
+            EffectDiagnosticCode::UpperBoundExceeded,
             EffectSeverity::Error,
             id.clone(),
-            format!("callable `{id}` infers effect `{effect}`, but declares only {declared}"),
-            EffectDiagnosticKind::MissingDeclaration {
-                missing: missing_one,
-                declared: declared.clone(),
+            format!(
+                "callable `{id}` infers effect `{effect}`, exceeding explicit upper bound {declared}"
+            ),
+            EffectDiagnosticKind::UpperBoundExceeded {
+                excess: missing_one,
+                upper_bound: declared.clone(),
             },
             trace_for(program, summaries, id, effect),
-        ));
-    }
-
-    let unused = declared.effects_not_covered_by(inferred);
-    if !unused.is_empty() {
-        diagnostics.push(EffectDiagnostic::new(
-            EffectDiagnosticCode::OverdeclaredEffect,
-            if program.strict_overdeclaration() {
-                EffectSeverity::Error
-            } else {
-                EffectSeverity::Warning
-            },
-            id.clone(),
-            format!("callable `{id}` declares unused effects {unused}"),
-            EffectDiagnosticKind::OverdeclaredEffect { unused },
-            None,
         ));
     }
 }

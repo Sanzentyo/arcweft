@@ -4,7 +4,12 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Canonical capability name declared by a compiled Agent controller.
+/// Canonical capability name required by a compiled Agent controller.
+///
+/// In the schema-v1 `AgentArtifactManifest::declared_effects` field this value
+/// is the compiler-lowered closed first-order effect row. The field name is
+/// retained for the serialized artifact contract, but the value is not the
+/// source `effects` upper bound.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
 pub struct EffectCapability(String);
@@ -73,6 +78,10 @@ pub struct AgentArtifactManifest {
     pub source_hash: StableHash,
     pub compiler_version: String,
     pub project_binding: ProjectBinding,
+    /// Closed first-order effect row inferred by the compiler.
+    ///
+    /// The serialized field name is historical. Unused members of a source
+    /// `effects { ... }` upper bound must not be emitted here.
     pub declared_effects: Vec<EffectCapability>,
     pub verified_effects: VerifiedEffectSummary,
     pub budget: AgentBudget,

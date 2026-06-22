@@ -11,7 +11,6 @@ use arcweft_lang_sema::resolve::{registry_from_hir_and_project, validate_hir_ref
 use arcweft_lang_syntax::ast::items::Attribute;
 use arcweft_runtime_plan::flow::lower_agent_controller_plan_with_stats;
 
-use crate::agent_effects::declared_agent_effects;
 use crate::agent_project::agent_required_entities_from_project;
 use crate::effect_manifest;
 use crate::error::CompileAgentError;
@@ -129,10 +128,13 @@ fn agent_artifact_manifest(
     typecheck_report: &TypeCheckReport,
 ) -> Result<AgentArtifactManifest, CompileAgentError> {
     let agent_id = agent_public_id(agent)?;
+    let agent_effect_id =
+        arcweft_lang_sema::effect_model::CallableId::new(format!("agent.{}", agent.item().name()));
     let verified_effects = effect_manifest::build_verified_effect_summary(
-        arcweft_lang_sema::effect_model::CallableId::new(format!("agent.{}", agent.item().name())),
+        &agent_effect_id,
         &typecheck_report.effects,
     )?;
+    let declared_effects = verified_effects.inferred.clone();
     Ok(AgentArtifactManifest {
         schema_version: 1,
         bundle_kind: AgentBundleKind::AgentController,
@@ -144,7 +146,7 @@ fn agent_artifact_manifest(
             mode: ProjectBindingMode::Compatible,
             required_entities: agent_required_entities_from_project(project)?,
         },
-        declared_effects: declared_agent_effects(agent),
+        declared_effects,
         verified_effects,
         budget: agent_budget(agent)?,
         debug_map_hash: None,

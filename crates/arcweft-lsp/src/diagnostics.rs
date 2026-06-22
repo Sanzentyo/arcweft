@@ -5,7 +5,8 @@ use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::{
     check::{analyze_types, validate_typecheck_ready},
     diagnostics::{
-        TypeCheckError, TypeCheckReadinessError, TypeCheckWarning, TypeCheckWarningKind,
+        TypeCheckError, TypeCheckErrorKind, TypeCheckReadinessError, TypeCheckWarning,
+        TypeCheckWarningKind,
     },
     resolve::{NameResolutionError, registry_from_hir, validate_hir_references},
 };
@@ -232,15 +233,29 @@ fn typecheck_diagnostics(errors: &[TypeCheckError]) -> Vec<Diagnostic> {
         .map(|(index, error)| Diagnostic {
             range: start_range(),
             severity: Some(DiagnosticSeverity::ERROR),
-            code: Some(NumberOrString::String(format!(
-                "sema.typecheck.{}",
-                index + 1
+            code: Some(NumberOrString::String(typecheck_error_code(
+                error,
+                index + 1,
             ))),
             source: Some("arcweft-sema".to_owned()),
             message: error.message().to_owned(),
             ..Diagnostic::default()
         })
         .collect()
+}
+
+fn typecheck_error_code(error: &TypeCheckError, index: usize) -> String {
+    match error.kind() {
+        TypeCheckErrorKind::Effect { diagnostic } => diagnostic.code().as_str().to_owned(),
+        TypeCheckErrorKind::ArgumentTypeMismatch { .. }
+        | TypeCheckErrorKind::MissingRustPackageMetadata { .. }
+        | TypeCheckErrorKind::MissingRustExport { .. }
+        | TypeCheckErrorKind::RustExportSignatureMismatch { .. }
+        | TypeCheckErrorKind::InlineCallErrorPolicyMissing { .. }
+        | TypeCheckErrorKind::InlineFailurePolicyConflict { .. }
+        | TypeCheckErrorKind::UnknownInlineFailurePolicy { .. }
+        | TypeCheckErrorKind::Message => format!("sema.typecheck.{index}"),
+    }
 }
 
 fn typecheck_warnings(warnings: &[TypeCheckWarning]) -> Vec<Diagnostic> {
@@ -465,14 +480,14 @@ pub type Payload = String | Bytes
     }
 
     #[test]
-    fn diagnostics_surface_overdeclared_effect_warning() {
-        let source = r#"
+    fn diagnostics_surface_upper_bound_exceeded_effect_error() {
+        let source = r"
 flow @flow.opening opening
-effects { fs.read }
+effects {}
 {
-    return "ok"
+    'flow.flags.seen <- 1i32
 }
-"#;
+";
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
         let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
 
@@ -480,14 +495,10 @@ effects { fs.read }
             .diagnostics()
             .iter()
             .find(|diagnostic| {
-                diagnostic.code == Some(NumberOrString::String("AWF-EFX-008".to_owned()))
+                diagnostic.code == Some(NumberOrString::String("AWF-EFX-001".to_owned()))
             })
-            .expect("overdeclared effect warning is surfaced");
-        assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::WARNING));
-        assert!(
-            diagnostic
-                .message
-                .contains("declares unused effects {fs.read}")
-        );
+            .expect("upper-bound effect error is surfaced");
+        assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::ERROR));
+        assert!(diagnostic.message.contains("state.write(flow)"));
     }
 }

@@ -14,8 +14,8 @@ generic warning fallback routing:
 - effect warnings are emitted through `TypeCheckWarning::effect`.
 - LSP warning codes are derived from structured warning kind data.
 
-The remaining implementation work was therefore a hardening slice rather than a
-new diagnostic model:
+The remaining implementation work at that cut was therefore a hardening slice
+rather than a new diagnostic model:
 
 - remove the stale LSP warning index plumbing left over from generic fallback
   code generation;
@@ -24,9 +24,18 @@ new diagnostic model:
   `sema.public_abi.anonymous_sum` in LSP tests;
 - keep effect warning routing through `EffectDiagnosticCode::as_str()`.
 
+## Superseded Effect Warning Slice
+
+The later first-order effect lowering slice changes source `effects` clauses
+from declared required rows into explicit upper bounds. Under that model an
+unused upper-bound member is not a semantic warning; it is simply not lowered
+into the Agent artifact's closed effect row. The former `AWF-EFX-008`
+overdeclared-effect warning and its LSP regression were removed with that
+slice.
+
 ## Non-Goals
 
-- No compatibility warning variant, deprecated alias, wrapper, or fallback code
+- No compatibility warning variant, legacy alias, wrapper, or fallback code
   is introduced.
 - `TypeCheckErrorKind::Message` remains outside this scope. The package and
   implemented change target non-fatal warning diagnostics only.
@@ -37,9 +46,7 @@ new diagnostic model:
 Completed on 2026-06-22:
 
 ```bash
-cargo test -p arcweft-lang-sema overdeclared_effect_is_reported_as_warning --lib -- --nocapture # passed
 cargo test -p arcweft-lang-sema declarations --lib -- --format=terse # passed
-cargo test -p arcweft-lsp diagnostics_surface_overdeclared_effect_warning --lib -- --nocapture # passed
 cargo test -p arcweft-lsp diagnostics_surface_public_abi_anonymous_sum_warning --lib -- --nocapture # passed
 cargo check -p arcweft-lang-sema -p arcweft-lsp --all-targets # passed
 cargo clippy -p arcweft-lang-sema -p arcweft-lsp --all-targets --all-features -- -D warnings # passed

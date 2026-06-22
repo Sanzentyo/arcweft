@@ -8,7 +8,7 @@ use arcweft_lang_sema::{
 };
 use thiserror::Error;
 
-/// Current semantics of the transitive closure and public-boundary checks.
+/// Current semantics of the transitive closure and artifact-boundary lowering.
 pub const EFFECT_ANALYSIS_VERSION: u32 = 1;
 
 /// Failure to construct a verified artifact effect proof.
@@ -18,16 +18,6 @@ pub enum VerifiedEffectBuildError {
     AnalysisFailed,
     #[error("effect analysis report has no summary for `{callable}`")]
     MissingSummary { callable: CallableId },
-    #[error("artifact boundary `{callable}` has no explicit effect declaration")]
-    MissingDeclaration { callable: CallableId },
-    #[error(
-        "artifact boundary `{callable}` infers {inferred}, which exceeds declared upper bound {declared}"
-    )]
-    DeclarationViolation {
-        callable: CallableId,
-        inferred: EffectSet,
-        declared: EffectSet,
-    },
     #[error(transparent)]
     InvalidDigest(#[from] IdentifierError),
 }
@@ -35,9 +25,10 @@ pub enum VerifiedEffectBuildError {
 /// Creates a schema-v2 effect proof from a successful semantic report.
 ///
 /// The builder is fail-closed: it accepts neither a report with diagnostics nor
-/// a caller-supplied declaration that could disagree with the analyzed node.
+/// a missing analyzed node. The legacy `declared` slot is populated with the
+/// closed inferred row, not with the source upper bound.
 pub fn build_verified_effect_summary(
-    callable: CallableId,
+    callable: &CallableId,
     report: &EffectAnalysisReport,
 ) -> Result<VerifiedEffectSummary, VerifiedEffectBuildError> {
     if report.has_errors() {
@@ -45,29 +36,11 @@ pub fn build_verified_effect_summary(
     }
     let summary =
         report
-            .summary(&callable)
+            .summary(callable)
             .ok_or_else(|| VerifiedEffectBuildError::MissingSummary {
                 callable: callable.clone(),
             })?;
-    let declared =
-        summary
-            .declared()
-            .ok_or_else(|| VerifiedEffectBuildError::MissingDeclaration {
-                callable: callable.clone(),
-            })?;
-    if !summary.inferred().is_subset(declared) {
-        return Err(VerifiedEffectBuildError::DeclarationViolation {
-            callable,
-            inferred: summary.inferred().clone(),
-            declared: declared.clone(),
-        });
-    }
-
-    let declared = declared
-        .iter()
-        .map(|effect| EffectCapability::new(effect.as_str()))
-        .collect();
-    let inferred = summary
+    let actual = summary
         .inferred()
         .iter()
         .map(|effect| EffectCapability::new(effect.as_str()))
@@ -76,8 +49,8 @@ pub fn build_verified_effect_summary(
 
     Ok(VerifiedEffectSummary::new(
         EFFECT_ANALYSIS_VERSION,
-        declared,
-        inferred,
+        actual.clone(),
+        actual,
         digest,
     ))
 }

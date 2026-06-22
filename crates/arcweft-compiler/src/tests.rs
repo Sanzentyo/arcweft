@@ -1406,8 +1406,8 @@ note(fmt("captured"))
 }
 
 #[test]
-fn compile_agent_source_with_project_rejects_capture_without_effect() {
-    let error = compile_agent_source_with_project(
+fn compile_agent_source_with_project_infers_capture_without_source_bound() {
+    let compiled = compile_agent_source_with_project(
         r"
 #[agent(version = 1)]
 agent @agent.capture_view capture_view()
@@ -1417,9 +1417,19 @@ capture(viewport())
 ",
         &ProjectSemanticIndex::new(ProgramHash::new("program-test")),
     )
-    .expect_err("capture requires declared effect");
+    .expect("capture effect is inferred without a source upper bound");
 
-    assert!(matches!(error, CompileAgentError::Type(_)));
+    let summary = compiled
+        .typecheck_report
+        .effects
+        .summary(&arcweft_lang_sema::effect_model::CallableId::new(
+            "agent.capture_view",
+        ))
+        .expect("agent effect summary");
+    assert!(summary.declared().is_none());
+    assert!(summary.inferred().contains(
+        &arcweft_lang_sema::effects::EffectId::parse("agent.capture").expect("valid effect")
+    ));
 }
 
 #[test]
@@ -1508,8 +1518,8 @@ attach(resource)
 }
 
 #[test]
-fn compile_agent_source_with_project_rejects_read_resource_without_effect() {
-    let error = compile_agent_source_with_project(
+fn compile_agent_source_with_project_infers_read_resource_without_source_bound() {
+    let compiled = compile_agent_source_with_project(
         r#"
 #[agent(version = 1)]
 agent @agent.read_resource read_resource_smoke()
@@ -1519,9 +1529,19 @@ read_resource(uri = "arcweft://session/cli/observation/latest.json")
 "#,
         &ProjectSemanticIndex::new(ProgramHash::new("program-test")),
     )
-    .expect_err("read_resource requires declared effect");
+    .expect("read_resource effect is inferred without a source upper bound");
 
-    assert!(matches!(error, CompileAgentError::Type(_)));
+    let summary = compiled
+        .typecheck_report
+        .effects
+        .summary(&arcweft_lang_sema::effect_model::CallableId::new(
+            "agent.read_resource_smoke",
+        ))
+        .expect("agent effect summary");
+    assert!(summary.declared().is_none());
+    assert!(summary.inferred().contains(
+        &arcweft_lang_sema::effects::EffectId::parse("agent.resource.read").expect("valid effect")
+    ));
 }
 
 #[test]
@@ -1556,8 +1576,8 @@ try rag.query(
 }
 
 #[test]
-fn compile_agent_source_with_project_rejects_rag_query_without_effect() {
-    let error = compile_agent_source_with_project(
+fn compile_agent_source_with_project_infers_rag_query_effect_without_source_bound() {
+    let compiled = compile_agent_source_with_project(
         r#"
 #[agent(version = 1)]
 agent @agent.debug_context debug_context()
@@ -1567,9 +1587,19 @@ rag.query("opening choice recent failures")
 "#,
         &ProjectSemanticIndex::new(ProgramHash::new("program-test")),
     )
-    .expect_err("rag.query requires declared effect");
+    .expect("rag.query effect is inferred without a source upper bound");
 
-    assert!(matches!(error, CompileAgentError::Type(_)));
+    let summary = compiled
+        .typecheck_report
+        .effects
+        .summary(&arcweft_lang_sema::effect_model::CallableId::new(
+            "agent.debug_context",
+        ))
+        .expect("agent effect summary");
+    assert!(summary.declared().is_none());
+    assert!(summary.inferred().contains(
+        &arcweft_lang_sema::effects::EffectId::parse("rag.query").expect("valid effect")
+    ));
 }
 
 #[test]
@@ -1644,6 +1674,50 @@ observe()
     assert_eq!(
         decoded.agent.as_ref().map(|agent| &agent.verified_effects),
         Some(&compiled.manifest.verified_effects)
+    );
+}
+
+#[test]
+fn compile_agent_bundle_lowers_inferred_effects_not_unused_source_upper_bound() {
+    let compiled = compile_agent_bundle_with_project(
+        r"
+#[agent(version = 1)]
+agent @agent.observe_smoke observe_smoke()
+effects { agent.observe, agent.capture }
+{
+    observe()
+}
+",
+        &ProjectSemanticIndex::new(ProgramHash::new("program-test")),
+    )
+    .expect("agent bundle compiles");
+
+    let manifest_effects = compiled
+        .manifest
+        .declared_effects
+        .iter()
+        .map(AgentEffectCapability::as_str)
+        .collect::<Vec<_>>();
+    assert_eq!(manifest_effects, vec!["agent.observe"]);
+    assert_eq!(
+        compiled
+            .manifest
+            .verified_effects
+            .declared
+            .iter()
+            .map(AgentEffectCapability::as_str)
+            .collect::<Vec<_>>(),
+        vec!["agent.observe"]
+    );
+    assert_eq!(
+        compiled
+            .manifest
+            .verified_effects
+            .inferred
+            .iter()
+            .map(AgentEffectCapability::as_str)
+            .collect::<Vec<_>>(),
+        vec!["agent.observe"]
     );
 }
 

@@ -350,7 +350,6 @@ impl TypeChecker<'_> {
             let contract = effect_contract_from_contracts(
                 item.contracts(),
                 agent.has_attribute("pure"),
-                true,
                 &mut self.errors,
             );
             let source_name = format!("agent.{}", item.name());
@@ -368,7 +367,6 @@ impl TypeChecker<'_> {
                 let contract = effect_contract_from_contracts(
                     flow.contracts(),
                     flow.has_attribute("pure"),
-                    entry_boundary,
                     &mut self.errors,
                 );
                 self.register_effect_callable(
@@ -391,7 +389,6 @@ impl TypeChecker<'_> {
             let contract = effect_contract_from_contracts(
                 function.contracts(),
                 function.has_attribute("pure"),
-                matches!(function.visibility(), Some(Visibility::Public)),
                 &mut self.errors,
             );
             self.register_effect_callable(
@@ -1187,7 +1184,6 @@ fn effect_visibility_from_syntax(visibility: Option<Visibility>) -> EffectVisibi
 fn effect_contract_from_contracts(
     contracts: &[super::ContractClause],
     pure: bool,
-    require_explicit_nonempty: bool,
     errors: &mut Vec<TypeCheckError>,
 ) -> EffectContract {
     let declared = declared_effect_set_from_contracts(contracts, errors);
@@ -1212,18 +1208,14 @@ fn effect_contract_from_contracts(
         )));
     }
 
-    let mut contract = if pure {
+    if pure {
         EffectContract::pure()
     } else if let Some(declared) = declared {
         EffectContract::bounded(declared)
     } else {
         EffectContract::inferred()
     }
-    .with_forbidden(forbidden);
-    if require_explicit_nonempty {
-        contract = contract.requiring_explicit_nonempty();
-    }
-    contract
+    .with_forbidden(forbidden)
 }
 
 fn declared_effect_set_from_contracts(

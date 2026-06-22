@@ -98,7 +98,7 @@ fn code_actions_return_workspace_edits() {
 }
 
 #[test]
-fn code_actions_add_missing_effect_declaration() {
+fn code_actions_expand_effect_upper_bound() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let mut session = ArcweftLspSession::new(&LspConfig::default());
     open_text(
@@ -126,13 +126,13 @@ effects { }
         })
         .expect("open document actions");
 
-    let action = code_action_by_title(&actions, "Add missing effect declaration")
-        .expect("missing effect quickfix exists");
+    let action = code_action_by_title(&actions, "Expand effect upper bound")
+        .expect("upper-bound quickfix exists");
     assert!(workspace_edit_replacements(action).contains(&"effects { fs.read }".to_owned()));
 }
 
 #[test]
-fn code_actions_remove_unused_effect_declaration() {
+fn code_actions_do_not_remove_unused_effect_upper_bound() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let mut session = ArcweftLspSession::new(&LspConfig::default());
     open_text(
@@ -157,9 +157,10 @@ effects { fs.read, debug.record }
         })
         .expect("open document actions");
 
-    let action = code_action_by_title(&actions, "Remove unused effect declaration")
-        .expect("unused effect quickfix exists");
-    assert!(workspace_edit_replacements(action).contains(&"effects { }".to_owned()));
+    assert!(
+        code_action_by_title(&actions, "Remove unused effect declaration").is_none(),
+        "unused upper-bound members are not diagnostics"
+    );
 }
 
 #[test]

@@ -97,15 +97,11 @@ impl TypeChecker<'_> {
         }
         if matches!(mode, LifetimeAccessMode::Write)
             && !matches!(key.scope(), LifetimeScopeKind::Line)
-            && !self
-                .effect_capabilities
-                .contains(&format!("state.write({})", key.scope().as_str()))
         {
-            self.errors.push(TypeCheckError::new(format!(
-                "writing `{}` requires effect capability `state.write({})`",
-                key.as_dotted(),
-                key.scope().as_str()
-            )));
+            self.record_static_effect(
+                &format!("state.write({})", key.scope().as_str()),
+                format!("write `{}`", key.as_dotted()),
+            );
         }
     }
 

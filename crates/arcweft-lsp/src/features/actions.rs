@@ -65,8 +65,11 @@ fn effect_contract_actions(
         .iter()
         .filter(|diagnostic| diagnostic.severity() == EffectSeverity::Error)
         .filter_map(|diagnostic| match diagnostic.kind() {
-            EffectDiagnosticKind::MissingDeclaration { missing, declared } => {
-                let effects = declared.union(missing);
+            EffectDiagnosticKind::UpperBoundExceeded {
+                excess,
+                upper_bound,
+            } => {
+                let effects = upper_bound.union(excess);
                 effect_set_edit(
                     document.text(),
                     parsed.typed_tree().items(),
@@ -77,60 +80,17 @@ fn effect_contract_actions(
                     quickfix_code_action(
                         uri,
                         document,
-                        format!(
-                            "Add missing effect declaration for `{}`",
-                            diagnostic.callable()
-                        ),
+                        format!("Expand effect upper bound for `{}`", diagnostic.callable()),
                         &edit,
                     )
                 })
             }
-            EffectDiagnosticKind::ExplicitDeclarationRequired { inferred } => effect_set_edit(
-                document.text(),
-                parsed.typed_tree().items(),
-                diagnostic.callable(),
-                inferred,
-            )
-            .map(|edit| {
-                quickfix_code_action(
-                    uri,
-                    document,
-                    format!("Declare inferred effects for `{}`", diagnostic.callable()),
-                    &edit,
-                )
-            }),
             EffectDiagnosticKind::ForbiddenEffect { .. }
             | EffectDiagnosticKind::PureCallableEffect { .. }
             | EffectDiagnosticKind::UnknownLocalCallable { .. }
             | EffectDiagnosticKind::DynamicSignatureRequired { .. }
-            | EffectDiagnosticKind::CapabilityUnavailable { .. }
-            | EffectDiagnosticKind::OverdeclaredEffect { .. } => None,
+            | EffectDiagnosticKind::CapabilityUnavailable { .. } => None,
         })
-        .chain(report.effects.warnings().filter_map(|diagnostic| {
-            let EffectDiagnosticKind::OverdeclaredEffect { unused } = diagnostic.kind() else {
-                return None;
-            };
-            let summary = report.effects.summary(diagnostic.callable())?;
-            let declared = summary.declared()?;
-            let effects = declared.difference(unused);
-            effect_set_edit(
-                document.text(),
-                parsed.typed_tree().items(),
-                diagnostic.callable(),
-                &effects,
-            )
-            .map(|edit| {
-                quickfix_code_action(
-                    uri,
-                    document,
-                    format!(
-                        "Remove unused effect declaration from `{}`",
-                        diagnostic.callable()
-                    ),
-                    &edit,
-                )
-            })
-        }))
         .collect()
 }
 

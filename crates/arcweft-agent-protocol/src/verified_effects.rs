@@ -7,7 +7,10 @@ use crate::{artifact::EffectCapability, ids::StableHash};
 pub struct VerifiedEffectSummary {
     /// Version of the semantic closure rules, independent from the compiler version.
     pub analysis_version: u32,
-    /// Source-declared upper bound at the public artifact boundary.
+    /// Closed first-order effect row stored in the legacy `declared` slot.
+    ///
+    /// This intentionally mirrors `inferred` for Agent artifacts. Source
+    /// `effects` clauses are upper bounds and may include unused capabilities.
     pub declared: Vec<EffectCapability>,
     /// Compiler-inferred transitive closure after successful validation.
     pub inferred: Vec<EffectCapability>,
