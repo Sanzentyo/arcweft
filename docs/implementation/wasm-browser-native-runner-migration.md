@@ -123,7 +123,7 @@ Implemented in the current checkout:
 npm.cmd --prefix web test
 ```
 
-Remaining completion work:
+Follow-up boundaries:
 
 - Native/Web screenshot parity now has capture producers, enforced Rust-script
   thresholds, and `imq` report paths for focus, hover, pressed, and compact
@@ -146,4 +146,5 @@ Remaining completion work:
   compact-focus-first-choice PSNR 21.4657 dB / SSIM 0.7345 / MSE 0.007136,
   and hidpi-focus-first-choice PSNR 20.0349 dB / SSIM 0.8295 / MSE 0.009920.
 - Richer image lifecycle semantics such as explicit hide/clear and authored
-  layer ordering remain to be promoted into the typed presentation model.
+  layer ordering remain future presentation-model work, not a blocker for the
+  current WebGPU-first browser player cut.
