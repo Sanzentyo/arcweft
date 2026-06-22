@@ -549,6 +549,28 @@ fn private_helper(value: String | Bytes) -> Unit {
         "anonymous sums in public ABI should lint, not fail: {:?}",
         report.diagnostics
     );
+    assert!(report.warnings.iter().any(|warning| {
+        matches!(
+            warning.kind(),
+            crate::diagnostics::TypeCheckWarningKind::PublicAbiAnonymousSum {
+                context,
+                type_ref,
+            } if context == "public type alias `Payload`"
+                && type_ref.contains("String")
+                && type_ref.contains("Bytes")
+        )
+    }));
+    assert!(report.warnings.iter().any(|warning| {
+        matches!(
+            warning.kind(),
+            crate::diagnostics::TypeCheckWarningKind::PublicAbiAnonymousSum {
+                context,
+                type_ref,
+            } if context == "public function `read_payload` return type"
+                && type_ref.contains("String")
+                && type_ref.contains("Bytes")
+        )
+    }));
     let warnings = report
         .warnings
         .iter()

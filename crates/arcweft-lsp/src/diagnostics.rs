@@ -246,14 +246,10 @@ fn typecheck_diagnostics(errors: &[TypeCheckError]) -> Vec<Diagnostic> {
 fn typecheck_warnings(warnings: &[TypeCheckWarning]) -> Vec<Diagnostic> {
     warnings
         .iter()
-        .enumerate()
-        .map(|(index, warning)| Diagnostic {
+        .map(|warning| Diagnostic {
             range: start_range(),
             severity: Some(DiagnosticSeverity::WARNING),
-            code: Some(NumberOrString::String(typecheck_warning_code(
-                warning,
-                index + 1,
-            ))),
+            code: Some(NumberOrString::String(typecheck_warning_code(warning))),
             source: Some("arcweft-sema".to_owned()),
             message: warning.message().to_owned(),
             ..Diagnostic::default()
@@ -261,7 +257,7 @@ fn typecheck_warnings(warnings: &[TypeCheckWarning]) -> Vec<Diagnostic> {
         .collect()
 }
 
-fn typecheck_warning_code(warning: &TypeCheckWarning, _index: usize) -> String {
+fn typecheck_warning_code(warning: &TypeCheckWarning) -> String {
     match warning.kind() {
         TypeCheckWarningKind::Effect { diagnostic } => diagnostic.code().as_str().to_owned(),
         TypeCheckWarningKind::PublicAbiAnonymousSum { .. } => {
@@ -444,6 +440,28 @@ flow @flow.opening start {
             diagnostic.code == Some(NumberOrString::String("AWF0102".into()))
                 && diagnostic.severity == Some(DiagnosticSeverity::ERROR)
         }));
+    }
+
+    #[test]
+    fn diagnostics_surface_public_abi_anonymous_sum_warning() {
+        let source = r"
+pub type Payload = String | Bytes
+";
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+
+        let diagnostic = analysis
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| {
+                diagnostic.code
+                    == Some(NumberOrString::String(
+                        "sema.public_abi.anonymous_sum".to_owned(),
+                    ))
+            })
+            .expect("public ABI anonymous sum warning is surfaced");
+        assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::WARNING));
+        assert!(diagnostic.message.contains("public type alias `Payload`"));
     }
 
     #[test]
