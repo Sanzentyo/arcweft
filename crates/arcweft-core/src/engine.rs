@@ -149,6 +149,17 @@ pub enum FlowFiberStatus {
     Failed(String),
 }
 
+/// String presentation style for high-level runtime flow status.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FlowStatusLabelStyle {
+    /// Stable runtime-facing status used by host/bundle/player observations.
+    Runtime,
+    /// Existing CLI/debug spelling that preserves `FlowExit`'s `Debug` form.
+    Debug,
+    /// Coarse status used when only the status kind should be exposed.
+    Compact,
+}
+
 /// Suspended `await ... with` state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AwaitState {
@@ -190,6 +201,79 @@ pub struct ChoiceState {
 pub enum FlowExit {
     Done,
     Return(String),
+}
+
+impl FlowFiberStatus {
+    pub fn status_label(&self, style: FlowStatusLabelStyle) -> String {
+        match style {
+            FlowStatusLabelStyle::Runtime => self.runtime_status_label(),
+            FlowStatusLabelStyle::Debug => self.debug_status_label(),
+            FlowStatusLabelStyle::Compact => self.compact_status_label(),
+        }
+    }
+
+    fn runtime_status_label(&self) -> String {
+        match self {
+            Self::Running => "running".to_owned(),
+            Self::Waiting(state) => format!("waiting {}", state.target.task.0),
+            Self::WaitingMany(state) => format!(
+                "waiting_many {} {}/{}",
+                state.target.task.0,
+                state.results.iter().filter(|value| value.is_some()).count(),
+                state.results.len()
+            ),
+            Self::Choice(state) => {
+                format!("choice {}", state.id.as_deref().unwrap_or("-"))
+            }
+            Self::Done(exit) => exit.runtime_status_label(),
+            Self::Failed(message) => format!("failed {message}"),
+        }
+    }
+
+    fn debug_status_label(&self) -> String {
+        match self {
+            Self::Running => "running".to_owned(),
+            Self::Waiting(state) => format!("waiting {}", state.target.task.0),
+            Self::WaitingMany(state) => format!(
+                "waiting_many {} {}/{}",
+                state.target.task.0,
+                state.results.iter().filter(|value| value.is_some()).count(),
+                state.results.len()
+            ),
+            Self::Choice(state) => {
+                format!("choice {}", state.id.as_deref().unwrap_or("-"))
+            }
+            Self::Done(exit) => format!("done {exit:?}"),
+            Self::Failed(message) => format!("failed {message}"),
+        }
+    }
+
+    fn compact_status_label(&self) -> String {
+        match self {
+            Self::Running => "running".to_owned(),
+            Self::Waiting(_) => "waiting".to_owned(),
+            Self::WaitingMany(_) => "waiting_many".to_owned(),
+            Self::Choice(_) => "choice".to_owned(),
+            Self::Done(exit) => exit.compact_status_label(),
+            Self::Failed(message) => format!("failed:{message}"),
+        }
+    }
+}
+
+impl FlowExit {
+    fn runtime_status_label(&self) -> String {
+        match self {
+            Self::Done => "done".to_owned(),
+            Self::Return(value) => format!("done return {value}"),
+        }
+    }
+
+    fn compact_status_label(&self) -> String {
+        match self {
+            Self::Done => "done".to_owned(),
+            Self::Return(value) => format!("done return {value}"),
+        }
+    }
 }
 
 impl Default for FlowFiber {

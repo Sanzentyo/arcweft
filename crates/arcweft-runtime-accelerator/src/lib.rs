@@ -470,6 +470,17 @@ pub enum RuntimePureBackendMode {
     Auto,
 }
 
+impl RuntimePureBackendMode {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Vm => "vm",
+            Self::Aot => "aot",
+            Self::Jit => "jit",
+        }
+    }
+}
+
 /// Runtime pure batch worker-count policy.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum RuntimePureWorkerCount {

@@ -1,0 +1,21 @@
+[package]
+name = "arcweft-render-web"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+arcweft-render-wgpu = { path = "../arcweft-render-wgpu" }
+thiserror.workspace = true
+wasm-bindgen.workspace = true
+web-sys = { workspace = true, features = ["console"] }
+wgpu = { workspace = true, features = ["webgpu"] }
+winit.workspace = true
+
+[lints]
+workspace = true

@@ -729,6 +729,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-player-web"
+version = "0.1.0"
+dependencies = [
+ "arcweft-bundle",
+ "arcweft-core",
+ "arcweft-id",
+ "arcweft-presentation",
+ "arcweft-render-web",
+ "arcweft-render-wgpu",
+ "arcweft-runtime-driver",
+ "js-sys",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "winit",
+]
+
+[[package]]
 name = "arcweft-presentation"
 version = "0.1.0"
 dependencies = [
@@ -781,6 +802,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-render-web"
+version = "0.1.0"
+dependencies = [
+ "arcweft-render-wgpu",
+ "thiserror 2.0.18",
+ "wasm-bindgen",
+ "web-sys",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
+name = "arcweft-render-wgpu"
+version = "0.1.0"
+dependencies = [
+ "arcweft-id",
+ "arcweft-presentation",
+ "arcweft-render-text",
+ "arcweft-ui",
+ "bytemuck",
+ "glyphon",
+ "thiserror 2.0.18",
+ "wgpu",
+]
+
+[[package]]
 name = "arcweft-runtime-accelerator"
 version = "0.1.0"
 dependencies = [
@@ -810,6 +857,20 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
  "wgpu",
+]
+
+[[package]]
+name = "arcweft-runtime-driver"
+version = "0.1.0"
+dependencies = [
+ "arcweft-bundle",
+ "arcweft-core",
+ "arcweft-id",
+ "arcweft-interaction-model",
+ "arcweft-presentation",
+ "arcweft-render-text",
+ "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

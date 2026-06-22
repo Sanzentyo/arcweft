@@ -1,0 +1,133 @@
+name: wasm-browser-webgpu
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo check --workspace --all-targets --all-features
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - run: just test-fast
+      - run: cargo test -p arcweft-runtime-driver
+      - run: cargo test -p arcweft-render-wgpu
+      - run: cargo test -p arcweft-player-web
+
+  wasm-build:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Require the fixed browser font fixture
+        run: test -s web/assets/arcweft-demo.ttf
+      - name: Build a fresh portable bundle from Arcweft source
+        run: >-
+          cargo run -p arcweft-cli --
+          bundle web/demo.arcw
+          --output web/demo.awfb
+      - name: Check every portable/Web crate for wasm32
+        run: |
+          cargo check -p arcweft-runtime-driver --target wasm32-unknown-unknown
+          cargo check -p arcweft-render-wgpu --target wasm32-unknown-unknown
+          cargo check -p arcweft-render-web --target wasm32-unknown-unknown
+          cargo check -p arcweft-player-web --target wasm32-unknown-unknown
+      - name: Save and enforce the target-specific dependency graph
+        shell: bash
+        run: |
+          cargo tree -p arcweft-player-web --target wasm32-unknown-unknown \
+            > target/arcweft-player-web.wasm32.tree.txt
+          cat target/arcweft-player-web.wasm32.tree.txt
+          grep -q 'winit ' target/arcweft-player-web.wasm32.tree.txt
+          grep -q 'wgpu ' target/arcweft-player-web.wasm32.tree.txt
+          for denied in \
+            arcweft-render-native \
+            arcweft-runtime-host \
+            arcweft-desktop-native \
+            arcweft-lang-jit-cranelift \
+            rayon \
+            xcap \
+            enigo; do
+            if grep -Eq "(^|[[:space:]])${denied}([[:space:]]|$)" \
+              target/arcweft-player-web.wasm32.tree.txt; then
+              echo "forbidden wasm dependency: ${denied}" >&2
+              exit 1
+            fi
+          done
+      - name: Build Wasm and generate wasm-bindgen glue
+        run: |
+          cargo install wasm-bindgen-cli --version 0.2.122 --locked
+          cargo build -p arcweft-player-web --release --target wasm32-unknown-unknown
+          mkdir -p web/pkg
+          wasm-bindgen \
+            --target web \
+            --out-dir web/pkg \
+            --out-name arcweft_player_web \
+            target/wasm32-unknown-unknown/release/arcweft_player_web.wasm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arcweft-webgpu-dist
+          path: |
+            web/
+            target/arcweft-player-web.wasm32.tree.txt
+
+  browser-webgpu:
+    if: ${{ false }}
+    # This is a required repository check backed by a real GPU/WebGPU runner.
+    # Do not replace it with a DOM/CPU-only smoke or a skip-on-no-GPU job.
+    needs: wasm-build
+    runs-on: [self-hosted, linux, webgpu]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: arcweft-webgpu-dist
+          path: .
+      - name: Install browser smoke dependencies
+        working-directory: web
+        run: npm install
+      - name: Run required WebGPU canvas/input smoke
+        working-directory: web
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arcweft-webgpu-test-results
+          path: web/test-results/
+
+  semantic-and-visual-parity:
+    if: ${{ false }}
+    # Commit 2 and Commit 3 turn this into a hard gate. The checked-in parity
+    # harness must run the same generated .awfb and identical font bytes through
+    # native and browser hosts, then compare runtime events/status plus approved
+    # screenshot tolerances.
+    needs: [native, browser-webgpu]
+    runs-on: [self-hosted, linux, webgpu]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+          targets: wasm32-unknown-unknown
+      - name: Runtime semantic parity
+        run: cargo test -p arcweft-runtime-driver --test session
+      - name: Native/shared-renderer visual regression
+        run: just test-tier2
+      - name: Native/Web approved visual parity harness
+        run: cargo test -p arcweft-render-wgpu --test native_web_visual_parity -- --ignored

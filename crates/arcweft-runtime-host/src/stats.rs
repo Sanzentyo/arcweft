@@ -1,6 +1,5 @@
 use arcweft_runtime_accelerator::{
-    RuntimePureAccelerator, RuntimePureBackendMode, RuntimePureCompileStats,
-    RuntimePureWorkerCount,
+    RuntimePureAccelerator, RuntimePureCompileStats, RuntimePureWorkerCount,
     math::{RuntimeMathAutoSelectionReason, RuntimeMathBackend, RuntimeMathStats},
 };
 
@@ -95,7 +94,7 @@ pub fn runtime_executor_stats(
     RuntimeExecutorStats {
         aot_fast_path_ops,
         pure_config: RuntimeExecutorPureConfigSummary {
-            backend: runtime_pure_backend_label(config.backend),
+            backend: config.backend.label(),
             workers: match config.workers {
                 RuntimePureWorkerCount::Auto => RuntimeExecutorPureWorkerSummary::Auto,
                 RuntimePureWorkerCount::Fixed(value) => {
@@ -106,7 +105,7 @@ pub fn runtime_executor_stats(
             worker_pool_active: pure.has_worker_pool(),
             batch_min_len: config.batch_min_len,
             emit_object_artifacts: config.emit_object_artifacts,
-            math_backend: runtime_math_backend_label(config.math.backend),
+            math_backend: config.math.backend.label(),
             math_wgpu_min_elements: config.math.wgpu_min_elements,
         },
         pure_acceleration: RuntimeExecutorPureAccelerationSummary {
@@ -118,43 +117,6 @@ pub fn runtime_executor_stats(
         },
         pure_compile: RuntimeExecutorPureCompileStatsSummary::from(pure.compile_stats()),
         math: RuntimeExecutorMathStatsSummary::from(pure.math_stats()),
-    }
-}
-
-fn runtime_pure_backend_label(value: RuntimePureBackendMode) -> &'static str {
-    match value {
-        RuntimePureBackendMode::Auto => "auto",
-        RuntimePureBackendMode::Vm => "vm",
-        RuntimePureBackendMode::Aot => "aot",
-        RuntimePureBackendMode::Jit => "jit",
-    }
-}
-
-fn runtime_math_backend_label(value: RuntimeMathBackend) -> &'static str {
-    match value {
-        RuntimeMathBackend::Auto => "auto",
-        RuntimeMathBackend::Scalar => "scalar",
-        RuntimeMathBackend::Glam => "glam",
-        RuntimeMathBackend::Ndarray => "ndarray",
-        RuntimeMathBackend::Wgpu => "wgpu",
-    }
-}
-
-fn runtime_math_auto_reason_label(value: RuntimeMathAutoSelectionReason) -> &'static str {
-    match value {
-        RuntimeMathAutoSelectionReason::Matmul4x4Glam => "matmul_4x4_glam",
-        RuntimeMathAutoSelectionReason::MatmulWgpuWorkThreshold => "matmul_wgpu_work_threshold",
-        RuntimeMathAutoSelectionReason::MatmulScalarSmallWork => "matmul_scalar_small_work",
-        RuntimeMathAutoSelectionReason::MatmulNdarrayCpuDefault => "matmul_ndarray_cpu_default",
-        RuntimeMathAutoSelectionReason::ElementwiseWgpuWorkThreshold => {
-            "elementwise_wgpu_work_threshold"
-        }
-        RuntimeMathAutoSelectionReason::ElementwiseScalarCpuDefault => {
-            "elementwise_scalar_cpu_default"
-        }
-        RuntimeMathAutoSelectionReason::ElementwiseNdarrayCpuDefault => {
-            "elementwise_ndarray_cpu_default"
-        }
     }
 }
 
@@ -202,8 +164,10 @@ impl From<RuntimeMathStats> for RuntimeExecutorMathStatsSummary {
             gpu_staging_buffer_creations: stats.gpu_staging_buffer_creations,
             gpu_staging_buffer_reuse_hits: stats.gpu_staging_buffer_reuse_hits,
             gpu_reused_dispatches: stats.gpu_reused_dispatches,
-            last_backend: stats.last_backend.map(runtime_math_backend_label),
-            last_auto_reason: stats.last_auto_reason.map(runtime_math_auto_reason_label),
+            last_backend: stats.last_backend.map(RuntimeMathBackend::label),
+            last_auto_reason: stats
+                .last_auto_reason
+                .map(RuntimeMathAutoSelectionReason::label),
         }
     }
 }

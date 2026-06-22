@@ -1138,11 +1138,11 @@ fn validate_prepared_backend(
         }
         RuntimeMathBackend::Auto => Err(format!(
             "prepared GPU reuse requires auto selection to resolve to wgpu, selected {}",
-            backend_label(selection.backend())
+            selection.backend().label()
         )),
         selected => Err(format!(
             "prepared GPU reuse is only available for the wgpu backend, got {}",
-            backend_label(selected)
+            selected.label()
         )),
     }
 }
@@ -1682,8 +1682,10 @@ impl From<RuntimeMathStats> for RuntimeMathStatsJson {
             gpu_staging_buffer_creations: stats.gpu_staging_buffer_creations,
             gpu_staging_buffer_reuse_hits: stats.gpu_staging_buffer_reuse_hits,
             gpu_reused_dispatches: stats.gpu_reused_dispatches,
-            last_backend: stats.last_backend.map(backend_label),
-            last_auto_reason: stats.last_auto_reason.map(auto_reason_label),
+            last_backend: stats.last_backend.map(RuntimeMathBackend::label),
+            last_auto_reason: stats
+                .last_auto_reason
+                .map(RuntimeMathAutoSelectionReason::label),
         }
     }
 }
@@ -1744,7 +1746,7 @@ impl BackendReport {
 
     fn into_json(self, scalar_baseline_ns: Option<u128>) -> BackendReportJson {
         BackendReportJson {
-            backend: backend_label(self.backend),
+            backend: self.backend.label(),
             status: self.status,
             median_ns: self.median_ns,
             speedup_vs_scalar: speedup_vs_scalar(scalar_baseline_ns, self.median_ns),
@@ -1815,39 +1817,11 @@ fn add_math_stats(total: &mut RuntimeMathStats, sample: RuntimeMathStats) {
     total.last_auto_reason = sample.last_auto_reason.or(total.last_auto_reason);
 }
 
-const fn backend_label(value: RuntimeMathBackend) -> &'static str {
-    match value {
-        RuntimeMathBackend::Scalar => "scalar",
-        RuntimeMathBackend::Glam => "glam",
-        RuntimeMathBackend::Ndarray => "ndarray",
-        RuntimeMathBackend::Wgpu => "wgpu",
-        RuntimeMathBackend::Auto => "auto",
-    }
-}
-
 const fn build_mode_label() -> &'static str {
     if cfg!(debug_assertions) {
         "debug_assertions"
     } else {
         "optimized"
-    }
-}
-
-const fn auto_reason_label(value: RuntimeMathAutoSelectionReason) -> &'static str {
-    match value {
-        RuntimeMathAutoSelectionReason::Matmul4x4Glam => "matmul_4x4_glam",
-        RuntimeMathAutoSelectionReason::MatmulWgpuWorkThreshold => "matmul_wgpu_work_threshold",
-        RuntimeMathAutoSelectionReason::MatmulScalarSmallWork => "matmul_scalar_small_work",
-        RuntimeMathAutoSelectionReason::MatmulNdarrayCpuDefault => "matmul_ndarray_cpu_default",
-        RuntimeMathAutoSelectionReason::ElementwiseWgpuWorkThreshold => {
-            "elementwise_wgpu_work_threshold"
-        }
-        RuntimeMathAutoSelectionReason::ElementwiseScalarCpuDefault => {
-            "elementwise_scalar_cpu_default"
-        }
-        RuntimeMathAutoSelectionReason::ElementwiseNdarrayCpuDefault => {
-            "elementwise_ndarray_cpu_default"
-        }
     }
 }
 

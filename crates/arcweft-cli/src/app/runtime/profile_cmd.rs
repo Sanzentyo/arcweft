@@ -11,8 +11,9 @@ use crate::app::shared::{is_arcw_path, print_json};
 use crate::output::{
     AotProfileStats, BorrowCheckProfileStats, BytecodeProfileStats, RuntimeExecutorTier,
     RuntimePlanProfileStats, RuntimeProfileCompiler, RuntimeProfileReport, RuntimeProfileRuntime,
-    RuntimeTypeValidationProfileStats, TypeCheckProfileStats, flow_status_label,
+    RuntimeTypeValidationProfileStats, TypeCheckProfileStats,
 };
+use arcweft_core::engine::FlowStatusLabelStyle;
 use arcweft_runtime_host::{NativeAdapterRegistrar, host_system_info};
 use std::process::ExitCode;
 
@@ -67,7 +68,7 @@ pub(in crate::app) fn runtime_profile_command(
             &options.values,
         )
     })?;
-    let final_status = flow_status_label(&trace.final_status);
+    let final_status = trace.final_status.status_label(FlowStatusLabelStyle::Debug);
     let report = RuntimeProfileReport {
         source: report_path(selection.path()),
         syntax_warnings: compiled.syntax_warnings,

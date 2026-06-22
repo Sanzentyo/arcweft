@@ -17,10 +17,14 @@ use super::shared::print_json;
 use crate::output::{
     BorrowCheckProfileStats, CheckReport, RuntimeExecutorTier, RuntimeTypeValidationProfileStats,
     RuntimeTypeValidationReportSummary, TypeCheckProfileStats, VerifyTypesReport,
-    VerifyTypesRuntimeSelfCheck, VerifyTypesVerifierSummary, flow_status_label,
+    VerifyTypesRuntimeSelfCheck, VerifyTypesVerifierSummary,
 };
 use arcweft_compiler::lower::lower_source_runtime_plan_with_options;
-use arcweft_core::{engine::FlowFiberStatus, plan::RuntimePlan, value::RuntimeBinding};
+use arcweft_core::{
+    engine::{FlowFiberStatus, FlowStatusLabelStyle},
+    plan::RuntimePlan,
+    value::RuntimeBinding,
+};
 use arcweft_runtime_host::NativeAdapterRegistrar;
 use arcweft_verify::{
     BackendKind, SmtBackend, VerificationMode, VerificationPolicy, VerificationReport,
@@ -273,7 +277,7 @@ fn verify_types_runtime_self_check(
         executor_stats: trace.executor_stats,
         native_io: trace.native_io,
         steps_run: trace.steps.len(),
-        final_status: flow_status_label(&trace.final_status),
+        final_status: trace.final_status.status_label(FlowStatusLabelStyle::Debug),
         diagnostics: trace.steps.iter().map(|step| step.diagnostics.len()).sum(),
         failed: matches!(trace.final_status, FlowFiberStatus::Failed(_)),
         steps: trace.steps,

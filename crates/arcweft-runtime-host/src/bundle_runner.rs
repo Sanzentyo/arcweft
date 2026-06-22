@@ -6,7 +6,7 @@ use arcweft_bundle::{
 };
 use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_core::effect::LineEffectRequest;
-use arcweft_core::engine::{FlowExit, FlowFiber, FlowFiberStatus};
+use arcweft_core::engine::{FlowFiber, FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::executor::{AotExecutor, BytecodeVmExecutor, RuntimeExecutor};
 use arcweft_core::plan::{FlowEvent, FlowRuntimeId, RuntimeEntryTarget, RuntimePlan};
 use arcweft_core::step::{
@@ -246,7 +246,9 @@ fn execute_bundle_with_native_adapters(
         executor_stats: trace.executor_stats,
         native_io: trace.native_io,
         steps: trace.steps,
-        final_status: flow_status_label(&trace.final_status),
+        final_status: trace
+            .final_status
+            .status_label(FlowStatusLabelStyle::Runtime),
     })
 }
 
@@ -602,7 +604,7 @@ impl BundleRunnerStepSummary {
             Self {
                 index,
                 stop_reason: format!("{stop_reason:?}"),
-                fiber_status: flow_status_label(&fiber_status),
+                fiber_status: fiber_status.status_label(FlowStatusLabelStyle::Runtime),
                 executed_ops: stats.executed_ops,
                 task_requests: task_requests.len(),
                 diagnostics: output
@@ -730,25 +732,6 @@ fn normalize_entity_selector(value: &str, family: &str) -> String {
         value.to_owned()
     } else {
         format!("{family}.{value}")
-    }
-}
-
-fn flow_status_label(status: &FlowFiberStatus) -> String {
-    match status {
-        FlowFiberStatus::Running => "running".to_owned(),
-        FlowFiberStatus::Waiting(state) => format!("waiting {}", state.target.task.0),
-        FlowFiberStatus::WaitingMany(state) => format!(
-            "waiting_many {} {}/{}",
-            state.target.task.0,
-            state.results.iter().filter(|value| value.is_some()).count(),
-            state.results.len()
-        ),
-        FlowFiberStatus::Choice(state) => {
-            format!("choice {}", state.id.as_deref().unwrap_or("-"))
-        }
-        FlowFiberStatus::Done(FlowExit::Done) => "done".to_owned(),
-        FlowFiberStatus::Done(FlowExit::Return(value)) => format!("done return {value}"),
-        FlowFiberStatus::Failed(message) => format!("failed {message}"),
     }
 }
 

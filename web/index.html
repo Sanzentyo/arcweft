@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Arcweft WebGPU Player</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main id="arcweft-host">
+      <canvas id="arcweft-canvas" tabindex="0" aria-label="Arcweft game canvas"></canvas>
+      <p id="arcweft-loading" role="status">Arcweft WebGPU playerを起動しています…</p>
+      <pre id="arcweft-fatal" role="alert" hidden></pre>
+    </main>
+    <script type="module" src="./player.js"></script>
+  </body>
+</html>

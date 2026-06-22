@@ -1,17 +1,24 @@
 //! Sans I/O bundle data model and deterministic codecs.
 
+#[cfg(feature = "format-avro")]
 use apache_avro::types::Value as AvroValue;
+#[cfg(feature = "format-avro")]
 use apache_avro::{Reader, Schema, Writer};
 use arcweft_agent_protocol::artifact::AgentArtifactManifest;
 use arcweft_core::bytecode::BytecodeProgram;
+#[cfg(feature = "format-yaml")]
 use arcweft_data::{Number, Value};
 use arcweft_render_text::LineDisplayCatalog;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "format-yaml")]
 use std::collections::BTreeMap;
+#[cfg(feature = "format-cbor")]
 use std::io::Cursor;
 use std::path::Path;
 use thiserror::Error;
+#[cfg(feature = "format-yaml")]
 use yaml_rust2::yaml::Hash;
+#[cfg(feature = "format-yaml")]
 use yaml_rust2::{Yaml, YamlEmitter, YamlLoader};
 
 pub const ARCWEFT_BUNDLE_SCHEMA_VERSION: u32 = 2;
@@ -207,6 +214,11 @@ pub enum BundleCodecError {
     },
     #[error("unsupported Arcweft bundle format `{format}`")]
     UnsupportedFormat { format: String },
+    #[error("Arcweft bundle format `{format}` requires Cargo feature `{feature}`")]
+    DisabledFormat {
+        format: BundleFormat,
+        feature: &'static str,
+    },
     #[error("bundle image asset `{asset_id}` references missing virtual file {space}:{path}")]
     MissingImageFile {
         asset_id: String,
@@ -215,6 +227,7 @@ pub enum BundleCodecError {
     },
 }
 
+#[cfg(feature = "format-yaml")]
 fn bundle_value_to_yaml(value: &Value) -> Result<Yaml, String> {
     match value {
         Value::Unit => Ok(Yaml::Null),
@@ -267,6 +280,7 @@ fn bundle_value_to_yaml(value: &Value) -> Result<Yaml, String> {
     }
 }
 
+#[cfg(feature = "format-yaml")]
 fn bundle_yaml_to_value(yaml: &Yaml) -> Result<Value, String> {
     match yaml {
         Yaml::Null => Ok(Value::Unit),
@@ -387,12 +401,16 @@ impl ArcweftBundle {
         self.validate_kind()?;
         match format {
             BundleFormat::Json => self.to_json_bytes(),
+            #[cfg(feature = "format-toml")]
             BundleFormat::Toml => toml::to_string_pretty(self)
                 .map(String::into_bytes)
                 .map_err(|error| BundleCodecError::EncodeFormat {
                     format,
                     message: error.to_string(),
                 }),
+            #[cfg(not(feature = "format-toml"))]
+            BundleFormat::Toml => Err(format.disabled_error()),
+            #[cfg(feature = "format-yaml")]
             BundleFormat::Yaml => {
                 let value = arcweft_serde_bridge::to_arcweft_value(self).map_err(|error| {
                     BundleCodecError::EncodeFormat {
@@ -411,12 +429,18 @@ impl ArcweftBundle {
                 })?;
                 Ok(out.into_bytes())
             }
+            #[cfg(not(feature = "format-yaml"))]
+            BundleFormat::Yaml => Err(format.disabled_error()),
+            #[cfg(feature = "format-messagepack")]
             BundleFormat::MessagePack => {
                 rmp_serde::to_vec_named(self).map_err(|error| BundleCodecError::EncodeFormat {
                     format,
                     message: error.to_string(),
                 })
             }
+            #[cfg(not(feature = "format-messagepack"))]
+            BundleFormat::MessagePack => Err(format.disabled_error()),
+            #[cfg(feature = "format-cbor")]
             BundleFormat::Cbor => {
                 let mut bytes = Vec::new();
                 ciborium::ser::into_writer(self, &mut bytes).map_err(|error| {
@@ -427,13 +451,50 @@ impl ArcweftBundle {
                 })?;
                 Ok(bytes)
             }
+            #[cfg(not(feature = "format-cbor"))]
+            BundleFormat::Cbor => Err(format.disabled_error()),
+            #[cfg(feature = "format-avro")]
             BundleFormat::Avro => self.to_avro_envelope_bytes(),
+            #[cfg(not(feature = "format-avro"))]
+            BundleFormat::Avro => Err(format.disabled_error()),
         }
     }
 
     pub fn from_format_slice(format: BundleFormat, bytes: &[u8]) -> Result<Self, BundleCodecError> {
+        if format == BundleFormat::Json {
+            return Self::from_json_slice(bytes);
+        }
+        let bundle = Self::from_non_json_format_slice(format, bytes)?;
+        bundle.validate_schema_and_kind()?;
+        Ok(bundle)
+    }
+
+    fn from_non_json_format_slice(
+        format: BundleFormat,
+        bytes: &[u8],
+    ) -> Result<Self, BundleCodecError> {
+        #[cfg(not(any(
+            feature = "format-avro",
+            feature = "format-cbor",
+            feature = "format-messagepack",
+            feature = "format-toml",
+            feature = "format-yaml"
+        )))]
+        {
+            let _ = bytes;
+            return Err(format.disabled_error());
+        }
+
+        #[cfg(any(
+            feature = "format-avro",
+            feature = "format-cbor",
+            feature = "format-messagepack",
+            feature = "format-toml",
+            feature = "format-yaml"
+        ))]
         let bundle = match format {
             BundleFormat::Json => return Self::from_json_slice(bytes),
+            #[cfg(feature = "format-toml")]
             BundleFormat::Toml => {
                 let source =
                     std::str::from_utf8(bytes).map_err(|error| BundleCodecError::DecodeFormat {
@@ -445,6 +506,9 @@ impl ArcweftBundle {
                     message: error.to_string(),
                 })?
             }
+            #[cfg(not(feature = "format-toml"))]
+            BundleFormat::Toml => return Err(format.disabled_error()),
+            #[cfg(feature = "format-yaml")]
             BundleFormat::Yaml => {
                 let source =
                     std::str::from_utf8(bytes).map_err(|error| BundleCodecError::DecodeFormat {
@@ -473,12 +537,18 @@ impl ArcweftBundle {
                     }
                 })?
             }
+            #[cfg(not(feature = "format-yaml"))]
+            BundleFormat::Yaml => return Err(format.disabled_error()),
+            #[cfg(feature = "format-messagepack")]
             BundleFormat::MessagePack => {
                 rmp_serde::from_slice(bytes).map_err(|error| BundleCodecError::DecodeFormat {
                     format,
                     message: error.to_string(),
                 })?
             }
+            #[cfg(not(feature = "format-messagepack"))]
+            BundleFormat::MessagePack => return Err(format.disabled_error()),
+            #[cfg(feature = "format-cbor")]
             BundleFormat::Cbor => {
                 ciborium::de::from_reader(Cursor::new(bytes)).map_err(|error| {
                     BundleCodecError::DecodeFormat {
@@ -487,20 +557,35 @@ impl ArcweftBundle {
                     }
                 })?
             }
+            #[cfg(not(feature = "format-cbor"))]
+            BundleFormat::Cbor => return Err(format.disabled_error()),
+            #[cfg(feature = "format-avro")]
             BundleFormat::Avro => Self::from_avro_envelope_slice(bytes)?,
+            #[cfg(not(feature = "format-avro"))]
+            BundleFormat::Avro => return Err(format.disabled_error()),
         };
-        bundle.validate_schema_and_kind()?;
+        #[cfg(any(
+            feature = "format-avro",
+            feature = "format-cbor",
+            feature = "format-messagepack",
+            feature = "format-toml",
+            feature = "format-yaml"
+        ))]
         Ok(bundle)
     }
 
     pub fn from_path_slice(path: &Path, bytes: &[u8]) -> Result<Self, BundleCodecError> {
         let Some(format) = BundleFormat::from_path(path) else {
-            return Self::from_json_slice(bytes).or_else(|json_error| {
-                Self::from_format_slice(BundleFormat::MessagePack, bytes)
-                    .or_else(|_| Self::from_format_slice(BundleFormat::Cbor, bytes))
-                    .or_else(|_| Self::from_format_slice(BundleFormat::Avro, bytes))
-                    .map_err(|_| json_error)
-            });
+            let json_error = match Self::from_json_slice(bytes) {
+                Ok(bundle) => return Ok(bundle),
+                Err(error) => error,
+            };
+            return BundleFormat::probe_order()
+                .iter()
+                .copied()
+                .filter(|format| *format != BundleFormat::Json)
+                .find_map(|format| Self::from_format_slice(format, bytes).ok())
+                .ok_or(json_error);
         };
         Self::from_format_slice(format, bytes)
     }
@@ -547,6 +632,7 @@ impl ArcweftBundle {
         self.validate_kind()
     }
 
+    #[cfg(feature = "format-avro")]
     fn to_avro_envelope_bytes(&self) -> Result<Vec<u8>, BundleCodecError> {
         let schema = bundle_avro_envelope_schema()?;
         let payload_json = serde_json::to_string(self).map_err(BundleCodecError::Encode)?;
@@ -578,6 +664,7 @@ impl ArcweftBundle {
             })
     }
 
+    #[cfg(feature = "format-avro")]
     fn from_avro_envelope_slice(bytes: &[u8]) -> Result<Self, BundleCodecError> {
         let reader = Reader::new(bytes).map_err(|error| BundleCodecError::DecodeFormat {
             format: BundleFormat::Avro,
@@ -615,6 +702,15 @@ impl ArcweftBundle {
 }
 
 impl BundleFormat {
+    pub const ALL: [Self; 6] = [
+        Self::Json,
+        Self::Toml,
+        Self::Yaml,
+        Self::MessagePack,
+        Self::Cbor,
+        Self::Avro,
+    ];
+
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Json => "json",
@@ -623,6 +719,64 @@ impl BundleFormat {
             Self::MessagePack => "msgpack",
             Self::Cbor => "cbor",
             Self::Avro => "avro",
+        }
+    }
+
+    pub const fn required_feature(self) -> Option<&'static str> {
+        match self {
+            Self::Json => None,
+            Self::Toml => Some("format-toml"),
+            Self::Yaml => Some("format-yaml"),
+            Self::MessagePack => Some("format-messagepack"),
+            Self::Cbor => Some("format-cbor"),
+            Self::Avro => Some("format-avro"),
+        }
+    }
+
+    pub const fn is_codec_enabled(self) -> bool {
+        match self {
+            Self::Json => true,
+            Self::Toml => cfg!(feature = "format-toml"),
+            Self::Yaml => cfg!(feature = "format-yaml"),
+            Self::MessagePack => cfg!(feature = "format-messagepack"),
+            Self::Cbor => cfg!(feature = "format-cbor"),
+            Self::Avro => cfg!(feature = "format-avro"),
+        }
+    }
+
+    pub fn enabled_formats() -> impl Iterator<Item = Self> {
+        Self::ALL
+            .into_iter()
+            .filter(|format| format.is_codec_enabled())
+    }
+
+    pub fn probe_order() -> Vec<Self> {
+        [
+            Self::Json,
+            Self::MessagePack,
+            Self::Cbor,
+            Self::Avro,
+            Self::Toml,
+            Self::Yaml,
+        ]
+        .into_iter()
+        .filter(|format| format.is_codec_enabled())
+        .collect()
+    }
+
+    #[cfg(any(
+        not(feature = "format-avro"),
+        not(feature = "format-cbor"),
+        not(feature = "format-messagepack"),
+        not(feature = "format-toml"),
+        not(feature = "format-yaml")
+    ))]
+    fn disabled_error(self) -> BundleCodecError {
+        BundleCodecError::DisabledFormat {
+            format: self,
+            feature: self
+                .required_feature()
+                .expect("only non-JSON bundle formats can be disabled"),
         }
     }
 
@@ -653,6 +807,7 @@ impl std::fmt::Display for BundleFormat {
     }
 }
 
+#[cfg(feature = "format-avro")]
 fn bundle_avro_envelope_schema() -> Result<Schema, BundleCodecError> {
     Schema::parse_str(
         r#"{
@@ -672,6 +827,7 @@ fn bundle_avro_envelope_schema() -> Result<Schema, BundleCodecError> {
     })
 }
 
+#[cfg(feature = "format-avro")]
 fn avro_string_field(
     fields: &[(String, AvroValue)],
     name: &str,
@@ -941,14 +1097,7 @@ mod tests {
             bytes: b"hello".to_vec(),
         }]);
 
-        for format in [
-            BundleFormat::Json,
-            BundleFormat::Toml,
-            BundleFormat::Yaml,
-            BundleFormat::MessagePack,
-            BundleFormat::Cbor,
-            BundleFormat::Avro,
-        ] {
+        for format in BundleFormat::enabled_formats() {
             let bytes = bundle
                 .to_format_bytes(format)
                 .unwrap_or_else(|error| panic!("{format} encodes: {error}"));

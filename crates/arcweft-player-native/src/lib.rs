@@ -9,7 +9,7 @@ use arcweft_bundle::ArcweftBundle;
 #[cfg(feature = "dev-source")]
 use arcweft_compiler::source::compile_source as compile_arcweft_source;
 #[cfg(feature = "dev-source")]
-use arcweft_core::engine::{Engine, FlowFiberStatus};
+use arcweft_core::engine::{Engine, FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::plan::FlowEvent;
 #[cfg(feature = "dev-source")]
 use arcweft_core::step::{
@@ -140,7 +140,10 @@ pub fn run_headless(
                 frames,
                 diagnostics,
                 steps,
-                status: flow_status_label(&engine.fiber().status),
+                status: engine
+                    .fiber()
+                    .status
+                    .status_label(FlowStatusLabelStyle::Runtime),
                 runtime: None,
                 #[cfg(feature = "dev-capture")]
                 native_capture: None,
@@ -151,7 +154,10 @@ pub fn run_headless(
         frames,
         diagnostics,
         steps,
-        status: flow_status_label(&engine.fiber().status),
+        status: engine
+            .fiber()
+            .status
+            .status_label(FlowStatusLabelStyle::Runtime),
         runtime: None,
         #[cfg(feature = "dev-capture")]
         native_capture: None,
@@ -252,18 +258,6 @@ fn append_display_frames(
             | FlowEvent::Return { .. }
             | FlowEvent::Done => {}
         }
-    }
-}
-
-#[cfg(feature = "dev-source")]
-fn flow_status_label(status: &FlowFiberStatus) -> String {
-    match status {
-        FlowFiberStatus::Running => "running".to_owned(),
-        FlowFiberStatus::Waiting(_) => "waiting".to_owned(),
-        FlowFiberStatus::WaitingMany(_) => "waiting_many".to_owned(),
-        FlowFiberStatus::Choice(_) => "choice".to_owned(),
-        FlowFiberStatus::Done(exit) => format!("done:{exit:?}"),
-        FlowFiberStatus::Failed(message) => format!("failed:{message}"),
     }
 }
 

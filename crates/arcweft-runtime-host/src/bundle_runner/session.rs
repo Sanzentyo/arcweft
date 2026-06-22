@@ -2,13 +2,15 @@ use super::{
     BundleRunnerError, BundleRunnerExecutor, BundleRunnerOptions, BundleRunnerPhase,
     BundleRunnerReport, BundleRunnerStepMode, BundleRunnerStepSummary, MaterializedBundleWorkspace,
     RuntimeExecutorInstance, bundle_host_policy, bundle_runner_bytecode, bundle_runner_entry,
-    flow_status_label, run_bundle_runner_phase, step_options, validate_bundle_image_assets,
-    validate_bundle_kind,
+    run_bundle_runner_phase, step_options, validate_bundle_image_assets, validate_bundle_kind,
 };
 use crate::native_task::{NativeTaskBridge, standard_cli_registry_builder};
 use arcweft_bundle::ArcweftBundle;
 use arcweft_core::{
-    engine::FlowFiberStatus, step::RuntimeStepInput, task::TaskEvent, value::RuntimeBinding,
+    engine::{FlowFiberStatus, FlowStatusLabelStyle},
+    step::RuntimeStepInput,
+    task::TaskEvent,
+    value::RuntimeBinding,
 };
 use arcweft_host_adapter::{HostAdapterError, HostAdapterRegistryBuilder};
 use std::{path::Path, time::Instant};
@@ -172,7 +174,10 @@ impl BundleRunnerSession {
     }
 
     pub fn final_status(&self) -> String {
-        flow_status_label(&self.executor.fiber().status)
+        self.executor
+            .fiber()
+            .status
+            .status_label(FlowStatusLabelStyle::Runtime)
     }
 
     pub fn into_report(mut self) -> BundleRunnerReport {
@@ -189,7 +194,11 @@ impl BundleRunnerSession {
             executor_stats: self.executor.executor_stats(),
             native_io: self.host.stats(),
             steps: self.steps,
-            final_status: flow_status_label(&self.executor.fiber().status),
+            final_status: self
+                .executor
+                .fiber()
+                .status
+                .status_label(FlowStatusLabelStyle::Runtime),
         }
     }
 }

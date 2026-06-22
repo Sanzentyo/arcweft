@@ -2,7 +2,7 @@ use crate::app::project::CheckedModule;
 use arcweft_core::aot::AotProgramStats;
 use arcweft_core::bytecode::BytecodeStats;
 use arcweft_core::effect::LineEffectRequest;
-use arcweft_core::engine::{FlowFiber, FlowFiberStatus};
+use arcweft_core::engine::{FlowFiber, FlowStatusLabelStyle};
 use arcweft_core::line_task::{LineTaskGroup, LineTaskNode, LineTaskScope, LineTaskTrigger};
 use arcweft_core::plan::FlowEvent;
 use arcweft_core::source::{RuntimeSourceEvent, SourceEventKind, SourcePolicy};
@@ -1183,7 +1183,7 @@ impl RuntimeStepRunSummary {
         let summary = Self {
             index,
             stop_reason: format!("{stop_reason:?}"),
-            fiber_status: flow_status_label(&fiber_status),
+            fiber_status: fiber_status.status_label(FlowStatusLabelStyle::Debug),
             stats: RuntimeStepStatsSummary::from(stats),
             diagnostics: output
                 .diagnostics
@@ -1370,24 +1370,6 @@ fn event_kind_label(kind: &SourceEventKind<RuntimePayload, RuntimePayload>) -> S
         SourceEventKind::PermissionRevoked => "permission_revoked".to_owned(),
         SourceEventKind::Error(error) => format!("error {}", error.label()),
         SourceEventKind::End => "end".to_owned(),
-    }
-}
-
-pub(crate) fn flow_status_label(status: &FlowFiberStatus) -> String {
-    match status {
-        FlowFiberStatus::Running => "running".to_owned(),
-        FlowFiberStatus::Waiting(state) => format!("waiting {}", state.target.task.0),
-        FlowFiberStatus::WaitingMany(state) => format!(
-            "waiting_many {} {}/{}",
-            state.target.task.0,
-            state.results.iter().filter(|value| value.is_some()).count(),
-            state.results.len()
-        ),
-        FlowFiberStatus::Choice(state) => {
-            format!("choice {}", state.id.as_deref().unwrap_or("-"))
-        }
-        FlowFiberStatus::Done(exit) => format!("done {exit:?}"),
-        FlowFiberStatus::Failed(message) => format!("failed {message}"),
     }
 }
 

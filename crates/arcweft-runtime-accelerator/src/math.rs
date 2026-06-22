@@ -16,6 +16,18 @@ pub enum RuntimeMathBackend {
     Auto,
 }
 
+impl RuntimeMathBackend {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Scalar => "scalar",
+            Self::Glam => "glam",
+            Self::Ndarray => "ndarray",
+            Self::Wgpu => "wgpu",
+        }
+    }
+}
+
 /// Reason recorded when `Auto` chooses a concrete math backend.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RuntimeMathAutoSelectionReason {
@@ -26,6 +38,20 @@ pub enum RuntimeMathAutoSelectionReason {
     ElementwiseWgpuWorkThreshold,
     ElementwiseScalarCpuDefault,
     ElementwiseNdarrayCpuDefault,
+}
+
+impl RuntimeMathAutoSelectionReason {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Matmul4x4Glam => "matmul_4x4_glam",
+            Self::MatmulWgpuWorkThreshold => "matmul_wgpu_work_threshold",
+            Self::MatmulScalarSmallWork => "matmul_scalar_small_work",
+            Self::MatmulNdarrayCpuDefault => "matmul_ndarray_cpu_default",
+            Self::ElementwiseWgpuWorkThreshold => "elementwise_wgpu_work_threshold",
+            Self::ElementwiseScalarCpuDefault => "elementwise_scalar_cpu_default",
+            Self::ElementwiseNdarrayCpuDefault => "elementwise_ndarray_cpu_default",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

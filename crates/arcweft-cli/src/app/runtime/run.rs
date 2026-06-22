@@ -11,8 +11,9 @@ use crate::app::project::{
     runtime_pure_config_for_selection,
 };
 use crate::app::shared::print_json;
-use crate::output::{RuntimeExecutorTier, RuntimeRunReport, flow_status_label};
+use crate::output::{RuntimeExecutorTier, RuntimeRunReport};
 use arcweft_compiler::lower::lower_source_runtime_plan_with_options;
+use arcweft_core::engine::FlowStatusLabelStyle;
 use arcweft_launch::LaunchKind;
 use arcweft_runtime_host::{NativeAdapterRegistrar, host_system_info};
 use std::process::ExitCode;
@@ -91,7 +92,7 @@ pub(in crate::app) fn runtime_run_command(
         executor_stats: trace.executor_stats,
         native_io: trace.native_io,
         steps: trace.steps,
-        final_status: flow_status_label(&trace.final_status),
+        final_status: trace.final_status.status_label(FlowStatusLabelStyle::Debug),
     };
     if options.json {
         print_json(&report)

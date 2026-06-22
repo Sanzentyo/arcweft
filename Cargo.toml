@@ -42,6 +42,10 @@ members = [
     "crates/arcweft-runtime-accelerator",
     "crates/arcweft-browser-bench",
     "crates/arcweft-bundle",
+    "crates/arcweft-runtime-driver",
+    "crates/arcweft-render-wgpu",
+    "crates/arcweft-render-web",
+    "crates/arcweft-player-web",
     "crates/arcweft-data",
     "crates/arcweft-data-derive",
     "crates/arcweft-codec-json",
@@ -96,6 +100,9 @@ arcweft-save = { path = "crates/arcweft-save" }
 arcweft-config = { path = "crates/arcweft-config" }
 arcweft-http-codec = { path = "crates/arcweft-http-codec" }
 arcweft-interaction-model = { path = "crates/arcweft-interaction-model" }
+arcweft-runtime-driver = { path = "crates/arcweft-runtime-driver" }
+arcweft-render-wgpu = { path = "crates/arcweft-render-wgpu" }
+arcweft-render-web = { path = "crates/arcweft-render-web" }
 base64 = "0.22.1"
 blake3 = "1.8.5"
 bytemuck = "1.25.0"

@@ -74,11 +74,9 @@ use super::project::{
 #[cfg(feature = "native-capture")]
 use super::runtime::parse::step_options;
 #[cfg(feature = "native-capture")]
-use crate::output::flow_status_label;
-#[cfg(feature = "native-capture")]
 use arcweft_compiler::lower::lower_source_runtime_plan_with_stats_and_options;
 #[cfg(feature = "native-capture")]
-use arcweft_core::engine::FlowFiberStatus;
+use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
 #[cfg(feature = "native-capture")]
 use arcweft_core::step::{RuntimeStepInput, RuntimeStepResult};
 #[cfg(feature = "native-capture")]

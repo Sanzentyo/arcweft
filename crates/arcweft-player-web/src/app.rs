@@ -1,0 +1,438 @@
+use crate::clock::LogicalClockQuantizer;
+use crate::host::BrowserTaskBroker;
+use crate::input::{InputController, InputOutcome};
+use crate::report::WebObservationReport;
+use arcweft_bundle::ArcweftBundle;
+use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
+use arcweft_render_web::web::{WebGpuCanvasHost, WebGpuCanvasHostError};
+use arcweft_render_wgpu::geometry::{
+    RenderChoiceItem, RenderDialogue, RenderPreferences, RenderScene, RenderViewport,
+    SharedFramePlanner,
+};
+use arcweft_render_wgpu::renderer::SharedRenderer;
+use arcweft_render_wgpu::sample::{DemoAnimationClock, generated_demo_images};
+use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions, BundleStepInput};
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::Arc;
+use thiserror::Error;
+use wasm_bindgen::JsCast;
+use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::spawn_local;
+use web_sys::{CustomEvent, CustomEventInit, HtmlCanvasElement};
+use winit::application::ApplicationHandler;
+use winit::dpi::PhysicalPosition;
+use winit::event::{ButtonSource, ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::keyboard::{Key, NamedKey};
+use winit::platform::web::WindowAttributesWeb;
+use winit::window::{Window, WindowAttributes, WindowId};
+
+#[derive(Debug, Error)]
+enum WebPlayerError {
+    #[error("browser window/document is unavailable")]
+    MissingDocument,
+    #[error("canvas `{0}` was not found")]
+    MissingCanvas(String),
+    #[error("element `{0}` is not a canvas")]
+    NotCanvas(String),
+    #[error("Arcweft bundle decode failed: {0}")]
+    BundleDecode(String),
+    #[error("Arcweft bundle session failed: {0}")]
+    Session(String),
+    #[error("browser task broker failed: {0}")]
+    TaskBroker(String),
+    #[error("winit event loop failed: {0}")]
+    EventLoop(String),
+    #[error("winit window failed: {0}")]
+    Window(String),
+    #[error("WebGPU initialization/rendering failed: {0}")]
+    WebGpu(String),
+    #[error("font registration failed: {0}")]
+    Font(String),
+    #[error("frame planning failed: {0}")]
+    FramePlan(String),
+    #[error("diagnostic serialization failed: {0}")]
+    Report(String),
+}
+
+struct ReadyGpu {
+    host: WebGpuCanvasHost,
+    renderer: SharedRenderer,
+}
+
+enum GpuState {
+    Uninitialized,
+    Loading,
+    Ready(ReadyGpu),
+    Failed,
+}
+
+struct PlayerState {
+    canvas: HtmlCanvasElement,
+    window: Option<Arc<dyn Window>>,
+    gpu: GpuState,
+    session: BundleSession,
+    broker: BrowserTaskBroker,
+    input: InputController,
+    clock: LogicalClockQuantizer,
+    font_bytes: Option<Vec<u8>>,
+    prepared: Option<arcweft_render_wgpu::geometry::PreparedFrame>,
+    fatal: Option<String>,
+}
+
+struct BrowserApp {
+    state: Rc<RefCell<PlayerState>>,
+}
+
+/// Starts the WebGPU-first browser player using already-fetched bundle/font bytes.
+/// JavaScript remains a bootstrap only; it does not render game UI.
+#[wasm_bindgen]
+pub fn start_arcweft_player(
+    canvas_id: String,
+    bundle_bytes: Vec<u8>,
+    font_bytes: Vec<u8>,
+) -> Result<(), JsValue> {
+    start(canvas_id, bundle_bytes, font_bytes)
+        .map_err(|error| JsValue::from_str(&error.to_string()))
+}
+
+fn start(
+    canvas_id: String,
+    bundle_bytes: Vec<u8>,
+    font_bytes: Vec<u8>,
+) -> Result<(), WebPlayerError> {
+    let document = web_sys::window()
+        .and_then(|window| window.document())
+        .ok_or(WebPlayerError::MissingDocument)?;
+    let element = document
+        .get_element_by_id(&canvas_id)
+        .ok_or_else(|| WebPlayerError::MissingCanvas(canvas_id.clone()))?;
+    let canvas = element
+        .dyn_into::<HtmlCanvasElement>()
+        .map_err(|_| WebPlayerError::NotCanvas(canvas_id.clone()))?;
+    let bundle = ArcweftBundle::from_json_slice(&bundle_bytes)
+        .map_err(|error| WebPlayerError::BundleDecode(error.to_string()))?;
+    let session = BundleSession::new(&bundle, BundleSessionOptions::default())
+        .map_err(|error| WebPlayerError::Session(error.to_string()))?;
+    let broker = BrowserTaskBroker::from_bundle(&bundle)
+        .map_err(|error| WebPlayerError::TaskBroker(error.to_string()))?;
+    let clock = LogicalClockQuantizer::new(16, 4)
+        .map_err(|error| WebPlayerError::Session(error.to_string()))?;
+    let state = Rc::new(RefCell::new(PlayerState {
+        canvas,
+        window: None,
+        gpu: GpuState::Uninitialized,
+        session,
+        broker,
+        input: InputController::default(),
+        clock,
+        font_bytes: Some(font_bytes),
+        prepared: None,
+        fatal: None,
+    }));
+    let event_loop =
+        EventLoop::new().map_err(|error| WebPlayerError::EventLoop(error.to_string()))?;
+    event_loop
+        .run_app(BrowserApp { state })
+        .map_err(|error| WebPlayerError::EventLoop(error.to_string()))
+}
+
+impl ApplicationHandler for BrowserApp {
+    fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
+        let mut state = self.state.borrow_mut();
+        if state.window.is_some() {
+            return;
+        }
+        let web_attributes = WindowAttributesWeb::default()
+            .with_canvas(Some(state.canvas.clone()))
+            .with_append(false)
+            .with_focusable(true);
+        let attributes = WindowAttributes::default()
+            .with_title("Arcweft WebGPU Player")
+            .with_platform_attributes(Box::new(web_attributes));
+        let window = match event_loop.create_window(attributes) {
+            Ok(window) => window,
+            Err(error) => {
+                set_fatal(&mut state, WebPlayerError::Window(error.to_string()));
+                return;
+            }
+        };
+        let window = Arc::<dyn Window>::from(window);
+        state.window = Some(Arc::clone(&window));
+        state.gpu = GpuState::Loading;
+        let shared = Rc::clone(&self.state);
+        spawn_local(async move {
+            let result = initialize_gpu(Arc::clone(&window), &shared).await;
+            if let Err(error) = result {
+                let mut state = shared.borrow_mut();
+                state.gpu = GpuState::Failed;
+                set_fatal(&mut state, error);
+            } else {
+                emit_event("arcweft-player-ready", "{}".to_owned());
+                window.request_redraw();
+            }
+        });
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        window_id: WindowId,
+        event: WindowEvent,
+    ) {
+        let mut state = self.state.borrow_mut();
+        let Some(window) = state.window.clone() else {
+            return;
+        };
+        if window.id() != window_id || state.fatal.is_some() {
+            return;
+        }
+        match event {
+            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::SurfaceResized(size) => {
+                if let GpuState::Ready(gpu) = &mut state.gpu {
+                    gpu.host.resize(size);
+                }
+                window.request_redraw();
+            }
+            WindowEvent::Focused(focused) => {
+                state.input.focus_changed(focused);
+                window.request_redraw();
+            }
+            WindowEvent::PointerMoved { position, .. } => {
+                let logical = logical_position(position, window.scale_factor());
+                if let Some(frame) = state.prepared.clone() {
+                    let outcome = state.input.pointer_move(&frame, PointerId(0), logical);
+                    apply_outcome(&mut state, outcome);
+                }
+                window.request_redraw();
+            }
+            WindowEvent::PointerButton {
+                state: element_state,
+                button:
+                    button @ (ButtonSource::Mouse(MouseButton::Left) | ButtonSource::Touch { .. }),
+                position,
+                ..
+            } => {
+                if let Some(frame) = state.prepared.clone() {
+                    let pointer = pointer_id(&button);
+                    let position = logical_position(position, window.scale_factor());
+                    let outcome = match element_state {
+                        ElementState::Pressed => {
+                            let _ = state.canvas.focus();
+                            state.input.pointer_down(&frame, pointer, position)
+                        }
+                        ElementState::Released => state.input.pointer_up(&frame, pointer, position),
+                    };
+                    apply_outcome(&mut state, outcome);
+                }
+                window.request_redraw();
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let delta_y = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y * 32.0,
+                    MouseScrollDelta::PixelDelta(position) => {
+                        (position.y / window.scale_factor()) as f32
+                    }
+                };
+                let outcome = state.input.wheel(delta_y);
+                apply_outcome(&mut state, outcome);
+                window.request_redraw();
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                let key = key_label(&event.logical_key);
+                let phase = match event.state {
+                    ElementState::Pressed => KeyPhase::Down,
+                    ElementState::Released => KeyPhase::Up,
+                };
+                if let Some(frame) = state.prepared.clone() {
+                    let outcome = state.input.keyboard(&frame, &key, phase);
+                    apply_outcome(&mut state, outcome);
+                }
+                window.request_redraw();
+            }
+            WindowEvent::RedrawRequested => {
+                if let Err(error) = redraw(&mut state, &window) {
+                    set_fatal(&mut state, error);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &dyn ActiveEventLoop) {
+        if let Some(window) = self.state.borrow().window.as_ref() {
+            window.request_redraw();
+        }
+    }
+}
+
+async fn initialize_gpu(
+    window: Arc<dyn Window>,
+    state: &Rc<RefCell<PlayerState>>,
+) -> Result<(), WebPlayerError> {
+    let host = WebGpuCanvasHost::new(window)
+        .await
+        .map_err(|error| WebPlayerError::WebGpu(error.to_string()))?;
+    let mut renderer = SharedRenderer::new(host.device(), host.queue(), host.format());
+    let font_bytes = state
+        .borrow_mut()
+        .font_bytes
+        .take()
+        .ok_or_else(|| WebPlayerError::Font("font bytes were already consumed".to_owned()))?;
+    renderer
+        .register_font_bytes(font_bytes)
+        .map_err(|error| WebPlayerError::Font(error.to_string()))?;
+    state.borrow_mut().gpu = GpuState::Ready(ReadyGpu { host, renderer });
+    Ok(())
+}
+
+fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPlayerError> {
+    let host_millis = now_millis();
+    for clock in state
+        .clock
+        .advance(host_millis)
+        .map_err(|error| WebPlayerError::Session(error.to_string()))?
+    {
+        let task_events = state.broker.drain_queued_task_events();
+        let step = state.session.step_with_clock(
+            clock,
+            BundleStepInput {
+                task_events,
+                ..BundleStepInput::default()
+            },
+        );
+        state.broker.cancel_scopes(step.cancel_scopes.clone());
+        state.broker.close_sources(step.source_close.clone());
+        let queued = state.broker.queue_dispatches(step.requested_tasks.clone());
+        let report = WebObservationReport::from_step(&step, queued);
+        let json = serde_json::to_string(&report)
+            .map_err(|error| WebPlayerError::Report(error.to_string()))?;
+        emit_event("arcweft-runtime-observation", json);
+    }
+
+    let size = window.surface_size();
+    let scale_factor = window.scale_factor();
+    let viewport = RenderViewport {
+        logical_width: size.width as f32 / scale_factor as f32,
+        logical_height: size.height as f32 / scale_factor as f32,
+        physical_width: size.width.max(1),
+        physical_height: size.height.max(1),
+        scale_factor,
+    };
+    let presentation = state.session.presentation();
+    let scene = RenderScene {
+        dialogue: presentation
+            .dialogue
+            .as_ref()
+            .map(|dialogue| RenderDialogue {
+                speaker: dialogue.callee.clone(),
+                text: dialogue.text.clone(),
+            }),
+        choices: presentation
+            .choices
+            .iter()
+            .map(|choice| RenderChoiceItem {
+                id: choice.id.clone(),
+                label: choice.label.clone(),
+            })
+            .collect(),
+        images: generated_demo_images(
+            viewport,
+            DemoAnimationClock::from_millis(host_millis.max(0.0) as u64),
+        ),
+        viewport,
+        preferences: RenderPreferences::default(),
+        interaction: state.input.visual_state(),
+        choice_scroll: state.input.choice_scroll(),
+    };
+    let mut prepared = SharedFramePlanner::prepare(&scene)
+        .map_err(|error| WebPlayerError::FramePlan(error.to_string()))?;
+    state.input.ensure_choice_focus(&prepared);
+    prepared = SharedFramePlanner::prepare(&RenderScene {
+        interaction: state.input.visual_state(),
+        ..scene
+    })
+    .map_err(|error| WebPlayerError::FramePlan(error.to_string()))?;
+
+    let GpuState::Ready(gpu) = &mut state.gpu else {
+        return Ok(());
+    };
+    let health = gpu.host.health();
+    if let Some(error) = health.device_lost.or(health.uncaptured_error) {
+        return Err(WebPlayerError::WebGpu(error));
+    }
+    match gpu.host.render_and_present(&mut gpu.renderer, &prepared) {
+        Ok(()) => {}
+        Err(WebGpuCanvasHostError::SurfaceLost | WebGpuCanvasHostError::SurfaceOutdated) => {
+            gpu.host.reconfigure();
+            window.request_redraw();
+        }
+        Err(error) => return Err(WebPlayerError::WebGpu(error.to_string())),
+    }
+    state.prepared = Some(prepared);
+    Ok(())
+}
+
+fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) {
+    for action in outcome.actions {
+        if let Err(error) = state.session.queue_semantic_action(&action) {
+            set_fatal(state, WebPlayerError::Session(error.to_string()));
+            break;
+        }
+    }
+}
+
+fn logical_position(position: PhysicalPosition<f64>, scale_factor: f64) -> ViewportPoint {
+    ViewportPoint::new(
+        (position.x / scale_factor) as f32,
+        (position.y / scale_factor) as f32,
+    )
+}
+
+fn pointer_id(button: &ButtonSource) -> PointerId {
+    match button {
+        ButtonSource::Touch { finger_id, .. } => PointerId(finger_id.into_raw() as u64 + 10),
+        ButtonSource::Mouse(_) | ButtonSource::TabletTool { .. } | ButtonSource::Unknown(_) => {
+            PointerId(0)
+        }
+    }
+}
+
+fn key_label(key: &Key) -> String {
+    match key {
+        Key::Named(NamedKey::ArrowUp) => "ArrowUp".to_owned(),
+        Key::Named(NamedKey::ArrowDown) => "ArrowDown".to_owned(),
+        Key::Named(NamedKey::ArrowLeft) => "ArrowLeft".to_owned(),
+        Key::Named(NamedKey::ArrowRight) => "ArrowRight".to_owned(),
+        Key::Named(NamedKey::Enter) => "Enter".to_owned(),
+        Key::Named(NamedKey::Home) => "Home".to_owned(),
+        Key::Named(NamedKey::End) => "End".to_owned(),
+        Key::Character(value) if value == " " => "Space".to_owned(),
+        Key::Character(value) => value.to_string(),
+        _ => format!("{key:?}"),
+    }
+}
+
+fn now_millis() -> f64 {
+    web_sys::window()
+        .and_then(|window| window.performance())
+        .map_or_else(js_sys::Date::now, |performance| performance.now())
+}
+
+fn emit_event(name: &str, detail: String) {
+    let init = CustomEventInit::new();
+    init.set_detail(&JsValue::from_str(&detail));
+    if let Ok(event) = CustomEvent::new_with_event_init_dict(name, &init)
+        && let Some(document) = web_sys::window().and_then(|window| window.document())
+    {
+        let _ = document.dispatch_event(&event);
+    }
+}
+
+fn set_fatal(state: &mut PlayerState, error: WebPlayerError) {
+    let message = error.to_string();
+    state.fatal = Some(message.clone());
+    emit_event("arcweft-player-fatal", message);
+}

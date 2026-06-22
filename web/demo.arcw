@@ -1,0 +1,17 @@
+character @character.alice Alice as alice {
+}
+
+entry game @entry.main { start(@flow.main) }
+
+flow @flow.main main {
+    alice: Arcweft is running on a shared wgpu renderer in this WebGPU canvas.[p]
+    choice @choice.web_demo {
+        @choice.web_demo.continue "Continue" -> @flow.done
+        @choice.web_demo.alternate "Alternate route" -> @flow.done
+    }
+}
+
+flow @flow.done done {
+    alice: The semantic choice input returned to the bytecode VM.[p]
+    return "done"
+}

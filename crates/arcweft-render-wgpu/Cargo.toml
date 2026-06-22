@@ -1,0 +1,23 @@
+[package]
+name = "arcweft-render-wgpu"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+arcweft-id = { path = "../arcweft-id" }
+arcweft-presentation = { path = "../arcweft-presentation" }
+arcweft-render-text = { path = "../arcweft-render-text" }
+arcweft-ui = { path = "../arcweft-ui" }
+bytemuck.workspace = true
+glyphon.workspace = true
+thiserror.workspace = true
+wgpu.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true

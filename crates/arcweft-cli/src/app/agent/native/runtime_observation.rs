@@ -201,7 +201,10 @@ pub(super) fn finish_agent_observation_report(
     ));
     let layers = agent_observed_layers("cli", tick, &objects);
     let presentation_tree = AgentPresentationTree::from_layers_and_objects(&layers, &objects);
-    let status = flow_status_label(&executor.fiber().status);
+    let status = executor
+        .fiber()
+        .status
+        .status_label(FlowStatusLabelStyle::Debug);
     let state_hash = hash_hex(
         format!(
             "{}:{}:{}:{}:{}",

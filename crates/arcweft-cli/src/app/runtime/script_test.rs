@@ -9,10 +9,9 @@ use crate::app::project::{
 use crate::app::shared::print_json;
 use crate::output::{
     ScriptTestFinalStatus, ScriptTestRunReport, ScriptTestRunSummary, ScriptTestStatus,
-    flow_status_label,
 };
 use arcweft_compiler::lower::lower_source_runtime_plan_with_options;
-use arcweft_core::engine::FlowFiberStatus;
+use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::plan::{FlowRuntimeId, RuntimePlan};
 use arcweft_core::value::RuntimeBinding;
 use arcweft_host_adapter::HostCallPolicy;
@@ -162,7 +161,7 @@ fn run_script_test(
             Vec::new(),
         );
     };
-    let final_status = flow_status_label(&trace.final_status);
+    let final_status = trace.final_status.status_label(FlowStatusLabelStyle::Debug);
     let mut diagnostics = trace
         .steps
         .iter()

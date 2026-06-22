@@ -11,15 +11,29 @@ arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-data = { workspace = true }
 arcweft-render-text = { path = "../arcweft-render-text" }
-arcweft-serde-bridge = { workspace = true }
-apache-avro.workspace = true
-ciborium.workspace = true
-rmp-serde.workspace = true
+arcweft-serde-bridge = { workspace = true, optional = true }
+apache-avro = { workspace = true, optional = true }
+ciborium = { workspace = true, optional = true }
+rmp-serde = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
-toml.workspace = true
-yaml-rust2.workspace = true
+toml = { workspace = true, optional = true }
+yaml-rust2 = { workspace = true, optional = true }
+
+[features]
+default = [
+    "format-avro",
+    "format-cbor",
+    "format-messagepack",
+    "format-toml",
+    "format-yaml",
+]
+format-avro = ["dep:apache-avro"]
+format-cbor = ["dep:ciborium"]
+format-messagepack = ["dep:rmp-serde"]
+format-toml = ["dep:toml"]
+format-yaml = ["dep:arcweft-serde-bridge", "dep:yaml-rust2"]
 
 [lints]
 workspace = true

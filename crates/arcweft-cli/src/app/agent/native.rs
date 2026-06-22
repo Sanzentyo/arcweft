@@ -28,11 +28,10 @@ use super::{
     AgentScriptRunOptions, AgentScriptSignalArg, AgentScriptStateArg, AgentSession,
     CliRuntimeExecutorTier, CliRuntimePureWorkers, CliRuntimeStepMode, ExitCode, FlowFiberStatus,
     LineDisplayCatalog, NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf,
-    ProfileOptions, RuntimeStepInput, RuntimeStepResult, flow_status_label, fs,
-    load_and_check_selection, lower_source_runtime_plan_with_stats_and_options,
-    native_host_policy_for_selection, parse_runtime_binding_arg, parse_runtime_pure_workers,
-    print_json, resolve_source_selection, runtime_plan_options_for_selection,
-    runtime_pure_config_for_selection, step_options,
+    ProfileOptions, RuntimeStepInput, RuntimeStepResult, fs, load_and_check_selection,
+    lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection,
+    parse_runtime_binding_arg, parse_runtime_pure_workers, print_json, resolve_source_selection,
+    runtime_plan_options_for_selection, runtime_pure_config_for_selection, step_options,
 };
 use crate::app::debug::debug_project_readback_json;
 use crate::app::image_declarations::{
@@ -94,6 +93,7 @@ use arcweft_agent_protocol::ui::AgentUiTree;
 use arcweft_agent_protocol::value::AgentValue;
 use arcweft_bundle::ArcweftBundle;
 use arcweft_core::effect::RuntimeCall;
+use arcweft_core::engine::FlowStatusLabelStyle;
 use arcweft_core::plan::FlowEvent;
 use arcweft_core::task::TaskEvent;
 use arcweft_debug_model::{
