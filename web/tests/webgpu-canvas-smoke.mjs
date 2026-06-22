@@ -145,8 +145,10 @@ async function openReady(browser, baseUrl, options = {}) {
       { timeout: 10_000 },
     );
     await assertFrameObservation(page, {
-      width: viewport.width,
-      height: viewport.height,
+      logicalWidth: viewport.width / (options.deviceScaleFactor ?? 1),
+      logicalHeight: viewport.height / (options.deviceScaleFactor ?? 1),
+      physicalWidth: viewport.width,
+      physicalHeight: viewport.height,
       scaleFactor: options.deviceScaleFactor ?? 1,
     });
   } catch (error) {
@@ -178,13 +180,15 @@ async function assertFrameObservation(page, expected) {
     "unexpected frame observation schema",
   );
   expect(
-    frame.viewport.logical_width_milli === expected.width * 1_000,
+    frame.viewport.logical_width_milli === expected.logicalWidth * 1_000,
     "logical width mismatch",
   );
   expect(
-    frame.viewport.logical_height_milli === expected.height * 1_000,
+    frame.viewport.logical_height_milli === expected.logicalHeight * 1_000,
     "logical height mismatch",
   );
+  expect(frame.viewport.physical_width === expected.physicalWidth, "physical width mismatch");
+  expect(frame.viewport.physical_height === expected.physicalHeight, "physical height mismatch");
   expect(
     frame.viewport.scale_factor_milli === Math.round(expected.scaleFactor * 1_000),
     "scale factor mismatch",
@@ -207,11 +211,11 @@ async function assertFrameObservation(page, expected) {
 }
 
 function expectedChoiceGeometry(expected) {
-  const width = Math.min(Math.max(expected.width * 0.64, 320), 920);
+  const width = Math.min(Math.max(expected.logicalWidth * 0.64, 320), 920);
   const itemHeight = 58;
   const gap = 12;
   const total = 2 * (itemHeight + gap) - gap;
-  const top = Math.max((expected.height - total) * 0.42, 36);
+  const top = Math.max((expected.logicalHeight - total) * 0.42, 36);
   const first = Math.round(top * 1_000);
   const second = Math.round((top + itemHeight + gap) * 1_000);
   return `choice.web_demo.continue:${first},choice.web_demo.alternate:${second}`;
@@ -357,6 +361,7 @@ async function writeCanvasParityScreenshots(browser, baseUrl) {
       expect(errors.length === 0, `console errors: ${errors.join("\n")}`);
       await page.locator("#arcweft-canvas").screenshot({
         path: join(directory, `web-${name}.png`),
+        scale: "css",
       });
     } finally {
       await page.close();
@@ -382,6 +387,12 @@ function parityCheckpoint(name) {
       return {
         viewport: { width: 960, height: 540 },
         deviceScaleFactor: 1,
+        apply: async () => {},
+      };
+    case "hidpi-focus-first-choice":
+      return {
+        viewport: { width: 640, height: 360 },
+        deviceScaleFactor: 2,
         apply: async () => {},
       };
     default:

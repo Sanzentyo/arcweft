@@ -109,8 +109,9 @@ Implemented in the current checkout:
 - `just webgpu-parity` rebuilds the bundle, compiles the Wasm player,
   regenerates wasm-bindgen glue, captures native/browser PNG artifacts for
   `focus-first-choice`, `hover-second-choice`, `press-first-choice`, and
-  `compact-focus-first-choice`, runs the Playwright WebGPU smoke with npm,
-  enforces the Rust-script parity thresholds, and writes `imq` reports.
+  `compact-focus-first-choice`, plus the `hidpi-focus-first-choice` scale-factor
+  checkpoint, runs the Playwright WebGPU smoke with npm, enforces the
+  Rust-script parity thresholds, and writes `imq` reports.
 - The shared renderer now draws the background rectangle, authored image quads,
   UI rectangles/focus ring, and text in that order. This keeps image objects
   behind dialogue/choice interaction visuals while preserving the shared
@@ -126,20 +127,23 @@ Remaining completion work:
 
 - Native/Web screenshot parity now has capture producers, enforced Rust-script
   thresholds, and `imq` report paths for focus, hover, pressed, and compact
-  viewport checkpoints. The initial thresholds are the approved Windows/Chrome
-  WebGPU tolerance for this cut and should be tightened as browser
-  readback/color-management behavior is made more deterministic.
+  viewport checkpoints plus a HiDPI scale-factor checkpoint. The initial
+  thresholds are the approved Windows/Chrome WebGPU tolerance for this cut and
+  should be tightened as browser readback/color-management behavior is made more
+  deterministic.
 - The current parity summary proves shared planner output and the PNG comparison
   now bounds final GPU pixels for the 1280x720 focus/hover/pressed checkpoints
-  plus a 960x540 compact viewport checkpoint. More DPI scale-factor pairs still
-  need to be promoted into the same gate before the full visual completion gate
-  can close.
+  plus a 960x540 compact viewport checkpoint and a 640x360 physical /
+  320x180 logical / 2.0 scale-factor checkpoint. More browser/OS matrix entries
+  can still be added later, but Windows local scale-factor coverage is now in
+  the gate.
 - On this Windows machine, the native offscreen PNGs and Playwright canvas PNGs
   passed `tools/verify-webgpu-parity.rs` and were compared with
   `imq compare --format json`; the recorded Rust-script metrics were:
   focus-first-choice PSNR 24.0221 dB / SSIM 0.7928 / MSE 0.003961,
   hover-second-choice PSNR 24.1604 dB / SSIM 0.8153 / MSE 0.003837,
   press-first-choice PSNR 23.9857 dB / SSIM 0.7790 / MSE 0.003994, and
-  compact-focus-first-choice PSNR 21.4657 dB / SSIM 0.7345 / MSE 0.007136.
+  compact-focus-first-choice PSNR 21.4657 dB / SSIM 0.7345 / MSE 0.007136,
+  and hidpi-focus-first-choice PSNR 20.0349 dB / SSIM 0.8295 / MSE 0.009920.
 - Richer image lifecycle semantics such as explicit hide/clear and authored
   layer ordering remain to be promoted into the typed presentation model.

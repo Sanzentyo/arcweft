@@ -123,7 +123,7 @@ impl Args {
          [--bundle web/demo.awfb] [--font web/assets/arcweft-demo.ttf] \
          [--output target/webgpu-parity/native.png] [--visual-time-millis 160] \
          [--target-format rgba8unorm|rgba8unorm-srgb|bgra8unorm|bgra8unorm-srgb] \
-         [--checkpoint neutral|focus-first-choice|hover-first-choice|hover-second-choice|press-first-choice|compact-focus-first-choice]"
+         [--checkpoint neutral|focus-first-choice|hover-first-choice|hover-second-choice|press-first-choice|compact-focus-first-choice|hidpi-focus-first-choice]"
             .to_owned()
     }
 }

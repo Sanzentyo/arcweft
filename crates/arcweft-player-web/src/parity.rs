@@ -81,6 +81,7 @@ pub enum WebGpuParityCheckpoint {
     HoverSecondChoice,
     PressFirstChoice,
     CompactFocusFirstChoice,
+    HidpiFocusFirstChoice,
 }
 
 impl WebGpuParityCheckpoint {
@@ -92,6 +93,7 @@ impl WebGpuParityCheckpoint {
             Self::HoverSecondChoice => "hover-second-choice",
             Self::PressFirstChoice => "press-first-choice",
             Self::CompactFocusFirstChoice => "compact-focus-first-choice",
+            Self::HidpiFocusFirstChoice => "hidpi-focus-first-choice",
         }
     }
 
@@ -103,6 +105,13 @@ impl WebGpuParityCheckpoint {
                 physical_width: 960,
                 physical_height: 540,
                 scale_factor: 1.0,
+            },
+            Self::HidpiFocusFirstChoice => RenderViewport {
+                logical_width: 320.0,
+                logical_height: 180.0,
+                physical_width: 640,
+                physical_height: 360,
+                scale_factor: 2.0,
             },
             Self::Neutral
             | Self::FocusFirstChoice
@@ -118,6 +127,7 @@ impl WebGpuParityCheckpoint {
             Self::FocusFirstChoice | Self::CompactFocusFirstChoice => {
                 WebGpuParityInteraction::FocusFirstChoice
             }
+            Self::HidpiFocusFirstChoice => WebGpuParityInteraction::FocusFirstChoice,
             Self::HoverFirstChoice => WebGpuParityInteraction::HoverFirstChoice,
             Self::HoverSecondChoice => WebGpuParityInteraction::HoverSecondChoice,
             Self::PressFirstChoice => WebGpuParityInteraction::PressFirstChoice,
@@ -145,6 +155,7 @@ impl FromStr for WebGpuParityCheckpoint {
             "hover-second-choice" => Ok(Self::HoverSecondChoice),
             "press-first-choice" => Ok(Self::PressFirstChoice),
             "compact-focus-first-choice" => Ok(Self::CompactFocusFirstChoice),
+            "hidpi-focus-first-choice" => Ok(Self::HidpiFocusFirstChoice),
             unknown => Err(WebGpuParityCheckpointParseError {
                 value: unknown.to_owned(),
             }),

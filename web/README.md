@@ -52,8 +52,8 @@ Open `http://127.0.0.1:4173/index.html` in Chrome with WebGPU enabled.
 The full local parity route rebuilds the bundle, compiles the Wasm player,
 regenerates wasm-bindgen glue, captures the shared renderer through native
 offscreen WebGPU, captures the browser canvas through Playwright, and enforces
-the approved PNG metric thresholds for focus, hover, pressed, and compact
-viewport checkpoints:
+the approved PNG metric thresholds for focus, hover, pressed, compact viewport,
+and HiDPI scale-factor checkpoints:
 
 ```bash
 just webgpu-parity
@@ -65,6 +65,7 @@ The parity checkpoint names are:
 - `hover-second-choice`
 - `press-first-choice`
 - `compact-focus-first-choice`
+- `hidpi-focus-first-choice`
 
 The equivalent manual capture command shape from the repository root is:
 
@@ -76,7 +77,7 @@ Then from this directory:
 
 ```bash
 $env:ARW_WEB_PARITY_DIR = (Resolve-Path ..\target\webgpu-parity).Path
-$env:ARW_WEB_PARITY_CHECKPOINTS = "focus-first-choice,hover-second-choice,press-first-choice,compact-focus-first-choice"
+$env:ARW_WEB_PARITY_CHECKPOINTS = "focus-first-choice,hover-second-choice,press-first-choice,compact-focus-first-choice,hidpi-focus-first-choice"
 npm.cmd test
 ```
 
