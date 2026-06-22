@@ -3,70 +3,97 @@ use arcweft_desktop_contract::{
     DesktopCapabilities, DesktopFeature, FeatureSupport, PermissionKind, PlatformKind,
 };
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct NativeCapabilityInputs {
+    pub owned_window: OwnedWindowCapabilityInput,
+    pub external_control: OptionalDriverInput,
+    pub persistent_grants: OptionalDriverInput,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum OwnedWindowCapabilityInput {
+    Missing,
+    RelativeOnly,
+    AbsolutePosition,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum OptionalDriverInput {
+    Missing,
+    Installed,
+}
+
 pub(crate) fn native_capabilities(
     platform: PlatformKind,
     options: &NativeDesktopOptions,
-    has_owned_driver: bool,
-    owned_absolute_position: bool,
-    has_external_control_driver: bool,
+    inputs: NativeCapabilityInputs,
 ) -> DesktopCapabilities {
     DesktopCapabilities::new(
         platform,
         [
-            owned_observe(has_owned_driver),
-            owned_control(has_owned_driver),
-            owned_absolute(platform, has_owned_driver, owned_absolute_position),
-            owned_cursor(has_owned_driver),
+            owned_observe(inputs.owned_window),
+            owned_control(inputs.owned_window),
+            owned_absolute(platform, inputs.owned_window),
+            owned_cursor(inputs.owned_window),
             file_dialog(platform),
             known_directories(options),
             granted_file_io(options),
-            FeatureSupport::unsupported(
-                DesktopFeature::PersistentFileGrant,
-                "the reference native backend keeps grants session-scoped; install a sealed-token persistence provider before enabling this feature",
-            ),
+            persistent_file_grants(inputs.persistent_grants),
             external_observe(platform, options),
-            external_control(platform, has_external_control_driver),
+            external_control(platform, inputs.external_control),
             global_pointer_observe(platform, options.global_pointer),
             global_pointer_control(platform, options.global_pointer),
         ],
     )
 }
 
-fn owned_observe(has_driver: bool) -> FeatureSupport {
-    if has_driver {
-        FeatureSupport::supported(
-            DesktopFeature::OwnedWindowObserve,
-            "provided by the native player's event-loop window driver",
-        )
-    } else {
-        FeatureSupport::unsupported(
-            DesktopFeature::OwnedWindowObserve,
-            "no owned-window driver is installed",
-        )
+fn persistent_file_grants(store: OptionalDriverInput) -> FeatureSupport {
+    match store {
+        OptionalDriverInput::Installed => FeatureSupport::with_consent(
+            DesktopFeature::PersistentFileGrant,
+            [PermissionKind::UserFileSelection],
+            "persistent file grants are restored through the host-provided sealed-token store",
+        ),
+        OptionalDriverInput::Missing => FeatureSupport::unsupported(
+            DesktopFeature::PersistentFileGrant,
+            "install a host-provided sealed-token persistence provider before enabling this feature",
+        ),
     }
 }
 
-fn owned_control(has_driver: bool) -> FeatureSupport {
-    if has_driver {
-        FeatureSupport::with_consent(
-            DesktopFeature::OwnedWindowControl,
-            [PermissionKind::HostMainThread],
-            "serialized through the native player's event-loop thread",
-        )
-    } else {
-        FeatureSupport::unsupported(
-            DesktopFeature::OwnedWindowControl,
+fn owned_observe(input: OwnedWindowCapabilityInput) -> FeatureSupport {
+    match input {
+        OwnedWindowCapabilityInput::Missing => FeatureSupport::unsupported(
+            DesktopFeature::OwnedWindowObserve,
             "no owned-window driver is installed",
-        )
+        ),
+        OwnedWindowCapabilityInput::RelativeOnly | OwnedWindowCapabilityInput::AbsolutePosition => {
+            FeatureSupport::supported(
+                DesktopFeature::OwnedWindowObserve,
+                "provided by the native player's event-loop window driver",
+            )
+        }
     }
 }
 
-fn owned_absolute(
-    platform: PlatformKind,
-    has_driver: bool,
-    driver_supports_absolute: bool,
-) -> FeatureSupport {
-    if !has_driver || !driver_supports_absolute {
+fn owned_control(input: OwnedWindowCapabilityInput) -> FeatureSupport {
+    match input {
+        OwnedWindowCapabilityInput::Missing => FeatureSupport::unsupported(
+            DesktopFeature::OwnedWindowControl,
+            "no owned-window driver is installed",
+        ),
+        OwnedWindowCapabilityInput::RelativeOnly | OwnedWindowCapabilityInput::AbsolutePosition => {
+            FeatureSupport::with_consent(
+                DesktopFeature::OwnedWindowControl,
+                [PermissionKind::HostMainThread],
+                "serialized through the native player's event-loop thread",
+            )
+        }
+    }
+}
+
+fn owned_absolute(platform: PlatformKind, input: OwnedWindowCapabilityInput) -> FeatureSupport {
+    if input != OwnedWindowCapabilityInput::AbsolutePosition {
         return FeatureSupport::unsupported(
             DesktopFeature::OwnedWindowAbsolutePosition,
             "the installed owned-window driver does not expose absolute positioning",
@@ -91,18 +118,19 @@ fn owned_absolute(
     }
 }
 
-fn owned_cursor(has_driver: bool) -> FeatureSupport {
-    if has_driver {
-        FeatureSupport::with_consent(
-            DesktopFeature::OwnedCursorControl,
-            [PermissionKind::HostMainThread],
-            "window-local cursor state is owned by the event-loop driver",
-        )
-    } else {
-        FeatureSupport::unsupported(
+fn owned_cursor(input: OwnedWindowCapabilityInput) -> FeatureSupport {
+    match input {
+        OwnedWindowCapabilityInput::Missing => FeatureSupport::unsupported(
             DesktopFeature::OwnedCursorControl,
             "no owned-window driver is installed",
-        )
+        ),
+        OwnedWindowCapabilityInput::RelativeOnly | OwnedWindowCapabilityInput::AbsolutePosition => {
+            FeatureSupport::with_consent(
+                DesktopFeature::OwnedCursorControl,
+                [PermissionKind::HostMainThread],
+                "window-local cursor state is owned by the event-loop driver",
+            )
+        }
     }
 }
 
@@ -215,8 +243,8 @@ fn external_observe(platform: PlatformKind, options: &NativeDesktopOptions) -> F
     }
 }
 
-fn external_control(platform: PlatformKind, has_driver: bool) -> FeatureSupport {
-    if !has_driver {
+fn external_control(platform: PlatformKind, input: OptionalDriverInput) -> FeatureSupport {
+    if input == OptionalDriverInput::Missing {
         return FeatureSupport::unsupported(
             DesktopFeature::ExternalWindowControl,
             "no privileged external-window control driver is installed",

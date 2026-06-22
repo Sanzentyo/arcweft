@@ -1,9 +1,11 @@
 use crate::NativeDesktopOptions;
-use crate::capabilities::native_capabilities;
+use crate::capabilities::{
+    NativeCapabilityInputs, OptionalDriverInput, OwnedWindowCapabilityInput, native_capabilities,
+};
 use crate::driver::{ExternalWindowControlDriver, OwnedWindowDriver};
 use crate::external::observe_external_windows;
 use crate::files::execute_user_file;
-use crate::grant_store::GrantStore;
+use crate::grant_store::{GrantStore, PersistentGrantStore};
 use crate::platform::native_platform_kind;
 use crate::pointer::execute_global_pointer;
 use arcweft_desktop_contract::{
@@ -18,6 +20,7 @@ pub struct NativeDesktopBuilder {
     options: NativeDesktopOptions,
     owned_window: Option<Arc<dyn OwnedWindowDriver>>,
     external_window_control: Option<Arc<dyn ExternalWindowControlDriver>>,
+    persistent_grants: Option<Arc<dyn PersistentGrantStore>>,
 }
 
 impl Default for NativeDesktopBuilder {
@@ -27,6 +30,7 @@ impl Default for NativeDesktopBuilder {
             options: NativeDesktopOptions::default(),
             owned_window: None,
             external_window_control: None,
+            persistent_grants: None,
         }
     }
 }
@@ -57,6 +61,12 @@ impl NativeDesktopBuilder {
         self
     }
 
+    #[must_use]
+    pub fn with_persistent_grant_store(mut self, store: Arc<dyn PersistentGrantStore>) -> Self {
+        self.persistent_grants = Some(store);
+        self
+    }
+
     /// Overrides platform detection for contract tests and embedding hosts.
     #[must_use]
     pub const fn with_platform(mut self, platform: arcweft_desktop_contract::PlatformKind) -> Self {
@@ -64,26 +74,54 @@ impl NativeDesktopBuilder {
         self
     }
 
+    /// Build a native desktop backend.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an installed persistent grant provider fails while loading
+    /// restored grants. Embedding hosts that need to report that failure should
+    /// call [`Self::try_build`] instead.
     pub fn build(self) -> NativeDesktopBackend {
+        self.try_build()
+            .expect("persistent grant store failed during native desktop backend construction")
+    }
+
+    pub fn try_build(self) -> Result<NativeDesktopBackend, DesktopError> {
         let owned_absolute_position = self
             .owned_window
             .as_ref()
             .is_some_and(|driver| driver.supports_absolute_position());
+        let grants = GrantStore::new(self.platform, self.persistent_grants)?;
+        let owned_window = match (self.owned_window.is_some(), owned_absolute_position) {
+            (false, _) => OwnedWindowCapabilityInput::Missing,
+            (true, false) => OwnedWindowCapabilityInput::RelativeOnly,
+            (true, true) => OwnedWindowCapabilityInput::AbsolutePosition,
+        };
         let capabilities = native_capabilities(
             self.platform,
             &self.options,
-            self.owned_window.is_some(),
-            owned_absolute_position,
-            self.external_window_control.is_some(),
+            NativeCapabilityInputs {
+                owned_window,
+                external_control: optional_driver(self.external_window_control.is_some()),
+                persistent_grants: optional_driver(grants.has_persistent_store()),
+            },
         );
-        NativeDesktopBackend {
+        Ok(NativeDesktopBackend {
             platform: self.platform,
             options: self.options,
             capabilities,
             owned_window: self.owned_window,
             external_window_control: self.external_window_control,
-            grants: GrantStore::default(),
-        }
+            grants,
+        })
+    }
+}
+
+const fn optional_driver(installed: bool) -> OptionalDriverInput {
+    if installed {
+        OptionalDriverInput::Installed
+    } else {
+        OptionalDriverInput::Missing
     }
 }
 
@@ -209,7 +247,25 @@ impl DesktopBackend for NativeDesktopBackend {
 mod tests {
     use super::*;
     use crate::GlobalPointerPolicy;
+    use crate::{PersistentGrantRecord, PersistentGrantStore};
     use arcweft_desktop_contract::{DesktopFeature, KnownDirectory, PlatformKind, SupportLevel};
+
+    #[derive(Default)]
+    struct EmptyPersistentGrantStore;
+
+    impl PersistentGrantStore for EmptyPersistentGrantStore {
+        fn load(&self) -> Result<Vec<PersistentGrantRecord>, DesktopError> {
+            Ok(Vec::new())
+        }
+
+        fn persist(&self, _record: PersistentGrantRecord) -> Result<(), DesktopError> {
+            Ok(())
+        }
+
+        fn revoke(&self, _id: &arcweft_desktop_contract::FileGrantId) -> Result<(), DesktopError> {
+            Ok(())
+        }
+    }
 
     #[test]
     fn high_authority_features_are_disabled_by_default() {
@@ -244,6 +300,21 @@ mod tests {
                 .capabilities()
                 .is_available(DesktopFeature::GlobalPointerObserve)
                 == cfg!(feature = "global-pointer")
+        );
+    }
+
+    #[test]
+    fn persistent_grant_store_enables_persistent_capability() {
+        let backend = NativeDesktopBuilder::new()
+            .with_platform(PlatformKind::Windows)
+            .with_persistent_grant_store(Arc::new(EmptyPersistentGrantStore))
+            .build();
+        assert_eq!(
+            backend
+                .capabilities()
+                .support(DesktopFeature::PersistentFileGrant)
+                .map(|support| support.level),
+            Some(SupportLevel::SupportedWithUserConsent)
         );
     }
 }

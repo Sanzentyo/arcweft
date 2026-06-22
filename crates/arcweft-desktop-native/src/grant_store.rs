@@ -5,7 +5,7 @@ use arcweft_desktop_contract::{
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 #[derive(Clone)]
 enum GrantRoot {
@@ -36,34 +36,78 @@ pub(crate) struct ResolvedGrant {
     pub path: PathBuf,
 }
 
+/// Persistable native file-grant root owned by an embedding host.
+///
+/// This type intentionally lives in the native adapter crate: native paths and
+/// platform restoration tokens do not cross the portable desktop contract.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PersistentGrantRoot {
+    Exact { path: PathBuf, parent: PathBuf },
+    Directory(PathBuf),
+}
+
+/// Host-owned persistent grant metadata restored when a native backend starts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PersistentGrantRecord {
+    pub id: FileGrantId,
+    pub display_name: String,
+    pub access: GrantAccess,
+    pub entry_kind: FileEntryKind,
+    pub root: PersistentGrantRoot,
+}
+
+/// Sealed persistent grant storage supplied by an embedding host.
+///
+/// Implementations may use OS bookmarks, credential stores, app-private files,
+/// or test fixtures. The Arcweft runtime receives only `FileGrantId` values.
+pub trait PersistentGrantStore: Send + Sync {
+    fn load(&self) -> Result<Vec<PersistentGrantRecord>, DesktopError>;
+
+    fn persist(&self, record: PersistentGrantRecord) -> Result<(), DesktopError>;
+
+    fn revoke(&self, id: &FileGrantId) -> Result<(), DesktopError>;
+}
+
 /// Process-local path authority store.
 ///
 /// The runtime sees only an unguessable `FileGrantId`. Existing targets and
 /// their parent directories are canonicalized immediately before I/O to reject
 /// symlink escapes. Destructive recursive operations are omitted from this
 /// reference backend to keep the residual TOCTOU surface small.
-#[derive(Default)]
 pub(crate) struct GrantStore {
+    platform: PlatformKind,
+    persistent: Option<Arc<dyn PersistentGrantStore>>,
     state: Mutex<GrantState>,
 }
 
 impl GrantStore {
+    pub fn new(
+        platform: PlatformKind,
+        persistent: Option<Arc<dyn PersistentGrantStore>>,
+    ) -> Result<Self, DesktopError> {
+        let grants = persistent.as_ref().map_or_else(
+            || Ok(BTreeMap::new()),
+            |store| restored_grants(store.load()?),
+        )?;
+        Ok(Self {
+            platform,
+            persistent,
+            state: Mutex::new(GrantState { grants }),
+        })
+    }
+
+    pub const fn has_persistent_store(&self) -> bool {
+        self.persistent.is_some()
+    }
+
     pub fn insert_path(
         &self,
-        platform: PlatformKind,
         path: impl AsRef<Path>,
         access: GrantAccess,
         lifetime: GrantLifetime,
         origin: GrantOrigin,
     ) -> Result<FileGrant, DesktopError> {
-        if lifetime == GrantLifetime::Persistent {
-            return Err(DesktopError::Unsupported {
-                feature: DesktopFeature::PersistentFileGrant,
-                platform,
-                detail: "persistent native grants require a host-provided sealed-token store"
-                    .to_owned(),
-            });
-        }
+        self.ensure_persistent_supported(lifetime)?;
 
         let path = path.as_ref();
         let (root, entry_kind) = match std::fs::metadata(path) {
@@ -137,6 +181,9 @@ impl GrantStore {
             origin,
             entry_kind,
         };
+        if lifetime == GrantLifetime::Persistent {
+            self.persist_grant(&public, &root)?;
+        }
         state.grants.insert(
             id,
             NativeGrant {
@@ -199,7 +246,20 @@ impl GrantStore {
     }
 
     pub fn revoke(&self, id: &FileGrantId) -> Result<(), DesktopError> {
-        self.state()
+        let mut state = self.state();
+        let grant = state
+            .grants
+            .get(id)
+            .ok_or_else(|| DesktopError::StaleHandle {
+                handle: id.to_string(),
+            })?;
+        if grant.public.lifetime == GrantLifetime::Persistent {
+            self.persistent
+                .as_ref()
+                .ok_or_else(|| self.persistent_unsupported())?
+                .revoke(id)?;
+        }
+        state
             .grants
             .remove(id)
             .map(|_| ())
@@ -208,10 +268,99 @@ impl GrantStore {
             })
     }
 
+    fn ensure_persistent_supported(&self, lifetime: GrantLifetime) -> Result<(), DesktopError> {
+        if lifetime == GrantLifetime::Persistent && self.persistent.is_none() {
+            Err(self.persistent_unsupported())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn persistent_unsupported(&self) -> DesktopError {
+        DesktopError::Unsupported {
+            feature: DesktopFeature::PersistentFileGrant,
+            platform: self.platform,
+            detail: "persistent native grants require a host-provided sealed-token store"
+                .to_owned(),
+        }
+    }
+
+    fn persist_grant(&self, public: &FileGrant, root: &GrantRoot) -> Result<(), DesktopError> {
+        let record = PersistentGrantRecord {
+            id: public.id.clone(),
+            display_name: public.display_name.clone(),
+            access: public.access,
+            entry_kind: public.entry_kind,
+            root: persistent_root(root),
+        };
+        self.persistent
+            .as_ref()
+            .ok_or_else(|| self.persistent_unsupported())?
+            .persist(record)
+    }
+
     fn state(&self) -> MutexGuard<'_, GrantState> {
         self.state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+impl Default for GrantStore {
+    fn default() -> Self {
+        Self {
+            platform: PlatformKind::Other,
+            persistent: None,
+            state: Mutex::new(GrantState::default()),
+        }
+    }
+}
+
+fn restored_grants(
+    records: Vec<PersistentGrantRecord>,
+) -> Result<BTreeMap<FileGrantId, NativeGrant>, DesktopError> {
+    records
+        .into_iter()
+        .try_fold(BTreeMap::new(), |mut grants, record| {
+            if grants.contains_key(&record.id) {
+                return Err(DesktopError::InvalidArgument {
+                    field: "persistent_grant_id".to_owned(),
+                    detail: format!("duplicate restored grant `{}`", record.id),
+                });
+            }
+            let public = FileGrant {
+                id: record.id.clone(),
+                display_name: record.display_name,
+                access: record.access,
+                lifetime: GrantLifetime::Persistent,
+                origin: GrantOrigin::Restored,
+                entry_kind: record.entry_kind,
+            };
+            grants.insert(
+                record.id,
+                NativeGrant {
+                    public,
+                    root: native_root(record.root),
+                },
+            );
+            Ok(grants)
+        })
+}
+
+fn persistent_root(root: &GrantRoot) -> PersistentGrantRoot {
+    match root {
+        GrantRoot::Exact { path, parent } => PersistentGrantRoot::Exact {
+            path: path.clone(),
+            parent: parent.clone(),
+        },
+        GrantRoot::Directory(path) => PersistentGrantRoot::Directory(path.clone()),
+    }
+}
+
+fn native_root(root: PersistentGrantRoot) -> GrantRoot {
+    match root {
+        PersistentGrantRoot::Exact { path, parent } => GrantRoot::Exact { path, parent },
+        PersistentGrantRoot::Directory(path) => GrantRoot::Directory(path),
     }
 }
 
@@ -370,6 +519,54 @@ fn check_access(public: &FileGrant, intent: ResolveIntent) -> Result<(), Desktop
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct MemoryPersistentGrantStore {
+        records: Mutex<BTreeMap<FileGrantId, PersistentGrantRecord>>,
+    }
+
+    impl PersistentGrantStore for MemoryPersistentGrantStore {
+        fn load(&self) -> Result<Vec<PersistentGrantRecord>, DesktopError> {
+            Ok(self
+                .records
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .values()
+                .cloned()
+                .collect())
+        }
+
+        fn persist(&self, record: PersistentGrantRecord) -> Result<(), DesktopError> {
+            self.records
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(record.id.clone(), record);
+            Ok(())
+        }
+
+        fn revoke(&self, id: &FileGrantId) -> Result<(), DesktopError> {
+            self.records
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(id)
+                .map(|_| ())
+                .ok_or_else(|| DesktopError::StaleHandle {
+                    handle: id.to_string(),
+                })
+        }
+    }
+
+    fn temp_test_dir(name: &str) -> PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "arcweft-persistent-grant-{name}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("test temp dir created");
+        path
+    }
 
     #[test]
     fn native_grant_ids_are_random_capability_tokens() {
@@ -379,5 +576,73 @@ mod tests {
         assert_ne!(first, second);
         assert!(first.as_str().starts_with("native-grant-"));
         assert_eq!(first.as_str().len(), "native-grant-".len() + 32);
+    }
+
+    #[test]
+    fn persistent_grants_require_a_host_store() {
+        let store = GrantStore::new(PlatformKind::Windows, None).expect("store builds");
+        let dir = temp_test_dir("requires-store");
+        let error = store
+            .insert_path(
+                &dir,
+                GrantAccess::Read,
+                GrantLifetime::Persistent,
+                GrantOrigin::UserSelection,
+            )
+            .expect_err("persistent grant needs a provider");
+        assert!(matches!(
+            error,
+            DesktopError::Unsupported {
+                feature: DesktopFeature::PersistentFileGrant,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn persistent_grants_are_saved_restored_and_revoked() {
+        let provider = Arc::new(MemoryPersistentGrantStore::default());
+        let dir = temp_test_dir("restore");
+        let file = dir.join("save.txt");
+        std::fs::write(&file, "kept").expect("test file written");
+
+        let grant = GrantStore::new(PlatformKind::Windows, Some(provider.clone()))
+            .expect("store builds")
+            .insert_path(
+                &file,
+                GrantAccess::Read,
+                GrantLifetime::Persistent,
+                GrantOrigin::UserSelection,
+            )
+            .expect("persistent grant is stored");
+
+        let restored = GrantStore::new(PlatformKind::Windows, Some(provider.clone()))
+            .expect("persistent grants restore");
+        let resolved = restored
+            .resolve(&GrantPath::root(grant.id.clone()), ResolveIntent::Read)
+            .expect("restored grant resolves");
+        assert_eq!(resolved.path, std::fs::canonicalize(&file).unwrap());
+
+        restored
+            .revoke(&grant.id)
+            .expect("persistent revoke succeeds");
+        let loaded = provider.load().expect("provider still works");
+        assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn duplicate_restored_grant_ids_are_rejected() {
+        let id = FileGrantId::try_new("persistent-duplicate").expect("valid id");
+        let record = PersistentGrantRecord {
+            id,
+            display_name: "docs".to_owned(),
+            access: GrantAccess::Read,
+            entry_kind: FileEntryKind::Directory,
+            root: PersistentGrantRoot::Directory(PathBuf::from(".")),
+        };
+        let Err(error) = restored_grants(vec![record.clone(), record]) else {
+            panic!("duplicate persistent ids are invalid");
+        };
+        assert!(matches!(error, DesktopError::InvalidArgument { .. }));
     }
 }

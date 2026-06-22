@@ -17,4 +17,5 @@ mod pointer;
 pub use backend::{NativeDesktopBackend, NativeDesktopBuilder};
 pub use config::{GlobalPointerPolicy, NativeDesktopOptions};
 pub use driver::{ExternalWindowControlDriver, OwnedWindowDriver};
+pub use grant_store::{PersistentGrantRecord, PersistentGrantRoot, PersistentGrantStore};
 pub use platform::native_platform_kind;

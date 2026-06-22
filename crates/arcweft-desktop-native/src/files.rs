@@ -30,7 +30,6 @@ pub(crate) fn execute_user_file(
             let path = known_directory_path(platform, directory)?;
             grants
                 .insert_path(
-                    platform,
                     path,
                     access,
                     lifetime,
@@ -82,18 +81,10 @@ pub(crate) fn execute_user_file(
 
 #[cfg(feature = "file-dialog")]
 fn show_dialog(
-    platform: PlatformKind,
+    _platform: PlatformKind,
     grants: &GrantStore,
     request: &FileDialogRequest,
 ) -> Result<UserFileResponse, DesktopError> {
-    if request.lifetime == arcweft_desktop_contract::GrantLifetime::Persistent {
-        return Err(DesktopError::Unsupported {
-            feature: arcweft_desktop_contract::DesktopFeature::PersistentFileGrant,
-            platform,
-            detail: "persistent native grants require a host-provided sealed-token store"
-                .to_owned(),
-        });
-    }
     validate_dialog_request(request)?;
     let mut dialog = rfd::FileDialog::new().set_title(request.title.clone());
     if let Some(suggested_name) = &request.suggested_name {
@@ -114,7 +105,6 @@ fn show_dialog(
     let mut inserted = Vec::with_capacity(paths.len());
     for path in paths {
         match grants.insert_path(
-            platform,
             path,
             request.access,
             request.lifetime,

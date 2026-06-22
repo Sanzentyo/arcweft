@@ -187,5 +187,9 @@ Known-directory validation requires host policy to allow a directory family firs
   host-call surfaces now that the generic desktop JSON request fallback is
   removed.
 - Add live macOS/Linux validation results when those environments are available.
-- Keep persistent file grants unsupported until a sealed, platform-specific token store is designed and implemented.
+- Validate concrete persistent file grant providers for macOS security-scoped
+  bookmarks, Windows app-private sealed storage, Linux portal document-store
+  tokens, and browser OPFS/IndexedDB/API targets. The native backend now has a
+  provider hook, but product hosts must install and audit their platform store
+  before enabling persistent grants.
 - Enable `global-pointer` and `external-window-observe` only in explicitly privileged builds and document the host policy used for each validation run.
