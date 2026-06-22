@@ -616,9 +616,9 @@ fn ensure_write_access(grant: &MemoryGrant) -> Result<(), DesktopError> {
 }
 
 const fn grant_permission(origin: GrantOrigin) -> PermissionKind {
-    match origin {
-        GrantOrigin::KnownDirectory(_) => PermissionKind::KnownDirectoryAccess,
-        GrantOrigin::UserSelection | GrantOrigin::Restored => PermissionKind::UserFileSelection,
+    match origin.issued_permission() {
+        Some(permission) => permission,
+        None => PermissionKind::UserFileSelection,
     }
 }
 

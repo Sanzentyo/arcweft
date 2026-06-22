@@ -16,15 +16,16 @@ desktop/browser storage boundaries.
 ## Implemented Boundary
 
 Native persistent file grants are now supported when an embedding host installs
-a sealed-token provider:
+host-opened persistent grant services:
 
-- `arcweft-desktop-native` exposes `PersistentGrantStore`,
-  `PersistentGrantRecord`, and `PersistentGrantRoot`.
-- `NativeDesktopBuilder::with_persistent_grant_store` installs the provider.
+- `arcweft-desktop-native` exposes `PersistentGrantConfig` and
+  `PersistentGrantServices`.
+- `NativeDesktopBuilder::with_persistent_grants` installs the services value.
 - `NativeDesktopBuilder::try_build` reports provider load failures; `build`
   keeps the existing infallible builder surface for default hosts.
-- `GrantStore` persists `GrantLifetime::Persistent` grants, restores provider
-  records as `GrantOrigin::Restored`, and removes persistent records on revoke.
+- `GrantStore` persists `GrantLifetime::Persistent` grants through the private
+  services boundary, lazily restores persistent-format IDs as
+  `GrantOrigin::Restored`, and removes persistent records on revoke.
 - `DesktopFeature::PersistentFileGrant` remains unsupported without a provider
   and becomes `supported_with_user_consent` when a provider is installed.
 

@@ -51,8 +51,8 @@ fn persistent_file_grants(store: OptionalDriverInput) -> FeatureSupport {
     match store {
         OptionalDriverInput::Installed => FeatureSupport::with_consent(
             DesktopFeature::PersistentFileGrant,
-            [PermissionKind::UserFileSelection],
-            "persistent file grants are restored through the host-provided sealed-token store",
+            [],
+            "persistent file grants are restored through host-opened persistent grant services",
         ),
         OptionalDriverInput::Missing => FeatureSupport::unsupported(
             DesktopFeature::PersistentFileGrant,

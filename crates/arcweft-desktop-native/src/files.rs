@@ -136,23 +136,11 @@ fn show_dialog(
 }
 
 fn validate_dialog_request(request: &FileDialogRequest) -> Result<(), DesktopError> {
-    match request.mode {
-        FileDialogMode::OpenFile | FileDialogMode::OpenFiles if !request.access.permits_read() => {
-            return Err(DesktopError::InvalidArgument {
-                field: "access".to_owned(),
-                detail: "open dialogs require read access".to_owned(),
-            });
-        }
-        FileDialogMode::SaveFile if !request.access.permits_write() => {
-            return Err(DesktopError::InvalidArgument {
-                field: "access".to_owned(),
-                detail: "save dialogs require write access".to_owned(),
-            });
-        }
-        FileDialogMode::OpenFile
-        | FileDialogMode::OpenFiles
-        | FileDialogMode::SaveFile
-        | FileDialogMode::PickDirectory => {}
+    if !request.mode.accepts_access(request.access) {
+        return Err(DesktopError::InvalidArgument {
+            field: "access".to_owned(),
+            detail: "dialog mode does not accept the requested access".to_owned(),
+        });
     }
     if request.suggested_name.as_ref().is_some_and(|name| {
         name.is_empty() || name.contains('/') || name.contains('\\') || name.contains('\0')

@@ -5,7 +5,8 @@ use crate::capabilities::{
 use crate::driver::{ExternalWindowControlDriver, OwnedWindowDriver};
 use crate::external::observe_external_windows;
 use crate::files::execute_user_file;
-use crate::grant_store::{GrantStore, PersistentGrantStore};
+use crate::grant_store::GrantStore;
+use crate::persistent_grants::PersistentGrantServices;
 use crate::platform::native_platform_kind;
 use crate::pointer::execute_global_pointer;
 use arcweft_desktop_contract::{
@@ -20,7 +21,7 @@ pub struct NativeDesktopBuilder {
     options: NativeDesktopOptions,
     owned_window: Option<Arc<dyn OwnedWindowDriver>>,
     external_window_control: Option<Arc<dyn ExternalWindowControlDriver>>,
-    persistent_grants: Option<Arc<dyn PersistentGrantStore>>,
+    persistent_grants: Option<PersistentGrantServices>,
 }
 
 impl Default for NativeDesktopBuilder {
@@ -62,8 +63,8 @@ impl NativeDesktopBuilder {
     }
 
     #[must_use]
-    pub fn with_persistent_grant_store(mut self, store: Arc<dyn PersistentGrantStore>) -> Self {
-        self.persistent_grants = Some(store);
+    pub fn with_persistent_grants(mut self, services: PersistentGrantServices) -> Self {
+        self.persistent_grants = Some(services);
         self
     }
 
@@ -78,9 +79,9 @@ impl NativeDesktopBuilder {
     ///
     /// # Panics
     ///
-    /// Panics if an installed persistent grant provider fails while loading
-    /// restored grants. Embedding hosts that need to report that failure should
-    /// call [`Self::try_build`] instead.
+    /// Panics if installed persistent grant services fail validation. Embedding
+    /// hosts that need to report that failure should call [`Self::try_build`]
+    /// instead.
     pub fn build(self) -> NativeDesktopBackend {
         self.try_build()
             .expect("persistent grant store failed during native desktop backend construction")
@@ -186,20 +187,29 @@ impl NativeDesktopBackend {
     }
 
     fn ensure_supported(&self, request: &DesktopRequest) -> Result<(), DesktopError> {
-        let Some(feature) = request.required_feature() else {
-            return Ok(());
-        };
-        let Some(support) = self.capabilities.support(feature) else {
-            return Err(self.unsupported_for(request));
-        };
-        if support.level == SupportLevel::Unsupported {
-            Err(DesktopError::Unsupported {
+        request
+            .required_features()
+            .into_iter()
+            .flatten()
+            .try_for_each(|feature| self.ensure_feature(feature))
+    }
+
+    fn ensure_feature(
+        &self,
+        feature: arcweft_desktop_contract::DesktopFeature,
+    ) -> Result<(), DesktopError> {
+        match self.capabilities.support(feature) {
+            Some(support) if support.level != SupportLevel::Unsupported => Ok(()),
+            Some(support) => Err(DesktopError::Unsupported {
                 feature,
                 platform: self.platform,
                 detail: support.detail.clone(),
-            })
-        } else {
-            Ok(())
+            }),
+            None => Err(DesktopError::Unsupported {
+                feature,
+                platform: self.platform,
+                detail: "feature is not declared".to_owned(),
+            }),
         }
     }
 
@@ -247,25 +257,8 @@ impl DesktopBackend for NativeDesktopBackend {
 mod tests {
     use super::*;
     use crate::GlobalPointerPolicy;
-    use crate::{PersistentGrantRecord, PersistentGrantStore};
+    use crate::PersistentGrantServices;
     use arcweft_desktop_contract::{DesktopFeature, KnownDirectory, PlatformKind, SupportLevel};
-
-    #[derive(Default)]
-    struct EmptyPersistentGrantStore;
-
-    impl PersistentGrantStore for EmptyPersistentGrantStore {
-        fn load(&self) -> Result<Vec<PersistentGrantRecord>, DesktopError> {
-            Ok(Vec::new())
-        }
-
-        fn persist(&self, _record: PersistentGrantRecord) -> Result<(), DesktopError> {
-            Ok(())
-        }
-
-        fn revoke(&self, _id: &arcweft_desktop_contract::FileGrantId) -> Result<(), DesktopError> {
-            Ok(())
-        }
-    }
 
     #[test]
     fn high_authority_features_are_disabled_by_default() {
@@ -307,7 +300,9 @@ mod tests {
     fn persistent_grant_store_enables_persistent_capability() {
         let backend = NativeDesktopBuilder::new()
             .with_platform(PlatformKind::Windows)
-            .with_persistent_grant_store(Arc::new(EmptyPersistentGrantStore))
+            .with_persistent_grants(PersistentGrantServices::memory_for_tests(
+                PlatformKind::Windows,
+            ))
             .build();
         assert_eq!(
             backend
@@ -316,5 +311,31 @@ mod tests {
                 .map(|support| support.level),
             Some(SupportLevel::SupportedWithUserConsent)
         );
+    }
+
+    #[test]
+    fn persistent_file_requests_require_supplemental_capability() {
+        let options =
+            NativeDesktopOptions::default().allow_known_directory(KnownDirectory::Documents);
+        let backend = NativeDesktopBuilder::new()
+            .with_platform(PlatformKind::Windows)
+            .with_options(options)
+            .build();
+        let error = backend
+            .execute(DesktopRequest::UserFile(
+                UserFileRequest::GrantKnownDirectory {
+                    directory: KnownDirectory::Documents,
+                    access: arcweft_desktop_contract::GrantAccess::Read,
+                    lifetime: arcweft_desktop_contract::GrantLifetime::Persistent,
+                },
+            ))
+            .expect_err("persistent grants require the supplemental feature");
+        assert!(matches!(
+            error,
+            DesktopError::Unsupported {
+                feature: DesktopFeature::PersistentFileGrant,
+                ..
+            }
+        ));
     }
 }

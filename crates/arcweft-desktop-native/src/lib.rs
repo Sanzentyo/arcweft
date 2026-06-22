@@ -11,11 +11,12 @@ mod driver;
 mod external;
 mod files;
 mod grant_store;
+mod persistent_grants;
 mod platform;
 mod pointer;
 
 pub use backend::{NativeDesktopBackend, NativeDesktopBuilder};
 pub use config::{GlobalPointerPolicy, NativeDesktopOptions};
 pub use driver::{ExternalWindowControlDriver, OwnedWindowDriver};
-pub use grant_store::{PersistentGrantRecord, PersistentGrantRoot, PersistentGrantStore};
+pub use persistent_grants::{PersistentGrantConfig, PersistentGrantServices};
 pub use platform::native_platform_kind;
