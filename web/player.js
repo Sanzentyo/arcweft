@@ -54,4 +54,12 @@ document.addEventListener("arcweft-runtime-observation", (event) => {
   }
 });
 
+document.addEventListener("arcweft-frame-observation", (event) => {
+  try {
+    window.__arcweftLastFrameObservation = JSON.parse(event.detail);
+  } catch (error) {
+    console.error("Arcweft frame observation JSON was invalid", error);
+  }
+});
+
 boot().catch(showFatal);

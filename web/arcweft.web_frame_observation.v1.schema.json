@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/arcweft/web-frame-observation-v1.schema.json",
+  "title": "Arcweft Web Player Frame Observation",
+  "description": "Debug and native/Web parity observation only. This is not a renderer command protocol.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "viewport",
+    "rectangle_count",
+    "image_count",
+    "text_count",
+    "choice_count",
+    "images",
+    "text",
+    "choices"
+  ],
+  "properties": {
+    "schema_version": { "const": "arcweft.web_frame_observation.v1" },
+    "viewport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "logical_width_milli",
+        "logical_height_milli",
+        "physical_width",
+        "physical_height",
+        "scale_factor_milli"
+      ],
+      "properties": {
+        "logical_width_milli": { "type": "integer", "minimum": 1 },
+        "logical_height_milli": { "type": "integer", "minimum": 1 },
+        "physical_width": { "type": "integer", "minimum": 1 },
+        "physical_height": { "type": "integer", "minimum": 1 },
+        "scale_factor_milli": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "rectangle_count": { "type": "integer", "minimum": 0 },
+    "image_count": { "type": "integer", "minimum": 0 },
+    "text_count": { "type": "integer", "minimum": 0 },
+    "choice_count": { "type": "integer", "minimum": 0 },
+    "images": { "type": "array", "items": { "$ref": "#/$defs/image" } },
+    "text": { "type": "array", "items": { "$ref": "#/$defs/text" } },
+    "choices": { "type": "array", "items": { "$ref": "#/$defs/choice" } }
+  },
+  "$defs": {
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x_milli", "y_milli", "width_milli", "height_milli"],
+      "properties": {
+        "x_milli": { "type": "integer" },
+        "y_milli": { "type": "integer" },
+        "width_milli": { "type": "integer", "minimum": 0 },
+        "height_milli": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "bounds",
+        "frame_width",
+        "frame_height",
+        "opacity_milli",
+        "rgba_hash"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "bounds": { "$ref": "#/$defs/bounds" },
+        "frame_width": { "type": "integer", "minimum": 1 },
+        "frame_height": { "type": "integer", "minimum": 1 },
+        "opacity_milli": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "rgba_hash": { "type": "string", "pattern": "^[0-9a-f]{16}$" }
+      }
+    },
+    "text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "bounds",
+        "font_size_milli",
+        "line_height_milli",
+        "rgba"
+      ],
+      "properties": {
+        "text": { "type": "string" },
+        "bounds": { "$ref": "#/$defs/bounds" },
+        "font_size_milli": { "type": "integer", "minimum": 0 },
+        "line_height_milli": { "type": "integer", "minimum": 0 },
+        "rgba": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "type": "integer", "minimum": 0, "maximum": 255 }
+        }
+      }
+    },
+    "choice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["option_id", "label", "target", "bounds"],
+      "properties": {
+        "option_id": { "type": "string" },
+        "label": { "type": "string" },
+        "target": { "type": "string" },
+        "bounds": { "$ref": "#/$defs/bounds" }
+      }
+    }
+  }
+}

@@ -95,6 +95,10 @@ Implemented in the current checkout:
 - Bundle-declared image objects are lowered into the portable presentation
   snapshot, decoded from packaged PNG/GIF/WebP assets in the browser host, and
   rendered through the shared WebGPU scene.
+- The browser emits a typed frame observation summary from `PreparedFrame`, and
+  the native/headless test path builds the same summary from `web/demo.awfb` to
+  pin shared geometry, text, choice, and image-object parity before pixel
+  readback is connected.
 - The Windows/headless Chrome WebGPU smoke passed on this machine with the
   installed Chrome channel and D3D11 ANGLE:
 
@@ -106,5 +110,11 @@ Remaining completion work:
 
 - Native/Web screenshot parity still needs an approved readback/comparison
   harness.
+- The current parity summary proves shared planner output, not final GPU pixels;
+  browser readback and native capture comparison are still required for the
+  visual completion gate.
+- `imq` is available on this machine and should be used for the native/Web
+  screenshot comparison once both capture producers write PNG or raw RGBA
+  artifacts.
 - Richer image lifecycle semantics such as explicit hide/clear and authored
   layer ordering remain to be promoted into the typed presentation model.

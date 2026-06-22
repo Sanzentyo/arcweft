@@ -2,7 +2,7 @@ use crate::clock::LogicalClockQuantizer;
 use crate::host::BrowserTaskBroker;
 use crate::images::{BrowserImageCatalog, BrowserImageCatalogError};
 use crate::input::{InputController, InputOutcome};
-use crate::report::WebObservationReport;
+use crate::report::{WebFrameObservationReport, WebObservationReport};
 use arcweft_bundle::ArcweftBundle;
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
 use arcweft_render_web::web::{WebGpuCanvasHost, WebGpuCanvasHostError};
@@ -400,6 +400,10 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
         ..scene
     })
     .map_err(|error| WebPlayerError::FramePlan(error.to_string()))?;
+    let frame_report = WebFrameObservationReport::from_prepared_frame(&prepared);
+    let frame_json = serde_json::to_string(&frame_report)
+        .map_err(|error| WebPlayerError::Report(error.to_string()))?;
+    emit_event("arcweft-frame-observation", frame_json);
 
     let GpuState::Ready(gpu) = &mut state.gpu else {
         return Ok(());

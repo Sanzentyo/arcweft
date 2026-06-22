@@ -24,8 +24,9 @@ npm test
 ```
 
 `test` starts a local static host and runs the Playwright smoke script (requires
-WebGPU). Set `ARW_PLAYWRIGHT_CHANNEL` to use another installed Playwright
-browser channel.
+WebGPU). The smoke checks canvas-only rendering, semantic input, and the
+typed frame observation summary used by the native/Web parity tests. Set
+`ARW_PLAYWRIGHT_CHANNEL` to use another installed Playwright browser channel.
 
 ## Manual launch
 

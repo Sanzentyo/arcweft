@@ -130,19 +130,48 @@ async function openReady(browser, baseUrl) {
     await page.waitForFunction(
       () =>
         window.__arcweftLastObservation?.choice_count > 0 &&
-        window.__arcweftLastObservation?.image_count >= 4,
+        window.__arcweftLastObservation?.image_count >= 4 &&
+        window.__arcweftLastFrameObservation?.choice_count === 2 &&
+        window.__arcweftLastFrameObservation?.image_count === 4,
       null,
       { timeout: 10_000 },
     );
+    await assertFrameObservation(page);
   } catch (error) {
     const state = await page.evaluate(() => ({
       fatal: document.querySelector("#arcweft-fatal")?.textContent ?? null,
       ready: document.querySelector("#arcweft-canvas")?.dataset.arcweftReady ?? null,
       observation: window.__arcweftLastObservation ?? null,
+      frameObservation: window.__arcweftLastFrameObservation ?? null,
     }));
     throw new Error(`${error.message}\nstate=${JSON.stringify(state)}`);
   }
   return { page, errors };
+}
+
+async function assertFrameObservation(page) {
+  const frame = await page.evaluate(() => window.__arcweftLastFrameObservation);
+  expect(
+    frame?.schema_version === "arcweft.web_frame_observation.v1",
+    "unexpected frame observation schema",
+  );
+  expect(frame.viewport.logical_width_milli === 1_280_000, "logical width mismatch");
+  expect(frame.viewport.logical_height_milli === 720_000, "logical height mismatch");
+  expect(
+    frame.images.map((image) => image.id).join(",") ===
+      [
+        "image.generated.background",
+        "image.generated.character_stand",
+        "image.generated.gif_pulse",
+        "image.generated.webp_pulse",
+      ].join(","),
+    `unexpected image ids: ${JSON.stringify(frame.images)}`,
+  );
+  expect(
+    frame.choices.map((choice) => `${choice.option_id}:${choice.bounds.y_milli}`).join(",") ===
+      "choice.web_demo.continue:248640,choice.web_demo.alternate:318640",
+    `unexpected choice geometry: ${JSON.stringify(frame.choices)}`,
+  );
 }
 
 async function runSmoke(name, test) {
