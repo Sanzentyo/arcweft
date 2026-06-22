@@ -100,28 +100,38 @@ Implemented in the current checkout:
   pin shared geometry, text, choice, and image-object parity before pixel
   readback is connected.
 - `tools/capture-webgpu-native-frame.rs` renders the same `web/demo.awfb`
-  `PreparedFrame` through the shared renderer into a native offscreen PNG.
+  `PreparedFrame` through the shared renderer into a native offscreen PNG with
+  an explicit render-target format.
   `web/tests/webgpu-canvas-smoke.mjs` can write the browser canvas PNG when
-  `ARW_WEB_PARITY_DIR` is set, and `imq compare` records full-reference image
-  metrics for the two outputs.
+  `ARW_WEB_PARITY_DIR` is set. `tools/verify-webgpu-parity.rs` enforces the
+  approved PNG metric thresholds, and `imq compare` records full-reference
+  image metrics for the two outputs.
+- `just webgpu-parity` rebuilds the bundle, compiles the Wasm player,
+  regenerates wasm-bindgen glue, captures native/browser PNG artifacts, runs
+  the Playwright WebGPU smoke with npm, enforces the Rust-script parity
+  thresholds, and writes an `imq` report.
 - The Windows/headless Chrome WebGPU smoke passed on this machine with the
   installed Chrome channel and D3D11 ANGLE:
 
 ```bash
-npm test
+npm.cmd --prefix web test
 ```
 
 Remaining completion work:
 
-- Native/Web screenshot parity now has capture producers and an `imq` comparison
-  path, but it still needs an approved repository-enforced metric threshold.
-- The current parity summary proves shared planner output, not final GPU pixels;
-  the current pixel comparison proves capture production and records image
-  quality metrics, but a repository-enforced threshold still needs to be
-  stabilized before the visual completion gate can close.
+- Native/Web screenshot parity now has capture producers, an enforced Rust
+  script threshold, and an `imq` report path. The initial thresholds are the
+  approved Windows/Chrome WebGPU tolerance for this cut and should be tightened
+  as browser readback/color-management behavior is made more deterministic.
+- The current parity summary proves shared planner output and the PNG comparison
+  now bounds final GPU pixels for the 1280x720 demo checkpoint. Broader visual
+  checkpoints such as multiple interaction states and DPI pairs still need to
+  be promoted into the same gate before the full visual completion gate can
+  close.
 - On this Windows machine, the native offscreen PNG and Playwright canvas PNG
-  were compared with `imq compare --format json`; the recorded metrics were
-  PSNR 24.1069 dB, SSIM 0.6883, MSE 0.003884, MAE 0.005821, and maxAE 0.85745
-  for 1280x720 RGBA PNGs.
+  passed `tools/verify-webgpu-parity.rs` and were compared with
+  `imq compare --format json`; the recorded metrics were PSNR 24.1069 dB,
+  SSIM 0.6883, MSE 0.003884, MAE 0.005821, maxAE 0.85745, and changed pixel
+  ratio 0.011715 for 1280x720 PNGs.
 - Richer image lifecycle semantics such as explicit hide/clear and authored
   layer ordering remain to be promoted into the typed presentation model.

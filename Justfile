@@ -112,6 +112,15 @@ native-visual-artifacts out="target\\arcweft-native-capture-artifacts":
     @.\target\release\arcw.exe agent observe tests\fixtures\native_capture\vertical_lr_ruby_text_combine_golden.arcw --json --image png --out "{{out}}\vertical_lr_ruby_text_combine_golden.candidate.png" --mode drain --steps 4 --max-ops 64 > "{{out}}\vertical_lr_ruby_text_combine_golden.observe.json"
     @imq image tests\fixtures\native_capture\vertical_lr_ruby_text_combine_golden.png "{{out}}\vertical_lr_ruby_text_combine_golden.candidate.png" --metrics psnr,ssim,mse,mae,maxae --format json > "{{out}}\vertical_lr_ruby_text_combine_golden.imq.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+webgpu-parity:
+    @cargo run -p arcweft-cli -- bundle web/demo.arcw --output web/demo.awfb
+    @cargo build -p arcweft-player-web --target wasm32-unknown-unknown
+    @wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\debug\arcweft_player_web.wasm
+    @cargo +nightly -Zscript tools\capture-webgpu-native-frame.rs --output target\webgpu-parity\native.png --visual-time-millis 160 --target-format rgba8unorm
+    @$env:ARW_WEB_PARITY_DIR = (Resolve-Path target\webgpu-parity).Path; npm.cmd --prefix web test; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    @cargo +nightly -Zscript tools\verify-webgpu-parity.rs --native target\webgpu-parity\native.png --web target\webgpu-parity\web.png --report target\webgpu-parity\parity-report.json
+    @imq compare target\webgpu-parity\native.png target\webgpu-parity\web.png --format json --output target\webgpu-parity\imq-report.json
+
 check-vendor-glyphon:
     @cargo check --manifest-path vendor\glyphon\Cargo.toml
 

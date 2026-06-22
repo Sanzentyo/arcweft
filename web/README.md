@@ -19,8 +19,8 @@ Browser smoke tests run through npm and Playwright. They use the installed
 Chrome channel by default. From this directory:
 
 ```bash
-npm install
-npm test
+npm.cmd install
+npm.cmd test
 ```
 
 `test` starts a local static host and runs the Playwright smoke script (requires
@@ -49,21 +49,31 @@ Open `http://127.0.0.1:4173/index.html` in Chrome with WebGPU enabled.
 
 ## Native/Web Pixel Parity
 
-From the repository root:
+The full local parity route rebuilds the bundle, compiles the Wasm player,
+regenerates wasm-bindgen glue, captures the shared renderer through native
+offscreen WebGPU, captures the browser canvas through Playwright, and enforces
+the approved PNG metric thresholds:
 
 ```bash
-cargo +nightly -Zscript tools/capture-webgpu-native-frame.rs --output target/webgpu-parity/native.png --visual-time-millis 160
+just webgpu-parity
+```
+
+The equivalent manual capture commands from the repository root are:
+
+```bash
+cargo +nightly -Zscript tools/capture-webgpu-native-frame.rs --output target/webgpu-parity/native.png --visual-time-millis 160 --target-format rgba8unorm
 ```
 
 Then from this directory:
 
 ```bash
 $env:ARW_WEB_PARITY_DIR = (Resolve-Path ..\target\webgpu-parity).Path
-npm test
+npm.cmd test
 ```
 
 Compare the two captures:
 
 ```bash
+cargo +nightly -Zscript tools/verify-webgpu-parity.rs --native target/webgpu-parity/native.png --web target/webgpu-parity/web.png --report target/webgpu-parity/parity-report.json
 imq compare target/webgpu-parity/native.png target/webgpu-parity/web.png --format json --output target/webgpu-parity/imq-report.json
 ```

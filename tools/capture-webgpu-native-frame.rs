@@ -31,24 +31,19 @@ fn main() -> Result<(), Box<dyn Error>> {
             ..WebGpuParityFrameOptions::default()
         },
     )?;
-    let mut capture = pollster::block_on(SharedOffscreenCapture::new(
-        wgpu_format(),
-    ))?;
+    let mut capture = pollster::block_on(SharedOffscreenCapture::new(args.target_format.wgpu()))?;
     capture.register_font_bytes(fs::read(&args.font)?)?;
     let image = capture.capture_frame(&frame)?;
     write_png(&args.output, image.width, image.height, &image.rgba)?;
     println!(
-        "wrote native shared-renderer capture {} ({}x{}, visual_time_millis={})",
+        "wrote native shared-renderer capture {} ({}x{}, visual_time_millis={}, target_format={})",
         args.output.display(),
         image.width,
         image.height,
-        args.visual_time_millis
+        args.visual_time_millis,
+        args.target_format.as_str()
     );
     Ok(())
-}
-
-fn wgpu_format() -> wgpu::TextureFormat {
-    wgpu::TextureFormat::Rgba8Unorm
 }
 
 struct Args {
@@ -56,6 +51,7 @@ struct Args {
     font: PathBuf,
     output: PathBuf,
     visual_time_millis: u64,
+    target_format: CaptureTargetFormat,
 }
 
 impl Args {
@@ -65,6 +61,7 @@ impl Args {
             font: PathBuf::from("web/assets/arcweft-demo.ttf"),
             output: PathBuf::from("target/webgpu-parity/native.png"),
             visual_time_millis: 160,
+            target_format: CaptureTargetFormat::Rgba8Unorm,
         };
         let mut index = 0;
         while index < args.len() {
@@ -100,6 +97,13 @@ impl Args {
                             format!("--visual-time-millis must be an integer: {error}")
                         })?;
                 }
+                "--target-format" => {
+                    index += 1;
+                    parsed.target_format = args
+                        .get(index)
+                        .ok_or_else(|| "--target-format requires a format".to_owned())?
+                        .parse()?;
+                }
                 "--help" | "-h" => return Err(Self::usage()),
                 unknown => return Err(format!("unknown argument `{unknown}`\n{}", Self::usage())),
             }
@@ -111,8 +115,51 @@ impl Args {
     fn usage() -> String {
         "usage: cargo +nightly -Zscript tools/capture-webgpu-native-frame.rs \
          [--bundle web/demo.awfb] [--font web/assets/arcweft-demo.ttf] \
-         [--output target/webgpu-parity/native.png] [--visual-time-millis 160]"
+         [--output target/webgpu-parity/native.png] [--visual-time-millis 160] \
+         [--target-format rgba8unorm|rgba8unorm-srgb|bgra8unorm|bgra8unorm-srgb]"
             .to_owned()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CaptureTargetFormat {
+    Rgba8Unorm,
+    Rgba8UnormSrgb,
+    Bgra8Unorm,
+    Bgra8UnormSrgb,
+}
+
+impl CaptureTargetFormat {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Rgba8Unorm => "rgba8unorm",
+            Self::Rgba8UnormSrgb => "rgba8unorm-srgb",
+            Self::Bgra8Unorm => "bgra8unorm",
+            Self::Bgra8UnormSrgb => "bgra8unorm-srgb",
+        }
+    }
+
+    const fn wgpu(self) -> wgpu::TextureFormat {
+        match self {
+            Self::Rgba8Unorm => wgpu::TextureFormat::Rgba8Unorm,
+            Self::Rgba8UnormSrgb => wgpu::TextureFormat::Rgba8UnormSrgb,
+            Self::Bgra8Unorm => wgpu::TextureFormat::Bgra8Unorm,
+            Self::Bgra8UnormSrgb => wgpu::TextureFormat::Bgra8UnormSrgb,
+        }
+    }
+}
+
+impl std::str::FromStr for CaptureTargetFormat {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "rgba8unorm" => Ok(Self::Rgba8Unorm),
+            "rgba8unorm-srgb" => Ok(Self::Rgba8UnormSrgb),
+            "bgra8unorm" => Ok(Self::Bgra8Unorm),
+            "bgra8unorm-srgb" => Ok(Self::Bgra8UnormSrgb),
+            unknown => Err(format!("unknown target format `{unknown}`")),
+        }
     }
 }
 
