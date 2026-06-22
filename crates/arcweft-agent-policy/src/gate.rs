@@ -197,10 +197,13 @@ where
         &self,
         mut resource: AgentResource,
     ) -> Result<PublishedAgentResource, AgentPolicyError> {
-        let metadata = resource
-            .image
-            .as_ref()
-            .ok_or(AgentPolicyError::MissingImageMetadata)?;
+        let Some(metadata) = resource.image.as_ref() else {
+            return Ok(self.withheld_resource(
+                resource,
+                PolicyDisposition::Review,
+                "missing_image_metadata",
+            ));
+        };
         if metadata.kind.is_policy_auxiliary() && !self.publication.publish_auxiliary_images {
             return Ok(self.withheld_resource(
                 resource,
@@ -210,11 +213,37 @@ where
         }
         let decoded = match decode_agent_image(&resource) {
             Ok(decoded) => decoded,
+            Err(AgentPolicyError::MissingImageMetadata) => {
+                return Ok(self.withheld_resource(
+                    resource,
+                    PolicyDisposition::Review,
+                    "missing_image_metadata",
+                ));
+            }
+            Err(AgentPolicyError::MissingImageBytes) => {
+                return Ok(self.withheld_resource(
+                    resource,
+                    PolicyDisposition::Review,
+                    "missing_image_bytes",
+                ));
+            }
             Err(AgentPolicyError::UnsupportedImageEncoding(_)) => {
                 return Ok(self.withheld_resource(
                     resource,
                     PolicyDisposition::Review,
                     "unsupported_image_encoding",
+                ));
+            }
+            Err(
+                AgentPolicyError::Base64(_)
+                | AgentPolicyError::Image(_)
+                | AgentPolicyError::Png(_)
+                | AgentPolicyError::MissingImageFrame,
+            ) => {
+                return Ok(self.withheld_resource(
+                    resource,
+                    PolicyDisposition::Review,
+                    "image_decode_failed",
                 ));
             }
             Err(error) => return Err(error),

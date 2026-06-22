@@ -154,6 +154,52 @@ fn auxiliary_capture_is_not_exposed_by_default() {
 }
 
 #[test]
+fn missing_image_metadata_is_withheld() {
+    let gate = AgentContentPolicyGate::new(ContentPolicyEngine::new(
+        RedClassifier,
+        PolicyProfile::strict_default(),
+    ));
+    let mut resource = raw_rgba_resource(AgentImageKind::Color, vec![1, 2, 3, 255]);
+    resource.image = None;
+
+    let published = gate.publish(resource).expect("publication succeeds");
+
+    assert_review_placeholder(&published, "missing_image_metadata");
+}
+
+#[test]
+fn missing_image_bytes_is_withheld() {
+    let gate = AgentContentPolicyGate::new(ContentPolicyEngine::new(
+        RedClassifier,
+        PolicyProfile::strict_default(),
+    ));
+    let mut resource = raw_rgba_resource(AgentImageKind::Color, vec![1, 2, 3, 255]);
+    resource.body = AgentResourceBody::Text("not image bytes".to_owned());
+
+    let published = gate.publish(resource).expect("publication succeeds");
+
+    assert_review_placeholder(&published, "missing_image_bytes");
+}
+
+#[test]
+fn failed_image_decode_is_withheld() {
+    let gate = AgentContentPolicyGate::new(ContentPolicyEngine::new(
+        RedClassifier,
+        PolicyProfile::strict_default(),
+    ));
+    let mut resource = raw_rgba_resource(AgentImageKind::Color, vec![1, 2, 3, 255]);
+    resource.mime_type = "image/png".to_owned();
+    resource.body = AgentResourceBody::BytesBase64(AgentBinaryResourceBody {
+        encoding: AgentBinaryEncoding::Base64,
+        data: STANDARD.encode(b"not a png"),
+    });
+
+    let published = gate.publish(resource).expect("publication succeeds");
+
+    assert_review_placeholder(&published, "image_decode_failed");
+}
+
+#[test]
 fn json_string_values_are_redacted() {
     let gate = AgentContentPolicyGate::new(ContentPolicyEngine::new(
         RuleClassifier::strict_builtin(),
@@ -196,4 +242,20 @@ fn moderated_scene_children_receive_distinct_opaque_uris() {
     assert_ne!(first, second);
     assert!(first.starts_with("arcweft://moderated/"));
     assert!(!first.contains("scene-view"));
+}
+
+fn assert_review_placeholder(published: &crate::PublishedAgentResource, expected_reason: &str) {
+    assert_eq!(
+        published.policy().disposition,
+        arcweft_content_policy::PolicyDisposition::Review
+    );
+    assert!(published.policy().reason_codes.contains(expected_reason));
+    assert!(published.resource().uri.starts_with("arcweft://moderated/"));
+    assert_eq!(published.resource().mime_type, "application/json");
+    assert!(published.resource().image.is_none());
+    let AgentResourceBody::Json(value) = &published.resource().body else {
+        panic!("withheld resource is JSON");
+    };
+    assert_eq!(value["content_policy"]["disposition"], "review");
+    assert_eq!(value["content_policy"]["code"], expected_reason);
 }
