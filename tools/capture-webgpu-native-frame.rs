@@ -13,7 +13,7 @@ wgpu = { version = "29.0.3", default-features = false, features = ["std", "wgsl"
 ---
 
 use arcweft_bundle::ArcweftBundle;
-use arcweft_player_web::parity::{WebGpuParityFrameOptions, prepare_bundle_parity_frame};
+use arcweft_player_web::parity::{WebGpuParityCheckpoint, prepare_bundle_parity_frame};
 use arcweft_render_wgpu::offscreen::SharedOffscreenCapture;
 use png::{BitDepth, ColorType, Encoder};
 use std::env;
@@ -24,22 +24,18 @@ use std::path::{Path, PathBuf};
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse(env::args().skip(1).collect())?;
     let bundle = ArcweftBundle::from_json_slice(&fs::read(&args.bundle)?)?;
-    let frame = prepare_bundle_parity_frame(
-        &bundle,
-        WebGpuParityFrameOptions {
-            visual_time_millis: args.visual_time_millis,
-            ..WebGpuParityFrameOptions::default()
-        },
-    )?;
+    let frame =
+        prepare_bundle_parity_frame(&bundle, args.checkpoint.options(args.visual_time_millis))?;
     let mut capture = pollster::block_on(SharedOffscreenCapture::new(args.target_format.wgpu()))?;
     capture.register_font_bytes(fs::read(&args.font)?)?;
     let image = capture.capture_frame(&frame)?;
     write_png(&args.output, image.width, image.height, &image.rgba)?;
     println!(
-        "wrote native shared-renderer capture {} ({}x{}, visual_time_millis={}, target_format={})",
+        "wrote native shared-renderer capture {} ({}x{}, checkpoint={}, visual_time_millis={}, target_format={})",
         args.output.display(),
         image.width,
         image.height,
+        args.checkpoint.as_str(),
         args.visual_time_millis,
         args.target_format.as_str()
     );
@@ -52,6 +48,7 @@ struct Args {
     output: PathBuf,
     visual_time_millis: u64,
     target_format: CaptureTargetFormat,
+    checkpoint: WebGpuParityCheckpoint,
 }
 
 impl Args {
@@ -62,6 +59,7 @@ impl Args {
             output: PathBuf::from("target/webgpu-parity/native.png"),
             visual_time_millis: 160,
             target_format: CaptureTargetFormat::Rgba8Unorm,
+            checkpoint: WebGpuParityCheckpoint::default(),
         };
         let mut index = 0;
         while index < args.len() {
@@ -104,6 +102,14 @@ impl Args {
                         .ok_or_else(|| "--target-format requires a format".to_owned())?
                         .parse()?;
                 }
+                "--checkpoint" => {
+                    index += 1;
+                    parsed.checkpoint = args
+                        .get(index)
+                        .ok_or_else(|| "--checkpoint requires a checkpoint".to_owned())?
+                        .parse::<WebGpuParityCheckpoint>()
+                        .map_err(|error| error.to_string())?;
+                }
                 "--help" | "-h" => return Err(Self::usage()),
                 unknown => return Err(format!("unknown argument `{unknown}`\n{}", Self::usage())),
             }
@@ -116,7 +122,8 @@ impl Args {
         "usage: cargo +nightly -Zscript tools/capture-webgpu-native-frame.rs \
          [--bundle web/demo.awfb] [--font web/assets/arcweft-demo.ttf] \
          [--output target/webgpu-parity/native.png] [--visual-time-millis 160] \
-         [--target-format rgba8unorm|rgba8unorm-srgb|bgra8unorm|bgra8unorm-srgb]"
+         [--target-format rgba8unorm|rgba8unorm-srgb|bgra8unorm|bgra8unorm-srgb] \
+         [--checkpoint neutral|focus-first-choice|hover-first-choice|hover-second-choice|press-first-choice|compact-focus-first-choice]"
             .to_owned()
     }
 }

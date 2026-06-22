@@ -8,6 +8,7 @@ use arcweft_runtime_driver::clock::{RuntimeClockError, RuntimeClockStep};
 use arcweft_runtime_driver::session::{
     BundleSession, BundleSessionError, BundleSessionOptions, BundleStepInput,
 };
+use std::str::FromStr;
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -15,7 +16,7 @@ pub struct WebGpuParityFrameOptions {
     pub viewport: RenderViewport,
     pub visual_time_millis: u64,
     pub max_ticks: u64,
-    pub focus_first_choice: bool,
+    pub interaction: WebGpuParityInteraction,
 }
 
 #[derive(Debug, Error)]
@@ -32,19 +33,138 @@ pub enum WebGpuParityFrameError {
     FramePlan(String),
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum WebGpuParityInteraction {
+    Neutral,
+    #[default]
+    FocusFirstChoice,
+    HoverFirstChoice,
+    HoverSecondChoice,
+    PressFirstChoice,
+}
+
+impl WebGpuParityInteraction {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Neutral => "neutral",
+            Self::FocusFirstChoice => "focus-first-choice",
+            Self::HoverFirstChoice => "hover-first-choice",
+            Self::HoverSecondChoice => "hover-second-choice",
+            Self::PressFirstChoice => "press-first-choice",
+        }
+    }
+}
+
+impl FromStr for WebGpuParityInteraction {
+    type Err = WebGpuParityCheckpointParseError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "neutral" => Ok(Self::Neutral),
+            "focus-first-choice" => Ok(Self::FocusFirstChoice),
+            "hover-first-choice" => Ok(Self::HoverFirstChoice),
+            "hover-second-choice" => Ok(Self::HoverSecondChoice),
+            "press-first-choice" => Ok(Self::PressFirstChoice),
+            unknown => Err(WebGpuParityCheckpointParseError {
+                value: unknown.to_owned(),
+            }),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum WebGpuParityCheckpoint {
+    Neutral,
+    #[default]
+    FocusFirstChoice,
+    HoverFirstChoice,
+    HoverSecondChoice,
+    PressFirstChoice,
+    CompactFocusFirstChoice,
+}
+
+impl WebGpuParityCheckpoint {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Neutral => "neutral",
+            Self::FocusFirstChoice => "focus-first-choice",
+            Self::HoverFirstChoice => "hover-first-choice",
+            Self::HoverSecondChoice => "hover-second-choice",
+            Self::PressFirstChoice => "press-first-choice",
+            Self::CompactFocusFirstChoice => "compact-focus-first-choice",
+        }
+    }
+
+    pub const fn viewport(self) -> RenderViewport {
+        match self {
+            Self::CompactFocusFirstChoice => RenderViewport {
+                logical_width: 960.0,
+                logical_height: 540.0,
+                physical_width: 960,
+                physical_height: 540,
+                scale_factor: 1.0,
+            },
+            Self::Neutral
+            | Self::FocusFirstChoice
+            | Self::HoverFirstChoice
+            | Self::HoverSecondChoice
+            | Self::PressFirstChoice => default_parity_viewport(),
+        }
+    }
+
+    pub const fn interaction(self) -> WebGpuParityInteraction {
+        match self {
+            Self::Neutral => WebGpuParityInteraction::Neutral,
+            Self::FocusFirstChoice | Self::CompactFocusFirstChoice => {
+                WebGpuParityInteraction::FocusFirstChoice
+            }
+            Self::HoverFirstChoice => WebGpuParityInteraction::HoverFirstChoice,
+            Self::HoverSecondChoice => WebGpuParityInteraction::HoverSecondChoice,
+            Self::PressFirstChoice => WebGpuParityInteraction::PressFirstChoice,
+        }
+    }
+
+    pub const fn options(self, visual_time_millis: u64) -> WebGpuParityFrameOptions {
+        WebGpuParityFrameOptions {
+            viewport: self.viewport(),
+            visual_time_millis,
+            max_ticks: 16,
+            interaction: self.interaction(),
+        }
+    }
+}
+
+impl FromStr for WebGpuParityCheckpoint {
+    type Err = WebGpuParityCheckpointParseError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "neutral" => Ok(Self::Neutral),
+            "focus-first-choice" => Ok(Self::FocusFirstChoice),
+            "hover-first-choice" => Ok(Self::HoverFirstChoice),
+            "hover-second-choice" => Ok(Self::HoverSecondChoice),
+            "press-first-choice" => Ok(Self::PressFirstChoice),
+            "compact-focus-first-choice" => Ok(Self::CompactFocusFirstChoice),
+            unknown => Err(WebGpuParityCheckpointParseError {
+                value: unknown.to_owned(),
+            }),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+#[error("unknown WebGPU parity checkpoint `{value}`")]
+pub struct WebGpuParityCheckpointParseError {
+    value: String,
+}
+
 impl Default for WebGpuParityFrameOptions {
     fn default() -> Self {
         Self {
-            viewport: RenderViewport {
-                logical_width: 1280.0,
-                logical_height: 720.0,
-                physical_width: 1280,
-                physical_height: 720,
-                scale_factor: 1.0,
-            },
+            viewport: default_parity_viewport(),
             visual_time_millis: 160,
             max_ticks: 16,
-            focus_first_choice: true,
+            interaction: WebGpuParityInteraction::default(),
         }
     }
 }
@@ -98,18 +218,50 @@ pub fn prepare_bundle_parity_frame(
     };
     let prepared = SharedFramePlanner::prepare(&scene)
         .map_err(|error| WebGpuParityFrameError::FramePlan(error.to_string()))?;
-    let interaction = if options.focus_first_choice {
-        InteractionVisualState {
-            focused: prepared.first_choice_target(),
-            hovered: None,
-            pressed: None,
-        }
-    } else {
-        InteractionVisualState::default()
-    };
+    let interaction = options.interaction.visual_state(&prepared);
     SharedFramePlanner::prepare(&RenderScene {
         interaction,
         ..scene
     })
     .map_err(|error| WebGpuParityFrameError::FramePlan(error.to_string()))
+}
+
+impl WebGpuParityInteraction {
+    fn visual_state(self, prepared: &PreparedFrame) -> InteractionVisualState {
+        let first = prepared.first_choice_target();
+        let second = prepared.last_choice_target();
+        match self {
+            Self::Neutral => InteractionVisualState::default(),
+            Self::FocusFirstChoice => InteractionVisualState {
+                focused: first,
+                hovered: None,
+                pressed: None,
+            },
+            Self::HoverFirstChoice => InteractionVisualState {
+                focused: first.clone(),
+                hovered: first,
+                pressed: None,
+            },
+            Self::HoverSecondChoice => InteractionVisualState {
+                focused: first,
+                hovered: second,
+                pressed: None,
+            },
+            Self::PressFirstChoice => InteractionVisualState {
+                focused: first.clone(),
+                hovered: first.clone(),
+                pressed: first,
+            },
+        }
+    }
+}
+
+const fn default_parity_viewport() -> RenderViewport {
+    RenderViewport {
+        logical_width: 1280.0,
+        logical_height: 720.0,
+        physical_width: 1280,
+        physical_height: 720,
+        scale_factor: 1.0,
+    }
 }

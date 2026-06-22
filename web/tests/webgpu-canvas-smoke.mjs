@@ -108,7 +108,11 @@ function collectConsoleErrors(page) {
 }
 
 async function openReady(browser, baseUrl, options = {}) {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  const viewport = options.viewport ?? { width: 1280, height: 720 };
+  const page = await browser.newPage({
+    viewport,
+    deviceScaleFactor: options.deviceScaleFactor ?? 1,
+  });
   if (options.deterministicClock) {
     await installDeterministicClock(page);
   }
@@ -140,7 +144,11 @@ async function openReady(browser, baseUrl, options = {}) {
       null,
       { timeout: 10_000 },
     );
-    await assertFrameObservation(page);
+    await assertFrameObservation(page, {
+      width: viewport.width,
+      height: viewport.height,
+      scaleFactor: options.deviceScaleFactor ?? 1,
+    });
   } catch (error) {
     const state = await page.evaluate(() => ({
       fatal: document.querySelector("#arcweft-fatal")?.textContent ?? null,
@@ -163,14 +171,24 @@ async function installDeterministicClock(page) {
   });
 }
 
-async function assertFrameObservation(page) {
+async function assertFrameObservation(page, expected) {
   const frame = await page.evaluate(() => window.__arcweftLastFrameObservation);
   expect(
     frame?.schema_version === "arcweft.web_frame_observation.v1",
     "unexpected frame observation schema",
   );
-  expect(frame.viewport.logical_width_milli === 1_280_000, "logical width mismatch");
-  expect(frame.viewport.logical_height_milli === 720_000, "logical height mismatch");
+  expect(
+    frame.viewport.logical_width_milli === expected.width * 1_000,
+    "logical width mismatch",
+  );
+  expect(
+    frame.viewport.logical_height_milli === expected.height * 1_000,
+    "logical height mismatch",
+  );
+  expect(
+    frame.viewport.scale_factor_milli === Math.round(expected.scaleFactor * 1_000),
+    "scale factor mismatch",
+  );
   expect(
     frame.images.map((image) => image.id).join(",") ===
       [
@@ -183,9 +201,20 @@ async function assertFrameObservation(page) {
   );
   expect(
     frame.choices.map((choice) => `${choice.option_id}:${choice.bounds.y_milli}`).join(",") ===
-      "choice.web_demo.continue:248640,choice.web_demo.alternate:318640",
+      expectedChoiceGeometry(expected),
     `unexpected choice geometry: ${JSON.stringify(frame.choices)}`,
   );
+}
+
+function expectedChoiceGeometry(expected) {
+  const width = Math.min(Math.max(expected.width * 0.64, 320), 920);
+  const itemHeight = 58;
+  const gap = 12;
+  const total = 2 * (itemHeight + gap) - gap;
+  const top = Math.max((expected.height - total) * 0.42, 36);
+  const first = Math.round(top * 1_000);
+  const second = Math.round((top + itemHeight + gap) * 1_000);
+  return `choice.web_demo.continue:${first},choice.web_demo.alternate:${second}`;
 }
 
 async function runSmoke(name, test) {
@@ -225,11 +254,16 @@ async function main() {
           .count();
         expect(domText === 0, "DOM game text renderer is present");
         expect(errors.length === 0, `console errors: ${errors.join("\n")}`);
-        await writeCanvasParityScreenshot(page);
       } finally {
         await page.close();
       }
     });
+
+    if (process.env.ARW_WEB_PARITY_DIR) {
+      await runSmoke("native/web visual parity checkpoints are capturable", async () => {
+        await writeCanvasParityScreenshots(browser, baseUrl);
+      });
+    }
 
     await runSmoke("pointer hit-test selects a canvas choice and advances runtime", async () => {
       const { page, errors } = await openReady(browser, baseUrl);
@@ -300,15 +334,90 @@ async function main() {
   }
 }
 
-async function writeCanvasParityScreenshot(page) {
+async function writeCanvasParityScreenshots(browser, baseUrl) {
   const directory = process.env.ARW_WEB_PARITY_DIR;
   if (!directory) {
     return;
   }
   await mkdir(directory, { recursive: true });
-  await page.locator("#arcweft-canvas").screenshot({
-    path: join(directory, "web.png"),
-  });
+  const names = (process.env.ARW_WEB_PARITY_CHECKPOINTS ??
+    "focus-first-choice,hover-second-choice,press-first-choice,compact-focus-first-choice")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+  for (const name of names) {
+    const checkpoint = parityCheckpoint(name);
+    const { page, errors } = await openReady(browser, baseUrl, {
+      deterministicClock: true,
+      viewport: checkpoint.viewport,
+      deviceScaleFactor: checkpoint.deviceScaleFactor,
+    });
+    try {
+      await checkpoint.apply(page);
+      expect(errors.length === 0, `console errors: ${errors.join("\n")}`);
+      await page.locator("#arcweft-canvas").screenshot({
+        path: join(directory, `web-${name}.png`),
+      });
+    } finally {
+      await page.close();
+    }
+  }
+}
+
+function parityCheckpoint(name) {
+  const base = {
+    viewport: { width: 1280, height: 720 },
+    deviceScaleFactor: 1,
+  };
+  switch (name) {
+    case "focus-first-choice":
+      return { ...base, apply: async () => {} };
+    case "hover-first-choice":
+      return { ...base, apply: hoverFirstChoice };
+    case "hover-second-choice":
+      return { ...base, apply: hoverSecondChoice };
+    case "press-first-choice":
+      return { ...base, apply: pressFirstChoice };
+    case "compact-focus-first-choice":
+      return {
+        viewport: { width: 960, height: 540 },
+        deviceScaleFactor: 1,
+        apply: async () => {},
+      };
+    default:
+      throw new Error(`unknown parity checkpoint: ${name}`);
+  }
+}
+
+async function hoverFirstChoice(page) {
+  const point = await choiceCenter(page, 0);
+  await page.mouse.move(point.x, point.y);
+  await page.waitForTimeout(100);
+}
+
+async function hoverSecondChoice(page) {
+  const point = await choiceCenter(page, 1);
+  await page.mouse.move(point.x, point.y);
+  await page.waitForTimeout(100);
+}
+
+async function pressFirstChoice(page) {
+  const point = await choiceCenter(page, 0);
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.down();
+  await page.waitForTimeout(100);
+}
+
+async function choiceCenter(page, index) {
+  const frame = await page.evaluate(() => window.__arcweftLastFrameObservation);
+  const choice = frame?.choices?.[index];
+  expect(Boolean(choice), `choice ${index} is not available`);
+  const box = await page.locator("#arcweft-canvas").boundingBox();
+  expect(Boolean(box), "canvas has no bounding box");
+  return {
+    x: box.x + (choice.bounds.x_milli + choice.bounds.width_milli / 2) / 1_000,
+    y: box.y + (choice.bounds.y_milli + choice.bounds.height_milli / 2) / 1_000,
+  };
 }
 
 await main().catch((error) => {

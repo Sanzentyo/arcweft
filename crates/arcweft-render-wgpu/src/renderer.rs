@@ -135,18 +135,20 @@ impl SharedRenderer {
             )
             .map_err(|error| SharedRendererError::TextPrepare(error.to_string()))?;
 
-        let vertices = rectangle_vertices(
-            &frame.rectangles,
+        let background_vertex_buffer = rectangle_vertex_buffer(
+            device,
+            "arcweft-shared-background-rectangle",
+            frame.rectangles.get(..1).unwrap_or_default(),
             frame.viewport.logical_width,
             frame.viewport.logical_height,
         );
-        let vertex_buffer = (!vertices.is_empty()).then(|| {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("arcweft-shared-rectangles"),
-                contents: bytemuck::cast_slice(&vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            })
-        });
+        let overlay_vertex_buffer = rectangle_vertex_buffer(
+            device,
+            "arcweft-shared-overlay-rectangles",
+            frame.rectangles.get(1..).unwrap_or_default(),
+            frame.viewport.logical_width,
+            frame.viewport.logical_height,
+        );
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("arcweft-shared-render-frame"),
         });
@@ -167,10 +169,13 @@ impl SharedRenderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            if let Some(vertex_buffer) = &vertex_buffer {
-                pass.set_pipeline(&self.rectangle_pipeline);
-                pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                pass.draw(0..u32::try_from(vertices.len()).unwrap_or(u32::MAX), 0..1);
+            if let Some((vertex_buffer, vertex_count)) = &background_vertex_buffer {
+                draw_rectangle_buffer(
+                    &mut pass,
+                    &self.rectangle_pipeline,
+                    vertex_buffer,
+                    *vertex_count,
+                );
             }
             for image in &frame.images {
                 self.render_image_quad(
@@ -180,6 +185,14 @@ impl SharedRenderer {
                     image,
                     frame.viewport.logical_width,
                     frame.viewport.logical_height,
+                );
+            }
+            if let Some((vertex_buffer, vertex_count)) = &overlay_vertex_buffer {
+                draw_rectangle_buffer(
+                    &mut pass,
+                    &self.rectangle_pipeline,
+                    vertex_buffer,
+                    *vertex_count,
                 );
             }
             self.text_renderer
@@ -268,6 +281,36 @@ fn text_area<'a>(buffer: &'a Buffer, block: &RenderTextBlock) -> TextArea<'a> {
         default_color: Color::rgba(block.rgba[0], block.rgba[1], block.rgba[2], block.rgba[3]),
         custom_glyphs: &[],
     }
+}
+
+fn rectangle_vertex_buffer(
+    device: &wgpu::Device,
+    label: &'static str,
+    rectangles: &[PaintRect],
+    width: f32,
+    height: f32,
+) -> Option<(wgpu::Buffer, u32)> {
+    let vertices = rectangle_vertices(rectangles, width, height);
+    (!vertices.is_empty()).then(|| {
+        let count = u32::try_from(vertices.len()).unwrap_or(u32::MAX);
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(label),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        (buffer, count)
+    })
+}
+
+fn draw_rectangle_buffer(
+    pass: &mut wgpu::RenderPass<'_>,
+    pipeline: &wgpu::RenderPipeline,
+    vertex_buffer: &wgpu::Buffer,
+    vertex_count: u32,
+) {
+    pass.set_pipeline(pipeline);
+    pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+    pass.draw(0..vertex_count, 0..1);
 }
 
 fn rectangle_vertices(rectangles: &[PaintRect], width: f32, height: f32) -> Vec<RectVertex> {

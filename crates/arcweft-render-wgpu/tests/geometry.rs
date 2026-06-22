@@ -62,6 +62,44 @@ fn keyboard_navigation_wraps_across_stable_targets() {
 }
 
 #[test]
+fn interaction_visual_state_changes_the_prepared_choice_rectangles() {
+    let base_scene = scene();
+    let neutral = SharedFramePlanner::prepare(&base_scene).expect("neutral frame plans");
+    let first = neutral.first_choice_target().expect("first target");
+    let focused = SharedFramePlanner::prepare(&RenderScene {
+        interaction: InteractionVisualState {
+            focused: Some(first.clone()),
+            hovered: None,
+            pressed: None,
+        },
+        ..base_scene.clone()
+    })
+    .expect("focused frame plans");
+    let pressed = SharedFramePlanner::prepare(&RenderScene {
+        interaction: InteractionVisualState {
+            focused: Some(first.clone()),
+            hovered: Some(first.clone()),
+            pressed: Some(first),
+        },
+        ..base_scene
+    })
+    .expect("pressed frame plans");
+
+    assert!(
+        focused.rectangles.len() > neutral.rectangles.len(),
+        "focused choice should add a visible focus ring"
+    );
+    assert!(
+        focused.rectangles[1]
+            .rgba
+            .iter()
+            .zip(pressed.rectangles[1].rgba.iter())
+            .any(|(focused, pressed)| (focused - pressed).abs() > f32::EPSILON),
+        "pressed choice should use a distinct fill"
+    );
+}
+
+#[test]
 fn generated_visual_demo_supplies_background_character_and_animated_frames() {
     let frame_a = SharedFramePlanner::prepare(&generated_scene(0)).expect("frame plans");
     let frame_b = SharedFramePlanner::prepare(&generated_scene(170)).expect("frame plans");

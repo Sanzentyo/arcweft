@@ -107,9 +107,14 @@ Implemented in the current checkout:
   approved PNG metric thresholds, and `imq compare` records full-reference
   image metrics for the two outputs.
 - `just webgpu-parity` rebuilds the bundle, compiles the Wasm player,
-  regenerates wasm-bindgen glue, captures native/browser PNG artifacts, runs
-  the Playwright WebGPU smoke with npm, enforces the Rust-script parity
-  thresholds, and writes an `imq` report.
+  regenerates wasm-bindgen glue, captures native/browser PNG artifacts for
+  `focus-first-choice`, `hover-second-choice`, `press-first-choice`, and
+  `compact-focus-first-choice`, runs the Playwright WebGPU smoke with npm,
+  enforces the Rust-script parity thresholds, and writes `imq` reports.
+- The shared renderer now draws the background rectangle, authored image quads,
+  UI rectangles/focus ring, and text in that order. This keeps image objects
+  behind dialogue/choice interaction visuals while preserving the shared
+  renderer as the only game renderer.
 - The Windows/headless Chrome WebGPU smoke passed on this machine with the
   installed Chrome channel and D3D11 ANGLE:
 
@@ -119,19 +124,22 @@ npm.cmd --prefix web test
 
 Remaining completion work:
 
-- Native/Web screenshot parity now has capture producers, an enforced Rust
-  script threshold, and an `imq` report path. The initial thresholds are the
-  approved Windows/Chrome WebGPU tolerance for this cut and should be tightened
-  as browser readback/color-management behavior is made more deterministic.
+- Native/Web screenshot parity now has capture producers, enforced Rust-script
+  thresholds, and `imq` report paths for focus, hover, pressed, and compact
+  viewport checkpoints. The initial thresholds are the approved Windows/Chrome
+  WebGPU tolerance for this cut and should be tightened as browser
+  readback/color-management behavior is made more deterministic.
 - The current parity summary proves shared planner output and the PNG comparison
-  now bounds final GPU pixels for the 1280x720 demo checkpoint. Broader visual
-  checkpoints such as multiple interaction states and DPI pairs still need to
-  be promoted into the same gate before the full visual completion gate can
-  close.
-- On this Windows machine, the native offscreen PNG and Playwright canvas PNG
+  now bounds final GPU pixels for the 1280x720 focus/hover/pressed checkpoints
+  plus a 960x540 compact viewport checkpoint. More DPI scale-factor pairs still
+  need to be promoted into the same gate before the full visual completion gate
+  can close.
+- On this Windows machine, the native offscreen PNGs and Playwright canvas PNGs
   passed `tools/verify-webgpu-parity.rs` and were compared with
-  `imq compare --format json`; the recorded metrics were PSNR 24.1069 dB,
-  SSIM 0.6883, MSE 0.003884, MAE 0.005821, maxAE 0.85745, and changed pixel
-  ratio 0.011715 for 1280x720 PNGs.
+  `imq compare --format json`; the recorded Rust-script metrics were:
+  focus-first-choice PSNR 24.0221 dB / SSIM 0.7928 / MSE 0.003961,
+  hover-second-choice PSNR 24.1604 dB / SSIM 0.8153 / MSE 0.003837,
+  press-first-choice PSNR 23.9857 dB / SSIM 0.7790 / MSE 0.003994, and
+  compact-focus-first-choice PSNR 21.4657 dB / SSIM 0.7345 / MSE 0.007136.
 - Richer image lifecycle semantics such as explicit hide/clear and authored
   layer ordering remain to be promoted into the typed presentation model.
