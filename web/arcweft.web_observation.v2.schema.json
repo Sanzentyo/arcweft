@@ -17,6 +17,7 @@
     "presentation_revision",
     "dialogue_present",
     "choice_count",
+    "image_count",
     "flow_event_count",
     "requested_tasks",
     "queued_task_events"
@@ -33,6 +34,7 @@
     "presentation_revision": { "type": "integer", "minimum": 0 },
     "dialogue_present": { "type": "boolean" },
     "choice_count": { "type": "integer", "minimum": 0 },
+    "image_count": { "type": "integer", "minimum": 0 },
     "flow_event_count": { "type": "integer", "minimum": 0 },
     "requested_tasks": { "type": "integer", "minimum": 0 },
     "queued_task_events": { "type": "integer", "minimum": 0 }

@@ -1,5 +1,6 @@
 use super::image_declarations::{
-    DeclaredImageObject, declared_image_asset_refs, parse_declared_image_objects,
+    DeclaredImageObject, declaration_arg_value, declared_image_asset_refs,
+    parse_declared_image_objects, public_asset_ref_arg,
 };
 use super::project::{
     ProfileOptions, SourceSelection, adapter_manifest_for_selection, resolve_source_selection,
@@ -33,8 +34,9 @@ use arcweft_adapter_desktop::{
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleFormat,
     BundleImageAnimation, BundleImageAsset, BundleImageDimensions, BundleImageFormat,
-    BundleLaunchKind, BundleManifest, BundleRuntimeSummary, BundleSource, BundleVirtualFile,
-    BundleVirtualFileRef, BundleVirtualFileSpace,
+    BundleImageObject, BundleImageObjectBounds, BundleLaunchKind, BundleManifest,
+    BundleRuntimeSummary, BundleSource, BundleVirtualFile, BundleVirtualFileRef,
+    BundleVirtualFileSpace,
 };
 use arcweft_core::{
     effect::{LineEffectRequest, RuntimeCall},
@@ -246,6 +248,7 @@ fn compile_bundle_artifact(
     let virtual_files = collect_bundle_virtual_files(selection.path(), options.include_spaces())?;
     let image_assets = collect_bundle_image_assets(&virtual_files)?;
     let image_declarations = parse_declared_image_objects(&source);
+    let image_objects = bundle_image_objects(&image_declarations)?;
     validate_referenced_bundle_image_assets(&compiled.plan, &image_declarations, &image_assets)?;
     Ok(ArcweftBundle::new(
         bundle_manifest(
@@ -264,7 +267,8 @@ fn compile_bundle_artifact(
     )
     .with_adapter_manifests(adapter_manifests)
     .with_virtual_files(virtual_files)
-    .with_image_assets(image_assets))
+    .with_image_assets(image_assets)
+    .with_image_objects(image_objects))
 }
 
 fn bundle_required_host_calls(plan: &RuntimePlan) -> Vec<String> {
@@ -499,6 +503,125 @@ fn validate_referenced_bundle_image_assets(
         missing.join(", ")
     );
     Err(ExitCode::from(2))
+}
+
+fn bundle_image_objects(
+    image_declarations: &BTreeMap<String, DeclaredImageObject>,
+) -> Result<Vec<BundleImageObject>, ExitCode> {
+    image_declarations
+        .values()
+        .map(bundle_image_object)
+        .collect::<Result<Vec<_>, ExitCode>>()
+}
+
+fn bundle_image_object(declaration: &DeclaredImageObject) -> Result<BundleImageObject, ExitCode> {
+    let asset = declaration
+        .args()
+        .iter()
+        .find_map(|arg| {
+            let (name, value) = arg.split_once(" = ")?;
+            (name.trim() == "asset")
+                .then_some(value.trim())
+                .and_then(public_asset_ref_arg)
+        })
+        .ok_or_else(|| {
+            eprintln!(
+                "error: image object `{}` is missing an asset reference",
+                declaration.id()
+            );
+            ExitCode::from(2)
+        })?;
+    let bounds = BundleImageObjectBounds {
+        x_milli: image_px_milli_arg(declaration, "x")?,
+        y_milli: image_px_milli_arg(declaration, "y")?,
+        width_milli: image_px_milli_arg(declaration, "width").and_then(width_height_milli)?,
+        height_milli: image_px_milli_arg(declaration, "height").and_then(width_height_milli)?,
+    };
+    Ok(BundleImageObject {
+        id: declaration.id().to_owned(),
+        asset,
+        bounds,
+        opacity_milli: image_opacity_milli_arg(declaration)?,
+    })
+}
+
+fn image_px_milli_arg(declaration: &DeclaredImageObject, name: &str) -> Result<i32, ExitCode> {
+    let Some(value) = declaration_arg_value(declaration.args(), name) else {
+        eprintln!(
+            "error: image object `{}` is missing `{name}`",
+            declaration.id()
+        );
+        return Err(ExitCode::from(2));
+    };
+    parse_px_milli(value).ok_or_else(|| {
+        eprintln!(
+            "error: image object `{}` has invalid `{name}` value `{value}`",
+            declaration.id()
+        );
+        ExitCode::from(2)
+    })
+}
+
+fn width_height_milli(value: i32) -> Result<u32, ExitCode> {
+    u32::try_from(value).map_err(|_| {
+        eprintln!("error: image width/height must be non-negative");
+        ExitCode::from(2)
+    })
+}
+
+fn parse_px_milli(value: &str) -> Option<i32> {
+    let pixels = value.trim().strip_suffix("px")?.trim();
+    let (whole, fraction) = pixels.split_once('.').unwrap_or((pixels, ""));
+    let sign = whole.starts_with('-');
+    let whole_abs = whole.trim_start_matches('-');
+    let whole_milli = whole_abs.parse::<i32>().ok()?.checked_mul(1_000)?;
+    let fraction_milli = fraction
+        .chars()
+        .take(3)
+        .try_fold((0_i32, 100_i32), |(value, scale), ch| {
+            let digit = ch.to_digit(10)?;
+            Some((value + i32::try_from(digit).ok()? * scale, scale / 10))
+        })?
+        .0;
+    let milli = whole_milli.checked_add(fraction_milli)?;
+    Some(if sign { -milli } else { milli })
+}
+
+fn image_opacity_milli_arg(declaration: &DeclaredImageObject) -> Result<u16, ExitCode> {
+    let Some(value) = declaration_arg_value(declaration.args(), "opacity") else {
+        return Ok(1_000);
+    };
+    let Some(milli) = parse_opacity_milli(value) else {
+        eprintln!(
+            "error: image object `{}` has invalid `opacity` value `{value}`",
+            declaration.id()
+        );
+        return Err(ExitCode::from(2));
+    };
+    Ok(milli)
+}
+
+fn parse_opacity_milli(value: &str) -> Option<u16> {
+    let value = value.trim();
+    if let Some(milli) = value.strip_suffix("milli") {
+        return milli
+            .trim()
+            .parse::<u16>()
+            .ok()
+            .filter(|value| *value <= 1_000);
+    }
+    let (whole, fraction) = value.split_once('.').unwrap_or((value, ""));
+    let whole = whole.parse::<u16>().ok()?;
+    let fraction_milli = fraction
+        .chars()
+        .take(3)
+        .try_fold((0_u16, 100_u16), |(value, scale), ch| {
+            let digit = ch.to_digit(10)?;
+            Some((value + u16::try_from(digit).ok()? * scale, scale / 10))
+        })?
+        .0;
+    let milli = whole.checked_mul(1_000)?.checked_add(fraction_milli)?;
+    (milli <= 1_000).then_some(milli)
 }
 
 fn static_image_asset_refs(
@@ -1270,6 +1393,34 @@ image @image.sample.pulse {
         assert_eq!(
             static_image_asset_refs(&plan_with_ops(Vec::new()), &declarations),
             vec!["asset.bg.pulse"]
+        );
+    }
+
+    #[test]
+    fn bundle_image_objects_collect_declared_bounds_and_opacity() {
+        let declarations = parse_declared_image_objects(
+            r"
+image @image.sample.pulse {
+    asset = @asset.bg.pulse
+    x = 12px
+    y = 34px
+    width = 56px
+    height = 78px
+    opacity = 0.875
+}
+",
+        );
+
+        let objects = bundle_image_objects(&declarations).expect("image object metadata");
+
+        assert_eq!(
+            objects,
+            vec![BundleImageObject {
+                id: "image.sample.pulse".to_owned(),
+                asset: "asset.bg.pulse".to_owned(),
+                bounds: BundleImageObjectBounds::from_px(12, 34, 56, 78),
+                opacity_milli: 875,
+            }]
         );
     }
 

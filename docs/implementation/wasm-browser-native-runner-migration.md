@@ -90,19 +90,21 @@ Implemented in the current checkout:
   assets, and `web/demo.awfb` is regenerated from that source.
 - `tools/generate-webgpu-demo-assets.rs` is a Rust script with embedded Cargo
   metadata that generates and validates the PNG/GIF/WebP fixtures.
-- Web smoke execution uses `deno task test`; npm package scripts and `npx` are
-  removed from the browser workflow.
+- Web smoke execution uses `npm test` and Playwright against an installed Chrome
+  channel.
+- Bundle-declared image objects are lowered into the portable presentation
+  snapshot, decoded from packaged PNG/GIF/WebP assets in the browser host, and
+  rendered through the shared WebGPU scene.
 - The Windows/headless Chrome WebGPU smoke passed on this machine with the
   installed Chrome channel and D3D11 ANGLE:
 
 ```bash
-deno task test
+npm test
 ```
 
 Remaining completion work:
 
 - Native/Web screenshot parity still needs an approved readback/comparison
   harness.
-- Bundle-declared image assets are packaged and validated, while the browser demo
-  render path still uses the shared renderer's generated demo-image scene until
-  the typed asset-to-render-scene bridge is landed.
+- Richer image lifecycle semantics such as explicit hide/clear and authored
+  layer ordering remain to be promoted into the typed presentation model.

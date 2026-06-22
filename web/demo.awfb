@@ -17,7 +17,7 @@
   },
   "source": {
     "label": "demo.arcw",
-    "text": "character alice Alice {\n}\n\npub asset @asset.generated.background {\n    kind = image\n    file = \"generated/background.png\"\n}\n\npub asset @asset.generated.character_stand {\n    kind = image\n    file = \"generated/character_stand.png\"\n}\n\npub asset @asset.generated.gif_pulse {\n    kind = image\n    file = \"generated/gif_pulse.gif\"\n}\n\npub asset @asset.generated.webp_pulse {\n    kind = image\n    file = \"generated/webp_pulse.webp\"\n}\n\npub image @image.generated.character_stand {\n    asset = @asset.generated.character_stand\n    x = 64px\n    y = 52px\n    width = 180px\n    height = 300px\n}\n\npub image @image.generated.gif_pulse {\n    asset = @asset.generated.gif_pulse\n    x = 486px\n    y = 46px\n    width = 96px\n    height = 96px\n}\n\npub image @image.generated.webp_pulse {\n    asset = @asset.generated.webp_pulse\n    x = 492px\n    y = 156px\n    width = 96px\n    height = 96px\n}\n\nentry game @entry.main { start(@flow.main) }\n\nflow main {\n    bg(@asset.generated.background)\n    image(@image.generated.character_stand)\n    image(@image.generated.gif_pulse)\n    image(@image.generated.webp_pulse)\n    alice: Arcweft is running on a shared wgpu renderer in this WebGPU canvas.\n    choice @choice.web_demo {\n        @choice.web_demo.continue \"Continue\" -> @flow.done\n        @choice.web_demo.alternate \"Alternate route\" -> @flow.done\r\n    }\r\n}\r\n\r\nflow done {\n    alice: The semantic choice input returned to the bytecode VM.\n    return \"done\"\r\n}\r\n"
+    "text": "character alice Alice {\n}\n\npub asset @asset.generated.background {\n    kind = image\n    file = \"generated/background.png\"\n}\n\npub asset @asset.generated.character_stand {\n    kind = image\n    file = \"generated/character_stand.png\"\n}\n\npub asset @asset.generated.gif_pulse {\n    kind = image\n    file = \"generated/gif_pulse.gif\"\n}\n\npub asset @asset.generated.webp_pulse {\n    kind = image\n    file = \"generated/webp_pulse.webp\"\n}\n\npub image @image.generated.character_stand {\n    asset = @asset.generated.character_stand\n    x = 64px\n    y = 52px\n    width = 180px\n    height = 300px\n}\n\npub image @image.generated.background {\n    asset = @asset.generated.background\n    x = 0px\n    y = 0px\n    width = 1280px\n    height = 720px\n}\n\npub image @image.generated.gif_pulse {\n    asset = @asset.generated.gif_pulse\n    x = 486px\n    y = 46px\n    width = 96px\n    height = 96px\n}\n\npub image @image.generated.webp_pulse {\n    asset = @asset.generated.webp_pulse\n    x = 492px\n    y = 156px\n    width = 96px\n    height = 96px\n}\n\nentry game @entry.main { start(@flow.main) }\n\nflow main {\n    image(@image.generated.background)\n    image(@image.generated.character_stand)\n    image(@image.generated.gif_pulse)\n    image(@image.generated.webp_pulse)\n    alice: Arcweft is running on a shared wgpu renderer in this WebGPU canvas.\n    choice @choice.web_demo {\n        @choice.web_demo.continue \"Continue\" -> @flow.done\n        @choice.web_demo.alternate \"Alternate route\" -> @flow.done\r\n    }\r\n}\r\n\r\nflow done {\n    alice: The semantic choice input returned to the bytecode VM.\n    return \"done\"\r\n}\r\n"
   },
   "bytecode": {
     "encoding": "structured_json",
@@ -40,9 +40,9 @@
               "Flow": {
                 "Effect": {
                   "Call": {
-                    "callee": "bg",
+                    "callee": "image",
                     "args": [
-                      "@asset.generated.background"
+                      "@image.generated.background"
                     ]
                   }
                 }
@@ -130179,6 +130179,52 @@
         "width": 96,
         "height": 96
       }
+    }
+  ],
+  "image_objects": [
+    {
+      "id": "image.generated.background",
+      "asset": "asset.generated.background",
+      "bounds": {
+        "x_milli": 0,
+        "y_milli": 0,
+        "width_milli": 1280000,
+        "height_milli": 720000
+      },
+      "opacity_milli": 1000
+    },
+    {
+      "id": "image.generated.character_stand",
+      "asset": "asset.generated.character_stand",
+      "bounds": {
+        "x_milli": 64000,
+        "y_milli": 52000,
+        "width_milli": 180000,
+        "height_milli": 300000
+      },
+      "opacity_milli": 1000
+    },
+    {
+      "id": "image.generated.gif_pulse",
+      "asset": "asset.generated.gif_pulse",
+      "bounds": {
+        "x_milli": 486000,
+        "y_milli": 46000,
+        "width_milli": 96000,
+        "height_milli": 96000
+      },
+      "opacity_milli": 1000
+    },
+    {
+      "id": "image.generated.webp_pulse",
+      "asset": "asset.generated.webp_pulse",
+      "bounds": {
+        "x_milli": 492000,
+        "y_milli": 156000,
+        "width_milli": 96000,
+        "height_milli": 96000
+      },
+      "opacity_milli": 1000
     }
   ]
 }

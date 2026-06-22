@@ -1,5 +1,6 @@
 use crate::clock::LogicalClockQuantizer;
 use crate::host::BrowserTaskBroker;
+use crate::images::{BrowserImageCatalog, BrowserImageCatalogError};
 use crate::input::{InputController, InputOutcome};
 use crate::report::WebObservationReport;
 use arcweft_bundle::ArcweftBundle;
@@ -10,7 +11,6 @@ use arcweft_render_wgpu::geometry::{
     SharedFramePlanner,
 };
 use arcweft_render_wgpu::renderer::SharedRenderer;
-use arcweft_render_wgpu::sample::{DemoAnimationClock, generated_demo_images};
 use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions, BundleStepInput};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -50,6 +50,8 @@ enum WebPlayerError {
     WebGpu(String),
     #[error("font registration failed: {0}")]
     Font(String),
+    #[error("image catalog failed: {0}")]
+    Image(String),
     #[error("frame planning failed: {0}")]
     FramePlan(String),
     #[error("diagnostic serialization failed: {0}")]
@@ -74,6 +76,7 @@ struct PlayerState {
     gpu: GpuState,
     session: BundleSession,
     broker: BrowserTaskBroker,
+    images: BrowserImageCatalog,
     input: InputController,
     clock: LogicalClockQuantizer,
     font_bytes: Option<Vec<u8>>,
@@ -162,6 +165,8 @@ fn start(
         .map_err(|error| WebPlayerError::Session(error.to_string()))?;
     let broker = BrowserTaskBroker::from_bundle(&bundle)
         .map_err(|error| WebPlayerError::TaskBroker(error.to_string()))?;
+    let images = BrowserImageCatalog::from_bundle(&bundle)
+        .map_err(|error| WebPlayerError::Image(error.to_string()))?;
     let clock = LogicalClockQuantizer::new(16, 4)
         .map_err(|error| WebPlayerError::Session(error.to_string()))?;
     let state = Rc::new(RefCell::new(PlayerState {
@@ -170,6 +175,7 @@ fn start(
         gpu: GpuState::Uninitialized,
         session,
         broker,
+        images,
         input: InputController::default(),
         clock,
         font_bytes: Some(font_bytes),
@@ -360,6 +366,10 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
     let browser_viewport = state.browser_viewport(window);
     let viewport = browser_viewport.render;
     let presentation = state.session.presentation();
+    let images = state
+        .images
+        .render_images(&presentation.images, host_millis.max(0.0) as u64)
+        .map_err(WebPlayerError::from)?;
     let scene = RenderScene {
         dialogue: presentation
             .dialogue
@@ -376,10 +386,7 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
                 label: choice.label.clone(),
             })
             .collect(),
-        images: generated_demo_images(
-            viewport,
-            DemoAnimationClock::from_millis(host_millis.max(0.0) as u64),
-        ),
+        images,
         viewport,
         preferences: RenderPreferences::default(),
         interaction: state.input.visual_state(),
@@ -412,6 +419,12 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
     }
     state.prepared = Some(prepared);
     Ok(())
+}
+
+impl From<BrowserImageCatalogError> for WebPlayerError {
+    fn from(error: BrowserImageCatalogError) -> Self {
+        Self::Image(error.to_string())
+    }
 }
 
 fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) {

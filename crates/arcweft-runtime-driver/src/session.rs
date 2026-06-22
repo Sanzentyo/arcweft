@@ -1,8 +1,9 @@
 use crate::clock::RuntimeClockStep;
 use crate::display::{BundlePresentationSnapshot, resolve_display_frames};
 use crate::task::HostTaskDispatch;
-use arcweft_bundle::{ArcweftBundle, BundleKind};
+use arcweft_bundle::{ArcweftBundle, BundleImageObject, BundleKind};
 use arcweft_core::bytecode::BytecodeProgram;
+use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::executor::{BytecodeVmExecutor, RuntimeExecutor};
 use arcweft_core::plan::{
@@ -70,6 +71,7 @@ pub struct BundleSessionStep {
     pub stats: RuntimeStepStats,
     pub diagnostics: Vec<String>,
     pub flow_events: Vec<FlowEvent>,
+    pub line_effects: Vec<LineEffectRequest>,
     pub presentation: BundlePresentationSnapshot,
     pub requested_tasks: Vec<HostTaskDispatch>,
     pub cancel_scopes: Vec<CancelScopeId>,
@@ -83,6 +85,7 @@ pub struct BundleSession {
     source_label: String,
     executor: BytecodeVmExecutor,
     display: LineDisplayCatalog,
+    image_objects: Vec<BundleImageObject>,
     options: BundleSessionOptions,
     pending_input_events: Vec<RoutedInputEvent>,
     presentation: BundlePresentationSnapshot,
@@ -218,6 +221,7 @@ impl BundleSession {
             source_label: bundle.manifest.source_label.clone(),
             executor: BytecodeVmExecutor::from_parts(bytecode, plan),
             display: bundle.display.clone(),
+            image_objects: bundle.image_objects.clone(),
             options,
             pending_input_events: Vec::new(),
             presentation: BundlePresentationSnapshot::default(),
@@ -295,6 +299,7 @@ impl BundleSession {
 
         let mut output = result.output;
         let flow_events = std::mem::take(&mut output.flow_events);
+        let line_effects = std::mem::take(&mut output.effects.line);
         let display = resolve_display_frames(&self.display, &flow_events);
         let mut diagnostics = output
             .diagnostics
@@ -302,7 +307,12 @@ impl BundleSession {
             .map(|diagnostic| diagnostic.message)
             .collect::<Vec<_>>();
         diagnostics.extend(display.diagnostics.iter().cloned());
-        self.presentation.update(&display, &result.fiber_status);
+        self.presentation.update(
+            &display,
+            &result.fiber_status,
+            &line_effects,
+            &self.image_objects,
+        );
 
         let requested_tasks = output
             .requests
@@ -337,6 +347,7 @@ impl BundleSession {
             stats: result.stats,
             diagnostics,
             flow_events,
+            line_effects,
             presentation: self.presentation.clone(),
             requested_tasks,
             cancel_scopes: output.requests.cancel_scopes,

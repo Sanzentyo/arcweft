@@ -15,17 +15,17 @@ Game rendering and interaction live in Rust through `arcweft-render-wgpu`,
 
 ## Playwright WebGPU smoke
 
-Browser smoke tests run through Deno and Playwright. They use the installed
-Chrome channel by default so Deno is not asked to run Playwright's npm browser
-downloader. From this directory:
+Browser smoke tests run through npm and Playwright. They use the installed
+Chrome channel by default. From this directory:
 
 ```bash
-deno task test
+npm install
+npm test
 ```
 
-`test` synchronizes Playwright through Deno, starts a local static host, and runs
-the `tests/` smoke script (requires WebGPU). Set `ARW_PLAYWRIGHT_CHANNEL` to use
-another installed Playwright browser channel.
+`test` starts a local static host and runs the Playwright smoke script (requires
+WebGPU). Set `ARW_PLAYWRIGHT_CHANNEL` to use another installed Playwright
+browser channel.
 
 ## Manual launch
 

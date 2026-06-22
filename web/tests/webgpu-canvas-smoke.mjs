@@ -68,7 +68,8 @@ async function serveFile(request, response) {
   }
 
   response.writeHead(200, {
-    "content-type": contentTypes.get(extname(fullPath).toLowerCase()) ?? "application/octet-stream",
+    "content-type": contentTypes.get(extname(fullPath).toLowerCase()) ??
+      "application/octet-stream",
   });
   createReadStream(fullPath).pipe(response);
 }
@@ -126,9 +127,13 @@ async function openReady(browser, baseUrl) {
     throw new Error(`${error.message}\nstate=${JSON.stringify(state)}`);
   }
   try {
-    await page.waitForFunction(() => window.__arcweftLastObservation?.choice_count > 0, null, {
-      timeout: 10_000,
-    });
+    await page.waitForFunction(
+      () =>
+        window.__arcweftLastObservation?.choice_count > 0 &&
+        window.__arcweftLastObservation?.image_count >= 4,
+      null,
+      { timeout: 10_000 },
+    );
   } catch (error) {
     const state = await page.evaluate(() => ({
       fatal: document.querySelector("#arcweft-fatal")?.textContent ?? null,

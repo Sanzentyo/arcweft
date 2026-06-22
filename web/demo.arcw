@@ -29,6 +29,14 @@ pub image @image.generated.character_stand {
     height = 300px
 }
 
+pub image @image.generated.background {
+    asset = @asset.generated.background
+    x = 0px
+    y = 0px
+    width = 1280px
+    height = 720px
+}
+
 pub image @image.generated.gif_pulse {
     asset = @asset.generated.gif_pulse
     x = 486px
@@ -48,7 +56,7 @@ pub image @image.generated.webp_pulse {
 entry game @entry.main { start(@flow.main) }
 
 flow main {
-    bg(@asset.generated.background)
+    image(@image.generated.background)
     image(@image.generated.character_stand)
     image(@image.generated.gif_pulse)
     image(@image.generated.webp_pulse)

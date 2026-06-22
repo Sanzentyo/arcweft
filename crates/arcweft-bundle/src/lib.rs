@@ -40,6 +40,8 @@ pub struct ArcweftBundle {
     pub virtual_files: Vec<BundleVirtualFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub image_assets: Vec<BundleImageAsset>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub image_objects: Vec<BundleImageObject>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -146,6 +148,23 @@ pub struct BundleImageAsset {
     pub animation: BundleImageAnimation,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dimensions: Option<BundleImageDimensions>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BundleImageObject {
+    pub id: String,
+    pub asset: String,
+    pub bounds: BundleImageObjectBounds,
+    #[serde(default = "default_opacity_milli")]
+    pub opacity_milli: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BundleImageObjectBounds {
+    pub x_milli: i32,
+    pub y_milli: i32,
+    pub width_milli: u32,
+    pub height_milli: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -338,6 +357,7 @@ impl ArcweftBundle {
             adapter_manifests: Vec::new(),
             virtual_files: Vec::new(),
             image_assets: Vec::new(),
+            image_objects: Vec::new(),
         }
     }
 
@@ -375,6 +395,19 @@ impl ArcweftBundle {
         self.image_assets
             .sort_by(|left, right| left.id.cmp(&right.id));
         self.image_assets
+            .dedup_by(|left, right| left.id == right.id);
+        self
+    }
+
+    #[must_use]
+    pub fn with_image_objects(
+        mut self,
+        objects: impl IntoIterator<Item = BundleImageObject>,
+    ) -> Self {
+        self.image_objects.extend(objects);
+        self.image_objects
+            .sort_by(|left, right| left.id.cmp(&right.id));
+        self.image_objects
             .dedup_by(|left, right| left.id == right.id);
         self
     }
@@ -598,6 +631,10 @@ impl ArcweftBundle {
 
     pub fn image_asset(&self, id: &str) -> Option<&BundleImageAsset> {
         self.image_assets.iter().find(|asset| asset.id == id)
+    }
+
+    pub fn image_object(&self, id: &str) -> Option<&BundleImageObject> {
+        self.image_objects.iter().find(|object| object.id == id)
     }
 
     pub fn image_asset_bytes(&self, id: &str) -> Result<Option<&[u8]>, BundleCodecError> {
@@ -868,6 +905,21 @@ impl BundleImageDimensions {
     }
 }
 
+impl BundleImageObjectBounds {
+    pub const fn from_px(x: i32, y: i32, width: u32, height: u32) -> Self {
+        Self {
+            x_milli: x.saturating_mul(1_000),
+            y_milli: y.saturating_mul(1_000),
+            width_milli: width.saturating_mul(1_000),
+            height_milli: height.saturating_mul(1_000),
+        }
+    }
+}
+
+const fn default_opacity_milli() -> u16 {
+    1_000
+}
+
 impl BundleVirtualFileSpace {
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -1010,6 +1062,29 @@ mod tests {
                 .image_asset_bytes("asset.ui.missing")
                 .expect("unknown asset is not an error"),
             None
+        );
+    }
+
+    #[test]
+    fn bundle_image_objects_round_trip_as_typed_metadata() {
+        let bundle = empty_test_bundle().with_image_objects([BundleImageObject {
+            id: "image.hero.logo".to_owned(),
+            asset: "asset.ui.logo".to_owned(),
+            bounds: BundleImageObjectBounds::from_px(10, 20, 320, 180),
+            opacity_milli: 900,
+        }]);
+
+        let bytes = bundle.to_json_bytes().expect("bundle encodes");
+        let decoded = ArcweftBundle::from_json_slice(&bytes).expect("bundle decodes");
+
+        assert_eq!(
+            decoded.image_object("image.hero.logo"),
+            Some(&BundleImageObject {
+                id: "image.hero.logo".to_owned(),
+                asset: "asset.ui.logo".to_owned(),
+                bounds: BundleImageObjectBounds::from_px(10, 20, 320, 180),
+                opacity_milli: 900,
+            })
         );
     }
 

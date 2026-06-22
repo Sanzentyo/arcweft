@@ -11,6 +11,10 @@ pub(in crate::app) struct DeclaredImageObject {
 }
 
 impl DeclaredImageObject {
+    pub(in crate::app) fn id(&self) -> &str {
+        &self.id
+    }
+
     pub(in crate::app) fn args(&self) -> &[String] {
         &self.args
     }
