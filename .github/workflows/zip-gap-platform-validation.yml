@@ -1,10 +1,16 @@
-name: ZIP gap platform validation
+name: ZIP gap Windows validation
 
 on:
-  push:
-    branches:
-      - main
+  # Temporarily disabled on 2026-06-22. Keep the job definition checked in as
+  # recorded validation policy, but do not run it until this trigger is restored.
   workflow_dispatch:
+    inputs:
+      disabled:
+        description: "This workflow is intentionally disabled; do not run."
+        required: true
+        default: "disabled"
+
+permissions: {}
 
 env:
   CARGO_INCREMENTAL: "0"
@@ -12,16 +18,10 @@ env:
   CARGO_PROFILE_TEST_DEBUG: "0"
 
 jobs:
-  platform-validation:
-    name: ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
+  windows-validation:
+    name: windows-latest
+    if: ${{ false }}
+    runs-on: windows-latest
 
     steps:
       - name: Checkout
@@ -31,12 +31,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy,rustfmt
-
-      - name: Install Linux native dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libegl1-mesa-dev libwayland-dev libxkbcommon-dev libpipewire-0.3-dev libvulkan1 mesa-vulkan-drivers
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -53,10 +47,6 @@ jobs:
 
       - name: Workspace clippy
         run: cargo clippy --workspace --all-targets --all-features
-
-      - name: Free Linux clippy artifacts before tests
-        if: runner.os == 'Linux'
-        run: cargo clean
 
       - name: Workspace non-CLI lib and integration tests
         timeout-minutes: 45

@@ -18,24 +18,36 @@ For a concise explanation of the concrete unfinished items, see
 - **Verification debt** means the implementation may be present, but the
   required validation evidence is missing.
 
-## Open Agent Items
+## Stopped Agent Validation Items
 
-### ZG-A-004: Linux/macOS platform validation is not recorded
+### ZG-A-004: Linux/macOS platform validation is stopped for this goal
 
 - ZIP tasks: T-009, A-21.
+- Status: stopped / out of current completion scope by explicit user direction
+  on 2026-06-22.
 - Current evidence:
-  GitHub Actions run `27915737840` for `fa7a89e2` records partial platform
-  evidence. macOS passed formatting, remote REPL/stdio MCP focused gates, data
-  codec focused gates, and workspace clippy, then failed workspace fast tests
-  on the bundle YAML named-shape issue. Ubuntu passed formatting, remote
-  REPL/stdio MCP focused gates, and data codec focused gates, then failed
-  workspace clippy because EGL development packages were missing. Windows had
-  passed formatting, focused gates, and workspace clippy while workspace fast
-  tests were still in progress when the unfinished inventory was recorded.
+  GitHub Actions run `27921332799` for
+  `7e0c3145f2bf20111594c1bf9053ea60c3847657` records the latest matrix attempt
+  before stopping non-Windows validation. Windows and macOS passed formatting,
+  remote REPL/stdio MCP focused gates, data codec focused gates, workspace
+  clippy, workspace non-CLI tests, CLI lib/bin tests, the CLI regression
+  harness, and CLI fixture check/run tests. Ubuntu passed formatting, focused
+  Agent gates, focused data codec gates, and workspace clippy, then failed
+  non-CLI workspace tests in `arcweft-render-native` because the Linux CI
+  headless graphics environment could not provide a suitable wgpu adapter for
+  native renderer capture tests. Earlier Ubuntu attempts exposed missing native
+  development packages and runner disk pressure; those workflow issues were
+  addressed before validation was stopped.
 - Why this matters: stdio process behavior, line endings, and CLI shell
   invocation differ across platforms.
-- Completion evidence needed: focused remote REPL gates and workspace gates on
-  Linux, Windows, and macOS, either through CI or explicit recorded runs.
+- Current completion decision: not a source-behavior implementation gap and no
+  longer a blocker for this ZIP goal. Non-Windows validation is recorded as
+  stopped, not silently complete.
+- Workflow state:
+  `.github/workflows/zip-gap-platform-validation.yml` is intentionally disabled.
+  It no longer runs on push, and its checked-in job is guarded with
+  `if: ${{ false }}` so the validation job does not execute while this pause is
+  in effect.
 
 ## Resolved Agent Items
 
@@ -164,17 +176,17 @@ For a concise explanation of the concrete unfinished items, see
   roundtrip, request timeout with bounded stderr tail retention, and
   shutdown-before-kill through a marker-writing fake child.
 - Remaining related work: this closes the stdio transport hardening slice.
-  Broader Agent completion still depends on project-bound REPL binding
-  diagnostics, formatter golden coverage, and Linux/macOS validation evidence.
+  Project-bound REPL binding diagnostics and formatter golden coverage are
+  resolved below; Linux/macOS validation is recorded above as stopped for this
+  goal.
 
 ## Open Core Data Codec Items
 
 None currently identified. The core data-codec implementation gaps from the
 ZIP audit are closed in the current source. The runtime external-call surface
 for shape-required decode is tracked separately under `ZG-R-001`, because it is
-an adapter/API integration gap rather than a core codec behavior gap. Goal
-completion is still blocked by the platform validation evidence tracked under
-ZG-A-004 and the open implementation items above.
+an adapter/API integration gap rather than a core codec behavior gap. No core
+data-codec source-behavior gap remains open in this ledger.
 
 ## Resolved Data Items
 

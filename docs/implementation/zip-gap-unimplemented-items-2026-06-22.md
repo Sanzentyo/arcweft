@@ -7,8 +7,8 @@ It is the readable companion to
 strict requirement ledger.
 
 Implementation baseline used for this inventory:
-`fa7a89e2 Document current ZIP gap unfinished items`, plus the current
-uncommitted checkout while the ZIP gap fixes are being validated.
+`7e0c3145 Stabilize Linux native validation`, plus the current documentation
+and workflow update that stops non-Windows validation for this ZIP goal.
 
 This document is the concrete "what is still not implemented" answer for the
 ZIP gap goal as of that baseline.
@@ -17,8 +17,9 @@ Current conclusion:
 
 - **Open source-behavior implementation items: none currently identified.**
 - **Partial implementation items: none currently identified.**
-- **Verification debt that still blocks goal completion: one item,
-  `ZG-A-004 / T-009 / A-21`, platform matrix validation evidence.**
+- **Verification debt that still blocks goal completion: none.**
+- **Non-Windows validation status: stopped for this goal by explicit user
+  direction on 2026-06-22.**
 
 Everything else from the ZIP is either recorded as resolved in
 `zip-gap-open-items-2026-06-21.md`, or is a related validation follow-up that
@@ -42,8 +43,8 @@ depends on one of the items above.
 | Effect/CLI | ZG-E-001 typed target-effect availability integration | Resolved implementation evidence | No current source-behavior gap is identified; target availability is separate from checker capabilities and CLI fixtures pass |
 | Runtime data adapter | ZG-R-001 explicit-shape runtime `data.decode` for shape-required formats | Resolved implementation evidence | No current source-behavior gap is identified for explicit `TypeShape` runtime decode of shape-required non-Avro formats |
 | Data codecs | ZIP data shape/budget implementation items | Resolved implementation evidence | No current core codec behavior gap is identified for JSON/TOML/YAML/MsgPack/CBOR/CSV/Arrow IPC/Parquet/Avro/Arcweft Binary in the ZIP scope |
-| Agent/CLI | Remote REPL binding policy, stdio MCP hardening, `.awfagent` formatter routing | Resolved implementation evidence | No current source-behavior gap is identified; platform validation evidence remains separate |
-| Agent | ZG-A-004 Linux/macOS validation | Verification debt | Windows 以外での remote REPL / stdio MCP / data codec focused gates と workspace gates の記録 |
+| Agent/CLI | Remote REPL binding policy, stdio MCP hardening, `.awfagent` formatter routing | Resolved implementation evidence | No current source-behavior gap is identified; non-Windows validation is recorded separately as stopped |
+| Agent | ZG-A-004 Linux/macOS validation | Stopped / out of current completion scope | Windows 以外での検証は 2026-06-22 の明示指示で停止。既存の non-Windows evidence と failure reason は下に記録 |
 
 ## ZG-E-001: Typed Target-Effect Availability Integration
 
@@ -202,7 +203,7 @@ Completion evidence:
 
 ZIP mapping: `T-009`, `A-21`.
 
-Status: **Verification debt**.
+Status: **Stopped / out of current completion scope**.
 
 Existing implementation/evidence:
 
@@ -211,53 +212,53 @@ Existing implementation/evidence:
 - `zip-gap-open-items-2026-06-21.md` と
   `zip-gap-audit-2026-06-21.md` は Windows 実行結果を中心に記録している。
 
-具体的に未完了として残っているもの:
+具体的に goal 完了条件から外したもの:
 
 - Linux での remote REPL / stdio MCP focused tests。
 - macOS での remote REPL / stdio MCP focused tests。
 - Linux/macOS/Windows の workspace gates または CI matrix evidence。
 - 各 platform の command、revision、result、失敗時の理由。
 
-ここは source behavior の未実装ではなく、検証証跡の未完である。Windows
-での実行証跡はあるが、ZIP の platform matrix は Linux/macOS の process
-lifecycle、path handling、stdio framing も対象にしているため、Windows だけでは
-完了扱いにできない。
+ここは source behavior の未実装ではなく、検証証跡の扱いである。2026-06-22
+のユーザ指示により、Windows 実環境以外での検証は停止し、この ZIP goal の
+完了条件から外した。non-Windows evidence は参考記録として残すが、goal
+completion blocker にはしない。
 
-Current action:
+Current recorded evidence:
 
-- `.github/workflows/zip-gap-platform-validation.yml` was added at
-  `b64be3ec` to collect Linux/macOS/Windows CI evidence for this item, and has
-  local uncommitted fixes for Linux native package setup.
-- GitHub Actions run `27915737840` for `fa7a89e2` is the current external
-  evidence run.
-  The run URL is
-  `https://github.com/Sanzentyo/arcweft/actions/runs/27915737840`.
-- In that run, macOS passed formatting, remote REPL/stdio MCP focused gates,
-  data codec focused gates, and workspace clippy, then failed workspace fast
-  tests on the bundle YAML named-shape issue. That issue has a local
-  uncommitted fix.
+- GitHub Actions run `27921332799` for
+  `7e0c3145f2bf20111594c1bf9053ea60c3847657` is the latest full matrix attempt
+  before non-Windows validation was stopped.
+  Run URL:
+  `https://github.com/Sanzentyo/arcweft/actions/runs/27921332799`.
+- In that run, Windows passed formatting, remote REPL/stdio MCP focused gates,
+  data codec focused gates, workspace clippy, workspace non-CLI tests, CLI
+  lib/bin tests, the CLI regression harness, and CLI fixture check/run tests.
+- In that run, macOS passed the same workflow.
 - In that run, Ubuntu passed formatting, remote REPL/stdio MCP focused gates,
-  and data codec focused gates, then failed workspace clippy because EGL
-  development packages were missing. The workflow has a local uncommitted
-  Linux dependency-install fix.
-- Windows passed formatting, focused gates, and workspace clippy in that run;
-  its workspace fast-test step was still in progress when this inventory was
-  recorded.
+  data codec focused gates, and workspace clippy, then failed the non-CLI
+  workspace tests in `arcweft-render-native` because the Linux CI headless
+  graphics environment could not provide a suitable wgpu adapter for native
+  renderer capture tests. Two Linux font-metric-sensitive assertions also
+  differed from the Windows/macOS metric margin.
+- Earlier Ubuntu attempts additionally exposed missing native packages
+  (`libegl`, `libwayland`, `libxkbcommon`, `libpipewire`, Vulkan/Mesa) and
+  runner disk-pressure issues. Those workflow issues were addressed before
+  the non-Windows validation was stopped.
+- The checked-in workflow is now Windows-only:
+  `.github/workflows/zip-gap-platform-validation.yml`.
 
-必要なテスト・証跡:
+Windows completion evidence retained for this goal:
 
-- 少なくとも remote REPL / stdio MCP process behavior に関わる focused tests
-  を Linux/macOS/Windows で記録する。
-- data codec の open/changed slice に対する focused tests を platform matrix
-  か CI で確認する。
-- reviewable cut point で workspace check/clippy と structural audit の結果を
-  実装文書に残す。
+- local Windows validation listed in the current validation cut below;
+- GitHub Actions Windows job success in run `27921332799`;
+- structural audit error count remains zero at review cut points.
 
-なぜ完了扱いにできないか:
+Why this no longer blocks completion:
 
-stdio process、line endings、shell invocation、path handling は OS 差が出る。
-Windows のみの成功では remote process adapter と CLI validation の ZIP 要求を
-閉じられない。
+The remaining Linux/macOS evidence was intentionally removed from the current
+goal boundary by explicit user direction on 2026-06-22. No source-behavior
+implementation item remains open in this inventory.
 
 ## ZG-D-001: Parse-Time Budgets Outside Arcweft Binary
 
@@ -421,7 +422,8 @@ some of them leave related items open:
 
 ## Current Local Validation Cut
 
-Revision basis: working tree after `fa7a89e2`, before the next push.
+Revision basis: `7e0c3145 Stabilize Linux native validation`, plus the
+Windows-only validation workflow and documentation update.
 
 Passed on Windows in this checkout:
 
@@ -447,11 +449,23 @@ Structural audit result:
 ```text
 files scanned: 1186
 Rust files: 654
-Rust physical LOC: 334923
+Rust physical LOC: 334932
 package manifests: 71
 violations: 0 error(s), 85 warning(s)
 reports written to docs\implementation\structure-audit-2026-06-21
 ```
+
+Additional focused validation after `7e0c3145`:
+
+```bash
+cargo test -p arcweft-render-native shaped --lib
+cargo clippy -p arcweft-render-native --all-targets --all-features
+cargo fmt --all -- --check
+cargo +nightly -Zscript tools\arcweft-structure-audit.rs --root .
+```
+
+Result: all passed locally on Windows; structural audit dry-run reported
+0 error(s), 85 warning(s).
 
 ## Completion Rule
 
@@ -460,4 +474,5 @@ tested or intentionally moved out of scope in a repository-visible note.
 A workspace `cargo clippy --workspace --all-targets --all-features` pass is
 necessary at reviewable cut points, but it is not sufficient for items that
 require malformed input tests, cross-format roundtrips, process behavior tests,
-or platform matrix validation.
+or platform validation. For this ZIP goal, non-Windows platform validation was
+intentionally moved out of scope on 2026-06-22.

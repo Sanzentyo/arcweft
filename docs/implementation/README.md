@@ -110,7 +110,7 @@ Phase 0 / Phase 1 minimal Rust workspace:
 - `docs/implementation/zip-gap-unimplemented-items-2026-06-22.md` lists the
   concrete unfinished items for `arcweft-zip-gap-audit-2026-06-21.zip`,
   separating resolved CLI target-effect availability and runtime shape-carrying
-  `data.decode` evidence from the remaining platform validation debt. Use it
+  `data.decode` evidence from the stopped non-Windows validation record. Use it
   as the readable checklist before claiming that ZIP-driven goal is complete.
 - Awaited capability calls now carry typed `HostTaskRequest` data through
   `AwaitTarget` into emitted `TaskSpec`s. The core remains Sans I/O; adapters
