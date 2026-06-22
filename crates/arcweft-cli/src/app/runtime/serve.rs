@@ -2,11 +2,12 @@ use super::entry::{select_server_entry, server_routes};
 use super::options::ServeOptions;
 use crate::app::project::{
     SourceSelection, load_and_check_selection, native_host_policy_for_selection_with_adapter,
-    profile_listen_addr, require_profile_kind, resolve_source_selection,
-    runtime_plan_options_for_selection, runtime_pure_config_for_selection,
+    require_profile_kind, resolve_source_selection, runtime_plan_options_for_selection,
+    runtime_pure_config_for_selection,
 };
 use crate::app::shared::print_json;
 use crate::server_adapter::{NativeHttpServerConfig, serve_native_http};
+use arcweft_adapter_context::standard;
 use arcweft_compiler::lower::lower_source_runtime_plan_with_options;
 use arcweft_launch::LaunchKind;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
@@ -83,9 +84,9 @@ pub(in crate::app) fn runtime_serve_selection(
 ) -> Result<(), ExitCode> {
     let adapter = adapter_override
         .or(selection.adapter())
-        .unwrap_or("sans-io");
-    let checked = load_and_check_selection(selection, Some(adapter))?;
-    let host_policy = native_host_policy_for_selection_with_adapter(selection, Some(adapter))?;
+        .unwrap_or(standard::SANS_IO_ADAPTER_ID);
+    let checked = load_and_check_selection(selection, adapter_override)?;
+    let host_policy = native_host_policy_for_selection_with_adapter(selection, adapter_override)?;
     let runtime_options = runtime_plan_options_for_selection(selection);
     let plan = lower_source_runtime_plan_with_options(&checked.hir, &runtime_options).map_err(
         |errors| {
@@ -128,7 +129,7 @@ pub(in crate::app) fn runtime_serve_selection(
     };
     let listen = match config.listen {
         Some(listen) => Some(listen),
-        None => profile_listen_addr(selection)?,
+        None => serve_profile_listen_addr(selection)?,
     };
     if let Some(listen) = listen {
         let server_report = serve_native_http(
@@ -176,4 +177,14 @@ pub(in crate::app) fn runtime_serve_selection(
         );
         Ok(())
     }
+}
+
+fn serve_profile_listen_addr(selection: &SourceSelection) -> Result<Option<SocketAddr>, ExitCode> {
+    let Some(raw) = selection.profile().and_then(|profile| profile.listen()) else {
+        return Ok(None);
+    };
+    raw.parse::<SocketAddr>().map(Some).map_err(|error| {
+        eprintln!("error: invalid launch profile listen address `{raw}`: {error}");
+        ExitCode::from(2)
+    })
 }

@@ -7498,6 +7498,79 @@ adapter = "native-http"
 }
 
 #[test]
+fn serve_profile_preserves_rust_metadata_when_adapter_comes_from_profile() {
+    let dir = temp_dir("serve-profile-rust-metadata");
+    let metadata_dir = dir.join("target").join("arcweft");
+    let source = dir.join("server.arcw");
+    let manifest = dir.join("arcw.toml");
+    let metadata = metadata_dir.join("truck_game.json");
+    fs::create_dir_all(&metadata_dir).expect("create metadata dir");
+    fs::write(
+        &source,
+        r#"
+extern rust mod mini_games::truck from crate "truck_game" {
+    pub type Rank
+    pub fn score_to_rank(score: i32) -> Rank
+}
+
+entry server @entry.http {
+    route GET "/rank" -> @flow.rank
+}
+
+flow @flow.rank rank {
+    let rank = mini_games.truck.score_to_rank(score = 42i32)
+    return "ok"
+}
+"#,
+    )
+    .expect("write server profile source using rust metadata");
+    fs::write(
+        &metadata,
+        truck_game_rust_manifest()
+            .to_json_pretty()
+            .expect("metadata encodes"),
+    )
+    .expect("write rust metadata");
+    fs::write(
+        &manifest,
+        r#"
+[profiles."server.rust"]
+kind = "server"
+source = "server.arcw"
+entry = "http"
+adapter = "native-http"
+rust_metadata = ["target/arcweft/truck_game.json"]
+"#,
+    )
+    .expect("write launch manifest");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("serve")
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--profile")
+        .arg("server.rust")
+        .arg("--json")
+        .output()
+        .expect("arcw serve --profile runs");
+    fs::remove_dir_all(&dir).expect("remove temp profile project");
+
+    assert!(
+        output.status.success(),
+        "serve should load profile rust metadata when adapter is not a CLI override, stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"entry\": \"entry.http\"")
+            && stdout.contains("\"adapter\": \"native-http\"")
+            && stdout.contains("\"target\": \"flow.rank\""),
+        "serve profile JSON should list rust metadata-backed route: {stdout}"
+    );
+}
+
+#[test]
 fn profile_source_and_path_are_mutually_exclusive() {
     let dir = temp_dir("profile-mutual-exclusion");
     let source = dir.join("main.arcw");

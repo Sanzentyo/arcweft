@@ -21,7 +21,6 @@ use arcweft_runtime_plan::{flow::RuntimePlanLowerOptions, line_task::LoweredLine
 use arcweft_rust_abi::ArcweftRustManifest;
 use clap::Args;
 use std::fs;
-use std::net::SocketAddr;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -209,18 +208,6 @@ pub(in crate::app) fn require_profile_kind(
     Err(ExitCode::from(2))
 }
 
-pub(in crate::app) fn profile_listen_addr(
-    selection: &SourceSelection,
-) -> Result<Option<SocketAddr>, ExitCode> {
-    let Some(raw) = selection.profile().and_then(ResolvedLaunchProfile::listen) else {
-        return Ok(None);
-    };
-    raw.parse::<SocketAddr>().map(Some).map_err(|error| {
-        eprintln!("error: invalid launch profile listen address `{raw}`: {error}");
-        ExitCode::from(2)
-    })
-}
-
 pub(in crate::app) fn load_and_check_selection(
     selection: &SourceSelection,
     adapter_override: Option<&str>,
@@ -258,21 +245,15 @@ pub(in crate::app) fn adapter_manifest_for_selection(
     selection: &SourceSelection,
     adapter_override: Option<&str>,
 ) -> Result<AdapterManifest, ExitCode> {
-    let adapter_id = adapter_override.or(selection.adapter());
+    let adapter_id = adapter_override
+        .or(selection.adapter())
+        .unwrap_or(standard::SANS_IO_ADAPTER_ID);
     let registry = adapter_registry_for_selection(selection)?;
-    adapter_manifest_from_registry(&registry, adapter_id)
-}
-
-fn adapter_manifest_from_registry(
-    registry: &arcweft_adapter_context::manifest::AdapterRegistry,
-    adapter: Option<&str>,
-) -> Result<AdapterManifest, ExitCode> {
-    let adapter_id = adapter.unwrap_or(standard::SANS_IO_ADAPTER_ID);
-    if let Some(manifest) = registry.get(adapter_id) {
-        return Ok(manifest.clone());
-    }
-    eprintln!("error: unknown adapter `{adapter_id}`");
-    Err(ExitCode::from(2))
+    let Some(manifest) = registry.get(adapter_id) else {
+        eprintln!("error: unknown adapter `{adapter_id}`");
+        return Err(ExitCode::from(2));
+    };
+    Ok(manifest.clone())
 }
 
 pub(in crate::app) fn native_host_policy_for_selection(

@@ -5,3 +5,5 @@
 /web/test-results/
 /web/playwright-report/
 /web/pkg/
+/.review-temp/
+/.review-tmp/
