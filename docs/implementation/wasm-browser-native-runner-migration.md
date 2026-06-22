@@ -99,6 +99,11 @@ Implemented in the current checkout:
   the native/headless test path builds the same summary from `web/demo.awfb` to
   pin shared geometry, text, choice, and image-object parity before pixel
   readback is connected.
+- `tools/capture-webgpu-native-frame.rs` renders the same `web/demo.awfb`
+  `PreparedFrame` through the shared renderer into a native offscreen PNG.
+  `web/tests/webgpu-canvas-smoke.mjs` can write the browser canvas PNG when
+  `ARW_WEB_PARITY_DIR` is set, and `imq compare` records full-reference image
+  metrics for the two outputs.
 - The Windows/headless Chrome WebGPU smoke passed on this machine with the
   installed Chrome channel and D3D11 ANGLE:
 
@@ -108,13 +113,15 @@ npm test
 
 Remaining completion work:
 
-- Native/Web screenshot parity still needs an approved readback/comparison
-  harness.
+- Native/Web screenshot parity now has capture producers and an `imq` comparison
+  path, but it still needs an approved repository-enforced metric threshold.
 - The current parity summary proves shared planner output, not final GPU pixels;
-  browser readback and native capture comparison are still required for the
-  visual completion gate.
-- `imq` is available on this machine and should be used for the native/Web
-  screenshot comparison once both capture producers write PNG or raw RGBA
-  artifacts.
+  the current pixel comparison proves capture production and records image
+  quality metrics, but a repository-enforced threshold still needs to be
+  stabilized before the visual completion gate can close.
+- On this Windows machine, the native offscreen PNG and Playwright canvas PNG
+  were compared with `imq compare --format json`; the recorded metrics were
+  PSNR 24.1069 dB, SSIM 0.6883, MSE 0.003884, MAE 0.005821, and maxAE 0.85745
+  for 1280x720 RGBA PNGs.
 - Richer image lifecycle semantics such as explicit hide/clear and authored
   layer ordering remain to be promoted into the typed presentation model.

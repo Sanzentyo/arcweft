@@ -46,3 +46,24 @@ deno task serve
 ```
 
 Open `http://127.0.0.1:4173/index.html` in Chrome with WebGPU enabled.
+
+## Native/Web Pixel Parity
+
+From the repository root:
+
+```bash
+cargo +nightly -Zscript tools/capture-webgpu-native-frame.rs --output target/webgpu-parity/native.png --visual-time-millis 160
+```
+
+Then from this directory:
+
+```bash
+$env:ARW_WEB_PARITY_DIR = (Resolve-Path ..\target\webgpu-parity).Path
+npm test
+```
+
+Compare the two captures:
+
+```bash
+imq compare target/webgpu-parity/native.png target/webgpu-parity/web.png --format json --output target/webgpu-parity/imq-report.json
+```

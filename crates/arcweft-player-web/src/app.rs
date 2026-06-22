@@ -472,8 +472,18 @@ fn key_label(key: &Key) -> String {
 }
 
 fn now_millis() -> f64 {
-    web_sys::window()
-        .and_then(|window| window.performance())
+    let Some(window) = web_sys::window() else {
+        return js_sys::Date::now();
+    };
+    if let Ok(now_hook) = js_sys::Reflect::get(&window, &JsValue::from_str("__arcweftNowMillis"))
+        && now_hook.is_function()
+        && let Ok(value) = js_sys::Function::from(now_hook).call0(&JsValue::NULL)
+        && let Some(millis) = value.as_f64()
+    {
+        return millis;
+    }
+    window
+        .performance()
         .map_or_else(js_sys::Date::now, |performance| performance.now())
 }
 

@@ -1,4 +1,5 @@
 import { createReadStream } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { open } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join, normalize } from "node:path";
@@ -106,8 +107,11 @@ function collectConsoleErrors(page) {
   return errors;
 }
 
-async function openReady(browser, baseUrl) {
+async function openReady(browser, baseUrl, options = {}) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  if (options.deterministicClock) {
+    await installDeterministicClock(page);
+  }
   const errors = collectConsoleErrors(page);
   await page.goto(`${baseUrl}/index.html`);
   expect(await page.evaluate(() => Boolean(navigator.gpu)), "navigator.gpu is unavailable");
@@ -147,6 +151,16 @@ async function openReady(browser, baseUrl) {
     throw new Error(`${error.message}\nstate=${JSON.stringify(state)}`);
   }
   return { page, errors };
+}
+
+async function installDeterministicClock(page) {
+  await page.addInitScript(() => {
+    let now = 0;
+    globalThis.__arcweftNowMillis = () => {
+      now = Math.min(now + 16, 160);
+      return now;
+    };
+  });
 }
 
 async function assertFrameObservation(page) {
@@ -200,7 +214,9 @@ async function main() {
 
   try {
     await runSmoke("dialogue and choice are WebGPU canvas content, not DOM game UI", async () => {
-      const { page, errors } = await openReady(browser, baseUrl);
+      const { page, errors } = await openReady(browser, baseUrl, {
+        deterministicClock: Boolean(process.env.ARW_WEB_PARITY_DIR),
+      });
       try {
         expect(await page.locator("canvas#arcweft-canvas").isVisible(), "canvas is not visible");
         expect(await page.locator("button").count() === 0, "DOM button renderer is present");
@@ -209,6 +225,7 @@ async function main() {
           .count();
         expect(domText === 0, "DOM game text renderer is present");
         expect(errors.length === 0, `console errors: ${errors.join("\n")}`);
+        await writeCanvasParityScreenshot(page);
       } finally {
         await page.close();
       }
@@ -257,6 +274,7 @@ async function main() {
 
     await runSmoke("missing WebGPU produces a structured fatal bootstrap error", async () => {
       const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+      await installDeterministicClock(page);
       try {
         await page.addInitScript(() => {
           Object.defineProperty(Navigator.prototype, "gpu", {
@@ -280,6 +298,17 @@ async function main() {
     await browser.close();
     await closeServer(server);
   }
+}
+
+async function writeCanvasParityScreenshot(page) {
+  const directory = process.env.ARW_WEB_PARITY_DIR;
+  if (!directory) {
+    return;
+  }
+  await mkdir(directory, { recursive: true });
+  await page.locator("#arcweft-canvas").screenshot({
+    path: join(directory, "web.png"),
+  });
 }
 
 await main().catch((error) => {

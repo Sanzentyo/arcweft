@@ -1,12 +1,6 @@
 use arcweft_bundle::ArcweftBundle;
-use arcweft_player_web::images::BrowserImageCatalog;
+use arcweft_player_web::parity::{WebGpuParityFrameOptions, prepare_bundle_parity_frame};
 use arcweft_player_web::report::{WebFrameBounds, WebFrameObservationReport, WebFrameViewport};
-use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, InteractionVisualState, RenderChoiceItem, RenderDialogue, RenderPreferences,
-    RenderScene, RenderViewport, SharedFramePlanner,
-};
-use arcweft_runtime_driver::clock::RuntimeClockStep;
-use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions, BundleStepInput};
 
 #[test]
 fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
@@ -99,63 +93,7 @@ fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
 fn demo_frame_report() -> WebFrameObservationReport {
     let bundle =
         ArcweftBundle::from_json_slice(include_bytes!("../../../web/demo.awfb")).expect("bundle");
-    let mut session =
-        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session");
-    let images = BrowserImageCatalog::from_bundle(&bundle).expect("images");
-
-    let mut last_step = None;
-    for tick in 1..=16 {
-        let dt_millis = u32::try_from(tick * 16).expect("test clock fits u32");
-        let clock = RuntimeClockStep::from_millis(tick, dt_millis).expect("clock");
-        let step = session.step_with_clock(clock, BundleStepInput::default());
-        let ready = step.presentation.choices.len() == 2 && step.presentation.images.len() == 4;
-        last_step = Some(step);
-        if ready {
-            break;
-        }
-    }
-    let presentation = &last_step.expect("step").presentation;
-    let viewport = RenderViewport {
-        logical_width: 1280.0,
-        logical_height: 720.0,
-        physical_width: 1280,
-        physical_height: 720,
-        scale_factor: 1.0,
-    };
-    let scene = RenderScene {
-        dialogue: presentation
-            .dialogue
-            .as_ref()
-            .map(|dialogue| RenderDialogue {
-                speaker: dialogue.callee.clone(),
-                text: dialogue.text.clone(),
-            }),
-        choices: presentation
-            .choices
-            .iter()
-            .map(|choice| RenderChoiceItem {
-                id: choice.id.clone(),
-                label: choice.label.clone(),
-            })
-            .collect(),
-        images: images
-            .render_images(&presentation.images, 32)
-            .expect("render images"),
-        viewport,
-        preferences: RenderPreferences::default(),
-        interaction: InteractionVisualState::default(),
-        choice_scroll: ChoiceScroll::default(),
-    };
-    let mut prepared = SharedFramePlanner::prepare(&scene).expect("frame");
-    let focused = prepared.first_choice_target();
-    prepared = SharedFramePlanner::prepare(&RenderScene {
-        interaction: InteractionVisualState {
-            focused,
-            hovered: None,
-            pressed: None,
-        },
-        ..scene
-    })
-    .expect("focused frame");
+    let prepared = prepare_bundle_parity_frame(&bundle, WebGpuParityFrameOptions::default())
+        .expect("parity frame");
     WebFrameObservationReport::from_prepared_frame(&prepared)
 }

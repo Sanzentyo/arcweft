@@ -8,5 +8,6 @@
 mod convert;
 
 pub mod geometry;
+pub mod offscreen;
 pub mod renderer;
 pub mod sample;
