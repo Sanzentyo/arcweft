@@ -828,7 +828,8 @@ fn collect_line_effect_static_image_asset_refs(effect: &LineEffectRequest) -> Ve
         | LineEffectRequest::Close(_)
         | LineEffectRequest::Select(_)
         | LineEffectRequest::Break { .. }
-        | LineEffectRequest::Continue { .. } => Vec::new(),
+        | LineEffectRequest::Continue { .. }
+        | LineEffectRequest::Audio(_) => Vec::new(),
     }
 }
 

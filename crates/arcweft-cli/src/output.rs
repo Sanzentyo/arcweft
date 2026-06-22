@@ -332,6 +332,7 @@ fn effect_label(effect: &LineEffectRequest) -> String {
         LineEffectRequest::Select(_) => "select".to_owned(),
         LineEffectRequest::Break { .. } => "break".to_owned(),
         LineEffectRequest::Continue { .. } => "continue".to_owned(),
+        LineEffectRequest::Audio(command) => format!("audio.{}", command.operation_name()),
     }
 }
 

@@ -1358,7 +1358,7 @@ fn assert_native_vertical_lr_ruby_text_combine_report(json: &serde_json::Value) 
         .iter()
         .find(|object| object["role"] == "dialogue_textbox")
         .expect("textbox object is observed");
-    let text_runs = textbox["rich_text"]["display_map"]["text_runs"]
+    let text_runs = observed_object_rich_text_frame(textbox)["display_map"]["text_runs"]
         .as_array()
         .expect("text runs are reported");
     assert!(
@@ -2551,7 +2551,7 @@ flow @flow.main main {
         .iter()
         .find(|object| object["role"] == "dialogue_textbox")
         .expect("textbox object is observed");
-    let run = textbox["rich_text"]["display_map"]["text_runs"]
+    let run = observed_object_rich_text_frame(textbox)["display_map"]["text_runs"]
         .as_array()
         .unwrap()
         .first()
@@ -3158,7 +3158,7 @@ flow @flow.main main {
         .iter()
         .find(|object| object["role"] == "dialogue_textbox")
         .expect("textbox object is observed");
-    let run = textbox["rich_text"]["display_map"]["text_runs"]
+    let run = observed_object_rich_text_frame(textbox)["display_map"]["text_runs"]
         .as_array()
         .unwrap()
         .first()
@@ -5030,7 +5030,7 @@ flow @flow.main main {
         .iter()
         .find(|object| object["role"] == "dialogue_textbox")
         .expect("textbox object is observed");
-    let run = textbox["rich_text"]["display_map"]["text_runs"]
+    let run = observed_object_rich_text_frame(textbox)["display_map"]["text_runs"]
         .as_array()
         .unwrap()
         .first()

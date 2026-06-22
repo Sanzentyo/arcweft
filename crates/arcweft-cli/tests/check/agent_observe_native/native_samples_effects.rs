@@ -9,7 +9,7 @@ fn agent_observe_native_renderer_reports_windows_fonts_sample_vertical_rl_geomet
         "縦書きの見本。吾輩は猫である。ABC 123 2026。春夏秋冬、朝昼夕夜、天地左右。",
     );
     assert_eq!(run["entity"], "sen.say");
-    assert_eq!(run["rich_text"]["line"], "say.windows_fonts.001");
+    assert_eq!(observed_object_rich_text_frame(run)["line"], "say.windows_fonts.001");
     assert_eq!(run["rich_text_ref"]["range"]["start"], 0);
     assert_eq!(run["rich_text_ref"]["range"]["end"], 105);
     assert!(
@@ -44,10 +44,10 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
         .unwrap()
         .iter()
         .find(|object| {
-            object["role"] == "dialogue_textbox" && object["rich_text"]["line"] == "say.full.005"
+            object["role"] == "dialogue_textbox" && observed_object_rich_text_frame(object)["line"] == "say.full.005"
         })
         .expect("target textbox object is observed");
-    let vertical_rl_display_run = textbox["rich_text"]["display_map"]["text_runs"]
+    let vertical_rl_display_run = observed_object_rich_text_frame(textbox)["display_map"]["text_runs"]
         .as_array()
         .unwrap()
         .iter()
@@ -61,7 +61,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
     );
     let vertical_rl = find_rich_text_run_object(&json, "吾輩は猫である。ABC 123 2026");
     assert_eq!(vertical_rl["entity"], "bob.say");
-    assert_eq!(vertical_rl["rich_text"]["line"], "say.full.005");
+    assert_eq!(observed_object_rich_text_frame(vertical_rl)["line"], "say.full.005");
     assert_eq!(vertical_rl["rich_text_ref"]["range"]["start"], 27);
     assert_eq!(vertical_rl["rich_text_ref"]["range"]["end"], 63);
     assert!(
@@ -78,7 +78,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
         "glyph_cluster"
     );
     assert_eq!(first_vertical_cluster["rich_text_ref"]["source"], "text");
-    assert_eq!(first_vertical_cluster["rich_text"]["line"], "say.full.005");
+    assert_eq!(observed_object_rich_text_frame(first_vertical_cluster)["line"], "say.full.005");
     assert_eq!(first_vertical_cluster["bbox"]["width"], 30);
     assert_eq!(first_vertical_cluster["bbox"]["height"], 30);
     assert!(
@@ -114,7 +114,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
     );
 
     let vertical_lr = find_rich_text_run_object(&json, "縦LR");
-    assert_eq!(vertical_lr["rich_text"]["line"], "say.full.005");
+    assert_eq!(observed_object_rich_text_frame(vertical_lr)["line"], "say.full.005");
     assert_eq!(vertical_lr["rich_text_ref"]["range"]["start"], 66);
     assert_eq!(vertical_lr["rich_text_ref"]["range"]["end"], 71);
     assert!(
@@ -251,7 +251,10 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
     }
 
     let combo_run = find_rich_text_run_object(&json, "重ね掛けtypewriter");
-    assert_eq!(combo_run["rich_text"]["line"], "say.effects.reveal");
+    assert_eq!(
+        observed_object_rich_text_frame(combo_run)["line"],
+        "say.effects.reveal"
+    );
     for effect in ["typewriter", "wave", "shake", "sparkle"] {
         assert_rich_text_run_object_has_effect(combo_run, effect);
     }
@@ -926,7 +929,10 @@ fn assert_full_grammar_typewriter_capture_step_readback(
     json: &serde_json::Value,
 ) {
     let typewriter_run = find_rich_text_run_object(json, "typewriter");
-    assert_eq!(typewriter_run["rich_text"]["line"], "say.full.005");
+    assert_eq!(
+        observed_object_rich_text_frame(typewriter_run)["line"],
+        "say.full.005"
+    );
     let object_id = typewriter_run["id"]
         .as_str()
         .expect("typewriter run object id is reported");
@@ -1028,7 +1034,10 @@ fn assert_full_grammar_animated_effect_readbacks(source_path: &Path, json: &serd
     let dir = temp_dir("agent-observe-full-grammar-animated-effects");
 
     let wave_run = find_rich_text_run_object(json, "wave");
-    assert_eq!(wave_run["rich_text"]["line"], "say.full.005");
+    assert_eq!(
+        observed_object_rich_text_frame(wave_run)["line"],
+        "say.full.005"
+    );
     let wave_object_id = wave_run["id"].as_str().unwrap();
     let wave_early_path = dir.join("full-grammar-wave-time-0125.rgba");
     let wave_late_path = dir.join("full-grammar-wave-time-0375.rgba");
@@ -1059,7 +1068,10 @@ fn assert_full_grammar_animated_effect_readbacks(source_path: &Path, json: &serd
     );
 
     let shake_run = find_rich_text_run_object(json, "shake");
-    assert_eq!(shake_run["rich_text"]["line"], "say.full.005");
+    assert_eq!(
+        observed_object_rich_text_frame(shake_run)["line"],
+        "say.full.005"
+    );
     assert_full_grammar_step_motion_differs(
         source_path,
         &dir,
@@ -1068,7 +1080,10 @@ fn assert_full_grammar_animated_effect_readbacks(source_path: &Path, json: &serd
     );
 
     let sparkle_run = find_rich_text_run_object(json, "custom effect");
-    assert_eq!(sparkle_run["rich_text"]["line"], "say.full.005");
+    assert_eq!(
+        observed_object_rich_text_frame(sparkle_run)["line"],
+        "say.full.005"
+    );
     assert_full_grammar_step_motion_differs(
         source_path,
         &dir,
@@ -1077,7 +1092,10 @@ fn assert_full_grammar_animated_effect_readbacks(source_path: &Path, json: &serd
     );
 
     let host_run = find_rich_text_run_object(json, "host");
-    assert_eq!(host_run["rich_text"]["line"], "say.full.005");
+    assert_eq!(
+        observed_object_rich_text_frame(host_run)["line"],
+        "say.full.005"
+    );
     assert_full_grammar_step_motion_differs(
         source_path,
         &dir,
@@ -1197,7 +1215,10 @@ fn assert_full_grammar_color_captures_differ(
 
 fn assert_full_grammar_soft_glow_shader_readback(source_path: &Path, json: &serde_json::Value) {
     let shader_run = find_rich_text_run_object(json, "shader");
-    assert_eq!(shader_run["rich_text"]["line"], "say.full.006");
+    assert_eq!(
+        observed_object_rich_text_frame(shader_run)["line"],
+        "say.full.006"
+    );
     let object_id = shader_run["id"]
         .as_str()
         .expect("shader run object id is reported");
@@ -1932,7 +1953,7 @@ flow @flow.main main {
         .iter()
         .find(|object| object["role"] == "dialogue_textbox")
         .expect("textbox object");
-    let host_events = object["rich_text"]["host_events"]
+    let host_events = observed_object_rich_text_frame(object)["host_events"]
         .as_array()
         .expect("host events array");
     assert!(
@@ -2146,7 +2167,7 @@ flow @flow.main main {
         .expect("textbox object is observed");
     assert_eq!(textbox["text"], "BeforeAfter");
     assert!(
-        textbox["rich_text"]["display_map"]["controls"]
+        observed_object_rich_text_frame(textbox)["display_map"]["controls"]
             .as_array()
             .unwrap()
             .iter()

@@ -152,7 +152,7 @@ fn agent_mcp_stdio_observes_profile_selected_dialogue_defaults() {
         .iter()
         .find(|object| object["role"] == "dialogue_textbox")
         .unwrap_or_else(|| panic!("MCP profile observation should include textbox: {session}"));
-    let contributions = textbox["rich_text"]["style_contributions"]
+    let contributions = observed_object_rich_text_frame(textbox)["style_contributions"]
         .as_array()
         .expect("MCP textbox style contributions are reported");
     assert!(contributions.iter().any(|contribution| {

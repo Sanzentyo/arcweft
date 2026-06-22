@@ -414,6 +414,7 @@ fn observation_report_serializes_stable_snake_case_enums() {
         "glyph_transform"
     );
     assert_eq!(json["objects"][0]["content"]["kind"], "rich_text");
+    assert!(json["objects"][0].get("rich_text").is_none());
     assert_eq!(
         json["objects"][0]["content"]["frame"]["style_contributions"][0]["path"],
         "rich_text.ruby.size"

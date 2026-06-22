@@ -171,14 +171,12 @@ fn find_textbox_object_by_rich_text_line<'a>(
 }
 
 fn observed_object_rich_text_frame(object: &serde_json::Value) -> &serde_json::Value {
-    if object
-        .get("rich_text")
-        .is_some_and(|rich_text| !rich_text.is_null())
-    {
-        &object["rich_text"]
-    } else {
-        &object["content"]["frame"]
-    }
+    assert_eq!(object["content"]["kind"], "rich_text");
+    assert!(
+        object.get("rich_text").is_none(),
+        "observed rich-text objects must use content.frame, not root rich_text: {object}"
+    );
+    &object["content"]["frame"]
 }
 
 fn rich_text_text_runs(textbox: &serde_json::Value) -> &[serde_json::Value] {
@@ -916,7 +914,7 @@ fn find_rich_text_page_object_by_line<'a>(
         .iter()
         .find(|object| {
             object["role"] == "rich_text_page"
-                && object["rich_text"]["line"] == line
+                && observed_object_rich_text_frame(object)["line"] == line
                 && object["rich_text_ref"]["page"].as_u64().unwrap_or(0) == page
         })
         .unwrap_or_else(|| {
@@ -935,7 +933,7 @@ fn find_rich_text_line_object_by_line<'a>(
         .iter()
         .find(|object| {
             object["role"] == "rich_text_line"
-                && object["rich_text"]["line"] == line
+                && observed_object_rich_text_frame(object)["line"] == line
                 && object["rich_text_ref"]["index"].as_u64() == Some(index)
         })
         .unwrap_or_else(|| {
@@ -950,7 +948,7 @@ fn first_text_run_presentation_layout(report: &serde_json::Value) -> &serde_json
         .iter()
         .find(|object| object["role"] == "dialogue_textbox")
         .unwrap_or_else(|| panic!("textbox object should be observed: {report}"));
-    let run = textbox["rich_text"]["display_map"]["text_runs"]
+    let run = observed_object_rich_text_frame(textbox)["display_map"]["text_runs"]
         .as_array()
         .expect("text runs are reported")
         .first()

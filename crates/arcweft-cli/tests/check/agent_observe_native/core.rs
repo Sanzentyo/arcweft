@@ -1448,7 +1448,7 @@ fn agent_observe_profile_selected_dialogue_defaults_drive_native_debug_output() 
     );
 
     let textbox = find_textbox_object(&json);
-    let base_styles = textbox["rich_text"]["base_styles"]
+    let base_styles = observed_object_rich_text_frame(textbox)["base_styles"]
         .as_array()
         .expect("base styles are reported");
     assert!(
@@ -1466,7 +1466,7 @@ fn agent_observe_profile_selected_dialogue_defaults_drive_native_debug_output() 
         "mobile dialogue defaults should select the 24px base text size: {textbox}"
     );
 
-    let contributions = textbox["rich_text"]["style_contributions"]
+    let contributions = observed_object_rich_text_frame(textbox)["style_contributions"]
         .as_array()
         .expect("style contributions are reported");
     assert!(contributions.iter().any(|contribution| {
@@ -1593,7 +1593,7 @@ flow @flow.main main {
         serde_json::from_slice(&output.stdout).expect("agent observe controls output is JSON");
     let object = &json["objects"][0];
     assert_eq!(object["text"], "HotCool");
-    let runs = object["rich_text"]["display_map"]["text_runs"]
+    let runs = observed_object_rich_text_frame(object)["display_map"]["text_runs"]
         .as_array()
         .expect("text runs are listed");
     let hot = runs
@@ -1615,7 +1615,7 @@ flow @flow.main main {
         cool["styles"].as_array().unwrap().is_empty(),
         "reset should clear active inline styles for following display runs"
     );
-    let controls = object["rich_text"]["display_map"]["controls"]
+    let controls = observed_object_rich_text_frame(object)["display_map"]["controls"]
         .as_array()
         .expect("control markers are listed");
     assert!(
@@ -1640,7 +1640,7 @@ flow @flow.main main {
             .any(|control| control["control"]["kind"] == "page")
     );
     assert!(
-        object["rich_text"]["display_map"]["host_events"]
+        observed_object_rich_text_frame(object)["display_map"]["host_events"]
             .as_array()
             .unwrap()
             .iter()
