@@ -2,18 +2,24 @@ use super::{
     Engine, FlowCursor, FlowEvent, FlowExit, FlowFiberStatus, FlowRuntimeId, LineEffectRequest,
     RuntimeStepInput, RuntimeStepOutput, run_line_task_group_for_input,
 };
+use crate::pure::RuntimeCallBackend;
 
 impl Engine {
     pub(super) fn step_line_only(
         &mut self,
         input: &RuntimeStepInput,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) {
         let Some(group) = self.plan.line_task_groups.get(self.fiber.line_cursor) else {
             self.finish(output);
             return;
         };
-        output.merge(run_line_task_group_for_input(group, input));
+        self.merge_step_output(
+            run_line_task_group_for_input(group, input),
+            output,
+            pure_backend,
+        );
         self.fiber.line_cursor += 1;
         if self.fiber.line_cursor >= self.plan.line_task_groups.len() {
             self.finish(output);

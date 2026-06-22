@@ -1,0 +1,54 @@
+[package]
+name = "arcweft-audio-device-cpal"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+default = ["output"]
+output = []
+native-microphone = []
+web-output = ["cpal/wasm-bindgen", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:web-sys"]
+web-audioworklet = ["web-output", "cpal/audioworklet"]
+web-microphone = ["dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:web-sys"]
+
+[dependencies]
+arcweft-audio-core = { path = "../arcweft-audio-core" }
+arcweft-audio-mixer = { path = "../arcweft-audio-mixer" }
+arcweft-interaction-model.workspace = true
+cpal = { workspace = true, default-features = false }
+rtrb.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = { workspace = true, optional = true }
+wasm-bindgen = { workspace = true, optional = true }
+wasm-bindgen-futures = { workspace = true, optional = true }
+web-sys = { workspace = true, optional = true, features = [
+    "AudioContext",
+    "AudioDestinationNode",
+    "AudioNode",
+    "AudioParam",
+    "AudioWorklet",
+    "AudioWorkletNode",
+    "AudioWorkletNodeOptions",
+    "GainNode",
+    "MediaDevices",
+    "MediaStream",
+    "MediaStreamAudioSourceNode",
+    "MediaStreamConstraints",
+    "MediaStreamTrack",
+    "MessageEvent",
+    "MessagePort",
+    "Navigator",
+    "Window",
+] }
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true

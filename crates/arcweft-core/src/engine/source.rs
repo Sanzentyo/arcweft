@@ -119,15 +119,17 @@ impl Engine {
                 Ok(value) => self.push_source_item(source, value.into(), output),
                 Err(error) => Self::diagnose_runtime_error(error, output),
             },
-            SourceOp::Effect(effect) => output.effects.line.push(effect.clone()),
-            SourceOp::SignalWrite(write) => output
-                .effects
-                .line
-                .push(LineEffectRequest::SignalWrite(write.clone())),
-            SourceOp::Log(log) => output
-                .effects
-                .line
-                .push(LineEffectRequest::Log(log.clone())),
+            SourceOp::Effect(effect) => {
+                self.emit_line_effect(effect.clone(), output, pure_backend);
+            }
+            SourceOp::SignalWrite(write) => self.emit_line_effect(
+                LineEffectRequest::SignalWrite(write.clone()),
+                output,
+                pure_backend,
+            ),
+            SourceOp::Log(log) => {
+                self.emit_line_effect(LineEffectRequest::Log(log.clone()), output, pure_backend);
+            }
             SourceOp::Close(target) => self.close_source(target, output),
             SourceOp::Noop => {}
         }

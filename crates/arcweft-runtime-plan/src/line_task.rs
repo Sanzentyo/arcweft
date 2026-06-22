@@ -720,6 +720,11 @@ fn effect_accesses(effect: &LineEffectRequest) -> Vec<ResourceAccess> {
             ResourceAccessMode::Append,
             ConflictPolicy::Append,
         )],
+        LineEffectRequest::Audio(_) => vec![resource_access(
+            "audio".to_owned(),
+            ResourceAccessMode::Append,
+            ConflictPolicy::Append,
+        )],
         LineEffectRequest::Out(_) => vec![resource_access(
             "line:out".to_owned(),
             ResourceAccessMode::Write,

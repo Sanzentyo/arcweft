@@ -1449,3 +1449,22 @@ flow @flow.assertions assertions {
                 && assertion.profile == RuntimeAssertionProfile::DebugOnly
     ));
 }
+
+#[test]
+fn runtime_plan_lowers_audio_call_to_typed_audio_effect() {
+    let tree = parse_ok(
+        r"
+flow @flow.audio audio {
+    audio.play(@voice.opening, @asset.voice.opening, @bus.master, fade_in_millis = 120u64)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("audio call fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("audio call lowers to runtime plan");
+    let [FlowOp::Effect(LineEffectRequest::Audio(command))] = plan.flows[0].ops.as_slice() else {
+        panic!("expected typed audio effect, got {:?}", plan.flows[0].ops);
+    };
+
+    assert_eq!(command.operation_name(), "play");
+}

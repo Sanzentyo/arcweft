@@ -82,7 +82,11 @@ impl Engine {
                         FlowFiberStatus::Failed(format!("missing line task group {task_group}"));
                     return;
                 };
-                output.merge(run_line_task_group_for_input(group, input));
+                self.merge_step_output(
+                    run_line_task_group_for_input(group, input),
+                    output,
+                    pure_backend,
+                );
                 if !self.apply_control_effects(output) {
                     self.advance_if_needed(next_op_index);
                 }
@@ -106,7 +110,7 @@ impl Engine {
                     need: target.need.clone(),
                     task: target.task.clone(),
                 });
-                output.effects.line.extend(pending);
+                self.emit_line_effects(pending, output, pure_backend);
                 let Some(task) = self.await_task_spec(&target, output, pure_backend) else {
                     return;
                 };
@@ -122,7 +126,7 @@ impl Engine {
                 target,
                 pending,
             } => {
-                output.effects.line.extend(pending);
+                self.emit_line_effects(pending, output, pure_backend);
                 self.start_await_many_state(
                     binding,
                     target,
@@ -384,7 +388,7 @@ impl Engine {
                 }
             }
             FlowOp::Effect(effect) => {
-                output.effects.line.push(effect);
+                self.emit_line_effect(effect, output, pure_backend);
                 if !self.apply_control_effects(output) {
                     self.advance_if_needed(next_op_index);
                 }

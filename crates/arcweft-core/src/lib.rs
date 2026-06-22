@@ -1,4 +1,5 @@
 pub mod aot;
+pub mod audio;
 pub mod bytecode;
 pub mod effect;
 pub mod engine;

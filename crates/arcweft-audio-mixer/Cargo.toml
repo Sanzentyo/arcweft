@@ -1,0 +1,19 @@
+[package]
+name = "arcweft-audio-mixer"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+arcweft-audio-core = { path = "../arcweft-audio-core" }
+arcweft-interaction-model.workspace = true
+thiserror.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true

@@ -194,6 +194,16 @@ impl RuntimeUInt {
         self.try_sum_as_i64()
     }
 
+    pub fn try_into_u64(self) -> Option<u64> {
+        match self {
+            Self::U8(value) => Some(u64::from(value)),
+            Self::U16(value) => Some(u64::from(value)),
+            Self::U32(value) => Some(u64::from(value)),
+            Self::U64(value) | Self::USize(value) => Some(value),
+            Self::U128(value) => u64::try_from(value).ok(),
+        }
+    }
+
     pub fn try_into_i32(self) -> Option<i32> {
         match self {
             Self::U8(value) => Some(i32::from(value)),
@@ -633,6 +643,38 @@ impl RuntimeValue {
 
     pub fn tensor_f64(value: DenseTensorF64) -> Self {
         Self::TensorF64(value)
+    }
+
+    pub fn as_identifier(&self) -> Option<&str> {
+        match self {
+            Self::EntityRef(value) | Self::String(value) => Some(value.as_str()),
+            _ => None,
+        }
+    }
+
+    pub const fn as_bool(&self) -> Option<bool> {
+        match self {
+            Self::Bool(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    pub fn try_i64(&self) -> Option<i64> {
+        match self {
+            Self::Int(value) => value.try_into_i64(),
+            Self::UInt(value) => value.try_into_i64(),
+            _ => None,
+        }
+    }
+
+    pub fn try_u64(&self) -> Option<u64> {
+        match self {
+            Self::UInt(value) => value.try_into_u64(),
+            Self::Int(value) => value
+                .try_into_i64()
+                .and_then(|value| u64::try_from(value).ok()),
+            _ => None,
+        }
     }
 }
 
@@ -1145,6 +1187,13 @@ pub enum RuntimeEvalError {
     BreakValueOutsideValueLoop,
     #[error("loop control `{0}` reached a non-loop runtime context")]
     MisplacedLoopControl(&'static str),
+    #[error("audio command error: {0}")]
+    Audio(String),
+    #[error("audio command expected {expected}, found {actual}")]
+    AudioValue {
+        expected: &'static str,
+        actual: String,
+    },
 }
 
 impl RuntimePayload {

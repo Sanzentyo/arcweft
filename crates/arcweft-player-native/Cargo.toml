@@ -14,11 +14,15 @@ dev-source = ["dep:arcweft-compiler"]
 [dependencies]
 arcweft-compiler = { path = "../arcweft-compiler", optional = true }
 arcweft-adapter-desktop = { path = "../arcweft-adapter-desktop" }
+arcweft-audio-codec = { path = "../arcweft-audio-codec" }
+arcweft-audio-core = { path = "../arcweft-audio-core" }
+arcweft-audio-device-cpal = { path = "../arcweft-audio-device-cpal" }
 arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-desktop-contract = { path = "../arcweft-desktop-contract" }
 arcweft-desktop-native = { path = "../arcweft-desktop-native" }
 arcweft-host-adapter = { path = "../arcweft-host-adapter" }
+arcweft-interaction-model = { path = "../arcweft-interaction-model" }
 arcweft-render-native = { path = "../arcweft-render-native" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-runtime-host = { path = "../arcweft-runtime-host" }

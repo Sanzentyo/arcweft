@@ -13,6 +13,7 @@ arcweft-core = { path = "../arcweft-core" }
 arcweft-host-adapter = { path = "../arcweft-host-adapter" }
 arcweft-id = { path = "../arcweft-id" }
 arcweft-image = { path = "../arcweft-image" }
+arcweft-interaction-model = { path = "../arcweft-interaction-model" }
 arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-runtime-accelerator = { path = "../arcweft-runtime-accelerator" }
 arcweft-runtime-scheduler = { path = "../arcweft-runtime-scheduler" }

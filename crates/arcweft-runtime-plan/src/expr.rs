@@ -1253,6 +1253,9 @@ fn runtime_call(expr: &Expr) -> RuntimeCall {
 /// Lowers ordinary call syntax into the canonical runtime effect request when
 /// the callee names a built-in effect namespace such as `log.info`.
 pub(crate) fn runtime_call_effect(expr: &Expr) -> LineEffectRequest {
+    if let Some(effect) = crate::audio::lower_audio_call(expr) {
+        return effect;
+    }
     let call = runtime_call(expr);
     if let Some(effect) = runtime_control_call(&call) {
         return effect;

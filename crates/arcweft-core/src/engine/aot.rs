@@ -80,6 +80,7 @@ impl Engine {
             source_events_emitted: 0,
             stream_events_emitted: 0,
             line_effects: output.effects.line.len(),
+            audio_commands: output.requests.audio.len(),
             diagnostics: output.diagnostics.len(),
         };
         (self.step_result(output, options, stats), aot_fast_path_ops)
@@ -136,7 +137,7 @@ impl Engine {
                 }
             }
             AotLinearOp::Effect(effect) => {
-                output.effects.line.push(effect.clone());
+                self.emit_line_effect(effect.clone(), output, pure_backend);
                 self.advance_aot_linear_cursor(next_op_index);
             }
             AotLinearOp::EnterScope => {

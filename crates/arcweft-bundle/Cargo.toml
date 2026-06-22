@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
+arcweft-audio-core = { workspace = true }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-data = { workspace = true }
 arcweft-render-text = { path = "../arcweft-render-text" }
@@ -20,6 +21,9 @@ serde_json.workspace = true
 thiserror.workspace = true
 toml = { workspace = true, optional = true }
 yaml-rust2 = { workspace = true, optional = true }
+
+[dev-dependencies]
+arcweft-interaction-model = { path = "../arcweft-interaction-model" }
 
 [features]
 default = [

@@ -14,6 +14,7 @@ use arcweft_core::step::{
 };
 use arcweft_core::value::RuntimeBinding;
 use arcweft_host_adapter::HostCallPolicy;
+use arcweft_interaction_model::audio::AudioCommandEnvelope;
 use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureAcceleratorConfig};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -134,6 +135,7 @@ pub struct BundleRunnerStepSummary {
     pub fiber_status: String,
     pub executed_ops: usize,
     pub task_requests: usize,
+    pub audio_commands: usize,
     pub diagnostics: Vec<String>,
     pub line_effects: Vec<String>,
     #[serde(skip)]
@@ -477,7 +479,8 @@ fn run_runtime_steps_with_executor(
             values,
             step_options(mode, max_ops),
         );
-        let (summary, task_requests) = BundleRunnerStepSummary::from_result(step_index, result);
+        let (summary, task_requests, _audio_commands) =
+            BundleRunnerStepSummary::from_result(step_index, result);
         let done = matches!(
             executor.fiber().status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
@@ -591,7 +594,11 @@ impl BundleRunnerStepSummary {
     fn from_result(
         index: usize,
         result: RuntimeStepResult,
-    ) -> (Self, Vec<arcweft_core::task::TaskSpec>) {
+    ) -> (
+        Self,
+        Vec<arcweft_core::task::TaskSpec>,
+        Vec<AudioCommandEnvelope>,
+    ) {
         let RuntimeStepResult {
             mut output,
             fiber_status,
@@ -599,6 +606,7 @@ impl BundleRunnerStepSummary {
             stats,
         } = result;
         let task_requests = std::mem::take(&mut output.requests.tasks);
+        let audio_commands = output.requests.audio;
         let flow_events = std::mem::take(&mut output.flow_events);
         (
             Self {
@@ -607,6 +615,7 @@ impl BundleRunnerStepSummary {
                 fiber_status: fiber_status.status_label(FlowStatusLabelStyle::Runtime),
                 executed_ops: stats.executed_ops,
                 task_requests: task_requests.len(),
+                audio_commands: audio_commands.len(),
                 diagnostics: output
                     .diagnostics
                     .into_iter()
@@ -616,6 +625,7 @@ impl BundleRunnerStepSummary {
                 flow_events,
             },
             task_requests,
+            audio_commands,
         )
     }
 }
@@ -741,6 +751,7 @@ fn effect_label(effect: &LineEffectRequest) -> String {
         LineEffectRequest::DropHandle { key } => format!("drop {key}"),
         LineEffectRequest::Wait(target) => format!("wait {target:?}"),
         LineEffectRequest::Call(call) => format!("call {}", call.callee),
+        LineEffectRequest::Audio(command) => format!("audio.{}", command.operation_name()),
         LineEffectRequest::Log(log) => format!("log.{}", log.level),
         LineEffectRequest::SignalWrite(write) => format!("signal.set {}", write.target),
         LineEffectRequest::MetricWrite(write) => format!("metric.set {}", write.target),

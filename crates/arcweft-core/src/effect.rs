@@ -1,3 +1,4 @@
+use crate::audio::RuntimeAudioCommand;
 use crate::line_task::LineOutRequest;
 use crate::time::LogicalDuration;
 use serde::{Deserialize, Serialize};
@@ -12,6 +13,7 @@ pub enum LineEffectRequest {
         key: String,
     },
     Wait(RuntimeWaitTarget),
+    Audio(Box<RuntimeAudioCommand>),
     Call(RuntimeCall),
     Log(RuntimeLog),
     SignalWrite(RuntimeAssignment),
@@ -37,6 +39,19 @@ pub enum LineEffectRequest {
     Continue {
         label: Option<String>,
     },
+}
+
+impl LineEffectRequest {
+    pub const fn is_audio(&self) -> bool {
+        matches!(self, Self::Audio(_))
+    }
+
+    pub fn audio(&self) -> Option<&RuntimeAudioCommand> {
+        match self {
+            Self::Audio(command) => Some(command.as_ref()),
+            _ => None,
+        }
+    }
 }
 
 /// Runtime assertion request emitted by ordinary `assert(...)` calls.

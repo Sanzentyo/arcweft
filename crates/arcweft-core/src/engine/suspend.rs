@@ -33,7 +33,7 @@ impl Engine {
                 true
             }
             FlowFiberStatus::Choice(state) => {
-                self.resume_choice_state(state, input, output);
+                self.resume_choice_state(state, input, output, pure_backend);
                 true
             }
             status @ (FlowFiberStatus::Running
@@ -112,6 +112,7 @@ impl Engine {
         mut state: ChoiceState,
         input: &RuntimeStepInput,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) {
         let Some(position) = state
             .options
@@ -127,9 +128,9 @@ impl Engine {
             id: state.id,
             option: selected,
         });
-        output.effects.line.extend(option.effects);
+        self.emit_line_effects(option.effects, output, pure_backend);
         if let Some(out) = option.out {
-            output.effects.line.push(LineEffectRequest::Out(out));
+            self.emit_line_effect(LineEffectRequest::Out(out), output, pure_backend);
         }
         if let Some(target) = option.target {
             self.goto(&target, output);

@@ -17,7 +17,7 @@ use arcweft_core::step::{
 };
 use arcweft_core::task::{CancelScopeId, LogicalEpoch, TaskEvent, TaskSequence};
 use arcweft_core::value::RuntimeBinding;
-use arcweft_interaction_model::audio::AudioEvent;
+use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioEvent};
 use arcweft_interaction_model::id::Identifier;
 use arcweft_interaction_model::input::{
     InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent,
@@ -73,6 +73,7 @@ pub struct BundleSessionStep {
     pub flow_events: Vec<FlowEvent>,
     pub line_effects: Vec<LineEffectRequest>,
     pub presentation: BundlePresentationSnapshot,
+    pub audio_commands: Vec<AudioCommandEnvelope>,
     pub requested_tasks: Vec<HostTaskDispatch>,
     pub cancel_scopes: Vec<CancelScopeId>,
     pub source_close: Vec<SourceId>,
@@ -328,6 +329,7 @@ impl BundleSession {
                 }
             })
             .collect();
+        let audio_commands = output.requests.audio;
         let finished = matches!(
             &result.fiber_status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
@@ -349,6 +351,7 @@ impl BundleSession {
             flow_events,
             line_effects,
             presentation: self.presentation.clone(),
+            audio_commands,
             requested_tasks,
             cancel_scopes: output.requests.cancel_scopes,
             source_close: output.requests.source_close,

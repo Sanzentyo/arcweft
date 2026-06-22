@@ -5,6 +5,7 @@ use apache_avro::types::Value as AvroValue;
 #[cfg(feature = "format-avro")]
 use apache_avro::{Reader, Schema, Writer};
 use arcweft_agent_protocol::artifact::AgentArtifactManifest;
+use arcweft_audio_core::graph::AudioGraph;
 use arcweft_core::bytecode::BytecodeProgram;
 #[cfg(feature = "format-yaml")]
 use arcweft_data::{Number, Value};
@@ -21,7 +22,7 @@ use yaml_rust2::yaml::Hash;
 #[cfg(feature = "format-yaml")]
 use yaml_rust2::{Yaml, YamlEmitter, YamlLoader};
 
-pub const ARCWEFT_BUNDLE_SCHEMA_VERSION: u32 = 2;
+pub const ARCWEFT_BUNDLE_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ArcweftBundle {
@@ -40,6 +41,8 @@ pub struct ArcweftBundle {
     pub virtual_files: Vec<BundleVirtualFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub image_assets: Vec<BundleImageAsset>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio: Option<AudioGraph>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub image_objects: Vec<BundleImageObject>,
 }
@@ -244,6 +247,8 @@ pub enum BundleCodecError {
         space: BundleVirtualFileSpace,
         path: String,
     },
+    #[error("bundle audio asset `{asset_id}` references missing asset file {path}")]
+    MissingAudioFile { asset_id: String, path: String },
 }
 
 #[cfg(feature = "format-yaml")]
@@ -357,6 +362,7 @@ impl ArcweftBundle {
             adapter_manifests: Vec::new(),
             virtual_files: Vec::new(),
             image_assets: Vec::new(),
+            audio: None,
             image_objects: Vec::new(),
         }
     }
@@ -409,6 +415,12 @@ impl ArcweftBundle {
             .sort_by(|left, right| left.id.cmp(&right.id));
         self.image_objects
             .dedup_by(|left, right| left.id == right.id);
+        self
+    }
+
+    #[must_use]
+    pub fn with_audio_graph(mut self, graph: AudioGraph) -> Self {
+        self.audio = Some(graph);
         self
     }
 
@@ -646,6 +658,27 @@ impl ArcweftBundle {
                 asset_id: asset.id.clone(),
                 space: asset.file.space,
                 path: asset.file.path.clone(),
+            });
+        };
+        Ok(Some(file.bytes.as_slice()))
+    }
+
+    pub fn audio_asset_bytes(&self, id: &str) -> Result<Option<&[u8]>, BundleCodecError> {
+        let Some(asset) = self
+            .audio
+            .as_ref()
+            .and_then(|graph| graph.assets.iter().find(|asset| asset.id.as_str() == id))
+        else {
+            return Ok(None);
+        };
+        let Some(file) = self
+            .virtual_files
+            .iter()
+            .find(|file| file.space == BundleVirtualFileSpace::Asset && file.path == asset.path)
+        else {
+            return Err(BundleCodecError::MissingAudioFile {
+                asset_id: asset.id.as_str().to_owned(),
+                path: asset.path.clone(),
             });
         };
         Ok(Some(file.bytes.as_slice()))
@@ -971,6 +1004,12 @@ mod tests {
         ids::{PublicId, StableHash},
         verified_effects::VerifiedEffectSummary,
     };
+    use arcweft_audio_core::graph::{
+        AudioAsset, AudioBusDef, AudioDecodeStrategy, AudioFormat, AudioGraph,
+    };
+    use arcweft_interaction_model::audio::{
+        AudioBusId, AudioLoopMode, AudioResourceId, GainDbMilli,
+    };
 
     #[test]
     fn bundle_json_round_trips_without_paths() {
@@ -1113,6 +1152,55 @@ mod tests {
                 path,
             } if asset_id == "asset.bg.room" && path == "bg/room.png"
         ));
+    }
+
+    #[test]
+    fn bundle_audio_graph_round_trips_and_resolves_asset_bytes() {
+        let audio_file = BundleVirtualFile {
+            space: BundleVirtualFileSpace::Asset,
+            path: "audio/opening.wav".to_owned(),
+            bytes: b"wav-bytes".to_vec(),
+        };
+        let master_bus = AudioBusId::new("bus.master").expect("bus id");
+        let bundle = empty_test_bundle()
+            .with_virtual_files([audio_file])
+            .with_audio_graph(AudioGraph {
+                master_bus: master_bus.clone(),
+                assets: vec![AudioAsset {
+                    id: AudioResourceId::new("asset.voice.opening").expect("audio asset id"),
+                    path: "audio/opening.wav".to_owned(),
+                    format: AudioFormat::Wav,
+                    strategy: AudioDecodeStrategy::Preload,
+                    default_loop: AudioLoopMode::None,
+                }],
+                buses: vec![AudioBusDef {
+                    id: master_bus,
+                    parent: None,
+                    gain: GainDbMilli::UNITY,
+                    muted: false,
+                    effects: Vec::new(),
+                }],
+                snapshots: Vec::new(),
+            });
+
+        let bytes = bundle.to_json_bytes().expect("bundle encodes");
+        let json = String::from_utf8(bytes.clone()).expect("json is utf8");
+        assert!(json.contains("\"audio\""));
+        assert!(json.contains("\"format\": \"wav\""));
+        let decoded = ArcweftBundle::from_json_slice(&bytes).expect("bundle decodes");
+
+        assert_eq!(
+            decoded
+                .audio_asset_bytes("asset.voice.opening")
+                .expect("audio bytes resolve"),
+            Some(b"wav-bytes".as_slice())
+        );
+        assert_eq!(
+            decoded
+                .audio_asset_bytes("asset.voice.missing")
+                .expect("unknown audio asset is not an error"),
+            None
+        );
     }
 
     #[test]

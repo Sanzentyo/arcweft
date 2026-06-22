@@ -35,6 +35,7 @@ use crate::value::{
 };
 use std::collections::{BTreeMap, VecDeque};
 pub mod aot;
+pub mod audio;
 pub mod eval;
 pub mod flow;
 pub mod line;
@@ -82,6 +83,8 @@ pub struct Engine {
     pure_helper_i64_call_shapes: Vec<bool>,
     pure_helper_f32_call_shapes: Vec<bool>,
     pure_helper_f64_call_shapes: Vec<bool>,
+    audio_epoch: u64,
+    next_audio_sequence: u64,
 }
 
 struct PureHelperCallShapes {
@@ -409,6 +412,8 @@ impl Engine {
             pure_helper_i64_call_shapes: call_shapes.i64,
             pure_helper_f32_call_shapes: call_shapes.f32,
             pure_helper_f64_call_shapes: call_shapes.f64,
+            audio_epoch: 0,
+            next_audio_sequence: 0,
         }
     }
 
@@ -495,6 +500,7 @@ impl Engine {
             source_events_emitted: output.effects.source_events.len(),
             stream_events_emitted: output.effects.stream_events.len(),
             line_effects: output.effects.line.len(),
+            audio_commands: output.requests.audio.len(),
             diagnostics: output.diagnostics.len(),
         };
         self.step_result(output, options, stats)
@@ -529,7 +535,7 @@ impl Engine {
         if self.fiber.cursor.is_some() {
             self.step_flow(input, output, pure_backend);
         } else {
-            self.step_line_only(input, output);
+            self.step_line_only(input, output, pure_backend);
         }
     }
 
@@ -746,6 +752,7 @@ impl Engine {
 
 fn has_host_requests(output: &RuntimeStepOutput) -> bool {
     !output.requests.tasks.is_empty()
+        || !output.requests.audio.is_empty()
         || !output.requests.cancel_scopes.is_empty()
         || !output.requests.source_close.is_empty()
 }

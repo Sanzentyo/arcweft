@@ -26,6 +26,7 @@ impl RuntimeObservationState {
             LineEffectRequest::EmitEvent(event) => self.events.push(event.clone()),
             LineEffectRequest::RegisterHandle { .. }
             | LineEffectRequest::DropHandle { .. }
+            | LineEffectRequest::Audio(_)
             | LineEffectRequest::Wait(_)
             | LineEffectRequest::Out(_)
             | LineEffectRequest::Return(_)

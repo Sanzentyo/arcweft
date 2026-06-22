@@ -6,7 +6,7 @@ use crate::task::{CancelScopeId, TaskEvent, TaskSpec};
 use crate::time::{LogicalDuration, TickId};
 use crate::value::RuntimeBinding;
 use arcweft_interaction_model::{
-    audio::AudioEvent,
+    audio::{AudioCommandEnvelope, AudioEvent},
     input::{InputEventKind, RoutedInputEvent},
     payload::InteractionPayload,
 };
@@ -58,6 +58,7 @@ pub struct RuntimeEffectBatch {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct HostRequestBatch {
     pub tasks: Vec<TaskSpec>,
+    pub audio: Vec<AudioCommandEnvelope>,
     pub cancel_scopes: Vec<CancelScopeId>,
     pub source_close: Vec<SourceId>,
 }
@@ -84,6 +85,7 @@ pub struct RuntimeStepStats {
     pub source_events_emitted: usize,
     pub stream_events_emitted: usize,
     pub line_effects: usize,
+    pub audio_commands: usize,
     pub diagnostics: usize,
 }
 
@@ -322,6 +324,7 @@ impl RuntimeStepOutput {
             .stream_events
             .extend(other.effects.stream_events);
         self.requests.tasks.extend(other.requests.tasks);
+        self.requests.audio.extend(other.requests.audio);
         self.requests
             .cancel_scopes
             .extend(other.requests.cancel_scopes);

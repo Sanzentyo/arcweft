@@ -1,5 +1,6 @@
 //! Native/headless rich-text player host for Arcweft.
 
+mod native_audio;
 mod window_driver;
 mod windowed;
 
@@ -84,6 +85,8 @@ pub enum NativePlayerError {
     BundleRunner(#[from] arcweft_runtime_host::BundleRunnerError),
     #[error(transparent)]
     NativeWindow(#[from] arcweft_render_native::NativeWindowError),
+    #[error(transparent)]
+    Audio(#[from] native_audio::NativePlayerAudioError),
     #[cfg(feature = "dev-source")]
     #[error("no display frame was produced")]
     NoDisplayFrame,

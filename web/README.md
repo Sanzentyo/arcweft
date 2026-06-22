@@ -13,6 +13,14 @@ rich DOM renderer, Canvas 2D renderer, WebGL fallback, or normal game-layout CSS
 Game rendering and interaction live in Rust through `arcweft-render-wgpu`,
 `arcweft-render-web`, and Arcweft presentation hit-testing.
 
+## Audio Worklet
+
+Serve `arcweft-microphone-worklet.js` with JavaScript MIME type from the same
+trusted application origin. The browser player should pass its resolved URL to
+the Rust microphone adapter only after an explicit Arcweft microphone request.
+The baseline worklet transfers PCM blocks over `MessagePort`; output playback
+uses the Rust audio host boundary.
+
 ## Playwright WebGPU smoke
 
 Browser smoke tests run through npm and Playwright. They use the installed

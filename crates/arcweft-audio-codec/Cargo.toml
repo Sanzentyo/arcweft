@@ -1,0 +1,27 @@
+[package]
+name = "arcweft-audio-codec"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+default = ["wav", "flac", "ogg-vorbis"]
+wav = ["symphonia/wav", "symphonia/pcm"]
+flac = ["symphonia/flac"]
+ogg-vorbis = ["symphonia/ogg", "symphonia/vorbis"]
+mp3 = ["symphonia/mp3"]
+aac = ["symphonia/aac", "symphonia/isomp4"]
+
+[dependencies]
+arcweft-audio-core = { path = "../arcweft-audio-core" }
+symphonia = { workspace = true, default-features = false }
+thiserror.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true

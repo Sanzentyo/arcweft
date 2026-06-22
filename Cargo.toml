@@ -46,6 +46,10 @@ members = [
     "crates/arcweft-render-wgpu",
     "crates/arcweft-render-web",
     "crates/arcweft-player-web",
+    "crates/arcweft-audio-core",
+    "crates/arcweft-audio-codec",
+    "crates/arcweft-audio-mixer",
+    "crates/arcweft-audio-device-cpal",
     "crates/arcweft-data",
     "crates/arcweft-data-derive",
     "crates/arcweft-codec-json",
@@ -103,6 +107,12 @@ arcweft-interaction-model = { path = "crates/arcweft-interaction-model" }
 arcweft-runtime-driver = { path = "crates/arcweft-runtime-driver" }
 arcweft-render-wgpu = { path = "crates/arcweft-render-wgpu" }
 arcweft-render-web = { path = "crates/arcweft-render-web" }
+arcweft-audio-core = { path = "crates/arcweft-audio-core" }
+arcweft-audio-codec = { path = "crates/arcweft-audio-codec" }
+arcweft-audio-mixer = { path = "crates/arcweft-audio-mixer" }
+cpal = { version = "0.18.1", default-features = false }
+rtrb = "0.3.4"
+symphonia = { version = "0.6.0", default-features = false, features = ["wav", "flac", "ogg", "vorbis", "mp3", "pcm"] }
 base64 = "0.22.1"
 blake3 = "1.8.5"
 bytemuck = "1.25.0"

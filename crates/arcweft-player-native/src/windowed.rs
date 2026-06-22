@@ -1,3 +1,4 @@
+use crate::native_audio::NativeAudioRuntime;
 use crate::window_driver::{WindowCloseSignal, WinitOwnedWindowDriver};
 use crate::{NativePlayerError, append_display_frames};
 use arcweft_adapter_desktop::DesktopAdapterSet;
@@ -30,6 +31,7 @@ struct BundleWindowDriver {
     display: LineDisplayCatalog,
     max_steps: usize,
     session: Option<BundleRunnerSession>,
+    audio: Option<NativeAudioRuntime>,
     pending_frames: VecDeque<LineDisplayFrame>,
     diagnostics: Vec<String>,
     waiting_for_advance: bool,
@@ -44,6 +46,7 @@ impl BundleWindowDriver {
             bundle: Some(bundle),
             max_steps,
             session: None,
+            audio: None,
             pending_frames: VecDeque::new(),
             diagnostics: Vec::new(),
             waiting_for_advance: false,
@@ -73,6 +76,31 @@ impl BundleWindowDriver {
 
     fn runtime_finished(&self) -> Result<bool, String> {
         self.session().map(BundleRunnerSession::is_finished)
+    }
+
+    fn drain_audio_events(&mut self) -> Result<(), String> {
+        let mut events = Vec::new();
+        if let Some(audio) = &mut self.audio {
+            audio.drain_events(&mut events);
+        }
+        if !events.is_empty() {
+            self.session_mut()?.push_audio_events(events);
+        }
+        Ok(())
+    }
+
+    fn submit_audio_commands(
+        &mut self,
+        commands: Vec<arcweft_interaction_model::audio::AudioCommandEnvelope>,
+    ) -> Result<(), String> {
+        let mut events = Vec::new();
+        if let Some(audio) = &mut self.audio {
+            audio.submit_commands(commands, &mut events);
+        }
+        if !events.is_empty() {
+            self.session_mut()?.push_audio_events(events);
+        }
+        Ok(())
     }
 }
 
@@ -107,7 +135,9 @@ impl NativeWindowLoopDriver for BundleWindowDriver {
             },
         )
         .map_err(|error| error.to_string())?;
+        let audio = NativeAudioRuntime::from_bundle(&bundle).map_err(|error| error.to_string())?;
         self.session = Some(session);
+        self.audio = audio;
         Ok(())
     }
 
@@ -134,6 +164,7 @@ impl NativeWindowLoopDriver for BundleWindowDriver {
         self.session_mut()?
             .pump_main_thread()
             .map_err(|error| error.to_string())?;
+        self.drain_audio_events()?;
         if self.close_signal.take() {
             return Ok(NativeWindowLoopControl::Exit);
         }
@@ -152,6 +183,7 @@ impl NativeWindowLoopDriver for BundleWindowDriver {
             .step()
             .map_err(|error| error.to_string())?
         {
+            self.submit_audio_commands(step.audio_commands)?;
             self.diagnostics
                 .extend(step.summary.diagnostics.iter().cloned());
             let mut frames = Vec::new();

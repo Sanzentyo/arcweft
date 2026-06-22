@@ -13,12 +13,14 @@ use arcweft_core::{
     value::RuntimeBinding,
 };
 use arcweft_host_adapter::{HostAdapterError, HostAdapterRegistryBuilder};
+use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioEvent};
 use std::{path::Path, time::Instant};
 
 /// One incremental bundle-runtime step executed by an embedding event loop.
 #[derive(Clone, Debug)]
 pub struct BundleRunnerSessionStep {
     pub summary: BundleRunnerStepSummary,
+    pub audio_commands: Vec<AudioCommandEnvelope>,
     pub finished: bool,
 }
 
@@ -40,6 +42,7 @@ pub struct BundleRunnerSession {
     host: NativeTaskBridge,
     values: Vec<RuntimeBinding>,
     task_events: Vec<TaskEvent>,
+    audio_events: Vec<AudioEvent>,
     mode: BundleRunnerStepMode,
     max_ops: usize,
     max_steps: usize,
@@ -110,6 +113,7 @@ impl BundleRunnerSession {
             host,
             values: options.values.clone(),
             task_events: Vec::new(),
+            audio_events: Vec::new(),
             mode: options.mode,
             max_ops: options.max_ops,
             max_steps: options.steps,
@@ -142,12 +146,14 @@ impl BundleRunnerSession {
         let result = self.executor.step_with_root_bindings(
             RuntimeStepInput {
                 task_events: std::mem::take(&mut self.task_events),
+                audio_events: std::mem::take(&mut self.audio_events),
                 ..RuntimeStepInput::default()
             },
             &self.values,
             step_options(self.mode, self.max_ops),
         );
-        let (summary, task_requests) = BundleRunnerStepSummary::from_result(index, result);
+        let (summary, task_requests, audio_commands) =
+            BundleRunnerStepSummary::from_result(index, result);
         let runtime_finished = matches!(
             self.executor.fiber().status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
@@ -161,12 +167,17 @@ impl BundleRunnerSession {
         self.finished = runtime_finished || self.steps.len() >= self.max_steps;
         Ok(Some(BundleRunnerSessionStep {
             summary,
+            audio_commands,
             finished: self.finished,
         }))
     }
 
     pub const fn is_finished(&self) -> bool {
         self.finished
+    }
+
+    pub fn push_audio_events(&mut self, events: impl IntoIterator<Item = AudioEvent>) {
+        self.audio_events.extend(events);
     }
 
     pub fn steps(&self) -> &[BundleRunnerStepSummary] {

@@ -21,6 +21,7 @@ pub struct WebObservationReport {
     pub choice_count: usize,
     pub image_count: usize,
     pub flow_event_count: usize,
+    pub audio_commands: usize,
     pub requested_tasks: usize,
     pub queued_task_events: usize,
 }
@@ -41,6 +42,7 @@ impl WebObservationReport {
             choice_count: step.presentation.choices.len(),
             image_count: step.presentation.images.len(),
             flow_event_count: step.flow_events.len(),
+            audio_commands: step.audio_commands.len(),
             requested_tasks: step.requested_tasks.len(),
             queued_task_events,
         }

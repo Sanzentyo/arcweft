@@ -1,5 +1,7 @@
 use arcweft_interaction_model::{
-    audio::{AudioEvent, AudioResourceId, AudioVoiceId, HostEvent, HostEventBatch},
+    audio::{
+        AudioDispatchId, AudioEvent, AudioResourceId, AudioVoiceId, HostEvent, HostEventBatch,
+    },
     id::Identifier,
     input::{
         InputEpoch, InputEventKind, InputSequence, InteractionTarget, KeyCode, RoutedInputEvent,
@@ -37,10 +39,10 @@ fn routed_input_roundtrip_preserves_routing_metadata() {
 #[test]
 fn audio_events_are_typed_and_roundtrip_without_string_dispatch() {
     let event = HostEvent::Audio {
-        event: AudioEvent::Play {
+        event: AudioEvent::PlaybackStarted {
+            playback: AudioDispatchId::new(0, 1),
             voice: AudioVoiceId::new("voice.dialogue").expect("voice"),
             resource: AudioResourceId::new("audio.line.001").expect("resource"),
-            looped: false,
         },
     };
     let batch = HostEventBatch::new(vec![event]);
