@@ -38,6 +38,17 @@ pub enum EmbeddingProviderScope {
     Remote,
 }
 
+impl EmbeddingProviderScope {
+    /// Returns whether this provider boundary may receive the privacy class.
+    pub const fn allows(self, privacy: PrivacyClass) -> bool {
+        let maximum = match self {
+            Self::Local => PrivacyClass::Sensitive,
+            Self::Remote => PrivacyClass::Project,
+        };
+        privacy.is_allowed_by(maximum)
+    }
+}
+
 /// Privacy policy applied before any embedding provider sees chunk text.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct EmbeddingInputPolicy {
@@ -117,15 +128,7 @@ impl EmbeddingInputPolicy {
     }
 
     pub const fn allows(self, privacy: PrivacyClass) -> bool {
-        if matches!(privacy, PrivacyClass::Secret) {
-            return false;
-        }
-        if matches!(self.scope, EmbeddingProviderScope::Remote)
-            && matches!(privacy, PrivacyClass::Sensitive)
-        {
-            return false;
-        }
-        privacy.is_allowed_by(self.max_privacy)
+        self.scope.allows(privacy) && privacy.is_allowed_by(self.max_privacy)
     }
 }
 

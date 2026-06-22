@@ -245,7 +245,8 @@ pub(super) fn agent_mcp_call_trace_read(
         .trace_resources
         .retain(|cached| cached.uri != resource.uri);
     state.trace_resources.push(resource.clone());
-    tool_result_for_resource(&resource)
+    let published = agent_publish_resource(resource)?;
+    tool_result_for_resource(&published)
         .map_err(|error| format!("failed to serialize MCP trace resource: {error}"))
 }
 
@@ -427,7 +428,8 @@ pub(super) fn agent_mcp_call_resource_read(
             return agent_mcp_json_tool_error(&error, "resource privacy");
         }
         agent_mcp_audit_resource_read(audit_path, uri, &resource, max_privacy, "allowed")?;
-        return tool_result_for_resource(&resource)
+        let published = agent_publish_resource(resource)?;
+        return tool_result_for_resource(&published)
             .map_err(|error| format!("failed to serialize MCP session context: {error}"));
     }
     if let Some(resource) = agent_mcp_cached_trace_resource(state, uri) {
@@ -438,7 +440,8 @@ pub(super) fn agent_mcp_call_resource_read(
             return agent_mcp_json_tool_error(&error, "resource privacy");
         }
         agent_mcp_audit_resource_read(audit_path, uri, &resource, max_privacy, "allowed")?;
-        return tool_result_for_resource(&resource)
+        let published = agent_publish_resource(resource)?;
+        return tool_result_for_resource(&published)
             .map_err(|error| format!("failed to serialize MCP trace resource: {error}"));
     }
     let Some(report) = state.report.clone() else {
@@ -460,7 +463,8 @@ pub(super) fn agent_mcp_call_resource_read(
         return agent_mcp_json_tool_error(&error, "resource privacy");
     }
     agent_mcp_audit_resource_read(audit_path, uri, &resource, max_privacy, "allowed")?;
-    tool_result_for_resource(&resource)
+    let published = agent_publish_resource(resource)?;
+    tool_result_for_resource(&published)
         .map_err(|error| format!("failed to serialize MCP tool resource: {error}"))
 }
 
@@ -799,7 +803,8 @@ pub(super) fn agent_mcp_call_capture(
         .capture_resources
         .retain(|cached| cached.uri != resource.uri);
     state.capture_resources.push(resource.clone());
-    tool_result_for_resource(&resource)
+    let published = agent_publish_resource(resource)?;
+    tool_result_for_resource(&published)
         .map_err(|error| format!("failed to serialize MCP capture resource: {error}"))
 }
 

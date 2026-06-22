@@ -56,6 +56,28 @@ pub enum AgentObservedObjectContent {
     Custom { object_type: String },
 }
 
+impl AgentObservedObjectContent {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::RichText { .. } => "rich_text",
+            Self::Image(_) => "image",
+            Self::Custom { .. } => "custom",
+        }
+    }
+
+    /// Text that must be evaluated before this object is published to an Agent.
+    pub fn policy_text(&self) -> Option<&str> {
+        match self {
+            Self::RichText { frame } => Some(frame.text.as_str()),
+            Self::Image(_) | Self::Custom { .. } => None,
+        }
+    }
+
+    pub const fn requires_visual_policy(&self) -> bool {
+        matches!(self, Self::Image(_) | Self::Custom { .. })
+    }
+}
+
 /// Image-specific payload for an observed image presentation object.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AgentObservedImageContent {

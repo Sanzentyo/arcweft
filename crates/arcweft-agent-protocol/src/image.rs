@@ -67,6 +67,14 @@ pub enum AgentImageRenderer {
     Native,
 }
 
+impl AgentImageRenderer {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Native => "native",
+        }
+    }
+}
+
 /// How an image capture was composed.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -80,6 +88,36 @@ pub enum AgentImageComposition {
     MaskedFramebufferCrop,
     IsolatedRegions,
     DebugGeometry,
+}
+
+impl AgentImageComposition {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Framebuffer => "framebuffer",
+            Self::OverlayVector => "overlay_vector",
+            Self::FramebufferCrop => "framebuffer_crop",
+            Self::ObjectIdAttachment => "object_id_attachment",
+            Self::MaskAttachment => "mask_attachment",
+            Self::MaskedFramebufferCrop => "masked_framebuffer_crop",
+            Self::IsolatedRegions => "isolated_regions",
+            Self::DebugGeometry => "debug_geometry",
+        }
+    }
+
+    /// Composition recorded after a content-policy mask has been applied.
+    #[must_use]
+    pub const fn after_policy_mask(self) -> Self {
+        match self {
+            Self::OverlayVector => Self::IsolatedRegions,
+            Self::Framebuffer
+            | Self::FramebufferCrop
+            | Self::ObjectIdAttachment
+            | Self::MaskAttachment
+            | Self::MaskedFramebufferCrop
+            | Self::IsolatedRegions
+            | Self::DebugGeometry => Self::MaskedFramebufferCrop,
+        }
+    }
 }
 
 /// Image capture scope.
@@ -96,6 +134,30 @@ pub enum AgentImageScope {
     },
 }
 
+impl AgentImageScope {
+    pub fn description(&self) -> String {
+        match self {
+            Self::Viewport => "viewport".to_owned(),
+            Self::Layer { id } => format!("layer:{id}"),
+            Self::Object { id } => format!("object:{id}"),
+        }
+    }
+
+    /// Replaces internal layer/object identifiers before an external publication.
+    #[must_use]
+    pub fn with_opaque_id(&self, opaque_id: &str) -> Self {
+        match self {
+            Self::Viewport => Self::Viewport,
+            Self::Layer { .. } => Self::Layer {
+                id: format!("layer.{opaque_id}"),
+            },
+            Self::Object { .. } => Self::Object {
+                id: format!("object.{opaque_id}"),
+            },
+        }
+    }
+}
+
 /// Image resource kind.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -105,6 +167,33 @@ pub enum AgentImageKind {
     OverlaySvg,
     ObjectId,
     Mask,
+}
+
+impl AgentImageKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Color => "color",
+            Self::Overlay => "overlay",
+            Self::OverlaySvg => "overlay_svg",
+            Self::ObjectId => "object_id",
+            Self::Mask => "mask",
+        }
+    }
+
+    /// Object-id and mask images are policy auxiliaries, not ordinary visual output.
+    pub const fn is_policy_auxiliary(self) -> bool {
+        matches!(self, Self::ObjectId | Self::Mask)
+    }
+
+    /// Canonical composition for a capture reference of this kind.
+    pub const fn default_capture_composition(self) -> AgentImageComposition {
+        match self {
+            Self::Color => AgentImageComposition::FramebufferCrop,
+            Self::ObjectId => AgentImageComposition::ObjectIdAttachment,
+            Self::Mask => AgentImageComposition::MaskAttachment,
+            Self::Overlay | Self::OverlaySvg => AgentImageComposition::OverlayVector,
+        }
+    }
 }
 
 /// Image fitting policy attached to an observed image object.
@@ -239,6 +328,31 @@ impl AgentImageMetadata {
             object: image.object.clone(),
             diagnostics: image.diagnostics.clone(),
         }
+    }
+
+    /// Removes free-form object/diagnostic metadata and internal scope ids before
+    /// this metadata is attached to an externally visible resource.
+    pub fn scrub_for_external_publication(&mut self, opaque_scope_id: &str) {
+        self.scope = self.scope.with_opaque_id(opaque_scope_id);
+        self.object = None;
+        self.diagnostics.clear();
+    }
+
+    pub fn description(&self, mime_type: &str) -> String {
+        let page = if self.page == 0 {
+            String::new()
+        } else {
+            format!(", page={}", self.page)
+        };
+        format!(
+            "Agent Debug Bus image resource (mime_type={mime_type}, kind={}, renderer={}, scope={}, composition={}{page}, width={}, height={})",
+            self.kind.as_str(),
+            self.renderer.as_str(),
+            self.scope.description(),
+            self.composition.as_str(),
+            self.width,
+            self.height,
+        )
     }
 }
 

@@ -3,8 +3,8 @@
 //! This module owns the resource/list/read conversions and the tool-result
 //! projection that wraps resources for MCP clients.
 
+use arcweft_agent_policy::PublishedAgentResource;
 use arcweft_agent_protocol::{
-    image::{AgentImageComposition, AgentImageKind, AgentImageRenderer, AgentImageScope},
     resource::{AgentResource, AgentResourceBody, AgentResourceKind},
     trace::AgentTraceRecord,
 };
@@ -121,21 +121,15 @@ pub fn list_resource_templates_result() -> McpListResourceTemplatesResult {
 }
 
 /// Converts an Agent resource into an MCP resource descriptor.
-pub fn resource_descriptor(resource: &AgentResource) -> McpResourceDescriptor {
-    let size = match &resource.body {
-        AgentResourceBody::Json(value) => serde_json::to_vec(value)
-            .ok()
-            .and_then(|bytes| u64::try_from(bytes.len()).ok()),
-        AgentResourceBody::Text(text) => u64::try_from(text.len()).ok(),
-        AgentResourceBody::BytesBase64(body) => decoded_base64_len(&body.data),
-    };
+pub fn resource_descriptor(published: &PublishedAgentResource) -> McpResourceDescriptor {
+    let resource = published.resource();
     McpResourceDescriptor {
         uri: resource.uri.clone(),
         name: resource_name(resource),
-        title: Some(resource_title(resource)),
-        description: Some(resource_description(resource)),
+        title: Some(resource.title().to_owned()),
+        description: Some(resource.description()),
         mime_type: Some(resource.mime_type.clone()),
-        size,
+        size: resource.decoded_len(),
     }
 }
 
@@ -156,7 +150,7 @@ fn resource_template(
 }
 
 /// Converts Agent resources into an MCP `resources/list` result.
-pub fn list_resources_result(resources: &[AgentResource]) -> McpListResourcesResult {
+pub fn list_resources_result(resources: &[PublishedAgentResource]) -> McpListResourcesResult {
     McpListResourcesResult {
         resources: resources.iter().map(resource_descriptor).collect(),
     }
@@ -200,17 +194,17 @@ fn trace_resource_hash(records: &[AgentTraceRecord]) -> String {
 
 /// Converts an Agent resource into an MCP `resources/read` result.
 pub fn read_resource_result(
-    resource: &AgentResource,
+    published: &PublishedAgentResource,
 ) -> Result<McpReadResourceResult, serde_json::Error> {
     Ok(McpReadResourceResult {
-        contents: vec![resource_contents(resource)?],
+        contents: vec![resource_contents(published.resource())?],
     })
 }
 
 /// Converts a set of Agent resources into an observe tool result. The result is
 /// intentionally link-oriented so MCP clients can choose which image/blob to
 /// fetch without embedding every frame resource in the initial tool response.
-pub fn tool_result_for_resources(resources: &[AgentResource]) -> McpCallToolResult {
+pub fn tool_result_for_resources(resources: &[PublishedAgentResource]) -> McpCallToolResult {
     McpCallToolResult {
         content: resources.iter().map(resource_link).collect(),
         is_error: false,
@@ -220,11 +214,12 @@ pub fn tool_result_for_resources(resources: &[AgentResource]) -> McpCallToolResu
 /// Converts an Agent resource into a tool result. Image resources become MCP
 /// image content so multimodal clients can render them directly.
 pub fn tool_result_for_resource(
-    resource: &AgentResource,
+    published: &PublishedAgentResource,
 ) -> Result<McpCallToolResult, serde_json::Error> {
+    let resource = published.resource();
     let content = match &resource.body {
         AgentResourceBody::BytesBase64(body) if resource.mime_type.starts_with("image/") => {
-            let mut content = image_metadata_content(resource)?;
+            let mut content = image_metadata_content(published)?;
             content.push(McpContentBlock::Image {
                 data: body.data.clone(),
                 mime_type: resource.mime_type.clone(),
@@ -232,7 +227,7 @@ pub fn tool_result_for_resource(
             content
         }
         _ => {
-            let mut content = image_metadata_content(resource)?;
+            let mut content = image_metadata_content(published)?;
             content.push(McpContentBlock::Resource {
                 resource: resource_contents(resource)?,
             });
@@ -246,16 +241,26 @@ pub fn tool_result_for_resource(
 }
 
 fn image_metadata_content(
-    resource: &AgentResource,
+    published: &PublishedAgentResource,
 ) -> Result<Vec<McpContentBlock>, serde_json::Error> {
+    let resource = published.resource();
     resource.image.as_ref().map_or_else(
-        || Ok(Vec::new()),
+        || {
+            Ok(vec![McpContentBlock::Text {
+                text: serde_json::to_string(&serde_json::json!({
+                    "uri": resource.uri,
+                    "mime_type": resource.mime_type,
+                    "content_policy": published.policy(),
+                }))?,
+            }])
+        },
         |metadata| {
             Ok(vec![McpContentBlock::Text {
                 text: serde_json::to_string(&serde_json::json!({
                     "uri": resource.uri,
                     "mime_type": resource.mime_type,
                     "image": metadata,
+                    "content_policy": published.policy(),
                 }))?,
             }])
         },
@@ -263,7 +268,7 @@ fn image_metadata_content(
 }
 
 /// Converts an Agent resource into an MCP content block link.
-pub fn resource_link(resource: &AgentResource) -> McpContentBlock {
+pub fn resource_link(resource: &PublishedAgentResource) -> McpContentBlock {
     let descriptor = resource_descriptor(resource);
     McpContentBlock::ResourceLink {
         uri: descriptor.uri,
@@ -305,103 +310,4 @@ fn resource_name(resource: &AgentResource) -> String {
         .filter(|name| !name.is_empty())
         .unwrap_or(resource.uri.as_str())
         .to_owned()
-}
-
-fn resource_title(resource: &AgentResource) -> String {
-    match resource.kind {
-        AgentResourceKind::SessionContext => "Session context",
-        AgentResourceKind::ObservationLatest => "Latest observation",
-        AgentResourceKind::Objects => "Observed objects",
-        AgentResourceKind::PresentationTree => "Presentation tree",
-        AgentResourceKind::OverlaySvg => "Overlay SVG",
-        AgentResourceKind::Image => "Captured image",
-        AgentResourceKind::Logs => "Runtime logs",
-        AgentResourceKind::Signals => "Runtime signals",
-        AgentResourceKind::Audio => "Audio state",
-        AgentResourceKind::Trace => "Agent trace",
-    }
-    .to_owned()
-}
-
-fn resource_description(resource: &AgentResource) -> String {
-    if resource.kind == AgentResourceKind::SessionContext {
-        return format!(
-            "Path-redacted Agent session context resource ({})",
-            resource.mime_type
-        );
-    }
-    if resource.kind == AgentResourceKind::Trace {
-        return format!(
-            "Agent execution trace resource for read-only replay ({})",
-            resource.mime_type
-        );
-    }
-    if let Some(image) = &resource.image {
-        let page = if image.page == 0 {
-            String::new()
-        } else {
-            format!(", page={}", image.page)
-        };
-        return format!(
-            "Agent Debug Bus image resource (mime_type={}, kind={}, renderer={}, scope={}, composition={}{}, width={}, height={})",
-            resource.mime_type,
-            image_kind_description(image.kind),
-            image_renderer_description(image.renderer),
-            image_scope_description(&image.scope),
-            image_composition_description(image.composition),
-            page,
-            image.width,
-            image.height
-        );
-    }
-    format!("Agent Debug Bus resource ({})", resource.mime_type)
-}
-
-fn image_scope_description(scope: &AgentImageScope) -> String {
-    match scope {
-        AgentImageScope::Viewport => "viewport".to_owned(),
-        AgentImageScope::Layer { id } => format!("layer:{id}"),
-        AgentImageScope::Object { id } => format!("object:{id}"),
-    }
-}
-
-fn image_kind_description(kind: AgentImageKind) -> &'static str {
-    match kind {
-        AgentImageKind::Color => "color",
-        AgentImageKind::Overlay => "overlay",
-        AgentImageKind::OverlaySvg => "overlay_svg",
-        AgentImageKind::ObjectId => "object_id",
-        AgentImageKind::Mask => "mask",
-    }
-}
-
-fn image_renderer_description(renderer: AgentImageRenderer) -> &'static str {
-    match renderer {
-        AgentImageRenderer::Native => "native",
-    }
-}
-
-pub(crate) fn image_composition_description(composition: AgentImageComposition) -> &'static str {
-    match composition {
-        AgentImageComposition::OverlayVector => "overlay_vector",
-        AgentImageComposition::Framebuffer => "framebuffer",
-        AgentImageComposition::FramebufferCrop => "framebuffer_crop",
-        AgentImageComposition::ObjectIdAttachment => "object_id_attachment",
-        AgentImageComposition::MaskAttachment => "mask_attachment",
-        AgentImageComposition::MaskedFramebufferCrop => "masked_framebuffer_crop",
-        AgentImageComposition::IsolatedRegions => "isolated_regions",
-        AgentImageComposition::DebugGeometry => "debug_geometry",
-    }
-}
-
-fn decoded_base64_len(value: &str) -> Option<u64> {
-    let padding = value
-        .as_bytes()
-        .iter()
-        .rev()
-        .take_while(|byte| **byte == b'=')
-        .count();
-    let groups = value.len().checked_div(4)?;
-    let len = groups.checked_mul(3)?.checked_sub(padding)?;
-    u64::try_from(len).ok()
 }

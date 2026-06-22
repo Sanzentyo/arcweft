@@ -190,7 +190,8 @@ pub(super) fn agent_mcp_handle_request(
 pub(super) fn agent_mcp_resource_list(state: &AgentMcpState) -> Result<serde_json::Value, String> {
     let resources = agent_mcp_current_resources(state)
         .map_err(|_| "failed to build Agent resource list".to_owned())?;
-    serde_json::to_value(list_resources_result(&resources))
+    let published = agent_publish_resources(resources)?;
+    serde_json::to_value(list_resources_result(&published))
         .map_err(|error| format!("failed to serialize MCP resource list: {error}"))
 }
 
@@ -211,7 +212,8 @@ pub(super) fn agent_mcp_resource_read(
         {
             return Err(agent_mcp_resource_read_privacy_message(&error));
         }
-        let read = read_resource_result(&resource)
+        let published = agent_publish_resource(resource)?;
+        let read = read_resource_result(&published)
             .map_err(|error| format!("failed to serialize MCP session context: {error}"))?;
         return serde_json::to_value(read)
             .map_err(|error| format!("failed to serialize MCP read: {error}"));
@@ -222,7 +224,8 @@ pub(super) fn agent_mcp_resource_read(
         {
             return Err(agent_mcp_resource_read_privacy_message(&error));
         }
-        let read = read_resource_result(&resource)
+        let published = agent_publish_resource(resource)?;
+        let read = read_resource_result(&published)
             .map_err(|error| format!("failed to serialize MCP resource: {error}"))?;
         return serde_json::to_value(read)
             .map_err(|error| format!("failed to serialize MCP read: {error}"));
@@ -247,7 +250,8 @@ pub(super) fn agent_mcp_resource_read(
     {
         return Err(agent_mcp_resource_read_privacy_message(&error));
     }
-    let read = read_resource_result(&resource)
+    let published = agent_publish_resource(resource)?;
+    let read = read_resource_result(&published)
         .map_err(|error| format!("failed to serialize MCP resource: {error}"))?;
     serde_json::to_value(read).map_err(|error| format!("failed to serialize MCP read: {error}"))
 }
@@ -394,7 +398,8 @@ pub(super) fn agent_mcp_call_observe(
     agent_mcp_store_observation(state, observed);
     let resources = agent_mcp_current_resources(state)
         .map_err(|_| "failed to build Agent session resource list".to_owned())?;
-    let tool = tool_result_for_resources(&resources);
+    let published = agent_publish_resources(resources)?;
+    let tool = tool_result_for_resources(&published);
     serde_json::to_value(tool)
         .map_err(|error| format!("failed to serialize MCP tool result: {error}"))
 }
@@ -420,9 +425,14 @@ pub(super) fn agent_mcp_call_session_info(
     let info = if let Some(report) = &state.report {
         let resources = agent_mcp_current_resources(state)
             .map_err(|_| "failed to build Agent session resource list".to_owned())?;
-        let descriptors = list_resources_result(&resources).resources;
+        let published = agent_publish_resources(resources)?;
+        let descriptors = list_resources_result(&published).resources;
         let latest_capture = agent_mcp_latest_capture_resource(state);
-        let latest_capture_descriptor = latest_capture.map(resource_descriptor);
+        let latest_capture_descriptor = latest_capture
+            .cloned()
+            .and_then(|resource| agent_publish_resource(resource).ok())
+            .as_ref()
+            .map(resource_descriptor);
         serde_json::json!({
             "observed": true,
             "session_id": report.session_id,
@@ -450,7 +460,8 @@ pub(super) fn agent_mcp_call_session_info(
             "trace_resource_count": state.trace_resources.len(),
         })
     } else {
-        let descriptors = list_resources_result(&state.trace_resources).resources;
+        let published = agent_publish_resources(state.trace_resources.clone())?;
+        let descriptors = list_resources_result(&published).resources;
         serde_json::json!({
             "observed": false,
             "session_id": "session.mcp.unobserved",

@@ -769,7 +769,9 @@ pub(super) fn agent_repl_trace(
     input: &str,
     state: &AgentReplState,
 ) -> AgentReplCellReport {
-    let descriptors = list_resources_result(&state.trace_resources).resources;
+    let descriptors = agent_publish_resources(state.trace_resources.clone())
+        .map(|resources| list_resources_result(&resources).resources)
+        .unwrap_or_default();
     agent_repl_ok(
         index,
         input,

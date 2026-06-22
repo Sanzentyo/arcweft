@@ -3,6 +3,8 @@ members = [
     "crates/arcweft-core",
     "crates/arcweft-compiler",
     "crates/arcweft-agent-protocol",
+    "crates/arcweft-content-policy",
+    "crates/arcweft-agent-policy",
     "crates/arcweft-agent-mcp",
     "crates/arcweft-agent-mcp-client",
     "crates/arcweft-debug-model",
@@ -112,6 +114,8 @@ arcweft-render-web = { path = "crates/arcweft-render-web" }
 arcweft-audio-core = { path = "crates/arcweft-audio-core" }
 arcweft-audio-codec = { path = "crates/arcweft-audio-codec" }
 arcweft-audio-mixer = { path = "crates/arcweft-audio-mixer" }
+arcweft-content-policy = { path = "crates/arcweft-content-policy" }
+arcweft-agent-policy = { path = "crates/arcweft-agent-policy" }
 cpal = { version = "0.18.1", default-features = false }
 rtrb = "0.3.4"
 symphonia = { version = "0.6.0", default-features = false, features = ["wav", "flac", "ogg", "vorbis", "mp3", "pcm"] }

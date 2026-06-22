@@ -7,6 +7,33 @@ pub(super) enum AgentObserveResourceOutput {
     Many(Vec<AgentResource>),
 }
 
+impl AgentObserveResourceOutput {
+    fn into_resources(self) -> Vec<AgentResource> {
+        match self {
+            Self::One(resource) => vec![*resource],
+            Self::Many(resources) => resources,
+        }
+    }
+
+    fn publish_with<C>(
+        self,
+        gate: &arcweft_agent_policy::AgentContentPolicyGate<C>,
+    ) -> Result<Vec<arcweft_agent_policy::PublishedAgentResource>, ExitCode>
+    where
+        C: arcweft_content_policy::ContentClassifier,
+    {
+        self.into_resources()
+            .into_iter()
+            .map(|resource| {
+                gate.publish(resource).map_err(|error| {
+                    eprintln!("error: Agent content-policy gate failed: {error}");
+                    ExitCode::FAILURE
+                })
+            })
+            .collect()
+    }
+}
+
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(untagged)]
 pub(super) enum AgentObserveMcpResourceOutput {
@@ -20,10 +47,8 @@ pub(super) fn agent_observe_mcp_resource_output(
     resource: AgentObserveResourceOutput,
     format: AgentObserveMcpFormat,
 ) -> Result<AgentObserveMcpResourceOutput, ExitCode> {
-    let resources = match resource {
-        AgentObserveResourceOutput::One(resource) => vec![*resource],
-        AgentObserveResourceOutput::Many(resources) => resources,
-    };
+    let gate = arcweft_agent_policy::AgentContentPolicyGate::strict_builtin();
+    let resources = resource.publish_with(&gate)?;
     match format {
         AgentObserveMcpFormat::Read => {
             let mut read_results = resources
@@ -276,7 +301,7 @@ pub(super) fn agent_capture_ref_resource(
             kind: spec.kind,
             renderer: AgentImageRenderer::Native,
             scope: spec.scope,
-            composition: agent_capture_ref_composition(spec.kind),
+            composition: spec.kind.default_capture_composition(),
             page: spec.page,
             capture_step: 0,
             capture_time_millis: report.capture_time_millis.unwrap_or_default(),
@@ -294,17 +319,6 @@ pub(super) fn agent_capture_ref_resource(
             diagnostics: Vec::new(),
         }),
         body: AgentResourceBody::Text(String::new()),
-    }
-}
-
-pub(super) const fn agent_capture_ref_composition(kind: AgentImageKind) -> AgentImageComposition {
-    match kind {
-        AgentImageKind::Color => AgentImageComposition::FramebufferCrop,
-        AgentImageKind::ObjectId => AgentImageComposition::ObjectIdAttachment,
-        AgentImageKind::Mask => AgentImageComposition::MaskAttachment,
-        AgentImageKind::Overlay | AgentImageKind::OverlaySvg => {
-            AgentImageComposition::OverlayVector
-        }
     }
 }
 

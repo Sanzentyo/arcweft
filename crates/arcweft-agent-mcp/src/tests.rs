@@ -4,13 +4,16 @@ use crate::{
         McpTextResourceContents, McpToolDescriptor,
     },
     resources::{
-        image_composition_description, list_resource_templates_result, list_resources_result,
-        read_resource_result, resource_descriptor, resource_link, tool_result_for_resource,
-        tool_result_for_resources, trace_resource,
+        list_resource_templates_result, list_resources_result, read_resource_result,
+        resource_descriptor, resource_link, tool_result_for_resource, tool_result_for_resources,
+        trace_resource,
     },
     tools::agent_tool_descriptors,
 };
 
+use arcweft_agent_policy::{
+    AgentContentPolicyGate, AgentPublicationPolicy, PublishedAgentResource,
+};
 use arcweft_agent_protocol::{
     geometry::AgentCoordinateSpace,
     ids::{AgentRunId, SessionId, StableHash},
@@ -24,6 +27,54 @@ use arcweft_agent_protocol::{
     },
     trace::{AgentTraceKind, AgentTraceRecord},
 };
+use arcweft_content_policy::{
+    ClassificationReport, ClassifierIdentity, ClassifierRun, ContentClassifier,
+    ContentPolicyEngine, PolicyInputRef, PolicyProfile,
+};
+
+#[derive(Clone, Debug)]
+struct AllowAllClassifier;
+
+impl ContentClassifier for AllowAllClassifier {
+    fn identity(&self) -> ClassifierIdentity {
+        ClassifierIdentity::new("arcweft.test.allow", "2026-06-22")
+    }
+
+    fn classify(
+        &self,
+        _input: PolicyInputRef<'_>,
+    ) -> Result<ClassificationReport, arcweft_content_policy::PolicyError> {
+        Ok(ClassificationReport {
+            findings: Vec::new(),
+            runs: vec![ClassifierRun::complete(self.identity())],
+        })
+    }
+}
+
+fn publish(resource: AgentResource) -> PublishedAgentResource {
+    publish_with_auxiliary_policy(resource, true)
+}
+
+fn publish_with_auxiliary_policy(
+    resource: AgentResource,
+    publish_auxiliary_images: bool,
+) -> PublishedAgentResource {
+    let gate = AgentContentPolicyGate::with_publication_policy(
+        ContentPolicyEngine::new(AllowAllClassifier, PolicyProfile::strict_default()),
+        AgentPublicationPolicy {
+            publish_auxiliary_images,
+        },
+    );
+    gate.publish(resource).expect("test resource publishes")
+}
+
+fn has_extension(name: &str, extension: &str) -> bool {
+    std::path::Path::new(name)
+        .extension()
+        .is_some_and(|candidate| candidate.eq_ignore_ascii_case(extension))
+}
+
+const PNG_1X1_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAX+XDSwAAAABJRU5ErkJggg==";
 
 #[test]
 fn tool_descriptors_include_wait_control_surface() {
@@ -130,35 +181,36 @@ fn image_agent_resource_maps_to_mcp_blob_and_image_tool_content() {
         }),
         body: AgentResourceBody::BytesBase64(AgentBinaryResourceBody {
             encoding: AgentBinaryEncoding::Base64,
-            data: "iVBORw0KGgo=".to_owned(),
+            data: PNG_1X1_BASE64.to_owned(),
         }),
     };
+    let resource = publish(resource);
 
     let descriptor = resource_descriptor(&resource);
     let read = read_resource_result(&resource).expect("resource read serializes");
     let tool = tool_result_for_resource(&resource).expect("tool result serializes");
 
-    assert_eq!(descriptor.name, "layer.dialogue.png");
+    assert!(has_extension(&descriptor.name, "png"));
     assert_eq!(descriptor.mime_type.as_deref(), Some("image/png"));
-    assert_eq!(descriptor.size, Some(8));
+    assert!(descriptor.size.is_some_and(|size| size > 8));
     let description = descriptor.description.as_deref().unwrap();
     assert!(description.contains("kind=color"));
     assert!(description.contains("renderer=native"));
-    assert!(description.contains("scope=layer:dialogue"));
+    assert!(description.contains("scope=layer:layer."));
     assert!(description.contains("composition=masked_framebuffer_crop"));
     assert_eq!(
-        image_composition_description(AgentImageComposition::ObjectIdAttachment),
+        AgentImageComposition::ObjectIdAttachment.as_str(),
         "object_id_attachment"
     );
     assert_eq!(
-        image_composition_description(AgentImageComposition::MaskAttachment),
+        AgentImageComposition::MaskAttachment.as_str(),
         "mask_attachment"
     );
     assert!(description.contains("width=320"));
     assert!(description.contains("height=180"));
     assert!(matches!(
         read.contents.as_slice(),
-        [McpResourceContents::Blob(McpBlobResourceContents { blob, .. })] if blob == "iVBORw0KGgo="
+        [McpResourceContents::Blob(McpBlobResourceContents { blob, .. })] if blob == PNG_1X1_BASE64
     ));
     assert!(matches!(
         tool.content.as_slice(),
@@ -169,12 +221,13 @@ fn image_agent_resource_maps_to_mcp_blob_and_image_tool_content() {
             && text.contains("\"renderer\":\"native\"")
             && text.contains("\"scope\"")
             && text.contains("\"kind\":\"layer\"")
-            && text.contains("\"id\":\"dialogue\"")
+            && text.contains("\"id\":\"layer.")
             && text.contains("\"composition\":\"masked_framebuffer_crop\"")
             && text.contains("\"crop_origin\"")
             && text.contains("\"content_viewport_bbox\"")
             && text.contains("\"content_pixels\":512")
-            && data == "iVBORw0KGgo="
+            && text.contains("\"content_policy\"")
+            && data == PNG_1X1_BASE64
             && mime_type == "image/png"
     ));
 }
@@ -193,9 +246,10 @@ fn image_tool_content_preserves_object_rich_text_ref_metadata() {
         image: Some(metadata),
         body: AgentResourceBody::BytesBase64(AgentBinaryResourceBody {
             encoding: AgentBinaryEncoding::Base64,
-            data: "AAAA".to_owned(),
+            data: "AAAAAA==".to_owned(),
         }),
     };
+    let resource = publish(resource);
 
     let tool = tool_result_for_resource(&resource).expect("tool result serializes");
 
@@ -210,27 +264,13 @@ fn image_tool_content_preserves_object_rich_text_ref_metadata() {
         );
     };
     let json: serde_json::Value = serde_json::from_str(text).expect("metadata text is JSON object");
-    assert_eq!(
-        json["image"]["object"]["id"],
-        "object.dialogue.0.0.proxy.0.0"
+    assert!(json["image"]["object"].is_null());
+    assert!(
+        json["image"]["scope"]["id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("object."))
     );
-    assert_eq!(
-        json["image"]["object"]["rich_text_ref"]["kind"],
-        "text_object_proxy"
-    );
-    assert_eq!(
-        json["image"]["object"]["rich_text_ref"]["presentation"]["object_proxies"][0]["params"]["channel"]
-            ["value"],
-        "choice"
-    );
-    assert_eq!(
-        json["image"]["object"]["bbox"]["space"],
-        serde_json::json!("viewport")
-    );
-    assert_eq!(
-        json["image"]["object"]["capture_refs"]["object_id_color"]["alpha"],
-        255
-    );
+    assert!(json["content_policy"].is_object());
 }
 
 #[test]
@@ -247,9 +287,10 @@ fn image_tool_content_preserves_image_object_frame_metadata() {
         image: Some(metadata),
         body: AgentResourceBody::BytesBase64(AgentBinaryResourceBody {
             encoding: AgentBinaryEncoding::Base64,
-            data: "AAAA".to_owned(),
+            data: "AAAAAA==".to_owned(),
         }),
     };
+    let resource = publish(resource);
 
     let tool = tool_result_for_resource(&resource).expect("tool result serializes");
 
@@ -264,23 +305,13 @@ fn image_tool_content_preserves_image_object_frame_metadata() {
         );
     };
     let json: serde_json::Value = serde_json::from_str(text).expect("metadata text is JSON object");
-    assert_eq!(
-        json["image"]["object"]["image_ref"]["asset"],
-        "asset.bg.pulse"
+    assert!(json["image"]["object"].is_null());
+    assert!(
+        json["image"]["scope"]["id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("object."))
     );
-    assert_eq!(json["image"]["object"]["image_ref"]["frame_index"], 1);
-    assert_eq!(
-        json["image"]["object"]["image_ref"]["local_time_millis"],
-        150
-    );
-    assert_eq!(
-        json["image"]["object"]["image_ref"]["proxies"][0]["id"],
-        "proxy.pulse_sprite.hotspot"
-    );
-    assert_eq!(
-        json["image"]["object"]["image_ref"]["params"]["param.role"]["value"],
-        "animated-hotspot"
-    );
+    assert!(json["content_policy"].is_object());
 }
 
 fn proxy_object_image_metadata_fixture() -> serde_json::Value {
@@ -289,11 +320,11 @@ fn proxy_object_image_metadata_fixture() -> serde_json::Value {
         "renderer": "native",
         "scope": { "kind": "object", "id": "object.dialogue.0.0.proxy.0.0" },
         "composition": "mask_attachment",
-        "width": 12,
-        "height": 8,
+        "width": 1,
+        "height": 1,
         "pixel_format": "rgba8_unorm",
-        "row_stride_bytes": 48,
-        "content_pixels": 24,
+        "row_stride_bytes": 4,
+        "content_pixels": 1,
         "object": {
             "id": "object.dialogue.0.0.proxy.0.0",
             "layer": "dialogue.rich_text",
@@ -353,11 +384,11 @@ fn image_object_frame_metadata_fixture() -> serde_json::Value {
                 "renderer": "native",
                 "scope": { "kind": "object", "id": "object.image.layer.foreground.0.1" },
                 "composition": "framebuffer_crop",
-                "width": 360,
-                "height": 180,
+                "width": 1,
+                "height": 1,
                 "pixel_format": "rgba8_unorm",
-                "row_stride_bytes": 1440,
-                "content_pixels": 64800,
+                "row_stride_bytes": 4,
+                "content_pixels": 1,
                 "object": {
                     "id": "object.image.layer.foreground.0.1",
                     "entity": "image.sample.pulse_sprite",
@@ -458,32 +489,35 @@ fn resource_list_and_observe_tool_result_expose_resource_links() {
             }),
             body: AgentResourceBody::BytesBase64(AgentBinaryResourceBody {
                 encoding: AgentBinaryEncoding::Base64,
-                data: "iVBORw0KGgo=".to_owned(),
+                data: PNG_1X1_BASE64.to_owned(),
             }),
         },
-    ];
+    ]
+    .into_iter()
+    .map(|resource| publish_with_auxiliary_policy(resource, false))
+    .collect::<Vec<_>>();
 
     let list = list_resources_result(&resources);
     let tool = tool_result_for_resources(&resources);
 
     assert_eq!(list.resources.len(), 2);
-    assert_eq!(list.resources[1].name, "layer.dialogue.object-id.png");
-    assert_eq!(list.resources[1].mime_type.as_deref(), Some("image/png"));
+    assert!(has_extension(&list.resources[1].name, "json"));
+    assert_eq!(
+        list.resources[1].mime_type.as_deref(),
+        Some("application/json")
+    );
     assert!(
         list.resources[1]
             .description
             .as_deref()
-            .is_some_and(|description| description.contains("kind=object_id")
-                && description.contains("renderer=native")
-                && description.contains("scope=layer:dialogue")
-                && description.contains("composition=object_id_attachment"))
+            .is_some_and(|description| description.contains("Agent Debug Bus resource"))
     );
     assert!(matches!(
         tool.content.as_slice(),
         [
             McpContentBlock::ResourceLink { name: first, .. },
             McpContentBlock::ResourceLink { name: second, mime_type: Some(mime_type), .. },
-        ] if first == "latest.json" && second == "layer.dialogue.object-id.png" && mime_type == "image/png"
+        ] if has_extension(first, "json") && has_extension(second, "json") && mime_type == "application/json"
     ));
 }
 
@@ -562,15 +596,16 @@ fn resource_templates_list_capture_uri_patterns() {
 fn trace_resource_maps_to_mcp_text_resource_and_link() {
     let records = trace_records_fixture();
     let resource = trace_resource(&records).expect("trace resource serializes");
-    let list = list_resources_result(std::slice::from_ref(&resource));
-    let read = read_resource_result(&resource).expect("trace resource reads");
-    let tool = tool_result_for_resource(&resource).expect("trace tool result serializes");
-
     assert_eq!(resource.kind, AgentResourceKind::Trace);
     assert_eq!(resource.uri, "arcweft://run/run.cli/trace.arcwx");
     assert_eq!(resource.mime_type, AGENT_TRACE_MIME_TYPE);
     assert_eq!(resource.hash, "trace:run.cli:2:blake3:run-finished-payload");
-    assert_eq!(list.resources[0].name, "trace.arcwx");
+    let resource = publish(resource);
+    let list = list_resources_result(std::slice::from_ref(&resource));
+    let read = read_resource_result(&resource).expect("trace resource reads");
+    let tool = tool_result_for_resource(&resource).expect("trace tool result serializes");
+
+    assert!(has_extension(&list.resources[0].name, "json"));
     assert_eq!(list.resources[0].title.as_deref(), Some("Agent trace"));
     assert!(
         list.resources[0]
@@ -585,8 +620,8 @@ fn trace_resource_maps_to_mcp_text_resource_and_link() {
     ));
     assert!(matches!(
         tool.content.as_slice(),
-        [McpContentBlock::Resource { resource: McpResourceContents::Text(McpTextResourceContents { uri, .. }) }]
-            if uri == "arcweft://run/run.cli/trace.arcwx"
+        [McpContentBlock::Text { text }, McpContentBlock::Resource { resource: McpResourceContents::Text(McpTextResourceContents { uri, .. }) }]
+            if uri.starts_with("arcweft://moderated/") && text.contains("\"content_policy\"")
     ));
 }
 
@@ -600,6 +635,7 @@ fn json_agent_resource_maps_to_mcp_text_resource() {
         image: None,
         body: AgentResourceBody::Json(serde_json::json!({ "status": "ok" })),
     };
+    let resource = publish(resource);
 
     let read = read_resource_result(&resource).expect("resource read serializes");
     let link = resource_link(&resource);
@@ -611,7 +647,7 @@ fn json_agent_resource_maps_to_mcp_text_resource() {
     assert!(matches!(
         link,
         McpContentBlock::ResourceLink { name, mime_type: Some(mime_type), .. }
-            if name == "latest.json" && mime_type == "application/json"
+            if has_extension(&name, "json") && mime_type == "application/json"
     ));
 }
 

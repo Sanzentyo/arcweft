@@ -172,6 +172,20 @@ struct AgentObservationTrace {
     tick: usize,
 }
 
+fn agent_publish_resource(
+    resource: AgentResource,
+) -> Result<arcweft_agent_policy::PublishedAgentResource, String> {
+    arcweft_agent_policy::AgentContentPolicyGate::strict_builtin()
+        .publish(resource)
+        .map_err(|error| format!("Agent content-policy gate failed: {error}"))
+}
+
+fn agent_publish_resources(
+    resources: Vec<AgentResource>,
+) -> Result<Vec<arcweft_agent_policy::PublishedAgentResource>, String> {
+    resources.into_iter().map(agent_publish_resource).collect()
+}
+
 mod capture;
 mod image_mapping;
 mod mcp_debug;

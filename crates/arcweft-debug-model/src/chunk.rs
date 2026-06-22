@@ -68,6 +68,30 @@ impl ChunkId {
 }
 
 impl PrivacyClass {
+    pub const fn rank(self) -> u8 {
+        match self {
+            Self::Public => 0,
+            Self::Project => 1,
+            Self::Sensitive => 2,
+            Self::Secret => 3,
+        }
+    }
+
+    #[must_use]
+    pub const fn join(self, other: Self) -> Self {
+        if self.rank() >= other.rank() {
+            self
+        } else {
+            other
+        }
+    }
+
+    /// Returns true when an explicit, audited declassification may lower
+    /// `self` to `target`. This method expresses direction, not authorization.
+    pub const fn can_declassify_to(self, target: Self) -> bool {
+        target.rank() <= self.rank()
+    }
+
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Public => "public",
@@ -88,16 +112,7 @@ impl PrivacyClass {
     }
 
     pub const fn is_allowed_by(self, max: Self) -> bool {
-        matches!(
-            (self, max),
-            (Self::Public, _)
-                | (
-                    Self::Project,
-                    Self::Project | Self::Sensitive | Self::Secret
-                )
-                | (Self::Sensitive, Self::Sensitive | Self::Secret)
-                | (Self::Secret, Self::Secret)
-        )
+        self.rank() <= max.rank()
     }
 }
 

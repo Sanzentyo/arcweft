@@ -258,7 +258,9 @@ version = "0.1.0"
 name = "arcweft-agent-mcp"
 version = "0.1.0"
 dependencies = [
+ "arcweft-agent-policy",
  "arcweft-agent-protocol",
+ "arcweft-content-policy",
  "serde",
  "serde_json",
 ]
@@ -270,6 +272,21 @@ dependencies = [
  "arcweft-agent-mcp",
  "arcweft-agent-protocol",
  "arcweft-agent-runner",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "arcweft-agent-policy"
+version = "0.1.0"
+dependencies = [
+ "arcweft-agent-protocol",
+ "arcweft-content-policy",
+ "arcweft-image",
+ "base64",
+ "blake3",
+ "png",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -389,10 +406,12 @@ dependencies = [
  "arcweft-adapter-desktop",
  "arcweft-agent-mcp",
  "arcweft-agent-mcp-client",
+ "arcweft-agent-policy",
  "arcweft-agent-protocol",
  "arcweft-agent-runner",
  "arcweft-bundle",
  "arcweft-compiler",
+ "arcweft-content-policy",
  "arcweft-core",
  "arcweft-debug-model",
  "arcweft-debug-sqlite",
@@ -544,6 +563,15 @@ name = "arcweft-config"
 version = "0.1.0"
 dependencies = [
  "arcweft-data",
+]
+
+[[package]]
+name = "arcweft-content-policy"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
