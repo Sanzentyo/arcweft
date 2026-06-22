@@ -7,7 +7,8 @@ use super::image_mapping::{
 };
 use super::mcp_protocol::{
     agent_mcp_call_get_state, agent_mcp_call_log_query, agent_mcp_call_session_info,
-    agent_mcp_call_signal_get, agent_mcp_resource_read, agent_mcp_script_run_options,
+    agent_mcp_call_signal_get, agent_mcp_resource_list, agent_mcp_resource_read,
+    agent_mcp_script_run_options,
 };
 use super::mcp_rag::{AgentMcpRagCandidate, agent_mcp_rag_context_pack_from_candidates};
 use super::mcp_resources::agent_mcp_capture_time_seconds;
@@ -474,6 +475,8 @@ fn agent_mcp_resource_read_enforces_capture_privacy() {
     assert_eq!(default_error["privacy"], serde_json::json!("sensitive"));
     assert_eq!(default_error["max_privacy"], serde_json::json!("project"));
 
+    assert_listed_moderated_uri_reads(&mut state);
+
     let allowed_result = agent_mcp_call_resource_read(
         &serde_json::json!({
             "uri": "arcweft://session/cli/frame/0/color.png",
@@ -484,24 +487,8 @@ fn agent_mcp_resource_read_enforces_capture_privacy() {
     )
     .expect("sensitive resource read succeeds");
     assert!(!allowed_result.is_error);
-    let store = DebugStore::open(&db_path).expect("debug store opens");
-    let events = store
-        .session_timeline_with_max_privacy(
-            Some("session.mcp.resource_read"),
-            None,
-            10,
-            PrivacyClass::Sensitive,
-        )
-        .expect("resource read audit timeline");
-    assert_eq!(events.len(), 2);
-    assert_eq!(events[0].event_kind, "resource_read");
-    assert_eq!(events[0].payload["outcome"], serde_json::json!("blocked"));
-    assert_eq!(events[0].payload["privacy"], serde_json::json!("sensitive"));
-    assert_eq!(
-        events[0].payload["max_privacy"],
-        serde_json::json!("project")
-    );
-    assert_eq!(events[1].payload["outcome"], serde_json::json!("allowed"));
+    assert_missing_image_metadata_tool_result(&allowed_result);
+    assert_resource_read_audit(&db_path);
 
     let direct_default = agent_mcp_resource_read(
         &serde_json::json!({"uri": "arcweft://session/cli/frame/0/color.png"}),
@@ -519,11 +506,149 @@ fn agent_mcp_resource_read_enforces_capture_privacy() {
         &mut state,
     )
     .expect("direct resources/read accepts explicit sensitive read");
+    let moderated_uri = direct_allowed["contents"][0]["uri"]
+        .as_str()
+        .expect("moderated resource uri");
+    assert!(moderated_uri.starts_with("arcweft://moderated/"));
+    assert_missing_image_metadata_read(&direct_allowed);
+    let moderated_read = agent_mcp_resource_read(
+        &serde_json::json!({
+            "uri": moderated_uri,
+            "max_privacy": "sensitive"
+        }),
+        &mut state,
+    )
+    .expect("raw read caches moderated URI for follow-up read");
     assert_eq!(
-        direct_allowed["contents"][0]["uri"],
-        serde_json::json!("arcweft://session/cli/frame/0/color.png")
+        moderated_read["contents"][0]["uri"],
+        serde_json::json!(moderated_uri)
     );
     let _ = std::fs::remove_file(&db_path);
+}
+
+#[test]
+fn agent_mcp_strict_mode_withholds_color_capture_without_visual_classifier() {
+    let mut state = AgentMcpState {
+        report: Some(test_agent_observation_report(None)),
+        capture_resources: vec![test_agent_raw_rgba_capture_resource(AgentImageKind::Color)],
+        ..AgentMcpState::default()
+    };
+
+    let result = agent_mcp_call_resource_read(
+        &serde_json::json!({
+            "uri": "arcweft://session/cli/frame/0/object.customer.secret.color.rgba",
+            "max_privacy": "sensitive"
+        }),
+        &mut state,
+    )
+    .expect("strict mode returns a policy placeholder");
+
+    assert!(!result.is_error);
+    let metadata = mcp_tool_metadata_json(&result);
+    assert_eq!(
+        metadata["content_policy"]["disposition"],
+        serde_json::json!("review")
+    );
+    assert!(
+        metadata["content_policy"]["reason_codes"]
+            .as_array()
+            .expect("reason codes")
+            .contains(&serde_json::json!("classifier_no_applicable_run"))
+    );
+    let body = mcp_tool_resource_text_json(&result);
+    assert_eq!(
+        body["content_policy"]["disposition"],
+        serde_json::json!("review")
+    );
+}
+
+#[test]
+fn agent_mcp_local_dev_mode_allows_color_capture_and_scrubs_metadata() {
+    let mut state = AgentMcpState {
+        content_policy_mode: AgentContentPolicyMode::LocalDev,
+        report: Some(test_agent_observation_report(None)),
+        capture_resources: vec![test_agent_raw_rgba_capture_resource(AgentImageKind::Color)],
+        ..AgentMcpState::default()
+    };
+
+    let result = agent_mcp_call_resource_read(
+        &serde_json::json!({
+            "uri": "arcweft://session/cli/frame/0/object.customer.secret.color.rgba",
+            "max_privacy": "sensitive"
+        }),
+        &mut state,
+    )
+    .expect("local-dev mode publishes color capture");
+
+    assert!(!result.is_error);
+    let metadata = mcp_tool_metadata_json(&result);
+    assert_eq!(
+        metadata["content_policy"]["disposition"],
+        serde_json::json!("allow")
+    );
+    assert_eq!(metadata["image"]["kind"], serde_json::json!("color"));
+    assert_eq!(
+        metadata["image"]["scope"]["kind"],
+        serde_json::json!("object")
+    );
+    assert!(
+        metadata["image"]["scope"]["id"]
+            .as_str()
+            .expect("opaque object scope id")
+            .starts_with("object.")
+    );
+    assert!(
+        !serde_json::to_string(&metadata)
+            .expect("metadata serializes")
+            .contains("customer.secret")
+    );
+    let resource = mcp_tool_resource_value(&result);
+    assert!(
+        resource["resource"]["uri"]
+            .as_str()
+            .expect("published URI")
+            .starts_with("arcweft://moderated/")
+    );
+    assert_eq!(
+        resource["resource"]["mimeType"],
+        serde_json::json!("application/octet-stream")
+    );
+    assert_eq!(resource["resource"]["blob"], serde_json::json!("IECA/w=="));
+}
+
+#[test]
+fn agent_mcp_local_dev_mode_still_withholds_auxiliary_captures() {
+    let mut state = AgentMcpState {
+        content_policy_mode: AgentContentPolicyMode::LocalDev,
+        report: Some(test_agent_observation_report(None)),
+        capture_resources: vec![test_agent_raw_rgba_capture_resource(
+            AgentImageKind::ObjectId,
+        )],
+        ..AgentMcpState::default()
+    };
+
+    let result = agent_mcp_call_resource_read(
+        &serde_json::json!({
+            "uri": "arcweft://session/cli/frame/0/object.customer.secret.object_id.rgba",
+            "max_privacy": "sensitive"
+        }),
+        &mut state,
+    )
+    .expect("local-dev mode returns a policy placeholder for auxiliary captures");
+
+    assert!(!result.is_error);
+    let metadata = mcp_tool_metadata_json(&result);
+    assert!(
+        metadata["content_policy"]["reason_codes"]
+            .as_array()
+            .expect("reason codes")
+            .contains(&serde_json::json!("auxiliary_capture_not_publishable"))
+    );
+    let body = mcp_tool_resource_text_json(&result);
+    assert_eq!(
+        body["content_policy"]["code"],
+        serde_json::json!("auxiliary_capture_not_publishable")
+    );
 }
 
 #[test]
@@ -605,7 +730,7 @@ fn agent_mcp_session_context_resource_redacts_source_and_enforces_privacy() {
     .expect("project context read succeeds");
     assert!(!allowed.is_error);
 
-    let session_info = agent_mcp_call_session_info(&state).expect("session info reads");
+    let session_info = agent_mcp_call_session_info(&mut state).expect("session info reads");
     let info = mcp_text_json(&session_info);
     assert_eq!(
         info["project"]["project_graph"]["project_summary"]["agent_action_count"],
@@ -2423,6 +2548,144 @@ fn mcp_text_json(result: &McpCallToolResult) -> serde_json::Value {
         panic!("expected one text block");
     };
     serde_json::from_str(text).expect("MCP text block is JSON")
+}
+
+fn mcp_tool_metadata_json(result: &McpCallToolResult) -> serde_json::Value {
+    let Some(McpContentBlock::Text { text }) = result.content.first() else {
+        panic!("expected leading metadata text block");
+    };
+    serde_json::from_str(text).expect("MCP metadata text block is JSON")
+}
+
+fn mcp_tool_resource_value(result: &McpCallToolResult) -> serde_json::Value {
+    let Some(resource) = result.content.get(1) else {
+        panic!("expected resource content block");
+    };
+    serde_json::to_value(resource).expect("MCP resource content serializes")
+}
+
+fn mcp_tool_resource_text_json(result: &McpCallToolResult) -> serde_json::Value {
+    let resource = mcp_tool_resource_value(result);
+    let text = resource["resource"]["text"]
+        .as_str()
+        .expect("resource content carries text");
+    serde_json::from_str(text).expect("resource text is JSON")
+}
+
+fn mcp_read_text_json(read: &serde_json::Value) -> serde_json::Value {
+    let text = read["contents"][0]["text"]
+        .as_str()
+        .expect("read result text");
+    serde_json::from_str(text).expect("read text is JSON")
+}
+
+fn assert_listed_moderated_uri_reads(state: &mut AgentMcpState) {
+    let listed = agent_mcp_resource_list(state).expect("resource list serializes");
+    let listed_uri = listed["resources"]
+        .as_array()
+        .expect("resources array")
+        .iter()
+        .filter_map(|resource| resource["uri"].as_str())
+        .find(|uri| uri.starts_with("arcweft://moderated/"))
+        .expect("resource list returns a moderated URI")
+        .to_owned();
+    let listed_read = agent_mcp_resource_read(
+        &serde_json::json!({
+            "uri": listed_uri,
+            "max_privacy": "sensitive"
+        }),
+        state,
+    )
+    .expect("listed moderated URI reads through cache");
+    assert_eq!(
+        listed_read["contents"][0]["uri"],
+        serde_json::json!(listed_uri)
+    );
+}
+
+fn assert_missing_image_metadata_tool_result(result: &McpCallToolResult) {
+    let metadata = mcp_tool_metadata_json(result);
+    assert_eq!(
+        metadata["content_policy"]["disposition"],
+        serde_json::json!("review")
+    );
+    assert!(
+        metadata["content_policy"]["reason_codes"]
+            .as_array()
+            .expect("reason codes")
+            .contains(&serde_json::json!("missing_image_metadata"))
+    );
+    let body = mcp_tool_resource_text_json(result);
+    assert_eq!(
+        body["content_policy"]["code"],
+        serde_json::json!("missing_image_metadata")
+    );
+}
+
+fn assert_missing_image_metadata_read(read: &serde_json::Value) {
+    let body = mcp_read_text_json(read);
+    assert_eq!(
+        body["content_policy"]["code"],
+        serde_json::json!("missing_image_metadata")
+    );
+}
+
+fn assert_resource_read_audit(db_path: &std::path::Path) {
+    let store = DebugStore::open(db_path).expect("debug store opens");
+    let events = store
+        .session_timeline_with_max_privacy(
+            Some("session.mcp.resource_read"),
+            None,
+            10,
+            PrivacyClass::Sensitive,
+        )
+        .expect("resource read audit timeline");
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].event_kind, "resource_read");
+    assert_eq!(events[0].payload["outcome"], serde_json::json!("blocked"));
+    assert_eq!(events[0].payload["privacy"], serde_json::json!("sensitive"));
+    assert_eq!(
+        events[0].payload["max_privacy"],
+        serde_json::json!("project")
+    );
+    assert_eq!(events[1].payload["outcome"], serde_json::json!("allowed"));
+}
+
+fn test_agent_raw_rgba_capture_resource(kind: AgentImageKind) -> AgentResource {
+    let capture_name = kind.as_str();
+    AgentResource {
+        uri: format!("arcweft://session/cli/frame/0/object.customer.secret.{capture_name}.rgba"),
+        kind: AgentResourceKind::Image,
+        mime_type: "application/octet-stream".to_owned(),
+        hash: "blake3:raw-rgba-test".to_owned(),
+        image: Some(AgentImageMetadata {
+            kind,
+            renderer: AgentImageRenderer::Native,
+            scope: AgentImageScope::Object {
+                id: "object.customer.secret".to_owned(),
+            },
+            composition: kind.default_capture_composition(),
+            page: 0,
+            capture_step: 0,
+            capture_time_millis: 0,
+            width: 1,
+            height: 1,
+            crop_origin: None,
+            pixel_format: Some("rgba8_unorm".to_owned()),
+            row_stride_bytes: Some(4),
+            content_bbox: None,
+            content_viewport_bbox: None,
+            content_pixels: None,
+            object: None,
+            diagnostics: Vec::new(),
+        }),
+        body: AgentResourceBody::BytesBase64(
+            arcweft_agent_protocol::resource::AgentBinaryResourceBody {
+                encoding: AgentBinaryEncoding::Base64,
+                data: "IECA/w==".to_owned(),
+            },
+        ),
+    }
 }
 
 #[test]

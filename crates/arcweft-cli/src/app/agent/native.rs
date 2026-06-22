@@ -22,13 +22,14 @@ use super::script::{
 };
 use super::{
     AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT, AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH, AgentCommand,
-    AgentControllerRunConfig, AgentControllerRunReport, AgentHitTestOptions, AgentMcpOptions,
-    AgentObserveCaptureKind, AgentObserveImageKind, AgentObserveMcpFormat, AgentObserveOptions,
-    AgentObserveResourceKind, AgentReplOptions, AgentRunner, AgentRunnerConfig,
-    AgentScriptRunOptions, AgentScriptSignalArg, AgentScriptStateArg, AgentSession,
-    CliRuntimeExecutorTier, CliRuntimePureWorkers, CliRuntimeStepMode, ExitCode, FlowFiberStatus,
-    LineDisplayCatalog, NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf,
-    ProfileOptions, RuntimeStepInput, RuntimeStepResult, fs, load_and_check_selection,
+    AgentContentPolicyMode, AgentControllerRunConfig, AgentControllerRunReport,
+    AgentHitTestOptions, AgentMcpOptions, AgentObserveCaptureKind, AgentObserveImageKind,
+    AgentObserveMcpFormat, AgentObserveOptions, AgentObserveResourceKind, AgentReplOptions,
+    AgentRunner, AgentRunnerConfig, AgentScriptRunOptions, AgentScriptSignalArg,
+    AgentScriptStateArg, AgentSession, CliRuntimeExecutorTier, CliRuntimePureWorkers,
+    CliRuntimeStepMode, ExitCode, FlowFiberStatus, LineDisplayCatalog, NativeAdapterRegistrar,
+    NativeTaskBridge, NoopRagService, Path, PathBuf, ProfileOptions, RuntimeStepInput,
+    RuntimeStepResult, fs, load_and_check_selection,
     lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection,
     parse_runtime_binding_arg, parse_runtime_pure_workers, print_json, resolve_source_selection,
     runtime_plan_options_for_selection, runtime_pure_config_for_selection, step_options,
@@ -172,18 +173,80 @@ struct AgentObservationTrace {
     tick: usize,
 }
 
-fn agent_publish_resource(
-    resource: AgentResource,
-) -> Result<arcweft_agent_policy::PublishedAgentResource, String> {
-    arcweft_agent_policy::AgentContentPolicyGate::strict_builtin()
-        .publish(resource)
-        .map_err(|error| format!("Agent content-policy gate failed: {error}"))
+#[derive(Clone, Debug)]
+struct AgentLocalDevVisualClassifier;
+
+impl arcweft_content_policy::ContentClassifier for AgentLocalDevVisualClassifier {
+    fn identity(&self) -> arcweft_content_policy::ClassifierIdentity {
+        arcweft_content_policy::ClassifierIdentity::new("arcweft.local-dev.visual", "2026-06-23")
+    }
+
+    fn classify(
+        &self,
+        input: arcweft_content_policy::PolicyInputRef<'_>,
+    ) -> Result<arcweft_content_policy::ClassificationReport, arcweft_content_policy::PolicyError>
+    {
+        let runs = match input {
+            arcweft_content_policy::PolicyInputRef::Text(_) => {
+                vec![arcweft_content_policy::ClassifierRun::not_applicable(
+                    self.identity(),
+                )]
+            }
+            arcweft_content_policy::PolicyInputRef::Image(_)
+            | arcweft_content_policy::PolicyInputRef::RenderedScene(_) => {
+                vec![arcweft_content_policy::ClassifierRun::complete(
+                    self.identity(),
+                )]
+            }
+        };
+        Ok(arcweft_content_policy::ClassificationReport {
+            findings: Vec::new(),
+            runs,
+        })
+    }
 }
 
-fn agent_publish_resources(
+fn agent_publish_resource_with_mode(
+    mode: AgentContentPolicyMode,
+    resource: AgentResource,
+) -> Result<arcweft_agent_policy::PublishedAgentResource, String> {
+    let result = match mode {
+        AgentContentPolicyMode::Strict => {
+            arcweft_agent_policy::AgentContentPolicyGate::strict_builtin().publish(resource)
+        }
+        AgentContentPolicyMode::LocalDev => {
+            if resource.kind == AgentResourceKind::Image
+                && !matches!(
+                    resource.image.as_ref().map(|metadata| metadata.kind),
+                    Some(AgentImageKind::Color)
+                )
+            {
+                return arcweft_agent_policy::AgentContentPolicyGate::strict_builtin()
+                    .publish(resource)
+                    .map_err(|error| format!("Agent content-policy gate failed: {error}"));
+            }
+            let classifier = arcweft_content_policy::CompositeClassifier::new(
+                arcweft_content_policy::RuleClassifier::strict_builtin(),
+                AgentLocalDevVisualClassifier,
+            );
+            let engine = arcweft_content_policy::ContentPolicyEngine::new(
+                classifier,
+                arcweft_content_policy::PolicyProfile::strict_default(),
+            );
+            arcweft_agent_policy::AgentContentPolicyGate::new(engine).publish(resource)
+        }
+    };
+    result.map_err(|error| format!("Agent content-policy gate failed: {error}"))
+}
+
+fn agent_publish_resources_with_mode(
+    mode: AgentContentPolicyMode,
     resources: Vec<AgentResource>,
 ) -> Result<Vec<arcweft_agent_policy::PublishedAgentResource>, String> {
-    resources.into_iter().map(agent_publish_resource).collect()
+    resources
+        .into_iter()
+        .map(|resource| agent_publish_resource_with_mode(mode, resource))
+        .collect()
 }
 
 mod capture;
@@ -228,9 +291,10 @@ use mcp_debug::{
 use mcp_protocol::{
     AgentMcpFrame, AgentMcpObservation, AgentMcpProjectContext, AgentMcpState,
     AgentObservationRunContext, AgentObservationRunOutput, AgentObservationState,
-    NativeAgentObservedSnapshot, NativeAgentRuntimeState, agent_mcp_agent_value,
-    agent_mcp_bool_argument, agent_mcp_command, agent_mcp_project_context_from_hir,
-    agent_mcp_store_observation,
+    AgentPublishedResourceCache, NativeAgentObservedSnapshot, NativeAgentRuntimeState,
+    agent_mcp_agent_value, agent_mcp_bool_argument, agent_mcp_cached_published_resource,
+    agent_mcp_command, agent_mcp_project_context_from_hir, agent_mcp_store_observation,
+    agent_publish_resource_for_state,
 };
 use mcp_rag::{
     agent_mcp_call_rag_context_read, agent_mcp_call_rag_explain, agent_mcp_call_rag_query,

@@ -14,24 +14,6 @@ impl AgentObserveResourceOutput {
             Self::Many(resources) => resources,
         }
     }
-
-    fn publish_with<C>(
-        self,
-        gate: &arcweft_agent_policy::AgentContentPolicyGate<C>,
-    ) -> Result<Vec<arcweft_agent_policy::PublishedAgentResource>, ExitCode>
-    where
-        C: arcweft_content_policy::ContentClassifier,
-    {
-        self.into_resources()
-            .into_iter()
-            .map(|resource| {
-                gate.publish(resource).map_err(|error| {
-                    eprintln!("error: Agent content-policy gate failed: {error}");
-                    ExitCode::FAILURE
-                })
-            })
-            .collect()
-    }
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -46,9 +28,18 @@ pub(super) enum AgentObserveMcpResourceOutput {
 pub(super) fn agent_observe_mcp_resource_output(
     resource: AgentObserveResourceOutput,
     format: AgentObserveMcpFormat,
+    content_policy_mode: AgentContentPolicyMode,
 ) -> Result<AgentObserveMcpResourceOutput, ExitCode> {
-    let gate = arcweft_agent_policy::AgentContentPolicyGate::strict_builtin();
-    let resources = resource.publish_with(&gate)?;
+    let resources = resource
+        .into_resources()
+        .into_iter()
+        .map(|resource| {
+            agent_publish_resource_with_mode(content_policy_mode, resource).map_err(|error| {
+                eprintln!("error: {error}");
+                ExitCode::FAILURE
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     match format {
         AgentObserveMcpFormat::Read => {
             let mut read_results = resources

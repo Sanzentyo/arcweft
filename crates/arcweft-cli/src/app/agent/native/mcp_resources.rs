@@ -245,7 +245,7 @@ pub(super) fn agent_mcp_call_trace_read(
         .trace_resources
         .retain(|cached| cached.uri != resource.uri);
     state.trace_resources.push(resource.clone());
-    let published = agent_publish_resource(resource)?;
+    let published = agent_publish_resource_for_state(state, resource)?;
     tool_result_for_resource(&published)
         .map_err(|error| format!("failed to serialize MCP trace resource: {error}"))
 }
@@ -418,6 +418,31 @@ pub(super) fn agent_mcp_call_resource_read(
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| "arcweft.resource.read requires arguments.uri".to_owned())?;
     let audit_path = agent_mcp_optional_debug_store_path(arguments);
+    if let Some(published) = agent_mcp_cached_published_resource(state, uri) {
+        if let Some(error) = agent_mcp_resource_read_privacy_error(
+            published.resource(),
+            max_privacy,
+            "arcweft.resource.read",
+        ) {
+            agent_mcp_audit_resource_read(
+                audit_path,
+                uri,
+                published.resource(),
+                max_privacy,
+                "blocked",
+            )?;
+            return agent_mcp_json_tool_error(&error, "resource privacy");
+        }
+        agent_mcp_audit_resource_read(
+            audit_path,
+            uri,
+            published.resource(),
+            max_privacy,
+            "allowed",
+        )?;
+        return tool_result_for_resource(&published)
+            .map_err(|error| format!("failed to serialize cached MCP resource: {error}"));
+    }
     if let Some(resource) = agent_mcp_session_context_resource_for_uri(state, uri)
         .map_err(|error| format!("failed to build Agent session context: {error}"))?
     {
@@ -428,7 +453,7 @@ pub(super) fn agent_mcp_call_resource_read(
             return agent_mcp_json_tool_error(&error, "resource privacy");
         }
         agent_mcp_audit_resource_read(audit_path, uri, &resource, max_privacy, "allowed")?;
-        let published = agent_publish_resource(resource)?;
+        let published = agent_publish_resource_for_state(state, resource)?;
         return tool_result_for_resource(&published)
             .map_err(|error| format!("failed to serialize MCP session context: {error}"));
     }
@@ -440,7 +465,7 @@ pub(super) fn agent_mcp_call_resource_read(
             return agent_mcp_json_tool_error(&error, "resource privacy");
         }
         agent_mcp_audit_resource_read(audit_path, uri, &resource, max_privacy, "allowed")?;
-        let published = agent_publish_resource(resource)?;
+        let published = agent_publish_resource_for_state(state, resource)?;
         return tool_result_for_resource(&published)
             .map_err(|error| format!("failed to serialize MCP trace resource: {error}"));
     }
@@ -463,7 +488,7 @@ pub(super) fn agent_mcp_call_resource_read(
         return agent_mcp_json_tool_error(&error, "resource privacy");
     }
     agent_mcp_audit_resource_read(audit_path, uri, &resource, max_privacy, "allowed")?;
-    let published = agent_publish_resource(resource)?;
+    let published = agent_publish_resource_for_state(state, resource)?;
     tool_result_for_resource(&published)
         .map_err(|error| format!("failed to serialize MCP tool resource: {error}"))
 }
@@ -803,7 +828,7 @@ pub(super) fn agent_mcp_call_capture(
         .capture_resources
         .retain(|cached| cached.uri != resource.uri);
     state.capture_resources.push(resource.clone());
-    let published = agent_publish_resource(resource)?;
+    let published = agent_publish_resource_for_state(state, resource)?;
     tool_result_for_resource(&published)
         .map_err(|error| format!("failed to serialize MCP capture resource: {error}"))
 }
@@ -1139,6 +1164,7 @@ pub(super) fn agent_mcp_observe_options(
         read_uri: None,
         mcp: false,
         mcp_format: AgentObserveMcpFormat::Read,
+        content_policy_mode: AgentContentPolicyMode::Strict,
         out: None,
         json: false,
     })

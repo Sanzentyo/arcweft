@@ -769,9 +769,12 @@ pub(super) fn agent_repl_trace(
     input: &str,
     state: &AgentReplState,
 ) -> AgentReplCellReport {
-    let descriptors = agent_publish_resources(state.trace_resources.clone())
-        .map(|resources| list_resources_result(&resources).resources)
-        .unwrap_or_default();
+    let descriptors = agent_publish_resources_with_mode(
+        AgentContentPolicyMode::Strict,
+        state.trace_resources.clone(),
+    )
+    .map(|resources| list_resources_result(&resources).resources)
+    .unwrap_or_default();
     agent_repl_ok(
         index,
         input,
@@ -1419,6 +1422,8 @@ pub(super) fn agent_repl_query(
         );
     }
     let mcp_state = AgentMcpState {
+        content_policy_mode: AgentContentPolicyMode::Strict,
+        published_resources: AgentPublishedResourceCache::default(),
         report: state.report.clone(),
         image_output: None,
         image_frames: AgentImageFrameStore::default(),
@@ -1646,6 +1651,7 @@ pub(super) fn agent_repl_observe_options(
         read_uri: None,
         mcp: false,
         mcp_format: AgentObserveMcpFormat::Read,
+        content_policy_mode: AgentContentPolicyMode::Strict,
         out: None,
         json: true,
     };

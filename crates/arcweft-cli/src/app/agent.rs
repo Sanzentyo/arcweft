@@ -148,6 +148,8 @@ pub(super) struct AgentObserveOptions {
     mcp: bool,
     #[arg(long, value_enum, default_value_t = AgentObserveMcpFormat::Read)]
     mcp_format: AgentObserveMcpFormat,
+    #[arg(long, value_enum, default_value_t = AgentContentPolicyMode::Strict)]
+    content_policy_mode: AgentContentPolicyMode,
     #[arg(long)]
     out: Option<PathBuf>,
     #[arg(long)]
@@ -204,7 +206,17 @@ pub(super) struct AgentHitTestOptions {
 }
 
 #[derive(Args, Clone, Debug)]
-pub(super) struct AgentMcpOptions {}
+pub(super) struct AgentMcpOptions {
+    #[arg(long, value_enum, default_value_t = AgentContentPolicyMode::Strict)]
+    content_policy_mode: AgentContentPolicyMode,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+pub(super) enum AgentContentPolicyMode {
+    #[default]
+    Strict,
+    LocalDev,
+}
 
 #[derive(Args, Clone, Debug)]
 pub(super) struct AgentReplOptions {

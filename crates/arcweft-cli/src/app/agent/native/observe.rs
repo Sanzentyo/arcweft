@@ -35,6 +35,7 @@ pub(super) fn agent_observe_command(
             let resource = agent_observe_mcp_resource_output(
                 AgentObserveResourceOutput::One(Box::new(resource)),
                 options.mcp_format,
+                options.content_policy_mode,
             )?;
             return print_json(&resource);
         }
@@ -53,7 +54,11 @@ pub(super) fn agent_observe_command(
     if let Some(resource) = options.resource {
         let resource = agent_observe_resource(&observed.report, image_output.as_ref(), resource)?;
         if options.mcp {
-            let resource = agent_observe_mcp_resource_output(resource, options.mcp_format)?;
+            let resource = agent_observe_mcp_resource_output(
+                resource,
+                options.mcp_format,
+                options.content_policy_mode,
+            )?;
             print_json(&resource)
         } else {
             print_json(&resource)
@@ -275,6 +280,7 @@ impl<'a> NativeAgentScriptSession<'a> {
                 read_uri: None,
                 mcp: false,
                 mcp_format: AgentObserveMcpFormat::Read,
+                content_policy_mode: AgentContentPolicyMode::Strict,
                 out: None,
                 json: true,
             },
@@ -740,6 +746,7 @@ pub(super) fn agent_hit_test_observe_options(options: &AgentHitTestOptions) -> A
         read_uri: None,
         mcp: false,
         mcp_format: AgentObserveMcpFormat::Read,
+        content_policy_mode: AgentContentPolicyMode::Strict,
         out: None,
         json: true,
     }

@@ -1,12 +1,15 @@
 use super::*;
 
 pub(super) fn agent_mcp_command(
-    _options: &AgentMcpOptions,
+    options: &AgentMcpOptions,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<(), ExitCode> {
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
-    let mut state = AgentMcpState::default();
+    let mut state = AgentMcpState {
+        content_policy_mode: options.content_policy_mode,
+        ..AgentMcpState::default()
+    };
     for line in stdin.lock().lines() {
         let line = line.map_err(|error| {
             eprintln!("error: failed to read MCP request: {error}");
@@ -43,6 +46,8 @@ pub(super) fn agent_mcp_command(
 
 #[derive(Default)]
 pub(super) struct AgentMcpState {
+    pub(super) content_policy_mode: AgentContentPolicyMode,
+    pub(super) published_resources: AgentPublishedResourceCache,
     pub(super) report: Option<AgentObservationReport>,
     pub(super) image_output: Option<AgentImageOutput>,
     pub(super) image_frames: AgentImageFrameStore,
@@ -53,6 +58,88 @@ pub(super) struct AgentMcpState {
     pub(super) native_capture_session: Option<arcweft_render_native::NativeOffscreenCaptureSession>,
     pub(super) runtime: Option<NativeAgentRuntimeState>,
     pub(super) observe_options: Option<AgentObserveOptions>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(super) struct AgentPublishedResourceCache {
+    by_public_uri: BTreeMap<String, arcweft_agent_policy::PublishedAgentResource>,
+    public_uri_by_source_uri: BTreeMap<String, String>,
+}
+
+impl AgentPublishedResourceCache {
+    pub(super) fn clear(&mut self) {
+        self.by_public_uri.clear();
+        self.public_uri_by_source_uri.clear();
+    }
+
+    pub(super) fn get(&self, uri: &str) -> Option<&arcweft_agent_policy::PublishedAgentResource> {
+        self.by_public_uri.get(uri)
+    }
+
+    pub(super) fn store(
+        &mut self,
+        source_uri: &str,
+        published: arcweft_agent_policy::PublishedAgentResource,
+    ) -> arcweft_agent_policy::PublishedAgentResource {
+        self.remove_source_uri(source_uri);
+        let public_uri = published.resource().uri.clone();
+        for key in agent_published_resource_source_keys(source_uri) {
+            self.public_uri_by_source_uri
+                .insert(key, public_uri.clone());
+        }
+        self.by_public_uri.insert(public_uri, published.clone());
+        published
+    }
+
+    pub(super) fn remove_source_uri(&mut self, source_uri: &str) {
+        for key in agent_published_resource_source_keys(source_uri) {
+            if let Some(public_uri) = self.public_uri_by_source_uri.remove(&key) {
+                let still_referenced = self
+                    .public_uri_by_source_uri
+                    .values()
+                    .any(|candidate| candidate == &public_uri);
+                if !still_referenced {
+                    self.by_public_uri.remove(&public_uri);
+                }
+            }
+        }
+    }
+}
+
+pub(super) fn agent_publish_resource_for_state(
+    state: &mut AgentMcpState,
+    resource: AgentResource,
+) -> Result<arcweft_agent_policy::PublishedAgentResource, String> {
+    let source_uri = resource.uri.clone();
+    let published = agent_publish_resource_with_mode(state.content_policy_mode, resource)?;
+    Ok(state.published_resources.store(&source_uri, published))
+}
+
+pub(super) fn agent_publish_resources_for_state(
+    state: &mut AgentMcpState,
+    resources: Vec<AgentResource>,
+) -> Result<Vec<arcweft_agent_policy::PublishedAgentResource>, String> {
+    resources
+        .into_iter()
+        .map(|resource| agent_publish_resource_for_state(state, resource))
+        .collect()
+}
+
+pub(super) fn agent_mcp_cached_published_resource(
+    state: &AgentMcpState,
+    uri: &str,
+) -> Option<arcweft_agent_policy::PublishedAgentResource> {
+    state.published_resources.get(uri).cloned()
+}
+
+fn agent_published_resource_source_keys(source_uri: &str) -> Vec<String> {
+    let mut keys = vec![source_uri.to_owned()];
+    if let Some((base, _)) = source_uri.split_once('?')
+        && base != source_uri
+    {
+        keys.push(base.to_owned());
+    }
+    keys
 }
 
 pub(super) struct AgentObservationState {
@@ -187,10 +274,12 @@ pub(super) fn agent_mcp_handle_request(
     })
 }
 
-pub(super) fn agent_mcp_resource_list(state: &AgentMcpState) -> Result<serde_json::Value, String> {
+pub(super) fn agent_mcp_resource_list(
+    state: &mut AgentMcpState,
+) -> Result<serde_json::Value, String> {
     let resources = agent_mcp_current_resources(state)
         .map_err(|_| "failed to build Agent resource list".to_owned())?;
-    let published = agent_publish_resources(resources)?;
+    let published = agent_publish_resources_for_state(state, resources)?;
     serde_json::to_value(list_resources_result(&published))
         .map_err(|error| format!("failed to serialize MCP resource list: {error}"))
 }
@@ -204,6 +293,19 @@ pub(super) fn agent_mcp_resource_read(
         .get("uri")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| "resources/read requires params.uri".to_owned())?;
+    if let Some(published) = agent_mcp_cached_published_resource(state, uri) {
+        if let Some(error) = agent_mcp_resource_read_privacy_error(
+            published.resource(),
+            max_privacy,
+            "resources/read",
+        ) {
+            return Err(agent_mcp_resource_read_privacy_message(&error));
+        }
+        let read = read_resource_result(&published)
+            .map_err(|error| format!("failed to serialize MCP resource: {error}"))?;
+        return serde_json::to_value(read)
+            .map_err(|error| format!("failed to serialize MCP read: {error}"));
+    }
     if let Some(resource) = agent_mcp_session_context_resource_for_uri(state, uri)
         .map_err(|error| format!("failed to build Agent session context: {error}"))?
     {
@@ -212,7 +314,7 @@ pub(super) fn agent_mcp_resource_read(
         {
             return Err(agent_mcp_resource_read_privacy_message(&error));
         }
-        let published = agent_publish_resource(resource)?;
+        let published = agent_publish_resource_for_state(state, resource)?;
         let read = read_resource_result(&published)
             .map_err(|error| format!("failed to serialize MCP session context: {error}"))?;
         return serde_json::to_value(read)
@@ -224,7 +326,7 @@ pub(super) fn agent_mcp_resource_read(
         {
             return Err(agent_mcp_resource_read_privacy_message(&error));
         }
-        let published = agent_publish_resource(resource)?;
+        let published = agent_publish_resource_for_state(state, resource)?;
         let read = read_resource_result(&published)
             .map_err(|error| format!("failed to serialize MCP resource: {error}"))?;
         return serde_json::to_value(read)
@@ -250,7 +352,7 @@ pub(super) fn agent_mcp_resource_read(
     {
         return Err(agent_mcp_resource_read_privacy_message(&error));
     }
-    let published = agent_publish_resource(resource)?;
+    let published = agent_publish_resource_for_state(state, resource)?;
     let read = read_resource_result(&published)
         .map_err(|error| format!("failed to serialize MCP resource: {error}"))?;
     serde_json::to_value(read).map_err(|error| format!("failed to serialize MCP read: {error}"))
@@ -398,7 +500,7 @@ pub(super) fn agent_mcp_call_observe(
     agent_mcp_store_observation(state, observed);
     let resources = agent_mcp_current_resources(state)
         .map_err(|_| "failed to build Agent session resource list".to_owned())?;
-    let published = agent_publish_resources(resources)?;
+    let published = agent_publish_resources_for_state(state, resources)?;
     let tool = tool_result_for_resources(&published);
     serde_json::to_value(tool)
         .map_err(|error| format!("failed to serialize MCP tool result: {error}"))
@@ -416,21 +518,22 @@ pub(super) fn agent_mcp_store_observation(
     state.observe_options = Some(observed.options);
     state.native_capture_session = None;
     state.capture_resources.clear();
+    state.published_resources.clear();
 }
 
 pub(super) fn agent_mcp_call_session_info(
-    state: &AgentMcpState,
+    state: &mut AgentMcpState,
 ) -> Result<McpCallToolResult, String> {
     let capabilities = agent_mcp_session_capabilities();
-    let info = if let Some(report) = &state.report {
+    let info = if let Some(report) = state.report.clone() {
         let resources = agent_mcp_current_resources(state)
             .map_err(|_| "failed to build Agent session resource list".to_owned())?;
-        let published = agent_publish_resources(resources)?;
+        let published = agent_publish_resources_for_state(state, resources)?;
         let descriptors = list_resources_result(&published).resources;
-        let latest_capture = agent_mcp_latest_capture_resource(state);
+        let latest_capture = agent_mcp_latest_capture_resource(state).cloned();
         let latest_capture_descriptor = latest_capture
-            .cloned()
-            .and_then(|resource| agent_publish_resource(resource).ok())
+            .clone()
+            .and_then(|resource| agent_publish_resource_for_state(state, resource).ok())
             .as_ref()
             .map(resource_descriptor);
         serde_json::json!({
@@ -454,13 +557,13 @@ pub(super) fn agent_mcp_call_session_info(
             "capture_resource_count": state.capture_resources.len(),
             "native_capture_session_active": state.runtime.is_some() || state.native_capture_session.is_some(),
             "project": state.project_context.as_ref().map(AgentMcpProjectContext::to_json),
-            "latest_capture": latest_capture.and_then(|resource| resource.image.as_ref()),
-            "latest_capture_uri": latest_capture.map(|resource| resource.uri.as_str()),
+            "latest_capture": latest_capture.as_ref().and_then(|resource| resource.image.as_ref()),
+            "latest_capture_uri": latest_capture.as_ref().map(|resource| resource.uri.as_str()),
             "latest_capture_resource": latest_capture_descriptor,
             "trace_resource_count": state.trace_resources.len(),
         })
     } else {
-        let published = agent_publish_resources(state.trace_resources.clone())?;
+        let published = agent_publish_resources_for_state(state, state.trace_resources.clone())?;
         let descriptors = list_resources_result(&published).resources;
         serde_json::json!({
             "observed": false,
@@ -1003,6 +1106,7 @@ pub(super) fn agent_mcp_store_frame(state: &mut AgentMcpState, frame: AgentMcpFr
     state.image_output = frame.image_output;
     state.image_frames = frame.image_frames;
     state.capture_resources.clear();
+    state.published_resources.clear();
 }
 
 pub(super) fn agent_mcp_action_argument(
