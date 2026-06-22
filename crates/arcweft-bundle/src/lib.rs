@@ -482,7 +482,7 @@ impl ArcweftBundle {
         )))]
         {
             let _ = bytes;
-            return Err(format.disabled_error());
+            Err(format.disabled_error())
         }
 
         #[cfg(any(

@@ -1,6 +1,6 @@
 use arcweft_render_wgpu::geometry::{
-    InteractionVisualState, RenderChoiceItem, RenderPreferences, RenderScene, RenderViewport,
-    SharedFramePlanner,
+    ChoiceScroll, InteractionVisualState, RenderChoiceItem, RenderPreferences, RenderScene,
+    RenderViewport, SharedFramePlanner,
 };
 use arcweft_render_wgpu::sample::{DemoAnimationClock, DemoImageKind, generated_demo_images};
 
@@ -28,7 +28,7 @@ fn scene() -> RenderScene {
         viewport,
         preferences: RenderPreferences::default(),
         interaction: InteractionVisualState::default(),
-        choice_scroll: Default::default(),
+        choice_scroll: ChoiceScroll::default(),
     }
 }
 

@@ -1,17 +1,65 @@
-character @character.alice Alice as alice {
+character alice Alice {
+}
+
+pub asset @asset.generated.background {
+    kind = image
+    file = "generated/background.png"
+}
+
+pub asset @asset.generated.character_stand {
+    kind = image
+    file = "generated/character_stand.png"
+}
+
+pub asset @asset.generated.gif_pulse {
+    kind = image
+    file = "generated/gif_pulse.gif"
+}
+
+pub asset @asset.generated.webp_pulse {
+    kind = image
+    file = "generated/webp_pulse.webp"
+}
+
+pub image @image.generated.character_stand {
+    asset = @asset.generated.character_stand
+    x = 64px
+    y = 52px
+    width = 180px
+    height = 300px
+}
+
+pub image @image.generated.gif_pulse {
+    asset = @asset.generated.gif_pulse
+    x = 486px
+    y = 46px
+    width = 96px
+    height = 96px
+}
+
+pub image @image.generated.webp_pulse {
+    asset = @asset.generated.webp_pulse
+    x = 492px
+    y = 156px
+    width = 96px
+    height = 96px
 }
 
 entry game @entry.main { start(@flow.main) }
 
-flow @flow.main main {
-    alice: Arcweft is running on a shared wgpu renderer in this WebGPU canvas.[p]
+flow main {
+    bg(@asset.generated.background)
+    image(@image.generated.character_stand)
+    image(@image.generated.gif_pulse)
+    image(@image.generated.webp_pulse)
+    alice: Arcweft is running on a shared wgpu renderer in this WebGPU canvas.
     choice @choice.web_demo {
         @choice.web_demo.continue "Continue" -> @flow.done
         @choice.web_demo.alternate "Alternate route" -> @flow.done
     }
 }
 
-flow @flow.done done {
-    alice: The semantic choice input returned to the bytecode VM.[p]
+flow done {
+    alice: The semantic choice input returned to the bytecode VM.
     return "done"
 }

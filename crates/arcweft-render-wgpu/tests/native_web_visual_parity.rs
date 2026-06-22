@@ -41,7 +41,14 @@ fn native_and_web_captures_stay_within_the_approved_tolerance() {
                 .any(|(left, right)| left.abs_diff(*right) > 3)
         })
         .count();
-    let changed_ratio = changed_pixels as f64 / (width * height) as f64;
+    let pixel_count = u32::try_from(
+        width
+            .checked_mul(height)
+            .expect("capture dimensions fit u32 pixel count"),
+    )
+    .expect("capture dimensions fit u32 pixel count");
+    let changed_ratio = f64::from(u32::try_from(changed_pixels).unwrap_or(u32::MAX))
+        / f64::from(pixel_count.max(1));
     assert!(
         changed_ratio <= maximum_changed_pixel_ratio,
         "native/Web changed pixel ratio {changed_ratio:.6} exceeded {maximum_changed_pixel_ratio:.6}"

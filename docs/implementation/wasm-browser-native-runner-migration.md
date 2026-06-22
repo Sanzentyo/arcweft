@@ -78,3 +78,31 @@ Native migration is complete only when:
 - browser WebGPU smoke is green,
 - semantic parity is exact,
 - visual parity differences are reviewed and bounded.
+
+## Current WebGPU browser cut — 2026-06-22
+
+Implemented in the current checkout:
+
+- `arcweft-player-web` boots the browser player through wasm-bindgen, winit, and
+  `arcweft-render-web`; JavaScript only fetches bytes and surfaces fatal/status
+  events.
+- `web/demo.arcw` declares generated background, character stand, GIF, and WebP
+  assets, and `web/demo.awfb` is regenerated from that source.
+- `tools/generate-webgpu-demo-assets.rs` is a Rust script with embedded Cargo
+  metadata that generates and validates the PNG/GIF/WebP fixtures.
+- Web smoke execution uses `deno task test`; npm package scripts and `npx` are
+  removed from the browser workflow.
+- The Windows/headless Chrome WebGPU smoke passed on this machine with the
+  installed Chrome channel and D3D11 ANGLE:
+
+```bash
+deno task test
+```
+
+Remaining completion work:
+
+- Native/Web screenshot parity still needs an approved readback/comparison
+  harness.
+- Bundle-declared image assets are packaged and validated, while the browser demo
+  render path still uses the shared renderer's generated demo-image scene until
+  the typed asset-to-render-scene bridge is landed.

@@ -271,11 +271,11 @@ impl InputController {
                 .interaction
                 .captures()
                 .iter()
-                .map(|capture| capture.pointer())
+                .map(arcweft_presentation::interaction::PointerCapture::pointer)
                 .collect::<Vec<_>>();
-            pointers.into_iter().for_each(|pointer| {
+            for pointer in pointers {
                 self.interaction.release_pointer(pointer);
-            });
+            }
         }
         InputOutcome {
             actions: Vec::new(),

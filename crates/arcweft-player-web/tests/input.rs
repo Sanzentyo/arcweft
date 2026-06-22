@@ -1,8 +1,8 @@
 use arcweft_player_web::input::InputController;
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
 use arcweft_render_wgpu::geometry::{
-    InteractionVisualState, RenderChoiceItem, RenderPreferences, RenderScene, RenderViewport,
-    SharedFramePlanner,
+    ChoiceScroll, InteractionVisualState, RenderChoiceItem, RenderPreferences, RenderScene,
+    RenderViewport, SharedFramePlanner,
 };
 
 fn frame() -> arcweft_render_wgpu::geometry::PreparedFrame {
@@ -28,7 +28,7 @@ fn frame() -> arcweft_render_wgpu::geometry::PreparedFrame {
         },
         preferences: RenderPreferences::default(),
         interaction: InteractionVisualState::default(),
-        choice_scroll: Default::default(),
+        choice_scroll: ChoiceScroll::default(),
     })
     .expect("frame plans")
 }

@@ -13,6 +13,7 @@ arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-ui = { path = "../arcweft-ui" }
 bytemuck.workspace = true
 glyphon.workspace = true
+num-traits = "0.2.19"
 thiserror.workspace = true
 wgpu.workspace = true
 

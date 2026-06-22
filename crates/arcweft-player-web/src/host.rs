@@ -10,7 +10,7 @@ use thiserror::Error;
 
 /// Browser host task broker for the synchronous embedded-VFS MVP slice.
 ///
-/// Fetch, IndexedDB, WebAudio, and nested Wasm are explicit post-MVP adapters.
+/// Fetch, `IndexedDB`, `WebAudio`, and nested Wasm are explicit post-MVP adapters.
 /// Unsupported calls produce deterministic task errors instead of being ignored.
 #[derive(Clone, Debug)]
 pub struct BrowserTaskBroker {

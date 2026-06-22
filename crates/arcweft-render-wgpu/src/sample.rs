@@ -1,5 +1,6 @@
 //! Deterministic visual sample assets for native/WebGPU parity checks.
 
+use crate::convert::{f32_to_u8_nonnegative, u32_to_f32, u64_to_f32};
 use crate::geometry::{RenderImage, RenderImageFrame, RenderViewport};
 use arcweft_presentation::hit::HitRect;
 
@@ -76,35 +77,39 @@ pub fn generated_demo_images(
 }
 
 fn gradient_background_frame() -> RenderImageFrame {
-    let width = 96;
-    let height = 54;
-    let mut rgba = Vec::with_capacity(width * height * 4);
-    for y in 0..height {
-        for x in 0..width {
-            let horizon = (x * 90 / width) as u8;
-            let dusk = (y * 80 / height) as u8;
+    const WIDTH: u32 = 96;
+    const HEIGHT: u32 = 54;
+    let mut rgba = Vec::with_capacity(usize::try_from(WIDTH * HEIGHT * 4).unwrap_or(0));
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            let horizon = u8::try_from(x * 90 / WIDTH).unwrap_or(0);
+            let dusk = u8::try_from(y * 80 / HEIGHT).unwrap_or(0);
             rgba.extend([12 + horizon / 5, 28 + dusk / 3, 58 + horizon / 2, 255]);
         }
     }
     RenderImageFrame {
-        width: width as u32,
-        height: height as u32,
+        width: WIDTH,
+        height: HEIGHT,
         rgba,
     }
 }
 
 fn character_stand_frame() -> RenderImageFrame {
-    let width = 72;
-    let height = 128;
-    let mut rgba = vec![0; width * height * 4];
-    for y in 0..height {
-        for x in 0..width {
-            let dx = x as f32 - width as f32 * 0.5;
-            let body_y = y as f32 - height as f32 * 0.55;
-            let head = dx * dx / 360.0 + (y as f32 - 28.0).powi(2) / 420.0 <= 1.0;
-            let body = dx.abs() < 18.0 + body_y.max(0.0) * 0.04 && y > 45 && y < height - 10;
+    const WIDTH: u32 = 72;
+    const HEIGHT: u32 = 128;
+    let width = u32_to_f32(WIDTH);
+    let height = u32_to_f32(HEIGHT);
+    let mut rgba = vec![0; usize::try_from(WIDTH * HEIGHT * 4).unwrap_or(0)];
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            let xf = u32_to_f32(x);
+            let yf = u32_to_f32(y);
+            let dx = xf - width * 0.5;
+            let body_y = yf - height * 0.55;
+            let head = dx * dx / 360.0 + (yf - 28.0).powi(2) / 420.0 <= 1.0;
+            let body = dx.abs() < 18.0 + body_y.max(0.0) * 0.04 && y > 45 && y < HEIGHT - 10;
             let hair = dx.abs() < 23.0 && y > 12 && y < 50;
-            let pixel = (y * width + x) * 4;
+            let pixel = usize::try_from((y * WIDTH + x) * 4).unwrap_or(0);
             if hair {
                 rgba[pixel..pixel + 4].copy_from_slice(&[33, 39, 78, 245]);
             }
@@ -120,26 +125,26 @@ fn character_stand_frame() -> RenderImageFrame {
         }
     }
     RenderImageFrame {
-        width: width as u32,
-        height: height as u32,
+        width: WIDTH,
+        height: HEIGHT,
         rgba,
     }
 }
 
 fn pulse_frame(frame: u64, color: [u8; 4]) -> RenderImageFrame {
-    let width = 32;
-    let height = 32;
-    let radius = 7.0 + frame as f32 * 2.2;
-    let mut rgba = Vec::with_capacity(width * height * 4);
-    for y in 0..height {
-        for x in 0..width {
-            let dx = x as f32 - 15.5;
-            let dy = y as f32 - 15.5;
+    const WIDTH: u32 = 32;
+    const HEIGHT: u32 = 32;
+    let radius = 7.0 + u64_to_f32(frame) * 2.2;
+    let mut rgba = Vec::with_capacity(usize::try_from(WIDTH * HEIGHT * 4).unwrap_or(0));
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            let dx = u32_to_f32(x) - 15.5;
+            let dy = u32_to_f32(y) - 15.5;
             let distance = (dx * dx + dy * dy).sqrt();
             let alpha = if distance <= radius {
                 color[3]
             } else if distance <= radius + 3.0 {
-                ((radius + 3.0 - distance) * 70.0) as u8
+                f32_to_u8_nonnegative((radius + 3.0 - distance) * 70.0)
             } else {
                 0
             };
@@ -147,8 +152,8 @@ fn pulse_frame(frame: u64, color: [u8; 4]) -> RenderImageFrame {
         }
     }
     RenderImageFrame {
-        width: width as u32,
-        height: height as u32,
+        width: WIDTH,
+        height: HEIGHT,
         rgba,
     }
 }

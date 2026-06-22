@@ -1,3 +1,4 @@
+use crate::convert::{f32_ceil_to_i32, f32_floor_to_i32};
 use crate::geometry::{PaintRect, PreparedFrame, RenderImage, RenderTextBlock};
 use bytemuck::{Pod, Zeroable};
 use glyphon::{
@@ -89,7 +90,7 @@ impl SharedRenderer {
             return Err(SharedRendererError::EmptyFont);
         }
         self.registered_font_bytes = self.registered_font_bytes.saturating_add(bytes.len());
-        let _ = self.font_system.db_mut().load_font_data(bytes);
+        self.font_system.db_mut().load_font_data(bytes);
         Ok(())
     }
 
@@ -259,10 +260,10 @@ fn text_area<'a>(buffer: &'a Buffer, block: &RenderTextBlock) -> TextArea<'a> {
         top: block.bounds.y,
         scale: 1.0,
         bounds: TextBounds {
-            left: block.bounds.x.floor() as i32,
-            top: block.bounds.y.floor() as i32,
-            right: (block.bounds.x + block.bounds.width).ceil() as i32,
-            bottom: (block.bounds.y + block.bounds.height).ceil() as i32,
+            left: f32_floor_to_i32(block.bounds.x),
+            top: f32_floor_to_i32(block.bounds.y),
+            right: f32_ceil_to_i32(block.bounds.x + block.bounds.width),
+            bottom: f32_ceil_to_i32(block.bounds.y + block.bounds.height),
         },
         default_color: Color::rgba(block.rgba[0], block.rgba[1], block.rgba[2], block.rgba[3]),
         custom_glyphs: &[],
@@ -508,7 +509,7 @@ fn image_upload_rgba(image: &RenderImage) -> Cow<'_, [u8]> {
 
 fn scaled_alpha_milli(alpha: u8, opacity_milli: u16) -> u8 {
     let value = u32::from(alpha) * u32::from(opacity_milli) / 1_000;
-    value.min(u32::from(u8::MAX)) as u8
+    u8::try_from(value.min(u32::from(u8::MAX))).unwrap_or(u8::MAX)
 }
 
 fn image_vertices(image: &RenderImage, width: f32, height: f32) -> [ImageVertex; 6] {
@@ -544,7 +545,7 @@ fn image_vertices(image: &RenderImage, width: f32, height: f32) -> [ImageVertex;
     ]
 }
 
-const RECTANGLE_SHADER: &str = r#"
+const RECTANGLE_SHADER: &str = r"
 struct VertexOut {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
@@ -565,9 +566,9 @@ fn vs_main(
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     return in.color;
 }
-"#;
+";
 
-const IMAGE_SHADER: &str = r#"
+const IMAGE_SHADER: &str = r"
 struct VertexOut {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
@@ -594,4 +595,4 @@ fn vs_main(
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     return textureSample(image_texture, image_sampler, in.uv);
 }
-"#;
+";

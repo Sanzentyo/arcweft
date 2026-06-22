@@ -52,12 +52,16 @@ impl LogicalClockQuantizer {
         };
         let elapsed = (host_millis - previous).clamp(0.0, 1_000.0);
         self.accumulated_millis += elapsed;
-        let due = (self.accumulated_millis / f64::from(self.quantum_millis)).floor() as u32;
-        let due = due.min(self.maximum_catch_up_steps);
+        let mut due = 0;
+        while due < self.maximum_catch_up_steps
+            && self.accumulated_millis >= f64::from(self.quantum_millis)
+        {
+            self.accumulated_millis -= f64::from(self.quantum_millis);
+            due += 1;
+        }
         if due == 0 {
             return Ok(Vec::new());
         }
-        self.accumulated_millis -= f64::from(due) * f64::from(self.quantum_millis);
         self.take_steps(due)
     }
 

@@ -1,3 +1,4 @@
+use crate::convert::usize_to_f32;
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::{HitRect, HitTree};
 use arcweft_presentation::input::InteractionTarget;
@@ -145,6 +146,10 @@ impl Default for RenderPreferences {
 }
 
 impl SharedFramePlanner {
+    /// # Panics
+    ///
+    /// Panics if internal layer parent ids are inconsistent. That indicates a
+    /// planner bug rather than invalid caller input.
     pub fn prepare(scene: &RenderScene) -> Result<PreparedFrame, FramePlanError> {
         validate_viewport(scene.viewport)?;
         let ids = FrameIds::new()?;
@@ -235,7 +240,7 @@ impl SharedFramePlanner {
             &mut rectangles,
             &mut text,
             &palette,
-            action,
+            &action,
         )?;
         let hits = semantics.to_hit_tree();
 
@@ -295,12 +300,12 @@ fn build_choices(
     rectangles: &mut Vec<PaintRect>,
     text: &mut Vec<RenderTextBlock>,
     palette: &Palette,
-    action: PublicId,
+    action: &PublicId,
 ) -> Result<Vec<RenderChoice>, FramePlanError> {
     let width = (scene.viewport.logical_width * 0.64).clamp(320.0, 920.0);
     let item_height = 58.0;
     let gap = 12.0;
-    let total = scene.choices.len() as f32 * (item_height + gap) - gap;
+    let total = usize_to_f32(scene.choices.len()) * (item_height + gap) - gap;
     let top =
         ((scene.viewport.logical_height - total) * 0.42).max(36.0) - scene.choice_scroll.offset_y;
     let left = (scene.viewport.logical_width - width) * 0.5;
@@ -314,7 +319,7 @@ fn build_choices(
             let target = InteractionTarget::new(ChoiceTargetId(index).public_id()?);
             let bounds = HitRect::new(
                 left,
-                top + index as f32 * (item_height + gap),
+                top + usize_to_f32(index) * (item_height + gap),
                 width,
                 item_height,
             );

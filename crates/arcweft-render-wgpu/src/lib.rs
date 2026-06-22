@@ -5,6 +5,8 @@
 //! presentation data. It must not know winit, web-sys, a native filesystem,
 //! browser fetch, surface creation, or blocking readback.
 
+mod convert;
+
 pub mod geometry;
 pub mod renderer;
 pub mod sample;

@@ -21,7 +21,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::{CustomEvent, CustomEventInit, HtmlCanvasElement};
 use winit::application::ApplicationHandler;
-use winit::dpi::PhysicalPosition;
+use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ButtonSource, ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{Key, NamedKey};
@@ -81,8 +81,53 @@ struct PlayerState {
     fatal: Option<String>,
 }
 
+struct BrowserViewport {
+    render: RenderViewport,
+    physical_size: PhysicalSize<u32>,
+}
+
 struct BrowserApp {
     state: Rc<RefCell<PlayerState>>,
+}
+
+impl PlayerState {
+    fn browser_viewport(&self, window: &Arc<dyn Window>) -> BrowserViewport {
+        let surface = window.surface_size();
+        let scale_factor = window.scale_factor().max(f64::EPSILON);
+        let fallback_logical_width = self.canvas.client_width().max(1) as f32;
+        let fallback_logical_height = self.canvas.client_height().max(1) as f32;
+        let physical_width = if surface.width == 0 {
+            ((fallback_logical_width as f64 * scale_factor).round() as u32).max(1)
+        } else {
+            surface.width
+        };
+        let physical_height = if surface.height == 0 {
+            ((fallback_logical_height as f64 * scale_factor).round() as u32).max(1)
+        } else {
+            surface.height
+        };
+        let logical_width = if surface.width == 0 {
+            fallback_logical_width
+        } else {
+            physical_width as f32 / scale_factor as f32
+        };
+        let logical_height = if surface.height == 0 {
+            fallback_logical_height
+        } else {
+            physical_height as f32 / scale_factor as f32
+        };
+
+        BrowserViewport {
+            render: RenderViewport {
+                logical_width,
+                logical_height,
+                physical_width,
+                physical_height,
+                scale_factor,
+            },
+            physical_size: PhysicalSize::new(physical_width, physical_height),
+        }
+    }
 }
 
 /// Starts the WebGPU-first browser player using already-fetched bundle/font bytes.
@@ -312,15 +357,8 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
         emit_event("arcweft-runtime-observation", json);
     }
 
-    let size = window.surface_size();
-    let scale_factor = window.scale_factor();
-    let viewport = RenderViewport {
-        logical_width: size.width as f32 / scale_factor as f32,
-        logical_height: size.height as f32 / scale_factor as f32,
-        physical_width: size.width.max(1),
-        physical_height: size.height.max(1),
-        scale_factor,
-    };
+    let browser_viewport = state.browser_viewport(window);
+    let viewport = browser_viewport.render;
     let presentation = state.session.presentation();
     let scene = RenderScene {
         dialogue: presentation
@@ -359,6 +397,7 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
     let GpuState::Ready(gpu) = &mut state.gpu else {
         return Ok(());
     };
+    gpu.host.resize(browser_viewport.physical_size);
     let health = gpu.host.health();
     if let Some(error) = health.device_lost.or(health.uncaptured_error) {
         return Err(WebPlayerError::WebGpu(error));

@@ -823,6 +823,7 @@ dependencies = [
  "arcweft-ui",
  "bytemuck",
  "glyphon",
+ "num-traits",
  "thiserror 2.0.18",
  "wgpu",
 ]

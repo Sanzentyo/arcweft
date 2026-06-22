@@ -99,12 +99,12 @@ jobs:
         with:
           name: arcweft-webgpu-dist
           path: .
-      - name: Install browser smoke dependencies
-        working-directory: web
-        run: npm install
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
       - name: Run required WebGPU canvas/input smoke
         working-directory: web
-        run: npx playwright test
+        run: deno task test
       - uses: actions/upload-artifact@v4
         if: always()
         with:
