@@ -7235,6 +7235,80 @@ adapter_manifests = ["custom-adapter.toml"]
 }
 
 #[test]
+fn profile_check_reports_adapter_manifest_read_error() {
+    let dir = temp_dir("profile-check-adapter-manifest-read-error");
+    let source = dir.join("game.arcw");
+    let manifest = dir.join("arcw.toml");
+    fs::write(&source, "flow @flow.opening opening { return \"ok\" }\n").expect("write source");
+    fs::write(
+        &manifest,
+        r#"
+[profiles.game]
+kind = "game"
+source = "game.arcw"
+adapter = "missing"
+adapter_manifests = ["missing-adapter.toml"]
+"#,
+    )
+    .expect("write launch manifest");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--profile")
+        .arg("game")
+        .arg("--json")
+        .output()
+        .expect("arcw check --profile runs");
+    fs::remove_dir_all(&dir).expect("remove temp profile project");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("failed to load adapter manifest"));
+    assert!(stderr.contains("failed to read adapter manifest"));
+    assert!(stderr.contains("missing-adapter.toml"));
+}
+
+#[test]
+fn profile_check_reports_adapter_manifest_parse_error() {
+    let dir = temp_dir("profile-check-adapter-manifest-parse-error");
+    let source = dir.join("game.arcw");
+    let manifest = dir.join("arcw.toml");
+    let adapter_manifest = dir.join("bad-adapter.toml");
+    fs::write(&source, "flow @flow.opening opening { return \"ok\" }\n").expect("write source");
+    fs::write(&adapter_manifest, "schema_version = ").expect("write bad adapter manifest");
+    fs::write(
+        &manifest,
+        r#"
+[profiles.game]
+kind = "game"
+source = "game.arcw"
+adapter = "missing"
+adapter_manifests = ["bad-adapter.toml"]
+"#,
+    )
+    .expect("write launch manifest");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--profile")
+        .arg("game")
+        .arg("--json")
+        .output()
+        .expect("arcw check --profile runs");
+    fs::remove_dir_all(&dir).expect("remove temp profile project");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("failed to load adapter manifest"));
+    assert!(stderr.contains("failed to parse adapter manifest"));
+    assert!(stderr.contains("bad-adapter.toml"));
+}
+
+#[test]
 fn profile_check_loads_rust_metadata_for_extern_module() {
     let dir = temp_dir("profile-check-rust-metadata");
     let metadata_dir = dir.join("target").join("arcweft");
@@ -7313,6 +7387,106 @@ rust_metadata = ["target/arcweft/truck_game.json"]
             .any(|phase| phase["name"] == "rust_metadata"),
         "profiled check should report rust_metadata phase: {json}"
     );
+}
+
+#[test]
+fn profile_check_reports_rust_metadata_read_error() {
+    let dir = temp_dir("profile-check-rust-metadata-read-error");
+    let source = dir.join("game.arcw");
+    let manifest = dir.join("arcw.toml");
+    fs::write(
+        &source,
+        r#"
+extern rust mod mini_games::truck from crate "truck_game" {
+    pub fn score_to_rank(score: i32) -> i64
+}
+
+flow @flow.opening opening {
+    let rank = mini_games.truck.score_to_rank(score = 42i32)
+    return "ok"
+}
+"#,
+    )
+    .expect("write source using rust metadata");
+    fs::write(
+        &manifest,
+        r#"
+[profiles.game]
+kind = "game"
+source = "game.arcw"
+rust_metadata = ["target/arcweft/missing.json"]
+"#,
+    )
+    .expect("write launch manifest");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--profile")
+        .arg("game")
+        .arg("--json")
+        .output()
+        .expect("arcw check --profile runs");
+    fs::remove_dir_all(&dir).expect("remove temp profile project");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("failed to load Rust ABI metadata"));
+    assert!(stderr.contains("failed to read Rust ABI metadata"));
+    assert!(stderr.contains("missing.json"));
+}
+
+#[test]
+fn profile_check_reports_rust_metadata_parse_error() {
+    let dir = temp_dir("profile-check-rust-metadata-parse-error");
+    let metadata_dir = dir.join("target").join("arcweft");
+    let source = dir.join("game.arcw");
+    let manifest = dir.join("arcw.toml");
+    let metadata = metadata_dir.join("bad.json");
+    fs::create_dir_all(&metadata_dir).expect("create metadata dir");
+    fs::write(
+        &source,
+        r#"
+extern rust mod mini_games::truck from crate "truck_game" {
+    pub fn score_to_rank(score: i32) -> i64
+}
+
+flow @flow.opening opening {
+    let rank = mini_games.truck.score_to_rank(score = 42i32)
+    return "ok"
+}
+"#,
+    )
+    .expect("write source using rust metadata");
+    fs::write(&metadata, "{ not json").expect("write bad rust metadata");
+    fs::write(
+        &manifest,
+        r#"
+[profiles.game]
+kind = "game"
+source = "game.arcw"
+rust_metadata = ["target/arcweft/bad.json"]
+"#,
+    )
+    .expect("write launch manifest");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--profile")
+        .arg("game")
+        .arg("--json")
+        .output()
+        .expect("arcw check --profile runs");
+    fs::remove_dir_all(&dir).expect("remove temp profile project");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("failed to load Rust ABI metadata"));
+    assert!(stderr.contains("failed to parse Rust ABI metadata"));
+    assert!(stderr.contains("bad.json"));
 }
 
 #[test]

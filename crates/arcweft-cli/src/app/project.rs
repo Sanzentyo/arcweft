@@ -5,7 +5,7 @@ use super::runtime::parse::parse_runtime_pure_workers;
 use super::runtime::profile::run_profile_phase;
 use super::shared::is_arcw_path;
 use crate::output::RuntimeProfilePhase;
-use arcweft_adapter_context::{codec::AdapterManifestFile, manifest::AdapterManifest, standard};
+use arcweft_adapter_context::{manifest::AdapterManifest, standard};
 use arcweft_compiler::{hir, parse};
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_lang_sema::{check::TypeCheckReport, env::TypeCheckEnv};
@@ -283,30 +283,16 @@ fn adapter_registry_for_selection(
         .adapter_manifests()
         .iter()
         .try_fold(registry, |registry, path| {
-            read_adapter_manifest(path).map(|manifest| registry.with_manifest(manifest))
+            arcweft_project_loader::adapter_manifest::load(path)
+                .map(|manifest| registry.with_manifest(manifest))
+                .map_err(|error| {
+                    eprintln!(
+                        "error: failed to load adapter manifest {}: {error}",
+                        path.display()
+                    );
+                    ExitCode::FAILURE
+                })
         })
-}
-
-fn read_adapter_manifest(path: &Path) -> Result<AdapterManifest, ExitCode> {
-    let source = fs::read_to_string(path).map_err(|error| {
-        eprintln!(
-            "error: failed to read adapter manifest {}: {error}",
-            path.display()
-        );
-        ExitCode::FAILURE
-    })?;
-    let file = match path.extension().and_then(|extension| extension.to_str()) {
-        Some("json") => AdapterManifestFile::from_json(&source),
-        _ => AdapterManifestFile::from_toml(&source),
-    }
-    .map_err(|error| {
-        eprintln!(
-            "error: failed to parse adapter manifest {}: {error}",
-            path.display()
-        );
-        ExitCode::FAILURE
-    })?;
-    Ok(file.into_manifest())
 }
 
 fn rust_metadata_for_selection(
@@ -319,16 +305,9 @@ fn rust_metadata_for_selection(
         .rust_metadata()
         .iter()
         .map(|path| {
-            let source = fs::read_to_string(path).map_err(|error| {
+            arcweft_project_loader::rust_metadata::load(path).map_err(|error| {
                 eprintln!(
-                    "error: failed to read Rust ABI metadata {}: {error}",
-                    path.display()
-                );
-                ExitCode::FAILURE
-            })?;
-            ArcweftRustManifest::from_json(&source).map_err(|error| {
-                eprintln!(
-                    "error: failed to parse Rust ABI metadata {}: {error}",
+                    "error: failed to load Rust ABI metadata {}: {error}",
                     path.display()
                 );
                 ExitCode::FAILURE

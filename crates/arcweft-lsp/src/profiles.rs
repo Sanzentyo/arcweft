@@ -1,12 +1,11 @@
 use arcweft_adapter_context::{
-    codec::{AdapterManifestCodecError, AdapterManifestFile},
     manifest::{AdapterManifest, AdapterRegistry},
     standard::{self, SANS_IO_ADAPTER_ID},
 };
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_launch::{LaunchProfileError, LaunchProfileManifest, ResolvedLaunchProfile};
 use arcweft_runtime_host::RuntimeHostRunnerKind;
-use arcweft_rust_abi::{ArcweftRustAbiError, ArcweftRustManifest};
+use arcweft_rust_abi::ArcweftRustManifest;
 use arcweft_verify_lsp::{ArcweftLspContext, ArcweftLspProfileContextBuilder};
 use lsp_types::Uri;
 use std::{
@@ -462,24 +461,18 @@ fn read_adapter_manifests(
     diagnostics: &mut Vec<LspProfileDiagnostic>,
 ) -> AdapterRegistry {
     paths.iter().fold(registry, |registry, path| {
-        match read_adapter_manifest(path) {
+        match arcweft_project_loader::adapter_manifest::load(path) {
             Ok(manifest) => registry.with_manifest(manifest),
             Err(error) => {
-                diagnostics.push(error.into_diagnostic(path_label(path, manifest_dir), profile_id));
+                diagnostics.push(adapter_manifest_diagnostic(
+                    &error,
+                    path_label(path, manifest_dir),
+                    profile_id,
+                ));
                 registry
             }
         }
     })
-}
-
-fn read_adapter_manifest(path: &Path) -> Result<AdapterManifest, AdapterManifestReadError> {
-    let source = fs::read_to_string(path).map_err(AdapterManifestReadError::Read)?;
-    let file = match path.extension().and_then(|extension| extension.to_str()) {
-        Some("json") => AdapterManifestFile::from_json(&source),
-        _ => AdapterManifestFile::from_toml(&source),
-    }
-    .map_err(AdapterManifestReadError::Parse)?;
-    Ok(file.into_manifest())
 }
 
 fn read_rust_metadata(
@@ -490,59 +483,56 @@ fn read_rust_metadata(
 ) -> Vec<ArcweftRustManifest> {
     paths
         .iter()
-        .filter_map(|path| match read_rust_manifest(path) {
-            Ok(manifest) => Some(manifest),
-            Err(error) => {
-                diagnostics.push(error.into_diagnostic(path_label(path, manifest_dir), profile_id));
-                None
-            }
-        })
+        .filter_map(
+            |path| match arcweft_project_loader::rust_metadata::load(path) {
+                Ok(manifest) => Some(manifest),
+                Err(error) => {
+                    diagnostics.push(rust_metadata_diagnostic(
+                        &error,
+                        path_label(path, manifest_dir),
+                        profile_id,
+                    ));
+                    None
+                }
+            },
+        )
         .collect()
 }
 
-fn read_rust_manifest(path: &Path) -> Result<ArcweftRustManifest, RustMetadataReadError> {
-    let source = fs::read_to_string(path).map_err(RustMetadataReadError::Read)?;
-    ArcweftRustManifest::from_json(&source).map_err(RustMetadataReadError::Parse)
+fn adapter_manifest_diagnostic(
+    error: &arcweft_project_loader::adapter_manifest::LoadError,
+    resource: String,
+    profile_id: &str,
+) -> LspProfileDiagnostic {
+    let kind = match error {
+        arcweft_project_loader::adapter_manifest::LoadError::Read(_) => {
+            LspProfileDiagnosticKind::AdapterManifestRead
+        }
+        arcweft_project_loader::adapter_manifest::LoadError::Parse(_) => {
+            LspProfileDiagnosticKind::AdapterManifestParse
+        }
+    };
+    LspProfileDiagnostic::new(kind, format!("{error} `{resource}`"))
+        .with_profile_id(profile_id)
+        .with_resource(resource)
 }
 
-#[derive(Debug, Error)]
-enum AdapterManifestReadError {
-    #[error("failed to read adapter manifest: {0}")]
-    Read(std::io::Error),
-    #[error("failed to parse adapter manifest: {0}")]
-    Parse(AdapterManifestCodecError),
-}
-
-#[derive(Debug, Error)]
-enum RustMetadataReadError {
-    #[error("failed to read Rust ABI metadata: {0}")]
-    Read(std::io::Error),
-    #[error("failed to parse Rust ABI metadata: {0}")]
-    Parse(ArcweftRustAbiError),
-}
-
-impl AdapterManifestReadError {
-    fn into_diagnostic(self, resource: String, profile_id: &str) -> LspProfileDiagnostic {
-        let kind = match self {
-            Self::Read(_) => LspProfileDiagnosticKind::AdapterManifestRead,
-            Self::Parse(_) => LspProfileDiagnosticKind::AdapterManifestParse,
-        };
-        LspProfileDiagnostic::new(kind, format!("{self} `{resource}`"))
-            .with_profile_id(profile_id)
-            .with_resource(resource)
-    }
-}
-
-impl RustMetadataReadError {
-    fn into_diagnostic(self, resource: String, profile_id: &str) -> LspProfileDiagnostic {
-        let kind = match self {
-            Self::Read(_) => LspProfileDiagnosticKind::RustMetadataRead,
-            Self::Parse(_) => LspProfileDiagnosticKind::RustMetadataParse,
-        };
-        LspProfileDiagnostic::new(kind, format!("{self} `{resource}`"))
-            .with_profile_id(profile_id)
-            .with_resource(resource)
-    }
+fn rust_metadata_diagnostic(
+    error: &arcweft_project_loader::rust_metadata::LoadError,
+    resource: String,
+    profile_id: &str,
+) -> LspProfileDiagnostic {
+    let kind = match error {
+        arcweft_project_loader::rust_metadata::LoadError::Read(_) => {
+            LspProfileDiagnosticKind::RustMetadataRead
+        }
+        arcweft_project_loader::rust_metadata::LoadError::Parse(_) => {
+            LspProfileDiagnosticKind::RustMetadataParse
+        }
+    };
+    LspProfileDiagnostic::new(kind, format!("{error} `{resource}`"))
+        .with_profile_id(profile_id)
+        .with_resource(resource)
 }
 
 fn path_label(path: &Path, manifest_dir: &Path) -> String {
@@ -786,6 +776,36 @@ adapter_manifests = ["adapters/missing.toml"]
 
         assert_eq!(diagnostic.profile_id(), Some("dev"));
         assert_eq!(diagnostic.resource(), Some("adapters/missing.toml"));
+        assert!(!diagnostic.message().contains(":/"));
+        assert!(!diagnostic.message().contains(":\\"));
+    }
+
+    #[test]
+    fn invalid_adapter_manifest_diagnostic_keeps_profile_relative_resource() {
+        let project = TestProject::new("lsp-profile-adapter-invalid");
+        project.write(
+            "arcw.toml",
+            r#"
+[profiles.dev]
+kind = "server"
+source = "src/main.arcw"
+adapter = "missing"
+adapter_manifests = ["adapters/bad.toml"]
+"#,
+        );
+        project.write("src/main.arcw", "flow @.main main {}\n");
+        project.write("adapters/bad.toml", "schema_version = ");
+        let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
+
+        let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
+        let diagnostic = profile
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.kind() == LspProfileDiagnosticKind::AdapterManifestParse)
+            .expect("adapter manifest parse diagnostic");
+
+        assert_eq!(diagnostic.profile_id(), Some("dev"));
+        assert_eq!(diagnostic.resource(), Some("adapters/bad.toml"));
         assert!(!diagnostic.message().contains(":/"));
         assert!(!diagnostic.message().contains(":\\"));
     }

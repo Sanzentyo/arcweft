@@ -70,6 +70,7 @@ members = [
     "crates/arcweft-source",
     "crates/arcweft-test",
     "crates/arcweft-tooling",
+    "crates/arcweft-project-loader",
     "crates/arcweft-verify",
     "crates/arcweft-lsp",
     "crates/arcweft-player-native",

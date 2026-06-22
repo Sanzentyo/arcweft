@@ -325,13 +325,20 @@ pixel to the source span that produced it:
   "parent_id": "object.dialogue.0.0.line.0",
   "role": "rich_text_ruby",
   "bbox": { "x": 32, "y": 520, "width": 640, "height": 120 },
-  "rich_text": {
+  "rich_text_ref": {
     "kind": "ruby",
     "range": { "start": 12, "end": 13 },
     "ruby": "まつりごと",
     "orientation": "upright",
     "ruby_base_bbox": { "x": 48, "y": 552, "width": 38, "height": 48 },
     "ruby_annotation_bbox": { "x": 44, "y": 532, "width": 46, "height": 14 }
+  },
+  "content": {
+    "kind": "rich_text",
+    "frame": {
+      "line": "say.opening.001",
+      "display_map": { "text_runs": [] }
+    }
   },
   "capture_refs": []
 }

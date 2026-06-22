@@ -407,6 +407,7 @@ dependencies = [
  "arcweft-lang-syntax",
  "arcweft-launch",
  "arcweft-presentation",
+ "arcweft-project-loader",
  "arcweft-rag",
  "arcweft-render-native",
  "arcweft-render-text",
@@ -746,6 +747,7 @@ dependencies = [
  "arcweft-lang-sema",
  "arcweft-lang-syntax",
  "arcweft-launch",
+ "arcweft-project-loader",
  "arcweft-render-text",
  "arcweft-runtime-host",
  "arcweft-runtime-plan",
@@ -830,6 +832,15 @@ name = "arcweft-presentation"
 version = "0.1.0"
 dependencies = [
  "arcweft-id",
+]
+
+[[package]]
+name = "arcweft-project-loader"
+version = "0.1.0"
+dependencies = [
+ "arcweft-adapter-context",
+ "arcweft-rust-abi",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

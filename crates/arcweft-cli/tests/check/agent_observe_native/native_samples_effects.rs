@@ -251,10 +251,7 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
     }
 
     let combo_run = find_rich_text_run_object(&json, "重ね掛けtypewriter");
-    assert_eq!(
-        observed_object_rich_text_frame(combo_run)["line"],
-        "say.effects.reveal"
-    );
+    assert_eq!(observed_object_rich_text_frame(combo_run)["line"], "say.effects.reveal");
     for effect in ["typewriter", "wave", "shake", "sparkle"] {
         assert_rich_text_run_object_has_effect(combo_run, effect);
     }
