@@ -1,6 +1,6 @@
 //! UI semantic fragment lowering into presentation semantics.
 
-use crate::{NodeKey, UiError};
+use crate::{NodeKey, SemanticSpecId, UiError};
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
@@ -142,6 +142,14 @@ impl UiSemanticNode {
 impl UiSemanticFragment {
     pub fn as_slice(&self) -> &[UiSemanticNode] {
         &self.nodes
+    }
+
+    pub fn get(&self, id: SemanticSpecId) -> Option<&UiSemanticNode> {
+        self.nodes.get(id.0 as usize)
+    }
+
+    pub fn find_target(&self, target: &InteractionTarget) -> Option<&UiSemanticNode> {
+        self.nodes.iter().find(|node| node.target() == target)
     }
 
     pub fn to_semantic_tree(&self) -> SemanticTree {

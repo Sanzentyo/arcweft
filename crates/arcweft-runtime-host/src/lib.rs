@@ -46,4 +46,5 @@ pub use stats::{
 };
 pub use ui_frame::{
     UiFrameCommit, UiFrameCommitBuilder, UiFrameCommitError, UiFrameImageItem, UiFrameLayer,
+    UiFrameResolvedLayer,
 };

@@ -7,6 +7,11 @@ use arcweft_presentation::layer::{
     RenderPhase,
 };
 use arcweft_presentation::semantic::{SemanticNode, SemanticRole, SemanticTree};
+use arcweft_render_text::{
+    LineDisplayFrame, RichTextEffectDescriptor, RichTextEffectPhase, RichTextParam,
+    RichTextPresentation, RichTextRange, RichTextTextRun,
+};
+use num_traits::ToPrimitive;
 use thiserror::Error;
 
 /// Logical viewport shared by visual planning and hit-testing.
@@ -48,6 +53,7 @@ pub struct RenderScene {
     pub choices: Vec<RenderChoiceItem>,
     pub images: Vec<RenderImage>,
     pub viewport: RenderViewport,
+    pub visual_time_millis: u64,
     pub preferences: RenderPreferences,
     pub interaction: InteractionVisualState,
     pub choice_scroll: ChoiceScroll,
@@ -58,6 +64,7 @@ pub struct RenderScene {
 pub struct RenderDialogue {
     pub speaker: String,
     pub text: String,
+    pub text_runs: Vec<RichTextTextRun>,
 }
 
 /// Portable choice data supplied by a player/runtime adapter.
@@ -197,39 +204,7 @@ impl SharedFramePlanner {
             rgba: palette.background,
         }];
         let mut text = Vec::new();
-        if let Some(dialogue) = &scene.dialogue {
-            let panel = dialogue_panel(scene.viewport);
-            rectangles.push(PaintRect {
-                bounds: panel,
-                rgba: palette.dialogue_panel,
-            });
-            let inset = 28.0;
-            let scale = f32::from(scene.preferences.text_scale_milli) / 1_000.0;
-            text.push(RenderTextBlock {
-                text: dialogue.speaker.clone(),
-                bounds: HitRect::new(
-                    panel.x + inset,
-                    panel.y + 20.0,
-                    panel.width - inset * 2.0,
-                    28.0 * scale,
-                ),
-                font_size: 20.0 * scale,
-                line_height: 26.0 * scale,
-                rgba: palette.speaker_text,
-            });
-            text.push(RenderTextBlock {
-                text: dialogue.text.clone(),
-                bounds: HitRect::new(
-                    panel.x + inset,
-                    panel.y + 58.0,
-                    panel.width - inset * 2.0,
-                    panel.height - 76.0,
-                ),
-                font_size: 25.0 * scale,
-                line_height: 34.0 * scale,
-                rgba: palette.dialogue_text,
-            });
-        }
+        push_dialogue_panel(scene, &mut rectangles, &mut text, &palette);
 
         let mut semantics = SemanticTree::default();
         let action = RenderActionKind::ChoiceSelect.public_id()?;
@@ -255,6 +230,263 @@ impl SharedFramePlanner {
             choices,
         })
     }
+}
+
+fn push_dialogue_panel(
+    scene: &RenderScene,
+    rectangles: &mut Vec<PaintRect>,
+    text: &mut Vec<RenderTextBlock>,
+    palette: &Palette,
+) {
+    let Some(dialogue) = &scene.dialogue else {
+        return;
+    };
+    let panel = dialogue_panel(scene.viewport);
+    rectangles.push(PaintRect {
+        bounds: panel,
+        rgba: palette.dialogue_panel,
+    });
+    let inset = 28.0;
+    let scale = f32::from(scene.preferences.text_scale_milli) / 1_000.0;
+    text.push(RenderTextBlock {
+        text: dialogue.speaker.clone(),
+        bounds: HitRect::new(
+            panel.x + inset,
+            panel.y + 20.0,
+            panel.width - inset * 2.0,
+            28.0 * scale,
+        ),
+        font_size: 20.0 * scale,
+        line_height: 26.0 * scale,
+        rgba: palette.speaker_text,
+    });
+    push_dialogue_text_blocks(
+        text,
+        dialogue,
+        DialogueTextLayout {
+            bounds: HitRect::new(
+                panel.x + inset,
+                panel.y + 58.0,
+                panel.width - inset * 2.0,
+                panel.height - 76.0,
+            ),
+            font_size: 25.0 * scale,
+            line_height: 34.0 * scale,
+            color: palette.dialogue_text,
+            visual_time_millis: scene.visual_time_millis,
+            reduce_motion: scene.preferences.reduce_motion,
+        },
+    );
+}
+
+impl RenderDialogue {
+    pub fn plain(speaker: impl Into<String>, text: impl Into<String>) -> Self {
+        Self {
+            speaker: speaker.into(),
+            text: text.into(),
+            text_runs: Vec::new(),
+        }
+    }
+
+    pub fn from_display_frame(frame: &LineDisplayFrame) -> Self {
+        Self {
+            speaker: frame.callee.clone(),
+            text: frame.text.clone(),
+            text_runs: frame.display_map.text_runs.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct DialogueTextLayout {
+    bounds: HitRect,
+    font_size: f32,
+    line_height: f32,
+    color: [u8; 4],
+    visual_time_millis: u64,
+    reduce_motion: bool,
+}
+
+fn push_dialogue_text_blocks(
+    text: &mut Vec<RenderTextBlock>,
+    dialogue: &RenderDialogue,
+    layout: DialogueTextLayout,
+) {
+    let runs = if dialogue.text_runs.is_empty() {
+        vec![RichTextTextRun {
+            range: RichTextRange::new(0, dialogue.text.len()),
+            source: arcweft_render_text::RichTextTextSource::Text,
+            node_index: 0,
+            styles: Vec::new(),
+            presentation: RichTextPresentation::default(),
+        }]
+    } else {
+        dialogue.text_runs.clone()
+    };
+    let visible_end = typewriter_visible_end(&dialogue.text, &runs, layout.visual_time_millis);
+    for run in runs {
+        let run_start = run.range.start.min(dialogue.text.len());
+        let run_end = run.range.end.min(dialogue.text.len()).min(visible_end);
+        if run_start >= run_end {
+            continue;
+        }
+        let Some(visible) = dialogue.text.get(run_start..run_end) else {
+            continue;
+        };
+        let x = layout.bounds.x
+            + estimated_text_width(&dialogue.text[..run_start], layout.font_size)
+                .min(layout.bounds.width);
+        let bounds = HitRect::new(
+            x,
+            layout.bounds.y,
+            (layout.bounds.width - (x - layout.bounds.x)).max(1.0),
+            layout.bounds.height,
+        );
+        let motion = (!layout.reduce_motion)
+            .then(|| text_motion(&run.presentation.effects))
+            .flatten();
+        if let Some(motion) = motion {
+            push_motion_text_blocks(text, visible, bounds, layout, motion, run_start);
+        } else {
+            text.push(RenderTextBlock {
+                text: visible.to_owned(),
+                bounds,
+                font_size: layout.font_size,
+                line_height: layout.line_height,
+                rgba: layout.color,
+            });
+        }
+    }
+}
+
+fn typewriter_visible_end(text: &str, runs: &[RichTextTextRun], visual_time_millis: u64) -> usize {
+    let Some(cps) = runs
+        .iter()
+        .flat_map(|run| &run.presentation.effects)
+        .find(|effect| effect.id == "typewriter" && effect.phase == RichTextEffectPhase::GlyphMask)
+        .map(typewriter_cps)
+    else {
+        return text.len();
+    };
+    let visible_chars = ((visual_time_millis.to_f32().unwrap_or(f32::MAX) / 1_000.0) * cps)
+        .floor()
+        .to_usize()
+        .unwrap_or(usize::MAX);
+    text.char_indices()
+        .map(|(index, _)| index)
+        .chain(std::iter::once(text.len()))
+        .nth(visible_chars)
+        .unwrap_or(text.len())
+}
+
+fn typewriter_cps(effect: &RichTextEffectDescriptor) -> f32 {
+    effect
+        .params
+        .get("cps")
+        .or_else(|| effect.params.get("speed"))
+        .and_then(param_f32)
+        .unwrap_or(28.0)
+        .clamp(1.0, 240.0)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct TextMotion {
+    amplitude: f32,
+    frequency: f32,
+}
+
+fn text_motion(effects: &[RichTextEffectDescriptor]) -> Option<TextMotion> {
+    effects
+        .iter()
+        .find(|effect| {
+            matches!(effect.id.as_str(), "wave" | "shake" | "jitter")
+                && effect.phase == RichTextEffectPhase::GlyphTransform
+        })
+        .map(|effect| TextMotion {
+            amplitude: effect
+                .params
+                .get("amp")
+                .or_else(|| effect.params.get("amplitude"))
+                .and_then(param_f32)
+                .unwrap_or(4.0)
+                .clamp(0.0, 24.0),
+            frequency: effect
+                .params
+                .get("freq")
+                .or_else(|| effect.params.get("frequency"))
+                .and_then(param_f32)
+                .unwrap_or(7.0)
+                .clamp(0.1, 24.0),
+        })
+}
+
+fn push_motion_text_blocks(
+    text: &mut Vec<RenderTextBlock>,
+    visible: &str,
+    bounds: HitRect,
+    layout: DialogueTextLayout,
+    motion: TextMotion,
+    range_start: usize,
+) {
+    let seconds = layout.visual_time_millis.to_f32().unwrap_or(f32::MAX) / 1_000.0;
+    let mut offset_x = 0.0;
+    for (index, ch) in visible.chars().enumerate() {
+        let advance = estimated_char_width(ch, layout.font_size);
+        let phase =
+            seconds * motion.frequency + (range_start + index).to_f32().unwrap_or(f32::MAX) * 0.58;
+        let offset_y = if ch.is_whitespace() {
+            0.0
+        } else {
+            phase.sin() * motion.amplitude
+        };
+        text.push(RenderTextBlock {
+            text: ch.to_string(),
+            bounds: HitRect::new(
+                bounds.x + offset_x,
+                bounds.y + offset_y,
+                advance.max(1.0),
+                bounds.height,
+            ),
+            font_size: layout.font_size,
+            line_height: layout.line_height,
+            rgba: layout.color,
+        });
+        offset_x += advance;
+        if offset_x >= bounds.width {
+            break;
+        }
+    }
+}
+
+fn param_f32(param: &RichTextParam) -> Option<f32> {
+    match param {
+        RichTextParam::Int { value } => value.to_f32(),
+        RichTextParam::Milli { value } => Some(value.as_f32()),
+        RichTextParam::Text { value } | RichTextParam::Raw { value } => {
+            value.trim().trim_end_matches("px").parse().ok()
+        }
+        RichTextParam::Bool { .. }
+        | RichTextParam::Vec2 { .. }
+        | RichTextParam::Selector { .. }
+        | RichTextParam::Expr { .. } => None,
+    }
+}
+
+fn estimated_text_width(text: &str, font_size: f32) -> f32 {
+    text.chars()
+        .map(|ch| estimated_char_width(ch, font_size))
+        .sum()
+}
+
+fn estimated_char_width(ch: char, font_size: f32) -> f32 {
+    let ratio = if ch.is_ascii_whitespace() {
+        0.34
+    } else if ch.is_ascii() {
+        0.58
+    } else {
+        0.94
+    };
+    font_size * ratio
 }
 
 impl PreparedFrame {

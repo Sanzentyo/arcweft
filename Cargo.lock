@@ -406,6 +406,7 @@ dependencies = [
  "arcweft-lang-sema",
  "arcweft-lang-syntax",
  "arcweft-launch",
+ "arcweft-player-native",
  "arcweft-presentation",
  "arcweft-project-loader",
  "arcweft-rag",
@@ -792,15 +793,35 @@ dependencies = [
  "arcweft-desktop-native",
  "arcweft-host-adapter",
  "arcweft-interaction-model",
+ "arcweft-player-scene",
+ "arcweft-presentation",
  "arcweft-render-native",
  "arcweft-render-text",
+ "arcweft-render-wgpu",
+ "arcweft-runtime-driver",
  "arcweft-runtime-host",
  "clap",
+ "num-traits",
  "png",
+ "pollster",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "wgpu",
  "winit",
+]
+
+[[package]]
+name = "arcweft-player-scene"
+version = "0.1.0"
+dependencies = [
+ "arcweft-bundle",
+ "arcweft-id",
+ "arcweft-image",
+ "arcweft-presentation",
+ "arcweft-render-wgpu",
+ "num-traits",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -811,6 +832,7 @@ dependencies = [
  "arcweft-core",
  "arcweft-id",
  "arcweft-image",
+ "arcweft-player-scene",
  "arcweft-presentation",
  "arcweft-render-text",
  "arcweft-render-web",

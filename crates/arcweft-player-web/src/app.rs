@@ -1,9 +1,9 @@
 use crate::clock::LogicalClockQuantizer;
 use crate::host::BrowserTaskBroker;
-use crate::images::{BrowserImageCatalog, BrowserImageCatalogError};
-use crate::input::{InputController, InputOutcome};
 use crate::report::{WebFrameObservationReport, WebObservationReport};
 use arcweft_bundle::ArcweftBundle;
+use arcweft_player_scene::images::{BundleImageCatalog, BundleImageCatalogError};
+use arcweft_player_scene::input::{InputController, InputOutcome};
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
 use arcweft_render_web::web::{WebGpuCanvasHost, WebGpuCanvasHostError};
 use arcweft_render_wgpu::geometry::{
@@ -76,11 +76,12 @@ struct PlayerState {
     gpu: GpuState,
     session: BundleSession,
     broker: BrowserTaskBroker,
-    images: BrowserImageCatalog,
+    images: BundleImageCatalog,
     input: InputController,
     clock: LogicalClockQuantizer,
     font_bytes: Option<Vec<u8>>,
     prepared: Option<arcweft_render_wgpu::geometry::PreparedFrame>,
+    dialogue_visual_clock: DialogueVisualClock,
     fatal: Option<String>,
 }
 
@@ -93,32 +94,25 @@ struct BrowserApp {
     state: Rc<RefCell<PlayerState>>,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct DialogueVisualClock {
+    line: Option<arcweft_core::plan::RuntimeLineId>,
+    started_at_millis: u64,
+}
+
 impl PlayerState {
     fn browser_viewport(&self, window: &Arc<dyn Window>) -> BrowserViewport {
-        let surface = window.surface_size();
         let scale_factor = window.scale_factor().max(f64::EPSILON);
-        let fallback_logical_width = self.canvas.client_width().max(1) as f32;
-        let fallback_logical_height = self.canvas.client_height().max(1) as f32;
-        let physical_width = if surface.width == 0 {
-            ((fallback_logical_width as f64 * scale_factor).round() as u32).max(1)
-        } else {
-            surface.width
-        };
-        let physical_height = if surface.height == 0 {
-            ((fallback_logical_height as f64 * scale_factor).round() as u32).max(1)
-        } else {
-            surface.height
-        };
-        let logical_width = if surface.width == 0 {
-            fallback_logical_width
-        } else {
-            physical_width as f32 / scale_factor as f32
-        };
-        let logical_height = if surface.height == 0 {
-            fallback_logical_height
-        } else {
-            physical_height as f32 / scale_factor as f32
-        };
+        let logical_width = self.canvas.client_width().max(1) as f32;
+        let logical_height = self.canvas.client_height().max(1) as f32;
+        let physical_width = ((f64::from(logical_width) * scale_factor).round() as u32).max(1);
+        let physical_height = ((f64::from(logical_height) * scale_factor).round() as u32).max(1);
+        if self.canvas.width() != physical_width {
+            self.canvas.set_width(physical_width);
+        }
+        if self.canvas.height() != physical_height {
+            self.canvas.set_height(physical_height);
+        }
 
         BrowserViewport {
             render: RenderViewport {
@@ -165,7 +159,7 @@ fn start(
         .map_err(|error| WebPlayerError::Session(error.to_string()))?;
     let broker = BrowserTaskBroker::from_bundle(&bundle)
         .map_err(|error| WebPlayerError::TaskBroker(error.to_string()))?;
-    let images = BrowserImageCatalog::from_bundle(&bundle)
+    let images = BundleImageCatalog::from_bundle(&bundle)
         .map_err(|error| WebPlayerError::Image(error.to_string()))?;
     let clock = LogicalClockQuantizer::new(16, 4)
         .map_err(|error| WebPlayerError::Session(error.to_string()))?;
@@ -180,6 +174,7 @@ fn start(
         clock,
         font_bytes: Some(font_bytes),
         prepared: None,
+        dialogue_visual_clock: DialogueVisualClock::default(),
         fatal: None,
     }));
     let event_loop =
@@ -366,6 +361,11 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
     let browser_viewport = state.browser_viewport(window);
     let viewport = browser_viewport.render;
     let presentation = state.session.presentation();
+    let visual_time_millis = dialogue_visual_time_millis(
+        &mut state.dialogue_visual_clock,
+        presentation.dialogue.as_ref(),
+        host_millis.max(0.0) as u64,
+    );
     let images = state
         .images
         .render_images(&presentation.images, host_millis.max(0.0) as u64)
@@ -374,10 +374,7 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
         dialogue: presentation
             .dialogue
             .as_ref()
-            .map(|dialogue| RenderDialogue {
-                speaker: dialogue.callee.clone(),
-                text: dialogue.text.clone(),
-            }),
+            .map(RenderDialogue::from_display_frame),
         choices: presentation
             .choices
             .iter()
@@ -388,6 +385,7 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
             .collect(),
         images,
         viewport,
+        visual_time_millis,
         preferences: RenderPreferences::default(),
         interaction: state.input.visual_state(),
         choice_scroll: state.input.choice_scroll(),
@@ -425,8 +423,25 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
     Ok(())
 }
 
-impl From<BrowserImageCatalogError> for WebPlayerError {
-    fn from(error: BrowserImageCatalogError) -> Self {
+fn dialogue_visual_time_millis(
+    clock: &mut DialogueVisualClock,
+    dialogue: Option<&arcweft_render_text::LineDisplayFrame>,
+    now_millis: u64,
+) -> u64 {
+    let Some(dialogue) = dialogue else {
+        clock.line = None;
+        clock.started_at_millis = now_millis;
+        return 0;
+    };
+    if clock.line.as_ref() != Some(&dialogue.line) {
+        clock.line = Some(dialogue.line.clone());
+        clock.started_at_millis = now_millis;
+    }
+    now_millis.saturating_sub(clock.started_at_millis)
+}
+
+impl From<BundleImageCatalogError> for WebPlayerError {
+    fn from(error: BundleImageCatalogError) -> Self {
         Self::Image(error.to_string())
     }
 }

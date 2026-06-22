@@ -1,4 +1,4 @@
-use arcweft_player_web::input::InputController;
+use arcweft_player_scene::input::InputController;
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderChoiceItem, RenderPreferences, RenderScene,
@@ -26,6 +26,7 @@ fn frame() -> arcweft_render_wgpu::geometry::PreparedFrame {
             physical_height: 720,
             scale_factor: 1.0,
         },
+        visual_time_millis: 0,
         preferences: RenderPreferences::default(),
         interaction: InteractionVisualState::default(),
         choice_scroll: ChoiceScroll::default(),

@@ -46,7 +46,7 @@ pub struct LayoutNode {
     child_count: u32,
 }
 
-/// Flat layout input derived from `ViewFragment`.
+/// Flat layout input derived from a retained fragment.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LayoutTree {
     nodes: Vec<LayoutNode>,
@@ -60,7 +60,15 @@ pub struct LayoutResults {
 
 impl LayoutLength {
     pub const fn px(value: i32) -> Self {
-        Self(value.saturating_mul(1000))
+        Self(value.saturating_mul(1_000))
+    }
+
+    pub const fn milli(value: i32) -> Self {
+        Self(value)
+    }
+
+    pub const fn value(self) -> i32 {
+        self.0
     }
 }
 
@@ -79,6 +87,15 @@ impl LayoutPoint {
 impl LayoutBox {
     pub const fn new(origin: LayoutPoint, size: LayoutSize) -> Self {
         Self { origin, size }
+    }
+
+    pub const fn milli_rect(self) -> [i32; 4] {
+        [
+            self.origin.x.value(),
+            self.origin.y.value(),
+            self.size.width.value(),
+            self.size.height.value(),
+        ]
     }
 }
 

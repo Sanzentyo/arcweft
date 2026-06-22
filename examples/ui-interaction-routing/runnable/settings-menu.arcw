@@ -1,0 +1,51 @@
+character guide Guide {
+}
+
+entry game @entry.main { start(@flow.main) }
+
+flow main {
+    guide: Settings sample. Use pointer hover, keyboard focus, and activation to move through the menu.
+    choice @choice.settings.main {
+        @choice.settings.audio "Audio" -> @flow.audio
+        @choice.settings.text "Text" -> @flow.text
+        @choice.settings.video "Video" -> @flow.video
+        @choice.settings.close "Close" -> @flow.done
+    }
+}
+
+flow audio {
+    guide: Audio settings selected. The focused item and hovered item share the routed interaction target.
+    choice @choice.settings.audio {
+        @choice.settings.audio.confirm "Apply audio preset" -> @flow.applied
+        @choice.settings.audio.back "Back" -> @flow.main
+    }
+}
+
+flow text {
+    guide: Text settings selected. IME composition is not enabled in this package; committed text remains unchanged.
+    choice @choice.settings.text {
+        @choice.settings.text.confirm "Apply text preset" -> @flow.applied
+        @choice.settings.text.back "Back" -> @flow.main
+    }
+}
+
+flow video {
+    guide: Video settings selected.
+    choice @choice.settings.video {
+        @choice.settings.video.confirm "Apply video preset" -> @flow.applied
+        @choice.settings.video.back "Back" -> @flow.main
+    }
+}
+
+flow applied {
+    guide: The semantic action returned to the bytecode VM.
+    choice @choice.settings.applied {
+        @choice.settings.applied.back "Back to settings" -> @flow.main
+        @choice.settings.applied.close "Close" -> @flow.done
+    }
+}
+
+flow done {
+    guide: Settings sample finished.
+    return "settings-finished"
+}

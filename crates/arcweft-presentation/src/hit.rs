@@ -49,6 +49,39 @@ impl HitRect {
             && x < left + f64::from(self.width)
             && y < top + f64::from(self.height)
     }
+
+    #[must_use]
+    pub fn outset(self, amount: f32) -> Self {
+        let doubled = amount * 2.0;
+        Self {
+            x: self.x - amount,
+            y: self.y - amount,
+            width: (self.width + doubled).max(0.0),
+            height: (self.height + doubled).max(0.0),
+        }
+    }
+
+    #[must_use]
+    pub fn translated(self, x: f32, y: f32) -> Self {
+        Self {
+            x: self.x + x,
+            y: self.y + y,
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn scaled_about_center(self, scale: f32) -> Self {
+        let scale = scale.max(0.0);
+        let width = self.width * scale;
+        let height = self.height * scale;
+        Self {
+            x: self.x + (self.width - width) * 0.5,
+            y: self.y + (self.height - height) * 0.5,
+            width,
+            height,
+        }
+    }
 }
 
 impl HitRecord {
@@ -76,12 +109,11 @@ impl HitRecord {
     }
 
     #[must_use]
-    pub fn with_hover_path(mut self, hover_path: Vec<InteractionTarget>) -> Self {
-        self.hover_path = if hover_path.is_empty() {
-            vec![self.target.clone()]
-        } else {
-            hover_path
-        };
+    pub fn with_hover_path(mut self, mut hover_path: Vec<InteractionTarget>) -> Self {
+        if hover_path.last() != Some(&self.target) {
+            hover_path.push(self.target.clone());
+        }
+        self.hover_path = hover_path;
         self
     }
 

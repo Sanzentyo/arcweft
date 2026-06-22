@@ -1,8 +1,11 @@
+use arcweft_presentation::input::InputEvent;
+use arcweft_presentation::interaction::InteractionState;
 use arcweft_presentation::layer::{LayerId, LayerTree};
 use arcweft_presentation::semantic::SemanticTree;
 use arcweft_ui::{
-    DisplayItemKind, DisplayList, ImageId, LayoutBox, NodeId, UiLayerOutput, UiSemanticFragment,
-    UiSemanticNode,
+    DisplayItemKind, DisplayList, ImageId, LayoutBox, NodeId, ResolvedDisplayList, UiError,
+    UiHandlerInvocation, UiHandlerRouteTable, UiLayerOutput, UiSemanticFragment, UiSemanticNode,
+    UiStyleTable,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -14,12 +17,21 @@ pub struct UiFrameLayer {
     display: DisplayList,
     semantic_fragment: UiSemanticFragment,
     semantics: SemanticTree,
+    handlers: UiHandlerRouteTable,
+    styles: UiStyleTable,
 }
 
 /// Ordered UI frame payload ready for host renderer and Agent observation phases.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct UiFrameCommit {
     layers: Vec<UiFrameLayer>,
+}
+
+/// One UI layer after interaction selectors have been resolved for a frame.
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiFrameResolvedLayer {
+    layer: LayerId,
+    display: ResolvedDisplayList,
 }
 
 /// One image display item in a committed UI frame with its render layer context.
@@ -61,6 +73,21 @@ impl UiFrameLayer {
             display,
             semantic_fragment,
             semantics,
+            handlers: UiHandlerRouteTable::default(),
+            styles: UiStyleTable::default(),
+        }
+    }
+
+    pub fn from_output(layer: LayerId, output: UiLayerOutput) -> Self {
+        let (display, semantic_fragment, handlers, styles) = output.into_frame_parts();
+        let semantics = semantic_fragment.to_semantic_tree();
+        Self {
+            layer,
+            display,
+            semantic_fragment,
+            semantics,
+            handlers,
+            styles,
         }
     }
 
@@ -78,6 +105,30 @@ impl UiFrameLayer {
 
     pub const fn semantic_fragment(&self) -> &UiSemanticFragment {
         &self.semantic_fragment
+    }
+
+    pub const fn handlers(&self) -> &UiHandlerRouteTable {
+        &self.handlers
+    }
+
+    pub const fn styles(&self) -> &UiStyleTable {
+        &self.styles
+    }
+
+    pub fn dispatch_input(&self, input: &InputEvent) -> Vec<UiHandlerInvocation> {
+        self.handlers.dispatch_input(input)
+    }
+
+    pub fn resolve_interaction_styles(
+        &self,
+        interaction: &InteractionState,
+    ) -> Result<UiFrameResolvedLayer, UiError> {
+        self.display
+            .resolve_interaction_styles(&self.semantic_fragment, &self.styles, interaction)
+            .map(|display| UiFrameResolvedLayer {
+                layer: self.layer.clone(),
+                display,
+            })
     }
 
     pub fn image_items(&self) -> Vec<UiFrameImageItem> {
@@ -102,6 +153,20 @@ impl UiFrameLayer {
                 | DisplayItemKind::Custom(_) => None,
             })
             .collect()
+    }
+}
+
+impl UiFrameResolvedLayer {
+    pub const fn layer(&self) -> &LayerId {
+        &self.layer
+    }
+
+    pub const fn display(&self) -> &ResolvedDisplayList {
+        &self.display
+    }
+
+    pub fn into_display(self) -> ResolvedDisplayList {
+        self.display
     }
 }
 
@@ -157,6 +222,23 @@ impl UiFrameCommit {
         tree
     }
 
+    pub fn dispatch_input(&self, input: &InputEvent) -> Vec<UiHandlerInvocation> {
+        self.layers
+            .iter()
+            .flat_map(|layer| layer.dispatch_input(input))
+            .collect()
+    }
+
+    pub fn resolve_interaction_styles(
+        &self,
+        interaction: &InteractionState,
+    ) -> Result<Vec<UiFrameResolvedLayer>, UiError> {
+        self.layers
+            .iter()
+            .map(|layer| layer.resolve_interaction_styles(interaction))
+            .collect()
+    }
+
     pub fn image_items(&self) -> Vec<UiFrameImageItem> {
         self.layers
             .iter()
@@ -189,8 +271,7 @@ impl UiFrameCommitBuilder {
         if self.layers.contains_key(&layer) {
             return Err(UiFrameCommitError::DuplicateLayer(layer));
         }
-        let (display, semantics) = output.into_parts();
-        let frame_layer = UiFrameLayer::new(layer.clone(), display, semantics);
+        let frame_layer = UiFrameLayer::from_output(layer.clone(), output);
         self.layers.insert(layer, frame_layer);
         Ok(())
     }

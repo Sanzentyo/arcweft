@@ -44,6 +44,7 @@ members = [
     "crates/arcweft-bundle",
     "crates/arcweft-runtime-driver",
     "crates/arcweft-render-wgpu",
+    "crates/arcweft-player-scene",
     "crates/arcweft-render-web",
     "crates/arcweft-player-web",
     "crates/arcweft-audio-core",

@@ -5,6 +5,8 @@ mod debug;
 mod image_declarations;
 pub(in crate::app) mod jit;
 mod local_embedding;
+#[cfg(feature = "native-player")]
+mod native_player;
 pub(crate) mod project;
 mod remote_embedding;
 pub(in crate::app) mod runtime;
@@ -17,6 +19,8 @@ use self::bundle::{bundle_command, run_bundle_command};
 use self::commands::{BuildCommand, Cli, CliCommand};
 use self::debug::debug_command;
 use self::jit::jit_command;
+#[cfg(feature = "native-player")]
+use self::native_player::native_player_command;
 use self::runtime::cli::runtime_cli_command;
 use self::runtime::plan::runtime_plan_command;
 use self::runtime::profile_cmd::runtime_profile_command;
@@ -88,6 +92,8 @@ fn run_cli(cli: Cli, adapter_registrars: &[NativeAdapterRegistrar]) -> Result<()
         CliCommand::Bench(options) => script_bench_command(&options, adapter_registrars),
         CliCommand::Bundle(options) => bundle_command(&options),
         CliCommand::RunBundle(options) => run_bundle_command(&options, adapter_registrars),
+        #[cfg(feature = "native-player")]
+        CliCommand::PlayNative(options) => native_player_command(&options),
         CliCommand::Build { command } => match command {
             BuildCommand::Bundle(options) => bundle_command(&options),
         },

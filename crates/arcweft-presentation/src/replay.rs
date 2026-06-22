@@ -22,7 +22,7 @@ pub struct RouteFingerprint {
 
 /// Hash the parts of presentation state that affect input routing.
 pub fn routing_hash(layers: &LayerTree, hits: &HitTree, state: &InteractionState) -> RoutingHash {
-    let mut hasher = StableHasher::new("arcweft.presentation.routing.v1");
+    let mut hasher = StableHasher::new("arcweft.presentation.routing.v2");
     hash_layer_tree(&mut hasher, layers);
     hash_hit_tree(&mut hasher, hits);
     hash_interaction_state(&mut hasher, state);
@@ -37,7 +37,7 @@ pub fn route_fingerprint(
     routed: &RoutedInput,
 ) -> RouteFingerprint {
     let route_hash = routing_hash(layers, hits, state);
-    let mut hasher = StableHasher::new("arcweft.presentation.route-decision.v1");
+    let mut hasher = StableHasher::new("arcweft.presentation.route-decision.v2");
     hasher.u64(routed.raw_epoch().0);
     hash_route_decision(&mut hasher, routed.decision());
     RouteFingerprint {
@@ -253,6 +253,20 @@ fn hash_interaction_state(hasher: &mut StableHasher, state: &InteractionState) {
         hasher.layer_id(capture.layer());
         hasher.target(capture.target());
     }
+    hasher.u64(state.hover_paths().len() as u64);
+    for path in state.hover_paths() {
+        hasher.u64(path.pointer().0);
+        hasher.u64(path.targets().len() as u64);
+        for target in path.targets() {
+            hasher.target(target);
+        }
+    }
+    hasher.u64(state.pressed_targets().len() as u64);
+    for pressed in state.pressed_targets() {
+        hasher.u64(pressed.pointer().0);
+        hasher.layer_id(pressed.layer());
+        hasher.target(pressed.target());
+    }
 }
 
 fn hash_route_decision(hasher: &mut StableHasher, decision: &RouteDecision) {
@@ -293,8 +307,12 @@ fn hash_input_event(hasher: &mut StableHasher, event: &InputEvent) {
             hasher.u32(3);
             hasher.str(value);
         }
-        InputEventKind::AgentInvoke { action } => {
+        InputEventKind::Focus { focused } => {
             hasher.u32(4);
+            hasher.bool(*focused);
+        }
+        InputEventKind::AgentInvoke { action } => {
+            hasher.u32(5);
             hasher.public_id(action);
         }
     }

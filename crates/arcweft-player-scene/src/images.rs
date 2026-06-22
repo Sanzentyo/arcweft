@@ -6,7 +6,7 @@ use num_traits::ToPrimitive;
 use thiserror::Error;
 
 #[derive(Clone, Debug)]
-pub struct BrowserImageCatalog {
+pub struct BundleImageCatalog {
     images: Vec<DecodedBundleImage>,
 }
 
@@ -17,7 +17,7 @@ struct DecodedBundleImage {
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
-pub enum BrowserImageCatalogError {
+pub enum BundleImageCatalogError {
     #[error("bundle image asset `{0}` was not found")]
     MissingAsset(String),
     #[error("bundle image object `{object_id}` references missing asset `{asset_id}`")]
@@ -30,28 +30,28 @@ pub enum BrowserImageCatalogError {
     EmptyBounds { object_id: String },
 }
 
-impl BrowserImageCatalog {
-    pub fn from_bundle(bundle: &ArcweftBundle) -> Result<Self, BrowserImageCatalogError> {
+impl BundleImageCatalog {
+    pub fn from_bundle(bundle: &ArcweftBundle) -> Result<Self, BundleImageCatalogError> {
         bundle
             .image_assets
             .iter()
             .map(|asset| {
                 let bytes = bundle
                     .image_asset_bytes(&asset.id)
-                    .map_err(|error| BrowserImageCatalogError::asset_read(&asset.id, &error))?
-                    .ok_or_else(|| BrowserImageCatalogError::MissingAsset(asset.id.clone()))?;
+                    .map_err(|error| BundleImageCatalogError::asset_read(&asset.id, &error))?
+                    .ok_or_else(|| BundleImageCatalogError::MissingAsset(asset.id.clone()))?;
                 let image = arcweft_image::decode_image_bytes(
                     image_format(asset.format),
                     bytes,
                     ImageDecodeOptions::default(),
                 )
-                .map_err(|error| BrowserImageCatalogError::decode(&asset.id, &error))?;
+                .map_err(|error| BundleImageCatalogError::decode(&asset.id, &error))?;
                 Ok(DecodedBundleImage {
                     asset_id: asset.id.clone(),
                     image,
                 })
             })
-            .collect::<Result<Vec<_>, BrowserImageCatalogError>>()
+            .collect::<Result<Vec<_>, BundleImageCatalogError>>()
             .map(|images| Self { images })
     }
 
@@ -59,7 +59,7 @@ impl BrowserImageCatalog {
         &self,
         objects: &[BundleImageObject],
         elapsed_millis: u64,
-    ) -> Result<Vec<RenderImage>, BrowserImageCatalogError> {
+    ) -> Result<Vec<RenderImage>, BundleImageCatalogError> {
         objects
             .iter()
             .map(|object| self.render_image(object, elapsed_millis))
@@ -70,19 +70,19 @@ impl BrowserImageCatalog {
         &self,
         object: &BundleImageObject,
         elapsed_millis: u64,
-    ) -> Result<RenderImage, BrowserImageCatalogError> {
+    ) -> Result<RenderImage, BundleImageCatalogError> {
         let decoded = self
             .images
             .iter()
             .find(|image| image.asset_id == object.asset)
-            .ok_or_else(|| BrowserImageCatalogError::MissingObjectAsset {
+            .ok_or_else(|| BundleImageCatalogError::MissingObjectAsset {
                 object_id: object.id.clone(),
                 asset_id: object.asset.clone(),
             })?;
         let frame = decoded
             .image
             .frame_at_time_millis(elapsed_millis)
-            .ok_or_else(|| BrowserImageCatalogError::Decode {
+            .ok_or_else(|| BundleImageCatalogError::Decode {
                 asset_id: object.asset.clone(),
                 message: "decoded image has no frame at visual time".to_owned(),
             })?;
@@ -99,7 +99,7 @@ impl BrowserImageCatalog {
     }
 }
 
-impl BrowserImageCatalogError {
+impl BundleImageCatalogError {
     fn asset_read(asset_id: &str, error: &BundleCodecError) -> Self {
         Self::AssetRead {
             asset_id: asset_id.to_owned(),
@@ -124,10 +124,10 @@ fn image_format(format: BundleImageFormat) -> ImageFormat {
     }
 }
 
-fn render_bounds(object: &BundleImageObject) -> Result<HitRect, BrowserImageCatalogError> {
+fn render_bounds(object: &BundleImageObject) -> Result<HitRect, BundleImageCatalogError> {
     let bounds = object.bounds;
     if bounds.width_milli == 0 || bounds.height_milli == 0 {
-        return Err(BrowserImageCatalogError::EmptyBounds {
+        return Err(BundleImageCatalogError::EmptyBounds {
             object_id: object.id.clone(),
         });
     }
@@ -145,84 +145,4 @@ fn milli_i32_to_f32(value: i32) -> f32 {
 
 fn milli_u32_to_f32(value: u32) -> f32 {
     value.to_f32().unwrap_or(f32::MAX) / 1_000.0
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use arcweft_bundle::{
-        BundleImageAnimation, BundleImageAsset, BundleImageDimensions, BundleImageObjectBounds,
-        BundleManifest, BundleRuntimeSummary, BundleSource, BundleVirtualFile,
-        BundleVirtualFileRef, BundleVirtualFileSpace,
-    };
-    use arcweft_core::bytecode::BytecodeProgram;
-    use arcweft_render_text::LineDisplayCatalog;
-
-    #[test]
-    fn renders_declared_bundle_image_object_frames() {
-        let bundle = image_bundle(
-            BundleImageFormat::Gif,
-            include_bytes!("../../../web/assets/generated-pulse.gif").to_vec(),
-        );
-        let catalog = BrowserImageCatalog::from_bundle(&bundle).expect("image catalog decodes");
-        let images = catalog
-            .render_images(&bundle.image_objects, 170)
-            .expect("render images");
-
-        assert_eq!(images.len(), 1);
-        assert_eq!(images[0].id, "image.generated.pulse");
-        assert_eq!(images[0].bounds, HitRect::new(12.0, 34.0, 56.0, 78.0));
-        assert_eq!(images[0].frame.width, 96);
-        assert_eq!(images[0].frame.height, 96);
-        assert_eq!(images[0].opacity_milli, 875);
-    }
-
-    fn image_bundle(format: BundleImageFormat, bytes: Vec<u8>) -> ArcweftBundle {
-        ArcweftBundle::new(
-            BundleManifest {
-                source_label: "test.arcw".to_owned(),
-                profile_id: None,
-                profile_kind: None,
-                entry: None,
-                adapter: None,
-                adapter_manifest_ids: Vec::new(),
-                required_host_calls: Vec::new(),
-                runtime: BundleRuntimeSummary {
-                    entry_flow: None,
-                    flows: 0,
-                    bytecode_instructions: 0,
-                    line_task_groups: 0,
-                    stream_plans: 0,
-                    source_plans: 0,
-                },
-            },
-            BundleSource {
-                label: "test.arcw".to_owned(),
-                text: String::new(),
-            },
-            BytecodeProgram::default(),
-            LineDisplayCatalog::default(),
-        )
-        .with_virtual_files([BundleVirtualFile {
-            space: BundleVirtualFileSpace::Asset,
-            path: "generated/pulse.gif".to_owned(),
-            bytes,
-        }])
-        .with_image_assets([BundleImageAsset {
-            id: "asset.generated.pulse".to_owned(),
-            file: BundleVirtualFileRef {
-                space: BundleVirtualFileSpace::Asset,
-                path: "generated/pulse.gif".to_owned(),
-            },
-            format,
-            animation: BundleImageAnimation::Animated,
-            dimensions: Some(BundleImageDimensions::new(96, 96)),
-        }])
-        .with_image_objects([BundleImageObject {
-            id: "image.generated.pulse".to_owned(),
-            asset: "asset.generated.pulse".to_owned(),
-            bounds: BundleImageObjectBounds::from_px(12, 34, 56, 78),
-            opacity_milli: 875,
-        }])
-    }
 }

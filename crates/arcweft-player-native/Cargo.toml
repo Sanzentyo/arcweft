@@ -23,15 +23,22 @@ arcweft-desktop-contract = { path = "../arcweft-desktop-contract" }
 arcweft-desktop-native = { path = "../arcweft-desktop-native" }
 arcweft-host-adapter = { path = "../arcweft-host-adapter" }
 arcweft-interaction-model = { path = "../arcweft-interaction-model" }
+arcweft-player-scene = { path = "../arcweft-player-scene" }
+arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-render-native = { path = "../arcweft-render-native" }
+arcweft-render-wgpu = { path = "../arcweft-render-wgpu" }
 arcweft-render-text = { path = "../arcweft-render-text" }
+arcweft-runtime-driver = { path = "../arcweft-runtime-driver" }
 arcweft-runtime-host = { path = "../arcweft-runtime-host" }
 
 clap = { workspace = true, features = ["derive"] }
 png = { workspace = true, optional = true }
+pollster.workspace = true
+num-traits = "0.2.19"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
+wgpu = { workspace = true, features = ["dx12", "metal", "vulkan"] }
 winit.workspace = true
 
 [lib]

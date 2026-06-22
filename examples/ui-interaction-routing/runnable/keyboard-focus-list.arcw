@@ -1,0 +1,23 @@
+character narrator Narrator {
+}
+
+entry game @entry.main { start(@flow.main) }
+
+flow main {
+    narrator: Keyboard focus sample. Arrow keys wrap across the stable targets; Home and End jump to the edges.
+    choice @choice.focus.list {
+        @choice.focus.one "First item" -> @flow.selected
+        @choice.focus.two "Second item" -> @flow.selected
+        @choice.focus.three "Third item" -> @flow.selected
+        @choice.focus.four "Fourth item" -> @flow.selected
+        @choice.focus.five "Fifth item" -> @flow.selected
+        @choice.focus.six "Sixth item" -> @flow.selected
+        @choice.focus.seven "Seventh item" -> @flow.selected
+        @choice.focus.eight "Eighth item" -> @flow.selected
+    }
+}
+
+flow selected {
+    narrator: A focused choice was activated with Enter, Space, pointer release, or semantic invocation.
+    return "focus-selected"
+}

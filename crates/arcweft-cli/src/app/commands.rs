@@ -2,6 +2,8 @@ use super::agent::{AgentHitTestOptions, AgentMcpOptions, AgentObserveOptions, Ag
 use super::bundle::{BundleOptions, RunBundleOptions};
 use super::debug::DebugCommand;
 use super::jit::JitCheckOptions;
+#[cfg(feature = "native-player")]
+use super::native_player::NativePlayerOptions;
 use super::runtime::options::{
     CliRunOptions, PlanOptions, RuntimeProfileOptions, RuntimeRunOptions, ScriptBenchOptions,
     ScriptTestOptions, ServeOptions,
@@ -41,6 +43,8 @@ pub(super) enum CliCommand {
     Bench(ScriptBenchOptions),
     Bundle(BundleOptions),
     RunBundle(RunBundleOptions),
+    #[cfg(feature = "native-player")]
+    PlayNative(NativePlayerOptions),
     Build {
         #[command(subcommand)]
         command: BuildCommand,

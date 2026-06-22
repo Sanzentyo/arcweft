@@ -1,5 +1,5 @@
-use crate::images::{BrowserImageCatalog, BrowserImageCatalogError};
 use arcweft_bundle::ArcweftBundle;
+use arcweft_player_scene::images::{BundleImageCatalog, BundleImageCatalogError};
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, PreparedFrame, RenderChoiceItem, RenderDialogue,
     RenderPreferences, RenderScene, RenderViewport, SharedFramePlanner,
@@ -26,7 +26,7 @@ pub enum WebGpuParityFrameError {
     #[error(transparent)]
     Clock(#[from] RuntimeClockError),
     #[error(transparent)]
-    Images(#[from] BrowserImageCatalogError),
+    Images(#[from] BundleImageCatalogError),
     #[error("demo bundle did not reach a dialogue/choice/image frame within {max_ticks} ticks")]
     FrameNotReady { max_ticks: u64 },
     #[error("frame planning failed: {0}")]
@@ -185,7 +185,7 @@ pub fn prepare_bundle_parity_frame(
     options: WebGpuParityFrameOptions,
 ) -> Result<PreparedFrame, WebGpuParityFrameError> {
     let mut session = BundleSession::new(bundle, BundleSessionOptions::default())?;
-    let images = BrowserImageCatalog::from_bundle(bundle)?;
+    let images = BundleImageCatalog::from_bundle(bundle)?;
     let mut presentation = None;
     for tick in 1..=options.max_ticks {
         let clock = RuntimeClockStep::from_millis(tick, 16)?;
@@ -209,10 +209,7 @@ pub fn prepare_bundle_parity_frame(
         dialogue: presentation
             .dialogue
             .as_ref()
-            .map(|dialogue| RenderDialogue {
-                speaker: dialogue.callee.clone(),
-                text: dialogue.text.clone(),
-            }),
+            .map(RenderDialogue::from_display_frame),
         choices: presentation
             .choices
             .iter()
@@ -223,6 +220,7 @@ pub fn prepare_bundle_parity_frame(
             .collect(),
         images: images.render_images(&presentation.images, options.visual_time_millis)?,
         viewport: options.viewport,
+        visual_time_millis: options.visual_time_millis,
         preferences: RenderPreferences::default(),
         interaction: InteractionVisualState::default(),
         choice_scroll: ChoiceScroll::default(),

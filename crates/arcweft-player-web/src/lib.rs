@@ -6,8 +6,6 @@
 
 pub mod clock;
 pub mod host;
-pub mod images;
-pub mod input;
 pub mod parity;
 pub mod report;
 

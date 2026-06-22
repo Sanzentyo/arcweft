@@ -1,0 +1,28 @@
+pub component @ui.sample.confirmation ConfirmationDialog(message: String) -> View {
+    VStack(spacing = 20) {
+        Text(message).font(.body)
+        HStack(spacing = 12) {
+            Button("Cancel")
+                .agent_target(@ui.sample.confirmation.cancel)
+                .interaction_style {
+                    idle { background = .secondary_button }
+                    hovered { background = .secondary_button_hover }
+                    focused { outline_color = .focus; outline_width = 3px }
+                    pressed { scale = 0.97 }
+                }
+                .on_click { action.invoke(@action.confirmation.cancel) }
+            Button("Accept")
+                .agent_target(@ui.sample.confirmation.accept)
+                .interaction_style {
+                    idle { background = .primary_button }
+                    hovered { background = .primary_button_hover }
+                    focused { outline_color = .focus; outline_width = 3px }
+                    pressed { background = .primary_button_pressed; scale = 0.97 }
+                }
+                .on_click { action.invoke(@action.confirmation.accept) }
+        }
+    }
+    .layer(@layer.ui.modal)
+    .padding(28)
+    .background(.modal_panel)
+}

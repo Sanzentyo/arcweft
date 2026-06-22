@@ -1,6 +1,7 @@
 //! Flat retained UI fragments emitted by Rust and Arcweft components.
 
 use crate::{NodeKey, RawEntity, UiError};
+use arcweft_presentation::input::{InputEventKind, PointerPhase};
 use std::collections::BTreeSet;
 
 /// Frame-local node identifier inside one retained fragment.
@@ -124,6 +125,19 @@ impl Span32 {
     }
 }
 
+impl EventKind {
+    pub const fn accepts(self, input: &InputEventKind) -> bool {
+        match self {
+            Self::Activate => input.is_activate(),
+            Self::PointerDown => matches!(input.pointer_phase(), Some(PointerPhase::Down)),
+            Self::PointerUp => matches!(input.pointer_phase(), Some(PointerPhase::Up)),
+            Self::PointerMove => matches!(input.pointer_phase(), Some(PointerPhase::Move)),
+            Self::Focus => matches!(input.focus_changed(), Some(true)),
+            Self::Blur => matches!(input.focus_changed(), Some(false)),
+        }
+    }
+}
+
 impl EventBinding {
     pub const fn new(kind: EventKind, handler: HandlerId) -> Self {
         Self { kind, handler }
@@ -135,6 +149,10 @@ impl EventBinding {
 
     pub const fn handler(self) -> HandlerId {
         self.handler
+    }
+
+    pub const fn accepts(self, input: &InputEventKind) -> bool {
+        self.kind.accepts(input)
     }
 }
 

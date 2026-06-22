@@ -5,6 +5,7 @@ pub mod display;
 pub mod entity;
 pub mod fragment;
 pub mod frame;
+pub mod handler;
 pub mod image;
 pub mod layout;
 pub mod presentation_image;
@@ -18,7 +19,10 @@ pub use component::{
     ComponentDescriptor, ComponentId, ComponentImplementation, ComponentRegistry,
     ComponentSchemaId, RustComponentId, UiProgramId,
 };
-pub use display::{DisplayItem, DisplayItemId, DisplayItemKind, DisplayList};
+pub use display::{
+    DisplayItem, DisplayItemId, DisplayItemKind, DisplayList, ResolvedDisplayItem,
+    ResolvedDisplayList,
+};
 pub use entity::{DirtyFlags, Entity, EntityStore, RawEntity};
 pub use fragment::{
     ContainerKind, CustomElementId, EventBinding, EventKind, FragmentKind, FragmentNode, HandlerId,
@@ -26,6 +30,7 @@ pub use fragment::{
     ViewFragmentBuilder,
 };
 pub use frame::UiLayerOutput;
+pub use handler::{UiHandlerInvocation, UiHandlerRoute, UiHandlerRouteTable};
 pub use image::{
     ImageAlignment, ImageFit, ImagePlayback, UiImagePresentationMetadata, UiImageSource,
     UiImageSourceTable, UiResolvedImageFrame,
@@ -38,8 +43,9 @@ pub use presentation_image::{UiImagePresentationFrame, UiImagePresentationInput}
 pub use reactive::{EntityInvalidation, ReactiveGraph, ReactiveInvalidation, Revision};
 pub use semantics::{UiNodeId, UiSemanticFragment, UiSemanticFragmentBuilder, UiSemanticNode};
 pub use style::{
-    Invalidation, Milli, PropertyBinding, PropertyBindingTable, PropertyBindingTableBuilder, Rgba8,
-    UiPropertyId, UiPropertyKind, UiPropertyValue, ValueSourceId,
+    Invalidation, Milli, PropertyBinding, PropertyBindingTable, PropertyBindingTableBuilder,
+    ResolvedUiProperty, ResolvedUiStyle, Rgba8, UiInteractionSelector, UiPropertyId,
+    UiPropertyKind, UiPropertyValue, UiStyle, UiStyleRule, UiStyleTable, ValueSourceId,
 };
 
 /// Stable key for one retained UI fragment node.
@@ -67,6 +73,34 @@ pub enum UiError {
     DuplicateImageSource(ImageId),
     #[error("unknown UI image source {0:?}")]
     UnknownImageSource(ImageId),
+    #[error("UI node {0:?} binds an event without semantic target metadata")]
+    HandlerNodeMissingSemantics(NodeId),
+    #[error("UI node {node:?} references unknown handler semantic {semantic:?}")]
+    UnknownHandlerSemantic {
+        node: NodeId,
+        semantic: SemanticSpecId,
+    },
+    #[error("UI node {node:?} references unknown display semantic {semantic:?}")]
+    UnknownDisplaySemantic {
+        node: NodeId,
+        semantic: SemanticSpecId,
+    },
+    #[error("duplicate UI style {0:?}")]
+    DuplicateStyle(StyleId),
+    #[error("unknown UI style {0:?}")]
+    UnknownStyle(StyleId),
+    #[error("duplicate base UI style property {0:?}")]
+    DuplicateStyleProperty(UiPropertyKind),
+    #[error("duplicate UI style rule {selector:?} for {kind:?}")]
+    DuplicateStyleRule {
+        selector: UiInteractionSelector,
+        kind: UiPropertyKind,
+    },
+    #[error("UI property {kind:?} rejects value {value:?}")]
+    InvalidUiPropertyValue {
+        kind: UiPropertyKind,
+        value: UiPropertyValue,
+    },
     #[error("too many UI items")]
     CapacityExceeded,
 }

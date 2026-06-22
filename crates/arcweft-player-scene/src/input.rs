@@ -1,15 +1,15 @@
 use arcweft_id::PublicId;
-use arcweft_presentation::hover::HoverPath;
 use arcweft_presentation::input::{
-    Action, InputEpoch, KeyPhase, KeyboardInput, PointerId, PointerInput, PointerPhase,
-    RawInputEvent, RawInputKind, ViewportPoint,
+    Action, InputEpoch, KeyPhase, PointerId, PointerInput, PointerPhase, RawInputEvent,
+    RawInputKind, ViewportPoint,
 };
-use arcweft_presentation::interaction::{FocusState, InteractionState, PointerCapture};
+use arcweft_presentation::interaction::{
+    FocusState, InteractionState, PointerCapture, PressedTarget,
+};
 use arcweft_presentation::router::{InputRouter, RouteDecision};
 use arcweft_render_wgpu::geometry::{ChoiceScroll, InteractionVisualState, PreparedFrame};
 use std::collections::BTreeMap;
 
-/// Pointer drag state owned by Arcweft presentation input, not the DOM drag API.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DragState {
     pub pointer: PointerId,
@@ -26,19 +26,16 @@ impl DragState {
     }
 }
 
-/// Result of one normalized input operation.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct InputOutcome {
     pub actions: Vec<Action>,
     pub redraw: bool,
 }
 
-/// Platform-independent input state used by the winit adapter.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct InputController {
     next_epoch: u64,
     interaction: InteractionState,
-    hover: Option<HoverPath>,
     pointer_positions: BTreeMap<u64, ViewportPoint>,
     pressed: BTreeMap<u64, arcweft_presentation::input::InteractionTarget>,
     drags: BTreeMap<u64, DragState>,
@@ -66,11 +63,8 @@ impl InputController {
     pub fn visual_state(&self) -> InteractionVisualState {
         InteractionVisualState {
             focused: self.interaction.focus().target().cloned(),
-            hovered: self
-                .hover
-                .as_ref()
-                .and_then(|path| path.targets().last().cloned()),
-            pressed: self.pressed.values().next().cloned(),
+            hovered: self.interaction.primary_hovered_target().cloned(),
+            pressed: self.interaction.primary_pressed_target().cloned(),
         }
     }
 
@@ -89,7 +83,14 @@ impl InputController {
         position: ViewportPoint,
     ) -> InputOutcome {
         self.pointer_positions.insert(pointer.0, position);
-        self.hover = InputRouter::hover_path(pointer, position, &frame.layers, &frame.hits);
+        match InputRouter::hover_path(pointer, position, &frame.layers, &frame.hits) {
+            Some(path) => {
+                let _ = self.interaction.set_hover_path(path);
+            }
+            None => {
+                let _ = self.interaction.clear_hover(pointer);
+            }
+        }
         if let Some(drag) = self.drags.get_mut(&pointer.0) {
             drag.current = position;
         }
@@ -128,6 +129,11 @@ impl InputController {
                     node.layer().clone(),
                     target.clone(),
                 ));
+                self.interaction.press_pointer(PressedTarget::new(
+                    pointer,
+                    node.layer().clone(),
+                    target.clone(),
+                ));
                 self.pressed.insert(pointer.0, target.clone());
                 self.drags.insert(
                     pointer.0,
@@ -160,7 +166,8 @@ impl InputController {
         }));
         let routed = InputRouter::route(&raw, &frame.layers, &frame.hits, &self.interaction);
         let released = self.pressed.remove(&pointer.0);
-        self.interaction.release_pointer(pointer);
+        let _ = self.interaction.release_pressed(pointer);
+        let _ = self.interaction.release_pointer(pointer);
         let drag = self.drags.remove(&pointer.0);
         let is_activation = drag
             .as_ref()
@@ -181,7 +188,7 @@ impl InputController {
         self.pointer_positions.remove(&pointer.0);
         self.pressed.remove(&pointer.0);
         self.drags.remove(&pointer.0);
-        self.interaction.release_pointer(pointer);
+        self.interaction.clear_pointer(pointer);
         InputOutcome {
             actions: Vec::new(),
             redraw: true,
@@ -241,14 +248,7 @@ impl InputController {
                     .collect(),
                 redraw: true,
             },
-            _ => {
-                let raw = self.raw(RawInputKind::Keyboard(KeyboardInput {
-                    key: key.to_owned(),
-                    phase,
-                }));
-                let _ = InputRouter::route(&raw, &frame.layers, &frame.hits, &self.interaction);
-                InputOutcome::default()
-            }
+            _ => InputOutcome::default(),
         }
     }
 
@@ -267,15 +267,7 @@ impl InputController {
             self.pointer_positions.clear();
             self.pressed.clear();
             self.drags.clear();
-            let pointers = self
-                .interaction
-                .captures()
-                .iter()
-                .map(arcweft_presentation::interaction::PointerCapture::pointer)
-                .collect::<Vec<_>>();
-            for pointer in pointers {
-                self.interaction.release_pointer(pointer);
-            }
+            self.interaction.clear_pointer_state();
         }
         InputOutcome {
             actions: Vec::new(),

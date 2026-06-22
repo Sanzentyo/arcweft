@@ -60,7 +60,7 @@ flow main {
     image(@image.generated.character_stand)
     image(@image.generated.gif_pulse)
     image(@image.generated.webp_pulse)
-    alice: Arcweft is running on a shared wgpu renderer in this WebGPU canvas.
+    alice: [.typewriter cps=24][.wave amp=4px freq=8]Typewriter text is alive on WebGPU.[/][/]
     choice @choice.web_demo {
         @choice.web_demo.continue "Continue" -> @flow.done
         @choice.web_demo.alternate "Alternate route" -> @flow.done
@@ -68,6 +68,6 @@ flow main {
 }
 
 flow done {
-    alice: The semantic choice input returned to the bytecode VM.
+    alice: [.typewriter cps=28][.wave amp=3px freq=10]The VM accepted the choice and kept the canvas in sync.[/][/]
     return "done"
 }

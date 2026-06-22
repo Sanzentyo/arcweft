@@ -1,9 +1,11 @@
 //! Display-list generation boundary for laid-out retained UI fragments.
 
 use crate::{
-    CustomElementId, FragmentKind, ImageId, LayoutBox, LayoutResults, NodeId, RichTextSourceId,
-    SemanticSpecId, TextSourceId, UiError, ViewFragment,
+    CustomElementId, FragmentKind, ImageId, LayoutBox, LayoutResults, NodeId, ResolvedUiStyle,
+    RichTextSourceId, SemanticSpecId, StyleId, TextSourceId, UiError, UiSemanticFragment,
+    UiStyleTable, ViewFragment,
 };
+use arcweft_presentation::interaction::InteractionState;
 
 /// Frame-local display item identifier.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -23,6 +25,7 @@ pub enum DisplayItemKind {
 pub struct DisplayItem {
     node: NodeId,
     kind: DisplayItemKind,
+    style: StyleId,
     layout: LayoutBox,
     semantics: Option<SemanticSpecId>,
 }
@@ -33,6 +36,19 @@ pub struct DisplayList {
     items: Vec<DisplayItem>,
 }
 
+/// One display item with interaction selectors resolved for the current frame.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedDisplayItem {
+    item: DisplayItem,
+    style: ResolvedUiStyle,
+}
+
+/// Ordered display list after hover/focus/pressed/disabled style resolution.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ResolvedDisplayList {
+    items: Vec<ResolvedDisplayItem>,
+}
+
 impl DisplayItem {
     pub const fn node(self) -> NodeId {
         self.node
@@ -40,6 +56,10 @@ impl DisplayItem {
 
     pub const fn kind(self) -> DisplayItemKind {
         self.kind
+    }
+
+    pub const fn style(self) -> StyleId {
+        self.style
     }
 
     pub const fn layout(self) -> LayoutBox {
@@ -75,6 +95,7 @@ impl DisplayList {
                 Some(layouts.require(id).map(|layout| DisplayItem {
                     node: id,
                     kind,
+                    style: node.style(),
                     layout,
                     semantics: node.semantics(),
                 }))
@@ -83,8 +104,64 @@ impl DisplayList {
         Ok(Self { items })
     }
 
+    pub fn resolve_interaction_styles(
+        &self,
+        semantics: &UiSemanticFragment,
+        styles: &UiStyleTable,
+        interaction: &InteractionState,
+    ) -> Result<ResolvedDisplayList, UiError> {
+        self.items
+            .iter()
+            .copied()
+            .map(|item| {
+                let semantic = match item.semantics() {
+                    Some(id) => Some(semantics.get(id).ok_or(UiError::UnknownDisplaySemantic {
+                        node: item.node(),
+                        semantic: id,
+                    })?),
+                    None => None,
+                };
+                let resolved = styles.resolve(
+                    item.style(),
+                    semantic.map(crate::UiSemanticNode::target),
+                    semantic.is_none_or(crate::UiSemanticNode::enabled),
+                    interaction,
+                )?;
+                Ok(ResolvedDisplayItem {
+                    item,
+                    style: resolved,
+                })
+            })
+            .collect::<Result<Vec<_>, UiError>>()
+            .map(|items| ResolvedDisplayList { items })
+    }
+
     pub fn as_slice(&self) -> &[DisplayItem] {
         &self.items
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+}
+
+impl ResolvedDisplayItem {
+    pub const fn item(&self) -> DisplayItem {
+        self.item
+    }
+
+    pub const fn style(&self) -> &ResolvedUiStyle {
+        &self.style
+    }
+}
+
+impl ResolvedDisplayList {
+    pub fn as_slice(&self) -> &[ResolvedDisplayItem] {
+        &self.items
+    }
+
+    pub fn into_vec(self) -> Vec<ResolvedDisplayItem> {
+        self.items
     }
 
     pub fn is_empty(&self) -> bool {

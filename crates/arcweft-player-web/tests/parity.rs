@@ -5,6 +5,7 @@ use arcweft_player_web::report::{WebFrameBounds, WebFrameObservationReport, WebF
 #[test]
 fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
     let report = demo_frame_report();
+    let complete_report = demo_frame_report_at(2_500);
 
     assert_eq!(report.schema_version, "arcweft.web_frame_observation.v1");
     assert_eq!(
@@ -18,8 +19,14 @@ fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
         }
     );
     assert_eq!(report.image_count, 4);
-    assert_eq!(report.text_count, 4);
+    assert_eq!(report.text_count, 6);
     assert_eq!(report.choice_count, 2);
+    assert_eq!(dialogue_text(&report), "Typ");
+    assert_eq!(
+        dialogue_text(&complete_report),
+        "Typewriter text is alive on WebGPU."
+    );
+    assert_eq!(complete_report.text_count, 38);
     assert_eq!(
         report
             .images
@@ -84,16 +91,32 @@ fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
             ),
         ]
     );
-    assert!(
-        report.text.iter().any(|text| text.text
-            == "Arcweft is running on a shared wgpu renderer in this WebGPU canvas.")
-    );
+    assert!(report.text.iter().any(|text| text.text == "alice"));
 }
 
 fn demo_frame_report() -> WebFrameObservationReport {
+    demo_frame_report_at(WebGpuParityFrameOptions::default().visual_time_millis)
+}
+
+fn demo_frame_report_at(visual_time_millis: u64) -> WebFrameObservationReport {
     let bundle =
         ArcweftBundle::from_json_slice(include_bytes!("../../../web/demo.awfb")).expect("bundle");
-    let prepared = prepare_bundle_parity_frame(&bundle, WebGpuParityFrameOptions::default())
-        .expect("parity frame");
+    let prepared = prepare_bundle_parity_frame(
+        &bundle,
+        WebGpuParityFrameOptions {
+            visual_time_millis,
+            ..WebGpuParityFrameOptions::default()
+        },
+    )
+    .expect("parity frame");
     WebFrameObservationReport::from_prepared_frame(&prepared)
+}
+
+fn dialogue_text(report: &WebFrameObservationReport) -> String {
+    report
+        .text
+        .iter()
+        .filter(|text| !matches!(text.text.as_str(), "alice" | "Continue" | "Alternate route"))
+        .map(|text| text.text.as_str())
+        .collect()
 }

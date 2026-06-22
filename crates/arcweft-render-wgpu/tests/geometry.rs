@@ -26,6 +26,7 @@ fn scene() -> RenderScene {
         ],
         images: Vec::new(),
         viewport,
+        visual_time_millis: 0,
         preferences: RenderPreferences::default(),
         interaction: InteractionVisualState::default(),
         choice_scroll: ChoiceScroll::default(),
@@ -38,6 +39,7 @@ fn generated_scene(elapsed_millis: u64) -> RenderScene {
         scene.viewport,
         DemoAnimationClock::from_millis(elapsed_millis),
     );
+    scene.visual_time_millis = elapsed_millis;
     scene
 }
 

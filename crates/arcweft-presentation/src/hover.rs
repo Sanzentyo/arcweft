@@ -27,6 +27,14 @@ impl HoverPath {
     pub fn targets(&self) -> &[InteractionTarget] {
         &self.targets
     }
+
+    pub fn leaf(&self) -> Option<&InteractionTarget> {
+        self.targets.last()
+    }
+
+    pub fn contains(&self, target: &InteractionTarget) -> bool {
+        self.targets.iter().any(|candidate| candidate == target)
+    }
 }
 
 impl HoverTransition {

@@ -11,3 +11,4 @@ pub mod geometry;
 pub mod offscreen;
 pub mod renderer;
 pub mod sample;
+pub mod ui;

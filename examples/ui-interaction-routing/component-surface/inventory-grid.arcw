@@ -1,0 +1,22 @@
+pub component @ui.sample.inventory InventoryGrid(items: Vec<InventoryItem>) -> View {
+    Grid(columns = 4, spacing = 12) {
+        ForEach(items, id = _.id) |item| {
+            Button {
+                VStack(spacing = 8) {
+                    Image(item.icon).fit(contain)
+                    Text(item.label)
+                }
+            }
+            .agent_target(item.id)
+            .enabled(item.enabled)
+            .interaction_style {
+                idle { background = .inventory_slot }
+                hovered { background = .inventory_slot_hover }
+                focused { outline_color = .focus; outline_width = 3px }
+                pressed { scale = 0.96 }
+                disabled { background = .inventory_slot_disabled }
+            }
+            .on_click { action.invoke(@action.inventory.select, payload = item.id) }
+        }
+    }
+}

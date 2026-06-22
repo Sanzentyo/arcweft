@@ -1,0 +1,22 @@
+character system System {
+}
+
+entry game @entry.main { start(@flow.main) }
+
+flow main {
+    system: Confirmation dialog sample. A choice behaves like a modal decision surface.
+    choice @choice.confirmation {
+        @choice.confirmation.accept "Accept" -> @flow.accepted
+        @choice.confirmation.cancel "Cancel" -> @flow.cancelled
+    }
+}
+
+flow accepted {
+    system: Accepted. The pressed target was released before the action reached the runtime.
+    return "accepted"
+}
+
+flow cancelled {
+    system: Cancelled.
+    return "cancelled"
+}

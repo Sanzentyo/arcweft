@@ -1,10 +1,12 @@
 //! Native/headless rich-text player host for Arcweft.
 
 mod native_audio;
+mod scene_windowed;
 mod window_driver;
 mod windowed;
 
-pub use windowed::run_bundle_windowed;
+pub use scene_windowed::run_bundle_windowed;
+pub use windowed::run_bundle_windowed as run_bundle_adapter_windowed;
 
 use arcweft_bundle::ArcweftBundle;
 #[cfg(feature = "dev-source")]
@@ -85,6 +87,8 @@ pub enum NativePlayerError {
     BundleRunner(#[from] arcweft_runtime_host::BundleRunnerError),
     #[error(transparent)]
     NativeWindow(#[from] arcweft_render_native::NativeWindowError),
+    #[error("native shared scene window failed: {0}")]
+    SceneWindow(String),
     #[error(transparent)]
     Audio(#[from] native_audio::NativePlayerAudioError),
     #[cfg(feature = "dev-source")]

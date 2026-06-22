@@ -1,0 +1,58 @@
+character operator Operator {
+}
+
+entry game @entry.main { start(@flow.main) }
+
+flow main {
+    operator: Inventory sample. Navigate the stable choice targets with pointer or arrow keys.
+    choice @choice.inventory.main {
+        @choice.inventory.key "Brass key" -> @flow.key
+        @choice.inventory.map "Folded map" -> @flow.map
+        @choice.inventory.radio "Portable radio" -> @flow.radio
+        @choice.inventory.close "Close inventory" -> @flow.done
+    }
+}
+
+flow key {
+    operator: The brass key has a scratched room number.
+    choice @choice.inventory.key_actions {
+        @choice.inventory.key.use "Use key" -> @flow.used
+        @choice.inventory.key.back "Back" -> @flow.main
+    }
+}
+
+flow map {
+    operator: The map highlights an alternate route.
+    choice @choice.inventory.map_actions {
+        @choice.inventory.map.inspect "Inspect route" -> @flow.inspected
+        @choice.inventory.map.back "Back" -> @flow.main
+    }
+}
+
+flow radio {
+    operator: The radio is silent.
+    choice @choice.inventory.radio_actions {
+        @choice.inventory.radio.tune "Tune radio" -> @flow.tuned
+        @choice.inventory.radio.back "Back" -> @flow.main
+    }
+}
+
+flow used {
+    operator: The key action was dispatched.
+    return "key-used"
+}
+
+flow inspected {
+    operator: The map action was dispatched.
+    return "map-inspected"
+}
+
+flow tuned {
+    operator: The radio action was dispatched.
+    return "radio-tuned"
+}
+
+flow done {
+    operator: Inventory closed.
+    return "inventory-closed"
+}

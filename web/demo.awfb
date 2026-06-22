@@ -17,7 +17,7 @@
   },
   "source": {
     "label": "demo.arcw",
-    "text": "character alice Alice {\n}\n\npub asset @asset.generated.background {\n    kind = image\n    file = \"generated/background.png\"\n}\n\npub asset @asset.generated.character_stand {\n    kind = image\n    file = \"generated/character_stand.png\"\n}\n\npub asset @asset.generated.gif_pulse {\n    kind = image\n    file = \"generated/gif_pulse.gif\"\n}\n\npub asset @asset.generated.webp_pulse {\n    kind = image\n    file = \"generated/webp_pulse.webp\"\n}\n\npub image @image.generated.character_stand {\n    asset = @asset.generated.character_stand\n    x = 64px\n    y = 52px\n    width = 180px\n    height = 300px\n}\n\npub image @image.generated.background {\n    asset = @asset.generated.background\n    x = 0px\n    y = 0px\n    width = 1280px\n    height = 720px\n}\n\npub image @image.generated.gif_pulse {\n    asset = @asset.generated.gif_pulse\n    x = 486px\n    y = 46px\n    width = 96px\n    height = 96px\n}\n\npub image @image.generated.webp_pulse {\n    asset = @asset.generated.webp_pulse\n    x = 492px\n    y = 156px\n    width = 96px\n    height = 96px\n}\n\nentry game @entry.main { start(@flow.main) }\n\nflow main {\n    image(@image.generated.background)\n    image(@image.generated.character_stand)\n    image(@image.generated.gif_pulse)\n    image(@image.generated.webp_pulse)\n    alice: Arcweft is running on a shared wgpu renderer in this WebGPU canvas.\n    choice @choice.web_demo {\n        @choice.web_demo.continue \"Continue\" -> @flow.done\n        @choice.web_demo.alternate \"Alternate route\" -> @flow.done\r\n    }\r\n}\r\n\r\nflow done {\n    alice: The semantic choice input returned to the bytecode VM.\n    return \"done\"\r\n}\r\n"
+    "text": "character alice Alice {\n}\n\npub asset @asset.generated.background {\n    kind = image\n    file = \"generated/background.png\"\n}\n\npub asset @asset.generated.character_stand {\n    kind = image\n    file = \"generated/character_stand.png\"\n}\n\npub asset @asset.generated.gif_pulse {\n    kind = image\n    file = \"generated/gif_pulse.gif\"\n}\n\npub asset @asset.generated.webp_pulse {\n    kind = image\n    file = \"generated/webp_pulse.webp\"\n}\n\npub image @image.generated.character_stand {\n    asset = @asset.generated.character_stand\n    x = 64px\n    y = 52px\n    width = 180px\n    height = 300px\n}\n\npub image @image.generated.background {\n    asset = @asset.generated.background\n    x = 0px\n    y = 0px\n    width = 1280px\n    height = 720px\n}\n\npub image @image.generated.gif_pulse {\n    asset = @asset.generated.gif_pulse\n    x = 486px\n    y = 46px\n    width = 96px\n    height = 96px\n}\n\npub image @image.generated.webp_pulse {\n    asset = @asset.generated.webp_pulse\n    x = 492px\n    y = 156px\n    width = 96px\n    height = 96px\n}\n\nentry game @entry.main { start(@flow.main) }\n\nflow main {\n    image(@image.generated.background)\n    image(@image.generated.character_stand)\n    image(@image.generated.gif_pulse)\n    image(@image.generated.webp_pulse)\n    alice: [.typewriter cps=24][.wave amp=4px freq=8]Typewriter text is alive on WebGPU.[/][/]\n    choice @choice.web_demo {\n        @choice.web_demo.continue \"Continue\" -> @flow.done\n        @choice.web_demo.alternate \"Alternate route\" -> @flow.done\r\n    }\r\n}\r\n\r\nflow done {\n    alice: [.typewriter cps=28][.wave amp=3px freq=10]The VM accepted the choice and kept the canvas in sync.[/][/]\n    return \"done\"\r\n}\r\n"
   },
   "bytecode": {
     "encoding": "structured_json",
@@ -203,13 +203,143 @@
         "style": null,
         "base_styles": [],
         "default_inline_failure_policy": null,
-        "style_contributions": [],
+        "style_contributions": [
+          {
+            "path": "rich_text.effect",
+            "layer": "inline_span",
+            "source": {
+              "kind": "source_file",
+              "item_id": "say.main.alice.001",
+              "public_id": "text.main.alice.001",
+              "range": {
+                "start": 1248,
+                "end": 1258
+              }
+            },
+            "op": "replace",
+            "value": "typewriter",
+            "active": false,
+            "shadowed_by": 2
+          },
+          {
+            "path": "rich_text.effect.typewriter.cps",
+            "layer": "inline_span",
+            "source": {
+              "kind": "source_file",
+              "item_id": "say.main.alice.001",
+              "public_id": "text.main.alice.001",
+              "range": {
+                "start": 1264,
+                "end": 1266
+              }
+            },
+            "op": "replace",
+            "value": "24",
+            "active": true
+          },
+          {
+            "path": "rich_text.effect",
+            "layer": "inline_span",
+            "source": {
+              "kind": "source_file",
+              "item_id": "say.main.alice.001",
+              "public_id": "text.main.alice.001",
+              "range": {
+                "start": 1268,
+                "end": 1272
+              }
+            },
+            "op": "replace",
+            "value": "wave",
+            "active": true
+          },
+          {
+            "path": "rich_text.effect.wave.amp",
+            "layer": "inline_span",
+            "source": {
+              "kind": "source_file",
+              "item_id": "say.main.alice.001",
+              "public_id": "text.main.alice.001",
+              "range": {
+                "start": 1278,
+                "end": 1281
+              }
+            },
+            "op": "replace",
+            "value": "4px",
+            "active": true
+          },
+          {
+            "path": "rich_text.effect.wave.freq",
+            "layer": "inline_span",
+            "source": {
+              "kind": "source_file",
+              "item_id": "say.main.alice.001",
+              "public_id": "text.main.alice.001",
+              "range": {
+                "start": 1287,
+                "end": 1288
+              }
+            },
+            "op": "replace",
+            "value": "8",
+            "active": true
+          }
+        ],
         "args": [],
         "content": {
           "nodes": [
             {
+              "kind": "style_start",
+              "style": {
+                "kind": "effect",
+                "effect": {
+                  "id": "typewriter",
+                  "params": {
+                    "cps": {
+                      "kind": "int",
+                      "value": 24
+                    }
+                  },
+                  "target": "run",
+                  "phase": "glyph_mask",
+                  "state_scope": "run"
+                }
+              }
+            },
+            {
+              "kind": "style_start",
+              "style": {
+                "kind": "effect",
+                "effect": {
+                  "id": "wave",
+                  "params": {
+                    "amp": {
+                      "kind": "milli",
+                      "value": 4000
+                    },
+                    "freq": {
+                      "kind": "int",
+                      "value": 8
+                    }
+                  },
+                  "target": "run",
+                  "phase": "glyph_transform",
+                  "state_scope": "run"
+                }
+              }
+            },
+            {
               "kind": "text",
-              "text": "Arcweft is running on a shared wgpu renderer in this WebGPU canvas."
+              "text": "Typewriter text is alive on WebGPU."
+            },
+            {
+              "kind": "style_end",
+              "name": "/"
+            },
+            {
+              "kind": "style_end",
+              "name": "/"
             }
           ]
         }
@@ -224,13 +354,143 @@
         "style": null,
         "base_styles": [],
         "default_inline_failure_policy": null,
-        "style_contributions": [],
+        "style_contributions": [
+          {
+            "path": "rich_text.effect",
+            "layer": "inline_span",
+            "source": {
+              "kind": "source_file",
+              "item_id": "say.done.alice.001",
+              "public_id": "text.done.alice.001",
+              "range": {
+                "start": 1524,
+                "end": 1534
+              }
+            },
+            "op": "replace",
+            "value": "typewriter",
+            "active": false,
+            "shadowed_by": 2
+          },
+          {
+            "path": "rich_text.effect.typewriter.cps",
+            "layer": "inline_span",
+            "source": {
+              "kind": "source_file",
+              "item_id": "say.done.alice.001",
+              "public_id": "text.done.alice.001",
+              "range": {
+                "start": 1540,
+                "end": 1542
+              }
+            },
+            "op": "replace",
+            "value": "28",
+            "active": true
+          },
+          {
+            "path": "rich_text.effect",
+            "layer": "inline_span",
+            "source": {
+              "kind": "source_file",
+              "item_id": "say.done.alice.001",
+              "public_id": "text.done.alice.001",
+              "range": {
+                "start": 1544,
+                "end": 1548
+              }
+            },
+            "op": "replace",
+            "value": "wave",
+            "active": true
+          },
+          {
+            "path": "rich_text.effect.wave.amp",
+            "layer": "inline_span",
+            "source": {
+              "kind": "source_file",
+              "item_id": "say.done.alice.001",
+              "public_id": "text.done.alice.001",
+              "range": {
+                "start": 1554,
+                "end": 1557
+              }
+            },
+            "op": "replace",
+            "value": "3px",
+            "active": true
+          },
+          {
+            "path": "rich_text.effect.wave.freq",
+            "layer": "inline_span",
+            "source": {
+              "kind": "source_file",
+              "item_id": "say.done.alice.001",
+              "public_id": "text.done.alice.001",
+              "range": {
+                "start": 1563,
+                "end": 1565
+              }
+            },
+            "op": "replace",
+            "value": "10",
+            "active": true
+          }
+        ],
         "args": [],
         "content": {
           "nodes": [
             {
+              "kind": "style_start",
+              "style": {
+                "kind": "effect",
+                "effect": {
+                  "id": "typewriter",
+                  "params": {
+                    "cps": {
+                      "kind": "int",
+                      "value": 28
+                    }
+                  },
+                  "target": "run",
+                  "phase": "glyph_mask",
+                  "state_scope": "run"
+                }
+              }
+            },
+            {
+              "kind": "style_start",
+              "style": {
+                "kind": "effect",
+                "effect": {
+                  "id": "wave",
+                  "params": {
+                    "amp": {
+                      "kind": "milli",
+                      "value": 3000
+                    },
+                    "freq": {
+                      "kind": "int",
+                      "value": 10
+                    }
+                  },
+                  "target": "run",
+                  "phase": "glyph_transform",
+                  "state_scope": "run"
+                }
+              }
+            },
+            {
               "kind": "text",
-              "text": "The semantic choice input returned to the bytecode VM."
+              "text": "The VM accepted the choice and kept the canvas in sync."
+            },
+            {
+              "kind": "style_end",
+              "name": "/"
+            },
+            {
+              "kind": "style_end",
+              "name": "/"
             }
           ]
         }

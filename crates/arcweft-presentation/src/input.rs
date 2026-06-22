@@ -45,6 +45,9 @@ pub struct KeyboardInput {
 }
 
 /// Text input payload after host/IME normalization.
+///
+/// This remains committed text only. Composition/preedit is intentionally a
+/// future input family documented by the UI interaction implementation package.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TextInput {
     value: String,
@@ -57,7 +60,7 @@ pub struct AgentInput {
     pub target: Option<InteractionTarget>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PointerId(pub u64);
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -95,6 +98,7 @@ pub enum InputEventKind {
     Pointer { phase: PointerPhase },
     Key { key: String, phase: KeyPhase },
     Text(String),
+    Focus { focused: bool },
     AgentInvoke { action: PublicId },
 }
 
@@ -189,6 +193,34 @@ impl TextInput {
     }
 }
 
+impl InputEventKind {
+    pub const fn pointer_phase(&self) -> Option<PointerPhase> {
+        match self {
+            Self::Pointer { phase } => Some(*phase),
+            Self::Activate
+            | Self::Key { .. }
+            | Self::Text(_)
+            | Self::Focus { .. }
+            | Self::AgentInvoke { .. } => None,
+        }
+    }
+
+    pub const fn focus_changed(&self) -> Option<bool> {
+        match self {
+            Self::Focus { focused } => Some(*focused),
+            Self::Activate
+            | Self::Pointer { .. }
+            | Self::Key { .. }
+            | Self::Text(_)
+            | Self::AgentInvoke { .. } => None,
+        }
+    }
+
+    pub const fn is_activate(&self) -> bool {
+        matches!(self, Self::Activate)
+    }
+}
+
 impl InputEvent {
     pub const fn new(
         raw_epoch: InputEpoch,
@@ -200,6 +232,18 @@ impl InputEvent {
             target,
             kind,
         }
+    }
+
+    pub const fn activate(raw_epoch: InputEpoch, target: InteractionTarget) -> Self {
+        Self::new(raw_epoch, target, InputEventKind::Activate)
+    }
+
+    pub const fn focus_changed(
+        raw_epoch: InputEpoch,
+        target: InteractionTarget,
+        focused: bool,
+    ) -> Self {
+        Self::new(raw_epoch, target, InputEventKind::Focus { focused })
     }
 
     pub const fn raw_epoch(&self) -> InputEpoch {

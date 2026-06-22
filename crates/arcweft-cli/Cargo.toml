@@ -30,6 +30,7 @@ arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-project-loader = { path = "../arcweft-project-loader" }
+arcweft-player-native = { path = "../arcweft-player-native", optional = true }
 arcweft-render-native = { path = "../arcweft-render-native", optional = true }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-rag = { path = "../arcweft-rag" }
@@ -63,6 +64,7 @@ default = []
 agent-repl = ["dep:reedline"]
 math-wgpu = ["arcweft-runtime-accelerator/math-wgpu"]
 native-capture = ["dep:arcweft-render-native"]
+native-player = ["dep:arcweft-player-native"]
 
 [lints]
 workspace = true
