@@ -16,7 +16,7 @@ arcweft-compiler = { path = "../arcweft-compiler", optional = true }
 arcweft-adapter-desktop = { path = "../arcweft-adapter-desktop" }
 arcweft-audio-codec = { path = "../arcweft-audio-codec" }
 arcweft-audio-core = { path = "../arcweft-audio-core" }
-arcweft-audio-device-cpal = { path = "../arcweft-audio-device-cpal" }
+arcweft-audio-device-cpal = { path = "../arcweft-audio-device-cpal", features = ["native-microphone"] }
 arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-desktop-contract = { path = "../arcweft-desktop-contract" }

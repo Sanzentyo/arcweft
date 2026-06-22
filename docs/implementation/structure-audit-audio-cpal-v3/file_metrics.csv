@@ -560,10 +560,10 @@ crates/arcweft-memory/Cargo.toml,213,13,11,text,false,false,false,false
 crates/arcweft-memory/src/lib.rs,4980,200,135,production,true,false,false,true
 crates/arcweft-need/Cargo.toml,254,16,13,text,false,false,false,false
 crates/arcweft-need/src/lib.rs,2647,102,86,production,true,false,false,true
-crates/arcweft-player-native/Cargo.toml,1465,45,39,text,false,false,false,false
+crates/arcweft-player-native/Cargo.toml,1499,45,39,text,false,false,false,false
 crates/arcweft-player-native/src/lib.rs,17169,492,449,production,true,false,false,true
 crates/arcweft-player-native/src/main.rs,12960,384,343,production,true,false,false,true
-crates/arcweft-player-native/src/native_audio.rs,3788,101,95,production,true,false,false,false
+crates/arcweft-player-native/src/native_audio.rs,8821,219,211,production,true,false,false,false
 crates/arcweft-player-native/src/window_driver.rs,37813,1066,958,production,true,false,false,true
 crates/arcweft-player-native/src/windowed.rs,7067,208,191,production,true,false,false,false
 crates/arcweft-player-web/Cargo.toml,1326,48,43,text,false,false,false,false
@@ -879,6 +879,7 @@ docs/examples/virtual-controller.md,1500,65,51,text,false,false,false,false
 docs/implementation/README.md,126316,1803,1781,text,false,false,false,false
 docs/implementation/agent-script-final-completion-audit.md,6039,73,61,text,false,false,false,false
 docs/implementation/agent-script-implementation.md,110903,507,495,text,false,false,false,false
+docs/implementation/audio-cpal-v3.md,4692,98,81,text,false,false,false,false
 docs/implementation/data-codec-dependency-selection.md,2099,24,20,text,false,false,false,false
 docs/implementation/data-codecs-reflection-adr-0008.md,3486,107,82,text,false,false,false,false
 docs/implementation/data-format-coverage.md,2909,45,39,text,false,false,false,false
@@ -900,6 +901,7 @@ docs/implementation/rich-text-object-goal-audit.md,7148,82,67,text,false,false,f
 docs/implementation/rich-text-object-visual-evidence.md,4718,53,42,text,false,false,false,false
 docs/implementation/runtime-acceleration-goal-gap.md,9295,238,173,text,false,false,false,false
 docs/implementation/structure-audit-2026-06-21/violations.md,17121,512,256,text,false,false,false,false
+docs/implementation/structure-audit-audio-cpal-v3/violations.md,17507,524,262,text,false,false,false,false
 docs/implementation/structure-refactor-2026-06-21.md,14768,247,228,text,false,false,false,false
 docs/implementation/test-execution-policy.md,25489,398,331,text,false,false,false,false
 docs/implementation/vertical-longterm-design-20260612/Cargo.toml,419,20,17,text,false,false,false,false

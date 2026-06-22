@@ -61,8 +61,10 @@ Commands run from `D:/git/arcweft`:
 ```bash
 cargo check -p arcweft-player-native -p arcweft-runtime-host
 cargo clippy -p arcweft-interaction-model -p arcweft-audio-core -p arcweft-audio-codec -p arcweft-audio-mixer -p arcweft-audio-device-cpal -p arcweft-runtime-plan -p arcweft-core -p arcweft-bundle -p arcweft-runtime-driver -p arcweft-runtime-host -p arcweft-player-web -p arcweft-player-native --all-targets --all-features -- -D warnings
+cargo clippy -p arcweft-player-native -p arcweft-audio-device-cpal --all-targets --all-features -- -D warnings
 cargo test -p arcweft-audio-core -p arcweft-audio-mixer -p arcweft-bundle -p arcweft-runtime-plan -p arcweft-player-native audio -- --nocapture
 cargo test -p arcweft-audio-core -p arcweft-audio-codec -p arcweft-audio-mixer -p arcweft-audio-device-cpal
+cargo test -p arcweft-player-native
 cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .
 cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audit-audio-cpal-v3
 ```
@@ -75,6 +77,7 @@ Results:
   (`bundle_audio_graph_round_trips_and_resolves_asset_bytes`,
   `runtime_plan_lowers_audio_call_to_typed_audio_effect`).
 - Unfiltered audio crate tests and doc-tests: passed.
+- Native player tests: passed.
 - Structural audit: 0 errors, 87 warnings.
 
 The structural audit output is checked in under
@@ -84,12 +87,15 @@ The structural audit output is checked in under
 
 - Native CPAL output is connected for windowed `.awfb` execution when a bundle
   contains an audio graph and the host has a default output device.
+- Native CPAL microphone request/stop commands are connected in the windowed
+  player, and captured sample levels are returned as typed `CaptureLevel`
+  events.
 - Headless bundle execution exposes audio command counts and typed requests but
   does not open a CPAL device.
 - Browser WebAudio output coordination is not part of this CPAL device slice.
   The web worklet and command reporting are present, but a full browser
   `AudioContext` coordinator should be implemented in the web player when the
   browser audio device target is scheduled.
-- Microphone commands are typed and the CPAL microphone device boundary exists;
-  routing microphone capture commands through the native player coordinator is
-  a remaining device-coordination task.
+- Capture monitor routing to an audio bus still returns a typed
+  `CommandFailed` event because the mixer does not yet expose a live input bus
+  endpoint.
