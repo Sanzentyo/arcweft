@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 arcweft-verify = { path = "../arcweft-verify" }
+oxiz-core = "0.2.1"
 oxiz-solver.workspace = true
 thiserror.workspace = true
 

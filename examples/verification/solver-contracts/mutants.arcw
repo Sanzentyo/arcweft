@@ -1,0 +1,41 @@
+// Intentionally incorrect counterparts. Each function has a SAT counterexample.
+
+pub fn clamp_affection_mutant(current: i32, delta: i32) -> i32
+requires current >= 0 && current <= 100
+requires delta >= -100 && delta <= 100
+ensures prove result >= 0
+ensures prove result <= 100
+{
+    current + delta
+}
+
+pub fn reserve_inventory_mutant(current: i32, amount: i32, capacity: i32) -> i32
+requires current >= 0
+requires amount >= 0
+requires current + amount <= capacity
+ensures prove result <= capacity
+{
+    current + amount + 1
+}
+
+pub fn charge_purchase_mutant(balance: i32, price: i32) -> i32
+requires price >= 0
+requires balance >= price
+ensures prove result >= 0
+{
+    balance - price - 1
+}
+
+pub fn advance_progress_mutant(progress: i32, step: i32) -> i32
+requires progress >= 0 && progress <= 100
+requires step >= 0
+ensures prove result <= 100
+{
+    progress + step
+}
+
+pub fn both_ready_mutant(left: bool, right: bool) -> bool
+ensures prove result == (left && right)
+{
+    left || right
+}

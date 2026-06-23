@@ -37,6 +37,19 @@ pub enum Pattern {
     Raw(String),
 }
 
+impl Pattern {
+    /// Returns the direct binding name accepted by scalar contract lowering.
+    ///
+    /// This behavior belongs to the syntax enum itself so verifier clients do
+    /// not duplicate pattern matching for `Ident`, `MutIdent`, and `Typed`.
+    pub fn simple_binding_name(&self) -> Option<&str> {
+        match self {
+            Self::Ident(name) | Self::MutIdent(name) | Self::Typed { name, .. } => Some(name),
+            _ => None,
+        }
+    }
+}
+
 /// One field inside a record/struct pattern.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecordPatternField {

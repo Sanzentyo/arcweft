@@ -5,6 +5,7 @@
 //! depend on a concrete runtime backend; those responsibilities belong to CLI
 //! and solver adapter crates.
 
+use crate::smt::{SmtCheck, SmtError, SmtOutcome, SmtProblem};
 use arcweft_compiler::lower::lower_source_line_tasks;
 use arcweft_lang_hir::model::{
     HirAwait, HirBorrow, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf, HirIfLet, HirLoop,
@@ -30,9 +31,10 @@ use arcweft_lang_sema::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use thiserror::Error;
 
+mod contract_smt;
 pub mod runtime_type;
+pub mod smt;
 
 pub use runtime_type::{
     RuntimeTypeDiagnostic, RuntimeTypeValidationReport, RuntimeTypeValidationStats,
@@ -81,6 +83,16 @@ pub enum BackendKind {
     Z3,
 }
 
+impl BackendKind {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Emit => "emit",
+            Self::Oxiz => "oxiz",
+            Self::Z3 => "z3",
+        }
+    }
+}
+
 /// Verifier policy with mode and backend selection.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct VerificationPolicy {
@@ -92,6 +104,7 @@ pub struct VerificationPolicy {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProofObligationKind {
+    FunctionContract,
     LifetimePromotion,
     UnsafeLifetimeAudit,
     MustDropDischarge,
@@ -105,6 +118,46 @@ pub enum ProofObligationKind {
     RuntimeConflict,
 }
 
+impl ProofObligationKind {
+    const fn is_semantic_owned(self) -> bool {
+        matches!(
+            self,
+            Self::LifetimePromotion
+                | Self::UnsafeLifetimeAudit
+                | Self::MustDropDischarge
+                | Self::ThreadCapture
+                | Self::ThreadJoinTyping
+                | Self::UpperLifetimeWrite
+                | Self::EffectCapability
+                | Self::ProofBody
+                | Self::TrustedAssumption
+                | Self::RawSyntax
+                | Self::RuntimeConflict
+        )
+    }
+
+    fn actions(self, discharge: &ProofDischarge) -> Vec<ToolAction> {
+        if !discharge.is_missing() {
+            return Vec::new();
+        }
+        match self {
+            Self::FunctionContract => vec![ToolAction::show_obligation()],
+            Self::LifetimePromotion
+            | Self::MustDropDischarge
+            | Self::ThreadCapture
+            | Self::ThreadJoinTyping
+            | Self::UpperLifetimeWrite
+            | Self::EffectCapability
+            | Self::ProofBody => vec![
+                ToolAction::generate_proof_stub(),
+                ToolAction::show_obligation(),
+            ],
+            Self::UnsafeLifetimeAudit => vec![ToolAction::generate_unsafe_audit()],
+            Self::TrustedAssumption | Self::RawSyntax | Self::RuntimeConflict => Vec::new(),
+        }
+    }
+}
+
 /// How an obligation is discharged, or why it still needs attention.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -113,7 +166,21 @@ pub enum ProofDischarge {
     FormalProof { id: String },
     AuditedUnsafe { id: String },
     TrustedAxiom { id: String },
+    Solver { backend: BackendKind },
     Missing,
+}
+
+impl ProofDischarge {
+    pub const fn is_missing(&self) -> bool {
+        matches!(self, Self::Missing)
+    }
+
+    pub const fn is_machine_proven(&self) -> bool {
+        matches!(
+            self,
+            Self::Automatic | Self::FormalProof { .. } | Self::Solver { .. }
+        )
+    }
 }
 
 /// One proof obligation produced by semantic analysis.
@@ -159,6 +226,32 @@ pub enum ToolActionKind {
     NavigateToUnsafeAudit,
 }
 
+impl ToolAction {
+    pub(crate) fn generate_proof_stub() -> Self {
+        Self {
+            id: "action.generate_proof_stub".to_owned(),
+            label: "Generate proof stub".to_owned(),
+            kind: ToolActionKind::GenerateProofStub,
+        }
+    }
+
+    pub(crate) fn show_obligation() -> Self {
+        Self {
+            id: "action.show_obligation".to_owned(),
+            label: "Show proof obligation".to_owned(),
+            kind: ToolActionKind::ShowObligation,
+        }
+    }
+
+    pub(crate) fn generate_unsafe_audit() -> Self {
+        Self {
+            id: "action.generate_unsafe_audit".to_owned(),
+            label: "Generate unsafe lifetime audit scaffold".to_owned(),
+            kind: ToolActionKind::GenerateUnsafeAudit,
+        }
+    }
+}
+
 /// Proof item summary carried into manifests and LSP hovers.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ProofSummary {
@@ -200,62 +293,12 @@ pub struct SolverCheck {
     pub obligation: String,
     pub backend: BackendKind,
     pub outcome: Option<SmtOutcome>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub model: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_output: Option<String>,
     pub error: Option<String>,
     pub required: bool,
-}
-
-/// Minimal proof expression IR for SMT emission and adapters.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum ProofExpr {
-    Bool(bool),
-    Var(String),
-    Not {
-        expr: Box<ProofExpr>,
-    },
-    And {
-        exprs: Vec<ProofExpr>,
-    },
-    Or {
-        exprs: Vec<ProofExpr>,
-    },
-    Eq {
-        lhs: Box<ProofExpr>,
-        rhs: Box<ProofExpr>,
-    },
-    App {
-        name: String,
-        args: Vec<ProofExpr>,
-    },
-}
-
-/// Solver-neutral SMT problem.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct SmtProblem {
-    pub name: String,
-    pub assertions: Vec<ProofExpr>,
-}
-
-/// Solver outcome normalized across adapters.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SmtOutcome {
-    Sat,
-    Unsat,
-    Unknown,
-}
-
-/// Error returned by a solver adapter.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-#[error("{message}")]
-pub struct SmtError {
-    message: String,
-}
-
-/// Sans-I/O-facing solver trait. Concrete adapters may perform I/O internally.
-pub trait SmtBackend {
-    fn name(&self) -> &'static str;
-    fn check(&self, problem: &SmtProblem) -> Result<SmtOutcome, SmtError>;
 }
 
 /// Verifies an HIR module according to the selected policy.
@@ -280,31 +323,11 @@ pub fn verify_module_with_env(
     );
     let mut report = collector.finish();
     merge_semantic_report(&mut report, semantic_report);
+    contract_smt::collect_function_contract_obligations(module, &mut report);
     report
-}
-
-/// Emits a compact SMT-LIB 2 script for a solver-neutral problem.
-pub fn emit_smt_lib(problem: &SmtProblem) -> String {
-    let mut out = String::from("(set-logic ALL)\n");
-    for assertion in &problem.assertions {
-        out.push_str("(assert ");
-        out.push_str(&emit_expr(assertion));
-        out.push_str(")\n");
-    }
-    out.push_str("(check-sat)\n");
-    out
-}
-
-impl SmtError {
-    pub fn new(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-        }
-    }
-
-    pub fn message(&self) -> &str {
-        &self.message
-    }
+        .diagnostics
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    report
 }
 
 impl VerificationReport {
@@ -326,20 +349,35 @@ impl VerificationReport {
         &mut self,
         obligation: &str,
         backend: BackendKind,
-        outcome: Result<SmtOutcome, SmtError>,
+        result: Result<SmtCheck, SmtError>,
     ) {
         let required = self.solver_check_required(obligation);
-        let (outcome, error) = match outcome {
-            Ok(outcome) => (Some(outcome), None),
-            Err(error) => (None, Some(error.message().to_owned())),
+        let (outcome, model, raw_output, error) = match result {
+            Ok(check) => (Some(check.outcome), check.model, check.raw_output, None),
+            Err(error) => (
+                None,
+                BTreeMap::new(),
+                None,
+                Some(error.message().to_owned()),
+            ),
         };
         let check = SolverCheck {
             obligation: obligation.to_owned(),
             backend,
             outcome,
+            model,
+            raw_output,
             error,
             required,
         };
+        if check.proves_claim()
+            && let Some(item) = self
+                .obligations
+                .iter_mut()
+                .find(|item| item.id == obligation)
+        {
+            item.discharge = ProofDischarge::Solver { backend };
+        }
         if check.is_failure() {
             self.diagnostics.push(VerificationDiagnostic {
                 id: format!("diagnostic.solver.{}", self.solver_checks.len() + 1),
@@ -348,11 +386,7 @@ impl VerificationReport {
                 source: None,
                 obligation: Some(obligation.to_owned()),
                 related_ids: vec![obligation.to_owned()],
-                actions: vec![ToolAction {
-                    id: "action.show_obligation".to_owned(),
-                    label: "Show proof obligation".to_owned(),
-                    kind: ToolActionKind::ShowObligation,
-                }],
+                actions: vec![ToolAction::show_obligation()],
             });
         }
         self.solver_checks.push(check);
@@ -372,7 +406,11 @@ impl VerificationReport {
 
 impl SolverCheck {
     pub fn is_failure(&self) -> bool {
-        self.required && !matches!(self.outcome, Some(SmtOutcome::Unsat))
+        self.required && !self.proves_claim()
+    }
+
+    pub fn proves_claim(&self) -> bool {
+        self.outcome.is_some_and(SmtOutcome::proves_claim)
     }
 
     fn failure_message(&self) -> String {
@@ -380,23 +418,15 @@ impl SolverCheck {
             return format!(
                 "required solver check `{}` failed on {}: {error}",
                 self.obligation,
-                backend_label(self.backend)
+                self.backend.label()
             );
         }
         format!(
-            "required solver check `{}` on {} returned {:?}",
+            "required solver check `{}` on {} returned {}",
             self.obligation,
-            backend_label(self.backend),
-            self.outcome.unwrap_or(SmtOutcome::Unknown)
+            self.backend.label(),
+            self.outcome.unwrap_or(SmtOutcome::Unknown).as_str()
         )
-    }
-}
-
-fn backend_label(backend: BackendKind) -> &'static str {
-    match backend {
-        BackendKind::Emit => "emit",
-        BackendKind::Oxiz => "oxiz",
-        BackendKind::Z3 => "z3",
     }
 }
 
@@ -463,7 +493,7 @@ fn remove_collector_semantic_obligations(report: &mut VerificationReport) {
     let removed: BTreeSet<String> = report
         .obligations
         .iter()
-        .filter(|obligation| is_semantic_owned_kind(obligation.kind))
+        .filter(|obligation| obligation.kind.is_semantic_owned())
         .map(|obligation| obligation.id.clone())
         .collect();
     if removed.is_empty() {
@@ -478,23 +508,6 @@ fn remove_collector_semantic_obligations(report: &mut VerificationReport) {
             .as_ref()
             .is_none_or(|id| !removed.contains(id))
     });
-}
-
-fn is_semantic_owned_kind(kind: ProofObligationKind) -> bool {
-    matches!(
-        kind,
-        ProofObligationKind::LifetimePromotion
-            | ProofObligationKind::UnsafeLifetimeAudit
-            | ProofObligationKind::MustDropDischarge
-            | ProofObligationKind::ThreadCapture
-            | ProofObligationKind::ThreadJoinTyping
-            | ProofObligationKind::UpperLifetimeWrite
-            | ProofObligationKind::EffectCapability
-            | ProofObligationKind::ProofBody
-            | ProofObligationKind::TrustedAssumption
-            | ProofObligationKind::RawSyntax
-            | ProofObligationKind::RuntimeConflict
-    )
 }
 
 fn merge_semantic_obligation(
@@ -514,16 +527,6 @@ fn merge_semantic_obligation(
     let verification_id = id.clone();
     let discharge = proof_discharge(obligation.discharge);
     let subject = obligation.subject;
-    let smt = Some(SmtProblem {
-        name: id.clone(),
-        assertions: vec![ProofExpr::App {
-            name: obligation_predicate(kind).to_owned(),
-            args: subject
-                .as_ref()
-                .map(|subject| vec![ProofExpr::Var(subject.clone())])
-                .unwrap_or_default(),
-        }],
-    });
     report.obligations.push(ProofObligation {
         id,
         kind,
@@ -534,7 +537,7 @@ fn merge_semantic_obligation(
             end: source.end,
         }),
         discharge,
-        smt,
+        smt: None,
     });
 
     (semantic_id, verification_id)
@@ -1438,16 +1441,6 @@ impl ObligationCollector {
     ) {
         self.next_obligation += 1;
         let id = format!("obligation.{:04}", self.next_obligation);
-        let smt = Some(SmtProblem {
-            name: id.clone(),
-            assertions: vec![ProofExpr::App {
-                name: obligation_predicate(kind).to_owned(),
-                args: subject
-                    .as_ref()
-                    .map(|subject| vec![ProofExpr::Var(subject.clone())])
-                    .unwrap_or_default(),
-            }],
-        });
         self.report.obligations.push(ProofObligation {
             id: id.clone(),
             kind,
@@ -1455,7 +1448,7 @@ impl ObligationCollector {
             subject: subject.clone(),
             source: None,
             discharge: discharge.clone(),
-            smt,
+            smt: None,
         });
         let severity = self.severity_for(kind, discharge);
         if severity != Severity::Info || *discharge == ProofDischarge::Missing {
@@ -1466,7 +1459,7 @@ impl ObligationCollector {
                 source: None,
                 obligation: Some(id),
                 related_ids: subject.into_iter().collect(),
-                actions: actions_for(kind, discharge),
+                actions: kind.actions(discharge),
             });
         }
     }
@@ -1474,7 +1467,9 @@ impl ObligationCollector {
     fn severity_for(&self, kind: ProofObligationKind, discharge: &ProofDischarge) -> Severity {
         if matches!(
             discharge,
-            ProofDischarge::Automatic | ProofDischarge::FormalProof { .. }
+            ProofDischarge::Automatic
+                | ProofDischarge::FormalProof { .. }
+                | ProofDischarge::Solver { .. }
         ) {
             return Severity::Info;
         }
@@ -1584,102 +1579,6 @@ fn is_drop_expr(expr: &Expr) -> bool {
         Expr::Call { callee, .. }
             if matches!(callee.as_ref(), Expr::Path(path) if matches!(path.as_str(), "drop" | "drop_optional" | "on_drop"))
     )
-}
-
-fn obligation_predicate(kind: ProofObligationKind) -> &'static str {
-    match kind {
-        ProofObligationKind::LifetimePromotion => "safe_promote",
-        ProofObligationKind::UnsafeLifetimeAudit => "unsafe_audit_complete",
-        ProofObligationKind::MustDropDischarge => "must_drop_discharged",
-        ProofObligationKind::ThreadCapture => "thread_capture_safe",
-        ProofObligationKind::ThreadJoinTyping => "thread_join_result_typed",
-        ProofObligationKind::UpperLifetimeWrite => "upper_lifetime_write_safe",
-        ProofObligationKind::EffectCapability => "effect_capability_available",
-        ProofObligationKind::ProofBody => "proof_body_valid",
-        ProofObligationKind::TrustedAssumption => "trusted_assumption",
-        ProofObligationKind::RawSyntax => "raw_syntax_absent",
-        ProofObligationKind::RuntimeConflict => "runtime_conflict_absent",
-    }
-}
-
-fn actions_for(kind: ProofObligationKind, discharge: &ProofDischarge) -> Vec<ToolAction> {
-    if discharge != &ProofDischarge::Missing {
-        return Vec::new();
-    }
-    match kind {
-        ProofObligationKind::LifetimePromotion
-        | ProofObligationKind::MustDropDischarge
-        | ProofObligationKind::ThreadCapture
-        | ProofObligationKind::ThreadJoinTyping
-        | ProofObligationKind::UpperLifetimeWrite
-        | ProofObligationKind::EffectCapability
-        | ProofObligationKind::ProofBody => {
-            vec![
-                ToolAction {
-                    id: "action.generate_proof_stub".to_owned(),
-                    label: "Generate proof stub".to_owned(),
-                    kind: ToolActionKind::GenerateProofStub,
-                },
-                ToolAction {
-                    id: "action.show_obligation".to_owned(),
-                    label: "Show proof obligation".to_owned(),
-                    kind: ToolActionKind::ShowObligation,
-                },
-            ]
-        }
-        ProofObligationKind::UnsafeLifetimeAudit => vec![ToolAction {
-            id: "action.generate_unsafe_audit".to_owned(),
-            label: "Generate unsafe lifetime audit scaffold".to_owned(),
-            kind: ToolActionKind::GenerateUnsafeAudit,
-        }],
-        ProofObligationKind::TrustedAssumption
-        | ProofObligationKind::RawSyntax
-        | ProofObligationKind::RuntimeConflict => Vec::new(),
-    }
-}
-
-fn emit_expr(expr: &ProofExpr) -> String {
-    match expr {
-        ProofExpr::Bool(value) => value.to_string(),
-        ProofExpr::Var(name) => sanitize_symbol(name),
-        ProofExpr::Not { expr } => format!("(not {})", emit_expr(expr)),
-        ProofExpr::And { exprs } => emit_nary("and", exprs),
-        ProofExpr::Or { exprs } => emit_nary("or", exprs),
-        ProofExpr::Eq { lhs, rhs } => format!("(= {} {})", emit_expr(lhs), emit_expr(rhs)),
-        ProofExpr::App { name, args } => {
-            if args.is_empty() {
-                sanitize_symbol(name)
-            } else {
-                format!(
-                    "({} {})",
-                    sanitize_symbol(name),
-                    args.iter().map(emit_expr).collect::<Vec<_>>().join(" ")
-                )
-            }
-        }
-    }
-}
-
-fn emit_nary(op: &str, exprs: &[ProofExpr]) -> String {
-    if exprs.is_empty() {
-        return "true".to_owned();
-    }
-    format!(
-        "({op} {})",
-        exprs.iter().map(emit_expr).collect::<Vec<_>>().join(" ")
-    )
-}
-
-fn sanitize_symbol(name: &str) -> String {
-    name.chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '$') {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect()
 }
 
 #[cfg(test)]

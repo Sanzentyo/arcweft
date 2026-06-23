@@ -27,8 +27,9 @@ use arcweft_core::{
 };
 use arcweft_runtime_host::NativeAdapterRegistrar;
 use arcweft_verify::{
-    BackendKind, SmtBackend, VerificationMode, VerificationPolicy, VerificationReport,
-    emit_smt_lib, validate_runtime_plan_types, verify_module_with_env,
+    BackendKind, VerificationMode, VerificationPolicy, VerificationReport,
+    smt::{SmtBackend, SmtEmission},
+    validate_runtime_plan_types, verify_module_with_env,
 };
 use arcweft_verify_oxiz::OxizBackend;
 use arcweft_verify_z3::ExternalZ3Backend;
@@ -431,7 +432,13 @@ fn emit_smt(path: &Path, report: &VerificationReport) -> Result<(), ExitCode> {
             continue;
         };
         let file = path.join(format!("{}.smt2", obligation.id));
-        fs::write(&file, emit_smt_lib(problem)).map_err(|error| {
+        let script = problem
+            .emit_smt_lib(SmtEmission::CounterexampleValues)
+            .map_err(|error| {
+                eprintln!("error: failed to emit {}: {error}", file.display());
+                ExitCode::FAILURE
+            })?;
+        fs::write(&file, script).map_err(|error| {
             eprintln!("error: failed to write {}: {error}", file.display());
             ExitCode::FAILURE
         })?;
@@ -461,7 +468,13 @@ fn solve_report(report: &mut VerificationReport, backend: BackendKind, z3_comman
             }
         };
         match &outcome {
-            Ok(outcome) => eprintln!("solver[{backend:?}] {obligation}: {outcome:?}"),
+            Ok(check) if check.model.is_empty() => {
+                eprintln!("solver[{backend:?}] {obligation}: {:?}", check.outcome);
+            }
+            Ok(check) => eprintln!(
+                "solver[{backend:?}] {obligation}: {:?} {:?}",
+                check.outcome, check.model
+            ),
             Err(error) => eprintln!("solver[{backend:?}] {obligation}: {error}"),
         }
         report.record_solver_check(&obligation, backend, outcome);

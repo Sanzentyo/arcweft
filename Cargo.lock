@@ -1223,6 +1223,7 @@ name = "arcweft-verify-oxiz"
 version = "0.1.0"
 dependencies = [
  "arcweft-verify",
+ "oxiz-core",
  "oxiz-solver",
  "thiserror 2.0.18",
 ]

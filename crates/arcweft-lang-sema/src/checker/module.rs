@@ -172,8 +172,9 @@ impl TypeChecker<'_> {
                     self.bind_function_param(param.pattern(), &function_param_local_type(param));
                 }
             }
+            let expected_return = function.signature().return_type().map(type_ref_kind);
             for contract in function.contracts() {
-                self.check_contract_clause(contract);
+                self.check_function_contract_clause(contract, expected_return.as_ref());
             }
             let effect_scope = EffectScope::from_contracts(function.contracts());
             let effect_snapshot = self.apply_effect_scope(&effect_scope);
@@ -186,7 +187,6 @@ impl TypeChecker<'_> {
                 self.effect_capabilities = effect_snapshot;
                 continue;
             }
-            let expected_return = function.signature().return_type().map(type_ref_kind);
             let actual = self.with_expected_return(expected_return.as_ref(), |this| {
                 this.check_function_body_expr(
                     function.statements(),

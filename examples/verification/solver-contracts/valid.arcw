@@ -1,0 +1,45 @@
+// Solver-backed contracts written as ordinary Arcweft functions.
+// Every `ensures prove` becomes assumptions ∧ body_relation ∧ ¬postcondition.
+
+pub fn clamp_affection(current: i32, delta: i32) -> i32
+requires current >= 0 && current <= 100
+requires delta >= -100 && delta <= 100
+ensures prove result >= 0
+ensures prove result <= 100
+{
+    (current + delta).clamp(0, 100)
+}
+
+pub fn reserve_inventory(current: i32, amount: i32, capacity: i32) -> i32
+requires current >= 0
+requires amount >= 0
+requires current + amount <= capacity
+ensures prove result >= current
+ensures prove result <= capacity
+{
+    current + amount
+}
+
+pub fn charge_purchase(balance: i32, price: i32) -> i32
+requires price >= 0
+requires balance >= price
+ensures prove result >= 0
+ensures prove result == balance - price
+{
+    balance - price
+}
+
+pub fn advance_progress(progress: i32, step: i32) -> i32
+requires progress >= 0 && progress <= 100
+requires step >= 0
+ensures prove result >= 0
+ensures prove result <= 100
+{
+    (progress + step).clamp(0, 100)
+}
+
+pub fn both_ready(left: bool, right: bool) -> bool
+ensures prove result == (left && right)
+{
+    left && right
+}

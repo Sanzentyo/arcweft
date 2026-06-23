@@ -1,4 +1,5 @@
 use super::*;
+use crate::smt::{ProofExpr, SmtCheck, SmtEmission, SmtOutcome, SmtProblem, SmtSort, SmtSymbol};
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_syntax::parser::parse_source;
@@ -246,15 +247,18 @@ flow @flow.cancel_cleanup cancel_cleanup {
 
 #[test]
 fn smt_lib_is_stable() {
-    let problem = SmtProblem {
-        name: "p".to_owned(),
-        assertions: vec![ProofExpr::App {
-            name: "must_drop_discharged".to_owned(),
-            args: vec![ProofExpr::Var("'line.focus".to_owned())],
-        }],
-    };
-    assert!(emit_smt_lib(&problem).contains("(check-sat)"));
-    assert!(emit_smt_lib(&problem).contains("must_drop_discharged"));
+    let problem = SmtProblem::counterexample(
+        "p",
+        vec![SmtSymbol::new("focus_discharged", SmtSort::Bool)],
+        [],
+        ProofExpr::var("focus_discharged"),
+        Vec::new(),
+    );
+    let script = problem
+        .emit_smt_lib(SmtEmission::CheckOnly)
+        .expect("problem emits");
+    assert!(script.contains("(declare-const focus_discharged Bool)"));
+    assert!(script.contains("(check-sat)"));
 }
 
 #[test]
@@ -271,13 +275,13 @@ fn required_solver_checks_are_report_diagnostics() {
             subject: Some("proof.example".to_owned()),
             source: None,
             discharge: ProofDischarge::Missing,
-            smt: Some(SmtProblem {
-                name: "obligation.0001".to_owned(),
-                assertions: vec![ProofExpr::App {
-                    name: "proof_body_valid".to_owned(),
-                    args: Vec::new(),
-                }],
-            }),
+            smt: Some(SmtProblem::counterexample(
+                "obligation.0001",
+                vec![SmtSymbol::new("proof_body_valid", SmtSort::Bool)],
+                [],
+                ProofExpr::var("proof_body_valid"),
+                Vec::new(),
+            )),
         }],
         ..VerificationReport::default()
     };
@@ -285,7 +289,7 @@ fn required_solver_checks_are_report_diagnostics() {
     report.record_solver_check(
         "obligation.0001",
         BackendKind::Oxiz,
-        Ok(SmtOutcome::Unknown),
+        Ok(SmtCheck::new(SmtOutcome::Unknown)),
     );
 
     assert!(report.has_solver_failures());
@@ -321,11 +325,45 @@ fn non_required_solver_checks_are_recorded_without_errors() {
     report.record_solver_check(
         "obligation.0001",
         BackendKind::Oxiz,
-        Ok(SmtOutcome::Unknown),
+        Ok(SmtCheck::new(SmtOutcome::Unknown)),
     );
 
     assert!(!report.has_solver_failures());
     assert!(!report.has_errors());
     assert_eq!(report.solver_checks.len(), 1);
     assert!(!report.solver_checks[0].required);
+}
+
+#[test]
+fn unsat_solver_check_records_solver_discharge() {
+    let mut report = VerificationReport {
+        policy: VerificationPolicy {
+            mode: VerificationMode::Test,
+            backend: BackendKind::Z3,
+        },
+        obligations: vec![ProofObligation {
+            id: "obligation.0001".to_owned(),
+            kind: ProofObligationKind::FunctionContract,
+            message: "postcondition".to_owned(),
+            subject: Some("function.example.ensures.1".to_owned()),
+            source: None,
+            discharge: ProofDischarge::Missing,
+            smt: None,
+        }],
+        ..VerificationReport::default()
+    };
+
+    report.record_solver_check(
+        "obligation.0001",
+        BackendKind::Z3,
+        Ok(SmtCheck::new(SmtOutcome::Unsat)),
+    );
+
+    assert_eq!(
+        report.obligations[0].discharge,
+        ProofDischarge::Solver {
+            backend: BackendKind::Z3
+        }
+    );
+    assert!(!report.has_solver_failures());
 }

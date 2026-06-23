@@ -56,6 +56,57 @@ pub enum ContractClause {
     Decreases(Expr),
 }
 
+impl ContractClause {
+    /// Explicit contract mode, when the clause supports one.
+    pub fn mode(&self) -> Option<&str> {
+        match self {
+            Self::Requires { mode, .. }
+            | Self::Ensures { mode, .. }
+            | Self::Invariant { mode, .. } => mode.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Expression assumed by solver-backed verification.
+    ///
+    /// A missing mode and the explicit `prove` mode both participate in proof;
+    /// runtime/debug/document-only modes and explicit `assume` clauses remain
+    /// owned by semantic trust policy instead of silently strengthening SMT.
+    pub fn solver_assumption(&self) -> Option<&Expr> {
+        match self {
+            Self::Requires { mode, expr } if Self::mode_requests_proof(mode.as_deref()) => {
+                Some(expr)
+            }
+            _ => None,
+        }
+    }
+
+    /// Proof-mode invariant clauses are recognized explicitly but are not yet
+    /// lowered as pre/post state pairs by the scalar function verifier.
+    pub fn solver_invariant(&self) -> Option<&Expr> {
+        match self {
+            Self::Invariant { mode, expr } if Self::mode_requests_proof(mode.as_deref()) => {
+                Some(expr)
+            }
+            _ => None,
+        }
+    }
+
+    /// Postcondition that must be proven by a solver backend.
+    pub fn solver_claim(&self) -> Option<&Expr> {
+        match self {
+            Self::Ensures { mode, expr } if Self::mode_requests_proof(mode.as_deref()) => {
+                Some(expr)
+            }
+            _ => None,
+        }
+    }
+
+    fn mode_requests_proof(mode: Option<&str>) -> bool {
+        matches!(mode, None | Some("prove"))
+    }
+}
+
 /// Top-level flow-like item kind.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FlowKind {

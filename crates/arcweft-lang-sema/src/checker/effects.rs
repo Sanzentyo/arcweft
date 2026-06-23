@@ -61,6 +61,28 @@ impl TypeChecker<'_> {
         }
     }
 
+    pub(super) fn check_function_contract_clause(
+        &mut self,
+        contract: &ContractClause,
+        result_type: Option<&TypeKind>,
+    ) {
+        let ContractClause::Ensures { .. } = contract else {
+            self.check_contract_clause(contract);
+            return;
+        };
+        let Some(result_type) = result_type else {
+            self.check_contract_clause(contract);
+            return;
+        };
+        let previous_result = self.locals.insert("result".to_owned(), result_type.clone());
+        self.check_contract_clause(contract);
+        if let Some(previous_result) = previous_result {
+            self.locals.insert("result".to_owned(), previous_result);
+        } else {
+            self.locals.remove("result");
+        }
+    }
+
     pub(super) fn check_contract_selector(&mut self, expr: &Expr) {
         // Contract selectors name capabilities or resources. They are not
         // executable expressions, so dotted selectors such as `signal.write`

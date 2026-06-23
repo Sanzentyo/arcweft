@@ -1225,6 +1225,9 @@ impl TypeChecker<'_> {
         if method_name == "contains" {
             return Some(self.check_sequence_contains_method_call(&receiver_type, args));
         }
+        if matches!(method_name, "clamp" | "min" | "max") && receiver_type.is_integer() {
+            return Some(self.check_integer_scalar_method_call(receiver_type, method_name, args));
+        }
         if method_name == "require_role" {
             return self.check_agent_object_require_role_method_call(&receiver_type, args);
         }
@@ -1284,6 +1287,37 @@ impl TypeChecker<'_> {
                 )));
                 None
             })
+    }
+
+    fn check_integer_scalar_method_call(
+        &mut self,
+        receiver_type: TypeKind,
+        method_name: &str,
+        args: &[CallArg],
+    ) -> TypeKind {
+        let expected_args = if method_name == "clamp" { 2 } else { 1 };
+        if args.len() != expected_args {
+            self.errors.push(TypeCheckError::new(format!(
+                "integer {method_name} requires {expected_args} positional argument(s)"
+            )));
+            for arg in args {
+                self.check_expr_with_expected(arg.value(), Some(&receiver_type));
+            }
+            return receiver_type;
+        }
+        for arg in args {
+            if arg.name().is_some() || arg.is_spread() {
+                self.errors.push(TypeCheckError::new(format!(
+                    "integer {method_name} arguments must be positional"
+                )));
+            }
+            self.expect_expr_type(
+                arg.value(),
+                &receiver_type,
+                &format!("integer {method_name}"),
+            );
+        }
+        receiver_type
     }
 
     fn check_probe_compare_method(
