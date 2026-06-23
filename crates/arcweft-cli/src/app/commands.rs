@@ -5,12 +5,13 @@ use super::import::ImportCommand;
 use super::jit::JitCheckOptions;
 #[cfg(feature = "native-player")]
 use super::native_player::NativePlayerOptions;
+use super::project_commands::{CompileOptions, ProjectBuildOptions, ProjectCheckOptions};
 use super::runtime::options::{
     CliRunOptions, PlanOptions, RuntimeProfileOptions, RuntimeRunOptions, ScriptBenchOptions,
     ScriptTestOptions, ServeOptions,
 };
 use super::tooling::ToolingCommandOptions;
-use super::verify::{CheckOptions, UnsafeOptions, VerifyOptions, VerifyTypesOptions};
+use super::verify::{UnsafeOptions, VerifyOptions, VerifyTypesOptions};
 use crate::toolchain_profile::ToolchainProfileOptions;
 use clap::{Parser, Subcommand};
 
@@ -23,7 +24,10 @@ pub(super) struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub(super) enum CliCommand {
-    Check(CheckOptions),
+    /// Checks the package selected by `arcw.toml`.
+    Check(ProjectCheckOptions),
+    /// Compiles one `.arcw` source directly without package discovery.
+    Compile(CompileOptions),
     Import {
         #[command(subcommand)]
         command: ImportCommand,
@@ -50,10 +54,8 @@ pub(super) enum CliCommand {
     RunBundle(RunBundleOptions),
     #[cfg(feature = "native-player")]
     PlayNative(NativePlayerOptions),
-    Build {
-        #[command(subcommand)]
-        command: BuildCommand,
-    },
+    /// Builds the package and writes project/plan artifacts under `target`.
+    Build(ProjectBuildOptions),
     ToolchainProfile(ToolchainProfileOptions),
     Jit {
         #[command(subcommand)]
@@ -107,9 +109,4 @@ pub(super) enum AgentScriptCommand {
 #[derive(Debug, Subcommand)]
 pub(super) enum JitCommand {
     Check(JitCheckOptions),
-}
-
-#[derive(Debug, Subcommand)]
-pub(super) enum BuildCommand {
-    Bundle(BundleOptions),
 }

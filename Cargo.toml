@@ -29,6 +29,7 @@ members = [
     "crates/arcweft-memory",
     "crates/arcweft-ref",
     "crates/arcweft",
+    "crates/arcweft-project",
     "crates/arcweft-lang-hir",
     "crates/arcweft-launch",
     "crates/arcweft-lang-jit-cranelift",

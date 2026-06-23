@@ -5,4 +5,5 @@
 
 pub mod adapter_manifest;
 pub mod character_manifest;
+pub mod project;
 pub mod rust_metadata;

@@ -30,21 +30,6 @@ use arcweft_verify::{
 };
 
 #[derive(serde::Serialize)]
-pub(crate) struct CheckReport {
-    pub(crate) status: String,
-    pub(crate) flows: usize,
-    pub(crate) line_task_groups: usize,
-    pub(crate) syntax_warnings: usize,
-    pub(crate) syntax: SyntaxProfileStats,
-    pub(crate) typecheck: TypeCheckProfileStats,
-    pub(crate) borrow_check: BorrowCheckProfileStats,
-    pub(crate) phases: Vec<RuntimeProfilePhase>,
-    pub(crate) verifier_diagnostics: usize,
-    pub(crate) verifier_obligations: usize,
-    pub(crate) unsafe_audits: usize,
-}
-
-#[derive(serde::Serialize)]
 pub(crate) struct RuntimePlanReport {
     pub(crate) lines: Vec<RuntimeLinePlanSummary>,
     pub(crate) line_display_catalog: Vec<LineDisplaySpec>,
@@ -123,32 +108,6 @@ struct RuntimeTaskSummary {
     join_policy: String,
     cancel_policy: String,
     scope: Box<RuntimeScopeSummary>,
-}
-
-impl CheckReport {
-    pub(crate) fn from_checked(
-        checked: &CheckedModule,
-        verification: &arcweft_verify::VerificationReport,
-    ) -> Self {
-        Self {
-            status: if verification.has_errors() {
-                "failed"
-            } else {
-                "ok"
-            }
-            .to_owned(),
-            flows: checked.hir.flows().len(),
-            line_task_groups: checked.line_task_groups.len(),
-            syntax_warnings: checked.syntax_warnings,
-            syntax: SyntaxProfileStats::from(checked.syntax_stats),
-            typecheck: TypeCheckProfileStats::from(&checked.typecheck_report),
-            borrow_check: BorrowCheckProfileStats::from(&checked.typecheck_report.stats),
-            phases: checked.phases.clone(),
-            verifier_diagnostics: verification.diagnostics.len(),
-            verifier_obligations: verification.obligations.len(),
-            unsafe_audits: verification.unsafe_audit_count(),
-        }
-    }
 }
 
 impl RuntimePlanReport {

@@ -15,7 +15,7 @@ use super::runtime::profile::run_profile_phase;
 use super::runtime::steps::{NativeRunHost, run_runtime_steps_with_executor};
 use super::shared::print_json;
 use crate::output::{
-    BorrowCheckProfileStats, CheckReport, RuntimeExecutorTier, RuntimeTypeValidationProfileStats,
+    BorrowCheckProfileStats, RuntimeExecutorTier, RuntimeTypeValidationProfileStats,
     RuntimeTypeValidationReportSummary, TypeCheckProfileStats, VerifyTypesReport,
     VerifyTypesRuntimeSelfCheck, VerifyTypesVerifierSummary,
 };
@@ -41,41 +41,6 @@ use std::{env, fs};
 
 const Z3_COMMAND_ENV: &str = "ARCWEFT_Z3_COMMAND";
 const Z3_BIN_ENV: &str = "ARCWEFT_Z3_BIN";
-
-pub(super) fn check_command(options: &CheckOptions) -> Result<(), ExitCode> {
-    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
-    let mut checked = load_and_check_selection(&selection, None)?;
-    let report = run_profile_phase(&mut checked.phases, "verify", || {
-        Ok::<arcweft_verify::VerificationReport, ExitCode>(verify_module_with_env(
-            &checked.hir,
-            &checked.env,
-            VerificationPolicy {
-                mode: VerificationMode::Dev,
-                backend: BackendKind::Emit,
-            },
-        ))
-    })?;
-    if options.json {
-        print_json(&CheckReport::from_checked(&checked, &report))?;
-    } else {
-        print_human_diagnostics(&report);
-    }
-    if report.has_errors() {
-        return Err(ExitCode::FAILURE);
-    }
-
-    if !options.json {
-        println!(
-            "ok: {} ({} flow(s), {} line task group(s), {} warning(s), {} obligation(s))",
-            selection.path().display(),
-            checked.hir.flows().len(),
-            checked.line_task_groups.len(),
-            checked.syntax_warnings,
-            report.obligations.len()
-        );
-    }
-    Ok(())
-}
 
 pub(super) fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
@@ -397,15 +362,6 @@ pub(in crate::app) struct UnsafeOptions {
     profile: ProfileOptions,
     #[arg(long, value_parser = parse_verification_mode, default_value = "dev")]
     mode: VerificationMode,
-    #[arg(long)]
-    json: bool,
-}
-
-#[derive(Args, Clone, Debug)]
-pub(in crate::app) struct CheckOptions {
-    path: Option<PathBuf>,
-    #[command(flatten)]
-    profile: ProfileOptions,
     #[arg(long)]
     json: bool,
 }

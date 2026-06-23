@@ -109,17 +109,21 @@ impl NativeTaskBridge {
         registrars: &[NativeAdapterRegistrar],
     ) -> Result<Self, HostAdapterError> {
         let registry = registry_with_registrars(source_path, registrars)?;
-        Ok(Self::with_registry(policy, registry))
+        Self::try_with_registry(policy, registry)
     }
 
-    pub fn with_registry(policy: HostCallPolicy, registry: HostAdapterRegistry) -> Self {
-        Self {
+    pub fn try_with_registry(
+        policy: HostCallPolicy,
+        registry: HostAdapterRegistry,
+    ) -> Result<Self, HostAdapterError> {
+        policy.ensure_implemented_by(&registry)?;
+        Ok(Self {
             policy,
             registry,
             sequence: 0,
             scheduler: RuntimeScheduler::default(),
             stats: NativeTaskStats::default(),
-        }
+        })
     }
 
     pub fn standard_policy() -> HostCallPolicy {
@@ -757,26 +761,14 @@ mod tests {
     fn native_bridge_rejects_allowed_host_call_without_native_implementation() {
         let source_path = std::env::temp_dir().join("arcweft-native-bridge-unimplemented.arcw");
         let policy = HostCallPolicy::from_manifests([standard::native_http_manifest()]);
-        let mut bridge = NativeTaskBridge::try_new(&source_path, policy, &[])
-            .expect("standard native adapters are unique");
-        let events = bridge.complete_tasks(vec![task(
-            "http",
-            HostTaskRequest::HttpRespond(arcweft_core::task::HttpRespondRequest {
-                request_id: "request-1".to_owned(),
-                status: 200,
-                headers: Vec::new(),
-                body: None,
-            }),
-        )]);
 
-        assert_eq!(events.len(), 1);
+        let error = NativeTaskBridge::try_new(&source_path, policy, &[])
+            .expect_err("missing native implementations are rejected before task execution");
         assert!(matches!(
-            &events[0].kind,
-            TaskEventKind::Err(message)
-                if message.contains("no native adapter implementation is registered")
+            error,
+            HostAdapterError::MissingHostCallImplementations { host_call_ids }
+                if host_call_ids == vec!["http.respond".to_owned()]
         ));
-        assert_eq!(bridge.stats().failed_tasks, 1);
-        assert_eq!(bridge.stats().scheduler.submitted, 0);
     }
 
     #[test]

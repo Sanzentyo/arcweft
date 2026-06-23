@@ -8,6 +8,7 @@ pub mod error;
 pub mod hir;
 pub mod lower;
 pub mod parse;
+pub mod project;
 pub mod source;
 pub mod types;
 

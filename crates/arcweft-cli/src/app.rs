@@ -9,6 +9,7 @@ mod local_embedding;
 #[cfg(feature = "native-player")]
 mod native_player;
 pub(crate) mod project;
+mod project_commands;
 mod remote_embedding;
 pub(in crate::app) mod runtime;
 pub(crate) mod shared;
@@ -17,12 +18,13 @@ pub(in crate::app) mod verify;
 
 use self::agent::agent_command;
 use self::bundle::{bundle_command, run_bundle_command};
-use self::commands::{BuildCommand, Cli, CliCommand};
+use self::commands::{Cli, CliCommand};
 use self::debug::debug_command;
 use self::import::import_command;
 use self::jit::jit_command;
 #[cfg(feature = "native-player")]
 use self::native_player::native_player_command;
+use self::project_commands::{compile_command, project_build_command, project_check_command};
 use self::runtime::cli::runtime_cli_command;
 use self::runtime::plan::runtime_plan_command;
 use self::runtime::profile_cmd::runtime_profile_command;
@@ -31,7 +33,7 @@ use self::runtime::script_bench::script_bench_command;
 use self::runtime::script_test::script_test_command;
 use self::runtime::serve::runtime_serve_command;
 use self::tooling::{format_command, ids_command};
-use self::verify::{check_command, unsafe_command, verify_command, verify_types_command};
+use self::verify::{unsafe_command, verify_command, verify_types_command};
 use crate::toolchain_profile;
 use arcweft_host_adapter::{HostAdapterError, HostAdapterRegistryBuilder};
 use arcweft_runtime_host::NativeAdapterRegistrar;
@@ -79,7 +81,8 @@ fn desktop_native_adapter_registrar(
 
 fn run_cli(cli: Cli, adapter_registrars: &[NativeAdapterRegistrar]) -> Result<(), ExitCode> {
     match cli.command {
-        CliCommand::Check(options) => check_command(&options),
+        CliCommand::Check(options) => project_check_command(&options),
+        CliCommand::Compile(options) => compile_command(&options),
         CliCommand::Import { command } => import_command(command),
         CliCommand::Agent { command } => agent_command(command, adapter_registrars),
         CliCommand::Debug { command } => debug_command(command),
@@ -97,9 +100,7 @@ fn run_cli(cli: Cli, adapter_registrars: &[NativeAdapterRegistrar]) -> Result<()
         CliCommand::RunBundle(options) => run_bundle_command(&options, adapter_registrars),
         #[cfg(feature = "native-player")]
         CliCommand::PlayNative(options) => native_player_command(&options),
-        CliCommand::Build { command } => match command {
-            BuildCommand::Bundle(options) => bundle_command(&options),
-        },
+        CliCommand::Build(options) => project_build_command(&options),
         CliCommand::ToolchainProfile(options) => toolchain_profile::run(&options),
         CliCommand::Jit { command } => jit_command(command),
         CliCommand::Fmt(options) => format_command(&options),

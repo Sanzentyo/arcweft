@@ -1,10 +1,13 @@
-use crate::app::project::{SourceSelection, runtime_plan_options_for_selection};
+use crate::app::project::{
+    SourceSelection, print_project_compile_error, runtime_plan_options_for_selection,
+};
 use crate::output::RuntimeProfilePhase;
-use arcweft_compiler::{hir, lower, parse};
+use arcweft_compiler::{hir, lower, parse, project::compile_project_with_env};
 use arcweft_core::aot::{AotProgram, AotProgramStats};
 use arcweft_core::bytecode::{BytecodeProgram, BytecodeStats};
 use arcweft_core::plan::RuntimePlan;
 use arcweft_lang_sema::{check::TypeCheckReport, env::TypeCheckEnv};
+use arcweft_lang_syntax::cst::SyntaxParseStats;
 use arcweft_render_text::LineDisplayCatalog;
 use arcweft_runtime_plan::flow::{RuntimePlanLowerReport, RuntimePlanLowerStats};
 use arcweft_verify::{RuntimeTypeValidationStats, validate_runtime_plan_types};
@@ -34,6 +37,9 @@ pub(in crate::app) fn compile_profile_runtime_plan(
     env: &TypeCheckEnv,
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<ProfileCompiledRuntimePlan, ExitCode> {
+    if let Some(manifest) = selection.manifest() {
+        return compile_project_runtime_plan(manifest, selection, env, phases);
+    }
     let source = run_profile_phase(phases, "read_source", || {
         fs::read_to_string(selection.path()).map_err(|error| {
             eprintln!(
@@ -127,6 +133,89 @@ pub(in crate::app) fn compile_profile_runtime_plan(
         bytecode_stats,
         aot_stats,
     })
+}
+
+fn compile_project_runtime_plan(
+    manifest: &Path,
+    selection: &SourceSelection,
+    env: &TypeCheckEnv,
+    phases: &mut Vec<RuntimeProfilePhase>,
+) -> Result<ProfileCompiledRuntimePlan, ExitCode> {
+    let loaded = run_profile_phase(phases, "load_project", || {
+        arcweft_project_loader::project::load(manifest).map_err(|error| {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        })
+    })?;
+    let runtime_options = runtime_plan_options_for_selection(selection);
+    let compiled = run_profile_phase(phases, "project_compile", || {
+        compile_project_with_env(loaded.sources(), env, &runtime_options).map_err(|error| {
+            print_project_compile_error(&error);
+            ExitCode::FAILURE
+        })
+    })?;
+    let syntax_stats =
+        compiled
+            .modules()
+            .iter()
+            .fold(SyntaxParseStats::default(), |mut stats, module| {
+                add_syntax_stats(&mut stats, module.syntax_stats());
+                stats
+            });
+    let runtime_plan_report = compiled.runtime_plan().clone();
+    let plan = runtime_plan_report.plan;
+    let line_display_catalog = runtime_plan_report.line_display_catalog;
+    let runtime_plan_stats = runtime_plan_report.stats;
+    let runtime_type_validation_stats = run_profile_phase(phases, "runtime_type_validate", || {
+        let report = validate_runtime_plan_types(&plan, compiled.typecheck_report());
+        if report.has_errors() {
+            for diagnostic in report.diagnostics {
+                eprintln!("error: {}: {}", diagnostic.path, diagnostic.message);
+            }
+            Err(ExitCode::FAILURE)
+        } else {
+            Ok(report.stats)
+        }
+    })?;
+    let aot = run_profile_phase(phases, "aot_lower", || {
+        Ok::<AotProgram, ExitCode>(AotProgram::from_runtime_plan(&plan))
+    })?;
+    let aot_stats = aot.stats().clone();
+    let bytecode = run_profile_phase(phases, "bytecode_lower", || {
+        Ok::<BytecodeProgram, ExitCode>(BytecodeProgram::from_runtime_plan(plan))
+    })?;
+    let bytecode_stats = bytecode.stats();
+    let plan = bytecode.clone().into_runtime_plan().map_err(|error| {
+        eprintln!("error: {error}");
+        ExitCode::FAILURE
+    })?;
+    Ok(ProfileCompiledRuntimePlan {
+        hir: compiled.linked_hir().clone(),
+        plan,
+        syntax_warnings: compiled.syntax_warnings(),
+        syntax_stats,
+        line_task_groups: compiled.line_task_groups().len(),
+        typecheck_report: compiled.typecheck_report().clone(),
+        runtime_plan_stats,
+        line_display_catalog,
+        runtime_type_validation_stats,
+        bytecode,
+        bytecode_stats,
+        aot_stats,
+    })
+}
+
+fn add_syntax_stats(total: &mut SyntaxParseStats, item: &SyntaxParseStats) {
+    total.cst_lex_passes += item.cst_lex_passes;
+    total.punctuation_scans += item.punctuation_scans;
+    total.punctuation_scan_bytes += item.punctuation_scan_bytes;
+    total.line_owned_bytes += item.line_owned_bytes;
+    total.block_owned_bytes += item.block_owned_bytes;
+    total.raw_owned_bytes += item.raw_owned_bytes;
+    total.wiki_scan_performed += item.wiki_scan_performed;
+    total.dot_normalization_owned += item.dot_normalization_owned;
+    total.dialogue_rescue_expr_parse_attempts += item.dialogue_rescue_expr_parse_attempts;
+    total.numeric_seq_summaries += item.numeric_seq_summaries;
 }
 
 fn profile_lower_runtime_plan(

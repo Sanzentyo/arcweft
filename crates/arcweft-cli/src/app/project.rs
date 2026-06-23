@@ -7,7 +7,7 @@ use super::shared::is_arcw_path;
 use crate::output::RuntimeProfilePhase;
 use arcweft_adapter_context::{manifest::AdapterManifest, standard};
 use arcweft_character::catalog::CharacterCatalog;
-use arcweft_compiler::{hir, parse};
+use arcweft_compiler::{hir, parse, project::compile_project_with_env};
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_lang_sema::{check::TypeCheckReport, env::TypeCheckEnv};
 use arcweft_launch::{
@@ -30,27 +30,39 @@ use std::process::ExitCode;
 pub(in crate::app) struct ProfileOptions {
     #[arg(long)]
     pub(in crate::app) profile: Option<String>,
-    #[arg(long, default_value = "arcw.toml")]
+    #[arg(
+        long = "manifest-path",
+        alias = "manifest",
+        default_value = "arcw.toml"
+    )]
     pub(in crate::app) manifest: PathBuf,
 }
 
 #[derive(Clone, Debug)]
 pub(in crate::app) enum SourceSelection {
     Direct { path: PathBuf },
+    Project { manifest: PathBuf, path: PathBuf },
     Profile(Box<ResolvedLaunchProfile>),
 }
 
 impl SourceSelection {
     pub(in crate::app) fn path(&self) -> &Path {
         match self {
-            Self::Direct { path } => path,
+            Self::Direct { path } | Self::Project { path, .. } => path,
             Self::Profile(profile) => profile.source(),
+        }
+    }
+
+    pub(in crate::app) fn manifest(&self) -> Option<&Path> {
+        match self {
+            Self::Project { manifest, .. } => Some(manifest),
+            Self::Direct { .. } | Self::Profile(_) => None,
         }
     }
 
     pub(in crate::app) fn profile(&self) -> Option<&ResolvedLaunchProfile> {
         match self {
-            Self::Direct { .. } => None,
+            Self::Direct { .. } | Self::Project { .. } => None,
             Self::Profile(profile) => Some(profile),
         }
     }
@@ -181,9 +193,14 @@ pub(in crate::app) fn resolve_source_selection_or_default_profile(
         (Some(path), None) => Ok(SourceSelection::Direct { path: path.clone() }),
         (None, Some(profile_id)) => resolve_profile_source_selection(profile, profile_id),
         (None, None) => {
-            let manifest = read_launch_manifest(&profile.manifest)?;
-            let profile_id = default_profile_id(&manifest, &profile.manifest, preferred_kind)?;
-            resolve_profile_source_selection(profile, &profile_id)
+            let manifest_path = resolve_manifest_path(&profile.manifest)?;
+            let manifest = read_launch_manifest(&manifest_path)?;
+            match default_profile_id(&manifest, &manifest_path, preferred_kind)? {
+                Some(profile_id) => {
+                    resolve_profile_source_selection_from_manifest(&manifest_path, &profile_id)
+                }
+                None => resolve_project_root_source_selection(&manifest_path),
+            }
         }
     }
 }
@@ -192,8 +209,16 @@ fn resolve_profile_source_selection(
     profile: &ProfileOptions,
     profile_id: &str,
 ) -> Result<SourceSelection, ExitCode> {
-    let manifest = read_launch_manifest(&profile.manifest)?;
-    let manifest_dir = profile.manifest.parent().unwrap_or_else(|| Path::new("."));
+    let manifest_path = resolve_manifest_path(&profile.manifest)?;
+    resolve_profile_source_selection_from_manifest(&manifest_path, profile_id)
+}
+
+fn resolve_profile_source_selection_from_manifest(
+    manifest_path: &Path,
+    profile_id: &str,
+) -> Result<SourceSelection, ExitCode> {
+    let manifest = read_launch_manifest(manifest_path)?;
+    let manifest_dir = manifest_path.parent().unwrap_or_else(|| Path::new("."));
     let adapter_registry = standard::standard_registry();
     let adapter_ids = adapter_registry.adapter_ids();
     let resolved = manifest
@@ -203,6 +228,36 @@ fn resolve_profile_source_selection(
             ExitCode::FAILURE
         })?;
     Ok(SourceSelection::Profile(Box::new(resolved)))
+}
+
+fn resolve_project_root_source_selection(
+    manifest_path: &Path,
+) -> Result<SourceSelection, ExitCode> {
+    let project = arcweft_project_loader::project::load(manifest_path).map_err(|error| {
+        eprintln!("error: {error}");
+        ExitCode::FAILURE
+    })?;
+    Ok(SourceSelection::Project {
+        manifest: project.sources().manifest_path().to_path_buf(),
+        path: project.sources().root_module().path().to_path_buf(),
+    })
+}
+
+fn resolve_manifest_path(path: &Path) -> Result<PathBuf, ExitCode> {
+    if path.is_file() {
+        return Ok(path.to_path_buf());
+    }
+    if path == Path::new(arcweft_project_loader::project::PROJECT_MANIFEST_FILE) {
+        let current = std::env::current_dir().map_err(|error| {
+            eprintln!("error: failed to resolve current directory: {error}");
+            ExitCode::FAILURE
+        })?;
+        return arcweft_project_loader::project::discover_manifest(&current).map_err(|error| {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        });
+    }
+    Ok(path.to_path_buf())
 }
 
 fn read_launch_manifest(path: &Path) -> Result<LaunchProfileManifest, ExitCode> {
@@ -223,19 +278,22 @@ fn default_profile_id(
     manifest: &LaunchProfileManifest,
     manifest_path: &Path,
     preferred_kind: LaunchKind,
-) -> Result<String, ExitCode> {
+) -> Result<Option<String>, ExitCode> {
     if let Some(default_profile) = manifest.default_profile() {
-        return Ok(default_profile.to_owned());
+        return Ok(Some(default_profile.to_owned()));
     }
     let profiles = manifest.profiles();
     let matching_kind = manifest.profile_ids_with_kind(preferred_kind);
     match (matching_kind.as_slice(), profiles.len()) {
-        ([profile_id], _) => Ok(profile_id.clone()),
-        ([], 1) => Ok(profiles
-            .keys()
-            .next()
-            .expect("profile map has one entry")
-            .clone()),
+        ([profile_id], _) => Ok(Some(profile_id.clone())),
+        ([], 1) => Ok(Some(
+            profiles
+                .keys()
+                .next()
+                .expect("profile map has one entry")
+                .clone(),
+        )),
+        ([], 0) => Ok(None),
         ([], _) => {
             eprintln!(
                 "error: expected .arcw source path, --profile, or a default profile in {}",
@@ -281,7 +339,52 @@ pub(in crate::app) fn load_and_check_selection(
 ) -> Result<CheckedModule, ExitCode> {
     let mut phases = Vec::new();
     let env = typecheck_env_for_selection(selection, adapter_override, &mut phases)?;
+    if let Some(manifest) = selection.manifest() {
+        return load_and_check_project_with_env(manifest, &env, phases);
+    }
     load_and_check_with_env(selection.path(), &env, phases)
+}
+
+fn load_and_check_project_with_env(
+    manifest: &Path,
+    env: &TypeCheckEnv,
+    mut phases: Vec<RuntimeProfilePhase>,
+) -> Result<CheckedModule, ExitCode> {
+    let loaded = run_profile_phase(&mut phases, "load_project", || {
+        arcweft_project_loader::project::load(manifest).map_err(|error| {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        })
+    })?;
+    let runtime_options = RuntimePlanLowerOptions::default();
+    let compiled = run_profile_phase(&mut phases, "project_compile", || {
+        compile_project_with_env(loaded.sources(), env, &runtime_options).map_err(|error| {
+            print_project_compile_error(&error);
+            ExitCode::FAILURE
+        })
+    })?;
+    Ok(CheckedModule {
+        hir: compiled.linked_hir().clone(),
+        env: env.clone(),
+        syntax_warnings: compiled.syntax_warnings(),
+        line_task_groups: compiled.line_task_groups().to_vec(),
+        typecheck_report: compiled.typecheck_report().clone(),
+        phases,
+    })
+}
+
+pub(in crate::app) fn print_project_compile_error(
+    error: &arcweft_compiler::project::ProjectCompileError,
+) {
+    eprintln!("error: {error}");
+    for diagnostic in error.diagnostics() {
+        let module = diagnostic
+            .module()
+            .map_or_else(|| "crate".to_owned(), ToString::to_string);
+        for message in diagnostic.messages() {
+            eprintln!("  {}[{}]: {message}", diagnostic.stage().as_str(), module);
+        }
+    }
 }
 
 pub(in crate::app) fn typecheck_env_for_selection(
@@ -424,7 +527,6 @@ pub(crate) struct CheckedModule {
     pub(crate) hir: arcweft_lang_hir::model::HirModule,
     pub(crate) env: TypeCheckEnv,
     pub(crate) syntax_warnings: usize,
-    pub(crate) syntax_stats: arcweft_lang_syntax::cst::SyntaxParseStats,
     pub(crate) line_task_groups: Vec<LoweredLineTaskGroup>,
     pub(crate) typecheck_report: TypeCheckReport,
     pub(crate) phases: Vec<RuntimeProfilePhase>,
@@ -459,7 +561,6 @@ pub(in crate::app) fn load_and_check_with_env(
         return Err(ExitCode::FAILURE);
     }
 
-    let syntax_stats = parsed.syntax_stats();
     let tree = parsed.into_typed_tree();
     let lints = run_profile_phase(&mut phases, "lint", || {
         Ok::<Vec<arcweft_lang_syntax::lint::SyntaxLint>, ExitCode>(parse::lint_source_tree(&tree))
@@ -524,7 +625,6 @@ pub(in crate::app) fn load_and_check_with_env(
         hir,
         env: env.clone(),
         syntax_warnings: parse::count_warning_lints(&lints),
-        syntax_stats,
         line_task_groups,
         typecheck_report,
         phases,
@@ -555,7 +655,7 @@ source = "main.arcw"
         assert_eq!(
             default_profile_id(&manifest, Path::new("arcw.toml"), LaunchKind::Game)
                 .expect("default profile resolves"),
-            "mobile"
+            Some("mobile".to_owned())
         );
     }
 
@@ -577,7 +677,24 @@ source = "server.arcw"
         assert_eq!(
             default_profile_id(&manifest, Path::new("arcw.toml"), LaunchKind::Game)
                 .expect("default profile resolves"),
-            "game.main"
+            Some("game.main".to_owned())
+        );
+    }
+
+    #[test]
+    fn default_profile_can_fall_back_to_project_root() {
+        let manifest = LaunchProfileManifest::parse_toml(
+            r#"
+[package]
+name = "smoke_project"
+"#,
+        )
+        .expect("manifest parses");
+
+        assert_eq!(
+            default_profile_id(&manifest, Path::new("arcw.toml"), LaunchKind::Game)
+                .expect("profile fallback resolves"),
+            None
         );
     }
 

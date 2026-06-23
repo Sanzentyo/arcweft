@@ -9,10 +9,10 @@ use arcweft_core::task::{
     AwaitTarget, HostTaskArgTemplate, HostTaskRequest, HostTaskRequestTemplate, NeedId, TaskId,
 };
 use arcweft_core::value::{RuntimeExpr, RuntimePayload, RuntimeValue};
-use arcweft_host_adapter::{HostAdapter, HostTaskMetrics, HostTaskOutcome};
+use arcweft_host_adapter::{HostAdapter, HostAdapterError, HostTaskMetrics, HostTaskOutcome};
 use arcweft_render_text::LineDisplayCatalog;
 use arcweft_runtime_host::{
-    BundleRunnerOptions, BundleRunnerStepMode, NativeAdapterRegistrar,
+    BundleRunnerError, BundleRunnerOptions, BundleRunnerStepMode, NativeAdapterRegistrar,
     run_bundle_with_native_adapters,
 };
 
@@ -43,7 +43,7 @@ fn bundle_runner_executes_custom_adapter_without_cli() {
 #[test]
 fn bundle_runner_reports_custom_adapter_missing_from_host() {
     let bundle = custom_echo_bundle();
-    let report = run_bundle_with_native_adapters(
+    let error = run_bundle_with_native_adapters(
         &bundle,
         &BundleRunnerOptions {
             steps: 8,
@@ -52,16 +52,14 @@ fn bundle_runner_reports_custom_adapter_missing_from_host() {
         },
         &[],
     )
-    .expect("bundle runner reports runtime diagnostics");
+    .expect_err("missing custom adapters are rejected before bundle execution");
 
-    assert_eq!(report.native_io.completed_tasks, 0);
-    assert_eq!(report.native_io.failed_tasks, 1);
-    assert!(report.steps.iter().any(|step| {
-        step.diagnostics.iter().any(|diagnostic| {
-            diagnostic
-                .contains("host call `custom.echo` is provided by the active adapter manifest")
-        })
-    }));
+    assert!(matches!(
+        error,
+        BundleRunnerError::NativeAdapter(HostAdapterError::MissingHostCallImplementations {
+            host_call_ids
+        }) if host_call_ids == vec!["custom.echo".to_owned()]
+    ));
 }
 
 #[derive(Clone, Debug)]

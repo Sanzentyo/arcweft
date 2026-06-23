@@ -10,6 +10,9 @@ publish = false
 [dependencies]
 arcweft-adapter-context = { path = "../arcweft-adapter-context" }
 arcweft-character = { path = "../arcweft-character" }
+arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-launch = { path = "../arcweft-launch" }
+arcweft-project = { path = "../arcweft-project" }
 arcweft-rust-abi = { path = "../arcweft-rust-abi" }
 thiserror.workspace = true
 

@@ -113,6 +113,10 @@ pub enum HostAdapterError {
         first_adapter: String,
         second_adapter: String,
     },
+    #[error(
+        "active adapter policy declares host calls without native implementations: {host_call_ids:?}"
+    )]
+    MissingHostCallImplementations { host_call_ids: Vec<String> },
     #[error("host-main-thread pump for adapter `{adapter}` failed: {message}")]
     Pump { adapter: String, message: String },
 }
@@ -161,6 +165,31 @@ impl HostCallPolicy {
     /// Returns true when this task request is enabled by the active manifests.
     pub fn allows(&self, request: &HostTaskRequest) -> bool {
         self.contains(&request.host_call_id())
+    }
+
+    /// Returns all manifest-authorized calls that lack concrete host adapters.
+    pub fn missing_implementations(&self, registry: &HostAdapterRegistry) -> Vec<String> {
+        self.ids
+            .iter()
+            .filter(|id| !registry.contains(id))
+            .cloned()
+            .collect()
+    }
+
+    /// Validates that every policy call has a concrete runtime implementation.
+    ///
+    /// This behavior belongs to the Arcweft-owned policy type. CLI and player
+    /// hosts should not duplicate the comparison with local helper functions.
+    pub fn ensure_implemented_by(
+        &self,
+        registry: &HostAdapterRegistry,
+    ) -> Result<(), HostAdapterError> {
+        let host_call_ids = self.missing_implementations(registry);
+        if host_call_ids.is_empty() {
+            Ok(())
+        } else {
+            Err(HostAdapterError::MissingHostCallImplementations { host_call_ids })
+        }
     }
 }
 
@@ -515,6 +544,21 @@ mod tests {
         assert!(policy.contains("fixture.echo"));
         assert!(policy.allows(&task("fixture", "echo").request));
         assert!(!policy.contains("fixture.missing"));
+    }
+
+    #[test]
+    fn policy_reports_all_missing_runtime_implementations_before_execution() {
+        let policy = HostCallPolicy::from_host_call_ids(["fixture.first", "fixture.second"]);
+        let error = policy
+            .ensure_implemented_by(&HostAdapterRegistry::new())
+            .expect_err("missing implementations are rejected");
+
+        assert_eq!(
+            error,
+            HostAdapterError::MissingHostCallImplementations {
+                host_call_ids: vec!["fixture.first".to_owned(), "fixture.second".to_owned()]
+            }
+        );
     }
 
     #[test]

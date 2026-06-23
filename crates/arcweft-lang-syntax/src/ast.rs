@@ -5,6 +5,7 @@ pub mod flow;
 pub mod ids;
 pub mod items;
 pub mod line_plan;
+pub mod module_path;
 pub mod pattern;
 pub mod proof;
 pub mod source;

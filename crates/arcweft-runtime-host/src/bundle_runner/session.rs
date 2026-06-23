@@ -97,7 +97,8 @@ impl BundleRunnerSession {
         let registry = install(workspace.source_path(), builder)
             .map(HostAdapterRegistryBuilder::build)
             .map_err(BundleRunnerError::NativeAdapter)?;
-        let host = NativeTaskBridge::with_registry(policy, registry);
+        let host = NativeTaskBridge::try_with_registry(policy, registry)
+            .map_err(BundleRunnerError::NativeAdapter)?;
         let executor =
             RuntimeExecutorInstance::from_bytecode(bytecode, options.executor, options.pure_config)
                 .map_err(BundleRunnerError::DecodeBytecode)?;
