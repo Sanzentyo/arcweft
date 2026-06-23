@@ -285,6 +285,17 @@ pub(in crate::app) enum CliRuntimeRunner {
     Web,
 }
 
+impl CliRuntimeRunner {
+    pub(in crate::app) const fn label(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Native => "native",
+            Self::Headless => "headless",
+            Self::Web => "web",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub(in crate::app) enum CliRuntimeExecutorTier {
     BytecodeVm,

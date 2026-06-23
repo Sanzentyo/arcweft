@@ -234,7 +234,7 @@ fn run_game_target(
     {
         eprintln!(
             "error: --runner {} cannot be combined with headless runtime/debug options; use --runner headless",
-            run_runner_label(options.runner)
+            options.runner.label()
         );
         return Err(ExitCode::from(2));
     }
@@ -254,7 +254,7 @@ fn run_game_target(
     if matches!(runner, CliRuntimeRunner::Native | CliRuntimeRunner::Web) && !is_game {
         eprintln!(
             "error: `arcw run --runner {}` requires a game launch profile or `entry game`",
-            run_runner_label(runner)
+            runner.label()
         );
         return Err(ExitCode::from(2));
     }
@@ -357,15 +357,6 @@ fn sanitize_bundle_stem(value: &str) -> String {
             }
         })
         .collect()
-}
-
-const fn run_runner_label(runner: CliRuntimeRunner) -> &'static str {
-    match runner {
-        CliRuntimeRunner::Auto => "auto",
-        CliRuntimeRunner::Native => "native",
-        CliRuntimeRunner::Headless => "headless",
-        CliRuntimeRunner::Web => "web",
-    }
 }
 
 #[cfg(feature = "native-player")]

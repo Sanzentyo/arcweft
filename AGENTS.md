@@ -49,6 +49,11 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 - Prefer responsibility modules as public boundaries (`pub mod`) when a crate has multiple stable subsystems. Avoid flattening every type through root-level `pub use`; root re-exports should be deliberate facade API, not compatibility shims.
 - Do not leave workspace-external directories that look like active `crates/`, `tests/`, or fixtures. Archive true historical material under docs only when explicitly requested; otherwise remove obsolete migration scratch directories.
 - Prefer typed APIs over stringly typed APIs.
+- When an Arcweft-owned enum or boundary type is missing behavior needed by
+  another crate, add the behavior as an inherent method on the original type
+  whenever the dependency direction allows it. Do not scatter ad hoc `match`
+  helpers, local extension traits, or stringly wrappers around the workspace to
+  compensate for an incomplete enum API.
 - Do not solve language, parser, type-checker, lowering, or runtime-plan
   behavior by hard-coding one-off names when the rule can be represented
   generically. For example, expected-type enum shorthand, builtin namespaces,

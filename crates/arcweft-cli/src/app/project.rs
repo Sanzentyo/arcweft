@@ -21,7 +21,6 @@ use arcweft_runtime_host::NativeTaskBridge;
 use arcweft_runtime_plan::{flow::RuntimePlanLowerOptions, line_task::LoweredLineTaskGroup};
 use arcweft_rust_abi::ArcweftRustManifest;
 use clap::Args;
-use std::collections::BTreeMap;
 use std::fs;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
@@ -229,7 +228,7 @@ fn default_profile_id(
         return Ok(default_profile.to_owned());
     }
     let profiles = manifest.profiles();
-    let matching_kind = profiles_with_kind(profiles, preferred_kind);
+    let matching_kind = manifest.profile_ids_with_kind(preferred_kind);
     match (matching_kind.as_slice(), profiles.len()) {
         ([profile_id], _) => Ok(profile_id.clone()),
         ([], 1) => Ok(profiles
@@ -246,7 +245,8 @@ fn default_profile_id(
         }
         _ => {
             eprintln!(
-                "error: multiple {preferred_kind:?} launch profiles found; set `default = \"...\"` in arcw.toml or pass --profile"
+                "error: multiple {} launch profiles found; set `default = \"...\"` in arcw.toml or pass --profile",
+                preferred_kind.as_str()
             );
             for profile_id in matching_kind {
                 eprintln!("  {profile_id}");
@@ -254,17 +254,6 @@ fn default_profile_id(
             Err(ExitCode::from(2))
         }
     }
-}
-
-fn profiles_with_kind(
-    profiles: &BTreeMap<String, arcweft_launch::LaunchProfileSpec>,
-    kind: LaunchKind,
-) -> Vec<String> {
-    profiles
-        .iter()
-        .filter(|(_, profile)| profile.kind() == kind)
-        .map(|(profile_id, _)| profile_id.clone())
-        .collect()
 }
 
 pub(in crate::app) fn require_profile_kind(
@@ -279,9 +268,9 @@ pub(in crate::app) fn require_profile_kind(
         return Ok(());
     }
     eprintln!(
-        "error: launch profile `{}` has kind {:?}; use an `{command}` profile for `arcw {command}`",
+        "error: launch profile `{}` has kind {}; use an `{command}` profile for `arcw {command}`",
         profile.id().as_str(),
-        profile.kind()
+        profile.kind().as_str()
     );
     Err(ExitCode::from(2))
 }

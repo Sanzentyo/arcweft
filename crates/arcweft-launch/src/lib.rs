@@ -26,6 +26,19 @@ pub enum LaunchKind {
     Bench,
 }
 
+impl LaunchKind {
+    /// Stable manifest spelling for diagnostics and logs.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Game => "game",
+            Self::Server => "server",
+            Self::Cli => "cli",
+            Self::Test => "test",
+            Self::Bench => "bench",
+        }
+    }
+}
+
 /// Pure helper execution backend selected by a launch profile.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case")]
@@ -234,6 +247,15 @@ impl LaunchProfileManifest {
         &self.profiles
     }
 
+    /// Profile IDs whose specs select `kind`.
+    pub fn profile_ids_with_kind(&self, kind: LaunchKind) -> Vec<String> {
+        self.profiles
+            .iter()
+            .filter(|(_, profile)| profile.kind() == kind)
+            .map(|(profile_id, _)| profile_id.clone())
+            .collect()
+    }
+
     /// Default profile selected when a command does not pass `--profile`.
     pub fn default_profile(&self) -> Option<&str> {
         self.default_profile.as_deref()
@@ -368,12 +390,17 @@ object_artifacts = true
         .expect("manifest parses");
 
         assert_eq!(manifest.default_profile(), Some("server.dev"));
+        assert_eq!(LaunchKind::Server.as_str(), "server");
         assert_eq!(
             manifest
                 .profiles()
                 .get("server.dev")
                 .map(LaunchProfileSpec::kind),
             Some(LaunchKind::Server)
+        );
+        assert_eq!(
+            manifest.profile_ids_with_kind(LaunchKind::Server),
+            vec!["server.dev".to_owned()]
         );
 
         let resolved = manifest
