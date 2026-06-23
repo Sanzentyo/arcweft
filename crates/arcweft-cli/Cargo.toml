@@ -64,7 +64,7 @@ name = "arcw"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["native-player"]
 agent-repl = ["dep:reedline"]
 math-wgpu = ["arcweft-runtime-accelerator/math-wgpu"]
 native-capture = ["dep:arcweft-render-native"]
