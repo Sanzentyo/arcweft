@@ -55,12 +55,11 @@ deno task serve
 
 Open `http://127.0.0.1:4173/index.html` in Chrome with WebGPU enabled.
 
-To load an ignored local sample bundle without replacing `web/demo.awfb`, copy it
-under `web/local/` and pass it as a query parameter:
+To load an ignored local sample bundle without replacing `web/demo.awfb`, build
+the web-local bundle through `arcw run`:
 
 ```bash
-New-Item -ItemType Directory -Force web/local
-Copy-Item target/zundamon-stand-switch.awfb web/local/zundamon-stand-switch.awfb
+cargo run -p arcweft-cli -- run --manifest samples/zundamon-stand-switch/arcw.toml --runner web
 ```
 
 Then open:

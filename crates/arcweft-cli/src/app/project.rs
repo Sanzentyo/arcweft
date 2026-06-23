@@ -21,6 +21,7 @@ use arcweft_runtime_host::NativeTaskBridge;
 use arcweft_runtime_plan::{flow::RuntimePlanLowerOptions, line_task::LoweredLineTaskGroup};
 use arcweft_rust_abi::ArcweftRustManifest;
 use clap::Args;
+use std::collections::BTreeMap;
 use std::fs;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
@@ -160,34 +161,110 @@ pub(in crate::app) fn resolve_source_selection(
             Err(ExitCode::from(2))
         }
         (Some(path), None) => Ok(SourceSelection::Direct { path: path.clone() }),
-        (None, Some(profile_id)) => {
-            let source = fs::read_to_string(&profile.manifest).map_err(|error| {
-                eprintln!(
-                    "error: failed to read launch manifest {}: {error}",
-                    profile.manifest.display()
-                );
-                ExitCode::FAILURE
-            })?;
-            let manifest = LaunchProfileManifest::parse_toml(&source).map_err(|error| {
-                eprintln!("error: {error}");
-                ExitCode::FAILURE
-            })?;
-            let manifest_dir = profile.manifest.parent().unwrap_or_else(|| Path::new("."));
-            let adapter_registry = standard::standard_registry();
-            let adapter_ids = adapter_registry.adapter_ids();
-            let resolved = manifest
-                .resolve_profile_with_adapters(profile_id, manifest_dir, &adapter_ids)
-                .map_err(|error| {
-                    eprintln!("error: {error}");
-                    ExitCode::FAILURE
-                })?;
-            Ok(SourceSelection::Profile(Box::new(resolved)))
-        }
+        (None, Some(profile_id)) => resolve_profile_source_selection(profile, profile_id),
         (None, None) => {
             eprintln!("error: expected .arcw source path or --profile");
             Err(ExitCode::from(2))
         }
     }
+}
+
+pub(in crate::app) fn resolve_source_selection_or_default_profile(
+    path: Option<&PathBuf>,
+    profile: &ProfileOptions,
+    preferred_kind: LaunchKind,
+) -> Result<SourceSelection, ExitCode> {
+    match (path, profile.profile.as_deref()) {
+        (Some(_), Some(_)) => {
+            eprintln!("error: source path and --profile cannot be used together");
+            Err(ExitCode::from(2))
+        }
+        (Some(path), None) => Ok(SourceSelection::Direct { path: path.clone() }),
+        (None, Some(profile_id)) => resolve_profile_source_selection(profile, profile_id),
+        (None, None) => {
+            let manifest = read_launch_manifest(&profile.manifest)?;
+            let profile_id = default_profile_id(&manifest, &profile.manifest, preferred_kind)?;
+            resolve_profile_source_selection(profile, &profile_id)
+        }
+    }
+}
+
+fn resolve_profile_source_selection(
+    profile: &ProfileOptions,
+    profile_id: &str,
+) -> Result<SourceSelection, ExitCode> {
+    let manifest = read_launch_manifest(&profile.manifest)?;
+    let manifest_dir = profile.manifest.parent().unwrap_or_else(|| Path::new("."));
+    let adapter_registry = standard::standard_registry();
+    let adapter_ids = adapter_registry.adapter_ids();
+    let resolved = manifest
+        .resolve_profile_with_adapters(profile_id, manifest_dir, &adapter_ids)
+        .map_err(|error| {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        })?;
+    Ok(SourceSelection::Profile(Box::new(resolved)))
+}
+
+fn read_launch_manifest(path: &Path) -> Result<LaunchProfileManifest, ExitCode> {
+    let source = fs::read_to_string(path).map_err(|error| {
+        eprintln!(
+            "error: failed to read launch manifest {}: {error}",
+            path.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    LaunchProfileManifest::parse_toml(&source).map_err(|error| {
+        eprintln!("error: {error}");
+        ExitCode::FAILURE
+    })
+}
+
+fn default_profile_id(
+    manifest: &LaunchProfileManifest,
+    manifest_path: &Path,
+    preferred_kind: LaunchKind,
+) -> Result<String, ExitCode> {
+    if let Some(default_profile) = manifest.default_profile() {
+        return Ok(default_profile.to_owned());
+    }
+    let profiles = manifest.profiles();
+    let matching_kind = profiles_with_kind(profiles, preferred_kind);
+    match (matching_kind.as_slice(), profiles.len()) {
+        ([profile_id], _) => Ok(profile_id.clone()),
+        ([], 1) => Ok(profiles
+            .keys()
+            .next()
+            .expect("profile map has one entry")
+            .clone()),
+        ([], _) => {
+            eprintln!(
+                "error: expected .arcw source path, --profile, or a default profile in {}",
+                manifest_path.display()
+            );
+            Err(ExitCode::from(2))
+        }
+        _ => {
+            eprintln!(
+                "error: multiple {preferred_kind:?} launch profiles found; set `default = \"...\"` in arcw.toml or pass --profile"
+            );
+            for profile_id in matching_kind {
+                eprintln!("  {profile_id}");
+            }
+            Err(ExitCode::from(2))
+        }
+    }
+}
+
+fn profiles_with_kind(
+    profiles: &BTreeMap<String, arcweft_launch::LaunchProfileSpec>,
+    kind: LaunchKind,
+) -> Vec<String> {
+    profiles
+        .iter()
+        .filter(|(_, profile)| profile.kind() == kind)
+        .map(|(profile_id, _)| profile_id.clone())
+        .collect()
 }
 
 pub(in crate::app) fn require_profile_kind(
@@ -463,4 +540,73 @@ pub(in crate::app) fn load_and_check_with_env(
         typecheck_report,
         phases,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_profile_prefers_manifest_default() {
+        let manifest = LaunchProfileManifest::parse_toml(
+            r#"
+default = "mobile"
+
+[profiles.desktop]
+kind = "game"
+source = "main.arcw"
+
+[profiles.mobile]
+kind = "game"
+source = "main.arcw"
+"#,
+        )
+        .expect("manifest parses");
+
+        assert_eq!(
+            default_profile_id(&manifest, Path::new("arcw.toml"), LaunchKind::Game)
+                .expect("default profile resolves"),
+            "mobile"
+        );
+    }
+
+    #[test]
+    fn default_profile_uses_single_matching_kind() {
+        let manifest = LaunchProfileManifest::parse_toml(
+            r#"
+[profiles."game.main"]
+kind = "game"
+source = "game.arcw"
+
+[profiles."server.dev"]
+kind = "server"
+source = "server.arcw"
+"#,
+        )
+        .expect("manifest parses");
+
+        assert_eq!(
+            default_profile_id(&manifest, Path::new("arcw.toml"), LaunchKind::Game)
+                .expect("default profile resolves"),
+            "game.main"
+        );
+    }
+
+    #[test]
+    fn default_profile_rejects_ambiguous_matching_kind() {
+        let manifest = LaunchProfileManifest::parse_toml(
+            r#"
+[profiles.desktop]
+kind = "game"
+source = "main.arcw"
+
+[profiles.mobile]
+kind = "game"
+source = "main.arcw"
+"#,
+        )
+        .expect("manifest parses");
+
+        assert!(default_profile_id(&manifest, Path::new("arcw.toml"), LaunchKind::Game).is_err());
+    }
 }

@@ -42,7 +42,7 @@ use arcweft_bundle::{
 use arcweft_core::{
     effect::{LineEffectRequest, RuntimeCall},
     line_task::{LineChildTask, LineTaskGroup, LineTaskNode, LineTaskScope},
-    plan::{FlowOp, RuntimePlan},
+    plan::{FlowOp, RuntimeEntryKind, RuntimePlan},
     value::{RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
 use arcweft_launch::LaunchKind;
@@ -226,8 +226,29 @@ fn compile_bundle_artifact(
     options: &BundleOptions,
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<ArcweftBundle, ExitCode> {
+    compile_bundle_for_selection(selection, options.include_spaces(), phases)
+        .map(|compiled| compiled.bundle)
+}
+
+#[derive(Clone, Debug)]
+pub(in crate::app) struct CompiledBundleArtifact {
+    pub(in crate::app) bundle: ArcweftBundle,
+    pub(in crate::app) entry_kinds: Vec<RuntimeEntryKind>,
+}
+
+pub(in crate::app) fn compile_bundle_for_selection(
+    selection: &SourceSelection,
+    include_spaces: Vec<BundleVirtualFileSpace>,
+    phases: &mut Vec<RuntimeProfilePhase>,
+) -> Result<CompiledBundleArtifact, ExitCode> {
     let env = typecheck_env_for_selection(selection, None, phases)?;
     let compiled = compile_profile_runtime_plan(selection, &env, phases)?;
+    let entry_kinds = compiled
+        .plan
+        .entries
+        .iter()
+        .map(|entry| entry.kind.clone())
+        .collect::<Vec<_>>();
     let source = fs::read_to_string(selection.path()).map_err(|error| {
         eprintln!(
             "error: failed to read bundle source {}: {error}",
@@ -246,12 +267,12 @@ fn compile_bundle_artifact(
         &adapter_manifest,
         required_host_calls.iter().map(String::as_str),
     );
-    let virtual_files = collect_bundle_virtual_files(selection.path(), options.include_spaces())?;
+    let virtual_files = collect_bundle_virtual_files(selection.path(), include_spaces)?;
     let image_assets = collect_bundle_image_assets(&virtual_files)?;
     let image_declarations = parse_declared_image_objects(&source);
     let image_objects = bundle_image_objects(&image_declarations)?;
     validate_referenced_bundle_image_assets(&compiled.plan, &image_declarations, &image_assets)?;
-    Ok(ArcweftBundle::new(
+    let bundle = ArcweftBundle::new(
         bundle_manifest(
             selection,
             source_label.clone(),
@@ -269,7 +290,11 @@ fn compile_bundle_artifact(
     .with_adapter_manifests(adapter_manifests)
     .with_virtual_files(virtual_files)
     .with_image_assets(image_assets)
-    .with_image_objects(image_objects))
+    .with_image_objects(image_objects);
+    Ok(CompiledBundleArtifact {
+        bundle,
+        entry_kinds,
+    })
 }
 
 fn bundle_required_host_calls(plan: &RuntimePlan) -> Vec<String> {
@@ -314,7 +339,7 @@ fn bundle_manifest(
     }
 }
 
-fn write_bundle_artifact(
+pub(in crate::app) fn write_bundle_artifact(
     output: &Path,
     bytes: Vec<u8>,
     phases: &mut Vec<RuntimeProfilePhase>,

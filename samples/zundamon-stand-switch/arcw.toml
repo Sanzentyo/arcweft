@@ -1,0 +1,5 @@
+default = "game.main"
+
+[profiles."game.main"]
+kind = "game"
+source = "main.arcw"

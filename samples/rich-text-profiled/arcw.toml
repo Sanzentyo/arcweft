@@ -1,3 +1,5 @@
+default = "desktop"
+
 [profiles.desktop]
 kind = "game"
 source = "src/main.arcw"

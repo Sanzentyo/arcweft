@@ -64,6 +64,8 @@ pub(in crate::app) struct RuntimeRunOptions {
     pub(in crate::app) path: Option<PathBuf>,
     #[command(flatten)]
     pub(in crate::app) profile: ProfileOptions,
+    #[arg(long, value_enum, default_value_t = CliRuntimeRunner::Auto)]
+    pub(in crate::app) runner: CliRuntimeRunner,
     #[arg(long, conflicts_with = "flow")]
     pub(in crate::app) entry: Option<String>,
     #[arg(long, conflicts_with = "entry")]
@@ -267,12 +269,20 @@ pub(in crate::app) struct ScriptBenchOptions {
     pub(in crate::app) json: bool,
 }
 
-#[derive(Clone, Copy, Debug, ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub(in crate::app) enum CliRuntimeStepMode {
     OneOp,
     Drain,
     Game,
     Server,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(in crate::app) enum CliRuntimeRunner {
+    Auto,
+    Native,
+    Headless,
+    Web,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]

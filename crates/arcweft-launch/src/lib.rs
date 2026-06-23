@@ -50,6 +50,8 @@ pub enum LaunchMathBackend {
 /// Project-level profile manifest parsed from `arcw.toml`.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 pub struct LaunchProfileManifest {
+    #[serde(default, rename = "default")]
+    default_profile: Option<String>,
     #[serde(default)]
     profiles: BTreeMap<String, LaunchProfileSpec>,
 }
@@ -231,6 +233,18 @@ impl LaunchProfileManifest {
     pub fn profiles(&self) -> &BTreeMap<String, LaunchProfileSpec> {
         &self.profiles
     }
+
+    /// Default profile selected when a command does not pass `--profile`.
+    pub fn default_profile(&self) -> Option<&str> {
+        self.default_profile.as_deref()
+    }
+}
+
+impl LaunchProfileSpec {
+    /// Runtime surface selected by this profile.
+    pub const fn kind(&self) -> LaunchKind {
+        self.kind
+    }
 }
 
 impl ResolvedLaunchProfile {
@@ -330,6 +344,8 @@ mod tests {
     fn parses_and_resolves_profiles_relative_to_manifest_dir() {
         let manifest = LaunchProfileManifest::parse_toml(
             r#"
+default = "server.dev"
+
 [profiles."server.dev"]
 kind = "server"
 source = "src/server.arcw"
@@ -350,6 +366,15 @@ object_artifacts = true
 "#,
         )
         .expect("manifest parses");
+
+        assert_eq!(manifest.default_profile(), Some("server.dev"));
+        assert_eq!(
+            manifest
+                .profiles()
+                .get("server.dev")
+                .map(LaunchProfileSpec::kind),
+            Some(LaunchKind::Server)
+        );
 
         let resolved = manifest
             .resolve_profile_with_adapters("server.dev", Path::new("game"), &["native-http"])
