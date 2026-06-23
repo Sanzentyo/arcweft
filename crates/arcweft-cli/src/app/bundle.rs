@@ -34,7 +34,8 @@ use arcweft_adapter_desktop::{
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleFormat,
     BundleImageAnimation, BundleImageAsset, BundleImageDimensions, BundleImageFormat,
-    BundleImageObject, BundleImageObjectBounds, BundleLaunchKind, BundleManifest,
+    BundleImageObject, BundleImageObjectAlignment, BundleImageObjectBounds, BundleImageObjectFit,
+    BundleImageObjectPlayback, BundleImageObjectTransform, BundleLaunchKind, BundleManifest,
     BundleRuntimeSummary, BundleSource, BundleVirtualFile, BundleVirtualFileRef,
     BundleVirtualFileSpace,
 };
@@ -541,7 +542,17 @@ fn bundle_image_object(declaration: &DeclaredImageObject) -> Result<BundleImageO
         id: declaration.id().to_owned(),
         asset,
         bounds,
+        fit: image_fit_arg(declaration),
+        alignment: image_alignment_arg(declaration),
+        playback: image_playback_arg(declaration),
+        transform: image_transform_arg(declaration),
+        depth_milli: declaration_arg_value(declaration.args(), "depth")
+            .and_then(parse_depth_arg)
+            .unwrap_or_default(),
         opacity_milli: image_opacity_milli_arg(declaration)?,
+        visible: declaration_arg_value(declaration.args(), "visible")
+            .and_then(parse_bool_arg)
+            .unwrap_or(true),
     })
 }
 
@@ -569,8 +580,144 @@ fn width_height_milli(value: i32) -> Result<u32, ExitCode> {
     })
 }
 
+fn image_fit_arg(declaration: &DeclaredImageObject) -> BundleImageObjectFit {
+    match declaration_arg_value(declaration.args(), "fit").map(unquote_arg) {
+        Some("cover") => BundleImageObjectFit::Cover,
+        Some("stretch") => BundleImageObjectFit::Stretch,
+        Some("intrinsic") => BundleImageObjectFit::Intrinsic,
+        _ => BundleImageObjectFit::Contain,
+    }
+}
+
+fn image_alignment_arg(declaration: &DeclaredImageObject) -> BundleImageObjectAlignment {
+    BundleImageObjectAlignment {
+        x_milli: declaration_arg_value(declaration.args(), "alignment.x")
+            .or_else(|| declaration_arg_value(declaration.args(), "align.x"))
+            .and_then(|value| parse_alignment_component_milli(value, "x"))
+            .unwrap_or(500),
+        y_milli: declaration_arg_value(declaration.args(), "alignment.y")
+            .or_else(|| declaration_arg_value(declaration.args(), "align.y"))
+            .and_then(|value| parse_alignment_component_milli(value, "y"))
+            .unwrap_or(500),
+    }
+}
+
+fn parse_alignment_component_milli(value: &str, axis: &str) -> Option<i32> {
+    match (axis, unquote_arg(value)) {
+        ("x", "left" | "start") | ("y", "top" | "start") => return Some(0),
+        ("x" | "y", "center" | "middle") => return Some(500),
+        ("x", "right" | "end") | ("y", "bottom" | "end") => return Some(1_000),
+        _ => {}
+    }
+    let integer = unquote_arg(value).parse::<i32>().ok()?;
+    Some(if (0..=1).contains(&integer) {
+        integer.saturating_mul(1_000)
+    } else {
+        integer.clamp(0, 1_000)
+    })
+}
+
+fn image_playback_arg(declaration: &DeclaredImageObject) -> BundleImageObjectPlayback {
+    BundleImageObjectPlayback {
+        start_time_millis: declaration_arg_value(declaration.args(), "playback.start")
+            .or_else(|| declaration_arg_value(declaration.args(), "playback.start_time"))
+            .and_then(parse_duration_millis)
+            .unwrap_or_default(),
+        rate_milli: declaration_arg_value(declaration.args(), "playback.rate")
+            .and_then(parse_rate_milli)
+            .unwrap_or(1_000),
+        paused_at_millis: declaration_arg_value(declaration.args(), "playback.paused_at")
+            .and_then(parse_duration_millis),
+        pinned_local_time_millis: declaration_arg_value(declaration.args(), "playback.local_time")
+            .or_else(|| declaration_arg_value(declaration.args(), "playback.pinned_local_time"))
+            .and_then(parse_duration_millis),
+    }
+}
+
+fn image_transform_arg(declaration: &DeclaredImageObject) -> BundleImageObjectTransform {
+    BundleImageObjectTransform {
+        m11_milli: declaration_arg_value(declaration.args(), "transform.m11")
+            .and_then(parse_milli_arg)
+            .unwrap_or(1_000),
+        m12_milli: declaration_arg_value(declaration.args(), "transform.m12")
+            .and_then(parse_milli_arg)
+            .unwrap_or_default(),
+        m21_milli: declaration_arg_value(declaration.args(), "transform.m21")
+            .and_then(parse_milli_arg)
+            .unwrap_or_default(),
+        m22_milli: declaration_arg_value(declaration.args(), "transform.m22")
+            .and_then(parse_milli_arg)
+            .unwrap_or(1_000),
+        tx_milli: declaration_arg_value(declaration.args(), "transform.tx")
+            .and_then(parse_px_milli)
+            .unwrap_or_default(),
+        ty_milli: declaration_arg_value(declaration.args(), "transform.ty")
+            .and_then(parse_px_milli)
+            .unwrap_or_default(),
+    }
+}
+
+fn parse_bool_arg(value: &str) -> Option<bool> {
+    match unquote_arg(value) {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
+}
+
+fn parse_rate_milli(value: &str) -> Option<u32> {
+    let milli = parse_milli_arg(value)?;
+    u32::try_from(milli.max(0)).ok()
+}
+
+fn parse_depth_arg(value: &str) -> Option<i32> {
+    rounded_i32(unquote_arg(value).parse::<f64>().ok()?)
+}
+
+fn parse_milli_arg(value: &str) -> Option<i32> {
+    let value = unquote_arg(value);
+    if let Some(percent) = value.strip_suffix('%') {
+        let parsed = percent.trim().parse::<f64>().ok()?;
+        return rounded_i32(parsed * 10.0);
+    }
+    let parsed = value.parse::<f64>().ok()?;
+    rounded_i32(parsed * 1_000.0)
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
+fn parse_duration_millis(value: &str) -> Option<u64> {
+    let value = unquote_arg(value);
+    let millis = if let Some(ms) = value.strip_suffix("ms") {
+        ms.trim().parse::<f64>().ok()?
+    } else if let Some(seconds) = value.strip_suffix('s') {
+        seconds.trim().parse::<f64>().ok()? * 1_000.0
+    } else {
+        value.parse::<f64>().ok()?
+    };
+    let millis = millis.round();
+    millis
+        .is_finite()
+        .then_some(millis.clamp(0.0, u64::MAX as f64) as u64)
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn rounded_i32(value: f64) -> Option<i32> {
+    let rounded = value.round();
+    rounded
+        .is_finite()
+        .then_some(rounded.clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32)
+}
+
+fn unquote_arg(value: &str) -> &str {
+    value.trim().trim_matches('"').trim_matches('\'')
+}
+
 fn parse_px_milli(value: &str) -> Option<i32> {
-    let pixels = value.trim().strip_suffix("px")?.trim();
+    let pixels = unquote_arg(value).strip_suffix("px")?.trim();
     let (whole, fraction) = pixels.split_once('.').unwrap_or((pixels, ""));
     let sign = whole.starts_with('-');
     let whole_abs = whole.trim_start_matches('-');
@@ -1407,7 +1554,15 @@ image @image.sample.pulse {
     y = 34px
     width = 56px
     height = 78px
+    fit = intrinsic
+    alignment.x = right
+    alignment.y = bottom
+    playback.local_time = 50ms
+    transform.tx = 24px
+    transform.ty = 12px
+    depth = 2500
     opacity = 0.875
+    visible = true
 }
 ",
         );
@@ -1420,7 +1575,28 @@ image @image.sample.pulse {
                 id: "image.sample.pulse".to_owned(),
                 asset: "asset.bg.pulse".to_owned(),
                 bounds: BundleImageObjectBounds::from_px(12, 34, 56, 78),
+                fit: BundleImageObjectFit::Intrinsic,
+                alignment: BundleImageObjectAlignment {
+                    x_milli: 1_000,
+                    y_milli: 1_000,
+                },
+                playback: BundleImageObjectPlayback {
+                    start_time_millis: 0,
+                    rate_milli: 1_000,
+                    paused_at_millis: None,
+                    pinned_local_time_millis: Some(50),
+                },
+                transform: BundleImageObjectTransform {
+                    m11_milli: 1_000,
+                    m12_milli: 0,
+                    m21_milli: 0,
+                    m22_milli: 1_000,
+                    tx_milli: 24_000,
+                    ty_milli: 12_000,
+                },
+                depth_milli: 2500,
                 opacity_milli: 875,
+                visible: true,
             }]
         );
     }

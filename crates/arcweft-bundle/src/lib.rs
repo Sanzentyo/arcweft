@@ -158,8 +158,20 @@ pub struct BundleImageObject {
     pub id: String,
     pub asset: String,
     pub bounds: BundleImageObjectBounds,
+    #[serde(default)]
+    pub fit: BundleImageObjectFit,
+    #[serde(default)]
+    pub alignment: BundleImageObjectAlignment,
+    #[serde(default)]
+    pub playback: BundleImageObjectPlayback,
+    #[serde(default)]
+    pub transform: BundleImageObjectTransform,
+    #[serde(default)]
+    pub depth_milli: i32,
     #[serde(default = "default_opacity_milli")]
     pub opacity_milli: u16,
+    #[serde(default = "default_true")]
+    pub visible: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -168,6 +180,42 @@ pub struct BundleImageObjectBounds {
     pub y_milli: i32,
     pub width_milli: u32,
     pub height_milli: u32,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BundleImageObjectFit {
+    #[default]
+    Contain,
+    Cover,
+    Stretch,
+    Intrinsic,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BundleImageObjectAlignment {
+    pub x_milli: i32,
+    pub y_milli: i32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BundleImageObjectPlayback {
+    pub start_time_millis: u64,
+    pub rate_milli: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paused_at_millis: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned_local_time_millis: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BundleImageObjectTransform {
+    pub m11_milli: i32,
+    pub m12_milli: i32,
+    pub m21_milli: i32,
+    pub m22_milli: i32,
+    pub tx_milli: i32,
+    pub ty_milli: i32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -949,8 +997,59 @@ impl BundleImageObjectBounds {
     }
 }
 
+impl Default for BundleImageObjectAlignment {
+    fn default() -> Self {
+        Self {
+            x_milli: 500,
+            y_milli: 500,
+        }
+    }
+}
+
+impl Default for BundleImageObjectPlayback {
+    fn default() -> Self {
+        Self {
+            start_time_millis: 0,
+            rate_milli: 1_000,
+            paused_at_millis: None,
+            pinned_local_time_millis: None,
+        }
+    }
+}
+
+impl BundleImageObjectPlayback {
+    pub fn local_time_millis(self, visual_time_millis: u64) -> u64 {
+        if let Some(pinned) = self.pinned_local_time_millis {
+            return pinned;
+        }
+        let sample_time = self.paused_at_millis.unwrap_or(visual_time_millis);
+        let elapsed = sample_time.saturating_sub(self.start_time_millis);
+        if self.rate_milli == 0 {
+            return 0;
+        }
+        elapsed.saturating_mul(u64::from(self.rate_milli)) / 1_000
+    }
+}
+
+impl Default for BundleImageObjectTransform {
+    fn default() -> Self {
+        Self {
+            m11_milli: 1_000,
+            m12_milli: 0,
+            m21_milli: 0,
+            m22_milli: 1_000,
+            tx_milli: 0,
+            ty_milli: 0,
+        }
+    }
+}
+
 const fn default_opacity_milli() -> u16 {
     1_000
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 impl BundleVirtualFileSpace {
@@ -1110,7 +1209,28 @@ mod tests {
             id: "image.hero.logo".to_owned(),
             asset: "asset.ui.logo".to_owned(),
             bounds: BundleImageObjectBounds::from_px(10, 20, 320, 180),
+            fit: BundleImageObjectFit::Cover,
+            alignment: BundleImageObjectAlignment {
+                x_milli: 250,
+                y_milli: 750,
+            },
+            playback: BundleImageObjectPlayback {
+                start_time_millis: 40,
+                rate_milli: 500,
+                paused_at_millis: None,
+                pinned_local_time_millis: Some(160),
+            },
+            transform: BundleImageObjectTransform {
+                m11_milli: 1_000,
+                m12_milli: 0,
+                m21_milli: 0,
+                m22_milli: 1_000,
+                tx_milli: 12_000,
+                ty_milli: -3_000,
+            },
+            depth_milli: 2400,
             opacity_milli: 900,
+            visible: true,
         }]);
 
         let bytes = bundle.to_json_bytes().expect("bundle encodes");
@@ -1122,7 +1242,28 @@ mod tests {
                 id: "image.hero.logo".to_owned(),
                 asset: "asset.ui.logo".to_owned(),
                 bounds: BundleImageObjectBounds::from_px(10, 20, 320, 180),
+                fit: BundleImageObjectFit::Cover,
+                alignment: BundleImageObjectAlignment {
+                    x_milli: 250,
+                    y_milli: 750,
+                },
+                playback: BundleImageObjectPlayback {
+                    start_time_millis: 40,
+                    rate_milli: 500,
+                    paused_at_millis: None,
+                    pinned_local_time_millis: Some(160),
+                },
+                transform: BundleImageObjectTransform {
+                    m11_milli: 1_000,
+                    m12_milli: 0,
+                    m21_milli: 0,
+                    m22_milli: 1_000,
+                    tx_milli: 12_000,
+                    ty_milli: -3_000,
+                },
+                depth_milli: 2400,
                 opacity_milli: 900,
+                visible: true,
             })
         );
     }

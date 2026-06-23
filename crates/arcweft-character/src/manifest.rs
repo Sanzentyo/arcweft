@@ -801,6 +801,10 @@ impl CharacterManifest {
 }
 
 impl<'a> ResolvedCharacterLayer<'a> {
+    pub const fn new(part: &'a CharacterPart, variant: &'a CharacterVariant) -> Self {
+        Self { part, variant }
+    }
+
     pub const fn part(self) -> &'a CharacterPart {
         self.part
     }

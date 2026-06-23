@@ -2977,6 +2977,68 @@ fn agent_image_object_color_capture_uses_stored_native_image_frame() {
 }
 
 #[test]
+fn agent_viewport_color_capture_uses_image_frames_without_textbox() {
+    let mut object = test_observed_object("object.image.logo", 1, 1, 2, 2);
+    object.role = "image".to_owned();
+    object.content = AgentObservedObjectContent::Image(Box::new(AgentObservedImageContent {
+        source: "ui.image.7".to_owned(),
+        object: None,
+        target: None,
+        asset: None,
+        frame_index: Some(0),
+        local_time_millis: Some(0),
+        opacity_milli: None,
+        fit: None,
+        alignment: None,
+        transform: None,
+        intrinsic_width: Some(2),
+        intrinsic_height: Some(2),
+        actions: Vec::new(),
+        params: BTreeMap::new(),
+        proxies: Vec::new(),
+    }));
+    let mut report = test_agent_observation_report(None);
+    report.viewport = AgentViewport {
+        width: 4,
+        height: 4,
+        scale: 1.0,
+    };
+    report.objects = vec![object];
+    let mut frames = AgentImageFrameStore::default();
+    frames.insert(
+        "object.image.logo",
+        2,
+        2,
+        vec![255, 0, 0, 255, 0, 0, 0, 0, 0, 255, 0, 255, 0, 0, 255, 255],
+    );
+    let mut native_session = arcweft_render_native::NativeOffscreenCaptureSession::new().unwrap();
+
+    let result = agent_native_capture_image_with_frame_store(
+        &report,
+        &AgentCaptureReadRequest {
+            uri: "arcweft://session/cli/frame/3/color.rgba".to_owned(),
+            image_kind: AgentObserveImageKind::RawRgba,
+            capture_kind: AgentObserveCaptureKind::Color,
+            scope: AgentCaptureScope::Viewport,
+            page: 0,
+            capture_step: 3,
+            capture_time_seconds: 0.0,
+        },
+        &mut native_session,
+        &frames,
+    )
+    .unwrap();
+
+    assert_eq!(result.image.composition, AgentImageComposition::Framebuffer);
+    assert_eq!(result.image.width, 4);
+    assert_eq!(result.image.height, 4);
+    assert_eq!(
+        &result.bytes[((4 + 1) * 4)..((4 + 2) * 4)],
+        &[255, 0, 0, 255]
+    );
+}
+
+#[test]
 #[allow(clippy::too_many_lines)]
 fn agent_ui_image_items_become_typed_image_objects_with_active_frame() {
     use arcweft_id::PublicId;

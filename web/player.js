@@ -3,6 +3,7 @@ import init, { start_arcweft_player } from "./pkg/arcweft_player_web.js";
 const canvas = document.getElementById("arcweft-canvas");
 const loading = document.getElementById("arcweft-loading");
 const fatal = document.getElementById("arcweft-fatal");
+const params = new URLSearchParams(window.location.search);
 
 function showFatal(error) {
   const message = error instanceof Error ? error.message : String(error);
@@ -29,9 +30,11 @@ async function boot() {
   }
 
   await init();
+  const bundleUrl = params.get("bundle") || "./demo.awfb";
+  const fontUrl = params.get("font") || "./assets/arcweft-demo.ttf";
   const [bundleBytes, fontBytes] = await Promise.all([
-    fetchBytes("./demo.awfb", "Arcweft bundle"),
-    fetchBytes("./assets/arcweft-demo.ttf", "Arcweft font"),
+    fetchBytes(bundleUrl, "Arcweft bundle"),
+    fetchBytes(fontUrl, "Arcweft font"),
   ]);
   start_arcweft_player("arcweft-canvas", bundleBytes, fontBytes);
   canvas.focus();

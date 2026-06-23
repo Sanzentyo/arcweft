@@ -3,6 +3,7 @@
 use crate::convert::{f32_to_u8_nonnegative, u32_to_f32, u64_to_f32};
 use crate::geometry::{RenderImage, RenderImageFrame, RenderViewport};
 use arcweft_presentation::hit::HitRect;
+use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectFit, ImageObjectTransform};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DemoImageKind {
@@ -53,24 +54,36 @@ pub fn generated_demo_images(
             id: DemoImageKind::Background.asset_id().to_owned(),
             frame: gradient_background_frame(),
             bounds: HitRect::new(0.0, 0.0, width, height),
+            fit: ImageObjectFit::Cover,
+            alignment: ImageObjectAlignment::center(),
+            transform: ImageObjectTransform::identity(),
             opacity_milli: 1_000,
         },
         RenderImage {
             id: DemoImageKind::CharacterStand.asset_id().to_owned(),
             frame: character_stand_frame(),
             bounds: HitRect::new(width * 0.61, height * 0.14, width * 0.22, height * 0.62),
+            fit: ImageObjectFit::Contain,
+            alignment: ImageObjectAlignment::center(),
+            transform: ImageObjectTransform::identity(),
             opacity_milli: 980,
         },
         RenderImage {
             id: DemoImageKind::GifPulse.asset_id().to_owned(),
             frame: pulse_frame(clock.frame_index(160, 4), [255, 111, 88, 255]),
             bounds: HitRect::new(width * 0.08, height * 0.12, 76.0, 76.0),
+            fit: ImageObjectFit::Stretch,
+            alignment: ImageObjectAlignment::center(),
+            transform: ImageObjectTransform::identity(),
             opacity_milli: 950,
         },
         RenderImage {
             id: DemoImageKind::WebPPulse.asset_id().to_owned(),
             frame: pulse_frame(clock.frame_index(130, 5), [98, 205, 255, 255]),
             bounds: HitRect::new(width * 0.17, height * 0.16, 68.0, 68.0),
+            fit: ImageObjectFit::Stretch,
+            alignment: ImageObjectAlignment::center(),
+            transform: ImageObjectTransform::identity(),
             opacity_milli: 920,
         },
     ]

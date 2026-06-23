@@ -1,0 +1,29 @@
+pub asset @asset.zundamon.normal {
+    kind = image
+    file = "zundamon/normal.png"
+}
+
+pub asset @asset.zundamon.smile {
+    kind = image
+    file = "zundamon/smile.png"
+}
+
+entry game {
+    start @flow.normal
+}
+
+flow normal {
+    image(asset = @asset.zundamon.normal, id = "image.zundamon.stand", target = "target.zundamon.stand", layer = "layer.character", x = 1060px, y = 48px, width = 190px, height = 600px, fit = "contain", alignment.x = "center", alignment.y = "bottom", depth = 1000)
+
+    choice @choice.zundamon.normal {
+        @choice.zundamon.to_smile "Switch to smile" -> @flow.smile
+    }
+}
+
+flow smile {
+    image(asset = @asset.zundamon.smile, id = "image.zundamon.stand", target = "target.zundamon.stand", layer = "layer.character", x = 1060px, y = 48px, width = 190px, height = 600px, fit = "contain", alignment.x = "center", alignment.y = "bottom", depth = 1000)
+
+    choice @choice.zundamon.smile {
+        @choice.zundamon.to_normal "Switch to normal" -> @flow.normal
+    }
+}

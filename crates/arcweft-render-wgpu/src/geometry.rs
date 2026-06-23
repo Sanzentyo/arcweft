@@ -1,6 +1,7 @@
 use crate::convert::usize_to_f32;
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::{HitRect, HitTree};
+use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectFit, ImageObjectTransform};
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::layer::{
     LayerContent, LayerId, LayerInputPolicy, LayerKind, LayerNode, LayerOrder, LayerTree,
@@ -95,6 +96,9 @@ pub struct RenderImage {
     pub id: String,
     pub frame: RenderImageFrame,
     pub bounds: HitRect,
+    pub fit: ImageObjectFit,
+    pub alignment: ImageObjectAlignment,
+    pub transform: ImageObjectTransform,
     pub opacity_milli: u16,
 }
 

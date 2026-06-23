@@ -1,6 +1,7 @@
 use arcweft_bundle::{ArcweftBundle, BundleCodecError, BundleImageFormat, BundleImageObject};
 use arcweft_image::{DecodedImage, ImageDecodeOptions, ImageError, ImageFormat};
 use arcweft_presentation::hit::HitRect;
+use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectFit, ImageObjectTransform};
 use arcweft_render_wgpu::geometry::{RenderImage, RenderImageFrame};
 use num_traits::ToPrimitive;
 use thiserror::Error;
@@ -81,7 +82,7 @@ impl BundleImageCatalog {
             })?;
         let frame = decoded
             .image
-            .frame_at_time_millis(elapsed_millis)
+            .frame_at_time_millis(object.playback.local_time_millis(elapsed_millis))
             .ok_or_else(|| BundleImageCatalogError::Decode {
                 asset_id: object.asset.clone(),
                 message: "decoded image has no frame at visual time".to_owned(),
@@ -94,6 +95,19 @@ impl BundleImageCatalog {
                 rgba: frame.rgba().to_vec(),
             },
             bounds: render_bounds(object)?,
+            fit: render_fit(object.fit),
+            alignment: ImageObjectAlignment::new(
+                object.alignment.x_milli,
+                object.alignment.y_milli,
+            ),
+            transform: ImageObjectTransform {
+                m11_milli: object.transform.m11_milli,
+                m12_milli: object.transform.m12_milli,
+                m21_milli: object.transform.m21_milli,
+                m22_milli: object.transform.m22_milli,
+                tx_milli: object.transform.tx_milli,
+                ty_milli: object.transform.ty_milli,
+            },
             opacity_milli: object.opacity_milli,
         })
     }
@@ -121,6 +135,15 @@ fn image_format(format: BundleImageFormat) -> ImageFormat {
         BundleImageFormat::Jpeg => ImageFormat::Jpeg,
         BundleImageFormat::Gif => ImageFormat::Gif,
         BundleImageFormat::WebP => ImageFormat::WebP,
+    }
+}
+
+fn render_fit(fit: arcweft_bundle::BundleImageObjectFit) -> ImageObjectFit {
+    match fit {
+        arcweft_bundle::BundleImageObjectFit::Contain => ImageObjectFit::Contain,
+        arcweft_bundle::BundleImageObjectFit::Cover => ImageObjectFit::Cover,
+        arcweft_bundle::BundleImageObjectFit::Stretch => ImageObjectFit::Stretch,
+        arcweft_bundle::BundleImageObjectFit::Intrinsic => ImageObjectFit::Intrinsic,
     }
 }
 

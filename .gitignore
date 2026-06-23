@@ -5,6 +5,8 @@
 /web/test-results/
 /web/playwright-report/
 /web/pkg/
+/web/local/
+/samples/**/.arcweft/
 /.review-temp/
 /.review-tmp/
 /.arcweft-local/

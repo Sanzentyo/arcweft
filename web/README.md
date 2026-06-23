@@ -55,6 +55,20 @@ deno task serve
 
 Open `http://127.0.0.1:4173/index.html` in Chrome with WebGPU enabled.
 
+To load an ignored local sample bundle without replacing `web/demo.awfb`, copy it
+under `web/local/` and pass it as a query parameter:
+
+```bash
+New-Item -ItemType Directory -Force web/local
+Copy-Item target/zundamon-stand-switch.awfb web/local/zundamon-stand-switch.awfb
+```
+
+Then open:
+
+```text
+http://127.0.0.1:4173/index.html?bundle=./local/zundamon-stand-switch.awfb
+```
+
 ## Native/Web Pixel Parity
 
 The full local parity route rebuilds the bundle, compiles the Wasm player,
