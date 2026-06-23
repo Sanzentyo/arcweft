@@ -1,4 +1,5 @@
 use crate::types::{EntityType, TypeKind};
+use arcweft_character::manifest::CharacterManifest;
 use arcweft_lang_syntax::types::FnParamKind;
 use std::collections::{HashMap, HashSet};
 
@@ -358,6 +359,63 @@ impl TypeCheckEnv {
             .or_default()
             .extend(variants.into_iter().map(Into::into));
         self
+    }
+
+    /// Registers look, part, and per-part variant enums from one validated manifest.
+    #[must_use]
+    pub fn with_character_manifest(mut self, manifest: &CharacterManifest) -> Self {
+        let character = manifest.character().as_str();
+        self = self.with_enum_variants(
+            TypeKind::character_look(character),
+            manifest.looks().iter().map(|look| look.id().as_str()),
+        );
+        self = self.with_enum_variants(
+            TypeKind::character_part(character),
+            manifest.parts().iter().map(|part| part.id().as_str()),
+        );
+        for part in manifest.parts() {
+            self = self.with_enum_variants(
+                TypeKind::character_variant(character, part.id().as_str()),
+                part.variants().iter().map(|variant| variant.id().as_str()),
+            );
+        }
+        self
+    }
+
+    /// Returns the registered look enum type when character metadata is loaded.
+    pub fn character_look_type(&self, character: &str) -> Option<TypeKind> {
+        let ty = TypeKind::character_look(character);
+        self.enum_variants.contains_key(&ty).then_some(ty)
+    }
+
+    /// Returns sorted manifest-declared looks for tooling and tests.
+    pub fn character_look_variants(&self, character: &str) -> Option<Vec<String>> {
+        let ty = TypeKind::character_look(character);
+        self.enum_variants.get(&ty).map(|variants| {
+            let mut variants = variants.iter().cloned().collect::<Vec<_>>();
+            variants.sort();
+            variants
+        })
+    }
+
+    /// Returns sorted manifest-declared part ids for tooling and tests.
+    pub fn character_part_variants(&self, character: &str) -> Option<Vec<String>> {
+        let ty = TypeKind::character_part(character);
+        self.enum_variants.get(&ty).map(|variants| {
+            let mut variants = variants.iter().cloned().collect::<Vec<_>>();
+            variants.sort();
+            variants
+        })
+    }
+
+    /// Returns sorted manifest-declared variants for one character part.
+    pub fn character_variant_variants(&self, character: &str, part: &str) -> Option<Vec<String>> {
+        let ty = TypeKind::character_variant(character, part);
+        self.enum_variants.get(&ty).map(|variants| {
+            let mut variants = variants.iter().cloned().collect::<Vec<_>>();
+            variants.sort();
+            variants
+        })
     }
 
     /// Returns registered enum-like unit variants grouped by semantic type in

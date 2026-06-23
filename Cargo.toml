@@ -21,6 +21,9 @@ members = [
     "crates/arcweft-host-adapter",
     "crates/arcweft-dialogue",
     "crates/arcweft-id",
+    "crates/arcweft-character",
+    "crates/arcweft-character-psd",
+    "crates/arcweft-character-ui",
     "crates/arcweft-image",
     "crates/arcweft-interaction-model",
     "crates/arcweft-memory",
@@ -92,6 +95,9 @@ license = "MIT OR Apache-2.0"
 repository = "https://example.invalid/arcweft"
 
 [workspace.dependencies]
+arcweft-character = { path = "crates/arcweft-character" }
+arcweft-character-psd = { path = "crates/arcweft-character-psd" }
+arcweft-character-ui = { path = "crates/arcweft-character-ui" }
 arcweft-data = { path = "crates/arcweft-data" }
 arcweft-data-derive = { path = "crates/arcweft-data-derive" }
 arcweft-codec-json = { path = "crates/arcweft-codec-json" }
@@ -140,6 +146,7 @@ ndarray = "0.17.2"
 num_cpus = "1.17.0"
 oxiz-solver = "0.2.1"
 png = "0.18.1"
+psd = "0.3.5"
 pollster = "0.4.0"
 rayon = "1.12.0"
 rfd = "0.17.2"

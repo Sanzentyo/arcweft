@@ -70,6 +70,8 @@ pub struct LaunchProfileSpec {
     #[serde(default)]
     dialogue_defaults: Option<String>,
     #[serde(default)]
+    character_manifests: Vec<PathBuf>,
+    #[serde(default)]
     pure: Option<LaunchPureProfileSpec>,
     #[serde(default)]
     rust_metadata: Vec<PathBuf>,
@@ -103,6 +105,7 @@ pub struct ResolvedLaunchProfile {
     adapter_manifests: Vec<PathBuf>,
     listen: Option<String>,
     dialogue_defaults: Option<String>,
+    character_manifests: Vec<PathBuf>,
     pure: Option<LaunchPureProfileSpec>,
     rust_metadata: Vec<PathBuf>,
 }
@@ -176,6 +179,17 @@ impl LaunchProfileManifest {
         } else {
             manifest_dir.join(&spec.source)
         };
+        let character_manifests = spec
+            .character_manifests
+            .iter()
+            .map(|path| {
+                if path.is_absolute() {
+                    path.clone()
+                } else {
+                    manifest_dir.join(path)
+                }
+            })
+            .collect();
         let rust_metadata = spec
             .rust_metadata
             .iter()
@@ -207,6 +221,7 @@ impl LaunchProfileManifest {
             adapter_manifests,
             listen: spec.listen.clone(),
             dialogue_defaults: spec.dialogue_defaults.clone(),
+            character_manifests,
             pure: spec.pure.clone(),
             rust_metadata,
         })
@@ -257,6 +272,11 @@ impl ResolvedLaunchProfile {
     /// Optional dialogue defaults profile selected by this launch profile.
     pub fn dialogue_defaults(&self) -> Option<&str> {
         self.dialogue_defaults.as_deref()
+    }
+
+    /// Character package manifests selected by this launch profile.
+    pub fn character_manifests(&self) -> &[PathBuf] {
+        &self.character_manifests
     }
 
     /// Optional pure-helper execution policy selected by the profile.

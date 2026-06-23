@@ -1,17 +1,17 @@
 [package]
-name = "arcweft-lang-sema"
+name = "arcweft-character-psd"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = false
 
 [dependencies]
 arcweft-character = { path = "../arcweft-character" }
-arcweft-id = { path = "../arcweft-id" }
-arcweft-lang-hir = { path = "../arcweft-lang-hir" }
-arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
-arcweft-source = { path = "../arcweft-source" }
+blake3.workspace = true
+png.workspace = true
+psd.workspace = true
 thiserror.workspace = true
 
 [lib]

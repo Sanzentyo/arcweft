@@ -115,6 +115,7 @@ pub enum LayerInputPolicy {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LayerContent {
     Empty,
+    Character(crate::character::CharacterRenderSpec),
     TextBox(PublicId),
     Activity(PublicId),
     NativeUi(PublicId),

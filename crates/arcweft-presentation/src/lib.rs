@@ -1,7 +1,9 @@
+use self::character::CharacterRenderSpec;
 use arcweft_id::PublicId;
 use core::marker::PhantomData;
 use std::collections::HashMap;
 
+pub mod character;
 pub mod gesture;
 pub mod hit;
 pub mod hover;
@@ -84,6 +86,7 @@ pub struct BackgroundSurface {
 pub struct CharacterSurface {
     character: PublicId,
     expression: Option<PublicId>,
+    render: Option<CharacterRenderSpec>,
 }
 
 /// Typed registry for one presentation surface family.
@@ -141,6 +144,20 @@ pub fn show_character(
         CharacterSurface::new(character.clone(), Some(expression_name)),
         PresentationTarget::scene(),
         PresentationSlot::character(character),
+        scope,
+    )
+}
+
+/// Stages a validated character composition resolved from an `.awchar` manifest.
+pub fn show_character_rendered(
+    render: CharacterRenderSpec,
+    scope: PresentationScope,
+) -> PresentationHandle<CharacterSurface> {
+    let character = render.character().as_public_id();
+    PresentationHandle::new(
+        CharacterSurface::from_render_spec(render),
+        PresentationTarget::scene(),
+        PresentationSlot::character(&character),
         scope,
     )
 }
@@ -255,6 +272,18 @@ impl CharacterSurface {
         Self {
             character,
             expression: expression_name.map(expression),
+            render: None,
+        }
+    }
+
+    /// Creates a stage surface from a validated manifest/look resolution.
+    pub fn from_render_spec(render: CharacterRenderSpec) -> Self {
+        let character = render.character().as_public_id();
+        let expression = Some(expression(render.look().as_str()));
+        Self {
+            character,
+            expression,
+            render: Some(render),
         }
     }
 
@@ -264,6 +293,10 @@ impl CharacterSurface {
 
     pub const fn expression(&self) -> Option<&PublicId> {
         self.expression.as_ref()
+    }
+
+    pub const fn render_spec(&self) -> Option<&CharacterRenderSpec> {
+        self.render.as_ref()
     }
 }
 

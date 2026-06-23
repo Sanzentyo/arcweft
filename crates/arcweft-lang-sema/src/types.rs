@@ -208,6 +208,36 @@ impl TypeKind {
         matches!(self, Self::F32 | Self::F64)
     }
 
+    /// Per-character enum type used for manifest-declared look values.
+    #[must_use]
+    pub fn character_look(character: impl AsRef<str>) -> Self {
+        Self::Named(format!("CharacterLook<{}>", character.as_ref()))
+    }
+
+    /// Per-character enum type used for manifest-declared part ids.
+    #[must_use]
+    pub fn character_part(character: impl AsRef<str>) -> Self {
+        Self::Named(format!("CharacterPart<{}>", character.as_ref()))
+    }
+
+    /// Per-character, per-part enum type used for manifest-declared variants.
+    #[must_use]
+    pub fn character_variant(character: impl AsRef<str>, part: impl AsRef<str>) -> Self {
+        Self::Named(format!(
+            "CharacterVariant<{},{}>",
+            character.as_ref(),
+            part.as_ref()
+        ))
+    }
+
+    /// Character id encoded by a `CharacterLook<...>` semantic type.
+    pub fn character_look_character(&self) -> Option<&str> {
+        let Self::Named(name) = self else {
+            return None;
+        };
+        name.strip_prefix("CharacterLook<")?.strip_suffix('>')
+    }
+
     #[must_use]
     pub fn primitive_name(name: &str) -> Option<Self> {
         Some(match name {

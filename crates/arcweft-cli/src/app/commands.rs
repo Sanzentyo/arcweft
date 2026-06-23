@@ -1,6 +1,7 @@
 use super::agent::{AgentHitTestOptions, AgentMcpOptions, AgentObserveOptions, AgentReplOptions};
 use super::bundle::{BundleOptions, RunBundleOptions};
 use super::debug::DebugCommand;
+use super::import::ImportCommand;
 use super::jit::JitCheckOptions;
 #[cfg(feature = "native-player")]
 use super::native_player::NativePlayerOptions;
@@ -23,6 +24,10 @@ pub(super) struct Cli {
 #[derive(Debug, Subcommand)]
 pub(super) enum CliCommand {
     Check(CheckOptions),
+    Import {
+        #[command(subcommand)]
+        command: ImportCommand,
+    },
     Agent {
         #[command(subcommand)]
         command: AgentCommand,

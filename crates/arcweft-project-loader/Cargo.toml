@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 arcweft-adapter-context = { path = "../arcweft-adapter-context" }
+arcweft-character = { path = "../arcweft-character" }
 arcweft-rust-abi = { path = "../arcweft-rust-abi" }
 thiserror.workspace = true
 

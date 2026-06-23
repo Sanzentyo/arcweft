@@ -8,6 +8,14 @@ pub mod adt {
     pub use arcweft_adt::*;
 }
 
+pub mod character {
+    pub use arcweft_character::*;
+}
+
+pub mod character_ui {
+    pub use arcweft_character_ui::*;
+}
+
 pub mod core {
     pub use arcweft_core::*;
 }

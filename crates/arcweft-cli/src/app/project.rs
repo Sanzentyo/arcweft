@@ -6,6 +6,7 @@ use super::runtime::profile::run_profile_phase;
 use super::shared::is_arcw_path;
 use crate::output::RuntimeProfilePhase;
 use arcweft_adapter_context::{manifest::AdapterManifest, standard};
+use arcweft_character::catalog::CharacterCatalog;
 use arcweft_compiler::{hir, parse};
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_lang_sema::{check::TypeCheckReport, env::TypeCheckEnv};
@@ -231,11 +232,22 @@ pub(in crate::app) fn typecheck_env_for_selection(
             manifest = manifest.with_rust_manifest(&rust_manifest);
         }
     }
+    let characters = if selection.profile().is_some() {
+        run_profile_phase(phases, "character_manifests", || {
+            character_catalog_for_selection(selection)
+        })?
+    } else {
+        CharacterCatalog::new()
+    };
     let env = if adapter_override.is_some() || selection.profile().is_some() {
         manifest.apply_to_target_env(TypeCheckEnv::standard())
     } else {
         manifest.apply_to_env(TypeCheckEnv::standard())
     };
+    let env = characters.manifests().fold(
+        env,
+        arcweft_lang_sema::env::TypeCheckEnv::with_character_manifest,
+    );
     Ok(arcweft_adapter_desktop::standard_desktop_manifests()
         .into_iter()
         .fold(env, |env, manifest| manifest.apply_to_env(env)))
@@ -293,6 +305,32 @@ fn adapter_registry_for_selection(
                     ExitCode::FAILURE
                 })
         })
+}
+
+fn character_catalog_for_selection(
+    selection: &SourceSelection,
+) -> Result<CharacterCatalog, ExitCode> {
+    let Some(profile) = selection.profile() else {
+        return Ok(CharacterCatalog::new());
+    };
+    let mut catalog = CharacterCatalog::new();
+    for path in profile.character_manifests() {
+        let manifest = arcweft_project_loader::character_manifest::load(path).map_err(|error| {
+            eprintln!(
+                "error: failed to load character manifest {}: {error}",
+                path.display()
+            );
+            ExitCode::FAILURE
+        })?;
+        catalog.insert(manifest).map_err(|error| {
+            eprintln!(
+                "error: failed to register character manifest {}: {error}",
+                path.display()
+            );
+            ExitCode::FAILURE
+        })?;
+    }
+    Ok(catalog)
 }
 
 fn rust_metadata_for_selection(

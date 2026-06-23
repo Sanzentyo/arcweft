@@ -213,6 +213,8 @@ name = "arcweft"
 version = "0.1.0"
 dependencies = [
  "arcweft-adt",
+ "arcweft-character",
+ "arcweft-character-ui",
  "arcweft-core",
  "arcweft-dialogue",
  "arcweft-id",
@@ -399,6 +401,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-character"
+version = "0.1.0"
+dependencies = [
+ "arcweft-id",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "arcweft-character-psd"
+version = "0.1.0"
+dependencies = [
+ "arcweft-character",
+ "blake3",
+ "png",
+ "psd",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "arcweft-character-ui"
+version = "0.1.0"
+dependencies = [
+ "arcweft-character",
+ "arcweft-image",
+ "arcweft-presentation",
+ "arcweft-ui",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arcweft-cli"
 version = "0.1.0"
 dependencies = [
@@ -410,6 +444,8 @@ dependencies = [
  "arcweft-agent-protocol",
  "arcweft-agent-runner",
  "arcweft-bundle",
+ "arcweft-character",
+ "arcweft-character-psd",
  "arcweft-compiler",
  "arcweft-content-policy",
  "arcweft-core",
@@ -740,6 +776,7 @@ dependencies = [
 name = "arcweft-lang-sema"
 version = "0.1.0"
 dependencies = [
+ "arcweft-character",
  "arcweft-id",
  "arcweft-lang-hir",
  "arcweft-lang-syntax",
@@ -771,6 +808,7 @@ name = "arcweft-lsp"
 version = "0.1.0"
 dependencies = [
  "arcweft-adapter-context",
+ "arcweft-character",
  "arcweft-compiler",
  "arcweft-lang-hir",
  "arcweft-lang-sema",
@@ -881,6 +919,7 @@ dependencies = [
 name = "arcweft-presentation"
 version = "0.1.0"
 dependencies = [
+ "arcweft-character",
  "arcweft-id",
 ]
 
@@ -889,6 +928,7 @@ name = "arcweft-project-loader"
 version = "0.1.0"
 dependencies = [
  "arcweft-adapter-context",
+ "arcweft-character",
  "arcweft-rust-abi",
  "thiserror 2.0.18",
 ]
@@ -4991,6 +5031,15 @@ name = "profiling"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
+
+[[package]]
+name = "psd"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a25f9b8cfffd65d911baf31a033239f7a0facb755faa2481575b70db5dc9195"
+dependencies = [
+ "thiserror 1.0.69",
+]
 
 [[package]]
 name = "pxfm"

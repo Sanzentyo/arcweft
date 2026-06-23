@@ -17,6 +17,8 @@ arcweft-core = { path = "../arcweft-core" }
 arcweft-adapter-context = { path = "../arcweft-adapter-context" }
 arcweft-adapter-desktop = { path = "../arcweft-adapter-desktop" }
 arcweft-bundle = { path = "../arcweft-bundle" }
+arcweft-character = { path = "../arcweft-character" }
+arcweft-character-psd = { path = "../arcweft-character-psd" }
 arcweft-compiler = { path = "../arcweft-compiler" }
 arcweft-debug-sqlite = { path = "../arcweft-debug-sqlite" }
 arcweft-debug-model = { path = "../arcweft-debug-model" }

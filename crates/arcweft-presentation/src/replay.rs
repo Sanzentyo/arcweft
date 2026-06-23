@@ -194,6 +194,33 @@ fn hash_layer_content(hasher: &mut StableHasher, content: &LayerContent) {
             hasher.u32(5);
             hasher.public_id(id);
         }
+        LayerContent::Character(render) => {
+            hasher.u32(6);
+            hasher.str(render.character().as_str());
+            hasher.str(render.look().as_str());
+            let canvas = render.canvas();
+            hasher.u32(canvas.width());
+            hasher.u32(canvas.height());
+            let anchor = render.anchor();
+            hasher.i32(anchor.x());
+            hasher.i32(anchor.y());
+            hasher.u64(render.layers().len() as u64);
+            for layer in render.layers() {
+                hasher.str(layer.part().as_str());
+                hasher.str(layer.variant().as_str());
+                hasher.public_id(layer.asset_id());
+                hasher.str(layer.asset_path().as_str());
+                let rect = layer.rect();
+                hasher.i32(rect.x());
+                hasher.i32(rect.y());
+                hasher.u32(rect.width());
+                hasher.u32(rect.height());
+                hasher.i32(layer.z());
+                hasher.u32(u32::from(layer.opacity()));
+                hasher.u32(layer.blend().stable_code());
+                hasher.bool(layer.clipping());
+            }
+        }
     }
 }
 

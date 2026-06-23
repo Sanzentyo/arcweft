@@ -12,6 +12,7 @@ over strings or byte slices.
 - [Module Manifest](module-manifest.md)
 - [Audio Manifest](audio-manifest.md)
 - [Layer Manifest](layer-manifest.md)
+- [Character Manifest](character-manifest.md)
 - [Layer Tree](layer-tree.md)
 - [Hook Manifest](hook-manifest.md)
 - [Memo Cache](memo-cache.md)
