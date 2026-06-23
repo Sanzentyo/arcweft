@@ -79,6 +79,9 @@ cargo run -p arcweft-cli -- verify \
 cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .
 ```
 
-The Z3 command requires a `z3` executable on `PATH` or a configured command
-path. OxiZ 0.2.1 is sufficient for the checked-in smoke examples, but its
-branch-heavy LIA support is not treated as a complete replacement for Z3.
+The Z3 command requires a `z3` executable on `PATH`, `--z3-command`,
+`ARCWEFT_Z3_COMMAND`, or `ARCWEFT_Z3_BIN`. `ARCWEFT_Z3_COMMAND` points to the
+executable; `ARCWEFT_Z3_BIN` points to the directory that contains `z3`.
+Do not commit local solver install paths to the repository. OxiZ 0.2.1 is
+sufficient for the checked-in smoke examples, but its branch-heavy LIA support
+is not treated as a complete replacement for Z3.

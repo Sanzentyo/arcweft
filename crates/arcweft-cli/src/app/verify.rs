@@ -34,9 +34,13 @@ use arcweft_verify::{
 use arcweft_verify_oxiz::OxizBackend;
 use arcweft_verify_z3::ExternalZ3Backend;
 use clap::Args;
-use std::fs;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::{env, fs};
+
+const Z3_COMMAND_ENV: &str = "ARCWEFT_Z3_COMMAND";
+const Z3_BIN_ENV: &str = "ARCWEFT_Z3_BIN";
 
 pub(super) fn check_command(options: &CheckOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
@@ -92,7 +96,8 @@ pub(super) fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
         emit_smt(path, &report)?;
     }
     if matches!(options.backend, BackendKind::Oxiz | BackendKind::Z3) {
-        solve_report(&mut report, options.backend, options.z3_command.as_deref());
+        let z3_command = resolve_z3_command(options);
+        solve_report(&mut report, options.backend, z3_command.as_deref());
     }
     if options.json {
         print_json(&report)?;
@@ -342,7 +347,7 @@ pub(in crate::app) struct VerifyOptions {
     emit_obligations: Option<PathBuf>,
     #[arg(long)]
     emit_smt: Option<PathBuf>,
-    #[arg(long, alias = "z3-command")]
+    #[arg(long, alias = "solver-command")]
     z3_command: Option<String>,
 }
 
@@ -446,7 +451,33 @@ fn emit_smt(path: &Path, report: &VerificationReport) -> Result<(), ExitCode> {
     Ok(())
 }
 
-fn solve_report(report: &mut VerificationReport, backend: BackendKind, z3_command: Option<&str>) {
+fn resolve_z3_command(options: &VerifyOptions) -> Option<OsString> {
+    options
+        .z3_command
+        .as_ref()
+        .map(OsString::from)
+        .or_else(|| non_empty_env_os(Z3_COMMAND_ENV))
+        .or_else(|| non_empty_env_os(Z3_BIN_ENV).map(z3_command_from_bin))
+}
+
+fn non_empty_env_os(name: &str) -> Option<OsString> {
+    env::var_os(name).filter(|value| !value.is_empty())
+}
+
+fn z3_command_from_bin(value: OsString) -> OsString {
+    let path = PathBuf::from(&value);
+    if path.file_name().is_some_and(|name| {
+        let name = name.to_string_lossy();
+        name.eq_ignore_ascii_case("z3") || name.eq_ignore_ascii_case("z3.exe")
+    }) {
+        value
+    } else {
+        path.join(if cfg!(windows) { "z3.exe" } else { "z3" })
+            .into_os_string()
+    }
+}
+
+fn solve_report(report: &mut VerificationReport, backend: BackendKind, z3_command: Option<&OsStr>) {
     let checks = report
         .obligations
         .iter()
@@ -462,8 +493,9 @@ fn solve_report(report: &mut VerificationReport, backend: BackendKind, z3_comman
             BackendKind::Emit => continue,
             BackendKind::Oxiz => OxizBackend.check(&problem),
             BackendKind::Z3 => {
-                let backend =
-                    z3_command.map_or_else(ExternalZ3Backend::default, ExternalZ3Backend::new);
+                let backend = z3_command.map_or_else(ExternalZ3Backend::default, |command| {
+                    ExternalZ3Backend::new(command.to_os_string())
+                });
                 backend.check(&problem)
             }
         };
@@ -478,5 +510,27 @@ fn solve_report(report: &mut VerificationReport, backend: BackendKind, z3_comman
             Err(error) => eprintln!("solver[{backend:?}] {obligation}: {error}"),
         }
         report.record_solver_check(&obligation, backend, outcome);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::z3_command_from_bin;
+    use std::ffi::OsString;
+    use std::path::PathBuf;
+
+    #[test]
+    fn z3_bin_env_points_to_platform_executable() {
+        let command = PathBuf::from(z3_command_from_bin(OsString::from("D:/tools/z3/bin")));
+        assert!(command.ends_with(if cfg!(windows) { "z3.exe" } else { "z3" }));
+    }
+
+    #[test]
+    fn z3_bin_env_accepts_direct_executable_path() {
+        let command = z3_command_from_bin(OsString::from("D:/tools/z3/bin/z3.exe"));
+        assert_eq!(
+            PathBuf::from(command),
+            PathBuf::from("D:/tools/z3/bin/z3.exe")
+        );
     }
 }

@@ -13,8 +13,22 @@ cargo run -p arcweft-cli -- verify \
   --mode test --backend z3 --json
 ```
 
-The Z3 route requires a `z3` executable on `PATH`. The OxiZ route is pure Rust
-and is the default smoke path for this directory.
+The Z3 route requires a `z3` executable on `PATH`, `--z3-command`, or one of
+these environment variables:
+
+```bash
+ARCWEFT_Z3_COMMAND=/path/to/z3
+ARCWEFT_Z3_BIN=/path/to/z3/bin
+```
+
+On Windows PowerShell, set only your local environment, not a repository file:
+
+```powershell
+$env:ARCWEFT_Z3_BIN = "D:\path\to\z3\bin"
+```
+
+The OxiZ route is pure Rust and remains the default smoke path for this
+directory.
 
 All obligations in `valid.arcw` should be `unsat`, which proves their
 postconditions. `mutants.arcw` is expected to fail: each mutated implementation
