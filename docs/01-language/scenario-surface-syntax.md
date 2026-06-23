@@ -142,7 +142,7 @@ use crate::game::prelude::*
 use self::characters::{alice}
 
 pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    bg(@asset.bg.room, fade = 300ms)
+    bg(@asset:.bg.room, fade = 300ms)
     show(@character.alice, .normal, at = .center, fade = 200ms)
 
     scope rain {
@@ -588,7 +588,7 @@ Scenario staging is expressed as ordinary effectful calls inside `flow` and
 stable grammar; `@` is reserved for entity references.
 
 ```arcw
-bg(@asset.bg.school_evening, fade = 600ms)
+bg(@asset:.bg.school_evening, fade = 600ms)
 show(@character.alice, .normal, at = .center, layer = @layer.characters, fade = 200ms)
 face(@character.alice, .smile, crossfade = 120ms)
 move(@character.alice, to = .left, time = 350ms, ease = cubic.out)
@@ -603,7 +603,7 @@ matching clear API.
 
 ```arcw
 scope opening_view {
-    let room = bg(@asset.bg.school_evening, fade = 600ms)
+    let room = bg(@asset:.bg.school_evening, fade = 600ms)
     let alice_on_stage = show(@character.alice, .normal, at = .center)
 
     alice: おはよう。[p]
@@ -617,7 +617,7 @@ one existed, reading it does not change it, and clearing it returns the current
 value if present.
 
 ```arcw
-let previous_bg = bg(@asset.bg.room, target = @target.scene, slot = @slot.background.main)
+let previous_bg = bg(@asset:.bg.room, target = @target.scene, slot = @slot.background.main)
 let current_bg = bg.ref(target = @target.scene, slot = @slot.background.main)
 let cleared_bg = bg.clear(target = @target.scene, slot = @slot.background.main)
 ```
@@ -638,8 +638,8 @@ If more than one background or one instance of the same character must coexist,
 the author must specify a different `target` or `slot`:
 
 ```arcw
-let far = bg(@asset.bg.city_far, slot = @slot.background.far)
-let near = bg(@asset.bg.city_near, slot = @slot.background.near)
+let far = bg(@asset:.bg.city_far, slot = @slot.background.far)
+let near = bg(@asset:.bg.city_near, slot = @slot.background.near)
 
 let alice_main = show(@character.alice, .smile, slot = @slot.character.alice.main)
 let alice_reflection = show(@character.alice, .sad, slot = @slot.character.alice.reflection)

@@ -1,32 +1,32 @@
-pub asset @asset.bg.room {
+pub asset bg.room {
     kind = image
     file = "bg/room.png"
 }
 
-pub asset @asset.bg.garden {
+pub asset bg.garden {
     kind = image
     file = "bg/garden.jpg"
 }
 
-pub asset @asset.bg.poster {
+pub asset bg.poster {
     kind = image
     file = "bg/poster.webp"
 }
 
-pub asset @asset.bg.pulse {
+pub asset bg.pulse {
     kind = image
     file = "bg/pulse.gif"
     animation = true
 }
 
-pub asset @asset.bg.loop {
+pub asset bg.loop {
     kind = image
     file = "bg/loop.webp"
     animation = true
 }
 
 pub image @image.sample.pulse_sprite {
-    asset = @asset.bg.pulse
+    asset = @asset:.bg.pulse
     target = @target.sample.pulse_sprite
     layer = @layer.foreground
     x = 96px
@@ -72,7 +72,7 @@ entry game {
 }
 
 flow image_static_png {
-    bg(@asset.bg.room)
+    bg(@asset:.bg.room)
 
     narrator.say(id=@say.image.static_png, voice=auto)[
         Static PNG background image as a first-class presentation object.[p]
@@ -82,7 +82,7 @@ flow image_static_png {
 }
 
 flow image_static_jpeg {
-    bg(@asset.bg.garden)
+    bg(@asset:.bg.garden)
 
     narrator.say(id=@say.image.static_jpeg, voice=auto)[
         Static JPEG background image follows the same Agent capture path.[p]
@@ -92,7 +92,7 @@ flow image_static_jpeg {
 }
 
 flow image_static_webp {
-    bg(@asset.bg.poster, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom", opacity = 0.75)
+    bg(@asset:.bg.poster, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom", opacity = 0.75)
 
     narrator.say(id=@say.image.static_webp, voice=auto)[
         Static WebP background image is decoded into the same image frame model.[p]
@@ -102,7 +102,7 @@ flow image_static_webp {
 }
 
 flow image_animated_gif {
-    bg(@asset.bg.pulse)
+    bg(@asset:.bg.pulse)
 
     narrator.say(id=@say.image.animated_gif, voice=auto)[
         Animated GIF background image is selected from deterministic capture time.[p]
@@ -112,7 +112,7 @@ flow image_animated_gif {
 }
 
 flow image_animated_webp {
-    bg(@asset.bg.loop)
+    bg(@asset:.bg.loop)
 
     narrator.say(id=@say.image.animated_webp, voice=auto)[
         Animated WebP background image uses the same deterministic frame selection contract.[p]
@@ -122,7 +122,7 @@ flow image_animated_webp {
 }
 
 flow image_sprite_overlay {
-    bg(@asset.bg.room)
+    bg(@asset:.bg.room)
     image(@image.sample.pulse_sprite)
 
     narrator.say(id=@say.image.sprite_overlay, voice=auto)[
@@ -133,8 +133,8 @@ flow image_sprite_overlay {
 }
 
 flow image_clipped_object {
-    bg(@asset.bg.room)
-    image(asset = @asset.bg.pulse, id = "image.sample.clipped_pulse", target = "target.sample.clipped_pulse", layer = "layer.clipped", x = 1184px, y = 48px, width = 192px, height = 96px, fit = "stretch", opacity = 0.5, depth = 2700, enabled = true, visible = true, action = "action.inspect.clipped_pulse", param.role = "clipped-animated-hotspot")
+    bg(@asset:.bg.room)
+    image(asset = @asset:.bg.pulse, id = "image.sample.clipped_pulse", target = "target.sample.clipped_pulse", layer = "layer.clipped", x = 1184px, y = 48px, width = 192px, height = 96px, fit = "stretch", opacity = 0.5, depth = 2700, enabled = true, visible = true, action = "action.inspect.clipped_pulse", param.role = "clipped-animated-hotspot")
 
     narrator.say(id=@say.image.clipped_object, voice=auto)[
         Clipped animated image object proves object capture uses viewport-visible geometry.[p]
@@ -144,8 +144,8 @@ flow image_clipped_object {
 }
 
 flow image_alignment_object {
-    bg(@asset.bg.room)
-    image(asset = @asset.bg.poster, id = "image.sample.aligned_poster", target = "target.sample.aligned_poster", layer = "layer.aligned", x = 96px, y = 72px, width = 360px, height = 180px, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom", opacity = 1, depth = 2400, enabled = true, visible = true, action = "action.inspect.aligned_poster", param.role = "aligned-static-hotspot")
+    bg(@asset:.bg.room)
+    image(asset = @asset:.bg.poster, id = "image.sample.aligned_poster", target = "target.sample.aligned_poster", layer = "layer.aligned", x = 96px, y = 72px, width = 360px, height = 180px, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom", opacity = 1, depth = 2400, enabled = true, visible = true, action = "action.inspect.aligned_poster", param.role = "aligned-static-hotspot")
 
     narrator.say(id=@say.image.alignment_object, voice=auto)[
         Static image object alignment places intrinsic pixels inside authored bounds.[p]

@@ -894,9 +894,12 @@ pub(super) fn agent_native_capture_session_for_hir(
             eprintln!("error: native capture failed: {error}");
             ExitCode::FAILURE
         })?;
+    let motions = runtime_pure_helpers(&text_helpers.motions);
+    let effects = runtime_pure_helpers(&text_helpers.effects);
+    let shaders = runtime_pure_helpers(&text_helpers.shaders);
     arcweft_render_native::register_arcweft_pure_text_motions(
         native_session.motion_registry_mut(),
-        &text_helpers.motions,
+        &motions,
     )
     .map_err(|error| {
         eprintln!("error: failed to register Arcweft text motion functions: {error}");
@@ -904,7 +907,7 @@ pub(super) fn agent_native_capture_session_for_hir(
     })?;
     arcweft_render_native::register_arcweft_pure_text_effects(
         native_session.effect_registry_mut(),
-        &text_helpers.effects,
+        &effects,
     )
     .map_err(|error| {
         eprintln!("error: failed to register Arcweft text effect functions: {error}");
@@ -912,13 +915,25 @@ pub(super) fn agent_native_capture_session_for_hir(
     })?;
     arcweft_render_native::register_arcweft_pure_text_shaders(
         native_session.shader_registry_mut(),
-        &text_helpers.shaders,
+        &shaders,
     )
     .map_err(|error| {
         eprintln!("error: failed to register Arcweft text shader functions: {error}");
         ExitCode::FAILURE
     })?;
     Ok(native_session)
+}
+
+fn runtime_pure_helpers(
+    candidates: &[arcweft_runtime_plan::pure::PureHelperCandidate],
+) -> Vec<arcweft_core::plan::RuntimePureHelper> {
+    candidates
+        .iter()
+        .enumerate()
+        .map(|(index, candidate)| {
+            candidate.to_runtime_helper(arcweft_core::plan::RuntimePureHelperId(index))
+        })
+        .collect()
 }
 
 pub(super) fn agent_mcp_capture_observe_arguments(

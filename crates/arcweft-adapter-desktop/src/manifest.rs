@@ -1,8 +1,7 @@
 use arcweft_adapter_context::manifest::{
-    AdapterEffectCapability, AdapterHostCall, AdapterManifest,
+    AdapterEffectCapability, AdapterFunctionParam, AdapterFunctionSignature, AdapterHostCall,
+    AdapterManifest, AdapterTypeKind,
 };
-use arcweft_lang_sema::env::{FunctionParam, FunctionSignature};
-use arcweft_lang_sema::types::TypeKind;
 use arcweft_rust_abi::{
     ArcweftRustManifest, ArcweftRustPackage, ArcweftRustTypeDecl, ArcweftRustTypeKind,
     ArcweftRustVariant,
@@ -53,15 +52,15 @@ pub fn desktop_owned_window_manifest() -> AdapterManifest {
     [
         owned_call(
             DESKTOP_OWNED_WINDOW_SET_TITLE_CALL,
-            [param("title", TypeKind::String)],
+            [param("title", AdapterTypeKind::String)],
         ),
         owned_call(
             DESKTOP_OWNED_WINDOW_SET_BOUNDS_CALL,
             [
-                param("x", TypeKind::I32),
-                param("y", TypeKind::I32),
-                param("width", TypeKind::U32),
-                param("height", TypeKind::U32),
+                param("x", AdapterTypeKind::I32),
+                param("y", AdapterTypeKind::I32),
+                param("width", AdapterTypeKind::U32),
+                param("height", AdapterTypeKind::U32),
             ],
         ),
         owned_call(DESKTOP_OWNED_WINDOW_SET_MODE_CALL, [window_mode_param()]),
@@ -70,11 +69,14 @@ pub fn desktop_owned_window_manifest() -> AdapterManifest {
         owned_call(DESKTOP_OWNED_CURSOR_SET_ICON_CALL, [cursor_icon_param()]),
         owned_call(
             DESKTOP_OWNED_CURSOR_SET_VISIBLE_CALL,
-            [param("visible", TypeKind::Bool)],
+            [param("visible", AdapterTypeKind::Bool)],
         ),
         owned_call(
             DESKTOP_OWNED_CURSOR_SET_POSITION_CALL,
-            [param("x", TypeKind::I32), param("y", TypeKind::I32)],
+            [
+                param("x", AdapterTypeKind::I32),
+                param("y", AdapterTypeKind::I32),
+            ],
         ),
     ]
     .into_iter()
@@ -86,7 +88,7 @@ pub fn desktop_owned_window_manifest() -> AdapterManifest {
             manifest
                 .with_function_signature(
                     call,
-                    FunctionSignature::new(
+                    AdapterFunctionSignature::new(
                         need_string_desktop_error(),
                         signature.params().iter().cloned(),
                     ),
@@ -227,21 +229,30 @@ fn manifest<const N: usize>(
 
 fn owned_call<const N: usize>(
     call: &'static str,
-    params: [FunctionParam; N],
-) -> (&'static str, FunctionSignature) {
-    (call, FunctionSignature::new(TypeKind::String, params))
+    params: [AdapterFunctionParam; N],
+) -> (&'static str, AdapterFunctionSignature) {
+    (
+        call,
+        AdapterFunctionSignature::new(AdapterTypeKind::String, params),
+    )
 }
 
-fn param(name: &'static str, ty: TypeKind) -> FunctionParam {
-    FunctionParam::required(name, ty)
+fn param(name: &'static str, ty: AdapterTypeKind) -> AdapterFunctionParam {
+    AdapterFunctionParam::required(name, ty)
 }
 
-fn window_mode_param() -> FunctionParam {
-    param("mode", TypeKind::Named(DESKTOP_WINDOW_MODE_TYPE.to_owned()))
+fn window_mode_param() -> AdapterFunctionParam {
+    param(
+        "mode",
+        AdapterTypeKind::Named(DESKTOP_WINDOW_MODE_TYPE.to_owned()),
+    )
 }
 
-fn cursor_icon_param() -> FunctionParam {
-    param("icon", TypeKind::Named(DESKTOP_CURSOR_ICON_TYPE.to_owned()))
+fn cursor_icon_param() -> AdapterFunctionParam {
+    param(
+        "icon",
+        AdapterTypeKind::Named(DESKTOP_CURSOR_ICON_TYPE.to_owned()),
+    )
 }
 
 fn owned_window_rust_manifest() -> ArcweftRustManifest {
@@ -307,10 +318,10 @@ fn unit_enum_type<const N: usize>(
     }
 }
 
-fn need_string_desktop_error() -> TypeKind {
-    TypeKind::Need {
-        ready: Box::new(TypeKind::String),
-        error: Box::new(TypeKind::Named("DesktopError".to_owned())),
+fn need_string_desktop_error() -> AdapterTypeKind {
+    AdapterTypeKind::Need {
+        ready: Box::new(AdapterTypeKind::String),
+        error: Box::new(AdapterTypeKind::Named("DesktopError".to_owned())),
     }
 }
 
@@ -370,9 +381,9 @@ mod tests {
         assert_eq!(set_bounds.signature().params().len(), 4);
         assert_eq!(
             set_bounds.signature().return_type(),
-            &TypeKind::Need {
-                ready: Box::new(TypeKind::String),
-                error: Box::new(TypeKind::Named("DesktopError".to_owned())),
+            &AdapterTypeKind::Need {
+                ready: Box::new(AdapterTypeKind::String),
+                error: Box::new(AdapterTypeKind::Named("DesktopError".to_owned())),
             }
         );
 
@@ -383,7 +394,7 @@ mod tests {
             .expect("set_mode function");
         assert_eq!(
             set_mode.signature().params()[0].ty(),
-            &TypeKind::Named(DESKTOP_WINDOW_MODE_TYPE.to_owned())
+            &AdapterTypeKind::Named(DESKTOP_WINDOW_MODE_TYPE.to_owned())
         );
 
         let set_icon = manifest
@@ -393,7 +404,7 @@ mod tests {
             .expect("set_icon function");
         assert_eq!(
             set_icon.signature().params()[0].ty(),
-            &TypeKind::Named(DESKTOP_CURSOR_ICON_TYPE.to_owned())
+            &AdapterTypeKind::Named(DESKTOP_CURSOR_ICON_TYPE.to_owned())
         );
 
         let request_close = manifest
@@ -402,19 +413,27 @@ mod tests {
             .find(|call| call.id() == DESKTOP_OWNED_WINDOW_REQUEST_CLOSE_CALL)
             .expect("request_close host call");
         assert!(request_close.signature().params().is_empty());
-        assert_eq!(request_close.signature().return_type(), &TypeKind::String);
+        assert_eq!(
+            request_close.signature().return_type(),
+            &AdapterTypeKind::String
+        );
 
-        let env = manifest.apply_to_env(arcweft_lang_sema::env::TypeCheckEnv::new());
-        let variants = env.enum_variant_sets();
-        assert!(variants.iter().any(|(ty, variants)| {
-            ty == &TypeKind::Named(DESKTOP_WINDOW_MODE_TYPE.to_owned())
-                && variants.contains(&"Fullscreen".to_owned())
-                && variants.contains(&"BorderlessFullscreen".to_owned())
+        assert!(manifest.rust_types().iter().any(|ty| {
+            ty.decl().name == DESKTOP_WINDOW_MODE_TYPE
+                && enum_contains(ty.decl(), ["Fullscreen", "BorderlessFullscreen"])
         }));
-        assert!(variants.iter().any(|(ty, variants)| {
-            ty == &TypeKind::Named(DESKTOP_CURSOR_ICON_TYPE.to_owned())
-                && variants.contains(&"Pointer".to_owned())
-                && variants.contains(&"Default".to_owned())
+        assert!(manifest.rust_types().iter().any(|ty| {
+            ty.decl().name == DESKTOP_CURSOR_ICON_TYPE
+                && enum_contains(ty.decl(), ["Pointer", "Default"])
         }));
+    }
+
+    fn enum_contains<const N: usize>(decl: &ArcweftRustTypeDecl, expected: [&str; N]) -> bool {
+        let ArcweftRustTypeKind::Enum { variants } = &decl.kind else {
+            return false;
+        };
+        expected
+            .into_iter()
+            .all(|name| variants.iter().any(|variant| variant.name == name))
     }
 }

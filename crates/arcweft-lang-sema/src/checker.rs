@@ -52,10 +52,10 @@ pub mod suspension;
 
 use helpers::{
     await_branch_pattern_type, choice_output_type, default_presentation_slot_family, entity_kind,
-    entity_kind_for_decl, ident_pattern_name, is_character_entity_literal, is_dialogue_callee_type,
-    is_drop_callee, is_local_ident, iter_item_type, merge_line_output, normalize_choice_type,
-    pattern_bindings_with_fallback, source_return_types, stmts_diverge, stream_return_types,
-    type_ref_kind, typed_pattern_binding, unify_loop_break_types,
+    entity_kind_for_decl, entity_syntax_kind, ident_pattern_name, is_character_entity_literal,
+    is_dialogue_callee_type, is_drop_callee, is_local_ident, iter_item_type, merge_line_output,
+    normalize_choice_type, pattern_bindings_with_fallback, source_return_types, stmts_diverge,
+    stream_return_types, type_ref_kind, typed_pattern_binding, unify_loop_break_types,
 };
 
 /// Verifies that lowered HIR no longer contains raw expression fragments.

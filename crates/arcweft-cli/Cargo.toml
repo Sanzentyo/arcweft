@@ -14,7 +14,7 @@ arcweft-agent-mcp-client = { path = "../arcweft-agent-mcp-client" }
 arcweft-agent-runner = { path = "../arcweft-agent-runner" }
 arcweft-content-policy = { path = "../arcweft-content-policy" }
 arcweft-core = { path = "../arcweft-core" }
-arcweft-adapter-context = { path = "../arcweft-adapter-context" }
+arcweft-adapter-context = { path = "../arcweft-adapter-context", features = ["sema"] }
 arcweft-adapter-desktop = { path = "../arcweft-adapter-desktop" }
 arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-character = { path = "../arcweft-character" }
@@ -33,12 +33,14 @@ arcweft-launch = { path = "../arcweft-launch" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 arcweft-presentation = { path = "../arcweft-presentation" }
+arcweft-project = { path = "../arcweft-project" }
 arcweft-project-loader = { path = "../arcweft-project-loader" }
 arcweft-player-native = { path = "../arcweft-player-native", optional = true }
 arcweft-render-native = { path = "../arcweft-render-native", optional = true }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-rag = { path = "../arcweft-rag" }
 arcweft-runtime-accelerator = { path = "../arcweft-runtime-accelerator" }
+arcweft-runtime-driver = { path = "../arcweft-runtime-driver", optional = true }
 arcweft-runtime-host = { path = "../arcweft-runtime-host" }
 arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
 arcweft-runtime-scheduler = { path = "../arcweft-runtime-scheduler" }
@@ -53,6 +55,7 @@ arcweft-verify-z3 = { path = "../arcweft-verify-z3" }
 base64.workspace = true
 blake3.workspace = true
 clap = { workspace = true, features = ["derive"] }
+ed25519-dalek.workspace = true
 png.workspace = true
 reedline = { version = "0.48.0", default-features = false, optional = true }
 serde = { workspace = true, features = ["derive"] }
@@ -64,11 +67,11 @@ name = "arcw"
 path = "src/main.rs"
 
 [features]
-default = ["native-player"]
+default = ["native-player", "native-capture"]
 agent-repl = ["dep:reedline"]
 math-wgpu = ["arcweft-runtime-accelerator/math-wgpu"]
 native-capture = ["dep:arcweft-render-native"]
-native-player = ["dep:arcweft-player-native"]
+native-player = ["dep:arcweft-player-native", "dep:arcweft-runtime-driver"]
 
 [lints]
 workspace = true

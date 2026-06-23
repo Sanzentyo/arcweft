@@ -99,7 +99,7 @@ context:
 trace:
   0: game/routes/opening.arcw:12:14
      flow.opening
-     await asset.image(@asset.bg.room)?
+     await asset.image(@asset:.bg.room)?
 
   1: game/routes/opening.arcw:9:5
      say.opening.narration.001 / text.opening.narration.001
@@ -117,7 +117,7 @@ ids:
 `.context(...)` and `.with_context(...)` append context frames without discarding the original cause.
 
 ```arcw
-let bg = try await asset.image(@asset.bg.room)
+let bg = try await asset.image(@asset:.bg.room)
     .context("while loading opening background")
 with:
     pending p:
@@ -130,7 +130,7 @@ with:
 Parenthesized whole-await context is valid but not preferred:
 
 ```arcw
-let bg = (await asset.image(@asset.bg.room) with:
+let bg = (await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
         progress.set(p.ratio)
@@ -140,7 +140,7 @@ let bg = (await asset.image(@asset.bg.room) with:
 Rejected:
 
 ```arcw
-await asset.image(@asset.bg.room)? with:
+await asset.image(@asset:.bg.room)? with:
     pending p:
         scene.show(@scene.loading)
 ```
@@ -226,5 +226,3 @@ crash/
   }
 }
 ```
-
-

@@ -92,6 +92,7 @@ fn entity_decl_registry_kind(kind: EntityDeclKind) -> EntityKind {
         EntityDeclKind::Character => EntityKind::Character,
         EntityDeclKind::Component => EntityKind::Component,
         EntityDeclKind::Activity => EntityKind::Activity,
+        EntityDeclKind::Content => EntityKind::Content,
         EntityDeclKind::Signal => EntityKind::Signal,
         EntityDeclKind::Metric => EntityKind::Metric,
         EntityDeclKind::Layer => EntityKind::Layer,

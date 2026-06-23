@@ -1,36 +1,75 @@
-character alice Alice {
+pub surface character zunda_guide {
+    display = "ずんだガイド"
+    default_voice = auto
+    dialogue_style {
+        rich_text {
+            text {
+                font = "Yu Gothic"
+                color = rgb("#aee28e")
+                size = 26px
+            }
+        }
+    }
 }
 
-pub asset @asset.generated.background {
+pub surface character narrator {
+    display = "語り手"
+    default_voice = auto
+    dialogue_style {
+        rich_text {
+            text {
+                font = "Yu Mincho"
+                color = rgb("#f1dbc8")
+                size = 23px
+            }
+        }
+    }
+}
+
+pub textbox web_panel {
+    rich_text {
+        text {
+            font = "Yu Gothic UI"
+            color = rgb("#f7f4e8")
+            size = 24px
+        }
+    }
+}
+
+pub dialogue defaults @dialogue.defaults {
+    window = @textbox.web_panel
+}
+
+pub asset generated.background {
     kind = image
     file = "generated/background.png"
 }
 
-pub asset @asset.generated.character_stand {
+pub asset generated.character_stand {
     kind = image
     file = "generated/character_stand.png"
 }
 
-pub asset @asset.generated.gif_pulse {
+pub asset generated.gif_pulse {
     kind = image
     file = "generated/gif_pulse.gif"
 }
 
-pub asset @asset.generated.webp_pulse {
+pub asset generated.webp_pulse {
     kind = image
     file = "generated/webp_pulse.webp"
 }
 
 pub image @image.generated.character_stand {
-    asset = @asset.generated.character_stand
-    x = 64px
+    asset = @asset:.generated.character_stand
+    x = 72px
     y = 52px
-    width = 180px
-    height = 300px
+    width = 208px
+    height = 332px
 }
 
 pub image @image.generated.background {
-    asset = @asset.generated.background
+    asset = @asset:.generated.background
     x = 0px
     y = 0px
     width = 1280px
@@ -38,7 +77,7 @@ pub image @image.generated.background {
 }
 
 pub image @image.generated.gif_pulse {
-    asset = @asset.generated.gif_pulse
+    asset = @asset:.generated.gif_pulse
     x = 486px
     y = 46px
     width = 96px
@@ -46,7 +85,7 @@ pub image @image.generated.gif_pulse {
 }
 
 pub image @image.generated.webp_pulse {
-    asset = @asset.generated.webp_pulse
+    asset = @asset:.generated.webp_pulse
     x = 492px
     y = 156px
     width = 96px
@@ -60,14 +99,21 @@ flow main {
     image(@image.generated.character_stand)
     image(@image.generated.gif_pulse)
     image(@image.generated.webp_pulse)
-    alice: [.typewriter cps=24][.wave amp=4px freq=8]Typewriter text is alive on WebGPU.[/][/]
+
+    narrator(id=@say.web_demo.narrator, voice=auto):
+        語り手は明朝体と薄い桃色で表示される。既定のタイプライター表示で、WASMでもnativeでも同じ速度で文字が現れる。[p]
+
+    zunda_guide(id=@say.web_demo.guide, voice=auto, look=.normal):
+        こちらはキャラクターsurfaceの色とフォントを使う行なのだ。[.wave amp=4px freq=8]波打つ文字[/]と、右上のアニメーション画像も同じフレーム計画で動いているのだ。[p]
+
     choice @choice.web_demo {
-        @choice.web_demo.continue "Continue" -> @flow.done
-        @choice.web_demo.alternate "Alternate route" -> @flow.done
+        @choice.web_demo.continue "このまま進む" -> @flow.done
+        @choice.web_demo.alternate "別ルートを見る" -> @flow.done
     }
 }
 
 flow done {
-    alice: [.typewriter cps=28][.wave amp=3px freq=10]The VM accepted the choice and kept the canvas in sync.[/][/]
+    zunda_guide(id=@say.web_demo.done, voice=auto, look=.smile):
+        choiceの当たり判定と見た目が一致したのだ。スクロールしてもボタンの場所は上下しないのだ。[p]
     return "done"
 }

@@ -1,7 +1,7 @@
 //! Native wgpu/glyphon renderer and capture adapter for Arcweft presentation frames.
 
 use arcweft_core::{
-    plan::{RuntimePureHelper, RuntimePureHelperId, RuntimePureInputType, RuntimePureOutputType},
+    plan::{RuntimePureHelper, RuntimePureInputType, RuntimePureOutputType},
     pure::VmPureFunctionScratch,
     value::RuntimeValue,
 };
@@ -15,7 +15,6 @@ use arcweft_render_text::{
     RichTextPresentation, RichTextRange, RichTextShaderRef, RichTextTransformOrigin,
     RichTextWritingMode,
 };
-use arcweft_runtime_plan::pure::PureHelperCandidate;
 use arcweft_text_layout::{
     GlyphOrientation, GlyphVerticalForm, LaidOutGlyph, LaidOutText, LayoutRect, TextLayoutConfig,
 };
@@ -856,29 +855,29 @@ impl RichTextMotionRegistry {
 
 pub fn register_arcweft_pure_text_shaders(
     registry: &mut RichTextShaderRegistry,
-    candidates: &[PureHelperCandidate],
+    helpers: &[RuntimePureHelper],
 ) -> Result<usize, RichTextShaderExportError> {
-    candidates.iter().try_fold(0usize, |exported, candidate| {
-        register_arcweft_pure_text_shader(registry, candidate)?;
+    helpers.iter().try_fold(0usize, |exported, helper| {
+        register_arcweft_pure_text_shader(registry, helper)?;
         Ok(exported.saturating_add(1))
     })
 }
 
 fn register_arcweft_pure_text_shader(
     registry: &mut RichTextShaderRegistry,
-    candidate: &PureHelperCandidate,
+    helper: &RuntimePureHelper,
 ) -> Result<(), RichTextShaderExportError> {
-    if !arcweft_text_pure_f32_triplet_signature_supported(candidate) {
+    if !arcweft_text_pure_f32_triplet_signature_supported(helper) {
         return Err(RichTextShaderExportError::UnsupportedSignature {
-            name: candidate.name().to_owned(),
+            name: helper.name.clone(),
         });
     }
-    let glyph_helper = runtime_helper_from_pure_candidate(candidate);
+    let glyph_helper = helper.clone();
     let post_process_helper = glyph_helper.clone();
     let mut glyph_scratch = VmPureFunctionScratch::default();
     let mut post_process_scratch = VmPureFunctionScratch::default();
     registry.insert_combined_lambda(
-        candidate.name().to_owned(),
+        helper.name.clone(),
         move |ctx| {
             let seed = shader_param_seed(ctx.shader, "seed").map_or(0.0, seed_bucket_as_f32);
             let time = shader_param_milli(ctx.shader, "time")
@@ -916,29 +915,29 @@ fn register_arcweft_pure_text_shader(
 
 pub fn register_arcweft_pure_text_effects(
     registry: &mut RichTextEffectRegistry,
-    candidates: &[PureHelperCandidate],
+    helpers: &[RuntimePureHelper],
 ) -> Result<usize, RichTextEffectExportError> {
-    candidates.iter().try_fold(0usize, |exported, candidate| {
-        register_arcweft_pure_text_effect(registry, candidate)?;
+    helpers.iter().try_fold(0usize, |exported, helper| {
+        register_arcweft_pure_text_effect(registry, helper)?;
         Ok(exported.saturating_add(1))
     })
 }
 
 fn register_arcweft_pure_text_effect(
     registry: &mut RichTextEffectRegistry,
-    candidate: &PureHelperCandidate,
+    helper: &RuntimePureHelper,
 ) -> Result<(), RichTextEffectExportError> {
-    if !arcweft_text_pure_f32_triplet_signature_supported(candidate) {
+    if !arcweft_text_pure_f32_triplet_signature_supported(helper) {
         return Err(RichTextEffectExportError::UnsupportedSignature {
-            name: candidate.name().to_owned(),
+            name: helper.name.clone(),
         });
     }
-    let glyph_helper = runtime_helper_from_pure_candidate(candidate);
+    let glyph_helper = helper.clone();
     let post_process_helper = glyph_helper.clone();
     let mut glyph_scratch = VmPureFunctionScratch::default();
     let mut post_process_scratch = VmPureFunctionScratch::default();
     registry.insert_combined_lambda(
-        candidate.name().to_owned(),
+        helper.name.clone(),
         move |ctx| {
             let seed = param_seed(ctx.effect, "seed").map_or(0.0, seed_bucket_as_f32);
             let phase = glyph_scratch
@@ -983,26 +982,26 @@ fn register_arcweft_pure_text_effect(
 
 pub fn register_arcweft_pure_text_motions(
     registry: &mut RichTextMotionRegistry,
-    candidates: &[PureHelperCandidate],
+    helpers: &[RuntimePureHelper],
 ) -> Result<usize, RichTextMotionExportError> {
-    candidates.iter().try_fold(0usize, |exported, candidate| {
-        register_arcweft_pure_text_motion(registry, candidate)?;
+    helpers.iter().try_fold(0usize, |exported, helper| {
+        register_arcweft_pure_text_motion(registry, helper)?;
         Ok(exported.saturating_add(1))
     })
 }
 
 fn register_arcweft_pure_text_motion(
     registry: &mut RichTextMotionRegistry,
-    candidate: &PureHelperCandidate,
+    helper: &RuntimePureHelper,
 ) -> Result<(), RichTextMotionExportError> {
-    if !arcweft_text_pure_f32_triplet_signature_supported(candidate) {
+    if !arcweft_text_pure_f32_triplet_signature_supported(helper) {
         return Err(RichTextMotionExportError::UnsupportedSignature {
-            name: candidate.name().to_owned(),
+            name: helper.name.clone(),
         });
     }
-    let helper = runtime_helper_from_pure_candidate(candidate);
+    let helper = helper.clone();
     let mut scratch = VmPureFunctionScratch::default();
-    registry.insert_lambda(candidate.name().to_owned(), move |ctx| {
+    registry.insert_lambda(helper.name.clone(), move |ctx| {
         let seed = param_seed(ctx.effect, "seed").map_or(0.0, seed_bucket_as_f32);
         let phase = scratch
             .evaluate_f32_slice(
@@ -1023,28 +1022,15 @@ fn register_arcweft_pure_text_motion(
     Ok(())
 }
 
-fn runtime_helper_from_pure_candidate(candidate: &PureHelperCandidate) -> RuntimePureHelper {
-    RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: candidate.name().to_owned(),
-        input_names: candidate.input_names().to_vec(),
-        input_types: candidate.input_types().to_vec(),
-        output_type: candidate.output_type(),
-        expr: candidate.expr().clone(),
-        scalar_eval_supported: candidate.shape().supports_scalar_eval,
-        origin: candidate.origin(),
-    }
-}
-
-fn arcweft_text_pure_f32_triplet_signature_supported(candidate: &PureHelperCandidate) -> bool {
-    candidate.input_types()
+fn arcweft_text_pure_f32_triplet_signature_supported(helper: &RuntimePureHelper) -> bool {
+    helper.input_types
         == [
             RuntimePureInputType::F32,
             RuntimePureInputType::F32,
             RuntimePureInputType::F32,
         ]
-        && candidate.output_type() == RuntimePureOutputType::F32
-        && candidate.shape().supports_scalar_eval
+        && helper.output_type == RuntimePureOutputType::F32
+        && helper.scalar_eval_supported
 }
 
 fn runtime_value_as_f32(value: &RuntimeValue) -> Option<f32> {

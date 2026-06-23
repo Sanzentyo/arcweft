@@ -155,7 +155,6 @@ struct ScannedSource {
 struct PendingImport {
     spelling: String,
     path: ModulePath,
-    mode: arcweft_lang_syntax::ast::common::UseDependencyMode,
     exact_module_prefix: bool,
 }
 
@@ -181,7 +180,7 @@ impl ScannedSource {
                 };
                 match target {
                     Some(target) if target != self.module => {
-                        Some(Ok(ModuleDependency::new(target, import.mode)))
+                        Some(Ok(ModuleDependency::new(target)))
                     }
                     Some(_) => None,
                     None => Some(Err(ProjectLoadError::UnresolvedImport {
@@ -243,10 +242,9 @@ fn scan_source(source_root: &Path, path: PathBuf) -> Result<ScannedSource, Proje
         .iter()
         .map(|item| {
             Ok(PendingImport {
-                spelling: item.tree().to_owned(),
-                path: item.module_path_prefix()?,
-                mode: item.dependency_mode(),
-                exact_module_prefix: item.module_path_is_exact(),
+                spelling: item.tree().source().to_owned(),
+                path: item.tree().module_path_prefix().clone(),
+                exact_module_prefix: item.tree().module_path_is_exact(),
             })
         })
         .collect::<Result<Vec<_>, ModulePathError>>()?;

@@ -94,7 +94,7 @@ context:
 trace:
   0: game/routes/opening.arcw:12:14
      flow.opening
-     await asset.image(@asset.bg.room)
+     await asset.image(@asset:.bg.room)
 
   1: game/routes/opening.arcw:9:5
      say.opening.narration.001 / text.opening.narration.001
@@ -170,7 +170,7 @@ This converts `None` to `Err(ArcError)` and attaches the context.
 Context can be attached to the `Need` before awaiting.
 
 ```arcw
-let bg = try await asset.image(@asset.bg.room)
+let bg = try await asset.image(@asset:.bg.room)
     .context("while loading opening background")
 with:
     pending p:
@@ -183,7 +183,7 @@ This is preferred.
 The explicit parenthesized form is valid but not recommended for hand-written code:
 
 ```arcw
-let bg = (await asset.image(@asset.bg.room) with:
+let bg = (await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
         progress.set(p.ratio)
@@ -197,7 +197,7 @@ explicitly asks for prefix-`?` style.
 Rejected because postfix `?` groups with the expression before `with:`:
 
 ```arcw
-await asset.image(@asset.bg.room)? with:
+await asset.image(@asset:.bg.room)? with:
     pending p:
         scene.show(@scene.loading)
 ```
@@ -278,6 +278,3 @@ crash/
   }
 }
 ```
-
-
-

@@ -271,7 +271,7 @@ scene.show(@scene.opening)
 scope {
     layer @layer.world.background {
         image(
-            asset = @asset.bg.room,
+            asset = @asset:.bg.room,
             id = "image.scene.room",
             target = "target.scene",
             layer = "layer.world.background",
@@ -284,7 +284,7 @@ scope {
     }
 
     layer @layer.world.characters {
-        sprite(@asset.char.alice.default)
+        sprite(@asset:.char.alice.default)
             .at(center)
             .agent_target(@character.alice)
     }
@@ -300,7 +300,7 @@ layer が省略された場合は default layer に入る。
 
 ```arcw
 scene {
-    bg(@asset.bg.room)                            // writes @slot.background.default
+    bg(@asset:.bg.room)                            // writes @slot.background.default
     show(@character.alice, .normal)               // desugar: layer @layer.world.characters
     choice { ... }                                // desugar: layer @layer.ui.game
 }
@@ -314,8 +314,8 @@ reflections, split-screen layers, or multiple copies of a character, the slot
 or target must be explicit.
 
 ```arcw
-let far = bg(@asset.bg.city_far, slot = @slot.background.far)
-let near = bg(@asset.bg.city_near, slot = @slot.background.near)
+let far = bg(@asset:.bg.city_far, slot = @slot.background.far)
+let near = bg(@asset:.bg.city_near, slot = @slot.background.near)
 
 let alice = show(@character.alice, .normal, target = @target.scene, slot = @slot.character.alice.main)
 let alice_shadow = show(@character.alice, .shadow, target = @target.scene, slot = @slot.character.alice.shadow)

@@ -93,7 +93,7 @@ signature. There is no default `i32`/`f64` fallback, and there are no concrete
 ```text
 Source       := ModuleDecl? UseDecl* Item*
 ModuleDecl   := 'mod' ModulePath
-UseDecl      := Visibility? ('lazy' | 'eager')? 'use' ModulePath ('::' UseTree)?
+UseDecl      := Visibility? 'use' ModulePath ('::' UseTree)?
 Visibility   := 'pub'?
 ModulePath   := ('crate' '::' | 'self' '::' | 'super' '::' | 'parent' '::')? IdentPath
 
@@ -138,9 +138,16 @@ AssetDecl := Visibility? 'asset' DeclIdentity AssetBody?
 ImageDecl := Visibility? 'image' DeclIdentity ImageObjectBody?
 ```
 
-The declaration establishes the `asset` entity id for references such as
-`@asset.bg.room`. Image payload packaging is still handled by the bundle image
-asset table, which records encoded files and decoded metadata.
+The declaration establishes the `asset` entity id. Authored asset references
+should prefer family-relative spelling such as `@asset:.bg.room`; this omits
+the default family from the id path while retaining the explicit asset
+reference anchor. Fully qualified references such as `@asset.bg.room` remain
+available for generated surfaces, manifest/tooling output, stored public-id
+roundtrips, and external interfaces that need the stored public id verbatim.
+They are not the recommended spelling for ordinary hand-authored asset
+references.
+Image payload packaging is still handled by the bundle image asset table, which
+records encoded files and decoded metadata.
 
 `image` declarations establish stable presentation-object ids such as
 `@image.sample.pulse_sprite`. Their bodies use the same flat fields as bounded
@@ -187,6 +194,8 @@ StagingClear    := ('bg' | 'show') '.clear' CallArgs | 'hide' CallArgs
 
 `crate`, `self`, and `super` are canonical module-path roots. `parent` is a
 reserved alias for `super`; formatters should normalize it to `super`.
+`lazy use` and `eager use` are not part of the grammar. `use` introduces names
+only; build demand and content availability are compiler and packaging policy.
 
 Declaration identities have a hand-written canonical surface and a generated
 surface. Hand-written flows should use either `flow opening(...)` or
@@ -197,13 +206,20 @@ unless it is covered by `#[allow(style::redundant_decl_identity)]` or
 `#[generated]`. A mismatch such as `flow @flow.opening start(...)` reports
 `identity::decl_binding_mismatch`; it is not a style warning.
 
-Source and entity declarations follow the same principle. Prefer
+Source and entity declarations follow the same principle. In declaration
+headers, the keyword supplies the default entity family, so authored code should
+omit that family prefix. Prefer
 `source http_requests: Source<T, E>` or
 `source @source.http_requests: Source<T, E>` over
 `source @source.http_requests http_requests: ...`. Prefer
-`pub character alice { display = "Alice" }` or
-`pub character @character.alice { display = "Alice" }` over putting display
-names or aliases in the declaration header.
+`pub character alice { display = "Alice" }`,
+`asset bg_room { source = file("images/room.webp") }`, or
+`content chapter_two { roots = [@flow.chapter_two] }` for hand-written source.
+Fully qualified forms such as `pub character @character.alice { ... }`,
+`asset @asset.bg_room { ... }`, and
+`content @content.chapter_two { ... }` are accepted but are generated or
+fully elaborated surfaces rather than the recommended authoring form. Avoid
+putting display names or aliases in declaration headers.
 
 ## Dialogue and line plans
 

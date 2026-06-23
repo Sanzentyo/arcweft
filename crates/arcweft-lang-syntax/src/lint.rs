@@ -155,6 +155,16 @@ fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, lints: &mut Vec<SyntaxLint
                     source_attrs,
                     lints,
                 );
+            } else if let Some(name) = item.id().body().rsplit('.').next() {
+                lint_explicit_decl_id(
+                    item.kind().keyword(),
+                    item.id().body(),
+                    name,
+                    *item.id().range(),
+                    item.attrs(),
+                    source_attrs,
+                    lints,
+                );
             }
         }
         Item::Source(source) => lint_source_identity(source, source_attrs, lints),
@@ -247,7 +257,7 @@ fn lint_explicit_decl_id(
     }
     lints.push(SyntaxLint::new(
         SyntaxLintCode::ExplicitDeclId,
-        format!("`{kind} @{id}` uses an explicit declaration id; `{kind} {name}` is the compact authoring form"),
+        format!("`{kind} @{id}` spells the default declaration family explicitly; `{kind} {name}` is the compact authoring form"),
         range,
     ));
 }
@@ -610,6 +620,38 @@ flow @flow.opening {
 
         assert_eq!(lint.code().stable_code(), "AWF0103");
         assert_eq!(lint.severity(), SyntaxLintSeverity::Hint);
+    }
+
+    #[test]
+    fn explicit_entity_decl_id_prefers_compact_authoring_form() {
+        let parsed = parse_source(
+            r"
+asset @asset.bg_room {
+}
+
+content @content.chapter_two {
+    roots = []
+}
+",
+        );
+        let lints = lint_id_policy(parsed.typed_tree());
+        let explicit = lints
+            .iter()
+            .filter(|lint| lint.code() == SyntaxLintCode::ExplicitDeclId)
+            .collect::<Vec<_>>();
+
+        assert_eq!(explicit.len(), 2);
+        assert!(explicit.iter().any(|lint| {
+            lint.message().contains("asset bg_room")
+                && lint
+                    .message()
+                    .contains("default declaration family explicitly")
+        }));
+        assert!(
+            explicit
+                .iter()
+                .any(|lint| lint.message().contains("content chapter_two"))
+        );
     }
 
     #[test]

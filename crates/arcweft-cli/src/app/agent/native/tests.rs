@@ -17,9 +17,11 @@ use super::observe::{
     native_agent_invoke_input_events, native_runtime_input_event,
 };
 use super::repl::{
-    AgentReplBinding, AgentReplConnection, AgentReplReedlineCompleter, AgentReplReedlineValidator,
-    AgentReplState, agent_repl_apply_connection, agent_repl_parse_connection,
+    AgentReplBinding, AgentReplConnection, AgentReplState, agent_repl_apply_connection,
+    agent_repl_parse_connection,
 };
+#[cfg(feature = "agent-repl")]
+use super::repl::{AgentReplReedlineCompleter, AgentReplReedlineValidator};
 use super::repl_project_binding::agent_repl_reconcile_project_bound_bindings;
 use super::repl_snapshot::agent_repl_serialized_bindings;
 use super::runtime_observation::{
@@ -1678,6 +1680,7 @@ fn agent_mcp_rag_context_pack_deduplicates_semantic_hashes() {
     assert_eq!(ids, vec!["chunk:a", "chunk:c"]);
 }
 
+#[cfg(feature = "agent-repl")]
 #[cfg(feature = "agent-repl")]
 #[test]
 fn agent_repl_reedline_validator_uses_fragment_completion() {
@@ -3383,11 +3386,11 @@ fn agent_lowers_runtime_background_call_into_image_observation() {
         &[
             RuntimeCall {
                 callee: "bg".to_owned(),
-                args: vec!["@asset.bg.missing".to_owned()],
+                args: vec!["@asset:.bg.missing".to_owned()],
             },
             RuntimeCall {
                 callee: "bg".to_owned(),
-                args: vec!["@asset.bg.room".to_owned()],
+                args: vec!["@asset:.bg.room".to_owned()],
             },
         ],
         0.06,
@@ -3438,7 +3441,7 @@ fn agent_background_call_accepts_fit_alignment_and_opacity() {
         &[RuntimeCall {
             callee: "bg".to_owned(),
             args: vec![
-                "@asset.bg.poster".to_owned(),
+                "@asset:.bg.poster".to_owned(),
                 "fit = intrinsic".to_owned(),
                 "alignment.x = right".to_owned(),
                 "alignment.y = bottom".to_owned(),
@@ -3482,7 +3485,7 @@ fn agent_runtime_background_call_uses_capture_time_for_animated_images() {
     };
     let call = RuntimeCall {
         callee: "bg".to_owned(),
-        args: vec!["@asset.bg.pulse".to_owned()],
+        args: vec!["@asset:.bg.pulse".to_owned()],
     };
     let (first, first_diagnostics) = agent_runtime_presentation_image_observation(
         &source,
@@ -3538,7 +3541,7 @@ fn agent_runtime_image_call_builds_bounded_layered_image_object() {
         &[RuntimeCall {
             callee: "image".to_owned(),
             args: vec![
-                "asset = @asset.bg.pulse".to_owned(),
+                "asset = @asset:.bg.pulse".to_owned(),
                 "id = @image.test.pulse".to_owned(),
                 "target = @target.test.pulse".to_owned(),
                 "layer = @layer.foreground".to_owned(),
@@ -3719,7 +3722,7 @@ fn agent_runtime_image_call_playback_pins_local_time_for_bounded_object() {
         &[RuntimeCall {
             callee: "image".to_owned(),
             args: vec![
-                "asset = @asset.bg.pulse".to_owned(),
+                "asset = @asset:.bg.pulse".to_owned(),
                 "id = @image.test.pinned_pulse".to_owned(),
                 "x = 12px".to_owned(),
                 "y = 34px".to_owned(),
@@ -3763,7 +3766,7 @@ fn agent_runtime_image_call_alignment_controls_fitted_object_geometry() {
         &[RuntimeCall {
             callee: "image".to_owned(),
             args: vec![
-                "asset = @asset.bg.poster".to_owned(),
+                "asset = @asset:.bg.poster".to_owned(),
                 "id = @image.test.aligned_poster".to_owned(),
                 "x = 10px".to_owned(),
                 "y = 20px".to_owned(),
@@ -3857,7 +3860,7 @@ fn agent_runtime_image_call_omits_invisible_image_object() {
         &[RuntimeCall {
             callee: "image".to_owned(),
             args: vec![
-                "asset = @asset.bg.pulse".to_owned(),
+                "asset = @asset:.bg.pulse".to_owned(),
                 "id = @image.test.hidden".to_owned(),
                 "x = 12px".to_owned(),
                 "y = 34px".to_owned(),
@@ -3902,6 +3905,12 @@ fn agent_source_image_decode_cache_reuses_decoded_animated_assets() {
 fn agent_asset_call_parser_accepts_only_public_asset_refs() {
     assert_eq!(
         agent_asset_id_from_call_arg("@asset.bg.room")
+            .map(|asset| asset.to_string())
+            .as_deref(),
+        Some("asset.bg.room")
+    );
+    assert_eq!(
+        agent_asset_id_from_call_arg("@asset:.bg.room")
             .map(|asset| asset.to_string())
             .as_deref(),
         Some("asset.bg.room")

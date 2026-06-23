@@ -916,7 +916,7 @@ Preload for likely next flow:
 ```arcw
 anticipate @flow.alice_intro {
     alice.preload(expressions=[smile, worried], voices=auto, sprites=true)
-    asset.preload(@asset.bg.room_evening)
+    asset.preload(@asset:.bg.room_evening)
     shader.preload(@shader.transition.dissolve)
 }
 ```

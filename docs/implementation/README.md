@@ -789,7 +789,6 @@ Current high-confidence state:
   `wait(mark(...))` / `wait(duration)` waits, and `'line.*`
   lifetime registry paths with optional `?` reads. Local dialogue `[hook ...]`
   and `#[hook ...]` syntax is removed; top-level engine hooks remain.
-
 ## Current Direction
 
 - Parser work now starts from a lossless rowan CST: `SyntaxKind`,
@@ -877,7 +876,7 @@ Current high-confidence state:
   the current flow, speaker, choice, and named-scope stack.
 - Old `@` command and attribute spellings are no longer treated as migration
   syntax. Attributes are `#[...]`; staging operations use canonical ordinary
-  calls such as `bg(@asset.bg.room, fade = 300ms)` and
+  calls such as `bg(@asset:.bg.room, fade = 300ms)` and
   `show(@character.alice, .normal)`.
 - `arcweft-dialogue` contains the current Sans I/O model for scoped
   dialogue lines, speaker presets, content, and line plans. Presentation

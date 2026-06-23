@@ -1,4 +1,4 @@
-use arcweft_lang_syntax::ast::{common::UseDependencyMode, module_path::CanonicalModulePath};
+use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
@@ -6,7 +6,6 @@ use thiserror::Error;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModuleDependency {
     target: CanonicalModulePath,
-    mode: UseDependencyMode,
 }
 
 /// One module and its resolved package-local imports.
@@ -26,7 +25,6 @@ pub struct CompileUnit {
     id: CompileUnitId,
     modules: Vec<CanonicalModulePath>,
     dependencies: Vec<CompileUnitId>,
-    lazy_dependencies: Vec<CompileUnitId>,
 }
 
 /// Deterministic module graph and compile-unit schedule.
@@ -51,37 +49,22 @@ pub enum ModuleGraphError {
 }
 
 impl ModuleDependency {
-    pub const fn new(target: CanonicalModulePath, mode: UseDependencyMode) -> Self {
-        Self { target, mode }
+    pub const fn new(target: CanonicalModulePath) -> Self {
+        Self { target }
     }
 
     pub const fn target(&self) -> &CanonicalModulePath {
         &self.target
     }
 
-    pub const fn mode(&self) -> UseDependencyMode {
-        self.mode
-    }
-
-    pub const fn loads_body_during_initial_build(&self) -> bool {
-        self.mode.loads_body_during_initial_build()
-    }
-
-    /// Sorts dependencies and merges repeated targets through the mode enum's
-    /// own precedence rule.
+    /// Sorts dependencies and removes repeated targets.
     pub fn normalize(dependencies: impl IntoIterator<Item = Self>) -> Vec<Self> {
-        let mut merged = BTreeMap::new();
-        for dependency in dependencies {
-            merged
-                .entry(dependency.target)
-                .and_modify(|mode: &mut UseDependencyMode| {
-                    *mode = mode.merge(dependency.mode);
-                })
-                .or_insert(dependency.mode);
-        }
-        merged
+        dependencies
             .into_iter()
-            .map(|(target, mode)| Self::new(target, mode))
+            .map(|dependency| dependency.target)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .map(Self::new)
             .collect()
     }
 }
@@ -125,15 +108,6 @@ impl CompileUnit {
     pub fn dependencies(&self) -> &[CompileUnitId] {
         &self.dependencies
     }
-
-    /// Compile units referenced only through `lazy use` edges.
-    ///
-    /// These edges do not constrain the current parse/HIR body order. The
-    /// crate-global semantic pass still runs after every unit is available; a
-    /// future serialized module-summary pass can consume this same edge set.
-    pub fn lazy_dependencies(&self) -> &[CompileUnitId] {
-        &self.lazy_dependencies
-    }
 }
 
 impl ModuleGraph {
@@ -169,7 +143,6 @@ impl ModuleGraph {
                 node_map[path]
                     .dependencies
                     .iter()
-                    .filter(|dependency| dependency.loads_body_during_initial_build())
                     .map(|dependency| path_indices[&dependency.target])
                     .collect::<Vec<_>>()
             })
@@ -206,7 +179,6 @@ impl ModuleGraph {
             .map(|(index, modules)| {
                 let id = CompileUnitId(index);
                 let mut dependencies = Vec::new();
-                let mut lazy_dependencies = Vec::new();
                 for dependency in modules
                     .iter()
                     .flat_map(|module| node_map[module].dependencies.iter())
@@ -215,21 +187,14 @@ impl ModuleGraph {
                     if dependency_unit == id {
                         continue;
                     }
-                    if dependency.loads_body_during_initial_build() {
-                        dependencies.push(dependency_unit);
-                    } else {
-                        lazy_dependencies.push(dependency_unit);
-                    }
+                    dependencies.push(dependency_unit);
                 }
                 dependencies.sort();
                 dependencies.dedup();
-                lazy_dependencies.sort();
-                lazy_dependencies.dedup();
                 CompileUnit {
                     id,
                     modules,
                     dependencies,
-                    lazy_dependencies,
                 }
             })
             .collect::<Vec<_>>();
@@ -350,10 +315,7 @@ fn dependency_order(units: &[CompileUnit]) -> Vec<CompileUnitId> {
 #[cfg(test)]
 mod tests {
     use super::{ModuleDependency, ModuleGraph, ModuleNode};
-    use arcweft_lang_syntax::ast::{
-        common::UseDependencyMode,
-        module_path::{CanonicalModulePath, ModulePath, ModuleSegment},
-    };
+    use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModulePath, ModuleSegment};
 
     fn canonical(path: &str) -> CanonicalModulePath {
         path.parse::<ModulePath>()
@@ -365,20 +327,8 @@ mod tests {
     #[test]
     fn groups_body_cycles_into_one_compile_unit() {
         let graph = ModuleGraph::new([
-            ModuleNode::new(
-                canonical("a"),
-                [ModuleDependency::new(
-                    canonical("b"),
-                    UseDependencyMode::Normal,
-                )],
-            ),
-            ModuleNode::new(
-                canonical("b"),
-                [ModuleDependency::new(
-                    canonical("a"),
-                    UseDependencyMode::Normal,
-                )],
-            ),
+            ModuleNode::new(canonical("a"), [ModuleDependency::new(canonical("b"))]),
+            ModuleNode::new(canonical("b"), [ModuleDependency::new(canonical("a"))]),
             ModuleNode::new(canonical("c"), []),
         ])
         .unwrap();
@@ -392,52 +342,28 @@ mod tests {
     }
 
     #[test]
-    fn lazy_cycle_does_not_merge_body_compile_units() {
-        let graph = ModuleGraph::new([
-            ModuleNode::new(
-                canonical("a"),
-                [ModuleDependency::new(
-                    canonical("b"),
-                    UseDependencyMode::Lazy,
-                )],
-            ),
-            ModuleNode::new(
-                canonical("b"),
-                [ModuleDependency::new(
-                    canonical("a"),
-                    UseDependencyMode::Lazy,
-                )],
-            ),
-        ])
-        .unwrap();
-        assert_eq!(graph.compile_units().len(), 2);
-        assert!(
-            graph
-                .compile_units()
-                .iter()
-                .all(|unit| unit.dependencies().is_empty())
-        );
-        assert!(
-            graph
-                .compile_units()
-                .iter()
-                .all(|unit| unit.lazy_dependencies().len() == 1)
-        );
-    }
-
-    #[test]
-    fn duplicate_imports_merge_on_the_owned_mode_precedence() {
+    fn duplicate_imports_are_deduplicated_by_target() {
         let target = canonical("shared");
         let node = ModuleNode::new(
             canonical("app"),
             [
-                ModuleDependency::new(target.clone(), UseDependencyMode::Lazy),
-                ModuleDependency::new(target.clone(), UseDependencyMode::Normal),
-                ModuleDependency::new(target, UseDependencyMode::Eager),
+                ModuleDependency::new(target.clone()),
+                ModuleDependency::new(target.clone()),
+                ModuleDependency::new(target),
             ],
         );
         assert_eq!(node.dependencies().len(), 1);
-        assert_eq!(node.dependencies()[0].mode(), UseDependencyMode::Eager);
+        assert_eq!(node.dependencies()[0].target(), &canonical("shared"));
+    }
+
+    #[test]
+    fn ordinary_cycles_merge_body_compile_units() {
+        let graph = ModuleGraph::new([
+            ModuleNode::new(canonical("a"), [ModuleDependency::new(canonical("b"))]),
+            ModuleNode::new(canonical("b"), [ModuleDependency::new(canonical("a"))]),
+        ])
+        .unwrap();
+        assert_eq!(graph.compile_units().len(), 1);
     }
 
     #[test]
@@ -445,10 +371,7 @@ mod tests {
         let graph = ModuleGraph::new([
             ModuleNode::new(
                 canonical("app"),
-                [ModuleDependency::new(
-                    canonical("shared"),
-                    UseDependencyMode::Normal,
-                )],
+                [ModuleDependency::new(canonical("shared"))],
             ),
             ModuleNode::new(canonical("shared"), []),
         ])

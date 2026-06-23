@@ -99,9 +99,11 @@ impl BundleRunnerSession {
             .map_err(BundleRunnerError::NativeAdapter)?;
         let host = NativeTaskBridge::try_with_registry(policy, registry)
             .map_err(BundleRunnerError::NativeAdapter)?;
-        let executor =
-            RuntimeExecutorInstance::from_bytecode(bytecode, options.executor, options.pure_config)
-                .map_err(BundleRunnerError::DecodeBytecode)?;
+        let executor = RuntimeExecutorInstance::from_bytecode(
+            bytecode,
+            options.executor,
+            options.pure_config,
+        )?;
 
         Ok(Self {
             _workspace: workspace,

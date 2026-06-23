@@ -59,7 +59,7 @@ To load an ignored local sample bundle without replacing `web/demo.awfb`, build
 the web-local bundle through `arcw run`:
 
 ```bash
-cargo run -p arcweft-cli -- run --manifest samples/zundamon-stand-switch/arcw.toml --runner web
+cargo run -p arcweft-cli -- run samples/zundamon-stand-switch/main.arcw --runner web
 ```
 
 Then open:

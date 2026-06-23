@@ -18,7 +18,7 @@ mod game::routes::opening
 
 use game::prelude::*
  pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    bg(@asset.bg.room, fade = 300ms)
+    bg(@asset:.bg.room, fade = 300ms)
     include @frag.alice_enters
 }
 ",
@@ -153,7 +153,7 @@ fn rejects_unparenthesized_presentation_call() {
     let errors = parse_errors(
         r"
 flow @flow.opening opening {
-    bg @asset.bg.room fade=300ms
+    bg @asset:.bg.room fade=300ms
 }
 ",
     );
@@ -336,12 +336,15 @@ fn normalizes_parent_module_root_alias() {
     let tree = parse_ok(
         r"
 mod parent::shared
-lazy use parent::common::{route_gate}
+use parent::common::{route_gate}
 ",
     );
 
     assert_eq!(tree.module().expect("module").path(), "super::shared");
-    assert_eq!(tree.uses()[0].tree(), "super::common::{route_gate}");
+    assert_eq!(
+        tree.uses()[0].tree().source(),
+        "super::common::{route_gate}"
+    );
 }
 
 #[test]

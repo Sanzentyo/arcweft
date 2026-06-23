@@ -9,7 +9,7 @@ use super::line_plan::parse_line_plan_body;
 use super::recovery::ParseError;
 use super::statements::parse_label_ref;
 use crate::ast::{
-    common::{DocBlock, TextRange, UseItem, UseMode},
+    common::{DocBlock, TextRange, UseItem, UseTree},
     dialogue::{LineArg, LineOptions, LineOptionsInit},
     ids::{EntityRefSyntax, IdRef, WikiLink},
     items::Attribute,
@@ -73,22 +73,20 @@ impl PendingDocLines {
     }
 }
 
-pub(super) fn parse_use_line(trimmed: &str, range: TextRange) -> Option<UseItem> {
+pub(super) fn parse_use_line(
+    trimmed: &str,
+    range: TextRange,
+) -> Result<Option<UseItem>, crate::ast::module_path::ModulePathError> {
     let (visibility, rest) = parse_visibility_prefix(trimmed);
     let rest = rest.trim_start();
-    let (mode, tree) = if let Some(tree) = rest.strip_prefix("lazy use ") {
-        (Some(UseMode::Lazy), tree)
-    } else if let Some(tree) = rest.strip_prefix("eager use ") {
-        (Some(UseMode::Eager), tree)
-    } else {
-        (None, rest.strip_prefix("use ")?)
+    let Some(tree) = rest.strip_prefix("use ") else {
+        return Ok(None);
     };
-    Some(UseItem::new(
+    Ok(Some(UseItem::new(
         visibility,
-        mode,
-        normalize_module_path(tree.trim()),
+        UseTree::parse(tree.trim())?,
         range,
-    ))
+    )))
 }
 
 pub(super) fn normalize_module_path(path: &str) -> String {

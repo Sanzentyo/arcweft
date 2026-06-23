@@ -626,9 +626,7 @@ pub(super) fn agent_asset_id_from_call_arg(arg: &str) -> Option<arcweft_id::Publ
 }
 
 pub(super) fn agent_public_id_from_call_arg(arg: &str) -> Option<arcweft_id::PublicId> {
-    let value = arg.trim().trim_matches('"').trim_matches('\'');
-    let value = value.strip_prefix('@').unwrap_or(value);
-    arcweft_id::PublicId::try_new(value).ok()
+    arcweft_id::PublicId::try_new(crate::app::image_declarations::public_id_arg(arg)?).ok()
 }
 
 pub(super) fn agent_call_named_value<'a>(call: &'a RuntimeCall, name: &str) -> Option<&'a str> {

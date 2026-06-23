@@ -4,6 +4,7 @@
 //! callers remain responsible for their own error presentation policy.
 
 pub mod adapter_manifest;
+pub mod cache;
 pub mod character_manifest;
 pub mod project;
 pub mod rust_metadata;

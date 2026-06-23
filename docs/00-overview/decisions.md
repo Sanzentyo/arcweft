@@ -44,7 +44,8 @@ The old `#entity` and `@command` shapes are not canonical grammar.
 ```text
 EntityRef:
   @flow.opening
-  @asset.bg.room
+  @asset:.bg.room
+  @asset.bg.room       # fully qualified public-id form for generated/tooling output
   @<asset:bg/room.ktx2>
 
 Attribute:
@@ -52,7 +53,7 @@ Attribute:
   #[link(Flow, @flow.opening)]
 
 Effectful scenario operation:
-  bg(@asset.bg.room, fade = 300ms)
+  bg(@asset:.bg.room, fade = 300ms)
   show(@character.alice, .smile, at = .center)
 ```
 
@@ -65,9 +66,15 @@ carry migration-only branches for old `@bg`, `@show`, `@choice`, or `@memo`
 forms; migration belongs in formatter/CLI tooling.
 
 General relative entity references should use family-qualified syntax such as
-`@flow:.next` or `@asset:.room`. ID-bearing contexts may also accept
-family-qualified forms such as `@say:.greeting`, but hand-written declarations
-should normally use the shorter `@.greeting` style.
+`@flow:.next` or `@asset:.room`. This family-relative form is the recommended
+authored spelling when the family has a default public-id prefix: `@asset:.room`
+keeps the `asset` anchor but does not repeat `asset` in the id path.
+`@asset.room` is the fully qualified public-id spelling for generated surfaces,
+manifests, stored public-id roundtrips, and tool queries that need the stored id
+verbatim; it is not the recommended spelling for ordinary hand-authored asset
+references. ID-bearing contexts may also accept family-qualified forms such as
+`@say:.greeting`, but hand-written declarations should normally use the shorter
+`@.greeting` style.
 
 ## Literal and primitive type decision
 
@@ -198,10 +205,13 @@ IDs, choice IDs, option IDs, and text-key overrides. They are not general entity
 references. Bare `.suffix` is not part of the core grammar, and bare `..suffix`
 is not accepted because `..` already appears in range and rest-pattern syntax.
 
-General entity references stay family-qualified. Use `@flow:.next`,
-`@frag:.intro`, `@asset:.room`, or `@textbox:.side` when a reference should be
-relative to the current flow/scope but the entity family is not implied by an
-ID-bearing field. Unqualified `@.next` is rejected in those contexts.
+General entity references must still name their family, but authoring should
+prefer family-relative spellings when that family has a default public-id
+prefix. Use `@flow:.next`, `@frag:.intro`, `@asset:.room`, or `@textbox:.side`
+for normal source references. Use absolute spellings such as `@asset.bg.room`
+only for generated surfaces, manifest/tooling output, and external interfaces
+that need the stored public id verbatim. Unqualified `@.next` is rejected in
+those reference contexts.
 
 ```text
 alice(id=@.greeting)
@@ -288,15 +298,15 @@ This is the most balanced choice after adding expression-oriented `if` / `match`
 `?` remains the ordinary Rust-like postfix propagation operator for `Result` and `Option`. Arcweft also reserves prefix `try expr` as a general propagation form equivalent to `expr?`; `try await` is the important readable specialization where `await` and pending handling must group before propagation.
 
 ```arcw
-let bg_result = await asset.image(@asset.bg.room) with:
+let bg_result = await asset.image(@asset:.bg.room) with:
     pending p:
         scene @scene.loading
 
-let bg = try await asset.image(@asset.bg.room) with:
+let bg = try await asset.image(@asset:.bg.room) with:
     pending p:
         scene @scene.loading
 
-let bg = await? asset.image(@asset.bg.room) with:
+let bg = await? asset.image(@asset:.bg.room) with:
     pending p:
         scene @scene.loading
 ```

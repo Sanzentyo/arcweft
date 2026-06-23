@@ -16,26 +16,26 @@ pub surface character @character.alice Alice as alice {
     }
 
     sprite_sheet @sprite.alice.standing {
-        base = @asset.char.alice.body
+        base = @asset:.char.alice.body
 
         part body {
-            normal = @asset.char.alice.body.normal
+            normal = @asset:.char.alice.body.normal
         }
 
         part look {
-            normal = @asset.char.alice.face.normal
-            smile = @asset.char.alice.face.smile
-            worried = @asset.char.alice.face.worried
-            surprised = @asset.char.alice.face.surprised
+            normal = @asset:.char.alice.face.normal
+            smile = @asset:.char.alice.face.smile
+            worried = @asset:.char.alice.face.worried
+            surprised = @asset:.char.alice.face.surprised
         }
 
         part mouth {
-            closed = @asset.char.alice.mouth.closed
-            a = @asset.char.alice.mouth.a
-            i = @asset.char.alice.mouth.i
-            u = @asset.char.alice.mouth.u
-            e = @asset.char.alice.mouth.e
-            o = @asset.char.alice.mouth.o
+            closed = @asset:.char.alice.mouth.closed
+            a = @asset:.char.alice.mouth.a
+            i = @asset:.char.alice.mouth.i
+            u = @asset:.char.alice.mouth.u
+            e = @asset:.char.alice.mouth.e
+            o = @asset:.char.alice.mouth.o
         }
     }
 
@@ -396,7 +396,7 @@ Read-ahead for a likely next flow:
 ```arcw
 anticipate @flow.alice_intro {
     alice.preload(looks=[smile, worried], voices=auto, sprites=true)
-    asset.preload(@asset.bg.room_evening)
+    asset.preload(@asset:.bg.room_evening)
     shader.preload(@shader.transition.dissolve)
 }
 ```
@@ -512,7 +512,7 @@ preload next @flow.alice_intro {
     alice.prefetch(flow=@flow.alice_intro, lines=6)
     alice.sprite(smile).preload()
     alice.voice_for(@say.alice_intro.001).preload()
-    asset.image(@asset.bg.room_evening)
+    asset.image(@asset:.bg.room_evening)
 }
 ```
 

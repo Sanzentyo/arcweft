@@ -115,7 +115,14 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
                 }
             }
         }
-        HirTopLevelDecl::EntityDecl(item) => push_entity(uses, item.id()),
+        HirTopLevelDecl::EntityDecl(item) => {
+            push_entity(uses, item.id());
+            if let Some(content) = item.content_body() {
+                for root in content.roots() {
+                    push_entity(uses, root);
+                }
+            }
+        }
         HirTopLevelDecl::Callable(item) => {
             for contract in item.contracts() {
                 collect_contract_clause(contract, uses);

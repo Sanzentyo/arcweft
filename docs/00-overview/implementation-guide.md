@@ -26,7 +26,8 @@ TokenKind
 - AST から semantic item を抽出。
 - module summary を作る。
 - `EntityId` と `PublicId` を解決。
-- `use` / `pub` / `lazy use` を解決。
+- `use` / `pub` を解決。`use` は名前導入のみで、ビルド需要は compiler 側の
+  demand model が扱う。
 - 型推論と effect check の前段を作る。
 
 ### `arcweft-id` / `arcweft-ref`

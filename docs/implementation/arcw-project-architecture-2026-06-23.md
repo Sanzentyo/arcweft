@@ -16,7 +16,8 @@ Implementation revision during audit:
 - `arcw.toml` is a Cargo-like project manifest with package metadata and build roots.
 - Project source loading is recursive under the configured source root.
 - File paths map to typed Arcweft module paths; non-root modules must declare the matching `mod` path.
-- `use` declarations become typed module graph edges with eager/normal/lazy behavior owned by Arcweft syntax boundary types.
+- `use` declarations become typed module graph edges for name introduction only;
+  eager/lazy body demand is compiler query state, not import syntax.
 - Module graph compile units are deterministic and SCC-based.
 - HIR has a module-preserving project container and a linked transitional view for existing semantic/runtime passes.
 - `arcw check` is package-oriented.
@@ -29,7 +30,8 @@ Implementation revision during audit:
 
 - Added Sans I/O crate `arcweft-project` for manifests, source inventories, module graph edges, and compile units.
 - Extended `arcweft-project-loader` with filesystem project discovery/loading while keeping the data model in `arcweft-project`.
-- Added `arcweft-lang-syntax::ast::module_path` and inherent behavior on `UseMode` / `UseDependencyMode`.
+- Added `arcweft-lang-syntax::ast::module_path` and kept import syntax as
+  ordinary name-introduction without `UseMode` / `UseDependencyMode`.
 - Added `arcweft-lang-hir::project::HirProject`.
 - Added `arcweft-compiler::project` for split parse/lint/HIR project compilation and in-process unit cache keys.
 - Added `arcw check`, `arcw build`, and `arcw compile` command paths in `arcweft-cli`.

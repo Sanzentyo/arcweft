@@ -23,7 +23,7 @@
 - [Result / Option, `?`, and Context](result-option-context.md)
 - [Error, Trace, `?`, and Context](error-trace-context.md)
 - [Block scopes](block-scopes.md)
-- [module / use / pub / lazy use](modules.md)
+- [module / use / pub](modules.md)
 - [Option / Result / Need / lifetime](types-and-effects.md)
 - [State / Event / Reducer / Flow / View](state-flow-reducer.md)
 - [ADT と pattern matching](adt.md)

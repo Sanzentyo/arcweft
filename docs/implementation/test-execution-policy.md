@@ -103,7 +103,6 @@ cover JLREQ and vertical-text matrices:
 | --- | --- | ---: | --- |
 | `cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer --quiet` | broad prefix, 204 selected tests | 230.6s wall | failed on stale textbox object crop expectations |
 | `cargo test -p arcweft-render-text -p arcweft-text-layout -p arcweft-player-native --lib --quiet` | rich-text/native library route | 3.6s wall | passed |
-| `cargo test -p arcweft-player-native --features dev-source --quiet` | native player source developer-mode route | feature-gated | use when changing player source compilation support |
 | `cargo test -p arcweft-player-native --features dev-capture --quiet` | native player capture developer-mode route | feature-gated | use when changing player capture CLI support |
 
 The broad `agent_observe_native_renderer` prefix is no longer a Tier 1 shortcut.

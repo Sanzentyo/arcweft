@@ -5,10 +5,9 @@
 //! editor plugin, or tests can reuse.
 
 use arcweft_adapter_context::manifest::{
-    AdapterEffectCapability, AdapterHostCallId, AdapterManifest,
+    AdapterEffectCapability, AdapterFunctionSignature, AdapterHostCallId, AdapterManifest,
+    AdapterTypeKind,
 };
-use arcweft_lang_sema::env::FunctionSignature;
-use arcweft_lang_sema::types::TypeKind;
 use arcweft_runtime_host::{
     RuntimeHostCapabilities, RuntimeHostConformanceDiagnosticKind, RuntimeHostConformanceReport,
     RuntimeHostRunnerKind,
@@ -493,7 +492,7 @@ pub fn rust_adapter_signature_help(
                     .params()
                     .iter()
                     .map(|param| ParameterInformation {
-                        label: ParameterLabel::Simple(param.name().unwrap_or("_").to_owned()),
+                        label: ParameterLabel::Simple(param.name().to_owned()),
                         documentation: Some(lsp_types::Documentation::String(type_kind_label(
                             param.ty(),
                         ))),
@@ -770,12 +769,12 @@ fn default_range() -> Range {
     }
 }
 
-fn signature_label(name: &str, signature: &FunctionSignature) -> String {
+fn signature_label(name: &str, signature: &AdapterFunctionSignature) -> String {
     let params = signature
         .params()
         .iter()
         .map(|param| {
-            let name = param.name().unwrap_or("_");
+            let name = param.name();
             format!("{name}: {}", type_kind_label(param.ty()))
         })
         .collect::<Vec<_>>()
@@ -787,14 +786,14 @@ fn signature_label(name: &str, signature: &FunctionSignature) -> String {
 }
 
 fn method_signature_label(
-    receiver: &TypeKind,
+    receiver: &AdapterTypeKind,
     name: &str,
-    signature: &FunctionSignature,
+    signature: &AdapterFunctionSignature,
 ) -> String {
     signature_label(&method_label(receiver, name), signature)
 }
 
-fn method_label(receiver: &TypeKind, name: &str) -> String {
+fn method_label(receiver: &AdapterTypeKind, name: &str) -> String {
     format!("{}.{}", type_kind_label(receiver), name)
 }
 
@@ -829,38 +828,37 @@ fn tooling_doc_text(adapter: &AdapterManifest, subject: &str) -> String {
     })
 }
 
-fn type_kind_label(ty: &TypeKind) -> String {
+fn type_kind_label(ty: &AdapterTypeKind) -> String {
     match ty {
-        TypeKind::Bool => "Bool".to_owned(),
-        TypeKind::I8 => "i8".to_owned(),
-        TypeKind::I16 => "i16".to_owned(),
-        TypeKind::I32 => "i32".to_owned(),
-        TypeKind::I64 => "i64".to_owned(),
-        TypeKind::I128 => "i128".to_owned(),
-        TypeKind::ISize => "isize".to_owned(),
-        TypeKind::U8 => "u8".to_owned(),
-        TypeKind::U16 => "u16".to_owned(),
-        TypeKind::U32 => "u32".to_owned(),
-        TypeKind::U64 => "u64".to_owned(),
-        TypeKind::U128 => "u128".to_owned(),
-        TypeKind::USize => "usize".to_owned(),
-        TypeKind::F32 => "f32".to_owned(),
-        TypeKind::F64 => "f64".to_owned(),
-        TypeKind::String => "String".to_owned(),
-        TypeKind::Char => "Char".to_owned(),
-        TypeKind::Unit => "()".to_owned(),
-        TypeKind::Never => "Never".to_owned(),
-        TypeKind::Vec(item) => format!("Vec<{}>", type_kind_label(item)),
-        TypeKind::Seq(item) => format!("Seq<{}>", type_kind_label(item)),
-        TypeKind::Option(item) => format!("Option<{}>", type_kind_label(item)),
-        TypeKind::Result { ok, error } => {
+        AdapterTypeKind::Bool => "Bool".to_owned(),
+        AdapterTypeKind::I8 => "i8".to_owned(),
+        AdapterTypeKind::I16 => "i16".to_owned(),
+        AdapterTypeKind::I32 => "i32".to_owned(),
+        AdapterTypeKind::I64 => "i64".to_owned(),
+        AdapterTypeKind::I128 => "i128".to_owned(),
+        AdapterTypeKind::ISize => "isize".to_owned(),
+        AdapterTypeKind::U8 => "u8".to_owned(),
+        AdapterTypeKind::U16 => "u16".to_owned(),
+        AdapterTypeKind::U32 => "u32".to_owned(),
+        AdapterTypeKind::U64 => "u64".to_owned(),
+        AdapterTypeKind::U128 => "u128".to_owned(),
+        AdapterTypeKind::USize => "usize".to_owned(),
+        AdapterTypeKind::F32 => "f32".to_owned(),
+        AdapterTypeKind::F64 => "f64".to_owned(),
+        AdapterTypeKind::String => "String".to_owned(),
+        AdapterTypeKind::Char => "Char".to_owned(),
+        AdapterTypeKind::Unit => "()".to_owned(),
+        AdapterTypeKind::Vec(item) => format!("Vec<{}>", type_kind_label(item)),
+        AdapterTypeKind::Seq(item) => format!("Seq<{}>", type_kind_label(item)),
+        AdapterTypeKind::Option(item) => format!("Option<{}>", type_kind_label(item)),
+        AdapterTypeKind::Result { ok, error } => {
             format!(
                 "Result<{}, {}>",
                 type_kind_label(ok),
                 type_kind_label(error)
             )
         }
-        TypeKind::Tuple(items) => format!(
+        AdapterTypeKind::Tuple(items) => format!(
             "({})",
             items
                 .iter()
@@ -868,16 +866,22 @@ fn type_kind_label(ty: &TypeKind) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-        TypeKind::Named(name) => name.clone(),
-        other => format!("{other:?}"),
+        AdapterTypeKind::Need { ready, error } => {
+            format!(
+                "Need<{}, {}>",
+                type_kind_label(ready),
+                type_kind_label(error)
+            )
+        }
+        AdapterTypeKind::Named(name) => name.clone(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_adapter_context::manifest::AdapterFunctionParam;
     use arcweft_adapter_context::manifest::{AdapterHostCall, AdapterManifest, AdapterToolingDoc};
-    use arcweft_lang_sema::env::{FunctionParam, FunctionSignature};
     use arcweft_rust_abi::{
         ArcweftRustField, ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage,
         ArcweftRustParam, ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind,
@@ -1152,20 +1156,26 @@ mod tests {
     #[test]
     fn exposes_adapter_manifest_completions_and_hover() {
         let adapter = AdapterManifest::new("custom", "Custom")
-            .with_symbol("custom", TypeKind::Named("CustomApi".to_owned()))
+            .with_symbol("custom", AdapterTypeKind::Named("CustomApi".to_owned()))
             .with_method_signature(
-                TypeKind::Named("CustomApi".to_owned()),
+                AdapterTypeKind::Named("CustomApi".to_owned()),
                 "read",
-                FunctionSignature::new(
-                    TypeKind::String,
-                    [FunctionParam::required("path", TypeKind::String)],
+                AdapterFunctionSignature::new(
+                    AdapterTypeKind::String,
+                    [AdapterFunctionParam::required(
+                        "path",
+                        AdapterTypeKind::String,
+                    )],
                 ),
             )
             .with_function_signature(
                 "custom.read",
-                FunctionSignature::new(
-                    TypeKind::String,
-                    [FunctionParam::required("path", TypeKind::String)],
+                AdapterFunctionSignature::new(
+                    AdapterTypeKind::String,
+                    [AdapterFunctionParam::required(
+                        "path",
+                        AdapterTypeKind::String,
+                    )],
                 ),
                 [AdapterEffectCapability::new("custom.read")],
             )

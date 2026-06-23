@@ -1,6 +1,6 @@
 use super::{
-    AwaitBranchKind, CallArg, ChoiceAction, EntityDeclKind, EntityKind, EntityRef, Expr,
-    LifetimeScopeKind, Literal, MapKind, Pattern, Stmt, TypeCheckError, TypeKind, TypeRef,
+    AwaitBranchKind, CallArg, ChoiceAction, EntityDeclKind, EntityKind, EntityRef, EntityRefSyntax,
+    Expr, LifetimeScopeKind, Literal, MapKind, Pattern, Stmt, TypeCheckError, TypeKind, TypeRef,
     VariantPatternPayload,
 };
 
@@ -18,6 +18,7 @@ pub(super) fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
         "textbox" => EntityKind::Textbox,
         "say" => EntityKind::DialogueLine,
         "text" => EntityKind::Text,
+        "content" => EntityKind::Content,
         "item" => EntityKind::Other("item".to_owned()),
         "asset" => EntityKind::Asset,
         "image" => EntityKind::Image,
@@ -47,6 +48,18 @@ pub(super) fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
     })
 }
 
+pub(super) fn entity_syntax_kind(entity: &EntityRefSyntax) -> Option<EntityKind> {
+    entity.as_absolute().and_then(entity_kind).or_else(|| {
+        entity.family_relative_ref().and_then(|relative| {
+            entity_kind(&EntityRef::new(
+                format!("{}._", relative.family()),
+                false,
+                *relative.range(),
+            ))
+        })
+    })
+}
+
 pub(super) fn expr_path_label(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Path(path) => Some(path.clone()),
@@ -62,6 +75,7 @@ pub(super) fn entity_kind_for_decl(kind: EntityDeclKind) -> EntityKind {
         EntityDeclKind::Character => EntityKind::Character,
         EntityDeclKind::Component => EntityKind::Component,
         EntityDeclKind::Activity => EntityKind::Activity,
+        EntityDeclKind::Content => EntityKind::Content,
         EntityDeclKind::Signal => EntityKind::Signal,
         EntityDeclKind::Metric => EntityKind::Metric,
         EntityDeclKind::Layer => EntityKind::Layer,
@@ -669,10 +683,7 @@ pub(super) fn choice_output_type(choice: &arcweft_lang_hir::model::HirChoice) ->
 
 pub(super) fn simple_expr_type(expr: &Expr) -> Option<TypeKind> {
     match expr {
-        Expr::EntityRef(entity) => entity
-            .as_absolute()
-            .and_then(entity_kind)
-            .map(TypeKind::entity_ref),
+        Expr::EntityRef(entity) => entity_syntax_kind(entity).map(TypeKind::entity_ref),
         Expr::Literal(literal) => literal_type(literal),
         Expr::Tuple(items) => items
             .iter()

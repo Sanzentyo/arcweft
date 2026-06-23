@@ -38,6 +38,10 @@ use arcweft_bundle::{
     BundleImageObjectPlayback, BundleImageObjectTransform, BundleLaunchKind, BundleManifest,
     BundleRuntimeSummary, BundleSource, BundleVirtualFile, BundleVirtualFileRef,
     BundleVirtualFileSpace,
+    container::{BundleDigest, BundleView, ReadBudget},
+    patch::{
+        BundlePatchArtifact, PatchCompatibility, apply_patch_bundle_bytes, encode_patch_bundle,
+    },
 };
 use arcweft_core::{
     effect::{LineEffectRequest, RuntimeCall},
@@ -50,8 +54,9 @@ use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
 use arcweft_runtime_host::{
     BundleRunnerError, BundleRunnerOptions, INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar,
     internal_scheduler_manifest, run_bundle_file_with_native_adapters,
+    run_bundle_with_native_adapters,
 };
-use clap::{Args, ValueEnum};
+use clap::Args;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -66,8 +71,8 @@ pub(in crate::app) struct BundleOptions {
     output: PathBuf,
     #[command(flatten)]
     virtual_files: BundleVirtualFileOptions,
-    #[arg(long, value_enum, default_value_t = BundleArtifactFormat::Json)]
-    format: BundleArtifactFormat,
+    #[arg(long, value_parser = parse_bundle_format_arg, default_value = "awfb")]
+    format: BundleFormat,
     #[arg(long)]
     json: bool,
 }
@@ -85,6 +90,8 @@ struct BundleVirtualFileOptions {
 #[derive(Args, Clone, Debug)]
 pub(in crate::app) struct RunBundleOptions {
     bundle: PathBuf,
+    #[arg(long)]
+    patch: Option<PathBuf>,
     #[arg(long, conflicts_with = "flow")]
     entry: Option<String>,
     #[arg(long, conflicts_with = "entry")]
@@ -99,31 +106,32 @@ pub(in crate::app) struct RunBundleOptions {
     max_ops: usize,
     #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
     values: Vec<RuntimeBinding>,
-    #[arg(long, value_enum, default_value_t = BundleInputFormat::Auto)]
-    format: BundleInputFormat,
     #[arg(long)]
     json: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-enum BundleArtifactFormat {
-    Json,
-    Toml,
-    Yaml,
-    Msgpack,
-    Cbor,
-    Avro,
+#[derive(Args, Clone, Debug)]
+pub(in crate::app) struct PatchBundleOptions {
+    #[arg(long)]
+    base: PathBuf,
+    #[arg(long)]
+    next: PathBuf,
+    #[arg(short, long)]
+    output: PathBuf,
+    #[arg(long)]
+    json: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-enum BundleInputFormat {
-    Auto,
-    Json,
-    Toml,
-    Yaml,
-    Msgpack,
-    Cbor,
-    Avro,
+#[derive(serde::Serialize)]
+struct PatchBundleCommandReport {
+    patch: String,
+    base: String,
+    next: String,
+    base_content_root: String,
+    target_content_root: String,
+    operations: usize,
+    changed_sections: usize,
+    compatibility: PatchCompatibility,
 }
 
 impl BundleOptions {
@@ -153,35 +161,21 @@ impl From<&RunBundleOptions> for BundleRunnerOptions {
             max_ops: options.max_ops,
             values: options.values.clone(),
             pure_config: RuntimePureAcceleratorConfig::default(),
-            bundle_format: options.format.bundle_format(),
         }
     }
 }
 
-impl From<BundleArtifactFormat> for BundleFormat {
-    fn from(format: BundleArtifactFormat) -> Self {
-        match format {
-            BundleArtifactFormat::Json => Self::Json,
-            BundleArtifactFormat::Toml => Self::Toml,
-            BundleArtifactFormat::Yaml => Self::Yaml,
-            BundleArtifactFormat::Msgpack => Self::MessagePack,
-            BundleArtifactFormat::Cbor => Self::Cbor,
-            BundleArtifactFormat::Avro => Self::Avro,
-        }
-    }
-}
-
-impl BundleInputFormat {
-    const fn bundle_format(self) -> Option<BundleFormat> {
-        match self {
-            Self::Auto => None,
-            Self::Json => Some(BundleFormat::Json),
-            Self::Toml => Some(BundleFormat::Toml),
-            Self::Yaml => Some(BundleFormat::Yaml),
-            Self::Msgpack => Some(BundleFormat::MessagePack),
-            Self::Cbor => Some(BundleFormat::Cbor),
-            Self::Avro => Some(BundleFormat::Avro),
-        }
+fn parse_bundle_format_arg(value: &str) -> Result<BundleFormat, String> {
+    let format = BundleFormat::parse(value).map_err(|error| error.to_string())?;
+    if format.is_codec_enabled() {
+        Ok(format)
+    } else {
+        let feature = format
+            .required_feature()
+            .expect("disabled bundle formats have feature gates");
+        Err(format!(
+            "bundle format `{format}` requires feature `{feature}`"
+        ))
     }
 }
 
@@ -200,12 +194,10 @@ pub(super) fn bundle_command(options: &BundleOptions) -> Result<(), ExitCode> {
     let mut phases = Vec::new();
     let bundle = compile_bundle_artifact(&selection, options, &mut phases)?;
     let bytes = run_profile_phase(&mut phases, "encode_bundle", || {
-        bundle
-            .to_format_bytes(options.format.into())
-            .map_err(|error| {
-                eprintln!("error: failed to encode bundle: {error}");
-                ExitCode::FAILURE
-            })
+        bundle.to_format_bytes(options.format).map_err(|error| {
+            eprintln!("error: failed to encode bundle: {error}");
+            ExitCode::FAILURE
+        })
     })?;
     write_bundle_artifact(&options.output, bytes, &mut phases)?;
     if options.json {
@@ -266,7 +258,7 @@ pub(in crate::app) fn compile_bundle_for_selection(
     let adapter_manifests = bundle_adapter_manifests(
         &adapter_manifest,
         required_host_calls.iter().map(String::as_str),
-    );
+    )?;
     let virtual_files = collect_bundle_virtual_files(selection.path(), include_spaces)?;
     let image_assets = collect_bundle_image_assets(&virtual_files)?;
     let image_declarations = parse_declared_image_objects(&source);
@@ -389,14 +381,23 @@ pub(super) fn run_bundle_command(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<(), ExitCode> {
     let runner_options = BundleRunnerOptions::from(options);
-    let execution =
+    let execution = if let Some(patch) = options.patch.as_ref() {
+        run_patched_bundle_with_native_adapters(
+            &options.bundle,
+            patch,
+            &runner_options,
+            adapter_registrars,
+        )?
+    } else {
         run_bundle_file_with_native_adapters(&options.bundle, &runner_options, adapter_registrars)
             .map_err(|error| {
-                eprintln!("error: {error}");
-                bundle_runner_error_exit_code(&error)
-            })?;
+            eprintln!("error: {error}");
+            bundle_runner_error_exit_code(&error)
+        })?
+    };
     let report = BundleRunReport {
         bundle: report_path(&options.bundle),
+        patch: options.patch.as_deref().map(report_path),
         source: execution.source,
         bytecode_instructions: execution.bytecode_instructions,
         adapter_manifests: execution.adapter_manifests,
@@ -420,9 +421,135 @@ pub(super) fn run_bundle_command(
     }
 }
 
+pub(super) fn patch_bundle_command(options: &PatchBundleOptions) -> Result<(), ExitCode> {
+    let base_bytes = read_patch_input("base", &options.base)?;
+    let next_bytes = read_patch_input("next", &options.next)?;
+    let artifact = build_patch_bundle_artifact_from_awfb_bytes(&base_bytes, &next_bytes)?;
+    let patch_bytes = encode_patch_bundle(&artifact).map_err(|error| {
+        eprintln!("error: failed to encode patch bundle: {error}");
+        ExitCode::FAILURE
+    })?;
+    write_patch_bundle_artifact(&options.output, patch_bytes)?;
+    let report = PatchBundleCommandReport {
+        patch: report_path(&options.output),
+        base: report_path(&options.base),
+        next: report_path(&options.next),
+        base_content_root: digest_report(artifact.plan.base_content_root),
+        target_content_root: digest_report(artifact.plan.target_content_root),
+        operations: artifact.plan.operations.len(),
+        changed_sections: artifact.changed_sections.len(),
+        compatibility: artifact.manifest.compatibility,
+    };
+    if options.json {
+        print_json(&report)
+    } else {
+        println!(
+            "ok: {} ({} operation(s), compatibility={})",
+            options.output.display(),
+            report.operations,
+            report.compatibility.label()
+        );
+        Ok(())
+    }
+}
+
+fn read_patch_input(label: &str, path: &Path) -> Result<Vec<u8>, ExitCode> {
+    fs::read(path).map_err(|error| {
+        eprintln!(
+            "error: failed to read {label} bundle {}: {error}",
+            path.display()
+        );
+        ExitCode::FAILURE
+    })
+}
+
+pub(in crate::app) fn build_patch_bundle_artifact_from_awfb_bytes(
+    base_bytes: &[u8],
+    next_bytes: &[u8],
+) -> Result<BundlePatchArtifact, ExitCode> {
+    let base = BundleView::parse(base_bytes, ReadBudget::default()).map_err(|error| {
+        eprintln!("error: failed to decode base AWFB bundle: {error}");
+        ExitCode::FAILURE
+    })?;
+    let next = BundleView::parse(next_bytes, ReadBudget::default()).map_err(|error| {
+        eprintln!("error: failed to decode next AWFB bundle: {error}");
+        ExitCode::FAILURE
+    })?;
+    BundlePatchArtifact::from_views(&base, &next).map_err(|error| {
+        eprintln!("error: failed to build patch artifact: {error}");
+        ExitCode::FAILURE
+    })
+}
+
+pub(in crate::app) fn write_patch_bundle_artifact(
+    output: &Path,
+    bytes: Vec<u8>,
+) -> Result<(), ExitCode> {
+    if let Some(parent) = output.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent).map_err(|error| {
+            eprintln!(
+                "error: failed to create patch output directory {}: {error}",
+                parent.display()
+            );
+            ExitCode::FAILURE
+        })?;
+    }
+    fs::write(output, bytes).map_err(|error| {
+        eprintln!(
+            "error: failed to write patch bundle {}: {error}",
+            output.display()
+        );
+        ExitCode::FAILURE
+    })
+}
+
+fn digest_report(digest: BundleDigest) -> String {
+    digest.to_string()
+}
+
+fn run_patched_bundle_with_native_adapters(
+    bundle: &Path,
+    patch: &Path,
+    runner_options: &BundleRunnerOptions,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<arcweft_runtime_host::BundleRunnerReport, ExitCode> {
+    let base_bytes = fs::read(bundle).map_err(|error| {
+        eprintln!(
+            "error: failed to read base bundle {}: {error}",
+            bundle.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    let patch_bytes = fs::read(patch).map_err(|error| {
+        eprintln!(
+            "error: failed to read patch bundle {}: {error}",
+            patch.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    let target_bytes = apply_patch_bundle_bytes(&base_bytes, &patch_bytes).map_err(|error| {
+        eprintln!("error: failed to apply bundle patch: {error}");
+        ExitCode::FAILURE
+    })?;
+    let target_bundle = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &target_bytes)
+        .map_err(|error| {
+            eprintln!("error: failed to decode patched target bundle: {error}");
+            ExitCode::FAILURE
+        })?;
+    run_bundle_with_native_adapters(&target_bundle, runner_options, adapter_registrars).map_err(
+        |error| {
+            eprintln!("error: {error}");
+            bundle_runner_error_exit_code(&error)
+        },
+    )
+}
+
 fn bundle_runner_error_exit_code(error: &BundleRunnerError) -> ExitCode {
     match error {
-        BundleRunnerError::ConflictingEntrySelection => ExitCode::from(2),
+        BundleRunnerError::ConflictingEntrySelection
+        | BundleRunnerError::ExpectedAwfbProduct { .. } => ExitCode::from(2),
         BundleRunnerError::ReadBundle { .. }
         | BundleRunnerError::DecodeBundle(_)
         | BundleRunnerError::InvalidImageAsset(_)
@@ -430,6 +557,7 @@ fn bundle_runner_error_exit_code(error: &BundleRunnerError) -> ExitCode {
         | BundleRunnerError::DecodeImageAsset { .. }
         | BundleRunnerError::ImageAssetMetadataMismatch { .. }
         | BundleRunnerError::DecodeBytecode(_)
+        | BundleRunnerError::VerifyBytecode(_)
         | BundleRunnerError::CreateWorkspace(_)
         | BundleRunnerError::CreateSourceDirectory(_)
         | BundleRunnerError::MaterializeSource(_)
@@ -1034,16 +1162,7 @@ fn runtime_positional_call_arg(call: &RuntimeCall, index: usize) -> Option<&str>
 }
 
 fn static_image_asset_ref_runtime_arg(arg: &str) -> Option<String> {
-    let value = arg.trim().trim_matches('"').trim_matches('\'');
-    let value = value.strip_prefix('@').unwrap_or(value);
-    value
-        .starts_with("asset.")
-        .then(|| value.to_owned())
-        .filter(|value| value.chars().all(public_asset_ref_char))
-}
-
-fn public_asset_ref_char(ch: char) -> bool {
-    ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-')
+    public_asset_ref_arg(arg)
 }
 
 fn host_call_id_for_template(capability: &str, operation: &str) -> String {
@@ -1080,7 +1199,7 @@ fn bundle_adapter_manifest_ids<'a>(
 fn bundle_adapter_manifests<'a>(
     selected: &AdapterManifest,
     required_host_calls: impl IntoIterator<Item = &'a str>,
-) -> Vec<BundleAdapterManifest> {
+) -> Result<Vec<BundleAdapterManifest>, ExitCode> {
     let required = required_host_calls.into_iter().collect::<Vec<_>>();
     let mut manifests = vec![bundle_adapter_manifest_from_context(selected)];
     if required
@@ -1113,9 +1232,24 @@ fn bundle_adapter_manifests<'a>(
             .filter_map(|host_call| desktop_manifest_for_host_call(host_call))
             .map(|manifest| bundle_adapter_manifest_from_context(&manifest)),
     );
-    manifests.sort_by(|left, right| left.id.cmp(&right.id));
-    manifests.dedup_by(|left, right| left.id == right.id);
-    manifests
+    let mut by_id: BTreeMap<String, BundleAdapterManifest> = BTreeMap::new();
+    for manifest in manifests {
+        match by_id.entry(manifest.id.clone()) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(manifest);
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => {
+                if entry.get() != &manifest {
+                    eprintln!(
+                        "error: duplicate bundle adapter manifest id `{}` has conflicting bodies",
+                        entry.key()
+                    );
+                    return Err(ExitCode::FAILURE);
+                }
+            }
+        }
+    }
+    Ok(by_id.into_values().collect())
 }
 
 fn desktop_manifest_id_for_host_call(host_call: &str) -> Option<&'static str> {
@@ -1205,7 +1339,6 @@ fn collect_bundle_image_assets(
         .flatten()
         .collect::<Vec<_>>();
     assets.sort_by(|left, right| left.id.cmp(&right.id));
-    assets.dedup_by(|left, right| left.id == right.id);
     Ok(assets)
 }
 
@@ -1384,10 +1517,16 @@ fn validate_relative_virtual_path(path: &Path) -> Result<(), ExitCode> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_bundle::{
+        container::{BundleView, ReadBudget},
+        patch::{BundlePatchArtifact, encode_patch_bundle},
+    };
+    use arcweft_core::bytecode::BytecodeProgram;
     use arcweft_core::plan::{FlowRuntimeId, RuntimeFlow};
     use arcweft_core::task::{
         AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
     };
+    use arcweft_render_text::LineDisplayCatalog;
 
     fn image_await(id: &str) -> FlowOp {
         FlowOp::Await {
@@ -1435,6 +1574,45 @@ mod tests {
             }],
             ..RuntimePlan::default()
         }
+    }
+
+    fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
+        let plan = RuntimePlan::new(
+            Some(FlowRuntimeId("flow.test".to_owned())),
+            vec![RuntimeFlow {
+                id: FlowRuntimeId("flow.test".to_owned()),
+                ops: vec![FlowOp::Return(return_value.to_owned())],
+            }],
+            Vec::new(),
+        )
+        .expect("test runtime plan is valid");
+        let program = BytecodeProgram::from_runtime_plan(plan);
+        let stats = program.stats();
+        ArcweftBundle::new(
+            BundleManifest {
+                source_label: source_label.to_owned(),
+                profile_id: None,
+                profile_kind: None,
+                entry: None,
+                adapter: None,
+                adapter_manifest_ids: Vec::new(),
+                required_host_calls: Vec::new(),
+                runtime: BundleRuntimeSummary {
+                    entry_flow: Some("flow.test".to_owned()),
+                    flows: stats.flows,
+                    bytecode_instructions: stats.instructions,
+                    line_task_groups: stats.line_task_groups,
+                    stream_plans: stats.stream_plans,
+                    source_plans: stats.source_plans,
+                },
+            },
+            BundleSource {
+                label: source_label.to_owned(),
+                text: format!("flow test {{ return \"{return_value}\" }}"),
+            },
+            program,
+            LineDisplayCatalog::default(),
+        )
     }
 
     fn image_asset(id: &str) -> BundleImageAsset {
@@ -1498,7 +1676,7 @@ mod tests {
         let plan = plan_with_ops(vec![FlowOp::If {
             condition: RuntimeExpr::Value(RuntimeValue::Bool(true)),
             then_ops: vec![image_await("asset.bg.room")],
-            else_ops: vec![image_effect_call("image", "asset = @asset.ui.logo")],
+            else_ops: vec![image_effect_call("image", "asset = @asset:.ui.logo")],
         }]);
 
         assert_eq!(
@@ -1510,7 +1688,7 @@ mod tests {
     #[test]
     fn static_image_asset_refs_collects_runtime_presentation_image_calls() {
         let plan = plan_with_ops(vec![
-            image_effect_call("bg", "@asset.bg.room"),
+            image_effect_call("bg", "@asset:.bg.room"),
             image_effect_call("image.show", "asset = \"asset.ui.logo\""),
             FlowOp::Await {
                 binding: None,
@@ -1521,7 +1699,7 @@ mod tests {
                 ),
                 pending: vec![LineEffectRequest::Call(RuntimeCall {
                     callee: "image".to_owned(),
-                    args: vec!["asset = @asset.bg.pulse".to_owned()],
+                    args: vec!["asset = @asset:.bg.pulse".to_owned()],
                 })],
             },
         ]);
@@ -1540,7 +1718,7 @@ mod tests {
     fn static_image_asset_refs_collects_line_task_image_calls() {
         let plan = plan_with_line_task(LineEffectRequest::Call(RuntimeCall {
             callee: "bg".to_owned(),
-            args: vec!["@asset.bg.room".to_owned()],
+            args: vec!["@asset:.bg.room".to_owned()],
         }));
 
         assert_eq!(
@@ -1554,7 +1732,7 @@ mod tests {
         let declarations = parse_declared_image_objects(
             r"
 image @image.sample.pulse {
-    asset = @asset.bg.pulse
+    asset = @asset:.bg.pulse
     x = 12px
     y = 34px
     width = 56px
@@ -1574,7 +1752,7 @@ image @image.sample.pulse {
         let declarations = parse_declared_image_objects(
             r"
 image @image.sample.pulse {
-    asset = @asset.bg.pulse
+    asset = @asset:.bg.pulse
     x = 12px
     y = 34px
     width = 56px
@@ -1630,7 +1808,7 @@ image @image.sample.pulse {
     fn validate_referenced_bundle_image_assets_rejects_missing_static_refs() {
         let plan = plan_with_ops(vec![
             image_await("asset.bg.room"),
-            image_effect_call("image", "asset = @asset.ui.logo"),
+            image_effect_call("image", "asset = @asset:.ui.logo"),
         ]);
 
         assert!(validate_referenced_bundle_image_assets(&plan, &BTreeMap::new(), &[]).is_err());
@@ -1642,5 +1820,75 @@ image @image.sample.pulse {
             )
             .is_ok()
         );
+    }
+
+    #[test]
+    fn patch_bundle_artifact_helper_diffs_base_and_next_awfb_bytes() {
+        let base_bytes = return_bundle("base.arcw", "base-done")
+            .to_format_bytes(BundleFormat::Awfb)
+            .expect("base bundle encodes");
+        let next_bytes = return_bundle("next.arcw", "next-done")
+            .to_format_bytes(BundleFormat::Awfb)
+            .expect("next bundle encodes");
+
+        let artifact = build_patch_bundle_artifact_from_awfb_bytes(&base_bytes, &next_bytes)
+            .expect("patch artifact builds");
+
+        assert_eq!(
+            artifact.manifest.base_content_root,
+            artifact.plan.base_content_root
+        );
+        assert_eq!(
+            artifact.manifest.target_content_root,
+            artifact.plan.target_content_root
+        );
+        assert!(!artifact.plan.operations.is_empty());
+    }
+
+    #[test]
+    fn run_bundle_applies_awfb_patch_before_execution() {
+        let base_bytes = return_bundle("base.arcw", "base-done")
+            .to_format_bytes(BundleFormat::Awfb)
+            .expect("base bundle encodes");
+        let target_bytes = return_bundle("target.arcw", "target-done")
+            .to_format_bytes(BundleFormat::Awfb)
+            .expect("target bundle encodes");
+        let base_view =
+            BundleView::parse(&base_bytes, ReadBudget::default()).expect("base AWFB parses");
+        let target_view =
+            BundleView::parse(&target_bytes, ReadBudget::default()).expect("target AWFB parses");
+        let artifact =
+            BundlePatchArtifact::from_views(&base_view, &target_view).expect("patch artifact");
+        let patch_bytes = encode_patch_bundle(&artifact).expect("patch bundle encodes");
+        let unique = format!(
+            "arcweft-run-bundle-patch-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock after UNIX epoch")
+                .as_nanos()
+        );
+        let base_path = std::env::temp_dir().join(format!("{unique}-base.awfb"));
+        let patch_path = std::env::temp_dir().join(format!("{unique}-patch.awfb"));
+        fs::write(&base_path, base_bytes).expect("base bundle writes");
+        fs::write(&patch_path, patch_bytes).expect("patch bundle writes");
+
+        let report = run_patched_bundle_with_native_adapters(
+            &base_path,
+            &patch_path,
+            &BundleRunnerOptions {
+                steps: 4,
+                max_ops: 8,
+                ..BundleRunnerOptions::default()
+            },
+            &[],
+        )
+        .expect("patched bundle runs");
+
+        assert_eq!(report.source, "base.arcw");
+        assert_eq!(report.final_status, "done return target-done");
+
+        let _ = fs::remove_file(base_path);
+        let _ = fs::remove_file(patch_path);
     }
 }

@@ -144,13 +144,7 @@ async function openReady(browser, baseUrl, options = {}) {
       null,
       { timeout: 10_000 },
     );
-    await assertFrameObservation(page, {
-      logicalWidth: viewport.width / (options.deviceScaleFactor ?? 1),
-      logicalHeight: viewport.height / (options.deviceScaleFactor ?? 1),
-      physicalWidth: viewport.width,
-      physicalHeight: viewport.height,
-      scaleFactor: options.deviceScaleFactor ?? 1,
-    });
+    await assertFrameObservation(page, await canvasViewport(page));
   } catch (error) {
     const state = await page.evaluate(() => ({
       fatal: document.querySelector("#arcweft-fatal")?.textContent ?? null,
@@ -211,14 +205,30 @@ async function assertFrameObservation(page, expected) {
 }
 
 function expectedChoiceGeometry(expected) {
-  const width = Math.min(Math.max(expected.logicalWidth * 0.64, 320), 920);
-  const itemHeight = 58;
+  const width = Math.min(Math.max(expected.logicalWidth * 0.52, 360), 760);
+  const itemHeight = 60;
   const gap = 12;
   const total = 2 * (itemHeight + gap) - gap;
-  const top = Math.max((expected.logicalHeight - total) * 0.42, 36);
+  const margin = Math.max(expected.logicalWidth * 0.045, 24);
+  const panelHeight = Math.min(Math.max(expected.logicalHeight * 0.28, 180), 320);
+  const panelY = expected.logicalHeight - panelHeight - margin;
+  const top = Math.max(panelY - total - 22, 36);
   const first = Math.round(top * 1_000);
   const second = Math.round((top + itemHeight + gap) * 1_000);
   return `choice.web_demo.continue:${first},choice.web_demo.alternate:${second}`;
+}
+
+async function canvasViewport(page) {
+  return await page.evaluate(() => {
+    const canvas = document.querySelector("#arcweft-canvas");
+    return {
+      logicalWidth: canvas.clientWidth,
+      logicalHeight: canvas.clientHeight,
+      physicalWidth: canvas.width,
+      physicalHeight: canvas.height,
+      scaleFactor: window.devicePixelRatio,
+    };
+  });
 }
 
 async function runSmoke(name, test) {
@@ -263,6 +273,24 @@ async function main() {
       }
     });
 
+    await runSmoke("canvas keeps a 16:9 aspect ratio inside non-16:9 viewports", async () => {
+      const { page, errors } = await openReady(browser, baseUrl, {
+        viewport: { width: 1000, height: 800 },
+      });
+      try {
+        const metrics = await canvasViewport(page);
+        expect(metrics.logicalWidth === 1000, `unexpected canvas width: ${metrics.logicalWidth}`);
+        expect(metrics.logicalHeight < 800, `canvas did not letterbox: ${metrics.logicalHeight}`);
+        expect(
+          Math.abs(metrics.logicalWidth / metrics.logicalHeight - 16 / 9) < 0.005,
+          `canvas is not 16:9: ${JSON.stringify(metrics)}`,
+        );
+        expect(errors.length === 0, `console errors: ${errors.join("\n")}`);
+      } finally {
+        await page.close();
+      }
+    });
+
     if (process.env.ARW_WEB_PARITY_DIR) {
       await runSmoke("native/web visual parity checkpoints are capturable", async () => {
         await writeCanvasParityScreenshots(browser, baseUrl);
@@ -272,9 +300,8 @@ async function main() {
     await runSmoke("pointer hit-test selects a canvas choice and advances runtime", async () => {
       const { page, errors } = await openReady(browser, baseUrl);
       try {
-        const box = await page.locator("#arcweft-canvas").boundingBox();
-        expect(Boolean(box), "canvas has no bounding box");
-        await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.39);
+        const point = await choiceCenter(page, 0);
+        await page.mouse.click(point.x, point.y);
         await page.waitForFunction(() => window.__arcweftLastObservation?.finished === true);
         expect(errors.length === 0, `console errors: ${errors.join("\n")}`);
       } finally {
@@ -302,7 +329,9 @@ async function main() {
         await page.waitForTimeout(100);
         const box = await page.locator("#arcweft-canvas").boundingBox();
         expect(Boolean(box), "canvas has no bounding box after resize");
-        await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.39);
+        await assertFrameObservation(page, await canvasViewport(page));
+        const point = await choiceCenter(page, 0);
+        await page.mouse.click(point.x, point.y);
         await page.waitForFunction(() => window.__arcweftLastObservation?.finished === true);
         expect(errors.length === 0, `console errors: ${errors.join("\n")}`);
       } finally {

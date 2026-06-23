@@ -1,11 +1,10 @@
 use arcweft_bundle::ArcweftBundle;
 #[cfg(feature = "dev-capture")]
 use arcweft_player_native::NativePlayerCaptureMetadata;
-#[cfg(feature = "dev-source")]
-use arcweft_player_native::{NativePlayerProgram, compile_source, run_headless};
-use arcweft_player_native::{run_bundle_headless, run_bundle_windowed};
-#[cfg(any(feature = "dev-capture", feature = "dev-source"))]
+use arcweft_player_native::{NativePatchEndpoint, run_bundle_headless, run_bundle_windowed};
+#[cfg(feature = "dev-capture")]
 use arcweft_render_native as native;
+use arcweft_runtime_driver::session::BundleSessionOptions;
 use clap::Parser;
 #[cfg(feature = "dev-capture")]
 use clap::ValueEnum;
@@ -22,9 +21,6 @@ struct Args {
     /// Emit JSON in headless mode.
     #[arg(long)]
     json: bool,
-    /// Treat path as an .arcw source file and compile it before execution.
-    #[arg(long)]
-    source: bool,
     /// Maximum runtime steps.
     #[arg(long, default_value_t = 64)]
     steps: usize,
@@ -44,7 +40,10 @@ struct Args {
     #[cfg(feature = "dev-capture")]
     #[arg(long, default_value_t = 540)]
     capture_height: u32,
-    /// Arcweft bundle file by default, or an Arcweft source file with --source.
+    /// Apply an `arcw run --watch` patch transport sidecar before running.
+    #[arg(long)]
+    patch_transport: Option<PathBuf>,
+    /// Arcweft product bundle file.
     path: PathBuf,
 }
 
@@ -67,40 +66,28 @@ fn main() -> ExitCode {
 }
 
 fn run(args: &Args) -> Result<(), String> {
-    if args.source {
-        return run_source(args);
-    }
     run_bundle(args)
-}
-
-fn run_source(args: &Args) -> Result<(), String> {
-    ensure_extension(&args.path, "arcw", "--source expects an .arcw source file")?;
-    #[cfg(not(feature = "dev-source"))]
-    {
-        Err(
-            "--source requires building arcweft-player-native with the dev-source feature"
-                .to_owned(),
-        )
-    }
-    #[cfg(feature = "dev-source")]
-    {
-        let source = fs::read_to_string(&args.path)
-            .map_err(|error| format!("failed to read source file: {error}"))?;
-        let program = compile_source(&source).map_err(|error| error.to_string())?;
-        run_program(args, program)
-    }
 }
 
 fn run_bundle(args: &Args) -> Result<(), String> {
     ensure_extension(
         &args.path,
         "awfb",
-        "native player expects an .awfb bundle; pass --source for .arcw dev input",
+        "native player expects an .awfb product bundle",
     )?;
-    let bytes =
+    let mut bytes =
         fs::read(&args.path).map_err(|error| format!("failed to read bundle file: {error}"))?;
-    let bundle =
-        ArcweftBundle::from_path_slice(&args.path, &bytes).map_err(|error| error.to_string())?;
+    if let Some(transport) = args.patch_transport.as_ref() {
+        let mut endpoint =
+            NativePatchEndpoint::from_awfb_bytes(bytes, BundleSessionOptions::default())
+                .map_err(|error| error.to_string())?;
+        endpoint
+            .apply_patch_transport_path(transport)
+            .map_err(|error| error.to_string())?;
+        bytes = endpoint.active_awfb_bytes().to_vec();
+    }
+    let bundle = ArcweftBundle::from_product_path_slice(&args.path, &bytes)
+        .map_err(|error| error.to_string())?;
     run_bundle_program(args, bundle)
 }
 
@@ -113,19 +100,6 @@ fn run_bundle_program(args: &Args, bundle: ArcweftBundle) -> Result<(), String> 
         return Ok(());
     }
     run_bundle_windowed(bundle, args.steps).map_err(|error| error.to_string())
-}
-
-#[cfg(feature = "dev-source")]
-fn run_program(args: &Args, program: NativePlayerProgram) -> Result<(), String> {
-    if args.headless {
-        let report = run_headless(program, args.steps).map_err(|error| error.to_string())?;
-        #[cfg(feature = "dev-capture")]
-        let report = attach_native_capture(args, report)?;
-        write_headless_report(args, &report)?;
-        return Ok(());
-    }
-    let report = run_headless(program, args.steps).map_err(|error| error.to_string())?;
-    native::run_frames_window("Arcweft Player", &report.frames).map_err(|error| error.to_string())
 }
 
 #[cfg(feature = "dev-capture")]
@@ -245,7 +219,6 @@ mod tests {
         Args {
             headless: true,
             json: true,
-            source: false,
             steps: 1,
             #[cfg(feature = "dev-capture")]
             capture: None,
@@ -255,6 +228,7 @@ mod tests {
             capture_width: 64,
             #[cfg(feature = "dev-capture")]
             capture_height: 64,
+            patch_transport: None,
             path: PathBuf::from(path),
         }
     }
@@ -264,8 +238,7 @@ mod tests {
         let args = args_for("game.arcw");
         let error = run(&args).expect_err("source input must not be accepted by default");
 
-        assert!(error.contains("native player expects an .awfb bundle"));
-        assert!(error.contains("pass --source for .arcw dev input"));
+        assert!(error.contains("native player expects an .awfb product bundle"));
     }
 
     #[cfg(not(feature = "dev-capture"))]
@@ -283,30 +256,16 @@ mod tests {
     }
 
     #[test]
-    fn source_mode_requires_arcw_extension_before_feature_gate() {
-        let mut args = args_for("game.awfb");
-        args.source = true;
-        let error = run(&args).expect_err("--source must require source-shaped input");
-
-        assert!(error.contains("--source expects an .arcw source file"));
-    }
-
-    #[cfg(not(feature = "dev-source"))]
-    #[test]
-    fn source_mode_requires_dev_source_feature() {
-        let mut args = args_for("game.arcw");
-        args.source = true;
-        let error = run(&args).expect_err("--source must be feature-gated");
-
-        assert!(error.contains("dev-source feature"));
-    }
-
-    #[test]
     fn default_bundle_mode_runs_awfb_without_source_flag() {
         let path = temp_awfb_path("bundle-mode-runs");
         let bundle = minimal_bundle();
-        fs::write(&path, bundle.to_json_bytes().expect("bundle encodes"))
-            .expect("bundle fixture writes");
+        fs::write(
+            &path,
+            bundle
+                .to_format_bytes(arcweft_bundle::BundleFormat::Awfb)
+                .expect("bundle encodes"),
+        )
+        .expect("bundle fixture writes");
         let mut args = args_for(path.to_str().expect("temp path is utf8"));
         args.json = false;
         args.steps = 8;
@@ -317,13 +276,33 @@ mod tests {
         result.expect("bundle mode runs an .awfb program");
     }
 
+    #[test]
+    fn product_awfb_input_does_not_fall_back_to_legacy_json() {
+        let path = temp_awfb_path("legacy-json-is-not-product-awfb");
+        let bundle = minimal_bundle();
+        fs::write(&path, bundle.to_json_bytes().expect("legacy json encodes"))
+            .expect("legacy json fixture writes");
+        let args = args_for(path.to_str().expect("temp path is utf8"));
+
+        let error = run(&args).expect_err("product .awfb input must require AWFB magic");
+        let _ = fs::remove_file(&path);
+
+        assert!(error.contains("AWFB"));
+        assert!(error.contains("magic"));
+    }
+
     #[cfg(feature = "dev-capture")]
     #[test]
     fn capture_mode_requires_capture_out() {
         let path = temp_awfb_path("capture-requires-out");
         let bundle = minimal_bundle();
-        fs::write(&path, bundle.to_json_bytes().expect("bundle encodes"))
-            .expect("bundle fixture writes");
+        fs::write(
+            &path,
+            bundle
+                .to_format_bytes(arcweft_bundle::BundleFormat::Awfb)
+                .expect("bundle encodes"),
+        )
+        .expect("bundle fixture writes");
         let mut args = args_for(path.to_str().expect("temp path is utf8"));
         args.capture = Some(NativeCaptureFormat::Png);
 

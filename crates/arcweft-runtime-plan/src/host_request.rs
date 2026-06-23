@@ -5,7 +5,7 @@
 //! how those requests are executed.
 
 use crate::expr::lower_runtime_expr_strict;
-use crate::labels::expr_label;
+use crate::labels::{entity_ref_label, expr_label};
 use arcweft_core::task::{HostTaskArgTemplate, HostTaskRequestTemplate};
 use arcweft_core::value::{RuntimeCallTarget, RuntimeExpr, RuntimeFieldExpr, RuntimeValue};
 use arcweft_lang_hir::syntax::expr::{CallArg, Expr, Literal};
@@ -432,7 +432,7 @@ fn lower_agent_probe_expr(expr: &Expr) -> Option<RuntimeExpr> {
 
 fn agent_id_label(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::EntityRef(entity) => Some(entity.body().to_owned()),
+        Expr::EntityRef(entity) => Some(entity_ref_label(entity)),
         Expr::Path(path) => Some(path.trim_start_matches('@').to_owned()),
         Expr::Literal(Literal::String(value)) => Some(value.clone()),
         _ => None,

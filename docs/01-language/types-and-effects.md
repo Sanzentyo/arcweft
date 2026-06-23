@@ -49,13 +49,13 @@ pub enum Need<T, E> {
 暗黙 force は禁止。
 
 ```arcw
-let bg = asset.image(@asset.bg.room) // Need<ImageHandle, AssetError>
+let bg = asset.image(@asset:.bg.room) // Need<ImageHandle, AssetError>
 ```
 
 flow で使うには:
 
 ```arcw
-let bg = try await asset.image(@asset.bg.room) with {
+let bg = try await asset.image(@asset:.bg.room) with {
     pending p => scene.show(@scene.loading); progress.set(p.ratio)
 }
 ```

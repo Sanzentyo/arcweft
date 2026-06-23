@@ -21,11 +21,11 @@ preload next @flow.alice_intro {
     alice.prefetch(flow=@flow.alice_intro, lines=6)
     alice.sprite(smile).preload()
     alice.voice_for(@say.alice_intro.001).preload()
-    asset.image(@asset.bg.room_evening)
+    asset.image(@asset:.bg.room_evening)
 }
 
 pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    bg(@asset.bg.room, fade = 300ms)
+    bg(@asset:.bg.room, fade = 300ms)
     show(@character.alice, .normal, at = .center, fade = 200ms)
 
     地の文: 扉の向こうから、雨の音がした。[p]

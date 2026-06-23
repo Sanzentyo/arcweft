@@ -519,6 +519,11 @@ fragment parser's cell completeness report and selected fragment family so the
 future terminal editor does not reimplement bracket, string, or item/statement
 boundary rules. Incomplete cells return explicit expected boundary tokens such
 as `)`, `]`, `}`, or `"` for multiline continuation.
+This REPL remains an Agent/runtime interaction frontend rather than a general
+Arcweft language REPL. Its load, reload, warm, inspection, completion, and
+runtime-binding behavior must not reintroduce `lazy use` or `eager use`;
+ordinary `use` stays name introduction, while compiler demand and REPL commands
+decide when interfaces, bodies, tool schemas, or runtime artifacts are prepared.
 `:connect source PATH` and `:connect profile ID [--manifest PATH]` switch the
 scripted REPL's native observation target for later `:observe` and `:capture`
 cells. `--connect <target>` accepts the same `current`, `source PATH`, direct
@@ -831,17 +836,70 @@ CLI/LSP inspection, not host I/O. Matrix/tensor test inputs use
 `--value lhs=matrix/f32/4x4:1,0,...`. Unsupported flow syntax fails with a
 runtime-lowering error instead of being silently dropped.
 
+## Build
+
+`arcw build [--manifest arcw.toml] [--profile PROFILE] [--target-dir DIR]
+[--release] [--watch] [--patch-base old.awfb] [--json]` is the
+profile-aware project build route. It loads the package selected by
+`arcw.toml`, verifies it in dev or release mode, and writes the product AWFB
+plus project metadata, the lowered runtime plan, and a build snapshot under the
+selected target directory:
+
+```text
+target/arcweft/debug/<package>.awfb
+target/arcweft/debug/<package>.project.json
+target/arcweft/debug/<package>.plan
+target/arcweft/debug/<package>.snapshot.json
+```
+
+`--target-dir` replaces the `target/arcweft` root before the debug/release
+profile segment is appended. `--patch-base old.awfb` also writes a patch AWFB
+under `patches/<package>-<base-root>-<target-root>.awfb`.
+
+Launch profiles may carry typed build and packaging policy. The manifest parser
+accepts `[profiles.NAME.build]` values such as `incremental`, `tree_shake`,
+`debug = "none"|"line-tables"|"full"`, `source =
+"none"|"normalized"|"full"`, and `shared_hoist_threshold_bytes`. It also
+accepts `[profiles.NAME.hot_reload]` (`mode`, `fallback`, `state`) and
+profile-level content policy tables such as
+`[profiles.release.content."content.chapter_two"]` with typed `residency`,
+`placement`, and `compression` values.
+
+Release-mode project verification rejects dynamic `goto` targets. Release
+tree shaking therefore requires static flow references or a future finite,
+manifest-backed dynamic set instead of an unbounded runtime flow lookup.
+
+`arcw build --watch` keeps the same build outputs current, watches the selected
+project source, manifest/profile inputs, and source-local `.arcweft/asset` and
+`.arcweft/content` payload files, and emits patch AWFB artifacts whenever the
+rebuilt target differs from the active base. Each rebuild compares the previous
+and current build snapshots and reports module/query invalidation counts beside
+the emitted patch. It is the artifact-writing watch path; `arcw run --watch`
+additionally targets a local player/dev transport. With `--runner native`, the
+run watch loop keeps an in-process native patch endpoint alive and applies each
+emitted patch bundle to that endpoint; the sidecar `.transport.json` remains
+available for tools or the standalone native player binary's
+`--patch-transport` startup path.
+
+```bash
+arcw build --manifest arcw.toml --profile game.release --target-dir dist
+arcw build --manifest arcw.toml --watch
+arcw build --manifest arcw.toml --patch-base dist/debug/game.awfb
+```
+
 ## Bundle
 
 `arcw bundle <file.arcw> --output game.awfb [--include-save] [--include-temp] [--include-export] [--json]`
 packages the current source, executable bytecode, a runtime summary, required
 host-call ids, adapter manifest bodies, adapter manifest ids, and selected
-virtual files into an `.awfb` JSON data artifact. `arcw build bundle ...` is
-the profile-aware product-build spelling for the same pipeline. The bundle
-crate is Sans I/O; the CLI owns reading the source, reading
+virtual files into an AWFB v1 product container by default. It is the explicit
+single-source bundling route; `arcw build` is the profile-aware project route.
+The bundle crate is Sans I/O; the CLI owns reading the source, reading
 `.arcweft/<space>/...`, and writing the artifact. Artifact paths are source
-labels and relative virtual paths only, so generated bundle JSON must not carry
-host absolute paths.
+labels and relative virtual paths only, so generated bundle artifacts must not
+carry host absolute paths. Inspection exports remain available with
+`--format json`, `.awfb.json`, or the explicit TOML/YAML/MessagePack/CBOR/Avro
+formats.
 
 `asset` files are included by default. `save`, `temp`, and `export` spaces are
 opt-in because they may contain local state. All packaged virtual file paths are
@@ -850,14 +908,101 @@ validated as normal relative components before encoding.
 ```bash
 arcw bundle game/main.arcw --output dist/game.awfb --json
 arcw bundle game/main.arcw --output dist/game.awfb --include-save --json
-arcw build bundle --manifest arcw.toml --profile game.release --output dist/game.awfb --json
+arcw build --manifest arcw.toml --profile game.release --target-dir dist
 ```
 
-`arcw run-bundle <game.awfb> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]`
-decodes the packaged bytecode, materializes the packaged source and virtual
-files into a temporary CLI workspace for source-local virtual I/O roots, then
-runs the same native task bridge used by `arcw run`. It does not parse,
-typecheck, or lower the source again. `--entry` and `--flow` override the
+`arcw patch --base old.awfb --next new.awfb --output update.awfb [--json]`
+is the offline patch-generation path. It compares two AWFB section indexes,
+emits a `BundleKind::Patch` AWFB with a manifest, `PatchPlan`, conservative
+compatibility class, and embedded changed-section payloads where available.
+JSON output reports the base/target content roots, operation count, changed
+section payload count, and compatibility label.
+
+```bash
+arcw patch --base dist/game-old.awfb --next dist/game-new.awfb --output dist/patches/game.awfb --json
+```
+
+`arcw sign-bundle --input unsigned.awfb --output signed.awfb --signer-id
+release-key-main (--signing-key-file key.hex | --signing-key-hex <hex>)
+[--key-epoch N] [--json]` appends a release signature envelope as the trailing
+AWFB signature block. The envelope records the signer id, Ed25519 v1 algorithm,
+deterministic key epoch, content root, bundle kind, and canonical AWFB signing
+digest; the private signing key is read only by the CLI adapter. JSON output
+reports the signed bundle path, content root, signing digest, key epoch, and
+public key that release manifests can place in `trusted_public_keys`.
+
+```bash
+arcw sign-bundle --input dist/content/chapter-two.awfb --output dist/content/chapter-two.signed.awfb --signer-id release-key-main --signing-key-file keys/release-main.hex --key-epoch 4 --json
+```
+
+`arcw inspect <game.awfb> [--manifest] [--json]` verifies the AWFB
+magic/version/header, manifest digest, section-index digest, bounds, duplicate
+section ids, required sections, and section payload digests, then reports the
+bundle kind, content root, manifest byte length, skipped optional-section
+count, and section descriptors. `--manifest` includes the canonical manifest
+bytes as UTF-8 text when possible. The command is an inspection path only; it
+does not parse or execute bundled source.
+
+```bash
+arcw inspect dist/game.awfb --json
+arcw inspect dist/content/chapter-two.awfb --manifest
+```
+
+`arcw cache stats [--root target/arcweft/cache/v1] [--json]` reports the
+filesystem cache inventory: immutable object files and bytes, immutable record
+files and bytes, lock files, temp files, and other files. `arcw cache verify
+[--root target/arcweft/cache/v1] [--json]` verifies object path digests,
+record path keys, record JSON schema, referenced object digest/length, and
+reports every issue before returning a failing status for a corrupt cache.
+Missing cache roots are treated as empty caches. `arcw cache explain <digest>
+[--root target/arcweft/cache/v1] [--json]` explains cache entries matching one
+64-character BLAKE3 artifact-key or object digest. `arcw cache explain
+--logical <item> [--root target/arcweft/cache/v1] [--json]` searches records
+that stored an explicit logical item label, such as release-bundle
+`content-root:<digest>` records. `arcw cache prune [--root
+target/arcweft/cache/v1]
+[--apply] [--json]` reports safe removal candidates and removes them only when
+`--apply` is present. The current prune set is intentionally conservative:
+temporary files, object files not referenced by any valid record, and empty
+cache shard/record/lock directories under known cache cleanup roots. `arcw
+cache fetch --manifest game.awfr --content-root <digest> [--root
+target/arcweft/cache/v1] [--json]` fetches one release-manifest bundle through
+deterministic mirrors. The current adapter supports `arcweft-cache:` cache
+hits, `file:` mirrors resolved relative to the `.awfr` file, plain `http://`
+mirrors, and `https://` mirrors through the TLS-validating network adapter. It
+verifies byte length and whole-file digest, stores the AWFB bytes as a
+content-addressed object, enforces manifest-required AWFB signature-block
+presence/size, and writes a release-bundle cache record so `prune` keeps the
+fetched object. If the manifest lists trusted signer ids, the
+signature block must decode as a release signature envelope with a trusted
+`signer_id`. If the manifest lists trusted Ed25519 public keys, the envelope
+signature payload must also verify against a matching key and deterministic
+key epoch. Manifest `allowed_algorithms` defaults to `ed25519-v1` and is
+validated before trusted-signer or trusted-public-key checks. HTTP fetch applies
+retry count, socket timeout from
+`cancel_after_millis`, response-body byte budget, user-agent policy, and
+HTTPS-only policy. Network mirrors that require unresolved proxy/auth/client
+profiles are rejected by the default cache adapter instead of being fetched
+without those policy requirements. Release signature envelopes are also bound
+to the fetched bundle content root, bundle kind, and canonical AWFB signing
+digest.
+
+```bash
+arcw cache stats --json
+arcw cache verify --root target/arcweft/cache/v1
+arcw cache explain 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --json
+arcw cache explain --logical content-root:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --json
+arcw cache prune --json
+arcw cache prune --apply
+arcw cache fetch --manifest dist/game.awfr --content-root 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --json
+```
+
+`arcw run-bundle <game.awfb> [--patch update.awfb] [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]`
+checks AWFB magic/version before decoding the packaged bytecode, materializes
+the packaged source and virtual files into a temporary CLI workspace for
+source-local virtual I/O roots, then runs the same native task bridge used by
+`arcw run`. It does not parse, typecheck, or lower the source again. `--entry`
+and `--flow` override the
 bundled entry selection by rewriting the decoded runtime entry selection before
 execution. The current implementation supports the standard CLI native file,
 system-info, and internal scheduler adapters; custom profile adapter
@@ -870,6 +1015,13 @@ policy; the runner supplies executable host code for matching ids and receives a
 typed `BundleRunnerReport` with phases, executor stats, native I/O stats, step
 summaries, and final status.
 
+`--patch update.awfb` expects an AWFB patch artifact whose base content root
+matches the input bundle. The CLI validates and materializes embedded
+add/replace/remove section payloads into patched AWFB bytes, then executes the
+patched bundle through the normal runner. In this cut, patch application keeps
+the base manifest bytes; JSON reports include the optional `patch` path when
+this route is used.
+
 JSON output includes `phases` for compile/package work on `bundle` and
 read/decode/materialize/bytecode/run work on `run-bundle`. These counters let
 CI and benchmark fixtures compare source execution against bytecode-bundle
@@ -878,6 +1030,7 @@ execution without recording host absolute paths.
 ```bash
 arcw run-bundle dist/game.awfb --mode drain --steps 8 --json
 arcw run-bundle dist/game.awfb --flow opening --mode drain --steps 8 --json
+arcw run-bundle dist/game.awfb --patch dist/game.update.awfb --mode drain --steps 8 --json
 ```
 
 ## CLI Entry Dry Run

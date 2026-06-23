@@ -1011,7 +1011,7 @@ fn runtime_plan_lowers_await_calls_to_typed_host_requests() {
 flow @flow.loading loading {
     try await fs.read_text("game/config.arcw") with { pending p => progress.set(p.ratio) }
     try await http.fetch("https://example.invalid/api", method = "POST", body = "payload") with { pending p => progress.set(p.ratio) }
-    try await asset.image(@asset.bg.room) with { pending p => progress.set(p.ratio) }
+    try await asset.image(@asset:.bg.room) with { pending p => progress.set(p.ratio) }
     try await shader.compile(@shader.fade, entry = "main") with { pending p => progress.set(p.ratio) }
     try await audio.decode(@voice.alice.opening) with { pending p => progress.set(p.ratio) }
     try await tts.synthesize("hello", voice = "alice") with { pending p => progress.set(p.ratio) }
@@ -1050,6 +1050,28 @@ flow @flow.loading loading {
     assert_eq!(requests[1].args[1].name(), Some("method"));
     assert_eq!(requests[1].args[2].name(), Some("body"));
     assert_eq!(requests[6].args[1].name(), Some("args"));
+}
+
+#[test]
+fn runtime_plan_normalizes_family_relative_asset_call_args() {
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    let room = bg(@asset:.room)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("family-relative asset call lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("family-relative asset call lowers");
+    let FlowOp::Let { expr, .. } = &plan.flows[0].ops[0] else {
+        panic!("expected let op");
+    };
+    let RuntimeExpr::Call { args, .. } = expr else {
+        panic!("expected runtime call");
+    };
+
+    assert_eq!(args, &[RuntimeExpr::EntityRef("asset.room".to_owned())]);
 }
 
 #[test]
@@ -1455,7 +1477,7 @@ fn runtime_plan_lowers_audio_call_to_typed_audio_effect() {
     let tree = parse_ok(
         r"
 flow @flow.audio audio {
-    audio.play(@voice.opening, @asset.voice.opening, @bus.master, fade_in_millis = 120u64)
+    audio.play(@voice.opening, @asset:.voice.opening, @bus.master, fade_in_millis = 120u64)
 }
 ",
     );

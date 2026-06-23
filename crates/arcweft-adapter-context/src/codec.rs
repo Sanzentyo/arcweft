@@ -1,10 +1,9 @@
 //! Data codecs for project-local adapter manifests.
 
 use crate::manifest::{
-    AdapterEffectCapability, AdapterHostCall, AdapterManifest, AdapterToolingDoc,
+    AdapterEffectCapability, AdapterFunctionParam, AdapterFunctionSignature, AdapterHostCall,
+    AdapterManifest, AdapterToolingDoc, AdapterTypeKind,
 };
-use arcweft_lang_sema::env::{FunctionParam, FunctionSignature};
-use arcweft_lang_sema::types::TypeKind;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -113,15 +112,15 @@ impl AdapterManifestFile {
     pub fn into_manifest(self) -> AdapterManifest {
         let manifest = AdapterManifest::new(self.id, self.display_name);
         let manifest = self.symbols.into_iter().fold(manifest, |manifest, symbol| {
-            manifest.with_symbol(symbol.name, parse_type_kind_label(&symbol.ty))
+            manifest.with_symbol(symbol.name, parse_adapter_type_kind_label(&symbol.ty))
         });
         let manifest = self.methods.into_iter().fold(manifest, |manifest, method| {
-            let signature = FunctionSignature::new(
-                parse_type_kind_label(&method.return_type),
+            let signature = AdapterFunctionSignature::new(
+                parse_adapter_type_kind_label(&method.return_type),
                 method.params.into_iter().map(function_param_from_file),
             );
             manifest.with_method_signature(
-                parse_type_kind_label(&method.receiver),
+                parse_adapter_type_kind_label(&method.receiver),
                 method.name,
                 signature,
             )
@@ -132,8 +131,8 @@ impl AdapterManifestFile {
             .fold(manifest, |manifest, function| {
                 manifest.with_function_signature(
                     function.name,
-                    FunctionSignature::new(
-                        parse_type_kind_label(&function.return_type),
+                    AdapterFunctionSignature::new(
+                        parse_adapter_type_kind_label(&function.return_type),
                         function.params.into_iter().map(function_param_from_file),
                     ),
                     effect_capabilities(function.effects),
@@ -148,8 +147,8 @@ impl AdapterManifestFile {
             .fold(manifest, |manifest, host_call| {
                 manifest.with_host_call(AdapterHostCall::with_signature(
                     host_call.id,
-                    FunctionSignature::new(
-                        parse_type_kind_label(&host_call.return_type),
+                    AdapterFunctionSignature::new(
+                        parse_adapter_type_kind_label(&host_call.return_type),
                         host_call.params.into_iter().map(function_param_from_file),
                     ),
                     effect_capabilities(host_call.effects),
@@ -174,8 +173,8 @@ impl AdapterManifestFile {
     }
 }
 
-fn function_param_from_file(param: AdapterParamFile) -> FunctionParam {
-    FunctionParam::required(param.name, parse_type_kind_label(&param.ty))
+fn function_param_from_file(param: AdapterParamFile) -> AdapterFunctionParam {
+    AdapterFunctionParam::required(param.name, parse_adapter_type_kind_label(&param.ty))
 }
 
 fn effect_capabilities(
@@ -184,39 +183,45 @@ fn effect_capabilities(
     effects.into_iter().map(AdapterEffectCapability::new)
 }
 
-fn parse_type_kind_label(label: &str) -> TypeKind {
+fn parse_adapter_type_kind_label(label: &str) -> AdapterTypeKind {
     let label = label.trim();
-    if let Some(ty) = TypeKind::primitive_name(label) {
+    if let Some(ty) = AdapterTypeKind::primitive_name(label) {
         return ty;
     }
     match label {
-        "unit" => TypeKind::Unit,
-        "I8" => TypeKind::I8,
-        "I16" => TypeKind::I16,
-        "I32" => TypeKind::I32,
-        "I64" => TypeKind::I64,
-        "I128" => TypeKind::I128,
-        "ISize" => TypeKind::ISize,
-        "U8" => TypeKind::U8,
-        "U16" => TypeKind::U16,
-        "U32" => TypeKind::U32,
-        "U64" => TypeKind::U64,
-        "U128" => TypeKind::U128,
-        "USize" => TypeKind::USize,
-        "F32" => TypeKind::F32,
-        "F64" => TypeKind::F64,
-        "string" => TypeKind::String,
+        "unit" => AdapterTypeKind::Unit,
+        "I8" => AdapterTypeKind::I8,
+        "I16" => AdapterTypeKind::I16,
+        "I32" => AdapterTypeKind::I32,
+        "I64" => AdapterTypeKind::I64,
+        "I128" => AdapterTypeKind::I128,
+        "ISize" => AdapterTypeKind::ISize,
+        "U8" => AdapterTypeKind::U8,
+        "U16" => AdapterTypeKind::U16,
+        "U32" => AdapterTypeKind::U32,
+        "U64" => AdapterTypeKind::U64,
+        "U128" => AdapterTypeKind::U128,
+        "USize" => AdapterTypeKind::USize,
+        "F32" => AdapterTypeKind::F32,
+        "F64" => AdapterTypeKind::F64,
+        "string" => AdapterTypeKind::String,
         other => parse_generic_type_label(other)
-            .unwrap_or_else(|| TypeKind::Named(other.trim().to_owned())),
+            .unwrap_or_else(|| AdapterTypeKind::Named(other.trim().to_owned())),
     }
 }
 
-fn parse_generic_type_label(label: &str) -> Option<TypeKind> {
+fn parse_generic_type_label(label: &str) -> Option<AdapterTypeKind> {
     let (head, inner) = split_generic(label)?;
     match head {
-        "Vec" => Some(TypeKind::Vec(Box::new(parse_type_kind_label(inner)))),
-        "Seq" => Some(TypeKind::Seq(Box::new(parse_type_kind_label(inner)))),
-        "Option" => Some(TypeKind::Option(Box::new(parse_type_kind_label(inner)))),
+        "Vec" => Some(AdapterTypeKind::Vec(Box::new(
+            parse_adapter_type_kind_label(inner),
+        ))),
+        "Seq" => Some(AdapterTypeKind::Seq(Box::new(
+            parse_adapter_type_kind_label(inner),
+        ))),
+        "Option" => Some(AdapterTypeKind::Option(Box::new(
+            parse_adapter_type_kind_label(inner),
+        ))),
         _ => None,
     }
 }
@@ -279,7 +284,7 @@ docs = "Read custom content."
         assert_eq!(manifest.host_calls()[0].signature().params().len(), 1);
         assert_eq!(
             manifest.host_calls()[0].signature().return_type(),
-            &TypeKind::String
+            &AdapterTypeKind::String
         );
         assert_eq!(manifest.tooling_docs()[0].subject(), "custom.read");
     }
@@ -340,16 +345,16 @@ display_name = "Custom File"
     #[test]
     fn type_label_parser_keeps_named_types_and_common_generics() {
         assert_eq!(
-            parse_type_kind_label("Widget"),
-            TypeKind::Named("Widget".to_owned())
+            parse_adapter_type_kind_label("Widget"),
+            AdapterTypeKind::Named("Widget".to_owned())
         );
         assert_eq!(
-            parse_type_kind_label("Seq<String>"),
-            TypeKind::Seq(Box::new(TypeKind::String))
+            parse_adapter_type_kind_label("Seq<String>"),
+            AdapterTypeKind::Seq(Box::new(AdapterTypeKind::String))
         );
         assert_eq!(
-            parse_type_kind_label("Option<i32>"),
-            TypeKind::Option(Box::new(TypeKind::I32))
+            parse_adapter_type_kind_label("Option<i32>"),
+            AdapterTypeKind::Option(Box::new(AdapterTypeKind::I32))
         );
     }
 }

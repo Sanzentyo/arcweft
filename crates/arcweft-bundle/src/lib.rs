@@ -1,5 +1,10 @@
 //! Sans I/O bundle data model and deterministic codecs.
 
+pub mod container;
+pub mod patch;
+mod product;
+pub mod release;
+
 #[cfg(feature = "format-avro")]
 use apache_avro::types::Value as AvroValue;
 #[cfg(feature = "format-avro")]
@@ -13,6 +18,7 @@ use arcweft_render_text::LineDisplayCatalog;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "format-yaml")]
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 #[cfg(feature = "format-cbor")]
 use std::io::Cursor;
 use std::path::Path;
@@ -86,6 +92,7 @@ pub enum BundleBytecodeEncoding {
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BundleFormat {
+    Awfb,
     #[default]
     Json,
     Toml,
@@ -284,6 +291,12 @@ pub enum BundleCodecError {
     },
     #[error("unsupported Arcweft bundle format `{format}`")]
     UnsupportedFormat { format: String },
+    #[error("Arcweft product bundle path must use `.awfb`: {path}")]
+    ExpectedProductAwfbPath { path: String },
+    #[error("failed to encode Arcweft AWFB bundle: {message}")]
+    EncodeAwfb { message: String },
+    #[error("failed to decode Arcweft AWFB bundle: {message}")]
+    DecodeAwfb { message: String },
     #[error("Arcweft bundle format `{format}` requires Cargo feature `{feature}`")]
     DisabledFormat {
         format: BundleFormat,
@@ -297,6 +310,17 @@ pub enum BundleCodecError {
     },
     #[error("bundle audio asset `{asset_id}` references missing asset file {path}")]
     MissingAudioFile { asset_id: String, path: String },
+    #[error("bundle contains duplicate adapter manifest id `{id}`")]
+    DuplicateAdapterManifest { id: String },
+    #[error("bundle contains duplicate virtual file {space}:{path}")]
+    DuplicateVirtualFile {
+        space: BundleVirtualFileSpace,
+        path: String,
+    },
+    #[error("bundle contains duplicate image asset id `{id}`")]
+    DuplicateImageAsset { id: String },
+    #[error("bundle contains duplicate image object id `{id}`")]
+    DuplicateImageObject { id: String },
 }
 
 #[cfg(feature = "format-yaml")]
@@ -423,8 +447,6 @@ impl ArcweftBundle {
         self.adapter_manifests.extend(manifests);
         self.adapter_manifests
             .sort_by(|left, right| left.id.cmp(&right.id));
-        self.adapter_manifests
-            .dedup_by(|left, right| left.id == right.id);
         self
     }
 
@@ -448,8 +470,6 @@ impl ArcweftBundle {
         self.image_assets.extend(assets);
         self.image_assets
             .sort_by(|left, right| left.id.cmp(&right.id));
-        self.image_assets
-            .dedup_by(|left, right| left.id == right.id);
         self
     }
 
@@ -461,8 +481,6 @@ impl ArcweftBundle {
         self.image_objects.extend(objects);
         self.image_objects
             .sort_by(|left, right| left.id.cmp(&right.id));
-        self.image_objects
-            .dedup_by(|left, right| left.id == right.id);
         self
     }
 
@@ -493,6 +511,7 @@ impl ArcweftBundle {
     pub fn to_format_bytes(&self, format: BundleFormat) -> Result<Vec<u8>, BundleCodecError> {
         self.validate_kind()?;
         match format {
+            BundleFormat::Awfb => product::to_awfb_bytes(self),
             BundleFormat::Json => self.to_json_bytes(),
             #[cfg(feature = "format-toml")]
             BundleFormat::Toml => toml::to_string_pretty(self)
@@ -554,8 +573,14 @@ impl ArcweftBundle {
     }
 
     pub fn from_format_slice(format: BundleFormat, bytes: &[u8]) -> Result<Self, BundleCodecError> {
-        if format == BundleFormat::Json {
-            return Self::from_json_slice(bytes);
+        match format {
+            BundleFormat::Awfb => return product::from_awfb_slice(bytes),
+            BundleFormat::Json => return Self::from_json_slice(bytes),
+            BundleFormat::Toml
+            | BundleFormat::Yaml
+            | BundleFormat::MessagePack
+            | BundleFormat::Cbor
+            | BundleFormat::Avro => {}
         }
         let bundle = Self::from_non_json_format_slice(format, bytes)?;
         bundle.validate_schema_and_kind()?;
@@ -586,6 +611,7 @@ impl ArcweftBundle {
             feature = "format-yaml"
         ))]
         let bundle = match format {
+            BundleFormat::Awfb => return product::from_awfb_slice(bytes),
             BundleFormat::Json => return Self::from_json_slice(bytes),
             #[cfg(feature = "format-toml")]
             BundleFormat::Toml => {
@@ -667,18 +693,44 @@ impl ArcweftBundle {
         Ok(bundle)
     }
 
-    pub fn from_path_slice(path: &Path, bytes: &[u8]) -> Result<Self, BundleCodecError> {
+    pub fn from_product_path_slice(path: &Path, bytes: &[u8]) -> Result<Self, BundleCodecError> {
+        if BundleFormat::from_path(path) != Some(BundleFormat::Awfb) {
+            return Err(BundleCodecError::ExpectedProductAwfbPath {
+                path: path.display().to_string(),
+            });
+        }
+        product::from_awfb_slice(bytes)
+    }
+
+    pub fn from_product_path_slice_with_external_sections(
+        path: &Path,
+        bytes: &[u8],
+        external_sections: &[container::ExternalSectionPayload],
+    ) -> Result<Self, BundleCodecError> {
+        if BundleFormat::from_path(path) != Some(BundleFormat::Awfb) {
+            return Err(BundleCodecError::ExpectedProductAwfbPath {
+                path: path.display().to_string(),
+            });
+        }
+        product::from_awfb_slice_with_external_sections(bytes, external_sections)
+    }
+
+    pub fn from_awfb_slice_with_external_sections(
+        bytes: &[u8],
+        external_sections: &[container::ExternalSectionPayload],
+    ) -> Result<Self, BundleCodecError> {
+        product::from_awfb_slice_with_external_sections(bytes, external_sections)
+    }
+
+    pub fn from_inspection_path_slice(path: &Path, bytes: &[u8]) -> Result<Self, BundleCodecError> {
         let Some(format) = BundleFormat::from_path(path) else {
-            let json_error = match Self::from_json_slice(bytes) {
-                Ok(bundle) => return Ok(bundle),
-                Err(error) => error,
-            };
-            return BundleFormat::probe_order()
-                .iter()
-                .copied()
-                .filter(|format| *format != BundleFormat::Json)
-                .find_map(|format| Self::from_format_slice(format, bytes).ok())
-                .ok_or(json_error);
+            return Err(BundleCodecError::UnsupportedFormat {
+                format: path
+                    .extension()
+                    .and_then(std::ffi::OsStr::to_str)
+                    .unwrap_or("<missing>")
+                    .to_owned(),
+            });
         };
         Self::from_format_slice(format, bytes)
     }
@@ -735,9 +787,52 @@ impl ArcweftBundle {
     fn validate_kind(&self) -> Result<(), BundleCodecError> {
         match (self.bundle_kind, self.agent.is_some()) {
             (BundleKind::AgentController, false) => Err(BundleCodecError::MissingAgentManifest),
-            (BundleKind::AgentController, true) | (BundleKind::Game, false) => Ok(()),
+            (BundleKind::AgentController, true) | (BundleKind::Game, false) => {
+                self.validate_unique_items()
+            }
             (BundleKind::Game, true) => Err(BundleCodecError::UnexpectedAgentManifest),
         }
+    }
+
+    fn validate_unique_items(&self) -> Result<(), BundleCodecError> {
+        let mut adapter_ids = BTreeSet::new();
+        for manifest in &self.adapter_manifests {
+            if !adapter_ids.insert(manifest.id.as_str()) {
+                return Err(BundleCodecError::DuplicateAdapterManifest {
+                    id: manifest.id.clone(),
+                });
+            }
+        }
+
+        let mut virtual_files = BTreeSet::new();
+        for file in &self.virtual_files {
+            if !virtual_files.insert((file.space.as_str(), file.path.as_str())) {
+                return Err(BundleCodecError::DuplicateVirtualFile {
+                    space: file.space,
+                    path: file.path.clone(),
+                });
+            }
+        }
+
+        let mut image_asset_ids = BTreeSet::new();
+        for asset in &self.image_assets {
+            if !image_asset_ids.insert(asset.id.as_str()) {
+                return Err(BundleCodecError::DuplicateImageAsset {
+                    id: asset.id.clone(),
+                });
+            }
+        }
+
+        let mut image_object_ids = BTreeSet::new();
+        for object in &self.image_objects {
+            if !image_object_ids.insert(object.id.as_str()) {
+                return Err(BundleCodecError::DuplicateImageObject {
+                    id: object.id.clone(),
+                });
+            }
+        }
+
+        Ok(())
     }
 
     fn validate_schema_and_kind(&self) -> Result<(), BundleCodecError> {
@@ -820,7 +915,8 @@ impl ArcweftBundle {
 }
 
 impl BundleFormat {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
+        Self::Awfb,
         Self::Json,
         Self::Toml,
         Self::Yaml,
@@ -831,6 +927,7 @@ impl BundleFormat {
 
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::Awfb => "awfb",
             Self::Json => "json",
             Self::Toml => "toml",
             Self::Yaml => "yaml",
@@ -842,7 +939,7 @@ impl BundleFormat {
 
     pub const fn required_feature(self) -> Option<&'static str> {
         match self {
-            Self::Json => None,
+            Self::Awfb | Self::Json => None,
             Self::Toml => Some("format-toml"),
             Self::Yaml => Some("format-yaml"),
             Self::MessagePack => Some("format-messagepack"),
@@ -853,7 +950,7 @@ impl BundleFormat {
 
     pub const fn is_codec_enabled(self) -> bool {
         match self {
-            Self::Json => true,
+            Self::Awfb | Self::Json => true,
             Self::Toml => cfg!(feature = "format-toml"),
             Self::Yaml => cfg!(feature = "format-yaml"),
             Self::MessagePack => cfg!(feature = "format-messagepack"),
@@ -870,6 +967,7 @@ impl BundleFormat {
 
     pub fn probe_order() -> Vec<Self> {
         [
+            Self::Awfb,
             Self::Json,
             Self::MessagePack,
             Self::Cbor,
@@ -901,6 +999,7 @@ impl BundleFormat {
     pub fn parse(value: &str) -> Result<Self, BundleCodecError> {
         match value.trim().to_ascii_lowercase().as_str() {
             "json" => Ok(Self::Json),
+            "awfb" => Ok(Self::Awfb),
             "toml" => Ok(Self::Toml),
             "yaml" | "yml" => Ok(Self::Yaml),
             "messagepack" | "msgpack" | "mpk" => Ok(Self::MessagePack),
@@ -922,6 +1021,14 @@ impl BundleFormat {
 impl std::fmt::Display for BundleFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for BundleFormat {
+    type Err = BundleCodecError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::parse(value)
     }
 }
 
@@ -1095,6 +1202,10 @@ impl std::fmt::Display for BundleKind {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::container::{
+        BundleSectionKind as ContainerSectionKind, BundleView, ReadBudget, SectionInput,
+        encode_bundle,
+    };
     use arcweft_agent_protocol::{
         artifact::{
             AgentArtifactManifest, AgentBudget, AgentBundleKind, EffectCapability, ProjectBinding,
@@ -1200,6 +1311,52 @@ mod tests {
                 .image_asset_bytes("asset.ui.missing")
                 .expect("unknown asset is not an error"),
             None
+        );
+    }
+
+    #[test]
+    fn bundle_rejects_duplicate_image_asset_ids_instead_of_deduplicating() {
+        let image_file = BundleVirtualFile {
+            space: BundleVirtualFileSpace::Asset,
+            path: "images/logo.webp".to_owned(),
+            bytes: b"webp-bytes".to_vec(),
+        };
+        let asset = BundleImageAsset {
+            id: "asset.ui.logo".to_owned(),
+            file: image_file.file_ref(),
+            format: BundleImageFormat::WebP,
+            animation: BundleImageAnimation::Animated,
+            dimensions: Some(BundleImageDimensions::new(320, 180)),
+        };
+        let bundle = empty_test_bundle()
+            .with_virtual_files([image_file])
+            .with_image_assets([asset.clone(), asset]);
+
+        let error = bundle
+            .to_format_bytes(BundleFormat::Json)
+            .expect_err("duplicate image assets reject");
+
+        assert!(
+            matches!(error, BundleCodecError::DuplicateImageAsset { id } if id == "asset.ui.logo")
+        );
+    }
+
+    #[test]
+    fn bundle_rejects_duplicate_adapter_manifest_ids_instead_of_deduplicating() {
+        let manifest = BundleAdapterManifest {
+            id: "native-file".to_owned(),
+            display_name: "Native File".to_owned(),
+            effects: vec!["fs.read".to_owned()],
+            host_calls: Vec::new(),
+        };
+        let bundle = empty_test_bundle().with_adapter_manifests([manifest.clone(), manifest]);
+
+        let error = bundle
+            .to_format_bytes(BundleFormat::Json)
+            .expect_err("duplicate adapter manifests reject");
+
+        assert!(
+            matches!(error, BundleCodecError::DuplicateAdapterManifest { id } if id == "native-file")
         );
     }
 
@@ -1412,6 +1569,21 @@ mod tests {
     }
 
     #[test]
+    fn awfb_rejects_runtime_types_layout_mismatch() {
+        let bytes = awfb_with_runtime_types_layout_signature(
+            &empty_test_bundle(),
+            "arcweft.bytecode.runtime-layout.v0.test",
+        );
+
+        let error = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &bytes)
+            .expect_err("runtime-types and bytecode layout mismatch is rejected");
+
+        assert!(
+            matches!(error, BundleCodecError::DecodeAwfb { message } if message.contains("runtime types layout"))
+        );
+    }
+
+    #[test]
     fn bundle_format_can_be_inferred_from_common_extensions() {
         assert_eq!(
             BundleFormat::from_path(Path::new("game.toml")),
@@ -1429,6 +1601,65 @@ mod tests {
             BundleFormat::from_path(Path::new("game.avro")),
             Some(BundleFormat::Avro)
         );
+        assert_eq!(
+            BundleFormat::from_path(Path::new("game.awfb")),
+            Some(BundleFormat::Awfb)
+        );
+        assert_eq!(
+            BundleFormat::from_path(Path::new("game.awfb.json")),
+            Some(BundleFormat::Json)
+        );
+    }
+
+    #[test]
+    fn awfb_path_does_not_fall_back_to_json_decoder() {
+        let bytes = empty_test_bundle()
+            .to_json_bytes()
+            .expect("legacy JSON bundle encodes");
+        let error = ArcweftBundle::from_inspection_path_slice(Path::new("game.awfb"), &bytes)
+            .expect_err("AWFB product path must require AWFB bytes");
+
+        assert!(
+            matches!(error, BundleCodecError::DecodeAwfb { message } if message.contains("magic"))
+        );
+    }
+
+    #[test]
+    fn product_path_requires_awfb_extension() {
+        let bytes = empty_test_bundle()
+            .to_json_bytes()
+            .expect("inspection JSON bundle encodes");
+        let error = ArcweftBundle::from_product_path_slice(Path::new("game.awfb.json"), &bytes)
+            .expect_err("product decode must not accept inspection JSON paths");
+
+        assert!(matches!(
+            error,
+            BundleCodecError::ExpectedProductAwfbPath { .. }
+        ));
+    }
+
+    #[test]
+    fn inspection_path_requires_explicit_legacy_format_extension() {
+        let bytes = empty_test_bundle()
+            .to_json_bytes()
+            .expect("inspection JSON bundle encodes");
+        let error = ArcweftBundle::from_inspection_path_slice(Path::new("game"), &bytes)
+            .expect_err("inspection decode must not probe legacy JSON for unknown paths");
+
+        assert!(matches!(error, BundleCodecError::UnsupportedFormat { .. }));
+    }
+
+    #[test]
+    fn inspection_json_path_decodes_legacy_bundle_export() {
+        let bundle = empty_test_bundle();
+        let bytes = bundle
+            .to_json_bytes()
+            .expect("inspection JSON bundle encodes");
+        let decoded =
+            ArcweftBundle::from_inspection_path_slice(Path::new("game.awfb.json"), &bytes)
+                .expect("explicit inspection JSON path decodes");
+
+        assert_eq!(decoded, bundle);
     }
 
     fn empty_test_bundle() -> ArcweftBundle {
@@ -1457,6 +1688,46 @@ mod tests {
             BytecodeProgram::default(),
             LineDisplayCatalog::default(),
         )
+    }
+
+    fn awfb_with_runtime_types_layout_signature(
+        bundle: &ArcweftBundle,
+        signature: &str,
+    ) -> Vec<u8> {
+        let bytes = bundle
+            .to_format_bytes(BundleFormat::Awfb)
+            .expect("AWFB bundle encodes");
+        let view = BundleView::parse(&bytes, ReadBudget::default()).expect("AWFB parses");
+        let sections = view
+            .sections()
+            .iter()
+            .map(|descriptor| {
+                let decoded = if descriptor.kind() == ContainerSectionKind::RuntimeTypes {
+                    serde_json::to_vec(&serde_json::json!({
+                        "schema_version": 1,
+                        "runtime_layout": {
+                            "abi_version": arcweft_core::bytecode::BYTECODE_ABI_VERSION,
+                            "signature": signature,
+                        },
+                    }))
+                    .expect("runtime types JSON encodes")
+                } else {
+                    view.decoded_section(descriptor.id())
+                        .expect("section decodes")
+                        .expect("product AWFB section is embedded")
+                };
+                SectionInput::embedded(
+                    descriptor.id(),
+                    descriptor.kind(),
+                    descriptor.schema_version(),
+                    descriptor.residency(),
+                    descriptor.required(),
+                    decoded,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        encode_bundle(view.kind(), view.manifest(), sections).expect("AWFB re-encodes")
     }
 
     fn test_agent_manifest() -> AgentArtifactManifest {

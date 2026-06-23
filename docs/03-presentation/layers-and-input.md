@@ -415,7 +415,7 @@ scene.show(@scene.opening)
 scope {
     layer @layer.background {
         image(
-            asset = @asset.bg.room,
+            asset = @asset:.bg.room,
             id = "image.scene.room",
             target = "target.scene",
             layer = "layer.background",
@@ -428,7 +428,7 @@ scope {
     }
 
     layer @layer.characters {
-        sprite(@asset.char.alice.default)
+        sprite(@asset:.char.alice.default)
             .at(center)
             .agent_target(@character.alice)
     }

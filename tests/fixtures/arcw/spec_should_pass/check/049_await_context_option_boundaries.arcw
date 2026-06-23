@@ -1,13 +1,13 @@
 flow @flow.await_context await_context -> ArcResult<String>
 effects { log.write }
 {
-    let bg = try await asset.image(@asset.bg.room)
+    let bg = try await asset.image(@asset:.bg.room)
         .context("opening background failed")
     with:
         pending p:
             log.info("loading bg", progress = p.ratio)
 
-    let fg = (await asset.image(@asset.bg.fg) with:
+    let fg = (await asset.image(@asset:.bg.fg) with:
         pending p:
             log.info("loading fg", progress = p.ratio)
     )?

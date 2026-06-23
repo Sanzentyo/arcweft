@@ -53,6 +53,90 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn typechecks_content_availability_builtins() {
+    let tree = parse_ok(
+        r"
+content chapter_two {
+    roots = [
+        @flow.chapter_two,
+    ]
+}
+
+flow menu_open
+effects { content.load, content.release, control.suspend }
+{
+    content.prefetch(@content.chapter_two)
+    let _ = await content.ensure(@content.chapter_two)
+    content.release(@content.chapter_two)
+}
+
+flow chapter_two {}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("content availability fixture lowers");
+    validate_typecheck_ready(&hir).expect("content availability fixture is typecheck-ready");
+    typecheck_hir(&hir, &TypeCheckEnv::standard())
+        .expect("content availability builtins typecheck");
+
+    let bad = parse_ok(
+        r"
+asset chapter_two {
+}
+
+flow bad_content_ref {
+    content.prefetch(@asset:.chapter_two)
+}
+",
+    );
+    let bad_hir = lower_to_hir(&bad).expect("bad content ref fixture lowers");
+    let errors = typecheck_hir(&bad_hir, &TypeCheckEnv::standard())
+        .expect_err("content builtins reject non-content ids");
+    assert!(errors.iter().any(|error| matches!(
+        error.kind(),
+        TypeCheckErrorKind::ArgumentTypeMismatch {
+            function,
+            argument,
+            expected,
+            actual,
+        } if function == "content.prefetch"
+            && argument == "unit"
+            && expected == &TypeKind::entity_ref(EntityKind::Content)
+            && actual == &TypeKind::entity_ref(EntityKind::Asset)
+    )));
+}
+
+#[test]
+fn rejects_removed_asset_set_ref_surface() {
+    let tree = parse_ok(
+        r"
+fn preload_route(route: AssetSetRef<Asset>) {
+    let _ = route
+}
+
+flow bad_asset_set_ref {
+    let _ = @asset_set.route_portraits
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("removed asset set fixture lowers");
+    validate_typecheck_ready(&hir).expect("removed asset set fixture is typecheck-ready");
+
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
+        .expect_err("asset set refs are not v1 source syntax");
+
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("`AssetSetRef<Asset>` is not part of the v1 Arcweft source grammar")
+    }));
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("unknown entity reference kind: asset_set.route_portraits")
+    }));
+}
+
+#[test]
 fn adapter_function_signature_checks_arguments() {
     let tree = parse_ok(
         r"
@@ -1044,7 +1128,7 @@ fn typechecks_presentation_handle_calls_and_slot_refs() {
     let tree = parse_ok(
         r"
 flow @flow.opening opening {
-    let room = bg(@asset.bg.room, target = @target.scene, slot = @slot.background.main)
+    let room = bg(@asset:.bg.room, target = @target.scene, slot = @slot.background.main)
     let alice_on_stage = show(@character.alice, .normal, slot = @slot.character.alice.main)
     let current_room = bg.ref(target = @target.scene, slot = @slot.background.main)
     let cleared_room = bg.clear(target = @target.scene, slot = @slot.background.main)
@@ -1078,19 +1162,19 @@ flow @flow.opening opening {
 fn typechecks_presentation_image_object_call_with_named_asset_and_bounds() {
     let tree = parse_ok(
         r#"
-asset @asset.bg.room {
+asset bg.room {
     file = "bg/room.png"
     kind = image
 }
 
-asset @asset.bg.pulse {
+asset bg.pulse {
     file = "bg/pulse.gif"
     kind = image
     animation = true
 }
 
 image @image.sample.pulse {
-    asset = @asset.bg.pulse
+    asset = @asset:.bg.pulse
     target = @target.sample.pulse
     layer = @layer.foreground
     x = 96px
@@ -1100,8 +1184,8 @@ image @image.sample.pulse {
 }
 
 flow @flow.opening opening {
-    let room = bg(@asset.bg.room, fit = "intrinsic", alignment.x = 1, alignment.y = 0.5, opacity = 0.75, playback.rate = 0.5, playback.local_time = 50ms)
-    let pulse = image(asset = @asset.bg.pulse, id = "image.sample.pulse", target = "target.sample.pulse", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, fit = "stretch", alignment.x = 0.25, alignment.y = 750, opacity = 0.5, playback.start = 0.1, playback.rate = 0.5, transform.tx = 24px, transform.ty = 12px, transform.m11 = 1000, transform.m22 = 1000, depth = 2500, enabled = true, visible = true, action = "action.inspect.pulse", param.role = "animated-hotspot", proxy.id = "proxy.pulse.hotspot", proxy.type = "PulseHotspot", proxy.role = "inspect", proxy.layer = "layer.hit", proxy.depth = 2600, proxy.hit_test = true, proxy.param.channel = "preview")
+    let room = bg(@asset:.bg.room, fit = "intrinsic", alignment.x = 1, alignment.y = 0.5, opacity = 0.75, playback.rate = 0.5, playback.local_time = 50ms)
+    let pulse = image(asset = @asset:.bg.pulse, id = "image.sample.pulse", target = "target.sample.pulse", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, fit = "stretch", alignment.x = 0.25, alignment.y = 750, opacity = 0.5, playback.start = 0.1, playback.rate = 0.5, transform.tx = 24px, transform.ty = 12px, transform.m11 = 1000, transform.m22 = 1000, depth = 2500, enabled = true, visible = true, action = "action.inspect.pulse", param.role = "animated-hotspot", proxy.id = "proxy.pulse.hotspot", proxy.type = "PulseHotspot", proxy.role = "inspect", proxy.layer = "layer.hit", proxy.depth = 2600, proxy.hit_test = true, proxy.param.channel = "preview")
     let declared = image(@image.sample.pulse)
 }
 "#,
@@ -1113,11 +1197,37 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn typechecks_family_relative_asset_references_in_asset_expected_calls() {
+    let tree = parse_ok(
+        r#"
+asset room {
+    file = "bg/room.png"
+    kind = image
+}
+
+asset pulse {
+    file = "bg/pulse.gif"
+    kind = image
+    animation = true
+}
+
+flow @flow.opening opening {
+    let room = bg(@asset:.room)
+    let pulse = image(asset = @asset:.pulse, id = "image.sample.pulse")
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("family-relative asset refs lower");
+
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("family-relative asset refs typecheck");
+}
+
+#[test]
 fn typecheck_rejects_presentation_slot_family_mismatch() {
     let tree = parse_ok(
         r"
 flow @flow.opening opening {
-    let room = bg(@asset.bg.room, slot = @slot.character.alice.main)
+    let room = bg(@asset:.bg.room, slot = @slot.character.alice.main)
 }
 ",
     );
@@ -1136,8 +1246,8 @@ fn typecheck_requires_explicit_slots_for_simultaneous_defaults() {
     let tree = parse_ok(
         r"
 flow @flow.opening opening {
-    let room = bg(@asset.bg.room)
-    let evening = bg(@asset.bg.evening)
+    let room = bg(@asset:.bg.room)
+    let evening = bg(@asset:.bg.evening)
 }
 ",
     );
@@ -1231,7 +1341,7 @@ fn typecheck_reports_wrong_choice_target_kind() {
         r#"
 flow @flow.opening opening {
     choice @choice.opening.first {
-        @choice.opening.listen "聞く" -> @asset.bg.room
+        @choice.opening.listen "聞く" -> @asset:.bg.room
     }
 }
 "#,

@@ -11,13 +11,13 @@ frame timing.
 The current implemented source surface is ordinary call syntax:
 
 ```arcw
-pub asset @asset.bg.room {
+pub asset bg_room {
   kind = image
   file = "bg/room.png"
 }
 
 pub image @image.sample.pulse_sprite {
-  asset = @asset.bg.pulse
+  asset = @asset:.bg.pulse
   target = @target.sample.pulse_sprite
   layer = @layer.foreground
   x = 96px
@@ -31,13 +31,13 @@ pub image @image.sample.pulse_sprite {
   proxy.hit_test = true
 }
 
-bg(@asset.bg.room)
-bg(@asset.bg.poster, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom")
+bg(@asset:.bg.room)
+bg(@asset:.bg.poster, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom")
 
 image(@image.sample.pulse_sprite)
 
 image(
-  asset = @asset.bg.pulse,
+  asset = @asset:.bg.pulse,
   id = "image.sample.pulse_sprite",
   target = "target.sample.pulse_sprite",
   layer = "layer.foreground",
@@ -77,11 +77,24 @@ module scope. `image(@image.id)` expands that declaration into the same
 hit-test, capture, bundle validation, and native rendering all see the same
 typed object. Call-site named arguments may override declaration fields.
 
-`asset @asset...` is a normal entity declaration family. It declares the stable
-asset id used by `asset.image(...)`, `bg(...)`, and `image(...)`. Its body is
-preserved as source metadata; the current bundle implementation still records
-encoded payloads from `.arcweft/asset` into `image_assets[]` and validates
-statically known image references against that table.
+`asset name { ... }` is the recommended hand-written asset declaration surface:
+the `asset` keyword already supplies the default declaration family, so the
+family prefix is omitted there. It declares the stable asset id used by
+`asset.image(...)`, `bg(...)`, and `image(...)`. Fully qualified declaration
+headers such as `asset @asset.bg_room { ... }` remain valid for generated or
+fully elaborated source, but authoring tools should lint them toward the
+compact declaration form. Authored asset references should prefer
+family-relative references such as `bg(@asset:.bg.room)` and
+`image(asset = @asset:.bg.pulse)`; this is the compact authored form because
+the `asset` anchor is explicit while the id path does not repeat the default
+family. Fully qualified references such as `@asset.bg.room` remain valid for
+generated surfaces, manifest/tooling output, stored public-id roundtrips, and
+external interfaces that need the stored public id verbatim, but they are not
+the recommended spelling for ordinary hand-authored asset references. Asset
+bodies are preserved as source metadata;
+the current bundle implementation still records encoded payloads from
+`.arcweft/asset` into `image_assets[]` and validates statically known image
+references against that table.
 
 The older fluent sketch form `image(@asset).fit(...)` is not the implemented
 surface. Declared image objects are the canonical reusable object form and lower

@@ -56,6 +56,37 @@ pub parser parse_player_command: Parser<PlayerCommand, ParseError> {
 }
 
 #[test]
+fn content_declaration_is_a_typed_entity() {
+    let tree = parse_ok(
+        r"
+content chapter_two {
+    roots = [
+        @flow.chapter_two,
+    ]
+}
+
+flow chapter_two {}
+",
+    );
+
+    let hir = lower_to_hir(&tree).expect("content declarations lower");
+    validate_typecheck_ready(&hir).expect("content declarations are typecheck-ready");
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("content declarations typecheck");
+
+    assert!(hir.declarations().iter().any(|decl| {
+        matches!(
+            decl,
+            HirTopLevelDecl::EntityDecl(item)
+                if item.kind() == EntityDeclKind::Content
+                    && item.id().body() == "content.chapter_two"
+                    && item.content_body().is_some_and(|body| body.roots().len() == 1)
+        )
+    }));
+    let registry = registry_from_hir(&hir);
+    validate_hir_references(&hir, &registry).expect("content roots resolve");
+}
+
+#[test]
 fn parses_proof_and_trusted_axiom_items_as_structured_declarations() {
     let tree = parse_ok(
         r#"
@@ -224,13 +255,13 @@ where len(self) <= 16
 fn parses_surface_alias_and_resource_entity_families() {
     let tree = parse_ok(
         r#"
-pub asset @asset.bg.room {
+pub asset bg.room {
     file = "bg/room.png"
     kind = image
 }
 
 pub image @image.sample.pulse {
-    asset = @asset.bg.room
+    asset = @asset:.bg.room
     x = 12px
     y = 34px
     width = 56px
@@ -618,7 +649,7 @@ requires state_is_valid
 
 pub view current_scene(state: GameState) -> Scene {
     scene {
-        layer bg = image(@asset.bg.room)
+        layer bg = image(@asset:.bg.room)
     }
 }
 ",

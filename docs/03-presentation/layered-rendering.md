@@ -235,11 +235,11 @@ Scene 内で layer を使う。
 scene.show(@scene.opening)
 scope {
     layer @layer.background {
-        image @asset.bg.room fit cover
+        image @asset:.bg.room fit cover
     }
 
     layer @layer.characters {
-        sprite @asset.char.alice.default at center
+        sprite @asset:.char.alice.default at center
     }
 
     layer @layer.dialogue {
@@ -258,7 +258,7 @@ scope {
 scene.show(@scene.opening)
 scope {
     image(
-        asset = @asset.bg.room,
+        asset = @asset:.bg.room,
         id = "image.scene.room",
         layer = "layer.background",
         x = 0px,
@@ -267,7 +267,7 @@ scope {
         height = 720px,
         fit = "cover"
     )
-    character layer @layer.characters sprite(@asset.char.alice.default).at(center)
+    character layer @layer.characters sprite(@asset:.char.alice.default).at(center)
     ui layer @layer.dialogue TextBox(current_text())
 }
 ```

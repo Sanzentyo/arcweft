@@ -1,4 +1,4 @@
-# module / use / pub / lazy use
+# module / use / pub
 
 ## module
 
@@ -94,29 +94,10 @@ to:
 use super::common::{route_gate}
 ```
 
-## lazy use
+`lazy use` and `eager use` are removed syntax. `use` introduces names only.
+Compiler-owned build demand and content availability decide when bodies,
+artifacts, and runtime content are built or mounted.
 
-```arcw
-lazy use mini_games::truck::{truck_game, TruckResult}
-lazy use game::shaders::heavy::{crt_postprocess}
-lazy use crate::mini_games::truck::{truck_game, TruckResult}
-lazy use self::generated::route_map::{RouteMap}
-lazy use super::shared::{SharedRouteState}
-```
-
-`lazy use` は export summary だけを読み、body parse/typecheck/compile/load は初回使用まで遅延する。
-
-## eager use
-
-```arcw
-eager use game::generated::route_map::{RouteMap}
-eager use self::generated::route_map::{RouteMap}
-eager use crate::game::generated::route_map::{RouteMap}
-```
-
-import 時副作用は禁止。`eager use` は compile/cache/diagnostics の都合で使う。
-
-`lazy use` / `eager use` でも通常の `use` と同じ module-root 規則を使う。
 `@.generated` / `@..generated` / `@super.generated` のような relative ID 形式は import path
 ではなく ID 文脈専用なので使わない。
 
@@ -133,7 +114,6 @@ pub struct ModuleItem {
     pub visibility: Visibility,
     pub signature: ItemSignature,
     pub origin: ItemOrigin,
-    pub lazy_policy: LazyPolicy,
 }
 ```
 

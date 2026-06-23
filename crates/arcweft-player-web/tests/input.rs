@@ -92,3 +92,13 @@ fn keyboard_focus_navigation_activates_the_focused_choice() {
         Some("choice.second")
     );
 }
+
+#[test]
+fn wheel_input_does_not_move_choice_scroll_state() {
+    let mut input = InputController::default();
+    let before = input.choice_scroll();
+    let outcome = input.wheel(180.0);
+
+    assert!(outcome.redraw);
+    assert_eq!(input.choice_scroll(), before);
+}

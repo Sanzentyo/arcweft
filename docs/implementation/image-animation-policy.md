@@ -69,10 +69,10 @@ and multi-frame GIF/WebP is marked animated. Render/runtime adapters still
 decode the encoded bundle payloads for frame upload and playback rather than
 re-reading source files. The bundler preserves relative virtual paths and
 avoids host path leakage.
-`arcw bundle` also validates statically known `asset.image(@asset.id)` /
+`arcw bundle` also validates statically known `asset.image(@asset:.id)` /
 `asset.image("asset.id")` host-task references and presentation runtime calls
-such as `bg(@asset.id)`, `image(@asset.id, ...)`, and
-`image(asset = @asset.id, ...)` against `image_assets[]`. The validation walks
+such as `bg(@asset:.id)`, `image(@asset:.id, ...)`, and
+`image(asset = @asset:.id, ...)` against `image_assets[]`. The validation walks
 flow ops, await pending effects, and line-task effect graphs so source-level
 presentation images cannot silently refer to assets that were omitted from the
 bundle.
@@ -137,7 +137,7 @@ readback report the resulting object-local `frame_index` and
 `--capture-time`.
 
 Source-level runtime calls can now feed that same presentation-image path for
-the first background slot. During Agent observe, `bg(@asset.bg.room)` and the
+the first background slot. During Agent observe, `bg(@asset:.bg.room)` and the
 quoted equivalent resolve to `samples/.arcweft/asset/bg/room.{png,jpg,jpeg,gif,webp}`
 beside the observed `.arcw` source, decode through `arcweft-image`, lower into
 an `ImagePresentationObject`, lower again through `UiImagePresentationFrame`,
@@ -179,7 +179,7 @@ same call that defines the visual object:
 
 ```arcw
 image(
-  asset = @asset.bg.pulse,
+  asset = @asset:.bg.pulse,
   id = "image.sample.pulse_sprite",
   target = "target.sample.pulse_sprite",
   layer = "layer.foreground",
@@ -286,8 +286,8 @@ image capture.
 1. Generalize source asset declarations from the current entity-id declaration
    surface into a payload-driving declaration if the language chooses to let
    source declarations override or supplement `.arcweft/asset` discovery.
-   `asset @asset... { ... }` now parses, lowers, resolves, and typechecks as
-   an Asset entity declaration, and `samples/image-animation.arcw` declares its
+   compact `asset ... { ... }` headers now parse, lower, resolve, and typecheck
+   as Asset entity declarations, and `samples/image-animation.arcw` declares its
    static and animated image asset ids. The bundle image asset table still owns
    encoded file records and decoded static/animated metadata, and static
    `asset.image(...)`, `bg(...)`, and bounded `image(...)` references are

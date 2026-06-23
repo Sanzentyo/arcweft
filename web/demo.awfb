@@ -9,15 +9,15 @@
     "runtime": {
       "entry_flow": "flow.main",
       "flows": 2,
-      "bytecode_instructions": 8,
-      "line_task_groups": 2,
+      "bytecode_instructions": 9,
+      "line_task_groups": 3,
       "stream_plans": 0,
       "source_plans": 0
     }
   },
   "source": {
     "label": "demo.arcw",
-    "text": "character alice Alice {\n}\n\npub asset @asset.generated.background {\n    kind = image\n    file = \"generated/background.png\"\n}\n\npub asset @asset.generated.character_stand {\n    kind = image\n    file = \"generated/character_stand.png\"\n}\n\npub asset @asset.generated.gif_pulse {\n    kind = image\n    file = \"generated/gif_pulse.gif\"\n}\n\npub asset @asset.generated.webp_pulse {\n    kind = image\n    file = \"generated/webp_pulse.webp\"\n}\n\npub image @image.generated.character_stand {\n    asset = @asset.generated.character_stand\n    x = 64px\n    y = 52px\n    width = 180px\n    height = 300px\n}\n\npub image @image.generated.background {\n    asset = @asset.generated.background\n    x = 0px\n    y = 0px\n    width = 1280px\n    height = 720px\n}\n\npub image @image.generated.gif_pulse {\n    asset = @asset.generated.gif_pulse\n    x = 486px\n    y = 46px\n    width = 96px\n    height = 96px\n}\n\npub image @image.generated.webp_pulse {\n    asset = @asset.generated.webp_pulse\n    x = 492px\n    y = 156px\n    width = 96px\n    height = 96px\n}\n\nentry game @entry.main { start(@flow.main) }\n\nflow main {\n    image(@image.generated.background)\n    image(@image.generated.character_stand)\n    image(@image.generated.gif_pulse)\n    image(@image.generated.webp_pulse)\n    alice: [.typewriter cps=24][.wave amp=4px freq=8]Typewriter text is alive on WebGPU.[/][/]\n    choice @choice.web_demo {\n        @choice.web_demo.continue \"Continue\" -> @flow.done\n        @choice.web_demo.alternate \"Alternate route\" -> @flow.done\r\n    }\r\n}\r\n\r\nflow done {\n    alice: [.typewriter cps=28][.wave amp=3px freq=10]The VM accepted the choice and kept the canvas in sync.[/][/]\n    return \"done\"\r\n}\r\n"
+    "text": "pub surface character zunda_guide {\n    display = \"ずんだガイド\"\n    default_voice = auto\n    dialogue_style {\n        rich_text {\n            text {\n                font = \"Yu Gothic\"\n                color = rgb(\"#aee28e\")\n                size = 26px\n            }\n        }\n    }\n}\n\npub surface character narrator {\n    display = \"語り手\"\n    default_voice = auto\n    dialogue_style {\n        rich_text {\n            text {\n                font = \"Yu Mincho\"\n                color = rgb(\"#f1dbc8\")\n                size = 23px\n            }\n        }\n    }\n}\n\npub textbox web_panel {\n    rich_text {\n        text {\n            font = \"Yu Gothic UI\"\n            color = rgb(\"#f7f4e8\")\n            size = 24px\n        }\n    }\n}\n\npub dialogue defaults @dialogue.defaults {\n    window = @textbox.web_panel\n}\n\npub asset @asset.generated.background {\n    kind = image\n    file = \"generated/background.png\"\n}\n\npub asset @asset.generated.character_stand {\n    kind = image\n    file = \"generated/character_stand.png\"\n}\n\npub asset @asset.generated.gif_pulse {\n    kind = image\n    file = \"generated/gif_pulse.gif\"\n}\n\npub asset @asset.generated.webp_pulse {\n    kind = image\n    file = \"generated/webp_pulse.webp\"\n}\n\npub image @image.generated.character_stand {\n    asset = @asset.generated.character_stand\n    x = 72px\n    y = 52px\n    width = 208px\n    height = 332px\n}\n\npub image @image.generated.background {\n    asset = @asset.generated.background\n    x = 0px\n    y = 0px\n    width = 1280px\n    height = 720px\n}\n\npub image @image.generated.gif_pulse {\n    asset = @asset.generated.gif_pulse\n    x = 486px\n    y = 46px\n    width = 96px\n    height = 96px\n}\n\npub image @image.generated.webp_pulse {\n    asset = @asset.generated.webp_pulse\n    x = 492px\n    y = 156px\n    width = 96px\n    height = 96px\n}\n\nentry game @entry.main { start(@flow.main) }\n\nflow main {\n    image(@image.generated.background)\n    image(@image.generated.character_stand)\n    image(@image.generated.gif_pulse)\n    image(@image.generated.webp_pulse)\n\n    narrator(id=@say.web_demo.narrator, voice=auto):\n        語り手は明朝体と薄い桃色で表示される。既定のタイプライター表示で、WASMでもnativeでも同じ速度で文字が現れる。[p]\n\n    zunda_guide(id=@say.web_demo.guide, voice=auto, look=.normal):\n        こちらはキャラクターsurfaceの色とフォントを使う行なのだ。[.wave amp=4px freq=8]波打つ文字[/]と、右上のアニメーション画像も同じフレーム計画で動いているのだ。[p]\n\n    choice @choice.web_demo {\n        @choice.web_demo.continue \"このまま進む\" -> @flow.done\n        @choice.web_demo.alternate \"別ルートを見る\" -> @flow.done\n    }\n}\n\nflow done {\n    zunda_guide(id=@say.web_demo.done, voice=auto, look=.smile):\n        choiceの当たり判定と見た目が一致したのだ。スクロールしてもボタンの場所は上下しないのだ。[p]\n    return \"done\"\n}\n"
   },
   "bytecode": {
     "encoding": "structured_json",
@@ -87,8 +87,16 @@
             {
               "Flow": {
                 "Dialogue": {
-                  "line": "say.main.alice.001",
+                  "line": "say.web_demo.narrator",
                   "task_group": 0
+                }
+              }
+            },
+            {
+              "Flow": {
+                "Dialogue": {
+                  "line": "say.web_demo.guide",
+                  "task_group": 1
                 }
               }
             },
@@ -99,14 +107,14 @@
                   "options": [
                     {
                       "id": "choice.web_demo.continue",
-                      "label": "Continue",
+                      "label": "このまま進む",
                       "target": "flow.done",
                       "out": null,
                       "effects": []
                     },
                     {
                       "id": "choice.web_demo.alternate",
-                      "label": "Alternate route",
+                      "label": "別ルートを見る",
                       "target": "flow.done",
                       "out": null,
                       "effects": []
@@ -123,8 +131,8 @@
             {
               "Flow": {
                 "Dialogue": {
-                  "line": "say.done.alice.001",
-                  "task_group": 1
+                  "line": "say.web_demo.done",
+                  "task_group": 2
                 }
               }
             },
@@ -185,6 +193,28 @@
             "presentation": "DropRegistered",
             "audio": "StopRegistered"
           }
+        },
+        {
+          "root": {
+            "node": {
+              "Seq": []
+            },
+            "defer_stack": [],
+            "completed_defer_stack": [],
+            "cancelled_defer_stack": [],
+            "failed_defer_stack": []
+          },
+          "options": [],
+          "bindings": [],
+          "out": [],
+          "cancel_rules": [],
+          "memo": [],
+          "assertions": [],
+          "cleanup": {
+            "child_tasks": "CancelAndJoin",
+            "presentation": "DropRegistered",
+            "audio": "StopRegistered"
+          }
         }
       ],
       "stream_plans": [],
@@ -194,47 +224,370 @@
   "display": {
     "lines": [
       {
-        "line": "say.main.alice.001",
-        "callee": "alice",
-        "text_key": "text.main.alice.001",
-        "window": "textbox.main",
-        "voice": null,
+        "line": "say.web_demo.narrator",
+        "callee": "narrator",
+        "text_key": "text.web_demo.narrator",
+        "window": "textbox.web_panel",
+        "voice": "auto",
         "look": null,
         "style": null,
-        "base_styles": [],
+        "base_styles": [
+          {
+            "kind": "font",
+            "family": {
+              "kind": "named",
+              "name": "Yu Gothic UI"
+            }
+          },
+          {
+            "kind": "color",
+            "value": {
+              "kind": "rgb",
+              "red": 247,
+              "green": 244,
+              "blue": 232
+            }
+          },
+          {
+            "kind": "size",
+            "points": 24,
+            "raw": "24"
+          },
+          {
+            "kind": "font",
+            "family": {
+              "kind": "named",
+              "name": "Yu Mincho"
+            }
+          },
+          {
+            "kind": "color",
+            "value": {
+              "kind": "rgb",
+              "red": 241,
+              "green": 219,
+              "blue": 200
+            }
+          },
+          {
+            "kind": "size",
+            "points": 23,
+            "raw": "23"
+          }
+        ],
         "default_inline_failure_policy": null,
         "style_contributions": [
           {
-            "path": "rich_text.effect",
-            "layer": "inline_span",
+            "path": "window",
+            "layer": "dialogue_defaults",
             "source": {
               "kind": "source_file",
-              "item_id": "say.main.alice.001",
-              "public_id": "text.main.alice.001",
+              "item_id": "dialogue.defaults",
+              "public_id": "dialogue.defaults",
               "range": {
-                "start": 1248,
-                "end": 1258
+                "start": 793,
+                "end": 811
               }
             },
             "op": "replace",
-            "value": "typewriter",
-            "active": false,
-            "shadowed_by": 2
+            "value": "@textbox.web_panel",
+            "active": true
           },
           {
-            "path": "rich_text.effect.typewriter.cps",
-            "layer": "inline_span",
+            "path": "rich_text.text.font",
+            "layer": "text_box_theme",
             "source": {
               "kind": "source_file",
-              "item_id": "say.main.alice.001",
-              "public_id": "text.main.alice.001",
+              "item_id": "textbox.web_panel",
+              "public_id": "textbox.web_panel",
               "range": {
-                "start": 1264,
-                "end": 1266
+                "start": 644,
+                "end": 658
               }
             },
             "op": "replace",
-            "value": "24",
+            "value": "\"Yu Gothic UI\"",
+            "style_index": 0,
+            "active": false,
+            "shadowed_by": 4
+          },
+          {
+            "path": "rich_text.text.color",
+            "layer": "text_box_theme",
+            "source": {
+              "kind": "source_file",
+              "item_id": "textbox.web_panel",
+              "public_id": "textbox.web_panel",
+              "range": {
+                "start": 679,
+                "end": 693
+              }
+            },
+            "op": "replace",
+            "value": "rgb(\"#f7f4e8\")",
+            "style_index": 1,
+            "active": false,
+            "shadowed_by": 5
+          },
+          {
+            "path": "rich_text.text.size",
+            "layer": "text_box_theme",
+            "source": {
+              "kind": "source_file",
+              "item_id": "textbox.web_panel",
+              "public_id": "textbox.web_panel",
+              "range": {
+                "start": 713,
+                "end": 717
+              }
+            },
+            "op": "replace",
+            "value": "24px",
+            "style_index": 2,
+            "active": false,
+            "shadowed_by": 6
+          },
+          {
+            "path": "rich_text.text.font",
+            "layer": "character_dialogue_style",
+            "source": {
+              "kind": "source_file",
+              "item_id": "character.narrator",
+              "public_id": "character.narrator",
+              "range": {
+                "start": 458,
+                "end": 469
+              }
+            },
+            "op": "replace",
+            "value": "\"Yu Mincho\"",
+            "style_index": 3,
+            "active": true
+          },
+          {
+            "path": "rich_text.text.color",
+            "layer": "character_dialogue_style",
+            "source": {
+              "kind": "source_file",
+              "item_id": "character.narrator",
+              "public_id": "character.narrator",
+              "range": {
+                "start": 494,
+                "end": 508
+              }
+            },
+            "op": "replace",
+            "value": "rgb(\"#f1dbc8\")",
+            "style_index": 4,
+            "active": true
+          },
+          {
+            "path": "rich_text.text.size",
+            "layer": "character_dialogue_style",
+            "source": {
+              "kind": "source_file",
+              "item_id": "character.narrator",
+              "public_id": "character.narrator",
+              "range": {
+                "start": 532,
+                "end": 536
+              }
+            },
+            "op": "replace",
+            "value": "23px",
+            "style_index": 5,
+            "active": true
+          }
+        ],
+        "args": [],
+        "content": {
+          "nodes": [
+            {
+              "kind": "text",
+              "text": "語り手は明朝体と薄い桃色で表示される。既定のタイプライター表示で、WASMでもnativeでも同じ速度で文字が現れる。"
+            },
+            {
+              "kind": "control",
+              "control": {
+                "kind": "page"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "line": "say.web_demo.guide",
+        "callee": "zunda_guide",
+        "text_key": "text.web_demo.guide",
+        "window": "textbox.web_panel",
+        "voice": "auto",
+        "look": ".normal",
+        "style": null,
+        "base_styles": [
+          {
+            "kind": "font",
+            "family": {
+              "kind": "named",
+              "name": "Yu Gothic UI"
+            }
+          },
+          {
+            "kind": "color",
+            "value": {
+              "kind": "rgb",
+              "red": 247,
+              "green": 244,
+              "blue": 232
+            }
+          },
+          {
+            "kind": "size",
+            "points": 24,
+            "raw": "24"
+          },
+          {
+            "kind": "font",
+            "family": {
+              "kind": "named",
+              "name": "Yu Gothic"
+            }
+          },
+          {
+            "kind": "color",
+            "value": {
+              "kind": "rgb",
+              "red": 174,
+              "green": 226,
+              "blue": 142
+            }
+          },
+          {
+            "kind": "size",
+            "points": 26,
+            "raw": "26"
+          }
+        ],
+        "default_inline_failure_policy": null,
+        "style_contributions": [
+          {
+            "path": "window",
+            "layer": "dialogue_defaults",
+            "source": {
+              "kind": "source_file",
+              "item_id": "dialogue.defaults",
+              "public_id": "dialogue.defaults",
+              "range": {
+                "start": 793,
+                "end": 811
+              }
+            },
+            "op": "replace",
+            "value": "@textbox.web_panel",
+            "active": true
+          },
+          {
+            "path": "rich_text.text.font",
+            "layer": "text_box_theme",
+            "source": {
+              "kind": "source_file",
+              "item_id": "textbox.web_panel",
+              "public_id": "textbox.web_panel",
+              "range": {
+                "start": 644,
+                "end": 658
+              }
+            },
+            "op": "replace",
+            "value": "\"Yu Gothic UI\"",
+            "style_index": 0,
+            "active": false,
+            "shadowed_by": 4
+          },
+          {
+            "path": "rich_text.text.color",
+            "layer": "text_box_theme",
+            "source": {
+              "kind": "source_file",
+              "item_id": "textbox.web_panel",
+              "public_id": "textbox.web_panel",
+              "range": {
+                "start": 679,
+                "end": 693
+              }
+            },
+            "op": "replace",
+            "value": "rgb(\"#f7f4e8\")",
+            "style_index": 1,
+            "active": false,
+            "shadowed_by": 5
+          },
+          {
+            "path": "rich_text.text.size",
+            "layer": "text_box_theme",
+            "source": {
+              "kind": "source_file",
+              "item_id": "textbox.web_panel",
+              "public_id": "textbox.web_panel",
+              "range": {
+                "start": 713,
+                "end": 717
+              }
+            },
+            "op": "replace",
+            "value": "24px",
+            "style_index": 2,
+            "active": false,
+            "shadowed_by": 6
+          },
+          {
+            "path": "rich_text.text.font",
+            "layer": "character_dialogue_style",
+            "source": {
+              "kind": "source_file",
+              "item_id": "character.zunda_guide",
+              "public_id": "character.zunda_guide",
+              "range": {
+                "start": 179,
+                "end": 190
+              }
+            },
+            "op": "replace",
+            "value": "\"Yu Gothic\"",
+            "style_index": 3,
+            "active": true
+          },
+          {
+            "path": "rich_text.text.color",
+            "layer": "character_dialogue_style",
+            "source": {
+              "kind": "source_file",
+              "item_id": "character.zunda_guide",
+              "public_id": "character.zunda_guide",
+              "range": {
+                "start": 215,
+                "end": 229
+              }
+            },
+            "op": "replace",
+            "value": "rgb(\"#aee28e\")",
+            "style_index": 4,
+            "active": true
+          },
+          {
+            "path": "rich_text.text.size",
+            "layer": "character_dialogue_style",
+            "source": {
+              "kind": "source_file",
+              "item_id": "character.zunda_guide",
+              "public_id": "character.zunda_guide",
+              "range": {
+                "start": 253,
+                "end": 257
+              }
+            },
+            "op": "replace",
+            "value": "26px",
+            "style_index": 5,
             "active": true
           },
           {
@@ -242,11 +595,11 @@
             "layer": "inline_span",
             "source": {
               "kind": "source_file",
-              "item_id": "say.main.alice.001",
-              "public_id": "text.main.alice.001",
+              "item_id": "say.web_demo.guide",
+              "public_id": "text.web_demo.guide",
               "range": {
-                "start": 1268,
-                "end": 1272
+                "start": 2331,
+                "end": 2335
               }
             },
             "op": "replace",
@@ -258,11 +611,11 @@
             "layer": "inline_span",
             "source": {
               "kind": "source_file",
-              "item_id": "say.main.alice.001",
-              "public_id": "text.main.alice.001",
+              "item_id": "say.web_demo.guide",
+              "public_id": "text.web_demo.guide",
               "range": {
-                "start": 1278,
-                "end": 1281
+                "start": 2341,
+                "end": 2344
               }
             },
             "op": "replace",
@@ -274,11 +627,11 @@
             "layer": "inline_span",
             "source": {
               "kind": "source_file",
-              "item_id": "say.main.alice.001",
-              "public_id": "text.main.alice.001",
+              "item_id": "say.web_demo.guide",
+              "public_id": "text.web_demo.guide",
               "range": {
-                "start": 1287,
-                "end": 1288
+                "start": 2350,
+                "end": 2351
               }
             },
             "op": "replace",
@@ -290,22 +643,8 @@
         "content": {
           "nodes": [
             {
-              "kind": "style_start",
-              "style": {
-                "kind": "effect",
-                "effect": {
-                  "id": "typewriter",
-                  "params": {
-                    "cps": {
-                      "kind": "int",
-                      "value": 24
-                    }
-                  },
-                  "target": "run",
-                  "phase": "glyph_mask",
-                  "state_scope": "run"
-                }
-              }
+              "kind": "text",
+              "text": "こちらはキャラクターsurfaceの色とフォントを使う行なのだ。"
             },
             {
               "kind": "style_start",
@@ -331,109 +670,198 @@
             },
             {
               "kind": "text",
-              "text": "Typewriter text is alive on WebGPU."
+              "text": "波打つ文字"
             },
             {
               "kind": "style_end",
               "name": "/"
             },
             {
-              "kind": "style_end",
-              "name": "/"
+              "kind": "text",
+              "text": "と、右上のアニメーション画像も同じフレーム計画で動いているのだ。"
+            },
+            {
+              "kind": "control",
+              "control": {
+                "kind": "page"
+              }
             }
           ]
         }
       },
       {
-        "line": "say.done.alice.001",
-        "callee": "alice",
-        "text_key": "text.done.alice.001",
-        "window": "textbox.main",
-        "voice": null,
-        "look": null,
+        "line": "say.web_demo.done",
+        "callee": "zunda_guide",
+        "text_key": "text.web_demo.done",
+        "window": "textbox.web_panel",
+        "voice": "auto",
+        "look": ".smile",
         "style": null,
-        "base_styles": [],
+        "base_styles": [
+          {
+            "kind": "font",
+            "family": {
+              "kind": "named",
+              "name": "Yu Gothic UI"
+            }
+          },
+          {
+            "kind": "color",
+            "value": {
+              "kind": "rgb",
+              "red": 247,
+              "green": 244,
+              "blue": 232
+            }
+          },
+          {
+            "kind": "size",
+            "points": 24,
+            "raw": "24"
+          },
+          {
+            "kind": "font",
+            "family": {
+              "kind": "named",
+              "name": "Yu Gothic"
+            }
+          },
+          {
+            "kind": "color",
+            "value": {
+              "kind": "rgb",
+              "red": 174,
+              "green": 226,
+              "blue": 142
+            }
+          },
+          {
+            "kind": "size",
+            "points": 26,
+            "raw": "26"
+          }
+        ],
         "default_inline_failure_policy": null,
         "style_contributions": [
           {
-            "path": "rich_text.effect",
-            "layer": "inline_span",
+            "path": "window",
+            "layer": "dialogue_defaults",
             "source": {
               "kind": "source_file",
-              "item_id": "say.done.alice.001",
-              "public_id": "text.done.alice.001",
+              "item_id": "dialogue.defaults",
+              "public_id": "dialogue.defaults",
               "range": {
-                "start": 1524,
-                "end": 1534
+                "start": 793,
+                "end": 811
               }
             },
             "op": "replace",
-            "value": "typewriter",
+            "value": "@textbox.web_panel",
+            "active": true
+          },
+          {
+            "path": "rich_text.text.font",
+            "layer": "text_box_theme",
+            "source": {
+              "kind": "source_file",
+              "item_id": "textbox.web_panel",
+              "public_id": "textbox.web_panel",
+              "range": {
+                "start": 644,
+                "end": 658
+              }
+            },
+            "op": "replace",
+            "value": "\"Yu Gothic UI\"",
+            "style_index": 0,
             "active": false,
-            "shadowed_by": 2
+            "shadowed_by": 4
           },
           {
-            "path": "rich_text.effect.typewriter.cps",
-            "layer": "inline_span",
+            "path": "rich_text.text.color",
+            "layer": "text_box_theme",
             "source": {
               "kind": "source_file",
-              "item_id": "say.done.alice.001",
-              "public_id": "text.done.alice.001",
+              "item_id": "textbox.web_panel",
+              "public_id": "textbox.web_panel",
               "range": {
-                "start": 1540,
-                "end": 1542
+                "start": 679,
+                "end": 693
               }
             },
             "op": "replace",
-            "value": "28",
+            "value": "rgb(\"#f7f4e8\")",
+            "style_index": 1,
+            "active": false,
+            "shadowed_by": 5
+          },
+          {
+            "path": "rich_text.text.size",
+            "layer": "text_box_theme",
+            "source": {
+              "kind": "source_file",
+              "item_id": "textbox.web_panel",
+              "public_id": "textbox.web_panel",
+              "range": {
+                "start": 713,
+                "end": 717
+              }
+            },
+            "op": "replace",
+            "value": "24px",
+            "style_index": 2,
+            "active": false,
+            "shadowed_by": 6
+          },
+          {
+            "path": "rich_text.text.font",
+            "layer": "character_dialogue_style",
+            "source": {
+              "kind": "source_file",
+              "item_id": "character.zunda_guide",
+              "public_id": "character.zunda_guide",
+              "range": {
+                "start": 179,
+                "end": 190
+              }
+            },
+            "op": "replace",
+            "value": "\"Yu Gothic\"",
+            "style_index": 3,
             "active": true
           },
           {
-            "path": "rich_text.effect",
-            "layer": "inline_span",
+            "path": "rich_text.text.color",
+            "layer": "character_dialogue_style",
             "source": {
               "kind": "source_file",
-              "item_id": "say.done.alice.001",
-              "public_id": "text.done.alice.001",
+              "item_id": "character.zunda_guide",
+              "public_id": "character.zunda_guide",
               "range": {
-                "start": 1544,
-                "end": 1548
+                "start": 215,
+                "end": 229
               }
             },
             "op": "replace",
-            "value": "wave",
+            "value": "rgb(\"#aee28e\")",
+            "style_index": 4,
             "active": true
           },
           {
-            "path": "rich_text.effect.wave.amp",
-            "layer": "inline_span",
+            "path": "rich_text.text.size",
+            "layer": "character_dialogue_style",
             "source": {
               "kind": "source_file",
-              "item_id": "say.done.alice.001",
-              "public_id": "text.done.alice.001",
+              "item_id": "character.zunda_guide",
+              "public_id": "character.zunda_guide",
               "range": {
-                "start": 1554,
-                "end": 1557
+                "start": 253,
+                "end": 257
               }
             },
             "op": "replace",
-            "value": "3px",
-            "active": true
-          },
-          {
-            "path": "rich_text.effect.wave.freq",
-            "layer": "inline_span",
-            "source": {
-              "kind": "source_file",
-              "item_id": "say.done.alice.001",
-              "public_id": "text.done.alice.001",
-              "range": {
-                "start": 1563,
-                "end": 1565
-              }
-            },
-            "op": "replace",
-            "value": "10",
+            "value": "26px",
+            "style_index": 5,
             "active": true
           }
         ],
@@ -441,56 +869,14 @@
         "content": {
           "nodes": [
             {
-              "kind": "style_start",
-              "style": {
-                "kind": "effect",
-                "effect": {
-                  "id": "typewriter",
-                  "params": {
-                    "cps": {
-                      "kind": "int",
-                      "value": 28
-                    }
-                  },
-                  "target": "run",
-                  "phase": "glyph_mask",
-                  "state_scope": "run"
-                }
-              }
-            },
-            {
-              "kind": "style_start",
-              "style": {
-                "kind": "effect",
-                "effect": {
-                  "id": "wave",
-                  "params": {
-                    "amp": {
-                      "kind": "milli",
-                      "value": 3000
-                    },
-                    "freq": {
-                      "kind": "int",
-                      "value": 10
-                    }
-                  },
-                  "target": "run",
-                  "phase": "glyph_transform",
-                  "state_scope": "run"
-                }
-              }
-            },
-            {
               "kind": "text",
-              "text": "The VM accepted the choice and kept the canvas in sync."
+              "text": "choiceの当たり判定と見た目が一致したのだ。スクロールしてもボタンの場所は上下しないのだ。"
             },
             {
-              "kind": "style_end",
-              "name": "/"
-            },
-            {
-              "kind": "style_end",
-              "name": "/"
+              "kind": "control",
+              "control": {
+                "kind": "page"
+              }
             }
           ]
         }
@@ -130451,18 +130837,56 @@
         "width_milli": 1280000,
         "height_milli": 720000
       },
-      "opacity_milli": 1000
+      "fit": "contain",
+      "alignment": {
+        "x_milli": 500,
+        "y_milli": 500
+      },
+      "playback": {
+        "start_time_millis": 0,
+        "rate_milli": 1000
+      },
+      "transform": {
+        "m11_milli": 1000,
+        "m12_milli": 0,
+        "m21_milli": 0,
+        "m22_milli": 1000,
+        "tx_milli": 0,
+        "ty_milli": 0
+      },
+      "depth_milli": 0,
+      "opacity_milli": 1000,
+      "visible": true
     },
     {
       "id": "image.generated.character_stand",
       "asset": "asset.generated.character_stand",
       "bounds": {
-        "x_milli": 64000,
+        "x_milli": 72000,
         "y_milli": 52000,
-        "width_milli": 180000,
-        "height_milli": 300000
+        "width_milli": 208000,
+        "height_milli": 332000
       },
-      "opacity_milli": 1000
+      "fit": "contain",
+      "alignment": {
+        "x_milli": 500,
+        "y_milli": 500
+      },
+      "playback": {
+        "start_time_millis": 0,
+        "rate_milli": 1000
+      },
+      "transform": {
+        "m11_milli": 1000,
+        "m12_milli": 0,
+        "m21_milli": 0,
+        "m22_milli": 1000,
+        "tx_milli": 0,
+        "ty_milli": 0
+      },
+      "depth_milli": 0,
+      "opacity_milli": 1000,
+      "visible": true
     },
     {
       "id": "image.generated.gif_pulse",
@@ -130473,7 +130897,26 @@
         "width_milli": 96000,
         "height_milli": 96000
       },
-      "opacity_milli": 1000
+      "fit": "contain",
+      "alignment": {
+        "x_milli": 500,
+        "y_milli": 500
+      },
+      "playback": {
+        "start_time_millis": 0,
+        "rate_milli": 1000
+      },
+      "transform": {
+        "m11_milli": 1000,
+        "m12_milli": 0,
+        "m21_milli": 0,
+        "m22_milli": 1000,
+        "tx_milli": 0,
+        "ty_milli": 0
+      },
+      "depth_milli": 0,
+      "opacity_milli": 1000,
+      "visible": true
     },
     {
       "id": "image.generated.webp_pulse",
@@ -130484,7 +130927,26 @@
         "width_milli": 96000,
         "height_milli": 96000
       },
-      "opacity_milli": 1000
+      "fit": "contain",
+      "alignment": {
+        "x_milli": 500,
+        "y_milli": 500
+      },
+      "playback": {
+        "start_time_millis": 0,
+        "rate_milli": 1000
+      },
+      "transform": {
+        "m11_milli": 1000,
+        "m12_milli": 0,
+        "m21_milli": 0,
+        "m22_milli": 1000,
+        "tx_milli": 0,
+        "ty_milli": 0
+      },
+      "depth_milli": 0,
+      "opacity_milli": 1000,
+      "visible": true
     }
   ]
 }

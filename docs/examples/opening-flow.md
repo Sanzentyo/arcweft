@@ -11,7 +11,7 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
     log.info("enter flow {flow:?}", flow = @flow.opening)
 
     preload opening {
-        asset.image(@asset.bg.room)
+        asset.image(@asset:.bg.room)
         cue @cue.voice.alice.001
         shader @shader.transition.dissolve
     }

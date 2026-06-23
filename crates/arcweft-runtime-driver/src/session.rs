@@ -1,8 +1,19 @@
 use crate::clock::RuntimeClockStep;
 use crate::display::{BundlePresentationSnapshot, resolve_display_frames};
+use crate::swap::{
+    GenerationBuildError, GenerationId, ProgramGeneration, SwapCompatibility, SwapError,
+    SwapSession, classify_swap,
+};
 use crate::task::HostTaskDispatch;
-use arcweft_bundle::{ArcweftBundle, BundleImageObject, BundleKind};
-use arcweft_core::bytecode::BytecodeProgram;
+use arcweft_bundle::container::{BundleDigest, BundleView, ReadBudget};
+use arcweft_bundle::patch::{
+    BundlePatchArtifact, PatchBundleError, PatchCompatibility, PatchValidationError,
+    apply_patch_bundle, decode_patch_bundle,
+};
+use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleImageObject, BundleKind};
+use arcweft_core::bytecode::{
+    BytecodeProgram, BytecodeVerificationBudget, BytecodeVerificationError,
+};
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::executor::{BytecodeVmExecutor, RuntimeExecutor};
@@ -25,6 +36,8 @@ use arcweft_interaction_model::input::{
 use arcweft_interaction_model::payload::InteractionPayload;
 use arcweft_presentation::input::Action;
 use arcweft_render_text::LineDisplayCatalog;
+use std::collections::BTreeMap;
+use std::sync::Arc;
 use thiserror::Error;
 
 /// Host-selected options for a portable bundle session.
@@ -81,7 +94,7 @@ pub struct BundleSessionStep {
 }
 
 /// Portable decoded bundle execution session.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct BundleSession {
     source_label: String,
     executor: BytecodeVmExecutor,
@@ -92,6 +105,11 @@ pub struct BundleSession {
     presentation: BundlePresentationSnapshot,
     next_step_index: usize,
     next_task_sequence: u64,
+    swap: SwapSession,
+    runtime_generation_pin: Option<Arc<ProgramGeneration>>,
+    task_generation_pins: BTreeMap<TaskSequence, Arc<ProgramGeneration>>,
+    next_generation_id: u64,
+    active_container_content_root: Option<BundleDigest>,
 }
 
 /// Error raised before a portable session can start.
@@ -109,10 +127,63 @@ pub enum BundleSessionError {
     NonFlowEntry { entry: String },
     #[error("failed to decode bundle bytecode: {0}")]
     DecodeBytecode(#[from] RuntimePlanError),
+    #[error("failed to verify bundle bytecode: {0}")]
+    VerifyBytecode(#[from] BytecodeVerificationError),
+    #[error("failed to fingerprint bundle generation: {message}")]
+    GenerationFingerprint { message: String },
+    #[error("failed to decode bundle container: {message}")]
+    DecodeBundle { message: String },
     #[error("unsupported semantic action `{action}` at the game runtime boundary")]
     UnsupportedSemanticAction { action: String },
     #[error("semantic action `{action}` is missing its option payload")]
     MissingSemanticActionPayload { action: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BundleHotSwapReport {
+    pub generation: GenerationId,
+    pub compatibility: SwapCompatibility,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BundlePatchReadiness {
+    Noop,
+    TargetBundleRequired { operations: usize },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BundlePatchReadinessReport {
+    pub base_generation: GenerationId,
+    pub base_content_root: BundleDigest,
+    pub target_content_root: BundleDigest,
+    pub compatibility: PatchCompatibility,
+    pub readiness: BundlePatchReadiness,
+}
+
+#[derive(Debug, Error)]
+pub enum BundleHotSwapError {
+    #[error("failed to build bundle generation: {0}")]
+    BuildGeneration(#[from] GenerationBuildError),
+    #[error("failed to prepare hot swap: {0}")]
+    Prepare(#[source] SwapError),
+    #[error("failed to commit hot swap: {0}")]
+    Commit(#[source] SwapError),
+    #[error("bundle session cannot apply `{compatibility}` without host restart")]
+    RestartRequired { compatibility: SwapCompatibility },
+    #[error("failed to build replacement session runtime: {0}")]
+    Session(#[from] BundleSessionError),
+    #[error("failed to decode AWFB patch bundle: {0}")]
+    DecodePatch(#[source] PatchBundleError),
+    #[error("invalid AWFB patch artifact: {0}")]
+    InvalidPatch(#[source] PatchBundleError),
+    #[error("patch does not apply to the active generation: {0}")]
+    WrongPatchBase(#[source] PatchValidationError),
+    #[error("active session was not created from an AWFB container")]
+    MissingActiveContainerRoot,
+    #[error("failed to materialize AWFB patch: {0}")]
+    MaterializePatch(#[source] PatchBundleError),
+    #[error("failed to decode materialized AWFB patch target: {message}")]
+    DecodePatchTarget { message: String },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -204,35 +275,76 @@ impl BundleSession {
         bundle: &ArcweftBundle,
         options: BundleSessionOptions,
     ) -> Result<Self, BundleSessionError> {
-        if bundle.bundle_kind != BundleKind::Game {
-            return Err(BundleSessionError::UnsupportedBundleKind(
-                bundle.bundle_kind,
-            ));
-        }
+        Self::new_with_container_root(bundle, options, None)
+    }
 
-        let mut plan = bundle.bytecode.program.clone().into_runtime_plan()?;
-        apply_entry_selection(
-            &mut plan,
-            selected_entry(bundle, &options),
-            options.flow.as_deref(),
-        )?;
-        let bytecode = BytecodeProgram::from_runtime_plan(plan.clone());
+    pub fn from_awfb_bytes(
+        bytes: &[u8],
+        options: BundleSessionOptions,
+    ) -> Result<Self, BundleSessionError> {
+        let view = BundleView::parse(bytes, ReadBudget::default()).map_err(|error| {
+            BundleSessionError::DecodeBundle {
+                message: error.to_string(),
+            }
+        })?;
+        let container_root = view.content_root();
+        let bundle =
+            ArcweftBundle::from_format_slice(BundleFormat::Awfb, bytes).map_err(|error| {
+                BundleSessionError::DecodeBundle {
+                    message: error.to_string(),
+                }
+            })?;
+        Self::new_with_container_root(&bundle, options, Some(container_root))
+    }
+
+    fn new_with_container_root(
+        bundle: &ArcweftBundle,
+        options: BundleSessionOptions,
+        active_container_content_root: Option<BundleDigest>,
+    ) -> Result<Self, BundleSessionError> {
+        let generation = Arc::new(initial_generation(bundle)?);
+        let runtime = build_session_runtime(bundle, &options)?;
 
         Ok(Self {
-            source_label: bundle.manifest.source_label.clone(),
-            executor: BytecodeVmExecutor::from_parts(bytecode, plan),
-            display: bundle.display.clone(),
-            image_objects: bundle.image_objects.clone(),
+            source_label: runtime.source_label,
+            executor: runtime.executor,
+            display: runtime.display,
+            image_objects: runtime.image_objects,
             options,
             pending_input_events: Vec::new(),
             presentation: BundlePresentationSnapshot::default(),
             next_step_index: 0,
             next_task_sequence: 0,
+            swap: SwapSession::new(generation.clone()),
+            runtime_generation_pin: Some(generation),
+            task_generation_pins: BTreeMap::new(),
+            next_generation_id: 1,
+            active_container_content_root,
         })
     }
 
     pub fn source_label(&self) -> &str {
         &self.source_label
+    }
+
+    pub fn active_generation(&self) -> &ProgramGeneration {
+        self.swap.active()
+    }
+
+    pub fn pin_active_generation(&self) -> Arc<ProgramGeneration> {
+        self.swap.pin_active_generation()
+    }
+
+    pub fn retired_generation_count(&self) -> usize {
+        self.swap.retired().len()
+    }
+
+    pub fn retire_unused_generations(&mut self) {
+        self.swap.retire_unused();
+    }
+
+    pub const fn active_container_content_root(&self) -> Option<BundleDigest> {
+        self.active_container_content_root
     }
 
     pub const fn presentation(&self) -> &BundlePresentationSnapshot {
@@ -269,12 +381,155 @@ impl BundleSession {
         );
     }
 
+    pub fn hot_swap_bundle(
+        &mut self,
+        bundle: &ArcweftBundle,
+    ) -> Result<BundleHotSwapReport, BundleHotSwapError> {
+        self.hot_swap_bundle_with_container_root(bundle, None)
+    }
+
+    fn hot_swap_bundle_with_container_root(
+        &mut self,
+        bundle: &ArcweftBundle,
+        active_container_content_root: Option<BundleDigest>,
+    ) -> Result<BundleHotSwapReport, BundleHotSwapError> {
+        let next_id = GenerationId(self.next_generation_id);
+        let next_generation = Arc::new(ProgramGeneration::from_bundle(next_id, bundle)?);
+        let compatibility = classify_swap(self.swap.active(), &next_generation);
+        if matches!(
+            compatibility,
+            SwapCompatibility::RestartRequired | SwapCompatibility::CodeGenerational
+        ) {
+            return Err(BundleHotSwapError::RestartRequired { compatibility });
+        }
+
+        let runtime = (compatibility == SwapCompatibility::CodeCompatible)
+            .then(|| build_session_runtime(bundle, &self.options))
+            .transpose()?;
+
+        self.swap
+            .prepare(next_generation)
+            .map_err(BundleHotSwapError::Prepare)?;
+        self.swap
+            .begin_quiescence()
+            .map_err(BundleHotSwapError::Prepare)?;
+
+        match compatibility {
+            SwapCompatibility::ContentOnly => {
+                self.source_label.clone_from(&bundle.manifest.source_label);
+                self.display = bundle.display.clone();
+                self.image_objects.clone_from(&bundle.image_objects);
+            }
+            SwapCompatibility::CodeCompatible => {
+                let Some(runtime) = runtime else {
+                    return Err(BundleHotSwapError::RestartRequired { compatibility });
+                };
+                self.source_label = runtime.source_label;
+                self.executor = runtime.executor;
+                self.display = runtime.display;
+                self.image_objects = runtime.image_objects;
+                self.pending_input_events.clear();
+                self.presentation = BundlePresentationSnapshot::default();
+            }
+            SwapCompatibility::CodeGenerational | SwapCompatibility::RestartRequired => {
+                unreachable!("restart-required compatibilities returned before prepare")
+            }
+        }
+
+        let committed = self.swap.commit().map_err(BundleHotSwapError::Commit)?;
+        if committed == SwapCompatibility::CodeCompatible {
+            self.runtime_generation_pin = Some(self.swap.pin_active_generation());
+        }
+        self.swap.retire_unused();
+        self.next_generation_id = self.next_generation_id.saturating_add(1);
+        self.active_container_content_root = active_container_content_root;
+        Ok(BundleHotSwapReport {
+            generation: next_id,
+            compatibility: committed,
+        })
+    }
+
+    pub fn inspect_hot_swap_patch_bytes(
+        &self,
+        bytes: &[u8],
+    ) -> Result<BundlePatchReadinessReport, BundleHotSwapError> {
+        let artifact = decode_patch_bundle(bytes).map_err(BundleHotSwapError::DecodePatch)?;
+        self.inspect_hot_swap_patch_artifact(&artifact)
+    }
+
+    pub fn hot_swap_patch_bytes(
+        &mut self,
+        base_awfb_bytes: &[u8],
+        patch_awfb_bytes: &[u8],
+    ) -> Result<BundleHotSwapReport, BundleHotSwapError> {
+        let artifact =
+            decode_patch_bundle(patch_awfb_bytes).map_err(BundleHotSwapError::DecodePatch)?;
+        let readiness = self.inspect_hot_swap_patch_artifact(&artifact)?;
+        if readiness.readiness == BundlePatchReadiness::Noop {
+            return Ok(BundleHotSwapReport {
+                generation: self.active_generation().id,
+                compatibility: SwapCompatibility::ContentOnly,
+            });
+        }
+        if let Some(compatibility) = restart_required_patch_compatibility(readiness.compatibility) {
+            return Err(BundleHotSwapError::RestartRequired { compatibility });
+        }
+        let target_bytes = apply_patch_bundle(base_awfb_bytes, &artifact)
+            .map_err(BundleHotSwapError::MaterializePatch)?;
+        let target_view =
+            BundleView::parse(&target_bytes, ReadBudget::default()).map_err(|error| {
+                BundleHotSwapError::DecodePatchTarget {
+                    message: error.to_string(),
+                }
+            })?;
+        let target_container_root = target_view.content_root();
+        let target_bundle = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &target_bytes)
+            .map_err(|error| BundleHotSwapError::DecodePatchTarget {
+                message: error.to_string(),
+            })?;
+        self.hot_swap_bundle_with_container_root(&target_bundle, Some(target_container_root))
+    }
+
+    pub fn inspect_hot_swap_patch_artifact(
+        &self,
+        artifact: &BundlePatchArtifact,
+    ) -> Result<BundlePatchReadinessReport, BundleHotSwapError> {
+        artifact
+            .validate()
+            .map_err(BundleHotSwapError::InvalidPatch)?;
+        let active_container_root = self
+            .active_container_content_root
+            .ok_or(BundleHotSwapError::MissingActiveContainerRoot)?;
+        artifact
+            .plan
+            .validate_base(active_container_root)
+            .map_err(BundleHotSwapError::WrongPatchBase)?;
+        let readiness = if artifact.plan.is_empty()
+            && artifact.plan.target_content_root == active_container_root
+        {
+            BundlePatchReadiness::Noop
+        } else {
+            BundlePatchReadiness::TargetBundleRequired {
+                operations: artifact.plan.operations.len(),
+            }
+        };
+        Ok(BundlePatchReadinessReport {
+            base_generation: self.active_generation().id,
+            base_content_root: artifact.plan.base_content_root,
+            target_content_root: artifact.plan.target_content_root,
+            compatibility: artifact.manifest.compatibility,
+            readiness,
+        })
+    }
+
     /// Executes exactly one VM step using explicit, non-zero logical time.
     pub fn step_with_clock(
         &mut self,
         clock: RuntimeClockStep,
         mut input: BundleStepInput,
     ) -> BundleSessionStep {
+        self.swap.enter_runtime_step();
+        self.release_completed_task_generation_pins(&input.task_events);
         input.input_events.append(&mut self.pending_input_events);
         let runtime_input = RuntimeStepInput {
             tick: clock.tick(),
@@ -297,6 +552,7 @@ impl BundleSession {
             },
             &mut pure_backend,
         );
+        self.swap.finish_runtime_step();
 
         let mut output = result.output;
         let flow_events = std::mem::take(&mut output.flow_events);
@@ -315,25 +571,16 @@ impl BundleSession {
             &self.image_objects,
         );
 
-        let requested_tasks = output
-            .requests
-            .tasks
-            .into_iter()
-            .map(|task| {
-                let sequence = TaskSequence(self.next_task_sequence);
-                self.next_task_sequence = self.next_task_sequence.saturating_add(1);
-                HostTaskDispatch {
-                    logical_epoch: LogicalEpoch(clock.tick().0),
-                    sequence,
-                    task,
-                }
-            })
-            .collect();
+        let requested_tasks = self.dispatch_requested_tasks(clock, output.requests.tasks);
         let audio_commands = output.requests.audio;
         let finished = matches!(
             &result.fiber_status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         );
+        if finished {
+            self.runtime_generation_pin = None;
+            self.swap.retire_unused();
+        }
         let index = self.next_step_index;
         self.next_step_index = self.next_step_index.saturating_add(1);
 
@@ -365,6 +612,101 @@ impl BundleSession {
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         )
     }
+
+    fn dispatch_requested_tasks(
+        &mut self,
+        clock: RuntimeClockStep,
+        tasks: Vec<arcweft_core::task::TaskSpec>,
+    ) -> Vec<HostTaskDispatch> {
+        let generation = self
+            .runtime_generation_pin
+            .clone()
+            .unwrap_or_else(|| self.swap.pin_active_generation());
+        tasks
+            .into_iter()
+            .map(|task| {
+                let sequence = TaskSequence(self.next_task_sequence);
+                self.next_task_sequence = self.next_task_sequence.saturating_add(1);
+                self.task_generation_pins
+                    .insert(sequence, generation.clone());
+                HostTaskDispatch {
+                    logical_epoch: LogicalEpoch(clock.tick().0),
+                    sequence,
+                    task,
+                }
+            })
+            .collect()
+    }
+
+    fn release_completed_task_generation_pins(&mut self, task_events: &[TaskEvent]) {
+        if task_events.is_empty() {
+            return;
+        }
+        for event in task_events {
+            self.task_generation_pins.remove(&event.sequence);
+        }
+        self.swap.retire_unused();
+    }
+}
+
+const fn restart_required_patch_compatibility(
+    compatibility: PatchCompatibility,
+) -> Option<SwapCompatibility> {
+    match compatibility {
+        PatchCompatibility::ContentOnly | PatchCompatibility::CodeCompatible => None,
+        PatchCompatibility::CodeGenerational => Some(SwapCompatibility::CodeGenerational),
+        PatchCompatibility::RestartRequired => Some(SwapCompatibility::RestartRequired),
+    }
+}
+
+#[derive(Debug)]
+struct SessionRuntime {
+    source_label: String,
+    executor: BytecodeVmExecutor,
+    display: LineDisplayCatalog,
+    image_objects: Vec<BundleImageObject>,
+}
+
+fn initial_generation(bundle: &ArcweftBundle) -> Result<ProgramGeneration, BundleSessionError> {
+    ProgramGeneration::from_bundle(GenerationId(0), bundle).map_err(|error| match error {
+        GenerationBuildError::UnsupportedBundleKind(kind) => {
+            BundleSessionError::UnsupportedBundleKind(kind)
+        }
+        GenerationBuildError::VerifyBytecode(error) => BundleSessionError::VerifyBytecode(error),
+        GenerationBuildError::EncodeFingerprint(error) => {
+            BundleSessionError::GenerationFingerprint {
+                message: error.to_string(),
+            }
+        }
+    })
+}
+
+fn build_session_runtime(
+    bundle: &ArcweftBundle,
+    options: &BundleSessionOptions,
+) -> Result<SessionRuntime, BundleSessionError> {
+    if bundle.bundle_kind != BundleKind::Game {
+        return Err(BundleSessionError::UnsupportedBundleKind(
+            bundle.bundle_kind,
+        ));
+    }
+
+    let program = bundle.bytecode.program.clone();
+    program.verify(BytecodeVerificationBudget::default())?;
+    let mut plan = program.into_runtime_plan()?;
+    apply_entry_selection(
+        &mut plan,
+        selected_entry(bundle, options),
+        options.flow.as_deref(),
+    )?;
+    let bytecode = BytecodeProgram::from_runtime_plan(plan.clone());
+
+    Ok(SessionRuntime {
+        source_label: bundle.manifest.source_label.clone(),
+        executor: BytecodeVmExecutor::from_parts(bytecode, plan),
+        display: bundle.display.clone(),
+        image_objects: bundle.image_objects.clone(),
+    })
 }
 
 fn selected_entry<'a>(

@@ -796,6 +796,12 @@ impl TypeChecker<'_> {
     }
 
     fn check_type_ref_shape(&mut self, ty: &TypeRef) {
+        if is_removed_asset_set_ref_type(ty) {
+            self.errors.push(TypeCheckError::new(format!(
+                "`{}` is not part of the v1 Arcweft source grammar; use manifest-backed finite sets at extern/reflection boundaries",
+                type_ref_label(ty)
+            )));
+        }
         match ty {
             TypeRef::Choice(alternatives) => {
                 let mut erased = HashMap::<String, String>::new();
@@ -1065,6 +1071,14 @@ fn unknown_default_inline_fallback_field(namespace: &str, field: &str) -> Option
     (namespace == "InlineFallback"
         && !matches!(field, "expr_source" | "call_source" | "value_plain"))
     .then(|| format!("{namespace}.{field}"))
+}
+
+fn is_removed_asset_set_ref_type(ty: &TypeRef) -> bool {
+    match ty {
+        TypeRef::Path(path) => path == "AssetSetRef",
+        TypeRef::Generic { base, .. } => base == "AssetSetRef",
+        _ => false,
+    }
 }
 
 fn default_inline_policy_label(expr: &Expr) -> String {

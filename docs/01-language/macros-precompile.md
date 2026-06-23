@@ -67,12 +67,14 @@ pub enum PrecompileOutput {
 }
 ```
 
-## lazy precompile
+## precompile demand
 
-precompile 生成物も `ModuleItem` として lazy realization できる。
+precompile 生成物も `ModuleItem` として扱う。利用側の構文は通常の
+`use` で、生成・読み込みタイミングは compiler-owned demand model と
+build cache が決める。
 
 ```arcw
-lazy use generated::route_map::{RouteMap}
+use generated::route_map::{RouteMap}
 ```
 
 ## hygiene と source map

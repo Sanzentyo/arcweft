@@ -93,6 +93,12 @@ pub(in crate::app) struct RuntimeRunOptions {
     #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
     pub(in crate::app) values: Vec<RuntimeBinding>,
     #[arg(long)]
+    pub(in crate::app) watch: bool,
+    #[arg(long, default_value_t = 500)]
+    pub(in crate::app) watch_poll_ms: u64,
+    #[arg(long, hide = true, default_value_t = 0)]
+    pub(in crate::app) watch_iterations: usize,
+    #[arg(long)]
     pub(in crate::app) json: bool,
 }
 

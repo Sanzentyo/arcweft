@@ -252,8 +252,7 @@ impl InputController {
         }
     }
 
-    pub fn wheel(&mut self, delta_y: f32) -> InputOutcome {
-        self.choice_scroll.offset_y = (self.choice_scroll.offset_y + delta_y).max(0.0);
+    pub fn wheel(&mut self, _delta_y: f32) -> InputOutcome {
         InputOutcome {
             actions: Vec::new(),
             redraw: true,

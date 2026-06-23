@@ -152,6 +152,10 @@ impl ProjectCompileCacheStatus {
             Self::Miss => "miss",
         }
     }
+
+    pub const fn is_hit(self) -> bool {
+        matches!(self, Self::Hit)
+    }
 }
 
 impl ProjectCompileDiagnostic {
@@ -485,13 +489,6 @@ fn build_unit_fingerprints(
                 .get(dependency)
                 .expect("compile order places body dependency fingerprints first");
             hasher.update(&fingerprint.0);
-        }
-        for dependency in unit.lazy_dependencies() {
-            for module in project.graph().compile_unit(*dependency).modules() {
-                hasher.update(b"lazy\0");
-                hasher.update(module.to_string().as_bytes());
-                hasher.update(&project.module(module).unwrap().source_hash().as_bytes());
-            }
         }
         fingerprints.insert(
             unit_id,

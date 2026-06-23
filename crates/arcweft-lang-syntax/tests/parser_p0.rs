@@ -38,6 +38,127 @@ flow opening {
     ));
 }
 
+#[test]
+fn removed_import_execution_modes_are_parse_diagnostics() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r"
+lazy use game::heavy::{shader}
+eager use game::generated::{RouteMap}
+use game::prelude::*
+",
+    );
+
+    assert_eq!(parsed.errors().len(), 2);
+    assert!(parsed.errors().iter().all(|error| {
+        error
+            .message()
+            .contains("`lazy use` and `eager use` were removed")
+    }));
+    let tree = parsed.typed_tree();
+    assert_eq!(tree.uses().len(), 1);
+    assert_eq!(tree.uses()[0].tree().source(), "game::prelude::*");
+}
+
+#[test]
+fn use_tree_exposes_typed_module_prefixes() {
+    let tree = parse_ok(
+        r"
+use parent::shared::{alpha, beta}
+pub use crate::game::routes::opening as opening_route
+use self::prelude::*
+",
+    );
+
+    assert_eq!(tree.uses().len(), 3);
+    assert_eq!(
+        tree.uses()[0].tree().source(),
+        "super::shared::{alpha, beta}"
+    );
+    assert_eq!(
+        tree.uses()[0].tree().module_path_prefix().to_string(),
+        "super::shared"
+    );
+    assert!(tree.uses()[0].tree().module_path_is_exact());
+    assert_eq!(
+        tree.uses()[1].tree().module_path_prefix().to_string(),
+        "crate::game::routes::opening"
+    );
+    assert!(!tree.uses()[1].tree().module_path_is_exact());
+    assert_eq!(
+        tree.uses()[2].tree().module_path_prefix().to_string(),
+        "self::prelude"
+    );
+    assert!(tree.uses()[2].tree().module_path_is_exact());
+}
+
+#[test]
+fn content_declaration_parses_as_typed_entity_body() {
+    let tree = parse_ok(
+        r"
+content chapter_two {
+    roots = [
+        @flow:.chapter_two,
+        @asset:.bg.room,
+    ]
+}
+",
+    );
+
+    let arcweft_lang_syntax::ast::items::Item::EntityDecl(content) = &tree.items()[0] else {
+        panic!("expected content entity declaration");
+    };
+    assert_eq!(
+        content.kind(),
+        arcweft_lang_syntax::ast::items::EntityDeclKind::Content
+    );
+    assert_eq!(content.id().body(), "content.chapter_two");
+    assert!(content.body().is_none());
+    let body = content.content_body().expect("content body is typed");
+    assert_eq!(body.roots().len(), 2);
+    assert_eq!(body.roots()[0].body(), "flow.chapter_two");
+    assert_eq!(body.roots()[1].body(), "asset.bg.room");
+}
+
+#[test]
+fn asset_set_is_not_v1_source_syntax() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r"
+asset set @asset_set.route_portraits {
+    members = [
+        @asset:.portrait.alice,
+    ]
+}
+",
+    );
+
+    assert_eq!(parsed.errors().len(), 1);
+    assert!(
+        parsed.errors()[0]
+            .message()
+            .contains("`asset set` is not part of the v1 Arcweft source grammar")
+    );
+    assert!(parsed.typed_tree().items().is_empty());
+}
+
+#[test]
+fn hot_checkpoint_is_not_v1_source_syntax() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r"
+hot checkpoint before_boss {
+    roots = [@flow.chapter_two]
+}
+",
+    );
+
+    assert_eq!(parsed.errors().len(), 1);
+    assert!(
+        parsed.errors()[0]
+            .message()
+            .contains("`hot checkpoint` is not part of the v1 Arcweft source grammar")
+    );
+    assert!(parsed.typed_tree().items().is_empty());
+}
+
 use arcweft_lang_syntax::{
     ast::{
         flow::{FlowItem, Stmt},

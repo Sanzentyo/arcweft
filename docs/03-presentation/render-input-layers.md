@@ -395,7 +395,7 @@ scene.show(@scene.opening)
 scope {
     layer @layer.bg phase Background z 0 {
         input none
-        image @asset.bg.room fit cover
+        image @asset:.bg.room fit cover
     }
 
     layer @layer.characters phase Characters z 200 {
@@ -446,7 +446,7 @@ requires visible => input.policy == .Modal
 
 ```arcw
 layer @layer.bg background {
-    image @asset.bg.room
+    image @asset:.bg.room
 }
 
 layer @layer.choice modal {

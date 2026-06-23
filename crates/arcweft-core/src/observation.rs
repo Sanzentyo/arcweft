@@ -53,14 +53,14 @@ mod tests {
         let mut state = RuntimeObservationState::default();
         state.record_effect(&LineEffectRequest::Call(RuntimeCall {
             callee: "bg".to_owned(),
-            args: vec!["@asset.bg.room".to_owned()],
+            args: vec!["@asset:.bg.room".to_owned()],
         }));
 
         assert_eq!(
             state.calls,
             vec![RuntimeCall {
                 callee: "bg".to_owned(),
-                args: vec!["@asset.bg.room".to_owned()],
+                args: vec!["@asset:.bg.room".to_owned()],
             }]
         );
     }

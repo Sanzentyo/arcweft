@@ -2,7 +2,10 @@
 
 use crate::expr::lower_runtime_expr_strict;
 use arcweft_core::{
-    plan::{RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType},
+    plan::{
+        RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
+        RuntimePureOutputType,
+    },
     pure::PureFunctionRequest,
     value::{RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
@@ -105,6 +108,20 @@ impl PureHelperCandidate {
     /// Whether this helper was explicitly annotated or inferred from a pure body.
     pub const fn origin(&self) -> RuntimePureHelperOrigin {
         self.origin
+    }
+
+    /// Converts this compiler-side candidate into a runtime-ready helper.
+    pub fn to_runtime_helper(&self, id: RuntimePureHelperId) -> RuntimePureHelper {
+        RuntimePureHelper {
+            id,
+            name: self.name.clone(),
+            input_names: self.input_names.clone(),
+            input_types: self.input_types.clone(),
+            output_type: self.output_type,
+            expr: self.expr.clone(),
+            scalar_eval_supported: self.shape.supports_scalar_eval,
+            origin: self.origin,
+        }
     }
 
     /// Builds a concrete VM/JIT request using integer input values.

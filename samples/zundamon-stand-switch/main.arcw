@@ -1,11 +1,83 @@
-pub asset @asset.zundamon.normal {
+pub surface character zundamon {
+    display = "ずんだもん"
+    default_voice = auto
+    dialogue_style {
+        rich_text {
+            text {
+                font = "Yu Gothic"
+                color = rgb("#9fe66f")
+                size = 27px
+            }
+        }
+    }
+}
+
+pub surface character narrator {
+    display = "語り手"
+    default_voice = auto
+    dialogue_style {
+        rich_text {
+            text {
+                font = "Yu Mincho"
+                color = rgb("#efd6c4")
+                size = 23px
+            }
+        }
+    }
+}
+
+pub textbox zundamon_panel {
+    rich_text {
+        text {
+            font = "Yu Gothic UI"
+            color = rgb("#f7f4e8")
+            size = 24px
+        }
+    }
+}
+
+pub dialogue defaults @dialogue.defaults {
+    window = @textbox.zundamon_panel
+}
+
+pub asset zundamon.normal {
     kind = image
     file = "zundamon/normal.png"
 }
 
-pub asset @asset.zundamon.smile {
+pub asset zundamon.smile {
     kind = image
     file = "zundamon/smile.png"
+}
+
+pub image @image.zundamon.normal {
+    asset = @asset:.zundamon.normal
+    id = "image.zundamon.stand"
+    target = "target.zundamon.stand"
+    layer = "layer.character"
+    x = 930px
+    y = 20px
+    width = 250px
+    height = 430px
+    fit = "contain"
+    alignment.x = "center"
+    alignment.y = "bottom"
+    depth = 1000
+}
+
+pub image @image.zundamon.smile {
+    asset = @asset:.zundamon.smile
+    id = "image.zundamon.stand"
+    target = "target.zundamon.stand"
+    layer = "layer.character"
+    x = 930px
+    y = 20px
+    width = 250px
+    height = 430px
+    fit = "contain"
+    alignment.x = "center"
+    alignment.y = "bottom"
+    depth = 1000
 }
 
 entry game {
@@ -13,17 +85,40 @@ entry game {
 }
 
 flow normal {
-    image(asset = @asset.zundamon.normal, id = "image.zundamon.stand", target = "target.zundamon.stand", layer = "layer.character", x = 1060px, y = 48px, width = 190px, height = 600px, fit = "contain", alignment.x = "center", alignment.y = "bottom", depth = 1000)
+    image(@image.zundamon.normal)
+
+    narrator(id=@say.zundamon.intro, voice=auto):
+        立ち絵はローカル生成されたずんだもん素材を使う。語り手は別surfaceなので、色とフォントが明確に違う。[p]
+
+    zundamon(id=@say.zundamon.normal, voice=auto, look=.normal):
+        ぼくのsurfaceでは緑の文字になるのだ。既定のタイプライターで表示されて、[.wave amp=4px freq=8]この部分だけ少し揺れる[/]のだ。[p]
 
     choice @choice.zundamon.normal {
-        @choice.zundamon.to_smile "Switch to smile" -> @flow.smile
+        @choice.zundamon.to_smile "笑顔に切り替える" -> @flow.smile
+        @choice.zundamon.finish_normal "この表情で終わる" -> @flow.done_normal
     }
 }
 
 flow smile {
-    image(asset = @asset.zundamon.smile, id = "image.zundamon.stand", target = "target.zundamon.stand", layer = "layer.character", x = 1060px, y = 48px, width = 190px, height = 600px, fit = "contain", alignment.x = "center", alignment.y = "bottom", depth = 1000)
+    image(@image.zundamon.smile)
+
+    zundamon(id=@say.zundamon.smile, voice=auto, look=.smile):
+        smile の look と画像objectを同じ場面で切り替えたのだ。choiceは固定位置なので、スクロールしても上下しないのだ。[p]
 
     choice @choice.zundamon.smile {
-        @choice.zundamon.to_normal "Switch to normal" -> @flow.normal
+        @choice.zundamon.to_normal "通常表情に戻す" -> @flow.normal
+        @choice.zundamon.finish_smile "笑顔のまま終わる" -> @flow.done_smile
     }
+}
+
+flow done_normal {
+    narrator(id=@say.zundamon.done_normal, voice=auto):
+        通常表情のまま終了。nativeでもWASMでも同じフレーム計画を使っている。[p]
+    return "done_normal"
+}
+
+flow done_smile {
+    narrator(id=@say.zundamon.done_smile, voice=auto):
+        笑顔で終了。surface、画像、choiceの表示をまとめて確認できる。[p]
+    return "done_smile"
 }

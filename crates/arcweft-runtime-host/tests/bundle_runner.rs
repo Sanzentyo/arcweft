@@ -1,9 +1,9 @@
 use arcweft_adapter_context::manifest::{AdapterHostCall, AdapterManifest};
 use arcweft_bundle::{
-    ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleManifest,
+    ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleFormat, BundleManifest,
     BundleRuntimeSummary, BundleSource,
 };
-use arcweft_core::bytecode::BytecodeProgram;
+use arcweft_core::bytecode::{BYTECODE_ABI_VERSION, BytecodeProgram, BytecodeVerificationError};
 use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
 use arcweft_core::task::{
     AwaitTarget, HostTaskArgTemplate, HostTaskRequest, HostTaskRequestTemplate, NeedId, TaskId,
@@ -13,8 +13,11 @@ use arcweft_host_adapter::{HostAdapter, HostAdapterError, HostTaskMetrics, HostT
 use arcweft_render_text::LineDisplayCatalog;
 use arcweft_runtime_host::{
     BundleRunnerError, BundleRunnerOptions, BundleRunnerStepMode, NativeAdapterRegistrar,
-    run_bundle_with_native_adapters,
+    run_bundle_file_with_native_adapters, run_bundle_with_native_adapters,
 };
+use std::fs;
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn bundle_runner_executes_custom_adapter_without_cli() {
@@ -59,6 +62,101 @@ fn bundle_runner_reports_custom_adapter_missing_from_host() {
         BundleRunnerError::NativeAdapter(HostAdapterError::MissingHostCallImplementations {
             host_call_ids
         }) if host_call_ids == vec!["custom.echo".to_owned()]
+    ));
+}
+
+#[test]
+fn bundle_runner_rejects_unverified_bytecode_before_execution() {
+    let mut bundle = custom_echo_bundle();
+    bundle.bytecode.program.abi_version = BYTECODE_ABI_VERSION + 1;
+    let registrars: [NativeAdapterRegistrar; 1] =
+        [|_, builder| builder.register(CustomEchoAdapter::new())];
+
+    let error = run_bundle_with_native_adapters(
+        &bundle,
+        &BundleRunnerOptions {
+            steps: 8,
+            mode: BundleRunnerStepMode::Drain,
+            ..BundleRunnerOptions::default()
+        },
+        &registrars,
+    )
+    .expect_err("invalid bytecode is rejected before execution");
+
+    assert!(matches!(
+        error,
+        BundleRunnerError::VerifyBytecode(BytecodeVerificationError::UnsupportedAbi {
+            actual,
+            expected,
+        }) if actual == BYTECODE_ABI_VERSION + 1 && expected == BYTECODE_ABI_VERSION
+    ));
+}
+
+#[test]
+fn bundle_runner_rejects_missing_bytecode_entrypoint_before_execution() {
+    let mut bundle = custom_echo_bundle();
+    bundle.bytecode.program.entry_flow = None;
+    let registrars: [NativeAdapterRegistrar; 1] =
+        [|_, builder| builder.register(CustomEchoAdapter::new())];
+
+    let error = run_bundle_with_native_adapters(
+        &bundle,
+        &BundleRunnerOptions {
+            steps: 8,
+            mode: BundleRunnerStepMode::Drain,
+            ..BundleRunnerOptions::default()
+        },
+        &registrars,
+    )
+    .expect_err("bytecode without an entrypoint is rejected before execution");
+
+    assert!(matches!(
+        error,
+        BundleRunnerError::VerifyBytecode(BytecodeVerificationError::MissingEntrypoint)
+    ));
+}
+
+#[test]
+fn bundle_file_runner_rejects_legacy_json_bytes_in_awfb_path() {
+    let path = temp_bundle_path("legacy-json", "awfb");
+    fs::write(
+        &path,
+        custom_echo_bundle()
+            .to_format_bytes(BundleFormat::Json)
+            .expect("legacy JSON encodes"),
+    )
+    .expect("fixture writes");
+
+    let error = run_bundle_file_with_native_adapters(&path, &BundleRunnerOptions::default(), &[])
+        .expect_err("AWFB product path must require AWFB magic");
+    let _ = fs::remove_file(&path);
+
+    assert!(matches!(
+        error,
+        BundleRunnerError::DecodeBundle(arcweft_bundle::BundleCodecError::DecodeAwfb {
+            message
+        }) if message.contains("magic")
+    ));
+}
+
+#[test]
+fn bundle_file_runner_requires_awfb_extension() {
+    let path = temp_bundle_path("wrong-extension", "json");
+    fs::write(
+        &path,
+        custom_echo_bundle()
+            .to_format_bytes(BundleFormat::Awfb)
+            .expect("AWFB encodes"),
+    )
+    .expect("fixture writes");
+
+    let error = run_bundle_file_with_native_adapters(&path, &BundleRunnerOptions::default(), &[])
+        .expect_err("product runner requires .awfb extension");
+    let _ = fs::remove_file(&path);
+
+    assert!(matches!(
+        error,
+        BundleRunnerError::ExpectedAwfbProduct { .. }
     ));
 }
 
@@ -160,4 +258,15 @@ fn custom_echo_bundle() -> ArcweftBundle {
             effects: Vec::new(),
         }],
     }])
+}
+
+fn temp_bundle_path(label: &str, extension: &str) -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time is after epoch")
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "arcweft-runtime-host-{label}-{}-{nanos}.{extension}",
+        std::process::id()
+    ))
 }

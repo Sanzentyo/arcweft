@@ -296,6 +296,7 @@ pub enum EntityDeclKind {
     Character,
     Component,
     Activity,
+    Content,
     Signal,
     Metric,
     Layer,
@@ -318,6 +319,7 @@ impl EntityDeclKind {
             Self::Character => "character",
             Self::Component => "component",
             Self::Activity => "activity",
+            Self::Content => "content",
             Self::Signal => "signal",
             Self::Metric => "metric",
             Self::Layer => "layer",
@@ -346,8 +348,21 @@ pub struct EntityDeclItem {
     surface_alias: Option<String>,
     signature_tail: String,
     body: Option<String>,
+    structured_body: Option<EntityDeclBody>,
     body_range: Option<TextRange>,
     range: TextRange,
+}
+
+/// Typed entity declaration body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EntityDeclBody {
+    Content(ContentDeclBody),
+}
+
+/// Content availability unit body declared with explicit root IDs.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContentDeclBody {
+    roots: Vec<EntityRef>,
 }
 
 /// Program entry declaration such as `entry game @entry.main { start(@flow.opening) }`.
@@ -844,6 +859,7 @@ impl EntityDeclItem {
         surface_alias: Option<String>,
         signature_tail: String,
         body: Option<String>,
+        structured_body: Option<EntityDeclBody>,
         body_range: Option<TextRange>,
         range: TextRange,
     ) -> Self {
@@ -856,6 +872,7 @@ impl EntityDeclItem {
             surface_alias,
             signature_tail,
             body,
+            structured_body,
             body_range,
             range,
         }
@@ -893,12 +910,33 @@ impl EntityDeclItem {
         self.body.as_deref()
     }
 
+    pub const fn structured_body(&self) -> Option<&EntityDeclBody> {
+        self.structured_body.as_ref()
+    }
+
+    pub const fn content_body(&self) -> Option<&ContentDeclBody> {
+        match self.structured_body.as_ref() {
+            Some(EntityDeclBody::Content(body)) => Some(body),
+            None => None,
+        }
+    }
+
     pub const fn body_range(&self) -> Option<&TextRange> {
         self.body_range.as_ref()
     }
 
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+}
+
+impl ContentDeclBody {
+    pub(crate) const fn new(roots: Vec<EntityRef>) -> Self {
+        Self { roots }
+    }
+
+    pub fn roots(&self) -> &[EntityRef] {
+        &self.roots
     }
 }
 

@@ -1258,13 +1258,13 @@ try invoke(@activity.inventory, .open, { label = "main" })
 fn compile_agent_source_with_project_checks_projected_image_invoke_action() {
     let project_source = parse_source(
         r#"
-asset @asset.bg.pulse {
+asset bg.pulse {
 file = "bg/pulse.gif"
 kind = image
 }
 
 flow @flow.opening opening {
-let pulse = image(asset = @asset.bg.pulse, target = "target.sample.pulse", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, action = "action.inspect.pulse")
+let pulse = image(asset = @asset:.bg.pulse, target = "target.sample.pulse", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, action = "action.inspect.pulse")
 }
 "#,
     )

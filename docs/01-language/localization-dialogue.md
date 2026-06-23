@@ -45,7 +45,7 @@ show_inlay = true
 
 ```arcw
 pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    bg(@asset.bg.room, fade = 300ms)
+    bg(@asset:.bg.room, fade = 300ms)
     show(@character.alice, .smile, at = .center)
 
     地の文: 扉の向こうから、雨の音がした。[p]

@@ -1,5 +1,5 @@
 pub view current_scene(state: GameState) -> Scene {
-    let bg = @asset.bg.room
+    let bg = @asset:.bg.room
     scene { layer bg = image(bg) }
 }
 

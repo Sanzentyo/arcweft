@@ -20,6 +20,8 @@ pub(in crate::app) struct BundleCommandReport {
 #[derive(serde::Serialize)]
 pub(in crate::app) struct BundleRunReport {
     pub(in crate::app) bundle: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::app) patch: Option<String>,
     pub(in crate::app) source: String,
     pub(in crate::app) bytecode_instructions: usize,
     pub(in crate::app) adapter_manifests: usize,

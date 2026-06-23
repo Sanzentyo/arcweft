@@ -305,7 +305,7 @@ impl<'a> Parser<'a> {
             self.push_error(
                 TextRange::new(line.start, line.end),
                 message,
-                ["choice @choice.id { ... }", "bg(@asset.id)"],
+                ["choice @choice.id { ... }", "bg(@asset:.id)"],
                 Some(trimmed),
                 ["use an ordinary statement or function-call style command"],
             );
@@ -590,7 +590,7 @@ impl<'a> Parser<'a> {
             range,
             "scenario staging uses canonical function-call syntax",
             [
-                "bg(@asset.id, fade = 300ms)",
+                "bg(@asset:.id, fade = 300ms)",
                 "show(@character.alice, .normal)",
             ],
             Some(trimmed),

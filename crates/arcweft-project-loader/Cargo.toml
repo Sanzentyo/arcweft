@@ -9,12 +9,20 @@ publish = false
 
 [dependencies]
 arcweft-adapter-context = { path = "../arcweft-adapter-context" }
+arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-character = { path = "../arcweft-character" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 arcweft-launch = { path = "../arcweft-launch" }
 arcweft-project = { path = "../arcweft-project" }
 arcweft-rust-abi = { path = "../arcweft-rust-abi" }
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
+ureq.workspace = true
+
+[dev-dependencies]
+arcweft-core = { path = "../arcweft-core" }
+arcweft-render-text = { path = "../arcweft-render-text" }
 
 [lib]
 path = "src/lib.rs"

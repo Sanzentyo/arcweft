@@ -20,7 +20,7 @@ Option<T>        presence/absence dimension
 `await need with:` waits for readiness and handles pending UI. It returns `Result<T, E>`.
 
 ```arcw
-let bg_result = await asset.image(@asset.bg.room) with:
+let bg_result = await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
         progress.set(p.ratio)
@@ -58,7 +58,7 @@ This ordinary postfix `?` is a core expression operator. It remains valid on any
 ```arcw
 let config = load_config()?
 let route = state.route_override.context("missing route")?
-let bg = (await asset.image(@asset.bg.room) with:
+let bg = (await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
 )?
@@ -80,7 +80,7 @@ The error arm has type `!`, so the whole expression has type `Image`.
 Writing this is technically valid but unpleasant:
 
 ```arcw
-let bg = (await asset.image(@asset.bg.room) with:
+let bg = (await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
         progress.set(p.ratio)
@@ -90,7 +90,7 @@ let bg = (await asset.image(@asset.bg.room) with:
 Therefore Arcweft's canonical user-facing form is:
 
 ```arcw
-let bg = try await asset.image(@asset.bg.room) with:
+let bg = try await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
         progress.set(p.ratio)
@@ -99,7 +99,7 @@ let bg = try await asset.image(@asset.bg.room) with:
 Arcweft also accepts this equivalent prefix sugar:
 
 ```arcw
-let bg = await? asset.image(@asset.bg.room) with:
+let bg = await? asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
         progress.set(p.ratio)
@@ -121,7 +121,7 @@ await? Need<T, E>      -> T
 Do not write:
 
 ```arcw
-await asset.image(@asset.bg.room)? with:
+await asset.image(@asset:.bg.room)? with:
     pending p:
         scene.show(@scene.loading)
 ```
@@ -131,13 +131,13 @@ That shape is visually close to Rust, but in Arcweft it is ambiguous because `wi
 Use one of:
 
 ```arcw
-let bg_result = await asset.image(@asset.bg.room) with:
+let bg_result = await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
-let bg = try await asset.image(@asset.bg.room) with:
+let bg = try await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
-let bg = await? asset.image(@asset.bg.room) with:
+let bg = await? asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
 ```
@@ -149,7 +149,7 @@ Parenthesized `(await ...)?` remains valid for generated code or rare expression
 Context can be attached to the `Need` before awaiting. The context is applied to the eventual error.
 
 ```arcw
-let bg = try await asset.image(@asset.bg.room)
+let bg = try await asset.image(@asset:.bg.room)
     .context("opening background failed")
 with:
     pending p:
@@ -163,7 +163,7 @@ This is preferred over parenthesizing the whole await.
 If the context must refer to the whole await operation, block form is allowed:
 
 ```arcw
-let bg = (await asset.image(@asset.bg.room) with:
+let bg = (await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
         progress.set(p.ratio)
@@ -190,8 +190,8 @@ Background `task fn` may use simpler await when not directly visible.
 
 ```arcw
 task fn load_opening_assets() -> ArcResult<OpeningAssets> {
-    let bg = try await asset.image(@asset.bg.room)
-    let voice = try await asset.audio(@asset.voice.alice.001)
+    let bg = try await asset.image(@asset:.bg.room)
+    let voice = try await asset.audio(@asset:.voice.alice.001)
     Ok(OpeningAssets { bg, voice })
 }
 ```
@@ -223,4 +223,3 @@ await expr? with:
 - [Error, Trace, `?`, and Context](error-trace-context.md)
 - [Never / Bottom Type](never-bottom-type.md)
 - [Expression Control Flow](expression-control-flow.md)
-

@@ -209,14 +209,30 @@ choice @.first
   -> @choice.opening.dream.first.listen
 ```
 
-For ordinary entity references, keep the fully qualified `@domain.path` form:
+For ordinary entity references, use the shortest spelling that still names the
+entity family unambiguously. Prefer family-relative references for families
+with a default public-id prefix. This omits the default family from the
+referenced id path while keeping the family anchor in the reference syntax; for
+assets, write `@asset:.bg.room`, not `@asset.bg.room`. Fully qualified
+`@domain.path` spellings remain valid for generated surfaces, manifest/tooling
+output, and cases where an external system needs the stored public id verbatim:
 
 ```arcw
-goto @flow.opening.next
+goto @flow:.opening.next
+bg(@asset:.bg.room)
+log("loaded", @asset:.bg.room)
 ```
 
-Do not write `goto @.next`. Relative IDs are not general references. Bare
-`.suffix` is not part of the core grammar.
+Do not write `goto @.next` or `bg(@.bg.room)`. Relative IDs are ID
+declarations/overrides, not general references. Bare `.suffix` is not part of
+the core grammar.
+
+Declaration headers are different from reference expressions. The declaration
+keyword already supplies the default family, so hand-written source should
+prefer compact declaration IDs such as `asset bg_room { ... }` or
+`content chapter_two { ... }`; fully qualified declaration headers such as
+`asset @asset.bg_room { ... }` are accepted as generated or fully elaborated
+surfaces and should be linted toward the compact form.
 
 ## 予約名
 

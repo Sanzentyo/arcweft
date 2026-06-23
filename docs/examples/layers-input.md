@@ -39,11 +39,11 @@ flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     scene.show(@scene.opening)
     scope {
         layer @layer.world.background {
-            image(@asset.bg.room).fit(cover)
+            image(@asset:.bg.room).fit(cover)
         }
 
         layer @layer.world.characters {
-            sprite(@asset.char.alice.default)
+            sprite(@asset:.char.alice.default)
                 .at(center)
                 .agent_target(@character.alice)
         }

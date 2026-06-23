@@ -8,11 +8,15 @@ repository.workspace = true
 
 [dependencies]
 arcweft-rust-abi = { path = "../arcweft-rust-abi" }
-arcweft-lang-sema = { path = "../arcweft-lang-sema" }
+arcweft-lang-sema = { path = "../arcweft-lang-sema", optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 toml.workspace = true
+
+[features]
+default = []
+sema = ["dep:arcweft-lang-sema"]
 
 [lib]
 path = "src/lib.rs"

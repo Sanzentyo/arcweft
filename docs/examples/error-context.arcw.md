@@ -9,7 +9,7 @@ pub flow @flow.error_context_example example(state: GameState) -> Result<FlowExi
     let route = state.route_override
         .context("missing route override for error_context_example")?
 
-    let bg = try await asset.image(@asset.bg.room)
+    let bg = try await asset.image(@asset:.bg.room)
         .context("while loading opening background")
     with:
         pending p:
@@ -42,4 +42,3 @@ context: missing route override for error_context_example
 ```
 
 If `asset.image(...)` fails, the error trace contains the `await` source location, the asset ID, and the context string.
-

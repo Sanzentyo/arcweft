@@ -1,11 +1,14 @@
 use super::agent::{AgentHitTestOptions, AgentMcpOptions, AgentObserveOptions, AgentReplOptions};
-use super::bundle::{BundleOptions, RunBundleOptions};
+use super::bundle::{BundleOptions, PatchBundleOptions, RunBundleOptions};
+use super::cache::CacheCommand;
 use super::debug::DebugCommand;
 use super::import::ImportCommand;
+use super::inspect::InspectOptions;
 use super::jit::JitCheckOptions;
 #[cfg(feature = "native-player")]
 use super::native_player::NativePlayerOptions;
 use super::project_commands::{CompileOptions, ProjectBuildOptions, ProjectCheckOptions};
+use super::release_sign::SignBundleOptions;
 use super::runtime::options::{
     CliRunOptions, PlanOptions, RuntimeProfileOptions, RuntimeRunOptions, ScriptBenchOptions,
     ScriptTestOptions, ServeOptions,
@@ -32,6 +35,8 @@ pub(super) enum CliCommand {
         #[command(subcommand)]
         command: ImportCommand,
     },
+    /// Inspects an AWFB bundle header, manifest, and section index.
+    Inspect(InspectOptions),
     Agent {
         #[command(subcommand)]
         command: AgentCommand,
@@ -51,7 +56,15 @@ pub(super) enum CliCommand {
     Test(ScriptTestOptions),
     Bench(ScriptBenchOptions),
     Bundle(BundleOptions),
+    Patch(PatchBundleOptions),
+    /// Appends a release signature envelope to an AWFB bundle.
+    SignBundle(SignBundleOptions),
     RunBundle(RunBundleOptions),
+    /// Inspects and verifies the Arcweft filesystem cache.
+    Cache {
+        #[command(subcommand)]
+        command: CacheCommand,
+    },
     #[cfg(feature = "native-player")]
     PlayNative(NativePlayerOptions),
     /// Builds the package and writes project/plan artifacts under `target`.

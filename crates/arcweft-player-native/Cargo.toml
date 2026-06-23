@@ -9,10 +9,8 @@ repository.workspace = true
 [features]
 default = []
 dev-capture = ["dep:png"]
-dev-source = ["dep:arcweft-compiler"]
 
 [dependencies]
-arcweft-compiler = { path = "../arcweft-compiler", optional = true }
 arcweft-adapter-desktop = { path = "../arcweft-adapter-desktop" }
 arcweft-audio-codec = { path = "../arcweft-audio-codec" }
 arcweft-audio-core = { path = "../arcweft-audio-core" }

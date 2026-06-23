@@ -98,6 +98,49 @@ flow @flow.listen listen {
 }
 
 #[test]
+fn project_index_records_content_root_relations() {
+    let tree = parse_source(
+        r#"
+content chapter_two {
+    roots = [ @flow.chapter_two, @asset:.bg ]
+}
+
+asset bg {
+    file = "bg/chapter-two.png"
+    kind = image
+}
+
+flow chapter_two {
+    return "chapter two"
+}
+"#,
+    )
+    .into_typed_tree();
+    let hir = lower_to_hir(&tree).expect("source lowers");
+    let index = project_semantic_index_from_hir(
+        &hir,
+        ProgramHash::new("program-test"),
+        &SourceName::path("test.arcw"),
+    )
+    .expect("project index builds");
+
+    let relations = index
+        .relations()
+        .iter()
+        .map(|relation| {
+            (
+                relation.from().as_str(),
+                relation.to().as_str(),
+                relation.edge_kind().as_str(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert!(relations.contains(&("content.chapter_two", "flow.chapter_two", "content_root")));
+    assert!(relations.contains(&("content.chapter_two", "asset.bg", "content_root")));
+}
+
+#[test]
 fn project_index_projects_entities_and_agent_prelude_to_env() {
     let index =
         ProjectSemanticIndex::new(ProgramHash::new("program-a")).with_entity(EntitySymbol::new(
@@ -297,13 +340,13 @@ flow @flow.done done {
 fn project_index_from_hir_projects_inline_image_agent_actions() {
     let tree = parse_source(
             r#"
-asset @asset.bg.pulse {
+asset bg.pulse {
     file = "bg/pulse.gif"
     kind = image
 }
 
 flow @flow.opening opening {
-    let pulse = image(asset = @asset.bg.pulse, target = "target.sample.pulse", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, action = "action.inspect.pulse")
+    let pulse = image(asset = @asset:.bg.pulse, target = "target.sample.pulse", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, action = "action.inspect.pulse")
 }
 "#,
         )

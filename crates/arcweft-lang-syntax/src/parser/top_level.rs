@@ -70,30 +70,36 @@ impl Parser<'_> {
                 *sinks.source_attrs_open = false;
                 self.reject_pending_doc(range);
                 self.reject_pending_attrs(range);
-                if let Some(use_item) = parse_use_line(trimmed, range)
-                    && self.validate_use_tree(use_item.tree(), range)
+                if Self::use_line_has_removed_execution_mode(trimmed) {
+                    self.push_error(
+                        range,
+                        "`lazy use` and `eager use` were removed from Arcweft import syntax",
+                        ["use module::path"],
+                        Some(trimmed),
+                        ["remove the import qualifier; use compiler build settings and content availability declarations for demand policy"],
+                    );
+                } else if let Some(tree) = Self::use_tree_source(trimmed)
+                    && self.validate_use_tree(tree, range)
                 {
-                    sinks.uses.push(use_item);
+                    match parse_use_line(trimmed, range) {
+                        Ok(Some(use_item)) => sinks.uses.push(use_item),
+                        Ok(None) => {}
+                        Err(error) => {
+                            let message = format!("invalid use tree: {error}");
+                            self.push_error(
+                                range,
+                                &message,
+                                ["use self::path", "use super::path", "use crate::path"],
+                                Some(trimmed),
+                                ["use a valid module path or grouped import tree"],
+                            );
+                        }
+                    }
                 }
                 self.index += 1;
             }
             CstTopLevelLineKind::Item => {
-                *sinks.source_attrs_open = false;
-                if trimmed.starts_with('@') {
-                    let message = if trimmed.starts_with("@memo") {
-                        "`@memo` is not valid Arcweft syntax"
-                    } else {
-                        "`@` does not start a top-level item"
-                    };
-                    self.push_error(
-                        range,
-                        message,
-                        ["fn name(...) { ... }", "#[attribute]"],
-                        Some(trimmed),
-                        ["use `#[...]` for attributes or an ordinary item keyword"],
-                    );
-                }
-                self.parse_top_level_item(dispatch.item, trimmed, range, sinks.items);
+                self.parse_top_level_item_line(dispatch.item, trimmed, range, sinks);
             }
         }
     }
@@ -110,6 +116,105 @@ impl Parser<'_> {
             false
         } else {
             true
+        }
+    }
+
+    fn use_line_has_removed_execution_mode(trimmed: &str) -> bool {
+        let (_, rest) = super::headers::parse_visibility_prefix(trimmed);
+        let rest = rest.trim_start();
+        let rest = rest.strip_prefix("surface ").unwrap_or(rest);
+        rest.starts_with("lazy use ") || rest.starts_with("eager use ")
+    }
+
+    fn use_tree_source(trimmed: &str) -> Option<&str> {
+        let (_, rest) = super::headers::parse_visibility_prefix(trimmed);
+        rest.trim_start().strip_prefix("use ").map(str::trim)
+    }
+
+    fn top_level_item_has_removed_asset_set(trimmed: &str) -> bool {
+        let (_, rest) = super::headers::parse_visibility_prefix(trimmed);
+        let rest = rest.trim_start();
+        let rest = rest.strip_prefix("surface ").unwrap_or(rest);
+        rest.starts_with("asset set ")
+    }
+
+    fn top_level_item_has_removed_hot_checkpoint(trimmed: &str) -> bool {
+        let (_, rest) = super::headers::parse_visibility_prefix(trimmed);
+        let rest = rest.trim_start();
+        let rest = rest.strip_prefix("surface ").unwrap_or(rest);
+        rest == "hot checkpoint"
+            || rest.starts_with("hot checkpoint ")
+            || rest.starts_with("hot checkpoint{")
+    }
+
+    fn parse_top_level_item_line(
+        &mut self,
+        kind: CstTopLevelItemKind,
+        trimmed: &str,
+        range: TextRange,
+        sinks: &mut TopLevelSinks<'_>,
+    ) {
+        *sinks.source_attrs_open = false;
+        if Self::top_level_item_has_removed_asset_set(trimmed) {
+            self.reject_removed_asset_set_decl(range);
+            return;
+        }
+        if Self::top_level_item_has_removed_hot_checkpoint(trimmed) {
+            self.reject_removed_hot_checkpoint_decl(range);
+            return;
+        }
+        if trimmed.starts_with('@') {
+            let message = if trimmed.starts_with("@memo") {
+                "`@memo` is not valid Arcweft syntax"
+            } else {
+                "`@` does not start a top-level item"
+            };
+            self.push_error(
+                range,
+                message,
+                ["fn name(...) { ... }", "#[attribute]"],
+                Some(trimmed),
+                ["use `#[...]` for attributes or an ordinary item keyword"],
+            );
+        }
+        self.parse_top_level_item(kind, trimmed, range, sinks.items);
+    }
+
+    fn reject_removed_asset_set_decl(&mut self, range: TextRange) {
+        let line = self.current().clone();
+        self.push_error(
+            range,
+            "`asset set` is not part of the v1 Arcweft source grammar",
+            ["linker finite sets in the manifest"],
+            Some(line.text.trim()),
+            [
+                "use direct typed entity references in source and manifest-backed finite sets for extern/reflection boundaries",
+            ],
+        );
+        self.reject_pending_doc(range);
+        self.reject_pending_attrs(range);
+        if line.text.contains('{') || self.next_nonblank_line_is_brace() {
+            let _ = self.take_flow_block_event();
+        } else {
+            self.index += 1;
+        }
+    }
+
+    fn reject_removed_hot_checkpoint_decl(&mut self, range: TextRange) {
+        let line = self.current().clone();
+        self.push_error(
+            range,
+            "`hot checkpoint` is not part of the v1 Arcweft source grammar",
+            ["use runtime generation pins and packaging hot-reload policy"],
+            Some(line.text.trim()),
+            ["keep checkpoint policy in the runtime/manifest layer instead of source declarations"],
+        );
+        self.reject_pending_doc(range);
+        self.reject_pending_attrs(range);
+        if line.text.contains('{') || self.next_nonblank_line_is_brace() {
+            let _ = self.take_flow_block_event();
+        } else {
+            self.index += 1;
         }
     }
 

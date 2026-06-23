@@ -13,6 +13,7 @@ arcweft-interaction-model = { path = "../arcweft-interaction-model" }
 arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

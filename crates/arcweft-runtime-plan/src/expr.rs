@@ -1,7 +1,8 @@
 //! Runtime expression and effect-call lowering.
 
 use crate::labels::{
-    call_arg_label, duration_expr, expr_label, literal_label, named_arg_label, named_arg_value,
+    call_arg_label, duration_expr, entity_ref_label, expr_label, literal_label, named_arg_label,
+    named_arg_value,
 };
 use crate::pattern::lower_runtime_pattern;
 use arcweft_core::effect::{
@@ -29,7 +30,7 @@ use std::collections::BTreeMap;
 pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
     match expr {
         Expr::Literal(literal) => RuntimeExpr::Value(lower_runtime_literal(literal)),
-        Expr::EntityRef(entity) => RuntimeExpr::EntityRef(entity.body().to_owned()),
+        Expr::EntityRef(entity) => RuntimeExpr::EntityRef(entity_ref_label(entity)),
         Expr::Path(path) => RuntimeExpr::Local(path.clone()),
         Expr::Tuple(items) if items.is_empty() => RuntimeExpr::Value(RuntimeValue::Unit),
         Expr::Tuple(items) => RuntimeExpr::Tuple(items.iter().map(lower_runtime_expr).collect()),
@@ -139,7 +140,7 @@ fn lower_runtime_expr_strict_with_helpers(
 ) -> Result<RuntimeExpr, String> {
     match expr {
         Expr::Literal(literal) => Ok(RuntimeExpr::Value(lower_runtime_literal(literal))),
-        Expr::EntityRef(entity) => Ok(RuntimeExpr::EntityRef(entity.body().to_owned())),
+        Expr::EntityRef(entity) => Ok(RuntimeExpr::EntityRef(entity_ref_label(entity))),
         Expr::Path(path) => Ok(constructor_path(path).map_or_else(
             || RuntimeExpr::Local(path.clone()),
             |(path, name)| RuntimeExpr::Variant {

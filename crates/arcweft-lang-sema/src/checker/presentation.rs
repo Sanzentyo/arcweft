@@ -2,7 +2,7 @@ use crate::diagnostics::TypeCheckError;
 use crate::types::{EntityKind, TypeKind};
 use arcweft_lang_syntax::expr::{CallArg, Expr, Literal};
 
-use super::{TypeChecker, entity_kind};
+use super::{TypeChecker, entity_kind, entity_syntax_kind};
 
 impl TypeChecker<'_> {
     pub(super) fn check_presentation_call(
@@ -71,9 +71,7 @@ impl TypeChecker<'_> {
 
     fn first_positional_entity_kind(args: &[CallArg]) -> Option<EntityKind> {
         args.iter().find_map(|arg| match arg {
-            CallArg::Positional(Expr::EntityRef(entity)) => {
-                entity.as_absolute().and_then(entity_kind)
-            }
+            CallArg::Positional(Expr::EntityRef(entity)) => entity_syntax_kind(entity),
             CallArg::Positional(_) | CallArg::Named { .. } | CallArg::Spread { .. } => None,
         })
     }
@@ -98,7 +96,7 @@ impl TypeChecker<'_> {
             return;
         };
         match arg {
-            Expr::EntityRef(entity) => match entity.as_absolute().and_then(entity_kind) {
+            Expr::EntityRef(entity) => match entity_syntax_kind(entity) {
                 Some(EntityKind::Asset) => {}
                 actual => self.errors.push(TypeCheckError::new(format!(
                     "{context} must be an Asset reference, found {actual:?}"
@@ -139,7 +137,7 @@ impl TypeChecker<'_> {
             return;
         };
         match arg {
-            Expr::EntityRef(entity) => match entity.as_absolute().and_then(entity_kind) {
+            Expr::EntityRef(entity) => match entity_syntax_kind(entity) {
                 Some(kind) if &kind == expected => {}
                 actual => self.errors.push(TypeCheckError::new(format!(
                     "{context} must be a {expected:?} reference, found {actual:?}"

@@ -1,7 +1,7 @@
 //! Choice-family type checking.
 
 use super::{
-    EntityKind, EntityRefSyntax, IdRef, Pattern, TypeCheckError, TypeChecker, TypeKind,
+    EntityKind, IdRef, Pattern, TypeCheckError, TypeChecker, TypeKind, entity_syntax_kind,
     ident_pattern_name, iter_item_type,
 };
 use arcweft_lang_syntax::ast::choice::{ChoiceAction, ChoiceItem, ChoiceOption, ChoicePlanItem};
@@ -136,8 +136,11 @@ impl TypeChecker<'_> {
                 self.line_out_depth -= 1;
             }
             ChoiceAction::Goto(target) => {
-                if let EntityRefSyntax::Absolute(target) = target {
-                    self.expect_entity_kind(target, &EntityKind::Flow, "choice target");
+                if entity_syntax_kind(target) != Some(EntityKind::Flow) {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "choice target `{}` must be a Flow reference",
+                        target.body()
+                    )));
                 }
             }
             ChoiceAction::None => {}

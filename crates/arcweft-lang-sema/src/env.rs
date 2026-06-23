@@ -303,7 +303,9 @@ impl TypeCheckEnv {
     pub fn with_standard_builtins(self) -> Self {
         self.with_function("fmt", TypeKind::DisplayText)
             .with_symbol("data", TypeKind::Named("DataNamespace".to_owned()))
+            .with_symbol("content", TypeKind::Named("ContentNamespace".to_owned()))
             .with_data_format_symbols()
+            .with_content_functions()
             .with_enum_variants(TypeKind::DataFormat, data_format_variant_names())
             .with_function_signature(
                 "data.encode",
@@ -336,6 +338,38 @@ impl TypeCheckEnv {
                     )],
                 ),
             )
+    }
+
+    #[must_use]
+    fn with_content_functions(self) -> Self {
+        let content_ref = TypeKind::entity_ref(crate::types::EntityKind::Content);
+        self.with_function_signature(
+            "content.prefetch",
+            FunctionSignature::new(
+                TypeKind::Unit,
+                [FunctionParam::required("unit", content_ref.clone())],
+            ),
+        )
+        .with_function_effects("content.prefetch", ["content.load"])
+        .with_function_signature(
+            "content.ensure",
+            FunctionSignature::new(
+                TypeKind::Need {
+                    ready: Box::new(TypeKind::Unit),
+                    error: Box::new(TypeKind::Named("ContentLoadError".to_owned())),
+                },
+                [FunctionParam::required("unit", content_ref.clone())],
+            ),
+        )
+        .with_function_effects("content.ensure", ["content.load"])
+        .with_function_signature(
+            "content.release",
+            FunctionSignature::new(
+                TypeKind::Unit,
+                [FunctionParam::required("unit", content_ref)],
+            ),
+        )
+        .with_function_effects("content.release", ["content.release"])
     }
 
     #[must_use]

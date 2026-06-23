@@ -31,8 +31,8 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
     scene.show(@scene.opening)
     scope {
         layer @layer.world {
-            image @asset.bg.room fit cover
-            sprite @asset.char.alice.default at center
+            image @asset:.bg.room fit cover
+            sprite @asset:.char.alice.default at center
         }
 
         layer @layer.dialogue {

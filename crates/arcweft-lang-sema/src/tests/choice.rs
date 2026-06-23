@@ -500,8 +500,11 @@ flow @flow.quiet_intro quiet_intro {}
         tree.module().expect("module").path(),
         "crate::game::routes::opening"
     );
-    assert_eq!(tree.uses()[0].tree(), "self::characters::{alice}");
-    assert_eq!(tree.uses()[1].tree(), "super::common::{route_gate}");
+    assert_eq!(tree.uses()[0].tree().source(), "self::characters::{alice}");
+    assert_eq!(
+        tree.uses()[1].tree().source(),
+        "super::common::{route_gate}"
+    );
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");

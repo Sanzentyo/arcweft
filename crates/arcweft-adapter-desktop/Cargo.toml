@@ -12,7 +12,6 @@ arcweft-core = { path = "../arcweft-core" }
 arcweft-desktop-contract = { path = "../arcweft-desktop-contract" }
 arcweft-desktop-host = { path = "../arcweft-desktop-host" }
 arcweft-host-adapter = { path = "../arcweft-host-adapter" }
-arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-rust-abi = { path = "../arcweft-rust-abi" }
 serde_json.workspace = true
 

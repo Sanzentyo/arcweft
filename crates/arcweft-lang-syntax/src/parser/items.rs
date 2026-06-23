@@ -1,12 +1,12 @@
 use crate::ast::common::TextRange;
-use crate::ast::ids::EntityRef;
+use crate::ast::ids::{EntityRef, EntityRefSyntax};
 use crate::ast::items::{
-    AgentItem, AgentItemInit, CallableItem, CallableItemInit, CapabilityFn, EntityDeclItem,
-    EntryDeclItem, EntryItem, EntryKind, EntryRouteBinding, EntryRouteBindingSource, EnumItem,
-    EnumVariant, ExternCapabilityItem, ExternModActivity, ExternModFunction, ExternModItem,
-    ExternModMember, ExternModType, ExternModTypeKind, FunctionInit, FunctionItem, ImplItem,
-    ImplMember, MemoFn, ParserItem, StateField, StateItem, StructField, StructItem, TraitItem,
-    TraitMember, TypeAliasItem,
+    AgentItem, AgentItemInit, CallableItem, CallableItemInit, CapabilityFn, ContentDeclBody,
+    EntityDeclBody, EntityDeclItem, EntityDeclKind, EntryDeclItem, EntryItem, EntryKind,
+    EntryRouteBinding, EntryRouteBindingSource, EnumItem, EnumVariant, ExternCapabilityItem,
+    ExternModActivity, ExternModFunction, ExternModItem, ExternModMember, ExternModType,
+    ExternModTypeKind, FunctionInit, FunctionItem, ImplItem, ImplMember, MemoFn, ParserItem,
+    StateField, StateItem, StructField, StructItem, TraitItem, TraitMember, TypeAliasItem,
 };
 use crate::cst::{
     find_matching_angle_group, find_matching_punctuation, find_top_level_punctuation,
@@ -19,8 +19,8 @@ use super::headers::{
     parse_callable_kind, parse_contract_clauses, parse_contract_expr_list, parse_entity_decl_head,
     parse_extern_mod_head, parse_function_kind_and_signature, parse_name_and_tail,
     parse_optional_angle_head, parse_required_decl_entity_ref_without_name_marker,
-    parse_required_entity_ref, parse_visibility_prefix, simple_error, split_function_header_lines,
-    split_supertraits,
+    parse_required_entity_ref, parse_required_entity_ref_syntax, parse_visibility_prefix,
+    simple_error, split_function_header_lines, split_supertraits,
 };
 use super::{
     Parser, PendingDocLines, SourceDialect, collect_logical_block_items, parse_expr_lossy,
@@ -504,6 +504,9 @@ impl Parser<'_> {
             .map(|range| TextRange::new(range.start, range.end));
         let (kind, visibility, id, name, surface_alias, signature_tail) =
             parse_entity_decl_head(head.trim(), start_line.start, &mut self.errors)?;
+        let structured_body =
+            parse_structured_entity_decl_body(kind, &body, start_line.start, &mut self.errors);
+        let raw_body = structured_body.is_none().then(|| body.into_owned());
         Some(EntityDeclItem::new(
             attrs,
             kind,
@@ -512,7 +515,8 @@ impl Parser<'_> {
             name,
             surface_alias,
             signature_tail,
-            Some(body.into_owned()),
+            raw_body,
+            structured_body,
             body_range,
             TextRange::new(start_line.start, block.end),
         ))
@@ -532,6 +536,7 @@ impl Parser<'_> {
             name,
             surface_alias,
             signature_tail,
+            None,
             None,
             None,
             TextRange::new(line.start, line.end),
@@ -691,6 +696,138 @@ pub(super) fn parse_state_fields(body: &str) -> Vec<StateField> {
             })
         })
         .collect()
+}
+
+fn parse_structured_entity_decl_body(
+    kind: EntityDeclKind,
+    body: &str,
+    base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Option<EntityDeclBody> {
+    match kind {
+        EntityDeclKind::Content => Some(EntityDeclBody::Content(ContentDeclBody::new(
+            parse_content_roots_field(body, base, errors),
+        ))),
+        _ => None,
+    }
+}
+
+fn parse_content_roots_field(
+    body: &str,
+    base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Vec<EntityRef> {
+    let mut roots = Vec::new();
+    let mut found_roots = false;
+    for item in collect_logical_block_items(body) {
+        let line = item.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some((name, value)) = split_top_level_binding(line) else {
+            errors.push(simple_error(
+                base,
+                line.len(),
+                "content declaration body item must be a field assignment",
+                "roots = [@flow.id]",
+            ));
+            continue;
+        };
+        if name.trim() != "roots" {
+            errors.push(simple_error(
+                base,
+                name.len(),
+                "unsupported content declaration field",
+                "roots = [@flow.id]",
+            ));
+            continue;
+        }
+        found_roots = true;
+        let value = value.trim();
+        let Some(list_body) = value
+            .strip_prefix('[')
+            .and_then(|rest| rest.strip_suffix(']'))
+        else {
+            errors.push(simple_error(
+                base,
+                value.len(),
+                "content roots must be an entity reference list",
+                "roots = [@flow.id]",
+            ));
+            continue;
+        };
+        roots.extend(parse_entity_ref_list(list_body, base, errors));
+    }
+    if !found_roots {
+        errors.push(simple_error(
+            base,
+            body.len().max(1),
+            "content declaration requires roots",
+            "roots = [@flow.id]",
+        ));
+    }
+    roots
+}
+
+fn parse_entity_ref_list(
+    body: &str,
+    base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Vec<EntityRef> {
+    collect_logical_block_items(body)
+        .into_iter()
+        .flat_map(|item| {
+            split_top_level_punctuation(item.trim(), ',')
+                .into_iter()
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .filter_map(|part| {
+            let trimmed = part.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            parse_required_entity_ref_syntax(trimmed, base, errors).and_then(|(entity, rest)| {
+                if !rest.trim().is_empty() {
+                    errors.push(simple_error(
+                        base,
+                        trimmed.len(),
+                        "entity list item has unsupported trailing syntax",
+                        "@entity.id",
+                    ));
+                    return None;
+                }
+                normalize_top_level_content_root(entity, base, trimmed.len(), errors)
+            })
+        })
+        .collect()
+}
+
+fn normalize_top_level_content_root(
+    entity: EntityRefSyntax,
+    base: usize,
+    len: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Option<EntityRef> {
+    match entity {
+        EntityRefSyntax::Absolute(entity) => Some(entity),
+        EntityRefSyntax::FamilyRelative(relative) => {
+            if relative.relative().parent_depth() != 0 {
+                errors.push(simple_error(
+                    base,
+                    len,
+                    "content root references cannot use parent-relative family syntax",
+                    "@asset:.id",
+                ));
+                return None;
+            }
+            Some(EntityRef::new(
+                format!("{}.{}", relative.family(), relative.relative().suffix()),
+                false,
+                *relative.range(),
+            ))
+        }
+    }
 }
 
 fn parse_entry_head(

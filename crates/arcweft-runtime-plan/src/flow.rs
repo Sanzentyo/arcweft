@@ -245,16 +245,7 @@ fn runtime_pure_helpers(
         .enumerate()
         .map(|(index, candidate)| {
             stats.pure_expr_cloned_nodes += candidate.shape().expr_weight;
-            RuntimePureHelper {
-                id: RuntimePureHelperId(index),
-                name: candidate.name().to_owned(),
-                input_names: candidate.input_names().to_vec(),
-                input_types: candidate.input_types().to_vec(),
-                output_type: candidate.output_type(),
-                expr: candidate.expr().clone(),
-                scalar_eval_supported: candidate.shape().supports_scalar_eval,
-                origin: candidate.origin(),
-            }
+            candidate.to_runtime_helper(RuntimePureHelperId(index))
         })
         .collect()
 }

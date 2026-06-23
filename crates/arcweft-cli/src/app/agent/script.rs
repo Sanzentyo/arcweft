@@ -397,7 +397,7 @@ pub(super) fn agent_script_run_bundle_input(
     let path = &options.path;
     let bytes =
         fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-    let bundle = ArcweftBundle::from_path_slice(path, &bytes)
+    let bundle = ArcweftBundle::from_product_path_slice(path, &bytes)
         .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
     if bundle.bundle_kind != BundleKind::AgentController {
         return Err(format!(

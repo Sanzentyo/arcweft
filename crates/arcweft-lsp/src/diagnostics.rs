@@ -308,10 +308,8 @@ fn start_range() -> Range {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_adapter_context::manifest::AdapterManifest;
-    use arcweft_lang_sema::{
-        env::{FunctionParam, FunctionSignature},
-        types::TypeKind,
+    use arcweft_adapter_context::manifest::{
+        AdapterFunctionParam, AdapterFunctionSignature, AdapterManifest, AdapterTypeKind,
     };
     use arcweft_runtime_host::RuntimeHostRunnerKind;
 
@@ -333,9 +331,12 @@ flow @.main main {
 
         let adapter = AdapterManifest::new("custom", "Custom").with_function_signature(
             "custom_echo",
-            FunctionSignature::new(
-                TypeKind::String,
-                [FunctionParam::required("value", TypeKind::String)],
+            AdapterFunctionSignature::new(
+                AdapterTypeKind::String,
+                [AdapterFunctionParam::required(
+                    "value",
+                    AdapterTypeKind::String,
+                )],
             ),
             [],
         );

@@ -9,7 +9,7 @@ use super::helpers::{
 use super::{
     BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr, FunctionParam,
     FunctionSignature, LifetimeScopeKind, MapKind, Pattern, Stmt, TypeCheckError, TypeChecker,
-    TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext, entity_kind,
+    TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext, entity_syntax_kind,
     normalize_choice_type,
 };
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
@@ -172,18 +172,7 @@ impl TypeChecker<'_> {
         if let Some(ty) = self.symbol_type(entity.body()).cloned() {
             return Some(ty);
         }
-        entity
-            .as_absolute()
-            .and_then(entity_kind)
-            .or_else(|| {
-                entity.family_relative_ref().and_then(|relative| {
-                    entity_kind(&arcweft_lang_syntax::ast::ids::EntityRef::new(
-                        format!("{}._", relative.family()),
-                        false,
-                        *relative.range(),
-                    ))
-                })
-            })
+        entity_syntax_kind(entity)
             .map(TypeKind::entity_ref)
             .or_else(|| {
                 self.errors.push(TypeCheckError::new(format!(

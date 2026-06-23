@@ -134,13 +134,21 @@ pub(in crate::app) fn declaration_arg_value<'a>(args: &'a [String], name: &str) 
     })
 }
 
-fn public_id_arg(arg: &str) -> Option<String> {
+pub(in crate::app) fn public_id_arg(arg: &str) -> Option<String> {
     let value = arg.trim().trim_matches('"').trim_matches('\'');
     let value = value.strip_prefix('@').unwrap_or(value);
-    value
+    let normalized = if let Some((family, suffix)) = value.split_once(":.") {
+        if family.is_empty() || suffix.is_empty() {
+            return None;
+        }
+        format!("{family}.{suffix}")
+    } else {
+        value.to_owned()
+    };
+    normalized
         .chars()
         .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
-        .then(|| value.to_owned())
+        .then_some(normalized)
 }
 
 #[cfg(test)]
@@ -152,7 +160,7 @@ mod tests {
         let declarations = parse_declared_image_objects(
             r"
 pub image @image.sample.pulse {
-    asset = @asset.bg.pulse
+    asset = @asset:.bg.pulse
     x = 12px
     y = 34px
     width = 56px
@@ -169,7 +177,7 @@ pub image @image.sample.pulse {
             declaration.args(),
             &[
                 "id = @image.sample.pulse".to_owned(),
-                "asset = @asset.bg.pulse".to_owned(),
+                "asset = @asset:.bg.pulse".to_owned(),
                 "x = 12px".to_owned(),
                 "y = 34px".to_owned(),
                 "width = 56px".to_owned(),
@@ -189,7 +197,7 @@ pub image @image.sample.pulse {
             id: "image.sample.pulse".to_owned(),
             args: vec![
                 "id = @image.sample.pulse".to_owned(),
-                "asset = @asset.bg.pulse".to_owned(),
+                "asset = @asset:.bg.pulse".to_owned(),
                 "x = 12px".to_owned(),
                 "opacity = 0.5".to_owned(),
             ],
@@ -202,7 +210,7 @@ pub image @image.sample.pulse {
             ),
             vec![
                 "id = @image.sample.pulse".to_owned(),
-                "asset = @asset.bg.pulse".to_owned(),
+                "asset = @asset:.bg.pulse".to_owned(),
                 "x = 12px".to_owned(),
                 "opacity = 1".to_owned(),
                 "param.role = override".to_owned(),

@@ -10,7 +10,7 @@ use super::logic::affection::{has_affection_at_least}
 
 #[derive(StableHash)]
 pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    bg(@asset.bg.room, fade = 300ms)
+    bg(@asset:.bg.room, fade = 300ms)
     show(@character.alice, .smile, at = .center, fade = 220ms)
 
     scope greeting {
@@ -34,7 +34,9 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 ## 重要な構文ルール
 
 - 型パラメータは `<>`: `Vec<T>`, `Result<T, E>`。
-- Entity 参照は `@foo.bar`、複雑な参照やメンバアクセス前は `@<foo.bar>`。
+- Entity 参照は family を明示する。手書きの通常形では `@asset:.foo`
+  のような family-relative form を推奨し、`@asset.foo` は生成物や tooling
+  出力向けの完全 public-id 形とする。複雑な参照やメンバアクセス前は `@<foo.bar>`。
 - `@.suffix` / `@..suffix` / `@...suffix` / `@super.suffix` は dialogue line / choice / option / text key のような ID 文脈だけで使う相対 ID。
 - module / import の相対指定は `self::` / `super::` / `crate::` を使う。
 - コメントリンクは `[[foo.bar]]`。
@@ -52,7 +54,7 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 
 ```arcw
 goto @flow.alice_intro
-bg(@asset.bg.room)
+bg(@asset:.bg.room)
 #[link(Flow, @flow.alice_intro, level = .soft)]
 ```
 
@@ -201,7 +203,7 @@ For ordinary visual novel writing, Arcweft provides compact line-oriented syntax
 
 ```arcw
 pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
-    bg(@asset.bg.room, fade = 300ms)
+    bg(@asset:.bg.room, fade = 300ms)
     show(@character.alice, .smile, at = .center)
 
     scope rain {

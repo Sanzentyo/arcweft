@@ -71,7 +71,7 @@ View は状態から描画仕様を作る純粋関数。
 ```arcw
 pub view current_scene(state: GameState) -> Scene {
     scene {
-        layer bg = image(asset = @asset.bg.room, id = "image.scene.bg", x = 0px, y = 0px, width = 1280px, height = 720px, fit = "cover")
+        layer bg = image(asset = @asset:.bg.room, id = "image.scene.bg", x = 0px, y = 0px, width = 1280px, height = 720px, fit = "cover")
         layer text = TextBox(current_text())
     }
 }

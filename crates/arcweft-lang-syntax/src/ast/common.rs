@@ -15,13 +15,20 @@ pub struct ModuleDecl {
     range: TextRange,
 }
 
-/// `use`, `lazy use`, or `eager use` import.
+/// `use` import.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UseItem {
     visibility: Option<Visibility>,
-    mode: Option<UseMode>,
-    tree: String,
+    tree: UseTree,
     range: TextRange,
+}
+
+/// Typed `use` tree syntax with the module prefix pre-parsed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UseTree {
+    source: String,
+    module_path_prefix: ModulePath,
+    exact_module_prefix: bool,
 }
 
 /// Markdown documentation comment collected from consecutive `///` lines.
@@ -37,21 +44,6 @@ pub enum Visibility {
     Public,
     Crate,
     Super,
-}
-
-/// Explicit import realization qualifier written in source.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UseMode {
-    Lazy,
-    Eager,
-}
-
-/// Effective dependency mode after applying the default for plain `use`.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum UseDependencyMode {
-    Normal,
-    Eager,
-    Lazy,
 }
 
 impl TextRange {
@@ -98,13 +90,11 @@ impl ModuleDecl {
 impl UseItem {
     pub(crate) const fn new(
         visibility: Option<Visibility>,
-        mode: Option<UseMode>,
-        tree: String,
+        tree: UseTree,
         range: TextRange,
     ) -> Self {
         Self {
             visibility,
-            mode,
             tree,
             range,
         }
@@ -114,41 +104,8 @@ impl UseItem {
         self.visibility
     }
 
-    pub const fn mode(&self) -> Option<UseMode> {
-        self.mode
-    }
-
-    /// Effective dependency behavior, including the plain-`use` default.
-    pub const fn dependency_mode(&self) -> UseDependencyMode {
-        match self.mode {
-            Some(mode) => mode.dependency_mode(),
-            None => UseDependencyMode::Normal,
-        }
-    }
-
-    pub fn tree(&self) -> &str {
+    pub const fn tree(&self) -> &UseTree {
         &self.tree
-    }
-
-    /// Whether the extracted prefix is syntactically known to name a module.
-    pub fn module_path_is_exact(&self) -> bool {
-        self.tree.contains("::{") || self.tree.ends_with("::*")
-    }
-
-    /// Returns the longest syntactic module prefix of this use tree.
-    ///
-    /// The project loader resolves this prefix against existing module paths,
-    /// walking one parent when the final segment can be an imported item.
-    pub fn module_path_prefix(&self) -> Result<ModulePath, ModulePathError> {
-        let without_alias = self
-            .tree
-            .split_once(" as ")
-            .map_or(self.tree.as_str(), |(path, _)| path);
-        let grouped = without_alias
-            .find("::{")
-            .map_or(without_alias, |index| &without_alias[..index]);
-        let globless = grouped.strip_suffix("::*").unwrap_or(grouped);
-        ModulePath::from_str(globless.trim())
     }
 
     pub const fn range(&self) -> &TextRange {
@@ -156,45 +113,50 @@ impl UseItem {
     }
 }
 
-impl UseMode {
-    /// Effective graph mode represented by this explicit qualifier.
-    pub const fn dependency_mode(self) -> UseDependencyMode {
-        match self {
-            Self::Lazy => UseDependencyMode::Lazy,
-            Self::Eager => UseDependencyMode::Eager,
-        }
+impl UseTree {
+    /// Parses a normalized import tree and extracts its module prefix.
+    pub fn parse(source: impl Into<String>) -> Result<Self, ModulePathError> {
+        let source = normalize_parent_module_root(&source.into());
+        let module_prefix_source = use_tree_module_prefix_source(&source);
+        let module_path_prefix = ModulePath::from_str(module_prefix_source)?;
+        let exact_module_prefix = source.contains("::{") || source.ends_with("::*");
+        Ok(Self {
+            source,
+            module_path_prefix,
+            exact_module_prefix,
+        })
     }
 
-    /// Whether the imported body participates in the initial build.
-    pub const fn loads_body_during_initial_build(self) -> bool {
-        self.dependency_mode().loads_body_during_initial_build()
+    /// Normalized source spelling of the use tree.
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// Whether the extracted prefix is syntactically known to name a module.
+    pub const fn module_path_is_exact(&self) -> bool {
+        self.exact_module_prefix
+    }
+
+    /// Returns the longest syntactic module prefix of this use tree.
+    ///
+    /// The project loader resolves this prefix against existing module paths,
+    /// walking one parent when the final segment can be an imported item.
+    pub fn module_path_prefix(&self) -> &ModulePath {
+        &self.module_path_prefix
     }
 }
 
-impl UseDependencyMode {
-    /// Whether the dependency body participates in the initial build.
-    pub const fn loads_body_during_initial_build(self) -> bool {
-        !matches!(self, Self::Lazy)
-    }
+fn normalize_parent_module_root(path: &str) -> String {
+    path.strip_prefix("parent::")
+        .map_or_else(|| path.to_owned(), |tail| format!("super::{tail}"))
+}
 
-    /// Merges duplicate imports of the same module without losing eagerness.
-    #[must_use]
-    pub const fn merge(self, other: Self) -> Self {
-        match (self, other) {
-            (Self::Eager, _) | (_, Self::Eager) => Self::Eager,
-            (Self::Normal, _) | (_, Self::Normal) => Self::Normal,
-            (Self::Lazy, Self::Lazy) => Self::Lazy,
-        }
-    }
-
-    /// Stable spelling for diagnostics, metadata, and cache keys.
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Normal => "normal",
-            Self::Eager => "eager",
-            Self::Lazy => "lazy",
-        }
-    }
+fn use_tree_module_prefix_source(source: &str) -> &str {
+    let without_alias = source.split_once(" as ").map_or(source, |(path, _)| path);
+    let grouped = without_alias
+        .find("::{")
+        .map_or(without_alias, |index| &without_alias[..index]);
+    grouped.strip_suffix("::*").unwrap_or(grouped).trim()
 }
 
 impl DocBlock {

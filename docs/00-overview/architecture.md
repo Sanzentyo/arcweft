@@ -69,7 +69,7 @@ Native product の基本形は AOT compiled player + embedded `.awfb` / bytecode
 
 ### 時間がかかるものは `Need<T, E>`
 
-asset load、shader compile、lazy use realization、Activity instantiate、TTS 生成、BGM pre-render、Typeset block の組版などは `Need<T, E>` として扱う。
+asset load、content ensure、shader compile、Activity instantiate、TTS 生成、BGM pre-render、Typeset block の組版などは `Need<T, E>` として扱う。
 
 `Need<T, E>` は `T` に暗黙変換できない。`flow` や UI では `await ... with { pending ... }` または `AwaitView` で待機時の挙動を明示する。
 

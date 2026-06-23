@@ -1,7 +1,7 @@
 //! Stable textual labels used by runtime-plan lowering.
 
 use arcweft_core::time::LogicalDuration;
-use arcweft_lang_hir::syntax::ast::pattern::Pattern;
+use arcweft_lang_hir::syntax::ast::{ids::EntityRefSyntax, pattern::Pattern};
 use arcweft_lang_hir::syntax::expr::{CallArg, DurationUnit, Expr, Literal};
 use arcweft_lang_hir::syntax::types::TypeRef;
 
@@ -31,13 +31,23 @@ pub(crate) fn duration_expr(expr: &Expr) -> Option<LogicalDuration> {
     .map(LogicalDuration::from_nanos)
 }
 
+pub(crate) fn entity_ref_label(entity: &EntityRefSyntax) -> String {
+    if let Some(absolute) = entity.as_absolute() {
+        return absolute.body().to_owned();
+    }
+    if let Some(relative) = entity.family_relative_ref() {
+        return format!("{}.{}", relative.family(), relative.relative().suffix());
+    }
+    entity.body().to_owned()
+}
+
 pub(crate) fn expr_label(expr: &Expr) -> String {
     match expr {
         Expr::LifetimePath { key, optional } => {
             format!("'{}{}", key.as_dotted(), if *optional { "?" } else { "" })
         }
         Expr::Path(path) => path.clone(),
-        Expr::EntityRef(entity) => format!("@{}", entity.body()),
+        Expr::EntityRef(entity) => format!("@{}", entity_ref_label(entity)),
         Expr::Literal(literal) => literal_label(literal),
         Expr::Call { callee, args } => format!(
             "{}({})",

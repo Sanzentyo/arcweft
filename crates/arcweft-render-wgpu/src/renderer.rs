@@ -1,11 +1,14 @@
 use crate::convert::{f32_ceil_to_i32, f32_floor_to_i32};
-use crate::geometry::{PaintRect, PreparedFrame, RenderImage, RenderTextBlock};
+use crate::geometry::{
+    PaintRect, PreparedFrame, RenderFontFamily, RenderImage, RenderTextBlock, RenderTextSlant,
+    RenderTextWeight,
+};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::image::ImageObjectFit;
 use bytemuck::{Pod, Zeroable};
 use glyphon::{
-    Attrs, Buffer, Cache, Color, FontSystem, Metrics, Resolution, Shaping, SwashCache, TextArea,
-    TextAtlas, TextBounds, TextRenderer, Viewport,
+    Attrs, Buffer, Cache, Color, Family, FontSystem, Metrics, Resolution, Shaping, Style,
+    SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Viewport, Weight,
 };
 use std::borrow::Cow;
 use thiserror::Error;
@@ -260,12 +263,34 @@ fn text_buffer(font_system: &mut FontSystem, block: &RenderTextBlock) -> Buffer 
     buffer.set_text(
         font_system,
         &block.text,
-        &Attrs::new(),
+        &text_attrs(block),
         Shaping::Advanced,
         None,
     );
     buffer.shape_until_scroll(font_system, false);
     buffer
+}
+
+fn text_attrs(block: &RenderTextBlock) -> Attrs<'_> {
+    let mut attrs = Attrs::new().family(render_font_family(&block.font_family));
+    if block.weight == RenderTextWeight::Bold {
+        attrs = attrs.weight(Weight::BOLD);
+    }
+    if block.slant == RenderTextSlant::Italic {
+        attrs = attrs.style(Style::Italic);
+    }
+    attrs
+}
+
+fn render_font_family(family: &RenderFontFamily) -> Family<'_> {
+    match family {
+        RenderFontFamily::Serif => Family::Serif,
+        RenderFontFamily::SansSerif => Family::SansSerif,
+        RenderFontFamily::Monospace => Family::Monospace,
+        RenderFontFamily::Cursive => Family::Cursive,
+        RenderFontFamily::Fantasy => Family::Fantasy,
+        RenderFontFamily::Named(name) => Family::Name(name),
+    }
 }
 
 fn text_area<'a>(buffer: &'a Buffer, block: &RenderTextBlock) -> TextArea<'a> {

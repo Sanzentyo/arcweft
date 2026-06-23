@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use winit::application::ApplicationHandler;
-use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
+use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize, Size};
 use winit::event::{ButtonSource, ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
@@ -26,6 +26,8 @@ use winit::window::{Window, WindowAttributes, WindowId};
 
 const EVENT_LOOP_TICK: Duration = Duration::from_millis(16);
 const DEFAULT_FONT_BYTES: &[u8] = include_bytes!("../../../web/assets/arcweft-demo.ttf");
+const SCENE_ASPECT_WIDTH: u32 = 16;
+const SCENE_ASPECT_HEIGHT: u32 = 9;
 
 pub fn run_bundle_windowed(
     bundle: ArcweftBundle,
@@ -150,7 +152,9 @@ impl ApplicationHandler for NativeSceneApp {
         let window = match event_loop.create_window(
             WindowAttributes::default()
                 .with_title(self.title.clone())
-                .with_surface_size(LogicalSize::new(1280.0, 720.0)),
+                .with_surface_size(LogicalSize::new(1280.0, 720.0))
+                .with_min_surface_size(LogicalSize::new(640.0, 360.0))
+                .with_surface_resize_increments(LogicalSize::new(16.0, 9.0)),
         ) {
             Ok(window) => Arc::<dyn Window>::from(window),
             Err(error) => {
@@ -264,7 +268,7 @@ impl NativeSceneState {
             .find(wgpu::TextureFormat::is_srgb)
             .or_else(|| capabilities.formats.first().copied())
             .ok_or(NativeSceneWindowError::NoSurfaceFormat)?;
-        let size = non_zero_size(window.surface_size());
+        let size = scene_aspect_size(window.surface_size());
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
@@ -307,7 +311,11 @@ impl NativeSceneState {
     }
 
     fn resize(&mut self, size: PhysicalSize<u32>) {
-        let size = non_zero_size(size);
+        let requested = non_zero_size(size);
+        let size = scene_aspect_size(requested);
+        if size != requested {
+            let _ = self.window.request_surface_size(Size::Physical(size));
+        }
         if self.config.width == size.width && self.config.height == size.height {
             return;
         }
@@ -412,7 +420,7 @@ impl NativeSceneState {
     }
 
     fn viewport(&self) -> RenderViewport {
-        let size = non_zero_size(self.window.surface_size());
+        let size = PhysicalSize::new(self.config.width, self.config.height);
         let scale_factor = self.window.scale_factor().max(f64::EPSILON);
         let logical_width = (f64::from(size.width) / scale_factor)
             .to_f32()
@@ -506,6 +514,32 @@ impl NativeSceneState {
 
 fn non_zero_size(size: PhysicalSize<u32>) -> PhysicalSize<u32> {
     PhysicalSize::new(size.width.max(1), size.height.max(1))
+}
+
+fn scene_aspect_size(size: PhysicalSize<u32>) -> PhysicalSize<u32> {
+    let size = non_zero_size(size);
+    if u64::from(size.width) * u64::from(SCENE_ASPECT_HEIGHT)
+        == u64::from(size.height) * u64::from(SCENE_ASPECT_WIDTH)
+    {
+        return size;
+    }
+    let max_u32 = u64::from(u32::MAX);
+    let width_for_height = ((u64::from(size.height) * u64::from(SCENE_ASPECT_WIDTH)
+        + u64::from(SCENE_ASPECT_HEIGHT / 2))
+        / u64::from(SCENE_ASPECT_HEIGHT))
+    .clamp(1, max_u32);
+    let height_for_width = ((u64::from(size.width) * u64::from(SCENE_ASPECT_HEIGHT)
+        + u64::from(SCENE_ASPECT_WIDTH / 2))
+        / u64::from(SCENE_ASPECT_WIDTH))
+    .clamp(1, max_u32);
+    let width_for_height = u32::try_from(width_for_height).unwrap_or(u32::MAX);
+    let height_for_width = u32::try_from(height_for_width).unwrap_or(u32::MAX);
+
+    if height_for_width.abs_diff(size.height) <= width_for_height.abs_diff(size.width) {
+        PhysicalSize::new(size.width, height_for_width)
+    } else {
+        PhysicalSize::new(width_for_height, size.height)
+    }
 }
 
 fn surface_texture(

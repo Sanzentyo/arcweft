@@ -7,6 +7,7 @@
 use serde::Deserialize;
 use std::{
     collections::BTreeMap,
+    fmt,
     path::{Path, PathBuf},
 };
 use thiserror::Error;
@@ -60,6 +61,156 @@ pub enum LaunchMathBackend {
     Wgpu,
 }
 
+/// Build-mode source payload policy selected by a launch profile.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum LaunchSourcePolicy {
+    None,
+    Normalized,
+    Full,
+}
+
+impl LaunchSourcePolicy {
+    /// Stable manifest spelling for diagnostics and logs.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Normalized => "normalized",
+            Self::Full => "full",
+        }
+    }
+}
+
+impl fmt::Display for LaunchSourcePolicy {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// Build-mode debug payload policy selected by a launch profile.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum LaunchDebugPolicy {
+    None,
+    LineTables,
+    Full,
+}
+
+impl LaunchDebugPolicy {
+    /// Stable manifest spelling for diagnostics and logs.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::LineTables => "line-tables",
+            Self::Full => "full",
+        }
+    }
+}
+
+impl fmt::Display for LaunchDebugPolicy {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// Content residency policy selected by a launch profile.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum LaunchContentResidency {
+    #[default]
+    Startup,
+    OnDemand,
+}
+
+impl LaunchContentResidency {
+    /// Stable manifest spelling for diagnostics and logs.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Startup => "startup",
+            Self::OnDemand => "on-demand",
+        }
+    }
+}
+
+impl fmt::Display for LaunchContentResidency {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// Content placement policy selected by a launch profile.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum LaunchContentPlacement {
+    #[default]
+    Embedded,
+    External,
+}
+
+impl LaunchContentPlacement {
+    /// Stable manifest spelling for diagnostics and logs.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Embedded => "embedded",
+            Self::External => "external",
+        }
+    }
+}
+
+impl fmt::Display for LaunchContentPlacement {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// Content compression policy selected by a launch profile.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum LaunchContentCompression {
+    #[default]
+    None,
+    Zstd,
+}
+
+impl LaunchContentCompression {
+    /// Stable manifest spelling for diagnostics and logs.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Zstd => "zstd",
+        }
+    }
+}
+
+impl fmt::Display for LaunchContentCompression {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// Hot-reload policy selected by a launch profile.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum LaunchHotReloadMode {
+    Restart,
+    Swap,
+}
+
+/// Hot-reload fallback selected by a launch profile.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum LaunchHotReloadFallback {
+    Error,
+    Restart,
+}
+
+/// Hot-reload state-compatibility policy selected by a launch profile.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum LaunchHotReloadStatePolicy {
+    Strict,
+}
+
 /// Project-level profile manifest parsed from `arcw.toml`.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 pub struct LaunchProfileManifest {
@@ -89,7 +240,28 @@ pub struct LaunchProfileSpec {
     #[serde(default)]
     pure: Option<LaunchPureProfileSpec>,
     #[serde(default)]
+    build: LaunchBuildProfileSpec,
+    #[serde(default)]
+    hot_reload: Option<LaunchHotReloadProfileSpec>,
+    #[serde(default)]
+    content: BTreeMap<String, LaunchContentProfileSpec>,
+    #[serde(default)]
     rust_metadata: Vec<PathBuf>,
+}
+
+/// Optional build policy for one launch profile.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+pub struct LaunchBuildProfileSpec {
+    #[serde(default)]
+    incremental: Option<bool>,
+    #[serde(default)]
+    tree_shake: Option<bool>,
+    #[serde(default)]
+    debug: Option<LaunchDebugPolicy>,
+    #[serde(default)]
+    source: Option<LaunchSourcePolicy>,
+    #[serde(default)]
+    shared_hoist_threshold_bytes: Option<u64>,
 }
 
 /// Optional pure-helper execution policy for one launch profile.
@@ -109,6 +281,28 @@ pub struct LaunchPureProfileSpec {
     object_artifacts: Option<bool>,
 }
 
+/// Optional hot-reload policy for one launch profile.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+pub struct LaunchHotReloadProfileSpec {
+    #[serde(default)]
+    mode: Option<LaunchHotReloadMode>,
+    #[serde(default)]
+    fallback: Option<LaunchHotReloadFallback>,
+    #[serde(default)]
+    state: Option<LaunchHotReloadStatePolicy>,
+}
+
+/// Profile-level policy for one logical content unit.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct LaunchContentProfileSpec {
+    #[serde(default)]
+    residency: LaunchContentResidency,
+    #[serde(default)]
+    placement: LaunchContentPlacement,
+    #[serde(default)]
+    compression: LaunchContentCompression,
+}
+
 /// Fully resolved launch profile ready for CLI/runtime use.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedLaunchProfile {
@@ -122,6 +316,9 @@ pub struct ResolvedLaunchProfile {
     dialogue_defaults: Option<String>,
     character_manifests: Vec<PathBuf>,
     pure: Option<LaunchPureProfileSpec>,
+    build: LaunchBuildProfileSpec,
+    hot_reload: Option<LaunchHotReloadProfileSpec>,
+    content: BTreeMap<String, LaunchContentProfileSpec>,
     rust_metadata: Vec<PathBuf>,
 }
 
@@ -238,6 +435,9 @@ impl LaunchProfileManifest {
             dialogue_defaults: spec.dialogue_defaults.clone(),
             character_manifests,
             pure: spec.pure.clone(),
+            build: spec.build.clone(),
+            hot_reload: spec.hot_reload.clone(),
+            content: spec.content.clone(),
             rust_metadata,
         })
     }
@@ -266,6 +466,21 @@ impl LaunchProfileSpec {
     /// Runtime surface selected by this profile.
     pub const fn kind(&self) -> LaunchKind {
         self.kind
+    }
+
+    /// Build policy selected by this profile.
+    pub const fn build(&self) -> &LaunchBuildProfileSpec {
+        &self.build
+    }
+
+    /// Hot-reload policy selected by this profile.
+    pub const fn hot_reload(&self) -> Option<&LaunchHotReloadProfileSpec> {
+        self.hot_reload.as_ref()
+    }
+
+    /// Content unit packaging policy selected by this profile.
+    pub fn content(&self) -> &BTreeMap<String, LaunchContentProfileSpec> {
+        &self.content
     }
 }
 
@@ -320,9 +535,51 @@ impl ResolvedLaunchProfile {
         self.pure.as_ref()
     }
 
+    /// Build policy selected by the profile.
+    pub const fn build(&self) -> &LaunchBuildProfileSpec {
+        &self.build
+    }
+
+    /// Hot-reload policy selected by the profile.
+    pub const fn hot_reload(&self) -> Option<&LaunchHotReloadProfileSpec> {
+        self.hot_reload.as_ref()
+    }
+
+    /// Content unit packaging policy selected by the profile.
+    pub fn content(&self) -> &BTreeMap<String, LaunchContentProfileSpec> {
+        &self.content
+    }
+
     /// Rust ABI metadata files selected by this profile.
     pub fn rust_metadata(&self) -> &[PathBuf] {
         &self.rust_metadata
+    }
+}
+
+impl LaunchBuildProfileSpec {
+    /// Optional incremental compilation policy.
+    pub const fn incremental(&self) -> Option<bool> {
+        self.incremental
+    }
+
+    /// Optional tree-shaking policy.
+    pub const fn tree_shake(&self) -> Option<bool> {
+        self.tree_shake
+    }
+
+    /// Optional debug payload policy.
+    pub const fn debug(&self) -> Option<LaunchDebugPolicy> {
+        self.debug
+    }
+
+    /// Optional source payload policy.
+    pub const fn source(&self) -> Option<LaunchSourcePolicy> {
+        self.source
+    }
+
+    /// Optional shared-pack hoisting threshold in decoded bytes.
+    pub const fn shared_hoist_threshold_bytes(&self) -> Option<u64> {
+        self.shared_hoist_threshold_bytes
     }
 }
 
@@ -355,6 +612,40 @@ impl LaunchPureProfileSpec {
     /// Optional build-time AOT object artifact emission policy.
     pub const fn object_artifacts(&self) -> Option<bool> {
         self.object_artifacts
+    }
+}
+
+impl LaunchHotReloadProfileSpec {
+    /// Optional hot-reload mode policy.
+    pub const fn mode(&self) -> Option<LaunchHotReloadMode> {
+        self.mode
+    }
+
+    /// Optional hot-reload fallback policy.
+    pub const fn fallback(&self) -> Option<LaunchHotReloadFallback> {
+        self.fallback
+    }
+
+    /// Optional state compatibility policy.
+    pub const fn state(&self) -> Option<LaunchHotReloadStatePolicy> {
+        self.state
+    }
+}
+
+impl LaunchContentProfileSpec {
+    /// Desired content residency for this logical content unit.
+    pub const fn residency(&self) -> LaunchContentResidency {
+        self.residency
+    }
+
+    /// Desired bundle placement for this logical content unit.
+    pub const fn placement(&self) -> LaunchContentPlacement {
+        self.placement
+    }
+
+    /// Desired compression for this logical content unit.
+    pub const fn compression(&self) -> LaunchContentCompression {
+        self.compression
     }
 }
 
@@ -431,6 +722,95 @@ object_artifacts = true
         assert_eq!(pure.workers(), Some("auto"));
         assert_eq!(pure.batch_min_len(), Some(2048));
         assert_eq!(pure.object_artifacts(), Some(true));
+    }
+
+    #[test]
+    fn parses_build_hot_reload_and_content_profile_policy() {
+        let manifest = LaunchProfileManifest::parse_toml(
+            r#"
+[profiles.release]
+kind = "game"
+source = "src/main.arcw"
+entry = "entry.main"
+
+[profiles.release.build]
+incremental = true
+tree_shake = true
+debug = "line-tables"
+source = "none"
+shared_hoist_threshold_bytes = 65536
+
+[profiles.release.hot_reload]
+mode = "swap"
+fallback = "restart"
+state = "strict"
+
+[profiles.release.content."content.chapter_two"]
+residency = "on-demand"
+placement = "external"
+compression = "zstd"
+
+[profiles.desktop]
+kind = "game"
+source = "src/main.arcw"
+
+[profiles.desktop.content."content.chapter_two"]
+residency = "on-demand"
+placement = "embedded"
+"#,
+        )
+        .expect("manifest parses");
+
+        let release = manifest
+            .resolve_profile("release", Path::new("game"))
+            .expect("release profile resolves");
+        let build = release.build();
+        assert_eq!(build.incremental(), Some(true));
+        assert_eq!(build.tree_shake(), Some(true));
+        assert_eq!(build.debug(), Some(LaunchDebugPolicy::LineTables));
+        assert_eq!(build.source(), Some(LaunchSourcePolicy::None));
+        assert_eq!(build.shared_hoist_threshold_bytes(), Some(65_536));
+        assert_eq!(LaunchDebugPolicy::LineTables.to_string(), "line-tables");
+        assert_eq!(LaunchSourcePolicy::None.to_string(), "none");
+
+        let hot_reload = release.hot_reload().expect("hot reload policy");
+        assert_eq!(hot_reload.mode(), Some(LaunchHotReloadMode::Swap));
+        assert_eq!(
+            hot_reload.fallback(),
+            Some(LaunchHotReloadFallback::Restart)
+        );
+        assert_eq!(hot_reload.state(), Some(LaunchHotReloadStatePolicy::Strict));
+
+        let content = release
+            .content()
+            .get("content.chapter_two")
+            .expect("content policy");
+        assert_eq!(content.residency(), LaunchContentResidency::OnDemand);
+        assert_eq!(content.placement(), LaunchContentPlacement::External);
+        assert_eq!(content.compression(), LaunchContentCompression::Zstd);
+        assert_eq!(LaunchContentResidency::OnDemand.to_string(), "on-demand");
+        assert_eq!(LaunchContentPlacement::External.to_string(), "external");
+        assert_eq!(LaunchContentCompression::Zstd.to_string(), "zstd");
+
+        let desktop = manifest
+            .resolve_profile("desktop", Path::new("game"))
+            .expect("desktop profile resolves");
+        let desktop_content = desktop
+            .content()
+            .get("content.chapter_two")
+            .expect("desktop content policy");
+        assert_eq!(
+            desktop_content.residency(),
+            LaunchContentResidency::OnDemand
+        );
+        assert_eq!(
+            desktop_content.placement(),
+            LaunchContentPlacement::Embedded
+        );
+        assert_eq!(
+            desktop_content.compression(),
+            LaunchContentCompression::None
+        );
     }
 
     #[test]

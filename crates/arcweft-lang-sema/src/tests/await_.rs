@@ -88,7 +88,7 @@ flow @flow.loading loading {
     await load_avatar() with {
         pending p => progress.set(p.ratio)
         ready img => Image(img)
-        error _ => Icon(@asset.avatar_fallback)
+        error _ => Icon(@asset:.avatar_fallback)
         denied _ => return Ok(FlowExit::Goto(@flow.title))
     }
 }
@@ -123,7 +123,7 @@ fn try_await_accepts_indented_with_block() {
     let tree = parse_ok(
         r"
 flow @flow.loading loading {
-    try await asset.image(@asset.bg.room) with:
+    try await asset.image(@asset:.bg.room) with:
         pending p:
             progress.set(p.ratio)
 }
@@ -154,7 +154,7 @@ fn await_question_prefix_is_try_await_sugar() {
     let tree = parse_ok(
         r"
 flow @flow.loading loading {
-    await? asset.image(@asset.bg.room) with { pending p => scene.show(@scene.loading) }
+    await? asset.image(@asset:.bg.room) with { pending p => scene.show(@scene.loading) }
 }
 ",
     );
@@ -267,7 +267,7 @@ fn let_try_await_with_accepts_multiline_context_before_with() {
     let tree = parse_ok(
         r#"
 flow @flow.loading loading {
-    let bg = try await asset.image(@asset.bg.room)
+    let bg = try await asset.image(@asset:.bg.room)
         .context("opening background failed")
     with:
         pending p:
@@ -305,7 +305,7 @@ fn let_parenthesized_await_with_question_is_try_sugar() {
     let tree = parse_ok(
         r"
 flow @flow.loading loading {
-    let bg = (await asset.image(@asset.bg.room) with:
+    let bg = (await asset.image(@asset:.bg.room) with:
         pending p:
             p.ratio
     )?
@@ -334,7 +334,7 @@ fn let_parenthesized_await_with_context_after_block_typechecks() {
     let tree = parse_ok(
         r#"
 flow @flow.loading loading {
-    let bg = (await asset.image(@asset.bg.room) with:
+    let bg = (await asset.image(@asset:.bg.room) with:
         pending p:
             p.ratio
     ).context("opening background failed")?
@@ -636,7 +636,7 @@ flow @flow.loading loading {
     try await load_avatar() with {
         pending p => progress.set(p.ratio)
         ready img => Image(img)
-        error _ => Icon(@asset.avatar_fallback)
+        error _ => Icon(@asset:.avatar_fallback)
         denied _ => return Ok(FlowExit::Goto(@flow.title))
     }
 }

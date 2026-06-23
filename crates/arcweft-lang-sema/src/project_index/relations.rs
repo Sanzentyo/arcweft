@@ -42,6 +42,22 @@ pub(super) fn index_entry_relations(
     Ok(index)
 }
 
+pub(super) fn index_content_root_relations(
+    content_id: &EntityRef,
+    roots: &[EntityRef],
+    mut index: ProjectSemanticIndex,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for root in roots {
+        index = index_entity_relation(
+            content_id,
+            root,
+            ProjectGraphRelationKind::ContentRoot,
+            index,
+        )?;
+    }
+    Ok(index)
+}
+
 pub(super) fn index_project_symbol_dependency_relations(
     module: &HirModule,
     mut index: ProjectSemanticIndex,

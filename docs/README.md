@@ -39,7 +39,7 @@
 - [Virtual Touch Controller](03-presentation/virtual-controller.md)
 - [Flow-Integrated Scenario Syntax / Dialogue Sugar](01-language/scenario-surface-syntax.md)
 - [Block Scopes and `{ ... }`](01-language/block-scopes.md)
-- [module / use / pub / lazy use](01-language/modules.md)
+- [module / use / pub](01-language/modules.md)
 - [ID と参照](01-language/ids-and-references.md)
 - [文法サマリ](01-language/grammar.md)
 - [Standard Types and Prelude](01-language/standard-types-and-prelude.md)

@@ -420,7 +420,7 @@ component SettingsPanel(props: SettingsProps) -> View {
 layer @layer.background: World {
     z = -1000
     cache = until invalidated
-    depends asset @asset.bg.room
+    depends asset @asset:.bg.room
 }
 ```
 

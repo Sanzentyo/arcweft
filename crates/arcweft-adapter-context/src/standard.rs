@@ -1,7 +1,8 @@
 //! Standard adapter manifests bundled with Arcweft tooling.
 
-use crate::manifest::{AdapterEffectCapability, AdapterHostCall, AdapterManifest, AdapterRegistry};
-use arcweft_lang_sema::types::TypeKind;
+use crate::manifest::{
+    AdapterEffectCapability, AdapterHostCall, AdapterManifest, AdapterRegistry, AdapterTypeKind,
+};
 
 /// Adapter id for the default Sans I/O environment.
 pub const SANS_IO_ADAPTER_ID: &str = "sans-io";
@@ -41,7 +42,10 @@ pub fn sans_io_manifest() -> AdapterManifest {
 /// Native HTTP server manifest.
 pub fn native_http_manifest() -> AdapterManifest {
     AdapterManifest::new(NATIVE_HTTP_ADAPTER_ID, "Native HTTP")
-        .with_symbol("request", TypeKind::Named("HttpRequestContext".to_owned()))
+        .with_symbol(
+            "request",
+            AdapterTypeKind::Named("HttpRequestContext".to_owned()),
+        )
         .with_effect(AdapterEffectCapability::new("http.respond"))
         .with_host_call(AdapterHostCall::new(
             "http.respond",
@@ -51,57 +55,57 @@ pub fn native_http_manifest() -> AdapterManifest {
 
 /// Optional forward-inference tensor manifest.
 pub fn inference_tensor_manifest() -> AdapterManifest {
-    let tensor = TypeKind::Named("TensorF32".to_owned());
+    let tensor = AdapterTypeKind::Named("TensorF32".to_owned());
     AdapterManifest::new(INFERENCE_TENSOR_ADAPTER_ID, "Inference Tensor")
-        .with_symbol("conv2d", TypeKind::Named("Conv2dApi".to_owned()))
-        .with_symbol("infer", TypeKind::Named("InferApi".to_owned()))
+        .with_symbol("conv2d", AdapterTypeKind::Named("Conv2dApi".to_owned()))
+        .with_symbol("infer", AdapterTypeKind::Named("InferApi".to_owned()))
         .with_method(
-            TypeKind::Named("Conv2dApi".to_owned()),
+            AdapterTypeKind::Named("Conv2dApi".to_owned()),
             "valid_f32",
             tensor.clone(),
         )
         .with_method(
-            TypeKind::Named("InferApi".to_owned()),
+            AdapterTypeKind::Named("InferApi".to_owned()),
             "matmul_f32",
             tensor.clone(),
         )
         .with_method(
-            TypeKind::Named("InferApi".to_owned()),
+            AdapterTypeKind::Named("InferApi".to_owned()),
             "add_f32",
             tensor.clone(),
         )
         .with_method(
-            TypeKind::Named("InferApi".to_owned()),
+            AdapterTypeKind::Named("InferApi".to_owned()),
             "bias_add_f32",
             tensor.clone(),
         )
         .with_method(
-            TypeKind::Named("InferApi".to_owned()),
+            AdapterTypeKind::Named("InferApi".to_owned()),
             "matmul_bias_add_f32",
             tensor.clone(),
         )
         .with_method(
-            TypeKind::Named("InferApi".to_owned()),
+            AdapterTypeKind::Named("InferApi".to_owned()),
             "relu_f32",
             tensor.clone(),
         )
         .with_method(
-            TypeKind::Named("InferApi".to_owned()),
+            AdapterTypeKind::Named("InferApi".to_owned()),
             "max_pool2d_f32",
             tensor.clone(),
         )
         .with_method(
-            TypeKind::Named("InferApi".to_owned()),
+            AdapterTypeKind::Named("InferApi".to_owned()),
             "softmax_last_dim_f32",
             tensor.clone(),
         )
         .with_method(
-            TypeKind::Named("InferApi".to_owned()),
+            AdapterTypeKind::Named("InferApi".to_owned()),
             "argmax_last_dim_f32",
-            TypeKind::Seq(Box::new(TypeKind::USize)),
+            AdapterTypeKind::Seq(Box::new(AdapterTypeKind::USize)),
         )
         .with_method(
-            TypeKind::Named("InferApi".to_owned()),
+            AdapterTypeKind::Named("InferApi".to_owned()),
             "flatten_outer_f32",
             tensor,
         )
@@ -163,25 +167,25 @@ mod tests {
     #[test]
     fn inference_tensor_manifest_injects_namespaced_methods_without_core_prelude() {
         let manifest = inference_tensor_manifest();
-        let tensor = TypeKind::Named("TensorF32".to_owned());
-        let env = manifest.apply_to_env(arcweft_lang_sema::env::TypeCheckEnv::new());
+        let tensor = AdapterTypeKind::Named("TensorF32".to_owned());
 
         assert_eq!(
             manifest.symbols(),
             &[
-                AdapterSymbol::new("conv2d", TypeKind::Named("Conv2dApi".to_owned())),
-                AdapterSymbol::new("infer", TypeKind::Named("InferApi".to_owned()))
+                AdapterSymbol::new("conv2d", AdapterTypeKind::Named("Conv2dApi".to_owned())),
+                AdapterSymbol::new("infer", AdapterTypeKind::Named("InferApi".to_owned()))
             ]
         );
         assert!(manifest.methods().iter().any(|method| {
-            method.receiver() == &TypeKind::Named("Conv2dApi".to_owned())
+            method.receiver() == &AdapterTypeKind::Named("Conv2dApi".to_owned())
                 && method.name() == "valid_f32"
                 && method.signature().return_type() == &tensor
         }));
         assert!(manifest.methods().iter().any(|method| {
-            method.receiver() == &TypeKind::Named("InferApi".to_owned())
+            method.receiver() == &AdapterTypeKind::Named("InferApi".to_owned())
                 && method.name() == "argmax_last_dim_f32"
-                && method.signature().return_type() == &TypeKind::Seq(Box::new(TypeKind::USize))
+                && method.signature().return_type()
+                    == &AdapterTypeKind::Seq(Box::new(AdapterTypeKind::USize))
         }));
         for call in [
             "conv2d.valid_f32",
@@ -202,12 +206,6 @@ mod tests {
                     .any(|host_call| host_call.id() == call)
             );
         }
-        assert_eq!(
-            env,
-            manifest
-                .clone()
-                .apply_to_env(arcweft_lang_sema::env::TypeCheckEnv::new())
-        );
     }
 
     #[test]

@@ -196,10 +196,15 @@ fn public_id_arg(arg: &str) -> Option<String> {
         .trim_matches('"')
         .trim_matches('\'');
     let value = value.strip_prefix('@').unwrap_or(value);
-    value
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
-        .then(|| value.to_owned())
+    let normalized = value.split_once(":.").map_or_else(
+        || value.to_owned(),
+        |(family, suffix)| format!("{family}.{suffix}"),
+    );
+    (!normalized.is_empty()
+        && normalized
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-')))
+    .then_some(normalized)
 }
 
 fn inline_image_object(call: &RuntimeCall) -> Option<BundleImageObject> {
@@ -396,7 +401,7 @@ mod tests {
         let call = RuntimeCall {
             callee: "image".to_owned(),
             args: vec![
-                "asset = @asset.zundamon.normal".to_owned(),
+                "asset = @asset:.zundamon.normal".to_owned(),
                 "id = \"image.zundamon.stand\"".to_owned(),
                 "x = 760".to_owned(),
                 "y = 24".to_owned(),

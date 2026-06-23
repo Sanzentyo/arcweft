@@ -11,7 +11,7 @@ use crate::window_page::{
     NativeFontFamily, NativeTextColor, NativeTextWeight, WindowRubyAnnotation,
     native_ruby_style_from_styles, native_style_from_styles, ruby_overlay_geometry,
 };
-use arcweft_core::plan::RuntimeLineId;
+use arcweft_core::plan::{RuntimeLineId, RuntimePureHelper, RuntimePureHelperId};
 use arcweft_image::{
     DecodedImage, DecodedImageFrame, ImageDimensions, ImageFormat, ImageRepetition,
 };
@@ -861,13 +861,33 @@ fn motion_test_frame(function: &str) -> LineDisplayFrame {
         .expect("frame resolves")
 }
 
-fn arcweft_text_registry_candidates(
-    source: &str,
-) -> arcweft_compiler::types::TextPureHelperCandidateReport {
+#[derive(Default)]
+struct RuntimeTextHelperReport {
+    shaders: Vec<RuntimePureHelper>,
+    effects: Vec<RuntimePureHelper>,
+    motions: Vec<RuntimePureHelper>,
+}
+
+fn arcweft_text_registry_candidates(source: &str) -> RuntimeTextHelperReport {
     let compiled = arcweft_compiler::source::compile_source(source)
         .expect("Arcweft text registry source compiles");
-    arcweft_compiler::lower::lower_source_text_pure_helper_candidates(&compiled.hir)
-        .expect("Arcweft text registry source exports pure text helpers")
+    let report = arcweft_compiler::lower::lower_source_text_pure_helper_candidates(&compiled.hir)
+        .expect("Arcweft text registry source exports pure text helpers");
+    RuntimeTextHelperReport {
+        shaders: runtime_helpers(&report.shaders),
+        effects: runtime_helpers(&report.effects),
+        motions: runtime_helpers(&report.motions),
+    }
+}
+
+fn runtime_helpers(
+    candidates: &[arcweft_runtime_plan::pure::PureHelperCandidate],
+) -> Vec<RuntimePureHelper> {
+    candidates
+        .iter()
+        .enumerate()
+        .map(|(index, candidate)| candidate.to_runtime_helper(RuntimePureHelperId(index)))
+        .collect()
 }
 
 fn text_motion_context(

@@ -18,7 +18,7 @@ SemanticHash 内容・意味のfingerprint
 ```arcw
 @flow.opening
 @choice.opening.listen
-@asset.bg.room
+@asset:.bg.room
 @state.GameState.affection
 ```
 
@@ -33,6 +33,28 @@ SemanticHash 内容・意味のfingerprint
 
 `@` is a surface sigil only. The stored `PublicId` body does not include it:
 `@flow.opening` stores `flow.opening`.
+
+Reference expressions have two accepted surfaces. Hand-written source should
+omit the default family from the referenced id path and prefer
+family-relative references such as `@asset:.bg.room` instead of repeating the
+absolute family in `@asset.bg.room`. Runtime calls such as `bg(...)` and
+`image(asset = ...)` are examples, but the rule is not limited to typed
+arguments: `@asset:.bg.room` still names the `asset` family explicitly. The
+family anchor remains explicit in the reference spelling, so use
+`@asset:.bg.room`, not `@.bg.room`, in expression positions. Fully qualified
+forms such as `@asset.bg.room`, `@flow.opening`, or
+`@state.GameState.affection` remain valid for generated surfaces,
+manifest/tooling output, stored public-id roundtrips, and external interfaces
+that need the stored public id verbatim. They are not the recommended spelling
+for ordinary hand-authored asset references when the family has a default
+public-id prefix.
+
+Declaration headers are a separate surface. There, the declaration keyword
+already supplies the family, so hand-written source should omit the default
+family prefix and prefer compact declaration ids such as `asset bg_room { ... }`
+and `content chapter_two { ... }`. Fully qualified declaration headers such as
+`asset @asset.bg_room { ... }` are accepted for generated or fully elaborated
+source and lint toward the compact authoring form.
 
 `#` is reserved for Rust-like attributes in the `#[...]` form and is not an
 entity-reference marker.
@@ -159,10 +181,11 @@ suffix として使い、`flow @. opening { ... }`、`flow @flow:. opening { ...
 `flow opening { ... }` と書いた場合も同じ暗黙 ID `flow.opening` を持つ。
 
 一般の entity reference 文脈で相対参照したい場合は family を明示する。
-同じ flow / fragment / asset family の中を相対参照する場合は、
-absolute ID を手で連結するより `@flow:.next` のような
-family-relative form を推奨する。family が明示されるので、ID を宣言する
-`@.suffix` と値として参照する `@flow:.suffix` が混ざらない。
+同じ flow / fragment / asset family の中を相対参照する場合や、default
+public-id prefix を持つ family を参照する場合は、absolute ID を手で連結する
+より `@flow:.next` や `@asset:.room` のような family-relative form を
+推奨する。family が明示されるので、ID を宣言する `@.suffix` と値として
+参照する `@flow:.suffix` / `@asset:.suffix` が混ざらない。
 
 ```arcw
 goto @flow:.next
@@ -456,6 +479,9 @@ If a source file uses `parent::`, canonical tooling should rewrite it to
 
 Resource scans derive public IDs from stable directory layout while keeping
 `EntityId`, `PublicId`, source path, and semantic hash separate in manifests.
+The examples below show canonical public IDs in manifest/tooling output. In
+authored source, prefer family-relative asset references such as
+`@asset:.bg.room` for the same public id.
 
 ```text
 assets/bg/room.png

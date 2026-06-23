@@ -1,6 +1,8 @@
+use arcweft_render_text::{RichTextColor, RichTextFontFamily, RichTextStyle};
 use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, InteractionVisualState, RenderChoiceItem, RenderPreferences, RenderScene,
-    RenderViewport, SharedFramePlanner,
+    ChoiceScroll, InteractionVisualState, RenderChoiceItem, RenderDialogue, RenderFontFamily,
+    RenderPreferences, RenderScene, RenderTextSlant, RenderTextWeight, RenderViewport,
+    SharedFramePlanner,
 };
 use arcweft_render_wgpu::sample::{DemoAnimationClock, DemoImageKind, generated_demo_images};
 
@@ -99,6 +101,91 @@ fn interaction_visual_state_changes_the_prepared_choice_rectangles() {
             .any(|(focused, pressed)| (focused - pressed).abs() > f32::EPSILON),
         "pressed choice should use a distinct fill"
     );
+}
+
+#[test]
+fn choice_geometry_ignores_legacy_scroll_offset() {
+    let base_scene = RenderScene {
+        dialogue: Some(RenderDialogue::plain(
+            "Guide",
+            "Choice geometry stays fixed.",
+        )),
+        visual_time_millis: 5_000,
+        ..scene()
+    };
+    let neutral = SharedFramePlanner::prepare(&base_scene).expect("neutral frame plans");
+    let scrolled = SharedFramePlanner::prepare(&RenderScene {
+        choice_scroll: ChoiceScroll { offset_y: 240.0 },
+        ..base_scene
+    })
+    .expect("scrolled frame plans");
+
+    let neutral_target = neutral.first_choice_target().expect("neutral target");
+    let scrolled_target = scrolled.first_choice_target().expect("scrolled target");
+    assert_eq!(
+        neutral
+            .hits
+            .find_target(&neutral_target)
+            .expect("neutral hit")
+            .bounds(),
+        scrolled
+            .hits
+            .find_target(&scrolled_target)
+            .expect("scrolled hit")
+            .bounds()
+    );
+}
+
+#[test]
+fn dialogue_surface_styles_are_preserved_for_shared_text_blocks() {
+    let frame = SharedFramePlanner::prepare(&RenderScene {
+        dialogue: Some(RenderDialogue {
+            speaker: "Narrator".to_owned(),
+            text: "Surface style reaches the canvas renderer.".to_owned(),
+            base_styles: vec![
+                RichTextStyle::Color {
+                    value: RichTextColor::Rgb {
+                        red: 220,
+                        green: 180,
+                        blue: 140,
+                    },
+                },
+                RichTextStyle::Font {
+                    family: RichTextFontFamily::Named {
+                        name: "Yu Mincho".to_owned(),
+                    },
+                },
+                RichTextStyle::Size {
+                    points: Some(31),
+                    raw: "31px".to_owned(),
+                },
+                RichTextStyle::Strong {
+                    attrs: String::new(),
+                },
+                RichTextStyle::Italic {
+                    attrs: String::new(),
+                },
+            ],
+            text_runs: Vec::new(),
+        }),
+        visual_time_millis: 5_000,
+        ..scene()
+    })
+    .expect("frame plans");
+
+    let body = frame
+        .text
+        .iter()
+        .find(|block| block.text.contains("Surface style"))
+        .expect("body text block");
+    assert_eq!(body.rgba, [220, 180, 140, 255]);
+    assert_eq!(
+        body.font_family,
+        RenderFontFamily::Named("Yu Mincho".to_owned())
+    );
+    assert_eq!(body.weight, RenderTextWeight::Bold);
+    assert_eq!(body.slant, RenderTextSlant::Italic);
+    assert!((body.font_size - 31.0).abs() < f32::EPSILON);
 }
 
 #[test]

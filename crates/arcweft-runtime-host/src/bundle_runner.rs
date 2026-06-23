@@ -4,7 +4,9 @@ use arcweft_bundle::{
     ArcweftBundle, BundleAdapterManifest, BundleFormat, BundleImageAnimation, BundleImageAsset,
     BundleImageDimensions, BundleImageFormat, BundleKind, BundleVirtualFile,
 };
-use arcweft_core::bytecode::BytecodeProgram;
+use arcweft_core::bytecode::{
+    BytecodeProgram, BytecodeVerificationBudget, BytecodeVerificationError,
+};
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::engine::{FlowFiber, FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::executor::{AotExecutor, BytecodeVmExecutor, RuntimeExecutor};
@@ -41,6 +43,11 @@ pub fn run_bundle_file_with_native_adapters(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<BundleRunnerReport, BundleRunnerError> {
     let path = path.as_ref();
+    if path.extension().and_then(std::ffi::OsStr::to_str) != Some("awfb") {
+        return Err(BundleRunnerError::ExpectedAwfbProduct {
+            path: path.to_path_buf(),
+        });
+    }
     let mut phases = Vec::new();
     let bytes = run_bundle_runner_phase(&mut phases, "read_bundle", || {
         fs::read(path).map_err(|source| BundleRunnerError::ReadBundle {
@@ -49,11 +56,8 @@ pub fn run_bundle_file_with_native_adapters(
         })
     })?;
     let bundle = run_bundle_runner_phase(&mut phases, "decode_bundle", || {
-        match options.bundle_format {
-            Some(format) => ArcweftBundle::from_format_slice(format, &bytes),
-            None => ArcweftBundle::from_path_slice(path, &bytes),
-        }
-        .map_err(BundleRunnerError::DecodeBundle)
+        ArcweftBundle::from_format_slice(BundleFormat::Awfb, &bytes)
+            .map_err(BundleRunnerError::DecodeBundle)
     })?;
     execute_bundle_with_native_adapters(&bundle, options, adapter_registrars, &mut phases)
 }
@@ -69,7 +73,6 @@ pub struct BundleRunnerOptions {
     pub max_ops: usize,
     pub values: Vec<RuntimeBinding>,
     pub pure_config: RuntimePureAcceleratorConfig,
-    pub bundle_format: Option<BundleFormat>,
 }
 
 impl Default for BundleRunnerOptions {
@@ -83,7 +86,6 @@ impl Default for BundleRunnerOptions {
             max_ops: 32,
             values: Vec::new(),
             pure_config: RuntimePureAcceleratorConfig::default(),
-            bundle_format: None,
         }
     }
 }
@@ -150,6 +152,8 @@ pub enum BundleRunnerError {
         #[source]
         source: std::io::Error,
     },
+    #[error("bundle runner expects an .awfb product bundle: {}", path.display())]
+    ExpectedAwfbProduct { path: PathBuf },
     #[error("failed to decode bundle: {0}")]
     DecodeBundle(arcweft_bundle::BundleCodecError),
     #[error("invalid bundle image asset: {0}")]
@@ -174,6 +178,8 @@ pub enum BundleRunnerError {
     },
     #[error("failed to decode bundle bytecode: {0}")]
     DecodeBytecode(arcweft_core::plan::RuntimePlanError),
+    #[error("failed to verify bundle bytecode: {0}")]
+    VerifyBytecode(BytecodeVerificationError),
     #[error("failed to create bundle workspace: {0}")]
     CreateWorkspace(std::io::Error),
     #[error("failed to create bundle source directory: {0}")]
@@ -360,10 +366,11 @@ fn bundle_runner_bytecode(
     bundle: &ArcweftBundle,
     options: &BundleRunnerOptions,
 ) -> Result<BytecodeProgram, BundleRunnerError> {
-    let mut plan = bundle
-        .bytecode
-        .program
-        .clone()
+    let program = bundle.bytecode.program.clone();
+    program
+        .verify(BytecodeVerificationBudget::default())
+        .map_err(BundleRunnerError::VerifyBytecode)?;
+    let mut plan = program
         .into_runtime_plan()
         .map_err(BundleRunnerError::DecodeBytecode)?;
     apply_bundle_runner_entry_selection(
@@ -429,8 +436,7 @@ fn run_bytecode_runtime_steps(
     values: &[RuntimeBinding],
 ) -> Result<RuntimeRunTrace, BundleRunnerError> {
     let mut executor =
-        RuntimeExecutorInstance::from_bytecode(bytecode, config.executor, config.pure_config)
-            .map_err(BundleRunnerError::DecodeBytecode)?;
+        RuntimeExecutorInstance::from_bytecode(bytecode, config.executor, config.pure_config)?;
     run_runtime_steps_with_executor(
         &mut executor,
         NativeRunHost {
@@ -542,8 +548,14 @@ impl RuntimeExecutorInstance {
         bytecode: BytecodeProgram,
         tier: BundleRunnerExecutor,
         pure_config: RuntimePureAcceleratorConfig,
-    ) -> Result<Self, arcweft_core::plan::RuntimePlanError> {
-        let plan = bytecode.clone().into_runtime_plan()?;
+    ) -> Result<Self, BundleRunnerError> {
+        bytecode
+            .verify(BytecodeVerificationBudget::default())
+            .map_err(BundleRunnerError::VerifyBytecode)?;
+        let plan = bytecode
+            .clone()
+            .into_runtime_plan()
+            .map_err(BundleRunnerError::DecodeBytecode)?;
         let pure = RuntimePureAccelerator::with_config(pure_config, &plan.pure_helpers);
         Ok(match tier {
             BundleRunnerExecutor::BytecodeVm => Self::BytecodeVm {

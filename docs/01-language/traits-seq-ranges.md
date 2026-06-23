@@ -146,7 +146,7 @@ fn load_config(path: VirtualPath) -> Result<Config, FsError | ParseError> {
 
 ```arcw
 let bg =
-    try await asset.image(@asset.bg.room) with {
+    try await asset.image(@asset:.bg.room) with {
         pending p => scene.show(@scene.loading); progress.set(p.ratio)
     }
 ```
@@ -357,8 +357,8 @@ let route = result {
 
 ```arcw
 let assets = task {
-    let bg = await asset.image(@asset.bg.room)?
-    let voice = await asset.audio(@asset.voice.alice.001)?
+    let bg = await asset.image(@asset:.bg.room)?
+    let voice = await asset.audio(@asset:.voice.alice.001)?
     Ok(OpeningAssets { bg, voice })
 }
 ```

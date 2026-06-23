@@ -17,16 +17,24 @@ body {
   width: 100vw;
   height: 100vh;
   height: 100dvh;
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(180deg, rgb(10 13 12) 0%, rgb(4 8 7) 100%);
 }
 
 #arcweft-canvas {
   display: block;
-  width: 100vw !important;
-  height: 100vh !important;
-  height: 100dvh !important;
+  width: min(100vw, calc(100vh * 16 / 9)) !important;
+  height: min(100vh, calc(100vw * 9 / 16)) !important;
+  width: min(100vw, calc(100dvh * 16 / 9)) !important;
+  height: min(100dvh, calc(100vw * 9 / 16)) !important;
+  aspect-ratio: 16 / 9;
   box-sizing: border-box;
   outline: none;
   touch-action: none;
+  background: #050807;
+  box-shadow: 0 0 0 1px rgb(229 236 170 / 20%);
 }
 
 #arcweft-loading,

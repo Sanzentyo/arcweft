@@ -9,8 +9,9 @@ use arcweft_presentation::layer::{
 };
 use arcweft_presentation::semantic::{SemanticNode, SemanticRole, SemanticTree};
 use arcweft_render_text::{
-    LineDisplayFrame, RichTextEffectDescriptor, RichTextEffectPhase, RichTextParam,
-    RichTextPresentation, RichTextRange, RichTextTextRun,
+    LineDisplayFrame, RichTextColor, RichTextEffectDescriptor, RichTextEffectPhase,
+    RichTextFontFamily, RichTextParam, RichTextRange, RichTextStyle, RichTextTextRun,
+    presentation_from_styles,
 };
 use num_traits::ToPrimitive;
 use thiserror::Error;
@@ -65,6 +66,7 @@ pub struct RenderScene {
 pub struct RenderDialogue {
     pub speaker: String,
     pub text: String,
+    pub base_styles: Vec<RichTextStyle>,
     pub text_runs: Vec<RichTextTextRun>,
 }
 
@@ -109,7 +111,51 @@ pub struct RenderTextBlock {
     pub bounds: HitRect,
     pub font_size: f32,
     pub line_height: f32,
+    pub font_family: RenderFontFamily,
+    pub weight: RenderTextWeight,
+    pub slant: RenderTextSlant,
     pub rgba: [u8; 4],
+}
+
+/// Font family requested by a prepared text block.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum RenderFontFamily {
+    Serif,
+    #[default]
+    SansSerif,
+    Monospace,
+    Cursive,
+    Fantasy,
+    Named(String),
+}
+
+impl RenderFontFamily {
+    fn from_rich_text(family: &RichTextFontFamily) -> Self {
+        match family {
+            RichTextFontFamily::Serif => Self::Serif,
+            RichTextFontFamily::SansSerif => Self::SansSerif,
+            RichTextFontFamily::Monospace => Self::Monospace,
+            RichTextFontFamily::Cursive => Self::Cursive,
+            RichTextFontFamily::Fantasy => Self::Fantasy,
+            RichTextFontFamily::Named { name } => Self::Named(name.clone()),
+        }
+    }
+}
+
+/// Text weight requested by a prepared text block.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RenderTextWeight {
+    #[default]
+    Regular,
+    Bold,
+}
+
+/// Text slant requested by a prepared text block.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RenderTextSlant {
+    #[default]
+    Upright,
+    Italic,
 }
 
 /// Choice geometry and stable semantic target.
@@ -252,6 +298,23 @@ fn push_dialogue_panel(
     });
     let inset = 28.0;
     let scale = f32::from(scene.preferences.text_scale_milli) / 1_000.0;
+    let base_style = text_style_from_styles(
+        &dialogue.base_styles,
+        RenderTextStyle::new(
+            25.0 * scale,
+            34.0 * scale,
+            palette.dialogue_text,
+            RenderFontFamily::SansSerif,
+        ),
+    );
+    let speaker_style = RenderTextStyle {
+        font_size: (base_style.font_size * 0.8).max(16.0 * scale),
+        line_height: (base_style.line_height * 0.78).max(24.0 * scale),
+        color: base_style.color,
+        font_family: base_style.font_family.clone(),
+        weight: RenderTextWeight::Bold,
+        slant: base_style.slant,
+    };
     text.push(RenderTextBlock {
         text: dialogue.speaker.clone(),
         bounds: HitRect::new(
@@ -260,23 +323,28 @@ fn push_dialogue_panel(
             panel.width - inset * 2.0,
             28.0 * scale,
         ),
-        font_size: 20.0 * scale,
-        line_height: 26.0 * scale,
-        rgba: palette.speaker_text,
+        font_size: speaker_style.font_size,
+        line_height: speaker_style.line_height,
+        font_family: speaker_style.font_family,
+        weight: speaker_style.weight,
+        slant: speaker_style.slant,
+        rgba: if dialogue.base_styles.is_empty() {
+            palette.speaker_text
+        } else {
+            speaker_style.color
+        },
     });
     push_dialogue_text_blocks(
         text,
         dialogue,
-        DialogueTextLayout {
+        &DialogueTextLayout {
             bounds: HitRect::new(
                 panel.x + inset,
                 panel.y + 58.0,
                 panel.width - inset * 2.0,
                 panel.height - 76.0,
             ),
-            font_size: 25.0 * scale,
-            line_height: 34.0 * scale,
-            color: palette.dialogue_text,
+            style: base_style,
             visual_time_millis: scene.visual_time_millis,
             reduce_motion: scene.preferences.reduce_motion,
         },
@@ -288,6 +356,7 @@ impl RenderDialogue {
         Self {
             speaker: speaker.into(),
             text: text.into(),
+            base_styles: Vec::new(),
             text_runs: Vec::new(),
         }
     }
@@ -296,38 +365,71 @@ impl RenderDialogue {
         Self {
             speaker: frame.callee.clone(),
             text: frame.text.clone(),
+            base_styles: frame.base_styles.clone(),
             text_runs: frame.display_map.text_runs.clone(),
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct DialogueTextLayout {
     bounds: HitRect,
+    style: RenderTextStyle,
+    visual_time_millis: u64,
+    reduce_motion: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct RenderTextStyle {
     font_size: f32,
     line_height: f32,
     color: [u8; 4],
-    visual_time_millis: u64,
-    reduce_motion: bool,
+    font_family: RenderFontFamily,
+    weight: RenderTextWeight,
+    slant: RenderTextSlant,
+}
+
+impl RenderTextStyle {
+    const fn new(
+        font_size: f32,
+        line_height: f32,
+        color: [u8; 4],
+        font_family: RenderFontFamily,
+    ) -> Self {
+        Self {
+            font_size,
+            line_height,
+            color,
+            font_family,
+            weight: RenderTextWeight::Regular,
+            slant: RenderTextSlant::Upright,
+        }
+    }
 }
 
 fn push_dialogue_text_blocks(
     text: &mut Vec<RenderTextBlock>,
     dialogue: &RenderDialogue,
-    layout: DialogueTextLayout,
+    layout: &DialogueTextLayout,
 ) {
     let runs = if dialogue.text_runs.is_empty() {
+        let styles = dialogue.base_styles.clone();
         vec![RichTextTextRun {
             range: RichTextRange::new(0, dialogue.text.len()),
             source: arcweft_render_text::RichTextTextSource::Text,
             node_index: 0,
-            styles: Vec::new(),
-            presentation: RichTextPresentation::default(),
+            presentation: presentation_from_styles(&styles),
+            styles,
         }]
     } else {
         dialogue.text_runs.clone()
     };
-    let visible_end = typewriter_visible_end(&dialogue.text, &runs, layout.visual_time_millis);
+    let visible_end = if layout.reduce_motion {
+        dialogue.text.len()
+    } else {
+        typewriter_visible_end(&dialogue.text, &runs, layout.visual_time_millis)
+    };
+    let mut offset_x: f32 = 0.0;
     for run in runs {
         let run_start = run.range.start.min(dialogue.text.len());
         let run_end = run.range.end.min(dialogue.text.len()).min(visible_end);
@@ -337,9 +439,8 @@ fn push_dialogue_text_blocks(
         let Some(visible) = dialogue.text.get(run_start..run_end) else {
             continue;
         };
-        let x = layout.bounds.x
-            + estimated_text_width(&dialogue.text[..run_start], layout.font_size)
-                .min(layout.bounds.width);
+        let run_style = text_style_from_styles(&run.styles, layout.style.clone());
+        let x = layout.bounds.x + offset_x.min(layout.bounds.width);
         let bounds = HitRect::new(
             x,
             layout.bounds.y,
@@ -350,28 +451,33 @@ fn push_dialogue_text_blocks(
             .then(|| text_motion(&run.presentation.effects))
             .flatten();
         if let Some(motion) = motion {
-            push_motion_text_blocks(text, visible, bounds, layout, motion, run_start);
+            push_motion_text_blocks(text, visible, bounds, layout, &run_style, motion, run_start);
         } else {
             text.push(RenderTextBlock {
                 text: visible.to_owned(),
                 bounds,
-                font_size: layout.font_size,
-                line_height: layout.line_height,
-                rgba: layout.color,
+                font_size: run_style.font_size,
+                line_height: run_style.line_height,
+                font_family: run_style.font_family.clone(),
+                weight: run_style.weight,
+                slant: run_style.slant,
+                rgba: run_style.color,
             });
+        }
+        offset_x += estimated_text_width(visible, run_style.font_size);
+        if offset_x >= layout.bounds.width {
+            break;
         }
     }
 }
 
 fn typewriter_visible_end(text: &str, runs: &[RichTextTextRun], visual_time_millis: u64) -> usize {
-    let Some(cps) = runs
+    const DEFAULT_TYPEWRITER_CPS: f32 = 28.0;
+    let cps = runs
         .iter()
         .flat_map(|run| &run.presentation.effects)
         .find(|effect| effect.id == "typewriter" && effect.phase == RichTextEffectPhase::GlyphMask)
-        .map(typewriter_cps)
-    else {
-        return text.len();
-    };
+        .map_or(DEFAULT_TYPEWRITER_CPS, typewriter_cps);
     let visible_chars = ((visual_time_millis.to_f32().unwrap_or(f32::MAX) / 1_000.0) * cps)
         .floor()
         .to_usize()
@@ -428,14 +534,15 @@ fn push_motion_text_blocks(
     text: &mut Vec<RenderTextBlock>,
     visible: &str,
     bounds: HitRect,
-    layout: DialogueTextLayout,
+    layout: &DialogueTextLayout,
+    style: &RenderTextStyle,
     motion: TextMotion,
     range_start: usize,
 ) {
     let seconds = layout.visual_time_millis.to_f32().unwrap_or(f32::MAX) / 1_000.0;
     let mut offset_x = 0.0;
     for (index, ch) in visible.chars().enumerate() {
-        let advance = estimated_char_width(ch, layout.font_size);
+        let advance = estimated_char_width(ch, style.font_size);
         let phase =
             seconds * motion.frequency + (range_start + index).to_f32().unwrap_or(f32::MAX) * 0.58;
         let offset_y = if ch.is_whitespace() {
@@ -451,14 +558,65 @@ fn push_motion_text_blocks(
                 advance.max(1.0),
                 bounds.height,
             ),
-            font_size: layout.font_size,
-            line_height: layout.line_height,
-            rgba: layout.color,
+            font_size: style.font_size,
+            line_height: style.line_height,
+            font_family: style.font_family.clone(),
+            weight: style.weight,
+            slant: style.slant,
+            rgba: style.color,
         });
         offset_x += advance;
         if offset_x >= bounds.width {
             break;
         }
+    }
+}
+
+fn text_style_from_styles(styles: &[RichTextStyle], fallback: RenderTextStyle) -> RenderTextStyle {
+    styles.iter().fold(fallback, apply_text_style)
+}
+
+fn apply_text_style(mut style: RenderTextStyle, rich_style: &RichTextStyle) -> RenderTextStyle {
+    match rich_style {
+        RichTextStyle::Em { .. } | RichTextStyle::Italic { .. } | RichTextStyle::Oblique { .. } => {
+            style.slant = RenderTextSlant::Italic;
+        }
+        RichTextStyle::Strong { .. } => style.weight = RenderTextWeight::Bold,
+        RichTextStyle::Color { value } => style.color = rich_text_color(value),
+        RichTextStyle::Font { family } => {
+            style.font_family = RenderFontFamily::from_rich_text(family);
+        }
+        RichTextStyle::Size {
+            points: Some(points),
+            ..
+        } => {
+            style.font_size = f32::from(*points);
+            style.line_height = style.font_size * 1.35;
+        }
+        RichTextStyle::Size { points: None, .. }
+        | RichTextStyle::Speed { .. }
+        | RichTextStyle::Layout { .. }
+        | RichTextStyle::Transform { .. }
+        | RichTextStyle::Presentation { .. }
+        | RichTextStyle::Effect { .. }
+        | RichTextStyle::Shader { .. }
+        | RichTextStyle::Object { .. }
+        | RichTextStyle::Unknown { .. } => {}
+    }
+    style
+}
+
+fn rich_text_color(color: &RichTextColor) -> [u8; 4] {
+    match color {
+        RichTextColor::Rgb { red, green, blue } => [*red, *green, *blue, 255],
+        RichTextColor::Named { name } => match name.as_str() {
+            "red" => [240, 110, 110, 255],
+            "green" => [120, 220, 150, 255],
+            "blue" => [130, 180, 255, 255],
+            "yellow" => [240, 220, 120, 255],
+            "muted" | "quiet" => [170, 170, 170, 255],
+            _ => [245, 245, 245, 255],
+        },
     }
 }
 
@@ -538,14 +696,24 @@ fn build_choices(
     palette: &Palette,
     action: &PublicId,
 ) -> Result<Vec<RenderChoice>, FramePlanError> {
-    let width = (scene.viewport.logical_width * 0.64).clamp(320.0, 920.0);
-    let item_height = 58.0;
+    if scene.choices.is_empty() {
+        return Ok(Vec::new());
+    }
+    let width = (scene.viewport.logical_width * 0.52).clamp(360.0, 760.0);
+    let item_height = 60.0;
     let gap = 12.0;
     let total = usize_to_f32(scene.choices.len()) * (item_height + gap) - gap;
-    let top =
-        ((scene.viewport.logical_height - total) * 0.42).max(36.0) - scene.choice_scroll.offset_y;
+    let top = scene.dialogue.as_ref().map_or_else(
+        || ((scene.viewport.logical_height - total) * 0.42).max(36.0),
+        |_| {
+            let panel = dialogue_panel(scene.viewport);
+            (panel.y - total - 22.0).max(36.0)
+        },
+    );
     let left = (scene.viewport.logical_width - width) * 0.5;
     let scale = f32::from(scene.preferences.text_scale_milli) / 1_000.0;
+    let font_size = 22.0 * scale;
+    let line_height = 30.0 * scale;
 
     scene
         .choices
@@ -578,13 +746,16 @@ fn build_choices(
             text.push(RenderTextBlock {
                 text: choice.label.clone(),
                 bounds: HitRect::new(
-                    bounds.x + 20.0,
-                    bounds.y + 13.0,
-                    bounds.width - 40.0,
-                    bounds.height - 20.0,
+                    bounds.x + 24.0,
+                    bounds.y + (bounds.height - line_height) * 0.5,
+                    bounds.width - 48.0,
+                    line_height,
                 ),
-                font_size: 22.0 * scale,
-                line_height: 29.0 * scale,
+                font_size,
+                line_height,
+                font_family: RenderFontFamily::SansSerif,
+                weight: RenderTextWeight::Bold,
+                slant: RenderTextSlant::Upright,
                 rgba: palette.choice_text,
             });
             semantics.push(
@@ -769,15 +940,15 @@ impl Palette {
             }
         } else {
             Self {
-                background: [0.018, 0.024, 0.05, 1.0],
-                dialogue_panel: [0.035, 0.055, 0.11, 0.94],
-                choice_idle: [0.08, 0.11, 0.20, 0.96],
-                choice_active: [0.14, 0.24, 0.42, 1.0],
-                choice_pressed: [0.11, 0.18, 0.32, 1.0],
-                focus_ring: [0.46, 0.79, 1.0, 1.0],
-                speaker_text: [139, 211, 255, 255],
-                dialogue_text: [241, 246, 255, 255],
-                choice_text: [246, 249, 255, 255],
+                background: [0.019, 0.027, 0.024, 1.0],
+                dialogue_panel: [0.066, 0.071, 0.064, 0.95],
+                choice_idle: [0.125, 0.124, 0.099, 0.98],
+                choice_active: [0.119, 0.235, 0.153, 1.0],
+                choice_pressed: [0.207, 0.3, 0.164, 1.0],
+                focus_ring: [0.886, 0.914, 0.384, 1.0],
+                speaker_text: [174, 226, 142, 255],
+                dialogue_text: [248, 246, 234, 255],
+                choice_text: [255, 252, 238, 255],
             }
         }
     }

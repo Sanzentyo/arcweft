@@ -130,6 +130,7 @@ pub enum ProjectGraphRelationKind {
     ContainsChoice,
     ContainsChoiceOption,
     ChoiceOptionGoto,
+    ContentRoot,
     FlowGoto,
     FlowInclude,
     ReferencesEntity,
@@ -555,6 +556,7 @@ impl ProjectGraphRelationKind {
             Self::ContainsChoice => "contains_choice",
             Self::ContainsChoiceOption => "contains_choice_option",
             Self::ChoiceOptionGoto => "choice_option_goto",
+            Self::ContentRoot => "content_root",
             Self::FlowGoto => "flow_goto",
             Self::FlowInclude => "flow_include",
             Self::ReferencesEntity => "references_entity",
@@ -937,6 +939,9 @@ fn index_top_level_declaration(
                 source_name.clone(),
                 entities::entity_decl_kind_label(item.kind()),
             )?);
+            if let Some(content) = item.content_body() {
+                index = relations::index_content_root_relations(item.id(), content.roots(), index)?;
+            }
         }
         HirTopLevelDecl::Entry(item) => {
             index = index.with_entity(entities::entity_symbol(

@@ -1,8 +1,9 @@
 # Zundamon Stand Switch Sample
 
-This sample demonstrates switching one standing character image object between
-two locally generated Zundamon PNGs. The generated PNGs are derived from a PSD
-fixture and are intentionally not tracked by the repository.
+This sample demonstrates switching one standing Zundamon image object between
+normal and smile surfaces, with separate Zundamon and narrator dialogue styles.
+The generated PNGs are derived from a PSD fixture and are intentionally not
+tracked by the repository.
 
 Source material:
 
@@ -31,9 +32,9 @@ samples/zundamon-stand-switch/.arcweft/asset/zundamon/
 Run through the CLI routes after preparing assets:
 
 ```bash
-cargo run -p arcweft-cli --bin arcw -- check samples/zundamon-stand-switch/main.arcw
-cargo run -p arcweft-cli --bin arcw -- run --manifest samples/zundamon-stand-switch/arcw.toml
-cargo run -p arcweft-cli --bin arcw -- run --manifest samples/zundamon-stand-switch/arcw.toml --runner headless --steps 2 --mode drain --max-ops 32 --json
+cargo run -p arcweft-cli --bin arcw -- compile samples/zundamon-stand-switch/main.arcw --emit check
+cargo run -p arcweft-cli --bin arcw -- run samples/zundamon-stand-switch/main.arcw
+cargo run -p arcweft-cli --bin arcw -- run samples/zundamon-stand-switch/main.arcw --runner headless --steps 2 --mode drain --max-ops 32 --json
 cargo run -p arcweft-cli --bin arcw -- agent observe samples/zundamon-stand-switch/main.arcw --steps 2 --image png --capture color --content-policy-mode local-dev --out target/zundamon-agent.png --json
 ```
 
@@ -54,7 +55,7 @@ cargo +nightly -Zscript tools/capture-bundle-scene-frame.rs target/zundamon-stan
 For the browser player, update the ignored `web/local/` bundle with:
 
 ```bash
-cargo run -p arcweft-cli --bin arcw -- run --manifest samples/zundamon-stand-switch/arcw.toml --runner web
+cargo run -p arcweft-cli --bin arcw -- run samples/zundamon-stand-switch/main.arcw --runner web
 ```
 
 Then open `web/index.html?bundle=./local/zundamon-stand-switch.awfb` after the

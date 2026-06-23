@@ -149,7 +149,7 @@ The second name is intentionally `transpose_option` rather than another overload
 `await need with:` returns `Result<T, E>`. The ergonomic form for propagation is `try await`.
 
 ```arcw
-let bg = try await asset.image(@asset.bg.room)
+let bg = try await asset.image(@asset:.bg.room)
     .context("opening background failed")
 with:
     pending p:
@@ -160,7 +160,7 @@ with:
 Equivalent explicit form:
 
 ```arcw
-let bg_result = await asset.image(@asset.bg.room)
+let bg_result = await asset.image(@asset:.bg.room)
     .context("opening background failed")
 with:
     pending p:
@@ -174,7 +174,7 @@ let bg = bg_result?
 formatter and examples should prefer `try await` for handwritten code.
 
 ```arcw
-let bg = await? asset.image(@asset.bg.room)
+let bg = await? asset.image(@asset:.bg.room)
     .context("opening background failed")
 with:
     pending p:
@@ -186,7 +186,7 @@ Rejected because `with:` belongs to the await operation and the postfix grouping
 is ambiguous:
 
 ```arcw
-await asset.image(@asset.bg.room)? with:
+await asset.image(@asset:.bg.room)? with:
     pending p:
         scene.show(@scene.loading)
 ```
@@ -238,5 +238,3 @@ Instead of:
 ```arcw
 let route = route_override.unwrap()
 ```
-
-
