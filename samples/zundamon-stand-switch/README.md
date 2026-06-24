@@ -20,7 +20,7 @@ cargo +nightly -Zscript tools/prepare-zundamon-sample.rs --apply
 Override the source path when needed:
 
 ```bash
-cargo +nightly -Zscript tools/prepare-zundamon-sample.rs --apply --source "D:\sanze\Downloads\ずんだもん立ち絵素材V3.2\ずんだもん立ち絵素材V3.2\ずんだもん立ち絵素材V3.2_全部詰め版.psd"
+cargo +nightly -Zscript tools/prepare-zundamon-sample.rs --apply --source "<local-psd-path>"
 ```
 
 The script writes only ignored files under:

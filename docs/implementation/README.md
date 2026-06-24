@@ -116,7 +116,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   the raw viewport-scaling and Agent capture metadata slice derived from
   `arcweft-layout-scaling-units-and-capture.zip`, including the explicit
   deferred design requests for fit-mode coordinates, layout units, text fitting,
-  shared WebGPU capture, and visual fixture parity.
+  shared WebGPU capture, and visual fixture parity. The 2026-06-24 integrated
+  execution package now moves the shared fit-transform primitives and layout
+  unit/text-fitting data contracts into the Sans I/O `arcweft-layout` crate.
 - Awaited capability calls now carry typed `HostTaskRequest` data through
   `AwaitTarget` into emitted `TaskSpec`s. The core remains Sans I/O; adapters
   consume the request data and later return deterministic `TaskEvent`s.

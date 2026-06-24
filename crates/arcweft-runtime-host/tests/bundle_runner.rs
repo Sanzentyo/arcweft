@@ -117,7 +117,7 @@ fn bundle_runner_rejects_missing_bytecode_entrypoint_before_execution() {
 }
 
 #[test]
-fn bundle_file_runner_rejects_legacy_json_bytes_in_awfb_path() {
+fn bundle_file_runner_rejects_json_bytes_in_awfb_path() {
     let path = temp_bundle_path("legacy-json", "awfb");
     fs::write(
         &path,

@@ -647,7 +647,7 @@ cargo test -p arcweft-verify-lsp --quiet
 cargo test -p arcweft-lsp diagnostics_use_profile_selected_adapter_environment --quiet
 cargo test -p arcweft-player-native --quiet
 cargo test -p arcweft-player-native default_input_requires_awfb_bundle --quiet
-cargo test -p arcweft-player-native product_awfb_input_does_not_fall_back_to_legacy_json --quiet
+cargo test -p arcweft-player-native product_awfb_input_does_not_fall_back_to_json_export --quiet
 cargo test -p arcweft-player-native native_patch_endpoint --quiet
 cargo test -p arcweft-player-native native_patch_endpoint_accepts_cli_style_cwd_relative_patch_path --quiet
 cargo test -p arcweft-cli watch_ --quiet

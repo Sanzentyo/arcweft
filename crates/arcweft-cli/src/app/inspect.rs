@@ -169,7 +169,7 @@ mod tests {
         );
         assert_eq!(report.sections.len(), 1);
         assert_eq!(report.sections[0].kind, "AssetBlob");
-        assert_eq!(report.sections[0].placement, "Embedded");
+        assert_eq!(report.sections[0].placement, "embedded");
         assert_eq!(report.sections[0].decoded_size, 11);
     }
 

@@ -77,6 +77,7 @@ arcweft-memo-runtime
 ```text
 arcweft-render
 arcweft-presentation
+arcweft-layout
 arcweft-render-native
 arcweft-layer-core
 arcweft-layer-input
@@ -209,6 +210,11 @@ arcweft-launch
   geometry、renderer effect / shader / motion registry を所有する adapter
   crate とする。`arcweft-cli` の Agent observe は product player 全体では
   なくこの renderer crate へ依存する。
+- `arcweft-layout` は Sans I/O の presentation-layer crate とし、design
+  viewport、output viewport、raw/contain/cover/stretch fit transform、inverse
+  mapping、layout unit expression、safe-area evaluation context、text overflow
+  policy、text fitting result/diagnostic data contractsを所有する。WGPU、
+  glyphon、filesystem、player/CLI adapterには依存しない。
 - `arcweft-player-native` は native product/player host であり、bundle /
   bytecode execution、scheduler/input/audio/window lifecycle、render-native
   orchestration を所有する。source direct execution は developer mode であり、

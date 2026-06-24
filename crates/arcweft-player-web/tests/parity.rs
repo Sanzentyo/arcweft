@@ -19,14 +19,14 @@ fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
         }
     );
     assert_eq!(report.image_count, 4);
-    assert_eq!(report.text_count, 6);
+    assert_eq!(report.text_count, 4);
     assert_eq!(report.choice_count, 2);
-    assert_eq!(dialogue_text(&report), "Typ");
+    assert_eq!(dialogue_text(&report), "こちらは");
     assert_eq!(
         dialogue_text(&complete_report),
-        "Typewriter text is alive on WebGPU."
+        "こちらはキャラクターsurfaceの色とフォントを使う行なのだ。波打つ文字と、右上のアニメーション画像も同じフレーム計画で動いているのだ。"
     );
-    assert_eq!(complete_report.text_count, 38);
+    assert_eq!(complete_report.text_count, 10);
     assert_eq!(
         report
             .images
@@ -52,10 +52,10 @@ fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
     assert_eq!(
         report.images[1].bounds,
         WebFrameBounds {
-            x_milli: 64_000,
+            x_milli: 72_000,
             y_milli: 52_000,
-            width_milli: 180_000,
-            height_milli: 300_000,
+            width_milli: 208_000,
+            height_milli: 332_000,
         }
     );
     assert_eq!(
@@ -71,27 +71,27 @@ fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
         vec![
             (
                 "choice.web_demo.continue",
-                "Continue",
+                "このまま進む",
                 WebFrameBounds {
-                    x_milli: 230_400,
-                    y_milli: 248_640,
-                    width_milli: 819_200,
-                    height_milli: 58_000,
+                    x_milli: 307_200,
+                    y_milli: 306_800,
+                    width_milli: 665_600,
+                    height_milli: 60_000,
                 },
             ),
             (
                 "choice.web_demo.alternate",
-                "Alternate route",
+                "別ルートを見る",
                 WebFrameBounds {
-                    x_milli: 230_400,
-                    y_milli: 318_640,
-                    width_milli: 819_200,
-                    height_milli: 58_000,
+                    x_milli: 307_200,
+                    y_milli: 378_800,
+                    width_milli: 665_600,
+                    height_milli: 60_000,
                 },
             ),
         ]
     );
-    assert!(report.text.iter().any(|text| text.text == "alice"));
+    assert!(report.text.iter().any(|text| text.text == "zunda_guide"));
 }
 
 fn demo_frame_report() -> WebFrameObservationReport {
@@ -116,7 +116,12 @@ fn dialogue_text(report: &WebFrameObservationReport) -> String {
     report
         .text
         .iter()
-        .filter(|text| !matches!(text.text.as_str(), "alice" | "Continue" | "Alternate route"))
+        .filter(|text| {
+            !matches!(
+                text.text.as_str(),
+                "zunda_guide" | "このまま進む" | "別ルートを見る"
+            )
+        })
         .map(|text| text.text.as_str())
         .collect()
 }

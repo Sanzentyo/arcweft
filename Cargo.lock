@@ -463,6 +463,7 @@ dependencies = [
  "arcweft-lang-sema",
  "arcweft-lang-syntax",
  "arcweft-launch",
+ "arcweft-layout",
  "arcweft-player-native",
  "arcweft-presentation",
  "arcweft-project",
@@ -811,6 +812,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-layout"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arcweft-lsp"
 version = "0.1.0"
 dependencies = [
@@ -1021,6 +1030,7 @@ name = "arcweft-render-wgpu"
 version = "0.1.0"
 dependencies = [
  "arcweft-id",
+ "arcweft-layout",
  "arcweft-presentation",
  "arcweft-render-text",
  "arcweft-ui",

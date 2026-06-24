@@ -54,12 +54,40 @@ Design requests were added under `docs/reviews/requests/` for these larger
 items so they are not silently treated as completed by the raw-mode metadata
 slice.
 
+## Integrated execution update - 2026-06-24
+
+The integrated execution package
+`D:/sanze/Downloads/arcweft-integrated-execution-design-2026-06-24.zip`
+resolves the earlier planner ownership question for the shared viewport fit
+model. The shared layout primitives now live in a new Sans I/O
+`arcweft-layout` crate:
+
+- `LayoutSize`, `LayoutPoint`, `LayoutRect`, `ScalePolicy`, and `ContentRect`
+  moved out of `arcweft-render-wgpu::geometry`.
+- `ScalePolicy::Raw` is the canonical raw-mode name. The old renderer-local
+  `None` variant was removed rather than aliased.
+- The crate also owns the first typed layout-unit expression model, safe-area
+  evaluation context, fit inverse mapping, clipping helper, text overflow
+  policy, and text fitting result/diagnostic data contracts.
+- `arcweft-render-wgpu` and native Agent observation now consume
+  `arcweft-layout` types instead of owning their own fit-transform copies.
+
+This update does not yet change Agent observe's default coordinate behavior:
+the current diagnostic path remains raw mode, matching the integrated package's
+explicit current-slice default.
+
 ## Validation
 
 - `cargo fmt`
 - `cargo test -p arcweft-render-wgpu --test geometry`
 - `cargo test -p arcweft-cli --features native-capture --lib agent_observe_`
 - `cargo test -p arcweft-cli --features native-capture --no-run`
+
+Additional integrated execution cut validation:
+
+- `cargo test -p arcweft-layout`
+- `cargo test -p arcweft-render-wgpu --test geometry`
+- `cargo check -p arcweft-layout -p arcweft-render-wgpu -p arcweft-cli --all-targets`
 
 ## Design deviations
 

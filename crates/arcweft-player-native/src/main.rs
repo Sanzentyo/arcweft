@@ -277,7 +277,7 @@ mod tests {
     }
 
     #[test]
-    fn product_awfb_input_does_not_fall_back_to_legacy_json() {
+    fn product_awfb_input_does_not_fall_back_to_json_export() {
         let path = temp_awfb_path("legacy-json-is-not-product-awfb");
         let bundle = minimal_bundle();
         fs::write(&path, bundle.to_json_bytes().expect("legacy json encodes"))

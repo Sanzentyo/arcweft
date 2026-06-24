@@ -281,23 +281,21 @@ pub(super) fn agent_observe_layout_scene_graph(viewport: &AgentViewport) -> serd
             "x": content_rect.scale_x,
             "y": content_rect.scale_y
         },
-        "raw_pixel_mode": content_rect.policy == arcweft_render_wgpu::geometry::ScalePolicy::None
+        "raw_pixel_mode": content_rect.policy == arcweft_layout::ScalePolicy::Raw
     })
 }
 
-pub(super) fn agent_observe_content_rect(
-    viewport: &AgentViewport,
-) -> arcweft_render_wgpu::geometry::ContentRect {
-    arcweft_render_wgpu::geometry::ContentRect::calculate(
-        arcweft_render_wgpu::geometry::LayoutSize::new(
+pub(super) fn agent_observe_content_rect(viewport: &AgentViewport) -> arcweft_layout::ContentRect {
+    arcweft_layout::ContentRect::calculate(
+        arcweft_layout::LayoutSize::new(
             agent_u32_to_f32(AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH),
             agent_u32_to_f32(AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT),
         ),
-        arcweft_render_wgpu::geometry::LayoutSize::new(
+        arcweft_layout::LayoutSize::new(
             agent_u32_to_f32(viewport.width),
             agent_u32_to_f32(viewport.height),
         ),
-        arcweft_render_wgpu::geometry::ScalePolicy::None,
+        arcweft_layout::ScalePolicy::Raw,
     )
     .expect("validated Agent viewport dimensions produce a content rect")
 }

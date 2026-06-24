@@ -1,8 +1,9 @@
+use arcweft_layout::{ContentRect, LayoutPoint, LayoutRect, LayoutSize, ScalePolicy};
 use arcweft_render_text::{RichTextColor, RichTextFontFamily, RichTextStyle};
 use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, ContentRect, InteractionVisualState, LayoutPoint, LayoutRect, LayoutSize,
-    RenderChoiceItem, RenderDialogue, RenderFontFamily, RenderPreferences, RenderScene,
-    RenderTextSlant, RenderTextWeight, RenderViewport, ScalePolicy, SharedFramePlanner,
+    ChoiceScroll, InteractionVisualState, RenderChoiceItem, RenderDialogue, RenderFontFamily,
+    RenderPreferences, RenderScene, RenderTextSlant, RenderTextWeight, RenderViewport,
+    SharedFramePlanner,
 };
 use arcweft_render_wgpu::sample::{DemoAnimationClock, DemoImageKind, generated_demo_images};
 
@@ -65,7 +66,7 @@ fn content_rect_contain_preserves_design_aspect_ratio_in_tall_output() {
 fn content_rect_modes_make_raw_cover_and_stretch_distinct() {
     let design = LayoutSize::new(1280.0, 720.0);
     let output = LayoutSize::new(1000.0, 800.0);
-    let raw = ContentRect::calculate(design, output, ScalePolicy::None).expect("raw rect");
+    let raw = ContentRect::calculate(design, output, ScalePolicy::Raw).expect("raw rect");
     let cover = ContentRect::calculate(design, output, ScalePolicy::Cover).expect("cover rect");
     let stretch =
         ContentRect::calculate(design, output, ScalePolicy::Stretch).expect("stretch rect");
@@ -155,7 +156,7 @@ fn interaction_visual_state_changes_the_prepared_choice_rectangles() {
 }
 
 #[test]
-fn choice_geometry_ignores_legacy_scroll_offset() {
+fn choice_geometry_ignores_scroll_offset() {
     let base_scene = RenderScene {
         dialogue: Some(RenderDialogue::plain(
             "Guide",

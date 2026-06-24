@@ -174,7 +174,7 @@ pub(super) fn parse_entity_decl_head(
         let (name, signature_tail) = parse_name_and_tail(rest);
         (id, name, signature_tail)
     } else {
-        let (name, signature_tail) = parse_name_and_tail(rest);
+        let (name, signature_tail) = parse_dotted_decl_name_and_tail(rest);
         let Some(name) = name else {
             errors.push(simple_error(
                 base,
@@ -797,6 +797,23 @@ pub(super) fn parse_name_and_tail(input: &str) -> (Option<String>, String) {
         || (None, trimmed.to_owned()),
         |(name, tail)| (Some(name.to_owned()), tail.trim().to_owned()),
     )
+}
+
+fn parse_dotted_decl_name_and_tail(input: &str) -> (Option<String>, String) {
+    let trimmed = input.trim_start();
+    let Some((first, mut tail)) = split_leading_ident(trimmed) else {
+        return (None, trimmed.to_owned());
+    };
+    let mut name = first.to_owned();
+    while let Some(after_dot) = tail.strip_prefix('.') {
+        let Some((segment, next_tail)) = split_leading_ident(after_dot) else {
+            break;
+        };
+        name.push('.');
+        name.push_str(segment);
+        tail = next_tail;
+    }
+    (Some(name), tail.trim().to_owned())
 }
 
 pub(super) fn parse_contract_clause(line: &str) -> Option<ContractClause> {

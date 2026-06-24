@@ -32,6 +32,7 @@ arcweft-lang-jit-cranelift = { path = "../arcweft-lang-jit-cranelift" }
 arcweft-launch = { path = "../arcweft-launch" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-layout.workspace = true
 arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-project = { path = "../arcweft-project" }
 arcweft-project-loader = { path = "../arcweft-project-loader" }

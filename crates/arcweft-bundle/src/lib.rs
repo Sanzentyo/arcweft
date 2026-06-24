@@ -1639,7 +1639,7 @@ mod tests {
     }
 
     #[test]
-    fn inspection_path_requires_explicit_legacy_format_extension() {
+    fn inspection_path_requires_explicit_json_format_extension() {
         let bytes = empty_test_bundle()
             .to_json_bytes()
             .expect("inspection JSON bundle encodes");
@@ -1650,7 +1650,7 @@ mod tests {
     }
 
     #[test]
-    fn inspection_json_path_decodes_legacy_bundle_export() {
+    fn inspection_json_path_decodes_bundle_export() {
         let bundle = empty_test_bundle();
         let bytes = bundle
             .to_json_bytes()

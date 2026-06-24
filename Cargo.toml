@@ -35,6 +35,7 @@ members = [
     "crates/arcweft-lang-jit-cranelift",
     "crates/arcweft-lang-sema",
     "crates/arcweft-lang-syntax",
+    "crates/arcweft-layout",
     "crates/arcweft-need",
     "crates/arcweft-presentation",
     "crates/arcweft-ui",
@@ -115,6 +116,7 @@ arcweft-save = { path = "crates/arcweft-save" }
 arcweft-config = { path = "crates/arcweft-config" }
 arcweft-http-codec = { path = "crates/arcweft-http-codec" }
 arcweft-interaction-model = { path = "crates/arcweft-interaction-model" }
+arcweft-layout = { path = "crates/arcweft-layout" }
 arcweft-runtime-driver = { path = "crates/arcweft-runtime-driver" }
 arcweft-render-wgpu = { path = "crates/arcweft-render-wgpu" }
 arcweft-render-web = { path = "crates/arcweft-render-web" }

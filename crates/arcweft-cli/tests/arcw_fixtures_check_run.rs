@@ -68,10 +68,10 @@ fn temp_fixture_copy(path: &Path) -> PathBuf {
 #[test]
 fn current_check_fixtures_pass() {
     for path in arcw_files(&fixture_root().join("current_pass/check")) {
-        let output = run_arcw(&["check"], &path);
+        let output = run_arcw(&["compile", "--emit", "check"], &path);
         assert!(
             output.status.success(),
-            "arcw check should pass for {}\nstdout:\n{}\nstderr:\n{}",
+            "arcw compile --emit check should pass for {}\nstdout:\n{}\nstderr:\n{}",
             path.display(),
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr),
@@ -98,7 +98,7 @@ fn current_run_fixtures_pass() {
 #[test]
 fn spec_should_pass_check_fixtures_pass_after_refactor() {
     for path in arcw_files(&fixture_root().join("spec_should_pass/check")) {
-        let output = run_arcw(&["check"], &path);
+        let output = run_arcw(&["compile", "--emit", "check"], &path);
         assert!(output.status.success(), "{} should check", path.display());
     }
 }
@@ -120,7 +120,7 @@ fn spec_should_pass_run_fixtures_pass_after_refactor() {
 #[test]
 fn spec_should_fail_fixtures_fail() {
     for path in arcw_files(&fixture_root().join("spec_should_fail")) {
-        let output = run_arcw(&["check"], &path);
+        let output = run_arcw(&["compile", "--emit", "check"], &path);
         assert!(!output.status.success(), "{} should fail", path.display());
     }
 }

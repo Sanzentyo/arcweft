@@ -180,7 +180,7 @@ fn agent_observe_layout_scene_graph_records_raw_content_rect() {
         metadata["renderer_kind"],
         serde_json::json!("native_rich_text_observer")
     );
-    assert_eq!(metadata["scale_policy"], serde_json::json!("none"));
+    assert_eq!(metadata["scale_policy"], serde_json::json!("raw"));
     assert_eq!(metadata["raw_pixel_mode"], serde_json::json!(true));
     assert_eq!(
         metadata["output_viewport"]["width"],
@@ -3292,7 +3292,7 @@ fn agent_ui_image_items_become_typed_image_objects_with_active_frame() {
     .unwrap();
     assert_eq!(result.image.width, 2);
     assert_eq!(result.image.height, 1);
-    assert_eq!(result.bytes, vec![2, 2, 2, 255, 3, 3, 3, 255]);
+    assert_eq!(result.bytes, vec![0, 0, 0, 0, 2, 2, 2, 255]);
 }
 
 #[test]
