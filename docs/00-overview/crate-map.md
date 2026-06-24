@@ -34,6 +34,7 @@ arcweft-lang-hir
 arcweft-lang-sema
 arcweft-compiler
 arcweft-runtime-plan
+arcweft-runtime-codegen
 arcweft-lang-ir
 arcweft-lang-vm
 arcweft-verify-lsp
@@ -204,6 +205,10 @@ arcweft-launch
   API を所有する。CLI の profile / diagnostics / filesystem selection は
   CLI 側に残し、player host は source developer mode でこの driver を使う。
 - `arcweft-runtime-plan` は checked HIR から `arcweft-core` の `RuntimePlan` / line task graph へ lowering する。
+- `arcweft-runtime-codegen` は full-script AOT/JIT の executor policy、
+  safe-region runtime-code IR、frame layout、cache key、structured compiled
+  step exit contract を所有する。Cranelift lowering、executable memory、
+  object loading、Wasm AOT backend、host I/O は adapter crate 側に置く。
 - `arcweft-verify` は Sans I/O の検証中核で、proof obligation、audit manifest、SMT problem、tool diagnostics schema を所有する。ファイルI/O、process起動、watch、editor transport は持たない。
 - `arcweft-verify-z3` は外部 Z3 process adapter、`arcweft-verify-oxiz` は pure Rust OxiZ adapter とする。solver依存は `arcweft-verify` や `arcweft-core` に入れない。
 - `arcweft-verify-lsp` は transportなしの LSP helper crate とし、

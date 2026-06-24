@@ -46,6 +46,7 @@ members = [
     "crates/arcweft-rust-abi-build",
     "crates/arcweft-rust-abi-macros",
     "crates/arcweft-runtime-plan",
+    "crates/arcweft-runtime-codegen",
     "crates/arcweft-runtime-accelerator",
     "crates/arcweft-browser-bench",
     "crates/arcweft-bundle",
@@ -117,6 +118,7 @@ arcweft-config = { path = "crates/arcweft-config" }
 arcweft-http-codec = { path = "crates/arcweft-http-codec" }
 arcweft-interaction-model = { path = "crates/arcweft-interaction-model" }
 arcweft-layout = { path = "crates/arcweft-layout" }
+arcweft-runtime-codegen = { path = "crates/arcweft-runtime-codegen" }
 arcweft-runtime-driver = { path = "crates/arcweft-runtime-driver" }
 arcweft-render-wgpu = { path = "crates/arcweft-render-wgpu" }
 arcweft-render-web = { path = "crates/arcweft-render-web" }

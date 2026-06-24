@@ -39,7 +39,7 @@ path,bytes,physical_lines,code_lines,classification,is_rust,is_test,is_generated
 .github/workflows/wasm-browser.yml,5177,144,138,text,false,false,false,false
 .github/workflows/zip-gap-platform-validation.yml,1955,65,51,text,false,false,false,false
 AGENTS.md,14034,260,210,text,false,false,false,false
-Cargo.toml,7049,206,201,text,false,false,false,false
+Cargo.toml,7157,208,203,text,false,false,false,false
 crates/arcweft/Cargo.toml,756,26,23,text,false,false,false,false
 crates/arcweft/src/lib.rs,841,49,33,production,true,false,false,false
 crates/arcweft-adapter-context/Cargo.toml,548,25,21,text,false,false,false,false
@@ -656,13 +656,14 @@ crates/arcweft-memory/src/lib.rs,4980,200,135,production,true,false,false,true
 crates/arcweft-need/Cargo.toml,254,16,13,text,false,false,false,false
 crates/arcweft-need/src/lib.rs,2647,102,86,production,true,false,false,true
 crates/arcweft-player-native/Cargo.toml,1750,50,44,text,false,false,false,false
-crates/arcweft-player-native/src/lib.rs,12057,333,306,production,true,false,false,true
+crates/arcweft-player-native/src/lib.rs,12081,334,307,production,true,false,false,true
 crates/arcweft-player-native/src/main.rs,12107,363,325,production,true,false,false,true
 crates/arcweft-player-native/src/native_audio.rs,8821,219,211,production,true,false,false,false
 crates/arcweft-player-native/src/patch_endpoint.rs,28395,751,689,production,true,false,false,true
 crates/arcweft-player-native/src/scene_windowed.rs,21999,602,568,production,true,false,false,false
 crates/arcweft-player-native/src/window_driver.rs,37813,1066,958,production,true,false,false,true
 crates/arcweft-player-native/src/windowed.rs,7067,208,191,production,true,false,false,false
+crates/arcweft-player-native/src/windowed_patch.rs,8957,304,248,production,true,false,false,true
 crates/arcweft-player-scene/Cargo.toml,562,22,19,text,false,false,false,false
 crates/arcweft-player-scene/src/images.rs,6239,171,158,production,true,false,false,false
 crates/arcweft-player-scene/src/input.rs,10092,306,286,production,true,false,false,false
@@ -763,6 +764,8 @@ crates/arcweft-runtime-accelerator/src/math/tests.rs,42195,1102,986,test,true,tr
 crates/arcweft-runtime-accelerator/src/math/wgpu_backend.rs,48359,1398,1338,production,true,false,false,false
 crates/arcweft-runtime-accelerator/src/math.rs,86092,2340,2190,production,true,false,false,false
 crates/arcweft-runtime-accelerator/src/tests.rs,98752,2461,2304,test,true,true,false,false
+crates/arcweft-runtime-codegen/Cargo.toml,306,17,14,text,false,false,false,false
+crates/arcweft-runtime-codegen/src/lib.rs,18101,613,493,production,true,false,false,true
 crates/arcweft-runtime-driver/Cargo.toml,710,26,22,text,false,false,false,false
 crates/arcweft-runtime-driver/src/clock.rs,2318,79,64,production,true,false,false,true
 crates/arcweft-runtime-driver/src/display.rs,15212,435,398,production,true,false,false,true
@@ -896,7 +899,7 @@ crates/arcweft-verify-z3/src/lib.rs,11556,343,309,production,true,false,false,tr
 docs/00-overview/README.md,476,14,11,text,false,false,false,false
 docs/00-overview/architecture.md,6109,131,90,text,false,false,false,false
 docs/00-overview/code-fences.md,1305,43,32,text,false,false,false,false
-docs/00-overview/crate-map.md,12600,258,242,text,false,false,false,false
+docs/00-overview/crate-map.md,12940,263,247,text,false,false,false,false
 docs/00-overview/decisions.md,11530,355,258,text,false,false,false,false
 docs/00-overview/feature-matrix.md,5512,105,89,text,false,false,false,false
 docs/00-overview/implementation-guide.md,3828,153,108,text,false,false,false,false
@@ -1008,7 +1011,7 @@ docs/examples/touch-virtual-controller.md,1434,64,53,text,false,false,false,fals
 docs/examples/usb-and-virtual-controller.md,3566,147,120,text,false,false,false,false
 docs/examples/usb-devices-and-virtual-controller.md,3614,157,119,text,false,false,false,false
 docs/examples/virtual-controller.md,1500,65,51,text,false,false,false,false
-docs/implementation/README.md,127645,1820,1799,text,false,false,false,false
+docs/implementation/README.md,127960,1825,1804,text,false,false,false,false
 docs/implementation/agent-script-final-completion-audit.md,6039,73,61,text,false,false,false,false
 docs/implementation/agent-script-implementation.md,110903,507,495,text,false,false,false,false
 docs/implementation/arcw-project-architecture-2026-06-23.md,8041,135,105,text,false,false,false,false
@@ -1027,7 +1030,7 @@ docs/implementation/image-animation-goal-audit.md,7141,80,65,text,false,false,fa
 docs/implementation/image-animation-policy.md,18821,334,304,text,false,false,false,false
 docs/implementation/incremental-hot-swap-bundle-2026-06-23.md,59515,839,810,text,false,false,false,false
 docs/implementation/incremental-hot-swap-completion-audit-2026-06-24.md,5705,71,56,text,false,false,false,false
-docs/implementation/integrated-execution-2026-06-24.md,4475,87,75,text,false,false,false,false
+docs/implementation/integrated-execution-2026-06-24.md,6541,121,109,text,false,false,false,false
 docs/implementation/layout-scaling-units-and-capture-2026-06-24.md,4733,98,80,text,false,false,false,false
 docs/implementation/native-cli-player-boundaries.md,19207,318,295,text,false,false,false,false
 docs/implementation/native-rich-text-player.md,43590,611,580,text,false,false,false,false

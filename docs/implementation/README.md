@@ -129,7 +129,12 @@ Phase 0 / Phase 1 minimal Rust workspace:
   budget/header/string-table/public-id-table contract used by future
   section-by-section binary product resource migration, and
   `arcweft-project::persistent_object` as the first compiler-private `.awbo`
-  object/envelope/key contract for future persistent query artifacts.
+  object/envelope/key contract for future persistent query artifacts. The
+  package also adds `arcweft-runtime-codegen` as the executor policy and
+  safe-region IR contract for future full-script AOT/JIT, plus
+  `arcweft-player-native::windowed_patch` as the typed event queue and
+  frame-boundary state-machine contract for future live patching of an already
+  running native window.
 - Awaited capability calls now carry typed `HostTaskRequest` data through
   `AwaitTarget` into emitted `TaskSpec`s. The core remains Sans I/O; adapters
   consume the request data and later return deterministic `TaskEvent`s.

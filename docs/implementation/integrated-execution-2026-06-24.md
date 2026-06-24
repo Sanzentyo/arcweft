@@ -42,6 +42,20 @@ the current completion boundary until answered.
     line-task evidence, runtime-plan units, bytecode units, and link plans;
   - canonical key digests using existing `BuildDigest` / `NamedDigest` types;
   - payload digest, payload length, magic, schema, kind, and key validation.
+- Baseline runtime code-generation groundwork added `arcweft-runtime-codegen`:
+  - executor selection policy for VM/native AOT/Wasm AOT under trust, profile,
+    and platform capabilities;
+  - target code artifact inventory and host-local runtime code cache keys;
+  - callable codegen facts, backend support/fallback reasons, frame layouts,
+    safe points, code regions, entrypoints, and structured compiled-step exits.
+- Windowed native live-patch groundwork added
+  `arcweft-player-native::windowed_patch`:
+  - typed patch events for bundles, transport sidecars, and restart requests;
+  - event source and restart reason contracts;
+  - a FIFO queue that only pops at the `AfterRenderSubmitted` mutation-safe
+    frame boundary;
+  - retained patch reports for debug overlays/log/tooling without killing the
+    running player on invalid patches.
 
 ## Explicit boundaries
 
@@ -61,6 +75,14 @@ the current completion boundary until answered.
   cut. `arcweft-project-loader` cache read-through/write-through still stores
   raw artifact bytes behind `.awci` records and has not yet switched parse/HIR
   query artifacts to `.awbo` payloads.
+- `arcweft-runtime-codegen` is a policy and IR contract only in this cut. It
+  does not implement Cranelift region lowering, executable memory, ObjectModule
+  AOT emission, Wasm AOT helpers, OSR, deoptimization, or background Agent REPL
+  compilation.
+- `arcweft-player-native::windowed_patch` is the event and state-machine
+  contract only in this cut. The already running `scene_windowed` event loop is
+  not yet wired to a watch channel, file watcher, local socket, or embedding
+  live patch stream.
 
 ## Design requests still excluding work
 
@@ -68,6 +90,16 @@ the current completion boundary until answered.
   still blocks replacing structured bytecode execution, deleting structured
   `BytecodeProgram` from AWBC product payloads, and inventing a local compact
   VM/lowering model.
+- `docs/reviews/requests/2026-06-24-code-generational-hot-swap-design.md`
+  still blocks true mixed-generation execution in one `BundleSession`.
+- `docs/reviews/requests/2026-06-24-windowed-native-live-patch-design.md`
+  still blocks wiring a live patch stream into the already running native
+  `winit` scene loop and mutating renderer/session/catalog state from that
+  stream.
+- `docs/reviews/requests/2026-06-24-patch-target-manifest-signature-design.md`
+  still blocks product-grade target manifest rewrite, target signature
+  regeneration, release-manifest mutation, and automatic external payload
+  fetching.
 
 ## Validation
 
@@ -77,6 +109,8 @@ Focused commands run for the implemented cuts:
 cargo test -p arcweft-core --lib
 cargo test -p arcweft-bundle --lib
 cargo test -p arcweft-project --lib
+cargo test -p arcweft-runtime-codegen --lib
+cargo test -p arcweft-player-native --lib windowed_patch
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audit-integrated-execution-2026-06-24

@@ -5,6 +5,7 @@ mod patch_endpoint;
 mod scene_windowed;
 mod window_driver;
 mod windowed;
+pub mod windowed_patch;
 
 pub use patch_endpoint::{
     NativePatchEndpoint, NativePatchEndpointError, NativePatchOutcome, NativePatchTransportAction,

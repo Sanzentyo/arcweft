@@ -1074,6 +1074,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-runtime-codegen"
+version = "0.1.0"
+dependencies = [
+ "arcweft-core",
+ "blake3",
+]
+
+[[package]]
 name = "arcweft-runtime-driver"
 version = "0.1.0"
 dependencies = [

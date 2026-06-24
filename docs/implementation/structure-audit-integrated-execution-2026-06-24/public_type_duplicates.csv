@@ -7,6 +7,9 @@ ActionTarget,enum,crates/arcweft-interaction-model/src/action.rs,29,2
 ActionTarget,enum,crates/arcweft-presentation/src/input.rs,117,2
 Bytes,struct,crates/arcweft-data/src/value.rs,28,2
 Bytes,struct,crates/arcweft-memory/src/lib.rs,9,2
+CallableId,struct,.arcweft-local/integrated-execution-design-2026-06-24/arcweft-integrated-execution-design-2026-06-24/reference-impl/crates/arcweft-runtime-codegen/src/lib.rs,6,2
+CallableId,struct,crates/arcweft-lang-sema/src/effect_model.rs,12,2
+CallableId,struct,crates/arcweft-runtime-codegen/src/lib.rs,17,2
 CallableKind,enum,crates/arcweft-lang-sema/src/effect_model.rs,16,2
 CallableKind,enum,crates/arcweft-lang-syntax/src/ast/items.rs,540,2
 CaptureTarget,enum,crates/arcweft-agent-protocol/src/protocol.rs,159,2

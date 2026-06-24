@@ -461,6 +461,8 @@ arcweft-runtime-accelerator,thiserror,normal,crates/arcweft-runtime-accelerator/
 arcweft-runtime-accelerator,wasm-bindgen,target,crates/arcweft-runtime-accelerator/Cargo.toml
 arcweft-runtime-accelerator,web-sys,target,crates/arcweft-runtime-accelerator/Cargo.toml
 arcweft-runtime-accelerator,wgpu,target,crates/arcweft-runtime-accelerator/Cargo.toml
+arcweft-runtime-codegen,arcweft-core,normal,crates/arcweft-runtime-codegen/Cargo.toml
+arcweft-runtime-codegen,blake3,normal,crates/arcweft-runtime-codegen/Cargo.toml
 arcweft-runtime-driver,arcweft-bundle,normal,crates/arcweft-runtime-driver/Cargo.toml
 arcweft-runtime-driver,arcweft-core,normal,crates/arcweft-runtime-driver/Cargo.toml
 arcweft-runtime-driver,arcweft-id,development,crates/arcweft-runtime-driver/Cargo.toml
