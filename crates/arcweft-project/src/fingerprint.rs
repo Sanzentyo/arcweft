@@ -7,7 +7,7 @@ use std::fmt::{Display, Write as _};
 pub struct BuildDigest([u8; 32]);
 
 /// Named digest entry encoded in canonical name order.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct NamedDigest {
     name: String,
     digest: BuildDigest,

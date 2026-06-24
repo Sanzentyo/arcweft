@@ -34,6 +34,14 @@ the current completion boundary until answered.
   - public-id tables that reject duplicates rather than silently deduplicating;
   - section-family mapping to existing AWFB container kinds where available;
   - patch compatibility classification for migrated resource section families.
+- Persistent compiler object groundwork added
+  `arcweft-project::persistent_object`:
+  - compiler-private `.awbo` object kind, stability, build identity, key, and
+    envelope contracts;
+  - typed payload contracts for parsed syntax, interface summaries, HIR bodies,
+    line-task evidence, runtime-plan units, bytecode units, and link plans;
+  - canonical key digests using existing `BuildDigest` / `NamedDigest` types;
+  - payload digest, payload length, magic, schema, kind, and key validation.
 
 ## Explicit boundaries
 
@@ -49,6 +57,10 @@ the current completion boundary until answered.
   cut. Product runtime-types, entrypoints, adapter requirements, content
   catalog, display catalog, and source-map sections still use their current
   product encoding until each section receives a concrete binary record codec.
+- `arcweft-project::persistent_object` is a data/verifier contract only in this
+  cut. `arcweft-project-loader` cache read-through/write-through still stores
+  raw artifact bytes behind `.awci` records and has not yet switched parse/HIR
+  query artifacts to `.awbo` payloads.
 
 ## Design requests still excluding work
 
@@ -64,6 +76,7 @@ Focused commands run for the implemented cuts:
 ```bash
 cargo test -p arcweft-core --lib
 cargo test -p arcweft-bundle --lib
+cargo test -p arcweft-project --lib
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audit-integrated-execution-2026-06-24

@@ -181,6 +181,10 @@ arcweft-launch
   string/public-id table、既存 AWFB section kind との対応、patch
   compatibility class までを扱い、runtime capability availability、
   renderer/backend limits、filesystem/network fetch、signing key access は扱わない。
+- `arcweft-project::persistent_object` は compiler-private `.awbo` object
+  envelope/key/payload contract を所有する。cache record filesystem layout、
+  object storage、lock、watch policy、CLI explain output は
+  `arcweft-project-loader` / CLI adapter 側に置く。
 - UI / shader / audio / Activity は `Command` / `TaskSpec` / `Need` / `EffectRequest` を介する。
 - Hook は phase ごとの構造化 action を返し、直接 host API を呼ばない。
 - Memoization は pure computation または TaskKey deduplication に限定し、cache は決定性に影響してはならない。

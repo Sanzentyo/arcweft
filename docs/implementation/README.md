@@ -127,7 +127,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   structured bytecode removal behind the existing AWBC design request. It also
   adds `arcweft-bundle::resource_codec` as the shared resource-section codec
   budget/header/string-table/public-id-table contract used by future
-  section-by-section binary product resource migration.
+  section-by-section binary product resource migration, and
+  `arcweft-project::persistent_object` as the first compiler-private `.awbo`
+  object/envelope/key contract for future persistent query artifacts.
 - Awaited capability calls now carry typed `HostTaskRequest` data through
   `AwaitTarget` into emitted `TaskSpec`s. The core remains Sans I/O; adapters
   consume the request data and later return deterministic `TaskEvent`s.

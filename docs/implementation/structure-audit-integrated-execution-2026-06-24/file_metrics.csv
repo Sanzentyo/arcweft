@@ -695,11 +695,12 @@ crates/arcweft-presentation/src/tests.rs,41268,1296,1209,test,true,true,false,fa
 crates/arcweft-presentation/tests/interaction_visual_state.rs,3894,116,102,test,true,true,false,false
 crates/arcweft-project/Cargo.toml,384,20,17,text,false,false,false,false
 crates/arcweft-project/src/artifact.rs,6708,185,164,production,true,false,false,true
-crates/arcweft-project/src/fingerprint.rs,8986,283,233,production,true,false,false,true
+crates/arcweft-project/src/fingerprint.rs,9009,283,233,production,true,false,false,true
 crates/arcweft-project/src/graph.rs,12197,392,345,production,true,false,false,true
 crates/arcweft-project/src/incremental.rs,20990,680,590,production,true,false,false,true
-crates/arcweft-project/src/lib.rs,347,11,6,production,true,false,false,false
+crates/arcweft-project/src/lib.rs,374,12,7,production,true,false,false,false
 crates/arcweft-project/src/manifest.rs,6018,226,185,production,true,false,false,true
+crates/arcweft-project/src/persistent_object.rs,20593,593,530,production,true,false,false,true
 crates/arcweft-project/src/sources.rs,4979,177,149,production,true,false,false,false
 crates/arcweft-project-loader/Cargo.toml,851,31,27,text,false,false,false,false
 crates/arcweft-project-loader/src/adapter_manifest.rs,4479,154,126,production,true,false,false,true
@@ -895,7 +896,7 @@ crates/arcweft-verify-z3/src/lib.rs,11556,343,309,production,true,false,false,tr
 docs/00-overview/README.md,476,14,11,text,false,false,false,false
 docs/00-overview/architecture.md,6109,131,90,text,false,false,false,false
 docs/00-overview/code-fences.md,1305,43,32,text,false,false,false,false
-docs/00-overview/crate-map.md,12320,254,238,text,false,false,false,false
+docs/00-overview/crate-map.md,12600,258,242,text,false,false,false,false
 docs/00-overview/decisions.md,11530,355,258,text,false,false,false,false
 docs/00-overview/feature-matrix.md,5512,105,89,text,false,false,false,false
 docs/00-overview/implementation-guide.md,3828,153,108,text,false,false,false,false
@@ -1007,7 +1008,7 @@ docs/examples/touch-virtual-controller.md,1434,64,53,text,false,false,false,fals
 docs/examples/usb-and-virtual-controller.md,3566,147,120,text,false,false,false,false
 docs/examples/usb-devices-and-virtual-controller.md,3614,157,119,text,false,false,false,false
 docs/examples/virtual-controller.md,1500,65,51,text,false,false,false,false
-docs/implementation/README.md,127494,1818,1797,text,false,false,false,false
+docs/implementation/README.md,127645,1820,1799,text,false,false,false,false
 docs/implementation/agent-script-final-completion-audit.md,6039,73,61,text,false,false,false,false
 docs/implementation/agent-script-implementation.md,110903,507,495,text,false,false,false,false
 docs/implementation/arcw-project-architecture-2026-06-23.md,8041,135,105,text,false,false,false,false
@@ -1026,7 +1027,7 @@ docs/implementation/image-animation-goal-audit.md,7141,80,65,text,false,false,fa
 docs/implementation/image-animation-policy.md,18821,334,304,text,false,false,false,false
 docs/implementation/incremental-hot-swap-bundle-2026-06-23.md,59515,839,810,text,false,false,false,false
 docs/implementation/incremental-hot-swap-completion-audit-2026-06-24.md,5705,71,56,text,false,false,false,false
-docs/implementation/integrated-execution-2026-06-24.md,3664,74,62,text,false,false,false,false
+docs/implementation/integrated-execution-2026-06-24.md,4475,87,75,text,false,false,false,false
 docs/implementation/layout-scaling-units-and-capture-2026-06-24.md,4733,98,80,text,false,false,false,false
 docs/implementation/native-cli-player-boundaries.md,19207,318,295,text,false,false,false,false
 docs/implementation/native-rich-text-player.md,43590,611,580,text,false,false,false,false

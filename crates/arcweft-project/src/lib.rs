@@ -8,4 +8,5 @@ pub mod fingerprint;
 pub mod graph;
 pub mod incremental;
 pub mod manifest;
+pub mod persistent_object;
 pub mod sources;
