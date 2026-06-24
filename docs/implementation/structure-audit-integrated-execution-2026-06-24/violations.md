@@ -62,13 +62,13 @@ large production file contains an embedded #[cfg(test)] module
 
 ## warning SIZE001 — `crates/arcweft-bundle/src/lib.rs`
 
-1775 physical LOC exceeds the 1200 LOC review threshold
+1776 physical LOC exceeds the 1200 LOC review threshold
 
 **Fix:** review responsibility boundaries before adding more code
 
 ## warning SIZE002 — `crates/arcweft-bundle/src/lib.rs`
 
-facade file has 1775 physical LOC; target is below 250 LOC
+facade file has 1776 physical LOC; target is below 250 LOC
 
 **Fix:** move implementations to named modules and keep intentional re-exports
 

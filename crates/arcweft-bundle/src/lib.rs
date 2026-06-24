@@ -4,6 +4,7 @@ pub mod container;
 pub mod patch;
 mod product;
 pub mod release;
+pub mod resource_codec;
 
 #[cfg(feature = "format-avro")]
 use apache_avro::types::Value as AvroValue;

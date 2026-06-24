@@ -26,6 +26,14 @@ the current completion boundary until answered.
   - `AwbcProgram::verify` for ABI, duplicate function/block ids, runtime type
     references, host-call signatures, entrypoint targets, register/table index
     bounds, branch/suspend block targets, and budget failures.
+- Resource codec groundwork added `arcweft-bundle::resource_codec`:
+  - compact product resource section codec families and magic bytes;
+  - shared section header validation for magic, schema version, decoded byte
+    budget, string table count, public-id table count, and record count;
+  - sorted/deduplicated string tables;
+  - public-id tables that reject duplicates rather than silently deduplicating;
+  - section-family mapping to existing AWFB container kinds where available;
+  - patch compatibility classification for migrated resource section families.
 
 ## Explicit boundaries
 
@@ -37,6 +45,10 @@ the current completion boundary until answered.
   It does not implement binary AWBC product encoding, lowering from
   `RuntimePlan`/`FlowOp`, compact VM execution, patch fingerprints, or deletion
   of the structured product bytecode payload.
+- `arcweft-bundle::resource_codec` is a shared contract module only in this
+  cut. Product runtime-types, entrypoints, adapter requirements, content
+  catalog, display catalog, and source-map sections still use their current
+  product encoding until each section receives a concrete binary record codec.
 
 ## Design requests still excluding work
 
@@ -51,6 +63,7 @@ Focused commands run for the implemented cuts:
 
 ```bash
 cargo test -p arcweft-core --lib
+cargo test -p arcweft-bundle --lib
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audit-integrated-execution-2026-06-24
