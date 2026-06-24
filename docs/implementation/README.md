@@ -4,6 +4,11 @@ This directory records the current implementation state of Arcweft Engine.
 
 Design specifications remain in the numbered `docs/` chapters. Files here describe what exists in the Rust workspace today, what has been verified, and what is intentionally deferred.
 
+Latest executable-runtime-core implementation notes are tracked in
+`docs/implementation/executable-runtime-core-2026-06-24.md`; the corresponding
+structure audit report is under
+`docs/implementation/structure-audits/executable-runtime-core-2026-06-24/`.
+
 ## Current Milestone
 
 Phase 0 / Phase 1 minimal Rust workspace:
