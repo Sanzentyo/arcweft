@@ -165,6 +165,9 @@ arcweft-launch
 ## 依存ルール
 
 - `arcweft-core` は runtime/data core に限定し、dialogue / presentation / syntax / verifier / CLI / LSP / wgpu / audio / Servo / DOM / filesystem / network / Cranelift / Wasmtime に依存しない。
+- `arcweft-core::awbc` は AWBC executable-table の Sans I/O data/verifier
+  境界を所有する。product encoding、filesystem、network、signing、runtime
+  lowering、VM 実行、JIT/AOT backend、patch materialization は所有しない。
 - 広い application prelude は facade crate `arcweft` が提供する。低レイヤ crate に便利 re-export を置かない。
 - `arcweft-presentation` は `bg(...)` / `show(...)` が返す scope-bound
   presentation handles、typed target/slot refs、clear operations、scope exit

@@ -119,6 +119,12 @@ Phase 0 / Phase 1 minimal Rust workspace:
   shared WebGPU capture, and visual fixture parity. The 2026-06-24 integrated
   execution package now moves the shared fit-transform primitives and layout
   unit/text-fitting data contracts into the Sans I/O `arcweft-layout` crate.
+- `docs/implementation/integrated-execution-2026-06-24.md` tracks the
+  integrated execution package cuts applied so far. In addition to
+  `arcweft-layout`, it adds the first Sans I/O `arcweft-core::awbc`
+  executable-table data/verifier boundary while explicitly leaving product AWBC
+  VM execution, lowering, binary product encoding, patch fingerprints, and
+  structured bytecode removal behind the existing AWBC design request.
 - Awaited capability calls now carry typed `HostTaskRequest` data through
   `AwaitTarget` into emitted `TaskSpec`s. The core remains Sans I/O; adapters
   consume the request data and later return deterministic `TaskEvent`s.
