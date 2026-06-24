@@ -56,6 +56,11 @@ the current completion boundary until answered.
     frame boundary;
   - retained patch reports for debug overlays/log/tooling without killing the
     running player on invalid patches.
+- Agent controller runtime tier groundwork added
+  `arcweft-agent-runner::runner::AgentControllerExecutorFactory`:
+  - the default controller path still uses the bytecode VM;
+  - REPL/dev policies can now supply a tiered controller executor without
+    replacing Agent host-call dispatch.
 
 ## Explicit boundaries
 
@@ -83,6 +88,9 @@ the current completion boundary until answered.
   contract only in this cut. The already running `scene_windowed` event loop is
   not yet wired to a watch channel, file watcher, local socket, or embedding
   live patch stream.
+- The Agent controller executor factory does not implement REPL overlay
+  modules, transactional cell commits, generation-aware bindings, or background
+  JIT warm commands.
 
 ## Design requests still excluding work
 
@@ -111,6 +119,7 @@ cargo test -p arcweft-bundle --lib
 cargo test -p arcweft-project --lib
 cargo test -p arcweft-runtime-codegen --lib
 cargo test -p arcweft-player-native --lib windowed_patch
+cargo test -p arcweft-agent-runner --lib
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audit-integrated-execution-2026-06-24

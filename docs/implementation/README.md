@@ -134,7 +134,9 @@ Phase 0 / Phase 1 minimal Rust workspace:
   safe-region IR contract for future full-script AOT/JIT, plus
   `arcweft-player-native::windowed_patch` as the typed event queue and
   frame-boundary state-machine contract for future live patching of an already
-  running native window.
+  running native window. `arcweft-agent-runner` also routes controller bytecode
+  through an executor factory so future REPL/dev runtime tiers can swap the
+  controller executor without replacing Agent host-call dispatch.
 - Awaited capability calls now carry typed `HostTaskRequest` data through
   `AwaitTarget` into emitted `TaskSpec`s. The core remains Sans I/O; adapters
   consume the request data and later return deterministic `TaskEvent`s.

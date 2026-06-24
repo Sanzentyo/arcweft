@@ -52,6 +52,39 @@ pub struct AgentRunner<S, D, R> {
     config: AgentRunnerConfig,
     sequence: u64,
 }
+
+/// Builds the executor used for one Agent controller bytecode run.
+///
+/// The default factory returns the bytecode VM, while REPL/dev policies can
+/// provide a tiered executor without changing host-call dispatch.
+pub trait AgentControllerExecutorFactory<S, D, R>
+where
+    S: AgentSession,
+    D: DebugEventSink,
+    R: RagService,
+{
+    type Executor: RuntimeExecutor;
+
+    fn build(&mut self, program: BytecodeProgram) -> AgentRunnerResult<Self::Executor, S, D, R>;
+}
+
+/// Default Agent controller executor factory.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct BytecodeVmAgentControllerExecutorFactory;
+
+impl<S, D, R> AgentControllerExecutorFactory<S, D, R> for BytecodeVmAgentControllerExecutorFactory
+where
+    S: AgentSession,
+    D: DebugEventSink,
+    R: RagService,
+{
+    type Executor = BytecodeVmExecutor;
+
+    fn build(&mut self, program: BytecodeProgram) -> AgentRunnerResult<Self::Executor, S, D, R> {
+        BytecodeVmExecutor::new(program).map_err(AgentRunError::Bytecode)
+    }
+}
+
 impl<S, D, R> AgentRunner<S, D, R>
 where
     S: AgentSession,
@@ -409,20 +442,57 @@ where
         program: BytecodeProgram,
         config: AgentControllerRunConfig,
     ) -> AgentRunnerResult<AgentControllerRunReport, S, D, R> {
-        self.run_controller_bytecode_with_budget(
+        let mut factory = BytecodeVmAgentControllerExecutorFactory;
+        self.run_controller_bytecode_with_executor_factory_and_budget(
             program,
             config,
             effective_controller_budget(AgentBudget::default(), config),
+            &mut factory,
         )
     }
 
-    fn run_controller_bytecode_with_budget(
+    /// Runs one Agent controller bytecode program through a supplied executor
+    /// factory.
+    pub fn run_controller_bytecode_with_executor_factory<F>(
+        &mut self,
+        program: BytecodeProgram,
+        config: AgentControllerRunConfig,
+        factory: &mut F,
+    ) -> AgentRunnerResult<AgentControllerRunReport, S, D, R>
+    where
+        F: AgentControllerExecutorFactory<S, D, R>,
+    {
+        self.run_controller_bytecode_with_executor_factory_and_budget(
+            program,
+            config,
+            effective_controller_budget(AgentBudget::default(), config),
+            factory,
+        )
+    }
+
+    fn run_controller_bytecode_with_executor_factory_and_budget<F>(
         &mut self,
         program: BytecodeProgram,
         config: AgentControllerRunConfig,
         budget: AgentBudget,
-    ) -> AgentRunnerResult<AgentControllerRunReport, S, D, R> {
-        let mut executor = BytecodeVmExecutor::new(program).map_err(AgentRunError::Bytecode)?;
+        factory: &mut F,
+    ) -> AgentRunnerResult<AgentControllerRunReport, S, D, R>
+    where
+        F: AgentControllerExecutorFactory<S, D, R>,
+    {
+        let mut executor = factory.build(program)?;
+        self.run_controller_executor_with_budget(&mut executor, config, budget)
+    }
+
+    fn run_controller_executor_with_budget<E>(
+        &mut self,
+        executor: &mut E,
+        config: AgentControllerRunConfig,
+        budget: AgentBudget,
+    ) -> AgentRunnerResult<AgentControllerRunReport, S, D, R>
+    where
+        E: RuntimeExecutor,
+    {
         let options = RuntimeStepOptions {
             mode: RuntimeStepMode::Drain,
             budget: RuntimeStepBudget {
@@ -514,10 +584,12 @@ where
             .map_err(AgentRunError::EffectPolicy)?;
         let previous_policy = std::mem::replace(&mut self.policy, authorization.policy().clone());
         let previous_authorization = self.authorization.replace(authorization);
-        let result = self.run_controller_bytecode_with_budget(
+        let mut factory = BytecodeVmAgentControllerExecutorFactory;
+        let result = self.run_controller_bytecode_with_executor_factory_and_budget(
             bundle.bytecode.program.clone(),
             config,
             effective_controller_budget(manifest.budget, config),
+            &mut factory,
         );
         self.policy = previous_policy;
         self.authorization = previous_authorization;
