@@ -15,6 +15,7 @@ use super::mcp_resources::agent_mcp_capture_time_seconds;
 use super::observe::{
     NativeAgentScriptSessionError, native_agent_advance_text_input_events,
     native_agent_invoke_input_events, native_runtime_input_event,
+    validate_agent_observe_output_extension,
 };
 use super::repl::{
     AgentReplBinding, AgentReplConnection, AgentReplState, agent_repl_apply_connection,
@@ -27,7 +28,7 @@ use super::repl_snapshot::agent_repl_serialized_bindings;
 use super::runtime_observation::{
     AgentSourceImageDecodeCache, agent_action_targets, agent_asset_id_from_call_arg,
     agent_image_alignment_component_milli, agent_image_call_alignment,
-    agent_image_call_opacity_milli, agent_image_call_playback,
+    agent_image_call_opacity_milli, agent_image_call_playback, agent_observe_layout_scene_graph,
 };
 use super::*;
 use arcweft_agent_protocol::protocol::{AgentProjectGraph, AgentSessionInfo};
@@ -132,6 +133,75 @@ fn test_agent_observation_report(capture_time_millis: Option<u32>) -> AgentObser
         final_status: "done".to_owned(),
         overlay_svg: None,
     }
+}
+
+#[test]
+fn agent_observe_output_extension_must_match_image_mime() {
+    assert!(
+        validate_agent_observe_output_extension(
+            std::path::Path::new("frame.svg"),
+            AgentObserveImageKind::Overlay,
+        )
+        .is_ok()
+    );
+    assert!(
+        validate_agent_observe_output_extension(
+            std::path::Path::new("frame.PNG"),
+            AgentObserveImageKind::Png,
+        )
+        .is_ok()
+    );
+    assert!(
+        validate_agent_observe_output_extension(
+            std::path::Path::new("frame.rgba"),
+            AgentObserveImageKind::RawRgba,
+        )
+        .is_ok()
+    );
+    assert!(
+        validate_agent_observe_output_extension(
+            std::path::Path::new("frame.png"),
+            AgentObserveImageKind::Overlay,
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn agent_observe_layout_scene_graph_records_raw_content_rect() {
+    let metadata = agent_observe_layout_scene_graph(&AgentViewport {
+        width: 1000,
+        height: 800,
+        scale: 1.0,
+    });
+
+    assert_eq!(metadata["kind"], serde_json::json!("layout.viewport_scale"));
+    assert_eq!(
+        metadata["renderer_kind"],
+        serde_json::json!("native_rich_text_observer")
+    );
+    assert_eq!(metadata["scale_policy"], serde_json::json!("none"));
+    assert_eq!(metadata["raw_pixel_mode"], serde_json::json!(true));
+    assert_eq!(
+        metadata["output_viewport"]["width"],
+        serde_json::json!(1000)
+    );
+    assert_eq!(
+        metadata["output_viewport"]["height"],
+        serde_json::json!(800)
+    );
+    assert_eq!(
+        metadata["design_viewport"]["width"],
+        serde_json::json!(1280)
+    );
+    assert_eq!(
+        metadata["design_viewport"]["height"],
+        serde_json::json!(720)
+    );
+    assert_eq!(metadata["content_rect"]["x"], serde_json::json!(0.0));
+    assert_eq!(metadata["content_rect"]["y"], serde_json::json!(0.0));
+    assert_eq!(metadata["content_rect"]["width"], serde_json::json!(1280.0));
+    assert_eq!(metadata["content_rect"]["height"], serde_json::json!(720.0));
 }
 
 fn test_line_display_frame() -> LineDisplayFrame {

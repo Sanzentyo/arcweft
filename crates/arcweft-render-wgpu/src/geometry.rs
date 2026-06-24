@@ -26,6 +26,52 @@ pub struct RenderViewport {
     pub scale_factor: f64,
 }
 
+/// Two-dimensional layout size in design-space logical pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LayoutSize {
+    pub width: f32,
+    pub height: f32,
+}
+
+/// Two-dimensional layout point in output viewport pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LayoutPoint {
+    pub x: f32,
+    pub y: f32,
+}
+
+/// Axis-aligned rectangle in output viewport pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LayoutRect {
+    pub origin: LayoutPoint,
+    pub size: LayoutSize,
+}
+
+/// Policy used when a design viewport is mapped into an output viewport.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ScalePolicy {
+    /// Preserve raw pixel coordinates with no implicit scale or letterbox.
+    #[default]
+    None,
+    /// Preserve aspect ratio and fit the complete design viewport.
+    Contain,
+    /// Preserve aspect ratio and fill the output viewport, cropping overflow.
+    Cover,
+    /// Scale width and height independently to the output viewport.
+    Stretch,
+}
+
+/// Computed content rectangle and scale for one design/output viewport pair.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ContentRect {
+    pub design_size: LayoutSize,
+    pub output_size: LayoutSize,
+    pub rect: LayoutRect,
+    pub scale_x: f32,
+    pub scale_y: f32,
+    pub policy: ScalePolicy,
+}
+
 /// User-facing presentation preferences independent of platform APIs.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RenderPreferences {
@@ -198,6 +244,128 @@ impl Default for RenderPreferences {
             text_scale_milli: 1_000,
             high_contrast: false,
             reduce_motion: false,
+        }
+    }
+}
+
+impl LayoutSize {
+    pub const fn new(width: f32, height: f32) -> Self {
+        Self { width, height }
+    }
+
+    pub fn is_positive(self) -> bool {
+        self.width.is_finite() && self.height.is_finite() && self.width > 0.0 && self.height > 0.0
+    }
+}
+
+impl LayoutPoint {
+    pub const fn new(x: f32, y: f32) -> Self {
+        Self { x, y }
+    }
+}
+
+impl LayoutRect {
+    pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self {
+            origin: LayoutPoint::new(x, y),
+            size: LayoutSize::new(width, height),
+        }
+    }
+
+    pub fn contains(self, point: LayoutPoint) -> bool {
+        point.x >= self.origin.x
+            && point.y >= self.origin.y
+            && point.x <= self.origin.x + self.size.width
+            && point.y <= self.origin.y + self.size.height
+    }
+}
+
+impl ScalePolicy {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Contain => "contain",
+            Self::Cover => "cover",
+            Self::Stretch => "stretch",
+        }
+    }
+}
+
+impl ContentRect {
+    pub fn calculate(
+        design_size: LayoutSize,
+        output_size: LayoutSize,
+        policy: ScalePolicy,
+    ) -> Result<Self, FramePlanError> {
+        if !design_size.is_positive() || !output_size.is_positive() {
+            return Err(FramePlanError::EmptyViewport);
+        }
+        let (width, height, scale_x, scale_y) = match policy {
+            ScalePolicy::None => (design_size.width, design_size.height, 1.0, 1.0),
+            ScalePolicy::Contain => {
+                let scale = (output_size.width / design_size.width)
+                    .min(output_size.height / design_size.height);
+                (
+                    design_size.width * scale,
+                    design_size.height * scale,
+                    scale,
+                    scale,
+                )
+            }
+            ScalePolicy::Cover => {
+                let scale = (output_size.width / design_size.width)
+                    .max(output_size.height / design_size.height);
+                (
+                    design_size.width * scale,
+                    design_size.height * scale,
+                    scale,
+                    scale,
+                )
+            }
+            ScalePolicy::Stretch => (
+                output_size.width,
+                output_size.height,
+                output_size.width / design_size.width,
+                output_size.height / design_size.height,
+            ),
+        };
+        let x = match policy {
+            ScalePolicy::None => 0.0,
+            ScalePolicy::Contain | ScalePolicy::Cover | ScalePolicy::Stretch => {
+                (output_size.width - width) * 0.5
+            }
+        };
+        let y = match policy {
+            ScalePolicy::None => 0.0,
+            ScalePolicy::Contain | ScalePolicy::Cover | ScalePolicy::Stretch => {
+                (output_size.height - height) * 0.5
+            }
+        };
+        Ok(Self {
+            design_size,
+            output_size,
+            rect: LayoutRect::new(x, y, width, height),
+            scale_x,
+            scale_y,
+            policy,
+        })
+    }
+
+    pub fn map_point(self, point: LayoutPoint) -> LayoutPoint {
+        LayoutPoint::new(
+            self.rect.origin.x + point.x * self.scale_x,
+            self.rect.origin.y + point.y * self.scale_y,
+        )
+    }
+
+    pub fn map_rect(self, rect: LayoutRect) -> LayoutRect {
+        let origin = self.map_point(rect.origin);
+        LayoutRect {
+            origin,
+            size: LayoutSize::new(
+                rect.size.width * self.scale_x,
+                rect.size.height * self.scale_y,
+            ),
         }
     }
 }

@@ -1029,6 +1029,9 @@ pub(super) fn validate_agent_observe_options(
         eprintln!("error: --out requires --image");
         return Err(ExitCode::from(2));
     }
+    if let (Some(out), Some(image)) = (&options.out, options.image) {
+        validate_agent_observe_output_extension(out, image)?;
+    }
     if options.capture.is_some()
         && !matches!(
             options.image,
@@ -1064,6 +1067,43 @@ pub(super) fn validate_agent_observe_options(
         return Err(ExitCode::from(2));
     }
     Ok(())
+}
+
+pub(super) fn validate_agent_observe_output_extension(
+    out: &Path,
+    image: AgentObserveImageKind,
+) -> Result<(), ExitCode> {
+    let expected = agent_observe_image_output_extension(image);
+    let actual = out
+        .extension()
+        .and_then(std::ffi::OsStr::to_str)
+        .map(str::to_ascii_lowercase);
+    if actual.as_deref() == Some(expected) {
+        return Ok(());
+    }
+    eprintln!(
+        "error: --out extension must be .{expected} for --image {}",
+        agent_observe_image_kind_name(image)
+    );
+    Err(ExitCode::from(2))
+}
+
+pub(super) const fn agent_observe_image_output_extension(
+    image: AgentObserveImageKind,
+) -> &'static str {
+    match image {
+        AgentObserveImageKind::Overlay => "svg",
+        AgentObserveImageKind::RawRgba => "rgba",
+        AgentObserveImageKind::Png => "png",
+    }
+}
+
+pub(super) const fn agent_observe_image_kind_name(image: AgentObserveImageKind) -> &'static str {
+    match image {
+        AgentObserveImageKind::Overlay => "overlay",
+        AgentObserveImageKind::RawRgba => "raw-rgba",
+        AgentObserveImageKind::Png => "png",
+    }
 }
 
 pub(super) fn agent_observe_effective_steps(options: &AgentObserveOptions) -> usize {

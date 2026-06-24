@@ -38,6 +38,7 @@ arcweft-project-loader = { path = "../arcweft-project-loader" }
 arcweft-player-native = { path = "../arcweft-player-native", optional = true }
 arcweft-render-native = { path = "../arcweft-render-native", optional = true }
 arcweft-render-text = { path = "../arcweft-render-text" }
+arcweft-render-wgpu = { path = "../arcweft-render-wgpu", optional = true }
 arcweft-rag = { path = "../arcweft-rag" }
 arcweft-runtime-accelerator = { path = "../arcweft-runtime-accelerator" }
 arcweft-runtime-driver = { path = "../arcweft-runtime-driver", optional = true }
@@ -70,7 +71,7 @@ path = "src/main.rs"
 default = ["native-player", "native-capture"]
 agent-repl = ["dep:reedline"]
 math-wgpu = ["arcweft-runtime-accelerator/math-wgpu"]
-native-capture = ["dep:arcweft-render-native"]
+native-capture = ["dep:arcweft-render-native", "dep:arcweft-render-wgpu"]
 native-player = ["dep:arcweft-player-native", "dep:arcweft-runtime-driver"]
 
 [lints]

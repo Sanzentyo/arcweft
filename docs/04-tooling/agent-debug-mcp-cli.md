@@ -70,6 +70,11 @@ as the animation sample time in seconds and records it as
 accept `viewport_width` and `viewport_height` to reproduce non-default screen sizes;
 when a source is observed, `textbox_height` can enlarge the observed dialogue
 textbox for layout-sensitive rich-text debugging without changing source text.
+Observation reports include a `scene_graph` entry with
+`kind = "layout.viewport_scale"` that records the output viewport, canonical
+1280x720 design viewport, raw `scale_policy = "none"`, content rect, and
+renderer path used by the current native rich-text observer. This keeps raw
+pixel mode explicit in JSON while future fit/contain modes are designed.
 `arcweft.session.info` returns the latest frame identifiers, resources, images,
 observed layers, observed objects, resource templates, and latest capture
 metadata so a debugger can recover current capture options, object ids, and
@@ -241,9 +246,12 @@ arcw agent observe --manifest arcw.toml --profile game.dev --json
 
 The current CLI image resources use the same observation `images` slots planned
 for MCP. `--image overlay` emits `kind = "overlay_svg"` and embeds the SVG body
-when requested. `--image png` and `--image raw-rgba` emit `kind = "color"` by
-default, or `kind = "object_id"` / `kind = "mask"` with `--capture object-id`
-or `--capture mask`. `--resource image` returns the selected image as an
+when requested. `--out` paths must match the selected image format:
+`.svg` for `--image overlay`, `.png` for `--image png`, and `.rgba` for
+`--image raw-rgba`, so an overlay SVG is not accidentally written to a PNG
+filename. `--image png` and `--image raw-rgba` emit `kind = "color"` by default,
+or `kind = "object_id"` / `kind = "mask"` with `--capture object-id` or
+`--capture mask`. `--resource image` returns the selected image as an
 `AgentResource` whose body is base64-encoded binary data, and `--resource image
 --mcp` returns MCP `resources/read` compatible contents with a base64 `blob`.
 The MCP server also supports `resources/templates/list`, which returns the

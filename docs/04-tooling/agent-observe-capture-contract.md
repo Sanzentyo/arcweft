@@ -89,6 +89,13 @@ logical pixels:
 Captures must include enough metadata to convert image-local pixels back to
 viewport coordinates without parsing URI strings.
 
+Current native Agent observation reports also publish viewport scaling metadata
+as a `scene_graph` entry with `kind = "layout.viewport_scale"`. The entry
+records the output viewport, canonical 1280x720 design viewport, raw
+`scale_policy = "none"`, content rect, scale factors, and renderer path. This
+is report metadata only in the current observer; applying contain/cover/stretch
+to all observed geometry and captures is tracked as a separate design item.
+
 ---
 
 ## Image resources

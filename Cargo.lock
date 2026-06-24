@@ -470,6 +470,7 @@ dependencies = [
  "arcweft-rag",
  "arcweft-render-native",
  "arcweft-render-text",
+ "arcweft-render-wgpu",
  "arcweft-runtime-accelerator",
  "arcweft-runtime-driver",
  "arcweft-runtime-host",

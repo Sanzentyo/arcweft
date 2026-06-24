@@ -238,7 +238,7 @@ pub(super) fn finish_agent_observation_report(
             root: "ui.root".to_owned(),
             children: vec!["dialogue.layer".to_owned()],
         },
-        scene_graph: Vec::new(),
+        scene_graph: vec![agent_observe_layout_scene_graph(&viewport)],
         audio_state: AgentAudioState {
             active_voices: Vec::new(),
             pending_events: Vec::new(),
@@ -254,6 +254,56 @@ pub(super) fn finish_agent_observation_report(
         final_status: status,
         overlay_svg: None,
     }
+}
+
+pub(super) fn agent_observe_layout_scene_graph(viewport: &AgentViewport) -> serde_json::Value {
+    let content_rect = agent_observe_content_rect(viewport);
+    serde_json::json!({
+        "kind": "layout.viewport_scale",
+        "renderer_kind": "native_rich_text_observer",
+        "output_viewport": {
+            "width": viewport.width,
+            "height": viewport.height,
+            "device_pixel_ratio": viewport.scale
+        },
+        "design_viewport": {
+            "width": AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH,
+            "height": AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT
+        },
+        "scale_policy": content_rect.policy.as_str(),
+        "content_rect": {
+            "x": content_rect.rect.origin.x,
+            "y": content_rect.rect.origin.y,
+            "width": content_rect.rect.size.width,
+            "height": content_rect.rect.size.height
+        },
+        "scale": {
+            "x": content_rect.scale_x,
+            "y": content_rect.scale_y
+        },
+        "raw_pixel_mode": content_rect.policy == arcweft_render_wgpu::geometry::ScalePolicy::None
+    })
+}
+
+pub(super) fn agent_observe_content_rect(
+    viewport: &AgentViewport,
+) -> arcweft_render_wgpu::geometry::ContentRect {
+    arcweft_render_wgpu::geometry::ContentRect::calculate(
+        arcweft_render_wgpu::geometry::LayoutSize::new(
+            agent_u32_to_f32(AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH),
+            agent_u32_to_f32(AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT),
+        ),
+        arcweft_render_wgpu::geometry::LayoutSize::new(
+            agent_u32_to_f32(viewport.width),
+            agent_u32_to_f32(viewport.height),
+        ),
+        arcweft_render_wgpu::geometry::ScalePolicy::None,
+    )
+    .expect("validated Agent viewport dimensions produce a content rect")
+}
+
+fn agent_u32_to_f32(value: u32) -> f32 {
+    value.to_string().parse().unwrap_or(f32::MAX)
 }
 
 pub(super) fn agent_action_targets_for_runtime_status(

@@ -1,8 +1,8 @@
 use arcweft_render_text::{RichTextColor, RichTextFontFamily, RichTextStyle};
 use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, InteractionVisualState, RenderChoiceItem, RenderDialogue, RenderFontFamily,
-    RenderPreferences, RenderScene, RenderTextSlant, RenderTextWeight, RenderViewport,
-    SharedFramePlanner,
+    ChoiceScroll, ContentRect, InteractionVisualState, LayoutPoint, LayoutRect, LayoutSize,
+    RenderChoiceItem, RenderDialogue, RenderFontFamily, RenderPreferences, RenderScene,
+    RenderTextSlant, RenderTextWeight, RenderViewport, ScalePolicy, SharedFramePlanner,
 };
 use arcweft_render_wgpu::sample::{DemoAnimationClock, DemoImageKind, generated_demo_images};
 
@@ -43,6 +43,57 @@ fn generated_scene(elapsed_millis: u64) -> RenderScene {
     );
     scene.visual_time_millis = elapsed_millis;
     scene
+}
+
+#[test]
+fn content_rect_contain_preserves_design_aspect_ratio_in_tall_output() {
+    let rect = ContentRect::calculate(
+        LayoutSize::new(1280.0, 720.0),
+        LayoutSize::new(1000.0, 800.0),
+        ScalePolicy::Contain,
+    )
+    .expect("content rect calculates");
+
+    assert_eq!(rect.policy, ScalePolicy::Contain);
+    assert!((rect.scale_x - 0.78125).abs() < f32::EPSILON);
+    assert!((rect.scale_y - 0.78125).abs() < f32::EPSILON);
+    assert_eq!(rect.rect.origin, LayoutPoint::new(0.0, 118.75));
+    assert_eq!(rect.rect.size, LayoutSize::new(1000.0, 562.5));
+}
+
+#[test]
+fn content_rect_modes_make_raw_cover_and_stretch_distinct() {
+    let design = LayoutSize::new(1280.0, 720.0);
+    let output = LayoutSize::new(1000.0, 800.0);
+    let raw = ContentRect::calculate(design, output, ScalePolicy::None).expect("raw rect");
+    let cover = ContentRect::calculate(design, output, ScalePolicy::Cover).expect("cover rect");
+    let stretch =
+        ContentRect::calculate(design, output, ScalePolicy::Stretch).expect("stretch rect");
+
+    assert_eq!(raw.rect, LayoutRect::new(0.0, 0.0, 1280.0, 720.0));
+    assert!((raw.scale_x - 1.0).abs() < f32::EPSILON);
+    assert!((raw.scale_y - 1.0).abs() < f32::EPSILON);
+    assert!((cover.scale_x - 1.111_111_2).abs() < 0.000_001);
+    assert!((cover.rect.origin.x + 211.111_15).abs() < 0.000_01);
+    assert!(cover.rect.origin.y.abs() < 0.000_1);
+    assert_eq!(stretch.rect, LayoutRect::new(0.0, 0.0, 1000.0, 800.0));
+    assert!((stretch.scale_x - 0.78125).abs() < f32::EPSILON);
+    assert!((stretch.scale_y - 1.111_111_2).abs() < 0.000_001);
+}
+
+#[test]
+fn content_rect_maps_design_rect_into_output_space() {
+    let rect = ContentRect::calculate(
+        LayoutSize::new(1280.0, 720.0),
+        LayoutSize::new(1000.0, 800.0),
+        ScalePolicy::Contain,
+    )
+    .expect("content rect calculates");
+
+    assert_eq!(
+        rect.map_rect(LayoutRect::new(96.0, 48.0, 320.0, 160.0)),
+        LayoutRect::new(75.0, 156.25, 250.0, 125.0)
+    );
 }
 
 #[test]
