@@ -103,14 +103,16 @@ The product `.awfb` codec is the AWFB v1 fixed-header container owned by
 `arcweft-bundle`. It has a fixed magic/version/header, a canonical manifest byte
 range, a canonical section index, embedded/external section descriptors, BLAKE3
 stored/content digests, bundle-kind section validation, unknown required-section
-rejection, optional unknown-section skipping, and read budgets. The current
-product codec stores `ProgramBytecode` as an `AWBC` binary envelope whose v1
-payload carries a compact bytecode validation table plus the structured
-`BytecodeProgram` still required by the current VM. Runtime types, entrypoints,
-adapter requirements, content catalog, display catalog, and normalized source
-still use section-specific typed JSON payloads. Those section boundaries are
-the stable replacement point for fully executable compact opcode tables and
-binary resource codecs.
+rejection, optional unknown-section skipping, and read budgets. Product
+manifests at schema version 4 and later declare
+`executable_payload = "awbc_v1"`, and their `ProgramBytecode` section is exactly
+canonical bytes from `AwbcProgram::encode_canonical()`. Structured
+`BytecodeProgram` data remains an inspection/export surface only and is not read
+by product `.awfb` runtime execution. Runtime types, entrypoints, adapter
+requirements, content catalog, display catalog, and normalized source still use
+section-specific typed JSON payloads. See `product-awfb-bytecode.md` and
+`docs/schemas/product-awfb-awbc-v1.json` for the AWBC-only product payload
+contract.
 
 The same Sans I/O bundle model also exposes explicit JSON, TOML, YAML,
 MessagePack, CBOR, and Avro encode/decode entrypoints for inspection and

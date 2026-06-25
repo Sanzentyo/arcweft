@@ -11,15 +11,12 @@ use arcweft_bundle::patch::{
     apply_patch_bundle, decode_patch_bundle,
 };
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleImageObject, BundleKind};
-use arcweft_core::bytecode::{
-    BytecodeProgram, BytecodeVerificationBudget, BytecodeVerificationError,
-};
+use arcweft_core::awbc::schema::{AwbcEntryId, AwbcProgram};
+use arcweft_core::bytecode::BytecodeVerificationError;
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
-use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
-use arcweft_core::plan::{
-    FlowEvent, FlowRuntimeId, RuntimeEntryTarget, RuntimePlan, RuntimePlanError,
-};
+use arcweft_core::executor::{ArcweftRuntimeExecutor, RuntimeExecutor};
+use arcweft_core::plan::{FlowEvent, RuntimePlanError};
 use arcweft_core::pure::VmRuntimePureCallBackend;
 use arcweft_core::source::{RuntimeSourceEvent, SourceId};
 use arcweft_core::step::{
@@ -129,6 +126,12 @@ pub enum BundleSessionError {
     DecodeBytecode(#[from] RuntimePlanError),
     #[error("failed to verify bundle bytecode: {0}")]
     VerifyBytecode(#[from] BytecodeVerificationError),
+    #[error("product bundle is missing canonical AWBC executable payload")]
+    MissingProductAwbc,
+    #[error("failed to create product AWBC runtime: {message}")]
+    ProductAwbcRuntime { message: String },
+    #[error("product AWBC entry `{entry}` does not exist")]
+    ProductAwbcEntry { entry: String },
     #[error("failed to fingerprint bundle generation: {message}")]
     GenerationFingerprint { message: String },
     #[error("failed to decode bundle container: {message}")]
@@ -673,6 +676,9 @@ fn initial_generation(bundle: &ArcweftBundle) -> Result<ProgramGeneration, Bundl
             BundleSessionError::UnsupportedBundleKind(kind)
         }
         GenerationBuildError::VerifyBytecode(error) => BundleSessionError::VerifyBytecode(error),
+        GenerationBuildError::ProductAwbcVerification { message } => {
+            BundleSessionError::ProductAwbcRuntime { message }
+        }
         GenerationBuildError::EncodeFingerprint(error) => {
             BundleSessionError::GenerationFingerprint {
                 message: error.to_string(),
@@ -691,26 +697,48 @@ fn build_session_runtime(
         ));
     }
 
-    let program = bundle.bytecode.program.clone();
-    program.verify(BytecodeVerificationBudget::default())?;
-    let mut plan = program.into_runtime_plan()?;
-    apply_entry_selection(
-        &mut plan,
-        selected_entry(bundle, options),
-        options.flow.as_deref(),
-    )?;
-    let bytecode = BytecodeProgram::from_runtime_plan(plan.clone());
+    let program = bundle
+        .product_awbc_program()
+        .map_err(|_| BundleSessionError::MissingProductAwbc)?
+        .clone();
+    let entry = selected_awbc_entry(&program, bundle, options)?;
 
     Ok(SessionRuntime {
         source_label: bundle.manifest.source_label.clone(),
-        executor: ArcweftRuntimeExecutor::from_bytecode_parts(
-            bytecode,
-            plan,
-            ArcweftExecutionTier::StructuredVm,
-        ),
+        executor: ArcweftRuntimeExecutor::from_awbc_product(program, entry).map_err(|error| {
+            BundleSessionError::ProductAwbcRuntime {
+                message: error.to_string(),
+            }
+        })?,
         display: bundle.display.clone(),
         image_objects: bundle.image_objects.clone(),
     })
+}
+
+fn selected_awbc_entry(
+    program: &AwbcProgram,
+    bundle: &ArcweftBundle,
+    options: &BundleSessionOptions,
+) -> Result<AwbcEntryId, BundleSessionError> {
+    if let Some(flow) = options.flow.as_deref() {
+        return Err(BundleSessionError::UnknownFlow {
+            flow: RuntimeEntityFamily::Flow.selector(flow),
+        });
+    }
+    let Some(entry) = selected_entry(bundle, options) else {
+        return Ok(AwbcEntryId(0));
+    };
+    let selected = RuntimeEntityFamily::Entry.selector(entry);
+    program
+        .entries
+        .iter()
+        .enumerate()
+        .find_map(|(index, candidate)| {
+            let public_id = program.strings.get(candidate.public_id.index())?;
+            (public_id == entry || public_id == &selected)
+                .then(|| AwbcEntryId(u32::try_from(index).unwrap_or(u32::MAX)))
+        })
+        .ok_or(BundleSessionError::ProductAwbcEntry { entry: selected })
 }
 
 fn selected_entry<'a>(
@@ -724,37 +752,4 @@ fn selected_entry<'a>(
             .then_some(bundle.manifest.entry.as_deref())
             .flatten()
     })
-}
-
-fn apply_entry_selection(
-    plan: &mut RuntimePlan,
-    entry: Option<&str>,
-    flow: Option<&str>,
-) -> Result<(), BundleSessionError> {
-    if entry.is_some() && flow.is_some() {
-        return Err(BundleSessionError::ConflictingEntrySelection);
-    }
-    if let Some(flow) = flow {
-        let flow = FlowRuntimeId(RuntimeEntityFamily::Flow.selector(flow));
-        if !plan.flows.iter().any(|candidate| candidate.id == flow) {
-            return Err(BundleSessionError::UnknownFlow { flow: flow.0 });
-        }
-        plan.entry_flow = Some(flow);
-        return Ok(());
-    }
-    if let Some(entry) = entry {
-        let entry = RuntimeEntityFamily::Entry.selector(entry);
-        let Some(spec) = plan
-            .entries
-            .iter()
-            .find(|candidate| candidate.id.0 == entry)
-        else {
-            return Err(BundleSessionError::UnknownEntry { entry });
-        };
-        let RuntimeEntryTarget::Flow(flow) = &spec.target else {
-            return Err(BundleSessionError::NonFlowEntry { entry });
-        };
-        plan.entry_flow = Some(flow.clone());
-    }
-    Ok(())
 }

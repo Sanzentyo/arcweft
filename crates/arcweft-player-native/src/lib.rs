@@ -90,7 +90,7 @@ pub fn run_bundle_headless(
             steps: max_steps,
             mode: BundleRunnerStepMode::Game,
             max_ops: 64,
-            executor: BundleRunnerExecutor::BytecodeVm,
+            executor: BundleRunnerExecutor::AwbcProduct,
             ..BundleRunnerOptions::default()
         },
         &[desktop_native_adapter_registrar],
@@ -246,7 +246,7 @@ mod tests {
         assert_eq!(runtime.source, "bundle-display.arcw");
         assert_eq!(runtime.bytecode_instructions, 2);
         assert_eq!(runtime.adapter_manifests, 0);
-        assert_eq!(runtime.executor, BundleRunnerExecutor::BytecodeVm);
+        assert_eq!(runtime.executor, BundleRunnerExecutor::AwbcProduct);
         assert_eq!(runtime.native_io.scheduler.submitted, 0);
     }
 

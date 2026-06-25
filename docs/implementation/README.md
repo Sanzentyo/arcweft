@@ -18,6 +18,10 @@ in
 `docs/implementation/seq-01-4-runtime-driver-host-executor-migration-2026-06-25.md`;
 the compact AWBC product-step parity design gap split from it is
 `docs/reviews/requests/2026-06-25-seq-01.4.1-compact-awbc-runtime-step-parity.md`.
+The seq-01.5 product AWFB bytecode migration is tracked in
+`docs/implementation/seq-01-5-product-awfb-bytecode-migration-2026-06-25.md`;
+new product `.awfb` executable payloads are canonical AWBC bytes and product
+runtime paths select the AWBC product executor by default.
 
 ## Current Milestone
 

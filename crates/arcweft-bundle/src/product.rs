@@ -3,37 +3,34 @@ use crate::container::{
     ContentResidency, ExternalSectionPayload, ReadBudget, SectionId, SectionInput, encode_bundle,
 };
 use crate::{
-    ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleAdapterManifest, BundleBytecodeProgram,
-    BundleCodecError, BundleImageAsset, BundleImageObject, BundleKind, BundleManifest,
-    BundleSource, BundleVirtualFile,
+    ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleAdapterManifest, BundleAwbcProgram,
+    BundleBytecodeEncoding, BundleBytecodeProgram, BundleCodecError, BundleImageAsset,
+    BundleImageObject, BundleKind, BundleManifest, BundleSource, BundleVirtualFile,
 };
 use arcweft_agent_protocol::artifact::AgentArtifactManifest;
 use arcweft_audio_core::graph::AudioGraph;
 use arcweft_core::bytecode::{BytecodeProgram, BytecodeRuntimeLayout};
-use arcweft_core::compact_bytecode::{
-    CompactBytecodeFunction, CompactBytecodeProgram, CompactBytecodeValidationBudget,
-    CompactCodeSlotId, CompactInstruction, CompactOpcode, CompactRuntimeSignature,
-    CompactRuntimeTypeId,
-};
-use arcweft_core::plan::{FlowOp, FlowRuntimeId};
 use arcweft_render_text::LineDisplayCatalog;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 const AWFB_SECTION_SCHEMA_VERSION: u32 = 1;
-const BYTECODE_SECTION_MAGIC: [u8; 8] = *b"AWBC\r\n\x1a\n";
-const BYTECODE_SECTION_ENVELOPE_VERSION: u32 = 1;
-const BYTECODE_SECTION_STRUCTURED_MESSAGEPACK: u32 = 1;
-const BYTECODE_SECTION_STRUCTURED_WITH_COMPACT_TABLE: u32 = 2;
-const COMPACT_TABLE_PAYLOAD_VERSION: u32 = 1;
+const LEGACY_BYTECODE_SECTION_MAGIC: [u8; 8] = *b"AWBC\r\n\x1a\n";
+const LEGACY_PRODUCT_BYTECODE_MESSAGEPACK_TAG: u32 = 1;
+const LEGACY_PRODUCT_BYTECODE_COMPACT_SIDECAR_TAG: u32 = 2;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct ProductManifest {
     schema_version: u32,
     bundle_kind: BundleKind,
+    #[serde(default = "default_executable_payload")]
+    executable_payload: String,
     manifest: BundleManifest,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     agent: Option<AgentArtifactManifest>,
+}
+
+fn default_executable_payload() -> String {
+    crate::product_awbc::PRODUCT_EXECUTABLE_PAYLOAD_AWBC_V1.to_owned()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -75,6 +72,7 @@ pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCod
     let product_manifest = ProductManifest {
         schema_version: bundle.schema_version,
         bundle_kind: bundle.bundle_kind,
+        executable_payload: crate::product_awbc::PRODUCT_EXECUTABLE_PAYLOAD_AWBC_V1.to_owned(),
         manifest: bundle.manifest.clone(),
         agent: bundle.agent.clone(),
     };
@@ -82,7 +80,11 @@ pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCod
     let sections = vec![
         required_section(
             BundleSectionKind::ProgramBytecode,
-            encode_program_bytecode_section(&bundle.bytecode)?,
+            bundle
+                .product_awbc
+                .as_ref()
+                .ok_or(BundleCodecError::MissingProductAwbcExecutable)?
+                .encode_product_section()?,
         ),
         required_section(
             BundleSectionKind::RuntimeTypes,
@@ -156,6 +158,13 @@ pub(crate) fn from_awfb_slice_with_external_sections(
             message: "container kind does not match product manifest bundle kind".to_owned(),
         });
     }
+    if product_manifest.executable_payload
+        != crate::product_awbc::PRODUCT_EXECUTABLE_PAYLOAD_AWBC_V1
+    {
+        return Err(BundleCodecError::UnsupportedProductExecutablePayload {
+            actual: product_manifest.executable_payload,
+        });
+    }
 
     let runtime_types = required_payload::<RuntimeTypesSection>(
         &view,
@@ -177,17 +186,8 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         external_sections,
         BundleSectionKind::ContentCatalog,
     )?;
-    let bytecode = required_bytes(&view, external_sections, BundleSectionKind::ProgramBytecode)
-        .and_then(|bytes| decode_program_bytecode_section(&bytes))?;
-    if runtime_types.runtime_layout != bytecode.program.runtime_layout {
-        return Err(BundleCodecError::DecodeAwfb {
-            message: format!(
-                "runtime types layout `{}` does not match bytecode layout `{}`",
-                runtime_types.runtime_layout.label(),
-                bytecode.program.runtime_layout.label()
-            ),
-        });
-    }
+    let product_awbc = required_product_awbc_bytes(&view, external_sections)
+        .and_then(|bytes| reject_structured_or_decode_awbc(&bytes))?;
     let display = optional_payload::<LineDisplayCatalog>(
         &view,
         external_sections,
@@ -210,7 +210,14 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         manifest: product_manifest.manifest,
         agent: product_manifest.agent,
         source,
-        bytecode,
+        bytecode: BundleBytecodeProgram {
+            encoding: BundleBytecodeEncoding::StructuredJson,
+            program: BytecodeProgram {
+                runtime_layout: runtime_types.runtime_layout,
+                ..BytecodeProgram::default()
+            },
+        },
+        product_awbc: Some(product_awbc),
         display,
         adapter_manifests: adapters.adapter_manifests,
         virtual_files: content.virtual_files,
@@ -255,18 +262,19 @@ where
     })
 }
 
-fn required_bytes(
+fn required_product_awbc_bytes(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
-    kind: BundleSectionKind,
 ) -> Result<Vec<u8>, BundleCodecError> {
-    let descriptor = required_descriptor(view, kind)?;
+    let descriptor = required_descriptor(view, BundleSectionKind::ProgramBytecode)
+        .map_err(|_| BundleCodecError::MissingProductAwbcExecutable)?;
     view.decoded_section_with_external_payloads(descriptor.id(), external_sections)
         .map_err(|error| BundleCodecError::DecodeAwfb {
             message: error.to_string(),
         })?
         .ok_or_else(|| BundleCodecError::DecodeAwfb {
-            message: format!("AWFB {kind:?} section is external and cannot be decoded inline"),
+            message: "AWFB ProgramBytecode section is external and cannot be decoded inline"
+                .to_owned(),
         })
 }
 
@@ -324,417 +332,23 @@ where
     decode_json(&bytes).map(Some)
 }
 
-fn encode_program_bytecode_section(
-    bytecode: &BundleBytecodeProgram,
-) -> Result<Vec<u8>, BundleCodecError> {
-    let compact = compact_validation_table(&bytecode.program);
-    compact
-        .verify(CompactBytecodeValidationBudget::default())
-        .map_err(|error| BundleCodecError::EncodeAwfb {
-            message: error.to_string(),
-        })?;
-    let compact_payload = encode_compact_table(&compact)?;
-    let structured_payload = encode_json(&bytecode.program)?;
-    let compact_len = checked_u32_len(compact_payload.len(), "compact bytecode table")?;
-    let structured_len = checked_u32_len(structured_payload.len(), "structured bytecode program")?;
-
-    let mut section = Vec::with_capacity(24 + compact_payload.len() + structured_payload.len());
-    section.extend_from_slice(&BYTECODE_SECTION_MAGIC);
-    section.extend_from_slice(&BYTECODE_SECTION_ENVELOPE_VERSION.to_le_bytes());
-    section.extend_from_slice(&BYTECODE_SECTION_STRUCTURED_WITH_COMPACT_TABLE.to_le_bytes());
-    section.extend_from_slice(&compact_len.to_le_bytes());
-    section.extend_from_slice(&structured_len.to_le_bytes());
-    section.extend_from_slice(&compact_payload);
-    section.extend_from_slice(&structured_payload);
-    Ok(section)
+fn reject_structured_or_decode_awbc(bytes: &[u8]) -> Result<BundleAwbcProgram, BundleCodecError> {
+    if let Some(tag) = legacy_structured_product_tag(bytes) {
+        return Err(BundleCodecError::StructuredProductBytecodeUnsupported { encoding_tag: tag });
+    }
+    BundleAwbcProgram::decode_product_section(bytes)
 }
 
-fn decode_program_bytecode_section(
-    bytes: &[u8],
-) -> Result<BundleBytecodeProgram, BundleCodecError> {
-    if !bytes.starts_with(&BYTECODE_SECTION_MAGIC) {
-        return decode_json(bytes);
+fn legacy_structured_product_tag(bytes: &[u8]) -> Option<u32> {
+    if bytes.len() < 16 || !bytes.starts_with(&LEGACY_BYTECODE_SECTION_MAGIC) {
+        return None;
     }
-    if bytes.len() < 16 {
-        return Err(BundleCodecError::DecodeAwfb {
-            message: "AWFB ProgramBytecode envelope is truncated".to_owned(),
-        });
-    }
-    let version = u32::from_le_bytes(bytes[8..12].try_into().expect("slice length checked"));
-    if version != BYTECODE_SECTION_ENVELOPE_VERSION {
-        return Err(BundleCodecError::DecodeAwfb {
-            message: format!(
-                "unsupported AWFB ProgramBytecode envelope version {version}; expected {BYTECODE_SECTION_ENVELOPE_VERSION}"
-            ),
-        });
-    }
-    let encoding = u32::from_le_bytes(bytes[12..16].try_into().expect("slice length checked"));
-    let program = match encoding {
-        BYTECODE_SECTION_STRUCTURED_MESSAGEPACK => {
-            decode_structured_messagepack_program(&bytes[16..])?
-        }
-        BYTECODE_SECTION_STRUCTURED_WITH_COMPACT_TABLE => {
-            decode_structured_program_with_compact_table(&bytes[16..])?
-        }
-        _ => {
-            return Err(BundleCodecError::DecodeAwfb {
-                message: format!("unknown AWFB ProgramBytecode encoding tag {encoding}"),
-            });
-        }
-    };
-    Ok(BundleBytecodeProgram {
-        encoding: crate::BundleBytecodeEncoding::StructuredJson,
-        program,
-    })
-}
-
-fn decode_structured_program_with_compact_table(
-    bytes: &[u8],
-) -> Result<BytecodeProgram, BundleCodecError> {
-    if bytes.len() < 8 {
-        return Err(BundleCodecError::DecodeAwfb {
-            message: "AWFB ProgramBytecode compact payload header is truncated".to_owned(),
-        });
-    }
-    let compact_len =
-        u32::from_le_bytes(bytes[..4].try_into().expect("slice length checked")) as usize;
-    let structured_len =
-        u32::from_le_bytes(bytes[4..8].try_into().expect("slice length checked")) as usize;
-    let payload_len = compact_len
-        .checked_add(structured_len)
-        .and_then(|len| len.checked_add(8))
-        .ok_or_else(|| BundleCodecError::DecodeAwfb {
-            message: "AWFB ProgramBytecode compact payload lengths overflow".to_owned(),
-        })?;
-    if bytes.len() != payload_len {
-        return Err(BundleCodecError::DecodeAwfb {
-            message: format!(
-                "AWFB ProgramBytecode compact payload length mismatch: header declares {payload_len} bytes, section has {} bytes",
-                bytes.len()
-            ),
-        });
-    }
-    let compact_end = 8 + compact_len;
-    let compact = decode_compact_table(&bytes[8..compact_end])?;
-    compact
-        .verify(CompactBytecodeValidationBudget::default())
-        .map_err(|error| BundleCodecError::DecodeAwfb {
-            message: error.to_string(),
-        })?;
-    decode_json(&bytes[compact_end..])
-}
-
-#[cfg(feature = "format-messagepack")]
-fn decode_structured_messagepack_program(
-    bytes: &[u8],
-) -> Result<arcweft_core::bytecode::BytecodeProgram, BundleCodecError> {
-    rmp_serde::from_slice(bytes).map_err(|error| BundleCodecError::DecodeAwfb {
-        message: error.to_string(),
-    })
-}
-
-#[cfg(not(feature = "format-messagepack"))]
-fn decode_structured_messagepack_program(
-    _bytes: &[u8],
-) -> Result<arcweft_core::bytecode::BytecodeProgram, BundleCodecError> {
-    Err(BundleCodecError::DecodeAwfb {
-        message: "AWFB ProgramBytecode MessagePack support is not enabled".to_owned(),
-    })
-}
-
-fn compact_validation_table(program: &BytecodeProgram) -> CompactBytecodeProgram {
-    let flow_slots = program
-        .flows
-        .iter()
-        .enumerate()
-        .map(|(index, flow)| (flow.id.clone(), u32::try_from(index).unwrap_or(u32::MAX)))
-        .collect::<BTreeMap<_, _>>();
-    let functions = program
-        .flows
-        .iter()
-        .enumerate()
-        .map(|(index, flow)| CompactBytecodeFunction {
-            slot: CompactCodeSlotId(u32::try_from(index).unwrap_or(u32::MAX)),
-            signature: CompactRuntimeSignature::default(),
-            instructions: compact_instructions(&flow.instructions, &flow_slots),
-        })
-        .collect();
-    CompactBytecodeProgram {
-        abi_version: program.abi_version,
-        runtime_type_count: 1,
-        constant_count: 0,
-        content_unit_count: u32::try_from(program.line_task_groups.len()).unwrap_or(u32::MAX),
-        functions,
-    }
-}
-
-fn compact_instructions(
-    instructions: &[arcweft_core::bytecode::BytecodeInstruction],
-    flow_slots: &BTreeMap<FlowRuntimeId, u32>,
-) -> Vec<CompactInstruction> {
-    instructions
-        .iter()
-        .flat_map(|instruction| match instruction {
-            arcweft_core::bytecode::BytecodeInstruction::Flow(op) => {
-                compact_flow_op(op, flow_slots)
-            }
-        })
-        .collect()
-}
-
-fn compact_flow_op(
-    op: &FlowOp,
-    flow_slots: &BTreeMap<FlowRuntimeId, u32>,
-) -> Vec<CompactInstruction> {
-    let mut instructions = Vec::new();
-    collect_compact_flow_op(op, flow_slots, &mut instructions);
-    instructions
-}
-
-fn collect_compact_flow_ops(
-    ops: &[FlowOp],
-    flow_slots: &BTreeMap<FlowRuntimeId, u32>,
-    out: &mut Vec<CompactInstruction>,
-) {
-    for op in ops {
-        collect_compact_flow_op(op, flow_slots, out);
-    }
-}
-
-fn collect_compact_flow_op(
-    op: &FlowOp,
-    flow_slots: &BTreeMap<FlowRuntimeId, u32>,
-    out: &mut Vec<CompactInstruction>,
-) {
-    match op {
-        FlowOp::Dialogue { task_group, .. } => out.push(CompactInstruction {
-            opcode: CompactOpcode::EnsureContent.encoded(),
-            operand: u32::try_from(*task_group).unwrap_or(u32::MAX),
-        }),
-        FlowOp::Choice { options, .. } => options
-            .iter()
-            .filter_map(|option| option.target.as_ref())
-            .for_each(|target| push_flow_call(target, flow_slots, out)),
-        FlowOp::Goto(target) => push_flow_call(target, flow_slots, out),
-        FlowOp::LetElse { else_ops, .. } => collect_compact_flow_ops(else_ops, flow_slots, out),
-        FlowOp::If {
-            then_ops, else_ops, ..
-        }
-        | FlowOp::IfLet {
-            then_ops, else_ops, ..
-        } => {
-            collect_compact_flow_ops(then_ops, flow_slots, out);
-            collect_compact_flow_ops(else_ops, flow_slots, out);
-        }
-        FlowOp::Match { arms, .. } => arms
-            .iter()
-            .for_each(|arm| collect_compact_flow_ops(&arm.ops, flow_slots, out)),
-        FlowOp::Loop { body }
-        | FlowOp::LetLoop { body, .. }
-        | FlowOp::While { body, .. }
-        | FlowOp::WhileLet { body, .. }
-        | FlowOp::For { body, .. }
-        | FlowOp::Thread { body, .. } => collect_compact_flow_ops(body, flow_slots, out),
-        FlowOp::LoopNext { body }
-        | FlowOp::WhileNext { body, .. }
-        | FlowOp::WhileLetNext { body, .. }
-        | FlowOp::ForNext { body, .. } => collect_compact_flow_ops(body, flow_slots, out),
-        FlowOp::Scope(ops) | FlowOp::LetScope { ops, .. } => {
-            collect_compact_flow_ops(ops, flow_slots, out);
-        }
-        FlowOp::Return(_) | FlowOp::ReturnExpr(_) => out.push(CompactInstruction {
-            opcode: CompactOpcode::Return.encoded(),
-            operand: 0,
-        }),
-        FlowOp::Bind(_)
-        | FlowOp::Let { .. }
-        | FlowOp::Await { .. }
-        | FlowOp::AwaitMany { .. }
-        | FlowOp::Break(_)
-        | FlowOp::Continue
-        | FlowOp::GotoExpr(_)
-        | FlowOp::Effect(_)
-        | FlowOp::EnterScope
-        | FlowOp::ExitScope
-        | FlowOp::ExitScopeBind { .. }
-        | FlowOp::Noop => {}
-    }
-}
-
-fn push_flow_call(
-    target: &FlowRuntimeId,
-    flow_slots: &BTreeMap<FlowRuntimeId, u32>,
-    out: &mut Vec<CompactInstruction>,
-) {
-    out.push(CompactInstruction {
-        opcode: CompactOpcode::Call.encoded(),
-        operand: flow_slots.get(target).copied().unwrap_or(u32::MAX),
-    });
-}
-
-fn encode_compact_table(program: &CompactBytecodeProgram) -> Result<Vec<u8>, BundleCodecError> {
-    let function_count = checked_u32_len(program.functions.len(), "compact bytecode functions")?;
-    let mut bytes = Vec::new();
-    push_u32(&mut bytes, COMPACT_TABLE_PAYLOAD_VERSION);
-    push_u32(&mut bytes, program.abi_version);
-    push_u32(&mut bytes, program.runtime_type_count);
-    push_u32(&mut bytes, program.constant_count);
-    push_u32(&mut bytes, program.content_unit_count);
-    push_u32(&mut bytes, function_count);
-    for function in &program.functions {
-        let param_count =
-            checked_u32_len(function.signature.params.len(), "compact signature params")?;
-        let instruction_count =
-            checked_u32_len(function.instructions.len(), "compact instructions")?;
-        push_u32(&mut bytes, function.slot.0);
-        push_u32(&mut bytes, param_count);
-        function
-            .signature
-            .params
-            .iter()
-            .for_each(|ty| push_u32(&mut bytes, ty.0));
-        push_u32(&mut bytes, function.signature.result.0);
-        bytes.extend_from_slice(&function.signature.effects.0);
-        push_u32(&mut bytes, instruction_count);
-        function.instructions.iter().for_each(|instruction| {
-            bytes.push(instruction.opcode);
-            push_u32(&mut bytes, instruction.operand);
-        });
-    }
-    Ok(bytes)
-}
-
-fn decode_compact_table(bytes: &[u8]) -> Result<CompactBytecodeProgram, BundleCodecError> {
-    let mut reader = CompactTableReader::new(bytes);
-    let version = reader.read_u32()?;
-    if version != COMPACT_TABLE_PAYLOAD_VERSION {
-        return Err(BundleCodecError::DecodeAwfb {
-            message: format!(
-                "unsupported AWFB compact bytecode table version {version}; expected {COMPACT_TABLE_PAYLOAD_VERSION}"
-            ),
-        });
-    }
-    let abi_version = reader.read_u32()?;
-    let runtime_type_count = reader.read_u32()?;
-    let constant_count = reader.read_u32()?;
-    let content_unit_count = reader.read_u32()?;
-    let function_count = reader.read_u32()? as usize;
-    let functions = (0..function_count)
-        .map(|_| decode_compact_function(&mut reader))
-        .collect::<Result<Vec<_>, _>>()?;
-    reader.finish()?;
-    Ok(CompactBytecodeProgram {
-        abi_version,
-        runtime_type_count,
-        constant_count,
-        content_unit_count,
-        functions,
-    })
-}
-
-fn decode_compact_function(
-    reader: &mut CompactTableReader<'_>,
-) -> Result<CompactBytecodeFunction, BundleCodecError> {
-    let slot = CompactCodeSlotId(reader.read_u32()?);
-    let param_count = reader.read_u32()? as usize;
-    let params = (0..param_count)
-        .map(|_| reader.read_u32().map(CompactRuntimeTypeId))
-        .collect::<Result<Vec<_>, _>>()?;
-    let result = CompactRuntimeTypeId(reader.read_u32()?);
-    let effects = reader.read_effect_digest()?;
-    let instruction_count = reader.read_u32()? as usize;
-    let instructions = (0..instruction_count)
-        .map(|_| {
-            let opcode = reader.read_u8()?;
-            let operand = reader.read_u32()?;
-            Ok(CompactInstruction { opcode, operand })
-        })
-        .collect::<Result<Vec<_>, BundleCodecError>>()?;
-    Ok(CompactBytecodeFunction {
-        slot,
-        signature: CompactRuntimeSignature {
-            params,
-            result,
-            effects,
-        },
-        instructions,
-    })
-}
-
-struct CompactTableReader<'a> {
-    bytes: &'a [u8],
-    offset: usize,
-}
-
-impl<'a> CompactTableReader<'a> {
-    const fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, offset: 0 }
-    }
-
-    fn read_u8(&mut self) -> Result<u8, BundleCodecError> {
-        let Some(value) = self.bytes.get(self.offset).copied() else {
-            return Err(Self::truncated_error());
-        };
-        self.offset += 1;
-        Ok(value)
-    }
-
-    fn read_u32(&mut self) -> Result<u32, BundleCodecError> {
-        let bytes = self.read_exact(4)?;
-        Ok(u32::from_le_bytes(
-            bytes.try_into().expect("slice length checked"),
-        ))
-    }
-
-    fn read_effect_digest(
-        &mut self,
-    ) -> Result<arcweft_core::compact_bytecode::CompactEffectDigest, BundleCodecError> {
-        let bytes = self.read_exact(32)?;
-        let digest = bytes.try_into().expect("slice length checked");
-        Ok(arcweft_core::compact_bytecode::CompactEffectDigest(digest))
-    }
-
-    fn read_exact(&mut self, len: usize) -> Result<&'a [u8], BundleCodecError> {
-        let end = self
-            .offset
-            .checked_add(len)
-            .ok_or_else(Self::truncated_error)?;
-        if end > self.bytes.len() {
-            return Err(Self::truncated_error());
-        }
-        let bytes = &self.bytes[self.offset..end];
-        self.offset = end;
-        Ok(bytes)
-    }
-
-    fn finish(&self) -> Result<(), BundleCodecError> {
-        if self.offset == self.bytes.len() {
-            Ok(())
-        } else {
-            Err(BundleCodecError::DecodeAwfb {
-                message: format!(
-                    "AWFB compact bytecode table has {} trailing bytes",
-                    self.bytes.len() - self.offset
-                ),
-            })
-        }
-    }
-
-    fn truncated_error() -> BundleCodecError {
-        BundleCodecError::DecodeAwfb {
-            message: "AWFB compact bytecode table is truncated".to_owned(),
-        }
-    }
-}
-
-fn push_u32(out: &mut Vec<u8>, value: u32) {
-    out.extend_from_slice(&value.to_le_bytes());
-}
-
-fn checked_u32_len(len: usize, label: &'static str) -> Result<u32, BundleCodecError> {
-    u32::try_from(len).map_err(|_| BundleCodecError::EncodeAwfb {
-        message: format!("{label} exceed u32 length limit"),
-    })
+    let tag = u32::from_le_bytes(bytes[12..16].try_into().ok()?);
+    matches!(
+        tag,
+        LEGACY_PRODUCT_BYTECODE_MESSAGEPACK_TAG | LEGACY_PRODUCT_BYTECODE_COMPACT_SIDECAR_TAG
+    )
+    .then_some(tag)
 }
 
 fn encode_json<T>(value: &T) -> Result<Vec<u8>, BundleCodecError>
@@ -772,10 +386,9 @@ fn section_id(kind: BundleSectionKind) -> SectionId {
 #[cfg(test)]
 mod tests {
     use super::{
-        AWFB_SECTION_SCHEMA_VERSION, AdapterRequirementsSection, BYTECODE_SECTION_MAGIC,
-        BYTECODE_SECTION_STRUCTURED_WITH_COMPACT_TABLE, ContentCatalogSection, EntrypointsSection,
-        ProductManifest, RuntimeTypesSection, container_kind, decode_compact_table, encode_json,
-        encode_program_bytecode_section, optional_section, required_section, section_id,
+        AWFB_SECTION_SCHEMA_VERSION, AdapterRequirementsSection, ContentCatalogSection,
+        EntrypointsSection, ProductManifest, RuntimeTypesSection, container_kind, encode_json,
+        optional_section, required_section, section_id,
     };
     use crate::container::{
         BundleDigest, BundleSectionKind, BundleView, ExternalSectionPayload, ReadBudget,
@@ -784,6 +397,12 @@ mod tests {
     use crate::{
         ArcweftBundle, BundleCodecError, BundleFormat, BundleManifest, BundleRuntimeSummary,
         BundleSource,
+    };
+    use arcweft_core::awbc::schema::{
+        AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
+        AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
+        AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
+        AwbcStringId, AwbcTableRange, AwbcTerminator,
     };
     use arcweft_core::bytecode::BytecodeProgram;
     use arcweft_render_text::LineDisplayCatalog;
@@ -801,7 +420,8 @@ mod tests {
         let decoded = ArcweftBundle::from_awfb_slice_with_external_sections(&bytes, &[payload])
             .expect("external bytecode payload decodes");
 
-        assert_eq!(decoded, bundle);
+        assert_eq!(decoded.product_awbc(), bundle.product_awbc());
+        assert_eq!(decoded.manifest, bundle.manifest);
     }
 
     #[test]
@@ -816,11 +436,12 @@ mod tests {
         )
         .expect("external product payload decodes");
 
-        assert_eq!(decoded, bundle);
+        assert_eq!(decoded.product_awbc(), bundle.product_awbc());
+        assert_eq!(decoded.manifest, bundle.manifest);
     }
 
     #[test]
-    fn awfb_product_encodes_program_bytecode_as_binary_envelope() {
+    fn awfb_product_encodes_program_bytecode_as_canonical_awbc() {
         let bundle = empty_bundle();
         let bytes = bundle
             .to_format_bytes(BundleFormat::Awfb)
@@ -836,44 +457,64 @@ mod tests {
             .expect("bytecode section decodes")
             .expect("bytecode section is embedded");
 
-        assert!(bytecode_bytes.starts_with(&BYTECODE_SECTION_MAGIC));
         assert_ne!(bytecode_bytes.first(), Some(&b'{'));
         assert_eq!(
-            u32::from_le_bytes(bytecode_bytes[12..16].try_into().expect("encoding tag")),
-            BYTECODE_SECTION_STRUCTURED_WITH_COMPACT_TABLE
+            bytecode_bytes,
+            bundle
+                .product_awbc_program()
+                .expect("product AWBC exists")
+                .encode_canonical()
+                .expect("AWBC encodes")
         );
         assert_eq!(
-            super::from_awfb_slice(&bytes).expect("binary bytecode AWFB decodes"),
-            bundle
+            super::from_awfb_slice(&bytes)
+                .expect("AWBC bytecode AWFB decodes")
+                .product_awbc(),
+            bundle.product_awbc()
         );
     }
 
     #[test]
-    fn awfb_product_embeds_verified_compact_bytecode_table() {
+    fn awfb_product_rejects_old_structured_product_bytecode_tag() {
         let bundle = empty_bundle();
-        let bytecode_bytes =
-            encode_program_bytecode_section(&bundle.bytecode).expect("bytecode encodes");
-        let compact_len =
-            u32::from_le_bytes(bytecode_bytes[16..20].try_into().expect("compact length")) as usize;
-        let compact = decode_compact_table(&bytecode_bytes[24..24 + compact_len])
-            .expect("compact table decodes");
+        let mut old_payload = Vec::new();
+        old_payload.extend_from_slice(b"AWBC\r\n\x1a\n");
+        old_payload.extend_from_slice(&1_u32.to_le_bytes());
+        old_payload.extend_from_slice(&2_u32.to_le_bytes());
+        old_payload.extend_from_slice(&0_u32.to_le_bytes());
+        old_payload.extend_from_slice(&0_u32.to_le_bytes());
+        let (bytes, payload) = awfb_with_external_program_bytecode(&bundle, old_payload);
 
-        compact
-            .verify(arcweft_core::compact_bytecode::CompactBytecodeValidationBudget::default())
-            .expect("compact table verifies");
-        assert_eq!(compact.abi_version, bundle.bytecode.program.abi_version);
+        let error = ArcweftBundle::from_awfb_slice_with_external_sections(&bytes, &[payload])
+            .expect_err("old structured product bytecode is rejected");
+
+        assert!(matches!(
+            error,
+            BundleCodecError::StructuredProductBytecodeUnsupported { encoding_tag: 2 }
+        ));
     }
 
     fn awfb_with_external_bytecode(bundle: &ArcweftBundle) -> (Vec<u8>, ExternalSectionPayload) {
+        let bytecode_bytes = bundle
+            .product_awbc_program()
+            .expect("product AWBC exists")
+            .encode_canonical()
+            .expect("AWBC encodes");
+        awfb_with_external_program_bytecode(bundle, bytecode_bytes)
+    }
+
+    fn awfb_with_external_program_bytecode(
+        bundle: &ArcweftBundle,
+        bytecode_bytes: Vec<u8>,
+    ) -> (Vec<u8>, ExternalSectionPayload) {
         let product_manifest = ProductManifest {
             schema_version: bundle.schema_version,
             bundle_kind: bundle.bundle_kind,
+            executable_payload: crate::product_awbc::PRODUCT_EXECUTABLE_PAYLOAD_AWBC_V1.to_owned(),
             manifest: bundle.manifest.clone(),
             agent: bundle.agent.clone(),
         };
         let manifest = encode_json(&product_manifest).expect("manifest encodes");
-        let bytecode_bytes =
-            encode_program_bytecode_section(&bundle.bytecode).expect("bytecode encodes");
         let bytecode_id = section_id(BundleSectionKind::ProgramBytecode);
         let sections = vec![
             SectionInput::external_ref(
@@ -963,5 +604,44 @@ mod tests {
             BytecodeProgram::default(),
             LineDisplayCatalog::default(),
         )
+        .with_product_awbc(minimal_awbc_program())
+    }
+
+    fn minimal_awbc_program() -> AwbcProgram {
+        AwbcProgram {
+            strings: vec!["entry.main".to_owned()],
+            signatures: vec![AwbcSignature {
+                params: Vec::new(),
+                result: None,
+                effects: AwbcEffectSetId(0),
+            }],
+            frame_layouts: vec![AwbcFrameLayout {
+                slots: Vec::new(),
+                max_scope_depth: 0,
+            }],
+            functions: vec![AwbcFunction {
+                public_id: Some(AwbcStringId(0)),
+                kind: AwbcFunctionKind::Flow,
+                signature: AwbcSignatureId(0),
+                frame_layout: AwbcFrameLayoutId(0),
+                blocks: AwbcTableRange::new(0, 1),
+                entry_block: AwbcBlockId(0),
+                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            }],
+            blocks: vec![AwbcBlock {
+                owner: AwbcFunctionId(0),
+                instructions: AwbcTableRange::new(0, 0),
+                terminator: AwbcTerminator::Return { value: None },
+                safe_point: AwbcSafePointKind::FlowEntry,
+                source_map: None,
+            }],
+            entries: vec![AwbcEntry {
+                public_id: AwbcStringId(0),
+                kind: AwbcEntryKind::Game,
+                signature: AwbcSignatureId(0),
+                target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            }],
+            ..AwbcProgram::default()
+        }
     }
 }

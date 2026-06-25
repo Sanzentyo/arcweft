@@ -1,4 +1,4 @@
-use super::schema::{AwbcBinaryOp, AwbcTrapCode, AwbcUnaryOp};
+use super::schema::{AwbcBinaryOp, AwbcUnaryOp};
 use crate::value::{RuntimeBinaryOp, RuntimeUnaryOp};
 
 impl From<RuntimeUnaryOp> for AwbcUnaryOp {
@@ -25,23 +25,6 @@ impl From<RuntimeBinaryOp> for AwbcBinaryOp {
             RuntimeBinaryOp::Div => Self::Div,
             RuntimeBinaryOp::And => Self::And,
             RuntimeBinaryOp::Or => Self::Or,
-        }
-    }
-}
-
-impl AwbcTrapCode {
-    pub(crate) const fn stable_name(self) -> &'static str {
-        match self {
-            Self::TypeMismatch => "type_mismatch",
-            Self::UninitializedRegister => "uninitialized_register",
-            Self::InvalidIndex => "invalid_index",
-            Self::DivisionByZero => "division_by_zero",
-            Self::PatternMismatch => "pattern_mismatch",
-            Self::MissingDynamicTarget => "missing_dynamic_target",
-            Self::HostAbiMismatch => "host_abi_mismatch",
-            Self::CapabilityDenied => "capability_denied",
-            Self::ExplicitPanic => "explicit_panic",
-            Self::InternalInvariant => "internal_invariant",
         }
     }
 }

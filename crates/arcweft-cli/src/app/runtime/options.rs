@@ -13,6 +13,7 @@ use std::path::PathBuf;
 impl From<BundleRunnerExecutor> for CliRuntimeExecutorTier {
     fn from(value: BundleRunnerExecutor) -> Self {
         match value {
+            BundleRunnerExecutor::AwbcProduct => Self::AwbcProduct,
             BundleRunnerExecutor::BytecodeVm => Self::BytecodeVm,
             BundleRunnerExecutor::Aot => Self::Aot,
         }
@@ -22,6 +23,7 @@ impl From<BundleRunnerExecutor> for CliRuntimeExecutorTier {
 impl From<CliRuntimeExecutorTier> for BundleRunnerExecutor {
     fn from(value: CliRuntimeExecutorTier) -> Self {
         match value {
+            CliRuntimeExecutorTier::AwbcProduct => Self::AwbcProduct,
             CliRuntimeExecutorTier::BytecodeVm => Self::BytecodeVm,
             CliRuntimeExecutorTier::Aot => Self::Aot,
         }
@@ -304,6 +306,7 @@ impl CliRuntimeRunner {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub(in crate::app) enum CliRuntimeExecutorTier {
+    AwbcProduct,
     BytecodeVm,
     Aot,
 }
@@ -334,6 +337,7 @@ pub(in crate::app) enum CliRuntimePureWorkers {
 impl From<CliRuntimeExecutorTier> for RuntimeExecutorTier {
     fn from(tier: CliRuntimeExecutorTier) -> Self {
         match tier {
+            CliRuntimeExecutorTier::AwbcProduct => Self::AwbcProduct,
             CliRuntimeExecutorTier::BytecodeVm => Self::BytecodeVm,
             CliRuntimeExecutorTier::Aot => Self::Aot,
         }

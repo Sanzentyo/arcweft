@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arcweft.dev/schemas/product-awfb-awbc-v1.json",
+  "title": "Arcweft AWFB Product AWBC v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "executable_payload",
+    "sections"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "minimum": 4
+    },
+    "executable_payload": {
+      "const": "awbc_v1"
+    },
+    "sections": {
+      "type": "array",
+      "contains": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "program_bytecode"
+          }
+        }
+      }
+    }
+  }
+}

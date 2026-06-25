@@ -3,6 +3,7 @@
 pub mod container;
 pub mod patch;
 mod product;
+pub mod product_awbc;
 pub mod release;
 pub mod resource_codec;
 
@@ -12,6 +13,7 @@ use apache_avro::types::Value as AvroValue;
 use apache_avro::{Reader, Schema, Writer};
 use arcweft_agent_protocol::artifact::AgentArtifactManifest;
 use arcweft_audio_core::graph::AudioGraph;
+use arcweft_core::awbc::schema::AwbcProgram;
 use arcweft_core::bytecode::BytecodeProgram;
 #[cfg(feature = "format-yaml")]
 use arcweft_data::{Number, Value};
@@ -29,7 +31,7 @@ use yaml_rust2::yaml::Hash;
 #[cfg(feature = "format-yaml")]
 use yaml_rust2::{Yaml, YamlEmitter, YamlLoader};
 
-pub const ARCWEFT_BUNDLE_SCHEMA_VERSION: u32 = 3;
+pub const ARCWEFT_BUNDLE_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ArcweftBundle {
@@ -41,6 +43,8 @@ pub struct ArcweftBundle {
     pub agent: Option<AgentArtifactManifest>,
     pub source: BundleSource,
     pub bytecode: BundleBytecodeProgram,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub product_awbc: Option<BundleAwbcProgram>,
     pub display: LineDisplayCatalog,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub adapter_manifests: Vec<BundleAdapterManifest>,
@@ -84,10 +88,22 @@ pub struct BundleBytecodeProgram {
     pub program: BytecodeProgram,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BundleAwbcProgram {
+    pub encoding: BundleAwbcEncoding,
+    pub program: AwbcProgram,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BundleBytecodeEncoding {
     StructuredJson,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BundleAwbcEncoding {
+    AwbcV1,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -298,6 +314,16 @@ pub enum BundleCodecError {
     EncodeAwfb { message: String },
     #[error("failed to decode Arcweft AWFB bundle: {message}")]
     DecodeAwfb { message: String },
+    #[error("product AWFB is missing its canonical AWBC executable payload")]
+    MissingProductAwbcExecutable,
+    #[error("product AWFB contains malformed AWBC executable payload: {message}")]
+    MalformedProductAwbcExecutable { message: String },
+    #[error("product AWFB structured bytecode payload tag {encoding_tag} is no longer executable")]
+    StructuredProductBytecodeUnsupported { encoding_tag: u32 },
+    #[error("unsupported product AWFB executable payload `{actual}`")]
+    UnsupportedProductExecutablePayload { actual: String },
+    #[error("product AWBC executable verification failed: {message}")]
+    ProductAwbcVerification { message: String },
     #[error("Arcweft bundle format `{format}` requires Cargo feature `{feature}`")]
     DisabledFormat {
         format: BundleFormat,
@@ -431,6 +457,7 @@ impl ArcweftBundle {
                 encoding: BundleBytecodeEncoding::StructuredJson,
                 program: bytecode,
             },
+            product_awbc: None,
             display,
             adapter_manifests: Vec::new(),
             virtual_files: Vec::new(),
@@ -496,6 +523,23 @@ impl ArcweftBundle {
         self.bundle_kind = BundleKind::AgentController;
         self.agent = Some(manifest);
         self
+    }
+
+    #[must_use]
+    pub fn with_product_awbc(mut self, program: AwbcProgram) -> Self {
+        self.product_awbc = Some(BundleAwbcProgram::new(program));
+        self
+    }
+
+    pub const fn product_awbc(&self) -> Option<&BundleAwbcProgram> {
+        self.product_awbc.as_ref()
+    }
+
+    pub fn product_awbc_program(&self) -> Result<&AwbcProgram, BundleCodecError> {
+        self.product_awbc
+            .as_ref()
+            .map(BundleAwbcProgram::program)
+            .ok_or(BundleCodecError::MissingProductAwbcExecutable)
     }
 
     pub fn to_json_bytes(&self) -> Result<Vec<u8>, BundleCodecError> {

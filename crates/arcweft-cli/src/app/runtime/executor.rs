@@ -90,7 +90,9 @@ impl RuntimeExecutorInstance {
 
 const fn arcweft_execution_tier(tier: CliRuntimeExecutorTier) -> ArcweftExecutionTier {
     match tier {
-        CliRuntimeExecutorTier::BytecodeVm => ArcweftExecutionTier::StructuredVm,
+        CliRuntimeExecutorTier::AwbcProduct | CliRuntimeExecutorTier::BytecodeVm => {
+            ArcweftExecutionTier::StructuredVm
+        }
         CliRuntimeExecutorTier::Aot => ArcweftExecutionTier::StructuredAot,
     }
 }

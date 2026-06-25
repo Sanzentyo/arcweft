@@ -1,0 +1,17 @@
+{
+  "schema_version": 4,
+  "bundle_kind": "game",
+  "executable_payload": "awbc_v1",
+  "manifest": {
+    "source_label": "examples/awbc-only.arcw",
+    "entry": "entry.main",
+    "runtime": {
+      "entry_flow": "flow.main",
+      "flows": 1,
+      "bytecode_instructions": 0,
+      "line_task_groups": 0,
+      "stream_plans": 0,
+      "source_plans": 0
+    }
+  }
+}

@@ -4,6 +4,7 @@ use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterManifest, BundleKind as ArcweftBundleKind, BundleVirtualFile,
 };
+use arcweft_core::awbc::schema::AwbcProgram;
 use arcweft_core::bytecode::{
     BYTECODE_ABI_VERSION, BytecodeEntry, BytecodeProgram, BytecodeVerificationBudget,
     BytecodeVerificationError,
@@ -99,6 +100,8 @@ pub enum GenerationBuildError {
     UnsupportedBundleKind(ArcweftBundleKind),
     #[error("failed to verify bundle bytecode: {0}")]
     VerifyBytecode(#[from] BytecodeVerificationError),
+    #[error("failed to verify product AWBC executable: {message}")]
+    ProductAwbcVerification { message: String },
     #[error("failed to encode hot-swap generation fingerprint: {0}")]
     EncodeFingerprint(#[from] serde_json::Error),
 }
@@ -143,6 +146,19 @@ impl ProgramGeneration {
                 bundle.bundle_kind,
             ));
         }
+        if let Some(product_awbc) = bundle.product_awbc() {
+            product_awbc.verify_product_executable().map_err(|error| {
+                GenerationBuildError::ProductAwbcVerification {
+                    message: error.to_string(),
+                }
+            })?;
+            return Self::from_verified_awbc(
+                id,
+                product_awbc.program(),
+                content_root(bundle)?,
+                adapter_requirements(bundle)?,
+            );
+        }
         bundle
             .bytecode
             .program
@@ -166,6 +182,22 @@ impl ProgramGeneration {
             content_root,
             bytecode_abi: bytecode.abi_version,
             code_slots: code_slots(bytecode)?,
+            state_layouts: BTreeMap::new(),
+            adapter_requirements,
+        })
+    }
+
+    pub fn from_verified_awbc(
+        id: GenerationId,
+        program: &AwbcProgram,
+        content_root: BundleDigest,
+        adapter_requirements: BundleDigest,
+    ) -> Result<Self, GenerationBuildError> {
+        Ok(Self {
+            id,
+            content_root,
+            bytecode_abi: program.header.abi_version,
+            code_slots: awbc_code_slots(program)?,
             state_layouts: BTreeMap::new(),
             adapter_requirements,
         })
@@ -250,6 +282,24 @@ fn code_slots(
         },
     );
     Ok(slots)
+}
+
+fn awbc_code_slots(
+    program: &AwbcProgram,
+) -> Result<BTreeMap<CodeSlotId, CodeSlot>, GenerationBuildError> {
+    let digest = program
+        .encode_canonical()
+        .map(|bytes| BundleDigest::of(&bytes))
+        .map_err(|error| GenerationBuildError::ProductAwbcVerification {
+            message: error.to_string(),
+        })?;
+    Ok(BTreeMap::from([(
+        CodeSlotId("__awbc_program".to_owned()),
+        CodeSlot {
+            signature: conservative_signature(digest),
+            code_digest: digest,
+        },
+    )]))
 }
 
 #[derive(Serialize)]
