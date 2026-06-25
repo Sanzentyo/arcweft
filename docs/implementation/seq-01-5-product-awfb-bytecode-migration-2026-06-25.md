@@ -108,3 +108,9 @@ No filesystem, network, signing-key, wall-clock, or platform I/O was added to
 fallback is retained for decoded product `.awfb` execution. The old
 `arcweft-core::compact_bytecode` module remains a non-goal for this cut and is
 left for the documented deletion gate.
+
+Follow-up design/review request:
+`docs/reviews/requests/2026-06-25-seq-01.6-product-awbc-build-parity-and-legacy-audit.md`
+records the post-merge audit items for ordinary AWFB builder wiring, compact
+AWBC runtime-step parity review, and remaining legacy/deletion-gate
+classification.
