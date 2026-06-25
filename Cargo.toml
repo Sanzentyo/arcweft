@@ -95,7 +95,7 @@ resolver = "3"
 edition = "2024"
 rust-version = "1.96"
 license = "MIT OR Apache-2.0"
-repository = "https://example.invalid/arcweft"
+repository = "https://github.com/Sanzentyo/arcweft"
 
 [workspace.dependencies]
 arcweft-character = { path = "crates/arcweft-character" }

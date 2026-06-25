@@ -1,0 +1,15 @@
+Arcweft Engine is licensed under either of
+
+* Apache License, Version 2.0
+  (LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0)
+* MIT license
+  (LICENSE-MIT or http://opensource.org/licenses/MIT)
+
+at your option.
+
+Unless otherwise noted, Arcweft-owned source code, documentation, examples,
+tests, fixtures, and generated demo assets are covered by this dual license.
+
+Third-party code and assets remain under their own licenses. See
+THIRD_PARTY_NOTICES.md and the license files colocated with third-party
+materials.
