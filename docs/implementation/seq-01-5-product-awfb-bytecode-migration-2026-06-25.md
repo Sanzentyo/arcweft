@@ -41,7 +41,7 @@ Results:
 - `cargo fmt --all -- --check`: passed.
 - Focused target `cargo check`: passed.
 - `cargo test -p arcweft-core awbc_product_step`: passed, 1 test.
-- `cargo test -p arcweft-bundle product_awbc`: passed, 5 integration tests
+- `cargo test -p arcweft-bundle product_awbc`: passed, 6 integration tests
   across AWBC-only encode/decode and source gates.
 - `cargo test -p arcweft-runtime-driver awbc_product`: passed, 1 integration
   test.
@@ -52,7 +52,7 @@ Results:
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`:
   passed.
 - Structural audit passed with `1506` files scanned, `831` Rust files,
-  `403945` Rust physical LOC, `89` package manifests, `0` errors, and `99`
+  `403992` Rust physical LOC, `89` package manifests, `0` errors, and `99`
   warnings.
 
 Additional source-gate check:
@@ -74,7 +74,7 @@ Changed Rust files:
 | `crates/arcweft-bundle/src/lib.rs` | production/facade | 64175 | 1820 | 574 | bundle data model, schema version, product AWBC public API |
 | `crates/arcweft-bundle/src/product.rs` | production | 24055 | 647 | 262 | AWFB section encode/decode, AWBC-only product payload rejection gates |
 | `crates/arcweft-bundle/src/product_awbc.rs` | production | 1942 | 54 | 0 | typed product AWBC section codec |
-| `crates/arcweft-bundle/tests/product_awbc_only.rs` | integration test | 3919 | 117 | 0 | AWBC-only product encode/decode diagnostics |
+| `crates/arcweft-bundle/tests/product_awbc_only.rs` | integration test | 5783 | 164 | 0 | AWBC-only product encode/decode diagnostics |
 | `crates/arcweft-bundle/tests/product_awbc_source_gates.rs` | integration test | 1415 | 36 | 0 | product runtime/source forbidden-term gates |
 | `crates/arcweft-core/src/awbc.rs` | facade | 526 | 18 | 2 | AWBC module namespace |
 | `crates/arcweft-core/src/awbc/product_step.rs` | production | 24977 | 622 | 18 | AWBC VM/fiber to `RuntimeStepResult` parity adapter |

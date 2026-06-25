@@ -1,6 +1,7 @@
 use arcweft_bundle::{
     ArcweftBundle, BundleAwbcProgram, BundleCodecError, BundleFormat, BundleManifest,
     BundleRuntimeSummary, BundleSource,
+    container::{BundleSectionKind, BundleView, ReadBudget, SectionInput, encode_bundle},
 };
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
@@ -47,6 +48,52 @@ fn product_awbc_malformed_reports_typed_diagnostic() {
     assert!(matches!(
         error,
         BundleCodecError::MalformedProductAwbcExecutable { .. }
+    ));
+}
+
+#[test]
+fn product_awbc_decode_rejects_old_structured_product_bytecode_tag() {
+    let bytes = minimal_bundle()
+        .with_product_awbc(minimal_awbc_program())
+        .to_format_bytes(BundleFormat::Awfb)
+        .expect("AWBC-only AWFB encodes");
+    let view = BundleView::parse(&bytes, ReadBudget::default()).expect("AWFB parses");
+    let mut old_payload = Vec::new();
+    old_payload.extend_from_slice(b"AWBC\r\n\x1a\n");
+    old_payload.extend_from_slice(&1_u32.to_le_bytes());
+    old_payload.extend_from_slice(&2_u32.to_le_bytes());
+    old_payload.extend_from_slice(&0_u32.to_le_bytes());
+    old_payload.extend_from_slice(&0_u32.to_le_bytes());
+    let sections = view
+        .sections()
+        .iter()
+        .map(|descriptor| {
+            let bytes = if descriptor.kind() == BundleSectionKind::ProgramBytecode {
+                old_payload.clone()
+            } else {
+                view.decoded_section(descriptor.id())
+                    .expect("section decodes")
+                    .expect("test AWFB uses embedded sections")
+            };
+            SectionInput::embedded(
+                descriptor.id(),
+                descriptor.kind(),
+                descriptor.schema_version(),
+                descriptor.residency(),
+                descriptor.required(),
+                bytes,
+            )
+        })
+        .collect::<Vec<_>>();
+    let old_structured =
+        encode_bundle(view.kind(), view.manifest(), sections).expect("AWFB re-encodes");
+
+    let error = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &old_structured)
+        .expect_err("old structured product bytecode is rejected");
+
+    assert!(matches!(
+        error,
+        BundleCodecError::StructuredProductBytecodeUnsupported { encoding_tag: 2 }
     ));
 }
 
