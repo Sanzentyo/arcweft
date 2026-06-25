@@ -1,5 +1,5 @@
 use crate::aot::AotProgram;
-use crate::awbc::product_step::AwbcProductStepExecutor;
+use crate::awbc::product_step::{AwbcProductStepBuildError, AwbcProductStepExecutor};
 use crate::awbc::schema::{AwbcEntryId, AwbcProgram};
 use crate::bytecode::BytecodeProgram;
 use crate::engine::{Engine, FlowFiber};
@@ -278,9 +278,8 @@ impl ArcweftRuntimeExecutor {
     pub fn from_awbc_product(
         program: AwbcProgram,
         entry: AwbcEntryId,
-    ) -> Result<Self, RuntimePlanError> {
-        let vm = AwbcProductStepExecutor::for_entry(program, entry, 64)
-            .map_err(RuntimePlanError::MissingEntryFlow)?;
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        let vm = AwbcProductStepExecutor::for_entry(program, entry, 64)?;
         Ok(Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(
             AwbcProductExecutor { vm },
         )))

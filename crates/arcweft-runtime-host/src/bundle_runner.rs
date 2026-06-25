@@ -4,7 +4,10 @@ use arcweft_bundle::{
     ArcweftBundle, BundleAdapterManifest, BundleFormat, BundleImageAnimation, BundleImageAsset,
     BundleImageDimensions, BundleImageFormat, BundleKind, BundleVirtualFile,
 };
-use arcweft_core::awbc::schema::{AwbcEntryId, AwbcProgram};
+use arcweft_core::awbc::{
+    product_step::AwbcProductStepBuildError,
+    schema::{AwbcEntryId, AwbcProgram},
+};
 use arcweft_core::bytecode::{
     BytecodeProgram, BytecodeVerificationBudget, BytecodeVerificationError,
 };
@@ -190,6 +193,8 @@ pub enum BundleRunnerError {
     },
     #[error("failed to decode bundle bytecode: {0}")]
     DecodeBytecode(arcweft_core::plan::RuntimePlanError),
+    #[error(transparent)]
+    ProductAwbcRuntime(#[from] AwbcProductStepBuildError),
     #[error("failed to verify bundle bytecode: {0}")]
     VerifyBytecode(BytecodeVerificationError),
     #[error("failed to create bundle workspace: {0}")]
@@ -637,8 +642,7 @@ impl RuntimeExecutorInstance {
     ) -> Result<Self, BundleRunnerError> {
         match program {
             BundleRunnerRuntimeProgram::Awbc { program, entry } => Ok(Self {
-                executor: ArcweftRuntimeExecutor::from_awbc_product(*program, entry)
-                    .map_err(BundleRunnerError::DecodeBytecode)?,
+                executor: ArcweftRuntimeExecutor::from_awbc_product(*program, entry)?,
                 pure: RuntimePureAccelerator::with_config(
                     RuntimePureAcceleratorConfig::default(),
                     &[],

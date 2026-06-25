@@ -135,6 +135,7 @@ impl<'a> AwbcLowerer<'a> {
                 anchor: None,
             });
         }
+        program.canonicalize_string_table();
 
         if options.verify {
             program

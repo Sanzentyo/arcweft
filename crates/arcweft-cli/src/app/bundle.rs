@@ -279,6 +279,7 @@ pub(in crate::app) fn compile_bundle_for_selection(
         compiled.bytecode,
         compiled.line_display_catalog,
     )
+    .with_product_awbc(compiled.product_awbc)
     .with_adapter_manifests(adapter_manifests)
     .with_virtual_files(virtual_files)
     .with_image_assets(image_assets)
@@ -557,6 +558,7 @@ fn bundle_runner_error_exit_code(error: &BundleRunnerError) -> ExitCode {
         | BundleRunnerError::DecodeImageAsset { .. }
         | BundleRunnerError::ImageAssetMetadataMismatch { .. }
         | BundleRunnerError::DecodeBytecode(_)
+        | BundleRunnerError::ProductAwbcRuntime(_)
         | BundleRunnerError::VerifyBytecode(_)
         | BundleRunnerError::CreateWorkspace(_)
         | BundleRunnerError::CreateSourceDirectory(_)
@@ -1527,6 +1529,7 @@ mod tests {
         AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
     };
     use arcweft_render_text::LineDisplayCatalog;
+    use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 
     fn image_await(id: &str) -> FlowOp {
         FlowOp::Await {
@@ -1586,6 +1589,11 @@ mod tests {
             Vec::new(),
         )
         .expect("test runtime plan is valid");
+        let display = LineDisplayCatalog::default();
+        let product_awbc = AwbcLowerer::new(&plan, &display, source_label)
+            .lower()
+            .expect("test product AWBC lowers")
+            .program;
         let program = BytecodeProgram::from_runtime_plan(plan);
         let stats = program.stats();
         ArcweftBundle::new(
@@ -1611,8 +1619,9 @@ mod tests {
                 text: format!("flow test {{ return \"{return_value}\" }}"),
             },
             program,
-            LineDisplayCatalog::default(),
+            display,
         )
+        .with_product_awbc(product_awbc)
     }
 
     fn image_asset(id: &str) -> BundleImageAsset {
@@ -1644,6 +1653,95 @@ mod tests {
             path: path.to_owned(),
             bytes,
         }
+    }
+
+    #[test]
+    fn compile_bundle_for_selection_attaches_product_awbc_before_awfb_encoding() {
+        let root = std::env::temp_dir().join(format!(
+            "arcweft-product-awbc-builder-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("temporary source directory");
+        let source_path = root.join("main.arcw");
+        fs::write(&source_path, "flow main { return \"done\" }").expect("temporary source writes");
+        let selection = SourceSelection::Direct {
+            path: source_path.clone(),
+        };
+        let mut phases = Vec::new();
+
+        let artifact = compile_bundle_for_selection(&selection, Vec::new(), &mut phases)
+            .expect("ordinary source bundle compiles");
+        let product_awbc = artifact
+            .bundle
+            .product_awbc()
+            .expect("ordinary source bundle has product AWBC");
+        assert!(!product_awbc.program().source_map.is_empty());
+        assert_eq!(
+            product_awbc.program().display_map.is_empty(),
+            artifact.bundle.display == LineDisplayCatalog::default()
+        );
+
+        let bytes = artifact
+            .bundle
+            .to_format_bytes(BundleFormat::Awfb)
+            .expect("ordinary product AWFB encodes");
+        let decoded = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &bytes)
+            .expect("ordinary product AWFB decodes");
+        assert!(decoded.product_awbc().is_some());
+        assert!(decoded.bytecode.program.flows.is_empty());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn project_bundle_for_selection_attaches_product_awbc_before_awfb_encoding() {
+        let root = std::env::temp_dir().join(format!(
+            "arcweft-project-product-awbc-builder-{}",
+            std::process::id()
+        ));
+        let source_root = root.join("src");
+        fs::create_dir_all(&source_root).expect("temporary project source directory");
+        let manifest_path = root.join("arcw.toml");
+        let source_path = source_root.join("main.arcw");
+        fs::write(
+            &manifest_path,
+            r#"
+[package]
+name = "product_awbc_builder"
+"#,
+        )
+        .expect("temporary manifest writes");
+        fs::write(
+            &source_path,
+            r#"
+entry game {
+    start(@flow.main)
+}
+
+flow main {
+    return "done"
+}
+"#,
+        )
+        .expect("temporary project source writes");
+        let selection = SourceSelection::Project {
+            manifest: manifest_path,
+            path: source_path,
+        };
+        let mut phases = Vec::new();
+
+        let artifact = compile_bundle_for_selection(&selection, Vec::new(), &mut phases)
+            .expect("ordinary project bundle compiles");
+        let bytes = artifact
+            .bundle
+            .to_format_bytes(BundleFormat::Awfb)
+            .expect("ordinary project product AWFB encodes");
+        let decoded = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &bytes)
+            .expect("ordinary project product AWFB decodes");
+        assert!(decoded.product_awbc().is_some());
+        assert!(decoded.bytecode.program.flows.is_empty());
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

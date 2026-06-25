@@ -55,7 +55,7 @@ impl<'a> AwbcFlowLowerer<'a> {
             owner: entry_owner,
             instructions: AwbcTableRange::new(instruction_start, instruction_len),
             terminator: AwbcTerminator::Return { value: None },
-            safe_point: AwbcSafePointKind::Return,
+            safe_point: AwbcSafePointKind::FlowEntry,
             source_map: None,
         });
         let layout = self

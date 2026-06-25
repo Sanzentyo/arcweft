@@ -165,6 +165,253 @@ impl Default for AwbcProgram {
     }
 }
 
+impl AwbcProgram {
+    /// Sorts and deduplicates the canonical string table while preserving every
+    /// existing `AwbcStringId` reference.
+    ///
+    /// AWBC verification requires the UTF-8 string table to be canonical.
+    /// Producers may discover strings while walking higher-level plans in
+    /// semantic order; this method performs the final owned-table normalization
+    /// before verification or encoding.
+    pub fn canonicalize_string_table(&mut self) {
+        let mut strings = self.strings.clone();
+        strings.sort();
+        strings.dedup();
+        if strings == self.strings {
+            return;
+        }
+
+        let remap = self
+            .strings
+            .iter()
+            .map(|value| {
+                let index = strings
+                    .binary_search(value)
+                    .unwrap_or_else(|insertion_index| insertion_index);
+                u32::try_from(index).unwrap_or(u32::MAX)
+            })
+            .collect::<Vec<_>>();
+        self.strings = strings;
+        remap_program_strings(self, &remap);
+    }
+}
+
+fn remap_string_id(id: &mut AwbcStringId, remap: &[u32]) {
+    if let Some(index) = remap.get(id.index()).copied() {
+        id.0 = index;
+    }
+}
+
+fn remap_optional_string_id(id: &mut Option<AwbcStringId>, remap: &[u32]) {
+    if let Some(id) = id {
+        remap_string_id(id, remap);
+    }
+}
+
+fn remap_program_strings(program: &mut AwbcProgram, remap: &[u32]) {
+    for ty in &mut program.runtime_types {
+        remap_runtime_type_strings(ty, remap);
+    }
+    for constant in &mut program.constants {
+        remap_constant_strings(constant, remap);
+    }
+    for effect_set in &mut program.effect_sets {
+        for effect in &mut effect_set.effects {
+            remap_string_id(effect, remap);
+        }
+    }
+    for layout in &mut program.frame_layouts {
+        for slot in &mut layout.slots {
+            remap_optional_string_id(&mut slot.name, remap);
+        }
+    }
+    for function in &mut program.functions {
+        remap_optional_string_id(&mut function.public_id, remap);
+    }
+    for instruction in &mut program.instructions {
+        remap_instruction_strings(instruction, remap);
+    }
+    for block in &mut program.blocks {
+        remap_terminator_strings(&mut block.terminator, remap);
+    }
+    for pattern in &mut program.patterns {
+        if let AwbcPattern::Entity(entity) = pattern {
+            remap_string_id(entity, remap);
+        }
+    }
+    for intrinsic in &mut program.intrinsics {
+        remap_string_id(&mut intrinsic.public_id, remap);
+    }
+    for call in &mut program.host_calls {
+        remap_string_id(&mut call.public_id, remap);
+        remap_string_id(&mut call.capability, remap);
+        remap_string_id(&mut call.operation, remap);
+    }
+    for task in &mut program.task_plans {
+        remap_string_id(&mut task.public_id, remap);
+        remap_string_id(&mut task.capability, remap);
+        remap_string_id(&mut task.operation, remap);
+        remap_string_id(&mut task.cancel_scope, remap);
+        for argument in &mut task.arguments {
+            remap_optional_string_id(&mut argument.name, remap);
+        }
+    }
+    for effect in &mut program.effect_plans {
+        remap_optional_string_id(&mut effect.capability, remap);
+    }
+    for choice in &mut program.choices {
+        remap_optional_string_id(&mut choice.public_id, remap);
+    }
+    for option in &mut program.choice_options {
+        remap_optional_string_id(&mut option.public_id, remap);
+        remap_string_id(&mut option.label, remap);
+    }
+    for content in &mut program.content_units {
+        remap_string_id(&mut content.public_id, remap);
+    }
+    for group in &mut program.line_task_groups {
+        for option in &mut group.options {
+            remap_string_id(&mut option.name, remap);
+        }
+        for handler in &mut group.cancel_handlers {
+            remap_string_id(&mut handler.trigger, remap);
+        }
+    }
+    for node in &mut program.line_task_nodes {
+        remap_line_task_node_strings(node, remap);
+    }
+    for stream in &mut program.stream_plans {
+        remap_string_id(&mut stream.public_id, remap);
+    }
+    for source in &mut program.source_plans {
+        remap_string_id(&mut source.public_id, remap);
+    }
+    for helper in &mut program.pure_helpers {
+        remap_string_id(&mut helper.public_id, remap);
+    }
+    for display in &mut program.display_map {
+        remap_string_id(&mut display.display_key, remap);
+    }
+    for source in &mut program.source_map {
+        remap_string_id(&mut source.source_file, remap);
+        remap_optional_string_id(&mut source.anchor, remap);
+    }
+    for resource in &mut program.resources {
+        remap_string_id(&mut resource.public_id, remap);
+        remap_string_id(&mut resource.kind, remap);
+    }
+    for entry in &mut program.entries {
+        remap_string_id(&mut entry.public_id, remap);
+        remap_entry_kind_strings(&mut entry.kind, remap);
+        remap_entry_target_strings(&mut entry.target, remap);
+    }
+}
+
+fn remap_runtime_type_strings(ty: &mut AwbcRuntimeType, remap: &[u32]) {
+    match ty {
+        AwbcRuntimeType::Record { public_id, fields } => {
+            remap_optional_string_id(public_id, remap);
+            for field in fields {
+                remap_string_id(&mut field.name, remap);
+            }
+        }
+        AwbcRuntimeType::Variant { public_id, cases } => {
+            remap_optional_string_id(public_id, remap);
+            for case in cases {
+                remap_string_id(&mut case.name, remap);
+            }
+        }
+        AwbcRuntimeType::Unit
+        | AwbcRuntimeType::Bool
+        | AwbcRuntimeType::Int(_)
+        | AwbcRuntimeType::UInt(_)
+        | AwbcRuntimeType::F32
+        | AwbcRuntimeType::F64
+        | AwbcRuntimeType::String
+        | AwbcRuntimeType::Char
+        | AwbcRuntimeType::Duration
+        | AwbcRuntimeType::EntityRef
+        | AwbcRuntimeType::Tuple(_)
+        | AwbcRuntimeType::Sequence(_)
+        | AwbcRuntimeType::MatrixF32
+        | AwbcRuntimeType::MatrixF64
+        | AwbcRuntimeType::TensorF32
+        | AwbcRuntimeType::TensorF64
+        | AwbcRuntimeType::TaskHandle
+        | AwbcRuntimeType::NeedHandle
+        | AwbcRuntimeType::Dynamic => {}
+    }
+}
+
+fn remap_constant_strings(constant: &mut AwbcConstant, remap: &[u32]) {
+    match constant {
+        AwbcConstant::String(id) | AwbcConstant::EntityRef(id) => remap_string_id(id, remap),
+        AwbcConstant::Unit
+        | AwbcConstant::Bool(_)
+        | AwbcConstant::Int { .. }
+        | AwbcConstant::UInt { .. }
+        | AwbcConstant::F32Bits(_)
+        | AwbcConstant::F64Bits(_)
+        | AwbcConstant::Char(_)
+        | AwbcConstant::DurationNanos(_)
+        | AwbcConstant::Tuple(_)
+        | AwbcConstant::Sequence(_)
+        | AwbcConstant::Record { .. }
+        | AwbcConstant::Variant { .. }
+        | AwbcConstant::Bytes(_)
+        | AwbcConstant::TensorF32 { .. }
+        | AwbcConstant::TensorF64 { .. } => {}
+    }
+}
+
+fn remap_instruction_strings(instruction: &mut AwbcInstruction, remap: &[u32]) {
+    if let AwbcInstruction::ProjectField { field, .. } = instruction {
+        remap_string_id(field, remap);
+    }
+}
+
+fn remap_terminator_strings(terminator: &mut AwbcTerminator, remap: &[u32]) {
+    if let AwbcTerminator::Trap { message, .. } = terminator {
+        remap_optional_string_id(message, remap);
+    }
+}
+
+fn remap_line_task_node_strings(node: &mut AwbcLineTaskNode, remap: &[u32]) {
+    if let AwbcLineTaskNode::Child { trigger, .. } = node {
+        remap_line_task_trigger_strings(trigger, remap);
+    }
+}
+
+fn remap_line_task_trigger_strings(trigger: &mut AwbcLineTaskTrigger, remap: &[u32]) {
+    if let AwbcLineTaskTrigger::Mark(id) = trigger {
+        remap_string_id(id, remap);
+    }
+}
+
+fn remap_entry_kind_strings(kind: &mut AwbcEntryKind, remap: &[u32]) {
+    if let AwbcEntryKind::Custom(id) = kind {
+        remap_string_id(id, remap);
+    }
+}
+
+fn remap_entry_target_strings(target: &mut AwbcEntryTarget, remap: &[u32]) {
+    if let AwbcEntryTarget::Routes(routes) = target {
+        for route in routes {
+            remap_string_id(&mut route.method, remap);
+            remap_string_id(&mut route.path, remap);
+            for binding in &mut route.bindings {
+                remap_route_binding_source_strings(&mut binding.source, remap);
+            }
+        }
+    }
+}
+
+fn remap_route_binding_source_strings(source: &mut AwbcRouteBindingSource, remap: &[u32]) {
+    match source {
+        AwbcRouteBindingSource::PathParameter(id) => remap_string_id(id, remap),
+    }
+}
+
 /// Program-level ABI facts included in semantic and code-cache identities.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcHeader {

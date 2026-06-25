@@ -3,13 +3,19 @@ use crate::app::project::{
 };
 use crate::output::RuntimeProfilePhase;
 use arcweft_compiler::{hir, lower, parse, project::compile_project_with_env};
-use arcweft_core::aot::{AotProgram, AotProgramStats};
-use arcweft_core::bytecode::{BytecodeProgram, BytecodeStats};
-use arcweft_core::plan::RuntimePlan;
+use arcweft_core::{
+    aot::{AotProgram, AotProgramStats},
+    awbc::schema::AwbcProgram,
+    bytecode::{BytecodeProgram, BytecodeStats},
+    plan::RuntimePlan,
+};
 use arcweft_lang_sema::{check::TypeCheckReport, env::TypeCheckEnv};
 use arcweft_lang_syntax::cst::SyntaxParseStats;
 use arcweft_render_text::LineDisplayCatalog;
-use arcweft_runtime_plan::flow::{RuntimePlanLowerReport, RuntimePlanLowerStats};
+use arcweft_runtime_plan::{
+    awbc_lower::{AwbcLowerError, AwbcLowerer},
+    flow::{RuntimePlanLowerReport, RuntimePlanLowerStats},
+};
 use arcweft_verify::{RuntimeTypeValidationStats, validate_runtime_plan_types};
 use std::fs;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -27,6 +33,7 @@ pub(in crate::app) struct ProfileCompiledRuntimePlan {
     pub(in crate::app) runtime_plan_stats: RuntimePlanLowerStats,
     pub(in crate::app) line_display_catalog: LineDisplayCatalog,
     pub(in crate::app) runtime_type_validation_stats: RuntimeTypeValidationStats,
+    pub(in crate::app) product_awbc: AwbcProgram,
     pub(in crate::app) bytecode: BytecodeProgram,
     pub(in crate::app) bytecode_stats: BytecodeStats,
     pub(in crate::app) aot_stats: AotProgramStats,
@@ -107,6 +114,7 @@ pub(in crate::app) fn compile_profile_runtime_plan(
             Ok(report.stats)
         }
     })?;
+    let product_awbc = profile_lower_product_awbc(selection, &plan, &line_display_catalog, phases)?;
     let aot = run_profile_phase(phases, "aot_lower", || {
         Ok::<AotProgram, ExitCode>(AotProgram::from_runtime_plan(&plan))
     })?;
@@ -129,10 +137,47 @@ pub(in crate::app) fn compile_profile_runtime_plan(
         runtime_plan_stats,
         line_display_catalog,
         runtime_type_validation_stats,
+        product_awbc,
         bytecode,
         bytecode_stats,
         aot_stats,
     })
+}
+
+fn profile_lower_product_awbc(
+    selection: &SourceSelection,
+    plan: &RuntimePlan,
+    display: &LineDisplayCatalog,
+    phases: &mut Vec<RuntimeProfilePhase>,
+) -> Result<AwbcProgram, ExitCode> {
+    let source_label = report_path(selection.path());
+    let report = run_profile_phase(phases, "product_awbc_lower", || {
+        AwbcLowerer::new(plan, display, &source_label)
+            .lower()
+            .map_err(|error| {
+                match error {
+                    AwbcLowerError::Lowering(diagnostics) => {
+                        for diagnostic in diagnostics {
+                            eprintln!(
+                                "error[product-awbc {}]: {}",
+                                diagnostic.path, diagnostic.message
+                            );
+                        }
+                    }
+                    AwbcLowerError::Verify(error) => {
+                        eprintln!("error: product AWBC verification failed: {error}");
+                    }
+                }
+                ExitCode::FAILURE
+            })
+    })?;
+    for diagnostic in report.diagnostics {
+        eprintln!(
+            "warning[product-awbc {}]: {}",
+            diagnostic.path, diagnostic.message
+        );
+    }
+    Ok(report.program)
 }
 
 fn compile_project_runtime_plan(
@@ -177,6 +222,7 @@ fn compile_project_runtime_plan(
             Ok(report.stats)
         }
     })?;
+    let product_awbc = profile_lower_product_awbc(selection, &plan, &line_display_catalog, phases)?;
     let aot = run_profile_phase(phases, "aot_lower", || {
         Ok::<AotProgram, ExitCode>(AotProgram::from_runtime_plan(&plan))
     })?;
@@ -199,6 +245,7 @@ fn compile_project_runtime_plan(
         runtime_plan_stats,
         line_display_catalog,
         runtime_type_validation_stats,
+        product_awbc,
         bytecode,
         bytecode_stats,
         aot_stats,

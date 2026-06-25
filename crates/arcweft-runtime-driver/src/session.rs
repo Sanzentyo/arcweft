@@ -11,7 +11,10 @@ use arcweft_bundle::patch::{
     apply_patch_bundle, decode_patch_bundle,
 };
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleImageObject, BundleKind};
-use arcweft_core::awbc::schema::{AwbcEntryId, AwbcProgram};
+use arcweft_core::awbc::{
+    product_step::AwbcProductStepBuildError,
+    schema::{AwbcEntryId, AwbcProgram},
+};
 use arcweft_core::bytecode::BytecodeVerificationError;
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
@@ -128,8 +131,10 @@ pub enum BundleSessionError {
     VerifyBytecode(#[from] BytecodeVerificationError),
     #[error("product bundle is missing canonical AWBC executable payload")]
     MissingProductAwbc,
-    #[error("failed to create product AWBC runtime: {message}")]
-    ProductAwbcRuntime { message: String },
+    #[error("failed to verify product AWBC generation: {message}")]
+    ProductAwbcVerification { message: String },
+    #[error(transparent)]
+    ProductAwbcRuntime(#[from] AwbcProductStepBuildError),
     #[error("product AWBC entry `{entry}` does not exist")]
     ProductAwbcEntry { entry: String },
     #[error("failed to fingerprint bundle generation: {message}")]
@@ -677,7 +682,7 @@ fn initial_generation(bundle: &ArcweftBundle) -> Result<ProgramGeneration, Bundl
         }
         GenerationBuildError::VerifyBytecode(error) => BundleSessionError::VerifyBytecode(error),
         GenerationBuildError::ProductAwbcVerification { message } => {
-            BundleSessionError::ProductAwbcRuntime { message }
+            BundleSessionError::ProductAwbcVerification { message }
         }
         GenerationBuildError::EncodeFingerprint(error) => {
             BundleSessionError::GenerationFingerprint {
@@ -705,11 +710,7 @@ fn build_session_runtime(
 
     Ok(SessionRuntime {
         source_label: bundle.manifest.source_label.clone(),
-        executor: ArcweftRuntimeExecutor::from_awbc_product(program, entry).map_err(|error| {
-            BundleSessionError::ProductAwbcRuntime {
-                message: error.to_string(),
-            }
-        })?,
+        executor: ArcweftRuntimeExecutor::from_awbc_product(program, entry)?,
         display: bundle.display.clone(),
         image_objects: bundle.image_objects.clone(),
     })

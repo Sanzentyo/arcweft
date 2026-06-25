@@ -492,6 +492,12 @@ mod tests {
         BundleLaunchKind, BundleManifest, BundleRuntimeSummary, BundleSource,
         BundleVirtualFileSpace,
     };
+    use arcweft_core::awbc::schema::{
+        AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
+        AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
+        AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
+        AwbcStringId, AwbcTableRange, AwbcTerminator,
+    };
     use arcweft_core::bytecode::{
         BYTECODE_ABI_VERSION, BytecodeEntry, BytecodeFlow, BytecodeInstruction,
     };
@@ -651,6 +657,29 @@ mod tests {
     }
 
     #[test]
+    fn generation_from_bundle_uses_canonical_product_awbc_identity() {
+        let active = ProgramGeneration::from_bundle(
+            GenerationId(1),
+            &test_bundle(BytecodeProgram::default(), b"asset")
+                .with_product_awbc(test_awbc_program("revision-a")),
+        )
+        .expect("active AWBC generation");
+        let next = ProgramGeneration::from_bundle(
+            GenerationId(2),
+            &test_bundle(BytecodeProgram::default(), b"asset")
+                .with_product_awbc(test_awbc_program("revision-b")),
+        )
+        .expect("next AWBC generation");
+
+        assert_eq!(active.content_root, next.content_root);
+        assert_ne!(active.code_slots, next.code_slots);
+        assert_eq!(
+            classify_swap(&active, &next),
+            SwapCompatibility::CodeGenerational
+        );
+    }
+
+    #[test]
     fn generation_from_bundle_rejects_unverified_bytecode() {
         let mut bytecode = test_bytecode(Vec::new());
         bytecode.abi_version = BYTECODE_ABI_VERSION + 1;
@@ -697,6 +726,44 @@ mod tests {
             path: "asset.bin".to_owned(),
             bytes: asset_bytes.to_vec(),
         }])
+    }
+
+    fn test_awbc_program(revision: &str) -> AwbcProgram {
+        AwbcProgram {
+            strings: vec!["entry.main".to_owned(), revision.to_owned()],
+            signatures: vec![AwbcSignature {
+                params: Vec::new(),
+                result: None,
+                effects: AwbcEffectSetId(0),
+            }],
+            frame_layouts: vec![AwbcFrameLayout {
+                slots: Vec::new(),
+                max_scope_depth: 0,
+            }],
+            functions: vec![AwbcFunction {
+                public_id: Some(AwbcStringId(0)),
+                kind: AwbcFunctionKind::Flow,
+                signature: AwbcSignatureId(0),
+                frame_layout: AwbcFrameLayoutId(0),
+                blocks: AwbcTableRange::new(0, 1),
+                entry_block: AwbcBlockId(0),
+                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            }],
+            blocks: vec![AwbcBlock {
+                owner: AwbcFunctionId(0),
+                instructions: AwbcTableRange::new(0, 0),
+                terminator: AwbcTerminator::Return { value: None },
+                safe_point: AwbcSafePointKind::FlowEntry,
+                source_map: None,
+            }],
+            entries: vec![AwbcEntry {
+                public_id: AwbcStringId(0),
+                kind: AwbcEntryKind::Game,
+                signature: AwbcSignatureId(0),
+                target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            }],
+            ..AwbcProgram::default()
+        }
     }
 
     fn test_bytecode(instructions: Vec<BytecodeInstruction>) -> BytecodeProgram {

@@ -2,7 +2,6 @@ pub mod aot;
 pub mod audio;
 pub mod awbc;
 pub mod bytecode;
-pub mod compact_bytecode;
 pub mod effect;
 pub mod engine;
 pub mod executor;

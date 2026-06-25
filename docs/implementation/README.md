@@ -22,6 +22,11 @@ The seq-01.5 product AWFB bytecode migration is tracked in
 `docs/implementation/seq-01-5-product-awfb-bytecode-migration-2026-06-25.md`;
 new product `.awfb` executable payloads are canonical AWBC bytes and product
 runtime paths select the AWBC product executor by default.
+The seq-01.6 producer wiring, runtime parity gate, and legacy audit are tracked
+in
+`docs/implementation/seq-01-6-product-awbc-build-parity-legacy-audit-2026-06-25.md`;
+the remaining product-step parity work is
+`docs/reviews/requests/2026-06-25-seq-01.6.1-product-awbc-runtime-step-parity-closure.md`.
 
 ## Current Milestone
 

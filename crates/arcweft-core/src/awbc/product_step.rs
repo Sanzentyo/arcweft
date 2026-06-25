@@ -9,7 +9,7 @@ use crate::awbc::fiber::{
 };
 use crate::awbc::schema::{
     AwbcBlockId, AwbcChoiceId, AwbcEffectKind, AwbcEffectPlanId, AwbcEntryId, AwbcFunctionId,
-    AwbcProgram, AwbcTaskClass, AwbcTaskPlanId, AwbcTaskPolicy,
+    AwbcInstruction, AwbcProgram, AwbcTaskClass, AwbcTaskPlanId, AwbcTaskPolicy, AwbcTerminator,
 };
 use crate::awbc::vm::{RejectingVmHost, VmExit, VmObservation, VmStepOptions, step_with_host};
 use crate::effect::{LineEffectRequest, RuntimeCall, RuntimeLog};
@@ -27,7 +27,142 @@ use crate::task::{
     TaskSpec,
 };
 use crate::value::{RuntimeEnv, RuntimePayload, RuntimeValue, runtime_value_label};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use thiserror::Error;
+
+/// Compact executable families that still lack product `RuntimeStepResult` parity.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum AwbcProductStepParityBlocker {
+    EntryArguments,
+    PureHelperCalls,
+    IntrinsicCalls,
+    TrapSourceReporting,
+    ContentEnsures,
+    Effects,
+    TaskStarts,
+    SpawnedFibers,
+    Streams,
+    Sources,
+    Dialogue,
+    Choice,
+    Await,
+    AwaitMany,
+    HostCall,
+    BudgetYield,
+}
+
+/// Product AWBC executor construction failures.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum AwbcProductStepBuildError {
+    #[error("product AWBC runtime-step parity is incomplete: {blockers:?}")]
+    UnsupportedParity {
+        blockers: Vec<AwbcProductStepParityBlocker>,
+    },
+    #[error("failed to initialize product AWBC fiber state: {message}")]
+    FiberState { message: String },
+}
+
+impl AwbcInstruction {
+    /// Returns the product-step parity family that blocks this instruction.
+    #[must_use]
+    pub const fn product_step_parity_blocker(&self) -> Option<AwbcProductStepParityBlocker> {
+        match self {
+            Self::CallPureHelper { .. } => Some(AwbcProductStepParityBlocker::PureHelperCalls),
+            Self::CallIntrinsic { .. } => Some(AwbcProductStepParityBlocker::IntrinsicCalls),
+            Self::EnsureContent { .. } => Some(AwbcProductStepParityBlocker::ContentEnsures),
+            Self::EmitEffect { .. } => Some(AwbcProductStepParityBlocker::Effects),
+            Self::StartTask { .. } => Some(AwbcProductStepParityBlocker::TaskStarts),
+            Self::SpawnFiber { .. } => Some(AwbcProductStepParityBlocker::SpawnedFibers),
+            Self::StreamYield { .. } | Self::StreamClose { .. } => {
+                Some(AwbcProductStepParityBlocker::Streams)
+            }
+            Self::SourceClose { .. } => Some(AwbcProductStepParityBlocker::Sources),
+            Self::BindPattern { .. }
+            | Self::TestPattern { .. }
+            | Self::RepeatSequence { .. }
+            | Self::SequenceLen { .. }
+            | Self::SequenceGet { .. }
+            | Self::SequenceSlice { .. }
+            | Self::SequencePush { .. }
+            | Self::MakeRecord { .. }
+            | Self::MakeVariant { .. }
+            | Self::ProjectTuple { .. }
+            | Self::ProjectRecord { .. }
+            | Self::ProjectField { .. }
+            | Self::Unary { .. }
+            | Self::Binary { .. } => Some(AwbcProductStepParityBlocker::TrapSourceReporting),
+            Self::Nop
+            | Self::LoadConst { .. }
+            | Self::Move { .. }
+            | Self::Clear { .. }
+            | Self::EnterScope { .. }
+            | Self::ExitScope { .. }
+            | Self::MakeTuple { .. }
+            | Self::MakeSequence { .. }
+            | Self::Drop { .. } => None,
+        }
+    }
+}
+
+impl AwbcTerminator {
+    /// Returns the product-step parity family that blocks this terminator.
+    #[must_use]
+    pub const fn product_step_parity_blocker(&self) -> Option<AwbcProductStepParityBlocker> {
+        match self {
+            Self::Dialogue { .. } => Some(AwbcProductStepParityBlocker::Dialogue),
+            Self::Choice { .. } => Some(AwbcProductStepParityBlocker::Choice),
+            Self::Await { .. } => Some(AwbcProductStepParityBlocker::Await),
+            Self::AwaitMany { .. } => Some(AwbcProductStepParityBlocker::AwaitMany),
+            Self::HostCall { .. } => Some(AwbcProductStepParityBlocker::HostCall),
+            Self::BudgetYield { .. } => Some(AwbcProductStepParityBlocker::BudgetYield),
+            Self::Trap { .. }
+            | Self::GotoDynamic { .. }
+            | Self::Match { .. }
+            | Self::Unreachable => Some(AwbcProductStepParityBlocker::TrapSourceReporting),
+            Self::Jump { .. }
+            | Self::Branch { .. }
+            | Self::CallFunction { .. }
+            | Self::GotoStatic { .. }
+            | Self::Return { .. } => None,
+        }
+    }
+}
+
+impl AwbcProgram {
+    /// Inventories unsupported product-step families in deterministic order.
+    #[must_use]
+    pub fn product_step_parity_blockers(&self) -> Vec<AwbcProductStepParityBlocker> {
+        let mut blockers = BTreeSet::new();
+        if self.entries.iter().any(|entry| {
+            self.signatures
+                .get(entry.signature.index())
+                .is_some_and(|signature| !signature.params.is_empty())
+        }) {
+            blockers.insert(AwbcProductStepParityBlocker::EntryArguments);
+        }
+        blockers.extend(
+            self.instructions
+                .iter()
+                .filter_map(AwbcInstruction::product_step_parity_blocker),
+        );
+        blockers.extend(
+            self.blocks
+                .iter()
+                .filter_map(|block| block.terminator.product_step_parity_blocker()),
+        );
+        blockers.into_iter().collect()
+    }
+
+    /// Rejects a compact program before execution when parity is incomplete.
+    pub fn ensure_product_step_parity(&self) -> Result<(), AwbcProductStepBuildError> {
+        let blockers = self.product_step_parity_blockers();
+        if blockers.is_empty() {
+            Ok(())
+        } else {
+            Err(AwbcProductStepBuildError::UnsupportedParity { blockers })
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AwbcProductStepExecutor {
@@ -41,7 +176,8 @@ impl AwbcProductStepExecutor {
         program: AwbcProgram,
         entry: AwbcEntryId,
         budget_quantum: u64,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        program.ensure_product_step_parity()?;
         let fiber = if program.entries.is_empty() {
             FiberState {
                 generation: 0,
@@ -64,8 +200,11 @@ impl AwbcProductStepExecutor {
                 streams: Vec::new(),
             }
         } else {
-            FiberState::for_entry(&program, entry, 0, budget_quantum)
-                .map_err(|error| error.to_string())?
+            FiberState::for_entry(&program, entry, 0, budget_quantum).map_err(|error| {
+                AwbcProductStepBuildError::FiberState {
+                    message: error.to_string(),
+                }
+            })?
         };
         let facade_fiber = FlowFiber {
             line_cursor: 0,
@@ -618,5 +757,69 @@ mod tests {
         assert_eq!(result.stop_reason, RuntimeStepStopReason::Done);
         assert!(result.output.diagnostics.is_empty());
         assert!(matches!(result.fiber_status, FlowFiberStatus::Done(_)));
+    }
+
+    #[test]
+    fn awbc_product_step_rejects_unreviewed_parity_families() {
+        use crate::awbc::schema::{
+            AwbcBlock, AwbcRegisterId, AwbcResumePointId, AwbcSafePointKind, AwbcTableRange,
+            AwbcTerminator,
+        };
+
+        let mut program = AwbcProgram::default();
+        program.blocks.push(AwbcBlock {
+            owner: AwbcFunctionId(0),
+            instructions: AwbcTableRange::new(0, 0),
+            terminator: AwbcTerminator::Choice {
+                choice: AwbcChoiceId(0),
+                dst: AwbcRegisterId(0),
+                resume: AwbcResumePointId(0),
+            },
+            safe_point: AwbcSafePointKind::Choice,
+            source_map: None,
+        });
+
+        let error = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64)
+            .expect_err("choice parity must be blocked before execution");
+        assert_eq!(
+            error,
+            AwbcProductStepBuildError::UnsupportedParity {
+                blockers: vec![AwbcProductStepParityBlocker::Choice],
+            }
+        );
+    }
+
+    #[test]
+    fn awbc_product_step_parity_inventory_is_deterministic() {
+        use crate::awbc::schema::{
+            AwbcEffectPlanId, AwbcInstruction, AwbcPureHelperId, AwbcRegisterId,
+        };
+
+        let program = AwbcProgram {
+            instructions: vec![
+                AwbcInstruction::EmitEffect {
+                    effect: AwbcEffectPlanId(0),
+                    args: Vec::new(),
+                },
+                AwbcInstruction::CallPureHelper {
+                    dst: AwbcRegisterId(0),
+                    helper: AwbcPureHelperId(0),
+                    args: Vec::new(),
+                },
+                AwbcInstruction::EmitEffect {
+                    effect: AwbcEffectPlanId(0),
+                    args: Vec::new(),
+                },
+            ],
+            ..AwbcProgram::default()
+        };
+
+        assert_eq!(
+            program.product_step_parity_blockers(),
+            vec![
+                AwbcProductStepParityBlocker::PureHelperCalls,
+                AwbcProductStepParityBlocker::Effects,
+            ]
+        );
     }
 }
