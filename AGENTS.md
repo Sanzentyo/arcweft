@@ -247,6 +247,55 @@ Use code fences consistently:
   goal open. Avoid silently treating a missing feature as complete because
   nearby functionality exists.
 
+## Zip design package workflow
+
+When a user provides a zip design package and asks to set or pursue an
+implementation goal, handle the package as the goal's source of truth before
+writing production code.
+
+Before setting the goal:
+
+- Confirm the package path exists and inspect its README, request markdown,
+  implementation notes, overlay/patch manifest, and design documents.
+- Derive the goal from the package's explicit acceptance criteria, not from the
+  subset that is easiest to implement.
+- Name the goal so it distinguishes:
+  - items that are sufficiently designed and implementation-ready;
+  - items intentionally excluded because the package says they are not
+    implemented;
+  - items excluded because the package leaves design, direction, API shape,
+    migration order, or verification expectations underspecified.
+
+While implementing a package-driven goal:
+
+- Implement the sufficiently designed items end to end.
+- Do not count a package's broad sequence request as sufficient design by
+  itself. If the package includes a topic in a sequence request but does not
+  give enough concrete implementation direction, remove that topic from the
+  active goal and create a follow-up design request.
+- If the package marks an item as future work, non-goal, intentionally
+  unimplemented, migration-gated, or specified only at a high level, exclude it
+  from the current implementation completion criteria unless another package
+  document provides concrete implementation-ready design for that item.
+- Record excluded implementation items and verification gaps in
+  `docs/implementation/`, not in stable design chapters.
+
+When adding follow-up request markdown under `docs/reviews/requests/`:
+
+- Use sequence-preserving branch numbers for items split out of an existing
+  request, for example `2026-06-24-seq-01.1-...md`,
+  `2026-06-24-seq-01.2-...md`.
+- Make each request independently throwable to another designer or agent:
+  include sequence position, why the split is needed, required decisions,
+  implementation order, tests to specify, constraints, and expected output.
+- Group topics into one request only when they must be designed together to
+  avoid incompatible contracts. Otherwise prefer smaller sequential requests.
+- State that the follow-up request must not redesign already implemented and
+  verified substrate unless the design package or current implementation
+  evidence shows a concrete flaw.
+- Link the follow-up requests from the relevant implementation note so the
+  active goal's non-goals are visible from repository documentation.
+
 ## Acceptance criteria for each task
 
 Each task should end with:
