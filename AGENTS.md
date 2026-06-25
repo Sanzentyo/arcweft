@@ -76,6 +76,55 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 - Public parser and AST types should have concise documentation comments suitable for generated Rust documentation.
 - Comments in parser code should explain grammar decisions, ambiguity handling, and recovery strategy; avoid restating obvious control flow.
 
+## Helper and conversion discipline
+
+Prefer owned, discoverable conversion APIs over free-standing
+`{SourceType}_to_{TargetType}` helper functions.
+
+When converting one Arcweft-owned boundary type into another and the dependency
+direction allows it:
+
+- prefer `impl From<Source> for Target` for infallible, context-free
+  conversions;
+- prefer `impl TryFrom<Source> for Target` or `impl TryFrom<&Source> for
+  Target` for fallible, context-free conversions;
+- prefer an inherent method on the owning boundary type when the conversion is
+  part of that type's domain behavior;
+- prefer a method on a dedicated lowering, inventory, verifier, or adapter
+  context when conversion needs interning, diagnostics, source spans,
+  allocation, policy, or shared state.
+
+Avoid public or widely reused helpers named like `runtime_policy_to_awbc_policy`,
+`foo_to_bar`, `convert_foo_bar`, or similar when the same behavior can live on
+an owned type or a named context object. Such helpers make ownership boundaries
+harder to audit and encourage scattered field-by-field projections.
+
+Small private helpers are acceptable when they are truly local implementation
+details, but name them by domain role rather than by both endpoint type names
+where possible. If a helper grows, is reused across modules, or mirrors a
+boundary contract, move it onto the responsible type or context object. Do not
+add extension traits, compatibility shims, or ad hoc wrapper APIs merely to
+avoid placing behavior on the owning type.
+
+Do not create private helper functions merely to hide a small `map_err`,
+`ok_or_else`, `match`, `if let`, or one-off error conversion. Prefer inline
+error handling when the logic is used once, the mapping is one or two
+expressions, and a helper name would mostly restate the operation, such as
+`convert_error`, `map_parse_error`, `missing_foo_error`, or `foo_or_error`.
+
+A private helper is appropriate when it names a real domain rule, invariant, or
+policy; is reused in multiple call sites; keeps a public function below a
+meaningful complexity threshold without hiding important error context;
+centralizes structured diagnostic construction that must remain consistent; or
+isolates boundary adaptation between crates or runtime tiers.
+
+When error construction needs shared formatting, stable diagnostic codes,
+source ranges, or repeated structured fields, prefer an inherent constructor on
+the error or diagnostic type over scattered local private helper functions.
+Avoid helper names whose only information is control mechanics, such as
+`handle_error`, `map_error`, `to_error`, `ensure_valid`, or `check_foo`, unless
+they encode a specific domain invariant in their name and body.
+
 ## Structural audit and decomposition gate
 
 Repository structure is part of the implementation result. Do not treat
