@@ -9,6 +9,7 @@ pub mod codec;
 pub mod fiber;
 pub mod parity;
 pub mod schema;
+mod schema_impls;
 pub mod verify;
 pub mod vm;
 
