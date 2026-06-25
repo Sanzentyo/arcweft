@@ -1,16 +1,14 @@
 //! Lowering from presentation image objects into retained UI image fragments.
 
 use crate::{
-    DisplayList, FragmentKind, ImageAlignment, ImageFit, ImagePlayback, LayoutBox, LayoutLength,
-    LayoutPoint, LayoutResults, LayoutSize, LayoutTree, NodeKey, SemanticSpecId, StyleId, UiError,
-    UiImagePresentationMetadata, UiImageSource, UiImageSourceTable, UiLayerOutput,
-    UiSemanticFragmentBuilder, UiSemanticNode, ViewFragmentBuilder,
+    DisplayList, FragmentKind, LayoutBox, LayoutLength, LayoutPoint, LayoutResults, LayoutSize,
+    LayoutTree, NodeKey, SemanticSpecId, StyleId, UiError, UiImagePresentationMetadata,
+    UiImageSource, UiImageSourceTable, UiLayerOutput, UiSemanticFragmentBuilder, UiSemanticNode,
+    ViewFragmentBuilder,
 };
 use arcweft_image::DecodedImage;
 use arcweft_presentation::hit::HitRect;
-use arcweft_presentation::image::{
-    ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImagePresentationObject,
-};
+use arcweft_presentation::image::ImagePresentationObject;
 use arcweft_presentation::layer::LayerId;
 use arcweft_presentation::semantic::SemanticRole;
 use std::collections::BTreeMap;
@@ -67,11 +65,11 @@ impl UiImagePresentationFrame {
             }
             let image_id = images.insert(
                 UiImageSource::new(image)
-                    .with_fit(ui_image_fit(object.fit()))
-                    .with_alignment(ui_image_alignment(object.alignment()))
+                    .with_fit(object.fit().into())
+                    .with_alignment(object.alignment().into())
                     .with_opacity_milli(object.opacity_milli())
                     .with_transform(object.transform())
-                    .with_playback(ui_image_playback(object.playback()))
+                    .with_playback(object.playback().into())
                     .with_presentation(ui_image_presentation_metadata(&object)),
             )?;
             let layer = object.layer().clone();
@@ -135,31 +133,6 @@ impl UiImagePresentationFrame {
     }
 }
 
-fn ui_image_fit(fit: ImageObjectFit) -> ImageFit {
-    match fit {
-        ImageObjectFit::Contain => ImageFit::Contain,
-        ImageObjectFit::Cover => ImageFit::Cover,
-        ImageObjectFit::Stretch => ImageFit::Stretch,
-        ImageObjectFit::Intrinsic => ImageFit::Intrinsic,
-    }
-}
-
-fn ui_image_alignment(alignment: ImageObjectAlignment) -> ImageAlignment {
-    ImageAlignment::new(alignment.x_milli(), alignment.y_milli())
-}
-
-fn ui_image_playback(playback: ImageObjectPlayback) -> ImagePlayback {
-    let mut result =
-        ImagePlayback::new(playback.start_time_millis()).with_rate_milli(playback.rate_milli());
-    if let Some(paused_at) = playback.paused_at_millis() {
-        result = result.paused_at(paused_at);
-    }
-    if let Some(pinned) = playback.pinned_local_time_millis() {
-        result = result.pinned_local_time(pinned);
-    }
-    result
-}
-
 fn layout_box(bounds: HitRect) -> LayoutBox {
     LayoutBox::new(
         LayoutPoint::new(layout_length(bounds.x), layout_length(bounds.y)),
@@ -207,13 +180,14 @@ fn ui_image_presentation_metadata(object: &ImagePresentationObject) -> UiImagePr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{ImageAlignment, ImageFit};
     use arcweft_id::PublicId;
     use arcweft_image::{
         DecodedImage, DecodedImageFrame, ImageDimensions, ImageFormat, ImageRepetition,
     };
     use arcweft_presentation::image::{
-        ImageAssetRef, ImageObjectId, ImageObjectPlayback, ImageObjectTransform,
-        ImagePresentationObject,
+        ImageAssetRef, ImageObjectAlignment, ImageObjectFit, ImageObjectId, ImageObjectPlayback,
+        ImageObjectTransform, ImagePresentationObject,
     };
     use arcweft_presentation::input::InteractionTarget;
 

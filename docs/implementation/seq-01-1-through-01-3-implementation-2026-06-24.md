@@ -139,8 +139,8 @@ cargo test -p arcweft-runtime-plan awbc_lower
 cargo test -p arcweft-runtime-codegen awbc_region
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 just test-workspace
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audits/seq-01-1-through-01-3-2026-06-24
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audits/seq-01-1-through-01-3-2026-06-24
 ```
 
 The structural audit reported 0 errors and 99 warnings. Report files were

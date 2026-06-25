@@ -45,7 +45,7 @@ git diff --check
 cargo fmt --all -- --check
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audit-incremental-hot-swap-2026-06-23
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audit-incremental-hot-swap-2026-06-23
 ```
 
 Current structural audit result: `0` errors, `97` warnings across `784` Rust

@@ -55,8 +55,8 @@ cargo test -p arcweft-ui
 cargo test -p arcweft-runtime-host
 cargo test -p arcweft-render-wgpu
 cargo test -p arcweft-player-web
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audit-ui-interaction-routing-2026-06-22
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audit-ui-interaction-routing-2026-06-22
 ```
 
 All commands above passed on this checkout. The structural audit reported 0

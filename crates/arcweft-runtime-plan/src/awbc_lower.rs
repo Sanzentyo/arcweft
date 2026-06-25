@@ -27,13 +27,13 @@ use arcweft_core::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerify
 use arcweft_core::plan::RuntimePlan;
 use arcweft_render_text::LineDisplayCatalog;
 
-/// Inputs to the compiler-side AWBC lowerer.
+/// Compiler-side context for one `RuntimePlan` to AWBC lowering operation.
 #[derive(Clone, Copy, Debug)]
-pub struct AwbcLowerInput<'a> {
-    pub plan: &'a RuntimePlan,
-    pub display: &'a LineDisplayCatalog,
-    pub source_label: &'a str,
-    pub options: AwbcLowerOptions,
+pub struct AwbcLowerer<'a> {
+    plan: &'a RuntimePlan,
+    display: &'a LineDisplayCatalog,
+    source_label: &'a str,
+    options: AwbcLowerOptions,
 }
 
 /// Stable options that affect lowering shape, never runtime semantics.
@@ -75,65 +75,82 @@ pub enum AwbcLowerError {
     Verify(AwbcVerifyError),
 }
 
-/// Lowers a runtime plan using default options and no display catalog entries.
-pub fn lower_runtime_plan_to_awbc(plan: &RuntimePlan) -> Result<AwbcLowerReport, AwbcLowerError> {
-    lower_runtime_plan_to_awbc_with_input(AwbcLowerInput {
-        plan,
-        display: &LineDisplayCatalog::default(),
-        source_label: "<runtime-plan>",
-        options: AwbcLowerOptions::default(),
-    })
-}
-
-/// Lowers a runtime plan to canonical AWBC tables.
-pub fn lower_runtime_plan_to_awbc_with_input(
-    input: AwbcLowerInput<'_>,
-) -> Result<AwbcLowerReport, AwbcLowerError> {
-    let mut inventory = AwbcInventory::new(input.source_label, input.options);
-    inventory.intern_runtime_primitives();
-    inventory.intern_display_catalog(input.display);
-
-    let mut diagnostics = {
-        let mut flow_lowerer = AwbcFlowLowerer::new(&mut inventory);
-        flow_lowerer.lower_plan(input.plan);
-        flow_lowerer.into_diagnostics()
-    };
-    AwbcSourceStreamLowerer::new(&mut inventory).lower_plan(input.plan);
-
-    diagnostics.extend(inventory.take_diagnostics());
-    let mut program = inventory.finish();
-    if input.options.emit_source_map && program.source_map.is_empty() {
-        let source_file = program
-            .strings
-            .iter()
-            .position(|value| value == input.source_label)
-            .map(|index| arcweft_core::awbc::schema::AwbcStringId(table_index(index)))
-            .unwrap_or_default();
-        program.source_map.push(AwbcSourceMapEntry {
-            location: arcweft_core::awbc::schema::AwbcCodeLocation::Block(
-                arcweft_core::awbc::schema::AwbcBlockId(0),
-            ),
-            source_file,
-            start: 0,
-            end: 0,
-            anchor: None,
-        });
+impl<'a> AwbcLowerer<'a> {
+    /// Creates a lowerer with the stable default emission options.
+    pub fn new(
+        plan: &'a RuntimePlan,
+        display: &'a LineDisplayCatalog,
+        source_label: &'a str,
+    ) -> Self {
+        Self {
+            plan,
+            display,
+            source_label,
+            options: AwbcLowerOptions::default(),
+        }
     }
 
-    if input.options.verify {
-        program
-            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
-            .map_err(AwbcLowerError::Verify)?;
+    /// Replaces the emission options for this lowering operation.
+    #[must_use]
+    pub const fn with_options(mut self, options: AwbcLowerOptions) -> Self {
+        self.options = options;
+        self
     }
-    let stats = AwbcLowerStats::from_program(&program);
-    if diagnostics.iter().any(AwbcLowerDiagnostic::is_error) {
-        return Err(AwbcLowerError::Lowering(diagnostics));
+
+    /// Lowers the configured runtime plan to canonical AWBC tables.
+    pub fn lower(self) -> Result<AwbcLowerReport, AwbcLowerError> {
+        let Self {
+            plan,
+            display,
+            source_label,
+            options,
+        } = self;
+        let mut inventory = AwbcInventory::new(source_label, options);
+        inventory.intern_runtime_primitives();
+        inventory.intern_display_catalog(display);
+
+        let mut diagnostics = {
+            let mut flow_lowerer = AwbcFlowLowerer::new(&mut inventory);
+            flow_lowerer.lower_plan(plan);
+            flow_lowerer.into_diagnostics()
+        };
+        AwbcSourceStreamLowerer::new(&mut inventory).lower_plan(plan);
+
+        diagnostics.extend(inventory.take_diagnostics());
+        let mut program = inventory.finish();
+        if options.emit_source_map && program.source_map.is_empty() {
+            let source_file = program
+                .strings
+                .iter()
+                .position(|value| value == source_label)
+                .map(|index| arcweft_core::awbc::schema::AwbcStringId(table_index(index)))
+                .unwrap_or_default();
+            program.source_map.push(AwbcSourceMapEntry {
+                location: arcweft_core::awbc::schema::AwbcCodeLocation::Block(
+                    arcweft_core::awbc::schema::AwbcBlockId(0),
+                ),
+                source_file,
+                start: 0,
+                end: 0,
+                anchor: None,
+            });
+        }
+
+        if options.verify {
+            program
+                .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+                .map_err(AwbcLowerError::Verify)?;
+        }
+        let stats = AwbcLowerStats::from_program(&program);
+        if diagnostics.iter().any(AwbcLowerDiagnostic::is_error) {
+            return Err(AwbcLowerError::Lowering(diagnostics));
+        }
+        Ok(AwbcLowerReport {
+            program,
+            stats,
+            diagnostics,
+        })
     }
-    Ok(AwbcLowerReport {
-        program,
-        stats,
-        diagnostics,
-    })
 }
 
 pub(crate) fn table_index(value: usize) -> u32 {

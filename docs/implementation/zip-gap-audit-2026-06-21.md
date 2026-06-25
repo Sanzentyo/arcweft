@@ -318,7 +318,7 @@ cargo test -p arcweft-cli stdio_transport_ --all-features -- --nocapture
 cargo clippy -p arcweft-cli --all-targets --all-features -- -D warnings
 cargo test -p arcweft-cli agent_repl_parse_stdio_connection --all-features
 cargo clippy --workspace --all-targets --all-features
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audit-2026-06-21
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audit-2026-06-21
 ```
 
 All commands above passed on Windows in this checkout.

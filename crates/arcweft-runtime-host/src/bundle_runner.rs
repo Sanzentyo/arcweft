@@ -9,7 +9,7 @@ use arcweft_core::bytecode::{
 };
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::engine::{FlowFiber, FlowFiberStatus, FlowStatusLabelStyle};
-use arcweft_core::executor::{AotExecutor, BytecodeVmExecutor, RuntimeExecutor};
+use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
 use arcweft_core::plan::{FlowEvent, FlowRuntimeId, RuntimeEntryTarget, RuntimePlan};
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepResult,
@@ -96,6 +96,15 @@ impl Default for BundleRunnerOptions {
 pub enum BundleRunnerExecutor {
     BytecodeVm,
     Aot,
+}
+
+impl From<BundleRunnerExecutor> for ArcweftExecutionTier {
+    fn from(value: BundleRunnerExecutor) -> Self {
+        match value {
+            BundleRunnerExecutor::BytecodeVm => Self::StructuredVm,
+            BundleRunnerExecutor::Aot => Self::StructuredAot,
+        }
+    }
 }
 
 /// Step scheduling mode selected by an embedding bundle runner.
@@ -532,15 +541,9 @@ struct NativeRunHost<'a> {
     adapter_registrars: &'a [NativeAdapterRegistrar],
 }
 
-enum RuntimeExecutorInstance {
-    BytecodeVm {
-        executor: BytecodeVmExecutor,
-        pure: RuntimePureAccelerator,
-    },
-    Aot {
-        executor: AotExecutor,
-        pure: RuntimePureAccelerator,
-    },
+struct RuntimeExecutorInstance {
+    executor: ArcweftRuntimeExecutor,
+    pure: RuntimePureAccelerator,
 }
 
 impl RuntimeExecutorInstance {
@@ -557,15 +560,9 @@ impl RuntimeExecutorInstance {
             .into_runtime_plan()
             .map_err(BundleRunnerError::DecodeBytecode)?;
         let pure = RuntimePureAccelerator::with_config(pure_config, &plan.pure_helpers);
-        Ok(match tier {
-            BundleRunnerExecutor::BytecodeVm => Self::BytecodeVm {
-                executor: BytecodeVmExecutor::from_parts(bytecode, plan),
-                pure,
-            },
-            BundleRunnerExecutor::Aot => Self::Aot {
-                executor: AotExecutor::new(plan),
-                pure,
-            },
+        Ok(Self {
+            executor: ArcweftRuntimeExecutor::from_bytecode_parts(bytecode, plan, tier.into()),
+            pure,
         })
     }
 
@@ -575,30 +572,20 @@ impl RuntimeExecutorInstance {
         root_bindings: &[RuntimeBinding],
         options: RuntimeStepOptions,
     ) -> RuntimeStepResult {
-        match self {
-            Self::BytecodeVm { executor, pure } => executor
-                .step_with_root_bindings_and_pure_backend(input, root_bindings, options, pure),
-            Self::Aot { executor, pure } => executor.step_with_root_bindings_and_pure_backend(
-                input,
-                root_bindings,
-                options,
-                pure,
-            ),
-        }
+        self.executor.step_with_root_bindings_and_pure_backend(
+            input,
+            root_bindings,
+            options,
+            &mut self.pure,
+        )
     }
 
     fn fiber(&self) -> &FlowFiber {
-        match self {
-            Self::BytecodeVm { executor, .. } => executor.fiber(),
-            Self::Aot { executor, .. } => executor.fiber(),
-        }
+        self.executor.fiber()
     }
 
     fn executor_stats(&self) -> RuntimeExecutorStats {
-        match self {
-            Self::BytecodeVm { pure, .. } => runtime_executor_stats(0, pure),
-            Self::Aot { executor, pure } => runtime_executor_stats(executor.fast_path_ops(), pure),
-        }
+        runtime_executor_stats(self.executor.fast_path_ops(), &self.pure)
     }
 }
 

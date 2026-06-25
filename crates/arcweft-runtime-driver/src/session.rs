@@ -16,7 +16,7 @@ use arcweft_core::bytecode::{
 };
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
-use arcweft_core::executor::{BytecodeVmExecutor, RuntimeExecutor};
+use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
 use arcweft_core::plan::{
     FlowEvent, FlowRuntimeId, RuntimeEntryTarget, RuntimePlan, RuntimePlanError,
 };
@@ -97,7 +97,7 @@ pub struct BundleSessionStep {
 #[derive(Clone, Debug)]
 pub struct BundleSession {
     source_label: String,
-    executor: BytecodeVmExecutor,
+    executor: ArcweftRuntimeExecutor,
     display: LineDisplayCatalog,
     image_objects: Vec<BundleImageObject>,
     options: BundleSessionOptions,
@@ -662,7 +662,7 @@ const fn restart_required_patch_compatibility(
 #[derive(Debug)]
 struct SessionRuntime {
     source_label: String,
-    executor: BytecodeVmExecutor,
+    executor: ArcweftRuntimeExecutor,
     display: LineDisplayCatalog,
     image_objects: Vec<BundleImageObject>,
 }
@@ -703,7 +703,11 @@ fn build_session_runtime(
 
     Ok(SessionRuntime {
         source_label: bundle.manifest.source_label.clone(),
-        executor: BytecodeVmExecutor::from_parts(bytecode, plan),
+        executor: ArcweftRuntimeExecutor::from_bytecode_parts(
+            bytecode,
+            plan,
+            ArcweftExecutionTier::StructuredVm,
+        ),
         display: bundle.display.clone(),
         image_objects: bundle.image_objects.clone(),
     })

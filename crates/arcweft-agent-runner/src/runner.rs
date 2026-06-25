@@ -4,7 +4,7 @@ use arcweft_bundle::{ArcweftBundle, BundleKind};
 use arcweft_core::{
     bytecode::BytecodeProgram,
     engine::FlowFiberStatus,
-    executor::{BytecodeVmExecutor, RuntimeExecutor},
+    executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor},
     step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
     task::{LogicalEpoch, TaskEvent, TaskEventKind, TaskSequence},
 };
@@ -78,10 +78,11 @@ where
     D: DebugEventSink,
     R: RagService,
 {
-    type Executor = BytecodeVmExecutor;
+    type Executor = ArcweftRuntimeExecutor;
 
     fn build(&mut self, program: BytecodeProgram) -> AgentRunnerResult<Self::Executor, S, D, R> {
-        BytecodeVmExecutor::new(program).map_err(AgentRunError::Bytecode)
+        ArcweftRuntimeExecutor::from_bytecode(program, ArcweftExecutionTier::StructuredVm)
+            .map_err(AgentRunError::Bytecode)
     }
 }
 

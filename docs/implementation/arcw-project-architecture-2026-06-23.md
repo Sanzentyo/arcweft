@@ -69,7 +69,7 @@ cargo fmt --all -- --check
 cargo test -p arcweft-project -p arcweft-project-loader -p arcweft-lang-hir -p arcweft-compiler -p arcweft-host-adapter -p arcweft-runtime-host -p arcweft-cli --lib
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .
+cargo +nightly -Zscript tools/structure-audit.rs --root .
 ```
 
 Structural audit result:

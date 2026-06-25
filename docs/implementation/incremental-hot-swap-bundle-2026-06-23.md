@@ -730,8 +730,8 @@ cargo run -p arcweft-cli --quiet -- run samples/visual-novel-mini/src/game.arcw 
 cargo run -p arcweft-cli --quiet -- run target/codex/native-watch-change-src/src/game.arcw --runner native --watch --watch-iterations 8 --watch-poll-ms 500
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audit-incremental-hot-swap-2026-06-23
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audit-incremental-hot-swap-2026-06-23
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audit-incremental-hot-swap-2026-06-23
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audit-incremental-hot-swap-2026-06-23
 cargo tree -p arcweft-player-native --edges normal -i arcweft-compiler
 cargo tree -p arcweft-player-native --all-features --edges normal -i arcweft-compiler
 cargo tree -p arcweft-player-native --edges normal -i arcweft-runtime-plan

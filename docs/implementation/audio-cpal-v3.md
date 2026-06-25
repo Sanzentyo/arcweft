@@ -65,8 +65,8 @@ cargo clippy -p arcweft-player-native -p arcweft-audio-device-cpal --all-targets
 cargo test -p arcweft-audio-core -p arcweft-audio-mixer -p arcweft-bundle -p arcweft-runtime-plan -p arcweft-player-native audio -- --nocapture
 cargo test -p arcweft-audio-core -p arcweft-audio-codec -p arcweft-audio-mixer -p arcweft-audio-device-cpal
 cargo test -p arcweft-player-native
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audit-audio-cpal-v3
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audit-audio-cpal-v3
 ```
 
 Results:

@@ -11,11 +11,7 @@ use crate::label_parse::{
     capture_request, effect_form_attachment_resource, invoke_action, observe_request,
     parse_public_id_arg, parse_string_label, pointer_click_action, rag_request, wait_request,
 };
-use crate::runtime_args::{
-    RuntimeAgentArgs, runtime_assertion_request, runtime_attach_request, runtime_capture_request,
-    runtime_invoke_action, runtime_observe_request, runtime_pointer_click_action,
-    runtime_rag_request, runtime_wait_request,
-};
+use crate::runtime_args::RuntimeAgentArgs;
 use crate::runtime_value::{runtime_public_id, runtime_string, runtime_u32};
 
 pub(crate) fn agent_host_request_from_effect(
@@ -119,9 +115,11 @@ pub(crate) fn agent_host_request_from_task(
     }
     let args = RuntimeAgentArgs::new(args);
     match operation.as_str() {
-        "observe" => runtime_observe_request(&args)
+        "observe" => args
+            .observe_request()
             .map(|request| AgentHostRequest::Observe(Box::new(request))),
-        "capture" => runtime_capture_request(&args)
+        "capture" => args
+            .capture_request()
             .map(|request| AgentHostRequest::Capture(Box::new(request))),
         "choose" => {
             let choice = args
@@ -138,11 +136,12 @@ pub(crate) fn agent_host_request_from_task(
             }
             Ok(AgentHostRequest::Act(Box::new(AgentAction::AdvanceText)))
         }
-        "pointer.click" => runtime_pointer_click_action(&args)
+        "pointer.click" => args
+            .pointer_click_action()
             .map(|action| AgentHostRequest::Act(Box::new(action))),
-        "invoke" => {
-            runtime_invoke_action(&args).map(|action| AgentHostRequest::Act(Box::new(action)))
-        }
+        "invoke" => args
+            .invoke_action()
+            .map(|action| AgentHostRequest::Act(Box::new(action))),
         "read_resource" => {
             let uri = args
                 .positional(0)
@@ -170,12 +169,14 @@ pub(crate) fn agent_host_request_from_task(
             let depth = args.named("depth").map_or(Ok(1), runtime_u32)?;
             Ok(AgentHostRequest::ProjectGraphNeighborhood { root, depth })
         }
-        "rag.query" => {
-            runtime_rag_request(&args).map(|request| AgentHostRequest::RagQuery(Box::new(request)))
-        }
-        "expect" => runtime_assertion_request(&args, AgentAssertionKind::Expect)
+        "rag.query" => args
+            .rag_request()
+            .map(|request| AgentHostRequest::RagQuery(Box::new(request))),
+        "expect" => args
+            .assertion_request(AgentAssertionKind::Expect)
             .map(|request| AgentHostRequest::Assert(Box::new(request))),
-        "deny" => runtime_assertion_request(&args, AgentAssertionKind::Deny)
+        "deny" => args
+            .assertion_request(AgentAssertionKind::Deny)
             .map(|request| AgentHostRequest::Assert(Box::new(request))),
         "checkpoint" => {
             let name = args
@@ -184,12 +185,12 @@ pub(crate) fn agent_host_request_from_task(
                 .map_or_else(|| Ok("checkpoint".to_owned()), runtime_string)?;
             Ok(AgentHostRequest::Checkpoint { name })
         }
-        "attach" => {
-            runtime_attach_request(&args).map(|request| AgentHostRequest::Attach(Box::new(request)))
-        }
-        "wait" => {
-            runtime_wait_request(&args).map(|request| AgentHostRequest::Wait(Box::new(request)))
-        }
+        "attach" => args
+            .attach_request()
+            .map(|request| AgentHostRequest::Attach(Box::new(request))),
+        "wait" => args
+            .wait_request()
+            .map(|request| AgentHostRequest::Wait(Box::new(request))),
         other => Err(format!("unsupported Agent task operation `{other}`")),
     }
 }

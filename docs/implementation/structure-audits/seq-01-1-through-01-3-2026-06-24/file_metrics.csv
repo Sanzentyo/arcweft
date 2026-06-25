@@ -1462,7 +1462,7 @@ tests/fixtures/native_capture/vertical_jlreq_preset_loose_golden.arcw,573,20,17,
 tests/fixtures/native_capture/vertical_jlreq_preset_normal_golden.arcw,579,20,17,test,false,true,false,false
 tests/fixtures/native_capture/vertical_lr_ruby_text_combine_golden.arcw,571,20,17,test,false,true,false,false
 tests/fixtures/native_capture/vertical_tutr_golden.arcw,515,20,17,test,false,true,false,false
-tools/arcweft-structure-audit.rs,34055,1034,944,production,true,false,false,false
+tools/structure-audit.rs,34055,1034,944,production,true,false,false,false
 tools/capture-bundle-scene-frame.rs,8941,249,235,production,true,false,false,false
 tools/capture-webgpu-native-frame.rs,6827,183,171,production,true,false,false,false
 tools/generate-webgpu-demo-assets.rs,9886,298,270,production,true,false,false,false

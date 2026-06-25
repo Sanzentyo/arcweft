@@ -55,8 +55,8 @@ cargo test -p arcweft-desktop-native
 cargo test -p arcweft-desktop-contract -p arcweft-desktop-host -p arcweft-adapter-desktop
 cargo check --workspace --all-targets
 cargo clippy -p arcweft-desktop-contract -p arcweft-desktop-native -p arcweft-desktop-host -p arcweft-adapter-desktop --all-targets -- -D warnings
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audit-persistent-file-grants-redesign-ce9ea4-2026-06-23
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audit-persistent-file-grants-redesign-ce9ea4-2026-06-23
 git diff --check
 ```
 

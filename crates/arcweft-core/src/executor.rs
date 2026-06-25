@@ -42,6 +42,34 @@ pub struct BytecodeVmExecutor {
     vm: VmExecutor,
 }
 
+/// Product-facing execution tier selected through the shared executor facade.
+///
+/// These tiers currently preserve the structured runtime behavior while the
+/// product AWBC migration remains a separate cut. Keeping the variants here
+/// prevents hosts from constructing low-level executors directly.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ArcweftExecutionTier {
+    StructuredVm,
+    StructuredAot,
+}
+
+/// Shared runtime executor facade used by application-facing crates.
+///
+/// The facade owns concrete executor construction so runtime hosts, CLI paths,
+/// native players, and development runners do not wire `BytecodeVmExecutor`
+/// directly. Product AWBC bytecode execution can replace or extend these
+/// variants without changing those callers.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ArcweftRuntimeExecutor {
+    inner: ArcweftRuntimeExecutorInner,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum ArcweftRuntimeExecutorInner {
+    StructuredVm(BytecodeVmExecutor),
+    StructuredAot(AotExecutor),
+}
+
 impl VmExecutor {
     pub fn new(plan: RuntimePlan) -> Self {
         Self {
@@ -223,6 +251,115 @@ impl BytecodeVmExecutor {
     }
 }
 
+impl ArcweftRuntimeExecutor {
+    pub fn from_runtime_plan(plan: RuntimePlan, tier: ArcweftExecutionTier) -> Self {
+        match tier {
+            ArcweftExecutionTier::StructuredVm => {
+                Self::from_inner(ArcweftRuntimeExecutorInner::StructuredVm(
+                    BytecodeVmExecutor::from_runtime_plan(plan),
+                ))
+            }
+            ArcweftExecutionTier::StructuredAot => Self::from_inner(
+                ArcweftRuntimeExecutorInner::StructuredAot(AotExecutor::new(plan)),
+            ),
+        }
+    }
+
+    pub fn from_bytecode(
+        program: BytecodeProgram,
+        tier: ArcweftExecutionTier,
+    ) -> Result<Self, RuntimePlanError> {
+        Ok(match tier {
+            ArcweftExecutionTier::StructuredVm => Self::from_inner(
+                ArcweftRuntimeExecutorInner::StructuredVm(BytecodeVmExecutor::new(program)?),
+            ),
+            ArcweftExecutionTier::StructuredAot => {
+                Self::from_inner(ArcweftRuntimeExecutorInner::StructuredAot(
+                    AotExecutor::new(program.into_runtime_plan()?),
+                ))
+            }
+        })
+    }
+
+    pub fn from_bytecode_parts(
+        program: BytecodeProgram,
+        plan: RuntimePlan,
+        tier: ArcweftExecutionTier,
+    ) -> Self {
+        match tier {
+            ArcweftExecutionTier::StructuredVm => {
+                Self::from_inner(ArcweftRuntimeExecutorInner::StructuredVm(
+                    BytecodeVmExecutor::from_parts(program, plan),
+                ))
+            }
+            ArcweftExecutionTier::StructuredAot => {
+                let _ = program;
+                Self::from_inner(ArcweftRuntimeExecutorInner::StructuredAot(
+                    AotExecutor::new(plan),
+                ))
+            }
+        }
+    }
+
+    pub fn from_aot_parts(program: AotProgram, plan: RuntimePlan) -> Self {
+        Self::from_inner(ArcweftRuntimeExecutorInner::StructuredAot(
+            AotExecutor::from_parts(program, plan),
+        ))
+    }
+
+    pub const fn tier(&self) -> ArcweftExecutionTier {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::StructuredVm(_) => ArcweftExecutionTier::StructuredVm,
+            ArcweftRuntimeExecutorInner::StructuredAot(_) => ArcweftExecutionTier::StructuredAot,
+        }
+    }
+
+    pub const fn fast_path_ops(&self) -> usize {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::StructuredVm(_) => 0,
+            ArcweftRuntimeExecutorInner::StructuredAot(executor) => executor.fast_path_ops(),
+        }
+    }
+
+    pub fn step_with_pure_backend(
+        &mut self,
+        input: RuntimeStepInput,
+        options: RuntimeStepOptions,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> RuntimeStepResult {
+        self.step_with_root_bindings_and_pure_backend(input, &[], options, pure_backend)
+    }
+
+    pub fn step_with_root_bindings_and_pure_backend(
+        &mut self,
+        input: RuntimeStepInput,
+        root_bindings: &[RuntimeBinding],
+        options: RuntimeStepOptions,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> RuntimeStepResult {
+        match &mut self.inner {
+            ArcweftRuntimeExecutorInner::StructuredVm(executor) => executor
+                .step_with_root_bindings_and_pure_backend(
+                    input,
+                    root_bindings,
+                    options,
+                    pure_backend,
+                ),
+            ArcweftRuntimeExecutorInner::StructuredAot(executor) => executor
+                .step_with_root_bindings_and_pure_backend(
+                    input,
+                    root_bindings,
+                    options,
+                    pure_backend,
+                ),
+        }
+    }
+
+    const fn from_inner(inner: ArcweftRuntimeExecutorInner) -> Self {
+        Self { inner }
+    }
+}
+
 impl RuntimeExecutor for VmExecutor {
     fn step(&mut self, input: RuntimeStepInput, options: RuntimeStepOptions) -> RuntimeStepResult {
         self.engine.step(input, options)
@@ -269,6 +406,22 @@ impl RuntimeExecutor for BytecodeVmExecutor {
 
     fn fiber(&self) -> &FlowFiber {
         self.vm.fiber()
+    }
+}
+
+impl RuntimeExecutor for ArcweftRuntimeExecutor {
+    fn step(&mut self, input: RuntimeStepInput, options: RuntimeStepOptions) -> RuntimeStepResult {
+        match &mut self.inner {
+            ArcweftRuntimeExecutorInner::StructuredVm(executor) => executor.step(input, options),
+            ArcweftRuntimeExecutorInner::StructuredAot(executor) => executor.step(input, options),
+        }
+    }
+
+    fn fiber(&self) -> &FlowFiber {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::StructuredVm(executor) => executor.fiber(),
+            ArcweftRuntimeExecutorInner::StructuredAot(executor) => executor.fiber(),
+        }
     }
 }
 

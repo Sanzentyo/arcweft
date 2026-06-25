@@ -441,7 +441,7 @@ cargo test -p arcweft-codec-arrow --all-features
 cargo test -p arcweft-codec-avro --all-features
 cargo test -p arcweft-bundle --all-features
 cargo test -p arcweft-runtime-accelerator data_external_call_ -- --nocapture
-cargo +nightly -Zscript tools\arcweft-structure-audit.rs --root . --write docs\implementation\structure-audit-2026-06-21
+cargo +nightly -Zscript tools\structure-audit.rs --root . --write docs\implementation\structure-audit-2026-06-21
 ```
 
 Structural audit result:
@@ -461,7 +461,7 @@ Additional focused validation after `7e0c3145`:
 cargo test -p arcweft-render-native shaped --lib
 cargo clippy -p arcweft-render-native --all-targets --all-features
 cargo fmt --all -- --check
-cargo +nightly -Zscript tools\arcweft-structure-audit.rs --root .
+cargo +nightly -Zscript tools\structure-audit.rs --root .
 ```
 
 Result: all passed locally on Windows; structural audit dry-run reported

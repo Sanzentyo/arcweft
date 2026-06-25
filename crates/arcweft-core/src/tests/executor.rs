@@ -1,7 +1,10 @@
 use crate::aot::{AotDispatchShape, AotProgram};
 use crate::bytecode::BytecodeProgram;
 use crate::effect::{LineEffectRequest, RuntimeLog};
-use crate::executor::{AotExecutor, BytecodeVmExecutor, RuntimeExecutor, VmExecutor};
+use crate::executor::{
+    AotExecutor, ArcweftExecutionTier, ArcweftRuntimeExecutor, BytecodeVmExecutor, RuntimeExecutor,
+    VmExecutor,
+};
 use crate::plan::{
     FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan, RuntimePureHelper, RuntimePureHelperId,
     RuntimePureHelperOrigin, RuntimePureOutputType,
@@ -267,4 +270,45 @@ fn bytecode_program_roundtrips_runtime_plan_and_matches_vm_executor() {
 
     assert_eq!(bytecode_result, vm_result);
     assert_eq!(bytecode_vm.fiber().status, vm.fiber().status);
+}
+
+#[test]
+fn runtime_executor_facade_matches_structured_vm_and_aot_boundaries() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![
+                FlowOp::Noop,
+                FlowOp::Effect(LineEffectRequest::Log(RuntimeLog {
+                    level: "info".to_owned(),
+                    message: "facade".to_owned(),
+                    fields: Vec::new(),
+                })),
+                FlowOp::Return("done".to_owned()),
+            ],
+        }],
+        Vec::new(),
+    )
+    .expect("plan is valid");
+    let options = RuntimeStepOptions {
+        mode: RuntimeStepMode::Drain,
+        budget: RuntimeStepBudget { max_ops: 8 },
+    };
+    let mut vm = VmExecutor::new(plan.clone());
+    let mut facade_vm =
+        ArcweftRuntimeExecutor::from_runtime_plan(plan.clone(), ArcweftExecutionTier::StructuredVm);
+    let mut facade_aot =
+        ArcweftRuntimeExecutor::from_runtime_plan(plan, ArcweftExecutionTier::StructuredAot);
+
+    let vm_result = vm.step(RuntimeStepInput::default(), options);
+    let facade_vm_result = facade_vm.step(RuntimeStepInput::default(), options);
+    let facade_aot_result = facade_aot.step(RuntimeStepInput::default(), options);
+
+    assert_eq!(facade_vm.tier(), ArcweftExecutionTier::StructuredVm);
+    assert_eq!(facade_aot.tier(), ArcweftExecutionTier::StructuredAot);
+    assert_eq!(facade_vm_result, vm_result);
+    assert_eq!(facade_aot_result.output, vm_result.output);
+    assert_eq!(facade_aot.fiber().status, vm.fiber().status);
+    assert_eq!(facade_aot.fast_path_ops(), 3);
 }

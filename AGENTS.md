@@ -37,6 +37,16 @@ If multiple Rust skills exist, read all relevant `SKILL.md` files and summarize 
 - Prefer small, compiling increments.
 - Use Jujutsu (`jj`) for repository state when available; prefer `jj status`, `jj diff`, and `jj describe` over equivalent Git commands for local workflow reporting.
 - Push autonomously to `main` at reasonable, reviewable cut points after validation instead of waiting for an explicit push request every time. A cut point should be a coherent implementation slice, not every small edit and not a large bag of unrelated work.
+- Do not carry unrelated completed work across independent user goals. After a
+  package-driven goal, request-file update, AGENTS.md policy edit, or coherent
+  refactor has passed its appropriate validation, describe it, commit it, and
+  push it before starting the next independent package or design request unless
+  the user explicitly asks to hold the changes locally.
+- If validation is partially blocked but the user asks to continue with another
+  independent task, either commit and push with the blocked validation clearly
+  documented in `docs/implementation/` and the final response, or stop and ask
+  for direction. Do not let multiple unrelated completed slices accumulate in
+  one working copy.
 - Do not create new branches or Jujutsu bookmarks unless the user explicitly asks for one. Keep routine work on `main`, avoid pushing speculative WIP refs, and remove or ask to remove merged/obsolete remote branches when cleanup is available and safe.
 - Keep crate boundaries aligned with architecture layers. Lower-level crates must not depend on higher-level crates.
 - Keep `arcweft-core` Sans I/O.
@@ -202,7 +212,7 @@ explicit repository-visible rationale.
 The checked-in structural audit script is the canonical first pass:
 
 ```bash
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .
+cargo +nightly -Zscript tools/structure-audit.rs --root .
 ```
 
 ## Rust conventions

@@ -76,7 +76,7 @@ cargo run -p arcweft-cli -- verify \
 cargo run -p arcweft-cli -- verify \
   examples/verification/solver-contracts/valid.arcw \
   --mode test --backend z3 --json
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .
+cargo +nightly -Zscript tools/structure-audit.rs --root .
 ```
 
 The Z3 command requires a `z3` executable on `PATH`, `--z3-command`,

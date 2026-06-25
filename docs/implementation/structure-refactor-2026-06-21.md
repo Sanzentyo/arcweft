@@ -12,7 +12,7 @@ Current checkout measured at Jujutsu change
 - Added the checked-in structural audit tool as a Rust script:
 
 ```bash
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .
+cargo +nightly -Zscript tools/structure-audit.rs --root .
 ```
 
 - Recorded current checkout reports under
@@ -127,7 +127,7 @@ cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .
 Command:
 
 ```bash
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audit-2026-06-21
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audit-2026-06-21
 ```
 
 Summary:

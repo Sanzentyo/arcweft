@@ -53,6 +53,6 @@ cargo clippy -p arcweft-lang-sema -p arcweft-lsp --all-targets --all-features --
 cargo check --workspace --all-targets # passed
 cargo clippy --workspace --all-targets --all-features -- -D warnings # passed
 cargo fmt --all --check # passed
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . # passed: 0 error(s), 87 warning(s)
+cargo +nightly -Zscript tools/structure-audit.rs --root . # passed: 0 error(s), 87 warning(s)
 rg -n "TypeCheckWarningKind::Message|TypeCheckWarning::new|sema\.typecheck\.warning|typecheck_warning_code\([^)]*," crates/arcweft-lang-sema/src crates/arcweft-lsp/src # no matches
 ```

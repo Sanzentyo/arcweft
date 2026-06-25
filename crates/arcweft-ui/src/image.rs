@@ -3,7 +3,10 @@
 use crate::{ImageId, LayoutBox, UiError};
 use arcweft_id::PublicId;
 use arcweft_image::{DecodedImage, DecodedImageFrame};
-use arcweft_presentation::image::{ImageObjectParam, ImageObjectProxy, ImageObjectTransform};
+use arcweft_presentation::image::{
+    ImageObjectAlignment, ImageObjectFit, ImageObjectParam, ImageObjectPlayback, ImageObjectProxy,
+    ImageObjectTransform,
+};
 use std::collections::BTreeMap;
 
 /// How an image's intrinsic pixels map into a layout box.
@@ -82,6 +85,17 @@ pub struct UiImageSourceTable {
     next: u32,
 }
 
+impl From<ImageObjectFit> for ImageFit {
+    fn from(value: ImageObjectFit) -> Self {
+        match value {
+            ImageObjectFit::Contain => Self::Contain,
+            ImageObjectFit::Cover => Self::Cover,
+            ImageObjectFit::Stretch => Self::Stretch,
+            ImageObjectFit::Intrinsic => Self::Intrinsic,
+        }
+    }
+}
+
 impl ImageAlignment {
     pub const fn new(x_milli: i32, y_milli: i32) -> Self {
         Self { x_milli, y_milli }
@@ -101,6 +115,12 @@ impl ImageAlignment {
 
     pub const fn y_milli(self) -> i32 {
         self.y_milli
+    }
+}
+
+impl From<ImageObjectAlignment> for ImageAlignment {
+    fn from(value: ImageObjectAlignment) -> Self {
+        Self::new(value.x_milli(), value.y_milli())
     }
 }
 
@@ -164,6 +184,19 @@ impl ImagePlayback {
             return 0;
         }
         elapsed.saturating_mul(u64::from(self.rate_milli)) / 1000
+    }
+}
+
+impl From<ImageObjectPlayback> for ImagePlayback {
+    fn from(value: ImageObjectPlayback) -> Self {
+        let mut playback = Self::new(value.start_time_millis()).with_rate_milli(value.rate_milli());
+        if let Some(paused_at) = value.paused_at_millis() {
+            playback = playback.paused_at(paused_at);
+        }
+        if let Some(pinned) = value.pinned_local_time_millis() {
+            playback = playback.pinned_local_time(pinned);
+        }
+        playback
     }
 }
 

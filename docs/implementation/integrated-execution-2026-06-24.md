@@ -122,7 +122,7 @@ cargo test -p arcweft-player-native --lib windowed_patch
 cargo test -p arcweft-agent-runner --lib
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audit-integrated-execution-2026-06-24
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audit-integrated-execution-2026-06-24
 just test-workspace
 ```
 

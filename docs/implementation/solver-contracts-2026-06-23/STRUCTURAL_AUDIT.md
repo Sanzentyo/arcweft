@@ -73,7 +73,7 @@ Warnings requiring future ownership review:
 Automated audit:
 
 ```bash
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .
+cargo +nightly -Zscript tools/structure-audit.rs --root .
 ```
 
 Result: 1,355 files scanned, 751 Rust files, 362,889 Rust physical LOC,

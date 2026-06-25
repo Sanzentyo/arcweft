@@ -450,7 +450,7 @@ data-codec source-behavior gap remains open in this ledger.
 - Re-run structural audit at each reviewable cut point:
 
 ```bash
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audit-2026-06-21
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audit-2026-06-21
 ```
 
 - Record exact current evidence for every ZIP task before marking the goal

@@ -68,8 +68,8 @@ cargo test -p arcweft-runtime-host
 cargo clippy -p arcweft-desktop-native -p arcweft-desktop-contract -p arcweft-desktop-host -p arcweft-adapter-desktop --all-targets -- -D warnings
 node web/tests/grant-storage-smoke.mjs
 node --check web/arcweft-grant-storage.js
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audit-persistent-file-grants-2026-06-22
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audit-persistent-file-grants-2026-06-22
 ```
 
 All commands above passed. The structural audit reported 0 errors and 88

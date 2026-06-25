@@ -13,6 +13,11 @@ compiled-region overlay is tracked in
 `docs/implementation/seq-01-1-through-01-3-implementation-2026-06-24.md`; its
 remaining 01.4/01.5 and semantic follow-up boundary is tracked in
 `docs/implementation/seq-01-remaining-01-4-01-5-and-open-items-2026-06-24.md`.
+The seq-01.4 runtime driver / host executor-construction migration is tracked
+in
+`docs/implementation/seq-01-4-runtime-driver-host-executor-migration-2026-06-25.md`;
+the compact AWBC product-step parity design gap split from it is
+`docs/reviews/requests/2026-06-25-seq-01.4.1-compact-awbc-runtime-step-parity.md`.
 
 ## Current Milestone
 

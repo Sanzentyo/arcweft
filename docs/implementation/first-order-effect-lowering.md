@@ -47,7 +47,7 @@ cargo clippy -p arcweft-lang-sema -p arcweft-compiler -p arcweft-lsp -p arcweft-
 cargo check --workspace --all-targets # passed
 cargo clippy --workspace --all-targets --all-features -- -D warnings # passed
 cargo fmt --all --check # passed
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . # passed: 0 error(s), 87 warning(s)
+cargo +nightly -Zscript tools/structure-audit.rs --root . # passed: 0 error(s), 87 warning(s)
 just test-workspace # passed
 ```
 

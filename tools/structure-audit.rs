@@ -1,7 +1,7 @@
 #!/usr/bin/env -S cargo +nightly -Zscript
 ---
 [package]
-name = "arcweft-structure-audit"
+name = "structure-audit"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.96"
@@ -13,12 +13,12 @@ clap = { version = "4.6.1", features = ["derive"] }
 ---
 
 /*
-Single-file structural scanner for an Arcweft checkout. It does not modify source files.
+Single-file structural scanner for a repository checkout. It does not modify source files.
 The default is dry-run: it scans and prints a summary without writing reports.
 
 ```bash
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs \
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+cargo +nightly -Zscript tools/structure-audit.rs \
   --root . --write target/structure-audit --fail-on-violations
 ```
 */
@@ -76,7 +76,7 @@ mod args {
 
     #[derive(Clone, Debug, Eq, Parser, PartialEq)]
     #[command(
-        name = "arcweft-structure-audit",
+        name = "structure-audit",
         disable_version_flag = true,
         args_override_self = true
     )]
@@ -108,7 +108,7 @@ mod args {
     where
         I: IntoIterator<Item = OsString>,
     {
-        let arguments = std::iter::once(OsString::from("arcweft-structure-audit")).chain(arguments);
+        let arguments = std::iter::once(OsString::from("structure-audit")).chain(arguments);
 
         match Args::try_parse_from(arguments) {
             Ok(arguments) => Ok(ParseOutcome::Run(arguments)),
@@ -128,9 +128,9 @@ mod args {
 
     pub fn help() -> &'static str {
         concat!(
-            "arcweft-structure-audit\n\n",
+            "structure-audit\n\n",
             "Usage:\n",
-            "  arcweft-structure-audit [--root PATH] [--write DIR] ",
+            "  structure-audit [--root PATH] [--write DIR] ",
             "[--fail-on-violations]\n\n",
             "Options:\n",
             "  --root PATH             Repository root (default: .)\n",

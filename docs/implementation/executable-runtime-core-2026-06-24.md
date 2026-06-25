@@ -91,7 +91,7 @@ cargo test -p arcweft-runtime-codegen --lib                PASS (5 passed)
 cargo fmt --all -- --check                                 PASS
 cargo check --workspace --all-targets                      PASS
 cargo clippy --workspace --all-targets --all-features -- -D warnings  PASS
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .      PASS (0 errors, 99 warnings)
+cargo +nightly -Zscript tools/structure-audit.rs --root .      PASS (0 errors, 99 warnings)
 just test-workspace                                        PASS
 ```
 

@@ -51,7 +51,7 @@ Source package:
 - `cargo clippy -p arcweft-project-loader -p arcweft-lsp -p arcweft-cli
   --all-targets --all-features -- -D warnings`: passed.
 - `cargo fmt --all --check`: passed.
-- `cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .`:
+- `cargo +nightly -Zscript tools/structure-audit.rs --root .`:
   passed with `0 error(s), 87 warning(s)`.
 - `just test-cli-check`: passed.
 - `just test-workspace`: passed after regenerating `web/demo.awfb` to the

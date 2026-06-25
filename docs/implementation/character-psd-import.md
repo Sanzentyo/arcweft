@@ -93,7 +93,7 @@ commit `7bcff73f8b73`.
 Command:
 
 ```bash
-cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root .
+cargo +nightly -Zscript tools/structure-audit.rs --root .
 ```
 
 Result: 1342 files scanned, 747 Rust files, 358799 Rust physical LOC, 86 package

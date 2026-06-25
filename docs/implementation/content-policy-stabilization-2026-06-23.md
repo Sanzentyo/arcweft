@@ -38,7 +38,7 @@ Date applied: 2026-06-23
 - `cargo test -p arcweft-cli --features "native-capture agent-repl" agent_mcp_ --lib`
 - `cargo check --workspace --all-targets --all-features`
 - `cargo clippy -p arcweft-content-policy -p arcweft-agent-policy -p arcweft-agent-mcp -p arcweft-cli --all-targets --all-features -- -D warnings`
-- `cargo +nightly -Zscript tools/arcweft-structure-audit.rs --root . --write docs/implementation/structure-audit-content-policy-stabilization-2026-06-23`
+- `cargo +nightly -Zscript tools/structure-audit.rs --root . --write docs/implementation/structure-audit-content-policy-stabilization-2026-06-23`
 
 ## Remaining Follow-Up
 
