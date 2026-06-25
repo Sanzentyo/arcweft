@@ -1,4 +1,5 @@
 pub mod audio;
+pub mod awbc_lower;
 pub mod errors;
 pub mod expr;
 pub mod flow;

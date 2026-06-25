@@ -8,6 +8,11 @@ Latest executable-runtime-core implementation notes are tracked in
 `docs/implementation/executable-runtime-core-2026-06-24.md`; the corresponding
 structure audit report is under
 `docs/implementation/structure-audits/executable-runtime-core-2026-06-24/`.
+The follow-up Request 01.1-01.3 AWBC lowerer, compact VM/parity, and baseline
+compiled-region overlay is tracked in
+`docs/implementation/seq-01-1-through-01-3-implementation-2026-06-24.md`; its
+remaining 01.4/01.5 and semantic follow-up boundary is tracked in
+`docs/implementation/seq-01-remaining-01-4-01-5-and-open-items-2026-06-24.md`.
 
 ## Current Milestone
 

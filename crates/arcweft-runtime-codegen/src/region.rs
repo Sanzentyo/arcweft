@@ -298,6 +298,9 @@ fn apply_exit(
             Ok(CompiledTransition::Suspended)
         }
         CompiledStepExit::Returned(value) => {
+            if fiber.status == FiberStatus::Returned {
+                return Ok(CompiledTransition::Returned(value));
+            }
             if fiber.finish_return(program, value.clone())? {
                 Ok(CompiledTransition::Returned(value))
             } else {

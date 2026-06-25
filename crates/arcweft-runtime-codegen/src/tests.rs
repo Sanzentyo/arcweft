@@ -1,4 +1,5 @@
 use crate::artifact::{CodeRegionId, RuntimeCodeArtifactKind};
+use crate::awbc_region::{AwbcRegionLowerOptions, lower_awbc_regions};
 use crate::cache::{RuntimeCodeCacheInputs, RuntimeCodeCacheKey};
 use crate::policy::{ProgramGenerationId, RuntimeOptimizationLevel};
 use crate::region::{
@@ -311,5 +312,72 @@ fn compiled_nested_return_restores_caller_and_writes_destination() {
             .register(AwbcRegisterId(0))
             .expect("return register"),
         &arcweft_core::value::RuntimeValue::String("compiled".to_owned())
+    );
+}
+
+#[test]
+fn awbc_region_lowering_accepts_basic_verified_flow() {
+    let program = program();
+    let report = lower_awbc_regions(
+        &program,
+        &AwbcRegionLowerOptions {
+            generation: ProgramGenerationId(1),
+            program_digest: PROGRAM_DIGEST,
+            ..AwbcRegionLowerOptions::default()
+        },
+    );
+
+    assert_eq!(report.regions.len(), 1);
+    assert!(report.rejected.is_empty());
+    assert_eq!(report.regions[0].metadata().program_digest, PROGRAM_DIGEST);
+}
+
+#[test]
+fn awbc_region_lowering_rejects_host_boundary_without_opt_in() {
+    let mut program = program();
+    program.instructions.push(AwbcInstruction::EnsureContent {
+        content: AwbcContentUnitId(0),
+    });
+    program.blocks[0].instructions = AwbcTableRange::new(0, 1);
+
+    let report = lower_awbc_regions(
+        &program,
+        &AwbcRegionLowerOptions {
+            generation: ProgramGenerationId(1),
+            program_digest: PROGRAM_DIGEST,
+            allow_host_boundaries: false,
+            ..AwbcRegionLowerOptions::default()
+        },
+    );
+
+    assert!(report.regions.is_empty());
+    assert_eq!(report.rejected.len(), 1);
+    assert_eq!(
+        report.rejected[0].reason,
+        CompiledFallbackReason::UnsupportedOpcode(AwbcOpcode::EnsureContent)
+    );
+}
+
+#[test]
+fn awbc_region_baseline_executes_through_compact_vm() {
+    let program = program();
+    let report = lower_awbc_regions(
+        &program,
+        &AwbcRegionLowerOptions {
+            generation: ProgramGenerationId(1),
+            program_digest: PROGRAM_DIGEST,
+            ..AwbcRegionLowerOptions::default()
+        },
+    );
+    let region = report.regions[0].clone();
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 10).expect("fiber");
+
+    let transition = execute_compiled_region(region.as_ref(), identity(), &program, &mut fiber, 10)
+        .expect("baseline AWBC region executes");
+
+    assert_eq!(transition, CompiledTransition::Returned(None));
+    assert_eq!(
+        fiber.status,
+        arcweft_core::awbc::fiber::FiberStatus::Returned
     );
 }
