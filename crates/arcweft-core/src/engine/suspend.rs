@@ -147,16 +147,20 @@ impl Engine {
                 self.fiber.status = FlowFiberStatus::Waiting(state);
             }
             TaskEventKind::Err(error) => {
-                self.fiber.status = FlowFiberStatus::Failed(error.clone());
-                output.diagnostics.push(RuntimeDiagnostic::new(format!(
-                    "await task {} failed: {error}",
-                    state.target.task.0
-                )));
+                let message = format!("await task {} failed: {error}", state.target.task.0);
+                self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                output.diagnostics.push(RuntimeDiagnostic::categorized(
+                    RuntimeDiagnosticCategory::Host,
+                    message,
+                ));
             }
             TaskEventKind::Cancelled => {
                 let message = format!("await task {} was cancelled", state.target.task.0);
                 self.fiber.status = FlowFiberStatus::Failed(message.clone());
-                output.diagnostics.push(RuntimeDiagnostic::new(message));
+                output.diagnostics.push(RuntimeDiagnostic::categorized(
+                    RuntimeDiagnosticCategory::Host,
+                    message,
+                ));
             }
         }
     }

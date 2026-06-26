@@ -34,12 +34,37 @@ struct ParityStep {
 }
 
 fn run_parity(plan: RuntimePlan, inputs: Vec<RuntimeStepInput>) -> Vec<ParityStep> {
-    run_parity_with_root_bindings(plan, &[], inputs)
+    run_parity_with_options(
+        plan,
+        &[],
+        RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: RuntimeStepBudget { max_ops: 128 },
+        },
+        inputs,
+    )
 }
 
 fn run_parity_with_root_bindings(
     plan: RuntimePlan,
     root_bindings: &[RuntimeBinding],
+    inputs: Vec<RuntimeStepInput>,
+) -> Vec<ParityStep> {
+    run_parity_with_options(
+        plan,
+        root_bindings,
+        RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: RuntimeStepBudget { max_ops: 128 },
+        },
+        inputs,
+    )
+}
+
+fn run_parity_with_options(
+    plan: RuntimePlan,
+    root_bindings: &[RuntimeBinding],
+    options: RuntimeStepOptions,
     inputs: Vec<RuntimeStepInput>,
 ) -> Vec<ParityStep> {
     let display = LineDisplayCatalog::default();
@@ -61,25 +86,19 @@ fn run_parity_with_root_bindings(
 
     inputs
         .into_iter()
-        .map(|input| {
-            let options = RuntimeStepOptions {
-                mode: RuntimeStepMode::Drain,
-                budget: RuntimeStepBudget { max_ops: 128 },
-            };
-            ParityStep {
-                structured: structured.step_with_root_bindings_and_pure_backend(
-                    input.clone(),
-                    root_bindings,
-                    options,
-                    &mut structured_backend,
-                ),
-                awbc: awbc.step_with_root_bindings_and_pure_backend(
-                    input,
-                    root_bindings,
-                    options,
-                    &mut awbc_backend,
-                ),
-            }
+        .map(|input| ParityStep {
+            structured: structured.step_with_root_bindings_and_pure_backend(
+                input.clone(),
+                root_bindings,
+                options,
+                &mut structured_backend,
+            ),
+            awbc: awbc.step_with_root_bindings_and_pure_backend(
+                input,
+                root_bindings,
+                options,
+                &mut awbc_backend,
+            ),
         })
         .collect()
 }
@@ -346,6 +365,42 @@ fn awbc_product_parity_choice() {
 }
 
 #[test]
+fn awbc_product_parity_choice_invalid_then_valid() {
+    let option = ChoiceRuntimeOption {
+        id: Some("choice.listen".to_owned()),
+        label: "Listen".to_owned(),
+        target: None,
+        out: None,
+        effects: Vec::new(),
+    };
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::Choice {
+                id: Some("choice.opening".to_owned()),
+                options: vec![option],
+            },
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![
+            RuntimeStepInput::default(),
+            RuntimeStepInput {
+                input_events: vec![input_event("choice", Some("choice.missing"))],
+                ..RuntimeStepInput::default()
+            },
+            RuntimeStepInput {
+                input_events: vec![input_event("choice", Some("choice.listen"))],
+                ..RuntimeStepInput::default()
+            },
+            RuntimeStepInput::default(),
+        ],
+    );
+
+    for step in &steps {
+        assert_step_boundary_eq(step);
+    }
+}
+
+#[test]
 fn awbc_product_parity_await() {
     let target = AwaitTarget {
         need: NeedId("need.load".to_owned()),
@@ -386,6 +441,76 @@ fn awbc_product_parity_await() {
                 ..RuntimeStepInput::default()
             },
             RuntimeStepInput::default(),
+        ],
+    );
+
+    for step in &steps {
+        assert_step_boundary_eq(step);
+    }
+}
+
+#[test]
+fn awbc_product_parity_await_error() {
+    let target = AwaitTarget {
+        need: NeedId("need.load".to_owned()),
+        task: TaskId("task.load".to_owned()),
+        request: host_template("probe", "load"),
+    };
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::Await {
+                binding: Some(RuntimePattern::Ident("loaded".to_owned())),
+                target,
+                pending: Vec::new(),
+            },
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![
+            RuntimeStepInput::default(),
+            RuntimeStepInput {
+                task_events: vec![TaskEvent {
+                    logical_epoch: LogicalEpoch::default(),
+                    task_id: TaskId("task.load".to_owned()),
+                    sequence: TaskSequence(0),
+                    kind: TaskEventKind::Err("host failed".to_owned()),
+                }],
+                ..RuntimeStepInput::default()
+            },
+        ],
+    );
+
+    for step in &steps {
+        assert_step_boundary_eq(step);
+    }
+}
+
+#[test]
+fn awbc_product_parity_await_cancel() {
+    let target = AwaitTarget {
+        need: NeedId("need.load".to_owned()),
+        task: TaskId("task.load".to_owned()),
+        request: host_template("probe", "load"),
+    };
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::Await {
+                binding: Some(RuntimePattern::Ident("loaded".to_owned())),
+                target,
+                pending: Vec::new(),
+            },
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![
+            RuntimeStepInput::default(),
+            RuntimeStepInput {
+                task_events: vec![TaskEvent {
+                    logical_epoch: LogicalEpoch::default(),
+                    task_id: TaskId("task.load".to_owned()),
+                    sequence: TaskSequence(0),
+                    kind: TaskEventKind::Cancelled,
+                }],
+                ..RuntimeStepInput::default()
+            },
         ],
     );
 
@@ -440,13 +565,43 @@ fn awbc_product_parity_stream_yield() {
             id: StreamRuntimeId("stream.generated".to_owned()),
             item_ty: "String".to_owned(),
             error_ty: "String".to_owned(),
-            ops: vec![StreamOp::Yield {
-                expr: RuntimeExpr::Value(RuntimeValue::String("stream-item".to_owned())),
-            }],
+            ops: vec![
+                StreamOp::Yield {
+                    expr: RuntimeExpr::Value(RuntimeValue::String("stream-item-0".to_owned())),
+                },
+                StreamOp::Yield {
+                    expr: RuntimeExpr::Value(RuntimeValue::String("stream-item-1".to_owned())),
+                },
+            ],
         }],
         Vec::new(),
     );
     let steps = run_parity(plan, vec![RuntimeStepInput::default()]);
+
+    assert_step_boundary_eq(&steps[0]);
+}
+
+#[test]
+fn awbc_product_parity_one_op() {
+    let steps = run_parity_with_options(
+        flow(vec![
+            FlowOp::Let {
+                pattern: RuntimePattern::Ident("total".to_owned()),
+                expr: RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(5))),
+                },
+            },
+            FlowOp::ReturnExpr(RuntimeExpr::Local("total".to_owned())),
+        ]),
+        &[],
+        RuntimeStepOptions {
+            mode: RuntimeStepMode::OneOp,
+            budget: RuntimeStepBudget { max_ops: 128 },
+        },
+        vec![RuntimeStepInput::default()],
+    );
 
     assert_step_boundary_eq(&steps[0]);
 }

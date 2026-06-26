@@ -436,6 +436,77 @@ Remaining entry/root-binding limits after this cut:
   or a structured runtime entry-binding contract that can reject before
   mutating the root environment.
 
+## Integration update 2026-06-26, fourth cut
+
+Current working change before commit: `tplzmmyz` over parent `szvlvznn`.
+
+This cut expands the differential matrix where the existing shared runtime API
+already has comparable inputs:
+
+- choice invalid-then-valid input is now differentially covered, proving that
+  invalid option input reports the same diagnostic, preserves the choice
+  suspension, and resumes only after the later valid selection;
+- await task error and cancellation are now differentially covered;
+- structured await task error/cancel diagnostics now use the shared `Host`
+  category and the same failed-fiber status message as the AWBC product path;
+- stream generation parity now covers two ordered yielded values in one step,
+  proving monotonic sequence 0/1 and output ordering for the product stream
+  transform path;
+- the harness can now run both tiers with explicit `RuntimeStepOptions`;
+- one-op step mode parity is covered by a linear arithmetic fixture.
+
+Exact validation run for this cut:
+
+```text
+cargo fmt --all -- --check
+  passed
+
+cargo test -p arcweft-runtime-plan awbc_product_parity -- --nocapture
+  passed: 17 passed, 0 failed
+
+cargo test -p arcweft-core awbc -- --nocapture
+  passed: 15 passed, 0 failed
+
+cargo test -p arcweft-runtime-plan awbc -- --nocapture
+  passed: 1 awbc_lower unit test and 17 awbc_product_parity tests passed,
+  0 failed
+
+cargo check -p arcweft-core -p arcweft-runtime-plan -p arcweft-compiler -p arcweft-bundle -p arcweft-cli -p arcweft-runtime-driver -p arcweft-runtime-host -p arcweft-player-native --all-targets
+  passed
+
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+  passed
+
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+  passed with no error-level violations: files scanned 1514, Rust files 833,
+  Rust physical LOC 408924, package manifests 89, warnings 102.
+
+git diff --check
+  passed
+```
+
+Structural measurements for files touched in the fourth cut:
+
+| Path | Bytes | Physical LOC | Kind / responsibility |
+|---|---:|---:|---|
+| `crates/arcweft-core/src/engine/suspend.rs` | 34655 | 832 | production structured suspension resume semantics |
+| `crates/arcweft-runtime-plan/tests/awbc_product_parity.rs` | 20429 | 608 | integration differential parity tests |
+
+Remaining matrix limits after this cut:
+
+- stream close/idempotence is not yet differentially covered; current
+  runtime-plan AWBC stream lowering still lowers `StreamOp::Close` as an
+  intrinsic placeholder rather than a stream close event/state transition.
+- await-many partial error/cancellation rows remain broader than the current
+  await-many launch-order fixture.
+- direct host-call differential coverage still requires a runtime-plan
+  host-call surface; product-step has direct host-call request/result unit
+  coverage only.
+- effect-kind rows still have direct product mapping-table coverage, not a
+  structured-vs-AWBC differential row for every kind.
+- budget loop, source close/event-ordering, typed trap, and full statistics
+  rows remain open.
+
 ## Required integration work before marking seq-01.6.1 complete
 
 - expand the differential harness to cover every row in the companion matrix,
