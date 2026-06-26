@@ -1604,12 +1604,94 @@ Remaining matrix limits after this cut:
   that the next production change should split a responsibility module or
   record an explicit exception before adding more substantial code.
 
+## Integration update 2026-06-26, sixteenth cut
+
+Current working change before commit: `zttyxtul` over parent `tpqomzyo`.
+
+This cut is a structural split before the product-step adapter crosses the
+2,500 LOC error threshold:
+
+- moved the product control-effect adapter into
+  `crates/arcweft-core/src/awbc/product_step/control.rs`;
+- kept the public product-step surface unchanged and left the call sites as
+  `self.apply_control_effects(...)`;
+- kept the moved responsibility narrow: it owns only the newly emitted
+  control-effect scan, `Return`/`Goto`/failure application, and the product
+  public-id lookup needed by `Goto`;
+- reduced `product_step.rs` from 2,485 LOC to 2,396 LOC while adding a 98 LOC
+  responsibility module.
+
+Exact validation run for this cut:
+
+```text
+cargo fmt --all -- --check
+  passed
+
+cargo test -p arcweft-core awbc -- --nocapture
+  passed: 15 passed, 0 failed
+
+cargo test -p arcweft-runtime-plan awbc_product_parity_control_effect -- --nocapture
+  passed: 3 passed, 0 failed
+
+cargo test -p arcweft-runtime-plan awbc_product_parity -- --nocapture
+  passed: 38 passed, 0 failed
+
+cargo check -p arcweft-core -p arcweft-runtime-plan -p arcweft-compiler -p arcweft-bundle -p arcweft-cli -p arcweft-runtime-driver -p arcweft-runtime-host -p arcweft-player-native --all-targets
+  passed
+
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+  passed
+
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+  passed with no error-level violations: files scanned 1515, Rust files 834,
+  Rust physical LOC 410613, package manifests 89, warnings 102.
+
+cargo test -p arcweft-runtime-driver awbc_product -- --nocapture
+  passed: 1 passed, 0 failed
+
+cargo test -p arcweft-runtime-host awbc_product -- --nocapture
+  passed: 1 passed, 0 failed
+
+cargo test -p arcweft-player-native awbc_product -- --nocapture
+  passed: 1 passed, 0 failed
+
+cargo test -p arcweft-cli awfb -- --nocapture
+  passed: 8 passed, 0 failed
+  note: the stderr line about a truncated AWFB is the expected rejection path
+  from the non-AWFB-input test.
+```
+
+Structural measurements for files touched in the sixteenth cut:
+
+| Path | Bytes | Physical LOC | Kind / responsibility |
+|---|---:|---:|---|
+| `crates/arcweft-core/src/awbc/product_step.rs` | 90802 | 2396 | production product AWBC RuntimeStepResult adapter; warning-level size hotspot, below the 2500 LOC error threshold |
+| `crates/arcweft-core/src/awbc/product_step/control.rs` | 3500 | 98 | production product AWBC control-effect adapter |
+
+Remaining matrix limits after this cut:
+
+- source handler item/progress/error pattern dispatch, source-yield queue
+  mutation, duplicate/lower-sequence source event behavior, broader await-many
+  out-of-order progress/ready behavior, direct suspend/result host-call
+  behavior, non-control line-effect payload parity, and control-changing
+  line-effect parity are now differentially covered.
+- multi-stream yield and self-close routing is covered for ordinary static
+  stream targets, and stream-to-source static close is differentially covered.
+  Dynamic close-target expressions remain unsupported by the compact AWBC
+  instruction shape and currently fail lowering with a diagnostic.
+- `Audio` still needs a typed payload contract before it can be executable in
+  product-step parity.
+- typed trap rows and full final-facade statistics/state equality remain open.
+- `product_step.rs` remains a warning-level size hotspot. Further product-step
+  behavior should continue moving stable responsibility modules out instead of
+  growing the facade file again.
+
 ## Required integration work before marking seq-01.6.1 complete
 
 - expand the differential harness to cover every row in the companion matrix,
   especially typed trap, audio payload, and final state/statistics fixtures;
-- decide whether to split the product adapter before it crosses the 2500 LOC
-  error threshold;
+- continue splitting product-step responsibilities before adding substantial
+  behavior back to the facade file;
 - update this note with the final committed revision.
 
 ## Changed-file summary
