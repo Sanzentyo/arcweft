@@ -67,6 +67,20 @@ impl FrameBuilder {
         )
     }
 
+    pub fn parameter(
+        &mut self,
+        name: &str,
+        name_id: AwbcStringId,
+        ty: AwbcTypeId,
+    ) -> AwbcRegisterId {
+        self.slot(
+            FrameSlotKey::Local(name.to_owned()),
+            Some(name_id),
+            ty,
+            AwbcFrameSlotRole::Parameter,
+        )
+    }
+
     pub fn temp(&mut self, ty: AwbcTypeId) -> AwbcRegisterId {
         let key = FrameSlotKey::Temp(self.temp_counter);
         self.temp_counter = self.temp_counter.saturating_add(1);

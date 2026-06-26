@@ -348,9 +348,10 @@ Structural measurements for files touched in the second cut:
 
 Remaining gaps that still prevent declaring the full seq-01.6.1 matrix complete:
 
-- true entry positional/named/retry differential rows remain below the
-  runtime-plan harness because the current `RuntimePlan` entry surface does not
-  expose entry parameter metadata; core fiber tests cover the compact binding
+- true entry positional/retry differential rows remain below the runtime-plan
+  harness because the current structured root-binding API is name-based and the
+  current `RuntimePlan` entry surface does not expose positional typed entry
+  parameter metadata; core fiber tests cover the compact positional/retry
   contract directly.
 - host-call parity has direct product-step request/result coverage, while the
   runtime-plan differential harness still covers host interaction through
@@ -363,6 +364,77 @@ Remaining gaps that still prevent declaring the full seq-01.6.1 matrix complete:
   non-panicking or another verifier-safe trap fixture is selected.
 - source/stream/statistics edge rows are broader than the current smoke and
   stream-yield fixtures.
+
+## Integration update 2026-06-26, third cut
+
+Current working change before commit: `szvlvznn` over parent `xuqtrrpu`.
+
+This cut moves the entry/root-binding row forward through ordinary runtime-plan
+lowering:
+
+- AWBC flow lowering now identifies entry-target flows from `RuntimePlan` and
+  `RuntimeEntrySpec` route/function targets.
+- For those entry flows, local reads that occur before a local declaration are
+  inferred as root entry parameters in first-read order.
+- `FrameBuilder` owns parameter slot creation so parameter slots remain stable
+  and appear before locals/temporaries in the frame layout.
+- Entry function signatures now include inferred dynamic parameters, allowing
+  `AwbcProductStepExecutor::step_with_root_bindings_and_pure_backend` to bind
+  named root values into compact registers before execution.
+- The runtime-plan differential harness now passes root bindings through both
+  structured and product-AWBC executors and includes a reversed-order
+  named-equivalent root-binding parity fixture.
+
+Exact validation run for this cut:
+
+```text
+cargo fmt --all -- --check
+  passed
+
+cargo test -p arcweft-runtime-plan awbc -- --nocapture
+  passed: 1 awbc_lower unit test and 13 awbc_product_parity tests passed,
+  0 failed
+
+cargo test -p arcweft-core awbc -- --nocapture
+  passed: 15 passed, 0 failed
+
+cargo check -p arcweft-core -p arcweft-runtime-plan -p arcweft-compiler -p arcweft-bundle -p arcweft-cli -p arcweft-runtime-driver -p arcweft-runtime-host -p arcweft-player-native --all-targets
+  passed
+
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+  passed
+
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+  passed with no error-level violations: files scanned 1514, Rust files 833,
+  Rust physical LOC 408765, package manifests 89, warnings 102.
+
+cargo test -p arcweft-runtime-plan awbc_product_parity -- --nocapture
+  passed: 13 passed, 0 failed
+
+git diff --check
+  passed
+```
+
+Structural measurements for files touched in the third cut:
+
+| Path | Bytes | Physical LOC | Kind / responsibility |
+|---|---:|---:|---|
+| `crates/arcweft-runtime-plan/src/awbc_lower/flow.rs` | 42103 | 1057 | production flow, pure-helper, and entry-parameter lowering; below the 1200 LOC production warning threshold but now above the preferred 300-800 LOC responsibility-module range |
+| `crates/arcweft-runtime-plan/src/awbc_lower/frame.rs` | 3854 | 125 | production frame slot allocator |
+| `crates/arcweft-runtime-plan/tests/awbc_product_parity.rs` | 15975 | 462 | integration differential parity tests |
+
+Remaining entry/root-binding limits after this cut:
+
+- named-equivalent root binding is now differentially covered.
+- positional root binding is still covered only by compact fiber unit tests,
+  because the structured runtime root-binding API accepts named
+  `RuntimeBinding` values and has no positional entry argument surface to feed
+  with the same input.
+- retry after entry argument rejection is still covered only by compact fiber
+  unit tests, because inferred entry parameters are dynamic; a full
+  differential retry row needs typed entry-parameter metadata in `RuntimePlan`
+  or a structured runtime entry-binding contract that can reject before
+  mutating the root environment.
 
 ## Required integration work before marking seq-01.6.1 complete
 

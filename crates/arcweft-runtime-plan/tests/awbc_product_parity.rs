@@ -1,6 +1,6 @@
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_core::engine::FlowFiberStatus;
-use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
+use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor};
 use arcweft_core::line_task::{LineTaskGroup, LineTaskNode, LineTaskScope};
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
@@ -16,7 +16,8 @@ use arcweft_core::task::{
     LogicalEpoch, NeedId, TaskEvent, TaskEventKind, TaskId, TaskSequence,
 };
 use arcweft_core::value::{
-    RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimePayload, RuntimeSeq, RuntimeValue,
+    RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeExpr, RuntimePayload, RuntimeSeq,
+    RuntimeValue,
 };
 use arcweft_interaction_model::{
     id::Identifier,
@@ -33,6 +34,14 @@ struct ParityStep {
 }
 
 fn run_parity(plan: RuntimePlan, inputs: Vec<RuntimeStepInput>) -> Vec<ParityStep> {
+    run_parity_with_root_bindings(plan, &[], inputs)
+}
+
+fn run_parity_with_root_bindings(
+    plan: RuntimePlan,
+    root_bindings: &[RuntimeBinding],
+    inputs: Vec<RuntimeStepInput>,
+) -> Vec<ParityStep> {
     let display = LineDisplayCatalog::default();
     let awbc = AwbcLowerer::new(&plan, &display, "awbc_product_parity.arcw")
         .lower()
@@ -47,6 +56,8 @@ fn run_parity(plan: RuntimePlan, inputs: Vec<RuntimeStepInput>) -> Vec<ParitySte
     let mut awbc =
         ArcweftRuntimeExecutor::from_awbc_product(awbc, arcweft_core::awbc::schema::AwbcEntryId(0))
             .expect("AWBC product executor builds");
+    let mut structured_backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+    let mut awbc_backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
 
     inputs
         .into_iter()
@@ -56,8 +67,18 @@ fn run_parity(plan: RuntimePlan, inputs: Vec<RuntimeStepInput>) -> Vec<ParitySte
                 budget: RuntimeStepBudget { max_ops: 128 },
             };
             ParityStep {
-                structured: structured.step(input.clone(), options),
-                awbc: awbc.step(input, options),
+                structured: structured.step_with_root_bindings_and_pure_backend(
+                    input.clone(),
+                    root_bindings,
+                    options,
+                    &mut structured_backend,
+                ),
+                awbc: awbc.step_with_root_bindings_and_pure_backend(
+                    input,
+                    root_bindings,
+                    options,
+                    &mut awbc_backend,
+                ),
             }
         })
         .collect()
@@ -148,6 +169,13 @@ fn call(name: &str) -> LineEffectRequest {
     })
 }
 
+fn binding(name: &str, value: RuntimeValue) -> RuntimeBinding {
+    RuntimeBinding {
+        name: name.to_owned(),
+        value,
+    }
+}
+
 fn host_template(capability: &str, operation: &str) -> HostTaskRequestTemplate {
     HostTaskRequestTemplate {
         capability: HostCapabilityId(capability.to_owned()),
@@ -180,6 +208,25 @@ fn awbc_product_parity_entry_local_bindings() {
             },
             FlowOp::ReturnExpr(RuntimeExpr::Local("total".to_owned())),
         ]),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+}
+
+#[test]
+fn awbc_product_parity_entry_root_bindings_named_equivalent() {
+    let plan = flow(vec![FlowOp::ReturnExpr(RuntimeExpr::Binary {
+        lhs: Box::new(RuntimeExpr::Local("left".to_owned())),
+        op: RuntimeBinaryOp::Add,
+        rhs: Box::new(RuntimeExpr::Local("right".to_owned())),
+    })]);
+    let steps = run_parity_with_root_bindings(
+        plan,
+        &[
+            binding("right", RuntimeValue::i64(5)),
+            binding("left", RuntimeValue::i64(2)),
+        ],
         vec![RuntimeStepInput::default()],
     );
 

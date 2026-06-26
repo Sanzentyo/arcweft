@@ -5,16 +5,19 @@ use crate::awbc_lower::line::AwbcLineLowerer;
 use crate::awbc_lower::pattern::lower_pattern;
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
-    AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption, AwbcFrameLayoutId,
-    AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
+    AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption, AwbcEffectSetId,
+    AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
     AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcLineTaskGroupId, AwbcPureHelper,
     AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind,
     AwbcScopeId, AwbcTableRange, AwbcTerminator,
 };
+use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
-    ChoiceRuntimeOption, FlowOp, RuntimeFlow, RuntimeMatchArm, RuntimePlan, RuntimePureHelper,
-    RuntimePureHelperOrigin,
+    ChoiceRuntimeOption, FlowOp, RuntimeEntryTarget, RuntimeFlow, RuntimeMatchArm, RuntimePlan,
+    RuntimePureHelper, RuntimePureHelperOrigin,
 };
+use arcweft_core::value::RuntimeExpr;
+use std::collections::BTreeSet;
 
 /// Builds one contiguous flow body while allowing host-visible suspension
 /// terminators to split the instruction stream into verified resume blocks.
@@ -163,8 +166,14 @@ impl<'a> AwbcFlowLowerer<'a> {
                 AwbcFunctionId(function_start.saturating_add(offset)),
             );
         }
+        let entry_targets = entry_target_flow_names(plan);
         for flow in &plan.flows {
-            self.lower_flow(flow);
+            let entry_parameters = if entry_targets.contains(flow.id.0.as_str()) {
+                infer_entry_parameter_names(&flow.ops)
+            } else {
+                Vec::new()
+            };
+            self.lower_flow(flow, &entry_parameters);
         }
         self.inventory.lower_entries(plan);
     }
@@ -187,12 +196,7 @@ impl<'a> AwbcFlowLowerer<'a> {
         let dynamic_ty = self.inventory.dynamic_ty();
         for input in &helper.input_names {
             let name = self.inventory.intern_string(input);
-            frame.slot(
-                crate::awbc_lower::frame::FrameSlotKey::Local(input.clone()),
-                Some(name),
-                dynamic_ty,
-                AwbcFrameSlotRole::Parameter,
-            );
+            frame.parameter(input, name, dynamic_ty);
         }
         let instruction_start = table_index(self.inventory.program.instructions.len());
         let value =
@@ -243,12 +247,17 @@ impl<'a> AwbcFlowLowerer<'a> {
         self.diagnostics
     }
 
-    fn lower_flow(&mut self, flow: &RuntimeFlow) -> AwbcFunctionId {
+    fn lower_flow(&mut self, flow: &RuntimeFlow, entry_parameters: &[String]) -> AwbcFunctionId {
         let mut frame = FrameBuilder::new();
         let owner = self
             .inventory
             .function_by_name(&flow.id.0)
             .unwrap_or_else(|| AwbcFunctionId(table_index(self.inventory.program.functions.len())));
+        let dynamic_ty = self.inventory.dynamic_ty();
+        for parameter in entry_parameters {
+            let name = self.inventory.intern_string(parameter);
+            frame.parameter(parameter, name, dynamic_ty);
+        }
         let mut body = FlowBodyBuilder::new(self.inventory, owner);
         self.lower_ops(&mut frame, &mut body, &flow.ops, &flow.id.0);
         let body = body.finish(self.inventory);
@@ -260,10 +269,16 @@ impl<'a> AwbcFlowLowerer<'a> {
                 point.frame_layout = layout;
             }
         }
+        let params = vec![self.inventory.dynamic_ty(); entry_parameters.len()];
         let signature = if body.returns_value {
-            self.inventory.intern_dynamic_value_signature(0)
+            self.inventory.intern_signature(
+                params,
+                Some(self.inventory.dynamic_ty()),
+                AwbcEffectSetId(0),
+            )
         } else {
-            self.inventory.intern_unit_signature()
+            self.inventory
+                .intern_signature(params, None, AwbcEffectSetId(0))
         };
         let public_id = self.inventory.intern_string(&flow.id.0);
         let function = self.inventory.push_function(
@@ -742,5 +757,335 @@ impl<'a> AwbcFlowLowerer<'a> {
                 intrinsic,
                 args,
             });
+    }
+}
+
+fn entry_target_flow_names(plan: &RuntimePlan) -> BTreeSet<&str> {
+    let mut targets = BTreeSet::new();
+    if let Some(entry_flow) = plan.entry_flow.as_ref() {
+        targets.insert(entry_flow.0.as_str());
+    }
+    for entry in &plan.entries {
+        match &entry.target {
+            RuntimeEntryTarget::Flow(flow) => {
+                targets.insert(flow.0.as_str());
+            }
+            RuntimeEntryTarget::Routes(routes) => {
+                targets.extend(routes.iter().map(|route| route.target.0.as_str()));
+            }
+        }
+    }
+    targets
+}
+
+fn infer_entry_parameter_names(ops: &[FlowOp]) -> Vec<String> {
+    let mut collector = EntryParameterCollector::default();
+    collector.collect_ops(ops);
+    collector.parameters
+}
+
+#[derive(Default)]
+struct EntryParameterCollector {
+    declared: BTreeSet<String>,
+    seen_parameters: BTreeSet<String>,
+    parameters: Vec<String>,
+}
+
+impl EntryParameterCollector {
+    fn collect_ops(&mut self, ops: &[FlowOp]) {
+        for op in ops {
+            self.collect_op(op);
+        }
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "FlowOp free-local discovery mirrors the enum so entry parameter inference stays in AWBC lowering."
+    )]
+    fn collect_op(&mut self, op: &FlowOp) {
+        match op {
+            FlowOp::Bind(bindings) => {
+                self.declared
+                    .extend(bindings.iter().map(|binding| binding.name.clone()));
+            }
+            FlowOp::Let { pattern, expr } | FlowOp::ExitScopeBind { pattern, expr } => {
+                self.collect_expr(expr);
+                self.declare_pattern(pattern);
+            }
+            FlowOp::LetElse {
+                pattern,
+                expr,
+                else_ops,
+            } => {
+                self.collect_expr(expr);
+                self.collect_scoped_ops(else_ops);
+                self.declare_pattern(pattern);
+            }
+            FlowOp::Await {
+                binding, target, ..
+            } => {
+                target
+                    .request
+                    .args
+                    .iter()
+                    .for_each(|arg| self.collect_expr(arg.value()));
+                if let Some(binding) = binding {
+                    self.declare_pattern(binding);
+                }
+            }
+            FlowOp::AwaitMany {
+                binding, target, ..
+            } => {
+                self.collect_expr(&target.source);
+                self.collect_with_declared(std::slice::from_ref(&target.item_binding), |this| {
+                    target
+                        .request
+                        .args
+                        .iter()
+                        .for_each(|arg| this.collect_expr(arg.value()));
+                });
+                if let Some(binding) = binding {
+                    self.declare_pattern(binding);
+                }
+            }
+            FlowOp::If {
+                condition,
+                then_ops,
+                else_ops,
+            } => {
+                self.collect_expr(condition);
+                self.collect_scoped_ops(then_ops);
+                self.collect_scoped_ops(else_ops);
+            }
+            FlowOp::IfLet {
+                pattern,
+                expr,
+                guard,
+                then_ops,
+                else_ops,
+            } => {
+                self.collect_expr(expr);
+                self.collect_optional_expr(guard.as_ref());
+                let names = pattern_names(pattern);
+                self.collect_with_declared(&names, |this| this.collect_ops(then_ops));
+                self.collect_scoped_ops(else_ops);
+            }
+            FlowOp::Match { scrutinee, arms } => {
+                self.collect_expr(scrutinee);
+                for arm in arms {
+                    let names = pattern_names(&arm.pattern);
+                    self.collect_with_declared(&names, |this| {
+                        this.collect_optional_expr(arm.guard.as_ref());
+                        this.collect_ops(&arm.ops);
+                    });
+                }
+            }
+            FlowOp::Loop { body }
+            | FlowOp::LetLoop { body, .. }
+            | FlowOp::Thread { body, .. }
+            | FlowOp::Scope(body) => self.collect_scoped_ops(body),
+            FlowOp::LoopNext { body }
+            | FlowOp::WhileNext { body, .. }
+            | FlowOp::WhileLetNext { body, .. }
+            | FlowOp::ForNext { body, .. } => self.collect_scoped_ops(body),
+            FlowOp::While { condition, body } => {
+                self.collect_expr(condition);
+                self.collect_scoped_ops(body);
+            }
+            FlowOp::WhileLet {
+                pattern,
+                expr,
+                guard,
+                body,
+            } => {
+                self.collect_expr(expr);
+                self.collect_optional_expr(guard.as_ref());
+                let names = pattern_names(pattern);
+                self.collect_with_declared(&names, |this| this.collect_ops(body));
+            }
+            FlowOp::For {
+                pattern,
+                source,
+                body,
+            } => {
+                self.collect_expr(source);
+                let names = pattern_names(pattern);
+                self.collect_with_declared(&names, |this| this.collect_ops(body));
+            }
+            FlowOp::LetScope {
+                pattern,
+                ops,
+                value,
+            } => {
+                self.collect_scoped_ops(ops);
+                self.collect_expr(value);
+                self.declare_pattern(pattern);
+            }
+            FlowOp::Break(Some(value)) | FlowOp::GotoExpr(value) | FlowOp::ReturnExpr(value) => {
+                self.collect_expr(value);
+            }
+            FlowOp::Dialogue { .. }
+            | FlowOp::Choice { .. }
+            | FlowOp::Break(None)
+            | FlowOp::Continue
+            | FlowOp::Goto(_)
+            | FlowOp::Return(_)
+            | FlowOp::Effect(_)
+            | FlowOp::EnterScope
+            | FlowOp::ExitScope
+            | FlowOp::Noop => {}
+        }
+    }
+
+    fn collect_expr(&mut self, expr: &RuntimeExpr) {
+        match expr {
+            RuntimeExpr::Local(name) => self.parameter(name),
+            RuntimeExpr::Value(_) | RuntimeExpr::EntityRef(_) => {}
+            RuntimeExpr::Let { name, expr, body } => {
+                self.collect_expr(expr);
+                self.collect_with_declared(std::slice::from_ref(name), |this| {
+                    this.collect_expr(body);
+                });
+            }
+            RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => {
+                for item in items {
+                    self.collect_expr(item);
+                }
+            }
+            RuntimeExpr::RepeatSeq { value, .. }
+            | RuntimeExpr::Field { target: value, .. }
+            | RuntimeExpr::ProjectTuple { target: value, .. }
+            | RuntimeExpr::ProjectRecord { target: value, .. }
+            | RuntimeExpr::SpreadArg(value)
+            | RuntimeExpr::Sum { source: value }
+            | RuntimeExpr::Unary { expr: value, .. } => self.collect_expr(value),
+            RuntimeExpr::Record(fields) => {
+                for field in fields {
+                    self.collect_expr(&field.value);
+                }
+            }
+            RuntimeExpr::Variant { payload, .. } => {
+                if let Some(payload) = payload {
+                    self.collect_expr(payload);
+                }
+            }
+            RuntimeExpr::Call { args, .. } | RuntimeExpr::PureCall { args, .. } => {
+                for arg in args {
+                    self.collect_expr(arg);
+                }
+            }
+            RuntimeExpr::MethodCall { receiver, args, .. } => {
+                self.collect_expr(receiver);
+                for arg in args {
+                    self.collect_expr(arg);
+                }
+            }
+            RuntimeExpr::Map {
+                source,
+                param,
+                body,
+            } => {
+                self.collect_expr(source);
+                self.collect_with_declared(std::slice::from_ref(param), |this| {
+                    this.collect_expr(body);
+                });
+            }
+            RuntimeExpr::Binary { lhs, rhs, .. } => {
+                self.collect_expr(lhs);
+                self.collect_expr(rhs);
+            }
+            RuntimeExpr::If {
+                condition,
+                then_expr,
+                else_expr,
+            } => {
+                self.collect_expr(condition);
+                self.collect_expr(then_expr);
+                self.collect_expr(else_expr);
+            }
+            RuntimeExpr::IfLet {
+                pattern,
+                expr,
+                guard,
+                then_expr,
+                else_expr,
+            } => {
+                self.collect_expr(expr);
+                self.collect_optional_expr(guard.as_deref());
+                let names = pattern_names(pattern);
+                self.collect_with_declared(&names, |this| this.collect_expr(then_expr));
+                self.collect_expr(else_expr);
+            }
+            RuntimeExpr::Match { scrutinee, arms } => {
+                self.collect_expr(scrutinee);
+                for arm in arms {
+                    let names = pattern_names(&arm.pattern);
+                    self.collect_with_declared(&names, |this| {
+                        this.collect_optional_expr(arm.guard.as_ref());
+                        this.collect_expr(&arm.value);
+                    });
+                }
+            }
+        }
+    }
+
+    fn collect_optional_expr(&mut self, expr: Option<&RuntimeExpr>) {
+        if let Some(expr) = expr {
+            self.collect_expr(expr);
+        }
+    }
+
+    fn collect_scoped_ops(&mut self, ops: &[FlowOp]) {
+        let declared = self.declared.clone();
+        self.collect_ops(ops);
+        self.declared = declared;
+    }
+
+    fn collect_with_declared(&mut self, names: &[String], f: impl FnOnce(&mut Self)) {
+        let declared = self.declared.clone();
+        self.declared.extend(names.iter().cloned());
+        f(self);
+        self.declared = declared;
+    }
+
+    fn declare_pattern(&mut self, pattern: &RuntimePattern) {
+        self.declared.extend(pattern_names(pattern));
+    }
+
+    fn parameter(&mut self, name: &str) {
+        if !self.declared.contains(name) && self.seen_parameters.insert(name.to_owned()) {
+            self.parameters.push(name.to_owned());
+        }
+    }
+}
+
+fn pattern_names(pattern: &RuntimePattern) -> Vec<String> {
+    match pattern {
+        RuntimePattern::Ident(name)
+        | RuntimePattern::MutIdent(name)
+        | RuntimePattern::Typed { name, .. } => vec![name.clone()],
+        RuntimePattern::Whole { name, pattern } => {
+            let mut names = vec![name.clone()];
+            names.extend(pattern_names(pattern));
+            names
+        }
+        RuntimePattern::Tuple(patterns) => patterns.iter().flat_map(pattern_names).collect(),
+        RuntimePattern::Record { fields, .. } => fields
+            .iter()
+            .flat_map(|field| pattern_names(&field.pattern))
+            .collect(),
+        RuntimePattern::BracketSeq { items, rest } => {
+            let mut names = items.iter().flat_map(pattern_names).collect::<Vec<_>>();
+            if let Some(rest) = rest {
+                names.push(rest.clone());
+            }
+            names
+        }
+        RuntimePattern::Variant { payload, .. } => {
+            payload.as_deref().map_or_else(Vec::new, pattern_names)
+        }
+        RuntimePattern::Discard | RuntimePattern::Literal(_) | RuntimePattern::Entity(_) => {
+            Vec::new()
+        }
     }
 }
