@@ -860,6 +860,9 @@ fn verify_stream_and_source_tables(verifier: &Verifier<'_, '_>) -> Result<(), Aw
                 "functions",
                 &at,
             )?;
+            if let Some(pattern) = handler.pattern {
+                check_index(program.patterns.len(), pattern.0, "patterns", &at)?;
+            }
             if program.functions[handler.function.index()].kind != AwbcFunctionKind::SourceHandler {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at: at.clone(),

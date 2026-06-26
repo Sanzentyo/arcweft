@@ -628,6 +628,116 @@ fn awbc_product_parity_source_handler_closes_later_source() {
 }
 
 #[test]
+fn awbc_product_parity_source_item_handler_respects_pattern() {
+    let driver = SourceId("source.driver".to_owned());
+    let target = SourceId("source.target".to_owned());
+    let steps = run_parity(
+        flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
+            Vec::new(),
+            vec![
+                SourcePlan {
+                    id: driver.clone(),
+                    item_ty: "Frame".to_owned(),
+                    error_ty: "SourceError".to_owned(),
+                    from: RuntimeExpr::Value(RuntimeValue::String("driver".to_owned())),
+                    policy: SourcePolicy::default(),
+                    handlers: vec![SourceHandlerPlan::Item {
+                        pattern: RuntimePattern::Literal(RuntimeValue::String("run".to_owned())),
+                        ops: vec![SourceOp::Close(target.clone())],
+                    }],
+                },
+                SourcePlan {
+                    id: target.clone(),
+                    item_ty: "Frame".to_owned(),
+                    error_ty: "SourceError".to_owned(),
+                    from: RuntimeExpr::Value(RuntimeValue::String("target".to_owned())),
+                    policy: SourcePolicy::default(),
+                    handlers: Vec::new(),
+                },
+            ],
+        ),
+        vec![RuntimeStepInput {
+            source_events: vec![
+                RuntimeSourceEvent {
+                    source: driver.clone(),
+                    sequence: TaskSequence(0),
+                    kind: SourceEventKind::Item(RuntimePayload(RuntimeValue::String(
+                        "ignore".to_owned(),
+                    ))),
+                },
+                RuntimeSourceEvent {
+                    source: driver,
+                    sequence: TaskSequence(1),
+                    kind: SourceEventKind::Item(RuntimePayload(RuntimeValue::String(
+                        "run".to_owned(),
+                    ))),
+                },
+            ],
+            ..RuntimeStepInput::default()
+        }],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.requests.source_close,
+        vec![target]
+    );
+}
+
+#[test]
+fn awbc_product_parity_source_progress_handler_respects_pattern() {
+    let driver = SourceId("source.driver".to_owned());
+    let target = SourceId("source.target".to_owned());
+    let steps = run_parity(
+        flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
+            Vec::new(),
+            vec![
+                SourcePlan {
+                    id: driver.clone(),
+                    item_ty: "Frame".to_owned(),
+                    error_ty: "SourceError".to_owned(),
+                    from: RuntimeExpr::Value(RuntimeValue::String("driver".to_owned())),
+                    policy: SourcePolicy::default(),
+                    handlers: vec![SourceHandlerPlan::Progress {
+                        pattern: RuntimePattern::Literal(RuntimeValue::String("ready".to_owned())),
+                        ops: vec![SourceOp::Close(target.clone())],
+                    }],
+                },
+                SourcePlan {
+                    id: target.clone(),
+                    item_ty: "Frame".to_owned(),
+                    error_ty: "SourceError".to_owned(),
+                    from: RuntimeExpr::Value(RuntimeValue::String("target".to_owned())),
+                    policy: SourcePolicy::default(),
+                    handlers: Vec::new(),
+                },
+            ],
+        ),
+        vec![RuntimeStepInput {
+            source_events: vec![
+                RuntimeSourceEvent {
+                    source: driver.clone(),
+                    sequence: TaskSequence(0),
+                    kind: SourceEventKind::Progress("warming".to_owned()),
+                },
+                RuntimeSourceEvent {
+                    source: driver,
+                    sequence: TaskSequence(1),
+                    kind: SourceEventKind::Progress("ready".to_owned()),
+                },
+            ],
+            ..RuntimeStepInput::default()
+        }],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.requests.source_close,
+        vec![target]
+    );
+}
+
+#[test]
 fn awbc_product_parity_stream_yield() {
     let plan = flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
         vec![StreamPlan {

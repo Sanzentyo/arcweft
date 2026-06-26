@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 /// Canonical AWBC executable ABI implemented by this schema.
 pub const AWBC_ABI_VERSION: u32 = 1;
 /// Canonical binary codec version used inside an `AWBC` product section.
-pub const AWBC_CODEC_VERSION: u16 = 2;
+pub const AWBC_CODEC_VERSION: u16 = 3;
 /// Magic at the beginning of a standalone canonical AWBC payload.
 pub const AWBC_MAGIC: [u8; 8] = *b"AWBC\r\n\x1a\n";
 
@@ -1469,6 +1469,7 @@ pub struct AwbcSourcePlan {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcSourceHandler {
     pub kind: AwbcSourceEventKind,
+    pub pattern: Option<AwbcPatternId>,
     pub function: AwbcFunctionId,
 }
 

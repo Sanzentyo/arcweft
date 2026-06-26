@@ -1024,7 +1024,7 @@ fn string(program: &AwbcProgram, id: AwbcStringId) -> Result<&str, VmError> {
         .ok_or(VmError::MissingString(id))
 }
 
-fn test_pattern(
+pub(crate) fn test_pattern(
     program: &AwbcProgram,
     pattern: AwbcPatternId,
     value: &RuntimeValue,

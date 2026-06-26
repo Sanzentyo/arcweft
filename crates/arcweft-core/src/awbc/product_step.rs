@@ -1684,6 +1684,16 @@ impl AwbcProductStepExecutor {
             | SourceEventKind::PermissionRevoked
             | SourceEventKind::End => Vec::new(),
         };
+        if let (Some(pattern), Some(value)) = (handler.pattern, args.first()) {
+            match crate::awbc::vm::test_pattern(&self.program, pattern, value) {
+                Ok(true) => {}
+                Ok(false) => return,
+                Err(error) => {
+                    self.record_error(ProductStepError::Internal(error.to_string()), output);
+                    return;
+                }
+            }
+        }
         self.spawn_child(handler.function, &args, output);
     }
 

@@ -5,9 +5,10 @@ use crate::awbc_lower::inventory::{
 };
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
-    AwbcBindMode, AwbcBlock, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
-    AwbcInstruction, AwbcSafePointKind, AwbcSourceHandler, AwbcSourcePlan, AwbcSourcePlanId,
-    AwbcStreamPlan, AwbcStreamPlanId, AwbcTableRange, AwbcTerminator,
+    AwbcBindMode, AwbcBlock, AwbcEffectSetId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
+    AwbcFunctionKind, AwbcInstruction, AwbcPatternId, AwbcSafePointKind, AwbcSourceHandler,
+    AwbcSourcePlan, AwbcSourcePlanId, AwbcStreamPlan, AwbcStreamPlanId, AwbcTableRange,
+    AwbcTerminator,
 };
 use arcweft_core::plan::RuntimePlan;
 use arcweft_core::source::{SourceHandlerPlan, SourceId, SourceOp};
@@ -23,6 +24,12 @@ pub struct AwbcSourceStreamLowerer<'a> {
 enum StaticQueueTarget<'a> {
     Source(&'a str),
     Stream(&'a str),
+}
+
+#[derive(Clone, Copy, Debug)]
+struct LoweredSourceHandler {
+    pattern: Option<AwbcPatternId>,
+    function: AwbcFunctionId,
 }
 
 impl<'a> AwbcSourceStreamLowerer<'a> {
@@ -54,9 +61,13 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
             let handlers = source
                 .handlers
                 .iter()
-                .map(|handler| AwbcSourceHandler {
-                    kind: source_handler_kind(handler),
-                    function: self.lower_source_handler(handler),
+                .map(|handler| {
+                    let lowered = self.lower_source_handler(handler);
+                    AwbcSourceHandler {
+                        kind: source_handler_kind(handler),
+                        pattern: lowered.pattern,
+                        function: lowered.function,
+                    }
                 })
                 .collect();
             let item_type = self.inventory.dynamic_ty();
@@ -255,9 +266,10 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
         ));
     }
 
-    fn lower_source_handler(&mut self, handler: &SourceHandlerPlan) -> AwbcFunctionId {
+    fn lower_source_handler(&mut self, handler: &SourceHandlerPlan) -> LoweredSourceHandler {
         let mut frame = FrameBuilder::new();
         let body_start = table_index(self.inventory.program.instructions.len());
+        let pattern = self.lower_source_handler_pattern(&mut frame, handler);
         let ops = match handler {
             SourceHandlerPlan::Item { ops, .. }
             | SourceHandlerPlan::Error { ops, .. }
@@ -283,8 +295,14 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
         let layout = self
             .inventory
             .intern_frame_layout("source.handler".to_owned(), frame.finish());
-        let signature = self.inventory.intern_unit_signature();
-        self.inventory.push_function(
+        let signature = if pattern.is_some() {
+            let dynamic_ty = self.inventory.dynamic_ty();
+            self.inventory
+                .intern_signature(vec![dynamic_ty], None, AwbcEffectSetId(0))
+        } else {
+            self.inventory.intern_unit_signature()
+        };
+        let function = self.inventory.push_function(
             None,
             AwbcFunction {
                 public_id: None,
@@ -297,7 +315,33 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
                     AwbcFunctionFlags::DETERMINISTIC | AwbcFunctionFlags::MAY_SUSPEND,
                 ),
             },
-        )
+        );
+        LoweredSourceHandler { pattern, function }
+    }
+
+    fn lower_source_handler_pattern(
+        &mut self,
+        frame: &mut FrameBuilder,
+        handler: &SourceHandlerPlan,
+    ) -> Option<AwbcPatternId> {
+        let pattern = match handler {
+            SourceHandlerPlan::Item { pattern, .. }
+            | SourceHandlerPlan::Error { pattern, .. }
+            | SourceHandlerPlan::Progress { pattern, .. } => pattern,
+            SourceHandlerPlan::Disconnected { .. }
+            | SourceHandlerPlan::PermissionRevoked { .. }
+            | SourceHandlerPlan::End { .. } => return None,
+        };
+        let name = self.inventory.intern_string("$source_event");
+        let value = frame.parameter("$source_event", name, self.inventory.dynamic_ty());
+        let pattern = crate::awbc_lower::pattern::lower_pattern(self.inventory, frame, pattern);
+        self.inventory
+            .push_instruction(AwbcInstruction::BindPattern {
+                pattern,
+                value,
+                mode: AwbcBindMode::Declare,
+            });
+        Some(pattern)
     }
 
     fn lower_source_op(&mut self, frame: &mut FrameBuilder, op: &SourceOp) {

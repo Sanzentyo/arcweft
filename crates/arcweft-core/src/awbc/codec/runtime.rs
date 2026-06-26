@@ -6,9 +6,9 @@ use crate::awbc::schema::{
     AwbcConstantId, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId, AwbcFunctionId, AwbcHostCall,
     AwbcHostCallMode, AwbcIntrinsic, AwbcLineCancelHandler, AwbcLineCleanupPolicy, AwbcLineOption,
     AwbcLineTaskGroup, AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger,
-    AwbcOverflowPolicy, AwbcParallelPolicy, AwbcPresentationCleanup, AwbcPrivacyPolicy,
-    AwbcPureHelper, AwbcPureHelperOrigin, AwbcReduceOp, AwbcRegisterId, AwbcReplayPolicy,
-    AwbcResourceAccess, AwbcResourceAccessMode, AwbcResourceId, AwbcSignatureId,
+    AwbcOverflowPolicy, AwbcParallelPolicy, AwbcPatternId, AwbcPresentationCleanup,
+    AwbcPrivacyPolicy, AwbcPureHelper, AwbcPureHelperOrigin, AwbcReduceOp, AwbcRegisterId,
+    AwbcReplayPolicy, AwbcResourceAccess, AwbcResourceAccessMode, AwbcResourceId, AwbcSignatureId,
     AwbcSourceEventKind, AwbcSourceHandler, AwbcSourcePlan, AwbcSourcePolicy, AwbcStreamPlan,
     AwbcStringId, AwbcTableRange, AwbcTaskArgument, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId,
     AwbcTaskPolicy, AwbcTypeId,
@@ -533,12 +533,14 @@ impl Wire for AwbcSourcePlan {
 impl Wire for AwbcSourceHandler {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.kind.write_wire(writer)?;
+        self.pattern.write_wire(writer)?;
         self.function.write_wire(writer)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
             kind: AwbcSourceEventKind::read_wire(reader)?,
+            pattern: Option::<AwbcPatternId>::read_wire(reader)?,
             function: AwbcFunctionId::read_wire(reader)?,
         })
     }
