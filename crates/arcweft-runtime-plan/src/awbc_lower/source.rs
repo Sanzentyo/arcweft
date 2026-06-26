@@ -1,6 +1,8 @@
 use crate::awbc_lower::expr::AwbcExprLowerer;
 use crate::awbc_lower::frame::FrameBuilder;
-use crate::awbc_lower::inventory::{AwbcInventory, source_handler_kind, source_policy};
+use crate::awbc_lower::inventory::{
+    AwbcInventory, AwbcLowerDiagnostic, source_handler_kind, source_policy,
+};
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
     AwbcBindMode, AwbcBlock, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
@@ -25,9 +27,16 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
         for stream in &plan.stream_plans {
             self.lower_stream(stream);
         }
+        let source_start = self.inventory.program.source_plans.len();
+        for (offset, source) in plan.source_plans.iter().enumerate() {
+            self.inventory.reserve_source_plan_id(
+                source.id.clone(),
+                AwbcSourcePlanId(table_index(source_start + offset)),
+            );
+        }
         for source in &plan.source_plans {
             let public_id = self.inventory.intern_string(&source.id.0);
-            let open = self.inventory.synthetic_empty_function("source.open");
+            let open = self.inventory.source_open_function("source.open");
             let handlers = source
                 .handlers
                 .iter()
@@ -39,14 +48,17 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
             let item_type = self.inventory.dynamic_ty();
             let error_type = self.inventory.dynamic_ty();
             let policy = source_policy(&source.policy);
-            self.inventory.program.source_plans.push(AwbcSourcePlan {
-                public_id,
-                item_type,
-                error_type,
-                open,
-                policy,
-                handlers,
-            });
+            self.inventory.push_source_plan(
+                source.id.clone(),
+                AwbcSourcePlan {
+                    public_id,
+                    item_type,
+                    error_type,
+                    open,
+                    policy,
+                    handlers,
+                },
+            );
         }
     }
 
@@ -185,7 +197,7 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
                 table_range_len(body_start, self.inventory.program.instructions.len()),
             ),
             terminator: AwbcTerminator::Return { value: None },
-            safe_point: AwbcSafePointKind::Return,
+            safe_point: AwbcSafePointKind::CallableBoundary,
             source_map: None,
         });
         let layout = self
@@ -246,11 +258,17 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
                         args: Vec::new(),
                     });
             }
-            SourceOp::Close(_) => {
-                self.inventory
-                    .push_instruction(AwbcInstruction::SourceClose {
-                        source: AwbcSourcePlanId(0),
-                    });
+            SourceOp::Close(source) => {
+                if let Some(source) = self.inventory.source_plan_id(source) {
+                    self.inventory
+                        .push_instruction(AwbcInstruction::SourceClose { source });
+                } else {
+                    self.inventory.push_instruction(AwbcInstruction::Nop);
+                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                        "source.close",
+                        format!("unknown source plan '{}'", source.0),
+                    ));
+                }
             }
             SourceOp::Noop => {
                 self.inventory.push_instruction(AwbcInstruction::Nop);

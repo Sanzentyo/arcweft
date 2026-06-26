@@ -12,9 +12,9 @@ use arcweft_core::awbc::schema::{
     AwbcPresentationCleanup, AwbcPrivacyPolicy, AwbcProgram, AwbcRegisterId, AwbcReplayPolicy,
     AwbcResumePoint, AwbcResumePointId, AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource,
     AwbcRuntimeType, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcSignedIntKind,
-    AwbcSourceEventKind, AwbcSourcePolicy, AwbcStringId, AwbcTableRange, AwbcTaskArgument,
-    AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId, AwbcTaskPolicy, AwbcTerminator, AwbcTypeId,
-    AwbcUnsignedIntKind,
+    AwbcSourceEventKind, AwbcSourcePlan, AwbcSourcePlanId, AwbcSourcePolicy, AwbcStringId,
+    AwbcTableRange, AwbcTaskArgument, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId, AwbcTaskPolicy,
+    AwbcTerminator, AwbcTypeId, AwbcUnsignedIntKind,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeWaitTarget};
 use arcweft_core::line_task::{
@@ -24,7 +24,7 @@ use arcweft_core::line_task::{
 };
 use arcweft_core::plan::{RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan};
 use arcweft_core::source::{
-    BackpressurePolicy, OverflowPolicy, PrivacyPolicy, ReplayPolicy, SourceHandlerPlan,
+    BackpressurePolicy, OverflowPolicy, PrivacyPolicy, ReplayPolicy, SourceHandlerPlan, SourceId,
     SourcePolicy,
 };
 use arcweft_core::task::{HostTaskArgTemplate, HostTaskRequestTemplate};
@@ -113,6 +113,7 @@ pub struct AwbcInventory {
     frame_layouts: BTreeMap<String, AwbcFrameLayoutId>,
     effects: BTreeMap<String, AwbcEffectPlanId>,
     tasks: BTreeMap<String, AwbcTaskPlanId>,
+    sources: BTreeMap<SourceId, AwbcSourcePlanId>,
     choices: BTreeMap<String, AwbcChoiceId>,
     entry_functions: BTreeMap<String, AwbcFunctionId>,
 }
@@ -142,6 +143,7 @@ impl AwbcInventory {
             frame_layouts: BTreeMap::new(),
             effects: BTreeMap::new(),
             tasks: BTreeMap::new(),
+            sources: BTreeMap::new(),
             choices: BTreeMap::new(),
             entry_functions: BTreeMap::new(),
         };
@@ -711,6 +713,21 @@ impl AwbcInventory {
         id
     }
 
+    pub fn reserve_source_plan_id(&mut self, source: SourceId, id: AwbcSourcePlanId) {
+        self.sources.insert(source, id);
+    }
+
+    pub fn push_source_plan(&mut self, source: SourceId, plan: AwbcSourcePlan) -> AwbcSourcePlanId {
+        let id = AwbcSourcePlanId(table_index(self.program.source_plans.len()));
+        self.program.source_plans.push(plan);
+        self.sources.entry(source).or_insert(id);
+        id
+    }
+
+    pub fn source_plan_id(&self, source: &SourceId) -> Option<AwbcSourcePlanId> {
+        self.sources.get(source).copied()
+    }
+
     pub fn intern_choice(
         &mut self,
         key: String,
@@ -814,6 +831,23 @@ impl AwbcInventory {
     }
 
     pub fn synthetic_empty_function(&mut self, name: &str) -> AwbcFunctionId {
+        self.empty_function(name, AwbcFunctionKind::Synthetic, AwbcSafePointKind::Return)
+    }
+
+    pub fn source_open_function(&mut self, name: &str) -> AwbcFunctionId {
+        self.empty_function(
+            name,
+            AwbcFunctionKind::SourceOpen,
+            AwbcSafePointKind::CallableBoundary,
+        )
+    }
+
+    fn empty_function(
+        &mut self,
+        name: &str,
+        kind: AwbcFunctionKind,
+        safe_point: AwbcSafePointKind,
+    ) -> AwbcFunctionId {
         let layout = self.intern_frame_layout(
             format!("{name}:empty"),
             AwbcFrameLayout {
@@ -825,7 +859,7 @@ impl AwbcInventory {
             owner: AwbcFunctionId(table_index(self.program.functions.len())),
             instructions: AwbcTableRange::new(table_index(self.program.instructions.len()), 0),
             terminator: AwbcTerminator::Return { value: None },
-            safe_point: AwbcSafePointKind::Return,
+            safe_point,
             source_map: None,
         });
         let signature = self.intern_unit_signature();
@@ -834,7 +868,7 @@ impl AwbcInventory {
             Some(name),
             AwbcFunction {
                 public_id,
-                kind: AwbcFunctionKind::Synthetic,
+                kind,
                 signature,
                 frame_layout: layout,
                 blocks: AwbcTableRange::new(block.0, 1),

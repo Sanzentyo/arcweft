@@ -7,6 +7,10 @@ use arcweft_core::plan::{
     ChoiceRuntimeOption, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan, RuntimePureHelper,
     RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType,
 };
+use arcweft_core::source::{
+    RuntimeSourceEvent, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp, SourcePlan,
+    SourcePolicy,
+};
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepResult,
 };
@@ -124,6 +128,26 @@ fn assert_step_boundary_eq(step: &ParityStep) {
     assert_eq!(
         step.awbc.stats.line_effects, step.structured.stats.line_effects,
         "line-effect stat mismatch"
+    );
+    assert_eq!(
+        step.awbc.stats.task_events_in, step.structured.stats.task_events_in,
+        "task-events-in stat mismatch"
+    );
+    assert_eq!(
+        step.awbc.stats.source_events_in, step.structured.stats.source_events_in,
+        "source-events-in stat mismatch"
+    );
+    assert_eq!(
+        step.awbc.stats.source_events_emitted, step.structured.stats.source_events_emitted,
+        "source-events-emitted stat mismatch"
+    );
+    assert_eq!(
+        step.awbc.stats.stream_events_emitted, step.structured.stats.stream_events_emitted,
+        "stream-events-emitted stat mismatch"
+    );
+    assert_eq!(
+        step.awbc.stats.audio_commands, step.structured.stats.audio_commands,
+        "audio-command stat mismatch"
     );
 }
 
@@ -544,18 +568,63 @@ fn awbc_product_parity_source_stream() {
     let steps = run_parity(
         flow(vec![FlowOp::Return("done".to_owned())]),
         vec![RuntimeStepInput {
-            source_events: vec![arcweft_core::source::RuntimeSourceEvent {
-                source: arcweft_core::source::SourceId("source.test".to_owned()),
+            source_events: vec![RuntimeSourceEvent {
+                source: SourceId("source.test".to_owned()),
                 sequence: TaskSequence(0),
-                kind: arcweft_core::source::SourceEventKind::Item(RuntimePayload(
-                    RuntimeValue::String("source-item".to_owned()),
-                )),
+                kind: SourceEventKind::Item(RuntimePayload(RuntimeValue::String(
+                    "source-item".to_owned(),
+                ))),
             }],
             ..RuntimeStepInput::default()
         }],
     );
 
     assert_step_boundary_eq(&steps[0]);
+}
+
+#[test]
+fn awbc_product_parity_source_handler_closes_later_source() {
+    let driver = SourceId("source.driver".to_owned());
+    let target = SourceId("source.target".to_owned());
+    let steps = run_parity(
+        flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
+            Vec::new(),
+            vec![
+                SourcePlan {
+                    id: driver.clone(),
+                    item_ty: "Frame".to_owned(),
+                    error_ty: "SourceError".to_owned(),
+                    from: RuntimeExpr::Value(RuntimeValue::String("driver".to_owned())),
+                    policy: SourcePolicy::default(),
+                    handlers: vec![SourceHandlerPlan::Disconnected {
+                        ops: vec![SourceOp::Close(target.clone())],
+                    }],
+                },
+                SourcePlan {
+                    id: target.clone(),
+                    item_ty: "Frame".to_owned(),
+                    error_ty: "SourceError".to_owned(),
+                    from: RuntimeExpr::Value(RuntimeValue::String("target".to_owned())),
+                    policy: SourcePolicy::default(),
+                    handlers: Vec::new(),
+                },
+            ],
+        ),
+        vec![RuntimeStepInput {
+            source_events: vec![RuntimeSourceEvent {
+                source: driver,
+                sequence: TaskSequence(0),
+                kind: SourceEventKind::Disconnected,
+            }],
+            ..RuntimeStepInput::default()
+        }],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.requests.source_close,
+        vec![target]
+    );
 }
 
 #[test]
@@ -728,6 +797,86 @@ fn awbc_product_parity_await_many_cancel() {
                     sequence: TaskSequence(0),
                     kind: TaskEventKind::Cancelled,
                 }],
+                ..RuntimeStepInput::default()
+            },
+        ],
+    );
+
+    for step in &steps {
+        assert_step_boundary_eq(step);
+    }
+}
+
+#[test]
+fn awbc_product_parity_await_many_partial_then_error() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::AwaitMany {
+                binding: Some(RuntimePattern::Ident("items".to_owned())),
+                target: await_many_target(),
+                pending: Vec::new(),
+            },
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![
+            RuntimeStepInput::default(),
+            RuntimeStepInput {
+                task_events: vec![
+                    TaskEvent {
+                        logical_epoch: LogicalEpoch::default(),
+                        task_id: TaskId("task.many.1".to_owned()),
+                        sequence: TaskSequence(0),
+                        kind: TaskEventKind::Ready(RuntimePayload(RuntimeValue::String(
+                            "b-ok".to_owned(),
+                        ))),
+                    },
+                    TaskEvent {
+                        logical_epoch: LogicalEpoch::default(),
+                        task_id: TaskId("task.many.0".to_owned()),
+                        sequence: TaskSequence(1),
+                        kind: TaskEventKind::Err("host failed".to_owned()),
+                    },
+                ],
+                ..RuntimeStepInput::default()
+            },
+        ],
+    );
+
+    for step in &steps {
+        assert_step_boundary_eq(step);
+    }
+}
+
+#[test]
+fn awbc_product_parity_await_many_partial_then_cancel() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::AwaitMany {
+                binding: Some(RuntimePattern::Ident("items".to_owned())),
+                target: await_many_target(),
+                pending: Vec::new(),
+            },
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![
+            RuntimeStepInput::default(),
+            RuntimeStepInput {
+                task_events: vec![
+                    TaskEvent {
+                        logical_epoch: LogicalEpoch::default(),
+                        task_id: TaskId("task.many.1".to_owned()),
+                        sequence: TaskSequence(0),
+                        kind: TaskEventKind::Ready(RuntimePayload(RuntimeValue::String(
+                            "b-ok".to_owned(),
+                        ))),
+                    },
+                    TaskEvent {
+                        logical_epoch: LogicalEpoch::default(),
+                        task_id: TaskId("task.many.0".to_owned()),
+                        sequence: TaskSequence(1),
+                        kind: TaskEventKind::Cancelled,
+                    },
+                ],
                 ..RuntimeStepInput::default()
             },
         ],
