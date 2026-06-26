@@ -1,7 +1,10 @@
-use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
+use arcweft_core::effect::{
+    LineEffectRequest, RuntimeAssertion, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall,
+    RuntimeEvent, RuntimeField, RuntimeLog, RuntimeWaitTarget,
+};
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
-use arcweft_core::line_task::{LineTaskGroup, LineTaskNode, LineTaskScope};
+use arcweft_core::line_task::{LineOutRequest, LineTaskGroup, LineTaskNode, LineTaskScope};
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
     ChoiceRuntimeOption, FlowEvent, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeHostCallTarget,
@@ -21,6 +24,7 @@ use arcweft_core::task::{
     AwaitManyTarget, AwaitTarget, HostCapabilityId, HostTaskArgTemplate, HostTaskRequestTemplate,
     LogicalEpoch, NeedId, TaskEvent, TaskEventKind, TaskId, TaskSequence,
 };
+use arcweft_core::time::LogicalDuration;
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeExpr, RuntimePayload, RuntimeSeq,
     RuntimeValue,
@@ -231,6 +235,68 @@ fn call(name: &str) -> LineEffectRequest {
         callee: name.to_owned(),
         args: Vec::new(),
     })
+}
+
+fn non_control_effect_table() -> Vec<LineEffectRequest> {
+    vec![
+        LineEffectRequest::RegisterHandle {
+            key: "handle.ui".to_owned(),
+            handle: "h-001".to_owned(),
+        },
+        LineEffectRequest::DropHandle {
+            key: "handle.ui".to_owned(),
+        },
+        LineEffectRequest::Wait(RuntimeWaitTarget::Duration(LogicalDuration::from_nanos(17))),
+        LineEffectRequest::Call(RuntimeCall {
+            callee: "effect.probe".to_owned(),
+            args: vec!["left".to_owned(), "right".to_owned()],
+        }),
+        LineEffectRequest::Log(RuntimeLog {
+            level: "info".to_owned(),
+            message: "hello".to_owned(),
+            fields: vec![RuntimeField {
+                name: "scene".to_owned(),
+                value: "opening".to_owned(),
+            }],
+        }),
+        LineEffectRequest::SignalWrite(RuntimeAssignment {
+            target: "signal.ready".to_owned(),
+            value: "true".to_owned(),
+        }),
+        LineEffectRequest::MetricWrite(RuntimeAssignment {
+            target: "metric.score".to_owned(),
+            value: "42".to_owned(),
+        }),
+        LineEffectRequest::EmitEvent(RuntimeEvent {
+            event: "event.chapter".to_owned(),
+            fields: vec![RuntimeField {
+                name: "chapter".to_owned(),
+                value: "01".to_owned(),
+            }],
+        }),
+        LineEffectRequest::Out(LineOutRequest {
+            label: Some("speaker".to_owned()),
+            value: "line-out".to_owned(),
+        }),
+        LineEffectRequest::Ensure {
+            condition: "ready".to_owned(),
+            message: "must be ready".to_owned(),
+        },
+        LineEffectRequest::Assert(RuntimeAssertion {
+            condition: "debug_flag".to_owned(),
+            message: "asserted".to_owned(),
+            profile: RuntimeAssertionProfile::Always,
+        }),
+        LineEffectRequest::Close("panel.main".to_owned()),
+        LineEffectRequest::Select("choice.primary".to_owned()),
+        LineEffectRequest::Break {
+            label: Some("loop.main".to_owned()),
+            value: Some("break-value".to_owned()),
+        },
+        LineEffectRequest::Continue {
+            label: Some("loop.main".to_owned()),
+        },
+    ]
 }
 
 fn binding(name: &str, value: RuntimeValue) -> RuntimeBinding {
@@ -637,6 +703,26 @@ fn awbc_product_parity_effect() {
     for step in &steps {
         assert_step_boundary_eq(step);
     }
+}
+
+#[test]
+fn awbc_product_parity_line_effect_kind_table_non_control() {
+    let effects = non_control_effect_table();
+    let steps = run_parity(
+        flow(
+            effects
+                .iter()
+                .cloned()
+                .map(FlowOp::Effect)
+                .chain(std::iter::once(FlowOp::Return("done".to_owned())))
+                .collect(),
+        ),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(steps[0].structured.output.effects.line, effects);
+    assert_eq!(steps[0].awbc.output.effects.line, effects);
 }
 
 #[test]
