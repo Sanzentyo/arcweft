@@ -44,7 +44,7 @@ use crate::task::{
 };
 use crate::value::{
     RuntimeBinding, RuntimeCallTarget, RuntimeEnv, RuntimePayload, RuntimeValue,
-    runtime_sequence_from_literal_values, runtime_value_label,
+    runtime_sequence_from_literal_values, runtime_sequence_values, runtime_value_label,
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use thiserror::Error;
@@ -1322,7 +1322,7 @@ impl AwbcProductStepExecutor {
                 .iter()
                 .filter_map(Clone::clone)
                 .collect::<Vec<_>>();
-            let value = runtime_sequence_from_literal_values(values);
+            let value = runtime_sequence_values(values);
             if let Some(pattern) = state.binding
                 && let Err(error) =
                     crate::awbc::vm::bind_pattern(&self.program, &mut self.fiber, pattern, &value)

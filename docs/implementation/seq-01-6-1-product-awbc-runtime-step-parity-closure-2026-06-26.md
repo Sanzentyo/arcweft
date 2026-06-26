@@ -1199,6 +1199,101 @@ Remaining matrix limits after this cut:
   structured-vs-AWBC differential row for every kind.
 - typed trap rows and full final-facade statistics/state equality remain open.
 
+## Integration update 2026-06-26, twelfth cut
+
+Current working change before commit: `tkmquupr` over parent `zktslpzm`.
+
+This cut closes the broader await-many progress/ready ordering row:
+
+- added `awbc_product_parity_await_many_out_of_order_progress_ready_three_items`
+  to cover three source items with limit 2, deliberately out-of-order task
+  events, progress events before ready events, in-flight refill, and final
+  aggregate result ordering;
+- the new fixture exposed that product AWBC was building the await-many
+  aggregate result with `runtime_sequence_from_literal_values`, producing a
+  dense string sequence where structured execution returns an explicit
+  runtime-values sequence;
+- product AWBC now uses `runtime_sequence_values` for runtime await-many
+  aggregate results, matching the structured RuntimeStepResult value boundary
+  while leaving literal/constant sequence compaction unchanged elsewhere;
+- the await-many parity helpers now support variable item lists for additional
+  matrix rows.
+
+Exact validation run for this cut:
+
+```text
+cargo fmt --all -- --check
+  passed after running cargo fmt --all to apply import wrapping
+
+cargo test -p arcweft-runtime-plan awbc_product_parity_await_many_out_of_order_progress_ready_three_items -- --nocapture
+  passed: 1 passed, 0 failed
+  note: the first run of this newly added fixture failed before the product
+  aggregate sequence constructor was corrected from dense literal compaction to
+  runtime value sequence construction.
+
+cargo test -p arcweft-runtime-plan awbc_product_parity -- --nocapture
+  passed: 33 passed, 0 failed
+
+cargo test -p arcweft-runtime-plan awbc -- --nocapture
+  passed: 1 awbc_lower unit test and 33 awbc_product_parity tests passed,
+  0 failed
+
+cargo test -p arcweft-core awbc -- --nocapture
+  passed: 15 passed, 0 failed
+
+cargo check -p arcweft-core -p arcweft-runtime-plan -p arcweft-compiler -p arcweft-bundle -p arcweft-cli -p arcweft-runtime-driver -p arcweft-runtime-host -p arcweft-player-native --all-targets
+  passed
+
+cargo test -p arcweft-bundle product_awbc -- --nocapture
+  passed: 4 product_awbc tests and 2 product source-gate tests passed,
+  0 failed
+
+cargo test -p arcweft-runtime-driver awbc_product -- --nocapture
+  passed: 1 passed, 0 failed
+
+cargo test -p arcweft-runtime-host awbc_product -- --nocapture
+  passed: 1 passed, 0 failed
+
+cargo test -p arcweft-player-native awbc_product -- --nocapture
+  passed: 1 passed, 0 failed
+
+cargo test -p arcweft-cli awfb -- --nocapture
+  passed: 8 passed, 0 failed
+  note: the stderr line about a truncated AWFB is the expected rejection path
+  from the non-AWFB-input test.
+
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+  passed
+
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+  passed with no error-level violations: files scanned 1514, Rust files 833,
+  Rust physical LOC 409934, package manifests 89, warnings 102.
+```
+
+Structural measurements for files touched in the twelfth cut:
+
+| Path | Bytes | Physical LOC | Kind / responsibility |
+|---|---:|---:|---|
+| `crates/arcweft-core/src/awbc/product_step.rs` | 88910 | 2264 | production product AWBC RuntimeStepResult adapter; warning-level size hotspot, below the 2500 LOC error threshold |
+| `crates/arcweft-runtime-plan/tests/awbc_product_parity.rs` | 45689 | 1290 | integration differential parity tests |
+
+Remaining matrix limits after this cut:
+
+- source handler item/progress/error pattern dispatch, source-yield queue
+  mutation, duplicate/lower-sequence source event behavior, and broader
+  await-many out-of-order progress/ready behavior are now differentially
+  covered.
+- multi-stream yield and self-close routing is covered for ordinary static
+  stream targets, and stream-to-source static close is differentially covered.
+  Dynamic close-target expressions remain unsupported by the compact AWBC
+  instruction shape and currently fail lowering with a diagnostic.
+- direct host-call differential coverage still requires a runtime-plan
+  host-call surface; product-step has direct host-call request/result unit
+  coverage only.
+- effect-kind rows still have direct product mapping-table coverage, not a
+  structured-vs-AWBC differential row for every kind.
+- typed trap rows and full final-facade statistics/state equality remain open.
+
 ## Required integration work before marking seq-01.6.1 complete
 
 - expand the differential harness to cover every row in the companion matrix,

@@ -4,8 +4,9 @@ use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, Runti
 use arcweft_core::line_task::{LineTaskGroup, LineTaskNode, LineTaskScope};
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
-    ChoiceRuntimeOption, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan, RuntimePureHelper,
-    RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType,
+    ChoiceRuntimeOption, FlowEvent, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan,
+    RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
+    RuntimePureOutputType,
 };
 use arcweft_core::source::{
     RuntimeSourceEvent, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp, SourcePlan,
@@ -1258,16 +1259,89 @@ fn awbc_product_parity_await_many_partial_then_cancel() {
     }
 }
 
+#[test]
+fn awbc_product_parity_await_many_out_of_order_progress_ready_three_items() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::AwaitMany {
+                binding: Some(RuntimePattern::Ident("items".to_owned())),
+                target: await_many_target_with_items(&["a", "b", "c"], 2),
+                pending: Vec::new(),
+            },
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![
+            RuntimeStepInput::default(),
+            RuntimeStepInput {
+                task_events: vec![
+                    task_ready("task.many.1", 1, "b-ok"),
+                    task_ready("task.many.0", 1, "a-ok"),
+                    task_progress("task.many.1", 0, "b-half"),
+                    task_progress("task.many.0", 0, "a-half"),
+                ],
+                ..RuntimeStepInput::default()
+            },
+            RuntimeStepInput {
+                task_events: vec![
+                    task_ready("task.many.2", 1, "c-ok"),
+                    task_progress("task.many.2", 0, "c-half"),
+                ],
+                ..RuntimeStepInput::default()
+            },
+        ],
+    );
+
+    for step in &steps {
+        assert_step_boundary_eq(step);
+    }
+    assert!(
+        steps[1]
+            .structured
+            .output
+            .flow_events
+            .iter()
+            .any(|event| matches!(
+                event,
+                FlowEvent::AwaitStarted { task, .. } if task.0 == "task.many.2"
+            )),
+        "third await-many task should be started after the first two ready events"
+    );
+    assert!(
+        steps[2]
+            .structured
+            .output
+            .flow_events
+            .iter()
+            .any(|event| matches!(
+                event,
+                FlowEvent::AwaitReady { need, value }
+                    if need.0 == "need.many"
+                        && *value == RuntimePayload(RuntimeValue::Seq(RuntimeSeq::values(vec![
+                            RuntimeValue::String("a-ok".to_owned()),
+                            RuntimeValue::String("b-ok".to_owned()),
+                            RuntimeValue::String("c-ok".to_owned()),
+                        ])))
+            )),
+        "await-many aggregate result should preserve source item order"
+    );
+}
+
 fn await_many_target() -> AwaitManyTarget {
+    await_many_target_with_items(&["a", "b"], 2)
+}
+
+fn await_many_target_with_items(items: &[&str], limit: usize) -> AwaitManyTarget {
     AwaitManyTarget {
         need: NeedId("need.many".to_owned()),
         task: TaskId("task.many".to_owned()),
-        source: RuntimeExpr::Value(RuntimeValue::Seq(RuntimeSeq::values(vec![
-            RuntimeValue::String("a".to_owned()),
-            RuntimeValue::String("b".to_owned()),
-        ]))),
+        source: RuntimeExpr::Value(RuntimeValue::Seq(RuntimeSeq::values(
+            items
+                .iter()
+                .map(|item| RuntimeValue::String((*item).to_owned()))
+                .collect(),
+        ))),
         item_binding: "item".to_owned(),
-        limit: 2,
+        limit,
         request: HostTaskRequestTemplate {
             capability: HostCapabilityId("probe".to_owned()),
             operation: "read".to_owned(),
@@ -1275,5 +1349,23 @@ fn await_many_target() -> AwaitManyTarget {
                 "item".to_owned(),
             ))],
         },
+    }
+}
+
+fn task_ready(task_id: &str, sequence: u64, value: &str) -> TaskEvent {
+    TaskEvent {
+        logical_epoch: LogicalEpoch::default(),
+        task_id: TaskId(task_id.to_owned()),
+        sequence: TaskSequence(sequence),
+        kind: TaskEventKind::Ready(RuntimePayload(RuntimeValue::String(value.to_owned()))),
+    }
+}
+
+fn task_progress(task_id: &str, sequence: u64, value: &str) -> TaskEvent {
+    TaskEvent {
+        logical_epoch: LogicalEpoch::default(),
+        task_id: TaskId(task_id.to_owned()),
+        sequence: TaskSequence(sequence),
+        kind: TaskEventKind::Progress(RuntimePayload(RuntimeValue::String(value.to_owned()))),
     }
 }
