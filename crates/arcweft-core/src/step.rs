@@ -4,7 +4,7 @@ use crate::source::{RuntimeSourceEvent, SourceId};
 use crate::stream::RuntimeStreamEvent;
 use crate::task::{CancelScopeId, TaskEvent, TaskSpec};
 use crate::time::{LogicalDuration, TickId};
-use crate::value::RuntimeBinding;
+use crate::value::{RuntimeBinding, RuntimePayload};
 use arcweft_interaction_model::{
     audio::{AudioCommandEnvelope, AudioEvent},
     input::{InputEventKind, RoutedInputEvent},
@@ -20,6 +20,7 @@ pub struct RuntimeStepInput {
     pub task_events: Vec<TaskEvent>,
     pub audio_events: Vec<AudioEvent>,
     pub source_events: Vec<RuntimeSourceEvent>,
+    pub host_call_results: Vec<RuntimeHostCallResult>,
 }
 
 /// Borrowed adapter-facing view of runtime step inputs.
@@ -36,6 +37,7 @@ pub struct RuntimeStepInputRef<'a> {
     task_events: &'a [TaskEvent],
     audio_events: &'a [AudioEvent],
     source_events: &'a [RuntimeSourceEvent],
+    host_call_results: &'a [RuntimeHostCallResult],
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -61,6 +63,78 @@ pub struct HostRequestBatch {
     pub audio: Vec<AudioCommandEnvelope>,
     pub cancel_scopes: Vec<CancelScopeId>,
     pub source_close: Vec<SourceId>,
+    pub ensure_content: Vec<RuntimeContentRequest>,
+    pub host_calls: Vec<RuntimeHostCallRequest>,
+}
+
+/// Stable identifier for one host call request/result exchange.
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeHostCallId(pub String);
+
+/// Whether a host call may complete in the emitting step or requires a later
+/// host result before the fiber can resume.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RuntimeHostCallMode {
+    #[default]
+    Immediate,
+    Suspend,
+}
+
+/// Typed host request emitted by compact or structured execution.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeHostCallRequest {
+    pub id: RuntimeHostCallId,
+    pub public_id: String,
+    pub capability: String,
+    pub operation: String,
+    pub args: Vec<RuntimePayload>,
+    pub mode: RuntimeHostCallMode,
+    pub deterministic: bool,
+}
+
+/// Host-supplied outcome for a previously emitted host call request.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeHostCallResult {
+    pub id: RuntimeHostCallId,
+    pub outcome: Result<RuntimePayload, RuntimeHostCallError>,
+}
+
+/// Typed host-call failure preserved at the deterministic step boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeHostCallError {
+    pub kind: RuntimeHostCallErrorKind,
+    pub message: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeHostCallErrorKind {
+    UnsupportedCapability,
+    Rejected,
+    Failed,
+}
+
+/// Content/resource residency request emitted by a Sans-I/O runtime step.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeContentRequest {
+    pub content: String,
+    pub resources: Vec<RuntimeContentResourceRequest>,
+}
+
+/// One resource referenced by a content residency request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeContentResourceRequest {
+    pub public_id: String,
+    pub kind: String,
+    pub digest: [u8; 32],
+    pub decoded_len: u64,
+    pub residency: RuntimeContentResidency,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeContentResidency {
+    Startup,
+    OnDemand,
+    Streaming,
 }
 
 /// Result envelope returned by the runtime step boundary.
@@ -121,6 +195,63 @@ pub struct RuntimePureCallStats {
 }
 
 impl RuntimePureCallStats {
+    /// Adds two independently-accounted runtime call deltas without overflow.
+    #[must_use]
+    pub fn saturating_add(self, other: Self) -> Self {
+        Self {
+            pure_calls: self.pure_calls.saturating_add(other.pure_calls),
+            math_calls: self.math_calls.saturating_add(other.math_calls),
+            math_accelerated_calls: self
+                .math_accelerated_calls
+                .saturating_add(other.math_accelerated_calls),
+            batch_calls: self.batch_calls.saturating_add(other.batch_calls),
+            batch_items: self.batch_items.saturating_add(other.batch_items),
+            flat_batch_calls: self.flat_batch_calls.saturating_add(other.flat_batch_calls),
+            flat_batch_items: self.flat_batch_items.saturating_add(other.flat_batch_items),
+            flat_batch_bytes_borrowed: self
+                .flat_batch_bytes_borrowed
+                .saturating_add(other.flat_batch_bytes_borrowed),
+            flatten_materializations: self
+                .flatten_materializations
+                .saturating_add(other.flatten_materializations),
+            flatten_bytes_copied: self
+                .flatten_bytes_copied
+                .saturating_add(other.flatten_bytes_copied),
+            jit_calls: self.jit_calls.saturating_add(other.jit_calls),
+            aot_calls: self.aot_calls.saturating_add(other.aot_calls),
+            vm_calls: self.vm_calls.saturating_add(other.vm_calls),
+            arg_stack_packs: self.arg_stack_packs.saturating_add(other.arg_stack_packs),
+            arg_vec_allocations: self
+                .arg_vec_allocations
+                .saturating_add(other.arg_vec_allocations),
+            arg_bytes_copied: self.arg_bytes_copied.saturating_add(other.arg_bytes_copied),
+            arg_bytes_borrowed: self
+                .arg_bytes_borrowed
+                .saturating_add(other.arg_bytes_borrowed),
+            result_bytes_copied: self
+                .result_bytes_copied
+                .saturating_add(other.result_bytes_copied),
+            parallel_policy_checks: self
+                .parallel_policy_checks
+                .saturating_add(other.parallel_policy_checks),
+            parallel_work_units: self
+                .parallel_work_units
+                .saturating_add(other.parallel_work_units),
+            parallel_batches: self.parallel_batches.saturating_add(other.parallel_batches),
+            parallel_skipped_backend: self
+                .parallel_skipped_backend
+                .saturating_add(other.parallel_skipped_backend),
+            parallel_skipped_small: self
+                .parallel_skipped_small
+                .saturating_add(other.parallel_skipped_small),
+            thread_pool_jobs: self.thread_pool_jobs.saturating_add(other.thread_pool_jobs),
+            thread_pool_build_elapsed_ns: self
+                .thread_pool_build_elapsed_ns
+                .saturating_add(other.thread_pool_build_elapsed_ns),
+            fallbacks: self.fallbacks.saturating_add(other.fallbacks),
+        }
+    }
+
     #[must_use]
     pub fn saturating_delta(self, before: Self) -> Self {
         Self {
@@ -230,9 +361,32 @@ pub struct RuntimeStepOutputSink<'a> {
     output: &'a mut RuntimeStepOutput,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct RuntimeDiagnostic {
     pub message: String,
+    pub category: RuntimeDiagnosticCategory,
+    pub source: Option<RuntimeDiagnosticSource>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RuntimeDiagnosticCategory {
+    #[default]
+    Runtime,
+    Input,
+    Type,
+    Pattern,
+    Host,
+    Capability,
+    Budget,
+    Internal,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeDiagnosticSource {
+    pub label: String,
+    pub start: u32,
+    pub end: u32,
+    pub anchor: Option<String>,
 }
 
 impl RuntimeStepInput {
@@ -245,6 +399,7 @@ impl RuntimeStepInput {
             task_events: self.task_events.as_slice(),
             audio_events: self.audio_events.as_slice(),
             source_events: self.source_events.as_slice(),
+            host_call_results: self.host_call_results.as_slice(),
         }
     }
 }
@@ -306,6 +461,10 @@ impl<'a> RuntimeStepInputRef<'a> {
     pub const fn source_events(&self) -> &'a [RuntimeSourceEvent] {
         self.source_events
     }
+
+    pub const fn host_call_results(&self) -> &'a [RuntimeHostCallResult] {
+        self.host_call_results
+    }
 }
 
 impl RuntimeStepOutput {
@@ -331,6 +490,10 @@ impl RuntimeStepOutput {
         self.requests
             .source_close
             .extend(other.requests.source_close);
+        self.requests
+            .ensure_content
+            .extend(other.requests.ensure_content);
+        self.requests.host_calls.extend(other.requests.host_calls);
     }
 }
 
@@ -354,12 +517,38 @@ impl<'a> RuntimeStepOutputSink<'a> {
     }
 
     pub fn push_diagnostic(&mut self, message: impl Into<String>) {
-        self.output.diagnostics.push(RuntimeDiagnostic {
-            message: message.into(),
-        });
+        self.output
+            .diagnostics
+            .push(RuntimeDiagnostic::new(message));
     }
 
     pub fn merge(&mut self, other: RuntimeStepOutput) {
         self.output.merge(other);
+    }
+}
+
+impl RuntimeDiagnostic {
+    #[must_use]
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            category: RuntimeDiagnosticCategory::Runtime,
+            source: None,
+        }
+    }
+
+    #[must_use]
+    pub fn categorized(category: RuntimeDiagnosticCategory, message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            category,
+            source: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_source(mut self, source: RuntimeDiagnosticSource) -> Self {
+        self.source = Some(source);
+        self
     }
 }

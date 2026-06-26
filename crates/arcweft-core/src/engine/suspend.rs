@@ -1,11 +1,15 @@
 use super::{
-    AwaitManyInFlight, AwaitManyState, AwaitState, AwaitTarget, CancelScopeId, ChoiceRuntimeOption,
-    ChoiceState, Engine, FlowEvent, FlowFiberStatus, LineEffectRequest, RuntimeDiagnostic,
+    AwaitManyInFlight, AwaitManyState, AwaitState, AwaitTarget, CancelScopeId, ChoiceState,
+    DialogueState, Engine, FlowEvent, FlowFiberStatus, LineEffectRequest, RuntimeDiagnostic,
     RuntimeEvalError, RuntimeFieldValue, RuntimePayload, RuntimeSeq, RuntimeStepInput,
     RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
     TaskSpec, runtime_sequence_values, runtime_value_into_sequence_values,
 };
+use crate::line_task::{
+    cancel_live_line_task_group, finish_live_line_task_group, progress_live_line_task_group,
+};
 use crate::pure::RuntimeCallBackend;
+use crate::step::RuntimeDiagnosticCategory;
 use crate::task::{
     AssetRequest, AudioDecodeRequest, AwaitManyTarget, FileReadBytesRequest, FileReadTextRequest,
     FileWriteBytesRequest, FileWriteTextRequest, HostTaskArgTemplate, HostTaskRequest,
@@ -24,6 +28,10 @@ impl Engine {
     ) -> bool {
         let status = std::mem::replace(&mut self.fiber.status, FlowFiberStatus::Running);
         match status {
+            FlowFiberStatus::Dialogue(state) => {
+                self.resume_dialogue_state(state, input, output, pure_backend);
+                true
+            }
             FlowFiberStatus::Waiting(state) => {
                 self.resume_await_state(state, events, output);
                 true
@@ -42,6 +50,51 @@ impl Engine {
                 self.fiber.status = status;
                 false
             }
+        }
+    }
+
+    fn resume_dialogue_state(
+        &mut self,
+        mut state: DialogueState,
+        input: &RuntimeStepInput,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) {
+        let Some(group) = self.plan.line_task_groups.get(state.task_group).cloned() else {
+            let message = format!("missing line task group {}", state.task_group);
+            self.fiber.status = FlowFiberStatus::Failed(message.clone());
+            output.diagnostics.push(RuntimeDiagnostic::categorized(
+                RuntimeDiagnosticCategory::Internal,
+                message,
+            ));
+            return;
+        };
+        if let Some(cancelled) = cancel_live_line_task_group(&group, input) {
+            self.merge_step_output(cancelled, output, pure_backend);
+            if self.apply_control_effects(output) {
+                return;
+            }
+            self.fiber.cursor = state.resume;
+            self.fiber.status = FlowFiberStatus::Running;
+            return;
+        }
+        self.merge_step_output(
+            progress_live_line_task_group(&group, input, &mut state.started_nodes),
+            output,
+            pure_backend,
+        );
+        if self.apply_control_effects(output) {
+            return;
+        }
+        if input_advances_dialogue(input, &state.line.0) {
+            self.merge_step_output(finish_live_line_task_group(&group), output, pure_backend);
+            if self.apply_control_effects(output) {
+                return;
+            }
+            self.fiber.cursor = state.resume;
+            self.fiber.status = FlowFiberStatus::Running;
+        } else {
+            self.fiber.status = FlowFiberStatus::Dialogue(state);
         }
     }
 
@@ -68,9 +121,9 @@ impl Engine {
                             self.fiber.status = FlowFiberStatus::Failed(
                                 "await result did not match binding pattern".to_owned(),
                             );
-                            output.diagnostics.push(RuntimeDiagnostic {
-                                message: "await result did not match binding pattern".to_owned(),
-                            });
+                            output.diagnostics.push(RuntimeDiagnostic::new(
+                                "await result did not match binding pattern".to_owned(),
+                            ));
                             return;
                         }
                         Err(error) => {
@@ -95,14 +148,15 @@ impl Engine {
             }
             TaskEventKind::Err(error) => {
                 self.fiber.status = FlowFiberStatus::Failed(error.clone());
-                output.diagnostics.push(RuntimeDiagnostic {
-                    message: format!("await task {} failed: {error}", state.target.task.0),
-                });
+                output.diagnostics.push(RuntimeDiagnostic::new(format!(
+                    "await task {} failed: {error}",
+                    state.target.task.0
+                )));
             }
             TaskEventKind::Cancelled => {
                 let message = format!("await task {} was cancelled", state.target.task.0);
                 self.fiber.status = FlowFiberStatus::Failed(message.clone());
-                output.diagnostics.push(RuntimeDiagnostic { message });
+                output.diagnostics.push(RuntimeDiagnostic::new(message));
             }
         }
     }
@@ -114,15 +168,36 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let Some(position) = state
-            .options
-            .iter()
-            .position(|option| input_selects_choice(input, option))
-        else {
+        let Some((requested_choice, selection)) = input_choice_selection(input) else {
             self.fiber.status = FlowFiberStatus::Choice(state);
             return;
         };
-        let option = state.options.swap_remove(position);
+        if requested_choice.is_some() && requested_choice != state.id.as_deref() {
+            output.diagnostics.push(RuntimeDiagnostic::categorized(
+                RuntimeDiagnosticCategory::Input,
+                format!(
+                    "stale choice selection for `{}` while waiting on `{}`",
+                    requested_choice.unwrap_or_default(),
+                    state.id.as_deref().unwrap_or("-")
+                ),
+            ));
+            self.fiber.status = FlowFiberStatus::Choice(state);
+            return;
+        }
+        let Some(position) = state.options.iter().position(|option| {
+            option.id.as_deref() == Some(selection) || option.label == selection
+        }) else {
+            output.diagnostics.push(RuntimeDiagnostic::categorized(
+                RuntimeDiagnosticCategory::Input,
+                format!(
+                    "invalid option `{selection}` for choice `{}`",
+                    state.id.as_deref().unwrap_or("-")
+                ),
+            ));
+            self.fiber.status = FlowFiberStatus::Choice(state);
+            return;
+        };
+        let option = state.options.remove(position);
         let selected = option.id.clone().unwrap_or_else(|| option.label.clone());
         output.flow_events.push(FlowEvent::ChoiceSelected {
             id: state.id,
@@ -236,12 +311,10 @@ impl Engine {
                 TaskEventKind::Err(error) => {
                     let in_flight = &state.in_flight[position];
                     self.fiber.status = FlowFiberStatus::Failed(error.clone());
-                    output.diagnostics.push(RuntimeDiagnostic {
-                        message: format!(
-                            "await task {} at index {} failed: {error}",
-                            in_flight.task.0, in_flight.index
-                        ),
-                    });
+                    output.diagnostics.push(RuntimeDiagnostic::new(format!(
+                        "await task {} at index {} failed: {error}",
+                        in_flight.task.0, in_flight.index
+                    )));
                     return;
                 }
                 TaskEventKind::Cancelled => {
@@ -251,7 +324,7 @@ impl Engine {
                         in_flight.task.0, in_flight.index
                     );
                     self.fiber.status = FlowFiberStatus::Failed(message.clone());
-                    output.diagnostics.push(RuntimeDiagnostic { message });
+                    output.diagnostics.push(RuntimeDiagnostic::new(message));
                     return;
                 }
             }
@@ -308,9 +381,9 @@ impl Engine {
                     self.fiber.status = FlowFiberStatus::Failed(
                         "await result did not match binding pattern".to_owned(),
                     );
-                    output.diagnostics.push(RuntimeDiagnostic {
-                        message: "await result did not match binding pattern".to_owned(),
-                    });
+                    output.diagnostics.push(RuntimeDiagnostic::new(
+                        "await result did not match binding pattern".to_owned(),
+                    ));
                     return;
                 }
                 Err(error) => {
@@ -769,14 +842,25 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
     }
 }
 
-fn input_selects_choice(input: &RuntimeStepInput, option: &ChoiceRuntimeOption) -> bool {
+fn input_advances_dialogue(input: &RuntimeStepInput, line: &str) -> bool {
     input.input_events.iter().any(|event| {
-        let Some(payload) = crate::step::input_event_text_payload(event) else {
-            return false;
-        };
         matches!(
             crate::step::input_event_trigger_name(event),
-            Some("choice" | "select")
-        ) && (option.id.as_deref() == Some(payload) || option.label == payload)
+            Some("advance" | "dialogue.advance")
+        ) && crate::step::input_event_text_payload(event).is_none_or(|value| value == line)
+    })
+}
+
+fn input_choice_selection(input: &RuntimeStepInput) -> Option<(Option<&str>, &str)> {
+    input.input_events.iter().find_map(|event| {
+        let trigger = crate::step::input_event_trigger_name(event)?;
+        let selection = crate::step::input_event_text_payload(event)?;
+        match trigger {
+            "choice" | "select" => Some((None, selection)),
+            trigger => trigger
+                .strip_prefix("choice:")
+                .or_else(|| trigger.strip_prefix("select:"))
+                .map(|choice| (Some(choice), selection)),
+        }
     })
 }

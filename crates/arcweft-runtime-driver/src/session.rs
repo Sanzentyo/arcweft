@@ -547,6 +547,7 @@ impl BundleSession {
             task_events: input.task_events,
             audio_events: input.audio_events,
             source_events: input.source_events,
+            host_call_results: Vec::new(),
         };
         let mut pure_backend = VmRuntimePureCallBackend::default();
         let result = self.executor.step_with_root_bindings_and_pure_backend(

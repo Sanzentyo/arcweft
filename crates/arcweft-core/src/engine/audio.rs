@@ -32,9 +32,9 @@ impl Engine {
             )),
             Err(error) => {
                 let message = error.to_string();
-                output.diagnostics.push(RuntimeDiagnostic {
-                    message: message.clone(),
-                });
+                output
+                    .diagnostics
+                    .push(RuntimeDiagnostic::new(message.clone()));
                 self.fiber.status = FlowFiberStatus::Failed(message);
             }
         }

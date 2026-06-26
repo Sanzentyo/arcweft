@@ -62,7 +62,7 @@ impl Engine {
                 SourceRuntimeState::new(event.source.clone(), SourcePolicy::default())
             });
         if let Some(message) = state.apply_event(event) {
-            output.diagnostics.push(RuntimeDiagnostic { message });
+            output.diagnostics.push(RuntimeDiagnostic::new(message));
         }
     }
 
@@ -81,9 +81,11 @@ impl Engine {
         match &event.kind {
             SourceEventKind::Error(error) => {
                 state.last_error = Some(error.clone());
-                output.diagnostics.push(RuntimeDiagnostic {
-                    message: format!("source {} error: {}", state.id.0, error.label()),
-                });
+                output.diagnostics.push(RuntimeDiagnostic::new(format!(
+                    "source {} error: {}",
+                    state.id.0,
+                    error.label()
+                )));
             }
             SourceEventKind::Disconnected
             | SourceEventKind::PermissionRevoked
@@ -147,7 +149,7 @@ impl Engine {
             .entry(source.clone())
             .or_insert_with(|| SourceRuntimeState::new(source.clone(), SourcePolicy::default()));
         if let Some(message) = state.push_item(item) {
-            output.diagnostics.push(RuntimeDiagnostic { message });
+            output.diagnostics.push(RuntimeDiagnostic::new(message));
         }
     }
 

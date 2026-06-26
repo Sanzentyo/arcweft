@@ -919,7 +919,7 @@ impl Engine {
     ) {
         let message = error.to_string();
         self.fiber.status = FlowFiberStatus::Failed(message.clone());
-        output.diagnostics.push(RuntimeDiagnostic { message });
+        output.diagnostics.push(RuntimeDiagnostic::new(message));
     }
 }
 
@@ -1232,7 +1232,7 @@ fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, Runti
     }
 }
 
-fn evaluate_runtime_call(
+pub(crate) fn evaluate_runtime_call(
     callee: &RuntimeCallTarget,
     args: &[RuntimeValue],
     pure_backend: &mut impl RuntimeCallBackend,

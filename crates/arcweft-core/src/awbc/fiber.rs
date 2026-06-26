@@ -2,11 +2,12 @@
 
 use super::schema::{
     AwbcBlockId, AwbcChoiceId, AwbcContentUnitId, AwbcEntryId, AwbcEntryTarget, AwbcFrameLayoutId,
-    AwbcFunctionId, AwbcHostCallId, AwbcLineTaskGroupId, AwbcPatternId, AwbcProgram,
-    AwbcRegisterId, AwbcResumePointId, AwbcScopeId, AwbcSourceMapId, AwbcSourcePlanId,
-    AwbcStreamPlanId, AwbcTaskPlanId, AwbcTrapCode,
+    AwbcFrameSlotRole, AwbcFunctionId, AwbcHostCallId, AwbcLineTaskGroupId, AwbcPatternId,
+    AwbcProgram, AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType, AwbcScopeId,
+    AwbcSignedIntKind, AwbcSourceMapId, AwbcSourcePlanId, AwbcStreamPlanId, AwbcTaskPlanId,
+    AwbcTrapCode, AwbcTypeId, AwbcUnsignedIntKind,
 };
-use crate::value::RuntimeValue;
+use crate::value::{RuntimeBinding, RuntimeInt, RuntimeUInt, RuntimeValue};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -197,6 +198,18 @@ pub enum FiberStateError {
     InvalidFrame,
     #[error("fiber call return value does not match its destination")]
     ReturnValueMismatch,
+    #[error("AWBC entry expects {expected} arguments, received {actual}")]
+    EntryArgumentCount { expected: usize, actual: usize },
+    #[error("AWBC entry argument `{name}` is duplicated")]
+    DuplicateEntryArgument { name: String },
+    #[error("AWBC entry argument `{name}` does not match a parameter")]
+    UnknownEntryArgument { name: String },
+    #[error("AWBC entry argument `{name}` expected {expected}, received {actual}")]
+    EntryArgumentType {
+        name: String,
+        expected: String,
+        actual: String,
+    },
 }
 
 impl FiberState {
@@ -274,6 +287,113 @@ impl FiberState {
                 })
                 .collect(),
         })
+    }
+
+    /// Transactionally binds the root entry arguments to parameter registers.
+    ///
+    /// Bindings whose names all match named parameters are treated as named
+    /// arguments. Otherwise, an equally-sized list is positional. Validation
+    /// completes before the live frame is mutated, so a rejected step may be
+    /// retried with corrected input.
+    pub fn bind_entry_arguments(
+        &mut self,
+        program: &AwbcProgram,
+        bindings: &[RuntimeBinding],
+    ) -> Result<(), FiberStateError> {
+        let frame = self.active_frame()?;
+        let function = program
+            .functions
+            .get(frame.function.index())
+            .ok_or(FiberStateError::UnknownFunction(frame.function.0))?;
+        let entry = program
+            .entries
+            .get(self.entry.index())
+            .ok_or(FiberStateError::UnknownEntry(self.entry.0))?;
+        if entry.signature != function.signature {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        let signature = program
+            .signatures
+            .get(entry.signature.index())
+            .ok_or(FiberStateError::InvalidFrame)?;
+        let layout = program
+            .frame_layouts
+            .get(frame.layout.index())
+            .ok_or(FiberStateError::UnknownFrameLayout(frame.layout.0))?;
+        let parameters = layout
+            .slots
+            .iter()
+            .enumerate()
+            .filter(|(_, slot)| slot.role == AwbcFrameSlotRole::Parameter)
+            .collect::<Vec<_>>();
+        if parameters.len() != signature.params.len() {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        if bindings.len() != parameters.len() {
+            return Err(FiberStateError::EntryArgumentCount {
+                expected: parameters.len(),
+                actual: bindings.len(),
+            });
+        }
+
+        let parameter_names = parameters
+            .iter()
+            .map(|(_, slot)| {
+                slot.name
+                    .and_then(|name| program.strings.get(name.index()).map(String::as_str))
+            })
+            .collect::<Vec<_>>();
+        let named = bindings.iter().any(|binding| {
+            parameter_names
+                .iter()
+                .flatten()
+                .any(|name| *name == binding.name)
+        });
+        let mut assignments = Vec::with_capacity(bindings.len());
+        if named {
+            let mut used = std::collections::BTreeSet::new();
+            for binding in bindings {
+                if !used.insert(binding.name.as_str()) {
+                    return Err(FiberStateError::DuplicateEntryArgument {
+                        name: binding.name.clone(),
+                    });
+                }
+                let Some(position) = parameter_names
+                    .iter()
+                    .position(|name| name.is_some_and(|name| name == binding.name))
+                else {
+                    return Err(FiberStateError::UnknownEntryArgument {
+                        name: binding.name.clone(),
+                    });
+                };
+                assignments.push((position, &binding.value, binding.name.as_str()));
+            }
+            assignments.sort_unstable_by_key(|(position, _, _)| *position);
+        } else {
+            assignments.extend(bindings.iter().enumerate().map(|(position, binding)| {
+                let name = parameter_names[position].unwrap_or(binding.name.as_str());
+                (position, &binding.value, name)
+            }));
+        }
+
+        let mut register_values = frame.registers.clone();
+        for (position, value, name) in assignments {
+            let (register, slot) = parameters[position];
+            let expected = signature.params[position];
+            if slot.ty != expected {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            if !runtime_value_matches_type(program, value, expected, 0) {
+                return Err(FiberStateError::EntryArgumentType {
+                    name: name.to_owned(),
+                    expected: runtime_type_label(program, expected),
+                    actual: runtime_value_type_label(value),
+                });
+            }
+            register_values[register] = Some(value.clone());
+        }
+        self.active_frame_mut()?.registers = register_values;
+        Ok(())
     }
 
     pub fn checkpoint(&self) -> FiberCheckpoint {
@@ -369,19 +489,57 @@ impl FiberState {
         return_to: AwbcResumePointId,
         destination: Option<AwbcRegisterId>,
     ) -> Result<(), FiberStateError> {
+        self.push_call_frame_with_args(program, function, return_to, destination, &[])
+    }
+
+    pub fn push_call_frame_with_args(
+        &mut self,
+        program: &AwbcProgram,
+        function: AwbcFunctionId,
+        return_to: AwbcResumePointId,
+        destination: Option<AwbcRegisterId>,
+        args: &[RuntimeValue],
+    ) -> Result<(), FiberStateError> {
         self.require_status(FiberStatus::Running)?;
         let function_record = program
             .functions
             .get(function.index())
             .ok_or(FiberStateError::UnknownFunction(function.0))?;
-        self.frames.push(FiberFrame::new(
+        let mut frame = FiberFrame::new(
             program,
             function,
             Some(FiberReturnPoint {
                 resume: return_to,
                 destination,
             }),
-        )?);
+        )?;
+        frame.bind_positional_arguments(program, args)?;
+        self.frames.push(frame);
+        self.cursor = FiberCursor {
+            function,
+            block: function_record.entry_block,
+            instruction_offset: 0,
+        };
+        Ok(())
+    }
+
+    /// Replaces the active frame with a tail-called function while preserving
+    /// the caller return point.
+    pub fn replace_active_function(
+        &mut self,
+        program: &AwbcProgram,
+        function: AwbcFunctionId,
+        args: &[RuntimeValue],
+    ) -> Result<(), FiberStateError> {
+        self.require_status(FiberStatus::Running)?;
+        let function_record = program
+            .functions
+            .get(function.index())
+            .ok_or(FiberStateError::UnknownFunction(function.0))?;
+        let return_to = self.active_frame()?.return_to;
+        let mut frame = FiberFrame::new(program, function, return_to)?;
+        frame.bind_positional_arguments(program, args)?;
+        *self.active_frame_mut()? = frame;
         self.cursor = FiberCursor {
             function,
             block: function_record.entry_block,
@@ -514,6 +672,54 @@ impl FiberFrame {
         })
     }
 
+    pub fn bind_positional_arguments(
+        &mut self,
+        program: &AwbcProgram,
+        args: &[RuntimeValue],
+    ) -> Result<(), FiberStateError> {
+        let function = program
+            .functions
+            .get(self.function.index())
+            .ok_or(FiberStateError::UnknownFunction(self.function.0))?;
+        let signature = program
+            .signatures
+            .get(function.signature.index())
+            .ok_or(FiberStateError::InvalidFrame)?;
+        let layout = program
+            .frame_layouts
+            .get(self.layout.index())
+            .ok_or(FiberStateError::UnknownFrameLayout(self.layout.0))?;
+        let parameters = layout
+            .slots
+            .iter()
+            .enumerate()
+            .filter(|(_, slot)| slot.role == AwbcFrameSlotRole::Parameter)
+            .collect::<Vec<_>>();
+        if parameters.len() != signature.params.len() || args.len() != parameters.len() {
+            return Err(FiberStateError::EntryArgumentCount {
+                expected: parameters.len(),
+                actual: args.len(),
+            });
+        }
+        let mut next = self.registers.clone();
+        for (position, ((register, slot), value)) in parameters.iter().zip(args).enumerate() {
+            let expected = signature.params[position];
+            if slot.ty != expected || !runtime_value_matches_type(program, value, expected, 0) {
+                return Err(FiberStateError::EntryArgumentType {
+                    name: slot
+                        .name
+                        .and_then(|id| program.strings.get(id.index()).cloned())
+                        .unwrap_or_else(|| format!("${position}")),
+                    expected: runtime_type_label(program, expected),
+                    actual: runtime_value_type_label(value),
+                });
+            }
+            next[*register] = Some(value.clone());
+        }
+        self.registers = next;
+        Ok(())
+    }
+
     pub fn register(&self, register: AwbcRegisterId) -> Result<&RuntimeValue, FiberStateError> {
         self.registers
             .get(register.index())
@@ -548,5 +754,315 @@ impl FiberFrame {
         )?;
         *slot = None;
         Ok(())
+    }
+}
+
+fn runtime_value_matches_type(
+    program: &AwbcProgram,
+    value: &RuntimeValue,
+    ty: AwbcTypeId,
+    depth: usize,
+) -> bool {
+    if depth > 64 {
+        return false;
+    }
+    let Some(ty) = program.runtime_types.get(ty.index()) else {
+        return false;
+    };
+    match (value, ty) {
+        (_, AwbcRuntimeType::Dynamic)
+        | (
+            RuntimeValue::String(_),
+            AwbcRuntimeType::String | AwbcRuntimeType::TaskHandle | AwbcRuntimeType::NeedHandle,
+        )
+        | (RuntimeValue::Unit, AwbcRuntimeType::Unit)
+        | (RuntimeValue::Bool(_), AwbcRuntimeType::Bool)
+        | (RuntimeValue::F32(_), AwbcRuntimeType::F32)
+        | (RuntimeValue::F64(_), AwbcRuntimeType::F64)
+        | (RuntimeValue::Char(_), AwbcRuntimeType::Char)
+        | (RuntimeValue::Duration(_), AwbcRuntimeType::Duration)
+        | (RuntimeValue::EntityRef(_), AwbcRuntimeType::EntityRef)
+        | (RuntimeValue::MatrixF32(_), AwbcRuntimeType::MatrixF32)
+        | (RuntimeValue::MatrixF64(_), AwbcRuntimeType::MatrixF64)
+        | (RuntimeValue::TensorF32(_), AwbcRuntimeType::TensorF32)
+        | (RuntimeValue::TensorF64(_), AwbcRuntimeType::TensorF64) => true,
+        (RuntimeValue::Int(value), AwbcRuntimeType::Int(kind)) => signed_kind(*value) == *kind,
+        (RuntimeValue::UInt(value), AwbcRuntimeType::UInt(kind)) => unsigned_kind(*value) == *kind,
+        (RuntimeValue::Tuple(values), AwbcRuntimeType::Tuple(types)) => {
+            values.len() == types.len()
+                && values
+                    .iter()
+                    .zip(types)
+                    .all(|(value, ty)| runtime_value_matches_type(program, value, *ty, depth + 1))
+        }
+        (RuntimeValue::Seq(values), AwbcRuntimeType::Sequence(item)) => values
+            .clone()
+            .into_values()
+            .iter()
+            .all(|value| runtime_value_matches_type(program, value, *item, depth + 1)),
+        (RuntimeValue::Record(values), AwbcRuntimeType::Record { fields, .. }) => {
+            values.len() == fields.len()
+                && values.iter().zip(fields).all(|(value, field)| {
+                    runtime_value_matches_type(program, &value.value, field.ty, depth + 1)
+                })
+        }
+        (RuntimeValue::Variant { name, payload, .. }, AwbcRuntimeType::Variant { cases, .. }) => {
+            cases.iter().any(|case| {
+                program
+                    .strings
+                    .get(case.name.index())
+                    .is_some_and(|case_name| {
+                        case_name == name
+                            && match (case.payload, payload.as_deref()) {
+                                (None, None) => true,
+                                (Some(ty), Some(value)) => {
+                                    runtime_value_matches_type(program, value, ty, depth + 1)
+                                }
+                                _ => false,
+                            }
+                    })
+            })
+        }
+        _ => false,
+    }
+}
+
+fn signed_kind(value: RuntimeInt) -> AwbcSignedIntKind {
+    match value {
+        RuntimeInt::I8(_) => AwbcSignedIntKind::I8,
+        RuntimeInt::I16(_) => AwbcSignedIntKind::I16,
+        RuntimeInt::I32(_) => AwbcSignedIntKind::I32,
+        RuntimeInt::I64(_) => AwbcSignedIntKind::I64,
+        RuntimeInt::I128(_) => AwbcSignedIntKind::I128,
+        RuntimeInt::ISize(_) => AwbcSignedIntKind::ISize,
+    }
+}
+
+fn unsigned_kind(value: RuntimeUInt) -> AwbcUnsignedIntKind {
+    match value {
+        RuntimeUInt::U8(_) => AwbcUnsignedIntKind::U8,
+        RuntimeUInt::U16(_) => AwbcUnsignedIntKind::U16,
+        RuntimeUInt::U32(_) => AwbcUnsignedIntKind::U32,
+        RuntimeUInt::U64(_) => AwbcUnsignedIntKind::U64,
+        RuntimeUInt::U128(_) => AwbcUnsignedIntKind::U128,
+        RuntimeUInt::USize(_) => AwbcUnsignedIntKind::USize,
+    }
+}
+
+fn runtime_type_label(program: &AwbcProgram, ty: AwbcTypeId) -> String {
+    program
+        .runtime_types
+        .get(ty.index())
+        .map_or_else(|| format!("type#{}", ty.0), |ty| format!("{ty:?}"))
+}
+
+fn runtime_value_type_label(value: &RuntimeValue) -> String {
+    match value {
+        RuntimeValue::Unit => "unit",
+        RuntimeValue::Bool(_) => "bool",
+        RuntimeValue::Int(_) => "int",
+        RuntimeValue::UInt(_) => "uint",
+        RuntimeValue::F32(_) => "f32",
+        RuntimeValue::F64(_) => "f64",
+        RuntimeValue::MatrixF32(_) => "matrix<f32>",
+        RuntimeValue::MatrixF64(_) => "matrix<f64>",
+        RuntimeValue::TensorF32(_) => "tensor<f32>",
+        RuntimeValue::TensorF64(_) => "tensor<f64>",
+        RuntimeValue::String(_) => "string",
+        RuntimeValue::Char(_) => "char",
+        RuntimeValue::Duration(_) => "duration",
+        RuntimeValue::EntityRef(_) => "entity",
+        RuntimeValue::Tuple(_) => "tuple",
+        RuntimeValue::Seq(_) => "sequence",
+        RuntimeValue::Record(_) => "record",
+        RuntimeValue::Variant { .. } => "variant",
+    }
+    .to_owned()
+}
+
+#[cfg(test)]
+#[allow(clippy::default_trait_access, clippy::field_reassign_with_default)]
+mod tests {
+    use super::*;
+    use crate::awbc::schema::{
+        AwbcBlock, AwbcEntry, AwbcEntryKind, AwbcFrameLayout, AwbcFrameSlot, AwbcFunction,
+        AwbcFunctionFlags, AwbcFunctionKind, AwbcSafePointKind, AwbcSignature, AwbcStringId,
+        AwbcTableRange, AwbcTerminator,
+    };
+
+    fn entry_arguments_program() -> AwbcProgram {
+        let mut program = AwbcProgram::default();
+        program.strings = vec!["a".to_owned(), "b".to_owned(), "entry".to_owned()];
+        let string_ty = AwbcTypeId(u32::try_from(program.runtime_types.len()).unwrap());
+        program.runtime_types.push(AwbcRuntimeType::String);
+        let i64_ty = AwbcTypeId(u32::try_from(program.runtime_types.len()).unwrap());
+        program
+            .runtime_types
+            .push(AwbcRuntimeType::Int(AwbcSignedIntKind::I64));
+        program.signatures.push(AwbcSignature {
+            params: vec![string_ty, i64_ty],
+            result: None,
+            effects: Default::default(),
+        });
+        program.frame_layouts.push(AwbcFrameLayout {
+            slots: vec![
+                AwbcFrameSlot {
+                    name: Some(AwbcStringId(0)),
+                    ty: string_ty,
+                    role: AwbcFrameSlotRole::Parameter,
+                    scope_depth: 0,
+                },
+                AwbcFrameSlot {
+                    name: Some(AwbcStringId(1)),
+                    ty: i64_ty,
+                    role: AwbcFrameSlotRole::Parameter,
+                    scope_depth: 0,
+                },
+            ],
+            max_scope_depth: 0,
+        });
+        program.functions.push(AwbcFunction {
+            public_id: Some(AwbcStringId(2)),
+            kind: AwbcFunctionKind::Flow,
+            signature: Default::default(),
+            frame_layout: Default::default(),
+            blocks: AwbcTableRange::new(0, 1),
+            entry_block: Default::default(),
+            flags: AwbcFunctionFlags::default(),
+        });
+        program.blocks.push(AwbcBlock {
+            owner: Default::default(),
+            instructions: AwbcTableRange::default(),
+            terminator: AwbcTerminator::Return { value: None },
+            safe_point: AwbcSafePointKind::Return,
+            source_map: None,
+        });
+        program.entries.push(AwbcEntry {
+            public_id: AwbcStringId(2),
+            kind: AwbcEntryKind::Game,
+            signature: Default::default(),
+            target: AwbcEntryTarget::Function(Default::default()),
+        });
+        program
+    }
+
+    fn binding(name: &str, value: RuntimeValue) -> RuntimeBinding {
+        RuntimeBinding {
+            name: name.to_owned(),
+            value,
+        }
+    }
+
+    #[test]
+    fn entry_arguments_accept_positional_and_named_equivalent_bindings() {
+        let program = entry_arguments_program();
+        let mut positional = FiberState::for_entry(&program, Default::default(), 0, 64).unwrap();
+        positional
+            .bind_entry_arguments(
+                &program,
+                &[
+                    binding("$0", RuntimeValue::String("value".to_owned())),
+                    binding("$1", RuntimeValue::i64(7)),
+                ],
+            )
+            .unwrap();
+        assert_eq!(
+            positional
+                .active_frame()
+                .unwrap()
+                .register(AwbcRegisterId(0)),
+            Ok(&RuntimeValue::String("value".to_owned()))
+        );
+        assert_eq!(
+            positional
+                .active_frame()
+                .unwrap()
+                .register(AwbcRegisterId(1)),
+            Ok(&RuntimeValue::i64(7))
+        );
+
+        let mut named = FiberState::for_entry(&program, Default::default(), 0, 64).unwrap();
+        named
+            .bind_entry_arguments(
+                &program,
+                &[
+                    binding("b", RuntimeValue::i64(11)),
+                    binding("a", RuntimeValue::String("named".to_owned())),
+                ],
+            )
+            .unwrap();
+        assert_eq!(
+            named.active_frame().unwrap().register(AwbcRegisterId(0)),
+            Ok(&RuntimeValue::String("named".to_owned()))
+        );
+        assert_eq!(
+            named.active_frame().unwrap().register(AwbcRegisterId(1)),
+            Ok(&RuntimeValue::i64(11))
+        );
+    }
+
+    #[test]
+    fn rejected_entry_arguments_are_transactional_and_retryable() {
+        let program = entry_arguments_program();
+        let mut fiber = FiberState::for_entry(&program, Default::default(), 0, 64).unwrap();
+        let before = fiber.clone();
+        let error = fiber
+            .bind_entry_arguments(
+                &program,
+                &[
+                    binding("a", RuntimeValue::String("ok".to_owned())),
+                    binding("b", RuntimeValue::Bool(false)),
+                ],
+            )
+            .unwrap_err();
+        assert!(matches!(error, FiberStateError::EntryArgumentType { .. }));
+        assert_eq!(fiber, before);
+
+        fiber
+            .bind_entry_arguments(
+                &program,
+                &[
+                    binding("a", RuntimeValue::String("ok".to_owned())),
+                    binding("b", RuntimeValue::i64(9)),
+                ],
+            )
+            .unwrap();
+        assert_eq!(
+            fiber.active_frame().unwrap().register(AwbcRegisterId(1)),
+            Ok(&RuntimeValue::i64(9))
+        );
+    }
+
+    #[test]
+    fn entry_arguments_reject_missing_unknown_and_duplicate_names() {
+        let program = entry_arguments_program();
+        let mut fiber = FiberState::for_entry(&program, Default::default(), 0, 64).unwrap();
+        assert!(matches!(
+            fiber.bind_entry_arguments(
+                &program,
+                &[binding("a", RuntimeValue::String("value".to_owned()))]
+            ),
+            Err(FiberStateError::EntryArgumentCount { .. })
+        ));
+        assert!(matches!(
+            fiber.bind_entry_arguments(
+                &program,
+                &[
+                    binding("a", RuntimeValue::String("value".to_owned())),
+                    binding("missing", RuntimeValue::i64(1)),
+                ]
+            ),
+            Err(FiberStateError::UnknownEntryArgument { .. })
+        ));
+        assert!(matches!(
+            fiber.bind_entry_arguments(
+                &program,
+                &[
+                    binding("a", RuntimeValue::String("value".to_owned())),
+                    binding("a", RuntimeValue::i64(1)),
+                ]
+            ),
+            Err(FiberStateError::DuplicateEntryArgument { .. })
+        ));
     }
 }

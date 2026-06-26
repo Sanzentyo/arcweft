@@ -1,10 +1,11 @@
 use super::{
-    AwaitState, ChoiceState, Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowCursor,
-    FlowEvent, FlowFiberStatus, FlowOp, FlowRuntimeId, RuntimeBinding, RuntimeDiagnostic,
-    RuntimeEvalError, RuntimeExpr, RuntimePattern, RuntimeStepInput, RuntimeStepOutput,
-    RuntimeValue, run_line_task_group_for_input, runtime_value_into_sequence_values,
+    AwaitState, ChoiceState, DialogueState, Engine, FlowControlStackEntry,
+    FlowControlStackEntryKind, FlowCursor, FlowEvent, FlowFiberStatus, FlowOp, FlowRuntimeId,
+    RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr, RuntimePattern,
+    RuntimeStepInput, RuntimeStepOutput, RuntimeValue, runtime_value_into_sequence_values,
     runtime_value_label,
 };
+use crate::line_task::progress_live_line_task_group;
 use crate::pattern::pattern_binding_capacity;
 use crate::pure::RuntimeCallBackend;
 use crate::task::{
@@ -62,19 +63,17 @@ impl Engine {
                     Ok((false, value)) => {
                         self.advance_if_needed(next_op_index);
                         self.push_ops(else_ops);
-                        output.diagnostics.push(RuntimeDiagnostic {
-                            message: format!(
-                                "let-else pattern did not match {}",
-                                runtime_value_label(&value)
-                            ),
-                        });
+                        output.diagnostics.push(RuntimeDiagnostic::new(format!(
+                            "let-else pattern did not match {}",
+                            runtime_value_label(&value)
+                        )));
                     }
                     Err(error) => self.fail_eval(error, output),
                 }
             }
             FlowOp::Dialogue { line, task_group } => {
                 output.flow_events.push(FlowEvent::DialogueLine {
-                    line,
+                    line: line.clone(),
                     bindings: self.fiber.env.bindings_snapshot(),
                 });
                 let Some(group) = self.plan.line_task_groups.get(task_group) else {
@@ -82,19 +81,26 @@ impl Engine {
                         FlowFiberStatus::Failed(format!("missing line task group {task_group}"));
                     return;
                 };
+                let mut started_nodes = std::collections::BTreeSet::new();
                 self.merge_step_output(
-                    run_line_task_group_for_input(group, input),
+                    progress_live_line_task_group(group, input, &mut started_nodes),
                     output,
                     pure_backend,
                 );
                 if !self.apply_control_effects(output) {
-                    self.advance_if_needed(next_op_index);
+                    self.fiber.status = FlowFiberStatus::Dialogue(DialogueState {
+                        line,
+                        task_group,
+                        resume: self.resume_cursor(next_op_index),
+                        started_nodes,
+                    });
                 }
             }
             FlowOp::Choice { id, options } => {
-                output
-                    .flow_events
-                    .push(FlowEvent::ChoicePresented { id: id.clone() });
+                output.flow_events.push(FlowEvent::ChoicePresented {
+                    id: id.clone(),
+                    options: options.clone(),
+                });
                 self.fiber.status = FlowFiberStatus::Choice(ChoiceState {
                     id,
                     options,

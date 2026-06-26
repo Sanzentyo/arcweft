@@ -42,17 +42,35 @@ fn engine_steps_flow_ops_and_applies_goto() {
         [FlowEvent::DialogueLine { .. }]
     ));
 
-    let second = super::runtime_step(&mut engine, RuntimeStepInput::default());
+    let blocked = super::runtime_step(&mut engine, RuntimeStepInput::default());
+    assert!(blocked.flow_events.is_empty());
+    assert!(blocked.effects.line.is_empty());
+    assert!(matches!(
+        engine.fiber().status,
+        FlowFiberStatus::Dialogue(_)
+    ));
+
+    let resumed = super::runtime_step(
+        &mut engine,
+        RuntimeStepInput {
+            input_events: vec![super::input_event("advance", Some("say.opening.001"))],
+            ..RuntimeStepInput::default()
+        },
+    );
+    assert!(resumed.flow_events.is_empty());
+    assert!(matches!(engine.fiber().status, FlowFiberStatus::Running));
+
+    let goto = super::runtime_step(&mut engine, RuntimeStepInput::default());
     assert_eq!(
-        second.flow_events,
+        goto.flow_events,
         vec![FlowEvent::Goto {
             target: FlowRuntimeId("flow.next".to_owned())
         }]
     );
 
-    let third = super::runtime_step(&mut engine, RuntimeStepInput::default());
+    let returned = super::runtime_step(&mut engine, RuntimeStepInput::default());
     assert_eq!(
-        third.flow_events,
+        returned.flow_events,
         vec![FlowEvent::Return {
             value: "Ok(FlowExit::Done)".to_owned()
         }]
@@ -1232,7 +1250,7 @@ fn engine_waits_for_choice_input() {
                 id: FlowRuntimeId("flow.opening".to_owned()),
                 ops: vec![FlowOp::Choice {
                     id: Some("choice.opening".to_owned()),
-                    options: vec![option],
+                    options: vec![option.clone()],
                 }],
             },
             RuntimeFlow {
@@ -1249,7 +1267,8 @@ fn engine_waits_for_choice_input() {
     assert_eq!(
         presented.flow_events,
         vec![FlowEvent::ChoicePresented {
-            id: Some("choice.opening".to_owned())
+            id: Some("choice.opening".to_owned()),
+            options: vec![option],
         }]
     );
     assert!(matches!(engine.fiber().status, FlowFiberStatus::Choice(_)));

@@ -87,9 +87,9 @@ impl Engine {
     }
 
     fn fail_aot_linear_precondition(&mut self, message: &str, output: &mut RuntimeStepOutput) {
-        output.diagnostics.push(super::RuntimeDiagnostic {
-            message: message.to_owned(),
-        });
+        output
+            .diagnostics
+            .push(super::RuntimeDiagnostic::new(message.to_owned()));
         self.fiber.status = FlowFiberStatus::Failed(message.to_owned());
     }
 

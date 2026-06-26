@@ -183,6 +183,7 @@ fn run_route_flow(
             body: message.clone(),
         },
         FlowFiberStatus::Running
+        | FlowFiberStatus::Dialogue(_)
         | FlowFiberStatus::Waiting(_)
         | FlowFiberStatus::WaitingMany(_)
         | FlowFiberStatus::Choice(_) => NativeHttpResponse {

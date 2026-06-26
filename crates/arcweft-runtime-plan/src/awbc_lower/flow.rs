@@ -5,12 +5,126 @@ use crate::awbc_lower::line::AwbcLineLowerer;
 use crate::awbc_lower::pattern::lower_pattern;
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
-    AwbcBindMode, AwbcBlock, AwbcChoiceId, AwbcChoiceOption, AwbcFunction, AwbcFunctionFlags,
-    AwbcFunctionId, AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId,
-    AwbcLineTaskGroupId, AwbcRegisterId, AwbcSafePointKind, AwbcScopeId, AwbcTableRange,
-    AwbcTerminator,
+    AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption, AwbcFrameLayoutId,
+    AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcInstruction,
+    AwbcIntrinsic, AwbcIntrinsicId, AwbcLineTaskGroupId, AwbcRegisterId, AwbcResumePoint,
+    AwbcResumePointId, AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator,
 };
 use arcweft_core::plan::{ChoiceRuntimeOption, FlowOp, RuntimeFlow, RuntimeMatchArm, RuntimePlan};
+
+/// Builds one contiguous flow body while allowing host-visible suspension
+/// terminators to split the instruction stream into verified resume blocks.
+struct FlowBodyBuilder {
+    owner: AwbcFunctionId,
+    block_start: u32,
+    instruction_start: u32,
+    resume_points: Vec<AwbcResumePointId>,
+    terminated: bool,
+    returns_value: bool,
+}
+
+impl FlowBodyBuilder {
+    fn new(inventory: &AwbcInventory, owner: AwbcFunctionId) -> Self {
+        Self {
+            owner,
+            block_start: table_index(inventory.program.blocks.len()),
+            instruction_start: table_index(inventory.program.instructions.len()),
+            resume_points: Vec::new(),
+            terminated: false,
+            returns_value: false,
+        }
+    }
+
+    fn suspend(
+        &mut self,
+        inventory: &mut AwbcInventory,
+        kind: AwbcSafePointKind,
+        terminator: impl FnOnce(AwbcResumePointId) -> AwbcTerminator,
+    ) {
+        if self.terminated {
+            return;
+        }
+        let current_block = AwbcBlockId(table_index(inventory.program.blocks.len()));
+        let next_block = AwbcBlockId(current_block.0.saturating_add(1));
+        let resume = inventory.push_resume_point(AwbcResumePoint {
+            function: self.owner,
+            block: next_block,
+            frame_layout: AwbcFrameLayoutId::default(),
+            kind,
+        });
+        let instruction_len =
+            table_range_len(self.instruction_start, inventory.program.instructions.len());
+        let safe_point = self.current_block_safe_point(inventory, kind);
+        inventory.push_block(AwbcBlock {
+            owner: self.owner,
+            instructions: AwbcTableRange::new(self.instruction_start, instruction_len),
+            terminator: terminator(resume),
+            safe_point,
+            source_map: None,
+        });
+        self.instruction_start = table_index(inventory.program.instructions.len());
+        self.resume_points.push(resume);
+    }
+
+    fn terminate(
+        &mut self,
+        inventory: &mut AwbcInventory,
+        terminator: AwbcTerminator,
+        safe_point: AwbcSafePointKind,
+    ) {
+        if self.terminated {
+            return;
+        }
+        self.returns_value |= matches!(terminator, AwbcTerminator::Return { value: Some(_) });
+        let instruction_len =
+            table_range_len(self.instruction_start, inventory.program.instructions.len());
+        let safe_point = self.current_block_safe_point(inventory, safe_point);
+        inventory.push_block(AwbcBlock {
+            owner: self.owner,
+            instructions: AwbcTableRange::new(self.instruction_start, instruction_len),
+            terminator,
+            safe_point,
+            source_map: None,
+        });
+        self.terminated = true;
+    }
+
+    fn current_block_safe_point(
+        &self,
+        inventory: &AwbcInventory,
+        safe_point: AwbcSafePointKind,
+    ) -> AwbcSafePointKind {
+        if table_index(inventory.program.blocks.len()) == self.block_start {
+            AwbcSafePointKind::FlowEntry
+        } else {
+            safe_point
+        }
+    }
+
+    fn finish(mut self, inventory: &mut AwbcInventory) -> FlowBody {
+        if !self.terminated {
+            self.terminate(
+                inventory,
+                AwbcTerminator::Return { value: None },
+                AwbcSafePointKind::Return,
+            );
+        }
+        let block_len = table_range_len(self.block_start, inventory.program.blocks.len());
+        FlowBody {
+            entry_block: AwbcBlockId(self.block_start),
+            blocks: AwbcTableRange::new(self.block_start, block_len),
+            resume_points: self.resume_points,
+            returns_value: self.returns_value,
+        }
+    }
+}
+
+struct FlowBody {
+    entry_block: AwbcBlockId,
+    blocks: AwbcTableRange,
+    resume_points: Vec<AwbcResumePointId>,
+    returns_value: bool,
+}
 
 /// Lowers all flow entry functions and public entries.
 pub struct AwbcFlowLowerer<'a> {
@@ -33,6 +147,15 @@ impl<'a> AwbcFlowLowerer<'a> {
             self.inventory
                 .intern_content_unit(&public_id, Some(group_id));
         }
+
+        let function_start = table_index(self.inventory.program.functions.len());
+        for (index, flow) in plan.flows.iter().enumerate() {
+            let offset = u32::try_from(index).unwrap_or(u32::MAX);
+            self.inventory.reserve_function_name(
+                &flow.id.0,
+                AwbcFunctionId(function_start.saturating_add(offset)),
+            );
+        }
         for flow in &plan.flows {
             self.lower_flow(flow);
         }
@@ -46,47 +169,68 @@ impl<'a> AwbcFlowLowerer<'a> {
 
     fn lower_flow(&mut self, flow: &RuntimeFlow) -> AwbcFunctionId {
         let mut frame = FrameBuilder::new();
-        let entry_owner = AwbcFunctionId(table_index(self.inventory.program.functions.len()));
-        let instruction_start = table_index(self.inventory.program.instructions.len());
-        self.lower_ops(&mut frame, &flow.ops, &flow.id.0);
-        let instruction_len =
-            table_range_len(instruction_start, self.inventory.program.instructions.len());
-        let block = self.inventory.push_block(AwbcBlock {
-            owner: entry_owner,
-            instructions: AwbcTableRange::new(instruction_start, instruction_len),
-            terminator: AwbcTerminator::Return { value: None },
-            safe_point: AwbcSafePointKind::FlowEntry,
-            source_map: None,
-        });
+        let owner = self
+            .inventory
+            .function_by_name(&flow.id.0)
+            .unwrap_or_else(|| AwbcFunctionId(table_index(self.inventory.program.functions.len())));
+        let mut body = FlowBodyBuilder::new(self.inventory, owner);
+        self.lower_ops(&mut frame, &mut body, &flow.ops, &flow.id.0);
+        let body = body.finish(self.inventory);
         let layout = self
             .inventory
             .intern_frame_layout(format!("flow:{}", flow.id.0), frame.finish());
-        let signature = self.inventory.intern_unit_signature();
+        for resume in body.resume_points {
+            if let Some(point) = self.inventory.program.resume_points.get_mut(resume.index()) {
+                point.frame_layout = layout;
+            }
+        }
+        let signature = if body.returns_value {
+            self.inventory.intern_dynamic_value_signature(0)
+        } else {
+            self.inventory.intern_unit_signature()
+        };
         let public_id = self.inventory.intern_string(&flow.id.0);
-        self.inventory.push_function(
+        let function = self.inventory.push_function(
             Some(flow.id.0.as_str()),
             AwbcFunction {
                 public_id: Some(public_id),
                 kind: AwbcFunctionKind::Flow,
                 signature,
                 frame_layout: layout,
-                blocks: AwbcTableRange::new(block.0, 1),
-                entry_block: block,
+                blocks: body.blocks,
+                entry_block: body.entry_block,
                 flags: AwbcFunctionFlags(
                     AwbcFunctionFlags::MAY_SUSPEND | AwbcFunctionFlags::DETERMINISTIC,
                 ),
             },
-        )
+        );
+        debug_assert_eq!(function, owner);
+        function
     }
 
-    fn lower_ops(&mut self, frame: &mut FrameBuilder, ops: &[FlowOp], path: &str) {
+    fn lower_ops(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        ops: &[FlowOp],
+        path: &str,
+    ) {
         for (index, op) in ops.iter().enumerate() {
-            self.lower_op(frame, op, &format!("{path}.{index}"));
+            if body.terminated {
+                break;
+            }
+            self.lower_op(frame, body, op, &format!("{path}.{index}"));
         }
     }
 
     #[allow(clippy::too_many_lines)]
-    fn lower_op(&mut self, frame: &mut FrameBuilder, op: &FlowOp, path: &str) {
+    fn lower_op(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        op: &FlowOp,
+        path: &str,
+    ) {
         match op {
             FlowOp::Bind(bindings) => {
                 for binding in bindings {
@@ -123,73 +267,93 @@ impl<'a> AwbcFlowLowerer<'a> {
                         pattern: pattern_id,
                         value,
                     });
-                self.lower_ops(frame, else_ops, &format!("{path}.else"));
+                self.lower_ops(frame, body, else_ops, &format!("{path}.else"));
             }
             FlowOp::Dialogue { line, task_group } => {
                 let group = AwbcLineTaskGroupId(table_index(*task_group));
                 let content = AwbcLineLowerer::new(self.inventory).content_for_line(line, group);
-                self.inventory
-                    .push_instruction(AwbcInstruction::EnsureContent { content });
-                self.push_intrinsic_call("flow.dialogue.safe_point", Vec::new());
+                body.suspend(self.inventory, AwbcSafePointKind::Dialogue, |resume| {
+                    AwbcTerminator::Dialogue {
+                        content,
+                        line_task_group: group,
+                        resume,
+                    }
+                });
             }
             FlowOp::Choice { id, options } => {
                 let choice = self.lower_choice(id.as_deref(), options);
-                self.push_intrinsic_call(&format!("flow.choice#{}", choice.0), Vec::new());
+                let dst = frame.temp(self.inventory.string_ty());
+                body.suspend(self.inventory, AwbcSafePointKind::Choice, |resume| {
+                    AwbcTerminator::Choice {
+                        choice,
+                        dst,
+                        resume,
+                    }
+                });
             }
             FlowOp::Await {
                 binding,
                 target,
                 pending,
             } => {
-                for effect in pending {
-                    let effect = self.inventory.intern_effect(effect);
-                    self.inventory
-                        .push_instruction(AwbcInstruction::EmitEffect {
-                            effect,
-                            args: Vec::new(),
-                        });
-                }
-                let task = self
-                    .inventory
-                    .intern_host_task(&target.task.0, &target.request);
-                let dst = frame.temp(self.inventory.dynamic_ty());
+                self.lower_pending_effects(pending);
+                let task = self.inventory.intern_host_task(
+                    &target.need.0,
+                    &target.task.0,
+                    &target.request,
+                );
+                let args = target
+                    .request
+                    .args
+                    .iter()
+                    .map(|arg| AwbcExprLowerer::new(self.inventory, frame, path).lower(arg.value()))
+                    .collect::<Vec<_>>();
+                let task_handle = frame.temp(self.inventory.dynamic_ty());
                 self.inventory.push_instruction(AwbcInstruction::StartTask {
-                    dst,
+                    dst: task_handle,
                     plan: task,
-                    args: Vec::new(),
+                    args,
                 });
-                if let Some(binding) = binding {
-                    let pattern = lower_pattern(self.inventory, frame, binding);
-                    self.inventory
-                        .push_instruction(AwbcInstruction::BindPattern {
-                            pattern,
-                            value: dst,
-                            mode: AwbcBindMode::Declare,
-                        });
-                }
+                let binding = binding
+                    .as_ref()
+                    .map(|binding| lower_pattern(self.inventory, frame, binding));
+                body.suspend(self.inventory, AwbcSafePointKind::Await, |resume| {
+                    AwbcTerminator::Await {
+                        task: task_handle,
+                        binding,
+                        resume,
+                    }
+                });
             }
             FlowOp::AwaitMany {
                 binding,
                 target,
                 pending,
             } => {
-                for effect in pending {
-                    let effect = self.inventory.intern_effect(effect);
-                    self.inventory
-                        .push_instruction(AwbcInstruction::EmitEffect {
-                            effect,
-                            args: Vec::new(),
-                        });
-                }
+                self.lower_pending_effects(pending);
                 let source =
                     AwbcExprLowerer::new(self.inventory, frame, path).lower(&target.source);
-                let task = self
-                    .inventory
-                    .intern_host_task(&target.task.0, &target.request);
-                let _binding = binding
+                let task = self.inventory.intern_host_task(
+                    &target.need.0,
+                    &target.task.0,
+                    &target.request,
+                );
+                let item_name = self.inventory.intern_string(&target.item_binding);
+                let item_binding =
+                    frame.local(&target.item_binding, item_name, self.inventory.dynamic_ty());
+                self.inventory
+                    .set_await_many_policy(task, item_binding, target.limit);
+                let binding = binding
                     .as_ref()
                     .map(|binding| lower_pattern(self.inventory, frame, binding));
-                self.push_intrinsic_call(&format!("await_many#{}", task.0), vec![source]);
+                body.suspend(self.inventory, AwbcSafePointKind::AwaitMany, |resume| {
+                    AwbcTerminator::AwaitMany {
+                        plan: task,
+                        source,
+                        binding,
+                        resume,
+                    }
+                });
             }
             FlowOp::If {
                 condition,
@@ -200,10 +364,12 @@ impl<'a> AwbcFlowLowerer<'a> {
                 let scope = frame.enter_scope();
                 self.inventory
                     .push_instruction(AwbcInstruction::EnterScope { scope });
-                self.lower_ops(frame, then_ops, &format!("{path}.then"));
-                self.lower_ops(frame, else_ops, &format!("{path}.else"));
-                self.inventory
-                    .push_instruction(AwbcInstruction::ExitScope { scope });
+                self.lower_ops(frame, body, then_ops, &format!("{path}.then"));
+                self.lower_ops(frame, body, else_ops, &format!("{path}.else"));
+                if !body.terminated {
+                    self.inventory
+                        .push_instruction(AwbcInstruction::ExitScope { scope });
+                }
                 frame.exit_scope();
             }
             FlowOp::IfLet {
@@ -225,33 +391,46 @@ impl<'a> AwbcFlowLowerer<'a> {
                 if let Some(guard) = guard {
                     let _ = AwbcExprLowerer::new(self.inventory, frame, path).lower(guard);
                 }
-                self.lower_ops(frame, then_ops, &format!("{path}.then"));
-                self.lower_ops(frame, else_ops, &format!("{path}.else"));
+                self.lower_ops(frame, body, then_ops, &format!("{path}.then"));
+                self.lower_ops(frame, body, else_ops, &format!("{path}.else"));
             }
-            FlowOp::Match { scrutinee, arms } => self.lower_match(frame, scrutinee, arms, path),
-            FlowOp::Loop { body } | FlowOp::LetLoop { body, .. } | FlowOp::Thread { body, .. } => {
+            FlowOp::Match { scrutinee, arms } => {
+                self.lower_match(frame, body, scrutinee, arms, path);
+            }
+            FlowOp::Loop { body: ops }
+            | FlowOp::LetLoop { body: ops, .. }
+            | FlowOp::Thread { body: ops, .. } => {
                 let scope = frame.enter_scope();
                 self.inventory
                     .push_instruction(AwbcInstruction::EnterScope { scope });
-                self.lower_ops(frame, body, &format!("{path}.body"));
-                self.push_intrinsic_call("flow.loop.backedge", Vec::new());
-                self.inventory
-                    .push_instruction(AwbcInstruction::ExitScope { scope });
+                self.lower_ops(frame, body, ops, &format!("{path}.body"));
+                if !body.terminated {
+                    body.suspend(self.inventory, AwbcSafePointKind::BudgetYield, |resume| {
+                        AwbcTerminator::BudgetYield { resume }
+                    });
+                    self.inventory
+                        .push_instruction(AwbcInstruction::ExitScope { scope });
+                }
                 frame.exit_scope();
             }
-            FlowOp::LoopNext { body }
-            | FlowOp::WhileNext { body, .. }
-            | FlowOp::WhileLetNext { body, .. }
-            | FlowOp::ForNext { body, .. } => self.lower_ops(frame, body, &format!("{path}.next")),
-            FlowOp::While { condition, body } => {
+            FlowOp::LoopNext { body: ops }
+            | FlowOp::WhileNext { body: ops, .. }
+            | FlowOp::WhileLetNext { body: ops, .. }
+            | FlowOp::ForNext { body: ops, .. } => {
+                self.lower_ops(frame, body, ops, &format!("{path}.next"));
+            }
+            FlowOp::While {
+                condition,
+                body: ops,
+            } => {
                 let _ = AwbcExprLowerer::new(self.inventory, frame, path).lower(condition);
-                self.lower_ops(frame, body, &format!("{path}.body"));
+                self.lower_ops(frame, body, ops, &format!("{path}.body"));
             }
             FlowOp::WhileLet {
                 pattern,
                 expr,
                 guard,
-                body,
+                body: ops,
             } => {
                 let value = AwbcExprLowerer::new(self.inventory, frame, path).lower(expr);
                 let pattern = lower_pattern(self.inventory, frame, pattern);
@@ -265,26 +444,28 @@ impl<'a> AwbcFlowLowerer<'a> {
                 if let Some(guard) = guard {
                     let _ = AwbcExprLowerer::new(self.inventory, frame, path).lower(guard);
                 }
-                self.lower_ops(frame, body, &format!("{path}.body"));
+                self.lower_ops(frame, body, ops, &format!("{path}.body"));
             }
             FlowOp::For {
                 pattern,
                 source,
-                body,
+                body: ops,
             } => {
                 let source = AwbcExprLowerer::new(self.inventory, frame, path).lower(source);
                 let pattern = lower_pattern(self.inventory, frame, pattern);
                 self.push_intrinsic_call("flow.for.iter", vec![source]);
                 let _ = pattern;
-                self.lower_ops(frame, body, &format!("{path}.body"));
+                self.lower_ops(frame, body, ops, &format!("{path}.body"));
             }
             FlowOp::Scope(ops) => {
                 let scope = frame.enter_scope();
                 self.inventory
                     .push_instruction(AwbcInstruction::EnterScope { scope });
-                self.lower_ops(frame, ops, &format!("{path}.scope"));
-                self.inventory
-                    .push_instruction(AwbcInstruction::ExitScope { scope });
+                self.lower_ops(frame, body, ops, &format!("{path}.scope"));
+                if !body.terminated {
+                    self.inventory
+                        .push_instruction(AwbcInstruction::ExitScope { scope });
+                }
                 frame.exit_scope();
             }
             FlowOp::LetScope {
@@ -292,15 +473,17 @@ impl<'a> AwbcFlowLowerer<'a> {
                 ops,
                 value,
             } => {
-                self.lower_ops(frame, ops, &format!("{path}.let_scope"));
-                let value = AwbcExprLowerer::new(self.inventory, frame, path).lower(value);
-                let pattern = lower_pattern(self.inventory, frame, pattern);
-                self.inventory
-                    .push_instruction(AwbcInstruction::BindPattern {
-                        pattern,
-                        value,
-                        mode: AwbcBindMode::Declare,
-                    });
+                self.lower_ops(frame, body, ops, &format!("{path}.let_scope"));
+                if !body.terminated {
+                    let value = AwbcExprLowerer::new(self.inventory, frame, path).lower(value);
+                    let pattern = lower_pattern(self.inventory, frame, pattern);
+                    self.inventory
+                        .push_instruction(AwbcInstruction::BindPattern {
+                            pattern,
+                            value,
+                            mode: AwbcBindMode::Declare,
+                        });
+                }
             }
             FlowOp::Break(value) => {
                 if let Some(value) = value {
@@ -311,18 +494,39 @@ impl<'a> AwbcFlowLowerer<'a> {
             }
             FlowOp::ReturnExpr(value) => {
                 let value = AwbcExprLowerer::new(self.inventory, frame, path).lower(value);
-                let _ = value;
-                self.push_intrinsic_call("flow.return_expr", Vec::new());
+                body.terminate(
+                    self.inventory,
+                    AwbcTerminator::Return { value: Some(value) },
+                    AwbcSafePointKind::Return,
+                );
             }
             FlowOp::Continue => {
                 self.push_intrinsic_call("flow.continue", Vec::new());
             }
             FlowOp::Goto(target) => {
-                self.push_intrinsic_call(&format!("goto.static:{}", target.0), Vec::new());
+                if let Some(function) = self.inventory.function_by_name(&target.0) {
+                    body.terminate(
+                        self.inventory,
+                        AwbcTerminator::GotoStatic {
+                            function,
+                            args: Vec::new(),
+                        },
+                        AwbcSafePointKind::CallableBoundary,
+                    );
+                } else {
+                    self.push_intrinsic_call(&format!("goto.static:{}", target.0), Vec::new());
+                }
             }
             FlowOp::GotoExpr(expr) => {
                 let target = AwbcExprLowerer::new(self.inventory, frame, path).lower(expr);
-                self.push_intrinsic_call("goto.dynamic", vec![target]);
+                body.terminate(
+                    self.inventory,
+                    AwbcTerminator::GotoDynamic {
+                        target,
+                        args: Vec::new(),
+                    },
+                    AwbcSafePointKind::CallableBoundary,
+                );
             }
             FlowOp::Return(value) => {
                 let value = self.inventory.constant_string(value);
@@ -331,6 +535,11 @@ impl<'a> AwbcFlowLowerer<'a> {
                     dst,
                     constant: value,
                 });
+                body.terminate(
+                    self.inventory,
+                    AwbcTerminator::Return { value: Some(dst) },
+                    AwbcSafePointKind::Return,
+                );
             }
             FlowOp::Effect(effect) => {
                 let effect = self.inventory.intern_effect(effect);
@@ -354,6 +563,17 @@ impl<'a> AwbcFlowLowerer<'a> {
             FlowOp::Noop => {
                 self.inventory.push_instruction(AwbcInstruction::Nop);
             }
+        }
+    }
+
+    fn lower_pending_effects(&mut self, pending: &[arcweft_core::effect::LineEffectRequest]) {
+        for effect in pending {
+            let effect = self.inventory.intern_effect(effect);
+            self.inventory
+                .push_instruction(AwbcInstruction::EmitEffect {
+                    effect,
+                    args: Vec::new(),
+                });
         }
     }
 
@@ -390,6 +610,7 @@ impl<'a> AwbcFlowLowerer<'a> {
     fn lower_match(
         &mut self,
         frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
         scrutinee: &arcweft_core::value::RuntimeExpr,
         arms: &[RuntimeMatchArm],
         path: &str,
@@ -407,7 +628,10 @@ impl<'a> AwbcFlowLowerer<'a> {
             if let Some(guard) = &arm.guard {
                 let _ = AwbcExprLowerer::new(self.inventory, frame, path).lower(guard);
             }
-            self.lower_ops(frame, &arm.ops, &format!("{path}.arm"));
+            self.lower_ops(frame, body, &arm.ops, &format!("{path}.arm"));
+            if body.terminated {
+                break;
+            }
         }
     }
 

@@ -77,7 +77,7 @@ pub struct ArcweftRuntimeExecutor {
 enum ArcweftRuntimeExecutorInner {
     StructuredVm(BytecodeVmExecutor),
     StructuredAot(AotExecutor),
-    AwbcProduct(AwbcProductExecutor),
+    AwbcProduct(Box<AwbcProductExecutor>),
 }
 
 impl VmExecutor {
@@ -281,7 +281,7 @@ impl ArcweftRuntimeExecutor {
     ) -> Result<Self, AwbcProductStepBuildError> {
         let vm = AwbcProductStepExecutor::for_entry(program, entry, 64)?;
         Ok(Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(
-            AwbcProductExecutor { vm },
+            Box::new(AwbcProductExecutor { vm }),
         )))
     }
 
@@ -376,7 +376,14 @@ impl ArcweftRuntimeExecutor {
                     options,
                     pure_backend,
                 ),
-            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.step(input, options),
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
+                executor.vm.step_with_root_bindings_and_pure_backend(
+                    input,
+                    root_bindings,
+                    options,
+                    pure_backend,
+                )
+            }
         }
     }
 

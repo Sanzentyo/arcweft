@@ -9,11 +9,12 @@ use super::fiber::{
     FiberSuspensionReason, FiberTerminalValue, FiberTrap,
 };
 use super::schema::{
-    AwbcBinaryOp, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcContentUnitId, AwbcEffectPlanId,
-    AwbcFunctionId, AwbcInstruction, AwbcInstructionId, AwbcIntrinsicId, AwbcOpcode, AwbcPattern,
-    AwbcPatternId, AwbcProgram, AwbcPureHelperId, AwbcRegisterId, AwbcResumePointId,
-    AwbcSignedIntKind, AwbcSourcePlanId, AwbcStreamPlanId, AwbcStringId, AwbcTerminator,
-    AwbcTrapCode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
+    AwbcBinaryOp, AwbcBlockId, AwbcCodeLocation, AwbcConstant, AwbcConstantId, AwbcContentUnitId,
+    AwbcEffectPlanId, AwbcFunctionId, AwbcInstruction, AwbcInstructionId, AwbcIntrinsicId,
+    AwbcOpcode, AwbcPattern, AwbcPatternId, AwbcProgram, AwbcPureHelperId, AwbcRegisterId,
+    AwbcResumePointId, AwbcSignedIntKind, AwbcSourceMapId, AwbcSourcePlanId, AwbcStreamPlanId,
+    AwbcStringId, AwbcTaskPlanId, AwbcTerminator, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
+    AwbcUnsignedIntKind,
 };
 use crate::time::LogicalDuration;
 use crate::value::{
@@ -50,8 +51,21 @@ pub enum VmObservation {
         offset: u32,
         opcode: AwbcOpcode,
     },
-    Effect(AwbcEffectPlanId),
+    Effect {
+        effect: AwbcEffectPlanId,
+        args: Vec<RuntimeValue>,
+    },
     EnsureContent(AwbcContentUnitId),
+    TaskStarted {
+        plan: AwbcTaskPlanId,
+        handle: RuntimeValue,
+        args: Vec<RuntimeValue>,
+    },
+    FiberSpawned {
+        function: AwbcFunctionId,
+        handle: Option<RuntimeValue>,
+        args: Vec<RuntimeValue>,
+    },
     StreamYield {
         stream: AwbcStreamPlanId,
         value: RuntimeValue,
@@ -145,6 +159,7 @@ pub fn step(
     step_with_host(program, fiber, options, &mut host)
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn step_with_host(
     program: &AwbcProgram,
     fiber: &mut FiberState,
@@ -187,12 +202,65 @@ pub fn step_with_host(
                 offset: cursor.instruction_offset,
                 opcode: instruction.opcode(),
             });
-            execute_instruction(program, fiber, host, instruction, &mut observations)?;
+            let source_map =
+                source_map_for_location(program, AwbcCodeLocation::Instruction(instruction_id))
+                    .or(block.source_map);
+            if let Err(error) = execute_instruction(
+                program,
+                fiber,
+                host,
+                instruction,
+                source_map,
+                &mut observations,
+            ) {
+                if let Some(code) = error.runtime_trap_code() {
+                    let trap = mark_runtime_error_trap(
+                        fiber,
+                        code,
+                        error.to_string(),
+                        source_map,
+                        &mut observations,
+                    );
+                    executed = executed.saturating_add(1);
+                    return Ok(VmStepOutput {
+                        executed,
+                        observations,
+                        exit: VmExit::Trapped(trap),
+                    });
+                }
+                return Err(error);
+            }
             fiber.cursor.instruction_offset = fiber.cursor.instruction_offset.saturating_add(1);
             executed = executed.saturating_add(1);
             continue;
         }
-        let exit = execute_terminator(program, fiber, host, &block.terminator, &mut observations)?;
+        let source_map = block
+            .source_map
+            .or_else(|| source_map_for_location(program, AwbcCodeLocation::Block(cursor.block)));
+        let exit = match execute_terminator(
+            program,
+            fiber,
+            host,
+            &block.terminator,
+            source_map,
+            &mut observations,
+        ) {
+            Ok(exit) => exit,
+            Err(error) => {
+                if let Some(code) = error.runtime_trap_code() {
+                    let trap = mark_runtime_error_trap(
+                        fiber,
+                        code,
+                        error.to_string(),
+                        source_map,
+                        &mut observations,
+                    );
+                    VmExit::Trapped(trap)
+                } else {
+                    return Err(error);
+                }
+            }
+        };
         executed = executed.saturating_add(1);
         if !matches!(exit, VmExit::Running) {
             return Ok(VmStepOutput {
@@ -215,6 +283,7 @@ fn execute_instruction(
     fiber: &mut FiberState,
     host: &mut impl VmHost,
     instruction: &AwbcInstruction,
+    source_map: Option<AwbcSourceMapId>,
     observations: &mut Vec<VmObservation>,
 ) -> Result<(), VmError> {
     match instruction {
@@ -310,10 +379,10 @@ fn execute_instruction(
                 };
                 if index >= sequence.len() {
                     trap(
-                        program,
                         fiber,
                         AwbcTrapCode::InvalidIndex,
                         Some("sequence index out of bounds"),
+                        source_map,
                         observations,
                     );
                     return Ok(());
@@ -479,20 +548,49 @@ fn execute_instruction(
         AwbcInstruction::EnsureContent { content } => {
             observations.push(VmObservation::EnsureContent(*content));
         }
-        AwbcInstruction::EmitEffect { effect, .. } => {
-            observations.push(VmObservation::Effect(*effect));
+        AwbcInstruction::EmitEffect { effect, args } => {
+            let args = register_values(fiber, args)?;
+            observations.push(VmObservation::Effect {
+                effect: *effect,
+                args,
+            });
         }
-        AwbcInstruction::StartTask { dst, plan, .. } => {
+        AwbcInstruction::StartTask { dst, plan, args } => {
+            let args = register_values(fiber, args)?;
+            let handle = RuntimeValue::String(
+                program
+                    .task_plans
+                    .get(plan.index())
+                    .and_then(|plan| program.strings.get(plan.public_id.index()))
+                    .cloned()
+                    .unwrap_or_else(|| format!("awbc.task.{}", plan.0)),
+            );
             fiber
                 .active_frame_mut()?
-                .set_register(*dst, RuntimeValue::String(format!("task#{}", plan.0)))?;
+                .set_register(*dst, handle.clone())?;
+            observations.push(VmObservation::TaskStarted {
+                plan: *plan,
+                handle,
+                args,
+            });
         }
-        AwbcInstruction::SpawnFiber { dst, function, .. } => {
-            if let Some(dst) = dst {
+        AwbcInstruction::SpawnFiber {
+            dst,
+            function,
+            args,
+        } => {
+            let args = register_values(fiber, args)?;
+            let handle = dst.map(|_| RuntimeValue::String(format!("awbc.fiber.{}", function.0)));
+            if let (Some(dst), Some(handle)) = (dst, handle.as_ref()) {
                 fiber
                     .active_frame_mut()?
-                    .set_register(*dst, RuntimeValue::String(format!("fiber#{}", function.0)))?;
+                    .set_register(*dst, handle.clone())?;
             }
+            observations.push(VmObservation::FiberSpawned {
+                function: *function,
+                handle,
+                args,
+            });
         }
         AwbcInstruction::StreamYield { stream, value } => {
             let value = register(fiber, *value)?.clone();
@@ -506,17 +604,19 @@ fn execute_instruction(
             }
         }
         AwbcInstruction::StreamClose { stream } => {
-            observations.push(VmObservation::StreamClose(*stream));
-            if let Some(state) = fiber.streams.iter_mut().find(|state| state.plan == *stream) {
+            if let Some(state) = fiber.streams.iter_mut().find(|state| state.plan == *stream)
+                && !state.closed
+            {
                 state.closed = true;
-                state.queue.clear();
+                observations.push(VmObservation::StreamClose(*stream));
             }
         }
         AwbcInstruction::SourceClose { source } => {
-            observations.push(VmObservation::SourceClose(*source));
-            if let Some(state) = fiber.sources.iter_mut().find(|state| state.plan == *source) {
+            if let Some(state) = fiber.sources.iter_mut().find(|state| state.plan == *source)
+                && !state.closed
+            {
                 state.closed = true;
-                state.queue.clear();
+                observations.push(VmObservation::SourceClose(*source));
             }
         }
     }
@@ -532,6 +632,7 @@ fn execute_terminator(
     fiber: &mut FiberState,
     _host: &mut impl VmHost,
     terminator: &AwbcTerminator,
+    source_map: Option<AwbcSourceMapId>,
     observations: &mut Vec<VmObservation>,
 ) -> Result<VmExit, VmError> {
     match terminator {
@@ -544,7 +645,9 @@ fn execute_terminator(
             then_block,
             else_block,
         } => {
-            let condition = register(fiber, *condition)?.as_bool().unwrap_or(false);
+            let condition = register(fiber, *condition)?
+                .as_bool()
+                .ok_or_else(|| VmError::Runtime("branch condition expected bool".to_owned()))?;
             jump(fiber, if condition { *then_block } else { *else_block });
             Ok(VmExit::Running)
         }
@@ -571,27 +674,46 @@ fn execute_terminator(
         }
         AwbcTerminator::CallFunction {
             function,
+            args,
             dst,
             resume,
-            ..
         } => {
-            fiber.push_call_frame(program, *function, *resume, *dst)?;
+            let args = register_values(fiber, args)?;
+            fiber.push_call_frame_with_args(program, *function, *resume, *dst, &args)?;
             Ok(VmExit::Running)
         }
-        AwbcTerminator::GotoStatic { function, .. } => {
-            let function_record = program
-                .functions
-                .get(function.index())
-                .ok_or(VmError::MissingFunction(*function))?;
-            fiber.cursor.function = *function;
-            fiber.cursor.block = function_record.entry_block;
-            fiber.cursor.instruction_offset = 0;
+        AwbcTerminator::GotoStatic { function, args } => {
+            let args = register_values(fiber, args)?;
+            fiber.replace_active_function(program, *function, &args)?;
             Ok(VmExit::Running)
         }
-        AwbcTerminator::GotoDynamic { target, .. } => Err(VmError::Runtime(format!(
-            "dynamic goto target `{}` requires host resolver",
-            runtime_value_label(register(fiber, *target)?)
-        ))),
+        AwbcTerminator::GotoDynamic { target, args } => {
+            let target_value = register(fiber, *target)?.clone();
+            let target = match &target_value {
+                RuntimeValue::String(target) | RuntimeValue::EntityRef(target) => program
+                    .functions
+                    .iter()
+                    .enumerate()
+                    .find_map(|(index, function)| {
+                        function
+                            .public_id
+                            .and_then(|id| program.strings.get(id.index()))
+                            .filter(|public_id| *public_id == target)
+                            .and_then(|_| u32::try_from(index).ok())
+                            .map(AwbcFunctionId)
+                    }),
+                _ => None,
+            }
+            .ok_or_else(|| {
+                VmError::Runtime(format!(
+                    "missing dynamic goto target `{}`",
+                    runtime_value_label(&target_value)
+                ))
+            })?;
+            let args = register_values(fiber, args)?;
+            fiber.replace_active_function(program, target, &args)?;
+            Ok(VmExit::Running)
+        }
         AwbcTerminator::Dialogue {
             content,
             line_task_group,
@@ -689,7 +811,7 @@ fn execute_terminator(
             let trap = FiberTrap {
                 code: *code,
                 message,
-                source_map: None,
+                source_map,
             };
             observations.push(VmObservation::Trap(trap.clone()));
             fiber.mark_trapped(trap.clone());
@@ -702,7 +824,7 @@ fn execute_terminator(
             let trap = FiberTrap {
                 code: AwbcTrapCode::InternalInvariant,
                 message: Some("unreachable AWBC block executed".to_owned()),
-                source_map: None,
+                source_map,
             };
             observations.push(VmObservation::Trap(trap.clone()));
             fiber.mark_trapped(trap.clone());
@@ -730,6 +852,16 @@ fn register(fiber: &FiberState, register: AwbcRegisterId) -> Result<&RuntimeValu
         .map_err(VmError::from)
 }
 
+fn register_values(
+    fiber: &FiberState,
+    registers: &[AwbcRegisterId],
+) -> Result<Vec<RuntimeValue>, VmError> {
+    registers
+        .iter()
+        .map(|register_id| register(fiber, *register_id).cloned())
+        .collect()
+}
+
 fn jump(fiber: &mut FiberState, block: AwbcBlockId) {
     fiber.cursor.block = block;
     fiber.cursor.instruction_offset = 0;
@@ -749,7 +881,7 @@ fn terminal_exit(fiber: &FiberState) -> VmExit {
     }
 }
 
-fn constant_value(
+pub(crate) fn constant_value(
     program: &AwbcProgram,
     constant: AwbcConstantId,
 ) -> Result<RuntimeValue, VmError> {
@@ -923,7 +1055,7 @@ fn test_pattern(
     })
 }
 
-fn bind_pattern(
+pub(crate) fn bind_pattern(
     program: &AwbcProgram,
     fiber: &mut FiberState,
     pattern: AwbcPatternId,
@@ -970,20 +1102,81 @@ fn bind_pattern(
 }
 
 fn trap(
-    program: &AwbcProgram,
     fiber: &mut FiberState,
     code: AwbcTrapCode,
     message: Option<&str>,
+    source_map: Option<AwbcSourceMapId>,
     observations: &mut Vec<VmObservation>,
 ) {
     let trap = FiberTrap {
         code,
         message: message.map(str::to_owned),
-        source_map: None,
+        source_map,
     };
     observations.push(VmObservation::Trap(trap.clone()));
     fiber.mark_trapped(trap);
-    let _ = program;
+}
+
+fn mark_runtime_error_trap(
+    fiber: &mut FiberState,
+    code: AwbcTrapCode,
+    message: String,
+    source_map: Option<AwbcSourceMapId>,
+    observations: &mut Vec<VmObservation>,
+) -> FiberTrap {
+    let trap = FiberTrap {
+        code,
+        message: Some(message),
+        source_map,
+    };
+    observations.push(VmObservation::Trap(trap.clone()));
+    fiber.mark_trapped(trap.clone());
+    trap
+}
+
+fn source_map_for_location(
+    program: &AwbcProgram,
+    location: AwbcCodeLocation,
+) -> Option<AwbcSourceMapId> {
+    program
+        .source_map
+        .iter()
+        .position(|entry| entry.location == location)
+        .and_then(|index| u32::try_from(index).ok())
+        .map(AwbcSourceMapId)
+}
+
+impl VmError {
+    fn runtime_trap_code(&self) -> Option<AwbcTrapCode> {
+        match self {
+            Self::Runtime(message) => Some(if message.contains("division by zero") {
+                AwbcTrapCode::DivisionByZero
+            } else if message.contains("pattern") {
+                AwbcTrapCode::PatternMismatch
+            } else if message.contains("dynamic goto target") {
+                AwbcTrapCode::MissingDynamicTarget
+            } else if message.contains("expected") || message.contains("type") {
+                AwbcTrapCode::TypeMismatch
+            } else {
+                AwbcTrapCode::InternalInvariant
+            }),
+            Self::Fiber(FiberStateError::RegisterOutOfBounds { .. }) => {
+                Some(AwbcTrapCode::UninitializedRegister)
+            }
+            Self::Fiber(
+                FiberStateError::ReturnValueMismatch | FiberStateError::EntryArgumentType { .. },
+            ) => Some(AwbcTrapCode::TypeMismatch),
+            Self::MissingIntrinsic(_) => Some(AwbcTrapCode::HostAbiMismatch),
+            Self::Fiber(_) => Some(AwbcTrapCode::InternalInvariant),
+            Self::MissingFunction(_)
+            | Self::MissingBlock(_)
+            | Self::MissingInstruction(_)
+            | Self::MissingConstant(_)
+            | Self::MissingString(_)
+            | Self::MissingPattern(_)
+            | Self::MissingType(_) => None,
+        }
+    }
 }
 
 fn unary_op(op: AwbcUnaryOp) -> crate::value::RuntimeUnaryOp {

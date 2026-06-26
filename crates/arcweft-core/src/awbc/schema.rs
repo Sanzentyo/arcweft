@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 /// Canonical AWBC executable ABI implemented by this schema.
 pub const AWBC_ABI_VERSION: u32 = 1;
 /// Canonical binary codec version used inside an `AWBC` product section.
-pub const AWBC_CODEC_VERSION: u16 = 1;
+pub const AWBC_CODEC_VERSION: u16 = 2;
 /// Magic at the beginning of a standalone canonical AWBC payload.
 pub const AWBC_MAGIC: [u8; 8] = *b"AWBC\r\n\x1a\n";
 
@@ -249,6 +249,7 @@ fn remap_program_strings(program: &mut AwbcProgram, remap: &[u32]) {
     }
     for task in &mut program.task_plans {
         remap_string_id(&mut task.public_id, remap);
+        remap_string_id(&mut task.need_id, remap);
         remap_string_id(&mut task.capability, remap);
         remap_string_id(&mut task.operation, remap);
         remap_string_id(&mut task.cancel_scope, remap);
@@ -1214,6 +1215,8 @@ pub enum AwbcHostCallMode {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcTaskPlan {
     pub public_id: AwbcStringId,
+    /// Stable need identifier reported at the shared runtime boundary.
+    pub need_id: AwbcStringId,
     pub capability: AwbcStringId,
     pub operation: AwbcStringId,
     pub signature: AwbcSignatureId,

@@ -219,3 +219,11 @@ pub struct RuntimePayload(pub RuntimeValue);
 `SourceEvent<String, String>` and `StreamEvent<String, String>` are removed.
 Use `RuntimeSourceEvent` and `RuntimeStreamEvent`. Display tooling may derive a
 payload label, but the runtime boundary preserves the structured value.
+
+## Product AWBC parity contract
+
+Canonical Game-product execution through this boundary is specified in
+[`product-awbc-runtime-step-parity.md`](product-awbc-runtime-step-parity.md).
+That contract defines explicit progression, typed host handshakes, ordering,
+diagnostics, statistics, and the differential completion gate without restoring
+a structured product fallback.

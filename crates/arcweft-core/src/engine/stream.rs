@@ -26,9 +26,10 @@ impl Engine {
                 continue;
             }
             if budget == 0 {
-                output.diagnostics.push(RuntimeDiagnostic {
-                    message: format!("stream {} exhausted frame budget", plan.id.0),
-                });
+                output.diagnostics.push(RuntimeDiagnostic::new(format!(
+                    "stream {} exhausted frame budget",
+                    plan.id.0
+                )));
             }
         }
         self.plan.stream_plans = stream_plans;
@@ -119,12 +120,10 @@ impl Engine {
             Ok(value) => match self.try_bind_pattern(pattern, &value) {
                 Ok(true) => true,
                 Ok(false) => {
-                    output.diagnostics.push(RuntimeDiagnostic {
-                        message: format!(
-                            "stream pattern did not match {}",
-                            runtime_value_label(&value)
-                        ),
-                    });
+                    output.diagnostics.push(RuntimeDiagnostic::new(format!(
+                        "stream pattern did not match {}",
+                        runtime_value_label(&value)
+                    )));
                     true
                 }
                 Err(error) => {
@@ -166,9 +165,9 @@ impl Engine {
                         return false;
                     }
                 }
-                Ok(None) => output.diagnostics.push(RuntimeDiagnostic {
-                    message: format!("stream for-next pattern did not match {source_key}"),
-                }),
+                Ok(None) => output.diagnostics.push(RuntimeDiagnostic::new(format!(
+                    "stream for-next pattern did not match {source_key}"
+                ))),
                 Err(error) => Self::diagnose_runtime_error(error, output),
             }
             if *budget == 0 {

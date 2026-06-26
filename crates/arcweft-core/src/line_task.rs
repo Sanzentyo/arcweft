@@ -6,6 +6,7 @@ use crate::task::{
 };
 use crate::time::LogicalDuration;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub enum ScopeExit {
@@ -223,6 +224,57 @@ pub(crate) fn run_line_task_group_for_input(
     }
 }
 
+/// Starts or progresses a live dialogue line task group without running the
+/// line-scope completion cleanup. `started_nodes` makes repeated host steps
+/// idempotent while still allowing mark/delay-triggered children to become
+/// ready on later steps.
+pub(crate) fn progress_live_line_task_group(
+    group: &LineTaskGroup,
+    input: &RuntimeStepInput,
+    started_nodes: &mut BTreeSet<usize>,
+) -> RuntimeStepOutput {
+    let mut output = RuntimeStepOutput::default();
+    let mut ordinal = 0;
+    run_live_node(
+        &group.root.node,
+        input,
+        started_nodes,
+        &mut ordinal,
+        &mut output,
+    );
+    output
+}
+
+/// Applies an explicit cancellation branch and line-scope cleanup. Returns
+/// `None` when the current input does not select a declared cancellation rule.
+pub(crate) fn cancel_live_line_task_group(
+    group: &LineTaskGroup,
+    input: &RuntimeStepInput,
+) -> Option<RuntimeStepOutput> {
+    let rule = group
+        .cancel_rules
+        .iter()
+        .find(|rule| input_matches_trigger(input, &rule.trigger))?;
+    let mut output = RuntimeStepOutput::default();
+    output.flow_events.push(FlowEvent::LineCancelled {
+        trigger: rule.trigger.clone(),
+    });
+    output.effects.line.extend(rule.action.clone());
+    output
+        .requests
+        .cancel_scopes
+        .push(CancelScopeId("line".to_owned()));
+    run_scope_cleanup(&group.root, ScopeExit::Cancelled, &mut output);
+    Some(output)
+}
+
+/// Completes a live line scope after an explicit host advance.
+pub(crate) fn finish_live_line_task_group(group: &LineTaskGroup) -> RuntimeStepOutput {
+    let mut output = RuntimeStepOutput::default();
+    run_scope_cleanup(&group.root, ScopeExit::Completed, &mut output);
+    output
+}
+
 fn input_matches_trigger(input: &RuntimeStepInput, trigger: &str) -> bool {
     input.input_events.iter().any(|event| {
         let Some(name) = crate::step::input_event_trigger_name(event) else {
@@ -273,6 +325,42 @@ fn run_node(node: &LineTaskNode, input: &RuntimeStepInput, output: &mut RuntimeS
         }
         LineTaskNode::Child(task) => run_child_task(task, input, output),
         LineTaskNode::Effect(effect) => output.effects.line.push(effect.clone()),
+    }
+}
+
+fn run_live_node(
+    node: &LineTaskNode,
+    input: &RuntimeStepInput,
+    started_nodes: &mut BTreeSet<usize>,
+    ordinal: &mut usize,
+    output: &mut RuntimeStepOutput,
+) {
+    match node {
+        LineTaskNode::Seq(nodes) | LineTaskNode::Start(nodes) => {
+            for node in nodes {
+                run_live_node(node, input, started_nodes, ordinal, output);
+            }
+        }
+        LineTaskNode::Parallel { children, .. } => {
+            for child in children {
+                run_live_node(child, input, started_nodes, ordinal, output);
+            }
+        }
+        LineTaskNode::Child(task) => {
+            let current = *ordinal;
+            *ordinal = ordinal.saturating_add(1);
+            if trigger_is_ready(&task.trigger, input) && started_nodes.insert(current) {
+                output.requests.tasks.push(task_spec(task));
+                run_scope(&task.scope, input, ScopeExit::Completed, output);
+            }
+        }
+        LineTaskNode::Effect(effect) => {
+            let current = *ordinal;
+            *ordinal = ordinal.saturating_add(1);
+            if started_nodes.insert(current) {
+                output.effects.line.push(effect.clone());
+            }
+        }
     }
 }
 

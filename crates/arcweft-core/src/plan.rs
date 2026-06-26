@@ -302,6 +302,7 @@ pub enum FlowEvent {
     },
     ChoicePresented {
         id: Option<String>,
+        options: Vec<ChoiceRuntimeOption>,
     },
     ChoiceSelected {
         id: Option<String>,

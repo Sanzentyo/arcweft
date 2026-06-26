@@ -174,6 +174,7 @@ fn run_script_test(
             diagnostics.push(format!("runtime failed: {message}"));
         }
         FlowFiberStatus::Running
+        | FlowFiberStatus::Dialogue(_)
         | FlowFiberStatus::Waiting(_)
         | FlowFiberStatus::WaitingMany(_)
         | FlowFiberStatus::Choice(_) => diagnostics.push(format!(

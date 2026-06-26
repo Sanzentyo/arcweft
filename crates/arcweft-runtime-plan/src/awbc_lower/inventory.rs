@@ -1,19 +1,20 @@
 use crate::awbc_lower::{AwbcLowerOptions, table_index, table_range_len};
 use arcweft_core::awbc::schema::{
-    AwbcAudioCleanup, AwbcBackpressurePolicy, AwbcBlock, AwbcBlockId, AwbcChildCancelPolicy,
-    AwbcChildCleanup, AwbcChildJoinPolicy, AwbcChoice, AwbcChoiceId, AwbcChoiceOption,
-    AwbcConstant, AwbcConstantId, AwbcContentUnit, AwbcContentUnitId, AwbcDisplayMapEntry,
-    AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSet, AwbcEffectSetId, AwbcEntry,
-    AwbcEntryKind, AwbcEntryTarget, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction,
-    AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcInstruction, AwbcInstructionId,
-    AwbcLineCancelHandler, AwbcLineCleanupPolicy, AwbcLineOption, AwbcLineTaskGroup,
-    AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger,
-    AwbcOverflowPolicy, AwbcParallelPolicy, AwbcPattern, AwbcPatternId, AwbcPresentationCleanup,
-    AwbcPrivacyPolicy, AwbcProgram, AwbcRegisterId, AwbcReplayPolicy, AwbcResumePoint,
-    AwbcResumePointId, AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource, AwbcRuntimeType,
-    AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcSignedIntKind, AwbcSourceEventKind,
-    AwbcSourcePolicy, AwbcStringId, AwbcTableRange, AwbcTaskArgument, AwbcTaskClass, AwbcTaskPlan,
-    AwbcTaskPlanId, AwbcTaskPolicy, AwbcTerminator, AwbcTypeId, AwbcUnsignedIntKind,
+    AwbcAudioCleanup, AwbcAwaitManyPolicy, AwbcBackpressurePolicy, AwbcBlock, AwbcBlockId,
+    AwbcChildCancelPolicy, AwbcChildCleanup, AwbcChildJoinPolicy, AwbcChoice, AwbcChoiceId,
+    AwbcChoiceOption, AwbcConstant, AwbcConstantId, AwbcContentUnit, AwbcContentUnitId,
+    AwbcDisplayMapEntry, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSet,
+    AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFrameLayout, AwbcFrameLayoutId,
+    AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcInstruction,
+    AwbcInstructionId, AwbcLineCancelHandler, AwbcLineCleanupPolicy, AwbcLineOption,
+    AwbcLineTaskGroup, AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId,
+    AwbcLineTaskTrigger, AwbcOverflowPolicy, AwbcParallelPolicy, AwbcPattern, AwbcPatternId,
+    AwbcPresentationCleanup, AwbcPrivacyPolicy, AwbcProgram, AwbcRegisterId, AwbcReplayPolicy,
+    AwbcResumePoint, AwbcResumePointId, AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource,
+    AwbcRuntimeType, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcSignedIntKind,
+    AwbcSourceEventKind, AwbcSourcePolicy, AwbcStringId, AwbcTableRange, AwbcTaskArgument,
+    AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId, AwbcTaskPolicy, AwbcTerminator, AwbcTypeId,
+    AwbcUnsignedIntKind,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeWaitTarget};
 use arcweft_core::line_task::{
@@ -120,6 +121,7 @@ pub struct AwbcInventory {
 #[derive(Clone, Copy, Debug)]
 struct NamedTaskSpec<'a> {
     public_id: &'a str,
+    need_id: &'a str,
     capability: &'a str,
     operation: &'a str,
     args: &'a [HostTaskArgTemplate],
@@ -467,6 +469,28 @@ impl AwbcInventory {
         self.entry_functions.get(name).copied()
     }
 
+    /// Reserves a deterministic function identifier before lowering bodies so
+    /// forward flow/choice targets resolve without a stringly post-pass.
+    pub fn reserve_function_name(&mut self, name: &str, function: AwbcFunctionId) {
+        self.entry_functions.insert(name.to_owned(), function);
+    }
+
+    /// Attaches bounded fan-out semantics to an owned task plan.
+    pub fn set_await_many_policy(
+        &mut self,
+        plan: AwbcTaskPlanId,
+        item_binding: AwbcRegisterId,
+        limit: usize,
+    ) {
+        let limit = u32::try_from(limit).unwrap_or(u32::MAX).max(1);
+        if let Some(task) = self.program.task_plans.get_mut(plan.index()) {
+            task.many = Some(AwbcAwaitManyPolicy {
+                item_binding,
+                limit,
+            });
+        }
+    }
+
     pub fn intern_content_unit(
         &mut self,
         public_id: &str,
@@ -562,6 +586,7 @@ impl AwbcInventory {
         AwbcLineTaskNode::Child {
             task: self.intern_named_task(NamedTaskSpec {
                 public_id: task.id.0.as_str(),
+                need_id: task.id.0.as_str(),
                 capability: "line_task",
                 operation: "run_child",
                 args: &[],
@@ -617,11 +642,13 @@ impl AwbcInventory {
 
     pub fn intern_host_task(
         &mut self,
-        label: &str,
+        need_id: &str,
+        task_id: &str,
         request: &HostTaskRequestTemplate,
     ) -> AwbcTaskPlanId {
         self.intern_named_task(NamedTaskSpec {
-            public_id: label,
+            public_id: task_id,
+            need_id,
             capability: &request.capability.0,
             operation: &request.operation,
             args: &request.args,
@@ -635,6 +662,7 @@ impl AwbcInventory {
     fn intern_named_task(&mut self, spec: NamedTaskSpec<'_>) -> AwbcTaskPlanId {
         let NamedTaskSpec {
             public_id,
+            need_id,
             capability,
             operation,
             args,
@@ -644,16 +672,21 @@ impl AwbcInventory {
             policy,
         } = spec;
         let key = format!(
-            "task:{public_id}:{capability}:{operation}:{args:?}:{class:?}:{priority}:{cancel_scope}:{policy:?}"
+            "task:{public_id}:{need_id}:{capability}:{operation}:{args:?}:{class:?}:{priority}:{cancel_scope}:{policy:?}"
         );
         if let Some(id) = self.tasks.get(&key).copied() {
             return id;
         }
         let id = AwbcTaskPlanId(table_index(self.program.task_plans.len()));
         let public_id = self.intern_string(public_id);
+        let need_id = self.intern_string(need_id);
         let capability = self.intern_string(capability);
         let operation = self.intern_string(operation);
-        let signature = self.intern_unit_signature();
+        let signature = self.intern_signature(
+            vec![self.dynamic_ty(); args.len()],
+            None,
+            AwbcEffectSetId(0),
+        );
         let cancel_scope = self.intern_string(cancel_scope);
         let arguments = args
             .iter()
@@ -664,6 +697,7 @@ impl AwbcInventory {
             .collect();
         self.program.task_plans.push(AwbcTaskPlan {
             public_id,
+            need_id,
             capability,
             operation,
             signature,
@@ -702,7 +736,6 @@ impl AwbcInventory {
     }
 
     pub fn lower_entries(&mut self, plan: &RuntimePlan) {
-        let signature = self.intern_unit_signature();
         for entry in &plan.entries {
             let public_id = self.intern_string(&entry.id.0);
             let kind = match &entry.kind {
@@ -714,40 +747,50 @@ impl AwbcInventory {
                 RuntimeEntryKind::Bench => AwbcEntryKind::Bench,
                 RuntimeEntryKind::Custom(value) => AwbcEntryKind::Custom(self.intern_string(value)),
             };
+            let mut signature = self.intern_unit_signature();
             let target = match &entry.target {
-                RuntimeEntryTarget::Flow(flow) => self.function_by_name(&flow.0).map_or_else(
-                    || {
+                RuntimeEntryTarget::Flow(flow) => {
+                    if let Some(function) = self.function_by_name(&flow.0) {
+                        signature = self.program.functions[function.index()].signature;
+                        AwbcEntryTarget::Function(function)
+                    } else {
                         self.diagnostic(AwbcLowerDiagnostic::error(
                             format!("entry.{}", entry.id.0),
                             format!("entry targets missing flow {}", flow.0),
                         ));
                         AwbcEntryTarget::Function(AwbcFunctionId(0))
-                    },
-                    AwbcEntryTarget::Function,
-                ),
-                RuntimeEntryTarget::Routes(routes) => AwbcEntryTarget::Routes(
-                    routes
+                    }
+                }
+                RuntimeEntryTarget::Routes(routes) => {
+                    let routes = routes
                         .iter()
-                        .map(|route| AwbcRoute {
-                            method: self.intern_string(&route.method),
-                            path: self.intern_string(&route.path),
-                            target: self.function_by_name(&route.target.0).unwrap_or(AwbcFunctionId(0)),
-                            bindings: route
-                                .bindings
-                                .iter()
-                                .enumerate()
-                                .map(|(index, binding)| AwbcRouteBinding {
-                                    register: AwbcRegisterId(table_index(index)),
-                                    source: match &binding.source {
-                                        arcweft_core::plan::RuntimeRouteBindingSource::PathParam(value) => {
-                                            AwbcRouteBindingSource::PathParameter(self.intern_string(value))
-                                        }
-                                    },
-                                })
-                                .collect(),
+                        .map(|route| {
+                            let target = self
+                                .function_by_name(&route.target.0)
+                                .unwrap_or(AwbcFunctionId(0));
+                            signature = self.program.functions[target.index()].signature;
+                            AwbcRoute {
+                                method: self.intern_string(&route.method),
+                                path: self.intern_string(&route.path),
+                                target,
+                                bindings: route
+                                    .bindings
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(index, binding)| AwbcRouteBinding {
+                                        register: AwbcRegisterId(table_index(index)),
+                                        source: match &binding.source {
+                                            arcweft_core::plan::RuntimeRouteBindingSource::PathParam(value) => {
+                                                AwbcRouteBindingSource::PathParameter(self.intern_string(value))
+                                            }
+                                        },
+                                    })
+                                    .collect(),
+                            }
                         })
-                        .collect(),
-                ),
+                        .collect();
+                    AwbcEntryTarget::Routes(routes)
+                }
             };
             self.program.entries.push(AwbcEntry {
                 public_id,
@@ -761,6 +804,7 @@ impl AwbcInventory {
             && let Some(function) = self.function_by_name(&entry_flow.0)
         {
             let public_id = self.intern_string("entry.main");
+            let signature = self.program.functions[function.index()].signature;
             self.program.entries.push(AwbcEntry {
                 public_id,
                 kind: AwbcEntryKind::Game,

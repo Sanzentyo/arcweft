@@ -36,9 +36,7 @@ fn runtime_step_output_sink_scopes_mutation_without_taking_output() {
         let mut writer = output.writer();
         writer.push_diagnostic("first");
         writer.merge(RuntimeStepOutput {
-            diagnostics: vec![RuntimeDiagnostic {
-                message: "second".to_owned(),
-            }],
+            diagnostics: vec![RuntimeDiagnostic::new("second".to_owned())],
             ..RuntimeStepOutput::default()
         });
     }
@@ -124,14 +122,40 @@ fn game_mode_stops_on_visible_output_but_server_mode_drains() {
         options(RuntimeStepMode::Game, 8),
     );
     assert_eq!(result.stop_reason, RuntimeStepStopReason::Output);
-    assert!(matches!(game.fiber().status, FlowFiberStatus::Running));
+    assert!(matches!(game.fiber().status, FlowFiberStatus::Dialogue(_)));
+
+    let resumed = game.step(
+        RuntimeStepInput {
+            input_events: vec![super::input_event("advance", Some("say.opening.001"))],
+            ..RuntimeStepInput::default()
+        },
+        options(RuntimeStepMode::Game, 8),
+    );
+    assert_eq!(resumed.stop_reason, RuntimeStepStopReason::Done);
+    assert!(matches!(game.fiber().status, FlowFiberStatus::Done(_)));
 
     let mut server = Engine::new(plan);
     let result = server.step(
         RuntimeStepInput::default(),
         options(RuntimeStepMode::Server, 8),
     );
-    assert_eq!(result.stop_reason, RuntimeStepStopReason::Done);
+    assert_eq!(result.stop_reason, RuntimeStepStopReason::Output);
+    assert!(matches!(
+        server.fiber().status,
+        FlowFiberStatus::Dialogue(_)
+    ));
+
+    let resumed = server.step(
+        RuntimeStepInput {
+            input_events: vec![super::input_event(
+                "dialogue.advance",
+                Some("say.opening.001"),
+            )],
+            ..RuntimeStepInput::default()
+        },
+        options(RuntimeStepMode::Server, 8),
+    );
+    assert_eq!(resumed.stop_reason, RuntimeStepStopReason::Done);
     assert!(matches!(server.fiber().status, FlowFiberStatus::Done(_)));
 }
 

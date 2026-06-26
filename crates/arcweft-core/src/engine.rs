@@ -37,6 +37,7 @@ use std::collections::{BTreeMap, VecDeque};
 pub mod aot;
 pub mod audio;
 pub mod eval;
+pub(crate) use eval::evaluate_runtime_call;
 pub mod flow;
 pub mod line;
 pub mod source;
@@ -145,11 +146,21 @@ pub struct FlowCursor {
 #[derive(Clone, Debug, PartialEq)]
 pub enum FlowFiberStatus {
     Running,
+    Dialogue(DialogueState),
     Waiting(AwaitState),
     WaitingMany(Box<AwaitManyState>),
     Choice(ChoiceState),
     Done(FlowExit),
     Failed(String),
+}
+
+/// Suspended dialogue line awaiting explicit host progression.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DialogueState {
+    pub line: crate::plan::RuntimeLineId,
+    pub task_group: usize,
+    pub resume: Option<FlowCursor>,
+    pub started_nodes: std::collections::BTreeSet<usize>,
 }
 
 /// String presentation style for high-level runtime flow status.
@@ -218,6 +229,7 @@ impl FlowFiberStatus {
     fn runtime_status_label(&self) -> String {
         match self {
             Self::Running => "running".to_owned(),
+            Self::Dialogue(state) => format!("dialogue {}", state.line.0),
             Self::Waiting(state) => format!("waiting {}", state.target.task.0),
             Self::WaitingMany(state) => format!(
                 "waiting_many {} {}/{}",
@@ -236,6 +248,7 @@ impl FlowFiberStatus {
     fn debug_status_label(&self) -> String {
         match self {
             Self::Running => "running".to_owned(),
+            Self::Dialogue(state) => format!("dialogue {}", state.line.0),
             Self::Waiting(state) => format!("waiting {}", state.target.task.0),
             Self::WaitingMany(state) => format!(
                 "waiting_many {} {}/{}",
@@ -254,6 +267,7 @@ impl FlowFiberStatus {
     fn compact_status_label(&self) -> String {
         match self {
             Self::Running => "running".to_owned(),
+            Self::Dialogue(_) => "dialogue".to_owned(),
             Self::Waiting(_) => "waiting".to_owned(),
             Self::WaitingMany(_) => "waiting_many".to_owned(),
             Self::Choice(_) => "choice".to_owned(),
@@ -470,14 +484,12 @@ impl Engine {
         let source_events = normalize_source_events(std::mem::take(&mut input.source_events));
         let task_events_in = events.len();
         let source_events_in = source_events.len();
-        output
-            .diagnostics
-            .extend(events.iter().map(|event| RuntimeDiagnostic {
-                message: format!(
-                    "task {} sequence {} delivered",
-                    event.task_id.0, event.sequence.0
-                ),
-            }));
+        output.diagnostics.extend(events.iter().map(|event| {
+            RuntimeDiagnostic::new(format!(
+                "task {} sequence {} delivered",
+                event.task_id.0, event.sequence.0
+            ))
+        }));
         self.apply_source_events(source_events, &mut output, pure_backend);
         self.step_stream_plans(&mut output, pure_backend);
 
@@ -662,9 +674,9 @@ impl Engine {
     }
 
     fn diagnose_runtime_error(error: impl std::fmt::Display, output: &mut RuntimeStepOutput) {
-        output.diagnostics.push(RuntimeDiagnostic {
-            message: error.to_string(),
-        });
+        output
+            .diagnostics
+            .push(RuntimeDiagnostic::new(error.to_string()));
     }
 
     fn step_result(
@@ -691,6 +703,7 @@ impl Engine {
                 FlowFiberStatus::Done(_)
                     | FlowFiberStatus::Waiting(_)
                     | FlowFiberStatus::WaitingMany(_)
+                    | FlowFiberStatus::Dialogue(_)
                     | FlowFiberStatus::Choice(_)
             )
         {
@@ -707,6 +720,7 @@ impl Engine {
                 FlowFiberStatus::Done(_)
                     | FlowFiberStatus::Waiting(_)
                     | FlowFiberStatus::WaitingMany(_)
+                    | FlowFiberStatus::Dialogue(_)
                     | FlowFiberStatus::Choice(_)
             )
         {
@@ -715,9 +729,14 @@ impl Engine {
         match self.fiber.status {
             FlowFiberStatus::Done(_) => Some(RuntimeStepStopReason::Done),
             FlowFiberStatus::Failed(_) => Some(RuntimeStepStopReason::Failed),
-            FlowFiberStatus::Waiting(_)
+            FlowFiberStatus::Dialogue(_)
+            | FlowFiberStatus::Waiting(_)
             | FlowFiberStatus::WaitingMany(_)
-            | FlowFiberStatus::Choice(_) => Some(RuntimeStepStopReason::Blocked),
+            | FlowFiberStatus::Choice(_) => Some(if has_presentation_visible_output(output) {
+                RuntimeStepStopReason::Output
+            } else {
+                RuntimeStepStopReason::Blocked
+            }),
             FlowFiberStatus::Running if has_host_requests(output) => {
                 Some(RuntimeStepStopReason::Output)
             }

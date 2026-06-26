@@ -610,6 +610,7 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
     for (index, task) in program.task_plans.iter().enumerate() {
         let at = format!("task plan {index}");
         check_string(program, task.public_id, &at)?;
+        check_string(program, task.need_id, &at)?;
         check_capability(verifier, task.capability, &at)?;
         check_string(program, task.operation, &at)?;
         check_string(program, task.cancel_scope, &at)?;

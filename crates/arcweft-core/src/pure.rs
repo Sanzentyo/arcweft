@@ -166,6 +166,18 @@ pub trait RuntimeExternalCallBackend {
     ) -> Option<Result<RuntimeValue, RuntimeEvalError>>;
 }
 
+/// Stable compact-AWBC pure helper identity presented to runtime backends.
+///
+/// Compact product execution cannot reconstruct the structured helper expression,
+/// so backends receive the canonical helper identity and ABI shape directly.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeCompactPureHelper {
+    pub id: u32,
+    pub name: String,
+    pub arity: usize,
+    pub scalar_eval_supported: bool,
+}
+
 /// Runtime-facing backend for deterministic pure helper calls.
 pub trait RuntimePureCallBackend {
     fn call_i8_slice(
@@ -457,6 +469,20 @@ pub trait RuntimePureCallBackend {
         helper: &RuntimePureHelper,
         args: &[RuntimeValue],
     ) -> Result<RuntimeValue, RuntimeEvalError>;
+
+    /// Optionally evaluates a canonical compact-AWBC helper directly.
+    ///
+    /// Returning `None` selects the verified compact VM fallback owned by the
+    /// product executor. Returning `Some` preserves backend selection and
+    /// deterministic success/failure at the shared runtime boundary.
+    fn call_compact_values(
+        &mut self,
+        helper: &RuntimeCompactPureHelper,
+        args: &[RuntimeValue],
+    ) -> Option<Result<RuntimeValue, RuntimeEvalError>> {
+        let _ = (helper, args);
+        None
+    }
 
     fn stats(&self) -> RuntimePureCallStats;
 }

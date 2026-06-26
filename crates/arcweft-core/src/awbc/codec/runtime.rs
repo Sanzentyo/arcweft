@@ -62,6 +62,7 @@ wire_enum!(AwbcHostCallMode, "host call mode", {
 impl Wire for AwbcTaskPlan {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.public_id.write_wire(writer)?;
+        self.need_id.write_wire(writer)?;
         self.capability.write_wire(writer)?;
         self.operation.write_wire(writer)?;
         self.signature.write_wire(writer)?;
@@ -76,6 +77,7 @@ impl Wire for AwbcTaskPlan {
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
             public_id: AwbcStringId::read_wire(reader)?,
+            need_id: AwbcStringId::read_wire(reader)?,
             capability: AwbcStringId::read_wire(reader)?,
             operation: AwbcStringId::read_wire(reader)?,
             signature: AwbcSignatureId::read_wire(reader)?,

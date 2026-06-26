@@ -22,6 +22,7 @@ pub enum ParityEvent {
     },
     ChoicePresented {
         id: Option<String>,
+        options: Vec<(Option<String>, String)>,
     },
     ChoiceSelected {
         id: Option<String>,
@@ -131,7 +132,13 @@ fn flow_event(event: &FlowEvent) -> ParityEvent {
         FlowEvent::LineCancelled { trigger } => ParityEvent::Effect {
             id: format!("line_cancelled:{trigger}"),
         },
-        FlowEvent::ChoicePresented { id } => ParityEvent::ChoicePresented { id: id.clone() },
+        FlowEvent::ChoicePresented { id, options } => ParityEvent::ChoicePresented {
+            id: id.clone(),
+            options: options
+                .iter()
+                .map(|option| (option.id.clone(), option.label.clone()))
+                .collect(),
+        },
         FlowEvent::ChoiceSelected { id, option } => ParityEvent::ChoiceSelected {
             id: id.clone(),
             option: option.clone(),
@@ -163,8 +170,18 @@ fn vm_observation(event: &VmObservation) -> ParityEvent {
         VmObservation::Instruction { .. } => ParityEvent::Effect {
             id: "instruction".to_owned(),
         },
-        VmObservation::Effect(AwbcEffectPlanId(id)) => ParityEvent::Effect {
+        VmObservation::Effect {
+            effect: AwbcEffectPlanId(id),
+            ..
+        } => ParityEvent::Effect {
             id: format!("effect#{id}"),
+        },
+        VmObservation::TaskStarted { plan, .. } => ParityEvent::AwaitStarted {
+            need: format!("task#{}", plan.0),
+            task: format!("task#{}", plan.0),
+        },
+        VmObservation::FiberSpawned { function, .. } => ParityEvent::Effect {
+            id: format!("fiber#{}", function.0),
         },
         VmObservation::EnsureContent(id) => ParityEvent::Content {
             id: format!("content#{}", id.0),
@@ -199,6 +216,7 @@ fn stop_reason(reason: RuntimeStepStopReason) -> &'static str {
 fn fiber_status(status: &FlowFiberStatus) -> String {
     match status {
         FlowFiberStatus::Running => "running".to_owned(),
+        FlowFiberStatus::Dialogue(_) => "dialogue".to_owned(),
         FlowFiberStatus::Waiting(_) => "waiting".to_owned(),
         FlowFiberStatus::WaitingMany(_) => "waiting_many".to_owned(),
         FlowFiberStatus::Choice(_) => "choice".to_owned(),
