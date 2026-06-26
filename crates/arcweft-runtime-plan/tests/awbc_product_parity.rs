@@ -2,7 +2,7 @@ use arcweft_core::effect::{
     LineEffectRequest, RuntimeAssertion, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall,
     RuntimeEvent, RuntimeField, RuntimeLog, RuntimeWaitTarget,
 };
-use arcweft_core::engine::FlowFiberStatus;
+use arcweft_core::engine::{FlowFiber, FlowFiberStatus};
 use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
 use arcweft_core::line_task::{LineOutRequest, LineTaskGroup, LineTaskNode, LineTaskScope};
 use arcweft_core::pattern::RuntimePattern;
@@ -13,11 +13,12 @@ use arcweft_core::plan::{
 };
 use arcweft_core::source::{
     RuntimeSourceEvent, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp, SourcePlan,
-    SourcePolicy, SourceRuntimeState,
+    SourcePolicy,
 };
 use arcweft_core::step::{
     RuntimeHostCallId, RuntimeHostCallMode, RuntimeHostCallResult, RuntimeStepBudget,
     RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepResult,
+    RuntimeStepStopReason,
 };
 use arcweft_core::stream::{StreamOp, StreamPlan, StreamRuntimeId};
 use arcweft_core::task::{
@@ -36,14 +37,13 @@ use arcweft_interaction_model::{
 };
 use arcweft_render_text::LineDisplayCatalog;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-use std::collections::BTreeMap;
 
 #[derive(Debug)]
 struct ParityStep {
     structured: RuntimeStepResult,
     awbc: RuntimeStepResult,
-    structured_sources: BTreeMap<SourceId, SourceRuntimeState>,
-    awbc_sources: BTreeMap<SourceId, SourceRuntimeState>,
+    structured_fiber: FlowFiber,
+    awbc_fiber: FlowFiber,
 }
 
 fn run_parity(plan: RuntimePlan, inputs: Vec<RuntimeStepInput>) -> Vec<ParityStep> {
@@ -115,8 +115,8 @@ fn run_parity_with_options(
             ParityStep {
                 structured: structured_result,
                 awbc: awbc_result,
-                structured_sources: structured.fiber().source_states.clone(),
-                awbc_sources: awbc.fiber().source_states.clone(),
+                structured_fiber: structured.fiber().clone(),
+                awbc_fiber: awbc.fiber().clone(),
             }
         })
         .collect()
@@ -165,8 +165,35 @@ fn assert_step_boundary_eq(step: &ParityStep) {
         "audio-command stat mismatch"
     );
     assert_eq!(
-        step.awbc_sources, step.structured_sources,
+        step.awbc_fiber.source_states, step.structured_fiber.source_states,
         "source state mismatch"
+    );
+    assert_facade_fiber_eq(step);
+}
+
+fn assert_facade_fiber_eq(step: &ParityStep) {
+    if !matches!(
+        step.structured.stop_reason,
+        RuntimeStepStopReason::Done | RuntimeStepStopReason::Failed | RuntimeStepStopReason::Output
+    ) {
+        return;
+    }
+    assert_eq!(
+        step.awbc_fiber.env, step.structured_fiber.env,
+        "facade environment mismatch"
+    );
+    assert_eq!(
+        step.awbc_fiber.observations, step.structured_fiber.observations,
+        "facade observations mismatch"
+    );
+    assert_eq!(
+        step.awbc_fiber.stream_states, step.structured_fiber.stream_states,
+        "facade stream state mismatch"
+    );
+    assert_eq!(
+        normalized_status(&step.awbc_fiber.status),
+        normalized_status(&step.structured_fiber.status),
+        "facade status mismatch"
     );
 }
 
@@ -870,7 +897,8 @@ fn awbc_product_parity_source_duplicate_sequence_items() {
     assert_step_boundary_eq(&steps[0]);
     assert_eq!(steps[0].structured.output.effects.source_events.len(), 2);
     let queue = steps[0]
-        .structured_sources
+        .structured_fiber
+        .source_states
         .get(&source)
         .expect("source state exists")
         .queue
@@ -913,7 +941,8 @@ fn awbc_product_parity_source_lower_sequence_cross_step() {
         assert_step_boundary_eq(step);
     }
     let queue = steps[1]
-        .structured_sources
+        .structured_fiber
+        .source_states
         .get(&source)
         .expect("source state exists")
         .queue
@@ -1171,7 +1200,8 @@ fn awbc_product_parity_source_handler_yields_to_source_queue() {
 
     assert_step_boundary_eq(&steps[0]);
     let queue = steps[0]
-        .structured_sources
+        .structured_fiber
+        .source_states
         .get(&source)
         .expect("source state exists")
         .queue
