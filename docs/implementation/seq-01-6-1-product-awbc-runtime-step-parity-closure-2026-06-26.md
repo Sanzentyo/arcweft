@@ -1866,10 +1866,32 @@ Remaining matrix limits after this cut:
   behavior should continue moving stable responsibility modules out instead of
   growing the facade file again.
 
+## Follow-up split after eighteenth cut
+
+The remaining audio parity row is split out to
+`docs/reviews/requests/2026-06-26-seq-01.6.2-product-awbc-audio-payload-parity.md`.
+
+Reason: seq-01.6.1 implemented the typed unsupported diagnostic for
+`AwbcEffectKind::Audio`, but product AWBC currently carries only the
+`RuntimeAudioCommand::operation_name()` static string. That is not enough to
+reconstruct the typed `RuntimeAudioCommand` payload, evaluate its `RuntimeExpr`
+fields, or emit the same `AudioCommandEnvelope` as structured execution without
+adding a stringly compatibility shim. The audio row therefore needs a concrete
+AWBC payload schema/codec/verifier/lowering design before implementation.
+
+With that split, the seq-01.6.1 implementation-ready closure rows are covered:
+
+- entry/root bindings, pure helpers, dialogue/line tasks, choice, await,
+  await-many, direct host calls, non-audio effects, content, stream, source,
+  budget/step modes, typed trap projection, and final/output facade state
+  equality have passing focused coverage;
+- no structured product fallback was reintroduced;
+- product AWFB execution remains AWBC-only in the validated smoke paths.
+
 ## Required integration work before marking seq-01.6.1 complete
 
-- expand the differential harness to cover every row in the companion matrix,
-  especially audio payload fixtures;
+- keep the audio payload row out of seq-01.6.1 completion and design it through
+  seq-01.6.2 before implementation;
 - continue splitting product-step responsibilities before adding substantial
   behavior back to the facade file;
 - update this note with the final committed revision.
