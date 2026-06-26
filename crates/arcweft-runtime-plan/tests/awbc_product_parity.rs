@@ -204,15 +204,18 @@ fn normalized_status(status: &FlowFiberStatus) -> FlowFiberStatus {
 }
 
 fn flow(ops: Vec<FlowOp>) -> RuntimePlan {
-    RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+    flows(
+        "flow.main",
         vec![RuntimeFlow {
             id: FlowRuntimeId("flow.main".to_owned()),
             ops,
         }],
-        Vec::new(),
     )
-    .expect("runtime plan builds")
+}
+
+fn flows(entry: &str, flows: Vec<RuntimeFlow>) -> RuntimePlan {
+    RuntimePlan::new(Some(FlowRuntimeId(entry.to_owned())), flows, Vec::new())
+        .expect("runtime plan builds")
 }
 
 fn input_event(kind: &str, payload: Option<&str>) -> RoutedInputEvent {
@@ -723,6 +726,100 @@ fn awbc_product_parity_line_effect_kind_table_non_control() {
     assert_step_boundary_eq(&steps[0]);
     assert_eq!(steps[0].structured.output.effects.line, effects);
     assert_eq!(steps[0].awbc.output.effects.line, effects);
+}
+
+#[test]
+fn awbc_product_parity_control_effect_return() {
+    let effect = LineEffectRequest::Return("effect-return".to_owned());
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::Effect(effect.clone()),
+            FlowOp::Return("unreachable".to_owned()),
+        ]),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.effects.line,
+        vec![effect.clone()]
+    );
+    assert_eq!(
+        steps[0].structured.output.flow_events,
+        vec![FlowEvent::Return {
+            value: "effect-return".to_owned(),
+        }]
+    );
+    assert_eq!(
+        normalized_status(&steps[0].structured.fiber_status),
+        FlowFiberStatus::Done(arcweft_core::engine::FlowExit::Return(
+            "effect-return".to_owned(),
+        ))
+    );
+}
+
+#[test]
+fn awbc_product_parity_control_effect_goto() {
+    let effect = LineEffectRequest::Goto("flow.next".to_owned());
+    let steps = run_parity(
+        flows(
+            "flow.main",
+            vec![
+                RuntimeFlow {
+                    id: FlowRuntimeId("flow.main".to_owned()),
+                    ops: vec![
+                        FlowOp::Effect(effect.clone()),
+                        FlowOp::Return("unreachable".to_owned()),
+                    ],
+                },
+                RuntimeFlow {
+                    id: FlowRuntimeId("flow.next".to_owned()),
+                    ops: vec![FlowOp::Return("next-done".to_owned())],
+                },
+            ],
+        ),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.effects.line,
+        vec![effect.clone()]
+    );
+    assert_eq!(
+        steps[0].structured.output.flow_events,
+        vec![
+            FlowEvent::Goto {
+                target: FlowRuntimeId("flow.next".to_owned()),
+            },
+            FlowEvent::Return {
+                value: "next-done".to_owned(),
+            },
+        ],
+    );
+}
+
+#[test]
+fn awbc_product_parity_control_effect_failures() {
+    for effect in [
+        LineEffectRequest::Panic("panic-effect".to_owned()),
+        LineEffectRequest::Fail("fail-effect".to_owned()),
+        LineEffectRequest::Bail("bail-effect".to_owned()),
+    ] {
+        let steps = run_parity(
+            flow(vec![
+                FlowOp::Effect(effect.clone()),
+                FlowOp::Return("unreachable".to_owned()),
+            ]),
+            vec![RuntimeStepInput::default()],
+        );
+
+        assert_step_boundary_eq(&steps[0]);
+        assert_eq!(
+            steps[0].structured.output.effects.line,
+            vec![effect.clone()]
+        );
+    }
 }
 
 #[test]
