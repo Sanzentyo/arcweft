@@ -677,6 +677,39 @@ fn awbc_product_parity_stream_yield_then_close() {
 }
 
 #[test]
+fn awbc_product_parity_multi_stream_yield_and_close() {
+    let plan = flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
+        vec![
+            StreamPlan {
+                id: StreamRuntimeId("stream.alpha".to_owned()),
+                item_ty: "String".to_owned(),
+                error_ty: "String".to_owned(),
+                ops: vec![StreamOp::Yield {
+                    expr: RuntimeExpr::Value(RuntimeValue::String("alpha-item".to_owned())),
+                }],
+            },
+            StreamPlan {
+                id: StreamRuntimeId("stream.beta".to_owned()),
+                item_ty: "String".to_owned(),
+                error_ty: "String".to_owned(),
+                ops: vec![
+                    StreamOp::Yield {
+                        expr: RuntimeExpr::Value(RuntimeValue::String("beta-item".to_owned())),
+                    },
+                    StreamOp::Close {
+                        source: RuntimeExpr::Value(RuntimeValue::String("stream.beta".to_owned())),
+                    },
+                ],
+            },
+        ],
+        Vec::new(),
+    );
+    let steps = run_parity(plan, vec![RuntimeStepInput::default()]);
+
+    assert_step_boundary_eq(&steps[0]);
+}
+
+#[test]
 fn awbc_product_parity_one_op() {
     let steps = run_parity_with_options(
         flow(vec![

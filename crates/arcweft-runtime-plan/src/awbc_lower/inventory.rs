@@ -12,9 +12,9 @@ use arcweft_core::awbc::schema::{
     AwbcPresentationCleanup, AwbcPrivacyPolicy, AwbcProgram, AwbcRegisterId, AwbcReplayPolicy,
     AwbcResumePoint, AwbcResumePointId, AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource,
     AwbcRuntimeType, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcSignedIntKind,
-    AwbcSourceEventKind, AwbcSourcePlan, AwbcSourcePlanId, AwbcSourcePolicy, AwbcStringId,
-    AwbcTableRange, AwbcTaskArgument, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId, AwbcTaskPolicy,
-    AwbcTerminator, AwbcTypeId, AwbcUnsignedIntKind,
+    AwbcSourceEventKind, AwbcSourcePlan, AwbcSourcePlanId, AwbcSourcePolicy, AwbcStreamPlan,
+    AwbcStreamPlanId, AwbcStringId, AwbcTableRange, AwbcTaskArgument, AwbcTaskClass, AwbcTaskPlan,
+    AwbcTaskPlanId, AwbcTaskPolicy, AwbcTerminator, AwbcTypeId, AwbcUnsignedIntKind,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeWaitTarget};
 use arcweft_core::line_task::{
@@ -27,6 +27,7 @@ use arcweft_core::source::{
     BackpressurePolicy, OverflowPolicy, PrivacyPolicy, ReplayPolicy, SourceHandlerPlan, SourceId,
     SourcePolicy,
 };
+use arcweft_core::stream::StreamRuntimeId;
 use arcweft_core::task::{HostTaskArgTemplate, HostTaskRequestTemplate};
 use arcweft_core::value::{RuntimeInt, RuntimeUInt, RuntimeValue};
 use arcweft_render_text::LineDisplayCatalog;
@@ -114,6 +115,7 @@ pub struct AwbcInventory {
     effects: BTreeMap<String, AwbcEffectPlanId>,
     tasks: BTreeMap<String, AwbcTaskPlanId>,
     sources: BTreeMap<SourceId, AwbcSourcePlanId>,
+    streams: BTreeMap<StreamRuntimeId, AwbcStreamPlanId>,
     choices: BTreeMap<String, AwbcChoiceId>,
     entry_functions: BTreeMap<String, AwbcFunctionId>,
 }
@@ -144,6 +146,7 @@ impl AwbcInventory {
             effects: BTreeMap::new(),
             tasks: BTreeMap::new(),
             sources: BTreeMap::new(),
+            streams: BTreeMap::new(),
             choices: BTreeMap::new(),
             entry_functions: BTreeMap::new(),
         };
@@ -726,6 +729,25 @@ impl AwbcInventory {
 
     pub fn source_plan_id(&self, source: &SourceId) -> Option<AwbcSourcePlanId> {
         self.sources.get(source).copied()
+    }
+
+    pub fn reserve_stream_plan_id(&mut self, stream: StreamRuntimeId, id: AwbcStreamPlanId) {
+        self.streams.insert(stream, id);
+    }
+
+    pub fn push_stream_plan(
+        &mut self,
+        stream: StreamRuntimeId,
+        plan: AwbcStreamPlan,
+    ) -> AwbcStreamPlanId {
+        let id = AwbcStreamPlanId(table_index(self.program.stream_plans.len()));
+        self.program.stream_plans.push(plan);
+        self.streams.entry(stream).or_insert(id);
+        id
+    }
+
+    pub fn stream_plan_id(&self, stream: &StreamRuntimeId) -> Option<AwbcStreamPlanId> {
+        self.streams.get(stream).copied()
     }
 
     pub fn intern_choice(

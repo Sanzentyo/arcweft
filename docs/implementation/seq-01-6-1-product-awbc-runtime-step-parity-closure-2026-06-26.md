@@ -699,6 +699,102 @@ Remaining matrix limits after this cut:
   structured-vs-AWBC differential row for every kind.
 - typed trap rows and full final-facade statistics/state equality remain open.
 
+## Integration update 2026-06-26, seventh cut
+
+Current working change before commit: `zssnkryy` over parent `wwoxktoq`.
+
+This cut closes the fixed-index stream routing gap exposed in prior notes:
+
+- `AwbcInventory` now owns stream-plan ID reservation and lookup, matching the
+  source-plan ownership added in the sixth cut.
+- stream plan IDs are reserved before stream body lowering, so transform
+  instructions can reference their owning stream table entry without scanning or
+  assuming index 0.
+- `StreamOp::Yield` now lowers to `AwbcInstruction::StreamYield` for the owning
+  transform stream instead of `AwbcStreamPlanId(0)`.
+- statically known `StreamOp::Close` targets now lower to either
+  `AwbcInstruction::StreamClose` or `AwbcInstruction::SourceClose` by resolving
+  the target against owned stream/source inventories. Unknown or dynamic close
+  targets now emit a structured lowering diagnostic rather than compiling to
+  the wrong stream.
+- the differential harness now covers two stream plans where the second stream
+  yields and closes itself, proving that multi-stream yield and close events are
+  projected to the correct public stream IDs and sequences.
+
+Exact validation run for this cut:
+
+```text
+cargo fmt --all -- --check
+  passed
+
+cargo test -p arcweft-runtime-plan awbc -- --nocapture
+  passed: 1 awbc_lower unit test and 25 awbc_product_parity tests passed,
+  0 failed
+
+cargo test -p arcweft-core awbc -- --nocapture
+  passed: 15 passed, 0 failed
+
+cargo check -p arcweft-core -p arcweft-runtime-plan -p arcweft-compiler -p arcweft-bundle -p arcweft-cli -p arcweft-runtime-driver -p arcweft-runtime-host -p arcweft-player-native --all-targets
+  passed
+
+cargo test -p arcweft-bundle product_awbc -- --nocapture
+  passed: 4 product_awbc tests and 2 product source-gate tests passed,
+  0 failed
+
+cargo test -p arcweft-runtime-driver awbc_product -- --nocapture
+  passed: 1 passed, 0 failed
+
+cargo test -p arcweft-runtime-host awbc_product -- --nocapture
+  passed: 1 passed, 0 failed
+
+cargo test -p arcweft-player-native awbc_product -- --nocapture
+  passed: 1 passed, 0 failed
+
+cargo test -p arcweft-cli awfb -- --nocapture
+  passed: 8 passed, 0 failed
+  note: the stderr line about a truncated AWFB is the expected rejection path
+  from the non-AWFB-input test.
+
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+  passed
+
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+  passed with no error-level violations: files scanned 1514, Rust files 833,
+  Rust physical LOC 409347, package manifests 89, warnings 102.
+
+git diff --check
+  passed
+```
+
+Structural measurements for files touched in the seventh cut:
+
+| Path | Bytes | Physical LOC | Kind / responsibility |
+|---|---:|---:|---|
+| `crates/arcweft-runtime-plan/src/awbc_lower/inventory.rs` | 43910 | 1056 | production AWBC inventory and table interning; warning-level `lib.rs`/large responsibility-adjacent hotspot because it owns many compact tables |
+| `crates/arcweft-runtime-plan/src/awbc_lower/source.rs` | 14283 | 347 | production source and stream AWBC lowering |
+| `crates/arcweft-runtime-plan/tests/awbc_product_parity.rs` | 30109 | 879 | integration differential parity tests |
+
+Remaining matrix limits after this cut:
+
+- multi-stream yield and self-close routing is now differentially covered for
+  ordinary static stream targets. Dynamic close-target expressions remain
+  unsupported by the compact AWBC instruction shape and currently fail lowering
+  with a diagnostic instead of silently misrouting.
+- source close target routing is covered for a source `Disconnected` handler
+  closing a later source. Stream-to-source static close is implemented in the
+  lowerer but still needs a dedicated differential row.
+- source item/progress handler pattern binding and duplicate/out-of-order
+  source event policy behavior still need dedicated differential rows.
+- await-many partial completion followed by error/cancel is covered for one
+  ready item followed by failure. Broader out-of-order progress/ready ordering
+  with more than two items remains open.
+- direct host-call differential coverage still requires a runtime-plan
+  host-call surface; product-step has direct host-call request/result unit
+  coverage only.
+- effect-kind rows still have direct product mapping-table coverage, not a
+  structured-vs-AWBC differential row for every kind.
+- typed trap rows and full final-facade statistics/state equality remain open.
+
 ## Required integration work before marking seq-01.6.1 complete
 
 - expand the differential harness to cover every row in the companion matrix,

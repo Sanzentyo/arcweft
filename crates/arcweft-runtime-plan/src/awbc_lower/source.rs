@@ -10,12 +10,19 @@ use arcweft_core::awbc::schema::{
     AwbcStreamPlan, AwbcStreamPlanId, AwbcTableRange, AwbcTerminator,
 };
 use arcweft_core::plan::RuntimePlan;
-use arcweft_core::source::{SourceHandlerPlan, SourceOp};
+use arcweft_core::source::{SourceHandlerPlan, SourceId, SourceOp};
 use arcweft_core::stream::{StreamOp, StreamPlan};
+use arcweft_core::value::{RuntimeExpr, RuntimeValue};
 
 /// Lowers source and stream declarations after flow functions exist.
 pub struct AwbcSourceStreamLowerer<'a> {
     inventory: &'a mut AwbcInventory,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum StaticQueueTarget<'a> {
+    Source(&'a str),
+    Stream(&'a str),
 }
 
 impl<'a> AwbcSourceStreamLowerer<'a> {
@@ -24,8 +31,12 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
     }
 
     pub fn lower_plan(&mut self, plan: &RuntimePlan) {
-        for stream in &plan.stream_plans {
-            self.lower_stream(stream);
+        let stream_start = self.inventory.program.stream_plans.len();
+        for (offset, stream) in plan.stream_plans.iter().enumerate() {
+            self.inventory.reserve_stream_plan_id(
+                stream.id.clone(),
+                AwbcStreamPlanId(table_index(stream_start + offset)),
+            );
         }
         let source_start = self.inventory.program.source_plans.len();
         for (offset, source) in plan.source_plans.iter().enumerate() {
@@ -33,6 +44,9 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
                 source.id.clone(),
                 AwbcSourcePlanId(table_index(source_start + offset)),
             );
+        }
+        for stream in &plan.stream_plans {
+            self.lower_stream(stream);
         }
         for source in &plan.source_plans {
             let public_id = self.inventory.intern_string(&source.id.0);
@@ -63,23 +77,34 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
     }
 
     fn lower_stream(&mut self, stream: &StreamPlan) {
-        let function = self.lower_stream_function(stream);
+        let stream_id = self
+            .inventory
+            .stream_plan_id(&stream.id)
+            .unwrap_or(AwbcStreamPlanId(0));
+        let function = self.lower_stream_function(stream, stream_id);
         let public_id = self.inventory.intern_string(&stream.id.0);
         let item_type = self.inventory.dynamic_ty();
         let error_type = self.inventory.dynamic_ty();
-        self.inventory.program.stream_plans.push(AwbcStreamPlan {
-            public_id,
-            item_type,
-            error_type,
-            transform: function,
-        });
+        self.inventory.push_stream_plan(
+            stream.id.clone(),
+            AwbcStreamPlan {
+                public_id,
+                item_type,
+                error_type,
+                transform: function,
+            },
+        );
     }
 
-    fn lower_stream_function(&mut self, stream: &StreamPlan) -> AwbcFunctionId {
+    fn lower_stream_function(
+        &mut self,
+        stream: &StreamPlan,
+        stream_id: AwbcStreamPlanId,
+    ) -> AwbcFunctionId {
         let mut frame = FrameBuilder::new();
         let body_start = table_index(self.inventory.program.instructions.len());
         for op in &stream.ops {
-            self.lower_stream_op(&mut frame, op);
+            self.lower_stream_op(&mut frame, stream_id, op);
         }
         let block_owner = AwbcFunctionId(table_index(self.inventory.program.functions.len()));
         let block = self.inventory.push_block(AwbcBlock {
@@ -111,7 +136,12 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
         )
     }
 
-    fn lower_stream_op(&mut self, frame: &mut FrameBuilder, op: &StreamOp) {
+    fn lower_stream_op(
+        &mut self,
+        frame: &mut FrameBuilder,
+        stream: AwbcStreamPlanId,
+        op: &StreamOp,
+    ) {
         match op {
             StreamOp::Let { pattern, expr } => {
                 let value = AwbcExprLowerer::new(self.inventory, frame, "stream.let").lower(expr);
@@ -127,18 +157,40 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
             StreamOp::Yield { expr } => {
                 let value = AwbcExprLowerer::new(self.inventory, frame, "stream.yield").lower(expr);
                 self.inventory
-                    .push_instruction(AwbcInstruction::StreamYield {
-                        stream: AwbcStreamPlanId(0),
-                        value,
-                    });
+                    .push_instruction(AwbcInstruction::StreamYield { stream, value });
             }
-            StreamOp::Close { source } => {
-                let _ = AwbcExprLowerer::new(self.inventory, frame, "stream.close").lower(source);
-                self.inventory
-                    .push_instruction(AwbcInstruction::StreamClose {
-                        stream: AwbcStreamPlanId(0),
-                    });
-            }
+            StreamOp::Close { source } => match self.resolve_static_queue_target(source) {
+                Some(StaticQueueTarget::Source(source)) => {
+                    if let Some(source) =
+                        self.inventory.source_plan_id(&SourceId(source.to_owned()))
+                    {
+                        self.inventory
+                            .push_instruction(AwbcInstruction::SourceClose { source });
+                    } else {
+                        self.lower_unknown_stream_close_target(source);
+                    }
+                }
+                Some(StaticQueueTarget::Stream(target)) => {
+                    if let Some(stream) = self
+                        .inventory
+                        .stream_plan_id(&arcweft_core::stream::StreamRuntimeId(target.to_owned()))
+                    {
+                        self.inventory
+                            .push_instruction(AwbcInstruction::StreamClose { stream });
+                    } else {
+                        self.lower_unknown_stream_close_target(target);
+                    }
+                }
+                None => {
+                    let _ =
+                        AwbcExprLowerer::new(self.inventory, frame, "stream.close").lower(source);
+                    self.inventory.push_instruction(AwbcInstruction::Nop);
+                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                        "stream.close",
+                        "dynamic stream close target is not representable in AWBC tables",
+                    ));
+                }
+            },
             StreamOp::If {
                 condition,
                 then_ops,
@@ -146,10 +198,10 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
             } => {
                 let _ = AwbcExprLowerer::new(self.inventory, frame, "stream.if").lower(condition);
                 for op in then_ops {
-                    self.lower_stream_op(frame, op);
+                    self.lower_stream_op(frame, stream, op);
                 }
                 for op in else_ops {
-                    self.lower_stream_op(frame, op);
+                    self.lower_stream_op(frame, stream, op);
                 }
             }
             StreamOp::Match { scrutinee, arms } => {
@@ -157,7 +209,7 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
                     AwbcExprLowerer::new(self.inventory, frame, "stream.match").lower(scrutinee);
                 for arm in arms {
                     for op in &arm.ops {
-                        self.lower_stream_op(frame, op);
+                        self.lower_stream_op(frame, stream, op);
                     }
                 }
             }
@@ -165,7 +217,7 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
                 let _ =
                     AwbcExprLowerer::new(self.inventory, frame, "stream.for_next").lower(source);
                 for op in body {
-                    self.lower_stream_op(frame, op);
+                    self.lower_stream_op(frame, stream, op);
                 }
             }
             StreamOp::Return => {}
@@ -173,6 +225,34 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
                 self.inventory.push_instruction(AwbcInstruction::Nop);
             }
         }
+    }
+
+    fn resolve_static_queue_target<'b>(
+        &self,
+        expr: &'b RuntimeExpr,
+    ) -> Option<StaticQueueTarget<'b>> {
+        let target = match expr {
+            RuntimeExpr::Value(RuntimeValue::String(target) | RuntimeValue::EntityRef(target))
+            | RuntimeExpr::EntityRef(target) => target.as_str(),
+            _ => return None,
+        };
+        if self
+            .inventory
+            .source_plan_id(&SourceId(target.to_owned()))
+            .is_some()
+        {
+            Some(StaticQueueTarget::Source(target))
+        } else {
+            Some(StaticQueueTarget::Stream(target))
+        }
+    }
+
+    fn lower_unknown_stream_close_target(&mut self, target: &str) {
+        self.inventory.push_instruction(AwbcInstruction::Nop);
+        self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+            "stream.close",
+            format!("unknown stream/source close target '{target}'"),
+        ));
     }
 
     fn lower_source_handler(&mut self, handler: &SourceHandlerPlan) -> AwbcFunctionId {
