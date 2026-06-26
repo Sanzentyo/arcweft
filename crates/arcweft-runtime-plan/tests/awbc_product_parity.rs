@@ -738,6 +738,65 @@ fn awbc_product_parity_source_progress_handler_respects_pattern() {
 }
 
 #[test]
+fn awbc_product_parity_source_error_handler_respects_pattern() {
+    let driver = SourceId("source.driver".to_owned());
+    let target = SourceId("source.target".to_owned());
+    let steps = run_parity(
+        flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
+            Vec::new(),
+            vec![
+                SourcePlan {
+                    id: driver.clone(),
+                    item_ty: "Frame".to_owned(),
+                    error_ty: "SourceError".to_owned(),
+                    from: RuntimeExpr::Value(RuntimeValue::String("driver".to_owned())),
+                    policy: SourcePolicy::default(),
+                    handlers: vec![SourceHandlerPlan::Error {
+                        pattern: RuntimePattern::Literal(RuntimeValue::String(
+                            "recoverable".to_owned(),
+                        )),
+                        ops: vec![SourceOp::Close(target.clone())],
+                    }],
+                },
+                SourcePlan {
+                    id: target.clone(),
+                    item_ty: "Frame".to_owned(),
+                    error_ty: "SourceError".to_owned(),
+                    from: RuntimeExpr::Value(RuntimeValue::String("target".to_owned())),
+                    policy: SourcePolicy::default(),
+                    handlers: Vec::new(),
+                },
+            ],
+        ),
+        vec![RuntimeStepInput {
+            source_events: vec![
+                RuntimeSourceEvent {
+                    source: driver.clone(),
+                    sequence: TaskSequence(0),
+                    kind: SourceEventKind::Error(RuntimePayload(RuntimeValue::String(
+                        "fatal".to_owned(),
+                    ))),
+                },
+                RuntimeSourceEvent {
+                    source: driver,
+                    sequence: TaskSequence(1),
+                    kind: SourceEventKind::Error(RuntimePayload(RuntimeValue::String(
+                        "recoverable".to_owned(),
+                    ))),
+                },
+            ],
+            ..RuntimeStepInput::default()
+        }],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.requests.source_close,
+        vec![target]
+    );
+}
+
+#[test]
 fn awbc_product_parity_stream_yield() {
     let plan = flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
         vec![StreamPlan {
@@ -817,6 +876,36 @@ fn awbc_product_parity_multi_stream_yield_and_close() {
     let steps = run_parity(plan, vec![RuntimeStepInput::default()]);
 
     assert_step_boundary_eq(&steps[0]);
+}
+
+#[test]
+fn awbc_product_parity_stream_closes_source_target() {
+    let source = SourceId("source.generated".to_owned());
+    let plan = flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
+        vec![StreamPlan {
+            id: StreamRuntimeId("stream.driver".to_owned()),
+            item_ty: "String".to_owned(),
+            error_ty: "String".to_owned(),
+            ops: vec![StreamOp::Close {
+                source: RuntimeExpr::Value(RuntimeValue::String(source.0.clone())),
+            }],
+        }],
+        vec![SourcePlan {
+            id: source.clone(),
+            item_ty: "Frame".to_owned(),
+            error_ty: "SourceError".to_owned(),
+            from: RuntimeExpr::Value(RuntimeValue::String("source".to_owned())),
+            policy: SourcePolicy::default(),
+            handlers: Vec::new(),
+        }],
+    );
+    let steps = run_parity(plan, vec![RuntimeStepInput::default()]);
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.requests.source_close,
+        vec![source]
+    );
 }
 
 #[test]
