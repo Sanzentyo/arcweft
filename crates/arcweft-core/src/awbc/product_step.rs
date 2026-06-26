@@ -368,6 +368,7 @@ impl AwbcProductStepExecutor {
             ))
         }));
         self.apply_source_events(source_events, &mut output);
+        self.step_stream_plans(&mut output, pure_backend);
 
         if matches!(
             self.fiber
@@ -499,6 +500,89 @@ impl AwbcProductStepExecutor {
             Err(error) => {
                 self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
                 1
+            }
+        }
+    }
+
+    fn step_stream_plans(
+        &mut self,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) {
+        let transforms = self
+            .program
+            .stream_plans
+            .iter()
+            .map(|stream| stream.transform)
+            .collect::<Vec<_>>();
+        for transform in transforms {
+            self.step_stream_transform(transform, output, pure_backend);
+        }
+    }
+
+    fn step_stream_transform(
+        &mut self,
+        transform: AwbcFunctionId,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) {
+        let mut fiber =
+            match FiberState::for_function(&self.program, self.fiber.entry, transform, 0, 64) {
+                Ok(fiber) => fiber,
+                Err(error) => {
+                    self.record_error(ProductStepError::Internal(error.to_string()), output);
+                    return;
+                }
+            };
+        loop {
+            let step = {
+                let mut host = ProductVmHost {
+                    backend: pure_backend,
+                    fallback_stats: &mut self.compact_pure_stats,
+                };
+                step_with_host(
+                    &self.program,
+                    &mut fiber,
+                    VmStepOptions {
+                        max_instructions: 64,
+                    },
+                    &mut host,
+                )
+            };
+            match step {
+                Ok(vm_output) => {
+                    self.consume_observations(vm_output.observations, output);
+                    match vm_output.exit {
+                        VmExit::Running => {}
+                        VmExit::Returned(_) => return,
+                        VmExit::Trapped(trap) => {
+                            self.record_trap(&trap, output);
+                            return;
+                        }
+                        VmExit::Suspended(reason) => {
+                            self.record_error(
+                                ProductStepError::Internal(format!(
+                                    "stream transform suspended at {reason:?}"
+                                )),
+                                output,
+                            );
+                            return;
+                        }
+                        VmExit::BudgetYield(_) => {
+                            self.record_error(
+                                ProductStepError::Internal(
+                                    "stream transform exhausted compact budget".to_owned(),
+                                ),
+                                output,
+                            );
+                            return;
+                        }
+                    }
+                }
+                Err(error) => {
+                    self.record_error(ProductStepError::Internal(error.to_string()), output);
+                    return;
+                }
             }
         }
     }

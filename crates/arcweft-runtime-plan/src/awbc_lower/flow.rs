@@ -6,11 +6,15 @@ use crate::awbc_lower::pattern::lower_pattern;
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
     AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption, AwbcFrameLayoutId,
-    AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcInstruction,
-    AwbcIntrinsic, AwbcIntrinsicId, AwbcLineTaskGroupId, AwbcRegisterId, AwbcResumePoint,
-    AwbcResumePointId, AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator,
+    AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
+    AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcLineTaskGroupId, AwbcPureHelper,
+    AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind,
+    AwbcScopeId, AwbcTableRange, AwbcTerminator,
 };
-use arcweft_core::plan::{ChoiceRuntimeOption, FlowOp, RuntimeFlow, RuntimeMatchArm, RuntimePlan};
+use arcweft_core::plan::{
+    ChoiceRuntimeOption, FlowOp, RuntimeFlow, RuntimeMatchArm, RuntimePlan, RuntimePureHelper,
+    RuntimePureHelperOrigin,
+};
 
 /// Builds one contiguous flow body while allowing host-visible suspension
 /// terminators to split the instruction stream into verified resume blocks.
@@ -141,6 +145,9 @@ impl<'a> AwbcFlowLowerer<'a> {
     }
 
     pub fn lower_plan(&mut self, plan: &RuntimePlan) {
+        for helper in &plan.pure_helpers {
+            self.lower_pure_helper(helper);
+        }
         for (index, group) in plan.line_task_groups.iter().enumerate() {
             let group_id = self.inventory.lower_line_task_group(group);
             let public_id = format!("line_task_group.{index}");
@@ -160,6 +167,75 @@ impl<'a> AwbcFlowLowerer<'a> {
             self.lower_flow(flow);
         }
         self.inventory.lower_entries(plan);
+    }
+
+    fn lower_pure_helper(&mut self, helper: &RuntimePureHelper) {
+        let expected_index = self.inventory.program.pure_helpers.len();
+        if helper.id.0 != expected_index {
+            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                format!("pure.{}", helper.name),
+                format!(
+                    "pure helper `{}` has id {}, expected contiguous id {}",
+                    helper.name, helper.id.0, expected_index
+                ),
+            ));
+            return;
+        }
+
+        let owner = AwbcFunctionId(table_index(self.inventory.program.functions.len()));
+        let mut frame = FrameBuilder::new();
+        let dynamic_ty = self.inventory.dynamic_ty();
+        for input in &helper.input_names {
+            let name = self.inventory.intern_string(input);
+            frame.slot(
+                crate::awbc_lower::frame::FrameSlotKey::Local(input.clone()),
+                Some(name),
+                dynamic_ty,
+                AwbcFrameSlotRole::Parameter,
+            );
+        }
+        let instruction_start = table_index(self.inventory.program.instructions.len());
+        let value =
+            AwbcExprLowerer::new(self.inventory, &mut frame, format!("pure.{}", helper.name))
+                .lower(&helper.expr);
+        let instruction_len =
+            table_range_len(instruction_start, self.inventory.program.instructions.len());
+        let layout = self
+            .inventory
+            .intern_frame_layout(format!("pure.{}:frame", helper.name), frame.finish());
+        let block = self.inventory.push_block(AwbcBlock {
+            owner,
+            instructions: AwbcTableRange::new(instruction_start, instruction_len),
+            terminator: AwbcTerminator::Return { value: Some(value) },
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        });
+        let public_id = self.inventory.intern_string(&helper.name);
+        let signature = self
+            .inventory
+            .intern_dynamic_value_signature(helper.input_names.len());
+        let function = self.inventory.push_function(
+            Some(&helper.name),
+            AwbcFunction {
+                public_id: Some(public_id),
+                kind: AwbcFunctionKind::PureHelper,
+                signature,
+                frame_layout: layout,
+                blocks: AwbcTableRange::new(block.0, 1),
+                entry_block: block,
+                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            },
+        );
+        self.inventory.program.pure_helpers.push(AwbcPureHelper {
+            public_id,
+            signature,
+            function,
+            scalar_eval_supported: helper.scalar_eval_supported,
+            origin: match helper.origin {
+                RuntimePureHelperOrigin::Annotated => AwbcPureHelperOrigin::Annotated,
+                RuntimePureHelperOrigin::Inferred => AwbcPureHelperOrigin::Inferred,
+            },
+        });
     }
 
     pub fn into_diagnostics(mut self) -> Vec<AwbcLowerDiagnostic> {

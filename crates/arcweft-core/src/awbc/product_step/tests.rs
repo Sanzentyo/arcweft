@@ -1,10 +1,20 @@
 use super::{AwbcProductStepExecutor, AwbcProductStepParityBlocker};
+use crate::awbc::product_step::mapping::MappedEffect;
 use crate::awbc::schema::{
-    AwbcChoiceId, AwbcEffectPlanId, AwbcInstruction, AwbcProgram, AwbcRegisterId,
-    AwbcResumePointId, AwbcTerminator,
+    AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcConstant, AwbcContentUnit, AwbcEffectKind,
+    AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSetId, AwbcEntryId, AwbcFrameLayout,
+    AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlags,
+    AwbcFunctionId, AwbcFunctionKind, AwbcHostCall, AwbcHostCallId, AwbcHostCallMode,
+    AwbcInstruction, AwbcProgram, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
+    AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange,
+    AwbcTerminator, AwbcTypeId,
 };
-use crate::engine::FlowFiberStatus;
-use crate::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepStopReason};
+use crate::engine::{FlowExit, FlowFiberStatus};
+use crate::step::{
+    RuntimeHostCallId, RuntimeHostCallMode, RuntimeHostCallResult, RuntimeStepInput,
+    RuntimeStepOptions, RuntimeStepStopReason,
+};
+use crate::value::{RuntimePayload, RuntimeValue};
 
 #[test]
 fn empty_product_program_finishes_without_diagnostics() {
@@ -52,4 +62,273 @@ fn product_program_inventory_is_empty_after_adapter_coverage() {
         program.product_step_parity_blockers(),
         Vec::<AwbcProductStepParityBlocker>::new()
     );
+}
+
+#[test]
+fn host_call_request_and_result_resume_at_runtime_step_boundary() {
+    let mut executor = AwbcProductStepExecutor::for_entry(host_call_program(), AwbcEntryId(0), 64)
+        .expect("host-call product executor starts");
+
+    let first = executor.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+
+    assert_eq!(first.output.requests.host_calls.len(), 1);
+    let request = &first.output.requests.host_calls[0];
+    assert_eq!(request.id, RuntimeHostCallId("host.probe".to_owned()));
+    assert_eq!(request.public_id, "host.probe");
+    assert_eq!(request.capability, "probe");
+    assert_eq!(request.operation, "read");
+    assert_eq!(request.args, Vec::<RuntimePayload>::new());
+    assert_eq!(request.mode, RuntimeHostCallMode::Suspend);
+    assert!(request.deterministic);
+    assert_eq!(first.stop_reason, RuntimeStepStopReason::Output);
+
+    let second = executor.step(
+        RuntimeStepInput {
+            host_call_results: vec![RuntimeHostCallResult {
+                id: request.id.clone(),
+                outcome: Ok(RuntimePayload(RuntimeValue::String("host-ok".to_owned()))),
+            }],
+            ..RuntimeStepInput::default()
+        },
+        RuntimeStepOptions::default(),
+    );
+
+    assert!(second.output.requests.host_calls.is_empty());
+    assert_eq!(second.fiber_status, FlowFiberStatus::Running);
+
+    let third = executor.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+    assert!(
+        third
+            .output
+            .flow_events
+            .contains(&crate::plan::FlowEvent::Return {
+                value: "host-ok".to_owned()
+            })
+    );
+    assert_eq!(
+        third.fiber_status,
+        FlowFiberStatus::Done(FlowExit::Return("host-ok".to_owned()))
+    );
+}
+
+#[test]
+fn ensure_content_instruction_projects_typed_content_request() {
+    let mut executor =
+        AwbcProductStepExecutor::for_entry(content_ensure_program(), AwbcEntryId(0), 64)
+            .expect("content product executor starts");
+
+    let first = executor.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+
+    assert_eq!(first.output.requests.ensure_content.len(), 1);
+    assert_eq!(
+        first.output.requests.ensure_content[0].content,
+        "line.content"
+    );
+    assert!(first.output.requests.ensure_content[0].resources.is_empty());
+    assert_eq!(first.stats.executed_ops, 1);
+
+    let second = executor.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+
+    assert!(second.output.requests.ensure_content.is_empty());
+    assert_eq!(second.stop_reason, RuntimeStepStopReason::Done);
+}
+
+#[test]
+fn effect_mapping_table_covers_every_awbc_effect_kind() {
+    let mut program = AwbcProgram::default();
+    let cases = [
+        (AwbcEffectKind::RegisterHandle, true),
+        (AwbcEffectKind::DropHandle, true),
+        (AwbcEffectKind::Wait, true),
+        (AwbcEffectKind::Audio, false),
+        (AwbcEffectKind::Call, true),
+        (AwbcEffectKind::Log, true),
+        (AwbcEffectKind::SignalWrite, true),
+        (AwbcEffectKind::MetricWrite, true),
+        (AwbcEffectKind::EmitEvent, true),
+        (AwbcEffectKind::Out, true),
+        (AwbcEffectKind::Return, true),
+        (AwbcEffectKind::Goto, true),
+        (AwbcEffectKind::Panic, true),
+        (AwbcEffectKind::Fail, true),
+        (AwbcEffectKind::Bail, true),
+        (AwbcEffectKind::Ensure, true),
+        (AwbcEffectKind::Assert, true),
+        (AwbcEffectKind::Close, true),
+        (AwbcEffectKind::Select, true),
+        (AwbcEffectKind::Break, true),
+        (AwbcEffectKind::Continue, true),
+    ];
+
+    for (kind, should_map_to_line_effect) in cases {
+        let effect = push_effect_plan(&mut program, kind);
+        let mapped = kind.map_product_effect(&program, effect, &[]);
+        assert_eq!(
+            matches!(mapped, MappedEffect::Line(_)),
+            should_map_to_line_effect
+        );
+        assert_eq!(
+            matches!(mapped, MappedEffect::Unsupported(_)),
+            !should_map_to_line_effect
+        );
+    }
+}
+
+fn content_ensure_program() -> AwbcProgram {
+    let strings = vec!["entry.main".to_owned(), "line.content".to_owned()];
+    let signature = AwbcSignature {
+        params: Vec::new(),
+        result: None,
+        effects: AwbcEffectSetId(0),
+    };
+    AwbcProgram {
+        strings,
+        signatures: vec![signature],
+        frame_layouts: vec![AwbcFrameLayout {
+            slots: Vec::new(),
+            max_scope_depth: 0,
+        }],
+        content_units: vec![AwbcContentUnit {
+            public_id: AwbcStringId(1),
+            line_task_group: None,
+            display: None,
+            source: None,
+            resources: Vec::new(),
+        }],
+        instructions: vec![AwbcInstruction::EnsureContent {
+            content: crate::awbc::schema::AwbcContentUnitId(0),
+        }],
+        blocks: vec![AwbcBlock {
+            owner: AwbcFunctionId(0),
+            instructions: AwbcTableRange::new(0, 1),
+            terminator: AwbcTerminator::Return { value: None },
+            safe_point: AwbcSafePointKind::FlowEntry,
+            source_map: None,
+        }],
+        functions: vec![AwbcFunction {
+            public_id: Some(AwbcStringId(0)),
+            kind: AwbcFunctionKind::Flow,
+            signature: AwbcSignatureId(0),
+            frame_layout: AwbcFrameLayoutId(0),
+            blocks: AwbcTableRange::new(0, 1),
+            entry_block: AwbcBlockId(0),
+            flags: AwbcFunctionFlags::default(),
+        }],
+        entries: vec![crate::awbc::schema::AwbcEntry {
+            public_id: AwbcStringId(0),
+            kind: crate::awbc::schema::AwbcEntryKind::Game,
+            signature: AwbcSignatureId(0),
+            target: crate::awbc::schema::AwbcEntryTarget::Function(AwbcFunctionId(0)),
+        }],
+        ..AwbcProgram::default()
+    }
+}
+
+fn host_call_program() -> AwbcProgram {
+    let strings = vec![
+        "entry.main".to_owned(),
+        "host.probe".to_owned(),
+        "probe".to_owned(),
+        "read".to_owned(),
+    ];
+    let signature = AwbcSignature {
+        params: Vec::new(),
+        result: Some(AwbcTypeId(1)),
+        effects: AwbcEffectSetId(0),
+    };
+    let frame_layout = AwbcFrameLayout {
+        slots: vec![AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(1),
+            role: AwbcFrameSlotRole::ReturnValue,
+            scope_depth: 0,
+        }],
+        max_scope_depth: 0,
+    };
+    AwbcProgram {
+        strings,
+        signatures: vec![signature],
+        frame_layouts: vec![frame_layout],
+        host_calls: vec![AwbcHostCall {
+            public_id: AwbcStringId(1),
+            capability: AwbcStringId(2),
+            operation: AwbcStringId(3),
+            signature: AwbcSignatureId(0),
+            mode: AwbcHostCallMode::Suspend,
+            deterministic: true,
+        }],
+        resume_points: vec![AwbcResumePoint {
+            function: AwbcFunctionId(0),
+            block: AwbcBlockId(1),
+            frame_layout: AwbcFrameLayoutId(0),
+            kind: AwbcSafePointKind::HostCall,
+        }],
+        blocks: vec![
+            AwbcBlock {
+                owner: AwbcFunctionId(0),
+                instructions: AwbcTableRange::new(0, 0),
+                terminator: AwbcTerminator::HostCall {
+                    call: AwbcHostCallId(0),
+                    args: Vec::new(),
+                    dst: Some(AwbcRegisterId(0)),
+                    resume: AwbcResumePointId(0),
+                },
+                safe_point: AwbcSafePointKind::FlowEntry,
+                source_map: None,
+            },
+            AwbcBlock {
+                owner: AwbcFunctionId(0),
+                instructions: AwbcTableRange::new(0, 0),
+                terminator: AwbcTerminator::Return {
+                    value: Some(AwbcRegisterId(0)),
+                },
+                safe_point: AwbcSafePointKind::Return,
+                source_map: None,
+            },
+        ],
+        functions: vec![AwbcFunction {
+            public_id: Some(AwbcStringId(0)),
+            kind: AwbcFunctionKind::Flow,
+            signature: AwbcSignatureId(0),
+            frame_layout: AwbcFrameLayoutId(0),
+            blocks: AwbcTableRange::new(0, 2),
+            entry_block: AwbcBlockId(0),
+            flags: AwbcFunctionFlags(AwbcFunctionFlags::MAY_SUSPEND),
+        }],
+        entries: vec![crate::awbc::schema::AwbcEntry {
+            public_id: AwbcStringId(0),
+            kind: crate::awbc::schema::AwbcEntryKind::Game,
+            signature: AwbcSignatureId(0),
+            target: crate::awbc::schema::AwbcEntryTarget::Function(AwbcFunctionId(0)),
+        }],
+        ..AwbcProgram::default()
+    }
+}
+
+fn push_effect_plan(program: &mut AwbcProgram, kind: AwbcEffectKind) -> AwbcEffectPlanId {
+    let static_args = (0..4)
+        .map(|index| constant_string(program, &format!("arg{index}")))
+        .collect();
+    let effect = AwbcEffectPlanId(
+        u32::try_from(program.effect_plans.len()).expect("test effect table index fits u32"),
+    );
+    program.effect_plans.push(AwbcEffectPlan {
+        kind,
+        signature: AwbcSignatureId(0),
+        capability: None,
+        static_args,
+        resources: Vec::new(),
+    });
+    effect
+}
+
+fn constant_string(program: &mut AwbcProgram, value: &str) -> crate::awbc::schema::AwbcConstantId {
+    let string =
+        AwbcStringId(u32::try_from(program.strings.len()).expect("test string index fits u32"));
+    program.strings.push(value.to_owned());
+    let constant = crate::awbc::schema::AwbcConstantId(
+        u32::try_from(program.constants.len()).expect("test constant index fits u32"),
+    );
+    program.constants.push(AwbcConstant::String(string));
+    constant
 }

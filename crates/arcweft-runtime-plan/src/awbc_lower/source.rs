@@ -80,7 +80,7 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
                 table_range_len(body_start, self.inventory.program.instructions.len()),
             ),
             terminator: AwbcTerminator::Return { value: None },
-            safe_point: AwbcSafePointKind::Return,
+            safe_point: AwbcSafePointKind::CallableBoundary,
             source_map: None,
         });
         let layout = self

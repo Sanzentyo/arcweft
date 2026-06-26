@@ -3,15 +3,21 @@ use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
 use arcweft_core::line_task::{LineTaskGroup, LineTaskNode, LineTaskScope};
 use arcweft_core::pattern::RuntimePattern;
-use arcweft_core::plan::{ChoiceRuntimeOption, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
+use arcweft_core::plan::{
+    ChoiceRuntimeOption, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan, RuntimePureHelper,
+    RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType,
+};
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepResult,
 };
+use arcweft_core::stream::{StreamOp, StreamPlan, StreamRuntimeId};
 use arcweft_core::task::{
     AwaitManyTarget, AwaitTarget, HostCapabilityId, HostTaskArgTemplate, HostTaskRequestTemplate,
     LogicalEpoch, NeedId, TaskEvent, TaskEventKind, TaskId, TaskSequence,
 };
-use arcweft_core::value::{RuntimeExpr, RuntimePayload, RuntimeSeq, RuntimeValue};
+use arcweft_core::value::{
+    RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimePayload, RuntimeSeq, RuntimeValue,
+};
 use arcweft_interaction_model::{
     id::Identifier,
     input::{InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent},
@@ -156,6 +162,64 @@ fn awbc_product_parity_entry() {
         flow(vec![FlowOp::Return("done".to_owned())]),
         vec![RuntimeStepInput::default()],
     );
+
+    assert_step_boundary_eq(&steps[0]);
+}
+
+#[test]
+fn awbc_product_parity_entry_local_bindings() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::Let {
+                pattern: RuntimePattern::Ident("total".to_owned()),
+                expr: RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(5))),
+                },
+            },
+            FlowOp::ReturnExpr(RuntimeExpr::Local("total".to_owned())),
+        ]),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+}
+
+#[test]
+fn awbc_product_parity_pure_intrinsic() {
+    let helper = RuntimePureHelper {
+        id: RuntimePureHelperId(0),
+        name: "helper.add_one".to_owned(),
+        input_names: vec!["x".to_owned()],
+        input_types: vec![RuntimePureInputType::I64],
+        output_type: RuntimePureOutputType::I64,
+        expr: RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("x".to_owned())),
+            op: RuntimeBinaryOp::Add,
+            rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(1))),
+        },
+        scalar_eval_supported: true,
+        origin: RuntimePureHelperOrigin::Inferred,
+    };
+    let plan = flow(vec![
+        FlowOp::Let {
+            pattern: RuntimePattern::Ident("pure_value".to_owned()),
+            expr: RuntimeExpr::PureCall {
+                helper: RuntimePureHelperId(0),
+                args: vec![RuntimeExpr::Value(RuntimeValue::i64(41))],
+            },
+        },
+        FlowOp::ReturnExpr(RuntimeExpr::Call {
+            callee: RuntimeCallTarget::intrinsic(arcweft_core::value::RuntimeIntrinsic::Add),
+            args: vec![
+                RuntimeExpr::Local("pure_value".to_owned()),
+                RuntimeExpr::Value(RuntimeValue::i64(1)),
+            ],
+        }),
+    ])
+    .with_pure_helpers(vec![helper]);
+    let steps = run_parity(plan, vec![RuntimeStepInput::default()]);
 
     assert_step_boundary_eq(&steps[0]);
 }
@@ -318,6 +382,24 @@ fn awbc_product_parity_source_stream() {
             ..RuntimeStepInput::default()
         }],
     );
+
+    assert_step_boundary_eq(&steps[0]);
+}
+
+#[test]
+fn awbc_product_parity_stream_yield() {
+    let plan = flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
+        vec![StreamPlan {
+            id: StreamRuntimeId("stream.generated".to_owned()),
+            item_ty: "String".to_owned(),
+            error_ty: "String".to_owned(),
+            ops: vec![StreamOp::Yield {
+                expr: RuntimeExpr::Value(RuntimeValue::String("stream-item".to_owned())),
+            }],
+        }],
+        Vec::new(),
+    );
+    let steps = run_parity(plan, vec![RuntimeStepInput::default()]);
 
     assert_step_boundary_eq(&steps[0]);
 }

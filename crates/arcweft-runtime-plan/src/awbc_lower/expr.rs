@@ -204,7 +204,7 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                 );
                 let body = self.lower(body);
                 let dst = self.frame.temp(self.inventory.dynamic_ty());
-                let intrinsic = self.intern_intrinsic("seq.map");
+                let intrinsic = self.intern_intrinsic("seq.map", 2);
                 self.inventory
                     .push_instruction(AwbcInstruction::CallIntrinsic {
                         dst: Some(dst),
@@ -216,7 +216,7 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
             RuntimeExpr::Sum { source } => {
                 let source = self.lower(source);
                 let dst = self.frame.temp(self.inventory.i64_ty());
-                let intrinsic = self.intern_intrinsic("seq.sum");
+                let intrinsic = self.intern_intrinsic("seq.sum", 1);
                 self.inventory
                     .push_instruction(AwbcInstruction::CallIntrinsic {
                         dst: Some(dst),
@@ -256,7 +256,7 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                 let condition = self.lower(condition);
                 let then_value = self.lower(then_expr);
                 let else_value = self.lower(else_expr);
-                let intrinsic = self.intern_intrinsic("select.bool");
+                let intrinsic = self.intern_intrinsic("select.bool", 3);
                 self.inventory
                     .push_instruction(AwbcInstruction::CallIntrinsic {
                         dst: Some(dst),
@@ -297,7 +297,7 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                 let then_value = self.lower(then_expr);
                 let else_value = self.lower(else_expr);
                 let dst = self.frame.temp(self.inventory.dynamic_ty());
-                let intrinsic = self.intern_intrinsic("select.bool");
+                let intrinsic = self.intern_intrinsic("select.bool", 3);
                 self.inventory
                     .push_instruction(AwbcInstruction::CallIntrinsic {
                         dst: Some(dst),
@@ -316,7 +316,7 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                         args.push(self.lower(guard));
                     }
                 }
-                let intrinsic = self.intern_intrinsic("match.value");
+                let intrinsic = self.intern_intrinsic("match.value", args.len());
                 self.inventory
                     .push_instruction(AwbcInstruction::CallIntrinsic {
                         dst: Some(dst),
@@ -331,7 +331,7 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
     fn lower_call(&mut self, callee: &RuntimeCallTarget, args: &[RuntimeExpr]) -> AwbcRegisterId {
         let args = args.iter().map(|arg| self.lower(arg)).collect::<Vec<_>>();
         let dst = self.frame.temp(self.inventory.dynamic_ty());
-        let intrinsic = self.intern_intrinsic(callee.as_label());
+        let intrinsic = self.intern_intrinsic(callee.as_label(), args.len());
         self.inventory
             .push_instruction(AwbcInstruction::CallIntrinsic {
                 dst: Some(dst),
@@ -341,18 +341,26 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
         dst
     }
 
-    fn intern_intrinsic(&mut self, label: &str) -> AwbcIntrinsicId {
-        if let Some((index, _)) = self
-            .inventory
-            .program
-            .intrinsics
-            .iter()
-            .enumerate()
-            .find(|(_, candidate)| self.inventory.string(candidate.public_id) == label)
+    fn intern_intrinsic(&mut self, label: &str, arity: usize) -> AwbcIntrinsicId {
+        if let Some((index, _)) =
+            self.inventory
+                .program
+                .intrinsics
+                .iter()
+                .enumerate()
+                .find(|(_, candidate)| {
+                    self.inventory.string(candidate.public_id) == label
+                        && self
+                            .inventory
+                            .program
+                            .signatures
+                            .get(candidate.signature.index())
+                            .is_some_and(|signature| signature.params.len() == arity)
+                })
         {
             return AwbcIntrinsicId(table_index(index));
         }
-        let signature = self.inventory.intern_dynamic_value_signature(0);
+        let signature = self.inventory.intern_dynamic_value_signature(arity);
         let id = AwbcIntrinsicId(table_index(self.inventory.program.intrinsics.len()));
         let public_id = self.inventory.intern_string(label);
         self.inventory.program.intrinsics.push(AwbcIntrinsic {

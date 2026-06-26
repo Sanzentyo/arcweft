@@ -268,11 +268,107 @@ exhaustive proof:
 - source/stream/budget/trap/statistics rows are smoke coverage, not the full
   scripted edge-case matrix from the companion document.
 
+## Integration update 2026-06-26, second cut
+
+Current working change before commit: `xuqtrrpu` over parent `mrmvzmkl`.
+
+This cut closes additional implementation-ready rows from the seq-01.6.1 matrix
+without restoring structured product fallback:
+
+- `awbc_lower` now lowers `RuntimePureHelper` entries into compact pure-helper
+  functions before flow lowering, preserving helper IDs, names, arity, scalar
+  metadata, and parameter slots as owned AWBC tables.
+- intrinsic signatures are arity-aware, so generic and known intrinsic calls no
+  longer collide through a single dynamic zero-parameter signature.
+- product runtime steps execute lowered stream transform functions and project
+  stream observations through the same product executor boundary as flow
+  execution.
+- stream transform functions use callable-boundary safe points, matching the
+  verifier's function-kind expectations.
+- the differential runtime-plan harness now includes local binding arithmetic,
+  pure-helper plus intrinsic execution, and stream-yield parity rows.
+- direct product-step tests now cover suspending host-call request/result
+  correlation, typed ensure-content projection, and a compile-time table over
+  every current `AwbcEffectKind`.
+
+Exact validation run for this cut:
+
+```text
+cargo fmt --all -- --check
+  passed
+
+cargo test -p arcweft-core awbc -- --nocapture
+  passed: 15 passed, 0 failed
+
+cargo test -p arcweft-runtime-plan awbc -- --nocapture
+  passed: 1 awbc_lower unit test and 12 awbc_product_parity tests passed, 0 failed
+
+cargo check -p arcweft-core -p arcweft-runtime-plan -p arcweft-compiler -p arcweft-bundle -p arcweft-cli -p arcweft-runtime-driver -p arcweft-runtime-host -p arcweft-player-native --all-targets
+  passed
+
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+  passed
+
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+  passed with no error-level violations: files scanned 1514, Rust files 833,
+  Rust physical LOC 408359, package manifests 89, warnings 102.
+
+cargo test -p arcweft-bundle product_awbc -- --nocapture
+  passed: 4 passed, 0 failed; product source-gate tests also passed, 2 passed,
+  0 failed.
+
+cargo test -p arcweft-cli awfb -- --nocapture
+  passed: 8 passed, 0 failed
+  note: the stderr line about a truncated AWFB is the expected rejection path
+  from the non-AWFB-input test.
+
+cargo test -p arcweft-runtime-driver awbc_product -- --nocapture
+  passed: 1 passed, 0 failed
+
+cargo test -p arcweft-runtime-host awbc_product -- --nocapture
+  passed: 1 passed, 0 failed
+
+cargo test -p arcweft-player-native awbc_product -- --nocapture
+  passed: 1 passed, 0 failed
+
+git diff --check
+  passed
+```
+
+Structural measurements for files touched in the second cut:
+
+| Path | Bytes | Physical LOC | Kind / responsibility |
+|---|---:|---:|---|
+| `crates/arcweft-core/src/awbc/product_step.rs` | 87152 | 2222 | production product AWBC RuntimeStepResult adapter; above the 1200 LOC warning threshold, below the 2500 LOC error threshold |
+| `crates/arcweft-core/src/awbc/product_step/tests.rs` | 12107 | 310 | unit tests for product adapter inventory, host-call, content, and effect mapping coverage |
+| `crates/arcweft-runtime-plan/src/awbc_lower/flow.rs` | 29649 | 724 | production flow and pure-helper lowering |
+| `crates/arcweft-runtime-plan/src/awbc_lower/expr.rs` | 16579 | 403 | production expression and intrinsic-call lowering |
+| `crates/arcweft-runtime-plan/src/awbc_lower/source.rs` | 11270 | 273 | production source and stream lowering |
+| `crates/arcweft-runtime-plan/tests/awbc_product_parity.rs` | 14518 | 419 | integration differential parity tests |
+
+Remaining gaps that still prevent declaring the full seq-01.6.1 matrix complete:
+
+- true entry positional/named/retry differential rows remain below the
+  runtime-plan harness because the current `RuntimePlan` entry surface does not
+  expose entry parameter metadata; core fiber tests cover the compact binding
+  contract directly.
+- host-call parity has direct product-step request/result coverage, while the
+  runtime-plan differential harness still covers host interaction through
+  host-task await; there is no direct host-call `FlowOp` row yet.
+- the effect table is direct product mapping coverage, not a structured-vs-AWBC
+  differential fixture for every effect kind.
+- the attempted division-by-zero differential row exposed that the structured
+  evaluator panics on integer division by zero instead of yielding a comparable
+  typed trap; that row remains blocked until the structured path is made
+  non-panicking or another verifier-safe trap fixture is selected.
+- source/stream/statistics edge rows are broader than the current smoke and
+  stream-yield fixtures.
+
 ## Required integration work before marking seq-01.6.1 complete
 
 - expand the differential harness to cover every row in the companion matrix,
-  especially pure/intrinsic, host-call, table-driven effect, and edge-case
-  source/stream/budget/trap/statistics fixtures;
+  especially direct entry-argument, host-call, table-driven effect, and
+  edge-case source/stream/budget/trap/statistics fixtures;
 - decide whether to split the product adapter before it crosses the 2500 LOC
   error threshold;
 - update this note with the final committed revision.
