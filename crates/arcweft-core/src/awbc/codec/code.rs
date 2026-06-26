@@ -223,6 +223,10 @@ impl Wire for AwbcInstruction {
             }
             Self::StreamClose { stream } => stream.write_wire(writer)?,
             Self::SourceClose { source } => source.write_wire(writer)?,
+            Self::SourceYield { source, value } => {
+                source.write_wire(writer)?;
+                value.write_wire(writer)?;
+            }
         }
         Ok(())
     }
@@ -380,6 +384,10 @@ impl Wire for AwbcInstruction {
             },
             AwbcOpcode::Drop => Self::Drop {
                 register: AwbcRegisterId::read_wire(reader)?,
+            },
+            AwbcOpcode::SourceYield => Self::SourceYield {
+                source: AwbcSourcePlanId::read_wire(reader)?,
+                value: AwbcRegisterId::read_wire(reader)?,
             },
             AwbcOpcode::Jump
             | AwbcOpcode::Branch
@@ -616,7 +624,8 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::StreamYield
             | AwbcOpcode::StreamClose
             | AwbcOpcode::SourceClose
-            | AwbcOpcode::Drop => unreachable!("instruction opcode rejected above"),
+            | AwbcOpcode::Drop
+            | AwbcOpcode::SourceYield => unreachable!("instruction opcode rejected above"),
         })
     }
 }

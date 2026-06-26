@@ -56,13 +56,17 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
             self.lower_stream(stream);
         }
         for source in &plan.source_plans {
+            let source_id = self
+                .inventory
+                .source_plan_id(&source.id)
+                .unwrap_or(AwbcSourcePlanId(0));
             let public_id = self.inventory.intern_string(&source.id.0);
             let open = self.inventory.source_open_function("source.open");
             let handlers = source
                 .handlers
                 .iter()
                 .map(|handler| {
-                    let lowered = self.lower_source_handler(handler);
+                    let lowered = self.lower_source_handler(source_id, handler);
                     AwbcSourceHandler {
                         kind: source_handler_kind(handler),
                         pattern: lowered.pattern,
@@ -266,7 +270,11 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
         ));
     }
 
-    fn lower_source_handler(&mut self, handler: &SourceHandlerPlan) -> LoweredSourceHandler {
+    fn lower_source_handler(
+        &mut self,
+        source: AwbcSourcePlanId,
+        handler: &SourceHandlerPlan,
+    ) -> LoweredSourceHandler {
         let mut frame = FrameBuilder::new();
         let body_start = table_index(self.inventory.program.instructions.len());
         let pattern = self.lower_source_handler_pattern(&mut frame, handler);
@@ -279,7 +287,7 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
             | SourceHandlerPlan::End { ops } => ops,
         };
         for op in ops {
-            self.lower_source_op(&mut frame, op);
+            self.lower_source_op(&mut frame, source, op);
         }
         let owner = AwbcFunctionId(table_index(self.inventory.program.functions.len()));
         let block = self.inventory.push_block(AwbcBlock {
@@ -344,15 +352,17 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
         Some(pattern)
     }
 
-    fn lower_source_op(&mut self, frame: &mut FrameBuilder, op: &SourceOp) {
+    fn lower_source_op(
+        &mut self,
+        frame: &mut FrameBuilder,
+        source: AwbcSourcePlanId,
+        op: &SourceOp,
+    ) {
         match op {
             SourceOp::Yield(expr) => {
                 let value = AwbcExprLowerer::new(self.inventory, frame, "source.yield").lower(expr);
                 self.inventory
-                    .push_instruction(AwbcInstruction::StreamYield {
-                        stream: AwbcStreamPlanId(0),
-                        value,
-                    });
+                    .push_instruction(AwbcInstruction::SourceYield { source, value });
             }
             SourceOp::Effect(effect) => {
                 let effect = self.inventory.intern_effect(effect);

@@ -71,6 +71,10 @@ pub enum VmObservation {
         value: RuntimeValue,
     },
     StreamClose(AwbcStreamPlanId),
+    SourceYield {
+        source: AwbcSourcePlanId,
+        value: RuntimeValue,
+    },
     SourceClose(AwbcSourcePlanId),
     Trap(FiberTrap),
 }
@@ -617,6 +621,18 @@ fn execute_instruction(
             {
                 state.closed = true;
                 observations.push(VmObservation::SourceClose(*source));
+            }
+        }
+        AwbcInstruction::SourceYield { source, value } => {
+            let value = register(fiber, *value)?.clone();
+            observations.push(VmObservation::SourceYield {
+                source: *source,
+                value: value.clone(),
+            });
+            if let Some(state) = fiber.sources.iter_mut().find(|state| state.plan == *source)
+                && !state.closed
+            {
+                state.queue.push(value);
             }
         }
     }

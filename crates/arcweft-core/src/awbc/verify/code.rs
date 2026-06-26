@@ -679,6 +679,16 @@ fn apply_instruction(
         AwbcInstruction::SourceClose { source } => {
             check_index(program.source_plans.len(), source.0, "source_plans", &at)?;
         }
+        AwbcInstruction::SourceYield { source, value } => {
+            check_index(program.source_plans.len(), source.0, "source_plans", &at)?;
+            let actual = read_register(verifier, function, block, *value, state)?;
+            require_compatible(
+                program,
+                program.source_plans[source.index()].item_type,
+                actual,
+                &at,
+            )?;
+        }
         AwbcInstruction::Drop { register } => {
             read_register(verifier, function, block, *register, state)?;
             clear_register(verifier, function, block, *register, state)?;

@@ -1529,6 +1529,19 @@ impl AwbcProductStepExecutor {
                         });
                     }
                 }
+                VmObservation::SourceYield { source, value } => {
+                    let source_id = source_id_for(&self.program, source);
+                    let state = self
+                        .facade_fiber
+                        .source_states
+                        .entry(source_id.clone())
+                        .or_insert_with(|| {
+                            SourceRuntimeState::new(source_id, SourcePolicy::default())
+                        });
+                    if let Some(message) = state.push_item(RuntimePayload::from(value)) {
+                        output.diagnostics.push(RuntimeDiagnostic::new(message));
+                    }
+                }
                 VmObservation::SourceClose(source) => {
                     let id = source_id_for(&self.program, source);
                     output.requests.source_close.push(id.clone());
@@ -1611,21 +1624,63 @@ impl AwbcProductStepExecutor {
             }
             self.source_sequences
                 .insert(event.source.clone(), event.sequence);
-            let state = self
-                .facade_fiber
-                .source_states
-                .entry(event.source.clone())
-                .or_insert_with(|| {
-                    SourceRuntimeState::new(event.source.clone(), SourcePolicy::default())
-                });
-            if let Some(message) = state.apply_event(event.clone()) {
-                output.diagnostics.push(RuntimeDiagnostic::new(message));
-            }
             if let Some(plan_id) = self.source_plan_for_id(&event.source) {
+                self.record_source_event_state(&event, output);
                 self.sync_compact_source_state(plan_id);
-                self.spawn_source_handler(plan_id, &event, output);
+                let handled = self.spawn_source_handler(plan_id, &event, output);
+                if !handled && matches!(event.kind, SourceEventKind::Item(_)) {
+                    self.apply_unhandled_source_event(event.clone(), output);
+                    self.sync_compact_source_state(plan_id);
+                }
+            } else {
+                self.apply_unhandled_source_event(event.clone(), output);
             }
             output.effects.source_events.push(event);
+        }
+    }
+
+    fn record_source_event_state(
+        &mut self,
+        event: &RuntimeSourceEvent,
+        output: &mut RuntimeStepOutput,
+    ) {
+        let state = self
+            .facade_fiber
+            .source_states
+            .entry(event.source.clone())
+            .or_insert_with(|| {
+                SourceRuntimeState::new(event.source.clone(), SourcePolicy::default())
+            });
+        match &event.kind {
+            SourceEventKind::Error(error) => {
+                state.last_error = Some(error.clone());
+                output.diagnostics.push(RuntimeDiagnostic::new(format!(
+                    "source {} error: {}",
+                    state.id.0,
+                    error.label()
+                )));
+            }
+            SourceEventKind::Disconnected
+            | SourceEventKind::PermissionRevoked
+            | SourceEventKind::End => state.close(),
+            SourceEventKind::Item(_) | SourceEventKind::Progress(_) => {}
+        }
+    }
+
+    fn apply_unhandled_source_event(
+        &mut self,
+        event: RuntimeSourceEvent,
+        output: &mut RuntimeStepOutput,
+    ) {
+        let state = self
+            .facade_fiber
+            .source_states
+            .entry(event.source.clone())
+            .or_insert_with(|| {
+                SourceRuntimeState::new(event.source.clone(), SourcePolicy::default())
+            });
+        if let Some(message) = state.apply_event(event) {
+            output.diagnostics.push(RuntimeDiagnostic::new(message));
         }
     }
 
@@ -1660,9 +1715,9 @@ impl AwbcProductStepExecutor {
         plan: AwbcSourcePlanId,
         event: &RuntimeSourceEvent,
         output: &mut RuntimeStepOutput,
-    ) {
+    ) -> bool {
         let Some(source) = self.program.source_plans.get(plan.index()) else {
-            return;
+            return false;
         };
         let kind = match event.kind {
             SourceEventKind::Item(_) => AwbcSourceEventKind::Item,
@@ -1673,7 +1728,7 @@ impl AwbcProductStepExecutor {
             SourceEventKind::End => AwbcSourceEventKind::End,
         };
         let Some(handler) = source.handlers.iter().find(|handler| handler.kind == kind) else {
-            return;
+            return false;
         };
         let args = match &event.kind {
             SourceEventKind::Item(value) | SourceEventKind::Error(value) => {
@@ -1687,14 +1742,15 @@ impl AwbcProductStepExecutor {
         if let (Some(pattern), Some(value)) = (handler.pattern, args.first()) {
             match crate::awbc::vm::test_pattern(&self.program, pattern, value) {
                 Ok(true) => {}
-                Ok(false) => return,
+                Ok(false) => return false,
                 Err(error) => {
                     self.record_error(ProductStepError::Internal(error.to_string()), output);
-                    return;
+                    return false;
                 }
             }
         }
         self.spawn_child(handler.function, &args, output);
+        true
     }
 
     fn resume_at(&mut self, resume: AwbcResumePointId, output: &mut RuntimeStepOutput) -> bool {

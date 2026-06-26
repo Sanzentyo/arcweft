@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 /// Canonical AWBC executable ABI implemented by this schema.
 pub const AWBC_ABI_VERSION: u32 = 1;
 /// Canonical binary codec version used inside an `AWBC` product section.
-pub const AWBC_CODEC_VERSION: u16 = 3;
+pub const AWBC_CODEC_VERSION: u16 = 4;
 /// Magic at the beginning of a standalone canonical AWBC payload.
 pub const AWBC_MAGIC: [u8; 8] = *b"AWBC\r\n\x1a\n";
 
@@ -658,6 +658,7 @@ pub enum AwbcOpcode {
     StreamClose,
     SourceClose,
     Drop,
+    SourceYield,
     Jump,
     Branch,
     Match,
@@ -710,6 +711,7 @@ impl AwbcOpcode {
             Self::StreamClose => 0x1d,
             Self::SourceClose => 0x1e,
             Self::Drop => 0x1f,
+            Self::SourceYield => 0x20,
             Self::Jump => 0x80,
             Self::Branch => 0x81,
             Self::Match => 0x82,
@@ -762,6 +764,7 @@ impl AwbcOpcode {
             0x1d => Self::StreamClose,
             0x1e => Self::SourceClose,
             0x1f => Self::Drop,
+            0x20 => Self::SourceYield,
             0x80 => Self::Jump,
             0x81 => Self::Branch,
             0x82 => Self::Match,
@@ -924,6 +927,10 @@ pub enum AwbcInstruction {
     Drop {
         register: AwbcRegisterId,
     },
+    SourceYield {
+        source: AwbcSourcePlanId,
+        value: AwbcRegisterId,
+    },
 }
 
 impl AwbcInstruction {
@@ -961,6 +968,7 @@ impl AwbcInstruction {
             Self::StreamClose { .. } => AwbcOpcode::StreamClose,
             Self::SourceClose { .. } => AwbcOpcode::SourceClose,
             Self::Drop { .. } => AwbcOpcode::Drop,
+            Self::SourceYield { .. } => AwbcOpcode::SourceYield,
         }
     }
 }

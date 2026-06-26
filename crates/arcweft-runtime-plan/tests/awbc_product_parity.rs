@@ -1,6 +1,6 @@
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_core::engine::FlowFiberStatus;
-use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor};
+use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
 use arcweft_core::line_task::{LineTaskGroup, LineTaskNode, LineTaskScope};
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
@@ -9,7 +9,7 @@ use arcweft_core::plan::{
 };
 use arcweft_core::source::{
     RuntimeSourceEvent, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp, SourcePlan,
-    SourcePolicy,
+    SourcePolicy, SourceRuntimeState,
 };
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepResult,
@@ -30,11 +30,14 @@ use arcweft_interaction_model::{
 };
 use arcweft_render_text::LineDisplayCatalog;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+use std::collections::BTreeMap;
 
 #[derive(Debug)]
 struct ParityStep {
     structured: RuntimeStepResult,
     awbc: RuntimeStepResult,
+    structured_sources: BTreeMap<SourceId, SourceRuntimeState>,
+    awbc_sources: BTreeMap<SourceId, SourceRuntimeState>,
 }
 
 fn run_parity(plan: RuntimePlan, inputs: Vec<RuntimeStepInput>) -> Vec<ParityStep> {
@@ -90,19 +93,25 @@ fn run_parity_with_options(
 
     inputs
         .into_iter()
-        .map(|input| ParityStep {
-            structured: structured.step_with_root_bindings_and_pure_backend(
+        .map(|input| {
+            let structured_result = structured.step_with_root_bindings_and_pure_backend(
                 input.clone(),
                 root_bindings,
                 options,
                 &mut structured_backend,
-            ),
-            awbc: awbc.step_with_root_bindings_and_pure_backend(
+            );
+            let awbc_result = awbc.step_with_root_bindings_and_pure_backend(
                 input,
                 root_bindings,
                 options,
                 &mut awbc_backend,
-            ),
+            );
+            ParityStep {
+                structured: structured_result,
+                awbc: awbc_result,
+                structured_sources: structured.fiber().source_states.clone(),
+                awbc_sources: awbc.fiber().source_states.clone(),
+            }
         })
         .collect()
 }
@@ -148,6 +157,10 @@ fn assert_step_boundary_eq(step: &ParityStep) {
     assert_eq!(
         step.awbc.stats.audio_commands, step.structured.stats.audio_commands,
         "audio-command stat mismatch"
+    );
+    assert_eq!(
+        step.awbc_sources, step.structured_sources,
+        "source state mismatch"
     );
 }
 
@@ -794,6 +807,50 @@ fn awbc_product_parity_source_error_handler_respects_pattern() {
         steps[0].structured.output.requests.source_close,
         vec![target]
     );
+}
+
+#[test]
+fn awbc_product_parity_source_handler_yields_to_source_queue() {
+    let source = SourceId("source.driver".to_owned());
+    let steps = run_parity(
+        flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
+            Vec::new(),
+            vec![SourcePlan {
+                id: source.clone(),
+                item_ty: "Frame".to_owned(),
+                error_ty: "SourceError".to_owned(),
+                from: RuntimeExpr::Value(RuntimeValue::String("driver".to_owned())),
+                policy: SourcePolicy::default(),
+                handlers: vec![SourceHandlerPlan::Item {
+                    pattern: RuntimePattern::Ident("frame".to_owned()),
+                    ops: vec![SourceOp::Yield(RuntimeExpr::Value(RuntimeValue::String(
+                        "derived-frame".to_owned(),
+                    )))],
+                }],
+            }],
+        ),
+        vec![RuntimeStepInput {
+            source_events: vec![RuntimeSourceEvent {
+                source: source.clone(),
+                sequence: TaskSequence(0),
+                kind: SourceEventKind::Item(RuntimePayload(RuntimeValue::String(
+                    "raw-frame".to_owned(),
+                ))),
+            }],
+            ..RuntimeStepInput::default()
+        }],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    let queue = steps[0]
+        .structured_sources
+        .get(&source)
+        .expect("source state exists")
+        .queue
+        .iter()
+        .map(RuntimePayload::label)
+        .collect::<Vec<_>>();
+    assert_eq!(queue, vec!["derived-frame"]);
 }
 
 #[test]
