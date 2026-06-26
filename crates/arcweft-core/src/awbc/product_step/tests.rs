@@ -7,12 +7,12 @@ use crate::awbc::schema::{
     AwbcFunctionId, AwbcFunctionKind, AwbcHostCall, AwbcHostCallId, AwbcHostCallMode,
     AwbcInstruction, AwbcProgram, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
     AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange,
-    AwbcTerminator, AwbcTypeId,
+    AwbcTerminator, AwbcTrapCode, AwbcTypeId,
 };
 use crate::engine::{FlowExit, FlowFiberStatus};
 use crate::step::{
-    RuntimeHostCallId, RuntimeHostCallMode, RuntimeHostCallResult, RuntimeStepInput,
-    RuntimeStepOptions, RuntimeStepStopReason,
+    RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeHostCallMode, RuntimeHostCallResult,
+    RuntimeStepInput, RuntimeStepOptions, RuntimeStepStopReason,
 };
 use crate::value::{RuntimePayload, RuntimeValue};
 
@@ -134,6 +134,68 @@ fn ensure_content_instruction_projects_typed_content_request() {
 }
 
 #[test]
+fn trap_terminators_project_typed_runtime_diagnostics() {
+    let cases = [
+        (AwbcTrapCode::TypeMismatch, RuntimeDiagnosticCategory::Type),
+        (
+            AwbcTrapCode::PatternMismatch,
+            RuntimeDiagnosticCategory::Pattern,
+        ),
+        (
+            AwbcTrapCode::HostAbiMismatch,
+            RuntimeDiagnosticCategory::Host,
+        ),
+        (
+            AwbcTrapCode::CapabilityDenied,
+            RuntimeDiagnosticCategory::Capability,
+        ),
+        (
+            AwbcTrapCode::DivisionByZero,
+            RuntimeDiagnosticCategory::Runtime,
+        ),
+        (
+            AwbcTrapCode::InvalidIndex,
+            RuntimeDiagnosticCategory::Runtime,
+        ),
+        (
+            AwbcTrapCode::MissingDynamicTarget,
+            RuntimeDiagnosticCategory::Runtime,
+        ),
+        (
+            AwbcTrapCode::ExplicitPanic,
+            RuntimeDiagnosticCategory::Runtime,
+        ),
+        (
+            AwbcTrapCode::UninitializedRegister,
+            RuntimeDiagnosticCategory::Runtime,
+        ),
+        (
+            AwbcTrapCode::InternalInvariant,
+            RuntimeDiagnosticCategory::Internal,
+        ),
+    ];
+
+    for (code, category) in cases {
+        let message = format!("typed trap {code:?}");
+        let mut executor =
+            AwbcProductStepExecutor::for_entry(trap_program(code, &message), AwbcEntryId(0), 64)
+                .expect("trap product executor starts");
+
+        let result = executor.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+
+        assert_eq!(result.stop_reason, RuntimeStepStopReason::Failed);
+        assert_eq!(result.stats.diagnostics, 1);
+        assert_eq!(result.output.diagnostics.len(), 1);
+        assert_eq!(result.output.diagnostics[0].category, category);
+        assert_eq!(result.output.diagnostics[0].message, message);
+        assert_eq!(
+            result.fiber_status,
+            FlowFiberStatus::Failed(message.clone())
+        );
+    }
+}
+
+#[test]
 fn effect_mapping_table_covers_every_awbc_effect_kind() {
     let mut program = AwbcProgram::default();
     let cases = [
@@ -171,6 +233,49 @@ fn effect_mapping_table_covers_every_awbc_effect_kind() {
             matches!(mapped, MappedEffect::Unsupported(_)),
             !should_map_to_line_effect
         );
+    }
+}
+
+fn trap_program(code: AwbcTrapCode, message: &str) -> AwbcProgram {
+    let strings = vec!["entry.main".to_owned(), message.to_owned()];
+    let signature = AwbcSignature {
+        params: Vec::new(),
+        result: None,
+        effects: AwbcEffectSetId(0),
+    };
+    AwbcProgram {
+        strings,
+        signatures: vec![signature],
+        frame_layouts: vec![AwbcFrameLayout {
+            slots: Vec::new(),
+            max_scope_depth: 0,
+        }],
+        blocks: vec![AwbcBlock {
+            owner: AwbcFunctionId(0),
+            instructions: AwbcTableRange::new(0, 0),
+            terminator: AwbcTerminator::Trap {
+                code,
+                message: Some(AwbcStringId(1)),
+            },
+            safe_point: AwbcSafePointKind::FlowEntry,
+            source_map: None,
+        }],
+        functions: vec![AwbcFunction {
+            public_id: Some(AwbcStringId(0)),
+            kind: AwbcFunctionKind::Flow,
+            signature: AwbcSignatureId(0),
+            frame_layout: AwbcFrameLayoutId(0),
+            blocks: AwbcTableRange::new(0, 1),
+            entry_block: AwbcBlockId(0),
+            flags: AwbcFunctionFlags::default(),
+        }],
+        entries: vec![crate::awbc::schema::AwbcEntry {
+            public_id: AwbcStringId(0),
+            kind: crate::awbc::schema::AwbcEntryKind::Game,
+            signature: AwbcSignatureId(0),
+            target: crate::awbc::schema::AwbcEntryTarget::Function(AwbcFunctionId(0)),
+        }],
+        ..AwbcProgram::default()
     }
 }
 
