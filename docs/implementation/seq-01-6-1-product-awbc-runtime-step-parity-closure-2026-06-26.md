@@ -494,11 +494,11 @@ Structural measurements for files touched in the fourth cut:
 
 Remaining matrix limits after this cut:
 
-- stream close/idempotence is not yet differentially covered; current
-  runtime-plan AWBC stream lowering still lowers `StreamOp::Close` as an
-  intrinsic placeholder rather than a stream close event/state transition.
-- await-many partial error/cancellation rows remain broader than the current
-  await-many launch-order fixture.
+- stream close is now covered for the ordinary single-stream lowering path, but
+  dynamic multi-stream close routing remains broader than the current
+  `AwbcStreamPlanId(0)` lowering model.
+- await-many error/cancellation rows are now covered for the first in-flight
+  item; broader partial-completion combinations remain open.
 - direct host-call differential coverage still requires a runtime-plan
   host-call surface; product-step has direct host-call request/result unit
   coverage only.
@@ -506,6 +506,97 @@ Remaining matrix limits after this cut:
   structured-vs-AWBC differential row for every kind.
 - budget loop, source close/event-ordering, typed trap, and full statistics
   rows remain open.
+
+## Integration update 2026-06-26, fifth cut
+
+Current working change before commit: `yqplpryx` over parent `tplzmmyz`.
+
+This cut expands the differential matrix across await-many failure, stream
+close, and budget-yield behavior:
+
+- `StreamRuntimeState` now owns `close_with_sequence`, which returns exactly one
+  close sequence and makes duplicate close attempts idempotent.
+- structured stream close now emits a `RuntimeStreamEvent::End` with the owned
+  close sequence when closing a stream target.
+- product AWBC stream-close observation projection now uses the same
+  `StreamRuntimeState::close_with_sequence` contract instead of emitting a close
+  event unconditionally.
+- runtime-plan AWBC stream lowering now emits `AwbcInstruction::StreamClose`
+  for `StreamOp::Close` instead of a placeholder intrinsic call.
+- await-many task error and cancellation diagnostics now use the shared `Host`
+  category and product-equivalent failed-fiber status message.
+- differential fixtures now cover await-many error, await-many cancellation,
+  stream yield/yield/close with sequence 0/1/2, and a budget-exhausted loop.
+
+Exact validation run for this cut:
+
+```text
+cargo fmt --all -- --check
+  passed
+
+cargo test -p arcweft-runtime-plan awbc -- --nocapture
+  passed: 1 awbc_lower unit test and 21 awbc_product_parity tests passed,
+  0 failed
+
+cargo test -p arcweft-core awbc -- --nocapture
+  passed: 15 passed, 0 failed
+
+cargo check -p arcweft-core -p arcweft-runtime-plan -p arcweft-compiler -p arcweft-bundle -p arcweft-cli -p arcweft-runtime-driver -p arcweft-runtime-host -p arcweft-player-native --all-targets
+  passed
+
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+  passed
+
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+  passed with no error-level violations: files scanned 1514, Rust files 833,
+  Rust physical LOC 409011, package manifests 89, warnings 102.
+
+cargo test -p arcweft-bundle product_awbc -- --nocapture
+  passed: 4 product_awbc tests and 2 product source-gate tests passed,
+  0 failed
+
+cargo test -p arcweft-runtime-driver awbc_product -- --nocapture
+  passed: 1 passed, 0 failed
+
+cargo test -p arcweft-runtime-host awbc_product -- --nocapture
+  passed: 1 passed, 0 failed
+
+cargo test -p arcweft-player-native awbc_product -- --nocapture
+  passed: 1 passed, 0 failed
+
+cargo test -p arcweft-cli awfb -- --nocapture
+  passed: 8 passed, 0 failed
+  note: the stderr line about a truncated AWFB is the expected rejection path
+  from the non-AWFB-input test.
+
+git diff --check
+  passed
+```
+
+Structural measurements for files touched in the fifth cut:
+
+| Path | Bytes | Physical LOC | Kind / responsibility |
+|---|---:|---:|---|
+| `crates/arcweft-core/src/stream.rs` | 3118 | 104 | production stream data/state contract |
+| `crates/arcweft-core/src/engine/stream.rs` | 11500 | 313 | production structured stream execution |
+| `crates/arcweft-core/src/engine/suspend.rs` | 34924 | 839 | production structured suspension resume semantics |
+| `crates/arcweft-core/src/awbc/product_step.rs` | 86984 | 2218 | production product AWBC RuntimeStepResult adapter; warning-level size hotspot, below the 2500 LOC error threshold |
+| `crates/arcweft-runtime-plan/src/awbc_lower/source.rs` | 10513 | 252 | production source/stream AWBC lowering |
+| `crates/arcweft-runtime-plan/src/awbc_lower/inventory.rs` | 41998 | 1008 | production AWBC inventory and table interning |
+| `crates/arcweft-runtime-plan/tests/awbc_product_parity.rs` | 23655 | 705 | integration differential parity tests |
+
+Remaining matrix limits after this cut:
+
+- stream close is proven for the ordinary single generated stream path; dynamic
+  close routing across multiple stream plans still needs a typed stream-target
+  lowering contract instead of hard-coded `AwbcStreamPlanId(0)`.
+- await-many partial completion followed by error/cancel is still not covered.
+- direct host-call differential coverage still requires a runtime-plan
+  host-call surface; product-step has direct host-call request/result unit
+  coverage only.
+- effect-kind rows still have direct product mapping-table coverage, not a
+  structured-vs-AWBC differential row for every kind.
+- source close/event-ordering, typed trap, and full statistics rows remain open.
 
 ## Required integration work before marking seq-01.6.1 complete
 

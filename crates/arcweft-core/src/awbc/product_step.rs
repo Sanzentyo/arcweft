@@ -1518,19 +1518,15 @@ impl AwbcProductStepExecutor {
                     }
                 }
                 VmObservation::StreamClose(stream) => {
-                    let sequence = self.stream_sequences.entry(stream).or_default();
-                    output.effects.stream_events.push(RuntimeStreamEvent {
-                        stream: stream_id_for(&self.program, stream),
-                        sequence: TaskSequence(*sequence),
-                        kind: SourceEventKind::End,
-                    });
-                    *sequence = sequence.saturating_add(1);
-                    if let Some(state) = self
-                        .facade_fiber
-                        .stream_states
-                        .get_mut(&stream_id_for(&self.program, stream))
+                    let stream_id = stream_id_for(&self.program, stream);
+                    if let Some(state) = self.facade_fiber.stream_states.get_mut(&stream_id)
+                        && let Some(sequence) = state.close_with_sequence()
                     {
-                        state.close();
+                        output.effects.stream_events.push(RuntimeStreamEvent {
+                            stream: stream_id,
+                            sequence,
+                            kind: SourceEventKind::End,
+                        });
                     }
                 }
                 VmObservation::SourceClose(source) => {

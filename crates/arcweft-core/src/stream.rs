@@ -104,4 +104,14 @@ impl StreamRuntimeState {
         self.closed = true;
         self.queue.clear();
     }
+
+    pub fn close_with_sequence(&mut self) -> Option<TaskSequence> {
+        if self.closed {
+            return None;
+        }
+        let sequence = TaskSequence(self.emitted_count);
+        self.emitted_count += 1;
+        self.close();
+        Some(sequence)
+    }
 }

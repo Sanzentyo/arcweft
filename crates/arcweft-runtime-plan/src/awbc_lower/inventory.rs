@@ -27,7 +27,6 @@ use arcweft_core::source::{
     BackpressurePolicy, OverflowPolicy, PrivacyPolicy, ReplayPolicy, SourceHandlerPlan,
     SourcePolicy,
 };
-use arcweft_core::stream::StreamOp;
 use arcweft_core::task::{HostTaskArgTemplate, HostTaskRequestTemplate};
 use arcweft_core::value::{RuntimeInt, RuntimeUInt, RuntimeValue};
 use arcweft_render_text::LineDisplayCatalog;
@@ -1066,18 +1065,5 @@ pub(crate) fn source_handler_kind(handler: &SourceHandlerPlan) -> AwbcSourceEven
         SourceHandlerPlan::Disconnected { .. } => AwbcSourceEventKind::Disconnected,
         SourceHandlerPlan::PermissionRevoked { .. } => AwbcSourceEventKind::PermissionRevoked,
         SourceHandlerPlan::End { .. } => AwbcSourceEventKind::End,
-    }
-}
-
-pub(crate) fn stream_op_family(op: &StreamOp) -> &'static str {
-    match op {
-        StreamOp::Let { .. } => "let",
-        StreamOp::ForNext { .. } => "for_next",
-        StreamOp::Yield { .. } => "yield",
-        StreamOp::If { .. } => "if",
-        StreamOp::Match { .. } => "match",
-        StreamOp::Close { .. } => "close",
-        StreamOp::Return => "return",
-        StreamOp::Noop => "noop",
     }
 }

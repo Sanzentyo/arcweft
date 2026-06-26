@@ -257,8 +257,13 @@ impl Engine {
                         .fiber
                         .stream_states
                         .get_mut(&StreamRuntimeId(stream.to_owned()))
+                    && let Some(sequence) = state.close_with_sequence()
                 {
-                    state.close();
+                    output.effects.stream_events.push(RuntimeStreamEvent {
+                        stream: StreamRuntimeId(stream.to_owned()),
+                        sequence,
+                        kind: SourceEventKind::End,
+                    });
                 }
             }
             Err(error) => Self::diagnose_runtime_error(error, output),

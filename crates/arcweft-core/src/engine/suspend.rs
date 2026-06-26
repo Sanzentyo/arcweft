@@ -314,11 +314,15 @@ impl Engine {
                 }
                 TaskEventKind::Err(error) => {
                     let in_flight = &state.in_flight[position];
-                    self.fiber.status = FlowFiberStatus::Failed(error.clone());
-                    output.diagnostics.push(RuntimeDiagnostic::new(format!(
+                    let message = format!(
                         "await task {} at index {} failed: {error}",
                         in_flight.task.0, in_flight.index
-                    )));
+                    );
+                    self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                    output.diagnostics.push(RuntimeDiagnostic::categorized(
+                        RuntimeDiagnosticCategory::Host,
+                        message,
+                    ));
                     return;
                 }
                 TaskEventKind::Cancelled => {
@@ -328,7 +332,10 @@ impl Engine {
                         in_flight.task.0, in_flight.index
                     );
                     self.fiber.status = FlowFiberStatus::Failed(message.clone());
-                    output.diagnostics.push(RuntimeDiagnostic::new(message));
+                    output.diagnostics.push(RuntimeDiagnostic::categorized(
+                        RuntimeDiagnosticCategory::Host,
+                        message,
+                    ));
                     return;
                 }
             }

@@ -1,14 +1,11 @@
 use crate::awbc_lower::expr::AwbcExprLowerer;
 use crate::awbc_lower::frame::FrameBuilder;
-use crate::awbc_lower::inventory::{
-    AwbcInventory, source_handler_kind, source_policy, stream_op_family,
-};
+use crate::awbc_lower::inventory::{AwbcInventory, source_handler_kind, source_policy};
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
     AwbcBindMode, AwbcBlock, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
-    AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcRegisterId, AwbcSafePointKind,
-    AwbcSourceHandler, AwbcSourcePlan, AwbcSourcePlanId, AwbcStreamPlan, AwbcStreamPlanId,
-    AwbcTableRange, AwbcTerminator,
+    AwbcInstruction, AwbcSafePointKind, AwbcSourceHandler, AwbcSourcePlan, AwbcSourcePlanId,
+    AwbcStreamPlan, AwbcStreamPlanId, AwbcTableRange, AwbcTerminator,
 };
 use arcweft_core::plan::RuntimePlan;
 use arcweft_core::source::{SourceHandlerPlan, SourceOp};
@@ -125,7 +122,10 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
             }
             StreamOp::Close { source } => {
                 let _ = AwbcExprLowerer::new(self.inventory, frame, "stream.close").lower(source);
-                self.push_intrinsic_call(stream_op_family(op), Vec::new());
+                self.inventory
+                    .push_instruction(AwbcInstruction::StreamClose {
+                        stream: AwbcStreamPlanId(0),
+                    });
             }
             StreamOp::If {
                 condition,
@@ -256,28 +256,5 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
                 self.inventory.push_instruction(AwbcInstruction::Nop);
             }
         }
-    }
-
-    fn intrinsic(&mut self, label: &str) -> AwbcIntrinsicId {
-        let signature = self.inventory.intern_unit_signature();
-        let id = AwbcIntrinsicId(table_index(self.inventory.program.intrinsics.len()));
-        let public_id = self.inventory.intern_string(label);
-        self.inventory.program.intrinsics.push(AwbcIntrinsic {
-            public_id,
-            registry_code: 0,
-            signature,
-            revision: 1,
-        });
-        id
-    }
-
-    fn push_intrinsic_call(&mut self, label: &str, args: Vec<AwbcRegisterId>) {
-        let intrinsic = self.intrinsic(label);
-        self.inventory
-            .push_instruction(AwbcInstruction::CallIntrinsic {
-                dst: None,
-                intrinsic,
-                args,
-            });
     }
 }

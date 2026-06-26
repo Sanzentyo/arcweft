@@ -582,6 +582,32 @@ fn awbc_product_parity_stream_yield() {
 }
 
 #[test]
+fn awbc_product_parity_stream_yield_then_close() {
+    let plan = flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
+        vec![StreamPlan {
+            id: StreamRuntimeId("stream.generated".to_owned()),
+            item_ty: "String".to_owned(),
+            error_ty: "String".to_owned(),
+            ops: vec![
+                StreamOp::Yield {
+                    expr: RuntimeExpr::Value(RuntimeValue::String("stream-item-0".to_owned())),
+                },
+                StreamOp::Yield {
+                    expr: RuntimeExpr::Value(RuntimeValue::String("stream-item-1".to_owned())),
+                },
+                StreamOp::Close {
+                    source: RuntimeExpr::Value(RuntimeValue::String("stream.generated".to_owned())),
+                },
+            ],
+        }],
+        Vec::new(),
+    );
+    let steps = run_parity(plan, vec![RuntimeStepInput::default()]);
+
+    assert_step_boundary_eq(&steps[0]);
+}
+
+#[test]
 fn awbc_product_parity_one_op() {
     let steps = run_parity_with_options(
         flow(vec![
@@ -607,6 +633,23 @@ fn awbc_product_parity_one_op() {
 }
 
 #[test]
+fn awbc_product_parity_budget_loop() {
+    let steps = run_parity_with_options(
+        flow(vec![FlowOp::Loop {
+            body: vec![FlowOp::Noop],
+        }]),
+        &[],
+        RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: RuntimeStepBudget { max_ops: 3 },
+        },
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+}
+
+#[test]
 fn awbc_product_parity_budget_trap_stats() {
     let steps = run_parity(
         flow(vec![FlowOp::ReturnExpr(RuntimeExpr::Value(
@@ -620,7 +663,83 @@ fn awbc_product_parity_budget_trap_stats() {
 
 #[test]
 fn awbc_product_parity_await_many() {
-    let target = AwaitManyTarget {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::AwaitMany {
+                binding: Some(RuntimePattern::Ident("items".to_owned())),
+                target: await_many_target(),
+                pending: Vec::new(),
+            },
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+}
+
+#[test]
+fn awbc_product_parity_await_many_error() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::AwaitMany {
+                binding: Some(RuntimePattern::Ident("items".to_owned())),
+                target: await_many_target(),
+                pending: Vec::new(),
+            },
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![
+            RuntimeStepInput::default(),
+            RuntimeStepInput {
+                task_events: vec![TaskEvent {
+                    logical_epoch: LogicalEpoch::default(),
+                    task_id: TaskId("task.many.0".to_owned()),
+                    sequence: TaskSequence(0),
+                    kind: TaskEventKind::Err("host failed".to_owned()),
+                }],
+                ..RuntimeStepInput::default()
+            },
+        ],
+    );
+
+    for step in &steps {
+        assert_step_boundary_eq(step);
+    }
+}
+
+#[test]
+fn awbc_product_parity_await_many_cancel() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::AwaitMany {
+                binding: Some(RuntimePattern::Ident("items".to_owned())),
+                target: await_many_target(),
+                pending: Vec::new(),
+            },
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![
+            RuntimeStepInput::default(),
+            RuntimeStepInput {
+                task_events: vec![TaskEvent {
+                    logical_epoch: LogicalEpoch::default(),
+                    task_id: TaskId("task.many.0".to_owned()),
+                    sequence: TaskSequence(0),
+                    kind: TaskEventKind::Cancelled,
+                }],
+                ..RuntimeStepInput::default()
+            },
+        ],
+    );
+
+    for step in &steps {
+        assert_step_boundary_eq(step);
+    }
+}
+
+fn await_many_target() -> AwaitManyTarget {
+    AwaitManyTarget {
         need: NeedId("need.many".to_owned()),
         task: TaskId("task.many".to_owned()),
         source: RuntimeExpr::Value(RuntimeValue::Seq(RuntimeSeq::values(vec![
@@ -636,18 +755,5 @@ fn awbc_product_parity_await_many() {
                 "item".to_owned(),
             ))],
         },
-    };
-    let steps = run_parity(
-        flow(vec![
-            FlowOp::AwaitMany {
-                binding: Some(RuntimePattern::Ident("items".to_owned())),
-                target,
-                pending: Vec::new(),
-            },
-            FlowOp::Return("done".to_owned()),
-        ]),
-        vec![RuntimeStepInput::default()],
-    );
-
-    assert_step_boundary_eq(&steps[0]);
+    }
 }
