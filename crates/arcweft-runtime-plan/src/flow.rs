@@ -321,6 +321,7 @@ fn optimize_nested_flow_ops(op: &mut FlowOp, stats: &mut RuntimePlanLowerStats) 
         | FlowOp::Choice { .. }
         | FlowOp::Await { .. }
         | FlowOp::AwaitMany { .. }
+        | FlowOp::HostCall { .. }
         | FlowOp::Break(_)
         | FlowOp::Continue
         | FlowOp::Goto(_)
@@ -413,9 +414,7 @@ fn rewrite_known_record_projections_in_op(op: &mut FlowOp, env: &[(String, Vec<S
             ..
         } => {
             rewrite_known_record_projections_in_expr(expr, env);
-            if let Some(guard) = guard {
-                rewrite_known_record_projections_in_expr(guard, env);
-            }
+            rewrite_known_record_projections_in_optional_expr(guard.as_mut(), env);
             rewrite_known_record_projections_in_ops(then_ops, env);
             rewrite_known_record_projections_in_ops(else_ops, env);
         }
@@ -447,18 +446,14 @@ fn rewrite_known_record_projections_in_op(op: &mut FlowOp, env: &[(String, Vec<S
             expr, guard, body, ..
         } => {
             rewrite_known_record_projections_in_expr(expr, env);
-            if let Some(guard) = guard {
-                rewrite_known_record_projections_in_expr(guard, env);
-            }
+            rewrite_known_record_projections_in_optional_expr(guard.as_mut(), env);
             rewrite_known_record_projections_in_ops(body, env);
         }
         FlowOp::WhileLetNext {
             expr, guard, body, ..
         } => {
             rewrite_known_record_projections_in_expr(expr, env);
-            if let Some(guard) = guard {
-                rewrite_known_record_projections_in_expr(guard, env);
-            }
+            rewrite_known_record_projections_in_optional_expr(guard.as_mut(), env);
             rewrite_known_record_projections_in_ops(Arc::make_mut(body), env);
         }
         FlowOp::For { source, body, .. } => {
@@ -467,6 +462,9 @@ fn rewrite_known_record_projections_in_op(op: &mut FlowOp, env: &[(String, Vec<S
         }
         FlowOp::AwaitMany { target, .. } => {
             rewrite_known_record_projections_in_expr(&mut target.source, env);
+        }
+        FlowOp::HostCall { target, .. } => {
+            rewrite_known_record_projections_in_exprs(&mut target.args, env);
         }
         FlowOp::LetScope { ops, value, .. } => {
             rewrite_known_record_projections_in_ops(ops, env);
@@ -495,6 +493,24 @@ fn rewrite_known_record_projections_in_op(op: &mut FlowOp, env: &[(String, Vec<S
 fn rewrite_known_record_projections_in_ops(ops: &mut [FlowOp], env: &[(String, Vec<String>)]) {
     for op in ops {
         rewrite_known_record_projections_in_op(op, env);
+    }
+}
+
+fn rewrite_known_record_projections_in_exprs(
+    exprs: &mut [RuntimeExpr],
+    env: &[(String, Vec<String>)],
+) {
+    for expr in exprs {
+        rewrite_known_record_projections_in_expr(expr, env);
+    }
+}
+
+fn rewrite_known_record_projections_in_optional_expr(
+    expr: Option<&mut RuntimeExpr>,
+    env: &[(String, Vec<String>)],
+) {
+    if let Some(expr) = expr {
+        rewrite_known_record_projections_in_expr(expr, env);
     }
 }
 
@@ -864,6 +880,9 @@ fn count_flow_op_pure_calls(op: &FlowOp) -> usize {
             count_runtime_expr_pure_calls(source) + count_flow_ops_pure_calls(body)
         }
         FlowOp::AwaitMany { target, .. } => count_runtime_expr_pure_calls(&target.source),
+        FlowOp::HostCall { target, .. } => {
+            target.args.iter().map(count_runtime_expr_pure_calls).sum()
+        }
         FlowOp::LetScope { ops, value, .. } => {
             count_flow_ops_pure_calls(ops) + count_runtime_expr_pure_calls(value)
         }
@@ -1044,6 +1063,11 @@ fn count_flow_op_local_uses_by_name(op: &FlowOp, name: &str) -> usize {
         FlowOp::AwaitMany { target, .. } => {
             count_runtime_expr_local_uses_by_name(&target.source, name)
         }
+        FlowOp::HostCall { target, .. } => target
+            .args
+            .iter()
+            .map(|arg| count_runtime_expr_local_uses_by_name(arg, name))
+            .sum(),
         FlowOp::LetScope { ops, value, .. } => {
             count_flow_ops_local_uses_by_name(ops, name)
                 + count_runtime_expr_local_uses_by_name(value, name)

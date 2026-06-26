@@ -4,16 +4,17 @@ use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, Runti
 use arcweft_core::line_task::{LineTaskGroup, LineTaskNode, LineTaskScope};
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
-    ChoiceRuntimeOption, FlowEvent, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan,
-    RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
-    RuntimePureOutputType,
+    ChoiceRuntimeOption, FlowEvent, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeHostCallTarget,
+    RuntimePlan, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
+    RuntimePureInputType, RuntimePureOutputType,
 };
 use arcweft_core::source::{
     RuntimeSourceEvent, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp, SourcePlan,
     SourcePolicy, SourceRuntimeState,
 };
 use arcweft_core::step::{
-    RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepResult,
+    RuntimeHostCallId, RuntimeHostCallMode, RuntimeHostCallResult, RuntimeStepBudget,
+    RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepResult,
 };
 use arcweft_core::stream::{StreamOp, StreamPlan, StreamRuntimeId};
 use arcweft_core::task::{
@@ -187,6 +188,12 @@ fn normalized_status(status: &FlowFiberStatus) -> FlowFiberStatus {
             state.target.source = RuntimeExpr::Value(RuntimeValue::Unit);
             state.target.request = host_template("normalized", "await_many");
             FlowFiberStatus::WaitingMany(state)
+        }
+        FlowFiberStatus::HostCall(mut state) => {
+            state.resume = None;
+            state.binding = None;
+            state.target.args.clear();
+            FlowFiberStatus::HostCall(state)
         }
         status => status,
     }
@@ -560,6 +567,61 @@ fn awbc_product_parity_await_cancel() {
 #[test]
 fn awbc_product_parity_host() {
     awbc_product_parity_await();
+}
+
+#[test]
+fn awbc_product_parity_direct_host_call_suspend_result() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::HostCall {
+                binding: Some(RuntimePattern::Ident("hosted".to_owned())),
+                target: RuntimeHostCallTarget::new(
+                    "host.probe",
+                    "probe",
+                    "read",
+                    [RuntimeExpr::Value(RuntimeValue::String("arg0".to_owned()))],
+                    RuntimeHostCallMode::Suspend,
+                    true,
+                ),
+            },
+            FlowOp::ReturnExpr(RuntimeExpr::Local("hosted".to_owned())),
+        ]),
+        vec![
+            RuntimeStepInput::default(),
+            RuntimeStepInput {
+                host_call_results: vec![RuntimeHostCallResult {
+                    id: RuntimeHostCallId("host.probe".to_owned()),
+                    outcome: Ok(RuntimePayload(RuntimeValue::String("host-ok".to_owned()))),
+                }],
+                ..RuntimeStepInput::default()
+            },
+        ],
+    );
+
+    for step in &steps {
+        assert_step_boundary_eq(step);
+    }
+    let request = steps[0]
+        .structured
+        .output
+        .requests
+        .host_calls
+        .first()
+        .expect("host call request emitted");
+    assert_eq!(request.id, RuntimeHostCallId("host.probe".to_owned()));
+    assert_eq!(request.public_id, "host.probe");
+    assert_eq!(request.capability, "probe");
+    assert_eq!(request.operation, "read");
+    assert_eq!(
+        request.args,
+        vec![RuntimePayload(RuntimeValue::String("arg0".to_owned()))]
+    );
+    assert_eq!(
+        steps[1].structured.output.flow_events,
+        vec![FlowEvent::Return {
+            value: "host-ok".to_owned()
+        }]
+    );
 }
 
 #[test]

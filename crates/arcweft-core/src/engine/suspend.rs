@@ -1,9 +1,10 @@
 use super::{
     AwaitManyInFlight, AwaitManyState, AwaitState, AwaitTarget, CancelScopeId, ChoiceState,
-    DialogueState, Engine, FlowEvent, FlowFiberStatus, LineEffectRequest, RuntimeDiagnostic,
-    RuntimeEvalError, RuntimeFieldValue, RuntimePayload, RuntimeSeq, RuntimeStepInput,
-    RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
-    TaskSpec, runtime_sequence_values, runtime_value_into_sequence_values,
+    DialogueState, Engine, FlowEvent, FlowFiberStatus, HostCallState, LineEffectRequest,
+    RuntimeDiagnostic, RuntimeEvalError, RuntimeFieldValue, RuntimePayload, RuntimeSeq,
+    RuntimeStepInput, RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey,
+    TaskPolicy, TaskPriority, TaskSpec, runtime_sequence_values,
+    runtime_value_into_sequence_values,
 };
 use crate::line_task::{
     cancel_live_line_task_group, finish_live_line_task_group, progress_live_line_task_group,
@@ -38,6 +39,10 @@ impl Engine {
             }
             FlowFiberStatus::WaitingMany(state) => {
                 self.resume_await_many_state(*state, events, output, pure_backend);
+                true
+            }
+            FlowFiberStatus::HostCall(state) => {
+                self.resume_host_call_state(state, input, output);
                 true
             }
             FlowFiberStatus::Choice(state) => {
@@ -160,6 +165,63 @@ impl Engine {
                 output.diagnostics.push(RuntimeDiagnostic::categorized(
                     RuntimeDiagnosticCategory::Host,
                     message,
+                ));
+            }
+        }
+    }
+
+    pub(super) fn resume_host_call_state(
+        &mut self,
+        state: HostCallState,
+        input: &RuntimeStepInput,
+        output: &mut RuntimeStepOutput,
+    ) {
+        let Some(result) = input
+            .host_call_results
+            .iter()
+            .find(|result| result.id == state.id)
+        else {
+            self.fiber.status = FlowFiberStatus::HostCall(state);
+            return;
+        };
+        match &result.outcome {
+            Ok(value) => {
+                if let Some(binding) = &state.binding {
+                    match self.try_bind_pattern(binding, value.value()) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            self.fiber.status = FlowFiberStatus::Failed(
+                                "host-call result did not match binding pattern".to_owned(),
+                            );
+                            output.diagnostics.push(RuntimeDiagnostic::categorized(
+                                RuntimeDiagnosticCategory::Host,
+                                "host-call result did not match binding pattern".to_owned(),
+                            ));
+                            return;
+                        }
+                        Err(error) => {
+                            self.fail_eval(error, output);
+                            return;
+                        }
+                    }
+                }
+                self.fiber.cursor = state.resume;
+                self.fiber.status = FlowFiberStatus::Running;
+            }
+            Err(error) => {
+                let category = match error.kind {
+                    crate::step::RuntimeHostCallErrorKind::UnsupportedCapability => {
+                        RuntimeDiagnosticCategory::Capability
+                    }
+                    crate::step::RuntimeHostCallErrorKind::Rejected
+                    | crate::step::RuntimeHostCallErrorKind::Failed => {
+                        RuntimeDiagnosticCategory::Host
+                    }
+                };
+                self.fiber.status = FlowFiberStatus::Failed(error.message.clone());
+                output.diagnostics.push(RuntimeDiagnostic::categorized(
+                    category,
+                    error.message.clone(),
                 ));
             }
         }

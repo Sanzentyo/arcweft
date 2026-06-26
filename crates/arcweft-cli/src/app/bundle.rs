@@ -583,6 +583,12 @@ fn collect_flow_op_host_calls(op: &FlowOp) -> Vec<String> {
             target.request.capability.0.as_str(),
             target.request.operation.as_str(),
         )],
+        FlowOp::HostCall { target, .. } => {
+            vec![host_call_id_for_template(
+                &target.capability,
+                &target.operation,
+            )]
+        }
         FlowOp::LetElse { else_ops, .. } => collect_flow_ops_host_calls(else_ops),
         FlowOp::If {
             then_ops, else_ops, ..
@@ -993,6 +999,7 @@ fn collect_flow_op_static_image_asset_refs(op: &FlowOp) -> Vec<String> {
         | FlowOp::Let { .. }
         | FlowOp::Dialogue { .. }
         | FlowOp::Choice { .. }
+        | FlowOp::HostCall { .. }
         | FlowOp::Break(_)
         | FlowOp::Continue
         | FlowOp::Goto(_)

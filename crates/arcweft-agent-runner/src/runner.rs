@@ -559,6 +559,7 @@ where
                 | FlowFiberStatus::Dialogue(_)
                 | FlowFiberStatus::Waiting(_)
                 | FlowFiberStatus::WaitingMany(_)
+                | FlowFiberStatus::HostCall(_)
                 | FlowFiberStatus::Choice(_) => {}
             }
         }

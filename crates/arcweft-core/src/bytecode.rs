@@ -433,6 +433,7 @@ fn verify_flow_op(
         | FlowOp::Let { .. }
         | FlowOp::Await { .. }
         | FlowOp::AwaitMany { .. }
+        | FlowOp::HostCall { .. }
         | FlowOp::Break(_)
         | FlowOp::Continue
         | FlowOp::GotoExpr(_)

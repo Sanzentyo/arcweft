@@ -92,6 +92,7 @@ impl AotLinearOp {
             | FlowOp::Choice { .. }
             | FlowOp::Await { .. }
             | FlowOp::AwaitMany { .. }
+            | FlowOp::HostCall { .. }
             | FlowOp::If { .. }
             | FlowOp::IfLet { .. }
             | FlowOp::Match { .. }
@@ -215,6 +216,7 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::Choice { .. }
         | FlowOp::Await { .. }
         | FlowOp::AwaitMany { .. }
+        | FlowOp::HostCall { .. }
         | FlowOp::If { .. }
         | FlowOp::IfLet { .. }
         | FlowOp::Match { .. }
@@ -278,7 +280,9 @@ impl AotOpClass {
             | FlowOp::Thread { .. }
             | FlowOp::Scope(_) => Self::Branch,
             FlowOp::Effect(_) => Self::Effect,
-            FlowOp::Await { .. } | FlowOp::AwaitMany { .. } => Self::Await,
+            FlowOp::Await { .. } | FlowOp::AwaitMany { .. } | FlowOp::HostCall { .. } => {
+                Self::Await
+            }
             FlowOp::Choice { .. } => Self::Choice,
             FlowOp::Dialogue { .. } => Self::Dialogue,
             FlowOp::Break(_) | FlowOp::Continue | FlowOp::Goto(_) | FlowOp::GotoExpr(_) => {
@@ -325,6 +329,7 @@ impl AotProgramStats {
                 | FlowOp::Choice { .. }
                 | FlowOp::Await { .. }
                 | FlowOp::AwaitMany { .. }
+                | FlowOp::HostCall { .. }
                 | FlowOp::Break(_)
                 | FlowOp::Continue
                 | FlowOp::Goto(_)

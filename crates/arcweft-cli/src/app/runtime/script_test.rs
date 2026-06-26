@@ -177,6 +177,7 @@ fn run_script_test(
         | FlowFiberStatus::Dialogue(_)
         | FlowFiberStatus::Waiting(_)
         | FlowFiberStatus::WaitingMany(_)
+        | FlowFiberStatus::HostCall(_)
         | FlowFiberStatus::Choice(_) => diagnostics.push(format!(
             "scenario did not finish within {} step(s): {final_status}",
             config.steps

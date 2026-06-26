@@ -264,6 +264,14 @@ impl<'a> RuntimeTypeValidator<'a> {
             FlowOp::Return(_) => {
                 self.report.stats.returns += 1;
             }
+            FlowOp::HostCall { binding, target } => {
+                if binding.is_some() {
+                    self.report.stats.let_bindings += 1;
+                }
+                target.args.iter().for_each(|arg| {
+                    self.validate_expr(path, arg);
+                });
+            }
             FlowOp::Await { .. }
             | FlowOp::AwaitMany { .. }
             | FlowOp::Effect(_)

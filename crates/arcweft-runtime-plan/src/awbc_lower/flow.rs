@@ -446,6 +446,36 @@ impl<'a> AwbcFlowLowerer<'a> {
                     }
                 });
             }
+            FlowOp::HostCall { binding, target } => {
+                let call = self.inventory.intern_host_call(target);
+                let args = target
+                    .args
+                    .iter()
+                    .map(|arg| AwbcExprLowerer::new(self.inventory, frame, path).lower(arg))
+                    .collect::<Vec<_>>();
+                let dst = binding
+                    .as_ref()
+                    .map(|_| frame.temp(self.inventory.dynamic_ty()));
+                let pattern = binding
+                    .as_ref()
+                    .map(|binding| lower_pattern(self.inventory, frame, binding));
+                body.suspend(self.inventory, AwbcSafePointKind::HostCall, |resume| {
+                    AwbcTerminator::HostCall {
+                        call,
+                        args,
+                        dst,
+                        resume,
+                    }
+                });
+                if let (Some(pattern), Some(value)) = (pattern, dst) {
+                    self.inventory
+                        .push_instruction(AwbcInstruction::BindPattern {
+                            pattern,
+                            value,
+                            mode: AwbcBindMode::Declare,
+                        });
+                }
+            }
             FlowOp::If {
                 condition,
                 then_ops,
@@ -844,6 +874,12 @@ impl EntryParameterCollector {
                         .iter()
                         .for_each(|arg| this.collect_expr(arg.value()));
                 });
+                if let Some(binding) = binding {
+                    self.declare_pattern(binding);
+                }
+            }
+            FlowOp::HostCall { binding, target } => {
+                target.args.iter().for_each(|arg| self.collect_expr(arg));
                 if let Some(binding) = binding {
                     self.declare_pattern(binding);
                 }

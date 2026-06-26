@@ -186,6 +186,7 @@ fn run_route_flow(
         | FlowFiberStatus::Dialogue(_)
         | FlowFiberStatus::Waiting(_)
         | FlowFiberStatus::WaitingMany(_)
+        | FlowFiberStatus::HostCall(_)
         | FlowFiberStatus::Choice(_) => NativeHttpResponse {
             status: 202,
             body: "route did not complete in this server step".to_owned(),

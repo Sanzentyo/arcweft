@@ -5,16 +5,17 @@ use arcweft_core::awbc::schema::{
     AwbcChoiceOption, AwbcConstant, AwbcConstantId, AwbcContentUnit, AwbcContentUnitId,
     AwbcDisplayMapEntry, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSet,
     AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFrameLayout, AwbcFrameLayoutId,
-    AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcInstruction,
-    AwbcInstructionId, AwbcLineCancelHandler, AwbcLineCleanupPolicy, AwbcLineOption,
-    AwbcLineTaskGroup, AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId,
-    AwbcLineTaskTrigger, AwbcOverflowPolicy, AwbcParallelPolicy, AwbcPattern, AwbcPatternId,
-    AwbcPresentationCleanup, AwbcPrivacyPolicy, AwbcProgram, AwbcRegisterId, AwbcReplayPolicy,
-    AwbcResumePoint, AwbcResumePointId, AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource,
-    AwbcRuntimeType, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcSignedIntKind,
-    AwbcSourceEventKind, AwbcSourcePlan, AwbcSourcePlanId, AwbcSourcePolicy, AwbcStreamPlan,
-    AwbcStreamPlanId, AwbcStringId, AwbcTableRange, AwbcTaskArgument, AwbcTaskClass, AwbcTaskPlan,
-    AwbcTaskPlanId, AwbcTaskPolicy, AwbcTerminator, AwbcTypeId, AwbcUnsignedIntKind,
+    AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcHostCall,
+    AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcInstructionId, AwbcLineCancelHandler,
+    AwbcLineCleanupPolicy, AwbcLineOption, AwbcLineTaskGroup, AwbcLineTaskGroupId,
+    AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcOverflowPolicy,
+    AwbcParallelPolicy, AwbcPattern, AwbcPatternId, AwbcPresentationCleanup, AwbcPrivacyPolicy,
+    AwbcProgram, AwbcRegisterId, AwbcReplayPolicy, AwbcResumePoint, AwbcResumePointId, AwbcRoute,
+    AwbcRouteBinding, AwbcRouteBindingSource, AwbcRuntimeType, AwbcSafePointKind, AwbcSignature,
+    AwbcSignatureId, AwbcSignedIntKind, AwbcSourceEventKind, AwbcSourcePlan, AwbcSourcePlanId,
+    AwbcSourcePolicy, AwbcStreamPlan, AwbcStreamPlanId, AwbcStringId, AwbcTableRange,
+    AwbcTaskArgument, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId, AwbcTaskPolicy, AwbcTerminator,
+    AwbcTypeId, AwbcUnsignedIntKind,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeWaitTarget};
 use arcweft_core::line_task::{
@@ -22,11 +23,14 @@ use arcweft_core::line_task::{
     LineCleanupPolicy, LineTaskGroup, LineTaskNode, LineTaskScope, ParallelPolicy,
     PresentationCleanup,
 };
-use arcweft_core::plan::{RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan};
+use arcweft_core::plan::{
+    RuntimeEntryKind, RuntimeEntryTarget, RuntimeHostCallTarget, RuntimePlan,
+};
 use arcweft_core::source::{
     BackpressurePolicy, OverflowPolicy, PrivacyPolicy, ReplayPolicy, SourceHandlerPlan, SourceId,
     SourcePolicy,
 };
+use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::stream::StreamRuntimeId;
 use arcweft_core::task::{HostTaskArgTemplate, HostTaskRequestTemplate};
 use arcweft_core::value::{RuntimeInt, RuntimeUInt, RuntimeValue};
@@ -114,6 +118,7 @@ pub struct AwbcInventory {
     frame_layouts: BTreeMap<String, AwbcFrameLayoutId>,
     effects: BTreeMap<String, AwbcEffectPlanId>,
     tasks: BTreeMap<String, AwbcTaskPlanId>,
+    host_calls: BTreeMap<String, AwbcHostCallId>,
     sources: BTreeMap<SourceId, AwbcSourcePlanId>,
     streams: BTreeMap<StreamRuntimeId, AwbcStreamPlanId>,
     choices: BTreeMap<String, AwbcChoiceId>,
@@ -145,6 +150,7 @@ impl AwbcInventory {
             frame_layouts: BTreeMap::new(),
             effects: BTreeMap::new(),
             tasks: BTreeMap::new(),
+            host_calls: BTreeMap::new(),
             sources: BTreeMap::new(),
             streams: BTreeMap::new(),
             choices: BTreeMap::new(),
@@ -661,6 +667,44 @@ impl AwbcInventory {
             cancel_scope: "flow",
             policy: AwbcTaskPolicy::JoinSameKey,
         })
+    }
+
+    pub fn intern_host_call(&mut self, target: &RuntimeHostCallTarget) -> AwbcHostCallId {
+        let key = format!(
+            "host_call:{}:{}:{}:{:?}:{}:{}",
+            target.public_id,
+            target.capability,
+            target.operation,
+            target.args,
+            target.mode as u8,
+            target.deterministic
+        );
+        if let Some(id) = self.host_calls.get(&key).copied() {
+            return id;
+        }
+        let id = AwbcHostCallId(table_index(self.program.host_calls.len()));
+        let signature = self.intern_signature(
+            vec![self.dynamic_ty(); target.args.len()],
+            Some(self.dynamic_ty()),
+            AwbcEffectSetId(0),
+        );
+        let mode = match target.mode {
+            RuntimeHostCallMode::Immediate => AwbcHostCallMode::Immediate,
+            RuntimeHostCallMode::Suspend => AwbcHostCallMode::Suspend,
+        };
+        let public_id = self.intern_string(&target.public_id);
+        let capability = self.intern_string(&target.capability);
+        let operation = self.intern_string(&target.operation);
+        self.program.host_calls.push(AwbcHostCall {
+            public_id,
+            capability,
+            operation,
+            signature,
+            mode,
+            deterministic: target.deterministic,
+        });
+        self.host_calls.insert(key, id);
+        id
     }
 
     fn intern_named_task(&mut self, spec: NamedTaskSpec<'_>) -> AwbcTaskPlanId {

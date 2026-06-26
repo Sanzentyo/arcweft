@@ -12,8 +12,8 @@ use crate::source::{
     SourcePolicy, SourceRuntimeState, normalize_source_events,
 };
 use crate::step::{
-    RuntimeDiagnostic, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepOutput,
-    RuntimeStepResult, RuntimeStepStats, RuntimeStepStopReason,
+    RuntimeDiagnostic, RuntimeHostCallId, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
+    RuntimeStepOutput, RuntimeStepResult, RuntimeStepStats, RuntimeStepStopReason,
 };
 use crate::stream::{
     RuntimeStreamEvent, StreamMatchArm, StreamOp, StreamRuntimeId, StreamRuntimeState,
@@ -86,6 +86,7 @@ pub struct Engine {
     pure_helper_f64_call_shapes: Vec<bool>,
     audio_epoch: u64,
     next_audio_sequence: u64,
+    next_host_call_sequence: u64,
 }
 
 struct PureHelperCallShapes {
@@ -149,6 +150,7 @@ pub enum FlowFiberStatus {
     Dialogue(DialogueState),
     Waiting(AwaitState),
     WaitingMany(Box<AwaitManyState>),
+    HostCall(HostCallState),
     Choice(ChoiceState),
     Done(FlowExit),
     Failed(String),
@@ -202,6 +204,15 @@ pub struct AwaitManyInFlight {
     pub need: NeedId,
 }
 
+/// Suspended direct host call awaiting a typed host result.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HostCallState {
+    pub binding: Option<RuntimePattern>,
+    pub target: crate::plan::RuntimeHostCallTarget,
+    pub id: RuntimeHostCallId,
+    pub resume: Option<FlowCursor>,
+}
+
 /// Suspended choice state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChoiceState {
@@ -237,6 +248,7 @@ impl FlowFiberStatus {
                 state.results.iter().filter(|value| value.is_some()).count(),
                 state.results.len()
             ),
+            Self::HostCall(state) => format!("host_call {}", state.id.0),
             Self::Choice(state) => {
                 format!("choice {}", state.id.as_deref().unwrap_or("-"))
             }
@@ -256,6 +268,7 @@ impl FlowFiberStatus {
                 state.results.iter().filter(|value| value.is_some()).count(),
                 state.results.len()
             ),
+            Self::HostCall(state) => format!("host_call {}", state.id.0),
             Self::Choice(state) => {
                 format!("choice {}", state.id.as_deref().unwrap_or("-"))
             }
@@ -270,6 +283,7 @@ impl FlowFiberStatus {
             Self::Dialogue(_) => "dialogue".to_owned(),
             Self::Waiting(_) => "waiting".to_owned(),
             Self::WaitingMany(_) => "waiting_many".to_owned(),
+            Self::HostCall(_) => "host_call".to_owned(),
             Self::Choice(_) => "choice".to_owned(),
             Self::Done(exit) => exit.compact_status_label(),
             Self::Failed(message) => format!("failed:{message}"),
@@ -428,6 +442,7 @@ impl Engine {
             pure_helper_f64_call_shapes: call_shapes.f64,
             audio_epoch: 0,
             next_audio_sequence: 0,
+            next_host_call_sequence: 0,
         }
     }
 
@@ -703,6 +718,7 @@ impl Engine {
                 FlowFiberStatus::Done(_)
                     | FlowFiberStatus::Waiting(_)
                     | FlowFiberStatus::WaitingMany(_)
+                    | FlowFiberStatus::HostCall(_)
                     | FlowFiberStatus::Dialogue(_)
                     | FlowFiberStatus::Choice(_)
             )
@@ -720,6 +736,7 @@ impl Engine {
                 FlowFiberStatus::Done(_)
                     | FlowFiberStatus::Waiting(_)
                     | FlowFiberStatus::WaitingMany(_)
+                    | FlowFiberStatus::HostCall(_)
                     | FlowFiberStatus::Dialogue(_)
                     | FlowFiberStatus::Choice(_)
             )
@@ -729,6 +746,11 @@ impl Engine {
         match self.fiber.status {
             FlowFiberStatus::Done(_) => Some(RuntimeStepStopReason::Done),
             FlowFiberStatus::Failed(_) => Some(RuntimeStepStopReason::Failed),
+            FlowFiberStatus::HostCall(_) => Some(if has_host_requests(output) {
+                RuntimeStepStopReason::Output
+            } else {
+                RuntimeStepStopReason::Blocked
+            }),
             FlowFiberStatus::Dialogue(_)
             | FlowFiberStatus::Waiting(_)
             | FlowFiberStatus::WaitingMany(_)
@@ -774,6 +796,8 @@ fn has_host_requests(output: &RuntimeStepOutput) -> bool {
         || !output.requests.audio.is_empty()
         || !output.requests.cancel_scopes.is_empty()
         || !output.requests.source_close.is_empty()
+        || !output.requests.ensure_content.is_empty()
+        || !output.requests.host_calls.is_empty()
 }
 
 fn has_presentation_visible_output(output: &RuntimeStepOutput) -> bool {

@@ -2,6 +2,7 @@ use crate::effect::LineEffectRequest;
 use crate::line_task::{LineOutRequest, LineTaskGroup};
 use crate::pattern::RuntimePattern;
 use crate::source::SourcePlan;
+use crate::step::RuntimeHostCallMode;
 use crate::stream::StreamPlan;
 use crate::task::{AwaitManyTarget, AwaitTarget, NeedId, TaskId};
 use crate::value::{RuntimeBinding, RuntimeExpr, RuntimePayload, RuntimeValue};
@@ -187,6 +188,10 @@ pub enum FlowOp {
         target: AwaitManyTarget,
         pending: Vec<LineEffectRequest>,
     },
+    HostCall {
+        binding: Option<RuntimePattern>,
+        target: RuntimeHostCallTarget,
+    },
     If {
         condition: RuntimeExpr,
         then_ops: Vec<FlowOp>,
@@ -268,6 +273,37 @@ pub enum FlowOp {
         expr: RuntimeExpr,
     },
     Noop,
+}
+
+/// Direct host-call request surface for runtime-step hosts.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct RuntimeHostCallTarget {
+    pub public_id: String,
+    pub capability: String,
+    pub operation: String,
+    pub args: Vec<RuntimeExpr>,
+    pub mode: RuntimeHostCallMode,
+    pub deterministic: bool,
+}
+
+impl RuntimeHostCallTarget {
+    pub fn new(
+        public_id: impl Into<String>,
+        capability: impl Into<String>,
+        operation: impl Into<String>,
+        args: impl IntoIterator<Item = RuntimeExpr>,
+        mode: RuntimeHostCallMode,
+        deterministic: bool,
+    ) -> Self {
+        Self {
+            public_id: public_id.into(),
+            capability: capability.into(),
+            operation: operation.into(),
+            args: args.into_iter().collect(),
+            mode,
+            deterministic,
+        }
+    }
 }
 
 /// One executable `match` arm in the runtime flow model.

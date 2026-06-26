@@ -22,10 +22,12 @@ use crate::awbc::schema::{
 use crate::awbc::vm::{VmError, VmExit, VmHost, VmObservation, VmStepOptions, step_with_host};
 use crate::engine::{
     AwaitManyInFlight, AwaitManyState, AwaitState, ChoiceState, DialogueState, FlowExit, FlowFiber,
-    FlowFiberStatus,
+    FlowFiberStatus, HostCallState,
 };
 use crate::observation::RuntimeObservationState;
-use crate::plan::{ChoiceRuntimeOption, FlowEvent, FlowRuntimeId, RuntimeLineId};
+use crate::plan::{
+    ChoiceRuntimeOption, FlowEvent, FlowRuntimeId, RuntimeHostCallTarget, RuntimeLineId,
+};
 use crate::pure::{RuntimeCallBackend, RuntimeCompactPureHelper, VmRuntimePureCallBackend};
 use crate::source::{
     BackpressurePolicy, OverflowPolicy, PrivacyPolicy, ReplayPolicy, RuntimeSourceEvent,
@@ -2022,10 +2024,43 @@ impl AwbcProductStepExecutor {
                         .collect(),
                 }))
             }
-            FiberSuspensionReason::HostCall { .. } | FiberSuspensionReason::BudgetYield => {
-                FlowFiberStatus::Running
-            }
+            FiberSuspensionReason::HostCall { call, .. } => self.host_call_status(*call),
+            FiberSuspensionReason::BudgetYield => FlowFiberStatus::Running,
         }
+    }
+
+    fn host_call_status(&self, call: AwbcHostCallId) -> FlowFiberStatus {
+        let record = self.program.host_calls.get(call.index());
+        let public_id = record
+            .and_then(|record| self.program.strings.get(record.public_id.index()))
+            .cloned()
+            .unwrap_or_else(|| format!("awbc.host_call.{}", call.0));
+        let id = self.pending_host_call.as_ref().map_or_else(
+            || RuntimeHostCallId(public_id.clone()),
+            |pending| pending.id.clone(),
+        );
+        FlowFiberStatus::HostCall(HostCallState {
+            binding: None,
+            target: RuntimeHostCallTarget::new(
+                public_id,
+                record
+                    .and_then(|record| self.program.strings.get(record.capability.index()))
+                    .cloned()
+                    .unwrap_or_else(|| "host".to_owned()),
+                record
+                    .and_then(|record| self.program.strings.get(record.operation.index()))
+                    .cloned()
+                    .unwrap_or_else(|| "call".to_owned()),
+                [],
+                record.map_or(RuntimeHostCallMode::Suspend, |record| match record.mode {
+                    AwbcHostCallMode::Immediate => RuntimeHostCallMode::Immediate,
+                    AwbcHostCallMode::Suspend => RuntimeHostCallMode::Suspend,
+                }),
+                record.is_none_or(|record| record.deterministic),
+            ),
+            id,
+            resume: None,
+        })
     }
 
     fn choice_runtime_option(

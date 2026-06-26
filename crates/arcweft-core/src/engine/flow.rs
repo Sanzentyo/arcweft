@@ -1,13 +1,14 @@
 use super::{
     AwaitState, ChoiceState, DialogueState, Engine, FlowControlStackEntry,
     FlowControlStackEntryKind, FlowCursor, FlowEvent, FlowFiberStatus, FlowOp, FlowRuntimeId,
-    RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr, RuntimePattern,
-    RuntimeStepInput, RuntimeStepOutput, RuntimeValue, runtime_value_into_sequence_values,
-    runtime_value_label,
+    HostCallState, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr,
+    RuntimePattern, RuntimeStepInput, RuntimeStepOutput, RuntimeValue,
+    runtime_value_into_sequence_values, runtime_value_label,
 };
 use crate::line_task::progress_live_line_task_group;
 use crate::pattern::pattern_binding_capacity;
 use crate::pure::RuntimeCallBackend;
+use crate::step::{RuntimeHostCallId, RuntimeHostCallRequest};
 use crate::task::{
     CancelScopeId, HostTaskRequest, TaskClass, TaskId, TaskKey, TaskPolicy, TaskPriority, TaskSpec,
 };
@@ -140,6 +141,39 @@ impl Engine {
                     output,
                     pure_backend,
                 );
+            }
+            FlowOp::HostCall { binding, target } => {
+                let args = match target
+                    .args
+                    .iter()
+                    .map(|arg| {
+                        self.evaluate_expr_with_backend(arg, pure_backend)
+                            .map(crate::value::RuntimePayload::from)
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                {
+                    Ok(args) => args,
+                    Err(error) => {
+                        self.fail_eval(error, output);
+                        return;
+                    }
+                };
+                let id = self.next_host_call_id(&target.public_id);
+                output.requests.host_calls.push(RuntimeHostCallRequest {
+                    id: id.clone(),
+                    public_id: target.public_id.clone(),
+                    capability: target.capability.clone(),
+                    operation: target.operation.clone(),
+                    args,
+                    mode: target.mode,
+                    deterministic: target.deterministic,
+                });
+                self.fiber.status = FlowFiberStatus::HostCall(HostCallState {
+                    binding,
+                    target,
+                    id,
+                    resume: self.resume_cursor(next_op_index),
+                });
             }
             FlowOp::If {
                 condition,
@@ -450,6 +484,16 @@ impl Engine {
         {
             cursor.op_index = next_op_index;
         }
+    }
+
+    fn next_host_call_id(&mut self, public_id: &str) -> RuntimeHostCallId {
+        let sequence = self.next_host_call_sequence;
+        self.next_host_call_sequence = self.next_host_call_sequence.saturating_add(1);
+        RuntimeHostCallId(if sequence == 0 {
+            public_id.to_owned()
+        } else {
+            format!("{public_id}.{sequence}")
+        })
     }
 
     fn resume_cursor(&self, next_op_index: Option<usize>) -> Option<FlowCursor> {

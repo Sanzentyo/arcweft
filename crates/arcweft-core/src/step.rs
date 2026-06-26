@@ -73,7 +73,7 @@ pub struct RuntimeHostCallId(pub String);
 
 /// Whether a host call may complete in the emitting step or requires a later
 /// host result before the fiber can resume.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
 pub enum RuntimeHostCallMode {
     #[default]
     Immediate,
