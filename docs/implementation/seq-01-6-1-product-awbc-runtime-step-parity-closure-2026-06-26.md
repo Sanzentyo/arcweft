@@ -1112,6 +1112,93 @@ Remaining matrix limits after this cut:
   structured-vs-AWBC differential row for every kind.
 - typed trap rows and full final-facade statistics/state equality remain open.
 
+## Integration update 2026-06-26, eleventh cut
+
+Current working change before commit: `zktslpzm` over parent `unvsqyqn`.
+
+This cut closes the duplicate/out-of-order source event policy gap:
+
+- the AWBC product executor no longer keeps an adapter-local `source_sequences`
+  ledger or emits product-only stale sequence input diagnostics;
+- source events are now applied and emitted through the same RuntimeStepResult
+  boundary as structured execution, including duplicate item events with the
+  same sequence and lower-sequence source input in a later step;
+- the parity suite adds `awbc_product_parity_source_duplicate_sequence_items`
+  and `awbc_product_parity_source_lower_sequence_cross_step`, raising the
+  focused AWBC product parity fixture count from 30 to 32.
+
+Exact validation run for this cut:
+
+```text
+cargo fmt --all -- --check
+  passed
+
+cargo test -p arcweft-runtime-plan awbc_product_parity -- --nocapture
+  passed: 32 passed, 0 failed
+
+cargo test -p arcweft-runtime-plan awbc -- --nocapture
+  passed: 1 awbc_lower unit test and 32 awbc_product_parity tests passed,
+  0 failed
+
+cargo test -p arcweft-core awbc -- --nocapture
+  passed: 15 passed, 0 failed
+
+cargo check -p arcweft-core -p arcweft-runtime-plan -p arcweft-compiler -p arcweft-bundle -p arcweft-cli -p arcweft-runtime-driver -p arcweft-runtime-host -p arcweft-player-native --all-targets
+  passed
+
+cargo test -p arcweft-bundle product_awbc -- --nocapture
+  passed: 4 product_awbc tests and 2 product source-gate tests passed,
+  0 failed
+
+cargo test -p arcweft-runtime-driver awbc_product -- --nocapture
+  passed: 1 passed, 0 failed
+
+cargo test -p arcweft-runtime-host awbc_product -- --nocapture
+  passed: 1 passed, 0 failed
+
+cargo test -p arcweft-player-native awbc_product -- --nocapture
+  passed: 1 passed, 0 failed
+
+cargo test -p arcweft-cli awfb -- --nocapture
+  passed: 8 passed, 0 failed
+  note: the stderr line about a truncated AWFB is the expected rejection path
+  from the non-AWFB-input test.
+
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+  passed
+
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+  passed with no error-level violations: files scanned 1514, Rust files 833,
+  Rust physical LOC 409842, package manifests 89, warnings 102.
+```
+
+Structural measurements for files touched in the eleventh cut:
+
+| Path | Bytes | Physical LOC | Kind / responsibility |
+|---|---:|---:|---|
+| `crates/arcweft-core/src/awbc/product_step.rs` | 88898 | 2264 | production product AWBC RuntimeStepResult adapter; warning-level size hotspot, below the 2500 LOC error threshold |
+| `crates/arcweft-runtime-plan/tests/awbc_product_parity.rs` | 42562 | 1203 | integration differential parity tests |
+
+Remaining matrix limits after this cut:
+
+- source handler item/progress/error pattern dispatch, source-yield queue
+  mutation, and duplicate/lower-sequence source event behavior are now
+  differentially covered, with facade source state compared after every parity
+  step.
+- multi-stream yield and self-close routing is covered for ordinary static
+  stream targets, and stream-to-source static close is differentially covered.
+  Dynamic close-target expressions remain unsupported by the compact AWBC
+  instruction shape and currently fail lowering with a diagnostic.
+- await-many partial completion followed by error/cancel is covered for one
+  ready item followed by failure. Broader out-of-order progress/ready ordering
+  with more than two items remains open.
+- direct host-call differential coverage still requires a runtime-plan
+  host-call surface; product-step has direct host-call request/result unit
+  coverage only.
+- effect-kind rows still have direct product mapping-table coverage, not a
+  structured-vs-AWBC differential row for every kind.
+- typed trap rows and full final-facade statistics/state equality remain open.
+
 ## Required integration work before marking seq-01.6.1 complete
 
 - expand the differential harness to cover every row in the companion matrix,

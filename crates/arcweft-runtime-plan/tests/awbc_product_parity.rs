@@ -596,6 +596,88 @@ fn awbc_product_parity_source_stream() {
 }
 
 #[test]
+fn awbc_product_parity_source_duplicate_sequence_items() {
+    let source = SourceId("source.test".to_owned());
+    let steps = run_parity(
+        flow(vec![FlowOp::Return("done".to_owned())]),
+        vec![RuntimeStepInput {
+            source_events: vec![
+                RuntimeSourceEvent {
+                    source: source.clone(),
+                    sequence: TaskSequence(0),
+                    kind: SourceEventKind::Item(RuntimePayload(RuntimeValue::String(
+                        "first".to_owned(),
+                    ))),
+                },
+                RuntimeSourceEvent {
+                    source: source.clone(),
+                    sequence: TaskSequence(0),
+                    kind: SourceEventKind::Item(RuntimePayload(RuntimeValue::String(
+                        "second".to_owned(),
+                    ))),
+                },
+            ],
+            ..RuntimeStepInput::default()
+        }],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(steps[0].structured.output.effects.source_events.len(), 2);
+    let queue = steps[0]
+        .structured_sources
+        .get(&source)
+        .expect("source state exists")
+        .queue
+        .iter()
+        .map(RuntimePayload::label)
+        .collect::<Vec<_>>();
+    assert_eq!(queue, vec!["second"]);
+}
+
+#[test]
+fn awbc_product_parity_source_lower_sequence_cross_step() {
+    let source = SourceId("source.test".to_owned());
+    let steps = run_parity(
+        flow(vec![FlowOp::Return("done".to_owned())]),
+        vec![
+            RuntimeStepInput {
+                source_events: vec![RuntimeSourceEvent {
+                    source: source.clone(),
+                    sequence: TaskSequence(2),
+                    kind: SourceEventKind::Item(RuntimePayload(RuntimeValue::String(
+                        "newer".to_owned(),
+                    ))),
+                }],
+                ..RuntimeStepInput::default()
+            },
+            RuntimeStepInput {
+                source_events: vec![RuntimeSourceEvent {
+                    source: source.clone(),
+                    sequence: TaskSequence(1),
+                    kind: SourceEventKind::Item(RuntimePayload(RuntimeValue::String(
+                        "late".to_owned(),
+                    ))),
+                }],
+                ..RuntimeStepInput::default()
+            },
+        ],
+    );
+
+    for step in &steps {
+        assert_step_boundary_eq(step);
+    }
+    let queue = steps[1]
+        .structured_sources
+        .get(&source)
+        .expect("source state exists")
+        .queue
+        .iter()
+        .map(RuntimePayload::label)
+        .collect::<Vec<_>>();
+    assert_eq!(queue, vec!["late"]);
+}
+
+#[test]
 fn awbc_product_parity_source_handler_closes_later_source() {
     let driver = SourceId("source.driver".to_owned());
     let target = SourceId("source.target".to_owned());

@@ -177,7 +177,6 @@ pub struct AwbcProductStepExecutor {
     pending_host_call: Option<PendingHostCall>,
     started_tasks: BTreeSet<TaskId>,
     emitted_content: BTreeSet<AwbcContentUnitId>,
-    source_sequences: BTreeMap<SourceId, TaskSequence>,
     stream_sequences: BTreeMap<AwbcStreamPlanId, u64>,
     child_fibers: VecDeque<FiberState>,
     next_generation: u64,
@@ -264,7 +263,6 @@ impl AwbcProductStepExecutor {
             pending_host_call: None,
             started_tasks: BTreeSet::new(),
             emitted_content: BTreeSet::new(),
-            source_sequences: BTreeMap::new(),
             stream_sequences: BTreeMap::new(),
             child_fibers: VecDeque::new(),
             next_generation: 1,
@@ -1608,22 +1606,6 @@ impl AwbcProductStepExecutor {
         output: &mut RuntimeStepOutput,
     ) {
         for event in events {
-            if self
-                .source_sequences
-                .get(&event.source)
-                .is_some_and(|last| event.sequence <= *last)
-            {
-                output.diagnostics.push(RuntimeDiagnostic::categorized(
-                    RuntimeDiagnosticCategory::Input,
-                    format!(
-                        "stale source {} sequence {}",
-                        event.source.0, event.sequence.0
-                    ),
-                ));
-                continue;
-            }
-            self.source_sequences
-                .insert(event.source.clone(), event.sequence);
             if let Some(plan_id) = self.source_plan_for_id(&event.source) {
                 self.record_source_event_state(&event, output);
                 self.sync_compact_source_state(plan_id);
