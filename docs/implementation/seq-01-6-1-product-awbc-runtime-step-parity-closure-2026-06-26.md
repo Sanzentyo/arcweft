@@ -1888,13 +1888,36 @@ With that split, the seq-01.6.1 implementation-ready closure rows are covered:
 - no structured product fallback was reintroduced;
 - product AWFB execution remains AWBC-only in the validated smoke paths.
 
-## Required integration work before marking seq-01.6.1 complete
+## Final Seq-01.6.1 Completion Boundary
 
-- keep the audio payload row out of seq-01.6.1 completion and design it through
-  seq-01.6.2 before implementation;
-- continue splitting product-step responsibilities before adding substantial
-  behavior back to the facade file;
-- update this note with the final committed revision.
+Final bookkeeping change: Jujutsu change
+`umpttmlrzotsrxxysmkwztnuntuuplvy`.
+
+Seq-01.6.1 is complete for the implementation-ready product AWBC
+`RuntimeStepResult` parity rows:
+
+- all product-step parity blocker families that had concrete implementation
+  shape in seq-01.6.1 are covered by focused product-step tests,
+  structured-vs-AWBC differential tests, or both;
+- decoded product AWFB execution remains AWBC-only in the validated product
+  bundle/runtime-driver/runtime-host/native-player/CLI smoke paths;
+- no structured product fallback, compiler dependency in product players, or
+  stringly compatibility shim was added.
+
+Explicitly excluded from seq-01.6.1 completion:
+
+- AWBC audio payload execution parity. The product adapter has a typed
+  unsupported diagnostic for `AwbcEffectKind::Audio`, but executable parity
+  requires the seq-01.6.2 payload schema/lowering design recorded in
+  `docs/reviews/requests/2026-06-26-seq-01.6.2-product-awbc-audio-payload-parity.md`.
+- Dynamic close-target expressions, which remain unsupported by the current
+  compact instruction shape and fail lowering with a diagnostic.
+
+Ongoing structural constraint:
+
+- `product_step.rs` remains a warning-level size hotspot. Further product-step
+  behavior should continue moving stable responsibility modules out instead of
+  growing the facade file again.
 
 ## Changed-file summary
 
