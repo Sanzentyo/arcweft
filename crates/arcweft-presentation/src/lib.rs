@@ -3,7 +3,9 @@ use arcweft_id::PublicId;
 use core::marker::PhantomData;
 use std::collections::HashMap;
 
+pub mod appearance;
 pub mod character;
+pub mod focus;
 pub mod gesture;
 pub mod hit;
 pub mod hover;
@@ -14,6 +16,7 @@ pub mod layer;
 pub mod replay;
 pub mod router;
 pub mod semantic;
+pub mod text_input;
 
 /// Named lifetime owner for presentation values.
 ///

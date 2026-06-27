@@ -12,3 +12,4 @@ pub mod offscreen;
 pub mod renderer;
 pub mod sample;
 pub mod ui;
+pub mod ui_scene;

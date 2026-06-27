@@ -1,0 +1,315 @@
+//! Author-facing UI style declarations and component-local style overrides.
+//!
+//! The renderer consumes resolved `UiStyle`/paint data, not this authoring model.
+//! Both Arcweft native style syntax and CSS lower into this representation before
+//! being interned into frame-local `StyleId` values.
+
+use crate::{Invalidation, UiInteractionSelector, UiPropertyKind, UiPropertyValue};
+use arcweft_id::PublicId;
+use std::collections::BTreeMap;
+
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum StyleSyntax {
+    #[default]
+    Arcweft,
+    Css,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StyleSource {
+    Inline(String),
+    Files(Vec<StyleFileRef>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StyleFileRef {
+    mode: StyleFileMode,
+    path: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StyleFileMode {
+    File,
+    Embed,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct StylePatch {
+    properties: Vec<StylePropertyAssignment>,
+    tokens: Vec<StyleTokenBinding>,
+    rules: Vec<StyleConditionalRule>,
+    part_rules: Vec<PartStyleRule>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StylePropertyAssignment {
+    kind: UiPropertyKind,
+    value: UiPropertyValue,
+    op: StyleAssignOp,
+    invalidation: Invalidation,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum StyleAssignOp {
+    #[default]
+    Replace,
+    Append,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StyleTokenBinding {
+    name: PublicId,
+    value: StyleTokenValue,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StyleTokenValue {
+    Property(UiPropertyValue),
+    SystemColor(arcweft_presentation::appearance::SystemColor),
+    Resource(PublicId),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StyleConditionalRule {
+    condition: StyleCondition,
+    patch: StylePatch,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PartStyleRule {
+    part: StylePartId,
+    condition: Option<StyleCondition>,
+    patch: StylePatch,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StylePartId(PublicId);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StyleCondition {
+    Interaction(UiInteractionSelector),
+    ElementState(UiElementStateSelector),
+    Environment(EnvironmentStylePredicate),
+    Expression(StyleExpressionId),
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum UiElementStateSelector {
+    FocusVisible,
+    ReadOnly,
+    Invalid,
+    Composing,
+    PlaceholderShown,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EnvironmentStylePredicate {
+    ColorScheme(arcweft_presentation::appearance::ColorScheme),
+    Contrast(arcweft_presentation::appearance::ContrastPreference),
+    ReduceMotion(bool),
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct StyleExpressionId(pub u32);
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ComponentStyleOverride {
+    layers: Vec<StyleOverrideLayer>,
+    exported_parts: BTreeMap<StylePartId, PublicId>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StyleOverrideLayer {
+    syntax: StyleSyntax,
+    source: StyleSource,
+    patch: StylePatch,
+}
+
+impl StyleFileRef {
+    pub fn file(path: impl Into<String>) -> Self {
+        Self {
+            mode: StyleFileMode::File,
+            path: path.into(),
+        }
+    }
+
+    pub fn embed(path: impl Into<String>) -> Self {
+        Self {
+            mode: StyleFileMode::Embed,
+            path: path.into(),
+        }
+    }
+
+    pub const fn mode(&self) -> StyleFileMode {
+        self.mode
+    }
+
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+}
+
+impl StylePatch {
+    pub fn push_property(&mut self, kind: UiPropertyKind, value: UiPropertyValue) {
+        self.properties
+            .push(StylePropertyAssignment::replace(kind, value));
+    }
+
+    pub fn push_rule(&mut self, condition: StyleCondition, patch: StylePatch) {
+        self.rules.push(StyleConditionalRule { condition, patch });
+    }
+
+    pub fn push_part_rule(&mut self, part: StylePartId, patch: StylePatch) {
+        self.part_rules.push(PartStyleRule {
+            part,
+            condition: None,
+            patch,
+        });
+    }
+
+    pub fn properties(&self) -> &[StylePropertyAssignment] {
+        &self.properties
+    }
+
+    pub fn tokens(&self) -> &[StyleTokenBinding] {
+        &self.tokens
+    }
+
+    pub fn rules(&self) -> &[StyleConditionalRule] {
+        &self.rules
+    }
+
+    pub fn part_rules(&self) -> &[PartStyleRule] {
+        &self.part_rules
+    }
+}
+
+impl StylePropertyAssignment {
+    pub fn replace(kind: UiPropertyKind, value: UiPropertyValue) -> Self {
+        Self {
+            kind,
+            value,
+            op: StyleAssignOp::Replace,
+            invalidation: kind.default_invalidation(),
+        }
+    }
+
+    pub fn append(kind: UiPropertyKind, value: UiPropertyValue) -> Self {
+        Self {
+            kind,
+            value,
+            op: StyleAssignOp::Append,
+            invalidation: kind.default_invalidation(),
+        }
+    }
+
+    pub const fn kind(&self) -> UiPropertyKind {
+        self.kind
+    }
+
+    pub const fn value(&self) -> UiPropertyValue {
+        self.value
+    }
+
+    pub const fn op(&self) -> StyleAssignOp {
+        self.op
+    }
+
+    pub const fn invalidation(&self) -> Invalidation {
+        self.invalidation
+    }
+}
+
+impl StylePartId {
+    pub const fn new(id: PublicId) -> Self {
+        Self(id)
+    }
+
+    pub const fn public_id(&self) -> &PublicId {
+        &self.0
+    }
+}
+
+impl StyleOverrideLayer {
+    pub const fn new(syntax: StyleSyntax, source: StyleSource, patch: StylePatch) -> Self {
+        Self {
+            syntax,
+            source,
+            patch,
+        }
+    }
+
+    pub const fn syntax(&self) -> StyleSyntax {
+        self.syntax
+    }
+
+    pub const fn source(&self) -> &StyleSource {
+        &self.source
+    }
+
+    pub const fn patch(&self) -> &StylePatch {
+        &self.patch
+    }
+}
+
+impl ComponentStyleOverride {
+    pub fn push_layer(&mut self, layer: StyleOverrideLayer) {
+        self.layers.push(layer);
+    }
+
+    pub fn export_part(&mut self, part: StylePartId, target: PublicId) {
+        self.exported_parts.insert(part, target);
+    }
+
+    pub fn layers(&self) -> &[StyleOverrideLayer] {
+        &self.layers
+    }
+
+    pub const fn exported_parts(&self) -> &BTreeMap<StylePartId, PublicId> {
+        &self.exported_parts
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ComponentStyleOverride, StyleFileMode, StyleFileRef, StyleOverrideLayer, StylePatch,
+        StyleSource, StyleSyntax,
+    };
+    use crate::{Milli, UiPropertyKind, UiPropertyValue};
+    use arcweft_id::PublicId;
+
+    #[test]
+    fn style_file_refs_preserve_file_vs_embed_identity() {
+        let file = StyleFileRef::file("ui/dialogue.css");
+        let embed = StyleFileRef::embed("ui/default.css");
+
+        assert_eq!(file.mode(), StyleFileMode::File);
+        assert_eq!(file.path(), "ui/dialogue.css");
+        assert_eq!(embed.mode(), StyleFileMode::Embed);
+        assert_eq!(embed.path(), "ui/default.css");
+    }
+
+    #[test]
+    fn component_style_overrides_keep_ordered_layers_and_exported_parts() {
+        let mut patch = StylePatch::default();
+        patch.push_property(UiPropertyKind::Opacity, UiPropertyValue::Milli(Milli(900)));
+        let mut overrides = ComponentStyleOverride::default();
+        overrides.push_layer(StyleOverrideLayer::new(
+            StyleSyntax::Arcweft,
+            StyleSource::Inline("opacity: 0.9".to_owned()),
+            patch,
+        ));
+        let part = super::StylePartId::new(public_id("part.label"));
+        let target = public_id("ui.dialogue.label");
+        overrides.export_part(part.clone(), target.clone());
+
+        assert_eq!(overrides.layers().len(), 1);
+        assert_eq!(overrides.layers()[0].syntax(), StyleSyntax::Arcweft);
+        assert_eq!(overrides.exported_parts().get(&part), Some(&target));
+    }
+
+    fn public_id(value: &str) -> PublicId {
+        PublicId::try_new(value).expect("test id")
+    }
+}

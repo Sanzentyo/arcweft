@@ -9,9 +9,13 @@ pub mod handler;
 pub mod image;
 pub mod layout;
 pub mod presentation_image;
+pub mod program;
 pub mod reactive;
 pub mod semantics;
 pub mod style;
+pub mod style_authoring;
+pub mod text_field;
+pub mod text_source;
 
 use thiserror::Error;
 
@@ -40,6 +44,12 @@ pub use layout::{
     LayoutTree,
 };
 pub use presentation_image::{UiImagePresentationFrame, UiImagePresentationInput};
+pub use program::{
+    UiBranch, UiComponentCall, UiCustomSpec, UiElementKind, UiElementSpec, UiEventBindingSpec,
+    UiExpressionId, UiHandlerProgram, UiImageSpec, UiInstruction, UiInstructionRange, UiPartExport,
+    UiPartId, UiProgram, UiRepeat, UiSemanticSpec, UiStableKey, UiStyleApply, UiStylePatchId,
+    UiTextSpec,
+};
 pub use reactive::{EntityInvalidation, ReactiveGraph, ReactiveInvalidation, Revision};
 pub use semantics::{UiNodeId, UiSemanticFragment, UiSemanticFragmentBuilder, UiSemanticNode};
 pub use style::{
@@ -47,6 +57,11 @@ pub use style::{
     ResolvedUiProperty, ResolvedUiStyle, Rgba8, UiInteractionSelector, UiPropertyId,
     UiPropertyKind, UiPropertyValue, UiStyle, UiStyleRule, UiStyleTable, ValueSourceId,
 };
+pub use text_field::{
+    ExternalTextUpdatePolicy, TextEditState, TextEditorMode, TextEditorPart, TextFieldId,
+    TextFieldPartId, TextFieldSpec,
+};
+pub use text_source::{UiRichTextHandle, UiTextByteRange, UiTextSource, UiTextSourceTable};
 
 /// Stable key for one retained UI fragment node.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

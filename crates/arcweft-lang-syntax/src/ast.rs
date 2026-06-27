@@ -9,3 +9,5 @@ pub mod module_path;
 pub mod pattern;
 pub mod proof;
 pub mod source;
+pub mod style;
+pub mod view;
