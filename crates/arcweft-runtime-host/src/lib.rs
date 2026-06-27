@@ -7,6 +7,7 @@ pub mod native_system;
 pub mod native_task;
 pub mod presentation_dispatch;
 pub mod stats;
+pub mod text_input_dispatch;
 pub mod ui_frame;
 
 pub use activity_host::{
@@ -43,6 +44,11 @@ pub use stats::{
     RuntimeExecutorMathStatsSummary, RuntimeExecutorPureAccelerationSummary,
     RuntimeExecutorPureCompileStatsSummary, RuntimeExecutorPureConfigSummary,
     RuntimeExecutorPureWorkerSummary, RuntimeExecutorStats, runtime_executor_stats,
+};
+pub use text_input_dispatch::{
+    FocusedTextInputSession, TextInputDispatchError, TextInputDispatchOutput,
+    TextInputDispatchState, TextInputFocusTransaction, dispatch_event_suppresses_shortcuts,
+    web_edit_context_capabilities,
 };
 pub use ui_frame::{
     UiFrameCommit, UiFrameCommitBuilder, UiFrameCommitError, UiFrameImageItem, UiFrameLayer,

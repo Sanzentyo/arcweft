@@ -59,7 +59,8 @@ pub use style::{
 };
 pub use text_field::{
     ExternalTextUpdatePolicy, TextEditError, TextEditOutcome, TextEditState, TextEditorMode,
-    TextEditorPart, TextFieldId, TextFieldMetrics, TextFieldPartId, TextFieldPartRect,
+    TextEditorPart, TextFieldBindingCommitPolicy, TextFieldEditPolicy, TextFieldGeometryPolicy,
+    TextFieldId, TextFieldMetrics, TextFieldPartId, TextFieldPartRect, TextFieldPolicyEditError,
     TextFieldSpec, TextFieldVisualBuffer,
 };
 pub use text_source::{UiRichTextHandle, UiTextByteRange, UiTextSource, UiTextSourceTable};

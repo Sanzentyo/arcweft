@@ -7,6 +7,7 @@ use arcweft_presentation::interaction::{
     FocusState, InteractionState, PointerCapture, PressedTarget,
 };
 use arcweft_presentation::router::{InputRouter, RouteDecision};
+use arcweft_presentation::text_input::{TextInput, TextInputKeyDisposition, TextInputOperation};
 use arcweft_render_wgpu::geometry::{ChoiceScroll, InteractionVisualState, PreparedFrame};
 use std::collections::BTreeMap;
 
@@ -41,6 +42,7 @@ pub struct InputController {
     drags: BTreeMap<u64, DragState>,
     choice_scroll: ChoiceScroll,
     window_focused: bool,
+    ime_composing: bool,
 }
 
 impl InputController {
@@ -54,6 +56,10 @@ impl InputController {
 
     pub const fn window_focused(&self) -> bool {
         self.window_focused
+    }
+
+    pub const fn ime_composing(&self) -> bool {
+        self.ime_composing
     }
 
     pub fn pointer_position(&self, pointer: PointerId) -> Option<ViewportPoint> {
@@ -249,6 +255,48 @@ impl InputController {
                 redraw: true,
             },
             _ => InputOutcome::default(),
+        }
+    }
+
+    pub fn keyboard_with_ime(
+        &mut self,
+        frame: &PreparedFrame,
+        key: &str,
+        phase: KeyPhase,
+        disposition: TextInputKeyDisposition,
+    ) -> InputOutcome {
+        if disposition.shortcuts_suppressed() || self.ime_composing {
+            return InputOutcome {
+                actions: Vec::new(),
+                redraw: self.ime_composing,
+            };
+        }
+        self.keyboard(frame, key, phase)
+    }
+
+    pub fn text_input(&mut self, frame: &PreparedFrame, input: TextInput) -> InputOutcome {
+        self.ime_composing = input.operations().iter().fold(
+            self.ime_composing,
+            |active, operation| match operation {
+                TextInputOperation::StartComposition | TextInputOperation::SetComposition(_) => {
+                    true
+                }
+                TextInputOperation::Commit(_)
+                | TextInputOperation::EndComposition { .. }
+                | TextInputOperation::Command(
+                    arcweft_presentation::text_input::TextEditCommand::Cancel
+                    | arcweft_presentation::text_input::TextEditCommand::Submit,
+                ) => false,
+                TextInputOperation::DeleteSurrounding { .. }
+                | TextInputOperation::SetSelection(_)
+                | TextInputOperation::Command(_) => active,
+            },
+        );
+        let raw = self.raw(RawInputKind::Text(input));
+        let _ = InputRouter::route(&raw, &frame.layers, &frame.hits, &self.interaction);
+        InputOutcome {
+            actions: Vec::new(),
+            redraw: true,
         }
     }
 

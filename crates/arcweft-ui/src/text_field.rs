@@ -704,3 +704,680 @@ mod tests {
         );
     }
 }
+
+/// Binding update strategy for platform IME edits.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum TextFieldBindingCommitPolicy {
+    #[default]
+    OnCommittedEdit,
+    OnSubmit,
+    Manual,
+}
+
+/// Per-field editing policy used by `TextField`, `TextArea`, and `SecureField`.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TextFieldEditPolicy {
+    secure: bool,
+    binding_commit: TextFieldBindingCommitPolicy,
+}
+
+/// Geometry conversion policy for candidate windows and character bounds.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextFieldGeometryPolicy {
+    writing_mode: arcweft_presentation::text_input::TextWritingMode,
+    text_local_to_viewport: arcweft_presentation::text_input::TextGeometryTransform,
+    viewport_to_screen: arcweft_presentation::text_input::TextGeometryTransform,
+}
+
+/// Policy-aware edit failure for secure fields and Unicode delete-surrounding.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum TextFieldPolicyEditError {
+    #[error(transparent)]
+    Edit(#[from] TextEditError),
+    #[error("secure text input batch was not marked sensitive")]
+    SecureInputNotRedacted,
+    #[error("secure text input forbids clipboard command {0:?}")]
+    SecureClipboardCommand(TextEditCommand),
+}
+
+impl TextFieldEditPolicy {
+    pub const fn plain() -> Self {
+        Self {
+            secure: false,
+            binding_commit: TextFieldBindingCommitPolicy::OnCommittedEdit,
+        }
+    }
+
+    pub const fn secure() -> Self {
+        Self {
+            secure: true,
+            binding_commit: TextFieldBindingCommitPolicy::OnCommittedEdit,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_binding_commit(
+        mut self,
+        binding_commit: TextFieldBindingCommitPolicy,
+    ) -> Self {
+        self.binding_commit = binding_commit;
+        self
+    }
+
+    pub const fn is_secure(self) -> bool {
+        self.secure
+    }
+
+    pub const fn binding_commit(self) -> TextFieldBindingCommitPolicy {
+        self.binding_commit
+    }
+}
+
+impl Default for TextFieldGeometryPolicy {
+    fn default() -> Self {
+        Self {
+            writing_mode: arcweft_presentation::text_input::TextWritingMode::HorizontalTb,
+            text_local_to_viewport:
+                arcweft_presentation::text_input::TextGeometryTransform::identity(),
+            viewport_to_screen: arcweft_presentation::text_input::TextGeometryTransform::identity(),
+        }
+    }
+}
+
+impl TextFieldGeometryPolicy {
+    #[must_use]
+    pub const fn with_writing_mode(
+        mut self,
+        writing_mode: arcweft_presentation::text_input::TextWritingMode,
+    ) -> Self {
+        self.writing_mode = writing_mode;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_text_local_to_viewport(
+        mut self,
+        transform: arcweft_presentation::text_input::TextGeometryTransform,
+    ) -> Self {
+        self.text_local_to_viewport = transform;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_viewport_to_screen(
+        mut self,
+        transform: arcweft_presentation::text_input::TextGeometryTransform,
+    ) -> Self {
+        self.viewport_to_screen = transform;
+        self
+    }
+
+    pub const fn writing_mode(self) -> arcweft_presentation::text_input::TextWritingMode {
+        self.writing_mode
+    }
+}
+
+impl TextEditOutcome {
+    pub const fn should_commit_binding(self, policy: TextFieldBindingCommitPolicy) -> bool {
+        match policy {
+            TextFieldBindingCommitPolicy::OnCommittedEdit => self.changed,
+            TextFieldBindingCommitPolicy::OnSubmit => self.submitted,
+            TextFieldBindingCommitPolicy::Manual => false,
+        }
+    }
+}
+
+impl TextEditState {
+    /// Applies a platform IME batch with secure-field and Unicode deletion policy.
+    ///
+    /// Preedit changes are visual-only, and callers can use
+    /// [`TextEditOutcome::should_commit_binding`] to decide whether to write the
+    /// committed document back to the bound value.
+    pub fn apply_text_input_with_policy(
+        &mut self,
+        input: &TextInput,
+        policy: TextFieldEditPolicy,
+    ) -> Result<TextEditOutcome, TextFieldPolicyEditError> {
+        if policy.secure && !input.privacy().is_sensitive() {
+            return Err(TextFieldPolicyEditError::SecureInputNotRedacted);
+        }
+        if self.session != Some(input.session()) {
+            return Err(TextEditError::StaleTextInputSession {
+                active: self.session,
+                incoming: input.session(),
+            }
+            .into());
+        }
+
+        let mut next = self.clone();
+        let mut changed = false;
+        let mut submitted = false;
+        for operation in input.operations() {
+            match operation {
+                TextInputOperation::StartComposition => next.composition = None,
+                TextInputOperation::SetComposition(composition) => {
+                    next.composition = Some(composition.clone());
+                }
+                TextInputOperation::Commit(commit) => {
+                    changed |= next.commit_text(commit)?;
+                }
+                TextInputOperation::EndComposition { reason } => {
+                    changed |= next.end_composition(*reason)?;
+                }
+                TextInputOperation::DeleteSurrounding {
+                    before,
+                    after,
+                    unit,
+                } => {
+                    changed |= next.delete_surrounding_by_unit(*before, *after, *unit)?;
+                }
+                TextInputOperation::SetSelection(selection) => {
+                    next.selection = ui_range(selection.range());
+                }
+                TextInputOperation::Command(command) => {
+                    let command_result = next.apply_command_with_policy(*command, policy)?;
+                    changed |= command_result.changed;
+                    submitted |= command_result.submitted;
+                }
+            }
+        }
+        if changed {
+            next.revision = next.revision.next();
+        }
+        let outcome = TextEditOutcome::new(changed, submitted, next.revision);
+        *self = next;
+        Ok(outcome)
+    }
+
+    pub fn text_input_client_snapshot(
+        &self,
+        session: TextInputSessionId,
+        target: InteractionTarget,
+        bounds: HitRect,
+        metrics: TextFieldMetrics,
+        options: TextInputOptions,
+        policy: TextFieldEditPolicy,
+    ) -> arcweft_presentation::text_input::TextInputClientSnapshot {
+        let selection = TextRange::new(
+            TextByteOffset(self.selection.start()),
+            TextByteOffset(self.selection.end()),
+        );
+        let mut snapshot = arcweft_presentation::text_input::TextInputClientSnapshot::new(
+            session,
+            target,
+            self.revision,
+            self.document.clone(),
+            TextByteOffset(0),
+            selection,
+            bounds,
+            caret_rect(bounds, self.selection.end(), metrics),
+            options.secure(policy.secure),
+        )
+        .with_character_bounds(character_bounds_for_visual_text(
+            &self.visual_source(),
+            bounds,
+            metrics,
+            arcweft_presentation::text_input::TextWritingMode::HorizontalTb,
+        ));
+        if let Some(composition) = &self.composition {
+            snapshot = snapshot.with_composition(composition.clone());
+        }
+        if policy.secure {
+            snapshot.redacted_for_secure_input()
+        } else {
+            snapshot
+        }
+    }
+
+    pub fn text_input_geometry_snapshot(
+        &self,
+        session: TextInputSessionId,
+        bounds: HitRect,
+        metrics: TextFieldMetrics,
+        policy: TextFieldGeometryPolicy,
+    ) -> arcweft_presentation::text_input::TextInputGeometrySnapshot {
+        let caret =
+            caret_rect_for_writing_mode(bounds, self.selection.end(), metrics, policy.writing_mode);
+        let character_bounds = character_bounds_for_visual_text(
+            &self.visual_source(),
+            bounds,
+            metrics,
+            policy.writing_mode,
+        );
+        arcweft_presentation::text_input::TextInputGeometrySnapshot::new(
+            arcweft_presentation::text_input::TextInputGeometrySnapshotParts {
+                session,
+                revision: self.revision,
+                writing_mode: policy.writing_mode,
+                text_local_control_rect: bounds,
+                text_local_caret_rect: caret,
+                text_local_character_bounds: character_bounds,
+                text_local_to_viewport: policy.text_local_to_viewport,
+                viewport_to_screen: policy.viewport_to_screen,
+            },
+        )
+    }
+
+    fn delete_surrounding_by_unit(
+        &mut self,
+        before: u32,
+        after: u32,
+        unit: TextDeleteUnit,
+    ) -> Result<bool, TextEditError> {
+        let range = surrounding_delete_range(&self.document, self.selection, before, after, unit)?;
+        replace_range(&mut self.document, range, "")?;
+        self.selection = UiTextByteRange::new(range.start(), range.start());
+        Ok(range.start() != range.end())
+    }
+
+    fn apply_command_with_policy(
+        &mut self,
+        command: TextEditCommand,
+        policy: TextFieldEditPolicy,
+    ) -> Result<TextEditOutcome, TextFieldPolicyEditError> {
+        if policy.secure
+            && matches!(
+                command,
+                TextEditCommand::Copy | TextEditCommand::Cut | TextEditCommand::Paste
+            )
+        {
+            return Err(TextFieldPolicyEditError::SecureClipboardCommand(command));
+        }
+        match command {
+            TextEditCommand::Backspace => Ok(TextEditOutcome::new(
+                self.delete_surrounding_by_unit(1, 0, TextDeleteUnit::GraphemeCluster)?,
+                false,
+                self.revision,
+            )),
+            TextEditCommand::Delete => Ok(TextEditOutcome::new(
+                self.delete_surrounding_by_unit(0, 1, TextDeleteUnit::GraphemeCluster)?,
+                false,
+                self.revision,
+            )),
+            TextEditCommand::Copy
+            | TextEditCommand::Cut
+            | TextEditCommand::Paste
+            | TextEditCommand::SelectAll
+            | TextEditCommand::Submit
+            | TextEditCommand::Cancel
+            | TextEditCommand::MoveLeft { .. }
+            | TextEditCommand::MoveRight { .. }
+            | TextEditCommand::MoveWordLeft { .. }
+            | TextEditCommand::MoveWordRight { .. }
+            | TextEditCommand::MoveLineStart { .. }
+            | TextEditCommand::MoveLineEnd { .. } => Ok(self.apply_command(command)?),
+        }
+    }
+}
+
+fn surrounding_delete_range(
+    document: &str,
+    selection: UiTextByteRange,
+    before: u32,
+    after: u32,
+    unit: TextDeleteUnit,
+) -> Result<UiTextByteRange, TextEditError> {
+    let start = checked_boundary(document, selection.start())?;
+    let end = checked_boundary(document, selection.end())?;
+    let start = match unit {
+        TextDeleteUnit::Utf16CodeUnit => offset_before_utf16(document, start, before),
+        TextDeleteUnit::UnicodeScalar => offset_before_scalars(document, start, before),
+        TextDeleteUnit::GraphemeCluster => offset_before_graphemes(document, start, before),
+    };
+    let end = match unit {
+        TextDeleteUnit::Utf16CodeUnit => offset_after_utf16(document, end, after),
+        TextDeleteUnit::UnicodeScalar => offset_after_scalars(document, end, after),
+        TextDeleteUnit::GraphemeCluster => offset_after_graphemes(document, end, after),
+    };
+    Ok(UiTextByteRange::new(start, end))
+}
+
+fn checked_boundary(document: &str, offset: u32) -> Result<usize, TextEditError> {
+    let offset = usize::try_from(offset).unwrap_or(usize::MAX);
+    if offset > document.len() {
+        return Err(TextEditError::InvalidByteRange {
+            range: UiTextByteRange::new(
+                u32::try_from(offset).unwrap_or(u32::MAX),
+                u32::try_from(offset).unwrap_or(u32::MAX),
+            ),
+            document_len: document.len(),
+        });
+    }
+    if !document.is_char_boundary(offset) {
+        let offset = u32::try_from(offset).unwrap_or(u32::MAX);
+        return Err(TextEditError::NonBoundaryRange {
+            range: UiTextByteRange::new(offset, offset),
+        });
+    }
+    Ok(offset)
+}
+
+fn offset_before_utf16(document: &str, byte: usize, mut units: u32) -> u32 {
+    if units == 0 {
+        return u32::try_from(byte).unwrap_or(u32::MAX);
+    }
+    for (index, scalar) in document[..byte].char_indices().rev() {
+        let width: u32 = if scalar.len_utf16() == 2 { 2 } else { 1 };
+        if units <= width {
+            return u32::try_from(index).unwrap_or(0);
+        }
+        units -= width;
+    }
+    0
+}
+
+fn offset_after_utf16(document: &str, byte: usize, mut units: u32) -> u32 {
+    if units == 0 {
+        return u32::try_from(byte).unwrap_or(u32::MAX);
+    }
+    for (relative, scalar) in document[byte..].char_indices() {
+        let end = byte + relative + scalar.len_utf8();
+        let width: u32 = if scalar.len_utf16() == 2 { 2 } else { 1 };
+        if units <= width {
+            return u32::try_from(end).unwrap_or(u32::MAX);
+        }
+        units -= width;
+    }
+    u32::try_from(document.len()).unwrap_or(u32::MAX)
+}
+
+fn offset_before_scalars(document: &str, byte: usize, count: u32) -> u32 {
+    if count == 0 {
+        return u32::try_from(byte).unwrap_or(u32::MAX);
+    }
+    document[..byte]
+        .char_indices()
+        .rev()
+        .nth(count.saturating_sub(1) as usize)
+        .map_or(0, |(index, _)| u32::try_from(index).unwrap_or(0))
+}
+
+fn offset_after_scalars(document: &str, byte: usize, count: u32) -> u32 {
+    if count == 0 {
+        return u32::try_from(byte).unwrap_or(u32::MAX);
+    }
+    document[byte..]
+        .char_indices()
+        .nth(count.saturating_sub(1) as usize)
+        .map_or_else(
+            || u32::try_from(document.len()).unwrap_or(u32::MAX),
+            |(relative, scalar)| {
+                u32::try_from(byte + relative + scalar.len_utf8()).unwrap_or(u32::MAX)
+            },
+        )
+}
+
+fn offset_before_graphemes(document: &str, byte: usize, count: u32) -> u32 {
+    if count == 0 {
+        return u32::try_from(byte).unwrap_or(u32::MAX);
+    }
+    let prefix = &document[..byte];
+    let mut starts = unicode_segmentation::UnicodeSegmentation::grapheme_indices(prefix, true)
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    starts.push(prefix.len());
+    let target = starts.len().saturating_sub(count as usize + 1);
+    u32::try_from(starts[target]).unwrap_or(0)
+}
+
+fn offset_after_graphemes(document: &str, byte: usize, count: u32) -> u32 {
+    if count == 0 {
+        return u32::try_from(byte).unwrap_or(u32::MAX);
+    }
+    let mut end = byte;
+    for (relative, grapheme) in
+        unicode_segmentation::UnicodeSegmentation::grapheme_indices(&document[byte..], true)
+            .take(count as usize)
+    {
+        end = byte + relative + grapheme.len();
+    }
+    u32::try_from(end).unwrap_or(u32::MAX)
+}
+
+fn character_bounds_for_visual_text(
+    source: &UiTextSource,
+    bounds: HitRect,
+    metrics: TextFieldMetrics,
+    writing_mode: arcweft_presentation::text_input::TextWritingMode,
+) -> Vec<arcweft_presentation::text_input::TextCharacterBounds> {
+    let UiTextSource::Plain(text) = source else {
+        return Vec::new();
+    };
+    text.char_indices()
+        .map(|(start, scalar)| {
+            let end = start + scalar.len_utf8();
+            let range = UiTextByteRange::new(
+                u32::try_from(start).unwrap_or(u32::MAX),
+                u32::try_from(end).unwrap_or(u32::MAX),
+            );
+            arcweft_presentation::text_input::TextCharacterBounds::new(
+                TextRange::new(TextByteOffset(range.start()), TextByteOffset(range.end())),
+                range_rect_for_writing_mode(bounds, range, metrics, writing_mode),
+            )
+        })
+        .collect()
+}
+
+fn range_rect_for_writing_mode(
+    bounds: HitRect,
+    range: UiTextByteRange,
+    metrics: TextFieldMetrics,
+    writing_mode: arcweft_presentation::text_input::TextWritingMode,
+) -> HitRect {
+    match writing_mode {
+        arcweft_presentation::text_input::TextWritingMode::HorizontalTb => {
+            range_rect(bounds, range, metrics)
+        }
+        arcweft_presentation::text_input::TextWritingMode::VerticalRl => {
+            let start = range.start().min(range.end());
+            let end = range.end().max(range.start());
+            let y = bounds.y + byte_offset_px(start, metrics.advance_px);
+            let height = byte_offset_px(end.saturating_sub(start), metrics.advance_px)
+                .max(metrics.caret_width_px);
+            HitRect::new(
+                bounds.x + bounds.width - metrics.line_height_px.min(bounds.width),
+                y,
+                metrics.line_height_px.min(bounds.width),
+                height,
+            )
+        }
+        arcweft_presentation::text_input::TextWritingMode::VerticalLr => {
+            let start = range.start().min(range.end());
+            let end = range.end().max(range.start());
+            let y = bounds.y + byte_offset_px(start, metrics.advance_px);
+            let height = byte_offset_px(end.saturating_sub(start), metrics.advance_px)
+                .max(metrics.caret_width_px);
+            HitRect::new(
+                bounds.x,
+                y,
+                metrics.line_height_px.min(bounds.width),
+                height,
+            )
+        }
+    }
+}
+
+fn caret_rect_for_writing_mode(
+    bounds: HitRect,
+    offset: u32,
+    metrics: TextFieldMetrics,
+    writing_mode: arcweft_presentation::text_input::TextWritingMode,
+) -> HitRect {
+    range_rect_for_writing_mode(
+        bounds,
+        UiTextByteRange::new(offset, offset),
+        metrics,
+        writing_mode,
+    )
+}
+
+#[cfg(test)]
+mod seq06_3_tests {
+    use super::*;
+    use arcweft_presentation::hit::HitRect;
+    use arcweft_presentation::input::InteractionTarget;
+    use arcweft_presentation::text_input::{
+        PlatformTextSelection, TextByteOffset, TextCommit, TextCompositionUpdate,
+        TextGeometryTransform, TextInput, TextInputOperation, TextInputPrivacy, TextInputSerial,
+        TextInputSessionId, TextRange, TextSelectionAffinity, TextWritingMode,
+    };
+
+    fn target() -> InteractionTarget {
+        InteractionTarget::new(arcweft_id::PublicId::try_new("target.textfield").unwrap())
+    }
+
+    #[test]
+    fn candidate_updates_do_not_commit_binding_before_commit() {
+        let mut state = TextEditState::new("abc");
+        state.bind_session(TextInputSessionId(1));
+        let preedit = TextInput::single(
+            TextInputSessionId(1),
+            TextInputSerial(1),
+            TextInputOperation::SetComposition(TextCompositionUpdate::new(
+                "にほんご",
+                TextRange::new(TextByteOffset(0), TextByteOffset(12)),
+            )),
+        );
+        let outcome = state
+            .apply_text_input_with_policy(&preedit, TextFieldEditPolicy::plain())
+            .unwrap();
+
+        assert!(!outcome.should_commit_binding(TextFieldBindingCommitPolicy::OnCommittedEdit));
+        assert_eq!(state.document(), "abc");
+        assert_eq!(state.visual_source(), UiTextSource::plain("にほんごabc"));
+    }
+
+    #[test]
+    fn commit_updates_binding_policy_after_preedit() {
+        let mut state = TextEditState::new("");
+        state.bind_session(TextInputSessionId(2));
+        let input = TextInput::single(
+            TextInputSessionId(2),
+            TextInputSerial(2),
+            TextInputOperation::Commit(TextCommit::new("日本語")),
+        );
+        let outcome = state
+            .apply_text_input_with_policy(&input, TextFieldEditPolicy::plain())
+            .unwrap();
+
+        assert!(outcome.should_commit_binding(TextFieldBindingCommitPolicy::OnCommittedEdit));
+        assert_eq!(state.document(), "日本語");
+    }
+
+    #[test]
+    fn delete_surrounding_preserves_emoji_and_combining_grapheme_boundaries() {
+        let mut state = TextEditState::new("a👩‍💻e\u{301}b");
+        state.bind_session(TextInputSessionId(3));
+        state
+            .apply_text_input_with_policy(
+                &TextInput::single(
+                    TextInputSessionId(3),
+                    TextInputSerial(1),
+                    TextInputOperation::SetSelection(PlatformTextSelection::new(
+                        TextRange::new(TextByteOffset(15), TextByteOffset(15)),
+                        TextSelectionAffinity::Downstream,
+                    )),
+                ),
+                TextFieldEditPolicy::plain(),
+            )
+            .unwrap();
+        state
+            .apply_text_input_with_policy(
+                &TextInput::single(
+                    TextInputSessionId(3),
+                    TextInputSerial(2),
+                    TextInputOperation::DeleteSurrounding {
+                        before: 1,
+                        after: 0,
+                        unit: TextDeleteUnit::GraphemeCluster,
+                    },
+                ),
+                TextFieldEditPolicy::plain(),
+            )
+            .unwrap();
+
+        assert_eq!(state.document(), "a👩‍💻b");
+    }
+
+    #[test]
+    fn secure_policy_rejects_plain_batches_and_clipboard() {
+        let mut state = TextEditState::new("");
+        state.bind_session(TextInputSessionId(4));
+        let input = TextInput::single(
+            TextInputSessionId(4),
+            TextInputSerial(1),
+            TextInputOperation::Commit(TextCommit::new("secret")),
+        );
+        assert_eq!(
+            state.apply_text_input_with_policy(&input, TextFieldEditPolicy::secure()),
+            Err(TextFieldPolicyEditError::SecureInputNotRedacted)
+        );
+        let copy = TextInput::single(
+            TextInputSessionId(4),
+            TextInputSerial(2),
+            TextInputOperation::Command(TextEditCommand::Copy),
+        )
+        .with_privacy(TextInputPrivacy::Sensitive);
+        assert_eq!(
+            state.apply_text_input_with_policy(&copy, TextFieldEditPolicy::secure()),
+            Err(TextFieldPolicyEditError::SecureClipboardCommand(
+                TextEditCommand::Copy
+            ))
+        );
+    }
+
+    #[test]
+    fn secure_snapshot_redacts_value_composition_and_character_bounds() {
+        let mut state = TextEditState::new("secret");
+        state.bind_session(TextInputSessionId(5));
+        state.set_composition(TextCompositionUpdate::new(
+            "preedit",
+            TextRange::new(TextByteOffset(0), TextByteOffset(7)),
+        ));
+        let snapshot = state.text_input_client_snapshot(
+            TextInputSessionId(5),
+            target(),
+            HitRect::new(0.0, 0.0, 200.0, 24.0),
+            TextFieldMetrics::default(),
+            TextInputOptions::default(),
+            TextFieldEditPolicy::secure(),
+        );
+
+        assert!(snapshot.surrounding_text().is_empty());
+        assert!(snapshot.composition().is_none());
+        assert!(snapshot.character_bounds().is_empty());
+        assert!(snapshot.options().is_secure());
+    }
+
+    #[test]
+    fn candidate_anchor_converts_after_scroll_transform_and_vertical_writing() {
+        let mut state = TextEditState::new("abcd");
+        state.bind_session(TextInputSessionId(6));
+        state
+            .apply_text_input_with_policy(
+                &TextInput::single(
+                    TextInputSessionId(6),
+                    TextInputSerial(1),
+                    TextInputOperation::SetSelection(PlatformTextSelection::new(
+                        TextRange::new(TextByteOffset(2), TextByteOffset(2)),
+                        TextSelectionAffinity::Downstream,
+                    )),
+                ),
+                TextFieldEditPolicy::plain(),
+            )
+            .unwrap();
+        let geometry = state.text_input_geometry_snapshot(
+            TextInputSessionId(6),
+            HitRect::new(5.0, 7.0, 100.0, 100.0),
+            TextFieldMetrics::default(),
+            TextFieldGeometryPolicy::default()
+                .with_writing_mode(TextWritingMode::VerticalRl)
+                .with_text_local_to_viewport(TextGeometryTransform::translation(10.0, 20.0))
+                .with_viewport_to_screen(TextGeometryTransform::translation(100.0, 200.0)),
+        );
+
+        assert_eq!(geometry.writing_mode(), TextWritingMode::VerticalRl);
+        assert!(geometry.candidate_anchor_rect().x >= 110.0);
+        assert!(geometry.candidate_anchor_rect().y >= 220.0);
+    }
+}
