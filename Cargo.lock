@@ -914,7 +914,6 @@ dependencies = [
  "arcweft-core",
  "arcweft-id",
  "arcweft-image",
- "arcweft-interaction-model",
  "arcweft-player-scene",
  "arcweft-presentation",
  "arcweft-render-text",

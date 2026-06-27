@@ -11,7 +11,6 @@ arcweft-bundle = { path = "../arcweft-bundle", default-features = false }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-id = { path = "../arcweft-id" }
 arcweft-image = { path = "../arcweft-image" }
-arcweft-interaction-model = { path = "../arcweft-interaction-model" }
 arcweft-player-scene = { path = "../arcweft-player-scene" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-presentation = { path = "../arcweft-presentation" }

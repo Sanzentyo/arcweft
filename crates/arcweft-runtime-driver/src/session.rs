@@ -236,12 +236,14 @@ impl RuntimeInputTargetKind {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RuntimeInputKind {
+    Advance,
     Choice,
 }
 
 impl RuntimeInputKind {
     const fn as_str(self) -> &'static str {
         match self {
+            Self::Advance => "advance",
             Self::Choice => "choice",
         }
     }
@@ -387,6 +389,16 @@ impl BundleSession {
             )
             .with_payload(InteractionPayload::Text(option.into())),
         );
+    }
+
+    /// Queues the standard semantic advance input for the active dialogue line.
+    pub fn queue_dialogue_advance(&mut self) {
+        self.queue_input(RoutedInputEvent::new(
+            InputEpoch::default(),
+            InputSequence::default(),
+            RuntimeInputTargetKind::Runtime.target(),
+            RuntimeInputKind::Advance.event_kind(),
+        ));
     }
 
     pub fn hot_swap_bundle(

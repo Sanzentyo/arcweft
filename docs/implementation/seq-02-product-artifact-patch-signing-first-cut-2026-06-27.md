@@ -35,7 +35,9 @@ safe implementation cut.
 - The web demo fixture `web/demo.awfb` has been regenerated as a binary AWFB
   with product AWBC from the current `web/demo.arcw` source.
 - Web parity frame preparation now advances the opening dialogue line through
-  the runtime input path before comparing the two-choice, four-image frame.
+  `BundleSession::queue_dialogue_advance()` before comparing the two-choice,
+  four-image frame, keeping concrete runtime input event construction inside
+  `arcweft-runtime-driver`.
 - The release-cache product bundle fixture now carries a minimal product AWBC
   executable so cached product fetch/decode tests exercise the current product
   bundle contract.
@@ -71,10 +73,12 @@ complete.
 - `cargo test -p arcweft-project-loader fetch_release_product_bundle_decodes_cached_awfb_product --all-features -- --nocapture`
 - `cargo check -p arcweft-player-web -p arcweft-project-loader --all-targets --all-features`
 - `cargo clippy -p arcweft-player-web -p arcweft-project-loader --all-targets --all-features -- -D warnings`
+- `cargo check -p arcweft-player-web -p arcweft-runtime-driver --all-targets --all-features`
+- `cargo clippy -p arcweft-player-web -p arcweft-runtime-driver --all-targets --all-features -- -D warnings`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`
   - files scanned: 1522
   - Rust files: 838
-  - Rust physical LOC: 412939
+  - Rust physical LOC: 412919
   - package manifests: 89
   - violations: 0 errors, 105 warnings
 - `git diff --check`
@@ -95,7 +99,8 @@ Follow-up web fixture regeneration was measured at Jujutsu change `ysnymssu`.
 
 | Path | Bytes | LOC | Kind | Embedded test LOC | Responsibilities |
 | --- | ---: | ---: | --- | ---: | --- |
-| `crates/arcweft-player-web/src/parity.rs` | 10788 | 291 | production | 0 | native-side WebGPU parity frame preparation, runtime stepping, dialogue advance input, interaction visual state selection |
+| `crates/arcweft-player-web/src/parity.rs` | 9770 | 260 | production | 0 | native-side WebGPU parity frame preparation, runtime stepping through `BundleSession`, interaction visual state selection |
+| `crates/arcweft-runtime-driver/src/session.rs` | 27834 | 708 | production | 0 | portable bundle session stepping, queued semantic runtime input, product AWBC runtime construction, hot-swap and patch readiness |
 | `crates/arcweft-player-web/tests/parity.rs` | 4079 | 125 | integration test | 0 | browser/native frame parity fixture loading and observation contract comparison |
 | `crates/arcweft-project-loader/src/cache/release.rs` | 58082 | 1459 | production plus unit tests | 758 | release manifest cache fetch, local/http/https mirror handling, product fetch tests, minimal AWBC release fixture |
 | `crates/arcweft-bundle/src/container.rs` | 76306 | 2335 | production plus unit tests | 662 | AWFB header/index codec, section descriptors, read budgets, content/signing roots, unknown optional preservation tests |
