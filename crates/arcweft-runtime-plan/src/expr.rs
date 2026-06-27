@@ -1627,12 +1627,20 @@ mod tests {
 
         let duration_expr = Expr::BracketSeq(vec![
             Expr::Literal(Literal::Duration {
-                amount: "1".to_owned(),
-                unit: arcweft_lang_hir::syntax::expr::DurationUnit::Millis,
+                amount: "5".to_owned(),
+                unit: arcweft_lang_hir::syntax::expr::DurationUnit::Nanos,
+            }),
+            Expr::Literal(Literal::Duration {
+                amount: "16_666".to_owned(),
+                unit: arcweft_lang_hir::syntax::expr::DurationUnit::Micros,
             }),
             Expr::Literal(Literal::Duration {
                 amount: "2".to_owned(),
-                unit: arcweft_lang_hir::syntax::expr::DurationUnit::Millis,
+                unit: arcweft_lang_hir::syntax::expr::DurationUnit::Minutes,
+            }),
+            Expr::Literal(Literal::Duration {
+                amount: "1".to_owned(),
+                unit: arcweft_lang_hir::syntax::expr::DurationUnit::Hours,
             }),
         ]);
         let lowered =
@@ -1641,8 +1649,10 @@ mod tests {
             lowered,
             RuntimeExpr::Value(RuntimeValue::Seq(seq))
                 if seq.as_durations() == Some([
-                    arcweft_core::time::LogicalDuration::from_nanos(1_000_000),
-                    arcweft_core::time::LogicalDuration::from_nanos(2_000_000),
+                    arcweft_core::time::LogicalDuration::from_nanos(5),
+                    arcweft_core::time::LogicalDuration::from_nanos(16_666_000),
+                    arcweft_core::time::LogicalDuration::from_nanos(120_000_000_000),
+                    arcweft_core::time::LogicalDuration::from_nanos(3_600_000_000_000),
                 ].as_slice())
         ));
     }

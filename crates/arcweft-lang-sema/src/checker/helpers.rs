@@ -117,6 +117,7 @@ pub(super) fn numeric_literal_suffix_type(suffix: Option<&str>) -> Option<TypeKi
             "deg" | "rad" | "turn" => TypeKind::Named("Angle".to_owned()),
             "db" | "lufs" => TypeKind::Named("AudioLevel".to_owned()),
             "bpm" => TypeKind::Named("Tempo".to_owned()),
+            "bars" => TypeKind::Named("MusicBars".to_owned()),
             _ => return None,
         })
     })

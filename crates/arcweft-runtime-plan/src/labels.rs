@@ -24,8 +24,12 @@ pub(crate) fn duration_expr(expr: &Expr) -> Option<LogicalDuration> {
     decimal_to_nanos(
         amount,
         match unit {
+            DurationUnit::Nanos => 1,
+            DurationUnit::Micros => 1_000,
             DurationUnit::Millis => 1_000_000,
             DurationUnit::Seconds => 1_000_000_000,
+            DurationUnit::Minutes => 60_000_000_000,
+            DurationUnit::Hours => 3_600_000_000_000,
         },
     )
     .map(LogicalDuration::from_nanos)
@@ -105,13 +109,7 @@ pub(crate) fn literal_label(literal: &Literal) -> String {
         | Literal::UnitNumber { raw, .. } => raw.clone(),
         Literal::Int { value, .. } => value.to_string(),
         Literal::Bool(value) => value.to_string(),
-        Literal::Duration { amount, unit } => format!(
-            "{amount}{}",
-            match unit {
-                DurationUnit::Millis => "ms",
-                DurationUnit::Seconds => "s",
-            }
-        ),
+        Literal::Duration { amount, unit } => format!("{amount}{}", unit.as_str()),
     }
 }
 
@@ -141,7 +139,8 @@ pub(crate) fn type_label(ty: &TypeRef) -> String {
 }
 
 fn decimal_to_nanos(amount: &str, unit_nanos: u64) -> Option<u64> {
-    let (whole, frac) = amount.split_once('.').unwrap_or((amount, ""));
+    let cleaned = amount.replace('_', "");
+    let (whole, frac) = cleaned.split_once('.').unwrap_or((cleaned.as_str(), ""));
     let whole_nanos = whole.parse::<u64>().ok()?.checked_mul(unit_nanos)?;
     if frac.is_empty() {
         return Some(whole_nanos);

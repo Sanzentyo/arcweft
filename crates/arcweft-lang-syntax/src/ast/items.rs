@@ -357,12 +357,27 @@ pub struct EntityDeclItem {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EntityDeclBody {
     Content(ContentDeclBody),
+    Image(ImageDeclBody),
 }
 
 /// Content availability unit body declared with explicit root IDs.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContentDeclBody {
     roots: Vec<EntityRef>,
+}
+
+/// Image presentation-object declaration body with parsed assignment fields.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImageDeclBody {
+    fields: Vec<ImageDeclField>,
+}
+
+/// One flat image declaration field such as `asset = @asset:.bg.room` or `transform.tx = 24px`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImageDeclField {
+    name: String,
+    value_source: String,
+    value: Expr,
 }
 
 /// Program entry declaration such as `entry game @entry.main { start(@flow.opening) }`.
@@ -917,7 +932,14 @@ impl EntityDeclItem {
     pub const fn content_body(&self) -> Option<&ContentDeclBody> {
         match self.structured_body.as_ref() {
             Some(EntityDeclBody::Content(body)) => Some(body),
-            None => None,
+            Some(EntityDeclBody::Image(_)) | None => None,
+        }
+    }
+
+    pub const fn image_body(&self) -> Option<&ImageDeclBody> {
+        match self.structured_body.as_ref() {
+            Some(EntityDeclBody::Image(body)) => Some(body),
+            Some(EntityDeclBody::Content(_)) | None => None,
         }
     }
 
@@ -937,6 +959,38 @@ impl ContentDeclBody {
 
     pub fn roots(&self) -> &[EntityRef] {
         &self.roots
+    }
+}
+
+impl ImageDeclBody {
+    pub(crate) const fn new(fields: Vec<ImageDeclField>) -> Self {
+        Self { fields }
+    }
+
+    pub fn fields(&self) -> &[ImageDeclField] {
+        &self.fields
+    }
+}
+
+impl ImageDeclField {
+    pub(crate) fn new(name: String, value_source: String, value: Expr) -> Self {
+        Self {
+            name,
+            value_source,
+            value,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn value_source(&self) -> &str {
+        &self.value_source
+    }
+
+    pub const fn value(&self) -> &Expr {
+        &self.value
     }
 }
 

@@ -1,5 +1,5 @@
 use arcweft_lang_syntax::{
-    ast::items::{EntityDeclKind, Item},
+    ast::items::{EntityDeclKind, ImageDeclBody, Item},
     parser::parse_source,
 };
 use std::collections::BTreeMap;
@@ -46,10 +46,13 @@ pub(in crate::app) fn parse_declared_image_objects(
             };
             (item.kind() == EntityDeclKind::Image).then(|| {
                 let id = item.id().body().to_owned();
+                let body = item
+                    .image_body()
+                    .expect("image declarations are parsed into typed image bodies");
                 (
                     id.clone(),
                     DeclaredImageObject {
-                        args: image_decl_body_args(&id, item.body().unwrap_or_default()),
+                        args: image_decl_body_args(&id, body),
                         id,
                     },
                 )
@@ -82,19 +85,11 @@ pub(in crate::app) fn public_asset_ref_arg(arg: &str) -> Option<String> {
     value.starts_with("asset.").then_some(value)
 }
 
-fn image_decl_body_args(id: &str, body: &str) -> Vec<String> {
+fn image_decl_body_args(id: &str, body: &ImageDeclBody) -> Vec<String> {
     let mut args = body
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with("//"))
-        .filter_map(|line| {
-            let (name, value) = line.split_once('=')?;
-            Some(format!(
-                "{} = {}",
-                name.trim(),
-                value.trim().trim_end_matches(',')
-            ))
-        })
+        .fields()
+        .iter()
+        .map(|field| format!("{} = {}", field.name(), field.value_source()))
         .collect::<Vec<_>>();
     if declaration_arg_value(&args, "id").is_none() {
         args.insert(0, format!("id = @{id}"));

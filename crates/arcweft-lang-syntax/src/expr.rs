@@ -218,23 +218,59 @@ impl fmt::Display for FloatSuffix {
 /// Numeric literal suffix that carries presentation or geometry units.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UnitNumberSuffix {
+    Percent,
+    Px,
     Pt,
+    Em,
+    Rem,
+    Vw,
+    Vh,
+    Deg,
     Rad,
+    Turn,
+    Db,
+    Lufs,
+    Bpm,
+    Bars,
 }
 
 impl UnitNumberSuffix {
     pub fn parse(source: &str) -> Option<Self> {
         match source {
+            "%" => Some(Self::Percent),
+            "px" => Some(Self::Px),
             "pt" => Some(Self::Pt),
+            "em" => Some(Self::Em),
+            "rem" => Some(Self::Rem),
+            "vw" => Some(Self::Vw),
+            "vh" => Some(Self::Vh),
+            "deg" => Some(Self::Deg),
             "rad" => Some(Self::Rad),
+            "turn" => Some(Self::Turn),
+            "db" => Some(Self::Db),
+            "lufs" => Some(Self::Lufs),
+            "bpm" => Some(Self::Bpm),
+            "bars" => Some(Self::Bars),
             _ => None,
         }
     }
 
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::Percent => "%",
+            Self::Px => "px",
             Self::Pt => "pt",
+            Self::Em => "em",
+            Self::Rem => "rem",
+            Self::Vw => "vw",
+            Self::Vh => "vh",
+            Self::Deg => "deg",
             Self::Rad => "rad",
+            Self::Turn => "turn",
+            Self::Db => "db",
+            Self::Lufs => "lufs",
+            Self::Bpm => "bpm",
+            Self::Bars => "bars",
         }
     }
 }
@@ -248,8 +284,25 @@ impl fmt::Display for UnitNumberSuffix {
 /// Duration suffix recognized by the syntax parser.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DurationUnit {
+    Nanos,
+    Micros,
     Millis,
     Seconds,
+    Minutes,
+    Hours,
+}
+
+impl DurationUnit {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Nanos => "ns",
+            Self::Micros => "us",
+            Self::Millis => "ms",
+            Self::Seconds => "s",
+            Self::Minutes => "min",
+            Self::Hours => "h",
+        }
+    }
 }
 
 /// Placeholder expression.
@@ -700,44 +753,9 @@ impl<'a> Lexer<'a> {
 
     fn lex_number_or_duration(&mut self) -> Token {
         let start = self.cursor;
-        while let Some(ch) = self.peek_char() {
-            if ch.is_ascii_digit() {
-                self.bump_char();
-            } else {
-                break;
-            }
-        }
-        if self.peek_char() == Some('.')
-            && !self.starts_with("..")
-            && self
-                .source
-                .get(self.cursor + 1..)
-                .and_then(|tail| tail.chars().next())
-                .is_some_and(|ch| ch.is_ascii_digit())
-        {
-            self.bump_char();
-            while let Some(ch) = self.peek_char() {
-                if ch.is_ascii_digit() {
-                    self.bump_char();
-                } else {
-                    break;
-                }
-            }
-        }
+        self.consume_number_body();
         self.consume_exponent();
-        if self.starts_with("ms") {
-            self.cursor += 2;
-        } else if self.starts_with("s") {
-            self.cursor += 1;
-        } else {
-            while let Some(ch) = self.peek_char() {
-                if ch.is_ascii_alphanumeric() || ch == '_' {
-                    self.bump_char();
-                } else {
-                    break;
-                }
-            }
-        }
+        self.consume_number_suffix();
         let raw = &self.source[start..self.cursor];
         let (number, suffix) = split_number_suffix(raw);
         let suffix = (!suffix.is_empty()).then(|| suffix.trim_start_matches('_').to_owned());
@@ -765,9 +783,70 @@ impl<'a> Lexer<'a> {
         } else {
             Token::Literal(Literal::Int {
                 raw: raw.to_owned(),
-                value: number.parse().unwrap_or(0),
+                value: parse_int_literal_value(number).unwrap_or(0),
                 suffix,
             })
+        }
+    }
+
+    fn consume_number_body(&mut self) {
+        self.bump_char();
+        if self.source[self.cursor.saturating_sub(1)..].starts_with('0')
+            && matches!(self.peek_char(), Some('x' | 'X'))
+        {
+            self.bump_char();
+            self.consume_radix_digits_or_underscores(16);
+            return;
+        }
+        if self.source[self.cursor.saturating_sub(1)..].starts_with('0')
+            && matches!(self.peek_char(), Some('b' | 'B'))
+        {
+            self.bump_char();
+            self.consume_radix_digits_or_underscores(2);
+            return;
+        }
+        if self.source[self.cursor.saturating_sub(1)..].starts_with('0')
+            && matches!(self.peek_char(), Some('o' | 'O'))
+        {
+            self.bump_char();
+            self.consume_radix_digits_or_underscores(8);
+            return;
+        }
+        self.consume_decimal_digits_or_underscores();
+        if self.peek_char() == Some('.') && !self.starts_with("..") {
+            self.bump_char();
+            self.consume_decimal_digits_or_underscores();
+        }
+    }
+
+    fn consume_decimal_digits_or_underscores(&mut self) {
+        while self
+            .peek_char()
+            .is_some_and(|ch| ch.is_ascii_digit() || ch == '_')
+        {
+            self.bump_char();
+        }
+    }
+
+    fn consume_radix_digits_or_underscores(&mut self, radix: u32) {
+        while self
+            .peek_char()
+            .is_some_and(|ch| ch == '_' || digit_matches_radix(ch, radix))
+        {
+            self.bump_char();
+        }
+    }
+
+    fn consume_number_suffix(&mut self) {
+        if self.peek_char() == Some('%') {
+            self.bump_char();
+            return;
+        }
+        while self
+            .peek_char()
+            .is_some_and(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        {
+            self.bump_char();
         }
     }
 
@@ -781,10 +860,12 @@ impl<'a> Lexer<'a> {
             self.bump_char();
         }
         let digits_start = self.cursor;
-        while self.peek_char().is_some_and(|ch| ch.is_ascii_digit()) {
-            self.bump_char();
-        }
-        if digits_start == self.cursor {
+        self.consume_decimal_digits_or_underscores();
+        if self.source[digits_start..self.cursor]
+            .chars()
+            .filter(|ch| *ch != '_')
+            .all(|ch| !ch.is_ascii_digit())
+        {
             self.cursor = exponent_start;
         }
     }
@@ -1543,10 +1624,7 @@ fn token_source(token: &Token) -> String {
 }
 
 const fn duration_unit_suffix(unit: DurationUnit) -> &'static str {
-    match unit {
-        DurationUnit::Millis => "ms",
-        DurationUnit::Seconds => "s",
-    }
+    unit.as_str()
 }
 
 fn nonempty_joined_name(parts: &[String]) -> Option<String> {
@@ -1562,32 +1640,55 @@ fn is_ident_continue(ch: char) -> bool {
 }
 
 fn parse_duration(source: &str) -> Option<Literal> {
-    if let Some(value) = source.strip_suffix("ms")
-        && is_numeric_duration(value)
-    {
-        return Some(Literal::Duration {
-            amount: value.to_owned(),
-            unit: DurationUnit::Millis,
-        });
-    }
-    let value = source.strip_suffix('s')?;
-    is_numeric_duration(value).then(|| Literal::Duration {
-        amount: value.to_owned(),
-        unit: DurationUnit::Seconds,
+    [
+        ("min", DurationUnit::Minutes),
+        ("ns", DurationUnit::Nanos),
+        ("us", DurationUnit::Micros),
+        ("ms", DurationUnit::Millis),
+        ("s", DurationUnit::Seconds),
+        ("h", DurationUnit::Hours),
+    ]
+    .into_iter()
+    .find_map(|(suffix, unit)| {
+        source
+            .strip_suffix(suffix)
+            .filter(|amount| is_numeric_unit_amount(amount))
+            .map(|amount| Literal::Duration {
+                amount: amount.to_owned(),
+                unit,
+            })
     })
 }
 
 fn split_number_suffix(source: &str) -> (&str, &str) {
-    let bytes = source.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() && bytes[index].is_ascii_digit() {
-        index += 1;
+    let split = numeric_body_len(source);
+    (&source[..split], &source[split..])
+}
+
+fn numeric_body_len(source: &str) -> usize {
+    if let Some(rest) = source
+        .strip_prefix("0x")
+        .or_else(|| source.strip_prefix("0X"))
+    {
+        return "0x".len() + radix_digits_len(rest, 16);
     }
-    if bytes.get(index) == Some(&b'.') {
+    if let Some(rest) = source
+        .strip_prefix("0b")
+        .or_else(|| source.strip_prefix("0B"))
+    {
+        return "0b".len() + radix_digits_len(rest, 2);
+    }
+    if let Some(rest) = source
+        .strip_prefix("0o")
+        .or_else(|| source.strip_prefix("0O"))
+    {
+        return "0o".len() + radix_digits_len(rest, 8);
+    }
+    let bytes = source.as_bytes();
+    let mut index = decimal_digits_len(source);
+    if bytes.get(index) == Some(&b'.') && !source[index..].starts_with("..") {
         index += 1;
-        while index < bytes.len() && bytes[index].is_ascii_digit() {
-            index += 1;
-        }
+        index += decimal_digits_len(&source[index..]);
     }
     if matches!(bytes.get(index), Some(b'e' | b'E')) {
         let exponent_start = index;
@@ -1596,15 +1697,61 @@ fn split_number_suffix(source: &str) -> (&str, &str) {
             index += 1;
         }
         let digits_start = index;
-        while index < bytes.len() && bytes[index].is_ascii_digit() {
-            index += 1;
-        }
-        if digits_start == index {
+        index += decimal_digits_len(&source[index..]);
+        if source[digits_start..index]
+            .chars()
+            .filter(|ch| *ch != '_')
+            .all(|ch| !ch.is_ascii_digit())
+        {
             index = exponent_start;
         }
     }
-    let split = index;
-    (&source[..split], &source[split..])
+    index
+}
+
+fn decimal_digits_len(source: &str) -> usize {
+    source
+        .char_indices()
+        .take_while(|(_, ch)| ch.is_ascii_digit() || *ch == '_')
+        .map(|(index, ch)| index + ch.len_utf8())
+        .last()
+        .unwrap_or(0)
+}
+
+fn radix_digits_len(source: &str, radix: u32) -> usize {
+    source
+        .char_indices()
+        .take_while(|(_, ch)| *ch == '_' || digit_matches_radix(*ch, radix))
+        .map(|(index, ch)| index + ch.len_utf8())
+        .last()
+        .unwrap_or(0)
+}
+
+fn parse_int_literal_value(number: &str) -> Option<i64> {
+    let cleaned = number.replace('_', "");
+    let (radix, digits) = if let Some(digits) = cleaned
+        .strip_prefix("0x")
+        .or_else(|| cleaned.strip_prefix("0X"))
+    {
+        (16, digits)
+    } else if let Some(digits) = cleaned
+        .strip_prefix("0b")
+        .or_else(|| cleaned.strip_prefix("0B"))
+    {
+        (2, digits)
+    } else if let Some(digits) = cleaned
+        .strip_prefix("0o")
+        .or_else(|| cleaned.strip_prefix("0O"))
+    {
+        (8, digits)
+    } else {
+        (10, cleaned.as_str())
+    };
+    i64::from_str_radix(digits, radix).ok()
+}
+
+fn digit_matches_radix(ch: char, radix: u32) -> bool {
+    ch.is_digit(radix)
 }
 
 fn parse_entity_expr(source: &str) -> Option<EntityRefSyntax> {
@@ -1674,11 +1821,12 @@ fn find_last_top_level_open_bracket(source: &str) -> Option<usize> {
     find_last_top_level_punctuation(source, '[')
 }
 
-fn is_numeric_duration(source: &str) -> bool {
-    !source.is_empty()
-        && source.chars().filter(|ch| *ch == '.').count() <= 1
-        && source.chars().any(|ch| ch.is_ascii_digit())
-        && source.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
+fn is_numeric_unit_amount(source: &str) -> bool {
+    if source.is_empty() || source.starts_with('_') || source.ends_with('_') {
+        return false;
+    }
+    let cleaned = source.replace('_', "");
+    cleaned.chars().any(|ch| ch.is_ascii_digit()) && cleaned.parse::<f64>().is_ok()
 }
 
 fn char_literal_suffix_boundary(tail: &str) -> bool {

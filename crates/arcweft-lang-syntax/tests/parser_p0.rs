@@ -164,7 +164,7 @@ use arcweft_lang_syntax::{
         flow::{FlowItem, Stmt},
         items::{Item, RawSyntaxFamily},
     },
-    expr::{BinaryOp, CallArg, Expr, Literal, UnaryOp, parse_expr},
+    expr::{BinaryOp, CallArg, DurationUnit, Expr, Literal, UnaryOp, UnitNumberSuffix, parse_expr},
     types::{TypeRef, parse_type_ref},
 };
 
@@ -452,22 +452,55 @@ fn float_suffix_and_unit_number_literals_are_typed_syntax() {
         })
     ));
 
-    let pt_lit = parse_expr("12pt").expect("point unit literal parses");
-    assert!(matches!(
-        pt_lit,
-        Expr::Literal(Literal::UnitNumber {
-            suffix: arcweft_lang_syntax::expr::UnitNumberSuffix::Pt,
-            ..
-        })
-    ));
+    for (source, expected) in [
+        ("85%", UnitNumberSuffix::Percent),
+        ("24px", UnitNumberSuffix::Px),
+        ("12pt", UnitNumberSuffix::Pt),
+        ("1.5em", UnitNumberSuffix::Em),
+        ("2rem", UnitNumberSuffix::Rem),
+        ("100vw", UnitNumberSuffix::Vw),
+        ("50vh", UnitNumberSuffix::Vh),
+        ("90deg", UnitNumberSuffix::Deg),
+        ("2rad", UnitNumberSuffix::Rad),
+        ("0.25turn", UnitNumberSuffix::Turn),
+        ("6db", UnitNumberSuffix::Db),
+        ("18lufs", UnitNumberSuffix::Lufs),
+        ("92bpm", UnitNumberSuffix::Bpm),
+        ("4bars", UnitNumberSuffix::Bars),
+    ] {
+        let expr = parse_expr(source).expect("unit-number literal parses");
+        assert!(
+            matches!(expr, Expr::Literal(Literal::UnitNumber { suffix, .. }) if suffix == expected)
+        );
+    }
 
-    let rad_lit = parse_expr("2rad").expect("radian unit literal parses");
+    for (source, expected) in [
+        ("16_666us", DurationUnit::Micros),
+        ("5ns", DurationUnit::Nanos),
+        ("120ms", DurationUnit::Millis),
+        ("1.5s", DurationUnit::Seconds),
+        ("2min", DurationUnit::Minutes),
+        ("1h", DurationUnit::Hours),
+    ] {
+        let expr = parse_expr(source).expect("duration literal parses");
+        assert!(matches!(expr, Expr::Literal(Literal::Duration { unit, .. }) if unit == expected));
+    }
+
     assert!(matches!(
-        rad_lit,
-        Expr::Literal(Literal::UnitNumber {
-            suffix: arcweft_lang_syntax::expr::UnitNumberSuffix::Rad,
-            ..
-        })
+        parse_expr("0xff_u8").expect("hex integer parses"),
+        Expr::Literal(Literal::Int { value: 255, suffix, .. }) if suffix.as_deref() == Some("u8")
+    ));
+    assert!(matches!(
+        parse_expr("0b1010_0101u8").expect("binary integer parses"),
+        Expr::Literal(Literal::Int { value: 0b1010_0101, suffix, .. }) if suffix.as_deref() == Some("u8")
+    ));
+    assert!(matches!(
+        parse_expr("0o755u32").expect("octal integer parses"),
+        Expr::Literal(Literal::Int { value: 0o755, suffix, .. }) if suffix.as_deref() == Some("u32")
+    ));
+    assert!(matches!(
+        parse_expr("1_000i32").expect("underscored decimal integer parses"),
+        Expr::Literal(Literal::Int { value: 1000, suffix, .. }) if suffix.as_deref() == Some("i32")
     ));
 
     assert!(parse_expr("1.0NaN").is_err());

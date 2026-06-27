@@ -5,8 +5,9 @@ use crate::ast::items::{
     EntityDeclBody, EntityDeclItem, EntityDeclKind, EntryDeclItem, EntryItem, EntryKind,
     EntryRouteBinding, EntryRouteBindingSource, EnumItem, EnumVariant, ExternCapabilityItem,
     ExternModActivity, ExternModFunction, ExternModItem, ExternModMember, ExternModType,
-    ExternModTypeKind, FunctionInit, FunctionItem, ImplItem, ImplMember, MemoFn, ParserItem,
-    StateField, StateItem, StructField, StructItem, TraitItem, TraitMember, TypeAliasItem,
+    ExternModTypeKind, FunctionInit, FunctionItem, ImageDeclBody, ImageDeclField, ImplItem,
+    ImplMember, MemoFn, ParserItem, StateField, StateItem, StructField, StructItem, TraitItem,
+    TraitMember, TypeAliasItem,
 };
 use crate::cst::{
     find_matching_angle_group, find_matching_punctuation, find_top_level_punctuation,
@@ -708,8 +709,58 @@ fn parse_structured_entity_decl_body(
         EntityDeclKind::Content => Some(EntityDeclBody::Content(ContentDeclBody::new(
             parse_content_roots_field(body, base, errors),
         ))),
+        EntityDeclKind::Image => Some(EntityDeclBody::Image(ImageDeclBody::new(
+            parse_image_decl_fields(body, base, errors),
+        ))),
         _ => None,
     }
+}
+
+fn parse_image_decl_fields(
+    body: &str,
+    base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Vec<ImageDeclField> {
+    collect_logical_block_items(body)
+        .into_iter()
+        .filter_map(|item| parse_image_decl_field(item.trim(), base, errors))
+        .collect()
+}
+
+fn parse_image_decl_field(
+    line: &str,
+    base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Option<ImageDeclField> {
+    if line.is_empty() {
+        return None;
+    }
+    let line = line.trim_end_matches(',').trim();
+    let Some((name, value)) = split_top_level_binding(line) else {
+        errors.push(simple_error(
+            base,
+            line.len(),
+            "image declaration body item must be a field assignment",
+            "asset = @asset:.id",
+        ));
+        return None;
+    };
+    let name = name.trim();
+    if name.is_empty() {
+        errors.push(simple_error(
+            base,
+            line.len(),
+            "image declaration field name cannot be empty",
+            "field = value",
+        ));
+        return None;
+    }
+    let value_source = value.trim().to_owned();
+    Some(ImageDeclField::new(
+        name.to_owned(),
+        value_source.clone(),
+        parse_expr_lossy(&value_source),
+    ))
 }
 
 fn parse_content_roots_field(

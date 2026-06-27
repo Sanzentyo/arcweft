@@ -301,7 +301,7 @@ pub rig @rig.alice.live2d {
         &tree.items()[1],
         Item::EntityDecl(item) if item.kind() == EntityDeclKind::Image
             && item.id().body() == "image.sample.pulse"
-            && item.body().is_some()
+            && item.image_body().is_some()
     ));
     let Item::EntityDecl(character) = &tree.items()[2] else {
         panic!("expected character declaration");
