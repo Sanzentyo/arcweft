@@ -70,6 +70,20 @@ The follow-up design packages remain responsible for those larger contract
 surfaces. This cut intentionally avoids treating the broad seq-02 request as
 complete.
 
+## Follow-Up Design Requests
+
+The remaining seq-02 product artifact surfaces are split into
+sequence-preserving requests so they are not accidentally deferred to seq-03:
+
+- `docs/reviews/requests/2026-06-27-seq-02.1-common-resource-wire-codec-and-resource-codec-plan.md`
+- `docs/reviews/requests/2026-06-27-seq-02.2-runtime-types-entrypoints-adapter-requirements-codecs.md`
+- `docs/reviews/requests/2026-06-27-seq-02.3-content-presentation-entity-resource-codecs.md`
+- `docs/reviews/requests/2026-06-27-seq-02.4-shader-ui-audio-debug-contract-resource-codecs.md`
+- `docs/reviews/requests/2026-06-27-seq-02.5-patch-v2-compatibility-and-materialization.md`
+- `docs/reviews/requests/2026-06-27-seq-02.6-awfr-release-archive-and-external-payload-carrier.md`
+- `docs/reviews/requests/2026-06-27-seq-02.7-signing-policy-redesign.md`
+- `docs/reviews/requests/2026-06-27-seq-02.8-overlay-production-application.md`
+
 ## Verification
 
 - `uv run .tmp\apply_seq_02.py --self-test`
