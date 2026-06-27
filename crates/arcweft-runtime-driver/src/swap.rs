@@ -1,6 +1,7 @@
 //! Hot-swap generation model for embedding runtimes.
 
 use arcweft_bundle::container::BundleDigest;
+use arcweft_bundle::patch::PatchCompatibility;
 use arcweft_bundle::resource_codec::runtime::AdapterRequirementsSection as CompactAdapterRequirementsSection;
 use arcweft_bundle::{ArcweftBundle, BundleKind as ArcweftBundleKind, BundleVirtualFile};
 use arcweft_core::awbc::schema::{
@@ -440,6 +441,15 @@ impl SwapCompatibility {
         matches!(self, Self::CodeGenerational)
     }
 
+    pub const fn from_patch_compatibility(compatibility: PatchCompatibility) -> Self {
+        match compatibility {
+            PatchCompatibility::ContentOnly => Self::ContentOnly,
+            PatchCompatibility::CodeCompatible => Self::CodeCompatible,
+            PatchCompatibility::CodeGenerational => Self::CodeGenerational,
+            PatchCompatibility::RestartRequired => Self::RestartRequired,
+        }
+    }
+
     pub const fn label(self) -> &'static str {
         match self {
             Self::ContentOnly => "content-only",
@@ -505,11 +515,19 @@ impl SwapSession {
         &mut self,
         next: Arc<ProgramGeneration>,
     ) -> Result<SwapCompatibility, SwapError> {
+        let compatibility = classify_swap(&self.active, &next);
+        self.prepare_with_compatibility(next, compatibility)
+    }
+
+    pub fn prepare_with_compatibility(
+        &mut self,
+        next: Arc<ProgramGeneration>,
+        compatibility: SwapCompatibility,
+    ) -> Result<SwapCompatibility, SwapError> {
         self.expect_phase(SwapPhase::Idle)?;
         if self.prepared.is_some() {
             return Err(SwapError::SwapAlreadyPrepared);
         }
-        let compatibility = classify_swap(&self.active, &next);
         if !compatibility.can_apply_live() {
             return Err(SwapError::RestartRequired);
         }

@@ -5,7 +5,8 @@
 //! decodes these migrated families through JSON section fallbacks; each family
 //! owns a compact resource envelope and a typed deterministic transcript.
 
-use crate::container::BundleDigest;
+use crate::container::{BundleDigest, BundleSectionKind};
+use crate::patch::PatchCompatibility;
 use crate::{ArcweftBundle, BundleImageAsset, BundleImageObject, BundleSource, BundleVirtualFile};
 use arcweft_audio_core::graph::AudioGraph;
 use arcweft_render_text::LineDisplayCatalog;
@@ -329,6 +330,49 @@ impl AudioGraphSection {
                         .map(|snapshot| snapshot.id.as_str().to_owned()),
                 ),
         )
+    }
+}
+
+/// Semantic patch compatibility for migrated product catalog compact sections.
+///
+/// Catalog families currently describe content/presentation/resource data rather
+/// than executable ABI. Decoding both sides is still required: malformed compact
+/// bytes must not receive a product-grade compatibility fingerprint.
+pub fn migrated_product_catalog_section_compatibility(
+    kind: BundleSectionKind,
+    old_bytes: &[u8],
+    new_bytes: &[u8],
+) -> Result<Option<PatchCompatibility>, SectionCodecError> {
+    let Some(codec) = ProductSectionCodecKind::from_section_kind(kind) else {
+        return Ok(None);
+    };
+    match codec {
+        ProductSectionCodecKind::ContentCatalog => {
+            let _old = ContentCatalogSection::decode_canonical_section(old_bytes)?;
+            let _new = ContentCatalogSection::decode_canonical_section(new_bytes)?;
+            Ok(Some(PatchCompatibility::ContentOnly))
+        }
+        ProductSectionCodecKind::AssetCatalog => {
+            let _old = AssetCatalogSection::decode_canonical_section(old_bytes)?;
+            let _new = AssetCatalogSection::decode_canonical_section(new_bytes)?;
+            Ok(Some(PatchCompatibility::ContentOnly))
+        }
+        ProductSectionCodecKind::DisplayCatalog => {
+            let _old = DisplayCatalogSection::decode_canonical_section(old_bytes)?;
+            let _new = DisplayCatalogSection::decode_canonical_section(new_bytes)?;
+            Ok(Some(PatchCompatibility::ContentOnly))
+        }
+        ProductSectionCodecKind::SourceMap => {
+            let _old = SourceMapSection::decode_canonical_section(old_bytes)?;
+            let _new = SourceMapSection::decode_canonical_section(new_bytes)?;
+            Ok(Some(PatchCompatibility::ContentOnly))
+        }
+        ProductSectionCodecKind::AudioGraph => {
+            let _old = AudioGraphSection::decode_canonical_section(old_bytes)?;
+            let _new = AudioGraphSection::decode_canonical_section(new_bytes)?;
+            Ok(Some(PatchCompatibility::ContentOnly))
+        }
+        _ => Ok(None),
     }
 }
 

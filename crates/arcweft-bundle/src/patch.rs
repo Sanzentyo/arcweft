@@ -1,19 +1,32 @@
-//! Sans I/O AWFB section patch model.
+//! Sans I/O AWFB patch schema 2 model.
+//!
+//! Patch artifacts are a single schema-2 format in this implementation. The
+//! patch bundle manifest binds base and target artifact identities, the `PatchPlan`
+//! section carries the descriptor operations plus optional target manifest bytes,
+//! changed embedded payloads are carried as `AssetBlob` sections, and core
+//! materialization always returns an unsigned target plus a typed report.
 
 use crate::container::{
-    BundleDigest, BundleKind, BundleSectionKind, BundleView, Compression, ContentPlacement,
-    ContentResidency, ReadBudget, SectionDescriptor, SectionId, SectionInput, SectionKindCode,
-    encode_bundle,
+    ArtifactIdentity, BundleDigest, BundleKind, BundleSectionKind, BundleView, Compression,
+    ContentPlacement, ContentResidency, ReadBudget, SectionDescriptor, SectionId, SectionInput,
+    SectionKindCode, encode_bundle,
 };
 use crate::release::{ReleaseManifestError, ReleaseSignaturePolicy};
+use crate::resource_codec::product_catalog::migrated_product_catalog_section_compatibility;
 use crate::resource_codec::runtime::{
     RuntimeResourceCompatibility, migrated_runtime_section_compatibility,
 };
+use arcweft_core::awbc::codec::AwbcDecodeBudget;
+use arcweft_core::awbc::schema::{
+    AwbcBlock, AwbcFrameLayout, AwbcFunction, AwbcInstruction, AwbcProgram, AwbcSignature,
+    AwbcTableRange,
+};
 use arcweft_core::bytecode::BYTECODE_ABI_VERSION;
-use std::collections::BTreeMap;
+use serde::Serialize;
+use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
-pub const PATCH_PLAN_SCHEMA_VERSION: u32 = 1;
+pub const PATCH_PLAN_SCHEMA_VERSION: u32 = 2;
 const PATCH_PAYLOAD_CARRIER_KIND: BundleSectionKind = BundleSectionKind::AssetBlob;
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -43,7 +56,9 @@ pub struct RuntimeAbiRange {
     pub max: u32,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Deserialize, serde::Serialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum PatchCompatibility {
     ContentOnly,
@@ -52,19 +67,102 @@ pub enum PatchCompatibility {
     RestartRequired,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PatchDescriptorMergeMode {
+    ReplaceBySectionId,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PatchManifestRewrite {
+    PreserveBaseManifest,
+    ReplaceWithTargetManifestBytes,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PatchExternalDescriptorPolicy {
+    MetadataOnlyAllowed,
+    PayloadRequired,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PatchTargetSignaturePolicy {
+    StripBaseSignature,
+    AdapterMaySignTarget,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct PatchMaterializationContract {
+    pub descriptor_merge: PatchDescriptorMergeMode,
+    pub manifest_rewrite: PatchManifestRewrite,
+    pub external_descriptor_policy: PatchExternalDescriptorPolicy,
+    pub target_signature: PatchTargetSignaturePolicy,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SectionChangeOperation {
+    Add,
+    Replace,
+    Remove,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SectionChangeDerivation {
+    RuntimeCompactCodec,
+    ProductCatalogCompactCodec,
+    AwbcExecutableFingerprint,
+    ExternalDescriptor,
+    SectionKindDefault,
+    UnknownOptionalSectionKind,
+    RemovalRequiresRestart,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct SectionCompatibilityFingerprint {
+    pub id: SectionId,
+    pub operation: SectionChangeOperation,
+    pub raw_kind_code: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub known_kind: Option<BundleSectionKind>,
+    pub required: bool,
+    pub compatibility: PatchCompatibility,
+    pub derivation: SectionChangeDerivation,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_descriptor_fingerprint: Option<BundleDigest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_descriptor_fingerprint: Option<BundleDigest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_content_fingerprint: Option<BundleDigest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_content_fingerprint: Option<BundleDigest>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct BundlePatchManifest {
     pub schema_version: u32,
+    pub min_reader_schema_version: u32,
+    pub runtime_abi: RuntimeAbiRange,
+    pub base_artifact: ArtifactIdentity,
+    pub target_artifact: ArtifactIdentity,
     pub base_content_root: BundleDigest,
     pub target_content_root: BundleDigest,
-    pub runtime_abi: RuntimeAbiRange,
     pub compatibility: PatchCompatibility,
+    pub materialization: PatchMaterializationContract,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub compatibility_fingerprints: Vec<SectionCompatibilityFingerprint>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct BundlePatchArtifact {
     pub manifest: BundlePatchManifest,
     pub plan: BundlePatchPlan,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_manifest_bytes: Option<Vec<u8>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub changed_sections: Vec<PatchSectionPayload>,
 }
@@ -73,6 +171,48 @@ pub struct BundlePatchArtifact {
 pub struct PatchSectionPayload {
     pub descriptor: SectionDescriptor,
     pub bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+struct PatchPlanSection {
+    schema_version: u32,
+    plan: BundlePatchPlan,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    target_manifest_bytes: Option<Vec<u8>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PatchMaterializationState {
+    Planned,
+    BaseValidated,
+    DescriptorsMerged,
+    ManifestRewritten,
+    TargetEncoded,
+    TargetValidated,
+    Materialized,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PatchTargetSignatureState {
+    BaseSignatureInvalidated,
+    UnsignedMaterializedTarget,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct PatchMaterializationReport {
+    pub completed_states: Vec<PatchMaterializationState>,
+    pub base_artifact: ArtifactIdentity,
+    pub target_artifact: ArtifactIdentity,
+    pub compatibility: PatchCompatibility,
+    pub target_signature: PatchTargetSignatureState,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PatchMaterializedTarget {
+    pub bytes: Vec<u8>,
+    pub report: PatchMaterializationReport,
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -90,14 +230,18 @@ pub enum PatchBundleError {
     EncodePayload(#[source] serde_json::Error),
     #[error("failed to decode AWFB patch payload: {0}")]
     DecodePayload(#[source] serde_json::Error),
-    #[error("failed to classify compact resource patch compatibility: {message}")]
-    ResourceCompatibility { message: String },
+    #[error("failed to classify patch compatibility: {message}")]
+    Compatibility { message: String },
     #[error("invalid AWFB patch container: {0}")]
     Container(#[source] crate::container::ContainerError),
     #[error("AWFB patch signature policy failed: {0}")]
     SignaturePolicy(#[source] ReleaseManifestError),
     #[error("AWFB bundle kind {actual:?} is not a patch bundle")]
     WrongBundleKind { actual: BundleKind },
+    #[error("unsupported AWFB patch schema {actual}; expected {expected}")]
+    UnsupportedSchema { actual: u32, expected: u32 },
+    #[error("AWFB patch min reader schema {required} is newer than this reader {reader}")]
+    UnsupportedMinReader { required: u32, reader: u32 },
     #[error("AWFB patch bundle is missing its PatchPlan section")]
     MissingPatchPlan,
     #[error("AWFB patch bundle contains more than one PatchPlan section")]
@@ -106,6 +250,17 @@ pub enum PatchBundleError {
     ContentRootMismatch,
     #[error("AWFB patch runtime ABI range {min}..={max} does not include current ABI {current}")]
     UnsupportedRuntimeAbi { min: u32, max: u32, current: u32 },
+    #[error("AWFB patch section change fingerprints do not match PatchPlan operations")]
+    SectionFingerprintMismatch,
+    #[error("AWFB patch manifest compatibility does not match section fingerprints")]
+    CompatibilityMismatch,
+    #[error("AWFB patch target manifest bytes are required for target manifest digest {expected}")]
+    MissingTargetManifest { expected: BundleDigest },
+    #[error("AWFB patch target manifest digest mismatch: expected {expected}, actual {actual}")]
+    TargetManifestDigestMismatch {
+        expected: BundleDigest,
+        actual: BundleDigest,
+    },
     #[error("AWFB patch is missing changed-section payload {0}")]
     MissingSectionPayload(SectionId),
     #[error("AWFB patch contains unexpected changed-section payload {0}")]
@@ -127,6 +282,16 @@ pub enum PatchBundleError {
         active: BundleDigest,
         expected: BundleDigest,
     },
+    #[error("AWFB patch base artifact mismatch: active {active:?}, expected {expected:?}")]
+    BaseIdentityMismatch {
+        active: Box<ArtifactIdentity>,
+        expected: Box<ArtifactIdentity>,
+    },
+    #[error("AWFB patch target artifact mismatch: actual {actual:?}, expected {expected:?}")]
+    TargetIdentityMismatch {
+        actual: Box<ArtifactIdentity>,
+        expected: Box<ArtifactIdentity>,
+    },
     #[error("AWFB patch base section {0} is missing")]
     MissingBaseSection(SectionId),
     #[error("AWFB patch add operation targets existing base section {0}")]
@@ -137,8 +302,6 @@ pub enum PatchBundleError {
         expected: BundleDigest,
         actual: BundleDigest,
     },
-    #[error("AWFB patch materialization currently requires embedded base section {0}")]
-    ExternalBaseSection(SectionId),
     #[error("AWFB patch materialized target root mismatch: expected {expected}, actual {actual}")]
     TargetContentRootMismatch {
         expected: BundleDigest,
@@ -187,9 +350,8 @@ impl PatchCompatibility {
     pub fn conservative_for_plan(plan: &BundlePatchPlan) -> Self {
         plan.operations
             .iter()
-            .map(operation_compatibility)
-            .max_by_key(|compatibility| compatibility.rank())
-            .unwrap_or(Self::ContentOnly)
+            .map(operation_default_compatibility)
+            .fold(Self::ContentOnly, Self::max)
     }
 
     pub const fn can_apply_live(self) -> bool {
@@ -213,6 +375,15 @@ impl PatchCompatibility {
         }
     }
 
+    #[must_use]
+    pub const fn max(self, other: Self) -> Self {
+        if self.rank() >= other.rank() {
+            self
+        } else {
+            other
+        }
+    }
+
     const fn rank(self) -> u8 {
         match self {
             Self::ContentOnly => 0,
@@ -223,55 +394,83 @@ impl PatchCompatibility {
     }
 }
 
+impl std::fmt::Display for PatchCompatibility {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.label())
+    }
+}
+
+impl Default for PatchMaterializationContract {
+    fn default() -> Self {
+        Self {
+            descriptor_merge: PatchDescriptorMergeMode::ReplaceBySectionId,
+            manifest_rewrite: PatchManifestRewrite::PreserveBaseManifest,
+            external_descriptor_policy: PatchExternalDescriptorPolicy::MetadataOnlyAllowed,
+            target_signature: PatchTargetSignaturePolicy::StripBaseSignature,
+        }
+    }
+}
+
+impl PatchMaterializationContract {
+    pub const fn for_manifest_rewrite(rewrites_manifest: bool) -> Self {
+        Self {
+            descriptor_merge: PatchDescriptorMergeMode::ReplaceBySectionId,
+            manifest_rewrite: if rewrites_manifest {
+                PatchManifestRewrite::ReplaceWithTargetManifestBytes
+            } else {
+                PatchManifestRewrite::PreserveBaseManifest
+            },
+            external_descriptor_policy: PatchExternalDescriptorPolicy::MetadataOnlyAllowed,
+            target_signature: PatchTargetSignaturePolicy::StripBaseSignature,
+        }
+    }
+}
+
 impl BundlePatchManifest {
-    pub fn for_plan(plan: &BundlePatchPlan) -> Self {
+    pub fn for_artifact_parts(
+        base: &BundleView<'_>,
+        target: &BundleView<'_>,
+        plan: &BundlePatchPlan,
+        compatibility_fingerprints: Vec<SectionCompatibilityFingerprint>,
+    ) -> Self {
+        let compatibility = compatibility_for_fingerprints(&compatibility_fingerprints);
         Self {
             schema_version: PATCH_PLAN_SCHEMA_VERSION,
+            min_reader_schema_version: PATCH_PLAN_SCHEMA_VERSION,
+            runtime_abi: RuntimeAbiRange::CURRENT,
+            base_artifact: base.artifact_identity(),
+            target_artifact: target.artifact_identity(),
             base_content_root: plan.base_content_root,
             target_content_root: plan.target_content_root,
-            runtime_abi: RuntimeAbiRange::CURRENT,
-            compatibility: PatchCompatibility::conservative_for_plan(plan),
+            compatibility,
+            materialization: PatchMaterializationContract::for_manifest_rewrite(
+                base.manifest() != target.manifest(),
+            ),
+            compatibility_fingerprints,
         }
     }
 }
 
 impl BundlePatchArtifact {
-    pub fn new(plan: BundlePatchPlan) -> Self {
-        Self {
-            manifest: BundlePatchManifest::for_plan(&plan),
-            plan,
-            changed_sections: Vec::new(),
-        }
-    }
-
     pub fn from_views(
         base: &BundleView<'_>,
         target: &BundleView<'_>,
     ) -> Result<Self, PatchBundleError> {
         let plan = BundlePatchPlan::diff(base, target);
-        let changed_sections = plan
-            .operations
-            .iter()
-            .filter_map(operation_next_descriptor)
-            .filter(|descriptor| descriptor.placement().is_embedded())
-            .map(|descriptor| {
-                target
-                    .decoded_section(descriptor.id())
-                    .map_err(PatchBundleError::Container)?
-                    .ok_or(PatchBundleError::MissingSectionPayload(descriptor.id()))
-                    .map(|bytes| PatchSectionPayload {
-                        descriptor: descriptor.clone(),
-                        bytes,
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let compatibility = compact_resource_compatibility(base, target, &plan)?;
+        let changed_sections = changed_section_payloads(&plan, target)?;
+        let compatibility_fingerprints = section_fingerprints_for_plan(base, target, &plan)?;
+        let manifest = BundlePatchManifest::for_artifact_parts(
+            base,
+            target,
+            &plan,
+            compatibility_fingerprints,
+        );
+        let target_manifest_bytes =
+            (base.manifest() != target.manifest()).then(|| target.manifest().to_vec());
         let artifact = Self {
-            manifest: BundlePatchManifest {
-                compatibility,
-                ..BundlePatchManifest::for_plan(&plan)
-            },
+            manifest,
             plan,
+            target_manifest_bytes,
             changed_sections,
         };
         artifact.validate()?;
@@ -279,8 +478,17 @@ impl BundlePatchArtifact {
     }
 
     pub fn validate(&self) -> Result<(), PatchBundleError> {
+        validate_schema(self.manifest.schema_version)?;
+        if self.manifest.min_reader_schema_version > PATCH_PLAN_SCHEMA_VERSION {
+            return Err(PatchBundleError::UnsupportedMinReader {
+                required: self.manifest.min_reader_schema_version,
+                reader: PATCH_PLAN_SCHEMA_VERSION,
+            });
+        }
         if self.manifest.base_content_root != self.plan.base_content_root
             || self.manifest.target_content_root != self.plan.target_content_root
+            || self.manifest.base_artifact.content_root != self.plan.base_content_root
+            || self.manifest.target_artifact.content_root != self.plan.target_content_root
         {
             return Err(PatchBundleError::ContentRootMismatch);
         }
@@ -292,6 +500,29 @@ impl BundlePatchArtifact {
             });
         }
         self.validate_changed_section_payloads()?;
+        validate_section_fingerprints(&self.plan, &self.manifest.compatibility_fingerprints)?;
+        if compatibility_for_fingerprints(&self.manifest.compatibility_fingerprints)
+            != self.manifest.compatibility
+        {
+            return Err(PatchBundleError::CompatibilityMismatch);
+        }
+        if self.manifest.materialization.manifest_rewrite
+            == PatchManifestRewrite::ReplaceWithTargetManifestBytes
+            && self.target_manifest_bytes.is_none()
+        {
+            return Err(PatchBundleError::MissingTargetManifest {
+                expected: self.manifest.target_artifact.manifest_digest,
+            });
+        }
+        if let Some(bytes) = &self.target_manifest_bytes {
+            let actual = BundleDigest::of(bytes);
+            if actual != self.manifest.target_artifact.manifest_digest {
+                return Err(PatchBundleError::TargetManifestDigestMismatch {
+                    expected: self.manifest.target_artifact.manifest_digest,
+                    actual,
+                });
+            }
+        }
         Ok(())
     }
 
@@ -330,11 +561,26 @@ impl BundlePatchArtifact {
     }
 }
 
+impl From<PatchValidationError> for PatchBundleError {
+    fn from(value: PatchValidationError) -> Self {
+        match value {
+            PatchValidationError::WrongBase { active, expected } => {
+                Self::WrongBase { active, expected }
+            }
+        }
+    }
+}
+
 pub fn encode_patch_bundle(artifact: &BundlePatchArtifact) -> Result<Vec<u8>, PatchBundleError> {
     artifact.validate()?;
     let manifest =
         serde_json::to_vec(&artifact.manifest).map_err(PatchBundleError::EncodePayload)?;
-    let plan = serde_json::to_vec(&artifact.plan).map_err(PatchBundleError::EncodePayload)?;
+    let plan = serde_json::to_vec(&PatchPlanSection {
+        schema_version: PATCH_PLAN_SCHEMA_VERSION,
+        plan: artifact.plan.clone(),
+        target_manifest_bytes: artifact.target_manifest_bytes.clone(),
+    })
+    .map_err(PatchBundleError::EncodePayload)?;
     let mut sections = vec![SectionInput::embedded(
         patch_plan_section_id(),
         BundleSectionKind::PatchPlan,
@@ -361,13 +607,15 @@ pub fn decode_patch_bundle(bytes: &[u8]) -> Result<BundlePatchArtifact, PatchBun
             actual: view.kind(),
         });
     }
-    let manifest =
+    let manifest: BundlePatchManifest =
         serde_json::from_slice(view.manifest()).map_err(PatchBundleError::DecodePayload)?;
-    let plan = decode_patch_plan_section(&view)?;
-    let changed_sections = decode_changed_sections(&view, &plan)?;
+    validate_schema(manifest.schema_version)?;
+    let plan_section = decode_patch_plan_section(&view)?;
+    let changed_sections = decode_changed_sections(&view, &plan_section.plan)?;
     let artifact = BundlePatchArtifact {
         manifest,
-        plan,
+        plan: plan_section.plan,
+        target_manifest_bytes: plan_section.target_manifest_bytes,
         changed_sections,
     };
     artifact.validate()?;
@@ -394,7 +642,7 @@ pub fn decode_patch_bundle_with_signature_policy(
 pub fn apply_patch_bundle_bytes(
     base_bytes: &[u8],
     patch_bytes: &[u8],
-) -> Result<Vec<u8>, PatchBundleError> {
+) -> Result<PatchMaterializedTarget, PatchBundleError> {
     let artifact = decode_patch_bundle(patch_bytes)?;
     apply_patch_bundle(base_bytes, &artifact)
 }
@@ -403,7 +651,7 @@ pub fn apply_signed_patch_bundle_bytes(
     base_bytes: &[u8],
     patch_bytes: &[u8],
     signature_policy: &ReleaseSignaturePolicy,
-) -> Result<Vec<u8>, PatchBundleError> {
+) -> Result<PatchMaterializedTarget, PatchBundleError> {
     let artifact = decode_patch_bundle_with_signature_policy(patch_bytes, signature_policy)?;
     apply_patch_bundle(base_bytes, &artifact)
 }
@@ -411,19 +659,141 @@ pub fn apply_signed_patch_bundle_bytes(
 pub fn apply_patch_bundle(
     base_bytes: &[u8],
     artifact: &BundlePatchArtifact,
-) -> Result<Vec<u8>, PatchBundleError> {
+) -> Result<PatchMaterializedTarget, PatchBundleError> {
     artifact.validate()?;
     let base = BundleView::parse(base_bytes, ReadBudget::default())
         .map_err(PatchBundleError::Container)?;
-    artifact
-        .plan
-        .validate_base(base.content_root())
-        .map_err(|error| match error {
-            PatchValidationError::WrongBase { active, expected } => {
-                PatchBundleError::WrongBase { active, expected }
-            }
-        })?;
+    artifact.plan.validate_base(base.content_root())?;
+    let active_identity = base.artifact_identity();
+    if active_identity != artifact.manifest.base_artifact {
+        return Err(PatchBundleError::BaseIdentityMismatch {
+            active: Box::new(active_identity),
+            expected: Box::new(artifact.manifest.base_artifact),
+        });
+    }
 
+    let mut states = vec![
+        PatchMaterializationState::Planned,
+        PatchMaterializationState::BaseValidated,
+    ];
+    let sections = materialized_sections(&base, artifact)?;
+    states.push(PatchMaterializationState::DescriptorsMerged);
+    let manifest = target_manifest_bytes(&base, artifact)?;
+    states.push(PatchMaterializationState::ManifestRewritten);
+    let target =
+        encode_bundle(base.kind(), manifest, sections).map_err(PatchBundleError::Container)?;
+    states.push(PatchMaterializationState::TargetEncoded);
+    let target_view =
+        BundleView::parse(&target, ReadBudget::default()).map_err(PatchBundleError::Container)?;
+    let actual_root = target_view.content_root();
+    if actual_root != artifact.manifest.target_content_root {
+        return Err(PatchBundleError::TargetContentRootMismatch {
+            expected: artifact.manifest.target_content_root,
+            actual: actual_root,
+        });
+    }
+    let actual_identity = target_view.artifact_identity();
+    if actual_identity != artifact.manifest.target_artifact {
+        return Err(PatchBundleError::TargetIdentityMismatch {
+            actual: Box::new(actual_identity),
+            expected: Box::new(artifact.manifest.target_artifact),
+        });
+    }
+    states.push(PatchMaterializationState::TargetValidated);
+    states.push(PatchMaterializationState::Materialized);
+    Ok(PatchMaterializedTarget {
+        bytes: target,
+        report: PatchMaterializationReport {
+            completed_states: states,
+            base_artifact: artifact.manifest.base_artifact,
+            target_artifact: artifact.manifest.target_artifact,
+            compatibility: artifact.manifest.compatibility,
+            target_signature: PatchTargetSignatureState::BaseSignatureInvalidated,
+        },
+    })
+}
+
+pub fn diff_sections(
+    base_content_root: BundleDigest,
+    target_content_root: BundleDigest,
+    base: &[SectionDescriptor],
+    target: &[SectionDescriptor],
+) -> BundlePatchPlan {
+    let base_by_id = section_index(base);
+    let target_by_id = section_index(target);
+    let mut operations = target_by_id
+        .iter()
+        .filter_map(|(id, next)| match base_by_id.get(id) {
+            None => Some(SectionOperation::Add((*next).clone())),
+            Some(old)
+                if old.content_digest() != next.content_digest()
+                    || old.kind_code() != next.kind_code()
+                    || old.schema_version() != next.schema_version()
+                    || old.residency() != next.residency()
+                    || old.placement() != next.placement()
+                    || old.compression() != next.compression()
+                    || old.decoded_size() != next.decoded_size()
+                    || old.required() != next.required() =>
+            {
+                Some(SectionOperation::Replace {
+                    old: old.content_digest(),
+                    next: (*next).clone(),
+                })
+            }
+            Some(_) => None,
+        })
+        .collect::<Vec<_>>();
+
+    operations.extend(base_by_id.iter().filter_map(|(id, old)| {
+        (!target_by_id.contains_key(id)).then_some(SectionOperation::Remove {
+            id: *id,
+            old: old.content_digest(),
+        })
+    }));
+
+    BundlePatchPlan {
+        base_content_root,
+        target_content_root,
+        operations,
+    }
+}
+
+fn validate_schema(actual: u32) -> Result<(), PatchBundleError> {
+    if actual == PATCH_PLAN_SCHEMA_VERSION {
+        Ok(())
+    } else {
+        Err(PatchBundleError::UnsupportedSchema {
+            actual,
+            expected: PATCH_PLAN_SCHEMA_VERSION,
+        })
+    }
+}
+
+fn changed_section_payloads(
+    plan: &BundlePatchPlan,
+    target: &BundleView<'_>,
+) -> Result<Vec<PatchSectionPayload>, PatchBundleError> {
+    plan.operations
+        .iter()
+        .filter_map(operation_next_descriptor)
+        .filter(|descriptor| descriptor.placement().is_embedded())
+        .map(|descriptor| {
+            target
+                .decoded_section(descriptor.id())
+                .map_err(PatchBundleError::Container)?
+                .ok_or(PatchBundleError::MissingSectionPayload(descriptor.id()))
+                .map(|bytes| PatchSectionPayload {
+                    descriptor: descriptor.clone(),
+                    bytes,
+                })
+        })
+        .collect()
+}
+
+fn materialized_sections(
+    base: &BundleView<'_>,
+    artifact: &BundlePatchArtifact,
+) -> Result<Vec<SectionInput>, PatchBundleError> {
     let base_by_id = section_index(base.sections());
     let changed_by_id = artifact
         .changed_sections
@@ -452,14 +822,11 @@ pub fn apply_patch_bundle(
             Some(SectionOperation::Add(_)) => {
                 return Err(PatchBundleError::BaseSectionAlreadyExists(descriptor.id()));
             }
-            None => sections.push(section_input_from_base(&base, descriptor)?),
+            None => sections.push(section_input_from_base(base, descriptor)?),
         }
     }
 
-    let base_section_ids = base_by_id
-        .keys()
-        .copied()
-        .collect::<std::collections::BTreeSet<_>>();
+    let base_section_ids = base_by_id.keys().copied().collect::<BTreeSet<_>>();
     for operation in &artifact.plan.operations {
         match operation {
             SectionOperation::Add(descriptor) => {
@@ -483,54 +850,30 @@ pub fn apply_patch_bundle(
             }
         }
     }
-
-    let target = encode_bundle(base.kind(), base.manifest(), sections)
-        .map_err(PatchBundleError::Container)?;
-    let target_view =
-        BundleView::parse(&target, ReadBudget::default()).map_err(PatchBundleError::Container)?;
-    let actual = target_view.content_root();
-    if actual != artifact.plan.target_content_root {
-        return Err(PatchBundleError::TargetContentRootMismatch {
-            expected: artifact.plan.target_content_root,
-            actual,
-        });
-    }
-    Ok(target)
+    Ok(sections)
 }
 
-pub fn diff_sections(
-    base_content_root: BundleDigest,
-    target_content_root: BundleDigest,
-    base: &[SectionDescriptor],
-    target: &[SectionDescriptor],
-) -> BundlePatchPlan {
-    let base_by_id = section_index(base);
-    let target_by_id = section_index(target);
-    let mut operations = target_by_id
-        .iter()
-        .filter_map(|(id, next)| match base_by_id.get(id) {
-            None => Some(SectionOperation::Add((*next).clone())),
-            Some(old) if old.content_digest() != next.content_digest() => {
-                Some(SectionOperation::Replace {
-                    old: old.content_digest(),
-                    next: (*next).clone(),
-                })
-            }
-            Some(_) => None,
-        })
-        .collect::<Vec<_>>();
-
-    operations.extend(base_by_id.iter().filter_map(|(id, old)| {
-        (!target_by_id.contains_key(id)).then_some(SectionOperation::Remove {
-            id: *id,
-            old: old.content_digest(),
-        })
-    }));
-
-    BundlePatchPlan {
-        base_content_root,
-        target_content_root,
-        operations,
+fn target_manifest_bytes<'a>(
+    base: &'a BundleView<'_>,
+    artifact: &'a BundlePatchArtifact,
+) -> Result<&'a [u8], PatchBundleError> {
+    if let Some(bytes) = &artifact.target_manifest_bytes {
+        let actual = BundleDigest::of(bytes);
+        if actual != artifact.manifest.target_artifact.manifest_digest {
+            return Err(PatchBundleError::TargetManifestDigestMismatch {
+                expected: artifact.manifest.target_artifact.manifest_digest,
+                actual,
+            });
+        }
+        Ok(bytes)
+    } else {
+        let actual = BundleDigest::of(base.manifest());
+        if actual != artifact.manifest.target_artifact.manifest_digest {
+            return Err(PatchBundleError::MissingTargetManifest {
+                expected: artifact.manifest.target_artifact.manifest_digest,
+            });
+        }
+        Ok(base.manifest())
     }
 }
 
@@ -660,7 +1003,7 @@ fn section_input_from_external_descriptor(descriptor: &SectionDescriptor) -> Sec
     .expect("parsed descriptor cannot contain required unknown section")
 }
 
-fn decode_patch_plan_section(view: &BundleView<'_>) -> Result<BundlePatchPlan, PatchBundleError> {
+fn decode_patch_plan_section(view: &BundleView<'_>) -> Result<PatchPlanSection, PatchBundleError> {
     let mut matches = view
         .sections()
         .iter()
@@ -671,13 +1014,17 @@ fn decode_patch_plan_section(view: &BundleView<'_>) -> Result<BundlePatchPlan, P
     if matches.next().is_some() {
         return Err(PatchBundleError::DuplicatePatchPlan);
     }
+    validate_schema(descriptor.schema_version())?;
     let Some(bytes) = view
         .embedded_section(descriptor.id())
         .map_err(PatchBundleError::Container)?
     else {
         return Err(PatchBundleError::MissingPatchPlan);
     };
-    serde_json::from_slice(bytes).map_err(PatchBundleError::DecodePayload)
+    let plan: PatchPlanSection =
+        serde_json::from_slice(bytes).map_err(PatchBundleError::DecodePayload)?;
+    validate_schema(plan.schema_version)?;
+    Ok(plan)
 }
 
 fn decode_changed_sections(
@@ -728,51 +1075,205 @@ fn operation_next_descriptor(operation: &SectionOperation) -> Option<&SectionDes
     }
 }
 
-fn compact_resource_compatibility(
+fn validate_section_fingerprints(
+    plan: &BundlePatchPlan,
+    fingerprints: &[SectionCompatibilityFingerprint],
+) -> Result<(), PatchBundleError> {
+    let expected_ids = plan
+        .operations
+        .iter()
+        .map(operation_id)
+        .collect::<BTreeSet<_>>();
+    let actual_ids = fingerprints
+        .iter()
+        .map(|fingerprint| fingerprint.id)
+        .collect::<BTreeSet<_>>();
+    if expected_ids != actual_ids || fingerprints.len() != actual_ids.len() {
+        return Err(PatchBundleError::SectionFingerprintMismatch);
+    }
+    Ok(())
+}
+
+fn section_fingerprints_for_plan(
     base: &BundleView<'_>,
     target: &BundleView<'_>,
     plan: &BundlePatchPlan,
-) -> Result<PatchCompatibility, PatchBundleError> {
-    let mut compatibility = PatchCompatibility::ContentOnly;
-    for operation in &plan.operations {
-        let operation_compatibility = compact_operation_compatibility(base, target, operation)?;
-        compatibility = max_patch_compatibility(compatibility, operation_compatibility);
-    }
-    Ok(compatibility)
+) -> Result<Vec<SectionCompatibilityFingerprint>, PatchBundleError> {
+    plan.operations
+        .iter()
+        .map(|operation| section_fingerprint_for_operation(base, target, operation))
+        .collect()
 }
 
-fn compact_operation_compatibility(
+fn section_fingerprint_for_operation(
     base: &BundleView<'_>,
     target: &BundleView<'_>,
     operation: &SectionOperation,
-) -> Result<PatchCompatibility, PatchBundleError> {
-    let SectionOperation::Replace { next, .. } = operation else {
-        return Ok(operation_compatibility(operation));
-    };
-    let Some(kind) = next.known_kind() else {
-        return Ok(operation_compatibility(operation));
-    };
-    if crate::resource_codec::runtime::runtime_codec_for_section(kind).is_none() {
-        return Ok(operation_compatibility(operation));
+) -> Result<SectionCompatibilityFingerprint, PatchBundleError> {
+    let id = operation_id(operation);
+    let base_descriptor = base
+        .sections()
+        .iter()
+        .find(|descriptor| descriptor.id() == id);
+    let target_descriptor = operation_next_descriptor(operation);
+    let descriptor =
+        target_descriptor
+            .or(base_descriptor)
+            .ok_or_else(|| PatchBundleError::Compatibility {
+                message: format!("section operation {id} has no descriptor"),
+            })?;
+    let (compatibility, derivation) = operation_compatibility(base, target, operation)?;
+    Ok(SectionCompatibilityFingerprint {
+        id,
+        operation: match operation {
+            SectionOperation::Add(_) => SectionChangeOperation::Add,
+            SectionOperation::Replace { .. } => SectionChangeOperation::Replace,
+            SectionOperation::Remove { .. } => SectionChangeOperation::Remove,
+        },
+        raw_kind_code: descriptor.kind_code().encoded(),
+        known_kind: descriptor.known_kind(),
+        required: descriptor.required(),
+        compatibility,
+        derivation,
+        base_descriptor_fingerprint: base_descriptor.map(descriptor_fingerprint),
+        target_descriptor_fingerprint: target_descriptor.map(descriptor_fingerprint),
+        base_content_fingerprint: base_descriptor.map(SectionDescriptor::content_digest),
+        target_content_fingerprint: target_descriptor.map(SectionDescriptor::content_digest),
+    })
+}
+
+fn operation_compatibility(
+    base: &BundleView<'_>,
+    target: &BundleView<'_>,
+    operation: &SectionOperation,
+) -> Result<(PatchCompatibility, SectionChangeDerivation), PatchBundleError> {
+    match operation {
+        SectionOperation::Remove { .. } => Ok((
+            PatchCompatibility::RestartRequired,
+            SectionChangeDerivation::RemovalRequiresRestart,
+        )),
+        SectionOperation::Add(descriptor) => Ok((
+            descriptor_default_compatibility(descriptor),
+            descriptor_default_derivation(descriptor),
+        )),
+        SectionOperation::Replace { next, .. } => replace_compatibility(base, target, next),
     }
-    let old = base
-        .decoded_section(next.id())
-        .map_err(PatchBundleError::Container)?
-        .ok_or(PatchBundleError::MissingBaseSection(next.id()))?;
-    let new = target
-        .decoded_section(next.id())
-        .map_err(PatchBundleError::Container)?
-        .ok_or(PatchBundleError::MissingSectionPayload(next.id()))?;
-    migrated_runtime_section_compatibility(kind, &old, &new)
-        .map_err(|error| PatchBundleError::ResourceCompatibility {
-            message: error.to_string(),
-        })
-        .map(|compatibility| {
-            compatibility.map_or_else(
-                || operation_compatibility(operation),
+}
+
+fn replace_compatibility(
+    base: &BundleView<'_>,
+    target: &BundleView<'_>,
+    next: &SectionDescriptor,
+) -> Result<(PatchCompatibility, SectionChangeDerivation), PatchBundleError> {
+    let Some(kind) = next.known_kind() else {
+        return Ok((
+            PatchCompatibility::ContentOnly,
+            SectionChangeDerivation::UnknownOptionalSectionKind,
+        ));
+    };
+    if next.placement() == ContentPlacement::External {
+        return Ok((
+            kind.patch_default_compatibility(),
+            SectionChangeDerivation::ExternalDescriptor,
+        ));
+    }
+    if crate::resource_codec::runtime::runtime_codec_for_section(kind).is_some() {
+        let old = decoded_section(
+            base,
+            next.id(),
+            PatchBundleError::MissingBaseSection(next.id()),
+        )?;
+        let new = decoded_section(
+            target,
+            next.id(),
+            PatchBundleError::MissingSectionPayload(next.id()),
+        )?;
+        let compatibility = migrated_runtime_section_compatibility(kind, &old, &new)
+            .map_err(|error| PatchBundleError::Compatibility {
+                message: error.to_string(),
+            })?
+            .map_or_else(
+                || kind.patch_default_compatibility(),
                 runtime_resource_patch_compatibility,
-            )
-        })
+            );
+        return Ok((compatibility, SectionChangeDerivation::RuntimeCompactCodec));
+    }
+    if let Some(compatibility) = product_catalog_compatibility(kind, base, target, next.id())? {
+        return Ok((
+            compatibility,
+            SectionChangeDerivation::ProductCatalogCompactCodec,
+        ));
+    }
+    if kind == BundleSectionKind::ProgramBytecode {
+        let old = decoded_section(
+            base,
+            next.id(),
+            PatchBundleError::MissingBaseSection(next.id()),
+        )?;
+        let new = decoded_section(
+            target,
+            next.id(),
+            PatchBundleError::MissingSectionPayload(next.id()),
+        )?;
+        return Ok((
+            awbc_executable_compatibility(&old, &new)?,
+            SectionChangeDerivation::AwbcExecutableFingerprint,
+        ));
+    }
+    Ok((
+        kind.patch_default_compatibility(),
+        SectionChangeDerivation::SectionKindDefault,
+    ))
+}
+
+fn operation_default_compatibility(operation: &SectionOperation) -> PatchCompatibility {
+    match operation {
+        SectionOperation::Add(descriptor) => descriptor_default_compatibility(descriptor),
+        SectionOperation::Replace { next, .. } => descriptor_default_compatibility(next),
+        SectionOperation::Remove { .. } => PatchCompatibility::RestartRequired,
+    }
+}
+
+fn descriptor_default_compatibility(descriptor: &SectionDescriptor) -> PatchCompatibility {
+    descriptor.known_kind().map_or(
+        PatchCompatibility::ContentOnly,
+        BundleSectionKind::patch_default_compatibility,
+    )
+}
+
+fn descriptor_default_derivation(descriptor: &SectionDescriptor) -> SectionChangeDerivation {
+    if descriptor.known_kind().is_none() {
+        SectionChangeDerivation::UnknownOptionalSectionKind
+    } else if descriptor.placement() == ContentPlacement::External {
+        SectionChangeDerivation::ExternalDescriptor
+    } else {
+        SectionChangeDerivation::SectionKindDefault
+    }
+}
+
+fn product_catalog_compatibility(
+    kind: BundleSectionKind,
+    base: &BundleView<'_>,
+    target: &BundleView<'_>,
+    id: SectionId,
+) -> Result<Option<PatchCompatibility>, PatchBundleError> {
+    let old = decoded_section(base, id, PatchBundleError::MissingBaseSection(id))?;
+    let new = decoded_section(target, id, PatchBundleError::MissingSectionPayload(id))?;
+    migrated_product_catalog_section_compatibility(kind, &old, &new).map_err(|error| {
+        PatchBundleError::Compatibility {
+            message: error.to_string(),
+        }
+    })
+}
+
+fn decoded_section(
+    view: &BundleView<'_>,
+    id: SectionId,
+    missing: PatchBundleError,
+) -> Result<Vec<u8>, PatchBundleError> {
+    view.decoded_section(id)
+        .map_err(PatchBundleError::Container)?
+        .ok_or(missing)
 }
 
 const fn runtime_resource_patch_compatibility(
@@ -786,49 +1287,194 @@ const fn runtime_resource_patch_compatibility(
     }
 }
 
-fn max_patch_compatibility(
-    left: PatchCompatibility,
-    right: PatchCompatibility,
+fn compatibility_for_fingerprints(
+    fingerprints: &[SectionCompatibilityFingerprint],
 ) -> PatchCompatibility {
-    if left.rank() >= right.rank() {
-        left
+    fingerprints
+        .iter()
+        .map(|fingerprint| fingerprint.compatibility)
+        .fold(PatchCompatibility::ContentOnly, PatchCompatibility::max)
+}
+
+fn descriptor_fingerprint(descriptor: &SectionDescriptor) -> BundleDigest {
+    let mut bytes = Vec::with_capacity(16 + 4 + 4 + 1 + 1 + 1 + 8 + 32 + 1);
+    bytes.extend_from_slice(&descriptor.id().as_bytes());
+    bytes.extend_from_slice(&descriptor.kind_code().encoded().to_le_bytes());
+    bytes.extend_from_slice(&descriptor.schema_version().to_le_bytes());
+    bytes.push(descriptor.residency().encoded());
+    bytes.push(descriptor.placement().encoded());
+    bytes.push(descriptor.compression().encoded());
+    bytes.extend_from_slice(&descriptor.decoded_size().to_le_bytes());
+    bytes.extend_from_slice(&descriptor.content_digest().as_bytes());
+    bytes.push(u8::from(descriptor.required()));
+    BundleDigest::of(&bytes)
+}
+
+fn awbc_executable_compatibility(
+    old: &[u8],
+    new: &[u8],
+) -> Result<PatchCompatibility, PatchBundleError> {
+    let old = decode_awbc_program(old)?;
+    let new = decode_awbc_program(new)?;
+    if old.header.abi_version != new.header.abi_version {
+        return Ok(PatchCompatibility::RestartRequired);
+    }
+    let old_functions = awbc_function_fingerprints(&old)?;
+    let new_functions = awbc_function_fingerprints(&new)?;
+    if old_functions
+        .keys()
+        .any(|id| !new_functions.contains_key(id))
+    {
+        return Ok(PatchCompatibility::RestartRequired);
+    }
+    let changed_existing_interface = old_functions.iter().any(|(id, old)| {
+        new_functions
+            .get(id)
+            .is_some_and(|new| old.interface != new.interface)
+    });
+    if changed_existing_interface {
+        return Ok(PatchCompatibility::CodeGenerational);
+    }
+    if old_functions.iter().any(|(id, old)| {
+        new_functions
+            .get(id)
+            .is_some_and(|new| old.body != new.body)
+    }) || old_functions.len() != new_functions.len()
+    {
+        Ok(PatchCompatibility::CodeCompatible)
     } else {
-        right
+        Ok(PatchCompatibility::ContentOnly)
     }
 }
 
-fn operation_compatibility(operation: &SectionOperation) -> PatchCompatibility {
-    match operation {
-        SectionOperation::Add(descriptor) => section_compatibility(descriptor.known_kind()),
-        SectionOperation::Replace { next, .. } => section_compatibility(next.known_kind()),
-        SectionOperation::Remove { .. } => PatchCompatibility::RestartRequired,
-    }
-}
-
-fn section_compatibility(kind: Option<BundleSectionKind>) -> PatchCompatibility {
-    match kind {
-        None
-        | Some(
-            BundleSectionKind::AdapterRequirements
-            | BundleSectionKind::RuntimeTypes
-            | BundleSectionKind::Entrypoints
-            | BundleSectionKind::PatchPlan,
-        ) => PatchCompatibility::RestartRequired,
-        Some(BundleSectionKind::ProgramBytecode | BundleSectionKind::HotSwapMap) => {
-            PatchCompatibility::CodeGenerational
+fn decode_awbc_program(bytes: &[u8]) -> Result<AwbcProgram, PatchBundleError> {
+    AwbcProgram::decode_canonical(bytes, AwbcDecodeBudget::default()).map_err(|error| {
+        PatchBundleError::Compatibility {
+            message: error.to_string(),
         }
-        Some(
-            BundleSectionKind::ContentCatalog
-            | BundleSectionKind::DisplayCatalog
-            | BundleSectionKind::AudioGraph
-            | BundleSectionKind::AssetCatalog
-            | BundleSectionKind::AssetBlob
-            | BundleSectionKind::LocaleCatalog
-            | BundleSectionKind::SourceMap
-            | BundleSectionKind::DebugSymbols
-            | BundleSectionKind::NormalizedSource,
-        ) => PatchCompatibility::ContentOnly,
-    }
+    })
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AwbcFunctionFingerprint {
+    interface: BundleDigest,
+    body: BundleDigest,
+}
+
+fn awbc_function_fingerprints(
+    program: &AwbcProgram,
+) -> Result<BTreeMap<String, AwbcFunctionFingerprint>, PatchBundleError> {
+    program
+        .functions
+        .iter()
+        .enumerate()
+        .map(|(index, function)| {
+            let id = function
+                .public_id
+                .and_then(|id| program.strings.get(id.index()).cloned())
+                .unwrap_or_else(|| format!("function.{index}"));
+            let signature = program.signatures.get(function.signature.index());
+            let frame_layout = program.frame_layouts.get(function.frame_layout.index());
+            let blocks = awbc_function_blocks(program, function)?;
+            Ok((
+                id,
+                AwbcFunctionFingerprint {
+                    interface: serde_digest(&AwbcFunctionInterfaceFingerprint {
+                        public_id: function
+                            .public_id
+                            .and_then(|id| program.strings.get(id.index())),
+                        kind: function.kind,
+                        signature,
+                        frame_layout,
+                        flags: function.flags,
+                    })?,
+                    body: serde_digest(&AwbcFunctionBodyFingerprint {
+                        function,
+                        signature,
+                        frame_layout,
+                        blocks,
+                    })?,
+                },
+            ))
+        })
+        .collect()
+}
+
+#[derive(Serialize)]
+struct AwbcFunctionInterfaceFingerprint<'a> {
+    public_id: Option<&'a String>,
+    kind: arcweft_core::awbc::schema::AwbcFunctionKind,
+    signature: Option<&'a AwbcSignature>,
+    frame_layout: Option<&'a AwbcFrameLayout>,
+    flags: arcweft_core::awbc::schema::AwbcFunctionFlags,
+}
+
+#[derive(Serialize)]
+struct AwbcFunctionBodyFingerprint<'a> {
+    function: &'a AwbcFunction,
+    signature: Option<&'a AwbcSignature>,
+    frame_layout: Option<&'a AwbcFrameLayout>,
+    blocks: Vec<AwbcFunctionBlockFingerprint<'a>>,
+}
+
+#[derive(Serialize)]
+struct AwbcFunctionBlockFingerprint<'a> {
+    block: &'a AwbcBlock,
+    instructions: &'a [AwbcInstruction],
+}
+
+fn awbc_function_blocks<'a>(
+    program: &'a AwbcProgram,
+    function: &AwbcFunction,
+) -> Result<Vec<AwbcFunctionBlockFingerprint<'a>>, PatchBundleError> {
+    awbc_table_range_slice(&program.blocks, function.blocks, "blocks")?
+        .iter()
+        .map(|block| {
+            Ok(AwbcFunctionBlockFingerprint {
+                block,
+                instructions: awbc_table_range_slice(
+                    &program.instructions,
+                    block.instructions,
+                    "instructions",
+                )?,
+            })
+        })
+        .collect()
+}
+
+fn awbc_table_range_slice<'a, T>(
+    table: &'a [T],
+    range: AwbcTableRange,
+    table_name: &'static str,
+) -> Result<&'a [T], PatchBundleError> {
+    let start = usize::try_from(range.start).map_err(|_| PatchBundleError::Compatibility {
+        message: format!("AWBC {table_name} range start does not fit usize"),
+    })?;
+    let end =
+        usize::try_from(
+            range
+                .checked_end()
+                .ok_or_else(|| PatchBundleError::Compatibility {
+                    message: format!("AWBC {table_name} range overflows u32"),
+                })?,
+        )
+        .map_err(|_| PatchBundleError::Compatibility {
+            message: format!("AWBC {table_name} range end does not fit usize"),
+        })?;
+    table
+        .get(start..end)
+        .ok_or_else(|| PatchBundleError::Compatibility {
+            message: format!(
+                "AWBC {table_name} range {start}..{end} exceeds table length {}",
+                table.len()
+            ),
+        })
+}
+
+fn serde_digest(value: &impl Serialize) -> Result<BundleDigest, PatchBundleError> {
+    serde_json::to_vec(value)
+        .map(|bytes| BundleDigest::of(&bytes))
+        .map_err(PatchBundleError::EncodePayload)
 }
 
 fn logical_descriptor_matches(left: &SectionDescriptor, right: &SectionDescriptor) -> bool {
@@ -858,7 +1504,7 @@ fn patch_payload_carrier_matches(carrier: &SectionDescriptor, logical: &SectionD
 fn patch_plan_section_id() -> SectionId {
     let mut id = [0_u8; 16];
     id[..4].copy_from_slice(&BundleSectionKind::PatchPlan.encoded().to_le_bytes());
-    id[4..].copy_from_slice(&BundleDigest::of(b"arcweft-awfb-v1-patch-plan").as_bytes()[..12]);
+    id[4..].copy_from_slice(&BundleDigest::of(b"arcweft-awfb-v2-patch-plan").as_bytes()[..12]);
     SectionId::from_bytes(id)
 }
 
@@ -867,519 +1513,4 @@ fn section_index(sections: &[SectionDescriptor]) -> BTreeMap<SectionId, &Section
         .iter()
         .map(|section| (section.id(), section))
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::container::{
-        BundleKind, BundleSectionKind, BundleView, Compression, ContentResidency, ReadBudget,
-        SectionInput, encode_bundle,
-    };
-    use crate::release::{
-        RELEASE_SIGNATURE_ALGORITHM_ED25519_V1, ReleaseSignatureEnvelope, ReleaseTrustedPublicKey,
-    };
-    use crate::resource_codec::runtime::AdapterRequirementsSection;
-    use ed25519_dalek::Signer as _;
-
-    fn content_pack(asset_blob: &'static [u8], include_catalog: bool) -> Vec<u8> {
-        let mut sections = vec![SectionInput::embedded(
-            SectionId::from_bytes([1; 16]),
-            BundleSectionKind::AssetBlob,
-            1,
-            ContentResidency::OnDemand,
-            false,
-            asset_blob,
-        )];
-        if include_catalog {
-            sections.push(SectionInput::embedded(
-                SectionId::from_bytes([2; 16]),
-                BundleSectionKind::ContentCatalog,
-                1,
-                ContentResidency::Startup,
-                false,
-                b"catalog",
-            ));
-        }
-        encode_bundle(BundleKind::ContentPack, br#"{"kind":"content"}"#, sections)
-            .expect("content pack encodes")
-    }
-
-    fn content_patch_pack(asset_blob: &'static [u8]) -> Vec<u8> {
-        encode_bundle(
-            BundleKind::ContentPack,
-            br#"{"kind":"content"}"#,
-            vec![SectionInput::embedded(
-                SectionId::from_bytes([1; 16]),
-                BundleSectionKind::AssetBlob,
-                1,
-                ContentResidency::OnDemand,
-                false,
-                asset_blob,
-            )],
-        )
-        .expect("content pack encodes")
-    }
-
-    fn external_content_pack(asset_blob: &'static [u8]) -> Vec<u8> {
-        encode_bundle(
-            BundleKind::ContentPack,
-            br#"{"kind":"content"}"#,
-            vec![SectionInput::external_ref(
-                SectionId::from_bytes([1; 16]),
-                BundleSectionKind::AssetBlob,
-                1,
-                ContentResidency::OnDemand,
-                false,
-                u64::try_from(asset_blob.len()).expect("fixture length fits in u64"),
-                BundleDigest::of(asset_blob),
-            )],
-        )
-        .expect("external content pack encodes")
-    }
-
-    fn zstd_content_pack(asset_blob: &'static [u8]) -> Vec<u8> {
-        encode_bundle(
-            BundleKind::ContentPack,
-            br#"{"kind":"content"}"#,
-            vec![
-                SectionInput::embedded_zstd(
-                    SectionId::from_bytes([1; 16]),
-                    BundleSectionKind::AssetBlob,
-                    1,
-                    ContentResidency::OnDemand,
-                    false,
-                    asset_blob,
-                )
-                .expect("zstd section encodes"),
-            ],
-        )
-        .expect("zstd content pack encodes")
-    }
-
-    fn program_patch_pack(bytecode: &'static [u8], adapter_requirements: &'static [u8]) -> Vec<u8> {
-        let adapter_requirements = AdapterRequirementsSection::new(
-            None,
-            std::iter::empty(),
-            [String::from_utf8_lossy(adapter_requirements).into_owned()],
-            std::iter::empty(),
-        )
-        .encode_canonical_section()
-        .expect("adapter requirements encode");
-        encode_bundle(
-            BundleKind::Program,
-            br#"{"kind":"program"}"#,
-            vec![
-                SectionInput::embedded(
-                    SectionId::from_bytes([1; 16]),
-                    BundleSectionKind::ProgramBytecode,
-                    1,
-                    ContentResidency::Startup,
-                    true,
-                    bytecode,
-                ),
-                SectionInput::embedded(
-                    SectionId::from_bytes([2; 16]),
-                    BundleSectionKind::RuntimeTypes,
-                    1,
-                    ContentResidency::Startup,
-                    true,
-                    b"runtime-types",
-                ),
-                SectionInput::embedded(
-                    SectionId::from_bytes([3; 16]),
-                    BundleSectionKind::Entrypoints,
-                    1,
-                    ContentResidency::Startup,
-                    true,
-                    b"entrypoints",
-                ),
-                SectionInput::embedded(
-                    SectionId::from_bytes([4; 16]),
-                    BundleSectionKind::AdapterRequirements,
-                    1,
-                    ContentResidency::Startup,
-                    true,
-                    adapter_requirements,
-                ),
-                SectionInput::embedded(
-                    SectionId::from_bytes([5; 16]),
-                    BundleSectionKind::ContentCatalog,
-                    1,
-                    ContentResidency::Startup,
-                    true,
-                    b"content-catalog",
-                ),
-            ],
-        )
-        .expect("program bundle encodes")
-    }
-
-    #[test]
-    fn patch_diff_is_stable_and_detects_add_replace_remove() {
-        let base = content_pack(b"old", true);
-        let target = content_pack(b"new", false);
-        let base = BundleView::parse(&base, ReadBudget::default()).expect("base parses");
-        let target = BundleView::parse(&target, ReadBudget::default()).expect("target parses");
-
-        let plan = BundlePatchPlan::diff(&base, &target);
-
-        assert_eq!(plan.operations.len(), 2);
-        assert!(matches!(
-            plan.operations[0],
-            SectionOperation::Replace { .. }
-        ));
-        assert!(matches!(
-            plan.operations[1],
-            SectionOperation::Remove { .. }
-        ));
-        plan.validate_base(base.content_root())
-            .expect("active base matches");
-        assert_eq!(
-            plan.validate_base(target.content_root()),
-            Err(PatchValidationError::WrongBase {
-                active: target.content_root(),
-                expected: base.content_root(),
-            })
-        );
-    }
-
-    #[test]
-    fn patch_bundle_requires_patch_plan_section() {
-        let error = encode_bundle(BundleKind::Patch, br#"{"kind":"patch"}"#, Vec::new())
-            .expect_err("patch bundles require a patch plan");
-        assert_eq!(
-            error,
-            crate::container::ContainerError::MissingRequiredSection(BundleSectionKind::PatchPlan)
-        );
-    }
-
-    #[test]
-    fn patch_bundle_round_trips_patch_plan_section() {
-        let base = content_pack(b"old", true);
-        let target = content_pack(b"new", false);
-        let base = BundleView::parse(&base, ReadBudget::default()).expect("base parses");
-        let target = BundleView::parse(&target, ReadBudget::default()).expect("target parses");
-        let artifact = BundlePatchArtifact::from_views(&base, &target).expect("patch artifact");
-
-        let bytes = encode_patch_bundle(&artifact).expect("patch encodes");
-        let decoded = decode_patch_bundle(&bytes).expect("patch decodes");
-
-        assert_eq!(decoded, artifact);
-        decoded
-            .plan
-            .validate_base(base.content_root())
-            .expect("patch base matches");
-    }
-
-    #[test]
-    fn patch_awfb_uses_asset_blob_carriers_for_changed_payloads() {
-        let base = program_patch_pack(b"bytecode-old", b"adapter");
-        let target = program_patch_pack(b"bytecode-new", b"adapter");
-        let base = BundleView::parse(&base, ReadBudget::default()).expect("base parses");
-        let target = BundleView::parse(&target, ReadBudget::default()).expect("target parses");
-        let artifact = BundlePatchArtifact::from_views(&base, &target).expect("patch artifact");
-
-        let bytes = encode_patch_bundle(&artifact).expect("patch encodes");
-        let view = BundleView::parse(&bytes, ReadBudget::default()).expect("patch AWFB parses");
-        let payload_sections = view
-            .sections()
-            .iter()
-            .filter(|section| section.kind() != BundleSectionKind::PatchPlan)
-            .collect::<Vec<_>>();
-        let decoded = decode_patch_bundle(&bytes).expect("patch decodes");
-
-        assert_eq!(payload_sections.len(), 1);
-        assert_eq!(payload_sections[0].kind(), BundleSectionKind::AssetBlob);
-        assert_eq!(
-            decoded.changed_sections[0].descriptor.kind(),
-            BundleSectionKind::ProgramBytecode
-        );
-        assert_eq!(decoded, artifact);
-    }
-
-    #[test]
-    fn patch_manifest_records_conservative_content_only_compatibility() {
-        let base = content_patch_pack(b"old");
-        let target = content_patch_pack(b"new");
-        let base = BundleView::parse(&base, ReadBudget::default()).expect("base parses");
-        let target = BundleView::parse(&target, ReadBudget::default()).expect("target parses");
-        let artifact = BundlePatchArtifact::from_views(&base, &target).expect("patch artifact");
-
-        assert_eq!(
-            artifact.manifest.compatibility,
-            PatchCompatibility::ContentOnly
-        );
-        assert_eq!(
-            PatchCompatibility::conservative_for_plan(&artifact.plan).label(),
-            "content-only"
-        );
-    }
-
-    #[test]
-    fn patch_manifest_records_conservative_code_generational_compatibility() {
-        let base = program_patch_pack(b"bytecode-old", b"adapter");
-        let target = program_patch_pack(b"bytecode-new", b"adapter");
-        let base = BundleView::parse(&base, ReadBudget::default()).expect("base parses");
-        let target = BundleView::parse(&target, ReadBudget::default()).expect("target parses");
-        let artifact = BundlePatchArtifact::from_views(&base, &target).expect("patch artifact");
-
-        assert_eq!(
-            artifact.manifest.compatibility,
-            PatchCompatibility::CodeGenerational
-        );
-        assert!(artifact.manifest.compatibility.keeps_old_generation());
-    }
-
-    #[test]
-    fn patch_manifest_records_conservative_restart_required_compatibility() {
-        let base = program_patch_pack(b"bytecode", b"adapter-old");
-        let target = program_patch_pack(b"bytecode", b"adapter-new");
-        let base = BundleView::parse(&base, ReadBudget::default()).expect("base parses");
-        let target = BundleView::parse(&target, ReadBudget::default()).expect("target parses");
-        let artifact = BundlePatchArtifact::from_views(&base, &target).expect("patch artifact");
-
-        assert_eq!(
-            artifact.manifest.compatibility,
-            PatchCompatibility::RestartRequired
-        );
-        assert!(!artifact.manifest.compatibility.can_apply_live());
-    }
-
-    #[test]
-    fn patch_bundle_rejects_root_mismatch_between_manifest_and_plan() {
-        let base = content_pack(b"old", true);
-        let target = content_pack(b"new", false);
-        let base = BundleView::parse(&base, ReadBudget::default()).expect("base parses");
-        let target = BundleView::parse(&target, ReadBudget::default()).expect("target parses");
-        let mut artifact = BundlePatchArtifact::new(BundlePatchPlan::diff(&base, &target));
-        artifact.manifest.target_content_root = base.content_root();
-
-        let error = encode_patch_bundle(&artifact).expect_err("mismatched roots reject");
-
-        assert!(matches!(error, PatchBundleError::ContentRootMismatch));
-    }
-
-    #[test]
-    fn patch_bundle_requires_payload_for_embedded_add_or_replace() {
-        let base = content_pack(b"old", true);
-        let target = content_pack(b"new", false);
-        let base = BundleView::parse(&base, ReadBudget::default()).expect("base parses");
-        let target = BundleView::parse(&target, ReadBudget::default()).expect("target parses");
-        let artifact = BundlePatchArtifact::new(BundlePatchPlan::diff(&base, &target));
-
-        let error = encode_patch_bundle(&artifact).expect_err("missing payload rejects");
-
-        assert!(matches!(error, PatchBundleError::MissingSectionPayload(_)));
-    }
-
-    #[test]
-    fn patch_bundle_rejects_payload_digest_mismatch() {
-        let base = content_pack(b"old", true);
-        let target = content_pack(b"new", false);
-        let base = BundleView::parse(&base, ReadBudget::default()).expect("base parses");
-        let target = BundleView::parse(&target, ReadBudget::default()).expect("target parses");
-        let mut artifact = BundlePatchArtifact::from_views(&base, &target).expect("patch artifact");
-        artifact.changed_sections[0].bytes = b"corrupt".to_vec();
-
-        let error = encode_patch_bundle(&artifact).expect_err("digest mismatch rejects");
-
-        assert!(matches!(
-            error,
-            PatchBundleError::PayloadDigestMismatch { .. }
-        ));
-    }
-
-    #[test]
-    fn patch_materializes_target_awfb_from_embedded_section_payloads() {
-        let base_bytes = content_pack(b"old", true);
-        let target_bytes = content_pack(b"new", false);
-        let base = BundleView::parse(&base_bytes, ReadBudget::default()).expect("base parses");
-        let target =
-            BundleView::parse(&target_bytes, ReadBudget::default()).expect("target parses");
-        let artifact = BundlePatchArtifact::from_views(&base, &target).expect("patch artifact");
-
-        let patched = apply_patch_bundle(&base_bytes, &artifact).expect("patch applies");
-        let patched = BundleView::parse(&patched, ReadBudget::default()).expect("patched parses");
-
-        assert_eq!(patched.kind(), target.kind());
-        assert_eq!(patched.manifest(), target.manifest());
-        assert_eq!(patched.content_root(), target.content_root());
-        assert_eq!(patched.sections().len(), target.sections().len());
-    }
-
-    #[test]
-    fn patch_materializes_target_awfb_from_encoded_patch_bundle() {
-        let base_bytes = content_pack(b"old", true);
-        let target_bytes = content_pack(b"new", false);
-        let base = BundleView::parse(&base_bytes, ReadBudget::default()).expect("base parses");
-        let target =
-            BundleView::parse(&target_bytes, ReadBudget::default()).expect("target parses");
-        let artifact = BundlePatchArtifact::from_views(&base, &target).expect("patch artifact");
-        let patch_bytes = encode_patch_bundle(&artifact).expect("patch encodes");
-
-        let patched =
-            apply_patch_bundle_bytes(&base_bytes, &patch_bytes).expect("encoded patch applies");
-        let patched = BundleView::parse(&patched, ReadBudget::default()).expect("patched parses");
-
-        assert_eq!(patched.content_root(), target.content_root());
-    }
-
-    #[test]
-    fn signed_patch_bundle_decodes_and_applies_with_signature_policy() {
-        let base_bytes = content_pack(b"old", true);
-        let target_bytes = content_pack(b"new", false);
-        let base = BundleView::parse(&base_bytes, ReadBudget::default()).expect("base parses");
-        let target =
-            BundleView::parse(&target_bytes, ReadBudget::default()).expect("target parses");
-        let artifact = BundlePatchArtifact::from_views(&base, &target).expect("patch artifact");
-        let patch_bytes = encode_patch_bundle(&artifact).expect("patch encodes");
-        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[11; 32]);
-        let policy = ReleaseSignaturePolicy::require_trusted_public_keys(
-            Some(64),
-            [ReleaseTrustedPublicKey::ed25519_v1(
-                "patch-key-main",
-                encode_hex(&signing_key.verifying_key().to_bytes()),
-            )
-            .expect("trusted public key")],
-        )
-        .expect("signature policy");
-        let signed_patch = sign_patch_bundle(patch_bytes.clone(), "patch-key-main", &signing_key);
-
-        let decoded = decode_patch_bundle_with_signature_policy(&signed_patch, &policy)
-            .expect("signed patch decodes");
-        let patched = apply_signed_patch_bundle_bytes(&base_bytes, &signed_patch, &policy)
-            .expect("signed patch applies");
-        let patched = BundleView::parse(&patched, ReadBudget::default()).expect("patched parses");
-
-        assert_eq!(decoded, artifact);
-        assert_eq!(patched.content_root(), target.content_root());
-        assert!(matches!(
-            decode_patch_bundle_with_signature_policy(&patch_bytes, &policy),
-            Err(PatchBundleError::SignaturePolicy(
-                ReleaseManifestError::MissingAwfbSignature { .. }
-            ))
-        ));
-    }
-
-    #[test]
-    fn patch_materializes_target_awfb_preserving_zstd_section_compression() {
-        let base_bytes = zstd_content_pack(b"old compressed asset bytes");
-        let target_bytes = zstd_content_pack(b"new compressed asset bytes");
-        let base = BundleView::parse(&base_bytes, ReadBudget::default()).expect("base parses");
-        let target =
-            BundleView::parse(&target_bytes, ReadBudget::default()).expect("target parses");
-        let artifact = BundlePatchArtifact::from_views(&base, &target).expect("patch artifact");
-        let patch_bytes = encode_patch_bundle(&artifact).expect("patch encodes");
-
-        let patched =
-            apply_patch_bundle_bytes(&base_bytes, &patch_bytes).expect("encoded patch applies");
-        let patched = BundleView::parse(&patched, ReadBudget::default()).expect("patched parses");
-        let patched_section = patched
-            .sections()
-            .iter()
-            .find(|section| section.kind() == BundleSectionKind::AssetBlob)
-            .expect("asset blob exists");
-
-        assert_eq!(patched.content_root(), target.content_root());
-        assert_eq!(patched_section.compression(), Compression::Zstd);
-    }
-
-    #[test]
-    fn patch_materializes_external_section_descriptor_changes_without_payloads() {
-        let base_bytes = external_content_pack(b"old external bytes");
-        let target_bytes = external_content_pack(b"new external bytes");
-        let base = BundleView::parse(&base_bytes, ReadBudget::default()).expect("base parses");
-        let target =
-            BundleView::parse(&target_bytes, ReadBudget::default()).expect("target parses");
-        let artifact = BundlePatchArtifact::from_views(&base, &target).expect("patch artifact");
-
-        assert!(artifact.changed_sections.is_empty());
-
-        let patched = apply_patch_bundle(&base_bytes, &artifact).expect("patch applies");
-        let patched = BundleView::parse(&patched, ReadBudget::default()).expect("patched parses");
-        let patched_section = patched
-            .sections()
-            .iter()
-            .find(|section| section.kind() == BundleSectionKind::AssetBlob)
-            .expect("external asset descriptor exists");
-
-        assert_eq!(patched.content_root(), target.content_root());
-        assert_eq!(patched_section.placement(), ContentPlacement::External);
-        assert_eq!(
-            patched_section.content_digest(),
-            BundleDigest::of(b"new external bytes")
-        );
-        assert!(
-            patched
-                .embedded_section(patched_section.id())
-                .expect("slice")
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn patch_materialization_rejects_wrong_base_root() {
-        let base_bytes = content_pack(b"old", true);
-        let other_base_bytes = content_pack(b"other", true);
-        let target_bytes = content_pack(b"new", false);
-        let other_base =
-            BundleView::parse(&other_base_bytes, ReadBudget::default()).expect("other base parses");
-        let target =
-            BundleView::parse(&target_bytes, ReadBudget::default()).expect("target parses");
-        let artifact =
-            BundlePatchArtifact::from_views(&other_base, &target).expect("patch artifact");
-
-        let error = apply_patch_bundle(&base_bytes, &artifact).expect_err("wrong base rejects");
-
-        assert!(matches!(error, PatchBundleError::WrongBase { .. }));
-    }
-
-    fn sign_patch_bundle(
-        patch_bytes: Vec<u8>,
-        signer_id: &str,
-        signing_key: &ed25519_dalek::SigningKey,
-    ) -> Vec<u8> {
-        let view = BundleView::parse(&patch_bytes, ReadBudget::default()).expect("patch parses");
-        let signing_digest = view.signing_digest().expect("signing digest");
-        let mut envelope = ReleaseSignatureEnvelope::new(
-            signer_id,
-            RELEASE_SIGNATURE_ALGORITHM_ED25519_V1,
-            view.content_root(),
-            view.kind(),
-            signing_digest,
-            encode_hex(&[0; 64]),
-        )
-        .expect("signature envelope");
-        let signature = signing_key.sign(&envelope.signing_message());
-        envelope.signature = encode_hex(&signature.to_bytes());
-        append_signature_block(
-            patch_bytes,
-            &envelope.to_json_bytes().expect("envelope encodes"),
-        )
-    }
-
-    fn append_signature_block(mut bytes: Vec<u8>, signature: &[u8]) -> Vec<u8> {
-        let signature_offset = bytes.len();
-        bytes.extend_from_slice(signature);
-        write_u64(&mut bytes, 56, signature_offset as u64);
-        write_u64(&mut bytes, 64, signature.len() as u64);
-        let file_len = bytes.len() as u64;
-        write_u64(&mut bytes, 72, file_len);
-        bytes
-    }
-
-    fn write_u64(bytes: &mut [u8], offset: usize, value: u64) {
-        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-    }
-
-    fn encode_hex(bytes: &[u8]) -> String {
-        bytes
-            .iter()
-            .fold(String::with_capacity(bytes.len() * 2), |mut hex, byte| {
-                use std::fmt::Write as _;
-                write!(&mut hex, "{byte:02x}").expect("writing to String cannot fail");
-                hex
-            })
-    }
 }

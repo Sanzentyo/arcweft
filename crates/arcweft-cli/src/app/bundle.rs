@@ -530,10 +530,11 @@ fn run_patched_bundle_with_native_adapters(
         );
         ExitCode::FAILURE
     })?;
-    let target_bytes = apply_patch_bundle_bytes(&base_bytes, &patch_bytes).map_err(|error| {
+    let materialized = apply_patch_bundle_bytes(&base_bytes, &patch_bytes).map_err(|error| {
         eprintln!("error: failed to apply bundle patch: {error}");
         ExitCode::FAILURE
     })?;
+    let target_bytes = materialized.bytes;
     let target_bundle = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &target_bytes)
         .map_err(|error| {
             eprintln!("error: failed to decode patched target bundle: {error}");
@@ -1990,7 +1991,7 @@ image @image.sample.pulse {
         )
         .expect("patched bundle runs");
 
-        assert_eq!(report.source, "base.arcw");
+        assert_eq!(report.source, "target.arcw");
         assert_eq!(report.final_status, "done return target-done");
 
         let _ = fs::remove_file(base_path);

@@ -178,36 +178,27 @@ impl NativePatchEndpoint {
             });
         }
 
-        let target_awfb_bytes = apply_patch_bundle(&self.base_awfb_bytes, &artifact)
+        let materialized = apply_patch_bundle(&self.base_awfb_bytes, &artifact)
             .map_err(NativePatchEndpointError::MaterializePatch)?;
-        if patch_can_apply_live(readiness.compatibility) {
-            match self
-                .session
-                .hot_swap_patch_bytes(&self.base_awfb_bytes, patch_awfb_bytes)
-            {
-                Ok(report) => {
-                    self.base_awfb_bytes = target_awfb_bytes;
-                    return Ok(NativePatchOutcome::Applied {
-                        report,
-                        content_root: readiness.target_content_root,
-                    });
-                }
-                Err(BundleHotSwapError::RestartRequired { .. }) => {
-                    return self.restart_from_patch_target(
-                        target_awfb_bytes,
-                        readiness.compatibility,
-                        readiness.target_content_root,
-                    );
-                }
-                Err(error) => return Err(NativePatchEndpointError::LiveApply(error)),
+        let target_awfb_bytes = materialized.bytes;
+        match self
+            .session
+            .hot_swap_patch_bytes(&self.base_awfb_bytes, patch_awfb_bytes)
+        {
+            Ok(report) => {
+                self.base_awfb_bytes = target_awfb_bytes;
+                Ok(NativePatchOutcome::Applied {
+                    report,
+                    content_root: readiness.target_content_root,
+                })
             }
+            Err(BundleHotSwapError::RestartRequired { .. }) => self.restart_from_patch_target(
+                target_awfb_bytes,
+                readiness.compatibility,
+                readiness.target_content_root,
+            ),
+            Err(error) => Err(NativePatchEndpointError::LiveApply(error)),
         }
-
-        self.restart_from_patch_target(
-            target_awfb_bytes,
-            readiness.compatibility,
-            readiness.target_content_root,
-        )
     }
 
     /// Applies a watch-transport sidecar emitted by `arcw run --watch`.
@@ -269,13 +260,6 @@ impl NativePatchEndpoint {
             content_root,
         })
     }
-}
-
-const fn patch_can_apply_live(compatibility: PatchCompatibility) -> bool {
-    matches!(
-        compatibility,
-        PatchCompatibility::ContentOnly | PatchCompatibility::CodeCompatible
-    )
 }
 
 fn validate_transport_envelope_header(
@@ -457,7 +441,11 @@ mod tests {
         let new = fixture_bundle_with("Dialogue text", true);
         let old_bytes = awfb_bytes(&old);
         let new_bytes = awfb_bytes(&new);
-        let patch_bytes = patch_bytes(&old_bytes, &new_bytes);
+        let patch_bytes = patch_bytes_with_compatibility(
+            &old_bytes,
+            &new_bytes,
+            PatchCompatibility::CodeGenerational,
+        );
         let new_root = awfb_root(&new_bytes);
         let mut endpoint =
             NativePatchEndpoint::from_awfb_bytes(old_bytes, BundleSessionOptions::default())
@@ -647,6 +635,22 @@ mod tests {
         let old_view = BundleView::parse(old, ReadBudget::default()).expect("old parses");
         let new_view = BundleView::parse(new, ReadBudget::default()).expect("new parses");
         let artifact = BundlePatchArtifact::from_views(&old_view, &new_view).expect("patch builds");
+        encode_patch_bundle(&artifact).expect("patch encodes")
+    }
+
+    fn patch_bytes_with_compatibility(
+        old: &[u8],
+        new: &[u8],
+        compatibility: PatchCompatibility,
+    ) -> Vec<u8> {
+        let old_view = BundleView::parse(old, ReadBudget::default()).expect("old parses");
+        let new_view = BundleView::parse(new, ReadBudget::default()).expect("new parses");
+        let mut artifact =
+            BundlePatchArtifact::from_views(&old_view, &new_view).expect("patch builds");
+        for fingerprint in &mut artifact.manifest.compatibility_fingerprints {
+            fingerprint.compatibility = compatibility;
+        }
+        artifact.manifest.compatibility = compatibility;
         encode_patch_bundle(&artifact).expect("patch encodes")
     }
 

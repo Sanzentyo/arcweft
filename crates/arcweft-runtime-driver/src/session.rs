@@ -469,6 +469,67 @@ impl BundleSession {
         })
     }
 
+    fn hot_swap_bundle_with_declared_compatibility(
+        &mut self,
+        bundle: &ArcweftBundle,
+        active_container_content_root: Option<BundleDigest>,
+        compatibility: SwapCompatibility,
+    ) -> Result<BundleHotSwapReport, BundleHotSwapError> {
+        let next_id = GenerationId(self.next_generation_id);
+        let next_generation = Arc::new(ProgramGeneration::from_bundle(next_id, bundle)?);
+        if matches!(
+            compatibility,
+            SwapCompatibility::RestartRequired | SwapCompatibility::CodeGenerational
+        ) {
+            return Err(BundleHotSwapError::RestartRequired { compatibility });
+        }
+
+        let runtime = (compatibility == SwapCompatibility::CodeCompatible)
+            .then(|| build_session_runtime(bundle, &self.options))
+            .transpose()?;
+
+        self.swap
+            .prepare_with_compatibility(next_generation, compatibility)
+            .map_err(BundleHotSwapError::Prepare)?;
+        self.swap
+            .begin_quiescence()
+            .map_err(BundleHotSwapError::Prepare)?;
+
+        match compatibility {
+            SwapCompatibility::ContentOnly => {
+                self.source_label.clone_from(&bundle.manifest.source_label);
+                self.display = bundle.display.clone();
+                self.image_objects.clone_from(&bundle.image_objects);
+            }
+            SwapCompatibility::CodeCompatible => {
+                let Some(runtime) = runtime else {
+                    return Err(BundleHotSwapError::RestartRequired { compatibility });
+                };
+                self.source_label = runtime.source_label;
+                self.executor = runtime.executor;
+                self.display = runtime.display;
+                self.image_objects = runtime.image_objects;
+                self.pending_input_events.clear();
+                self.presentation = BundlePresentationSnapshot::default();
+            }
+            SwapCompatibility::CodeGenerational | SwapCompatibility::RestartRequired => {
+                unreachable!("restart-required compatibilities returned before prepare")
+            }
+        }
+
+        let committed = self.swap.commit().map_err(BundleHotSwapError::Commit)?;
+        if committed == SwapCompatibility::CodeCompatible {
+            self.runtime_generation_pin = Some(self.swap.pin_active_generation());
+        }
+        self.swap.retire_unused();
+        self.next_generation_id = self.next_generation_id.saturating_add(1);
+        self.active_container_content_root = active_container_content_root;
+        Ok(BundleHotSwapReport {
+            generation: next_id,
+            compatibility: committed,
+        })
+    }
+
     pub fn inspect_hot_swap_patch_bytes(
         &self,
         bytes: &[u8],
@@ -491,11 +552,19 @@ impl BundleSession {
                 compatibility: SwapCompatibility::ContentOnly,
             });
         }
-        if let Some(compatibility) = restart_required_patch_compatibility(readiness.compatibility) {
-            return Err(BundleHotSwapError::RestartRequired { compatibility });
+        let declared_compatibility =
+            SwapCompatibility::from_patch_compatibility(readiness.compatibility);
+        if matches!(
+            declared_compatibility,
+            SwapCompatibility::CodeGenerational | SwapCompatibility::RestartRequired
+        ) {
+            return Err(BundleHotSwapError::RestartRequired {
+                compatibility: declared_compatibility,
+            });
         }
-        let target_bytes = apply_patch_bundle(base_awfb_bytes, &artifact)
+        let materialized = apply_patch_bundle(base_awfb_bytes, &artifact)
             .map_err(BundleHotSwapError::MaterializePatch)?;
+        let target_bytes = materialized.bytes;
         let target_view =
             BundleView::parse(&target_bytes, ReadBudget::default()).map_err(|error| {
                 BundleHotSwapError::DecodePatchTarget {
@@ -507,7 +576,11 @@ impl BundleSession {
             .map_err(|error| BundleHotSwapError::DecodePatchTarget {
                 message: error.to_string(),
             })?;
-        self.hot_swap_bundle_with_container_root(&target_bundle, Some(target_container_root))
+        self.hot_swap_bundle_with_declared_compatibility(
+            &target_bundle,
+            Some(target_container_root),
+            declared_compatibility,
+        )
     }
 
     pub fn inspect_hot_swap_patch_artifact(
@@ -667,16 +740,6 @@ impl BundleSession {
             self.task_generation_pins.remove(&event.sequence);
         }
         self.swap.retire_unused();
-    }
-}
-
-const fn restart_required_patch_compatibility(
-    compatibility: PatchCompatibility,
-) -> Option<SwapCompatibility> {
-    match compatibility {
-        PatchCompatibility::ContentOnly | PatchCompatibility::CodeCompatible => None,
-        PatchCompatibility::CodeGenerational => Some(SwapCompatibility::CodeGenerational),
-        PatchCompatibility::RestartRequired => Some(SwapCompatibility::RestartRequired),
     }
 }
 

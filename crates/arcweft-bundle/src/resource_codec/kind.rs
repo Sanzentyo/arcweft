@@ -144,6 +144,28 @@ impl ProductSectionCodecKind {
         }
     }
 
+    /// Inverse mapping from an AWFB section kind to the compact product resource
+    /// family that owns the section payload, when one exists.
+    pub const fn from_section_kind(kind: BundleSectionKind) -> Option<Self> {
+        match kind {
+            BundleSectionKind::RuntimeTypes => Some(Self::RuntimeTypes),
+            BundleSectionKind::Entrypoints => Some(Self::Entrypoints),
+            BundleSectionKind::AdapterRequirements => Some(Self::AdapterRequirements),
+            BundleSectionKind::ContentCatalog => Some(Self::ContentCatalog),
+            BundleSectionKind::AssetCatalog => Some(Self::AssetCatalog),
+            BundleSectionKind::DisplayCatalog => Some(Self::DisplayCatalog),
+            BundleSectionKind::SourceMap => Some(Self::SourceMap),
+            BundleSectionKind::LocaleCatalog => Some(Self::LocaleText),
+            BundleSectionKind::AudioGraph => Some(Self::AudioGraph),
+            BundleSectionKind::DebugSymbols => Some(Self::DebugSymbols),
+            BundleSectionKind::ProgramBytecode
+            | BundleSectionKind::AssetBlob
+            | BundleSectionKind::NormalizedSource
+            | BundleSectionKind::HotSwapMap
+            | BundleSectionKind::PatchPlan => None,
+        }
+    }
+
     pub const fn migration_status(self) -> ProductResourceMigrationStatus {
         match self {
             Self::RuntimeTypes | Self::Entrypoints | Self::AdapterRequirements => {

@@ -1,6 +1,10 @@
-use arcweft_bundle::container::{BundleDigest, BundleView, ReadBudget, SectionId};
+use arcweft_bundle::container::{
+    ArtifactIdentity, BundleDigest, BundleKind, BundleView, ReadBudget, SectionId,
+};
 use arcweft_bundle::patch::{
-    BundlePatchArtifact, BundlePatchPlan, PatchCompatibility, SectionOperation, encode_patch_bundle,
+    BundlePatchArtifact, BundlePatchManifest, BundlePatchPlan, PATCH_PLAN_SCHEMA_VERSION,
+    PatchCompatibility, PatchMaterializationContract, RuntimeAbiRange, SectionChangeDerivation,
+    SectionChangeOperation, SectionCompatibilityFingerprint, SectionOperation, encode_patch_bundle,
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
@@ -43,6 +47,77 @@ fn awfb_root(bytes: &[u8]) -> BundleDigest {
     BundleView::parse(bytes, ReadBudget::default())
         .expect("fixture AWFB parses")
         .content_root()
+}
+
+fn test_patch_artifact(plan: BundlePatchPlan) -> BundlePatchArtifact {
+    let compatibility_fingerprints = plan
+        .operations
+        .iter()
+        .map(|operation| {
+            let (id, operation_kind, compatibility, derivation) = match operation {
+                SectionOperation::Add(descriptor) => (
+                    descriptor.id(),
+                    SectionChangeOperation::Add,
+                    PatchCompatibility::ContentOnly,
+                    SectionChangeDerivation::SectionKindDefault,
+                ),
+                SectionOperation::Replace { next, .. } => (
+                    next.id(),
+                    SectionChangeOperation::Replace,
+                    PatchCompatibility::ContentOnly,
+                    SectionChangeDerivation::SectionKindDefault,
+                ),
+                SectionOperation::Remove { id, .. } => (
+                    *id,
+                    SectionChangeOperation::Remove,
+                    PatchCompatibility::RestartRequired,
+                    SectionChangeDerivation::RemovalRequiresRestart,
+                ),
+            };
+            SectionCompatibilityFingerprint {
+                id,
+                operation: operation_kind,
+                raw_kind_code: 0,
+                known_kind: None,
+                required: true,
+                compatibility,
+                derivation,
+                base_descriptor_fingerprint: None,
+                target_descriptor_fingerprint: None,
+                base_content_fingerprint: None,
+                target_content_fingerprint: None,
+            }
+        })
+        .collect::<Vec<_>>();
+    let compatibility = compatibility_fingerprints
+        .iter()
+        .map(|fingerprint| fingerprint.compatibility)
+        .fold(PatchCompatibility::ContentOnly, PatchCompatibility::max);
+    BundlePatchArtifact {
+        manifest: BundlePatchManifest {
+            schema_version: PATCH_PLAN_SCHEMA_VERSION,
+            min_reader_schema_version: PATCH_PLAN_SCHEMA_VERSION,
+            runtime_abi: RuntimeAbiRange::CURRENT,
+            base_artifact: ArtifactIdentity::for_current_container(
+                BundleKind::Program,
+                plan.base_content_root,
+                BundleDigest::of(b"test-base-manifest"),
+            ),
+            target_artifact: ArtifactIdentity::for_current_container(
+                BundleKind::Program,
+                plan.target_content_root,
+                BundleDigest::of(b"test-target-manifest"),
+            ),
+            base_content_root: plan.base_content_root,
+            target_content_root: plan.target_content_root,
+            compatibility,
+            materialization: PatchMaterializationContract::default(),
+            compatibility_fingerprints,
+        },
+        plan,
+        target_manifest_bytes: None,
+        changed_sections: Vec::new(),
+    }
 }
 
 fn fixture_bundle_with(
@@ -511,7 +586,7 @@ fn patch_readiness_accepts_noop_patch_for_active_generation() {
     let session = BundleSession::from_awfb_bytes(&bytes, BundleSessionOptions::default())
         .expect("session starts");
     let base = awfb_root(&bytes);
-    let artifact = BundlePatchArtifact::new(BundlePatchPlan {
+    let artifact = test_patch_artifact(BundlePatchPlan {
         base_content_root: base,
         target_content_root: base,
         operations: Vec::new(),
@@ -533,7 +608,7 @@ fn patch_readiness_reports_target_bundle_required_for_section_operations() {
     let session = BundleSession::from_awfb_bytes(&bytes, BundleSessionOptions::default())
         .expect("session starts");
     let base = awfb_root(&bytes);
-    let artifact = BundlePatchArtifact::new(BundlePatchPlan {
+    let artifact = test_patch_artifact(BundlePatchPlan {
         base_content_root: base,
         target_content_root: BundleDigest::of(b"target"),
         operations: vec![SectionOperation::Remove {
@@ -560,7 +635,7 @@ fn patch_readiness_decodes_awfb_patch_bytes() {
     let session = BundleSession::from_awfb_bytes(&bundle_bytes, BundleSessionOptions::default())
         .expect("session starts");
     let base = awfb_root(&bundle_bytes);
-    let artifact = BundlePatchArtifact::new(BundlePatchPlan {
+    let artifact = test_patch_artifact(BundlePatchPlan {
         base_content_root: base,
         target_content_root: base,
         operations: Vec::new(),
@@ -581,7 +656,7 @@ fn patch_readiness_rejects_wrong_active_base() {
     let bytes = awfb_bytes(&bundle);
     let session = BundleSession::from_awfb_bytes(&bytes, BundleSessionOptions::default())
         .expect("session starts");
-    let artifact = BundlePatchArtifact::new(BundlePatchPlan {
+    let artifact = test_patch_artifact(BundlePatchPlan {
         base_content_root: BundleDigest::of(b"other-base"),
         target_content_root: BundleDigest::of(b"target"),
         operations: Vec::new(),
@@ -599,7 +674,7 @@ fn patch_readiness_requires_awfb_backed_session() {
     let bundle = fixture_bundle();
     let session =
         BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
-    let artifact = BundlePatchArtifact::new(BundlePatchPlan {
+    let artifact = test_patch_artifact(BundlePatchPlan {
         base_content_root: BundleDigest::of(b"base"),
         target_content_root: BundleDigest::of(b"target"),
         operations: Vec::new(),
@@ -620,7 +695,7 @@ fn hot_swap_patch_bytes_reports_restart_required_before_materializing_target() {
     let bundle = fixture_bundle();
     let bundle_bytes = awfb_bytes(&bundle);
     let base = awfb_root(&bundle_bytes);
-    let artifact = BundlePatchArtifact::new(BundlePatchPlan {
+    let artifact = test_patch_artifact(BundlePatchPlan {
         base_content_root: base,
         target_content_root: BundleDigest::of(b"target"),
         operations: vec![SectionOperation::Remove {

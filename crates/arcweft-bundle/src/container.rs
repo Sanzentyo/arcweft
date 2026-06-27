@@ -410,6 +410,28 @@ impl BundleSectionKind {
             }
         }
     }
+
+    /// Default patch compatibility for a section kind when no migrated codec can
+    /// derive a more precise semantic fingerprint from section bytes.
+    pub const fn patch_default_compatibility(self) -> crate::patch::PatchCompatibility {
+        match self {
+            Self::RuntimeTypes
+            | Self::Entrypoints
+            | Self::AdapterRequirements
+            | Self::PatchPlan => crate::patch::PatchCompatibility::RestartRequired,
+            Self::ProgramBytecode => crate::patch::PatchCompatibility::CodeCompatible,
+            Self::HotSwapMap => crate::patch::PatchCompatibility::CodeGenerational,
+            Self::ContentCatalog
+            | Self::DisplayCatalog
+            | Self::AudioGraph
+            | Self::AssetCatalog
+            | Self::AssetBlob
+            | Self::LocaleCatalog
+            | Self::SourceMap
+            | Self::DebugSymbols
+            | Self::NormalizedSource => crate::patch::PatchCompatibility::ContentOnly,
+        }
+    }
 }
 
 impl ContentResidency {

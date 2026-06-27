@@ -999,19 +999,54 @@ name = "watch_virtual_addition_test"
         };
         let patch_bundle = patch_dir.join("game-base-target.awfb");
         let target_bundle = root.join("game.awfb");
+        let base_root = arcweft_bundle::container::BundleDigest::ZERO;
+        let target_root = arcweft_bundle::container::BundleDigest::of(b"target");
+        let section_id = arcweft_bundle::container::SectionId::from_bytes([7; 16]);
         let artifact = arcweft_bundle::patch::BundlePatchArtifact {
             manifest: arcweft_bundle::patch::BundlePatchManifest {
                 schema_version: arcweft_bundle::patch::PATCH_PLAN_SCHEMA_VERSION,
-                base_content_root: arcweft_bundle::container::BundleDigest::ZERO,
-                target_content_root: arcweft_bundle::container::BundleDigest::of(b"target"),
+                min_reader_schema_version: arcweft_bundle::patch::PATCH_PLAN_SCHEMA_VERSION,
                 runtime_abi: arcweft_bundle::patch::RuntimeAbiRange::CURRENT,
+                base_artifact: arcweft_bundle::container::ArtifactIdentity::for_current_container(
+                    arcweft_bundle::container::BundleKind::Program,
+                    base_root,
+                    arcweft_bundle::container::BundleDigest::of(b"base-manifest"),
+                ),
+                target_artifact: arcweft_bundle::container::ArtifactIdentity::for_current_container(
+                    arcweft_bundle::container::BundleKind::Program,
+                    target_root,
+                    arcweft_bundle::container::BundleDigest::of(b"target-manifest"),
+                ),
+                base_content_root: base_root,
+                target_content_root: target_root,
                 compatibility: PatchCompatibility::CodeGenerational,
+                materialization: arcweft_bundle::patch::PatchMaterializationContract::default(),
+                compatibility_fingerprints: vec![
+                    arcweft_bundle::patch::SectionCompatibilityFingerprint {
+                        id: section_id,
+                        operation: arcweft_bundle::patch::SectionChangeOperation::Remove,
+                        raw_kind_code: 0,
+                        known_kind: None,
+                        required: true,
+                        compatibility: PatchCompatibility::CodeGenerational,
+                        derivation:
+                            arcweft_bundle::patch::SectionChangeDerivation::SectionKindDefault,
+                        base_descriptor_fingerprint: None,
+                        target_descriptor_fingerprint: None,
+                        base_content_fingerprint: None,
+                        target_content_fingerprint: None,
+                    },
+                ],
             },
             plan: arcweft_bundle::patch::BundlePatchPlan {
-                base_content_root: arcweft_bundle::container::BundleDigest::ZERO,
-                target_content_root: arcweft_bundle::container::BundleDigest::of(b"target"),
-                operations: Vec::new(),
+                base_content_root: base_root,
+                target_content_root: target_root,
+                operations: vec![arcweft_bundle::patch::SectionOperation::Remove {
+                    id: section_id,
+                    old: arcweft_bundle::container::BundleDigest::of(b"old-section"),
+                }],
             },
+            target_manifest_bytes: None,
             changed_sections: Vec::new(),
         };
 
