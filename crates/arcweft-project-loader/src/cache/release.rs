@@ -796,6 +796,12 @@ mod tests {
         },
         release::{ReleaseBundleRef, ReleaseManifest, ReleaseMirror},
     };
+    use arcweft_core::awbc::schema::{
+        AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
+        AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
+        AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
+        AwbcStringId, AwbcTableRange, AwbcTerminator,
+    };
     use arcweft_core::bytecode::BytecodeProgram;
     use arcweft_render_text::LineDisplayCatalog;
     use std::{
@@ -1427,6 +1433,45 @@ mod tests {
             BytecodeProgram::default(),
             LineDisplayCatalog::default(),
         )
+        .with_product_awbc(minimal_awbc_program())
+    }
+
+    fn minimal_awbc_program() -> AwbcProgram {
+        AwbcProgram {
+            strings: vec!["entry.main".to_owned()],
+            signatures: vec![AwbcSignature {
+                params: Vec::new(),
+                result: None,
+                effects: AwbcEffectSetId(0),
+            }],
+            frame_layouts: vec![AwbcFrameLayout {
+                slots: Vec::new(),
+                max_scope_depth: 0,
+            }],
+            functions: vec![AwbcFunction {
+                public_id: Some(AwbcStringId(0)),
+                kind: AwbcFunctionKind::Flow,
+                signature: AwbcSignatureId(0),
+                frame_layout: AwbcFrameLayoutId(0),
+                blocks: AwbcTableRange::new(0, 1),
+                entry_block: AwbcBlockId(0),
+                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            }],
+            blocks: vec![AwbcBlock {
+                owner: AwbcFunctionId(0),
+                instructions: AwbcTableRange::new(0, 0),
+                terminator: AwbcTerminator::Return { value: None },
+                safe_point: AwbcSafePointKind::FlowEntry,
+                source_map: None,
+            }],
+            entries: vec![AwbcEntry {
+                public_id: AwbcStringId(0),
+                kind: AwbcEntryKind::Game,
+                signature: AwbcSignatureId(0),
+                target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            }],
+            ..AwbcProgram::default()
+        }
     }
 
     fn append_signature_block(mut bytes: Vec<u8>, signature: &[u8]) -> Vec<u8> {

@@ -1,4 +1,9 @@
 use arcweft_bundle::ArcweftBundle;
+use arcweft_interaction_model::{
+    id::Identifier,
+    input::{InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent},
+    payload::InteractionPayload,
+};
 use arcweft_player_scene::images::{BundleImageCatalog, BundleImageCatalogError};
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, PreparedFrame, RenderChoiceItem, RenderDialogue,
@@ -187,10 +192,28 @@ pub fn prepare_bundle_parity_frame(
     let mut session = BundleSession::new(bundle, BundleSessionOptions::default())?;
     let images = BundleImageCatalog::from_bundle(bundle)?;
     let mut presentation = None;
+    let mut pending_advance = None;
     for tick in 1..=options.max_ticks {
         let clock = RuntimeClockStep::from_millis(tick, 16)?;
-        let step = session.step_with_clock(clock, BundleStepInput::default());
+        let step = session.step_with_clock(
+            clock,
+            BundleStepInput {
+                input_events: pending_advance
+                    .take()
+                    .map(advance_dialogue_event)
+                    .into_iter()
+                    .collect(),
+                ..BundleStepInput::default()
+            },
+        );
         let ready = step.presentation.choices.len() == 2 && step.presentation.images.len() == 4;
+        if !ready {
+            pending_advance = step
+                .presentation
+                .dialogue
+                .as_ref()
+                .map(|dialogue| dialogue.line.0.clone());
+        }
         presentation = Some(step.presentation);
         if ready {
             break;
@@ -233,6 +256,18 @@ pub fn prepare_bundle_parity_frame(
         ..scene
     })
     .map_err(|error| WebGpuParityFrameError::FramePlan(error.to_string()))
+}
+
+fn advance_dialogue_event(line: String) -> RoutedInputEvent {
+    RoutedInputEvent::new(
+        InputEpoch::default(),
+        InputSequence::default(),
+        InteractionTarget::new("runtime").expect("static runtime input target is non-empty"),
+        InputEventKind::Custom {
+            name: Identifier::new("advance").expect("static input name is non-empty"),
+        },
+    )
+    .with_payload(InteractionPayload::Text(line))
 }
 
 impl WebGpuParityInteraction {

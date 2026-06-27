@@ -32,6 +32,13 @@ safe implementation cut.
 - Native player AWFB test fixtures now lower product AWBC from the same
   `RuntimePlan` used for their legacy structured bytecode fixture, so workspace
   smoke tests no longer fail before reaching the remaining web demo fixture gap.
+- The web demo fixture `web/demo.awfb` has been regenerated as a binary AWFB
+  with product AWBC from the current `web/demo.arcw` source.
+- Web parity frame preparation now advances the opening dialogue line through
+  the runtime input path before comparing the two-choice, four-image frame.
+- The release-cache product bundle fixture now carries a minimal product AWBC
+  executable so cached product fetch/decode tests exercise the current product
+  bundle contract.
 
 ## Non-Goals For This Cut
 
@@ -58,27 +65,39 @@ complete.
 - `cargo fmt --all -- --check`
 - `cargo check -p arcweft-core -p arcweft-bundle -p arcweft-runtime-driver -p arcweft-runtime-host -p arcweft-project-loader -p arcweft-cli -p arcweft-player-native --all-targets --all-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo run -p arcweft-cli --quiet -- bundle web/demo.arcw --output target/codex-web-demo/demo.awfb`
+- `cargo run -p arcweft-cli --quiet -- inspect target/codex-web-demo/demo.awfb --json`
+- `cargo test -p arcweft-player-web --test parity --all-features`
+- `cargo test -p arcweft-project-loader fetch_release_product_bundle_decodes_cached_awfb_product --all-features -- --nocapture`
+- `cargo check -p arcweft-player-web -p arcweft-project-loader --all-targets --all-features`
+- `cargo clippy -p arcweft-player-web -p arcweft-project-loader --all-targets --all-features -- -D warnings`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`
   - files scanned: 1522
   - Rust files: 838
-  - Rust physical LOC: 412856
+  - Rust physical LOC: 412939
   - package manifests: 89
   - violations: 0 errors, 105 warnings
 - `git diff --check`
 
-`just test-workspace` was run and reached the existing
-`arcweft-player-web --test parity` fixture gap:
-`web/demo.awfb` is a JSON fixture with `schema_version` 3 while the current
-bundle schema expects 4, and that fixture has not yet been regenerated as a
-product-AWBC-capable web demo. Earlier workspace tests, including
-`arcweft-bundle` and `arcweft-player-native`, passed before that failure.
+`just test-workspace` now progresses past the former
+`arcweft-player-web --test parity` fixture gap and the release-cache product
+fetch fixture. It stops later in `arcweft-runtime-driver --test session`,
+where structured-era test fixtures still lack product AWBC executables:
+14 session tests fail with `MissingProductAwbcExecutable` or
+`MissingProductAwbc`. Migrating those session hot-swap and patch-readiness
+fixtures is a separate follow-up from rebuilding the web demo fixture.
 
 ## Structural Audit Notes
 
 Repository state measured at Jujutsu change `lokxmrmv`.
 
+Follow-up web fixture regeneration was measured at Jujutsu change `ysnymssu`.
+
 | Path | Bytes | LOC | Kind | Embedded test LOC | Responsibilities |
 | --- | ---: | ---: | --- | ---: | --- |
+| `crates/arcweft-player-web/src/parity.rs` | 10788 | 291 | production | 0 | native-side WebGPU parity frame preparation, runtime stepping, dialogue advance input, interaction visual state selection |
+| `crates/arcweft-player-web/tests/parity.rs` | 4079 | 125 | integration test | 0 | browser/native frame parity fixture loading and observation contract comparison |
+| `crates/arcweft-project-loader/src/cache/release.rs` | 58082 | 1459 | production plus unit tests | 758 | release manifest cache fetch, local/http/https mirror handling, product fetch tests, minimal AWBC release fixture |
 | `crates/arcweft-bundle/src/container.rs` | 76306 | 2335 | production plus unit tests | 662 | AWFB header/index codec, section descriptors, read budgets, content/signing roots, unknown optional preservation tests |
 | `crates/arcweft-bundle/src/container/identity.rs` | 1526 | 47 | production | 0 | current AWFB artifact identity digest transcript |
 | `crates/arcweft-bundle/src/container/opaque.rs` | 1404 | 56 | production | 0 | raw section-kind code and decoded known/unknown section-kind boundary |

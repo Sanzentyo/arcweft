@@ -1,4 +1,4 @@
-use arcweft_bundle::ArcweftBundle;
+use arcweft_bundle::{ArcweftBundle, BundleFormat};
 use arcweft_player_web::parity::{WebGpuParityFrameOptions, prepare_bundle_parity_frame};
 use arcweft_player_web::report::{WebFrameBounds, WebFrameObservationReport, WebFrameViewport};
 
@@ -99,8 +99,11 @@ fn demo_frame_report() -> WebFrameObservationReport {
 }
 
 fn demo_frame_report_at(visual_time_millis: u64) -> WebFrameObservationReport {
-    let bundle =
-        ArcweftBundle::from_json_slice(include_bytes!("../../../web/demo.awfb")).expect("bundle");
+    let bundle = ArcweftBundle::from_format_slice(
+        BundleFormat::Awfb,
+        include_bytes!("../../../web/demo.awfb"),
+    )
+    .expect("bundle");
     let prepared = prepare_bundle_parity_frame(
         &bundle,
         WebGpuParityFrameOptions {
