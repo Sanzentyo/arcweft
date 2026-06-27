@@ -12,6 +12,7 @@ pub mod field;
 pub mod header;
 pub mod inspection;
 pub mod kind;
+pub mod product_catalog;
 pub mod runtime;
 pub mod table;
 pub mod types;
@@ -28,6 +29,13 @@ pub use header::{
 };
 pub use inspection::{EnumSymbolInspection, ResourceFieldInspection, ResourceInspection};
 pub use kind::{ProductResourceMigrationStatus, ProductSectionCodecKind};
+pub use product_catalog::{
+    AssetCatalogSection as CompactAssetCatalogSection,
+    AudioGraphSection as CompactAudioGraphSection,
+    ContentCatalogSection as CompactContentCatalogSection,
+    DisplayCatalogSection as CompactDisplayCatalogSection,
+    SourceMapSection as CompactSourceMapSection,
+};
 pub use runtime::{
     AdapterRequirementsSection as CompactAdapterRequirementsSection,
     EntrypointsSection as CompactEntrypointsSection,

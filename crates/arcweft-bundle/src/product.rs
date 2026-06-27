@@ -7,15 +7,16 @@ use crate::resource_codec::runtime::{
     EntrypointsSection as CompactEntrypointsSection,
     RuntimeTypesSection as CompactRuntimeTypesSection,
 };
+use crate::resource_codec::{
+    CompactAssetCatalogSection, CompactAudioGraphSection, CompactContentCatalogSection,
+    CompactDisplayCatalogSection, CompactSourceMapSection,
+};
 use crate::{
     ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleAwbcProgram, BundleBytecodeEncoding,
-    BundleBytecodeProgram, BundleCodecError, BundleImageAsset, BundleImageObject, BundleKind,
-    BundleManifest, BundleSource, BundleVirtualFile,
+    BundleBytecodeProgram, BundleCodecError, BundleKind, BundleManifest, BundleSource,
 };
 use arcweft_agent_protocol::artifact::AgentArtifactManifest;
-use arcweft_audio_core::graph::AudioGraph;
 use arcweft_core::bytecode::BytecodeProgram;
-use arcweft_render_text::LineDisplayCatalog;
 use serde::{Deserialize, Serialize};
 
 const AWFB_SECTION_SCHEMA_VERSION: u32 = 1;
@@ -36,18 +37,6 @@ struct ProductManifest {
 
 fn default_executable_payload() -> String {
     crate::product_awbc::PRODUCT_EXECUTABLE_PAYLOAD_AWBC_V1.to_owned()
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct ContentCatalogSection {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    virtual_files: Vec<BundleVirtualFile>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    image_assets: Vec<BundleImageAsset>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    audio: Option<AudioGraph>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    image_objects: Vec<BundleImageObject>,
 }
 
 pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCodecError> {
@@ -88,22 +77,27 @@ pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCod
         ),
         required_section(
             BundleSectionKind::ContentCatalog,
-            encode_json(&ContentCatalogSection {
-                virtual_files: bundle.virtual_files.clone(),
-                image_assets: bundle.image_assets.clone(),
-                audio: bundle.audio.clone(),
-                image_objects: bundle.image_objects.clone(),
-            })?,
+            CompactContentCatalogSection::from_bundle(bundle)
+                .encode_canonical_section()
+                .map_err(|error| compact_encode_error(&error))?,
         ),
         optional_section(
             BundleSectionKind::DisplayCatalog,
-            encode_json(&bundle.display)?,
+            CompactDisplayCatalogSection::from_bundle(bundle)
+                .encode_canonical_section()
+                .map_err(|error| compact_encode_error(&error))?,
         ),
         optional_section(
-            BundleSectionKind::NormalizedSource,
-            encode_json(&bundle.source)?,
+            BundleSectionKind::SourceMap,
+            CompactSourceMapSection::from_bundle(bundle)
+                .encode_canonical_section()
+                .map_err(|error| compact_encode_error(&error))?,
         ),
-    ];
+    ]
+    .into_iter()
+    .chain(optional_asset_catalog_section(bundle)?)
+    .chain(optional_audio_graph_section(bundle)?)
+    .collect::<Vec<_>>();
     encode_bundle(container_kind(bundle.bundle_kind), &manifest, sections).map_err(|error| {
         BundleCodecError::EncodeAwfb {
             message: error.to_string(),
@@ -156,26 +150,17 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         .and_then(|()| entrypoints.validate_awbc(product_awbc.program()))
         .map_err(|error| compact_decode_error(&error))?;
     let adapters = required_adapter_requirements(&view, external_sections)?;
-    let content = required_payload::<ContentCatalogSection>(
-        &view,
-        external_sections,
-        BundleSectionKind::ContentCatalog,
-    )?;
-    let display = optional_payload::<LineDisplayCatalog>(
-        &view,
-        external_sections,
-        BundleSectionKind::DisplayCatalog,
-    )?
-    .unwrap_or_default();
-    let source = optional_payload::<BundleSource>(
-        &view,
-        external_sections,
-        BundleSectionKind::NormalizedSource,
-    )?
-    .unwrap_or_else(|| BundleSource {
-        label: product_manifest.manifest.source_label.clone(),
-        text: String::new(),
-    });
+    let _content = required_content_catalog(&view, external_sections)?;
+    let assets = optional_asset_catalog(&view, external_sections)?.unwrap_or_default();
+    let display = optional_display_catalog(&view, external_sections)?.unwrap_or_default();
+    let source = optional_source_map(&view, external_sections)?.map_or_else(
+        || BundleSource {
+            label: product_manifest.manifest.source_label.clone(),
+            text: String::new(),
+        },
+        |section| section.source,
+    );
+    let audio = optional_audio_graph(&view, external_sections)?.map(|section| section.graph);
 
     Ok(ArcweftBundle {
         schema_version: product_manifest.schema_version,
@@ -191,12 +176,12 @@ pub(crate) fn from_awfb_slice_with_external_sections(
             },
         },
         product_awbc: Some(product_awbc),
-        display,
+        display: display.display,
         adapter_manifests: adapters.adapter_manifests,
-        virtual_files: content.virtual_files,
-        image_assets: content.image_assets,
-        audio: content.audio,
-        image_objects: content.image_objects,
+        virtual_files: assets.virtual_files,
+        image_assets: assets.image_assets,
+        audio,
+        image_objects: display.image_objects,
     })
 }
 
@@ -236,6 +221,95 @@ fn required_adapter_requirements(
     )
 }
 
+fn optional_asset_catalog_section(
+    bundle: &ArcweftBundle,
+) -> Result<Option<SectionInput>, BundleCodecError> {
+    let section = CompactAssetCatalogSection::from_bundle(bundle);
+    if section.is_empty() {
+        return Ok(None);
+    }
+    section
+        .encode_canonical_section()
+        .map_err(|error| compact_encode_error(&error))
+        .map(|bytes| Some(optional_section(BundleSectionKind::AssetCatalog, bytes)))
+}
+
+fn optional_audio_graph_section(
+    bundle: &ArcweftBundle,
+) -> Result<Option<SectionInput>, BundleCodecError> {
+    bundle
+        .audio
+        .clone()
+        .map(CompactAudioGraphSection::from_graph)
+        .map(|section| {
+            section
+                .encode_canonical_section()
+                .map_err(|error| compact_encode_error(&error))
+                .map(|bytes| optional_section(BundleSectionKind::AudioGraph, bytes))
+        })
+        .transpose()
+}
+
+fn required_content_catalog(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+) -> Result<CompactContentCatalogSection, BundleCodecError> {
+    required_compact_payload(
+        view,
+        external_sections,
+        BundleSectionKind::ContentCatalog,
+        CompactContentCatalogSection::decode_canonical_section,
+    )
+}
+
+fn optional_asset_catalog(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+) -> Result<Option<CompactAssetCatalogSection>, BundleCodecError> {
+    optional_compact_payload(
+        view,
+        external_sections,
+        BundleSectionKind::AssetCatalog,
+        CompactAssetCatalogSection::decode_canonical_section,
+    )
+}
+
+fn optional_display_catalog(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+) -> Result<Option<CompactDisplayCatalogSection>, BundleCodecError> {
+    optional_compact_payload(
+        view,
+        external_sections,
+        BundleSectionKind::DisplayCatalog,
+        CompactDisplayCatalogSection::decode_canonical_section,
+    )
+}
+
+fn optional_source_map(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+) -> Result<Option<CompactSourceMapSection>, BundleCodecError> {
+    optional_compact_payload(
+        view,
+        external_sections,
+        BundleSectionKind::SourceMap,
+        CompactSourceMapSection::decode_canonical_section,
+    )
+}
+
+fn optional_audio_graph(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+) -> Result<Option<CompactAudioGraphSection>, BundleCodecError> {
+    optional_compact_payload(
+        view,
+        external_sections,
+        BundleSectionKind::AudioGraph,
+        CompactAudioGraphSection::decode_canonical_section,
+    )
+}
+
 fn required_compact_payload<T>(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
@@ -252,6 +326,39 @@ fn required_compact_payload<T>(
             message: format!("AWFB {kind:?} section is external and cannot be decoded inline"),
         })?;
     decode(&bytes).map_err(|error| compact_decode_error(&error))
+}
+
+fn optional_compact_payload<T>(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+    kind: BundleSectionKind,
+    decode: fn(&[u8]) -> Result<T, crate::resource_codec::SectionCodecError>,
+) -> Result<Option<T>, BundleCodecError> {
+    let mut matches = view
+        .sections()
+        .iter()
+        .filter(|descriptor| descriptor.known_kind() == Some(kind));
+    let Some(descriptor) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(BundleCodecError::DecodeAwfb {
+            message: format!("AWFB bundle contains multiple {kind:?} sections"),
+        });
+    }
+    let Some(bytes) = view
+        .decoded_section_with_external_payloads(descriptor.id(), external_sections)
+        .map_err(|error| BundleCodecError::DecodeAwfb {
+            message: error.to_string(),
+        })?
+    else {
+        return Err(BundleCodecError::DecodeAwfb {
+            message: format!("AWFB {kind:?} section is external and cannot be decoded inline"),
+        });
+    };
+    decode(&bytes)
+        .map(Some)
+        .map_err(|error| compact_decode_error(&error))
 }
 
 fn compact_encode_error(error: &crate::resource_codec::SectionCodecError) -> BundleCodecError {
@@ -286,19 +393,6 @@ fn optional_section(kind: BundleSectionKind, bytes: Vec<u8>) -> SectionInput {
         false,
         bytes,
     )
-}
-
-fn required_payload<T>(
-    view: &BundleView<'_>,
-    external_sections: &[ExternalSectionPayload],
-    kind: BundleSectionKind,
-) -> Result<T, BundleCodecError>
-where
-    T: for<'de> Deserialize<'de>,
-{
-    optional_payload(view, external_sections, kind)?.ok_or_else(|| BundleCodecError::DecodeAwfb {
-        message: format!("AWFB bundle is missing required {kind:?} section"),
-    })
 }
 
 fn required_product_awbc_bytes(
@@ -336,39 +430,6 @@ fn required_descriptor<'a>(
         });
     }
     Ok(descriptor)
-}
-
-fn optional_payload<T>(
-    view: &BundleView<'_>,
-    external_sections: &[ExternalSectionPayload],
-    kind: BundleSectionKind,
-) -> Result<Option<T>, BundleCodecError>
-where
-    T: for<'de> Deserialize<'de>,
-{
-    let mut matches = view
-        .sections()
-        .iter()
-        .filter(|descriptor| descriptor.known_kind() == Some(kind));
-    let Some(descriptor) = matches.next() else {
-        return Ok(None);
-    };
-    if matches.next().is_some() {
-        return Err(BundleCodecError::DecodeAwfb {
-            message: format!("AWFB bundle contains multiple {kind:?} sections"),
-        });
-    }
-    let Some(bytes) = view
-        .decoded_section_with_external_payloads(descriptor.id(), external_sections)
-        .map_err(|error| BundleCodecError::DecodeAwfb {
-            message: error.to_string(),
-        })?
-    else {
-        return Err(BundleCodecError::DecodeAwfb {
-            message: format!("AWFB {kind:?} section is external and cannot be decoded inline"),
-        });
-    };
-    decode_json(&bytes).map(Some)
 }
 
 fn reject_structured_or_decode_awbc(bytes: &[u8]) -> Result<BundleAwbcProgram, BundleCodecError> {
@@ -426,12 +487,16 @@ fn section_id(kind: BundleSectionKind) -> SectionId {
 mod tests {
     use super::{
         AWFB_SECTION_SCHEMA_VERSION, CompactAdapterRequirementsSection, CompactEntrypointsSection,
-        CompactRuntimeTypesSection, ContentCatalogSection, ProductManifest, container_kind,
-        encode_json, optional_section, required_section, section_id,
+        CompactRuntimeTypesSection, ProductManifest, container_kind, encode_json,
+        optional_asset_catalog_section, optional_audio_graph_section, optional_section,
+        required_section, section_id,
     };
     use crate::container::{
         BundleDigest, BundleSectionKind, BundleView, ExternalSectionPayload, ReadBudget,
         SectionInput, encode_bundle,
+    };
+    use crate::resource_codec::{
+        CompactContentCatalogSection, CompactDisplayCatalogSection, CompactSourceMapSection,
     };
     use crate::{
         ArcweftBundle, BundleCodecError, BundleFormat, BundleManifest, BundleRuntimeSummary,
@@ -585,23 +650,27 @@ mod tests {
             ),
             required_section(
                 BundleSectionKind::ContentCatalog,
-                encode_json(&ContentCatalogSection {
-                    virtual_files: bundle.virtual_files.clone(),
-                    image_assets: bundle.image_assets.clone(),
-                    audio: bundle.audio.clone(),
-                    image_objects: bundle.image_objects.clone(),
-                })
-                .expect("content catalog encode"),
+                CompactContentCatalogSection::from_bundle(bundle)
+                    .encode_canonical_section()
+                    .expect("content catalog encode"),
             ),
             optional_section(
                 BundleSectionKind::DisplayCatalog,
-                encode_json(&bundle.display).expect("display catalog encode"),
+                CompactDisplayCatalogSection::from_bundle(bundle)
+                    .encode_canonical_section()
+                    .expect("display catalog encode"),
             ),
             optional_section(
-                BundleSectionKind::NormalizedSource,
-                encode_json(&bundle.source).expect("source encode"),
+                BundleSectionKind::SourceMap,
+                CompactSourceMapSection::from_bundle(bundle)
+                    .encode_canonical_section()
+                    .expect("source encode"),
             ),
-        ];
+        ]
+        .into_iter()
+        .chain(optional_asset_catalog_section(bundle).expect("asset catalog encodes"))
+        .chain(optional_audio_graph_section(bundle).expect("audio graph encodes"))
+        .collect::<Vec<_>>();
         let bytes = encode_bundle(container_kind(bundle.bundle_kind), &manifest, sections)
             .expect("AWFB encodes");
         (

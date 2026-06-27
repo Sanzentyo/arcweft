@@ -153,9 +153,8 @@ impl ProductSectionCodecKind {
             | Self::AssetCatalog
             | Self::DisplayCatalog
             | Self::SourceMap
-            | Self::LocaleText
-            | Self::AudioGraph
-            | Self::DebugSymbols => ProductResourceMigrationStatus::JsonTemporary,
+            | Self::AudioGraph => ProductResourceMigrationStatus::CompactFirst,
+            Self::LocaleText | Self::DebugSymbols => ProductResourceMigrationStatus::JsonTemporary,
             Self::Shader | Self::Ui | Self::Entity | Self::Contracts | Self::GraphIndex => {
                 ProductResourceMigrationStatus::Future
             }
