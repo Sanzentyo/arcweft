@@ -39,6 +39,7 @@ members = [
     "crates/arcweft-need",
     "crates/arcweft-presentation",
     "crates/arcweft-ui",
+    "crates/arcweft-takumi-adapter",
     "crates/arcweft-render-native",
     "crates/arcweft-render-text",
     "crates/arcweft-text-layout",
@@ -121,6 +122,7 @@ arcweft-layout = { path = "crates/arcweft-layout" }
 arcweft-runtime-codegen = { path = "crates/arcweft-runtime-codegen" }
 arcweft-runtime-driver = { path = "crates/arcweft-runtime-driver" }
 arcweft-render-wgpu = { path = "crates/arcweft-render-wgpu" }
+arcweft-takumi-adapter = { path = "crates/arcweft-takumi-adapter" }
 arcweft-render-web = { path = "crates/arcweft-render-web" }
 arcweft-audio-core = { path = "crates/arcweft-audio-core" }
 arcweft-audio-codec = { path = "crates/arcweft-audio-codec" }
@@ -165,6 +167,7 @@ serde_repr = "0.1.20"
 proc-macro2 = "1.0.106"
 quote = "1.0.45"
 syn = { version = "2.0.117", features = ["full", "extra-traits"] }
+takumi = { git = "https://github.com/kane50613/takumi", rev = "38cb0ba6276981cb9bccc074acde7730f68dbde4", default-features = false, features = ["unstable", "woff2", "woff", "svg"] }
 thiserror = "2.0.18"
 toml = "1.1.2"
 ureq = "3.3.0"
