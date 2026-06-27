@@ -10,13 +10,21 @@ just fixture-refresh
 ```
 
 This command refreshes checked-in deterministic generated artifacts and then
-runs focused validation.
+runs focused validation. It intentionally stays portable: native renderer PNG
+goldens are checked in, but their pixels depend on the Windows native text path
+and pinned fonts, so the full command writes review candidates under `target/`
+instead of overwriting checked-in PNGs.
 
 Current refresh targets:
 
 | Target | Source | Command |
 | --- | --- | --- |
 | `web/demo.awfb` | `web/demo.arcw` | `just fixture-refresh-web-demo-awfb` |
+| `web/assets/generated-background.png` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
+| `web/assets/generated-character.png` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
+| `web/assets/generated-pulse.gif` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
+| `web/assets/generated-pulse.webp` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
+| `web/.arcweft/asset/generated/*` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
 | `crates/arcweft-lang-syntax/src/jlreq_punctuation_data.rs` | `tools/generate_jlreq_punctuation_data.rs` | `just generate-jlreq-punctuation` |
 
 Focused validation run by `just fixture-refresh-check`:
@@ -27,6 +35,33 @@ cargo test -p arcweft-player-web --test parity --all-features --quiet
 cargo test -p arcweft-cli --test arcw_fixtures_check_run --quiet
 ```
 
+## Full Refresh With Native Candidates
+
+```bash
+just fixture-refresh-all
+```
+
+This runs the portable refresh plus native capture PNG candidate generation and
+the native fixture-integrity check. Use it on a Windows machine with the pinned
+fixture fonts available when native renderer output is intentionally changing.
+Promote candidate PNGs to checked-in goldens only after reviewing the pixel
+result and rerunning the integrity check.
+
+Additional native candidate targets:
+
+| Target | Source | Command |
+| --- | --- | --- |
+| `target/arcweft-native-capture-refresh/vertical_tutr_golden.png` | `tests/fixtures/native_capture/vertical_tutr_golden.arcw` | `just fixture-refresh-native-capture-candidates` |
+| `target/arcweft-native-capture-refresh/vertical_jlreq_preset_loose_golden.png` | `tests/fixtures/native_capture/vertical_jlreq_preset_loose_golden.arcw` | `just fixture-refresh-native-capture-candidates` |
+| `target/arcweft-native-capture-refresh/vertical_jlreq_preset_normal_golden.png` | `tests/fixtures/native_capture/vertical_jlreq_preset_normal_golden.arcw` | `just fixture-refresh-native-capture-candidates` |
+| `target/arcweft-native-capture-refresh/vertical_lr_ruby_text_combine_golden.png` | `tests/fixtures/native_capture/vertical_lr_ruby_text_combine_golden.arcw` | `just fixture-refresh-native-capture-candidates` |
+
+Additional validation run by `just fixture-refresh-native-capture-check`:
+
+```bash
+cargo test -p arcweft-cli --features native-capture --test check native_checked_in_visual_golden_fixtures_are_well_formed --quiet
+```
+
 ## List Command
 
 ```bash
@@ -35,6 +70,8 @@ just fixture-refresh-list
 
 Use this before adding a new generated fixture. If a checked-in artifact can be
 deterministically regenerated, add it to this note and to `fixture-refresh`.
+If a checked-in artifact is renderer- or platform-sensitive, add it to the full
+refresh candidate path instead.
 
 ## Candidate-Only Artifacts
 
