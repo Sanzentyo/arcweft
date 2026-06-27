@@ -125,6 +125,24 @@ pub struct StyleOverrideLayer {
     patch: StylePatch,
 }
 
+impl StyleSource {
+    pub fn inline(source: impl Into<String>) -> Self {
+        Self::Inline(source.into())
+    }
+
+    pub fn from_file(path: impl Into<String>) -> Self {
+        Self::Files(vec![StyleFileRef::file(path)])
+    }
+
+    pub fn from_embed(path: impl Into<String>) -> Self {
+        Self::Files(vec![StyleFileRef::embed(path)])
+    }
+
+    pub fn files(files: Vec<StyleFileRef>) -> Self {
+        Self::Files(files)
+    }
+}
+
 impl StyleFileRef {
     pub fn file(path: impl Into<String>) -> Self {
         Self {
@@ -250,6 +268,38 @@ impl StyleOverrideLayer {
     pub const fn patch(&self) -> &StylePatch {
         &self.patch
     }
+
+    pub fn arcweft_inline(source: impl Into<String>, patch: StylePatch) -> Self {
+        Self::new(StyleSyntax::Arcweft, StyleSource::inline(source), patch)
+    }
+
+    pub fn css_inline(source: impl Into<String>, patch: StylePatch) -> Self {
+        Self::new(StyleSyntax::Css, StyleSource::inline(source), patch)
+    }
+
+    pub fn arcweft_file(source_path: impl Into<String>, style_patch: StylePatch) -> Self {
+        Self::new(
+            StyleSyntax::Arcweft,
+            StyleSource::from_file(source_path),
+            style_patch,
+        )
+    }
+
+    pub fn css_file(source_path: impl Into<String>, style_patch: StylePatch) -> Self {
+        Self::new(
+            StyleSyntax::Css,
+            StyleSource::from_file(source_path),
+            style_patch,
+        )
+    }
+
+    pub fn css_embed(source_path: impl Into<String>, style_patch: StylePatch) -> Self {
+        Self::new(
+            StyleSyntax::Css,
+            StyleSource::from_embed(source_path),
+            style_patch,
+        )
+    }
 }
 
 impl ComponentStyleOverride {
@@ -295,17 +345,22 @@ mod tests {
         let mut patch = StylePatch::default();
         patch.push_property(UiPropertyKind::Opacity, UiPropertyValue::Milli(Milli(900)));
         let mut overrides = ComponentStyleOverride::default();
-        overrides.push_layer(StyleOverrideLayer::new(
-            StyleSyntax::Arcweft,
-            StyleSource::Inline("opacity: 0.9".to_owned()),
-            patch,
+        overrides.push_layer(StyleOverrideLayer::arcweft_inline("opacity: 0.9", patch));
+        overrides.push_layer(StyleOverrideLayer::css_file(
+            "ui/dialogue.css",
+            StylePatch::default(),
         ));
         let part = super::StylePartId::new(public_id("part.label"));
         let target = public_id("ui.dialogue.label");
         overrides.export_part(part.clone(), target.clone());
 
-        assert_eq!(overrides.layers().len(), 1);
+        assert_eq!(overrides.layers().len(), 2);
         assert_eq!(overrides.layers()[0].syntax(), StyleSyntax::Arcweft);
+        assert_eq!(overrides.layers()[1].syntax(), StyleSyntax::Css);
+        assert_eq!(
+            overrides.layers()[1].source(),
+            &StyleSource::from_file("ui/dialogue.css")
+        );
         assert_eq!(overrides.exported_parts().get(&part), Some(&target));
     }
 

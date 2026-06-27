@@ -47,8 +47,8 @@ pub use presentation_image::{UiImagePresentationFrame, UiImagePresentationInput}
 pub use program::{
     UiBranch, UiComponentCall, UiCustomSpec, UiElementKind, UiElementSpec, UiEventBindingSpec,
     UiExpressionId, UiHandlerProgram, UiImageSpec, UiInstruction, UiInstructionRange, UiPartExport,
-    UiPartId, UiProgram, UiRepeat, UiSemanticSpec, UiStableKey, UiStyleApply, UiStylePatchId,
-    UiTextSpec,
+    UiPartId, UiProgram, UiProgramBuilder, UiRepeat, UiSemanticSpec, UiStableKey, UiStyleApply,
+    UiStylePatchId, UiTextSpec,
 };
 pub use reactive::{EntityInvalidation, ReactiveGraph, ReactiveInvalidation, Revision};
 pub use semantics::{UiNodeId, UiSemanticFragment, UiSemanticFragmentBuilder, UiSemanticNode};
@@ -58,8 +58,9 @@ pub use style::{
     UiPropertyKind, UiPropertyValue, UiStyle, UiStyleRule, UiStyleTable, ValueSourceId,
 };
 pub use text_field::{
-    ExternalTextUpdatePolicy, TextEditState, TextEditorMode, TextEditorPart, TextFieldId,
-    TextFieldPartId, TextFieldSpec,
+    ExternalTextUpdatePolicy, TextEditError, TextEditOutcome, TextEditState, TextEditorMode,
+    TextEditorPart, TextFieldId, TextFieldMetrics, TextFieldPartId, TextFieldPartRect,
+    TextFieldSpec, TextFieldVisualBuffer,
 };
 pub use text_source::{UiRichTextHandle, UiTextByteRange, UiTextSource, UiTextSourceTable};
 

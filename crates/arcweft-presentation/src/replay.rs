@@ -6,6 +6,10 @@ use crate::layer::{
     LayerVisibility, RenderPhase,
 };
 use crate::router::{RouteDecision, RoutedInput};
+use crate::text_input::{
+    CompositionEndReason, PlatformTextSelection, TextByteOffset, TextCommit, TextCompositionUpdate,
+    TextDeleteUnit, TextEditCommand, TextInput, TextInputOperation, TextInputPrivacy, TextRange,
+};
 use arcweft_id::PublicId;
 
 /// Deterministic hash of the routing-relevant presentation state.
@@ -332,7 +336,7 @@ fn hash_input_event(hasher: &mut StableHasher, event: &InputEvent) {
         }
         InputEventKind::Text(value) => {
             hasher.u32(3);
-            hasher.str(value);
+            hash_text_input(hasher, value);
         }
         InputEventKind::Focus { focused } => {
             hasher.u32(4);
@@ -342,6 +346,109 @@ fn hash_input_event(hasher: &mut StableHasher, event: &InputEvent) {
             hasher.u32(5);
             hasher.public_id(action);
         }
+    }
+}
+
+fn hash_text_input(hasher: &mut StableHasher, input: &TextInput) {
+    hasher.u64(input.session().0);
+    hasher.u64(input.serial().0);
+    hasher.u32(text_input_privacy_code(input.privacy()));
+    hasher.u64(input.operations().len() as u64);
+    for operation in input.operations() {
+        hash_text_input_operation(hasher, input.privacy(), operation);
+    }
+}
+
+fn hash_text_input_operation(
+    hasher: &mut StableHasher,
+    privacy: TextInputPrivacy,
+    operation: &TextInputOperation,
+) {
+    match operation {
+        TextInputOperation::StartComposition => hasher.u32(0),
+        TextInputOperation::SetComposition(update) => {
+            hasher.u32(1);
+            hash_composition_update(hasher, privacy, update);
+        }
+        TextInputOperation::Commit(commit) => {
+            hasher.u32(2);
+            hash_commit(hasher, privacy, commit);
+        }
+        TextInputOperation::EndComposition { reason } => {
+            hasher.u32(3);
+            hasher.u32(composition_end_reason_code(*reason));
+        }
+        TextInputOperation::DeleteSurrounding {
+            before,
+            after,
+            unit,
+        } => {
+            hasher.u32(4);
+            hasher.u32(*before);
+            hasher.u32(*after);
+            hasher.u32(text_delete_unit_code(*unit));
+        }
+        TextInputOperation::SetSelection(selection) => {
+            hasher.u32(5);
+            hash_platform_selection(hasher, *selection);
+        }
+        TextInputOperation::Command(command) => {
+            hasher.u32(6);
+            hasher.u32(text_edit_command_code(*command));
+        }
+    }
+}
+
+fn hash_composition_update(
+    hasher: &mut StableHasher,
+    privacy: TextInputPrivacy,
+    update: &TextCompositionUpdate,
+) {
+    hasher.bool(update.replacement().is_some());
+    if let Some(range) = update.replacement() {
+        hash_text_range(hasher, range);
+    }
+    hash_text_payload(hasher, privacy, update.preedit());
+    hash_text_range(hasher, update.selection());
+    hasher.u64(update.segments().len() as u64);
+    for segment in update.segments() {
+        hash_text_range(hasher, segment.range());
+        hasher.u32(segment.kind() as u32);
+    }
+}
+
+fn hash_commit(hasher: &mut StableHasher, privacy: TextInputPrivacy, commit: &TextCommit) {
+    hash_text_payload(hasher, privacy, commit.text());
+    hasher.bool(commit.replacement().is_some());
+    if let Some(range) = commit.replacement() {
+        hash_text_range(hasher, range);
+    }
+}
+
+fn hash_text_payload(hasher: &mut StableHasher, privacy: TextInputPrivacy, value: &str) {
+    if privacy.is_sensitive() {
+        hasher.marker("redacted-text");
+        hasher.u64(value.chars().count() as u64);
+        hasher.u64(value.len() as u64);
+    } else {
+        hasher.str(value);
+    }
+}
+
+fn hash_text_range(hasher: &mut StableHasher, range: TextRange<TextByteOffset>) {
+    hasher.u32(range.start().0);
+    hasher.u32(range.end().0);
+}
+
+fn hash_platform_selection(hasher: &mut StableHasher, selection: PlatformTextSelection) {
+    hash_text_range(hasher, selection.range());
+    hasher.u32(selection.affinity() as u32);
+}
+
+const fn text_input_privacy_code(privacy: TextInputPrivacy) -> u32 {
+    match privacy {
+        TextInputPrivacy::Plain => 0,
+        TextInputPrivacy::Sensitive => 1,
     }
 }
 
@@ -410,5 +517,46 @@ const fn key_phase_code(phase: KeyPhase) -> u32 {
     match phase {
         KeyPhase::Down => 0,
         KeyPhase::Up => 1,
+    }
+}
+
+const fn selecting_code(selecting: bool) -> u32 {
+    if selecting { 1 } else { 0 }
+}
+
+const fn composition_end_reason_code(reason: CompositionEndReason) -> u32 {
+    match reason {
+        CompositionEndReason::Committed => 0,
+        CompositionEndReason::Cancelled => 1,
+        CompositionEndReason::FocusChanged => 2,
+        CompositionEndReason::SessionInvalidated => 3,
+        CompositionEndReason::PlatformDisabled => 4,
+    }
+}
+
+const fn text_delete_unit_code(unit: TextDeleteUnit) -> u32 {
+    match unit {
+        TextDeleteUnit::Utf16CodeUnit => 0,
+        TextDeleteUnit::UnicodeScalar => 1,
+        TextDeleteUnit::GraphemeCluster => 2,
+    }
+}
+
+const fn text_edit_command_code(command: TextEditCommand) -> u32 {
+    match command {
+        TextEditCommand::MoveLeft { selecting } => selecting_code(selecting),
+        TextEditCommand::MoveRight { selecting } => 2 + selecting_code(selecting),
+        TextEditCommand::MoveWordLeft { selecting } => 4 + selecting_code(selecting),
+        TextEditCommand::MoveWordRight { selecting } => 6 + selecting_code(selecting),
+        TextEditCommand::MoveLineStart { selecting } => 8 + selecting_code(selecting),
+        TextEditCommand::MoveLineEnd { selecting } => 10 + selecting_code(selecting),
+        TextEditCommand::Backspace => 12,
+        TextEditCommand::Delete => 13,
+        TextEditCommand::SelectAll => 14,
+        TextEditCommand::Copy => 15,
+        TextEditCommand::Cut => 16,
+        TextEditCommand::Paste => 17,
+        TextEditCommand::Submit => 18,
+        TextEditCommand::Cancel => 19,
     }
 }

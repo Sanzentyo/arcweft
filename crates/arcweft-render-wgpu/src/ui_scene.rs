@@ -8,6 +8,7 @@
 
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
+use arcweft_ui::{TextEditorPart, TextFieldVisualBuffer};
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct UiScene {
@@ -42,6 +43,15 @@ pub enum UiPrimitive {
     Selection(UiSelectionPrimitive),
     Caret(UiCaretPrimitive),
     CompositionUnderline(UiCompositionUnderline),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiTextFieldSceneStyle {
+    pub background: Option<UiColorRgba8>,
+    pub selection: UiColorRgba8,
+    pub caret: UiColorRgba8,
+    pub composition: UiColorRgba8,
+    pub composition_thickness: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -164,6 +174,33 @@ impl UiAffine2 {
     };
 }
 
+impl Default for UiTextFieldSceneStyle {
+    fn default() -> Self {
+        Self {
+            background: None,
+            selection: UiColorRgba8 {
+                red: 0x33,
+                green: 0x99,
+                blue: 0xff,
+                alpha: 0x66,
+            },
+            caret: UiColorRgba8 {
+                red: 0xff,
+                green: 0xff,
+                blue: 0xff,
+                alpha: 0xff,
+            },
+            composition: UiColorRgba8 {
+                red: 0xff,
+                green: 0xff,
+                blue: 0xff,
+                alpha: 0xff,
+            },
+            composition_thickness: 2.0,
+        }
+    }
+}
+
 impl UiScene {
     pub fn new(viewport_width: f32, viewport_height: f32) -> Self {
         Self {
@@ -197,15 +234,74 @@ impl UiScene {
     pub fn primitives(&self) -> &[UiPrimitive] {
         &self.primitives
     }
+
+    pub fn push_text_field_parts(
+        &mut self,
+        buffer: &TextFieldVisualBuffer,
+        style: &UiTextFieldSceneStyle,
+    ) -> UiPrimitiveRange {
+        let start = u32::try_from(self.primitives.len()).unwrap_or(u32::MAX);
+        if let Some(color) = style.background {
+            self.push_primitive(UiPrimitive::SolidRect(UiSolidRect {
+                bounds: buffer.bounds(),
+                color,
+            }));
+        }
+        for part in buffer.parts() {
+            match part.part() {
+                TextEditorPart::Selection => {
+                    self.push_primitive(UiPrimitive::Selection(UiSelectionPrimitive {
+                        target: buffer.target().cloned(),
+                        bounds: part.bounds(),
+                        color: style.selection,
+                    }));
+                }
+                TextEditorPart::Caret => {
+                    self.push_primitive(UiPrimitive::Caret(UiCaretPrimitive {
+                        target: buffer.target().cloned(),
+                        bounds: part.bounds(),
+                        color: style.caret,
+                    }));
+                }
+                TextEditorPart::Composition | TextEditorPart::CompositionTarget => {
+                    self.push_primitive(UiPrimitive::CompositionUnderline(
+                        UiCompositionUnderline {
+                            target: buffer.target().cloned(),
+                            bounds: part.bounds(),
+                            color: style.composition,
+                            thickness: style.composition_thickness,
+                            style: UiUnderlineStyle::Solid,
+                        },
+                    ));
+                }
+                TextEditorPart::Root
+                | TextEditorPart::Content
+                | TextEditorPart::Placeholder
+                | TextEditorPart::Leading
+                | TextEditorPart::Trailing
+                | TextEditorPart::ClearButton => {}
+            }
+        }
+        let end = u32::try_from(self.primitives.len()).unwrap_or(u32::MAX);
+        let range = UiPrimitiveRange { start, end };
+        self.push_context(UiSceneContext {
+            transform: UiAffine2::IDENTITY,
+            opacity: 1.0,
+            clip: Some(UiClip::Rect(buffer.bounds())),
+            primitive_range: range,
+        });
+        range
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
         UiAffine2, UiColorRgba8, UiPrimitive, UiPrimitiveRange, UiScene, UiSceneContext,
-        UiSolidRect,
+        UiSolidRect, UiTextFieldSceneStyle,
     };
     use arcweft_presentation::hit::HitRect;
+    use arcweft_ui::{TextEditState, TextEditorPart, TextFieldMetrics};
 
     #[test]
     fn ui_scene_preserves_context_and_primitive_order() {
@@ -232,6 +328,49 @@ mod tests {
         assert_eq!(
             scene.contexts()[0].primitive_range,
             UiPrimitiveRange { start: 0, end: 1 }
+        );
+    }
+
+    #[test]
+    fn text_field_parts_lower_to_selection_caret_and_composition_primitives() {
+        let mut state = TextEditState::new("abc");
+        state.set_composition(
+            arcweft_presentation::text_input::TextCompositionUpdate::new(
+                "かな",
+                arcweft_presentation::text_input::TextRange::new(
+                    arcweft_presentation::text_input::TextByteOffset(0),
+                    arcweft_presentation::text_input::TextByteOffset(6),
+                ),
+            ),
+        );
+        let buffer = state.visual_buffer(
+            None,
+            HitRect::new(0.0, 0.0, 120.0, 24.0),
+            TextFieldMetrics::default(),
+            false,
+        );
+        assert!(
+            buffer
+                .parts()
+                .iter()
+                .any(|part| part.part() == TextEditorPart::Composition)
+        );
+
+        let mut scene = UiScene::new(320.0, 180.0);
+        let range = scene.push_text_field_parts(&buffer, &UiTextFieldSceneStyle::default());
+
+        assert_eq!(range, scene.contexts()[0].primitive_range);
+        assert!(
+            scene
+                .primitives()
+                .iter()
+                .any(|primitive| matches!(primitive, UiPrimitive::Caret(_)))
+        );
+        assert!(
+            scene
+                .primitives()
+                .iter()
+                .any(|primitive| { matches!(primitive, UiPrimitive::CompositionUnderline(_)) })
         );
     }
 }

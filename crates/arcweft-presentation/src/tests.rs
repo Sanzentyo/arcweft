@@ -9,7 +9,7 @@ use crate::image::{
 use crate::input::{
     Action, ActionBatch, ActionTarget, AgentInput, HostEvent, HostEventBatch, HostEventSource,
     InputEpoch, InputEvent, InputEventKind, InteractionTarget, KeyPhase, KeyboardInput, PointerId,
-    PointerInput, PointerPhase, RawInputEvent, RawInputKind, TextInput, ViewportPoint,
+    PointerInput, PointerPhase, RawInputEvent, RawInputKind, ViewportPoint,
 };
 use crate::interaction::{FocusState, InteractionState, PointerCapture};
 use crate::layer::{
@@ -19,6 +19,10 @@ use crate::layer::{
 use crate::replay::{route_fingerprint, routing_hash};
 use crate::router::{InputRouter, RouteDecision};
 use crate::semantic::{SemanticActionError, SemanticNode, SemanticRole, SemanticTree};
+use crate::text_input::{
+    TextCommit, TextInput, TextInputOperation, TextInputPrivacy, TextInputSerial,
+    TextInputSessionId,
+};
 
 #[test]
 fn registry_clears_values_when_scope_exits() {
@@ -596,13 +600,85 @@ fn router_routes_keyboard_and_text_to_focus_target() {
         }) if key == "Enter"
     ));
 
-    let text = RawInputEvent::new(InputEpoch(31), RawInputKind::Text(TextInput::new("abc")));
+    let text = RawInputEvent::new(
+        InputEpoch(31),
+        RawInputKind::Text(TextInput::committed(
+            TextInputSessionId(9),
+            TextInputSerial(1),
+            "abc",
+        )),
+    );
     let routed_text = InputRouter::route(&text, &tree, &hits, &state);
     assert!(matches!(
         routed_text.event().map(InputEvent::kind),
-        Some(InputEventKind::Text(value)) if value == "abc"
+        Some(InputEventKind::Text(value)) if value.session() == TextInputSessionId(9)
+            && matches!(
+                value.operations(),
+                [TextInputOperation::Commit(commit)] if commit.text() == "abc"
+            )
     ));
     assert_eq!(routed_text.event().map(InputEvent::target), Some(&target));
+}
+
+#[test]
+fn replay_hash_redacts_sensitive_text_input_payloads() {
+    let root = layer_id("root");
+    let dialogue = layer_id("dialogue");
+    let target = interaction_target("textbox.password");
+    let mut tree = LayerTree::new(LayerNode::new(
+        root.clone(),
+        LayerKind::Root,
+        layer_order(RenderPhase::Background, 0, 0),
+    ));
+    tree.insert(
+        LayerNode::new(
+            dialogue.clone(),
+            LayerKind::TextBox,
+            layer_order(RenderPhase::Dialogue, 0, 10),
+        )
+        .with_parent(root)
+        .with_input_policy(LayerInputPolicy::HitTest),
+    )
+    .expect("dialogue inserts");
+    let mut hits = HitTree::default();
+    hits.push(HitRecord::new(
+        dialogue.clone(),
+        target.clone(),
+        HitRect::new(0.0, 0.0, 240.0, 24.0),
+    ));
+    let mut state = InteractionState::default();
+    state.set_focus(FocusState::new(dialogue, target));
+
+    let first = RawInputEvent::new(
+        InputEpoch(41),
+        RawInputKind::Text(
+            TextInput::single(
+                TextInputSessionId(4),
+                TextInputSerial(1),
+                TextInputOperation::Commit(TextCommit::new("secret-a")),
+            )
+            .with_privacy(TextInputPrivacy::Sensitive),
+        ),
+    );
+    let second = RawInputEvent::new(
+        InputEpoch(41),
+        RawInputKind::Text(
+            TextInput::single(
+                TextInputSessionId(4),
+                TextInputSerial(1),
+                TextInputOperation::Commit(TextCommit::new("secret-b")),
+            )
+            .with_privacy(TextInputPrivacy::Sensitive),
+        ),
+    );
+
+    let first = InputRouter::route(&first, &tree, &hits, &state);
+    let second = InputRouter::route(&second, &tree, &hits, &state);
+
+    assert_eq!(
+        route_fingerprint(&tree, &hits, &state, &first).decision_hash(),
+        route_fingerprint(&tree, &hits, &state, &second).decision_hash()
+    );
 }
 
 #[test]

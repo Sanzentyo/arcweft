@@ -38,6 +38,14 @@ pub struct TextInput {
     session: TextInputSessionId,
     serial: TextInputSerial,
     operations: Vec<TextInputOperation>,
+    privacy: TextInputPrivacy,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum TextInputPrivacy {
+    #[default]
+    Plain,
+    Sensitive,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -271,7 +279,34 @@ impl TextInput {
             session,
             serial,
             operations,
+            privacy: TextInputPrivacy::Plain,
         }
+    }
+
+    pub fn single(
+        session: TextInputSessionId,
+        serial: TextInputSerial,
+        operation: TextInputOperation,
+    ) -> Self {
+        Self::new(session, serial, vec![operation])
+    }
+
+    pub fn committed(
+        session: TextInputSessionId,
+        serial: TextInputSerial,
+        text: impl Into<String>,
+    ) -> Self {
+        Self::single(
+            session,
+            serial,
+            TextInputOperation::Commit(TextCommit::new(text)),
+        )
+    }
+
+    #[must_use]
+    pub const fn with_privacy(mut self, privacy: TextInputPrivacy) -> Self {
+        self.privacy = privacy;
+        self
     }
 
     pub const fn session(&self) -> TextInputSessionId {
@@ -286,8 +321,35 @@ impl TextInput {
         &self.operations
     }
 
+    pub const fn privacy(&self) -> TextInputPrivacy {
+        self.privacy
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.operations.is_empty()
+    }
+
     pub fn into_operations(self) -> Vec<TextInputOperation> {
         self.operations
+    }
+}
+
+impl TextInputPrivacy {
+    pub const fn is_sensitive(self) -> bool {
+        matches!(self, Self::Sensitive)
+    }
+}
+
+impl TextRevision {
+    #[must_use]
+    pub fn next(self) -> Self {
+        Self(self.0.saturating_add(1))
+    }
+}
+
+impl TextInputOperation {
+    pub fn commit(text: impl Into<String>) -> Self {
+        Self::Commit(TextCommit::new(text))
     }
 }
 
@@ -335,11 +397,11 @@ impl TextCompositionSegment {
         Self { range, kind }
     }
 
-    pub const fn range(self) -> TextRange<TextByteOffset> {
+    pub const fn range(&self) -> TextRange<TextByteOffset> {
         self.range
     }
 
-    pub const fn kind(self) -> TextCompositionSegmentKind {
+    pub const fn kind(&self) -> TextCompositionSegmentKind {
         self.kind
     }
 }

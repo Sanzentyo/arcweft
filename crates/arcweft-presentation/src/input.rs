@@ -1,3 +1,4 @@
+use crate::text_input::TextInput;
 use arcweft_id::PublicId;
 
 /// Stable target produced by `LayerTree` routing.
@@ -44,15 +45,6 @@ pub struct KeyboardInput {
     pub phase: KeyPhase,
 }
 
-/// Text input payload after host/IME normalization.
-///
-/// This remains committed text only. Composition/preedit is intentionally a
-/// future input family documented by the UI interaction implementation package.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TextInput {
-    value: String,
-}
-
 /// Agent semantic input enters the same routing system as physical input.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentInput {
@@ -97,7 +89,7 @@ pub enum InputEventKind {
     Activate,
     Pointer { phase: PointerPhase },
     Key { key: String, phase: KeyPhase },
-    Text(String),
+    Text(TextInput),
     Focus { focused: bool },
     AgentInvoke { action: PublicId },
 }
@@ -181,19 +173,8 @@ impl ViewportPoint {
     }
 }
 
-impl TextInput {
-    pub fn new(value: impl Into<String>) -> Self {
-        Self {
-            value: value.into(),
-        }
-    }
-
-    pub const fn value(&self) -> &str {
-        self.value.as_str()
-    }
-}
-
 impl InputEventKind {
+    /// Returns the pointer phase for pointer-routed events.
     pub const fn pointer_phase(&self) -> Option<PointerPhase> {
         match self {
             Self::Pointer { phase } => Some(*phase),
@@ -212,6 +193,18 @@ impl InputEventKind {
             | Self::Pointer { .. }
             | Self::Key { .. }
             | Self::Text(_)
+            | Self::AgentInvoke { .. } => None,
+        }
+    }
+
+    /// Returns the session-scoped text-input batch for IME/text routed events.
+    pub fn text_input(&self) -> Option<&TextInput> {
+        match self {
+            Self::Text(text) => Some(text),
+            Self::Activate
+            | Self::Pointer { .. }
+            | Self::Key { .. }
+            | Self::Focus { .. }
             | Self::AgentInvoke { .. } => None,
         }
     }

@@ -189,3 +189,97 @@ impl ComponentViewBody {
         self.range
     }
 }
+
+impl ViewText {
+    pub const fn new(source: Expr, modifiers: Vec<ViewModifier>, range: TextRange) -> Self {
+        Self {
+            source,
+            rich_surface: None,
+            modifiers,
+            range,
+        }
+    }
+
+    #[must_use]
+    pub fn with_rich_surface(mut self, rich_surface: impl Into<String>) -> Self {
+        self.rich_surface = Some(rich_surface.into());
+        self
+    }
+
+    pub const fn source(&self) -> &Expr {
+        &self.source
+    }
+    pub const fn rich_surface(&self) -> Option<&String> {
+        self.rich_surface.as_ref()
+    }
+    pub fn modifiers(&self) -> &[ViewModifier] {
+        &self.modifiers
+    }
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl ViewTextField {
+    pub const fn new(
+        value: Expr,
+        mode: ViewTextFieldMode,
+        args: Vec<ViewArg>,
+        modifiers: Vec<ViewModifier>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            value,
+            mode,
+            args,
+            modifiers,
+            range,
+        }
+    }
+
+    pub const fn value(&self) -> &Expr {
+        &self.value
+    }
+    pub const fn mode(&self) -> ViewTextFieldMode {
+        self.mode
+    }
+    pub fn args(&self) -> &[ViewArg] {
+        &self.args
+    }
+    pub fn modifiers(&self) -> &[ViewModifier] {
+        &self.modifiers
+    }
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl ViewStyleModifier {
+    pub fn named(name: EntityRefSyntax) -> Self {
+        Self::Named(name)
+    }
+    pub fn inline_arcweft(source: impl Into<String>) -> Self {
+        Self::InlineArcweft(source.into())
+    }
+    pub fn inline_css(source: impl Into<String>) -> Self {
+        Self::InlineCss(source.into())
+    }
+
+    pub const fn syntax_name(&self) -> Option<&'static str> {
+        match self {
+            Self::Named(_) => None,
+            Self::InlineArcweft(_) => Some("Arcweft"),
+            Self::InlineCss(_) => Some("Css"),
+        }
+    }
+}
+
+impl ViewModifier {
+    pub fn style_arcweft(source: impl Into<String>) -> Self {
+        Self::Style(ViewStyleModifier::inline_arcweft(source))
+    }
+
+    pub fn style_css(source: impl Into<String>) -> Self {
+        Self::Style(ViewStyleModifier::inline_css(source))
+    }
+}

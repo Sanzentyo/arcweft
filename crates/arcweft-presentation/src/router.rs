@@ -1,11 +1,12 @@
 use crate::hit::{HitRecord, HitTree};
 use crate::hover::HoverPath;
 use crate::input::{
-    InputEvent, InputEventKind, KeyboardInput, PointerId, RawInputEvent, RawInputKind, TextInput,
+    InputEvent, InputEventKind, KeyboardInput, PointerId, RawInputEvent, RawInputKind,
     ViewportPoint,
 };
 use crate::interaction::InteractionState;
 use crate::layer::{LayerId, LayerInputPolicy, LayerTree, LayerVisibility};
+use crate::text_input::TextInput;
 
 /// Stateless Sans I/O router over `LayerTree`, `HitTree`, and `InteractionState`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -177,12 +178,7 @@ fn route_text(
     let Some(record) = hits.find_target(target) else {
         return RouteDecision::TargetUnavailable;
     };
-    route_hit_record(
-        raw,
-        layers,
-        record,
-        InputEventKind::Text(text.value().to_owned()),
-    )
+    route_hit_record(raw, layers, record, InputEventKind::Text(text.clone()))
 }
 
 fn route_pointer_hit_record(

@@ -1,6 +1,9 @@
 //! Style property bindings and interaction-aware retained UI style data.
 
 use crate::{DirtyFlags, StyleId, UiError};
+use arcweft_presentation::appearance::{
+    PresentationColor, PresentationEnvironment, SystemColor, SystemPaletteSet,
+};
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::interaction::InteractionState;
 use std::collections::{BTreeMap, BTreeSet};
@@ -36,8 +39,14 @@ pub enum UiPropertyKind {
     Rotate,
     Color,
     BackgroundColor,
+    PlaceholderColor,
+    SelectionColor,
+    CaretColor,
+    CompositionUnderlineColor,
     OutlineColor,
     OutlineWidth,
+    BorderRadius,
+    FontSize,
     Visibility,
     Width,
     Height,
@@ -53,6 +62,7 @@ pub enum UiPropertyValue {
     Bool(bool),
     Milli(Milli),
     Color(Rgba8),
+    SystemColor(SystemColor),
     Resource(u32),
 }
 
@@ -152,6 +162,15 @@ impl Rgba8 {
             alpha,
         }
     }
+
+    pub const fn from_presentation(color: PresentationColor) -> Self {
+        Self {
+            red: color.red,
+            green: color.green,
+            blue: color.blue,
+            alpha: color.alpha,
+        }
+    }
 }
 
 impl UiPropertyKind {
@@ -164,11 +183,16 @@ impl UiPropertyKind {
             | Self::Rotate
             | Self::Color
             | Self::BackgroundColor
+            | Self::PlaceholderColor
+            | Self::SelectionColor
+            | Self::CaretColor
+            | Self::CompositionUnderlineColor
             | Self::OutlineColor
             | Self::OutlineWidth
+            | Self::BorderRadius
             | Self::Visibility
             | Self::Custom(_) => Invalidation::Paint,
-            Self::Width | Self::Height | Self::Display => Invalidation::Layout,
+            Self::Width | Self::Height | Self::Display | Self::FontSize => Invalidation::Layout,
             Self::SemanticLabel => Invalidation::Semantics,
             Self::StructuralCondition => Invalidation::Fragment,
         }
@@ -182,11 +206,20 @@ impl UiPropertyKind {
             | Self::Scale
             | Self::Rotate
             | Self::OutlineWidth
+            | Self::BorderRadius
+            | Self::FontSize
             | Self::Width
             | Self::Height => matches!(value, UiPropertyValue::Milli(_)),
-            Self::Color | Self::BackgroundColor | Self::OutlineColor => {
-                matches!(value, UiPropertyValue::Color(_))
-            }
+            Self::Color
+            | Self::BackgroundColor
+            | Self::PlaceholderColor
+            | Self::SelectionColor
+            | Self::CaretColor
+            | Self::CompositionUnderlineColor
+            | Self::OutlineColor => matches!(
+                value,
+                UiPropertyValue::Color(_) | UiPropertyValue::SystemColor(_)
+            ),
             Self::Visibility | Self::Display | Self::StructuralCondition => {
                 matches!(value, UiPropertyValue::Bool(_))
             }
@@ -200,28 +233,47 @@ impl UiPropertyValue {
     pub const fn as_bool(self) -> Option<bool> {
         match self {
             Self::Bool(value) => Some(value),
-            Self::Milli(_) | Self::Color(_) | Self::Resource(_) => None,
+            Self::Milli(_) | Self::Color(_) | Self::SystemColor(_) | Self::Resource(_) => None,
         }
     }
 
     pub const fn as_milli(self) -> Option<Milli> {
         match self {
             Self::Milli(value) => Some(value),
-            Self::Bool(_) | Self::Color(_) | Self::Resource(_) => None,
+            Self::Bool(_) | Self::Color(_) | Self::SystemColor(_) | Self::Resource(_) => None,
         }
     }
 
     pub const fn as_color(self) -> Option<Rgba8> {
         match self {
             Self::Color(value) => Some(value),
-            Self::Bool(_) | Self::Milli(_) | Self::Resource(_) => None,
+            Self::Bool(_) | Self::Milli(_) | Self::SystemColor(_) | Self::Resource(_) => None,
         }
+    }
+
+    pub const fn as_system_color(self) -> Option<SystemColor> {
+        match self {
+            Self::SystemColor(value) => Some(value),
+            Self::Bool(_) | Self::Milli(_) | Self::Color(_) | Self::Resource(_) => None,
+        }
+    }
+
+    pub fn resolve_color(
+        self,
+        environment: &PresentationEnvironment,
+        palette: SystemPaletteSet,
+    ) -> Option<Rgba8> {
+        self.as_color().or_else(|| {
+            self.as_system_color().map(|role| {
+                Rgba8::from_presentation(palette.color(environment.color_scheme(), role))
+            })
+        })
     }
 
     pub const fn as_resource(self) -> Option<u32> {
         match self {
             Self::Resource(value) => Some(value),
-            Self::Bool(_) | Self::Milli(_) | Self::Color(_) => None,
+            Self::Bool(_) | Self::Milli(_) | Self::Color(_) | Self::SystemColor(_) => None,
         }
     }
 }
@@ -499,6 +551,15 @@ impl ResolvedUiStyle {
 
     pub fn color(&self, kind: UiPropertyKind) -> Option<Rgba8> {
         self.value(kind).and_then(UiPropertyValue::as_color)
+    }
+
+    pub fn resolved_color(
+        &self,
+        kind: UiPropertyKind,
+        environment: &PresentationEnvironment,
+    ) -> Option<Rgba8> {
+        self.value(kind)
+            .and_then(|value| value.resolve_color(environment, SystemPaletteSet::ENGINE_DEFAULT))
     }
 
     pub fn is_visible(&self) -> bool {
