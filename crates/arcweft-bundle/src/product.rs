@@ -285,7 +285,7 @@ fn required_descriptor<'a>(
     let mut matches = view
         .sections()
         .iter()
-        .filter(|descriptor| descriptor.kind() == kind);
+        .filter(|descriptor| descriptor.known_kind() == Some(kind));
     let Some(descriptor) = matches.next() else {
         return Err(BundleCodecError::DecodeAwfb {
             message: format!("AWFB bundle is missing required {kind:?} section"),
@@ -310,7 +310,7 @@ where
     let mut matches = view
         .sections()
         .iter()
-        .filter(|descriptor| descriptor.kind() == kind);
+        .filter(|descriptor| descriptor.known_kind() == Some(kind));
     let Some(descriptor) = matches.next() else {
         return Ok(None);
     };
@@ -450,7 +450,7 @@ mod tests {
         let descriptor = view
             .sections()
             .iter()
-            .find(|section| section.kind() == BundleSectionKind::ProgramBytecode)
+            .find(|section| section.known_kind() == Some(BundleSectionKind::ProgramBytecode))
             .expect("program bytecode section exists");
         let bytecode_bytes = view
             .decoded_section(descriptor.id())

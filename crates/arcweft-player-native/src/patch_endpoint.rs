@@ -407,6 +407,7 @@ mod tests {
     use arcweft_runtime_driver::clock::RuntimeClockStep;
     use arcweft_runtime_driver::session::BundleStepInput;
     use arcweft_runtime_driver::swap::SwapCompatibility;
+    use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -705,6 +706,26 @@ mod tests {
             vec![LineTaskGroup::default()],
         )
         .expect("runtime plan is valid");
+        let display = LineDisplayCatalog::new(vec![LineDisplaySpec {
+            line,
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![RichTextNode::Text {
+                text: display_text.to_owned(),
+            }]),
+        }]);
+        let product_awbc = AwbcLowerer::new(&plan, &display, "native-patch.arcw")
+            .lower()
+            .expect("product AWBC lowers")
+            .program;
         let bytecode = BytecodeProgram::from_runtime_plan(plan);
         let stats = bytecode.stats();
         ArcweftBundle::new(
@@ -730,22 +751,8 @@ mod tests {
                 text: "flow @flow.main main { ... }".to_owned(),
             },
             bytecode,
-            LineDisplayCatalog::new(vec![LineDisplaySpec {
-                line,
-                callee: "alice".to_owned(),
-                text_key: None,
-                window: None,
-                voice: None,
-                look: None,
-                style: None,
-                base_styles: Vec::new(),
-                default_inline_failure_policy: None,
-                style_contributions: Vec::new(),
-                args: Vec::new(),
-                content: RichTextDocument::new(vec![RichTextNode::Text {
-                    text: display_text.to_owned(),
-                }]),
-            }]),
+            display,
         )
+        .with_product_awbc(product_awbc)
     }
 }

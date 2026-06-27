@@ -210,6 +210,8 @@ mod tests {
         bytecode::BytecodeProgram,
         plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan},
     };
+    use arcweft_render_text::LineDisplayCatalog;
+    use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
     use std::{
         process,
         time::{SystemTime, UNIX_EPOCH},
@@ -322,6 +324,11 @@ mod tests {
             Vec::new(),
         )
         .expect("runtime plan is valid");
+        let display = LineDisplayCatalog::default();
+        let product_awbc = AwbcLowerer::new(&plan, &display, "bundle-mode-runs.arcw")
+            .lower()
+            .expect("product AWBC lowers")
+            .program;
         let bytecode = BytecodeProgram::from_runtime_plan(plan);
         ArcweftBundle::new(
             BundleManifest {
@@ -346,8 +353,9 @@ mod tests {
                 text: "flow @flow.main main { return \"done\" }".to_owned(),
             },
             bytecode,
-            arcweft_render_text::LineDisplayCatalog::default(),
+            display,
         )
+        .with_product_awbc(product_awbc)
     }
 
     fn temp_awfb_path(label: &str) -> PathBuf {

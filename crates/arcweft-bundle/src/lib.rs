@@ -1262,6 +1262,12 @@ mod tests {
     use arcweft_audio_core::graph::{
         AudioAsset, AudioBusDef, AudioDecodeStrategy, AudioFormat, AudioGraph,
     };
+    use arcweft_core::awbc::schema::{
+        AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
+        AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
+        AwbcFunctionKind, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId,
+        AwbcTableRange, AwbcTerminator,
+    };
     use arcweft_interaction_model::audio::{
         AudioBusId, AudioLoopMode, AudioResourceId, GainDbMilli,
     };
@@ -1614,18 +1620,20 @@ mod tests {
     }
 
     #[test]
-    fn awfb_rejects_runtime_types_layout_mismatch() {
+    fn awfb_decodes_runtime_types_layout_independent_from_awbc_payload() {
         let bytes = awfb_with_runtime_types_layout_signature(
             &empty_test_bundle(),
             "arcweft.bytecode.runtime-layout.v0.test",
         );
 
-        let error = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &bytes)
-            .expect_err("runtime-types and bytecode layout mismatch is rejected");
+        let decoded = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &bytes)
+            .expect("AWBC product AWFB decodes");
 
-        assert!(
-            matches!(error, BundleCodecError::DecodeAwfb { message } if message.contains("runtime types layout"))
+        assert_eq!(
+            decoded.bytecode.program.runtime_layout.signature,
+            "arcweft.bytecode.runtime-layout.v0.test"
         );
+        assert!(decoded.product_awbc().is_some());
     }
 
     #[test]
@@ -1733,6 +1741,45 @@ mod tests {
             BytecodeProgram::default(),
             LineDisplayCatalog::default(),
         )
+        .with_product_awbc(minimal_awbc_program())
+    }
+
+    fn minimal_awbc_program() -> AwbcProgram {
+        AwbcProgram {
+            strings: vec!["entry.main".to_owned()],
+            signatures: vec![AwbcSignature {
+                params: Vec::new(),
+                result: None,
+                effects: AwbcEffectSetId(0),
+            }],
+            frame_layouts: vec![AwbcFrameLayout {
+                slots: Vec::new(),
+                max_scope_depth: 0,
+            }],
+            functions: vec![AwbcFunction {
+                public_id: Some(AwbcStringId(0)),
+                kind: AwbcFunctionKind::Flow,
+                signature: AwbcSignatureId(0),
+                frame_layout: AwbcFrameLayoutId(0),
+                blocks: AwbcTableRange::new(0, 1),
+                entry_block: AwbcBlockId(0),
+                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            }],
+            blocks: vec![AwbcBlock {
+                owner: AwbcFunctionId(0),
+                instructions: AwbcTableRange::new(0, 0),
+                terminator: AwbcTerminator::Return { value: None },
+                safe_point: AwbcSafePointKind::FlowEntry,
+                source_map: None,
+            }],
+            entries: vec![AwbcEntry {
+                public_id: AwbcStringId(0),
+                kind: AwbcEntryKind::Game,
+                signature: AwbcSignatureId(0),
+                target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            }],
+            ..AwbcProgram::default()
+        }
     }
 
     fn awfb_with_runtime_types_layout_signature(

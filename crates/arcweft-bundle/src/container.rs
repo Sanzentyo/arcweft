@@ -1,5 +1,11 @@
 //! AWFB v1 product container codec.
 
+mod identity;
+mod opaque;
+
+pub use identity::ArtifactIdentity;
+pub use opaque::{DecodedSectionKind, SectionKindCode};
+
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use thiserror::Error;
@@ -29,7 +35,7 @@ const REQUIRED_PATCH_SECTIONS: [BundleSectionKind; 1] = [BundleSectionKind::Patc
 )]
 pub struct BundleDigest([u8; 32]);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BundleKind {
     Program,
@@ -97,7 +103,7 @@ pub struct SectionId([u8; 16]);
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct SectionDescriptor {
     id: SectionId,
-    kind: BundleSectionKind,
+    kind: SectionKindCode,
     schema_version: u32,
     residency: ContentResidency,
     placement: ContentPlacement,
@@ -113,7 +119,7 @@ pub struct SectionDescriptor {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SectionInput {
     id: SectionId,
-    kind: BundleSectionKind,
+    kind: SectionKindCode,
     schema_version: u32,
     residency: ContentResidency,
     placement: ContentPlacement,
@@ -254,8 +260,7 @@ struct Header {
 }
 
 enum DecodedDescriptor {
-    Known(SectionDescriptor),
-    UnknownOptional,
+    Descriptor(SectionDescriptor),
 }
 
 impl BundleDigest {
@@ -590,8 +595,31 @@ impl SectionDescriptor {
         self.id
     }
 
+    /// Returns the known section kind.
+    ///
+    /// # Panics
+    ///
+    /// Panics when this descriptor carries an unknown optional section kind.
+    /// Use [`Self::known_kind`] or [`Self::kind_code`] when preserving opaque
+    /// sections.
     pub const fn kind(&self) -> BundleSectionKind {
+        self.known_kind()
+            .expect("SectionDescriptor::kind called for unknown optional section")
+    }
+
+    pub const fn known_kind(&self) -> Option<BundleSectionKind> {
+        self.kind.known()
+    }
+
+    pub const fn kind_code(&self) -> SectionKindCode {
         self.kind
+    }
+
+    pub const fn decoded_kind(&self) -> DecodedSectionKind {
+        match self.known_kind() {
+            Some(kind) => DecodedSectionKind::Known(kind),
+            None => DecodedSectionKind::UnknownOptional(self.kind),
+        }
     }
 
     pub const fn schema_version(&self) -> u32 {
@@ -649,7 +677,7 @@ impl SectionInput {
         let digest = BundleDigest::of(&decoded_bytes);
         Self {
             id,
-            kind,
+            kind: kind.into(),
             schema_version,
             residency,
             placement: ContentPlacement::Embedded,
@@ -683,7 +711,7 @@ impl SectionInput {
             u64::try_from(decoded_bytes.len()).map_err(|_| ContainerError::Bounds)?;
         Ok(Self {
             id,
-            kind,
+            kind: kind.into(),
             schema_version,
             residency,
             placement: ContentPlacement::Embedded,
@@ -726,7 +754,7 @@ impl SectionInput {
     ) -> Self {
         Self {
             id,
-            kind,
+            kind: kind.into(),
             schema_version,
             residency,
             placement: ContentPlacement::External,
@@ -744,8 +772,169 @@ impl SectionInput {
         self.id
     }
 
+    /// Returns the known section kind.
+    ///
+    /// # Panics
+    ///
+    /// Panics when this input carries an unknown optional section kind. Use
+    /// [`Self::known_kind`] or [`Self::kind_code`] when preserving opaque
+    /// sections.
     pub const fn kind(&self) -> BundleSectionKind {
+        self.known_kind()
+            .expect("SectionInput::kind called for unknown optional section")
+    }
+
+    pub const fn known_kind(&self) -> Option<BundleSectionKind> {
+        self.kind.known()
+    }
+
+    pub const fn kind_code(&self) -> SectionKindCode {
         self.kind
+    }
+
+    pub fn embedded_unknown_optional(
+        id: SectionId,
+        kind: SectionKindCode,
+        schema_version: u32,
+        residency: ContentResidency,
+        decoded_bytes: impl Into<Vec<u8>>,
+    ) -> Self {
+        let decoded_bytes = decoded_bytes.into();
+        let size = u64::try_from(decoded_bytes.len()).unwrap_or(u64::MAX);
+        let digest = BundleDigest::of(&decoded_bytes);
+        Self {
+            id,
+            kind,
+            schema_version,
+            residency,
+            placement: ContentPlacement::Embedded,
+            compression: Compression::None,
+            required: false,
+            stored_size: size,
+            decoded_size: size,
+            stored_digest: digest,
+            content_digest: digest,
+            stored_bytes: decoded_bytes,
+        }
+    }
+
+    pub fn embedded_raw_optional(
+        id: SectionId,
+        kind: SectionKindCode,
+        schema_version: u32,
+        residency: ContentResidency,
+        required: bool,
+        decoded_bytes: impl Into<Vec<u8>>,
+    ) -> Result<Self, ContainerError> {
+        if required && kind.known().is_none() {
+            return Err(ContainerError::UnknownRequiredSectionKind(kind.encoded()));
+        }
+        let decoded_bytes = decoded_bytes.into();
+        let size = u64::try_from(decoded_bytes.len()).unwrap_or(u64::MAX);
+        let digest = BundleDigest::of(&decoded_bytes);
+        Ok(Self {
+            id,
+            kind,
+            schema_version,
+            residency,
+            placement: ContentPlacement::Embedded,
+            compression: Compression::None,
+            required,
+            stored_size: size,
+            decoded_size: size,
+            stored_digest: digest,
+            content_digest: digest,
+            stored_bytes: decoded_bytes,
+        })
+    }
+
+    pub fn embedded_raw_optional_zstd(
+        id: SectionId,
+        kind: SectionKindCode,
+        schema_version: u32,
+        residency: ContentResidency,
+        required: bool,
+        decoded_bytes: impl AsRef<[u8]>,
+    ) -> Result<Self, ContainerError> {
+        if required && kind.known().is_none() {
+            return Err(ContainerError::UnknownRequiredSectionKind(kind.encoded()));
+        }
+        let decoded_bytes = decoded_bytes.as_ref();
+        let stored_bytes = zstd::bulk::compress(decoded_bytes, 0).map_err(|error| {
+            ContainerError::CompressZstd {
+                section: id,
+                message: error.to_string(),
+            }
+        })?;
+        let stored_size = u64::try_from(stored_bytes.len()).map_err(|_| ContainerError::Bounds)?;
+        let decoded_size =
+            u64::try_from(decoded_bytes.len()).map_err(|_| ContainerError::Bounds)?;
+        Ok(Self {
+            id,
+            kind,
+            schema_version,
+            residency,
+            placement: ContentPlacement::Embedded,
+            compression: Compression::Zstd,
+            required,
+            stored_size,
+            decoded_size,
+            stored_digest: BundleDigest::of(&stored_bytes),
+            content_digest: BundleDigest::of(decoded_bytes),
+            stored_bytes,
+        })
+    }
+
+    pub fn external_unknown_optional_ref(
+        id: SectionId,
+        kind: SectionKindCode,
+        schema_version: u32,
+        residency: ContentResidency,
+        decoded_size: u64,
+        content_digest: BundleDigest,
+    ) -> Self {
+        Self {
+            id,
+            kind,
+            schema_version,
+            residency,
+            placement: ContentPlacement::External,
+            compression: Compression::None,
+            required: false,
+            stored_size: decoded_size,
+            decoded_size,
+            stored_digest: content_digest,
+            content_digest,
+            stored_bytes: Vec::new(),
+        }
+    }
+
+    pub fn external_raw_optional_ref(
+        id: SectionId,
+        kind: SectionKindCode,
+        schema_version: u32,
+        residency: ContentResidency,
+        required: bool,
+        decoded_size: u64,
+        content_digest: BundleDigest,
+    ) -> Result<Self, ContainerError> {
+        if required && kind.known().is_none() {
+            return Err(ContainerError::UnknownRequiredSectionKind(kind.encoded()));
+        }
+        Ok(Self {
+            id,
+            kind,
+            schema_version,
+            residency,
+            placement: ContentPlacement::External,
+            compression: Compression::None,
+            required,
+            stored_size: decoded_size,
+            decoded_size,
+            stored_digest: content_digest,
+            content_digest,
+            stored_bytes: Vec::new(),
+        })
     }
 
     pub fn stored_bytes(&self) -> &[u8] {
@@ -819,7 +1008,7 @@ impl<'a> BundleView<'a> {
         }
 
         let mut sections = Vec::with_capacity(header.section_count);
-        let mut skipped_optional_sections = 0_usize;
+        let skipped_optional_sections = 0_usize;
         let mut seen = BTreeSet::new();
         let mut occupied_ranges = vec![
             (0_usize, HEADER_SIZE),
@@ -846,7 +1035,7 @@ impl<'a> BundleView<'a> {
 
         for entry in index.chunks_exact(SECTION_INDEX_ENTRY_SIZE) {
             match decode_descriptor(entry)? {
-                DecodedDescriptor::Known(descriptor) => {
+                DecodedDescriptor::Descriptor(descriptor) => {
                     if !seen.insert(descriptor.id) {
                         return Err(ContainerError::DuplicateSection(descriptor.id));
                     }
@@ -868,9 +1057,6 @@ impl<'a> BundleView<'a> {
                         occupied_ranges.push(range);
                     }
                     sections.push(descriptor);
-                }
-                DecodedDescriptor::UnknownOptional => {
-                    skipped_optional_sections += 1;
                 }
             }
         }
@@ -970,7 +1156,7 @@ impl<'a> BundleView<'a> {
         let mut bytes = Vec::new();
         for descriptor in descriptors {
             bytes.extend_from_slice(&descriptor.id.as_bytes());
-            bytes.extend_from_slice(&descriptor.kind.encoded().to_le_bytes());
+            bytes.extend_from_slice(&descriptor.kind_code().encoded().to_le_bytes());
             bytes.extend_from_slice(&descriptor.schema_version.to_le_bytes());
             bytes.extend_from_slice(&descriptor.decoded_size.to_le_bytes());
             bytes.extend_from_slice(&descriptor.content_digest.as_bytes());
@@ -979,6 +1165,14 @@ impl<'a> BundleView<'a> {
             bytes.push(descriptor.placement.encoded());
         }
         BundleDigest::of(&bytes)
+    }
+
+    pub fn artifact_identity(&self) -> ArtifactIdentity {
+        ArtifactIdentity::for_current_container(
+            self.kind,
+            self.content_root(),
+            BundleDigest::of(self.manifest),
+        )
     }
 }
 
@@ -1151,10 +1345,17 @@ fn validate_inputs(kind: BundleKind, sections: &[SectionInput]) -> Result<(), Co
         if !seen.insert(section.id) {
             return Err(ContainerError::DuplicateSection(section.id));
         }
-        if !kind.allows_section(section.kind) {
+        if section.required && section.known_kind().is_none() {
+            return Err(ContainerError::UnknownRequiredSectionKind(
+                section.kind_code().encoded(),
+            ));
+        }
+        if let Some(section_kind) = section.known_kind()
+            && !kind.allows_section(section_kind)
+        {
             return Err(ContainerError::DisallowedSection {
                 bundle: kind,
-                section: section.kind,
+                section: section_kind,
             });
         }
         if section.placement == ContentPlacement::External && !section.stored_bytes.is_empty() {
@@ -1174,7 +1375,10 @@ fn validate_required_inputs(
         BundleKind::AgentController | BundleKind::ContentPack => &[],
     };
     for required in required_sections {
-        if !sections.iter().any(|section| section.kind == *required) {
+        if !sections
+            .iter()
+            .any(|section| section.known_kind() == Some(*required))
+        {
             return Err(ContainerError::MissingRequiredSection(*required));
         }
     }
@@ -1191,7 +1395,10 @@ fn validate_required_sections(
         BundleKind::AgentController | BundleKind::ContentPack => &[],
     };
     for required in required_sections {
-        if !sections.iter().any(|section| section.kind == *required) {
+        if !sections
+            .iter()
+            .any(|section| section.known_kind() == Some(*required))
+        {
             return Err(ContainerError::MissingRequiredSection(*required));
         }
     }
@@ -1203,10 +1410,17 @@ fn validate_descriptor(
     descriptor: &SectionDescriptor,
     budget: ReadBudget,
 ) -> Result<(), ContainerError> {
-    if !bundle.allows_section(descriptor.kind) {
+    if descriptor.required && descriptor.known_kind().is_none() {
+        return Err(ContainerError::UnknownRequiredSectionKind(
+            descriptor.kind_code().encoded(),
+        ));
+    }
+    if let Some(kind) = descriptor.known_kind()
+        && !bundle.allows_section(kind)
+    {
         return Err(ContainerError::DisallowedSection {
             bundle,
-            section: descriptor.kind,
+            section: kind,
         });
     }
     if descriptor.decoded_size > budget.decoded_bytes {
@@ -1348,7 +1562,7 @@ fn encode_header(out: &mut [u8], header: Header) -> Result<(), ContainerError> {
 fn encode_descriptor(out: &mut Vec<u8>, value: &SectionDescriptor) {
     let start = out.len();
     out.extend_from_slice(&value.id.as_bytes());
-    out.extend_from_slice(&value.kind.encoded().to_le_bytes());
+    out.extend_from_slice(&value.kind_code().encoded().to_le_bytes());
     out.extend_from_slice(&value.schema_version.to_le_bytes());
     out.push(value.residency.encoded());
     out.push(value.placement.encoded());
@@ -1372,18 +1586,15 @@ fn decode_descriptor(bytes: &[u8]) -> Result<DecodedDescriptor, ContainerError> 
     let id = SectionId::from_bytes(id);
     let kind_raw = read_u32(bytes, 16)?;
     let required = *bytes.get(27).ok_or(ContainerError::Bounds)? != 0;
-    let Some(kind) = BundleSectionKind::from_encoded(kind_raw) else {
-        if required {
-            return Err(ContainerError::UnknownRequiredSectionKind(kind_raw));
-        }
-        return Ok(DecodedDescriptor::UnknownOptional);
-    };
+    if required && BundleSectionKind::from_encoded(kind_raw).is_none() {
+        return Err(ContainerError::UnknownRequiredSectionKind(kind_raw));
+    }
     let residency_raw = *bytes.get(24).ok_or(ContainerError::Bounds)?;
     let placement_raw = *bytes.get(25).ok_or(ContainerError::Bounds)?;
     let compression_raw = *bytes.get(26).ok_or(ContainerError::Bounds)?;
-    Ok(DecodedDescriptor::Known(SectionDescriptor {
+    Ok(DecodedDescriptor::Descriptor(SectionDescriptor {
         id,
-        kind,
+        kind: SectionKindCode::new(kind_raw),
         schema_version: read_u32(bytes, 20)?,
         residency: ContentResidency::from_encoded(residency_raw)
             .ok_or(ContainerError::InvalidResidency(residency_raw))?,
@@ -1463,9 +1674,10 @@ fn read_digest(bytes: &[u8], offset: usize) -> Result<BundleDigest, ContainerErr
 #[cfg(test)]
 mod tests {
     use super::{
-        BundleKind, BundleSectionKind, BundleView, Compression, ContainerError, ContentPlacement,
-        ContentResidency, ExternalSectionPayload, ExternalSectionPayloadError, ReadBudget,
-        SectionId, SectionInput, encode_bundle,
+        BundleDigest, BundleKind, BundleSectionKind, BundleView, Compression, ContainerError,
+        ContentPlacement, ContentResidency, DecodedSectionKind, ExternalSectionPayload,
+        ExternalSectionPayloadError, ReadBudget, SectionId, SectionInput, SectionKindCode,
+        encode_bundle,
     };
 
     #[test]
@@ -1970,29 +2182,38 @@ mod tests {
     }
 
     #[test]
-    fn awfb_v1_skips_unknown_optional_sections_and_rejects_required_unknown() {
+    fn awfb_v1_retains_unknown_optional_sections_and_rejects_required_unknown() {
         let mut bytes = encode_bundle(
             BundleKind::ContentPack,
             b"{}",
-            vec![SectionInput::embedded(
+            vec![SectionInput::embedded_unknown_optional(
                 section_id(1),
-                BundleSectionKind::AssetBlob,
+                SectionKindCode::new(900),
                 1,
                 ContentResidency::OnDemand,
-                false,
                 b"blob",
             )],
         )
         .expect("AWFB encodes");
-        let index_offset = 176_usize;
-        bytes[index_offset + 16..index_offset + 20].copy_from_slice(&900_u32.to_le_bytes());
-        refresh_index_digest(&mut bytes, index_offset, super::SECTION_INDEX_ENTRY_SIZE);
 
         let view = BundleView::parse(&bytes, ReadBudget::default())
-            .expect("unknown optional section can be skipped");
-        assert_eq!(view.skipped_optional_sections(), 1);
-        assert!(view.sections().is_empty());
+            .expect("unknown optional section can be retained");
+        assert_eq!(view.skipped_optional_sections(), 0);
+        assert_eq!(view.sections().len(), 1);
+        let descriptor = &view.sections()[0];
+        assert_eq!(descriptor.known_kind(), None);
+        assert_eq!(descriptor.kind_code(), SectionKindCode::new(900));
+        assert_eq!(
+            descriptor.decoded_kind(),
+            DecodedSectionKind::UnknownOptional(SectionKindCode::new(900))
+        );
+        assert_eq!(
+            view.decoded_section(descriptor.id())
+                .expect("unknown optional section decodes"),
+            Some(b"blob".to_vec())
+        );
 
+        let index_offset = 176_usize;
         bytes[index_offset + 27] = 1;
         refresh_index_digest(&mut bytes, index_offset, super::SECTION_INDEX_ENTRY_SIZE);
         let error = BundleView::parse(&bytes, ReadBudget::default())
@@ -2001,6 +2222,87 @@ mod tests {
             error,
             ContainerError::UnknownRequiredSectionKind(900)
         ));
+    }
+
+    #[test]
+    fn awfb_v1_retains_unknown_optional_external_descriptors() {
+        let payload = b"external opaque bytes";
+        let payload_digest = BundleDigest::of(payload);
+        let bytes = encode_bundle(
+            BundleKind::ContentPack,
+            b"{}",
+            vec![SectionInput::external_unknown_optional_ref(
+                section_id(2),
+                SectionKindCode::new(901),
+                1,
+                ContentResidency::OnDemand,
+                payload.len() as u64,
+                payload_digest,
+            )],
+        )
+        .expect("AWFB encodes");
+
+        let view = BundleView::parse(&bytes, ReadBudget::default()).expect("AWFB parses");
+        let descriptor = &view.sections()[0];
+
+        assert_eq!(descriptor.known_kind(), None);
+        assert_eq!(descriptor.kind_code(), SectionKindCode::new(901));
+        assert_eq!(
+            view.decoded_section_with_external_payloads(
+                descriptor.id(),
+                &[ExternalSectionPayload::new(
+                    descriptor.id(),
+                    payload.to_vec()
+                )],
+            )
+            .expect("external unknown optional payload verifies"),
+            Some(payload.to_vec())
+        );
+    }
+
+    #[test]
+    fn artifact_identity_changes_for_manifest_only_delta() {
+        let section = SectionInput::embedded(
+            section_id(3),
+            BundleSectionKind::AssetBlob,
+            1,
+            ContentResidency::OnDemand,
+            false,
+            b"stable content",
+        );
+        let first = encode_bundle(
+            BundleKind::ContentPack,
+            br#"{"name":"first"}"#,
+            vec![section],
+        )
+        .expect("first AWFB encodes");
+        let section = SectionInput::embedded(
+            section_id(3),
+            BundleSectionKind::AssetBlob,
+            1,
+            ContentResidency::OnDemand,
+            false,
+            b"stable content",
+        );
+        let second = encode_bundle(
+            BundleKind::ContentPack,
+            br#"{"name":"second"}"#,
+            vec![section],
+        )
+        .expect("second AWFB encodes");
+        let first = BundleView::parse(&first, ReadBudget::default()).expect("first AWFB parses");
+        let second = BundleView::parse(&second, ReadBudget::default()).expect("second AWFB parses");
+
+        assert_eq!(first.content_root(), second.content_root());
+        assert_ne!(first.artifact_identity(), second.artifact_identity());
+        assert_ne!(
+            first.artifact_identity().digest(),
+            second.artifact_identity().digest()
+        );
+        assert_eq!(
+            first.artifact_identity().manifest_digest,
+            BundleDigest::of(br#"{"name":"first"}"#)
+        );
     }
 
     fn required(id: SectionId, kind: BundleSectionKind, bytes: &'static [u8]) -> SectionInput {

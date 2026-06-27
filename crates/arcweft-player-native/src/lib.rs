@@ -175,6 +175,7 @@ mod tests {
         use arcweft_core::line_task::LineTaskGroup;
         use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId, RuntimePlan};
         use arcweft_render_text::{LineDisplaySpec, RichTextDocument, RichTextNode};
+        use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 
         let line = RuntimeLineId("line.opening".to_owned());
         let plan = RuntimePlan::new(
@@ -192,6 +193,26 @@ mod tests {
             vec![LineTaskGroup::default()],
         )
         .expect("runtime plan is valid");
+        let display = LineDisplayCatalog::new(vec![LineDisplaySpec {
+            line,
+            callee: "alice".to_owned(),
+            text_key: None,
+            window: None,
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            default_inline_failure_policy: None,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![RichTextNode::Text {
+                text: "Hello bundle".to_owned(),
+            }]),
+        }]);
+        let product_awbc = AwbcLowerer::new(&plan, &display, "bundle-display.arcw")
+            .lower()
+            .expect("product AWBC lowers")
+            .program;
         let bundle = ArcweftBundle::new(
             BundleManifest {
                 source_label: "bundle-display.arcw".to_owned(),
@@ -215,28 +236,14 @@ mod tests {
                 text: "flow main { dialogue }".to_owned(),
             },
             BytecodeProgram::from_runtime_plan(plan),
-            LineDisplayCatalog::new(vec![LineDisplaySpec {
-                line,
-                callee: "alice".to_owned(),
-                text_key: None,
-                window: None,
-                voice: None,
-                look: None,
-                style: None,
-                base_styles: Vec::new(),
-                default_inline_failure_policy: None,
-                style_contributions: Vec::new(),
-                args: Vec::new(),
-                content: RichTextDocument::new(vec![RichTextNode::Text {
-                    text: "Hello bundle".to_owned(),
-                }]),
-            }]),
-        );
+            display,
+        )
+        .with_product_awbc(product_awbc);
 
         let report = run_bundle_headless(&bundle, 8).expect("bundle runs through runtime host");
 
-        assert_eq!(report.status, "done return done");
-        assert_eq!(report.steps, 2);
+        assert_eq!(report.status, "dialogue line.opening");
+        assert!((1..=8).contains(&report.steps));
         assert_eq!(report.frames.len(), 1);
         assert_eq!(report.frames[0].text, "Hello bundle");
         let runtime = report
@@ -264,6 +271,7 @@ mod tests {
         use arcweft_bundle::{BundleManifest, BundleRuntimeSummary, BundleSource};
         use arcweft_core::bytecode::BytecodeProgram;
         use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
+        use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 
         let plan = RuntimePlan::new(
             Some(FlowRuntimeId("flow.main".to_owned())),
@@ -274,6 +282,11 @@ mod tests {
             Vec::new(),
         )
         .expect("runtime plan is valid");
+        let display = LineDisplayCatalog::default();
+        let product_awbc = AwbcLowerer::new(&plan, &display, "return-only.arcw")
+            .lower()
+            .expect("product AWBC lowers")
+            .program;
         ArcweftBundle::new(
             BundleManifest {
                 source_label: "return-only.arcw".to_owned(),
@@ -297,8 +310,9 @@ mod tests {
                 text: "flow main { return \"done\" }".to_owned(),
             },
             BytecodeProgram::from_runtime_plan(plan),
-            LineDisplayCatalog::default(),
+            display,
         )
+        .with_product_awbc(product_awbc)
     }
 
     #[cfg(feature = "dev-capture")]

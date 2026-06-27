@@ -881,6 +881,7 @@ dependencies = [
  "arcweft-render-wgpu",
  "arcweft-runtime-driver",
  "arcweft-runtime-host",
+ "arcweft-runtime-plan",
  "clap",
  "num-traits",
  "png",

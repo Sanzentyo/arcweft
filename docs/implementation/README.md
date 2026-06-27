@@ -27,6 +27,10 @@ in
 `docs/implementation/seq-01-6-product-awbc-build-parity-legacy-audit-2026-06-25.md`;
 the remaining product-step parity work is
 `docs/reviews/requests/2026-06-25-seq-01.6.1-product-awbc-runtime-step-parity-closure.md`.
+The seq-02 product artifact / patch / signing package first cut is tracked in
+`docs/implementation/seq-02-product-artifact-patch-signing-first-cut-2026-06-27.md`;
+only unknown optional AWFB section preservation and `ArtifactIdentity` were
+implementation-ready in this cut.
 
 ## Current Milestone
 
@@ -1847,5 +1851,4 @@ The stable specification locations for the `pro_review4.md` decisions are:
 - `docs/05-build-and-security/native-web-build.md`: native/web runtime target model.
 - `docs/05-build-and-security/packaging.md`: Sans I/O bundle format boundary.
 - `docs/schemas/README.md`: schemas as data formats rather than I/O APIs.
-
 

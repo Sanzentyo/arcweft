@@ -2,7 +2,8 @@
 
 use crate::container::{
     BundleDigest, BundleKind, BundleSectionKind, BundleView, Compression, ContentPlacement,
-    ContentResidency, ReadBudget, SectionDescriptor, SectionId, SectionInput, encode_bundle,
+    ContentResidency, ReadBudget, SectionDescriptor, SectionId, SectionInput, SectionKindCode,
+    encode_bundle,
 };
 use crate::release::{ReleaseManifestError, ReleaseSignaturePolicy};
 use arcweft_core::bytecode::BYTECODE_ABI_VERSION;
@@ -551,7 +552,7 @@ fn validate_old_digest(
 fn section_input_from_payload(
     payload: &PatchSectionPayload,
 ) -> Result<SectionInput, PatchBundleError> {
-    section_input_from_payload_as_kind(payload, payload.descriptor.kind())
+    section_input_from_payload_as_kind(payload, payload.descriptor.kind_code())
 }
 
 fn section_input_from_payload_carrier(
@@ -562,7 +563,7 @@ fn section_input_from_payload_carrier(
 
 fn section_input_from_payload_as_kind(
     payload: &PatchSectionPayload,
-    kind: BundleSectionKind,
+    kind: impl Into<SectionKindCode>,
 ) -> Result<SectionInput, PatchBundleError> {
     if payload.descriptor.placement() != ContentPlacement::Embedded {
         return Err(PatchBundleError::ExternalSectionPayload(
@@ -605,25 +606,27 @@ fn section_input_for_descriptor(
     descriptor: &SectionDescriptor,
     decoded_bytes: impl Into<Vec<u8>>,
 ) -> Result<SectionInput, PatchBundleError> {
-    section_input_for_descriptor_as_kind(descriptor, descriptor.kind(), decoded_bytes)
+    section_input_for_descriptor_as_kind(descriptor, descriptor.kind_code(), decoded_bytes)
 }
 
 fn section_input_for_descriptor_as_kind(
     descriptor: &SectionDescriptor,
-    kind: BundleSectionKind,
+    kind: impl Into<SectionKindCode>,
     decoded_bytes: impl Into<Vec<u8>>,
 ) -> Result<SectionInput, PatchBundleError> {
     let decoded_bytes = decoded_bytes.into();
+    let kind = kind.into();
     match descriptor.compression() {
-        Compression::None => Ok(SectionInput::embedded(
+        Compression::None => SectionInput::embedded_raw_optional(
             descriptor.id(),
             kind,
             descriptor.schema_version(),
             descriptor.residency(),
             descriptor.required(),
             decoded_bytes,
-        )),
-        Compression::Zstd => SectionInput::embedded_zstd(
+        )
+        .map_err(PatchBundleError::Container),
+        Compression::Zstd => SectionInput::embedded_raw_optional_zstd(
             descriptor.id(),
             kind,
             descriptor.schema_version(),
@@ -636,22 +639,23 @@ fn section_input_for_descriptor_as_kind(
 }
 
 fn section_input_from_external_descriptor(descriptor: &SectionDescriptor) -> SectionInput {
-    SectionInput::external_ref(
+    SectionInput::external_raw_optional_ref(
         descriptor.id(),
-        descriptor.kind(),
+        descriptor.kind_code(),
         descriptor.schema_version(),
         descriptor.residency(),
         descriptor.required(),
         descriptor.decoded_size(),
         descriptor.content_digest(),
     )
+    .expect("parsed descriptor cannot contain required unknown section")
 }
 
 fn decode_patch_plan_section(view: &BundleView<'_>) -> Result<BundlePatchPlan, PatchBundleError> {
     let mut matches = view
         .sections()
         .iter()
-        .filter(|descriptor| descriptor.kind() == BundleSectionKind::PatchPlan);
+        .filter(|descriptor| descriptor.known_kind() == Some(BundleSectionKind::PatchPlan));
     let Some(descriptor) = matches.next() else {
         return Err(PatchBundleError::MissingPatchPlan);
     };
@@ -674,7 +678,7 @@ fn decode_changed_sections(
     let expected = expected_changed_sections(plan);
     view.sections()
         .iter()
-        .filter(|descriptor| descriptor.kind() != BundleSectionKind::PatchPlan)
+        .filter(|descriptor| descriptor.known_kind() != Some(BundleSectionKind::PatchPlan))
         .filter(|descriptor| descriptor.placement().is_embedded())
         .map(|descriptor| {
             let Some(expected_descriptor) = expected.get(&descriptor.id()) else {
@@ -717,36 +721,41 @@ fn operation_next_descriptor(operation: &SectionOperation) -> Option<&SectionDes
 
 fn operation_compatibility(operation: &SectionOperation) -> PatchCompatibility {
     match operation {
-        SectionOperation::Add(descriptor) => section_compatibility(descriptor.kind()),
-        SectionOperation::Replace { next, .. } => section_compatibility(next.kind()),
+        SectionOperation::Add(descriptor) => section_compatibility(descriptor.known_kind()),
+        SectionOperation::Replace { next, .. } => section_compatibility(next.known_kind()),
         SectionOperation::Remove { .. } => PatchCompatibility::RestartRequired,
     }
 }
 
-fn section_compatibility(kind: BundleSectionKind) -> PatchCompatibility {
+fn section_compatibility(kind: Option<BundleSectionKind>) -> PatchCompatibility {
     match kind {
-        BundleSectionKind::AdapterRequirements
-        | BundleSectionKind::RuntimeTypes
-        | BundleSectionKind::Entrypoints
-        | BundleSectionKind::PatchPlan => PatchCompatibility::RestartRequired,
-        BundleSectionKind::ProgramBytecode | BundleSectionKind::HotSwapMap => {
+        None
+        | Some(
+            BundleSectionKind::AdapterRequirements
+            | BundleSectionKind::RuntimeTypes
+            | BundleSectionKind::Entrypoints
+            | BundleSectionKind::PatchPlan,
+        ) => PatchCompatibility::RestartRequired,
+        Some(BundleSectionKind::ProgramBytecode | BundleSectionKind::HotSwapMap) => {
             PatchCompatibility::CodeGenerational
         }
-        BundleSectionKind::ContentCatalog
-        | BundleSectionKind::DisplayCatalog
-        | BundleSectionKind::AudioGraph
-        | BundleSectionKind::AssetCatalog
-        | BundleSectionKind::AssetBlob
-        | BundleSectionKind::LocaleCatalog
-        | BundleSectionKind::SourceMap
-        | BundleSectionKind::DebugSymbols
-        | BundleSectionKind::NormalizedSource => PatchCompatibility::ContentOnly,
+        Some(
+            BundleSectionKind::ContentCatalog
+            | BundleSectionKind::DisplayCatalog
+            | BundleSectionKind::AudioGraph
+            | BundleSectionKind::AssetCatalog
+            | BundleSectionKind::AssetBlob
+            | BundleSectionKind::LocaleCatalog
+            | BundleSectionKind::SourceMap
+            | BundleSectionKind::DebugSymbols
+            | BundleSectionKind::NormalizedSource,
+        ) => PatchCompatibility::ContentOnly,
     }
 }
 
 fn logical_descriptor_matches(left: &SectionDescriptor, right: &SectionDescriptor) -> bool {
     left.id() == right.id()
-        && left.kind() == right.kind()
+        && left.kind_code() == right.kind_code()
         && left.schema_version() == right.schema_version()
         && left.residency() == right.residency()
         && left.placement() == right.placement()
@@ -758,7 +767,7 @@ fn logical_descriptor_matches(left: &SectionDescriptor, right: &SectionDescripto
 
 fn patch_payload_carrier_matches(carrier: &SectionDescriptor, logical: &SectionDescriptor) -> bool {
     carrier.id() == logical.id()
-        && carrier.kind() == PATCH_PAYLOAD_CARRIER_KIND
+        && carrier.known_kind() == Some(PATCH_PAYLOAD_CARRIER_KIND)
         && carrier.schema_version() == logical.schema_version()
         && carrier.residency() == logical.residency()
         && carrier.placement() == logical.placement()
