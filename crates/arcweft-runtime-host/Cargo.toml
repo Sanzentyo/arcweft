@@ -25,6 +25,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 arcweft-render-text = { path = "../arcweft-render-text" }
+arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
 serde_json.workspace = true
 
 [lib]

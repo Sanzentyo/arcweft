@@ -183,6 +183,9 @@ fn vm_observation(event: &VmObservation) -> ParityEvent {
             need: format!("task#{}", plan.0),
             task: format!("task#{}", plan.0),
         },
+        VmObservation::Goto(function) => ParityEvent::Effect {
+            id: format!("goto#{}", function.0),
+        },
         VmObservation::FiberSpawned { function, .. } => ParityEvent::Effect {
             id: format!("fiber#{}", function.0),
         },

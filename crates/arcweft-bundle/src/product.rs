@@ -333,13 +333,13 @@ where
 }
 
 fn reject_structured_or_decode_awbc(bytes: &[u8]) -> Result<BundleAwbcProgram, BundleCodecError> {
-    if let Some(tag) = legacy_structured_product_tag(bytes) {
+    if let Some(tag) = structured_product_container_tag(bytes) {
         return Err(BundleCodecError::StructuredProductBytecodeUnsupported { encoding_tag: tag });
     }
     BundleAwbcProgram::decode_product_section(bytes)
 }
 
-fn legacy_structured_product_tag(bytes: &[u8]) -> Option<u32> {
+fn structured_product_container_tag(bytes: &[u8]) -> Option<u32> {
     if bytes.len() < 16 || !bytes.starts_with(&LEGACY_BYTECODE_SECTION_MAGIC) {
         return None;
     }

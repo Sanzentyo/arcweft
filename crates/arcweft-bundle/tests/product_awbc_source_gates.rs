@@ -31,8 +31,8 @@ fn product_awbc_codec_rejects_old_structured_product_payloads_explicitly() {
         .expect("product source reads");
     assert!(product.contains("StructuredProductBytecodeUnsupported"));
     assert!(product.contains("reject_structured_or_decode_awbc"));
-    assert!(!product.contains("legacy_structured_product_fallback"));
     assert!(!product.contains("decode_structured_product_fallback"));
+    assert!(!product.contains("structured_product_fallback"));
 }
 #[test]
 fn project_and_run_awfb_writers_share_product_bundle_builder() {

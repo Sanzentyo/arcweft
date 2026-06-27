@@ -18,6 +18,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 arcweft-id = { path = "../arcweft-id" }
+arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
 
 [lib]
 path = "src/lib.rs"

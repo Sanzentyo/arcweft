@@ -31,6 +31,7 @@ struct FlowBodyBuilder {
     resume_points: Vec<AwbcResumePointId>,
     terminated: bool,
     returns_value: bool,
+    has_dynamic_target: bool,
 }
 
 impl FlowBodyBuilder {
@@ -42,6 +43,7 @@ impl FlowBodyBuilder {
             resume_points: Vec::new(),
             terminated: false,
             returns_value: false,
+            has_dynamic_target: false,
         }
     }
 
@@ -86,6 +88,7 @@ impl FlowBodyBuilder {
             return;
         }
         self.returns_value |= matches!(terminator, AwbcTerminator::Return { value: Some(_) });
+        self.has_dynamic_target |= matches!(terminator, AwbcTerminator::GotoDynamic { .. });
         let instruction_len =
             table_range_len(self.instruction_start, inventory.program.instructions.len());
         let safe_point = self.current_block_safe_point(inventory, safe_point);
@@ -125,6 +128,7 @@ impl FlowBodyBuilder {
             blocks: AwbcTableRange::new(self.block_start, block_len),
             resume_points: self.resume_points,
             returns_value: self.returns_value,
+            has_dynamic_target: self.has_dynamic_target,
         }
     }
 }
@@ -134,6 +138,7 @@ struct FlowBody {
     blocks: AwbcTableRange,
     resume_points: Vec<AwbcResumePointId>,
     returns_value: bool,
+    has_dynamic_target: bool,
 }
 
 /// Lowers all flow entry functions and public entries.
@@ -284,6 +289,10 @@ impl<'a> AwbcFlowLowerer<'a> {
                 .intern_signature(params, None, AwbcEffectSetId(0))
         };
         let public_id = self.inventory.intern_string(&flow.id.0);
+        let mut flags = AwbcFunctionFlags::MAY_SUSPEND | AwbcFunctionFlags::DETERMINISTIC;
+        if body.has_dynamic_target {
+            flags |= AwbcFunctionFlags::HAS_DYNAMIC_TARGET;
+        }
         let function = self.inventory.push_function(
             Some(flow.id.0.as_str()),
             AwbcFunction {
@@ -293,9 +302,7 @@ impl<'a> AwbcFlowLowerer<'a> {
                 frame_layout: layout,
                 blocks: body.blocks,
                 entry_block: body.entry_block,
-                flags: AwbcFunctionFlags(
-                    AwbcFunctionFlags::MAY_SUSPEND | AwbcFunctionFlags::DETERMINISTIC,
-                ),
+                flags: AwbcFunctionFlags(flags),
             },
         );
         debug_assert_eq!(function, owner);

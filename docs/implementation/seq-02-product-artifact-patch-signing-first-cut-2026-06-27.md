@@ -41,6 +41,20 @@ safe implementation cut.
 - The release-cache product bundle fixture now carries a minimal product AWBC
   executable so cached product fetch/decode tests exercise the current product
   bundle contract.
+- Runtime-driver session and hot-swap fixtures now lower product AWBC from the
+  same `RuntimePlan` used by their structured bytecode fixture. Tests that
+  intentionally verify structured bytecode rejection explicitly select the
+  structured executor path.
+- Product AWBC hot-swap identity is tracked per function rather than as one
+  whole-program code slot, so code-body changes can be classified separately
+  from function interface/layout changes.
+- Runtime-host bundle runner fixtures now carry product AWBC for product runner
+  execution and AWFB encoding paths, while bytecode verification tests keep a
+  structured-only fixture and executor selection.
+- Product AWBC lowering now marks dynamic-goto functions with
+  `HAS_DYNAMIC_TARGET`, emits `FlowEvent::Goto` for AWBC static/dynamic goto
+  terminators, and lowers stream `for next` item bindings without leaving
+  uninitialized product registers.
 
 ## Non-Goals For This Cut
 
@@ -75,21 +89,28 @@ complete.
 - `cargo clippy -p arcweft-player-web -p arcweft-project-loader --all-targets --all-features -- -D warnings`
 - `cargo check -p arcweft-player-web -p arcweft-runtime-driver --all-targets --all-features`
 - `cargo clippy -p arcweft-player-web -p arcweft-runtime-driver --all-targets --all-features -- -D warnings`
+- `cargo test -p arcweft-runtime-driver --all-features`
+- `cargo test -p arcweft-runtime-host --all-features`
+- `cargo test -p arcweft-runtime-host --test bundle_runner --all-features -- --nocapture`
+- `cargo test -p arcweft-runtime-plan awbc_product_parity_dynamic_goto --all-features -- --nocapture`
+- `cargo test -p arcweft-runtime-plan awbc_product_parity_stream_for_next_binds_source_item --all-features -- --nocapture`
+- `cargo test -p arcweft-runtime-plan runtime_plan_lowers_stream_and_source_plans_separately_from_flow_ops --all-features -- --nocapture`
+- `cargo test -p arcweft-cli --test regression_harness source_tree_does_not_reintroduce_removed_whitespace_command_dsl_or_shims --all-features -- --nocapture`
+- `cargo test -p arcweft-cli --test arcw_fixtures_check_run current_run_fixtures_pass --all-features -- --nocapture`
+- `cargo check -p arcweft-core -p arcweft-runtime-plan -p arcweft-bundle -p arcweft-runtime-driver -p arcweft-runtime-host -p arcweft-cli --all-targets --all-features`
+- `cargo clippy -p arcweft-core -p arcweft-runtime-plan -p arcweft-bundle -p arcweft-runtime-driver -p arcweft-runtime-host -p arcweft-cli --all-targets --all-features -- -D warnings`
+- `just test-workspace`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`
   - files scanned: 1522
   - Rust files: 838
-  - Rust physical LOC: 412919
+  - Rust physical LOC: 413244
   - package manifests: 89
   - violations: 0 errors, 105 warnings
 - `git diff --check`
 
-`just test-workspace` now progresses past the former
-`arcweft-player-web --test parity` fixture gap and the release-cache product
-fetch fixture. It stops later in `arcweft-runtime-driver --test session`,
-where structured-era test fixtures still lack product AWBC executables:
-14 session tests fail with `MissingProductAwbcExecutable` or
-`MissingProductAwbc`. Migrating those session hot-swap and patch-readiness
-fixtures is a separate follow-up from rebuilding the web demo fixture.
+`just test-workspace` now passes through the former web parity gap, the
+runtime-driver session/hot-swap fixture gap, the runtime-host bundle runner
+fixture gap, and the current run fixture product AWBC verification path.
 
 ## Structural Audit Notes
 
@@ -97,8 +118,22 @@ Repository state measured at Jujutsu change `lokxmrmv`.
 
 Follow-up web fixture regeneration was measured at Jujutsu change `ysnymssu`.
 
+Runtime session, host, and AWBC lowering closure was measured at Jujutsu change
+`usuyrkqm`.
+
 | Path | Bytes | LOC | Kind | Embedded test LOC | Responsibilities |
 | --- | ---: | ---: | --- | ---: | --- |
+| `crates/arcweft-core/src/awbc/vm.rs` | 44788 | 1189 | production | 0 | compact AWBC VM instruction and terminator execution, host observations, goto observation emission |
+| `crates/arcweft-core/src/awbc/product_step.rs` | 91610 | 2322 | production plus minimal test module | 2 | product AWBC runtime stepping, event projection, source/stream state handling, native host request projection |
+| `crates/arcweft-core/src/awbc/parity.rs` | 8255 | 240 | production | 0 | AWBC/structured parity event normalization and VM observation mapping |
+| `crates/arcweft-runtime-plan/src/awbc_lower/flow.rs` | 48354 | 1219 | production | 0 | runtime flow to AWBC lowering, flow frame construction, dynamic-goto flag propagation |
+| `crates/arcweft-runtime-plan/src/awbc_lower/source.rs` | 18630 | 460 | production | 0 | source/stream plan lowering, stream source parameter inference, source handler AWBC functions |
+| `crates/arcweft-runtime-plan/tests/awbc_product_parity.rs` | 59106 | 1683 | integration test | 0 | structured/product AWBC parity fixtures for control, source, stream, audio, await, and expression behavior |
+| `crates/arcweft-runtime-plan/tests/runtime_plan.rs` | 46520 | 1359 | integration test | 0 | parser/HIR/runtime-plan lowering coverage, including source handler binding preservation |
+| `crates/arcweft-runtime-driver/src/swap.rs` | 29447 | 814 | production plus unit tests | 310 | bundle generation construction, product AWBC per-function code identity, hot-swap compatibility classification |
+| `crates/arcweft-runtime-driver/tests/session.rs` | 23866 | 615 | integration test | 0 | bundle session stepping, product AWBC session fixtures, hot-swap and patch-readiness behavior |
+| `crates/arcweft-runtime-host/src/bundle_runner.rs` | 39525 | 1077 | production plus unit tests | 266 | bundle runner execution, product AWBC fixture construction, image/source validation |
+| `crates/arcweft-runtime-host/tests/bundle_runner.rs` | 10073 | 270 | integration test | 0 | native-adapter bundle runner product fixture and structured bytecode rejection tests |
 | `crates/arcweft-player-web/src/parity.rs` | 9770 | 260 | production | 0 | native-side WebGPU parity frame preparation, runtime stepping through `BundleSession`, interaction visual state selection |
 | `crates/arcweft-runtime-driver/src/session.rs` | 27834 | 708 | production | 0 | portable bundle session stepping, queued semantic runtime input, product AWBC runtime construction, hot-swap and patch readiness |
 | `crates/arcweft-player-web/tests/parity.rs` | 4079 | 125 | integration test | 0 | browser/native frame parity fixture loading and observation contract comparison |

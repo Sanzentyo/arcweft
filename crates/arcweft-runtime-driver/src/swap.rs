@@ -4,7 +4,9 @@ use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterManifest, BundleKind as ArcweftBundleKind, BundleVirtualFile,
 };
-use arcweft_core::awbc::schema::AwbcProgram;
+use arcweft_core::awbc::schema::{
+    AwbcBlock, AwbcFrameLayout, AwbcFunction, AwbcInstruction, AwbcProgram, AwbcSignature,
+};
 use arcweft_core::bytecode::{
     BYTECODE_ABI_VERSION, BytecodeEntry, BytecodeProgram, BytecodeVerificationBudget,
     BytecodeVerificationError,
@@ -287,19 +289,114 @@ fn code_slots(
 fn awbc_code_slots(
     program: &AwbcProgram,
 ) -> Result<BTreeMap<CodeSlotId, CodeSlot>, GenerationBuildError> {
-    let digest = program
-        .encode_canonical()
-        .map(|bytes| BundleDigest::of(&bytes))
-        .map_err(|error| GenerationBuildError::ProductAwbcVerification {
-            message: error.to_string(),
-        })?;
-    Ok(BTreeMap::from([(
-        CodeSlotId("__awbc_program".to_owned()),
+    program
+        .functions
+        .iter()
+        .enumerate()
+        .map(|(index, function)| awbc_function_code_slot(program, index, function))
+        .collect()
+}
+
+fn awbc_function_code_slot(
+    program: &AwbcProgram,
+    index: usize,
+    function: &AwbcFunction,
+) -> Result<(CodeSlotId, CodeSlot), GenerationBuildError> {
+    let signature = program.signatures.get(function.signature.index());
+    let frame_layout = program.frame_layouts.get(function.frame_layout.index());
+    let public_id = function
+        .public_id
+        .and_then(|id| program.strings.get(id.index()).map(String::as_str));
+    let blocks = awbc_table_range_slice(&program.blocks, function.blocks, "blocks")?;
+    let blocks = blocks
+        .iter()
+        .map(|block| {
+            let instructions =
+                awbc_table_range_slice(&program.instructions, block.instructions, "instructions")?;
+            Ok(AwbcFunctionBlockFingerprint {
+                block,
+                instructions,
+            })
+        })
+        .collect::<Result<Vec<_>, GenerationBuildError>>()?;
+    let interface_digest = digest_serde(&AwbcFunctionInterfaceFingerprint {
+        public_id,
+        kind: function.kind,
+        signature,
+        frame_layout,
+        flags: function.flags,
+    })?;
+    let code_digest = digest_serde(&AwbcFunctionCodeFingerprint {
+        public_id,
+        function,
+        signature,
+        frame_layout,
+        blocks,
+    })?;
+    Ok((
+        awbc_function_code_slot_id(index, public_id),
         CodeSlot {
-            signature: conservative_signature(digest),
-            code_digest: digest,
+            signature: conservative_signature(interface_digest),
+            code_digest,
         },
-    )]))
+    ))
+}
+
+#[derive(Serialize)]
+struct AwbcFunctionInterfaceFingerprint<'a> {
+    public_id: Option<&'a str>,
+    kind: arcweft_core::awbc::schema::AwbcFunctionKind,
+    signature: Option<&'a AwbcSignature>,
+    frame_layout: Option<&'a AwbcFrameLayout>,
+    flags: arcweft_core::awbc::schema::AwbcFunctionFlags,
+}
+
+#[derive(Serialize)]
+struct AwbcFunctionCodeFingerprint<'a> {
+    public_id: Option<&'a str>,
+    function: &'a AwbcFunction,
+    signature: Option<&'a AwbcSignature>,
+    frame_layout: Option<&'a AwbcFrameLayout>,
+    blocks: Vec<AwbcFunctionBlockFingerprint<'a>>,
+}
+
+#[derive(Serialize)]
+struct AwbcFunctionBlockFingerprint<'a> {
+    block: &'a AwbcBlock,
+    instructions: &'a [AwbcInstruction],
+}
+
+fn awbc_table_range_slice<'a, T>(
+    table: &'a [T],
+    range: arcweft_core::awbc::schema::AwbcTableRange,
+    table_name: &'static str,
+) -> Result<&'a [T], GenerationBuildError> {
+    let start = usize::try_from(range.start).map_err(|_| {
+        GenerationBuildError::ProductAwbcVerification {
+            message: format!("AWBC {table_name} range start does not fit usize"),
+        }
+    })?;
+    let end = usize::try_from(range.checked_end().ok_or_else(|| {
+        GenerationBuildError::ProductAwbcVerification {
+            message: format!("AWBC {table_name} range overflows u32"),
+        }
+    })?)
+    .map_err(|_| GenerationBuildError::ProductAwbcVerification {
+        message: format!("AWBC {table_name} range end does not fit usize"),
+    })?;
+    table
+        .get(start..end)
+        .ok_or_else(|| GenerationBuildError::ProductAwbcVerification {
+            message: format!(
+                "AWBC {table_name} range {start}..{end} exceeds table length {}",
+                table.len()
+            ),
+        })
+}
+
+fn awbc_function_code_slot_id(index: usize, public_id: Option<&str>) -> CodeSlotId {
+    let id = public_id.map_or_else(|| format!("function.{index}"), str::to_owned);
+    CodeSlotId(format!("awbc:{id}"))
 }
 
 #[derive(Serialize)]
@@ -496,7 +593,7 @@ mod tests {
         AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
         AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
         AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
-        AwbcStringId, AwbcTableRange, AwbcTerminator,
+        AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTrapCode,
     };
     use arcweft_core::bytecode::{
         BYTECODE_ABI_VERSION, BytecodeEntry, BytecodeFlow, BytecodeInstruction,
@@ -657,7 +754,7 @@ mod tests {
     }
 
     #[test]
-    fn generation_from_bundle_uses_canonical_product_awbc_identity() {
+    fn generation_from_bundle_uses_product_awbc_function_identity() {
         let active = ProgramGeneration::from_bundle(
             GenerationId(1),
             &test_bundle(BytecodeProgram::default(), b"asset")
@@ -675,7 +772,7 @@ mod tests {
         assert_ne!(active.code_slots, next.code_slots);
         assert_eq!(
             classify_swap(&active, &next),
-            SwapCompatibility::CodeGenerational
+            SwapCompatibility::CodeCompatible
         );
     }
 
@@ -729,6 +826,11 @@ mod tests {
     }
 
     fn test_awbc_program(revision: &str) -> AwbcProgram {
+        let trap_code = if revision == "revision-a" {
+            AwbcTrapCode::ExplicitPanic
+        } else {
+            AwbcTrapCode::InternalInvariant
+        };
         AwbcProgram {
             strings: vec!["entry.main".to_owned(), revision.to_owned()],
             signatures: vec![AwbcSignature {
@@ -752,7 +854,10 @@ mod tests {
             blocks: vec![AwbcBlock {
                 owner: AwbcFunctionId(0),
                 instructions: AwbcTableRange::new(0, 0),
-                terminator: AwbcTerminator::Return { value: None },
+                terminator: AwbcTerminator::Trap {
+                    code: trap_code,
+                    message: None,
+                },
                 safe_point: AwbcSafePointKind::FlowEntry,
                 source_map: None,
             }],

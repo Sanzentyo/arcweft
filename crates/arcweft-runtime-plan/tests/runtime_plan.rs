@@ -4,6 +4,7 @@ use arcweft_core::{
         RuntimeWaitTarget,
     },
     line_task::{LineChildTask, LineOutRequest, LineTaskNode, LineTaskTrigger},
+    pattern::RuntimePattern,
     plan::{FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget},
     source::{SourceHandlerPlan, SourceOp},
     stream::StreamOp,
@@ -945,9 +946,13 @@ flow @flow.opening opening {
     assert_eq!(plan.source_plans[0].id.0, "source.player_mic_frames");
     assert!(matches!(
         plan.source_plans[0].handlers.as_slice(),
-        [SourceHandlerPlan::Item { ops, .. }]
-            if matches!(ops.as_slice(), [SourceOp::Yield(expr)]
-                if matches!(expr, RuntimeExpr::PureCall { helper, .. } if helper.0 == 0))
+        [SourceHandlerPlan::Item {
+            pattern: RuntimePattern::Ident(name),
+            ops,
+        }]
+            if name == "frame"
+                && matches!(ops.as_slice(), [SourceOp::Yield(expr)]
+                    if matches!(expr, RuntimeExpr::PureCall { helper, .. } if helper.0 == 0))
     ));
 }
 

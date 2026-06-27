@@ -1508,6 +1508,11 @@ impl AwbcProductStepExecutor {
                         }
                     }
                 }
+                VmObservation::Goto(target) => {
+                    output.flow_events.push(FlowEvent::Goto {
+                        target: FlowRuntimeId(self.function_public_id(target)),
+                    });
+                }
                 VmObservation::FiberSpawned { function, args, .. } => {
                     self.spawn_child(function, &args, output);
                 }

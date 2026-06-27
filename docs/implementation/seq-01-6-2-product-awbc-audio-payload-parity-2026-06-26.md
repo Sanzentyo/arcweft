@@ -163,5 +163,5 @@ The checked-in structure audit reported 0 errors and 105 warnings.
   had the seq-01.6.1 product-step split. The audio adapter was integrated as
   `product_step/audio.rs` beside the existing private modules.
 - No structured product fallback, stringly audio reconstruction, host audio I/O,
-  new dependency, unstable Rust feature, macro, `unsafe`, or compatibility shim
+  new dependency, unstable Rust feature, macro, `unsafe`, or transitional layer
   was introduced.

@@ -898,6 +898,44 @@ fn awbc_product_parity_control_effect_goto() {
 }
 
 #[test]
+fn awbc_product_parity_dynamic_goto() {
+    let steps = run_parity(
+        flows(
+            "flow.main",
+            vec![
+                RuntimeFlow {
+                    id: FlowRuntimeId("flow.main".to_owned()),
+                    ops: vec![
+                        FlowOp::GotoExpr(RuntimeExpr::Value(RuntimeValue::String(
+                            "flow.next".to_owned(),
+                        ))),
+                        FlowOp::Return("unreachable".to_owned()),
+                    ],
+                },
+                RuntimeFlow {
+                    id: FlowRuntimeId("flow.next".to_owned()),
+                    ops: vec![FlowOp::Return("next-done".to_owned())],
+                },
+            ],
+        ),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.flow_events,
+        vec![
+            FlowEvent::Goto {
+                target: FlowRuntimeId("flow.next".to_owned()),
+            },
+            FlowEvent::Return {
+                value: "next-done".to_owned(),
+            },
+        ],
+    );
+}
+
+#[test]
 fn awbc_product_parity_control_effect_failures() {
     for effect in [
         LineEffectRequest::Panic("panic-effect".to_owned()),
@@ -937,6 +975,38 @@ fn awbc_product_parity_source_stream() {
     );
 
     assert_step_boundary_eq(&steps[0]);
+}
+
+#[test]
+fn awbc_product_parity_stream_for_next_binds_source_item() {
+    let plan = flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
+        vec![StreamPlan {
+            id: StreamRuntimeId("passthrough".to_owned()),
+            item_ty: "IteratorItem".to_owned(),
+            error_ty: "CaptureError".to_owned(),
+            ops: vec![StreamOp::ForNext {
+                pattern: RuntimePattern::Ident("frame".to_owned()),
+                source: RuntimeExpr::Local("frames".to_owned()),
+                body: vec![StreamOp::Yield {
+                    expr: RuntimeExpr::Local("frame".to_owned()),
+                }],
+            }],
+        }],
+        Vec::new(),
+    );
+    let awbc = AwbcLowerer::new(
+        &plan,
+        &LineDisplayCatalog::default(),
+        "stream-for-next.arcw",
+    )
+    .lower()
+    .expect("stream for-next plan lowers")
+    .program;
+
+    assert!(
+        awbc.product_step_parity_blockers().is_empty(),
+        "stream for-next binding should produce verified product AWBC"
+    );
 }
 
 #[test]

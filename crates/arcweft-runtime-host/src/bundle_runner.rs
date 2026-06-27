@@ -893,6 +893,7 @@ mod tests {
     use arcweft_core::line_task::LineTaskGroup;
     use arcweft_core::plan::{FlowOp, RuntimeFlow, RuntimeLineId};
     use arcweft_render_text::LineDisplayCatalog;
+    use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 
     #[test]
     fn bundle_runner_session_captures_per_run_host_state_and_steps_incrementally() {
@@ -1112,6 +1113,11 @@ mod tests {
             vec![LineTaskGroup::default()],
         )
         .expect("runtime plan is valid");
+        let display = LineDisplayCatalog::default();
+        let product_awbc = AwbcLowerer::new(&plan, &display, "dialogue-bundle.arcw")
+            .lower()
+            .expect("product AWBC lowers")
+            .program;
         let bytecode = BytecodeProgram::from_runtime_plan(plan);
         ArcweftBundle::new(
             BundleManifest {
@@ -1136,7 +1142,8 @@ mod tests {
                 text: "flow main { dialogue }".to_owned(),
             },
             bytecode,
-            LineDisplayCatalog::default(),
+            display,
         )
+        .with_product_awbc(product_awbc)
     }
 }

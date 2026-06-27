@@ -14,6 +14,7 @@ use arcweft_core::plan::RuntimePlan;
 use arcweft_core::source::{SourceHandlerPlan, SourceId, SourceOp};
 use arcweft_core::stream::{StreamOp, StreamPlan};
 use arcweft_core::value::{RuntimeExpr, RuntimeValue};
+use std::collections::BTreeSet;
 
 /// Lowers source and stream declarations after flow functions exist.
 pub struct AwbcSourceStreamLowerer<'a> {
@@ -117,6 +118,10 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
         stream_id: AwbcStreamPlanId,
     ) -> AwbcFunctionId {
         let mut frame = FrameBuilder::new();
+        for parameter in Self::stream_source_parameters(&stream.ops) {
+            let name = self.inventory.intern_string(&parameter);
+            frame.parameter(&parameter, name, self.inventory.dynamic_ty());
+        }
         let body_start = table_index(self.inventory.program.instructions.len());
         for op in &stream.ops {
             self.lower_stream_op(&mut frame, stream_id, op);
@@ -132,10 +137,21 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
             safe_point: AwbcSafePointKind::CallableBoundary,
             source_map: None,
         });
+        let frame_layout = frame.finish();
+        let params = frame_layout
+            .slots
+            .iter()
+            .take_while(|slot| {
+                slot.role == arcweft_core::awbc::schema::AwbcFrameSlotRole::Parameter
+            })
+            .map(|slot| slot.ty)
+            .collect();
         let layout = self
             .inventory
-            .intern_frame_layout(format!("stream:{}", stream.id.0), frame.finish());
-        let signature = self.inventory.intern_unit_signature();
+            .intern_frame_layout(format!("stream:{}", stream.id.0), frame_layout);
+        let signature = self
+            .inventory
+            .intern_signature(params, None, AwbcEffectSetId(0));
         let public_id = self.inventory.intern_string(&stream.id.0);
         self.inventory.push_function(
             Some(stream.id.0.as_str()),
@@ -228,9 +244,21 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
                     }
                 }
             }
-            StreamOp::ForNext { source, body, .. } => {
-                let _ =
+            StreamOp::ForNext {
+                pattern,
+                source,
+                body,
+            } => {
+                let value =
                     AwbcExprLowerer::new(self.inventory, frame, "stream.for_next").lower(source);
+                let pattern =
+                    crate::awbc_lower::pattern::lower_pattern(self.inventory, frame, pattern);
+                self.inventory
+                    .push_instruction(AwbcInstruction::BindPattern {
+                        pattern,
+                        value,
+                        mode: AwbcBindMode::Declare,
+                    });
                 for op in body {
                     self.lower_stream_op(frame, stream, op);
                 }
@@ -238,6 +266,41 @@ impl<'a> AwbcSourceStreamLowerer<'a> {
             StreamOp::Return => {}
             StreamOp::Noop => {
                 self.inventory.push_instruction(AwbcInstruction::Nop);
+            }
+        }
+    }
+
+    fn stream_source_parameters(ops: &[StreamOp]) -> BTreeSet<String> {
+        let mut parameters = BTreeSet::new();
+        Self::collect_stream_source_parameters(ops, &mut parameters);
+        parameters
+    }
+
+    fn collect_stream_source_parameters(ops: &[StreamOp], parameters: &mut BTreeSet<String>) {
+        for op in ops {
+            match op {
+                StreamOp::ForNext { source, body, .. } => {
+                    if let RuntimeExpr::Local(name) = source {
+                        parameters.insert(name.clone());
+                    }
+                    Self::collect_stream_source_parameters(body, parameters);
+                }
+                StreamOp::If {
+                    then_ops, else_ops, ..
+                } => {
+                    Self::collect_stream_source_parameters(then_ops, parameters);
+                    Self::collect_stream_source_parameters(else_ops, parameters);
+                }
+                StreamOp::Match { arms, .. } => {
+                    for arm in arms {
+                        Self::collect_stream_source_parameters(&arm.ops, parameters);
+                    }
+                }
+                StreamOp::Let { .. }
+                | StreamOp::Yield { .. }
+                | StreamOp::Close { .. }
+                | StreamOp::Return
+                | StreamOp::Noop => {}
             }
         }
     }

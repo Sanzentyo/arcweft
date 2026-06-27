@@ -12,9 +12,10 @@ use arcweft_core::value::{RuntimeExpr, RuntimePayload, RuntimeValue};
 use arcweft_host_adapter::{HostAdapter, HostAdapterError, HostTaskMetrics, HostTaskOutcome};
 use arcweft_render_text::LineDisplayCatalog;
 use arcweft_runtime_host::{
-    BundleRunnerError, BundleRunnerOptions, BundleRunnerStepMode, NativeAdapterRegistrar,
-    run_bundle_file_with_native_adapters, run_bundle_with_native_adapters,
+    BundleRunnerError, BundleRunnerExecutor, BundleRunnerOptions, BundleRunnerStepMode,
+    NativeAdapterRegistrar, run_bundle_file_with_native_adapters, run_bundle_with_native_adapters,
 };
+use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -67,7 +68,7 @@ fn bundle_runner_reports_custom_adapter_missing_from_host() {
 
 #[test]
 fn bundle_runner_rejects_unverified_bytecode_before_execution() {
-    let mut bundle = custom_echo_bundle();
+    let mut bundle = structured_custom_echo_bundle();
     bundle.bytecode.program.abi_version = BYTECODE_ABI_VERSION + 1;
     let registrars: [NativeAdapterRegistrar; 1] =
         [|_, builder| builder.register(CustomEchoAdapter::new())];
@@ -76,6 +77,7 @@ fn bundle_runner_rejects_unverified_bytecode_before_execution() {
         &bundle,
         &BundleRunnerOptions {
             steps: 8,
+            executor: BundleRunnerExecutor::BytecodeVm,
             mode: BundleRunnerStepMode::Drain,
             ..BundleRunnerOptions::default()
         },
@@ -94,7 +96,7 @@ fn bundle_runner_rejects_unverified_bytecode_before_execution() {
 
 #[test]
 fn bundle_runner_rejects_missing_bytecode_entrypoint_before_execution() {
-    let mut bundle = custom_echo_bundle();
+    let mut bundle = structured_custom_echo_bundle();
     bundle.bytecode.program.entry_flow = None;
     let registrars: [NativeAdapterRegistrar; 1] =
         [|_, builder| builder.register(CustomEchoAdapter::new())];
@@ -103,6 +105,7 @@ fn bundle_runner_rejects_missing_bytecode_entrypoint_before_execution() {
         &bundle,
         &BundleRunnerOptions {
             steps: 8,
+            executor: BundleRunnerExecutor::BytecodeVm,
             mode: BundleRunnerStepMode::Drain,
             ..BundleRunnerOptions::default()
         },
@@ -194,6 +197,14 @@ impl HostAdapter for CustomEchoAdapter {
 }
 
 fn custom_echo_bundle() -> ArcweftBundle {
+    custom_echo_bundle_with_product_awbc(true)
+}
+
+fn structured_custom_echo_bundle() -> ArcweftBundle {
+    custom_echo_bundle_with_product_awbc(false)
+}
+
+fn custom_echo_bundle_with_product_awbc(include_product_awbc: bool) -> ArcweftBundle {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.custom".to_owned())),
         vec![RuntimeFlow {
@@ -220,9 +231,16 @@ fn custom_echo_bundle() -> ArcweftBundle {
         Vec::new(),
     )
     .expect("custom bundle plan is valid");
+    let display = LineDisplayCatalog::default();
+    let product_awbc = include_product_awbc.then(|| {
+        AwbcLowerer::new(&plan, &display, "custom.arcw")
+            .lower()
+            .expect("custom product AWBC lowers")
+            .program
+    });
     let program = BytecodeProgram::from_runtime_plan(plan);
     let stats = program.stats();
-    ArcweftBundle::new(
+    let bundle = ArcweftBundle::new(
         BundleManifest {
             source_label: "custom.arcw".to_owned(),
             profile_id: None,
@@ -247,7 +265,7 @@ fn custom_echo_bundle() -> ArcweftBundle {
                     .to_owned(),
         },
         program,
-        LineDisplayCatalog::default(),
+        display,
     )
     .with_adapter_manifests([BundleAdapterManifest {
         id: "custom-echo".to_owned(),
@@ -257,7 +275,13 @@ fn custom_echo_bundle() -> ArcweftBundle {
             id: "custom.echo".to_owned(),
             effects: Vec::new(),
         }],
-    }])
+    }]);
+
+    if let Some(product_awbc) = product_awbc {
+        bundle.with_product_awbc(product_awbc)
+    } else {
+        bundle
+    }
 }
 
 fn temp_bundle_path(label: &str, extension: &str) -> PathBuf {

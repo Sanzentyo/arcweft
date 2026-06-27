@@ -61,6 +61,7 @@ pub enum VmObservation {
         handle: RuntimeValue,
         args: Vec<RuntimeValue>,
     },
+    Goto(AwbcFunctionId),
     FiberSpawned {
         function: AwbcFunctionId,
         handle: Option<RuntimeValue>,
@@ -701,6 +702,7 @@ fn execute_terminator(
         AwbcTerminator::GotoStatic { function, args } => {
             let args = register_values(fiber, args)?;
             fiber.replace_active_function(program, *function, &args)?;
+            observations.push(VmObservation::Goto(*function));
             Ok(VmExit::Running)
         }
         AwbcTerminator::GotoDynamic { target, args } => {
@@ -728,6 +730,7 @@ fn execute_terminator(
             })?;
             let args = register_values(fiber, args)?;
             fiber.replace_active_function(program, target, &args)?;
+            observations.push(VmObservation::Goto(target));
             Ok(VmExit::Running)
         }
         AwbcTerminator::Dialogue {

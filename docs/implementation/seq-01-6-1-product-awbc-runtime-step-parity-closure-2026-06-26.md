@@ -1876,7 +1876,7 @@ Reason: seq-01.6.1 implemented the typed unsupported diagnostic for
 `RuntimeAudioCommand::operation_name()` static string. That is not enough to
 reconstruct the typed `RuntimeAudioCommand` payload, evaluate its `RuntimeExpr`
 fields, or emit the same `AudioCommandEnvelope` as structured execution without
-adding a stringly compatibility shim. The audio row therefore needs a concrete
+adding a stringly transitional layer. The audio row therefore needs a concrete
 AWBC payload schema/codec/verifier/lowering design before implementation.
 
 With that split, the seq-01.6.1 implementation-ready closure rows are covered:
@@ -1902,7 +1902,7 @@ Seq-01.6.1 is complete for the implementation-ready product AWBC
 - decoded product AWFB execution remains AWBC-only in the validated product
   bundle/runtime-driver/runtime-host/native-player/CLI smoke paths;
 - no structured product fallback, compiler dependency in product players, or
-  stringly compatibility shim was added.
+  stringly transitional layer was added.
 
 Explicitly excluded from seq-01.6.1 completion:
 

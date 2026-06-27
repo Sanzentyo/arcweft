@@ -23,9 +23,14 @@ use arcweft_runtime_driver::session::{
     BundleSessionOptions, BundleStepInput,
 };
 use arcweft_runtime_driver::swap::SwapCompatibility;
+use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 
 fn fixture_bundle() -> ArcweftBundle {
     fixture_bundle_with("WebGPU dialogue", false, false)
+}
+
+fn structured_vm_fixture_bundle() -> ArcweftBundle {
+    fixture_bundle_from_parts("WebGPU dialogue", false, false, false)
 }
 
 fn awfb_bytes(bundle: &ArcweftBundle) -> Vec<u8> {
@@ -44,6 +49,15 @@ fn fixture_bundle_with(
     display_text: &str,
     extra_flow: bool,
     changed_main_code: bool,
+) -> ArcweftBundle {
+    fixture_bundle_from_parts(display_text, extra_flow, changed_main_code, true)
+}
+
+fn fixture_bundle_from_parts(
+    display_text: &str,
+    extra_flow: bool,
+    changed_main_code: bool,
+    include_product_awbc: bool,
 ) -> ArcweftBundle {
     let line = RuntimeLineId("line.opening".to_owned());
     let main_ops = if changed_main_code {
@@ -89,7 +103,23 @@ fn fixture_bundle_with(
     )
     .expect("runtime plan is valid");
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
-    ArcweftBundle::new(
+    let display = LineDisplayCatalog::new(vec![LineDisplaySpec {
+        line,
+        callee: "alice".to_owned(),
+        text_key: None,
+        window: None,
+        voice: None,
+        look: None,
+        style: None,
+        base_styles: Vec::new(),
+        default_inline_failure_policy: None,
+        style_contributions: Vec::new(),
+        args: Vec::new(),
+        content: RichTextDocument::new(vec![RichTextNode::Text {
+            text: display_text.to_owned(),
+        }]),
+    }]);
+    let bundle = ArcweftBundle::new(
         BundleManifest {
             source_label: "web-demo.arcw".to_owned(),
             profile_id: None,
@@ -111,24 +141,18 @@ fn fixture_bundle_with(
             label: "web-demo.arcw".to_owned(),
             text: String::new(),
         },
-        BytecodeProgram::from_runtime_plan(plan),
-        LineDisplayCatalog::new(vec![LineDisplaySpec {
-            line,
-            callee: "alice".to_owned(),
-            text_key: None,
-            window: None,
-            voice: None,
-            look: None,
-            style: None,
-            base_styles: Vec::new(),
-            default_inline_failure_policy: None,
-            style_contributions: Vec::new(),
-            args: Vec::new(),
-            content: RichTextDocument::new(vec![RichTextNode::Text {
-                text: display_text.to_owned(),
-            }]),
-        }]),
-    )
+        BytecodeProgram::from_runtime_plan(plan.clone()),
+        display.clone(),
+    );
+    if include_product_awbc {
+        let product_awbc = AwbcLowerer::new(&plan, &display, "web-demo.arcw")
+            .lower()
+            .expect("product AWBC lowers")
+            .program;
+        bundle.with_product_awbc(product_awbc)
+    } else {
+        bundle
+    }
 }
 
 fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
@@ -166,6 +190,11 @@ fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
     )
     .expect("runtime plan is valid");
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
+    let display = LineDisplayCatalog::default();
+    let product_awbc = AwbcLowerer::new(&plan, &display, "await-demo.arcw")
+        .lower()
+        .expect("product AWBC lowers")
+        .program;
     ArcweftBundle::new(
         BundleManifest {
             source_label: "await-demo.arcw".to_owned(),
@@ -189,8 +218,9 @@ fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
             text: String::new(),
         },
         BytecodeProgram::from_runtime_plan(plan),
-        LineDisplayCatalog::default(),
+        display,
     )
+    .with_product_awbc(product_awbc)
 }
 
 #[test]
@@ -211,6 +241,7 @@ fn session_requires_explicit_clock_and_exposes_presentation() {
         Some("WebGPU dialogue")
     );
 
+    session.queue_dialogue_advance();
     let choice_step = session.step_with_clock(
         RuntimeClockStep::from_millis(2, 16).expect("clock"),
         BundleStepInput::default(),
@@ -242,7 +273,7 @@ fn session_requires_explicit_clock_and_exposes_presentation() {
 
 #[test]
 fn session_rejects_unverified_bytecode_before_construction() {
-    let mut bundle = fixture_bundle();
+    let mut bundle = structured_vm_fixture_bundle();
     bundle.bytecode.program.abi_version = BYTECODE_ABI_VERSION + 1;
 
     let error = BundleSession::new(&bundle, BundleSessionOptions::default())
@@ -259,7 +290,7 @@ fn session_rejects_unverified_bytecode_before_construction() {
 
 #[test]
 fn session_rejects_missing_bytecode_entrypoint_before_construction() {
-    let mut bundle = fixture_bundle();
+    let mut bundle = structured_vm_fixture_bundle();
     bundle.bytecode.program.entry_flow = None;
 
     let error = BundleSession::new(&bundle, BundleSessionOptions::default())
@@ -325,6 +356,7 @@ fn generation_pin_retains_old_bundle_generation_until_handle_drops() {
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
+    session.queue_dialogue_advance();
     let _choice = session.step_with_clock(
         RuntimeClockStep::from_millis(2, 16).expect("clock"),
         BundleStepInput::default(),
@@ -366,6 +398,7 @@ fn active_fiber_pin_retains_old_generation_until_fiber_finishes() {
     assert!(!blocked.finished);
     assert_eq!(session.retired_generation_count(), 1);
 
+    session.queue_dialogue_advance();
     let choice = session.step_with_clock(
         RuntimeClockStep::from_millis(2, 16).expect("clock"),
         BundleStepInput::default(),
