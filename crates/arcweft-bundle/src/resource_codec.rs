@@ -12,6 +12,7 @@ pub mod field;
 pub mod header;
 pub mod inspection;
 pub mod kind;
+pub mod runtime;
 pub mod table;
 pub mod types;
 pub mod wire;
@@ -27,6 +28,11 @@ pub use header::{
 };
 pub use inspection::{EnumSymbolInspection, ResourceFieldInspection, ResourceInspection};
 pub use kind::{ProductResourceMigrationStatus, ProductSectionCodecKind};
+pub use runtime::{
+    AdapterRequirementsSection as CompactAdapterRequirementsSection,
+    EntrypointsSection as CompactEntrypointsSection,
+    RuntimeTypesSection as CompactRuntimeTypesSection,
+};
 pub use table::{EnumRegistry, EnumSymbol, PublicIdRef, PublicIdTable, StringId, StringTable};
 pub use types::{CrossSectionRef, DigestRef, SourceRangeRef, StableId};
 pub use wire::{DecodedResourceSection, ProductResourceEnvelope};

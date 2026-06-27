@@ -1,9 +1,8 @@
 //! Hot-swap generation model for embedding runtimes.
 
 use arcweft_bundle::container::BundleDigest;
-use arcweft_bundle::{
-    ArcweftBundle, BundleAdapterManifest, BundleKind as ArcweftBundleKind, BundleVirtualFile,
-};
+use arcweft_bundle::resource_codec::runtime::AdapterRequirementsSection as CompactAdapterRequirementsSection;
+use arcweft_bundle::{ArcweftBundle, BundleKind as ArcweftBundleKind, BundleVirtualFile};
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcFrameLayout, AwbcFunction, AwbcInstruction, AwbcProgram, AwbcSignature,
 };
@@ -106,6 +105,8 @@ pub enum GenerationBuildError {
     ProductAwbcVerification { message: String },
     #[error("failed to encode hot-swap generation fingerprint: {0}")]
     EncodeFingerprint(#[from] serde_json::Error),
+    #[error("failed to fingerprint compact adapter requirements: {message}")]
+    AdapterRequirementFingerprint { message: String },
 }
 
 #[derive(Clone, Debug)]
@@ -238,23 +239,13 @@ fn content_root(bundle: &ArcweftBundle) -> Result<BundleDigest, GenerationBuildE
 }
 
 fn adapter_requirements(bundle: &ArcweftBundle) -> Result<BundleDigest, GenerationBuildError> {
-    #[derive(Serialize)]
-    struct AdapterFingerprint<'a> {
-        adapter: &'a Option<String>,
-        adapter_manifest_ids: &'a [String],
-        required_host_calls: &'a [String],
-        adapter_manifests: Vec<&'a BundleAdapterManifest>,
-    }
-
-    let mut adapter_manifests = bundle.adapter_manifests.iter().collect::<Vec<_>>();
-    adapter_manifests.sort_by(|left, right| left.id.cmp(&right.id));
-
-    digest_serde(&AdapterFingerprint {
-        adapter: &bundle.manifest.adapter,
-        adapter_manifest_ids: &bundle.manifest.adapter_manifest_ids,
-        required_host_calls: &bundle.manifest.required_host_calls,
-        adapter_manifests,
-    })
+    CompactAdapterRequirementsSection::from_bundle(bundle)
+        .and_then(|section| section.canonical_digest())
+        .map_err(
+            |error| GenerationBuildError::AdapterRequirementFingerprint {
+                message: error.to_string(),
+            },
+        )
 }
 
 fn code_slots(

@@ -1251,6 +1251,7 @@ mod tests {
         BundleSectionKind as ContainerSectionKind, BundleView, ReadBudget, SectionInput,
         encode_bundle,
     };
+    use crate::resource_codec::runtime::RuntimeTypesSection;
     use arcweft_agent_protocol::{
         artifact::{
             AgentArtifactManifest, AgentBudget, AgentBundleKind, EffectCapability, ProjectBinding,
@@ -1795,14 +1796,12 @@ mod tests {
             .iter()
             .map(|descriptor| {
                 let decoded = if descriptor.kind() == ContainerSectionKind::RuntimeTypes {
-                    serde_json::to_vec(&serde_json::json!({
-                        "schema_version": 1,
-                        "runtime_layout": {
-                            "abi_version": arcweft_core::bytecode::BYTECODE_ABI_VERSION,
-                            "signature": signature,
-                        },
-                    }))
-                    .expect("runtime types JSON encodes")
+                    let mut section = RuntimeTypesSection::from_bundle(bundle)
+                        .expect("runtime types section builds");
+                    section.runtime_layout.signature = signature.to_owned();
+                    section
+                        .encode_canonical_section()
+                        .expect("runtime types section encodes")
                 } else {
                     view.decoded_section(descriptor.id())
                         .expect("section decodes")

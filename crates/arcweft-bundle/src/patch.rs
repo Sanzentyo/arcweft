@@ -6,6 +6,9 @@ use crate::container::{
     encode_bundle,
 };
 use crate::release::{ReleaseManifestError, ReleaseSignaturePolicy};
+use crate::resource_codec::runtime::{
+    RuntimeResourceCompatibility, migrated_runtime_section_compatibility,
+};
 use arcweft_core::bytecode::BYTECODE_ABI_VERSION;
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -87,6 +90,8 @@ pub enum PatchBundleError {
     EncodePayload(#[source] serde_json::Error),
     #[error("failed to decode AWFB patch payload: {0}")]
     DecodePayload(#[source] serde_json::Error),
+    #[error("failed to classify compact resource patch compatibility: {message}")]
+    ResourceCompatibility { message: String },
     #[error("invalid AWFB patch container: {0}")]
     Container(#[source] crate::container::ContainerError),
     #[error("AWFB patch signature policy failed: {0}")]
@@ -260,8 +265,12 @@ impl BundlePatchArtifact {
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let compatibility = compact_resource_compatibility(base, target, &plan)?;
         let artifact = Self {
-            manifest: BundlePatchManifest::for_plan(&plan),
+            manifest: BundlePatchManifest {
+                compatibility,
+                ..BundlePatchManifest::for_plan(&plan)
+            },
             plan,
             changed_sections,
         };
@@ -719,6 +728,75 @@ fn operation_next_descriptor(operation: &SectionOperation) -> Option<&SectionDes
     }
 }
 
+fn compact_resource_compatibility(
+    base: &BundleView<'_>,
+    target: &BundleView<'_>,
+    plan: &BundlePatchPlan,
+) -> Result<PatchCompatibility, PatchBundleError> {
+    let mut compatibility = PatchCompatibility::ContentOnly;
+    for operation in &plan.operations {
+        let operation_compatibility = compact_operation_compatibility(base, target, operation)?;
+        compatibility = max_patch_compatibility(compatibility, operation_compatibility);
+    }
+    Ok(compatibility)
+}
+
+fn compact_operation_compatibility(
+    base: &BundleView<'_>,
+    target: &BundleView<'_>,
+    operation: &SectionOperation,
+) -> Result<PatchCompatibility, PatchBundleError> {
+    let SectionOperation::Replace { next, .. } = operation else {
+        return Ok(operation_compatibility(operation));
+    };
+    let Some(kind) = next.known_kind() else {
+        return Ok(operation_compatibility(operation));
+    };
+    if crate::resource_codec::runtime::runtime_codec_for_section(kind).is_none() {
+        return Ok(operation_compatibility(operation));
+    }
+    let old = base
+        .decoded_section(next.id())
+        .map_err(PatchBundleError::Container)?
+        .ok_or(PatchBundleError::MissingBaseSection(next.id()))?;
+    let new = target
+        .decoded_section(next.id())
+        .map_err(PatchBundleError::Container)?
+        .ok_or(PatchBundleError::MissingSectionPayload(next.id()))?;
+    migrated_runtime_section_compatibility(kind, &old, &new)
+        .map_err(|error| PatchBundleError::ResourceCompatibility {
+            message: error.to_string(),
+        })
+        .map(|compatibility| {
+            compatibility.map_or_else(
+                || operation_compatibility(operation),
+                runtime_resource_patch_compatibility,
+            )
+        })
+}
+
+const fn runtime_resource_patch_compatibility(
+    compatibility: RuntimeResourceCompatibility,
+) -> PatchCompatibility {
+    match compatibility {
+        RuntimeResourceCompatibility::ContentOnly => PatchCompatibility::ContentOnly,
+        RuntimeResourceCompatibility::CodeCompatible => PatchCompatibility::CodeCompatible,
+        RuntimeResourceCompatibility::CodeGenerational => PatchCompatibility::CodeGenerational,
+        RuntimeResourceCompatibility::RestartRequired => PatchCompatibility::RestartRequired,
+    }
+}
+
+fn max_patch_compatibility(
+    left: PatchCompatibility,
+    right: PatchCompatibility,
+) -> PatchCompatibility {
+    if left.rank() >= right.rank() {
+        left
+    } else {
+        right
+    }
+}
+
 fn operation_compatibility(operation: &SectionOperation) -> PatchCompatibility {
     match operation {
         SectionOperation::Add(descriptor) => section_compatibility(descriptor.known_kind()),
@@ -801,6 +879,7 @@ mod tests {
     use crate::release::{
         RELEASE_SIGNATURE_ALGORITHM_ED25519_V1, ReleaseSignatureEnvelope, ReleaseTrustedPublicKey,
     };
+    use crate::resource_codec::runtime::AdapterRequirementsSection;
     use ed25519_dalek::Signer as _;
 
     fn content_pack(asset_blob: &'static [u8], include_catalog: bool) -> Vec<u8> {
@@ -879,6 +958,14 @@ mod tests {
     }
 
     fn program_patch_pack(bytecode: &'static [u8], adapter_requirements: &'static [u8]) -> Vec<u8> {
+        let adapter_requirements = AdapterRequirementsSection::new(
+            None,
+            std::iter::empty(),
+            [String::from_utf8_lossy(adapter_requirements).into_owned()],
+            std::iter::empty(),
+        )
+        .encode_canonical_section()
+        .expect("adapter requirements encode");
         encode_bundle(
             BundleKind::Program,
             br#"{"kind":"program"}"#,

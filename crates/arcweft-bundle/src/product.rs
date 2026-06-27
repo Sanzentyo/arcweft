@@ -2,14 +2,19 @@ use crate::container::{
     BundleDigest, BundleKind as ContainerBundleKind, BundleSectionKind, BundleView,
     ContentResidency, ExternalSectionPayload, ReadBudget, SectionId, SectionInput, encode_bundle,
 };
+use crate::resource_codec::runtime::{
+    AdapterRequirementsSection as CompactAdapterRequirementsSection,
+    EntrypointsSection as CompactEntrypointsSection,
+    RuntimeTypesSection as CompactRuntimeTypesSection,
+};
 use crate::{
-    ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleAdapterManifest, BundleAwbcProgram,
-    BundleBytecodeEncoding, BundleBytecodeProgram, BundleCodecError, BundleImageAsset,
-    BundleImageObject, BundleKind, BundleManifest, BundleSource, BundleVirtualFile,
+    ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleAwbcProgram, BundleBytecodeEncoding,
+    BundleBytecodeProgram, BundleCodecError, BundleImageAsset, BundleImageObject, BundleKind,
+    BundleManifest, BundleSource, BundleVirtualFile,
 };
 use arcweft_agent_protocol::artifact::AgentArtifactManifest;
 use arcweft_audio_core::graph::AudioGraph;
-use arcweft_core::bytecode::{BytecodeProgram, BytecodeRuntimeLayout};
+use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_render_text::LineDisplayCatalog;
 use serde::{Deserialize, Serialize};
 
@@ -31,29 +36,6 @@ struct ProductManifest {
 
 fn default_executable_payload() -> String {
     crate::product_awbc::PRODUCT_EXECUTABLE_PAYLOAD_AWBC_V1.to_owned()
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct RuntimeTypesSection {
-    schema_version: u32,
-    #[serde(default)]
-    runtime_layout: BytecodeRuntimeLayout,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct EntrypointsSection {
-    entry: Option<String>,
-    entry_flow: Option<String>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct AdapterRequirementsSection {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    adapter_manifest_ids: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    required_host_calls: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    adapter_manifests: Vec<BundleAdapterManifest>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -88,25 +70,21 @@ pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCod
         ),
         required_section(
             BundleSectionKind::RuntimeTypes,
-            encode_json(&RuntimeTypesSection {
-                schema_version: AWFB_SECTION_SCHEMA_VERSION,
-                runtime_layout: bundle.bytecode.program.runtime_layout.clone(),
-            })?,
+            CompactRuntimeTypesSection::from_bundle(bundle)
+                .and_then(|section| section.encode_canonical_section())
+                .map_err(|error| compact_encode_error(&error))?,
         ),
         required_section(
             BundleSectionKind::Entrypoints,
-            encode_json(&EntrypointsSection {
-                entry: bundle.manifest.entry.clone(),
-                entry_flow: bundle.manifest.runtime.entry_flow.clone(),
-            })?,
+            CompactEntrypointsSection::from_bundle(bundle)
+                .and_then(|section| section.encode_canonical_section())
+                .map_err(|error| compact_encode_error(&error))?,
         ),
         required_section(
             BundleSectionKind::AdapterRequirements,
-            encode_json(&AdapterRequirementsSection {
-                adapter_manifest_ids: bundle.manifest.adapter_manifest_ids.clone(),
-                required_host_calls: bundle.manifest.required_host_calls.clone(),
-                adapter_manifests: bundle.adapter_manifests.clone(),
-            })?,
+            CompactAdapterRequirementsSection::from_bundle(bundle)
+                .and_then(|section| section.encode_canonical_section())
+                .map_err(|error| compact_encode_error(&error))?,
         ),
         required_section(
             BundleSectionKind::ContentCatalog,
@@ -166,28 +144,23 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         });
     }
 
-    let runtime_types = required_payload::<RuntimeTypesSection>(
-        &view,
-        external_sections,
-        BundleSectionKind::RuntimeTypes,
-    )?;
-    let _entrypoints = required_payload::<EntrypointsSection>(
-        &view,
-        external_sections,
-        BundleSectionKind::Entrypoints,
-    )?;
-    let adapters = required_payload::<AdapterRequirementsSection>(
-        &view,
-        external_sections,
-        BundleSectionKind::AdapterRequirements,
-    )?;
+    let product_awbc = required_product_awbc_bytes(&view, external_sections)
+        .and_then(|bytes| reject_structured_or_decode_awbc(&bytes))?;
+    let runtime_types = required_runtime_types(&view, external_sections)?;
+    runtime_types
+        .validate_awbc(product_awbc.program())
+        .map_err(|error| compact_decode_error(&error))?;
+    let entrypoints = required_entrypoints(&view, external_sections)?;
+    entrypoints
+        .validate_manifest(&product_manifest.manifest)
+        .and_then(|()| entrypoints.validate_awbc(product_awbc.program()))
+        .map_err(|error| compact_decode_error(&error))?;
+    let adapters = required_adapter_requirements(&view, external_sections)?;
     let content = required_payload::<ContentCatalogSection>(
         &view,
         external_sections,
         BundleSectionKind::ContentCatalog,
     )?;
-    let product_awbc = required_product_awbc_bytes(&view, external_sections)
-        .and_then(|bytes| reject_structured_or_decode_awbc(&bytes))?;
     let display = optional_payload::<LineDisplayCatalog>(
         &view,
         external_sections,
@@ -225,6 +198,72 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         audio: content.audio,
         image_objects: content.image_objects,
     })
+}
+
+fn required_runtime_types(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+) -> Result<CompactRuntimeTypesSection, BundleCodecError> {
+    required_compact_payload(
+        view,
+        external_sections,
+        BundleSectionKind::RuntimeTypes,
+        CompactRuntimeTypesSection::decode_canonical_section,
+    )
+}
+
+fn required_entrypoints(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+) -> Result<CompactEntrypointsSection, BundleCodecError> {
+    required_compact_payload(
+        view,
+        external_sections,
+        BundleSectionKind::Entrypoints,
+        CompactEntrypointsSection::decode_canonical_section,
+    )
+}
+
+fn required_adapter_requirements(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+) -> Result<CompactAdapterRequirementsSection, BundleCodecError> {
+    required_compact_payload(
+        view,
+        external_sections,
+        BundleSectionKind::AdapterRequirements,
+        CompactAdapterRequirementsSection::decode_canonical_section,
+    )
+}
+
+fn required_compact_payload<T>(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+    kind: BundleSectionKind,
+    decode: fn(&[u8]) -> Result<T, crate::resource_codec::SectionCodecError>,
+) -> Result<T, BundleCodecError> {
+    let descriptor = required_descriptor(view, kind)?;
+    let bytes = view
+        .decoded_section_with_external_payloads(descriptor.id(), external_sections)
+        .map_err(|error| BundleCodecError::DecodeAwfb {
+            message: error.to_string(),
+        })?
+        .ok_or_else(|| BundleCodecError::DecodeAwfb {
+            message: format!("AWFB {kind:?} section is external and cannot be decoded inline"),
+        })?;
+    decode(&bytes).map_err(|error| compact_decode_error(&error))
+}
+
+fn compact_encode_error(error: &crate::resource_codec::SectionCodecError) -> BundleCodecError {
+    BundleCodecError::EncodeAwfb {
+        message: error.to_string(),
+    }
+}
+
+fn compact_decode_error(error: &crate::resource_codec::SectionCodecError) -> BundleCodecError {
+    BundleCodecError::DecodeAwfb {
+        message: error.to_string(),
+    }
 }
 
 fn required_section(kind: BundleSectionKind, bytes: Vec<u8>) -> SectionInput {
@@ -386,9 +425,9 @@ fn section_id(kind: BundleSectionKind) -> SectionId {
 #[cfg(test)]
 mod tests {
     use super::{
-        AWFB_SECTION_SCHEMA_VERSION, AdapterRequirementsSection, ContentCatalogSection,
-        EntrypointsSection, ProductManifest, RuntimeTypesSection, container_kind, encode_json,
-        optional_section, required_section, section_id,
+        AWFB_SECTION_SCHEMA_VERSION, CompactAdapterRequirementsSection, CompactEntrypointsSection,
+        CompactRuntimeTypesSection, ContentCatalogSection, ProductManifest, container_kind,
+        encode_json, optional_section, required_section, section_id,
     };
     use crate::container::{
         BundleDigest, BundleSectionKind, BundleView, ExternalSectionPayload, ReadBudget,
@@ -528,28 +567,21 @@ mod tests {
             ),
             required_section(
                 BundleSectionKind::RuntimeTypes,
-                encode_json(&RuntimeTypesSection {
-                    schema_version: AWFB_SECTION_SCHEMA_VERSION,
-                    runtime_layout: bundle.bytecode.program.runtime_layout.clone(),
-                })
-                .expect("runtime types encode"),
+                CompactRuntimeTypesSection::from_bundle(bundle)
+                    .and_then(|section| section.encode_canonical_section())
+                    .expect("runtime types encode"),
             ),
             required_section(
                 BundleSectionKind::Entrypoints,
-                encode_json(&EntrypointsSection {
-                    entry: bundle.manifest.entry.clone(),
-                    entry_flow: bundle.manifest.runtime.entry_flow.clone(),
-                })
-                .expect("entrypoints encode"),
+                CompactEntrypointsSection::from_bundle(bundle)
+                    .and_then(|section| section.encode_canonical_section())
+                    .expect("entrypoints encode"),
             ),
             required_section(
                 BundleSectionKind::AdapterRequirements,
-                encode_json(&AdapterRequirementsSection {
-                    adapter_manifest_ids: bundle.manifest.adapter_manifest_ids.clone(),
-                    required_host_calls: bundle.manifest.required_host_calls.clone(),
-                    adapter_manifests: bundle.adapter_manifests.clone(),
-                })
-                .expect("adapter requirements encode"),
+                CompactAdapterRequirementsSection::from_bundle(bundle)
+                    .and_then(|section| section.encode_canonical_section())
+                    .expect("adapter requirements encode"),
             ),
             required_section(
                 BundleSectionKind::ContentCatalog,

@@ -702,6 +702,9 @@ fn initial_generation(bundle: &ArcweftBundle) -> Result<ProgramGeneration, Bundl
                 message: error.to_string(),
             }
         }
+        GenerationBuildError::AdapterRequirementFingerprint { message } => {
+            BundleSessionError::GenerationFingerprint { message }
+        }
     })
 }
 
