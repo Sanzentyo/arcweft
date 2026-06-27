@@ -5,7 +5,7 @@ Packages:
 - `arcweft-seq-02-3-content-presentation-entity-resource-codecs-package.zip`
 - `arcweft-seq-02-4-audio-graph-resource-codec-package.zip`
 
-Review input: `C:\Users\sanze\.codex\attachments\980d076e-df4e-4416-a80e-06e6adbc9667\pasted-text.txt`
+Review input: attached review text for seq-02.2 through seq-02.4 packages.
 
 ## Integration Decision
 

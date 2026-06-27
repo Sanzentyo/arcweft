@@ -1,6 +1,6 @@
 //! Deterministic visual sample assets for native/WebGPU parity checks.
 
-use crate::convert::{f32_to_u8_nonnegative, u32_to_f32, u64_to_f32};
+use crate::convert::{nonnegative_alpha_byte, saturating_u32_as_f32, saturating_u64_as_f32};
 use crate::geometry::{RenderImage, RenderImageFrame, RenderViewport};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectFit, ImageObjectTransform};
@@ -110,13 +110,13 @@ fn gradient_background_frame() -> RenderImageFrame {
 fn character_stand_frame() -> RenderImageFrame {
     const WIDTH: u32 = 72;
     const HEIGHT: u32 = 128;
-    let width = u32_to_f32(WIDTH);
-    let height = u32_to_f32(HEIGHT);
+    let width = saturating_u32_as_f32(WIDTH);
+    let height = saturating_u32_as_f32(HEIGHT);
     let mut rgba = vec![0; usize::try_from(WIDTH * HEIGHT * 4).unwrap_or(0)];
     for y in 0..HEIGHT {
         for x in 0..WIDTH {
-            let xf = u32_to_f32(x);
-            let yf = u32_to_f32(y);
+            let xf = saturating_u32_as_f32(x);
+            let yf = saturating_u32_as_f32(y);
             let dx = xf - width * 0.5;
             let body_y = yf - height * 0.55;
             let head = dx * dx / 360.0 + (yf - 28.0).powi(2) / 420.0 <= 1.0;
@@ -147,17 +147,17 @@ fn character_stand_frame() -> RenderImageFrame {
 fn pulse_frame(frame: u64, color: [u8; 4]) -> RenderImageFrame {
     const WIDTH: u32 = 32;
     const HEIGHT: u32 = 32;
-    let radius = 7.0 + u64_to_f32(frame) * 2.2;
+    let radius = 7.0 + saturating_u64_as_f32(frame) * 2.2;
     let mut rgba = Vec::with_capacity(usize::try_from(WIDTH * HEIGHT * 4).unwrap_or(0));
     for y in 0..HEIGHT {
         for x in 0..WIDTH {
-            let dx = u32_to_f32(x) - 15.5;
-            let dy = u32_to_f32(y) - 15.5;
+            let dx = saturating_u32_as_f32(x) - 15.5;
+            let dy = saturating_u32_as_f32(y) - 15.5;
             let distance = (dx * dx + dy * dy).sqrt();
             let alpha = if distance <= radius {
                 color[3]
             } else if distance <= radius + 3.0 {
-                f32_to_u8_nonnegative((radius + 3.0 - distance) * 70.0)
+                nonnegative_alpha_byte((radius + 3.0 - distance) * 70.0)
             } else {
                 0
             };

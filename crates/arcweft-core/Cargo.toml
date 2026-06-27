@@ -8,12 +8,6 @@ repository.workspace = true
 
 [features]
 default = []
-render-wgpu = []
-ui-servo = []
-audio = []
-capture-camera = []
-usb = []
-mcp = []
 
 [dependencies]
 arcweft-id = { path = "../arcweft-id" }

@@ -78,10 +78,10 @@
 - ⚠️ `crates/arcweft-render-wgpu/src/convert.rs` に `usize_to_f32`, `u32_to_f32`, `u64_to_f32`, `f32_floor_to_i32`, `f32_ceil_to_i32`, `f32_to_u8_nonnegative` がある。bounded conversion policy として意図は明確だが、名前は endpoint 型変換 helper そのもの。F5 で修正候補化。
 - 🟦 `arcweft-core/src/engine/audio.rs` の `evaluate_audio_i16` などは Engine の domain-specific 評価 method であり、現時点では free-standing conversion helper ではない。ただし `#[allow(clippy::too_many_lines)]` と併せて分割候補。
 
-### A7: compatibility shim / legacy alias
+### A7: compatibility layer / old alias
 
 - ✅ 検索語: `compat`, `legacy`。
-- ⚠️ `crates/arcweft-codec-binary/src/lib.rs` の `BincodeCompatCodec` / feature `bincode-legacy` は明示的な外部 interop boundary として実装されている。未完成 compiler/parser の互換 shim ではないので即違反とは断定しないが、AGENTS.md の「compat shim / deprecated alias を残さない」方針と誤読されやすい。F6 で rename / docs 補強案。
+- ⚠️ `crates/arcweft-codec-binary/src/lib.rs` の `BincodeCompatCodec` / feature `bincode-legacy` は明示的な外部 interop boundary として実装されている。未完成 compiler/parser の互換層ではないので即違反とは断定しないが、AGENTS.md の「古い互換名を残さない」方針と誤読されやすい。F6 で rename / docs 補強案。
 - 🟦 seq-02.3/02.4 note では product JSON fallback を消し、migrated catalog families を compact owner codec に寄せたことが記録されている。
 
 ### A8: stringly API / one-off labels
@@ -188,8 +188,8 @@ Status: ⚠️
 
 修正方法:
 
-1. internal compatibility shim ではなく外部 format adapter であることを明確にするため、`BincodeCompatCodec` を `BincodeInteropCodec` へ rename する。
-2. feature 名も `bincode-legacy` ではなく `bincode-interop` 等に変更する。既存ユーザー互換が必要なら migration note を docs/implementation に残し、unfinished compiler/parser の deprecated alias とは別物だと明記する。
+1. internal compatibility layer ではなく外部 format adapter であることを明確にするため、`BincodeCompatCodec` を `BincodeInteropCodec` へ rename する。
+2. feature 名も `bincode-legacy` ではなく `bincode-interop` 等に変更する。既存ユーザー互換が必要なら migration note を docs/implementation に残し、unfinished compiler/parser の old alias とは別物だと明記する。
 3. primary Arcweft binary format (`ArcweftBinaryCodec`) が bincode に依存しないことを source gate test で固定する。
 
 ### F7: runtime obsolete vocabulary の残存候補

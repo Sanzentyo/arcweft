@@ -8,7 +8,7 @@ description = "Arcweft binary codec and bincode interop boundary."
 
 [features]
 default = []
-bincode-legacy = ["dep:bincode", "dep:arcweft-codec-json", "dep:serde_json"]
+bincode-interop = ["dep:bincode", "dep:arcweft-codec-json", "dep:serde_json"]
 
 [dependencies]
 arcweft-data = { path = "../arcweft-data" }

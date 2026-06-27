@@ -61,11 +61,11 @@ impl Codec for ArcweftBinaryCodec {
 /// The implementation is intentionally feature-gated so Arcweft's primary
 /// binary format is not tied to bincode's API or release cadence.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct BincodeCompatCodec;
+pub struct BincodeInteropCodec;
 
-impl Codec for BincodeCompatCodec {
+impl Codec for BincodeInteropCodec {
     fn id(&self) -> FormatId {
-        FormatId::new("bincode-compat")
+        FormatId::new("bincode-interop")
     }
 
     fn media_types(&self) -> &'static [&'static str] {
@@ -82,17 +82,17 @@ impl Codec for BincodeCompatCodec {
         _shape: &TypeShape,
         options: &EncodeOptions,
     ) -> Result<Vec<u8>> {
-        #[cfg(feature = "bincode-legacy")]
+        #[cfg(feature = "bincode-interop")]
         {
             let json = arcweft_codec_json::to_json_value(value, options.bytes_format)?;
             bincode::serde::encode_to_vec(&json, bincode::config::standard())
                 .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))
         }
-        #[cfg(not(feature = "bincode-legacy"))]
+        #[cfg(not(feature = "bincode-interop"))]
         {
             let _ = (value, options);
             Err(DataError::unsupported(
-                "bincode legacy support is disabled; enable feature `bincode-legacy` only for explicit interop",
+                "bincode interop support is disabled; enable feature `bincode-interop` only for explicit interop",
             ))
         }
     }
@@ -103,7 +103,7 @@ impl Codec for BincodeCompatCodec {
         _shape: &TypeShape,
         options: &DecodeOptions,
     ) -> Result<Value> {
-        #[cfg(feature = "bincode-legacy")]
+        #[cfg(feature = "bincode-interop")]
         {
             let (json, consumed): (serde_json::Value, usize) =
                 bincode::serde::decode_from_slice(input, bincode::config::standard()).map_err(
@@ -119,11 +119,11 @@ impl Codec for BincodeCompatCodec {
             options.limits.validate(&value)?;
             Ok(value)
         }
-        #[cfg(not(feature = "bincode-legacy"))]
+        #[cfg(not(feature = "bincode-interop"))]
         {
             let _ = (input, options);
             Err(DataError::unsupported(
-                "bincode legacy support is disabled; enable feature `bincode-legacy` only for explicit interop",
+                "bincode interop support is disabled; enable feature `bincode-interop` only for explicit interop",
             ))
         }
     }

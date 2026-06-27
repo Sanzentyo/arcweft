@@ -1,4 +1,4 @@
-use crate::convert::usize_to_f32;
+use crate::convert::saturating_usize_as_f32;
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::{HitRect, HitTree};
 use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectFit, ImageObjectTransform};
@@ -702,7 +702,7 @@ fn build_choices(
     let width = (scene.viewport.logical_width * 0.52).clamp(360.0, 760.0);
     let item_height = 60.0;
     let gap = 12.0;
-    let total = usize_to_f32(scene.choices.len()) * (item_height + gap) - gap;
+    let total = saturating_usize_as_f32(scene.choices.len()) * (item_height + gap) - gap;
     let top = scene.dialogue.as_ref().map_or_else(
         || ((scene.viewport.logical_height - total) * 0.42).max(36.0),
         |_| {
@@ -723,7 +723,7 @@ fn build_choices(
             let target = InteractionTarget::new(ChoiceTargetId(index).public_id()?);
             let bounds = HitRect::new(
                 left,
-                top + usize_to_f32(index) * (item_height + gap),
+                top + saturating_usize_as_f32(index) * (item_height + gap),
                 width,
                 item_height,
             );

@@ -1,4 +1,4 @@
-use crate::convert::{f32_ceil_to_i32, f32_floor_to_i32};
+use crate::convert::{pixel_ceil_as_i32, pixel_floor_as_i32};
 use crate::geometry::{
     PaintRect, PreparedFrame, RenderFontFamily, RenderImage, RenderTextBlock, RenderTextSlant,
     RenderTextWeight,
@@ -300,10 +300,10 @@ fn text_area<'a>(buffer: &'a Buffer, block: &RenderTextBlock) -> TextArea<'a> {
         top: block.bounds.y,
         scale: 1.0,
         bounds: TextBounds {
-            left: f32_floor_to_i32(block.bounds.x),
-            top: f32_floor_to_i32(block.bounds.y),
-            right: f32_ceil_to_i32(block.bounds.x + block.bounds.width),
-            bottom: f32_ceil_to_i32(block.bounds.y + block.bounds.height),
+            left: pixel_floor_as_i32(block.bounds.x),
+            top: pixel_floor_as_i32(block.bounds.y),
+            right: pixel_ceil_as_i32(block.bounds.x + block.bounds.width),
+            bottom: pixel_ceil_as_i32(block.bounds.y + block.bounds.height),
         },
         default_color: Color::rgba(block.rgba[0], block.rgba[1], block.rgba[2], block.rgba[3]),
         custom_glyphs: &[],

@@ -12,7 +12,7 @@
 | Parquet | `arcweft-codec-arrow` / `parquet` | Columnar storage/export | Shares Arrow table conversion. |
 | Avro | `arcweft-codec-avro` / `apache-avro` | Schemaful stream/storage | Requires Avro schema JSON at adapter construction. |
 | Arcweft Binary | `arcweft-codec-binary` | Recommended save/network binary | Stable Arcweft-owned wire, checksum handled in save envelope. |
-| bincode legacy compat | `arcweft-codec-binary` optional `bincode-legacy` feature | Legacy interop only | Not the primary Arcweft binary format; disabled by default. |
+| bincode interop | `arcweft-codec-binary` optional `bincode-interop` feature | Interop only | Not the primary Arcweft binary format; disabled by default. |
 | ORC | future adapter boundary | Not default | Reserved until a suitably maintained Rust crate is selected. |
 
 ## DSL runtime surface

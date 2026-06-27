@@ -651,7 +651,10 @@ mod tests {
             StdioMcpTransport::spawn_with_policy(&hanging_child_endpoint(&stderr), policy)
                 .expect("fake child spawns");
 
-        thread::sleep(Duration::from_millis(500));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !transport.stderr_tail_text().contains("tail-end") && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
         let error = transport
             .request::<serde_json::Value>("initialize", &json!({}))
             .expect_err("request should time out");
