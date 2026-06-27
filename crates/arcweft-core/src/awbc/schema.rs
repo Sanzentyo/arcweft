@@ -1,9 +1,12 @@
+use arcweft_interaction_model::audio::{
+    AudioEffectParameterKind, AudioLoopMode, MicrophoneConstraints,
+};
 use serde::{Deserialize, Serialize};
 
 /// Canonical AWBC executable ABI implemented by this schema.
 pub const AWBC_ABI_VERSION: u32 = 1;
 /// Canonical binary codec version used inside an `AWBC` product section.
-pub const AWBC_CODEC_VERSION: u16 = 4;
+pub const AWBC_CODEC_VERSION: u16 = 5;
 /// Magic at the beginning of a standalone canonical AWBC payload.
 pub const AWBC_MAGIC: [u8; 8] = *b"AWBC\r\n\x1a\n";
 
@@ -56,6 +59,10 @@ awbc_id!(AwbcChoiceOptionId, "Index into the choice-option table.");
 awbc_id!(AwbcIntrinsicId, "Index into the intrinsic-call table.");
 awbc_id!(AwbcHostCallId, "Index into the host-call ABI table.");
 awbc_id!(AwbcTaskPlanId, "Index into the host-task plan table.");
+awbc_id!(
+    AwbcAudioCommandId,
+    "Index into the typed audio-command payload table."
+);
 awbc_id!(AwbcEffectPlanId, "Index into the effect plan table.");
 awbc_id!(AwbcContentUnitId, "Index into the content-unit table.");
 awbc_id!(AwbcLineTaskGroupId, "Index into the line-task-group table.");
@@ -114,6 +121,7 @@ pub struct AwbcProgram {
     pub intrinsics: Vec<AwbcIntrinsic>,
     pub host_calls: Vec<AwbcHostCall>,
     pub task_plans: Vec<AwbcTaskPlan>,
+    pub audio_commands: Vec<AwbcAudioCommand>,
     pub effect_plans: Vec<AwbcEffectPlan>,
     pub choices: Vec<AwbcChoice>,
     pub choice_options: Vec<AwbcChoiceOption>,
@@ -148,6 +156,7 @@ impl Default for AwbcProgram {
             intrinsics: Vec::new(),
             host_calls: Vec::new(),
             task_plans: Vec::new(),
+            audio_commands: Vec::new(),
             effect_plans: Vec::new(),
             choices: Vec::new(),
             choice_options: Vec::new(),
@@ -1271,11 +1280,186 @@ pub struct AwbcAwaitManyPolicy {
     pub limit: u32,
 }
 
+/// Effect-local argument index used by typed AWBC audio payloads.
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+)]
+#[serde(transparent)]
+pub struct AwbcAudioArg(pub u32);
+
+impl AwbcAudioArg {
+    #[must_use]
+    pub const fn new(index: u32) -> Self {
+        Self(index)
+    }
+
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+/// One evaluated value consumed by a typed AWBC audio command.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum AwbcAudioValueRef {
+    /// Runtime value passed through `AwbcInstruction::EmitEffect.args`.
+    Arg(AwbcAudioArg),
+    /// Canonical constant used by context-free literal line-task effects.
+    Const(AwbcConstantId),
+}
+
+/// Canonical typed AWBC representation of `RuntimeAudioCommand`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AwbcAudioCommand {
+    Play {
+        voice: AwbcAudioValueRef,
+        resource: AwbcAudioValueRef,
+        bus: AwbcAudioValueRef,
+        gain_db_milli: AwbcAudioValueRef,
+        pan_milli: AwbcAudioValueRef,
+        loop_mode: AudioLoopMode,
+        start_frame: AwbcAudioValueRef,
+        fade_in_millis: AwbcAudioValueRef,
+    },
+    Stop {
+        voice: AwbcAudioValueRef,
+        fade_out_millis: AwbcAudioValueRef,
+    },
+    StopAll {
+        fade_out_millis: AwbcAudioValueRef,
+    },
+    SetVoiceGain {
+        voice: AwbcAudioValueRef,
+        gain_db_milli: AwbcAudioValueRef,
+        transition_millis: AwbcAudioValueRef,
+    },
+    SetVoicePan {
+        voice: AwbcAudioValueRef,
+        pan_milli: AwbcAudioValueRef,
+        transition_millis: AwbcAudioValueRef,
+    },
+    SetBusGain {
+        bus: AwbcAudioValueRef,
+        gain_db_milli: AwbcAudioValueRef,
+        transition_millis: AwbcAudioValueRef,
+    },
+    SetBusMute {
+        bus: AwbcAudioValueRef,
+        muted: AwbcAudioValueRef,
+    },
+    SetEffectEnabled {
+        bus: AwbcAudioValueRef,
+        effect: AwbcAudioValueRef,
+        enabled: AwbcAudioValueRef,
+    },
+    SetEffectParameter {
+        bus: AwbcAudioValueRef,
+        effect: AwbcAudioValueRef,
+        parameter: AudioEffectParameterKind,
+        value: AwbcAudioValueRef,
+        transition_millis: AwbcAudioValueRef,
+    },
+    ApplySnapshot {
+        snapshot: AwbcAudioValueRef,
+        transition_millis: AwbcAudioValueRef,
+    },
+    RequestMicrophone {
+        capture: AwbcAudioValueRef,
+        constraints: MicrophoneConstraints,
+    },
+    StopMicrophone {
+        capture: AwbcAudioValueRef,
+    },
+    SetCaptureMonitor {
+        capture: AwbcAudioValueRef,
+        bus: Option<AwbcAudioValueRef>,
+        gain_db_milli: AwbcAudioValueRef,
+    },
+}
+
+impl AwbcAudioCommand {
+    /// Returns all payload value references in canonical field order.
+    #[must_use]
+    pub fn value_refs(&self) -> Vec<AwbcAudioValueRef> {
+        match self {
+            Self::Play {
+                voice,
+                resource,
+                bus,
+                gain_db_milli,
+                pan_milli,
+                start_frame,
+                fade_in_millis,
+                ..
+            } => vec![
+                *voice,
+                *resource,
+                *bus,
+                *gain_db_milli,
+                *pan_milli,
+                *start_frame,
+                *fade_in_millis,
+            ],
+            Self::Stop {
+                voice,
+                fade_out_millis,
+            } => vec![*voice, *fade_out_millis],
+            Self::StopAll { fade_out_millis } => vec![*fade_out_millis],
+            Self::SetVoiceGain {
+                voice,
+                gain_db_milli,
+                transition_millis,
+            } => vec![*voice, *gain_db_milli, *transition_millis],
+            Self::SetVoicePan {
+                voice,
+                pan_milli,
+                transition_millis,
+            } => vec![*voice, *pan_milli, *transition_millis],
+            Self::SetBusGain {
+                bus,
+                gain_db_milli,
+                transition_millis,
+            } => vec![*bus, *gain_db_milli, *transition_millis],
+            Self::SetBusMute { bus, muted } => vec![*bus, *muted],
+            Self::SetEffectEnabled {
+                bus,
+                effect,
+                enabled,
+            } => vec![*bus, *effect, *enabled],
+            Self::SetEffectParameter {
+                bus,
+                effect,
+                value,
+                transition_millis,
+                ..
+            } => vec![*bus, *effect, *value, *transition_millis],
+            Self::ApplySnapshot {
+                snapshot,
+                transition_millis,
+            } => vec![*snapshot, *transition_millis],
+            Self::RequestMicrophone { capture, .. } | Self::StopMicrophone { capture } => {
+                vec![*capture]
+            }
+            Self::SetCaptureMonitor {
+                capture,
+                bus,
+                gain_db_milli,
+            } => bus.map_or_else(
+                || vec![*capture, *gain_db_milli],
+                |bus| vec![*capture, bus, *gain_db_milli],
+            ),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcEffectPlan {
     pub kind: AwbcEffectKind,
     pub signature: AwbcSignatureId,
     pub capability: Option<AwbcStringId>,
+    pub audio: Option<AwbcAudioCommandId>,
     pub static_args: Vec<AwbcConstantId>,
     pub resources: Vec<AwbcResourceAccess>,
 }

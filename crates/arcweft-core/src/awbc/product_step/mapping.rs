@@ -19,9 +19,11 @@ use crate::task::{
 use crate::value::{
     RuntimePayload, RuntimeValue, runtime_value_into_sequence_values, runtime_value_label,
 };
+use arcweft_interaction_model::audio::AudioCommand;
 
 pub(super) enum MappedEffect {
     Line(LineEffectRequest),
+    Audio(AudioCommand),
     Unsupported(RuntimeDiagnostic),
 }
 
@@ -82,15 +84,30 @@ impl AwbcEffectKind {
                 }
                 None => LineEffectRequest::Wait(RuntimeWaitTarget::Expr(String::new())),
             },
-            Self::Audio => {
-                return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
-                    RuntimeDiagnosticCategory::Capability,
-                    format!(
-                        "AWBC audio effect `{}` requires a typed audio command payload",
-                        string(0)
-                    ),
-                ));
-            }
+            Self::Audio => match plan
+                .audio
+                .and_then(|audio| program.audio_commands.get(audio.index()))
+            {
+                Some(command) => {
+                    return command
+                        .map_product_audio(program, dynamic_args)
+                        .map_or_else(
+                            |error| {
+                                MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
+                                    error.category(),
+                                    error.to_string(),
+                                ))
+                            },
+                            MappedEffect::Audio,
+                        );
+                }
+                None => {
+                    return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
+                        RuntimeDiagnosticCategory::Internal,
+                        "AWBC audio effect is missing typed audio command payload",
+                    ));
+                }
+            },
             Self::Call => LineEffectRequest::Call(RuntimeCall {
                 callee: string(0),
                 args: static_args[1..]

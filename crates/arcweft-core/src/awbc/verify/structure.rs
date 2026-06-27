@@ -5,10 +5,11 @@
 
 use super::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
 use crate::awbc::schema::{
-    AWBC_ABI_VERSION, AwbcBlockId, AwbcCodeLocation, AwbcConstant, AwbcEffectSetId, AwbcEntryKind,
-    AwbcEntryTarget, AwbcFrameSlotRole, AwbcFunctionId, AwbcFunctionKind, AwbcLineTaskNode,
-    AwbcLineTaskTrigger, AwbcPattern, AwbcPatternId, AwbcProgram, AwbcRouteBindingSource,
-    AwbcRuntimeType, AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTypeId,
+    AWBC_ABI_VERSION, AwbcAudioCommandId, AwbcAudioValueRef, AwbcBlockId, AwbcCodeLocation,
+    AwbcConstant, AwbcEffectKind, AwbcEffectPlan, AwbcEffectSetId, AwbcEntryKind, AwbcEntryTarget,
+    AwbcFrameSlotRole, AwbcFunctionId, AwbcFunctionKind, AwbcLineTaskNode, AwbcLineTaskTrigger,
+    AwbcPattern, AwbcPatternId, AwbcProgram, AwbcRouteBindingSource, AwbcRuntimeType,
+    AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTypeId,
 };
 use std::collections::BTreeSet;
 
@@ -641,6 +642,7 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
         if let Some(capability) = effect.capability {
             check_capability(verifier, capability, &at)?;
         }
+        verify_effect_audio_payload(program, index, effect)?;
         for constant in &effect.static_args {
             check_index(program.constants.len(), constant.0, "constants", &at)?;
         }
@@ -701,6 +703,70 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                 at,
                 message: "pure-helper table does not match function signature/kind".to_owned(),
             });
+        }
+    }
+    Ok(())
+}
+
+fn verify_effect_audio_payload(
+    program: &AwbcProgram,
+    effect_index: usize,
+    effect: &AwbcEffectPlan,
+) -> Result<(), AwbcVerifyError> {
+    match (effect.kind, effect.audio) {
+        (AwbcEffectKind::Audio, Some(command)) => {
+            if !effect.static_args.is_empty() {
+                return Err(AwbcVerifyError::MalformedAudioPayload {
+                    effect: effect_index,
+                    message: "audio effect must use typed payload rows, not legacy static args"
+                        .to_owned(),
+                });
+            }
+            verify_audio_command_refs(program, effect_index, effect.signature, command)
+        }
+        (AwbcEffectKind::Audio, None) => Err(AwbcVerifyError::MalformedAudioPayload {
+            effect: effect_index,
+            message: "audio effect is missing typed payload row".to_owned(),
+        }),
+        (_, Some(_)) => Err(AwbcVerifyError::MalformedAudioPayload {
+            effect: effect_index,
+            message: "non-audio effect carries an audio payload row".to_owned(),
+        }),
+        (_, None) => Ok(()),
+    }
+}
+
+fn verify_audio_command_refs(
+    program: &AwbcProgram,
+    effect_index: usize,
+    signature: AwbcSignatureId,
+    command: AwbcAudioCommandId,
+) -> Result<(), AwbcVerifyError> {
+    check_index(
+        program.audio_commands.len(),
+        command.0,
+        "audio_commands",
+        &format!("effect plan {effect_index}"),
+    )?;
+    let arg_count = program.signatures[signature.index()].params.len();
+    for value in program.audio_commands[command.index()].value_refs() {
+        match value {
+            AwbcAudioValueRef::Arg(arg) if arg.index() >= arg_count => {
+                return Err(AwbcVerifyError::MalformedAudioPayload {
+                    effect: effect_index,
+                    message: format!(
+                        "audio arg {} exceeds effect signature arity {arg_count}",
+                        arg.0
+                    ),
+                });
+            }
+            AwbcAudioValueRef::Arg(_) => {}
+            AwbcAudioValueRef::Const(constant) => check_index(
+                program.constants.len(),
+                constant.0,
+                "constants",
+                &format!("effect plan {effect_index} audio payload"),
+            )?,
         }
     }
     Ok(())

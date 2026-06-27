@@ -1,21 +1,22 @@
+use crate::awbc_lower::audio::constant_audio_command;
 use crate::awbc_lower::{AwbcLowerOptions, table_index, table_range_len};
 use arcweft_core::awbc::schema::{
-    AwbcAudioCleanup, AwbcAwaitManyPolicy, AwbcBackpressurePolicy, AwbcBlock, AwbcBlockId,
-    AwbcChildCancelPolicy, AwbcChildCleanup, AwbcChildJoinPolicy, AwbcChoice, AwbcChoiceId,
-    AwbcChoiceOption, AwbcConstant, AwbcConstantId, AwbcContentUnit, AwbcContentUnitId,
-    AwbcDisplayMapEntry, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSet,
-    AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFrameLayout, AwbcFrameLayoutId,
-    AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcHostCall,
-    AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcInstructionId, AwbcLineCancelHandler,
-    AwbcLineCleanupPolicy, AwbcLineOption, AwbcLineTaskGroup, AwbcLineTaskGroupId,
-    AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcOverflowPolicy,
-    AwbcParallelPolicy, AwbcPattern, AwbcPatternId, AwbcPresentationCleanup, AwbcPrivacyPolicy,
-    AwbcProgram, AwbcRegisterId, AwbcReplayPolicy, AwbcResumePoint, AwbcResumePointId, AwbcRoute,
-    AwbcRouteBinding, AwbcRouteBindingSource, AwbcRuntimeType, AwbcSafePointKind, AwbcSignature,
-    AwbcSignatureId, AwbcSignedIntKind, AwbcSourceEventKind, AwbcSourcePlan, AwbcSourcePlanId,
-    AwbcSourcePolicy, AwbcStreamPlan, AwbcStreamPlanId, AwbcStringId, AwbcTableRange,
-    AwbcTaskArgument, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId, AwbcTaskPolicy, AwbcTerminator,
-    AwbcTypeId, AwbcUnsignedIntKind,
+    AwbcAudioCleanup, AwbcAudioCommand, AwbcAudioCommandId, AwbcAwaitManyPolicy,
+    AwbcBackpressurePolicy, AwbcBlock, AwbcBlockId, AwbcChildCancelPolicy, AwbcChildCleanup,
+    AwbcChildJoinPolicy, AwbcChoice, AwbcChoiceId, AwbcChoiceOption, AwbcConstant, AwbcConstantId,
+    AwbcContentUnit, AwbcContentUnitId, AwbcDisplayMapEntry, AwbcEffectKind, AwbcEffectPlan,
+    AwbcEffectPlanId, AwbcEffectSet, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
+    AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
+    AwbcFunctionKind, AwbcHostCall, AwbcHostCallId, AwbcHostCallMode, AwbcInstruction,
+    AwbcInstructionId, AwbcLineCancelHandler, AwbcLineCleanupPolicy, AwbcLineOption,
+    AwbcLineTaskGroup, AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId,
+    AwbcLineTaskTrigger, AwbcOverflowPolicy, AwbcParallelPolicy, AwbcPattern, AwbcPatternId,
+    AwbcPresentationCleanup, AwbcPrivacyPolicy, AwbcProgram, AwbcRegisterId, AwbcReplayPolicy,
+    AwbcResumePoint, AwbcResumePointId, AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource,
+    AwbcRuntimeType, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcSignedIntKind,
+    AwbcSourceEventKind, AwbcSourcePlan, AwbcSourcePlanId, AwbcSourcePolicy, AwbcStreamPlan,
+    AwbcStreamPlanId, AwbcStringId, AwbcTableRange, AwbcTaskArgument, AwbcTaskClass, AwbcTaskPlan,
+    AwbcTaskPlanId, AwbcTaskPolicy, AwbcTerminator, AwbcTypeId, AwbcUnsignedIntKind,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeWaitTarget};
 use arcweft_core::line_task::{
@@ -81,6 +82,7 @@ pub struct AwbcLowerStats {
     pub instructions: usize,
     pub patterns: usize,
     pub effects: usize,
+    pub audio_commands: usize,
     pub task_plans: usize,
     pub source_plans: usize,
     pub stream_plans: usize,
@@ -97,6 +99,7 @@ impl AwbcLowerStats {
             instructions: program.instructions.len(),
             patterns: program.patterns.len(),
             effects: program.effect_plans.len(),
+            audio_commands: program.audio_commands.len(),
             task_plans: program.task_plans.len(),
             source_plans: program.source_plans.len(),
             stream_plans: program.stream_plans.len(),
@@ -117,6 +120,7 @@ pub struct AwbcInventory {
     signatures: BTreeMap<String, AwbcSignatureId>,
     frame_layouts: BTreeMap<String, AwbcFrameLayoutId>,
     effects: BTreeMap<String, AwbcEffectPlanId>,
+    audio_commands: BTreeMap<String, AwbcAudioCommandId>,
     tasks: BTreeMap<String, AwbcTaskPlanId>,
     host_calls: BTreeMap<String, AwbcHostCallId>,
     sources: BTreeMap<SourceId, AwbcSourcePlanId>,
@@ -149,6 +153,7 @@ impl AwbcInventory {
             signatures: BTreeMap::new(),
             frame_layouts: BTreeMap::new(),
             effects: BTreeMap::new(),
+            audio_commands: BTreeMap::new(),
             tasks: BTreeMap::new(),
             host_calls: BTreeMap::new(),
             sources: BTreeMap::new(),
@@ -634,6 +639,10 @@ impl AwbcInventory {
         if let Some(id) = self.effects.get(&key).copied() {
             return id;
         }
+        if let LineEffectRequest::Audio(command) = effect {
+            let command = constant_audio_command(self, command, "line_task.audio");
+            return self.intern_audio_effect(command, 0);
+        }
         let id = AwbcEffectPlanId(table_index(self.program.effect_plans.len()));
         let kind = effect_kind(effect);
         let signature = self.intern_unit_signature();
@@ -643,10 +652,48 @@ impl AwbcInventory {
             kind,
             signature,
             capability,
+            audio: None,
             static_args,
             resources: Vec::new(),
         });
         self.effects.insert(key, id);
+        id
+    }
+
+    pub fn intern_audio_effect(
+        &mut self,
+        command: AwbcAudioCommand,
+        arg_count: usize,
+    ) -> AwbcEffectPlanId {
+        let audio = self.intern_audio_command(command);
+        let key = format!("effect:audio:{audio:?}:{arg_count}");
+        if let Some(id) = self.effects.get(&key).copied() {
+            return id;
+        }
+        let id = AwbcEffectPlanId(table_index(self.program.effect_plans.len()));
+        let signature =
+            self.intern_signature(vec![self.dynamic_ty(); arg_count], None, AwbcEffectSetId(0));
+        let capability = Some(self.intern_string("audio"));
+        self.program.effect_plans.push(AwbcEffectPlan {
+            kind: AwbcEffectKind::Audio,
+            signature,
+            capability,
+            audio: Some(audio),
+            static_args: Vec::new(),
+            resources: Vec::new(),
+        });
+        self.effects.insert(key, id);
+        id
+    }
+
+    fn intern_audio_command(&mut self, command: AwbcAudioCommand) -> AwbcAudioCommandId {
+        let key = format!("audio:{command:?}");
+        if let Some(id) = self.audio_commands.get(&key).copied() {
+            return id;
+        }
+        let id = AwbcAudioCommandId(table_index(self.program.audio_commands.len()));
+        self.program.audio_commands.push(command);
+        self.audio_commands.insert(key, id);
         id
     }
 
@@ -1090,9 +1137,7 @@ fn effect_static_args(
         LineEffectRequest::Continue { label } => {
             vec![optional_string_constant(inventory, label.as_deref())]
         }
-        LineEffectRequest::Audio(command) => {
-            vec![inventory.constant_string(command.operation_name())]
-        }
+        LineEffectRequest::Audio(_) => Vec::new(),
     }
 }
 

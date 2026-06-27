@@ -57,6 +57,82 @@ fn canonical_codec_is_deterministic_and_round_trips() {
 }
 
 #[test]
+fn canonical_codec_round_trips_typed_audio_payload_table() {
+    let mut program = minimal_program();
+    program.audio_commands.push(AwbcAudioCommand::StopAll {
+        fade_out_millis: AwbcAudioValueRef::Arg(AwbcAudioArg::new(0)),
+    });
+
+    let encoded = program
+        .encode_canonical()
+        .expect("encode AWBC audio payload");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode AWBC audio payload");
+
+    assert_eq!(decoded, program);
+}
+
+#[test]
+fn verifier_rejects_audio_effect_without_typed_payload() {
+    let mut program = minimal_program();
+    program.effect_plans.push(AwbcEffectPlan {
+        kind: AwbcEffectKind::Audio,
+        signature: AwbcSignatureId(0),
+        capability: None,
+        audio: None,
+        static_args: Vec::new(),
+        resources: Vec::new(),
+    });
+
+    assert!(matches!(
+        program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::MalformedAudioPayload { effect: 0, .. })
+    ));
+}
+
+#[test]
+fn verifier_rejects_audio_payload_arg_outside_effect_signature() {
+    let mut program = minimal_program();
+    program.audio_commands.push(AwbcAudioCommand::StopAll {
+        fade_out_millis: AwbcAudioValueRef::Arg(AwbcAudioArg::new(1)),
+    });
+    program.effect_plans.push(AwbcEffectPlan {
+        kind: AwbcEffectKind::Audio,
+        signature: AwbcSignatureId(0),
+        capability: None,
+        audio: Some(AwbcAudioCommandId(0)),
+        static_args: Vec::new(),
+        resources: Vec::new(),
+    });
+
+    assert!(matches!(
+        program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::MalformedAudioPayload { effect: 0, .. })
+    ));
+}
+
+#[test]
+fn verifier_rejects_non_audio_effect_with_typed_audio_payload() {
+    let mut program = minimal_program();
+    program.audio_commands.push(AwbcAudioCommand::StopAll {
+        fade_out_millis: AwbcAudioValueRef::Const(AwbcConstantId(0)),
+    });
+    program.effect_plans.push(AwbcEffectPlan {
+        kind: AwbcEffectKind::Log,
+        signature: AwbcSignatureId(0),
+        capability: None,
+        audio: Some(AwbcAudioCommandId(0)),
+        static_args: Vec::new(),
+        resources: Vec::new(),
+    });
+
+    assert!(matches!(
+        program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::MalformedAudioPayload { effect: 0, .. })
+    ));
+}
+
+#[test]
 fn decode_rejects_encoded_byte_budget() {
     let bytes = minimal_program().encode_canonical().expect("encode AWBC");
     let budget = AwbcDecodeBudget {

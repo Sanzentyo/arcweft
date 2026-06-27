@@ -1,13 +1,13 @@
 use super::{AwbcProductStepExecutor, AwbcProductStepParityBlocker};
 use crate::awbc::product_step::mapping::MappedEffect;
 use crate::awbc::schema::{
-    AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcConstant, AwbcContentUnit, AwbcEffectKind,
-    AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSetId, AwbcEntryId, AwbcFrameLayout,
-    AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlags,
-    AwbcFunctionId, AwbcFunctionKind, AwbcHostCall, AwbcHostCallId, AwbcHostCallMode,
-    AwbcInstruction, AwbcProgram, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
-    AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange,
-    AwbcTerminator, AwbcTrapCode, AwbcTypeId,
+    AwbcAudioArg, AwbcAudioCommand, AwbcAudioCommandId, AwbcAudioValueRef, AwbcBlock, AwbcBlockId,
+    AwbcChoiceId, AwbcConstant, AwbcContentUnit, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId,
+    AwbcEffectSetId, AwbcEntryId, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot,
+    AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
+    AwbcHostCall, AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcProgram, AwbcRegisterId,
+    AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
+    AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
 };
 use crate::engine::{FlowExit, FlowFiberStatus};
 use crate::step::{
@@ -236,6 +236,58 @@ fn effect_mapping_table_covers_every_awbc_effect_kind() {
     }
 }
 
+#[test]
+fn audio_effect_mapping_without_typed_payload_is_typed_internal_diagnostic() {
+    let mut program = AwbcProgram::default();
+    let effect = push_effect_plan(&mut program, AwbcEffectKind::Audio);
+
+    let mapped = AwbcEffectKind::Audio.map_product_effect(&program, effect, &[]);
+
+    let MappedEffect::Unsupported(diagnostic) = mapped else {
+        panic!("malformed audio payload must not map to a line or audio request");
+    };
+    assert_eq!(diagnostic.category, RuntimeDiagnosticCategory::Internal);
+}
+
+#[test]
+fn audio_effect_mapping_missing_arg_is_typed_internal_diagnostic() {
+    let mut program = AwbcProgram::default();
+    program.audio_commands.push(AwbcAudioCommand::StopAll {
+        fade_out_millis: AwbcAudioValueRef::Arg(AwbcAudioArg::new(0)),
+    });
+    let effect = push_effect_plan(&mut program, AwbcEffectKind::Audio);
+    program.effect_plans[effect.index()].audio = Some(AwbcAudioCommandId(0));
+    program.effect_plans[effect.index()].static_args.clear();
+
+    let mapped = AwbcEffectKind::Audio.map_product_effect(&program, effect, &[]);
+
+    let MappedEffect::Unsupported(diagnostic) = mapped else {
+        panic!("missing audio dynamic arg must not map to a request");
+    };
+    assert_eq!(diagnostic.category, RuntimeDiagnosticCategory::Internal);
+}
+
+#[test]
+fn audio_effect_mapping_invalid_identifier_is_typed_type_diagnostic() {
+    let mut program = AwbcProgram::default();
+    let invalid_voice = constant_string(&mut program, "   ");
+    program.audio_commands.push(AwbcAudioCommand::Stop {
+        voice: AwbcAudioValueRef::Const(invalid_voice),
+        fade_out_millis: AwbcAudioValueRef::Arg(AwbcAudioArg::new(0)),
+    });
+    let effect = push_effect_plan(&mut program, AwbcEffectKind::Audio);
+    program.effect_plans[effect.index()].audio = Some(AwbcAudioCommandId(0));
+    program.effect_plans[effect.index()].static_args.clear();
+
+    let mapped =
+        AwbcEffectKind::Audio.map_product_effect(&program, effect, &[RuntimeValue::u32(25)]);
+
+    let MappedEffect::Unsupported(diagnostic) = mapped else {
+        panic!("invalid audio identifier must not map to a request");
+    };
+    assert_eq!(diagnostic.category, RuntimeDiagnosticCategory::Type);
+}
+
 fn trap_program(code: AwbcTrapCode, message: &str) -> AwbcProgram {
     let strings = vec!["entry.main".to_owned(), message.to_owned()];
     let signature = AwbcSignature {
@@ -421,6 +473,7 @@ fn push_effect_plan(program: &mut AwbcProgram, kind: AwbcEffectKind) -> AwbcEffe
         kind,
         signature: AwbcSignatureId(0),
         capability: None,
+        audio: None,
         static_args,
         resources: Vec::new(),
     });

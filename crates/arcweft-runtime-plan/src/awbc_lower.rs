@@ -5,6 +5,7 @@
 //! this crate. Product players consume the emitted `AwbcProgram`; they do not
 //! need HIR, sema, syntax, compiler, or this lowerer.
 
+mod audio;
 mod expr;
 mod flow;
 mod frame;
@@ -15,6 +16,7 @@ mod source;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use audio::AwbcAudioLowerer;
 pub use expr::AwbcExprLowerer;
 pub use flow::AwbcFlowLowerer;
 pub use frame::{FrameBuilder, FrameSlotKey};

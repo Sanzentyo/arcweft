@@ -1,3 +1,4 @@
+use arcweft_core::audio::RuntimeAudioCommand;
 use arcweft_core::effect::{
     LineEffectRequest, RuntimeAssertion, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall,
     RuntimeEvent, RuntimeField, RuntimeLog, RuntimeWaitTarget,
@@ -31,6 +32,7 @@ use arcweft_core::value::{
     RuntimeValue,
 };
 use arcweft_interaction_model::{
+    audio::{AudioCommand, AudioDispatchId, AudioMillis, GainDbMilli},
     id::Identifier,
     input::{InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent},
     payload::InteractionPayload,
@@ -265,6 +267,20 @@ fn call(name: &str) -> LineEffectRequest {
         callee: name.to_owned(),
         args: Vec::new(),
     })
+}
+
+fn audio_stop_all() -> LineEffectRequest {
+    LineEffectRequest::Audio(Box::new(RuntimeAudioCommand::StopAll {
+        fade_out_millis: RuntimeExpr::Value(RuntimeValue::u32(125)),
+    }))
+}
+
+fn audio_set_bus_gain() -> LineEffectRequest {
+    LineEffectRequest::Audio(Box::new(RuntimeAudioCommand::SetBusGain {
+        bus: RuntimeExpr::Value(RuntimeValue::String("bus.music".to_owned())),
+        gain_db_milli: RuntimeExpr::Local("music_gain".to_owned()),
+        transition_millis: RuntimeExpr::Value(RuntimeValue::u32(250)),
+    }))
 }
 
 fn non_control_effect_table() -> Vec<LineEffectRequest> {
@@ -733,6 +749,61 @@ fn awbc_product_parity_effect() {
     for step in &steps {
         assert_step_boundary_eq(step);
     }
+}
+
+#[test]
+fn awbc_product_parity_audio_stop_all() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::Effect(audio_stop_all()),
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(steps[0].structured.output.requests.audio.len(), 1);
+    assert_eq!(
+        steps[0].awbc.output.requests.audio,
+        steps[0].structured.output.requests.audio
+    );
+    assert_eq!(steps[0].awbc.stats.audio_commands, 1);
+    assert_eq!(steps[0].structured.stats.audio_commands, 1);
+    assert_eq!(
+        steps[0].structured.output.requests.audio[0].dispatch,
+        AudioDispatchId::new(0, 0)
+    );
+    assert!(matches!(
+        steps[0].structured.output.requests.audio[0].command,
+        AudioCommand::StopAll { fade_out } if fade_out == AudioMillis::new(125)
+    ));
+}
+
+#[test]
+fn awbc_product_parity_audio_expression_bus_gain() {
+    let steps = run_parity_with_root_bindings(
+        flow(vec![
+            FlowOp::Effect(audio_set_bus_gain()),
+            FlowOp::Return("done".to_owned()),
+        ]),
+        &[binding("music_gain", RuntimeValue::i32(-4500))],
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(steps[0].structured.output.requests.audio.len(), 1);
+    assert_eq!(
+        steps[0].awbc.output.requests.audio,
+        steps[0].structured.output.requests.audio
+    );
+    assert_eq!(steps[0].awbc.stats.audio_commands, 1);
+    assert!(matches!(
+        &steps[0].structured.output.requests.audio[0].command,
+        AudioCommand::SetBusGain { bus, gain, transition }
+            if bus.as_str() == "bus.music"
+                && *gain == GainDbMilli::new(-4500).expect("valid gain")
+                && *transition == AudioMillis::new(250)
+    ));
 }
 
 #[test]

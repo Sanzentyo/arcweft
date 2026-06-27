@@ -4,6 +4,7 @@
 //! the shared `RuntimeStepResult` boundary. It is Sans I/O: every host action is
 //! returned as typed data and no structured bytecode fallback is reachable.
 
+mod audio;
 mod control;
 mod mapping;
 
@@ -49,6 +50,7 @@ use crate::value::{
     RuntimeBinding, RuntimeCallTarget, RuntimeEnv, RuntimePayload, RuntimeValue,
     runtime_sequence_from_literal_values, runtime_sequence_values, runtime_value_label,
 };
+use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioDispatchId};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use thiserror::Error;
 
@@ -184,6 +186,7 @@ pub struct AwbcProductStepExecutor {
     child_fibers: VecDeque<FiberState>,
     next_generation: u64,
     next_host_call_sequence: u64,
+    next_audio_sequence: u64,
     compact_pure_stats: crate::step::RuntimePureCallStats,
 }
 
@@ -270,6 +273,7 @@ impl AwbcProductStepExecutor {
             child_fibers: VecDeque::new(),
             next_generation: 1,
             next_host_call_sequence: 0,
+            next_audio_sequence: 0,
             compact_pure_stats: crate::step::RuntimePureCallStats::default(),
         })
     }
@@ -1575,8 +1579,18 @@ impl AwbcProductStepExecutor {
         };
         match plan.kind.map_product_effect(&self.program, effect, args) {
             MappedEffect::Line(effect) => output.effects.line.push(effect),
+            MappedEffect::Audio(command) => output.requests.audio.push(AudioCommandEnvelope::new(
+                self.next_audio_dispatch(),
+                command,
+            )),
             MappedEffect::Unsupported(diagnostic) => output.diagnostics.push(diagnostic),
         }
+    }
+
+    fn next_audio_dispatch(&mut self) -> AudioDispatchId {
+        let dispatch = AudioDispatchId::new(0, self.next_audio_sequence);
+        self.next_audio_sequence = self.next_audio_sequence.saturating_add(1);
+        dispatch
     }
 
     fn spawn_child(

@@ -1919,6 +1919,18 @@ Ongoing structural constraint:
   behavior should continue moving stable responsibility modules out instead of
   growing the facade file again.
 
+## Seq-01.6.2 Audio Closure Update
+
+The explicit seq-01.6.1 exclusion for AWBC audio payload execution parity is
+closed by `docs/implementation/seq-01-6-2-product-awbc-audio-payload-parity-2026-06-26.md`.
+
+Seq-01.6.2 adds the typed `AwbcProgram.audio_commands` table,
+`AwbcEffectPlan.audio` payload reference, codec version 5 support, verifier
+malformed-payload rules, flow/root-binding audio expression lowering, and
+product-step `AudioCommandEnvelope` emission. The old string-only
+`RuntimeAudioCommand::operation_name()` payload is no longer a product execution
+path.
+
 ## Changed-file summary
 
 The overlay changes AWBC schema/codec/verifier, compact fiber and VM behavior,

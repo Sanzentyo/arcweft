@@ -1,9 +1,10 @@
 use super::AwbcCodecError;
 use super::wire::{Reader, Wire, Writer, wire_enum};
 use crate::awbc::schema::{
-    AwbcAudioCleanup, AwbcAwaitManyPolicy, AwbcBackpressurePolicy, AwbcChildCancelPolicy,
-    AwbcChildCleanup, AwbcChildJoinPolicy, AwbcChoice, AwbcChoiceOption, AwbcConflictPolicy,
-    AwbcConstantId, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId, AwbcFunctionId, AwbcHostCall,
+    AwbcAudioArg, AwbcAudioCleanup, AwbcAudioCommand, AwbcAudioCommandId, AwbcAudioValueRef,
+    AwbcAwaitManyPolicy, AwbcBackpressurePolicy, AwbcChildCancelPolicy, AwbcChildCleanup,
+    AwbcChildJoinPolicy, AwbcChoice, AwbcChoiceOption, AwbcConflictPolicy, AwbcConstantId,
+    AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId, AwbcFunctionId, AwbcHostCall,
     AwbcHostCallMode, AwbcIntrinsic, AwbcLineCancelHandler, AwbcLineCleanupPolicy, AwbcLineOption,
     AwbcLineTaskGroup, AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger,
     AwbcOverflowPolicy, AwbcParallelPolicy, AwbcPatternId, AwbcPresentationCleanup,
@@ -12,6 +13,9 @@ use crate::awbc::schema::{
     AwbcSourceEventKind, AwbcSourceHandler, AwbcSourcePlan, AwbcSourcePolicy, AwbcStreamPlan,
     AwbcStringId, AwbcTableRange, AwbcTaskArgument, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId,
     AwbcTaskPolicy, AwbcTypeId,
+};
+use arcweft_interaction_model::audio::{
+    AudioEffectParameterKind, AudioLoopMode, MicrophoneConstraints,
 };
 
 impl Wire for AwbcIntrinsic {
@@ -140,11 +144,338 @@ impl Wire for AwbcAwaitManyPolicy {
     }
 }
 
+impl Wire for AwbcAudioArg {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.0.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        u32::read_wire(reader).map(Self)
+    }
+}
+
+impl Wire for AwbcAudioValueRef {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Arg(value) => {
+                writer.write_u8(0);
+                value.write_wire(writer)?;
+            }
+            Self::Const(value) => {
+                writer.write_u8(1);
+                value.write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        Ok(match reader.read_u8()? {
+            0 => Self::Arg(AwbcAudioArg::read_wire(reader)?),
+            1 => Self::Const(AwbcConstantId::read_wire(reader)?),
+            tag => {
+                return Err(AwbcCodecError::UnknownTag {
+                    kind: "audio value ref",
+                    tag,
+                    offset,
+                });
+            }
+        })
+    }
+}
+
+impl Wire for AudioLoopMode {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::None => writer.write_u8(0),
+            Self::Whole => writer.write_u8(1),
+            Self::Region {
+                start_frame,
+                end_frame,
+            } => {
+                writer.write_u8(2);
+                start_frame.write_wire(writer)?;
+                end_frame.write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        Ok(match reader.read_u8()? {
+            0 => Self::None,
+            1 => Self::Whole,
+            2 => Self::Region {
+                start_frame: u64::read_wire(reader)?,
+                end_frame: u64::read_wire(reader)?,
+            },
+            tag => {
+                return Err(AwbcCodecError::UnknownTag {
+                    kind: "audio loop mode",
+                    tag,
+                    offset,
+                });
+            }
+        })
+    }
+}
+
+wire_enum!(AudioEffectParameterKind, "audio effect parameter kind", {
+    0 => AudioEffectParameterKind::BiquadCutoffMilliHz,
+    1 => AudioEffectParameterKind::BiquadQMilli,
+    2 => AudioEffectParameterKind::CompressorThresholdDbMilli,
+    3 => AudioEffectParameterKind::CompressorRatioMilli,
+    4 => AudioEffectParameterKind::CompressorAttackMicros,
+    5 => AudioEffectParameterKind::CompressorReleaseMicros,
+    6 => AudioEffectParameterKind::CompressorMakeupDbMilli,
+    7 => AudioEffectParameterKind::DelayTimeMillis,
+    8 => AudioEffectParameterKind::DelayFeedbackMilli,
+    9 => AudioEffectParameterKind::ReverbRoomSizeMilli,
+    10 => AudioEffectParameterKind::ReverbDampingMilli,
+    11 => AudioEffectParameterKind::WetGainDbMilli,
+    12 => AudioEffectParameterKind::DryGainDbMilli,
+    13 => AudioEffectParameterKind::LimiterCeilingDbMilli,
+    14 => AudioEffectParameterKind::LimiterReleaseMicros,
+});
+
+impl Wire for MicrophoneConstraints {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.channels.write_wire(writer)?;
+        self.preferred_sample_rate_hz.write_wire(writer)?;
+        self.echo_cancellation.write_wire(writer)?;
+        self.noise_suppression.write_wire(writer)?;
+        self.auto_gain_control.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            channels: u16::read_wire(reader)?,
+            preferred_sample_rate_hz: Option::<u32>::read_wire(reader)?,
+            echo_cancellation: bool::read_wire(reader)?,
+            noise_suppression: bool::read_wire(reader)?,
+            auto_gain_control: bool::read_wire(reader)?,
+        })
+    }
+}
+
+impl Wire for AwbcAudioCommand {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Audio command wire order mirrors the stable payload enum one variant at a time."
+    )]
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Play {
+                voice,
+                resource,
+                bus,
+                gain_db_milli,
+                pan_milli,
+                loop_mode,
+                start_frame,
+                fade_in_millis,
+            } => {
+                writer.write_u8(0);
+                voice.write_wire(writer)?;
+                resource.write_wire(writer)?;
+                bus.write_wire(writer)?;
+                gain_db_milli.write_wire(writer)?;
+                pan_milli.write_wire(writer)?;
+                loop_mode.write_wire(writer)?;
+                start_frame.write_wire(writer)?;
+                fade_in_millis.write_wire(writer)?;
+            }
+            Self::Stop {
+                voice,
+                fade_out_millis,
+            } => {
+                writer.write_u8(1);
+                voice.write_wire(writer)?;
+                fade_out_millis.write_wire(writer)?;
+            }
+            Self::StopAll { fade_out_millis } => {
+                writer.write_u8(2);
+                fade_out_millis.write_wire(writer)?;
+            }
+            Self::SetVoiceGain {
+                voice,
+                gain_db_milli,
+                transition_millis,
+            } => {
+                writer.write_u8(3);
+                voice.write_wire(writer)?;
+                gain_db_milli.write_wire(writer)?;
+                transition_millis.write_wire(writer)?;
+            }
+            Self::SetVoicePan {
+                voice,
+                pan_milli,
+                transition_millis,
+            } => {
+                writer.write_u8(4);
+                voice.write_wire(writer)?;
+                pan_milli.write_wire(writer)?;
+                transition_millis.write_wire(writer)?;
+            }
+            Self::SetBusGain {
+                bus,
+                gain_db_milli,
+                transition_millis,
+            } => {
+                writer.write_u8(5);
+                bus.write_wire(writer)?;
+                gain_db_milli.write_wire(writer)?;
+                transition_millis.write_wire(writer)?;
+            }
+            Self::SetBusMute { bus, muted } => {
+                writer.write_u8(6);
+                bus.write_wire(writer)?;
+                muted.write_wire(writer)?;
+            }
+            Self::SetEffectEnabled {
+                bus,
+                effect,
+                enabled,
+            } => {
+                writer.write_u8(7);
+                bus.write_wire(writer)?;
+                effect.write_wire(writer)?;
+                enabled.write_wire(writer)?;
+            }
+            Self::SetEffectParameter {
+                bus,
+                effect,
+                parameter,
+                value,
+                transition_millis,
+            } => {
+                writer.write_u8(8);
+                bus.write_wire(writer)?;
+                effect.write_wire(writer)?;
+                parameter.write_wire(writer)?;
+                value.write_wire(writer)?;
+                transition_millis.write_wire(writer)?;
+            }
+            Self::ApplySnapshot {
+                snapshot,
+                transition_millis,
+            } => {
+                writer.write_u8(9);
+                snapshot.write_wire(writer)?;
+                transition_millis.write_wire(writer)?;
+            }
+            Self::RequestMicrophone {
+                capture,
+                constraints,
+            } => {
+                writer.write_u8(10);
+                capture.write_wire(writer)?;
+                constraints.write_wire(writer)?;
+            }
+            Self::StopMicrophone { capture } => {
+                writer.write_u8(11);
+                capture.write_wire(writer)?;
+            }
+            Self::SetCaptureMonitor {
+                capture,
+                bus,
+                gain_db_milli,
+            } => {
+                writer.write_u8(12);
+                capture.write_wire(writer)?;
+                bus.write_wire(writer)?;
+                gain_db_milli.write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        Ok(match reader.read_u8()? {
+            0 => Self::Play {
+                voice: AwbcAudioValueRef::read_wire(reader)?,
+                resource: AwbcAudioValueRef::read_wire(reader)?,
+                bus: AwbcAudioValueRef::read_wire(reader)?,
+                gain_db_milli: AwbcAudioValueRef::read_wire(reader)?,
+                pan_milli: AwbcAudioValueRef::read_wire(reader)?,
+                loop_mode: AudioLoopMode::read_wire(reader)?,
+                start_frame: AwbcAudioValueRef::read_wire(reader)?,
+                fade_in_millis: AwbcAudioValueRef::read_wire(reader)?,
+            },
+            1 => Self::Stop {
+                voice: AwbcAudioValueRef::read_wire(reader)?,
+                fade_out_millis: AwbcAudioValueRef::read_wire(reader)?,
+            },
+            2 => Self::StopAll {
+                fade_out_millis: AwbcAudioValueRef::read_wire(reader)?,
+            },
+            3 => Self::SetVoiceGain {
+                voice: AwbcAudioValueRef::read_wire(reader)?,
+                gain_db_milli: AwbcAudioValueRef::read_wire(reader)?,
+                transition_millis: AwbcAudioValueRef::read_wire(reader)?,
+            },
+            4 => Self::SetVoicePan {
+                voice: AwbcAudioValueRef::read_wire(reader)?,
+                pan_milli: AwbcAudioValueRef::read_wire(reader)?,
+                transition_millis: AwbcAudioValueRef::read_wire(reader)?,
+            },
+            5 => Self::SetBusGain {
+                bus: AwbcAudioValueRef::read_wire(reader)?,
+                gain_db_milli: AwbcAudioValueRef::read_wire(reader)?,
+                transition_millis: AwbcAudioValueRef::read_wire(reader)?,
+            },
+            6 => Self::SetBusMute {
+                bus: AwbcAudioValueRef::read_wire(reader)?,
+                muted: AwbcAudioValueRef::read_wire(reader)?,
+            },
+            7 => Self::SetEffectEnabled {
+                bus: AwbcAudioValueRef::read_wire(reader)?,
+                effect: AwbcAudioValueRef::read_wire(reader)?,
+                enabled: AwbcAudioValueRef::read_wire(reader)?,
+            },
+            8 => Self::SetEffectParameter {
+                bus: AwbcAudioValueRef::read_wire(reader)?,
+                effect: AwbcAudioValueRef::read_wire(reader)?,
+                parameter: AudioEffectParameterKind::read_wire(reader)?,
+                value: AwbcAudioValueRef::read_wire(reader)?,
+                transition_millis: AwbcAudioValueRef::read_wire(reader)?,
+            },
+            9 => Self::ApplySnapshot {
+                snapshot: AwbcAudioValueRef::read_wire(reader)?,
+                transition_millis: AwbcAudioValueRef::read_wire(reader)?,
+            },
+            10 => Self::RequestMicrophone {
+                capture: AwbcAudioValueRef::read_wire(reader)?,
+                constraints: MicrophoneConstraints::read_wire(reader)?,
+            },
+            11 => Self::StopMicrophone {
+                capture: AwbcAudioValueRef::read_wire(reader)?,
+            },
+            12 => Self::SetCaptureMonitor {
+                capture: AwbcAudioValueRef::read_wire(reader)?,
+                bus: Option::<AwbcAudioValueRef>::read_wire(reader)?,
+                gain_db_milli: AwbcAudioValueRef::read_wire(reader)?,
+            },
+            tag => {
+                return Err(AwbcCodecError::UnknownTag {
+                    kind: "audio command",
+                    tag,
+                    offset,
+                });
+            }
+        })
+    }
+}
+
 impl Wire for AwbcEffectPlan {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.kind.write_wire(writer)?;
         self.signature.write_wire(writer)?;
         self.capability.write_wire(writer)?;
+        self.audio.write_wire(writer)?;
         self.static_args.write_wire(writer)?;
         self.resources.write_wire(writer)
     }
@@ -154,6 +485,7 @@ impl Wire for AwbcEffectPlan {
             kind: AwbcEffectKind::read_wire(reader)?,
             signature: AwbcSignatureId::read_wire(reader)?,
             capability: Option::<AwbcStringId>::read_wire(reader)?,
+            audio: Option::<AwbcAudioCommandId>::read_wire(reader)?,
             static_args: Vec::<AwbcConstantId>::read_wire(reader)?,
             resources: Vec::<AwbcResourceAccess>::read_wire(reader)?,
         })

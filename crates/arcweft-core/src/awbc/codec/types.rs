@@ -1,15 +1,15 @@
 use super::AwbcCodecError;
 use super::wire::{Reader, Wire, Writer, wire_enum, wire_id};
 use crate::awbc::schema::{
-    AwbcBlockId, AwbcChoiceId, AwbcChoiceOptionId, AwbcConstant, AwbcConstantId, AwbcContentUnitId,
-    AwbcDigest, AwbcDisplayMapId, AwbcEffectPlanId, AwbcEffectSet, AwbcEffectSetId, AwbcEntryId,
-    AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunctionFlags,
-    AwbcFunctionId, AwbcHeader, AwbcHostCallId, AwbcInstructionId, AwbcIntrinsicId,
-    AwbcLineTaskGroupId, AwbcLineTaskNodeId, AwbcMatchArmId, AwbcPatternId, AwbcPureHelperId,
-    AwbcRecordField, AwbcRegisterId, AwbcResourceId, AwbcResumePointId, AwbcRuntimeType,
-    AwbcScopeId, AwbcSignature, AwbcSignatureId, AwbcSignedIntKind, AwbcSourceMapId,
-    AwbcSourcePlanId, AwbcStreamPlanId, AwbcStringId, AwbcTableRange, AwbcTaskPlanId, AwbcTypeId,
-    AwbcUnsignedIntKind, AwbcVariantCase,
+    AwbcAudioCommandId, AwbcBlockId, AwbcChoiceId, AwbcChoiceOptionId, AwbcConstant,
+    AwbcConstantId, AwbcContentUnitId, AwbcDigest, AwbcDisplayMapId, AwbcEffectPlanId,
+    AwbcEffectSet, AwbcEffectSetId, AwbcEntryId, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot,
+    AwbcFrameSlotRole, AwbcFunctionFlags, AwbcFunctionId, AwbcHeader, AwbcHostCallId,
+    AwbcInstructionId, AwbcIntrinsicId, AwbcLineTaskGroupId, AwbcLineTaskNodeId, AwbcMatchArmId,
+    AwbcPatternId, AwbcPureHelperId, AwbcRecordField, AwbcRegisterId, AwbcResourceId,
+    AwbcResumePointId, AwbcRuntimeType, AwbcScopeId, AwbcSignature, AwbcSignatureId,
+    AwbcSignedIntKind, AwbcSourceMapId, AwbcSourcePlanId, AwbcStreamPlanId, AwbcStringId,
+    AwbcTableRange, AwbcTaskPlanId, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantCase,
 };
 
 wire_id!(
@@ -32,6 +32,7 @@ wire_id!(
     AwbcIntrinsicId,
     AwbcHostCallId,
     AwbcTaskPlanId,
+    AwbcAudioCommandId,
     AwbcEffectPlanId,
     AwbcContentUnitId,
     AwbcLineTaskGroupId,

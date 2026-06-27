@@ -1,9 +1,11 @@
+use crate::awbc_lower::AwbcAudioLowerer;
 use crate::awbc_lower::expr::AwbcExprLowerer;
 use crate::awbc_lower::frame::FrameBuilder;
 use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic};
 use crate::awbc_lower::line::AwbcLineLowerer;
 use crate::awbc_lower::pattern::lower_pattern;
 use crate::awbc_lower::{table_index, table_range_len};
+use arcweft_core::audio::RuntimeAudioCommand;
 use arcweft_core::awbc::schema::{
     AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption, AwbcEffectSetId,
     AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
@@ -11,6 +13,7 @@ use arcweft_core::awbc::schema::{
     AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind,
     AwbcScopeId, AwbcTableRange, AwbcTerminator,
 };
+use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
     ChoiceRuntimeOption, FlowOp, RuntimeEntryTarget, RuntimeFlow, RuntimeMatchArm, RuntimePlan,
@@ -663,12 +666,17 @@ impl<'a> AwbcFlowLowerer<'a> {
                 );
             }
             FlowOp::Effect(effect) => {
-                let effect = self.inventory.intern_effect(effect);
+                let (effect, args) = match effect {
+                    LineEffectRequest::Audio(command) => {
+                        let (command, args) =
+                            AwbcAudioLowerer::new(self.inventory, frame, path).lower(command);
+                        let effect = self.inventory.intern_audio_effect(command, args.len());
+                        (effect, args)
+                    }
+                    _ => (self.inventory.intern_effect(effect), Vec::new()),
+                };
                 self.inventory
-                    .push_instruction(AwbcInstruction::EmitEffect {
-                        effect,
-                        args: Vec::new(),
-                    });
+                    .push_instruction(AwbcInstruction::EmitEffect { effect, args });
             }
             FlowOp::EnterScope => {
                 let scope = frame.enter_scope();
@@ -960,16 +968,128 @@ impl EntryParameterCollector {
             FlowOp::Break(Some(value)) | FlowOp::GotoExpr(value) | FlowOp::ReturnExpr(value) => {
                 self.collect_expr(value);
             }
+            FlowOp::Effect(effect) => self.collect_effect(effect),
             FlowOp::Dialogue { .. }
             | FlowOp::Choice { .. }
             | FlowOp::Break(None)
             | FlowOp::Continue
             | FlowOp::Goto(_)
             | FlowOp::Return(_)
-            | FlowOp::Effect(_)
             | FlowOp::EnterScope
             | FlowOp::ExitScope
             | FlowOp::Noop => {}
+        }
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Entry parameter discovery must enumerate every audio command expression field."
+    )]
+    fn collect_effect(&mut self, effect: &LineEffectRequest) {
+        let LineEffectRequest::Audio(command) = effect else {
+            return;
+        };
+        match command.as_ref() {
+            RuntimeAudioCommand::Play {
+                voice,
+                resource,
+                bus,
+                gain_db_milli,
+                pan_milli,
+                start_frame,
+                fade_in_millis,
+                ..
+            } => {
+                self.collect_expr(voice);
+                self.collect_expr(resource);
+                self.collect_expr(bus);
+                self.collect_expr(gain_db_milli);
+                self.collect_expr(pan_milli);
+                self.collect_expr(start_frame);
+                self.collect_expr(fade_in_millis);
+            }
+            RuntimeAudioCommand::Stop {
+                voice,
+                fade_out_millis,
+            } => {
+                self.collect_expr(voice);
+                self.collect_expr(fade_out_millis);
+            }
+            RuntimeAudioCommand::StopAll { fade_out_millis } => {
+                self.collect_expr(fade_out_millis);
+            }
+            RuntimeAudioCommand::SetVoiceGain {
+                voice,
+                gain_db_milli,
+                transition_millis,
+            } => {
+                self.collect_expr(voice);
+                self.collect_expr(gain_db_milli);
+                self.collect_expr(transition_millis);
+            }
+            RuntimeAudioCommand::SetVoicePan {
+                voice,
+                pan_milli,
+                transition_millis,
+            } => {
+                self.collect_expr(voice);
+                self.collect_expr(pan_milli);
+                self.collect_expr(transition_millis);
+            }
+            RuntimeAudioCommand::SetBusGain {
+                bus,
+                gain_db_milli,
+                transition_millis,
+            } => {
+                self.collect_expr(bus);
+                self.collect_expr(gain_db_milli);
+                self.collect_expr(transition_millis);
+            }
+            RuntimeAudioCommand::SetBusMute { bus, muted } => {
+                self.collect_expr(bus);
+                self.collect_expr(muted);
+            }
+            RuntimeAudioCommand::SetEffectEnabled {
+                bus,
+                effect,
+                enabled,
+            } => {
+                self.collect_expr(bus);
+                self.collect_expr(effect);
+                self.collect_expr(enabled);
+            }
+            RuntimeAudioCommand::SetEffectParameter {
+                bus,
+                effect,
+                value,
+                transition_millis,
+                ..
+            } => {
+                self.collect_expr(bus);
+                self.collect_expr(effect);
+                self.collect_expr(value);
+                self.collect_expr(transition_millis);
+            }
+            RuntimeAudioCommand::ApplySnapshot {
+                snapshot,
+                transition_millis,
+            } => {
+                self.collect_expr(snapshot);
+                self.collect_expr(transition_millis);
+            }
+            RuntimeAudioCommand::RequestMicrophone { capture, .. }
+            | RuntimeAudioCommand::StopMicrophone { capture } => {
+                self.collect_expr(capture);
+            }
+            RuntimeAudioCommand::SetCaptureMonitor {
+                capture,
+                bus,
+                gain_db_milli,
+            } => {
+                self.collect_expr(capture);
+                self.collect_optional_expr(bus.as_ref());
+                self.collect_expr(gain_db_milli);
+            }
         }
     }
 

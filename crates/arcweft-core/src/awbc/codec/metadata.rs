@@ -27,6 +27,7 @@ impl Wire for AwbcProgram {
         writer.write_table(&self.intrinsics)?;
         writer.write_table(&self.host_calls)?;
         writer.write_table(&self.task_plans)?;
+        writer.write_table(&self.audio_commands)?;
         writer.write_table(&self.effect_plans)?;
         writer.write_table(&self.choices)?;
         writer.write_table(&self.choice_options)?;
@@ -61,6 +62,7 @@ impl Wire for AwbcProgram {
             intrinsics: reader.read_table("intrinsics", budget.intrinsics)?,
             host_calls: reader.read_table("host_calls", budget.host_calls)?,
             task_plans: reader.read_table("task_plans", budget.task_plans)?,
+            audio_commands: reader.read_table("audio_commands", budget.audio_commands)?,
             effect_plans: reader.read_table("effect_plans", budget.effect_plans)?,
             choices: reader.read_table("choices", budget.choices)?,
             choice_options: reader.read_table("choice_options", budget.choice_options)?,
