@@ -16,6 +16,7 @@ pub mod product_catalog;
 pub mod runtime;
 pub mod table;
 pub mod types;
+pub mod ui;
 pub mod wire;
 
 pub use budget::SectionCodecBudget;
@@ -43,4 +44,10 @@ pub use runtime::{
 };
 pub use table::{EnumRegistry, EnumSymbol, PublicIdRef, PublicIdTable, StringId, StringTable};
 pub use types::{CrossSectionRef, DigestRef, SourceRangeRef, StableId};
+pub use ui::{
+    CompactUiInputResource, CompactUiProgramResource, CompactUiStyleResource,
+    CompactUiTextResource, CompactUiThemeResource, UiInputResource, UiProgramResource,
+    UiResourceBudget, UiResourceCompatibility, UiStyleResource, UiTextResource, UiThemeResource,
+    migrated_ui_section_compatibility,
+};
 pub use wire::{DecodedResourceSection, ProductResourceEnvelope};

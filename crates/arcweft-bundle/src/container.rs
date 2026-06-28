@@ -62,6 +62,11 @@ pub enum BundleSectionKind {
     NormalizedSource,
     HotSwapMap,
     PatchPlan,
+    UiProgram,
+    UiStyle,
+    UiText,
+    UiInput,
+    UiTheme,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -350,6 +355,11 @@ impl BundleSectionKind {
             Self::NormalizedSource => 13,
             Self::HotSwapMap => 14,
             Self::PatchPlan => 15,
+            Self::UiProgram => 16,
+            Self::UiStyle => 17,
+            Self::UiText => 18,
+            Self::UiInput => 19,
+            Self::UiTheme => 20,
         }
     }
 
@@ -370,6 +380,11 @@ impl BundleSectionKind {
             13 => Some(Self::NormalizedSource),
             14 => Some(Self::HotSwapMap),
             15 => Some(Self::PatchPlan),
+            16 => Some(Self::UiProgram),
+            17 => Some(Self::UiStyle),
+            18 => Some(Self::UiText),
+            19 => Some(Self::UiInput),
+            20 => Some(Self::UiTheme),
             _ => None,
         }
     }
@@ -404,10 +419,16 @@ impl BundleSectionKind {
             | Self::AssetCatalog
             | Self::LocaleCatalog
             | Self::HotSwapMap
-            | Self::PatchPlan => ContentResidency::Startup,
-            Self::AssetBlob | Self::SourceMap | Self::DebugSymbols | Self::NormalizedSource => {
-                ContentResidency::OnDemand
-            }
+            | Self::PatchPlan
+            | Self::UiProgram
+            | Self::UiStyle
+            | Self::UiInput
+            | Self::UiTheme => ContentResidency::Startup,
+            Self::AssetBlob
+            | Self::SourceMap
+            | Self::DebugSymbols
+            | Self::NormalizedSource
+            | Self::UiText => ContentResidency::OnDemand,
         }
     }
 
@@ -418,7 +439,8 @@ impl BundleSectionKind {
             Self::RuntimeTypes
             | Self::Entrypoints
             | Self::AdapterRequirements
-            | Self::PatchPlan => crate::patch::PatchCompatibility::RestartRequired,
+            | Self::PatchPlan
+            | Self::UiInput => crate::patch::PatchCompatibility::RestartRequired,
             Self::ProgramBytecode => crate::patch::PatchCompatibility::CodeCompatible,
             Self::HotSwapMap => crate::patch::PatchCompatibility::CodeGenerational,
             Self::ContentCatalog
@@ -429,7 +451,11 @@ impl BundleSectionKind {
             | Self::LocaleCatalog
             | Self::SourceMap
             | Self::DebugSymbols
-            | Self::NormalizedSource => crate::patch::PatchCompatibility::ContentOnly,
+            | Self::NormalizedSource
+            | Self::UiProgram
+            | Self::UiStyle
+            | Self::UiText
+            | Self::UiTheme => crate::patch::PatchCompatibility::ContentOnly,
         }
     }
 }

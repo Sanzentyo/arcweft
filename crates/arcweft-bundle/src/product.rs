@@ -11,6 +11,10 @@ use crate::resource_codec::{
     CompactAssetCatalogSection, CompactAudioGraphSection, CompactContentCatalogSection,
     CompactDisplayCatalogSection, CompactSourceMapSection,
 };
+use crate::resource_codec::{
+    CompactUiInputResource, CompactUiProgramResource, CompactUiStyleResource,
+    CompactUiTextResource, CompactUiThemeResource,
+};
 use crate::{
     ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleAwbcProgram, BundleBytecodeEncoding,
     BundleBytecodeProgram, BundleCodecError, BundleKind, BundleManifest, BundleSource,
@@ -97,6 +101,11 @@ pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCod
     .into_iter()
     .chain(optional_asset_catalog_section(bundle)?)
     .chain(optional_audio_graph_section(bundle)?)
+    .chain(optional_ui_program_section(bundle)?)
+    .chain(optional_ui_style_section(bundle)?)
+    .chain(optional_ui_text_section(bundle)?)
+    .chain(optional_ui_input_section(bundle)?)
+    .chain(optional_ui_theme_section(bundle)?)
     .collect::<Vec<_>>();
     encode_bundle(container_kind(bundle.bundle_kind), &manifest, sections).map_err(|error| {
         BundleCodecError::EncodeAwfb {
@@ -161,6 +170,11 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         |section| section.source,
     );
     let audio = optional_audio_graph(&view, external_sections)?.map(|section| section.graph);
+    let ui_program = optional_ui_program(&view, external_sections)?;
+    let ui_style = optional_ui_style(&view, external_sections)?;
+    let ui_text = optional_ui_text(&view, external_sections)?;
+    let ui_input = optional_ui_input(&view, external_sections)?;
+    let ui_theme = optional_ui_theme(&view, external_sections)?;
 
     Ok(ArcweftBundle {
         schema_version: product_manifest.schema_version,
@@ -182,6 +196,11 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         image_assets: assets.image_assets,
         audio,
         image_objects: display.image_objects,
+        ui_program,
+        ui_style,
+        ui_text,
+        ui_input,
+        ui_theme,
     })
 }
 
@@ -250,6 +269,76 @@ fn optional_audio_graph_section(
         .transpose()
 }
 
+fn optional_ui_program_section(
+    bundle: &ArcweftBundle,
+) -> Result<Option<SectionInput>, BundleCodecError> {
+    optional_ui_section(
+        BundleSectionKind::UiProgram,
+        bundle
+            .ui_program
+            .as_ref()
+            .map(CompactUiProgramResource::encode_canonical_section),
+    )
+}
+
+fn optional_ui_style_section(
+    bundle: &ArcweftBundle,
+) -> Result<Option<SectionInput>, BundleCodecError> {
+    optional_ui_section(
+        BundleSectionKind::UiStyle,
+        bundle
+            .ui_style
+            .as_ref()
+            .map(CompactUiStyleResource::encode_canonical_section),
+    )
+}
+
+fn optional_ui_text_section(
+    bundle: &ArcweftBundle,
+) -> Result<Option<SectionInput>, BundleCodecError> {
+    optional_ui_section(
+        BundleSectionKind::UiText,
+        bundle
+            .ui_text
+            .as_ref()
+            .map(CompactUiTextResource::encode_canonical_section),
+    )
+}
+
+fn optional_ui_input_section(
+    bundle: &ArcweftBundle,
+) -> Result<Option<SectionInput>, BundleCodecError> {
+    optional_ui_section(
+        BundleSectionKind::UiInput,
+        bundle
+            .ui_input
+            .as_ref()
+            .map(CompactUiInputResource::encode_canonical_section),
+    )
+}
+
+fn optional_ui_theme_section(
+    bundle: &ArcweftBundle,
+) -> Result<Option<SectionInput>, BundleCodecError> {
+    optional_ui_section(
+        BundleSectionKind::UiTheme,
+        bundle
+            .ui_theme
+            .as_ref()
+            .map(CompactUiThemeResource::encode_canonical_section),
+    )
+}
+
+fn optional_ui_section(
+    kind: BundleSectionKind,
+    encode: Option<Result<Vec<u8>, crate::resource_codec::SectionCodecError>>,
+) -> Result<Option<SectionInput>, BundleCodecError> {
+    encode
+        .transpose()
+        .map_err(|error| compact_encode_error(&error))
+        .map(|bytes| bytes.map(|bytes| optional_section(kind, bytes)))
+}
+
 fn required_content_catalog(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
@@ -307,6 +396,66 @@ fn optional_audio_graph(
         external_sections,
         BundleSectionKind::AudioGraph,
         CompactAudioGraphSection::decode_canonical_section,
+    )
+}
+
+fn optional_ui_program(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+) -> Result<Option<CompactUiProgramResource>, BundleCodecError> {
+    optional_compact_payload(
+        view,
+        external_sections,
+        BundleSectionKind::UiProgram,
+        CompactUiProgramResource::decode_canonical_section,
+    )
+}
+
+fn optional_ui_style(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+) -> Result<Option<CompactUiStyleResource>, BundleCodecError> {
+    optional_compact_payload(
+        view,
+        external_sections,
+        BundleSectionKind::UiStyle,
+        CompactUiStyleResource::decode_canonical_section,
+    )
+}
+
+fn optional_ui_text(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+) -> Result<Option<CompactUiTextResource>, BundleCodecError> {
+    optional_compact_payload(
+        view,
+        external_sections,
+        BundleSectionKind::UiText,
+        CompactUiTextResource::decode_canonical_section,
+    )
+}
+
+fn optional_ui_input(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+) -> Result<Option<CompactUiInputResource>, BundleCodecError> {
+    optional_compact_payload(
+        view,
+        external_sections,
+        BundleSectionKind::UiInput,
+        CompactUiInputResource::decode_canonical_section,
+    )
+}
+
+fn optional_ui_theme(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+) -> Result<Option<CompactUiThemeResource>, BundleCodecError> {
+    optional_compact_payload(
+        view,
+        external_sections,
+        BundleSectionKind::UiTheme,
+        CompactUiThemeResource::decode_canonical_section,
     )
 }
 

@@ -24,6 +24,11 @@ pub enum ProductSectionCodecKind {
     DebugSymbols,
     Contracts,
     GraphIndex,
+    UiProgram,
+    UiStyle,
+    UiText,
+    UiInput,
+    UiTheme,
 }
 
 /// Migration status for compact product resource section families.
@@ -59,6 +64,11 @@ impl ProductSectionCodecKind {
             Self::DebugSymbols => 13,
             Self::Contracts => 14,
             Self::GraphIndex => 15,
+            Self::UiProgram => 16,
+            Self::UiStyle => 17,
+            Self::UiText => 18,
+            Self::UiInput => 19,
+            Self::UiTheme => 20,
         }
     }
 
@@ -80,6 +90,11 @@ impl ProductSectionCodecKind {
             13 => Some(Self::DebugSymbols),
             14 => Some(Self::Contracts),
             15 => Some(Self::GraphIndex),
+            16 => Some(Self::UiProgram),
+            17 => Some(Self::UiStyle),
+            18 => Some(Self::UiText),
+            19 => Some(Self::UiInput),
+            20 => Some(Self::UiTheme),
             _ => None,
         }
     }
@@ -102,6 +117,11 @@ impl ProductSectionCodecKind {
             Self::DebugSymbols => "debug_symbols",
             Self::Contracts => "contracts",
             Self::GraphIndex => "graph_index",
+            Self::UiProgram => "ui_program",
+            Self::UiStyle => "ui_style",
+            Self::UiText => "ui_text",
+            Self::UiInput => "ui_input",
+            Self::UiTheme => "ui_theme",
         }
     }
 
@@ -123,6 +143,11 @@ impl ProductSectionCodecKind {
             Self::DebugSymbols => *b"AWDS\r\n\x1a\n",
             Self::Contracts => *b"AWCT\r\n\x1a\n",
             Self::GraphIndex => *b"AWGI\r\n\x1a\n",
+            Self::UiProgram => *b"AWUP\r\n\x1a\n",
+            Self::UiStyle => *b"AWUS\r\n\x1a\n",
+            Self::UiText => *b"AWUT\r\n\x1a\n",
+            Self::UiInput => *b"AWUN\r\n\x1a\n",
+            Self::UiTheme => *b"AWUH\r\n\x1a\n",
         }
     }
 
@@ -140,6 +165,11 @@ impl ProductSectionCodecKind {
             Self::LocaleText => Some(BundleSectionKind::LocaleCatalog),
             Self::AudioGraph => Some(BundleSectionKind::AudioGraph),
             Self::DebugSymbols => Some(BundleSectionKind::DebugSymbols),
+            Self::UiProgram => Some(BundleSectionKind::UiProgram),
+            Self::UiStyle => Some(BundleSectionKind::UiStyle),
+            Self::UiText => Some(BundleSectionKind::UiText),
+            Self::UiInput => Some(BundleSectionKind::UiInput),
+            Self::UiTheme => Some(BundleSectionKind::UiTheme),
             Self::Shader | Self::Ui | Self::Entity | Self::Contracts | Self::GraphIndex => None,
         }
     }
@@ -158,6 +188,11 @@ impl ProductSectionCodecKind {
             BundleSectionKind::LocaleCatalog => Some(Self::LocaleText),
             BundleSectionKind::AudioGraph => Some(Self::AudioGraph),
             BundleSectionKind::DebugSymbols => Some(Self::DebugSymbols),
+            BundleSectionKind::UiProgram => Some(Self::UiProgram),
+            BundleSectionKind::UiStyle => Some(Self::UiStyle),
+            BundleSectionKind::UiText => Some(Self::UiText),
+            BundleSectionKind::UiInput => Some(Self::UiInput),
+            BundleSectionKind::UiTheme => Some(Self::UiTheme),
             BundleSectionKind::ProgramBytecode
             | BundleSectionKind::AssetBlob
             | BundleSectionKind::NormalizedSource
@@ -175,7 +210,12 @@ impl ProductSectionCodecKind {
             | Self::AssetCatalog
             | Self::DisplayCatalog
             | Self::SourceMap
-            | Self::AudioGraph => ProductResourceMigrationStatus::CompactFirst,
+            | Self::AudioGraph
+            | Self::UiProgram
+            | Self::UiStyle
+            | Self::UiText
+            | Self::UiInput
+            | Self::UiTheme => ProductResourceMigrationStatus::CompactFirst,
             Self::LocaleText | Self::DebugSymbols => ProductResourceMigrationStatus::JsonTemporary,
             Self::Shader | Self::Ui | Self::Entity | Self::Contracts | Self::GraphIndex => {
                 ProductResourceMigrationStatus::Future
@@ -194,6 +234,7 @@ impl ProductSectionCodecKind {
                 | Self::Entrypoints
                 | Self::AdapterRequirements
                 | Self::Contracts
+                | Self::UiInput
                 | Self::GraphIndex
         )
     }
@@ -203,7 +244,8 @@ impl ProductSectionCodecKind {
             Self::RuntimeTypes
             | Self::Entrypoints
             | Self::AdapterRequirements
-            | Self::Contracts => PatchCompatibility::RestartRequired,
+            | Self::Contracts
+            | Self::UiInput => PatchCompatibility::RestartRequired,
             Self::GraphIndex => PatchCompatibility::CodeCompatible,
             Self::ContentCatalog
             | Self::AssetCatalog
@@ -214,7 +256,11 @@ impl ProductSectionCodecKind {
             | Self::Shader
             | Self::Ui
             | Self::Entity
-            | Self::DebugSymbols => PatchCompatibility::ContentOnly,
+            | Self::DebugSymbols
+            | Self::UiProgram
+            | Self::UiStyle
+            | Self::UiText
+            | Self::UiTheme => PatchCompatibility::ContentOnly,
         }
     }
 }

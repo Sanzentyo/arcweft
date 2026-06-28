@@ -7,6 +7,9 @@ pub mod product_awbc;
 pub mod release;
 pub mod resource_codec;
 
+use crate::resource_codec::{
+    UiInputResource, UiProgramResource, UiStyleResource, UiTextResource, UiThemeResource,
+};
 #[cfg(feature = "format-avro")]
 use apache_avro::types::Value as AvroValue;
 #[cfg(feature = "format-avro")]
@@ -56,6 +59,16 @@ pub struct ArcweftBundle {
     pub audio: Option<AudioGraph>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub image_objects: Vec<BundleImageObject>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui_program: Option<UiProgramResource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui_style: Option<UiStyleResource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui_text: Option<UiTextResource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui_input: Option<UiInputResource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui_theme: Option<UiThemeResource>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -464,6 +477,11 @@ impl ArcweftBundle {
             image_assets: Vec::new(),
             audio: None,
             image_objects: Vec::new(),
+            ui_program: None,
+            ui_style: None,
+            ui_text: None,
+            ui_input: None,
+            ui_theme: None,
         }
     }
 
@@ -515,6 +533,36 @@ impl ArcweftBundle {
     #[must_use]
     pub fn with_audio_graph(mut self, graph: AudioGraph) -> Self {
         self.audio = Some(graph);
+        self
+    }
+
+    #[must_use]
+    pub fn with_ui_program(mut self, resource: UiProgramResource) -> Self {
+        self.ui_program = Some(resource);
+        self
+    }
+
+    #[must_use]
+    pub fn with_ui_style(mut self, resource: UiStyleResource) -> Self {
+        self.ui_style = Some(resource);
+        self
+    }
+
+    #[must_use]
+    pub fn with_ui_text(mut self, resource: UiTextResource) -> Self {
+        self.ui_text = Some(resource);
+        self
+    }
+
+    #[must_use]
+    pub fn with_ui_input(mut self, resource: UiInputResource) -> Self {
+        self.ui_input = Some(resource);
+        self
+    }
+
+    #[must_use]
+    pub fn with_ui_theme(mut self, resource: UiThemeResource) -> Self {
+        self.ui_theme = Some(resource);
         self
     }
 
