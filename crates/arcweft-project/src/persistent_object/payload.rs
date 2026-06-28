@@ -2,7 +2,7 @@ use super::schema::{
     AWBO_SCHEMA_VERSION, AwboError, CompilerIdentityNamespaceObject, CompilerObjectKey,
     CompilerObjectKind, CompilerStageInputsObject,
 };
-use crate::fingerprint::BuildDigest;
+use crate::fingerprint::{BuildDigest, put_digest, put_string, put_u32};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -149,16 +149,31 @@ pub struct StableDiagnosticSummaryObject {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct InterfaceSummaryObject {
+    pub schema_version: u32,
+    pub compiler_namespace: CompilerIdentityNamespaceObject,
     pub module: String,
+    pub source_digest: BuildDigest,
+    pub source_span: StableSourceSpanObject,
+    pub diagnostics: StableDiagnosticSummaryObject,
+    pub stage_inputs: CompilerStageInputsObject,
     pub exports_digest: BuildDigest,
     pub imports_digest: BuildDigest,
     pub public_symbols: Vec<PublicSymbolObject>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PublicSymbolKind {
+    Flow,
+    Function,
+    Agent,
+    Declaration,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct PublicSymbolObject {
     pub name: String,
-    pub kind: String,
+    pub kind: PublicSymbolKind,
     pub signature_digest: BuildDigest,
 }
 
@@ -212,9 +227,9 @@ impl CompilerObjectPayload {
         }
         match self {
             Self::ParsedSyntax(value) => value.validate_for_key(key),
+            Self::InterfaceSummary(value) => value.validate_for_key(key),
             Self::HirBody(value) => value.validate_for_key(key),
-            Self::InterfaceSummary(_)
-            | Self::LineTaskEvidence(_)
+            Self::LineTaskEvidence(_)
             | Self::RuntimePlanUnit(_)
             | Self::BytecodeUnit(_)
             | Self::LinkPlan(_) => Ok(()),
@@ -254,6 +269,108 @@ impl HirBodyObject {
             });
         }
         self.stage_inputs.validate_for_key(key)
+    }
+}
+
+impl InterfaceSummaryObject {
+    pub fn validate_for_key(&self, key: &CompilerObjectKey) -> Result<(), AwboError> {
+        validate_version(self.schema_version)?;
+        self.compiler_namespace.validate_for_key(key)?;
+        if self.source_digest != key.source_digest {
+            return Err(AwboError::PayloadKeyInputMismatch {
+                field: "interface_summary.source_digest",
+            });
+        }
+        self.source_span.validate()?;
+        self.diagnostics.validate()?;
+        self.stage_inputs.validate_for_key(key)?;
+        self.validate_summary_shape()
+    }
+
+    pub fn validate_summary_shape(&self) -> Result<(), AwboError> {
+        if self.module.is_empty() {
+            return Err(AwboError::MalformedPayload {
+                reason: "interface summary module is empty".to_owned(),
+            });
+        }
+        let canonical = Self::canonical_public_symbols(self.public_symbols.clone());
+        if canonical != self.public_symbols {
+            return Err(AwboError::MalformedPayload {
+                reason: "interface public symbols are not canonical".to_owned(),
+            });
+        }
+        if has_duplicate_public_symbol_descriptor(&canonical) {
+            return Err(AwboError::MalformedPayload {
+                reason: "interface public symbols contain duplicate descriptors".to_owned(),
+            });
+        }
+        let expected_exports = Self::exports_digest_for(&canonical);
+        if self.exports_digest != expected_exports {
+            return Err(AwboError::MalformedPayload {
+                reason: "interface exports digest does not match public symbols".to_owned(),
+            });
+        }
+        let expected_imports = self.stage_inputs.dependency_interface_digest_root();
+        if self.imports_digest != expected_imports {
+            return Err(AwboError::MalformedPayload {
+                reason: "interface imports digest does not match dependency interfaces".to_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn canonical_public_symbols(
+        symbols: impl IntoIterator<Item = PublicSymbolObject>,
+    ) -> Vec<PublicSymbolObject> {
+        let mut symbols = symbols.into_iter().collect::<Vec<_>>();
+        symbols.sort();
+        symbols
+    }
+
+    pub fn exports_digest_for(symbols: &[PublicSymbolObject]) -> BuildDigest {
+        let symbols = Self::canonical_public_symbols(symbols.iter().cloned());
+        let mut bytes = Vec::new();
+        put_string(&mut bytes, "interface-exports-v1");
+        put_u32(&mut bytes, u32::try_from(symbols.len()).unwrap_or(u32::MAX));
+        for symbol in symbols {
+            put_string(&mut bytes, symbol.kind.as_str());
+            put_string(&mut bytes, &symbol.name);
+            put_digest(&mut bytes, symbol.signature_digest);
+        }
+        BuildDigest::of(&bytes)
+    }
+}
+
+impl PublicSymbolKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Flow => "flow",
+            Self::Function => "function",
+            Self::Agent => "agent",
+            Self::Declaration => "declaration",
+        }
+    }
+
+    pub const fn wire_tag(self) -> u8 {
+        match self {
+            Self::Flow => 0,
+            Self::Function => 1,
+            Self::Agent => 2,
+            Self::Declaration => 3,
+        }
+    }
+
+    pub const fn from_wire_tag(tag: u8) -> Result<Self, AwboError> {
+        match tag {
+            0 => Ok(Self::Flow),
+            1 => Ok(Self::Function),
+            2 => Ok(Self::Agent),
+            3 => Ok(Self::Declaration),
+            _ => Err(AwboError::UnsupportedWireTag {
+                domain: "public symbol kind",
+                tag,
+            }),
+        }
     }
 }
 
@@ -382,4 +499,10 @@ fn count_severity(
     .map_err(|_| AwboError::PayloadTooLarge {
         field: "diagnostics",
     })
+}
+
+fn has_duplicate_public_symbol_descriptor(symbols: &[PublicSymbolObject]) -> bool {
+    symbols
+        .windows(2)
+        .any(|window| window[0].kind == window[1].kind && window[0].name == window[1].name)
 }

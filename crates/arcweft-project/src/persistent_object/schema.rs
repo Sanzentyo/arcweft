@@ -133,30 +133,29 @@ impl CompilerObjectKind {
         }
     }
 
-    /// Query family allowed for seq04.2 adapter-owned read-through.
+    /// Query family allowed for adapter-owned read-through.
     ///
-    /// Only parse facts and HIR-body facts have deterministic safe `.awbo`
-    /// payloads in this slice. Later slices must opt in explicitly by adding
-    /// their object kind here together with validation and tests.
+    /// Object families must opt in only after their payload has a stable
+    /// validation contract and read/write-through tests.
     pub const fn safe_read_through_query_kind(self) -> Option<QueryKind> {
         match self {
             Self::ParsedSyntax => Some(QueryKind::Parse),
+            Self::InterfaceSummary => Some(QueryKind::Interface),
             Self::HirBody => Some(QueryKind::HirBody),
-            Self::InterfaceSummary
-            | Self::LineTaskEvidence
+            Self::LineTaskEvidence
             | Self::RuntimePlanUnit
             | Self::BytecodeUnit
             | Self::LinkPlan => None,
         }
     }
 
-    /// Artifact family allowed for seq04.2 adapter-owned read-through.
+    /// Artifact family allowed for adapter-owned read-through.
     pub const fn safe_read_through_artifact_kind(self) -> Option<ArtifactKind> {
         match self {
             Self::ParsedSyntax => Some(ArtifactKind::ParsedSyntax),
+            Self::InterfaceSummary => Some(ArtifactKind::InterfaceSummary),
             Self::HirBody => Some(ArtifactKind::HirBody),
-            Self::InterfaceSummary
-            | Self::LineTaskEvidence
+            Self::LineTaskEvidence
             | Self::RuntimePlanUnit
             | Self::BytecodeUnit
             | Self::LinkPlan => None,
@@ -167,9 +166,9 @@ impl CompilerObjectKind {
     pub const fn from_safe_read_through_artifact_kind(artifact_kind: ArtifactKind) -> Option<Self> {
         match artifact_kind {
             ArtifactKind::ParsedSyntax => Some(Self::ParsedSyntax),
+            ArtifactKind::InterfaceSummary => Some(Self::InterfaceSummary),
             ArtifactKind::HirBody => Some(Self::HirBody),
-            ArtifactKind::InterfaceSummary
-            | ArtifactKind::TypeCheckReport
+            ArtifactKind::TypeCheckReport
             | ArtifactKind::RuntimePlan
             | ArtifactKind::BytecodeUnit
             | ArtifactKind::AssetMetadata
@@ -339,5 +338,14 @@ impl CompilerStageInputsObject {
             });
         }
         Ok(())
+    }
+
+    pub fn dependency_interface_digest_root(&self) -> BuildDigest {
+        let mut bytes = Vec::new();
+        put_u32(&mut bytes, AWBO_SCHEMA_VERSION);
+        put_string(&mut bytes, "dependency-interface-digests");
+        let values = NamedDigest::canonicalize(self.dependency_interface_digests.clone());
+        put_named_digests(&mut bytes, &values);
+        BuildDigest::of(&bytes)
     }
 }

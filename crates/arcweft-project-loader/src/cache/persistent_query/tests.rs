@@ -10,9 +10,9 @@ use arcweft_project::{
     persistent_object::{
         AWBO_MAGIC, AWBO_SCHEMA_VERSION, AwboEnvelope, CompilerBuildIdentity, CompilerObjectKey,
         CompilerObjectKind, CompilerObjectPayload, CompilerObjectStability, HirBodyFactsObject,
-        HirBodyObject, ParsedSyntaxEvidenceObject, ParsedSyntaxObject,
-        StableDiagnosticSummaryObject, StableRangeObject, StableSourceSpanObject,
-        SyntaxStatsObject,
+        HirBodyObject, InterfaceSummaryObject, ParsedSyntaxEvidenceObject, ParsedSyntaxObject,
+        PublicSymbolKind, PublicSymbolObject, StableDiagnosticSummaryObject, StableRangeObject,
+        StableSourceSpanObject, SyntaxStatsObject,
     },
 };
 use std::{
@@ -87,6 +87,15 @@ fn hir_request() -> PersistentQueryReadRequest {
     PersistentQueryReadRequest::new(
         QueryKind::HirBody,
         artifact_key(QueryKind::HirBody, &key),
+        key,
+    )
+}
+
+fn interface_request() -> PersistentQueryReadRequest {
+    let key = object_key(CompilerObjectKind::InterfaceSummary);
+    PersistentQueryReadRequest::new(
+        QueryKind::Interface,
+        artifact_key(QueryKind::Interface, &key),
         key,
     )
 }
@@ -171,9 +180,39 @@ fn hir_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
     })
 }
 
+fn interface_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
+    let stage_inputs = key.stage_inputs();
+    let public_symbols = InterfaceSummaryObject::canonical_public_symbols([
+        PublicSymbolObject {
+            name: "main::opening".to_owned(),
+            kind: PublicSymbolKind::Flow,
+            signature_digest: digest("opening-signature"),
+        },
+        PublicSymbolObject {
+            name: "main::done".to_owned(),
+            kind: PublicSymbolKind::Flow,
+            signature_digest: digest("done-signature"),
+        },
+    ]);
+    let imports_digest = stage_inputs.dependency_interface_digest_root();
+    CompilerObjectPayload::InterfaceSummary(InterfaceSummaryObject {
+        schema_version: AWBO_SCHEMA_VERSION,
+        compiler_namespace: key.identity_namespace(),
+        module: "main".to_owned(),
+        source_digest: key.source_digest,
+        source_span: span(),
+        diagnostics: StableDiagnosticSummaryObject::empty(),
+        stage_inputs,
+        exports_digest: InterfaceSummaryObject::exports_digest_for(&public_symbols),
+        imports_digest,
+        public_symbols,
+    })
+}
+
 fn envelope_bytes(key: &CompilerObjectKey) -> Vec<u8> {
     let payload = match key.kind {
         CompilerObjectKind::ParsedSyntax => parsed_payload(key),
+        CompilerObjectKind::InterfaceSummary => interface_payload(key),
         CompilerObjectKind::HirBody => hir_payload(key),
         other => panic!("test helper does not support {other:?}"),
     };
@@ -251,6 +290,34 @@ fn persistent_query_write_through_stores_parse_object_for_read_through() {
         outcome,
         PersistentQueryReadOutcome::Hit(hit)
             if matches!(hit.payload, PersistentQueryHitPayload::ParsedSyntax(_))
+    ));
+}
+
+#[test]
+fn persistent_query_write_through_stores_interface_summary_for_read_through() {
+    let store = FilesystemCacheStore::new(temp_root("write-through-interface"));
+    let request = interface_request();
+    let receipt = store
+        .write_persistent_query(&PersistentQueryWriteRequest::new(
+            request.query,
+            request.artifact_key,
+            request.object_key.clone(),
+            "interface-summary:main",
+            interface_payload(&request.object_key),
+        ))
+        .expect("persistent interface query writes");
+
+    assert_eq!(receipt.query, QueryKind::Interface);
+    assert_eq!(receipt.artifact_kind, ArtifactKind::InterfaceSummary);
+    assert!(receipt.record_path.is_file());
+    assert!(receipt.object_path.is_file());
+
+    let outcome = store.read_persistent_query(&request);
+    assert!(outcome.is_hit());
+    assert!(matches!(
+        outcome,
+        PersistentQueryReadOutcome::Hit(hit)
+            if matches!(hit.payload, PersistentQueryHitPayload::InterfaceSummary(_))
     ));
 }
 
@@ -574,14 +641,25 @@ fn persistent_query_query_kind_mismatch_is_soft_miss() {
 
 #[test]
 fn persistent_query_dependency_mismatches_are_soft_misses() {
-    let interface_store = FilesystemCacheStore::new(temp_root("dep-interface"));
-    let interface_request = parse_request();
-    store_good_object(&interface_store, &interface_request);
-    let mut changed_interface = interface_request.clone();
-    changed_interface.object_key.dependency_interface_digests =
+    let parse_store = FilesystemCacheStore::new(temp_root("dep-interface"));
+    let parse_request = parse_request();
+    store_good_object(&parse_store, &parse_request);
+    let mut changed_parse = parse_request.clone();
+    changed_parse.object_key.dependency_interface_digests =
         vec![NamedDigest::new("dep", digest("changed"))];
     assert!(matches!(
-        miss_reason(interface_store.read_persistent_query(&changed_interface)),
+        miss_reason(parse_store.read_persistent_query(&changed_parse)),
+        PersistentQueryMissReason::DependencyInterfaceDigestMismatch { .. }
+    ));
+
+    let summary_store = FilesystemCacheStore::new(temp_root("summary-dep-interface"));
+    let summary_request = interface_request();
+    store_good_object(&summary_store, &summary_request);
+    let mut changed_summary = summary_request.clone();
+    changed_summary.object_key.dependency_interface_digests =
+        vec![NamedDigest::new("dep", digest("changed"))];
+    assert!(matches!(
+        miss_reason(summary_store.read_persistent_query(&changed_summary)),
         PersistentQueryMissReason::DependencyInterfaceDigestMismatch { .. }
     ));
 
@@ -618,4 +696,21 @@ fn persistent_query_unsupported_object_kind_and_status_are_typed() {
             reason: InvalidationReason::MissingRecord,
         },
     );
+}
+
+#[test]
+fn runtime_bytecode_and_link_plan_objects_remain_unsupported() {
+    let store = FilesystemCacheStore::new(temp_root("unsupported-later-families"));
+    for object_kind in [
+        CompilerObjectKind::RuntimePlanUnit,
+        CompilerObjectKind::BytecodeUnit,
+        CompilerObjectKind::LinkPlan,
+    ] {
+        let mut request = parse_request();
+        request.object_key.kind = object_kind;
+        assert_eq!(
+            miss_reason(store.read_persistent_query(&request)),
+            PersistentQueryMissReason::UnsupportedObjectKind { object_kind },
+        );
+    }
 }

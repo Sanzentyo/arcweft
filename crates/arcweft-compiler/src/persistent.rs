@@ -10,14 +10,16 @@ use arcweft_lang_syntax::{
     cst::{SyntaxKind, SyntaxNode, SyntaxParseStats},
     parser::recovery::ParseError,
     source::{LineIndex, ParsedSource},
+    types::{FnParamKind, FnSignature, GenericParam, TypeRef},
 };
 use arcweft_project::{
     fingerprint::BuildDigest,
     persistent_object::{
         AWBO_SCHEMA_VERSION, CompilerObjectKey, CompilerObjectKind, CompilerObjectPayload,
-        HirBodyFactsObject, HirBodyObject, ParsedSyntaxEvidenceObject, ParsedSyntaxObject,
-        StableDiagnosticObject, StableDiagnosticSeverity, StableDiagnosticSummaryObject,
-        StableRangeObject, StableSourceSpanObject, SyntaxStatsObject,
+        HirBodyFactsObject, HirBodyObject, InterfaceSummaryObject, ParsedSyntaxEvidenceObject,
+        ParsedSyntaxObject, PublicSymbolKind, PublicSymbolObject, StableDiagnosticObject,
+        StableDiagnosticSeverity, StableDiagnosticSummaryObject, StableRangeObject,
+        StableSourceSpanObject, SyntaxStatsObject,
     },
 };
 use thiserror::Error;
@@ -31,6 +33,14 @@ pub struct ParsedSyntaxFactsInput<'a> {
 
 /// Inputs required to project a lowered HIR module into deterministic facts.
 pub struct HirBodyFactsInput<'a> {
+    pub key: &'a CompilerObjectKey,
+    pub module: &'a str,
+    pub parsed: &'a ParsedSource,
+    pub hir: &'a HirModule,
+}
+
+/// Inputs required to project a lowered HIR module into stable interface facts.
+pub struct InterfaceSummaryFactsInput<'a> {
     pub key: &'a CompilerObjectKey,
     pub module: &'a str,
     pub parsed: &'a ParsedSource,
@@ -116,6 +126,37 @@ pub fn hir_body_payload(
     input: &HirBodyFactsInput<'_>,
 ) -> Result<CompilerObjectPayload, PersistentFactsError> {
     Ok(CompilerObjectPayload::HirBody(hir_body_object(input)?))
+}
+
+/// Builds a stable interface-summary payload object without serializing HIR.
+pub fn interface_summary_object(
+    input: &InterfaceSummaryFactsInput<'_>,
+) -> Result<InterfaceSummaryObject, PersistentFactsError> {
+    ensure_key_kind(input.key, CompilerObjectKind::InterfaceSummary)?;
+    let source_digest = BuildDigest::from_bytes(input.parsed.source_hash().as_bytes());
+    let stage_inputs = input.key.stage_inputs();
+    let public_symbols = interface_public_symbols(input.module, input.hir)?;
+    Ok(InterfaceSummaryObject {
+        schema_version: AWBO_SCHEMA_VERSION,
+        compiler_namespace: input.key.identity_namespace(),
+        module: input.module.to_owned(),
+        source_digest,
+        source_span: source_span(input.parsed)?,
+        diagnostics: StableDiagnosticSummaryObject::empty(),
+        imports_digest: stage_inputs.dependency_interface_digest_root(),
+        exports_digest: InterfaceSummaryObject::exports_digest_for(&public_symbols),
+        stage_inputs,
+        public_symbols,
+    })
+}
+
+/// Builds a typed interface-summary payload enum for direct envelope construction.
+pub fn interface_summary_payload(
+    input: &InterfaceSummaryFactsInput<'_>,
+) -> Result<CompilerObjectPayload, PersistentFactsError> {
+    Ok(CompilerObjectPayload::InterfaceSummary(
+        interface_summary_object(input)?,
+    ))
 }
 
 fn ensure_key_kind(
@@ -335,6 +376,181 @@ fn hir_body_facts(
         symbol_digest: BuildDigest::of(&symbols),
         body_shape_digest: BuildDigest::of(&shape),
     })
+}
+
+fn interface_public_symbols(
+    module: &str,
+    hir: &HirModule,
+) -> Result<Vec<PublicSymbolObject>, PersistentFactsError> {
+    let mut symbols = Vec::new();
+    for flow in hir.flows() {
+        let Some(name) = flow.name() else {
+            continue;
+        };
+        symbols.push(public_symbol(
+            PublicSymbolKind::Flow,
+            module,
+            name,
+            signature_digest("flow", name, flow.signature())?,
+        ));
+    }
+
+    for function in hir.functions() {
+        symbols.push(public_symbol(
+            PublicSymbolKind::Function,
+            module,
+            function.name(),
+            signature_digest("function", function.name(), Some(function.signature()))?,
+        ));
+    }
+
+    for agent in hir.agents() {
+        let name = agent.item().name();
+        symbols.push(public_symbol(
+            PublicSymbolKind::Agent,
+            module,
+            name,
+            signature_digest("agent", name, agent.item().signature())?,
+        ));
+    }
+
+    for (index, declaration) in hir.declarations().iter().enumerate() {
+        let name = format!("decl:{index}:{}", declaration.cache_fact_tag());
+        symbols.push(public_symbol(
+            PublicSymbolKind::Declaration,
+            module,
+            &name,
+            signature_digest("declaration", declaration.cache_fact_tag(), None)?,
+        ));
+    }
+
+    Ok(InterfaceSummaryObject::canonical_public_symbols(symbols))
+}
+
+fn public_symbol(
+    kind: PublicSymbolKind,
+    module: &str,
+    name: &str,
+    signature_digest: BuildDigest,
+) -> PublicSymbolObject {
+    PublicSymbolObject {
+        name: format!("{module}::{name}"),
+        kind,
+        signature_digest,
+    }
+}
+
+fn signature_digest(
+    family: &str,
+    name: &str,
+    signature: Option<&FnSignature>,
+) -> Result<BuildDigest, PersistentFactsError> {
+    let mut bytes = Vec::new();
+    put_str(&mut bytes, family)?;
+    put_str(&mut bytes, name)?;
+    if let Some(signature) = signature {
+        record_fn_signature(signature, &mut bytes)?;
+    } else {
+        put_str(&mut bytes, "no-signature")?;
+    }
+    Ok(BuildDigest::of(&bytes))
+}
+
+fn record_fn_signature(
+    signature: &FnSignature,
+    bytes: &mut Vec<u8>,
+) -> Result<(), PersistentFactsError> {
+    put_str(bytes, signature.name())?;
+    put_len(bytes, "generic params", signature.generic_params().len())?;
+    for param in signature.generic_params() {
+        match param {
+            GenericParam::Lifetime(lifetime) => {
+                put_str(bytes, "lifetime")?;
+                put_str(bytes, lifetime.name())?;
+            }
+            GenericParam::Type(name) => {
+                put_str(bytes, "type")?;
+                put_str(bytes, name)?;
+            }
+        }
+    }
+
+    put_len(bytes, "param groups", signature.param_groups().len())?;
+    for group in signature.param_groups() {
+        put_len(bytes, "params", group.params().len())?;
+        for param in group.params() {
+            put_str(
+                bytes,
+                match param.kind() {
+                    FnParamKind::Fixed => "fixed",
+                    FnParamKind::Rest => "rest",
+                },
+            )?;
+            record_type_ref(param.ty(), bytes)?;
+            put_bool(bytes, param.default().is_some());
+        }
+    }
+
+    if let Some(return_type) = signature.return_type() {
+        put_bool(bytes, true);
+        record_type_ref(return_type, bytes)?;
+    } else {
+        put_bool(bytes, false);
+    }
+
+    put_len(bytes, "where clauses", signature.where_clauses().len())?;
+    for clause in signature.where_clauses() {
+        record_type_ref(clause.subject(), bytes)?;
+        put_len(bytes, "where bounds", clause.bounds().len())?;
+        for bound in clause.bounds() {
+            record_type_ref(bound, bytes)?;
+        }
+    }
+    Ok(())
+}
+
+fn record_type_ref(ty: &TypeRef, bytes: &mut Vec<u8>) -> Result<(), PersistentFactsError> {
+    match ty {
+        TypeRef::Never => put_str(bytes, "never")?,
+        TypeRef::ConstInt(value) => {
+            put_str(bytes, "const-int")?;
+            put_len(bytes, "const int", *value)?;
+        }
+        TypeRef::Path(path) => {
+            put_str(bytes, "path")?;
+            put_str(bytes, path)?;
+        }
+        TypeRef::Choice(alternatives) => {
+            put_str(bytes, "choice")?;
+            put_len(bytes, "choice alternatives", alternatives.len())?;
+            for alternative in alternatives {
+                record_type_ref(alternative, bytes)?;
+            }
+        }
+        TypeRef::Generic { base, args } => {
+            put_str(bytes, "generic")?;
+            put_str(bytes, base)?;
+            put_len(bytes, "generic args", args.len())?;
+            for arg in args {
+                record_type_ref(arg, bytes)?;
+            }
+        }
+        TypeRef::Ref { lifetime, inner } => {
+            put_str(bytes, "ref")?;
+            put_option_str(
+                bytes,
+                lifetime
+                    .as_ref()
+                    .map(arcweft_lang_syntax::types::LifetimeName::name),
+            )?;
+            record_type_ref(inner, bytes)?;
+        }
+        TypeRef::Slice(inner) => {
+            put_str(bytes, "slice")?;
+            record_type_ref(inner, bytes)?;
+        }
+    }
+    Ok(())
 }
 
 fn record_hir_declaration(
@@ -644,6 +860,43 @@ return "done"
             .expect("HIR envelope encodes");
         let decoded = AwboEnvelope::decode(&bytes, &key).expect("HIR envelope decodes");
         assert!(matches!(decoded.payload, CompilerObjectPayload::HirBody(_)));
+    }
+
+    #[test]
+    fn persistent_interface_summary_facts_round_trip_without_hir_serialization() {
+        let parsed = parse_source_text(SOURCE);
+        assert!(parsed.errors().is_empty());
+        let tree = parsed.clone().into_typed_tree();
+        let hir = lower_source_tree(&tree).expect("source lowers to HIR");
+        let key = key(CompilerObjectKind::InterfaceSummary, &parsed);
+        let object = interface_summary_object(&InterfaceSummaryFactsInput {
+            key: &key,
+            module: "game",
+            parsed: &parsed,
+            hir: &hir,
+        })
+        .expect("interface summary facts build");
+
+        assert_eq!(object.source_digest, key.source_digest);
+        assert_eq!(
+            object.imports_digest,
+            object.stage_inputs.dependency_interface_digest_root()
+        );
+        assert_eq!(
+            object.exports_digest,
+            InterfaceSummaryObject::exports_digest_for(&object.public_symbols)
+        );
+        assert!(!object.public_symbols.is_empty());
+
+        let bytes = AwboEnvelope::new(&key, CompilerObjectPayload::InterfaceSummary(object))
+            .expect("interface envelope builds")
+            .encode()
+            .expect("interface envelope encodes");
+        let decoded = AwboEnvelope::decode(&bytes, &key).expect("interface envelope decodes");
+        assert!(matches!(
+            decoded.payload,
+            CompilerObjectPayload::InterfaceSummary(_)
+        ));
     }
 
     #[test]

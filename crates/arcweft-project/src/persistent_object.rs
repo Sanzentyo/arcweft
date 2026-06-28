@@ -13,9 +13,9 @@ pub use codec::AwboEnvelope;
 pub use payload::{
     BytecodeUnitObject, CompilerObjectPayload, HirBodyFactsObject, HirBodyObject,
     InterfaceSummaryObject, LineTaskEvidenceObject, LinkPlanObject, ParsedSyntaxEvidenceObject,
-    ParsedSyntaxObject, PublicSymbolObject, RuntimePlanUnitObject, StableDiagnosticObject,
-    StableDiagnosticSeverity, StableDiagnosticSummaryObject, StableRangeObject,
-    StableSourceSpanObject, SyntaxStatsObject,
+    ParsedSyntaxObject, PublicSymbolKind, PublicSymbolObject, RuntimePlanUnitObject,
+    StableDiagnosticObject, StableDiagnosticSeverity, StableDiagnosticSummaryObject,
+    StableRangeObject, StableSourceSpanObject, SyntaxStatsObject,
 };
 pub use schema::{
     AWBO_MAGIC, AWBO_SCHEMA_VERSION, AwboError, CompilerBuildIdentity,

@@ -1,9 +1,9 @@
 use super::payload::{
     BytecodeUnitObject, CompilerObjectPayload, HirBodyFactsObject, HirBodyObject,
     InterfaceSummaryObject, LineTaskEvidenceObject, LinkPlanObject, ParsedSyntaxEvidenceObject,
-    ParsedSyntaxObject, PublicSymbolObject, RuntimePlanUnitObject, StableDiagnosticObject,
-    StableDiagnosticSeverity, StableDiagnosticSummaryObject, StableRangeObject,
-    StableSourceSpanObject, SyntaxStatsObject,
+    ParsedSyntaxObject, PublicSymbolKind, PublicSymbolObject, RuntimePlanUnitObject,
+    StableDiagnosticObject, StableDiagnosticSeverity, StableDiagnosticSummaryObject,
+    StableRangeObject, StableSourceSpanObject, SyntaxStatsObject,
 };
 use super::schema::{
     AWBO_MAGIC, AWBO_SCHEMA_VERSION, AwboError, CompilerBuildIdentity,
@@ -493,13 +493,19 @@ fn put_interface_summary(
     writer: &mut BinaryWriter,
     value: &InterfaceSummaryObject,
 ) -> Result<(), AwboError> {
+    writer.put_u32(value.schema_version);
+    put_identity_namespace(writer, &value.compiler_namespace)?;
     writer.put_string("module", &value.module)?;
+    writer.put_digest(value.source_digest);
+    put_source_span(writer, value.source_span);
+    put_diagnostic_summary(writer, &value.diagnostics)?;
+    put_stage_inputs(writer, &value.stage_inputs)?;
     writer.put_digest(value.exports_digest);
     writer.put_digest(value.imports_digest);
     writer.put_len("public_symbols", value.public_symbols.len())?;
     for symbol in &value.public_symbols {
         writer.put_string("symbol.name", &symbol.name)?;
-        writer.put_string("symbol.kind", &symbol.kind)?;
+        writer.put_u8(symbol.kind.wire_tag());
         writer.put_digest(symbol.signature_digest);
     }
     Ok(())
@@ -508,7 +514,13 @@ fn put_interface_summary(
 fn read_interface_summary(
     reader: &mut BinaryReader<'_>,
 ) -> Result<InterfaceSummaryObject, AwboError> {
+    let schema_version = reader.read_u32("interface.schema_version")?;
+    let compiler_namespace = read_identity_namespace(reader)?;
     let module = reader.read_string("interface.module")?;
+    let source_digest = reader.read_digest("interface.source_digest")?;
+    let source_span = read_source_span(reader)?;
+    let diagnostics = read_diagnostic_summary(reader)?;
+    let stage_inputs = read_stage_inputs(reader)?;
     let exports_digest = reader.read_digest("interface.exports_digest")?;
     let imports_digest = reader.read_digest("interface.imports_digest")?;
     let len = reader.read_u32_len("interface.public_symbols")?;
@@ -516,13 +528,19 @@ fn read_interface_summary(
         .map(|_| {
             Ok(PublicSymbolObject {
                 name: reader.read_string("interface.symbol.name")?,
-                kind: reader.read_string("interface.symbol.kind")?,
+                kind: PublicSymbolKind::from_wire_tag(reader.read_u8("interface.symbol.kind")?)?,
                 signature_digest: reader.read_digest("interface.symbol.signature_digest")?,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(InterfaceSummaryObject {
+        schema_version,
+        compiler_namespace,
         module,
+        source_digest,
+        source_span,
+        diagnostics,
+        stage_inputs,
         exports_digest,
         imports_digest,
         public_symbols,
@@ -1032,6 +1050,35 @@ mod tests {
         })
     }
 
+    fn interface_payload_for(key: &CompilerObjectKey) -> CompilerObjectPayload {
+        let stage_inputs = key.stage_inputs();
+        let public_symbols = InterfaceSummaryObject::canonical_public_symbols([
+            PublicSymbolObject {
+                name: "game::opening".to_owned(),
+                kind: PublicSymbolKind::Flow,
+                signature_digest: digest("opening-signature"),
+            },
+            PublicSymbolObject {
+                name: "game::done".to_owned(),
+                kind: PublicSymbolKind::Flow,
+                signature_digest: digest("done-signature"),
+            },
+        ]);
+        let imports_digest = stage_inputs.dependency_interface_digest_root();
+        CompilerObjectPayload::InterfaceSummary(InterfaceSummaryObject {
+            schema_version: AWBO_SCHEMA_VERSION,
+            compiler_namespace: key.identity_namespace(),
+            module: "game".to_owned(),
+            source_digest: key.source_digest,
+            source_span: span(),
+            diagnostics: StableDiagnosticSummaryObject::empty(),
+            stage_inputs,
+            exports_digest: InterfaceSummaryObject::exports_digest_for(&public_symbols),
+            imports_digest,
+            public_symbols,
+        })
+    }
+
     #[test]
     fn persistent_object_bytes_are_deterministic() {
         let key = key(CompilerObjectKind::ParsedSyntax);
@@ -1048,16 +1095,18 @@ mod tests {
     }
 
     #[test]
-    fn persistent_object_round_trips_parse_and_hir_payloads() {
+    fn persistent_object_round_trips_parse_interface_and_hir_payloads() {
         for kind in [
             CompilerObjectKind::ParsedSyntax,
+            CompilerObjectKind::InterfaceSummary,
             CompilerObjectKind::HirBody,
         ] {
             let key = key(kind);
             let payload = match kind {
                 CompilerObjectKind::ParsedSyntax => parsed_payload_for(&key),
+                CompilerObjectKind::InterfaceSummary => interface_payload_for(&key),
                 CompilerObjectKind::HirBody => hir_payload_for(&key),
-                _ => unreachable!("test covers parse and HIR payloads"),
+                _ => unreachable!("test covers parse/interface/HIR payloads"),
             };
             let envelope = AwboEnvelope::new(&key, payload).expect("envelope builds");
             let bytes = envelope.encode().expect("envelope encodes");
@@ -1132,6 +1181,30 @@ mod tests {
         };
         parsed.diagnostics.warning_count = 0;
 
+        assert!(matches!(
+            AwboEnvelope::new(&key, payload),
+            Err(AwboError::MalformedPayload { .. })
+        ));
+    }
+
+    #[test]
+    fn persistent_object_rejects_malformed_interface_summary() {
+        let key = key(CompilerObjectKind::InterfaceSummary);
+        let mut payload = interface_payload_for(&key);
+        let CompilerObjectPayload::InterfaceSummary(interface) = &mut payload else {
+            panic!("payload is interface summary");
+        };
+        interface.exports_digest = digest("wrong-exports");
+        assert!(matches!(
+            AwboEnvelope::new(&key, payload),
+            Err(AwboError::MalformedPayload { .. })
+        ));
+
+        let mut payload = interface_payload_for(&key);
+        let CompilerObjectPayload::InterfaceSummary(interface) = &mut payload else {
+            panic!("payload is interface summary");
+        };
+        interface.imports_digest = digest("wrong-imports");
         assert!(matches!(
             AwboEnvelope::new(&key, payload),
             Err(AwboError::MalformedPayload { .. })

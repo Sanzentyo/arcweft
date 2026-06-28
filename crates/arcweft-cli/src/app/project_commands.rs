@@ -21,7 +21,8 @@ use arcweft_compiler::{
     lower::lower_source_runtime_plan_with_options,
     parse::parse_source_text,
     persistent::{
-        HirBodyFactsInput, ParsedSyntaxFactsInput, hir_body_payload, parsed_syntax_payload,
+        HirBodyFactsInput, InterfaceSummaryFactsInput, ParsedSyntaxFactsInput, hir_body_payload,
+        interface_summary_payload, parsed_syntax_payload,
     },
     project::{
         CompiledProject, CompiledProjectModule, InMemoryProjectCompileCache, NoProjectCompileCache,
@@ -737,6 +738,7 @@ fn write_persistent_query_source(
     let unit_cache_status = module_compile_cache_status(state, source);
     for kind in [
         CompilerObjectKind::ParsedSyntax,
+        CompilerObjectKind::InterfaceSummary,
         CompilerObjectKind::HirBody,
     ] {
         if let Some(item) =
@@ -767,7 +769,10 @@ fn persistent_query_write_item(
         return Ok(None);
     };
     let logical_item = persistent_query_logical_item(kind, source);
-    let dependency_interface_digests = if kind == CompilerObjectKind::HirBody {
+    let dependency_interface_digests = if matches!(
+        kind,
+        CompilerObjectKind::InterfaceSummary | CompilerObjectKind::HirBody
+    ) {
         dependency_interface_digests(state, source)
     } else {
         Vec::new()
@@ -826,8 +831,15 @@ fn persistent_query_payload(
             parsed,
             hir: compiled.hir(),
         }),
-        CompilerObjectKind::InterfaceSummary
-        | CompilerObjectKind::LineTaskEvidence
+        CompilerObjectKind::InterfaceSummary => {
+            interface_summary_payload(&InterfaceSummaryFactsInput {
+                key: object_key,
+                module: &module_label,
+                parsed,
+                hir: compiled.hir(),
+            })
+        }
+        CompilerObjectKind::LineTaskEvidence
         | CompilerObjectKind::RuntimePlanUnit
         | CompilerObjectKind::BytecodeUnit
         | CompilerObjectKind::LinkPlan => unreachable!("safe query kind list is exhaustive"),
@@ -1598,6 +1610,15 @@ flow done {
                     }
                 )
         }));
+        assert!(first_artifacts.snapshot.queries().iter().any(|query| {
+            query.query() == QueryKind::Interface
+                && matches!(
+                    query.status(),
+                    CacheRecordStatus::Rebuilt {
+                        reason: InvalidationReason::MissingRecord
+                    }
+                )
+        }));
 
         let second = compile_project_command(&profile, VerificationMode::Dev)
             .expect("second project compiles");
@@ -1610,7 +1631,7 @@ flow done {
             second_artifacts.snapshot.content_root()
         );
         assert!(second_artifacts.snapshot.queries().iter().any(|query| {
-            query.query() == QueryKind::HirBody
+            matches!(query.query(), QueryKind::Interface | QueryKind::HirBody)
                 && matches!(
                     query.status(),
                     CacheRecordStatus::HitThenRebuilt {
@@ -1648,8 +1669,10 @@ flow done {
         let second_artifacts = write_project_build_artifacts(&second, &second_report, &target_root)
             .expect("second watch artifacts write");
         assert!(second_artifacts.snapshot.queries().iter().any(|query| {
-            matches!(query.query(), QueryKind::Parse | QueryKind::HirBody)
-                && query.status().is_hit()
+            matches!(
+                query.query(),
+                QueryKind::Parse | QueryKind::Interface | QueryKind::HirBody
+            ) && query.status().is_hit()
         }));
         assert!(!second_artifacts.snapshot.queries().iter().any(|query| {
             query.status().rebuild_reason().is_some_and(|reason| {
@@ -1679,7 +1702,7 @@ flow done {
         let second_artifacts = write_project_build_artifacts(&second, &second_report, &target_root)
             .expect("second artifacts write");
         assert!(second_artifacts.snapshot.queries().iter().any(|query| {
-            query.query() == QueryKind::Parse
+            matches!(query.query(), QueryKind::Parse | QueryKind::Interface)
                 && matches!(
                     query.status(),
                     CacheRecordStatus::Rebuilt {
@@ -1737,7 +1760,7 @@ flow done {
     }
 
     fn corrupt_persistent_query_records(cache_root: &Path) {
-        for namespace in ["parse", "hir-body"] {
+        for namespace in ["parse", "interface", "hir-body"] {
             corrupt_records_under(&cache_root.join("records").join(namespace));
         }
     }
@@ -1760,7 +1783,7 @@ flow done {
     }
 
     fn corrupt_persistent_query_objects(cache_root: &Path) {
-        for namespace in ["parse", "hir-body"] {
+        for namespace in ["parse", "interface", "hir-body"] {
             corrupt_objects_for_records(cache_root, &cache_root.join("records").join(namespace));
         }
     }

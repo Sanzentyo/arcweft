@@ -15,7 +15,8 @@ use arcweft_project::{
     persistent_object::{
         AWBO_SCHEMA_VERSION, AwboEnvelope, AwboError, CompilerBuildIdentity,
         CompilerIdentityNamespaceObject, CompilerObjectKey, CompilerObjectKind,
-        CompilerObjectPayload, CompilerStageInputsObject, HirBodyObject, ParsedSyntaxObject,
+        CompilerObjectPayload, CompilerStageInputsObject, HirBodyObject, InterfaceSummaryObject,
+        ParsedSyntaxObject,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -69,11 +70,12 @@ pub struct PersistentQueryHit {
     pub payload: PersistentQueryHitPayload,
 }
 
-/// Safe payloads enabled in seq04.2.
+/// Safe payloads enabled for persistent query read-through.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum PersistentQueryHitPayload {
     ParsedSyntax(ParsedSyntaxObject),
+    InterfaceSummary(InterfaceSummaryObject),
     HirBody(HirBodyObject),
 }
 
@@ -413,7 +415,7 @@ impl From<ErrorKind> for PersistentQueryIoKind {
 }
 
 impl FilesystemCacheStore {
-    /// Reads and validates a parse/HIR persistent compiler object.
+    /// Reads and validates a parse/interface/HIR persistent compiler object.
     pub fn read_persistent_query(
         &self,
         request: &PersistentQueryReadRequest,
@@ -522,7 +524,7 @@ impl FilesystemCacheStore {
         ))
     }
 
-    /// Writes a deterministic parse/HIR `.awbo` object and key-addressed record.
+    /// Writes a deterministic parse/interface/HIR `.awbo` object and key-addressed record.
     pub fn write_persistent_query(
         &self,
         request: &PersistentQueryWriteRequest,
@@ -805,6 +807,9 @@ fn persistent_query_hit_payload(
         CompilerObjectPayload::ParsedSyntax(payload) => {
             Ok(PersistentQueryHitPayload::ParsedSyntax(payload.clone()))
         }
+        CompilerObjectPayload::InterfaceSummary(payload) => {
+            Ok(PersistentQueryHitPayload::InterfaceSummary(payload.clone()))
+        }
         CompilerObjectPayload::HirBody(payload) => {
             Ok(PersistentQueryHitPayload::HirBody(payload.clone()))
         }
@@ -1012,6 +1017,15 @@ fn object_key_from_envelope(envelope: &AwboEnvelope) -> Option<CompilerObjectKey
             dependency_body_digests: payload.stage_inputs.dependency_body_digests.clone(),
             environment_digest: payload.stage_inputs.environment_digest,
         },
+        CompilerObjectPayload::InterfaceSummary(payload) => CompilerObjectKey {
+            kind: CompilerObjectKind::InterfaceSummary,
+            compiler: payload.compiler_namespace.compiler.clone(),
+            source_digest: payload.source_digest,
+            query_options_digest: payload.stage_inputs.query_options_digest,
+            dependency_interface_digests: payload.stage_inputs.dependency_interface_digests.clone(),
+            dependency_body_digests: payload.stage_inputs.dependency_body_digests.clone(),
+            environment_digest: payload.stage_inputs.environment_digest,
+        },
         CompilerObjectPayload::HirBody(payload) => CompilerObjectKey {
             kind: CompilerObjectKind::HirBody,
             compiler: payload.compiler_namespace.compiler.clone(),
@@ -1021,8 +1035,7 @@ fn object_key_from_envelope(envelope: &AwboEnvelope) -> Option<CompilerObjectKey
             dependency_body_digests: payload.stage_inputs.dependency_body_digests.clone(),
             environment_digest: payload.stage_inputs.environment_digest,
         },
-        CompilerObjectPayload::InterfaceSummary(_)
-        | CompilerObjectPayload::LineTaskEvidence(_)
+        CompilerObjectPayload::LineTaskEvidence(_)
         | CompilerObjectPayload::RuntimePlanUnit(_)
         | CompilerObjectPayload::BytecodeUnit(_)
         | CompilerObjectPayload::LinkPlan(_) => return None,
@@ -1052,9 +1065,9 @@ fn named_digest_evidence(values: &[NamedDigest]) -> Vec<PersistentQueryNamedDige
 fn payload_schema_version(payload: &CompilerObjectPayload) -> Option<u32> {
     match payload {
         CompilerObjectPayload::ParsedSyntax(value) => Some(value.schema_version),
+        CompilerObjectPayload::InterfaceSummary(value) => Some(value.schema_version),
         CompilerObjectPayload::HirBody(value) => Some(value.schema_version),
-        CompilerObjectPayload::InterfaceSummary(_)
-        | CompilerObjectPayload::LineTaskEvidence(_)
+        CompilerObjectPayload::LineTaskEvidence(_)
         | CompilerObjectPayload::RuntimePlanUnit(_)
         | CompilerObjectPayload::BytecodeUnit(_)
         | CompilerObjectPayload::LinkPlan(_) => None,
@@ -1137,6 +1150,9 @@ fn validate_envelope_for_request(
         CompilerObjectPayload::ParsedSyntax(payload) => {
             validate_parsed_syntax_payload(payload, key)?;
         }
+        CompilerObjectPayload::InterfaceSummary(payload) => {
+            validate_interface_summary_payload(payload, key)?;
+        }
         CompilerObjectPayload::HirBody(payload) => {
             validate_hir_body_payload(payload, key)?;
         }
@@ -1196,6 +1212,27 @@ fn validate_hir_body_payload(
         });
     }
     validate_stage_inputs(&payload.stage_inputs, key)
+}
+
+fn validate_interface_summary_payload(
+    payload: &InterfaceSummaryObject,
+    key: &CompilerObjectKey,
+) -> Result<(), PersistentQueryMissReason> {
+    validate_payload_schema(payload.schema_version)?;
+    validate_namespace(&payload.compiler_namespace, key)?;
+    validate_source_digest(payload.source_digest, key)?;
+    payload
+        .source_span
+        .validate()
+        .map_err(|error| corrupt_object(&error))?;
+    payload
+        .diagnostics
+        .validate()
+        .map_err(|error| corrupt_object(&error))?;
+    validate_stage_inputs(&payload.stage_inputs, key)?;
+    payload
+        .validate_summary_shape()
+        .map_err(|error| corrupt_object(&error))
 }
 
 fn validate_payload_schema(version: u32) -> Result<(), PersistentQueryMissReason> {
