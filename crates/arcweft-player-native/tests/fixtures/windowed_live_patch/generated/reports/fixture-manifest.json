@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "generated_by": "tools/regenerate-windowed-live-patch-fixtures.rs",
+  "source_dir": "crates/arcweft-player-native/tests/fixtures/windowed_live_patch/src",
+  "bundles": [
+    {
+      "name": "base",
+      "source_label": "tests/fixtures/windowed_live_patch/src/base.arcw",
+      "awfb_path": "crates/arcweft-player-native/tests/fixtures/windowed_live_patch/generated/base.awfb",
+      "content_root": "4ba740fcfaa705d74574ac4ef32737bedbf19ae23c7a8fc5654b838330cbc721",
+      "awfb_len": 7824
+    },
+    {
+      "name": "content_target",
+      "source_label": "tests/fixtures/windowed_live_patch/src/content_target.arcw",
+      "awfb_path": "crates/arcweft-player-native/tests/fixtures/windowed_live_patch/generated/content_target.awfb",
+      "content_root": "955cfce3efb865d04ff6097ff0d6986a7b046c9fbb9904cee2f92d7724805cd8",
+      "awfb_len": 7712
+    },
+    {
+      "name": "code_generational_target",
+      "source_label": "tests/fixtures/windowed_live_patch/src/code_generational_target.arcw",
+      "awfb_path": "crates/arcweft-player-native/tests/fixtures/windowed_live_patch/generated/code_generational_target.awfb",
+      "content_root": "515cdcf118d12bc3906bac1c65edc2e0de58d56a308db87e8c258a1cbe434460",
+      "awfb_len": 7632
+    },
+    {
+      "name": "restart_required_target",
+      "source_label": "tests/fixtures/windowed_live_patch/src/restart_required_target.arcw",
+      "awfb_path": "crates/arcweft-player-native/tests/fixtures/windowed_live_patch/generated/restart_required_target.awfb",
+      "content_root": "6aadcaa011636e22597506c7b6c947411c4824838d73d38508ab08f7f5c31a57",
+      "awfb_len": 6560
+    },
+    {
+      "name": "wrong_base",
+      "source_label": "tests/fixtures/windowed_live_patch/src/wrong_base.arcw",
+      "awfb_path": "crates/arcweft-player-native/tests/fixtures/windowed_live_patch/generated/wrong_base.awfb",
+      "content_root": "d93c218b6e50392338c363f6cb796ff348db3a37a64537e233bff5b4484f2e4b",
+      "awfb_len": 7888
+    },
+    {
+      "name": "await_base",
+      "source_label": "tests/fixtures/windowed_live_patch/src/await_base.arcw",
+      "awfb_path": "crates/arcweft-player-native/tests/fixtures/windowed_live_patch/generated/await_base.awfb",
+      "content_root": "faabf1ddfaeaa37076125d9c79d6bbcf5d72369a3652f144a9dcc3f7bae558b1",
+      "awfb_len": 5824
+    },
+    {
+      "name": "await_code_generational_target",
+      "source_label": "tests/fixtures/windowed_live_patch/src/await_code_generational_target.arcw",
+      "awfb_path": "crates/arcweft-player-native/tests/fixtures/windowed_live_patch/generated/await_code_generational_target.awfb",
+      "content_root": "1549dd281493b9531a7acc7a31f6de4556e18ab92feafefe93d6005fdabdc4a2",
+      "awfb_len": 5792
+    }
+  ],
+  "patches": [
+    {
+      "name": "base_to_content",
+      "patch_path": "crates/arcweft-player-native/tests/fixtures/windowed_live_patch/generated/patches/base_to_content.awfb.patch",
+      "compatibility": "content-only",
+      "base_content_root": "4ba740fcfaa705d74574ac4ef32737bedbf19ae23c7a8fc5654b838330cbc721",
+      "target_content_root": "955cfce3efb865d04ff6097ff0d6986a7b046c9fbb9904cee2f92d7724805cd8",
+      "operation_count": 4,
+      "patch_len": 12048
+    },
+    {
+      "name": "base_to_code_generational",
+      "patch_path": "crates/arcweft-player-native/tests/fixtures/windowed_live_patch/generated/patches/base_to_code_generational.awfb.patch",
+      "compatibility": "code-generational",
+      "base_content_root": "4ba740fcfaa705d74574ac4ef32737bedbf19ae23c7a8fc5654b838330cbc721",
+      "target_content_root": "515cdcf118d12bc3906bac1c65edc2e0de58d56a308db87e8c258a1cbe434460",
+      "operation_count": 4,
+      "patch_len": 12960
+    },
+    {
+      "name": "base_to_restart_required",
+      "patch_path": "crates/arcweft-player-native/tests/fixtures/windowed_live_patch/generated/patches/base_to_restart_required.awfb.patch",
+      "compatibility": "restart-required",
+      "base_content_root": "4ba740fcfaa705d74574ac4ef32737bedbf19ae23c7a8fc5654b838330cbc721",
+      "target_content_root": "6aadcaa011636e22597506c7b6c947411c4824838d73d38508ab08f7f5c31a57",
+      "operation_count": 4,
+      "patch_len": 10208
+    },
+    {
+      "name": "wrong_base_to_content",
+      "patch_path": "crates/arcweft-player-native/tests/fixtures/windowed_live_patch/generated/patches/wrong_base_to_content.awfb.patch",
+      "compatibility": "restart-required",
+      "base_content_root": "d93c218b6e50392338c363f6cb796ff348db3a37a64537e233bff5b4484f2e4b",
+      "target_content_root": "955cfce3efb865d04ff6097ff0d6986a7b046c9fbb9904cee2f92d7724805cd8",
+      "operation_count": 4,
+      "patch_len": 12976
+    },
+    {
+      "name": "await_base_to_code_generational",
+      "patch_path": "crates/arcweft-player-native/tests/fixtures/windowed_live_patch/generated/patches/await_base_to_code_generational.awfb.patch",
+      "compatibility": "code-generational",
+      "base_content_root": "faabf1ddfaeaa37076125d9c79d6bbcf5d72369a3652f144a9dcc3f7bae558b1",
+      "target_content_root": "1549dd281493b9531a7acc7a31f6de4556e18ab92feafefe93d6005fdabdc4a2",
+      "operation_count": 3,
+      "patch_len": 10048
+    }
+  ],
+  "malformed_patch_bytes": 24
+}

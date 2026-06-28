@@ -1,0 +1,167 @@
+{
+  "case_name": "content-only",
+  "before": {
+    "label": "content-only-before",
+    "shell": {
+      "window_shell_id": 7001,
+      "renderer_shell_id": 7002,
+      "input_controller_id": 7003,
+      "visual_clock_id": 7004,
+      "presented_frames": 0,
+      "last_patch_boundary": "after_render_submitted",
+      "prepared_frame_valid": false
+    },
+    "runtime": {
+      "active_generation": 0,
+      "current_fiber_generation": 0,
+      "retired_generation_count": 0,
+      "active_content_root": "4ba740fcfaa705d74574ac4ef32737bedbf19ae23c7a8fc5654b838330cbc721",
+      "queued_patch_count": 0,
+      "is_finished": false,
+      "presentation_text": "Windowed smoke: base",
+      "choice_count": 0,
+      "presentation_image_count": 0,
+      "last_step_status": "dialogue line.opening",
+      "last_step_finished": false,
+      "visual_clock": {
+        "identity": 7004,
+        "line": null,
+        "started_at_millis": 0,
+        "visual_time_millis": 0
+      }
+    },
+    "patch_report": {
+      "state": "idle",
+      "source": null,
+      "message": "idle",
+      "compatibility": null
+    },
+    "direct_image_probe": {
+      "kind": "rgba",
+      "width": 1,
+      "height": 1,
+      "rgba": [
+        255,
+        0,
+        0,
+        255
+      ]
+    }
+  },
+  "outcomes": [
+    {
+      "kind": "applied",
+      "generation": 1,
+      "compatibility": "content-only",
+      "content_root": "955cfce3efb865d04ff6097ff0d6986a7b046c9fbb9904cee2f92d7724805cd8",
+      "rejection_source": null,
+      "rejection_message": null
+    }
+  ],
+  "after_commit": {
+    "label": "content-only-after-commit",
+    "shell": {
+      "window_shell_id": 7001,
+      "renderer_shell_id": 7002,
+      "input_controller_id": 7003,
+      "visual_clock_id": 7004,
+      "presented_frames": 1,
+      "last_patch_boundary": "after_render_submitted",
+      "prepared_frame_valid": false
+    },
+    "runtime": {
+      "active_generation": 1,
+      "current_fiber_generation": 0,
+      "retired_generation_count": 1,
+      "active_content_root": "955cfce3efb865d04ff6097ff0d6986a7b046c9fbb9904cee2f92d7724805cd8",
+      "queued_patch_count": 0,
+      "is_finished": false,
+      "presentation_text": "Windowed smoke: base",
+      "choice_count": 0,
+      "presentation_image_count": 0,
+      "last_step_status": "dialogue line.opening",
+      "last_step_finished": false,
+      "visual_clock": {
+        "identity": 7004,
+        "line": "RuntimeLineId(\"line.opening\")",
+        "started_at_millis": 16,
+        "visual_time_millis": 0
+      }
+    },
+    "patch_report": {
+      "state": "applied",
+      "source": "embedding_api",
+      "message": "patch applied at frame boundary",
+      "compatibility": "content-only"
+    },
+    "direct_image_probe": {
+      "kind": "rgba",
+      "width": 1,
+      "height": 1,
+      "rgba": [
+        0,
+        0,
+        255,
+        255
+      ]
+    }
+  },
+  "after_observe": {
+    "label": "content-only-after-new-entry",
+    "shell": {
+      "window_shell_id": 7001,
+      "renderer_shell_id": 7002,
+      "input_controller_id": 7003,
+      "visual_clock_id": 7004,
+      "presented_frames": 1,
+      "last_patch_boundary": "after_render_submitted",
+      "prepared_frame_valid": false
+    },
+    "runtime": {
+      "active_generation": 1,
+      "current_fiber_generation": 1,
+      "retired_generation_count": 0,
+      "active_content_root": "955cfce3efb865d04ff6097ff0d6986a7b046c9fbb9904cee2f92d7724805cd8",
+      "queued_patch_count": 0,
+      "is_finished": false,
+      "presentation_text": "Windowed smoke: content target",
+      "choice_count": 0,
+      "presentation_image_count": 0,
+      "last_step_status": "dialogue line.opening",
+      "last_step_finished": false,
+      "visual_clock": {
+        "identity": 7004,
+        "line": "RuntimeLineId(\"line.opening\")",
+        "started_at_millis": 16,
+        "visual_time_millis": 0
+      }
+    },
+    "patch_report": {
+      "state": "applied",
+      "source": "embedding_api",
+      "message": "patch applied at frame boundary",
+      "compatibility": "content-only"
+    },
+    "direct_image_probe": {
+      "kind": "rgba",
+      "width": 1,
+      "height": 1,
+      "rgba": [
+        0,
+        0,
+        255,
+        255
+      ]
+    }
+  },
+  "observations": [
+    {
+      "key": "expected_catalog_rgba",
+      "value": "[0, 0, 255, 255]"
+    },
+    {
+      "key": "new_foreground_generation",
+      "value": "1"
+    }
+  ]
+}

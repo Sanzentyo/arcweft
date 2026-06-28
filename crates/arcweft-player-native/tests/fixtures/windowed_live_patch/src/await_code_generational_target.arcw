@@ -1,0 +1,6 @@
+// Seq-03.7 code-generational pending-task target fixture.
+// The foreground entry is replaced while the old task completion remains bound
+// to the old generation until completion is delivered.
+flow @flow.main main {
+    return "changed"
+}

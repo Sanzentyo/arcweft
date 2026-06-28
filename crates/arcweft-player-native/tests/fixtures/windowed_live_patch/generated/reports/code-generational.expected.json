@@ -1,0 +1,167 @@
+{
+  "case_name": "code-generational",
+  "before": {
+    "label": "code-generational-before",
+    "shell": {
+      "window_shell_id": 7001,
+      "renderer_shell_id": 7002,
+      "input_controller_id": 7003,
+      "visual_clock_id": 7004,
+      "presented_frames": 0,
+      "last_patch_boundary": "after_render_submitted",
+      "prepared_frame_valid": false
+    },
+    "runtime": {
+      "active_generation": 0,
+      "current_fiber_generation": 0,
+      "retired_generation_count": 0,
+      "active_content_root": "4ba740fcfaa705d74574ac4ef32737bedbf19ae23c7a8fc5654b838330cbc721",
+      "queued_patch_count": 0,
+      "is_finished": false,
+      "presentation_text": null,
+      "choice_count": 0,
+      "presentation_image_count": 0,
+      "last_step_status": null,
+      "last_step_finished": null,
+      "visual_clock": {
+        "identity": 7004,
+        "line": null,
+        "started_at_millis": 0,
+        "visual_time_millis": 0
+      }
+    },
+    "patch_report": {
+      "state": "idle",
+      "source": null,
+      "message": "idle",
+      "compatibility": null
+    },
+    "direct_image_probe": {
+      "kind": "rgba",
+      "width": 1,
+      "height": 1,
+      "rgba": [
+        255,
+        0,
+        0,
+        255
+      ]
+    }
+  },
+  "outcomes": [
+    {
+      "kind": "applied",
+      "generation": 1,
+      "compatibility": "code-generational",
+      "content_root": "515cdcf118d12bc3906bac1c65edc2e0de58d56a308db87e8c258a1cbe434460",
+      "rejection_source": null,
+      "rejection_message": null
+    }
+  ],
+  "after_commit": {
+    "label": "code-generational-after-commit",
+    "shell": {
+      "window_shell_id": 7001,
+      "renderer_shell_id": 7002,
+      "input_controller_id": 7003,
+      "visual_clock_id": 7004,
+      "presented_frames": 1,
+      "last_patch_boundary": "after_render_submitted",
+      "prepared_frame_valid": false
+    },
+    "runtime": {
+      "active_generation": 1,
+      "current_fiber_generation": 0,
+      "retired_generation_count": 1,
+      "active_content_root": "515cdcf118d12bc3906bac1c65edc2e0de58d56a308db87e8c258a1cbe434460",
+      "queued_patch_count": 0,
+      "is_finished": false,
+      "presentation_text": null,
+      "choice_count": 0,
+      "presentation_image_count": 0,
+      "last_step_status": null,
+      "last_step_finished": null,
+      "visual_clock": {
+        "identity": 7004,
+        "line": null,
+        "started_at_millis": 16,
+        "visual_time_millis": 0
+      }
+    },
+    "patch_report": {
+      "state": "applied",
+      "source": "embedding_api",
+      "message": "patch applied at frame boundary",
+      "compatibility": "code-generational"
+    },
+    "direct_image_probe": {
+      "kind": "rgba",
+      "width": 1,
+      "height": 1,
+      "rgba": [
+        255,
+        0,
+        0,
+        255
+      ]
+    }
+  },
+  "after_observe": {
+    "label": "code-generational-after-new-entry",
+    "shell": {
+      "window_shell_id": 7001,
+      "renderer_shell_id": 7002,
+      "input_controller_id": 7003,
+      "visual_clock_id": 7004,
+      "presented_frames": 1,
+      "last_patch_boundary": "after_render_submitted",
+      "prepared_frame_valid": false
+    },
+    "runtime": {
+      "active_generation": 1,
+      "current_fiber_generation": null,
+      "retired_generation_count": 0,
+      "active_content_root": "515cdcf118d12bc3906bac1c65edc2e0de58d56a308db87e8c258a1cbe434460",
+      "queued_patch_count": 0,
+      "is_finished": true,
+      "presentation_text": null,
+      "choice_count": 0,
+      "presentation_image_count": 0,
+      "last_step_status": "done return changed",
+      "last_step_finished": true,
+      "visual_clock": {
+        "identity": 7004,
+        "line": null,
+        "started_at_millis": 16,
+        "visual_time_millis": 0
+      }
+    },
+    "patch_report": {
+      "state": "applied",
+      "source": "embedding_api",
+      "message": "patch applied at frame boundary",
+      "compatibility": "code-generational"
+    },
+    "direct_image_probe": {
+      "kind": "rgba",
+      "width": 1,
+      "height": 1,
+      "rgba": [
+        255,
+        0,
+        0,
+        255
+      ]
+    }
+  },
+  "observations": [
+    {
+      "key": "old_foreground_generation",
+      "value": "0"
+    },
+    {
+      "key": "new_foreground_generation",
+      "value": "1"
+    }
+  ]
+}

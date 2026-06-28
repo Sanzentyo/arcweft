@@ -1,0 +1,19 @@
+// Seq-03.7 windowed live-patch smoke base fixture.
+//
+// The Rust fixture generator in tests/support/windowed_live_patch_fixtures.rs
+// constructs the equivalent typed RuntimePlan and stores this source text in
+// the generated AWFB BundleSource. The source is repository-owned acceptance
+// evidence, not a placeholder JSON runtime fixture.
+flow @flow.main main {
+    line @line.opening alice "Windowed smoke: base"
+    choice @choice.opening {
+        option @choice.opening.next "Next" -> @flow.done
+    }
+}
+
+flow @flow.done done {
+    return "done"
+}
+
+image_asset @sprite file "asset/sprite.png" format png size 1 1
+image_object @sprite.object asset @sprite bounds 0 0 1000 1000 fit stretch

@@ -21,6 +21,17 @@ impl FrameBoundary {
     pub const fn is_patch_commit_safe(self) -> bool {
         matches!(self, Self::AfterRenderSubmitted)
     }
+
+    /// Stable label used by deterministic smoke reports and regeneration
+    /// manifests.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::BeforeRuntimeStep => "before_runtime_step",
+            Self::AfterRuntimeStep => "after_runtime_step",
+            Self::BeforeRender => "before_render",
+            Self::AfterRenderSubmitted => "after_render_submitted",
+        }
+    }
 }
 
 /// Patch event delivered to a windowed native event loop.
@@ -118,6 +129,49 @@ impl WindowedPatchEvent {
                 source.clone()
             }
             Self::RestartWithBundle { .. } => PatchEventSource::EmbeddingApi,
+        }
+    }
+}
+
+impl PatchEventSource {
+    /// Stable label used by deterministic smoke reports and regeneration
+    /// manifests.
+    pub const fn label(&self) -> &'static str {
+        match self {
+            Self::WatchChannel => "watch_channel",
+            Self::OneShotSidecar => "one_shot_sidecar",
+            Self::FileWatch => "file_watch",
+            Self::LocalSocket => "local_socket",
+            Self::EmbeddingApi => "embedding_api",
+        }
+    }
+}
+
+impl RestartReason {
+    /// Stable label used by deterministic smoke reports and regeneration
+    /// manifests.
+    pub const fn label(&self) -> &'static str {
+        match self {
+            Self::CodeGenerationalUnsupported => "code_generational_unsupported",
+            Self::RestartRequiredPatch => "restart_required_patch",
+            Self::Manual => "manual",
+        }
+    }
+}
+
+impl WindowedPatchState {
+    /// Stable label used by deterministic smoke reports and regeneration
+    /// manifests.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::Queued => "queued",
+            Self::Preparing => "preparing",
+            Self::ReadyToCommit => "ready_to_commit",
+            Self::Committing => "committing",
+            Self::RestartingSession => "restarting_session",
+            Self::Applied => "applied",
+            Self::Rejected => "rejected",
         }
     }
 }

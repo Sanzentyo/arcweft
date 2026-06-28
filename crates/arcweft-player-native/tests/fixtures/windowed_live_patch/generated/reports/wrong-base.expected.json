@@ -1,0 +1,110 @@
+{
+  "case_name": "wrong-base",
+  "before": {
+    "label": "wrong-base-before",
+    "shell": {
+      "window_shell_id": 7001,
+      "renderer_shell_id": 7002,
+      "input_controller_id": 7003,
+      "visual_clock_id": 7004,
+      "presented_frames": 0,
+      "last_patch_boundary": "after_render_submitted",
+      "prepared_frame_valid": false
+    },
+    "runtime": {
+      "active_generation": 0,
+      "current_fiber_generation": 0,
+      "retired_generation_count": 0,
+      "active_content_root": "4ba740fcfaa705d74574ac4ef32737bedbf19ae23c7a8fc5654b838330cbc721",
+      "queued_patch_count": 0,
+      "is_finished": false,
+      "presentation_text": "Windowed smoke: base",
+      "choice_count": 0,
+      "presentation_image_count": 0,
+      "last_step_status": "dialogue line.opening",
+      "last_step_finished": false,
+      "visual_clock": {
+        "identity": 7004,
+        "line": null,
+        "started_at_millis": 0,
+        "visual_time_millis": 0
+      }
+    },
+    "patch_report": {
+      "state": "idle",
+      "source": null,
+      "message": "idle",
+      "compatibility": null
+    },
+    "direct_image_probe": {
+      "kind": "rgba",
+      "width": 1,
+      "height": 1,
+      "rgba": [
+        255,
+        0,
+        0,
+        255
+      ]
+    }
+  },
+  "outcomes": [
+    {
+      "kind": "rejected",
+      "generation": null,
+      "compatibility": null,
+      "content_root": null,
+      "rejection_source": "embedding_api",
+      "rejection_message": "failed to materialize windowed patch target before commit: patch base root mismatch: active 4ba740fcfaa705d74574ac4ef32737bedbf19ae23c7a8fc5654b838330cbc721, expected d93c218b6e50392338c363f6cb796ff348db3a37a64537e233bff5b4484f2e4b"
+    }
+  ],
+  "after_commit": {
+    "label": "wrong-base-after-reject",
+    "shell": {
+      "window_shell_id": 7001,
+      "renderer_shell_id": 7002,
+      "input_controller_id": 7003,
+      "visual_clock_id": 7004,
+      "presented_frames": 1,
+      "last_patch_boundary": "after_render_submitted",
+      "prepared_frame_valid": true
+    },
+    "runtime": {
+      "active_generation": 0,
+      "current_fiber_generation": 0,
+      "retired_generation_count": 0,
+      "active_content_root": "4ba740fcfaa705d74574ac4ef32737bedbf19ae23c7a8fc5654b838330cbc721",
+      "queued_patch_count": 0,
+      "is_finished": false,
+      "presentation_text": "Windowed smoke: base",
+      "choice_count": 0,
+      "presentation_image_count": 0,
+      "last_step_status": "dialogue line.opening",
+      "last_step_finished": false,
+      "visual_clock": {
+        "identity": 7004,
+        "line": "RuntimeLineId(\"line.opening\")",
+        "started_at_millis": 16,
+        "visual_time_millis": 0
+      }
+    },
+    "patch_report": {
+      "state": "rejected",
+      "source": "embedding_api",
+      "message": "failed to materialize windowed patch target before commit: patch base root mismatch: active 4ba740fcfaa705d74574ac4ef32737bedbf19ae23c7a8fc5654b838330cbc721, expected d93c218b6e50392338c363f6cb796ff348db3a37a64537e233bff5b4484f2e4b",
+      "compatibility": null
+    },
+    "direct_image_probe": {
+      "kind": "rgba",
+      "width": 1,
+      "height": 1,
+      "rgba": [
+        255,
+        0,
+        0,
+        255
+      ]
+    }
+  },
+  "observations": []
+}

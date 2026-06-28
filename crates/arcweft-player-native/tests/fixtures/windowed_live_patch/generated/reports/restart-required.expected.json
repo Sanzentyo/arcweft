@@ -1,0 +1,149 @@
+{
+  "case_name": "restart-required",
+  "before": {
+    "label": "restart-required-before",
+    "shell": {
+      "window_shell_id": 7001,
+      "renderer_shell_id": 7002,
+      "input_controller_id": 7003,
+      "visual_clock_id": 7004,
+      "presented_frames": 0,
+      "last_patch_boundary": "after_render_submitted",
+      "prepared_frame_valid": false
+    },
+    "runtime": {
+      "active_generation": 0,
+      "current_fiber_generation": 0,
+      "retired_generation_count": 0,
+      "active_content_root": "4ba740fcfaa705d74574ac4ef32737bedbf19ae23c7a8fc5654b838330cbc721",
+      "queued_patch_count": 0,
+      "is_finished": false,
+      "presentation_text": "Windowed smoke: base",
+      "choice_count": 0,
+      "presentation_image_count": 0,
+      "last_step_status": "dialogue line.opening",
+      "last_step_finished": false,
+      "visual_clock": {
+        "identity": 7004,
+        "line": null,
+        "started_at_millis": 0,
+        "visual_time_millis": 0
+      }
+    },
+    "patch_report": {
+      "state": "idle",
+      "source": null,
+      "message": "idle",
+      "compatibility": null
+    },
+    "direct_image_probe": {
+      "kind": "rgba",
+      "width": 1,
+      "height": 1,
+      "rgba": [
+        255,
+        0,
+        0,
+        255
+      ]
+    }
+  },
+  "outcomes": [
+    {
+      "kind": "restarted",
+      "generation": 0,
+      "compatibility": "restart-required",
+      "content_root": "6aadcaa011636e22597506c7b6c947411c4824838d73d38508ab08f7f5c31a57",
+      "rejection_source": null,
+      "rejection_message": null
+    }
+  ],
+  "after_commit": {
+    "label": "restart-required-after-commit",
+    "shell": {
+      "window_shell_id": 7001,
+      "renderer_shell_id": 7002,
+      "input_controller_id": 7003,
+      "visual_clock_id": 7004,
+      "presented_frames": 1,
+      "last_patch_boundary": "after_render_submitted",
+      "prepared_frame_valid": false
+    },
+    "runtime": {
+      "active_generation": 0,
+      "current_fiber_generation": 0,
+      "retired_generation_count": 0,
+      "active_content_root": "6aadcaa011636e22597506c7b6c947411c4824838d73d38508ab08f7f5c31a57",
+      "queued_patch_count": 0,
+      "is_finished": false,
+      "presentation_text": null,
+      "choice_count": 0,
+      "presentation_image_count": 0,
+      "last_step_status": "dialogue line.opening",
+      "last_step_finished": false,
+      "visual_clock": {
+        "identity": 7004,
+        "line": "RuntimeLineId(\"line.opening\")",
+        "started_at_millis": 16,
+        "visual_time_millis": 0
+      }
+    },
+    "patch_report": {
+      "state": "restarting_session",
+      "source": "embedding_api",
+      "message": "session restarted at frame boundary",
+      "compatibility": "restart-required"
+    },
+    "direct_image_probe": {
+      "kind": "unavailable",
+      "message": "bundle image object `sprite.object` references missing asset `sprite`"
+    }
+  },
+  "after_observe": {
+    "label": "restart-required-after-observe",
+    "shell": {
+      "window_shell_id": 7001,
+      "renderer_shell_id": 7002,
+      "input_controller_id": 7003,
+      "visual_clock_id": 7004,
+      "presented_frames": 1,
+      "last_patch_boundary": "after_render_submitted",
+      "prepared_frame_valid": false
+    },
+    "runtime": {
+      "active_generation": 0,
+      "current_fiber_generation": 0,
+      "retired_generation_count": 0,
+      "active_content_root": "6aadcaa011636e22597506c7b6c947411c4824838d73d38508ab08f7f5c31a57",
+      "queued_patch_count": 0,
+      "is_finished": false,
+      "presentation_text": "Windowed smoke: restart target",
+      "choice_count": 0,
+      "presentation_image_count": 0,
+      "last_step_status": "dialogue line.opening",
+      "last_step_finished": false,
+      "visual_clock": {
+        "identity": 7004,
+        "line": "RuntimeLineId(\"line.opening\")",
+        "started_at_millis": 16,
+        "visual_time_millis": 0
+      }
+    },
+    "patch_report": {
+      "state": "restarting_session",
+      "source": "embedding_api",
+      "message": "session restarted at frame boundary",
+      "compatibility": "restart-required"
+    },
+    "direct_image_probe": {
+      "kind": "unavailable",
+      "message": "bundle image object `sprite.object` references missing asset `sprite`"
+    }
+  },
+  "observations": [
+    {
+      "key": "restart_reason",
+      "value": "restart_required_patch"
+    }
+  ]
+}

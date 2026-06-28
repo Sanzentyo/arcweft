@@ -1,0 +1,154 @@
+{
+  "case_name": "code-generational-task",
+  "before": {
+    "label": "code-generational-task-before",
+    "shell": {
+      "window_shell_id": 7001,
+      "renderer_shell_id": 7002,
+      "input_controller_id": 7003,
+      "visual_clock_id": 7004,
+      "presented_frames": 0,
+      "last_patch_boundary": "after_render_submitted",
+      "prepared_frame_valid": false
+    },
+    "runtime": {
+      "active_generation": 0,
+      "current_fiber_generation": 0,
+      "retired_generation_count": 0,
+      "active_content_root": "faabf1ddfaeaa37076125d9c79d6bbcf5d72369a3652f144a9dcc3f7bae558b1",
+      "queued_patch_count": 0,
+      "is_finished": false,
+      "presentation_text": null,
+      "choice_count": 0,
+      "presentation_image_count": 0,
+      "last_step_status": "running",
+      "last_step_finished": false,
+      "visual_clock": {
+        "identity": 7004,
+        "line": null,
+        "started_at_millis": 0,
+        "visual_time_millis": 0
+      }
+    },
+    "patch_report": {
+      "state": "idle",
+      "source": null,
+      "message": "idle",
+      "compatibility": null
+    },
+    "direct_image_probe": {
+      "kind": "unavailable",
+      "message": "bundle image object `sprite.object` references missing asset `sprite`"
+    }
+  },
+  "outcomes": [
+    {
+      "kind": "applied",
+      "generation": 1,
+      "compatibility": "code-generational",
+      "content_root": "1549dd281493b9531a7acc7a31f6de4556e18ab92feafefe93d6005fdabdc4a2",
+      "rejection_source": null,
+      "rejection_message": null
+    }
+  ],
+  "after_commit": {
+    "label": "code-generational-task-after-commit",
+    "shell": {
+      "window_shell_id": 7001,
+      "renderer_shell_id": 7002,
+      "input_controller_id": 7003,
+      "visual_clock_id": 7004,
+      "presented_frames": 1,
+      "last_patch_boundary": "after_render_submitted",
+      "prepared_frame_valid": false
+    },
+    "runtime": {
+      "active_generation": 1,
+      "current_fiber_generation": 0,
+      "retired_generation_count": 1,
+      "active_content_root": "1549dd281493b9531a7acc7a31f6de4556e18ab92feafefe93d6005fdabdc4a2",
+      "queued_patch_count": 0,
+      "is_finished": false,
+      "presentation_text": null,
+      "choice_count": 0,
+      "presentation_image_count": 0,
+      "last_step_status": "running",
+      "last_step_finished": false,
+      "visual_clock": {
+        "identity": 7004,
+        "line": null,
+        "started_at_millis": 16,
+        "visual_time_millis": 0
+      }
+    },
+    "patch_report": {
+      "state": "applied",
+      "source": "embedding_api",
+      "message": "patch applied at frame boundary",
+      "compatibility": "code-generational"
+    },
+    "direct_image_probe": {
+      "kind": "unavailable",
+      "message": "bundle image object `sprite.object` references missing asset `sprite`"
+    }
+  },
+  "after_observe": {
+    "label": "code-generational-task-after-completion",
+    "shell": {
+      "window_shell_id": 7001,
+      "renderer_shell_id": 7002,
+      "input_controller_id": 7003,
+      "visual_clock_id": 7004,
+      "presented_frames": 1,
+      "last_patch_boundary": "after_render_submitted",
+      "prepared_frame_valid": false
+    },
+    "runtime": {
+      "active_generation": 1,
+      "current_fiber_generation": null,
+      "retired_generation_count": 0,
+      "active_content_root": "1549dd281493b9531a7acc7a31f6de4556e18ab92feafefe93d6005fdabdc4a2",
+      "queued_patch_count": 0,
+      "is_finished": true,
+      "presentation_text": null,
+      "choice_count": 0,
+      "presentation_image_count": 0,
+      "last_step_status": "done return changed",
+      "last_step_finished": true,
+      "visual_clock": {
+        "identity": 7004,
+        "line": null,
+        "started_at_millis": 16,
+        "visual_time_millis": 0
+      }
+    },
+    "patch_report": {
+      "state": "applied",
+      "source": "embedding_api",
+      "message": "patch applied at frame boundary",
+      "compatibility": "code-generational"
+    },
+    "direct_image_probe": {
+      "kind": "unavailable",
+      "message": "bundle image object `sprite.object` references missing asset `sprite`"
+    }
+  },
+  "observations": [
+    {
+      "key": "old_task_generation",
+      "value": "0"
+    },
+    {
+      "key": "task_generation_after_commit",
+      "value": "0"
+    },
+    {
+      "key": "new_entry_generation",
+      "value": "1"
+    },
+    {
+      "key": "task_generation_after_completion",
+      "value": "none"
+    }
+  ]
+}

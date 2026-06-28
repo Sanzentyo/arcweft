@@ -44,6 +44,65 @@ pub enum WindowedRuntimeOutcome {
 }
 
 impl WindowedRuntimeOutcome {
+    /// Stable label used by deterministic smoke reports and regeneration
+    /// manifests.
+    pub const fn kind_label(&self) -> &'static str {
+        match self {
+            Self::Noop { .. } => "noop",
+            Self::Applied { .. } => "applied",
+            Self::Restarted { .. } => "restarted",
+            Self::Rejected { .. } => "rejected",
+        }
+    }
+
+    /// Returns the generation touched by the outcome, when one exists.
+    pub const fn generation(&self) -> Option<GenerationId> {
+        match self {
+            Self::Noop { generation, .. }
+            | Self::Applied { generation, .. }
+            | Self::Restarted { generation, .. } => Some(*generation),
+            Self::Rejected { .. } => None,
+        }
+    }
+
+    /// Returns the patch compatibility class represented by the outcome, when
+    /// the outcome reached a valid patch artifact.
+    pub const fn compatibility(&self) -> Option<PatchCompatibility> {
+        match self {
+            Self::Noop { .. } => Some(PatchCompatibility::ContentOnly),
+            Self::Applied { compatibility, .. } | Self::Restarted { compatibility, .. } => {
+                Some(*compatibility)
+            }
+            Self::Rejected { .. } => None,
+        }
+    }
+
+    /// Returns the active content root after a successful outcome.
+    pub const fn content_root(&self) -> Option<BundleDigest> {
+        match self {
+            Self::Noop { content_root, .. }
+            | Self::Applied { content_root, .. }
+            | Self::Restarted { content_root, .. } => Some(*content_root),
+            Self::Rejected { .. } => None,
+        }
+    }
+
+    /// Returns the event source that produced a rejection.
+    pub const fn rejection_source(&self) -> Option<&PatchEventSource> {
+        match self {
+            Self::Rejected { source, .. } => Some(source),
+            Self::Noop { .. } | Self::Applied { .. } | Self::Restarted { .. } => None,
+        }
+    }
+
+    /// Returns the rejection message.
+    pub fn rejection_message(&self) -> Option<&str> {
+        match self {
+            Self::Rejected { message, .. } => Some(message.as_str()),
+            Self::Noop { .. } | Self::Applied { .. } | Self::Restarted { .. } => None,
+        }
+    }
+
     /// Returns whether the prepared frame/input hit data from before this outcome
     /// must be discarded before accepting more interaction.
     pub fn invalidates_prepared_frame(&self) -> bool {
