@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arcweft.local/schemas/web-editcontext-real-ime-trace.v1.json",
+  "title": "Arcweft Web EditContext real IME trace",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "capturedAt",
+    "mode",
+    "redaction",
+    "events"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "arcweft.web-editcontext-real-ime.trace.v1"
+    },
+    "capturedAt": {
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "manual",
+        "unsupported",
+        "validation-blocked"
+      ]
+    },
+    "expectedCommit": {
+      "$ref": "#/$defs/redactedText"
+    },
+    "redaction": {
+      "type": "object",
+      "required": [
+        "rawTextAllowed",
+        "secureFieldPolicy"
+      ],
+      "properties": {
+        "rawTextAllowed": {
+          "type": "boolean"
+        },
+        "secureFieldPolicy": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "seq",
+          "timeMs",
+          "kind",
+          "detail"
+        ],
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "timeMs": {
+            "type": "number",
+            "minimum": 0
+          },
+          "kind": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "result": {
+      "type": "object"
+    },
+    "artifacts": {
+      "type": "object"
+    },
+    "analysis": {
+      "type": "object"
+    },
+    "consoleErrors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "redactedText": {
+      "type": "object",
+      "required": [
+        "redacted",
+        "utf16Length"
+      ],
+      "properties": {
+        "redacted": {
+          "type": "boolean"
+        },
+        "utf16Length": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hasJapanese": {
+          "type": "boolean"
+        },
+        "hasAscii": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

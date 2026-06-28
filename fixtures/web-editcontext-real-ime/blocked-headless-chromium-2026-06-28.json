@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "arcweft.web-editcontext-real-ime.trace.v1",
+  "mode": "validation-blocked",
+  "capturedAt": "2026-06-28T00:00:00+09:00",
+  "redaction": {
+    "rawTextAllowed": false,
+    "secureFieldPolicy": "secure fields redact surrounding text, event text, clipboard text, and selection-derived geometry"
+  },
+  "environment": {
+    "sandbox": true,
+    "nodeVersion": "v22.16.0",
+    "npmVersion": "10.9.2",
+    "installedChromiumVersion": "Chromium 144.0.7559.96 built on Debian GNU/Linux 13 (trixie)",
+    "playwrightNodeModuleAvailable": false,
+    "interactiveJapaneseImeAvailable": false
+  },
+  "events": [
+    {
+      "seq": 1,
+      "timeMs": 0,
+      "kind": "validation_blocked",
+      "detail": {
+        "reason": "Packaging sandbox has no interactive OS Japanese IME surface; Playwright dependency is not installed; headless Chromium did not provide acceptable real IME evidence.",
+        "notAcceptedAsPass": true
+      }
+    }
+  ],
+  "analysis": {
+    "status": "blocked",
+    "blockedAcceptanceItems": [
+      "real Japanese IME candidate-window placement",
+      "native/browser caret visual behavior under an active real IME",
+      "real OS IME preedit-to-commit trace"
+    ]
+  }
+}

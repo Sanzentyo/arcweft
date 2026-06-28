@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "arcweft.web-editcontext-real-ime.trace.v1",
+  "mode": "unsupported",
+  "capturedAt": "2026-06-28T00:00:00+09:00",
+  "redaction": {
+    "rawTextAllowed": false,
+    "secureFieldPolicy": "secure fields redact surrounding text, event text, clipboard text, and selection-derived geometry"
+  },
+  "events": [
+    {
+      "seq": 1,
+      "timeMs": 0,
+      "kind": "forced_unsupported",
+      "detail": {
+        "editContextType": "undefined",
+        "elementHasEditContext": false
+      }
+    },
+    {
+      "seq": 2,
+      "timeMs": 1,
+      "kind": "arcweft_status",
+      "detail": {
+        "owner": "arcweft-player",
+        "state": "unsupported_no_fallback",
+        "secure": false,
+        "fallbackInstalled": false
+      }
+    }
+  ],
+  "result": {
+    "sampleState": "unsupported",
+    "fallbackInstalled": false,
+    "glueOwner": "arcweft-player",
+    "hiddenFallbackCount": 0
+  },
+  "analysis": {
+    "status": "fixture_shape_only",
+    "checks": {
+      "unsupportedSuccess": true,
+      "noHiddenFallback": true
+    },
+    "note": "Run ARCWEFT_REAL_IME_MODE=unsupported npm run test:ime:real in a checkout for executable evidence."
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "arcweft.web-editcontext-real-ime.trace.v1",
+  "mode": "manual",
+  "capturedAt": "REPLACE_WITH_HARNESS_TIMESTAMP",
+  "expectedCommit": {
+    "redacted": true,
+    "utf16Length": 3,
+    "hasJapanese": true,
+    "hasAscii": false
+  },
+  "redaction": {
+    "rawTextAllowed": false,
+    "secureFieldPolicy": "secure fields redact surrounding text, event text, clipboard text, and selection-derived geometry"
+  },
+  "operatorScript": [
+    "Focus #arcweft-ime-surface",
+    "Enable Japanese IME",
+    "Type nihongo and commit 日本語",
+    "Exercise ArrowLeft and Shift+ArrowLeft while composition is active",
+    "Pointer click/drag in the Arcweft surface",
+    "Exercise Backspace, Delete, and Select All",
+    "Click Finish trace"
+  ],
+  "events": [],
+  "analysis": {
+    "status": "template_not_evidence"
+  }
+}
