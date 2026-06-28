@@ -7,7 +7,10 @@ use crate::swap::{
     GenerationBuildError, GenerationId, ProgramGeneration, SwapCompatibility, SwapError,
     SwapSession, classify_swap,
 };
-use crate::task::HostTaskDispatch;
+use crate::task::{
+    HostTaskDispatch, RuntimeTaskCancelOutcome, RuntimeTaskCancelTarget, RuntimeTaskListOptions,
+    RuntimeTaskOwner, RuntimeTaskRecord, RuntimeTaskRegistry,
+};
 use arcweft_bundle::container::{BundleDigest, BundleView, ReadBudget};
 use arcweft_bundle::patch::{
     BundlePatchArtifact, PatchBundleError, PatchCompatibility, PatchValidationError,
@@ -29,7 +32,7 @@ use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepStats,
     RuntimeStepStopReason,
 };
-use arcweft_core::task::{CancelScopeId, LogicalEpoch, TaskEvent, TaskSequence};
+use arcweft_core::task::{CancelScopeId, LogicalEpoch, TaskEvent, TaskEventKind, TaskSequence};
 use arcweft_core::value::RuntimeBinding;
 use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioEvent};
 use arcweft_interaction_model::id::Identifier;
@@ -149,6 +152,7 @@ pub struct BundleSession {
     swap: SwapSession,
     runtime_generation_pin: Option<Arc<ProgramGeneration>>,
     task_generation_pins: BTreeMap<TaskSequence, Arc<ProgramGeneration>>,
+    tasks: RuntimeTaskRegistry,
     next_generation_id: u64,
     active_container_content_root: Option<BundleDigest>,
 }
@@ -391,6 +395,7 @@ impl BundleSession {
             swap: SwapSession::new(generation.clone()),
             runtime_generation_pin: Some(generation),
             task_generation_pins: BTreeMap::new(),
+            tasks: RuntimeTaskRegistry::default(),
             next_generation_id: 1,
             active_container_content_root,
         })
@@ -416,6 +421,17 @@ impl BundleSession {
         self.task_generation_pins
             .get(&sequence)
             .map(|generation| generation.id)
+    }
+
+    pub fn runtime_tasks(&self, options: RuntimeTaskListOptions) -> Vec<RuntimeTaskRecord> {
+        self.tasks.list(options)
+    }
+
+    pub fn cancel_runtime_tasks(
+        &mut self,
+        target: &RuntimeTaskCancelTarget,
+    ) -> RuntimeTaskCancelOutcome {
+        self.tasks.cancel(target)
     }
 
     pub fn runtime_image_count(&self) -> usize {
@@ -707,14 +723,16 @@ impl BundleSession {
         mut input: BundleStepInput,
     ) -> BundleSessionStep {
         self.swap.enter_runtime_step();
-        self.release_completed_task_generation_pins(&input.task_events);
+        input.task_events.extend(self.tasks.drain_task_events());
+        let task_events = self.tasks.apply_task_events(input.task_events);
+        self.release_completed_task_generation_pins(&task_events);
         input.input_events.append(&mut self.pending_input_events);
         let runtime_input = RuntimeStepInput {
             tick: clock.tick(),
             dt: clock.dt(),
             bindings: input.bindings,
             input_events: input.input_events,
-            task_events: input.task_events,
+            task_events,
             audio_events: input.audio_events,
             source_events: input.source_events,
             host_call_results: Vec::new(),
@@ -751,6 +769,11 @@ impl BundleSession {
         );
 
         let requested_tasks = self.dispatch_requested_tasks(clock, output.requests.tasks);
+        let cancel_scopes = output.requests.cancel_scopes;
+        for scope in &cancel_scopes {
+            self.tasks
+                .cancel(&RuntimeTaskCancelTarget::Scope(scope.0.clone()));
+        }
         let audio_commands = output.requests.audio;
         let finished = matches!(
             &result.fiber_status,
@@ -779,7 +802,7 @@ impl BundleSession {
             presentation: self.presentation.clone(),
             audio_commands,
             requested_tasks,
-            cancel_scopes: output.requests.cancel_scopes,
+            cancel_scopes,
             source_close: output.requests.source_close,
             finished,
         }
@@ -808,12 +831,14 @@ impl BundleSession {
                 self.next_task_sequence = self.next_task_sequence.saturating_add(1);
                 self.task_generation_pins
                     .insert(sequence, generation.clone());
-                HostTaskDispatch {
+                let dispatch = HostTaskDispatch {
                     generation: generation.id,
                     logical_epoch: LogicalEpoch(clock.tick().0),
                     sequence,
                     task,
-                }
+                };
+                self.tasks.register_dispatch(&dispatch);
+                dispatch
             })
             .collect()
     }
@@ -823,6 +848,9 @@ impl BundleSession {
             return;
         }
         for event in task_events {
+            if matches!(event.kind, TaskEventKind::Progress(_)) {
+                continue;
+            }
             self.task_generation_pins.remove(&event.sequence);
         }
         self.retire_unused_generations();
@@ -879,6 +907,19 @@ impl BundleSession {
         for generation in table_only_generations {
             self.runtime_images.remove(generation);
         }
+    }
+}
+
+impl RuntimeTaskOwner for BundleSession {
+    fn runtime_tasks(&self, options: RuntimeTaskListOptions) -> Vec<RuntimeTaskRecord> {
+        BundleSession::runtime_tasks(self, options)
+    }
+
+    fn cancel_runtime_tasks(
+        &mut self,
+        target: RuntimeTaskCancelTarget,
+    ) -> RuntimeTaskCancelOutcome {
+        BundleSession::cancel_runtime_tasks(self, &target)
     }
 }
 

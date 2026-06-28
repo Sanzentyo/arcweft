@@ -334,6 +334,7 @@ dependencies = [
  "arcweft-lang-sema",
  "arcweft-lang-syntax",
  "arcweft-runtime-codegen",
+ "arcweft-runtime-driver",
  "arcweft-tooling",
  "blake3",
  "serde_json",

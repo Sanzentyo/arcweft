@@ -2,9 +2,10 @@ use std::collections::BTreeMap;
 
 use arcweft_agent_protocol::protocol::{AgentProjectGraph, AgentSessionInfo, ObservationEnvelope};
 use arcweft_agent_repl::command::{
-    BuiltinReplCommandHandler, ReplCommand, ReplCommandContext, ReplCommandDiagnosticCode,
-    ReplCommandEvidence, ReplCommandHandler, ReplCommandHost, ReplCommandHostResult,
-    ReplCommandStatus, ReplInput, ReplTracePolicy, parse_repl_command, parse_repl_input,
+    BuiltinReplCommandHandler, CancelCommand, ReplCancelOutcome, ReplCommand, ReplCommandContext,
+    ReplCommandDiagnosticCode, ReplCommandEvidence, ReplCommandHandler, ReplCommandHost,
+    ReplCommandHostResult, ReplCommandStatus, ReplInput, ReplTracePolicy, parse_repl_command,
+    parse_repl_input,
 };
 use arcweft_agent_repl::{ReplBaseSnapshot, ReplSession, ReplSessionOptions};
 use arcweft_lang_sema::project_index::{ProgramHash, ProjectSemanticIndex};
@@ -103,6 +104,67 @@ fn repl_trace_allows_replay_host_reads_without_overlay_mutation() {
     assert_eq!(host.observations, 1);
     assert_eq!(before.committed_cells, after.committed_cells);
     assert_eq!(before.overlay_hash, after.overlay_hash);
+}
+
+#[test]
+fn repl_trace_rejects_cancel_before_host_mutation() {
+    #[derive(Default)]
+    struct CancelTrackingHost {
+        cancels: usize,
+    }
+
+    impl ReplCommandHost for CancelTrackingHost {
+        fn session_info(&mut self) -> ReplCommandHostResult<AgentSessionInfo> {
+            Ok(AgentSessionInfo {
+                session_id: "trace.session".to_owned(),
+                program_hash: "hash.trace.base".to_owned(),
+                project_entities: Vec::new(),
+                project_graph: AgentProjectGraph::default(),
+                profile: Some("trace.replay".to_owned()),
+                capabilities: vec!["observe".to_owned()],
+            })
+        }
+
+        fn observe(
+            &mut self,
+            _command: &arcweft_agent_repl::command::ObserveCommand,
+        ) -> ReplCommandHostResult<ObservationEnvelope> {
+            Ok(observation(1))
+        }
+
+        fn step(
+            &mut self,
+            command: &arcweft_agent_repl::command::StepCommand,
+        ) -> ReplCommandHostResult<ObservationEnvelope> {
+            Ok(observation(u64::from(command.frames)))
+        }
+
+        fn cancel(&mut self, command: &CancelCommand) -> ReplCommandHostResult<ReplCancelOutcome> {
+            self.cancels += 1;
+            Ok(ReplCancelOutcome {
+                target: command.target.clone(),
+                cancelled: 1,
+                pending_after: 0,
+            })
+        }
+    }
+
+    let mut session = test_session();
+    let mut host = CancelTrackingHost::default();
+    let mut handler = BuiltinReplCommandHandler;
+    let result = {
+        let mut context = ReplCommandContext::new(&mut session)
+            .with_trace_policy(ReplTracePolicy::ReadOnlyTrace)
+            .with_host(&mut host);
+        handler.handle(&mut context, parse_repl_command(":cancel all").unwrap())
+    };
+
+    assert_eq!(result.status, ReplCommandStatus::Rejected);
+    assert_eq!(host.cancels, 0);
+    assert_eq!(
+        result.diagnostics[0].code,
+        ReplCommandDiagnosticCode::ReadOnlyTraceRejected
+    );
 }
 
 #[derive(Default)]

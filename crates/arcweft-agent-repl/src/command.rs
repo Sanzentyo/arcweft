@@ -8,6 +8,7 @@
 mod dispatch;
 mod host;
 mod parse;
+mod runtime_task;
 mod types;
 
 pub use self::dispatch::{
@@ -20,6 +21,7 @@ pub use self::host::{
 pub use self::parse::{
     ReplCommandParseError, parse_repl_command, parse_repl_input, repl_command_names,
 };
+pub use self::runtime_task::RuntimeTaskReplCommandHost;
 pub use self::types::{
     CancelCommand, CapabilitiesCommand, CellsCommand, CodegenCommand, GenerationsCommand,
     HelpCommand, LoadCommand, ObserveCommand, ReloadCommand, ReplBackgroundQueuedEvidence,
