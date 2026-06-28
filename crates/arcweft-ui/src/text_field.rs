@@ -944,6 +944,21 @@ impl TextEditState {
             metrics,
             policy.writing_mode,
         );
+        let text_local_selection_rects =
+            selection_rects_for_text_field(self.selection, bounds, metrics, policy.writing_mode);
+        let text_local_composition_rects =
+            self.composition
+                .as_ref()
+                .map_or_else(Vec::new, |composition| {
+                    let base = composition.replacement().map_or(self.selection, ui_range);
+                    let range = UiTextByteRange::new(
+                        base.start(),
+                        base.start().saturating_add(
+                            u32::try_from(composition.preedit().len()).unwrap_or(u32::MAX),
+                        ),
+                    );
+                    selection_rects_for_text_field(range, bounds, metrics, policy.writing_mode)
+                });
         arcweft_presentation::text_input::TextInputGeometrySnapshot::new(
             arcweft_presentation::text_input::TextInputGeometrySnapshotParts {
                 session,
@@ -952,6 +967,8 @@ impl TextEditState {
                 text_local_control_rect: bounds,
                 text_local_caret_rect: caret,
                 text_local_character_bounds: character_bounds,
+                text_local_selection_rects,
+                text_local_composition_rects,
                 text_local_to_viewport: policy.text_local_to_viewport,
                 viewport_to_screen: policy.viewport_to_screen,
             },
@@ -1156,6 +1173,21 @@ fn character_bounds_for_visual_text(
             )
         })
         .collect()
+}
+
+fn selection_rects_for_text_field(
+    range: UiTextByteRange,
+    bounds: HitRect,
+    metrics: TextFieldMetrics,
+    writing_mode: arcweft_presentation::text_input::TextWritingMode,
+) -> Vec<arcweft_presentation::text_input::TextRangeRect> {
+    if range.start() == range.end() {
+        return Vec::new();
+    }
+    vec![arcweft_presentation::text_input::TextRangeRect::new(
+        TextRange::new(TextByteOffset(range.start()), TextByteOffset(range.end())),
+        range_rect_for_writing_mode(bounds, range, metrics, writing_mode),
+    )]
 }
 
 fn range_rect_for_writing_mode(

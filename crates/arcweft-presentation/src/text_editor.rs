@@ -14,7 +14,8 @@ use crate::text_input::{
     TextCompositionSegment, TextCompositionUpdate, TextDeleteUnit, TextEditCommand,
     TextGeometryTransform, TextInput, TextInputClientSnapshot, TextInputGeometrySnapshot,
     TextInputGeometrySnapshotParts, TextInputOptions, TextInputSecurityPolicy, TextInputSessionId,
-    TextRange, TextRevision, TextSelectionAffinity, TextUtf16Offset, TextWritingMode,
+    TextRange, TextRangeRect, TextRevision, TextSelectionAffinity, TextUtf16Offset,
+    TextWritingMode,
 };
 use core::fmt;
 
@@ -37,6 +38,7 @@ pub struct TextEditorState {
 /// samples can use the monospaced defaults without platform-specific code.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextEditorLayout {
+    source: TextEditorLayoutSource,
     text_local_control_rect: HitRect,
     text_origin_x: f32,
     text_origin_y: f32,
@@ -46,6 +48,41 @@ pub struct TextEditorLayout {
     writing_mode: TextWritingMode,
     text_local_to_viewport: TextGeometryTransform,
     viewport_to_screen: TextGeometryTransform,
+    glyphs: Vec<TextEditorGlyphGeometry>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum TextEditorLayoutSource {
+    Renderer,
+    #[default]
+    MonospacedFixture,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextEditorGlyphGeometry {
+    range: TextRange<TextByteOffset>,
+    bounds: HitRect,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextEditorLayoutParts {
+    pub source: TextEditorLayoutSource,
+    pub text_local_control_rect: HitRect,
+    pub glyphs: Vec<TextEditorGlyphGeometry>,
+    pub caret_width: f32,
+    pub writing_mode: TextWritingMode,
+    pub text_local_to_viewport: TextGeometryTransform,
+    pub viewport_to_screen: TextGeometryTransform,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TextEditorLayoutError {
+    RendererLayoutWithoutGlyphs,
+    InvalidGlyphRange(TextIndexError),
+    OverlappingGlyphRange {
+        previous: TextRange<TextByteOffset>,
+        next: TextRange<TextByteOffset>,
+    },
 }
 
 /// Paired snapshots produced after an edit, selection move, scroll, or layout
@@ -84,6 +121,7 @@ pub enum TextEditorError {
     },
     SecureClipboardCommand(TextEditCommand),
     ClipboardEmpty,
+    Layout(TextEditorLayoutError),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -250,6 +288,23 @@ impl TextEditorState {
         x: f32,
         selecting: bool,
     ) -> Result<(), TextEditorError> {
+        self.set_caret_from_text_local_point(layout, x, layout.text_origin_y, selecting)
+    }
+
+    /// Moves pointer coordinates in text-local units to the nearest renderer
+    /// glyph boundary. Monospaced fixture layout is retained for deterministic
+    /// tests and minimal samples.
+    pub fn set_caret_from_text_local_point(
+        &mut self,
+        layout: &TextEditorLayout,
+        x: f32,
+        y: f32,
+        selecting: bool,
+    ) -> Result<(), TextEditorError> {
+        if layout.is_renderer_backed() {
+            let caret = layout.hit_test_text_local_point(x, y, &self.index()?)?;
+            return self.move_caret_to(caret, selecting);
+        }
         let index = self.index()?;
         let relative_x = (x - layout.text_origin_x).max(0.0);
         let boundary_count = index.grapheme_boundaries().len();
@@ -301,6 +356,8 @@ impl TextEditorState {
                 text_local_control_rect: layout.text_local_control_rect,
                 text_local_caret_rect: caret_rect,
                 text_local_character_bounds: self.character_bounds(layout),
+                text_local_selection_rects: self.selection_rects(layout),
+                text_local_composition_rects: self.composition_rects(layout),
                 text_local_to_viewport: layout.text_local_to_viewport,
                 viewport_to_screen: layout.viewport_to_screen,
             },
@@ -720,6 +777,13 @@ impl TextEditorState {
     }
 
     fn character_bounds(&self, layout: &TextEditorLayout) -> Vec<TextCharacterBounds> {
+        if layout.is_renderer_backed() {
+            return layout
+                .glyphs
+                .iter()
+                .map(|glyph| TextCharacterBounds::new(glyph.range, glyph.bounds))
+                .collect();
+        }
         let mut x = layout.text_origin_x;
         let mut bounds = Vec::new();
         for (byte, ch) in self.text.char_indices() {
@@ -744,6 +808,11 @@ impl TextEditorState {
     }
 
     fn caret_rect(&self, layout: &TextEditorLayout) -> Result<HitRect, TextEditorError> {
+        if layout.is_renderer_backed() {
+            return layout
+                .caret_rect_for_offset(self.caret, &self.index()?)
+                .map_err(Into::into);
+        }
         let index = self.index()?;
         let slot = index
             .grapheme_boundaries()
@@ -757,6 +826,18 @@ impl TextEditorState {
             layout.caret_width,
             layout.line_height,
         ))
+    }
+
+    fn selection_rects(&self, layout: &TextEditorLayout) -> Vec<TextRangeRect> {
+        if self.selection_is_collapsed() {
+            return Vec::new();
+        }
+        layout.range_rects(self.selection)
+    }
+
+    fn composition_rects(&self, layout: &TextEditorLayout) -> Vec<TextRangeRect> {
+        self.composition_range()
+            .map_or_else(Vec::new, |range| layout.range_rects(range))
     }
 
     fn selection_is_collapsed(&self) -> bool {
@@ -774,7 +855,12 @@ impl TextEditorState {
 
 impl TextEditorLayout {
     pub fn new(text_local_control_rect: HitRect) -> Self {
+        Self::monospaced_fixture(text_local_control_rect)
+    }
+
+    pub fn monospaced_fixture(text_local_control_rect: HitRect) -> Self {
         Self {
+            source: TextEditorLayoutSource::MonospacedFixture,
             text_local_control_rect,
             text_origin_x: text_local_control_rect.x,
             text_origin_y: text_local_control_rect.y,
@@ -784,6 +870,158 @@ impl TextEditorLayout {
             writing_mode: TextWritingMode::HorizontalTb,
             text_local_to_viewport: TextGeometryTransform::identity(),
             viewport_to_screen: TextGeometryTransform::identity(),
+            glyphs: Vec::new(),
+        }
+    }
+
+    pub fn from_renderer_parts_for_text(
+        text: &str,
+        parts: TextEditorLayoutParts,
+    ) -> Result<Self, TextEditorLayoutError> {
+        if parts.source == TextEditorLayoutSource::Renderer
+            && parts.glyphs.is_empty()
+            && !text.is_empty()
+        {
+            return Err(TextEditorLayoutError::RendererLayoutWithoutGlyphs);
+        }
+        let index = TextIndexSnapshot::try_new(text.to_owned())?;
+        let mut previous: Option<TextRange<TextByteOffset>> = None;
+        for glyph in &parts.glyphs {
+            index.validate_byte_range(glyph.range)?;
+            if let Some(previous_range) = previous
+                && previous_range.end().0 > glyph.range.start().0
+            {
+                return Err(TextEditorLayoutError::OverlappingGlyphRange {
+                    previous: previous_range,
+                    next: glyph.range,
+                });
+            }
+            previous = Some(glyph.range);
+        }
+        Ok(Self {
+            source: parts.source,
+            text_local_control_rect: parts.text_local_control_rect,
+            text_origin_x: parts.text_local_control_rect.x,
+            text_origin_y: parts.text_local_control_rect.y,
+            grapheme_advance: 0.0,
+            line_height: parts.text_local_control_rect.height.max(1.0),
+            caret_width: parts.caret_width.max(1.0),
+            writing_mode: parts.writing_mode,
+            text_local_to_viewport: parts.text_local_to_viewport,
+            viewport_to_screen: parts.viewport_to_screen,
+            glyphs: parts.glyphs,
+        })
+    }
+
+    pub const fn source(&self) -> TextEditorLayoutSource {
+        self.source
+    }
+
+    pub const fn is_renderer_backed(&self) -> bool {
+        matches!(self.source, TextEditorLayoutSource::Renderer)
+    }
+
+    pub fn glyphs(&self) -> &[TextEditorGlyphGeometry] {
+        &self.glyphs
+    }
+
+    fn caret_rect_for_offset(
+        &self,
+        offset: TextByteOffset,
+        index: &TextIndexSnapshot,
+    ) -> Result<HitRect, TextEditorLayoutError> {
+        index.validate_byte_offset(offset)?;
+        if let Some(glyph) = self
+            .glyphs
+            .iter()
+            .find(|glyph| offset.0 <= glyph.range.start().0)
+        {
+            return Ok(self.caret_rect_at_glyph_start(*glyph));
+        }
+        Ok(self.glyphs.last().map_or_else(
+            || {
+                HitRect::new(
+                    self.text_local_control_rect.x,
+                    self.text_local_control_rect.y,
+                    self.caret_width,
+                    self.text_local_control_rect.height.max(1.0),
+                )
+            },
+            |glyph| self.caret_rect_at_glyph_end(*glyph),
+        ))
+    }
+
+    fn hit_test_text_local_point(
+        &self,
+        x: f32,
+        y: f32,
+        index: &TextIndexSnapshot,
+    ) -> Result<TextByteOffset, TextEditorLayoutError> {
+        if self.glyphs.is_empty() {
+            return Ok(TextByteOffset(0));
+        }
+        let same_line = self
+            .glyphs
+            .iter()
+            .copied()
+            .filter(|glyph| y >= glyph.bounds.y && y <= glyph.bounds.y + glyph.bounds.height)
+            .collect::<Vec<_>>();
+        let candidates = if same_line.is_empty() {
+            self.glyphs.as_slice()
+        } else {
+            same_line.as_slice()
+        };
+        for glyph in candidates {
+            let mid = glyph.bounds.x + glyph.bounds.width * 0.5;
+            if x <= mid {
+                return Ok(index.validate_byte_offset(*glyph.range.start())?);
+            }
+        }
+        let end = candidates
+            .last()
+            .map_or(TextByteOffset(0), |glyph| *glyph.range.end());
+        index.validate_byte_offset(end).map_err(Into::into)
+    }
+
+    fn range_rects(&self, range: TextRange<TextByteOffset>) -> Vec<TextRangeRect> {
+        self.glyphs
+            .iter()
+            .filter(|glyph| ranges_overlap(glyph.range, range))
+            .map(|glyph| TextRangeRect::new(glyph.range, glyph.bounds))
+            .collect()
+    }
+
+    fn caret_rect_at_glyph_start(&self, glyph: TextEditorGlyphGeometry) -> HitRect {
+        match self.writing_mode {
+            TextWritingMode::HorizontalTb => HitRect::new(
+                glyph.bounds.x,
+                glyph.bounds.y,
+                self.caret_width,
+                glyph.bounds.height.max(1.0),
+            ),
+            TextWritingMode::VerticalRl | TextWritingMode::VerticalLr => HitRect::new(
+                glyph.bounds.x,
+                glyph.bounds.y,
+                glyph.bounds.width.max(1.0),
+                self.caret_width,
+            ),
+        }
+    }
+
+    fn caret_rect_at_glyph_end(&self, glyph: TextEditorGlyphGeometry) -> HitRect {
+        match self.writing_mode {
+            TextWritingMode::HorizontalTb => HitRect::new(
+                glyph.bounds.x + glyph.bounds.width,
+                glyph.bounds.y,
+                self.caret_width,
+                glyph.bounds.height.max(1.0),
+            ),
+            TextWritingMode::VerticalRl | TextWritingMode::VerticalLr => HitRect::new(
+                glyph.bounds.x,
+                glyph.bounds.y + glyph.bounds.height,
+                glyph.bounds.width.max(1.0),
+                self.caret_width,
+            ),
         }
     }
 
@@ -837,6 +1075,20 @@ impl Default for TextEditorLayout {
     }
 }
 
+impl TextEditorGlyphGeometry {
+    pub const fn new(range: TextRange<TextByteOffset>, bounds: HitRect) -> Self {
+        Self { range, bounds }
+    }
+
+    pub const fn range(self) -> TextRange<TextByteOffset> {
+        self.range
+    }
+
+    pub const fn bounds(self) -> HitRect {
+        self.bounds
+    }
+}
+
 impl TextEditorSnapshots {
     pub const fn client(&self) -> &TextInputClientSnapshot {
         &self.client
@@ -871,6 +1123,18 @@ impl From<TextIndexError> for TextEditorError {
     }
 }
 
+impl From<TextEditorLayoutError> for TextEditorError {
+    fn from(error: TextEditorLayoutError) -> Self {
+        Self::Layout(error)
+    }
+}
+
+impl From<TextIndexError> for TextEditorLayoutError {
+    fn from(error: TextIndexError) -> Self {
+        Self::InvalidGlyphRange(error)
+    }
+}
+
 impl fmt::Display for TextEditorError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -886,11 +1150,16 @@ impl fmt::Display for TextEditorError {
                 )
             }
             Self::ClipboardEmpty => write!(f, "paste requested but editor clipboard is empty"),
+            Self::Layout(error) => write!(f, "text editor layout error: {error:?}"),
         }
     }
 }
 
 impl std::error::Error for TextEditorError {}
+
+fn ranges_overlap(left: TextRange<TextByteOffset>, right: TextRange<TextByteOffset>) -> bool {
+    left.start().0 < right.end().0 && right.start().0 < left.end().0
+}
 
 fn add_offset(start: TextByteOffset, relative: TextByteOffset) -> TextByteOffset {
     TextByteOffset(start.0.saturating_add(relative.0))

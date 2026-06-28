@@ -1073,6 +1073,7 @@ dependencies = [
  "arcweft-layout",
  "arcweft-presentation",
  "arcweft-render-text",
+ "arcweft-text-layout",
  "arcweft-ui",
  "bytemuck",
  "glyphon",

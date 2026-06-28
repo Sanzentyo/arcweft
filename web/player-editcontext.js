@@ -163,7 +163,7 @@ export class ArcweftEditContextPlayerGlue {
   }
 
   updateGeometry(geometry) {
-    this.#state.lastGeometry = geometry ?? null;
+    this.#state.lastGeometry = normalizeRuntimeGeometry(geometry);
     this.#syncEditContextGeometry();
     this.#emitStatus("geometry_update");
   }
@@ -328,7 +328,7 @@ export class ArcweftEditContextPlayerGlue {
     }
     event.preventDefault();
     this.#host.focus();
-    const offset = this.#offsetForClientX(event.clientX);
+    const offset = this.#offsetForClientPoint(event.clientX, event.clientY);
     this.#state.pointerSelection = { pointerId: event.pointerId, anchor: offset };
     this.#host.setPointerCapture?.(event.pointerId);
     this.#setSelection(offset, offset, offset);
@@ -345,7 +345,7 @@ export class ArcweftEditContextPlayerGlue {
       return;
     }
     event.preventDefault();
-    const offset = this.#offsetForClientX(event.clientX);
+    const offset = this.#offsetForClientPoint(event.clientX, event.clientY);
     this.#setSelection(Math.min(active.anchor, offset), Math.max(active.anchor, offset), active.anchor);
     await this.#dispatchSelectionUpdate();
     this.#syncEditContextText();
@@ -505,7 +505,11 @@ export class ArcweftEditContextPlayerGlue {
     this.#state.selectionAnchor = Math.max(0, Math.min(textLength, anchor));
   }
 
-  #offsetForClientX(clientX) {
+  #offsetForClientPoint(clientX, clientY) {
+    const runtimeOffset = runtimeOffsetForPoint(this.#state.lastGeometry, clientX, clientY);
+    if (runtimeOffset !== null) {
+      return nearestGraphemeOffset(this.#state.text, runtimeOffset);
+    }
     const rect = this.#host.getBoundingClientRect();
     const textLength = utf16Length(this.#state.text);
     if (textLength === 0) {
@@ -553,20 +557,25 @@ export class ArcweftEditContextPlayerGlue {
   }
 
   #selectionBounds() {
-    if (this.#state.lastGeometry?.caretRect) {
-      return toDomRectInit(this.#state.lastGeometry.caretRect);
-    }
     const start = Math.min(this.#state.selectionStart, this.#state.selectionEnd);
     const end = Math.max(this.#state.selectionStart, this.#state.selectionEnd);
     if (start !== end) {
+      const runtimeSelection = runtimeRectsForRange(this.#state.lastGeometry?.selectionRects, start, end);
+      if (runtimeSelection.length > 0) {
+        return unionRects(runtimeSelection.map((entry) => entry.rect));
+      }
       return unionRects(this.#computeCharacterBounds(start, end));
+    }
+    if (this.#state.lastGeometry?.caretRect) {
+      return toDomRectInit(this.#state.lastGeometry.caretRect);
     }
     return this.#rectForOffset(start);
   }
 
   #computeCharacterBounds(rangeStart, rangeEnd) {
-    if (this.#state.lastGeometry?.characterBounds && this.#state.lastGeometry.characterBounds.length > 0) {
-      return this.#state.lastGeometry.characterBounds.map(toDomRectInit);
+    const runtimeBounds = runtimeRectsForRange(this.#state.lastGeometry?.characterBounds, rangeStart, rangeEnd);
+    if (runtimeBounds.length > 0) {
+      return runtimeBounds.map((entry) => entry.rect);
     }
     const start = clampOffset(this.#state.text, rangeStart);
     const end = clampOffset(this.#state.text, Math.max(rangeEnd, start));
@@ -697,6 +706,59 @@ function readComposing(editContext, event, fallback) {
     return editContext.isComposing;
   }
   return Boolean(fallback);
+}
+
+function normalizeRuntimeGeometry(geometry) {
+  if (!geometry) {
+    return null;
+  }
+  return {
+    controlRect: geometry.controlRect ? toDomRectInit(geometry.controlRect) : null,
+    caretRect: geometry.caretRect ? toDomRectInit(geometry.caretRect) : null,
+    selectionRects: normalizeRuntimeRangeRects(geometry.selectionRects),
+    compositionRects: normalizeRuntimeRangeRects(geometry.compositionRects),
+    characterBounds: normalizeRuntimeRangeRects(geometry.characterBounds),
+    textInsetX: geometry.textInsetX,
+    textInsetY: geometry.textInsetY,
+  };
+}
+
+function normalizeRuntimeRangeRects(rects = []) {
+  return Array.isArray(rects) ? rects
+    .map((entry) => ({
+      start: numberOr(entry?.range?.start, numberOr(entry?.start, 0)),
+      end: numberOr(entry?.range?.end, numberOr(entry?.end, 0)),
+      rect: toDomRectInit(entry?.rect ?? entry?.bounds),
+    }))
+    .filter((entry) => entry.end >= entry.start)
+    : [];
+}
+
+function runtimeRectsForRange(rects = [], start, end) {
+  if (!Array.isArray(rects) || rects.length === 0) {
+    return [];
+  }
+  const lo = Math.min(start, end);
+  const hi = Math.max(start, end);
+  return rects.filter((entry) => entry.start < hi && lo < entry.end);
+}
+
+function runtimeOffsetForPoint(geometry, x, y) {
+  const bounds = geometry?.characterBounds ?? [];
+  if (bounds.length === 0) {
+    return null;
+  }
+  for (const entry of bounds) {
+    const rect = entry.rect;
+    if (y >= rect.y && y <= rect.y + rect.height && x <= rect.x + rect.width * 0.5) {
+      return entry.start;
+    }
+    if (y >= rect.y && y <= rect.y + rect.height && x <= rect.x + rect.width) {
+      return entry.end;
+    }
+  }
+  const last = bounds[bounds.length - 1];
+  return last?.end ?? null;
 }
 
 function commandForKeyEvent(event) {

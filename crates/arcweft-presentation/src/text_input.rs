@@ -162,6 +162,13 @@ pub struct TextCharacterBounds {
     pub bounds: HitRect,
 }
 
+/// A range-tagged rectangle used for selection and composition fragments.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextRangeRect {
+    pub range: TextRange<TextByteOffset>,
+    pub bounds: HitRect,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum TextInputHostCommand {
     Activate {
@@ -760,11 +767,20 @@ pub struct TextInputGeometrySnapshot {
     revision: TextRevision,
     writing_mode: TextWritingMode,
     text_local_control_rect: HitRect,
+    text_local_caret_rect: HitRect,
+    text_local_character_bounds: Vec<TextCharacterBounds>,
+    text_local_selection_rects: Vec<TextRangeRect>,
+    text_local_composition_rects: Vec<TextRangeRect>,
     viewport_control_rect: HitRect,
     screen_control_rect: HitRect,
     viewport_caret_rect: HitRect,
+    viewport_character_bounds: Vec<TextCharacterBounds>,
+    viewport_selection_rects: Vec<TextRangeRect>,
+    viewport_composition_rects: Vec<TextRangeRect>,
     screen_caret_rect: HitRect,
     screen_character_bounds: Vec<TextCharacterBounds>,
+    screen_selection_rects: Vec<TextRangeRect>,
+    screen_composition_rects: Vec<TextRangeRect>,
 }
 
 /// Text-local geometry inputs used to construct a transformed IME snapshot.
@@ -776,6 +792,8 @@ pub struct TextInputGeometrySnapshotParts {
     pub text_local_control_rect: HitRect,
     pub text_local_caret_rect: HitRect,
     pub text_local_character_bounds: Vec<TextCharacterBounds>,
+    pub text_local_selection_rects: Vec<TextRangeRect>,
+    pub text_local_composition_rects: Vec<TextRangeRect>,
     pub text_local_to_viewport: TextGeometryTransform,
     pub viewport_to_screen: TextGeometryTransform,
 }
@@ -1081,6 +1099,12 @@ impl TextCharacterBounds {
     }
 }
 
+impl TextRangeRect {
+    pub const fn new(range: TextRange<TextByteOffset>, bounds: HitRect) -> Self {
+        Self { range, bounds }
+    }
+}
+
 impl TextInputClientSnapshot {
     #[must_use]
     pub fn redacted_for_secure_input(&self) -> Self {
@@ -1109,28 +1133,43 @@ impl TextInputGeometrySnapshot {
             text_local_control_rect,
             text_local_caret_rect,
             text_local_character_bounds,
+            text_local_selection_rects,
+            text_local_composition_rects,
             text_local_to_viewport,
             viewport_to_screen,
         } = parts;
         let text_local_to_screen = text_local_to_viewport.then(viewport_to_screen);
+        let viewport_character_bounds =
+            transform_character_bounds(&text_local_character_bounds, text_local_to_viewport);
+        let screen_character_bounds =
+            transform_character_bounds(&text_local_character_bounds, text_local_to_screen);
+        let viewport_selection_rects =
+            transform_range_rects(&text_local_selection_rects, text_local_to_viewport);
+        let screen_selection_rects =
+            transform_range_rects(&text_local_selection_rects, text_local_to_screen);
+        let viewport_composition_rects =
+            transform_range_rects(&text_local_composition_rects, text_local_to_viewport);
+        let screen_composition_rects =
+            transform_range_rects(&text_local_composition_rects, text_local_to_screen);
         Self {
             session,
             revision,
             writing_mode,
             text_local_control_rect,
+            text_local_caret_rect,
+            text_local_character_bounds,
+            text_local_selection_rects,
+            text_local_composition_rects,
             viewport_control_rect: text_local_to_viewport.transform_rect(text_local_control_rect),
             screen_control_rect: text_local_to_screen.transform_rect(text_local_control_rect),
             viewport_caret_rect: text_local_to_viewport.transform_rect(text_local_caret_rect),
+            viewport_character_bounds,
+            viewport_selection_rects,
+            viewport_composition_rects,
             screen_caret_rect: text_local_to_screen.transform_rect(text_local_caret_rect),
-            screen_character_bounds: text_local_character_bounds
-                .into_iter()
-                .map(|bounds| {
-                    TextCharacterBounds::new(
-                        bounds.range,
-                        text_local_to_screen.transform_rect(bounds.bounds),
-                    )
-                })
-                .collect(),
+            screen_character_bounds,
+            screen_selection_rects,
+            screen_composition_rects,
         }
     }
 
@@ -1150,6 +1189,22 @@ impl TextInputGeometrySnapshot {
         self.text_local_control_rect
     }
 
+    pub const fn text_local_caret_rect(&self) -> HitRect {
+        self.text_local_caret_rect
+    }
+
+    pub fn text_local_character_bounds(&self) -> &[TextCharacterBounds] {
+        &self.text_local_character_bounds
+    }
+
+    pub fn text_local_selection_rects(&self) -> &[TextRangeRect] {
+        &self.text_local_selection_rects
+    }
+
+    pub fn text_local_composition_rects(&self) -> &[TextRangeRect] {
+        &self.text_local_composition_rects
+    }
+
     pub const fn viewport_control_rect(&self) -> HitRect {
         self.viewport_control_rect
     }
@@ -1160,6 +1215,18 @@ impl TextInputGeometrySnapshot {
 
     pub const fn viewport_caret_rect(&self) -> HitRect {
         self.viewport_caret_rect
+    }
+
+    pub fn viewport_character_bounds(&self) -> &[TextCharacterBounds] {
+        &self.viewport_character_bounds
+    }
+
+    pub fn viewport_selection_rects(&self) -> &[TextRangeRect] {
+        &self.viewport_selection_rects
+    }
+
+    pub fn viewport_composition_rects(&self) -> &[TextRangeRect] {
+        &self.viewport_composition_rects
     }
 
     pub const fn screen_caret_rect(&self) -> HitRect {
@@ -1174,6 +1241,14 @@ impl TextInputGeometrySnapshot {
         &self.screen_character_bounds
     }
 
+    pub fn screen_selection_rects(&self) -> &[TextRangeRect] {
+        &self.screen_selection_rects
+    }
+
+    pub fn screen_composition_rects(&self) -> &[TextRangeRect] {
+        &self.screen_composition_rects
+    }
+
     #[must_use]
     pub fn redacted_for_secure_input(&self) -> Self {
         Self {
@@ -1181,11 +1256,42 @@ impl TextInputGeometrySnapshot {
             revision: self.revision,
             writing_mode: self.writing_mode,
             text_local_control_rect: self.text_local_control_rect,
+            text_local_caret_rect: self.text_local_control_rect,
+            text_local_character_bounds: Vec::new(),
+            text_local_selection_rects: Vec::new(),
+            text_local_composition_rects: Vec::new(),
             viewport_control_rect: self.viewport_control_rect,
             screen_control_rect: self.screen_control_rect,
             viewport_caret_rect: self.viewport_control_rect,
+            viewport_character_bounds: Vec::new(),
+            viewport_selection_rects: Vec::new(),
+            viewport_composition_rects: Vec::new(),
             screen_caret_rect: self.screen_control_rect,
             screen_character_bounds: Vec::new(),
+            screen_selection_rects: Vec::new(),
+            screen_composition_rects: Vec::new(),
         }
     }
+}
+
+fn transform_character_bounds(
+    bounds: &[TextCharacterBounds],
+    transform: TextGeometryTransform,
+) -> Vec<TextCharacterBounds> {
+    bounds
+        .iter()
+        .map(|bounds| {
+            TextCharacterBounds::new(bounds.range, transform.transform_rect(bounds.bounds))
+        })
+        .collect()
+}
+
+fn transform_range_rects(
+    rects: &[TextRangeRect],
+    transform: TextGeometryTransform,
+) -> Vec<TextRangeRect> {
+    rects
+        .iter()
+        .map(|rect| TextRangeRect::new(rect.range, transform.transform_rect(rect.bounds)))
+        .collect()
 }

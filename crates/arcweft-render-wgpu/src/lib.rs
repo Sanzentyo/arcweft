@@ -11,5 +11,6 @@ pub mod geometry;
 pub mod offscreen;
 pub mod renderer;
 pub mod sample;
+pub mod text_editor_geometry;
 pub mod ui;
 pub mod ui_scene;

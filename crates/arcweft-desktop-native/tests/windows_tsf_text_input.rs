@@ -127,6 +127,8 @@ fn geometry_reports_clipped_no_layout_and_secure_redaction() {
             TextRange::new(TextByteOffset(0), TextByteOffset(1)),
             HitRect::new(5.25, 0.0, 8.25, 20.0),
         )],
+        text_local_selection_rects: Vec::new(),
+        text_local_composition_rects: Vec::new(),
         text_local_to_viewport: TextGeometryTransform::default(),
         viewport_to_screen: TextGeometryTransform::default(),
     });
