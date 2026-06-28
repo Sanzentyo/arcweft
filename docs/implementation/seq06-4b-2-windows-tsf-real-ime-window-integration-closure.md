@@ -57,6 +57,27 @@ running the sample with Microsoft Japanese IME enabled and capturing real
 preedit, candidate movement, commit, deletion, selection movement, focus loss,
 and secure redaction behavior.
 
+## Follow-up after real-machine probe
+
+The standalone `windows-tsf-ime-sample` is now treated as a backend diagnostic
+harness, not as the final Arcweft acceptance surface. A real-machine probe
+showed that it can present a blank native window and fail to anchor IME candidate
+UI to a visible Arcweft-rendered text target. That evidence means the remaining
+work is not another TSF-only connection point; it is the cross-platform native
+player bridge that connects focused Arcweft text controls, renderer-backed
+geometry, platform backend sessions, shared editor mutations, and player trace
+capture.
+
+The follow-up request is:
+
+- `docs/reviews/requests/2026-06-29-seq-06.4j-native-player-platform-text-input-bridge-package.md`
+
+After seq06.4j, Windows real IME acceptance should run through the normal
+player/DSL path, for example `arcw run --runner native <sample.arcw>` with a
+text-input trace output flag. The standalone TSF sample may remain useful for
+low-level COM lifecycle diagnostics, but it must not be used as the final
+evidence that Arcweft native text input works.
+
 ## Required commands
 
 ```bash
@@ -65,6 +86,7 @@ cargo check -p arcweft-desktop-native --target x86_64-pc-windows-msvc --all-targ
 cargo test -p arcweft-desktop-native --test windows_tsf_text_input --all-features
 cargo test -p arcweft-desktop-native --test windows_tsf_real_ime_source_gate --all-features
 cargo test -p arcweft-desktop-native --test windows_tsf_real_ime_lifecycle --target x86_64-pc-windows-msvc --all-features
+# Diagnostic harness only; final acceptance moves to the seq06.4j player/DSL path.
 cargo run -p arcweft-player-native --bin windows-tsf-ime-sample -- --trace-out fixtures/windows-tsf-real-ime/microsoft-japanese-ime-hiragana.real.json
 cargo clippy -p arcweft-desktop-native -p arcweft-player-native --all-targets --all-features -- -D warnings
 cargo +nightly -Zscript tools/structure-audit.rs --root .
