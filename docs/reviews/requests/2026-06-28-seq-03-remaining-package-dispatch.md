@@ -3,59 +3,47 @@
 ## Purpose
 
 This file is the throw-ready index for the remaining seq03 work after the
-production application of seq03.1 through seq03.4.
+production application of seq03.1 through seq03.6.
 
-Seq03.1-03.4 are already production-applied: generation runtime table,
-generation-bound task dispatch, code-generational `BundleSession` behavior, and
-the first `WindowedRuntimeOwner` API. Do not ask follow-up agents to redesign
-that substrate unless they find a concrete implementation flaw.
+Seq03.1-03.6 are already production-applied: generation runtime table,
+generation-bound task dispatch, code-generational `BundleSession` behavior,
+`WindowedRuntimeOwner`, scene ownership integration, and the typed multi-entry
+runtime start API. Do not ask follow-up agents to redesign that substrate unless
+they find a concrete implementation flaw.
 
 ## Throw These Requests
 
-### First wave: design in parallel
+### Next wave: design in parallel, apply sequentially
 
-Send these two requests at the same time:
+Send these requests at the same time if desired:
 
-- `docs/reviews/requests/2026-06-28-seq-03.5-windowed-runtime-owner-scene-integration-package.md`
-- `docs/reviews/requests/2026-06-28-seq-03.6-multi-entry-generation-runtime-api-package.md`
+- `docs/reviews/requests/2026-06-28-seq-03.7-windowed-live-patch-smoke-fixtures-package.md`
+- `docs/reviews/requests/2026-06-28-seq-03.8-windowed-live-patch-ingress-adapter-package.md`
 
 Expected result from each agent: a zip package with `overlay/`, tests,
 implementation note, validation log, non-goals, and direct apply instructions.
 
 Apply order after zip return:
 
-1. Apply seq03.5 first unless seq03.6 replaces a `BundleSession` API that
-   seq03.5 must consume.
-2. Apply seq03.6 second, rebased against the seq03.5 production result.
-
-### Second wave: design now, implement after seq03.5
-
-Send these after or alongside the first wave, but do not apply their
-implementation until seq03.5 has landed:
-
-- `docs/reviews/requests/2026-06-28-seq-03.7-windowed-live-patch-smoke-fixtures-package.md`
-- `docs/reviews/requests/2026-06-28-seq-03.8-windowed-live-patch-ingress-adapter-package.md`
-
-Apply order after zip return:
-
-1. Apply seq03.7 after seq03.5, because smoke fixtures need the scene owner
-   integration points.
-2. Apply seq03.8 after seq03.5 and preferably after seq03.7, because ingress
-   should reuse the fixture/regeneration path as validation evidence.
+1. Apply seq03.7 first, because smoke fixtures should establish the concrete
+   AWFB/patch regeneration and observation path.
+2. Apply seq03.8 after seq03.7, because ingress should reuse the
+   fixture/regeneration path as validation evidence.
 
 ## Suggested Parallel Prompt
 
 Use this prompt when launching the first wave:
 
 ```text
-You are working on Sanzentyo/arcweft main after seq03.1-03.4 have been
+You are working on Sanzentyo/arcweft main after seq03.1-03.6 have been
 production-applied. Please implement the attached request as a zip overlay
 package, not as a direct repository commit.
 
 Read the request markdown fully and treat it as the acceptance criteria. Do not
 redesign the already-applied generation runtime table, generation-bound host
-task dispatch, code-generational BundleSession behavior, or WindowedRuntimeOwner
-API unless current source evidence shows a concrete flaw.
+task dispatch, code-generational BundleSession behavior, WindowedRuntimeOwner
+scene integration, or typed multi-entry start API unless current source evidence
+shows a concrete flaw.
 
 Return a zip containing:
 - README.md with assumptions, apply order, acceptance criteria, and non-goals
@@ -82,4 +70,5 @@ Seq03 can be considered complete only after:
 - a local/dev ingress adapter can enqueue typed patch events without directly
   mutating runtime state.
 
-Until then, seq04 may be designed in parallel but seq03 is not fully closed.
+The first two items are complete as of seq03.5/seq03.6. Until seq03.7 and
+seq03.8 land, seq04 may be designed in parallel but seq03 is not fully closed.

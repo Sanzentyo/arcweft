@@ -1,6 +1,10 @@
 use crate::NativePlayerError;
+use crate::windowed_patch::FrameBoundary;
+use crate::windowed_runtime::{
+    WindowedRuntimeOutcome, WindowedRuntimeOwner, WindowedRuntimeOwnerError,
+};
 use arcweft_bundle::ArcweftBundle;
-use arcweft_player_scene::images::{BundleImageCatalog, BundleImageCatalogError};
+use arcweft_player_scene::images::BundleImageCatalogError;
 use arcweft_player_scene::input::{InputController, InputOutcome};
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
 use arcweft_render_text::LineDisplayFrame;
@@ -10,9 +14,7 @@ use arcweft_render_wgpu::geometry::{
 };
 use arcweft_render_wgpu::renderer::{SharedRenderer, SharedRendererError};
 use arcweft_runtime_driver::clock::{RuntimeClockError, RuntimeClockStep};
-use arcweft_runtime_driver::session::{
-    BundleSession, BundleSessionError, BundleSessionOptions, BundleStepInput,
-};
+use arcweft_runtime_driver::session::{BundleSessionError, BundleSessionOptions, BundleStepInput};
 use num_traits::ToPrimitive;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -45,6 +47,8 @@ enum NativeSceneWindowError {
     Window(String),
     #[error("bundle session failed: {0}")]
     Session(#[from] BundleSessionError),
+    #[error("windowed runtime owner failed: {0}")]
+    RuntimeOwner(#[from] WindowedRuntimeOwnerError),
     #[error("runtime clock failed: {0}")]
     Clock(#[from] RuntimeClockError),
     #[error("bundle image catalog failed: {0}")]
@@ -87,8 +91,7 @@ struct NativeSceneState {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     renderer: SharedRenderer,
-    session: BundleSession,
-    images: BundleImageCatalog,
+    runtime: WindowedRuntimeOwner,
     input: InputController,
     prepared: Option<arcweft_render_wgpu::geometry::PreparedFrame>,
     dialogue_visual_clock: DialogueVisualClock,
@@ -291,8 +294,7 @@ impl NativeSceneState {
         surface.configure(&device, &config);
         let mut renderer = SharedRenderer::new(&device, &queue, format);
         renderer.register_font_bytes(DEFAULT_FONT_BYTES.to_vec())?;
-        let session = BundleSession::new(&bundle, BundleSessionOptions::default())?;
-        let images = BundleImageCatalog::from_bundle(&bundle)?;
+        let runtime = WindowedRuntimeOwner::from_bundle(&bundle, BundleSessionOptions::default())?;
         Ok(Self {
             window,
             surface,
@@ -300,8 +302,7 @@ impl NativeSceneState {
             queue,
             config,
             renderer,
-            session,
-            images,
+            runtime,
             input: InputController::default(),
             prepared: None,
             dialogue_visual_clock: DialogueVisualClock::default(),
@@ -330,18 +331,27 @@ impl NativeSceneState {
         self.input.ensure_choice_focus(&prepared);
         let prepared = self.prepare_frame_with_interaction()?;
         self.render(&prepared)?;
-        self.prepared = Some(prepared);
+        let patch_outcomes = self.drain_patch_events_after_render_submitted()?;
+        if patch_outcomes
+            .iter()
+            .any(WindowedRuntimeOutcome::invalidates_prepared_frame)
+        {
+            self.prepared = None;
+        } else {
+            self.prepared = Some(prepared);
+        }
         Ok(())
     }
 
     fn step_runtime(&mut self) -> Result<(), NativeSceneWindowError> {
-        if self.session.is_finished() {
+        if self.runtime.session().is_finished() {
             return Ok(());
         }
         let clock = RuntimeClockStep::from_millis(self.next_tick, 16)?;
         self.next_tick = self.next_tick.saturating_add(1);
         let _step = self
-            .session
+            .runtime
+            .session_mut()
             .step_with_clock(clock, BundleStepInput::default());
         Ok(())
     }
@@ -369,7 +379,7 @@ impl NativeSceneState {
     fn render_scene(&mut self) -> Result<RenderScene, NativeSceneWindowError> {
         let viewport = self.viewport();
         let elapsed = self.elapsed_millis();
-        let presentation = self.session.presentation();
+        let presentation = self.runtime.session().presentation();
         let visual_time_millis = dialogue_visual_time_millis(
             &mut self.dialogue_visual_clock,
             presentation.dialogue.as_ref(),
@@ -388,7 +398,10 @@ impl NativeSceneState {
                     label: choice.label.clone(),
                 })
                 .collect(),
-            images: self.images.render_images(&presentation.images, elapsed)?,
+            images: self
+                .runtime
+                .images()
+                .render_images(&presentation.images, elapsed)?,
             viewport,
             visual_time_millis,
             preferences: RenderPreferences::default(),
@@ -417,6 +430,18 @@ impl NativeSceneState {
             .render_to_view(&self.device, &self.queue, &view, prepared)?;
         surface_frame.present();
         Ok(())
+    }
+
+    fn drain_patch_events_after_render_submitted(
+        &mut self,
+    ) -> Result<Vec<WindowedRuntimeOutcome>, NativeSceneWindowError> {
+        let outcomes = self
+            .runtime
+            .drain_patch_boundary(FrameBoundary::AfterRenderSubmitted)?;
+        if !outcomes.is_empty() {
+            self.window.request_redraw();
+        }
+        Ok(outcomes)
     }
 
     fn viewport(&self) -> RenderViewport {
@@ -495,7 +520,7 @@ impl NativeSceneState {
 
     fn apply_outcome(&mut self, outcome: InputOutcome) -> Result<(), NativeSceneWindowError> {
         for action in outcome.actions {
-            self.session.queue_semantic_action(&action)?;
+            self.runtime.session_mut().queue_semantic_action(&action)?;
         }
         Ok(())
     }
@@ -569,23 +594,6 @@ fn pointer_id(button: &ButtonSource) -> PointerId {
     }
 }
 
-fn dialogue_visual_time_millis(
-    clock: &mut DialogueVisualClock,
-    dialogue: Option<&LineDisplayFrame>,
-    now_millis: u64,
-) -> u64 {
-    let Some(dialogue) = dialogue else {
-        clock.line = None;
-        clock.started_at_millis = now_millis;
-        return 0;
-    };
-    if clock.line.as_ref() != Some(&dialogue.line) {
-        clock.line = Some(dialogue.line.clone());
-        clock.started_at_millis = now_millis;
-    }
-    now_millis.saturating_sub(clock.started_at_millis)
-}
-
 fn key_label(key: &Key) -> String {
     match key {
         Key::Named(NamedKey::ArrowUp) => "ArrowUp".to_owned(),
@@ -599,4 +607,21 @@ fn key_label(key: &Key) -> String {
         Key::Character(value) => value.to_string(),
         _ => format!("{key:?}"),
     }
+}
+
+fn dialogue_visual_time_millis(
+    clock: &mut DialogueVisualClock,
+    dialogue: Option<&LineDisplayFrame>,
+    elapsed_millis: u64,
+) -> u64 {
+    let Some(dialogue) = dialogue else {
+        clock.line = None;
+        clock.started_at_millis = elapsed_millis;
+        return 0;
+    };
+    if clock.line.as_ref() != Some(&dialogue.line) {
+        clock.line = Some(dialogue.line.clone());
+        clock.started_at_millis = elapsed_millis;
+    }
+    elapsed_millis.saturating_sub(clock.started_at_millis)
 }

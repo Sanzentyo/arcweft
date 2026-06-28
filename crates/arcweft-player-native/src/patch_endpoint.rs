@@ -226,16 +226,27 @@ impl NativePatchEndpoint {
         bytes: &[u8],
         base_dir: &Path,
     ) -> Result<NativePatchOutcome, NativePatchEndpointError> {
-        let envelope: NativePatchTransportEnvelope =
-            serde_json::from_slice(bytes).map_err(NativePatchEndpointError::DecodeTransport)?;
-        self.apply_patch_transport_envelope(&envelope, base_dir)
+        let patch_bytes = Self::patch_bytes_from_transport_json_bytes(bytes, base_dir)?;
+        self.apply_patch_bytes(&patch_bytes)
     }
 
-    fn apply_patch_transport_envelope(
-        &mut self,
+    /// Decodes a watch-transport JSON payload and returns the referenced patch bytes.
+    ///
+    /// Windowed owners use this to validate the materialized target image catalog
+    /// before mutating the live endpoint at the frame-safe commit boundary.
+    pub fn patch_bytes_from_transport_json_bytes(
+        bytes: &[u8],
+        base_dir: &Path,
+    ) -> Result<Vec<u8>, NativePatchEndpointError> {
+        let envelope: NativePatchTransportEnvelope =
+            serde_json::from_slice(bytes).map_err(NativePatchEndpointError::DecodeTransport)?;
+        Self::patch_bytes_from_transport_envelope(&envelope, base_dir)
+    }
+
+    fn patch_bytes_from_transport_envelope(
         envelope: &NativePatchTransportEnvelope,
         base_dir: &Path,
-    ) -> Result<NativePatchOutcome, NativePatchEndpointError> {
+    ) -> Result<Vec<u8>, NativePatchEndpointError> {
         validate_transport_envelope_header(envelope)?;
         let patch_path = resolve_transport_path(base_dir, &envelope.patch_bundle);
         let patch_bytes =
@@ -244,7 +255,7 @@ impl NativePatchEndpoint {
                 message: error.to_string(),
             })?;
         validate_transport_patch_metadata(envelope, &patch_bytes)?;
-        self.apply_patch_bytes(&patch_bytes)
+        Ok(patch_bytes)
     }
 
     fn restart_from_patch_target(
@@ -393,7 +404,7 @@ mod tests {
         LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode,
     };
     use arcweft_runtime_driver::clock::RuntimeClockStep;
-    use arcweft_runtime_driver::session::BundleStepInput;
+    use arcweft_runtime_driver::session::{BundleEntryStart, BundleStepInput};
     use arcweft_runtime_driver::swap::SwapCompatibility;
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
     use std::fs;
@@ -473,7 +484,7 @@ mod tests {
 
         endpoint
             .session_mut()
-            .restart_active_entry_on_current_generation()
+            .start_foreground_entry_on_current_generation(BundleEntryStart::session_default())
             .expect("new entry binds to generational patch target");
         let step = endpoint.session_mut().step_with_clock(
             RuntimeClockStep::from_millis(1, 16).expect("clock"),

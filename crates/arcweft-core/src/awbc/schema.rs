@@ -609,6 +609,13 @@ pub enum AwbcFunctionKind {
     Synthetic,
 }
 
+impl AwbcFunctionKind {
+    #[must_use]
+    pub const fn is_flow(self) -> bool {
+        matches!(self, Self::Flow)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcFunctionFlags(pub u32);
 
@@ -1794,6 +1801,17 @@ pub enum AwbcEntryKind {
 pub enum AwbcEntryTarget {
     Function(AwbcFunctionId),
     Routes(Vec<AwbcRoute>),
+}
+
+impl AwbcEntryTarget {
+    /// Returns the single function selected by this entry target, if one exists.
+    #[must_use]
+    pub const fn function(&self) -> Option<AwbcFunctionId> {
+        match self {
+            Self::Function(function) => Some(*function),
+            Self::Routes(_) => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

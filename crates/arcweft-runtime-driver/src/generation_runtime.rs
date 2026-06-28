@@ -199,4 +199,20 @@ mod tests {
         assert!(!table.contains_generation(GenerationId(0)));
         assert!(table.contains_generation(GenerationId(1)));
     }
+
+    #[test]
+    fn table_reports_missing_generation_deterministically() {
+        let table = GenerationRuntimeTable::new(GenerationRuntimeImage::new(generation(0), 0));
+
+        let error = table
+            .get(GenerationId(7))
+            .expect_err("missing generation is typed");
+
+        assert_eq!(
+            error,
+            GenerationRuntimeError::MissingGeneration {
+                generation: GenerationId(7)
+            }
+        );
+    }
 }

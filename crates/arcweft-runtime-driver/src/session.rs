@@ -96,6 +96,43 @@ pub struct BundleSessionStep {
     pub finished: bool,
 }
 
+/// Foreground-entry start request for the current single-fiber runtime driver.
+///
+/// `SessionDefault` reuses the entry selected when the generation runtime image
+/// was built from `BundleSessionOptions`. `Entry` is an explicit AWBC entry table
+/// id supplied by a caller that already resolved public launch metadata.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum BundleEntryStart {
+    #[default]
+    SessionDefault,
+    Entry(AwbcEntryId),
+}
+
+impl BundleEntryStart {
+    #[must_use]
+    pub const fn session_default() -> Self {
+        Self::SessionDefault
+    }
+
+    #[must_use]
+    pub const fn entry(entry: AwbcEntryId) -> Self {
+        Self::Entry(entry)
+    }
+}
+
+impl From<AwbcEntryId> for BundleEntryStart {
+    fn from(entry: AwbcEntryId) -> Self {
+        Self::Entry(entry)
+    }
+}
+
+/// Minimal observable handle for a newly started foreground entry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StartedForegroundEntry {
+    pub generation: GenerationId,
+    pub entry: AwbcEntryId,
+}
+
 /// Portable decoded bundle execution session.
 #[derive(Clone, Debug)]
 pub struct BundleSession {
@@ -149,6 +186,18 @@ pub enum BundleSessionError {
     UnsupportedSemanticAction { action: String },
     #[error("semantic action `{action}` is missing its option payload")]
     MissingSemanticActionPayload { action: String },
+}
+
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum BundleEntryStartError {
+    #[error("AWBC entry {entry:?} does not exist in the active generation")]
+    UnknownEntry { entry: AwbcEntryId },
+    #[error("AWBC entry {entry:?} does not select a single runnable flow")]
+    NonFlowEntry { entry: AwbcEntryId },
+    #[error("generation runtime table failed: {0}")]
+    GenerationRuntime(#[from] GenerationRuntimeError),
+    #[error(transparent)]
+    ProductAwbcRuntime(#[from] AwbcProductStepBuildError),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -367,6 +416,14 @@ impl BundleSession {
         self.task_generation_pins
             .get(&sequence)
             .map(|generation| generation.id)
+    }
+
+    pub fn runtime_image_count(&self) -> usize {
+        self.runtime_images.len()
+    }
+
+    pub fn has_runtime_image(&self, generation: GenerationId) -> bool {
+        self.runtime_images.contains_generation(generation)
     }
 
     pub fn pin_active_generation(&self) -> Arc<ProgramGeneration> {
@@ -771,17 +828,29 @@ impl BundleSession {
         self.retire_unused_generations();
     }
 
-    /// Starts a fresh active entry on the currently committed active generation.
-    /// Existing retired generation pins remain live until their fibers/tasks are
-    /// released; this method only rebinds the session's foreground entry.
-    pub fn restart_active_entry_on_current_generation(&mut self) -> Result<(), BundleHotSwapError> {
+    /// Starts a fresh foreground entry on the currently committed active generation.
+    ///
+    /// This intentionally preserves the current single-foreground-fiber model:
+    /// starting an entry replaces only the foreground executor. Retired generation
+    /// images remain live while active task pins, explicit pins, or the old
+    /// foreground fiber still hold them.
+    pub fn start_foreground_entry_on_current_generation(
+        &mut self,
+        start: BundleEntryStart,
+    ) -> Result<StartedForegroundEntry, BundleEntryStartError> {
         let generation = self.swap.active_generation_id();
-        let runtime = self.runtime_images.get(generation)?.cloned_runtime();
+        let runtime = self
+            .runtime_images
+            .get(generation)?
+            .runtime()
+            .start_entry(start)?;
+        let entry = runtime.entry;
         self.activate_runtime(runtime);
         self.runtime_generation_pin = Some(self.swap.pin_active_generation());
         self.pending_input_events.clear();
         self.presentation = BundlePresentationSnapshot::default();
-        Ok(())
+        self.retire_unused_generations();
+        Ok(StartedForegroundEntry { generation, entry })
     }
 
     fn activate_runtime(&mut self, runtime: SessionRuntime) {
@@ -816,6 +885,8 @@ impl BundleSession {
 #[derive(Clone, Debug)]
 struct SessionRuntime {
     source_label: String,
+    program: AwbcProgram,
+    entry: AwbcEntryId,
     executor: ArcweftRuntimeExecutor,
     display: LineDisplayCatalog,
     image_objects: Vec<BundleImageObject>,
@@ -841,6 +912,42 @@ fn initial_generation(bundle: &ArcweftBundle) -> Result<ProgramGeneration, Bundl
     })
 }
 
+impl SessionRuntime {
+    fn new(
+        source_label: String,
+        program: AwbcProgram,
+        entry: AwbcEntryId,
+        display: LineDisplayCatalog,
+        image_objects: Vec<BundleImageObject>,
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        let executor = ArcweftRuntimeExecutor::from_awbc_product(program.clone(), entry)?;
+        Ok(Self {
+            source_label,
+            program,
+            entry,
+            executor,
+            display,
+            image_objects,
+        })
+    }
+
+    fn start_entry(&self, start: BundleEntryStart) -> Result<Self, BundleEntryStartError> {
+        let entry = match start {
+            BundleEntryStart::SessionDefault => self.entry,
+            BundleEntryStart::Entry(entry) => entry,
+        };
+        ensure_start_awbc_entry_selects_flow(&self.program, entry)?;
+        Self::new(
+            self.source_label.clone(),
+            self.program.clone(),
+            entry,
+            self.display.clone(),
+            self.image_objects.clone(),
+        )
+        .map_err(BundleEntryStartError::from)
+    }
+}
+
 fn build_session_runtime(
     bundle: &ArcweftBundle,
     options: &BundleSessionOptions,
@@ -856,13 +963,16 @@ fn build_session_runtime(
         .map_err(|_| BundleSessionError::MissingProductAwbc)?
         .clone();
     let entry = selected_awbc_entry(&program, bundle, options)?;
+    ensure_session_awbc_entry_selects_flow(&program, entry)?;
 
-    Ok(SessionRuntime {
-        source_label: bundle.manifest.source_label.clone(),
-        executor: ArcweftRuntimeExecutor::from_awbc_product(program, entry)?,
-        display: bundle.display.clone(),
-        image_objects: bundle.image_objects.clone(),
-    })
+    SessionRuntime::new(
+        bundle.manifest.source_label.clone(),
+        program,
+        entry,
+        bundle.display.clone(),
+        bundle.image_objects.clone(),
+    )
+    .map_err(BundleSessionError::from)
 }
 
 fn selected_awbc_entry(
@@ -870,6 +980,9 @@ fn selected_awbc_entry(
     bundle: &ArcweftBundle,
     options: &BundleSessionOptions,
 ) -> Result<AwbcEntryId, BundleSessionError> {
+    if options.entry.is_some() && options.flow.is_some() {
+        return Err(BundleSessionError::ConflictingEntrySelection);
+    }
     if let Some(flow) = options.flow.as_deref() {
         return Err(BundleSessionError::UnknownFlow {
             flow: RuntimeEntityFamily::Flow.selector(flow),
@@ -902,4 +1015,60 @@ fn selected_entry<'a>(
             .then_some(bundle.manifest.entry.as_deref())
             .flatten()
     })
+}
+
+fn ensure_session_awbc_entry_selects_flow(
+    program: &AwbcProgram,
+    entry: AwbcEntryId,
+) -> Result<(), BundleSessionError> {
+    if awbc_entry_selects_flow(program, entry) {
+        Ok(())
+    } else {
+        Err(BundleSessionError::NonFlowEntry {
+            entry: awbc_entry_label(program, entry),
+        })
+    }
+}
+
+fn ensure_start_awbc_entry_selects_flow(
+    program: &AwbcProgram,
+    entry: AwbcEntryId,
+) -> Result<(), BundleEntryStartError> {
+    if !awbc_entry_exists_or_empty_program_default(program, entry) {
+        return Err(BundleEntryStartError::UnknownEntry { entry });
+    }
+    if awbc_entry_selects_flow(program, entry) {
+        Ok(())
+    } else {
+        Err(BundleEntryStartError::NonFlowEntry { entry })
+    }
+}
+
+fn awbc_entry_exists_or_empty_program_default(program: &AwbcProgram, entry: AwbcEntryId) -> bool {
+    program.entries.get(entry.index()).is_some()
+        || (program.entries.is_empty() && entry == AwbcEntryId(0))
+}
+
+fn awbc_entry_selects_flow(program: &AwbcProgram, entry: AwbcEntryId) -> bool {
+    if program.entries.is_empty() && entry == AwbcEntryId(0) {
+        return true;
+    }
+    let Some(entry) = program.entries.get(entry.index()) else {
+        return false;
+    };
+    let Some(function) = entry.target.function() else {
+        return false;
+    };
+    program
+        .functions
+        .get(function.index())
+        .is_some_and(|function| function.kind.is_flow())
+}
+
+fn awbc_entry_label(program: &AwbcProgram, entry: AwbcEntryId) -> String {
+    program
+        .entries
+        .get(entry.index())
+        .and_then(|entry| program.strings.get(entry.public_id.index()).cloned())
+        .unwrap_or_else(|| format!("entry#{}", entry.0))
 }

@@ -9,6 +9,9 @@ use arcweft_bundle::patch::{
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
 };
+use arcweft_core::awbc::schema::{
+    AwbcEntry, AwbcEntryId, AwbcEntryKind, AwbcEntryTarget, AwbcProgram, AwbcRoute, AwbcStringId,
+};
 use arcweft_core::bytecode::{BYTECODE_ABI_VERSION, BytecodeProgram, BytecodeVerificationError};
 use arcweft_core::line_task::LineTaskGroup;
 use arcweft_core::plan::{
@@ -23,8 +26,8 @@ use arcweft_presentation::input::{Action, ActionTarget};
 use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{
-    BundleHotSwapError, BundlePatchReadiness, BundleSession, BundleSessionError,
-    BundleSessionOptions, BundleStepInput,
+    BundleEntryStart, BundleEntryStartError, BundleHotSwapError, BundlePatchReadiness,
+    BundleSession, BundleSessionError, BundleSessionOptions, BundleStepInput,
 };
 use arcweft_runtime_driver::swap::SwapCompatibility;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
@@ -296,6 +299,91 @@ fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
         display,
     )
     .with_product_awbc(product_awbc)
+}
+
+fn fixture_await_replacement_bundle() -> ArcweftBundle {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![FlowOp::Return("changed".to_owned())],
+        }],
+        Vec::new(),
+    )
+    .expect("runtime plan is valid");
+    let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
+    let display = LineDisplayCatalog::default();
+    let product_awbc = AwbcLowerer::new(&plan, &display, "await-replacement.arcw")
+        .lower()
+        .expect("product AWBC lowers")
+        .program;
+    ArcweftBundle::new(
+        BundleManifest {
+            source_label: "await-replacement.arcw".to_owned(),
+            profile_id: None,
+            profile_kind: None,
+            entry: None,
+            adapter: None,
+            adapter_manifest_ids: Vec::new(),
+            required_host_calls: Vec::new(),
+            runtime: BundleRuntimeSummary {
+                entry_flow: Some("flow.main".to_owned()),
+                flows: stats.flows,
+                bytecode_instructions: stats.instructions,
+                line_task_groups: stats.line_task_groups,
+                stream_plans: 0,
+                source_plans: 0,
+            },
+        },
+        BundleSource {
+            label: "await-replacement.arcw".to_owned(),
+            text: String::new(),
+        },
+        BytecodeProgram::from_runtime_plan(plan),
+        display,
+    )
+    .with_product_awbc(product_awbc)
+}
+
+fn bundle_with_route_entry() -> ArcweftBundle {
+    let mut bundle = fixture_bundle();
+    let program = &mut bundle.product_awbc.as_mut().expect("product AWBC").program;
+    let [method, path, public_id] = add_awbc_strings(program, ["GET", "/route", "entry.route"]);
+    let first = program.entries.first().expect("default entry exists");
+    let function = first
+        .target
+        .function()
+        .expect("default entry targets a function");
+    let signature = first.signature;
+    program.entries.push(AwbcEntry {
+        public_id,
+        kind: AwbcEntryKind::Server,
+        signature,
+        target: AwbcEntryTarget::Routes(vec![AwbcRoute {
+            method,
+            path,
+            target: function,
+            bindings: Vec::new(),
+        }]),
+    });
+    bundle
+}
+
+fn add_awbc_strings<const N: usize>(
+    program: &mut AwbcProgram,
+    values: [&str; N],
+) -> [AwbcStringId; N] {
+    program
+        .strings
+        .extend(values.iter().map(|value| (*value).to_owned()));
+    program.canonicalize_string_table();
+    std::array::from_fn(|index| {
+        let table_index = program
+            .strings
+            .binary_search(&values[index].to_owned())
+            .expect("inserted string is present");
+        AwbcStringId(u32::try_from(table_index).expect("string index fits in u32"))
+    })
 }
 
 #[test]
@@ -585,7 +673,7 @@ fn hot_swap_changed_structured_flow_keeps_current_fiber_on_old_generation() {
 }
 
 #[test]
-fn new_entry_binds_to_new_generation_after_code_generational_commit() {
+fn entry_generation_start_binds_to_new_generation_after_code_generational_commit() {
     let old_bundle = fixture_bundle();
     let new_bundle = fixture_bundle_with("WebGPU dialogue", false, true);
     let mut session =
@@ -596,9 +684,12 @@ fn new_entry_binds_to_new_generation_after_code_generational_commit() {
         .expect("code-generational swap applies");
     let new_generation = report.generation;
 
-    session
-        .restart_active_entry_on_current_generation()
+    let started = session
+        .start_foreground_entry_on_current_generation(BundleEntryStart::session_default())
         .expect("new entry binds to committed active generation");
+
+    assert_eq!(started.generation, new_generation);
+    assert_eq!(started.entry, AwbcEntryId(0));
     assert_eq!(session.current_fiber_generation(), Some(new_generation));
 
     let step = session.step_with_clock(
@@ -608,6 +699,111 @@ fn new_entry_binds_to_new_generation_after_code_generational_commit() {
 
     assert!(step.finished);
     assert!(step.status_label.contains("changed"));
+}
+
+#[test]
+fn entry_generation_start_prunes_replaced_old_fiber_runtime_image() {
+    let old_bundle = fixture_bundle();
+    let new_bundle = fixture_bundle_with("WebGPU dialogue", false, true);
+    let mut session =
+        BundleSession::new(&old_bundle, BundleSessionOptions::default()).expect("session starts");
+    let old_generation = session.active_generation().id;
+
+    let report = session
+        .hot_swap_bundle(&new_bundle)
+        .expect("code-generational swap applies");
+
+    assert_eq!(report.compatibility, SwapCompatibility::CodeGenerational);
+    assert_eq!(session.current_fiber_generation(), Some(old_generation));
+    assert!(session.has_runtime_image(old_generation));
+    assert!(session.has_runtime_image(report.generation));
+
+    let started = session
+        .start_foreground_entry_on_current_generation(BundleEntryStart::session_default())
+        .expect("foreground entry starts on active generation");
+
+    assert_eq!(started.generation, report.generation);
+    assert_eq!(session.current_fiber_generation(), Some(report.generation));
+    assert!(!session.has_runtime_image(old_generation));
+    assert_eq!(session.retired_generation_count(), 0);
+}
+
+#[test]
+fn entry_generation_start_keeps_old_runtime_image_until_task_pin_releases() {
+    let old_bundle = fixture_await_bundle(false);
+    let new_bundle = fixture_await_replacement_bundle();
+    let mut session =
+        BundleSession::new(&old_bundle, BundleSessionOptions::default()).expect("session starts");
+    let old_generation = session.active_generation().id;
+    let waiting = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let task = waiting.requested_tasks[0].clone();
+    let task_sequence = task.sequence;
+
+    let report = session
+        .hot_swap_bundle(&new_bundle)
+        .expect("code-generational swap applies");
+    assert_eq!(report.compatibility, SwapCompatibility::CodeGenerational);
+
+    session
+        .start_foreground_entry_on_current_generation(BundleEntryStart::session_default())
+        .expect("new foreground entry starts");
+
+    assert_eq!(session.task_generation(task_sequence), Some(old_generation));
+    assert!(session.has_runtime_image(old_generation));
+    assert!(session.has_runtime_image(report.generation));
+
+    let _completion = session.step_with_clock(
+        RuntimeClockStep::from_millis(2, 16).expect("clock"),
+        BundleStepInput {
+            task_events: vec![task.ready(RuntimePayload::new(RuntimeValue::String(
+                "bg_handle".to_owned(),
+            )))],
+            ..BundleStepInput::default()
+        },
+    );
+
+    assert_eq!(session.task_generation(task_sequence), None);
+    assert!(!session.has_runtime_image(old_generation));
+    assert_eq!(session.retired_generation_count(), 0);
+}
+
+#[test]
+fn entry_generation_start_reports_invalid_entry_selection_deterministically() {
+    let bundle = fixture_bundle();
+    let mut session =
+        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
+
+    let error = session
+        .start_foreground_entry_on_current_generation(BundleEntryStart::entry(AwbcEntryId(777)))
+        .expect_err("missing typed entry rejects");
+
+    assert_eq!(
+        error,
+        BundleEntryStartError::UnknownEntry {
+            entry: AwbcEntryId(777)
+        }
+    );
+}
+
+#[test]
+fn entry_generation_start_reports_non_flow_entry_selection_deterministically() {
+    let bundle = bundle_with_route_entry();
+    let mut session =
+        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
+
+    let error = session
+        .start_foreground_entry_on_current_generation(BundleEntryStart::entry(AwbcEntryId(1)))
+        .expect_err("route entry is not a foreground flow");
+
+    assert_eq!(
+        error,
+        BundleEntryStartError::NonFlowEntry {
+            entry: AwbcEntryId(1)
+        }
+    );
 }
 
 #[test]

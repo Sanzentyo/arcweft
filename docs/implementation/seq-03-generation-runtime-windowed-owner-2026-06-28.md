@@ -21,7 +21,8 @@ commit/new-entry behavior, and the first `WindowedRuntimeOwner` API.
   target for new entries.
 - Added `BundleSession::restart_active_entry_on_current_generation` as the
   first single-active-entry API for rebinding the foreground entry to the latest
-  committed generation.
+  committed generation. This API was later replaced by the seq03.6 typed
+  multi-entry start API.
 - Added generation runtime image pruning tied to the `SwapSession` retire
   lifecycle. The applied implementation explicitly releases table-only retired
   runtime images before `SwapSession::retire_unused`, so the runtime table's
@@ -48,7 +49,7 @@ commit/new-entry behavior, and the first `WindowedRuntimeOwner` API.
   code-compatible old generations from retiring after task pins were released.
 - The package README mentions a small `scene_windowed.rs` integration hunk, but
   the actual seq03.4 patch only added `windowed_runtime.rs` and its module
-  declaration. The event-loop scene integration remains a follow-up request.
+  declaration. The event-loop scene integration was completed by seq03.5.
 - The package fixtures are review examples only, not full AWFB binaries. They
   were not copied into runtime fixtures in this cut.
 
@@ -62,21 +63,20 @@ Seq03.5 and seq03.6 can be designed in parallel because seq03.5 is primarily
 `arcweft-player-native` event-loop ownership while seq03.6 is primarily
 `arcweft-runtime-driver` multi-entry runtime API design. Apply them sequentially
 to `main`, with seq03.5 first unless seq03.6 explicitly changes the
-`BundleSession` API that the scene owner must consume. Seq03.7 should be
-designed in parallel if desired, but its implementation should wait for the
-seq03.5 scene integration.
+`BundleSession` API that the scene owner must consume. Both follow-ups were
+later applied together against `main`. Seq03.7 should now be the next seq03
+implementation package, followed by seq03.8.
 
 ## Non-Goals In This Cut
 
 - No filesystem watcher, local socket, release fetcher, or network transport
   was added to `arcweft-runtime-driver`.
 - No release publish/trust verifier dependency was introduced.
-- `scene_windowed.rs` still owns the live `BundleSession` and
-  `BundleImageCatalog` directly; it is not yet wired to `WindowedRuntimeOwner`.
+- `scene_windowed.rs` ownership was moved to `WindowedRuntimeOwner` in seq03.5.
+  This note keeps the original seq03.1-03.4 boundary for historical audit.
 - No GPU/window smoke test was added for an actual running `winit` live-patch
   path.
-- `restart_active_entry_on_current_generation` remains the first single-entry
-  API and is not yet a general multi-entry/multi-fiber scheduler.
+- The first single-entry restart API was superseded by seq03.6.
 
 ## Validation
 
