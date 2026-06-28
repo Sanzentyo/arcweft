@@ -2750,6 +2750,7 @@ fn test_agent_raw_rgba_capture_resource(kind: AgentImageKind) -> AgentResource {
             content_viewport_bbox: None,
             content_pixels: None,
             object: None,
+            selected_capture: None,
             diagnostics: Vec::new(),
         }),
         body: AgentResourceBody::BytesBase64(

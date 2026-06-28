@@ -282,6 +282,8 @@ pub(super) fn agent_native_capture_result_from_raster(
     };
     let stats = capture.content_stats();
     let content_viewport_bbox = agent_content_viewport_bbox(capture.crop_origin, stats.bbox);
+    let selected_capture =
+        agent_selected_capture_metadata_from_raster(report, request, capture, stats.bbox);
     let image = AgentImageResource {
         kind: agent_image_kind(request.capture_kind),
         renderer: AgentImageRenderer::Native,
@@ -300,6 +302,7 @@ pub(super) fn agent_native_capture_result_from_raster(
         content_viewport_bbox,
         content_pixels: Some(stats.content_pixels),
         object: agent_image_object_for_capture_scope(report, &request.scope),
+        selected_capture,
         diagnostics: agent_native_visual_diagnostics(request.capture_step, &capture.diagnostics),
         written: None,
     };
@@ -1815,5 +1818,170 @@ pub(super) fn agent_native_rich_text_target_for_object_id<'a>(
         role,
         parent,
         element,
+    })
+}
+
+pub(super) fn agent_selected_capture_metadata_from_raster(
+    report: &AgentObservationReport,
+    request: &AgentCaptureReadRequest,
+    capture: &AgentRasterCapture,
+    content_bbox: Option<AgentImageContentBBox>,
+) -> Option<AgentSelectedCaptureMetadata> {
+    if matches!(request.scope, AgentCaptureScope::Viewport) {
+        return None;
+    }
+    let unclipped = agent_capture_scope_bbox(report, &request.scope)
+        .unwrap_or_else(|| agent_capture_bbox_from_raster(report, capture));
+    let clipped = agent_capture_bbox_from_raster(report, capture);
+    let mask = agent_capture_mask_for_scope(report, request, capture, content_bbox, &clipped);
+    Some(agent_selected_capture_metadata_for_ref(
+        AgentSelectedCaptureMetadataSpec {
+            scope: &request.scope,
+            kind: agent_image_kind(request.capture_kind),
+            composition: capture.composition,
+            unclipped: &unclipped,
+            clipped: &clipped,
+            source: agent_capture_source_identity(report, &request.scope),
+            mask,
+            viewport: Some(&report.viewport),
+        },
+    ))
+}
+
+pub(super) fn agent_capture_bbox_from_raster(
+    report: &AgentObservationReport,
+    capture: &AgentRasterCapture,
+) -> AgentBBox {
+    let origin = capture.crop_origin.unwrap_or(AgentImageCropOrigin {
+        space: AgentCoordinateSpace::Viewport,
+        x: 0,
+        y: 0,
+    });
+    AgentBBox {
+        space: AgentCoordinateSpace::Viewport,
+        x: origin.x,
+        y: origin.y,
+        width: capture
+            .width
+            .min(report.viewport.width.saturating_sub(origin.x))
+            .max(1),
+        height: capture
+            .height
+            .min(report.viewport.height.saturating_sub(origin.y))
+            .max(1),
+    }
+}
+
+pub(super) fn agent_capture_scope_bbox(
+    report: &AgentObservationReport,
+    scope: &AgentCaptureScope,
+) -> Option<AgentBBox> {
+    match scope {
+        AgentCaptureScope::Viewport => Some(AgentBBox {
+            space: AgentCoordinateSpace::Viewport,
+            x: 0,
+            y: 0,
+            width: report.viewport.width.max(1),
+            height: report.viewport.height.max(1),
+        }),
+        AgentCaptureScope::Layer(layer_id) => report
+            .layers
+            .iter()
+            .find(|layer| layer.id == *layer_id)
+            .map(|layer| layer.bbox.clone()),
+        AgentCaptureScope::Object(object_id) => report
+            .objects
+            .iter()
+            .find(|object| object.id == *object_id)
+            .map(|object| object.bbox.clone()),
+    }
+}
+
+pub(super) fn agent_capture_source_identity(
+    report: &AgentObservationReport,
+    scope: &AgentCaptureScope,
+) -> AgentCaptureSourceIdentity {
+    match scope {
+        AgentCaptureScope::Viewport => {
+            AgentCaptureSourceIdentity::viewport(report.viewport.width, report.viewport.height)
+        }
+        AgentCaptureScope::Layer(layer_id) => report
+            .layers
+            .iter()
+            .find(|layer| layer.id == *layer_id)
+            .map_or_else(
+                || AgentCaptureSourceIdentity::Layer {
+                    id: layer_id.clone(),
+                    object_count: 0,
+                },
+                AgentCaptureSourceIdentity::from_layer,
+            ),
+        AgentCaptureScope::Object(object_id) => report
+            .objects
+            .iter()
+            .find(|object| object.id == *object_id)
+            .map_or_else(
+                || AgentCaptureSourceIdentity::Object {
+                    id: object_id.clone(),
+                    parent_id: None,
+                    entity: None,
+                    layer: String::new(),
+                    role: String::new(),
+                    object_layer: None,
+                    object_depth: None,
+                    rich_text: None,
+                },
+                AgentCaptureSourceIdentity::from_object,
+            ),
+    }
+}
+
+pub(super) fn agent_capture_mask_for_scope(
+    report: &AgentObservationReport,
+    request: &AgentCaptureReadRequest,
+    capture: &AgentRasterCapture,
+    content_bbox: Option<AgentImageContentBBox>,
+    clipped: &AgentBBox,
+) -> Option<AgentSelectedCaptureMask> {
+    if matches!(request.scope, AgentCaptureScope::Viewport) {
+        return None;
+    }
+    let bounds = agent_layout_rect_from_bbox(clipped);
+    let (object_ids, layer_ids) = match &request.scope {
+        AgentCaptureScope::Viewport => (Vec::new(), Vec::new()),
+        AgentCaptureScope::Layer(layer_id) => (
+            report
+                .objects
+                .iter()
+                .filter(|object| object.visible && agent_object_matches_layer(object, layer_id))
+                .map(|object| object.id.clone())
+                .collect(),
+            vec![layer_id.clone()],
+        ),
+        AgentCaptureScope::Object(object_id) => (
+            vec![object_id.clone()],
+            report
+                .objects
+                .iter()
+                .find(|object| object.id == *object_id)
+                .map(agent_object_layers)
+                .unwrap_or_default(),
+        ),
+    };
+    Some(AgentSelectedCaptureMask {
+        availability: AgentCaptureMaskAvailability::default(),
+        basis: LayoutCoordinateSpace::Output,
+        bounds,
+        object_ids,
+        layer_ids,
+        has_object_id_attachment: true,
+        has_alpha_mask: request.capture_kind == AgentObserveCaptureKind::Mask
+            || matches!(
+                capture.composition,
+                AgentImageComposition::MaskAttachment
+                    | AgentImageComposition::MaskedFramebufferCrop
+                    | AgentImageComposition::IsolatedRegions
+            )
+            || content_bbox.is_some(),
     })
 }

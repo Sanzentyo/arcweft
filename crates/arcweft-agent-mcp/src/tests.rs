@@ -177,6 +177,7 @@ fn image_agent_resource_maps_to_mcp_blob_and_image_tool_content() {
             }),
             content_pixels: Some(512),
             object: None,
+            selected_capture: None,
             diagnostics: Vec::new(),
         }),
         body: AgentResourceBody::BytesBase64(AgentBinaryResourceBody {
@@ -485,6 +486,7 @@ fn resource_list_and_observe_tool_result_expose_resource_links() {
                 content_viewport_bbox: None,
                 content_pixels: None,
                 object: None,
+                selected_capture: None,
                 diagnostics: Vec::new(),
             }),
             body: AgentResourceBody::BytesBase64(AgentBinaryResourceBody {

@@ -19,7 +19,7 @@ pub struct AgentHitTestReport {
 }
 
 /// One observed object/region hit by an Agent hit-test query.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct AgentHitTestHit {
     pub rank: usize,
     pub object_id: String,

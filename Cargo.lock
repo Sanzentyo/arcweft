@@ -313,6 +313,7 @@ name = "arcweft-agent-protocol"
 version = "0.1.0"
 dependencies = [
  "arcweft-core",
+ "arcweft-layout",
  "arcweft-render-text",
  "base64",
  "serde",

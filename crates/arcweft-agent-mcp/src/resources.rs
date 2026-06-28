@@ -130,6 +130,7 @@ pub fn resource_descriptor(published: &PublishedAgentResource) -> McpResourceDes
         description: Some(resource.description()),
         mime_type: Some(resource.mime_type.clone()),
         size: resource.decoded_len(),
+        image: resource.image.clone(),
     }
 }
 
@@ -277,6 +278,7 @@ pub fn resource_link(resource: &PublishedAgentResource) -> McpContentBlock {
         description: descriptor.description,
         mime_type: descriptor.mime_type,
         size: descriptor.size,
+        image: descriptor.image,
     }
 }
 
@@ -285,17 +287,20 @@ fn resource_contents(resource: &AgentResource) -> Result<McpResourceContents, se
         AgentResourceBody::Json(value) => Ok(McpResourceContents::Text(McpTextResourceContents {
             uri: resource.uri.clone(),
             mime_type: Some(resource.mime_type.clone()),
+            image: resource.image.clone(),
             text: serde_json::to_string(value)?,
         })),
         AgentResourceBody::Text(text) => Ok(McpResourceContents::Text(McpTextResourceContents {
             uri: resource.uri.clone(),
             mime_type: Some(resource.mime_type.clone()),
+            image: resource.image.clone(),
             text: text.clone(),
         })),
         AgentResourceBody::BytesBase64(body) => {
             Ok(McpResourceContents::Blob(McpBlobResourceContents {
                 uri: resource.uri.clone(),
                 mime_type: Some(resource.mime_type.clone()),
+                image: resource.image.clone(),
                 blob: body.data.clone(),
             }))
         }

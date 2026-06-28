@@ -385,11 +385,12 @@ impl LayoutPoint {
 }
 
 impl LayoutRect {
-    pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
-        Self {
-            origin: LayoutPoint::new(x, y),
-            size: LayoutSize::new(width, height),
-        }
+    pub const fn new(origin: LayoutPoint, size: LayoutSize) -> Self {
+        Self { origin, size }
+    }
+
+    pub const fn from_xywh(x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self::new(LayoutPoint::new(x, y), LayoutSize::new(width, height))
     }
 
     pub fn contains(self, point: LayoutPoint) -> bool {
@@ -413,7 +414,7 @@ impl LayoutRect {
         let y0 = self.origin.y.max(0.0);
         let x1 = self.right().min(viewport.width).max(x0);
         let y1 = self.bottom().min(viewport.height).max(y0);
-        Self::new(x0, y0, x1 - x0, y1 - y0)
+        Self::from_xywh(x0, y0, x1 - x0, y1 - y0)
     }
 }
 
@@ -501,7 +502,7 @@ impl ContentRect {
         Ok(Self {
             design_size,
             output_size,
-            rect: LayoutRect::new(x, y, width, height),
+            rect: LayoutRect::from_xywh(x, y, width, height),
             scale_x,
             scale_y,
             policy,
@@ -524,7 +525,7 @@ impl ContentRect {
 
     pub fn map_rect(self, rect: LayoutRect) -> LayoutRect {
         let origin = self.map_point(rect.origin);
-        LayoutRect::new(
+        LayoutRect::from_xywh(
             origin.x,
             origin.y,
             rect.size.width * self.scale_x,
@@ -534,7 +535,7 @@ impl ContentRect {
 
     pub fn unmap_rect(self, rect: LayoutRect) -> LayoutRect {
         let origin = self.unmap_point(rect.origin);
-        LayoutRect::new(
+        LayoutRect::from_xywh(
             origin.x,
             origin.y,
             rect.size.width / self.scale_x,
@@ -607,7 +608,7 @@ impl ContentRect {
             input_space,
             design_point,
             output_point,
-            inside_design_viewport: LayoutRect::new(
+            inside_design_viewport: LayoutRect::from_xywh(
                 0.0,
                 0.0,
                 self.design_size.width,
@@ -615,7 +616,7 @@ impl ContentRect {
             )
             .contains(design_point),
             inside_content_rect: self.rect.contains(output_point),
-            inside_output_viewport: LayoutRect::new(
+            inside_output_viewport: LayoutRect::from_xywh(
                 0.0,
                 0.0,
                 self.output_size.width,

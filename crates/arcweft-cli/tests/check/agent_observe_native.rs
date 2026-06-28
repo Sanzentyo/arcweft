@@ -19,3 +19,4 @@ include!("agent_observe_native/published_jlreq_class_mix.rs");
 include!("agent_observe_native/published_jlreq_units.rs");
 include!("agent_observe_native/native_samples_effects.rs");
 include!("agent_observe_native/mcp_native_capture.rs");
+include!("agent_observe_native/selected_capture_metadata.rs");

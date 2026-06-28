@@ -221,7 +221,7 @@ where
                 ));
             }
             Err(AgentPolicyError::MissingImageBytes) => {
-                return Ok(self.withheld_resource(
+                return Ok(self.withheld_image_metadata_resource(
                     resource,
                     PolicyDisposition::Review,
                     "missing_image_bytes",
@@ -318,6 +318,33 @@ where
             Some(output_digest.clone()),
             false,
         );
+        output_digest.as_str().clone_into(&mut resource.hash);
+        resource.uri = summary.moderated_uri("json");
+        PublishedAgentResource::new(resource, summary)
+    }
+
+    fn withheld_image_metadata_resource(
+        &self,
+        mut resource: AgentResource,
+        disposition: PolicyDisposition,
+        reason: &str,
+    ) -> PublishedAgentResource {
+        let input_digest = resource_body_digest(&resource.body);
+        "application/json".clone_into(&mut resource.mime_type);
+        resource.body = AgentResourceBody::Json(policy_placeholder(disposition, reason));
+        let output_digest = resource_body_digest(&resource.body);
+        let summary = AgentPolicySummary::synthetic(
+            self.engine.profile().id.as_str(),
+            self.engine.profile().version.as_str(),
+            disposition,
+            reason,
+            input_digest,
+            Some(output_digest.clone()),
+            false,
+        );
+        if let Some(metadata) = resource.image.as_mut() {
+            metadata.scrub_for_external_publication(&summary.opaque_token());
+        }
         output_digest.as_str().clone_into(&mut resource.hash);
         resource.uri = summary.moderated_uri("json");
         PublishedAgentResource::new(resource, summary)

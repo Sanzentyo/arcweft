@@ -71,13 +71,13 @@ fn content_rect_modes_make_raw_cover_and_stretch_distinct() {
     let stretch =
         ContentRect::calculate(design, output, ScalePolicy::Stretch).expect("stretch rect");
 
-    assert_eq!(raw.rect, LayoutRect::new(0.0, 0.0, 1280.0, 720.0));
+    assert_eq!(raw.rect, LayoutRect::from_xywh(0.0, 0.0, 1280.0, 720.0));
     assert!((raw.scale_x - 1.0).abs() < f32::EPSILON);
     assert!((raw.scale_y - 1.0).abs() < f32::EPSILON);
     assert!((cover.scale_x - 1.111_111_2).abs() < 0.000_001);
     assert!((cover.rect.origin.x + 211.111_15).abs() < 0.000_01);
     assert!(cover.rect.origin.y.abs() < 0.000_1);
-    assert_eq!(stretch.rect, LayoutRect::new(0.0, 0.0, 1000.0, 800.0));
+    assert_eq!(stretch.rect, LayoutRect::from_xywh(0.0, 0.0, 1000.0, 800.0));
     assert!((stretch.scale_x - 0.78125).abs() < f32::EPSILON);
     assert!((stretch.scale_y - 1.111_111_2).abs() < 0.000_001);
 }
@@ -92,8 +92,8 @@ fn content_rect_maps_design_rect_into_output_space() {
     .expect("content rect calculates");
 
     assert_eq!(
-        rect.map_rect(LayoutRect::new(96.0, 48.0, 320.0, 160.0)),
-        LayoutRect::new(75.0, 156.25, 250.0, 125.0)
+        rect.map_rect(LayoutRect::from_xywh(96.0, 48.0, 320.0, 160.0)),
+        LayoutRect::from_xywh(75.0, 156.25, 250.0, 125.0)
     );
 }
 

@@ -77,6 +77,7 @@ fn raw_rgba_resource(kind: AgentImageKind, pixels: Vec<u8>) -> AgentResource {
             content_viewport_bbox: None,
             content_pixels: None,
             object: None,
+            selected_capture: None,
             diagnostics: Vec::new(),
         }),
         body: AgentResourceBody::BytesBase64(AgentBinaryResourceBody {
@@ -178,7 +179,19 @@ fn missing_image_bytes_is_withheld() {
 
     let published = gate.publish(resource).expect("publication succeeds");
 
-    assert_review_placeholder(&published, "missing_image_bytes");
+    assert_review_placeholder_with_image_metadata(&published, "missing_image_bytes");
+    let metadata = published
+        .resource()
+        .image
+        .as_ref()
+        .expect("metadata-only image resource keeps scrubbed metadata");
+    assert!(matches!(
+        &metadata.scope,
+        AgentImageScope::Object { id } if id.starts_with("object.")
+            && !id.contains("customer")
+    ));
+    assert!(metadata.object.is_none());
+    assert!(metadata.diagnostics.is_empty());
 }
 
 #[test]
@@ -245,6 +258,22 @@ fn moderated_scene_children_receive_distinct_opaque_uris() {
 }
 
 fn assert_review_placeholder(published: &crate::PublishedAgentResource, expected_reason: &str) {
+    assert_review_placeholder_policy(published, expected_reason);
+    assert!(published.resource().image.is_none());
+}
+
+fn assert_review_placeholder_with_image_metadata(
+    published: &crate::PublishedAgentResource,
+    expected_reason: &str,
+) {
+    assert_review_placeholder_policy(published, expected_reason);
+    assert!(published.resource().image.is_some());
+}
+
+fn assert_review_placeholder_policy(
+    published: &crate::PublishedAgentResource,
+    expected_reason: &str,
+) {
     assert_eq!(
         published.policy().disposition,
         arcweft_content_policy::PolicyDisposition::Review
@@ -252,7 +281,6 @@ fn assert_review_placeholder(published: &crate::PublishedAgentResource, expected
     assert!(published.policy().reason_codes.contains(expected_reason));
     assert!(published.resource().uri.starts_with("arcweft://moderated/"));
     assert_eq!(published.resource().mime_type, "application/json");
-    assert!(published.resource().image.is_none());
     let AgentResourceBody::Json(value) = &published.resource().body else {
         panic!("withheld resource is JSON");
     };

@@ -63,10 +63,12 @@ use arcweft_agent_protocol::hit_test::{AgentHitTestHit, AgentHitTestReport};
 use arcweft_agent_protocol::ids::PublicId as AgentPublicId;
 use arcweft_agent_protocol::ids::{AgentResourceUri, AgentRunId, PublicId, SessionId, StableHash};
 use arcweft_agent_protocol::image::{
-    AgentImageAlignment, AgentImageComposition, AgentImageContentBBox, AgentImageCropOrigin,
-    AgentImageFit, AgentImageKind, AgentImageMetadata, AgentImageObjectParam, AgentImageObjectRef,
+    AgentCaptureMaskAvailability, AgentCaptureSourceIdentity, AgentImageAlignment,
+    AgentImageComposition, AgentImageContentBBox, AgentImageCropOrigin, AgentImageFit,
+    AgentImageKind, AgentImageMetadata, AgentImageObjectParam, AgentImageObjectRef,
     AgentImageRenderer, AgentImageResource, AgentImageScope, AgentImageTransform,
     AgentLayerCaptureRef, AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs,
+    AgentSelectedCaptureMask, AgentSelectedCaptureMetadata,
 };
 use arcweft_agent_protocol::object::{
     AgentObservedImageContent, AgentObservedLayer, AgentObservedObject, AgentObservedObjectContent,
@@ -128,6 +130,12 @@ use arcweft_lang_syntax::ast::{
 };
 use arcweft_lang_syntax::expr::{CallArg, Expr, Literal};
 use arcweft_lang_syntax::parser::{ParseCompletion, ParsedFragment, ParsedFragmentKind};
+use arcweft_layout::{
+    CaptureComposition as LayoutCaptureComposition, CaptureCropBounds,
+    CaptureMaskMetadata as LayoutCaptureMaskMetadata, CaptureMetadata as LayoutCaptureMetadata,
+    CaptureRendererKind, CaptureScope as LayoutCaptureScope, LayoutCoordinateSpace, LayoutPoint,
+    LayoutRect, LayoutSize, ScalePolicy,
+};
 use arcweft_presentation::image::{
     ImageObjectAlignment, ImageObjectParam, ImageObjectPlayback, ImageObjectProxy,
     ImageObjectTransform,
@@ -273,13 +281,14 @@ use capture::{
     agent_observe_capture_resource,
 };
 use image_mapping::{
-    agent_capture_uri, agent_encode_png, agent_frame_capture_uri_for_page,
-    agent_image_observation_from_ui_frame, agent_measure_frame_elements_with_session,
+    AgentSelectedCaptureMetadataSpec, agent_capture_uri, agent_encode_png,
+    agent_frame_capture_uri_for_page, agent_image_observation_from_ui_frame,
+    agent_layout_rect_from_bbox, agent_measure_frame_elements_with_session,
     agent_native_rich_text_element_bboxes, agent_native_textbox_capture_bbox_for_page,
-    agent_object_capture_refs_for_page, agent_object_id_color, agent_object_matches_layer,
-    agent_observed_layers, agent_observed_rich_text, agent_overlay_svg,
+    agent_object_capture_refs_for_page, agent_object_id_color, agent_object_layers,
+    agent_object_matches_layer, agent_observed_layers, agent_observed_rich_text, agent_overlay_svg,
     agent_rich_text_child_objects, agent_rich_text_ranges_overlap, agent_scoped_capture_name,
-    agent_textbox_object, hash_hex,
+    agent_selected_capture_metadata_for_ref, agent_textbox_object, hash_hex,
 };
 use mcp_debug::{
     agent_mcp_call_debug_close_stale_sessions, agent_mcp_call_debug_graph_inventory,

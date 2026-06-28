@@ -219,8 +219,8 @@ fn selected_capture_metadata_carries_scope_crop_mask_and_fit() {
     let metadata = CaptureMetadata::selected_object(
         CaptureRendererKind::NativeRichTextObserver,
         "object.dialogue.0.0",
-        LayoutRect::new(96.0, 600.0, 808.0, 120.0),
-        LayoutRect::new(96.0, 600.0, 808.0, 100.0),
+        LayoutRect::from_xywh(96.0, 600.0, 808.0, 120.0),
+        LayoutRect::from_xywh(96.0, 600.0, 808.0, 100.0),
         fit,
     );
     assert_eq!(metadata.coordinate_basis, LayoutCoordinateSpace::Output);
@@ -233,9 +233,9 @@ fn selected_capture_metadata_carries_scope_crop_mask_and_fit() {
 
 #[test]
 fn clipped_rect_preserves_signed_source_before_clipping() {
-    let rect = LayoutRect::new(-10.0, 5.0, 30.0, 50.0);
+    let rect = LayoutRect::from_xywh(-10.0, 5.0, 30.0, 50.0);
     assert_eq!(
         rect.clipped_to(LayoutSize::new(100.0, 40.0)),
-        LayoutRect::new(0.0, 5.0, 20.0, 35.0)
+        LayoutRect::from_xywh(0.0, 5.0, 20.0, 35.0)
     );
 }

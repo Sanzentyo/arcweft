@@ -398,6 +398,7 @@ mod tests {
                     arcweft_agent_mcp::model::McpTextResourceContents {
                         uri: "arcweft://session/fake/observation/latest.json".to_owned(),
                         mime_type: Some("application/json".to_owned()),
+                        image: None,
                         text: "{}".to_owned(),
                     },
                 )],

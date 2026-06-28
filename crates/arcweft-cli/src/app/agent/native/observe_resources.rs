@@ -242,6 +242,7 @@ pub(super) fn agent_layer_capture_ref_resource(
             width: capture.width,
             height: capture.height,
             object: None,
+            selected_capture: capture.selected_capture.clone(),
         },
     )
 }
@@ -264,6 +265,7 @@ pub(super) fn agent_object_capture_ref_resource(
             width: capture.width,
             height: capture.height,
             object: Some(AgentImageObjectRef::from_observed(object)),
+            selected_capture: capture.selected_capture.clone(),
         },
     )
 }
@@ -277,6 +279,7 @@ pub(super) struct AgentCaptureRefResourceSpec<'a> {
     pub(super) width: u32,
     pub(super) height: u32,
     pub(super) object: Option<AgentImageObjectRef>,
+    pub(super) selected_capture: Option<AgentSelectedCaptureMetadata>,
 }
 
 pub(super) fn agent_capture_ref_resource(
@@ -307,6 +310,7 @@ pub(super) fn agent_capture_ref_resource(
             content_viewport_bbox: None,
             content_pixels: None,
             object: spec.object,
+            selected_capture: spec.selected_capture,
             diagnostics: Vec::new(),
         }),
         body: AgentResourceBody::Text(String::new()),

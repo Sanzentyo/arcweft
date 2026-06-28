@@ -1,0 +1,160 @@
+{
+  "uri": "arcweft://session/cli/frame/7/layer.dialogue.mask.rgba",
+  "kind": "image",
+  "mime_type": "application/octet-stream",
+  "hash": "fixture-layer-mask-hash",
+  "image": {
+    "kind": "mask",
+    "renderer": "native",
+    "scope": {
+      "kind": "layer",
+      "id": "dialogue"
+    },
+    "composition": "mask_attachment",
+    "page": 0,
+    "capture_step": 8,
+    "capture_time_millis": 250,
+    "width": 1088,
+    "height": 124,
+    "crop_origin": {
+      "space": "viewport",
+      "x": 96,
+      "y": 548
+    },
+    "pixel_format": "rgba8_unorm",
+    "row_stride_bytes": 4352,
+    "content_bbox": {
+      "x": 0,
+      "y": 0,
+      "width": 1088,
+      "height": 124
+    },
+    "content_viewport_bbox": {
+      "x": 96,
+      "y": 548,
+      "width": 1088,
+      "height": 124
+    },
+    "content_pixels": 134912,
+    "selected_capture": {
+      "renderer": "native_rich_text_observer",
+      "scope": {
+        "kind": "layer",
+        "id": "dialogue"
+      },
+      "composition": "mask_attachment",
+      "coordinate_basis": "output",
+      "crop": {
+        "basis": "output",
+        "unclipped": {
+          "origin": {
+            "x": 96.0,
+            "y": 548.0
+          },
+          "size": {
+            "width": 1088.0,
+            "height": 124.0
+          }
+        },
+        "clipped": {
+          "origin": {
+            "x": 96.0,
+            "y": 548.0
+          },
+          "size": {
+            "width": 1088.0,
+            "height": 124.0
+          }
+        }
+      },
+      "mask": {
+        "availability": "available",
+        "basis": "output",
+        "bounds": {
+          "origin": {
+            "x": 96.0,
+            "y": 548.0
+          },
+          "size": {
+            "width": 1088.0,
+            "height": 124.0
+          }
+        },
+        "object_ids": [
+          "object.dialogue.0.0",
+          "object.dialogue.0.0.run.0"
+        ],
+        "layer_ids": [
+          "dialogue"
+        ],
+        "has_object_id_attachment": true,
+        "has_alpha_mask": true
+      },
+      "fit_transform": {
+        "design_space": "design",
+        "content_space": "output",
+        "output_space": "output",
+        "serialized_geometry_space": "output",
+        "hit_test_input_space": "output",
+        "policy": "raw",
+        "content_rect": {
+          "origin": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "size": {
+            "width": 1280.0,
+            "height": 720.0
+          }
+        },
+        "visible_output_rect": {
+          "origin": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "size": {
+            "width": 1280.0,
+            "height": 720.0
+          }
+        },
+        "visible_design_rect": {
+          "origin": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "size": {
+            "width": 1280.0,
+            "height": 720.0
+          }
+        },
+        "bars": {
+          "top": 0.0,
+          "right": 0.0,
+          "bottom": 0.0,
+          "left": 0.0
+        },
+        "crop": {
+          "top": 0.0,
+          "right": 0.0,
+          "bottom": 0.0,
+          "left": 0.0
+        },
+        "scale_x": 1.0,
+        "scale_y": 1.0,
+        "raw_pixel_mode": true
+      },
+      "source": {
+        "kind": "layer",
+        "id": "dialogue",
+        "object_count": 2
+      }
+    }
+  },
+  "body": {
+    "body_kind": "bytes_base64",
+    "body": {
+      "encoding": "base64",
+      "data": "AAAAAAAA"
+    }
+  }
+}

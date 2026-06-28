@@ -3,12 +3,13 @@
 //! The module keeps the transport-neutral shapes in one place so tools and
 //! resource adapters can share the same contract without a broad root facade.
 
+use arcweft_agent_protocol::image::AgentImageMetadata;
 use serde::{Deserialize, Serialize};
 
 pub const AGENT_TRACE_MIME_TYPE: &str = "application/vnd.arcweft.agent-trace+json";
 
 /// Resource descriptor returned by MCP `resources/list`.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct McpResourceDescriptor {
     pub uri: String,
     pub name: String,
@@ -20,10 +21,12 @@ pub struct McpResourceDescriptor {
     pub mime_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<AgentImageMetadata>,
 }
 
 /// Result body returned by MCP `resources/list`.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct McpListResourcesResult {
     pub resources: Vec<McpResourceDescriptor>,
 }
@@ -50,14 +53,14 @@ pub struct McpListResourceTemplatesResult {
 }
 
 /// Result body returned by MCP `resources/read`.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct McpReadResourceResult {
     pub contents: Vec<McpResourceContents>,
 }
 
 /// MCP resource content. Text resources carry `text`; binary resources carry
 /// base64 `blob`.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum McpResourceContents {
     Text(McpTextResourceContents),
@@ -65,20 +68,24 @@ pub enum McpResourceContents {
 }
 
 /// Text resource content for MCP.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct McpTextResourceContents {
     pub uri: String,
     #[serde(rename = "mimeType", skip_serializing_if = "Option::is_none")]
     pub mime_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<AgentImageMetadata>,
     pub text: String,
 }
 
 /// Binary resource content for MCP.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct McpBlobResourceContents {
     pub uri: String,
     #[serde(rename = "mimeType", skip_serializing_if = "Option::is_none")]
     pub mime_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<AgentImageMetadata>,
     pub blob: String,
 }
 
@@ -94,7 +101,7 @@ pub struct McpToolDescriptor {
 }
 
 /// Result returned by MCP `tools/call`.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct McpCallToolResult {
     pub content: Vec<McpContentBlock>,
     #[serde(rename = "isError")]
@@ -102,7 +109,7 @@ pub struct McpCallToolResult {
 }
 
 /// MCP content blocks relevant to Agent observation tools.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum McpContentBlock {
     Text {
@@ -127,5 +134,7 @@ pub enum McpContentBlock {
         mime_type: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         size: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        image: Option<AgentImageMetadata>,
     },
 }

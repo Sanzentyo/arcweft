@@ -1346,6 +1346,7 @@ pub(super) fn agent_observe_image_output(
                 content_viewport_bbox: None,
                 content_pixels: None,
                 object: agent_image_object_for_capture_scope(report, &scope),
+                selected_capture: None,
                 diagnostics: Vec::new(),
                 written: options.out.as_deref().map(report_path),
             }];

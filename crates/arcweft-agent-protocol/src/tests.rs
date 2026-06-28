@@ -3,10 +3,11 @@ use crate::diagnostic::{AgentDiagnostic, AgentDiagnosticSeverity};
 use crate::geometry::{AgentBBox, AgentCoordinateSpace, AgentRgbaColor, AgentViewport};
 use crate::hit_test::AgentHitTestHit;
 use crate::image::{
-    AgentImageAlignment, AgentImageComposition, AgentImageContentBBox, AgentImageCropOrigin,
-    AgentImageFit, AgentImageKind, AgentImageMetadata, AgentImageObjectParam, AgentImageObjectRef,
-    AgentImageRenderer, AgentImageResource, AgentImageScope, AgentImageTransform,
-    AgentLayerCaptureRef, AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs,
+    AgentCaptureSourceIdentity, AgentImageAlignment, AgentImageComposition, AgentImageContentBBox,
+    AgentImageCropOrigin, AgentImageFit, AgentImageKind, AgentImageMetadata, AgentImageObjectParam,
+    AgentImageObjectRef, AgentImageRenderer, AgentImageResource, AgentImageScope,
+    AgentImageTransform, AgentLayerCaptureRef, AgentLayerCaptureRefs, AgentObjectCaptureRef,
+    AgentObjectCaptureRefs, AgentSelectedCaptureMetadata,
 };
 use crate::object::{
     AgentObservedImageContent, AgentObservedLayer, AgentObservedObject, AgentObservedObjectContent,
@@ -24,6 +25,11 @@ use crate::rich_text::{
 use crate::session::{AgentAssignment, AgentAudioState};
 use crate::ui::AgentUiTree;
 use arcweft_core::plan::RuntimeLineId;
+use arcweft_layout::{
+    CaptureComposition, CaptureCropBounds, CaptureMaskMetadata, CaptureMetadata,
+    CaptureRendererKind, CaptureScope, ContentRect, LayoutCoordinateSpace, LayoutPoint, LayoutRect,
+    LayoutSize, ScalePolicy,
+};
 use arcweft_render_text::{
     LineDisplayFrame, RichTextAssignOp, RichTextCascadeLayer, RichTextEffectDescriptor,
     RichTextEffectPhase, RichTextEffectTarget, RichTextObjectProxyDeclaration, RichTextParam,
@@ -47,6 +53,7 @@ fn test_capture_refs() -> AgentObjectCaptureRefs {
             page: 0,
             width: 3,
             height: 4,
+            selected_capture: None,
         }],
     }
 }
@@ -60,6 +67,7 @@ fn test_layer_capture_refs() -> AgentLayerCaptureRefs {
             page: 0,
             width: 10,
             height: 20,
+            selected_capture: None,
         }],
     }
 }
@@ -126,6 +134,7 @@ fn test_raw_mask_image_resource() -> AgentImageResource {
         }),
         content_pixels: Some(12),
         object: None,
+        selected_capture: None,
         diagnostics: Vec::new(),
         written: None,
     }
@@ -167,6 +176,7 @@ fn test_mcp_observation_report() -> AgentObservationReport {
             content_viewport_bbox: None,
             content_pixels: None,
             object: None,
+            selected_capture: None,
             diagnostics: Vec::new(),
             written: None,
         }],
@@ -266,6 +276,7 @@ fn test_serialization_observation_report() -> AgentObservationReport {
             content_viewport_bbox: None,
             content_pixels: None,
             object: None,
+            selected_capture: None,
             diagnostics: Vec::new(),
             written: None,
         }],
@@ -824,6 +835,124 @@ fn image_resource_metadata_preserves_capture_diagnostics() {
     assert_eq!(metadata.diagnostics, image.diagnostics);
 }
 
+fn test_layout_capture_metadata(
+    scope: CaptureScope,
+    composition: CaptureComposition,
+) -> CaptureMetadata {
+    let rect = LayoutRect::new(LayoutPoint::new(96.0, 548.0), LayoutSize::new(3.0, 4.0));
+    CaptureMetadata {
+        renderer: CaptureRendererKind::NativeRichTextObserver,
+        scope,
+        composition,
+        coordinate_basis: LayoutCoordinateSpace::Output,
+        crop: CaptureCropBounds {
+            basis: LayoutCoordinateSpace::Output,
+            unclipped: rect,
+            clipped: rect,
+        },
+        mask: Some(CaptureMaskMetadata {
+            basis: LayoutCoordinateSpace::Output,
+            bounds: rect,
+            object_ids: vec!["object.dialogue.0.0".to_owned()],
+            layer_ids: vec!["dialogue".to_owned()],
+            has_object_id_attachment: true,
+            has_alpha_mask: true,
+        }),
+        fit_transform: ContentRect::calculate(
+            LayoutSize::new(1280.0, 720.0),
+            LayoutSize::new(1280.0, 720.0),
+            ScalePolicy::Raw,
+        )
+        .expect("raw content rect")
+        .fit_transform_metadata(LayoutCoordinateSpace::Output, LayoutCoordinateSpace::Output),
+    }
+}
+
+#[test]
+fn capture_metadata_serializes_selected_object_image_resource() {
+    let report = test_mcp_observation_report();
+    let mut image = test_raw_mask_image_resource();
+    image.selected_capture = Some(AgentSelectedCaptureMetadata::from_layout(
+        test_layout_capture_metadata(
+            CaptureScope::Object {
+                id: "object.dialogue.0.0".to_owned(),
+            },
+            CaptureComposition::MaskAttachment,
+        ),
+        AgentCaptureSourceIdentity::Object {
+            id: "object.dialogue.0.0".to_owned(),
+            parent_id: None,
+            entity: Some("alice".to_owned()),
+            layer: "dialogue".to_owned(),
+            role: "dialogue_textbox".to_owned(),
+            object_layer: None,
+            object_depth: None,
+            rich_text: None,
+        },
+    ));
+
+    let resource = report.image_resource(&image, &[255; 48]);
+    let json = serde_json::to_value(&resource).expect("resource serializes");
+
+    assert_eq!(
+        json["image"]["selected_capture"]["renderer"],
+        "native_rich_text_observer"
+    );
+    assert_eq!(json["image"]["selected_capture"]["scope"]["kind"], "object");
+    assert_eq!(
+        json["image"]["selected_capture"]["composition"],
+        "mask_attachment"
+    );
+    assert_eq!(
+        json["image"]["selected_capture"]["coordinate_basis"],
+        "output"
+    );
+    assert_eq!(json["image"]["selected_capture"]["crop"]["basis"], "output");
+    assert_eq!(
+        json["image"]["selected_capture"]["mask"]["availability"],
+        "available"
+    );
+    assert_eq!(
+        json["image"]["selected_capture"]["mask"]["object_ids"][0],
+        "object.dialogue.0.0"
+    );
+    assert_eq!(
+        json["image"]["selected_capture"]["source"]["role"],
+        "dialogue_textbox"
+    );
+}
+
+#[test]
+fn capture_metadata_serializes_selected_layer_capture_ref() {
+    let mut refs = test_layer_capture_refs();
+    refs.captures[0].selected_capture = Some(AgentSelectedCaptureMetadata::from_layout(
+        test_layout_capture_metadata(
+            CaptureScope::Layer {
+                id: "dialogue".to_owned(),
+            },
+            CaptureComposition::FramebufferCrop,
+        ),
+        AgentCaptureSourceIdentity::Layer {
+            id: "dialogue".to_owned(),
+            object_count: 1,
+        },
+    ));
+
+    let json = serde_json::to_value(&refs).expect("capture refs serialize");
+    assert_eq!(
+        json["captures"][0]["selected_capture"]["scope"]["kind"],
+        "layer"
+    );
+    assert_eq!(
+        json["captures"][0]["selected_capture"]["source"]["object_count"],
+        1
+    );
+    assert_eq!(
+        json["captures"][0]["selected_capture"]["fit_transform"]["policy"],
+        "raw"
+    );
+}
+
 #[test]
 fn observation_report_builds_mcp_style_resources() {
     let report = test_mcp_observation_report();
@@ -873,6 +1002,7 @@ fn observation_report_builds_mcp_style_resources() {
             content_viewport_bbox: None,
             content_pixels: None,
             object: None,
+            selected_capture: None,
             diagnostics: Vec::new(),
         },
     );
@@ -911,6 +1041,7 @@ fn observation_report_builds_mcp_style_resources() {
             }),
             content_pixels: Some(12),
             object: None,
+            selected_capture: None,
             diagnostics: Vec::new(),
         },
     );
