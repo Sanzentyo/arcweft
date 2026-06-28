@@ -7,11 +7,11 @@ mod image_declarations;
 mod import;
 mod inspect;
 pub(in crate::app) mod jit;
-mod local_embedding;
 #[cfg(feature = "native-player")]
 mod native_player;
 pub(crate) mod project;
 mod project_commands;
+mod release;
 mod release_sign;
 mod remote_embedding;
 pub(in crate::app) mod runtime;
@@ -30,6 +30,7 @@ use self::jit::jit_command;
 #[cfg(feature = "native-player")]
 use self::native_player::native_player_command;
 use self::project_commands::{compile_command, project_build_command, project_check_command};
+use self::release::release_command;
 use self::release_sign::sign_bundle_command;
 use self::runtime::cli::runtime_cli_command;
 use self::runtime::plan::runtime_plan_command;
@@ -106,6 +107,7 @@ fn run_cli(cli: Cli, adapter_registrars: &[NativeAdapterRegistrar]) -> Result<()
         CliCommand::Bundle(options) => bundle_command(&options),
         CliCommand::Patch(options) => patch_bundle_command(&options),
         CliCommand::SignBundle(options) => sign_bundle_command(&options),
+        CliCommand::Release { command } => release_command(command),
         CliCommand::RunBundle(options) => run_bundle_command(&options, adapter_registrars),
         CliCommand::Cache { command } => cache_command(command),
         #[cfg(feature = "native-player")]
