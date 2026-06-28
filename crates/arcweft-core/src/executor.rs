@@ -62,6 +62,22 @@ pub enum ArcweftExecutionTier {
     AwbcProduct,
 }
 
+impl ArcweftExecutionTier {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::StructuredVm => "structured_vm",
+            Self::StructuredAot => "structured_aot",
+            Self::AwbcProduct => "awbc_product",
+        }
+    }
+
+    #[must_use]
+    pub const fn is_vm_first(self) -> bool {
+        matches!(self, Self::StructuredVm | Self::AwbcProduct)
+    }
+}
+
 /// Shared runtime executor facade used by application-facing crates.
 ///
 /// The facade owns concrete executor construction so runtime hosts, CLI paths,

@@ -1,7 +1,7 @@
 use crate::artifact::{CodeRegionId, RuntimeCodeArtifactKind};
 use crate::awbc_region::{AwbcRegionLowerOptions, lower_awbc_regions};
 use crate::cache::{RuntimeCodeCacheInputs, RuntimeCodeCacheKey};
-use crate::policy::{ProgramGenerationId, RuntimeOptimizationLevel};
+use crate::policy::{ProgramGenerationId, RuntimeExecutorKind, RuntimeOptimizationLevel};
 use crate::region::{
     COMPILED_REGION_ABI_VERSION, CompiledApplyError, CompiledExecutionIdentity, CompiledFallback,
     CompiledFallbackReason, CompiledRegion, CompiledRegionEntry, CompiledRegionInput,
@@ -380,4 +380,14 @@ fn awbc_region_baseline_executes_through_compact_vm() {
         fiber.status,
         arcweft_core::awbc::fiber::FiberStatus::Returned
     );
+}
+
+#[test]
+fn runtime_codegen_policy_labels_are_stable_for_repl_tiering_status() {
+    assert_eq!(ProgramGenerationId::new(7).as_u64(), 7);
+    assert_eq!(RuntimeExecutorKind::CompactVm.as_str(), "compact_vm");
+    assert_eq!(RuntimeExecutorKind::Jit.as_str(), "jit");
+    assert!(RuntimeExecutorKind::Jit.is_compiled_backend());
+    assert!(!RuntimeExecutorKind::CompactVm.is_compiled_backend());
+    assert_eq!(RuntimeOptimizationLevel::Baseline.as_str(), "baseline");
 }

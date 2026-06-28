@@ -2,8 +2,9 @@ use arcweft_agent_protocol::protocol::{ObservationEnvelope, ObserveRequest};
 
 use crate::{
     ReplBaseChangeOutcome, ReplBindingEvidence, ReplCapabilityReport, ReplCellId, ReplCellInput,
-    ReplCellKind, ReplCellList, ReplGenerationEvidence, ReplGenerationId, ReplResetOutcome,
-    ReplTierInvalidationToken, ReplTierStatusProjection, ReplUndoOutcome,
+    ReplCellKind, ReplCellList, ReplCodegenStatus, ReplGenerationEvidence, ReplGenerationId,
+    ReplResetOutcome, ReplTierInvalidationToken, ReplTierStatusProjection, ReplUndoOutcome,
+    ReplWarmOutcome,
 };
 
 /// Stable per-dispatch id assigned before a command is executed.
@@ -231,6 +232,8 @@ pub enum ReplCommandEvidence {
     Reset(ReplResetEvidence),
     Capabilities(ReplCapabilityReport),
     Generations(ReplGenerationCommandEvidence),
+    Warm(ReplWarmOutcome),
+    Codegen(ReplCodegenStatus),
     BackgroundQueued(ReplBackgroundQueuedEvidence),
     Help(ReplHelpEvidence),
     Quit,

@@ -15,6 +15,7 @@ arcweft-core = { path = "../arcweft-core" }
 arcweft-debug-model = { path = "../arcweft-debug-model" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-runtime-codegen = { path = "../arcweft-runtime-codegen" }
 arcweft-tooling = { path = "../arcweft-tooling" }
 
 blake3.workspace = true

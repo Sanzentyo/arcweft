@@ -86,6 +86,144 @@ where
     }
 }
 
+/// Agent controller executor tier policy used by tooling and REPL/dev adapters.
+///
+/// Product paths keep using [`BytecodeVmAgentControllerExecutorFactory`]. This
+/// policy is intentionally runner-local so selecting a dev tier never makes
+/// product players depend on REPL, compiler, codegen, JIT, or AOT crates.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AgentControllerExecutorTierPolicy {
+    requested: ArcweftExecutionTier,
+    allow_vm_fallback: bool,
+}
+
+/// Agent controller executor factory that can request a non-default tier while
+/// preserving bytecode-VM fallback semantics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TieredAgentControllerExecutorFactory {
+    policy: AgentControllerExecutorTierPolicy,
+    last_requested: Option<ArcweftExecutionTier>,
+    last_built: Option<ArcweftExecutionTier>,
+    fell_back_to_vm: bool,
+}
+
+impl AgentControllerExecutorTierPolicy {
+    /// Product and stable runner policy: request the structured bytecode VM.
+    #[must_use]
+    pub const fn bytecode_vm_first() -> Self {
+        Self {
+            requested: ArcweftExecutionTier::StructuredVm,
+            allow_vm_fallback: true,
+        }
+    }
+
+    /// REPL/dev policy: request a tier but keep VM fallback enabled.
+    #[must_use]
+    pub const fn repl_dev(requested: ArcweftExecutionTier) -> Self {
+        Self {
+            requested,
+            allow_vm_fallback: true,
+        }
+    }
+
+    #[must_use]
+    pub const fn requested_tier(self) -> ArcweftExecutionTier {
+        self.requested
+    }
+
+    #[must_use]
+    pub const fn allow_vm_fallback(self) -> bool {
+        self.allow_vm_fallback
+    }
+
+    #[must_use]
+    pub const fn with_vm_fallback(self, allow_vm_fallback: bool) -> Self {
+        Self {
+            allow_vm_fallback,
+            ..self
+        }
+    }
+}
+
+impl TieredAgentControllerExecutorFactory {
+    #[must_use]
+    pub const fn new(policy: AgentControllerExecutorTierPolicy) -> Self {
+        Self {
+            policy,
+            last_requested: None,
+            last_built: None,
+            fell_back_to_vm: false,
+        }
+    }
+
+    #[must_use]
+    pub const fn policy(self) -> AgentControllerExecutorTierPolicy {
+        self.policy
+    }
+
+    #[must_use]
+    pub const fn last_requested_tier(self) -> Option<ArcweftExecutionTier> {
+        self.last_requested
+    }
+
+    #[must_use]
+    pub const fn last_built_tier(self) -> Option<ArcweftExecutionTier> {
+        self.last_built
+    }
+
+    #[must_use]
+    pub const fn fell_back_to_vm(self) -> bool {
+        self.fell_back_to_vm
+    }
+}
+
+impl Default for AgentControllerExecutorTierPolicy {
+    fn default() -> Self {
+        Self::bytecode_vm_first()
+    }
+}
+
+impl Default for TieredAgentControllerExecutorFactory {
+    fn default() -> Self {
+        Self::new(AgentControllerExecutorTierPolicy::bytecode_vm_first())
+    }
+}
+
+impl<S, D, R> AgentControllerExecutorFactory<S, D, R> for TieredAgentControllerExecutorFactory
+where
+    S: AgentSession,
+    D: DebugEventSink,
+    R: RagService,
+{
+    type Executor = ArcweftRuntimeExecutor;
+
+    fn build(&mut self, program: BytecodeProgram) -> AgentRunnerResult<Self::Executor, S, D, R> {
+        let requested = self.policy.requested_tier();
+        self.last_requested = Some(requested);
+        match ArcweftRuntimeExecutor::from_bytecode(program.clone(), requested) {
+            Ok(executor) => {
+                self.last_built = Some(executor.tier());
+                self.fell_back_to_vm = false;
+                Ok(executor)
+            }
+            Err(_error)
+                if self.policy.allow_vm_fallback()
+                    && requested != ArcweftExecutionTier::StructuredVm =>
+            {
+                let executor = ArcweftRuntimeExecutor::from_bytecode(
+                    program,
+                    ArcweftExecutionTier::StructuredVm,
+                )
+                .map_err(AgentRunError::Bytecode)?;
+                self.last_built = Some(executor.tier());
+                self.fell_back_to_vm = true;
+                Ok(executor)
+            }
+            Err(error) => Err(AgentRunError::Bytecode(error)),
+        }
+    }
+}
+
 impl<S, D, R> AgentRunner<S, D, R>
 where
     S: AgentSession,
@@ -714,5 +852,32 @@ where
             created_unix_ms: self.config.created_unix_ms,
         };
         self.debug.append(&event).map_err(AgentRunError::Debug)
+    }
+}
+
+#[cfg(test)]
+mod tier_policy_tests {
+    use super::*;
+
+    #[test]
+    fn agent_controller_tier_policy_product_default_is_vm_first() {
+        let policy = AgentControllerExecutorTierPolicy::default();
+
+        assert_eq!(policy.requested_tier(), ArcweftExecutionTier::StructuredVm);
+        assert!(policy.allow_vm_fallback());
+    }
+
+    #[test]
+    fn agent_controller_tier_policy_repl_can_request_aot_with_vm_fallback() {
+        let policy =
+            AgentControllerExecutorTierPolicy::repl_dev(ArcweftExecutionTier::StructuredAot);
+        let factory = TieredAgentControllerExecutorFactory::new(policy);
+
+        assert_eq!(
+            factory.policy().requested_tier(),
+            ArcweftExecutionTier::StructuredAot
+        );
+        assert!(factory.policy().allow_vm_fallback());
+        assert!(!factory.fell_back_to_vm());
     }
 }

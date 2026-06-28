@@ -16,6 +16,7 @@ pub mod runtime;
 pub mod session;
 pub mod source;
 pub mod tier;
+pub mod tiering;
 
 pub use binding::{
     ReplBindingInvalidation, ReplBindingRecord, ReplBindingSnapshotKind, ReplBindingStatus,
@@ -35,4 +36,10 @@ pub use session::{ReplBaseChangeOutcome, ReplBaseSnapshot, ReplSession, ReplSess
 pub use tier::{
     ReplExecutableCell, ReplExecutableSnapshot, ReplTierCursor, ReplTierInvalidationReason,
     ReplTierInvalidationToken, ReplTierStatusProjection, ReplTierStatusRecord,
+};
+pub use tiering::{
+    ReplCodegenStatus, ReplPendingWarmJob, ReplTierBackendStatus, ReplTierCommandHandler,
+    ReplTierDiagnostic, ReplTierDiagnosticCode, ReplTierDiagnosticSeverity, ReplTierFallback,
+    ReplTierManager, ReplTierPolicy, ReplTierStatus, ReplWarmOutcome, ReplWarmRequest,
+    ReplWarmUnsupportedReason,
 };
