@@ -32,6 +32,23 @@ runtime does not yet own platform object wiring:
 The native sample is therefore intentionally a runnable adapter-contract sample,
 not a user-facing OS IME window.
 
+## Current Web Sample Limits
+
+The Web sample is also not yet a complete product TextField. It proves basic
+EditContext availability and font/style wiring, but it does not yet own:
+
+- candidate-window geometry updates from rendered caret/character bounds;
+- a single synchronized visible caret policy;
+- pointer hit-testing, drag selection, and selection painting;
+- arrow-key and shortcut edit commands;
+- selected-text replacement, deletion, cut/copy/paste policy, or movement.
+
+These gaps are tracked in:
+
+- `docs/implementation/seq06-ime-caret-selection-gap-analysis-2026-06-28.md`
+- `docs/reviews/requests/2026-06-28-seq-06.4a.2-web-editcontext-caret-geometry-selection-package.md`
+- `docs/reviews/requests/2026-06-28-seq-06.4g-cross-platform-text-editing-behavior-package.md`
+
 ## Commands
 
 ```bash
