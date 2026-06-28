@@ -12,6 +12,7 @@ arcweft-agent-policy = { path = "../arcweft-agent-policy" }
 arcweft-agent-mcp = { path = "../arcweft-agent-mcp" }
 arcweft-agent-mcp-client = { path = "../arcweft-agent-mcp-client" }
 arcweft-agent-runner = { path = "../arcweft-agent-runner" }
+arcweft-agent-repl = { path = "../arcweft-agent-repl" }
 arcweft-content-policy = { path = "../arcweft-content-policy" }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-adapter-context = { path = "../arcweft-adapter-context", features = ["sema"] }

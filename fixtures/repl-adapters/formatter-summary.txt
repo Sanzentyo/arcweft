@@ -1,0 +1,1 @@
+The formatter emits one structured JSON object with command_id, status, evidence, and diagnostics. Human output is a deterministic one-line summary plus diagnostics. Large vectors are bounded by max_items and large strings by max_string_bytes.

@@ -1,0 +1,20 @@
+{
+  "command_id": 1,
+  "status": "rejected",
+  "evidence": {
+    "kind": "cancel",
+    "outcome": {
+      "target": { "kind": "all" },
+      "cancelled": 0,
+      "pending_after": 0
+    }
+  },
+  "diagnostics": [
+    {
+      "severity": "error",
+      "code": "read_only_trace_rejected",
+      "message": "read-only trace mode rejects mutating command `:cancel`",
+      "field": null
+    }
+  ]
+}

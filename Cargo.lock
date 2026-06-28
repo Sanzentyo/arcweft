@@ -479,6 +479,7 @@ dependencies = [
  "arcweft-agent-mcp-client",
  "arcweft-agent-policy",
  "arcweft-agent-protocol",
+ "arcweft-agent-repl",
  "arcweft-agent-runner",
  "arcweft-bundle",
  "arcweft-character",

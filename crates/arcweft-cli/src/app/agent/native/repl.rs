@@ -518,18 +518,13 @@ pub(super) fn agent_repl_eval_line(
     state: &mut AgentReplState,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> AgentReplCellReport {
-    if input.starts_with(':') {
-        return agent_repl_eval_meta(index, input, options, state, adapter_registrars);
-    }
-    if state.read_only {
-        return agent_repl_error(
-            index,
-            input,
-            "cell",
-            "read-only Agent REPL does not execute Agent cells".to_owned(),
-        );
-    }
-    agent_repl_eval_compiled_cell(index, input, state)
+    super::repl_command_bridge::agent_repl_eval_line(
+        index,
+        input,
+        options,
+        state,
+        adapter_registrars,
+    )
 }
 
 pub(super) fn agent_repl_eval_meta(
@@ -2391,6 +2386,15 @@ pub(super) fn agent_repl_error(
 }
 
 pub(super) fn agent_repl_print_cell(report: &AgentReplCellReport) {
+    if matches!(report.status.as_str(), "ok" | "queued")
+        && let Some(value) = &report.value
+        && let Some(text) = value
+            .get("formatted_text")
+            .and_then(serde_json::Value::as_str)
+    {
+        println!("{text}");
+        return;
+    }
     match report.status.as_str() {
         "ok" | "parsed" => {
             if let Some(value) = &report.value {

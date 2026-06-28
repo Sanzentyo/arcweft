@@ -1,0 +1,2 @@
+error: rejected: cell submission rejected source_len=18 policy=read_only_trace
+diagnostic[error:read_only_trace_rejected]: read-only Agent REPL does not execute Agent cells

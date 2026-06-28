@@ -1,0 +1,19 @@
+{
+  "command_id": 1,
+  "status": "error",
+  "evidence": {
+    "kind": "tasks",
+    "include_completed": false,
+    "tasks": [],
+    "truncated": false,
+    "total_tasks": 0
+  },
+  "diagnostics": [
+    {
+      "severity": "error",
+      "code": "host_unavailable",
+      "message": "task inspection is not available for this CLI Agent REPL host adapter (include_completed=false)",
+      "field": null
+    }
+  ]
+}

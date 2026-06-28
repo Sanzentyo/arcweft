@@ -1,0 +1,2 @@
+error: no evidence
+diagnostic[warning:tiering_unavailable]: this CLI Agent REPL adapter is not yet backed by a seq05.3 tiering manager
