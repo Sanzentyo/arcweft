@@ -8,6 +8,7 @@ use arcweft_presentation::layer::{
     RenderPhase,
 };
 use arcweft_presentation::semantic::{SemanticNode, SemanticRole, SemanticTree};
+use arcweft_presentation::text_input::{TextInputClientSnapshot, TextInputGeometrySnapshot};
 use arcweft_render_text::{
     LineDisplayFrame, RichTextColor, RichTextEffectDescriptor, RichTextEffectPhase,
     RichTextFontFamily, RichTextParam, RichTextRange, RichTextStyle, RichTextTextRun,
@@ -179,6 +180,17 @@ pub struct PreparedFrame {
     pub choices: Vec<RenderChoice>,
 }
 
+/// Renderer-backed text input target prepared for platform IME adapters.
+///
+/// This intentionally contains Arcweft-owned text-input snapshots rather than
+/// native handles. Platform adapters consume it through the native player
+/// bridge.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreparedTextInputTarget {
+    pub snapshot: TextInputClientSnapshot,
+    pub geometry: TextInputGeometrySnapshot,
+}
+
 /// Pure geometry planner shared by native and browser hosts.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SharedFramePlanner;
@@ -190,6 +202,20 @@ pub enum FramePlanError {
     EmptyViewport,
     #[error("failed to construct stable presentation id `{value}`")]
     InvalidId { value: String },
+}
+
+impl PreparedFrame {
+    /// Returns the renderer-backed focused text target for platform IME sync.
+    ///
+    /// The native bridge calls this from the normal player window path. Current
+    /// frame planning does not yet lower Arcweft text editor controls into
+    /// prepared text-input geometry, so returning `None` keeps unsupported IME
+    /// attachment explicit instead of fabricating a platform focus target.
+    #[must_use]
+    pub fn focused_text_input_target(&self) -> Option<PreparedTextInputTarget> {
+        let _ = self;
+        None
+    }
 }
 
 impl Default for RenderPreferences {

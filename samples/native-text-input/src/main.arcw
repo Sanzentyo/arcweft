@@ -1,0 +1,27 @@
+pub surface character narrator {
+    display = "Arcweft Native Text Input"
+    default_voice = auto
+}
+
+entry game @entry.native_text_input {
+    start @flow.native_text_input
+}
+
+flow native_text_input effects { native.text_input.sample } {
+    narrator:
+        seq06.4j native-player platform text input bridge sample.[p]
+        Use pointer focus and Tab traversal across TextField, TextArea, and SecureField.[p]
+
+    # The renderer/runtime side of seq06.4j consumes this deterministic scene id
+    # and lowers it to real Arcweft text controls.  Platform IME acceptance must
+    # use `arcw run --runner native` and must not call windows-tsf-ime-sample.
+    let _mounted = try await native.text_input.sample.mount("seq06.4j.native-text-input") with {
+        error _ => return "native_text_input_mount_failed"
+    }
+
+    narrator:
+        Controls: jp_text_field, jp_text_area, secret_secure_field.[p]
+        Enter Japanese IME text, move the caret, select text, delete text, and blur focus.[p]
+
+    return "native_text_input_sample_open"
+}

@@ -58,6 +58,11 @@ pub(in crate::app) fn runtime_run_command(
         );
         return Err(ExitCode::from(2));
     }
+    if options.text_input_trace_out.is_some() && !matches!(options.runner, CliRuntimeRunner::Native)
+    {
+        eprintln!("error: --text-input-trace-out requires --runner native");
+        return Err(ExitCode::from(2));
+    }
     if should_try_bundle_run(options, &selection) {
         let pure_config = runtime_pure_config_for_selection(
             &selection,
@@ -298,7 +303,7 @@ fn run_game_target(
             let output = run_bundle_output_path(selection, RUN_BUNDLE_DIR);
             write_run_bundle(&output, &bundle, &mut phases)?;
             println!("Built {}", output.display());
-            run_native_bundle(bundle, options.steps)?;
+            run_native_bundle(bundle, options.steps, options)?;
             Ok(RunTargetOutcome::Handled)
         }
         CliRuntimeRunner::Web => {
@@ -437,15 +442,21 @@ fn run_native_windowed_watch_target(
         output.display(),
         inputs.len(),
     );
-    run_native_bundle_with_ingress(initial_bundle, options.steps, move |ingress| {
-        thread::spawn(move || {
-            if let Err(code) = native_windowed_watch_producer_loop(
-                &options, &selection, &output, base_bytes, inputs, &ingress,
-            ) {
-                eprintln!("watch: native windowed producer stopped with {code:?}");
-            }
-        });
-    })
+    let text_input_options = native_text_input_options(&options);
+    run_native_bundle_with_ingress(
+        initial_bundle,
+        options.steps,
+        text_input_options,
+        move |ingress| {
+            thread::spawn(move || {
+                if let Err(code) = native_windowed_watch_producer_loop(
+                    &options, &selection, &output, base_bytes, inputs, &ingress,
+                ) {
+                    eprintln!("watch: native windowed producer stopped with {code:?}");
+                }
+            });
+        },
+    )
 }
 
 #[cfg(not(feature = "native-player"))]
@@ -865,8 +876,17 @@ fn sanitize_bundle_stem(value: &str) -> String {
 }
 
 #[cfg(feature = "native-player")]
-fn run_native_bundle(bundle: ArcweftBundle, steps: usize) -> Result<(), ExitCode> {
-    arcweft_player_native::run_bundle_windowed(bundle, steps).map_err(|error| {
+fn run_native_bundle(
+    bundle: ArcweftBundle,
+    steps: usize,
+    options: &RuntimeRunOptions,
+) -> Result<(), ExitCode> {
+    arcweft_player_native::run_bundle_windowed_with_text_input_options(
+        bundle,
+        steps,
+        native_text_input_options(options),
+    )
+    .map_err(|error| {
         eprintln!("error: native player failed: {error}");
         ExitCode::FAILURE
     })
@@ -876,21 +896,43 @@ fn run_native_bundle(bundle: ArcweftBundle, steps: usize) -> Result<(), ExitCode
 fn run_native_bundle_with_ingress<F>(
     bundle: ArcweftBundle,
     steps: usize,
+    text_input_options: arcweft_player_native::NativeTextInputBridgeOptions,
     ingress_ready: F,
 ) -> Result<(), ExitCode>
 where
     F: FnOnce(arcweft_player_native::WindowedPatchIngress) + Send + 'static,
 {
-    arcweft_player_native::run_bundle_windowed_with_ingress(bundle, steps, ingress_ready).map_err(
-        |error| {
-            eprintln!("error: native player failed: {error}");
-            ExitCode::FAILURE
-        },
+    arcweft_player_native::run_bundle_windowed_with_ingress_and_text_input_options(
+        bundle,
+        steps,
+        text_input_options,
+        ingress_ready,
     )
+    .map_err(|error| {
+        eprintln!("error: native player failed: {error}");
+        ExitCode::FAILURE
+    })
+}
+
+#[cfg(feature = "native-player")]
+fn native_text_input_options(
+    options: &RuntimeRunOptions,
+) -> arcweft_player_native::NativeTextInputBridgeOptions {
+    let mut bridge = arcweft_player_native::NativeTextInputBridgeOptions::default();
+    if let Some(output) = options.text_input_trace_out.as_ref() {
+        bridge = bridge.with_trace(
+            arcweft_player_native::NativeTextInputTraceOptions::write_to(output.clone()),
+        );
+    }
+    bridge
 }
 
 #[cfg(not(feature = "native-player"))]
-fn run_native_bundle(_bundle: ArcweftBundle, _steps: usize) -> Result<(), ExitCode> {
+fn run_native_bundle(
+    _bundle: ArcweftBundle,
+    _steps: usize,
+    _options: &RuntimeRunOptions,
+) -> Result<(), ExitCode> {
     eprintln!("error: native player support is not enabled for this arcw build");
     Err(ExitCode::from(2))
 }

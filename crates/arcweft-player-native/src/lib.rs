@@ -3,6 +3,7 @@
 mod native_audio;
 mod patch_endpoint;
 mod scene_windowed;
+mod text_input_bridge;
 mod window_driver;
 mod windowed;
 mod windowed_ingress;
@@ -13,7 +14,12 @@ pub use patch_endpoint::{
     NativePatchEndpoint, NativePatchEndpointError, NativePatchOutcome, NativePatchTransportAction,
     NativePatchTransportEnvelope,
 };
-pub use scene_windowed::{run_bundle_windowed, run_bundle_windowed_with_ingress};
+pub use scene_windowed::{
+    run_bundle_windowed, run_bundle_windowed_with_ingress,
+    run_bundle_windowed_with_ingress_and_text_input_options,
+    run_bundle_windowed_with_text_input_options,
+};
+pub use text_input_bridge::{NativeTextInputBridgeOptions, NativeTextInputTraceOptions};
 pub use windowed::run_bundle_windowed as run_bundle_adapter_windowed;
 pub use windowed_ingress::{
     WindowedLocalSidecar, WindowedPatchIngress, WindowedPatchIngressAccepted,

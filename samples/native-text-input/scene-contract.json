@@ -1,0 +1,51 @@
+{
+  "schema": "arcweft.seq06.4j.native-text-input.scene-contract.v1",
+  "scene_id": "seq06.4j.native-text-input",
+  "acceptance_surface": "arcw run --runner native samples/native-text-input/src/main.arcw",
+  "controls": [
+    {
+      "id": "jp_text_field",
+      "role": "TextField",
+      "label": "Japanese text field",
+      "initial_text": "かな入力",
+      "placeholder": "日本語を入力",
+      "secure": false,
+      "multiline": false,
+      "font_style": "sans_regular_18",
+      "fixture_bounds": { "x": 96, "y": 128, "width": 720, "height": 44 }
+    },
+    {
+      "id": "jp_text_area",
+      "role": "TextArea",
+      "label": "Japanese multiline text area",
+      "initial_text": "一行目\n二行目",
+      "placeholder": "複数行の日本語入力",
+      "secure": false,
+      "multiline": true,
+      "font_style": "serif_regular_18",
+      "fixture_bounds": { "x": 96, "y": 208, "width": 720, "height": 144 }
+    },
+    {
+      "id": "secret_secure_field",
+      "role": "SecureField",
+      "label": "Secure field",
+      "initial_text": "",
+      "placeholder": "秘密の入力",
+      "secure": true,
+      "multiline": false,
+      "font_style": "monospace_regular_18",
+      "fixture_bounds": { "x": 96, "y": 392, "width": 720, "height": 44 }
+    }
+  ],
+  "required_trace_evidence": [
+    "backend capability record",
+    "focus generation for each control",
+    "renderer geometry with screen caret/candidate anchor for plain controls",
+    "secure_redacted=true for SecureField snapshot and geometry",
+    "composition update",
+    "commit",
+    "delete_surrounding or command deletion",
+    "selection movement",
+    "blur/deactivate"
+  ]
+}

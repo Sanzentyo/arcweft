@@ -1,0 +1,24 @@
+{
+  "schema": "arcweft.seq06.4j.native-player-text-input-trace.v1",
+  "records_are": "JSON array of NativeTextInputTraceRecord",
+  "must_contain_record_types": [
+    "capabilities",
+    "focus",
+    "geometry",
+    "key_disposition",
+    "platform_event",
+    "routed_text_input",
+    "blur"
+  ],
+  "forbidden_values": [
+    "HWND",
+    "ITf",
+    "ITextStoreACP",
+    "NSRange",
+    "NSTextInputClient",
+    "NSView",
+    "InputConnection",
+    "UITextInput",
+    "secure plaintext"
+  ]
+}

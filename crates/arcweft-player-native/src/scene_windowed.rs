@@ -1,4 +1,8 @@
 use crate::NativePlayerError;
+use crate::text_input_bridge::{
+    NativeTextInputBridge, NativeTextInputBridgeError, NativeTextInputBridgeOptions,
+    NativeTextInputFocusReason, NativeTextInputFocusedControl, NativeTextInputWindowContext,
+};
 use crate::windowed_ingress::{
     WindowedPatchIngress, WindowedPatchIngressCompletion, WindowedPatchIngressConfig,
     WindowedPatchIngressMessage, WindowedPatchIngressReceiver,
@@ -13,8 +17,8 @@ use arcweft_player_scene::input::{InputController, InputOutcome};
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
 use arcweft_render_text::LineDisplayFrame;
 use arcweft_render_wgpu::geometry::{
-    RenderChoiceItem, RenderDialogue, RenderPreferences, RenderScene, RenderViewport,
-    SharedFramePlanner,
+    PreparedFrame, PreparedTextInputTarget, RenderChoiceItem, RenderDialogue, RenderPreferences,
+    RenderScene, RenderViewport, SharedFramePlanner,
 };
 use arcweft_render_wgpu::renderer::{SharedRenderer, SharedRendererError};
 use arcweft_runtime_driver::clock::{RuntimeClockError, RuntimeClockStep};
@@ -44,6 +48,15 @@ pub fn run_bundle_windowed(
         .map_err(|error| NativePlayerError::SceneWindow(error.to_string()))
 }
 
+pub fn run_bundle_windowed_with_text_input_options(
+    bundle: ArcweftBundle,
+    _max_steps: usize,
+    text_input_options: NativeTextInputBridgeOptions,
+) -> Result<(), NativePlayerError> {
+    run_shared_scene_window_with_options("Arcweft Player", bundle, text_input_options, |_| {})
+        .map_err(|error| NativePlayerError::SceneWindow(error.to_string()))
+}
+
 pub fn run_bundle_windowed_with_ingress(
     bundle: ArcweftBundle,
     _max_steps: usize,
@@ -51,6 +64,21 @@ pub fn run_bundle_windowed_with_ingress(
 ) -> Result<(), NativePlayerError> {
     run_shared_scene_window_with_ingress("Arcweft Player", bundle, configure_ingress)
         .map_err(|error| NativePlayerError::SceneWindow(error.to_string()))
+}
+
+pub fn run_bundle_windowed_with_ingress_and_text_input_options(
+    bundle: ArcweftBundle,
+    _max_steps: usize,
+    text_input_options: NativeTextInputBridgeOptions,
+    configure_ingress: impl FnOnce(WindowedPatchIngress),
+) -> Result<(), NativePlayerError> {
+    run_shared_scene_window_with_options(
+        "Arcweft Player",
+        bundle,
+        text_input_options,
+        configure_ingress,
+    )
+    .map_err(|error| NativePlayerError::SceneWindow(error.to_string()))
 }
 
 #[derive(Debug, Error)]
@@ -67,6 +95,8 @@ enum NativeSceneWindowError {
     Clock(#[from] RuntimeClockError),
     #[error("bundle image catalog failed: {0}")]
     Images(#[from] BundleImageCatalogError),
+    #[error("native text-input bridge failed: {0}")]
+    TextInputBridge(#[from] NativeTextInputBridgeError),
     #[error("WebGPU surface creation failed: {0}")]
     SurfaceCreation(String),
     #[error("no WebGPU adapter is available for the native surface")]
@@ -94,6 +124,7 @@ enum NativeSceneWindowError {
 struct NativeSceneApp {
     title: String,
     bundle: Option<ArcweftBundle>,
+    text_input_options: NativeTextInputBridgeOptions,
     state: Option<NativeSceneState>,
     ingress: WindowedPatchIngressReceiver,
     ingress_completion: WindowedPatchIngressCompletion,
@@ -111,6 +142,7 @@ struct NativeSceneState {
     runtime: WindowedRuntimeOwner,
     ingress_completion: WindowedPatchIngressCompletion,
     input: InputController,
+    text_input: NativeTextInputBridge,
     prepared: Option<arcweft_render_wgpu::geometry::PreparedFrame>,
     dialogue_visual_clock: DialogueVisualClock,
     started_at: Instant,
@@ -135,6 +167,20 @@ fn run_shared_scene_window_with_ingress(
     bundle: ArcweftBundle,
     configure_ingress: impl FnOnce(WindowedPatchIngress),
 ) -> Result<(), NativeSceneWindowError> {
+    run_shared_scene_window_with_options(
+        title,
+        bundle,
+        NativeTextInputBridgeOptions::default(),
+        configure_ingress,
+    )
+}
+
+fn run_shared_scene_window_with_options(
+    title: &str,
+    bundle: ArcweftBundle,
+    text_input_options: NativeTextInputBridgeOptions,
+    configure_ingress: impl FnOnce(WindowedPatchIngress),
+) -> Result<(), NativeSceneWindowError> {
     let event_loop =
         EventLoop::new().map_err(|error| NativeSceneWindowError::EventLoop(error.to_string()))?;
     let (ingress, ingress_rx) = WindowedPatchIngress::channel(
@@ -148,6 +194,7 @@ fn run_shared_scene_window_with_ingress(
         .run_app(NativeSceneApp {
             title: title.to_owned(),
             bundle: Some(bundle),
+            text_input_options,
             state: None,
             ingress: ingress_rx,
             ingress_completion: ingress_completion.clone(),
@@ -226,9 +273,11 @@ impl ApplicationHandler for NativeSceneApp {
             }
         };
         match pollster::block_on(NativeSceneState::new(
-            window,
+            Arc::clone(&window),
             bundle,
             self.ingress_completion.clone(),
+            NativeTextInputWindowContext::from_winit_window(window.as_ref()),
+            self.text_input_options.clone(),
         )) {
             Ok(state) => {
                 self.state = Some(state);
@@ -267,9 +316,8 @@ impl ApplicationHandler for NativeSceneApp {
                 Ok(())
             }
             WindowEvent::Focused(focused) => {
-                state.input.focus_changed(focused);
                 state.window.request_redraw();
-                Ok(())
+                state.focus_changed(focused)
             }
             WindowEvent::PointerMoved { position, .. } => {
                 state.pointer_move(position);
@@ -287,8 +335,7 @@ impl ApplicationHandler for NativeSceneApp {
                 Ok(())
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                state.keyboard(&event.logical_key, event.state);
-                Ok(())
+                state.keyboard(&event.logical_key, event.state)
             }
             WindowEvent::RedrawRequested => state.redraw(),
             _ => Ok(()),
@@ -316,6 +363,8 @@ impl NativeSceneState {
         window: Arc<dyn Window>,
         bundle: ArcweftBundle,
         ingress_completion: WindowedPatchIngressCompletion,
+        text_input_window: NativeTextInputWindowContext,
+        text_input_options: NativeTextInputBridgeOptions,
     ) -> Result<Self, NativeSceneWindowError> {
         let instance = wgpu::Instance::default();
         let surface = instance
@@ -370,6 +419,7 @@ impl NativeSceneState {
         let mut renderer = SharedRenderer::new(&device, &queue, format);
         renderer.register_font_bytes(DEFAULT_FONT_BYTES.to_vec())?;
         let runtime = WindowedRuntimeOwner::from_bundle(&bundle, BundleSessionOptions::default())?;
+        let text_input = NativeTextInputBridge::new(text_input_window, text_input_options);
         Ok(Self {
             window,
             surface,
@@ -380,6 +430,7 @@ impl NativeSceneState {
             runtime,
             ingress_completion,
             input: InputController::default(),
+            text_input,
             prepared: None,
             dialogue_visual_clock: DialogueVisualClock::default(),
             started_at: Instant::now(),
@@ -406,6 +457,7 @@ impl NativeSceneState {
         let prepared = self.prepare_frame()?;
         self.input.ensure_choice_focus(&prepared);
         let prepared = self.prepare_frame_with_interaction()?;
+        self.sync_text_input_bridge(&prepared, NativeTextInputFocusReason::RedrawRefresh)?;
         self.render(&prepared)?;
         let patch_outcomes = self.drain_patch_events_after_render_submitted()?;
         if patch_outcomes
@@ -583,6 +635,7 @@ impl NativeSceneState {
             ElementState::Released => self.input.pointer_up(&frame, pointer, position),
         };
         self.apply_outcome(outcome)?;
+        self.sync_text_input_bridge(&frame, NativeTextInputFocusReason::Pointer)?;
         self.window.request_redraw();
         Ok(())
     }
@@ -598,17 +651,49 @@ impl NativeSceneState {
         self.window.request_redraw();
     }
 
-    fn keyboard(&mut self, key: &Key, element_state: ElementState) {
+    fn keyboard(
+        &mut self,
+        key: &Key,
+        element_state: ElementState,
+    ) -> Result<(), NativeSceneWindowError> {
         let Some(frame) = self.prepared.clone() else {
-            return;
+            return Ok(());
         };
         let phase = match element_state {
             ElementState::Pressed => KeyPhase::Down,
             ElementState::Released => KeyPhase::Up,
         };
-        let outcome = self.input.keyboard(&frame, &key_label(key), phase);
-        let _ = self.apply_outcome(outcome);
+        let label = key_label(key);
+        let disposition = self.text_input.backend_key_disposition(&label);
+        let outcome = self
+            .input
+            .keyboard_with_ime(&frame, &label, phase, disposition);
+        self.apply_outcome(outcome)?;
+        for edit in self.text_input.drain_platform_edits(disposition)? {
+            let outcome = self.input.text_input(&frame, edit.into_input());
+            self.apply_outcome(outcome)?;
+        }
         self.window.request_redraw();
+        Ok(())
+    }
+
+    fn focus_changed(&mut self, focused: bool) -> Result<(), NativeSceneWindowError> {
+        let outcome = self.input.focus_changed(focused);
+        self.apply_outcome(outcome)?;
+        if !focused {
+            self.text_input.blur_active()?;
+        }
+        Ok(())
+    }
+
+    fn sync_text_input_bridge(
+        &mut self,
+        frame: &PreparedFrame,
+        reason: NativeTextInputFocusReason,
+    ) -> Result<(), NativeSceneWindowError> {
+        self.text_input
+            .sync_focus(focused_text_input_control(frame, reason))?;
+        Ok(())
     }
 
     fn apply_outcome(&mut self, outcome: InputOutcome) -> Result<(), NativeSceneWindowError> {
@@ -685,6 +770,16 @@ fn pointer_id(button: &ButtonSource) -> PointerId {
             PointerId(0)
         }
     }
+}
+
+fn focused_text_input_control(
+    frame: &PreparedFrame,
+    reason: NativeTextInputFocusReason,
+) -> Option<NativeTextInputFocusedControl> {
+    let PreparedTextInputTarget { snapshot, geometry } = frame.focused_text_input_target()?;
+    Some(NativeTextInputFocusedControl::new(
+        snapshot, geometry, reason,
+    ))
 }
 
 fn key_label(key: &Key) -> String {
