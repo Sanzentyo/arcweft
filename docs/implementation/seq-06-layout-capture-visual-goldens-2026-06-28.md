@@ -96,11 +96,13 @@ threshold of 1,000 LOC.
 
 - Wire selected object/layer capture resource metadata into
   `arcweft-agent-protocol` and native/WebGPU adapters once the current resource
-  constructors are updated together.
+  constructors are updated together. Follow-up request:
+  `docs/reviews/requests/2026-06-28-seq-06.5-selected-capture-resource-metadata-package.md`.
 - Add `--scale-policy raw|contain|cover|stretch` only as an explicit follow-up;
   v1 default remains raw.
 - Add visual smoke/golden fixtures after shared WebGPU capture assets and pinned
-  font/backend policy are available in the checkout.
+  font/backend policy are available in the checkout. Follow-up request:
+  `docs/reviews/requests/2026-06-28-seq-06.6-visual-smoke-golden-fixtures-package.md`.
 
 ## Design deviations
 
