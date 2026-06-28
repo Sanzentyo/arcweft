@@ -8,6 +8,7 @@ use super::jit::JitCheckOptions;
 #[cfg(feature = "native-player")]
 use super::native_player::NativePlayerOptions;
 use super::project_commands::{CompileOptions, ProjectBuildOptions, ProjectCheckOptions};
+use super::release::ReleaseCommand;
 use super::release_sign::SignBundleOptions;
 use super::runtime::options::{
     CliRunOptions, PlanOptions, RuntimeProfileOptions, RuntimeRunOptions, ScriptBenchOptions,
@@ -59,6 +60,11 @@ pub(super) enum CliCommand {
     Patch(PatchBundleOptions),
     /// Appends a release signature envelope to an AWFB bundle.
     SignBundle(SignBundleOptions),
+    /// Publishes and verifies AWFR release artifacts.
+    Release {
+        #[command(subcommand)]
+        command: ReleaseCommand,
+    },
     RunBundle(RunBundleOptions),
     /// Inspects and verifies the Arcweft filesystem cache.
     Cache {
