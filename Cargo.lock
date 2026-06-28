@@ -1011,6 +1011,7 @@ dependencies = [
  "arcweft-project",
  "arcweft-render-text",
  "arcweft-rust-abi",
+ "ed25519-dalek",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

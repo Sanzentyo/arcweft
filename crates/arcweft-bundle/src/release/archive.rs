@@ -671,6 +671,17 @@ impl AwfrArchiveManifest {
             .map_err(|error| AwfrArchiveError::EncodeJson(error.to_string()))
     }
 
+    pub fn unsigned_archive_bytes(&self) -> Result<Vec<u8>, AwfrArchiveError> {
+        let mut archive = self.clone();
+        archive.signatures.clear();
+        archive.to_json_bytes()
+    }
+
+    pub fn unsigned_whole_file_digest(&self) -> Result<BundleDigest, AwfrArchiveError> {
+        self.unsigned_archive_bytes()
+            .map(|bytes| BundleDigest::of(&bytes))
+    }
+
     pub fn from_json_slice(bytes: &[u8]) -> Result<Self, AwfrArchiveError> {
         let mut archive = serde_json::from_slice::<Self>(bytes)
             .map_err(|error| AwfrArchiveError::DecodeJson(error.to_string()))?;
@@ -698,9 +709,7 @@ impl AwfrArchiveManifest {
     }
 
     pub fn unsigned_identity_digest(&self) -> Result<BundleDigest, AwfrArchiveError> {
-        let mut archive = self.clone();
-        archive.signatures.clear();
-        let bytes = archive.to_json_bytes()?;
+        let bytes = self.unsigned_archive_bytes()?;
         let mut transcript = Vec::with_capacity(bytes.len() + 64);
         transcript.extend_from_slice(b"arcweft.awfr-archive-identity.v1\0");
         transcript.extend_from_slice(&BundleDigest::of(&bytes).as_bytes());
@@ -919,6 +928,41 @@ mod tests {
         assert_eq!(
             archive.unsigned_identity_digest(),
             decoded.unsigned_identity_digest()
+        );
+    }
+
+    #[test]
+    fn awfr_unsigned_digest_ignores_detached_signature_refs() {
+        let payload = b"voice-payload";
+        let (bundle, carrier) = external_content_pack(payload);
+        let bundle_ref = ReleaseBundleRef::from_awfb_bytes(
+            &bundle,
+            [ReleaseMirror::with_priority("file:content.awfb", 1).expect("bundle mirror")],
+        )
+        .expect("bundle ref");
+        let release_manifest = ReleaseManifest::new([bundle_ref]).expect("release manifest");
+        let mut archive = AwfrArchiveManifest::new(
+            ReleaseChannel::new("nightly").expect("channel"),
+            release_manifest,
+            [carrier],
+        )
+        .expect("archive");
+        let unsigned = archive
+            .unsigned_whole_file_digest()
+            .expect("unsigned digest");
+        archive.signatures.push(AwfrArchiveSignatureRef {
+            signer_id: "test-fixture".to_owned(),
+            algorithm: "ed25519-v1".to_owned(),
+            key_epoch: 4,
+            signing_digest: BundleDigest::of(b"detached transcript"),
+            signature: "fixture-only".to_owned(),
+        });
+
+        assert_eq!(
+            unsigned,
+            archive
+                .unsigned_whole_file_digest()
+                .expect("signed unsigned digest")
         );
     }
 

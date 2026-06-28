@@ -154,13 +154,23 @@ fn release_verify_command(options: &ReleaseVerifyOptions) -> Result<(), ExitCode
     })?;
 
     if options.json {
-        print_json(&report)
+        print_json(&report)?;
+        if report.success {
+            Ok(())
+        } else {
+            Err(ExitCode::FAILURE)
+        }
     } else {
         println!("policy: {:?}", report.policy_mode);
         println!("channel: {}", report.channel);
+        println!("success: {}", report.success);
         println!("signing states: {}", report.signing.len());
         println!("payload states: {}", report.payloads.len());
-        Ok(())
+        if report.success {
+            Ok(())
+        } else {
+            Err(ExitCode::FAILURE)
+        }
     }
 }
 

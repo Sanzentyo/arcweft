@@ -368,7 +368,7 @@ fn publish_verified_payload(
                 status: ExternalPayloadCacheFetchAttemptStatus::Failed,
                 message: Some(error.to_string()),
             });
-            return Ok(None);
+            return Err(ExternalPayloadCacheFetchError::Archive(error));
         }
     };
     let key = store_external_payload_record(context.store, context.carrier, &bytes)?;
@@ -647,7 +647,7 @@ mod tests {
             ReleaseFetchPolicy::default(),
         );
         fs::create_dir_all(&root).expect("root creates");
-        fs::write(root.join("payload.bin"), b"voice-external-bad").expect("payload writes");
+        fs::write(root.join("payload.bin"), b"voice-external-evil").expect("payload writes");
         let archive_path = write_archive(&root, &fixture.archive);
 
         let error = fetch_external_payload_bytes_to_cache(
@@ -660,7 +660,7 @@ mod tests {
 
         assert!(matches!(
             error,
-            ExternalPayloadCacheFetchError::NoUsableMirror(_)
+            ExternalPayloadCacheFetchError::Archive(AwfrArchiveError::DigestMismatch { .. })
         ));
         assert!(!cache.exists());
         let _ = fs::remove_dir_all(root);
@@ -692,7 +692,7 @@ mod tests {
 
         assert!(matches!(
             error,
-            ExternalPayloadCacheFetchError::NoUsableMirror(_)
+            ExternalPayloadCacheFetchError::Archive(AwfrArchiveError::ByteLengthMismatch { .. })
         ));
         assert!(!cache.exists());
         let _ = fs::remove_dir_all(root);

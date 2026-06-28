@@ -1,18 +1,16 @@
+use super::trust::{ReleaseTrustEvidence, ReleaseTrustEvidenceKind, inspect_release_trust};
 use crate::cache::external_payload::{
     ExternalPayloadCacheFetchError, ExternalPayloadCacheFetchReport,
     fetch_external_payload_bytes_to_cache,
 };
-use arcweft_bundle::{
-    container::{BundleDigest, ContentResidency},
-    release::{
-        archive::{
-            AwfrArchiveError, AwfrArchiveManifest, ExternalPayloadCarrier,
-            ExternalPayloadMaterializationMode,
-        },
-        signing_policy::{
-            SigningDigestTranscript, SigningInspectionResult, SigningInspectionState,
-            SigningPolicy, SigningPolicyError, SigningPolicyMode, SigningSubjectKind,
-        },
+use arcweft_bundle::release::{
+    archive::{
+        AwfrArchiveError, AwfrArchiveManifest, ExternalPayloadCarrier,
+        ExternalPayloadMaterializationMode,
+    },
+    signing_policy::{
+        SigningDigestTranscript, SigningInspectionResult, SigningInspectionState, SigningPolicy,
+        SigningPolicyError, SigningPolicyMode, SigningSubjectKind,
     },
 };
 use serde::Serialize;
@@ -28,8 +26,10 @@ pub struct ReleaseConsumeVerificationReport {
     pub channel: String,
     pub policy_mode: SigningPolicyMode,
     pub payload_mode: ExternalPayloadMaterializationMode,
+    pub success: bool,
     pub signing: Vec<SigningInspectionResult>,
     pub payloads: Vec<ReleasePayloadInspectionResult>,
+    pub trust: Vec<ReleaseTrustEvidence>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -81,27 +81,32 @@ pub fn verify_release_archive(
             source,
         })?;
     let archive = AwfrArchiveManifest::from_json_slice(&archive_bytes)?;
-    let signing = inspect_archive_signatures(policy, &archive, &archive_bytes)?;
+    let signing = inspect_archive_signatures(policy, &archive)?;
     let payloads = archive
         .external_payloads
         .iter()
         .map(|carrier| inspect_payload(archive_path, cache_root, carrier, payload_mode))
         .collect::<Vec<_>>();
+    let mut trust = inspect_release_trust(archive_path, &archive, policy);
+    trust.extend(signing.iter().map(|result| signing_trust_evidence(*result)));
+    trust.extend(payloads.iter().map(payload_trust_evidence));
+    let success = report_success(&signing, &payloads, &trust);
 
     Ok(ReleaseConsumeVerificationReport {
         archive: archive_path.display().to_string(),
         channel: archive.channel.to_string(),
         policy_mode: policy.mode,
         payload_mode,
+        success,
         signing,
         payloads,
+        trust,
     })
 }
 
 fn inspect_archive_signatures(
     policy: &SigningPolicy,
     archive: &AwfrArchiveManifest,
-    archive_bytes: &[u8],
 ) -> Result<Vec<SigningInspectionResult>, ReleaseConsumeVerificationError> {
     if archive.signatures.is_empty() {
         return Ok(vec![policy.inspect_signature_presence(
@@ -112,7 +117,7 @@ fn inspect_archive_signatures(
         )]);
     }
 
-    let whole_file_digest = BundleDigest::of(archive_bytes);
+    let whole_file_digest = archive.unsigned_whole_file_digest()?;
     archive
         .signatures
         .iter()
@@ -143,7 +148,7 @@ fn inspect_payload(
     carrier: &ExternalPayloadCarrier,
     payload_mode: ExternalPayloadMaterializationMode,
 ) -> ReleasePayloadInspectionResult {
-    if !payload_mode_requires_bytes(carrier, payload_mode) {
+    if !carrier.requires_payload_bytes(payload_mode) {
         return payload_result(
             carrier,
             ReleasePayloadInspectionState::MetadataOnly,
@@ -190,16 +195,107 @@ fn payload_result(
     }
 }
 
-fn payload_mode_requires_bytes(
-    carrier: &ExternalPayloadCarrier,
-    payload_mode: ExternalPayloadMaterializationMode,
+fn report_success(
+    signing: &[SigningInspectionResult],
+    payloads: &[ReleasePayloadInspectionResult],
+    trust: &[ReleaseTrustEvidence],
 ) -> bool {
-    match payload_mode {
-        ExternalPayloadMaterializationMode::MetadataOnly => false,
-        ExternalPayloadMaterializationMode::RequiredResidency => {
-            carrier.required || carrier.residency == ContentResidency::Startup
+    signing
+        .iter()
+        .all(|result| signing_state_is_success(*result))
+        && payloads.iter().all(payload_state_is_success)
+        && trust.iter().all(ReleaseTrustEvidence::succeeds)
+}
+
+fn signing_state_is_success(result: SigningInspectionResult) -> bool {
+    matches!(
+        result.state,
+        SigningInspectionState::Valid
+            | SigningInspectionState::UnsignedAllowed
+            | SigningInspectionState::MetadataOnlyExternalPayloads
+    )
+}
+
+fn payload_state_is_success(result: &ReleasePayloadInspectionResult) -> bool {
+    matches!(
+        result.state,
+        ReleasePayloadInspectionState::MetadataOnly | ReleasePayloadInspectionState::Verified
+    )
+}
+
+fn signing_trust_evidence(result: SigningInspectionResult) -> ReleaseTrustEvidence {
+    match result.state {
+        SigningInspectionState::Valid | SigningInspectionState::UnsignedAllowed => {
+            ReleaseTrustEvidence::passed(
+                ReleaseTrustEvidenceKind::ArchiveSignature,
+                "awfr_signature_valid",
+                format!("{:?}", result.subject),
+            )
         }
-        ExternalPayloadMaterializationMode::AllPayloads => true,
+        SigningInspectionState::WrongChannel | SigningInspectionState::WrongEpoch => {
+            ReleaseTrustEvidence::hard_failure(
+                ReleaseTrustEvidenceKind::SigningPolicy,
+                "wrong_signing_policy",
+                format!("{:?}", result.subject),
+                format!("signing state {:?}", result.state),
+            )
+        }
+        SigningInspectionState::Invalid => ReleaseTrustEvidence::hard_failure(
+            ReleaseTrustEvidenceKind::ArchiveSignature,
+            "detached_signature_transcript_mismatch",
+            format!("{:?}", result.subject),
+            "detached AWFR signature transcript did not match the unsigned archive transcript",
+        ),
+        _ => ReleaseTrustEvidence::hard_failure(
+            ReleaseTrustEvidenceKind::ArchiveSignature,
+            "required_signature_missing",
+            format!("{:?}", result.subject),
+            format!("signing state {:?}", result.state),
+        ),
+    }
+}
+
+fn payload_trust_evidence(result: &ReleasePayloadInspectionResult) -> ReleaseTrustEvidence {
+    let subject = format!("{}:{}", result.bundle_content_root, result.descriptor_id);
+    match result.state {
+        ReleasePayloadInspectionState::MetadataOnly => ReleaseTrustEvidence::passed(
+            ReleaseTrustEvidenceKind::ExternalPayload,
+            "external_payload_metadata_only",
+            subject,
+        ),
+        ReleasePayloadInspectionState::Verified => ReleaseTrustEvidence::passed(
+            ReleaseTrustEvidenceKind::ExternalPayload,
+            "external_payload_verified",
+            subject,
+        ),
+        ReleasePayloadInspectionState::MissingBytes => ReleaseTrustEvidence::recoverable_miss(
+            ReleaseTrustEvidenceKind::ExternalPayload,
+            "external_payload_missing",
+            subject,
+            result
+                .message
+                .clone()
+                .unwrap_or_else(|| "payload bytes are missing".to_owned()),
+        ),
+        ReleasePayloadInspectionState::Invalid => {
+            let message = result
+                .message
+                .clone()
+                .unwrap_or_else(|| "payload bytes are invalid".to_owned());
+            let code = if message.contains("byte length mismatch") {
+                "external_payload_size_mismatch"
+            } else if message.contains("digest mismatch") {
+                "external_payload_digest_mismatch"
+            } else {
+                "external_payload_invalid"
+            };
+            ReleaseTrustEvidence::hard_failure(
+                ReleaseTrustEvidenceKind::ExternalPayload,
+                code,
+                subject,
+                message,
+            )
+        }
     }
 }
 

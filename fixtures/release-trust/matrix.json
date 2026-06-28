@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "channel": "seq02-9-fixture",
+  "signer_id": "seq02-9-test-fixture-key-do-not-use",
+  "key_epoch": 4,
+  "cases": [
+    {
+      "name": "success_cache_hit",
+      "mode": "required_residency",
+      "expected_success": true,
+      "expected_codes": [
+        "awfr_signature_valid",
+        "base_signature_valid",
+        "patch_signature_valid",
+        "materialized_target_digest_match",
+        "materialized_target_signature_valid",
+        "external_payload_verified"
+      ]
+    },
+    {
+      "name": "success_metadata_only",
+      "mode": "metadata_only",
+      "expected_success": true,
+      "expected_codes": [
+        "external_payload_metadata_only"
+      ]
+    },
+    {
+      "name": "missing_base_signature",
+      "mode": "required_residency",
+      "expected_success": false,
+      "expected_codes": [
+        "missing_base_signature"
+      ]
+    },
+    {
+      "name": "missing_patch_signature",
+      "mode": "required_residency",
+      "expected_success": false,
+      "expected_codes": [
+        "missing_patch_signature"
+      ]
+    },
+    {
+      "name": "patch_target_identity_mismatch",
+      "mode": "required_residency",
+      "expected_success": false,
+      "expected_codes": [
+        "patch_target_identity_mismatch"
+      ]
+    },
+    {
+      "name": "materialized_target_digest_mismatch",
+      "mode": "required_residency",
+      "expected_success": false,
+      "expected_codes": [
+        "materialized_target_digest_mismatch"
+      ]
+    },
+    {
+      "name": "materialized_target_signature_missing",
+      "mode": "required_residency",
+      "expected_success": false,
+      "expected_codes": [
+        "missing_materialized_target_signature"
+      ]
+    },
+    {
+      "name": "external_payload_digest_mismatch",
+      "mode": "required_residency",
+      "expected_success": false,
+      "expected_codes": [
+        "external_payload_digest_mismatch"
+      ]
+    },
+    {
+      "name": "external_payload_size_mismatch",
+      "mode": "required_residency",
+      "expected_success": false,
+      "expected_codes": [
+        "external_payload_size_mismatch"
+      ]
+    },
+    {
+      "name": "external_payload_missing_required_residency",
+      "mode": "required_residency",
+      "expected_success": false,
+      "expected_codes": [
+        "external_payload_missing"
+      ]
+    },
+    {
+      "name": "awfr_manifest_tamper",
+      "mode": "required_residency",
+      "expected_success": false,
+      "expected_codes": [
+        "detached_signature_transcript_mismatch"
+      ]
+    },
+    {
+      "name": "wrong_signing_policy",
+      "mode": "required_residency",
+      "expected_success": false,
+      "expected_codes": [
+        "wrong_signing_policy"
+      ]
+    },
+    {
+      "name": "detached_signature_transcript_mismatch",
+      "mode": "required_residency",
+      "expected_success": false,
+      "expected_codes": [
+        "detached_signature_transcript_mismatch"
+      ]
+    }
+  ]
+}

@@ -7,3 +7,4 @@
 pub mod consume;
 pub mod materialize;
 pub mod publish;
+pub mod trust;
