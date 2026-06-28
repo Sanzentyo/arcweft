@@ -322,6 +322,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-agent-repl"
+version = "0.1.0"
+dependencies = [
+ "arcweft-agent-protocol",
+ "arcweft-agent-runner",
+ "arcweft-bundle",
+ "arcweft-compiler",
+ "arcweft-core",
+ "arcweft-debug-model",
+ "arcweft-lang-sema",
+ "arcweft-lang-syntax",
+ "arcweft-tooling",
+ "blake3",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arcweft-agent-runner"
 version = "0.1.0"
 dependencies = [

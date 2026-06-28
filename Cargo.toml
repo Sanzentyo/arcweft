@@ -10,6 +10,7 @@ members = [
     "crates/arcweft-debug-model",
     "crates/arcweft-rag",
     "crates/arcweft-agent-runner",
+    "crates/arcweft-agent-repl",
     "crates/arcweft-debug-sqlite",
     "crates/arcweft-adt",
     "crates/arcweft-adapter-context",
