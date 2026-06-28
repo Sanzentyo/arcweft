@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Arcweft IME Text Input Sample</title>
+    <link rel="stylesheet" href="./ime-sample.css" />
+  </head>
+  <body>
+    <main class="ime-shell">
+      <section class="editor-plane" aria-labelledby="ime-sample-title">
+        <div class="sample-media" aria-hidden="true">
+          <img src="./assets/generated-background.png" alt="" />
+        </div>
+        <div class="editor-column">
+          <header class="sample-header">
+            <p class="eyebrow">Web EditContext</p>
+            <h1 id="ime-sample-title">Arcweft IME Sample</h1>
+          </header>
+
+          <div class="field-stack">
+            <label class="field-label" for="arcweft-ime-surface">TextField</label>
+            <div
+              id="arcweft-ime-surface"
+              class="ime-surface"
+              role="textbox"
+              aria-multiline="true"
+              aria-describedby="ime-sample-status"
+              tabindex="0"
+            >
+              <span id="arcweft-ime-text" class="committed-text"></span><span
+                id="arcweft-ime-composition"
+                class="composition-text"
+              ></span><span class="caret" aria-hidden="true"></span>
+            </div>
+          </div>
+
+          <div class="sample-grid" aria-label="Current IME adapter state">
+            <output id="ime-sample-status" class="status-line">initializing</output>
+            <output id="ime-sample-selection" class="metric">selection 0..0</output>
+            <output id="ime-sample-fonts" class="metric">fonts loading</output>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./ime-sample.js"></script>
+  </body>
+</html>

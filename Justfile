@@ -182,6 +182,18 @@ webgpu-parity:
     @cargo +nightly -Zscript tools\verify-webgpu-parity.rs --native target\webgpu-parity\native-hidpi-focus-first-choice.png --web target\webgpu-parity\web-hidpi-focus-first-choice.png --report target\webgpu-parity\parity-hidpi-focus-first-choice.json --min-psnr 20.0 --max-mse 0.0101 --max-mae 0.0168 --max-changed-pixel-ratio 0.04
     @foreach ($checkpoint in @("focus-first-choice", "hover-second-choice", "press-first-choice", "compact-focus-first-choice", "hidpi-focus-first-choice")) { imq compare "target\webgpu-parity\native-$checkpoint.png" "target\webgpu-parity\web-$checkpoint.png" --format json --output "target\webgpu-parity\imq-$checkpoint.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
 
+ime-sample-web port="8786":
+    @Write-Host "Serving Arcweft IME sample at http://127.0.0.1:{{port}}/ime-sample.html"
+    @python -m http.server {{port}} --bind 127.0.0.1 --directory web
+
+ime-sample-native:
+    @cargo run -p arcweft-desktop-native --example ime_text_input_contract
+
+ime-sample-check:
+    @node web\tests\ime-sample-source.mjs
+    @node web\tests\ime-sample-smoke.mjs
+    @cargo run -p arcweft-desktop-native --example ime_text_input_contract
+
 check-vendor-glyphon:
     @cargo check --manifest-path vendor\glyphon\Cargo.toml
 
