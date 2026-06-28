@@ -157,6 +157,24 @@ impl QueryKind {
         }
     }
 
+    /// Parses a stable cache namespace into a query family.
+    pub fn from_cache_namespace(namespace: &str) -> Option<Self> {
+        match namespace {
+            "parse" => Some(Self::Parse),
+            "interface" => Some(Self::Interface),
+            "hir-body" => Some(Self::HirBody),
+            "type-check" => Some(Self::TypeCheck),
+            "runtime-plan" => Some(Self::RuntimePlan),
+            "bytecode-unit" => Some(Self::BytecodeUnit),
+            "asset-metadata" => Some(Self::AssetMetadata),
+            "asset-payload" => Some(Self::AssetPayload),
+            "link-plan" => Some(Self::LinkPlan),
+            "bundle-section" => Some(Self::BundleSection),
+            "bundle-index" => Some(Self::BundleIndex),
+            _ => None,
+        }
+    }
+
     /// Artifact family produced by this query.
     pub const fn artifact_kind(self) -> ArtifactKind {
         match self {

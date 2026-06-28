@@ -94,6 +94,83 @@ pub struct PersistentQueryWriteReceipt {
     pub record: CacheRecord,
 }
 
+/// Cache-explain evidence for one persistent compiler query record.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PersistentQueryExplainEvidence {
+    pub query: QueryKind,
+    pub artifact_key: String,
+    pub object_kind: CompilerObjectKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub query_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_inputs: Option<PersistentQueryKeyInputEvidence>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compiler_identity: Option<CompilerBuildIdentity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload_kind: Option<CompilerObjectKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record_schema_version: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub object_schema_version: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload_schema_version: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub object_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub object_len: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record_object_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record_object_len: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_object_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_object_len: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload_len: Option<u64>,
+    pub status: PersistentQueryExplainStatus,
+    pub cache_record_status: CacheRecordStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub soft_miss_reason: Option<PersistentQueryMissReason>,
+    pub recovery_action: PersistentQueryRecoveryAction,
+}
+
+/// Canonical key inputs surfaced by cache explain for persistent query records.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PersistentQueryKeyInputEvidence {
+    pub query_options_digest: String,
+    pub dependency_interface_digests: Vec<PersistentQueryNamedDigestEvidence>,
+    pub dependency_body_digests: Vec<PersistentQueryNamedDigestEvidence>,
+    pub environment_digest: String,
+}
+
+/// Named dependency digest evidence in canonical order.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PersistentQueryNamedDigestEvidence {
+    pub name: String,
+    pub digest: String,
+}
+
+/// Persistent query cache-explain hit/miss status.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PersistentQueryExplainStatus {
+    Hit,
+    Miss,
+}
+
+/// Recommended recovery action for a persistent query explain result.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PersistentQueryRecoveryAction {
+    NoneRequired,
+    RebuildFromSource,
+}
+
 /// Recoverable soft-miss evidence.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PersistentQueryMiss {
@@ -342,6 +419,107 @@ impl FilesystemCacheStore {
         request: &PersistentQueryReadRequest,
     ) -> PersistentQueryReadOutcome {
         self.read_persistent_query_checked(request)
+    }
+
+    /// Explains a decoded cache record as a persistent compiler query when supported.
+    pub fn explain_persistent_query_record(
+        &self,
+        query: QueryKind,
+        record: &CacheRecord,
+    ) -> Option<PersistentQueryExplainEvidence> {
+        let object_kind =
+            CompilerObjectKind::from_safe_read_through_artifact_kind(record.artifact_kind())?;
+        let object_path = self.object_path(record.object_digest());
+        let object_bytes = match fs::read(&object_path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                return Some(explain_persistent_query_preflight_miss(
+                    query,
+                    record,
+                    object_kind,
+                    None,
+                    None,
+                    PersistentQueryMissReason::MissingObject {
+                        object_digest: record.object_digest(),
+                    },
+                ));
+            }
+            Err(error) => {
+                return Some(explain_persistent_query_preflight_miss(
+                    query,
+                    record,
+                    object_kind,
+                    None,
+                    None,
+                    PersistentQueryMissReason::ObjectReadFailed {
+                        object_digest: record.object_digest(),
+                        io_kind: error.kind().into(),
+                        message: error.to_string(),
+                    },
+                ));
+            }
+        };
+        let observed_len = len_u64(&object_bytes);
+        if observed_len != record.object_len() {
+            return Some(explain_persistent_query_preflight_miss(
+                query,
+                record,
+                object_kind,
+                None,
+                Some(observed_len),
+                PersistentQueryMissReason::ObjectLengthMismatch {
+                    expected: record.object_len(),
+                    actual: observed_len,
+                },
+            ));
+        }
+        let observed_digest = BuildDigest::of(&object_bytes);
+        if observed_digest != record.object_digest() {
+            return Some(explain_persistent_query_preflight_miss(
+                query,
+                record,
+                object_kind,
+                Some(observed_digest),
+                Some(observed_len),
+                PersistentQueryMissReason::ObjectDigestMismatch {
+                    expected: record.object_digest(),
+                    actual: observed_digest,
+                },
+            ));
+        }
+        let envelope = match AwboEnvelope::decode_detached(&object_bytes) {
+            Ok(envelope) => envelope,
+            Err(error) => {
+                return Some(explain_persistent_query_preflight_miss(
+                    query,
+                    record,
+                    object_kind,
+                    Some(observed_digest),
+                    Some(observed_len),
+                    awbo_error_reason(&error),
+                ));
+            }
+        };
+        let Some(object_key) = object_key_from_envelope(&envelope) else {
+            return Some(explain_persistent_query_preflight_miss(
+                query,
+                record,
+                object_kind,
+                Some(observed_digest),
+                Some(observed_len),
+                PersistentQueryMissReason::PayloadKindMismatch {
+                    expected: object_kind,
+                    actual: envelope.payload.kind(),
+                },
+            ));
+        };
+        let request = PersistentQueryReadRequest::new(query, record.key(), object_key.clone());
+        Some(explain_persistent_query_outcome(
+            &self.read_persistent_query(&request),
+            Some(record),
+            Some(&object_key),
+            Some(&envelope),
+        ))
     }
 
     /// Writes a deterministic parse/HIR `.awbo` object and key-addressed record.
@@ -713,6 +891,174 @@ fn miss(
         observed_object_len,
         reason,
     }))
+}
+
+fn explain_persistent_query_outcome(
+    outcome: &PersistentQueryReadOutcome,
+    record: Option<&CacheRecord>,
+    object_key: Option<&CompilerObjectKey>,
+    envelope: Option<&AwboEnvelope>,
+) -> PersistentQueryExplainEvidence {
+    match outcome {
+        PersistentQueryReadOutcome::Hit(hit) => PersistentQueryExplainEvidence {
+            query: hit.query,
+            artifact_key: hit.artifact_key.digest().to_hex(),
+            object_kind: hit.object_kind,
+            query_key: object_key.map(|key| key.digest().to_hex()),
+            key_inputs: object_key.map(key_input_evidence),
+            compiler_identity: object_key.map(|key| key.compiler.clone().canonicalized()),
+            source_digest: object_key.map(|key| key.source_digest.to_hex()),
+            payload_kind: Some(hit.object_kind),
+            record_schema_version: Some(hit.record.schema_version()),
+            object_schema_version: envelope.map(|value| value.schema_version),
+            payload_schema_version: envelope
+                .and_then(|value| payload_schema_version(&value.payload)),
+            object_digest: Some(hit.object_digest.to_hex()),
+            object_len: Some(hit.object_len),
+            record_object_digest: Some(hit.record.object_digest().to_hex()),
+            record_object_len: Some(hit.record.object_len()),
+            observed_object_digest: Some(hit.object_digest.to_hex()),
+            observed_object_len: Some(hit.object_len),
+            payload_digest: Some(hit.payload_digest.to_hex()),
+            payload_len: Some(hit.payload_len),
+            status: PersistentQueryExplainStatus::Hit,
+            cache_record_status: CacheRecordStatus::Hit,
+            soft_miss_reason: None,
+            recovery_action: PersistentQueryRecoveryAction::NoneRequired,
+        },
+        PersistentQueryReadOutcome::Miss(miss) => {
+            let reason = miss.reason.clone();
+            PersistentQueryExplainEvidence {
+                query: miss.query,
+                artifact_key: miss.artifact_key.digest().to_hex(),
+                object_kind: miss.object_kind,
+                query_key: object_key.map(|key| key.digest().to_hex()),
+                key_inputs: object_key.map(key_input_evidence),
+                compiler_identity: object_key.map(|key| key.compiler.clone().canonicalized()),
+                source_digest: object_key.map(|key| key.source_digest.to_hex()),
+                payload_kind: envelope.map(|value| value.payload.kind()),
+                record_schema_version: record.map(CacheRecord::schema_version),
+                object_schema_version: envelope.map(|value| value.schema_version),
+                payload_schema_version: envelope
+                    .and_then(|value| payload_schema_version(&value.payload)),
+                object_digest: miss
+                    .record_object_digest
+                    .or(miss.observed_object_digest)
+                    .map(BuildDigest::to_hex),
+                object_len: miss.record_object_len.or(miss.observed_object_len),
+                record_object_digest: miss.record_object_digest.map(BuildDigest::to_hex),
+                record_object_len: miss.record_object_len,
+                observed_object_digest: miss.observed_object_digest.map(BuildDigest::to_hex),
+                observed_object_len: miss.observed_object_len,
+                payload_digest: envelope.map(|value| value.payload_digest.to_hex()),
+                payload_len: envelope.map(|value| value.payload_len),
+                status: PersistentQueryExplainStatus::Miss,
+                cache_record_status: CacheRecordStatus::Miss {
+                    reason: reason.invalidation_reason(),
+                },
+                soft_miss_reason: Some(reason),
+                recovery_action: PersistentQueryRecoveryAction::RebuildFromSource,
+            }
+        }
+    }
+}
+
+fn explain_persistent_query_preflight_miss(
+    query: QueryKind,
+    record: &CacheRecord,
+    object_kind: CompilerObjectKind,
+    observed_digest: Option<BuildDigest>,
+    observed_len: Option<u64>,
+    reason: PersistentQueryMissReason,
+) -> PersistentQueryExplainEvidence {
+    let status = CacheRecordStatus::Miss {
+        reason: reason.invalidation_reason(),
+    };
+    PersistentQueryExplainEvidence {
+        query,
+        artifact_key: record.key().digest().to_hex(),
+        object_kind,
+        query_key: None,
+        key_inputs: None,
+        compiler_identity: None,
+        source_digest: None,
+        payload_kind: None,
+        record_schema_version: Some(record.schema_version()),
+        object_schema_version: None,
+        payload_schema_version: None,
+        object_digest: Some(record.object_digest().to_hex()),
+        object_len: Some(record.object_len()),
+        record_object_digest: Some(record.object_digest().to_hex()),
+        record_object_len: Some(record.object_len()),
+        observed_object_digest: observed_digest.map(BuildDigest::to_hex),
+        observed_object_len: observed_len,
+        payload_digest: None,
+        payload_len: None,
+        status: PersistentQueryExplainStatus::Miss,
+        cache_record_status: status,
+        soft_miss_reason: Some(reason),
+        recovery_action: PersistentQueryRecoveryAction::RebuildFromSource,
+    }
+}
+
+fn object_key_from_envelope(envelope: &AwboEnvelope) -> Option<CompilerObjectKey> {
+    let key = match &envelope.payload {
+        CompilerObjectPayload::ParsedSyntax(payload) => CompilerObjectKey {
+            kind: CompilerObjectKind::ParsedSyntax,
+            compiler: payload.compiler_namespace.compiler.clone(),
+            source_digest: payload.source_digest,
+            query_options_digest: payload.stage_inputs.query_options_digest,
+            dependency_interface_digests: payload.stage_inputs.dependency_interface_digests.clone(),
+            dependency_body_digests: payload.stage_inputs.dependency_body_digests.clone(),
+            environment_digest: payload.stage_inputs.environment_digest,
+        },
+        CompilerObjectPayload::HirBody(payload) => CompilerObjectKey {
+            kind: CompilerObjectKind::HirBody,
+            compiler: payload.compiler_namespace.compiler.clone(),
+            source_digest: payload.source_digest,
+            query_options_digest: payload.stage_inputs.query_options_digest,
+            dependency_interface_digests: payload.stage_inputs.dependency_interface_digests.clone(),
+            dependency_body_digests: payload.stage_inputs.dependency_body_digests.clone(),
+            environment_digest: payload.stage_inputs.environment_digest,
+        },
+        CompilerObjectPayload::InterfaceSummary(_)
+        | CompilerObjectPayload::LineTaskEvidence(_)
+        | CompilerObjectPayload::RuntimePlanUnit(_)
+        | CompilerObjectPayload::BytecodeUnit(_)
+        | CompilerObjectPayload::LinkPlan(_) => return None,
+    };
+    Some(key.canonicalized())
+}
+
+fn key_input_evidence(key: &CompilerObjectKey) -> PersistentQueryKeyInputEvidence {
+    PersistentQueryKeyInputEvidence {
+        query_options_digest: key.query_options_digest.to_hex(),
+        dependency_interface_digests: named_digest_evidence(&key.dependency_interface_digests),
+        dependency_body_digests: named_digest_evidence(&key.dependency_body_digests),
+        environment_digest: key.environment_digest.to_hex(),
+    }
+}
+
+fn named_digest_evidence(values: &[NamedDigest]) -> Vec<PersistentQueryNamedDigestEvidence> {
+    values
+        .iter()
+        .map(|value| PersistentQueryNamedDigestEvidence {
+            name: value.name().to_owned(),
+            digest: value.digest().to_hex(),
+        })
+        .collect()
+}
+
+fn payload_schema_version(payload: &CompilerObjectPayload) -> Option<u32> {
+    match payload {
+        CompilerObjectPayload::ParsedSyntax(value) => Some(value.schema_version),
+        CompilerObjectPayload::HirBody(value) => Some(value.schema_version),
+        CompilerObjectPayload::InterfaceSummary(_)
+        | CompilerObjectPayload::LineTaskEvidence(_)
+        | CompilerObjectPayload::RuntimePlanUnit(_)
+        | CompilerObjectPayload::BytecodeUnit(_)
+        | CompilerObjectPayload::LinkPlan(_) => None,
+    }
 }
 
 fn record_error_reason(error: super::record::CacheRecordError) -> PersistentQueryMissReason {

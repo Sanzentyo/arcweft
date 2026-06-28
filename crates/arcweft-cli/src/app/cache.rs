@@ -15,7 +15,7 @@ pub(super) enum CacheCommand {
     Stats(CacheOptions),
     /// Verifies object digests and cache record references.
     Verify(CacheOptions),
-    /// Explains cache entries for one artifact key, object digest, or logical item.
+    /// Explains cache entries for one artifact key, object digest, query key, or logical item.
     Explain(CacheExplainOptions),
     /// Removes safe cache garbage; dry-run unless --apply is provided.
     Prune(CachePruneOptions),
@@ -201,6 +201,45 @@ fn cache_explain_command(options: &CacheExplainOptions) -> Result<(), ExitCode> 
             if let Some(object_status) = item.object_status {
                 println!("  object status: {object_status:?}");
             }
+            if let Some(evidence) = &item.persistent_query {
+                println!("  persistent query: {}", evidence.query);
+                if let Some(query_key) = &evidence.query_key {
+                    println!("  query key: {query_key}");
+                }
+                if let Some(compiler) = &evidence.compiler_identity {
+                    println!(
+                        "  compiler identity: package_version={}, git_commit={}, rustc={}, target={}",
+                        compiler.package_version,
+                        compiler.git_commit,
+                        compiler.rustc,
+                        compiler.target
+                    );
+                }
+                if let Some(source_digest) = &evidence.source_digest {
+                    println!("  source digest: {source_digest}");
+                }
+                if let Some(payload_kind) = evidence.payload_kind {
+                    println!("  payload kind: {payload_kind:?}");
+                }
+                if let Some(record_schema) = evidence.record_schema_version {
+                    println!("  record schema: {record_schema}");
+                }
+                if let Some(object_schema) = evidence.object_schema_version {
+                    println!("  object schema: {object_schema}");
+                }
+                if let Some(payload_schema) = evidence.payload_schema_version {
+                    println!("  payload schema: {payload_schema}");
+                }
+                println!("  persistent status: {:?}", evidence.status);
+                println!(
+                    "  cache record status: {}",
+                    evidence.cache_record_status.as_str()
+                );
+                if let Some(reason) = &evidence.soft_miss_reason {
+                    println!("  soft miss: {reason:?}");
+                }
+                println!("  recovery: {:?}", evidence.recovery_action);
+            }
         }
         for issue in &report.issues {
             println!("- {:?}: {} ({})", issue.kind, issue.path, issue.message);
@@ -355,6 +394,20 @@ mod tests {
             ReleaseBundleRef, ReleaseManifest, ReleaseMirror,
             archive::{AwfrArchiveManifest, ExternalPayloadMediaType, ReleaseChannel},
         },
+    };
+    use arcweft_project::{
+        artifact::{ArtifactKey, ArtifactKeyInput},
+        fingerprint::{BuildDigest, NamedDigest},
+        incremental::QueryKind,
+        persistent_object::{
+            AWBO_SCHEMA_VERSION, CompilerBuildIdentity, CompilerObjectKey, CompilerObjectKind,
+            CompilerObjectPayload, ParsedSyntaxEvidenceObject, ParsedSyntaxObject,
+            StableDiagnosticSummaryObject, StableRangeObject, StableSourceSpanObject,
+            SyntaxStatsObject,
+        },
+    };
+    use arcweft_project_loader::cache::{
+        persistent_query::PersistentQueryWriteRequest, store::FilesystemCacheStore,
     };
     use std::{
         fs,
@@ -571,6 +624,33 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    #[test]
+    fn explain_accepts_persistent_query_key_digest() {
+        let root = temp_root("cli-persistent-query-key");
+        let cache = root.join("cache");
+        let store = FilesystemCacheStore::new(&cache);
+        let object_key = cli_persistent_object_key();
+        let artifact_key = cli_persistent_artifact_key(&object_key);
+        store
+            .write_persistent_query(&PersistentQueryWriteRequest::new(
+                QueryKind::Parse,
+                artifact_key,
+                object_key.clone(),
+                "crate::main",
+                cli_persistent_parsed_payload(&object_key),
+            ))
+            .expect("persistent query writes");
+
+        cache_explain_command(&CacheExplainOptions {
+            query: object_key.digest().to_hex(),
+            logical: false,
+            root: cache,
+            json: true,
+        })
+        .expect("query-key cache explain succeeds");
+        let _ = fs::remove_dir_all(root);
+    }
+
     fn temp_root(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
             "arcweft-cache-{label}-{}",
@@ -579,5 +659,98 @@ mod tests {
                 .expect("clock")
                 .as_nanos()
         ))
+    }
+
+    fn cli_persistent_compiler() -> CompilerBuildIdentity {
+        CompilerBuildIdentity {
+            package_version: "0.1.0".to_owned(),
+            git_commit: "seq-04-4".to_owned(),
+            rustc: "rustc-test".to_owned(),
+            target: "x86_64-unknown-linux-gnu".to_owned(),
+            enabled_features: vec!["b".to_owned(), "a".to_owned()],
+        }
+    }
+
+    fn cli_persistent_object_key() -> CompilerObjectKey {
+        CompilerObjectKey {
+            kind: CompilerObjectKind::ParsedSyntax,
+            compiler: cli_persistent_compiler(),
+            source_digest: BuildDigest::of(b"source"),
+            query_options_digest: BuildDigest::of(b"options"),
+            dependency_interface_digests: vec![NamedDigest::new(
+                "dep",
+                BuildDigest::of(b"dep-interface"),
+            )],
+            dependency_body_digests: vec![NamedDigest::new("dep", BuildDigest::of(b"dep-body"))],
+            environment_digest: BuildDigest::of(b"environment"),
+        }
+    }
+
+    fn cli_persistent_artifact_key(key: &CompilerObjectKey) -> ArtifactKey {
+        ArtifactKey::derive(&ArtifactKeyInput {
+            compiler_build_id: key.compiler.git_commit.clone(),
+            query: QueryKind::Parse,
+            artifact_kind: QueryKind::Parse.artifact_kind(),
+            target_triple: key.compiler.target.clone(),
+            target_features: key.compiler.enabled_features.clone(),
+            profile: "dev".to_owned(),
+            package: "pkg".to_owned(),
+            logical_item: "crate::main".to_owned(),
+            source_digest: key.source_digest,
+            dependency_interface_digests: key.dependency_interface_digests.clone(),
+            dependency_body_digests: key.dependency_body_digests.clone(),
+            adapter_environment_digest: key.environment_digest,
+            launch_profile_digest: BuildDigest::ZERO,
+            declared_environment_digest: BuildDigest::ZERO,
+            format_options_digest: key.query_options_digest,
+        })
+    }
+
+    fn cli_persistent_span() -> StableSourceSpanObject {
+        StableSourceSpanObject {
+            range: StableRangeObject { start: 0, end: 4 },
+            start_line: 0,
+            start_column: 0,
+            end_line: 0,
+            end_column: 4,
+        }
+    }
+
+    fn cli_persistent_parsed_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
+        CompilerObjectPayload::ParsedSyntax(ParsedSyntaxObject {
+            schema_version: AWBO_SCHEMA_VERSION,
+            compiler_namespace: key.identity_namespace(),
+            source_label: "src/main.arcw".to_owned(),
+            source_digest: key.source_digest,
+            source_span: cli_persistent_span(),
+            stats: SyntaxStatsObject {
+                bytes: 4,
+                lines: 1,
+                cst_lex_passes: 1,
+                punctuation_scans: 0,
+                punctuation_scan_bytes: 0,
+                line_owned_bytes: 0,
+                block_owned_bytes: 0,
+                raw_owned_bytes: 0,
+                wiki_scan_performed: 0,
+                dot_normalization_owned: 0,
+                dialogue_rescue_expr_parse_attempts: 0,
+                numeric_seq_summaries: 0,
+            },
+            diagnostics: StableDiagnosticSummaryObject::empty(),
+            stage_inputs: key.stage_inputs(),
+            evidence: ParsedSyntaxEvidenceObject {
+                root_kind: "source_file".to_owned(),
+                cst_shape_digest: BuildDigest::of(b"cst"),
+                line_index_digest: BuildDigest::of(b"line-index"),
+                cst_node_count: 1,
+                cst_token_count: 1,
+                cst_error_node_count: 0,
+                typed_attribute_count: 0,
+                typed_use_count: 0,
+                typed_item_count: 1,
+                wiki_link_count: 0,
+            },
+        })
     }
 }

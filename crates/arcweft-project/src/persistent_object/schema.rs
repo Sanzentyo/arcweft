@@ -163,6 +163,23 @@ impl CompilerObjectKind {
         }
     }
 
+    /// Reverse mapping for object families enabled for safe read-through.
+    pub const fn from_safe_read_through_artifact_kind(artifact_kind: ArtifactKind) -> Option<Self> {
+        match artifact_kind {
+            ArtifactKind::ParsedSyntax => Some(Self::ParsedSyntax),
+            ArtifactKind::HirBody => Some(Self::HirBody),
+            ArtifactKind::InterfaceSummary
+            | ArtifactKind::TypeCheckReport
+            | ArtifactKind::RuntimePlan
+            | ArtifactKind::BytecodeUnit
+            | ArtifactKind::AssetMetadata
+            | ArtifactKind::AssetPayload
+            | ArtifactKind::LinkPlan
+            | ArtifactKind::BundleSection
+            | ArtifactKind::BundleIndex => None,
+        }
+    }
+
     pub const fn wire_tag(self) -> u8 {
         match self {
             Self::ParsedSyntax => 0,

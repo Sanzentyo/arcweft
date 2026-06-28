@@ -1,10 +1,13 @@
-use super::{record::CacheRecord, store::FilesystemCacheStore};
-use arcweft_project::fingerprint::BuildDigest;
+use super::{
+    persistent_query::PersistentQueryExplainEvidence, record::CacheRecord,
+    store::FilesystemCacheStore,
+};
+use arcweft_project::{fingerprint::BuildDigest, incremental::QueryKind};
 use serde::Serialize;
 use std::{
     collections::BTreeSet,
     fs,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 use thiserror::Error;
 
@@ -110,6 +113,8 @@ pub struct CacheExplainMatch {
     pub object_len: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub object_status: Option<CacheExplainObjectStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub persistent_query: Option<PersistentQueryExplainEvidence>,
 }
 
 /// Kind of matched cache item.
@@ -246,6 +251,8 @@ pub fn explain_cache(root: &Path, query: &str) -> Result<CacheExplainReport, Cac
             && digest_from_record_path(root, &file) == Some(digest)
         {
             explain_record(root, &file, &mut report);
+        } else if is_under(&file, &root.join("records")) && file.extension_str() == Some("awci") {
+            explain_record_if_persistent_query_key(root, &file, digest, &mut report);
         }
     }
     if !report.matches.is_empty() {
@@ -448,6 +455,7 @@ fn explain_object(path: &Path, digest: BuildDigest, report: &mut CacheExplainRep
                 } else {
                     CacheExplainObjectStatus::DigestMismatch
                 }),
+                persistent_query: None,
             });
         }
         Err(error) => push_issue(
@@ -484,6 +492,19 @@ fn explain_record(root: &Path, path: &Path, report: &mut CacheExplainReport) {
             return;
         }
     };
+    let persistent_query = query_from_record_path(root, path).and_then(|query| {
+        FilesystemCacheStore::new(root).explain_persistent_query_record(query, &record)
+    });
+    push_record_match(root, path, &record, persistent_query, report);
+}
+
+fn push_record_match(
+    root: &Path,
+    path: &Path,
+    record: &CacheRecord,
+    persistent_query: Option<PersistentQueryExplainEvidence>,
+    report: &mut CacheExplainReport,
+) {
     let object_status = match FilesystemCacheStore::new(root).read_object(record.object_digest()) {
         Ok(object) => match u64::try_from(object.len()).unwrap_or(u64::MAX) {
             len if len == record.object_len() => CacheExplainObjectStatus::Present,
@@ -503,7 +524,34 @@ fn explain_record(root: &Path, path: &Path, report: &mut CacheExplainReport) {
         object_digest: Some(record.object_digest().to_string()),
         object_len: Some(record.object_len()),
         object_status: Some(object_status),
+        persistent_query,
     });
+}
+
+fn explain_record_if_persistent_query_key(
+    root: &Path,
+    path: &Path,
+    query_key: BuildDigest,
+    report: &mut CacheExplainReport,
+) {
+    let Ok(bytes) = fs::read(path) else {
+        return;
+    };
+    let Ok(record) = CacheRecord::from_slice(&bytes) else {
+        return;
+    };
+    let Some(query) = query_from_record_path(root, path) else {
+        return;
+    };
+    let Some(evidence) =
+        FilesystemCacheStore::new(root).explain_persistent_query_record(query, &record)
+    else {
+        return;
+    };
+    let query_key = query_key.to_hex();
+    if evidence.query_key.as_deref() == Some(query_key.as_str()) {
+        push_record_match(root, path, &record, Some(evidence), report);
+    }
 }
 
 fn explain_record_if_logical_item(
@@ -777,6 +825,15 @@ fn digest_from_record_path(root: &Path, path: &Path) -> Option<BuildDigest> {
     digest_from_hex(&format!("{first}{rest}"))
 }
 
+fn query_from_record_path(root: &Path, path: &Path) -> Option<QueryKind> {
+    let relative = path.strip_prefix(root.join("records")).ok()?;
+    let mut components = relative.components();
+    let Component::Normal(namespace) = components.next()? else {
+        return None;
+    };
+    QueryKind::from_cache_namespace(namespace.to_str()?)
+}
+
 fn digest_from_hex(hex: &str) -> Option<BuildDigest> {
     if hex.len() != 64 {
         return None;
@@ -839,11 +896,23 @@ mod tests {
         CacheExplainStatus, CachePruneCandidateKind, CacheVerifyStatus, cache_stats, explain_cache,
         explain_cache_by_logical_item, prune_cache, verify_cache,
     };
-    use crate::cache::store::FilesystemCacheStore;
+    use crate::cache::{
+        persistent_query::{
+            PersistentQueryExplainStatus, PersistentQueryMissReason, PersistentQueryRecoveryAction,
+            PersistentQueryWriteRequest,
+        },
+        store::FilesystemCacheStore,
+    };
     use arcweft_project::{
         artifact::{ArtifactKey, ArtifactKeyInput, ArtifactKind},
-        fingerprint::BuildDigest,
+        fingerprint::{BuildDigest, NamedDigest},
         incremental::QueryKind,
+        persistent_object::{
+            AWBO_SCHEMA_VERSION, CompilerBuildIdentity, CompilerObjectKey, CompilerObjectKind,
+            CompilerObjectPayload, ParsedSyntaxEvidenceObject, ParsedSyntaxObject,
+            StableDiagnosticSummaryObject, StableRangeObject, StableSourceSpanObject,
+            SyntaxStatsObject,
+        },
     };
     use std::{
         fs,
@@ -943,6 +1012,96 @@ mod tests {
         assert_eq!(report.matches.len(), 1);
         assert_eq!(report.matches[0].logical_item.as_deref(), Some("crate"));
         assert_eq!(report.matches[0].artifact_key, Some(key.digest().to_hex()));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cache_explain_embeds_persistent_query_hit_evidence() {
+        let root = temp_root("persistent-explain-hit");
+        let store = FilesystemCacheStore::new(&root);
+        let object_key = persistent_object_key(CompilerObjectKind::ParsedSyntax);
+        let artifact_key = persistent_artifact_key(QueryKind::Parse, &object_key);
+        store
+            .write_persistent_query(&PersistentQueryWriteRequest::new(
+                QueryKind::Parse,
+                artifact_key,
+                object_key.clone(),
+                "crate::main",
+                persistent_parsed_payload(&object_key),
+            ))
+            .expect("persistent query writes");
+
+        let report = explain_cache_by_logical_item(&root, "crate::main").expect("logical explain");
+
+        assert_eq!(report.status, CacheExplainStatus::Found);
+        let evidence = report
+            .matches
+            .iter()
+            .find_map(|item| item.persistent_query.as_ref())
+            .expect("persistent explain evidence");
+        let query_key = object_key.digest().to_hex();
+        assert_eq!(evidence.status, PersistentQueryExplainStatus::Hit);
+        assert_eq!(evidence.query_key.as_deref(), Some(query_key.as_str()));
+        assert_eq!(
+            evidence.source_digest,
+            Some(object_key.source_digest.to_hex())
+        );
+        assert_eq!(
+            evidence.payload_kind,
+            Some(CompilerObjectKind::ParsedSyntax)
+        );
+        assert_eq!(evidence.payload_schema_version, Some(AWBO_SCHEMA_VERSION));
+        assert_eq!(
+            evidence.recovery_action,
+            PersistentQueryRecoveryAction::NoneRequired
+        );
+        assert!(evidence.soft_miss_reason.is_none());
+
+        let by_query_key = explain_cache(&root, &query_key).expect("query-key explain");
+        assert_eq!(by_query_key.status, CacheExplainStatus::Found);
+        assert!(by_query_key.matches.iter().any(|item| {
+            item.persistent_query
+                .as_ref()
+                .and_then(|value| value.query_key.as_deref())
+                == Some(query_key.as_str())
+        }));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cache_explain_embeds_persistent_query_soft_miss_evidence() {
+        let root = temp_root("persistent-explain-miss");
+        let store = FilesystemCacheStore::new(&root);
+        let object_key = persistent_object_key(CompilerObjectKind::ParsedSyntax);
+        let artifact_key = persistent_artifact_key(QueryKind::Parse, &object_key);
+        let payload = persistent_parsed_payload(&object_key);
+        let receipt = store
+            .write_persistent_query(&PersistentQueryWriteRequest::new(
+                QueryKind::Parse,
+                artifact_key,
+                object_key,
+                "crate::main",
+                payload,
+            ))
+            .expect("persistent query writes");
+        fs::remove_file(receipt.object_path).expect("object is removed");
+
+        let report = explain_cache_by_logical_item(&root, "crate::main").expect("logical explain");
+        let evidence = report
+            .matches
+            .iter()
+            .find_map(|item| item.persistent_query.as_ref())
+            .expect("persistent explain evidence");
+
+        assert_eq!(evidence.status, PersistentQueryExplainStatus::Miss);
+        assert_eq!(
+            evidence.recovery_action,
+            PersistentQueryRecoveryAction::RebuildFromSource
+        );
+        assert!(matches!(
+            &evidence.soft_miss_reason,
+            Some(PersistentQueryMissReason::MissingObject { .. })
+        ));
         let _ = fs::remove_dir_all(root);
     }
 
@@ -1084,6 +1243,99 @@ mod tests {
                 .expect("clock")
                 .as_nanos()
         ))
+    }
+
+    fn persistent_compiler() -> CompilerBuildIdentity {
+        CompilerBuildIdentity {
+            package_version: "0.1.0".to_owned(),
+            git_commit: "seq-04-4".to_owned(),
+            rustc: "rustc-test".to_owned(),
+            target: "x86_64-unknown-linux-gnu".to_owned(),
+            enabled_features: vec!["b".to_owned(), "a".to_owned()],
+        }
+    }
+
+    fn persistent_object_key(kind: CompilerObjectKind) -> CompilerObjectKey {
+        CompilerObjectKey {
+            kind,
+            compiler: persistent_compiler(),
+            source_digest: BuildDigest::of(b"source"),
+            query_options_digest: BuildDigest::of(b"options"),
+            dependency_interface_digests: vec![NamedDigest::new(
+                "dep",
+                BuildDigest::of(b"dep-interface"),
+            )],
+            dependency_body_digests: vec![NamedDigest::new("dep", BuildDigest::of(b"dep-body"))],
+            environment_digest: BuildDigest::of(b"environment"),
+        }
+    }
+
+    fn persistent_artifact_key(query: QueryKind, key: &CompilerObjectKey) -> ArtifactKey {
+        ArtifactKey::derive(&ArtifactKeyInput {
+            compiler_build_id: key.compiler.git_commit.clone(),
+            query,
+            artifact_kind: query.artifact_kind(),
+            target_triple: key.compiler.target.clone(),
+            target_features: key.compiler.enabled_features.clone(),
+            profile: "dev".to_owned(),
+            package: "pkg".to_owned(),
+            logical_item: "crate::main".to_owned(),
+            source_digest: key.source_digest,
+            dependency_interface_digests: key.dependency_interface_digests.clone(),
+            dependency_body_digests: key.dependency_body_digests.clone(),
+            adapter_environment_digest: key.environment_digest,
+            launch_profile_digest: BuildDigest::ZERO,
+            declared_environment_digest: BuildDigest::ZERO,
+            format_options_digest: key.query_options_digest,
+        })
+    }
+
+    fn persistent_span() -> StableSourceSpanObject {
+        StableSourceSpanObject {
+            range: StableRangeObject { start: 0, end: 4 },
+            start_line: 0,
+            start_column: 0,
+            end_line: 0,
+            end_column: 4,
+        }
+    }
+
+    fn persistent_parsed_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
+        CompilerObjectPayload::ParsedSyntax(ParsedSyntaxObject {
+            schema_version: AWBO_SCHEMA_VERSION,
+            compiler_namespace: key.identity_namespace(),
+            source_label: "src/main.arcw".to_owned(),
+            source_digest: key.source_digest,
+            source_span: persistent_span(),
+            stats: SyntaxStatsObject {
+                bytes: 4,
+                lines: 1,
+                cst_lex_passes: 1,
+                punctuation_scans: 0,
+                punctuation_scan_bytes: 0,
+                line_owned_bytes: 0,
+                block_owned_bytes: 0,
+                raw_owned_bytes: 0,
+                wiki_scan_performed: 0,
+                dot_normalization_owned: 0,
+                dialogue_rescue_expr_parse_attempts: 0,
+                numeric_seq_summaries: 0,
+            },
+            diagnostics: StableDiagnosticSummaryObject::empty(),
+            stage_inputs: key.stage_inputs(),
+            evidence: ParsedSyntaxEvidenceObject {
+                root_kind: "source_file".to_owned(),
+                cst_shape_digest: BuildDigest::of(b"cst"),
+                line_index_digest: BuildDigest::of(b"line-index"),
+                cst_node_count: 1,
+                cst_token_count: 1,
+                cst_error_node_count: 0,
+                typed_attribute_count: 0,
+                typed_use_count: 0,
+                typed_item_count: 1,
+                wiki_link_count: 0,
+            },
+        })
     }
 
     fn object_path(root: &Path, digest: BuildDigest) -> PathBuf {
