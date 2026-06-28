@@ -49,6 +49,24 @@ than exact-zero pixel parity because the native text path can produce tiny
 antialiasing differences across otherwise valid Windows renderer/font
 environments. For a milestone or CI handoff that needs publishable evidence, run
 `just native-visual-artifacts`; it writes fresh candidate PNGs, observe JSON,
-and `imq` JSON reports to `target/arcweft-native-capture-artifacts/`. Exact
-visual failures report the checked-in reference path, candidate path, and metric
-JSON path.
+`imq` JSON reports, and `exact-native-golden.environment.json` to
+`target/arcweft-native-capture-artifacts/`. Exact visual failures report the
+fixture id, checked-in reference path, candidate path, observe JSON path, metric
+JSON path, and environment fingerprint path.
+
+Exact native golden review uses these status classes:
+
+- `expected_skip` for local/non-Windows discovery runs where exact evidence is
+  not required;
+- `environment_not_pinned` for required jobs that did not assert the pinned
+  environment contract;
+- `environment_blocker` for missing `imq`, missing pinned `MS Mincho`, or an
+  unsupported backend;
+- `baseline_drift` when dimensions match but MSE/MAE exceed the fixture bounds;
+- `hard_visual_regression` for capture failure, `imq` failure, dimension
+  mismatch, malformed PNGs, or missing artifacts.
+
+Do not overwrite checked-in PNGs from a refresh command directly. A baseline
+replacement requires a complete candidate packet, human visual review, recorded
+before/after metrics, and a documented reason that the candidate is the intended
+renderer output.

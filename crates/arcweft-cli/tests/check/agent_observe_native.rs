@@ -1,7 +1,6 @@
 use super::{
-    agent_mcp_responses, filesystem_safe_test_label, project_shape_metadata,
-    rich_text_showcase_path, run_agent_mcp_stdio, seed_debug_search_db, stable_hash, temp_arcw,
-    temp_dir, workspace_path, workspace_root,
+    agent_mcp_responses, project_shape_metadata, rich_text_showcase_path, run_agent_mcp_stdio,
+    seed_debug_search_db, stable_hash, temp_arcw, temp_dir, workspace_path, workspace_root,
 };
 use std::fs;
 use std::path::{Path, PathBuf};

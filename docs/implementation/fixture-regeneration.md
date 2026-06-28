@@ -49,6 +49,24 @@ selected object/layer metadata and image-content smoke without exact pixels.
 Promote candidate PNGs to checked-in goldens only after reviewing the pixel
 result and rerunning the integrity check.
 
+Seq06.7 makes native exact refresh a reviewed promotion step rather than blind
+regeneration. Candidate generation must retain the full review packet:
+
+```text
+target/arcweft-native-capture-refresh/
+  exact-native-golden.environment.json
+  <fixture>.png
+  <fixture>.observe.json
+  <fixture>.imq.json
+```
+
+Before replacing a checked-in PNG, compare the candidate against the checked-in
+reference, inspect the PNG visually, and record the environment fingerprint and
+before/after metrics in an implementation note. Do not copy a candidate over a
+checked-in PNG merely because `fixture-refresh-all` produced it. Missing `imq`,
+missing pinned `MS Mincho`, unsupported backend, or a non-pinned milestone run is
+an environment blocker, not a PNG-refresh approval.
+
 Additional native candidate targets:
 
 | Target | Source | Command |
@@ -88,7 +106,9 @@ just webgpu-parity
 ```
 
 Promote candidate images or reports to checked-in fixtures only after comparing
-the output and documenting why the expected result changed.
+the output and documenting why the expected result changed. For exact native
+goldens, promotion additionally requires candidate PNG, observe JSON, `imq` JSON,
+and `exact-native-golden.environment.json` from the same run.
 
 ## Authored Fixtures
 

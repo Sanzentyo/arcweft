@@ -1,46 +1,130 @@
 {
+  "schema": "arcweft.exact_native_golden.policy.v2",
   "fixture": "exact_native_golden_policy",
   "tier": "tier2_environment_gated",
+  "default_fast_path": false,
+  "modes": {
+    "strict_pinned": {
+      "purpose": "milestone/release evidence",
+      "required_env": {
+        "ARW_EXACT_NATIVE_GOLDEN_REQUIRED": "1",
+        "ARW_EXACT_NATIVE_GOLDEN_PINNED": "1",
+        "ARW_EXACT_NATIVE_GOLDEN_BACKEND": "native_rich_text_observer"
+      },
+      "missing_imq_or_font_or_backend": "hard environment_blocker failure"
+    },
+    "local_unpinned": {
+      "purpose": "developer discovery and artifact generation",
+      "required_env": {},
+      "missing_imq_or_font_or_backend": "structured skip with fingerprint"
+    }
+  },
   "checked_in_goldens": [
     "tests/fixtures/native_capture/vertical_tutr_golden.png",
     "tests/fixtures/native_capture/vertical_jlreq_preset_loose_golden.png",
     "tests/fixtures/native_capture/vertical_jlreq_preset_normal_golden.png",
     "tests/fixtures/native_capture/vertical_lr_ruby_text_combine_golden.png"
   ],
-  "candidate_dir": "target/arcweft-native-capture-artifacts",
+  "artifact_roots": {
+    "test_visual_golden": "target/arcweft-native-golden-drift/test-visual-golden/<fixture-id>/",
+    "native_visual_artifacts": "target/arcweft-native-capture-artifacts/",
+    "fixture_refresh_candidates": "target/arcweft-native-capture-refresh/",
+    "ci_upload": "target/arcweft-native-capture-artifacts/"
+  },
+  "environment_fingerprint": {
+    "schema": "arcweft.exact_native_golden.environment.v1",
+    "required_fields": [
+      "os.family",
+      "os.version_family",
+      "renderer.backend_path",
+      "font.requested_family",
+      "font.windows_font_file_exists",
+      "viewport.width",
+      "viewport.height",
+      "viewport.device_scale",
+      "png.format",
+      "arcweft.commit",
+      "fixtures[].source_hash",
+      "imq.version",
+      "imq.metrics"
+    ]
+  },
   "environment": {
     "os": "windows",
     "font": "MS Mincho",
     "viewport": "1280x720",
-    "scale_policy": "raw",
+    "scale_policy": "raw Agent capture path",
     "device_pixel_ratio": 1.0,
-    "renderer": "native_rich_text_observer"
+    "renderer": "native_rich_text_observer",
+    "backend_env": "ARW_EXACT_NATIVE_GOLDEN_BACKEND=native_rich_text_observer",
+    "png_color_format": "PNG produced by arcw agent observe --image png"
   },
   "imq": {
-    "metrics": [
-      "psnr",
-      "ssim",
-      "mse",
-      "mae",
-      "maxae"
-    ],
-    "max_mse": 0.002,
-    "max_mae": 0.003,
-    "dimensions_must_match": true,
-    "gate_thresholds": {
+    "metrics": ["psnr", "ssim", "mse", "mae", "maxae"],
+    "hard_gates": {
       "dimensions_must_match": true,
       "max_mse": 0.002,
       "max_mae": 0.003
     },
-    "record_only_metrics": [
-      "psnr",
-      "ssim",
-      "maxae"
-    ]
+    "record_only_metrics": ["psnr", "ssim", "maxae"],
+    "threshold_change": "none in seq06.7"
   },
-  "failure_report": {
-    "reference_path": true,
-    "candidate_path": true,
-    "metric_json_path": true
+  "fixtures": [
+    {
+      "id": "vertical_tutr_golden",
+      "label": "vertical Tu/Tr",
+      "source": "tests/fixtures/native_capture/vertical_tutr_golden.arcw",
+      "reference": "tests/fixtures/native_capture/vertical_tutr_golden.png",
+      "candidate": "target/arcweft-native-capture-artifacts/vertical_tutr_golden.candidate.png",
+      "observe_json": "target/arcweft-native-capture-artifacts/vertical_tutr_golden.observe.json",
+      "metrics_json": "target/arcweft-native-capture-artifacts/vertical_tutr_golden.imq.json",
+      "max_mse": 0.002,
+      "max_mae": 0.003
+    },
+    {
+      "id": "vertical_jlreq_preset_loose_golden",
+      "label": "loose JLREQ preset",
+      "source": "tests/fixtures/native_capture/vertical_jlreq_preset_loose_golden.arcw",
+      "reference": "tests/fixtures/native_capture/vertical_jlreq_preset_loose_golden.png",
+      "candidate": "target/arcweft-native-capture-artifacts/vertical_jlreq_preset_loose_golden.candidate.png",
+      "observe_json": "target/arcweft-native-capture-artifacts/vertical_jlreq_preset_loose_golden.observe.json",
+      "metrics_json": "target/arcweft-native-capture-artifacts/vertical_jlreq_preset_loose_golden.imq.json",
+      "max_mse": 0.002,
+      "max_mae": 0.003
+    },
+    {
+      "id": "vertical_jlreq_preset_normal_golden",
+      "label": "normal JLREQ preset",
+      "source": "tests/fixtures/native_capture/vertical_jlreq_preset_normal_golden.arcw",
+      "reference": "tests/fixtures/native_capture/vertical_jlreq_preset_normal_golden.png",
+      "candidate": "target/arcweft-native-capture-artifacts/vertical_jlreq_preset_normal_golden.candidate.png",
+      "observe_json": "target/arcweft-native-capture-artifacts/vertical_jlreq_preset_normal_golden.observe.json",
+      "metrics_json": "target/arcweft-native-capture-artifacts/vertical_jlreq_preset_normal_golden.imq.json",
+      "max_mse": 0.002,
+      "max_mae": 0.003
+    },
+    {
+      "id": "vertical_lr_ruby_text_combine_golden",
+      "label": "vertical_lr ruby/text-combine",
+      "source": "tests/fixtures/native_capture/vertical_lr_ruby_text_combine_golden.arcw",
+      "reference": "tests/fixtures/native_capture/vertical_lr_ruby_text_combine_golden.png",
+      "candidate": "target/arcweft-native-capture-artifacts/vertical_lr_ruby_text_combine_golden.candidate.png",
+      "observe_json": "target/arcweft-native-capture-artifacts/vertical_lr_ruby_text_combine_golden.observe.json",
+      "metrics_json": "target/arcweft-native-capture-artifacts/vertical_lr_ruby_text_combine_golden.imq.json",
+      "max_mse": 0.002,
+      "max_mae": 0.003
+    }
+  ],
+  "status_classes": {
+    "expected_skip": "non-Windows local execution or explicitly unsupported local environment when exact evidence is not required",
+    "environment_not_pinned": "required exact job did not assert the pinned environment contract",
+    "environment_blocker": "required imq, pinned MS Mincho, or native backend evidence is missing",
+    "baseline_drift": "dimensions match and capture succeeds, but MSE/MAE exceed fixture thresholds",
+    "hard_visual_regression": "capture failure, imq execution failure, dimension mismatch, malformed PNG, or non-metric failure"
+  },
+  "baseline_refresh": {
+    "candidate_command": "just native-visual-artifacts",
+    "promotion": "copy reviewed target/arcweft-native-capture-artifacts/<fixture>.candidate.png to tests/fixtures/native_capture/<fixture>.png only after human review and documented metrics",
+    "blind_regeneration_allowed": false
   }
 }

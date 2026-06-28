@@ -324,7 +324,7 @@ needs full end-to-end evidence:
 ```bash
 cargo test -p arcweft-cli --features native-capture --test check agent_mcp_stdio -- --ignored --nocapture
 cargo test -p arcweft-cli --features native-capture --test check agent_observe_writes_layer_png_and_object_raw_images -- --ignored --nocapture
-cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer_matches_checked_in_imq_golden_fixtures -- --ignored --nocapture
+cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer_matches_checked_in_imq_golden_fixture -- --ignored --nocapture
 ```
 
 The equivalent Justfile targets are:
@@ -348,6 +348,34 @@ not run it automatically for every small mainline cut point unless the changed
 code is in that risk area. The MCP stdio part alone is now short enough to run
 as the default validation for Agent MCP protocol, resource URI, capture
 resource lifetime, and native readback changes.
+
+Exact native visual golden status semantics are structured so CI can distinguish
+local discovery from milestone evidence:
+
+| Status | Meaning | CI handling |
+| --- | --- | --- |
+| `expected_skip` | local/non-Windows exact run without required pinned evidence | allowed only in optional artifact jobs |
+| `environment_not_pinned` | `ARW_EXACT_NATIVE_GOLDEN_REQUIRED=1` was set but the pinned contract was not asserted | fail milestone/release job |
+| `environment_blocker` | `imq`, `MS Mincho`, or the supported backend evidence is missing | fail milestone/release job; optional jobs upload fingerprint |
+| `baseline_drift` | capture and dimensions are valid, but MSE/MAE exceed fixture bounds | fail; review candidate/reference/metrics/fingerprint |
+| `hard_visual_regression` | capture failure, `imq` failure, dimension mismatch, malformed PNG, or missing artifact | fail hard |
+
+The pinned milestone exact native visual job must run on Windows with:
+
+```powershell
+$env:ARW_EXACT_NATIVE_GOLDEN_REQUIRED = "1"
+$env:ARW_EXACT_NATIVE_GOLDEN_PINNED = "1"
+$env:ARW_EXACT_NATIVE_GOLDEN_BACKEND = "native_rich_text_observer"
+just test-visual-golden
+just native-visual-artifacts
+```
+
+The job must upload `target/arcweft-native-capture-artifacts/` even on failure.
+That directory contains candidate PNGs, `arcw agent observe` JSON reports,
+`imq` JSON metrics, and `exact-native-golden.environment.json`. The ignored
+Cargo exact tests also retain per-fixture packets under
+`target/arcweft-native-golden-drift/test-visual-golden/<fixture-id>/` so a
+single fixture drift can be reviewed without rerunning locally.
 
 Operational budget:
 
@@ -378,8 +406,8 @@ Operational budget:
   for the image-producing `agent observe` calls because native PNG capture and
   image comparison are often faster through the optimized binary once the
   release build is warm. The target writes fresh native PNG candidates,
-  `arcw agent observe` JSON, and `imq` JSON metric reports for every checked-in
-  native visual golden.
+  `arcw agent observe` JSON, `imq` JSON metric reports, and an exact native
+  golden environment fingerprint for every checked-in native visual golden.
 - Sample visual review issues that are visible in generated PNGs must be kept
   under `docs/implementation/visual-sample-review-issues/` with the issue text
   and the corresponding PNG until the implementation has been improved and the

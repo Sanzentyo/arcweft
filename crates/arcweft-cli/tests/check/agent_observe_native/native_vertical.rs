@@ -1207,111 +1207,576 @@ fn assert_checked_in_native_png_golden(label: &str, golden: &[u8]) {
     );
 }
 
-#[test]
-#[ignore = "tier 2 visual regression: exact PNG/imq golden is environment-sensitive"]
-fn agent_observe_native_renderer_matches_checked_in_imq_golden_fixtures() {
-    if !cfg!(windows) {
-        eprintln!("skipping checked-in native visual golden comparisons: Windows font fixtures");
-        return;
-    }
-    if !imq_is_available() {
-        eprintln!("skipping checked-in native visual golden comparisons: imq is not available");
-        return;
-    }
+const EXACT_NATIVE_GOLDEN_METRIC_SET: &str = "psnr,ssim,mse,mae,maxae";
+const EXACT_NATIVE_GOLDEN_VIEWPORT_WIDTH: u32 = 1280;
+const EXACT_NATIVE_GOLDEN_VIEWPORT_HEIGHT: u32 = 720;
 
-    assert_checked_in_native_imq_golden(
-        "vertical Tu/Tr",
-        "vertical_tutr_golden.arcw",
-        "vertical_tutr_golden.png",
-        "vertical-tutr-candidate.png",
-    );
-    assert_checked_in_native_imq_golden(
-        "loose JLREQ preset",
-        "vertical_jlreq_preset_loose_golden.arcw",
-        "vertical_jlreq_preset_loose_golden.png",
-        "vertical-jlreq-preset-loose-candidate.png",
-    );
-    assert_checked_in_native_imq_golden(
-        "normal JLREQ preset",
-        "vertical_jlreq_preset_normal_golden.arcw",
-        "vertical_jlreq_preset_normal_golden.png",
-        "vertical-jlreq-preset-normal-candidate.png",
-    );
-    assert_checked_in_native_imq_golden(
-        "vertical_lr ruby/text-combine",
-        "vertical_lr_ruby_text_combine_golden.arcw",
-        "vertical_lr_ruby_text_combine_golden.png",
-        "vertical-lr-ruby-text-combine-candidate.png",
-    );
+#[derive(Clone, Copy, Debug)]
+struct NativeExactGoldenFixture {
+    id: &'static str,
+    label: &'static str,
+    source_filename: &'static str,
+    golden_filename: &'static str,
+    max_mse: f64,
+    max_mae: f64,
 }
 
-fn assert_checked_in_native_imq_golden(
-    label: &str,
-    source_filename: &str,
-    golden_filename: &str,
-    candidate_filename: &str,
+impl NativeExactGoldenFixture {
+    fn source_path(&self, fixture_dir: &Path) -> PathBuf {
+        fixture_dir.join(self.source_filename)
+    }
+
+    fn golden_path(&self, fixture_dir: &Path) -> PathBuf {
+        fixture_dir.join(self.golden_filename)
+    }
+}
+
+#[derive(Debug)]
+struct NativeExactGoldenArtifactPaths {
+    artifact_dir: PathBuf,
+    candidate_path: PathBuf,
+    observe_path: PathBuf,
+    metrics_path: PathBuf,
+    fingerprint_path: PathBuf,
+}
+
+impl NativeExactGoldenArtifactPaths {
+    fn for_fixture(fixture: NativeExactGoldenFixture) -> Self {
+        let artifact_dir = workspace_root()
+            .join("target/arcweft-native-golden-drift/test-visual-golden")
+            .join(fixture.id);
+        Self {
+            candidate_path: artifact_dir.join(format!("{}.candidate.png", fixture.id)),
+            observe_path: artifact_dir.join(format!("{}.observe.json", fixture.id)),
+            metrics_path: artifact_dir.join(format!("{}.imq.json", fixture.id)),
+            fingerprint_path: artifact_dir.join(format!("{}.environment.json", fixture.id)),
+            artifact_dir,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct NativeExactGoldenEnvironmentBlocker {
+    classification: &'static str,
+    code: &'static str,
+    message: &'static str,
+}
+
+const NATIVE_EXACT_GOLDEN_FIXTURES: &[NativeExactGoldenFixture] = &[
+    NativeExactGoldenFixture {
+        id: "vertical_tutr_golden",
+        label: "vertical Tu/Tr",
+        source_filename: "vertical_tutr_golden.arcw",
+        golden_filename: "vertical_tutr_golden.png",
+        max_mse: 0.002,
+        max_mae: 0.003,
+    },
+    NativeExactGoldenFixture {
+        id: "vertical_jlreq_preset_loose_golden",
+        label: "loose JLREQ preset",
+        source_filename: "vertical_jlreq_preset_loose_golden.arcw",
+        golden_filename: "vertical_jlreq_preset_loose_golden.png",
+        max_mse: 0.002,
+        max_mae: 0.003,
+    },
+    NativeExactGoldenFixture {
+        id: "vertical_jlreq_preset_normal_golden",
+        label: "normal JLREQ preset",
+        source_filename: "vertical_jlreq_preset_normal_golden.arcw",
+        golden_filename: "vertical_jlreq_preset_normal_golden.png",
+        max_mse: 0.002,
+        max_mae: 0.003,
+    },
+    NativeExactGoldenFixture {
+        id: "vertical_lr_ruby_text_combine_golden",
+        label: "vertical_lr ruby/text-combine",
+        source_filename: "vertical_lr_ruby_text_combine_golden.arcw",
+        golden_filename: "vertical_lr_ruby_text_combine_golden.png",
+        max_mse: 0.002,
+        max_mae: 0.003,
+    },
+];
+
+#[test]
+#[ignore = "tier 2 visual regression: exact PNG/imq golden is environment-sensitive"]
+fn agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_tutr() {
+    assert_checked_in_native_imq_golden("vertical_tutr_golden");
+}
+
+#[test]
+#[ignore = "tier 2 visual regression: exact PNG/imq golden is environment-sensitive"]
+fn agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_jlreq_preset_loose()
+{
+    assert_checked_in_native_imq_golden("vertical_jlreq_preset_loose_golden");
+}
+
+#[test]
+#[ignore = "tier 2 visual regression: exact PNG/imq golden is environment-sensitive"]
+fn agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_jlreq_preset_normal(
 ) {
+    assert_checked_in_native_imq_golden("vertical_jlreq_preset_normal_golden");
+}
+
+#[test]
+#[ignore = "tier 2 visual regression: exact PNG/imq golden is environment-sensitive"]
+fn agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_lr_ruby_text_combine(
+) {
+    assert_checked_in_native_imq_golden("vertical_lr_ruby_text_combine_golden");
+}
+
+fn assert_checked_in_native_imq_golden(fixture_id: &str) {
+    let fixture = native_exact_golden_fixture(fixture_id);
     let fixture_dir = workspace_root().join("tests/fixtures/native_capture");
-    let source_path = fixture_dir.join(source_filename);
-    let golden_path = fixture_dir.join(golden_filename);
+    let source_path = fixture.source_path(&fixture_dir);
+    let golden_path = fixture.golden_path(&fixture_dir);
+    let paths = NativeExactGoldenArtifactPaths::for_fixture(fixture);
+    reset_native_exact_golden_artifacts(&paths);
+
+    if handle_exact_native_golden_environment_blocker(fixture, &paths) {
+        return;
+    }
+
     let golden_bytes = fs::read(&golden_path).expect("read checked-in native visual golden");
-    assert_checked_in_native_png_golden(label, &golden_bytes);
+    assert_checked_in_native_png_golden(fixture.label, &golden_bytes);
+    capture_native_exact_golden_candidate(fixture, &source_path, &paths);
+    let imq_json = run_exact_native_golden_imq(fixture, &golden_path, &paths);
+    let mse = metric_score(&imq_json, "mse");
+    let mae = metric_score(&imq_json, "mae");
+    let status = exact_native_golden_status(fixture, &imq_json, mse, mae);
+    write_exact_native_golden_fingerprint(fixture, &paths, status, None);
+    assert_exact_native_golden_metrics(fixture, &golden_path, &paths, &imq_json, mse, mae);
+}
 
-    let dir = temp_dir(&format!(
-        "agent-observe-native-{}-golden",
-        filesystem_safe_test_label(label)
-    ));
-    let candidate_path = dir.join(candidate_filename);
-    let metrics_path = dir.join(format!("{candidate_filename}.imq.json"));
-    let candidate_json = capture_native_png_report(&source_path, &candidate_path);
-    assert_native_capture_has_content(&candidate_json, candidate_filename);
+fn reset_native_exact_golden_artifacts(paths: &NativeExactGoldenArtifactPaths) {
+    fs::create_dir_all(&paths.artifact_dir)
+        .expect("create native exact golden artifact directory");
+    for stale_path in [
+        &paths.candidate_path,
+        &paths.observe_path,
+        &paths.metrics_path,
+        &paths.fingerprint_path,
+    ] {
+        let _ = fs::remove_file(stale_path);
+    }
+}
 
+fn handle_exact_native_golden_environment_blocker(
+    fixture: NativeExactGoldenFixture,
+    paths: &NativeExactGoldenArtifactPaths,
+) -> bool {
+    let Some(blocker) = exact_native_golden_environment_blocker() else {
+        return false;
+    };
+    write_exact_native_golden_fingerprint(fixture, paths, blocker.classification, Some(&blocker));
+    let message = format!(
+        "{} exact native golden {}: fixture={}, fingerprint={}, {}",
+        blocker.classification,
+        blocker.code,
+        fixture.id,
+        paths.fingerprint_path.display(),
+        blocker.message
+    );
+    assert!(!exact_native_golden_required(), "{message}");
+    eprintln!("{message}");
+    true
+}
+
+fn capture_native_exact_golden_candidate(
+    fixture: NativeExactGoldenFixture,
+    source_path: &Path,
+    paths: &NativeExactGoldenArtifactPaths,
+) {
+    let candidate_json = capture_native_png_report(source_path, &paths.candidate_path);
+    fs::write(
+        &paths.observe_path,
+        serde_json::to_vec_pretty(&candidate_json).expect("serialize native golden observe JSON"),
+    )
+    .expect("write native exact golden observe JSON");
+    let candidate_name = paths
+        .candidate_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("candidate path has UTF-8 file name");
+    assert_native_exact_capture_has_content(&candidate_json, candidate_name);
+    assert_eq!(fixture.id, candidate_name.trim_end_matches(".candidate.png"));
+}
+
+fn run_exact_native_golden_imq(
+    fixture: NativeExactGoldenFixture,
+    golden_path: &Path,
+    paths: &NativeExactGoldenArtifactPaths,
+) -> serde_json::Value {
     let imq_output = Command::new("imq")
         .arg("image")
-        .arg(&golden_path)
-        .arg(&candidate_path)
+        .arg(golden_path)
+        .arg(&paths.candidate_path)
         .arg("--metrics")
-        .arg("psnr,ssim,mse,mae,maxae")
+        .arg(EXACT_NATIVE_GOLDEN_METRIC_SET)
         .arg("--format")
         .arg("json")
         .output()
         .expect("imq compares checked-in native visual golden");
-    fs::write(&metrics_path, &imq_output.stdout)
+    fs::write(&paths.metrics_path, &imq_output.stdout)
         .expect("write checked-in native visual golden imq metrics");
-    assert!(
-        imq_output.status.success(),
-        "{label} imq checked-in golden comparison should succeed, reference={}, candidate={}, metrics={}, stderr: {}",
+    if !imq_output.status.success() {
+        write_exact_native_golden_fingerprint(
+            fixture,
+            paths,
+            "hard_visual_regression",
+            None,
+        );
+        panic!(
+            "fixture={} imq checked-in golden comparison should succeed, reference={}, candidate={}, observe={}, metrics={}, environment={}, stderr: {}",
+            fixture.id,
+            golden_path.display(),
+            paths.candidate_path.display(),
+            paths.observe_path.display(),
+            paths.metrics_path.display(),
+            paths.fingerprint_path.display(),
+            String::from_utf8_lossy(&imq_output.stderr)
+        );
+    }
+    match serde_json::from_slice(&imq_output.stdout) {
+        Ok(json) => json,
+        Err(error) => {
+            write_exact_native_golden_fingerprint(
+                fixture,
+                paths,
+                "hard_visual_regression",
+                None,
+            );
+            panic!(
+                "fixture={} imq output should be JSON, reference={}, candidate={}, observe={}, metrics={}, environment={}, error={error}",
+                fixture.id,
+                golden_path.display(),
+                paths.candidate_path.display(),
+                paths.observe_path.display(),
+                paths.metrics_path.display(),
+                paths.fingerprint_path.display()
+            );
+        }
+    }
+}
+
+fn exact_native_golden_status(
+    fixture: NativeExactGoldenFixture,
+    imq_json: &serde_json::Value,
+    mse: f64,
+    mae: f64,
+) -> &'static str {
+    let width = imq_json["dimensions"]["width"].as_u64().unwrap_or_default();
+    let height = imq_json["dimensions"]["height"].as_u64().unwrap_or_default();
+    if width != u64::from(EXACT_NATIVE_GOLDEN_VIEWPORT_WIDTH)
+        || height != u64::from(EXACT_NATIVE_GOLDEN_VIEWPORT_HEIGHT)
+    {
+        "hard_visual_regression"
+    } else if mse <= fixture.max_mse && mae <= fixture.max_mae {
+        "passed"
+    } else {
+        "baseline_drift"
+    }
+}
+
+fn assert_exact_native_golden_metrics(
+    fixture: NativeExactGoldenFixture,
+    golden_path: &Path,
+    paths: &NativeExactGoldenArtifactPaths,
+    imq_json: &serde_json::Value,
+    mse: f64,
+    mae: f64,
+) {
+    assert_eq!(
+        imq_json["dimensions"]["width"],
+        EXACT_NATIVE_GOLDEN_VIEWPORT_WIDTH,
+        "fixture={} visual golden width should match, reference={}, candidate={}, observe={}, metrics={}, environment={}: {imq_json}",
+        fixture.id,
         golden_path.display(),
-        candidate_path.display(),
-        metrics_path.display(),
-        String::from_utf8_lossy(&imq_output.stderr)
+        paths.candidate_path.display(),
+        paths.observe_path.display(),
+        paths.metrics_path.display(),
+        paths.fingerprint_path.display()
     );
-    let imq_json: serde_json::Value =
-        serde_json::from_slice(&imq_output.stdout).expect("imq output is JSON");
-    assert_eq!(imq_json["dimensions"]["width"], 1280);
-    assert_eq!(imq_json["dimensions"]["height"], 720);
-    assert!(
-        metric_score(&imq_json, "mse") <= 0.002,
-        "{label} visual golden mse drift should stay bounded, reference={}, candidate={}, metrics={}: {imq_json}",
+    assert_eq!(
+        imq_json["dimensions"]["height"],
+        EXACT_NATIVE_GOLDEN_VIEWPORT_HEIGHT,
+        "fixture={} visual golden height should match, reference={}, candidate={}, observe={}, metrics={}, environment={}: {imq_json}",
+        fixture.id,
         golden_path.display(),
-        candidate_path.display(),
-        metrics_path.display()
+        paths.candidate_path.display(),
+        paths.observe_path.display(),
+        paths.metrics_path.display(),
+        paths.fingerprint_path.display()
     );
     assert!(
-        metric_score(&imq_json, "mae") <= 0.003,
-        "{label} visual golden mae drift should stay bounded, reference={}, candidate={}, metrics={}: {imq_json}",
+        mse <= fixture.max_mse,
+        "fixture={} visual golden mse drift should stay bounded, max_mse={}, actual_mse={}, actual_mae={}, reference={}, candidate={}, observe={}, metrics={}, environment={}: {imq_json}",
+        fixture.id,
+        fixture.max_mse,
+        mse,
+        mae,
         golden_path.display(),
-        candidate_path.display(),
-        metrics_path.display()
+        paths.candidate_path.display(),
+        paths.observe_path.display(),
+        paths.metrics_path.display(),
+        paths.fingerprint_path.display()
+    );
+    assert!(
+        mae <= fixture.max_mae,
+        "fixture={} visual golden mae drift should stay bounded, max_mae={}, actual_mse={}, actual_mae={}, reference={}, candidate={}, observe={}, metrics={}, environment={}: {imq_json}",
+        fixture.id,
+        fixture.max_mae,
+        mse,
+        mae,
+        golden_path.display(),
+        paths.candidate_path.display(),
+        paths.observe_path.display(),
+        paths.metrics_path.display(),
+        paths.fingerprint_path.display()
     );
     assert_metric_close(
-        metric_detail(&imq_json, "psnr", "mse"),
-        metric_score(&imq_json, "mse"),
+        metric_detail(imq_json, "psnr", "mse"),
+        mse,
         0.0,
         "psnr.mse",
     );
+}
 
-    fs::remove_dir_all(&dir).expect("remove temp native visual golden dir");
+fn assert_native_exact_capture_has_content(report: &serde_json::Value, written_name: &str) {
+    assert_eq!(report["images"][0]["kind"], "color");
+    assert_eq!(report["images"][0]["renderer"], "native");
+    assert_eq!(report["images"][0]["composition"], "framebuffer");
+    assert_eq!(report["images"][0]["mime_type"], "image/png");
+    assert_eq!(report["images"][0]["width"], EXACT_NATIVE_GOLDEN_VIEWPORT_WIDTH);
+    assert_eq!(report["images"][0]["height"], EXACT_NATIVE_GOLDEN_VIEWPORT_HEIGHT);
+    assert!(report["images"][0]["content_pixels"].as_u64().unwrap() > 0);
+    let written = report["images"][0]["written"]
+        .as_str()
+        .expect("native exact capture report includes written path");
+    assert_eq!(native_capture_written_file_name(written), written_name);
+}
+
+fn native_capture_written_file_name(written: &str) -> &str {
+    written
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(written)
+}
+
+fn native_exact_golden_fixture(fixture_id: &str) -> NativeExactGoldenFixture {
+    NATIVE_EXACT_GOLDEN_FIXTURES
+        .iter()
+        .copied()
+        .find(|fixture| fixture.id == fixture_id)
+        .unwrap_or_else(|| panic!("unknown native exact golden fixture `{fixture_id}`"))
+}
+
+fn exact_native_golden_environment_blocker() -> Option<NativeExactGoldenEnvironmentBlocker> {
+    if exact_native_golden_required() && std::env::var_os("ARW_EXACT_NATIVE_GOLDEN_PINNED").is_none()
+    {
+        return Some(NativeExactGoldenEnvironmentBlocker {
+            classification: "environment_not_pinned",
+            code: "missing_required_pin",
+            message: "required exact native golden job must set ARW_EXACT_NATIVE_GOLDEN_PINNED=1",
+        });
+    }
+    if !cfg!(windows) {
+        return Some(NativeExactGoldenEnvironmentBlocker {
+            classification: if exact_native_golden_required() {
+                "environment_blocker"
+            } else {
+                "expected_skip"
+            },
+            code: "unsupported_os",
+            message: "checked-in native exact goldens are Windows MS Mincho fixtures",
+        });
+    }
+    if !imq_is_available() {
+        return Some(NativeExactGoldenEnvironmentBlocker {
+            classification: "environment_blocker",
+            code: "missing_imq",
+            message: "imq is required for exact native golden metrics",
+        });
+    }
+    if !pinned_native_golden_font_available() {
+        return Some(NativeExactGoldenEnvironmentBlocker {
+            classification: "environment_blocker",
+            code: "missing_pinned_font",
+            message: "MS Mincho font probe failed for the pinned exact native golden environment",
+        });
+    }
+    if let Ok(backend) = std::env::var("ARW_EXACT_NATIVE_GOLDEN_BACKEND")
+        && backend != "native_rich_text_observer"
+    {
+        return Some(NativeExactGoldenEnvironmentBlocker {
+            classification: "environment_blocker",
+            code: "unsupported_backend",
+            message: "ARW_EXACT_NATIVE_GOLDEN_BACKEND must be native_rich_text_observer",
+        });
+    }
+    None
+}
+
+fn exact_native_golden_required() -> bool {
+    std::env::var_os("ARW_EXACT_NATIVE_GOLDEN_REQUIRED").is_some()
+}
+
+fn pinned_native_golden_font_available() -> bool {
+    pinned_native_golden_font_path().is_some_and(|path| path.exists())
+}
+
+fn pinned_native_golden_font_path() -> Option<PathBuf> {
+    std::env::var_os("WINDIR").map(|windir| PathBuf::from(windir).join("Fonts").join("msmincho.ttc"))
+}
+
+fn write_exact_native_golden_fingerprint(
+    fixture: NativeExactGoldenFixture,
+    paths: &NativeExactGoldenArtifactPaths,
+    status: &str,
+    blocker: Option<&NativeExactGoldenEnvironmentBlocker>,
+) {
+    let root = workspace_root();
+    let fixture_dir = root.join("tests/fixtures/native_capture");
+    let source_path = fixture.source_path(&fixture_dir);
+    let golden_path = fixture.golden_path(&fixture_dir);
+    let font_path = pinned_native_golden_font_path();
+    let fingerprint = serde_json::json!({
+        "schema": "arcweft.exact_native_golden.environment.v1",
+        "fixture": {
+            "id": fixture.id,
+            "label": fixture.label,
+            "source": source_path.display().to_string(),
+            "reference": golden_path.display().to_string(),
+            "thresholds": {
+                "max_mse": fixture.max_mse,
+                "max_mae": fixture.max_mae,
+            },
+        },
+        "status": status,
+        "blocker": blocker.map(|blocker| serde_json::json!({
+            "classification": blocker.classification,
+            "code": blocker.code,
+            "message": blocker.message,
+        })),
+        "environment": {
+            "required": exact_native_golden_required(),
+            "pinned": std::env::var_os("ARW_EXACT_NATIVE_GOLDEN_PINNED").is_some(),
+            "os": {
+                "family": std::env::consts::OS,
+                "arch": std::env::consts::ARCH,
+                "version_family": native_exact_golden_os_version(),
+            },
+            "renderer": {
+                "backend_path": "native_rich_text_observer",
+                "backend_env": std::env::var("ARW_EXACT_NATIVE_GOLDEN_BACKEND").ok(),
+                "arcw_binary": env!("CARGO_BIN_EXE_arcw"),
+            },
+            "font": {
+                "requested_family": "MS Mincho",
+                "fallback_policy": "fixture source pins MS Mincho; exact baseline acceptance is blocked if the pinned family probe fails",
+                "windows_font_file": font_path.as_ref().map(|path| path.display().to_string()),
+                "windows_font_file_exists": font_path.as_ref().is_some_and(|path| path.exists()),
+            },
+            "viewport": {
+                "width": EXACT_NATIVE_GOLDEN_VIEWPORT_WIDTH,
+                "height": EXACT_NATIVE_GOLDEN_VIEWPORT_HEIGHT,
+                "device_scale": 1.0,
+            },
+            "png": {
+                "format": "png",
+                "capture_command_format": "arcw agent observe --image png",
+                "color_format": "PNG bytes emitted by native Agent capture",
+            },
+            "arcweft": {
+                "commit": native_exact_golden_git_commit(&root),
+                "dirty": native_exact_golden_git_dirty(&root),
+                "source_hash": native_exact_golden_git_hash_object(&root, &source_path),
+                "reference_hash": native_exact_golden_git_hash_object(&root, &golden_path),
+            },
+            "imq": {
+                "available": imq_is_available(),
+                "version": native_exact_golden_imq_version(),
+                "metrics": ["psnr", "ssim", "mse", "mae", "maxae"],
+            },
+        },
+        "artifacts": {
+            "artifact_dir": paths.artifact_dir.display().to_string(),
+            "reference": artifact_status_json(&golden_path),
+            "candidate": artifact_status_json(&paths.candidate_path),
+            "observe_json": artifact_status_json(&paths.observe_path),
+            "metrics_json": artifact_status_json(&paths.metrics_path),
+            "fingerprint_json": paths.fingerprint_path.display().to_string(),
+        },
+    });
+    fs::write(
+        &paths.fingerprint_path,
+        serde_json::to_vec_pretty(&fingerprint).expect("serialize exact native golden fingerprint"),
+    )
+    .expect("write exact native golden fingerprint");
+}
+
+fn artifact_status_json(path: &Path) -> serde_json::Value {
+    serde_json::json!({
+        "path": path.display().to_string(),
+        "exists": path.exists(),
+    })
+}
+
+fn native_exact_golden_os_version() -> Option<String> {
+    if cfg!(windows) {
+        native_exact_golden_command_stdout(Command::new("cmd").arg("/C").arg("ver"))
+    } else if cfg!(target_os = "macos") {
+        native_exact_golden_command_stdout(Command::new("sw_vers").arg("-productVersion"))
+    } else {
+        native_exact_golden_command_stdout(Command::new("uname").arg("-srv"))
+    }
+}
+
+fn native_exact_golden_git_commit(root: &Path) -> Option<String> {
+    native_exact_golden_command_stdout(
+        Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .arg("rev-parse")
+            .arg("HEAD"),
+    )
+}
+
+fn native_exact_golden_git_dirty(root: &Path) -> Option<bool> {
+    native_exact_golden_command_stdout(
+        Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .arg("status")
+            .arg("--short"),
+    )
+    .map(|status| !status.is_empty())
+}
+
+fn native_exact_golden_git_hash_object(root: &Path, path: &Path) -> Option<String> {
+    native_exact_golden_command_stdout(
+        Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .arg("hash-object")
+            .arg(path),
+    )
+}
+
+fn native_exact_golden_imq_version() -> Option<String> {
+    native_exact_golden_command_stdout(Command::new("imq").arg("--version")).or_else(|| {
+        native_exact_golden_command_stdout(Command::new("imq").arg("--help"))
+            .and_then(|help| help.lines().next().map(str::to_owned))
+    })
+}
+
+fn native_exact_golden_command_stdout(command: &mut Command) -> Option<String> {
+    let output = command.stderr(Stdio::null()).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    Some(stdout.trim().to_owned())
 }
 
 #[test]
@@ -6291,4 +6756,3 @@ fn agent_observe_native_renderer_writes_regional_indicator_strict_class_mix_raw_
     assert_native_regional_indicator_strict_class_mix_raw_crop("vertical_lr", "mask");
     assert_native_regional_indicator_strict_class_mix_raw_crop("vertical_lr", "object-id");
 }
-

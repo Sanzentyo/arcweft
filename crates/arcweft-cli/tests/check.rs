@@ -224,19 +224,6 @@ fn temp_dir(name: &str) -> PathBuf {
     path
 }
 
-fn filesystem_safe_test_label(label: &str) -> String {
-    label
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() {
-                ch.to_ascii_lowercase()
-            } else {
-                '-'
-            }
-        })
-        .collect()
-}
-
 fn assert_sample_summary_is_ordered(samples: &serde_json::Value) {
     let min = samples["min"].as_u64().expect("sample min is an integer");
     let median = samples["median"]
