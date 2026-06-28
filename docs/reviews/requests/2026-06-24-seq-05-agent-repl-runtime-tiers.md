@@ -131,3 +131,15 @@ Please produce one design document with:
 - test plan;
 - explicit non-goals.
 
+## Follow-Up Package Split
+
+The original seq05 request has been split into independently throwable package
+requests:
+
+- `docs/reviews/requests/2026-06-28-seq-05.0-agent-repl-runtime-tiers-dispatch-package.md`
+- `docs/reviews/requests/2026-06-28-seq-05.1-repl-overlay-cell-transaction-package.md`
+- `docs/reviews/requests/2026-06-28-seq-05.2-repl-commands-agent-runner-package.md`
+- `docs/reviews/requests/2026-06-28-seq-05.3-repl-executor-tiering-warm-codegen-package.md`
+
+Use seq05.0 first when asking another designer to confirm or improve the split.
+Use seq05.1 as the first implementation package after the split is accepted.
