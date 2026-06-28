@@ -1,5 +1,10 @@
-use crate::fingerprint::{
-    BuildDigest, NamedDigest, put_digest, put_named_digests, put_string, put_string_vec, put_u32,
+use crate::{
+    artifact::ArtifactKind,
+    fingerprint::{
+        BuildDigest, NamedDigest, put_digest, put_named_digests, put_string, put_string_vec,
+        put_u32,
+    },
+    incremental::QueryKind,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -125,6 +130,36 @@ impl CompilerObjectKind {
             Self::RuntimePlanUnit => "runtime-plan-unit",
             Self::BytecodeUnit => "bytecode-unit",
             Self::LinkPlan => "link-plan",
+        }
+    }
+
+    /// Query family allowed for seq04.2 adapter-owned read-through.
+    ///
+    /// Only parse facts and HIR-body facts have deterministic safe `.awbo`
+    /// payloads in this slice. Later slices must opt in explicitly by adding
+    /// their object kind here together with validation and tests.
+    pub const fn safe_read_through_query_kind(self) -> Option<QueryKind> {
+        match self {
+            Self::ParsedSyntax => Some(QueryKind::Parse),
+            Self::HirBody => Some(QueryKind::HirBody),
+            Self::InterfaceSummary
+            | Self::LineTaskEvidence
+            | Self::RuntimePlanUnit
+            | Self::BytecodeUnit
+            | Self::LinkPlan => None,
+        }
+    }
+
+    /// Artifact family allowed for seq04.2 adapter-owned read-through.
+    pub const fn safe_read_through_artifact_kind(self) -> Option<ArtifactKind> {
+        match self {
+            Self::ParsedSyntax => Some(ArtifactKind::ParsedSyntax),
+            Self::HirBody => Some(ArtifactKind::HirBody),
+            Self::InterfaceSummary
+            | Self::LineTaskEvidence
+            | Self::RuntimePlanUnit
+            | Self::BytecodeUnit
+            | Self::LinkPlan => None,
         }
     }
 

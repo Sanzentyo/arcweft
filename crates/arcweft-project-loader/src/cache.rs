@@ -7,6 +7,7 @@ pub mod external_payload;
 pub mod inspect;
 pub mod lock;
 mod network;
+pub mod persistent_query;
 pub mod record;
 pub mod release;
 pub mod store;

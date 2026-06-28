@@ -537,7 +537,7 @@ mod tests {
     use crate::{hir::lower_source_tree, parse::parse_source_text};
     use arcweft_project::{
         fingerprint::NamedDigest,
-        persistent_object::{AwboEnvelope, CompilerBuildIdentity},
+        persistent_object::{AwboEnvelope, AwboError, CompilerBuildIdentity},
     };
 
     const SOURCE: &str = r#"
@@ -664,5 +664,37 @@ return "done"
                 actual: CompilerObjectKind::HirBody,
             }
         );
+    }
+
+    #[test]
+    fn persistent_query_soft_miss_does_not_block_source_rebuild() {
+        let parsed = parse_source_text(SOURCE);
+        assert!(parsed.errors().is_empty());
+        let key = key(CompilerObjectKind::ParsedSyntax, &parsed);
+        let bytes = AwboEnvelope::new(
+            &key,
+            parsed_syntax_payload(&ParsedSyntaxFactsInput {
+                key: &key,
+                source_label: "src/game.arcw",
+                parsed: &parsed,
+            })
+            .expect("parse payload builds"),
+        )
+        .expect("parse envelope builds")
+        .encode()
+        .expect("parse envelope encodes");
+
+        let mut changed_key = key.clone();
+        changed_key.compiler.git_commit = "changed-compiler".to_owned();
+        assert_eq!(
+            AwboEnvelope::decode(&bytes, &changed_key)
+                .expect_err("changed compiler identity misses"),
+            AwboError::KeyDigestMismatch,
+        );
+
+        let rebuilt = parse_source_text(SOURCE);
+        assert!(rebuilt.errors().is_empty());
+        let tree = rebuilt.clone().into_typed_tree();
+        lower_source_tree(&tree).expect("source rebuild still lowers to HIR");
     }
 }

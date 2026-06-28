@@ -185,7 +185,7 @@ impl FilesystemCacheStore {
         Ok(Some(bytes))
     }
 
-    fn object_path(&self, digest: BuildDigest) -> PathBuf {
+    pub(crate) fn object_path(&self, digest: BuildDigest) -> PathBuf {
         let hex = digest.to_hex();
         self.root
             .join("objects")
@@ -194,7 +194,7 @@ impl FilesystemCacheStore {
             .join(&hex[2..])
     }
 
-    fn record_path(&self, query: QueryKind, key: ArtifactKey) -> PathBuf {
+    pub(crate) fn record_path(&self, query: QueryKind, key: ArtifactKey) -> PathBuf {
         let hex = key.digest().to_hex();
         self.root()
             .join("records")

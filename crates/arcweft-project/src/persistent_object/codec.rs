@@ -77,7 +77,7 @@ impl AwboEnvelope {
         Ok(writer.finish())
     }
 
-    pub fn decode(bytes: &[u8], key: &CompilerObjectKey) -> Result<Self, AwboError> {
+    pub fn decode_detached(bytes: &[u8]) -> Result<Self, AwboError> {
         let mut reader = BinaryReader::new(bytes);
         let magic = reader.read_array::<8>("magic")?;
         let schema_version = reader.read_u32("schema_version")?;
@@ -100,6 +100,12 @@ impl AwboEnvelope {
             payload_len,
             payload,
         };
+        envelope.validate_envelope_shape()?;
+        Ok(envelope)
+    }
+
+    pub fn decode(bytes: &[u8], key: &CompilerObjectKey) -> Result<Self, AwboError> {
+        let envelope = Self::decode_detached(bytes)?;
         envelope.validate(key)?;
         Ok(envelope)
     }
