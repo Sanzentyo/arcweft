@@ -4,6 +4,10 @@ Date: 2026-06-28
 Decision: **defer**
 Target fixture: `vertical_tutr_golden`
 
+Superseded by:
+`docs/implementation/seq-06.7.2-exact-native-golden-baseline-promotion-2026-06-28.md`.
+Seq06.7.1 remains as the historical no-packet deferral record.
+
 ## Summary
 
 This review does not promote a new `tests/fixtures/native_capture/vertical_tutr_golden.png`

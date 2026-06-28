@@ -213,6 +213,14 @@ observe JSON, `imq` JSON, or exact native environment fingerprint was available.
 The retained packet is
 `docs/implementation/seq-06.7.1-exact-native-golden-baseline-promotion-review-2026-06-28/`.
 
+Seq06.7.2 resolved that blocker in this checkout. A pinned Windows run collected
+the same-run candidate PNG, observe JSON, `imq` JSON, and environment
+fingerprint, reviewed the visual output, and promoted
+`tests/fixtures/native_capture/vertical_tutr_golden.png` to the candidate hash
+`2e381ca2dd5ad76767cf4ae5ec03e2a35228b23a5fc7c35b93e99bc144f52fa2`. The
+threshold policy remains unchanged. See
+`docs/implementation/seq-06.7.2-exact-native-golden-baseline-promotion-2026-06-28.md`.
+
 ## Validation status
 
 The package was prepared from GitHub connector inspection of `main` after

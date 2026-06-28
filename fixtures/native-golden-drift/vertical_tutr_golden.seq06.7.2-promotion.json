@@ -1,0 +1,53 @@
+{
+  "schema": "arcweft.exact_native_golden.promotion_review.v1",
+  "fixture": "vertical_tutr_golden",
+  "decision": "promoted",
+  "review_date": "2026-06-28",
+  "review_note": "docs/implementation/seq-06.7.2-exact-native-golden-baseline-promotion-2026-06-28.md",
+  "source_commit": "d4ff2bf634da69c103c120e5c3d04f2799b9f117",
+  "environment": {
+    "os_family": "windows",
+    "os_version_family": "Microsoft Windows [Version 10.0.26200.8737]",
+    "arch": "x86_64",
+    "backend": "native_rich_text_observer",
+    "font": "MS Mincho",
+    "font_probe": "C:\\WINDOWS\\Fonts\\msmincho.ttc",
+    "viewport": {
+      "width": 1280,
+      "height": 720,
+      "device_scale": 1.0
+    },
+    "imq_version": "imq 0.1.0"
+  },
+  "pre_promotion": {
+    "previous_reference_sha256": "1d2a7132ac8fdc7e3e9b4d161a36ebf0a105784ee1aeaa47e6da3142ae0760a1",
+    "candidate_sha256": "2e381ca2dd5ad76767cf4ae5ec03e2a35228b23a5fc7c35b93e99bc144f52fa2",
+    "metrics": {
+      "dimensions": {
+        "width": 1280,
+        "height": 720
+      },
+      "psnr": 25.097808689898176,
+      "ssim": 0.4080704230342105,
+      "mse": 0.0030918550895167305,
+      "mae": 0.004233718228315644,
+      "maxae": 0.9607843137254901
+    },
+    "thresholds": {
+      "max_mse": 0.002,
+      "max_mae": 0.003
+    }
+  },
+  "same_run_artifacts": {
+    "candidate_png_sha256": "2e381ca2dd5ad76767cf4ae5ec03e2a35228b23a5fc7c35b93e99bc144f52fa2",
+    "observe_json_sha256": "49927c01771e2bdf4bb1b943fc56d6bb01d231c27f34af153f5b76a16693c133",
+    "imq_json_sha256": "a8634b2965536e1780f9ee97b29904debc19a60bc45caf53e987cf9848bace03",
+    "environment_json_sha256": "f2b62e585cf0f34aaec9db9ca03f767c2a4fc9f677c14ffede454910a82671b0"
+  },
+  "post_promotion_validation": [
+    "cargo test -p arcweft-cli --features native-capture --test check native_checked_in_visual_golden_fixtures_are_well_formed --quiet",
+    "ARW_EXACT_NATIVE_GOLDEN_REQUIRED=1 ARW_EXACT_NATIVE_GOLDEN_PINNED=1 ARW_EXACT_NATIVE_GOLDEN_BACKEND=native_rich_text_observer just test-visual-golden"
+  ],
+  "threshold_change": "none",
+  "default_fast_path_change": "none"
+}

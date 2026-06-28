@@ -6,3 +6,7 @@ complete pinned environment fingerprint.
 
 `vertical_tutr_golden.seq06.6-drift.json` records the drift evidence supplied in
 the seq06.7 request and the seq06.7 classification.
+
+`vertical_tutr_golden.seq06.7.2-promotion.json` records the later pinned Windows
+promotion review that resolved the drift by replacing the checked-in
+`vertical_tutr_golden.png` baseline with the reviewed candidate.

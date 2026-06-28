@@ -67,12 +67,15 @@ checked-in PNG merely because `fixture-refresh-all` produced it. Missing `imq`,
 missing pinned `MS Mincho`, unsupported backend, or a non-pinned milestone run is
 an environment blocker, not a PNG-refresh approval.
 
-For the `vertical_tutr_golden` seq06.7.1 promotion review, the current decision
-is deferred because no pinned Windows candidate packet was available. Use
+The `vertical_tutr_golden` seq06.7.1 promotion review initially deferred because
+no pinned Windows candidate packet was available. Seq06.7.2 collected that
+packet on Windows and promoted the reviewed candidate to
+`tests/fixtures/native_capture/vertical_tutr_golden.png` without changing
+thresholds. Use
 `cargo +nightly -Zscript tools/collect-pinned-windows-review-evidence.rs --root .`
-on the next pinned Windows run to collect the candidate PNG, observe JSON,
-`imq` JSON, environment fingerprint, and command logs in one directory. The
-collector refuses to run outside Windows.
+for future exact native golden promotion reviews to collect the candidate PNG,
+observe JSON, `imq` JSON, environment fingerprint, and command logs in one
+directory. The collector refuses to run outside Windows.
 
 Additional native candidate targets:
 
