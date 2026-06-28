@@ -217,6 +217,11 @@ These are not seq-02.8 overlay-application work and must not be smuggled in by g
 7. Design and implement entity, shader, contracts, graph-index, locale/text, and debug-symbol product resource families only when their owning design requests provide concrete carriers and schemas.
 8. Implement seq3 generation/windowed live patch behavior separately; seq3 must consume patch schema-2 declared compatibility instead of reclassifying artifact changes locally.
 
+The seq02 release hardening follow-ups are split into:
+
+- `docs/reviews/requests/2026-06-29-seq-02.9-release-trust-e2e-fixtures-package.md`
+- `docs/reviews/requests/2026-06-29-seq-02.10-remote-publication-backend-package.md`
+
 ## Design Deviations
 
 - The original package ZIPs and extracted overlay directories were not present in this connector-audited repository snapshot, so file-level hunks not preserved in repo-visible notes are classified as discarded/unverifiable rather than reconstructed.

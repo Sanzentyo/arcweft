@@ -161,3 +161,23 @@ Please produce one design document with:
 - test plan;
 - explicit non-goals.
 
+## Follow-Up Package Split
+
+The original seq02 request has been split into independently throwable package
+requests:
+
+- `docs/reviews/requests/2026-06-27-seq-02.1-common-resource-wire-codec-and-resource-codec-plan.md`
+- `docs/reviews/requests/2026-06-27-seq-02.2-runtime-types-entrypoints-adapter-requirements-codecs.md`
+- `docs/reviews/requests/2026-06-27-seq-02.3-content-presentation-entity-resource-codecs.md`
+- `docs/reviews/requests/2026-06-27-seq-02.4-shader-ui-audio-debug-contract-resource-codecs.md`
+- `docs/reviews/requests/2026-06-27-seq-02.4.1-ui-style-text-input-resource-codec.md`
+- `docs/reviews/requests/2026-06-27-seq-02.5-patch-v2-compatibility-and-materialization.md`
+- `docs/reviews/requests/2026-06-27-seq-02.6-awfr-release-archive-and-external-payload-carrier.md`
+- `docs/reviews/requests/2026-06-27-seq-02.7-signing-policy-redesign.md`
+- `docs/reviews/requests/2026-06-27-seq-02.8-overlay-production-application.md`
+- `docs/reviews/requests/2026-06-29-seq-02.9-release-trust-e2e-fixtures-package.md`
+- `docs/reviews/requests/2026-06-29-seq-02.10-remote-publication-backend-package.md`
+
+Seq02.1 through seq02.8 are production-application slices. Seq02.9 and
+seq02.10 are hardening slices: end-to-end release trust fixtures first, then a
+real remote publication backend. Apply seq02.9 before implementing seq02.10.

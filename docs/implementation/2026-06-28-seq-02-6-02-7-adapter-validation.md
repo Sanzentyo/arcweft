@@ -60,7 +60,9 @@ violations: 0 error(s), 107 warning(s)
 - The release consume verifier now compiles and is wired, but broader
   end-to-end release trust fixtures with detached signatures, signed patch
   artifacts, materialized targets, and external payload cache state should be
-  expanded in a later hardening cut.
+  expanded in a later hardening cut:
+  `docs/reviews/requests/2026-06-29-seq-02.9-release-trust-e2e-fixtures-package.md`.
 - Live remote publication remains represented by local atomic staging in this
   cut. Real remote upload backends should be adapter-specific and must keep
-  credentials, clocks, and network clients out of `arcweft-bundle`.
+  credentials, clocks, and network clients out of `arcweft-bundle`:
+  `docs/reviews/requests/2026-06-29-seq-02.10-remote-publication-backend-package.md`.
