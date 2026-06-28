@@ -7,6 +7,7 @@ mod image_declarations;
 mod import;
 mod inspect;
 pub(in crate::app) mod jit;
+pub(in crate::app) mod local_embedding;
 #[cfg(feature = "native-player")]
 mod native_player;
 pub(crate) mod project;

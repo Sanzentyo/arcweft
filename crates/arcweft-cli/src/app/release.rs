@@ -29,7 +29,7 @@ pub(in crate::app) struct ReleasePublishOptions {
     /// Optional staging root. Defaults under destination root.
     #[arg(long)]
     staging_root: Option<PathBuf>,
-    /// Artifact spec in the form kind:source_path:relative_publish_path.
+    /// Artifact spec in the form `kind:source_path:relative_publish_path`.
     #[arg(long = "artifact", value_parser = parse_publish_artifact_arg)]
     artifacts: Vec<ReleasePublishArtifactArg>,
     /// Emit machine-readable JSON.

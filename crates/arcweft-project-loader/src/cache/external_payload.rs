@@ -136,64 +136,39 @@ pub fn fetch_external_payload_bytes_to_cache(
         .ok_or(ExternalPayloadCacheFetchError::MissingCarrier(key))?;
     let archive_dir = archive_path.parent().unwrap_or_else(|| Path::new("."));
     let store = FilesystemCacheStore::new(cache_root);
-    let fetch_policy = &archive.release_manifest.fetch_policy;
     let mut attempts = Vec::new();
+    let mut context = ExternalPayloadFetchContext {
+        store: &store,
+        archive_path,
+        cache_root,
+        carrier,
+        fetch_policy: &archive.release_manifest.fetch_policy,
+        attempts: &mut attempts,
+    };
 
-    for mirror in &carrier.mirrors {
+    for mirror in &context.carrier.mirrors {
         match mirror_scheme(mirror) {
             Some("arcweft-cache") => {
-                if let Some(report) = try_cache_mirror(
-                    &store,
-                    archive_path,
-                    cache_root,
-                    carrier,
-                    mirror,
-                    &mut attempts,
-                )? {
+                if let Some(report) = try_cache_mirror(&mut context, mirror)? {
                     return Ok(report);
                 }
             }
             Some("file") => {
-                if let Some(report) = fetch_file_mirror(
-                    &store,
-                    archive_path,
-                    archive_dir,
-                    cache_root,
-                    carrier,
-                    mirror,
-                    fetch_policy,
-                    &mut attempts,
-                )? {
+                if let Some(report) = fetch_file_mirror(&mut context, archive_dir, mirror)? {
                     return Ok(report);
                 }
             }
             Some("http") => {
-                if let Some(report) = fetch_http_mirror(
-                    &store,
-                    archive_path,
-                    cache_root,
-                    carrier,
-                    mirror,
-                    fetch_policy,
-                    &mut attempts,
-                )? {
+                if let Some(report) = fetch_http_mirror(&mut context, mirror)? {
                     return Ok(report);
                 }
             }
             Some("https") => {
-                if let Some(report) = fetch_https_mirror(
-                    &store,
-                    archive_path,
-                    cache_root,
-                    carrier,
-                    mirror,
-                    fetch_policy,
-                    &mut attempts,
-                )? {
+                if let Some(report) = fetch_https_mirror(&mut context, mirror)? {
                     return Ok(report);
                 }
             }
-            _ => attempts.push(ExternalPayloadCacheFetchAttempt {
+            _ => context.attempts.push(ExternalPayloadCacheFetchAttempt {
                 uri: mirror.uri.clone(),
                 status: ExternalPayloadCacheFetchAttemptStatus::SkippedUnsupportedScheme,
                 message: Some("unsupported mirror scheme".to_owned()),
@@ -204,39 +179,47 @@ pub fn fetch_external_payload_bytes_to_cache(
     Err(ExternalPayloadCacheFetchError::NoUsableMirror(key))
 }
 
+struct ExternalPayloadFetchContext<'a> {
+    store: &'a FilesystemCacheStore,
+    archive_path: &'a Path,
+    cache_root: &'a Path,
+    carrier: &'a ExternalPayloadCarrier,
+    fetch_policy: &'a ReleaseFetchPolicy,
+    attempts: &'a mut Vec<ExternalPayloadCacheFetchAttempt>,
+}
+
 fn try_cache_mirror(
-    store: &FilesystemCacheStore,
-    archive_path: &Path,
-    cache_root: &Path,
-    carrier: &ExternalPayloadCarrier,
+    context: &mut ExternalPayloadFetchContext<'_>,
     mirror: &ReleaseMirror,
-    attempts: &mut Vec<ExternalPayloadCacheFetchAttempt>,
 ) -> Result<Option<ExternalPayloadCacheFetchBytes>, ExternalPayloadCacheFetchError> {
-    match store.read_object(build_digest(carrier.compressed_digest)) {
+    match context
+        .store
+        .read_object(build_digest(context.carrier.compressed_digest))
+    {
         Ok(bytes) => {
-            let decoded = carrier.verify_stored_bytes(&bytes)?;
-            let key = store_external_payload_record(store, carrier, &bytes)?;
-            attempts.push(ExternalPayloadCacheFetchAttempt {
+            let decoded = context.carrier.verify_stored_bytes(&bytes)?;
+            let key = store_external_payload_record(context.store, context.carrier, &bytes)?;
+            context.attempts.push(ExternalPayloadCacheFetchAttempt {
                 uri: mirror.uri.clone(),
                 status: ExternalPayloadCacheFetchAttemptStatus::Hit,
                 message: None,
             });
             Ok(Some(ExternalPayloadCacheFetchBytes {
                 report: report(
-                    archive_path,
-                    cache_root,
-                    carrier,
+                    context.archive_path,
+                    context.cache_root,
+                    context.carrier,
                     ExternalPayloadCacheFetchStatus::CacheHit,
                     Some(mirror.uri.clone()),
                     Some(key),
-                    attempts.clone(),
+                    context.attempts.clone(),
                 ),
                 compressed_bytes: bytes,
                 decoded_bytes: decoded,
             }))
         }
         Err(error) => {
-            attempts.push(ExternalPayloadCacheFetchAttempt {
+            context.attempts.push(ExternalPayloadCacheFetchAttempt {
                 uri: mirror.uri.clone(),
                 status: ExternalPayloadCacheFetchAttemptStatus::CacheMiss,
                 message: Some(error.to_string()),
@@ -247,21 +230,16 @@ fn try_cache_mirror(
 }
 
 fn fetch_file_mirror(
-    store: &FilesystemCacheStore,
-    archive_path: &Path,
+    context: &mut ExternalPayloadFetchContext<'_>,
     archive_dir: &Path,
-    cache_root: &Path,
-    carrier: &ExternalPayloadCarrier,
     mirror: &ReleaseMirror,
-    fetch_policy: &ReleaseFetchPolicy,
-    attempts: &mut Vec<ExternalPayloadCacheFetchAttempt>,
 ) -> Result<Option<ExternalPayloadCacheFetchBytes>, ExternalPayloadCacheFetchError> {
     let path = file_mirror_path(archive_dir, &mirror.uri);
-    for _ in 1..=fetch_policy.max_attempts_per_mirror {
+    for _ in 1..=context.fetch_policy.max_attempts_per_mirror {
         let metadata = match fs::metadata(&path) {
             Ok(metadata) => metadata,
             Err(source) => {
-                attempts.push(ExternalPayloadCacheFetchAttempt {
+                context.attempts.push(ExternalPayloadCacheFetchAttempt {
                     uri: mirror.uri.clone(),
                     status: ExternalPayloadCacheFetchAttemptStatus::Failed,
                     message: Some(source.to_string()),
@@ -269,14 +247,14 @@ fn fetch_file_mirror(
                 continue;
             }
         };
-        if metadata.len() > fetch_policy.candidate_byte_budget {
-            attempts.push(ExternalPayloadCacheFetchAttempt {
+        if metadata.len() > context.fetch_policy.candidate_byte_budget {
+            context.attempts.push(ExternalPayloadCacheFetchAttempt {
                 uri: mirror.uri.clone(),
                 status: ExternalPayloadCacheFetchAttemptStatus::Failed,
                 message: Some(format!(
                     "candidate byte budget exceeded: {} byte(s) > {} byte(s)",
                     metadata.len(),
-                    fetch_policy.candidate_byte_budget
+                    context.fetch_policy.candidate_byte_budget
                 )),
             });
             return Ok(None);
@@ -284,7 +262,7 @@ fn fetch_file_mirror(
         let bytes = match fs::read(&path) {
             Ok(bytes) => bytes,
             Err(source) => {
-                attempts.push(ExternalPayloadCacheFetchAttempt {
+                context.attempts.push(ExternalPayloadCacheFetchAttempt {
                     uri: mirror.uri.clone(),
                     status: ExternalPayloadCacheFetchAttemptStatus::Failed,
                     message: Some(source.to_string()),
@@ -293,14 +271,10 @@ fn fetch_file_mirror(
             }
         };
         if let Some(fetched) = publish_verified_payload(
-            store,
-            archive_path,
-            cache_root,
-            carrier,
+            context,
             mirror,
             bytes,
             ExternalPayloadCacheFetchStatus::Fetched,
-            attempts,
         )? {
             return Ok(Some(fetched));
         }
@@ -309,27 +283,22 @@ fn fetch_file_mirror(
 }
 
 fn fetch_http_mirror(
-    store: &FilesystemCacheStore,
-    archive_path: &Path,
-    cache_root: &Path,
-    carrier: &ExternalPayloadCarrier,
+    context: &mut ExternalPayloadFetchContext<'_>,
     mirror: &ReleaseMirror,
-    fetch_policy: &ReleaseFetchPolicy,
-    attempts: &mut Vec<ExternalPayloadCacheFetchAttempt>,
 ) -> Result<Option<ExternalPayloadCacheFetchBytes>, ExternalPayloadCacheFetchError> {
-    if let Some(message) = network_policy_rejection(fetch_policy, "http") {
-        attempts.push(ExternalPayloadCacheFetchAttempt {
+    if let Some(message) = network_policy_rejection(context.fetch_policy, "http") {
+        context.attempts.push(ExternalPayloadCacheFetchAttempt {
             uri: mirror.uri.clone(),
             status: ExternalPayloadCacheFetchAttemptStatus::Failed,
             message: Some(message),
         });
         return Ok(None);
     }
-    for _ in 1..=fetch_policy.max_attempts_per_mirror {
-        let bytes = match read_http_mirror(&mirror.uri, fetch_policy) {
+    for _ in 1..=context.fetch_policy.max_attempts_per_mirror {
+        let bytes = match read_http_mirror(&mirror.uri, context.fetch_policy) {
             Ok(bytes) => bytes,
             Err(message) => {
-                attempts.push(ExternalPayloadCacheFetchAttempt {
+                context.attempts.push(ExternalPayloadCacheFetchAttempt {
                     uri: mirror.uri.clone(),
                     status: ExternalPayloadCacheFetchAttemptStatus::Failed,
                     message: Some(message),
@@ -338,14 +307,10 @@ fn fetch_http_mirror(
             }
         };
         if let Some(fetched) = publish_verified_payload(
-            store,
-            archive_path,
-            cache_root,
-            carrier,
+            context,
             mirror,
             bytes,
             ExternalPayloadCacheFetchStatus::Fetched,
-            attempts,
         )? {
             return Ok(Some(fetched));
         }
@@ -354,27 +319,22 @@ fn fetch_http_mirror(
 }
 
 fn fetch_https_mirror(
-    store: &FilesystemCacheStore,
-    archive_path: &Path,
-    cache_root: &Path,
-    carrier: &ExternalPayloadCarrier,
+    context: &mut ExternalPayloadFetchContext<'_>,
     mirror: &ReleaseMirror,
-    fetch_policy: &ReleaseFetchPolicy,
-    attempts: &mut Vec<ExternalPayloadCacheFetchAttempt>,
 ) -> Result<Option<ExternalPayloadCacheFetchBytes>, ExternalPayloadCacheFetchError> {
-    if let Some(message) = network_policy_rejection(fetch_policy, "https") {
-        attempts.push(ExternalPayloadCacheFetchAttempt {
+    if let Some(message) = network_policy_rejection(context.fetch_policy, "https") {
+        context.attempts.push(ExternalPayloadCacheFetchAttempt {
             uri: mirror.uri.clone(),
             status: ExternalPayloadCacheFetchAttemptStatus::Failed,
             message: Some(message),
         });
         return Ok(None);
     }
-    for _ in 1..=fetch_policy.max_attempts_per_mirror {
-        let bytes = match read_https_mirror(&mirror.uri, fetch_policy) {
+    for _ in 1..=context.fetch_policy.max_attempts_per_mirror {
+        let bytes = match read_https_mirror(&mirror.uri, context.fetch_policy) {
             Ok(bytes) => bytes,
             Err(message) => {
-                attempts.push(ExternalPayloadCacheFetchAttempt {
+                context.attempts.push(ExternalPayloadCacheFetchAttempt {
                     uri: mirror.uri.clone(),
                     status: ExternalPayloadCacheFetchAttemptStatus::Failed,
                     message: Some(message),
@@ -383,14 +343,10 @@ fn fetch_https_mirror(
             }
         };
         if let Some(fetched) = publish_verified_payload(
-            store,
-            archive_path,
-            cache_root,
-            carrier,
+            context,
             mirror,
             bytes,
             ExternalPayloadCacheFetchStatus::Fetched,
-            attempts,
         )? {
             return Ok(Some(fetched));
         }
@@ -399,19 +355,15 @@ fn fetch_https_mirror(
 }
 
 fn publish_verified_payload(
-    store: &FilesystemCacheStore,
-    archive_path: &Path,
-    cache_root: &Path,
-    carrier: &ExternalPayloadCarrier,
+    context: &mut ExternalPayloadFetchContext<'_>,
     mirror: &ReleaseMirror,
     bytes: Vec<u8>,
     status: ExternalPayloadCacheFetchStatus,
-    attempts: &mut Vec<ExternalPayloadCacheFetchAttempt>,
 ) -> Result<Option<ExternalPayloadCacheFetchBytes>, ExternalPayloadCacheFetchError> {
-    let decoded = match carrier.verify_stored_bytes(&bytes) {
+    let decoded = match context.carrier.verify_stored_bytes(&bytes) {
         Ok(decoded) => decoded,
         Err(error) => {
-            attempts.push(ExternalPayloadCacheFetchAttempt {
+            context.attempts.push(ExternalPayloadCacheFetchAttempt {
                 uri: mirror.uri.clone(),
                 status: ExternalPayloadCacheFetchAttemptStatus::Failed,
                 message: Some(error.to_string()),
@@ -419,21 +371,21 @@ fn publish_verified_payload(
             return Ok(None);
         }
     };
-    let key = store_external_payload_record(store, carrier, &bytes)?;
-    attempts.push(ExternalPayloadCacheFetchAttempt {
+    let key = store_external_payload_record(context.store, context.carrier, &bytes)?;
+    context.attempts.push(ExternalPayloadCacheFetchAttempt {
         uri: mirror.uri.clone(),
         status: ExternalPayloadCacheFetchAttemptStatus::Fetched,
         message: None,
     });
     Ok(Some(ExternalPayloadCacheFetchBytes {
         report: report(
-            archive_path,
-            cache_root,
-            carrier,
+            context.archive_path,
+            context.cache_root,
+            context.carrier,
             status,
             Some(mirror.uri.clone()),
             Some(key),
-            attempts.clone(),
+            context.attempts.clone(),
         ),
         compressed_bytes: bytes,
         decoded_bytes: decoded,
@@ -619,27 +571,12 @@ mod tests {
         let root = temp_root("external-payload-http");
         let cache = root.join("cache");
         let payload = b"voice-external-http";
-        let listener = TcpListener::bind("127.0.0.1:0").expect("test server binds");
-        let addr = listener.local_addr().expect("server addr");
-        let server_payload = payload.to_vec();
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("request accepted");
-            let mut request = [0_u8; 1024];
-            let _ = stream.read(&mut request).expect("request reads");
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                server_payload.len()
-            )
-            .expect("response header writes");
-            stream.write_all(&server_payload).expect("response body writes");
-            let _ = stream.shutdown(Shutdown::Both);
-        });
+        let (uri, server) = spawn_http_payload_server(payload.to_vec());
         let section_id = SectionId::from_bytes([9; 16]);
         let fixture = external_archive_fixture(
             payload,
             section_id,
-            [ReleaseMirror::new(format!("http://{addr}/payload.bin")).expect("http mirror")],
+            [ReleaseMirror::new(uri).expect("http mirror")],
             ReleaseFetchPolicy::default(),
         );
         fs::create_dir_all(&root).expect("root creates");
@@ -650,10 +587,10 @@ mod tests {
             fixture.carrier.bundle_content_root,
             fixture.carrier.descriptor_id,
             &cache,
-        )
-        .expect("payload fetches over http");
+        );
 
         server.join().expect("server exits");
+        let fetched = fetched.expect("payload fetches over http");
         assert_eq!(fetched.decoded_bytes, payload);
         assert_eq!(
             fetched.report.attempts.last().expect("attempt").status,
@@ -735,16 +672,14 @@ mod tests {
         let cache = root.join("cache");
         let payload = b"voice-external-good-size";
         let section_id = SectionId::from_bytes([12; 16]);
-        let mut fixture = external_archive_fixture(
+        let fixture = external_archive_fixture(
             payload,
             section_id,
             [ReleaseMirror::new("file:payload.bin").expect("payload mirror")],
             ReleaseFetchPolicy::default(),
         );
-        fixture.carrier.compressed_size += 1;
-        fixture.archive.external_payloads = vec![fixture.carrier.clone()];
         fs::create_dir_all(&root).expect("root creates");
-        fs::write(root.join("payload.bin"), payload).expect("payload writes");
+        fs::write(root.join("payload.bin"), b"wrong-size").expect("payload writes");
         let archive_path = write_archive(&root, &fixture.archive);
 
         let error = fetch_external_payload_bytes_to_cache(
@@ -836,5 +771,34 @@ mod tests {
                 .expect("clock")
                 .as_nanos()
         ))
+    }
+
+    fn spawn_http_payload_server(body: Vec<u8>) -> (String, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("test HTTP listener binds");
+        let addr = listener.local_addr().expect("test HTTP local addr");
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("test HTTP accepts request");
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 256];
+            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                let read = stream.read(&mut buffer).expect("test HTTP request reads");
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..read]);
+            }
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .expect("test HTTP headers write");
+            stream.write_all(&body).expect("test HTTP body writes");
+            stream.flush().expect("test HTTP response flushes");
+            stream
+                .shutdown(Shutdown::Write)
+                .expect("test HTTP response shuts down");
+        });
+        (format!("http://{addr}/payload.bin"), handle)
     }
 }

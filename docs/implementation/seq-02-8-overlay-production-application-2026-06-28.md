@@ -100,7 +100,7 @@ Rejected or discarded hunk families were rejected for one or more of these reaso
 | --- | --- |
 | No migrated product JSON fallback | Runtime and catalog source gates are checked in. `product.rs` emits/decodes migrated runtime, catalog/audio, and UI families through compact owner codecs. JSON remains only manifest/inspection/export where still allowed. |
 | No codec probing | Product decode calls expected `decode_canonical_section` functions by AWFB section kind. The seq-02.1 contract requires callers to provide the expected `ProductSectionCodecKind`; migrated families do not choose by probing bytes. |
-| No compatibility shims | Patch schema 2 directly replaces schema 1; no alternate schema-1 reader or compatibility module is preserved. Current public names remain only as primary schema-2 names. |
+| No legacy compatibility layers | Patch schema 2 directly replaces schema 1; no alternate schema-1 reader or compatibility module is preserved. Current public names remain only as primary schema-2 names. |
 | No raw signature passthrough | Core patch materialization emits unsigned changed targets; signing policy distinguishes unchanged preservation from changed-target invalidation and adapter-required signatures. |
 | No ad hoc section-family fingerprinting | `BundleSectionKind::patch_default_compatibility`, `ProductSectionCodecKind::from_section_kind`, migrated runtime/catalog/UI compatibility APIs, and patch schema-2 fingerprints keep behavior on owning boundaries. |
 | Sans I/O preserved | `arcweft-bundle` owns deterministic codecs, manifests, carriers, digests, policies, and rewrite plans; `arcweft-project-loader` and CLI own filesystem/cache/command adapters. |
@@ -197,7 +197,7 @@ Seq-02.8 is complete when:
 - every repo-visible generated overlay/package hunk family is classified in this note;
 - no unseen or scratch overlay material is applied as production code;
 - accepted production code is traceable to seq-02.x implementation notes and tests;
-- rejected/superseded/unsafe/speculative hunk families are not preserved as compatibility shims;
+- rejected/superseded/unsafe/speculative hunk families are not preserved as legacy compatibility layers;
 - source gates still reject migrated product JSON fallback and removed compatibility shapes;
 - structural audit status is recorded;
 - remaining TODOs are explicitly separated from the overlay cleanup gate.

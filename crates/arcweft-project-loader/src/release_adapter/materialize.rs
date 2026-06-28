@@ -1,5 +1,7 @@
 use arcweft_bundle::{
-    container::{BundleView, ContentPlacement, ContentResidency, ReadBudget, SectionDescriptor, SectionId},
+    container::{
+        BundleView, ContentPlacement, ContentResidency, ReadBudget, SectionDescriptor, SectionId,
+    },
     patch::{
         BundlePatchArtifact, PatchBundleError, PatchMaterializedTarget, SectionOperation,
         apply_patch_bundle, decode_patch_bundle,
@@ -34,7 +36,9 @@ pub enum ReleaseTargetMaterializationError {
     DecodePatchBundle(#[source] PatchBundleError),
     #[error("failed to inspect base bundle before target materialization: {0}")]
     InspectBase(String),
-    #[error("external payload materialization mode {mode:?} requires section payload {descriptor_id}")]
+    #[error(
+        "external payload materialization mode {mode:?} requires section payload {descriptor_id}"
+    )]
     ExternalPayloadRequired {
         mode: ExternalPayloadMaterializationMode,
         descriptor_id: SectionId,

@@ -109,7 +109,11 @@ pub fn publish_release_atomically(
     if plan.artifacts.is_empty() {
         return Err(ReleasePublishError::EmptyPlan);
     }
-    validate_publish_paths(plan.artifacts.iter().map(|artifact| &artifact.relative_path))?;
+    validate_publish_paths(
+        plan.artifacts
+            .iter()
+            .map(|artifact| &artifact.relative_path),
+    )?;
     let staging_root = staging_root(plan);
     fs::create_dir_all(&staging_root).map_err(|source| ReleasePublishError::CreateStaging {
         path: staging_root.clone(),
@@ -166,9 +170,11 @@ pub fn publish_release_atomically(
     }
 
     if staging_root.exists() {
-        fs::remove_dir_all(&staging_root).map_err(|source| ReleasePublishError::CleanupStaging {
-            path: staging_root.clone(),
-            source,
+        fs::remove_dir_all(&staging_root).map_err(|source| {
+            ReleasePublishError::CleanupStaging {
+                path: staging_root.clone(),
+                source,
+            }
         })?;
     }
 
@@ -230,10 +236,12 @@ fn validate_relative_publish_path(path: &Path) -> Result<(), ReleasePublishError
             message: "absolute paths are not allowed".to_owned(),
         });
     }
-    if path
-        .components()
-        .any(|component| matches!(component, Component::ParentDir | Component::RootDir | Component::Prefix(_)))
-    {
+    if path.components().any(|component| {
+        matches!(
+            component,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    }) {
         return Err(ReleasePublishError::InvalidPublishPath {
             path: path.to_path_buf(),
             message: "path must remain inside the destination root".to_owned(),
@@ -273,29 +281,53 @@ mod tests {
             staging_root: Some(root.join("stage")),
             artifacts: vec![
                 artifact(ReleasePublishArtifactKind::AwfbBundle, "game.awfb", b"awfb"),
-                artifact(ReleasePublishArtifactKind::PatchArtifact, "game.awfp", b"patch"),
+                artifact(
+                    ReleasePublishArtifactKind::PatchArtifact,
+                    "game.awfp",
+                    b"patch",
+                ),
                 artifact(
                     ReleasePublishArtifactKind::ExternalPayload,
                     "payloads/voice.bin",
                     b"payload",
                 ),
-                artifact(ReleasePublishArtifactKind::Signature, "game.awfr.sig", b"sig"),
-                artifact(ReleasePublishArtifactKind::AwfrArchive, "game.awfr", b"awfr"),
+                artifact(
+                    ReleasePublishArtifactKind::Signature,
+                    "game.awfr.sig",
+                    b"sig",
+                ),
+                artifact(
+                    ReleasePublishArtifactKind::AwfrArchive,
+                    "game.awfr",
+                    b"awfr",
+                ),
             ],
         };
 
         let report = publish_release_atomically(&plan).expect("publish succeeds");
 
         assert_eq!(report.artifacts.len(), 5);
-        assert_eq!(fs::read(root.join("dest/game.awfb")).expect("awfb reads"), b"awfb");
-        assert_eq!(fs::read(root.join("dest/game.awfp")).expect("patch reads"), b"patch");
+        assert_eq!(
+            fs::read(root.join("dest/game.awfb")).expect("awfb reads"),
+            b"awfb"
+        );
+        assert_eq!(
+            fs::read(root.join("dest/game.awfp")).expect("patch reads"),
+            b"patch"
+        );
         assert_eq!(
             fs::read(root.join("dest/payloads/voice.bin")).expect("payload reads"),
             b"payload"
         );
-        assert_eq!(fs::read(root.join("dest/game.awfr.sig")).expect("sig reads"), b"sig");
-        assert_eq!(fs::read(root.join("dest/game.awfr")).expect("awfr reads"), b"awfr");
-        assert!(!root.join("stage").exists());
+        assert_eq!(
+            fs::read(root.join("dest/game.awfr.sig")).expect("sig reads"),
+            b"sig"
+        );
+        assert_eq!(
+            fs::read(root.join("dest/game.awfr")).expect("awfr reads"),
+            b"awfr"
+        );
+        assert!(!Path::new(&report.staging_root).exists());
         let _ = fs::remove_dir_all(root);
     }
 
@@ -305,12 +337,19 @@ mod tests {
         let plan = ReleasePublishPlan {
             destination_root: root.join("dest"),
             staging_root: Some(root.join("stage")),
-            artifacts: vec![artifact(ReleasePublishArtifactKind::AwfrArchive, "../game.awfr", b"awfr")],
+            artifacts: vec![artifact(
+                ReleasePublishArtifactKind::AwfrArchive,
+                "../game.awfr",
+                b"awfr",
+            )],
         };
 
         let error = publish_release_atomically(&plan).expect_err("path escape rejects");
 
-        assert!(matches!(error, ReleasePublishError::InvalidPublishPath { .. }));
+        assert!(matches!(
+            error,
+            ReleasePublishError::InvalidPublishPath { .. }
+        ));
         assert!(!root.join("dest").exists());
         assert!(!root.join("stage").exists());
         let _ = fs::remove_dir_all(root);
