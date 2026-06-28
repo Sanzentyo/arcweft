@@ -2,9 +2,10 @@
 //!
 //! This crate deliberately uses Takumi as a CSS cascade, layout, and stacking
 //! scene source, not as a CPU bitmap renderer. The primary output is
-//! [`arcweft_render_wgpu::ui_scene::UiScene`] with direct wgpu primitives and
-//! capture metadata that keeps Arcweft component, part, handler, semantic, and
-//! Agent identity attached to the rendered coordinate space.
+//! [`arcweft_render_wgpu::ui_scene::UiScene`] with direct wgpu primitives,
+//! compositing groups, and capture metadata that keeps Arcweft component, part,
+//! handler, semantic, and Agent identity attached to the rendered coordinate
+//! space.
 
 pub mod adapter;
 pub mod cache;
@@ -24,7 +25,8 @@ pub use capture::{TakumiCaptureFrame, TakumiCaptureRecord};
 pub use diagnostic::{TakumiAdapterError, TakumiDiagnostic, TakumiDiagnosticCode};
 pub use lowering::{
     DirectBackground, DirectBorder, DirectBoxPaint, DirectClip, DirectPaintCatalog,
-    TakumiSceneInput, TakumiSceneLowerer, TakumiSceneOutput,
+    TakumiCompositingStyle, TakumiCompositingStyleCatalog, TakumiSceneInput, TakumiSceneLowerer,
+    TakumiSceneOutput,
 };
 pub use metadata::{ArcweftNodeMetadata, TakumiMetadataEntry, TakumiMetadataMap, TakumiPath};
 pub use style::{

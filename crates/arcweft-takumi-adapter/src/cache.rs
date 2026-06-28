@@ -155,4 +155,29 @@ mod tests {
         assert_ne!(paint_a, paint_b);
         assert_eq!(scene.viewport().device_pixel_ratio_milli(), 1250);
     }
+
+    #[test]
+    fn mask_image_url_resource_revision_changes_scene_cache_key() {
+        let viewport = ViewportKey::new(1280, 720, 1.0, 16.0);
+        let before_mask_url = TakumiSceneCacheKey::new(
+            UiProgramRevision(1),
+            ViewFragmentRevision(2),
+            StyleRevision(3),
+            TextLayoutRevision(4),
+            ImageRevision(10),
+            viewport,
+        );
+        let after_mask_url = TakumiSceneCacheKey::new(
+            UiProgramRevision(1),
+            ViewFragmentRevision(2),
+            StyleRevision(3),
+            TextLayoutRevision(4),
+            ImageRevision(11),
+            viewport,
+        );
+
+        assert_ne!(before_mask_url, after_mask_url);
+        assert_eq!(before_mask_url.image_revision(), ImageRevision(10));
+        assert_eq!(after_mask_url.image_revision(), ImageRevision(11));
+    }
 }

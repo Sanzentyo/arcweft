@@ -53,7 +53,7 @@ fn takumi_path_attributes_are_stable() {
 #[test]
 fn diagnostic_code_names_are_contractual() {
     assert_eq!(
-        arcweft_takumi_adapter::DirectCssSupport::diagnose_css(".x { filter: blur(2px); }")
+        arcweft_takumi_adapter::DirectCssSupport::diagnose_css(".x { filter: url(#goo); }")
             .diagnostics()[0]
             .code(),
         TakumiDiagnosticCode::UnsupportedDirectCss,
