@@ -625,3 +625,57 @@ fn dialogue_visual_time_millis(
     }
     elapsed_millis.saturating_sub(clock.started_at_millis)
 }
+
+#[cfg(test)]
+mod tests {
+    fn native_scene_state_body(source: &str) -> &str {
+        let struct_start = source
+            .find("struct NativeSceneState {")
+            .expect("NativeSceneState declaration exists");
+        let source_after_start = &source[struct_start..];
+        let body_start = source_after_start
+            .find('{')
+            .expect("NativeSceneState starts a body");
+        let mut depth = 0usize;
+        let mut start = None;
+        for (offset, character) in source_after_start[body_start..].char_indices() {
+            match character {
+                '{' => {
+                    depth = depth.saturating_add(1);
+                    if start.is_none() {
+                        start = Some(body_start + offset + character.len_utf8());
+                    }
+                }
+                '}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        let start = start.expect("NativeSceneState body start was recorded");
+                        return &source_after_start[start..body_start + offset];
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("NativeSceneState body closes");
+    }
+
+    #[test]
+    fn native_scene_state_stores_runtime_owner_not_session_catalog_pair() {
+        let source = include_str!("scene_windowed.rs");
+        let body = native_scene_state_body(source);
+
+        assert!(body.contains("runtime: WindowedRuntimeOwner,"));
+        assert!(!body.contains("session:"));
+        assert!(!body.contains("images:"));
+    }
+
+    #[test]
+    fn after_render_submitted_boundary_is_after_surface_present_returns() {
+        let source = include_str!("scene_windowed.rs");
+
+        assert!(source.contains(
+            "self.render(&prepared)?;\n        let patch_outcomes = self.drain_patch_events_after_render_submitted()?;"
+        ));
+        assert!(source.contains("FrameBoundary::AfterRenderSubmitted"));
+    }
+}

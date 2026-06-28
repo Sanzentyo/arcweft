@@ -51,6 +51,10 @@ just test-workspace
 that command confirms the library test binary builds. A real `winit`/GPU smoke
 fixture remains part of seq03.7.
 
+The `(1)` package re-application on 2026-06-28 confirmed the production wiring
+was already present, then restored the two source-level `scene_windowed` tests
+listed above without copying the older overlay over newer main-branch fixes.
+
 ## Non-goals
 
 - Filesystem watching, socket servers, network fetch, AWFR trust verification, and release publication.
