@@ -25,7 +25,7 @@ pub struct ReplCapabilitySet {
 /// Public capability projection for commands.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReplCapabilityReport {
-    pub allowed: Vec<String>,
+    pub allowed: Vec<RuntimeAgentCapability>,
 }
 
 /// Borrowed runtime handles required for immediate VM execution.
@@ -89,13 +89,15 @@ impl ReplCapabilitySet {
 
     #[must_use]
     pub fn report(&self) -> ReplCapabilityReport {
-        let mut allowed = self
-            .allowed
-            .iter()
-            .map(|capability| capability.as_str().to_owned())
-            .collect::<Vec<_>>();
-        allowed.sort();
+        let allowed = self.allowed.iter().copied().collect::<Vec<_>>();
         ReplCapabilityReport { allowed }
+    }
+}
+
+impl ReplCapabilityReport {
+    #[must_use]
+    pub fn allows(&self, capability: RuntimeAgentCapability) -> bool {
+        self.allowed.contains(&capability)
     }
 }
 
@@ -220,7 +222,7 @@ where
         let mut counts = BTreeMap::new();
         for event in &self.events {
             if repl_effectful_debug_event(event.kind) {
-                *counts.entry(format!("{:?}", event.kind)).or_insert(0) += 1;
+                *counts.entry(event.kind).or_insert(0) += 1;
             }
         }
         let event_kinds = counts

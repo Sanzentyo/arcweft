@@ -1,5 +1,6 @@
 use arcweft_agent_runner::config::AgentControllerRunReport;
 use arcweft_core::engine::FlowFiberStatus;
+use arcweft_debug_model::event::DebugEventKind;
 
 use crate::binding::ReplBindingRecord;
 use crate::cell::ReplCellExecutionStatus;
@@ -29,7 +30,7 @@ pub struct ReplBindingEvidence {
 /// Count of one debug event family observed during VM execution.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReplDebugEventCount {
-    pub kind: String,
+    pub kind: DebugEventKind,
     pub count: usize,
 }
 

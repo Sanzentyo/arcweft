@@ -3,12 +3,12 @@
 //! This crate owns the compiler-dependent REPL session model for Agent cells:
 //! base project snapshots, committed overlay cells, pre-commit validation,
 //! immediate VM execution through `arcweft-agent-runner`, and narrow typed
-//! projections for later command and tiering packages. It intentionally does not
-//! parse user-visible `:` commands and does not provide product-player runtime
-//! dependencies.
+//! projections for later command and tiering packages. Product-player crates do
+//! not depend on this REPL crate.
 
 pub mod binding;
 pub mod cell;
+pub mod command;
 pub mod error;
 pub mod evidence;
 mod hash;

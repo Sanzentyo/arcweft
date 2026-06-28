@@ -15,7 +15,7 @@ pub struct DebugEvent {
 }
 
 /// Stable debug event family.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DebugEventKind {
     SessionStarted,
