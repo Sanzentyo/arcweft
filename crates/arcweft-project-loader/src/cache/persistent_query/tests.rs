@@ -1,6 +1,6 @@
 use super::{
     PersistentQueryHitPayload, PersistentQueryMissReason, PersistentQueryReadOutcome,
-    PersistentQueryReadRequest,
+    PersistentQueryReadRequest, PersistentQueryWriteError, PersistentQueryWriteRequest,
 };
 use crate::cache::{record::CacheRecord, store::FilesystemCacheStore};
 use arcweft_project::{
@@ -226,6 +226,59 @@ fn persistent_query_hit_returns_payload_and_snapshot_status() {
 }
 
 #[test]
+fn persistent_query_write_through_stores_parse_object_for_read_through() {
+    let store = FilesystemCacheStore::new(temp_root("write-through-parse"));
+    let request = parse_request();
+    let receipt = store
+        .write_persistent_query(&PersistentQueryWriteRequest::new(
+            request.query,
+            request.artifact_key,
+            request.object_key.clone(),
+            "crate::main",
+            parsed_payload(&request.object_key),
+        ))
+        .expect("persistent query writes");
+
+    assert_eq!(receipt.query, QueryKind::Parse);
+    assert_eq!(receipt.artifact_kind, ArtifactKind::ParsedSyntax);
+    assert!(receipt.record_path.is_file());
+    assert!(receipt.object_path.is_file());
+    assert!(receipt.object_len > receipt.payload_len);
+
+    let outcome = store.read_persistent_query(&request);
+    assert!(outcome.is_hit());
+    assert!(matches!(
+        outcome,
+        PersistentQueryReadOutcome::Hit(hit)
+            if matches!(hit.payload, PersistentQueryHitPayload::ParsedSyntax(_))
+    ));
+}
+
+#[test]
+fn persistent_query_write_through_rejects_payload_kind_mismatch() {
+    let store = FilesystemCacheStore::new(temp_root("write-kind-mismatch"));
+    let request = parse_request();
+    let hir_key = object_key(CompilerObjectKind::HirBody);
+    let error = store
+        .write_persistent_query(&PersistentQueryWriteRequest::new(
+            request.query,
+            request.artifact_key,
+            request.object_key.clone(),
+            "crate::main",
+            hir_payload(&hir_key),
+        ))
+        .expect_err("wrong payload kind rejects");
+
+    assert!(matches!(
+        error,
+        PersistentQueryWriteError::PayloadKindMismatch {
+            key: CompilerObjectKind::ParsedSyntax,
+            payload: CompilerObjectKind::HirBody,
+        }
+    ));
+}
+
+#[test]
 fn persistent_query_missing_record_is_soft_miss() {
     let store = FilesystemCacheStore::new(temp_root("missing-record"));
 
@@ -369,10 +422,17 @@ fn persistent_query_corrupt_object_is_soft_miss() {
         )
         .expect("corrupt test object stores");
 
+    let outcome = store.read_persistent_query(&request);
     assert!(matches!(
-        miss_reason(store.read_persistent_query(&request)),
+        miss_reason(outcome.clone()),
         PersistentQueryMissReason::CorruptObject { .. }
     ));
+    assert_eq!(
+        outcome.cache_record_status(),
+        CacheRecordStatus::Miss {
+            reason: InvalidationReason::CorruptObject,
+        }
+    );
 }
 
 #[test]

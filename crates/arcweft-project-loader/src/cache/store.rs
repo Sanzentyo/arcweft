@@ -43,6 +43,12 @@ pub enum CacheStoreError {
         #[source]
         source: std::io::Error,
     },
+    #[error("failed to remove existing cache file `{path}` before replacement: {source}")]
+    RemoveExisting {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("failed to read cache file `{path}`: {source}")]
     Read {
         path: PathBuf,
@@ -92,7 +98,7 @@ impl FilesystemCacheStore {
     pub fn put_object(&self, bytes: &[u8]) -> Result<BuildDigest, CacheStoreError> {
         let digest = BuildDigest::of(bytes);
         let path = self.object_path(digest);
-        write_immutable(&path, bytes)?;
+        write_verified(&path, bytes, |existing| BuildDigest::of(existing) == digest)?;
         Ok(digest)
     }
 
@@ -147,7 +153,9 @@ impl FilesystemCacheStore {
             },
         );
         let record_bytes = record.to_bytes()?;
-        write_immutable(&self.record_path(query, key), &record_bytes)?;
+        write_verified(&self.record_path(query, key), &record_bytes, |existing| {
+            existing == record_bytes.as_slice()
+        })?;
         Ok(record)
     }
 
@@ -222,6 +230,50 @@ fn read_file(path: &Path) -> Result<Vec<u8>, CacheStoreError> {
     Ok(bytes)
 }
 
+fn write_verified(
+    path: &Path,
+    bytes: &[u8],
+    accepts_existing: impl FnOnce(&[u8]) -> bool,
+) -> Result<(), CacheStoreError> {
+    if path.is_file() {
+        let existing = read_file(path)?;
+        if accepts_existing(&existing) {
+            return Ok(());
+        }
+        return replace_file(path, bytes);
+    }
+    write_immutable(path, bytes)
+}
+
+fn replace_file(path: &Path, bytes: &[u8]) -> Result<(), CacheStoreError> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).map_err(|source| CacheStoreError::CreateDir {
+        path: parent.to_path_buf(),
+        source,
+    })?;
+    let tmp = temp_path(parent);
+    write_temp_file(&tmp, bytes)?;
+    match fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(_source) if path.is_file() => {
+            fs::remove_file(path).map_err(|source| CacheStoreError::RemoveExisting {
+                path: path.to_path_buf(),
+                source,
+            })?;
+            fs::rename(&tmp, path).map_err(|source| CacheStoreError::Publish {
+                from: tmp,
+                to: path.to_path_buf(),
+                source,
+            })
+        }
+        Err(source) => Err(CacheStoreError::Publish {
+            from: tmp,
+            to: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
 fn write_immutable(path: &Path, bytes: &[u8]) -> Result<(), CacheStoreError> {
     if path.is_file() {
         return Ok(());
@@ -232,22 +284,7 @@ fn write_immutable(path: &Path, bytes: &[u8]) -> Result<(), CacheStoreError> {
         source,
     })?;
     let tmp = temp_path(parent);
-    {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&tmp)
-            .map_err(|source| CacheStoreError::WriteTemp {
-                path: tmp.clone(),
-                source,
-            })?;
-        file.write_all(bytes)
-            .and_then(|()| file.sync_all())
-            .map_err(|source| CacheStoreError::WriteTemp {
-                path: tmp.clone(),
-                source,
-            })?;
-    }
+    write_temp_file(&tmp, bytes)?;
     match fs::rename(&tmp, path) {
         Ok(()) => Ok(()),
         Err(_source) if path.is_file() => {
@@ -260,6 +297,23 @@ fn write_immutable(path: &Path, bytes: &[u8]) -> Result<(), CacheStoreError> {
             source,
         }),
     }
+}
+
+fn write_temp_file(path: &Path, bytes: &[u8]) -> Result<(), CacheStoreError> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|source| CacheStoreError::WriteTemp {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    file.write_all(bytes)
+        .and_then(|()| file.sync_all())
+        .map_err(|source| CacheStoreError::WriteTemp {
+            path: path.to_path_buf(),
+            source,
+        })
 }
 
 fn temp_path(parent: &Path) -> PathBuf {
@@ -326,6 +380,39 @@ mod tests {
             store
                 .read_artifact(QueryKind::Parse, key)
                 .expect("artifact read"),
+            Some(b"artifact".to_vec())
+        );
+    }
+
+    #[test]
+    fn store_artifact_repairs_corrupt_existing_object_and_record() {
+        let store = FilesystemCacheStore::new(temp_root("repair"));
+        let key = key();
+        store
+            .store_artifact(
+                QueryKind::Parse,
+                key,
+                ArtifactKind::ParsedSyntax,
+                b"artifact",
+            )
+            .expect("artifact stored");
+        let object_digest = BuildDigest::of(b"artifact");
+        std::fs::write(store.object_path(object_digest), b"corrupt").expect("object corrupts");
+        std::fs::write(store.record_path(QueryKind::Parse, key), b"not-json")
+            .expect("record corrupts");
+
+        store
+            .store_artifact(
+                QueryKind::Parse,
+                key,
+                ArtifactKind::ParsedSyntax,
+                b"artifact",
+            )
+            .expect("artifact repairs");
+        assert_eq!(
+            store
+                .read_artifact(QueryKind::Parse, key)
+                .expect("artifact read after repair"),
             Some(b"artifact".to_vec())
         );
     }

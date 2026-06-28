@@ -115,11 +115,34 @@ fn project_fingerprint(
 const fn cache_status(status: ProjectCompileCacheStatus) -> CacheRecordStatus {
     match status {
         ProjectCompileCacheStatus::Hit => CacheRecordStatus::Hit,
-        ProjectCompileCacheStatus::Miss => CacheRecordStatus::Miss {
+        ProjectCompileCacheStatus::Miss => CacheRecordStatus::Rebuilt {
             reason: InvalidationReason::MissingRecord,
         },
-        ProjectCompileCacheStatus::Disabled => CacheRecordStatus::Miss {
+        ProjectCompileCacheStatus::Disabled => CacheRecordStatus::Rebuilt {
             reason: InvalidationReason::OptionsChanged,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cache_status;
+    use crate::project::ProjectCompileCacheStatus;
+    use arcweft_project::incremental::{CacheRecordStatus, InvalidationReason};
+
+    #[test]
+    fn persistent_query_snapshot_status_records_rebuild_reason() {
+        assert_eq!(
+            cache_status(ProjectCompileCacheStatus::Miss),
+            CacheRecordStatus::Rebuilt {
+                reason: InvalidationReason::MissingRecord,
+            }
+        );
+        assert_eq!(
+            cache_status(ProjectCompileCacheStatus::Disabled),
+            CacheRecordStatus::Rebuilt {
+                reason: InvalidationReason::OptionsChanged,
+            }
+        );
     }
 }

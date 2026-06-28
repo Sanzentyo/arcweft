@@ -4,7 +4,10 @@
 //! staleness, corruption, or mismatch is returned as typed soft-miss evidence so
 //! callers can rebuild from source instead of poisoning the build.
 
-use super::{record::CacheRecord, store::FilesystemCacheStore};
+use super::{
+    record::CacheRecord,
+    store::{CacheStoreError, FilesystemCacheStore},
+};
 use arcweft_project::{
     artifact::{ArtifactKey, ArtifactKind},
     fingerprint::{BuildDigest, NamedDigest},
@@ -21,6 +24,7 @@ use std::{
     io::ErrorKind,
     path::{Path, PathBuf},
 };
+use thiserror::Error;
 
 /// One adapter-owned persistent query read-through request.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -28,6 +32,16 @@ pub struct PersistentQueryReadRequest {
     pub query: QueryKind,
     pub artifact_key: ArtifactKey,
     pub object_key: CompilerObjectKey,
+}
+
+/// One adapter-owned persistent query write-through request.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PersistentQueryWriteRequest {
+    pub query: QueryKind,
+    pub artifact_key: ArtifactKey,
+    pub object_key: CompilerObjectKey,
+    pub logical_item: String,
+    pub payload: CompilerObjectPayload,
 }
 
 /// Read-through hit or recoverable soft miss.
@@ -61,6 +75,23 @@ pub struct PersistentQueryHit {
 pub enum PersistentQueryHitPayload {
     ParsedSyntax(ParsedSyntaxObject),
     HirBody(HirBodyObject),
+}
+
+/// Successful write-through evidence for one persistent compiler query object.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PersistentQueryWriteReceipt {
+    pub query: QueryKind,
+    pub artifact_key: ArtifactKey,
+    pub artifact_kind: ArtifactKind,
+    pub object_kind: CompilerObjectKind,
+    pub logical_item: String,
+    pub record_path: PathBuf,
+    pub object_path: PathBuf,
+    pub object_digest: BuildDigest,
+    pub object_len: u64,
+    pub payload_digest: BuildDigest,
+    pub payload_len: u64,
+    pub record: CacheRecord,
 }
 
 /// Recoverable soft-miss evidence.
@@ -191,12 +222,53 @@ pub enum PersistentQueryIoKind {
     Other,
 }
 
+/// Hard failures while writing a deterministic persistent query object.
+#[derive(Debug, Error)]
+pub enum PersistentQueryWriteError {
+    #[error("persistent query write-through does not support object kind {object_kind:?}")]
+    UnsupportedObjectKind { object_kind: CompilerObjectKind },
+    #[error("persistent query write-through expected query {expected:?}, got {actual:?}")]
+    QueryKindMismatch {
+        expected: QueryKind,
+        actual: QueryKind,
+    },
+    #[error(
+        "persistent query write-through payload kind {payload:?} does not match key kind {key:?}"
+    )]
+    PayloadKindMismatch {
+        key: CompilerObjectKind,
+        payload: CompilerObjectKind,
+    },
+    #[error(transparent)]
+    Awbo(#[from] AwboError),
+    #[error(transparent)]
+    Store(#[from] CacheStoreError),
+}
+
 impl PersistentQueryReadRequest {
     pub fn new(query: QueryKind, artifact_key: ArtifactKey, object_key: CompilerObjectKey) -> Self {
         Self {
             query,
             artifact_key,
             object_key,
+        }
+    }
+}
+
+impl PersistentQueryWriteRequest {
+    pub fn new(
+        query: QueryKind,
+        artifact_key: ArtifactKey,
+        object_key: CompilerObjectKey,
+        logical_item: impl Into<String>,
+        payload: CompilerObjectPayload,
+    ) -> Self {
+        Self {
+            query,
+            artifact_key,
+            object_key,
+            logical_item: logical_item.into(),
+            payload,
         }
     }
 }
@@ -234,8 +306,8 @@ impl PersistentQueryMissReason {
             | Self::RecordReadFailed { .. }
             | Self::CorruptRecord { .. }
             | Self::RecordKeyMismatch
-            | Self::ArtifactKindMismatch { .. }
-            | Self::MissingObject { .. }
+            | Self::ArtifactKindMismatch { .. } => InvalidationReason::CorruptRecord,
+            Self::MissingObject { .. }
             | Self::ObjectReadFailed { .. }
             | Self::ObjectDigestMismatch { .. }
             | Self::ObjectLengthMismatch { .. }
@@ -245,7 +317,7 @@ impl PersistentQueryMissReason {
             | Self::PayloadKindMismatch { .. }
             | Self::PayloadDigestMismatch
             | Self::PayloadLengthMismatch { .. }
-            | Self::KeyDigestMismatch { .. } => InvalidationReason::CorruptRecord,
+            | Self::KeyDigestMismatch { .. } => InvalidationReason::CorruptObject,
         }
     }
 }
@@ -270,6 +342,62 @@ impl FilesystemCacheStore {
         request: &PersistentQueryReadRequest,
     ) -> PersistentQueryReadOutcome {
         self.read_persistent_query_checked(request)
+    }
+
+    /// Writes a deterministic parse/HIR `.awbo` object and key-addressed record.
+    pub fn write_persistent_query(
+        &self,
+        request: &PersistentQueryWriteRequest,
+    ) -> Result<PersistentQueryWriteReceipt, PersistentQueryWriteError> {
+        let Some(expected_query) = request.object_key.kind.safe_read_through_query_kind() else {
+            return Err(PersistentQueryWriteError::UnsupportedObjectKind {
+                object_kind: request.object_key.kind,
+            });
+        };
+        if request.query != expected_query {
+            return Err(PersistentQueryWriteError::QueryKindMismatch {
+                expected: expected_query,
+                actual: request.query,
+            });
+        }
+        let Some(artifact_kind) = request.object_key.kind.safe_read_through_artifact_kind() else {
+            return Err(PersistentQueryWriteError::UnsupportedObjectKind {
+                object_kind: request.object_key.kind,
+            });
+        };
+        let payload_kind = request.payload.kind();
+        if payload_kind != request.object_key.kind {
+            return Err(PersistentQueryWriteError::PayloadKindMismatch {
+                key: request.object_key.kind,
+                payload: payload_kind,
+            });
+        }
+
+        let envelope = AwboEnvelope::new(&request.object_key, request.payload.clone())?;
+        let payload_digest = envelope.payload_digest;
+        let payload_len = envelope.payload_len;
+        let bytes = envelope.encode()?;
+        let record = self.store_artifact_with_logical_item(
+            request.query,
+            request.artifact_key,
+            artifact_kind,
+            Some(request.logical_item.as_str()),
+            &bytes,
+        )?;
+        Ok(PersistentQueryWriteReceipt {
+            query: request.query,
+            artifact_key: request.artifact_key,
+            artifact_kind,
+            object_kind: request.object_key.kind,
+            logical_item: request.logical_item.clone(),
+            record_path: self.record_path(request.query, request.artifact_key),
+            object_path: self.object_path(record.object_digest()),
+            object_digest: record.object_digest(),
+            object_len: record.object_len(),
+            payload_digest,
+            payload_len,
+            record,
+        })
     }
 
     fn read_persistent_query_checked(

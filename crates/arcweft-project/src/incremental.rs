@@ -50,6 +50,7 @@ pub enum InvalidationReason {
     Reusable,
     MissingRecord,
     CorruptRecord,
+    CorruptObject,
     CompilerChanged,
     CacheSchemaChanged,
     SourceChanged,
@@ -59,6 +60,7 @@ pub enum InvalidationReason {
     DependencyBodyChanged { module: String },
     EnvironmentChanged,
     OptionsChanged,
+    ConservativeInvalidation { policy: String },
 }
 
 /// Query record status stored in build snapshots and reports.
@@ -66,8 +68,10 @@ pub enum InvalidationReason {
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum CacheRecordStatus {
     Hit,
+    HitThenRebuilt { reason: InvalidationReason },
     Miss { reason: InvalidationReason },
     Stored,
+    Rebuilt { reason: InvalidationReason },
 }
 
 /// Per-module digest evidence emitted by a successful build.
@@ -208,9 +212,33 @@ impl InvalidationReason {
 }
 
 impl CacheRecordStatus {
+    /// Stable status label for CLI cache reports.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Hit => "hit",
+            Self::HitThenRebuilt { .. } => "hit_then_rebuilt",
+            Self::Miss { .. } => "miss",
+            Self::Stored => "stored",
+            Self::Rebuilt { .. } => "rebuilt",
+        }
+    }
+
     /// Whether the artifact was loaded from cache.
     pub const fn is_hit(&self) -> bool {
         matches!(self, Self::Hit)
+    }
+
+    /// Whether source rebuild was performed after cache lookup evidence.
+    pub const fn is_rebuilt(&self) -> bool {
+        matches!(self, Self::HitThenRebuilt { .. } | Self::Rebuilt { .. })
+    }
+
+    /// Rebuild reason when this status records a rebuild.
+    pub const fn rebuild_reason(&self) -> Option<&InvalidationReason> {
+        match self {
+            Self::HitThenRebuilt { reason } | Self::Rebuilt { reason } => Some(reason),
+            Self::Hit | Self::Miss { .. } | Self::Stored => None,
+        }
     }
 }
 
@@ -336,11 +364,7 @@ impl BuildSnapshot {
         let mut modules = modules.into_iter().collect::<Vec<_>>();
         modules.sort_by(|left, right| left.module.cmp(&right.module));
         let mut queries = queries.into_iter().collect::<Vec<_>>();
-        queries.sort_by(|left, right| {
-            left.query
-                .cmp(&right.query)
-                .then_with(|| left.key.cmp(&right.key))
-        });
+        sort_query_snapshots(&mut queries);
         Self {
             build_id: build_id.into(),
             project,
@@ -373,6 +397,16 @@ impl BuildSnapshot {
 
     pub const fn content_root(&self) -> Option<BuildDigest> {
         self.content_root
+    }
+
+    #[must_use]
+    pub fn with_additional_queries(
+        mut self,
+        queries: impl IntoIterator<Item = QuerySnapshot>,
+    ) -> Self {
+        self.queries.extend(queries);
+        sort_query_snapshots(&mut self.queries);
+        self
     }
 
     pub fn module_invalidations_since(&self, previous: &Self) -> Vec<ModuleInvalidation> {
@@ -479,6 +513,15 @@ impl QueryInvalidation {
     }
 }
 
+fn sort_query_snapshots(queries: &mut [QuerySnapshot]) {
+    queries.sort_by(|left, right| {
+        left.query
+            .cmp(&right.query)
+            .then_with(|| left.key.cmp(&right.key))
+            .then_with(|| left.artifact_digest.cmp(&right.artifact_digest))
+    });
+}
+
 fn invalidation_reason_for_query(
     query: QueryKind,
     module_invalidations: &[ModuleInvalidation],
@@ -563,9 +606,19 @@ mod tests {
     }
 
     #[test]
-    fn cache_record_status_reports_hits() {
+    fn cache_record_status_reports_hits_and_rebuild_reasons() {
         assert!(CacheRecordStatus::Hit.is_hit());
         assert!(!CacheRecordStatus::Stored.is_hit());
+        let rebuilt = CacheRecordStatus::Rebuilt {
+            reason: InvalidationReason::MissingRecord,
+        };
+        assert_eq!(rebuilt.as_str(), "rebuilt");
+        assert!(!rebuilt.is_hit());
+        assert!(rebuilt.is_rebuilt());
+        assert_eq!(
+            rebuilt.rebuild_reason(),
+            Some(&InvalidationReason::MissingRecord)
+        );
     }
 
     #[test]
@@ -594,6 +647,38 @@ mod tests {
         assert_eq!(snapshot.selected_entries(), &["game.dev", "game.release"]);
         assert_eq!(snapshot.modules()[0].module(), "crate::a");
         assert_eq!(snapshot.modules()[1].module(), "crate::b");
+    }
+
+    #[test]
+    fn build_snapshot_appends_query_evidence_deterministically() {
+        let snapshot = BuildSnapshot::new(
+            "build",
+            project(),
+            ["game.dev"],
+            [],
+            [query_snapshot(QueryKind::HirBody, "b", "b-out")],
+        )
+        .with_additional_queries([
+            QuerySnapshot::new(
+                QueryKind::Parse,
+                artifact_key(QueryKind::Parse, "parse"),
+                digest("parse-out"),
+                CacheRecordStatus::Rebuilt {
+                    reason: InvalidationReason::CorruptObject,
+                },
+            ),
+            query_snapshot(QueryKind::HirBody, "a", "a-out"),
+        ]);
+
+        assert_eq!(snapshot.queries()[0].query(), QueryKind::Parse);
+        assert_eq!(snapshot.queries()[1].query(), QueryKind::HirBody);
+        assert_eq!(snapshot.queries()[2].query(), QueryKind::HirBody);
+        assert!(matches!(
+            snapshot.queries()[0].status(),
+            CacheRecordStatus::Rebuilt {
+                reason: InvalidationReason::CorruptObject
+            }
+        ));
     }
 
     #[test]
