@@ -140,3 +140,22 @@ Please produce one design document with:
 - test plan;
 - explicit non-goals.
 
+## Follow-Up Package Split
+
+The original seq04 request has been split into independently throwable package
+requests:
+
+- `docs/reviews/requests/2026-06-28-seq-04.1-awbo-parse-hir-codec-package.md`
+- `docs/reviews/requests/2026-06-28-seq-04.2-persistent-query-read-through-soft-miss-package.md`
+- `docs/reviews/requests/2026-06-28-seq-04.3-persistent-query-write-through-buildsnapshot-package.md`
+- `docs/reviews/requests/2026-06-28-seq-04.4-cache-explain-query-evidence-package.md`
+- `docs/reviews/requests/2026-06-28-seq-04.5-interface-runtime-bytecode-link-reuse-package.md`
+- `docs/reviews/requests/2026-06-29-seq-04.6-module-aware-sema-typecheck-cache-gates-package.md`
+- `docs/reviews/requests/2026-06-29-seq-04.7-runtime-plan-unit-cache-reuse-package.md`
+- `docs/reviews/requests/2026-06-29-seq-04.8-bytecode-unit-and-link-plan-cache-reuse-package.md`
+
+Seq04.1 through seq04.5 establish the safe parse/HIR/interface cache substrate.
+Seq04.6 through seq04.8 are the deferred family requests: typecheck/sema gates,
+runtime-plan unit reuse, and bytecode/link-plan reuse. Apply them in sequence
+unless a returned package explicitly proves that a later family must remain
+conservative.

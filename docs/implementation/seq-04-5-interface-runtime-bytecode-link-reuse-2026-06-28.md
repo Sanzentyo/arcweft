@@ -75,6 +75,12 @@ Bytecode-unit reuse is deferred because AWBC/codegen identities are not sufficie
 
 Link-plan reuse is deferred because it requires stable identities for all runtime/bytecode units and a stable link descriptor. Current link/bundle caching remains artifact-level storage only.
 
+The deferred families are split into follow-up package requests:
+
+- `docs/reviews/requests/2026-06-29-seq-04.6-module-aware-sema-typecheck-cache-gates-package.md`
+- `docs/reviews/requests/2026-06-29-seq-04.7-runtime-plan-unit-cache-reuse-package.md`
+- `docs/reviews/requests/2026-06-29-seq-04.8-bytecode-unit-and-link-plan-cache-reuse-package.md`
+
 ## Validation
 
 The implementation adds or extends tests for interface summary codec round-trip and malformed payload rejection, compiler fact-builder round-trip, project-loader interface read/write-through, unsupported later object families, and CLI cache evidence.
