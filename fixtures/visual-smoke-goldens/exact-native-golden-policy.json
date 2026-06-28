@@ -1,0 +1,46 @@
+{
+  "fixture": "exact_native_golden_policy",
+  "tier": "tier2_environment_gated",
+  "checked_in_goldens": [
+    "tests/fixtures/native_capture/vertical_tutr_golden.png",
+    "tests/fixtures/native_capture/vertical_jlreq_preset_loose_golden.png",
+    "tests/fixtures/native_capture/vertical_jlreq_preset_normal_golden.png",
+    "tests/fixtures/native_capture/vertical_lr_ruby_text_combine_golden.png"
+  ],
+  "candidate_dir": "target/arcweft-native-capture-artifacts",
+  "environment": {
+    "os": "windows",
+    "font": "MS Mincho",
+    "viewport": "1280x720",
+    "scale_policy": "raw",
+    "device_pixel_ratio": 1.0,
+    "renderer": "native_rich_text_observer"
+  },
+  "imq": {
+    "metrics": [
+      "psnr",
+      "ssim",
+      "mse",
+      "mae",
+      "maxae"
+    ],
+    "max_mse": 0.002,
+    "max_mae": 0.003,
+    "dimensions_must_match": true,
+    "gate_thresholds": {
+      "dimensions_must_match": true,
+      "max_mse": 0.002,
+      "max_mae": 0.003
+    },
+    "record_only_metrics": [
+      "psnr",
+      "ssim",
+      "maxae"
+    ]
+  },
+  "failure_report": {
+    "reference_path": true,
+    "candidate_path": true,
+    "metric_json_path": true
+  }
+}

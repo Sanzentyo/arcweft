@@ -44,6 +44,8 @@ just fixture-refresh-all
 This runs the portable refresh plus native capture PNG candidate generation and
 the native fixture-integrity check. Use it on a Windows machine with the pinned
 fixture fonts available when native renderer output is intentionally changing.
+It also runs the deterministic non-exact `visual_smoke` suite, which checks
+selected object/layer metadata and image-content smoke without exact pixels.
 Promote candidate PNGs to checked-in goldens only after reviewing the pixel
 result and rerunning the integrity check.
 
@@ -55,10 +57,12 @@ Additional native candidate targets:
 | `target/arcweft-native-capture-refresh/vertical_jlreq_preset_loose_golden.png` | `tests/fixtures/native_capture/vertical_jlreq_preset_loose_golden.arcw` | `just fixture-refresh-native-capture-candidates` |
 | `target/arcweft-native-capture-refresh/vertical_jlreq_preset_normal_golden.png` | `tests/fixtures/native_capture/vertical_jlreq_preset_normal_golden.arcw` | `just fixture-refresh-native-capture-candidates` |
 | `target/arcweft-native-capture-refresh/vertical_lr_ruby_text_combine_golden.png` | `tests/fixtures/native_capture/vertical_lr_ruby_text_combine_golden.arcw` | `just fixture-refresh-native-capture-candidates` |
+| `target/arcweft-native-capture-artifacts/vertical_goal_clear_smoke.candidate.png` | `tests/fixtures/native_capture/vertical_goal_clear_smoke.arcw` | `just native-visual-artifacts` |
 
 Additional validation run by `just fixture-refresh-native-capture-check`:
 
 ```bash
+cargo test -p arcweft-cli --features native-capture --test check visual_smoke -- --nocapture
 cargo test -p arcweft-cli --features native-capture --test check native_checked_in_visual_golden_fixtures_are_well_formed --quiet
 ```
 

@@ -1,0 +1,106 @@
+{
+  "fixture": "visual_smoke_dialogue_object_metadata",
+  "image": {
+    "kind": "color",
+    "renderer": "native",
+    "scope": {
+      "kind": "object",
+      "id": "object.dialogue.0.0"
+    },
+    "composition": "isolated_regions_or_masked_framebuffer_crop",
+    "width": "positive",
+    "height": "positive",
+    "crop_origin": {
+      "space": "viewport",
+      "x": "matches_selected_crop",
+      "y": "matches_selected_crop"
+    },
+    "content_pixels": "non_zero",
+    "selected_capture": {
+      "renderer": "native_rich_text_observer",
+      "scope": {
+        "kind": "object",
+        "id": "object.dialogue.0.0"
+      },
+      "composition": "isolated_regions_or_masked_framebuffer_crop",
+      "coordinate_basis": "output",
+      "crop": {
+        "basis": "output",
+        "unclipped": "object_bbox",
+        "clipped": "matches_image_dimensions"
+      },
+      "mask": {
+        "availability": "available",
+        "basis": "output",
+        "bounds": "matches_clipped_crop",
+        "object_ids": [
+          "object.dialogue.0.0"
+        ],
+        "layer_ids": [
+          "dialogue"
+        ],
+        "has_object_id_attachment": true,
+        "has_alpha_mask": "capture_kind_dependent"
+      },
+      "fit_transform": {
+        "design_space": "design",
+        "content_space": "output",
+        "output_space": "output",
+        "serialized_geometry_space": "output",
+        "hit_test_input_space": "output",
+        "policy": "raw",
+        "content_rect": {
+          "origin": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "size": {
+            "width": 1280.0,
+            "height": 720.0
+          }
+        },
+        "visible_output_rect": {
+          "origin": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "size": {
+            "width": 1280.0,
+            "height": 720.0
+          }
+        },
+        "visible_design_rect": {
+          "origin": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "size": {
+            "width": 1280.0,
+            "height": 720.0
+          }
+        },
+        "bars": {
+          "top": 0.0,
+          "right": 0.0,
+          "bottom": 0.0,
+          "left": 0.0
+        },
+        "crop": {
+          "top": 0.0,
+          "right": 0.0,
+          "bottom": 0.0,
+          "left": 0.0
+        },
+        "scale_x": 1.0,
+        "scale_y": 1.0,
+        "raw_pixel_mode": true
+      },
+      "source": {
+        "kind": "object",
+        "id": "object.dialogue.0.0",
+        "role": "dialogue_textbox",
+        "layer": "dialogue"
+      }
+    }
+  }
+}

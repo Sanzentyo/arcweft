@@ -250,6 +250,7 @@ For routine local execution through Justfile, use:
 ```bash
 just test-fast
 just test-cli-native
+just test-visual-smoke
 just test-cli-check
 just test-workspace
 just test-doc
@@ -264,8 +265,12 @@ fast path: it runs workspace lib/integration tests except the large
 CLI integration harnesses. It intentionally does not run doc-tests.
 `just test-doc` is the explicit doc-test path for Rust documentation examples
 and milestone validation.
-`just test-cli-native` is the normal native rich-text/Agent observe smoke slice;
-it must remain exact-test based rather than using the broad
+`just test-visual-smoke` runs the deterministic non-exact visual smoke suite for
+viewport, layer, selected object, object-id, mask, and overflow/wrap captures.
+It asserts dimensions, non-empty image content, crop bounds, and seq06.5
+`selected_capture` metadata, but does not compare exact pixels. `just
+test-cli-native` is the normal native rich-text/Agent observe smoke slice and
+includes `just test-visual-smoke`; it must remain exact-test based rather than using the broad
 `agent_observe_native_renderer` prefix.
 `just test-cli-check` is the routine CLI integration smoke. It runs the
 bench/run/JIT JSON groups, Agent observe JSON reporting, and the exact native
@@ -364,6 +369,8 @@ Operational budget:
   adapter-facing GlyphArea contract changed.
 - Milestone or risky Agent/MCP/capture change: add the explicit Tier 2 target
   that matches the risk, or `just test-tier2` for an exhaustive slow pass.
+- Deterministic visual smoke change: run `just test-visual-smoke`; add
+  `just test-cli-native` when the native capture CLI surface also changed.
 - Milestone native visual handoff: run `just native-visual-artifacts` on a
   Windows machine with `imq` available and publish
   `target/arcweft-native-capture-artifacts/` as the CI/job artifact. That target

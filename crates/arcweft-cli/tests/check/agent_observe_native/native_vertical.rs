@@ -1262,6 +1262,7 @@ fn assert_checked_in_native_imq_golden(
         filesystem_safe_test_label(label)
     ));
     let candidate_path = dir.join(candidate_filename);
+    let metrics_path = dir.join(format!("{candidate_filename}.imq.json"));
     let candidate_json = capture_native_png_report(&source_path, &candidate_path);
     assert_native_capture_has_content(&candidate_json, candidate_filename);
 
@@ -1275,9 +1276,14 @@ fn assert_checked_in_native_imq_golden(
         .arg("json")
         .output()
         .expect("imq compares checked-in native visual golden");
+    fs::write(&metrics_path, &imq_output.stdout)
+        .expect("write checked-in native visual golden imq metrics");
     assert!(
         imq_output.status.success(),
-        "{label} imq checked-in golden comparison should succeed, stderr: {}",
+        "{label} imq checked-in golden comparison should succeed, reference={}, candidate={}, metrics={}, stderr: {}",
+        golden_path.display(),
+        candidate_path.display(),
+        metrics_path.display(),
         String::from_utf8_lossy(&imq_output.stderr)
     );
     let imq_json: serde_json::Value =
@@ -1286,11 +1292,17 @@ fn assert_checked_in_native_imq_golden(
     assert_eq!(imq_json["dimensions"]["height"], 720);
     assert!(
         metric_score(&imq_json, "mse") <= 0.002,
-        "{label} visual golden mse drift should stay bounded: {imq_json}"
+        "{label} visual golden mse drift should stay bounded, reference={}, candidate={}, metrics={}: {imq_json}",
+        golden_path.display(),
+        candidate_path.display(),
+        metrics_path.display()
     );
     assert!(
         metric_score(&imq_json, "mae") <= 0.003,
-        "{label} visual golden mae drift should stay bounded: {imq_json}"
+        "{label} visual golden mae drift should stay bounded, reference={}, candidate={}, metrics={}: {imq_json}",
+        golden_path.display(),
+        candidate_path.display(),
+        metrics_path.display()
     );
     assert_metric_close(
         metric_detail(&imq_json, "psnr", "mse"),

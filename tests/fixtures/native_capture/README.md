@@ -31,17 +31,24 @@ cargo run -p arcweft-cli -- agent observe tests/fixtures/native_capture/vertical
 cargo run -p arcweft-cli -- agent observe tests/fixtures/native_capture/vertical_lr_ruby_text_combine_golden.arcw --json --image png --out tests/fixtures/native_capture/vertical_lr_ruby_text_combine_golden.png --mode drain --steps 4 --max-ops 64
 ```
 
-The CLI test compares fresh candidate captures against the checked-in PNGs with
-`imq` when both Windows and the `imq` binary are available. A non-ignored CLI
-fixture-integrity test also checks that the checked-in sources keep the intended
-vertical coverage, that every PNG remains a 1280x720 Agent capture, and that the
-loose/normal preset PNGs are distinct. The goal-clear smoke fixture is validated
-by non-ignored CLI tests that generate a temporary native PNG; color, mask, and
-object-id raw crops from the same text-combine/typewriter object; and mask /
-object-id raw crops from the vertical ruby objects on both physical sides.
+The CLI `visual_smoke` tests are the default non-exact validation tier for this
+directory. They generate temporary viewport, selected layer, selected object,
+object-id, mask, and overflow/wrap captures; assert dimensions, non-empty image
+content, crop bounds, and seq06.5 `selected_capture` metadata; and avoid exact
+pixel comparison. The exact visual-golden test compares fresh candidate captures
+against the checked-in PNGs with `imq` only when both Windows and the `imq`
+binary are available. A non-ignored CLI fixture-integrity test also checks that
+the checked-in sources keep the intended vertical coverage, that every PNG
+remains a 1280x720 Agent capture, and that the loose/normal preset PNGs are
+distinct. The goal-clear smoke fixture is validated by non-ignored CLI tests
+that generate a temporary native PNG; color, mask, and object-id raw crops from
+the same text-combine/typewriter object; and mask / object-id raw crops from the
+vertical ruby objects on both physical sides.
 Tier2 `imq` visual regression uses bounded full-reference MSE/MAE drift rather
 than exact-zero pixel parity because the native text path can produce tiny
 antialiasing differences across otherwise valid Windows renderer/font
 environments. For a milestone or CI handoff that needs publishable evidence, run
-`just native-visual-artifacts`; it writes fresh candidate PNGs, observe JSON, and
-`imq` JSON reports to `target/arcweft-native-capture-artifacts/`.
+`just native-visual-artifacts`; it writes fresh candidate PNGs, observe JSON,
+and `imq` JSON reports to `target/arcweft-native-capture-artifacts/`. Exact
+visual failures report the checked-in reference path, candidate path, and metric
+JSON path.
