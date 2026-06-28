@@ -1,3 +1,4 @@
+use crate::swap::GenerationId;
 use arcweft_core::task::{LogicalEpoch, TaskEvent, TaskEventKind, TaskSequence, TaskSpec};
 use arcweft_core::value::RuntimePayload;
 use serde::{Deserialize, Serialize};
@@ -9,6 +10,7 @@ use serde::{Deserialize, Serialize};
 /// normalized back to this pair before task events enter the VM.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct HostTaskDispatch {
+    pub generation: GenerationId,
     pub logical_epoch: LogicalEpoch,
     pub sequence: TaskSequence,
     pub task: TaskSpec,
@@ -56,6 +58,7 @@ mod tests {
     #[test]
     fn completion_preserves_request_epoch_and_sequence() {
         let dispatch = HostTaskDispatch {
+            generation: GenerationId(4),
             logical_epoch: LogicalEpoch(12),
             sequence: TaskSequence(7),
             task: TaskSpec::new(
@@ -68,6 +71,8 @@ mod tests {
                 HostTaskRequest::custom("test", "unit", []),
             ),
         };
+        assert_eq!(dispatch.generation, GenerationId(4));
+
         let event = dispatch.ready(RuntimePayload::new(RuntimeValue::Unit));
         assert_eq!(event.logical_epoch, LogicalEpoch(12));
         assert_eq!(event.sequence, TaskSequence(7));

@@ -6,12 +6,16 @@ mod scene_windowed;
 mod window_driver;
 mod windowed;
 pub mod windowed_patch;
+mod windowed_runtime;
 
 pub use patch_endpoint::{
     NativePatchEndpoint, NativePatchEndpointError, NativePatchOutcome, NativePatchTransportAction,
 };
 pub use scene_windowed::run_bundle_windowed;
 pub use windowed::run_bundle_windowed as run_bundle_adapter_windowed;
+pub use windowed_runtime::{
+    WindowedRuntimeOutcome, WindowedRuntimeOwner, WindowedRuntimeOwnerError,
+};
 
 use arcweft_bundle::ArcweftBundle;
 use arcweft_core::plan::FlowEvent;

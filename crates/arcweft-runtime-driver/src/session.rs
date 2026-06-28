@@ -1,5 +1,8 @@
 use crate::clock::RuntimeClockStep;
 use crate::display::{BundlePresentationSnapshot, resolve_display_frames};
+use crate::generation_runtime::{
+    GenerationRuntimeError, GenerationRuntimeImage, GenerationRuntimeTable,
+};
 use crate::swap::{
     GenerationBuildError, GenerationId, ProgramGeneration, SwapCompatibility, SwapError,
     SwapSession, classify_swap,
@@ -98,6 +101,7 @@ pub struct BundleSessionStep {
 pub struct BundleSession {
     source_label: String,
     executor: ArcweftRuntimeExecutor,
+    runtime_images: GenerationRuntimeTable<SessionRuntime>,
     display: LineDisplayCatalog,
     image_objects: Vec<BundleImageObject>,
     options: BundleSessionOptions,
@@ -192,6 +196,8 @@ pub enum BundleHotSwapError {
     MaterializePatch(#[source] PatchBundleError),
     #[error("failed to decode materialized AWFB patch target: {message}")]
     DecodePatchTarget { message: String },
+    #[error("generation runtime table failed: {0}")]
+    GenerationRuntime(#[from] GenerationRuntimeError),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -314,12 +320,20 @@ impl BundleSession {
     ) -> Result<Self, BundleSessionError> {
         let generation = Arc::new(initial_generation(bundle)?);
         let runtime = build_session_runtime(bundle, &options)?;
+        let executor = runtime.executor.clone();
+        let display = runtime.display.clone();
+        let image_objects = runtime.image_objects.clone();
+        let source_label = runtime.source_label.clone();
 
         Ok(Self {
-            source_label: runtime.source_label,
-            executor: runtime.executor,
-            display: runtime.display,
-            image_objects: runtime.image_objects,
+            source_label,
+            executor,
+            runtime_images: GenerationRuntimeTable::new(GenerationRuntimeImage::new(
+                generation.clone(),
+                runtime,
+            )),
+            display,
+            image_objects,
             options,
             pending_input_events: Vec::new(),
             presentation: BundlePresentationSnapshot::default(),
@@ -341,6 +355,20 @@ impl BundleSession {
         self.swap.active()
     }
 
+    /// Returns the generation currently bound to the active runtime fiber.
+    pub fn current_fiber_generation(&self) -> Option<GenerationId> {
+        self.runtime_generation_pin
+            .as_ref()
+            .map(|generation| generation.id)
+    }
+
+    /// Returns the generation that emitted an outstanding host task.
+    pub fn task_generation(&self, sequence: TaskSequence) -> Option<GenerationId> {
+        self.task_generation_pins
+            .get(&sequence)
+            .map(|generation| generation.id)
+    }
+
     pub fn pin_active_generation(&self) -> Arc<ProgramGeneration> {
         self.swap.pin_active_generation()
     }
@@ -350,7 +378,9 @@ impl BundleSession {
     }
 
     pub fn retire_unused_generations(&mut self) {
+        self.release_table_only_retired_runtime_images();
         self.swap.retire_unused();
+        self.prune_runtime_images();
     }
 
     pub const fn active_container_content_root(&self) -> Option<BundleDigest> {
@@ -416,16 +446,11 @@ impl BundleSession {
         let next_id = GenerationId(self.next_generation_id);
         let next_generation = Arc::new(ProgramGeneration::from_bundle(next_id, bundle)?);
         let compatibility = classify_swap(self.swap.active(), &next_generation);
-        if matches!(
-            compatibility,
-            SwapCompatibility::RestartRequired | SwapCompatibility::CodeGenerational
-        ) {
+        if compatibility == SwapCompatibility::RestartRequired {
             return Err(BundleHotSwapError::RestartRequired { compatibility });
         }
 
-        let runtime = (compatibility == SwapCompatibility::CodeCompatible)
-            .then(|| build_session_runtime(bundle, &self.options))
-            .transpose()?;
+        let next_runtime = build_session_runtime(bundle, &self.options)?;
 
         self.swap
             .prepare(next_generation)
@@ -441,26 +466,29 @@ impl BundleSession {
                 self.image_objects.clone_from(&bundle.image_objects);
             }
             SwapCompatibility::CodeCompatible => {
-                let Some(runtime) = runtime else {
-                    return Err(BundleHotSwapError::RestartRequired { compatibility });
-                };
-                self.source_label = runtime.source_label;
-                self.executor = runtime.executor;
-                self.display = runtime.display;
-                self.image_objects = runtime.image_objects;
+                self.activate_runtime(next_runtime.clone());
                 self.pending_input_events.clear();
                 self.presentation = BundlePresentationSnapshot::default();
             }
-            SwapCompatibility::CodeGenerational | SwapCompatibility::RestartRequired => {
-                unreachable!("restart-required compatibilities returned before prepare")
+            SwapCompatibility::CodeGenerational => {
+                // The current fiber keeps running on its existing executor. The
+                // new runtime image is inserted after commit and becomes the
+                // binding target for new entries.
+            }
+            SwapCompatibility::RestartRequired => {
+                unreachable!("restart-required compatibility returned before prepare")
             }
         }
 
         let committed = self.swap.commit().map_err(BundleHotSwapError::Commit)?;
+        self.runtime_images.insert(GenerationRuntimeImage::new(
+            self.swap.active().clone(),
+            next_runtime,
+        ))?;
         if committed == SwapCompatibility::CodeCompatible {
             self.runtime_generation_pin = Some(self.swap.pin_active_generation());
         }
-        self.swap.retire_unused();
+        self.retire_unused_generations();
         self.next_generation_id = self.next_generation_id.saturating_add(1);
         self.active_container_content_root = active_container_content_root;
         Ok(BundleHotSwapReport {
@@ -477,16 +505,17 @@ impl BundleSession {
     ) -> Result<BundleHotSwapReport, BundleHotSwapError> {
         let next_id = GenerationId(self.next_generation_id);
         let next_generation = Arc::new(ProgramGeneration::from_bundle(next_id, bundle)?);
-        if matches!(
-            compatibility,
-            SwapCompatibility::RestartRequired | SwapCompatibility::CodeGenerational
-        ) {
+        if compatibility == SwapCompatibility::RestartRequired {
             return Err(BundleHotSwapError::RestartRequired { compatibility });
         }
 
-        let runtime = (compatibility == SwapCompatibility::CodeCompatible)
-            .then(|| build_session_runtime(bundle, &self.options))
-            .transpose()?;
+        let actual = classify_swap(self.swap.active(), &next_generation);
+        if actual == SwapCompatibility::RestartRequired {
+            return Err(BundleHotSwapError::RestartRequired {
+                compatibility: actual,
+            });
+        }
+        let next_runtime = build_session_runtime(bundle, &self.options)?;
 
         self.swap
             .prepare_with_compatibility(next_generation, compatibility)
@@ -502,26 +531,28 @@ impl BundleSession {
                 self.image_objects.clone_from(&bundle.image_objects);
             }
             SwapCompatibility::CodeCompatible => {
-                let Some(runtime) = runtime else {
-                    return Err(BundleHotSwapError::RestartRequired { compatibility });
-                };
-                self.source_label = runtime.source_label;
-                self.executor = runtime.executor;
-                self.display = runtime.display;
-                self.image_objects = runtime.image_objects;
+                self.activate_runtime(next_runtime.clone());
                 self.pending_input_events.clear();
                 self.presentation = BundlePresentationSnapshot::default();
             }
-            SwapCompatibility::CodeGenerational | SwapCompatibility::RestartRequired => {
-                unreachable!("restart-required compatibilities returned before prepare")
+            SwapCompatibility::CodeGenerational => {
+                // Keep current fiber on the old executor. New entries are bound
+                // to the committed active generation through the runtime table.
+            }
+            SwapCompatibility::RestartRequired => {
+                unreachable!("restart-required compatibility returned before prepare")
             }
         }
 
         let committed = self.swap.commit().map_err(BundleHotSwapError::Commit)?;
+        self.runtime_images.insert(GenerationRuntimeImage::new(
+            self.swap.active().clone(),
+            next_runtime,
+        ))?;
         if committed == SwapCompatibility::CodeCompatible {
             self.runtime_generation_pin = Some(self.swap.pin_active_generation());
         }
-        self.swap.retire_unused();
+        self.retire_unused_generations();
         self.next_generation_id = self.next_generation_id.saturating_add(1);
         self.active_container_content_root = active_container_content_root;
         Ok(BundleHotSwapReport {
@@ -554,10 +585,7 @@ impl BundleSession {
         }
         let declared_compatibility =
             SwapCompatibility::from_patch_compatibility(readiness.compatibility);
-        if matches!(
-            declared_compatibility,
-            SwapCompatibility::CodeGenerational | SwapCompatibility::RestartRequired
-        ) {
+        if declared_compatibility == SwapCompatibility::RestartRequired {
             return Err(BundleHotSwapError::RestartRequired {
                 compatibility: declared_compatibility,
             });
@@ -673,7 +701,7 @@ impl BundleSession {
         );
         if finished {
             self.runtime_generation_pin = None;
-            self.swap.retire_unused();
+            self.retire_unused_generations();
         }
         let index = self.next_step_index;
         self.next_step_index = self.next_step_index.saturating_add(1);
@@ -724,6 +752,7 @@ impl BundleSession {
                 self.task_generation_pins
                     .insert(sequence, generation.clone());
                 HostTaskDispatch {
+                    generation: generation.id,
                     logical_epoch: LogicalEpoch(clock.tick().0),
                     sequence,
                     task,
@@ -739,11 +768,52 @@ impl BundleSession {
         for event in task_events {
             self.task_generation_pins.remove(&event.sequence);
         }
-        self.swap.retire_unused();
+        self.retire_unused_generations();
+    }
+
+    /// Starts a fresh active entry on the currently committed active generation.
+    /// Existing retired generation pins remain live until their fibers/tasks are
+    /// released; this method only rebinds the session's foreground entry.
+    pub fn restart_active_entry_on_current_generation(&mut self) -> Result<(), BundleHotSwapError> {
+        let generation = self.swap.active_generation_id();
+        let runtime = self.runtime_images.get(generation)?.cloned_runtime();
+        self.activate_runtime(runtime);
+        self.runtime_generation_pin = Some(self.swap.pin_active_generation());
+        self.pending_input_events.clear();
+        self.presentation = BundlePresentationSnapshot::default();
+        Ok(())
+    }
+
+    fn activate_runtime(&mut self, runtime: SessionRuntime) {
+        self.source_label = runtime.source_label;
+        self.executor = runtime.executor;
+        self.display = runtime.display;
+        self.image_objects = runtime.image_objects;
+    }
+
+    fn prune_runtime_images(&mut self) {
+        let live = self.swap.live_generation_ids();
+        self.runtime_images.retain_generations(&live);
+    }
+
+    fn release_table_only_retired_runtime_images(&mut self) {
+        let table_only_generations = self
+            .swap
+            .retired()
+            .iter()
+            .filter(|generation| {
+                self.runtime_images.contains_generation(generation.id)
+                    && Arc::strong_count(generation) <= 2
+            })
+            .map(|generation| generation.id)
+            .collect::<Vec<_>>();
+        for generation in table_only_generations {
+            self.runtime_images.remove(generation);
+        }
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct SessionRuntime {
     source_label: String,
     executor: ArcweftRuntimeExecutor,

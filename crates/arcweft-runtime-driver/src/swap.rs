@@ -16,12 +16,12 @@ use arcweft_core::plan::{FlowRuntimeId, RuntimePureHelper};
 use arcweft_core::source::SourcePlan;
 use arcweft_core::stream::StreamPlan;
 use arcweft_render_text::LineDisplayCatalog;
-use serde::Serialize;
-use std::collections::BTreeMap;
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use thiserror::Error;
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct GenerationId(pub u64);
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -505,6 +505,18 @@ impl SwapSession {
 
     pub fn retired(&self) -> &[Arc<ProgramGeneration>] {
         &self.retired
+    }
+
+    /// Returns active plus retained retired generation ids in deterministic order.
+    pub fn live_generation_ids(&self) -> BTreeSet<GenerationId> {
+        let mut live = BTreeSet::new();
+        live.insert(self.active.id);
+        live.extend(self.retired.iter().map(|generation| generation.id));
+        live
+    }
+
+    pub fn active_generation_id(&self) -> GenerationId {
+        self.active.id
     }
 
     pub const fn phase(&self) -> SwapPhase {

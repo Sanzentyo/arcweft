@@ -6,6 +6,7 @@
 
 pub mod clock;
 pub mod display;
+pub mod generation_runtime;
 pub mod session;
 pub mod swap;
 pub mod task;

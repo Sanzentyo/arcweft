@@ -143,6 +143,10 @@ impl NativePatchEndpoint {
         &mut self.session
     }
 
+    pub const fn options(&self) -> &BundleSessionOptions {
+        &self.options
+    }
+
     pub const fn active_content_root(&self) -> Option<BundleDigest> {
         self.session.active_container_content_root()
     }
@@ -436,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    fn native_patch_endpoint_restarts_for_generational_patch_target() {
+    fn native_patch_endpoint_applies_generational_patch_target() {
         let old = fixture_bundle_with("Dialogue text", false);
         let new = fixture_bundle_with("Dialogue text", true);
         let old_bytes = awfb_bytes(&old);
@@ -453,17 +457,24 @@ mod tests {
 
         let outcome = endpoint
             .apply_patch_bytes(&patch_bytes)
-            .expect("generational patch restarts");
+            .expect("generational patch applies");
 
-        assert_eq!(
+        assert!(matches!(
             outcome,
-            NativePatchOutcome::Restarted {
-                generation: GenerationId(0),
-                compatibility: PatchCompatibility::CodeGenerational,
-                content_root: new_root,
-            }
-        );
+            NativePatchOutcome::Applied {
+                report: BundleHotSwapReport {
+                    generation: GenerationId(1),
+                    compatibility: SwapCompatibility::CodeGenerational,
+                },
+                content_root,
+            } if content_root == new_root
+        ));
         assert_eq!(endpoint.active_content_root(), Some(new_root));
+
+        endpoint
+            .session_mut()
+            .restart_active_entry_on_current_generation()
+            .expect("new entry binds to generational patch target");
         let step = endpoint.session_mut().step_with_clock(
             RuntimeClockStep::from_millis(1, 16).expect("clock"),
             BundleStepInput::default(),

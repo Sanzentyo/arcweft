@@ -513,6 +513,12 @@ fn pending_task_pin_survives_code_compatible_runtime_rebuild() {
     );
     assert_eq!(waiting.requested_tasks.len(), 1);
     let task = waiting.requested_tasks[0].clone();
+    assert_eq!(
+        task.generation,
+        session
+            .current_fiber_generation()
+            .expect("fiber generation")
+    );
 
     let report = session
         .hot_swap_bundle(&new_bundle)
@@ -561,22 +567,47 @@ fn hot_swap_code_compatible_bundle_replaces_runtime_at_quiescent_boundary() {
 }
 
 #[test]
-fn hot_swap_changed_structured_flow_requires_host_restart() {
+fn hot_swap_changed_structured_flow_keeps_current_fiber_on_old_generation() {
+    let old_bundle = fixture_bundle();
+    let new_bundle = fixture_bundle_with("WebGPU dialogue", false, true);
+    let mut session =
+        BundleSession::new(&old_bundle, BundleSessionOptions::default()).expect("session starts");
+    let old_generation = session.active_generation().id;
+
+    let report = session
+        .hot_swap_bundle(&new_bundle)
+        .expect("code-generational swap applies with mixed generation support");
+
+    assert_eq!(report.compatibility, SwapCompatibility::CodeGenerational);
+    assert_ne!(session.active_generation().id, old_generation);
+    assert_eq!(session.current_fiber_generation(), Some(old_generation));
+    assert_eq!(session.retired_generation_count(), 1);
+}
+
+#[test]
+fn new_entry_binds_to_new_generation_after_code_generational_commit() {
     let old_bundle = fixture_bundle();
     let new_bundle = fixture_bundle_with("WebGPU dialogue", false, true);
     let mut session =
         BundleSession::new(&old_bundle, BundleSessionOptions::default()).expect("session starts");
 
-    let error = session
+    let report = session
         .hot_swap_bundle(&new_bundle)
-        .expect_err("changed structured flow cannot be applied live yet");
+        .expect("code-generational swap applies");
+    let new_generation = report.generation;
 
-    assert!(matches!(
-        error,
-        BundleHotSwapError::RestartRequired {
-            compatibility: SwapCompatibility::CodeGenerational,
-        }
-    ));
+    session
+        .restart_active_entry_on_current_generation()
+        .expect("new entry binds to committed active generation");
+    assert_eq!(session.current_fiber_generation(), Some(new_generation));
+
+    let step = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+
+    assert!(step.finished);
+    assert!(step.status_label.contains("changed"));
 }
 
 #[test]
