@@ -120,7 +120,10 @@ single large file:
 All production Rust files added by this overlay remain below the AGENTS.md
 1,200 LOC warning threshold.
 
-Remaining follow-up work from the package is unchanged: adapt the CLI REPL to
-format `ReplCommandResult`, add MCP/LSP formatting adapters if needed, provide
-runtime-driver task/cancel host adapters, and implement seq05.3 tiering handlers
-for `:warm` and `:codegen`.
+Remaining adapter follow-up work from the package is split into
+`docs/reviews/requests/2026-06-28-seq-05.2.1-repl-adapter-follow-up-package.md`:
+adapt the CLI REPL to format `ReplCommandResult`, add MCP/LSP formatting
+adapters if needed, and provide runtime-driver task/cancel host adapters.
+
+Seq05.3 tiering handlers for `:warm` and `:codegen` are tracked separately by
+`docs/reviews/requests/2026-06-28-seq-05.3-repl-executor-tiering-warm-codegen-package.md`.

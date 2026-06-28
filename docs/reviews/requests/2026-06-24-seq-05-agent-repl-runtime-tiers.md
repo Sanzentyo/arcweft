@@ -139,7 +139,11 @@ requests:
 - `docs/reviews/requests/2026-06-28-seq-05.0-agent-repl-runtime-tiers-dispatch-package.md`
 - `docs/reviews/requests/2026-06-28-seq-05.1-repl-overlay-cell-transaction-package.md`
 - `docs/reviews/requests/2026-06-28-seq-05.2-repl-commands-agent-runner-package.md`
+- `docs/reviews/requests/2026-06-28-seq-05.2.1-repl-adapter-follow-up-package.md`
 - `docs/reviews/requests/2026-06-28-seq-05.3-repl-executor-tiering-warm-codegen-package.md`
 
 Use seq05.0 first when asking another designer to confirm or improve the split.
 Use seq05.1 as the first implementation package after the split is accepted.
+Use seq05.2.1 after seq05.2/seq05.3 when CLI/MCP/LSP/runtime-driver adapters
+need to consume the typed command result surface without redesigning command
+semantics.
