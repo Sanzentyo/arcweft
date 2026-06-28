@@ -1,0 +1,38 @@
+{
+  "fixture": "windows-tsf-display-attributes",
+  "tsf_metadata": {
+    "api": "ITfDisplayAttributeMgr / TF_DISPLAYATTRIBUTE.bAttr",
+    "native_identity": "omitted"
+  },
+  "mappings": [
+    {
+      "tf_da_attr_info": "Input",
+      "arcweft_kind": "RawInput"
+    },
+    {
+      "tf_da_attr_info": "Converted",
+      "arcweft_kind": "Converted"
+    },
+    {
+      "tf_da_attr_info": "FixedConverted",
+      "arcweft_kind": "Converted"
+    },
+    {
+      "tf_da_attr_info": "TargetConverted",
+      "arcweft_kind": "TargetConverted"
+    },
+    {
+      "tf_da_attr_info": "TargetNotConverted",
+      "arcweft_kind": "TargetNotConverted"
+    },
+    {
+      "tf_da_attr_info": "InputError",
+      "arcweft_kind": "InputError"
+    },
+    {
+      "tf_da_attr_info": "Other",
+      "arcweft_kind": null,
+      "diagnostic_code": "tsf_display_attribute_other"
+    }
+  ]
+}

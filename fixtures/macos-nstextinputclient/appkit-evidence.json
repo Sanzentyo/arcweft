@@ -1,0 +1,42 @@
+{
+  "case": "appkit_evidence",
+  "official_doc_pages": [
+    "https://developer.apple.com/documentation/appkit/nstextinputclient",
+    "https://developer.apple.com/documentation/appkit/nstextinputcontext"
+  ],
+  "generated_binding_evidence": [
+    {
+      "selector": "setMarkedText:selectedRange:replacementRange:",
+      "parameters": [
+        "NSObject",
+        "NSRange",
+        "NSRange"
+      ]
+    },
+    {
+      "selector": "insertText:replacementRange:",
+      "parameters": [
+        "NSObject",
+        "NSRange"
+      ]
+    },
+    {
+      "selector": "firstRectForCharacterRange:actualRange:",
+      "parameters": [
+        "NSRange",
+        "NSRange*"
+      ],
+      "returns": "CGRect"
+    },
+    {
+      "selector": "selectedRange",
+      "returns": "NSRange"
+    },
+    {
+      "selector": "markedRange",
+      "returns": "NSRange"
+    }
+  ],
+  "local_header_pin_required": true,
+  "notes": "No private SDK dump is included. Verify exact Xcode SDK header line numbers before merge."
+}

@@ -1,0 +1,22 @@
+{
+  "schema": "arcweft.web-editcontext.trace.v1",
+  "adapter": "WebEditContext",
+  "fixture": "EditContext absent unsupported activation",
+  "fallback_installed": false,
+  "browser_metadata": {
+    "editContext_available": false,
+    "api_surface": [],
+    "coordinate_space": "client_css_pixels"
+  },
+  "events": [
+    {
+      "event": "feature-detect",
+      "support": "UnsupportedNoFallback"
+    },
+    {
+      "event": "activate",
+      "error": "WebEditContextUnavailable",
+      "host_command": null
+    }
+  ]
+}

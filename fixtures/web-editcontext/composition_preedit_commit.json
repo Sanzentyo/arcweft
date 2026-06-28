@@ -1,0 +1,47 @@
+{
+  "schema": "arcweft.web-editcontext.trace.v1",
+  "adapter": "WebEditContext",
+  "fixture": "composition/preedit to commit flow",
+  "fallback_installed": false,
+  "browser_metadata": {
+    "editContext_available": true,
+    "coordinate_space": "client_css_pixels"
+  },
+  "events": [
+    {
+      "event": "compositionstart",
+      "serial": 1,
+      "operation": "StartComposition"
+    },
+    {
+      "event": "textupdate",
+      "serial": 2,
+      "composing": true,
+      "preedit": "にほんご",
+      "operations": [
+        "SetComposition",
+        "SetSelection"
+      ],
+      "preedit_selection_byte_range": [
+        12,
+        12
+      ]
+    },
+    {
+      "event": "compositionend",
+      "serial": 3,
+      "operation": "EndComposition",
+      "reason": "Committed"
+    },
+    {
+      "event": "textupdate",
+      "serial": 4,
+      "composing": false,
+      "replacement": "日本語",
+      "operations": [
+        "Commit",
+        "SetSelection"
+      ]
+    }
+  ]
+}

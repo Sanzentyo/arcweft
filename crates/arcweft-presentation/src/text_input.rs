@@ -167,9 +167,11 @@ pub enum TextInputHostCommand {
     Activate {
         session: TextInputSessionId,
         target: InteractionTarget,
+        capabilities: TextInputCapabilities,
         snapshot: Box<TextInputClientSnapshot>,
     },
     Update(Box<TextInputClientSnapshot>),
+    UpdateGeometry(Box<TextInputGeometrySnapshot>),
     CommitComposition {
         session: TextInputSessionId,
     },
@@ -197,6 +199,10 @@ pub enum TextInputCapabilitySupport {
     #[default]
     Unsupported,
     Supported,
+    Limited,
+    VersionDependent,
+    HostDependent,
+    SecureRedacted,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -266,6 +272,18 @@ impl<I> TextRange<I> {
 
     pub const fn end(&self) -> &I {
         &self.end
+    }
+}
+
+impl TextByteOffset {
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+impl TextUtf16Offset {
+    pub const fn get(self) -> u32 {
+        self.0
     }
 }
 
@@ -979,9 +997,31 @@ impl TextInputSecurityPolicy {
             Self::SecureRedacted => snapshot.redacted_for_secure_input(),
         }
     }
+
+    pub fn redact_geometry(
+        self,
+        geometry: &TextInputGeometrySnapshot,
+    ) -> TextInputGeometrySnapshot {
+        match self {
+            Self::Plain => geometry.clone(),
+            Self::SecureRedacted => geometry.redacted_for_secure_input(),
+        }
+    }
 }
 
 impl TextInputCapabilities {
+    pub const fn all_supported() -> Self {
+        Self {
+            surrounding_text: TextInputCapabilitySupport::Supported,
+            delete_surrounding: TextInputCapabilitySupport::Supported,
+            reconversion: TextInputCapabilitySupport::Supported,
+            composition_segments: TextInputCapabilitySupport::Supported,
+            character_bounds: TextInputCapabilitySupport::Supported,
+            programmatic_commit: TextInputCapabilitySupport::Supported,
+            programmatic_cancel: TextInputCapabilitySupport::Supported,
+        }
+    }
+
     pub const fn for_platform_adapter(adapter: TextInputAdapterKind) -> Self {
         match adapter {
             TextInputAdapterKind::WindowsTsf
@@ -989,25 +1029,17 @@ impl TextInputCapabilities {
             | TextInputAdapterKind::WaylandTextInputV3
             | TextInputAdapterKind::AndroidInputConnection
             | TextInputAdapterKind::IosTextInput
-            | TextInputAdapterKind::WebEditContext => Self {
-                surrounding_text: TextInputCapabilitySupport::Supported,
-                delete_surrounding: TextInputCapabilitySupport::Supported,
-                reconversion: TextInputCapabilitySupport::Supported,
-                composition_segments: TextInputCapabilitySupport::Supported,
-                character_bounds: TextInputCapabilitySupport::Supported,
-                programmatic_commit: TextInputCapabilitySupport::Supported,
-                programmatic_cancel: TextInputCapabilitySupport::Supported,
-            },
+            | TextInputAdapterKind::WebEditContext => Self::all_supported(),
         }
     }
 
     pub const fn secure_redacted() -> Self {
         Self {
-            surrounding_text: TextInputCapabilitySupport::Unsupported,
+            surrounding_text: TextInputCapabilitySupport::SecureRedacted,
             delete_surrounding: TextInputCapabilitySupport::Supported,
-            reconversion: TextInputCapabilitySupport::Unsupported,
-            composition_segments: TextInputCapabilitySupport::Supported,
-            character_bounds: TextInputCapabilitySupport::Supported,
+            reconversion: TextInputCapabilitySupport::SecureRedacted,
+            composition_segments: TextInputCapabilitySupport::SecureRedacted,
+            character_bounds: TextInputCapabilitySupport::SecureRedacted,
             programmatic_commit: TextInputCapabilitySupport::Supported,
             programmatic_cancel: TextInputCapabilitySupport::Supported,
         }
@@ -1020,6 +1052,26 @@ impl TextInputCapabilities {
             )),
             WebTextInputApiSupport::UnsupportedNoFallback => None,
         }
+    }
+
+    #[must_use]
+    pub const fn narrow_for_security(self, security: TextInputSecurityPolicy) -> Self {
+        match security {
+            TextInputSecurityPolicy::Plain => self,
+            TextInputSecurityPolicy::SecureRedacted => Self {
+                surrounding_text: TextInputCapabilitySupport::SecureRedacted,
+                reconversion: TextInputCapabilitySupport::SecureRedacted,
+                composition_segments: TextInputCapabilitySupport::SecureRedacted,
+                character_bounds: TextInputCapabilitySupport::SecureRedacted,
+                ..self
+            },
+        }
+    }
+}
+
+impl TextInputCapabilitySupport {
+    pub const fn is_supported(self) -> bool {
+        matches!(self, Self::Supported | Self::Limited)
     }
 }
 
@@ -1120,5 +1172,20 @@ impl TextInputGeometrySnapshot {
 
     pub fn screen_character_bounds(&self) -> &[TextCharacterBounds] {
         &self.screen_character_bounds
+    }
+
+    #[must_use]
+    pub fn redacted_for_secure_input(&self) -> Self {
+        Self {
+            session: self.session,
+            revision: self.revision,
+            writing_mode: self.writing_mode,
+            text_local_control_rect: self.text_local_control_rect,
+            viewport_control_rect: self.viewport_control_rect,
+            screen_control_rect: self.screen_control_rect,
+            viewport_caret_rect: self.viewport_caret_rect,
+            screen_caret_rect: self.screen_caret_rect,
+            screen_character_bounds: Vec::new(),
+        }
     }
 }

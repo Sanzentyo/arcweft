@@ -1,0 +1,21 @@
+{
+  "case": "invalid_range_and_nsnotfound",
+  "source_text": "a😀b",
+  "invalid_range_utf16": {
+    "location": 2,
+    "length": 1,
+    "reason": "inside surrogate pair"
+  },
+  "nsnotfound": {
+    "location": "NSNotFound",
+    "length": 0,
+    "accepted_for": [
+      "optional replacement range",
+      "first-rect fallback"
+    ],
+    "rejected_for": [
+      "setMarkedText selectedRange"
+    ]
+  },
+  "policy": "reject without clamp"
+}

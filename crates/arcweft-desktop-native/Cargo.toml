@@ -12,15 +12,29 @@ file-dialog = ["dep:rfd"]
 known-directories = ["dep:directories"]
 global-pointer = ["dep:enigo"]
 external-window-observe = ["dep:xcap"]
+macos-text-input = []
 
 [dependencies]
 arcweft-desktop-contract = { path = "../arcweft-desktop-contract" }
 arcweft-desktop-host = { path = "../arcweft-desktop-host" }
+arcweft-presentation = { path = "../arcweft-presentation" }
 directories = { workspace = true, optional = true }
 enigo = { workspace = true, optional = true }
 getrandom.workspace = true
+num-traits = "0.2.19"
 rfd = { workspace = true, optional = true }
 xcap = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_UI_TextServices",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+arcweft-id = { path = "../arcweft-id" }
 
 [lints]
 workspace = true

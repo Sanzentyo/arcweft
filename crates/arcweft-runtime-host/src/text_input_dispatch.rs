@@ -24,6 +24,7 @@ pub struct FocusedTextInputSession {
     generation: TextInputFocusGeneration,
     revision: TextRevision,
     options: TextInputOptions,
+    capabilities: TextInputCapabilities,
     security: TextInputSecurityPolicy,
     last_serial: Option<TextInputSerial>,
     composition_active: bool,
@@ -97,9 +98,20 @@ impl TextInputDispatchState {
     /// dispatch, while the active state still remembers that incoming batches
     /// must be hashed/replayed as sensitive text.
     pub fn activate(&mut self, snapshot: &TextInputClientSnapshot) -> TextInputFocusTransaction {
+        self.activate_with_capabilities(snapshot, TextInputCapabilities::all_supported())
+    }
+
+    /// Activates a platform text-input session with adapter-reported
+    /// capabilities.
+    pub fn activate_with_capabilities(
+        &mut self,
+        snapshot: &TextInputClientSnapshot,
+        capabilities: TextInputCapabilities,
+    ) -> TextInputFocusTransaction {
         self.focus_generation = self.focus_generation.next();
         let generation = self.focus_generation;
         let security = TextInputSecurityPolicy::from_options(snapshot.options());
+        let capabilities = capabilities.narrow_for_security(security);
         let session = snapshot.session();
         let target = snapshot.target().clone();
         let revision = snapshot.revision();
@@ -111,6 +123,7 @@ impl TextInputDispatchState {
             generation,
             revision,
             options,
+            capabilities,
             security,
             last_serial: None,
             composition_active: false,
@@ -118,6 +131,7 @@ impl TextInputDispatchState {
         TextInputFocusTransaction::new(generation).with_command(TextInputHostCommand::Activate {
             session,
             target,
+            capabilities,
             snapshot: Box::new(command_snapshot),
         })
     }
@@ -145,6 +159,26 @@ impl TextInputDispatchState {
         }
         Ok(TextInputHostCommand::Update(Box::new(
             active.security.redact_snapshot(snapshot),
+        )))
+    }
+
+    /// Emits a redacted or plain geometry update for the active session.
+    pub fn update_geometry(
+        &self,
+        geometry: &arcweft_presentation::text_input::TextInputGeometrySnapshot,
+    ) -> Result<TextInputHostCommand, TextInputDispatchError> {
+        let active = self
+            .active
+            .as_ref()
+            .ok_or(TextInputDispatchError::NoActiveSession)?;
+        if active.session != geometry.session() {
+            return Err(TextInputDispatchError::SessionMismatch {
+                active: active.session,
+                incoming: geometry.session(),
+            });
+        }
+        Ok(TextInputHostCommand::UpdateGeometry(Box::new(
+            active.security.redact_geometry(geometry),
         )))
     }
 
@@ -266,6 +300,10 @@ impl FocusedTextInputSession {
 
     pub const fn security(&self) -> TextInputSecurityPolicy {
         self.security
+    }
+
+    pub const fn capabilities(&self) -> TextInputCapabilities {
+        self.capabilities
     }
 
     pub const fn composition_active(&self) -> bool {

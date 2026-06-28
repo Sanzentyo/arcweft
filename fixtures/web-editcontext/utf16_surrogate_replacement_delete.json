@@ -1,0 +1,50 @@
+{
+  "schema": "arcweft.web-editcontext.trace.v1",
+  "adapter": "WebEditContext",
+  "fixture": "UTF-16 surrogate replacement and deletion",
+  "fallback_installed": false,
+  "browser_metadata": {
+    "editContext_available": true,
+    "coordinate_space": "client_css_pixels"
+  },
+  "events": [
+    {
+      "event": "textupdate",
+      "pre_text": "a😀b",
+      "update_range_utf16": [
+        1,
+        3
+      ],
+      "replacement": "👩‍💻",
+      "selection_utf16_post": [
+        6,
+        6
+      ],
+      "serial": 1,
+      "operation": "Commit",
+      "replacement_byte_range": [
+        1,
+        5
+      ]
+    },
+    {
+      "event": "textupdate",
+      "pre_text": "a👩‍💻b",
+      "update_range_utf16": [
+        1,
+        6
+      ],
+      "replacement": "",
+      "selection_utf16_post": [
+        1,
+        1
+      ],
+      "serial": 2,
+      "operation": "Commit",
+      "replacement_byte_range": [
+        1,
+        12
+      ]
+    }
+  ]
+}

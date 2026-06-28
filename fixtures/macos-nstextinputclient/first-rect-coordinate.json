@@ -1,0 +1,18 @@
+{
+  "case": "first_rect_coordinate_convention",
+  "arcweft_screen_space": "top-left origin logical screen points",
+  "appkit_screen_space": "screen rectangle returned by firstRectForCharacterRange:actualRange:",
+  "screen_height_points": 1080,
+  "arcweft_rect": {
+    "x": 10,
+    "y": 200,
+    "width": 8,
+    "height": 24
+  },
+  "appkit_rect": {
+    "x": 10,
+    "y": 856,
+    "width": 8,
+    "height": 24
+  }
+}

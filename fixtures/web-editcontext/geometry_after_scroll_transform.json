@@ -1,0 +1,56 @@
+{
+  "schema": "arcweft.web-editcontext.trace.v1",
+  "adapter": "WebEditContext",
+  "fixture": "candidate/caret geometry after scroll or transform",
+  "fallback_installed": false,
+  "browser_metadata": {
+    "editContext_available": true,
+    "coordinate_space": "client_css_pixels"
+  },
+  "events": [
+    {
+      "event": "UpdateGeometry",
+      "text_revision": 9,
+      "text_serial": null,
+      "viewport_control_rect": [
+        10,
+        20,
+        240,
+        32
+      ],
+      "viewport_caret_rect": [
+        74,
+        20,
+        1,
+        32
+      ],
+      "calls": [
+        "updateControlBounds",
+        "updateSelectionBounds",
+        "updateCharacterBounds"
+      ]
+    },
+    {
+      "event": "scroll-transform",
+      "text_revision": 9,
+      "text_serial": null,
+      "viewport_control_rect": [
+        10,
+        -40,
+        240,
+        32
+      ],
+      "viewport_caret_rect": [
+        74,
+        -40,
+        1,
+        32
+      ],
+      "calls": [
+        "updateControlBounds",
+        "updateSelectionBounds",
+        "updateCharacterBounds"
+      ]
+    }
+  ]
+}

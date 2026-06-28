@@ -1,0 +1,22 @@
+{
+  "fixture": "windows-tsf-acp-surrogate-pair",
+  "tsf_metadata": {
+    "api": "ITextStoreACP",
+    "acp_unit": "utf16_code_unit",
+    "native_identity": "omitted"
+  },
+  "snapshot": {
+    "revision": 7,
+    "text": "a🦀b",
+    "security": "plain"
+  },
+  "input": {
+    "acp_start": 1,
+    "acp_end": 3
+  },
+  "expected": {
+    "byte_start": 1,
+    "byte_end": 5,
+    "diagnostic": null
+  }
+}

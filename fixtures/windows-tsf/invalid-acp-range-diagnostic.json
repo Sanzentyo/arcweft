@@ -1,0 +1,22 @@
+{
+  "fixture": "windows-tsf-invalid-acp-range-diagnostic",
+  "tsf_metadata": {
+    "api": "ITextStoreACP::SetSelection",
+    "acp_unit": "utf16_code_unit",
+    "native_identity": "omitted"
+  },
+  "snapshot": {
+    "revision": 1,
+    "text": "abc",
+    "security": "plain"
+  },
+  "input": {
+    "acp_start": 3,
+    "acp_end": 1
+  },
+  "expected": {
+    "reject": true,
+    "diagnostic_code": "windows_tsf.invalid_acp_range.unordered",
+    "clamped": false
+  }
+}

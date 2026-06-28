@@ -1,0 +1,11 @@
+{
+  "schema": "arcweft.web-editcontext.browser-metadata.v1",
+  "official_evidence": {
+    "w3c": "https://w3c.github.io/edit-context/",
+    "mdn": "https://developer.mozilla.org/en-US/docs/Web/API/EditContext",
+    "chrome": "https://developer.chrome.com/blog/new-in-chrome-121"
+  },
+  "offset_policy": "EditContext event offsets are treated as UTF-16 source units for adapter conversion.",
+  "geometry_policy": "EditContext geometry is viewport/client CSS pixels.",
+  "fallback_policy": "No hidden DOM text-entry fallback is installed."
+}

@@ -1,0 +1,26 @@
+{
+  "case": "marked_text_update",
+  "platform": "macos-appkit-nstextinputclient",
+  "appkit_callback": "setMarkedText:selectedRange:replacementRange:",
+  "native_metadata_scope": "fixture-local",
+  "input": {
+    "marked_text": "にほんご",
+    "selected_range_utf16": {
+      "location": 0,
+      "length": 4
+    },
+    "replacement_range_utf16": {
+      "location": 0,
+      "length": 0
+    }
+  },
+  "arcweft": {
+    "serial_boundary": "one callback -> one serial",
+    "event": "Batch",
+    "operations": [
+      "StartComposition",
+      "SetComposition"
+    ],
+    "ranges": "canonical byte ranges only"
+  }
+}

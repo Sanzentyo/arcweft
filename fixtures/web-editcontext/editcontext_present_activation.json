@@ -1,0 +1,29 @@
+{
+  "schema": "arcweft.web-editcontext.trace.v1",
+  "adapter": "WebEditContext",
+  "fixture": "EditContext present activation",
+  "fallback_installed": false,
+  "browser_metadata": {
+    "editContext_available": true,
+    "api_surface": [
+      "EditContext",
+      "HTMLElement.editContext"
+    ],
+    "coordinate_space": "client_css_pixels"
+  },
+  "events": [
+    {
+      "event": "feature-detect",
+      "support": "EditContext"
+    },
+    {
+      "event": "activate",
+      "session": 42,
+      "capabilities": {
+        "surrounding_text": "Supported",
+        "character_bounds": "Supported"
+      },
+      "host_command": "Activate"
+    }
+  ]
+}

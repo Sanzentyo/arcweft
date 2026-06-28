@@ -1,0 +1,25 @@
+{
+  "fixture": "windows-tsf-secure-redaction",
+  "tsf_metadata": {
+    "api": "ITextStoreACP / GetTextExt / reconversion",
+    "native_identity": "omitted"
+  },
+  "snapshot": {
+    "security": "secure_redacted",
+    "surrounding_text": "",
+    "surrounding_start": 0,
+    "selection": [
+      0,
+      0
+    ],
+    "character_bounds": []
+  },
+  "expected": {
+    "acp_conversion": "SecureRedacted",
+    "reconversion": "SecureRedacted",
+    "character_bounds": "SecureRedacted",
+    "leaks_original_text": false,
+    "leaks_original_length": false,
+    "leaks_native_identity": false
+  }
+}

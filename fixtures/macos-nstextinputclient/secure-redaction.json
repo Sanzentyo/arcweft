@@ -1,0 +1,17 @@
+{
+  "case": "secure_field_redaction",
+  "input_policy": "SecureRedacted",
+  "redacted": [
+    "original text",
+    "original offset",
+    "original length",
+    "character-bound vector",
+    "selected-range-derived anchor",
+    "native object identity"
+  ],
+  "first_rect": {
+    "availability": "SecureRedacted",
+    "actualRange": "NSNotFound",
+    "source": "caret fallback only"
+  }
+}

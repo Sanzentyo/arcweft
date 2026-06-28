@@ -706,10 +706,14 @@ version = "0.1.0"
 dependencies = [
  "arcweft-desktop-contract",
  "arcweft-desktop-host",
+ "arcweft-id",
+ "arcweft-presentation",
  "directories",
  "enigo",
  "getrandom 0.4.3",
+ "num-traits",
  "rfd",
+ "windows 0.62.2",
  "xcap",
 ]
 
@@ -935,6 +939,7 @@ dependencies = [
  "arcweft-render-web",
  "arcweft-render-wgpu",
  "arcweft-runtime-driver",
+ "arcweft-runtime-host",
  "js-sys",
  "num-traits",
  "serde",

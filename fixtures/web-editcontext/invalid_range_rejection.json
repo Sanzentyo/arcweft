@@ -1,0 +1,24 @@
+{
+  "schema": "arcweft.web-editcontext.trace.v1",
+  "adapter": "WebEditContext",
+  "fixture": "invalid range rejection with no silent clamp",
+  "fallback_installed": false,
+  "browser_metadata": {
+    "editContext_available": true,
+    "coordinate_space": "client_css_pixels"
+  },
+  "events": [
+    {
+      "event": "textupdate",
+      "pre_text": "a😀b",
+      "update_range_utf16": [
+        2,
+        3
+      ],
+      "replacement": "x",
+      "error": "Utf16OffsetInsideSurrogatePair",
+      "serial_consumed": false,
+      "mutated_editor": false
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "case": "committed_insert",
+  "appkit_callback": "insertText:replacementRange:",
+  "input": {
+    "text": "日本語",
+    "replacement_range_utf16": {
+      "location": 0,
+      "length": 4
+    }
+  },
+  "arcweft": {
+    "event": "Commit",
+    "replacement": "resolved canonical byte range"
+  }
+}

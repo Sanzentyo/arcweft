@@ -1,0 +1,21 @@
+{
+  "fixture": "windows-tsf-edit-session-grouping",
+  "tsf_metadata": {
+    "api": "ITfContext::RequestEditSession",
+    "boundary": "one completed readwrite edit session",
+    "native_identity": "omitted"
+  },
+  "input": {
+    "session_operations": [
+      "start_composition",
+      "set_composition",
+      "set_selection"
+    ],
+    "starting_serial": 10
+  },
+  "expected": {
+    "arcweft_event": "PlatformTextInputEvent::Batch",
+    "serial": 10,
+    "operation_count": 3
+  }
+}

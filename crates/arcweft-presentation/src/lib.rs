@@ -16,6 +16,7 @@ pub mod layer;
 pub mod replay;
 pub mod router;
 pub mod semantic;
+pub mod text_index;
 pub mod text_input;
 
 /// Named lifetime owner for presentation values.

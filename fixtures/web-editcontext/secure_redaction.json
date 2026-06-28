@@ -1,0 +1,36 @@
+{
+  "schema": "arcweft.web-editcontext.trace.v1",
+  "adapter": "WebEditContext",
+  "fixture": "secure field redaction",
+  "fallback_installed": false,
+  "browser_metadata": {
+    "editContext_available": true,
+    "coordinate_space": "client_css_pixels"
+  },
+  "events": [
+    {
+      "event": "activate",
+      "secure": true,
+      "surrounding_text": "",
+      "surrounding_start": 0,
+      "selection_byte_range": [
+        0,
+        0
+      ],
+      "composition": null,
+      "character_bounds": [],
+      "capabilities": {
+        "surrounding_text": "SecureRedacted",
+        "composition_segments": "SecureRedacted",
+        "character_bounds": "SecureRedacted"
+      }
+    },
+    {
+      "event": "UpdateGeometry",
+      "secure": true,
+      "character_bounds": [],
+      "candidate_anchor_source": "control_rect",
+      "diagnostic": "SecureRedacted"
+    }
+  ]
+}

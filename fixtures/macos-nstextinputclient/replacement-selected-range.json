@@ -1,0 +1,20 @@
+{
+  "case": "replacement_and_selected_range",
+  "source_text": "a😀b",
+  "replacement_range_utf16": {
+    "location": 1,
+    "length": 2
+  },
+  "replacement_range_bytes": {
+    "start": 1,
+    "end": 5
+  },
+  "selected_range_in_marked_text_utf16": {
+    "location": 0,
+    "length": 4
+  },
+  "selected_range_in_marked_text_bytes": {
+    "start": 0,
+    "end": 12
+  }
+}

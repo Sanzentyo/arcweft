@@ -1,0 +1,27 @@
+{
+  "fixture": "windows-tsf-reconversion-facts",
+  "tsf_metadata": {
+    "api": "ITfFunctionProvider::GetFunction(IID_ITfFnReconversion)",
+    "function_identity": "omitted"
+  },
+  "cases": [
+    {
+      "name": "available",
+      "reconversion_function_available": true,
+      "security": "plain",
+      "expected_status": "Supported"
+    },
+    {
+      "name": "unavailable",
+      "reconversion_function_available": false,
+      "security": "plain",
+      "expected_status": "RuntimeUnavailable(tsf_reconversion_function_missing)"
+    },
+    {
+      "name": "secure",
+      "reconversion_function_available": true,
+      "security": "secure_redacted",
+      "expected_status": "SecureRedacted"
+    }
+  ]
+}

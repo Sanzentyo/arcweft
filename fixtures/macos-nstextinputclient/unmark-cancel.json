@@ -1,0 +1,13 @@
+{
+  "case": "unmark_cancel",
+  "callbacks": [
+    {
+      "appkit_callback": "unmarkText",
+      "arcweft_reason": "Committed"
+    },
+    {
+      "adapter_callback": "cancel_marked_text",
+      "arcweft_reason": "Cancelled"
+    }
+  ]
+}

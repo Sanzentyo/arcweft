@@ -1,0 +1,23 @@
+{
+  "fixture": "windows-tsf-delayed-event-after-focus-generation-change",
+  "tsf_metadata": {
+    "api": "finalized TSF command callback",
+    "native_identity": "omitted"
+  },
+  "events": [
+    {
+      "name": "focus_generation_2_commit",
+      "generation": 2,
+      "serial": 1,
+      "text": "x"
+    },
+    {
+      "name": "runtime_active_generation_3",
+      "generation": 3
+    }
+  ],
+  "expected": {
+    "runtime_rejection": "FocusGenerationMismatch",
+    "adapter_compares_com_identity": false
+  }
+}

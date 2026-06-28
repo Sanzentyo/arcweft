@@ -14,6 +14,7 @@ mod grant_store;
 mod persistent_grants;
 mod platform;
 mod pointer;
+pub mod text_input;
 
 pub use backend::{NativeDesktopBackend, NativeDesktopBuilder};
 pub use config::{GlobalPointerPolicy, NativeDesktopOptions};

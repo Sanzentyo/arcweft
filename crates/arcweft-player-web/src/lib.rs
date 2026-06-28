@@ -5,6 +5,7 @@
 //! and routed through Arcweft presentation data on the canvas.
 
 pub mod clock;
+pub mod edit_context;
 pub mod host;
 pub mod parity;
 pub mod report;

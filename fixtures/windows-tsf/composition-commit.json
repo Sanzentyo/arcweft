@@ -1,0 +1,32 @@
+{
+  "fixture": "windows-tsf-composition-commit",
+  "tsf_metadata": {
+    "api": "ITfEditSession::DoEditSession",
+    "edit_session": "fixture-local-readwrite",
+    "native_identity": "omitted"
+  },
+  "events": [
+    {
+      "serial": 41,
+      "operation": "start_composition"
+    },
+    {
+      "serial": 41,
+      "operation": "set_composition",
+      "preedit": "にほんご",
+      "selection_bytes": [
+        0,
+        12
+      ]
+    },
+    {
+      "serial": 42,
+      "operation": "commit",
+      "text": "日本語"
+    }
+  ],
+  "expected": {
+    "preedit_mutates_binding": false,
+    "commit_text": "日本語"
+  }
+}

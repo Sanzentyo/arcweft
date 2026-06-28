@@ -1,0 +1,32 @@
+{
+  "fixture": "windows-tsf-geometry-clipped-no-layout",
+  "tsf_metadata": {
+    "api": "ITextStoreACP::GetTextExt",
+    "coordinate_space": "screen_rect",
+    "native_identity": "omitted"
+  },
+  "cases": [
+    {
+      "name": "clipped",
+      "byte_range": [
+        0,
+        1
+      ],
+      "rect": {
+        "left": 5,
+        "top": 0,
+        "right": 14,
+        "bottom": 20
+      },
+      "clipped": true
+    },
+    {
+      "name": "no_layout",
+      "byte_range": [
+        1,
+        2
+      ],
+      "availability": "NoLayout"
+    }
+  ]
+}

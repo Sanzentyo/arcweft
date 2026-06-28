@@ -1,0 +1,7 @@
+{
+  "case": "delayed_callback_after_focus_generation_change",
+  "old_generation": 3,
+  "active_generation": 4,
+  "adapter_event": "PlatformTextInputContext carries old generation",
+  "runtime_host_expected_rejection": "FocusGenerationMismatch"
+}
