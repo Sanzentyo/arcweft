@@ -5,6 +5,7 @@
 
 use arcweft_bundle::patch::PatchCompatibility;
 use std::collections::VecDeque;
+use std::path::PathBuf;
 use thiserror::Error;
 
 /// Event-loop boundary reached by the native window.
@@ -43,10 +44,12 @@ pub enum WindowedPatchEvent {
     },
     ApplyTransportSidecar {
         bytes: Vec<u8>,
+        base_dir: PathBuf,
         source: PatchEventSource,
     },
     RestartWithBundle {
         bytes: Vec<u8>,
+        source: PatchEventSource,
         reason: RestartReason,
     },
 }
@@ -128,7 +131,7 @@ impl WindowedPatchEvent {
             Self::ApplyBundle { source, .. } | Self::ApplyTransportSidecar { source, .. } => {
                 source.clone()
             }
-            Self::RestartWithBundle { .. } => PatchEventSource::EmbeddingApi,
+            Self::RestartWithBundle { source, .. } => source.clone(),
         }
     }
 }
@@ -296,6 +299,7 @@ mod tests {
         });
         queue.push(WindowedPatchEvent::ApplyTransportSidecar {
             bytes: b"two".to_vec(),
+            base_dir: PathBuf::from("."),
             source: PatchEventSource::OneShotSidecar,
         });
 

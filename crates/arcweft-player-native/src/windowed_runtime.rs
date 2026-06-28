@@ -213,6 +213,15 @@ impl WindowedRuntimeOwner {
         self.patch_queue.push(event);
     }
 
+    /// Retains an adapter-side ingress rejection without mutating the active session/catalog.
+    pub fn retain_patch_ingress_rejection(
+        &mut self,
+        source: PatchEventSource,
+        message: impl Into<String>,
+    ) {
+        self.patch_queue.reject(source, message);
+    }
+
     /// Processes all queued patch events at `boundary`.
     ///
     /// No session or catalog mutation occurs unless `boundary` is
@@ -250,9 +259,9 @@ impl WindowedRuntimeOwner {
             WindowedPatchEvent::ApplyBundle { bytes, .. } => {
                 self.apply_patch_bundle_bytes(source.clone(), &bytes)
             }
-            WindowedPatchEvent::ApplyTransportSidecar { bytes, .. } => {
-                self.apply_transport_sidecar(source.clone(), &bytes)
-            }
+            WindowedPatchEvent::ApplyTransportSidecar {
+                bytes, base_dir, ..
+            } => self.apply_transport_sidecar(source.clone(), &bytes, base_dir.as_path()),
             WindowedPatchEvent::RestartWithBundle { bytes, .. } => {
                 self.restart_from_bundle_bytes(source.clone(), bytes)
             }
@@ -288,9 +297,10 @@ impl WindowedRuntimeOwner {
         &mut self,
         source: PatchEventSource,
         bytes: &[u8],
+        base_dir: &Path,
     ) -> Result<WindowedRuntimeOutcome, WindowedRuntimeOwnerError> {
         let patch_bytes =
-            NativePatchEndpoint::patch_bytes_from_transport_json_bytes(bytes, Path::new("."))?;
+            NativePatchEndpoint::patch_bytes_from_transport_json_bytes(bytes, base_dir)?;
         self.apply_patch_bundle_bytes(source, &patch_bytes)
     }
 

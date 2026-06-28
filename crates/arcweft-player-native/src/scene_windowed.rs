@@ -1,4 +1,7 @@
 use crate::NativePlayerError;
+use crate::windowed_ingress::{
+    WindowedPatchIngress, WindowedPatchIngressMessage, WindowedPatchIngressReceiver,
+};
 use crate::windowed_patch::FrameBoundary;
 use crate::windowed_runtime::{
     WindowedRuntimeOutcome, WindowedRuntimeOwner, WindowedRuntimeOwnerError,
@@ -16,6 +19,7 @@ use arcweft_render_wgpu::renderer::{SharedRenderer, SharedRendererError};
 use arcweft_runtime_driver::clock::{RuntimeClockError, RuntimeClockStep};
 use arcweft_runtime_driver::session::{BundleSessionError, BundleSessionOptions, BundleStepInput};
 use num_traits::ToPrimitive;
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use thiserror::Error;
@@ -36,6 +40,15 @@ pub fn run_bundle_windowed(
     _max_steps: usize,
 ) -> Result<(), NativePlayerError> {
     run_shared_scene_window("Arcweft Player", bundle)
+        .map_err(|error| NativePlayerError::SceneWindow(error.to_string()))
+}
+
+pub fn run_bundle_windowed_with_ingress(
+    bundle: ArcweftBundle,
+    _max_steps: usize,
+    configure_ingress: impl FnOnce(WindowedPatchIngress),
+) -> Result<(), NativePlayerError> {
+    run_shared_scene_window_with_ingress("Arcweft Player", bundle, configure_ingress)
         .map_err(|error| NativePlayerError::SceneWindow(error.to_string()))
 }
 
@@ -81,6 +94,8 @@ struct NativeSceneApp {
     title: String,
     bundle: Option<ArcweftBundle>,
     state: Option<NativeSceneState>,
+    ingress: WindowedPatchIngressReceiver,
+    pending_ingress: VecDeque<WindowedPatchIngressMessage>,
     error: Arc<Mutex<Option<String>>>,
 }
 
@@ -109,14 +124,26 @@ fn run_shared_scene_window(
     title: &str,
     bundle: ArcweftBundle,
 ) -> Result<(), NativeSceneWindowError> {
+    run_shared_scene_window_with_ingress(title, bundle, |_| {})
+}
+
+fn run_shared_scene_window_with_ingress(
+    title: &str,
+    bundle: ArcweftBundle,
+    configure_ingress: impl FnOnce(WindowedPatchIngress),
+) -> Result<(), NativeSceneWindowError> {
     let event_loop =
         EventLoop::new().map_err(|error| NativeSceneWindowError::EventLoop(error.to_string()))?;
+    let (ingress, ingress_rx) = WindowedPatchIngress::channel(event_loop.create_proxy());
+    configure_ingress(ingress);
     let error = Arc::new(Mutex::new(None));
     event_loop
         .run_app(NativeSceneApp {
             title: title.to_owned(),
             bundle: Some(bundle),
             state: None,
+            ingress: ingress_rx,
+            pending_ingress: VecDeque::new(),
             error: Arc::clone(&error),
         })
         .map_err(|error| NativeSceneWindowError::EventLoop(error.to_string()))?;
@@ -137,6 +164,28 @@ impl NativeSceneApp {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(error);
         event_loop.exit();
+    }
+
+    fn drain_ingress_messages(&mut self) {
+        let messages: Vec<_> = self.ingress.drain().collect();
+        for message in messages {
+            self.apply_ingress_message(message);
+        }
+    }
+
+    fn drain_pending_ingress(&mut self) {
+        let pending = std::mem::take(&mut self.pending_ingress);
+        for message in pending {
+            self.apply_ingress_message(message);
+        }
+    }
+
+    fn apply_ingress_message(&mut self, message: WindowedPatchIngressMessage) {
+        if let Some(state) = self.state.as_mut() {
+            state.apply_ingress_message(message);
+        } else {
+            self.pending_ingress.push_back(message);
+        }
     }
 }
 
@@ -166,7 +215,11 @@ impl ApplicationHandler for NativeSceneApp {
             }
         };
         match pollster::block_on(NativeSceneState::new(window, bundle)) {
-            Ok(state) => self.state = Some(state),
+            Ok(state) => {
+                self.state = Some(state);
+                self.drain_pending_ingress();
+                self.drain_ingress_messages();
+            }
             Err(error) => {
                 self.fail(event_loop, error.to_string());
                 return;
@@ -229,7 +282,12 @@ impl ApplicationHandler for NativeSceneApp {
         }
     }
 
+    fn proxy_wake_up(&mut self, _event_loop: &dyn ActiveEventLoop) {
+        self.drain_ingress_messages();
+    }
+
     fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
+        self.drain_ingress_messages();
         if let Some(state) = self.state.as_ref() {
             state.window.request_redraw();
         }
@@ -354,6 +412,18 @@ impl NativeSceneState {
             .session_mut()
             .step_with_clock(clock, BundleStepInput::default());
         Ok(())
+    }
+
+    fn apply_ingress_message(&mut self, message: WindowedPatchIngressMessage) {
+        match message {
+            WindowedPatchIngressMessage::Enqueue(event) => {
+                self.runtime.push_patch_event(event);
+            }
+            WindowedPatchIngressMessage::RetainRejected { source, message } => {
+                self.runtime.retain_patch_ingress_rejection(source, message);
+            }
+        }
+        self.window.request_redraw();
     }
 
     fn prepare_frame(

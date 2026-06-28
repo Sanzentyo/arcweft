@@ -14,7 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-const PATCH_TRANSPORT_SCHEMA_VERSION: u32 = 1;
+pub const PATCH_TRANSPORT_SCHEMA_VERSION: u32 = 1;
 
 /// In-process patch endpoint for an AWFB-backed native player session.
 ///
@@ -100,7 +100,7 @@ pub enum NativePatchEndpointError {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-struct NativePatchTransportEnvelope {
+pub struct NativePatchTransportEnvelope {
     schema_version: u32,
     runner: String,
     source: String,
@@ -119,6 +119,102 @@ struct NativePatchTransportEnvelope {
 pub enum NativePatchTransportAction {
     ApplyPatch,
     RestartPlayer,
+}
+
+impl NativePatchTransportEnvelope {
+    /// Decodes and validates a local development patch transport envelope.
+    pub fn from_json_bytes(bytes: &[u8]) -> Result<Self, NativePatchEndpointError> {
+        let envelope: Self =
+            serde_json::from_slice(bytes).map_err(NativePatchEndpointError::DecodeTransport)?;
+        envelope.validate_header()?;
+        Ok(envelope)
+    }
+
+    /// Returns the requested transport action.
+    pub const fn action(&self) -> NativePatchTransportAction {
+        self.action
+    }
+
+    /// Returns the source label recorded in the transport sidecar.
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// Returns the referenced target bundle path string.
+    pub fn target_bundle(&self) -> &str {
+        &self.target_bundle
+    }
+
+    /// Returns the referenced patch bundle path string.
+    pub fn patch_bundle(&self) -> &str {
+        &self.patch_bundle
+    }
+
+    /// Parses the envelope's base content root digest.
+    pub fn base_content_root(&self) -> Result<BundleDigest, NativePatchEndpointError> {
+        parse_transport_digest(&self.base_content_root)
+    }
+
+    /// Parses the envelope's target content root digest.
+    pub fn target_content_root(&self) -> Result<BundleDigest, NativePatchEndpointError> {
+        parse_transport_digest(&self.target_content_root)
+    }
+
+    /// Resolves the sidecar's patch bundle path relative to the sidecar directory.
+    pub fn resolved_patch_bundle_path(&self, base_dir: &Path) -> PathBuf {
+        resolve_transport_path(base_dir, &self.patch_bundle)
+    }
+
+    /// Resolves the sidecar's target bundle path relative to the sidecar directory.
+    pub fn resolved_target_bundle_path(&self, base_dir: &Path) -> PathBuf {
+        resolve_transport_path(base_dir, &self.target_bundle)
+    }
+
+    fn validate_header(&self) -> Result<(), NativePatchEndpointError> {
+        if self.schema_version != PATCH_TRANSPORT_SCHEMA_VERSION {
+            return Err(NativePatchEndpointError::UnsupportedTransportSchema {
+                actual: self.schema_version,
+                expected: PATCH_TRANSPORT_SCHEMA_VERSION,
+            });
+        }
+        if !matches!(self.runner.as_str(), "native" | "headless" | "auto") {
+            return Err(NativePatchEndpointError::UnsupportedTransportRunner(
+                self.runner.clone(),
+            ));
+        }
+        for (field, value) in [
+            ("source", self.source.as_str()),
+            ("target_bundle", self.target_bundle.as_str()),
+            ("patch_bundle", self.patch_bundle.as_str()),
+        ] {
+            if value.trim().is_empty() {
+                return Err(NativePatchEndpointError::EmptyTransportField { field });
+            }
+        }
+        Ok(())
+    }
+}
+
+impl NativePatchTransportAction {
+    /// Stable transport label used in sidecar JSON.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::ApplyPatch => "apply_patch",
+            Self::RestartPlayer => "restart_player",
+        }
+    }
+
+    /// Returns the action expected for a patch compatibility class.
+    pub const fn for_compatibility(compatibility: PatchCompatibility) -> Self {
+        match compatibility {
+            PatchCompatibility::ContentOnly | PatchCompatibility::CodeCompatible => {
+                Self::ApplyPatch
+            }
+            PatchCompatibility::CodeGenerational | PatchCompatibility::RestartRequired => {
+                Self::RestartPlayer
+            }
+        }
+    }
 }
 
 impl NativePatchEndpoint {
@@ -238,8 +334,7 @@ impl NativePatchEndpoint {
         bytes: &[u8],
         base_dir: &Path,
     ) -> Result<Vec<u8>, NativePatchEndpointError> {
-        let envelope: NativePatchTransportEnvelope =
-            serde_json::from_slice(bytes).map_err(NativePatchEndpointError::DecodeTransport)?;
+        let envelope = NativePatchTransportEnvelope::from_json_bytes(bytes)?;
         Self::patch_bytes_from_transport_envelope(&envelope, base_dir)
     }
 
@@ -247,8 +342,7 @@ impl NativePatchEndpoint {
         envelope: &NativePatchTransportEnvelope,
         base_dir: &Path,
     ) -> Result<Vec<u8>, NativePatchEndpointError> {
-        validate_transport_envelope_header(envelope)?;
-        let patch_path = resolve_transport_path(base_dir, &envelope.patch_bundle);
+        let patch_path = envelope.resolved_patch_bundle_path(base_dir);
         let patch_bytes =
             fs::read(&patch_path).map_err(|error| NativePatchEndpointError::ReadPatch {
                 path: patch_path,
@@ -275,32 +369,6 @@ impl NativePatchEndpoint {
             content_root,
         })
     }
-}
-
-fn validate_transport_envelope_header(
-    envelope: &NativePatchTransportEnvelope,
-) -> Result<(), NativePatchEndpointError> {
-    if envelope.schema_version != PATCH_TRANSPORT_SCHEMA_VERSION {
-        return Err(NativePatchEndpointError::UnsupportedTransportSchema {
-            actual: envelope.schema_version,
-            expected: PATCH_TRANSPORT_SCHEMA_VERSION,
-        });
-    }
-    if !matches!(envelope.runner.as_str(), "native" | "headless" | "auto") {
-        return Err(NativePatchEndpointError::UnsupportedTransportRunner(
-            envelope.runner.clone(),
-        ));
-    }
-    for (field, value) in [
-        ("source", envelope.source.as_str()),
-        ("target_bundle", envelope.target_bundle.as_str()),
-        ("patch_bundle", envelope.patch_bundle.as_str()),
-    ] {
-        if value.trim().is_empty() {
-            return Err(NativePatchEndpointError::EmptyTransportField { field });
-        }
-    }
-    Ok(())
 }
 
 fn validate_transport_patch_metadata(
@@ -337,7 +405,8 @@ fn validate_transport_patch_metadata(
             artifact: artifact.plan.operations.len(),
         });
     }
-    let expected_action = transport_action_for_compatibility(artifact.manifest.compatibility);
+    let expected_action =
+        NativePatchTransportAction::for_compatibility(artifact.manifest.compatibility);
     if envelope.action != expected_action {
         return Err(NativePatchEndpointError::TransportActionMismatch {
             actual: envelope.action,
@@ -346,19 +415,6 @@ fn validate_transport_patch_metadata(
         });
     }
     Ok(())
-}
-
-const fn transport_action_for_compatibility(
-    compatibility: PatchCompatibility,
-) -> NativePatchTransportAction {
-    match compatibility {
-        PatchCompatibility::ContentOnly | PatchCompatibility::CodeCompatible => {
-            NativePatchTransportAction::ApplyPatch
-        }
-        PatchCompatibility::CodeGenerational | PatchCompatibility::RestartRequired => {
-            NativePatchTransportAction::RestartPlayer
-        }
-    }
 }
 
 fn resolve_transport_path(base_dir: &Path, value: &str) -> PathBuf {

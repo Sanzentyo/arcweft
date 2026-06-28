@@ -5,14 +5,20 @@ mod patch_endpoint;
 mod scene_windowed;
 mod window_driver;
 mod windowed;
+mod windowed_ingress;
 pub mod windowed_patch;
 mod windowed_runtime;
 
 pub use patch_endpoint::{
     NativePatchEndpoint, NativePatchEndpointError, NativePatchOutcome, NativePatchTransportAction,
+    NativePatchTransportEnvelope,
 };
-pub use scene_windowed::run_bundle_windowed;
+pub use scene_windowed::{run_bundle_windowed, run_bundle_windowed_with_ingress};
 pub use windowed::run_bundle_windowed as run_bundle_adapter_windowed;
+pub use windowed_ingress::{
+    WindowedLocalSidecar, WindowedPatchIngress, WindowedPatchIngressError,
+    WindowedPatchIngressReport, WindowedPatchIngressState, WindowedPatchTransportActionSet,
+};
 pub use windowed_runtime::{
     WindowedRuntimeOutcome, WindowedRuntimeOwner, WindowedRuntimeOwnerError,
 };
