@@ -3,7 +3,9 @@
 //! Native text APIs often report positions in UTF-16 code units. Arcweft text
 //! input carries canonical byte ranges, so adapters resolve native offsets
 //! through this immutable snapshot before emitting `PlatformTextInputEvent`
-//! values.
+//! values. The same snapshot also owns editor movement boundaries so Web,
+//! `TSF`, `AppKit`, `Wayland`, `Android`, and `iOS` adapters do not grow
+//! independent caret/deletion semantics.
 
 use crate::text_input::{TextByteOffset, TextRange, TextUtf16Offset};
 use core::fmt;
@@ -199,6 +201,200 @@ impl TextIndexSnapshot {
         let byte_range = self.byte_range_from_utf16(canonical)?;
         Ok(&self.text[byte_range.start().0 as usize..byte_range.end().0 as usize])
     }
+
+    /// Returns byte offsets for every valid UTF-8/UTF-16 boundary, including 0
+    /// and the end offset. Consumers that need editing movement should prefer
+    /// the grapheme/word methods below instead of interpreting this iterator as
+    /// user-visible caret stops.
+    pub fn byte_offsets(&self) -> impl Iterator<Item = TextByteOffset> + '_ {
+        self.boundaries
+            .iter()
+            .map(|boundary| TextByteOffset(boundary.byte))
+    }
+
+    /// Validates that a byte offset is a canonical character boundary in this
+    /// snapshot and returns it unchanged.
+    pub fn validate_byte_offset(
+        &self,
+        offset: TextByteOffset,
+    ) -> Result<TextByteOffset, TextIndexError> {
+        self.utf16_offset_for_byte(offset).map(|_| offset)
+    }
+
+    /// Validates that a byte range is ordered and lies on canonical text
+    /// boundaries. Invalid ranges are rejected; they are never silently clamped.
+    pub fn validate_byte_range(
+        &self,
+        range: TextRange<TextByteOffset>,
+    ) -> Result<TextRange<TextByteOffset>, TextIndexError> {
+        if range.start().0 > range.end().0 {
+            return Err(TextIndexError::InvertedByteRange {
+                start: *range.start(),
+                end: *range.end(),
+            });
+        }
+        self.validate_byte_offset(*range.start())?;
+        self.validate_byte_offset(*range.end())?;
+        Ok(range)
+    }
+
+    /// Returns true when the range is collapsed.
+    pub fn range_is_collapsed(&self, range: TextRange<TextByteOffset>) -> bool {
+        range.start() == range.end()
+    }
+
+    /// Moves to the previous Unicode scalar boundary. This is exposed for native
+    /// APIs whose deletion unit is scalar rather than user-visible grapheme.
+    pub fn previous_scalar_boundary(
+        &self,
+        offset: TextByteOffset,
+    ) -> Result<TextByteOffset, TextIndexError> {
+        self.validate_byte_offset(offset)?;
+        Ok(self
+            .byte_offsets()
+            .take_while(|candidate| candidate.0 < offset.0)
+            .last()
+            .unwrap_or(TextByteOffset(0)))
+    }
+
+    /// Moves to the next Unicode scalar boundary.
+    pub fn next_scalar_boundary(
+        &self,
+        offset: TextByteOffset,
+    ) -> Result<TextByteOffset, TextIndexError> {
+        self.validate_byte_offset(offset)?;
+        Ok(self
+            .byte_offsets()
+            .find(|candidate| candidate.0 > offset.0)
+            .unwrap_or_else(|| self.len_bytes()))
+    }
+
+    /// Moves to the previous shared Arcweft grapheme boundary. The implementation
+    /// is intentionally conservative and groups common combining marks,
+    /// variation selectors, regional indicators, emoji skin-tone modifiers, and
+    /// zero-width-joiner emoji runs so adapter-specific deletion code does not
+    /// split the cases covered by Arcweft fixtures.
+    pub fn previous_grapheme_boundary(
+        &self,
+        offset: TextByteOffset,
+    ) -> Result<TextByteOffset, TextIndexError> {
+        self.validate_byte_offset(offset)?;
+        Ok(self
+            .grapheme_boundaries()
+            .into_iter()
+            .take_while(|candidate| candidate.0 < offset.0)
+            .last()
+            .unwrap_or(TextByteOffset(0)))
+    }
+
+    /// Moves to the next shared Arcweft grapheme boundary.
+    pub fn next_grapheme_boundary(
+        &self,
+        offset: TextByteOffset,
+    ) -> Result<TextByteOffset, TextIndexError> {
+        self.validate_byte_offset(offset)?;
+        Ok(self
+            .grapheme_boundaries()
+            .into_iter()
+            .find(|candidate| candidate.0 > offset.0)
+            .unwrap_or_else(|| self.len_bytes()))
+    }
+
+    /// Moves to the previous word boundary. Word movement is defined over the
+    /// shared snapshot, not per adapter. It first skips whitespace/punctuation
+    /// left of the caret and then lands at the start of the preceding word-like
+    /// run.
+    pub fn previous_word_boundary(
+        &self,
+        offset: TextByteOffset,
+    ) -> Result<TextByteOffset, TextIndexError> {
+        self.validate_byte_offset(offset)?;
+        let mut last_word_start = TextByteOffset(0);
+        let mut in_word = false;
+        for (byte, ch) in self.text.char_indices() {
+            let current = TextByteOffset(u32::try_from(byte).unwrap_or(u32::MAX));
+            if current.0 >= offset.0 {
+                break;
+            }
+            let word = is_word_char(ch);
+            if word && !in_word {
+                last_word_start = current;
+            }
+            in_word = word;
+        }
+        Ok(last_word_start)
+    }
+
+    /// Moves to the next word boundary. It first skips the current word-like run
+    /// and then skips following non-word separators.
+    pub fn next_word_boundary(
+        &self,
+        offset: TextByteOffset,
+    ) -> Result<TextByteOffset, TextIndexError> {
+        self.validate_byte_offset(offset)?;
+        let mut seen_word = false;
+        let mut left_word = false;
+        for (byte, ch) in self.text.char_indices() {
+            let current = TextByteOffset(u32::try_from(byte).unwrap_or(u32::MAX));
+            if current.0 < offset.0 {
+                continue;
+            }
+            let word = is_word_char(ch);
+            if word {
+                seen_word = true;
+                if left_word {
+                    return Ok(current);
+                }
+            } else if seen_word {
+                left_word = true;
+            }
+        }
+        Ok(self.len_bytes())
+    }
+
+    /// Returns the closest valid byte offset for a horizontal hit-test character
+    /// slot. This is a presentation/editor rule, not a native range conversion:
+    /// invalid native offsets still use the fallible conversion APIs above.
+    pub fn byte_offset_for_grapheme_slot(&self, slot: usize) -> TextByteOffset {
+        self.grapheme_boundaries()
+            .into_iter()
+            .nth(slot)
+            .unwrap_or_else(|| self.len_bytes())
+    }
+
+    /// Shared grapheme boundaries used by movement, deletion, pointer hit-test,
+    /// and deterministic fixture geometry.
+    pub fn grapheme_boundaries(&self) -> Vec<TextByteOffset> {
+        let mut boundaries = vec![TextByteOffset(0)];
+        let mut previous_was_joiner = false;
+        let mut regional_indicator_run = 0_u8;
+        for (byte, ch) in self.text.char_indices() {
+            if byte == 0 {
+                previous_was_joiner = ch == '\u{200d}';
+                regional_indicator_run = u8::from(is_regional_indicator(ch));
+                continue;
+            }
+            let should_join_previous = previous_was_joiner
+                || is_grapheme_extend(ch)
+                || is_variation_selector(ch)
+                || is_emoji_modifier(ch)
+                || (is_regional_indicator(ch) && regional_indicator_run % 2 == 1);
+            if !should_join_previous {
+                boundaries.push(TextByteOffset(u32::try_from(byte).unwrap_or(u32::MAX)));
+            }
+            previous_was_joiner = ch == '\u{200d}';
+            regional_indicator_run = if is_regional_indicator(ch) {
+                regional_indicator_run.saturating_add(1)
+            } else {
+                0
+            };
+        }
+        let end = self.len_bytes();
+        if boundaries.last().copied() != Some(end) {
+            boundaries.push(end);
+        }
+        boundaries
+    }
 }
 
 const fn char_utf8_len_u32(ch: char) -> u32 {
@@ -217,6 +413,54 @@ const fn char_utf16_len_u32(ch: char) -> u32 {
         2 => 2,
         _ => unreachable!(),
     }
+}
+
+fn is_word_char(ch: char) -> bool {
+    ch == '_'
+        || ch.is_alphanumeric()
+        || matches!(ch, '\u{3040}'..='\u{30ff}' | '\u{3400}'..='\u{9fff}')
+}
+
+fn is_grapheme_extend(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{0300}'..='\u{036f}'
+            | '\u{0483}'..='\u{0489}'
+            | '\u{0591}'..='\u{05bd}'
+            | '\u{05bf}'
+            | '\u{05c1}'..='\u{05c2}'
+            | '\u{05c4}'..='\u{05c5}'
+            | '\u{05c7}'
+            | '\u{0610}'..='\u{061a}'
+            | '\u{064b}'..='\u{065f}'
+            | '\u{0670}'
+            | '\u{06d6}'..='\u{06dc}'
+            | '\u{06df}'..='\u{06e4}'
+            | '\u{06e7}'..='\u{06e8}'
+            | '\u{06ea}'..='\u{06ed}'
+            | '\u{0900}'..='\u{0903}'
+            | '\u{093a}'
+            | '\u{093c}'
+            | '\u{0941}'..='\u{0948}'
+            | '\u{094d}'
+            | '\u{0951}'..='\u{0957}'
+            | '\u{1ab0}'..='\u{1aff}'
+            | '\u{1dc0}'..='\u{1dff}'
+            | '\u{20d0}'..='\u{20ff}'
+            | '\u{fe20}'..='\u{fe2f}'
+    )
+}
+
+fn is_variation_selector(ch: char) -> bool {
+    matches!(ch, '\u{fe00}'..='\u{fe0f}' | '\u{e0100}'..='\u{e01ef}')
+}
+
+fn is_emoji_modifier(ch: char) -> bool {
+    matches!(ch, '\u{1f3fb}'..='\u{1f3ff}')
+}
+
+fn is_regional_indicator(ch: char) -> bool {
+    matches!(ch, '\u{1f1e6}'..='\u{1f1ff}')
 }
 
 impl fmt::Display for TextIndexError {

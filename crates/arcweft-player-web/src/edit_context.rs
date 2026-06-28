@@ -9,11 +9,12 @@ use arcweft_presentation::input::{InputEpoch, InteractionTarget};
 use arcweft_presentation::text_index::{TextIndexError, TextIndexSnapshot};
 use arcweft_presentation::text_input::{
     CompositionEndReason, PlatformTextInputContext, PlatformTextInputEvent, PlatformTextSelection,
-    TextByteOffset, TextCommit, TextCompositionUpdate, TextInputAdapterKind, TextInputCapabilities,
-    TextInputCapabilitySupport, TextInputClientSnapshot, TextInputFocusGeneration,
-    TextInputGeometrySnapshot, TextInputHostCommand, TextInputKeyDisposition, TextInputOperation,
-    TextInputSecurityPolicy, TextInputSerial, TextInputSessionId, TextRange, TextRevision,
-    TextSelectionAffinity, TextUtf16Offset, WebTextInputApiSupport,
+    TextByteOffset, TextCommit, TextCompositionUpdate, TextEditCommand, TextInputAdapterKind,
+    TextInputCapabilities, TextInputCapabilitySupport, TextInputClientSnapshot,
+    TextInputFocusGeneration, TextInputGeometrySnapshot, TextInputHostCommand,
+    TextInputKeyDisposition, TextInputOperation, TextInputSecurityPolicy, TextInputSerial,
+    TextInputSessionId, TextRange, TextRevision, TextSelectionAffinity, TextUtf16Offset,
+    WebTextInputApiSupport,
 };
 use arcweft_runtime_host::text_input_dispatch::{
     TextInputDispatchError, TextInputDispatchOutput, TextInputDispatchState,
@@ -278,6 +279,19 @@ impl WebEditContextAdapter {
         geometry: &TextInputGeometrySnapshot,
     ) -> Result<TextInputHostCommand, WebEditContextError> {
         Ok(self.dispatch.update_geometry(geometry)?)
+    }
+
+    pub fn dispatch_command(
+        &mut self,
+        epoch: InputEpoch,
+        command: TextEditCommand,
+    ) -> Result<TextInputDispatchOutput, WebEditContextError> {
+        let context = self.next_context()?;
+        Ok(self.dispatch.dispatch_platform_event(
+            epoch,
+            PlatformTextInputEvent::Command { context, command },
+            TextInputKeyDisposition::ShortcutCandidate,
+        )?)
     }
 
     fn platform_event_for_text_update(

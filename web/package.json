@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/webgpu-canvas-smoke.mjs"
+    "test": "node tests/webgpu-canvas-smoke.mjs",
+    "test:ime": "node tests/ime-sample-source.mjs && node tests/player-editcontext-glue-unit.mjs && node tests/player-editcontext-caret-selection-unit.mjs && node tests/ime-sample-smoke.mjs"
   },
   "devDependencies": {
     "playwright": "1.61.0"

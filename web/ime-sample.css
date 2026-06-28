@@ -108,6 +108,7 @@ h1 {
 }
 
 .ime-surface {
+  position: relative;
   min-height: 240px;
   padding: clamp(18px, 3vw, 30px);
   box-sizing: border-box;
@@ -120,8 +121,25 @@ h1 {
   font-size: clamp(1.35rem, 4vw, 2.4rem);
   line-height: 1.7;
   outline: none;
+  caret-color: transparent;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.ime-surface.arcweft-editcontext-host {
+  caret-color: transparent;
+}
+
+.arcweft-selection {
+  background: rgb(100 210 200 / 28%);
+}
+
+.arcweft-composition {
+  text-decoration-line: underline;
+  text-decoration-style: double;
+  text-decoration-color: var(--accent-2);
+  text-underline-offset: 0.18em;
+  background: rgb(246 204 102 / 14%);
 }
 
 .ime-surface:focus {
@@ -143,12 +161,20 @@ h1 {
 }
 
 .caret {
-  display: inline-block;
+  position: absolute;
+  display: block;
+  left: var(--arcweft-caret-x, 18px);
+  top: var(--arcweft-caret-y, 18px);
   width: 2px;
-  height: 1.08em;
-  margin-left: 1px;
-  vertical-align: -0.16em;
+  height: var(--arcweft-caret-h, 1.08em);
+  margin-left: 0;
+  vertical-align: initial;
   background: var(--accent);
+  pointer-events: none;
+}
+
+.arcweft-editcontext-host .caret {
+  display: block;
 }
 
 .sample-grid {

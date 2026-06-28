@@ -1093,7 +1093,7 @@ impl TextInputClientSnapshot {
             selection: TextRange::new(TextByteOffset(0), TextByteOffset(0)),
             composition: None,
             control_rect: self.control_rect,
-            caret_rect: self.caret_rect,
+            caret_rect: self.control_rect,
             character_bounds: Vec::new(),
             options: self.options.clone().secure(true),
         }
@@ -1183,8 +1183,8 @@ impl TextInputGeometrySnapshot {
             text_local_control_rect: self.text_local_control_rect,
             viewport_control_rect: self.viewport_control_rect,
             screen_control_rect: self.screen_control_rect,
-            viewport_caret_rect: self.viewport_caret_rect,
-            screen_caret_rect: self.screen_caret_rect,
+            viewport_caret_rect: self.viewport_control_rect,
+            screen_caret_rect: self.screen_control_rect,
             screen_character_bounds: Vec::new(),
         }
     }

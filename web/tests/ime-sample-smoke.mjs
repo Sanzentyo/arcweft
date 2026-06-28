@@ -40,8 +40,7 @@ async function serveFile(request, response) {
     return;
   }
   response.writeHead(200, {
-    "content-type": contentTypes.get(extname(fullPath).toLowerCase()) ??
-      "application/octet-stream",
+    "content-type": contentTypes.get(extname(fullPath).toLowerCase()) ?? "application/octet-stream",
   });
   createReadStream(fullPath).pipe(response);
 }
@@ -81,18 +80,32 @@ try {
   await page.goto(`${baseUrl}/ime-sample.html`);
   await page.locator("#arcweft-ime-surface").focus();
   await page.waitForSelector("#ime-sample-status[data-state]");
-  const state = await page.locator("#ime-sample-status").getAttribute("data-state");
-  const fonts = await page.locator("#ime-sample-fonts").textContent();
-  if (!["ready", "unsupported"].includes(state)) {
-    throw new Error(`unexpected IME sample state: ${state}`);
+  await page.waitForFunction(() => {
+    const state = document.getElementById("ime-sample-status")?.dataset.state;
+    return state === "ready" || state === "unsupported";
+  });
+  const result = await page.evaluate(() => ({
+    state: document.getElementById("ime-sample-status").dataset.state,
+    fonts: document.getElementById("ime-sample-fonts").textContent,
+    owner: window.__arcweftImeSampleGlueOwner,
+    fallbackInstalled: window.__arcweftImeSampleFallbackInstalled,
+  }));
+  if (!["ready", "unsupported"].includes(result.state)) {
+    throw new Error(`unexpected IME sample state: ${result.state}`);
   }
-  if (!fonts.includes("Arcweft Demo") || !fonts.includes("Noto Sans JP")) {
-    throw new Error(`font stack status did not include expected fonts: ${fonts}`);
+  if (result.owner !== "arcweft-player") {
+    throw new Error(`sample was not installed by Arcweft player glue: ${result.owner}`);
+  }
+  if (result.fallbackInstalled !== false) {
+    throw new Error("sample installed a forbidden fallback");
+  }
+  if (!result.fonts.includes("Arcweft Demo") || !result.fonts.includes("Noto Sans JP")) {
+    throw new Error(`font stack status did not include expected fonts: ${result.fonts}`);
   }
   if (errors.length > 0) {
     throw new Error(`browser console errors:\n${errors.join("\n")}`);
   }
-  console.log(JSON.stringify({ sample: "web-ime-smoke", state, fonts }));
+  console.log(JSON.stringify({ sample: "web-ime-player-owned-smoke", ...result }));
 } finally {
   await browser.close();
   await closeServer(server);
