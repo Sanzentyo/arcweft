@@ -326,17 +326,25 @@ fn run_watch_target(
     mut initial_bundle: ArcweftBundle,
     mut phases: Vec<crate::output::RuntimeProfilePhase>,
 ) -> Result<(), ExitCode> {
+    if matches!(runner, CliRuntimeRunner::Native) {
+        return run_native_windowed_watch_target(
+            options.clone(),
+            selection.clone(),
+            initial_bundle,
+            phases,
+        );
+    }
+
     let output_dir = match runner {
-        CliRuntimeRunner::Native => RUN_BUNDLE_DIR,
         CliRuntimeRunner::Web => WEB_LOCAL_BUNDLE_DIR,
         CliRuntimeRunner::Auto | CliRuntimeRunner::Headless => {
             unreachable!("watch runner resolved")
         }
+        CliRuntimeRunner::Native => unreachable!("native watch returned above"),
     };
     let output = run_bundle_output_path(selection, output_dir);
     apply_watch_entry_override(options, &mut initial_bundle);
     let mut base_bytes = write_watch_bundle(&output, &initial_bundle, &mut phases)?;
-    let mut native_watch_endpoint = start_native_watch_endpoint(runner, &base_bytes)?;
     let mut inputs = watch_inputs(selection)?;
     println!(
         "watch: built {} ({} input(s), runner={})",
@@ -384,8 +392,6 @@ fn run_watch_target(
                 })?;
                 let patch_output = watch_patch_output_path(selection, &artifact);
                 write_patch_bundle_artifact(&patch_output, patch_bytes)?;
-                let native_endpoint_outcome =
-                    apply_native_watch_patch(&mut native_watch_endpoint, &patch_output)?;
                 write_bundle_artifact(&output, next_bytes.clone(), &mut next_phases)?;
                 let transport_output = write_watch_patch_transport_envelope(
                     selection,
@@ -395,17 +401,128 @@ fn run_watch_target(
                     &artifact,
                 )?;
                 println!(
-                    "watch: patch {} ({} operation(s), compatibility={}, transport={}, action={}{})",
+                    "watch: patch {} ({} operation(s), compatibility={}, transport={}, action={})",
+                    patch_output.display(),
+                    artifact.plan.operations.len(),
+                    artifact.manifest.compatibility.label(),
+                    transport_output.display(),
+                    watch_patch_transport_action(artifact.manifest.compatibility).label()
+                );
+                base_bytes = next_bytes;
+                inputs = next_inputs;
+            }
+            Err(code) => {
+                eprintln!("watch: rebuild failed; keeping previous bundle active");
+                if max_iterations.is_some() {
+                    return Err(code);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "native-player")]
+fn run_native_windowed_watch_target(
+    options: RuntimeRunOptions,
+    selection: SourceSelection,
+    mut initial_bundle: ArcweftBundle,
+    mut phases: Vec<crate::output::RuntimeProfilePhase>,
+) -> Result<(), ExitCode> {
+    let output = run_bundle_output_path(&selection, RUN_BUNDLE_DIR);
+    apply_watch_entry_override(&options, &mut initial_bundle);
+    let base_bytes = write_watch_bundle(&output, &initial_bundle, &mut phases)?;
+    let inputs = watch_inputs(&selection)?;
+    println!(
+        "watch: built {} ({} input(s), runner=native, ingress=windowed-event-loop)",
+        output.display(),
+        inputs.len(),
+    );
+    run_native_bundle_with_ingress(initial_bundle, options.steps, move |ingress| {
+        thread::spawn(move || {
+            if let Err(code) = native_windowed_watch_producer_loop(
+                &options, &selection, &output, base_bytes, inputs, &ingress,
+            ) {
+                eprintln!("watch: native windowed producer stopped with {code:?}");
+            }
+        });
+    })
+}
+
+#[cfg(not(feature = "native-player"))]
+fn run_native_windowed_watch_target(
+    _options: RuntimeRunOptions,
+    _selection: SourceSelection,
+    _initial_bundle: ArcweftBundle,
+    _phases: Vec<crate::output::RuntimeProfilePhase>,
+) -> Result<(), ExitCode> {
+    eprintln!("error: native player support is not enabled for this arcw build");
+    Err(ExitCode::from(2))
+}
+
+#[cfg(feature = "native-player")]
+fn native_windowed_watch_producer_loop(
+    options: &RuntimeRunOptions,
+    selection: &SourceSelection,
+    output: &Path,
+    mut base_bytes: Vec<u8>,
+    mut inputs: BTreeMap<PathBuf, WatchFileState>,
+    ingress: &arcweft_player_native::WindowedPatchIngress,
+) -> Result<(), ExitCode> {
+    let max_iterations = (options.watch_iterations > 0).then_some(options.watch_iterations);
+    let mut iterations = 0_usize;
+    loop {
+        if max_iterations.is_some_and(|max| iterations >= max) {
+            return Ok(());
+        }
+        iterations = iterations.saturating_add(1);
+        thread::sleep(Duration::from_millis(options.watch_poll_ms));
+        let next_inputs = watch_inputs(selection)?;
+        if next_inputs == inputs {
+            continue;
+        }
+        let mut next_phases = Vec::new();
+        match compile_watch_bundle(options, selection, &mut next_phases) {
+            Ok(next_bundle) => {
+                let next_bytes =
+                    next_bundle
+                        .to_format_bytes(BundleFormat::Awfb)
+                        .map_err(|error| {
+                            eprintln!("error: failed to encode watched bundle: {error}");
+                            ExitCode::FAILURE
+                        })?;
+                let artifact =
+                    build_patch_bundle_artifact_from_awfb_bytes(&base_bytes, &next_bytes)?;
+                let patch_bytes = encode_patch_bundle(&artifact).map_err(|error| {
+                    eprintln!("error: failed to encode watched patch bundle: {error}");
+                    ExitCode::FAILURE
+                })?;
+                let patch_output = watch_patch_output_path(selection, &artifact);
+                write_patch_bundle_artifact(&patch_output, patch_bytes.clone())?;
+                write_bundle_artifact(output, next_bytes.clone(), &mut next_phases)?;
+                let transport_output = write_watch_patch_transport_envelope(
+                    selection,
+                    CliRuntimeRunner::Native,
+                    output,
+                    &patch_output,
+                    &artifact,
+                )?;
+                let accepted = ingress
+                    .push_patch_bundle_bytes(
+                        patch_bytes,
+                        arcweft_player_native::windowed_patch::PatchEventSource::WatchChannel,
+                    )
+                    .map_err(|error| {
+                        eprintln!("error: native windowed patch ingress rejected patch: {error}");
+                        ExitCode::FAILURE
+                    })?;
+                println!(
+                    "watch: patch {} ({} operation(s), compatibility={}, transport={}, action={}, ingress_sequence={})",
                     patch_output.display(),
                     artifact.plan.operations.len(),
                     artifact.manifest.compatibility.label(),
                     transport_output.display(),
                     watch_patch_transport_action(artifact.manifest.compatibility).label(),
-                    native_endpoint_outcome
-                        .as_deref()
-                        .map_or_else(String::new, |outcome| format!(
-                            ", native_endpoint={outcome}"
-                        ))
+                    accepted.sequence,
                 );
                 base_bytes = next_bytes;
                 inputs = next_inputs;
@@ -559,84 +676,6 @@ fn watch_patch_transport_output_path(patch_bundle: &Path) -> PathBuf {
     let mut output = patch_bundle.to_path_buf();
     output.set_extension("transport.json");
     output
-}
-
-#[cfg(feature = "native-player")]
-type NativeWatchEndpoint = Option<arcweft_player_native::NativePatchEndpoint>;
-
-#[cfg(not(feature = "native-player"))]
-type NativeWatchEndpoint = ();
-
-#[cfg(feature = "native-player")]
-fn start_native_watch_endpoint(
-    runner: CliRuntimeRunner,
-    base_awfb_bytes: &[u8],
-) -> Result<NativeWatchEndpoint, ExitCode> {
-    if !matches!(runner, CliRuntimeRunner::Native) {
-        return Ok(None);
-    }
-    arcweft_player_native::NativePatchEndpoint::from_awfb_bytes(
-        base_awfb_bytes.to_vec(),
-        arcweft_runtime_driver::session::BundleSessionOptions::default(),
-    )
-    .map(Some)
-    .map_err(|error| {
-        eprintln!("error: failed to start native watch patch endpoint: {error}");
-        ExitCode::FAILURE
-    })
-}
-
-#[cfg(not(feature = "native-player"))]
-fn start_native_watch_endpoint(
-    runner: CliRuntimeRunner,
-    _base_awfb_bytes: &[u8],
-) -> Result<NativeWatchEndpoint, ExitCode> {
-    if matches!(runner, CliRuntimeRunner::Native) {
-        eprintln!("error: native player support is not enabled for this arcw build");
-        return Err(ExitCode::from(2));
-    }
-    Ok(())
-}
-
-#[cfg(feature = "native-player")]
-fn apply_native_watch_patch(
-    endpoint: &mut NativeWatchEndpoint,
-    patch_path: &Path,
-) -> Result<Option<String>, ExitCode> {
-    let Some(endpoint) = endpoint.as_mut() else {
-        return Ok(None);
-    };
-    let patch_bytes = fs::read(patch_path).map_err(|error| {
-        eprintln!(
-            "error: failed to read watched patch for native endpoint {}: {error}",
-            patch_path.display()
-        );
-        ExitCode::FAILURE
-    })?;
-    endpoint
-        .apply_patch_bytes(&patch_bytes)
-        .map(|outcome| Some(native_watch_outcome_label(&outcome).to_owned()))
-        .map_err(|error| {
-            eprintln!("error: native watch patch endpoint rejected patch: {error}");
-            ExitCode::FAILURE
-        })
-}
-
-#[cfg(not(feature = "native-player"))]
-fn apply_native_watch_patch(
-    _endpoint: &mut NativeWatchEndpoint,
-    _patch_path: &Path,
-) -> Result<Option<String>, ExitCode> {
-    Ok(None)
-}
-
-#[cfg(feature = "native-player")]
-fn native_watch_outcome_label(outcome: &arcweft_player_native::NativePatchOutcome) -> &'static str {
-    match outcome {
-        arcweft_player_native::NativePatchOutcome::Noop { .. } => "noop",
-        arcweft_player_native::NativePatchOutcome::Applied { .. } => "applied",
-        arcweft_player_native::NativePatchOutcome::Restarted { .. } => "restarted",
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -831,6 +870,23 @@ fn run_native_bundle(bundle: ArcweftBundle, steps: usize) -> Result<(), ExitCode
         eprintln!("error: native player failed: {error}");
         ExitCode::FAILURE
     })
+}
+
+#[cfg(feature = "native-player")]
+fn run_native_bundle_with_ingress<F>(
+    bundle: ArcweftBundle,
+    steps: usize,
+    ingress_ready: F,
+) -> Result<(), ExitCode>
+where
+    F: FnOnce(arcweft_player_native::WindowedPatchIngress) + Send + 'static,
+{
+    arcweft_player_native::run_bundle_windowed_with_ingress(bundle, steps, ingress_ready).map_err(
+        |error| {
+            eprintln!("error: native player failed: {error}");
+            ExitCode::FAILURE
+        },
+    )
 }
 
 #[cfg(not(feature = "native-player"))]
@@ -1068,6 +1124,25 @@ name = "watch_virtual_addition_test"
         assert_eq!(json["patch_bundle"], patch_bundle.display().to_string());
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn native_watch_uses_windowed_ingress_instead_of_standalone_endpoint() {
+        let source = include_str!("run.rs");
+        let native_watch_start = source
+            .find("fn run_native_windowed_watch_target(")
+            .expect("native watch target helper exists");
+        let after_native_watch = &source[native_watch_start..];
+        let native_watch_end = after_native_watch
+            .find("fn has_headless_debug_options_for_watch(")
+            .expect("native watch helper ends before common watch helpers");
+        let native_watch_body = &after_native_watch[..native_watch_end];
+
+        assert!(native_watch_body.contains("run_native_bundle_with_ingress"));
+        assert!(native_watch_body.contains("push_patch_bundle_bytes"));
+        assert!(!native_watch_body.contains("NativePatchEndpoint"));
+        assert!(!native_watch_body.contains("start_native_watch_endpoint"));
+        assert!(!native_watch_body.contains("apply_native_watch_patch"));
     }
 
     #[test]

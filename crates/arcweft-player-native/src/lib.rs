@@ -16,8 +16,9 @@ pub use patch_endpoint::{
 pub use scene_windowed::{run_bundle_windowed, run_bundle_windowed_with_ingress};
 pub use windowed::run_bundle_windowed as run_bundle_adapter_windowed;
 pub use windowed_ingress::{
-    WindowedLocalSidecar, WindowedPatchIngress, WindowedPatchIngressError,
-    WindowedPatchIngressReport, WindowedPatchIngressState, WindowedPatchTransportActionSet,
+    WindowedLocalSidecar, WindowedPatchIngress, WindowedPatchIngressAccepted,
+    WindowedPatchIngressConfig, WindowedPatchIngressError, WindowedPatchIngressErrorKind,
+    WindowedPatchIngressReport, WindowedPatchIngressReportState, WindowedPatchTransportActionSet,
 };
 pub use windowed_runtime::{
     WindowedRuntimeOutcome, WindowedRuntimeOwner, WindowedRuntimeOwnerError,

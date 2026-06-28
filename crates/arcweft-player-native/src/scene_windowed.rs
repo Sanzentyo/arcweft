@@ -1,6 +1,7 @@
 use crate::NativePlayerError;
 use crate::windowed_ingress::{
-    WindowedPatchIngress, WindowedPatchIngressMessage, WindowedPatchIngressReceiver,
+    WindowedPatchIngress, WindowedPatchIngressCompletion, WindowedPatchIngressConfig,
+    WindowedPatchIngressMessage, WindowedPatchIngressReceiver,
 };
 use crate::windowed_patch::FrameBoundary;
 use crate::windowed_runtime::{
@@ -95,6 +96,7 @@ struct NativeSceneApp {
     bundle: Option<ArcweftBundle>,
     state: Option<NativeSceneState>,
     ingress: WindowedPatchIngressReceiver,
+    ingress_completion: WindowedPatchIngressCompletion,
     pending_ingress: VecDeque<WindowedPatchIngressMessage>,
     error: Arc<Mutex<Option<String>>>,
 }
@@ -107,6 +109,7 @@ struct NativeSceneState {
     config: wgpu::SurfaceConfiguration,
     renderer: SharedRenderer,
     runtime: WindowedRuntimeOwner,
+    ingress_completion: WindowedPatchIngressCompletion,
     input: InputController,
     prepared: Option<arcweft_render_wgpu::geometry::PreparedFrame>,
     dialogue_visual_clock: DialogueVisualClock,
@@ -134,7 +137,11 @@ fn run_shared_scene_window_with_ingress(
 ) -> Result<(), NativeSceneWindowError> {
     let event_loop =
         EventLoop::new().map_err(|error| NativeSceneWindowError::EventLoop(error.to_string()))?;
-    let (ingress, ingress_rx) = WindowedPatchIngress::channel(event_loop.create_proxy());
+    let (ingress, ingress_rx) = WindowedPatchIngress::channel(
+        event_loop.create_proxy(),
+        WindowedPatchIngressConfig::default(),
+    );
+    let ingress_completion = ingress.completion();
     configure_ingress(ingress);
     let error = Arc::new(Mutex::new(None));
     event_loop
@@ -143,10 +150,12 @@ fn run_shared_scene_window_with_ingress(
             bundle: Some(bundle),
             state: None,
             ingress: ingress_rx,
+            ingress_completion: ingress_completion.clone(),
             pending_ingress: VecDeque::new(),
             error: Arc::clone(&error),
         })
         .map_err(|error| NativeSceneWindowError::EventLoop(error.to_string()))?;
+    ingress_completion.close("native player event loop exited");
     let error = error
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -159,6 +168,8 @@ fn run_shared_scene_window_with_ingress(
 
 impl NativeSceneApp {
     fn fail(&self, event_loop: &dyn ActiveEventLoop, error: String) {
+        self.ingress_completion
+            .close(format!("native scene failed: {error}"));
         *self
             .error
             .lock()
@@ -167,7 +178,7 @@ impl NativeSceneApp {
     }
 
     fn drain_ingress_messages(&mut self) {
-        let messages: Vec<_> = self.ingress.drain().collect();
+        let messages = self.ingress.drain();
         for message in messages {
             self.apply_ingress_message(message);
         }
@@ -214,7 +225,11 @@ impl ApplicationHandler for NativeSceneApp {
                 return;
             }
         };
-        match pollster::block_on(NativeSceneState::new(window, bundle)) {
+        match pollster::block_on(NativeSceneState::new(
+            window,
+            bundle,
+            self.ingress_completion.clone(),
+        )) {
             Ok(state) => {
                 self.state = Some(state);
                 self.drain_pending_ingress();
@@ -242,6 +257,7 @@ impl ApplicationHandler for NativeSceneApp {
         }
         let result = match event {
             WindowEvent::CloseRequested => {
+                self.ingress_completion.close("native player closed");
                 event_loop.exit();
                 Ok(())
             }
@@ -299,6 +315,7 @@ impl NativeSceneState {
     async fn new(
         window: Arc<dyn Window>,
         bundle: ArcweftBundle,
+        ingress_completion: WindowedPatchIngressCompletion,
     ) -> Result<Self, NativeSceneWindowError> {
         let instance = wgpu::Instance::default();
         let surface = instance
@@ -361,6 +378,7 @@ impl NativeSceneState {
             config,
             renderer,
             runtime,
+            ingress_completion,
             input: InputController::default(),
             prepared: None,
             dialogue_visual_clock: DialogueVisualClock::default(),
@@ -416,8 +434,11 @@ impl NativeSceneState {
 
     fn apply_ingress_message(&mut self, message: WindowedPatchIngressMessage) {
         match message {
-            WindowedPatchIngressMessage::Enqueue(event) => {
-                self.runtime.push_patch_event(event);
+            WindowedPatchIngressMessage::Enqueue(envelope) => {
+                let source = envelope.event.source();
+                self.ingress_completion
+                    .accepted_by_event_loop(envelope.sequence, source);
+                self.runtime.push_patch_event(envelope.event);
             }
             WindowedPatchIngressMessage::RetainRejected { source, message } => {
                 self.runtime.retain_patch_ingress_rejection(source, message);
@@ -508,6 +529,8 @@ impl NativeSceneState {
         let outcomes = self
             .runtime
             .drain_patch_boundary(FrameBoundary::AfterRenderSubmitted)?;
+        self.ingress_completion
+            .completed_at_frame_boundary(outcomes.len());
         if !outcomes.is_empty() {
             self.window.request_redraw();
         }
@@ -747,5 +770,17 @@ mod tests {
             "self.render(&prepared)?;\n        let patch_outcomes = self.drain_patch_events_after_render_submitted()?;"
         ));
         assert!(source.contains("FrameBoundary::AfterRenderSubmitted"));
+    }
+
+    #[test]
+    fn windowed_ingress_is_accepted_and_completed_by_event_loop_owner() {
+        let source = include_str!("scene_windowed.rs");
+
+        assert!(source.contains("WindowedPatchIngress::channel("));
+        assert!(source.contains("fn proxy_wake_up(&mut self, _event_loop: &dyn ActiveEventLoop)"));
+        assert!(source.contains("accepted_by_event_loop(envelope.sequence, source)"));
+        assert!(source.contains("self.runtime.push_patch_event(envelope.event)"));
+        assert!(source.contains("completed_at_frame_boundary(outcomes.len())"));
+        assert!(source.contains("ingress_completion.close(\"native player closed\")"));
     }
 }
