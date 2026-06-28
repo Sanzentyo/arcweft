@@ -258,6 +258,10 @@ pub(super) fn finish_agent_observation_report(
 
 pub(super) fn agent_observe_layout_scene_graph(viewport: &AgentViewport) -> serde_json::Value {
     let content_rect = agent_observe_content_rect(viewport);
+    let metadata = content_rect.fit_transform_metadata(
+        arcweft_layout::LayoutCoordinateSpace::Output,
+        arcweft_layout::LayoutCoordinateSpace::Output,
+    );
     serde_json::json!({
         "kind": "layout.viewport_scale",
         "renderer_kind": "native_rich_text_observer",
@@ -270,18 +274,49 @@ pub(super) fn agent_observe_layout_scene_graph(viewport: &AgentViewport) -> serd
             "width": AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH,
             "height": AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT
         },
-        "scale_policy": content_rect.policy.as_str(),
+        "coordinate_spaces": {
+            "design": metadata.design_space,
+            "content": metadata.content_space,
+            "output": metadata.output_space,
+            "serialized_geometry": metadata.serialized_geometry_space,
+            "hit_test_input": metadata.hit_test_input_space
+        },
+        "scale_policy": metadata.policy.as_str(),
         "content_rect": {
-            "x": content_rect.rect.origin.x,
-            "y": content_rect.rect.origin.y,
-            "width": content_rect.rect.size.width,
-            "height": content_rect.rect.size.height
+            "x": metadata.content_rect.origin.x,
+            "y": metadata.content_rect.origin.y,
+            "width": metadata.content_rect.size.width,
+            "height": metadata.content_rect.size.height
+        },
+        "visible_output_rect": {
+            "x": metadata.visible_output_rect.origin.x,
+            "y": metadata.visible_output_rect.origin.y,
+            "width": metadata.visible_output_rect.size.width,
+            "height": metadata.visible_output_rect.size.height
+        },
+        "visible_design_rect": {
+            "x": metadata.visible_design_rect.origin.x,
+            "y": metadata.visible_design_rect.origin.y,
+            "width": metadata.visible_design_rect.size.width,
+            "height": metadata.visible_design_rect.size.height
+        },
+        "bars": {
+            "top": metadata.bars.top,
+            "right": metadata.bars.right,
+            "bottom": metadata.bars.bottom,
+            "left": metadata.bars.left
+        },
+        "crop": {
+            "top": metadata.crop.top,
+            "right": metadata.crop.right,
+            "bottom": metadata.crop.bottom,
+            "left": metadata.crop.left
         },
         "scale": {
-            "x": content_rect.scale_x,
-            "y": content_rect.scale_y
+            "x": metadata.scale_x,
+            "y": metadata.scale_y
         },
-        "raw_pixel_mode": content_rect.policy == arcweft_layout::ScalePolicy::Raw
+        "raw_pixel_mode": metadata.raw_pixel_mode
     })
 }
 
