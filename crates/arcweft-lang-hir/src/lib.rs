@@ -4,6 +4,7 @@
 //! passes, runtime-plan lowering, CLI, and LSP tooling should import HIR through
 //! this crate instead of reaching into parser internals.
 
+pub mod cache_facts;
 pub mod id_context;
 pub mod lower;
 pub mod lower_choice;

@@ -12,6 +12,7 @@ pub mod link;
 pub mod lower;
 pub mod object;
 pub mod parse;
+pub mod persistent;
 pub mod project;
 pub mod reachability;
 pub mod source;

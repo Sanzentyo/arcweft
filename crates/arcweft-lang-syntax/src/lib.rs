@@ -5,6 +5,7 @@
 //! type resolution or runtime semantics.
 
 pub mod ast;
+pub mod cache_facts;
 pub mod cst;
 pub mod expr;
 pub mod lint;
