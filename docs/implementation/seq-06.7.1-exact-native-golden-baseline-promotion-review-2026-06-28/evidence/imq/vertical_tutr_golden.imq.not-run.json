@@ -1,0 +1,25 @@
+{
+  "schema": "arcweft.exact_native_golden.imq.not_run.v1",
+  "fixture": "vertical_tutr_golden",
+  "status": "not_run",
+  "expected_path": "target/arcweft-native-capture-artifacts/vertical_tutr_golden.imq.json",
+  "expected_command": "imq image tests/fixtures/native_capture/vertical_tutr_golden.png target/arcweft-native-capture-artifacts/vertical_tutr_golden.candidate.png --metrics psnr,ssim,mse,mae,maxae --format json",
+  "expected_metrics": [
+    "psnr",
+    "ssim",
+    "mse",
+    "mae",
+    "maxae"
+  ],
+  "reason": "imq was not available locally and no pinned Windows candidate was generated.",
+  "historical_seq06_6_metrics": {
+    "dimensions": {
+      "width": 1280,
+      "height": 720
+    },
+    "mse": 0.0030918550895167305,
+    "mae": 0.004233718228315644,
+    "max_mse": 0.002,
+    "max_mae": 0.003
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "schema": "arcweft.package_generation_environment.v1",
+  "generated_unix_seconds": 1782650598,
+  "status": "not_pinned_windows_environment",
+  "os": {
+    "family": "linux",
+    "release": "4.4.0",
+    "version": "#1 SMP Sun Jan 10 15:06:54 PST 2016",
+    "machine": "x86_64"
+  },
+  "tools": {
+    "imq": null,
+    "just": null,
+    "cargo": null,
+    "git": "/usr/bin/git"
+  },
+  "source_access": "GitHub connector; no local checkout",
+  "probe_log": "evidence/command-logs/00-local-environment-probe.log"
+}

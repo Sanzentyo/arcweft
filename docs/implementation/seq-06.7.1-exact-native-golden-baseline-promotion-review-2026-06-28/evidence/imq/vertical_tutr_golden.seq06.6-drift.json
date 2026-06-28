@@ -1,0 +1,19 @@
+{
+  "schema": "arcweft.exact_native_golden.drift_evidence.v1",
+  "fixture": "vertical_tutr_golden",
+  "source": "seq06.6 target-checkout validation evidence from request",
+  "classification": "baseline_drift_requires_pinned_environment_review",
+  "dimensions": {
+    "width": 1280,
+    "height": 720
+  },
+  "metrics": {
+    "mse": 0.0030918550895167305,
+    "mae": 0.004233718228315644
+  },
+  "bounds": {
+    "max_mse": 0.002,
+    "max_mae": 0.003
+  },
+  "seq06_7_decision": "Do not refresh the checked-in PNG in this package. Retain future candidates under target/ with observe JSON, imq JSON, and environment fingerprint before promotion."
+}

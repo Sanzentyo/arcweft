@@ -1,0 +1,15 @@
+Required pinned commands were not executed in this sandbox because the environment was not Windows and did not contain the native capture stack.
+
+Required next commands:
+
+$env:ARW_EXACT_NATIVE_GOLDEN_REQUIRED = "1"
+$env:ARW_EXACT_NATIVE_GOLDEN_PINNED = "1"
+$env:ARW_EXACT_NATIVE_GOLDEN_BACKEND = "native_rich_text_observer"
+just test-visual-golden
+just native-visual-artifacts
+
+Expected artifacts:
+- target/arcweft-native-capture-artifacts/vertical_tutr_golden.candidate.png
+- target/arcweft-native-capture-artifacts/vertical_tutr_golden.observe.json
+- target/arcweft-native-capture-artifacts/vertical_tutr_golden.imq.json
+- target/arcweft-native-capture-artifacts/exact-native-golden.environment.json

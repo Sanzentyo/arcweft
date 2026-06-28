@@ -1,0 +1,79 @@
+{
+  "schema": "arcweft.exact_native_golden.environment.v1",
+  "generated_unix_seconds": 1782650598,
+  "status": "environment_blocker",
+  "blocker": {
+    "classification": "environment_blocker",
+    "code": "pinned_windows_run_not_executed",
+    "message": "Package-generation environment was not Windows and did not contain the pinned native capture stack."
+  },
+  "environment_required": true,
+  "environment_pinned": false,
+  "os": {
+    "family": "linux",
+    "arch": "x86_64",
+    "version_family": "4.4.0"
+  },
+  "renderer": {
+    "backend_path": "native_rich_text_observer",
+    "backend_env": null,
+    "arcw_binary": "target/release/arcw.exe"
+  },
+  "font": {
+    "requested_family": "MS Mincho",
+    "fallback_policy": "fixture source pins MS Mincho; exact baseline acceptance is blocked if the pinned family probe fails",
+    "windows_font_file": null,
+    "windows_font_file_exists": false
+  },
+  "viewport": {
+    "width": 1280,
+    "height": 720,
+    "device_scale": 1.0
+  },
+  "png": {
+    "format": "png",
+    "capture_command_format": "arcw agent observe --image png",
+    "color_format": "PNG bytes emitted by native Agent capture"
+  },
+  "arcweft": {
+    "commit": "b0b45b44b2dd34573d991839d950b58091c314b4",
+    "dirty": null,
+    "source_access": "GitHub connector inspection; no local checkout available for git status/hash-object."
+  },
+  "imq": {
+    "available": false,
+    "version": null,
+    "metrics": [
+      "psnr",
+      "ssim",
+      "mse",
+      "mae",
+      "maxae"
+    ]
+  },
+  "fixtures": [
+    {
+      "id": "vertical_tutr_golden",
+      "source": "tests/fixtures/native_capture/vertical_tutr_golden.arcw",
+      "source_sha": "878e3997fab3c239a5d3ca49f4ba31694b4b5edc",
+      "reference": "tests/fixtures/native_capture/vertical_tutr_golden.png",
+      "reference_sha": "18615fcee9c1ad9f9c24a65d94ad937a8d02544f",
+      "thresholds": {
+        "max_mse": 0.002,
+        "max_mae": 0.003
+      },
+      "candidate_png": {
+        "path": "target/arcweft-native-capture-artifacts/vertical_tutr_golden.candidate.png",
+        "exists": false
+      },
+      "observe_json": {
+        "path": "target/arcweft-native-capture-artifacts/vertical_tutr_golden.observe.json",
+        "exists": false
+      },
+      "metrics_json": {
+        "path": "target/arcweft-native-capture-artifacts/vertical_tutr_golden.imq.json",
+        "exists": false
+      }
+    }
+  ]
+}

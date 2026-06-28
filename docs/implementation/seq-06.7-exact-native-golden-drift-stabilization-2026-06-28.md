@@ -206,6 +206,13 @@ prove that a checked-in baseline replacement is valid. The next validation run
 must produce a complete candidate packet and then decide whether to promote a
 new reference.
 
+Seq06.7.1 performed that promotion review as far as the available package
+evidence allowed and deferred promotion again. The blocker is
+`pinned_windows_candidate_packet_missing`: no same-run Windows candidate PNG,
+observe JSON, `imq` JSON, or exact native environment fingerprint was available.
+The retained packet is
+`docs/implementation/seq-06.7.1-exact-native-golden-baseline-promotion-review-2026-06-28/`.
+
 ## Validation status
 
 The package was prepared from GitHub connector inspection of `main` after

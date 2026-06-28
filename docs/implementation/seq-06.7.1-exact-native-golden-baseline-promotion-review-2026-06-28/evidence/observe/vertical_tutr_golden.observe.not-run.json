@@ -1,0 +1,8 @@
+{
+  "schema": "arcweft.exact_native_golden.observe.not_run.v1",
+  "fixture": "vertical_tutr_golden",
+  "status": "not_run",
+  "expected_path": "target/arcweft-native-capture-artifacts/vertical_tutr_golden.observe.json",
+  "expected_command": "target/release/arcw.exe agent observe tests/fixtures/native_capture/vertical_tutr_golden.arcw --json --image png --out target/arcweft-native-capture-artifacts/vertical_tutr_golden.candidate.png --mode drain --steps 4 --max-ops 64",
+  "reason": "Pinned Windows native capture run was not available in the package-generation environment."
+}

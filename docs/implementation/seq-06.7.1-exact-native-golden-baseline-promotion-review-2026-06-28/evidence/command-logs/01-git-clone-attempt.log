@@ -1,0 +1,5 @@
+$ git clone --depth 1 https://github.com/Sanzentyo/arcweft.git /mnt/data/arcweft
+Cloning into '/mnt/data/arcweft'...
+fatal: unable to access 'https://github.com/Sanzentyo/arcweft.git/': Could not resolve host: github.com
+
+Result: local checkout was not available. Repository inputs were inspected through the GitHub connector instead.

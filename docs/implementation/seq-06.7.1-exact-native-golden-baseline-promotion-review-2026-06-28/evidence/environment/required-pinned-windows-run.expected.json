@@ -1,0 +1,30 @@
+{
+  "schema": "arcweft.exact_native_golden.required_pinned_run.v1",
+  "required_environment": {
+    "os": "windows",
+    "font": "MS Mincho",
+    "font_probe": "%WINDIR%\\Fonts\\msmincho.ttc",
+    "backend": "native_rich_text_observer",
+    "env": {
+      "ARW_EXACT_NATIVE_GOLDEN_REQUIRED": "1",
+      "ARW_EXACT_NATIVE_GOLDEN_PINNED": "1",
+      "ARW_EXACT_NATIVE_GOLDEN_BACKEND": "native_rich_text_observer"
+    },
+    "imq_metrics": [
+      "psnr",
+      "ssim",
+      "mse",
+      "mae",
+      "maxae"
+    ],
+    "viewport": {
+      "width": 1280,
+      "height": 720,
+      "device_scale": 1.0
+    }
+  },
+  "commands": [
+    "just test-visual-golden",
+    "just native-visual-artifacts"
+  ]
+}

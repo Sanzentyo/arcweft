@@ -1,0 +1,27 @@
+Inspected via GitHub connector:
+
+Repository: Sanzentyo/arcweft
+Revision inferred from search/fetch URLs: b0b45b44b2dd34573d991839d950b58091c314b4
+
+Files fetched/read:
+- AGENTS.md
+- docs/README.md
+- docs/00-overview/architecture.md
+- docs/reviews/requests/2026-06-28-seq-06.7.1-exact-native-golden-baseline-promotion-review-package.md
+- docs/implementation/seq-06.7-exact-native-golden-drift-stabilization-2026-06-28.md
+- fixtures/visual-smoke-goldens/exact-native-golden-policy.json
+- fixtures/native-golden-drift/vertical_tutr_golden.seq06.6-drift.json
+- fixtures/native-golden-drift/README.md
+- docs/implementation/test-execution-policy.md
+- docs/implementation/fixture-regeneration.md
+- tests/fixtures/native_capture/README.md
+- tests/fixtures/native_capture/vertical_tutr_golden.arcw
+- tests/fixtures/native_capture/vertical_tutr_golden.png metadata/sha
+- tests/fixtures/native_capture/vertical_jlreq_preset_loose_golden.arcw
+- tests/fixtures/native_capture/vertical_jlreq_preset_normal_golden.arcw
+- tests/fixtures/native_capture/vertical_lr_ruby_text_combine_golden.arcw
+- Justfile
+- tools/write-native-golden-fingerprint.rs
+- crates/arcweft-cli/tests/check/agent_observe_native/native_vertical.rs
+
+No GitHub workflow run artifacts were found for commit b0b45b44b2dd34573d991839d950b58091c314b4 through fetch_commit_workflow_runs.
