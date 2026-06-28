@@ -13,6 +13,7 @@ known-directories = ["dep:directories"]
 global-pointer = ["dep:enigo"]
 external-window-observe = ["dep:xcap"]
 macos-text-input = []
+macos-appkit-text-input = ["macos-text-input", "dep:serde", "dep:serde_json"]
 
 [dependencies]
 arcweft-desktop-contract = { path = "../arcweft-desktop-contract" }
@@ -23,18 +24,34 @@ enigo = { workspace = true, optional = true }
 getrandom.workspace = true
 num-traits = "0.2.19"
 rfd = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive"], optional = true }
+serde_json = { workspace = true, optional = true }
+thiserror.workspace = true
 xcap = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_System_Com",
+    "Win32_System_Ole",
+    "Win32_System_Variant",
     "Win32_UI_TextServices",
     "Win32_UI_WindowsAndMessaging",
 ] }
+windows-core.workspace = true
 
 [dev-dependencies]
 arcweft-id = { path = "../arcweft-id" }
 
-[lints]
-workspace = true
+# The workspace root forbids unsafe. Real TSF COM implementation needs an
+# audited, Windows-only exception in this adapter crate. Shared Sans I/O crates
+# keep the workspace-level forbid.
+[lints.rust]
+unsafe_code = "allow"
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+must_use_candidate = "allow"

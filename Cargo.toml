@@ -157,6 +157,7 @@ oxiz-solver = "0.2.1"
 png = "0.18.1"
 psd = "0.3.5"
 pollster = "0.4.0"
+raw-window-handle = "0.6.2"
 rayon = "1.12.0"
 rfd = "0.17.2"
 rowan = "0.16.1"
@@ -198,6 +199,7 @@ glyphon = "0.11.0"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 winit = "0.31.0-beta.2"
 windows = "0.62.2"
+windows-core = "0.62.2"
 xcap = "0.9.6"
 
 [workspace.lints.rust]

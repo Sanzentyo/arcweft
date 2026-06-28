@@ -732,7 +732,11 @@ dependencies = [
  "getrandom 0.4.3",
  "num-traits",
  "rfd",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
  "windows 0.62.2",
+ "windows-core 0.62.2",
  "xcap",
 ]
 
@@ -911,6 +915,7 @@ dependencies = [
  "arcweft-desktop-contract",
  "arcweft-desktop-native",
  "arcweft-host-adapter",
+ "arcweft-id",
  "arcweft-interaction-model",
  "arcweft-player-scene",
  "arcweft-presentation",
@@ -924,10 +929,12 @@ dependencies = [
  "num-traits",
  "png",
  "pollster",
+ "raw-window-handle",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
  "wgpu",
+ "windows 0.62.2",
  "winit",
 ]
 

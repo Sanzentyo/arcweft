@@ -1,0 +1,147 @@
+{
+  "metadata": {
+    "adapter": "windows_tsf",
+    "os": "Windows 11 or later - real host required",
+    "ime": "Microsoft Japanese IME",
+    "arcweft_sequence": "seq06.4b.2",
+    "secure_redaction": true,
+    "captured_at": "REPLACE_WITH_REAL_CAPTURE_TIMESTAMP",
+    "commit": "REPLACE_WITH_ARCWEFT_COMMIT"
+  },
+  "events": [
+    {
+      "index": 0,
+      "control": "TextField",
+      "kind": "activate",
+      "session": 1,
+      "generation": 1,
+      "redacted": false
+    },
+    {
+      "index": 1,
+      "control": "TextField",
+      "kind": "start_composition",
+      "session": 1,
+      "generation": 1,
+      "serial": 1,
+      "redacted": false
+    },
+    {
+      "index": 2,
+      "control": "TextField",
+      "kind": "set_composition",
+      "session": 1,
+      "generation": 1,
+      "serial": 2,
+      "redacted": false,
+      "preedit_len": 12,
+      "candidate_rect": {
+        "left": 24,
+        "top": 32,
+        "right": 25,
+        "bottom": 56
+      }
+    },
+    {
+      "index": 3,
+      "control": "TextField",
+      "kind": "candidate_geometry_query",
+      "session": 1,
+      "generation": 1,
+      "redacted": false,
+      "candidate_rect": {
+        "left": 24,
+        "top": 32,
+        "right": 25,
+        "bottom": 56
+      }
+    },
+    {
+      "index": 4,
+      "control": "TextField",
+      "kind": "set_selection",
+      "session": 1,
+      "generation": 1,
+      "serial": 3,
+      "redacted": false
+    },
+    {
+      "index": 5,
+      "control": "TextField",
+      "kind": "commit",
+      "session": 1,
+      "generation": 1,
+      "serial": 4,
+      "redacted": false,
+      "text": "日本語"
+    },
+    {
+      "index": 6,
+      "control": "TextArea",
+      "kind": "activate",
+      "session": 2,
+      "generation": 2,
+      "redacted": false
+    },
+    {
+      "index": 7,
+      "control": "TextArea",
+      "kind": "delete_surrounding",
+      "session": 2,
+      "generation": 2,
+      "serial": 5,
+      "redacted": false
+    },
+    {
+      "index": 8,
+      "control": "SecureField",
+      "kind": "activate",
+      "session": 3,
+      "generation": 3,
+      "redacted": true,
+      "text_len": 0
+    },
+    {
+      "index": 9,
+      "control": "SecureField",
+      "kind": "set_composition",
+      "session": 3,
+      "generation": 3,
+      "serial": 6,
+      "redacted": true,
+      "preedit_len": 0
+    },
+    {
+      "index": 10,
+      "control": "SecureField",
+      "kind": "candidate_geometry_query",
+      "session": 3,
+      "generation": 3,
+      "redacted": true,
+      "candidate_rect": {
+        "left": 24,
+        "top": 196,
+        "right": 544,
+        "bottom": 224
+      }
+    },
+    {
+      "index": 11,
+      "control": "SecureField",
+      "kind": "commit",
+      "session": 3,
+      "generation": 3,
+      "serial": 7,
+      "redacted": true,
+      "text_len": 0
+    },
+    {
+      "index": 12,
+      "control": "SecureField",
+      "kind": "deactivate",
+      "session": 3,
+      "generation": 3,
+      "redacted": true
+    }
+  ]
+}

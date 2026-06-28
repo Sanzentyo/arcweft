@@ -8,3 +8,6 @@ pub mod windows_tsf;
 
 #[cfg(all(target_os = "macos", feature = "macos-text-input"))]
 pub mod macos_text_input;
+
+#[cfg(all(target_os = "macos", feature = "macos-appkit-text-input"))]
+pub mod macos_appkit_bridge;

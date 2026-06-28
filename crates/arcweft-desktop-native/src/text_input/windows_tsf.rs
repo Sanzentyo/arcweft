@@ -12,6 +12,10 @@ mod display_attributes;
 mod edit_session;
 mod geometry;
 mod range;
+#[cfg(target_os = "windows")]
+pub mod real_ime;
+#[cfg(target_os = "windows")]
+pub(crate) mod unsafe_com;
 
 pub use activation::{WindowsTsfActivation, WindowsTsfActivationDiagnostic, WindowsTsfAdapter};
 pub use capabilities::{

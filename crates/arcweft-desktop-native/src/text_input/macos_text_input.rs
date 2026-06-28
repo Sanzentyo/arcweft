@@ -10,10 +10,10 @@ use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::text_index::{TextIndexError, TextIndexSnapshot};
 use arcweft_presentation::text_input::{
     CompositionEndReason, PlatformTextInputContext, PlatformTextInputEvent, PlatformTextSelection,
-    TextByteOffset, TextCharacterBounds, TextCommit, TextCompositionUpdate, TextInputAdapterKind,
-    TextInputClientSnapshot, TextInputFocusGeneration, TextInputGeometrySnapshot,
-    TextInputOperation, TextInputSecurityPolicy, TextInputSerial, TextInputSessionId, TextRange,
-    TextRevision, TextSelectionAffinity, TextUtf16Offset,
+    TextByteOffset, TextCharacterBounds, TextCommit, TextCompositionUpdate, TextEditCommand,
+    TextInputAdapterKind, TextInputClientSnapshot, TextInputFocusGeneration,
+    TextInputGeometrySnapshot, TextInputOperation, TextInputSecurityPolicy, TextInputSerial,
+    TextInputSessionId, TextRange, TextRevision, TextSelectionAffinity, TextUtf16Offset,
 };
 use core::fmt;
 
@@ -207,7 +207,9 @@ impl MacosTextInputAdapter {
             serial: TextInputSerial(0),
             index,
             selection: snapshot.selection(),
-            marked_range: snapshot.composition().map(TextCompositionUpdate::selection),
+            marked_range: snapshot
+                .composition()
+                .and_then(TextCompositionUpdate::replacement),
             marked_text: snapshot
                 .composition()
                 .map(|composition| composition.preedit().to_owned()),
@@ -230,6 +232,34 @@ impl MacosTextInputAdapter {
 
     pub const fn diagnostics(&self) -> &MacosTextInputActivationDiagnostics {
         &self.diagnostics
+    }
+
+    pub fn refresh_snapshot(
+        &mut self,
+        snapshot: &TextInputClientSnapshot,
+        generation: TextInputFocusGeneration,
+    ) -> Result<(), MacosTextInputError> {
+        let security = TextInputSecurityPolicy::from_options(snapshot.options());
+        self.index = TextIndexSnapshot::try_new(snapshot.surrounding_text().to_owned()).map_err(
+            |source| MacosTextInputError::TextIndex {
+                role: "refresh_snapshot.surrounding_text",
+                source,
+            },
+        )?;
+        self.session = snapshot.session();
+        self.target = snapshot.target().clone();
+        self.generation = generation;
+        self.revision = snapshot.revision();
+        self.selection = snapshot.selection();
+        self.marked_range = snapshot
+            .composition()
+            .and_then(TextCompositionUpdate::replacement);
+        self.marked_text = snapshot
+            .composition()
+            .map(|composition| composition.preedit().to_owned());
+        self.security = security;
+        self.diagnostics = MacosTextInputActivationDiagnostics::for_security(security);
+        Ok(())
     }
 
     pub fn set_marked_text(
@@ -320,6 +350,38 @@ impl MacosTextInputAdapter {
                 selection: PlatformTextSelection::new(range, affinity),
             },
         })
+    }
+
+    pub fn command(&mut self, command: TextEditCommand) -> MacosTextInputCallback {
+        MacosTextInputCallback {
+            event: PlatformTextInputEvent::Command {
+                context: self.next_context(),
+                command,
+            },
+        }
+    }
+
+    pub const fn has_marked_text_for_appkit(&self) -> bool {
+        !matches!(self.security, TextInputSecurityPolicy::SecureRedacted)
+            && self.marked_text.is_some()
+    }
+
+    pub fn marked_range_for_appkit(&self) -> Result<MacosNativeRange, MacosTextInputError> {
+        if matches!(self.security, TextInputSecurityPolicy::SecureRedacted) {
+            return Err(MacosTextInputError::SecureRedacted {
+                request: "markedRange",
+            });
+        }
+        self.marked_range
+            .map_or(Ok(MacosNativeRange::not_found()), |range| {
+                self.index
+                    .utf16_range_from_byte(range)
+                    .map(MacosNativeRange::from_utf16_range)
+                    .map_err(|source| MacosTextInputError::TextIndex {
+                        role: "markedRange",
+                        source,
+                    })
+            })
     }
 
     pub fn selected_range_for_appkit(&self) -> Result<MacosNativeRange, MacosTextInputError> {

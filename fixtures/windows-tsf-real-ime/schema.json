@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Arcweft Windows TSF real IME trace",
+  "type": "object",
+  "required": [
+    "metadata",
+    "events"
+  ],
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": [
+        "adapter",
+        "os",
+        "ime",
+        "arcweft_sequence",
+        "secure_redaction"
+      ],
+      "properties": {
+        "adapter": {
+          "const": "windows_tsf"
+        },
+        "os": {
+          "type": "string"
+        },
+        "ime": {
+          "type": "string"
+        },
+        "arcweft_sequence": {
+          "const": "seq06.4b.2"
+        },
+        "secure_redaction": {
+          "type": "boolean"
+        },
+        "captured_at": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        }
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "index",
+          "control",
+          "kind",
+          "session",
+          "generation",
+          "redacted"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "control": {
+            "enum": [
+              "TextField",
+              "TextArea",
+              "SecureField"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "session": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "serial": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "redacted": {
+            "type": "boolean"
+          },
+          "text": {
+            "type": "string"
+          },
+          "text_len": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "preedit_len": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "candidate_rect": {
+            "type": "object",
+            "required": [
+              "left",
+              "top",
+              "right",
+              "bottom"
+            ],
+            "properties": {
+              "left": {
+                "type": "integer"
+              },
+              "top": {
+                "type": "integer"
+              },
+              "right": {
+                "type": "integer"
+              },
+              "bottom": {
+                "type": "integer"
+              }
+            }
+          },
+          "diagnostic": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

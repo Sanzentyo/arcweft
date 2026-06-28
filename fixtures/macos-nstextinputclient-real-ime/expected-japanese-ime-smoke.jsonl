@@ -1,0 +1,14 @@
+{"phase":"validation_note","note":"Contract fixture only. Replace/add captured-japanese-ime-YYYY-MM-DD.jsonl after running on macOS with Japanese IME."}
+{"phase":"swift_event","event":"ready","rect":{"x":200.0,"y":200.0,"width":680.0,"height":42.0}}
+{"phase":"swift_event","event":"focus"}
+{"phase":"swift_event","event":"set_marked_text","preedit":"にほんご","range":{"location":18446744073709551615,"length":0}}
+{"phase":"arcweft_event","event":"batch_start_and_set_composition","serial":1,"generation":1,"preedit":"にほんご"}
+{"phase":"geometry_state","event":"first_rect","rect":{"x":200.0,"y":672.0,"width":1.0,"height":28.0}}
+{"phase":"swift_event","event":"insert_text","commit":"日本語","range":{"location":18446744073709551615,"length":0}}
+{"phase":"arcweft_event","event":"commit","serial":2,"generation":1,"commit":"日本語"}
+{"phase":"editor_state","text":"日本語","range":{"location":3,"length":0}}
+{"phase":"swift_event","event":"command","selector":"deleteBackward:"}
+{"phase":"arcweft_event","event":"command_backspace","serial":3,"generation":1}
+{"phase":"swift_event","event":"command","selector":"moveLeft:"}
+{"phase":"arcweft_event","event":"command_move_left","serial":4,"generation":1}
+{"phase":"secure_audit","secure":true,"text":"","range":{"location":18446744073709551615,"length":0},"note":"secure mode must expose no surrounding text, selected/marked ranges, character bounds, or diagnostics"}
