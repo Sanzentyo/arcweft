@@ -1,4 +1,5 @@
-use arcweft_bundle::container::BundleDigest;
+use arcweft_bundle::container::{BundleDigest, SectionId};
+use arcweft_project_loader::cache::external_payload::fetch_external_payload_to_cache;
 use arcweft_project_loader::cache::inspect::{
     CacheExplainStatus, CacheVerifyStatus, cache_stats, explain_cache,
     explain_cache_by_logical_item, prune_cache, verify_cache,
@@ -20,6 +21,8 @@ pub(super) enum CacheCommand {
     Prune(CachePruneOptions),
     /// Fetches one release-manifest bundle into the local cache.
     Fetch(CacheFetchOptions),
+    /// Fetches one AWFR external payload into the local cache.
+    FetchExternal(CacheFetchExternalOptions),
 }
 
 #[derive(Clone, Debug, Args)]
@@ -76,6 +79,25 @@ pub(super) struct CacheFetchOptions {
     json: bool,
 }
 
+#[derive(Clone, Debug, Args)]
+pub(super) struct CacheFetchExternalOptions {
+    /// AWFR archive path.
+    #[arg(long)]
+    archive: PathBuf,
+    /// Bundle content root digest that owns the external section descriptor.
+    #[arg(long)]
+    bundle_content_root: String,
+    /// External section descriptor id as 32 lowercase hexadecimal characters.
+    #[arg(long)]
+    descriptor_id: String,
+    /// Cache root directory.
+    #[arg(long, default_value = "target/arcweft/cache/v1")]
+    root: PathBuf,
+    /// Emit machine-readable JSON.
+    #[arg(long)]
+    json: bool,
+}
+
 pub(super) fn cache_command(command: CacheCommand) -> Result<(), ExitCode> {
     match command {
         CacheCommand::Stats(options) => cache_stats_command(&options),
@@ -83,6 +105,7 @@ pub(super) fn cache_command(command: CacheCommand) -> Result<(), ExitCode> {
         CacheCommand::Explain(options) => cache_explain_command(&options),
         CacheCommand::Prune(options) => cache_prune_command(&options),
         CacheCommand::Fetch(options) => cache_fetch_command(&options),
+        CacheCommand::FetchExternal(options) => cache_fetch_external_command(&options),
     }
 }
 
@@ -254,18 +277,70 @@ fn cache_fetch_command(options: &CacheFetchOptions) -> Result<(), ExitCode> {
     Ok(())
 }
 
-fn parse_bundle_digest(value: &str) -> Result<BundleDigest, String> {
-    if value.len() != 64 {
-        return Err("content root must be a 64-character lowercase hexadecimal digest".to_owned());
+fn cache_fetch_external_command(options: &CacheFetchExternalOptions) -> Result<(), ExitCode> {
+    let bundle_content_root =
+        parse_bundle_digest(&options.bundle_content_root).map_err(|message| {
+            eprintln!("error: {message}");
+            ExitCode::from(2)
+        })?;
+    let descriptor_id = parse_section_id(&options.descriptor_id).map_err(|message| {
+        eprintln!("error: {message}");
+        ExitCode::from(2)
+    })?;
+    let report = fetch_external_payload_to_cache(
+        &options.archive,
+        bundle_content_root,
+        descriptor_id,
+        &options.root,
+    )
+    .map_err(|error| {
+        eprintln!("error: failed to fetch external payload into cache: {error}");
+        ExitCode::FAILURE
+    })?;
+    if options.json {
+        serde_json::to_writer_pretty(std::io::stdout(), &report).map_err(|error| {
+            eprintln!("error: failed to write external payload fetch JSON: {error}");
+            ExitCode::FAILURE
+        })?;
+        println!();
+    } else {
+        println!("status: {:?}", report.status);
+        println!("bundle content root: {}", report.bundle_content_root);
+        println!("descriptor id: {}", report.descriptor_id);
+        println!("decoded digest: {}", report.decoded_digest);
+        if let Some(uri) = &report.source_uri {
+            println!("source: {uri}");
+        }
+        if let Some(key) = &report.record_key {
+            println!("record key: {key}");
+        }
     }
-    let mut bytes = [0_u8; 32];
+    Ok(())
+}
+
+fn parse_bundle_digest(value: &str) -> Result<BundleDigest, String> {
+    parse_hex_array::<32>(value, "content root").map(BundleDigest::from_bytes)
+}
+
+fn parse_section_id(value: &str) -> Result<SectionId, String> {
+    parse_hex_array::<16>(value, "descriptor id").map(SectionId::from_bytes)
+}
+
+fn parse_hex_array<const N: usize>(value: &str, label: &str) -> Result<[u8; N], String> {
+    if value.len() != N * 2 {
+        return Err(format!(
+            "{label} must be a {}-character lowercase hexadecimal digest",
+            N * 2
+        ));
+    }
+    let mut bytes = [0_u8; N];
     for (index, chunk) in value.as_bytes().chunks_exact(2).enumerate() {
         let text = std::str::from_utf8(chunk)
-            .map_err(|_| "content root digest must be valid UTF-8 hex".to_owned())?;
+            .map_err(|_| format!("{label} digest must be valid UTF-8 hex"))?;
         bytes[index] = u8::from_str_radix(text, 16)
-            .map_err(|_| "content root digest must contain only hexadecimal digits".to_owned())?;
+            .map_err(|_| format!("{label} digest must contain only hexadecimal digits"))?;
     }
-    Ok(BundleDigest::from_bytes(bytes))
+    Ok(bytes)
 }
 
 #[cfg(test)]
@@ -273,9 +348,13 @@ mod tests {
     use super::*;
     use arcweft_bundle::{
         container::{
-            BundleKind, BundleSectionKind, ContentResidency, SectionId, SectionInput, encode_bundle,
+            BundleKind, BundleSectionKind, BundleView, ContentResidency, ReadBudget, SectionInput,
+            encode_bundle,
         },
-        release::{ReleaseBundleRef, ReleaseManifest, ReleaseMirror},
+        release::{
+            ReleaseBundleRef, ReleaseManifest, ReleaseMirror,
+            archive::{AwfrArchiveManifest, ExternalPayloadMediaType, ReleaseChannel},
+        },
     };
     use std::{
         fs,
@@ -352,6 +431,19 @@ mod tests {
     }
 
     #[test]
+    fn fetch_external_rejects_invalid_descriptor_id() {
+        let result = cache_fetch_external_command(&CacheFetchExternalOptions {
+            archive: PathBuf::from("missing.awfr"),
+            bundle_content_root: "00".repeat(32),
+            descriptor_id: "not-a-section-id".to_owned(),
+            root: PathBuf::from("target/arcweft/cache/v1"),
+            json: true,
+        });
+
+        assert_eq!(result, Err(ExitCode::from(2)));
+    }
+
+    #[test]
     fn fetch_populates_cache_from_file_release_manifest() {
         let root = temp_root("cli-fetch-file");
         let cache = root.join("cache");
@@ -403,6 +495,79 @@ mod tests {
             json: true,
         })
         .expect("logical explain finds release record");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn fetch_external_populates_cache_from_file_awfr_archive() {
+        let root = temp_root("cli-fetch-external-file");
+        let cache = root.join("cache");
+        let payload = b"external-voice";
+        let section_id = SectionId::from_bytes([7; 16]);
+        let bundle = encode_bundle(
+            BundleKind::ContentPack,
+            br#"{"kind":"content"}"#,
+            vec![SectionInput::external_ref(
+                section_id,
+                BundleSectionKind::AssetBlob,
+                1,
+                ContentResidency::OnDemand,
+                false,
+                payload.len() as u64,
+                BundleDigest::of(payload),
+            )],
+        )
+        .expect("content pack encodes");
+        let view = BundleView::parse(&bundle, ReadBudget::default()).expect("bundle parses");
+        let carrier = arcweft_bundle::release::archive::ExternalPayloadCarrier::from_descriptor(
+            &view.sections()[0],
+            view.artifact_identity(),
+            ExternalPayloadMediaType::default(),
+            payload.len() as u64,
+            BundleDigest::of(payload),
+            [ReleaseMirror::new("file:payload.bin").expect("payload mirror")],
+        )
+        .expect("carrier");
+        let bundle_ref = ReleaseBundleRef::from_awfb_bytes(
+            &bundle,
+            [ReleaseMirror::new("file:content.awfb").expect("bundle mirror")],
+        )
+        .expect("bundle ref");
+        let archive = AwfrArchiveManifest::new(
+            ReleaseChannel::new("dev").expect("channel"),
+            ReleaseManifest::new([bundle_ref]).expect("manifest"),
+            [carrier.clone()],
+        )
+        .expect("archive");
+        fs::create_dir_all(&root).expect("root creates");
+        fs::write(root.join("payload.bin"), payload).expect("payload writes");
+        let archive_path = root.join("game.awfr");
+        fs::write(
+            &archive_path,
+            archive.to_json_bytes().expect("archive encodes"),
+        )
+        .expect("archive writes");
+
+        cache_fetch_external_command(&CacheFetchExternalOptions {
+            archive: archive_path,
+            bundle_content_root: carrier.bundle_content_root.to_string(),
+            descriptor_id: carrier.descriptor_id.to_string(),
+            root: cache.clone(),
+            json: true,
+        })
+        .expect("external fetch succeeds");
+
+        let verify = verify_cache(&cache).expect("cache verifies");
+        assert_eq!(verify.status, CacheVerifyStatus::Ok);
+        assert_eq!(verify.stats.object_files, 1);
+        assert_eq!(verify.stats.record_files, 1);
+        cache_explain_command(&CacheExplainOptions {
+            query: carrier.cache_key.logical_item(),
+            logical: true,
+            root: cache,
+            json: true,
+        })
+        .expect("logical explain finds external payload record");
         let _ = fs::remove_dir_all(root);
     }
 

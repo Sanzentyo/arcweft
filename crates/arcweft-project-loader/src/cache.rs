@@ -3,6 +3,7 @@
 //! This module stores immutable content-addressed objects and immutable
 //! key-addressed records. It does not execute compiler queries.
 
+pub mod external_payload;
 pub mod inspect;
 pub mod lock;
 pub mod record;

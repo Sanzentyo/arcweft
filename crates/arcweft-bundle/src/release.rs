@@ -1,5 +1,8 @@
 //! Sans I/O release manifest for external AWFB content.
 
+pub mod archive;
+pub mod signing_policy;
+
 use crate::container::{BundleDigest, BundleKind, BundleView, ReadBudget};
 use std::collections::BTreeSet;
 use thiserror::Error;
