@@ -1,4 +1,12 @@
+use super::repl_cli_command::{
+    AgentReplParsedInput, CliReplCommandJsonOptions, CliReplCommandResult,
+    cli_repl_command_result_json, cli_repl_protocol_unavailable_result, parse_agent_repl_input,
+};
 use super::*;
+use arcweft_agent_repl::command::{
+    ReplCommandEvidence, ReplCommandId, ReplCommandJsonOptions, ReplCommandResult,
+    ReplCommandStatus, ReplTracePolicy, repl_command_result_json,
+};
 
 pub(super) fn agent_mcp_command(
     options: &AgentMcpOptions,
@@ -622,12 +630,92 @@ pub(super) fn agent_mcp_call_repl_command(
 ) -> Result<McpCallToolResult, String> {
     let request = McpReplCommandRequest::from_arguments(arguments)
         .map_err(|error| format!("invalid {MCP_REPL_COMMAND_TOOL} arguments: {error}"))?;
+    let parsed = match parse_agent_repl_input(&request.input) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            let result = ReplCommandResult::error(
+                agent_mcp_repl_command_id(&request),
+                ReplCommandEvidence::Empty,
+                error.into_diagnostic(),
+            );
+            return Ok(agent_mcp_shared_repl_tool_result(&result, &request));
+        }
+    };
+    match parsed {
+        AgentReplParsedInput::Shared(_) => agent_mcp_call_shared_repl_command(&request, state),
+        AgentReplParsedInput::Cli(command) => {
+            let result = cli_repl_protocol_unavailable_result(
+                agent_mcp_repl_command_id(&request),
+                &command,
+                ReplTracePolicy::from(request.trace_policy),
+            );
+            Ok(agent_mcp_cli_repl_tool_result(&result, &request))
+        }
+    }
+}
+
+fn agent_mcp_call_shared_repl_command(
+    request: &McpReplCommandRequest,
+    state: &mut AgentMcpState,
+) -> Result<McpCallToolResult, String> {
     agent_mcp_ensure_repl_session(state)?;
     let Some(session) = state.repl_session.as_mut() else {
         return Err("failed to initialize MCP REPL command session".to_owned());
     };
     let mut endpoint = McpReplCommandEndpoint::new(session, &mut state.repl_tier_handler);
-    Ok(endpoint.execute(&request))
+    Ok(endpoint.execute(request))
+}
+
+fn agent_mcp_repl_command_id(request: &McpReplCommandRequest) -> ReplCommandId {
+    ReplCommandId::new(request.command_id.max(1))
+}
+
+fn agent_mcp_shared_repl_json_options(request: &McpReplCommandRequest) -> ReplCommandJsonOptions {
+    ReplCommandJsonOptions {
+        max_items: request.max_items,
+        max_string_bytes: request.max_string_bytes,
+        include_diagnostics: request.include_diagnostics,
+    }
+}
+
+fn agent_mcp_cli_repl_json_options(request: &McpReplCommandRequest) -> CliReplCommandJsonOptions {
+    CliReplCommandJsonOptions::new(request.include_diagnostics)
+}
+
+fn agent_mcp_shared_repl_tool_result(
+    result: &ReplCommandResult,
+    request: &McpReplCommandRequest,
+) -> McpCallToolResult {
+    agent_mcp_repl_tool_result_from_json(
+        &repl_command_result_json(result, &agent_mcp_shared_repl_json_options(request)),
+        result.status,
+    )
+}
+
+fn agent_mcp_cli_repl_tool_result(
+    result: &CliReplCommandResult,
+    request: &McpReplCommandRequest,
+) -> McpCallToolResult {
+    agent_mcp_repl_tool_result_from_json(
+        &cli_repl_command_result_json(result, agent_mcp_cli_repl_json_options(request)),
+        result.status,
+    )
+}
+
+fn agent_mcp_repl_tool_result_from_json(
+    json: &serde_json::Value,
+    status: ReplCommandStatus,
+) -> McpCallToolResult {
+    let text = serde_json::to_string(&json).unwrap_or_else(|error| {
+        serde_json::json!({ "formatter_error": error.to_string() }).to_string()
+    });
+    McpCallToolResult {
+        content: vec![McpContentBlock::Text { text }],
+        is_error: matches!(
+            status,
+            ReplCommandStatus::Rejected | ReplCommandStatus::Error
+        ),
+    }
 }
 
 fn agent_mcp_ensure_repl_session(state: &mut AgentMcpState) -> Result<(), String> {
@@ -1381,4 +1469,66 @@ pub(super) fn agent_mcp_call_log_query(
         "logs": logs,
     });
     agent_mcp_json_tool_result(&value, "logs")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mcp_repl_command_returns_cli_local_protocol_json() {
+        let (json, is_error) = call_repl_command_json(&serde_json::json!({
+            "input": ":trace",
+            "command_id": 9,
+            "trace_policy": "read_write",
+        }));
+
+        assert!(is_error);
+        assert_eq!(json["command_id"], 9);
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["command"], ":trace");
+        assert_eq!(json["evidence"]["kind"], "empty");
+        assert_eq!(json["diagnostics"][0]["code"], "unhandled_extension");
+        assert!(json.get("formatted_text").is_none());
+    }
+
+    #[test]
+    fn mcp_repl_command_omits_cli_local_diagnostics_when_requested() {
+        let (json, is_error) = call_repl_command_json(&serde_json::json!({
+            "input": ":trace",
+            "command_id": 10,
+            "include_diagnostics": false,
+        }));
+
+        assert!(is_error);
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["diagnostics"].as_array().map(Vec::len), Some(0));
+    }
+
+    #[test]
+    fn mcp_repl_command_rejects_cli_local_mutation_in_read_only_trace() {
+        let (json, is_error) = call_repl_command_json(&serde_json::json!({
+            "input": ":save out.awfagent",
+            "command_id": 11,
+            "trace_policy": "read_only_trace",
+        }));
+
+        assert!(is_error);
+        assert_eq!(json["status"], "rejected");
+        assert_eq!(json["command"], ":save");
+        assert_eq!(json["diagnostics"][0]["code"], "read_only_trace_rejected");
+    }
+
+    fn call_repl_command_json(arguments: &serde_json::Value) -> (serde_json::Value, bool) {
+        let mut state = AgentMcpState::default();
+        let result = agent_mcp_call_repl_command(arguments, &mut state)
+            .expect("MCP REPL command returns tool result");
+        let McpContentBlock::Text { text } = &result.content[0] else {
+            panic!("MCP REPL command must return JSON text content");
+        };
+        (
+            serde_json::from_str(text).expect("MCP REPL command JSON parses"),
+            result.is_error,
+        )
+    }
 }

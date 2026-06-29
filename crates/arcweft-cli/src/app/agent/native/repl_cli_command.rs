@@ -8,9 +8,13 @@
 mod dispatch;
 mod format;
 mod parse;
+mod protocol;
 mod types;
 
 pub(super) use self::dispatch::{CliReplCommandContext, dispatch_cli_repl_command};
 pub(super) use self::format::{CliReplCommandFormattedOutput, CliReplLocalCommandFormatter};
 pub(super) use self::parse::{AgentReplParsedInput, parse_agent_repl_input};
+pub(super) use self::protocol::{
+    CliReplCommandJsonOptions, cli_repl_command_result_json, cli_repl_protocol_unavailable_result,
+};
 pub(super) use self::types::{CliReplCommand, CliReplCommandResult};

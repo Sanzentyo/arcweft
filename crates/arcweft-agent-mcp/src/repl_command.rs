@@ -234,3 +234,46 @@ fn default_max_string_bytes() -> usize {
 fn default_true() -> bool {
     true
 }
+
+#[cfg(test)]
+mod tests {
+    use arcweft_agent_repl::command::{ReplCommandEvidence, ReplHelpEvidence};
+
+    use super::*;
+
+    #[test]
+    fn repl_command_mcp_tool_result_uses_structured_json_text() {
+        let request = McpReplCommandRequest {
+            input: ":help".to_owned(),
+            command_id: 5,
+            trace_policy: McpReplTracePolicy::ReadWrite,
+            max_items: 8,
+            max_string_bytes: 64,
+            include_diagnostics: true,
+        };
+        let result = ReplCommandResult::ok(
+            ReplCommandId::new(5),
+            ReplCommandEvidence::Help(ReplHelpEvidence {
+                topic: None,
+                commands: vec![":observe", ":tasks"],
+            }),
+        );
+        let tool = McpReplCommandEndpoint::tool_result(&result, &request);
+        assert!(!tool.is_error);
+        let McpContentBlock::Text { text } = &tool.content[0] else {
+            panic!("REPL command tool result must return JSON text");
+        };
+        let json: serde_json::Value = serde_json::from_str(text).expect("json text parses");
+        assert_eq!(json["command_id"], 5);
+        assert_eq!(json["evidence"]["kind"], "help");
+        assert!(json.get("formatted_text").is_none());
+    }
+
+    #[test]
+    fn repl_command_mcp_trace_policy_conversion_is_typed() {
+        assert_eq!(
+            ReplTracePolicy::from(McpReplTracePolicy::ReadOnlyTrace),
+            ReplTracePolicy::ReadOnlyTrace
+        );
+    }
+}

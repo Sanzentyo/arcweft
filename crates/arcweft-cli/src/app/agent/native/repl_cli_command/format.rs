@@ -1,11 +1,10 @@
 use arcweft_agent_repl::command::{
     ReplCommandDiagnostic, ReplCommandDiagnosticSeverity, ReplCommandStatus,
 };
-use serde_json::{Value, json};
+use serde_json::Value;
 
-use super::types::{
-    CliCaptureTarget, CliConnectTarget, CliReplCommandEvidence, CliReplCommandResult,
-};
+use super::protocol::{CliReplCommandJsonOptions, cli_repl_command_result_json};
+use super::types::{CliReplCommandEvidence, CliReplCommandResult};
 
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::app::agent::native) struct CliReplCommandFormattedOutput {
@@ -21,99 +20,9 @@ impl CliReplLocalCommandFormatter {
     pub(in crate::app::agent::native) fn format_result(
         result: &CliReplCommandResult,
     ) -> CliReplCommandFormattedOutput {
-        let json = result_json(result);
+        let json = cli_repl_command_result_json(result, CliReplCommandJsonOptions::default());
         let text = human_result(result);
         CliReplCommandFormattedOutput { text, json }
-    }
-}
-
-fn result_json(result: &CliReplCommandResult) -> Value {
-    json!({
-        "command_id": result.command_id.as_u64(),
-        "status": status_label(result.status),
-        "command": result.command_name,
-        "evidence": evidence_json(&result.evidence),
-        "diagnostics": result.diagnostics.iter().map(diagnostic_json).collect::<Vec<_>>(),
-    })
-}
-
-fn evidence_json(evidence: &CliReplCommandEvidence) -> Value {
-    match evidence {
-        CliReplCommandEvidence::Empty => json!({ "kind": "empty" }),
-        CliReplCommandEvidence::Trace { value } => json!({
-            "kind": "trace",
-            "value": value,
-        }),
-        CliReplCommandEvidence::Actions { value } => json!({
-            "kind": "actions",
-            "value": value,
-        }),
-        CliReplCommandEvidence::Inspection {
-            kind,
-            source,
-            value,
-        } => json!({
-            "kind": "inspection",
-            "inspection": kind.as_str(),
-            "source": source,
-            "value": value,
-        }),
-        CliReplCommandEvidence::Capture { target, value } => json!({
-            "kind": "capture",
-            "target": capture_target_json(target),
-            "value": value,
-        }),
-        CliReplCommandEvidence::Query { text, value } => json!({
-            "kind": "query",
-            "text": text,
-            "value": value,
-        }),
-        CliReplCommandEvidence::Drop { name, value } => json!({
-            "kind": "drop",
-            "name": name,
-            "value": value,
-        }),
-        CliReplCommandEvidence::Save { path, value } => json!({
-            "kind": "save",
-            "path": path,
-            "value": value,
-        }),
-        CliReplCommandEvidence::Connect { target, value } => json!({
-            "kind": "connect",
-            "target": connect_target_json(target),
-            "value": value,
-        }),
-        CliReplCommandEvidence::Parse {
-            kind,
-            source,
-            value,
-        } => json!({
-            "kind": "parse",
-            "parser": kind.as_str(),
-            "source": source,
-            "value": value,
-        }),
-        CliReplCommandEvidence::Complete {
-            source_before_cursor,
-            value,
-        } => json!({
-            "kind": "complete",
-            "source_before_cursor": source_before_cursor,
-            "value": value,
-        }),
-        CliReplCommandEvidence::Highlight { source, value } => json!({
-            "kind": "highlight",
-            "source": source,
-            "value": value,
-        }),
-        CliReplCommandEvidence::History { value } => json!({
-            "kind": "history",
-            "value": value,
-        }),
-        CliReplCommandEvidence::Bindings { value } => json!({
-            "kind": "bindings",
-            "value": value,
-        }),
     }
 }
 
@@ -219,41 +128,6 @@ fn human_evidence(
     }
 }
 
-fn capture_target_json(target: &CliCaptureTarget) -> Value {
-    match target {
-        CliCaptureTarget::Viewport => json!({ "kind": "viewport" }),
-        CliCaptureTarget::Layer { id } => json!({ "kind": "layer", "id": id }),
-        CliCaptureTarget::Object { id } => json!({ "kind": "object", "id": id }),
-    }
-}
-
-fn connect_target_json(target: &CliConnectTarget) -> Value {
-    match target {
-        CliConnectTarget::Current => json!({ "kind": "current" }),
-        CliConnectTarget::Source { path } => json!({ "kind": "source", "path": path }),
-        CliConnectTarget::Profile { id, manifest } => json!({
-            "kind": "profile",
-            "id": id,
-            "manifest": manifest,
-        }),
-        CliConnectTarget::StdioMcp { program, args } => json!({
-            "kind": "stdio_mcp",
-            "program": program,
-            "args": args,
-        }),
-        CliConnectTarget::Inferred { target } => json!({ "kind": "inferred", "target": target }),
-    }
-}
-
-fn diagnostic_json(value: &ReplCommandDiagnostic) -> Value {
-    json!({
-        "severity": diagnostic_severity_label(value.severity),
-        "code": value.code.as_str(),
-        "message": &value.message,
-        "field": &value.field,
-    })
-}
-
 fn human_diagnostic(value: &ReplCommandDiagnostic) -> String {
     let field = value
         .field
@@ -307,6 +181,7 @@ mod tests {
     use arcweft_agent_repl::command::{
         ReplCommandDiagnostic, ReplCommandDiagnosticCode, ReplCommandId,
     };
+    use serde_json::json;
 
     use super::*;
 
