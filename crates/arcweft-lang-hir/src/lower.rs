@@ -6,6 +6,8 @@ use arcweft_lang_syntax::ast::items::{AgentItem, Attribute, FunctionItem, Item, 
 pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerError>> {
     let mut state = HirLoweringState {
         attributes: tree.attrs().to_vec(),
+        source_len: Some(tree.source().len()),
+        top_level_ranges: tree.items().iter().filter_map(Item::range).collect(),
         ..HirLoweringState::default()
     };
 
@@ -18,6 +20,8 @@ pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerErr
 #[derive(Default)]
 struct HirLoweringState {
     attributes: Vec<Attribute>,
+    source_len: Option<usize>,
+    top_level_ranges: Vec<arcweft_lang_syntax::ast::common::TextRange>,
     flows: Vec<crate::model::HirFlow>,
     functions: Vec<HirFunction>,
     agents: Vec<HirAgent>,
@@ -142,6 +146,8 @@ impl HirLoweringState {
         if self.errors.is_empty() {
             Ok(HirModule {
                 attributes: self.attributes,
+                source_len: self.source_len,
+                top_level_ranges: self.top_level_ranges,
                 flows: self.flows,
                 functions: self.functions,
                 agents: self.agents,
@@ -170,6 +176,7 @@ fn lower_function(function: &FunctionItem) -> HirFunction {
         contracts: function.contracts().to_vec(),
         statements: function.body_statements().to_vec(),
         value: function.body_value().cloned(),
+        range: *function.range(),
     }
 }
 

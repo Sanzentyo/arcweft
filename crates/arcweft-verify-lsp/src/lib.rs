@@ -1006,6 +1006,45 @@ mod tests {
     }
 
     #[test]
+    fn verifier_empty_insertion_action_becomes_workspace_edit() {
+        let uri = "file:///game/routes/opening.arcw"
+            .parse::<Uri>()
+            .expect("uri");
+        let report = VerificationReport {
+            policy: VerificationPolicy::default(),
+            diagnostics: vec![VerificationDiagnostic {
+                id: "d1".to_owned(),
+                severity: VerifySeverity::Warning,
+                message: "missing proof".to_owned(),
+                source: None,
+                obligation: Some("obligation.0001".to_owned()),
+                related_ids: Vec::new(),
+                actions: vec![ToolAction {
+                    id: "action.generate_proof_stub".to_owned(),
+                    label: "Generate proof stub".to_owned(),
+                    kind: ToolActionKind::GenerateProofStub,
+                    source_edit: Some(arcweft_verify::ToolActionSourceEdit {
+                        span: VerifySourceSpan { start: 21, end: 21 },
+                        replacement: "\n\nproof @proof.obligation_0001 {\n    check _\n}\n"
+                            .to_owned(),
+                        applicability: ToolActionApplicability::HasPlaceholders,
+                    }),
+                    command: None,
+                }],
+            }],
+            ..VerificationReport::default()
+        };
+
+        let actions = code_actions_from_report_with_mapper(&uri, &report, &TestMapper);
+
+        let edit = actions[0].edit.as_ref().expect("workspace edit");
+        let text_edit = &edit.changes.as_ref().expect("changes")[&uri][0];
+        assert_eq!(text_edit.range.start, Position::new(0, 21));
+        assert_eq!(text_edit.range.end, Position::new(0, 21));
+        assert!(text_edit.new_text.contains("proof @proof.obligation_0001"));
+    }
+
+    #[test]
     fn verifier_host_action_becomes_command_action() {
         let uri = "file:///game/routes/opening.arcw"
             .parse::<Uri>()

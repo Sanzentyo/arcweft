@@ -3,7 +3,7 @@ use crate::ast::dialogue::{ContentCall, DialogueContent, SpeakerLine};
 use crate::ast::flow::{
     BorrowBlock, Flow, FlowInit, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, MatchArm,
     MatchBlock, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, Stmt,
-    StmtMatchArm, WaitTarget, WhileBlock, WhileLetBlock,
+    StmtMatchArm, UnsafeAuditInsertion, WaitTarget, WhileBlock, WhileLetBlock,
 };
 use crate::ast::ids::{IdRef, RelativeId, RelativeIdSpelling};
 use crate::ast::items::{Attribute, Item, RawSyntax, TypedSyntaxTree};

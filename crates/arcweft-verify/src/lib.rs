@@ -38,9 +38,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 mod contract_smt;
+mod insertion;
 pub mod runtime_type;
 pub mod smt;
 
+use insertion::{VerifierInsertionInventory, proof_stub_edit, unsafe_audit_edit};
+pub use insertion::{VerifierInsertionPolicy, VerifierInsertionTarget};
 pub use runtime_type::{
     RuntimeTypeDiagnostic, RuntimeTypeValidationReport, RuntimeTypeValidationStats,
     validate_runtime_plan_types,
@@ -141,7 +144,21 @@ impl ProofObligationKind {
         )
     }
 
-    fn actions(self, discharge: &ProofDischarge) -> Vec<ToolAction> {
+    pub(crate) const fn owns_proof_insertion_span(self) -> bool {
+        matches!(
+            self,
+            Self::LifetimePromotion
+                | Self::MustDropDischarge
+                | Self::ThreadCapture
+                | Self::ThreadJoinTyping
+                | Self::UpperLifetimeWrite
+                | Self::EffectCapability
+                | Self::ProofBody
+        )
+    }
+
+    fn actions(self, obligation: &ProofObligation) -> Vec<ToolAction> {
+        let discharge = &obligation.discharge;
         if !discharge.is_missing() {
             return Vec::new();
         }
@@ -154,10 +171,10 @@ impl ProofObligationKind {
             | Self::UpperLifetimeWrite
             | Self::EffectCapability
             | Self::ProofBody => vec![
-                ToolAction::generate_proof_stub(),
+                ToolAction::generate_proof_stub(obligation),
                 ToolAction::show_obligation(),
             ],
-            Self::UnsafeLifetimeAudit => vec![ToolAction::generate_unsafe_audit()],
+            Self::UnsafeLifetimeAudit => vec![ToolAction::generate_unsafe_audit(obligation)],
             Self::TrustedAssumption | Self::RawSyntax | Self::RuntimeConflict => Vec::new(),
         }
     }
@@ -196,8 +213,16 @@ pub struct ProofObligation {
     pub message: String,
     pub subject: Option<String>,
     pub source: Option<SourceSpan>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub insertion_target: Option<VerifierInsertionTarget>,
     pub discharge: ProofDischarge,
     pub smt: Option<SmtProblem>,
+}
+
+impl ProofObligation {
+    fn actions(&self) -> Vec<ToolAction> {
+        self.kind.actions(self)
+    }
 }
 
 /// JSON diagnostic shared by CLI, LSP, and future Agent tools.
@@ -261,8 +286,8 @@ pub struct ToolActionCommand {
 }
 
 impl ToolAction {
-    pub(crate) fn generate_proof_stub() -> Self {
-        Self {
+    pub(crate) fn generate_proof_stub(obligation: &ProofObligation) -> Self {
+        let mut action = Self {
             id: "action.generate_proof_stub".to_owned(),
             label: "Generate proof stub".to_owned(),
             kind: ToolActionKind::GenerateProofStub,
@@ -271,7 +296,11 @@ impl ToolAction {
                 "arcweft.verify.generateProofStub",
                 "Generate proof stub",
             )),
+        };
+        if let Some((span, replacement, applicability)) = proof_stub_edit(obligation) {
+            action = action.with_source_edit(span, replacement, applicability);
         }
+        action
     }
 
     pub(crate) fn show_obligation() -> Self {
@@ -287,17 +316,21 @@ impl ToolAction {
         }
     }
 
-    pub(crate) fn generate_unsafe_audit() -> Self {
-        Self {
+    pub(crate) fn generate_unsafe_audit(obligation: &ProofObligation) -> Self {
+        let mut action = Self {
             id: "action.generate_unsafe_audit".to_owned(),
-            label: "Generate unsafe lifetime audit scaffold".to_owned(),
+            label: "Generate unsafe lifetime audit metadata".to_owned(),
             kind: ToolActionKind::GenerateUnsafeAudit,
             source_edit: None,
             command: Some(ToolActionCommand::new(
                 "arcweft.verify.generateUnsafeAudit",
-                "Generate unsafe lifetime audit scaffold",
+                "Generate unsafe lifetime audit metadata",
             )),
+        };
+        if let Some((span, replacement, applicability)) = unsafe_audit_edit(obligation) {
+            action = action.with_source_edit(span, replacement, applicability);
         }
+        action
     }
 
     #[must_use]
@@ -497,7 +530,8 @@ pub fn verify_module_with_env(
     env: &TypeCheckEnv,
     policy: VerificationPolicy,
 ) -> VerificationReport {
-    let mut collector = ObligationCollector::new(policy);
+    let insertion_inventory = VerifierInsertionInventory::from_module(module);
+    let mut collector = ObligationCollector::new(policy, insertion_inventory);
     collector.collect_module(module);
     let semantic_report = analyze_semantics(
         module,
@@ -507,7 +541,7 @@ pub fn verify_module_with_env(
         },
     );
     let mut report = collector.finish();
-    merge_semantic_report(&mut report, semantic_report);
+    merge_semantic_report(&mut report, semantic_report, insertion_inventory);
     contract_smt::collect_function_contract_obligations(module, &mut report);
     report
         .diagnostics
@@ -622,7 +656,12 @@ impl SolverCheck {
     }
 }
 
-fn merge_semantic_report(report: &mut VerificationReport, semantic: SemanticReport) {
+fn merge_semantic_report(
+    report: &mut VerificationReport,
+    semantic: SemanticReport,
+    insertion_inventory: VerifierInsertionInventory,
+) {
+    let insertion_context = SemanticInsertionContext::new(&semantic, insertion_inventory);
     remove_collector_semantic_obligations(report);
 
     for proof in semantic.proofs {
@@ -670,7 +709,8 @@ fn merge_semantic_report(report: &mut VerificationReport, semantic: SemanticRepo
     }
     let mut id_map = BTreeMap::new();
     for obligation in semantic.obligations {
-        let (semantic_id, verification_id) = merge_semantic_obligation(report, obligation);
+        let (semantic_id, verification_id) =
+            merge_semantic_obligation(report, obligation, &insertion_context);
         id_map.insert(semantic_id, verification_id);
     }
     for diagnostic in semantic.diagnostics {
@@ -705,6 +745,7 @@ fn remove_collector_semantic_obligations(report: &mut VerificationReport) {
 fn merge_semantic_obligation(
     report: &mut VerificationReport,
     obligation: SemanticObligation,
+    insertion_context: &SemanticInsertionContext,
 ) -> (String, String) {
     let semantic_id = obligation.id.clone();
     let kind = proof_kind(obligation.kind);
@@ -719,6 +760,7 @@ fn merge_semantic_obligation(
     let verification_id = id.clone();
     let discharge = proof_discharge(obligation.discharge);
     let subject = obligation.subject;
+    let insertion_target = insertion_context.target_for(kind, subject.as_deref());
     report.obligations.push(ProofObligation {
         id,
         kind,
@@ -728,11 +770,57 @@ fn merge_semantic_obligation(
             start: source.start,
             end: source.end,
         }),
+        insertion_target,
         discharge,
         smt: None,
     });
 
     (semantic_id, verification_id)
+}
+
+struct SemanticInsertionContext {
+    proof_inventory: VerifierInsertionInventory,
+    unsafe_audits: BTreeMap<String, VerifierInsertionTarget>,
+}
+
+impl SemanticInsertionContext {
+    fn new(report: &SemanticReport, proof_inventory: VerifierInsertionInventory) -> Self {
+        let unsafe_audits = report
+            .unsafe_audits
+            .iter()
+            .filter_map(|audit| {
+                let insertion = audit.audit_insertion?;
+                Some((
+                    audit.id.clone(),
+                    VerifierInsertionTarget::unsafe_audit_metadata(
+                        SourceSpan {
+                            start: insertion.start,
+                            end: insertion.end,
+                        },
+                        audit.has_reason,
+                        audit.has_safety_doc,
+                    ),
+                ))
+            })
+            .collect();
+        Self {
+            proof_inventory,
+            unsafe_audits,
+        }
+    }
+
+    fn target_for(
+        &self,
+        kind: ProofObligationKind,
+        subject: Option<&str>,
+    ) -> Option<VerifierInsertionTarget> {
+        match kind {
+            ProofObligationKind::UnsafeLifetimeAudit => {
+                subject.and_then(|subject| self.unsafe_audits.get(subject).copied())
+            }
+            _ => self.proof_inventory.proof_target_for_kind(kind),
+        }
+    }
 }
 
 fn merge_semantic_diagnostic(
@@ -753,7 +841,7 @@ fn merge_semantic_diagnostic(
     let actions = obligation
         .as_ref()
         .and_then(|id| report.obligations.iter().find(|item| &item.id == id))
-        .map_or_else(Vec::new, |item| item.kind.actions(&item.discharge));
+        .map_or_else(Vec::new, ProofObligation::actions);
     report.diagnostics.push(VerificationDiagnostic {
         id: format!("diagnostic.{}", diagnostic.id),
         severity: severity(diagnostic.severity),
@@ -814,6 +902,7 @@ struct ObligationCollector {
     policy: VerificationPolicy,
     report: VerificationReport,
     next_obligation: usize,
+    insertion_inventory: VerifierInsertionInventory,
     unsafe_stack: Vec<String>,
     known_proofs: BTreeSet<String>,
     known_axioms: BTreeSet<String>,
@@ -822,7 +911,7 @@ struct ObligationCollector {
 }
 
 impl ObligationCollector {
-    fn new(policy: VerificationPolicy) -> Self {
+    fn new(policy: VerificationPolicy, insertion_inventory: VerifierInsertionInventory) -> Self {
         Self {
             policy,
             report: VerificationReport {
@@ -830,6 +919,7 @@ impl ObligationCollector {
                 ..VerificationReport::default()
             },
             next_obligation: 0,
+            insertion_inventory,
             unsafe_stack: Vec::new(),
             known_proofs: BTreeSet::new(),
             known_axioms: BTreeSet::new(),
@@ -1061,8 +1151,15 @@ impl ObligationCollector {
                 id,
                 reason,
                 has_safety_doc,
+                audit_insertion,
                 body,
-            } => self.collect_unsafe_lifetime(id, reason.as_ref(), *has_safety_doc, body),
+            } => self.collect_unsafe_lifetime(
+                id,
+                reason.as_ref(),
+                *has_safety_doc,
+                audit_insertion.as_ref(),
+                body,
+            ),
             Stmt::If { condition, body } | Stmt::While { condition, body } => {
                 self.collect_expr(condition);
                 self.collect_stmts(body);
@@ -1404,6 +1501,7 @@ impl ObligationCollector {
         id: &IdRef,
         reason: Option<&Expr>,
         has_safety_doc: bool,
+        audit_insertion: Option<&arcweft_lang_hir::syntax::ast::flow::UnsafeAuditInsertion>,
         body: &[Stmt],
     ) {
         let id = id_ref_label(id, "unsafe");
@@ -1421,11 +1519,22 @@ impl ObligationCollector {
         } else {
             ProofDischarge::Missing
         };
-        self.add_obligation(
+        let insertion_target = audit_insertion
+            .filter(|_| reason.is_none() || !has_safety_doc)
+            .map(|insertion| span_from_range(insertion.replacement_range()))
+            .map(|span| {
+                VerifierInsertionTarget::unsafe_audit_metadata(
+                    span,
+                    reason.is_some(),
+                    has_safety_doc,
+                )
+            });
+        self.add_obligation_with_insertion(
             ProofObligationKind::UnsafeLifetimeAudit,
             format!("unsafe lifetime audit `{id}` must include reason and SAFETY docs"),
             Some(id.clone()),
             &discharge,
+            insertion_target,
         );
         self.unsafe_stack.push(id);
         self.collect_stmts(body);
@@ -1635,17 +1744,32 @@ impl ObligationCollector {
         subject: Option<String>,
         discharge: &ProofDischarge,
     ) {
+        let insertion_target = self.insertion_inventory.proof_target_for_kind(kind);
+        self.add_obligation_with_insertion(kind, message, subject, discharge, insertion_target);
+    }
+
+    fn add_obligation_with_insertion(
+        &mut self,
+        kind: ProofObligationKind,
+        message: String,
+        subject: Option<String>,
+        discharge: &ProofDischarge,
+        insertion_target: Option<VerifierInsertionTarget>,
+    ) {
         self.next_obligation += 1;
         let id = format!("obligation.{:04}", self.next_obligation);
-        self.report.obligations.push(ProofObligation {
+        let obligation = ProofObligation {
             id: id.clone(),
             kind,
             message: message.clone(),
             subject: subject.clone(),
             source: None,
+            insertion_target,
             discharge: discharge.clone(),
             smt: None,
-        });
+        };
+        let actions = obligation.actions();
+        self.report.obligations.push(obligation);
         let severity = self.severity_for(kind, discharge);
         if severity != Severity::Info || *discharge == ProofDischarge::Missing {
             self.report.diagnostics.push(VerificationDiagnostic {
@@ -1655,7 +1779,7 @@ impl ObligationCollector {
                 source: None,
                 obligation: Some(id),
                 related_ids: subject.into_iter().collect(),
-                actions: kind.actions(discharge),
+                actions,
             });
         }
     }

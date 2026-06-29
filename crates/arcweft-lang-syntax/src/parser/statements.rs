@@ -2,9 +2,9 @@ use super::control_flow::parse_final_block_expr;
 use super::headers::parse_required_id_ref;
 use super::{
     CstStmtKind, DeferOutcome, Expr, IdRef, ParseError, Parser, RawSyntax, RelativeId,
-    RelativeIdSpelling, ScopeExprBlock, Stmt, TextRange, WaitTarget, classify_stmt,
-    parse_binding_pattern, parse_braced_while_let_stmt, parse_defer_outcome, parse_expr_lossy,
-    parse_expr_lossy_with_stats, parse_expr_with_inline_line_plan_with_stats,
+    RelativeIdSpelling, ScopeExprBlock, Stmt, TextRange, UnsafeAuditInsertion, WaitTarget,
+    classify_stmt, parse_binding_pattern, parse_braced_while_let_stmt, parse_defer_outcome,
+    parse_expr_lossy, parse_expr_lossy_with_stats, parse_expr_with_inline_line_plan_with_stats,
     parse_memo_block_options, parse_named_block_expr, parse_pattern, parse_scope_expr_body,
     parse_stmt_lines, parse_stmt_match_arms, parse_thread_block, parse_trigger_pattern,
     split_top_level_binding, split_top_level_keyword_once,
@@ -271,7 +271,13 @@ fn parse_braced_stmt(trimmed: &str) -> Option<Stmt> {
     let (head, body) = super::split_brace_item(trimmed)?;
     if head.starts_with("unsafe lifetime ") {
         let mut errors = Vec::new();
-        return Some(parse_unsafe_lifetime_block(head, body, 0, &mut errors));
+        return Some(parse_unsafe_lifetime_block(
+            head,
+            body,
+            0,
+            None,
+            &mut errors,
+        ));
     }
     if head.starts_with("thread") {
         return Some(Stmt::Thread(parse_thread_block(head, body)));
@@ -325,6 +331,7 @@ pub(super) fn parse_unsafe_lifetime_block(
     head: &str,
     body: &str,
     base: usize,
+    audit_insertion: Option<UnsafeAuditInsertion>,
     errors: &mut Vec<ParseError>,
 ) -> Stmt {
     let mut lines = head.lines().map(str::trim).filter(|line| !line.is_empty());
@@ -369,6 +376,7 @@ pub(super) fn parse_unsafe_lifetime_block(
         id,
         reason,
         has_safety_doc,
+        audit_insertion,
         body: parse_stmt_lines(&executable_body),
     }
 }

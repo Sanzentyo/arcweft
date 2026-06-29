@@ -1,3 +1,5 @@
-flow @flow.opening opening {
-    let summary = promote('flow)
+signal current_flow: Watch<Ref<Flow>>
+
+flow effects {
+    signal.set(@signal.current_flow, @flow.effects)
 }

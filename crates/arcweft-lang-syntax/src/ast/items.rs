@@ -137,6 +137,42 @@ impl TypedSyntaxTree {
     }
 }
 
+impl Item {
+    /// Returns the authoritative top-level source range for item-boundary tooling.
+    ///
+    /// Flow-body items do not own top-level declaration boundaries, so they are
+    /// deliberately excluded from insertion-point inventories.
+    pub const fn range(&self) -> Option<TextRange> {
+        match self {
+            Self::Flow(item) => Some(*item.range()),
+            Self::Function(item) => Some(*item.range()),
+            Self::Agent(item) => Some(*item.range()),
+            Self::Callable(item) => Some(*item.range()),
+            Self::State(item) => Some(*item.range()),
+            Self::Trait(item) => Some(*item.range()),
+            Self::Impl(item) => Some(*item.range()),
+            Self::Enum(item) => Some(*item.range()),
+            Self::Struct(item) => Some(*item.range()),
+            Self::TypeAlias(item) => Some(*item.range()),
+            Self::EntityDecl(item) => Some(*item.range()),
+            Self::Entry(item) => Some(*item.range()),
+            Self::ExternCapability(item) => Some(*item.range()),
+            Self::ExternMod(item) => Some(*item.range()),
+            Self::Hook(item) => Some(*item.range()),
+            Self::DialogueDefaults(item) => Some(*item.range()),
+            Self::MemoFn(item) => Some(*item.range()),
+            Self::Proof(item) => Some(*item.range()),
+            Self::TrustedAxiom(item) => Some(*item.range()),
+            Self::Test(item) => Some(*item.range()),
+            Self::Bench(item) => Some(*item.range()),
+            Self::Parser(item) => Some(*item.range()),
+            Self::Source(item) => Some(*item.range()),
+            Self::Raw(item) => Some(*item.range()),
+            Self::FlowItem(_) => None,
+        }
+    }
+}
+
 impl Attribute {
     pub(crate) const fn new(name: String, args: Option<String>, range: TextRange) -> Self {
         Self { name, args, range }

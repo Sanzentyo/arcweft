@@ -105,6 +105,8 @@ impl HirModule {
     /// Source-level attributes are intentionally not promoted to crate-level
     /// attributes. The module-preserving owner remains [`HirProject`].
     pub fn append_module_body(&mut self, mut module: Self) {
+        self.source_len = None;
+        self.top_level_ranges.clear();
         self.flows.append(&mut module.flows);
         self.functions.append(&mut module.functions);
         self.agents.append(&mut module.agents);

@@ -254,4 +254,36 @@ mod tests {
         assert!(rendered.contains("+ flow opening"));
         assert!(rendered.contains("arcweft.verify.showObligation"));
     }
+
+    #[test]
+    fn plain_renderer_includes_verifier_proof_stub_patch_preview() {
+        let source = "flow @flow.opening opening {\n}\n";
+        let span = SourceSpan::new(
+            SourceName::path("game.arcw"),
+            SourceRange::new(source.len(), source.len()),
+        );
+        let diagnostic = Diagnostic::new(
+            DiagnosticSeverity::Warning,
+            "lifetime promotion requires proof",
+        )
+        .with_code("AWF0703")
+        .with_suggestion(
+            DiagnosticSuggestion::new(
+                "Generate proof stub",
+                DiagnosticApplicability::HasPlaceholders,
+            )
+            .with_edit(SourceEdit::new(
+                span,
+                "\n\nproof @proof.obligation_0001 {\n    // TODO: prove it\n    check _\n}\n",
+            )),
+        );
+        let source = DiagnosticSource::new(Path::new("game.arcw"), source);
+        let groups = diagnostic_groups(&diagnostic, &source);
+        let rendered = Renderer::plain().render(&groups);
+
+        assert!(rendered.contains("warning[AWF0703]: lifetime promotion requires proof"));
+        assert!(rendered.contains("Generate proof stub"));
+        assert!(rendered.contains("+ proof @proof.obligation_0001"));
+        assert!(rendered.contains("+     check _"));
+    }
 }

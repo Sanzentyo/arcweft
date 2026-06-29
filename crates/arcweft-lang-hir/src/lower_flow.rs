@@ -31,6 +31,7 @@ pub(crate) fn lower_flow(flow: &Flow) -> Result<HirFlow, HirLowerError> {
         signature: flow.signature().cloned(),
         contracts: flow.contracts().to_vec(),
         body,
+        range: *flow.range(),
     })
 }
 

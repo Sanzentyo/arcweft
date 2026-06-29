@@ -74,6 +74,7 @@ fn push_problem(
         ),
         subject: Some(subject.clone()),
         source: None,
+        insertion_target: None,
         discharge: ProofDischarge::Missing,
         smt: Some(problem),
     });
@@ -117,6 +118,7 @@ fn push_lowering_failure(
         message: message.clone(),
         subject: Some(subject.clone()),
         source: None,
+        insertion_target: None,
         discharge: ProofDischarge::Missing,
         smt: None,
     });

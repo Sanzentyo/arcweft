@@ -1,0 +1,6 @@
+flow audit_demo {
+    unsafe lifetime @unsafe.cache_last_line {
+        let summary = promote_unchecked('flow)
+        return summary
+    }
+}

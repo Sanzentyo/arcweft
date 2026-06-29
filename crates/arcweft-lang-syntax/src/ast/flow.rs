@@ -268,6 +268,16 @@ pub struct StmtMatchArm {
     body: Vec<Stmt>,
 }
 
+/// Exact source replacement range used to insert unsafe lifetime audit metadata.
+///
+/// The parser creates this only for syntax forms whose editable boundary is
+/// known precisely, currently the opening brace of a braced `unsafe lifetime`
+/// block.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UnsafeAuditInsertion {
+    replacement_range: TextRange,
+}
+
 /// `borrow expr as name: Type { ... }` zero-copy borrow block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BorrowBlock {
@@ -354,6 +364,7 @@ pub enum Stmt {
         id: IdRef,
         reason: Option<Expr>,
         has_safety_doc: bool,
+        audit_insertion: Option<UnsafeAuditInsertion>,
         body: Vec<Stmt>,
     },
     If {
@@ -483,6 +494,16 @@ pub enum AwaitBranchKind {
     Ready,
     Error,
     Denied,
+}
+
+impl UnsafeAuditInsertion {
+    pub(crate) const fn new(replacement_range: TextRange) -> Self {
+        Self { replacement_range }
+    }
+
+    pub const fn replacement_range(&self) -> &TextRange {
+        &self.replacement_range
+    }
 }
 
 impl Flow {

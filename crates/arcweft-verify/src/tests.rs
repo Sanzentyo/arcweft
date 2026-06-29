@@ -70,7 +70,14 @@ flow @flow.effects effects {
 
 #[test]
 fn verifier_action_source_edit_becomes_diagnostic_suggestion() {
-    let action = ToolAction::generate_proof_stub().with_source_edit(
+    let action = ToolAction {
+        id: "action.generate_proof_stub".to_owned(),
+        label: "Generate proof stub".to_owned(),
+        kind: ToolActionKind::GenerateProofStub,
+        source_edit: None,
+        command: None,
+    }
+    .with_source_edit(
         SourceSpan { start: 0, end: 0 },
         "\nproof @proof.todo {\n    prove _\n}\n",
         ToolActionApplicability::HasPlaceholders,
@@ -127,6 +134,114 @@ fn unsafe_lifetime_records_audit() {
             .iter()
             .any(|obligation| matches!(obligation.discharge, ProofDischarge::AuditedUnsafe { .. }))
     );
+}
+
+#[test]
+fn proof_insertion_target_generates_source_edit() {
+    let report = report(
+        r"
+flow @flow.effects effects {
+    signal.set(@signal.current_flow, @flow.effects)
+}
+",
+        VerificationMode::Test,
+    );
+
+    let action = report
+        .diagnostics
+        .iter()
+        .flat_map(|diagnostic| diagnostic.actions.iter())
+        .find(|action| action.kind == ToolActionKind::GenerateProofStub)
+        .expect("missing proof exposes proof stub action");
+    let edit = action
+        .source_edit()
+        .expect("exact top-level insertion becomes source edit");
+
+    assert_eq!(edit.span().start, edit.span().end);
+    assert_eq!(
+        edit.applicability(),
+        ToolActionApplicability::HasPlaceholders
+    );
+    assert!(edit.replacement().contains("proof @proof."));
+    assert!(edit.replacement().contains("check _"));
+}
+
+#[test]
+fn proof_insertion_without_target_keeps_host_command() {
+    let obligation = ProofObligation {
+        id: "obligation.0001".to_owned(),
+        kind: ProofObligationKind::LifetimePromotion,
+        message: "lifetime promotion requires proof".to_owned(),
+        subject: None,
+        source: None,
+        insertion_target: None,
+        discharge: ProofDischarge::Missing,
+        smt: None,
+    };
+
+    let action = obligation
+        .actions()
+        .into_iter()
+        .find(|action| action.kind == ToolActionKind::GenerateProofStub)
+        .expect("proof obligation still exposes host action");
+
+    assert!(action.source_edit().is_none());
+    assert!(action.command.is_some());
+}
+
+#[test]
+fn unsafe_audit_insertion_target_generates_source_edit() {
+    let report = report(
+        r"
+flow @flow.unsafe_demo unsafe_demo {
+    unsafe lifetime @unsafe.cache {
+        let summary = promote_unchecked('flow)
+    }
+}
+",
+        VerificationMode::Test,
+    );
+
+    let action = report
+        .diagnostics
+        .iter()
+        .flat_map(|diagnostic| diagnostic.actions.iter())
+        .find(|action| action.kind == ToolActionKind::GenerateUnsafeAudit)
+        .expect("missing unsafe audit exposes action");
+    let edit = action
+        .source_edit()
+        .expect("exact unsafe opening brace becomes replacement edit");
+
+    assert_eq!(edit.span().end, edit.span().start + 1);
+    assert_eq!(
+        edit.applicability(),
+        ToolActionApplicability::HasPlaceholders
+    );
+    assert!(edit.replacement().contains("reason = _"));
+    assert!(edit.replacement().contains("/// SAFETY: TODO"));
+}
+
+#[test]
+fn unsafe_audit_without_exact_range_keeps_host_command() {
+    let obligation = ProofObligation {
+        id: "obligation.0002".to_owned(),
+        kind: ProofObligationKind::UnsafeLifetimeAudit,
+        message: "unsafe lifetime audit requires metadata".to_owned(),
+        subject: Some("unsafe.cache".to_owned()),
+        source: None,
+        insertion_target: None,
+        discharge: ProofDischarge::Missing,
+        smt: None,
+    };
+
+    let action = obligation
+        .actions()
+        .into_iter()
+        .find(|action| action.kind == ToolActionKind::GenerateUnsafeAudit)
+        .expect("unsafe audit still exposes host action");
+
+    assert!(action.source_edit().is_none());
+    assert!(action.command.is_some());
 }
 
 #[test]
@@ -350,6 +465,7 @@ fn required_solver_checks_are_report_diagnostics() {
             message: "proof body requires solver".to_owned(),
             subject: Some("proof.example".to_owned()),
             source: None,
+            insertion_target: None,
             discharge: ProofDischarge::Missing,
             smt: Some(SmtProblem::counterexample(
                 "obligation.0001",
@@ -392,6 +508,7 @@ fn non_required_solver_checks_are_recorded_without_errors() {
             message: "proof body can be advisory in dev".to_owned(),
             subject: None,
             source: None,
+            insertion_target: None,
             discharge: ProofDischarge::Missing,
             smt: None,
         }],
@@ -423,6 +540,7 @@ fn unsat_solver_check_records_solver_discharge() {
             message: "postcondition".to_owned(),
             subject: Some("function.example.ensures.1".to_owned()),
             source: None,
+            insertion_target: None,
             discharge: ProofDischarge::Missing,
             smt: None,
         }],

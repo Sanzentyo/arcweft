@@ -16,7 +16,7 @@ use arcweft_lang_hir::syntax::{
         common::TextRange,
         flow::{
             AwaitWith, FlowItem, LoopBlock, ScopeExprBlock, SelectBranchHead, Stmt, ThreadBlock,
-            WaitTarget,
+            UnsafeAuditInsertion, WaitTarget,
         },
         ids::{EntityRefSyntax, IdRef},
         line_plan::{LinePlan, LinePlanItem, TriggerPattern},
@@ -319,6 +319,7 @@ pub struct SemanticTrustedAxiomSummary {
 pub struct SemanticUnsafeAuditSummary {
     pub id: String,
     pub source: Option<SemanticSourceSpan>,
+    pub audit_insertion: Option<SemanticSourceSpan>,
     pub has_reason: bool,
     pub has_safety_doc: bool,
 }
@@ -782,9 +783,16 @@ impl<'a> SemanticAnalyzer<'a> {
                 id,
                 reason,
                 has_safety_doc,
+                audit_insertion,
                 body,
             } => {
-                self.collect_unsafe_lifetime(id, reason.as_ref(), *has_safety_doc, body);
+                self.collect_unsafe_lifetime(
+                    id,
+                    reason.as_ref(),
+                    *has_safety_doc,
+                    audit_insertion.as_ref(),
+                    body,
+                );
                 BlockFlow::from_fallthrough(facts)
             }
             _ => {
@@ -908,21 +916,24 @@ impl<'a> SemanticAnalyzer<'a> {
                 id,
                 reason,
                 has_safety_doc,
+                audit_insertion,
                 body,
-            } => self.collect_unsafe_lifetime(id, reason.as_ref(), *has_safety_doc, body),
+            } => self.collect_unsafe_lifetime(
+                id,
+                reason.as_ref(),
+                *has_safety_doc,
+                audit_insertion.as_ref(),
+                body,
+            ),
             Stmt::If { condition, body } => {
                 self.collect_expr(condition, state);
-                let mut body_state = state.clone();
-                self.collect_stmts(body, &mut body_state);
-                state.live_must_drop.extend(body_state.live_must_drop);
+                self.collect_nested_statement_scope(body, state);
             }
             Stmt::Loop { body } | Stmt::While { body, .. } => {
                 if let Stmt::While { condition, .. } = stmt {
                     self.collect_expr(condition, state);
                 }
-                let mut body_state = state.clone();
-                self.collect_stmts(body, &mut body_state);
-                state.live_must_drop.extend(body_state.live_must_drop);
+                self.collect_nested_statement_scope(body, state);
             }
             Stmt::WhileLet {
                 expr, guard, body, ..
@@ -931,15 +942,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 if let Some(guard) = guard {
                     self.collect_expr(guard, state);
                 }
-                let mut body_state = state.clone();
-                self.collect_stmts(body, &mut body_state);
-                state.live_must_drop.extend(body_state.live_must_drop);
+                self.collect_nested_statement_scope(body, state);
             }
             Stmt::For { source, body, .. } => {
                 self.collect_expr(source, state);
-                let mut body_state = state.clone();
-                self.collect_stmts(body, &mut body_state);
-                state.live_must_drop.extend(body_state.live_must_drop);
+                self.collect_nested_statement_scope(body, state);
             }
             Stmt::Match { expr, arms } => {
                 self.collect_expr(expr, state);
@@ -958,6 +965,12 @@ impl<'a> SemanticAnalyzer<'a> {
                 raw.range().map(|range| format!("{range:?}")),
             ),
         }
+    }
+
+    fn collect_nested_statement_scope(&mut self, body: &[Stmt], state: &mut FlowState) {
+        let mut body_state = state.clone();
+        self.collect_stmts(body, &mut body_state);
+        state.live_must_drop.extend(body_state.live_must_drop);
     }
 
     fn collect_choice(&mut self, choice: &HirChoice) {
@@ -1535,6 +1548,7 @@ impl<'a> SemanticAnalyzer<'a> {
         id: &IdRef,
         reason: Option<&Expr>,
         has_safety_doc: bool,
+        audit_insertion: Option<&UnsafeAuditInsertion>,
         body: &[Stmt],
     ) {
         let id = id_ref_label(id, "unsafe");
@@ -1545,6 +1559,8 @@ impl<'a> SemanticAnalyzer<'a> {
         self.report.unsafe_audits.push(SemanticUnsafeAuditSummary {
             id: id.clone(),
             source: None,
+            audit_insertion: audit_insertion
+                .map(|insertion| span_from_range(insertion.replacement_range())),
             has_reason: reason.is_some(),
             has_safety_doc,
         });

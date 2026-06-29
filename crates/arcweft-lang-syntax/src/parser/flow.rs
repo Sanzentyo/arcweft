@@ -6,10 +6,10 @@ use super::headers::{
 use super::{
     BlockStyle, ContentCall, CstBlockEvent, CstFlowItemKind, CstLetFlowItemKind, CstLine,
     CstLineEvents, CstStructuredFlowBlockKind, DeferOutcome, Flow, FlowInit, FlowItem, Parser,
-    RawSyntax, ScopeBlock, Stmt, SyntaxParseStats, TextRange, flat_block_head, indentation,
-    is_await_with_head, is_expression_statement_call, is_typed_stmt, is_with_brace_head,
-    parse_await_with, parse_defer_outcome, parse_expr_lossy, parse_flat_fence, parse_line_options,
-    parse_line_plan_attachment, parse_scope_head, parse_stmt, parse_stmt_lines,
+    RawSyntax, ScopeBlock, Stmt, SyntaxParseStats, TextRange, UnsafeAuditInsertion,
+    flat_block_head, indentation, is_await_with_head, is_expression_statement_call, is_typed_stmt,
+    is_with_brace_head, parse_await_with, parse_defer_outcome, parse_expr_lossy, parse_flat_fence,
+    parse_line_options, parse_line_plan_attachment, parse_scope_head, parse_stmt, parse_stmt_lines,
     parse_stmt_with_stats_and_base, parse_thread_block, parse_unsafe_lifetime_block,
     parse_with_brace_label, split_call_head, split_leading_ident,
 };
@@ -448,8 +448,8 @@ impl<'a> Parser<'a> {
 
     fn parse_unsafe_lifetime_flow_stmt(&mut self) -> Option<FlowItem> {
         let start_line = self.current().clone();
-        let (head, body, _, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing unsafe lifetime",
@@ -459,10 +459,18 @@ impl<'a> Parser<'a> {
             );
             return None;
         }
+        let audit_insertion = block
+            .body_range
+            .as_ref()
+            .and_then(|range| range.start.checked_sub(1))
+            .map(|open_brace| {
+                UnsafeAuditInsertion::new(TextRange::new(open_brace, open_brace + 1))
+            });
         Some(FlowItem::Stmt(parse_unsafe_lifetime_block(
-            &head,
-            &body,
+            &block.head,
+            &block.body,
             start_line.start,
+            audit_insertion,
             &mut self.errors,
         )))
     }

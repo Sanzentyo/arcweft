@@ -31,6 +31,8 @@ use thiserror::Error;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirModule {
     pub(crate) attributes: Vec<Attribute>,
+    pub(crate) source_len: Option<usize>,
+    pub(crate) top_level_ranges: Vec<TextRange>,
     pub(crate) flows: Vec<HirFlow>,
     pub(crate) functions: Vec<HirFunction>,
     pub(crate) agents: Vec<HirAgent>,
@@ -48,6 +50,7 @@ pub struct HirFlow {
     pub(crate) signature: Option<FnSignature>,
     pub(crate) contracts: Vec<ContractClause>,
     pub(crate) body: Vec<HirFlowItem>,
+    pub(crate) range: TextRange,
 }
 
 /// HIR-facing function body.
@@ -60,6 +63,7 @@ pub struct HirFunction {
     pub(crate) contracts: Vec<ContractClause>,
     pub(crate) statements: Vec<Stmt>,
     pub(crate) value: Option<Expr>,
+    pub(crate) range: TextRange,
 }
 
 /// HIR-facing Agent controller item.
@@ -321,6 +325,30 @@ impl HirModule {
         &self.attributes
     }
 
+    pub const fn source_len(&self) -> Option<usize> {
+        self.source_len
+    }
+
+    pub fn top_level_ranges(&self) -> &[TextRange] {
+        &self.top_level_ranges
+    }
+
+    /// Returns an empty insertion range after the last typed top-level item.
+    ///
+    /// If HIR was not lowered from one concrete source document, or if there is
+    /// no typed top-level boundary, callers must keep repair actions as host
+    /// commands instead of emitting a speculative source edit.
+    pub fn safe_top_level_insertion_range(&self) -> Option<TextRange> {
+        let source_len = self.source_len?;
+        let end = self
+            .top_level_ranges
+            .iter()
+            .map(TextRange::end)
+            .max()
+            .filter(|end| *end <= source_len)?;
+        Some(TextRange::new(end, end))
+    }
+
     pub fn has_attribute(&self, name: &str) -> bool {
         self.attributes
             .iter()
@@ -379,6 +407,10 @@ impl HirFlow {
         &self.body
     }
 
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+
     pub fn contracts(&self) -> &[ContractClause] {
         &self.contracts
     }
@@ -421,6 +453,10 @@ impl HirFunction {
 
     pub const fn value(&self) -> Option<&Expr> {
         self.value.as_ref()
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
     }
 }
 

@@ -1,0 +1,13 @@
+Expected renderer properties for seq07.3 missing-proof fixture:
+
+- diagnostic code/label remains the verifier obligation code used by current tests.
+- output includes `Generate proof stub` as a help suggestion.
+- output includes a patch preview with a top-level insertion.
+- patch preview contains:
+
++ proof @proof.obligation_0001 {
++     // TODO: prove effect capability
++     check _
++ }
+
+The exact obligation number may change when other obligations are inserted before this fixture; tests should assert the stable action kind and replacement shape, not raw numbering beyond fixture-local snapshots.
