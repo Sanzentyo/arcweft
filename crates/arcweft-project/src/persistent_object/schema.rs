@@ -4,7 +4,7 @@ use crate::{
         BuildDigest, NamedDigest, put_digest, put_named_digests, put_string, put_string_vec,
         put_u32,
     },
-    incremental::QueryKind,
+    incremental::{CacheRecordStatus, InvalidationReason, QueryKind},
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -19,6 +19,7 @@ pub enum CompilerObjectKind {
     ParsedSyntax,
     InterfaceSummary,
     HirBody,
+    TypecheckGate,
     LineTaskEvidence,
     RuntimePlanUnit,
     BytecodeUnit,
@@ -114,6 +115,7 @@ impl CompilerObjectKind {
             Self::InterfaceSummary => CompilerObjectStability::CrossCompiler,
             Self::ParsedSyntax
             | Self::HirBody
+            | Self::TypecheckGate
             | Self::LineTaskEvidence
             | Self::RuntimePlanUnit
             | Self::BytecodeUnit
@@ -126,6 +128,7 @@ impl CompilerObjectKind {
             Self::ParsedSyntax => "parsed-syntax",
             Self::InterfaceSummary => "interface-summary",
             Self::HirBody => "hir-body",
+            Self::TypecheckGate => "typecheck-gate",
             Self::LineTaskEvidence => "line-task-evidence",
             Self::RuntimePlanUnit => "runtime-plan-unit",
             Self::BytecodeUnit => "bytecode-unit",
@@ -142,6 +145,7 @@ impl CompilerObjectKind {
             Self::ParsedSyntax => Some(QueryKind::Parse),
             Self::InterfaceSummary => Some(QueryKind::Interface),
             Self::HirBody => Some(QueryKind::HirBody),
+            Self::TypecheckGate => Some(QueryKind::TypeCheck),
             Self::LineTaskEvidence
             | Self::RuntimePlanUnit
             | Self::BytecodeUnit
@@ -155,6 +159,7 @@ impl CompilerObjectKind {
             Self::ParsedSyntax => Some(ArtifactKind::ParsedSyntax),
             Self::InterfaceSummary => Some(ArtifactKind::InterfaceSummary),
             Self::HirBody => Some(ArtifactKind::HirBody),
+            Self::TypecheckGate => Some(ArtifactKind::TypeCheckReport),
             Self::LineTaskEvidence
             | Self::RuntimePlanUnit
             | Self::BytecodeUnit
@@ -168,8 +173,8 @@ impl CompilerObjectKind {
             ArtifactKind::ParsedSyntax => Some(Self::ParsedSyntax),
             ArtifactKind::InterfaceSummary => Some(Self::InterfaceSummary),
             ArtifactKind::HirBody => Some(Self::HirBody),
-            ArtifactKind::TypeCheckReport
-            | ArtifactKind::RuntimePlan
+            ArtifactKind::TypeCheckReport => Some(Self::TypecheckGate),
+            ArtifactKind::RuntimePlan
             | ArtifactKind::BytecodeUnit
             | ArtifactKind::AssetMetadata
             | ArtifactKind::AssetPayload
@@ -179,11 +184,44 @@ impl CompilerObjectKind {
         }
     }
 
+    pub const TYPECHECK_GATE_CONSERVATIVE_POLICY: &'static str =
+        "typecheck-gate-valid-but-linked-sema-rebuilt";
+
+    pub fn read_through_hit_status(self) -> CacheRecordStatus {
+        if self.read_through_hit_requires_rebuild() {
+            CacheRecordStatus::HitThenRebuilt {
+                reason: InvalidationReason::ConservativeInvalidation {
+                    policy: Self::TYPECHECK_GATE_CONSERVATIVE_POLICY.to_owned(),
+                },
+            }
+        } else {
+            CacheRecordStatus::Hit
+        }
+    }
+
+    pub const fn read_through_hit_requires_rebuild(self) -> bool {
+        matches!(self, Self::TypecheckGate)
+    }
+
+    pub const fn conservative_read_through_policy(self) -> Option<&'static str> {
+        match self {
+            Self::TypecheckGate => Some(Self::TYPECHECK_GATE_CONSERVATIVE_POLICY),
+            Self::ParsedSyntax
+            | Self::InterfaceSummary
+            | Self::HirBody
+            | Self::LineTaskEvidence
+            | Self::RuntimePlanUnit
+            | Self::BytecodeUnit
+            | Self::LinkPlan => None,
+        }
+    }
+
     pub const fn wire_tag(self) -> u8 {
         match self {
             Self::ParsedSyntax => 0,
             Self::InterfaceSummary => 1,
             Self::HirBody => 2,
+            Self::TypecheckGate => 7,
             Self::LineTaskEvidence => 3,
             Self::RuntimePlanUnit => 4,
             Self::BytecodeUnit => 5,
@@ -196,6 +234,7 @@ impl CompilerObjectKind {
             0 => Ok(Self::ParsedSyntax),
             1 => Ok(Self::InterfaceSummary),
             2 => Ok(Self::HirBody),
+            7 => Ok(Self::TypecheckGate),
             3 => Ok(Self::LineTaskEvidence),
             4 => Ok(Self::RuntimePlanUnit),
             5 => Ok(Self::BytecodeUnit),

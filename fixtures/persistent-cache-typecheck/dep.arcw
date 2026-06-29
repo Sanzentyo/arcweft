@@ -1,0 +1,3 @@
+pub flow @flow.dep dep {
+return "dep"
+}

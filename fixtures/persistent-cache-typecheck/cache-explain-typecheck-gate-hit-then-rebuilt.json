@@ -1,0 +1,14 @@
+{
+  "query": "type-check",
+  "payload_kind": "typecheck_gate",
+  "status": "hit",
+  "cache_record_status": {
+    "kind": "hit_then_rebuilt",
+    "reason": {
+      "kind": "conservative_invalidation",
+      "policy": "typecheck-gate-valid-but-linked-sema-rebuilt"
+    }
+  },
+  "typecheck_gate_reuse_policy": "conservative_rebuild",
+  "recovery_action": "rebuild_from_source"
+}

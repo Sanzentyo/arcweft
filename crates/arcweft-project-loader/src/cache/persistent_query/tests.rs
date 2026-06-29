@@ -12,7 +12,8 @@ use arcweft_project::{
         CompilerObjectKind, CompilerObjectPayload, CompilerObjectStability, HirBodyFactsObject,
         HirBodyObject, InterfaceSummaryObject, ParsedSyntaxEvidenceObject, ParsedSyntaxObject,
         PublicSymbolKind, PublicSymbolObject, StableDiagnosticSummaryObject, StableRangeObject,
-        StableSourceSpanObject, SyntaxStatsObject,
+        StableSourceSpanObject, SyntaxStatsObject, TypecheckGateFactsObject, TypecheckGateObject,
+        TypecheckGateReusePolicy,
     },
 };
 use std::{
@@ -96,6 +97,15 @@ fn interface_request() -> PersistentQueryReadRequest {
     PersistentQueryReadRequest::new(
         QueryKind::Interface,
         artifact_key(QueryKind::Interface, &key),
+        key,
+    )
+}
+
+fn typecheck_gate_request() -> PersistentQueryReadRequest {
+    let key = object_key(CompilerObjectKind::TypecheckGate);
+    PersistentQueryReadRequest::new(
+        QueryKind::TypeCheck,
+        artifact_key(QueryKind::TypeCheck, &key),
         key,
     )
 }
@@ -209,11 +219,48 @@ fn interface_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
     })
 }
 
+fn typecheck_gate_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
+    let CompilerObjectPayload::InterfaceSummary(interface) =
+        interface_payload(&object_key(CompilerObjectKind::InterfaceSummary))
+    else {
+        panic!("interface helper returns interface summary");
+    };
+    let CompilerObjectPayload::HirBody(hir) = hir_payload(&object_key(CompilerObjectKind::HirBody))
+    else {
+        panic!("HIR helper returns HIR body");
+    };
+    let diagnostics = StableDiagnosticSummaryObject::empty();
+    let public_symbols = interface.public_symbols.clone();
+    let dependency_interface_digest_root = key.stage_inputs().dependency_interface_digest_root();
+    CompilerObjectPayload::TypecheckGate(TypecheckGateObject {
+        schema_version: AWBO_SCHEMA_VERSION,
+        compiler_namespace: key.identity_namespace(),
+        module: "main".to_owned(),
+        source_digest: key.source_digest,
+        source_span: span(),
+        diagnostics: diagnostics.clone(),
+        stage_inputs: key.stage_inputs(),
+        facts: TypecheckGateFactsObject {
+            interface_exports_digest: interface.exports_digest,
+            interface_imports_digest: dependency_interface_digest_root,
+            dependency_interface_digest_root,
+            body_shape_digest: hir.body_digest,
+            hir_symbol_digest: hir.facts.symbol_digest,
+            public_symbols: public_symbols.clone(),
+            type_signature_digest: TypecheckGateObject::type_signature_digest_for(&public_symbols),
+            capability_effect_digest: TypecheckGateObject::conservative_capability_effect_digest(),
+            diagnostic_digest: TypecheckGateObject::diagnostic_digest_for(&diagnostics),
+        },
+        reuse_policy: TypecheckGateReusePolicy::ConservativeRebuild,
+    })
+}
+
 fn envelope_bytes(key: &CompilerObjectKey) -> Vec<u8> {
     let payload = match key.kind {
         CompilerObjectKind::ParsedSyntax => parsed_payload(key),
         CompilerObjectKind::InterfaceSummary => interface_payload(key),
         CompilerObjectKind::HirBody => hir_payload(key),
+        CompilerObjectKind::TypecheckGate => typecheck_gate_payload(key),
         other => panic!("test helper does not support {other:?}"),
     };
     AwboEnvelope::new(key, payload)
@@ -318,6 +365,42 @@ fn persistent_query_write_through_stores_interface_summary_for_read_through() {
         outcome,
         PersistentQueryReadOutcome::Hit(hit)
             if matches!(hit.payload, PersistentQueryHitPayload::InterfaceSummary(_))
+    ));
+}
+
+#[test]
+fn persistent_query_write_through_stores_typecheck_gate_as_valid_but_rebuilt() {
+    let store = FilesystemCacheStore::new(temp_root("write-through-typecheck-gate"));
+    let request = typecheck_gate_request();
+    let receipt = store
+        .write_persistent_query(&PersistentQueryWriteRequest::new(
+            request.query,
+            request.artifact_key,
+            request.object_key.clone(),
+            "typecheck-gate:main",
+            typecheck_gate_payload(&request.object_key),
+        ))
+        .expect("persistent typecheck gate writes");
+
+    assert_eq!(receipt.query, QueryKind::TypeCheck);
+    assert_eq!(receipt.artifact_kind, ArtifactKind::TypeCheckReport);
+    assert!(receipt.record_path.is_file());
+    assert!(receipt.object_path.is_file());
+
+    let outcome = store.read_persistent_query(&request);
+    assert!(outcome.is_hit());
+    assert_eq!(
+        outcome.cache_record_status(),
+        CacheRecordStatus::HitThenRebuilt {
+            reason: InvalidationReason::ConservativeInvalidation {
+                policy: CompilerObjectKind::TYPECHECK_GATE_CONSERVATIVE_POLICY.to_owned(),
+            },
+        }
+    );
+    assert!(matches!(
+        outcome,
+        PersistentQueryReadOutcome::Hit(hit)
+            if matches!(hit.payload, PersistentQueryHitPayload::TypecheckGate(_))
     ));
 }
 

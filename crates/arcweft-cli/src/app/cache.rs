@@ -221,6 +221,9 @@ fn cache_explain_command(options: &CacheExplainOptions) -> Result<(), ExitCode> 
                 if let Some(payload_kind) = evidence.payload_kind {
                     println!("  payload kind: {payload_kind:?}");
                 }
+                if let Some(policy) = evidence.typecheck_gate_reuse_policy {
+                    println!("  typecheck gate policy: {}", policy.as_str());
+                }
                 if let Some(record_schema) = evidence.record_schema_version {
                     println!("  record schema: {record_schema}");
                 }

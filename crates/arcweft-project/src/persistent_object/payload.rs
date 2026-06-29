@@ -13,6 +13,7 @@ pub enum CompilerObjectPayload {
     ParsedSyntax(ParsedSyntaxObject),
     InterfaceSummary(InterfaceSummaryObject),
     HirBody(HirBodyObject),
+    TypecheckGate(TypecheckGateObject),
     LineTaskEvidence(LineTaskEvidenceObject),
     RuntimePlanUnit(RuntimePlanUnitObject),
     BytecodeUnit(BytecodeUnitObject),
@@ -178,6 +179,38 @@ pub struct PublicSymbolObject {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TypecheckGateObject {
+    pub schema_version: u32,
+    pub compiler_namespace: CompilerIdentityNamespaceObject,
+    pub module: String,
+    pub source_digest: BuildDigest,
+    pub source_span: StableSourceSpanObject,
+    pub diagnostics: StableDiagnosticSummaryObject,
+    pub stage_inputs: CompilerStageInputsObject,
+    pub facts: TypecheckGateFactsObject,
+    pub reuse_policy: TypecheckGateReusePolicy,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TypecheckGateFactsObject {
+    pub interface_exports_digest: BuildDigest,
+    pub interface_imports_digest: BuildDigest,
+    pub dependency_interface_digest_root: BuildDigest,
+    pub body_shape_digest: BuildDigest,
+    pub hir_symbol_digest: BuildDigest,
+    pub public_symbols: Vec<PublicSymbolObject>,
+    pub type_signature_digest: BuildDigest,
+    pub capability_effect_digest: BuildDigest,
+    pub diagnostic_digest: BuildDigest,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TypecheckGateReusePolicy {
+    ConservativeRebuild,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LineTaskEvidenceObject {
     pub module: String,
     pub evidence_digest: BuildDigest,
@@ -211,6 +244,7 @@ impl CompilerObjectPayload {
             Self::ParsedSyntax(_) => CompilerObjectKind::ParsedSyntax,
             Self::InterfaceSummary(_) => CompilerObjectKind::InterfaceSummary,
             Self::HirBody(_) => CompilerObjectKind::HirBody,
+            Self::TypecheckGate(_) => CompilerObjectKind::TypecheckGate,
             Self::LineTaskEvidence(_) => CompilerObjectKind::LineTaskEvidence,
             Self::RuntimePlanUnit(_) => CompilerObjectKind::RuntimePlanUnit,
             Self::BytecodeUnit(_) => CompilerObjectKind::BytecodeUnit,
@@ -229,6 +263,7 @@ impl CompilerObjectPayload {
             Self::ParsedSyntax(value) => value.validate_for_key(key),
             Self::InterfaceSummary(value) => value.validate_for_key(key),
             Self::HirBody(value) => value.validate_for_key(key),
+            Self::TypecheckGate(value) => value.validate_for_key(key),
             Self::LineTaskEvidence(_)
             | Self::RuntimePlanUnit(_)
             | Self::BytecodeUnit(_)
@@ -339,6 +374,169 @@ impl InterfaceSummaryObject {
         }
         BuildDigest::of(&bytes)
     }
+}
+
+impl TypecheckGateObject {
+    pub fn validate_for_key(&self, key: &CompilerObjectKey) -> Result<(), AwboError> {
+        validate_version(self.schema_version)?;
+        self.compiler_namespace.validate_for_key(key)?;
+        if self.source_digest != key.source_digest {
+            return Err(AwboError::PayloadKeyInputMismatch {
+                field: "typecheck_gate.source_digest",
+            });
+        }
+        self.source_span.validate()?;
+        self.diagnostics.validate()?;
+        self.stage_inputs.validate_for_key(key)?;
+        self.validate_gate_shape()
+    }
+
+    pub fn validate_gate_shape(&self) -> Result<(), AwboError> {
+        if self.module.is_empty() {
+            return Err(AwboError::MalformedPayload {
+                reason: "typecheck gate module is empty".to_owned(),
+            });
+        }
+        if self.reuse_policy != TypecheckGateReusePolicy::ConservativeRebuild {
+            return Err(AwboError::MalformedPayload {
+                reason: "typecheck gate must use conservative rebuild policy".to_owned(),
+            });
+        }
+        let canonical =
+            InterfaceSummaryObject::canonical_public_symbols(self.facts.public_symbols.clone());
+        if canonical != self.facts.public_symbols {
+            return Err(AwboError::MalformedPayload {
+                reason: "typecheck gate public symbols are not canonical".to_owned(),
+            });
+        }
+        if has_duplicate_public_symbol_descriptor(&canonical) {
+            return Err(AwboError::MalformedPayload {
+                reason: "typecheck gate public symbols contain duplicate descriptors".to_owned(),
+            });
+        }
+        if self.facts.interface_exports_digest
+            != InterfaceSummaryObject::exports_digest_for(&canonical)
+        {
+            return Err(AwboError::MalformedPayload {
+                reason: "typecheck gate exports digest does not match public symbols".to_owned(),
+            });
+        }
+        let dependency_root = self.stage_inputs.dependency_interface_digest_root();
+        if self.facts.dependency_interface_digest_root != dependency_root {
+            return Err(AwboError::MalformedPayload {
+                reason: "typecheck gate dependency interface root mismatch".to_owned(),
+            });
+        }
+        if self.facts.interface_imports_digest != dependency_root {
+            return Err(AwboError::MalformedPayload {
+                reason: "typecheck gate imports digest does not match dependency interfaces"
+                    .to_owned(),
+            });
+        }
+        if self.facts.type_signature_digest != Self::type_signature_digest_for(&canonical) {
+            return Err(AwboError::MalformedPayload {
+                reason: "typecheck gate type signature digest mismatch".to_owned(),
+            });
+        }
+        if self.facts.capability_effect_digest != Self::conservative_capability_effect_digest() {
+            return Err(AwboError::MalformedPayload {
+                reason: "typecheck gate capability/effect digest is not conservative sentinel"
+                    .to_owned(),
+            });
+        }
+        if self.facts.diagnostic_digest != Self::diagnostic_digest_for(&self.diagnostics) {
+            return Err(AwboError::MalformedPayload {
+                reason: "typecheck gate diagnostic digest mismatch".to_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn type_signature_digest_for(symbols: &[PublicSymbolObject]) -> BuildDigest {
+        let symbols = InterfaceSummaryObject::canonical_public_symbols(symbols.iter().cloned());
+        let mut bytes = Vec::new();
+        put_string(&mut bytes, "typecheck-gate-signatures-v1");
+        put_u32(&mut bytes, u32::try_from(symbols.len()).unwrap_or(u32::MAX));
+        for symbol in symbols {
+            put_string(&mut bytes, symbol.kind.as_str());
+            put_string(&mut bytes, &symbol.name);
+            put_digest(&mut bytes, symbol.signature_digest);
+        }
+        BuildDigest::of(&bytes)
+    }
+
+    pub fn conservative_capability_effect_digest() -> BuildDigest {
+        BuildDigest::of(b"typecheck-gate-capability-effect-v1:conservative-rebuild")
+    }
+
+    pub fn diagnostic_digest_for(diagnostics: &StableDiagnosticSummaryObject) -> BuildDigest {
+        let mut bytes = Vec::new();
+        put_string(&mut bytes, "typecheck-gate-diagnostics-v1");
+        put_u32(&mut bytes, diagnostics.error_count);
+        put_u32(&mut bytes, diagnostics.warning_count);
+        put_u32(&mut bytes, diagnostics.info_count);
+        put_u32(&mut bytes, diagnostics.note_count);
+        put_u32(
+            &mut bytes,
+            u32::try_from(diagnostics.diagnostics.len()).unwrap_or(u32::MAX),
+        );
+        for diagnostic in &diagnostics.diagnostics {
+            put_string(&mut bytes, &diagnostic.code);
+            put_u32(&mut bytes, u32::from(diagnostic.severity.wire_tag()));
+            put_string(&mut bytes, &diagnostic.message);
+            put_optional_stable_span_digest(&mut bytes, diagnostic.primary_span);
+            put_u32(
+                &mut bytes,
+                u32::try_from(diagnostic.related_spans.len()).unwrap_or(u32::MAX),
+            );
+            for span in &diagnostic.related_spans {
+                put_stable_span_digest(&mut bytes, *span);
+            }
+        }
+        BuildDigest::of(&bytes)
+    }
+}
+
+impl TypecheckGateReusePolicy {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ConservativeRebuild => "conservative_rebuild",
+        }
+    }
+
+    pub const fn wire_tag(self) -> u8 {
+        match self {
+            Self::ConservativeRebuild => 0,
+        }
+    }
+
+    pub const fn from_wire_tag(tag: u8) -> Result<Self, AwboError> {
+        match tag {
+            0 => Ok(Self::ConservativeRebuild),
+            _ => Err(AwboError::UnsupportedWireTag {
+                domain: "typecheck gate reuse policy",
+                tag,
+            }),
+        }
+    }
+}
+
+fn put_optional_stable_span_digest(bytes: &mut Vec<u8>, span: Option<StableSourceSpanObject>) {
+    if let Some(span) = span {
+        put_string(bytes, "some");
+        put_stable_span_digest(bytes, span);
+    } else {
+        put_string(bytes, "none");
+    }
+}
+
+fn put_stable_span_digest(bytes: &mut Vec<u8>, span: StableSourceSpanObject) {
+    put_u32(bytes, span.range.start);
+    put_u32(bytes, span.range.end);
+    put_u32(bytes, span.start_line);
+    put_u32(bytes, span.start_column);
+    put_u32(bytes, span.end_line);
+    put_u32(bytes, span.end_column);
 }
 
 impl PublicSymbolKind {

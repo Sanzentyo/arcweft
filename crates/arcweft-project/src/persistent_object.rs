@@ -15,7 +15,8 @@ pub use payload::{
     InterfaceSummaryObject, LineTaskEvidenceObject, LinkPlanObject, ParsedSyntaxEvidenceObject,
     ParsedSyntaxObject, PublicSymbolKind, PublicSymbolObject, RuntimePlanUnitObject,
     StableDiagnosticObject, StableDiagnosticSeverity, StableDiagnosticSummaryObject,
-    StableRangeObject, StableSourceSpanObject, SyntaxStatsObject,
+    StableRangeObject, StableSourceSpanObject, SyntaxStatsObject, TypecheckGateFactsObject,
+    TypecheckGateObject, TypecheckGateReusePolicy,
 };
 pub use schema::{
     AWBO_MAGIC, AWBO_SCHEMA_VERSION, AwboError, CompilerBuildIdentity,

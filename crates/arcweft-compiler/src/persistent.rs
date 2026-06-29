@@ -19,7 +19,8 @@ use arcweft_project::{
         HirBodyFactsObject, HirBodyObject, InterfaceSummaryObject, ParsedSyntaxEvidenceObject,
         ParsedSyntaxObject, PublicSymbolKind, PublicSymbolObject, StableDiagnosticObject,
         StableDiagnosticSeverity, StableDiagnosticSummaryObject, StableRangeObject,
-        StableSourceSpanObject, SyntaxStatsObject,
+        StableSourceSpanObject, SyntaxStatsObject, TypecheckGateFactsObject, TypecheckGateObject,
+        TypecheckGateReusePolicy,
     },
 };
 use thiserror::Error;
@@ -47,6 +48,15 @@ pub struct InterfaceSummaryFactsInput<'a> {
     pub hir: &'a HirModule,
 }
 
+/// Inputs required to project stable typecheck gate facts.
+pub struct TypecheckGateFactsInput<'a> {
+    pub key: &'a CompilerObjectKey,
+    pub module: &'a str,
+    pub parsed: &'a ParsedSource,
+    pub interface_summary: &'a InterfaceSummaryObject,
+    pub hir_body: &'a HirBodyObject,
+}
+
 /// Failure while projecting compiler internals into stable persistent facts.
 #[derive(Debug, Error, Eq, PartialEq)]
 pub enum PersistentFactsError {
@@ -59,6 +69,8 @@ pub enum PersistentFactsError {
     CoordinateTooLarge { field: &'static str, value: usize },
     #[error("{field} length does not fit the stable payload count type")]
     CountTooLarge { field: &'static str },
+    #[error("{field} source digest does not match typecheck gate key")]
+    SourceDigestMismatch { field: &'static str },
 }
 
 /// Builds a parsed-syntax payload object without serializing parser internals.
@@ -157,6 +169,59 @@ pub fn interface_summary_payload(
     Ok(CompilerObjectPayload::InterfaceSummary(
         interface_summary_object(input)?,
     ))
+}
+
+/// Builds a stable typecheck gate object without serializing linked HIR or a `TypeCheckReport`.
+pub fn typecheck_gate_object(
+    input: &TypecheckGateFactsInput<'_>,
+) -> Result<TypecheckGateObject, PersistentFactsError> {
+    ensure_key_kind(input.key, CompilerObjectKind::TypecheckGate)?;
+    let source_digest = BuildDigest::from_bytes(input.parsed.source_hash().as_bytes());
+    if input.interface_summary.source_digest != source_digest {
+        return Err(PersistentFactsError::SourceDigestMismatch {
+            field: "interface_summary",
+        });
+    }
+    if input.hir_body.source_digest != source_digest {
+        return Err(PersistentFactsError::SourceDigestMismatch { field: "hir_body" });
+    }
+    let diagnostics = StableDiagnosticSummaryObject::empty();
+    let public_symbols = InterfaceSummaryObject::canonical_public_symbols(
+        input.interface_summary.public_symbols.clone(),
+    );
+    let dependency_interface_digest_root =
+        input.key.stage_inputs().dependency_interface_digest_root();
+    let facts = TypecheckGateFactsObject {
+        interface_exports_digest: input.interface_summary.exports_digest,
+        interface_imports_digest: input.interface_summary.imports_digest,
+        dependency_interface_digest_root,
+        body_shape_digest: input.hir_body.body_digest,
+        hir_symbol_digest: input.hir_body.facts.symbol_digest,
+        type_signature_digest: TypecheckGateObject::type_signature_digest_for(&public_symbols),
+        capability_effect_digest: TypecheckGateObject::conservative_capability_effect_digest(),
+        diagnostic_digest: TypecheckGateObject::diagnostic_digest_for(&diagnostics),
+        public_symbols,
+    };
+    Ok(TypecheckGateObject {
+        schema_version: AWBO_SCHEMA_VERSION,
+        compiler_namespace: input.key.identity_namespace(),
+        module: input.module.to_owned(),
+        source_digest,
+        source_span: source_span(input.parsed)?,
+        diagnostics,
+        stage_inputs: input.key.stage_inputs(),
+        facts,
+        reuse_policy: TypecheckGateReusePolicy::ConservativeRebuild,
+    })
+}
+
+/// Builds a typed typecheck-gate payload enum for direct envelope construction.
+pub fn typecheck_gate_payload(
+    input: &TypecheckGateFactsInput<'_>,
+) -> Result<CompilerObjectPayload, PersistentFactsError> {
+    Ok(CompilerObjectPayload::TypecheckGate(typecheck_gate_object(
+        input,
+    )?))
 }
 
 fn ensure_key_kind(

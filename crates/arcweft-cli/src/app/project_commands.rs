@@ -21,8 +21,9 @@ use arcweft_compiler::{
     lower::lower_source_runtime_plan_with_options,
     parse::parse_source_text,
     persistent::{
-        HirBodyFactsInput, InterfaceSummaryFactsInput, ParsedSyntaxFactsInput, hir_body_payload,
-        interface_summary_payload, parsed_syntax_payload,
+        HirBodyFactsInput, InterfaceSummaryFactsInput, ParsedSyntaxFactsInput,
+        TypecheckGateFactsInput, hir_body_object, hir_body_payload, interface_summary_object,
+        interface_summary_payload, parsed_syntax_payload, typecheck_gate_payload,
     },
     project::{
         CompiledProject, CompiledProjectModule, InMemoryProjectCompileCache, NoProjectCompileCache,
@@ -771,7 +772,9 @@ fn persistent_query_write_item(
     let logical_item = persistent_query_logical_item(kind, source);
     let dependency_interface_digests = if matches!(
         kind,
-        CompilerObjectKind::InterfaceSummary | CompilerObjectKind::HirBody
+        CompilerObjectKind::InterfaceSummary
+            | CompilerObjectKind::HirBody
+            | CompilerObjectKind::TypecheckGate
     ) {
         dependency_interface_digests(state, source)
     } else {
@@ -839,6 +842,37 @@ fn persistent_query_payload(
                 hir: compiled.hir(),
             })
         }
+        CompilerObjectKind::TypecheckGate => (|| {
+            let interface_key = sibling_persistent_object_key(
+                object_key,
+                CompilerObjectKind::InterfaceSummary,
+                QueryKind::Interface,
+            );
+            let hir_key = sibling_persistent_object_key(
+                object_key,
+                CompilerObjectKind::HirBody,
+                QueryKind::HirBody,
+            );
+            let interface_summary = interface_summary_object(&InterfaceSummaryFactsInput {
+                key: &interface_key,
+                module: &module_label,
+                parsed,
+                hir: compiled.hir(),
+            })?;
+            let hir_body = hir_body_object(&HirBodyFactsInput {
+                key: &hir_key,
+                module: &module_label,
+                parsed,
+                hir: compiled.hir(),
+            })?;
+            typecheck_gate_payload(&TypecheckGateFactsInput {
+                key: object_key,
+                module: &module_label,
+                parsed,
+                interface_summary: &interface_summary,
+                hir_body: &hir_body,
+            })
+        })(),
         CompilerObjectKind::LineTaskEvidence
         | CompilerObjectKind::RuntimePlanUnit
         | CompilerObjectKind::BytecodeUnit
@@ -851,6 +885,23 @@ fn persistent_query_payload(
         );
         ExitCode::FAILURE
     })
+}
+
+fn sibling_persistent_object_key(
+    source: &CompilerObjectKey,
+    kind: CompilerObjectKind,
+    query: QueryKind,
+) -> CompilerObjectKey {
+    CompilerObjectKey {
+        kind,
+        compiler: source.compiler.clone(),
+        source_digest: source.source_digest,
+        query_options_digest: persistent_query_options_digest(query),
+        dependency_interface_digests: source.dependency_interface_digests.clone(),
+        dependency_body_digests: source.dependency_body_digests.clone(),
+        environment_digest: source.environment_digest,
+    }
+    .canonicalized()
 }
 
 fn commit_persistent_query_item(

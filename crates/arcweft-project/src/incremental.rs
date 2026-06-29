@@ -621,6 +621,15 @@ mod tests {
                 .dependency_scope()
                 .requires_body_digests()
         );
+        assert_eq!(
+            QueryKind::TypeCheck.artifact_kind(),
+            crate::artifact::ArtifactKind::TypeCheckReport
+        );
+        assert!(
+            !QueryKind::TypeCheck
+                .dependency_scope()
+                .requires_body_digests()
+        );
     }
 
     #[test]

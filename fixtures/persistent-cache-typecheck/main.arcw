@@ -1,0 +1,6 @@
+use dep
+
+pub flow @flow.opening opening {
+goto @flow.dep
+return "done"
+}

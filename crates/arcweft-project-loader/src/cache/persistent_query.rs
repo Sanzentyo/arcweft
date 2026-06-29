@@ -16,11 +16,12 @@ use arcweft_project::{
         AWBO_SCHEMA_VERSION, AwboEnvelope, AwboError, CompilerBuildIdentity,
         CompilerIdentityNamespaceObject, CompilerObjectKey, CompilerObjectKind,
         CompilerObjectPayload, CompilerStageInputsObject, HirBodyObject, InterfaceSummaryObject,
-        ParsedSyntaxObject,
+        ParsedSyntaxObject, TypecheckGateObject, TypecheckGateReusePolicy,
     },
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::BTreeMap,
     fs,
     io::ErrorKind,
     path::{Path, PathBuf},
@@ -77,6 +78,7 @@ pub enum PersistentQueryHitPayload {
     ParsedSyntax(ParsedSyntaxObject),
     InterfaceSummary(InterfaceSummaryObject),
     HirBody(HirBodyObject),
+    TypecheckGate(TypecheckGateObject),
 }
 
 /// Successful write-through evidence for one persistent compiler query object.
@@ -138,6 +140,8 @@ pub struct PersistentQueryExplainEvidence {
     pub cache_record_status: CacheRecordStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub soft_miss_reason: Option<PersistentQueryMissReason>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub typecheck_gate_reuse_policy: Option<TypecheckGateReusePolicy>,
     pub recovery_action: PersistentQueryRecoveryAction,
 }
 
@@ -359,7 +363,7 @@ impl PersistentQueryReadOutcome {
 
     pub fn cache_record_status(&self) -> CacheRecordStatus {
         match self {
-            Self::Hit(_) => CacheRecordStatus::Hit,
+            Self::Hit(hit) => hit.object_kind.read_through_hit_status(),
             Self::Miss(miss) => CacheRecordStatus::Miss {
                 reason: miss.reason.invalidation_reason(),
             },
@@ -378,8 +382,12 @@ impl PersistentQueryMissReason {
             Self::SourceDigestMismatch { .. } => InvalidationReason::SourceChanged,
             Self::QueryOptionsDigestMismatch { .. } => InvalidationReason::OptionsChanged,
             Self::EnvironmentDigestMismatch { .. } => InvalidationReason::EnvironmentChanged,
-            Self::DependencyInterfaceDigestMismatch { .. } => InvalidationReason::InterfaceChanged,
-            Self::DependencyBodyDigestMismatch { .. } => InvalidationReason::BodyChanged,
+            Self::DependencyInterfaceDigestMismatch { expected, actual } => {
+                dependency_interface_mismatch_invalidation_reason(expected, actual)
+            }
+            Self::DependencyBodyDigestMismatch { expected, actual } => {
+                dependency_body_mismatch_invalidation_reason(expected, actual)
+            }
             Self::UnsupportedObjectKind { .. }
             | Self::QueryKindMismatch { .. }
             | Self::RecordReadFailed { .. }
@@ -399,6 +407,53 @@ impl PersistentQueryMissReason {
             | Self::KeyDigestMismatch { .. } => InvalidationReason::CorruptObject,
         }
     }
+}
+
+fn dependency_interface_mismatch_invalidation_reason(
+    expected: &[NamedDigest],
+    actual: &[NamedDigest],
+) -> InvalidationReason {
+    first_changed_dependency_name(expected, actual)
+        .map_or(InvalidationReason::InterfaceChanged, |module| {
+            InvalidationReason::DependencyInterfaceChanged { module }
+        })
+}
+
+fn dependency_body_mismatch_invalidation_reason(
+    expected: &[NamedDigest],
+    actual: &[NamedDigest],
+) -> InvalidationReason {
+    first_changed_dependency_name(expected, actual)
+        .map_or(InvalidationReason::BodyChanged, |module| {
+            InvalidationReason::DependencyBodyChanged { module }
+        })
+}
+
+fn first_changed_dependency_name(
+    expected: &[NamedDigest],
+    actual: &[NamedDigest],
+) -> Option<String> {
+    let actual_by_name = actual
+        .iter()
+        .map(|value| (value.name(), value.digest()))
+        .collect::<BTreeMap<_, _>>();
+    expected
+        .iter()
+        .find(|expected| match actual_by_name.get(expected.name()) {
+            Some(actual_digest) => *actual_digest != expected.digest(),
+            None => true,
+        })
+        .map(|value| value.name().to_owned())
+        .or_else(|| {
+            let expected_by_name = expected
+                .iter()
+                .map(|value| (value.name(), value.digest()))
+                .collect::<BTreeMap<_, _>>();
+            actual
+                .iter()
+                .find(|actual| !expected_by_name.contains_key(actual.name()))
+                .map(|value| value.name().to_owned())
+        })
 }
 
 impl From<ErrorKind> for PersistentQueryIoKind {
@@ -813,6 +868,9 @@ fn persistent_query_hit_payload(
         CompilerObjectPayload::HirBody(payload) => {
             Ok(PersistentQueryHitPayload::HirBody(payload.clone()))
         }
+        CompilerObjectPayload::TypecheckGate(payload) => {
+            Ok(PersistentQueryHitPayload::TypecheckGate(payload.clone()))
+        }
         other => Err(miss(
             request,
             record_path.to_path_buf(),
@@ -927,9 +985,14 @@ fn explain_persistent_query_outcome(
             payload_digest: Some(hit.payload_digest.to_hex()),
             payload_len: Some(hit.payload_len),
             status: PersistentQueryExplainStatus::Hit,
-            cache_record_status: CacheRecordStatus::Hit,
+            cache_record_status: hit.object_kind.read_through_hit_status(),
             soft_miss_reason: None,
-            recovery_action: PersistentQueryRecoveryAction::NoneRequired,
+            typecheck_gate_reuse_policy: envelope.and_then(typecheck_gate_reuse_policy),
+            recovery_action: if hit.object_kind.read_through_hit_requires_rebuild() {
+                PersistentQueryRecoveryAction::RebuildFromSource
+            } else {
+                PersistentQueryRecoveryAction::NoneRequired
+            },
         },
         PersistentQueryReadOutcome::Miss(miss) => {
             let reason = miss.reason.clone();
@@ -962,6 +1025,7 @@ fn explain_persistent_query_outcome(
                     reason: reason.invalidation_reason(),
                 },
                 soft_miss_reason: Some(reason),
+                typecheck_gate_reuse_policy: envelope.and_then(typecheck_gate_reuse_policy),
                 recovery_action: PersistentQueryRecoveryAction::RebuildFromSource,
             }
         }
@@ -1002,6 +1066,7 @@ fn explain_persistent_query_preflight_miss(
         status: PersistentQueryExplainStatus::Miss,
         cache_record_status: status,
         soft_miss_reason: Some(reason),
+        typecheck_gate_reuse_policy: None,
         recovery_action: PersistentQueryRecoveryAction::RebuildFromSource,
     }
 }
@@ -1028,6 +1093,15 @@ fn object_key_from_envelope(envelope: &AwboEnvelope) -> Option<CompilerObjectKey
         },
         CompilerObjectPayload::HirBody(payload) => CompilerObjectKey {
             kind: CompilerObjectKind::HirBody,
+            compiler: payload.compiler_namespace.compiler.clone(),
+            source_digest: payload.source_digest,
+            query_options_digest: payload.stage_inputs.query_options_digest,
+            dependency_interface_digests: payload.stage_inputs.dependency_interface_digests.clone(),
+            dependency_body_digests: payload.stage_inputs.dependency_body_digests.clone(),
+            environment_digest: payload.stage_inputs.environment_digest,
+        },
+        CompilerObjectPayload::TypecheckGate(payload) => CompilerObjectKey {
+            kind: CompilerObjectKind::TypecheckGate,
             compiler: payload.compiler_namespace.compiler.clone(),
             source_digest: payload.source_digest,
             query_options_digest: payload.stage_inputs.query_options_digest,
@@ -1067,6 +1141,7 @@ fn payload_schema_version(payload: &CompilerObjectPayload) -> Option<u32> {
         CompilerObjectPayload::ParsedSyntax(value) => Some(value.schema_version),
         CompilerObjectPayload::InterfaceSummary(value) => Some(value.schema_version),
         CompilerObjectPayload::HirBody(value) => Some(value.schema_version),
+        CompilerObjectPayload::TypecheckGate(value) => Some(value.schema_version),
         CompilerObjectPayload::LineTaskEvidence(_)
         | CompilerObjectPayload::RuntimePlanUnit(_)
         | CompilerObjectPayload::BytecodeUnit(_)
@@ -1156,6 +1231,9 @@ fn validate_envelope_for_request(
         CompilerObjectPayload::HirBody(payload) => {
             validate_hir_body_payload(payload, key)?;
         }
+        CompilerObjectPayload::TypecheckGate(payload) => {
+            validate_typecheck_gate_payload(payload, key)?;
+        }
         other => {
             return Err(PersistentQueryMissReason::PayloadKindMismatch {
                 expected: key.kind,
@@ -1212,6 +1290,40 @@ fn validate_hir_body_payload(
         });
     }
     validate_stage_inputs(&payload.stage_inputs, key)
+}
+
+fn validate_typecheck_gate_payload(
+    payload: &TypecheckGateObject,
+    key: &CompilerObjectKey,
+) -> Result<(), PersistentQueryMissReason> {
+    validate_payload_schema(payload.schema_version)?;
+    validate_namespace(&payload.compiler_namespace, key)?;
+    validate_source_digest(payload.source_digest, key)?;
+    payload
+        .source_span
+        .validate()
+        .map_err(|error| corrupt_object(&error))?;
+    payload
+        .diagnostics
+        .validate()
+        .map_err(|error| corrupt_object(&error))?;
+    validate_stage_inputs(&payload.stage_inputs, key)?;
+    payload
+        .validate_gate_shape()
+        .map_err(|error| corrupt_object(&error))
+}
+
+fn typecheck_gate_reuse_policy(envelope: &AwboEnvelope) -> Option<TypecheckGateReusePolicy> {
+    match &envelope.payload {
+        CompilerObjectPayload::TypecheckGate(payload) => Some(payload.reuse_policy),
+        CompilerObjectPayload::ParsedSyntax(_)
+        | CompilerObjectPayload::InterfaceSummary(_)
+        | CompilerObjectPayload::HirBody(_)
+        | CompilerObjectPayload::LineTaskEvidence(_)
+        | CompilerObjectPayload::RuntimePlanUnit(_)
+        | CompilerObjectPayload::BytecodeUnit(_)
+        | CompilerObjectPayload::LinkPlan(_) => None,
+    }
 }
 
 fn validate_interface_summary_payload(

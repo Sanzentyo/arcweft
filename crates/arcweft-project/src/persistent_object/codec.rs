@@ -3,7 +3,8 @@ use super::payload::{
     InterfaceSummaryObject, LineTaskEvidenceObject, LinkPlanObject, ParsedSyntaxEvidenceObject,
     ParsedSyntaxObject, PublicSymbolKind, PublicSymbolObject, RuntimePlanUnitObject,
     StableDiagnosticObject, StableDiagnosticSeverity, StableDiagnosticSummaryObject,
-    StableRangeObject, StableSourceSpanObject, SyntaxStatsObject,
+    StableRangeObject, StableSourceSpanObject, SyntaxStatsObject, TypecheckGateFactsObject,
+    TypecheckGateObject, TypecheckGateReusePolicy,
 };
 use super::schema::{
     AWBO_MAGIC, AWBO_SCHEMA_VERSION, AwboError, CompilerBuildIdentity,
@@ -173,6 +174,7 @@ impl CompilerObjectPayload {
             Self::ParsedSyntax(value) => put_parsed_syntax(&mut writer, value)?,
             Self::InterfaceSummary(value) => put_interface_summary(&mut writer, value)?,
             Self::HirBody(value) => put_hir_body(&mut writer, value)?,
+            Self::TypecheckGate(value) => put_typecheck_gate(&mut writer, value)?,
             Self::LineTaskEvidence(value) => put_line_task_evidence(&mut writer, value)?,
             Self::RuntimePlanUnit(value) => put_runtime_plan_unit(&mut writer, value)?,
             Self::BytecodeUnit(value) => put_bytecode_unit(&mut writer, value)?,
@@ -198,6 +200,9 @@ impl CompilerObjectPayload {
                 Self::InterfaceSummary(read_interface_summary(&mut reader)?)
             }
             CompilerObjectKind::HirBody => Self::HirBody(read_hir_body(&mut reader)?),
+            CompilerObjectKind::TypecheckGate => {
+                Self::TypecheckGate(read_typecheck_gate(&mut reader)?)
+            }
             CompilerObjectKind::LineTaskEvidence => {
                 Self::LineTaskEvidence(read_line_task_evidence(&mut reader)?)
             }
@@ -228,6 +233,7 @@ impl CompilerObjectKind {
             "parsed-syntax" => Ok(Self::ParsedSyntax),
             "interface-summary" => Ok(Self::InterfaceSummary),
             "hir-body" => Ok(Self::HirBody),
+            "typecheck-gate" => Ok(Self::TypecheckGate),
             "line-task-evidence" => Ok(Self::LineTaskEvidence),
             "runtime-plan-unit" => Ok(Self::RuntimePlanUnit),
             "bytecode-unit" => Ok(Self::BytecodeUnit),
@@ -544,6 +550,91 @@ fn read_interface_summary(
         exports_digest,
         imports_digest,
         public_symbols,
+    })
+}
+
+fn put_typecheck_gate(
+    writer: &mut BinaryWriter,
+    value: &TypecheckGateObject,
+) -> Result<(), AwboError> {
+    writer.put_u32(value.schema_version);
+    put_identity_namespace(writer, &value.compiler_namespace)?;
+    writer.put_string("typecheck.module", &value.module)?;
+    writer.put_digest(value.source_digest);
+    put_source_span(writer, value.source_span);
+    put_diagnostic_summary(writer, &value.diagnostics)?;
+    put_stage_inputs(writer, &value.stage_inputs)?;
+    put_typecheck_gate_facts(writer, &value.facts)?;
+    writer.put_u8(value.reuse_policy.wire_tag());
+    Ok(())
+}
+
+fn read_typecheck_gate(reader: &mut BinaryReader<'_>) -> Result<TypecheckGateObject, AwboError> {
+    Ok(TypecheckGateObject {
+        schema_version: reader.read_u32("typecheck.schema_version")?,
+        compiler_namespace: read_identity_namespace(reader)?,
+        module: reader.read_string("typecheck.module")?,
+        source_digest: reader.read_digest("typecheck.source_digest")?,
+        source_span: read_source_span(reader)?,
+        diagnostics: read_diagnostic_summary(reader)?,
+        stage_inputs: read_stage_inputs(reader)?,
+        facts: read_typecheck_gate_facts(reader)?,
+        reuse_policy: TypecheckGateReusePolicy::from_wire_tag(
+            reader.read_u8("typecheck.reuse_policy")?,
+        )?,
+    })
+}
+
+fn put_typecheck_gate_facts(
+    writer: &mut BinaryWriter,
+    value: &TypecheckGateFactsObject,
+) -> Result<(), AwboError> {
+    writer.put_digest(value.interface_exports_digest);
+    writer.put_digest(value.interface_imports_digest);
+    writer.put_digest(value.dependency_interface_digest_root);
+    writer.put_digest(value.body_shape_digest);
+    writer.put_digest(value.hir_symbol_digest);
+    writer.put_len("typecheck.public_symbols", value.public_symbols.len())?;
+    for symbol in &value.public_symbols {
+        writer.put_string("typecheck.symbol.name", &symbol.name)?;
+        writer.put_u8(symbol.kind.wire_tag());
+        writer.put_digest(symbol.signature_digest);
+    }
+    writer.put_digest(value.type_signature_digest);
+    writer.put_digest(value.capability_effect_digest);
+    writer.put_digest(value.diagnostic_digest);
+    Ok(())
+}
+
+fn read_typecheck_gate_facts(
+    reader: &mut BinaryReader<'_>,
+) -> Result<TypecheckGateFactsObject, AwboError> {
+    let interface_exports_digest = reader.read_digest("typecheck.interface_exports_digest")?;
+    let interface_imports_digest = reader.read_digest("typecheck.interface_imports_digest")?;
+    let dependency_interface_digest_root =
+        reader.read_digest("typecheck.dependency_interface_digest_root")?;
+    let body_shape_digest = reader.read_digest("typecheck.body_shape_digest")?;
+    let hir_symbol_digest = reader.read_digest("typecheck.hir_symbol_digest")?;
+    let len = reader.read_u32_len("typecheck.public_symbols")?;
+    let public_symbols = (0..len)
+        .map(|_| {
+            Ok(PublicSymbolObject {
+                name: reader.read_string("typecheck.symbol.name")?,
+                kind: PublicSymbolKind::from_wire_tag(reader.read_u8("typecheck.symbol.kind")?)?,
+                signature_digest: reader.read_digest("typecheck.symbol.signature_digest")?,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(TypecheckGateFactsObject {
+        interface_exports_digest,
+        interface_imports_digest,
+        dependency_interface_digest_root,
+        body_shape_digest,
+        hir_symbol_digest,
+        public_symbols,
+        type_signature_digest: reader.read_digest("typecheck.type_signature_digest")?,
+        capability_effect_digest: reader.read_digest("typecheck.capability_effect_digest")?,
+        diagnostic_digest: reader.read_digest("typecheck.diagnostic_digest")?,
     })
 }
 
@@ -1079,6 +1170,47 @@ mod tests {
         })
     }
 
+    fn typecheck_gate_payload_for(object_key: &CompilerObjectKey) -> CompilerObjectPayload {
+        let CompilerObjectPayload::InterfaceSummary(interface) =
+            interface_payload_for(&key(CompilerObjectKind::InterfaceSummary))
+        else {
+            panic!("interface helper returns interface summary");
+        };
+        let CompilerObjectPayload::HirBody(hir) =
+            hir_payload_for(&key(CompilerObjectKind::HirBody))
+        else {
+            panic!("HIR helper returns HIR body");
+        };
+        let diagnostics = StableDiagnosticSummaryObject::empty();
+        let public_symbols = interface.public_symbols.clone();
+        let dependency_interface_digest_root =
+            object_key.stage_inputs().dependency_interface_digest_root();
+        CompilerObjectPayload::TypecheckGate(TypecheckGateObject {
+            schema_version: AWBO_SCHEMA_VERSION,
+            compiler_namespace: object_key.identity_namespace(),
+            module: "game".to_owned(),
+            source_digest: object_key.source_digest,
+            source_span: span(),
+            diagnostics: diagnostics.clone(),
+            stage_inputs: object_key.stage_inputs(),
+            facts: TypecheckGateFactsObject {
+                interface_exports_digest: interface.exports_digest,
+                interface_imports_digest: dependency_interface_digest_root,
+                dependency_interface_digest_root,
+                body_shape_digest: hir.body_digest,
+                hir_symbol_digest: hir.facts.symbol_digest,
+                public_symbols: public_symbols.clone(),
+                type_signature_digest: TypecheckGateObject::type_signature_digest_for(
+                    &public_symbols,
+                ),
+                capability_effect_digest:
+                    TypecheckGateObject::conservative_capability_effect_digest(),
+                diagnostic_digest: TypecheckGateObject::diagnostic_digest_for(&diagnostics),
+            },
+            reuse_policy: TypecheckGateReusePolicy::ConservativeRebuild,
+        })
+    }
+
     #[test]
     fn persistent_object_bytes_are_deterministic() {
         let key = key(CompilerObjectKind::ParsedSyntax);
@@ -1100,12 +1232,14 @@ mod tests {
             CompilerObjectKind::ParsedSyntax,
             CompilerObjectKind::InterfaceSummary,
             CompilerObjectKind::HirBody,
+            CompilerObjectKind::TypecheckGate,
         ] {
             let key = key(kind);
             let payload = match kind {
                 CompilerObjectKind::ParsedSyntax => parsed_payload_for(&key),
                 CompilerObjectKind::InterfaceSummary => interface_payload_for(&key),
                 CompilerObjectKind::HirBody => hir_payload_for(&key),
+                CompilerObjectKind::TypecheckGate => typecheck_gate_payload_for(&key),
                 _ => unreachable!("test covers parse/interface/HIR payloads"),
             };
             let envelope = AwboEnvelope::new(&key, payload).expect("envelope builds");
