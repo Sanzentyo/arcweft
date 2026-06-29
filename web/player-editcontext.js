@@ -63,7 +63,6 @@ export class ArcweftEditContextPlayerGlue {
     this.#host.editContext = this.#editContext;
     this.#state.installed = true;
 
-    await this.#activateAdapter();
     this.#syncEditContextText();
     this.#syncEditContextGeometry();
 
@@ -159,7 +158,51 @@ export class ArcweftEditContextPlayerGlue {
     this.#syncEditContextText();
     this.#syncEditContextGeometry();
     this.#renderMirror();
-    this.#emitStatus("runtime_update");
+  }
+
+  applyRuntimeCommand(command) {
+    if (!command) {
+      return;
+    }
+    switch (command.kind) {
+      case "activate":
+        this.updateFromRuntimeSnapshot(command.snapshot);
+        this.#emitStatus("runtime_activated");
+        break;
+      case "update_snapshot":
+        this.updateFromRuntimeSnapshot(command.snapshot);
+        break;
+      case "update_geometry":
+        this.updateGeometry(command.geometry);
+        break;
+      case "commit_composition":
+        this.#state.composing = false;
+        this.#state.compositionStart = this.#state.selectionStart;
+        this.#state.compositionEnd = this.#state.selectionEnd;
+        this.#emitStatus("runtime_composition_commit", { session: command.session });
+        this.#renderMirror();
+        break;
+      case "cancel_composition":
+        this.#state.composing = false;
+        this.#emitStatus("runtime_composition_cancel", { session: command.session });
+        this.#renderMirror();
+        break;
+      case "deactivate":
+        this.#state.installed = false;
+        this.#state.composing = false;
+        this.#emitStatus("runtime_deactivated", { session: command.session });
+        this.#renderMirror();
+        break;
+      case "unsupported_no_fallback":
+        this.#emitStatus("unsupported_no_fallback", {
+          api: "edit_context",
+          message: command.message,
+        });
+        break;
+      default:
+        this.#emitStatus("runtime_command_ignored", { kind: command.kind });
+        break;
+    }
   }
 
   updateGeometry(geometry) {
@@ -183,15 +226,6 @@ export class ArcweftEditContextPlayerGlue {
 
   #isSupported() {
     return typeof window.EditContext === "function" && "editContext" in this.#host;
-  }
-
-  async #activateAdapter() {
-    await this.#delegateCall(
-      "activate",
-      this.#state.hostId,
-      this.#state.secure ? "" : this.#state.text,
-      this.#state.secure,
-    );
   }
 
   #installListener(target, type, callback, options) {

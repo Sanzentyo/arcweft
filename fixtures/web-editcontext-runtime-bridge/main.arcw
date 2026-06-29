@@ -1,0 +1,39 @@
+// Fixture source for seq06.4a.3 Web player runtime text-input bridge.
+//
+// This intentionally uses stable ids and three control kinds.  The exact syntax
+// may need the current Arcweft UI lowering spelling in the target checkout; keep
+// the ids, labels, and evidence roles stable when adapting.
+
+scene web_editcontext_runtime_bridge {
+  title "Web EditContext Runtime Bridge"
+
+  text_field plain_name {
+    id "target.text.runtime.plain_name"
+    label "Name / Japanese IME"
+    value ""
+    placeholder "日本語を入力"
+    font "Arcweft Demo"
+    style { size 22 color "#f5f5f5" }
+  }
+
+  text_area notes {
+    id "target.text.runtime.notes"
+    label "Notes"
+    value "first line\nsecond line"
+    placeholder "multiple lines"
+    multiline true
+    font "Noto Sans JP"
+    style { size 20 line_height 30 color "#f5f5f5" }
+  }
+
+  secure_field secret_pin {
+    id "target.text.runtime.secret_pin"
+    label "Secure PIN"
+    value ""
+    placeholder "redacted"
+    purpose password
+    secure true
+    font "Arcweft Demo"
+    style { size 22 color "#f5f5f5" }
+  }
+}

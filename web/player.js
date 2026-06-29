@@ -2,6 +2,8 @@ import { createArcweftEditContextPlayerGlue } from "./player-editcontext.js";
 
 const DEFAULT_WASM_URL = "./pkg/arcweft_player_web.js";
 let wasmModulePromise = null;
+const runtimeTextInputs = new Map();
+let runtimeCommandListenerInstalled = false;
 
 export async function loadArcweftWasm(url = DEFAULT_WASM_URL) {
   if (globalThis.__arcweftWasmModule) {
@@ -35,6 +37,9 @@ export async function setupArcweftWebTextInput(options = {}) {
   });
   const installed = await glue.install();
   markArcweftTextInputOwner();
+  runtimeTextInputs.set(hostId, installed);
+  globalThis.__arcweftWebTextInputs = runtimeTextInputs;
+  installRuntimeCommandListener(options.statusTarget ?? document);
   globalThis.__arcweftWebTextInput = installed;
   return installed;
 }
@@ -101,22 +106,51 @@ function wasmDelegate(wasm) {
     return null;
   }
   return {
-    activate(hostId, text, secure) {
-      return wasm.arcweft_web_text_input_activate?.(hostId, text, secure);
-    },
     dispatchTextUpdate(hostId, payload) {
-      return wasm.arcweft_web_text_input_dispatch_text_update?.(hostId, payload);
+      return wasm.arcweft_web_text_input_runtime_dispatch_text_update?.(hostId, payload);
     },
     compositionStart(hostId) {
-      return wasm.arcweft_web_text_input_composition_start?.(hostId);
+      return wasm.arcweft_web_text_input_runtime_composition_start?.(hostId);
     },
     compositionEnd(hostId, cancelled) {
-      return wasm.arcweft_web_text_input_composition_end?.(hostId, Boolean(cancelled));
+      return wasm.arcweft_web_text_input_runtime_composition_end?.(hostId, Boolean(cancelled));
     },
     dispatchCommand(hostId, command, selecting) {
-      return wasm.arcweft_web_text_input_dispatch_command?.(hostId, command, Boolean(selecting));
+      return wasm.arcweft_web_text_input_runtime_dispatch_command?.(
+        hostId,
+        command,
+        Boolean(selecting),
+      );
     },
   };
+}
+
+function installRuntimeCommandListener(target = document) {
+  if (runtimeCommandListenerInstalled) {
+    return;
+  }
+  runtimeCommandListenerInstalled = true;
+  target.addEventListener("arcweft-text-input-runtime-command", (event) => {
+    const detail = parseRuntimeCommandDetail(event.detail);
+    const glue = runtimeTextInputs.get(detail.hostId) ?? globalThis.__arcweftWebTextInput;
+    if (!glue) {
+      return;
+    }
+    for (const command of detail.commands ?? []) {
+      glue.applyRuntimeCommand(command);
+    }
+  });
+}
+
+function parseRuntimeCommandDetail(detail) {
+  if (typeof detail === "string") {
+    try {
+      return JSON.parse(detail);
+    } catch {
+      return { hostId: "arcweft-canvas", commands: [] };
+    }
+  }
+  return detail ?? { hostId: "arcweft-canvas", commands: [] };
 }
 
 function markArcweftTextInputOwner() {

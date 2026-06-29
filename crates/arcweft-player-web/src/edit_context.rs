@@ -221,6 +221,19 @@ impl WebEditContextAdapter {
             .blur(arcweft_presentation::text_input::TextInputBlurPolicy::PlatformDefault)
     }
 
+    pub fn update_snapshot(
+        &mut self,
+        snapshot: &TextInputClientSnapshot,
+    ) -> Result<TextInputHostCommand, WebEditContextError> {
+        let command = self.dispatch.update_snapshot(snapshot)?;
+        if let Some(active) = &mut self.active {
+            active.revision = snapshot.revision();
+            active.index = TextIndexSnapshot::try_new(snapshot.surrounding_text().to_owned())?;
+            active.security = TextInputSecurityPolicy::from_options(snapshot.options());
+        }
+        Ok(command)
+    }
+
     pub fn dispatch_composition_start(
         &mut self,
         epoch: InputEpoch,
@@ -406,6 +419,10 @@ impl WebEditContextActiveSession {
 
     pub const fn security(&self) -> TextInputSecurityPolicy {
         self.security
+    }
+
+    pub const fn is_composing(&self) -> bool {
+        self.composing
     }
 
     pub fn text_index(&self) -> &TextIndexSnapshot {

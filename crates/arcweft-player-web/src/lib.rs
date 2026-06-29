@@ -9,6 +9,7 @@ pub mod edit_context;
 pub mod host;
 pub mod parity;
 pub mod report;
+pub mod runtime_text_input;
 pub mod web_text_input;
 
 #[cfg(target_arch = "wasm32")]

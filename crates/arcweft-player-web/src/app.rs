@@ -1,10 +1,16 @@
 use crate::clock::LogicalClockQuantizer;
+use crate::edit_context::WebEditContextFeatureDetection;
 use crate::host::BrowserTaskBroker;
 use crate::report::{WebFrameObservationReport, WebObservationReport};
+use crate::runtime_text_input::{
+    WebPlayerTextInputBridgeHandle, WebRuntimeTextInputFocusReason, WebTextInputClientTransform,
+    register_runtime_bridge,
+};
 use arcweft_bundle::ArcweftBundle;
 use arcweft_player_scene::images::{BundleImageCatalog, BundleImageCatalogError};
 use arcweft_player_scene::input::{InputController, InputOutcome};
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
+use arcweft_presentation::text_input::TextInputKeyDisposition;
 use arcweft_render_web::web::{WebGpuCanvasHost, WebGpuCanvasHostError};
 use arcweft_render_wgpu::geometry::{
     RenderChoiceItem, RenderDialogue, RenderPreferences, RenderScene, RenderViewport,
@@ -56,6 +62,8 @@ enum WebPlayerError {
     FramePlan(String),
     #[error("diagnostic serialization failed: {0}")]
     Report(String),
+    #[error("Web runtime text-input bridge failed: {0}")]
+    TextInput(String),
 }
 
 struct ReadyGpu {
@@ -78,6 +86,7 @@ struct PlayerState {
     broker: BrowserTaskBroker,
     images: BundleImageCatalog,
     input: InputController,
+    text_input: WebPlayerTextInputBridgeHandle,
     clock: LogicalClockQuantizer,
     font_bytes: Option<Vec<u8>>,
     prepared: Option<arcweft_render_wgpu::geometry::PreparedFrame>,
@@ -153,6 +162,8 @@ fn start(
     let canvas = element
         .dyn_into::<HtmlCanvasElement>()
         .map_err(|_| WebPlayerError::NotCanvas(canvas_id.clone()))?;
+    let detection = WebEditContextFeatureDetection::detect_for_element(canvas.unchecked_ref());
+    let text_input = register_runtime_bridge(canvas_id.clone(), detection);
     let bundle = ArcweftBundle::from_json_slice(&bundle_bytes)
         .map_err(|error| WebPlayerError::BundleDecode(error.to_string()))?;
     let session = BundleSession::new(&bundle, BundleSessionOptions::default())
@@ -171,6 +182,7 @@ fn start(
         broker,
         images,
         input: InputController::default(),
+        text_input,
         clock,
         font_bytes: Some(font_bytes),
         prepared: None,
@@ -240,10 +252,19 @@ impl ApplicationHandler for BrowserApp {
                 if let GpuState::Ready(gpu) = &mut state.gpu {
                     gpu.host.resize(size);
                 }
+                if let Err(error) = update_text_input_client_transform(&mut state) {
+                    set_fatal(&mut state, error);
+                    return;
+                }
                 window.request_redraw();
             }
             WindowEvent::Focused(focused) => {
-                state.input.focus_changed(focused);
+                let outcome = state.input.focus_changed(focused);
+                apply_outcome(&mut state, outcome);
+                if !focused && let Err(error) = state.text_input.blur_active() {
+                    set_fatal(&mut state, WebPlayerError::TextInput(error.to_string()));
+                    return;
+                }
                 window.request_redraw();
             }
             WindowEvent::PointerMoved { position, .. } => {
@@ -293,7 +314,17 @@ impl ApplicationHandler for BrowserApp {
                     ElementState::Released => KeyPhase::Up,
                 };
                 if let Some(frame) = state.prepared.clone() {
-                    let outcome = state.input.keyboard(&frame, &key, phase);
+                    if let Err(error) = drain_text_input_edits(&mut state, &frame) {
+                        set_fatal(&mut state, error);
+                        return;
+                    }
+                    let disposition = state
+                        .text_input
+                        .key_disposition()
+                        .unwrap_or(TextInputKeyDisposition::ShortcutCandidate);
+                    let outcome = state
+                        .input
+                        .keyboard_with_ime(&frame, &key, phase, disposition);
                     apply_outcome(&mut state, outcome);
                 }
                 window.request_redraw();
@@ -398,6 +429,12 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
         ..scene
     })
     .map_err(|error| WebPlayerError::FramePlan(error.to_string()))?;
+    update_text_input_client_transform(state)?;
+    state
+        .text_input
+        .sync_prepared_frame(&prepared, WebRuntimeTextInputFocusReason::RedrawRefresh)
+        .map_err(|error| WebPlayerError::TextInput(error.to_string()))?;
+    drain_text_input_edits(state, &prepared)?;
     let frame_report = WebFrameObservationReport::from_prepared_frame(&prepared);
     let frame_json = serde_json::to_string(&frame_report)
         .map_err(|error| WebPlayerError::Report(error.to_string()))?;
@@ -453,6 +490,32 @@ fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) {
             break;
         }
     }
+}
+
+fn update_text_input_client_transform(state: &mut PlayerState) -> Result<(), WebPlayerError> {
+    let rect = state.canvas.get_bounding_client_rect();
+    state
+        .text_input
+        .set_client_transform(WebTextInputClientTransform::new(
+            rect.left() as f32,
+            rect.top() as f32,
+        ))
+        .map_err(|error| WebPlayerError::TextInput(error.to_string()))
+}
+
+fn drain_text_input_edits(
+    state: &mut PlayerState,
+    frame: &arcweft_render_wgpu::geometry::PreparedFrame,
+) -> Result<(), WebPlayerError> {
+    let edits = state
+        .text_input
+        .drain_pending_edits()
+        .map_err(|error| WebPlayerError::TextInput(error.to_string()))?;
+    for edit in edits {
+        let outcome = state.input.text_input(frame, edit.into_input());
+        apply_outcome(state, outcome);
+    }
+    Ok(())
 }
 
 fn logical_position(position: PhysicalPosition<f64>, scale_factor: f64) -> ViewportPoint {

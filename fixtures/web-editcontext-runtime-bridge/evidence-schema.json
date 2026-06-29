@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Arcweft Web EditContext Runtime Bridge Evidence",
+  "type": "object",
+  "required": ["browser", "arcweftRevision", "events"],
+  "properties": {
+    "browser": { "type": "string" },
+    "arcweftRevision": { "type": "string" },
+    "editContextSupported": { "type": "boolean" },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "detail"],
+        "properties": {
+          "name": { "type": "string" },
+          "detail": { "type": "object" }
+        }
+      }
+    },
+    "candidateAnchorNonOrigin": { "type": "boolean" },
+    "securePlaintextObserved": { "type": "boolean", "const": false }
+  }
+}
