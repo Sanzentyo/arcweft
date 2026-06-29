@@ -129,24 +129,28 @@ fn agent_repl_eval_typed_meta(
                 input,
                 options,
                 &agent_repl_handle_typed_command(
-                    index,
-                    &mut state.command_session,
-                    &mut state.command_tier_handler,
+                    ReplCommandDispatch {
+                        index,
+                        command_session: &mut state.command_session,
+                        tier_handler: &mut state.command_tier_handler,
+                        loader: &mut loader,
+                        trace_policy,
+                        command,
+                    },
                     Some(&mut task_host),
-                    &mut loader,
-                    trace_policy,
-                    command,
                 ),
             );
         }
         agent_repl_handle_typed_command(
-            index,
-            &mut state.command_session,
-            &mut state.command_tier_handler,
+            ReplCommandDispatch {
+                index,
+                command_session: &mut state.command_session,
+                tier_handler: &mut state.command_tier_handler,
+                loader: &mut loader,
+                trace_policy,
+                command,
+            },
             Some(&mut host),
-            &mut loader,
-            trace_policy,
-            command,
         )
     } else {
         let Some(command_agent_session) = state.command_agent_session.as_mut() else {
@@ -154,13 +158,15 @@ fn agent_repl_eval_typed_meta(
         };
         let mut host = AgentSessionReplCommandHost::new(command_agent_session);
         agent_repl_handle_typed_command_with_runtime_tasks(
-            index,
-            &mut state.command_session,
-            &mut state.command_tier_handler,
+            ReplCommandDispatch {
+                index,
+                command_session: &mut state.command_session,
+                tier_handler: &mut state.command_tier_handler,
+                loader: &mut loader,
+                trace_policy,
+                command,
+            },
             &mut host,
-            &mut loader,
-            trace_policy,
-            command,
             #[cfg(feature = "native-player")]
             state.runtime_session.as_mut(),
         )
@@ -169,14 +175,18 @@ fn agent_repl_eval_typed_meta(
     agent_repl_typed_cell_report(index, input, options, &result)
 }
 
-fn agent_repl_handle_typed_command_with_runtime_tasks(
+struct ReplCommandDispatch<'a> {
     index: usize,
-    command_session: &mut Option<ReplSession>,
-    tier_handler: &mut arcweft_agent_repl::ReplTierCommandHandler,
-    host: &mut dyn ReplCommandHost,
-    loader: &mut dyn ReplProjectLoader,
+    command_session: &'a mut Option<ReplSession>,
+    tier_handler: &'a mut arcweft_agent_repl::ReplTierCommandHandler,
+    loader: &'a mut dyn ReplProjectLoader,
     trace_policy: ReplTracePolicy,
     command: ReplCommand,
+}
+
+fn agent_repl_handle_typed_command_with_runtime_tasks(
+    dispatch: ReplCommandDispatch<'_>,
+    host: &mut dyn ReplCommandHost,
     #[cfg(feature = "native-player")] runtime_session: Option<
         &mut arcweft_runtime_driver::session::BundleSession,
     >,
@@ -184,40 +194,19 @@ fn agent_repl_handle_typed_command_with_runtime_tasks(
     #[cfg(feature = "native-player")]
     if let Some(runtime_session) = runtime_session {
         let mut task_host = RuntimeTaskReplCommandHost::new(host, runtime_session);
-        return agent_repl_handle_typed_command(
-            index,
-            command_session,
-            tier_handler,
-            Some(&mut task_host),
-            loader,
-            trace_policy,
-            command,
-        );
+        return agent_repl_handle_typed_command(dispatch, Some(&mut task_host));
     }
 
-    agent_repl_handle_typed_command(
-        index,
-        command_session,
-        tier_handler,
-        Some(host),
-        loader,
-        trace_policy,
-        command,
-    )
+    agent_repl_handle_typed_command(dispatch, Some(host))
 }
 
 fn agent_repl_handle_typed_command(
-    index: usize,
-    command_session: &mut Option<ReplSession>,
-    tier_handler: &mut arcweft_agent_repl::ReplTierCommandHandler,
+    dispatch: ReplCommandDispatch<'_>,
     host: Option<&mut dyn ReplCommandHost>,
-    loader: &mut dyn ReplProjectLoader,
-    trace_policy: ReplTracePolicy,
-    command: ReplCommand,
 ) -> ReplCommandResult {
-    let Some(command_session) = command_session.as_mut() else {
+    let Some(command_session) = dispatch.command_session.as_mut() else {
         return ReplCommandResult::error(
-            agent_repl_command_id(index),
+            agent_repl_command_id(dispatch.index),
             ReplCommandEvidence::Empty,
             ReplCommandDiagnostic::error(
                 ReplCommandDiagnosticCode::HostUnavailable,
@@ -226,13 +215,17 @@ fn agent_repl_handle_typed_command(
         );
     };
     let mut context = ReplCommandContext::new(command_session)
-        .with_next_command_id(agent_repl_command_id(index))
-        .with_loader(loader)
-        .with_trace_policy(trace_policy);
+        .with_next_command_id(agent_repl_command_id(dispatch.index))
+        .with_loader(dispatch.loader)
+        .with_trace_policy(dispatch.trace_policy);
     if let Some(host) = host {
         context = context.with_host(host);
     }
-    arcweft_agent_repl::command::ReplCommandHandler::handle(tier_handler, &mut context, command)
+    arcweft_agent_repl::command::ReplCommandHandler::handle(
+        dispatch.tier_handler,
+        &mut context,
+        dispatch.command,
+    )
 }
 
 fn agent_repl_typed_cell_report(

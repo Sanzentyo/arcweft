@@ -23,7 +23,7 @@ fn bridge_is_native_player_integration_point_not_tsf_scene_loop() {
     assert!(scene.contains("text_input: NativeTextInputBridge,"));
     assert!(scene.contains("NativeTextInputWindowContext::from_winit_window"));
     assert!(scene.contains("keyboard_with_ime"));
-    assert!(bridge.contains("TextInputDispatchState"));
+    assert!(bridge.contains("PlayerTextInputBridgeCore"));
     assert!(bridge.contains("PlatformTextInputEvent"));
     assert!(!scene.contains("WindowsTsfImeBridge"));
     assert!(!scene.contains("NSTextInputClient"));

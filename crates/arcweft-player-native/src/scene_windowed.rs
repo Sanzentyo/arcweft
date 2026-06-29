@@ -1,4 +1,5 @@
 use crate::NativePlayerError;
+use crate::native_audio::{NativeAudioRuntime, NativePlayerAudioError};
 use crate::text_input_bridge::{
     NativeTextInputBridge, NativeTextInputBridgeError, NativeTextInputBridgeOptions,
     NativeTextInputFocusReason, NativeTextInputFocusedControl, NativeTextInputWindowContext,
@@ -12,6 +13,7 @@ use crate::windowed_runtime::{
     WindowedRuntimeOutcome, WindowedRuntimeOwner, WindowedRuntimeOwnerError,
 };
 use arcweft_bundle::ArcweftBundle;
+use arcweft_interaction_model::audio::AudioEvent;
 use arcweft_player_scene::images::BundleImageCatalogError;
 use arcweft_player_scene::input::{InputController, InputOutcome};
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
@@ -97,6 +99,8 @@ enum NativeSceneWindowError {
     Images(#[from] BundleImageCatalogError),
     #[error("native text-input bridge failed: {0}")]
     TextInputBridge(#[from] NativeTextInputBridgeError),
+    #[error("native audio failed: {0}")]
+    Audio(#[from] NativePlayerAudioError),
     #[error("player text editor failed: {0}")]
     TextEditor(#[from] arcweft_presentation::text_editor::TextEditorError),
     #[error("WebGPU surface creation failed: {0}")]
@@ -142,6 +146,8 @@ struct NativeSceneState {
     config: wgpu::SurfaceConfiguration,
     renderer: SharedRenderer,
     runtime: WindowedRuntimeOwner,
+    audio: Option<NativeAudioRuntime>,
+    audio_events: Vec<AudioEvent>,
     ingress_completion: WindowedPatchIngressCompletion,
     input: InputController,
     text_input: NativeTextInputBridge,
@@ -420,6 +426,7 @@ impl NativeSceneState {
         surface.configure(&device, &config);
         let mut renderer = SharedRenderer::new(&device, &queue, format);
         renderer.register_font_bytes(DEFAULT_FONT_BYTES.to_vec())?;
+        let audio = NativeAudioRuntime::from_bundle(&bundle)?;
         let runtime = WindowedRuntimeOwner::from_bundle(&bundle, BundleSessionOptions::default())?;
         let text_input = NativeTextInputBridge::new(text_input_window, text_input_options);
         Ok(Self {
@@ -430,6 +437,8 @@ impl NativeSceneState {
             config,
             renderer,
             runtime,
+            audio,
+            audio_events: Vec::new(),
             ingress_completion,
             input: InputController::default(),
             text_input,
@@ -477,12 +486,22 @@ impl NativeSceneState {
         if self.runtime.session().is_finished() {
             return Ok(());
         }
+        if let Some(audio) = &mut self.audio {
+            audio.drain_events(&mut self.audio_events);
+        }
         let clock = RuntimeClockStep::from_millis(self.next_tick, 16)?;
         self.next_tick = self.next_tick.saturating_add(1);
-        let _step = self
-            .runtime
-            .session_mut()
-            .step_with_clock(clock, BundleStepInput::default());
+        let audio_events = std::mem::take(&mut self.audio_events);
+        let step = self.runtime.session_mut().step_with_clock(
+            clock,
+            BundleStepInput {
+                audio_events,
+                ..BundleStepInput::default()
+            },
+        );
+        if let Some(audio) = &mut self.audio {
+            audio.submit_commands(step.audio_commands, &mut self.audio_events);
+        }
         Ok(())
     }
 
