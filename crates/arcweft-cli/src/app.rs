@@ -11,6 +11,7 @@ pub(in crate::app) mod jit;
 pub(in crate::app) mod local_embedding;
 #[cfg(feature = "native-player")]
 mod native_player;
+mod progress;
 pub(crate) mod project;
 mod project_commands;
 mod release;

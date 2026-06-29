@@ -5,6 +5,7 @@ use super::bundle::{
     write_bundle_artifact, write_patch_bundle_artifact,
 };
 use super::diagnostics::emit_diagnostics_for_path;
+use super::progress::{CliProgress, CliProgressStatus};
 use super::project::{
     ProfileOptions, SourceSelection, load_and_check_selection, print_project_compile_error,
     resolve_source_selection, runtime_plan_options_for_selection, typecheck_env_for_selection,
@@ -310,7 +311,10 @@ impl ProjectCommandReport {
 }
 
 pub(super) fn project_check_command(options: &ProjectCheckOptions) -> Result<(), ExitCode> {
-    let state = compile_project_command(&options.profile, VerificationMode::Dev)?;
+    let progress = CliProgress::new(!options.json);
+    let state = progress.run(CliProgressStatus::Checking, "project", || {
+        compile_project_command(&options.profile, VerificationMode::Dev)
+    })?;
     let report = ProjectCommandReport::from_state(&state);
     if options.json {
         print_json(&report)?;
@@ -336,15 +340,8 @@ pub(super) fn project_build_command(options: &ProjectBuildOptions) -> Result<(),
     }
     let mode = ProjectBuildMode::from_release(options.release);
     let mut compile_cache = InMemoryProjectCompileCache::default();
-    let state = if options.watch {
-        compile_project_command_with_cache(
-            &options.profile,
-            mode.verification_mode(),
-            &mut compile_cache,
-        )?
-    } else {
-        compile_project_command(&options.profile, mode.verification_mode())?
-    };
+    let progress = CliProgress::new(!options.json);
+    let state = compile_project_build_state(options, mode, &mut compile_cache, progress)?;
     let report = ProjectCommandReport::from_state(&state);
     if report.status != "ok" {
         emit_verification_diagnostics(&state.selection, &state.verification);
@@ -355,15 +352,23 @@ pub(super) fn project_build_command(options: &ProjectBuildOptions) -> Result<(),
     }
 
     let target_root = project_build_target_root(options, &state, mode);
-    let artifacts = write_project_build_artifacts(&state, &report, &target_root)?;
+    let artifacts = progress.run(
+        CliProgressStatus::Writing,
+        format!("{} artifacts", mode.directory()),
+        || write_project_build_artifacts(&state, &report, &target_root),
+    )?;
     let mut patch_artifacts = Vec::new();
     if let Some(base) = options.patch_base.as_ref() {
-        patch_artifacts.push(write_project_build_patch_from_base(
-            base,
-            &artifacts.bundle_bytes,
-            &target_root,
-            state.loaded.sources().manifest().package().name().as_str(),
-        )?);
+        patch_artifacts.push(
+            progress.run(CliProgressStatus::Writing, "patch artifact", || {
+                write_project_build_patch_from_base(
+                    base,
+                    &artifacts.bundle_bytes,
+                    &target_root,
+                    state.loaded.sources().manifest().package().name().as_str(),
+                )
+            })?,
+        );
     }
 
     if options.watch {
@@ -415,6 +420,29 @@ pub(super) fn project_build_command(options: &ProjectBuildOptions) -> Result<(),
         );
     }
     Ok(())
+}
+
+fn compile_project_build_state(
+    options: &ProjectBuildOptions,
+    mode: ProjectBuildMode,
+    compile_cache: &mut InMemoryProjectCompileCache,
+    progress: CliProgress,
+) -> Result<ProjectCommandState, ExitCode> {
+    progress.run(
+        CliProgressStatus::Building,
+        format!("{} project", mode.directory()),
+        || {
+            if options.watch {
+                compile_project_command_with_cache(
+                    &options.profile,
+                    mode.verification_mode(),
+                    compile_cache,
+                )
+            } else {
+                compile_project_command(&options.profile, mode.verification_mode())
+            }
+        },
+    )
 }
 
 fn project_build_target_root(
@@ -1378,15 +1406,24 @@ pub(super) fn compile_command(options: &CompileOptions) -> Result<(), ExitCode> 
     let selection = SourceSelection::Direct {
         path: options.input.clone(),
     };
-    let checked = load_and_check_selection(&selection, None)?;
-    let verification = verify_module_with_env(
-        &checked.hir,
-        &checked.env,
-        VerificationPolicy {
-            mode: VerificationMode::Dev,
-            backend: BackendKind::Emit,
+    let progress = CliProgress::new(!options.json);
+    let checked = progress.run(CliProgressStatus::Checking, options.input.display(), || {
+        load_and_check_selection(&selection, None)
+    })?;
+    let verification = progress.run(
+        CliProgressStatus::Verifying,
+        options.input.display(),
+        || {
+            Ok(verify_module_with_env(
+                &checked.hir,
+                &checked.env,
+                VerificationPolicy {
+                    mode: VerificationMode::Dev,
+                    backend: BackendKind::Emit,
+                },
+            ))
         },
-    );
+    )?;
     if verification.has_errors() {
         emit_verification_diagnostics(&selection, &verification);
         return Err(ExitCode::FAILURE);
@@ -1401,25 +1438,29 @@ pub(super) fn compile_command(options: &CompileOptions) -> Result<(), ExitCode> 
         })?;
     match options.emit {
         CompileEmit::Check => {}
-        CompileEmit::Hir => write_text_artifact(
-            output.as_deref().expect("HIR emit has a default path"),
-            &format!("{:#?}\n", checked.hir),
-        )?,
-        CompileEmit::Plan => {
-            let plan = lower_source_runtime_plan_with_options(
-                &checked.hir,
-                &RuntimePlanLowerOptions::default(),
-            )
-            .map_err(|errors| {
-                for error in errors {
-                    eprintln!("error: {}", error.message());
-                }
-                ExitCode::FAILURE
+        CompileEmit::Hir => {
+            let output_path = output.as_deref().expect("HIR emit has a default path");
+            progress.run(CliProgressStatus::Writing, output_path.display(), || {
+                write_text_artifact(output_path, &format!("{:#?}\n", checked.hir))
             })?;
-            write_text_artifact(
-                output.as_deref().expect("plan emit has a default path"),
-                &format!("{plan:#?}\n"),
-            )?;
+        }
+        CompileEmit::Plan => {
+            let plan = progress.run(CliProgressStatus::Compiling, "runtime plan", || {
+                lower_source_runtime_plan_with_options(
+                    &checked.hir,
+                    &RuntimePlanLowerOptions::default(),
+                )
+                .map_err(|errors| {
+                    for error in errors {
+                        eprintln!("error: {}", error.message());
+                    }
+                    ExitCode::FAILURE
+                })
+            })?;
+            let output_path = output.as_deref().expect("plan emit has a default path");
+            progress.run(CliProgressStatus::Writing, output_path.display(), || {
+                write_text_artifact(output_path, &format!("{plan:#?}\n"))
+            })?;
         }
     }
 

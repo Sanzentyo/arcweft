@@ -122,6 +122,7 @@ async function installDeterministicClock(page, maxMillis) {
   });
   await page.addInitScript((value) => {
     globalThis.__arcweftCssStyleParityMaxMillis = value;
+    globalThis.__arcweftDialogueVisualTimeMillis = value;
   }, maxMillis);
 }
 
@@ -161,7 +162,7 @@ async function openReady(browser, baseUrl, checkpoint) {
             .join("") ?? "";
           return needsDetailedStyle
             ? text.includes("Bold") && text.includes("color")
-            : text.includes("CSS-like style parity");
+            : text.includes("checks renderer-owned");
         })(),
       checkpoint === "default",
       { timeout: 10_000 },
@@ -222,7 +223,7 @@ async function main() {
         );
         await page.locator("#arcweft-canvas").screenshot({
           path: join(outputDir, `web-${checkpoint}.png`),
-          scale: "css",
+          scale: "device",
         });
         console.log(JSON.stringify({
           sample: "css-style-parity",

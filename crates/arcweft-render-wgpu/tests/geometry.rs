@@ -55,6 +55,19 @@ fn generated_scene(elapsed_millis: u64) -> RenderScene {
 }
 
 #[test]
+fn viewport_physical_scale_factor_for_renderer_is_finite_f32() {
+    let mut viewport = scene().viewport;
+    viewport.scale_factor = 2.0;
+    assert!((viewport.physical_scale_factor_f32() - 2.0).abs() < f32::EPSILON);
+
+    viewport.scale_factor = 0.0;
+    assert!((viewport.physical_scale_factor_f32() - f32::EPSILON).abs() < f32::EPSILON);
+
+    viewport.scale_factor = f64::NAN;
+    assert!((viewport.physical_scale_factor_f32() - 1.0).abs() < f32::EPSILON);
+}
+
+#[test]
 fn content_rect_contain_preserves_design_aspect_ratio_in_tall_output() {
     let rect = ContentRect::calculate(
         LayoutSize::new(1280.0, 720.0),

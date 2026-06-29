@@ -2,6 +2,7 @@ use super::image_declarations::{
     DeclaredImageObject, declaration_arg_value, declared_image_asset_refs,
     parse_declared_image_objects, public_asset_ref_arg,
 };
+use super::progress::{CliProgress, CliProgressStatus};
 use super::project::{
     ProfileOptions, SourceSelection, adapter_manifest_for_selection, resolve_source_selection,
     typecheck_env_for_selection,
@@ -196,14 +197,27 @@ fn bundle_launch_kind(kind: LaunchKind) -> BundleLaunchKind {
 pub(super) fn bundle_command(options: &BundleOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     let mut phases = Vec::new();
-    let bundle = compile_bundle_artifact(&selection, options, &mut phases)?;
-    let bytes = run_profile_phase(&mut phases, "encode_bundle", || {
-        bundle.to_format_bytes(options.format).map_err(|error| {
-            eprintln!("error: failed to encode bundle: {error}");
-            ExitCode::FAILURE
-        })
+    let progress = CliProgress::new(!options.json);
+    let bundle = progress.run(
+        CliProgressStatus::Compiling,
+        format!("bundle {}", report_path(selection.path())),
+        || compile_bundle_artifact(&selection, options, &mut phases),
+    )?;
+    let bytes = progress.run(
+        CliProgressStatus::Encoding,
+        format!("{} bundle", options.format),
+        || {
+            run_profile_phase(&mut phases, "encode_bundle", || {
+                bundle.to_format_bytes(options.format).map_err(|error| {
+                    eprintln!("error: failed to encode bundle: {error}");
+                    ExitCode::FAILURE
+                })
+            })
+        },
+    )?;
+    progress.run(CliProgressStatus::Writing, options.output.display(), || {
+        write_bundle_artifact(&options.output, bytes, &mut phases)
     })?;
-    write_bundle_artifact(&options.output, bytes, &mut phases)?;
     if options.json {
         print_json(&bundle_command_report(&options.output, &bundle, phases))
     } else {

@@ -123,10 +123,11 @@ impl SharedRenderer {
             .iter()
             .map(|block| text_buffer(&mut self.font_system, block))
             .collect::<Vec<_>>();
+        let text_scale_factor = frame.viewport.physical_scale_factor_f32();
         let areas = buffers
             .iter_mut()
             .zip(&frame.text)
-            .map(|(buffer, block)| text_area(buffer, block))
+            .map(|(buffer, block)| text_area(buffer, block, text_scale_factor))
             .collect::<Vec<_>>();
         self.text_renderer
             .prepare(
@@ -293,20 +294,27 @@ fn render_font_family(family: &RenderFontFamily) -> Family<'_> {
     }
 }
 
-fn text_area<'a>(buffer: &'a Buffer, block: &RenderTextBlock) -> TextArea<'a> {
+fn text_area<'a>(buffer: &'a Buffer, block: &RenderTextBlock, scale_factor: f32) -> TextArea<'a> {
+    let scale_factor = scale_factor.max(f32::EPSILON);
+    let scaled_bounds = scale_text_bounds(block.bounds, scale_factor);
     TextArea {
         buffer,
-        left: block.bounds.x,
-        top: block.bounds.y,
-        scale: 1.0,
-        bounds: TextBounds {
-            left: pixel_floor_as_i32(block.bounds.x),
-            top: pixel_floor_as_i32(block.bounds.y),
-            right: pixel_ceil_as_i32(block.bounds.x + block.bounds.width),
-            bottom: pixel_ceil_as_i32(block.bounds.y + block.bounds.height),
-        },
+        left: block.bounds.x * scale_factor,
+        top: block.bounds.y * scale_factor,
+        scale: scale_factor,
+        bounds: scaled_bounds,
         default_color: Color::rgba(block.rgba[0], block.rgba[1], block.rgba[2], block.rgba[3]),
         custom_glyphs: &[],
+    }
+}
+
+fn scale_text_bounds(bounds: HitRect, scale_factor: f32) -> TextBounds {
+    let scale_factor = scale_factor.max(f32::EPSILON);
+    TextBounds {
+        left: pixel_floor_as_i32(bounds.x * scale_factor),
+        top: pixel_floor_as_i32(bounds.y * scale_factor),
+        right: pixel_ceil_as_i32((bounds.x + bounds.width) * scale_factor),
+        bottom: pixel_ceil_as_i32((bounds.y + bounds.height) * scale_factor),
     }
 }
 
@@ -789,3 +797,38 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     return textureSample(image_texture, image_sampler, in.uv);
 }
 ";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn text_bounds_are_scaled_to_physical_pixels() {
+        let bounds = HitRect::new(10.25, 20.5, 100.25, 40.25);
+
+        assert_eq!(
+            scale_text_bounds(bounds, 2.0),
+            TextBounds {
+                left: 20,
+                top: 41,
+                right: 221,
+                bottom: 122,
+            }
+        );
+    }
+
+    #[test]
+    fn text_bounds_keep_default_scale_pixel_rounding() {
+        let bounds = HitRect::new(10.25, 20.5, 100.25, 40.25);
+
+        assert_eq!(
+            scale_text_bounds(bounds, 1.0),
+            TextBounds {
+                left: 10,
+                top: 20,
+                right: 111,
+                bottom: 61,
+            }
+        );
+    }
+}

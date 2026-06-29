@@ -31,6 +31,22 @@ pub struct RenderViewport {
     pub scale_factor: f64,
 }
 
+impl RenderViewport {
+    /// Returns the finite physical scale factor used by renderer subsystems
+    /// whose APIs accept `f32` coordinates.
+    #[must_use]
+    pub fn physical_scale_factor_f32(self) -> f32 {
+        let Some(scale_factor) = self.scale_factor.to_f32() else {
+            return 1.0;
+        };
+        if scale_factor.is_finite() {
+            scale_factor.max(f32::EPSILON)
+        } else {
+            1.0
+        }
+    }
+}
+
 /// User-facing presentation preferences independent of platform APIs.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RenderPreferences {

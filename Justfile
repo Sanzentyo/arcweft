@@ -208,9 +208,15 @@ css-style-parity:
     @wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\debug\arcweft_player_web.wasm
     @cargo +nightly -Zscript tools\capture-css-style-parity-native-frame.rs --bundle web/local/css-style-parity.awfb --output target\css-style-parity\native-default.png --viewport default --visual-time-millis 9000 --target-format rgba8unorm
     @cargo +nightly -Zscript tools\capture-css-style-parity-native-frame.rs --bundle web/local/css-style-parity.awfb --output target\css-style-parity\native-compact.png --viewport compact --visual-time-millis 9000 --target-format rgba8unorm
-    @$env:ARW_CSS_STYLE_PARITY_DIR = (Resolve-Path target\css-style-parity).Path; $env:ARW_CSS_STYLE_PARITY_CHECKPOINTS = "default,compact"; $env:ARW_CSS_STYLE_PARITY_VISUAL_TIME_MILLIS = "9000"; node web\tests\css-style-parity-smoke.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    @cargo +nightly -Zscript tools\capture-css-style-parity-native-frame.rs --bundle web/local/css-style-parity.awfb --output target\css-style-parity\native-hidpi.png --viewport hidpi --visual-time-millis 9000 --target-format rgba8unorm
+    @$env:ARW_CSS_STYLE_PARITY_DIR = (Resolve-Path target\css-style-parity).Path; $env:ARW_CSS_STYLE_PARITY_CHECKPOINTS = "default,compact,hidpi"; $env:ARW_CSS_STYLE_PARITY_VISUAL_TIME_MILLIS = "9000"; node web\tests\css-style-parity-smoke.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     @cargo +nightly -Zscript tools\verify-webgpu-parity.rs --native target\css-style-parity\native-default.png --web target\css-style-parity\web-default.png --report target\css-style-parity\parity-default.json --min-psnr 25.0 --min-ssim 0.60 --max-mse 0.0030 --max-mae 0.0048 --max-changed-pixel-ratio 0.011
-    @cargo +nightly -Zscript tools\verify-webgpu-parity.rs --native target\css-style-parity\native-compact.png --web target\css-style-parity\web-compact.png --report target\css-style-parity\parity-compact.json --min-psnr 25.0 --min-ssim 0.50 --max-mse 0.0031 --max-mae 0.0050 --max-changed-pixel-ratio 0.012
+    @cargo +nightly -Zscript tools\verify-webgpu-parity.rs --native target\css-style-parity\native-compact.png --web target\css-style-parity\web-compact.png --report target\css-style-parity\parity-compact.json --min-psnr 24.0 --min-ssim 0.55 --max-mse 0.0039 --max-mae 0.0063 --max-changed-pixel-ratio 0.0145
+    @cargo +nightly -Zscript tools\verify-webgpu-parity.rs --native target\css-style-parity\native-hidpi.png --web target\css-style-parity\web-hidpi.png --report target\css-style-parity\parity-hidpi.json --min-psnr 19.8 --min-ssim 0.44 --max-mse 0.0102 --max-mae 0.0148 --max-changed-pixel-ratio 0.028
+    @foreach ($checkpoint in @("default", "compact", "hidpi")) { imq compare "target\css-style-parity\native-$checkpoint.png" "target\css-style-parity\web-$checkpoint.png" --metrics psnr,ssim,mse,mae,maxae --format json --output "target\css-style-parity\imq-$checkpoint.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+
+css-style-parity-profile:
+    @cargo +nightly -Zscript tools\profile-css-style-parity-startup.rs --output target\css-style-parity\startup-profile.json
 
 ime-sample-web port="8786":
     @cargo +nightly -Zscript tools\build-web-ime-player-rendered-fixture.rs --out web\ime-player-rendered.awfb

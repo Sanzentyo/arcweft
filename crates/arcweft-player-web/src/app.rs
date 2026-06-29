@@ -487,7 +487,26 @@ fn dialogue_visual_time_millis(
         clock.line = Some(dialogue.line.clone());
         clock.started_at_millis = now_millis;
     }
-    now_millis.saturating_sub(clock.started_at_millis)
+    dialogue_visual_time_override_millis()
+        .unwrap_or_else(|| now_millis.saturating_sub(clock.started_at_millis))
+}
+
+fn dialogue_visual_time_override_millis() -> Option<u64> {
+    let window = web_sys::window()?;
+    let value = js_sys::Reflect::get(
+        &window,
+        &JsValue::from_str("__arcweftDialogueVisualTimeMillis"),
+    )
+    .ok()?;
+    let millis = if value.is_function() {
+        js_sys::Function::from(value)
+            .call0(&JsValue::NULL)
+            .ok()?
+            .as_f64()?
+    } else {
+        value.as_f64()?
+    };
+    millis.is_finite().then(|| millis.max(0.0) as u64)
 }
 
 impl From<BundleImageCatalogError> for WebPlayerError {
