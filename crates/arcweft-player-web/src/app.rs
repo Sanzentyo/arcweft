@@ -497,14 +497,26 @@ impl From<BundleImageCatalogError> for WebPlayerError {
 }
 
 fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) {
-    if outcome.dialogue_advance {
+    let InputOutcome {
+        actions,
+        text_control_write_backs,
+        dialogue_advance,
+        redraw: _,
+    } = outcome;
+    if dialogue_advance {
         state.session.queue_dialogue_advance();
     }
-    for action in outcome.actions {
+    for action in actions {
         if let Err(error) = state.session.queue_semantic_action(&action) {
             set_fatal(state, WebPlayerError::Session(error.to_string()));
             break;
         }
+    }
+    if let Err(error) = state
+        .session
+        .queue_text_control_write_backs(text_control_write_backs)
+    {
+        set_fatal(state, WebPlayerError::Session(error.to_string()));
     }
 }
 

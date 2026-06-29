@@ -11,12 +11,13 @@ use crate::task::{
     HostTaskDispatch, RuntimeTaskCancelOutcome, RuntimeTaskCancelTarget, RuntimeTaskListOptions,
     RuntimeTaskOwner, RuntimeTaskRecord, RuntimeTaskRegistry,
 };
+use crate::text_control_writeback::RuntimeTextControlWriteBack;
 use arcweft_bundle::container::{BundleDigest, BundleView, ReadBudget};
 use arcweft_bundle::patch::{
     BundlePatchArtifact, PatchBundleError, PatchCompatibility, PatchValidationError,
     apply_patch_bundle, decode_patch_bundle,
 };
-use arcweft_bundle::resource_codec::UiRuntimeTextControl;
+use arcweft_bundle::resource_codec::{UiRuntimeTextControl, UiRuntimeTextSelection};
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleImageObject, BundleKind};
 use arcweft_core::awbc::{
     product_step::AwbcProductStepBuildError,
@@ -42,6 +43,7 @@ use arcweft_interaction_model::input::{
 };
 use arcweft_interaction_model::payload::InteractionPayload;
 use arcweft_presentation::input::Action;
+use arcweft_presentation::text_input::TextControlWriteBack;
 use arcweft_render_text::LineDisplayCatalog;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -93,6 +95,7 @@ pub struct BundleSessionStep {
     pub flow_events: Vec<FlowEvent>,
     pub line_effects: Vec<LineEffectRequest>,
     pub presentation: BundlePresentationSnapshot,
+    pub text_control_write_backs: Vec<RuntimeTextControlWriteBack>,
     pub audio_commands: Vec<AudioCommandEnvelope>,
     pub requested_tasks: Vec<HostTaskDispatch>,
     pub cancel_scopes: Vec<CancelScopeId>,
@@ -148,6 +151,7 @@ pub struct BundleSession {
     text_inputs: Vec<UiRuntimeTextControl>,
     options: BundleSessionOptions,
     pending_input_events: Vec<RoutedInputEvent>,
+    pending_text_control_write_backs: Vec<RuntimeTextControlWriteBack>,
     presentation: BundlePresentationSnapshot,
     next_step_index: usize,
     next_task_sequence: u64,
@@ -192,6 +196,10 @@ pub enum BundleSessionError {
     UnsupportedSemanticAction { action: String },
     #[error("semantic action `{action}` is missing its option payload")]
     MissingSemanticActionPayload { action: String },
+    #[error(
+        "runtime text-control write-back target `{target}` with session {session} is not active"
+    )]
+    UnknownTextControlWriteBackTarget { target: String, session: u64 },
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -393,6 +401,7 @@ impl BundleSession {
             text_inputs,
             options,
             pending_input_events: Vec::new(),
+            pending_text_control_write_backs: Vec::new(),
             presentation: BundlePresentationSnapshot::default(),
             next_step_index: 0,
             next_task_sequence: 0,
@@ -508,6 +517,34 @@ impl BundleSession {
         ));
     }
 
+    pub fn queue_text_control_write_back(
+        &mut self,
+        write_back: &TextControlWriteBack,
+    ) -> Result<(), BundleSessionError> {
+        let runtime_write_back =
+            apply_text_control_write_back_to_controls(&mut self.text_inputs, write_back)?;
+        self.pending_text_control_write_backs
+            .push(runtime_write_back);
+        self.presentation.replace_text_inputs(&self.text_inputs);
+        Ok(())
+    }
+
+    pub fn queue_text_control_write_backs<I>(
+        &mut self,
+        write_backs: I,
+    ) -> Result<(), BundleSessionError>
+    where
+        I: IntoIterator<Item = TextControlWriteBack>,
+    {
+        write_backs
+            .into_iter()
+            .try_for_each(|write_back| self.queue_text_control_write_back(&write_back))
+    }
+
+    pub fn pending_text_control_write_backs(&self) -> &[RuntimeTextControlWriteBack] {
+        &self.pending_text_control_write_backs
+    }
+
     pub fn hot_swap_bundle(
         &mut self,
         bundle: &ArcweftBundle,
@@ -527,7 +564,8 @@ impl BundleSession {
             return Err(BundleHotSwapError::RestartRequired { compatibility });
         }
 
-        let next_runtime = build_session_runtime(bundle, &self.options)?;
+        let mut next_runtime = build_session_runtime(bundle, &self.options)?;
+        preserve_runtime_text_control_values(&self.text_inputs, &mut next_runtime.text_inputs);
 
         self.swap
             .prepare(next_generation)
@@ -593,7 +631,8 @@ impl BundleSession {
                 compatibility: actual,
             });
         }
-        let next_runtime = build_session_runtime(bundle, &self.options)?;
+        let mut next_runtime = build_session_runtime(bundle, &self.options)?;
+        preserve_runtime_text_control_values(&self.text_inputs, &mut next_runtime.text_inputs);
 
         self.swap
             .prepare_with_compatibility(next_generation, compatibility)
@@ -733,6 +772,7 @@ impl BundleSession {
         let task_events = self.tasks.apply_task_events(input.task_events);
         self.release_completed_task_generation_pins(&task_events);
         input.input_events.append(&mut self.pending_input_events);
+        let text_control_write_backs = std::mem::take(&mut self.pending_text_control_write_backs);
         let runtime_input = RuntimeStepInput {
             tick: clock.tick(),
             dt: clock.dt(),
@@ -807,6 +847,7 @@ impl BundleSession {
             flow_events,
             line_effects,
             presentation: self.presentation.clone(),
+            text_control_write_backs,
             audio_commands,
             requested_tasks,
             cancel_scopes,
@@ -928,6 +969,120 @@ impl RuntimeTaskOwner for BundleSession {
         target: RuntimeTaskCancelTarget,
     ) -> RuntimeTaskCancelOutcome {
         BundleSession::cancel_runtime_tasks(self, &target)
+    }
+}
+
+fn apply_text_control_write_back_to_controls(
+    text_inputs: &mut [UiRuntimeTextControl],
+    write_back: &TextControlWriteBack,
+) -> Result<RuntimeTextControlWriteBack, BundleSessionError> {
+    let target = write_back.target().id().as_str().to_owned();
+    let session = write_back.session().0;
+    let Some(control) = text_inputs
+        .iter_mut()
+        .find(|control| control.target == target && control.session == session)
+    else {
+        return Err(BundleSessionError::UnknownTextControlWriteBackTarget { target, session });
+    };
+    write_back.value().as_str().clone_into(&mut control.value);
+    control.selection = UiRuntimeTextSelection::new(
+        write_back.selection().start().get(),
+        write_back.selection().end().get(),
+    );
+    Ok(RuntimeTextControlWriteBack::from_control(
+        write_back, control,
+    ))
+}
+
+fn preserve_runtime_text_control_values(
+    current: &[UiRuntimeTextControl],
+    next: &mut [UiRuntimeTextControl],
+) {
+    for next_control in next.iter_mut() {
+        if let Some(current_control) = current.iter().find(|current_control| {
+            same_runtime_text_control_identity(current_control, next_control)
+        }) {
+            next_control.value.clone_from(&current_control.value);
+            next_control.selection = current_control.selection;
+        }
+    }
+}
+
+fn same_runtime_text_control_identity(
+    left: &UiRuntimeTextControl,
+    right: &UiRuntimeTextControl,
+) -> bool {
+    left.public_id == right.public_id
+        && left.target == right.target
+        && left.session == right.session
+}
+
+#[cfg(test)]
+mod text_control_writeback_tests {
+    use super::*;
+    use arcweft_bundle::resource_codec::ui::{
+        CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
+        UiInputPurpose, UiRuntimeTextControlBounds, UiRuntimeTextControlHandlers,
+        UiRuntimeTextControlOptions, UiSecureInputPolicy,
+    };
+    use arcweft_id::PublicId;
+    use arcweft_presentation::input::InteractionTarget as PresentationTarget;
+    use arcweft_presentation::text_input::{
+        TextByteOffset, TextControlValue, TextInputSessionId, TextRange, TextRevision,
+    };
+
+    fn runtime_control(target: &str, session: u64, value: &str) -> UiRuntimeTextControl {
+        UiRuntimeTextControl {
+            public_id: target.to_owned(),
+            target: target.to_owned(),
+            session,
+            value: value.to_owned(),
+            selection: UiRuntimeTextSelection::collapsed_at_end(value),
+            options: UiRuntimeTextControlOptions {
+                purpose: UiInputPurpose::Text,
+                autocorrect: TextAssistPolicy::PlatformDefault,
+                spellcheck: TextAssistPolicy::PlatformDefault,
+                capitalization: TextCapitalization::None,
+                enter_key: EnterKeyHint::Default,
+                multiline: false,
+                secure_policy: UiSecureInputPolicy::Plain,
+                composition_on_blur: CompositionOnBlurPolicy::Commit,
+            },
+            kind: UiInputKind::TextField,
+            bounds: UiRuntimeTextControlBounds::from_px(0, 0, 100, 24),
+            label: None,
+            handlers: UiRuntimeTextControlHandlers::default(),
+        }
+    }
+
+    #[test]
+    fn write_back_updates_runtime_overlay_and_returns_typed_event() {
+        let mut controls = vec![runtime_control("field.name", 7, "old")];
+        let write_back = TextControlWriteBack::change(
+            PresentationTarget::new(PublicId::try_new("field.name").unwrap()),
+            TextInputSessionId(7),
+            TextControlValue::plain("new"),
+            TextRange::new(TextByteOffset(3), TextByteOffset(3)),
+            TextRevision(1),
+        );
+
+        let event = apply_text_control_write_back_to_controls(&mut controls, &write_back).unwrap();
+
+        assert_eq!(controls[0].value, "new");
+        assert_eq!(event.value().as_str(), "new");
+        assert!(event.is_change());
+    }
+
+    #[test]
+    fn hot_swap_preserves_matching_runtime_text_value_and_drops_removed_controls() {
+        let current = vec![runtime_control("field.name", 7, "edited")];
+        let mut next = vec![runtime_control("field.name", 7, "default")];
+        preserve_runtime_text_control_values(&current, &mut next);
+        assert_eq!(next[0].value, "edited");
+
+        let mut incompatible = vec![runtime_control("field.other", 8, "default")];
+        preserve_runtime_text_control_values(&current, &mut incompatible);
+        assert_eq!(incompatible[0].value, "default");
     }
 }
 

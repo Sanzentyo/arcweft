@@ -7,8 +7,13 @@ use arcweft_presentation::interaction::{
     FocusState, InteractionState, PointerCapture, PressedTarget,
 };
 use arcweft_presentation::router::{InputRouter, RouteDecision};
-use arcweft_presentation::text_editor::{TextEditorClipboard, TextEditorError, TextEditorState};
-use arcweft_presentation::text_input::{TextInput, TextInputKeyDisposition, TextInputOperation};
+use arcweft_presentation::text_editor::{
+    TextEditorClipboard, TextEditorError, TextEditorOutput, TextEditorState,
+};
+use arcweft_presentation::text_input::{
+    TextControlValue, TextControlWriteBack, TextInput, TextInputKeyDisposition, TextInputOperation,
+    TextInputPrivacy,
+};
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, FramePlanError, InteractionVisualState, PreparedFrame, RenderTextInputControl,
 };
@@ -33,8 +38,28 @@ impl DragState {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct InputOutcome {
     pub actions: Vec<Action>,
+    pub text_control_write_backs: Vec<TextControlWriteBack>,
     pub dialogue_advance: bool,
     pub redraw: bool,
+}
+
+impl InputOutcome {
+    pub fn text_control_write_backs(&self) -> &[TextControlWriteBack] {
+        &self.text_control_write_backs
+    }
+
+    pub fn into_text_control_write_backs(self) -> Vec<TextControlWriteBack> {
+        self.text_control_write_backs
+    }
+
+    fn redraw(redraw: bool) -> Self {
+        Self {
+            actions: Vec::new(),
+            text_control_write_backs: Vec::new(),
+            dialogue_advance: false,
+            redraw,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -162,11 +187,7 @@ impl InputController {
             phase: PointerPhase::Move,
         }));
         let _ = InputRouter::route(&raw, &frame.layers, &frame.hits, &self.interaction);
-        InputOutcome {
-            actions: Vec::new(),
-            dialogue_advance: false,
-            redraw: true,
-        }
+        InputOutcome::redraw(true)
     }
 
     pub fn pointer_down(
@@ -209,11 +230,7 @@ impl InputController {
                 );
             }
         }
-        InputOutcome {
-            actions: Vec::new(),
-            dialogue_advance: false,
-            redraw: true,
-        }
+        InputOutcome::redraw(true)
     }
 
     pub fn pointer_up(
@@ -250,11 +267,7 @@ impl InputController {
         self.pressed.remove(&pointer.0);
         self.drags.remove(&pointer.0);
         self.interaction.clear_pointer(pointer);
-        InputOutcome {
-            actions: Vec::new(),
-            dialogue_advance: false,
-            redraw: true,
-        }
+        InputOutcome::redraw(true)
     }
 
     pub fn keyboard(&mut self, frame: &PreparedFrame, key: &str, phase: KeyPhase) -> InputOutcome {
@@ -267,42 +280,26 @@ impl InputController {
                 if let Some(next) = next {
                     self.set_focus(frame, next);
                 }
-                InputOutcome {
-                    actions: Vec::new(),
-                    dialogue_advance: false,
-                    redraw: true,
-                }
+                InputOutcome::redraw(true)
             }
             "ArrowDown" | "ArrowRight" => {
                 let next = frame.adjacent_choice_target(self.interaction.focus().target(), 1);
                 if let Some(next) = next {
                     self.set_focus(frame, next);
                 }
-                InputOutcome {
-                    actions: Vec::new(),
-                    dialogue_advance: false,
-                    redraw: true,
-                }
+                InputOutcome::redraw(true)
             }
             "Home" => {
                 if let Some(target) = frame.first_choice_target() {
                     self.set_focus(frame, target);
                 }
-                InputOutcome {
-                    actions: Vec::new(),
-                    dialogue_advance: false,
-                    redraw: true,
-                }
+                InputOutcome::redraw(true)
             }
             "End" => {
                 if let Some(target) = frame.last_choice_target() {
                     self.set_focus(frame, target);
                 }
-                InputOutcome {
-                    actions: Vec::new(),
-                    dialogue_advance: false,
-                    redraw: true,
-                }
+                InputOutcome::redraw(true)
             }
             "Enter" | " " | "Space" => {
                 let actions = self
@@ -328,6 +325,7 @@ impl InputController {
         if disposition.shortcuts_suppressed() || self.ime_composing {
             return InputOutcome {
                 actions: Vec::new(),
+                text_control_write_backs: Vec::new(),
                 dialogue_advance: false,
                 redraw: self.ime_composing,
             };
@@ -340,12 +338,47 @@ impl InputController {
         frame: &PreparedFrame,
         input: TextInput,
     ) -> Result<InputOutcome, TextEditorError> {
+        let mut text_control_write_backs = Vec::new();
         if let Some(editor) = self
             .focused_text_editor
             .as_mut()
             .filter(|editor| editor.session() == input.session())
         {
-            let _outputs = editor.apply_text_input(&input, &mut self.text_editor_clipboard)?;
+            let before_text = editor.text().to_owned();
+            let before_selection = editor.selection();
+            let outputs = editor.apply_text_input(&input, &mut self.text_editor_clipboard)?;
+            let submitted = input.submits_runtime_text_control()
+                || outputs
+                    .iter()
+                    .any(|output| matches!(output, TextEditorOutput::Submitted(_)));
+            let changed = input.commits_runtime_text_control_value()
+                && (editor.text() != before_text || editor.selection() != before_selection);
+            if changed || submitted {
+                let privacy = if input.privacy().is_sensitive() || editor.options().is_secure() {
+                    TextInputPrivacy::Sensitive
+                } else {
+                    TextInputPrivacy::Plain
+                };
+                let target = editor.target().clone();
+                let session = editor.session();
+                let value = TextControlValue::new(editor.text(), privacy);
+                let selection = editor.selection();
+                let revision = editor.revision();
+                if changed {
+                    text_control_write_backs.push(TextControlWriteBack::change(
+                        target.clone(),
+                        session,
+                        value.clone(),
+                        selection,
+                        revision,
+                    ));
+                }
+                if submitted {
+                    text_control_write_backs.push(TextControlWriteBack::submit(
+                        target, session, value, selection, revision,
+                    ));
+                }
+            }
         }
         self.ime_composing = input.operations().iter().fold(
             self.ime_composing,
@@ -368,17 +401,14 @@ impl InputController {
         let _ = InputRouter::route(&raw, &frame.layers, &frame.hits, &self.interaction);
         Ok(InputOutcome {
             actions: Vec::new(),
+            text_control_write_backs,
             dialogue_advance: false,
             redraw: true,
         })
     }
 
     pub fn wheel(&mut self, _delta_y: f32) -> InputOutcome {
-        InputOutcome {
-            actions: Vec::new(),
-            dialogue_advance: false,
-            redraw: true,
-        }
+        InputOutcome::redraw(true)
     }
 
     pub fn focus_changed(&mut self, focused: bool) -> InputOutcome {
@@ -391,11 +421,7 @@ impl InputController {
             self.focused_text_editor = None;
             self.interaction.clear_pointer_state();
         }
-        InputOutcome {
-            actions: Vec::new(),
-            dialogue_advance: false,
-            redraw: true,
-        }
+        InputOutcome::redraw(true)
     }
 
     fn set_focus(
@@ -425,6 +451,7 @@ fn activation_outcome(
         is_activation && actions.is_empty() && frame.has_dialogue() && frame.choices.is_empty();
     InputOutcome {
         actions,
+        text_control_write_backs: Vec::new(),
         dialogue_advance,
         redraw: true,
     }
@@ -449,7 +476,9 @@ mod tests {
     use arcweft_presentation::hit::HitRect;
     use arcweft_presentation::semantic::SemanticRole;
     use arcweft_presentation::text_input::{
-        TextByteOffset, TextInputOptions, TextInputSerial, TextInputSessionId, TextRange,
+        TextByteOffset, TextCompositionUpdate, TextControlWriteBackKind, TextEditCommand,
+        TextInputOperation, TextInputOptions, TextInputPrivacy, TextInputSerial,
+        TextInputSessionId, TextRange,
     };
     use arcweft_render_wgpu::geometry::{
         RenderPreferences, RenderScene, RenderViewport, SharedFramePlanner,
@@ -516,5 +545,220 @@ mod tests {
         assert_eq!(input.focused_text_editor().unwrap().text(), "abcd");
         let next_control = input.apply_live_text_control_state(control);
         assert_eq!(next_control.value, "abcd");
+    }
+
+    #[test]
+    fn committed_text_input_emits_typed_change_write_back() {
+        let target = target("text_input.change");
+        let session = TextInputSessionId(52);
+        let control = RenderTextInputControl::new(
+            target.clone(),
+            session,
+            "ab",
+            TextRange::new(TextByteOffset(2), TextByteOffset(2)),
+            TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(20.0, 30.0, 220.0, 32.0),
+        );
+        let frame = SharedFramePlanner::prepare(&RenderScene {
+            interaction: InteractionVisualState {
+                focused: Some(target),
+                hovered: None,
+                pressed: None,
+            },
+            ..scene(control.clone())
+        })
+        .unwrap();
+        let mut input = InputController::default();
+        input.activate_text_control(&control).unwrap();
+
+        let outcome = input
+            .text_input(
+                &frame,
+                TextInput::committed(session, TextInputSerial(8), "c"),
+            )
+            .unwrap();
+
+        assert_eq!(outcome.text_control_write_backs().len(), 1);
+        let event = &outcome.text_control_write_backs()[0];
+        assert_eq!(event.kind(), TextControlWriteBackKind::Change);
+        assert_eq!(event.value().as_str(), "abc");
+        assert_eq!(
+            event.target(),
+            input.focused_text_editor().unwrap().target()
+        );
+    }
+
+    #[test]
+    fn submit_command_is_distinguishable_from_change() {
+        let target = target("text_input.submit");
+        let session = TextInputSessionId(53);
+        let control = RenderTextInputControl::new(
+            target.clone(),
+            session,
+            "ready",
+            TextRange::new(TextByteOffset(5), TextByteOffset(5)),
+            TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(20.0, 30.0, 220.0, 32.0),
+        );
+        let frame = SharedFramePlanner::prepare(&RenderScene {
+            interaction: InteractionVisualState {
+                focused: Some(target),
+                hovered: None,
+                pressed: None,
+            },
+            ..scene(control.clone())
+        })
+        .unwrap();
+        let mut input = InputController::default();
+        input.activate_text_control(&control).unwrap();
+
+        let outcome = input
+            .text_input(
+                &frame,
+                TextInput::single(
+                    session,
+                    TextInputSerial(9),
+                    TextInputOperation::Command(TextEditCommand::Submit),
+                ),
+            )
+            .unwrap();
+
+        assert_eq!(outcome.text_control_write_backs().len(), 1);
+        let event = &outcome.text_control_write_backs()[0];
+        assert!(event.is_submit());
+        assert!(!event.is_change());
+        assert_eq!(event.value().as_str(), "ready");
+    }
+
+    #[test]
+    fn ime_preedit_does_not_write_back_until_commit() {
+        let target = target("text_input.ime");
+        let session = TextInputSessionId(54);
+        let control = RenderTextInputControl::new(
+            target.clone(),
+            session,
+            "",
+            TextRange::new(TextByteOffset(0), TextByteOffset(0)),
+            TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(20.0, 30.0, 220.0, 32.0),
+        );
+        let frame = SharedFramePlanner::prepare(&RenderScene {
+            interaction: InteractionVisualState {
+                focused: Some(target),
+                hovered: None,
+                pressed: None,
+            },
+            ..scene(control.clone())
+        })
+        .unwrap();
+        let mut input = InputController::default();
+        input.activate_text_control(&control).unwrap();
+
+        let preedit = input
+            .text_input(
+                &frame,
+                TextInput::single(
+                    session,
+                    TextInputSerial(10),
+                    TextInputOperation::SetComposition(TextCompositionUpdate::new(
+                        "に",
+                        TextRange::new(TextByteOffset(0), TextByteOffset(3)),
+                    )),
+                ),
+            )
+            .unwrap();
+        assert!(preedit.text_control_write_backs().is_empty());
+
+        let commit = input
+            .text_input(
+                &frame,
+                TextInput::committed(session, TextInputSerial(11), "日"),
+            )
+            .unwrap();
+        assert_eq!(commit.text_control_write_backs().len(), 1);
+        assert_eq!(commit.text_control_write_backs()[0].value().as_str(), "日");
+    }
+
+    #[test]
+    fn no_op_delete_command_does_not_emit_change_write_back() {
+        let target = target("text_input.noop_delete");
+        let session = TextInputSessionId(56);
+        let control = RenderTextInputControl::new(
+            target.clone(),
+            session,
+            "",
+            TextRange::new(TextByteOffset(0), TextByteOffset(0)),
+            TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(20.0, 30.0, 220.0, 32.0),
+        );
+        let frame = SharedFramePlanner::prepare(&RenderScene {
+            interaction: InteractionVisualState {
+                focused: Some(target),
+                hovered: None,
+                pressed: None,
+            },
+            ..scene(control.clone())
+        })
+        .unwrap();
+        let mut input = InputController::default();
+        input.activate_text_control(&control).unwrap();
+
+        let outcome = input
+            .text_input(
+                &frame,
+                TextInput::single(
+                    session,
+                    TextInputSerial(13),
+                    TextInputOperation::Command(TextEditCommand::Backspace),
+                ),
+            )
+            .unwrap();
+
+        assert!(outcome.text_control_write_backs().is_empty());
+    }
+
+    #[test]
+    fn secure_write_back_value_is_available_but_redacted_in_debug() {
+        let target = target("text_input.secure");
+        let session = TextInputSessionId(55);
+        let control = RenderTextInputControl::new(
+            target.clone(),
+            session,
+            "",
+            TextRange::new(TextByteOffset(0), TextByteOffset(0)),
+            TextInputOptions::default().secure(true),
+            SemanticRole::SecureTextField,
+            HitRect::new(20.0, 30.0, 220.0, 32.0),
+        );
+        let frame = SharedFramePlanner::prepare(&RenderScene {
+            interaction: InteractionVisualState {
+                focused: Some(target),
+                hovered: None,
+                pressed: None,
+            },
+            ..scene(control.clone())
+        })
+        .unwrap();
+        let mut input = InputController::default();
+        input.activate_text_control(&control).unwrap();
+
+        let outcome = input
+            .text_input(
+                &frame,
+                TextInput::committed(session, TextInputSerial(12), "secret")
+                    .with_privacy(TextInputPrivacy::Sensitive),
+            )
+            .unwrap();
+
+        let event = &outcome.text_control_write_backs()[0];
+        assert_eq!(event.value().as_str(), "secret");
+        assert!(event.value().is_sensitive());
+        let debug = format!("{event:?}");
+        assert!(!debug.contains("secret"));
+        assert!(debug.contains("<redacted>"));
     }
 }

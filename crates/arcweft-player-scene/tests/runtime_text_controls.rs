@@ -1,7 +1,7 @@
 use arcweft_bundle::resource_codec::ui::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
-    UiInputPurpose, UiRuntimeTextControl, UiRuntimeTextControlBounds, UiRuntimeTextControlOptions,
-    UiRuntimeTextSelection, UiSecureInputPolicy,
+    UiInputPurpose, UiRuntimeTextControl, UiRuntimeTextControlBounds, UiRuntimeTextControlHandlers,
+    UiRuntimeTextControlOptions, UiRuntimeTextSelection, UiSecureInputPolicy,
 };
 use arcweft_player_scene::input::InputController;
 use arcweft_player_scene::text_controls::RuntimeTextControlLowerer;
@@ -189,6 +189,7 @@ fn runtime_control(public_id: &str, kind: UiInputKind, value: &str) -> UiRuntime
         kind,
         bounds: UiRuntimeTextControlBounds::from_px(48, 48, 260, 48),
         label: Some("Name".to_owned()),
+        handlers: UiRuntimeTextControlHandlers::default(),
     }
 }
 

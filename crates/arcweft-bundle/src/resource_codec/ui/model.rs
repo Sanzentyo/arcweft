@@ -1,6 +1,7 @@
 use crate::BundleVirtualFileRef;
 use crate::container::BundleDigest;
 use crate::resource_codec::types::{CrossSectionRef, DigestRef, SourceRangeRef};
+use core::fmt;
 use serde::{Deserialize, Serialize};
 
 /// Product UI program section decoded from `UiProgram`.
@@ -519,7 +520,7 @@ pub enum CompositionOnBlurPolicy {
 }
 
 /// Runtime-facing text-control emission produced from typed product UI resources.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct UiRuntimeTextControl {
     pub public_id: String,
     pub target: String,
@@ -531,6 +532,34 @@ pub struct UiRuntimeTextControl {
     pub bounds: UiRuntimeTextControlBounds,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "UiRuntimeTextControlHandlers::is_empty"
+    )]
+    pub handlers: UiRuntimeTextControlHandlers,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiRuntimeTextControlHandlers {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change: Option<UiRuntimeTextControlHandler>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub submit: Option<UiRuntimeTextControlHandler>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiRuntimeTextControlHandler {
+    pub handler_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<UiRuntimeTextControlHandlerRuntime>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiRuntimeTextControlHandlerRuntime {
+    pub awbc_function_index: u32,
+    pub handler_abi: BundleDigest,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub function_binding: Option<CrossSectionRef>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -668,6 +697,7 @@ impl UiInputOptions {
             bounds: UiRuntimeTextControlBounds::default_slot(index, self.kind),
             value,
             label,
+            handlers: UiRuntimeTextControlHandlers::from_input(self, program),
         }
     }
 
@@ -696,6 +726,103 @@ impl UiInputKind {
 impl UiSecureInputPolicy {
     pub const fn is_secure(self) -> bool {
         !matches!(self, Self::Plain)
+    }
+}
+
+impl fmt::Debug for UiRuntimeTextControl {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UiRuntimeTextControl")
+            .field("public_id", &self.public_id)
+            .field("target", &self.target)
+            .field("session", &self.session)
+            .field("value", &self.diagnostic_value())
+            .field("selection", &self.selection)
+            .field("options", &self.options)
+            .field("kind", &self.kind)
+            .field("bounds", &self.bounds)
+            .field("label", &self.label)
+            .field("handlers", &self.handlers)
+            .finish()
+    }
+}
+
+impl UiProgramResource {
+    pub fn handler_ref(&self, handler_id: &str) -> Option<&UiHandlerRef> {
+        self.handlers
+            .iter()
+            .find(|handler| handler.handler_id == handler_id)
+    }
+}
+
+impl UiRuntimeTextControl {
+    pub const fn is_secure(&self) -> bool {
+        self.options.secure_policy.is_secure() || self.kind.is_secure()
+    }
+
+    #[must_use]
+    pub fn redacted_for_observation(&self) -> Self {
+        if self.is_secure() {
+            Self {
+                value: String::new(),
+                ..self.clone()
+            }
+        } else {
+            self.clone()
+        }
+    }
+
+    fn diagnostic_value(&self) -> String {
+        if self.is_secure() {
+            "<redacted>".to_owned()
+        } else {
+            self.value.clone()
+        }
+    }
+}
+
+impl UiRuntimeTextControlHandlers {
+    pub fn from_input(input: &UiInputOptions, program: Option<&UiProgramResource>) -> Self {
+        Self {
+            change: input
+                .change_handler
+                .as_deref()
+                .map(|handler| UiRuntimeTextControlHandler::from_program(program, handler)),
+            submit: input
+                .submit_handler
+                .as_deref()
+                .map(|handler| UiRuntimeTextControlHandler::from_program(program, handler)),
+        }
+    }
+
+    pub const fn is_empty(&self) -> bool {
+        self.change.is_none() && self.submit.is_none()
+    }
+}
+
+impl UiRuntimeTextControlHandler {
+    pub fn unresolved(handler_id: impl Into<String>) -> Self {
+        Self {
+            handler_id: handler_id.into(),
+            runtime: None,
+        }
+    }
+
+    pub fn from_program(program: Option<&UiProgramResource>, handler_id: &str) -> Self {
+        program
+            .and_then(|program| program.handler_ref(handler_id))
+            .map_or_else(|| Self::unresolved(handler_id), Self::from_handler_ref)
+    }
+
+    pub fn from_handler_ref(handler: &UiHandlerRef) -> Self {
+        Self {
+            handler_id: handler.handler_id.clone(),
+            runtime: Some(UiRuntimeTextControlHandlerRuntime {
+                awbc_function_index: handler.awbc_function_index,
+                handler_abi: handler.handler_abi,
+                function_binding: handler.function_binding,
+            }),
+        }
     }
 }
 
@@ -787,6 +914,12 @@ fn stable_text_session(public_id: &str) -> u64 {
     if hash == 0 { 1 } else { hash }
 }
 
+pub type CompactUiProgramResource = UiProgramResource;
+pub type CompactUiStyleResource = UiStyleResource;
+pub type CompactUiTextResource = UiTextResource;
+pub type CompactUiInputResource = UiInputResource;
+pub type CompactUiThemeResource = UiThemeResource;
+
 fn clamp_text_byte_offset(value: &str, offset: u32) -> u32 {
     let mut index = usize::try_from(offset)
         .unwrap_or(usize::MAX)
@@ -797,8 +930,39 @@ fn clamp_text_byte_offset(value: &str, offset: u32) -> u32 {
     u32::try_from(index).unwrap_or(u32::MAX)
 }
 
-pub type CompactUiProgramResource = UiProgramResource;
-pub type CompactUiStyleResource = UiStyleResource;
-pub type CompactUiTextResource = UiTextResource;
-pub type CompactUiInputResource = UiInputResource;
-pub type CompactUiThemeResource = UiThemeResource;
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn runtime_text_control_carries_authored_change_and_submit_handlers() {
+        let input = UiInputOptions {
+            public_id: "field.name".to_owned(),
+            kind: UiInputKind::TextField,
+            value_text_source: "text.name".to_owned(),
+            placeholder_text_source: None,
+            purpose: UiInputPurpose::Text,
+            autocorrect: TextAssistPolicy::PlatformDefault,
+            spellcheck: TextAssistPolicy::PlatformDefault,
+            capitalization: TextCapitalization::None,
+            enter_key: EnterKeyHint::Default,
+            multiline: false,
+            secure_policy: UiSecureInputPolicy::Plain,
+            composition_on_blur: CompositionOnBlurPolicy::Commit,
+            submit_handler: Some("handler.name.submit".to_owned()),
+            change_handler: Some("handler.name.change".to_owned()),
+            adapter_requirements: Vec::new(),
+        };
+
+        let control = input.runtime_text_control(0, None, None);
+
+        assert_eq!(
+            control.handlers.change.unwrap().handler_id,
+            "handler.name.change"
+        );
+        assert_eq!(
+            control.handlers.submit.unwrap().handler_id,
+            "handler.name.submit"
+        );
+    }
+}

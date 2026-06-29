@@ -7,6 +7,7 @@ use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::plan::FlowEvent;
 use arcweft_render_text::{LineDisplayCatalog, LineDisplayFrame, RuntimeLineContext};
+use core::fmt;
 use serde::{Deserialize, Serialize};
 
 /// Choice metadata shared by native and Web presentation hosts.
@@ -26,7 +27,7 @@ pub struct DisplayResolution {
 /// Current portable presentation state consumed by renderer adapters.
 ///
 /// This value is a diagnostic/render input model, not a DOM instruction set.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Default, Deserialize, PartialEq, Serialize)]
 pub struct BundlePresentationSnapshot {
     pub revision: u64,
     pub dialogue: Option<LineDisplayFrame>,
@@ -84,6 +85,39 @@ impl BundlePresentationSnapshot {
             self.images = next_images;
             self.text_inputs = next_text_inputs;
         }
+    }
+
+    pub(crate) fn replace_text_inputs(&mut self, text_inputs: &[UiRuntimeTextControl]) {
+        let next_text_inputs = text_inputs.to_vec();
+        if self.text_inputs != next_text_inputs {
+            self.revision = self.revision.saturating_add(1);
+            self.text_inputs = next_text_inputs;
+        }
+    }
+
+    #[must_use]
+    pub fn redacted_for_observation(&self) -> Self {
+        Self {
+            text_inputs: self
+                .text_inputs
+                .iter()
+                .map(UiRuntimeTextControl::redacted_for_observation)
+                .collect(),
+            ..self.clone()
+        }
+    }
+}
+
+impl fmt::Debug for BundlePresentationSnapshot {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BundlePresentationSnapshot")
+            .field("revision", &self.revision)
+            .field("dialogue", &self.dialogue)
+            .field("choices", &self.choices)
+            .field("images", &self.images)
+            .field("text_inputs", &self.redacted_for_observation().text_inputs)
+            .finish()
     }
 }
 

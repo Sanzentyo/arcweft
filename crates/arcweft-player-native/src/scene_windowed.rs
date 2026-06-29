@@ -733,12 +733,21 @@ impl NativeSceneState {
     }
 
     fn apply_outcome(&mut self, outcome: InputOutcome) -> Result<(), NativeSceneWindowError> {
-        if outcome.dialogue_advance {
+        let InputOutcome {
+            actions,
+            text_control_write_backs,
+            dialogue_advance,
+            redraw: _,
+        } = outcome;
+        if dialogue_advance {
             self.runtime.session_mut().queue_dialogue_advance();
         }
-        for action in outcome.actions {
+        for action in actions {
             self.runtime.session_mut().queue_semantic_action(&action)?;
         }
+        self.runtime
+            .session_mut()
+            .queue_text_control_write_backs(text_control_write_backs)?;
         Ok(())
     }
 

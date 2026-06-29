@@ -48,6 +48,7 @@ pub use ui::{
     CompactUiInputResource, CompactUiProgramResource, CompactUiStyleResource,
     CompactUiTextResource, CompactUiThemeResource, UiInputResource, UiProgramResource,
     UiResourceBudget, UiResourceCompatibility, UiRuntimeTextControl, UiRuntimeTextControlBounds,
+    UiRuntimeTextControlHandler, UiRuntimeTextControlHandlerRuntime, UiRuntimeTextControlHandlers,
     UiRuntimeTextControlOptions, UiRuntimeTextSelection, UiStyleResource, UiTextResource,
     UiThemeResource, migrated_ui_section_compatibility,
 };

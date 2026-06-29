@@ -8,6 +8,7 @@
 
 use crate::hit::HitRect;
 use crate::input::InteractionTarget;
+use core::fmt;
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TextByteOffset(pub u32);
@@ -63,6 +64,39 @@ pub enum TextInputOperation {
     },
     SetSelection(PlatformTextSelection),
     Command(TextEditCommand),
+}
+
+/// Runtime/product write-back boundary for committed text-control values.
+///
+/// `Change` is emitted only for committed value mutations, never for IME
+/// preedit/composition text. `Submit` is emitted for submit commands and can
+/// carry the same committed value without being confused with an ordinary
+/// change.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TextControlWriteBackKind {
+    Change,
+    Submit,
+}
+
+/// Text-control value that carries its diagnostics privacy with the value.
+#[derive(Clone, Eq, PartialEq)]
+pub struct TextControlValue {
+    text: String,
+    privacy: TextInputPrivacy,
+}
+
+/// Player-to-runtime text-control write-back.
+///
+/// This is owned typed data, not JSON and not an `InteractionPayload::Text`
+/// string tunnel.
+#[derive(Clone, Eq, PartialEq)]
+pub struct TextControlWriteBack {
+    target: InteractionTarget,
+    session: TextInputSessionId,
+    kind: TextControlWriteBackKind,
+    value: TextControlValue,
+    selection: TextRange<TextByteOffset>,
+    revision: TextRevision,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -357,6 +391,18 @@ impl TextInput {
     pub fn into_operations(self) -> Vec<TextInputOperation> {
         self.operations
     }
+
+    pub fn commits_runtime_text_control_value(&self) -> bool {
+        self.operations
+            .iter()
+            .any(TextInputOperation::commits_runtime_text_control_value)
+    }
+
+    pub fn submits_runtime_text_control(&self) -> bool {
+        self.operations
+            .iter()
+            .any(TextInputOperation::submits_runtime_text_control)
+    }
 }
 
 impl TextInputPrivacy {
@@ -375,6 +421,171 @@ impl TextRevision {
 impl TextInputOperation {
     pub fn commit(text: impl Into<String>) -> Self {
         Self::Commit(TextCommit::new(text))
+    }
+
+    pub const fn commits_runtime_text_control_value(&self) -> bool {
+        matches!(
+            self,
+            Self::Commit(_)
+                | Self::DeleteSurrounding { .. }
+                | Self::Command(
+                    TextEditCommand::Backspace
+                        | TextEditCommand::Delete
+                        | TextEditCommand::Cut
+                        | TextEditCommand::Paste,
+                )
+        )
+    }
+
+    pub const fn submits_runtime_text_control(&self) -> bool {
+        matches!(self, Self::Command(TextEditCommand::Submit))
+    }
+}
+
+impl fmt::Debug for TextControlValue {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TextControlValue")
+            .field("text", &self.redacted_for_diagnostics())
+            .field("privacy", &self.privacy)
+            .finish()
+    }
+}
+
+impl fmt::Debug for TextControlWriteBack {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TextControlWriteBack")
+            .field("target", &self.target)
+            .field("session", &self.session)
+            .field("kind", &self.kind)
+            .field("value", &self.value)
+            .field("selection", &self.selection)
+            .field("revision", &self.revision)
+            .finish()
+    }
+}
+
+impl TextControlValue {
+    pub fn new(text: impl Into<String>, privacy: TextInputPrivacy) -> Self {
+        Self {
+            text: text.into(),
+            privacy,
+        }
+    }
+
+    pub fn plain(text: impl Into<String>) -> Self {
+        Self::new(text, TextInputPrivacy::Plain)
+    }
+
+    pub fn sensitive(text: impl Into<String>) -> Self {
+        Self::new(text, TextInputPrivacy::Sensitive)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.text
+    }
+
+    pub const fn privacy(&self) -> TextInputPrivacy {
+        self.privacy
+    }
+
+    pub const fn is_sensitive(&self) -> bool {
+        self.privacy.is_sensitive()
+    }
+
+    pub fn redacted_for_diagnostics(&self) -> String {
+        if self.is_sensitive() {
+            "<redacted>".to_owned()
+        } else {
+            self.text.clone()
+        }
+    }
+}
+
+impl TextControlWriteBack {
+    pub fn new(
+        target: InteractionTarget,
+        session: TextInputSessionId,
+        kind: TextControlWriteBackKind,
+        value: TextControlValue,
+        selection: TextRange<TextByteOffset>,
+        revision: TextRevision,
+    ) -> Self {
+        Self {
+            target,
+            session,
+            kind,
+            value,
+            selection,
+            revision,
+        }
+    }
+
+    pub fn change(
+        target: InteractionTarget,
+        session: TextInputSessionId,
+        value: TextControlValue,
+        selection: TextRange<TextByteOffset>,
+        revision: TextRevision,
+    ) -> Self {
+        Self::new(
+            target,
+            session,
+            TextControlWriteBackKind::Change,
+            value,
+            selection,
+            revision,
+        )
+    }
+
+    pub fn submit(
+        target: InteractionTarget,
+        session: TextInputSessionId,
+        value: TextControlValue,
+        selection: TextRange<TextByteOffset>,
+        revision: TextRevision,
+    ) -> Self {
+        Self::new(
+            target,
+            session,
+            TextControlWriteBackKind::Submit,
+            value,
+            selection,
+            revision,
+        )
+    }
+
+    pub const fn target(&self) -> &InteractionTarget {
+        &self.target
+    }
+
+    pub const fn session(&self) -> TextInputSessionId {
+        self.session
+    }
+
+    pub const fn kind(&self) -> TextControlWriteBackKind {
+        self.kind
+    }
+
+    pub const fn value(&self) -> &TextControlValue {
+        &self.value
+    }
+
+    pub const fn selection(&self) -> TextRange<TextByteOffset> {
+        self.selection
+    }
+
+    pub const fn revision(&self) -> TextRevision {
+        self.revision
+    }
+
+    pub const fn is_change(&self) -> bool {
+        matches!(self.kind, TextControlWriteBackKind::Change)
+    }
+
+    pub const fn is_submit(&self) -> bool {
+        matches!(self.kind, TextControlWriteBackKind::Submit)
     }
 }
 
@@ -1294,4 +1505,37 @@ fn transform_range_rects(
         .iter()
         .map(|rect| TextRangeRect::new(rect.range, transform.transform_rect(rect.bounds)))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn text_control_write_back_value_debug_redacts_sensitive_text() {
+        let value = TextControlValue::sensitive("secret");
+
+        let debug = format!("{value:?}");
+
+        assert_eq!(value.as_str(), "secret");
+        assert!(!debug.contains("secret"));
+        assert!(debug.contains("<redacted>"));
+    }
+
+    #[test]
+    fn text_control_write_back_kind_detection_separates_change_and_submit() {
+        let commit = TextInputOperation::commit("x");
+        let submit = TextInputOperation::Command(TextEditCommand::Submit);
+        let preedit = TextInputOperation::SetComposition(TextCompositionUpdate::new(
+            "x",
+            TextRange::new(TextByteOffset(0), TextByteOffset(1)),
+        ));
+
+        assert!(commit.commits_runtime_text_control_value());
+        assert!(!commit.submits_runtime_text_control());
+        assert!(submit.submits_runtime_text_control());
+        assert!(!submit.commits_runtime_text_control_value());
+        assert!(!preedit.commits_runtime_text_control_value());
+        assert!(!preedit.submits_runtime_text_control());
+    }
 }
