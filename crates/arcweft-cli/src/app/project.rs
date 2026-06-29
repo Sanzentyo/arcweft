@@ -8,7 +8,10 @@ use super::shared::is_arcw_path;
 use crate::output::RuntimeProfilePhase;
 use arcweft_adapter_context::{manifest::AdapterManifest, standard};
 use arcweft_character::catalog::CharacterCatalog;
-use arcweft_compiler::{hir, parse, project::compile_project_with_env};
+use arcweft_compiler::{
+    hir, parse,
+    project::{ProjectCompileDiagnostic, ProjectCompileError, compile_project_with_env},
+};
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_lang_sema::{check::TypeCheckReport, env::TypeCheckEnv};
 use arcweft_lang_syntax::{lint::SyntaxLint, source::ParsedSource};
@@ -376,18 +379,26 @@ fn load_and_check_project_with_env(
     })
 }
 
-pub(in crate::app) fn print_project_compile_error(
-    error: &arcweft_compiler::project::ProjectCompileError,
-) {
-    eprintln!("error: {error}");
+pub(in crate::app) fn print_project_compile_error(error: &ProjectCompileError) {
+    let emitter = DiagnosticEmitter::stderr();
     for diagnostic in error.diagnostics() {
-        let module = diagnostic
-            .module()
-            .map_or_else(|| "crate".to_owned(), ToString::to_string);
-        for message in diagnostic.messages() {
-            eprintln!("  {}[{}]: {message}", diagnostic.stage().as_str(), module);
-        }
+        emit_project_compile_diagnostic(&emitter, diagnostic);
     }
+}
+
+fn emit_project_compile_diagnostic(
+    emitter: &DiagnosticEmitter,
+    diagnostic: &ProjectCompileDiagnostic,
+) {
+    if let Some(source) = diagnostic.source()
+        && let Some(text) = source.text()
+    {
+        let diagnostic_source =
+            DiagnosticSource::from_display_path(source.name().display_name().to_owned(), text);
+        emitter.emit(diagnostic.diagnostic(), &diagnostic_source);
+        return;
+    }
+    emitter.emit_without_source(diagnostic.diagnostic());
 }
 
 pub(in crate::app) fn typecheck_env_for_selection(

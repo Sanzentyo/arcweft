@@ -1,4 +1,5 @@
 use crate::{effect_diagnostics::EffectDiagnostic, types::TypeKind};
+use arcweft_source::{Diagnostic, DiagnosticSeverity};
 use thiserror::Error;
 
 /// Semantic type-checking diagnostic.
@@ -79,6 +80,11 @@ impl TypeCheckReadinessError {
     /// Human-readable readiness failure.
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    /// Builds the shared diagnostic representation for compiler, CLI, LSP, and Agent surfaces.
+    pub fn diagnostic(&self) -> Diagnostic {
+        Diagnostic::new(DiagnosticSeverity::Error, self.message.clone()).with_code("sema.readiness")
     }
 }
 
@@ -209,6 +215,17 @@ impl TypeCheckError {
     pub const fn kind(&self) -> &TypeCheckErrorKind {
         &self.kind
     }
+
+    /// Stable compiler-wide diagnostic code.
+    pub fn stable_code(&self) -> String {
+        typecheck_error_code(&self.kind)
+    }
+
+    /// Builds the shared diagnostic representation for compiler, CLI, LSP, and Agent surfaces.
+    pub fn diagnostic(&self) -> Diagnostic {
+        Diagnostic::new(DiagnosticSeverity::Error, self.message.clone())
+            .with_code(self.stable_code())
+    }
 }
 
 impl TypeCheckWarning {
@@ -241,5 +258,53 @@ impl TypeCheckWarning {
     /// Machine-readable warning family and structured fields.
     pub const fn kind(&self) -> &TypeCheckWarningKind {
         &self.kind
+    }
+
+    /// Stable compiler-wide diagnostic code.
+    pub fn stable_code(&self) -> String {
+        typecheck_warning_code(&self.kind)
+    }
+
+    /// Builds the shared diagnostic representation for compiler, CLI, LSP, and Agent surfaces.
+    pub fn diagnostic(&self) -> Diagnostic {
+        Diagnostic::new(DiagnosticSeverity::Warning, self.message.clone())
+            .with_code(self.stable_code())
+    }
+}
+
+fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
+    match kind {
+        TypeCheckErrorKind::Message => "sema.typecheck".to_owned(),
+        TypeCheckErrorKind::ArgumentTypeMismatch { .. } => {
+            "sema.typecheck.argument_type_mismatch".to_owned()
+        }
+        TypeCheckErrorKind::MissingRustPackageMetadata { .. } => {
+            "sema.extern_rust.missing_metadata".to_owned()
+        }
+        TypeCheckErrorKind::MissingRustExport { .. } => {
+            "sema.extern_rust.missing_export".to_owned()
+        }
+        TypeCheckErrorKind::RustExportSignatureMismatch { .. } => {
+            "sema.extern_rust.signature_mismatch".to_owned()
+        }
+        TypeCheckErrorKind::InlineCallErrorPolicyMissing { .. } => {
+            "sema.dialogue.inline_error_policy_missing".to_owned()
+        }
+        TypeCheckErrorKind::InlineFailurePolicyConflict { .. } => {
+            "sema.dialogue.inline_failure_policy_conflict".to_owned()
+        }
+        TypeCheckErrorKind::UnknownInlineFailurePolicy { .. } => {
+            "sema.dialogue.unknown_inline_failure_policy".to_owned()
+        }
+        TypeCheckErrorKind::Effect { diagnostic } => diagnostic.code().as_str().to_owned(),
+    }
+}
+
+fn typecheck_warning_code(kind: &TypeCheckWarningKind) -> String {
+    match kind {
+        TypeCheckWarningKind::PublicAbiAnonymousSum { .. } => {
+            "sema.public_abi.anonymous_sum".to_owned()
+        }
+        TypeCheckWarningKind::Effect { diagnostic } => diagnostic.code().as_str().to_owned(),
     }
 }

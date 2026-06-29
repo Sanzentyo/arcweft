@@ -22,6 +22,7 @@ use arcweft_runtime_plan::{
     flow::{RuntimePlanLowerOptions, RuntimePlanLowerReport},
     line_task::LoweredLineTaskGroup,
 };
+use arcweft_source::{Diagnostic, DiagnosticSeverity, SourceName};
 use std::{collections::BTreeMap, fmt::Write as _};
 use thiserror::Error;
 
@@ -52,7 +53,15 @@ pub enum ProjectCompileCacheStatus {
 pub struct ProjectCompileDiagnostic {
     module: Option<CanonicalModulePath>,
     stage: ProjectCompileStage,
-    messages: Vec<String>,
+    source: Option<ProjectDiagnosticSource>,
+    diagnostic: Diagnostic,
+}
+
+/// Source snapshot attached to diagnostics produced from one loaded project file.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectDiagnosticSource {
+    name: SourceName,
+    text: Option<String>,
 }
 
 /// Independently parsed and lowered source module.
@@ -121,11 +130,10 @@ pub struct InMemoryProjectCompileCache {
 
 /// Project compilation failure.
 #[derive(Debug, Error)]
-#[error("Arcweft project compilation failed during {stage}: {messages:?}")]
+#[error("Arcweft project compilation failed during {stage}")]
 pub struct ProjectCompileError {
     stage: &'static str,
     diagnostics: Vec<ProjectCompileDiagnostic>,
-    messages: Vec<String>,
 }
 
 impl ProjectCompileStage {
@@ -167,8 +175,29 @@ impl ProjectCompileDiagnostic {
         self.stage
     }
 
-    pub fn messages(&self) -> &[String] {
-        &self.messages
+    pub const fn source(&self) -> Option<&ProjectDiagnosticSource> {
+        self.source.as_ref()
+    }
+
+    pub const fn diagnostic(&self) -> &Diagnostic {
+        &self.diagnostic
+    }
+}
+
+impl ProjectDiagnosticSource {
+    pub fn new(name: SourceName, text: impl Into<String>) -> Self {
+        Self {
+            name,
+            text: Some(text.into()),
+        }
+    }
+
+    pub const fn name(&self) -> &SourceName {
+        &self.name
+    }
+
+    pub fn text(&self) -> Option<&str> {
+        self.text.as_deref()
     }
 }
 
@@ -379,30 +408,38 @@ where
             .iter()
             .map(|module| HirProjectModule::new(module.module.clone(), module.hir.clone())),
     )
-    .map_err(|error| linked_error(ProjectCompileStage::HirProject, [error.to_string()]))?;
+    .map_err(|error| {
+        linked_error(
+            ProjectCompileStage::HirProject,
+            [
+                Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                    .with_code("hir.project"),
+            ],
+        )
+    })?;
     let linked_hir = hir_project.linked_module();
     hir::resolve_hir_references(&linked_hir).map_err(|errors| {
         linked_error(
             ProjectCompileStage::Resolve,
-            errors.into_iter().map(|error| error.to_string()),
+            errors.into_iter().map(|error| error.diagnostic()),
         )
     })?;
     hir::validate_hir_typecheck_ready(&linked_hir).map_err(|errors| {
         linked_error(
             ProjectCompileStage::Readiness,
-            errors.into_iter().map(|error| error.message().to_owned()),
+            errors.into_iter().map(|error| error.diagnostic()),
         )
     })?;
     let typecheck_report = hir::typecheck_hir_with_env(&linked_hir, env).map_err(|errors| {
         linked_error(
             ProjectCompileStage::TypeCheck,
-            errors.into_iter().map(|error| error.message().to_owned()),
+            errors.into_iter().map(|error| error.diagnostic()),
         )
     })?;
     let line_task_groups = lower::lower_source_line_tasks(&linked_hir).map_err(|errors| {
         linked_error(
             ProjectCompileStage::LineTaskLower,
-            errors.into_iter().map(|error| error.message().to_owned()),
+            errors.into_iter().map(|error| error.diagnostic()),
         )
     })?;
     let runtime_plan =
@@ -410,7 +447,7 @@ where
             .map_err(|errors| {
                 linked_error(
                     ProjectCompileStage::RuntimePlanLower,
-                    errors.into_iter().map(|error| error.message().to_owned()),
+                    errors.into_iter().map(|error| error.diagnostic()),
                 )
             })?;
 
@@ -429,15 +466,16 @@ fn compile_module(
     source: &ProjectSourceFile,
     compile_unit: CompileUnitId,
 ) -> Result<CompiledProjectModule, ProjectCompileError> {
+    let source_name = module_source_name(source);
     let parsed = parse::parse_source_text(source.source().to_owned());
     if !parsed.errors().is_empty() {
         return Err(module_error(
-            source.module().clone(),
+            source,
             ProjectCompileStage::Parse,
             parsed
                 .errors()
                 .iter()
-                .map(|error| error.message().to_owned()),
+                .map(|error| error.diagnostic(&source_name)),
         ));
     }
     let syntax_stats = parsed.syntax_stats();
@@ -445,20 +483,22 @@ fn compile_module(
     let lints = parse::lint_source_tree(&tree);
     if parse::has_error_lints(&lints) {
         return Err(module_error(
-            source.module().clone(),
+            source,
             ProjectCompileStage::Lint,
             lints
                 .iter()
                 .filter(|lint| lint.severity() == SyntaxLintSeverity::Error)
-                .map(|lint| lint.message().to_owned()),
+                .map(|lint| lint.diagnostic(&source_name)),
         ));
     }
     let syntax_warnings = parse::count_warning_lints(&lints);
     let hir = hir::lower_source_tree(&tree).map_err(|errors| {
         module_error(
-            source.module().clone(),
+            source,
             ProjectCompileStage::HirLower,
-            errors.into_iter().map(|error| error.message().to_owned()),
+            errors
+                .into_iter()
+                .map(|error| error.diagnostic(&source_name)),
         )
     })?;
     Ok(CompiledProjectModule {
@@ -514,36 +554,47 @@ fn cached_unit_matches(
         })
 }
 
+fn module_source_name(source: &ProjectSourceFile) -> SourceName {
+    SourceName::path(source.path().display().to_string())
+}
+
 fn module_error(
-    module: CanonicalModulePath,
+    source: &ProjectSourceFile,
     stage: ProjectCompileStage,
-    messages: impl IntoIterator<Item = String>,
+    diagnostics: impl IntoIterator<Item = Diagnostic>,
 ) -> ProjectCompileError {
-    let messages = messages.into_iter().collect::<Vec<_>>();
+    let module = source.module().clone();
+    let source =
+        ProjectDiagnosticSource::new(module_source_name(source), source.source().to_owned());
     ProjectCompileError {
         stage: stage.as_str(),
-        diagnostics: vec![ProjectCompileDiagnostic {
-            module: Some(module),
-            stage,
-            messages: messages.clone(),
-        }],
-        messages,
+        diagnostics: diagnostics
+            .into_iter()
+            .map(|diagnostic| ProjectCompileDiagnostic {
+                module: Some(module.clone()),
+                stage,
+                source: Some(source.clone()),
+                diagnostic,
+            })
+            .collect(),
     }
 }
 
 fn linked_error(
     stage: ProjectCompileStage,
-    messages: impl IntoIterator<Item = String>,
+    diagnostics: impl IntoIterator<Item = Diagnostic>,
 ) -> ProjectCompileError {
-    let messages = messages.into_iter().collect::<Vec<_>>();
     ProjectCompileError {
         stage: stage.as_str(),
-        diagnostics: vec![ProjectCompileDiagnostic {
-            module: None,
-            stage,
-            messages: messages.clone(),
-        }],
-        messages,
+        diagnostics: diagnostics
+            .into_iter()
+            .map(|diagnostic| ProjectCompileDiagnostic {
+                module: None,
+                stage,
+                source: None,
+                diagnostic,
+            })
+            .collect(),
     }
 }
 
@@ -554,5 +605,55 @@ impl ProjectCompileError {
 
     pub fn diagnostics(&self) -> &[ProjectCompileDiagnostic] {
         &self.diagnostics
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+    use arcweft_project::sources::ProjectSourceFile;
+    use arcweft_source::{DiagnosticLabel, SourceRange, SourceSpan};
+    use std::path::PathBuf;
+
+    #[test]
+    fn project_compile_diagnostics_own_typed_diagnostic_and_source_snapshot() {
+        let source_text = "flow @flow.opening start {\n}\n";
+        let source = ProjectSourceFile::new(
+            CanonicalModulePath::crate_root(),
+            PathBuf::from("src/main.arcw"),
+            source_text.to_owned(),
+            [],
+        );
+        let span = SourceSpan::new(module_source_name(&source), SourceRange::new(5, 18));
+        let error = module_error(
+            &source,
+            ProjectCompileStage::Parse,
+            [Diagnostic::new(DiagnosticSeverity::Error, "parse failed")
+                .with_code("syntax.parse")
+                .with_label(DiagnosticLabel::primary(
+                    span,
+                    Some("found token here".to_owned()),
+                ))],
+        );
+
+        let diagnostic = error.diagnostics().first().expect("diagnostic");
+        assert_eq!(
+            diagnostic.module(),
+            Some(&CanonicalModulePath::crate_root())
+        );
+        assert_eq!(diagnostic.stage(), ProjectCompileStage::Parse);
+        assert_eq!(
+            diagnostic.diagnostic().code().expect("code").as_str(),
+            "syntax.parse"
+        );
+        assert_eq!(
+            diagnostic.source().expect("source").text(),
+            Some(source_text)
+        );
+        assert_eq!(
+            diagnostic.source().expect("source").name().display_name(),
+            "src/main.arcw"
+        );
     }
 }

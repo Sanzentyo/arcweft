@@ -11,6 +11,7 @@ arcweft-core = { path = "../arcweft-core" }
 arcweft-interaction-model = { path = "../arcweft-interaction-model" }
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-render-text = { path = "../arcweft-render-text" }
+arcweft-source = { path = "../arcweft-source" }
 thiserror.workspace = true
 
 [dev-dependencies]

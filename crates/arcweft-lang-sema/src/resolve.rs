@@ -4,6 +4,7 @@ use crate::types::EntityKind;
 use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::ast::flow::FlowKind;
 use arcweft_lang_syntax::ast::items::EntityDeclKind;
+use arcweft_source::{Diagnostic, DiagnosticSeverity};
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -18,6 +19,13 @@ pub struct NameRegistry {
 #[error("{message}")]
 pub struct NameResolutionError {
     message: String,
+}
+
+impl NameResolutionError {
+    /// Builds the shared diagnostic representation for compiler, CLI, LSP, and Agent surfaces.
+    pub fn diagnostic(&self) -> Diagnostic {
+        Diagnostic::new(DiagnosticSeverity::Error, self.message.clone()).with_code("sema.resolve")
+    }
 }
 
 /// Builds a registry from declarations visible in one HIR module.

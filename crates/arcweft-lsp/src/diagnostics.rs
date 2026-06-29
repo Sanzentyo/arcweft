@@ -4,15 +4,16 @@ use crate::profiles::LspProfile;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::{
     check::{analyze_types, validate_typecheck_ready},
-    diagnostics::{
-        TypeCheckError, TypeCheckErrorKind, TypeCheckReadinessError, TypeCheckWarning,
-        TypeCheckWarningKind,
-    },
+    diagnostics::{TypeCheckError, TypeCheckReadinessError, TypeCheckWarning},
     resolve::{NameResolutionError, registry_from_hir, validate_hir_references},
 };
 use arcweft_lang_syntax::{
     lint::{SyntaxLint, lint_id_policy},
     parser::parse_source,
+};
+use arcweft_source::{
+    Diagnostic as ArcDiagnostic, DiagnosticApplicability, DiagnosticLabelStyle,
+    DiagnosticSeverity as ArcDiagnosticSeverity, SourceName, SourceSpan,
 };
 use arcweft_verify::{BackendKind, VerificationMode, VerificationPolicy, verify_module_with_env};
 use arcweft_verify_lsp::{
@@ -20,7 +21,8 @@ use arcweft_verify_lsp::{
     profile_manifest_conformance_diagnostics,
 };
 use lsp_types::{
-    Diagnostic, DiagnosticSeverity, NumberOrString, Position, PublishDiagnosticsParams, Range,
+    Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, NumberOrString,
+    Position, PublishDiagnosticsParams, Range, Uri,
 };
 
 /// Analyzed document diagnostics plus source index used by feature handlers.
@@ -34,28 +36,19 @@ impl DocumentAnalysis {
     /// Runs syntax, HIR lowering, profile-aware type checking, and verifier diagnostics.
     pub fn analyze(source: &str, encoding: PositionEncoding, profile: &LspProfile) -> Self {
         let line_index = LineIndex::new(source.to_owned(), encoding);
+        let source_name = SourceName::path("<memory>");
         let parsed = parse_source(source.to_owned());
         let mut diagnostics = parsed
             .errors()
             .iter()
-            .enumerate()
-            .map(|(index, error)| Diagnostic {
-                range: line_index.range_from_byte_span(error.range().start(), error.range().end()),
-                severity: Some(DiagnosticSeverity::ERROR),
-                code: Some(NumberOrString::String(format!(
-                    "syntax.parse.{}",
-                    index + 1
-                ))),
-                source: Some("arcweft-syntax".to_owned()),
-                message: error.message().to_owned(),
-                ..Diagnostic::default()
-            })
+            .map(|error| lsp_diagnostic_from_arcweft(&error.diagnostic(&source_name), &line_index))
             .collect::<Vec<_>>();
 
         if parsed.errors().is_empty() {
             diagnostics.extend(syntax_lint_diagnostics(
                 &lint_id_policy(parsed.typed_tree()),
                 &line_index,
+                &source_name,
             ));
             match lower_to_hir(parsed.typed_tree()) {
                 Ok(hir) => {
@@ -65,8 +58,10 @@ impl DocumentAnalysis {
                         let readiness = readiness_diagnostics(&hir, &line_index);
                         if readiness.is_empty() {
                             let typecheck_report = analyze_types(&hir, &env);
-                            diagnostics
-                                .extend(typecheck_diagnostics(&typecheck_report.diagnostics));
+                            diagnostics.extend(typecheck_diagnostics(
+                                &typecheck_report.diagnostics,
+                                &line_index,
+                            ));
                             diagnostics.extend(typecheck_warnings(&typecheck_report.warnings));
                             if typecheck_report.diagnostics.is_empty() {
                                 let report = verify_module_with_env(
@@ -90,19 +85,8 @@ impl DocumentAnalysis {
                     }
                 }
                 Err(errors) => {
-                    diagnostics.extend(errors.into_iter().enumerate().map(|(index, error)| {
-                        let range = error.range().map_or_else(
-                            || line_index.range_from_byte_span(0, 0),
-                            |range| line_index.range_from_byte_span(range.start(), range.end()),
-                        );
-                        Diagnostic {
-                            range,
-                            severity: Some(DiagnosticSeverity::ERROR),
-                            code: Some(NumberOrString::String(format!("hir.lower.{}", index + 1))),
-                            source: Some("arcweft-hir".to_owned()),
-                            message: error.message().to_owned(),
-                            ..Diagnostic::default()
-                        }
+                    diagnostics.extend(errors.into_iter().map(|error| {
+                        lsp_diagnostic_from_arcweft(&error.diagnostic(&source_name), &line_index)
                     }));
                 }
             }
@@ -125,26 +109,14 @@ impl DocumentAnalysis {
     }
 }
 
-fn syntax_lint_diagnostics(lints: &[SyntaxLint], line_index: &LineIndex) -> Vec<Diagnostic> {
+fn syntax_lint_diagnostics(
+    lints: &[SyntaxLint],
+    line_index: &LineIndex,
+    source_name: &SourceName,
+) -> Vec<Diagnostic> {
     lints
         .iter()
-        .map(|lint| Diagnostic {
-            range: line_index.range_from_byte_span(lint.range().start(), lint.range().end()),
-            severity: Some(match lint.severity() {
-                arcweft_lang_syntax::lint::SyntaxLintSeverity::Error => DiagnosticSeverity::ERROR,
-                arcweft_lang_syntax::lint::SyntaxLintSeverity::Warning => {
-                    DiagnosticSeverity::WARNING
-                }
-                arcweft_lang_syntax::lint::SyntaxLintSeverity::Information => {
-                    DiagnosticSeverity::INFORMATION
-                }
-                arcweft_lang_syntax::lint::SyntaxLintSeverity::Hint => DiagnosticSeverity::HINT,
-            }),
-            code: Some(NumberOrString::String(lint.code().stable_code().to_owned())),
-            source: Some("arcweft-syntax".to_owned()),
-            message: format!("{}: {}", lint.code().domain_name(), lint.message()),
-            ..Diagnostic::default()
-        })
+        .map(|lint| lsp_diagnostic_from_arcweft(&lint.diagnostic(source_name), line_index))
         .collect()
 }
 
@@ -198,87 +170,33 @@ fn readiness_diagnostics(
 
 fn name_resolution_diagnostic(
     error: &NameResolutionError,
-    index: usize,
+    _index: usize,
     line_index: &LineIndex,
 ) -> Diagnostic {
-    Diagnostic {
-        range: line_index.range_from_byte_span(0, 0),
-        severity: Some(DiagnosticSeverity::ERROR),
-        code: Some(NumberOrString::String(format!("sema.resolve.{index}"))),
-        source: Some("arcweft-sema".to_owned()),
-        message: error.message().to_owned(),
-        ..Diagnostic::default()
-    }
+    lsp_diagnostic_from_arcweft(&error.diagnostic(), line_index)
 }
 
 fn readiness_diagnostic(
     error: &TypeCheckReadinessError,
-    index: usize,
+    _index: usize,
     line_index: &LineIndex,
 ) -> Diagnostic {
-    Diagnostic {
-        range: line_index.range_from_byte_span(0, 0),
-        severity: Some(DiagnosticSeverity::ERROR),
-        code: Some(NumberOrString::String(format!("sema.readiness.{index}"))),
-        source: Some("arcweft-sema".to_owned()),
-        message: error.message().to_owned(),
-        ..Diagnostic::default()
-    }
+    lsp_diagnostic_from_arcweft(&error.diagnostic(), line_index)
 }
 
-fn typecheck_diagnostics(errors: &[TypeCheckError]) -> Vec<Diagnostic> {
+fn typecheck_diagnostics(errors: &[TypeCheckError], line_index: &LineIndex) -> Vec<Diagnostic> {
     errors
         .iter()
-        .enumerate()
-        .map(|(index, error)| Diagnostic {
-            range: start_range(),
-            severity: Some(DiagnosticSeverity::ERROR),
-            code: Some(NumberOrString::String(typecheck_error_code(
-                error,
-                index + 1,
-            ))),
-            source: Some("arcweft-sema".to_owned()),
-            message: error.message().to_owned(),
-            ..Diagnostic::default()
-        })
+        .map(|error| lsp_diagnostic_from_arcweft(&error.diagnostic(), line_index))
         .collect()
-}
-
-fn typecheck_error_code(error: &TypeCheckError, index: usize) -> String {
-    match error.kind() {
-        TypeCheckErrorKind::Effect { diagnostic } => diagnostic.code().as_str().to_owned(),
-        TypeCheckErrorKind::ArgumentTypeMismatch { .. }
-        | TypeCheckErrorKind::MissingRustPackageMetadata { .. }
-        | TypeCheckErrorKind::MissingRustExport { .. }
-        | TypeCheckErrorKind::RustExportSignatureMismatch { .. }
-        | TypeCheckErrorKind::InlineCallErrorPolicyMissing { .. }
-        | TypeCheckErrorKind::InlineFailurePolicyConflict { .. }
-        | TypeCheckErrorKind::UnknownInlineFailurePolicy { .. }
-        | TypeCheckErrorKind::Message => format!("sema.typecheck.{index}"),
-    }
 }
 
 fn typecheck_warnings(warnings: &[TypeCheckWarning]) -> Vec<Diagnostic> {
+    let line_index = LineIndex::new(String::new(), PositionEncoding::Utf16);
     warnings
         .iter()
-        .map(|warning| Diagnostic {
-            range: start_range(),
-            severity: Some(DiagnosticSeverity::WARNING),
-            code: Some(NumberOrString::String(typecheck_warning_code(warning))),
-            source: Some("arcweft-sema".to_owned()),
-            message: warning.message().to_owned(),
-            ..Diagnostic::default()
-        })
+        .map(|warning| lsp_diagnostic_from_arcweft(&warning.diagnostic(), &line_index))
         .collect()
-}
-
-fn typecheck_warning_code(warning: &TypeCheckWarning) -> String {
-    match warning.kind() {
-        TypeCheckWarningKind::Effect { diagnostic } => diagnostic.code().as_str().to_owned(),
-        TypeCheckWarningKind::PublicAbiAnonymousSum { .. } => {
-            "sema.public_abi.anonymous_sum".to_owned()
-        }
-    }
 }
 
 fn profile_diagnostics(profile: &LspProfile) -> Vec<Diagnostic> {
@@ -299,6 +217,132 @@ fn profile_diagnostics(profile: &LspProfile) -> Vec<Diagnostic> {
         profile.declared_manifests(),
     ));
     diagnostics
+}
+
+fn lsp_diagnostic_from_arcweft(diagnostic: &ArcDiagnostic, line_index: &LineIndex) -> Diagnostic {
+    let span = primary_span(diagnostic);
+    let range = span.map_or_else(start_range, |span| range_for_span(span, line_index));
+    Diagnostic {
+        range,
+        severity: Some(lsp_severity(diagnostic.severity())),
+        code: diagnostic
+            .code()
+            .map(|code| NumberOrString::String(code.as_str().to_owned())),
+        source: Some(lsp_source_name(diagnostic).to_owned()),
+        message: diagnostic.message().to_owned(),
+        related_information: related_information(diagnostic, line_index),
+        data: suggestions_data(diagnostic, line_index),
+        ..Diagnostic::default()
+    }
+}
+
+fn primary_span(diagnostic: &ArcDiagnostic) -> Option<&SourceSpan> {
+    diagnostic.span().or_else(|| {
+        diagnostic
+            .labels()
+            .first()
+            .map(arcweft_source::DiagnosticLabel::span)
+    })
+}
+
+fn range_for_span(span: &SourceSpan, line_index: &LineIndex) -> Range {
+    line_index.range_from_byte_span(span.range().start(), span.range().end())
+}
+
+fn lsp_severity(severity: ArcDiagnosticSeverity) -> DiagnosticSeverity {
+    match severity {
+        ArcDiagnosticSeverity::Error => DiagnosticSeverity::ERROR,
+        ArcDiagnosticSeverity::Warning => DiagnosticSeverity::WARNING,
+        ArcDiagnosticSeverity::Info => DiagnosticSeverity::INFORMATION,
+        ArcDiagnosticSeverity::Hint => DiagnosticSeverity::HINT,
+    }
+}
+
+fn lsp_source_name(diagnostic: &ArcDiagnostic) -> &'static str {
+    match diagnostic
+        .code()
+        .map(arcweft_source::DiagnosticCode::as_str)
+    {
+        Some(code) if code.starts_with("syntax.") || code.starts_with("AWF0") => "arcweft-syntax",
+        Some(code) if code.starts_with("hir.") => "arcweft-hir",
+        Some(code) if code.starts_with("sema.") || code.starts_with("AWF-EFX") => "arcweft-sema",
+        Some(code) if code.starts_with("runtime.") => "arcweft-runtime",
+        _ => "arcweft",
+    }
+}
+
+fn related_information(
+    diagnostic: &ArcDiagnostic,
+    line_index: &LineIndex,
+) -> Option<Vec<DiagnosticRelatedInformation>> {
+    let uri = memory_uri();
+    let mut related = diagnostic
+        .labels()
+        .iter()
+        .filter_map(|label| {
+            let message = label
+                .message()
+                .map(str::to_owned)
+                .or_else(|| match label.style() {
+                    DiagnosticLabelStyle::Primary => Some("primary location".to_owned()),
+                    DiagnosticLabelStyle::Secondary => Some("related location".to_owned()),
+                })?;
+            Some(DiagnosticRelatedInformation {
+                location: Location::new(uri.clone(), range_for_span(label.span(), line_index)),
+                message,
+            })
+        })
+        .collect::<Vec<_>>();
+    let note_range =
+        primary_span(diagnostic).map_or_else(start_range, |span| range_for_span(span, line_index));
+    related.extend(
+        diagnostic
+            .notes()
+            .iter()
+            .map(|note| DiagnosticRelatedInformation {
+                location: Location::new(uri.clone(), note_range),
+                message: note.clone(),
+            }),
+    );
+    (!related.is_empty()).then_some(related)
+}
+
+fn suggestions_data(
+    diagnostic: &ArcDiagnostic,
+    line_index: &LineIndex,
+) -> Option<serde_json::Value> {
+    if diagnostic.suggestions().is_empty() {
+        return None;
+    }
+    Some(serde_json::json!({
+        "suggestions": diagnostic.suggestions().iter().map(|suggestion| {
+            serde_json::json!({
+                "message": suggestion.message(),
+                "applicability": applicability_name(suggestion.applicability()),
+                "edits": suggestion.edits().iter().map(|edit| {
+                    serde_json::json!({
+                        "range": range_for_span(edit.span(), line_index),
+                        "replacement": edit.replacement(),
+                    })
+                }).collect::<Vec<_>>(),
+            })
+        }).collect::<Vec<_>>(),
+    }))
+}
+
+fn applicability_name(applicability: DiagnosticApplicability) -> &'static str {
+    match applicability {
+        DiagnosticApplicability::MachineApplicable => "machine_applicable",
+        DiagnosticApplicability::MaybeIncorrect => "maybe_incorrect",
+        DiagnosticApplicability::HasPlaceholders => "has_placeholders",
+        DiagnosticApplicability::Unspecified => "unspecified",
+    }
+}
+
+fn memory_uri() -> Uri {
+    "file:///__arcweft_memory__.arcw"
+        .parse()
+        .expect("memory URI is valid")
 }
 
 fn start_range() -> Range {
@@ -390,11 +434,7 @@ flow @flow.opening start {
             .expect("identity mismatch diagnostic");
 
         assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::ERROR));
-        assert!(
-            diagnostic
-                .message
-                .contains("identity::decl_binding_mismatch")
-        );
+        assert_eq!(diagnostic.source.as_deref(), Some("arcweft-syntax"));
     }
 
     #[test]
@@ -412,7 +452,7 @@ flow @flow.opening {
             .expect("explicit declaration id diagnostic");
 
         assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::HINT));
-        assert!(diagnostic.message.contains("style::explicit_decl_id"));
+        assert_eq!(diagnostic.source.as_deref(), Some("arcweft-syntax"));
     }
 
     #[test]
@@ -501,5 +541,24 @@ effects {}
             .expect("upper-bound effect error is surfaced");
         assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::ERROR));
         assert!(diagnostic.message.contains("state.write(flow)"));
+    }
+
+    #[test]
+    fn diagnostics_include_machine_applicable_suggestions_in_lsp_data() {
+        let source = r"
+flow @flow.opening {
+}
+";
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let diagnostic = analysis
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code == Some(NumberOrString::String("AWF0103".into())))
+            .expect("explicit declaration id diagnostic");
+        let data = diagnostic.data.as_ref().expect("suggestion data");
+        let rendered = data.to_string();
+        assert!(rendered.contains("machine_applicable"));
+        assert!(rendered.contains("opening"));
     }
 }

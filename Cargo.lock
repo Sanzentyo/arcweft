@@ -827,6 +827,7 @@ name = "arcweft-lang-hir"
 version = "0.1.0"
 dependencies = [
  "arcweft-lang-syntax",
+ "arcweft-source",
  "thiserror 2.0.18",
 ]
 
@@ -895,6 +896,7 @@ dependencies = [
  "arcweft-runtime-host",
  "arcweft-runtime-plan",
  "arcweft-rust-abi",
+ "arcweft-source",
  "arcweft-tooling",
  "arcweft-verify",
  "arcweft-verify-lsp",
@@ -1198,6 +1200,7 @@ dependencies = [
  "arcweft-lang-sema",
  "arcweft-lang-syntax",
  "arcweft-render-text",
+ "arcweft-source",
  "thiserror 2.0.18",
 ]
 

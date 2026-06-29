@@ -18,6 +18,9 @@ use arcweft_lang_syntax::{
     expr::Expr,
     types::FnSignature,
 };
+use arcweft_source::{
+    Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceName, SourceRange, SourceSpan,
+};
 use thiserror::Error;
 
 /// HIR-facing module produced from parsed surface syntax.
@@ -832,6 +835,21 @@ impl HirLowerError {
 
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    /// Builds the shared diagnostic representation for compiler, CLI, LSP, and Agent surfaces.
+    pub fn diagnostic(&self, source: &SourceName) -> Diagnostic {
+        let mut diagnostic =
+            Diagnostic::new(DiagnosticSeverity::Error, self.message.clone()).with_code("hir.lower");
+        if let Some(range) = self.range.as_ref() {
+            let span =
+                SourceSpan::new(source.clone(), SourceRange::new(range.start(), range.end()));
+            diagnostic = diagnostic.with_label(DiagnosticLabel::primary(
+                span,
+                Some("HIR lowering failed here".to_owned()),
+            ));
+        }
+        diagnostic
     }
 
     pub const fn range(&self) -> Option<&TextRange> {

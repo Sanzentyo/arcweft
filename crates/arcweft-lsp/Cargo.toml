@@ -19,6 +19,7 @@ arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-rust-abi = { path = "../arcweft-rust-abi" }
 arcweft-runtime-host = { path = "../arcweft-runtime-host" }
 arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
+arcweft-source = { path = "../arcweft-source" }
 arcweft-tooling = { path = "../arcweft-tooling" }
 arcweft-verify = { path = "../arcweft-verify" }
 arcweft-verify-lsp = { path = "../arcweft-verify-lsp" }

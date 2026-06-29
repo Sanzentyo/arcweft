@@ -39,6 +39,11 @@ impl DiagnosticEmitter {
         eprintln!("{}", self.renderer.render(&groups));
     }
 
+    pub(in crate::app) fn emit_without_source(&self, diagnostic: &Diagnostic) {
+        let groups = diagnostic_groups_without_source(diagnostic);
+        eprintln!("{}", self.renderer.render(&groups));
+    }
+
     pub(in crate::app) fn emit_all<'a>(
         &self,
         diagnostics: impl IntoIterator<Item = &'a Diagnostic>,
@@ -52,8 +57,12 @@ impl DiagnosticEmitter {
 
 impl<'a> DiagnosticSource<'a> {
     pub(in crate::app) fn new(path: &Path, text: &'a str) -> Self {
+        Self::from_display_path(path.display().to_string(), text)
+    }
+
+    pub(in crate::app) fn from_display_path(path: impl Into<String>, text: &'a str) -> Self {
         Self {
-            path: path.display().to_string(),
+            path: path.into(),
             text,
         }
     }
@@ -71,21 +80,38 @@ fn diagnostic_groups<'source>(
     diagnostic: &Diagnostic,
     source: &'source DiagnosticSource<'source>,
 ) -> Vec<Group<'source>> {
+    diagnostic_groups_with_optional_source(diagnostic, Some(source))
+}
+
+fn diagnostic_groups_without_source(diagnostic: &Diagnostic) -> Vec<Group<'static>> {
+    diagnostic_groups_with_optional_source(diagnostic, None)
+}
+
+fn diagnostic_groups_with_optional_source<'source>(
+    diagnostic: &Diagnostic,
+    source: Option<&'source DiagnosticSource<'source>>,
+) -> Vec<Group<'source>> {
     let mut groups = Vec::new();
     let mut title = level_for(diagnostic.severity()).primary_title(diagnostic.message().to_owned());
     if let Some(code) = diagnostic.code() {
         title = title.id(code.as_str().to_owned());
     }
     let mut group = Group::with_title(title);
-    let labels = diagnostic.labels();
-    if labels.is_empty() {
-        if let Some(span) = diagnostic.span() {
-            group = group.element(snippet_for_span(source, span));
+    if let Some(source) = source {
+        let labels = diagnostic.labels();
+        if labels.is_empty() {
+            if let Some(span) = diagnostic.span() {
+                group = group.element(snippet_for_span(source, span));
+            }
+        } else {
+            for label in labels {
+                group = group.element(snippet_for_label(source, label));
+            }
         }
-    } else {
-        for label in labels {
-            group = group.element(snippet_for_label(source, label));
-        }
+    } else if diagnostic.span().is_some() || !diagnostic.labels().is_empty() {
+        group = group.element(
+            Level::NOTE.message("source text is unavailable; span labels were omitted".to_owned()),
+        );
     }
     for note in diagnostic.notes() {
         group = group.element(Level::NOTE.message(note.to_owned()));
@@ -98,14 +124,20 @@ fn diagnostic_groups<'source>(
                 .with_name(Some("help"))
                 .secondary_title(suggestion.message().to_owned()),
         );
-        for edit in suggestion.edits() {
+        if let Some(source) = source {
+            for edit in suggestion.edits() {
+                suggestion_group = suggestion_group.element(
+                    Snippet::source(source.text)
+                        .path(source.path_for(edit.span().source()))
+                        .patch(Patch::new(
+                            edit.span().range().as_range(),
+                            edit.replacement().to_owned(),
+                        )),
+                );
+            }
+        } else if !suggestion.edits().is_empty() {
             suggestion_group = suggestion_group.element(
-                Snippet::source(source.text)
-                    .path(source.path_for(edit.span().source()))
-                    .patch(Patch::new(
-                        edit.span().range().as_range(),
-                        edit.replacement().to_owned(),
-                    )),
+                Level::NOTE.message("source text is unavailable; edit preview omitted".to_owned()),
             );
         }
         groups.push(suggestion_group);
