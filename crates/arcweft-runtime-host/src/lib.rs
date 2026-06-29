@@ -5,6 +5,7 @@ pub mod bundle_runner;
 pub mod capabilities;
 pub mod native_system;
 pub mod native_task;
+pub mod player_text_input_bridge;
 pub mod presentation_dispatch;
 pub mod stats;
 pub mod text_input_dispatch;
@@ -29,6 +30,10 @@ pub use native_system::{HostSystemInfo, host_system_info, system_info_value};
 pub use native_task::{
     INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar, NativeSchedulerStats, NativeTaskBridge,
     NativeTaskClassCounts, NativeTaskStats, internal_scheduler_manifest,
+};
+pub use player_text_input_bridge::{
+    PlayerTextInputBridgeCore, PlayerTextInputEdit, PlayerTextInputFocusedControl,
+    PlayerTextInputHostCommandSink, PlayerTextInputSync, PlayerTextInputSyncPhase,
 };
 pub use presentation_dispatch::{
     DispatchedPresentationAction, PresentationActionDestination, PresentationActionDispatchError,

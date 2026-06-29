@@ -665,11 +665,16 @@ impl NativeSceneState {
         };
         let label = key_label(key);
         let disposition = self.text_input.backend_key_disposition(&label);
+        let player_disposition = if self.text_input.shortcuts_allowed(disposition) {
+            disposition
+        } else {
+            arcweft_presentation::text_input::TextInputKeyDisposition::ImeConsumed
+        };
         let outcome = self
             .input
-            .keyboard_with_ime(&frame, &label, phase, disposition);
+            .keyboard_with_ime(&frame, &label, phase, player_disposition);
         self.apply_outcome(outcome)?;
-        for edit in self.text_input.drain_platform_edits(disposition)? {
+        for edit in self.text_input.drain_platform_edits(player_disposition)? {
             let outcome = self.input.text_input(&frame, edit.into_input());
             self.apply_outcome(outcome)?;
         }

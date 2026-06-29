@@ -5,20 +5,18 @@
 
 #[cfg(target_arch = "wasm32")]
 use arcweft_presentation::hit::HitRect;
-use arcweft_presentation::input::{InputEpoch, InteractionTarget};
+use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::text_index::{TextIndexError, TextIndexSnapshot};
 use arcweft_presentation::text_input::{
     CompositionEndReason, PlatformTextInputContext, PlatformTextInputEvent, PlatformTextSelection,
     TextByteOffset, TextCommit, TextCompositionUpdate, TextEditCommand, TextInputAdapterKind,
     TextInputCapabilities, TextInputCapabilitySupport, TextInputClientSnapshot,
-    TextInputFocusGeneration, TextInputGeometrySnapshot, TextInputHostCommand,
-    TextInputKeyDisposition, TextInputOperation, TextInputSecurityPolicy, TextInputSerial,
+    TextInputFocusGeneration, TextInputOperation, TextInputSecurityPolicy, TextInputSerial,
     TextInputSessionId, TextRange, TextRevision, TextSelectionAffinity, TextUtf16Offset,
     WebTextInputApiSupport,
 };
 use arcweft_runtime_host::text_input_dispatch::{
-    TextInputDispatchError, TextInputDispatchOutput, TextInputDispatchState,
-    TextInputFocusTransaction, web_edit_context_capabilities,
+    TextInputDispatchError, web_edit_context_capabilities,
 };
 use thiserror::Error;
 
@@ -63,7 +61,6 @@ pub struct WebEditContextActiveSession {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct WebEditContextAdapter {
-    dispatch: TextInputDispatchState,
     active: Option<WebEditContextActiveSession>,
     next_serial: u64,
 }
@@ -189,9 +186,11 @@ impl WebEditContextAdapter {
         &mut self,
         snapshot: &TextInputClientSnapshot,
         detection: WebEditContextFeatureDetection,
-    ) -> Result<TextInputFocusTransaction, WebEditContextError> {
-        let capabilities = match detection.capabilities() {
-            Ok(capabilities) => capabilities,
+        generation: TextInputFocusGeneration,
+        capabilities: TextInputCapabilities,
+    ) -> Result<(), WebEditContextError> {
+        let detected = match detection.capabilities() {
+            Ok(detected) => detected,
             Err(TextInputDispatchError::WebEditContextUnavailable) => {
                 return Err(WebEditContextError::WebEditContextUnavailable);
             }
@@ -199,112 +198,78 @@ impl WebEditContextAdapter {
         };
         let security = TextInputSecurityPolicy::from_options(snapshot.options());
         let capabilities = capabilities.narrow_for_security(security);
-        let activation = self
-            .dispatch
-            .activate_with_capabilities(snapshot, capabilities);
+        let detected = detected.narrow_for_security(security);
+        debug_assert_eq!(capabilities, detected);
         self.active = Some(WebEditContextActiveSession {
             session: snapshot.session(),
             target: snapshot.target().clone(),
-            generation: activation.generation(),
+            generation,
             revision: snapshot.revision(),
             index: TextIndexSnapshot::try_new(snapshot.surrounding_text().to_owned())?,
             capabilities,
             security,
             composing: false,
         });
-        Ok(activation)
+        Ok(())
     }
 
-    pub fn deactivate(&mut self) -> TextInputFocusTransaction {
+    pub fn deactivate(&mut self) {
         self.active = None;
-        self.dispatch
-            .blur(arcweft_presentation::text_input::TextInputBlurPolicy::PlatformDefault)
     }
 
     pub fn update_snapshot(
         &mut self,
         snapshot: &TextInputClientSnapshot,
-    ) -> Result<TextInputHostCommand, WebEditContextError> {
-        let command = self.dispatch.update_snapshot(snapshot)?;
+    ) -> Result<(), WebEditContextError> {
         if let Some(active) = &mut self.active {
             active.revision = snapshot.revision();
             active.index = TextIndexSnapshot::try_new(snapshot.surrounding_text().to_owned())?;
             active.security = TextInputSecurityPolicy::from_options(snapshot.options());
         }
-        Ok(command)
+        Ok(())
     }
 
-    pub fn dispatch_composition_start(
+    pub fn composition_start_event(
         &mut self,
-        epoch: InputEpoch,
-    ) -> Result<TextInputDispatchOutput, WebEditContextError> {
+    ) -> Result<PlatformTextInputEvent, WebEditContextError> {
         let context = self.next_context()?;
         let event = PlatformTextInputEvent::StartComposition(context);
-        let output = self.dispatch.dispatch_platform_event(
-            epoch,
-            event,
-            TextInputKeyDisposition::ImeConsumed,
-        )?;
         if let Some(active) = &mut self.active {
             active.composing = true;
         }
-        Ok(output)
+        Ok(event)
     }
 
-    pub fn dispatch_composition_end(
+    pub fn composition_end_event(
         &mut self,
-        epoch: InputEpoch,
         reason: CompositionEndReason,
-    ) -> Result<TextInputDispatchOutput, WebEditContextError> {
+    ) -> Result<PlatformTextInputEvent, WebEditContextError> {
         let context = self.next_context()?;
         let event = PlatformTextInputEvent::EndComposition { context, reason };
-        let output = self.dispatch.dispatch_platform_event(
-            epoch,
-            event,
-            TextInputKeyDisposition::ImeConsumed,
-        )?;
         if let Some(active) = &mut self.active {
             active.composing = false;
         }
-        Ok(output)
+        Ok(event)
     }
 
-    pub fn dispatch_text_update(
+    pub fn text_update_event(
         &mut self,
-        epoch: InputEpoch,
         update: &WebEditContextTextUpdate,
-    ) -> Result<TextInputDispatchOutput, WebEditContextError> {
+    ) -> Result<PlatformTextInputEvent, WebEditContextError> {
         let (event, post_index, composing_after) = self.platform_event_for_text_update(update)?;
-        let output = self.dispatch.dispatch_platform_event(
-            epoch,
-            event,
-            TextInputKeyDisposition::ImeConsumed,
-        )?;
         if let Some(active) = &mut self.active {
             active.index = post_index;
             active.composing = composing_after;
         }
-        Ok(output)
+        Ok(event)
     }
 
-    pub fn geometry_command(
-        &self,
-        geometry: &TextInputGeometrySnapshot,
-    ) -> Result<TextInputHostCommand, WebEditContextError> {
-        Ok(self.dispatch.update_geometry(geometry)?)
-    }
-
-    pub fn dispatch_command(
+    pub fn command_event(
         &mut self,
-        epoch: InputEpoch,
         command: TextEditCommand,
-    ) -> Result<TextInputDispatchOutput, WebEditContextError> {
+    ) -> Result<PlatformTextInputEvent, WebEditContextError> {
         let context = self.next_context()?;
-        Ok(self.dispatch.dispatch_platform_event(
-            epoch,
-            PlatformTextInputEvent::Command { context, command },
-            TextInputKeyDisposition::ShortcutCandidate,
-        )?)
+        Ok(PlatformTextInputEvent::Command { context, command })
     }
 
     fn platform_event_for_text_update(
@@ -508,8 +473,8 @@ mod tests {
     use super::*;
     use arcweft_id::PublicId;
     use arcweft_presentation::hit::HitRect;
-    use arcweft_presentation::input::{InteractionTarget, RawInputKind};
-    use arcweft_presentation::text_input::{TextInputOptions, TextInputPrivacy};
+    use arcweft_presentation::input::InteractionTarget;
+    use arcweft_presentation::text_input::TextInputOptions;
 
     fn target() -> InteractionTarget {
         InteractionTarget::new(PublicId::try_new("target.web.editcontext").unwrap())
@@ -530,6 +495,17 @@ mod tests {
         )
     }
 
+    fn activate(adapter: &mut WebEditContextAdapter, snapshot: &TextInputClientSnapshot) {
+        adapter
+            .activate(
+                snapshot,
+                WebEditContextFeatureDetection::new(true, true),
+                TextInputFocusGeneration(1),
+                TextInputCapabilities::for_platform_adapter(TextInputAdapterKind::WebEditContext),
+            )
+            .unwrap();
+    }
+
     #[test]
     fn unsupported_activation_reports_typed_error_without_dispatch_state() {
         let mut adapter = WebEditContextAdapter::default();
@@ -537,6 +513,8 @@ mod tests {
             .activate(
                 &snapshot("", false),
                 WebEditContextFeatureDetection::new(false, false),
+                TextInputFocusGeneration(1),
+                TextInputCapabilities::all_supported(),
             )
             .expect_err("EditContext absence rejects activation");
 
@@ -547,26 +525,8 @@ mod tests {
     #[test]
     fn secure_activation_narrows_character_bounds_to_redacted() {
         let mut adapter = WebEditContextAdapter::default();
-        let activation = adapter
-            .activate(
-                &snapshot("secret", true),
-                WebEditContextFeatureDetection::new(true, true),
-            )
-            .expect("EditContext present activates");
-        let TextInputHostCommand::Activate {
-            snapshot,
-            capabilities,
-            ..
-        } = &activation.commands()[0]
-        else {
-            panic!("activation command expected");
-        };
+        activate(&mut adapter, &snapshot("secret", true));
 
-        assert!(snapshot.surrounding_text().is_empty());
-        assert_eq!(
-            capabilities.character_bounds,
-            TextInputCapabilitySupport::SecureRedacted
-        );
         assert_eq!(
             adapter.active().unwrap().character_bounds_policy(),
             TextInputCapabilitySupport::SecureRedacted
@@ -576,12 +536,7 @@ mod tests {
     #[test]
     fn surrogate_replacement_uses_canonical_byte_range() {
         let mut adapter = WebEditContextAdapter::default();
-        adapter
-            .activate(
-                &snapshot("a😀b", false),
-                WebEditContextFeatureDetection::new(true, true),
-            )
-            .unwrap();
+        activate(&mut adapter, &snapshot("a😀b", false));
         let update = WebEditContextTextUpdate::new(
             TextRange::new(TextUtf16Offset(1), TextUtf16Offset(3)),
             "👩‍💻",
@@ -607,12 +562,7 @@ mod tests {
     #[test]
     fn invalid_utf16_range_rejects_before_serial_advances() {
         let mut adapter = WebEditContextAdapter::default();
-        adapter
-            .activate(
-                &snapshot("a😀b", false),
-                WebEditContextFeatureDetection::new(true, true),
-            )
-            .unwrap();
+        activate(&mut adapter, &snapshot("a😀b", false));
         let update = WebEditContextTextUpdate::new(
             TextRange::new(TextUtf16Offset(2), TextUtf16Offset(3)),
             "x",
@@ -628,36 +578,25 @@ mod tests {
     }
 
     #[test]
-    fn composition_preedit_to_commit_flow_marks_ime_consumed() {
+    fn composition_preedit_to_commit_flow_emits_platform_events() {
         let mut adapter = WebEditContextAdapter::default();
-        adapter
-            .activate(
-                &snapshot("", false),
-                WebEditContextFeatureDetection::new(true, true),
-            )
-            .unwrap();
+        activate(&mut adapter, &snapshot("", false));
         let start = adapter
-            .dispatch_composition_start(InputEpoch(1))
+            .composition_start_event()
             .expect("composition starts");
-        assert_eq!(
-            start.key_disposition(),
-            TextInputKeyDisposition::ImeConsumed
-        );
+        assert!(matches!(start, PlatformTextInputEvent::StartComposition(_)));
         let update = WebEditContextTextUpdate::new(
             TextRange::new(TextUtf16Offset(0), TextUtf16Offset(0)),
             "にほんご",
             TextRange::new(TextUtf16Offset(4), TextUtf16Offset(4)),
         )
         .composing(true);
-        let output = adapter
-            .dispatch_text_update(InputEpoch(2), &update)
-            .expect("preedit routes");
-        let RawInputKind::Text(input) = output.raw().kind() else {
-            panic!("text input expected");
+        let output = adapter.text_update_event(&update).expect("preedit routes");
+        let PlatformTextInputEvent::Batch { operations, .. } = output else {
+            panic!("batch event expected");
         };
-        assert_eq!(input.privacy(), TextInputPrivacy::Plain);
         assert!(matches!(
-            input.operations(),
+            operations.as_slice(),
             [
                 TextInputOperation::SetComposition(_),
                 TextInputOperation::SetSelection(_)
@@ -665,14 +604,14 @@ mod tests {
         ));
 
         let end = adapter
-            .dispatch_composition_end(InputEpoch(3), CompositionEndReason::Committed)
+            .composition_end_event(CompositionEndReason::Committed)
             .expect("composition ends");
-        let RawInputKind::Text(input) = end.raw().kind() else {
-            panic!("text input expected");
-        };
         assert!(matches!(
-            input.operations(),
-            [TextInputOperation::EndComposition { .. }]
+            end,
+            PlatformTextInputEvent::EndComposition {
+                reason: CompositionEndReason::Committed,
+                ..
+            }
         ));
     }
 }

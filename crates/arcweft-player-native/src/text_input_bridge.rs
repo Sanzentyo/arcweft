@@ -14,13 +14,19 @@ pub use trace::NativeTextInputTraceOptions;
 
 use self::backend::{NativeTextInputBackend, NativeTextInputBackendError};
 use self::trace::NativeTextInputTraceWriter;
-use arcweft_presentation::input::{InputEpoch, InteractionTarget, RawInputKind};
+#[cfg(test)]
+use arcweft_presentation::input::InteractionTarget;
+#[cfg(test)]
+use arcweft_presentation::text_input::TextInputSessionId;
 use arcweft_presentation::text_input::{
-    PlatformTextInputEvent, TextInput, TextInputBlurPolicy, TextInputClientSnapshot,
-    TextInputFocusGeneration, TextInputGeometrySnapshot, TextInputHostCommand,
-    TextInputKeyDisposition, TextInputSecurityPolicy, TextInputSessionId,
+    PlatformTextInputEvent, TextInput, TextInputBlurPolicy, TextInputCapabilities,
+    TextInputClientSnapshot, TextInputFocusGeneration, TextInputGeometrySnapshot,
+    TextInputHostCommand, TextInputKeyDisposition, TextInputSecurityPolicy,
 };
-use arcweft_runtime_host::{TextInputDispatchError, TextInputDispatchState};
+use arcweft_runtime_host::{
+    PlayerTextInputBridgeCore, PlayerTextInputFocusedControl, PlayerTextInputSyncPhase,
+    TextInputDispatchError,
+};
 use thiserror::Error;
 
 /// Native text-input bridge options supplied by the normal player run path.
@@ -42,8 +48,7 @@ pub enum NativeTextInputFocusReason {
 /// Focused Arcweft text control snapshot plus renderer-backed geometry.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NativeTextInputFocusedControl {
-    snapshot: TextInputClientSnapshot,
-    geometry: TextInputGeometrySnapshot,
+    focused: PlayerTextInputFocusedControl,
     reason: NativeTextInputFocusReason,
 }
 
@@ -57,20 +62,9 @@ pub struct NativeTextInputPlayerEdit {
 /// Cross-platform bridge owned by one native player window.
 #[derive(Debug)]
 pub(crate) struct NativeTextInputBridge {
-    dispatch: TextInputDispatchState,
+    core: PlayerTextInputBridgeCore,
     backend: NativeTextInputBackend,
     trace: NativeTextInputTraceWriter,
-    active: Option<NativeTextInputActiveFocus>,
-    next_epoch: u64,
-    blur_policy: TextInputBlurPolicy,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct NativeTextInputActiveFocus {
-    session: TextInputSessionId,
-    target: InteractionTarget,
-    generation: TextInputFocusGeneration,
-    security: TextInputSecurityPolicy,
 }
 
 /// Bridge-level error.  Native backend errors are contained in the player/native
@@ -81,8 +75,6 @@ pub enum NativeTextInputBridgeError {
     Backend(#[from] NativeTextInputBackendError),
     #[error("text-input dispatch failed: {0}")]
     Dispatch(#[from] TextInputDispatchError),
-    #[error("backend command was requested without an active bridge focus")]
-    NoActiveFocus,
 }
 
 impl NativeTextInputBridgeOptions {
@@ -114,18 +106,36 @@ impl NativeTextInputFocusedControl {
         reason: NativeTextInputFocusReason,
     ) -> Self {
         Self {
-            snapshot,
-            geometry,
+            focused: PlayerTextInputFocusedControl::new(
+                snapshot,
+                geometry,
+                TextInputCapabilities::all_supported(),
+            ),
             reason,
         }
     }
 
     pub const fn snapshot(&self) -> &TextInputClientSnapshot {
-        &self.snapshot
+        self.focused.snapshot()
     }
 
     pub const fn geometry(&self) -> &TextInputGeometrySnapshot {
-        &self.geometry
+        self.focused.geometry()
+    }
+
+    fn with_capabilities(self, capabilities: TextInputCapabilities) -> Self {
+        Self {
+            focused: PlayerTextInputFocusedControl::new(
+                self.focused.snapshot().clone(),
+                self.focused.geometry().clone(),
+                capabilities,
+            ),
+            reason: self.reason,
+        }
+    }
+
+    const fn focused(&self) -> &PlayerTextInputFocusedControl {
+        &self.focused
     }
 
     pub const fn reason(&self) -> NativeTextInputFocusReason {
@@ -152,12 +162,9 @@ impl NativeTextInputBridge {
             trace.record_backend_unavailable(backend.identity(), reason);
         }
         Self {
-            dispatch: TextInputDispatchState::default(),
+            core: PlayerTextInputBridgeCore::default().with_blur_policy(blur_policy),
             backend,
             trace,
-            active: None,
-            next_epoch: 1,
-            blur_policy,
         }
     }
 
@@ -175,53 +182,57 @@ impl NativeTextInputBridge {
         let Some(focused) = focused else {
             return self.blur_active();
         };
+        let focused = focused.with_capabilities(self.backend.capabilities());
         let snapshot = focused.snapshot();
-        let security = TextInputSecurityPolicy::from_options(snapshot.options());
-        let target = snapshot.target().clone();
-        let session = snapshot.session();
-        let focus_changed = self.active.as_ref().is_none_or(|active| {
-            active.session != session || active.target != target || active.security != security
-        });
-        if focus_changed {
-            self.blur_active()?;
-            let transaction = self
-                .dispatch
-                .activate_with_capabilities(snapshot, self.backend.capabilities());
-            let generation = transaction.generation();
-            self.active = Some(NativeTextInputActiveFocus {
-                session,
-                target,
-                generation,
-                security,
-            });
-            self.trace.record_focus(
-                self.backend.identity(),
-                focused.reason(),
-                snapshot,
-                generation,
-                security,
-            );
-            for command in transaction.commands() {
-                self.apply_host_command(command, Some(focused.geometry()))?;
+        let sync = self.core.sync_focus(Some(focused.focused()))?;
+        match sync.phase() {
+            PlayerTextInputSyncPhase::Activated => {
+                self.trace.record_focus(
+                    self.backend.identity(),
+                    focused.reason(),
+                    snapshot,
+                    sync.generation(),
+                    sync.security(),
+                );
             }
-            self.update_geometry(focused.geometry(), security)?;
-            return Ok(());
+            PlayerTextInputSyncPhase::Updated => {
+                self.trace.record_snapshot(
+                    self.backend.identity(),
+                    "update",
+                    snapshot,
+                    sync.generation(),
+                    sync.security(),
+                );
+            }
+            PlayerTextInputSyncPhase::Idle | PlayerTextInputSyncPhase::Blurred => {}
         }
-        self.update_snapshot(snapshot, security)?;
-        self.update_geometry(focused.geometry(), security)
+        if matches!(
+            sync.phase(),
+            PlayerTextInputSyncPhase::Activated | PlayerTextInputSyncPhase::Updated
+        ) {
+            self.trace.record_geometry(
+                self.backend.identity(),
+                focused.geometry(),
+                sync.security(),
+            );
+        }
+        for command in sync.commands() {
+            self.apply_host_command(command, sync.generation(), Some(focused.geometry()))?;
+        }
+        Ok(())
     }
 
     pub(crate) fn blur_active(&mut self) -> Result<(), NativeTextInputBridgeError> {
-        if self.active.is_none() {
+        let ended_session = self.core.active_session();
+        let sync = self.core.blur_active();
+        if sync.phase() == PlayerTextInputSyncPhase::Idle {
             return Ok(());
         }
-        let transaction = self.dispatch.blur(self.blur_policy);
         self.trace
-            .record_blur(self.backend.identity(), transaction.ended_session());
-        for command in transaction.commands() {
-            self.apply_host_command(command, None)?;
+            .record_blur(self.backend.identity(), ended_session);
+        for command in sync.commands() {
+            self.apply_host_command(command, sync.generation(), None)?;
         }
-        self.active = None;
         Ok(())
     }
 
@@ -230,9 +241,9 @@ impl NativeTextInputBridge {
         disposition: TextInputKeyDisposition,
     ) -> Result<Vec<NativeTextInputPlayerEdit>, NativeTextInputBridgeError> {
         let security = self
-            .active
-            .as_ref()
-            .map_or(TextInputSecurityPolicy::Plain, |active| active.security);
+            .core
+            .active_security()
+            .unwrap_or(TextInputSecurityPolicy::Plain);
         self.backend
             .drain_platform_events()
             .into_iter()
@@ -240,31 +251,8 @@ impl NativeTextInputBridge {
             .collect()
     }
 
-    fn update_snapshot(
-        &mut self,
-        snapshot: &TextInputClientSnapshot,
-        security: TextInputSecurityPolicy,
-    ) -> Result<(), NativeTextInputBridgeError> {
-        let command = self.dispatch.update_snapshot(snapshot)?;
-        self.trace.record_snapshot(
-            self.backend.identity(),
-            "update",
-            snapshot,
-            self.active_generation()?,
-            security,
-        );
-        self.apply_host_command(&command, None)
-    }
-
-    fn update_geometry(
-        &mut self,
-        geometry: &TextInputGeometrySnapshot,
-        security: TextInputSecurityPolicy,
-    ) -> Result<(), NativeTextInputBridgeError> {
-        let command = self.dispatch.update_geometry(geometry)?;
-        self.trace
-            .record_geometry(self.backend.identity(), geometry, security);
-        self.apply_host_command(&command, Some(geometry))
+    pub(crate) fn shortcuts_allowed(&self, disposition: TextInputKeyDisposition) -> bool {
+        self.core.shortcuts_allowed(disposition)
     }
 
     fn dispatch_platform_event(
@@ -275,45 +263,34 @@ impl NativeTextInputBridge {
     ) -> Result<NativeTextInputPlayerEdit, NativeTextInputBridgeError> {
         self.trace
             .record_platform_event(self.backend.identity(), &event, security);
-        let output = match self.dispatch.dispatch_platform_event(
-            InputEpoch(self.next_epoch),
-            event,
-            disposition,
-        ) {
-            Ok(output) => output,
+        let edit = match self.core.dispatch_platform_event(event, disposition) {
+            Ok(edit) => edit,
             Err(error) => {
                 self.trace
                     .record_dispatch_rejection(self.backend.identity(), &error);
                 return Err(error.into());
             }
         };
-        self.next_epoch = self.next_epoch.saturating_add(1);
-        let key_disposition = output.key_disposition();
-        let raw = output.into_raw();
-        let input = match raw.kind() {
-            RawInputKind::Text(input) => input.clone(),
-            _ => unreachable!(
-                "TextInputDispatchState always emits RawInputKind::Text for platform events"
-            ),
-        };
         self.trace.record_routed_text_input(
             self.backend.identity(),
-            &input,
-            key_disposition,
+            edit.input(),
+            edit.key_disposition(),
             security,
         );
-        Ok(NativeTextInputPlayerEdit { input })
+        Ok(NativeTextInputPlayerEdit {
+            input: edit.into_input(),
+        })
     }
 
     fn apply_host_command(
         &mut self,
         command: &TextInputHostCommand,
+        generation: TextInputFocusGeneration,
         geometry: Option<&TextInputGeometrySnapshot>,
     ) -> Result<(), NativeTextInputBridgeError> {
         match command {
             TextInputHostCommand::Activate { snapshot, .. } => {
-                self.backend
-                    .activate(snapshot, self.active_generation()?, geometry)?;
+                self.backend.activate(snapshot, generation, geometry)?;
             }
             TextInputHostCommand::Update(snapshot) => self.backend.update_snapshot(snapshot)?,
             TextInputHostCommand::UpdateGeometry(geometry) => {
@@ -325,16 +302,11 @@ impl NativeTextInputBridge {
             TextInputHostCommand::CancelComposition { session } => {
                 self.backend.cancel_composition(*session);
             }
-            TextInputHostCommand::Deactivate { .. } => self.backend.blur(self.blur_policy)?,
+            TextInputHostCommand::Deactivate { .. } => {
+                self.backend.blur(self.core.blur_policy())?;
+            }
         }
         Ok(())
-    }
-
-    fn active_generation(&self) -> Result<TextInputFocusGeneration, NativeTextInputBridgeError> {
-        self.active
-            .as_ref()
-            .map(|active| active.generation)
-            .ok_or(NativeTextInputBridgeError::NoActiveFocus)
     }
 }
 

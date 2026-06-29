@@ -20,7 +20,6 @@ pub use scene_windowed::{
     run_bundle_windowed_with_text_input_options,
 };
 pub use text_input_bridge::{NativeTextInputBridgeOptions, NativeTextInputTraceOptions};
-pub use windowed::run_bundle_windowed as run_bundle_adapter_windowed;
 pub use windowed_ingress::{
     WindowedLocalSidecar, WindowedPatchIngress, WindowedPatchIngressAccepted,
     WindowedPatchIngressConfig, WindowedPatchIngressError, WindowedPatchIngressErrorKind,

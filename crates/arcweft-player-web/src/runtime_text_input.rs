@@ -11,16 +11,20 @@ use crate::edit_context::{
     WebEditContextTextUpdate,
 };
 use arcweft_presentation::hit::HitRect;
-use arcweft_presentation::input::{InputEpoch, InteractionTarget, RawInputKind};
+#[cfg(test)]
+use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::text_index::TextIndexSnapshot;
 use arcweft_presentation::text_input::{
     CompositionEndReason, TextByteOffset, TextCharacterBounds, TextEditCommand, TextInput,
-    TextInputClientSnapshot, TextInputGeometrySnapshot, TextInputHostCommand,
-    TextInputKeyDisposition, TextInputSecurityPolicy, TextInputSessionId, TextRange, TextRangeRect,
+    TextInputCapabilities, TextInputClientSnapshot, TextInputGeometrySnapshot,
+    TextInputHostCommand, TextInputKeyDisposition, TextInputSessionId, TextRange, TextRangeRect,
     TextUtf16Offset,
 };
 use arcweft_render_wgpu::geometry::{PreparedFrame, PreparedTextInputTarget};
-use arcweft_runtime_host::text_input_dispatch::TextInputDispatchOutput;
+use arcweft_runtime_host::{
+    PlayerTextInputBridgeCore, PlayerTextInputEdit, PlayerTextInputFocusedControl,
+    PlayerTextInputSyncPhase,
+};
 use serde::Serialize;
 use std::collections::VecDeque;
 use thiserror::Error;
@@ -188,20 +192,12 @@ pub struct WebRuntimeTextInputDispatchStatus {
 #[derive(Debug)]
 pub struct WebPlayerTextInputBridge {
     host_id: String,
+    core: PlayerTextInputBridgeCore,
     adapter: WebEditContextAdapter,
     detection: WebEditContextFeatureDetection,
-    active: Option<WebRuntimeTextInputActiveFocus>,
     pending: VecDeque<WebRuntimeTextInputPlayerEdit>,
-    next_epoch: u64,
     client_transform: WebTextInputClientTransform,
     unsupported_reported: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct WebRuntimeTextInputActiveFocus {
-    session: TextInputSessionId,
-    target: InteractionTarget,
-    security: TextInputSecurityPolicy,
 }
 
 /// Opaque registry handle owned by the normal `app.rs` player loop.
@@ -216,6 +212,8 @@ pub struct WebPlayerTextInputBridgeHandle {
 pub enum WebRuntimeTextInputBridgeError {
     #[error("Web EditContext adapter failed: {0}")]
     EditContext(#[from] WebEditContextError),
+    #[error("Web text-input dispatch failed: {0}")]
+    Dispatch(#[from] arcweft_runtime_host::TextInputDispatchError),
     #[error("Web text-input dispatch emitted a non-text raw event")]
     NonTextDispatchOutput,
     #[error("unknown Web text-input command `{0}`")]
@@ -360,21 +358,16 @@ impl WebRuntimeTextInputSync {
     pub fn into_commands(self) -> Vec<WebRuntimeTextInputCommand> {
         self.commands
     }
-
-    fn extend(&mut self, commands: impl IntoIterator<Item = WebRuntimeTextInputCommand>) {
-        self.commands.extend(commands);
-    }
 }
 
 impl WebPlayerTextInputBridge {
     pub fn new(host_id: impl Into<String>, detection: WebEditContextFeatureDetection) -> Self {
         Self {
             host_id: host_id.into(),
+            core: PlayerTextInputBridgeCore::default(),
             adapter: WebEditContextAdapter::default(),
             detection,
-            active: None,
             pending: VecDeque::new(),
-            next_epoch: 1,
             client_transform: WebTextInputClientTransform::default(),
             unsupported_reported: false,
         }
@@ -407,47 +400,51 @@ impl WebPlayerTextInputBridge {
         let Some(focused) = focused else {
             return self.blur_active();
         };
-        if self.detection.capabilities().is_err() {
+        let Ok(capabilities) = self.detection.capabilities() else {
+            let _ = self.core.blur_active();
+            self.adapter.deactivate();
             return Ok(self.unsupported_sync());
-        }
-
+        };
+        let focused = PlayerTextInputFocusedControl::new(
+            focused.snapshot().clone(),
+            focused.geometry().clone(),
+            capabilities,
+        );
         let snapshot = focused.snapshot();
-        let security = TextInputSecurityPolicy::from_options(snapshot.options());
-        let target = snapshot.target().clone();
-        let session = snapshot.session();
-        let focus_changed = self.active.as_ref().is_none_or(|active| {
-            active.session != session || active.target != target || active.security != security
-        });
-        if focus_changed {
-            let mut sync = self.blur_active()?;
-            let activation = self.adapter.activate(snapshot, self.detection)?;
-            self.active = Some(WebRuntimeTextInputActiveFocus {
-                session,
-                target,
-                security,
-            });
-            sync.extend(self.commands_from_transaction(activation.into_commands())?);
-            sync.extend(self.update_geometry(focused.geometry())?.into_commands());
-            Ok(sync)
-        } else {
-            let mut sync = WebRuntimeTextInputSync::default();
-            let command = self.adapter.update_snapshot(snapshot)?;
-            sync.extend(self.commands_from_transaction(vec![command])?);
-            sync.extend(self.update_geometry(focused.geometry())?.into_commands());
-            Ok(sync)
+        let sync = self.core.sync_focus(Some(&focused))?;
+        match sync.phase() {
+            PlayerTextInputSyncPhase::Activated => {
+                self.adapter.activate(
+                    snapshot,
+                    self.detection,
+                    sync.generation(),
+                    self.core
+                        .active_capabilities()
+                        .unwrap_or(TextInputCapabilities::all_supported()),
+                )?;
+            }
+            PlayerTextInputSyncPhase::Updated => {
+                self.adapter.update_snapshot(snapshot)?;
+            }
+            PlayerTextInputSyncPhase::Blurred => {
+                self.adapter.deactivate();
+            }
+            PlayerTextInputSyncPhase::Idle => {}
         }
+        Ok(WebRuntimeTextInputSync {
+            commands: self.commands_from_transaction(sync.into_commands())?,
+        })
     }
 
     pub fn blur_active(
         &mut self,
     ) -> Result<WebRuntimeTextInputSync, WebRuntimeTextInputBridgeError> {
-        if self.active.is_none() {
-            return Ok(WebRuntimeTextInputSync::default());
+        let sync = self.core.blur_active();
+        if sync.phase() != PlayerTextInputSyncPhase::Idle {
+            self.adapter.deactivate();
         }
-        let transaction = self.adapter.deactivate();
-        self.active = None;
         Ok(WebRuntimeTextInputSync {
-            commands: self.commands_from_transaction(transaction.into_commands())?,
+            commands: self.commands_from_transaction(sync.into_commands())?,
         })
     }
 
@@ -455,33 +452,39 @@ impl WebPlayerTextInputBridge {
         &mut self,
         update: &WebRuntimeTextInputTextUpdate,
     ) -> Result<WebRuntimeTextInputDispatchStatus, WebRuntimeTextInputBridgeError> {
-        let epoch = self.next_epoch();
-        let output = self
+        let event = self
             .adapter
-            .dispatch_text_update(epoch, &update.as_edit_context_update())?;
-        self.enqueue_output("textupdate", output)
+            .text_update_event(&update.as_edit_context_update())?;
+        let edit = self
+            .core
+            .dispatch_platform_event(event, TextInputKeyDisposition::ImeConsumed)?;
+        Ok(self.enqueue_edit("textupdate", edit))
     }
 
     pub fn dispatch_composition_start(
         &mut self,
     ) -> Result<WebRuntimeTextInputDispatchStatus, WebRuntimeTextInputBridgeError> {
-        let epoch = self.next_epoch();
-        let output = self.adapter.dispatch_composition_start(epoch)?;
-        self.enqueue_output("compositionstart", output)
+        let event = self.adapter.composition_start_event()?;
+        let edit = self
+            .core
+            .dispatch_platform_event(event, TextInputKeyDisposition::ImeConsumed)?;
+        Ok(self.enqueue_edit("compositionstart", edit))
     }
 
     pub fn dispatch_composition_end(
         &mut self,
         cancelled: bool,
     ) -> Result<WebRuntimeTextInputDispatchStatus, WebRuntimeTextInputBridgeError> {
-        let epoch = self.next_epoch();
         let reason = if cancelled {
             CompositionEndReason::Cancelled
         } else {
             CompositionEndReason::Committed
         };
-        let output = self.adapter.dispatch_composition_end(epoch, reason)?;
-        self.enqueue_output("compositionend", output)
+        let event = self.adapter.composition_end_event(reason)?;
+        let edit = self
+            .core
+            .dispatch_platform_event(event, TextInputKeyDisposition::ImeConsumed)?;
+        Ok(self.enqueue_edit("compositionend", edit))
     }
 
     pub fn dispatch_command_label(
@@ -490,9 +493,11 @@ impl WebPlayerTextInputBridge {
         selecting: bool,
     ) -> Result<WebRuntimeTextInputDispatchStatus, WebRuntimeTextInputBridgeError> {
         let command = command_from_label(label, selecting)?;
-        let epoch = self.next_epoch();
-        let output = self.adapter.dispatch_command(epoch, command)?;
-        self.enqueue_output("command", output)
+        let event = self.adapter.command_event(command)?;
+        let edit = self
+            .core
+            .dispatch_platform_event(event, TextInputKeyDisposition::ShortcutCandidate)?;
+        Ok(self.enqueue_edit("command", edit))
     }
 
     pub fn drain_pending_edits(&mut self) -> Vec<WebRuntimeTextInputPlayerEdit> {
@@ -500,7 +505,7 @@ impl WebPlayerTextInputBridge {
     }
 
     pub fn key_disposition(&self) -> TextInputKeyDisposition {
-        if self
+        let disposition = if self
             .adapter
             .active()
             .is_some_and(crate::edit_context::WebEditContextActiveSession::is_composing)
@@ -508,11 +513,16 @@ impl WebPlayerTextInputBridge {
             TextInputKeyDisposition::ImeConsumed
         } else {
             TextInputKeyDisposition::ShortcutCandidate
+        };
+        if self.core.shortcuts_allowed(disposition) {
+            disposition
+        } else {
+            TextInputKeyDisposition::ImeConsumed
         }
     }
 
     pub fn active_session(&self) -> Option<TextInputSessionId> {
-        self.active.as_ref().map(|active| active.session)
+        self.core.active_session()
     }
 
     fn from_prepared_target(
@@ -520,16 +530,6 @@ impl WebPlayerTextInputBridge {
         reason: WebRuntimeTextInputFocusReason,
     ) -> WebRuntimeTextInputFocusedControl {
         WebRuntimeTextInputFocusedControl::new(target.snapshot, target.geometry, reason)
-    }
-
-    fn update_geometry(
-        &mut self,
-        geometry: &TextInputGeometrySnapshot,
-    ) -> Result<WebRuntimeTextInputSync, WebRuntimeTextInputBridgeError> {
-        let command = self.adapter.geometry_command(geometry)?;
-        Ok(WebRuntimeTextInputSync {
-            commands: self.commands_from_transaction(vec![command])?,
-        })
     }
 
     fn unsupported_sync(&mut self) -> WebRuntimeTextInputSync {
@@ -599,16 +599,13 @@ impl WebPlayerTextInputBridge {
         }
     }
 
-    fn enqueue_output(
+    fn enqueue_edit(
         &mut self,
         state: &'static str,
-        output: TextInputDispatchOutput,
-    ) -> Result<WebRuntimeTextInputDispatchStatus, WebRuntimeTextInputBridgeError> {
-        let key_disposition = output.key_disposition();
-        let raw = output.into_raw();
-        let RawInputKind::Text(input) = raw.kind() else {
-            return Err(WebRuntimeTextInputBridgeError::NonTextDispatchOutput);
-        };
+        edit: PlayerTextInputEdit,
+    ) -> WebRuntimeTextInputDispatchStatus {
+        let key_disposition = edit.key_disposition();
+        let input = edit.into_input();
         let operation_count = input.operations().len();
         let privacy = if input.privacy().is_sensitive() {
             "sensitive"
@@ -616,23 +613,17 @@ impl WebPlayerTextInputBridge {
             "plain"
         };
         self.pending.push_back(WebRuntimeTextInputPlayerEdit {
-            input: input.clone(),
+            input,
             key_disposition,
         });
-        Ok(WebRuntimeTextInputDispatchStatus {
+        WebRuntimeTextInputDispatchStatus {
             state,
             fallback_installed: false,
             operation_count,
             pending_edit_count: self.pending.len(),
             privacy,
             key_disposition: key_disposition_label(key_disposition),
-        })
-    }
-
-    fn next_epoch(&mut self) -> InputEpoch {
-        let epoch = InputEpoch(self.next_epoch);
-        self.next_epoch = self.next_epoch.saturating_add(1);
-        epoch
+        }
     }
 }
 
