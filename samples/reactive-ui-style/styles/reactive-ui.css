@@ -1,0 +1,30 @@
+.reactive-ui {
+  background-color: #0d121f;
+  color: CanvasText;
+  font-family: "Arcweft Demo", "Yu Gothic", "Hiragino Sans", "Noto Sans JP", system-ui;
+}
+
+.reactive-ui button {
+  background-color: #1a2d4c;
+  border-radius: 8px;
+  color: AccentText;
+}
+
+.reactive-ui button:hover {
+  background-color: #2b5584;
+  transform: translateY(-1px);
+}
+
+.reactive-ui button:active {
+  background-color: #116775;
+  transform: scale(0.97);
+}
+
+.reactive-ui button:focus-visible {
+  outline-color: #74e6da;
+  outline-width: 3px;
+}
+
+.reactive-ui button:disabled {
+  opacity: 0.52;
+}

@@ -218,6 +218,11 @@ css-style-parity:
 css-style-parity-profile:
     @cargo +nightly -Zscript tools\profile-css-style-parity-startup.rs --output target\css-style-parity\startup-profile.json
 
+reactive-ui-style-sample:
+    @New-Item -ItemType Directory -Force -Path web\local,target\reactive-ui-style,target\reactive-ui-style\interaction-states | Out-Null
+    @cargo run -p arcweft-cli -- bundle samples/reactive-ui-style/src/main.arcw --output web/local/reactive-ui-style.awfb
+    @cargo run -p arcweft-render-wgpu --example ui_interaction_showcase -- --out target\reactive-ui-style\interaction-states
+
 ime-sample-web port="8786":
     @cargo +nightly -Zscript tools\build-web-ime-player-rendered-fixture.rs --out web\ime-player-rendered.awfb
     @cargo build -p arcweft-player-web --target wasm32-unknown-unknown

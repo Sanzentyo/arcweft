@@ -1,0 +1,25 @@
+style @style.reactive.surface {
+    background_color = token.reactive.surface
+    font_family = token.reactive.font_stack
+}
+
+style @style.reactive.button {
+    background_color = token.reactive.button
+    color = system.accent_text
+    border_radius = 8px
+}
+
+style @style.reactive.button when hover {
+    background_color = token.reactive.button_hover
+    translate_y = -1px
+}
+
+style @style.reactive.button when active {
+    background_color = token.reactive.button_active
+    scale = 0.97
+}
+
+style @style.reactive.button when focus_visible {
+    outline_color = token.reactive.focus
+    outline_width = 3px
+}
