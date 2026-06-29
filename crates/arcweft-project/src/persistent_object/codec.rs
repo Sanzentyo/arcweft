@@ -1,6 +1,7 @@
 use super::payload::{
-    BytecodeUnitObject, CompilerObjectPayload, HirBodyFactsObject, HirBodyObject,
-    InterfaceSummaryObject, LineTaskEvidenceObject, LinkPlanObject, ParsedSyntaxEvidenceObject,
+    BytecodeUnitFactsObject, BytecodeUnitObject, BytecodeUnitReusePolicy, CompilerObjectPayload,
+    HirBodyFactsObject, HirBodyObject, InterfaceSummaryObject, LineTaskEvidenceObject,
+    LinkPlanFactsObject, LinkPlanObject, LinkPlanReusePolicy, ParsedSyntaxEvidenceObject,
     ParsedSyntaxObject, PublicSymbolKind, PublicSymbolObject, RuntimePlanUnitObject,
     StableDiagnosticObject, StableDiagnosticSeverity, StableDiagnosticSummaryObject,
     StableRangeObject, StableSourceSpanObject, SyntaxStatsObject, TypecheckGateFactsObject,
@@ -13,7 +14,6 @@ use super::schema::{
 };
 use crate::fingerprint::{BuildDigest, NamedDigest};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 /// `.awbo` object envelope.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -680,45 +680,116 @@ fn put_bytecode_unit(
     writer: &mut BinaryWriter,
     value: &BytecodeUnitObject,
 ) -> Result<(), AwboError> {
-    writer.put_string("module", &value.module)?;
-    writer.put_digest(value.awbc_digest);
-    writer.put_bytes("bytecode.payload", &value.payload)
+    writer.put_u32(value.schema_version);
+    put_identity_namespace(writer, &value.compiler_namespace)?;
+    writer.put_string("bytecode.module", &value.module)?;
+    writer.put_digest(value.source_digest);
+    put_source_span(writer, value.source_span);
+    put_diagnostic_summary(writer, &value.diagnostics)?;
+    put_stage_inputs(writer, &value.stage_inputs)?;
+    put_bytecode_unit_facts(writer, &value.facts);
+    writer.put_u8(value.reuse_policy.wire_tag());
+    Ok(())
 }
 
 fn read_bytecode_unit(reader: &mut BinaryReader<'_>) -> Result<BytecodeUnitObject, AwboError> {
     Ok(BytecodeUnitObject {
+        schema_version: reader.read_u32("bytecode.schema_version")?,
+        compiler_namespace: read_identity_namespace(reader)?,
         module: reader.read_string("bytecode.module")?,
-        awbc_digest: reader.read_digest("bytecode.awbc_digest")?,
-        payload: reader.read_bytes("bytecode.payload")?,
+        source_digest: reader.read_digest("bytecode.source_digest")?,
+        source_span: read_source_span(reader)?,
+        diagnostics: read_diagnostic_summary(reader)?,
+        stage_inputs: read_stage_inputs(reader)?,
+        facts: read_bytecode_unit_facts(reader)?,
+        reuse_policy: BytecodeUnitReusePolicy::from_wire_tag(
+            reader.read_u8("bytecode.reuse_policy")?,
+        )?,
+    })
+}
+
+fn put_bytecode_unit_facts(writer: &mut BinaryWriter, value: &BytecodeUnitFactsObject) {
+    writer.put_digest(value.runtime_plan_unit_digest);
+    writer.put_digest(value.hir_body_digest);
+    writer.put_digest(value.typecheck_gate_digest);
+    writer.put_digest(value.awbc_schema_digest);
+    writer.put_digest(value.verifier_policy_digest);
+    writer.put_digest(value.codegen_policy_digest);
+    writer.put_digest(value.target_profile_digest);
+    writer.put_digest(value.feature_set_digest);
+    writer.put_digest(value.dependency_body_digest_root);
+    writer.put_digest(value.canonical_bytecode_digest);
+}
+
+fn read_bytecode_unit_facts(
+    reader: &mut BinaryReader<'_>,
+) -> Result<BytecodeUnitFactsObject, AwboError> {
+    Ok(BytecodeUnitFactsObject {
+        runtime_plan_unit_digest: reader.read_digest("bytecode.runtime_plan_unit_digest")?,
+        hir_body_digest: reader.read_digest("bytecode.hir_body_digest")?,
+        typecheck_gate_digest: reader.read_digest("bytecode.typecheck_gate_digest")?,
+        awbc_schema_digest: reader.read_digest("bytecode.awbc_schema_digest")?,
+        verifier_policy_digest: reader.read_digest("bytecode.verifier_policy_digest")?,
+        codegen_policy_digest: reader.read_digest("bytecode.codegen_policy_digest")?,
+        target_profile_digest: reader.read_digest("bytecode.target_profile_digest")?,
+        feature_set_digest: reader.read_digest("bytecode.feature_set_digest")?,
+        dependency_body_digest_root: reader.read_digest("bytecode.dependency_body_digest_root")?,
+        canonical_bytecode_digest: reader.read_digest("bytecode.canonical_bytecode_digest")?,
     })
 }
 
 fn put_link_plan(writer: &mut BinaryWriter, value: &LinkPlanObject) -> Result<(), AwboError> {
-    writer.put_string_vec("entrypoints", &value.entrypoints)?;
-    writer.put_len("unit_digests", value.unit_digests.len())?;
-    for (unit, digest) in &value.unit_digests {
-        writer.put_string("unit", unit)?;
-        writer.put_digest(*digest);
-    }
-    writer.put_digest(value.link_digest);
+    writer.put_u32(value.schema_version);
+    put_identity_namespace(writer, &value.compiler_namespace)?;
+    writer.put_string("link.package", &value.package)?;
+    writer.put_digest(value.source_digest);
+    put_source_span(writer, value.source_span);
+    put_diagnostic_summary(writer, &value.diagnostics)?;
+    put_stage_inputs(writer, &value.stage_inputs)?;
+    put_link_plan_facts(writer, &value.facts)?;
+    writer.put_u8(value.reuse_policy.wire_tag());
     Ok(())
 }
 
 fn read_link_plan(reader: &mut BinaryReader<'_>) -> Result<LinkPlanObject, AwboError> {
-    let entrypoints = reader.read_string_vec("link.entrypoints")?;
-    let len = reader.read_u32_len("link.unit_digests")?;
-    let unit_digests = (0..len)
-        .map(|_| {
-            let unit = reader.read_string("link.unit")?;
-            let digest = reader.read_digest("link.unit_digest")?;
-            Ok((unit, digest))
-        })
-        .collect::<Result<BTreeMap<_, _>, _>>()?;
-    let link_digest = reader.read_digest("link.link_digest")?;
     Ok(LinkPlanObject {
-        entrypoints,
-        unit_digests,
-        link_digest,
+        schema_version: reader.read_u32("link.schema_version")?,
+        compiler_namespace: read_identity_namespace(reader)?,
+        package: reader.read_string("link.package")?,
+        source_digest: reader.read_digest("link.source_digest")?,
+        source_span: read_source_span(reader)?,
+        diagnostics: read_diagnostic_summary(reader)?,
+        stage_inputs: read_stage_inputs(reader)?,
+        facts: read_link_plan_facts(reader)?,
+        reuse_policy: LinkPlanReusePolicy::from_wire_tag(reader.read_u8("link.reuse_policy")?)?,
+    })
+}
+
+fn put_link_plan_facts(
+    writer: &mut BinaryWriter,
+    value: &LinkPlanFactsObject,
+) -> Result<(), AwboError> {
+    writer.put_named_digests("link.ordered_unit_digests", &value.ordered_unit_digests)?;
+    writer.put_digest(value.entrypoint_digest);
+    writer.put_digest(value.resource_section_digest);
+    writer.put_digest(value.adapter_requirements_digest);
+    writer.put_digest(value.patch_compatibility_digest);
+    writer.put_digest(value.product_build_options_digest);
+    writer.put_digest(value.dependency_body_digest_root);
+    writer.put_digest(value.link_descriptor_digest);
+    Ok(())
+}
+
+fn read_link_plan_facts(reader: &mut BinaryReader<'_>) -> Result<LinkPlanFactsObject, AwboError> {
+    Ok(LinkPlanFactsObject {
+        ordered_unit_digests: reader.read_named_digests("link.ordered_unit_digests")?,
+        entrypoint_digest: reader.read_digest("link.entrypoint_digest")?,
+        resource_section_digest: reader.read_digest("link.resource_section_digest")?,
+        adapter_requirements_digest: reader.read_digest("link.adapter_requirements_digest")?,
+        patch_compatibility_digest: reader.read_digest("link.patch_compatibility_digest")?,
+        product_build_options_digest: reader.read_digest("link.product_build_options_digest")?,
+        dependency_body_digest_root: reader.read_digest("link.dependency_body_digest_root")?,
+        link_descriptor_digest: reader.read_digest("link.link_descriptor_digest")?,
     })
 }
 
@@ -1211,6 +1282,73 @@ mod tests {
         })
     }
 
+    fn bytecode_payload_for(object_key: &CompilerObjectKey) -> CompilerObjectPayload {
+        let CompilerObjectPayload::HirBody(hir) =
+            hir_payload_for(&key(CompilerObjectKind::HirBody))
+        else {
+            panic!("HIR helper returns HIR body");
+        };
+        let CompilerObjectPayload::TypecheckGate(typecheck) =
+            typecheck_gate_payload_for(&key(CompilerObjectKind::TypecheckGate))
+        else {
+            panic!("typecheck helper returns typecheck gate");
+        };
+        CompilerObjectPayload::BytecodeUnit(BytecodeUnitObject {
+            schema_version: AWBO_SCHEMA_VERSION,
+            compiler_namespace: object_key.identity_namespace(),
+            module: "game".to_owned(),
+            source_digest: object_key.source_digest,
+            source_span: span(),
+            diagnostics: StableDiagnosticSummaryObject::empty(),
+            stage_inputs: object_key.stage_inputs(),
+            facts: BytecodeUnitFactsObject {
+                runtime_plan_unit_digest: BytecodeUnitObject::conservative_runtime_plan_unit_digest(
+                ),
+                hir_body_digest: hir.body_digest,
+                typecheck_gate_digest: typecheck.facts.diagnostic_digest,
+                awbc_schema_digest: BytecodeUnitObject::conservative_awbc_schema_digest(),
+                verifier_policy_digest: BytecodeUnitObject::conservative_verifier_policy_digest(),
+                codegen_policy_digest: BytecodeUnitObject::conservative_codegen_policy_digest(),
+                target_profile_digest: object_key.query_options_digest,
+                feature_set_digest: digest("features"),
+                dependency_body_digest_root: object_key
+                    .stage_inputs()
+                    .dependency_body_digest_root(),
+                canonical_bytecode_digest:
+                    BytecodeUnitObject::conservative_canonical_bytecode_digest(),
+            },
+            reuse_policy: BytecodeUnitReusePolicy::ConservativeRebuild,
+        })
+    }
+
+    fn link_plan_payload_for(object_key: &CompilerObjectKey) -> CompilerObjectPayload {
+        let mut facts = LinkPlanFactsObject {
+            ordered_unit_digests: NamedDigest::canonicalize([
+                NamedDigest::new("b", digest("b")),
+                NamedDigest::new("a", digest("a")),
+            ]),
+            entrypoint_digest: LinkPlanObject::conservative_entrypoint_digest(),
+            resource_section_digest: LinkPlanObject::conservative_resource_section_digest(),
+            adapter_requirements_digest: LinkPlanObject::conservative_adapter_requirements_digest(),
+            patch_compatibility_digest: LinkPlanObject::conservative_patch_compatibility_digest(),
+            product_build_options_digest: digest("product-build-options"),
+            dependency_body_digest_root: object_key.stage_inputs().dependency_body_digest_root(),
+            link_descriptor_digest: BuildDigest::ZERO,
+        };
+        facts.link_descriptor_digest = LinkPlanObject::link_descriptor_digest_for(&facts);
+        CompilerObjectPayload::LinkPlan(LinkPlanObject {
+            schema_version: AWBO_SCHEMA_VERSION,
+            compiler_namespace: object_key.identity_namespace(),
+            package: "game".to_owned(),
+            source_digest: object_key.source_digest,
+            source_span: span(),
+            diagnostics: StableDiagnosticSummaryObject::empty(),
+            stage_inputs: object_key.stage_inputs(),
+            facts,
+            reuse_policy: LinkPlanReusePolicy::ConservativeRebuild,
+        })
+    }
+
     #[test]
     fn persistent_object_bytes_are_deterministic() {
         let key = key(CompilerObjectKind::ParsedSyntax);
@@ -1233,6 +1371,8 @@ mod tests {
             CompilerObjectKind::InterfaceSummary,
             CompilerObjectKind::HirBody,
             CompilerObjectKind::TypecheckGate,
+            CompilerObjectKind::BytecodeUnit,
+            CompilerObjectKind::LinkPlan,
         ] {
             let key = key(kind);
             let payload = match kind {
@@ -1240,7 +1380,9 @@ mod tests {
                 CompilerObjectKind::InterfaceSummary => interface_payload_for(&key),
                 CompilerObjectKind::HirBody => hir_payload_for(&key),
                 CompilerObjectKind::TypecheckGate => typecheck_gate_payload_for(&key),
-                _ => unreachable!("test covers parse/interface/HIR payloads"),
+                CompilerObjectKind::BytecodeUnit => bytecode_payload_for(&key),
+                CompilerObjectKind::LinkPlan => link_plan_payload_for(&key),
+                _ => unreachable!("test covers safe read-through payloads"),
             };
             let envelope = AwboEnvelope::new(&key, payload).expect("envelope builds");
             let bytes = envelope.encode().expect("envelope encodes");
@@ -1346,20 +1488,18 @@ mod tests {
     }
 
     #[test]
-    fn link_plan_payload_digest_is_stable_for_btree_order() {
-        let mut units = BTreeMap::new();
-        units.insert("b".to_owned(), digest("b"));
-        units.insert("a".to_owned(), digest("a"));
-        let first = CompilerObjectPayload::LinkPlan(LinkPlanObject {
-            entrypoints: vec!["main".to_owned()],
-            unit_digests: units.clone(),
-            link_digest: digest("link"),
-        });
-        let second = CompilerObjectPayload::LinkPlan(LinkPlanObject {
-            entrypoints: vec!["main".to_owned()],
-            unit_digests: units,
-            link_digest: digest("link"),
-        });
+    fn link_plan_payload_digest_is_stable_for_canonical_unit_order() {
+        let key = key(CompilerObjectKind::LinkPlan);
+        let first = link_plan_payload_for(&key);
+        let mut second = link_plan_payload_for(&key);
+        let CompilerObjectPayload::LinkPlan(link) = &mut second else {
+            panic!("payload is link plan");
+        };
+        link.facts.ordered_unit_digests = NamedDigest::canonicalize([
+            NamedDigest::new("a", digest("a")),
+            NamedDigest::new("b", digest("b")),
+        ]);
+        link.facts.link_descriptor_digest = LinkPlanObject::link_descriptor_digest_for(&link.facts);
 
         assert_eq!(
             first.digest().expect("digest builds"),

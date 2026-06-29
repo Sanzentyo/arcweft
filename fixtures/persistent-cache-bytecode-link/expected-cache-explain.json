@@ -1,0 +1,13 @@
+{
+  "expected_query_families": [
+    "bytecode-unit",
+    "link-plan"
+  ],
+  "expected_status": "hit_then_rebuilt",
+  "expected_recovery_action": "rebuild_from_source",
+  "expected_policies": {
+    "bytecode-unit": "bytecode-unit-gate-valid-but-awbc-rebuilt",
+    "link-plan": "link-plan-gate-valid-but-product-relinked"
+  },
+  "product_byte_equivalence_reason": "conservative rebuild; cached gate evidence is validated but not accepted as AWBC/link input"
+}

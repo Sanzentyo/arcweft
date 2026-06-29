@@ -1,0 +1,7 @@
+flow @flow.opening opening {
+  goto @flow.done
+}
+
+flow @flow.done done {
+  return "done"
+}

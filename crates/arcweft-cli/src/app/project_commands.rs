@@ -22,9 +22,11 @@ use arcweft_compiler::{
     lower::lower_source_runtime_plan_with_options,
     parse::parse_source_text,
     persistent::{
-        HirBodyFactsInput, InterfaceSummaryFactsInput, ParsedSyntaxFactsInput,
-        TypecheckGateFactsInput, hir_body_object, hir_body_payload, interface_summary_object,
-        interface_summary_payload, parsed_syntax_payload, typecheck_gate_payload,
+        BytecodeUnitFactsInput, HirBodyFactsInput, InterfaceSummaryFactsInput, LinkPlanFactsInput,
+        ParsedSyntaxFactsInput, PersistentFactsError, TypecheckGateFactsInput,
+        bytecode_unit_payload, hir_body_object, hir_body_payload, interface_summary_object,
+        interface_summary_payload, link_plan_payload, parsed_syntax_payload, typecheck_gate_object,
+        typecheck_gate_payload,
     },
     project::{
         CompiledProject, CompiledProjectModule, InMemoryProjectCompileCache, NoProjectCompileCache,
@@ -39,7 +41,7 @@ use arcweft_project::{
     incremental::{BuildSnapshot, CacheRecordStatus, InvalidationReason, QueryKind, QuerySnapshot},
     persistent_object::{
         AwboEnvelope, CompilerBuildIdentity, CompilerObjectKey, CompilerObjectKind,
-        CompilerObjectPayload,
+        CompilerObjectPayload, HirBodyObject, InterfaceSummaryObject,
     },
     sources::ProjectSourceFile,
 };
@@ -742,6 +744,9 @@ fn write_persistent_query_source(
         CompilerObjectKind::ParsedSyntax,
         CompilerObjectKind::InterfaceSummary,
         CompilerObjectKind::HirBody,
+        CompilerObjectKind::TypecheckGate,
+        CompilerObjectKind::BytecodeUnit,
+        CompilerObjectKind::LinkPlan,
     ] {
         if let Some(item) =
             persistent_query_write_item(state, snapshot, source, compiled, &parsed, kind)?
@@ -776,12 +781,21 @@ fn persistent_query_write_item(
         CompilerObjectKind::InterfaceSummary
             | CompilerObjectKind::HirBody
             | CompilerObjectKind::TypecheckGate
+            | CompilerObjectKind::BytecodeUnit
+            | CompilerObjectKind::LinkPlan
     ) {
         dependency_interface_digests(state, source)
     } else {
         Vec::new()
     };
-    let dependency_body_digests = Vec::new();
+    let dependency_body_digests = if matches!(
+        kind,
+        CompilerObjectKind::BytecodeUnit | CompilerObjectKind::LinkPlan
+    ) {
+        dependency_body_digests(state, source)
+    } else {
+        Vec::new()
+    };
     let query_options_digest = persistent_query_options_digest(query);
     let object_key = CompilerObjectKey {
         kind,
@@ -843,41 +857,18 @@ fn persistent_query_payload(
                 hir: compiled.hir(),
             })
         }
-        CompilerObjectKind::TypecheckGate => (|| {
-            let interface_key = sibling_persistent_object_key(
-                object_key,
-                CompilerObjectKind::InterfaceSummary,
-                QueryKind::Interface,
-            );
-            let hir_key = sibling_persistent_object_key(
-                object_key,
-                CompilerObjectKind::HirBody,
-                QueryKind::HirBody,
-            );
-            let interface_summary = interface_summary_object(&InterfaceSummaryFactsInput {
-                key: &interface_key,
-                module: &module_label,
-                parsed,
-                hir: compiled.hir(),
-            })?;
-            let hir_body = hir_body_object(&HirBodyFactsInput {
-                key: &hir_key,
-                module: &module_label,
-                parsed,
-                hir: compiled.hir(),
-            })?;
-            typecheck_gate_payload(&TypecheckGateFactsInput {
-                key: object_key,
-                module: &module_label,
-                parsed,
-                interface_summary: &interface_summary,
-                hir_body: &hir_body,
-            })
-        })(),
-        CompilerObjectKind::LineTaskEvidence
-        | CompilerObjectKind::RuntimePlanUnit
-        | CompilerObjectKind::BytecodeUnit
-        | CompilerObjectKind::LinkPlan => unreachable!("safe query kind list is exhaustive"),
+        CompilerObjectKind::TypecheckGate => {
+            typecheck_gate_payload_for_query(object_key, &module_label, compiled, parsed)
+        }
+        CompilerObjectKind::BytecodeUnit => {
+            bytecode_unit_payload_for_query(object_key, &module_label, compiled, parsed)
+        }
+        CompilerObjectKind::LinkPlan => {
+            link_plan_payload_for_query(object_key, &module_label, parsed)
+        }
+        CompilerObjectKind::LineTaskEvidence | CompilerObjectKind::RuntimePlanUnit => {
+            unreachable!("safe query kind list is exhaustive")
+        }
     }
     .map_err(|error| {
         eprintln!(
@@ -886,6 +877,97 @@ fn persistent_query_payload(
         );
         ExitCode::FAILURE
     })
+}
+
+fn typecheck_gate_payload_for_query(
+    object_key: &CompilerObjectKey,
+    module_label: &str,
+    compiled: &CompiledProjectModule,
+    parsed: &ParsedSource,
+) -> Result<CompilerObjectPayload, PersistentFactsError> {
+    let (interface_summary, hir_body) =
+        interface_and_hir_sibling_objects(object_key, module_label, compiled, parsed)?;
+    typecheck_gate_payload(&TypecheckGateFactsInput {
+        key: object_key,
+        module: module_label,
+        parsed,
+        interface_summary: &interface_summary,
+        hir_body: &hir_body,
+    })
+}
+
+fn bytecode_unit_payload_for_query(
+    object_key: &CompilerObjectKey,
+    module_label: &str,
+    compiled: &CompiledProjectModule,
+    parsed: &ParsedSource,
+) -> Result<CompilerObjectPayload, PersistentFactsError> {
+    let (interface_summary, hir_body) =
+        interface_and_hir_sibling_objects(object_key, module_label, compiled, parsed)?;
+    let typecheck_key = sibling_persistent_object_key(
+        object_key,
+        CompilerObjectKind::TypecheckGate,
+        QueryKind::TypeCheck,
+    );
+    let typecheck_gate = typecheck_gate_object(&TypecheckGateFactsInput {
+        key: &typecheck_key,
+        module: module_label,
+        parsed,
+        interface_summary: &interface_summary,
+        hir_body: &hir_body,
+    })?;
+    bytecode_unit_payload(&BytecodeUnitFactsInput {
+        key: object_key,
+        module: module_label,
+        parsed,
+        hir_body: &hir_body,
+        typecheck_gate: &typecheck_gate,
+    })
+}
+
+fn link_plan_payload_for_query(
+    object_key: &CompilerObjectKey,
+    module_label: &str,
+    parsed: &ParsedSource,
+) -> Result<CompilerObjectPayload, PersistentFactsError> {
+    link_plan_payload(&LinkPlanFactsInput {
+        key: object_key,
+        package: module_label,
+        parsed,
+        ordered_unit_digests: vec![NamedDigest::new(
+            module_label.to_owned(),
+            arcweft_project::persistent_object::BytecodeUnitObject::conservative_canonical_bytecode_digest(),
+        )],
+        product_build_options_digest: persistent_query_options_digest(QueryKind::LinkPlan),
+    })
+}
+
+fn interface_and_hir_sibling_objects(
+    object_key: &CompilerObjectKey,
+    module_label: &str,
+    compiled: &CompiledProjectModule,
+    parsed: &ParsedSource,
+) -> Result<(InterfaceSummaryObject, HirBodyObject), PersistentFactsError> {
+    let interface_key = sibling_persistent_object_key(
+        object_key,
+        CompilerObjectKind::InterfaceSummary,
+        QueryKind::Interface,
+    );
+    let hir_key =
+        sibling_persistent_object_key(object_key, CompilerObjectKind::HirBody, QueryKind::HirBody);
+    let interface_summary = interface_summary_object(&InterfaceSummaryFactsInput {
+        key: &interface_key,
+        module: module_label,
+        parsed,
+        hir: compiled.hir(),
+    })?;
+    let hir_body = hir_body_object(&HirBodyFactsInput {
+        key: &hir_key,
+        module: module_label,
+        parsed,
+        hir: compiled.hir(),
+    })?;
+    Ok((interface_summary, hir_body))
 }
 
 fn sibling_persistent_object_key(
@@ -965,11 +1047,21 @@ fn commit_persistent_query_item(
 
 fn persistent_query_status_after_read(read: &PersistentQueryReadOutcome) -> CacheRecordStatus {
     match read {
-        PersistentQueryReadOutcome::Hit(_) => CacheRecordStatus::HitThenRebuilt {
-            reason: InvalidationReason::ConservativeInvalidation {
-                policy: "safe_awbo_facts_do_not_reconstruct_compiler_ir".to_owned(),
-            },
-        },
+        PersistentQueryReadOutcome::Hit(hit) => hit
+            .object_kind
+            .conservative_read_through_policy()
+            .map_or_else(
+                || CacheRecordStatus::HitThenRebuilt {
+                    reason: InvalidationReason::ConservativeInvalidation {
+                        policy: "safe_awbo_facts_do_not_reconstruct_compiler_ir".to_owned(),
+                    },
+                },
+                |policy| CacheRecordStatus::HitThenRebuilt {
+                    reason: InvalidationReason::ConservativeInvalidation {
+                        policy: policy.to_owned(),
+                    },
+                },
+            ),
         PersistentQueryReadOutcome::Miss(miss) => CacheRecordStatus::Rebuilt {
             reason: miss.reason.invalidation_reason(),
         },
@@ -1063,6 +1155,27 @@ fn dependency_interface_digests(
                 .find(|entry| entry.module() == module.to_string())
                 .expect("snapshot contains dependency module fingerprint")
                 .interface_digest();
+            NamedDigest::new(module.to_string(), digest)
+        })
+        .collect()
+}
+
+fn dependency_body_digests(
+    state: &ProjectCommandState,
+    source: &ProjectSourceFile,
+) -> Vec<NamedDigest> {
+    source
+        .dependencies()
+        .iter()
+        .map(|dependency| {
+            let module = dependency.target();
+            let digest = state
+                .snapshot
+                .modules()
+                .iter()
+                .find(|entry| entry.module() == module.to_string())
+                .expect("snapshot contains dependency module fingerprint")
+                .body_digest();
             NamedDigest::new(module.to_string(), digest)
         })
         .collect()

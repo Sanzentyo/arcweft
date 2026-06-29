@@ -11,8 +11,9 @@ mod schema;
 
 pub use codec::AwboEnvelope;
 pub use payload::{
-    BytecodeUnitObject, CompilerObjectPayload, HirBodyFactsObject, HirBodyObject,
-    InterfaceSummaryObject, LineTaskEvidenceObject, LinkPlanObject, ParsedSyntaxEvidenceObject,
+    BytecodeUnitFactsObject, BytecodeUnitObject, BytecodeUnitReusePolicy, CompilerObjectPayload,
+    HirBodyFactsObject, HirBodyObject, InterfaceSummaryObject, LineTaskEvidenceObject,
+    LinkPlanFactsObject, LinkPlanObject, LinkPlanReusePolicy, ParsedSyntaxEvidenceObject,
     ParsedSyntaxObject, PublicSymbolKind, PublicSymbolObject, RuntimePlanUnitObject,
     StableDiagnosticObject, StableDiagnosticSeverity, StableDiagnosticSummaryObject,
     StableRangeObject, StableSourceSpanObject, SyntaxStatsObject, TypecheckGateFactsObject,

@@ -13,14 +13,15 @@ use arcweft_lang_syntax::{
     types::{FnParamKind, FnSignature, GenericParam, TypeRef},
 };
 use arcweft_project::{
-    fingerprint::BuildDigest,
+    fingerprint::{BuildDigest, NamedDigest},
     persistent_object::{
-        AWBO_SCHEMA_VERSION, CompilerObjectKey, CompilerObjectKind, CompilerObjectPayload,
-        HirBodyFactsObject, HirBodyObject, InterfaceSummaryObject, ParsedSyntaxEvidenceObject,
-        ParsedSyntaxObject, PublicSymbolKind, PublicSymbolObject, StableDiagnosticObject,
-        StableDiagnosticSeverity, StableDiagnosticSummaryObject, StableRangeObject,
-        StableSourceSpanObject, SyntaxStatsObject, TypecheckGateFactsObject, TypecheckGateObject,
-        TypecheckGateReusePolicy,
+        AWBO_SCHEMA_VERSION, BytecodeUnitFactsObject, BytecodeUnitObject, BytecodeUnitReusePolicy,
+        CompilerObjectKey, CompilerObjectKind, CompilerObjectPayload, HirBodyFactsObject,
+        HirBodyObject, InterfaceSummaryObject, LinkPlanFactsObject, LinkPlanObject,
+        LinkPlanReusePolicy, ParsedSyntaxEvidenceObject, ParsedSyntaxObject, PublicSymbolKind,
+        PublicSymbolObject, StableDiagnosticObject, StableDiagnosticSeverity,
+        StableDiagnosticSummaryObject, StableRangeObject, StableSourceSpanObject,
+        SyntaxStatsObject, TypecheckGateFactsObject, TypecheckGateObject, TypecheckGateReusePolicy,
     },
 };
 use thiserror::Error;
@@ -55,6 +56,24 @@ pub struct TypecheckGateFactsInput<'a> {
     pub parsed: &'a ParsedSource,
     pub interface_summary: &'a InterfaceSummaryObject,
     pub hir_body: &'a HirBodyObject,
+}
+
+/// Inputs required to project a conservative bytecode-unit gate.
+pub struct BytecodeUnitFactsInput<'a> {
+    pub key: &'a CompilerObjectKey,
+    pub module: &'a str,
+    pub parsed: &'a ParsedSource,
+    pub hir_body: &'a HirBodyObject,
+    pub typecheck_gate: &'a TypecheckGateObject,
+}
+
+/// Inputs required to project a conservative link-plan gate.
+pub struct LinkPlanFactsInput<'a> {
+    pub key: &'a CompilerObjectKey,
+    pub package: &'a str,
+    pub parsed: &'a ParsedSource,
+    pub ordered_unit_digests: Vec<NamedDigest>,
+    pub product_build_options_digest: BuildDigest,
 }
 
 /// Failure while projecting compiler internals into stable persistent facts.
@@ -222,6 +241,96 @@ pub fn typecheck_gate_payload(
     Ok(CompilerObjectPayload::TypecheckGate(typecheck_gate_object(
         input,
     )?))
+}
+
+/// Builds a conservative bytecode-unit gate object.
+pub fn bytecode_unit_object(
+    input: &BytecodeUnitFactsInput<'_>,
+) -> Result<BytecodeUnitObject, PersistentFactsError> {
+    ensure_key_kind(input.key, CompilerObjectKind::BytecodeUnit)?;
+    let source_digest = BuildDigest::from_bytes(input.parsed.source_hash().as_bytes());
+    if input.hir_body.source_digest != source_digest {
+        return Err(PersistentFactsError::SourceDigestMismatch { field: "hir_body" });
+    }
+    if input.typecheck_gate.source_digest != source_digest {
+        return Err(PersistentFactsError::SourceDigestMismatch {
+            field: "typecheck_gate",
+        });
+    }
+    let stage_inputs = input.key.stage_inputs();
+    let facts = BytecodeUnitFactsObject {
+        runtime_plan_unit_digest: BytecodeUnitObject::conservative_runtime_plan_unit_digest(),
+        hir_body_digest: input.hir_body.body_digest,
+        typecheck_gate_digest: input.typecheck_gate.facts.diagnostic_digest,
+        awbc_schema_digest: BytecodeUnitObject::conservative_awbc_schema_digest(),
+        verifier_policy_digest: BytecodeUnitObject::conservative_verifier_policy_digest(),
+        codegen_policy_digest: BytecodeUnitObject::conservative_codegen_policy_digest(),
+        target_profile_digest: input.key.query_options_digest,
+        feature_set_digest: BuildDigest::of(
+            input.key.compiler.enabled_features.join("\0").as_bytes(),
+        ),
+        dependency_body_digest_root: stage_inputs.dependency_body_digest_root(),
+        canonical_bytecode_digest: BytecodeUnitObject::conservative_canonical_bytecode_digest(),
+    };
+    Ok(BytecodeUnitObject {
+        schema_version: AWBO_SCHEMA_VERSION,
+        compiler_namespace: input.key.identity_namespace(),
+        module: input.module.to_owned(),
+        source_digest,
+        source_span: source_span(input.parsed)?,
+        diagnostics: StableDiagnosticSummaryObject::empty(),
+        stage_inputs,
+        facts,
+        reuse_policy: BytecodeUnitReusePolicy::ConservativeRebuild,
+    })
+}
+
+/// Builds a typed conservative bytecode-unit payload enum.
+pub fn bytecode_unit_payload(
+    input: &BytecodeUnitFactsInput<'_>,
+) -> Result<CompilerObjectPayload, PersistentFactsError> {
+    Ok(CompilerObjectPayload::BytecodeUnit(bytecode_unit_object(
+        input,
+    )?))
+}
+
+/// Builds a conservative link-plan gate object.
+pub fn link_plan_object(
+    input: &LinkPlanFactsInput<'_>,
+) -> Result<LinkPlanObject, PersistentFactsError> {
+    ensure_key_kind(input.key, CompilerObjectKind::LinkPlan)?;
+    let source_digest = BuildDigest::from_bytes(input.parsed.source_hash().as_bytes());
+    let stage_inputs = input.key.stage_inputs();
+    let ordered_unit_digests = NamedDigest::canonicalize(input.ordered_unit_digests.clone());
+    let mut facts = LinkPlanFactsObject {
+        ordered_unit_digests,
+        entrypoint_digest: LinkPlanObject::conservative_entrypoint_digest(),
+        resource_section_digest: LinkPlanObject::conservative_resource_section_digest(),
+        adapter_requirements_digest: LinkPlanObject::conservative_adapter_requirements_digest(),
+        patch_compatibility_digest: LinkPlanObject::conservative_patch_compatibility_digest(),
+        product_build_options_digest: input.product_build_options_digest,
+        dependency_body_digest_root: stage_inputs.dependency_body_digest_root(),
+        link_descriptor_digest: BuildDigest::ZERO,
+    };
+    facts.link_descriptor_digest = LinkPlanObject::link_descriptor_digest_for(&facts);
+    Ok(LinkPlanObject {
+        schema_version: AWBO_SCHEMA_VERSION,
+        compiler_namespace: input.key.identity_namespace(),
+        package: input.package.to_owned(),
+        source_digest,
+        source_span: source_span(input.parsed)?,
+        diagnostics: StableDiagnosticSummaryObject::empty(),
+        stage_inputs,
+        facts,
+        reuse_policy: LinkPlanReusePolicy::ConservativeRebuild,
+    })
+}
+
+/// Builds a typed conservative link-plan payload enum.
+pub fn link_plan_payload(
+    input: &LinkPlanFactsInput<'_>,
+) -> Result<CompilerObjectPayload, PersistentFactsError> {
+    Ok(CompilerObjectPayload::LinkPlan(link_plan_object(input)?))
 }
 
 fn ensure_key_kind(

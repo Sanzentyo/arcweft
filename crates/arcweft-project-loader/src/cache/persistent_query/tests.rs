@@ -8,12 +8,13 @@ use arcweft_project::{
     fingerprint::{BuildDigest, NamedDigest},
     incremental::{CACHE_SCHEMA_VERSION, CacheRecordStatus, InvalidationReason, QueryKind},
     persistent_object::{
-        AWBO_MAGIC, AWBO_SCHEMA_VERSION, AwboEnvelope, CompilerBuildIdentity, CompilerObjectKey,
-        CompilerObjectKind, CompilerObjectPayload, CompilerObjectStability, HirBodyFactsObject,
-        HirBodyObject, InterfaceSummaryObject, ParsedSyntaxEvidenceObject, ParsedSyntaxObject,
-        PublicSymbolKind, PublicSymbolObject, StableDiagnosticSummaryObject, StableRangeObject,
-        StableSourceSpanObject, SyntaxStatsObject, TypecheckGateFactsObject, TypecheckGateObject,
-        TypecheckGateReusePolicy,
+        AWBO_MAGIC, AWBO_SCHEMA_VERSION, AwboEnvelope, BytecodeUnitFactsObject, BytecodeUnitObject,
+        BytecodeUnitReusePolicy, CompilerBuildIdentity, CompilerObjectKey, CompilerObjectKind,
+        CompilerObjectPayload, CompilerObjectStability, HirBodyFactsObject, HirBodyObject,
+        InterfaceSummaryObject, LinkPlanFactsObject, LinkPlanObject, LinkPlanReusePolicy,
+        ParsedSyntaxEvidenceObject, ParsedSyntaxObject, PublicSymbolKind, PublicSymbolObject,
+        StableDiagnosticSummaryObject, StableRangeObject, StableSourceSpanObject,
+        SyntaxStatsObject, TypecheckGateFactsObject, TypecheckGateObject, TypecheckGateReusePolicy,
     },
 };
 use std::{
@@ -106,6 +107,24 @@ fn typecheck_gate_request() -> PersistentQueryReadRequest {
     PersistentQueryReadRequest::new(
         QueryKind::TypeCheck,
         artifact_key(QueryKind::TypeCheck, &key),
+        key,
+    )
+}
+
+fn bytecode_request() -> PersistentQueryReadRequest {
+    let key = object_key(CompilerObjectKind::BytecodeUnit);
+    PersistentQueryReadRequest::new(
+        QueryKind::BytecodeUnit,
+        artifact_key(QueryKind::BytecodeUnit, &key),
+        key,
+    )
+}
+
+fn link_plan_request() -> PersistentQueryReadRequest {
+    let key = object_key(CompilerObjectKind::LinkPlan);
+    PersistentQueryReadRequest::new(
+        QueryKind::LinkPlan,
+        artifact_key(QueryKind::LinkPlan, &key),
         key,
     )
 }
@@ -255,12 +274,76 @@ fn typecheck_gate_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
     })
 }
 
+fn bytecode_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
+    let CompilerObjectPayload::HirBody(hir) = hir_payload(&object_key(CompilerObjectKind::HirBody))
+    else {
+        panic!("HIR helper returns HIR body");
+    };
+    let CompilerObjectPayload::TypecheckGate(typecheck) =
+        typecheck_gate_payload(&object_key(CompilerObjectKind::TypecheckGate))
+    else {
+        panic!("typecheck helper returns typecheck gate");
+    };
+    CompilerObjectPayload::BytecodeUnit(BytecodeUnitObject {
+        schema_version: AWBO_SCHEMA_VERSION,
+        compiler_namespace: key.identity_namespace(),
+        module: "main".to_owned(),
+        source_digest: key.source_digest,
+        source_span: span(),
+        diagnostics: StableDiagnosticSummaryObject::empty(),
+        stage_inputs: key.stage_inputs(),
+        facts: BytecodeUnitFactsObject {
+            runtime_plan_unit_digest: BytecodeUnitObject::conservative_runtime_plan_unit_digest(),
+            hir_body_digest: hir.body_digest,
+            typecheck_gate_digest: typecheck.facts.diagnostic_digest,
+            awbc_schema_digest: BytecodeUnitObject::conservative_awbc_schema_digest(),
+            verifier_policy_digest: BytecodeUnitObject::conservative_verifier_policy_digest(),
+            codegen_policy_digest: BytecodeUnitObject::conservative_codegen_policy_digest(),
+            target_profile_digest: key.query_options_digest,
+            feature_set_digest: digest("feature-set"),
+            dependency_body_digest_root: key.stage_inputs().dependency_body_digest_root(),
+            canonical_bytecode_digest: BytecodeUnitObject::conservative_canonical_bytecode_digest(),
+        },
+        reuse_policy: BytecodeUnitReusePolicy::ConservativeRebuild,
+    })
+}
+
+fn link_plan_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
+    let mut facts = LinkPlanFactsObject {
+        ordered_unit_digests: NamedDigest::canonicalize([NamedDigest::new(
+            "main",
+            BytecodeUnitObject::conservative_canonical_bytecode_digest(),
+        )]),
+        entrypoint_digest: LinkPlanObject::conservative_entrypoint_digest(),
+        resource_section_digest: LinkPlanObject::conservative_resource_section_digest(),
+        adapter_requirements_digest: LinkPlanObject::conservative_adapter_requirements_digest(),
+        patch_compatibility_digest: LinkPlanObject::conservative_patch_compatibility_digest(),
+        product_build_options_digest: digest("product-build-options"),
+        dependency_body_digest_root: key.stage_inputs().dependency_body_digest_root(),
+        link_descriptor_digest: BuildDigest::ZERO,
+    };
+    facts.link_descriptor_digest = LinkPlanObject::link_descriptor_digest_for(&facts);
+    CompilerObjectPayload::LinkPlan(LinkPlanObject {
+        schema_version: AWBO_SCHEMA_VERSION,
+        compiler_namespace: key.identity_namespace(),
+        package: "main".to_owned(),
+        source_digest: key.source_digest,
+        source_span: span(),
+        diagnostics: StableDiagnosticSummaryObject::empty(),
+        stage_inputs: key.stage_inputs(),
+        facts,
+        reuse_policy: LinkPlanReusePolicy::ConservativeRebuild,
+    })
+}
+
 fn envelope_bytes(key: &CompilerObjectKey) -> Vec<u8> {
     let payload = match key.kind {
         CompilerObjectKind::ParsedSyntax => parsed_payload(key),
         CompilerObjectKind::InterfaceSummary => interface_payload(key),
         CompilerObjectKind::HirBody => hir_payload(key),
         CompilerObjectKind::TypecheckGate => typecheck_gate_payload(key),
+        CompilerObjectKind::BytecodeUnit => bytecode_payload(key),
+        CompilerObjectKind::LinkPlan => link_plan_payload(key),
         other => panic!("test helper does not support {other:?}"),
     };
     AwboEnvelope::new(key, payload)
@@ -401,6 +484,78 @@ fn persistent_query_write_through_stores_typecheck_gate_as_valid_but_rebuilt() {
         outcome,
         PersistentQueryReadOutcome::Hit(hit)
             if matches!(hit.payload, PersistentQueryHitPayload::TypecheckGate(_))
+    ));
+}
+
+#[test]
+fn persistent_query_write_through_stores_bytecode_gate_as_valid_but_rebuilt() {
+    let store = FilesystemCacheStore::new(temp_root("write-through-bytecode-gate"));
+    let request = bytecode_request();
+    let receipt = store
+        .write_persistent_query(&PersistentQueryWriteRequest::new(
+            request.query,
+            request.artifact_key,
+            request.object_key.clone(),
+            "bytecode-unit:main",
+            bytecode_payload(&request.object_key),
+        ))
+        .expect("persistent bytecode gate writes");
+
+    assert_eq!(receipt.query, QueryKind::BytecodeUnit);
+    assert_eq!(receipt.artifact_kind, ArtifactKind::BytecodeUnit);
+    assert!(receipt.record_path.is_file());
+    assert!(receipt.object_path.is_file());
+
+    let outcome = store.read_persistent_query(&request);
+    assert!(outcome.is_hit());
+    assert_eq!(
+        outcome.cache_record_status(),
+        CacheRecordStatus::HitThenRebuilt {
+            reason: InvalidationReason::ConservativeInvalidation {
+                policy: CompilerObjectKind::BYTECODE_UNIT_CONSERVATIVE_POLICY.to_owned(),
+            },
+        }
+    );
+    assert!(matches!(
+        outcome,
+        PersistentQueryReadOutcome::Hit(hit)
+            if matches!(hit.payload, PersistentQueryHitPayload::BytecodeUnit(_))
+    ));
+}
+
+#[test]
+fn persistent_query_write_through_stores_link_plan_gate_as_valid_but_rebuilt() {
+    let store = FilesystemCacheStore::new(temp_root("write-through-link-plan-gate"));
+    let request = link_plan_request();
+    let receipt = store
+        .write_persistent_query(&PersistentQueryWriteRequest::new(
+            request.query,
+            request.artifact_key,
+            request.object_key.clone(),
+            "link-plan:main",
+            link_plan_payload(&request.object_key),
+        ))
+        .expect("persistent link-plan gate writes");
+
+    assert_eq!(receipt.query, QueryKind::LinkPlan);
+    assert_eq!(receipt.artifact_kind, ArtifactKind::LinkPlan);
+    assert!(receipt.record_path.is_file());
+    assert!(receipt.object_path.is_file());
+
+    let outcome = store.read_persistent_query(&request);
+    assert!(outcome.is_hit());
+    assert_eq!(
+        outcome.cache_record_status(),
+        CacheRecordStatus::HitThenRebuilt {
+            reason: InvalidationReason::ConservativeInvalidation {
+                policy: CompilerObjectKind::LINK_PLAN_CONSERVATIVE_POLICY.to_owned(),
+            },
+        }
+    );
+    assert!(matches!(
+        outcome,
+        PersistentQueryReadOutcome::Hit(hit)
+            if matches!(hit.payload, PersistentQueryHitPayload::LinkPlan(_))
     ));
 }
 
@@ -782,18 +937,15 @@ fn persistent_query_unsupported_object_kind_and_status_are_typed() {
 }
 
 #[test]
-fn runtime_bytecode_and_link_plan_objects_remain_unsupported() {
-    let store = FilesystemCacheStore::new(temp_root("unsupported-later-families"));
-    for object_kind in [
-        CompilerObjectKind::RuntimePlanUnit,
-        CompilerObjectKind::BytecodeUnit,
-        CompilerObjectKind::LinkPlan,
-    ] {
-        let mut request = parse_request();
-        request.object_key.kind = object_kind;
-        assert_eq!(
-            miss_reason(store.read_persistent_query(&request)),
-            PersistentQueryMissReason::UnsupportedObjectKind { object_kind },
-        );
-    }
+fn runtime_plan_unit_remains_unsupported_until_seq04_7_identity_is_applied() {
+    let store = FilesystemCacheStore::new(temp_root("unsupported-runtime-plan-unit"));
+    let mut request = parse_request();
+    request.object_key.kind = CompilerObjectKind::RuntimePlanUnit;
+
+    assert_eq!(
+        miss_reason(store.read_persistent_query(&request)),
+        PersistentQueryMissReason::UnsupportedObjectKind {
+            object_kind: CompilerObjectKind::RuntimePlanUnit,
+        },
+    );
 }

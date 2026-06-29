@@ -13,10 +13,10 @@ use arcweft_project::{
     fingerprint::{BuildDigest, NamedDigest},
     incremental::{CacheRecordStatus, InvalidationReason, QueryKind},
     persistent_object::{
-        AWBO_SCHEMA_VERSION, AwboEnvelope, AwboError, CompilerBuildIdentity,
+        AWBO_SCHEMA_VERSION, AwboEnvelope, AwboError, BytecodeUnitObject, CompilerBuildIdentity,
         CompilerIdentityNamespaceObject, CompilerObjectKey, CompilerObjectKind,
         CompilerObjectPayload, CompilerStageInputsObject, HirBodyObject, InterfaceSummaryObject,
-        ParsedSyntaxObject, TypecheckGateObject, TypecheckGateReusePolicy,
+        LinkPlanObject, ParsedSyntaxObject, TypecheckGateObject, TypecheckGateReusePolicy,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -79,6 +79,8 @@ pub enum PersistentQueryHitPayload {
     InterfaceSummary(InterfaceSummaryObject),
     HirBody(HirBodyObject),
     TypecheckGate(TypecheckGateObject),
+    BytecodeUnit(BytecodeUnitObject),
+    LinkPlan(LinkPlanObject),
 }
 
 /// Successful write-through evidence for one persistent compiler query object.
@@ -142,6 +144,8 @@ pub struct PersistentQueryExplainEvidence {
     pub soft_miss_reason: Option<PersistentQueryMissReason>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub typecheck_gate_reuse_policy: Option<TypecheckGateReusePolicy>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conservative_reuse_policy: Option<String>,
     pub recovery_action: PersistentQueryRecoveryAction,
 }
 
@@ -871,6 +875,12 @@ fn persistent_query_hit_payload(
         CompilerObjectPayload::TypecheckGate(payload) => {
             Ok(PersistentQueryHitPayload::TypecheckGate(payload.clone()))
         }
+        CompilerObjectPayload::BytecodeUnit(payload) => {
+            Ok(PersistentQueryHitPayload::BytecodeUnit(payload.clone()))
+        }
+        CompilerObjectPayload::LinkPlan(payload) => {
+            Ok(PersistentQueryHitPayload::LinkPlan(payload.clone()))
+        }
         other => Err(miss(
             request,
             record_path.to_path_buf(),
@@ -988,6 +998,10 @@ fn explain_persistent_query_outcome(
             cache_record_status: hit.object_kind.read_through_hit_status(),
             soft_miss_reason: None,
             typecheck_gate_reuse_policy: envelope.and_then(typecheck_gate_reuse_policy),
+            conservative_reuse_policy: hit
+                .object_kind
+                .conservative_read_through_policy()
+                .map(str::to_owned),
             recovery_action: if hit.object_kind.read_through_hit_requires_rebuild() {
                 PersistentQueryRecoveryAction::RebuildFromSource
             } else {
@@ -1026,6 +1040,10 @@ fn explain_persistent_query_outcome(
                 },
                 soft_miss_reason: Some(reason),
                 typecheck_gate_reuse_policy: envelope.and_then(typecheck_gate_reuse_policy),
+                conservative_reuse_policy: miss
+                    .object_kind
+                    .conservative_read_through_policy()
+                    .map(str::to_owned),
                 recovery_action: PersistentQueryRecoveryAction::RebuildFromSource,
             }
         }
@@ -1067,6 +1085,9 @@ fn explain_persistent_query_preflight_miss(
         cache_record_status: status,
         soft_miss_reason: Some(reason),
         typecheck_gate_reuse_policy: None,
+        conservative_reuse_policy: object_kind
+            .conservative_read_through_policy()
+            .map(str::to_owned),
         recovery_action: PersistentQueryRecoveryAction::RebuildFromSource,
     }
 }
@@ -1109,10 +1130,27 @@ fn object_key_from_envelope(envelope: &AwboEnvelope) -> Option<CompilerObjectKey
             dependency_body_digests: payload.stage_inputs.dependency_body_digests.clone(),
             environment_digest: payload.stage_inputs.environment_digest,
         },
-        CompilerObjectPayload::LineTaskEvidence(_)
-        | CompilerObjectPayload::RuntimePlanUnit(_)
-        | CompilerObjectPayload::BytecodeUnit(_)
-        | CompilerObjectPayload::LinkPlan(_) => return None,
+        CompilerObjectPayload::BytecodeUnit(payload) => CompilerObjectKey {
+            kind: CompilerObjectKind::BytecodeUnit,
+            compiler: payload.compiler_namespace.compiler.clone(),
+            source_digest: payload.source_digest,
+            query_options_digest: payload.stage_inputs.query_options_digest,
+            dependency_interface_digests: payload.stage_inputs.dependency_interface_digests.clone(),
+            dependency_body_digests: payload.stage_inputs.dependency_body_digests.clone(),
+            environment_digest: payload.stage_inputs.environment_digest,
+        },
+        CompilerObjectPayload::LinkPlan(payload) => CompilerObjectKey {
+            kind: CompilerObjectKind::LinkPlan,
+            compiler: payload.compiler_namespace.compiler.clone(),
+            source_digest: payload.source_digest,
+            query_options_digest: payload.stage_inputs.query_options_digest,
+            dependency_interface_digests: payload.stage_inputs.dependency_interface_digests.clone(),
+            dependency_body_digests: payload.stage_inputs.dependency_body_digests.clone(),
+            environment_digest: payload.stage_inputs.environment_digest,
+        },
+        CompilerObjectPayload::LineTaskEvidence(_) | CompilerObjectPayload::RuntimePlanUnit(_) => {
+            return None;
+        }
     };
     Some(key.canonicalized())
 }
@@ -1142,10 +1180,11 @@ fn payload_schema_version(payload: &CompilerObjectPayload) -> Option<u32> {
         CompilerObjectPayload::InterfaceSummary(value) => Some(value.schema_version),
         CompilerObjectPayload::HirBody(value) => Some(value.schema_version),
         CompilerObjectPayload::TypecheckGate(value) => Some(value.schema_version),
-        CompilerObjectPayload::LineTaskEvidence(_)
-        | CompilerObjectPayload::RuntimePlanUnit(_)
-        | CompilerObjectPayload::BytecodeUnit(_)
-        | CompilerObjectPayload::LinkPlan(_) => None,
+        CompilerObjectPayload::BytecodeUnit(value) => Some(value.schema_version),
+        CompilerObjectPayload::LinkPlan(value) => Some(value.schema_version),
+        CompilerObjectPayload::LineTaskEvidence(_) | CompilerObjectPayload::RuntimePlanUnit(_) => {
+            None
+        }
     }
 }
 
@@ -1234,6 +1273,12 @@ fn validate_envelope_for_request(
         CompilerObjectPayload::TypecheckGate(payload) => {
             validate_typecheck_gate_payload(payload, key)?;
         }
+        CompilerObjectPayload::BytecodeUnit(payload) => {
+            validate_bytecode_unit_payload(payload, key)?;
+        }
+        CompilerObjectPayload::LinkPlan(payload) => {
+            validate_link_plan_payload(payload, key)?;
+        }
         other => {
             return Err(PersistentQueryMissReason::PayloadKindMismatch {
                 expected: key.kind,
@@ -1294,6 +1339,48 @@ fn validate_hir_body_payload(
 
 fn validate_typecheck_gate_payload(
     payload: &TypecheckGateObject,
+    key: &CompilerObjectKey,
+) -> Result<(), PersistentQueryMissReason> {
+    validate_payload_schema(payload.schema_version)?;
+    validate_namespace(&payload.compiler_namespace, key)?;
+    validate_source_digest(payload.source_digest, key)?;
+    payload
+        .source_span
+        .validate()
+        .map_err(|error| corrupt_object(&error))?;
+    payload
+        .diagnostics
+        .validate()
+        .map_err(|error| corrupt_object(&error))?;
+    validate_stage_inputs(&payload.stage_inputs, key)?;
+    payload
+        .validate_gate_shape()
+        .map_err(|error| corrupt_object(&error))
+}
+
+fn validate_bytecode_unit_payload(
+    payload: &BytecodeUnitObject,
+    key: &CompilerObjectKey,
+) -> Result<(), PersistentQueryMissReason> {
+    validate_payload_schema(payload.schema_version)?;
+    validate_namespace(&payload.compiler_namespace, key)?;
+    validate_source_digest(payload.source_digest, key)?;
+    payload
+        .source_span
+        .validate()
+        .map_err(|error| corrupt_object(&error))?;
+    payload
+        .diagnostics
+        .validate()
+        .map_err(|error| corrupt_object(&error))?;
+    validate_stage_inputs(&payload.stage_inputs, key)?;
+    payload
+        .validate_gate_shape()
+        .map_err(|error| corrupt_object(&error))
+}
+
+fn validate_link_plan_payload(
+    payload: &LinkPlanObject,
     key: &CompilerObjectKey,
 ) -> Result<(), PersistentQueryMissReason> {
     validate_payload_schema(payload.schema_version)?;

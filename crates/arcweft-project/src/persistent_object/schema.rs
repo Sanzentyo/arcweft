@@ -146,10 +146,9 @@ impl CompilerObjectKind {
             Self::InterfaceSummary => Some(QueryKind::Interface),
             Self::HirBody => Some(QueryKind::HirBody),
             Self::TypecheckGate => Some(QueryKind::TypeCheck),
-            Self::LineTaskEvidence
-            | Self::RuntimePlanUnit
-            | Self::BytecodeUnit
-            | Self::LinkPlan => None,
+            Self::BytecodeUnit => Some(QueryKind::BytecodeUnit),
+            Self::LinkPlan => Some(QueryKind::LinkPlan),
+            Self::LineTaskEvidence | Self::RuntimePlanUnit => None,
         }
     }
 
@@ -160,10 +159,9 @@ impl CompilerObjectKind {
             Self::InterfaceSummary => Some(ArtifactKind::InterfaceSummary),
             Self::HirBody => Some(ArtifactKind::HirBody),
             Self::TypecheckGate => Some(ArtifactKind::TypeCheckReport),
-            Self::LineTaskEvidence
-            | Self::RuntimePlanUnit
-            | Self::BytecodeUnit
-            | Self::LinkPlan => None,
+            Self::BytecodeUnit => Some(ArtifactKind::BytecodeUnit),
+            Self::LinkPlan => Some(ArtifactKind::LinkPlan),
+            Self::LineTaskEvidence | Self::RuntimePlanUnit => None,
         }
     }
 
@@ -174,11 +172,11 @@ impl CompilerObjectKind {
             ArtifactKind::InterfaceSummary => Some(Self::InterfaceSummary),
             ArtifactKind::HirBody => Some(Self::HirBody),
             ArtifactKind::TypeCheckReport => Some(Self::TypecheckGate),
+            ArtifactKind::BytecodeUnit => Some(Self::BytecodeUnit),
+            ArtifactKind::LinkPlan => Some(Self::LinkPlan),
             ArtifactKind::RuntimePlan
-            | ArtifactKind::BytecodeUnit
             | ArtifactKind::AssetMetadata
             | ArtifactKind::AssetPayload
-            | ArtifactKind::LinkPlan
             | ArtifactKind::BundleSection
             | ArtifactKind::BundleIndex => None,
         }
@@ -186,12 +184,16 @@ impl CompilerObjectKind {
 
     pub const TYPECHECK_GATE_CONSERVATIVE_POLICY: &'static str =
         "typecheck-gate-valid-but-linked-sema-rebuilt";
+    pub const BYTECODE_UNIT_CONSERVATIVE_POLICY: &'static str =
+        "bytecode-unit-gate-valid-but-awbc-rebuilt";
+    pub const LINK_PLAN_CONSERVATIVE_POLICY: &'static str =
+        "link-plan-gate-valid-but-product-relinked";
 
     pub fn read_through_hit_status(self) -> CacheRecordStatus {
-        if self.read_through_hit_requires_rebuild() {
+        if let Some(policy) = self.conservative_read_through_policy() {
             CacheRecordStatus::HitThenRebuilt {
                 reason: InvalidationReason::ConservativeInvalidation {
-                    policy: Self::TYPECHECK_GATE_CONSERVATIVE_POLICY.to_owned(),
+                    policy: policy.to_owned(),
                 },
             }
         } else {
@@ -200,19 +202,22 @@ impl CompilerObjectKind {
     }
 
     pub const fn read_through_hit_requires_rebuild(self) -> bool {
-        matches!(self, Self::TypecheckGate)
+        matches!(
+            self,
+            Self::TypecheckGate | Self::BytecodeUnit | Self::LinkPlan
+        )
     }
 
     pub const fn conservative_read_through_policy(self) -> Option<&'static str> {
         match self {
             Self::TypecheckGate => Some(Self::TYPECHECK_GATE_CONSERVATIVE_POLICY),
+            Self::BytecodeUnit => Some(Self::BYTECODE_UNIT_CONSERVATIVE_POLICY),
+            Self::LinkPlan => Some(Self::LINK_PLAN_CONSERVATIVE_POLICY),
             Self::ParsedSyntax
             | Self::InterfaceSummary
             | Self::HirBody
             | Self::LineTaskEvidence
-            | Self::RuntimePlanUnit
-            | Self::BytecodeUnit
-            | Self::LinkPlan => None,
+            | Self::RuntimePlanUnit => None,
         }
     }
 
@@ -384,6 +389,15 @@ impl CompilerStageInputsObject {
         put_u32(&mut bytes, AWBO_SCHEMA_VERSION);
         put_string(&mut bytes, "dependency-interface-digests");
         let values = NamedDigest::canonicalize(self.dependency_interface_digests.clone());
+        put_named_digests(&mut bytes, &values);
+        BuildDigest::of(&bytes)
+    }
+
+    pub fn dependency_body_digest_root(&self) -> BuildDigest {
+        let mut bytes = Vec::new();
+        put_u32(&mut bytes, AWBO_SCHEMA_VERSION);
+        put_string(&mut bytes, "dependency-body-digests");
+        let values = NamedDigest::canonicalize(self.dependency_body_digests.clone());
         put_named_digests(&mut bytes, &values);
         BuildDigest::of(&bytes)
     }
