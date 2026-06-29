@@ -61,6 +61,11 @@ export async function startArcweftWebPlayer(options = {}) {
       fatal.textContent = `Arcweft player could not start.\n${message}`;
     }
     window.__arcweftFatal = { kind: "unsupported_or_fatal", message };
+    document.dispatchEvent(
+      new CustomEvent("arcweft-player-fatal", {
+        detail: message,
+      }),
+    );
   };
 
   try {
@@ -201,6 +206,23 @@ document.addEventListener("arcweft-frame-observation", (event) => {
   }
 });
 
-if (document.getElementById("arcweft-canvas")) {
-  startArcweftWebPlayer();
+function autostartOptionsFromCanvas(canvas) {
+  return {
+    canvasId: canvas.id || "arcweft-canvas",
+    bundleUrl: canvas.dataset.arcweftBundleUrl || undefined,
+    fontUrl: canvas.dataset.arcweftFontUrl || undefined,
+    textInput: canvas.dataset.arcweftTextInput === "false" ? false : undefined,
+  };
+}
+
+function shouldAutostartArcweftWebPlayer(canvas) {
+  return Boolean(canvas) && globalThis.__arcweftWebPlayerAutostart !== false;
+}
+
+const autostartCanvas = document.getElementById("arcweft-canvas");
+if (shouldAutostartArcweftWebPlayer(autostartCanvas)) {
+  startArcweftWebPlayer({
+    ...autostartOptionsFromCanvas(autostartCanvas),
+    ...(globalThis.__arcweftWebPlayerAutostartOptions ?? {}),
+  });
 }

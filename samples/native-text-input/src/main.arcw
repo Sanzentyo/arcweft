@@ -1,20 +1,18 @@
 pub surface character narrator {
-    display = "Arcweft Native Text Input"
-    default_voice = auto
+  display = "Arcweft Native IME"
+  default_voice = auto
 }
 
-entry game @entry.native_text_input {
-    start @flow.native_text_input
+entry game @entry.native_text_input_sample {
+  start @flow.native_text_input_sample
 }
 
-flow native_text_input {
-    narrator:
-        seq06.4j native-player platform text input bridge sample.[p]
-        This sample is the normal native player entrypoint for future renderer-backed text controls.[p]
+flow native_text_input_sample {
+  narrator:
+    Native player-rendered IME acceptance sample.[p]
+    This scene owns three Arcweft-rendered text controls from product UI resources: jp_text_field, jp_text_area, and secret_secure_field.[p]
+    Use pointer focus or keyboard traversal to focus a control, then enter Latin or Japanese text with the active platform IME.[p]
+    Local trace output belongs under target/native-text-input-trace/.
 
-    narrator:
-        Controls planned by scene-contract: jp_text_field, jp_text_area, secret_secure_field.[p]
-        The current renderer still needs focused text input target lowering before live IME can attach.[p]
-
-    return "native_text_input_sample_open"
+  return "native_text_input_sample_open"
 }

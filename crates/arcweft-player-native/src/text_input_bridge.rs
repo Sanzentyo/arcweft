@@ -19,9 +19,10 @@ use arcweft_presentation::input::InteractionTarget;
 #[cfg(test)]
 use arcweft_presentation::text_input::TextInputSessionId;
 use arcweft_presentation::text_input::{
-    PlatformTextInputEvent, TextInput, TextInputBlurPolicy, TextInputCapabilities,
-    TextInputClientSnapshot, TextInputFocusGeneration, TextInputGeometrySnapshot,
-    TextInputHostCommand, TextInputKeyDisposition, TextInputSecurityPolicy,
+    PlatformTextInputEvent, TextControlWriteBack, TextInput, TextInputBlurPolicy,
+    TextInputCapabilities, TextInputClientSnapshot, TextInputFocusGeneration,
+    TextInputGeometrySnapshot, TextInputHostCommand, TextInputKeyDisposition,
+    TextInputSecurityPolicy,
 };
 use arcweft_runtime_host::{
     PlayerTextInputBridgeCore, PlayerTextInputFocusedControl, PlayerTextInputSyncPhase,
@@ -157,6 +158,7 @@ impl NativeTextInputBridge {
         let NativeTextInputBridgeOptions { trace, blur_policy } = options;
         let backend = NativeTextInputBackend::for_window(window);
         let mut trace = NativeTextInputTraceWriter::new(trace);
+        trace.record_backend_selected(backend.identity());
         trace.record_capabilities(backend.identity(), backend.capabilities());
         if let Some(reason) = backend.unavailable_reason() {
             trace.record_backend_unavailable(backend.identity(), reason);
@@ -253,6 +255,16 @@ impl NativeTextInputBridge {
 
     pub(crate) fn shortcuts_allowed(&self, disposition: TextInputKeyDisposition) -> bool {
         self.core.shortcuts_allowed(disposition)
+    }
+
+    pub(crate) fn record_runtime_write_backs<'a>(
+        &mut self,
+        write_backs: impl IntoIterator<Item = &'a TextControlWriteBack>,
+    ) {
+        for write_back in write_backs {
+            self.trace
+                .record_runtime_write_back(self.backend.identity(), write_back);
+        }
     }
 
     fn dispatch_platform_event(

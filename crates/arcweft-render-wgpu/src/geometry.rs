@@ -721,6 +721,45 @@ impl PreparedFrame {
         self.choices.first().map(|choice| choice.target.clone())
     }
 
+    pub fn text_input_targets(&self) -> impl Iterator<Item = InteractionTarget> + '_ {
+        self.semantics
+            .as_slice()
+            .iter()
+            .filter(|node| node.role().is_text_input_control() && node.visible() && node.enabled())
+            .map(|node| node.target().clone())
+    }
+
+    pub fn keyboard_focus_targets(&self) -> Vec<InteractionTarget> {
+        self.text_input_targets()
+            .chain(self.choices.iter().map(|choice| choice.target.clone()))
+            .collect()
+    }
+
+    pub fn first_keyboard_focus_target(&self) -> Option<InteractionTarget> {
+        self.keyboard_focus_targets().into_iter().next()
+    }
+
+    pub fn last_keyboard_focus_target(&self) -> Option<InteractionTarget> {
+        self.keyboard_focus_targets().into_iter().last()
+    }
+
+    pub fn adjacent_keyboard_focus_target(
+        &self,
+        current: Option<&InteractionTarget>,
+        delta: isize,
+    ) -> Option<InteractionTarget> {
+        let targets = self.keyboard_focus_targets();
+        if targets.is_empty() {
+            return None;
+        }
+        let current = current
+            .and_then(|target| targets.iter().position(|candidate| candidate == target))
+            .unwrap_or(0);
+        let len = isize::try_from(targets.len()).ok()?;
+        let next = (isize::try_from(current).ok()? + delta).rem_euclid(len);
+        targets.get(usize::try_from(next).ok()?).cloned()
+    }
+
     pub fn last_choice_target(&self) -> Option<InteractionTarget> {
         self.choices.last().map(|choice| choice.target.clone())
     }

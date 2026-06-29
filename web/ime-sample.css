@@ -1,218 +1,59 @@
-@font-face {
-  font-family: "Arcweft Demo";
-  src: url("./assets/arcweft-demo.ttf") format("truetype");
-  font-display: swap;
-}
-
-:root {
-  color-scheme: dark;
-  --panel: rgb(17 20 29 / 92%);
-  --ink: #f4f7fb;
-  --muted: #aab6c6;
-  --line: rgb(238 245 255 / 20%);
-  --accent: #64d2c8;
-  --accent-2: #f6cc66;
-  --danger: #ff8f8f;
-  --font-ui: "Arcweft Demo", "Inter", "Segoe UI", "Yu Gothic UI", "Hiragino Sans",
-    "Noto Sans JP", system-ui, sans-serif;
-  --font-editor: "Arcweft Demo", "Yu Gothic", "Yu Mincho", "Hiragino Mincho ProN",
-    "Noto Serif JP", "Noto Sans JP", serif;
-}
-
 html,
-body {
-  width: 100%;
-  min-height: 100%;
-  margin: 0;
-  background: #0b0e11;
-}
-
-body {
-  font-family: var(--font-ui);
-  color: var(--ink);
-}
-
-.ime-shell {
-  min-height: 100vh;
-  min-height: 100dvh;
-  display: grid;
-  place-items: center;
-  padding: clamp(18px, 4vw, 44px);
-  box-sizing: border-box;
-  background:
-    linear-gradient(120deg, rgb(8 11 15) 0%, rgb(18 25 30) 46%, rgb(22 18 16) 100%);
-}
-
-.editor-plane {
-  width: min(1040px, 100%);
-  min-height: min(640px, calc(100dvh - 56px));
-  display: grid;
-  grid-template-columns: minmax(220px, 0.74fr) minmax(320px, 1fr);
-  gap: clamp(18px, 3vw, 34px);
-  align-items: stretch;
-}
-
-.sample-media {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #111720;
-}
-
-.sample-media img {
+body,
+#arcweft-host {
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  opacity: 0.82;
-  transform: scale(1.02);
-}
-
-.editor-column {
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  gap: 18px;
-  min-width: 0;
-}
-
-.sample-header {
-  display: grid;
-  gap: 5px;
-}
-
-.eyebrow {
   margin: 0;
-  color: var(--accent);
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0;
+  overflow: hidden;
+  background: #050817;
 }
 
-h1 {
-  margin: 0;
-  font-size: clamp(2rem, 6vw, 4.1rem);
-  line-height: 0.98;
-  letter-spacing: 0;
+body {
+  font-family: system-ui, sans-serif;
 }
 
-.field-stack {
-  display: grid;
-  grid-template-rows: auto 1fr;
-  gap: 8px;
-  min-height: 280px;
-}
-
-.field-label {
-  color: var(--muted);
-  font-size: 0.92rem;
-}
-
-.ime-surface {
+#arcweft-host {
   position: relative;
-  min-height: 240px;
-  padding: clamp(18px, 3vw, 30px);
-  box-sizing: border-box;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  display: grid;
+  place-items: center;
   background:
-    linear-gradient(180deg, rgb(20 24 35 / 96%) 0%, rgb(15 18 26 / 96%) 100%);
-  color: var(--ink);
-  font-family: var(--font-editor);
-  font-size: clamp(1.35rem, 4vw, 2.4rem);
-  line-height: 1.7;
-  outline: none;
-  caret-color: transparent;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+    radial-gradient(circle at 30% 18%, rgb(28 54 54 / 48%) 0%, transparent 34%),
+    linear-gradient(180deg, rgb(10 13 12) 0%, rgb(4 8 7) 100%);
 }
 
-.ime-surface.arcweft-editcontext-host {
-  caret-color: transparent;
-}
-
-.arcweft-selection {
-  background: rgb(100 210 200 / 28%);
-}
-
-.arcweft-composition {
-  text-decoration-line: underline;
-  text-decoration-style: double;
-  text-decoration-color: var(--accent-2);
-  text-underline-offset: 0.18em;
-  background: rgb(246 204 102 / 14%);
-}
-
-.ime-surface:focus {
-  border-color: rgb(100 210 200 / 85%);
-  box-shadow: 0 0 0 3px rgb(100 210 200 / 16%);
-}
-
-.committed-text:empty::before {
-  content: "ここに日本語 IME で入力";
-  color: rgb(244 247 251 / 42%);
-}
-
-.composition-text {
-  text-decoration-line: underline;
-  text-decoration-style: double;
-  text-decoration-color: var(--accent-2);
-  text-underline-offset: 0.18em;
-  background: rgb(246 204 102 / 14%);
-}
-
-.caret {
-  position: absolute;
+#arcweft-canvas {
   display: block;
-  left: var(--arcweft-caret-x, 18px);
-  top: var(--arcweft-caret-y, 18px);
-  width: 2px;
-  height: var(--arcweft-caret-h, 1.08em);
-  margin-left: 0;
-  vertical-align: initial;
-  background: var(--accent);
+  width: min(100vw, calc(100vh * 16 / 9)) !important;
+  height: min(100vh, calc(100vw * 9 / 16)) !important;
+  width: min(100vw, calc(100dvh * 16 / 9)) !important;
+  height: min(100dvh, calc(100vw * 9 / 16)) !important;
+  aspect-ratio: 16 / 9;
+  box-sizing: border-box;
+  outline: none;
+  touch-action: none;
+  background: #050807;
+  box-shadow: 0 0 0 1px rgb(100 210 200 / 24%);
+}
+
+#arcweft-loading,
+#arcweft-fatal {
+  position: absolute;
+  inset: auto 1rem 1rem 1rem;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  color: #eef4ff;
+  background: rgb(5 8 23 / 88%);
+  border: 1px solid rgb(130 185 255 / 60%);
+  border-radius: 0.4rem;
+  white-space: pre-wrap;
   pointer-events: none;
 }
 
-.arcweft-editcontext-host .caret {
-  display: block;
-}
-
-.sample-grid {
-  display: grid;
-  grid-template-columns: 1.5fr 1fr 1fr;
-  gap: 8px;
-}
-
-.status-line,
-.metric {
-  min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  color: var(--muted);
-  font: 0.84rem/1.35 var(--font-ui);
-  white-space: normal;
-}
-
-.status-line[data-state="ready"] {
-  color: var(--accent);
-}
-
-.status-line[data-state="unsupported"] {
-  color: var(--danger);
-}
-
-@media (width <= 760px) {
-  .editor-plane {
-    grid-template-columns: 1fr;
-  }
-
-  .sample-media {
-    min-height: 150px;
-  }
-
-  .sample-grid {
-    grid-template-columns: 1fr;
-  }
+#arcweft-fatal {
+  color: #ffd8d8;
+  border-color: #ff7373;
 }

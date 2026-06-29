@@ -19,6 +19,10 @@ use arcweft_text_layout::{
 };
 use num_traits::ToPrimitive;
 
+const TEXT_INSET_X: f32 = 8.0;
+const TEXT_INSET_Y: f32 = 4.0;
+const CARET_WIDTH: f32 = 2.0;
+
 /// Real text-control input lowered from runtime/product UI state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderTextInputControl {
@@ -107,6 +111,8 @@ pub(super) fn build_text_inputs(
         });
         if is_focused {
             super::push_focus_ring(rectangles, control.bounds, palette.focus_ring);
+            push_renderer_text_input_selection(rectangles, control, palette);
+            push_renderer_text_input_caret(rectangles, control, palette);
         }
 
         let display_value = if options.is_secure() {
@@ -116,14 +122,9 @@ pub(super) fn build_text_inputs(
         };
         text.push(RenderTextBlock {
             text: display_value,
-            bounds: HitRect::new(
-                control.bounds.x + 8.0,
-                control.bounds.y + 4.0,
-                (control.bounds.width - 16.0).max(0.0),
-                (control.bounds.height - 8.0).max(1.0),
-            ),
-            font_size: (control.bounds.height * 0.55).clamp(12.0, 28.0),
-            line_height: (control.bounds.height - 8.0).max(1.0),
+            bounds: text_inner_bounds(control),
+            font_size: text_control_font_size(control),
+            line_height: text_control_line_height(control),
             font_family: RenderFontFamily::SansSerif,
             weight: RenderTextWeight::Regular,
             slant: RenderTextSlant::Upright,
@@ -150,6 +151,60 @@ pub(super) fn build_text_inputs(
         }
     }
     Ok(focused)
+}
+
+fn push_renderer_text_input_selection(
+    rectangles: &mut Vec<PaintRect>,
+    control: &RenderTextInputControl,
+    palette: &Palette,
+) {
+    let start = control.selection.start().get();
+    let end = control.selection.end().get();
+    if start == end {
+        return;
+    }
+    rectangles.push(PaintRect {
+        bounds: text_range_rect(control, start, end),
+        rgba: palette.choice_active,
+    });
+}
+
+fn push_renderer_text_input_caret(
+    rectangles: &mut Vec<PaintRect>,
+    control: &RenderTextInputControl,
+    palette: &Palette,
+) {
+    let caret = control.selection.end().get();
+    let inner = text_inner_bounds(control);
+    let x = inner.x + text_advance_to_byte(control, caret);
+    rectangles.push(PaintRect {
+        bounds: HitRect::new(x, inner.y, CARET_WIDTH, inner.height),
+        rgba: palette.focus_ring,
+    });
+}
+
+fn text_range_rect(control: &RenderTextInputControl, start: u32, end: u32) -> HitRect {
+    let inner = text_inner_bounds(control);
+    let x0 = inner.x + text_advance_to_byte(control, start);
+    let x1 = inner.x + text_advance_to_byte(control, end);
+    HitRect::new(x0.min(x1), inner.y, (x1 - x0).abs().max(1.0), inner.height)
+}
+
+fn text_inner_bounds(control: &RenderTextInputControl) -> HitRect {
+    HitRect::new(
+        control.bounds.x + TEXT_INSET_X,
+        control.bounds.y + TEXT_INSET_Y,
+        (control.bounds.width - TEXT_INSET_X * 2.0).max(0.0),
+        text_control_line_height(control),
+    )
+}
+
+fn text_control_font_size(control: &RenderTextInputControl) -> f32 {
+    (control.bounds.height * 0.55).clamp(12.0, 28.0)
+}
+
+fn text_control_line_height(control: &RenderTextInputControl) -> f32 {
+    (control.bounds.height - TEXT_INSET_Y * 2.0).max(1.0)
 }
 
 fn prepare_text_input_target(
@@ -193,8 +248,8 @@ fn prepare_text_input_target(
 }
 
 fn laid_out_text_for_control(control: &RenderTextInputControl) -> LaidOutText {
-    let line_height = (control.bounds.height - 8.0).max(1.0);
-    let mut x = 8.0;
+    let line_height = text_control_line_height(control);
+    let mut x = TEXT_INSET_X;
     let mut glyphs = Vec::new();
     for (start, ch) in control.value.char_indices() {
         let end = start.saturating_add(ch.len_utf8());
@@ -227,6 +282,19 @@ fn estimated_text_input_glyph_width(ch: char, line_height: f32) -> f32 {
     } else {
         (line_height * 0.9).max(10.0)
     }
+}
+
+fn text_advance_to_byte(control: &RenderTextInputControl, byte_offset: u32) -> f32 {
+    let limit = usize::try_from(byte_offset)
+        .unwrap_or(usize::MAX)
+        .min(control.value.len());
+    control
+        .value
+        .char_indices()
+        .take_while(|(index, _)| *index < limit)
+        .map(|(_, ch)| estimated_text_input_glyph_width(ch, text_control_line_height(control)))
+        .sum::<f32>()
+        .min((control.bounds.width - TEXT_INSET_X * 2.0).max(0.0))
 }
 
 fn mask_secure_text(value: &str) -> String {

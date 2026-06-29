@@ -1,0 +1,30 @@
+{
+  "program_id": "ui.program.native_text_input_sample",
+  "root_component": "ui.component.native_text_input_root",
+  "instructions": [],
+  "child_spans": [],
+  "handlers": [],
+  "state_schema_hashes": [],
+  "exported_parts": [],
+  "semantic_targets": [
+    {
+      "public_id": "jp_text_field",
+      "target": "jp_text_field",
+      "label_text_source": "text.label.jp_text_field",
+      "source": null
+    },
+    {
+      "public_id": "jp_text_area",
+      "target": "jp_text_area",
+      "label_text_source": "text.label.jp_text_area",
+      "source": null
+    },
+    {
+      "public_id": "secret_secure_field",
+      "target": "secret_secure_field",
+      "label_text_source": "text.label.secret_secure_field",
+      "source": null
+    }
+  ],
+  "adapter_requirements": []
+}

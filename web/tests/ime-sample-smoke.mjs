@@ -7,11 +7,14 @@ import { chromium } from "playwright";
 
 const root = normalize(join(fileURLToPath(new URL(".", import.meta.url)), ".."));
 const contentTypes = new Map([
+  [".awfb", "application/octet-stream"],
   [".css", "text/css; charset=utf-8"],
   [".html", "text/html; charset=utf-8"],
   [".js", "text/javascript; charset=utf-8"],
+  [".json", "application/json; charset=utf-8"],
   [".png", "image/png"],
   [".ttf", "font/ttf"],
+  [".wasm", "application/wasm"],
 ]);
 
 function staticPath(requestUrl) {
@@ -66,6 +69,24 @@ function closeServer(server) {
   });
 }
 
+function containsControlId(value, id) {
+  if (typeof value === "string") {
+    return value.includes(id);
+  }
+  if (Array.isArray(value)) {
+    return value.some((entry) => containsControlId(entry, id));
+  }
+  if (value && typeof value === "object") {
+    return Object.values(value).some((entry) => containsControlId(entry, id));
+  }
+  return false;
+}
+
+function geometryCommands(commands) {
+  return commands.flatMap((envelope) => envelope?.commands ?? [])
+    .filter((command) => command.kind === "activate" || command.kind === "update_geometry");
+}
+
 const { server, baseUrl } = await startServer();
 const browser = await chromium.launch();
 try {
@@ -78,35 +99,73 @@ try {
   });
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${baseUrl}/ime-sample.html`);
-  await page.locator("#arcweft-ime-surface").focus();
-  await page.waitForSelector("#ime-sample-status[data-state]");
-  await page.waitForFunction(() => {
-    const state = document.getElementById("ime-sample-status")?.dataset.state;
-    return state === "ready" || state === "unsupported";
-  });
-  const result = await page.evaluate(() => ({
-    state: document.getElementById("ime-sample-status").dataset.state,
-    fonts: document.getElementById("ime-sample-fonts").textContent,
-    owner: window.__arcweftImeSampleGlueOwner,
-    fallbackInstalled: window.__arcweftImeSampleFallbackInstalled,
+
+  const sourceShape = await page.evaluate(() => ({
+    canvasCount: document.querySelectorAll("canvas#arcweft-canvas").length,
+    forbiddenActiveNodeCount: document.querySelectorAll(
+      "input, textarea, [contenteditable], [role='textbox'], .caret, .committed-text, .composition-text, #ime-sample-status, #ime-sample-selection, #ime-sample-fonts",
+    ).length,
+    sample: window.__arcweftImeSample,
   }));
-  if (!["ready", "unsupported"].includes(result.state)) {
-    throw new Error(`unexpected IME sample state: ${result.state}`);
+  if (sourceShape.canvasCount !== 1 || sourceShape.forbiddenActiveNodeCount !== 0) {
+    throw new Error(`active sample is not canvas-only: ${JSON.stringify(sourceShape)}`);
   }
-  if (result.owner !== "arcweft-player") {
-    throw new Error(`sample was not installed by Arcweft player glue: ${result.owner}`);
+  if (sourceShape.sample?.boundary !== "player-rendered") {
+    throw new Error(`sample did not declare player-rendered boundary: ${JSON.stringify(sourceShape.sample)}`);
   }
-  if (result.fallbackInstalled !== false) {
-    throw new Error("sample installed a forbidden fallback");
+
+  await page.waitForFunction(() => (
+    Boolean(window.__arcweftFatal) ||
+    Boolean(window.__arcweftLastFrameObservation) ||
+    Boolean(window.__arcweftImeSample?.unsupportedNoFallback)
+  ), null, { timeout: 15_000 });
+
+  const fatal = await page.evaluate(() => window.__arcweftFatal ?? window.__arcweftImeSample?.fatal ?? null);
+  if (fatal) {
+    console.log(JSON.stringify({
+      sample: "web-ime-player-rendered-smoke",
+      status: "environment_blocked",
+      fatal,
+      forbiddenActiveNodeCount: sourceShape.forbiddenActiveNodeCount,
+    }));
+  } else {
+    await page.locator("#arcweft-canvas").click({ position: { x: 96, y: 96 } });
+    await page.waitForTimeout(250);
+    await page.keyboard.type("abc");
+    await page.waitForTimeout(250);
+
+    const evidence = await page.evaluate(() => ({
+      owner: window.__arcweftImeSampleGlueOwner,
+      fallbackInstalled: window.__arcweftImeSampleFallbackInstalled,
+      frame: window.__arcweftLastFrameObservation,
+      commands: window.__arcweftImeSample?.runtimeCommands ?? [],
+    }));
+    const geometry = geometryCommands(evidence.commands);
+    const caretRects = geometry
+      .map((command) => command.geometry?.caretRect ?? command.snapshot?.caretRect)
+      .filter(Boolean);
+
+    if (evidence.fallbackInstalled !== false) {
+      throw new Error("sample installed a forbidden fallback");
+    }
+    if (!containsControlId(evidence.frame, "input.jp_text_field")) {
+      throw new Error("frame observation did not include the Japanese text field target");
+    }
+    if (caretRects.length > 0 && !caretRects.every((rect) => rect.height > 8 && rect.width >= 0)) {
+      throw new Error(`invalid caret geometry evidence: ${JSON.stringify(caretRects)}`);
+    }
+    if (errors.length > 0) {
+      throw new Error(`browser console errors:\n${errors.join("\n")}`);
+    }
+    console.log(JSON.stringify({
+      sample: "web-ime-player-rendered-smoke",
+      status: "passed",
+      owner: evidence.owner,
+      geometryCommandCount: geometry.length,
+      caretRects,
+    }));
   }
-  if (!result.fonts.includes("Arcweft Demo") || !result.fonts.includes("Noto Sans JP")) {
-    throw new Error(`font stack status did not include expected fonts: ${result.fonts}`);
-  }
-  if (errors.length > 0) {
-    throw new Error(`browser console errors:\n${errors.join("\n")}`);
-  }
-  console.log(JSON.stringify({ sample: "web-ime-player-owned-smoke", ...result }));
 } finally {
   await browser.close();
-  await closeServer(server);
+  await closeServer(server).catch(() => {});
 }

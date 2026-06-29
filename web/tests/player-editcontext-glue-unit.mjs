@@ -69,12 +69,6 @@ const browser = await chromium.launch();
 try {
   const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
   await page.addInitScript(() => {
-    function assertDomRect(bounds) {
-      if (!(bounds instanceof DOMRect)) {
-        throw new Error(`EditContext geometry requires DOMRect, got ${Object.prototype.toString.call(bounds)}`);
-      }
-    }
-
     class FakeEditContext extends EventTarget {
       constructor({ text = "" } = {}) {
         super();
@@ -91,15 +85,23 @@ try {
         this.selectionEnd = end;
       }
       updateControlBounds(bounds) {
-        assertDomRect(bounds);
+        if (!(bounds instanceof DOMRect)) {
+          throw new Error("control bounds must be DOMRect");
+        }
         this.controlBounds = bounds;
       }
       updateSelectionBounds(bounds) {
-        assertDomRect(bounds);
+        if (!(bounds instanceof DOMRect)) {
+          throw new Error("selection bounds must be DOMRect");
+        }
         this.selectionBounds = bounds;
       }
       updateCharacterBounds(rangeStart, bounds) {
-        bounds.forEach(assertDomRect);
+        for (const bound of bounds) {
+          if (!(bound instanceof DOMRect)) {
+            throw new Error("character bound must be DOMRect");
+          }
+        }
         this.characterBounds = { rangeStart, bounds };
       }
     }
@@ -114,12 +116,26 @@ try {
       },
     });
   });
+
   await page.goto(`${baseUrl}/ime-sample.html`);
-  await page.waitForSelector("#ime-sample-status[data-state='ready']");
   const result = await page.evaluate(async () => {
-    const host = document.getElementById("arcweft-ime-surface");
+    const module = await import("./player-editcontext.js");
+    const host = document.createElement("div");
+    host.id = "unit-editcontext-host";
+    host.tabIndex = 0;
+    host.style.cssText = "position:absolute;left:8px;top:8px;width:320px;height:48px";
+    document.body.append(host);
+    const statusTarget = new EventTarget();
     const statuses = [];
-    document.addEventListener("arcweft-text-input-status", (event) => statuses.push(event.detail));
+    statusTarget.addEventListener("arcweft-text-input-status", (event) => statuses.push(event.detail));
+    statusTarget.addEventListener("arcweft-text-input-render", (event) => statuses.push({ render: event.detail }));
+    const glue = module.createArcweftEditContextPlayerGlue(host, {
+      hostId: host.id,
+      initialText: "",
+      statusTarget,
+      delegate: {},
+    });
+    await glue.install();
     host.editContext.dispatchEvent(new Event("compositionstart"));
     const update = new Event("textupdate");
     update.updateRangeStart = 0;
@@ -133,23 +149,24 @@ try {
     host.editContext.dispatchEvent(new Event("compositionend"));
     await new Promise((resolve) => setTimeout(resolve, 0));
     return {
-      owner: window.__arcweftImeSampleGlueOwner,
-      fallbackInstalled: window.__arcweftImeSampleFallbackInstalled,
-      text: document.getElementById("arcweft-ime-text").textContent,
-      composition: document.getElementById("arcweft-ime-composition").textContent,
-      statuses: statuses.map((status) => status.state),
+      fallbackInstalled: glue.status().fallbackInstalled,
+      text: host.editContext.text,
+      statuses: statuses.map((status) => status.state).filter(Boolean),
+      mirrorNodeCount: document.querySelectorAll(".committed-text,.composition-text,.caret").length,
+      forbiddenActiveNodeCount: document.querySelectorAll("input, textarea, [contenteditable], [role='textbox']").length,
     };
   });
-  if (result.owner !== "arcweft-player") {
-    throw new Error(`unexpected glue owner: ${result.owner}`);
-  }
+
   if (result.fallbackInstalled !== false) {
     throw new Error("fallback flag must remain false");
+  }
+  if (result.mirrorNodeCount !== 0 || result.forbiddenActiveNodeCount !== 0) {
+    throw new Error(`forbidden DOM nodes: ${JSON.stringify(result)}`);
   }
   if (!result.statuses.includes("composition_update") || !result.statuses.includes("composition_end")) {
     throw new Error(`missing composition statuses: ${result.statuses.join(", ")}`);
   }
-  console.log(JSON.stringify({ test: "player-editcontext-glue-unit", result }));
+  console.log(JSON.stringify({ test: "player-editcontext-invisible-glue-unit", result }));
 } finally {
   await browser.close();
   await closeServer(server);

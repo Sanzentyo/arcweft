@@ -9,22 +9,60 @@ This directory contains only:
 - diagnostic observation wiring for tests.
 
 It intentionally contains no speaker element, dialogue element, choice button,
-rich DOM renderer, Canvas 2D renderer, WebGL fallback, or normal game-layout CSS.
-Game rendering and interaction live in Rust through `arcweft-render-wgpu`,
-`arcweft-render-web`, and Arcweft presentation hit-testing.
+rich DOM renderer, Canvas 2D renderer, WebGL fallback, normal game-layout CSS, or
+visible DOM text-input sample UI. Game rendering and interaction live in Rust
+through `arcweft-render-wgpu`, `arcweft-render-web`, and Arcweft presentation
+hit-testing.
+
+## Player-rendered Web IME sample
+
+The active Web IME sample is canvas/WebGPU-rendered:
+
+```bash
+just ime-sample-web
+```
+
+Open:
+
+```text
+http://127.0.0.1:8786/ime-sample.html
+```
+
+Equivalent normal player URL:
+
+```text
+http://127.0.0.1:8786/index.html?bundle=./ime-player-rendered.awfb
+```
+
+`web/ime-sample.html` is a thin host page. It contains no visible DOM textbox,
+text mirror, CSS caret, selection/composition spans, or sample status cards. The
+visible `TextField`, `TextArea`, `SecureField`, focus ring, text, mask, caret,
+selection, and composition evidence are Arcweft-rendered in the canvas.
+
+`EditContext` remains an invisible browser adapter object owned by
+`web/player-editcontext.js` and synchronized from
+`PreparedFrame::focused_text_input_target()` through the normal Web player
+runtime bridge.
+
+Build the fixture and Wasm manually:
+
+```bash
+cargo +nightly -Zscript tools/build-web-ime-player-rendered-fixture.rs --out web/ime-player-rendered.awfb
+cargo build -p arcweft-player-web --target wasm32-unknown-unknown
+wasm-bindgen --target web --out-dir web/pkg --out-name arcweft_player_web target/wasm32-unknown-unknown/debug/arcweft_player_web.wasm
+npm --prefix web run test:ime
+```
 
 ## Audio Worklet
 
 Serve `arcweft-microphone-worklet.js` with JavaScript MIME type from the same
 trusted application origin. The browser player should pass its resolved URL to
 the Rust microphone adapter only after an explicit Arcweft microphone request.
-The baseline worklet transfers PCM blocks over `MessagePort`; output playback
-uses the Rust audio host boundary.
 
 ## Playwright WebGPU smoke
 
-Browser smoke tests run through npm and Playwright. They use the installed
-Chrome channel by default. From this directory:
+Browser smoke tests run through npm and Playwright. They use the installed Chrome
+channel by default. From this directory:
 
 ```bash
 npm.cmd install
@@ -32,8 +70,8 @@ npm.cmd test
 ```
 
 `test` starts a local static host and runs the Playwright smoke script (requires
-WebGPU). The smoke checks canvas-only rendering, semantic input, and the
-typed frame observation summary used by the native/Web parity tests. Set
+WebGPU). The smoke checks canvas-only rendering, semantic input, and the typed
+frame observation summary used by the native/Web parity tests. Set
 `ARW_PLAYWRIGHT_CHANNEL` to use another installed Playwright browser channel.
 
 ## Manual launch
@@ -54,57 +92,3 @@ deno task serve
 ```
 
 Open `http://127.0.0.1:4173/index.html` in Chrome with WebGPU enabled.
-
-To load an ignored local sample bundle without replacing `web/demo.awfb`, build
-the web-local bundle through `arcw run`:
-
-```bash
-cargo run -p arcweft-cli -- run samples/zundamon-stand-switch/main.arcw --runner web
-```
-
-Then open:
-
-```text
-http://127.0.0.1:4173/index.html?bundle=./local/zundamon-stand-switch.awfb
-```
-
-## Native/Web Pixel Parity
-
-The full local parity route rebuilds the bundle, compiles the Wasm player,
-regenerates wasm-bindgen glue, captures the shared renderer through native
-offscreen WebGPU, captures the browser canvas through Playwright, and enforces
-the approved PNG metric thresholds for focus, hover, pressed, compact viewport,
-and HiDPI scale-factor checkpoints:
-
-```bash
-just webgpu-parity
-```
-
-The parity checkpoint names are:
-
-- `focus-first-choice`
-- `hover-second-choice`
-- `press-first-choice`
-- `compact-focus-first-choice`
-- `hidpi-focus-first-choice`
-
-The equivalent manual capture command shape from the repository root is:
-
-```bash
-cargo +nightly -Zscript tools/capture-webgpu-native-frame.rs --checkpoint focus-first-choice --output target/webgpu-parity/native-focus-first-choice.png --visual-time-millis 160 --target-format rgba8unorm
-```
-
-Then from this directory:
-
-```bash
-$env:ARW_WEB_PARITY_DIR = (Resolve-Path ..\target\webgpu-parity).Path
-$env:ARW_WEB_PARITY_CHECKPOINTS = "focus-first-choice,hover-second-choice,press-first-choice,compact-focus-first-choice,hidpi-focus-first-choice"
-npm.cmd test
-```
-
-Compare the two captures:
-
-```bash
-cargo +nightly -Zscript tools/verify-webgpu-parity.rs --native target/webgpu-parity/native-focus-first-choice.png --web target/webgpu-parity/web-focus-first-choice.png --report target/webgpu-parity/parity-focus-first-choice.json
-imq compare target/webgpu-parity/native-focus-first-choice.png target/webgpu-parity/web-focus-first-choice.png --format json --output target/webgpu-parity/imq-focus-first-choice.json
-```

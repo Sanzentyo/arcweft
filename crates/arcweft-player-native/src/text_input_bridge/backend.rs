@@ -23,7 +23,7 @@ pub enum NativeTextInputBackendIdentity {
     MacosAppKit,
     WaylandTextInputV3Unavailable,
     AndroidInputConnectionUnavailable,
-    IosTextInputUnavailable,
+    IosUiTextInputUnavailable,
     Unavailable,
 }
 
@@ -94,7 +94,40 @@ impl NativeTextInputBackend {
             })
         }
 
-        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        #[cfg(target_os = "linux")]
+        {
+            let _ = window;
+            Self::Unavailable(UnavailableTextInputBackend::new(
+                NativeTextInputBackendIdentity::WaylandTextInputV3Unavailable,
+                "Wayland text-input-v3 host boundary is not connected in this build".to_owned(),
+            ))
+        }
+
+        #[cfg(target_os = "android")]
+        {
+            let _ = window;
+            Self::Unavailable(UnavailableTextInputBackend::new(
+                NativeTextInputBackendIdentity::AndroidInputConnectionUnavailable,
+                "Android InputConnection host boundary is not connected in this build".to_owned(),
+            ))
+        }
+
+        #[cfg(target_os = "ios")]
+        {
+            let _ = window;
+            Self::Unavailable(UnavailableTextInputBackend::new(
+                NativeTextInputBackendIdentity::IosUiTextInputUnavailable,
+                "iOS UITextInput host boundary is not connected in this build".to_owned(),
+            ))
+        }
+
+        #[cfg(not(any(
+            target_os = "windows",
+            target_os = "macos",
+            target_os = "linux",
+            target_os = "android",
+            target_os = "ios"
+        )))]
         {
             let _ = window;
             Self::Unavailable(UnavailableTextInputBackend::new(

@@ -246,10 +246,10 @@ const recorderInit = ({ allowText, expectedCommit, forceUnsupported }) => {
     panel.innerHTML = `
       <strong>Arcweft real IME recorder</strong>
       <ol style="padding-left:1.2em;margin:8px 0">
-        <li>Focus the Arcweft text surface.</li>
+        <li>Focus the Arcweft canvas text control.</li>
         <li>Use the OS Japanese IME: type <code>nihongo</code>, convert to <code>日本語</code>, then commit.</li>
         <li>While composition is active, move the caret/selection with ArrowLeft and Shift+ArrowLeft.</li>
-        <li>Click and drag in the text surface, then test Backspace, Delete, and Select All.</li>
+        <li>Click and drag in the rendered text control, then test Backspace, Delete, and Select All.</li>
       </ol>
       <button id="arcweft-real-ime-finish" type="button">Finish trace</button>
     `;
@@ -350,6 +350,10 @@ const recorderInit = ({ allowText, expectedCommit, forceUnsupported }) => {
   installConstructorRecorder();
   document.addEventListener("arcweft-text-input-status", (event) => record("arcweft_status", summarizeStatus(event.detail)), true);
   document.addEventListener("arcweft-text-input-render", (event) => record("arcweft_render", summarizeRender(event.detail)), true);
+  document.addEventListener("arcweft-text-input-runtime-command", (event) => record("arcweft_runtime_command", parseDetail(event.detail)), true);
+  document.addEventListener("arcweft-frame-observation", (event) => record("arcweft_frame_observation", parseDetail(event.detail)), true);
+  document.addEventListener("arcweft-player-ready", () => record("arcweft_player_ready", {}), true);
+  document.addEventListener("arcweft-player-fatal", (event) => record("arcweft_player_fatal", { message: String(event.detail ?? "") }), true);
   window.addEventListener("keydown", (event) => record("keydown", {
     key: event.key,
     code: event.code,
@@ -369,6 +373,24 @@ const recorderInit = ({ allowText, expectedCommit, forceUnsupported }) => {
   document.addEventListener("DOMContentLoaded", installFinishOverlay, { once: true });
 };
 
+function parseDetail(detail) {
+  if (typeof detail !== "string") {
+    return detail ?? null;
+  }
+  try {
+    return JSON.parse(detail);
+  } catch {
+    return detail;
+  }
+}
+
+function runtimeGeometryCommands(events) {
+  return events
+    .filter((event) => event.kind === "arcweft_runtime_command")
+    .flatMap((event) => event.detail?.commands ?? [])
+    .filter((command) => command.kind === "activate" || command.kind === "update_geometry");
+}
+
 function distanceBetweenCenters(a, b) {
   if (!a || !b) {
     return Number.POSITIVE_INFINITY;
@@ -385,6 +407,7 @@ function analyzeTrace(trace, snapshot, forceUnsupported) {
   const methodEvents = events.filter((event) => event.kind === "editcontext_method");
   const statuses = events.filter((event) => event.kind === "arcweft_status").map((event) => event.detail);
   const renders = events.filter((event) => event.kind === "arcweft_render").map((event) => event.detail);
+  const runtimeGeometry = runtimeGeometryCommands(events);
   const selectionBounds = methodEvents
     .filter((event) => event.detail.method === "updateSelectionBounds")
     .map((event) => event.detail.rect)
@@ -392,25 +415,31 @@ function analyzeTrace(trace, snapshot, forceUnsupported) {
   const characterBounds = methodEvents
     .filter((event) => event.detail.method === "updateCharacterBounds")
     .flatMap((event) => event.detail.bounds ?? []);
-  const caretRects = renders.map((event) => event.caretRect).filter(Boolean);
+  const caretRects = [
+    ...renders.map((event) => event.caretRect).filter(Boolean),
+    ...runtimeGeometry
+      .map((command) => command.geometry?.caretRect ?? command.snapshot?.caretRect)
+      .filter(Boolean),
+  ];
   const geometryTracksCaret = selectionBounds.some((selectionRect) => (
     caretRects.some((caretRect) => distanceBetweenCenters(selectionRect, caretRect) <= 96)
   ));
   const commandNames = new Set(statuses.filter((status) => status.state === "command").map((status) => status.command));
   const support = snapshot.support;
   const hiddenFallbackCount = snapshot.hiddenFallbackCount;
-  const unsupportedSuccess = forceUnsupported && snapshot.sampleState === "unsupported" && hiddenFallbackCount === 0 && snapshot.fallbackInstalled === false;
+  const unsupportedSuccess = forceUnsupported && ["fatal", "unsupported"].includes(snapshot.sampleState) && hiddenFallbackCount === 0 && snapshot.fallbackInstalled === false;
   const checks = {
     editContextSupported: support.editContextType === "function" && support.hostHasEditContext === true,
     noHiddenFallback: hiddenFallbackCount === 0 && snapshot.fallbackInstalled === false,
+    playerRenderedBoundary: snapshot.sample?.boundary === "player-rendered" && snapshot.sample?.visibleDomTextUi === false,
+    playerReady: snapshot.sampleState === "ready",
     compositionStarted: events.some((event) => event.kind === "compositionstart"),
     textUpdated: events.some((event) => event.kind === "textupdate" && event.detail.text?.utf16Length > 0),
     compositionEnded: events.some((event) => event.kind === "compositionend"),
     selectionBoundsNonOrigin: selectionBounds.some((candidate) => candidate.nonOrigin),
     characterBoundsNonOrigin: characterBounds.some((candidate) => candidate.nonOrigin),
     geometryTracksCaret,
-    oneArcweftCaret: snapshot.arcweftCaretCount === 1,
-    nativeCaretHidden: snapshot.caretColor === "rgba(0, 0, 0, 0)" || snapshot.caretColor === "transparent",
+    runtimeGeometryPumped: runtimeGeometry.length > 0,
     keyboardMovement: commandNames.has("move_left") || commandNames.has("move_right"),
     rangedSelection: [...commandNames].some((command) => command?.startsWith("move_")) && statuses.some((status) => status.selectionStart !== status.selectionEnd),
     pointerSelection: statuses.some((status) => ["pointer_down", "pointer_drag", "pointer_up"].includes(status.state)),
@@ -423,14 +452,15 @@ function analyzeTrace(trace, snapshot, forceUnsupported) {
     : [
       "editContextSupported",
       "noHiddenFallback",
+      "playerRenderedBoundary",
+      "playerReady",
       "compositionStarted",
       "textUpdated",
       "compositionEnded",
       "selectionBoundsNonOrigin",
       "characterBoundsNonOrigin",
       "geometryTracksCaret",
-      "oneArcweftCaret",
-      "nativeCaretHidden",
+      "runtimeGeometryPumped",
       "keyboardMovement",
       "rangedSelection",
       "pointerSelection",
@@ -450,7 +480,7 @@ function analyzeTrace(trace, snapshot, forceUnsupported) {
 
 async function snapshotPage(page) {
   return await page.evaluate(() => {
-    const host = document.getElementById("arcweft-ime-surface");
+    const host = document.getElementById("arcweft-canvas");
     const style = host ? getComputedStyle(host) : null;
     const hiddenFallbacks = [...document.querySelectorAll("textarea,input,[contenteditable]")]
       .map((element) => ({
@@ -459,14 +489,18 @@ async function snapshotPage(page) {
         contenteditable: element.getAttribute("contenteditable"),
         hidden: element.hidden || getComputedStyle(element).display === "none" || getComputedStyle(element).visibility === "hidden",
       }));
+    const sample = window.__arcweftImeSample ?? null;
+    const fatal = window.__arcweftFatal ?? null;
+    const ready = host?.dataset.arcweftReady === "true";
+    const sampleState = fatal ? "fatal" : ready ? "ready" : sample?.unsupportedNoFallback ? "unsupported" : "starting";
     return {
       title: document.title,
       url: location.href,
-      sampleState: document.getElementById("ime-sample-status")?.dataset.state ?? null,
-      statusText: document.getElementById("ime-sample-status")?.value ?? document.getElementById("ime-sample-status")?.textContent ?? null,
+      sample,
+      sampleState,
+      statusText: fatal?.message ?? sampleState,
       fallbackInstalled: Boolean(window.__arcweftImeSampleFallbackInstalled),
       glueOwner: window.__arcweftImeSampleGlueOwner,
-      arcweftCaretCount: host?.querySelectorAll(".caret")?.length ?? 0,
       caretColor: style?.caretColor ?? null,
       hiddenFallbackCount: hiddenFallbacks.length,
       hiddenFallbacks,
@@ -504,10 +538,12 @@ try {
   page.on("pageerror", (error) => consoleErrors.push(error.message));
   await page.addInitScript(recorderInit, { allowText, expectedCommit, forceUnsupported });
   await page.goto(`${baseUrl}/ime-sample.html`, { waitUntil: "domcontentloaded" });
-  await page.locator("#arcweft-ime-surface").focus();
+  await page.locator("#arcweft-canvas").focus();
   await page.waitForFunction(() => {
-    const state = document.getElementById("ime-sample-status")?.dataset.state;
-    return state === "ready" || state === "unsupported";
+    const canvas = document.getElementById("arcweft-canvas");
+    return Boolean(window.__arcweftFatal)
+      || canvas?.dataset.arcweftReady === "true"
+      || Boolean(window.__arcweftImeSample?.unsupportedNoFallback);
   });
   const initialSnapshot = await snapshotPage(page);
   if (!forceUnsupported && initialSnapshot.sampleState !== "ready") {

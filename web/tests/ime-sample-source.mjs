@@ -5,75 +5,91 @@ import { fileURLToPath } from "node:url";
 const root = normalize(join(fileURLToPath(new URL(".", import.meta.url)), ".."));
 const html = await readFile(join(root, "ime-sample.html"), "utf8");
 const css = await readFile(join(root, "ime-sample.css"), "utf8");
-
-const productionFiles = [
-  "player.js",
-  "player-editcontext.js",
-  "ime-sample.js",
-];
-const hiddenFallbackPatterns = [
-  "textarea",
-  "contenteditable",
-  "HtmlTextAreaElement",
-  "HtmlInputElement",
-  "installKeyboardFallback",
-  "beforeinput",
-];
-const sampleOwnershipPatterns = [
-  "new window.EditContext",
-  "new EditContext",
-  "addEventListener(\"textupdate\"",
-  "addEventListener('textupdate'",
-  "addEventListener(\"compositionend\"",
-  "addEventListener('compositionend'",
-  "let modelText",
-  "modelText =",
-  "applyUpdate(",
-];
+const sampleJs = await readFile(join(root, "ime-sample.js"), "utf8");
+const playerJs = await readFile(join(root, "player.js"), "utf8");
+const editContextJs = await readFile(join(root, "player-editcontext.js"), "utf8");
 
 const hits = [];
-for (const property of [
-  "filter:",
-  "backdrop-filter:",
-  "clip-path:",
-  "mix-blend-mode:",
-  "mask:",
-]) {
-  if (css.includes(property)) {
-    hits.push(`ime-sample.css must stay direct-wgpu-compatible; found ${property}`);
-  }
-}
-if (!html.includes("role=\"textbox\"")) {
-  hits.push("ime-sample.html must expose a textbox role");
-}
-for (const fontToken of [
-  "--font-ui",
-  "--font-editor",
-  "Arcweft Demo",
-  "Yu Gothic",
-  "Noto Sans JP",
-]) {
-  if (!css.includes(fontToken)) {
-    hits.push(`ime-sample.css must keep the multi-font stack token ${JSON.stringify(fontToken)}`);
-  }
-}
-for (const file of productionFiles) {
-  const text = await readFile(join(root, file), "utf8");
-  for (const pattern of hiddenFallbackPatterns) {
+
+function forbid(label, text, patterns) {
+  for (const pattern of patterns) {
     if (text.includes(pattern)) {
-      hits.push(`${file} contains hidden-fallback pattern ${JSON.stringify(pattern)}`);
+      hits.push(`${label} contains forbidden active-sample pattern ${JSON.stringify(pattern)}`);
     }
   }
 }
-const sample = await readFile(join(root, "ime-sample.js"), "utf8");
-for (const pattern of sampleOwnershipPatterns) {
-  if (sample.includes(pattern)) {
-    hits.push(`ime-sample.js still owns browser IME glue via ${JSON.stringify(pattern)}`);
-  }
+
+forbid("ime-sample.html", html, [
+  'role="textbox"',
+  "arcweft-ime-surface",
+  "arcweft-ime-text",
+  "arcweft-ime-composition",
+  "committed-text",
+  "composition-text",
+  'class="caret"',
+  "ime-sample-status",
+  "ime-sample-selection",
+  "ime-sample-fonts",
+  "<input",
+  "<textarea",
+  "contenteditable",
+]);
+
+forbid("ime-sample.css", css, [
+  ".ime-surface",
+  ".committed-text",
+  ".composition-text",
+  ".caret",
+  "--arcweft-caret",
+  ".sample-grid",
+  ".status-line",
+  ".metric",
+  "caret-color",
+]);
+
+forbid("ime-sample.js", sampleJs, [
+  "setupArcweftWebTextInput",
+  "new window.EditContext",
+  "new EditContext",
+  "committedTextId",
+  "compositionTextId",
+  "innerHTML",
+  "textContent =",
+  'querySelector("#ime-sample-status',
+  "querySelector('#ime-sample-status",
+]);
+
+forbid("player.js", playerJs, [
+  'document.createElement("textarea")',
+  "document.createElement('textarea')",
+  "contenteditable",
+  "installKeyboardFallback",
+]);
+
+forbid("player-editcontext.js", editContextJs, [
+  'document.createElement("textarea")',
+  "document.createElement('textarea')",
+  'document.createElement("input")',
+  "document.createElement('input')",
+  "contenteditable",
+  "installKeyboardFallback",
+]);
+
+if (!html.includes('id="arcweft-canvas"')) {
+  hits.push("ime-sample.html must host the normal Arcweft canvas");
+}
+if (!sampleJs.includes("__arcweftWebPlayerAutostartOptions")) {
+  hits.push("ime-sample.js must configure the normal player autostart options");
+}
+if (!sampleJs.includes('await import("./player.js")')) {
+  hits.push("ime-sample.js must enter through web/player.js");
+}
+if (!playerJs.includes("__arcweftWebPlayerAutostartOptions")) {
+  hits.push("player.js must consume thin-host autostart options");
 }
 
 if (hits.length > 0) {
   throw new Error(hits.join("\n"));
 }
 
-console.log(JSON.stringify({ gate: "ime-sample-source", status: "passed" }));
+console.log(JSON.stringify({ gate: "ime-sample-player-rendered-source", status: "passed" }));

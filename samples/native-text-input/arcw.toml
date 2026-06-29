@@ -1,7 +1,7 @@
 [package]
-name = "native_text_input_seq06_4j"
+name = "native-text-input"
+version = "0.1.0"
 
 [launch.main]
 kind = "game"
 source = "src/main.arcw"
-entry = "@entry.native_text_input"

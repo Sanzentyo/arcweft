@@ -1,51 +1,89 @@
 {
-  "schema": "arcweft.seq06.4j.native-text-input.scene-contract.v1",
-  "scene_id": "seq06.4j.native-text-input",
+  "schema": "arcweft.seq06.4j.1.native-ime-player-rendered.scene-contract.v1",
   "acceptance_surface": "arcw run --runner native samples/native-text-input/src/main.arcw",
+  "trace_default": "target/native-text-input-trace/native-player-ime.real.json",
   "controls": [
     {
       "id": "jp_text_field",
-      "role": "TextField",
-      "label": "Japanese text field",
-      "initial_text": "かな入力",
-      "placeholder": "日本語を入力",
-      "secure": false,
-      "multiline": false,
-      "font_style": "sans_regular_18",
-      "fixture_bounds": { "x": 96, "y": 128, "width": 720, "height": 44 }
+      "kind": "TextField",
+      "label": "Japanese TextField",
+      "initial_value": "Tokyo",
+      "placeholder": "IME text here",
+      "expected_focus": [
+        "pointer",
+        "keyboard_traversal"
+      ],
+      "write_back": [
+        "change",
+        "submit"
+      ],
+      "secure": false
     },
     {
       "id": "jp_text_area",
-      "role": "TextArea",
-      "label": "Japanese multiline text area",
-      "initial_text": "一行目\n二行目",
-      "placeholder": "複数行の日本語入力",
-      "secure": false,
-      "multiline": true,
-      "font_style": "serif_regular_18",
-      "fixture_bounds": { "x": 96, "y": 208, "width": 720, "height": 144 }
+      "kind": "TextArea",
+      "label": "Multiline TextArea",
+      "initial_value": "line one\nsecond line",
+      "placeholder": "Multiline IME text",
+      "expected_focus": [
+        "pointer",
+        "keyboard_traversal"
+      ],
+      "write_back": [
+        "change"
+      ],
+      "secure": false
     },
     {
       "id": "secret_secure_field",
-      "role": "SecureField",
-      "label": "Secure field",
-      "initial_text": "",
-      "placeholder": "秘密の入力",
+      "kind": "SecureField",
+      "label": "SecureField",
+      "initial_value": "sekret-1234",
+      "placeholder": "secret",
+      "expected_focus": [
+        "pointer",
+        "keyboard_traversal"
+      ],
+      "write_back": [
+        "change",
+        "submit"
+      ],
       "secure": true,
-      "multiline": false,
-      "font_style": "monospace_regular_18",
-      "fixture_bounds": { "x": 96, "y": 392, "width": 720, "height": 44 }
+      "trace_expectation": "value and character geometry redacted"
     }
   ],
-  "required_trace_evidence": [
-    "backend capability record",
-    "focus generation for each control",
-    "renderer geometry with screen caret/candidate anchor for plain controls",
-    "secure_redacted=true for SecureField snapshot and geometry",
-    "composition update",
-    "commit",
-    "delete_surrounding or command deletion",
-    "selection movement",
-    "blur/deactivate"
+  "required_trace_records": [
+    "capabilities",
+    "backend_selected",
+    "focus",
+    "snapshot",
+    "geometry",
+    "platform_event",
+    "routed_text_input",
+    "runtime_write_back",
+    "blur"
+  ],
+  "diagnostic_only": [
+    "windows-tsf-ime-sample",
+    "macOS AppKit helper samples",
+    "blank native harness windows",
+    "synthetic adapter contract batches"
+  ],
+  "font_style_cases": [
+    {
+      "control": "jp_text_field",
+      "font_stack": "Yu Gothic / Hiragino Sans / Noto Sans JP / system-ui",
+      "style": "single-line focus ring and border"
+    },
+    {
+      "control": "jp_text_area",
+      "font_stack": "Yu Mincho / Hiragino Mincho ProN / Noto Serif JP / serif",
+      "style": "multiline line-height and selection/composition geometry"
+    },
+    {
+      "control": "secret_secure_field",
+      "font_stack": "system-ui secure mask",
+      "style": "secure masking and redacted geometry"
+    }
   ]
 }

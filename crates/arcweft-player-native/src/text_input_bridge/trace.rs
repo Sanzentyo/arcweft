@@ -4,10 +4,11 @@ use super::NativeTextInputFocusReason;
 use super::backend::NativeTextInputBackendIdentity;
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::text_input::{
-    PlatformTextInputEvent, TextByteOffset, TextCompositionUpdate, TextInput,
-    TextInputCapabilities, TextInputCapabilitySupport, TextInputClientSnapshot,
-    TextInputFocusGeneration, TextInputGeometrySnapshot, TextInputKeyDisposition,
-    TextInputOperation, TextInputSecurityPolicy, TextInputSessionId, TextRange,
+    PlatformTextInputEvent, TextByteOffset, TextCompositionUpdate, TextControlWriteBack,
+    TextControlWriteBackKind, TextInput, TextInputCapabilities, TextInputCapabilitySupport,
+    TextInputClientSnapshot, TextInputFocusGeneration, TextInputGeometrySnapshot,
+    TextInputKeyDisposition, TextInputOperation, TextInputSecurityPolicy, TextInputSessionId,
+    TextRange,
 };
 use arcweft_runtime_host::TextInputDispatchError;
 use serde::Serialize;
@@ -28,6 +29,9 @@ pub(crate) struct NativeTextInputTraceWriter {
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(tag = "record", rename_all = "snake_case")]
 pub enum NativeTextInputTraceRecord {
+    BackendSelected {
+        backend: NativeTextInputBackendIdentity,
+    },
     Capabilities {
         backend: NativeTextInputBackendIdentity,
         capabilities: TraceCapabilities,
@@ -82,6 +86,16 @@ pub enum NativeTextInputTraceRecord {
         privacy: &'static str,
         key_disposition: &'static str,
         secure_redacted: bool,
+    },
+    RuntimeWriteBack {
+        backend: NativeTextInputBackendIdentity,
+        target: String,
+        session: u64,
+        kind: &'static str,
+        revision: u64,
+        selection: TraceTextRange,
+        secure_redacted: bool,
+        value_len: usize,
     },
     DispatchRejected {
         backend: NativeTextInputBackendIdentity,
@@ -177,6 +191,11 @@ impl NativeTextInputTraceWriter {
             backend,
             capabilities: TraceCapabilities::from(capabilities),
         });
+    }
+
+    pub(crate) fn record_backend_selected(&mut self, backend: NativeTextInputBackendIdentity) {
+        self.records
+            .push(NativeTextInputTraceRecord::BackendSelected { backend });
     }
 
     pub(crate) fn record_backend_unavailable(
@@ -303,6 +322,29 @@ impl NativeTextInputTraceWriter {
                 },
                 key_disposition: key_disposition_label(key_disposition),
                 secure_redacted: security == TextInputSecurityPolicy::SecureRedacted,
+            });
+    }
+
+    pub(crate) fn record_runtime_write_back(
+        &mut self,
+        backend: NativeTextInputBackendIdentity,
+        write_back: &TextControlWriteBack,
+    ) {
+        let secure_redacted = write_back.value().is_sensitive();
+        self.records
+            .push(NativeTextInputTraceRecord::RuntimeWriteBack {
+                backend,
+                target: write_back.target().id().as_str().to_owned(),
+                session: write_back.session().0,
+                kind: write_back_kind_label(write_back.kind()),
+                revision: write_back.revision().0,
+                selection: TraceTextRange::from(write_back.selection()),
+                secure_redacted,
+                value_len: if secure_redacted {
+                    0
+                } else {
+                    write_back.value().as_str().len()
+                },
             });
     }
 
@@ -501,5 +543,12 @@ const fn operation_kind(value: &TextInputOperation) -> &'static str {
         TextInputOperation::DeleteSurrounding { .. } => "delete_surrounding",
         TextInputOperation::SetSelection(_) => "set_selection",
         TextInputOperation::Command(_) => "command",
+    }
+}
+
+const fn write_back_kind_label(value: TextControlWriteBackKind) -> &'static str {
+    match value {
+        TextControlWriteBackKind::Change => "change",
+        TextControlWriteBackKind::Submit => "submit",
     }
 }

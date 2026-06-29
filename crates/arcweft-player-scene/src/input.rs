@@ -157,7 +157,7 @@ impl InputController {
 
     pub fn ensure_choice_focus(&mut self, frame: &PreparedFrame) {
         if self.interaction.focus().target().is_none()
-            && let Some(target) = frame.first_choice_target()
+            && let Some(target) = frame.first_keyboard_focus_target()
         {
             self.set_focus(frame, target);
         }
@@ -276,27 +276,29 @@ impl InputController {
         }
         match key {
             "ArrowUp" | "ArrowLeft" => {
-                let next = frame.adjacent_choice_target(self.interaction.focus().target(), -1);
+                let next =
+                    frame.adjacent_keyboard_focus_target(self.interaction.focus().target(), -1);
                 if let Some(next) = next {
                     self.set_focus(frame, next);
                 }
                 InputOutcome::redraw(true)
             }
-            "ArrowDown" | "ArrowRight" => {
-                let next = frame.adjacent_choice_target(self.interaction.focus().target(), 1);
+            "ArrowDown" | "ArrowRight" | "Tab" => {
+                let next =
+                    frame.adjacent_keyboard_focus_target(self.interaction.focus().target(), 1);
                 if let Some(next) = next {
                     self.set_focus(frame, next);
                 }
                 InputOutcome::redraw(true)
             }
             "Home" => {
-                if let Some(target) = frame.first_choice_target() {
+                if let Some(target) = frame.first_keyboard_focus_target() {
                     self.set_focus(frame, target);
                 }
                 InputOutcome::redraw(true)
             }
             "End" => {
-                if let Some(target) = frame.last_choice_target() {
+                if let Some(target) = frame.last_keyboard_focus_target() {
                     self.set_focus(frame, target);
                 }
                 InputOutcome::redraw(true)

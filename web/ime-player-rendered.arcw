@@ -1,0 +1,17 @@
+// Web IME Player-Rendered Sample
+//
+// This source is the authored marker for the generated product fixture
+// `web/ime-player-rendered.awfb`. The active sample is generated from typed
+// product UI resources by `tools/build-web-ime-player-rendered-fixture.rs` until
+// the `.arcw` grammar grows first-class TextField/TextArea/SecureField syntax.
+//
+// Runtime controls in the generated bundle:
+// - input.jp_text_field: TextField, Japanese IME target
+// - input.long_latin_area: TextArea, long Latin/Japanese text
+// - input.secret_secure_field: SecureField, redacted diagnostics
+
+entry game @entry.main { start(@flow.web_ime_player_rendered) }
+
+flow web_ime_player_rendered {
+    return "web_ime_player_rendered_fixture"
+}

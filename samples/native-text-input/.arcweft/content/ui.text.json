@@ -1,0 +1,96 @@
+{
+  "sources": [
+    {
+      "public_id": "text.label.jp_text_field",
+      "kind": {
+        "literal": {
+          "value": "Japanese TextField / 日本語入力"
+        }
+      },
+      "source": null
+    },
+    {
+      "public_id": "text.value.jp_text_field",
+      "kind": {
+        "literal": {
+          "value": "Tokyo"
+        }
+      },
+      "source": null
+    },
+    {
+      "public_id": "text.placeholder.jp_text_field",
+      "kind": {
+        "literal": {
+          "value": "日本語 IME text"
+        }
+      },
+      "source": null
+    },
+    {
+      "public_id": "text.label.jp_text_area",
+      "kind": {
+        "literal": {
+          "value": "Multiline TextArea / 複数行"
+        }
+      },
+      "source": null
+    },
+    {
+      "public_id": "text.value.jp_text_area",
+      "kind": {
+        "literal": {
+          "value": "line one\nsecond line"
+        }
+      },
+      "source": null
+    },
+    {
+      "public_id": "text.placeholder.jp_text_area",
+      "kind": {
+        "literal": {
+          "value": "複数行の IME text"
+        }
+      },
+      "source": null
+    },
+    {
+      "public_id": "text.label.secret_secure_field",
+      "kind": {
+        "literal": {
+          "value": "SecureField / redacted"
+        }
+      },
+      "source": null
+    },
+    {
+      "public_id": "text.value.secret_secure_field",
+      "kind": {
+        "literal": {
+          "value": "sekret-1234"
+        }
+      },
+      "source": null
+    },
+    {
+      "public_id": "text.placeholder.secret_secure_field",
+      "kind": {
+        "literal": {
+          "value": "secret"
+        }
+      },
+      "source": null
+    }
+  ],
+  "display_frame_refs": [],
+  "source_ranges": [],
+  "reveal_policies": [],
+  "cursor_policies": [],
+  "redactions": [
+    {
+      "text_source": "text.value.secret_secure_field",
+      "classification": "secret",
+      "replacement": "<redacted>"
+    }
+  ]
+}

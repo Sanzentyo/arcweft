@@ -1,0 +1,262 @@
+#!/usr/bin/env cargo +nightly -Zscript
+---cargo
+[dependencies]
+arcweft-bundle = { path = "../crates/arcweft-bundle" }
+arcweft-core = { path = "../crates/arcweft-core" }
+arcweft-render-text = { path = "../crates/arcweft-render-text" }
+---
+
+use arcweft_bundle::resource_codec::ui::{
+    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
+    UiInputOptions, UiInputPurpose, UiInputResource, UiProgramResource, UiSecureInputPolicy,
+    UiSemanticTarget, UiTextResource, UiTextSourceKind, UiTextSourceRecord,
+};
+use arcweft_bundle::{
+    ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
+};
+use arcweft_core::awbc::schema::{
+    AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
+    AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
+    AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
+    AwbcStringId, AwbcTableRange, AwbcTerminator,
+};
+use arcweft_core::bytecode::BytecodeProgram;
+use arcweft_render_text::LineDisplayCatalog;
+use std::env;
+use std::fs;
+use std::path::PathBuf;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let out = output_path()?;
+    let bundle = web_ime_player_rendered_bundle();
+    let bytes = bundle.to_format_bytes(BundleFormat::Awfb)?;
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&out, bytes)?;
+    println!("wrote {}", out.display());
+    Ok(())
+}
+
+fn output_path() -> Result<PathBuf, String> {
+    let mut args = env::args().skip(1);
+    let mut out = PathBuf::from("web/ime-player-rendered.awfb");
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--out" | "-o" => {
+                let Some(value) = args.next() else {
+                    return Err("--out requires a path".to_owned());
+                };
+                out = PathBuf::from(value);
+            }
+            "--help" | "-h" => {
+                println!("usage: cargo +nightly -Zscript tools/build-web-ime-player-rendered-fixture.rs --out web/ime-player-rendered.awfb");
+                std::process::exit(0);
+            }
+            other => return Err(format!("unknown argument `{other}`")),
+        }
+    }
+    Ok(out)
+}
+
+fn web_ime_player_rendered_bundle() -> ArcweftBundle {
+    minimal_bundle()
+        .with_product_awbc(minimal_awbc_program())
+        .with_ui_text(ui_text())
+        .with_ui_input(ui_input())
+        .with_ui_program(ui_program())
+}
+
+fn minimal_bundle() -> ArcweftBundle {
+    ArcweftBundle::new(
+        BundleManifest {
+            source_label: "web/ime-player-rendered.arcw".to_owned(),
+            profile_id: Some("sample.web_ime_player_rendered".to_owned()),
+            profile_kind: None,
+            entry: Some("entry.main".to_owned()),
+            adapter: None,
+            adapter_manifest_ids: Vec::new(),
+            required_host_calls: Vec::new(),
+            runtime: BundleRuntimeSummary {
+                entry_flow: Some("entry.main".to_owned()),
+                flows: 1,
+                bytecode_instructions: 0,
+                line_task_groups: 0,
+                stream_plans: 0,
+                source_plans: 0,
+            },
+        },
+        BundleSource {
+            label: "web/ime-player-rendered.arcw".to_owned(),
+            text: include_str!("../web/ime-player-rendered.arcw").to_owned(),
+        },
+        BytecodeProgram::default(),
+        LineDisplayCatalog::default(),
+    )
+}
+
+fn ui_program() -> UiProgramResource {
+    UiProgramResource {
+        program_id: "ui.program.web_ime_player_rendered".to_owned(),
+        root_component: "ui.root.web_ime_player_rendered".to_owned(),
+        instructions: Vec::new(),
+        child_spans: Vec::new(),
+        handlers: Vec::new(),
+        state_schema_hashes: Vec::new(),
+        exported_parts: Vec::new(),
+        semantic_targets: vec![
+            semantic("target.jp_text_field", "input.jp_text_field", "text.label.jp_text_field"),
+            semantic("target.long_latin_area", "input.long_latin_area", "text.label.long_latin_area"),
+            semantic("target.secret_secure_field", "input.secret_secure_field", "text.label.secret_secure_field"),
+        ],
+        adapter_requirements: Vec::new(),
+    }
+}
+
+fn semantic(public_id: &str, target: &str, label_text_source: &str) -> UiSemanticTarget {
+    UiSemanticTarget {
+        public_id: public_id.to_owned(),
+        target: target.to_owned(),
+        label_text_source: Some(label_text_source.to_owned()),
+        source: None,
+    }
+}
+
+fn ui_text() -> UiTextResource {
+    UiTextResource {
+        sources: vec![
+            literal("text.value.jp_text_field", "かな入力 sample"),
+            literal("text.placeholder.jp_text_field", "ここに日本語 IME で入力"),
+            literal("text.label.jp_text_field", "Japanese TextField"),
+            literal(
+                "text.value.long_latin_area",
+                "Long Latin text wraps through the renderer; 日本語の語句も同じ Arcweft frameで表示する。",
+            ),
+            literal("text.placeholder.long_latin_area", "Long text and Japanese text"),
+            literal("text.label.long_latin_area", "Long TextArea"),
+            literal("text.value.secret_secure_field", "arcweft-secret-1234"),
+            literal("text.placeholder.secret_secure_field", "secret"),
+            literal("text.label.secret_secure_field", "SecureField"),
+        ],
+        display_frame_refs: Vec::new(),
+        source_ranges: Vec::new(),
+        reveal_policies: Vec::new(),
+        cursor_policies: Vec::new(),
+        redactions: Vec::new(),
+    }
+}
+
+fn literal(public_id: &str, value: &str) -> UiTextSourceRecord {
+    UiTextSourceRecord {
+        public_id: public_id.to_owned(),
+        kind: UiTextSourceKind::Literal {
+            value: value.to_owned(),
+        },
+        source: None,
+    }
+}
+
+fn ui_input() -> UiInputResource {
+    UiInputResource {
+        options: vec![
+            input_option(
+                "input.jp_text_field",
+                UiInputKind::TextField,
+                "text.value.jp_text_field",
+                Some("text.placeholder.jp_text_field"),
+                UiInputPurpose::Text,
+                UiSecureInputPolicy::Plain,
+                Some("handler.jp_text_field.change"),
+                Some("handler.jp_text_field.submit"),
+            ),
+            input_option(
+                "input.long_latin_area",
+                UiInputKind::TextArea,
+                "text.value.long_latin_area",
+                Some("text.placeholder.long_latin_area"),
+                UiInputPurpose::Text,
+                UiSecureInputPolicy::Plain,
+                Some("handler.long_latin_area.change"),
+                None,
+            ),
+            input_option(
+                "input.secret_secure_field",
+                UiInputKind::SecureField,
+                "text.value.secret_secure_field",
+                Some("text.placeholder.secret_secure_field"),
+                UiInputPurpose::Password,
+                UiSecureInputPolicy::Password,
+                Some("handler.secret_secure_field.change"),
+                Some("handler.secret_secure_field.submit"),
+            ),
+        ],
+        adapter_requirements: Vec::new(),
+    }
+}
+
+fn input_option(
+    public_id: &str,
+    kind: UiInputKind,
+    value_text_source: &str,
+    placeholder_text_source: Option<&str>,
+    purpose: UiInputPurpose,
+    secure_policy: UiSecureInputPolicy,
+    change_handler: Option<&str>,
+    submit_handler: Option<&str>,
+) -> UiInputOptions {
+    UiInputOptions {
+        public_id: public_id.to_owned(),
+        kind,
+        value_text_source: value_text_source.to_owned(),
+        placeholder_text_source: placeholder_text_source.map(ToOwned::to_owned),
+        purpose,
+        autocorrect: TextAssistPolicy::PlatformDefault,
+        spellcheck: TextAssistPolicy::PlatformDefault,
+        capitalization: TextCapitalization::None,
+        enter_key: if kind.is_multiline() { EnterKeyHint::Enter } else { EnterKeyHint::Done },
+        multiline: kind.is_multiline(),
+        secure_policy,
+        composition_on_blur: CompositionOnBlurPolicy::Commit,
+        submit_handler: submit_handler.map(ToOwned::to_owned),
+        change_handler: change_handler.map(ToOwned::to_owned),
+        adapter_requirements: Vec::new(),
+    }
+}
+
+fn minimal_awbc_program() -> AwbcProgram {
+    AwbcProgram {
+        strings: vec!["entry.main".to_owned()],
+        signatures: vec![AwbcSignature {
+            params: Vec::new(),
+            result: None,
+            effects: AwbcEffectSetId(0),
+        }],
+        frame_layouts: vec![AwbcFrameLayout {
+            slots: Vec::new(),
+            max_scope_depth: 0,
+        }],
+        functions: vec![AwbcFunction {
+            public_id: Some(AwbcStringId(0)),
+            kind: AwbcFunctionKind::Flow,
+            signature: AwbcSignatureId(0),
+            frame_layout: AwbcFrameLayoutId(0),
+            blocks: AwbcTableRange::new(0, 1),
+            entry_block: AwbcBlockId(0),
+            flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+        }],
+        blocks: vec![AwbcBlock {
+            owner: AwbcFunctionId(0),
+            instructions: AwbcTableRange::new(0, 0),
+            terminator: AwbcTerminator::Return { value: None },
+            safe_point: AwbcSafePointKind::FlowEntry,
+            source_map: None,
+        }],
+        entries: vec![AwbcEntry {
+            public_id: AwbcStringId(0),
+            kind: AwbcEntryKind::Game,
+            signature: AwbcSignatureId(0),
+            target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+        }],
+        ..AwbcProgram::default()
+    }
+}

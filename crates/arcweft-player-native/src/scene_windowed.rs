@@ -745,6 +745,8 @@ impl NativeSceneState {
         for action in actions {
             self.runtime.session_mut().queue_semantic_action(&action)?;
         }
+        self.text_input
+            .record_runtime_write_backs(&text_control_write_backs);
         self.runtime
             .session_mut()
             .queue_text_control_write_backs(text_control_write_backs)?;
@@ -839,6 +841,7 @@ fn key_label(key: &Key) -> String {
         Key::Named(NamedKey::Enter) => "Enter".to_owned(),
         Key::Named(NamedKey::Home) => "Home".to_owned(),
         Key::Named(NamedKey::End) => "End".to_owned(),
+        Key::Named(NamedKey::Tab) => "Tab".to_owned(),
         Key::Character(value) if value == " " => "Space".to_owned(),
         Key::Character(value) => value.to_string(),
         _ => format!("{key:?}"),

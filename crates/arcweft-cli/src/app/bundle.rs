@@ -42,6 +42,9 @@ use arcweft_bundle::{
     patch::{
         BundlePatchArtifact, PatchCompatibility, apply_patch_bundle_bytes, encode_patch_bundle,
     },
+    resource_codec::{
+        UiInputResource, UiProgramResource, UiStyleResource, UiTextResource, UiThemeResource,
+    },
 };
 use arcweft_core::{
     effect::{LineEffectRequest, RuntimeCall},
@@ -57,6 +60,7 @@ use arcweft_runtime_host::{
     run_bundle_with_native_adapters,
 };
 use clap::Args;
+use serde::de::DeserializeOwned;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -263,31 +267,114 @@ pub(in crate::app) fn compile_bundle_for_selection(
     let image_assets = collect_bundle_image_assets(&virtual_files)?;
     let image_declarations = parse_declared_image_objects(&source);
     let image_objects = bundle_image_objects(&image_declarations)?;
+    let ui_sidecars = collect_bundle_ui_sidecars(selection.path())?;
     validate_referenced_bundle_image_assets(&compiled.plan, &image_declarations, &image_assets)?;
-    let bundle = ArcweftBundle::new(
-        bundle_manifest(
-            selection,
-            source_label.clone(),
-            &compiled,
-            adapter_manifest_ids,
-            required_host_calls,
-        ),
-        BundleSource {
-            label: source_label,
-            text: source,
-        },
-        compiled.bytecode,
-        compiled.line_display_catalog,
-    )
-    .with_product_awbc(compiled.product_awbc)
-    .with_adapter_manifests(adapter_manifests)
-    .with_virtual_files(virtual_files)
-    .with_image_assets(image_assets)
-    .with_image_objects(image_objects);
+    let bundle = attach_bundle_ui_sidecars(
+        ArcweftBundle::new(
+            bundle_manifest(
+                selection,
+                source_label.clone(),
+                &compiled,
+                adapter_manifest_ids,
+                required_host_calls,
+            ),
+            BundleSource {
+                label: source_label,
+                text: source,
+            },
+            compiled.bytecode,
+            compiled.line_display_catalog,
+        )
+        .with_product_awbc(compiled.product_awbc)
+        .with_adapter_manifests(adapter_manifests)
+        .with_virtual_files(virtual_files)
+        .with_image_assets(image_assets)
+        .with_image_objects(image_objects),
+        ui_sidecars,
+    );
     Ok(CompiledBundleArtifact {
         bundle,
         entry_kinds,
     })
+}
+
+#[derive(Clone, Debug, Default)]
+struct BundleUiSidecars {
+    program: Option<UiProgramResource>,
+    style: Option<UiStyleResource>,
+    text: Option<UiTextResource>,
+    input: Option<UiInputResource>,
+    theme: Option<UiThemeResource>,
+}
+
+fn collect_bundle_ui_sidecars(source_path: &Path) -> Result<BundleUiSidecars, ExitCode> {
+    let Some(source_dir) = source_path.parent() else {
+        return Ok(BundleUiSidecars::default());
+    };
+    let roots = [
+        source_dir.join(".arcweft").join("content"),
+        source_dir.parent().map_or_else(
+            || source_dir.join(".arcweft").join("content"),
+            |project_dir| project_dir.join(".arcweft").join("content"),
+        ),
+    ];
+    let Some(root) = roots.iter().find(|candidate| candidate.exists()) else {
+        return Ok(BundleUiSidecars::default());
+    };
+
+    Ok(BundleUiSidecars {
+        program: read_optional_json_sidecar(&root.join("ui.program.json"))?,
+        style: read_optional_json_sidecar(&root.join("ui.style.json"))?,
+        text: read_optional_json_sidecar(&root.join("ui.text.json"))?,
+        input: read_optional_json_sidecar(&root.join("ui.input.json"))?,
+        theme: read_optional_json_sidecar(&root.join("ui.theme.json"))?,
+    })
+}
+
+fn read_optional_json_sidecar<T>(path: &Path) -> Result<Option<T>, ExitCode>
+where
+    T: DeserializeOwned,
+{
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let bytes = fs::read(path).map_err(|error| {
+        eprintln!(
+            "error: failed to read UI resource sidecar {}: {error}",
+            path.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    serde_json::from_slice(&bytes).map(Some).map_err(|error| {
+        eprintln!(
+            "error: failed to decode UI resource sidecar {}: {error}",
+            path.display()
+        );
+        ExitCode::FAILURE
+    })
+}
+
+fn attach_bundle_ui_sidecars(
+    mut bundle: ArcweftBundle,
+    sidecars: BundleUiSidecars,
+) -> ArcweftBundle {
+    if let Some(resource) = sidecars.program {
+        bundle = bundle.with_ui_program(resource);
+    }
+    if let Some(resource) = sidecars.style {
+        bundle = bundle.with_ui_style(resource);
+    }
+    if let Some(resource) = sidecars.text {
+        bundle = bundle.with_ui_text(resource);
+    }
+    if let Some(resource) = sidecars.input {
+        bundle = bundle.with_ui_input(resource);
+    }
+    if let Some(resource) = sidecars.theme {
+        bundle = bundle.with_ui_theme(resource);
+    }
+    bundle
 }
 
 fn bundle_required_host_calls(plan: &RuntimePlan) -> Vec<String> {

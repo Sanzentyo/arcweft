@@ -213,16 +213,33 @@ css-style-parity:
     @cargo +nightly -Zscript tools\verify-webgpu-parity.rs --native target\css-style-parity\native-compact.png --web target\css-style-parity\web-compact.png --report target\css-style-parity\parity-compact.json --min-psnr 25.0 --min-ssim 0.50 --max-mse 0.0031 --max-mae 0.0050 --max-changed-pixel-ratio 0.012
 
 ime-sample-web port="8786":
-    @Write-Host "Serving Arcweft IME sample at http://127.0.0.1:{{port}}/ime-sample.html"
+    @cargo +nightly -Zscript tools\build-web-ime-player-rendered-fixture.rs --out web\ime-player-rendered.awfb
+    @cargo build -p arcweft-player-web --target wasm32-unknown-unknown
+    @wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\debug\arcweft_player_web.wasm
+    @Write-Host "Serving Arcweft player-rendered IME sample at http://127.0.0.1:{{port}}/ime-sample.html"
+    @Write-Host "Equivalent player URL: http://127.0.0.1:{{port}}/index.html?bundle=./ime-player-rendered.awfb"
     @python -m http.server {{port}} --bind 127.0.0.1 --directory web
 
 ime-sample-native:
+    @cargo run -p arcweft-cli --features native-player -- run --runner native samples/native-text-input/src/main.arcw --text-input-trace-out target\native-text-input-trace\native-player-ime.real.json
+
+ime-sample-native-real: ime-sample-native
+
+ime-sample-native-contract:
     @cargo run -p arcweft-desktop-native --example ime_text_input_contract
 
 ime-sample-check:
-    @node web\tests\ime-sample-source.mjs
-    @node web\tests\ime-sample-smoke.mjs
-    @cargo run -p arcweft-desktop-native --example ime_text_input_contract
+    @cargo +nightly -Zscript tools\build-web-ime-player-rendered-fixture.rs --out web\ime-player-rendered.awfb
+    @cargo build -p arcweft-player-web --target wasm32-unknown-unknown
+    @wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\debug\arcweft_player_web.wasm
+    @npm.cmd --prefix web run test:ime
+    @cargo test -p arcweft-cli --features native-player native_text_input_sample --quiet
+    @cargo test -p arcweft-render-wgpu focused_text_input_target --all-features --quiet
+    @cargo test -p arcweft-player-scene --test runtime_text_controls --quiet
+    @cargo test -p arcweft-player-web runtime_text_input --all-features --quiet
+    @cargo test -p arcweft-player-native native_text_input_bridge --quiet
+    @cargo test -p arcweft-player-native --test native_text_input_seq06_4j1_source_gate --quiet
+    @cargo +nightly -Zscript tools\source-gates\seq06_4j1_native_ime_player_rendered_gates.rs --root .
 
 check-vendor-glyphon:
     @cargo check --manifest-path vendor\glyphon\Cargo.toml
