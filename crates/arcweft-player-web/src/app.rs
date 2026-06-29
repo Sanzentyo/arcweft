@@ -9,6 +9,9 @@ use crate::runtime_text_input::{
 use arcweft_bundle::ArcweftBundle;
 use arcweft_player_scene::images::{BundleImageCatalog, BundleImageCatalogError};
 use arcweft_player_scene::input::{InputController, InputOutcome};
+use arcweft_player_scene::text_controls::{
+    RuntimeTextControlLowerer, RuntimeTextControlLoweringError,
+};
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
 use arcweft_presentation::text_input::TextInputKeyDisposition;
 use arcweft_render_web::web::{WebGpuCanvasHost, WebGpuCanvasHostError};
@@ -66,6 +69,8 @@ enum WebPlayerError {
     TextInput(String),
     #[error("player text editor failed: {0}")]
     TextEditor(String),
+    #[error("runtime text-control lowering failed: {0}")]
+    TextControlLowering(#[from] RuntimeTextControlLoweringError),
 }
 
 struct ReadyGpu {
@@ -403,6 +408,8 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
         .images
         .render_images(&presentation.images, host_millis.max(0.0) as u64)
         .map_err(WebPlayerError::from)?;
+    let text_inputs =
+        RuntimeTextControlLowerer::lower_for_frame(&mut state.input, &presentation.text_inputs)?;
     let scene = RenderScene {
         dialogue: presentation
             .dialogue
@@ -416,7 +423,7 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
                 label: choice.label.clone(),
             })
             .collect(),
-        text_inputs: Vec::new(),
+        text_inputs,
         images,
         viewport,
         visual_time_millis,

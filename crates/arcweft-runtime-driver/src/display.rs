@@ -1,3 +1,4 @@
+use arcweft_bundle::resource_codec::UiRuntimeTextControl;
 use arcweft_bundle::{
     BundleImageObject, BundleImageObjectAlignment, BundleImageObjectBounds, BundleImageObjectFit,
     BundleImageObjectPlayback, BundleImageObjectTransform,
@@ -31,6 +32,8 @@ pub struct BundlePresentationSnapshot {
     pub dialogue: Option<LineDisplayFrame>,
     pub choices: Vec<BundleChoice>,
     pub images: Vec<BundleImageObject>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub text_inputs: Vec<UiRuntimeTextControl>,
 }
 
 /// Resolves dialogue flow events into host-renderable, Sans I/O display frames.
@@ -60,6 +63,7 @@ impl BundlePresentationSnapshot {
         status: &FlowFiberStatus,
         effects: &[LineEffectRequest],
         image_objects: &[BundleImageObject],
+        text_inputs: &[UiRuntimeTextControl],
     ) {
         let next_dialogue = resolution
             .frames
@@ -68,14 +72,17 @@ impl BundlePresentationSnapshot {
             .or_else(|| self.dialogue.clone());
         let next_choices = choices_from_status(status);
         let next_images = images_from_effects(&self.images, effects, image_objects);
+        let next_text_inputs = text_inputs.to_vec();
         if self.dialogue != next_dialogue
             || self.choices != next_choices
             || self.images != next_images
+            || self.text_inputs != next_text_inputs
         {
             self.revision = self.revision.saturating_add(1);
             self.dialogue = next_dialogue;
             self.choices = next_choices;
             self.images = next_images;
+            self.text_inputs = next_text_inputs;
         }
     }
 }

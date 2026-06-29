@@ -16,6 +16,9 @@ use arcweft_bundle::ArcweftBundle;
 use arcweft_interaction_model::audio::AudioEvent;
 use arcweft_player_scene::images::BundleImageCatalogError;
 use arcweft_player_scene::input::{InputController, InputOutcome};
+use arcweft_player_scene::text_controls::{
+    RuntimeTextControlLowerer, RuntimeTextControlLoweringError,
+};
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
 use arcweft_render_text::LineDisplayFrame;
 use arcweft_render_wgpu::geometry::{
@@ -103,6 +106,8 @@ enum NativeSceneWindowError {
     Audio(#[from] NativePlayerAudioError),
     #[error("player text editor failed: {0}")]
     TextEditor(#[from] arcweft_presentation::text_editor::TextEditorError),
+    #[error("runtime text-control lowering failed: {0}")]
+    TextControlLowering(#[from] RuntimeTextControlLoweringError),
     #[error("WebGPU surface creation failed: {0}")]
     SurfaceCreation(String),
     #[error("no WebGPU adapter is available for the native surface")]
@@ -549,6 +554,8 @@ impl NativeSceneState {
             presentation.dialogue.as_ref(),
             elapsed,
         );
+        let text_inputs =
+            RuntimeTextControlLowerer::lower_for_frame(&mut self.input, &presentation.text_inputs)?;
         Ok(RenderScene {
             dialogue: presentation
                 .dialogue
@@ -562,7 +569,7 @@ impl NativeSceneState {
                     label: choice.label.clone(),
                 })
                 .collect(),
-            text_inputs: Vec::new(),
+            text_inputs,
             images: self
                 .runtime
                 .images()

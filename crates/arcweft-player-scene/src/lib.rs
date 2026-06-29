@@ -2,3 +2,4 @@
 
 pub mod images;
 pub mod input;
+pub mod text_controls;

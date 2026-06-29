@@ -16,6 +16,7 @@ use arcweft_bundle::patch::{
     BundlePatchArtifact, PatchBundleError, PatchCompatibility, PatchValidationError,
     apply_patch_bundle, decode_patch_bundle,
 };
+use arcweft_bundle::resource_codec::UiRuntimeTextControl;
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleImageObject, BundleKind};
 use arcweft_core::awbc::{
     product_step::AwbcProductStepBuildError,
@@ -144,6 +145,7 @@ pub struct BundleSession {
     runtime_images: GenerationRuntimeTable<SessionRuntime>,
     display: LineDisplayCatalog,
     image_objects: Vec<BundleImageObject>,
+    text_inputs: Vec<UiRuntimeTextControl>,
     options: BundleSessionOptions,
     pending_input_events: Vec<RoutedInputEvent>,
     presentation: BundlePresentationSnapshot,
@@ -376,6 +378,7 @@ impl BundleSession {
         let executor = runtime.executor.clone();
         let display = runtime.display.clone();
         let image_objects = runtime.image_objects.clone();
+        let text_inputs = runtime.text_inputs.clone();
         let source_label = runtime.source_label.clone();
 
         Ok(Self {
@@ -387,6 +390,7 @@ impl BundleSession {
             )),
             display,
             image_objects,
+            text_inputs,
             options,
             pending_input_events: Vec::new(),
             presentation: BundlePresentationSnapshot::default(),
@@ -537,6 +541,7 @@ impl BundleSession {
                 self.source_label.clone_from(&bundle.manifest.source_label);
                 self.display = bundle.display.clone();
                 self.image_objects.clone_from(&bundle.image_objects);
+                self.text_inputs.clone_from(&next_runtime.text_inputs);
             }
             SwapCompatibility::CodeCompatible => {
                 self.activate_runtime(next_runtime.clone());
@@ -602,6 +607,7 @@ impl BundleSession {
                 self.source_label.clone_from(&bundle.manifest.source_label);
                 self.display = bundle.display.clone();
                 self.image_objects.clone_from(&bundle.image_objects);
+                self.text_inputs.clone_from(&next_runtime.text_inputs);
             }
             SwapCompatibility::CodeCompatible => {
                 self.activate_runtime(next_runtime.clone());
@@ -766,6 +772,7 @@ impl BundleSession {
             &result.fiber_status,
             &line_effects,
             &self.image_objects,
+            &self.text_inputs,
         );
 
         let requested_tasks = self.dispatch_requested_tasks(clock, output.requests.tasks);
@@ -886,6 +893,7 @@ impl BundleSession {
         self.executor = runtime.executor;
         self.display = runtime.display;
         self.image_objects = runtime.image_objects;
+        self.text_inputs = runtime.text_inputs;
     }
 
     fn prune_runtime_images(&mut self) {
@@ -931,6 +939,7 @@ struct SessionRuntime {
     executor: ArcweftRuntimeExecutor,
     display: LineDisplayCatalog,
     image_objects: Vec<BundleImageObject>,
+    text_inputs: Vec<UiRuntimeTextControl>,
 }
 
 fn initial_generation(bundle: &ArcweftBundle) -> Result<ProgramGeneration, BundleSessionError> {
@@ -960,6 +969,7 @@ impl SessionRuntime {
         entry: AwbcEntryId,
         display: LineDisplayCatalog,
         image_objects: Vec<BundleImageObject>,
+        text_inputs: Vec<UiRuntimeTextControl>,
     ) -> Result<Self, AwbcProductStepBuildError> {
         let executor = ArcweftRuntimeExecutor::from_awbc_product(program.clone(), entry)?;
         Ok(Self {
@@ -969,6 +979,7 @@ impl SessionRuntime {
             executor,
             display,
             image_objects,
+            text_inputs,
         })
     }
 
@@ -984,6 +995,7 @@ impl SessionRuntime {
             entry,
             self.display.clone(),
             self.image_objects.clone(),
+            self.text_inputs.clone(),
         )
         .map_err(BundleEntryStartError::from)
     }
@@ -1005,6 +1017,9 @@ fn build_session_runtime(
         .clone();
     let entry = selected_awbc_entry(&program, bundle, options)?;
     ensure_session_awbc_entry_selects_flow(&program, entry)?;
+    let text_inputs = bundle.ui_input.as_ref().map_or_else(Vec::new, |input| {
+        input.runtime_text_controls(bundle.ui_text.as_ref(), bundle.ui_program.as_ref())
+    });
 
     SessionRuntime::new(
         bundle.manifest.source_label.clone(),
@@ -1012,6 +1027,7 @@ fn build_session_runtime(
         entry,
         bundle.display.clone(),
         bundle.image_objects.clone(),
+        text_inputs,
     )
     .map_err(BundleSessionError::from)
 }

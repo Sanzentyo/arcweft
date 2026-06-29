@@ -96,6 +96,17 @@ pub enum UiElementKind {
     SecureField,
 }
 
+impl UiElementKind {
+    pub const fn text_input_kind(self) -> Option<UiInputKind> {
+        match self {
+            Self::TextField => Some(UiInputKind::TextField),
+            Self::TextArea => Some(UiInputKind::TextArea),
+            Self::SecureField => Some(UiInputKind::SecureField),
+            Self::Surface | Self::Row | Self::Column | Self::Stack | Self::Button => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UiStyleApplyRef {
@@ -507,6 +518,47 @@ pub enum CompositionOnBlurPolicy {
     PreserveUntilAdapterDecision,
 }
 
+/// Runtime-facing text-control emission produced from typed product UI resources.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiRuntimeTextControl {
+    pub public_id: String,
+    pub target: String,
+    pub session: u64,
+    pub value: String,
+    pub selection: UiRuntimeTextSelection,
+    pub options: UiRuntimeTextControlOptions,
+    pub kind: UiInputKind,
+    pub bounds: UiRuntimeTextControlBounds,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiRuntimeTextSelection {
+    pub start: u32,
+    pub end: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiRuntimeTextControlBounds {
+    pub x_milli: i32,
+    pub y_milli: i32,
+    pub width_milli: u32,
+    pub height_milli: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiRuntimeTextControlOptions {
+    pub purpose: UiInputPurpose,
+    pub autocorrect: TextAssistPolicy,
+    pub spellcheck: TextAssistPolicy,
+    pub capitalization: TextCapitalization,
+    pub enter_key: EnterKeyHint,
+    pub multiline: bool,
+    pub secure_policy: UiSecureInputPolicy,
+    pub composition_on_blur: CompositionOnBlurPolicy,
+}
+
 /// Product theme/environment section decoded from `UiTheme`.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct UiThemeResource {
@@ -562,6 +614,187 @@ impl UiStyleSelector {
             _ => depth.max(1),
         })
     }
+}
+
+impl UiTextResource {
+    pub fn literal_text(&self, public_id: &str) -> Option<&str> {
+        self.sources
+            .iter()
+            .find(|source| source.public_id == public_id)
+            .and_then(|source| match &source.kind {
+                UiTextSourceKind::Literal { value } => Some(value.as_str()),
+                UiTextSourceKind::Localized { .. }
+                | UiTextSourceKind::RichTextDocument { .. }
+                | UiTextSourceKind::DisplayFrame { .. } => None,
+            })
+    }
+}
+
+impl UiInputResource {
+    pub fn runtime_text_controls(
+        &self,
+        text: Option<&UiTextResource>,
+        program: Option<&UiProgramResource>,
+    ) -> Vec<UiRuntimeTextControl> {
+        self.options
+            .iter()
+            .enumerate()
+            .map(|(index, option)| option.runtime_text_control(index, text, program))
+            .collect()
+    }
+}
+
+impl UiInputOptions {
+    pub fn runtime_text_control(
+        &self,
+        index: usize,
+        text: Option<&UiTextResource>,
+        program: Option<&UiProgramResource>,
+    ) -> UiRuntimeTextControl {
+        let value = text
+            .and_then(|resource| resource.literal_text(&self.value_text_source))
+            .unwrap_or_default()
+            .to_owned();
+        let label = runtime_label_source(program, self)
+            .and_then(|source| text.and_then(|resource| resource.literal_text(source)))
+            .map(ToOwned::to_owned);
+        UiRuntimeTextControl {
+            public_id: self.public_id.clone(),
+            target: self.public_id.clone(),
+            session: self.runtime_text_session(),
+            selection: UiRuntimeTextSelection::collapsed_at_end(&value),
+            options: UiRuntimeTextControlOptions::from_input(self),
+            kind: self.kind,
+            bounds: UiRuntimeTextControlBounds::default_slot(index, self.kind),
+            value,
+            label,
+        }
+    }
+
+    pub fn runtime_text_session(&self) -> u64 {
+        stable_text_session(&self.public_id)
+    }
+}
+
+impl UiInputKind {
+    pub const fn is_secure(self) -> bool {
+        matches!(self, Self::SecureField)
+    }
+
+    pub const fn is_multiline(self) -> bool {
+        matches!(self, Self::TextArea)
+    }
+
+    const fn default_height_milli(self) -> u32 {
+        match self {
+            Self::TextField | Self::SecureField => 48_000,
+            Self::TextArea => 136_000,
+        }
+    }
+}
+
+impl UiSecureInputPolicy {
+    pub const fn is_secure(self) -> bool {
+        !matches!(self, Self::Plain)
+    }
+}
+
+impl UiRuntimeTextSelection {
+    pub const fn new(start: u32, end: u32) -> Self {
+        Self { start, end }
+    }
+
+    pub fn collapsed_at_end(value: &str) -> Self {
+        let end = u32::try_from(value.len()).unwrap_or(u32::MAX);
+        Self::new(end, end)
+    }
+
+    #[must_use]
+    pub fn clamped_to_text(self, value: &str) -> Self {
+        Self::new(
+            clamp_text_byte_offset(value, self.start),
+            clamp_text_byte_offset(value, self.end),
+        )
+    }
+}
+
+impl UiRuntimeTextControlBounds {
+    pub const fn new(x_milli: i32, y_milli: i32, width_milli: u32, height_milli: u32) -> Self {
+        Self {
+            x_milli,
+            y_milli,
+            width_milli,
+            height_milli,
+        }
+    }
+
+    pub const fn from_px(x: i32, y: i32, width: u32, height: u32) -> Self {
+        Self::new(
+            x.saturating_mul(1_000),
+            y.saturating_mul(1_000),
+            width.saturating_mul(1_000),
+            height.saturating_mul(1_000),
+        )
+    }
+
+    fn default_slot(index: usize, kind: UiInputKind) -> Self {
+        let index = i32::try_from(index).unwrap_or(i32::MAX);
+        Self::new(
+            48_000,
+            48_000_i32.saturating_add(index.saturating_mul(64_000)),
+            420_000,
+            kind.default_height_milli(),
+        )
+    }
+}
+
+impl UiRuntimeTextControlOptions {
+    pub const fn from_input(input: &UiInputOptions) -> Self {
+        Self {
+            purpose: input.purpose,
+            autocorrect: input.autocorrect,
+            spellcheck: input.spellcheck,
+            capitalization: input.capitalization,
+            enter_key: input.enter_key,
+            multiline: input.multiline || input.kind.is_multiline(),
+            secure_policy: input.secure_policy,
+            composition_on_blur: input.composition_on_blur,
+        }
+    }
+}
+
+fn runtime_label_source<'a>(
+    program: Option<&'a UiProgramResource>,
+    input: &'a UiInputOptions,
+) -> Option<&'a str> {
+    program
+        .and_then(|program| {
+            program.semantic_targets.iter().find_map(|target| {
+                (target.target == input.public_id || target.public_id == input.public_id)
+                    .then_some(target.label_text_source.as_deref())
+                    .flatten()
+            })
+        })
+        .or(input.placeholder_text_source.as_deref())
+}
+
+fn stable_text_session(public_id: &str) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+    let hash = public_id.as_bytes().iter().fold(FNV_OFFSET, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(FNV_PRIME)
+    });
+    if hash == 0 { 1 } else { hash }
+}
+
+fn clamp_text_byte_offset(value: &str, offset: u32) -> u32 {
+    let mut index = usize::try_from(offset)
+        .unwrap_or(usize::MAX)
+        .min(value.len());
+    while index > 0 && !value.is_char_boundary(index) {
+        index = index.saturating_sub(1);
+    }
+    u32::try_from(index).unwrap_or(u32::MAX)
 }
 
 pub type CompactUiProgramResource = UiProgramResource;

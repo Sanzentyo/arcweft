@@ -47,7 +47,8 @@ pub use types::{CrossSectionRef, DigestRef, SourceRangeRef, StableId};
 pub use ui::{
     CompactUiInputResource, CompactUiProgramResource, CompactUiStyleResource,
     CompactUiTextResource, CompactUiThemeResource, UiInputResource, UiProgramResource,
-    UiResourceBudget, UiResourceCompatibility, UiStyleResource, UiTextResource, UiThemeResource,
-    migrated_ui_section_compatibility,
+    UiResourceBudget, UiResourceCompatibility, UiRuntimeTextControl, UiRuntimeTextControlBounds,
+    UiRuntimeTextControlOptions, UiRuntimeTextSelection, UiStyleResource, UiTextResource,
+    UiThemeResource, migrated_ui_section_compatibility,
 };
 pub use wire::{DecodedResourceSection, ProductResourceEnvelope};
