@@ -4,8 +4,8 @@
 edition = "2024"
 ---
 
-//! Source gates for seq06.4k player text-input convergence and native windowed
-//! path retirement.
+//! Source gates for seq06.4k text-input/windowed convergence plus seq06.4k.1
+//! real text-control lowering to `PreparedFrame`.
 //!
 //! Run from the repository root:
 //!
@@ -25,15 +25,17 @@ fn main() {
     check_native_bridge(&root, &mut failures);
     check_web_bridge(&root, &mut failures);
     check_renderer_focus_blocker(&root, &mut failures);
+    check_real_prepared_frame_text_input(&root, &mut failures);
+    check_player_owned_text_editor(&root, &mut failures);
     check_windowed_path(&root, &mut failures);
     check_no_hidden_web_fallback(&root, &mut failures);
 
     if failures.is_empty() {
-        println!("seq06.4k source gates passed");
+        println!("seq06.4k / seq06.4k.1 source gates passed");
         return;
     }
 
-    eprintln!("seq06.4k source gates failed:");
+    eprintln!("seq06.4k / seq06.4k.1 source gates failed:");
     for failure in failures {
         eprintln!("- {failure}");
     }
@@ -98,18 +100,25 @@ fn check_native_bridge(root: &Path, failures: &mut Vec<String>) {
 }
 
 fn check_web_bridge(root: &Path, failures: &mut Vec<String>) {
-    let runtime = read(root, "crates/arcweft-player-web/src/runtime_text_input.rs");
+    let runtime_rel = "crates/arcweft-player-web/src/runtime_text_input.rs";
+    let runtime = read(root, runtime_rel);
     require_contains(
         failures,
-        "crates/arcweft-player-web/src/runtime_text_input.rs",
+        runtime_rel,
         &runtime,
         "PlayerTextInputBridgeCore",
     );
     require_contains(
         failures,
-        "crates/arcweft-player-web/src/runtime_text_input.rs",
+        runtime_rel,
         &runtime,
         "core.shortcuts_allowed",
+    );
+    require_contains(
+        failures,
+        runtime_rel,
+        &runtime,
+        "focused_text_input_target()",
     );
 
     let adapter = read(root, "crates/arcweft-player-web/src/edit_context.rs");
@@ -122,14 +131,67 @@ fn check_web_bridge(root: &Path, failures: &mut Vec<String>) {
 }
 
 fn check_renderer_focus_blocker(root: &Path, failures: &mut Vec<String>) {
-    let follow_up = "docs/reviews/requests/2026-06-29-seq-06.4k.1-real-text-control-schema-to-prepared-frame.md";
     let geometry = read(root, "crates/arcweft-render-wgpu/src/geometry.rs");
     let still_returns_none = geometry.contains("pub fn focused_text_input_target(&self) -> Option<PreparedTextInputTarget> {\n        let _ = self;\n        None\n    }");
-    if still_returns_none && !exists(root, follow_up) {
-        failures.push(format!(
-            "PreparedFrame focus target still returns None and {follow_up} is missing"
-        ));
+    if still_returns_none {
+        failures.push(
+            "PreparedFrame focus target must not contain the hardcoded None implementation"
+                .to_owned(),
+        );
     }
+}
+
+fn check_real_prepared_frame_text_input(root: &Path, failures: &mut Vec<String>) {
+    let rel = "crates/arcweft-render-wgpu/src/geometry.rs";
+    let source = read(root, rel);
+    require_contains(
+        failures,
+        rel,
+        &source,
+        "pub text_inputs: Vec<RenderTextInputControl>",
+    );
+    require_contains(
+        failures,
+        rel,
+        &source,
+        "focused_text_input: Option<PreparedTextInputTarget>",
+    );
+
+    let rel = "crates/arcweft-render-wgpu/src/geometry/text_controls.rs";
+    let source = read(root, rel);
+    require_contains(
+        failures,
+        rel,
+        &source,
+        "TextEditorGeometryPump::layout_from_laid_out_text",
+    );
+    require_contains(
+        failures,
+        rel,
+        &source,
+        "TextEditorState::from_text_control",
+    );
+    require_contains(
+        failures,
+        rel,
+        &source,
+        "TextInputSecurityPolicy::from_options",
+    );
+    require_contains(failures, rel, &source, "pub struct RenderTextInputControl");
+}
+
+fn check_player_owned_text_editor(root: &Path, failures: &mut Vec<String>) {
+    let rel = "crates/arcweft-player-scene/src/input.rs";
+    let source = read(root, rel);
+    require_contains(
+        failures,
+        rel,
+        &source,
+        "focused_text_editor: Option<TextEditorState>",
+    );
+    require_contains(failures, rel, &source, "activate_text_control");
+    require_contains(failures, rel, &source, "apply_live_text_control_state");
+    require_contains(failures, rel, &source, "editor.apply_text_input");
 }
 
 fn check_windowed_path(root: &Path, failures: &mut Vec<String>) {
@@ -159,6 +221,12 @@ fn check_windowed_path(root: &Path, failures: &mut Vec<String>) {
         "crates/arcweft-player-native/src/scene_windowed.rs",
         &scene,
         "FrameBoundary::AfterRenderSubmitted",
+    );
+    require_contains(
+        failures,
+        "crates/arcweft-player-native/src/scene_windowed.rs",
+        &scene,
+        "focused_text_input_target()",
     );
 
     if exists(root, "crates/arcweft-player-native/src/windowed.rs")

@@ -192,6 +192,7 @@ pub fn dispatch_presentation_action(
             SemanticRole::Button
             | SemanticRole::TextField
             | SemanticRole::TextArea
+            | SemanticRole::SecureTextField
             | SemanticRole::Image
             | SemanticRole::Debug
             | SemanticRole::Custom => PresentationActionDestination::UiEntity,

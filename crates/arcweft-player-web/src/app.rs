@@ -64,6 +64,8 @@ enum WebPlayerError {
     Report(String),
     #[error("Web runtime text-input bridge failed: {0}")]
     TextInput(String),
+    #[error("player text editor failed: {0}")]
+    TextEditor(String),
 }
 
 struct ReadyGpu {
@@ -414,6 +416,7 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
                 label: choice.label.clone(),
             })
             .collect(),
+        text_inputs: Vec::new(),
         images,
         viewport,
         visual_time_millis,
@@ -512,7 +515,10 @@ fn drain_text_input_edits(
         .drain_pending_edits()
         .map_err(|error| WebPlayerError::TextInput(error.to_string()))?;
     for edit in edits {
-        let outcome = state.input.text_input(frame, edit.into_input());
+        let outcome = state
+            .input
+            .text_input(frame, edit.into_input())
+            .map_err(|error| WebPlayerError::TextEditor(error.to_string()))?;
         apply_outcome(state, outcome);
     }
     Ok(())

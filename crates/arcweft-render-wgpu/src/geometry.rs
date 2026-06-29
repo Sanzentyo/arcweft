@@ -8,6 +8,7 @@ use arcweft_presentation::layer::{
     RenderPhase,
 };
 use arcweft_presentation::semantic::{SemanticNode, SemanticRole, SemanticTree};
+use arcweft_presentation::text_editor::TextEditorError;
 use arcweft_presentation::text_input::{TextInputClientSnapshot, TextInputGeometrySnapshot};
 use arcweft_render_text::{
     LineDisplayFrame, RichTextColor, RichTextEffectDescriptor, RichTextEffectPhase,
@@ -16,6 +17,9 @@ use arcweft_render_text::{
 };
 use num_traits::ToPrimitive;
 use thiserror::Error;
+
+mod text_controls;
+pub use text_controls::RenderTextInputControl;
 
 /// Logical viewport shared by visual planning and hit-testing.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -54,6 +58,7 @@ pub struct InteractionVisualState {
 pub struct RenderScene {
     pub dialogue: Option<RenderDialogue>,
     pub choices: Vec<RenderChoiceItem>,
+    pub text_inputs: Vec<RenderTextInputControl>,
     pub images: Vec<RenderImage>,
     pub viewport: RenderViewport,
     pub visual_time_millis: u64,
@@ -178,6 +183,7 @@ pub struct PreparedFrame {
     pub images: Vec<RenderImage>,
     pub text: Vec<RenderTextBlock>,
     pub choices: Vec<RenderChoice>,
+    focused_text_input: Option<PreparedTextInputTarget>,
 }
 
 /// Renderer-backed text input target prepared for platform IME adapters.
@@ -202,19 +208,20 @@ pub enum FramePlanError {
     EmptyViewport,
     #[error("failed to construct stable presentation id `{value}`")]
     InvalidId { value: String },
+    #[error("semantic role {role:?} is not a text-input control")]
+    InvalidTextInputRole { role: SemanticRole },
+    #[error(transparent)]
+    TextEditor(#[from] TextEditorError),
 }
 
 impl PreparedFrame {
     /// Returns the renderer-backed focused text target for platform IME sync.
     ///
-    /// The native bridge calls this from the normal player window path. Current
-    /// frame planning does not yet lower Arcweft text editor controls into
-    /// prepared text-input geometry, so returning `None` keeps unsupported IME
-    /// attachment explicit instead of fabricating a platform focus target.
+    /// This is the single native/web focus-target source. It is populated only
+    /// by real `RenderTextInputControl` input lowered from runtime/player state.
     #[must_use]
     pub fn focused_text_input_target(&self) -> Option<PreparedTextInputTarget> {
-        let _ = self;
-        None
+        self.focused_text_input.clone()
     }
 }
 
@@ -263,11 +270,23 @@ impl SharedFramePlanner {
                     LayerKind::GameUi,
                     order(RenderPhase::GameUi, 0),
                 )
-                .with_parent(ids.root)
+                .with_parent(ids.root.clone())
                 .with_content(LayerContent::NativeUi(ids.choice_content.clone()))
                 .with_input_policy(LayerInputPolicy::HitTest),
             )
             .expect("choice layer parent is present");
+        layers
+            .insert(
+                LayerNode::new(
+                    ids.text_input.clone(),
+                    LayerKind::GameUi,
+                    order(RenderPhase::GameUi, 1),
+                )
+                .with_parent(ids.root)
+                .with_content(LayerContent::NativeUi(ids.text_input_content.clone()))
+                .with_input_policy(LayerInputPolicy::HitTest),
+            )
+            .expect("text-input layer parent is present");
 
         let palette = Palette::from_preferences(scene.preferences);
         let mut rectangles = vec![PaintRect {
@@ -293,6 +312,14 @@ impl SharedFramePlanner {
             &palette,
             &action,
         )?;
+        let focused_text_input = text_controls::build_text_inputs(
+            scene,
+            &ids.text_input,
+            &mut semantics,
+            &mut rectangles,
+            &mut text,
+            &palette,
+        )?;
         let hits = semantics.to_hit_tree();
 
         Ok(PreparedFrame {
@@ -304,6 +331,7 @@ impl SharedFramePlanner {
             images: scene.images.clone(),
             text,
             choices,
+            focused_text_input,
         })
     }
 }
@@ -882,8 +910,10 @@ enum FrameStaticId {
     RootLayer,
     DialogueLayer,
     ChoiceLayer,
+    TextInputLayer,
     DialogueContent,
     ChoiceContent,
+    TextInputContent,
 }
 
 impl FrameStaticId {
@@ -892,8 +922,10 @@ impl FrameStaticId {
             Self::RootLayer => "layer.player.root",
             Self::DialogueLayer => "layer.player.dialogue",
             Self::ChoiceLayer => "layer.player.choice",
+            Self::TextInputLayer => "layer.player.text_input",
             Self::DialogueContent => "textbox.player.dialogue",
             Self::ChoiceContent => "ui.player.choice",
+            Self::TextInputContent => "ui.player.text_input",
         }
     }
 
@@ -922,8 +954,10 @@ struct FrameIds {
     root: LayerId,
     dialogue: LayerId,
     choice: LayerId,
+    text_input: LayerId,
     dialogue_content: PublicId,
     choice_content: PublicId,
+    text_input_content: PublicId,
 }
 
 impl FrameIds {
@@ -932,8 +966,10 @@ impl FrameIds {
             root: FrameStaticId::RootLayer.layer_id()?,
             dialogue: FrameStaticId::DialogueLayer.layer_id()?,
             choice: FrameStaticId::ChoiceLayer.layer_id()?,
+            text_input: FrameStaticId::TextInputLayer.layer_id()?,
             dialogue_content: FrameStaticId::DialogueContent.public_id()?,
             choice_content: FrameStaticId::ChoiceContent.public_id()?,
+            text_input_content: FrameStaticId::TextInputContent.public_id()?,
         })
     }
 }

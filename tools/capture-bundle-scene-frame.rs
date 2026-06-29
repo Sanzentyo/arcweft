@@ -204,6 +204,7 @@ fn prepare_frame(
                 label: choice.label.clone(),
             })
             .collect(),
+        text_inputs: Vec::new(),
         images: images.render_images(&presentation.images, args.visual_time_millis)?,
         viewport,
         visual_time_millis: args.visual_time_millis,

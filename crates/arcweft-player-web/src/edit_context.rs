@@ -435,6 +435,19 @@ fn preedit_selection_range(
 
 #[cfg(target_arch = "wasm32")]
 fn rect_init(rect: HitRect) -> JsValue {
+    let args = js_sys::Array::new();
+    args.push(&JsValue::from_f64(f64::from(rect.x)));
+    args.push(&JsValue::from_f64(f64::from(rect.y)));
+    args.push(&JsValue::from_f64(f64::from(rect.width)));
+    args.push(&JsValue::from_f64(f64::from(rect.height)));
+    let global = js_sys::global();
+    if let Ok(constructor) = js_sys::Reflect::get(&global, &JsValue::from_str("DOMRect"))
+        && constructor.is_function()
+        && let Ok(dom_rect) = js_sys::Reflect::construct(&constructor.unchecked_into(), &args)
+    {
+        return dom_rect;
+    }
+
     let object = js_sys::Object::new();
     let _ = js_sys::Reflect::set(
         &object,

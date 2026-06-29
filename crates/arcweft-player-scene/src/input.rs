@@ -7,8 +7,11 @@ use arcweft_presentation::interaction::{
     FocusState, InteractionState, PointerCapture, PressedTarget,
 };
 use arcweft_presentation::router::{InputRouter, RouteDecision};
+use arcweft_presentation::text_editor::{TextEditorClipboard, TextEditorError, TextEditorState};
 use arcweft_presentation::text_input::{TextInput, TextInputKeyDisposition, TextInputOperation};
-use arcweft_render_wgpu::geometry::{ChoiceScroll, InteractionVisualState, PreparedFrame};
+use arcweft_render_wgpu::geometry::{
+    ChoiceScroll, FramePlanError, InteractionVisualState, PreparedFrame, RenderTextInputControl,
+};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -43,6 +46,8 @@ pub struct InputController {
     choice_scroll: ChoiceScroll,
     window_focused: bool,
     ime_composing: bool,
+    focused_text_editor: Option<TextEditorState>,
+    text_editor_clipboard: TextEditorClipboard,
 }
 
 impl InputController {
@@ -62,6 +67,10 @@ impl InputController {
         self.ime_composing
     }
 
+    pub const fn focused_text_editor(&self) -> Option<&TextEditorState> {
+        self.focused_text_editor.as_ref()
+    }
+
     pub fn pointer_position(&self, pointer: PointerId) -> Option<ViewportPoint> {
         self.pointer_positions.get(&pointer.0).copied()
     }
@@ -72,6 +81,52 @@ impl InputController {
             hovered: self.interaction.primary_hovered_target().cloned(),
             pressed: self.interaction.primary_pressed_target().cloned(),
         }
+    }
+
+    /// Activates the player-owned editor for a declarative runtime text control.
+    ///
+    /// Platform bridges still receive focus exclusively from
+    /// `PreparedFrame::focused_text_input_target`; this state is the live
+    /// product editor that validated platform edits mutate before the next
+    /// frame is planned.
+    pub fn activate_text_control(
+        &mut self,
+        control: &RenderTextInputControl,
+    ) -> Result<bool, FramePlanError> {
+        let options = control.resolved_options()?;
+        let already_active = self.focused_text_editor.as_ref().is_some_and(|editor| {
+            editor.session() == control.session && editor.target() == &control.target
+        });
+        if already_active {
+            return Ok(false);
+        }
+        self.focused_text_editor = Some(TextEditorState::from_text_control(
+            control.session,
+            control.target.clone(),
+            control.value.clone(),
+            control.selection,
+            options,
+        )?);
+        Ok(true)
+    }
+
+    #[must_use]
+    pub fn apply_live_text_control_state(
+        &self,
+        control: RenderTextInputControl,
+    ) -> RenderTextInputControl {
+        self.focused_text_editor
+            .as_ref()
+            .map_or(control.clone(), |editor| {
+                if editor.session() == control.session && editor.target() == &control.target {
+                    control
+                        .with_value(editor.text())
+                        .with_selection(editor.selection())
+                        .with_options(editor.options().clone())
+                } else {
+                    control
+                }
+            })
     }
 
     pub fn ensure_choice_focus(&mut self, frame: &PreparedFrame) {
@@ -274,7 +329,18 @@ impl InputController {
         self.keyboard(frame, key, phase)
     }
 
-    pub fn text_input(&mut self, frame: &PreparedFrame, input: TextInput) -> InputOutcome {
+    pub fn text_input(
+        &mut self,
+        frame: &PreparedFrame,
+        input: TextInput,
+    ) -> Result<InputOutcome, TextEditorError> {
+        if let Some(editor) = self
+            .focused_text_editor
+            .as_mut()
+            .filter(|editor| editor.session() == input.session())
+        {
+            let _outputs = editor.apply_text_input(&input, &mut self.text_editor_clipboard)?;
+        }
         self.ime_composing = input.operations().iter().fold(
             self.ime_composing,
             |active, operation| match operation {
@@ -294,10 +360,10 @@ impl InputController {
         );
         let raw = self.raw(RawInputKind::Text(input));
         let _ = InputRouter::route(&raw, &frame.layers, &frame.hits, &self.interaction);
-        InputOutcome {
+        Ok(InputOutcome {
             actions: Vec::new(),
             redraw: true,
-        }
+        })
     }
 
     pub fn wheel(&mut self, _delta_y: f32) -> InputOutcome {
@@ -314,6 +380,7 @@ impl InputController {
             self.pointer_positions.clear();
             self.pressed.clear();
             self.drags.clear();
+            self.focused_text_editor = None;
             self.interaction.clear_pointer_state();
         }
         InputOutcome {
@@ -351,4 +418,80 @@ fn choice_action(
         .lower_action(target, &kind)
         .ok()
         .map(|action| action.with_payload(choice.option_id.clone()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcweft_presentation::hit::HitRect;
+    use arcweft_presentation::semantic::SemanticRole;
+    use arcweft_presentation::text_input::{
+        TextByteOffset, TextInputOptions, TextInputSerial, TextInputSessionId, TextRange,
+    };
+    use arcweft_render_wgpu::geometry::{
+        RenderPreferences, RenderScene, RenderViewport, SharedFramePlanner,
+    };
+
+    fn target(name: &str) -> arcweft_presentation::input::InteractionTarget {
+        arcweft_presentation::input::InteractionTarget::new(
+            PublicId::try_new(format!("target.{name}")).unwrap(),
+        )
+    }
+
+    fn scene(control: RenderTextInputControl) -> RenderScene {
+        RenderScene {
+            dialogue: None,
+            choices: Vec::new(),
+            text_inputs: vec![control],
+            images: Vec::new(),
+            viewport: RenderViewport {
+                logical_width: 640.0,
+                logical_height: 360.0,
+                physical_width: 640,
+                physical_height: 360,
+                scale_factor: 1.0,
+            },
+            visual_time_millis: 0,
+            preferences: RenderPreferences::default(),
+            interaction: InteractionVisualState::default(),
+            choice_scroll: ChoiceScroll::default(),
+        }
+    }
+
+    #[test]
+    fn text_input_edits_player_owned_focused_text_editor_state() {
+        let target = target("text_input.editor");
+        let session = TextInputSessionId(42);
+        let control = RenderTextInputControl::new(
+            target.clone(),
+            session,
+            "abc",
+            TextRange::new(TextByteOffset(3), TextByteOffset(3)),
+            TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(20.0, 30.0, 220.0, 32.0),
+        );
+        let frame = SharedFramePlanner::prepare(&RenderScene {
+            interaction: InteractionVisualState {
+                focused: Some(target),
+                hovered: None,
+                pressed: None,
+            },
+            ..scene(control.clone())
+        })
+        .unwrap();
+        let mut input = InputController::default();
+        input.activate_text_control(&control).unwrap();
+        let outcome = input
+            .text_input(
+                &frame,
+                TextInput::committed(session, TextInputSerial(7), "d"),
+            )
+            .unwrap();
+
+        assert!(outcome.redraw);
+        assert_eq!(input.focused_text_editor().unwrap().text(), "abcd");
+        let next_control = input.apply_live_text_control_state(control);
+        assert_eq!(next_control.value, "abcd");
+    }
 }

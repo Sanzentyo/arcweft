@@ -221,6 +221,7 @@ pub fn prepare_bundle_parity_frame(
                 label: choice.label.clone(),
             })
             .collect(),
+        text_inputs: Vec::new(),
         images: images.render_images(&presentation.images, options.visual_time_millis)?,
         viewport: options.viewport,
         visual_time_millis: options.visual_time_millis,

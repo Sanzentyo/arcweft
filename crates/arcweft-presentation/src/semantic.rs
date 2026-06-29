@@ -6,6 +6,7 @@ use crate::input::{
 use crate::interaction::InteractionState;
 use crate::layer::{LayerId, LayerTree};
 use crate::router::{InputRouter, RouteDecision};
+use crate::text_input::TextInputOptions;
 use arcweft_id::PublicId;
 
 /// Semantic role shared by `TextBox`, `Activity`, UI, Agent, and accessibility.
@@ -16,9 +17,39 @@ pub enum SemanticRole {
     Button,
     TextField,
     TextArea,
+    SecureTextField,
     Image,
     Debug,
     Custom,
+}
+
+impl SemanticRole {
+    /// Returns whether this semantic role represents an Arcweft text-input control.
+    pub const fn is_text_input_control(self) -> bool {
+        matches!(
+            self,
+            Self::TextField | Self::TextArea | Self::SecureTextField
+        )
+    }
+
+    /// Applies text-input options implied by the semantic role.
+    ///
+    /// Keeping this behavior on `SemanticRole` makes the text-control boundary
+    /// discoverable for renderer, player, and accessibility callers.
+    #[must_use]
+    pub fn text_input_options(self, options: TextInputOptions) -> Option<TextInputOptions> {
+        match self {
+            Self::TextField => Some(options),
+            Self::TextArea => Some(options.multiline(true)),
+            Self::SecureTextField => Some(options.secure(true)),
+            Self::TextBox
+            | Self::Activity
+            | Self::Button
+            | Self::Image
+            | Self::Debug
+            | Self::Custom => None,
+        }
+    }
 }
 
 /// One semantic object visible to Agent/debug/accessibility routing.
@@ -135,6 +166,7 @@ impl SemanticNode {
             | SemanticRole::Button
             | SemanticRole::TextField
             | SemanticRole::TextArea
+            | SemanticRole::SecureTextField
             | SemanticRole::Image
             | SemanticRole::Debug
             | SemanticRole::Custom => ActionTarget::Entity(self.target.clone()),

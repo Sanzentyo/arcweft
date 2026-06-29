@@ -18,6 +18,7 @@ fn frame() -> arcweft_render_wgpu::geometry::PreparedFrame {
                 label: "Second".to_owned(),
             },
         ],
+        text_inputs: Vec::new(),
         images: Vec::new(),
         viewport: RenderViewport {
             logical_width: 1280.0,

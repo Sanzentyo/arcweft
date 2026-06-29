@@ -97,6 +97,8 @@ enum NativeSceneWindowError {
     Images(#[from] BundleImageCatalogError),
     #[error("native text-input bridge failed: {0}")]
     TextInputBridge(#[from] NativeTextInputBridgeError),
+    #[error("player text editor failed: {0}")]
+    TextEditor(#[from] arcweft_presentation::text_editor::TextEditorError),
     #[error("WebGPU surface creation failed: {0}")]
     SurfaceCreation(String),
     #[error("no WebGPU adapter is available for the native surface")]
@@ -541,6 +543,7 @@ impl NativeSceneState {
                     label: choice.label.clone(),
                 })
                 .collect(),
+            text_inputs: Vec::new(),
             images: self
                 .runtime
                 .images()
@@ -675,7 +678,7 @@ impl NativeSceneState {
             .keyboard_with_ime(&frame, &label, phase, player_disposition);
         self.apply_outcome(outcome)?;
         for edit in self.text_input.drain_platform_edits(player_disposition)? {
-            let outcome = self.input.text_input(&frame, edit.into_input());
+            let outcome = self.input.text_input(&frame, edit.into_input())?;
             self.apply_outcome(outcome)?;
         }
         self.window.request_redraw();

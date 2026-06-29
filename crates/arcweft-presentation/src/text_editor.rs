@@ -156,6 +156,35 @@ impl TextEditorState {
         })
     }
 
+    /// Creates a shared editor from declarative runtime text-control state.
+    ///
+    /// The caller-provided selection is validated rather than clamped so the
+    /// player, renderer, and platform adapter agree on the exact product-owned
+    /// text value that becomes an IME target.
+    pub fn from_text_control(
+        session: TextInputSessionId,
+        target: InteractionTarget,
+        text: impl Into<String>,
+        selection: TextRange<TextByteOffset>,
+        options: TextInputOptions,
+    ) -> Result<Self, TextEditorError> {
+        let text = text.into();
+        let index = TextIndexSnapshot::try_new(text.clone())?;
+        let selection = index.validate_byte_range(selection)?;
+        let caret = *selection.end();
+        Ok(Self {
+            session,
+            target,
+            text,
+            selection,
+            selection_anchor: *selection.start(),
+            caret,
+            composition: None,
+            revision: TextRevision::default(),
+            options,
+        })
+    }
+
     /// Rehydrates the shared editor from an activation snapshot.
     pub fn from_snapshot(snapshot: &TextInputClientSnapshot) -> Result<Self, TextEditorError> {
         let index = TextIndexSnapshot::try_new(snapshot.surrounding_text().to_owned())?;

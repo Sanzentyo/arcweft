@@ -1,9 +1,16 @@
+use arcweft_id::PublicId;
 use arcweft_layout::{ContentRect, LayoutPoint, LayoutRect, LayoutSize, ScalePolicy};
+use arcweft_presentation::hit::HitRect;
+use arcweft_presentation::input::InteractionTarget;
+use arcweft_presentation::semantic::SemanticRole;
+use arcweft_presentation::text_input::{
+    TextByteOffset, TextInputOptions, TextInputPurpose, TextInputSessionId, TextRange,
+};
 use arcweft_render_text::{RichTextColor, RichTextFontFamily, RichTextStyle};
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderChoiceItem, RenderDialogue, RenderFontFamily,
-    RenderPreferences, RenderScene, RenderTextSlant, RenderTextWeight, RenderViewport,
-    SharedFramePlanner,
+    RenderPreferences, RenderScene, RenderTextInputControl, RenderTextSlant, RenderTextWeight,
+    RenderViewport, SharedFramePlanner,
 };
 use arcweft_render_wgpu::sample::{DemoAnimationClock, DemoImageKind, generated_demo_images};
 
@@ -27,6 +34,7 @@ fn scene() -> RenderScene {
                 label: "Two".to_owned(),
             },
         ],
+        text_inputs: Vec::new(),
         images: Vec::new(),
         viewport,
         visual_time_millis: 0,
@@ -238,6 +246,127 @@ fn dialogue_surface_styles_are_preserved_for_shared_text_blocks() {
     assert_eq!(body.weight, RenderTextWeight::Bold);
     assert_eq!(body.slant, RenderTextSlant::Italic);
     assert!((body.font_size - 31.0).abs() < f32::EPSILON);
+}
+
+fn text_target(name: &str) -> InteractionTarget {
+    InteractionTarget::new(PublicId::try_new(format!("target.{name}")).unwrap())
+}
+
+fn text_control(
+    target: InteractionTarget,
+    value: &str,
+    role: SemanticRole,
+    options: TextInputOptions,
+    bounds: HitRect,
+) -> RenderTextInputControl {
+    let end = TextByteOffset(u32::try_from(value.len()).unwrap());
+    RenderTextInputControl::new(
+        target,
+        TextInputSessionId(77),
+        value,
+        TextRange::new(end, end),
+        options,
+        role,
+        bounds,
+    )
+}
+
+#[test]
+fn focused_text_input_target_produces_real_focused_text_field() {
+    let target = text_target("real.text_field");
+    let control = text_control(
+        target.clone(),
+        "abc",
+        SemanticRole::TextField,
+        TextInputOptions::default(),
+        HitRect::new(96.0, 88.0, 260.0, 32.0),
+    );
+    let mut scene = scene();
+    scene.choices.clear();
+    scene.text_inputs = vec![control];
+    scene.interaction = InteractionVisualState {
+        focused: Some(target.clone()),
+        hovered: None,
+        pressed: None,
+    };
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("text input frame plans");
+    let focused = frame.focused_text_input_target().expect("focused target");
+
+    assert_eq!(focused.snapshot.target(), &target);
+    assert_eq!(focused.snapshot.surrounding_text(), "abc");
+    assert_eq!(focused.geometry.viewport_character_bounds().len(), 3);
+    assert_eq!(
+        frame.semantics.find(&target).expect("semantic node").role(),
+        SemanticRole::TextField,
+    );
+}
+
+#[test]
+fn focused_text_input_target_secure_field_redacts_value_and_character_geometry() {
+    let target = text_target("secure.password");
+    let control = text_control(
+        target.clone(),
+        "secret",
+        SemanticRole::SecureTextField,
+        TextInputOptions::default().with_purpose(TextInputPurpose::Password),
+        HitRect::new(32.0, 44.0, 240.0, 32.0),
+    );
+    let mut scene = scene();
+    scene.choices.clear();
+    scene.text_inputs = vec![control];
+    scene.interaction.focused = Some(target);
+
+    let focused = SharedFramePlanner::prepare(&scene)
+        .expect("secure text input frame plans")
+        .focused_text_input_target()
+        .expect("focused target");
+
+    assert!(focused.snapshot.options().is_secure());
+    assert_eq!(focused.snapshot.surrounding_text(), "");
+    assert!(focused.snapshot.character_bounds().is_empty());
+    assert!(focused.geometry.viewport_character_bounds().is_empty());
+    assert!(focused.geometry.screen_character_bounds().is_empty());
+}
+
+#[test]
+fn focused_text_input_target_browser_and_native_use_same_geometry_snapshot_source() {
+    let target = text_target("geometry.shared");
+    let bounds = HitRect::new(50.0, 60.0, 300.0, 40.0);
+    let control = text_control(
+        target.clone(),
+        "hi",
+        SemanticRole::TextField,
+        TextInputOptions::default(),
+        bounds,
+    );
+    let mut scene = scene();
+    scene.choices.clear();
+    scene.text_inputs = vec![control];
+    scene.viewport.scale_factor = 2.0;
+    scene.viewport.physical_width = 2560;
+    scene.viewport.physical_height = 1440;
+    scene.interaction.focused = Some(target);
+
+    let focused = SharedFramePlanner::prepare(&scene)
+        .expect("hidpi text input frame plans")
+        .focused_text_input_target()
+        .expect("focused target");
+    let geometry = focused.geometry;
+
+    assert_eq!(
+        focused.snapshot.control_rect(),
+        geometry.viewport_control_rect()
+    );
+    assert_eq!(
+        focused.snapshot.caret_rect(),
+        geometry.viewport_caret_rect()
+    );
+    assert_eq!(geometry.viewport_control_rect(), bounds);
+    assert_eq!(
+        geometry.screen_control_rect(),
+        HitRect::new(100.0, 120.0, 600.0, 80.0)
+    );
 }
 
 #[test]
