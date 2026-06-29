@@ -113,6 +113,11 @@ pub fn build_release_trust_fixture(case: ReleaseTrustCase) -> BuiltReleaseTrustF
         archive.to_json_bytes().expect("archive JSON"),
     )
     .expect("archive writes");
+    fs::write(
+        root.join("game.awfr.sig"),
+        archive.signatures[0].signature.as_bytes(),
+    )
+    .expect("detached signature writes");
 
     BuiltReleaseTrustFixture {
         root,

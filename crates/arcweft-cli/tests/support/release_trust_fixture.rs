@@ -33,6 +33,7 @@ const EXTERNAL_PAYLOAD: &[u8] = b"seq02.9 deterministic external payload";
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReleaseTrustCase {
     SuccessCacheHit,
+    SuccessFileMirror,
     MissingPatchSignature,
     ExternalPayloadMissing,
     DetachedSignatureTranscriptMismatch,
@@ -150,6 +151,7 @@ pub fn build_release_trust_fixture(case: ReleaseTrustCase) -> BuiltReleaseTrustF
     }
 
     let archive_path = write_archive(&root, &archive);
+    write_detached_signature(&root, &archive);
 
     BuiltReleaseTrustFixture {
         root,
@@ -162,6 +164,7 @@ impl ReleaseTrustCase {
     fn label(self) -> &'static str {
         match self {
             Self::SuccessCacheHit => "success-cache-hit",
+            Self::SuccessFileMirror => "success-file-mirror",
             Self::MissingPatchSignature => "missing-patch-signature",
             Self::ExternalPayloadMissing => "external-payload-missing",
             Self::DetachedSignatureTranscriptMismatch => "detached-signature-transcript-mismatch",
@@ -177,6 +180,14 @@ fn write_archive(root: &std::path::Path, archive: &AwfrArchiveManifest) -> PathB
     )
     .expect("archive writes");
     archive_path
+}
+
+fn write_detached_signature(root: &std::path::Path, archive: &AwfrArchiveManifest) {
+    fs::write(
+        root.join("game.awfr.sig"),
+        archive.signatures[0].signature.as_bytes(),
+    )
+    .expect("detached signature writes");
 }
 
 fn content_pack(embedded: &[u8], external_payload: &[u8], external_required: bool) -> Vec<u8> {

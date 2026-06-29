@@ -6,6 +6,8 @@ use std::{
 };
 use thiserror::Error;
 
+pub mod remote;
+
 /// Local publication artifact family. The commit order publishes AWFR last so
 /// consumers never observe the final archive before referenced bytes/signatures
 /// have been staged into their destination paths.
@@ -198,7 +200,7 @@ pub fn publish_release_atomically(
 }
 
 impl ReleasePublishArtifactKind {
-    const fn commit_rank(self) -> u8 {
+    pub const fn commit_rank(self) -> u8 {
         match self {
             Self::AwfbBundle => 0,
             Self::PatchArtifact => 1,
@@ -206,6 +208,14 @@ impl ReleasePublishArtifactKind {
             Self::Signature => 3,
             Self::AwfrArchive => 4,
         }
+    }
+
+    pub const fn is_signature(self) -> bool {
+        matches!(self, Self::Signature)
+    }
+
+    pub const fn is_final_awfr(self) -> bool {
+        matches!(self, Self::AwfrArchive)
     }
 }
 
@@ -223,7 +233,7 @@ fn validate_publish_paths<'a>(
     Ok(())
 }
 
-fn validate_relative_publish_path(path: &Path) -> Result<(), ReleasePublishError> {
+pub(crate) fn validate_relative_publish_path(path: &Path) -> Result<(), ReleasePublishError> {
     if path.as_os_str().is_empty() {
         return Err(ReleasePublishError::InvalidPublishPath {
             path: path.to_path_buf(),
