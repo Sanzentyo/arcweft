@@ -11,6 +11,7 @@ pub mod adapter;
 pub mod cache;
 pub mod capture;
 pub mod diagnostic;
+pub mod evidence;
 pub mod lowering;
 pub mod metadata;
 pub mod style;
@@ -21,8 +22,12 @@ pub use cache::{
     ImageRevision, RendererResourceRevision, StyleRevision, TakumiPaintCacheKey,
     TakumiSceneCacheKey, TextLayoutRevision, UiProgramRevision, ViewFragmentRevision, ViewportKey,
 };
-pub use capture::{TakumiCaptureFrame, TakumiCaptureRecord};
+pub use capture::{
+    TakumiCaptureFrame, TakumiCaptureRecord, TakumiCompositingCaptureRecord,
+    TakumiCompositingGroupId, TakumiEffectOutsets, TakumiPaintNodeId,
+};
 pub use diagnostic::{TakumiAdapterError, TakumiDiagnostic, TakumiDiagnosticCode};
+pub use evidence::{COMPOSITING_EVIDENCE_SCHEMA_VERSION, capture_frame_to_json};
 pub use lowering::{
     DirectBackground, DirectBorder, DirectBoxPaint, DirectClip, DirectPaintCatalog,
     TakumiCompositingStyle, TakumiCompositingStyleCatalog, TakumiSceneInput, TakumiSceneLowerer,

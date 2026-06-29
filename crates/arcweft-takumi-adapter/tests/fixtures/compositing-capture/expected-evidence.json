@@ -1,0 +1,37 @@
+{
+  "schema_version": "arcweft.compositing-capture.v1",
+  "objects": [],
+  "groups": [
+    {
+      "record_kind": "compositing_group",
+      "paint_node_id": 1,
+      "compositing_group_id": 1,
+      "primitive_range": null,
+      "metadata": {
+        "node": 100,
+        "key": 9001,
+        "kind": "Container(Stack)",
+        "style": 22,
+        "component": null,
+        "program": null,
+        "part": null,
+        "semantic": null,
+        "handlers": [77],
+        "agent": null
+      },
+      "isolation": "Isolate",
+      "blend_mode": "Multiply",
+      "layout_bounds": {"x": 64.0, "y": 48.0, "width": 256.0, "height": 144.0},
+      "visual_bounds": {"x": 46.0, "y": 30.0, "width": 292.0, "height": 180.0},
+      "hit_bounds": {"x": 64.0, "y": 48.0, "width": 256.0, "height": 144.0},
+      "clip_bounds": {"x": 76.0, "y": 60.0, "width": 232.0, "height": 120.0},
+      "mask_bounds": [{"x": 64.0, "y": 48.0, "width": 256.0, "height": 144.0}],
+      "effect_outsets": {
+        "filter_px": 18.0,
+        "backdrop_filter_px": 9.0,
+        "mask_px": 0.0,
+        "total_px": 18.0
+      }
+    }
+  ]
+}

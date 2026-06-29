@@ -1,0 +1,22 @@
+/* seq06.9c compositing capture evidence fixture.
+   The scene intentionally covers all CSS families that should produce
+   metadata/evidence without CPU-rasterized Takumi output. */
+.aw-compositing-fixture {
+  width: 256px;
+  height: 144px;
+  isolation: isolate;
+  filter: blur(6px) drop-shadow(8px 4px 4px rgba(0, 0, 0, 0.5)) saturate(1.15);
+  backdrop-filter: contrast(1.1) blur(3px);
+  mask-image: url("arcweft://mask/diagonal-alpha");
+  mask-size: cover;
+  mask-position: 50% 50%;
+  mask-repeat: no-repeat;
+  clip-path: inset(12px 12px 12px 12px round 10px);
+  mix-blend-mode: multiply;
+}
+
+.aw-compositing-fixture__backdrop {
+  width: 320px;
+  height: 180px;
+  background: linear-gradient(90deg, #101828 0%, #475467 100%);
+}

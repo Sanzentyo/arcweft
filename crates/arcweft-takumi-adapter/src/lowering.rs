@@ -1,5 +1,8 @@
 use crate::{
-    capture::{TakumiCaptureFrame, TakumiCaptureRecord},
+    capture::{
+        TakumiCaptureFrame, TakumiCaptureRecord, TakumiCompositingCaptureRecord,
+        TakumiCompositingGroupId, TakumiEffectOutsets, TakumiPaintNodeId,
+    },
     diagnostic::TakumiAdapterError,
     metadata::{TakumiMetadataMap, TakumiPath},
     text::ArcweftTextLayoutBridge,
@@ -112,6 +115,8 @@ struct UiSceneBuild {
     contexts: Vec<UiSceneContext>,
     paint_nodes: Vec<UiPaintNode>,
     capture: TakumiCaptureFrame,
+    next_paint_node_id: u32,
+    next_compositing_group_id: u32,
 }
 
 struct TakumiLoweringRefs<'a> {
@@ -285,6 +290,8 @@ impl UiSceneBuild {
             contexts: Vec::new(),
             paint_nodes: Vec::new(),
             capture: TakumiCaptureFrame::default(),
+            next_paint_node_id: 0,
+            next_compositing_group_id: 0,
         }
     }
 
@@ -302,6 +309,16 @@ impl UiSceneBuild {
 
     fn push_paint_node(&mut self, node: UiPaintNode) {
         self.paint_nodes.push(node);
+    }
+
+    fn next_paint_node_id(&mut self) -> TakumiPaintNodeId {
+        self.next_paint_node_id = self.next_paint_node_id.saturating_add(1);
+        TakumiPaintNodeId::new(self.next_paint_node_id)
+    }
+
+    fn next_compositing_group_id(&mut self) -> TakumiCompositingGroupId {
+        self.next_compositing_group_id = self.next_compositing_group_id.saturating_add(1);
+        TakumiCompositingGroupId::new(self.next_compositing_group_id)
     }
 
     fn finish(self) -> TakumiSceneOutput {
@@ -332,11 +349,13 @@ fn lower_context(
     let mut children = Vec::new();
     let mut root_path = None;
     let mut bounds = None;
+    let group_id = build.next_compositing_group_id();
+    let group_paint_node_id = build.next_paint_node_id();
 
     if let Some(root) = context.root() {
         root_path = Some(TakumiPath::from(root.path.clone()));
         bounds = Some(bounds_for_node(root, refs.layout_results)?);
-        if let Some(node) = lower_node(root, refs, build)? {
+        if let Some(node) = lower_node(root, refs, build, group_id)? {
             children.push(node);
         }
     }
@@ -344,7 +363,7 @@ fn lower_context(
         for item in bucket {
             match &item.kind {
                 PaintItemKind::Node(node) => {
-                    if let Some(node) = lower_node(node, refs, build)? {
+                    if let Some(node) = lower_node(node, refs, build, group_id)? {
                         children.push(node);
                     }
                 }
@@ -373,6 +392,29 @@ fn lower_context(
         children,
     };
 
+    if let Some(path) = root_path.as_ref()
+        && let Some(metadata) = refs.metadata.get_by_path(path)
+    {
+        let primitive_range = primitive_range_for_group(&group);
+        let effect_outsets = effect_outsets_for_effects(&group.effects);
+        build.capture.push_compositing_group(
+            TakumiCompositingCaptureRecord::new(
+                metadata.clone(),
+                group_id,
+                group_paint_node_id,
+                group.bounds,
+                group.visual_bounds(),
+            )
+            .with_primitive_range(primitive_range)
+            .with_hit_bounds(group.bounds)
+            .with_clip_bounds(clip_bounds_for_group(&group))
+            .with_mask_bounds(mask_bounds_for_group(&group))
+            .with_effect_outsets(effect_outsets)
+            .with_isolation(group.isolation)
+            .with_blend_mode(group.effects.blend_mode),
+        );
+    }
+
     Ok(Some(UiPaintNode::Group(group)))
 }
 
@@ -380,10 +422,12 @@ fn lower_node(
     node: &NodePaint,
     refs: &TakumiLoweringRefs<'_>,
     build: &mut UiSceneBuild,
+    group_id: TakumiCompositingGroupId,
 ) -> Result<Option<UiPaintNode>, TakumiAdapterError> {
     let bounds = bounds_for_node(node, refs.layout_results)?;
     let path = TakumiPath::from(node.path.clone());
     let transform = affine_to_ui(node.transform.to_cols_array());
+    let paint_node_id = build.next_paint_node_id();
     let paint = refs.direct_paint.get(&path);
     let start = build.primitive_start()?;
 
@@ -425,13 +469,21 @@ fn lower_node(
     };
     build.push_context(scene_context.clone());
     if let Some(metadata) = refs.metadata.get_by_path(&path) {
-        build.capture.push(TakumiCaptureRecord::new(
-            metadata.clone(),
-            primitive_range,
-            bounds,
-            transform,
-            clip,
-        ));
+        build.capture.push(
+            TakumiCaptureRecord::new(
+                metadata.clone(),
+                primitive_range,
+                bounds,
+                transform,
+                clip.clone(),
+            )
+            .with_paint_node_id(paint_node_id)
+            .with_compositing_group_id(group_id)
+            .with_layout_bounds(bounds)
+            .with_visual_bounds(bounds)
+            .with_hit_bounds(bounds)
+            .with_clip_bounds(clip.as_ref().map(crate::capture::ui_clip_bounds)),
+        );
     }
     Ok(Some(UiPaintNode::Direct(scene_context)))
 }
@@ -496,6 +548,68 @@ impl DirectClip {
             Self::RoundedRect { radius } => UiClip::RoundedRect { bounds, radius },
         }
     }
+}
+
+fn primitive_range_for_group(group: &UiCompositingGroup) -> Option<UiPrimitiveRange> {
+    group
+        .children
+        .iter()
+        .filter_map(primitive_range_for_paint_node)
+        .fold(None, |acc, range| {
+            Some(match acc {
+                Some(existing) => UiPrimitiveRange {
+                    start: existing.start.min(range.start),
+                    end: existing.end.max(range.end),
+                },
+                None => range,
+            })
+        })
+}
+
+fn primitive_range_for_paint_node(node: &UiPaintNode) -> Option<UiPrimitiveRange> {
+    match node {
+        UiPaintNode::Direct(context) => Some(context.primitive_range),
+        UiPaintNode::Group(group) => primitive_range_for_group(group),
+    }
+}
+
+fn effect_outsets_for_effects(effects: &UiCompositingEffects) -> TakumiEffectOutsets {
+    TakumiEffectOutsets::new(
+        effects.filters.visual_outset_px(),
+        effects.backdrop_filters.visual_outset_px(),
+        effects
+            .masks
+            .iter()
+            .map(UiMask::visual_outset_px)
+            .fold(0.0, f32::max),
+    )
+}
+
+fn clip_bounds_for_group(group: &UiCompositingGroup) -> Option<HitRect> {
+    let clip_path = group.effects.clip_path.as_deref()?;
+    match clip_path {
+        UiClipPath::Inset { inset, .. } => {
+            let top = inset[0].resolve_px(group.bounds.height)?;
+            let right = inset[1].resolve_px(group.bounds.width)?;
+            let bottom = inset[2].resolve_px(group.bounds.height)?;
+            let left = inset[3].resolve_px(group.bounds.width)?;
+            Some(HitRect::new(
+                group.bounds.x + left,
+                group.bounds.y + top,
+                (group.bounds.width - left - right).max(0.0),
+                (group.bounds.height - top - bottom).max(0.0),
+            ))
+        }
+        UiClipPath::Circle { .. }
+        | UiClipPath::Ellipse { .. }
+        | UiClipPath::Polygon { .. }
+        | UiClipPath::Path { .. }
+        | UiClipPath::Unsupported(_) => Some(group.bounds),
+    }
+}
+
+fn mask_bounds_for_group(group: &UiCompositingGroup) -> Vec<HitRect> {
+    group.effects.masks.iter().map(|_| group.bounds).collect()
 }
 
 fn collect_render_node_styles(
@@ -832,5 +946,30 @@ mod tests {
             second.primitive_range,
             UiPrimitiveRange { start: 1, end: 2 }
         );
+    }
+
+    #[test]
+    fn capture_records_include_compositing_group_and_paint_node_bounds() {
+        let effects = UiCompositingEffects {
+            filters: UiFilterList::new([UiFilter::Blur { radius_px: 4.0 }]),
+            blend_mode: UiBlendMode::Multiply,
+            ..UiCompositingEffects::default()
+        };
+        let group = UiCompositingGroup::new(HitRect::new(10.0, 20.0, 80.0, 40.0), effects)
+            .with_children(vec![UiPaintNode::Direct(UiSceneContext {
+                transform: UiAffine2::IDENTITY,
+                opacity: 1.0,
+                clip: None,
+                primitive_range: UiPrimitiveRange { start: 2, end: 6 },
+            })]);
+
+        let outsets = effect_outsets_for_effects(&group.effects);
+        assert_eq!(
+            primitive_range_for_group(&group),
+            Some(UiPrimitiveRange { start: 2, end: 6 })
+        );
+        assert!((outsets.filter_px - 12.0).abs() <= f32::EPSILON);
+        assert_eq!(clip_bounds_for_group(&group), None);
+        assert!(mask_bounds_for_group(&group).is_empty());
     }
 }
