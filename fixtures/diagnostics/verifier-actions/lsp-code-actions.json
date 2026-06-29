@@ -1,0 +1,38 @@
+[
+  {
+    "title": "Show proof obligation",
+    "kind": "refactor",
+    "command": {
+      "title": "Show proof obligation",
+      "command": "arcweft.verify.showObligation",
+      "arguments": [
+        "file:///game.arcw",
+        "obligation.0001",
+        "action.show_obligation"
+      ]
+    }
+  },
+  {
+    "title": "Generate proof stub",
+    "kind": "quickfix",
+    "edit": {
+      "changes": {
+        "file:///game.arcw": [
+          {
+            "range": {
+              "start": {
+                "line": 0,
+                "character": 0
+              },
+              "end": {
+                "line": 0,
+                "character": 0
+              }
+            },
+            "newText": "proof @proof.todo {\n    prove _\n}\n"
+          }
+        ]
+      }
+    }
+  }
+]

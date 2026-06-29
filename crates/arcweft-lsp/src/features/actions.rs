@@ -26,6 +26,7 @@ use arcweft_lang_syntax::{
 use arcweft_render_text::{
     LineDisplaySpec, RichTextAssignOp, RichTextCascadeLayer, RichTextStyleContribution,
 };
+use arcweft_verify_lsp::code_actions_from_report_with_mapper;
 use arcweft_verify_lsp::source_code_actions_with_mapper;
 use arcweft_verify_lsp::workspace_edit_from_tooling_edit;
 use lsp_types::{CodeAction, CodeActionKind, Position, Uri};
@@ -37,10 +38,17 @@ pub fn actions(
     profile: &LspProfile,
     uri: &Uri,
     document: &DocumentSnapshot,
-    _analysis: &DocumentAnalysis,
+    analysis: &DocumentAnalysis,
     position: Position,
 ) -> Vec<CodeAction> {
     let mut actions = source_code_actions_with_mapper(uri, document.text(), document.line_index());
+    if let Some(report) = analysis.verification_report() {
+        actions.extend(code_actions_from_report_with_mapper(
+            uri,
+            report,
+            document.line_index(),
+        ));
+    }
     actions.extend(effect_contract_actions(profile, uri, document));
     actions.extend(dialogue_override_actions(profile, uri, document, position));
     actions
@@ -1351,6 +1359,13 @@ fn block_braces(source: &str, range: &TextRange) -> Option<(usize, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::documents::DocumentStore;
+    use crate::positions::PositionEncoding;
+    use arcweft_runtime_host::RuntimeHostRunnerKind;
+    use lsp_types::{
+        DidChangeTextDocumentParams, TextDocumentContentChangeEvent,
+        VersionedTextDocumentIdentifier,
+    };
 
     #[test]
     fn dialogue_option_insertion_adds_new_speaker_options() {
@@ -1557,6 +1572,45 @@ mod tests {
             edit.replacement,
             "    rich_text {\n        ruby {\n            size = 14px\n        }\n    }\n"
         );
+    }
+
+    #[test]
+    fn verifier_report_actions_are_included_in_code_actions() {
+        let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
+        let source = "flow @flow.opening opening {\n    let summary = promote('flow)\n}\n";
+        let mut store = DocumentStore::default();
+        let document = store
+            .change(
+                DidChangeTextDocumentParams {
+                    text_document: VersionedTextDocumentIdentifier {
+                        uri: uri.clone(),
+                        version: 1,
+                    },
+                    content_changes: vec![TextDocumentContentChangeEvent {
+                        range: None,
+                        range_length: None,
+                        text: source.to_owned(),
+                    }],
+                },
+                PositionEncoding::Utf16,
+            )
+            .expect("document opens");
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let analysis = DocumentAnalysis::analyze(
+            document.text(),
+            document.line_index().position_encoding(),
+            &profile,
+        );
+
+        assert!(analysis.verification_report().is_some());
+        let code_actions = actions(&profile, &uri, &document, &analysis, Position::new(1, 4));
+
+        assert!(code_actions.iter().any(|action| {
+            action.command.as_ref().is_some_and(|command| {
+                command.command == "arcweft.verify.generateProofStub"
+                    || command.command == "arcweft.verify.showObligation"
+            })
+        }));
     }
 
     #[test]

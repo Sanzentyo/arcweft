@@ -1,3 +1,4 @@
+use super::diagnostics::emit_diagnostics_for_path;
 use super::project::{
     CheckedModule, ProfileOptions, SourceSelection, load_and_check_selection,
     native_host_policy_for_selection, resolve_source_selection, runtime_plan_options_for_selection,
@@ -26,6 +27,7 @@ use arcweft_core::{
     value::RuntimeBinding,
 };
 use arcweft_runtime_host::NativeAdapterRegistrar;
+use arcweft_source::SourceName;
 use arcweft_verify::{
     BackendKind, VerificationMode, VerificationPolicy, VerificationReport,
     smt::{SmtBackend, SmtEmission},
@@ -67,9 +69,14 @@ pub(super) fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
     if options.json {
         print_json(&report)?;
     } else {
-        print_human_diagnostics(&report);
+        emit_verifier_diagnostics(&selection, &report);
+        let status = if report.has_errors() || report.has_solver_failures() {
+            "failed"
+        } else {
+            "ok"
+        };
         println!(
-            "ok: {} ({} obligation(s), {} unsafe audit(s))",
+            "{status}: {} ({} obligation(s), {} unsafe audit(s))",
             selection.path().display(),
             report.obligations.len(),
             report.unsafe_audit_count()
@@ -366,10 +373,10 @@ pub(in crate::app) struct UnsafeOptions {
     json: bool,
 }
 
-fn print_human_diagnostics(report: &VerificationReport) {
-    for diagnostic in &report.diagnostics {
-        eprintln!("{:?}: {}", diagnostic.severity, diagnostic.message);
-    }
+fn emit_verifier_diagnostics(selection: &SourceSelection, report: &VerificationReport) {
+    let source_name = SourceName::path(selection.path().display().to_string());
+    let diagnostics = report.source_diagnostics(&source_name);
+    emit_diagnostics_for_path(selection.path(), &diagnostics);
 }
 
 fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), ExitCode> {

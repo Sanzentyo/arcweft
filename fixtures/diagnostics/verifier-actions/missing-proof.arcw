@@ -1,0 +1,3 @@
+flow @flow.opening opening {
+    let summary = promote('flow)
+}

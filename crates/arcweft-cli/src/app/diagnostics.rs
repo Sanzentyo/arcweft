@@ -1,6 +1,7 @@
 use annotate_snippets::{Annotation, AnnotationKind, Group, Level, Patch, Renderer, Snippet};
 use arcweft_source::{
-    Diagnostic, DiagnosticLabel, DiagnosticLabelStyle, DiagnosticSeverity, SourceName, SourceSpan,
+    Diagnostic, DiagnosticCommand, DiagnosticLabel, DiagnosticLabelStyle, DiagnosticSeverity,
+    SourceName, SourceSpan,
 };
 use std::io::{self, IsTerminal};
 use std::path::Path;
@@ -51,6 +52,21 @@ impl DiagnosticEmitter {
     ) {
         for diagnostic in diagnostics {
             self.emit(diagnostic, source);
+        }
+    }
+}
+
+pub(in crate::app) fn emit_diagnostics_for_path(path: &Path, diagnostics: &[Diagnostic]) {
+    let emitter = DiagnosticEmitter::stderr();
+    match std::fs::read_to_string(path) {
+        Ok(source_text) => {
+            let source = DiagnosticSource::new(path, &source_text);
+            emitter.emit_all(diagnostics, &source);
+        }
+        Err(_) => {
+            for diagnostic in diagnostics {
+                emitter.emit_without_source(diagnostic);
+            }
         }
     }
 }
@@ -142,7 +158,27 @@ fn diagnostic_groups_with_optional_source<'source>(
         }
         groups.push(suggestion_group);
     }
+    for command in diagnostic.commands() {
+        groups.push(Group::with_title(
+            Level::HELP
+                .with_name(Some("action"))
+                .secondary_title(command_title(command)),
+        ));
+    }
     groups
+}
+
+fn command_title(command: &DiagnosticCommand) -> String {
+    let title = format!(
+        "Run verifier command `{}`: {}",
+        command.id(),
+        command.title()
+    );
+    if command.arguments().is_empty() {
+        title
+    } else {
+        format!("{title} (args: {})", command.arguments().join(", "))
+    }
 }
 
 fn snippet_for_span<'source>(
@@ -184,8 +220,8 @@ fn level_for(severity: DiagnosticSeverity) -> Level<'static> {
 mod tests {
     use super::*;
     use arcweft_source::{
-        DiagnosticApplicability, DiagnosticLabel, DiagnosticSuggestion, SourceEdit, SourceRange,
-        SourceSpan,
+        DiagnosticApplicability, DiagnosticCommand, DiagnosticLabel, DiagnosticSuggestion,
+        SourceEdit, SourceRange, SourceSpan,
     };
 
     #[test]
@@ -204,6 +240,10 @@ mod tests {
                     DiagnosticApplicability::MachineApplicable,
                 )
                 .with_edit(SourceEdit::new(span, "opening")),
+            )
+            .with_command(
+                DiagnosticCommand::new("arcweft.verify.showObligation", "Show proof obligation")
+                    .with_argument("obligation.0001"),
             );
         let source = DiagnosticSource::new(Path::new("game.arcw"), source);
         let groups = diagnostic_groups(&diagnostic, &source);
@@ -212,5 +252,6 @@ mod tests {
         assert!(rendered.contains("style::explicit_decl_id"));
         assert!(rendered.contains("replace explicit id with compact form"));
         assert!(rendered.contains("+ flow opening"));
+        assert!(rendered.contains("arcweft.verify.showObligation"));
     }
 }

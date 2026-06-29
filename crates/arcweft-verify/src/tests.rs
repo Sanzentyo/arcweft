@@ -39,6 +39,82 @@ fn promotion_without_proof_is_an_obligation() {
 }
 
 #[test]
+fn semantic_diagnostics_carry_typed_verifier_actions() {
+    let report = report(
+        r"
+flow @flow.effects effects {
+    signal.set(@signal.current_flow, @flow.effects)
+}
+",
+        VerificationMode::Test,
+    );
+
+    let diagnostic = report
+        .diagnostics
+        .iter()
+        .find(|diagnostic| {
+            diagnostic.actions.iter().any(|action| {
+                action.kind == ToolActionKind::GenerateProofStub
+                    || action.kind == ToolActionKind::ShowObligation
+            })
+        })
+        .expect("semantic verifier diagnostic exposes typed actions");
+    assert!(diagnostic.actions.iter().any(|action| {
+        action.kind == ToolActionKind::GenerateProofStub
+            && action
+                .command
+                .as_ref()
+                .is_some_and(|command| command.id == "arcweft.verify.generateProofStub")
+    }));
+}
+
+#[test]
+fn verifier_action_source_edit_becomes_diagnostic_suggestion() {
+    let action = ToolAction::generate_proof_stub().with_source_edit(
+        SourceSpan { start: 0, end: 0 },
+        "\nproof @proof.todo {\n    prove _\n}\n",
+        ToolActionApplicability::HasPlaceholders,
+    );
+    let source_name = arcweft_source::SourceName::path("game.arcw");
+    let suggestion = action
+        .diagnostic_suggestion(&source_name)
+        .expect("source edit produces suggestion");
+
+    assert_eq!(
+        suggestion.applicability(),
+        arcweft_source::DiagnosticApplicability::HasPlaceholders
+    );
+    assert_eq!(suggestion.edits().len(), 1);
+    assert!(
+        suggestion.edits()[0]
+            .replacement()
+            .contains("proof @proof.todo")
+    );
+}
+
+#[test]
+fn verifier_host_action_becomes_diagnostic_command() {
+    let diagnostic = VerificationDiagnostic {
+        id: "diagnostic.obligation.0001".to_owned(),
+        severity: Severity::Warning,
+        message: "missing proof".to_owned(),
+        source: None,
+        obligation: Some("obligation.0001".to_owned()),
+        related_ids: Vec::new(),
+        actions: vec![ToolAction::show_obligation()],
+    };
+    let source = diagnostic.source_diagnostic(&arcweft_source::SourceName::path("game.arcw"));
+
+    assert!(source.suggestions().is_empty());
+    assert_eq!(source.commands().len(), 1);
+    assert_eq!(source.commands()[0].id(), "arcweft.verify.showObligation");
+    assert_eq!(
+        source.commands()[0].arguments(),
+        &["obligation.0001".to_owned()]
+    );
+}
+
+#[test]
 fn unsafe_lifetime_records_audit() {
     let report = report(
         "flow @flow.opening opening {\n  unsafe lifetime @unsafe.cache reason = \"ok\" {\n    /// SAFETY: owned clone only\n    let summary = promote_unchecked('flow)\n  }\n}\n",

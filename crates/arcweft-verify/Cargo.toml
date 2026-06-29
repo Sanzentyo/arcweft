@@ -11,6 +11,7 @@ arcweft-core = { path = "../arcweft-core" }
 arcweft-compiler = { path = "../arcweft-compiler" }
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema" }
+arcweft-source = { path = "../arcweft-source" }
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 

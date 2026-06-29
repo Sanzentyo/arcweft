@@ -1332,6 +1332,7 @@ dependencies = [
  "arcweft-lang-hir",
  "arcweft-lang-sema",
  "arcweft-lang-syntax",
+ "arcweft-source",
  "serde",
  "thiserror 2.0.18",
 ]

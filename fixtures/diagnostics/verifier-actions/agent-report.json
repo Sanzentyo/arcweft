@@ -1,0 +1,55 @@
+{
+  "policy": {
+    "mode": "test",
+    "backend": "emit"
+  },
+  "diagnostics": [
+    {
+      "id": "diagnostic.obligation.0001",
+      "severity": "error",
+      "message": "lifetime promotion to `'flow` requires proof or audit",
+      "source": null,
+      "obligation": "obligation.0001",
+      "related_ids": [
+        "'flow"
+      ],
+      "actions": [
+        {
+          "id": "action.generate_proof_stub",
+          "label": "Generate proof stub",
+          "kind": "generate_proof_stub",
+          "command": {
+            "id": "arcweft.verify.generateProofStub",
+            "title": "Generate proof stub"
+          }
+        },
+        {
+          "id": "action.show_obligation",
+          "label": "Show proof obligation",
+          "kind": "show_obligation",
+          "command": {
+            "id": "arcweft.verify.showObligation",
+            "title": "Show proof obligation"
+          }
+        }
+      ]
+    }
+  ],
+  "obligations": [
+    {
+      "id": "obligation.0001",
+      "kind": "lifetime_promotion",
+      "message": "lifetime promotion to `'flow` requires proof or audit",
+      "subject": "'flow",
+      "source": null,
+      "discharge": {
+        "kind": "missing"
+      },
+      "smt": null
+    }
+  ],
+  "solver_checks": [],
+  "proofs": [],
+  "trusted_axioms": [],
+  "unsafe_audits": []
+}

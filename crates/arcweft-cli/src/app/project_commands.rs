@@ -4,6 +4,7 @@ use super::bundle::{
     build_patch_bundle_artifact_from_awfb_bytes, compile_bundle_for_selection,
     write_bundle_artifact, write_patch_bundle_artifact,
 };
+use super::diagnostics::emit_diagnostics_for_path;
 use super::project::{
     ProfileOptions, SourceSelection, load_and_check_selection, print_project_compile_error,
     resolve_source_selection, runtime_plan_options_for_selection, typecheck_env_for_selection,
@@ -312,7 +313,7 @@ pub(super) fn project_check_command(options: &ProjectCheckOptions) -> Result<(),
     if options.json {
         print_json(&report)?;
     } else {
-        print_verification_diagnostics(&state.verification);
+        emit_verification_diagnostics(&state.selection, &state.verification);
         println!(
             "{}: {} ({} module(s), {} compile unit(s), {} warning(s), {} obligation(s))",
             report.status,
@@ -344,7 +345,7 @@ pub(super) fn project_build_command(options: &ProjectBuildOptions) -> Result<(),
     };
     let report = ProjectCommandReport::from_state(&state);
     if report.status != "ok" {
-        print_verification_diagnostics(&state.verification);
+        emit_verification_diagnostics(&state.selection, &state.verification);
         if options.json {
             print_json(&report)?;
         }
@@ -1199,7 +1200,7 @@ fn project_build_watch_loop(
             Ok(next_state) => {
                 let report = ProjectCommandReport::from_state(&next_state);
                 if report.status != "ok" {
-                    print_verification_diagnostics(&next_state.verification);
+                    emit_verification_diagnostics(&next_state.selection, &next_state.verification);
                     eprintln!("watch: rebuild failed verification; keeping previous bundle active");
                     if max_iterations.is_some() {
                         return Err(ExitCode::FAILURE);
@@ -1274,7 +1275,7 @@ pub(super) fn compile_command(options: &CompileOptions) -> Result<(), ExitCode> 
         },
     );
     if verification.has_errors() {
-        print_verification_diagnostics(&verification);
+        emit_verification_diagnostics(&selection, &verification);
         return Err(ExitCode::FAILURE);
     }
 
@@ -1503,10 +1504,10 @@ fn print_project_load_error(error: &ProjectLoadError) -> ExitCode {
     ExitCode::FAILURE
 }
 
-fn print_verification_diagnostics(report: &VerificationReport) {
-    for diagnostic in &report.diagnostics {
-        eprintln!("{:?}: {}", diagnostic.severity, diagnostic.message);
-    }
+fn emit_verification_diagnostics(selection: &SourceSelection, report: &VerificationReport) {
+    let source_name = SourceName::path(selection.path().display().to_string());
+    let diagnostics = report.source_diagnostics(&source_name);
+    emit_diagnostics_for_path(selection.path(), &diagnostics);
 }
 
 fn status_result(status: &str) -> Result<(), ExitCode> {

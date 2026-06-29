@@ -136,6 +136,13 @@ pub struct DiagnosticSuggestion {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DiagnosticCommand {
+    id: String,
+    title: String,
+    arguments: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Diagnostic {
     severity: DiagnosticSeverity,
     code: Option<DiagnosticCode>,
@@ -144,6 +151,7 @@ pub struct Diagnostic {
     labels: Vec<DiagnosticLabel>,
     notes: Vec<String>,
     suggestions: Vec<DiagnosticSuggestion>,
+    commands: Vec<DiagnosticCommand>,
 }
 
 impl Diagnostic {
@@ -156,6 +164,7 @@ impl Diagnostic {
             labels: Vec::new(),
             notes: Vec::new(),
             suggestions: Vec::new(),
+            commands: Vec::new(),
         }
     }
 
@@ -192,6 +201,12 @@ impl Diagnostic {
         self
     }
 
+    #[must_use]
+    pub fn with_command(mut self, command: DiagnosticCommand) -> Self {
+        self.commands.push(command);
+        self
+    }
+
     pub const fn severity(&self) -> DiagnosticSeverity {
         self.severity
     }
@@ -218,6 +233,10 @@ impl Diagnostic {
 
     pub fn suggestions(&self) -> &[DiagnosticSuggestion] {
         &self.suggestions
+    }
+
+    pub fn commands(&self) -> &[DiagnosticCommand] {
+        &self.commands
     }
 }
 
@@ -402,11 +421,40 @@ impl DiagnosticSuggestion {
     }
 }
 
+impl DiagnosticCommand {
+    pub fn new(id: impl Into<String>, title: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            title: title.into(),
+            arguments: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_argument(mut self, argument: impl Into<String>) -> Self {
+        self.arguments.push(argument.into());
+        self
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn arguments(&self) -> &[String] {
+        &self.arguments
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        Diagnostic, DiagnosticApplicability, DiagnosticBag, DiagnosticLabel, DiagnosticSeverity,
-        DiagnosticSuggestion, SourceEdit, SourceName, SourcePosition, SourceRange, SourceSpan,
+        Diagnostic, DiagnosticApplicability, DiagnosticBag, DiagnosticCommand, DiagnosticLabel,
+        DiagnosticSeverity, DiagnosticSuggestion, SourceEdit, SourceName, SourcePosition,
+        SourceRange, SourceSpan,
     };
 
     #[test]
@@ -428,7 +476,11 @@ mod tests {
                 Some("explicit id".to_owned()),
             ))
             .with_note("style lint")
-            .with_suggestion(suggestion);
+            .with_suggestion(suggestion)
+            .with_command(
+                DiagnosticCommand::new("arcweft.verify.showObligation", "Show proof obligation")
+                    .with_argument("obligation.0001"),
+            );
         let mut bag = DiagnosticBag::default();
         bag.push(diagnostic);
         let diagnostic = bag.iter().next().expect("diagnostic");
@@ -439,5 +491,10 @@ mod tests {
         assert_eq!(diagnostic.labels().len(), 1);
         assert_eq!(diagnostic.notes(), &["style lint".to_owned()]);
         assert_eq!(diagnostic.suggestions().len(), 1);
+        assert_eq!(diagnostic.commands().len(), 1);
+        assert_eq!(
+            diagnostic.commands()[0].arguments(),
+            &["obligation.0001".to_owned()]
+        );
     }
 }

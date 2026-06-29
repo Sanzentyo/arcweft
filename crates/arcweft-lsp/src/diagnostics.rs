@@ -15,7 +15,9 @@ use arcweft_source::{
     Diagnostic as ArcDiagnostic, DiagnosticApplicability, DiagnosticLabelStyle,
     DiagnosticSeverity as ArcDiagnosticSeverity, SourceName, SourceSpan,
 };
-use arcweft_verify::{BackendKind, VerificationMode, VerificationPolicy, verify_module_with_env};
+use arcweft_verify::{
+    BackendKind, VerificationMode, VerificationPolicy, VerificationReport, verify_module_with_env,
+};
 use arcweft_verify_lsp::{
     LspPositionMapper, diagnostics_from_report_with_mapper,
     profile_manifest_conformance_diagnostics,
@@ -30,6 +32,7 @@ use lsp_types::{
 pub struct DocumentAnalysis {
     diagnostics: Vec<Diagnostic>,
     line_index: LineIndex,
+    verification_report: Option<VerificationReport>,
 }
 
 impl DocumentAnalysis {
@@ -37,6 +40,7 @@ impl DocumentAnalysis {
     pub fn analyze(source: &str, encoding: PositionEncoding, profile: &LspProfile) -> Self {
         let line_index = LineIndex::new(source.to_owned(), encoding);
         let source_name = SourceName::path("<memory>");
+        let mut verification_report = None;
         let parsed = parse_source(source.to_owned());
         let mut diagnostics = parsed
             .errors()
@@ -76,6 +80,7 @@ impl DocumentAnalysis {
                                     &report,
                                     &line_index,
                                 ));
+                                verification_report = Some(report);
                             }
                         } else {
                             diagnostics.extend(readiness);
@@ -95,6 +100,7 @@ impl DocumentAnalysis {
         Self {
             diagnostics,
             line_index,
+            verification_report,
         }
     }
 
@@ -106,6 +112,11 @@ impl DocumentAnalysis {
     /// Line index used for source-aware LSP feature conversion.
     pub const fn line_index(&self) -> &LineIndex {
         &self.line_index
+    }
+
+    /// Verifier report retained for typed verifier code actions.
+    pub const fn verification_report(&self) -> Option<&VerificationReport> {
+        self.verification_report.as_ref()
     }
 }
 

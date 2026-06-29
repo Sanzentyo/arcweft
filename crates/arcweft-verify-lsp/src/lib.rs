@@ -14,7 +14,8 @@ use arcweft_runtime_host::{
 };
 use arcweft_rust_abi::{ArcweftRustTypeDecl, ArcweftRustTypeKind};
 use arcweft_verify::{
-    Severity as VerifySeverity, ToolActionKind, VerificationDiagnostic, VerificationReport,
+    Severity as VerifySeverity, ToolAction, ToolActionKind, ToolActionSourceEdit,
+    VerificationDiagnostic, VerificationReport,
 };
 use lsp_types::{
     CodeAction, CodeActionKind, CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity,
@@ -515,26 +516,8 @@ pub fn code_actions_from_report(uri: &Uri, report: &VerificationReport) -> Vec<C
             diagnostic
                 .actions
                 .iter()
-                .map(|action| CodeAction {
-                    title: action.label.clone(),
-                    kind: Some(match action.kind {
-                        ToolActionKind::GenerateProofStub | ToolActionKind::GenerateUnsafeAudit => {
-                            CodeActionKind::QUICKFIX
-                        }
-                        ToolActionKind::ShowObligation
-                        | ToolActionKind::NavigateToProof
-                        | ToolActionKind::NavigateToUnsafeAudit => CodeActionKind::REFACTOR,
-                    }),
-                    diagnostics: Some(vec![diagnostic_from_verify(diagnostic)]),
-                    command: Some(lsp_types::Command {
-                        title: action.label.clone(),
-                        command: format!("arcweft.{}", action.id),
-                        arguments: Some(vec![
-                            serde_json::json!(uri.to_string()),
-                            serde_json::json!(diagnostic.obligation),
-                        ]),
-                    }),
-                    ..CodeAction::default()
+                .map(|action| {
+                    verifier_command_code_action(uri, diagnostic, action, diagnostic_from_verify)
                 })
                 .collect::<Vec<_>>()
         })
@@ -551,29 +534,73 @@ pub fn code_actions_from_report_with_mapper(
         .diagnostics
         .iter()
         .flat_map(|diagnostic| {
-            diagnostic.actions.iter().map(|action| CodeAction {
-                title: action.label.clone(),
-                kind: Some(match action.kind {
-                    ToolActionKind::GenerateProofStub | ToolActionKind::GenerateUnsafeAudit => {
-                        CodeActionKind::QUICKFIX
-                    }
-                    ToolActionKind::ShowObligation
-                    | ToolActionKind::NavigateToProof
-                    | ToolActionKind::NavigateToUnsafeAudit => CodeActionKind::REFACTOR,
-                }),
-                diagnostics: Some(vec![diagnostic_from_verify_with_mapper(diagnostic, mapper)]),
-                command: Some(lsp_types::Command {
-                    title: action.label.clone(),
-                    command: format!("arcweft.{}", action.id),
-                    arguments: Some(vec![
-                        serde_json::json!(uri.to_string()),
-                        serde_json::json!(diagnostic.obligation),
-                    ]),
-                }),
-                ..CodeAction::default()
+            diagnostic.actions.iter().map(|action| {
+                if let Some(source_edit) = action.source_edit() {
+                    verifier_edit_code_action(uri, diagnostic, action, source_edit, mapper)
+                } else {
+                    verifier_command_code_action(uri, diagnostic, action, |diagnostic| {
+                        diagnostic_from_verify_with_mapper(diagnostic, mapper)
+                    })
+                }
             })
         })
         .collect()
+}
+
+fn verifier_edit_code_action(
+    uri: &Uri,
+    diagnostic: &VerificationDiagnostic,
+    action: &ToolAction,
+    source_edit: &ToolActionSourceEdit,
+    mapper: &impl LspPositionMapper,
+) -> CodeAction {
+    CodeAction {
+        title: action.label.clone(),
+        kind: Some(verifier_code_action_kind(action.kind)),
+        diagnostics: Some(vec![diagnostic_from_verify_with_mapper(diagnostic, mapper)]),
+        edit: Some(workspace_edit_from_tool_action_edit(
+            uri,
+            source_edit,
+            mapper,
+        )),
+        command: None,
+        ..CodeAction::default()
+    }
+}
+
+fn verifier_command_code_action(
+    uri: &Uri,
+    diagnostic: &VerificationDiagnostic,
+    action: &ToolAction,
+    diagnostic_mapper: impl FnOnce(&VerificationDiagnostic) -> Diagnostic,
+) -> CodeAction {
+    let command = action.host_command();
+    CodeAction {
+        title: action.label.clone(),
+        kind: Some(verifier_code_action_kind(action.kind)),
+        diagnostics: Some(vec![diagnostic_mapper(diagnostic)]),
+        command: Some(lsp_types::Command {
+            title: command.title().to_owned(),
+            command: command.id().to_owned(),
+            arguments: Some(vec![
+                serde_json::json!(uri.to_string()),
+                serde_json::json!(diagnostic.obligation),
+                serde_json::json!(action.id),
+            ]),
+        }),
+        ..CodeAction::default()
+    }
+}
+
+fn verifier_code_action_kind(kind: ToolActionKind) -> CodeActionKind {
+    match kind {
+        ToolActionKind::GenerateProofStub | ToolActionKind::GenerateUnsafeAudit => {
+            CodeActionKind::QUICKFIX
+        }
+        ToolActionKind::ShowObligation
+        | ToolActionKind::NavigateToProof
+        | ToolActionKind::NavigateToUnsafeAudit => CodeActionKind::REFACTOR,
+    }
 }
 
 /// Converts source-level Arcweft tooling actions into LSP code actions.
@@ -629,6 +656,20 @@ pub fn workspace_edit_from_tooling_edit(
     let text_edit = TextEdit::new(
         mapper.range_from_byte_span(edit.start, edit.end),
         edit.replacement.clone(),
+    );
+    WorkspaceEdit::new(HashMap::from([(uri.clone(), vec![text_edit])]))
+}
+
+/// Converts one verifier-owned source edit into an LSP workspace edit.
+pub fn workspace_edit_from_tool_action_edit(
+    uri: &Uri,
+    edit: &ToolActionSourceEdit,
+    mapper: &impl LspPositionMapper,
+) -> WorkspaceEdit {
+    let span = edit.span();
+    let text_edit = TextEdit::new(
+        mapper.range_from_byte_span(span.start, span.end),
+        edit.replacement().to_owned(),
     );
     WorkspaceEdit::new(HashMap::from([(uri.clone(), vec![text_edit])]))
 }
@@ -887,7 +928,10 @@ mod tests {
         ArcweftRustParam, ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind,
         ArcweftRustTypeRef, ArcweftRustVariant,
     };
-    use arcweft_verify::{VerificationDiagnostic, VerificationPolicy, VerificationReport};
+    use arcweft_verify::{
+        SourceSpan as VerifySourceSpan, ToolActionApplicability, ToolActionCommand,
+        VerificationDiagnostic, VerificationPolicy, VerificationReport,
+    };
 
     struct TestMapper;
 
@@ -918,6 +962,86 @@ mod tests {
         let diagnostics = diagnostics_from_report(&report);
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].severity, Some(DiagnosticSeverity::ERROR));
+    }
+
+    #[test]
+    fn verifier_source_edit_action_becomes_workspace_edit() {
+        let uri = "file:///game/routes/opening.arcw"
+            .parse::<Uri>()
+            .expect("uri");
+        let report = VerificationReport {
+            policy: VerificationPolicy::default(),
+            diagnostics: vec![VerificationDiagnostic {
+                id: "d1".to_owned(),
+                severity: VerifySeverity::Warning,
+                message: "missing proof".to_owned(),
+                source: Some(VerifySourceSpan { start: 3, end: 8 }),
+                obligation: Some("obligation.0001".to_owned()),
+                related_ids: Vec::new(),
+                actions: vec![ToolAction {
+                    id: "action.generate_proof_stub".to_owned(),
+                    label: "Generate proof stub".to_owned(),
+                    kind: ToolActionKind::GenerateProofStub,
+                    source_edit: Some(arcweft_verify::ToolActionSourceEdit {
+                        span: VerifySourceSpan { start: 10, end: 15 },
+                        replacement: "proof {}".to_owned(),
+                        applicability: ToolActionApplicability::HasPlaceholders,
+                    }),
+                    command: None,
+                }],
+            }],
+            ..VerificationReport::default()
+        };
+
+        let actions = code_actions_from_report_with_mapper(&uri, &report, &TestMapper);
+
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].kind, Some(CodeActionKind::QUICKFIX));
+        assert!(actions[0].command.is_none());
+        let edit = actions[0].edit.as_ref().expect("workspace edit");
+        let text_edit = &edit.changes.as_ref().expect("changes")[&uri][0];
+        assert_eq!(text_edit.range.start, Position::new(0, 10));
+        assert_eq!(text_edit.range.end, Position::new(0, 15));
+        assert_eq!(text_edit.new_text, "proof {}");
+    }
+
+    #[test]
+    fn verifier_host_action_becomes_command_action() {
+        let uri = "file:///game/routes/opening.arcw"
+            .parse::<Uri>()
+            .expect("uri");
+        let report = VerificationReport {
+            policy: VerificationPolicy::default(),
+            diagnostics: vec![VerificationDiagnostic {
+                id: "d1".to_owned(),
+                severity: VerifySeverity::Warning,
+                message: "inspect obligation".to_owned(),
+                source: None,
+                obligation: Some("obligation.0001".to_owned()),
+                related_ids: Vec::new(),
+                actions: vec![ToolAction {
+                    id: "action.show_obligation".to_owned(),
+                    label: "Show proof obligation".to_owned(),
+                    kind: ToolActionKind::ShowObligation,
+                    source_edit: None,
+                    command: Some(ToolActionCommand::new(
+                        "arcweft.verify.showObligation",
+                        "Show proof obligation",
+                    )),
+                }],
+            }],
+            ..VerificationReport::default()
+        };
+
+        let actions = code_actions_from_report(&uri, &report);
+
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].kind, Some(CodeActionKind::REFACTOR));
+        assert!(actions[0].edit.is_none());
+        assert_eq!(
+            actions[0].command.as_ref().expect("command").command,
+            "arcweft.verify.showObligation"
+        );
     }
 
     #[test]

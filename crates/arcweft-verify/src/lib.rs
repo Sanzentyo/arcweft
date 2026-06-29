@@ -29,6 +29,11 @@ use arcweft_lang_sema::{
         analyze_semantics,
     },
 };
+use arcweft_source::{
+    Diagnostic as SourceDiagnostic, DiagnosticApplicability, DiagnosticCommand, DiagnosticLabel,
+    DiagnosticSeverity, DiagnosticSuggestion, SourceEdit, SourceName as DiagnosticSourceName,
+    SourceRange, SourceSpan as DiagnosticSourceSpan,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -213,10 +218,14 @@ pub struct ToolAction {
     pub id: String,
     pub label: String,
     pub kind: ToolActionKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_edit: Option<ToolActionSourceEdit>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<ToolActionCommand>,
 }
 
 /// Action kind for verifier-assisted edits or navigation.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolActionKind {
     GenerateProofStub,
@@ -226,12 +235,42 @@ pub enum ToolActionKind {
     NavigateToUnsafeAudit,
 }
 
+/// Optional source rewrite attached to an otherwise stable verifier action.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ToolActionSourceEdit {
+    pub span: SourceSpan,
+    pub replacement: String,
+    pub applicability: ToolActionApplicability,
+}
+
+/// Applicability of verifier-provided source edits.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolActionApplicability {
+    MachineApplicable,
+    MaybeIncorrect,
+    HasPlaceholders,
+    Unspecified,
+}
+
+/// Host/tool command attached to a verifier action.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ToolActionCommand {
+    pub id: String,
+    pub title: String,
+}
+
 impl ToolAction {
     pub(crate) fn generate_proof_stub() -> Self {
         Self {
             id: "action.generate_proof_stub".to_owned(),
             label: "Generate proof stub".to_owned(),
             kind: ToolActionKind::GenerateProofStub,
+            source_edit: None,
+            command: Some(ToolActionCommand::new(
+                "arcweft.verify.generateProofStub",
+                "Generate proof stub",
+            )),
         }
     }
 
@@ -240,6 +279,11 @@ impl ToolAction {
             id: "action.show_obligation".to_owned(),
             label: "Show proof obligation".to_owned(),
             kind: ToolActionKind::ShowObligation,
+            source_edit: None,
+            command: Some(ToolActionCommand::new(
+                "arcweft.verify.showObligation",
+                "Show proof obligation",
+            )),
         }
     }
 
@@ -248,7 +292,148 @@ impl ToolAction {
             id: "action.generate_unsafe_audit".to_owned(),
             label: "Generate unsafe lifetime audit scaffold".to_owned(),
             kind: ToolActionKind::GenerateUnsafeAudit,
+            source_edit: None,
+            command: Some(ToolActionCommand::new(
+                "arcweft.verify.generateUnsafeAudit",
+                "Generate unsafe lifetime audit scaffold",
+            )),
         }
+    }
+
+    #[must_use]
+    pub fn with_source_edit(
+        mut self,
+        span: SourceSpan,
+        replacement: impl Into<String>,
+        applicability: ToolActionApplicability,
+    ) -> Self {
+        self.source_edit = Some(ToolActionSourceEdit {
+            span,
+            replacement: replacement.into(),
+            applicability,
+        });
+        self
+    }
+
+    pub fn source_edit(&self) -> Option<&ToolActionSourceEdit> {
+        self.source_edit.as_ref()
+    }
+
+    pub fn host_command(&self) -> ToolActionCommand {
+        self.command.clone().unwrap_or_else(|| {
+            ToolActionCommand::new(format!("arcweft.{}", self.id), self.label.clone())
+        })
+    }
+
+    pub fn diagnostic_suggestion(
+        &self,
+        source_name: &DiagnosticSourceName,
+    ) -> Option<DiagnosticSuggestion> {
+        let edit = self.source_edit.as_ref()?;
+        let span = DiagnosticSourceSpan::new(
+            source_name.clone(),
+            SourceRange::new(edit.span.start, edit.span.end),
+        );
+        Some(
+            DiagnosticSuggestion::new(self.label.clone(), edit.applicability.into())
+                .with_edit(SourceEdit::new(span, edit.replacement.clone())),
+        )
+    }
+
+    pub fn diagnostic_command(&self, obligation: Option<&str>) -> Option<DiagnosticCommand> {
+        if self.source_edit.is_some() {
+            return None;
+        }
+        let command = self.host_command();
+        let mut diagnostic = DiagnosticCommand::new(command.id, command.title);
+        if let Some(obligation) = obligation {
+            diagnostic = diagnostic.with_argument(obligation.to_owned());
+        }
+        Some(diagnostic)
+    }
+}
+
+impl ToolActionSourceEdit {
+    pub const fn span(&self) -> SourceSpan {
+        self.span
+    }
+
+    pub fn replacement(&self) -> &str {
+        &self.replacement
+    }
+
+    pub const fn applicability(&self) -> ToolActionApplicability {
+        self.applicability
+    }
+}
+
+impl ToolActionCommand {
+    pub fn new(id: impl Into<String>, title: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            title: title.into(),
+        }
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+}
+
+impl From<ToolActionApplicability> for DiagnosticApplicability {
+    fn from(value: ToolActionApplicability) -> Self {
+        match value {
+            ToolActionApplicability::MachineApplicable => Self::MachineApplicable,
+            ToolActionApplicability::MaybeIncorrect => Self::MaybeIncorrect,
+            ToolActionApplicability::HasPlaceholders => Self::HasPlaceholders,
+            ToolActionApplicability::Unspecified => Self::Unspecified,
+        }
+    }
+}
+
+impl From<Severity> for DiagnosticSeverity {
+    fn from(value: Severity) -> Self {
+        match value {
+            Severity::Info => Self::Info,
+            Severity::Warning => Self::Warning,
+            Severity::Error => Self::Error,
+        }
+    }
+}
+
+impl VerificationDiagnostic {
+    pub fn source_diagnostic(&self, source_name: &DiagnosticSourceName) -> SourceDiagnostic {
+        let mut diagnostic = SourceDiagnostic::new(self.severity.into(), self.message.clone())
+            .with_code(self.id.clone());
+        if let Some(span) = self.source {
+            let span = DiagnosticSourceSpan::new(
+                source_name.clone(),
+                SourceRange::new(span.start, span.end),
+            );
+            diagnostic = diagnostic.with_label(DiagnosticLabel::primary(
+                span,
+                Some("verifier diagnostic".to_owned()),
+            ));
+        }
+        if let Some(obligation) = &self.obligation {
+            diagnostic = diagnostic.with_note(format!("obligation: {obligation}"));
+        }
+        for related in &self.related_ids {
+            diagnostic = diagnostic.with_note(format!("related: {related}"));
+        }
+        for action in &self.actions {
+            if let Some(suggestion) = action.diagnostic_suggestion(source_name) {
+                diagnostic = diagnostic.with_suggestion(suggestion);
+            }
+            if let Some(command) = action.diagnostic_command(self.obligation.as_deref()) {
+                diagnostic = diagnostic.with_command(command);
+            }
+        }
+        diagnostic
     }
 }
 
@@ -331,6 +516,13 @@ pub fn verify_module_with_env(
 }
 
 impl VerificationReport {
+    pub fn source_diagnostics(&self, source_name: &DiagnosticSourceName) -> Vec<SourceDiagnostic> {
+        self.diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.source_diagnostic(source_name))
+            .collect()
+    }
+
     pub fn has_errors(&self) -> bool {
         self.diagnostics
             .iter()
@@ -558,6 +750,10 @@ fn merge_semantic_diagnostic(
     let obligation = diagnostic
         .obligation
         .and_then(|id| id_map.get(&id).cloned());
+    let actions = obligation
+        .as_ref()
+        .and_then(|id| report.obligations.iter().find(|item| &item.id == id))
+        .map_or_else(Vec::new, |item| item.kind.actions(&item.discharge));
     report.diagnostics.push(VerificationDiagnostic {
         id: format!("diagnostic.{}", diagnostic.id),
         severity: severity(diagnostic.severity),
@@ -568,7 +764,7 @@ fn merge_semantic_diagnostic(
         }),
         obligation,
         related_ids: diagnostic.related_ids,
-        actions: Vec::new(),
+        actions,
     });
 }
 
