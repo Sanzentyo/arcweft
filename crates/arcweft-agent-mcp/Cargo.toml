@@ -9,9 +9,14 @@ repository.workspace = true
 [dependencies]
 arcweft-agent-policy = { path = "../arcweft-agent-policy" }
 arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
+arcweft-agent-repl = { path = "../arcweft-agent-repl" }
 arcweft-content-policy = { path = "../arcweft-content-policy" }
+arcweft-runtime-driver = { path = "../arcweft-runtime-driver" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+
+[dev-dependencies]
+arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 
 [lints]
 workspace = true

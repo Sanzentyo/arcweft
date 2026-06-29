@@ -287,7 +287,10 @@ version = "0.1.0"
 dependencies = [
  "arcweft-agent-policy",
  "arcweft-agent-protocol",
+ "arcweft-agent-repl",
  "arcweft-content-policy",
+ "arcweft-lang-sema",
+ "arcweft-runtime-driver",
  "serde",
  "serde_json",
 ]

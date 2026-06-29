@@ -5,6 +5,7 @@
 use serde_json;
 
 use crate::model::McpToolDescriptor;
+use crate::repl_command::MCP_REPL_COMMAND_TOOL;
 
 pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
     vec![
@@ -18,6 +19,7 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
         agent_capture_tool_descriptor(),
         agent_hit_test_tool_descriptor(),
         agent_session_info_tool_descriptor(),
+        agent_repl_command_tool_descriptor(),
         agent_get_state_tool_descriptor(),
         agent_signal_get_tool_descriptor(),
         agent_log_query_tool_descriptor(),
@@ -33,6 +35,26 @@ pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
         agent_debug_graph_inventory_tool_descriptor(),
         agent_trace_read_tool_descriptor(),
     ]
+}
+
+fn agent_repl_command_tool_descriptor() -> McpToolDescriptor {
+    McpToolDescriptor {
+        name: MCP_REPL_COMMAND_TOOL.to_owned(),
+        title: Some("Run Arcweft Agent REPL Command".to_owned()),
+        description: "Parses raw Agent REPL input, dispatches typed meta-commands through the shared ReplCommandHandler stack, and returns structured ReplCommandResult evidence as JSON text.".to_owned(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "input": { "type": "string", "description": "Raw REPL input such as :tasks --all, :cancel all, :warm latest, or :codegen latest." },
+                "command_id": { "type": "integer", "minimum": 1, "default": 1 },
+                "trace_policy": { "type": "string", "enum": ["read_write", "read_only_trace"], "default": "read_write" },
+                "max_items": { "type": "integer", "minimum": 1, "default": 32 },
+                "max_string_bytes": { "type": "integer", "minimum": 1, "default": 240 },
+                "include_diagnostics": { "type": "boolean", "default": true }
+            },
+            "required": ["input"]
+        }),
+    }
 }
 
 fn agent_script_run_tool_descriptor() -> McpToolDescriptor {

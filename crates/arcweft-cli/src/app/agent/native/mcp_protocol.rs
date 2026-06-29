@@ -58,6 +58,8 @@ pub(super) struct AgentMcpState {
     pub(super) native_capture_session: Option<arcweft_render_native::NativeOffscreenCaptureSession>,
     pub(super) runtime: Option<NativeAgentRuntimeState>,
     pub(super) observe_options: Option<AgentObserveOptions>,
+    pub(super) repl_session: Option<arcweft_agent_repl::ReplSession>,
+    pub(super) repl_tier_handler: arcweft_agent_repl::ReplTierCommandHandler,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -398,6 +400,11 @@ pub(super) fn agent_mcp_tool_call(
             serde_json::to_value(tool)
                 .map_err(|error| format!("failed to serialize MCP session info: {error}"))
         }
+        MCP_REPL_COMMAND_TOOL => {
+            let tool = agent_mcp_call_repl_command(&arguments, state)?;
+            serde_json::to_value(tool)
+                .map_err(|error| format!("failed to serialize MCP REPL command result: {error}"))
+        }
         "arcweft.resource.read" => {
             let tool = agent_mcp_call_resource_read(&arguments, state)?;
             serde_json::to_value(tool)
@@ -603,9 +610,36 @@ fn agent_mcp_session_capabilities() -> Vec<&'static str> {
         "capture",
         "resource_read",
         "step_frames",
+        "repl_command",
         "hit_test",
         "rag",
     ]
+}
+
+pub(super) fn agent_mcp_call_repl_command(
+    arguments: &serde_json::Value,
+    state: &mut AgentMcpState,
+) -> Result<McpCallToolResult, String> {
+    let request = McpReplCommandRequest::from_arguments(arguments)
+        .map_err(|error| format!("invalid {MCP_REPL_COMMAND_TOOL} arguments: {error}"))?;
+    agent_mcp_ensure_repl_session(state)?;
+    let Some(session) = state.repl_session.as_mut() else {
+        return Err("failed to initialize MCP REPL command session".to_owned());
+    };
+    let mut endpoint = McpReplCommandEndpoint::new(session, &mut state.repl_tier_handler);
+    Ok(endpoint.execute(&request))
+}
+
+fn agent_mcp_ensure_repl_session(state: &mut AgentMcpState) -> Result<(), String> {
+    if state.repl_session.is_some() {
+        return Ok(());
+    }
+    let project = agent_script_project_index(&[])?;
+    state.repl_session = Some(arcweft_agent_repl::ReplSession::new(
+        arcweft_agent_repl::ReplBaseSnapshot::from_project("mcp-agent-repl", project),
+        arcweft_agent_repl::ReplSessionOptions::default(),
+    ));
+    Ok(())
 }
 
 fn agent_mcp_program_hash_for_state(state: &AgentMcpState) -> String {

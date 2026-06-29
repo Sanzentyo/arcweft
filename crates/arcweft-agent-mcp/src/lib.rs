@@ -5,6 +5,7 @@
 //! shapes so CLI, tests, and a future MCP transport share one contract.
 
 pub mod model;
+pub mod repl_command;
 pub mod resources;
 pub mod tools;
 

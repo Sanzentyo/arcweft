@@ -1455,6 +1455,8 @@ pub(super) fn agent_repl_query(
         native_capture_session: None,
         runtime: None,
         observe_options: None,
+        repl_session: None,
+        repl_tier_handler: arcweft_agent_repl::ReplTierCommandHandler::default(),
     };
     match agent_mcp_rag_context_pack(
         &mcp_state,

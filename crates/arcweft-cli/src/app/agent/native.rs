@@ -46,6 +46,7 @@ use crate::app::local_embedding::{
 };
 use arcweft_agent_mcp::{
     model::{McpCallToolResult, McpContentBlock, McpListResourcesResult, McpReadResourceResult},
+    repl_command::{MCP_REPL_COMMAND_TOOL, McpReplCommandEndpoint, McpReplCommandRequest},
     resources::{
         list_resource_templates_result, list_resources_result, read_resource_result,
         resource_descriptor, tool_result_for_resource, tool_result_for_resources, trace_resource,

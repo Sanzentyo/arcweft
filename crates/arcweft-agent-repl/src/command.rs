@@ -7,6 +7,7 @@
 
 mod dispatch;
 mod host;
+mod json;
 mod parse;
 mod runtime_task;
 mod types;
@@ -18,6 +19,7 @@ pub use self::host::{
     AgentSessionReplCommandHost, ReplCommandHost, ReplCommandHostError, ReplCommandHostResult,
     ReplProjectLoader,
 };
+pub use self::json::{ReplCommandJsonOptions, repl_command_result_json};
 pub use self::parse::{
     ReplCommandParseError, parse_repl_command, parse_repl_input, repl_command_names,
 };
