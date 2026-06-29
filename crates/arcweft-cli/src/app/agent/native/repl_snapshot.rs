@@ -1,6 +1,8 @@
 use super::repl::AgentReplSerializedBinding;
-use super::{
-    CallArg, EntityRefSyntax, Expr, Literal, ParsedFragment, ParsedFragmentKind, Pattern, Stmt,
+use arcweft_lang_syntax::{
+    ast::{flow::Stmt, ids::EntityRefSyntax, pattern::Pattern},
+    expr::{CallArg, Expr, Literal},
+    parser::{ParsedFragment, ParsedFragmentKind},
 };
 use std::collections::BTreeMap;
 

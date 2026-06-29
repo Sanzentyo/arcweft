@@ -84,6 +84,12 @@ impl<'a> ReplCommandContext<'a> {
     }
 
     #[must_use]
+    pub const fn with_next_command_id(mut self, next_command_id: ReplCommandId) -> Self {
+        self.next_command_id = next_command_id;
+        self
+    }
+
+    #[must_use]
     pub fn trace_policy(&self) -> ReplTracePolicy {
         self.trace_policy
     }

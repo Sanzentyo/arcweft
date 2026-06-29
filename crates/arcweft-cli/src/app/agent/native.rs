@@ -14,22 +14,22 @@ use super::rag::{
 use super::script::{
     AgentCaptureBlob, AgentScriptRunInput, AgentScriptRunReport, CliAgentSession,
     CollectingDebugSink, agent_cli_session_id, agent_debug_finish_runtime_session,
-    agent_debug_start_runtime_session, agent_script_project_entities_metadata,
-    agent_script_project_graph_metadata, agent_script_project_index, agent_script_run_bundle,
-    agent_script_run_input, agent_script_run_report_from_result, agent_script_runtime_policy,
-    agent_script_runtime_policy_for_bundle, parse_agent_script_signal_arg,
-    parse_agent_script_state_arg, read_and_validate_agent_trace_records, write_agent_capture_blobs,
+    agent_debug_start_runtime_session, agent_project_entities, agent_project_graph,
+    agent_script_project_entities_metadata, agent_script_project_graph_metadata,
+    agent_script_project_index, agent_script_run_bundle, agent_script_run_input,
+    agent_script_run_report_from_result, agent_script_runtime_policy,
+    parse_agent_script_signal_arg, parse_agent_script_state_arg,
+    read_and_validate_agent_trace_records, write_agent_capture_blobs,
 };
 use super::{
     AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT, AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH, AgentCommand,
-    AgentContentPolicyMode, AgentControllerRunConfig, AgentControllerRunReport,
-    AgentHitTestOptions, AgentMcpOptions, AgentObserveCaptureKind, AgentObserveImageKind,
-    AgentObserveMcpFormat, AgentObserveOptions, AgentObserveResourceKind, AgentReplOptions,
-    AgentRunner, AgentRunnerConfig, AgentScriptRunOptions, AgentScriptSignalArg,
-    AgentScriptStateArg, AgentSession, CliRuntimeExecutorTier, CliRuntimePureWorkers,
-    CliRuntimeStepMode, ExitCode, FlowFiberStatus, LineDisplayCatalog, NativeAdapterRegistrar,
-    NativeTaskBridge, NoopRagService, Path, PathBuf, ProfileOptions, RuntimeStepInput,
-    RuntimeStepResult, fs, load_and_check_selection,
+    AgentContentPolicyMode, AgentControllerRunConfig, AgentHitTestOptions, AgentMcpOptions,
+    AgentObserveCaptureKind, AgentObserveImageKind, AgentObserveMcpFormat, AgentObserveOptions,
+    AgentObserveResourceKind, AgentReplOptions, AgentRunner, AgentRunnerConfig,
+    AgentScriptRunOptions, AgentScriptSignalArg, AgentScriptStateArg, AgentSession,
+    CliRuntimeExecutorTier, CliRuntimePureWorkers, CliRuntimeStepMode, ExitCode, FlowFiberStatus,
+    LineDisplayCatalog, NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf,
+    ProfileOptions, RuntimeStepInput, RuntimeStepResult, fs, load_and_check_selection,
     lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection,
     parse_runtime_binding_arg, parse_runtime_pure_workers, print_json, resolve_source_selection,
     runtime_plan_options_for_selection, runtime_pure_config_for_selection, step_options,
@@ -94,7 +94,6 @@ use arcweft_agent_protocol::session::{AgentAssignment, AgentAudioState};
 use arcweft_agent_protocol::trace::AgentTraceRecord;
 use arcweft_agent_protocol::ui::AgentUiTree;
 use arcweft_agent_protocol::value::AgentValue;
-use arcweft_bundle::ArcweftBundle;
 use arcweft_core::effect::RuntimeCall;
 use arcweft_core::engine::FlowStatusLabelStyle;
 use arcweft_core::plan::FlowEvent;
@@ -123,12 +122,6 @@ use arcweft_interaction_model::{
 };
 use arcweft_lang_sema::check::{TypeCheckReport, TypeJudgmentRule};
 use arcweft_lang_sema::project_index::{ProgramHash, project_semantic_index_from_hir};
-use arcweft_lang_syntax::ast::{
-    flow::Stmt,
-    ids::EntityRefSyntax,
-    pattern::{Pattern, VariantPatternPayload},
-};
-use arcweft_lang_syntax::expr::{CallArg, Expr, Literal};
 use arcweft_lang_syntax::parser::{ParseCompletion, ParsedFragment, ParsedFragmentKind};
 use arcweft_layout::{
     CaptureComposition as LayoutCaptureComposition, CaptureCropBounds,
@@ -269,6 +262,7 @@ mod repl;
 mod repl_command_bridge;
 mod repl_command_format;
 mod repl_project_binding;
+#[cfg(test)]
 mod repl_snapshot;
 mod runtime_observation;
 #[cfg(test)]

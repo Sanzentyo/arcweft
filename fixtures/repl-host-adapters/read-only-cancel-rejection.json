@@ -1,0 +1,1 @@
+{"kind":"empty","status":"rejected","diagnostics":[{"severity":"error","code":"read_only_trace_rejected","message":"read-only trace mode rejects mutating command `:cancel`"}],"mutation_attempted":false}

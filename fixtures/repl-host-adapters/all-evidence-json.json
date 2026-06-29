@@ -1,0 +1,19 @@
+{
+  "fixtures": [
+    {"kind":"observation","status":"ok","tick":0,"frame_id":"cli.frame.0","state_hash":"cli.state.0","render_hash":"cli.render.0","actions":0,"signals":0},
+    {"kind":"step","status":"ok","frames":1,"observation":{"tick":1,"frame_id":"cli.frame.1","state_hash":"cli.state.1","render_hash":"cli.render.1"}},
+    {"kind":"tasks","status":"ok","include_completed":false,"tasks":[{"id":"task.dialogue.0","status":"running","generation":0,"logical_epoch":0,"sequence":0,"cancel_scope":"dialogue"}]},
+    {"kind":"cancel","status":"ok","outcome":{"target":{"kind":"all"},"cancelled":1,"pending_after":0}},
+    {"kind":"load","status":"ok","path":"examples/repl/base.awfagent","dropped_cells":0,"invalidated_bindings":0,"generation":{"active_generation":1}},
+    {"kind":"reload","status":"ok","path":"examples/repl/base.awfagent","dropped_cells":0,"invalidated_bindings":0,"generation":{"active_generation":2}},
+    {"kind":"cells","status":"ok","include_invalidated":false,"cells":[{"id":0,"kind":"expression","execution":{"status":"Executed"}}]},
+    {"kind":"undo","status":"ok","removed_cell":0,"remaining_cells":0},
+    {"kind":"reset","status":"ok","removed_cells":0,"retained_generation":0},
+    {"kind":"capabilities","status":"ok","allowed":["agent.observe","agent.act.semantic","agent.capture","agent.resource.read","debug.read","debug.record","rag.query"]},
+    {"kind":"generations","status":"ok","generation":{"active_generation":0,"committed_cells":1,"invalidation_events":1},"tiers":[{"tier":"bytecode_vm","status":"unsupported"}],"bindings":[{"name":"x","status":"active"}]},
+    {"kind":"warm","status":"ok","request_id":1,"requested":true,"started_background_job":false,"backend_status":"unsupported","fallback":"bytecode_vm","reason":"full_script_backend_not_available"},
+    {"kind":"codegen","status":"ok","requested":true,"backend_status":"unsupported","fallback":"bytecode_vm","failures":[{"code":"full_script_backend_not_available"}]},
+    {"kind":"cell_submission_rejected","status":"error","source_len":12,"policy":"read_only_trace","diagnostics":[{"severity":"error","code":"read_only_trace_rejected"}]},
+    {"kind":"empty","status":"error","diagnostics":[{"severity":"error","code":"host_unavailable","message":"task inspection is not available for this host adapter"}]}
+  ]
+}

@@ -1,0 +1,2 @@
+ok: warm request_id=1 requested=true started_background_job=false backend_status=unsupported fallback=bytecode_vm reason=full_script_backend_not_available generation=0 overlay=overlay.empty
+ok: codegen requested=true backend_status=unsupported fallback=bytecode_vm warmed_generations=0 pending_jobs=0 failures=1 invalidated_artifacts=0

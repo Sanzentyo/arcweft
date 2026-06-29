@@ -1,0 +1,19 @@
+ok: observation tick=0 frame=cli.frame.0 state=cli.state.0 render=cli.render.0 actions=0 signals=0
+ok: step frames=1 tick=1 frame=cli.frame.1 state=cli.state.1 render=cli.render.1
+ok: tasks include_completed=false count=1
+  task id=task.dialogue.0 status=running generation=0 epoch=0 sequence=0 scope=dialogue
+ok: cancel target=all cancelled=1 pending_after=0
+ok: load path=examples/repl/base.awfagent dropped_cells=0 invalidated_bindings=0 generation=1
+ok: reload path=examples/repl/base.awfagent dropped_cells=0 invalidated_bindings=0 generation=2
+ok: cells count=1 include_invalidated=false
+  cell.0 kind=expression status=Executed generation=0 overlay=overlay.0
+ok: undo removed=cell.0 remaining_cells=0 overlay=overlay.empty
+ok: reset removed_cells=0 retained_generation=0 overlay=overlay.empty
+ok: capabilities allowed=agent.observe,agent.act.semantic,agent.capture,agent.resource.read,debug.read,debug.record,rag.query
+ok: generations active=0 committed_cells=1 invalidations=1 overlay=overlay.0 tiers=1 bindings=1
+ok: warm request_id=1 requested=true started_background_job=false backend_status=unsupported fallback=bytecode_vm reason=full_script_backend_not_available generation=0 overlay=overlay.0
+ok: codegen requested=true backend_status=unsupported fallback=bytecode_vm warmed_generations=0 pending_jobs=0 failures=1 invalidated_artifacts=0
+error: cell submission rejected source_len=12 policy=read_only_trace
+  diagnostic error read_only_trace_rejected read-only trace mode does not allow cell execution
+error: host unavailable
+  diagnostic error host_unavailable task inspection is not available for this host adapter

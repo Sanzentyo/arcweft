@@ -1,18 +1,26 @@
 use super::repl::{
-    AgentReplCellReport, AgentReplState, agent_repl_eval_compiled_cell, agent_repl_eval_meta,
-    agent_repl_ok,
+    AgentReplBinding, AgentReplCellReport, AgentReplState, agent_repl_eval_meta, agent_repl_ok,
 };
 use super::repl_command_format::{
     CliReplCommandFormatter, ReplCommandFormatMode, ReplCommandFormatOptions,
     ReplCommandFormattedOutput, ReplCommandResultFormatter,
 };
-use super::{AgentReplOptions, NativeAdapterRegistrar};
+use super::{
+    AgentControllerRunConfig, AgentReplOptions, AgentRunnerConfig, CollectingDebugSink,
+    NativeAdapterRegistrar, NoopRagService, PathBuf, agent_cli_session_id,
+    agent_script_project_index,
+};
+#[cfg(feature = "native-player")]
+use arcweft_agent_repl::command::RuntimeTaskReplCommandHost;
 use arcweft_agent_repl::command::{
-    ReplCancelEvidence, ReplCancelOutcome, ReplCellSubmissionEvidence, ReplCommand,
-    ReplCommandDiagnostic, ReplCommandDiagnosticCode, ReplCommandDiagnosticSeverity,
-    ReplCommandEvidence, ReplCommandId, ReplCommandResult, ReplCommandStatus, ReplHelpEvidence,
-    ReplInput, ReplTaskList, ReplTasksEvidence, ReplTracePolicy, parse_repl_input,
-    repl_command_names,
+    AgentSessionReplCommandHost, LoadCommand, ReloadCommand, ReplCommand, ReplCommandContext,
+    ReplCommandDiagnostic, ReplCommandDiagnosticCode, ReplCommandEvidence, ReplCommandHost,
+    ReplCommandHostError, ReplCommandId, ReplCommandResult, ReplCommandStatus, ReplInput,
+    ReplProjectLoader, ReplTracePolicy, parse_repl_input,
+};
+use arcweft_agent_repl::{
+    ReplBaseSnapshot, ReplCellExecutionStatus, ReplCellInput, ReplEvaluateOutcome,
+    ReplEvaluationRuntime, ReplSession,
 };
 
 pub(super) fn agent_repl_eval_line(
@@ -27,34 +35,11 @@ pub(super) fn agent_repl_eval_line(
             agent_repl_ok(index, input, "empty", serde_json::json!({ "empty": true }))
         }
         Ok(ReplInput::Cell(cell)) => {
-            if state.read_only {
-                return agent_repl_typed_cell_report(
-                    index,
-                    input,
-                    options,
-                    &ReplCommandResult::rejected(
-                        agent_repl_command_id(index),
-                        ReplCommandEvidence::CellSubmissionRejected(ReplCellSubmissionEvidence {
-                            source_len: cell.source_text().len(),
-                            policy: ReplTracePolicy::ReadOnlyTrace,
-                        }),
-                        ReplCommandDiagnostic::error(
-                            ReplCommandDiagnosticCode::ReadOnlyTraceRejected,
-                            "read-only Agent REPL does not execute Agent cells",
-                        ),
-                    ),
-                );
-            }
-            agent_repl_eval_compiled_cell(index, input, state)
+            agent_repl_eval_typed_cell(index, input, options, state, &cell)
         }
-        Ok(ReplInput::Command(command)) => agent_repl_eval_typed_or_cli_meta(
-            index,
-            input,
-            options,
-            state,
-            adapter_registrars,
-            command,
-        ),
+        Ok(ReplInput::Command(command)) => {
+            agent_repl_eval_typed_meta(index, input, options, state, command)
+        }
         Err(_) if agent_repl_cli_meta_command(input).is_some() => {
             agent_repl_eval_meta(index, input, options, state, adapter_registrars)
         }
@@ -71,17 +56,54 @@ pub(super) fn agent_repl_eval_line(
     }
 }
 
-fn agent_repl_eval_typed_or_cli_meta(
+fn agent_repl_eval_typed_cell(
     index: usize,
     input: &str,
     options: &AgentReplOptions,
     state: &mut AgentReplState,
-    adapter_registrars: &[NativeAdapterRegistrar],
-    command: ReplCommand,
+    cell: &ReplCellInput,
 ) -> AgentReplCellReport {
-    match agent_repl_eval_typed_meta(index, input, options, state, command) {
-        Some(report) => report,
-        None => agent_repl_eval_meta(index, input, options, state, adapter_registrars),
+    let trace_policy = agent_repl_trace_policy(state);
+    let Some(command_agent_session) = state.command_agent_session.as_mut() else {
+        return agent_repl_command_surface_unavailable(index, input, options);
+    };
+
+    let mut debug = CollectingDebugSink::default();
+    let mut rag = NoopRagService;
+    let runtime = ReplEvaluationRuntime::new(
+        command_agent_session,
+        &mut debug,
+        &mut rag,
+        AgentRunnerConfig::new(agent_cli_session_id()),
+    )
+    .with_run_config(AgentControllerRunConfig {
+        max_steps: 16,
+        max_ops_per_step: 128,
+    });
+
+    let evaluation = {
+        let Some(command_session) = state.command_session.as_mut() else {
+            return agent_repl_command_surface_unavailable(index, input, options);
+        };
+        let mut context = ReplCommandContext::new(command_session)
+            .with_next_command_id(agent_repl_command_id(index))
+            .with_trace_policy(trace_policy);
+        if let Some(result) = context.reject_cell_submission_if_read_only(cell) {
+            return agent_repl_typed_cell_report(index, input, options, &result);
+        }
+        context.session_mut().evaluate_cell(cell, runtime)
+    };
+    match evaluation {
+        Ok(outcome) => agent_repl_typed_cell_outcome(index, input, state, outcome),
+        Err(error) => AgentReplCellReport {
+            index,
+            input: input.to_owned(),
+            kind: "cell".to_owned(),
+            status: "error".to_owned(),
+            message: Some(error.to_string()),
+            value: Some(serde_json::json!({ "transaction_error": error.to_string() })),
+            quit: false,
+        },
     }
 }
 
@@ -89,105 +111,128 @@ fn agent_repl_eval_typed_meta(
     index: usize,
     input: &str,
     options: &AgentReplOptions,
-    state: &AgentReplState,
+    state: &mut AgentReplState,
     command: ReplCommand,
-) -> Option<AgentReplCellReport> {
-    let command_id = agent_repl_command_id(index);
-    let result = match command {
-        ReplCommand::Help(command) => ReplCommandResult::ok(
-            command_id,
-            ReplCommandEvidence::Help(ReplHelpEvidence {
-                topic: command.topic,
-                commands: repl_command_names(),
-            }),
-        ),
-        ReplCommand::Quit => ReplCommandResult::exit_requested(command_id),
-        ReplCommand::Tasks(command) => ReplCommandResult::error(
-            command_id,
-            ReplCommandEvidence::Tasks(ReplTasksEvidence {
-                include_completed: command.include_completed,
-                tasks: ReplTaskList::default(),
-            }),
-            ReplCommandDiagnostic::error(
-                ReplCommandDiagnosticCode::HostUnavailable,
-                format!(
-                    "task inspection is not available for this CLI Agent REPL host adapter (include_completed={})",
-                    command.include_completed
-                ),
-            ),
-        ),
-        ReplCommand::Cancel(command) => {
-            if state.read_only {
-                ReplCommandResult::rejected(
-                    command_id,
-                    ReplCommandEvidence::Cancel(ReplCancelEvidence {
-                        outcome: ReplCancelOutcome {
-                            target: command.target,
-                            cancelled: 0,
-                            pending_after: 0,
-                        },
-                    }),
-                    ReplCommandDiagnostic::error(
-                        ReplCommandDiagnosticCode::ReadOnlyTraceRejected,
-                        "read-only trace mode rejects mutating command `:cancel`",
-                    ),
-                )
-            } else {
-                ReplCommandResult::error(
-                    command_id,
-                    ReplCommandEvidence::Cancel(ReplCancelEvidence {
-                        outcome: ReplCancelOutcome {
-                            target: command.target,
-                            cancelled: 0,
-                            pending_after: 0,
-                        },
-                    }),
-                    ReplCommandDiagnostic::error(
-                        ReplCommandDiagnosticCode::HostUnavailable,
-                        "task cancellation is not available for this CLI Agent REPL host adapter",
-                    ),
-                )
-            }
-        }
-        ReplCommand::Warm(_) | ReplCommand::Codegen(_) if state.read_only => {
-            ReplCommandResult::rejected(
-                command_id,
-                ReplCommandEvidence::Empty,
-                ReplCommandDiagnostic::error(
-                    ReplCommandDiagnosticCode::ReadOnlyTraceRejected,
-                    "read-only trace mode rejects background tiering commands",
-                ),
-            )
-        }
-        ReplCommand::Warm(_) | ReplCommand::Codegen(_) => ReplCommandResult::error(
-            command_id,
-            ReplCommandEvidence::Empty,
-            ReplCommandDiagnostic {
-                severity: ReplCommandDiagnosticSeverity::Warning,
-                code: ReplCommandDiagnosticCode::TieringUnavailable,
-                message:
-                    "this CLI Agent REPL adapter is not yet backed by a seq05.3 tiering manager"
-                        .to_owned(),
-                field: None,
-            },
-        ),
-        ReplCommand::Step(_)
-        | ReplCommand::Cells(_)
-        | ReplCommand::Undo(_)
-        | ReplCommand::Reload(_)
-        | ReplCommand::Reset(_)
-        | ReplCommand::Capabilities(_)
-        | ReplCommand::Generations(_) => ReplCommandResult::error(
-            command_id,
-            ReplCommandEvidence::Empty,
-            ReplCommandDiagnostic::error(
-                ReplCommandDiagnosticCode::HostUnavailable,
-                "this command requires a seq05.1 session-backed CLI adapter",
-            ),
-        ),
-        ReplCommand::Observe(_) | ReplCommand::Load(_) => return None,
+) -> AgentReplCellReport {
+    let trace_policy = agent_repl_trace_policy(state);
+    let mut loader = CliReplProjectLoader {
+        project_path: &mut state.command_project_path,
     };
-    Some(agent_repl_typed_cell_report(index, input, options, &result))
+
+    let result = if let Some(remote_session) = state.remote_session.as_mut() {
+        let mut host = AgentSessionReplCommandHost::new(remote_session);
+        #[cfg(feature = "native-player")]
+        if let Some(runtime_session) = state.runtime_session.as_mut() {
+            let mut task_host = RuntimeTaskReplCommandHost::new(&mut host, runtime_session);
+            return agent_repl_typed_cell_report(
+                index,
+                input,
+                options,
+                &agent_repl_handle_typed_command(
+                    index,
+                    &mut state.command_session,
+                    &mut state.command_tier_handler,
+                    Some(&mut task_host),
+                    &mut loader,
+                    trace_policy,
+                    command,
+                ),
+            );
+        }
+        agent_repl_handle_typed_command(
+            index,
+            &mut state.command_session,
+            &mut state.command_tier_handler,
+            Some(&mut host),
+            &mut loader,
+            trace_policy,
+            command,
+        )
+    } else {
+        let Some(command_agent_session) = state.command_agent_session.as_mut() else {
+            return agent_repl_command_surface_unavailable(index, input, options);
+        };
+        let mut host = AgentSessionReplCommandHost::new(command_agent_session);
+        agent_repl_handle_typed_command_with_runtime_tasks(
+            index,
+            &mut state.command_session,
+            &mut state.command_tier_handler,
+            &mut host,
+            &mut loader,
+            trace_policy,
+            command,
+            #[cfg(feature = "native-player")]
+            state.runtime_session.as_mut(),
+        )
+    };
+
+    agent_repl_typed_cell_report(index, input, options, &result)
+}
+
+fn agent_repl_handle_typed_command_with_runtime_tasks(
+    index: usize,
+    command_session: &mut Option<ReplSession>,
+    tier_handler: &mut arcweft_agent_repl::ReplTierCommandHandler,
+    host: &mut dyn ReplCommandHost,
+    loader: &mut dyn ReplProjectLoader,
+    trace_policy: ReplTracePolicy,
+    command: ReplCommand,
+    #[cfg(feature = "native-player")] runtime_session: Option<
+        &mut arcweft_runtime_driver::session::BundleSession,
+    >,
+) -> ReplCommandResult {
+    #[cfg(feature = "native-player")]
+    if let Some(runtime_session) = runtime_session {
+        let mut task_host = RuntimeTaskReplCommandHost::new(host, runtime_session);
+        return agent_repl_handle_typed_command(
+            index,
+            command_session,
+            tier_handler,
+            Some(&mut task_host),
+            loader,
+            trace_policy,
+            command,
+        );
+    }
+
+    agent_repl_handle_typed_command(
+        index,
+        command_session,
+        tier_handler,
+        Some(host),
+        loader,
+        trace_policy,
+        command,
+    )
+}
+
+fn agent_repl_handle_typed_command(
+    index: usize,
+    command_session: &mut Option<ReplSession>,
+    tier_handler: &mut arcweft_agent_repl::ReplTierCommandHandler,
+    host: Option<&mut dyn ReplCommandHost>,
+    loader: &mut dyn ReplProjectLoader,
+    trace_policy: ReplTracePolicy,
+    command: ReplCommand,
+) -> ReplCommandResult {
+    let Some(command_session) = command_session.as_mut() else {
+        return ReplCommandResult::error(
+            agent_repl_command_id(index),
+            ReplCommandEvidence::Empty,
+            ReplCommandDiagnostic::error(
+                ReplCommandDiagnosticCode::HostUnavailable,
+                "typed Agent REPL command session is not initialized",
+            ),
+        );
+    };
+    let mut context = ReplCommandContext::new(command_session)
+        .with_next_command_id(agent_repl_command_id(index))
+        .with_loader(loader)
+        .with_trace_policy(trace_policy);
+    if let Some(host) = host {
+        context = context.with_host(host);
+    }
+    arcweft_agent_repl::command::ReplCommandHandler::handle(tier_handler, &mut context, command)
 }
 
 fn agent_repl_typed_cell_report(
@@ -230,6 +275,103 @@ fn agent_repl_typed_cell_report(
     }
 }
 
+fn agent_repl_typed_cell_outcome(
+    index: usize,
+    input: &str,
+    state: &mut AgentReplState,
+    outcome: ReplEvaluateOutcome,
+) -> AgentReplCellReport {
+    let record = outcome.record;
+    let execution = &record.execution;
+    let binding_name = record.id.label();
+    let status = if execution.status == ReplCellExecutionStatus::Executed {
+        "ok"
+    } else {
+        "error"
+    };
+    state.bindings.insert(
+        binding_name.clone(),
+        AgentReplBinding {
+            name: binding_name.clone(),
+            binding_kind: "cell".to_owned(),
+            source: record.source.clone(),
+            status: status.to_owned(),
+            final_status: execution.final_status.clone(),
+            host_calls: execution.host_calls,
+            responses: execution.responses,
+            serializable: false,
+            serialized_source: None,
+            snapshot_kind: None,
+            non_serializable_reason: Some(
+                "cell artifact is represented by typed REPL evidence".to_owned(),
+            ),
+        },
+    );
+    for binding in &record.bindings {
+        state.bindings.insert(
+            binding.name.clone(),
+            AgentReplBinding {
+                name: binding.name.clone(),
+                binding_kind: "local".to_owned(),
+                source: binding.source.clone(),
+                status: status.to_owned(),
+                final_status: execution.final_status.clone(),
+                host_calls: execution.host_calls,
+                responses: execution.responses,
+                serializable: true,
+                serialized_source: Some(binding.source.clone()),
+                snapshot_kind: Some(binding.snapshot_kind.as_str().to_owned()),
+                non_serializable_reason: None,
+            },
+        );
+    }
+
+    AgentReplCellReport {
+        index,
+        input: input.to_owned(),
+        kind: "cell".to_owned(),
+        status: status.to_owned(),
+        message: execution.error.clone(),
+        value: Some(serde_json::json!({
+            "binding": binding_name,
+            "compiled": true,
+            "committed": outcome.committed,
+            "cell": {
+                "id": record.id.as_u64(),
+                "kind": record.kind.as_str(),
+                "generation": record.generation.as_u64(),
+                "overlay_hash": record.overlay_hash,
+                "commit_hash": record.commit_hash,
+                "entry_flow": record.entry_flow,
+                "bytecode_stats": {
+                    "flows": record.bytecode_stats.flows,
+                    "instructions": record.bytecode_stats.instructions,
+                    "line_task_groups": record.bytecode_stats.line_task_groups,
+                    "stream_plans": record.bytecode_stats.stream_plans,
+                    "source_plans": record.bytecode_stats.source_plans,
+                },
+                "verified_effects": record.verified_effects,
+                "bindings": record.bindings.iter().map(|binding| serde_json::json!({
+                    "name": binding.name,
+                    "snapshot_kind": binding.snapshot_kind.as_str(),
+                    "project_bound": binding.project_bound,
+                })).collect::<Vec<_>>(),
+            },
+            "execution": {
+                "status": format!("{:?}", execution.status),
+                "steps": execution.steps,
+                "host_calls": execution.host_calls,
+                "responses": execution.responses,
+                "events_emitted": execution.events_emitted,
+                "final_status": execution.final_status,
+                "error": execution.error,
+                "partially_effectful": execution.host_effects.partially_effectful,
+            }
+        })),
+        quit: false,
+    }
+}
+
 fn agent_repl_formatted_output_value(output: ReplCommandFormattedOutput) -> serde_json::Value {
     match output.json {
         serde_json::Value::Object(mut value) => {
@@ -240,6 +382,34 @@ fn agent_repl_formatted_output_value(output: ReplCommandFormattedOutput) -> serd
             serde_json::Value::Object(value)
         }
         other => serde_json::json!({ "formatted_text": output.text, "value": other }),
+    }
+}
+
+fn agent_repl_command_surface_unavailable(
+    index: usize,
+    input: &str,
+    options: &AgentReplOptions,
+) -> AgentReplCellReport {
+    agent_repl_typed_cell_report(
+        index,
+        input,
+        options,
+        &ReplCommandResult::error(
+            agent_repl_command_id(index),
+            ReplCommandEvidence::Empty,
+            ReplCommandDiagnostic::error(
+                ReplCommandDiagnosticCode::HostUnavailable,
+                "typed Agent REPL command surface is not initialized",
+            ),
+        ),
+    )
+}
+
+fn agent_repl_trace_policy(state: &AgentReplState) -> ReplTracePolicy {
+    if state.read_only {
+        ReplTracePolicy::ReadOnlyTrace
+    } else {
+        ReplTracePolicy::ReadWrite
     }
 }
 
@@ -258,16 +428,57 @@ fn agent_repl_cli_meta_command(input: &str) -> Option<&str> {
                 | ":hir"
                 | ":bytecode"
                 | ":capture"
-                | ":complete"
-                | ":highlight"
                 | ":query"
-                | ":history"
-                | ":bindings"
-                | ":connect"
                 | ":drop"
                 | ":save"
-                | ":parse"
-                | ":classify"
+                | ":connect"
         )
     })
+}
+
+struct CliReplProjectLoader<'a> {
+    project_path: &'a mut Option<String>,
+}
+
+impl ReplProjectLoader for CliReplProjectLoader<'_> {
+    fn load(&mut self, command: &LoadCommand) -> Result<ReplBaseSnapshot, ReplCommandHostError> {
+        let snapshot = cli_repl_base_snapshot(Some(command.path.as_str()))?;
+        *self.project_path = Some(command.path.clone());
+        Ok(snapshot)
+    }
+
+    fn reload(
+        &mut self,
+        command: &ReloadCommand,
+    ) -> Result<ReplBaseSnapshot, ReplCommandHostError> {
+        let selected = command.path.as_deref().or(self.project_path.as_deref());
+        let snapshot = cli_repl_base_snapshot(selected)?;
+        if let Some(path) = &command.path {
+            *self.project_path = Some(path.clone());
+        }
+        Ok(snapshot)
+    }
+}
+
+fn cli_repl_base_snapshot(path: Option<&str>) -> Result<ReplBaseSnapshot, ReplCommandHostError> {
+    if let Some(path) = path {
+        let candidate = PathBuf::from(path);
+        if !candidate.exists() {
+            return Err(ReplCommandHostError::new(
+                ReplCommandDiagnosticCode::ProjectLoaderError,
+                format!(
+                    "CLI REPL project path {} does not exist",
+                    candidate.display()
+                ),
+            ));
+        }
+    }
+    let project = agent_script_project_index(&[]).map_err(|message| {
+        ReplCommandHostError::new(ReplCommandDiagnosticCode::ProjectLoaderError, message)
+    })?;
+    let label = path.map_or_else(
+        || "cli-agent-repl:current".to_owned(),
+        |path| format!("cli-agent-repl:{path}"),
+    );
+    Ok(ReplBaseSnapshot::from_project(label, project))
 }

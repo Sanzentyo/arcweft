@@ -1,9 +1,14 @@
 use super::repl_project_binding::agent_repl_reconcile_project_bound_bindings;
-use super::repl_snapshot::agent_repl_serialized_bindings;
 use super::*;
 
 #[derive(Default)]
 pub(super) struct AgentReplState {
+    pub(super) command_session: Option<arcweft_agent_repl::ReplSession>,
+    pub(super) command_agent_session: Option<CliAgentSession>,
+    pub(super) command_tier_handler: arcweft_agent_repl::ReplTierCommandHandler,
+    pub(super) command_project_path: Option<String>,
+    #[cfg(feature = "native-player")]
+    pub(super) runtime_session: Option<arcweft_runtime_driver::session::BundleSession>,
     pub(super) report: Option<AgentObservationReport>,
     pub(super) history: Vec<AgentReplHistoryEntry>,
     pub(super) bindings: BTreeMap<String, AgentReplBinding>,
@@ -53,6 +58,7 @@ pub(super) struct AgentReplBinding {
     pub(super) non_serializable_reason: Option<String>,
 }
 
+#[cfg(test)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct AgentReplSerializedBinding {
     pub(super) source: String,
@@ -93,29 +99,6 @@ pub(super) struct AgentReplCellReport {
     pub(super) quit: bool,
 }
 
-impl AgentReplCellReport {
-    pub(super) fn with_persistence(mut self, result: Result<bool, String>) -> Self {
-        match result {
-            Ok(false) => self,
-            Ok(true) => {
-                if let Some(serde_json::Value::Object(value)) = &mut self.value {
-                    value.insert("persisted".to_owned(), serde_json::Value::Bool(true));
-                }
-                self
-            }
-            Err(error) => Self {
-                index: self.index,
-                input: self.input,
-                kind: self.kind,
-                status: "error".to_owned(),
-                message: Some(error),
-                value: self.value,
-                quit: false,
-            },
-        }
-    }
-}
-
 pub(super) fn agent_repl_command(
     options: &AgentReplOptions,
     adapter_registrars: &[NativeAdapterRegistrar],
@@ -137,12 +120,20 @@ pub(super) fn agent_repl_initial_state(
     let (debug_store, debug_db_path) = agent_repl_debug_store(options)?;
     let trace = agent_repl_trace_resources(options)?;
     let connection = agent_repl_initial_connection(options)?;
+    let command_surface = agent_repl_initial_command_surface(options).map_err(|message| {
+        eprintln!("error: failed to initialize typed Agent REPL command surface: {message}");
+        ExitCode::FAILURE
+    })?;
     let remote_connection =
         agent_repl_connect_remote_session(connection.as_ref()).map_err(|message| {
             eprintln!("error: {message}");
             ExitCode::from(2)
         })?;
     Ok(AgentReplState {
+        command_session: Some(command_surface.repl_session),
+        command_agent_session: Some(command_surface.agent_session),
+        command_tier_handler: arcweft_agent_repl::ReplTierCommandHandler::default(),
+        command_project_path: command_surface.project_path,
         connection,
         remote_session: remote_connection.session,
         remote_program_hash: remote_connection.program_hash,
@@ -153,6 +144,37 @@ pub(super) fn agent_repl_initial_state(
         trace_resources: trace.resources,
         read_only: options.read_only,
         ..AgentReplState::default()
+    })
+}
+
+struct AgentReplCommandSurface {
+    repl_session: arcweft_agent_repl::ReplSession,
+    agent_session: CliAgentSession,
+    project_path: Option<String>,
+}
+
+fn agent_repl_initial_command_surface(
+    options: &AgentReplOptions,
+) -> Result<AgentReplCommandSurface, String> {
+    let project = agent_script_project_index(&[])?;
+    let program_hash = project.program_hash().as_str().to_owned();
+    let project_entities = agent_project_entities(&project)?;
+    let project_graph = agent_project_graph(&project)?;
+    let repl_session = arcweft_agent_repl::ReplSession::new(
+        arcweft_agent_repl::ReplBaseSnapshot::from_project("cli-agent-repl", project),
+        arcweft_agent_repl::ReplSessionOptions::default(),
+    );
+    let agent_session = CliAgentSession::new(
+        Vec::new(),
+        Vec::new(),
+        program_hash,
+        project_entities,
+        project_graph,
+    );
+    Ok(AgentReplCommandSurface {
+        repl_session,
+        agent_session,
+        project_path: options.path.as_ref().map(|path| path.display().to_string()),
     })
 }
 
@@ -1691,6 +1713,36 @@ pub(super) fn agent_repl_compile_fragment(
         .map_err(|error| error.to_string())
 }
 
+pub(super) fn agent_repl_cell_source(
+    index: usize,
+    input: &str,
+    fragment: &ParsedFragment,
+    live_binding_prelude: &str,
+) -> String {
+    if matches!(fragment.kind(), Some(ParsedFragmentKind::Items(_))) {
+        return input.to_owned();
+    }
+    let cell_body = if matches!(fragment.kind(), Some(ParsedFragmentKind::Expression(_))) {
+        format!("    return {input}")
+    } else if input.starts_with("return ") || input.contains("\nreturn ") {
+        indent_agent_repl_body(input)
+    } else {
+        format!("{}\n    return \"ok\"", indent_agent_repl_body(input))
+    };
+    let body = if live_binding_prelude.trim().is_empty() {
+        cell_body
+    } else {
+        format!(
+            "{}\n{}",
+            indent_agent_repl_body(live_binding_prelude),
+            cell_body
+        )
+    };
+    format!(
+        "#[agent(version = 1)]\nagent @agent.repl.cell_{index} repl_cell_{index}()\neffects {{ agent.observe, agent.act.semantic, agent.act.physical, agent.wait, agent.capture, agent.resource.read, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n"
+    )
+}
+
 pub(super) fn agent_repl_inspection_source(
     index: usize,
     input: &str,
@@ -1736,614 +1788,6 @@ pub(super) fn apply_agent_repl_capture_target(
             Ok(())
         }
         _ => Err(":capture accepts only viewport, layer ID, or object ID".to_owned()),
-    }
-}
-
-pub(super) fn agent_repl_eval_compiled_cell(
-    index: usize,
-    input: &str,
-    state: &mut AgentReplState,
-) -> AgentReplCellReport {
-    let fragment = agent_repl_parse_fragment(input);
-    let parse_report = agent_repl_fragment_report(&fragment);
-    if !matches!(fragment.completion(), ParseCompletion::Complete) || !fragment.errors().is_empty()
-    {
-        return agent_repl_invalid_fragment_report(index, input, state, &fragment, parse_report);
-    }
-
-    let source = agent_repl_cell_source(
-        index,
-        input,
-        &fragment,
-        &agent_repl_live_binding_prelude(state),
-    );
-    let binding_names = agent_repl_fragment_binding_names(&fragment);
-    let serialized_bindings = agent_repl_serialized_bindings(&fragment);
-    let project = match agent_script_project_index(&[]) {
-        Ok(project) => project,
-        Err(error) => return agent_repl_error(index, input, "cell", error),
-    };
-    let compiled =
-        match arcweft_compiler::agent::compile_agent_bundle_with_project(source, &project) {
-            Ok(compiled) => compiled,
-            Err(error) => {
-                let message = error.to_string();
-                return agent_repl_compile_error_report(
-                    index,
-                    input,
-                    state,
-                    parse_report,
-                    &message,
-                );
-            }
-        };
-    let project_entities =
-        match arcweft_compiler::agent_project::agent_required_entities_from_project(&project) {
-            Ok(entities) => entities,
-            Err(error) => return agent_repl_error(index, input, "cell", error.to_string()),
-        };
-    let project_graph =
-        match arcweft_compiler::agent_project::agent_project_graph_from_project(&project) {
-            Ok(graph) => graph,
-            Err(error) => return agent_repl_error(index, input, "cell", error.to_string()),
-        };
-    if state.remote_session.is_some() {
-        return agent_repl_eval_remote_compiled_cell(
-            index,
-            input,
-            state,
-            &parse_report,
-            &binding_names,
-            &serialized_bindings,
-            &compiled.bundle,
-        );
-    }
-    let mut runner = AgentRunner::new(
-        CliAgentSession::new(
-            Vec::new(),
-            Vec::new(),
-            project.program_hash().as_str().to_owned(),
-            project_entities,
-            project_graph,
-        ),
-        CollectingDebugSink::default(),
-        NoopRagService,
-        agent_script_runtime_policy_for_bundle(&compiled.bundle),
-        AgentRunnerConfig::new(agent_cli_session_id()),
-    );
-    let run_result = runner.run_controller_bundle(
-        &compiled.bundle,
-        AgentControllerRunConfig {
-            max_steps: 16,
-            max_ops_per_step: 128,
-        },
-    );
-    match run_result {
-        Ok(report) => agent_repl_run_success_report(
-            index,
-            input,
-            state,
-            &parse_report,
-            &report,
-            &binding_names,
-            &serialized_bindings,
-        ),
-        Err(error) => {
-            let message = error.to_string();
-            let effect_summary = agent_repl_run_effect_summary(&runner.debug_mut().events);
-            agent_repl_run_error_report(
-                index,
-                input,
-                state,
-                &parse_report,
-                &message,
-                effect_summary,
-            )
-        }
-    }
-}
-
-fn agent_repl_eval_remote_compiled_cell(
-    index: usize,
-    input: &str,
-    state: &mut AgentReplState,
-    parse_report: &serde_json::Value,
-    binding_names: &[String],
-    serialized_bindings: &BTreeMap<String, AgentReplSerializedBinding>,
-    bundle: &ArcweftBundle,
-) -> AgentReplCellReport {
-    let Some(session) = state.remote_session.take() else {
-        return agent_repl_error(
-            index,
-            input,
-            "cell",
-            "remote MCP session is not connected".to_owned(),
-        );
-    };
-    let mut runner = AgentRunner::new(
-        session,
-        CollectingDebugSink::default(),
-        NoopRagService,
-        agent_script_runtime_policy_for_bundle(bundle),
-        AgentRunnerConfig::new(agent_cli_session_id()),
-    );
-    let run_result = runner.run_controller_bundle(
-        bundle,
-        AgentControllerRunConfig {
-            max_steps: 16,
-            max_ops_per_step: 128,
-        },
-    );
-    let effect_summary = run_result
-        .as_ref()
-        .err()
-        .map(|_| agent_repl_run_effect_summary(&runner.debug_mut().events));
-    state.remote_session = Some(runner.into_session());
-    match run_result {
-        Ok(report) => agent_repl_run_success_report(
-            index,
-            input,
-            state,
-            parse_report,
-            &report,
-            binding_names,
-            serialized_bindings,
-        ),
-        Err(error) => agent_repl_run_error_report(
-            index,
-            input,
-            state,
-            parse_report,
-            &error.to_string(),
-            effect_summary.unwrap_or(AgentReplRunEffectSummary {
-                host_calls: 0,
-                events_emitted: 0,
-                partially_effectful: false,
-            }),
-        ),
-    }
-}
-
-pub(super) fn agent_repl_invalid_fragment_report(
-    index: usize,
-    input: &str,
-    state: &mut AgentReplState,
-    fragment: &ParsedFragment,
-    parse_report: serde_json::Value,
-) -> AgentReplCellReport {
-    AgentReplCellReport {
-        index,
-        input: input.to_owned(),
-        kind: "cell".to_owned(),
-        status: "error".to_owned(),
-        message: Some("REPL cell is not a complete Agent fragment".to_owned()),
-        value: Some(parse_report),
-        quit: false,
-    }
-    .with_persistence(agent_repl_persist_cell(
-        state,
-        index,
-        input,
-        "error",
-        serde_json::json!({
-            "parse": fragment
-                .errors()
-                .iter()
-                .map(|error| error.message().to_owned())
-                .collect::<Vec<_>>()
-        }),
-        false,
-    ))
-}
-
-pub(super) fn agent_repl_compile_error_report(
-    index: usize,
-    input: &str,
-    state: &mut AgentReplState,
-    parse_report: serde_json::Value,
-    message: &str,
-) -> AgentReplCellReport {
-    AgentReplCellReport {
-        index,
-        input: input.to_owned(),
-        kind: "cell".to_owned(),
-        status: "error".to_owned(),
-        message: Some(message.to_owned()),
-        value: Some(parse_report),
-        quit: false,
-    }
-    .with_persistence(agent_repl_persist_cell(
-        state,
-        index,
-        input,
-        "error",
-        serde_json::json!({ "compile_error": message }),
-        false,
-    ))
-}
-
-pub(super) fn agent_repl_run_success_report(
-    index: usize,
-    input: &str,
-    state: &mut AgentReplState,
-    parse_report: &serde_json::Value,
-    report: &AgentControllerRunReport,
-    binding_names: &[String],
-    serialized_bindings: &BTreeMap<String, AgentReplSerializedBinding>,
-) -> AgentReplCellReport {
-    let binding_name = format!("cell.{index}");
-    let final_status = report
-        .final_status
-        .as_ref()
-        .map(|status| format!("{status:?}"));
-    let responses = report.responses.len();
-    let value = serde_json::json!({
-        "binding": binding_name,
-        "compiled": true,
-        "steps": report.steps,
-        "host_calls": report.host_calls,
-        "responses": report.responses,
-        "events_emitted": report.events_emitted,
-        "final_status": final_status,
-        "bindings": binding_names,
-        "parse": parse_report,
-    });
-    if let Some(error) = agent_repl_unsupported_snapshot_error(binding_names, serialized_bindings) {
-        return agent_repl_snapshot_escape_error_report(
-            index,
-            input,
-            state,
-            parse_report,
-            &error,
-            report.host_calls,
-            report.events_emitted,
-        );
-    }
-    let persisted = agent_repl_persist_cell(
-        state,
-        index,
-        input,
-        "ok",
-        value.clone(),
-        report.host_calls > 0,
-    );
-    state.bindings.insert(
-        binding_name.clone(),
-        AgentReplBinding {
-            name: binding_name.clone(),
-            binding_kind: "cell".to_owned(),
-            source: input.to_owned(),
-            status: "ok".to_owned(),
-            final_status,
-            host_calls: report.host_calls,
-            responses,
-            serializable: false,
-            serialized_source: None,
-            snapshot_kind: None,
-            non_serializable_reason: Some("cell artifact is not a REPL value".to_owned()),
-        },
-    );
-    for local_name in binding_names {
-        let serialized = serialized_bindings.get(local_name);
-        state.bindings.insert(
-            local_name.clone(),
-            AgentReplBinding {
-                name: local_name.clone(),
-                binding_kind: "local".to_owned(),
-                source: input.to_owned(),
-                status: "ok".to_owned(),
-                final_status: state
-                    .bindings
-                    .get(&binding_name)
-                    .and_then(|binding| binding.final_status.clone()),
-                host_calls: report.host_calls,
-                responses,
-                serializable: serialized.is_some(),
-                serialized_source: serialized.map(|binding| binding.source.clone()),
-                snapshot_kind: serialized.map(|binding| binding.snapshot_kind.clone()),
-                non_serializable_reason: serialized
-                    .is_none()
-                    .then(|| "binding value is not a supported REPL snapshot".to_owned()),
-            },
-        );
-    }
-    agent_repl_ok(index, input, "cell", value).with_persistence(persisted)
-}
-
-pub(super) fn agent_repl_unsupported_snapshot_error(
-    binding_names: &[String],
-    serialized_bindings: &BTreeMap<String, AgentReplSerializedBinding>,
-) -> Option<String> {
-    let unsupported = binding_names
-        .iter()
-        .filter(|name| !serialized_bindings.contains_key(*name))
-        .cloned()
-        .collect::<Vec<_>>();
-    (!unsupported.is_empty()).then(|| {
-        format!(
-            "REPL local binding(s) cannot cross cells without a supported snapshot: {}",
-            unsupported.join(", ")
-        )
-    })
-}
-
-pub(super) fn agent_repl_snapshot_escape_error_report(
-    index: usize,
-    input: &str,
-    state: &mut AgentReplState,
-    parse_report: &serde_json::Value,
-    message: &str,
-    host_calls: usize,
-    events_emitted: u64,
-) -> AgentReplCellReport {
-    let value = serde_json::json!({
-        "parse": parse_report,
-        "snapshot_error": message,
-        "host_calls": host_calls,
-        "events_emitted": events_emitted,
-        "partially_effectful": host_calls > 0,
-    });
-    AgentReplCellReport {
-        index,
-        input: input.to_owned(),
-        kind: "cell".to_owned(),
-        status: "error".to_owned(),
-        message: Some(message.to_owned()),
-        value: Some(value.clone()),
-        quit: false,
-    }
-    .with_persistence(agent_repl_persist_cell(
-        state,
-        index,
-        input,
-        "error",
-        value,
-        host_calls > 0,
-    ))
-}
-
-pub(super) fn agent_repl_run_error_report(
-    index: usize,
-    input: &str,
-    state: &mut AgentReplState,
-    parse_report: &serde_json::Value,
-    message: &str,
-    effect_summary: AgentReplRunEffectSummary,
-) -> AgentReplCellReport {
-    let value = serde_json::json!({
-        "parse": parse_report,
-        "run_error": message,
-        "host_calls": effect_summary.host_calls,
-        "events_emitted": effect_summary.events_emitted,
-        "partially_effectful": effect_summary.partially_effectful,
-    });
-    AgentReplCellReport {
-        index,
-        input: input.to_owned(),
-        kind: "cell".to_owned(),
-        status: "error".to_owned(),
-        message: Some(message.to_owned()),
-        value: Some(value.clone()),
-        quit: false,
-    }
-    .with_persistence(agent_repl_persist_cell(
-        state,
-        index,
-        input,
-        "error",
-        value,
-        effect_summary.partially_effectful,
-    ))
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct AgentReplRunEffectSummary {
-    pub(super) host_calls: usize,
-    pub(super) events_emitted: u64,
-    pub(super) partially_effectful: bool,
-}
-
-pub(super) fn agent_repl_run_effect_summary(events: &[DebugEvent]) -> AgentReplRunEffectSummary {
-    let host_calls = events
-        .iter()
-        .filter(|event| agent_repl_effectful_debug_event(event.kind))
-        .count();
-    AgentReplRunEffectSummary {
-        host_calls,
-        events_emitted: events.last().map_or(0, |event| event.sequence),
-        partially_effectful: host_calls > 0,
-    }
-}
-
-pub(super) fn agent_repl_effectful_debug_event(kind: DebugEventKind) -> bool {
-    matches!(
-        kind,
-        DebugEventKind::Observation
-            | DebugEventKind::Action
-            | DebugEventKind::Capture
-            | DebugEventKind::Assertion
-            | DebugEventKind::RagQuery
-    )
-}
-
-pub(super) fn agent_repl_persist_cell(
-    state: &mut AgentReplState,
-    index: usize,
-    input: &str,
-    status: &str,
-    display: serde_json::Value,
-    partially_effectful: bool,
-) -> Result<bool, String> {
-    let Some(store) = &state.debug_store else {
-        return Ok(false);
-    };
-    let ordinal = i64::try_from(index).map_err(|_| "REPL cell index is too large".to_owned())?;
-    let source_hash = StableHash::new(format!(
-        "blake3:{}",
-        blake3::hash(input.as_bytes()).to_hex()
-    ))
-    .expect("generated REPL cell hash is nonempty");
-    store
-        .upsert_repl_cell(&DebugReplCell {
-            cell_id: format!("repl:session.cli:{ordinal}"),
-            session_id: agent_cli_session_id(),
-            run_id: None,
-            ordinal,
-            source: input.to_owned(),
-            source_hash,
-            status: status.to_owned(),
-            inferred_type: None,
-            display: Some(display),
-            partially_effectful,
-            diagnostic_ids: Vec::new(),
-            created_unix_ms: 0,
-        })
-        .map_err(|error| format!("failed to persist REPL cell {index}: {error}"))?;
-    state.persisted_cells = state.persisted_cells.saturating_add(1);
-    Ok(true)
-}
-
-pub(super) fn agent_repl_cell_source(
-    index: usize,
-    input: &str,
-    fragment: &ParsedFragment,
-    live_binding_prelude: &str,
-) -> String {
-    if matches!(fragment.kind(), Some(ParsedFragmentKind::Items(_))) {
-        return input.to_owned();
-    }
-    let cell_body = if matches!(fragment.kind(), Some(ParsedFragmentKind::Expression(_))) {
-        format!("    return {input}")
-    } else if input.starts_with("return ") || input.contains("\nreturn ") {
-        indent_agent_repl_body(input)
-    } else {
-        format!("{}\n    return \"ok\"", indent_agent_repl_body(input))
-    };
-    let body = if live_binding_prelude.trim().is_empty() {
-        cell_body
-    } else {
-        format!(
-            "{}\n{}",
-            indent_agent_repl_body(live_binding_prelude),
-            cell_body
-        )
-    };
-    format!(
-        "#[agent(version = 1)]\nagent @agent.repl.cell_{index} repl_cell_{index}()\neffects {{ agent.observe, agent.act.semantic, agent.act.physical, agent.wait, agent.capture, agent.resource.read, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n"
-    )
-}
-
-pub(super) fn agent_repl_live_binding_prelude(state: &AgentReplState) -> String {
-    state
-        .bindings
-        .values()
-        .filter(|binding| binding.status == "ok")
-        .filter(|binding| binding.binding_kind == "local")
-        .filter_map(|binding| {
-            binding
-                .serialized_source
-                .as_ref()
-                .map(|source| format!("let {} = {source}", binding.name))
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-pub(super) fn agent_repl_fragment_binding_names(fragment: &ParsedFragment) -> Vec<String> {
-    let Some(ParsedFragmentKind::Statements(statements)) = fragment.kind() else {
-        return Vec::new();
-    };
-    let mut names = statements
-        .iter()
-        .flat_map(agent_repl_stmt_binding_names)
-        .collect::<Vec<_>>();
-    names.sort();
-    names.dedup();
-    names
-}
-
-pub(super) fn agent_repl_stmt_binding_names(statement: &Stmt) -> Vec<String> {
-    match statement {
-        Stmt::Let { pattern, .. }
-        | Stmt::LetElse { pattern, .. }
-        | Stmt::LetChoice { pattern, .. }
-        | Stmt::LetScope { pattern, .. }
-        | Stmt::LetLoop { pattern, .. }
-        | Stmt::LetAwait { pattern, .. } => agent_repl_pattern_binding_names(pattern),
-        Stmt::WhileLet { pattern, .. } | Stmt::For { pattern, .. } => {
-            agent_repl_pattern_binding_names(pattern)
-        }
-        Stmt::Return(_)
-        | Stmt::Out { .. }
-        | Stmt::Goto(_)
-        | Stmt::Thread(_)
-        | Stmt::DeferBlock { .. }
-        | Stmt::Defer { .. }
-        | Stmt::Yield(_)
-        | Stmt::Signal { .. }
-        | Stmt::LifetimeSet { .. }
-        | Stmt::Expr(_)
-        | Stmt::Wait(_)
-        | Stmt::On { .. }
-        | Stmt::UnsafeLifetime { .. }
-        | Stmt::If { .. }
-        | Stmt::Match { .. }
-        | Stmt::Loop { .. }
-        | Stmt::While { .. }
-        | Stmt::Close(_)
-        | Stmt::Select(_)
-        | Stmt::Break { .. }
-        | Stmt::Continue { .. }
-        | Stmt::Raw(_) => Vec::new(),
-    }
-}
-
-pub(super) fn agent_repl_pattern_binding_names(pattern: &Pattern) -> Vec<String> {
-    match pattern {
-        Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. } => {
-            vec![name.clone()]
-        }
-        Pattern::Whole { name, pattern } => {
-            let mut names = vec![name.clone()];
-            names.extend(agent_repl_pattern_binding_names(pattern));
-            names
-        }
-        Pattern::Tuple(items) => items
-            .iter()
-            .flat_map(agent_repl_pattern_binding_names)
-            .collect(),
-        Pattern::Record { fields, .. } => fields
-            .iter()
-            .flat_map(|field| agent_repl_pattern_binding_names(field.pattern()))
-            .collect(),
-        Pattern::BracketSeq { items, rest } => {
-            let mut names = items
-                .iter()
-                .flat_map(agent_repl_pattern_binding_names)
-                .collect::<Vec<_>>();
-            names.extend(rest.clone());
-            names
-        }
-        Pattern::Variant { payload, .. } => payload
-            .as_ref()
-            .map(agent_repl_variant_payload_binding_names)
-            .unwrap_or_default(),
-        Pattern::Literal(_) | Pattern::Entity(_) | Pattern::Discard | Pattern::Raw(_) => Vec::new(),
-    }
-}
-
-pub(super) fn agent_repl_variant_payload_binding_names(
-    payload: &VariantPatternPayload,
-) -> Vec<String> {
-    match payload {
-        VariantPatternPayload::Tuple(items) => items
-            .iter()
-            .flat_map(agent_repl_pattern_binding_names)
-            .collect(),
-        VariantPatternPayload::Record { fields, .. } => fields
-            .iter()
-            .flat_map(|field| agent_repl_pattern_binding_names(field.pattern()))
-            .collect(),
     }
 }
 
