@@ -82,13 +82,19 @@ Results:
   scanned files and `997` Rust files;
 - `git diff --check` passed.
 
-The wasm target validation was attempted:
+The wasm target validation was re-run after LLVM/clang became available on the
+local Windows host:
 
 ```bash
 cargo check -p arcweft-player-web --target wasm32-unknown-unknown
 ```
 
-It did not reach Arcweft code because `zstd-sys` requires a C compiler for this
-target and this environment has no `clang` on `PATH`. Re-run the wasm check in a
-Web build environment with clang installed, then regenerate `web/pkg` with the
-repository's wasm build command before browser-real validation.
+The later full-feature command also passed:
+
+```bash
+cargo check -p arcweft-player-web --target wasm32-unknown-unknown --all-features
+```
+
+`zstd-sys` now builds its C shim successfully. The wasm check produced one
+pre-existing warning in `arcweft-runtime-accelerator` for an unused
+`native_jit` import when compiling the wasm target.

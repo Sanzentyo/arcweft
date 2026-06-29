@@ -3,8 +3,6 @@
 //! This module owns browser `EditContext` feature detection and event
 //! normalization. It never installs hidden DOM text-entry fallbacks.
 
-#[cfg(target_arch = "wasm32")]
-use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::text_index::{TextIndexError, TextIndexSnapshot};
 use arcweft_presentation::text_input::{
@@ -368,8 +366,8 @@ impl WebEditContextAdapter {
         if !constructor.is_function() {
             return Err(WebEditContextError::WebEditContextUnavailable);
         }
-        js_sys::Reflect::construct(&constructor.unchecked_into(), &js_sys::Array::new())
-            .map_err(js_error)
+        let constructor: js_sys::Function = constructor.unchecked_into();
+        js_sys::Reflect::construct(&constructor, &js_sys::Array::new()).map_err(js_error)
     }
 }
 
@@ -431,45 +429,6 @@ fn preedit_selection_range(
             TextUtf16Offset(relative_end),
         ))
         .map_err(Into::into)
-}
-
-#[cfg(target_arch = "wasm32")]
-fn rect_init(rect: HitRect) -> JsValue {
-    let args = js_sys::Array::new();
-    args.push(&JsValue::from_f64(f64::from(rect.x)));
-    args.push(&JsValue::from_f64(f64::from(rect.y)));
-    args.push(&JsValue::from_f64(f64::from(rect.width)));
-    args.push(&JsValue::from_f64(f64::from(rect.height)));
-    let global = js_sys::global();
-    if let Ok(constructor) = js_sys::Reflect::get(&global, &JsValue::from_str("DOMRect"))
-        && constructor.is_function()
-        && let Ok(dom_rect) = js_sys::Reflect::construct(&constructor.unchecked_into(), &args)
-    {
-        return dom_rect;
-    }
-
-    let object = js_sys::Object::new();
-    let _ = js_sys::Reflect::set(
-        &object,
-        &JsValue::from_str("x"),
-        &JsValue::from_f64(f64::from(rect.x)),
-    );
-    let _ = js_sys::Reflect::set(
-        &object,
-        &JsValue::from_str("y"),
-        &JsValue::from_f64(f64::from(rect.y)),
-    );
-    let _ = js_sys::Reflect::set(
-        &object,
-        &JsValue::from_str("width"),
-        &JsValue::from_f64(f64::from(rect.width)),
-    );
-    let _ = js_sys::Reflect::set(
-        &object,
-        &JsValue::from_str("height"),
-        &JsValue::from_f64(f64::from(rect.height)),
-    );
-    object.into()
 }
 
 #[cfg(target_arch = "wasm32")]

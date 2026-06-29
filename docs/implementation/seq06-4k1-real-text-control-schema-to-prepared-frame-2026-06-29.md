@@ -46,13 +46,22 @@ git diff --check
 
 Result: passed. Structure audit reported `0 error(s), 118 warning(s)`. Existing `arcweft-player-native` dead-code warnings remain in the legacy native audio/windowed modules and are tracked outside this cut.
 
-Additional attempted validation:
+Additional validation after installing LLVM/clang on the local Windows host:
 
 ```bash
 cargo check -p arcweft-player-web --target wasm32-unknown-unknown --all-features
 ```
 
-Result: blocked by local environment before Arcweft code was typechecked for wasm. `zstd-sys` could not find `clang` for the wasm C shim build.
+Result: passed. The previous `zstd-sys` C shim build blocker is resolved with
+`clang` available on `PATH`. This check produced one pre-existing warning in
+`arcweft-runtime-accelerator` for an unused `native_jit` import when compiling
+the wasm target.
+
+The wasm run also exposed an Arcweft-side type inference issue in
+`WebEditContextAdapter::create_edit_context_object`; the `EditContext`
+constructor is now explicitly converted to `js_sys::Function`. A stale unused
+Rust-side `rect_init` DOMRect fallback was removed because runtime geometry
+conversion is owned by `web/player-editcontext.js`.
 
 ## Design Deviations
 
