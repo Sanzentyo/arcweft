@@ -8,7 +8,7 @@ use super::{
     RuntimePureCallStats, RuntimePureCompileStats, RuntimePureHelper, RuntimePureHelperId,
     RuntimePureInputType, RuntimePureNativeKind, RuntimePureOutputType, RuntimePureScalar,
     RuntimePureScalarInteger, RuntimePureWorkerCount, RuntimeSeq, RuntimeValue, ThreadPool,
-    ThreadPoolBuilder, VmPureFunctionScratch, helper_native_kind, native_jit, native_jit_enabled,
+    ThreadPoolBuilder, VmPureFunctionScratch, helper_native_kind, native_jit_enabled,
 };
 
 pub(super) fn runtime_value_kind(value: &RuntimeValue) -> String {
@@ -562,7 +562,7 @@ pub(super) fn record_aot_object_artifact_bundle(
     cache: &[Option<RuntimePureCacheEntry>],
     stats: &mut RuntimePureCompileStats,
 ) {
-    use native_jit::PureObjectBundleRequest;
+    use super::native_jit::PureObjectBundleRequest;
 
     let prepared = helpers
         .iter()

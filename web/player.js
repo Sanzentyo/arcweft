@@ -25,7 +25,7 @@ export async function setupArcweftWebTextInput(options = {}) {
   if (!host) {
     throw new Error(`Arcweft text input host not found: ${hostId}`);
   }
-  const wasm = options.wasm ?? await maybeLoadWasm(options.wasmUrl);
+  const wasm = options.wasm ?? (options.wasmUrl ? await maybeLoadWasm(options.wasmUrl) : null);
   const delegate = options.delegate ?? wasmDelegate(wasm);
   const glue = createArcweftEditContextPlayerGlue(host, {
     hostId,

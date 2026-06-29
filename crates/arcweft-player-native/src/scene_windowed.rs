@@ -733,6 +733,9 @@ impl NativeSceneState {
     }
 
     fn apply_outcome(&mut self, outcome: InputOutcome) -> Result<(), NativeSceneWindowError> {
+        if outcome.dialogue_advance {
+            self.runtime.session_mut().queue_dialogue_advance();
+        }
         for action in outcome.actions {
             self.runtime.session_mut().queue_semantic_action(&action)?;
         }

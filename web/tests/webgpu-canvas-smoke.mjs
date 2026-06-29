@@ -134,6 +134,7 @@ async function openReady(browser, baseUrl, options = {}) {
     }));
     throw new Error(`${error.message}\nstate=${JSON.stringify(state)}`);
   }
+  await advanceDialogueToChoices(page);
   try {
     await page.waitForFunction(
       () =>
@@ -155,6 +156,46 @@ async function openReady(browser, baseUrl, options = {}) {
     throw new Error(`${error.message}\nstate=${JSON.stringify(state)}`);
   }
   return { page, errors };
+}
+
+async function advanceDialogueToChoices(page) {
+  await page.locator("#arcweft-canvas").focus();
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const state = await page.evaluate(() => ({
+      dialoguePresent: window.__arcweftLastObservation?.dialogue_present === true,
+      choiceCount: window.__arcweftLastObservation?.choice_count ?? 0,
+      stopReason: window.__arcweftLastObservation?.stop_reason ?? null,
+    }));
+    if (state.choiceCount > 0) {
+      return;
+    }
+    if (!state.dialoguePresent || state.stopReason !== "Blocked") {
+      return;
+    }
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(50);
+  }
+}
+
+async function finishBlockedDialogue(page) {
+  await page.locator("#arcweft-canvas").focus();
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const state = await page.evaluate(() => ({
+      dialoguePresent: window.__arcweftLastObservation?.dialogue_present === true,
+      choiceCount: window.__arcweftLastObservation?.choice_count ?? 0,
+      finished: window.__arcweftLastObservation?.finished === true,
+      stopReason: window.__arcweftLastObservation?.stop_reason ?? null,
+    }));
+    if (state.finished) {
+      return;
+    }
+    if (!state.dialoguePresent || state.choiceCount > 0 || state.stopReason !== "Blocked") {
+      break;
+    }
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(50);
+  }
+  await page.waitForFunction(() => window.__arcweftLastObservation?.finished === true);
 }
 
 async function installDeterministicClock(page) {
@@ -302,7 +343,7 @@ async function main() {
       try {
         const point = await choiceCenter(page, 0);
         await page.mouse.click(point.x, point.y);
-        await page.waitForFunction(() => window.__arcweftLastObservation?.finished === true);
+        await finishBlockedDialogue(page);
         expect(errors.length === 0, `console errors: ${errors.join("\n")}`);
       } finally {
         await page.close();
@@ -315,7 +356,7 @@ async function main() {
         await page.locator("#arcweft-canvas").focus();
         await page.keyboard.press("ArrowDown");
         await page.keyboard.press("Enter");
-        await page.waitForFunction(() => window.__arcweftLastObservation?.finished === true);
+        await finishBlockedDialogue(page);
         expect(errors.length === 0, `console errors: ${errors.join("\n")}`);
       } finally {
         await page.close();
@@ -332,7 +373,7 @@ async function main() {
         await assertFrameObservation(page, await canvasViewport(page));
         const point = await choiceCenter(page, 0);
         await page.mouse.click(point.x, point.y);
-        await page.waitForFunction(() => window.__arcweftLastObservation?.finished === true);
+        await finishBlockedDialogue(page);
         expect(errors.length === 0, `console errors: ${errors.join("\n")}`);
       } finally {
         await page.close();

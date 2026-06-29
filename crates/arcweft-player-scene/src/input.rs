@@ -33,6 +33,7 @@ impl DragState {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct InputOutcome {
     pub actions: Vec<Action>,
+    pub dialogue_advance: bool,
     pub redraw: bool,
 }
 
@@ -163,6 +164,7 @@ impl InputController {
         let _ = InputRouter::route(&raw, &frame.layers, &frame.hits, &self.interaction);
         InputOutcome {
             actions: Vec::new(),
+            dialogue_advance: false,
             redraw: true,
         }
     }
@@ -209,6 +211,7 @@ impl InputController {
         }
         InputOutcome {
             actions: Vec::new(),
+            dialogue_advance: false,
             redraw: true,
         }
     }
@@ -239,10 +242,7 @@ impl InputController {
             }
             _ => Vec::new(),
         };
-        InputOutcome {
-            actions,
-            redraw: true,
-        }
+        activation_outcome(frame, actions, is_activation)
     }
 
     pub fn pointer_cancel(&mut self, pointer: PointerId) -> InputOutcome {
@@ -252,6 +252,7 @@ impl InputController {
         self.interaction.clear_pointer(pointer);
         InputOutcome {
             actions: Vec::new(),
+            dialogue_advance: false,
             redraw: true,
         }
     }
@@ -268,6 +269,7 @@ impl InputController {
                 }
                 InputOutcome {
                     actions: Vec::new(),
+                    dialogue_advance: false,
                     redraw: true,
                 }
             }
@@ -278,6 +280,7 @@ impl InputController {
                 }
                 InputOutcome {
                     actions: Vec::new(),
+                    dialogue_advance: false,
                     redraw: true,
                 }
             }
@@ -287,6 +290,7 @@ impl InputController {
                 }
                 InputOutcome {
                     actions: Vec::new(),
+                    dialogue_advance: false,
                     redraw: true,
                 }
             }
@@ -296,19 +300,20 @@ impl InputController {
                 }
                 InputOutcome {
                     actions: Vec::new(),
+                    dialogue_advance: false,
                     redraw: true,
                 }
             }
-            "Enter" | " " | "Space" => InputOutcome {
-                actions: self
+            "Enter" | " " | "Space" => {
+                let actions = self
                     .interaction
                     .focus()
                     .target()
                     .and_then(|target| choice_action(frame, target))
                     .into_iter()
-                    .collect(),
-                redraw: true,
-            },
+                    .collect();
+                activation_outcome(frame, actions, true)
+            }
             _ => InputOutcome::default(),
         }
     }
@@ -323,6 +328,7 @@ impl InputController {
         if disposition.shortcuts_suppressed() || self.ime_composing {
             return InputOutcome {
                 actions: Vec::new(),
+                dialogue_advance: false,
                 redraw: self.ime_composing,
             };
         }
@@ -362,6 +368,7 @@ impl InputController {
         let _ = InputRouter::route(&raw, &frame.layers, &frame.hits, &self.interaction);
         Ok(InputOutcome {
             actions: Vec::new(),
+            dialogue_advance: false,
             redraw: true,
         })
     }
@@ -369,6 +376,7 @@ impl InputController {
     pub fn wheel(&mut self, _delta_y: f32) -> InputOutcome {
         InputOutcome {
             actions: Vec::new(),
+            dialogue_advance: false,
             redraw: true,
         }
     }
@@ -385,6 +393,7 @@ impl InputController {
         }
         InputOutcome {
             actions: Vec::new(),
+            dialogue_advance: false,
             redraw: true,
         }
     }
@@ -404,6 +413,20 @@ impl InputController {
         let epoch = InputEpoch(self.next_epoch);
         self.next_epoch = self.next_epoch.saturating_add(1);
         RawInputEvent::new(epoch, kind)
+    }
+}
+
+fn activation_outcome(
+    frame: &PreparedFrame,
+    actions: Vec<Action>,
+    is_activation: bool,
+) -> InputOutcome {
+    let dialogue_advance =
+        is_activation && actions.is_empty() && frame.has_dialogue() && frame.choices.is_empty();
+    InputOutcome {
+        actions,
+        dialogue_advance,
+        redraw: true,
     }
 }
 

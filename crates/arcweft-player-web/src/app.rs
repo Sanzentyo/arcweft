@@ -6,7 +6,7 @@ use crate::runtime_text_input::{
     WebPlayerTextInputBridgeHandle, WebRuntimeTextInputFocusReason, WebTextInputClientTransform,
     register_runtime_bridge,
 };
-use arcweft_bundle::ArcweftBundle;
+use arcweft_bundle::{ArcweftBundle, BundleFormat};
 use arcweft_player_scene::images::{BundleImageCatalog, BundleImageCatalogError};
 use arcweft_player_scene::input::{InputController, InputOutcome};
 use arcweft_player_scene::text_controls::{
@@ -171,7 +171,7 @@ fn start(
         .map_err(|_| WebPlayerError::NotCanvas(canvas_id.clone()))?;
     let detection = WebEditContextFeatureDetection::detect_for_element(canvas.unchecked_ref());
     let text_input = register_runtime_bridge(canvas_id.clone(), detection);
-    let bundle = ArcweftBundle::from_json_slice(&bundle_bytes)
+    let bundle = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &bundle_bytes)
         .map_err(|error| WebPlayerError::BundleDecode(error.to_string()))?;
     let session = BundleSession::new(&bundle, BundleSessionOptions::default())
         .map_err(|error| WebPlayerError::Session(error.to_string()))?;
@@ -284,11 +284,12 @@ impl ApplicationHandler for BrowserApp {
             }
             WindowEvent::PointerButton {
                 state: element_state,
-                button:
-                    button @ (ButtonSource::Mouse(MouseButton::Left) | ButtonSource::Touch { .. }),
+                button,
                 position,
                 ..
-            } => {
+            } if button.clone().mouse_button() == Some(MouseButton::Left)
+                || matches!(button, ButtonSource::Touch { .. }) =>
+            {
                 if let Some(frame) = state.prepared.clone() {
                     let pointer = pointer_id(&button);
                     let position = logical_position(position, window.scale_factor());
@@ -496,6 +497,9 @@ impl From<BundleImageCatalogError> for WebPlayerError {
 }
 
 fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) {
+    if outcome.dialogue_advance {
+        state.session.queue_dialogue_advance();
+    }
     for action in outcome.actions {
         if let Err(error) = state.session.queue_semantic_action(&action) {
             set_fatal(state, WebPlayerError::Session(error.to_string()));

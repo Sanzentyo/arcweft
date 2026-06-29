@@ -183,6 +183,7 @@ pub struct PreparedFrame {
     pub images: Vec<RenderImage>,
     pub text: Vec<RenderTextBlock>,
     pub choices: Vec<RenderChoice>,
+    dialogue_present: bool,
     focused_text_input: Option<PreparedTextInputTarget>,
 }
 
@@ -222,6 +223,11 @@ impl PreparedFrame {
     #[must_use]
     pub fn focused_text_input_target(&self) -> Option<PreparedTextInputTarget> {
         self.focused_text_input.clone()
+    }
+
+    #[must_use]
+    pub const fn has_dialogue(&self) -> bool {
+        self.dialogue_present
     }
 }
 
@@ -331,6 +337,7 @@ impl SharedFramePlanner {
             images: scene.images.clone(),
             text,
             choices,
+            dialogue_present: scene.dialogue.is_some(),
             focused_text_input,
         })
     }
