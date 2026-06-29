@@ -26,8 +26,9 @@ text-control lowering error variant, and it was ported manually.
 - Routed native and Web scene builders through the same lowerer before
   `SharedFramePlanner::prepare`.
 - Added unit tests for product/runtime emission and player-scene lowering.
-- Added a source gate preventing normal native/Web scene builders from
-  regressing to empty text inputs or hidden platform text-entry fallbacks.
+- Documented the native/Web scene-builder boundary in code comments instead of
+  adding a brittle string-scanning source gate for `text_inputs: Vec::new()` or
+  DOM fallback tokens.
 
 ## Intentional Boundaries
 
@@ -41,6 +42,12 @@ No platform-specific TSF/AppKit/Wayland/Android/iOS/EditContext adapter behavior
 was changed. Native and Web still activate IME only from
 `PreparedFrame::focused_text_input_target()`.
 
+This cut intentionally avoids a seq06.4k.1.1-specific source gate for hidden DOM
+fallback or empty text-input vector strings. Those checks are too tightly coupled
+to source spelling and would make normal refactors noisy. The contract is kept
+in this note, the request documentation, shared lowerer comments, and behavioral
+tests around runtime text-control lowering and focused prepared targets.
+
 ## Validation
 
 Passed:
@@ -49,11 +56,8 @@ Passed:
 cargo fmt --all -- --check
 cargo test -p arcweft-bundle --test ui_runtime_text_controls
 cargo test -p arcweft-player-scene --test runtime_text_controls
-cargo +nightly -Zscript tools/source-gates/seq06_4k_1_1_product_runtime_text_control_gates.rs --root .
-cargo +nightly -Zscript tools/source-gates/seq06_4k_text_input_windowed_gates.rs --root .
 cargo clippy -p arcweft-bundle -p arcweft-runtime-driver -p arcweft-player-scene -p arcweft-player-native -p arcweft-player-web --all-targets --all-features -- -D warnings
 ```
 
 Platform manual validation with real browser EditContext, Windows TSF, and
 macOS AppKit IME remains outside this package.
-

@@ -408,6 +408,8 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
         .images
         .render_images(&presentation.images, host_millis.max(0.0) as u64)
         .map_err(WebPlayerError::from)?;
+    // Runtime text controls use the same player-owned lowering path as native;
+    // browser IME support is attached after PreparedFrame geometry is known.
     let text_inputs =
         RuntimeTextControlLowerer::lower_for_frame(&mut state.input, &presentation.text_inputs)?;
     let scene = RenderScene {

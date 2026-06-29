@@ -28,6 +28,8 @@ pub enum RuntimeTextControlLoweringError {
 }
 
 impl RuntimeTextControlLowerer {
+    /// Lowers product/runtime text controls through the shared player-owned
+    /// editor path before renderer frame preparation.
     pub fn lower_for_frame(
         input: &mut InputController,
         controls: &[UiRuntimeTextControl],

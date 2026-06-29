@@ -554,6 +554,8 @@ impl NativeSceneState {
             presentation.dialogue.as_ref(),
             elapsed,
         );
+        // Runtime text controls use the shared player-owned lowering path; IME
+        // activation still comes only from PreparedFrame geometry.
         let text_inputs =
             RuntimeTextControlLowerer::lower_for_frame(&mut self.input, &presentation.text_inputs)?;
         Ok(RenderScene {
