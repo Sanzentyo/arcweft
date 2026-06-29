@@ -20,6 +20,8 @@ run with `arcw`.
 - [rich-text-profiled](rich-text-profiled/README.md) - project-shaped rich-text
   sample with launch profiles that select different `dialogue defaults`
   profiles for provenance-aware runtime-plan and LSP cascade checks.
+- [css-style-parity](css-style-parity/README.md) - image-free Web/native
+  renderer parity sample for CSS-like text and choice styling.
 - [rich-text-windows-fonts.arcw](rich-text-windows-fonts.arcw) - Windows
   default font comparison sample using nested character `dialogue_style`
   typography for horizontal, mixed, and vertical text.

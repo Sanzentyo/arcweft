@@ -1,0 +1,52 @@
+pub surface character stylist {
+    display = "Style Guide"
+    default_voice = auto
+    dialogue_style {
+        rich_text {
+            text {
+                font = "Arcweft Demo"
+                color = rgb("#ecf7ff")
+                size = 28px
+            }
+        }
+    }
+}
+
+pub textbox style_panel {
+    rich_text {
+        text {
+            font = "Arcweft Demo"
+            color = rgb("#f8fbff")
+            size = 29px
+        }
+        ruby {
+            size = 12px
+            gap = 1px
+        }
+    }
+}
+
+pub dialogue defaults @dialogue.defaults {
+    window = @textbox.style_panel
+}
+
+entry game @entry.css_style_parity {
+    start @flow.css_style_parity
+}
+
+flow css_style_parity {
+    stylist(id=@say.css_style_parity.main, voice=auto):
+        [font "Arcweft Demo"][color #64d2c8]CSS-like style parity[/color][/font] checks renderer-owned text styling only.[r]
+        [color #f6cc66]color[/color], [size 36]size[/size], [strong]Bold[/strong], [em]emphasis[/em], and |[ruby](ルビ) must match native and Web.[p]
+
+    choice @choice.css_style_parity {
+        @choice.css_style_parity.accept "Keep styled route" -> @flow.done
+        @choice.css_style_parity.inspect "Inspect parity metrics" -> @flow.done
+    }
+}
+
+flow done {
+    stylist(id=@say.css_style_parity.done, voice=auto):
+        Native and Web consumed the same Arcweft frame plan.[p]
+    return "css_style_parity_done"
+}

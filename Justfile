@@ -201,6 +201,17 @@ webgpu-parity:
     @cargo +nightly -Zscript tools\verify-webgpu-parity.rs --native target\webgpu-parity\native-hidpi-focus-first-choice.png --web target\webgpu-parity\web-hidpi-focus-first-choice.png --report target\webgpu-parity\parity-hidpi-focus-first-choice.json --min-psnr 20.0 --max-mse 0.0101 --max-mae 0.0168 --max-changed-pixel-ratio 0.04
     @foreach ($checkpoint in @("focus-first-choice", "hover-second-choice", "press-first-choice", "compact-focus-first-choice", "hidpi-focus-first-choice")) { imq compare "target\webgpu-parity\native-$checkpoint.png" "target\webgpu-parity\web-$checkpoint.png" --format json --output "target\webgpu-parity\imq-$checkpoint.json"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
 
+css-style-parity:
+    @New-Item -ItemType Directory -Force -Path web\local,target\css-style-parity | Out-Null
+    @cargo run -p arcweft-cli -- bundle samples/css-style-parity/main.arcw --output web/local/css-style-parity.awfb
+    @cargo build -p arcweft-player-web --target wasm32-unknown-unknown
+    @wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\debug\arcweft_player_web.wasm
+    @cargo +nightly -Zscript tools\capture-css-style-parity-native-frame.rs --bundle web/local/css-style-parity.awfb --output target\css-style-parity\native-default.png --viewport default --visual-time-millis 9000 --target-format rgba8unorm
+    @cargo +nightly -Zscript tools\capture-css-style-parity-native-frame.rs --bundle web/local/css-style-parity.awfb --output target\css-style-parity\native-compact.png --viewport compact --visual-time-millis 9000 --target-format rgba8unorm
+    @$env:ARW_CSS_STYLE_PARITY_DIR = (Resolve-Path target\css-style-parity).Path; $env:ARW_CSS_STYLE_PARITY_CHECKPOINTS = "default,compact"; $env:ARW_CSS_STYLE_PARITY_VISUAL_TIME_MILLIS = "9000"; node web\tests\css-style-parity-smoke.mjs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    @cargo +nightly -Zscript tools\verify-webgpu-parity.rs --native target\css-style-parity\native-default.png --web target\css-style-parity\web-default.png --report target\css-style-parity\parity-default.json --min-psnr 25.0 --min-ssim 0.60 --max-mse 0.0030 --max-mae 0.0048 --max-changed-pixel-ratio 0.011
+    @cargo +nightly -Zscript tools\verify-webgpu-parity.rs --native target\css-style-parity\native-compact.png --web target\css-style-parity\web-compact.png --report target\css-style-parity\parity-compact.json --min-psnr 25.0 --min-ssim 0.50 --max-mse 0.0031 --max-mae 0.0050 --max-changed-pixel-ratio 0.012
+
 ime-sample-web port="8786":
     @Write-Host "Serving Arcweft IME sample at http://127.0.0.1:{{port}}/ime-sample.html"
     @python -m http.server {{port}} --bind 127.0.0.1 --directory web
