@@ -188,7 +188,7 @@ Use `loop { break value }` if a loop must produce a value.
 
 ```arcw
 while cond {
-    break 1  # error
+    break 1  // error
 }
 ```
 

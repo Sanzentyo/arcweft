@@ -163,7 +163,7 @@ alice(id=@.greeting):
     おはよう。[p]
 
 alice(id=@say:.greeting):
-    おはよう。[p]  # allowed, but formatter may prefer id=@.greeting
+    おはよう。[p]  // allowed, but formatter may prefer id=@.greeting
 
 choice @choice:.first {
     @choice:.listen "聞く" -> @flow:.listen

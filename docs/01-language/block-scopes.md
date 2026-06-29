@@ -218,7 +218,7 @@ let slice = {
         pixels
     }
 }
-# error: pixels cannot escape frame borrow scope
+// error: pixels cannot escape frame borrow scope
 ```
 
 The same rule applies to any region exit. Borrowed values cannot be returned,
@@ -230,10 +230,10 @@ let escaped = {
     let pixels: &'asset [Rgba8] = bg.pixels()
     pixels
 }
-# error: borrowed value cannot escape through block final value
+// error: borrowed value cannot escape through block final value
 
 'flow.cache.pixels <- pixels
-# error: borrowed value cannot escape through upper lifetime registry write
+// error: borrowed value cannot escape through upper lifetime registry write
 ```
 
 Borrowed locals can be ended before a suspension or region boundary with a

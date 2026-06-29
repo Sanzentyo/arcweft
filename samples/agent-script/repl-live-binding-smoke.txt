@@ -1,4 +1,4 @@
-# Agent REPL live binding smoke session.
+// Agent REPL live binding smoke session.
 let answer = 42i64
 return answer
 let frame = observe()

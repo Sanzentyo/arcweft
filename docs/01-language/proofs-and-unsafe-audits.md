@@ -52,7 +52,7 @@ proof @proof.requires_only {
 }
 
 let summary = promote('flow, proof = @proof.requires_only)
-# error: proof body does not check or ensure the 'flow target
+// error: proof body does not check or ensure the 'flow target
 ```
 
 ## Proof references

@@ -608,7 +608,7 @@ scope opening_view {
 
     alice: おはよう。[p]
 }
-# room and alice_on_stage leave scope here; their registered values are cleared.
+// room and alice_on_stage leave scope here; their registered values are cleared.
 ```
 
 Every presentation value is registered in a typed target/slot pair. A slot is a

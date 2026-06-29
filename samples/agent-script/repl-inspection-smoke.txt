@@ -1,4 +1,4 @@
-# Agent REPL inspection and capture session.
+// Agent REPL inspection and capture session.
 :help
 :type 1u32
 :classify let frame = try observe()

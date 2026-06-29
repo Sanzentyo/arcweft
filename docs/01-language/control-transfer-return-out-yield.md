@@ -154,7 +154,7 @@ Loop scopes may be labeled when an explicit target improves diagnostics or avoid
 
 ```arcw
 while cond {
-    break 1  # error
+    break 1  // error
 }
 ```
 

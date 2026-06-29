@@ -1,4 +1,4 @@
-# Agent REPL read-only trace inspection smoke session.
+// Agent REPL read-only trace inspection smoke session.
 :help
 :trace
 :query observation_received

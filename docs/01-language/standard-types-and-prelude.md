@@ -169,7 +169,7 @@ let zeros: Array<i32, 4> = [0; 4]
 Length mismatch is a verifier/type-checking diagnostic:
 
 ```arcw
-let bad: Array<i32, 2> = [1, 2, 3]  # error
+let bad: Array<i32, 2> = [1, 2, 3]  // error
 ```
 
 `OrderedMap` / `OrderedSet` preserve first insertion order. `BTreeMap` /

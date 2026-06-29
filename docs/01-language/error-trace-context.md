@@ -65,7 +65,7 @@ When an error is created in `.arcw` code, Arcweft captures:
 When the error is propagated with `?`, Arcweft appends a lightweight propagation frame at the call site.
 
 ```arcw
-let bg = load_bg()?   # Err path gets a propagation frame here
+let bg = load_bg()?   // Err path gets a propagation frame here
 ```
 
 ## Native backtrace

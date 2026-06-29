@@ -5,15 +5,15 @@ Arcweft has one pattern language used by `match`, `if let`, `while let`, `let ..
 ## Basic patterns
 
 ```arcw
-_                    # wildcard
-x                    # binding
-mut x                # mutable local binding, advanced use
-42                   # literal
-"hello"              # literal string
-@choice.opening.listen # entity reference literal
-.Some(x)             # enum variant, type inferred
-.Ok(value)            # Result success
-.Err(err)             # Result error
+_                    // wildcard
+x                    // binding
+mut x                // mutable local binding, advanced use
+42                   // literal
+"hello"              // literal string
+@choice.opening.listen // entity reference literal
+.Some(x)             // enum variant, type inferred
+.Ok(value)            // Result success
+.Err(err)             // Result error
 ```
 
 ## Tuple patterns
@@ -144,7 +144,7 @@ if let .Some(route) = state.route_override {
     goto route
 }
 
-# route is not visible here
+// route is not visible here
 ```
 
 For `let ... else`, bindings are visible after the statement because the else branch must diverge.

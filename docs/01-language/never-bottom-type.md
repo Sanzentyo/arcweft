@@ -72,13 +72,13 @@ This applies to:
 ## Diverging expressions
 
 ```arcw
-return expr      # exits current fn / flow / parser / task fn
-goto @flow.x     # exits current flow segment with FlowExit::Goto
-break expr       # exits nearest loop; if loop-valued, contributes expr type
-continue         # starts next loop iteration
-panic("msg")     # runtime failure; type !
-fail(error)      # construct ArcError and diverge; type !
-abort line       # cancel current line and diverge from line continuation
+return expr      // exits current fn / flow / parser / task fn
+goto @flow.x     // exits current flow segment with FlowExit::Goto
+break expr       // exits nearest loop; if loop-valued, contributes expr type
+continue         // starts next loop iteration
+panic("msg")     // runtime failure; type !
+fail(error)      // construct ArcError and diverge; type !
+abort line       // cancel current line and diverge from line continuation
 ```
 
 ## `loop` and Never
@@ -131,7 +131,7 @@ Use `match` or `unwrap_or` for fallback values.
 The `?` operator produces `!` on the error branch and `T` on the success branch.
 
 ```arcw
-let image = load_image()?   # Ok(image) => image, Err(e) => return Err(e)
+let image = load_image()?   // Ok(image) => image, Err(e) => return Err(e)
 ```
 
 Conceptually:

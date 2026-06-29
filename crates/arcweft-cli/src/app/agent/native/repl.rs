@@ -167,7 +167,7 @@ pub(super) fn agent_repl_scripted_command(
 
     for (index, line) in source.lines().enumerate() {
         let input = line.trim();
-        if input.is_empty() || input.starts_with('#') {
+        if agent_repl_input_line_is_trivia(input) {
             continue;
         }
         let report = agent_repl_eval_line(index, input, options, &mut *state, adapter_registrars);
@@ -230,7 +230,7 @@ pub(super) fn agent_repl_interactive_command(
         match editor.read_line(&prompt) {
             Ok(reedline::Signal::Success(buffer)) => {
                 let input = buffer.trim();
-                if input.is_empty() || input.starts_with('#') {
+                if agent_repl_input_line_is_trivia(input) {
                     continue;
                 }
                 let report =
@@ -509,6 +509,10 @@ pub(super) fn agent_repl_input(options: &AgentReplOptions) -> Result<String, Exi
             ExitCode::FAILURE
         })?;
     Ok(input)
+}
+
+fn agent_repl_input_line_is_trivia(input: &str) -> bool {
+    input.is_empty() || input.starts_with("//")
 }
 
 pub(super) fn agent_repl_eval_line(
