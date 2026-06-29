@@ -1,0 +1,21 @@
+# Human output fixture expectations
+
+ok: :trace loaded=true path=trace.arcwx records=3 resources=1 read_only=true
+ok: :actions tick=42 actions=2
+ok: :type source_bytes=5
+ok: :ast source_bytes=8
+ok: :hir source_bytes=8
+ok: :bytecode source_bytes=8
+ok: :capture target=layer:dialogue.front frame=frame.42 images=1
+ok: :query query_bytes=11
+ok: :drop name=cell.1 kind=cell
+ok: :save path=out.awfagent bytes=128
+ok: :connect target=profile:dev:profiles.toml program_hash=program.hash
+ok: :parse source_bytes=8
+ok: :classify source_bytes=8
+ok: :complete source_bytes=7 items=3
+ok: :highlight source_bytes=18 tokens=6
+ok: :history cells=2
+ok: :bindings bindings=2
+rejected: :save no evidence
+diagnostic[error:read_only_trace_rejected] field=:save: read-only trace mode rejects mutating CLI command `:save`

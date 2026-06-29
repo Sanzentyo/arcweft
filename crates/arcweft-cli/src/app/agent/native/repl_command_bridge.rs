@@ -1,5 +1,8 @@
-use super::repl::{
-    AgentReplBinding, AgentReplCellReport, AgentReplState, agent_repl_eval_meta, agent_repl_ok,
+use super::repl::{AgentReplBinding, AgentReplCellReport, AgentReplState, agent_repl_ok};
+use super::repl_cli_command::{
+    AgentReplParsedInput, CliReplCommand, CliReplCommandContext, CliReplCommandFormattedOutput,
+    CliReplCommandResult, CliReplLocalCommandFormatter, dispatch_cli_repl_command,
+    parse_agent_repl_input,
 };
 use super::repl_command_format::{
     CliReplCommandFormatter, ReplCommandFormatMode, ReplCommandFormatOptions,
@@ -16,7 +19,7 @@ use arcweft_agent_repl::command::{
     AgentSessionReplCommandHost, LoadCommand, ReloadCommand, ReplCommand, ReplCommandContext,
     ReplCommandDiagnostic, ReplCommandDiagnosticCode, ReplCommandEvidence, ReplCommandHost,
     ReplCommandHostError, ReplCommandId, ReplCommandResult, ReplCommandStatus, ReplInput,
-    ReplProjectLoader, ReplTracePolicy, parse_repl_input,
+    ReplProjectLoader, ReplTracePolicy,
 };
 use arcweft_agent_repl::{
     ReplBaseSnapshot, ReplCellExecutionStatus, ReplCellInput, ReplEvaluateOutcome,
@@ -30,18 +33,18 @@ pub(super) fn agent_repl_eval_line(
     state: &mut AgentReplState,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> AgentReplCellReport {
-    match parse_repl_input(input) {
-        Ok(ReplInput::Empty) => {
+    match parse_agent_repl_input(input) {
+        Ok(AgentReplParsedInput::Shared(ReplInput::Empty)) => {
             agent_repl_ok(index, input, "empty", serde_json::json!({ "empty": true }))
         }
-        Ok(ReplInput::Cell(cell)) => {
+        Ok(AgentReplParsedInput::Shared(ReplInput::Cell(cell))) => {
             agent_repl_eval_typed_cell(index, input, options, state, &cell)
         }
-        Ok(ReplInput::Command(command)) => {
+        Ok(AgentReplParsedInput::Shared(ReplInput::Command(command))) => {
             agent_repl_eval_typed_meta(index, input, options, state, command)
         }
-        Err(_) if agent_repl_cli_meta_command(input).is_some() => {
-            agent_repl_eval_meta(index, input, options, state, adapter_registrars)
+        Ok(AgentReplParsedInput::Cli(command)) => {
+            agent_repl_eval_cli_meta(index, input, options, state, adapter_registrars, command)
         }
         Err(error) => agent_repl_typed_cell_report(
             index,
@@ -173,6 +176,77 @@ fn agent_repl_eval_typed_meta(
     };
 
     agent_repl_typed_cell_report(index, input, options, &result)
+}
+
+fn agent_repl_eval_cli_meta(
+    index: usize,
+    input: &str,
+    options: &AgentReplOptions,
+    state: &mut AgentReplState,
+    adapter_registrars: &[NativeAdapterRegistrar],
+    command: CliReplCommand,
+) -> AgentReplCellReport {
+    let trace_policy = agent_repl_trace_policy(state);
+    let result = dispatch_cli_repl_command(
+        CliReplCommandContext {
+            command_id: agent_repl_command_id(index),
+            index,
+            input,
+            options,
+            state,
+            adapter_registrars,
+            trace_policy,
+        },
+        command,
+    );
+    agent_repl_cli_typed_cell_report(index, input, options, &result)
+}
+
+fn agent_repl_cli_typed_cell_report(
+    index: usize,
+    input: &str,
+    options: &AgentReplOptions,
+    result: &CliReplCommandResult,
+) -> AgentReplCellReport {
+    let output = CliReplLocalCommandFormatter::format_result(result);
+    let status = match result.status {
+        ReplCommandStatus::Ok | ReplCommandStatus::ExitRequested => "ok",
+        ReplCommandStatus::Queued => "queued",
+        ReplCommandStatus::Rejected | ReplCommandStatus::Error => "error",
+    };
+    let text = output.text.clone();
+    AgentReplCellReport {
+        index,
+        input: input.to_owned(),
+        kind: "meta".to_owned(),
+        status: status.to_owned(),
+        message: matches!(
+            result.status,
+            ReplCommandStatus::Rejected | ReplCommandStatus::Error
+        )
+        .then_some(text.clone()),
+        value: Some(if options.json {
+            output.json
+        } else {
+            agent_repl_cli_formatted_output_value(output)
+        }),
+        quit: false,
+    }
+}
+
+fn agent_repl_cli_formatted_output_value(
+    output: CliReplCommandFormattedOutput,
+) -> serde_json::Value {
+    match output.json {
+        serde_json::Value::Object(mut value) => {
+            value.insert(
+                "formatted_text".to_owned(),
+                serde_json::Value::String(output.text),
+            );
+            serde_json::Value::Object(value)
+        }
+        other => serde_json::json!({ "formatted_text": output.text, "value": other }),
+    }
 }
 
 struct ReplCommandDispatch<'a> {
@@ -410,25 +484,6 @@ fn agent_repl_command_id(index: usize) -> ReplCommandId {
     ReplCommandId::new(u64::try_from(index).unwrap_or(u64::MAX).saturating_add(1))
 }
 
-fn agent_repl_cli_meta_command(input: &str) -> Option<&str> {
-    input.split_whitespace().next().filter(|command| {
-        matches!(
-            *command,
-            ":trace"
-                | ":actions"
-                | ":type"
-                | ":ast"
-                | ":hir"
-                | ":bytecode"
-                | ":capture"
-                | ":query"
-                | ":drop"
-                | ":save"
-                | ":connect"
-        )
-    })
-}
-
 struct CliReplProjectLoader<'a> {
     project_path: &'a mut Option<String>,
 }
@@ -474,4 +529,75 @@ fn cli_repl_base_snapshot(path: Option<&str>) -> Result<ReplBaseSnapshot, ReplCo
         |path| format!("cli-agent-repl:{path}"),
     );
     Ok(ReplBaseSnapshot::from_project(label, project))
+}
+
+#[cfg(all(test, feature = "native-capture"))]
+mod tests {
+    use super::super::{
+        AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT, AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH,
+        CliRuntimeExecutorTier, CliRuntimeStepMode, ProfileOptions,
+    };
+    use super::{AgentReplOptions, agent_repl_eval_line};
+    use crate::app::agent::native::repl::AgentReplState;
+
+    fn test_options() -> AgentReplOptions {
+        AgentReplOptions {
+            path: None,
+            profile: ProfileOptions::default(),
+            entry: None,
+            flow: None,
+            executor: CliRuntimeExecutorTier::BytecodeVm,
+            pure_backend: None,
+            pure_workers: None,
+            pure_batch_min_len: None,
+            pure_object_artifacts: false,
+            math_backend: None,
+            math_wgpu_min_elements: None,
+            steps: 1,
+            capture_step: None,
+            mode: CliRuntimeStepMode::Drain,
+            max_ops: 64,
+            values: Vec::new(),
+            viewport_width: AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH,
+            viewport_height: AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT,
+            textbox_height: None,
+            capture_time_seconds: None,
+            debug_db: None,
+            trace: None,
+            read_only: false,
+            connect: None,
+            input: None,
+            json: true,
+        }
+    }
+
+    #[test]
+    fn repl_command_bridge_routes_cli_command_to_typed_json() {
+        let options = test_options();
+        let mut state = AgentReplState::default();
+        let report = agent_repl_eval_line(0, ":trace", &options, &mut state, &[]);
+
+        assert_eq!(report.status, "ok");
+        let value = report.value.expect("typed CLI result JSON");
+        assert_eq!(value["command"], ":trace");
+        assert_eq!(value["evidence"]["kind"], "trace");
+        assert!(value.get("formatted_text").is_none());
+    }
+
+    #[test]
+    fn repl_command_bridge_reports_two_stage_unknown_command() {
+        let options = test_options();
+        let mut state = AgentReplState::default();
+        let report =
+            agent_repl_eval_line(0, ":definitely-not-a-command", &options, &mut state, &[]);
+
+        assert_eq!(report.status, "error");
+        let value = report.value.expect("typed parse error JSON");
+        assert_eq!(value["diagnostics"][0]["code"], "unknown_command");
+        assert!(
+            value["diagnostics"][0]["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("shared REPL and CLI inspection/debug"))
+        );
+    }
 }

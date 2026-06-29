@@ -1,0 +1,10 @@
+{
+  "case": "CLI parser stage handles CLI-only command after shared parser declines",
+  "input": ":trace",
+  "stage": "cli",
+  "expected_variant": "CliReplCommandKind::Trace",
+  "expected_anchor": {
+    "start": 0,
+    "end": 6
+  }
+}

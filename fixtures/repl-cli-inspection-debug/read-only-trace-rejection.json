@@ -1,0 +1,16 @@
+{
+  "case": "read-only trace rejection for mutating CLI-only command",
+  "input": ":save out.awfagent",
+  "trace_policy": "read_only_trace",
+  "command_effect": "host_mutation",
+  "result": {
+    "status": "rejected",
+    "diagnostics": [
+      {
+        "severity": "error",
+        "code": "read_only_trace_rejected",
+        "field": ":save"
+      }
+    ]
+  }
+}

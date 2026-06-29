@@ -1,0 +1,13 @@
+{
+  "case": "shared command output path remains ReplCommandResult",
+  "input": ":help",
+  "stage": "shared",
+  "formatter": "CliReplCommandFormatter",
+  "json_shape": {
+    "status": "ok",
+    "evidence": {
+      "kind": "help"
+    },
+    "diagnostics": []
+  }
+}

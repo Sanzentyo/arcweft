@@ -1,0 +1,9 @@
+{
+  "case": "shared parser stage wins",
+  "input": ":cells --all",
+  "stage": "shared",
+  "expected_variant": "ReplInput::Command(ReplCommand::Cells)",
+  "expected": {
+    "include_invalidated": true
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "case": "unknown after both parser stages fail",
+  "input": ":definitely-not-a-command",
+  "diagnostic": {
+    "severity": "error",
+    "code": "unknown_command",
+    "field": ":definitely-not-a-command",
+    "message_contains": "shared REPL and CLI inspection/debug parser stages"
+  }
+}

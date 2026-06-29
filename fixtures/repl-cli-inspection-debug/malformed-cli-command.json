@@ -1,0 +1,10 @@
+{
+  "case": "malformed CLI-only command arguments",
+  "input": ":type",
+  "diagnostic": {
+    "severity": "error",
+    "code": "missing_argument",
+    "field": ":type",
+    "message_contains": "requires an expression"
+  }
+}

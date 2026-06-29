@@ -1,0 +1,91 @@
+{
+  "case": "deterministic CLI-only command result JSON families",
+  "examples": [
+    {
+      "input": ":trace",
+      "evidence_kind": "trace"
+    },
+    {
+      "input": ":actions",
+      "evidence_kind": "actions"
+    },
+    {
+      "input": ":type 1 + 1",
+      "evidence_kind": "inspection",
+      "inspection": "type"
+    },
+    {
+      "input": ":ast return 1",
+      "evidence_kind": "inspection",
+      "inspection": "ast"
+    },
+    {
+      "input": ":hir return 1",
+      "evidence_kind": "inspection",
+      "inspection": "hir"
+    },
+    {
+      "input": ":bytecode return 1",
+      "evidence_kind": "inspection",
+      "inspection": "bytecode"
+    },
+    {
+      "input": ":capture layer dialogue.front",
+      "evidence_kind": "capture",
+      "target": {
+        "kind": "layer",
+        "id": "dialogue.front"
+      }
+    },
+    {
+      "input": ":query final frame",
+      "evidence_kind": "query"
+    },
+    {
+      "input": ":drop cell.1",
+      "evidence_kind": "drop"
+    },
+    {
+      "input": ":save out.awfagent",
+      "evidence_kind": "save"
+    },
+    {
+      "input": ":connect profile dev --manifest profiles.toml",
+      "evidence_kind": "connect",
+      "target": {
+        "kind": "profile",
+        "id": "dev",
+        "manifest": "profiles.toml"
+      }
+    },
+    {
+      "input": ":parse return 1",
+      "evidence_kind": "parse",
+      "parser": "parse"
+    },
+    {
+      "input": ":classify return 1",
+      "evidence_kind": "parse",
+      "parser": "classify"
+    },
+    {
+      "input": ":complete agent @",
+      "evidence_kind": "complete"
+    },
+    {
+      "input": ":highlight agent @a a() {}",
+      "evidence_kind": "highlight"
+    },
+    {
+      "input": ":history",
+      "evidence_kind": "history"
+    },
+    {
+      "input": ":bindings",
+      "evidence_kind": "bindings"
+    }
+  ],
+  "must_not_include": [
+    "formatted_text"
+  ]
+}
