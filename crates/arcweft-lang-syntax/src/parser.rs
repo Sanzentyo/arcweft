@@ -514,12 +514,7 @@ impl<'a> Parser<'a> {
             expected.into_iter().map(str::to_owned).collect(),
             found.map(str::to_owned),
             message.to_owned(),
-            recovery
-                .into_iter()
-                .map(|message| RecoverySuggestion {
-                    message: message.to_owned(),
-                })
-                .collect(),
+            recovery.into_iter().map(RecoverySuggestion::new).collect(),
             SourceAnchor::new(SourceName::path("<memory>"), 0..0),
         ));
     }

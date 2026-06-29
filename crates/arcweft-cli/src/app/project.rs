@@ -1,3 +1,4 @@
+use super::diagnostics::{DiagnosticEmitter, DiagnosticSource};
 use super::runtime::options::{
     CliRuntimeMathBackend, CliRuntimePureBackend, CliRuntimePureWorkers,
 };
@@ -10,6 +11,7 @@ use arcweft_character::catalog::CharacterCatalog;
 use arcweft_compiler::{hir, parse, project::compile_project_with_env};
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_lang_sema::{check::TypeCheckReport, env::TypeCheckEnv};
+use arcweft_lang_syntax::{lint::SyntaxLint, source::ParsedSource};
 use arcweft_launch::{
     LaunchKind, LaunchMathBackend, LaunchProfileManifest, LaunchPureBackend, ResolvedLaunchProfile,
 };
@@ -20,6 +22,7 @@ use arcweft_runtime_accelerator::{
 use arcweft_runtime_host::NativeTaskBridge;
 use arcweft_runtime_plan::{flow::RuntimePlanLowerOptions, line_task::LoweredLineTaskGroup};
 use arcweft_rust_abi::ArcweftRustManifest;
+use arcweft_source::{Diagnostic, DiagnosticSeverity, SourceName};
 use clap::Args;
 use std::fs;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -532,6 +535,44 @@ pub(crate) struct CheckedModule {
     pub(crate) phases: Vec<RuntimeProfilePhase>,
 }
 
+fn emit_phase_error_diagnostics(
+    emitter: &DiagnosticEmitter,
+    diagnostic_source: &DiagnosticSource<'_>,
+    code: &'static str,
+    messages: impl IntoIterator<Item = String>,
+) {
+    let diagnostics = messages
+        .into_iter()
+        .map(|message| Diagnostic::new(DiagnosticSeverity::Error, message).with_code(code))
+        .collect::<Vec<_>>();
+    emitter.emit_all(&diagnostics, diagnostic_source);
+}
+
+fn emit_parse_error_diagnostics(
+    parsed: &ParsedSource,
+    source_name: &SourceName,
+    emitter: &DiagnosticEmitter,
+    diagnostic_source: &DiagnosticSource<'_>,
+) {
+    let diagnostics = parsed
+        .errors()
+        .iter()
+        .map(|error| error.diagnostic(source_name))
+        .collect::<Vec<_>>();
+    emitter.emit_all(&diagnostics, diagnostic_source);
+}
+
+fn emit_syntax_lint_diagnostics(
+    lints: &[SyntaxLint],
+    source_name: &SourceName,
+    emitter: &DiagnosticEmitter,
+    diagnostic_source: &DiagnosticSource<'_>,
+) {
+    for lint in lints {
+        emitter.emit(&lint.diagnostic(source_name), diagnostic_source);
+    }
+}
+
 pub(in crate::app) fn load_and_check_with_env(
     path: &Path,
     env: &TypeCheckEnv,
@@ -554,69 +595,78 @@ pub(in crate::app) fn load_and_check_with_env(
             ExitCode::FAILURE
         })
     })?;
+    let source_text = parsed.source().to_owned();
+    let source_name = SourceName::path(path.display().to_string());
+    let diagnostic_source = DiagnosticSource::new(path, &source_text);
+    let emitter = DiagnosticEmitter::stderr();
     if !parsed.errors().is_empty() {
-        for error in parsed.errors() {
-            eprintln!("error: {}", error.message());
-        }
+        emit_parse_error_diagnostics(&parsed, &source_name, &emitter, &diagnostic_source);
         return Err(ExitCode::FAILURE);
     }
 
     let tree = parsed.into_typed_tree();
     let lints = run_profile_phase(&mut phases, "lint", || {
-        Ok::<Vec<arcweft_lang_syntax::lint::SyntaxLint>, ExitCode>(parse::lint_source_tree(&tree))
+        Ok::<Vec<SyntaxLint>, ExitCode>(parse::lint_source_tree(&tree))
     })?;
-    for lint in &lints {
-        eprintln!(
-            "{}[{} {}]: {}",
-            lint.severity().label(),
-            lint.code().stable_code(),
-            lint.code().domain_name(),
-            lint.message()
-        );
-    }
+    emit_syntax_lint_diagnostics(&lints, &source_name, &emitter, &diagnostic_source);
     if parse::has_error_lints(&lints) {
         return Err(ExitCode::FAILURE);
     }
 
     let hir = run_profile_phase(&mut phases, "lower_hir", || {
         hir::lower_source_tree(&tree).map_err(|errors| {
-            for error in errors {
-                eprintln!("error: {}", error.message());
-            }
+            emit_phase_error_diagnostics(
+                &emitter,
+                &diagnostic_source,
+                "hir.lower",
+                errors.into_iter().map(|error| error.message().to_owned()),
+            );
             ExitCode::FAILURE
         })
     })?;
 
     run_profile_phase(&mut phases, "resolve", || {
         hir::resolve_hir_references(&hir).map_err(|errors| {
-            for error in errors {
-                eprintln!("error: {error}");
-            }
+            emit_phase_error_diagnostics(
+                &emitter,
+                &diagnostic_source,
+                "sema.resolve",
+                errors.into_iter().map(|error| error.to_string()),
+            );
             ExitCode::FAILURE
         })
     })?;
     run_profile_phase(&mut phases, "readiness", || {
         hir::validate_hir_typecheck_ready(&hir).map_err(|errors| {
-            for error in errors {
-                eprintln!("error: {}", error.message());
-            }
+            emit_phase_error_diagnostics(
+                &emitter,
+                &diagnostic_source,
+                "sema.readiness",
+                errors.into_iter().map(|error| error.message().to_owned()),
+            );
             ExitCode::FAILURE
         })
     })?;
     let typecheck_report = run_profile_phase(&mut phases, "typecheck", || {
         hir::typecheck_hir_with_env(&hir, env).map_err(|errors| {
-            for error in errors {
-                eprintln!("error: {}", error.message());
-            }
+            emit_phase_error_diagnostics(
+                &emitter,
+                &diagnostic_source,
+                "sema.typecheck",
+                errors.into_iter().map(|error| error.message().to_owned()),
+            );
             ExitCode::FAILURE
         })
     })?;
 
     let line_task_groups = run_profile_phase(&mut phases, "line_task_lower", || {
         arcweft_compiler::lower::lower_source_line_tasks(&hir).map_err(|errors| {
-            for error in errors {
-                eprintln!("error: {}", error.message());
-            }
+            emit_phase_error_diagnostics(
+                &emitter,
+                &diagnostic_source,
+                "runtime.line_task.lower",
+                errors.into_iter().map(|error| error.message().to_owned()),
+            );
             ExitCode::FAILURE
         })
     })?;

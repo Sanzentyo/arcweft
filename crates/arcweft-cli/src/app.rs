@@ -3,6 +3,7 @@ mod bundle;
 mod cache;
 mod commands;
 mod debug;
+pub(in crate::app) mod diagnostics;
 mod image_declarations;
 mod import;
 mod inspect;

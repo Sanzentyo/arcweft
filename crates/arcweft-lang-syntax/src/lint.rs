@@ -4,6 +4,10 @@ use crate::ast::flow::FlowItem;
 use crate::ast::ids::{FamilyRelativeEntityRef, IdRef, RelativeId, RelativeIdSpelling};
 use crate::ast::items::{Attribute, Item, TypedSyntaxTree};
 use crate::ast::source::SourceItem;
+use arcweft_source::{
+    Diagnostic, DiagnosticApplicability, DiagnosticLabel, DiagnosticSeverity, DiagnosticSuggestion,
+    SourceEdit, SourceName, SourceRange, SourceSpan,
+};
 
 /// Syntax-level lint emitted before full name resolution.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -11,6 +15,7 @@ pub struct SyntaxLint {
     code: SyntaxLintCode,
     message: String,
     range: TextRange,
+    suggestions: Vec<SyntaxLintSuggestion>,
 }
 
 /// Stable categories for editor and CLI filtering.
@@ -22,6 +27,21 @@ pub enum SyntaxLintCode {
     DeclBindingMismatch,
     ExplicitDeclId,
     GeneratedSurfaceForm,
+}
+
+/// Source edit attached to a syntax lint before the source name is known.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SyntaxLintEdit {
+    range: TextRange,
+    replacement: String,
+}
+
+/// Concrete syntax lint suggestion that can become a terminal patch, LSP fix, or Agent action.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SyntaxLintSuggestion {
+    message: String,
+    edits: Vec<SyntaxLintEdit>,
+    applicability: DiagnosticApplicability,
 }
 
 impl SyntaxLintCode {
@@ -75,6 +95,15 @@ impl SyntaxLintSeverity {
             Self::Warning => "warning",
             Self::Information => "info",
             Self::Hint => "hint",
+        }
+    }
+
+    pub const fn diagnostic_severity(self) -> DiagnosticSeverity {
+        match self {
+            Self::Error => DiagnosticSeverity::Error,
+            Self::Warning => DiagnosticSeverity::Warning,
+            Self::Information => DiagnosticSeverity::Info,
+            Self::Hint => DiagnosticSeverity::Hint,
         }
     }
 }
@@ -255,11 +284,17 @@ fn lint_explicit_decl_id(
     if allows_lint(attrs, source_attrs, SyntaxLintCode::ExplicitDeclId) {
         return;
     }
-    lints.push(SyntaxLint::new(
-        SyntaxLintCode::ExplicitDeclId,
-        format!("`{kind} @{id}` spells the default declaration family explicitly; `{kind} {name}` is the compact authoring form"),
-        range,
-    ));
+    lints.push(
+        SyntaxLint::new(
+            SyntaxLintCode::ExplicitDeclId,
+            format!("`{kind} @{id}` spells the default declaration family explicitly; `{kind} {name}` is the compact authoring form"),
+            range,
+        )
+        .with_suggestion(SyntaxLintSuggestion::machine_applicable(
+            format!("replace explicit `@{id}` with compact `{name}`"),
+            SyntaxLintEdit::new(range, name),
+        )),
+    );
 }
 
 fn lint_generated_surface_form(
@@ -391,16 +426,35 @@ fn lint_optional_id(id: Option<&IdRef>, lints: &mut Vec<SyntaxLint>) {
 
 fn lint_relative_id(relative: &RelativeId, lints: &mut Vec<SyntaxLint>) {
     if relative.spelling() == RelativeIdSpelling::DotRun && relative.parent_depth() >= 2 {
-        lints.push(SyntaxLint::new(
-            SyntaxLintCode::DeepDotRunRelativeId,
-            format!(
-                "`@...{}` is accepted but hand-written source should prefer explicit `@super.super.{}`",
-                relative.suffix(),
-                relative.suffix()
-            ),
-            *relative.range(),
-        ));
+        let replacement = explicit_super_relative_id(relative);
+        lints.push(
+            SyntaxLint::new(
+                SyntaxLintCode::DeepDotRunRelativeId,
+                format!(
+                    "`@...{}` is accepted but hand-written source should prefer explicit `{replacement}`",
+                    relative.suffix(),
+                ),
+                *relative.range(),
+            )
+            .with_suggestion(SyntaxLintSuggestion::machine_applicable(
+                format!("replace dot-run relative id with `{replacement}`"),
+                SyntaxLintEdit::new(*relative.range(), replacement),
+            )),
+        );
     }
+}
+
+fn explicit_super_relative_id(relative: &RelativeId) -> String {
+    let mut replacement = String::from("@");
+    for depth in 0..relative.parent_depth() {
+        if depth > 0 {
+            replacement.push('.');
+        }
+        replacement.push_str("super");
+    }
+    replacement.push('.');
+    replacement.push_str(relative.suffix());
+    replacement
 }
 
 impl SyntaxLint {
@@ -409,7 +463,14 @@ impl SyntaxLint {
             code,
             message,
             range,
+            suggestions: Vec::new(),
         }
+    }
+
+    #[must_use]
+    fn with_suggestion(mut self, suggestion: SyntaxLintSuggestion) -> Self {
+        self.suggestions.push(suggestion);
+        self
     }
 
     pub const fn code(&self) -> SyntaxLintCode {
@@ -426,6 +487,83 @@ impl SyntaxLint {
 
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+
+    pub fn suggestions(&self) -> &[SyntaxLintSuggestion] {
+        &self.suggestions
+    }
+
+    /// Builds a structured diagnostic for CLI, LSP, and Agent tooling.
+    pub fn diagnostic(&self, source: &SourceName) -> Diagnostic {
+        let span = SourceSpan::new(
+            source.clone(),
+            SourceRange::new(self.range.start(), self.range.end()),
+        );
+        self.suggestions.iter().fold(
+            Diagnostic::new(self.severity().diagnostic_severity(), self.message.clone())
+                .with_code(self.code.stable_code())
+                .with_label(DiagnosticLabel::primary(
+                    span,
+                    Some(self.code.domain_name().to_owned()),
+                )),
+            |diagnostic, suggestion| diagnostic.with_suggestion(suggestion.diagnostic(source)),
+        )
+    }
+}
+
+impl SyntaxLintEdit {
+    fn new(range: TextRange, replacement: impl Into<String>) -> Self {
+        Self {
+            range,
+            replacement: replacement.into(),
+        }
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+
+    pub fn replacement(&self) -> &str {
+        &self.replacement
+    }
+
+    fn source_edit(&self, source: SourceName) -> SourceEdit {
+        SourceEdit::new(
+            SourceSpan::new(
+                source,
+                SourceRange::new(self.range.start(), self.range.end()),
+            ),
+            self.replacement.clone(),
+        )
+    }
+}
+
+impl SyntaxLintSuggestion {
+    fn machine_applicable(message: impl Into<String>, edit: SyntaxLintEdit) -> Self {
+        Self {
+            message: message.into(),
+            edits: vec![edit],
+            applicability: DiagnosticApplicability::MachineApplicable,
+        }
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    pub fn edits(&self) -> &[SyntaxLintEdit] {
+        &self.edits
+    }
+
+    pub const fn applicability(&self) -> DiagnosticApplicability {
+        self.applicability
+    }
+
+    fn diagnostic(&self, source: &SourceName) -> DiagnosticSuggestion {
+        self.edits.iter().fold(
+            DiagnosticSuggestion::new(self.message.clone(), self.applicability),
+            |suggestion, edit| suggestion.with_edit(edit.source_edit(source.clone())),
+        )
     }
 }
 
@@ -665,5 +803,40 @@ character alice {
 
         assert!(!codes.contains(&SyntaxLintCode::RedundantDeclIdentity));
         assert!(!codes.contains(&SyntaxLintCode::DeclBindingMismatch));
+    }
+
+    #[test]
+    fn explicit_id_lint_carries_machine_applicable_suggestion() {
+        let parsed = parse_source("flow @flow.opening {\n}\n");
+        let lint = lint_id_policy(parsed.typed_tree())
+            .into_iter()
+            .find(|lint| lint.code() == SyntaxLintCode::ExplicitDeclId)
+            .expect("explicit id lint");
+
+        assert_eq!(lint.suggestions().len(), 1);
+        assert_eq!(lint.suggestions()[0].edits()[0].replacement(), "opening");
+    }
+
+    #[test]
+    fn deep_dot_run_lint_carries_explicit_super_suggestion() {
+        let parsed = parse_source(
+            r#"
+flow @flow.opening opening {
+    choice {
+        @...ending "Next" -> @flow.ending
+    }
+}
+"#,
+        );
+        let lint = lint_id_policy(parsed.typed_tree())
+            .into_iter()
+            .find(|lint| lint.code() == SyntaxLintCode::DeepDotRunRelativeId)
+            .expect("deep dot-run lint");
+
+        assert_eq!(lint.suggestions().len(), 1);
+        assert_eq!(
+            lint.suggestions()[0].edits()[0].replacement(),
+            "@super.super.ending"
+        );
     }
 }

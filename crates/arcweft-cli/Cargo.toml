@@ -55,6 +55,7 @@ arcweft-ui = { path = "../arcweft-ui" }
 arcweft-verify = { path = "../arcweft-verify" }
 arcweft-verify-oxiz = { path = "../arcweft-verify-oxiz" }
 arcweft-verify-z3 = { path = "../arcweft-verify-z3" }
+annotate-snippets.workspace = true
 base64.workspace = true
 blake3.workspace = true
 clap = { workspace = true, features = ["derive"] }

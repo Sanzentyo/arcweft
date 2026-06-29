@@ -784,9 +784,7 @@ pub(super) fn simple_error(base: usize, len: usize, message: &str, expected: &st
         vec![expected.to_owned()],
         None,
         message.to_owned(),
-        vec![RecoverySuggestion {
-            message: format!("use {expected} syntax"),
-        }],
+        vec![RecoverySuggestion::new(format!("use {expected} syntax"))],
         SourceAnchor::new(SourceName::path("<memory>"), base..base + len),
     )
 }

@@ -1,4 +1,7 @@
-use arcweft_source::SourceAnchor;
+use arcweft_source::{
+    Diagnostic, DiagnosticApplicability, DiagnosticLabel, DiagnosticSeverity, DiagnosticSuggestion,
+    SourceEdit, SourceName, SourceRange, SourceSpan,
+};
 use thiserror::Error;
 
 use crate::ast::common::TextRange;
@@ -12,13 +15,22 @@ pub struct ParseError {
     found: Option<String>,
     message: String,
     recovery: Vec<RecoverySuggestion>,
-    anchor: SourceAnchor,
+    anchor: arcweft_source::SourceAnchor,
 }
 
 /// Suggested local edit or strategy for recovering from an error.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecoverySuggestion {
     pub(crate) message: String,
+    pub(crate) edits: Vec<RecoveryEdit>,
+    pub(crate) applicability: DiagnosticApplicability,
+}
+
+/// Suggested parse-recovery source edit relative to the parsed source.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecoveryEdit {
+    range: TextRange,
+    replacement: String,
 }
 
 impl ParseError {
@@ -28,7 +40,7 @@ impl ParseError {
         found: Option<String>,
         message: String,
         recovery: Vec<RecoverySuggestion>,
-        anchor: SourceAnchor,
+        anchor: arcweft_source::SourceAnchor,
     ) -> Self {
         Self {
             range,
@@ -74,14 +86,100 @@ impl ParseError {
     }
 
     /// Source anchor for tooling integrations.
-    pub const fn anchor(&self) -> &SourceAnchor {
+    pub const fn anchor(&self) -> &arcweft_source::SourceAnchor {
         &self.anchor
+    }
+
+    /// Builds the shared Arcweft diagnostic representation for CLI/LSP/Agent renderers.
+    pub fn diagnostic(&self, source: &SourceName) -> Diagnostic {
+        let span = SourceSpan::new(
+            source.clone(),
+            SourceRange::new(self.range.start(), self.range.end()),
+        );
+        let mut diagnostic = Diagnostic::new(DiagnosticSeverity::Error, self.message.clone())
+            .with_code("syntax.parse")
+            .with_label(DiagnosticLabel::primary(
+                span,
+                self.found
+                    .as_ref()
+                    .map(|found| format!("found `{found}` here")),
+            ));
+        if !self.expected.is_empty() {
+            diagnostic = diagnostic.with_note(format!("expected: {}", self.expected.join(", ")));
+        }
+        for suggestion in &self.recovery {
+            diagnostic = diagnostic.with_suggestion(suggestion.diagnostic_suggestion(source));
+        }
+        diagnostic
     }
 }
 
 impl RecoverySuggestion {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            edits: Vec::new(),
+            applicability: DiagnosticApplicability::Unspecified,
+        }
+    }
+
+    #[must_use]
+    pub fn with_edit(mut self, edit: RecoveryEdit) -> Self {
+        self.edits.push(edit);
+        self
+    }
+
+    #[must_use]
+    pub fn with_applicability(mut self, applicability: DiagnosticApplicability) -> Self {
+        self.applicability = applicability;
+        self
+    }
+
     /// Recovery message.
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    /// Recovery edits, when the suggestion can be expressed as a concrete patch.
+    pub fn edits(&self) -> &[RecoveryEdit] {
+        &self.edits
+    }
+
+    pub const fn applicability(&self) -> DiagnosticApplicability {
+        self.applicability
+    }
+
+    fn diagnostic_suggestion(&self, source: &SourceName) -> DiagnosticSuggestion {
+        self.edits.iter().fold(
+            DiagnosticSuggestion::new(self.message.clone(), self.applicability),
+            |suggestion, edit| suggestion.with_edit(edit.source_edit(source.clone())),
+        )
+    }
+}
+
+impl RecoveryEdit {
+    pub fn new(range: TextRange, replacement: impl Into<String>) -> Self {
+        Self {
+            range,
+            replacement: replacement.into(),
+        }
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+
+    pub fn replacement(&self) -> &str {
+        &self.replacement
+    }
+
+    fn source_edit(&self, source: SourceName) -> SourceEdit {
+        SourceEdit::new(
+            SourceSpan::new(
+                source,
+                SourceRange::new(self.range.start(), self.range.end()),
+            ),
+            self.replacement.clone(),
+        )
     }
 }

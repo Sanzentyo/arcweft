@@ -385,9 +385,9 @@ fn push_ambiguous_await_question_error(
             vec!["try await expr with:".to_owned()],
             Some(expr_part.trim().to_owned()),
             "`await expr? with` is ambiguous; use `try await expr with`".to_owned(),
-            vec![RecoverySuggestion {
-                message: "move `?` before `await` as `try await`".to_owned(),
-            }],
+            vec![RecoverySuggestion::new(
+                "move `?` before `await` as `try await`",
+            )],
             SourceAnchor::new(SourceName::path("<memory>"), range.start()..range.end()),
         ));
     }
