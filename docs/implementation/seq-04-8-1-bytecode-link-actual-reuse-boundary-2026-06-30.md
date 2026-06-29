@@ -70,6 +70,9 @@ Changed Rust file size measurement:
 
 ## Follow-up candidates
 
-- Wire actual bytecode/link builder calls into the full build orchestration once the seq04.7 runtime-plan-unit identity is available at every producer call site.
-- Replace remaining conservative bytecode/link producers as their policy identities become available.
-- Add end-to-end CLI golden tests once ordinary builds emit actual reusable bytecode/link payloads.
+- Full build orchestration actual builder integration:
+  `docs/reviews/requests/2026-06-30-seq-04.8.2-full-build-orchestration-actual-builder-integration.md`
+- Bytecode/link producer identity closure and conservative continuation:
+  `docs/reviews/requests/2026-06-30-seq-04.8.3-bytecode-link-producer-identity-closure.md`
+- Normal build CLI goldens and cache evidence:
+  `docs/reviews/requests/2026-06-30-seq-04.8.4-normal-build-cli-goldens-cache-evidence.md`
