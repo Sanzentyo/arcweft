@@ -69,6 +69,12 @@ const browser = await chromium.launch();
 try {
   const page = await browser.newPage({ viewport: { width: 760, height: 420 } });
   await page.addInitScript(() => {
+    function assertDomRect(bounds) {
+      if (!(bounds instanceof DOMRect)) {
+        throw new Error(`EditContext geometry requires DOMRect, got ${Object.prototype.toString.call(bounds)}`);
+      }
+    }
+
     class FakeEditContext extends EventTarget {
       constructor({ text = "" } = {}) {
         super();
@@ -86,14 +92,17 @@ try {
         this.selectionEnd = end;
       }
       updateControlBounds(bounds) {
+        assertDomRect(bounds);
         this.controlBounds = bounds;
         this.geometryCalls.push(["control", bounds]);
       }
       updateSelectionBounds(bounds) {
+        assertDomRect(bounds);
         this.selectionBounds = bounds;
         this.geometryCalls.push(["selection", bounds]);
       }
       updateCharacterBounds(rangeStart, bounds) {
+        bounds.forEach(assertDomRect);
         this.characterBounds = { rangeStart, bounds };
         this.geometryCalls.push(["character", { rangeStart, bounds }]);
       }

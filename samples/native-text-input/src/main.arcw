@@ -7,21 +7,14 @@ entry game @entry.native_text_input {
     start @flow.native_text_input
 }
 
-flow native_text_input effects { native.text_input.sample } {
+flow native_text_input {
     narrator:
         seq06.4j native-player platform text input bridge sample.[p]
-        Use pointer focus and Tab traversal across TextField, TextArea, and SecureField.[p]
-
-    # The renderer/runtime side of seq06.4j consumes this deterministic scene id
-    # and lowers it to real Arcweft text controls.  Platform IME acceptance must
-    # use `arcw run --runner native` and must not call windows-tsf-ime-sample.
-    let _mounted = try await native.text_input.sample.mount("seq06.4j.native-text-input") with {
-        error _ => return "native_text_input_mount_failed"
-    }
+        This sample is the normal native player entrypoint for future renderer-backed text controls.[p]
 
     narrator:
-        Controls: jp_text_field, jp_text_area, secret_secure_field.[p]
-        Enter Japanese IME text, move the caret, select text, delete text, and blur focus.[p]
+        Controls planned by scene-contract: jp_text_field, jp_text_area, secret_secure_field.[p]
+        The current renderer still needs focused text input target lowering before live IME can attach.[p]
 
     return "native_text_input_sample_open"
 }

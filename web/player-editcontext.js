@@ -584,10 +584,10 @@ export class ArcweftEditContextPlayerGlue {
 
   #controlBounds() {
     if (this.#state.lastGeometry?.controlRect) {
-      return toDomRectInit(this.#state.lastGeometry.controlRect);
+      return toDomRect(this.#state.lastGeometry.controlRect);
     }
     const rect = this.#host.getBoundingClientRect();
-    return toDomRectInit(rect);
+    return toDomRect(rect);
   }
 
   #selectionBounds() {
@@ -601,7 +601,7 @@ export class ArcweftEditContextPlayerGlue {
       return unionRects(this.#computeCharacterBounds(start, end));
     }
     if (this.#state.lastGeometry?.caretRect) {
-      return toDomRectInit(this.#state.lastGeometry.caretRect);
+      return toDomRect(this.#state.lastGeometry.caretRect);
     }
     return this.#rectForOffset(start);
   }
@@ -609,7 +609,7 @@ export class ArcweftEditContextPlayerGlue {
   #computeCharacterBounds(rangeStart, rangeEnd) {
     const runtimeBounds = runtimeRectsForRange(this.#state.lastGeometry?.characterBounds, rangeStart, rangeEnd);
     if (runtimeBounds.length > 0) {
-      return runtimeBounds.map((entry) => entry.rect);
+      return runtimeBounds.map((entry) => toDomRect(entry.rect));
     }
     const start = clampOffset(this.#state.text, rangeStart);
     const end = clampOffset(this.#state.text, Math.max(rangeEnd, start));
@@ -630,12 +630,12 @@ export class ArcweftEditContextPlayerGlue {
     const advance = this.#characterAdvance(rect);
     const slot = graphemeSlotForOffset(this.#state.text, offset);
     const widthSlots = Math.max(1, graphemeSlotForOffset(this.#state.text, endOffset) - slot);
-    return {
+    return toDomRect({
       x: rect.left + this.#textInsetX() + slot * advance,
       y: rect.top + this.#textInsetY(),
       width: Math.max(1, widthSlots * advance),
       height: Math.max(1, rect.height - this.#textInsetY() * 2),
-    };
+    });
   }
 
   #characterAdvance(rect = this.#host.getBoundingClientRect()) {
@@ -988,13 +988,13 @@ function escapeHtml(value) {
 
 function unionRects(rects) {
   if (!rects.length) {
-    return { x: 0, y: 0, width: 1, height: 1 };
+    return toDomRect({ x: 0, y: 0, width: 1, height: 1 });
   }
   const left = Math.min(...rects.map((rect) => rect.x));
   const top = Math.min(...rects.map((rect) => rect.y));
   const right = Math.max(...rects.map((rect) => rect.x + rect.width));
   const bottom = Math.max(...rects.map((rect) => rect.y + rect.height));
-  return { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
+  return toDomRect({ x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) });
 }
 
 function numberOr(value, fallback) {
@@ -1014,4 +1014,16 @@ function toDomRectInit(rect = {}) {
     width: Math.max(0, numberOr(rect.width, 0)),
     height: Math.max(0, numberOr(rect.height, 0)),
   };
+}
+
+function toDomRect(rect = {}) {
+  const init = toDomRectInit(rect);
+  const DomRectType = typeof DOMRect === "function"
+    ? DOMRect
+    : typeof window !== "undefined" && typeof window.DOMRect === "function"
+      ? window.DOMRect
+      : null;
+  return DomRectType
+    ? new DomRectType(init.x, init.y, init.width, init.height)
+    : init;
 }
