@@ -15,13 +15,14 @@ use arcweft_lang_syntax::{
 use arcweft_project::{
     fingerprint::{BuildDigest, NamedDigest},
     persistent_object::{
-        AWBO_SCHEMA_VERSION, BytecodeUnitFactsObject, BytecodeUnitObject, BytecodeUnitReusePolicy,
-        CompilerObjectKey, CompilerObjectKind, CompilerObjectPayload, HirBodyFactsObject,
-        HirBodyObject, InterfaceSummaryObject, LinkPlanFactsObject, LinkPlanObject,
-        LinkPlanReusePolicy, ParsedSyntaxEvidenceObject, ParsedSyntaxObject, PublicSymbolKind,
-        PublicSymbolObject, StableDiagnosticObject, StableDiagnosticSeverity,
-        StableDiagnosticSummaryObject, StableRangeObject, StableSourceSpanObject,
-        SyntaxStatsObject, TypecheckGateFactsObject, TypecheckGateObject, TypecheckGateReusePolicy,
+        AWBO_SCHEMA_VERSION, BytecodeUnitFactsObject, BytecodeUnitIdentityObject,
+        BytecodeUnitObject, BytecodeUnitReusePolicy, CompilerObjectKey, CompilerObjectKind,
+        CompilerObjectPayload, HirBodyFactsObject, HirBodyObject, InterfaceSummaryObject,
+        LinkDescriptorObject, LinkPlanFactsObject, LinkPlanObject, LinkPlanReusePolicy,
+        ParsedSyntaxEvidenceObject, ParsedSyntaxObject, PublicSymbolKind, PublicSymbolObject,
+        StableDiagnosticObject, StableDiagnosticSeverity, StableDiagnosticSummaryObject,
+        StableRangeObject, StableSourceSpanObject, SyntaxStatsObject, TypecheckGateFactsObject,
+        TypecheckGateObject, TypecheckGateReusePolicy,
     },
 };
 use thiserror::Error;
@@ -73,6 +74,36 @@ pub struct LinkPlanFactsInput<'a> {
     pub package: &'a str,
     pub parsed: &'a ParsedSource,
     pub ordered_unit_digests: Vec<NamedDigest>,
+    pub product_build_options_digest: BuildDigest,
+}
+
+/// Inputs required to project an actual reusable bytecode unit.
+pub struct ActualBytecodeUnitFactsInput<'a> {
+    pub key: &'a CompilerObjectKey,
+    pub module: &'a str,
+    pub parsed: &'a ParsedSource,
+    pub hir_body: &'a HirBodyObject,
+    pub typecheck_gate: &'a TypecheckGateObject,
+    pub runtime_plan_unit_digest: BuildDigest,
+    pub canonical_awbc_bytes: &'a [u8],
+    pub awbc_schema_digest: BuildDigest,
+    pub verifier_policy_digest: BuildDigest,
+    pub codegen_policy_digest: BuildDigest,
+    pub target_profile_digest: BuildDigest,
+    pub feature_set_digest: BuildDigest,
+    pub relocation_import_table_digest: BuildDigest,
+}
+
+/// Inputs required to project an actual reusable link descriptor.
+pub struct ActualLinkPlanFactsInput<'a> {
+    pub key: &'a CompilerObjectKey,
+    pub package: &'a str,
+    pub parsed: &'a ParsedSource,
+    pub ordered_unit_identities: Vec<NamedDigest>,
+    pub entrypoint_digest: BuildDigest,
+    pub resource_section_digest: BuildDigest,
+    pub adapter_requirements_digest: BuildDigest,
+    pub patch_compatibility_digest: BuildDigest,
     pub product_build_options_digest: BuildDigest,
 }
 
@@ -259,18 +290,27 @@ pub fn bytecode_unit_object(
     }
     let stage_inputs = input.key.stage_inputs();
     let facts = BytecodeUnitFactsObject {
-        runtime_plan_unit_digest: BytecodeUnitObject::conservative_runtime_plan_unit_digest(),
+        identity: BytecodeUnitIdentityObject {
+            runtime_plan_unit_digest: BytecodeUnitObject::conservative_runtime_plan_unit_digest(),
+            awbc_schema_digest: BytecodeUnitObject::conservative_awbc_schema_digest(),
+            verifier_policy_digest: BytecodeUnitObject::conservative_verifier_policy_digest(),
+            codegen_policy_digest: BytecodeUnitObject::conservative_codegen_policy_digest(),
+            target_profile_digest: input.key.query_options_digest,
+            feature_set_digest: BuildDigest::of(
+                input.key.compiler.enabled_features.join("\0").as_bytes(),
+            ),
+            relocation_import_table_digest:
+                BytecodeUnitObject::conservative_relocation_import_table_digest(),
+        },
         hir_body_digest: input.hir_body.body_digest,
         typecheck_gate_digest: input.typecheck_gate.facts.diagnostic_digest,
-        awbc_schema_digest: BytecodeUnitObject::conservative_awbc_schema_digest(),
-        verifier_policy_digest: BytecodeUnitObject::conservative_verifier_policy_digest(),
-        codegen_policy_digest: BytecodeUnitObject::conservative_codegen_policy_digest(),
-        target_profile_digest: input.key.query_options_digest,
-        feature_set_digest: BuildDigest::of(
-            input.key.compiler.enabled_features.join("\0").as_bytes(),
-        ),
         dependency_body_digest_root: stage_inputs.dependency_body_digest_root(),
         canonical_bytecode_digest: BytecodeUnitObject::conservative_canonical_bytecode_digest(),
+        bytecode_descriptor_digest: BuildDigest::ZERO,
+    };
+    let facts = BytecodeUnitFactsObject {
+        bytecode_descriptor_digest: BytecodeUnitObject::bytecode_descriptor_digest_for(&facts),
+        ..facts
     };
     Ok(BytecodeUnitObject {
         schema_version: AWBO_SCHEMA_VERSION,
@@ -281,6 +321,7 @@ pub fn bytecode_unit_object(
         diagnostics: StableDiagnosticSummaryObject::empty(),
         stage_inputs,
         facts,
+        canonical_awbc_bytes: Vec::new(),
         reuse_policy: BytecodeUnitReusePolicy::ConservativeRebuild,
     })
 }
@@ -294,6 +335,64 @@ pub fn bytecode_unit_payload(
     )?))
 }
 
+/// Builds an actual reusable bytecode-unit payload object.
+pub fn actual_bytecode_unit_object(
+    input: &ActualBytecodeUnitFactsInput<'_>,
+) -> Result<BytecodeUnitObject, PersistentFactsError> {
+    ensure_key_kind(input.key, CompilerObjectKind::BytecodeUnit)?;
+    let source_digest = BuildDigest::from_bytes(input.parsed.source_hash().as_bytes());
+    if input.hir_body.source_digest != source_digest {
+        return Err(PersistentFactsError::SourceDigestMismatch { field: "hir_body" });
+    }
+    if input.typecheck_gate.source_digest != source_digest {
+        return Err(PersistentFactsError::SourceDigestMismatch {
+            field: "typecheck_gate",
+        });
+    }
+    let stage_inputs = input.key.stage_inputs();
+    let facts = BytecodeUnitFactsObject {
+        identity: BytecodeUnitIdentityObject {
+            runtime_plan_unit_digest: input.runtime_plan_unit_digest,
+            awbc_schema_digest: input.awbc_schema_digest,
+            verifier_policy_digest: input.verifier_policy_digest,
+            codegen_policy_digest: input.codegen_policy_digest,
+            target_profile_digest: input.target_profile_digest,
+            feature_set_digest: input.feature_set_digest,
+            relocation_import_table_digest: input.relocation_import_table_digest,
+        },
+        hir_body_digest: input.hir_body.body_digest,
+        typecheck_gate_digest: input.typecheck_gate.facts.diagnostic_digest,
+        dependency_body_digest_root: stage_inputs.dependency_body_digest_root(),
+        canonical_bytecode_digest: BuildDigest::of(input.canonical_awbc_bytes),
+        bytecode_descriptor_digest: BuildDigest::ZERO,
+    };
+    let facts = BytecodeUnitFactsObject {
+        bytecode_descriptor_digest: BytecodeUnitObject::bytecode_descriptor_digest_for(&facts),
+        ..facts
+    };
+    Ok(BytecodeUnitObject {
+        schema_version: AWBO_SCHEMA_VERSION,
+        compiler_namespace: input.key.identity_namespace(),
+        module: input.module.to_owned(),
+        source_digest,
+        source_span: source_span(input.parsed)?,
+        diagnostics: StableDiagnosticSummaryObject::empty(),
+        stage_inputs,
+        facts,
+        canonical_awbc_bytes: input.canonical_awbc_bytes.to_vec(),
+        reuse_policy: BytecodeUnitReusePolicy::VerifiedReusable,
+    })
+}
+
+/// Builds a typed actual bytecode-unit payload enum.
+pub fn actual_bytecode_unit_payload(
+    input: &ActualBytecodeUnitFactsInput<'_>,
+) -> Result<CompilerObjectPayload, PersistentFactsError> {
+    Ok(CompilerObjectPayload::BytecodeUnit(
+        actual_bytecode_unit_object(input)?,
+    ))
+}
+
 /// Builds a conservative link-plan gate object.
 pub fn link_plan_object(
     input: &LinkPlanFactsInput<'_>,
@@ -301,18 +400,20 @@ pub fn link_plan_object(
     ensure_key_kind(input.key, CompilerObjectKind::LinkPlan)?;
     let source_digest = BuildDigest::from_bytes(input.parsed.source_hash().as_bytes());
     let stage_inputs = input.key.stage_inputs();
-    let ordered_unit_digests = NamedDigest::canonicalize(input.ordered_unit_digests.clone());
-    let mut facts = LinkPlanFactsObject {
-        ordered_unit_digests,
+    let descriptor = LinkDescriptorObject {
+        ordered_unit_identities: NamedDigest::canonicalize(input.ordered_unit_digests.clone()),
         entrypoint_digest: LinkPlanObject::conservative_entrypoint_digest(),
         resource_section_digest: LinkPlanObject::conservative_resource_section_digest(),
         adapter_requirements_digest: LinkPlanObject::conservative_adapter_requirements_digest(),
         patch_compatibility_digest: LinkPlanObject::conservative_patch_compatibility_digest(),
         product_build_options_digest: input.product_build_options_digest,
         dependency_body_digest_root: stage_inputs.dependency_body_digest_root(),
+    };
+    let mut facts = LinkPlanFactsObject {
+        descriptor,
         link_descriptor_digest: BuildDigest::ZERO,
     };
-    facts.link_descriptor_digest = LinkPlanObject::link_descriptor_digest_for(&facts);
+    facts.link_descriptor_digest = LinkPlanObject::link_descriptor_digest_for(&facts.descriptor);
     Ok(LinkPlanObject {
         schema_version: AWBO_SCHEMA_VERSION,
         compiler_namespace: input.key.identity_namespace(),
@@ -331,6 +432,48 @@ pub fn link_plan_payload(
     input: &LinkPlanFactsInput<'_>,
 ) -> Result<CompilerObjectPayload, PersistentFactsError> {
     Ok(CompilerObjectPayload::LinkPlan(link_plan_object(input)?))
+}
+
+/// Builds an actual reusable link-plan payload object.
+pub fn actual_link_plan_object(
+    input: &ActualLinkPlanFactsInput<'_>,
+) -> Result<LinkPlanObject, PersistentFactsError> {
+    ensure_key_kind(input.key, CompilerObjectKind::LinkPlan)?;
+    let source_digest = BuildDigest::from_bytes(input.parsed.source_hash().as_bytes());
+    let stage_inputs = input.key.stage_inputs();
+    let descriptor = LinkDescriptorObject {
+        ordered_unit_identities: input.ordered_unit_identities.clone(),
+        entrypoint_digest: input.entrypoint_digest,
+        resource_section_digest: input.resource_section_digest,
+        adapter_requirements_digest: input.adapter_requirements_digest,
+        patch_compatibility_digest: input.patch_compatibility_digest,
+        product_build_options_digest: input.product_build_options_digest,
+        dependency_body_digest_root: stage_inputs.dependency_body_digest_root(),
+    };
+    let facts = LinkPlanFactsObject {
+        link_descriptor_digest: LinkPlanObject::link_descriptor_digest_for(&descriptor),
+        descriptor,
+    };
+    Ok(LinkPlanObject {
+        schema_version: AWBO_SCHEMA_VERSION,
+        compiler_namespace: input.key.identity_namespace(),
+        package: input.package.to_owned(),
+        source_digest,
+        source_span: source_span(input.parsed)?,
+        diagnostics: StableDiagnosticSummaryObject::empty(),
+        stage_inputs,
+        facts,
+        reuse_policy: LinkPlanReusePolicy::VerifiedReusable,
+    })
+}
+
+/// Builds a typed actual link-plan payload enum.
+pub fn actual_link_plan_payload(
+    input: &ActualLinkPlanFactsInput<'_>,
+) -> Result<CompilerObjectPayload, PersistentFactsError> {
+    Ok(CompilerObjectPayload::LinkPlan(actual_link_plan_object(
+        input,
+    )?))
 }
 
 fn ensure_key_kind(
@@ -1123,5 +1266,99 @@ return "done"
         assert!(rebuilt.errors().is_empty());
         let tree = rebuilt.clone().into_typed_tree();
         lower_source_tree(&tree).expect("source rebuild still lowers to HIR");
+    }
+
+    #[test]
+    fn persistent_query_actual_bytecode_builder_produces_verified_reusable_payload() {
+        let parsed = parse_source_text(SOURCE);
+        assert!(parsed.errors().is_empty());
+        let tree = parsed.clone().into_typed_tree();
+        let hir = lower_source_tree(&tree).expect("source lowers to HIR");
+        let interface_key = key(CompilerObjectKind::InterfaceSummary, &parsed);
+        let hir_key = key(CompilerObjectKind::HirBody, &parsed);
+        let typecheck_key = key(CompilerObjectKind::TypecheckGate, &parsed);
+        let bytecode_key = key(CompilerObjectKind::BytecodeUnit, &parsed);
+        let interface_summary = interface_summary_object(&InterfaceSummaryFactsInput {
+            key: &interface_key,
+            module: "game",
+            parsed: &parsed,
+            hir: &hir,
+        })
+        .expect("interface facts build");
+        let hir_body = hir_body_object(&HirBodyFactsInput {
+            key: &hir_key,
+            module: "game",
+            parsed: &parsed,
+            hir: &hir,
+        })
+        .expect("HIR facts build");
+        let typecheck_gate = typecheck_gate_object(&TypecheckGateFactsInput {
+            key: &typecheck_key,
+            module: "game",
+            parsed: &parsed,
+            interface_summary: &interface_summary,
+            hir_body: &hir_body,
+        })
+        .expect("typecheck facts build");
+        let object = actual_bytecode_unit_object(&ActualBytecodeUnitFactsInput {
+            key: &bytecode_key,
+            module: "game",
+            parsed: &parsed,
+            hir_body: &hir_body,
+            typecheck_gate: &typecheck_gate,
+            runtime_plan_unit_digest: digest("runtime-plan"),
+            canonical_awbc_bytes: b"canonical-awbc",
+            awbc_schema_digest: digest("awbc-schema"),
+            verifier_policy_digest: digest("verifier-policy"),
+            codegen_policy_digest: digest("codegen-policy"),
+            target_profile_digest: bytecode_key.query_options_digest,
+            feature_set_digest: digest("features"),
+            relocation_import_table_digest: digest("relocations"),
+        })
+        .expect("actual bytecode facts build");
+
+        assert_eq!(
+            object.reuse_policy,
+            BytecodeUnitReusePolicy::VerifiedReusable
+        );
+        assert_eq!(object.canonical_awbc_bytes, b"canonical-awbc");
+        assert_eq!(
+            object.facts.bytecode_descriptor_digest,
+            BytecodeUnitObject::bytecode_descriptor_digest_for(&object.facts)
+        );
+        AwboEnvelope::new(&bytecode_key, CompilerObjectPayload::BytecodeUnit(object))
+            .expect("actual bytecode envelope validates");
+    }
+
+    #[test]
+    fn persistent_query_actual_link_builder_keeps_ordered_descriptor() {
+        let parsed = parse_source_text(SOURCE);
+        assert!(parsed.errors().is_empty());
+        let key = key(CompilerObjectKind::LinkPlan, &parsed);
+        let ordered = vec![
+            NamedDigest::new("b", digest("b-bytecode")),
+            NamedDigest::new("a", digest("a-bytecode")),
+        ];
+        let object = actual_link_plan_object(&ActualLinkPlanFactsInput {
+            key: &key,
+            package: "game",
+            parsed: &parsed,
+            ordered_unit_identities: ordered.clone(),
+            entrypoint_digest: digest("entrypoints"),
+            resource_section_digest: digest("resources"),
+            adapter_requirements_digest: digest("adapter-requirements"),
+            patch_compatibility_digest: digest("patch-compatibility"),
+            product_build_options_digest: digest("product-build-options"),
+        })
+        .expect("actual link facts build");
+
+        assert_eq!(object.reuse_policy, LinkPlanReusePolicy::VerifiedReusable);
+        assert_eq!(object.facts.descriptor.ordered_unit_identities, ordered);
+        assert_eq!(
+            object.facts.link_descriptor_digest,
+            LinkPlanObject::link_descriptor_digest_for(&object.facts.descriptor)
+        );
+        AwboEnvelope::new(&key, CompilerObjectPayload::LinkPlan(object))
+            .expect("actual link envelope validates");
     }
 }

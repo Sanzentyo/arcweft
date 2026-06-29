@@ -8,15 +8,21 @@ use super::{
     record::CacheRecord,
     store::{CacheStoreError, FilesystemCacheStore},
 };
+use arcweft_core::awbc::{
+    codec::AwbcDecodeBudget,
+    schema::AwbcProgram,
+    verify::{AwbcVerifyBudget, AwbcVerifyContext},
+};
 use arcweft_project::{
     artifact::{ArtifactKey, ArtifactKind},
     fingerprint::{BuildDigest, NamedDigest},
     incremental::{CacheRecordStatus, InvalidationReason, QueryKind},
     persistent_object::{
-        AWBO_SCHEMA_VERSION, AwboEnvelope, AwboError, BytecodeUnitObject, CompilerBuildIdentity,
-        CompilerIdentityNamespaceObject, CompilerObjectKey, CompilerObjectKind,
-        CompilerObjectPayload, CompilerStageInputsObject, HirBodyObject, InterfaceSummaryObject,
-        LinkPlanObject, ParsedSyntaxObject, TypecheckGateObject, TypecheckGateReusePolicy,
+        AWBO_SCHEMA_VERSION, AwboEnvelope, AwboError, BytecodeUnitObject, BytecodeUnitReusePolicy,
+        CompilerBuildIdentity, CompilerIdentityNamespaceObject, CompilerObjectKey,
+        CompilerObjectKind, CompilerObjectPayload, CompilerStageInputsObject, HirBodyObject,
+        InterfaceSummaryObject, LinkDescriptorObject, LinkPlanObject, LinkPlanReusePolicy,
+        ParsedSyntaxObject, TypecheckGateObject, TypecheckGateReusePolicy,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -34,6 +40,8 @@ pub struct PersistentQueryReadRequest {
     pub query: QueryKind,
     pub artifact_key: ArtifactKey,
     pub object_key: CompilerObjectKey,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_link_descriptor: Option<LinkDescriptorObject>,
 }
 
 /// One adapter-owned persistent query write-through request.
@@ -144,6 +152,12 @@ pub struct PersistentQueryExplainEvidence {
     pub soft_miss_reason: Option<PersistentQueryMissReason>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub typecheck_gate_reuse_policy: Option<TypecheckGateReusePolicy>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bytecode_unit_reuse_policy: Option<BytecodeUnitReusePolicy>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_plan_reuse_policy: Option<LinkPlanReusePolicy>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_reuse_policy: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conservative_reuse_policy: Option<String>,
     pub recovery_action: PersistentQueryRecoveryAction,
@@ -295,6 +309,25 @@ pub enum PersistentQueryMissReason {
         expected: BuildDigest,
         actual: BuildDigest,
     },
+    BytecodeTargetProfileMismatch {
+        expected: BuildDigest,
+        actual: BuildDigest,
+    },
+    BytecodeFeatureSetMismatch {
+        expected: BuildDigest,
+        actual: BuildDigest,
+    },
+    BytecodeDecodeVerifyFailed {
+        message: String,
+    },
+    BytecodeRoundTripMismatch {
+        expected: BuildDigest,
+        actual: BuildDigest,
+    },
+    LinkDescriptorMismatch {
+        expected: BuildDigest,
+        actual: BuildDigest,
+    },
 }
 
 /// Serializable IO class for read-through evidence.
@@ -338,7 +371,14 @@ impl PersistentQueryReadRequest {
             query,
             artifact_key,
             object_key,
+            expected_link_descriptor: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_expected_link_descriptor(mut self, descriptor: LinkDescriptorObject) -> Self {
+        self.expected_link_descriptor = Some(descriptor);
+        self
     }
 }
 
@@ -367,7 +407,7 @@ impl PersistentQueryReadOutcome {
 
     pub fn cache_record_status(&self) -> CacheRecordStatus {
         match self {
-            Self::Hit(hit) => hit.object_kind.read_through_hit_status(),
+            Self::Hit(hit) => hit.payload.cache_record_status(),
             Self::Miss(miss) => CacheRecordStatus::Miss {
                 reason: miss.reason.invalidation_reason(),
             },
@@ -384,7 +424,9 @@ impl PersistentQueryMissReason {
             | Self::PayloadSchemaMismatch { .. } => InvalidationReason::CacheSchemaChanged,
             Self::CompilerIdentityMismatch { .. } => InvalidationReason::CompilerChanged,
             Self::SourceDigestMismatch { .. } => InvalidationReason::SourceChanged,
-            Self::QueryOptionsDigestMismatch { .. } => InvalidationReason::OptionsChanged,
+            Self::QueryOptionsDigestMismatch { .. }
+            | Self::BytecodeTargetProfileMismatch { .. }
+            | Self::BytecodeFeatureSetMismatch { .. } => InvalidationReason::OptionsChanged,
             Self::EnvironmentDigestMismatch { .. } => InvalidationReason::EnvironmentChanged,
             Self::DependencyInterfaceDigestMismatch { expected, actual } => {
                 dependency_interface_mismatch_invalidation_reason(expected, actual)
@@ -408,7 +450,69 @@ impl PersistentQueryMissReason {
             | Self::PayloadKindMismatch { .. }
             | Self::PayloadDigestMismatch
             | Self::PayloadLengthMismatch { .. }
-            | Self::KeyDigestMismatch { .. } => InvalidationReason::CorruptObject,
+            | Self::KeyDigestMismatch { .. }
+            | Self::BytecodeDecodeVerifyFailed { .. }
+            | Self::BytecodeRoundTripMismatch { .. }
+            | Self::LinkDescriptorMismatch { .. } => InvalidationReason::CorruptObject,
+        }
+    }
+}
+
+impl PersistentQueryHitPayload {
+    fn cache_record_status(&self) -> CacheRecordStatus {
+        if let Some(policy) = self.conservative_reuse_policy() {
+            CacheRecordStatus::HitThenRebuilt {
+                reason: InvalidationReason::ConservativeInvalidation {
+                    policy: policy.to_owned(),
+                },
+            }
+        } else {
+            CacheRecordStatus::Hit
+        }
+    }
+
+    fn conservative_reuse_policy(&self) -> Option<&'static str> {
+        match self {
+            Self::TypecheckGate(_) => Some(CompilerObjectKind::TYPECHECK_GATE_CONSERVATIVE_POLICY),
+            Self::BytecodeUnit(payload)
+                if payload.reuse_policy == BytecodeUnitReusePolicy::ConservativeRebuild =>
+            {
+                Some(CompilerObjectKind::BYTECODE_UNIT_CONSERVATIVE_POLICY)
+            }
+            Self::LinkPlan(payload)
+                if payload.reuse_policy == LinkPlanReusePolicy::ConservativeRebuild =>
+            {
+                Some(CompilerObjectKind::LINK_PLAN_CONSERVATIVE_POLICY)
+            }
+            Self::ParsedSyntax(_)
+            | Self::InterfaceSummary(_)
+            | Self::HirBody(_)
+            | Self::BytecodeUnit(_)
+            | Self::LinkPlan(_) => None,
+        }
+    }
+
+    fn actual_reuse_policy(&self) -> Option<&'static str> {
+        match self {
+            Self::BytecodeUnit(payload)
+                if payload.reuse_policy == BytecodeUnitReusePolicy::VerifiedReusable =>
+            {
+                Some("verified_reusable")
+            }
+            Self::LinkPlan(payload)
+                if payload.reuse_policy == LinkPlanReusePolicy::VerifiedReusable =>
+            {
+                Some("verified_reusable")
+            }
+            _ => None,
+        }
+    }
+
+    fn recovery_action(&self) -> PersistentQueryRecoveryAction {
+        if self.conservative_reuse_policy().is_some() {
+            PersistentQueryRecoveryAction::RebuildFromSource
+        } else {
+            PersistentQueryRecoveryAction::NoneRequired
         }
     }
 }
@@ -826,7 +930,7 @@ impl FilesystemCacheStore {
                 awbo_error_reason(&error),
             )
         })?;
-        validate_envelope_for_request(&envelope, &request.object_key)
+        validate_envelope_for_request(&envelope, request)
             .map_err(|reason| miss(request, record_path.to_path_buf(), Some(evidence), reason))?;
         Ok(envelope)
     }
@@ -995,18 +1099,14 @@ fn explain_persistent_query_outcome(
             payload_digest: Some(hit.payload_digest.to_hex()),
             payload_len: Some(hit.payload_len),
             status: PersistentQueryExplainStatus::Hit,
-            cache_record_status: hit.object_kind.read_through_hit_status(),
+            cache_record_status: hit.payload.cache_record_status(),
             soft_miss_reason: None,
             typecheck_gate_reuse_policy: envelope.and_then(typecheck_gate_reuse_policy),
-            conservative_reuse_policy: hit
-                .object_kind
-                .conservative_read_through_policy()
-                .map(str::to_owned),
-            recovery_action: if hit.object_kind.read_through_hit_requires_rebuild() {
-                PersistentQueryRecoveryAction::RebuildFromSource
-            } else {
-                PersistentQueryRecoveryAction::NoneRequired
-            },
+            bytecode_unit_reuse_policy: envelope.and_then(bytecode_unit_reuse_policy),
+            link_plan_reuse_policy: envelope.and_then(link_plan_reuse_policy),
+            actual_reuse_policy: hit.payload.actual_reuse_policy().map(str::to_owned),
+            conservative_reuse_policy: hit.payload.conservative_reuse_policy().map(str::to_owned),
+            recovery_action: hit.payload.recovery_action(),
         },
         PersistentQueryReadOutcome::Miss(miss) => {
             let reason = miss.reason.clone();
@@ -1040,6 +1140,9 @@ fn explain_persistent_query_outcome(
                 },
                 soft_miss_reason: Some(reason),
                 typecheck_gate_reuse_policy: envelope.and_then(typecheck_gate_reuse_policy),
+                bytecode_unit_reuse_policy: envelope.and_then(bytecode_unit_reuse_policy),
+                link_plan_reuse_policy: envelope.and_then(link_plan_reuse_policy),
+                actual_reuse_policy: None,
                 conservative_reuse_policy: miss
                     .object_kind
                     .conservative_read_through_policy()
@@ -1085,6 +1188,9 @@ fn explain_persistent_query_preflight_miss(
         cache_record_status: status,
         soft_miss_reason: Some(reason),
         typecheck_gate_reuse_policy: None,
+        bytecode_unit_reuse_policy: None,
+        link_plan_reuse_policy: None,
+        actual_reuse_policy: None,
         conservative_reuse_policy: object_kind
             .conservative_read_through_policy()
             .map(str::to_owned),
@@ -1247,8 +1353,9 @@ fn awbo_error_reason(error: &AwboError) -> PersistentQueryMissReason {
 
 fn validate_envelope_for_request(
     envelope: &AwboEnvelope,
-    key: &CompilerObjectKey,
+    request: &PersistentQueryReadRequest,
 ) -> Result<(), PersistentQueryMissReason> {
+    let key = &request.object_key;
     if envelope.kind != key.kind {
         return Err(PersistentQueryMissReason::ObjectKindMismatch {
             expected: key.kind,
@@ -1278,6 +1385,7 @@ fn validate_envelope_for_request(
         }
         CompilerObjectPayload::LinkPlan(payload) => {
             validate_link_plan_payload(payload, key)?;
+            validate_expected_link_descriptor(payload, request.expected_link_descriptor.as_ref())?;
         }
         other => {
             return Err(PersistentQueryMissReason::PayloadKindMismatch {
@@ -1358,6 +1466,63 @@ fn validate_typecheck_gate_payload(
         .map_err(|error| corrupt_object(&error))
 }
 
+fn validate_bytecode_reuse(
+    payload: &BytecodeUnitObject,
+    key: &CompilerObjectKey,
+) -> Result<(), PersistentQueryMissReason> {
+    payload
+        .validate_gate_shape()
+        .map_err(|error| corrupt_object(&error))?;
+    if payload.reuse_policy != BytecodeUnitReusePolicy::VerifiedReusable {
+        return Ok(());
+    }
+    if payload.facts.identity.target_profile_digest != key.query_options_digest {
+        return Err(PersistentQueryMissReason::BytecodeTargetProfileMismatch {
+            expected: key.query_options_digest,
+            actual: payload.facts.identity.target_profile_digest,
+        });
+    }
+    let expected_features = feature_set_digest_for(&key.compiler.enabled_features);
+    if payload.facts.identity.feature_set_digest != expected_features {
+        return Err(PersistentQueryMissReason::BytecodeFeatureSetMismatch {
+            expected: expected_features,
+            actual: payload.facts.identity.feature_set_digest,
+        });
+    }
+    let program =
+        AwbcProgram::decode_canonical(&payload.canonical_awbc_bytes, AwbcDecodeBudget::default())
+            .map_err(
+            |error| PersistentQueryMissReason::BytecodeDecodeVerifyFailed {
+                message: error.to_string(),
+            },
+        )?;
+    program
+        .verify(
+            AwbcVerifyBudget::default(),
+            AwbcVerifyContext {
+                require_entrypoint: false,
+                ..AwbcVerifyContext::default()
+            },
+        )
+        .map_err(
+            |error| PersistentQueryMissReason::BytecodeDecodeVerifyFailed {
+                message: error.to_string(),
+            },
+        )?;
+    let round_trip = program.encode_canonical().map_err(|error| {
+        PersistentQueryMissReason::BytecodeDecodeVerifyFailed {
+            message: error.to_string(),
+        }
+    })?;
+    if round_trip != payload.canonical_awbc_bytes {
+        return Err(PersistentQueryMissReason::BytecodeRoundTripMismatch {
+            expected: BuildDigest::of(&payload.canonical_awbc_bytes),
+            actual: BuildDigest::of(&round_trip),
+        });
+    }
+    Ok(())
+}
+
 fn validate_bytecode_unit_payload(
     payload: &BytecodeUnitObject,
     key: &CompilerObjectKey,
@@ -1374,9 +1539,30 @@ fn validate_bytecode_unit_payload(
         .validate()
         .map_err(|error| corrupt_object(&error))?;
     validate_stage_inputs(&payload.stage_inputs, key)?;
-    payload
-        .validate_gate_shape()
-        .map_err(|error| corrupt_object(&error))
+    validate_bytecode_reuse(payload, key)
+}
+
+fn validate_expected_link_descriptor(
+    payload: &LinkPlanObject,
+    expected: Option<&LinkDescriptorObject>,
+) -> Result<(), PersistentQueryMissReason> {
+    let Some(expected) = expected else {
+        return Ok(());
+    };
+    if payload.facts.descriptor != *expected {
+        return Err(PersistentQueryMissReason::LinkDescriptorMismatch {
+            expected: LinkPlanObject::link_descriptor_digest_for(expected),
+            actual: payload.facts.link_descriptor_digest,
+        });
+    }
+    Ok(())
+}
+
+fn feature_set_digest_for(features: &[String]) -> BuildDigest {
+    let mut features = features.to_vec();
+    features.sort();
+    features.dedup();
+    BuildDigest::of(features.join("\0").as_bytes())
 }
 
 fn validate_link_plan_payload(
@@ -1410,6 +1596,20 @@ fn typecheck_gate_reuse_policy(envelope: &AwboEnvelope) -> Option<TypecheckGateR
         | CompilerObjectPayload::RuntimePlanUnit(_)
         | CompilerObjectPayload::BytecodeUnit(_)
         | CompilerObjectPayload::LinkPlan(_) => None,
+    }
+}
+
+fn bytecode_unit_reuse_policy(envelope: &AwboEnvelope) -> Option<BytecodeUnitReusePolicy> {
+    match &envelope.payload {
+        CompilerObjectPayload::BytecodeUnit(payload) => Some(payload.reuse_policy),
+        _ => None,
+    }
+}
+
+fn link_plan_reuse_policy(envelope: &AwboEnvelope) -> Option<LinkPlanReusePolicy> {
+    match &envelope.payload {
+        CompilerObjectPayload::LinkPlan(payload) => Some(payload.reuse_policy),
+        _ => None,
     }
 }
 

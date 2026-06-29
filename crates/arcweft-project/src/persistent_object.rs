@@ -11,13 +11,14 @@ mod schema;
 
 pub use codec::AwboEnvelope;
 pub use payload::{
-    BytecodeUnitFactsObject, BytecodeUnitObject, BytecodeUnitReusePolicy, CompilerObjectPayload,
-    HirBodyFactsObject, HirBodyObject, InterfaceSummaryObject, LineTaskEvidenceObject,
-    LinkPlanFactsObject, LinkPlanObject, LinkPlanReusePolicy, ParsedSyntaxEvidenceObject,
-    ParsedSyntaxObject, PublicSymbolKind, PublicSymbolObject, RuntimePlanUnitObject,
-    StableDiagnosticObject, StableDiagnosticSeverity, StableDiagnosticSummaryObject,
-    StableRangeObject, StableSourceSpanObject, SyntaxStatsObject, TypecheckGateFactsObject,
-    TypecheckGateObject, TypecheckGateReusePolicy,
+    BytecodeUnitFactsObject, BytecodeUnitIdentityObject, BytecodeUnitObject,
+    BytecodeUnitReusePolicy, CompilerObjectPayload, HirBodyFactsObject, HirBodyObject,
+    InterfaceSummaryObject, LineTaskEvidenceObject, LinkDescriptorObject, LinkPlanFactsObject,
+    LinkPlanObject, LinkPlanReusePolicy, ParsedSyntaxEvidenceObject, ParsedSyntaxObject,
+    PublicSymbolKind, PublicSymbolObject, RuntimePlanUnitObject, StableDiagnosticObject,
+    StableDiagnosticSeverity, StableDiagnosticSummaryObject, StableRangeObject,
+    StableSourceSpanObject, SyntaxStatsObject, TypecheckGateFactsObject, TypecheckGateObject,
+    TypecheckGateReusePolicy,
 };
 pub use schema::{
     AWBO_MAGIC, AWBO_SCHEMA_VERSION, AwboError, CompilerBuildIdentity,

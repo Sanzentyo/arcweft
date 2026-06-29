@@ -3,15 +3,22 @@ use super::{
     PersistentQueryReadRequest, PersistentQueryWriteError, PersistentQueryWriteRequest,
 };
 use crate::cache::{record::CacheRecord, store::FilesystemCacheStore};
+use arcweft_core::awbc::schema::{
+    AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
+    AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
+    AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId,
+    AwbcTableRange, AwbcTerminator,
+};
 use arcweft_project::{
     artifact::{ArtifactKey, ArtifactKeyInput, ArtifactKind},
     fingerprint::{BuildDigest, NamedDigest},
     incremental::{CACHE_SCHEMA_VERSION, CacheRecordStatus, InvalidationReason, QueryKind},
     persistent_object::{
-        AWBO_MAGIC, AWBO_SCHEMA_VERSION, AwboEnvelope, BytecodeUnitFactsObject, BytecodeUnitObject,
-        BytecodeUnitReusePolicy, CompilerBuildIdentity, CompilerObjectKey, CompilerObjectKind,
-        CompilerObjectPayload, CompilerObjectStability, HirBodyFactsObject, HirBodyObject,
-        InterfaceSummaryObject, LinkPlanFactsObject, LinkPlanObject, LinkPlanReusePolicy,
+        AWBO_MAGIC, AWBO_SCHEMA_VERSION, AwboEnvelope, BytecodeUnitFactsObject,
+        BytecodeUnitIdentityObject, BytecodeUnitObject, BytecodeUnitReusePolicy,
+        CompilerBuildIdentity, CompilerObjectKey, CompilerObjectKind, CompilerObjectPayload,
+        CompilerObjectStability, HirBodyFactsObject, HirBodyObject, InterfaceSummaryObject,
+        LinkDescriptorObject, LinkPlanFactsObject, LinkPlanObject, LinkPlanReusePolicy,
         ParsedSyntaxEvidenceObject, ParsedSyntaxObject, PublicSymbolKind, PublicSymbolObject,
         StableDiagnosticSummaryObject, StableRangeObject, StableSourceSpanObject,
         SyntaxStatsObject, TypecheckGateFactsObject, TypecheckGateObject, TypecheckGateReusePolicy,
@@ -284,6 +291,27 @@ fn bytecode_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
     else {
         panic!("typecheck helper returns typecheck gate");
     };
+    let facts = BytecodeUnitFactsObject {
+        identity: BytecodeUnitIdentityObject {
+            runtime_plan_unit_digest: BytecodeUnitObject::conservative_runtime_plan_unit_digest(),
+            awbc_schema_digest: BytecodeUnitObject::conservative_awbc_schema_digest(),
+            verifier_policy_digest: BytecodeUnitObject::conservative_verifier_policy_digest(),
+            codegen_policy_digest: BytecodeUnitObject::conservative_codegen_policy_digest(),
+            target_profile_digest: key.query_options_digest,
+            feature_set_digest: digest("feature-set"),
+            relocation_import_table_digest:
+                BytecodeUnitObject::conservative_relocation_import_table_digest(),
+        },
+        hir_body_digest: hir.body_digest,
+        typecheck_gate_digest: typecheck.facts.diagnostic_digest,
+        dependency_body_digest_root: key.stage_inputs().dependency_body_digest_root(),
+        canonical_bytecode_digest: BytecodeUnitObject::conservative_canonical_bytecode_digest(),
+        bytecode_descriptor_digest: BuildDigest::ZERO,
+    };
+    let facts = BytecodeUnitFactsObject {
+        bytecode_descriptor_digest: BytecodeUnitObject::bytecode_descriptor_digest_for(&facts),
+        ..facts
+    };
     CompilerObjectPayload::BytecodeUnit(BytecodeUnitObject {
         schema_version: AWBO_SCHEMA_VERSION,
         compiler_namespace: key.identity_namespace(),
@@ -292,25 +320,15 @@ fn bytecode_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
         source_span: span(),
         diagnostics: StableDiagnosticSummaryObject::empty(),
         stage_inputs: key.stage_inputs(),
-        facts: BytecodeUnitFactsObject {
-            runtime_plan_unit_digest: BytecodeUnitObject::conservative_runtime_plan_unit_digest(),
-            hir_body_digest: hir.body_digest,
-            typecheck_gate_digest: typecheck.facts.diagnostic_digest,
-            awbc_schema_digest: BytecodeUnitObject::conservative_awbc_schema_digest(),
-            verifier_policy_digest: BytecodeUnitObject::conservative_verifier_policy_digest(),
-            codegen_policy_digest: BytecodeUnitObject::conservative_codegen_policy_digest(),
-            target_profile_digest: key.query_options_digest,
-            feature_set_digest: digest("feature-set"),
-            dependency_body_digest_root: key.stage_inputs().dependency_body_digest_root(),
-            canonical_bytecode_digest: BytecodeUnitObject::conservative_canonical_bytecode_digest(),
-        },
+        facts,
+        canonical_awbc_bytes: Vec::new(),
         reuse_policy: BytecodeUnitReusePolicy::ConservativeRebuild,
     })
 }
 
 fn link_plan_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
-    let mut facts = LinkPlanFactsObject {
-        ordered_unit_digests: NamedDigest::canonicalize([NamedDigest::new(
+    let descriptor = LinkDescriptorObject {
+        ordered_unit_identities: NamedDigest::canonicalize([NamedDigest::new(
             "main",
             BytecodeUnitObject::conservative_canonical_bytecode_digest(),
         )]),
@@ -320,9 +338,12 @@ fn link_plan_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
         patch_compatibility_digest: LinkPlanObject::conservative_patch_compatibility_digest(),
         product_build_options_digest: digest("product-build-options"),
         dependency_body_digest_root: key.stage_inputs().dependency_body_digest_root(),
+    };
+    let mut facts = LinkPlanFactsObject {
+        descriptor,
         link_descriptor_digest: BuildDigest::ZERO,
     };
-    facts.link_descriptor_digest = LinkPlanObject::link_descriptor_digest_for(&facts);
+    facts.link_descriptor_digest = LinkPlanObject::link_descriptor_digest_for(&facts.descriptor);
     CompilerObjectPayload::LinkPlan(LinkPlanObject {
         schema_version: AWBO_SCHEMA_VERSION,
         compiler_namespace: key.identity_namespace(),
@@ -333,6 +354,128 @@ fn link_plan_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
         stage_inputs: key.stage_inputs(),
         facts,
         reuse_policy: LinkPlanReusePolicy::ConservativeRebuild,
+    })
+}
+
+fn feature_set_digest_for(features: &[String]) -> BuildDigest {
+    let mut features = features.to_vec();
+    features.sort();
+    features.dedup();
+    BuildDigest::of(features.join("\0").as_bytes())
+}
+
+fn minimal_awbc_bytes() -> Vec<u8> {
+    let program = AwbcProgram {
+        strings: vec!["main".to_owned()],
+        signatures: vec![AwbcSignature {
+            params: Vec::new(),
+            result: None,
+            effects: AwbcEffectSetId(0),
+        }],
+        frame_layouts: vec![AwbcFrameLayout {
+            slots: Vec::new(),
+            max_scope_depth: 0,
+        }],
+        functions: vec![AwbcFunction {
+            public_id: Some(AwbcStringId(0)),
+            kind: AwbcFunctionKind::Flow,
+            signature: AwbcSignatureId(0),
+            frame_layout: AwbcFrameLayoutId(0),
+            blocks: AwbcTableRange::new(0, 1),
+            entry_block: AwbcBlockId(0),
+            flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+        }],
+        blocks: vec![AwbcBlock {
+            owner: AwbcFunctionId(0),
+            instructions: AwbcTableRange::new(0, 0),
+            terminator: AwbcTerminator::Return { value: None },
+            safe_point: AwbcSafePointKind::FlowEntry,
+            source_map: None,
+        }],
+        entries: vec![AwbcEntry {
+            public_id: AwbcStringId(0),
+            kind: AwbcEntryKind::Game,
+            signature: AwbcSignatureId(0),
+            target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+        }],
+        ..AwbcProgram::default()
+    };
+    program.encode_canonical().expect("minimal AWBC encodes")
+}
+
+fn actual_bytecode_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
+    let CompilerObjectPayload::HirBody(hir) = hir_payload(&object_key(CompilerObjectKind::HirBody))
+    else {
+        panic!("HIR helper returns HIR body");
+    };
+    let CompilerObjectPayload::TypecheckGate(typecheck) =
+        typecheck_gate_payload(&object_key(CompilerObjectKind::TypecheckGate))
+    else {
+        panic!("typecheck helper returns typecheck gate");
+    };
+    let canonical_awbc_bytes = minimal_awbc_bytes();
+    let facts = BytecodeUnitFactsObject {
+        identity: BytecodeUnitIdentityObject {
+            runtime_plan_unit_digest: digest("runtime-plan-unit"),
+            awbc_schema_digest: digest("awbc-schema"),
+            verifier_policy_digest: digest("verifier-policy"),
+            codegen_policy_digest: digest("codegen-policy"),
+            target_profile_digest: key.query_options_digest,
+            feature_set_digest: feature_set_digest_for(&key.compiler.enabled_features),
+            relocation_import_table_digest: digest("relocation-import-table"),
+        },
+        hir_body_digest: hir.body_digest,
+        typecheck_gate_digest: typecheck.facts.diagnostic_digest,
+        dependency_body_digest_root: key.stage_inputs().dependency_body_digest_root(),
+        canonical_bytecode_digest: BuildDigest::of(&canonical_awbc_bytes),
+        bytecode_descriptor_digest: BuildDigest::ZERO,
+    };
+    let facts = BytecodeUnitFactsObject {
+        bytecode_descriptor_digest: BytecodeUnitObject::bytecode_descriptor_digest_for(&facts),
+        ..facts
+    };
+    CompilerObjectPayload::BytecodeUnit(BytecodeUnitObject {
+        schema_version: AWBO_SCHEMA_VERSION,
+        compiler_namespace: key.identity_namespace(),
+        module: "main".to_owned(),
+        source_digest: key.source_digest,
+        source_span: span(),
+        diagnostics: StableDiagnosticSummaryObject::empty(),
+        stage_inputs: key.stage_inputs(),
+        facts,
+        canonical_awbc_bytes,
+        reuse_policy: BytecodeUnitReusePolicy::VerifiedReusable,
+    })
+}
+
+fn verified_link_descriptor(key: &CompilerObjectKey) -> LinkDescriptorObject {
+    LinkDescriptorObject {
+        ordered_unit_identities: vec![NamedDigest::new("main", digest("bytecode-unit-identity"))],
+        entrypoint_digest: digest("entrypoints"),
+        resource_section_digest: digest("resources"),
+        adapter_requirements_digest: digest("adapter-requirements"),
+        patch_compatibility_digest: digest("patch-compatibility"),
+        product_build_options_digest: digest("product-build-options"),
+        dependency_body_digest_root: key.stage_inputs().dependency_body_digest_root(),
+    }
+}
+
+fn actual_link_plan_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
+    let descriptor = verified_link_descriptor(key);
+    let facts = LinkPlanFactsObject {
+        link_descriptor_digest: LinkPlanObject::link_descriptor_digest_for(&descriptor),
+        descriptor,
+    };
+    CompilerObjectPayload::LinkPlan(LinkPlanObject {
+        schema_version: AWBO_SCHEMA_VERSION,
+        compiler_namespace: key.identity_namespace(),
+        package: "main".to_owned(),
+        source_digest: key.source_digest,
+        source_span: span(),
+        diagnostics: StableDiagnosticSummaryObject::empty(),
+        stage_inputs: key.stage_inputs(),
+        facts,
+        reuse_policy: LinkPlanReusePolicy::VerifiedReusable,
     })
 }
 
@@ -556,6 +699,75 @@ fn persistent_query_write_through_stores_link_plan_gate_as_valid_but_rebuilt() {
         outcome,
         PersistentQueryReadOutcome::Hit(hit)
             if matches!(hit.payload, PersistentQueryHitPayload::LinkPlan(_))
+    ));
+}
+
+#[test]
+fn persistent_query_verified_bytecode_unit_is_actual_hit() {
+    let store = FilesystemCacheStore::new(temp_root("write-through-bytecode-actual"));
+    let request = bytecode_request();
+    store
+        .write_persistent_query(&PersistentQueryWriteRequest::new(
+            request.query,
+            request.artifact_key,
+            request.object_key.clone(),
+            "bytecode-unit:main",
+            actual_bytecode_payload(&request.object_key),
+        ))
+        .expect("persistent actual bytecode writes");
+
+    let outcome = store.read_persistent_query(&request);
+    assert!(outcome.is_hit());
+    assert_eq!(outcome.cache_record_status(), CacheRecordStatus::Hit);
+    assert!(matches!(
+        outcome,
+        PersistentQueryReadOutcome::Hit(hit)
+            if matches!(&hit.payload, PersistentQueryHitPayload::BytecodeUnit(payload)
+                if payload.reuse_policy == BytecodeUnitReusePolicy::VerifiedReusable)
+    ));
+}
+
+#[test]
+fn persistent_query_verified_link_plan_matches_expected_descriptor() {
+    let store = FilesystemCacheStore::new(temp_root("write-through-link-plan-actual"));
+    let request = link_plan_request();
+    store
+        .write_persistent_query(&PersistentQueryWriteRequest::new(
+            request.query,
+            request.artifact_key,
+            request.object_key.clone(),
+            "link-plan:main",
+            actual_link_plan_payload(&request.object_key),
+        ))
+        .expect("persistent actual link writes");
+
+    let descriptor = verified_link_descriptor(&request.object_key);
+    let outcome = store.read_persistent_query(&request.with_expected_link_descriptor(descriptor));
+    assert!(outcome.is_hit());
+    assert_eq!(outcome.cache_record_status(), CacheRecordStatus::Hit);
+}
+
+#[test]
+fn persistent_query_verified_link_plan_descriptor_mismatch_is_soft_miss() {
+    let store = FilesystemCacheStore::new(temp_root("write-through-link-plan-mismatch"));
+    let request = link_plan_request();
+    store
+        .write_persistent_query(&PersistentQueryWriteRequest::new(
+            request.query,
+            request.artifact_key,
+            request.object_key.clone(),
+            "link-plan:main",
+            actual_link_plan_payload(&request.object_key),
+        ))
+        .expect("persistent actual link writes");
+
+    let mut descriptor = verified_link_descriptor(&request.object_key);
+    descriptor.entrypoint_digest = digest("other-entrypoints");
+    assert!(matches!(
+        miss_reason(
+            store.read_persistent_query(&request.with_expected_link_descriptor(descriptor))
+        ),
+        PersistentQueryMissReason::LinkDescriptorMismatch { .. }
     ));
 }
 

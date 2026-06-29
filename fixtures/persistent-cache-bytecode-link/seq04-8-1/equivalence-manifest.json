@@ -1,0 +1,16 @@
+{
+  "fixture": "seq04.8.1 bytecode/link actual reuse boundary",
+  "awbc": {
+    "rebuilt": "bytecode-rebuilt.awbc.hex",
+    "reused": "bytecode-reused.awbc.hex",
+    "sha256": "49227d159961f8e3dbb8fa87496ccf905c85db6ff4d8e81d131b67b2f4421654",
+    "bytes_identical": true
+  },
+  "awfb": {
+    "rebuilt": "product-bytes-rebuilt.awfb.hex",
+    "reused": "product-bytes-reused.awfb.hex",
+    "sha256": "3ce68075b7a663dd860c0c0ce0ebdf457619cb9ca2dbc0ae8fc14f2d6af6667c",
+    "bytes_identical": true
+  },
+  "verification_note": "These paired files are deterministic equality fixtures packaged with the overlay. Repository tests should generate full AWBC/AWFB bytes and compare them with the same equality rule after applying the patches."
+}

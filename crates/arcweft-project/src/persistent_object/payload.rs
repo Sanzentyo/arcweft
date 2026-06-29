@@ -226,6 +226,17 @@ pub struct RuntimePlanUnitObject {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BytecodeUnitIdentityObject {
+    pub runtime_plan_unit_digest: BuildDigest,
+    pub awbc_schema_digest: BuildDigest,
+    pub verifier_policy_digest: BuildDigest,
+    pub codegen_policy_digest: BuildDigest,
+    pub target_profile_digest: BuildDigest,
+    pub feature_set_digest: BuildDigest,
+    pub relocation_import_table_digest: BuildDigest,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BytecodeUnitObject {
     pub schema_version: u32,
     pub compiler_namespace: CompilerIdentityNamespaceObject,
@@ -235,27 +246,36 @@ pub struct BytecodeUnitObject {
     pub diagnostics: StableDiagnosticSummaryObject,
     pub stage_inputs: CompilerStageInputsObject,
     pub facts: BytecodeUnitFactsObject,
+    pub canonical_awbc_bytes: Vec<u8>,
     pub reuse_policy: BytecodeUnitReusePolicy,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BytecodeUnitFactsObject {
-    pub runtime_plan_unit_digest: BuildDigest,
+    pub identity: BytecodeUnitIdentityObject,
     pub hir_body_digest: BuildDigest,
     pub typecheck_gate_digest: BuildDigest,
-    pub awbc_schema_digest: BuildDigest,
-    pub verifier_policy_digest: BuildDigest,
-    pub codegen_policy_digest: BuildDigest,
-    pub target_profile_digest: BuildDigest,
-    pub feature_set_digest: BuildDigest,
     pub dependency_body_digest_root: BuildDigest,
     pub canonical_bytecode_digest: BuildDigest,
+    pub bytecode_descriptor_digest: BuildDigest,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BytecodeUnitReusePolicy {
     ConservativeRebuild,
+    VerifiedReusable,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LinkDescriptorObject {
+    pub ordered_unit_identities: Vec<NamedDigest>,
+    pub entrypoint_digest: BuildDigest,
+    pub resource_section_digest: BuildDigest,
+    pub adapter_requirements_digest: BuildDigest,
+    pub patch_compatibility_digest: BuildDigest,
+    pub product_build_options_digest: BuildDigest,
+    pub dependency_body_digest_root: BuildDigest,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -273,13 +293,7 @@ pub struct LinkPlanObject {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LinkPlanFactsObject {
-    pub ordered_unit_digests: Vec<NamedDigest>,
-    pub entrypoint_digest: BuildDigest,
-    pub resource_section_digest: BuildDigest,
-    pub adapter_requirements_digest: BuildDigest,
-    pub patch_compatibility_digest: BuildDigest,
-    pub product_build_options_digest: BuildDigest,
-    pub dependency_body_digest_root: BuildDigest,
+    pub descriptor: LinkDescriptorObject,
     pub link_descriptor_digest: BuildDigest,
 }
 
@@ -287,6 +301,7 @@ pub struct LinkPlanFactsObject {
 #[serde(rename_all = "snake_case")]
 pub enum LinkPlanReusePolicy {
     ConservativeRebuild,
+    VerifiedReusable,
 }
 
 impl CompilerObjectPayload {
@@ -592,21 +607,35 @@ impl BytecodeUnitObject {
                 reason: "bytecode unit module is empty".to_owned(),
             });
         }
-        if self.reuse_policy != BytecodeUnitReusePolicy::ConservativeRebuild {
-            return Err(AwboError::MalformedPayload {
-                reason: "bytecode unit gate must use conservative rebuild policy".to_owned(),
-            });
+        match self.reuse_policy {
+            BytecodeUnitReusePolicy::ConservativeRebuild => self.validate_conservative_shape(),
+            BytecodeUnitReusePolicy::VerifiedReusable => self.validate_reusable_shape(),
         }
+    }
+
+    fn validate_common_shape(&self) -> Result<(), AwboError> {
         if self.facts.dependency_body_digest_root != self.stage_inputs.dependency_body_digest_root()
         {
             return Err(AwboError::MalformedPayload {
                 reason: "bytecode unit dependency body root mismatch".to_owned(),
             });
         }
-        if self.facts.runtime_plan_unit_digest != Self::conservative_runtime_plan_unit_digest() {
+        Ok(())
+    }
+
+    fn validate_conservative_shape(&self) -> Result<(), AwboError> {
+        self.validate_common_shape()?;
+        if self.facts.identity.runtime_plan_unit_digest
+            != Self::conservative_runtime_plan_unit_digest()
+        {
             return Err(AwboError::MalformedPayload {
                 reason: "bytecode unit runtime-plan identity is not the conservative sentinel"
                     .to_owned(),
+            });
+        }
+        if !self.canonical_awbc_bytes.is_empty() {
+            return Err(AwboError::MalformedPayload {
+                reason: "conservative bytecode unit must not persist AWBC bytes".to_owned(),
             });
         }
         if self.facts.canonical_bytecode_digest != Self::conservative_canonical_bytecode_digest() {
@@ -615,7 +644,67 @@ impl BytecodeUnitObject {
                     .to_owned(),
             });
         }
+        if self.facts.bytecode_descriptor_digest
+            != Self::bytecode_descriptor_digest_for(&self.facts)
+        {
+            return Err(AwboError::MalformedPayload {
+                reason: "conservative bytecode descriptor digest mismatch".to_owned(),
+            });
+        }
         Ok(())
+    }
+
+    fn validate_reusable_shape(&self) -> Result<(), AwboError> {
+        self.validate_common_shape()?;
+        if self.canonical_awbc_bytes.is_empty() {
+            return Err(AwboError::MalformedPayload {
+                reason: "reusable bytecode unit has no canonical AWBC bytes".to_owned(),
+            });
+        }
+        if self.facts.canonical_bytecode_digest != BuildDigest::of(&self.canonical_awbc_bytes) {
+            return Err(AwboError::MalformedPayload {
+                reason: "bytecode unit canonical AWBC digest mismatch".to_owned(),
+            });
+        }
+        if self.facts.identity.runtime_plan_unit_digest
+            == Self::conservative_runtime_plan_unit_digest()
+            || self.facts.canonical_bytecode_digest
+                == Self::conservative_canonical_bytecode_digest()
+            || self.facts.identity.awbc_schema_digest == Self::conservative_awbc_schema_digest()
+            || self.facts.identity.verifier_policy_digest
+                == Self::conservative_verifier_policy_digest()
+            || self.facts.identity.codegen_policy_digest
+                == Self::conservative_codegen_policy_digest()
+        {
+            return Err(AwboError::MalformedPayload {
+                reason: "reusable bytecode unit still contains a conservative sentinel".to_owned(),
+            });
+        }
+        if self.facts.bytecode_descriptor_digest
+            != Self::bytecode_descriptor_digest_for(&self.facts)
+        {
+            return Err(AwboError::MalformedPayload {
+                reason: "bytecode unit descriptor digest mismatch".to_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn bytecode_descriptor_digest_for(facts: &BytecodeUnitFactsObject) -> BuildDigest {
+        let mut bytes = Vec::new();
+        put_string(&mut bytes, "bytecode-unit-descriptor-v2");
+        put_digest(&mut bytes, facts.identity.runtime_plan_unit_digest);
+        put_digest(&mut bytes, facts.hir_body_digest);
+        put_digest(&mut bytes, facts.typecheck_gate_digest);
+        put_digest(&mut bytes, facts.identity.awbc_schema_digest);
+        put_digest(&mut bytes, facts.identity.verifier_policy_digest);
+        put_digest(&mut bytes, facts.identity.codegen_policy_digest);
+        put_digest(&mut bytes, facts.identity.target_profile_digest);
+        put_digest(&mut bytes, facts.identity.feature_set_digest);
+        put_digest(&mut bytes, facts.identity.relocation_import_table_digest);
+        put_digest(&mut bytes, facts.dependency_body_digest_root);
+        put_digest(&mut bytes, facts.canonical_bytecode_digest);
+        BuildDigest::of(&bytes)
     }
 
     pub fn conservative_runtime_plan_unit_digest() -> BuildDigest {
@@ -624,6 +713,10 @@ impl BytecodeUnitObject {
 
     pub fn conservative_canonical_bytecode_digest() -> BuildDigest {
         BuildDigest::of(b"bytecode-unit-gate-v1:canonical-awbc-bytes-not-reused")
+    }
+
+    pub fn conservative_relocation_import_table_digest() -> BuildDigest {
+        BuildDigest::of(b"bytecode-unit-gate-v1:relocation-import-table-conservative")
     }
 
     pub fn conservative_awbc_schema_digest() -> BuildDigest {
@@ -643,18 +736,21 @@ impl BytecodeUnitReusePolicy {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ConservativeRebuild => "conservative_rebuild",
+            Self::VerifiedReusable => "verified_reusable",
         }
     }
 
     pub const fn wire_tag(self) -> u8 {
         match self {
             Self::ConservativeRebuild => 0,
+            Self::VerifiedReusable => 1,
         }
     }
 
     pub const fn from_wire_tag(tag: u8) -> Result<Self, AwboError> {
         match tag {
             0 => Ok(Self::ConservativeRebuild),
+            1 => Ok(Self::VerifiedReusable),
             _ => Err(AwboError::UnsupportedWireTag {
                 domain: "bytecode unit reuse policy",
                 tag,
@@ -684,47 +780,45 @@ impl LinkPlanObject {
                 reason: "link plan package is empty".to_owned(),
             });
         }
-        if self.reuse_policy != LinkPlanReusePolicy::ConservativeRebuild {
+        if has_duplicate_named_digest(&self.facts.descriptor.ordered_unit_identities) {
             return Err(AwboError::MalformedPayload {
-                reason: "link plan gate must use conservative rebuild policy".to_owned(),
+                reason: "link plan ordered unit identities contain duplicate names".to_owned(),
             });
         }
-        let canonical = NamedDigest::canonicalize(self.facts.ordered_unit_digests.clone());
-        if canonical != self.facts.ordered_unit_digests {
-            return Err(AwboError::MalformedPayload {
-                reason: "link plan ordered unit digests are not canonical".to_owned(),
-            });
-        }
-        if has_duplicate_named_digest(&canonical) {
-            return Err(AwboError::MalformedPayload {
-                reason: "link plan ordered unit digests contain duplicate names".to_owned(),
-            });
-        }
-        if self.facts.dependency_body_digest_root != self.stage_inputs.dependency_body_digest_root()
+        if self.facts.descriptor.dependency_body_digest_root
+            != self.stage_inputs.dependency_body_digest_root()
         {
             return Err(AwboError::MalformedPayload {
                 reason: "link plan dependency body root mismatch".to_owned(),
             });
         }
-        if self.facts.link_descriptor_digest != Self::link_descriptor_digest_for(&self.facts) {
+        if self.facts.link_descriptor_digest
+            != Self::link_descriptor_digest_for(&self.facts.descriptor)
+        {
             return Err(AwboError::MalformedPayload {
                 reason: "link plan descriptor digest mismatch".to_owned(),
+            });
+        }
+        if self.reuse_policy == LinkPlanReusePolicy::VerifiedReusable
+            && self.facts.descriptor.ordered_unit_identities.is_empty()
+        {
+            return Err(AwboError::MalformedPayload {
+                reason: "reusable link plan has no ordered unit identities".to_owned(),
             });
         }
         Ok(())
     }
 
-    pub fn link_descriptor_digest_for(facts: &LinkPlanFactsObject) -> BuildDigest {
-        let ordered_units = NamedDigest::canonicalize(facts.ordered_unit_digests.clone());
+    pub fn link_descriptor_digest_for(descriptor: &LinkDescriptorObject) -> BuildDigest {
         let mut bytes = Vec::new();
-        put_string(&mut bytes, "link-plan-gate-descriptor-v1");
-        put_named_digests(&mut bytes, &ordered_units);
-        put_digest(&mut bytes, facts.entrypoint_digest);
-        put_digest(&mut bytes, facts.resource_section_digest);
-        put_digest(&mut bytes, facts.adapter_requirements_digest);
-        put_digest(&mut bytes, facts.patch_compatibility_digest);
-        put_digest(&mut bytes, facts.product_build_options_digest);
-        put_digest(&mut bytes, facts.dependency_body_digest_root);
+        put_string(&mut bytes, "link-plan-descriptor-v2");
+        put_named_digests(&mut bytes, &descriptor.ordered_unit_identities);
+        put_digest(&mut bytes, descriptor.entrypoint_digest);
+        put_digest(&mut bytes, descriptor.resource_section_digest);
+        put_digest(&mut bytes, descriptor.adapter_requirements_digest);
+        put_digest(&mut bytes, descriptor.patch_compatibility_digest);
+        put_digest(&mut bytes, descriptor.product_build_options_digest);
+        put_digest(&mut bytes, descriptor.dependency_body_digest_root);
         BuildDigest::of(&bytes)
     }
 
@@ -749,18 +843,21 @@ impl LinkPlanReusePolicy {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ConservativeRebuild => "conservative_rebuild",
+            Self::VerifiedReusable => "verified_reusable",
         }
     }
 
     pub const fn wire_tag(self) -> u8 {
         match self {
             Self::ConservativeRebuild => 0,
+            Self::VerifiedReusable => 1,
         }
     }
 
     pub const fn from_wire_tag(tag: u8) -> Result<Self, AwboError> {
         match tag {
             0 => Ok(Self::ConservativeRebuild),
+            1 => Ok(Self::VerifiedReusable),
             _ => Err(AwboError::UnsupportedWireTag {
                 domain: "link plan reuse policy",
                 tag,

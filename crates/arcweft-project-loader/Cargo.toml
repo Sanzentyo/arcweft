@@ -11,6 +11,7 @@ publish = false
 arcweft-adapter-context = { path = "../arcweft-adapter-context" }
 arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-character = { path = "../arcweft-character" }
+arcweft-core = { path = "../arcweft-core" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 arcweft-launch = { path = "../arcweft-launch" }
 arcweft-project = { path = "../arcweft-project" }
@@ -21,7 +22,6 @@ thiserror.workspace = true
 ureq.workspace = true
 
 [dev-dependencies]
-arcweft-core = { path = "../arcweft-core" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 ed25519-dalek.workspace = true
 
