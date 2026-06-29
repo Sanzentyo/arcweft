@@ -77,10 +77,18 @@ Not end-to-end player-supported yet:
 ## Follow-Up Requests
 
 - `docs/reviews/requests/2026-06-30-seq-06.11-reactive-ui-authoring-style-resolution-package.md`
+- `docs/reviews/requests/2026-06-30-seq-06.11a-css-computed-style-direct-paint-extractor-package.md`
+- `docs/reviews/requests/2026-06-30-seq-06.11b-ui-scene-compositor-player-path-integration-package.md`
 - `docs/reviews/requests/2026-06-30-seq-06.12-css-layout-cascade-coverage-package.md`
 - `docs/reviews/requests/2026-06-30-seq-06.13-css-motion-effects-coverage-package.md`
+- `docs/reviews/requests/2026-06-30-seq-06.13a-clip-path-and-mask-render-closure-package.md`
+- `docs/reviews/requests/2026-06-30-seq-06.13b-box-shadow-and-blend-render-closure-package.md`
 
 Seq06.11 is the required implementation path before the sample can become a
-fully player-owned retained UI sample. Seq06.12 and seq06.13 can be designed in
-parallel, but production integration should not bypass the seq06.11 frame
-connection.
+fully player-owned retained UI sample. Seq06.11a and seq06.11b are split out
+from a follow-up review against an older `main` snapshot that called out two
+practical missing connections: CSS computed style to direct paint extraction,
+and `UiScene` / `UiCompositor` integration into the normal player path.
+
+Seq06.12, seq06.13, seq06.13a, and seq06.13b can be designed in parallel, but
+production integration should not bypass the seq06.11b frame connection.
