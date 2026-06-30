@@ -14,6 +14,7 @@ pub mod diagnostic;
 pub mod evidence;
 pub mod lowering;
 pub mod metadata;
+pub mod paint_extractor;
 pub mod style;
 pub mod text;
 
@@ -34,6 +35,12 @@ pub use lowering::{
     TakumiSceneOutput,
 };
 pub use metadata::{ArcweftNodeMetadata, TakumiMetadataEntry, TakumiMetadataMap, TakumiPath};
+pub use paint_extractor::{
+    ComputedDirectPaintExtractor, ComputedDirectPaintFrame, ComputedDirectPaintInput,
+    DirectPaintEvidenceFrame, DirectPaintEvidenceRecord, DirectPaintLayerEvidence,
+    DirectPaintLayerKind, DirectPaintResourceRequirement, DirectPaintResourceTable,
+    DirectPaintSource,
+};
 pub use style::{
     CssInvalidationClass, CssPropertyClass, DirectCssFeature, DirectCssSupport, TakumiCssBundle,
 };

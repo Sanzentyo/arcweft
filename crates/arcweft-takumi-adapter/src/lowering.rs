@@ -51,7 +51,7 @@ pub struct TakumiCompositingStyle {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DirectBoxPaint {
-    pub background: Option<DirectBackground>,
+    pub backgrounds: Vec<DirectBackground>,
     pub border: Option<DirectBorder>,
     pub clip: Option<DirectClip>,
     pub opacity: f32,
@@ -188,7 +188,7 @@ impl TakumiCompositingStyle {
 impl DirectBoxPaint {
     pub fn new() -> Self {
         Self {
-            background: None,
+            backgrounds: Vec::new(),
             border: None,
             clip: None,
             opacity: 1.0,
@@ -197,7 +197,16 @@ impl DirectBoxPaint {
 
     #[must_use]
     pub fn with_background(mut self, background: DirectBackground) -> Self {
-        self.background = Some(background);
+        self.backgrounds.push(background);
+        self
+    }
+
+    #[must_use]
+    pub fn with_backgrounds(
+        mut self,
+        backgrounds: impl IntoIterator<Item = DirectBackground>,
+    ) -> Self {
+        self.backgrounds.extend(backgrounds);
         self
     }
 
@@ -217,6 +226,13 @@ impl DirectBoxPaint {
     pub fn with_opacity(mut self, opacity: f32) -> Self {
         self.opacity = opacity.clamp(0.0, 1.0);
         self
+    }
+
+    pub fn has_visible_direct_paint(&self) -> bool {
+        !self.backgrounds.is_empty()
+            || self.border.is_some()
+            || self.clip.is_some()
+            || self.opacity < 1.0
     }
 }
 
@@ -432,7 +448,7 @@ fn lower_node(
     let start = build.primitive_start()?;
 
     if let Some(paint) = paint {
-        if let Some(background) = &paint.background {
+        for background in &paint.backgrounds {
             lower_background(background, bounds, build);
         }
         if let Some(border) = paint.border {
