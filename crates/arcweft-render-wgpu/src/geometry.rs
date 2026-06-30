@@ -13,7 +13,7 @@ use arcweft_presentation::text_input::{TextInputClientSnapshot, TextInputGeometr
 use arcweft_render_text::{
     LineDisplayFrame, RichTextColor, RichTextEffectDescriptor, RichTextEffectPhase,
     RichTextFontFamily, RichTextParam, RichTextRange, RichTextStyle, RichTextTextRun,
-    presentation_from_styles,
+    RichTextTextSource, presentation_from_styles,
 };
 use num_traits::ToPrimitive;
 use thiserror::Error;
@@ -139,6 +139,81 @@ pub struct RenderTextBlock {
     pub rgba: [u8; 4],
 }
 
+/// One dialogue body laid out as a single rich-text paragraph.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RenderStyledParagraph {
+    pub text: String,
+    pub bounds: HitRect,
+    pub default_style: RenderTextStyle,
+    pub spans: Vec<RenderStyledTextSpan>,
+    pub reveal: RenderTextReveal,
+    pub glyph_transforms: Vec<RenderGlyphTransformSpan>,
+    pub visual_time_millis: u64,
+}
+
+/// One typed style span inside a renderer-owned paragraph.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RenderStyledTextSpan {
+    pub range: RichTextRange,
+    pub style: RenderTextStyle,
+    pub node_index: usize,
+}
+
+/// Source-range reveal mask for effects such as typewriter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RenderTextReveal {
+    pub visible_end: usize,
+}
+
+/// One post-layout glyph transform span inside a renderer-owned paragraph.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RenderGlyphTransformSpan {
+    pub range: RichTextRange,
+    pub motion: RenderGlyphMotion,
+    pub node_index: usize,
+}
+
+/// Supported deterministic glyph-position transform kinds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RenderGlyphTransformKind {
+    Wave,
+    Shake,
+    Jitter,
+}
+
+impl RenderGlyphTransformKind {
+    fn from_effect_id(id: &str) -> Option<Self> {
+        match id {
+            "wave" => Some(Self::Wave),
+            "shake" => Some(Self::Shake),
+            "jitter" => Some(Self::Jitter),
+            _ => None,
+        }
+    }
+}
+
+/// Deterministic glyph-position transform parameters.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RenderGlyphMotion {
+    pub kind: RenderGlyphTransformKind,
+    pub amplitude: f32,
+    pub frequency: f32,
+}
+
+impl RenderGlyphMotion {
+    pub fn offset_y(self, seconds: f32, source_byte: usize) -> f32 {
+        let source_phase = source_byte.to_f32().unwrap_or(f32::MAX) * 0.58;
+        let phase = seconds.mul_add(self.frequency, source_phase);
+        match self.kind {
+            RenderGlyphTransformKind::Wave => phase.sin() * self.amplitude,
+            RenderGlyphTransformKind::Shake => {
+                ((phase * 1.7).sin() * 0.6 + (phase * 2.3).cos() * 0.4) * self.amplitude
+            }
+            RenderGlyphTransformKind::Jitter => (phase.sin() * 12_989.0).sin() * self.amplitude,
+        }
+    }
+}
+
 /// Font family requested by a prepared text block.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum RenderFontFamily {
@@ -198,6 +273,7 @@ pub struct PreparedFrame {
     pub rectangles: Vec<PaintRect>,
     pub images: Vec<RenderImage>,
     pub text: Vec<RenderTextBlock>,
+    pub styled_paragraphs: Vec<RenderStyledParagraph>,
     pub choices: Vec<RenderChoice>,
     dialogue_present: bool,
     focused_text_input: Option<PreparedTextInputTarget>,
@@ -321,7 +397,14 @@ impl SharedFramePlanner {
             rgba: palette.background,
         }];
         let mut text = Vec::new();
-        push_dialogue_panel(scene, &mut rectangles, &mut text, &palette);
+        let mut styled_paragraphs = Vec::new();
+        push_dialogue_panel(
+            scene,
+            &mut rectangles,
+            &mut text,
+            &mut styled_paragraphs,
+            &palette,
+        );
 
         let mut semantics = SemanticTree::default();
         let action = RenderActionKind::ChoiceSelect.public_id()?;
@@ -352,6 +435,7 @@ impl SharedFramePlanner {
             rectangles,
             images: scene.images.clone(),
             text,
+            styled_paragraphs,
             choices,
             dialogue_present: scene.dialogue.is_some(),
             focused_text_input,
@@ -363,6 +447,7 @@ fn push_dialogue_panel(
     scene: &RenderScene,
     rectangles: &mut Vec<PaintRect>,
     text: &mut Vec<RenderTextBlock>,
+    styled_paragraphs: &mut Vec<RenderStyledParagraph>,
     palette: &Palette,
 ) {
     let Some(dialogue) = &scene.dialogue else {
@@ -411,8 +496,8 @@ fn push_dialogue_panel(
             speaker_style.color
         },
     });
-    push_dialogue_text_blocks(
-        text,
+    push_dialogue_styled_paragraph(
+        styled_paragraphs,
         dialogue,
         &DialogueTextLayout {
             bounds: HitRect::new(
@@ -457,13 +542,13 @@ struct DialogueTextLayout {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-struct RenderTextStyle {
-    font_size: f32,
-    line_height: f32,
-    color: [u8; 4],
-    font_family: RenderFontFamily,
-    weight: RenderTextWeight,
-    slant: RenderTextSlant,
+pub struct RenderTextStyle {
+    pub font_size: f32,
+    pub line_height: f32,
+    pub color: [u8; 4],
+    pub font_family: RenderFontFamily,
+    pub weight: RenderTextWeight,
+    pub slant: RenderTextSlant,
 }
 
 impl RenderTextStyle {
@@ -484,68 +569,87 @@ impl RenderTextStyle {
     }
 }
 
-fn push_dialogue_text_blocks(
-    text: &mut Vec<RenderTextBlock>,
+fn push_dialogue_styled_paragraph(
+    styled_paragraphs: &mut Vec<RenderStyledParagraph>,
     dialogue: &RenderDialogue,
     layout: &DialogueTextLayout,
 ) {
-    let runs = if dialogue.text_runs.is_empty() {
-        let styles = dialogue.base_styles.clone();
-        vec![RichTextTextRun {
-            range: RichTextRange::new(0, dialogue.text.len()),
-            source: arcweft_render_text::RichTextTextSource::Text,
-            node_index: 0,
-            presentation: presentation_from_styles(&styles),
-            styles,
-        }]
-    } else {
-        dialogue.text_runs.clone()
-    };
+    let runs = dialogue_text_runs(dialogue);
     let visible_end = if layout.reduce_motion {
         dialogue.text.len()
     } else {
         typewriter_visible_end(&dialogue.text, &runs, layout.visual_time_millis)
     };
-    let mut offset_x: f32 = 0.0;
-    for run in runs {
-        let run_start = run.range.start.min(dialogue.text.len());
-        let run_end = run.range.end.min(dialogue.text.len()).min(visible_end);
-        if run_start >= run_end {
-            continue;
-        }
-        let Some(visible) = dialogue.text.get(run_start..run_end) else {
-            continue;
-        };
-        let run_style = text_style_from_styles(&run.styles, layout.style.clone());
-        let x = layout.bounds.x + offset_x.min(layout.bounds.width);
-        let bounds = HitRect::new(
-            x,
-            layout.bounds.y,
-            (layout.bounds.width - (x - layout.bounds.x)).max(1.0),
-            layout.bounds.height,
-        );
-        let motion = (!layout.reduce_motion)
-            .then(|| text_motion(&run.presentation.effects))
-            .flatten();
-        if let Some(motion) = motion {
-            push_motion_text_blocks(text, visible, bounds, layout, &run_style, motion, run_start);
-        } else {
-            text.push(RenderTextBlock {
-                text: visible.to_owned(),
-                bounds,
-                font_size: run_style.font_size,
-                line_height: run_style.line_height,
-                font_family: run_style.font_family.clone(),
-                weight: run_style.weight,
-                slant: run_style.slant,
-                rgba: run_style.color,
-            });
-        }
-        offset_x += estimated_text_width(visible, run_style.font_size);
-        if offset_x >= layout.bounds.width {
-            break;
-        }
+    let spans = runs
+        .iter()
+        .filter_map(|run| render_styled_text_span(dialogue, layout, run))
+        .collect();
+    let glyph_transforms = if layout.reduce_motion {
+        Vec::new()
+    } else {
+        runs.iter()
+            .filter_map(|run| render_glyph_transform_span(dialogue, run))
+            .collect()
+    };
+    styled_paragraphs.push(RenderStyledParagraph {
+        text: dialogue.text.clone(),
+        bounds: layout.bounds,
+        default_style: layout.style.clone(),
+        spans,
+        reveal: RenderTextReveal {
+            visible_end: visible_end.min(dialogue.text.len()),
+        },
+        glyph_transforms,
+        visual_time_millis: layout.visual_time_millis,
+    });
+}
+
+fn dialogue_text_runs(dialogue: &RenderDialogue) -> Vec<RichTextTextRun> {
+    if !dialogue.text_runs.is_empty() {
+        return dialogue.text_runs.clone();
     }
+    let styles = dialogue.base_styles.clone();
+    vec![RichTextTextRun {
+        range: RichTextRange::new(0, dialogue.text.len()),
+        source: RichTextTextSource::Text,
+        node_index: 0,
+        presentation: presentation_from_styles(&styles),
+        styles,
+    }]
+}
+
+fn render_styled_text_span(
+    dialogue: &RenderDialogue,
+    layout: &DialogueTextLayout,
+    run: &RichTextTextRun,
+) -> Option<RenderStyledTextSpan> {
+    let range = valid_text_range(&dialogue.text, run.range)?;
+    Some(RenderStyledTextSpan {
+        range,
+        style: text_style_from_styles(&run.styles, layout.style.clone()),
+        node_index: run.node_index,
+    })
+}
+
+fn render_glyph_transform_span(
+    dialogue: &RenderDialogue,
+    run: &RichTextTextRun,
+) -> Option<RenderGlyphTransformSpan> {
+    let range = valid_text_range(&dialogue.text, run.range)?;
+    Some(RenderGlyphTransformSpan {
+        range,
+        motion: glyph_motion(&run.presentation.effects)?,
+        node_index: run.node_index,
+    })
+}
+
+fn valid_text_range(text: &str, range: RichTextRange) -> Option<RichTextRange> {
+    let start = range.start.min(text.len());
+    let end = range.end.min(text.len());
+    if start >= end || text.get(start..end).is_none() {
+        return None;
+    }
+    Some(RichTextRange::new(start, end))
 }
 
 fn typewriter_visible_end(text: &str, runs: &[RichTextTextRun], visual_time_millis: u64) -> usize {
@@ -576,20 +680,16 @@ fn typewriter_cps(effect: &RichTextEffectDescriptor) -> f32 {
         .clamp(1.0, 240.0)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct TextMotion {
-    amplitude: f32,
-    frequency: f32,
-}
-
-fn text_motion(effects: &[RichTextEffectDescriptor]) -> Option<TextMotion> {
+fn glyph_motion(effects: &[RichTextEffectDescriptor]) -> Option<RenderGlyphMotion> {
     effects
         .iter()
         .find(|effect| {
-            matches!(effect.id.as_str(), "wave" | "shake" | "jitter")
+            RenderGlyphTransformKind::from_effect_id(&effect.id).is_some()
                 && effect.phase == RichTextEffectPhase::GlyphTransform
         })
-        .map(|effect| TextMotion {
+        .map(|effect| RenderGlyphMotion {
+            kind: RenderGlyphTransformKind::from_effect_id(&effect.id)
+                .expect("effect id was matched above"),
             amplitude: effect
                 .params
                 .get("amp")
@@ -605,48 +705,6 @@ fn text_motion(effects: &[RichTextEffectDescriptor]) -> Option<TextMotion> {
                 .unwrap_or(7.0)
                 .clamp(0.1, 24.0),
         })
-}
-
-fn push_motion_text_blocks(
-    text: &mut Vec<RenderTextBlock>,
-    visible: &str,
-    bounds: HitRect,
-    layout: &DialogueTextLayout,
-    style: &RenderTextStyle,
-    motion: TextMotion,
-    range_start: usize,
-) {
-    let seconds = layout.visual_time_millis.to_f32().unwrap_or(f32::MAX) / 1_000.0;
-    let mut offset_x = 0.0;
-    for (index, ch) in visible.chars().enumerate() {
-        let advance = estimated_char_width(ch, style.font_size);
-        let phase =
-            seconds * motion.frequency + (range_start + index).to_f32().unwrap_or(f32::MAX) * 0.58;
-        let offset_y = if ch.is_whitespace() {
-            0.0
-        } else {
-            phase.sin() * motion.amplitude
-        };
-        text.push(RenderTextBlock {
-            text: ch.to_string(),
-            bounds: HitRect::new(
-                bounds.x + offset_x,
-                bounds.y + offset_y,
-                advance.max(1.0),
-                bounds.height,
-            ),
-            font_size: style.font_size,
-            line_height: style.line_height,
-            font_family: style.font_family.clone(),
-            weight: style.weight,
-            slant: style.slant,
-            rgba: style.color,
-        });
-        offset_x += advance;
-        if offset_x >= bounds.width {
-            break;
-        }
-    }
 }
 
 fn text_style_from_styles(styles: &[RichTextStyle], fallback: RenderTextStyle) -> RenderTextStyle {
@@ -709,23 +767,6 @@ fn param_f32(param: &RichTextParam) -> Option<f32> {
         | RichTextParam::Selector { .. }
         | RichTextParam::Expr { .. } => None,
     }
-}
-
-fn estimated_text_width(text: &str, font_size: f32) -> f32 {
-    text.chars()
-        .map(|ch| estimated_char_width(ch, font_size))
-        .sum()
-}
-
-fn estimated_char_width(ch: char, font_size: f32) -> f32 {
-    let ratio = if ch.is_ascii_whitespace() {
-        0.34
-    } else if ch.is_ascii() {
-        0.58
-    } else {
-        0.94
-    };
-    font_size * ratio
 }
 
 impl PreparedFrame {

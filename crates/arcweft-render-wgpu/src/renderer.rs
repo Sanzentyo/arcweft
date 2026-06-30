@@ -1,10 +1,11 @@
 use crate::convert::{pixel_ceil_as_i32, pixel_floor_as_i32};
 use crate::geometry::{
-    PaintRect, PreparedFrame, RenderFontFamily, RenderImage, RenderTextBlock, RenderTextSlant,
-    RenderTextWeight,
+    PaintRect, PreparedFrame, RenderFontFamily, RenderImage, RenderStyledParagraph,
+    RenderStyledTextSpan, RenderTextBlock, RenderTextSlant, RenderTextStyle, RenderTextWeight,
 };
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::image::ImageObjectFit;
+use arcweft_render_text::RichTextRange;
 use bytemuck::{Pod, Zeroable};
 use glyphon::{
     Attrs, Buffer, Cache, Color, Family, FontSystem, Metrics, Resolution, Shaping, Style,
@@ -13,6 +14,8 @@ use glyphon::{
 use std::borrow::Cow;
 use thiserror::Error;
 use wgpu::util::DeviceExt;
+
+const TRANSPARENT_ALPHA: u8 = 0;
 
 /// GPU renderer shared by native surfaces, browser surfaces, and offscreen tests.
 pub struct SharedRenderer {
@@ -118,28 +121,7 @@ impl SharedRenderer {
             },
         );
 
-        let mut buffers = frame
-            .text
-            .iter()
-            .map(|block| text_buffer(&mut self.font_system, block))
-            .collect::<Vec<_>>();
-        let text_scale_factor = frame.viewport.physical_scale_factor_f32();
-        let areas = buffers
-            .iter_mut()
-            .zip(&frame.text)
-            .map(|(buffer, block)| text_area(buffer, block, text_scale_factor))
-            .collect::<Vec<_>>();
-        self.text_renderer
-            .prepare(
-                device,
-                queue,
-                &mut self.font_system,
-                &mut self.atlas,
-                &self.viewport,
-                areas,
-                &mut self.swash_cache,
-            )
-            .map_err(|error| SharedRendererError::TextPrepare(error.to_string()))?;
+        self.prepare_text_content(device, queue, frame)?;
 
         let background_vertex_buffer = rectangle_vertex_buffer(
             device,
@@ -210,6 +192,52 @@ impl SharedRenderer {
         Ok(())
     }
 
+    fn prepare_text_content(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &PreparedFrame,
+    ) -> Result<(), SharedRendererError> {
+        let mut block_buffers = frame
+            .text
+            .iter()
+            .map(|block| text_buffer(&mut self.font_system, block))
+            .collect::<Vec<_>>();
+        let text_scale_factor = frame.viewport.physical_scale_factor_f32();
+        let text_areas = block_buffers
+            .iter_mut()
+            .zip(&frame.text)
+            .map(|(buffer, block)| text_area(buffer, block, text_scale_factor))
+            .collect::<Vec<_>>();
+        let paragraph_buffers = frame
+            .styled_paragraphs
+            .iter()
+            .map(|paragraph| styled_paragraph_buffer(&mut self.font_system, paragraph))
+            .collect::<Vec<_>>();
+        let paragraph_areas = paragraph_buffers
+            .iter()
+            .zip(&frame.styled_paragraphs)
+            .map(|(buffer, paragraph)| {
+                styled_paragraph_text_area(buffer, paragraph, text_scale_factor)
+            })
+            .collect::<Vec<_>>();
+        let text_areas = text_areas
+            .into_iter()
+            .chain(paragraph_areas)
+            .collect::<Vec<_>>();
+        self.text_renderer
+            .prepare(
+                device,
+                queue,
+                &mut self.font_system,
+                &mut self.atlas,
+                &self.viewport,
+                text_areas,
+                &mut self.swash_cache,
+            )
+            .map_err(|error| SharedRendererError::TextPrepare(error.to_string()))
+    }
+
     fn render_image_quad(
         &self,
         device: &wgpu::Device,
@@ -272,12 +300,157 @@ fn text_buffer(font_system: &mut FontSystem, block: &RenderTextBlock) -> Buffer 
     buffer
 }
 
+fn styled_paragraph_buffer(
+    font_system: &mut FontSystem,
+    paragraph: &RenderStyledParagraph,
+) -> Buffer {
+    let mut buffer = Buffer::new(
+        font_system,
+        Metrics::new(
+            paragraph.default_style.font_size,
+            paragraph.default_style.line_height,
+        ),
+    );
+    buffer.set_size(
+        font_system,
+        Some(paragraph.bounds.width),
+        Some(paragraph.bounds.height),
+    );
+    let default_attrs = attrs_from_style(&paragraph.default_style);
+    let spans = styled_paragraph_attr_spans(paragraph);
+    buffer.set_rich_text(font_system, spans, &default_attrs, Shaping::Advanced, None);
+    buffer.shape_until_scroll(font_system, false);
+    buffer
+}
+
+fn styled_paragraph_attr_spans(paragraph: &RenderStyledParagraph) -> Vec<(&str, Attrs<'_>)> {
+    let mut output = Vec::new();
+    let mut cursor = 0;
+    let mut spans = paragraph.spans.iter().collect::<Vec<_>>();
+    spans.sort_by_key(|span| span.range.start);
+    for span in spans {
+        let start = span.range.start.min(paragraph.text.len()).max(cursor);
+        let end = span.range.end.min(paragraph.text.len());
+        if cursor < start {
+            push_revealed_attr_span(
+                &mut output,
+                paragraph,
+                cursor,
+                start,
+                &paragraph.default_style,
+            );
+        }
+        if start < end {
+            push_revealed_attr_span(&mut output, paragraph, start, end, &span.style);
+            cursor = end;
+        }
+    }
+    if cursor < paragraph.text.len() {
+        push_revealed_attr_span(
+            &mut output,
+            paragraph,
+            cursor,
+            paragraph.text.len(),
+            &paragraph.default_style,
+        );
+    }
+    if output.is_empty() {
+        push_revealed_attr_span(
+            &mut output,
+            paragraph,
+            0,
+            paragraph.text.len(),
+            &paragraph.default_style,
+        );
+    }
+    output
+}
+
+fn push_revealed_attr_span<'a>(
+    output: &mut Vec<(&'a str, Attrs<'a>)>,
+    paragraph: &'a RenderStyledParagraph,
+    start: usize,
+    end: usize,
+    style: &'a RenderTextStyle,
+) {
+    if start >= end {
+        return;
+    }
+    let reveal = paragraph.reveal.visible_end.min(paragraph.text.len());
+    if end <= reveal {
+        push_attr_span(output, paragraph, start, end, style, style.color[3]);
+    } else if start >= reveal {
+        push_attr_span(output, paragraph, start, end, style, TRANSPARENT_ALPHA);
+    } else {
+        push_attr_span(output, paragraph, start, reveal, style, style.color[3]);
+        push_attr_span(output, paragraph, reveal, end, style, TRANSPARENT_ALPHA);
+    }
+}
+
+fn push_attr_span<'a>(
+    output: &mut Vec<(&'a str, Attrs<'a>)>,
+    paragraph: &'a RenderStyledParagraph,
+    start: usize,
+    end: usize,
+    style: &'a RenderTextStyle,
+    alpha: u8,
+) {
+    if let Some(text) = paragraph.text.get(start..end) {
+        output.push((text, attrs_from_style_with_alpha(style, alpha)));
+    }
+}
+
+fn styled_paragraph_text_area<'a>(
+    buffer: &'a Buffer,
+    paragraph: &RenderStyledParagraph,
+    scale_factor: f32,
+) -> TextArea<'a> {
+    let scale_factor = scale_factor.max(f32::EPSILON);
+    TextArea {
+        buffer,
+        left: paragraph.bounds.x * scale_factor,
+        top: paragraph.bounds.y * scale_factor,
+        scale: scale_factor,
+        bounds: scale_text_bounds(paragraph.bounds, scale_factor),
+        default_color: Color::rgba(
+            paragraph.default_style.color[0],
+            paragraph.default_style.color[1],
+            paragraph.default_style.color[2],
+            paragraph.default_style.color[3],
+        ),
+        custom_glyphs: &[],
+    }
+}
+
 fn text_attrs(block: &RenderTextBlock) -> Attrs<'_> {
     let mut attrs = Attrs::new().family(render_font_family(&block.font_family));
     if block.weight == RenderTextWeight::Bold {
         attrs = attrs.weight(Weight::BOLD);
     }
     if block.slant == RenderTextSlant::Italic {
+        attrs = attrs.style(Style::Italic);
+    }
+    attrs
+}
+
+fn attrs_from_style(style: &RenderTextStyle) -> Attrs<'_> {
+    attrs_from_style_with_alpha(style, style.color[3])
+}
+
+fn attrs_from_style_with_alpha(style: &RenderTextStyle, alpha: u8) -> Attrs<'_> {
+    let mut attrs = Attrs::new()
+        .family(render_font_family(&style.font_family))
+        .color(Color::rgba(
+            style.color[0],
+            style.color[1],
+            style.color[2],
+            alpha,
+        ))
+        .metrics(Metrics::new(style.font_size, style.line_height));
+    if style.weight == RenderTextWeight::Bold {
+        attrs = attrs.weight(Weight::BOLD);
+    }
+    if style.slant == RenderTextSlant::Italic {
         attrs = attrs.style(Style::Italic);
     }
     attrs
@@ -315,6 +488,79 @@ fn scale_text_bounds(bounds: HitRect, scale_factor: f32) -> TextBounds {
         top: pixel_floor_as_i32(bounds.y * scale_factor),
         right: pixel_ceil_as_i32((bounds.x + bounds.width) * scale_factor),
         bottom: pixel_ceil_as_i32((bounds.y + bounds.height) * scale_factor),
+    }
+}
+
+/// Paragraph-wide layout evidence consumed by seq06.10 raster parity.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StyledParagraphLayoutEvidence {
+    pub spans: Vec<StyledParagraphSpanEvidence>,
+    pub line_boxes: Vec<StyledParagraphLineBox>,
+    pub glyph_bounds: Vec<StyledParagraphGlyphBounds>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StyledParagraphSpanEvidence {
+    pub range: RichTextRange,
+    pub font_size: f32,
+    pub line_height: f32,
+    pub rgba: [u8; 4],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StyledParagraphLineBox {
+    pub line_index: usize,
+    pub bounds: HitRect,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StyledParagraphGlyphBounds {
+    pub source_range: RichTextRange,
+    pub bounds: HitRect,
+    pub visible: bool,
+}
+
+pub fn styled_paragraph_layout_evidence(
+    font_system: &mut FontSystem,
+    paragraph: &RenderStyledParagraph,
+) -> StyledParagraphLayoutEvidence {
+    let buffer = styled_paragraph_buffer(font_system, paragraph);
+    let mut line_boxes = Vec::new();
+    let mut glyph_bounds = Vec::new();
+    for (line_index, run) in buffer.layout_runs().enumerate() {
+        line_boxes.push(StyledParagraphLineBox {
+            line_index,
+            bounds: HitRect::new(
+                paragraph.bounds.x,
+                paragraph.bounds.y + run.line_top,
+                run.line_w,
+                run.line_height,
+            ),
+        });
+        glyph_bounds.extend(run.glyphs.iter().map(|glyph| StyledParagraphGlyphBounds {
+            source_range: RichTextRange::new(glyph.start, glyph.end),
+            bounds: HitRect::new(
+                paragraph.bounds.x + glyph.x,
+                paragraph.bounds.y + run.line_top,
+                glyph.w,
+                run.line_height,
+            ),
+            visible: glyph.start < paragraph.reveal.visible_end,
+        }));
+    }
+    StyledParagraphLayoutEvidence {
+        spans: paragraph.spans.iter().map(span_evidence).collect(),
+        line_boxes,
+        glyph_bounds,
+    }
+}
+
+fn span_evidence(span: &RenderStyledTextSpan) -> StyledParagraphSpanEvidence {
+    StyledParagraphSpanEvidence {
+        range: span.range,
+        font_size: span.style.font_size,
+        line_height: span.style.line_height,
+        rgba: span.style.color,
     }
 }
 

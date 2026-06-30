@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { open } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join, normalize } from "node:path";
@@ -15,6 +15,8 @@ const checkpoints = (process.env.ARW_CSS_STYLE_PARITY_CHECKPOINTS ?? "default,co
   .filter(Boolean);
 const bundleUrl = process.env.ARW_CSS_STYLE_PARITY_BUNDLE_URL ??
   "./local/css-style-parity.awfb";
+const fontUrl = process.env.ARW_CSS_STYLE_PARITY_FONT_URL ??
+  "./assets/arcweft-demo.ttf";
 const visualTimeMillis = Number.parseInt(
   process.env.ARW_CSS_STYLE_PARITY_VISUAL_TIME_MILLIS ?? "9000",
   10,
@@ -25,9 +27,12 @@ const contentTypes = new Map([
   [".css", "text/css; charset=utf-8"],
   [".html", "text/html; charset=utf-8"],
   [".js", "text/javascript; charset=utf-8"],
+  [".otf", "font/otf"],
   [".png", "image/png"],
   [".ttf", "font/ttf"],
   [".wasm", "application/wasm"],
+  [".woff", "font/woff"],
+  [".woff2", "font/woff2"],
 ]);
 
 function expect(condition, message) {
@@ -139,12 +144,19 @@ function checkpointOptions(name) {
   }
 }
 
+function frameText(frame) {
+  const textBlocks = frame?.text?.map((item) => item.text) ?? [];
+  const paragraphs = frame?.styled_paragraphs?.map((item) => item.text) ?? [];
+  return [...textBlocks, ...paragraphs].join("");
+}
+
 async function openReady(browser, baseUrl, checkpoint) {
   const options = checkpointOptions(checkpoint);
   const page = await browser.newPage(options);
   await installDeterministicClock(page, visualTimeMillis);
   const errors = collectConsoleErrors(page);
-  await page.goto(`${baseUrl}/index.html?bundle=${bundleUrl}`);
+  const search = new URLSearchParams({ bundle: bundleUrl, font: fontUrl });
+  await page.goto(`${baseUrl}/index.html?${search}`);
   expect(await page.evaluate(() => Boolean(navigator.gpu)), "navigator.gpu is unavailable");
   await page.waitForFunction(
     () => document.querySelector("#arcweft-canvas")?.dataset.arcweftReady === "true",
@@ -157,9 +169,10 @@ async function openReady(browser, baseUrl, checkpoint) {
         window.__arcweftLastObservation?.dialogue_present === true &&
         window.__arcweftLastFrameObservation?.image_count === 0 &&
         (() => {
-          const text = window.__arcweftLastFrameObservation?.text
-            ?.map((item) => item.text)
-            .join("") ?? "";
+          const frame = window.__arcweftLastFrameObservation;
+          const textBlocks = frame?.text?.map((item) => item.text) ?? [];
+          const paragraphs = frame?.styled_paragraphs?.map((item) => item.text) ?? [];
+          const text = [...textBlocks, ...paragraphs].join("");
           return needsDetailedStyle
             ? text.includes("Bold") && text.includes("color")
             : text.includes("checks renderer-owned");
@@ -186,10 +199,14 @@ async function assertCanvasOnlySample(page, checkpoint) {
     .count();
   expect(domGameText === 0, "DOM game text renderer is present");
   const frame = await page.evaluate(() => window.__arcweftLastFrameObservation);
-  expect(frame?.schema_version === "arcweft.web_frame_observation.v1", "bad frame schema");
+  expect(frame?.schema_version === "arcweft.web_frame_observation.v2", "bad frame schema");
   expect(frame.image_count === 0, "CSS style parity sample should have no image assets");
-  expect(frame.text_count >= 2, `expected styled text blocks, got ${frame.text_count}`);
-  const text = frame.text.map((item) => item.text).join("");
+  expect(frame.text_count >= 2, `expected styled text evidence, got ${frame.text_count}`);
+  expect(
+    frame.styled_paragraph_count >= 1,
+    `expected styled paragraph evidence, got ${frame.styled_paragraph_count}`,
+  );
+  const text = frameText(frame);
   expect(text.includes("CSS-like style parity"), `missing styled sample text for ${checkpoint}`);
   if (checkpoint === "default") {
     expect(text.includes("Bold"), `missing bold sample text for ${checkpoint}`);
@@ -197,8 +214,32 @@ async function assertCanvasOnlySample(page, checkpoint) {
   }
 }
 
+async function fontFingerprint() {
+  const fullPath = staticPath(fontUrl);
+  expect(fullPath && fullPath !== "", `font path is outside served fixture root: ${fontUrl}`);
+  const bytes = await readFile(fullPath);
+  return {
+    url: fontUrl,
+    path: fullPath,
+    byte_len: bytes.byteLength,
+    fnv1a64: fnv1a64(bytes),
+  };
+}
+
+function fnv1a64(bytes) {
+  let hash = 0xcbf29ce484222325n;
+  const prime = 0x00000100000001b3n;
+  const mask = 0xffffffffffffffffn;
+  for (const byte of bytes) {
+    hash ^= BigInt(byte);
+    hash = (hash * prime) & mask;
+  }
+  return hash.toString(16).padStart(16, "0");
+}
+
 async function main() {
   await mkdir(outputDir, { recursive: true });
+  const font = await fontFingerprint();
   const { server, baseUrl } = await startServer();
   const webGpuArgs = ["--enable-unsafe-webgpu"];
   if (process.platform === "win32") {
@@ -217,9 +258,15 @@ async function main() {
         await assertCanvasOnlySample(page, checkpoint);
         expect(errors.length === 0, `console errors: ${errors.join("\n")}`);
         const frame = await page.evaluate(() => window.__arcweftLastFrameObservation);
+        const frameEvidence = {
+          ...frame,
+          checkpoint,
+          visual_time_millis: visualTimeMillis,
+          font,
+        };
         await writeFile(
           join(outputDir, `web-${checkpoint}.frame.json`),
-          `${JSON.stringify(frame, null, 2)}\n`,
+          `${JSON.stringify(frameEvidence, null, 2)}\n`,
         );
         await page.locator("#arcweft-canvas").screenshot({
           path: join(outputDir, `web-${checkpoint}.png`),
@@ -232,6 +279,7 @@ async function main() {
           choiceCount: frame.choice_count,
           imageCount: frame.image_count,
           visualTimeMillis,
+          fontHash: font.fnv1a64,
         }));
       } finally {
         await page.close();

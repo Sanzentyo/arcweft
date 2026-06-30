@@ -1,4 +1,6 @@
-use arcweft_render_wgpu::geometry::{PreparedFrame, RenderImage, RenderTextBlock};
+use arcweft_render_wgpu::geometry::{
+    PreparedFrame, RenderImage, RenderStyledParagraph, RenderStyledTextSpan, RenderTextBlock,
+};
 use arcweft_runtime_driver::session::BundleSessionStep;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
@@ -61,9 +63,11 @@ pub struct WebFrameObservationReport {
     pub rectangle_count: usize,
     pub image_count: usize,
     pub text_count: usize,
+    pub styled_paragraph_count: usize,
     pub choice_count: usize,
     pub images: Vec<WebFrameImage>,
     pub text: Vec<WebFrameText>,
+    pub styled_paragraphs: Vec<WebFrameStyledParagraph>,
     pub choices: Vec<WebFrameChoice>,
 }
 
@@ -104,6 +108,24 @@ pub struct WebFrameText {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WebFrameStyledParagraph {
+    pub text: String,
+    pub bounds: WebFrameBounds,
+    pub visible_end: usize,
+    pub span_count: usize,
+    pub spans: Vec<WebFrameStyledSpan>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WebFrameStyledSpan {
+    pub start: usize,
+    pub end: usize,
+    pub font_size_milli: i64,
+    pub line_height_milli: i64,
+    pub rgba: [u8; 4],
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WebFrameChoice {
     pub option_id: String,
     pub label: String,
@@ -114,7 +136,7 @@ pub struct WebFrameChoice {
 impl WebFrameObservationReport {
     pub fn from_prepared_frame(frame: &PreparedFrame) -> Self {
         Self {
-            schema_version: "arcweft.web_frame_observation.v1".to_owned(),
+            schema_version: "arcweft.web_frame_observation.v2".to_owned(),
             viewport: WebFrameViewport {
                 logical_width_milli: f64_milli(f64::from(frame.viewport.logical_width)),
                 logical_height_milli: f64_milli(f64::from(frame.viewport.logical_height)),
@@ -124,7 +146,8 @@ impl WebFrameObservationReport {
             },
             rectangle_count: frame.rectangles.len(),
             image_count: frame.images.len(),
-            text_count: frame.text.len(),
+            text_count: frame.text.len() + frame.styled_paragraphs.len(),
+            styled_paragraph_count: frame.styled_paragraphs.len(),
             choice_count: frame.choices.len(),
             images: frame
                 .images
@@ -135,6 +158,11 @@ impl WebFrameObservationReport {
                 .text
                 .iter()
                 .map(WebFrameText::from_text_block)
+                .collect(),
+            styled_paragraphs: frame
+                .styled_paragraphs
+                .iter()
+                .map(WebFrameStyledParagraph::from_styled_paragraph)
                 .collect(),
             choices: frame
                 .choices
@@ -187,6 +215,34 @@ impl WebFrameText {
             font_size_milli: f32_milli(text.font_size),
             line_height_milli: f32_milli(text.line_height),
             rgba: text.rgba,
+        }
+    }
+}
+
+impl WebFrameStyledParagraph {
+    fn from_styled_paragraph(paragraph: &RenderStyledParagraph) -> Self {
+        Self {
+            text: paragraph.text.clone(),
+            bounds: WebFrameBounds::from_hit_rect(paragraph.bounds),
+            visible_end: paragraph.reveal.visible_end,
+            span_count: paragraph.spans.len(),
+            spans: paragraph
+                .spans
+                .iter()
+                .map(WebFrameStyledSpan::from_styled_span)
+                .collect(),
+        }
+    }
+}
+
+impl WebFrameStyledSpan {
+    fn from_styled_span(span: &RenderStyledTextSpan) -> Self {
+        Self {
+            start: span.range.start,
+            end: span.range.end,
+            font_size_milli: f32_milli(span.style.font_size),
+            line_height_milli: f32_milli(span.style.line_height),
+            rgba: span.style.color,
         }
     }
 }

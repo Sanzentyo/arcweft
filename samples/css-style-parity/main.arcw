@@ -38,6 +38,7 @@ flow css_style_parity {
     stylist(id=@say.css_style_parity.main, voice=auto):
         [font "Arcweft Demo"][color #64d2c8]CSS-like style parity[/color][/font] checks renderer-owned text styling only.[r]
         [color #f6cc66]color[/color], [size 36]size[/size], [strong]Bold[/strong], [em]emphasis[/em], and |[ruby](ルビ) must match native and Web.[p]
+        [color #9be7ff]Styled paragraph wrap probe:[/color] this intentionally long sentence crosses [strong]bold text[/strong], [color #f6cc66]warm color[/color], and [size 34]larger glyph[/size] spans so one dialogue body must wrap as a single paragraph instead of restarting layout at each style run.[p]
 
     choice @choice.css_style_parity {
         @choice.css_style_parity.accept "Keep styled route" -> @flow.done

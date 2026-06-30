@@ -1,0 +1,50 @@
+{
+  "schema_version": "arcweft.css_style_text_raster_fixture.v1",
+  "contract": "text-mask/layout identity with backend-specific antialias allowance",
+  "font": {
+    "path": "web/assets/arcweft-demo.ttf",
+    "required": true,
+    "fingerprint_fields": ["byte_len", "fnv1a64"]
+  },
+  "thresholds": {
+    "layout_milli_tolerance": 0,
+    "max_bbox_delta_px": 2.0,
+    "max_centroid_delta_px": 1.25,
+    "max_coverage_delta_ratio": 0.15,
+    "max_mask_xor_ratio": 0.45,
+    "min_ink_pixels": 4,
+    "ink_affinity_threshold": 0.35
+  },
+  "checkpoints": [
+    {
+      "name": "default",
+      "native_png": "target/css-style-parity/native-default.png",
+      "web_png": "target/css-style-parity/web-default.png",
+      "native_frame": "target/css-style-parity/native-default.frame.json",
+      "web_frame": "target/css-style-parity/web-default.frame.json",
+      "text_raster_report": "target/css-style-parity/text-raster-default.json",
+      "full_png_report": "target/css-style-parity/parity-default.json",
+      "imq_report": "target/css-style-parity/imq-default.json"
+    },
+    {
+      "name": "compact",
+      "native_png": "target/css-style-parity/native-compact.png",
+      "web_png": "target/css-style-parity/web-compact.png",
+      "native_frame": "target/css-style-parity/native-compact.frame.json",
+      "web_frame": "target/css-style-parity/web-compact.frame.json",
+      "text_raster_report": "target/css-style-parity/text-raster-compact.json",
+      "full_png_report": "target/css-style-parity/parity-compact.json",
+      "imq_report": "target/css-style-parity/imq-compact.json"
+    },
+    {
+      "name": "hidpi",
+      "native_png": "target/css-style-parity/native-hidpi.png",
+      "web_png": "target/css-style-parity/web-hidpi.png",
+      "native_frame": "target/css-style-parity/native-hidpi.frame.json",
+      "web_frame": "target/css-style-parity/web-hidpi.frame.json",
+      "text_raster_report": "target/css-style-parity/text-raster-hidpi.json",
+      "full_png_report": "target/css-style-parity/parity-hidpi.json",
+      "imq_report": "target/css-style-parity/imq-hidpi.json"
+    }
+  ]
+}

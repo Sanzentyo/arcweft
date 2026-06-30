@@ -210,7 +210,7 @@ fn choice_geometry_ignores_scroll_offset() {
 }
 
 #[test]
-fn dialogue_surface_styles_are_preserved_for_shared_text_blocks() {
+fn dialogue_surface_styles_are_preserved_for_styled_paragraph() {
     let frame = SharedFramePlanner::prepare(&RenderScene {
         dialogue: Some(RenderDialogue {
             speaker: "Narrator".to_owned(),
@@ -246,19 +246,26 @@ fn dialogue_surface_styles_are_preserved_for_shared_text_blocks() {
     })
     .expect("frame plans");
 
+    assert!(
+        frame
+            .text
+            .iter()
+            .all(|block| !block.text.contains("Surface style"))
+    );
     let body = frame
-        .text
+        .styled_paragraphs
         .iter()
-        .find(|block| block.text.contains("Surface style"))
-        .expect("body text block");
-    assert_eq!(body.rgba, [220, 180, 140, 255]);
+        .find(|paragraph| paragraph.text.contains("Surface style"))
+        .expect("styled paragraph");
+    let span = body.spans.first().expect("styled span");
+    assert_eq!(span.style.color, [220, 180, 140, 255]);
     assert_eq!(
-        body.font_family,
+        span.style.font_family,
         RenderFontFamily::Named("Yu Mincho".to_owned())
     );
-    assert_eq!(body.weight, RenderTextWeight::Bold);
-    assert_eq!(body.slant, RenderTextSlant::Italic);
-    assert!((body.font_size - 31.0).abs() < f32::EPSILON);
+    assert_eq!(span.style.weight, RenderTextWeight::Bold);
+    assert_eq!(span.style.slant, RenderTextSlant::Italic);
+    assert!((span.style.font_size - 31.0).abs() < f32::EPSILON);
 }
 
 fn text_target(name: &str) -> InteractionTarget {
