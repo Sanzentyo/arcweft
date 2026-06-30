@@ -113,12 +113,12 @@ pub(super) fn verify_types_command(
     let runtime_failed = runtime
         .as_ref()
         .is_some_and(|runtime| runtime.failed || runtime.diagnostics > 0);
-    let status =
-        if runtime_type_validation.has_errors() || verification.has_errors() || runtime_failed {
-            "failed"
-        } else {
-            "ok"
-        };
+    let verification_failed = verification.has_blocking_runtime_safety_gaps();
+    let status = if runtime_type_validation.has_errors() || verification_failed || runtime_failed {
+        "failed"
+    } else {
+        "ok"
+    };
     let report = VerifyTypesReport {
         status: status.to_owned(),
         source: report_path(selection.path()),

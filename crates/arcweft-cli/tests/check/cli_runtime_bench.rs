@@ -6958,23 +6958,23 @@ fn spec_rejected_edge_fixtures_fail_with_diagnostics() {
         ),
         (
             "tests/fixtures/arcw/spec_should_fail/019_unsafe_lifetime_missing_reason_rejected.arcw",
-            "unsafe lifetime block requires a reason",
+            "Generate unsafe lifetime audit metadata",
         ),
         (
             "tests/fixtures/arcw/spec_should_fail/020_unsafe_block_missing_safety_doc_rejected.arcw",
-            "unsafe lifetime block requires a SAFETY doc comment",
+            "Generate unsafe lifetime audit metadata",
         ),
     ] {
         let path = workspace_root().join(relative_path);
         let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-            .arg("check")
+            .arg("verify")
             .arg(&path)
             .output()
-            .expect("arcw check runs");
+            .expect("arcw verify runs");
 
         assert!(
             !output.status.success(),
-            "{} must be rejected by arcw check",
+            "{} must be rejected by arcw verify",
             path.display()
         );
         assert!(
@@ -7942,4 +7942,3 @@ source = "opening_bench.arcw"
         String::from_utf8_lossy(&bench.stderr)
     );
 }
-

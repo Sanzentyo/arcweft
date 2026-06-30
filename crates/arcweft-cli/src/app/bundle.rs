@@ -1,3 +1,4 @@
+use super::diagnostics::emit_diagnostics_for_path;
 use super::image_declarations::{
     DeclaredImageObject, declaration_arg_value, declared_image_asset_refs,
     parse_declared_image_objects, public_asset_ref_arg,
@@ -59,6 +60,10 @@ use arcweft_runtime_host::{
     BundleRunnerError, BundleRunnerOptions, INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar,
     internal_scheduler_manifest, run_bundle_file_with_native_adapters,
     run_bundle_with_native_adapters,
+};
+use arcweft_source::SourceName;
+use arcweft_verify::{
+    BackendKind, VerificationMode, VerificationPolicy, VerificationReport, verify_module_with_env,
 };
 use clap::Args;
 use serde::de::DeserializeOwned;
@@ -253,6 +258,18 @@ pub(in crate::app) fn compile_bundle_for_selection(
 ) -> Result<CompiledBundleArtifact, ExitCode> {
     let env = typecheck_env_for_selection(selection, None, phases)?;
     let compiled = compile_profile_runtime_plan(selection, &env, phases)?;
+    let verification = verify_module_with_env(
+        &compiled.hir,
+        &env,
+        VerificationPolicy {
+            mode: VerificationMode::Dev,
+            backend: BackendKind::Emit,
+        },
+    );
+    if verification.has_blocking_runtime_safety_gaps() {
+        emit_bundle_verification_diagnostics(selection, &verification);
+        return Err(ExitCode::FAILURE);
+    }
     let entry_kinds = compiled
         .plan
         .entries
@@ -310,6 +327,12 @@ pub(in crate::app) fn compile_bundle_for_selection(
         bundle,
         entry_kinds,
     })
+}
+
+fn emit_bundle_verification_diagnostics(selection: &SourceSelection, report: &VerificationReport) {
+    let source_name = SourceName::path(selection.path().display().to_string());
+    let diagnostics = report.source_diagnostics(&source_name);
+    emit_diagnostics_for_path(selection.path(), &diagnostics);
 }
 
 #[derive(Clone, Debug, Default)]

@@ -270,7 +270,7 @@ impl ProjectBuildMode {
 
 impl ProjectCommandReport {
     fn from_state(state: &ProjectCommandState) -> Self {
-        let failed = state.verification.has_errors();
+        let failed = state.verification.has_blocking_runtime_safety_gaps();
         let sources = state.loaded.sources();
         Self {
             status: if failed { "failed" } else { "ok" },
@@ -1424,7 +1424,7 @@ pub(super) fn compile_command(options: &CompileOptions) -> Result<(), ExitCode> 
             ))
         },
     )?;
-    if verification.has_errors() {
+    if verification.has_blocking_runtime_safety_gaps() {
         emit_verification_diagnostics(&selection, &verification);
         return Err(ExitCode::FAILURE);
     }

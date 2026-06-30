@@ -1729,7 +1729,7 @@ flow @flow.array_repeat_mismatch array_repeat_mismatch {
 }
 
 #[test]
-fn typechecks_unsafe_lifetime_audit_block_shape() {
+fn typecheck_defers_unsafe_lifetime_audit_metadata_to_verifier() {
     let tree = parse_ok(
         r#"
 flow @flow.audit audit {
@@ -1757,16 +1757,29 @@ flow @flow.audit audit {
 "#,
     );
     let hir = lower_to_hir(&tree).expect("unsafe lifetime block lowers");
-    let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("audit metadata is required");
-    assert!(
-        errors
-            .iter()
-            .any(|error| error.message().contains("requires a reason"))
+    typecheck_hir(&hir, &TypeCheckEnv::new())
+        .expect("missing audit metadata is a verifier-owned policy obligation");
+}
+
+#[test]
+fn typecheck_still_rejects_unrelated_errors_inside_unsafe_lifetime() {
+    let tree = parse_ok(
+        r#"
+flow @flow.audit audit {
+    unsafe lifetime @unsafe.cache_last_line {
+        let summary: i32 = "not an int"
+    }
+}
+"#,
     );
+    let hir = lower_to_hir(&tree).expect("unsafe lifetime block lowers");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
+        .expect_err("ordinary type errors still stop before verifier repair actions");
+
     assert!(
         errors
             .iter()
-            .any(|error| error.message().contains("SAFETY doc comment"))
+            .any(|error| error.message().contains("let annotation expects"))
     );
 }
 

@@ -563,6 +563,20 @@ impl VerificationReport {
             .any(|diagnostic| diagnostic.severity == Severity::Error)
     }
 
+    pub fn has_missing_unsafe_audit_metadata(&self) -> bool {
+        self.obligations.iter().any(|obligation| {
+            obligation.kind == ProofObligationKind::UnsafeLifetimeAudit
+                && matches!(&obligation.discharge, ProofDischarge::Missing)
+        })
+    }
+
+    /// Runtime-producing flows must not proceed with an unaudited unsafe
+    /// lifetime block even when the caller selected a dev verifier policy where
+    /// ordinary proof obligations are advisory warnings.
+    pub fn has_blocking_runtime_safety_gaps(&self) -> bool {
+        self.has_errors() || self.has_missing_unsafe_audit_metadata()
+    }
+
     pub fn has_solver_failures(&self) -> bool {
         self.solver_checks.iter().any(SolverCheck::is_failure)
     }

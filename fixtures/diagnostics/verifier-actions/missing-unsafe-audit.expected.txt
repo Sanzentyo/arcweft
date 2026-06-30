@@ -1,7 +1,7 @@
-Expected renderer properties for seq07.3 missing-unsafe-audit fixture:
+Expected renderer properties for seq07.3.1 missing-unsafe-audit fixture:
 
 - diagnostic identifies `unsafe lifetime @unsafe.cache_last_line` as an unsafe audit obligation.
-- output includes `Generate unsafe audit metadata` as a help suggestion.
+- output includes `Generate unsafe lifetime audit metadata` as a help suggestion.
 - output includes a patch preview replacing the opening `{` with:
 
 +  reason = _
@@ -14,8 +14,6 @@ Expected renderer properties for seq07.3 missing-unsafe-audit fixture:
 Current full CLI status:
 
 - `arcw verify fixtures/diagnostics/verifier-actions/missing-unsafe-audit.arcw`
-  stops in `sema.typecheck` before verifier diagnostics are emitted because
-  missing `reason` and missing `/// SAFETY:` are still hard typecheck errors.
-- The verifier/LSP source-edit path is covered by seq07.3 unit tests.
-- Full CLI convergence is tracked by
-  `docs/reviews/requests/2026-06-30-seq-07.3.1-unsafe-audit-cli-repair-path-convergence.md`.
+  reaches verifier diagnostics and exits with the verifier failure status in the
+  default `test` policy; it must not stop in `sema.typecheck` for missing audit metadata.
+- Unrelated type errors inside the same block still stop before verifier repair actions.

@@ -108,12 +108,9 @@ impl TypeChecker<'_> {
             Stmt::LifetimeSet { target, expr } => self.check_lifetime_set_stmt(target, expr),
             Stmt::Wait(target) => self.check_wait_stmt(target),
             Stmt::On { body, .. } => self.check_on_stmt(stmt, body),
-            Stmt::UnsafeLifetime {
-                reason,
-                has_safety_doc,
-                body,
-                ..
-            } => self.check_unsafe_lifetime_stmt(reason.as_ref(), *has_safety_doc, body),
+            Stmt::UnsafeLifetime { reason, body, .. } => {
+                self.check_unsafe_lifetime_stmt(reason.as_ref(), body);
+            }
             Stmt::If { condition, body } => self.check_if_stmt(condition, body),
             Stmt::Loop { body } => self.check_stmt_loop(body),
             Stmt::While { condition, body } => self.check_stmt_while(condition, body),
@@ -191,23 +188,9 @@ impl TypeChecker<'_> {
         });
     }
 
-    fn check_unsafe_lifetime_stmt(
-        &mut self,
-        reason: Option<&Expr>,
-        has_safety_doc: bool,
-        body: &[Stmt],
-    ) {
+    fn check_unsafe_lifetime_stmt(&mut self, reason: Option<&Expr>, body: &[Stmt]) {
         if let Some(reason) = reason {
             self.check_expr(reason);
-        } else {
-            self.errors.push(TypeCheckError::new(
-                "unsafe lifetime block requires a reason".to_owned(),
-            ));
-        }
-        if !has_safety_doc {
-            self.errors.push(TypeCheckError::new(
-                "unsafe lifetime block requires a SAFETY doc comment".to_owned(),
-            ));
         }
         for stmt in body {
             self.check_stmt(stmt);

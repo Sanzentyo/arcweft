@@ -52,9 +52,10 @@ The `missing-proof.arcw` CLI command is expected to exit with code `1` because
 the fixture intentionally contains a verifier error. It is accepted when the
 CLI output includes the typed `Generate proof stub` patch preview.
 
-The `missing-unsafe-audit.arcw` CLI command is currently expected to exit with
-code `1` at the typecheck phase. This documents the gap below rather than a
-completed CLI repair path.
+The `missing-unsafe-audit.arcw` CLI command exits with code `1` from verifier
+policy after seq07.3.1. It is accepted when the CLI output reaches verifier
+diagnostics and includes the typed `Generate unsafe lifetime audit metadata`
+patch preview.
 
 The package's broad filters `cargo test -p arcweft-verify verifier_obligation`,
 `cargo test -p arcweft-verify-lsp verifier_source_edit`, and
@@ -62,21 +63,24 @@ The package's broad filters `cargo test -p arcweft-verify verifier_obligation`,
 zero tests under those filters; the added exact tests above cover the required
 behavior directly.
 
-## Known gap
+## Seq07.3.1 closure
 
 `arcw verify fixtures/diagnostics/verifier-actions/missing-unsafe-audit.arcw`
-still stops in `sema.typecheck` before verifier diagnostics are emitted:
+now reaches verifier diagnostics instead of stopping in `sema.typecheck` for
+missing unsafe audit metadata. Typecheck still rejects ordinary unrelated body
+type errors before verifier repair actions are constructed.
 
 ```text
-unsafe lifetime block requires a reason
-unsafe lifetime block requires a SAFETY doc comment
+Generate unsafe lifetime audit metadata
+reason = _
+/// SAFETY: TODO: justify this unsafe lifetime block.
 ```
 
-The verifier and LSP layers can produce and transport the unsafe-audit
-source-edit action, but the full CLI verify path cannot display it until audit
-metadata ownership is converged between typecheck and verifier. This is split
-into
-`docs/reviews/requests/2026-06-30-seq-07.3.1-unsafe-audit-cli-repair-path-convergence.md`.
+The ownership convergence is documented in
+`docs/implementation/unsafe-audit-cli-repair-path-convergence-2026-06-30.md`.
+Missing unsafe audit metadata is now a verifier-owned policy obligation, and
+runtime-producing paths use verifier-owned `has_blocking_runtime_safety_gaps`
+rather than string matching rendered diagnostics.
 
 Structural audit result:
 

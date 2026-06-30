@@ -222,6 +222,24 @@ flow @flow.unsafe_demo unsafe_demo {
 }
 
 #[test]
+fn missing_unsafe_audit_metadata_is_runtime_safety_gap_in_dev() {
+    let report = report(
+        r"
+flow @flow.unsafe_demo unsafe_demo {
+    unsafe lifetime @unsafe.cache {
+        let summary = promote_unchecked('flow)
+    }
+}
+",
+        VerificationMode::Dev,
+    );
+
+    assert!(!report.has_errors());
+    assert!(report.has_missing_unsafe_audit_metadata());
+    assert!(report.has_blocking_runtime_safety_gaps());
+}
+
+#[test]
 fn unsafe_audit_without_exact_range_keeps_host_command() {
     let obligation = ProofObligation {
         id: "obligation.0002".to_owned(),

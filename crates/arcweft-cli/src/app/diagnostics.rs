@@ -286,4 +286,40 @@ mod tests {
         assert!(rendered.contains("+ proof @proof.obligation_0001"));
         assert!(rendered.contains("+     check _"));
     }
+
+    #[test]
+    fn plain_renderer_includes_verifier_unsafe_audit_patch_preview() {
+        let source = "flow audit_demo {\n    unsafe lifetime @unsafe.cache_last_line {\n        let summary = promote_unchecked('flow)\n    }\n}\n";
+        let marker = "@unsafe.cache_last_line {";
+        let start = source.find(marker).expect("unsafe lifetime marker") + marker.len() - 1;
+        let span = SourceSpan::new(
+            SourceName::path("game.arcw"),
+            SourceRange::new(start, start + 1),
+        );
+        let diagnostic = Diagnostic::new(
+            DiagnosticSeverity::Warning,
+            "unsafe lifetime audit `unsafe.cache_last_line` must include string reason and SAFETY docs",
+        )
+        .with_code("AWF0703")
+        .with_suggestion(
+            DiagnosticSuggestion::new(
+                "Generate unsafe lifetime audit metadata",
+                DiagnosticApplicability::HasPlaceholders,
+            )
+            .with_edit(SourceEdit::new(
+                span,
+                " reason = _\n{\n    /// SAFETY: TODO: justify this unsafe lifetime block.",
+            )),
+        );
+        let source = DiagnosticSource::new(Path::new("game.arcw"), source);
+        let groups = diagnostic_groups(&diagnostic, &source);
+        let rendered = Renderer::plain().render(&groups);
+
+        assert!(rendered.contains(
+            "warning[AWF0703]: unsafe lifetime audit `unsafe.cache_last_line` must include string reason and SAFETY docs"
+        ));
+        assert!(rendered.contains("Generate unsafe lifetime audit metadata"));
+        assert!(rendered.contains("reason = _"));
+        assert!(rendered.contains("/// SAFETY: TODO"));
+    }
 }
