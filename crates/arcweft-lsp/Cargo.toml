@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 arcweft-adapter-context = { path = "../arcweft-adapter-context", features = ["sema"] }
+arcweft-agent-repl = { path = "../arcweft-agent-repl" }
 arcweft-character = { path = "../arcweft-character" }
 arcweft-compiler = { path = "../arcweft-compiler" }
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::custom::ArcweftCustomRequest;
 use arcweft_rust_abi::{
     ArcweftRustField, ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage,
     ArcweftRustParam, ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind,
@@ -907,6 +908,34 @@ fn execute_command_uses_document_changes_when_client_supports_them() {
         workspace_edit.document_changes,
         Some(lsp_types::DocumentChanges::Edits(_))
     ));
+}
+
+#[test]
+fn repl_command_request_without_executor_returns_typed_host_unavailable() {
+    let mut session = ArcweftLspSession::new(&LspConfig::default());
+
+    let response = session.handle_request(Request {
+        id: RequestId::from(12),
+        method: ArcweftCustomRequest::ReplCommand.as_str().to_owned(),
+        params: serde_json::json!({
+            "input": ":tasks",
+            "command_id": 77,
+        }),
+    });
+
+    assert!(response.error.is_none());
+    let result = response.result.expect("LSP REPL command response");
+    assert_eq!(result["is_error"], serde_json::json!(true));
+    assert_eq!(result["result"]["command_id"], serde_json::json!(77));
+    assert_eq!(result["result"]["status"], serde_json::json!("error"));
+    assert_eq!(
+        result["diagnostics"][0]["code"],
+        serde_json::json!("host_unavailable")
+    );
+    assert_eq!(
+        result["result"]["evidence"]["kind"],
+        serde_json::json!("empty")
+    );
 }
 
 #[test]

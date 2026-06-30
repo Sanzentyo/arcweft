@@ -6,6 +6,7 @@
 //! adapter so this crate remains Sans I/O.
 
 mod dispatch;
+mod endpoint;
 mod host;
 mod json;
 mod parse;
@@ -14,6 +15,9 @@ mod types;
 
 pub use self::dispatch::{
     BuiltinReplCommandHandler, ReplBackgroundRequestSink, ReplCommandContext, ReplCommandHandler,
+};
+pub use self::endpoint::{
+    ReplCommandEndpoint, ReplCommandEndpointRequest, ReplCommandEndpointTracePolicy,
 };
 pub use self::host::{
     AgentSessionReplCommandHost, ReplCommandHost, ReplCommandHostError, ReplCommandHostResult,

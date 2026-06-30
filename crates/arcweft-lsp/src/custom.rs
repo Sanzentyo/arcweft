@@ -12,6 +12,7 @@ pub enum ArcweftCustomRequest {
     ExpandSugar,
     ShaderPreview,
     AudioCuePreview,
+    ReplCommand,
 }
 
 impl ArcweftCustomRequest {
@@ -29,6 +30,7 @@ impl ArcweftCustomRequest {
             Self::ExpandSugar => "arcweft/expandSugar",
             Self::ShaderPreview => "arcweft/shaderPreview",
             Self::AudioCuePreview => "arcweft/audioCuePreview",
+            Self::ReplCommand => "arcweft/replCommand",
         }
     }
 }

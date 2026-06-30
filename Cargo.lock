@@ -885,6 +885,7 @@ name = "arcweft-lsp"
 version = "0.1.0"
 dependencies = [
  "arcweft-adapter-context",
+ "arcweft-agent-repl",
  "arcweft-character",
  "arcweft-compiler",
  "arcweft-lang-hir",

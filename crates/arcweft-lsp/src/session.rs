@@ -1,10 +1,12 @@
 use crate::commands::ArcweftCommand;
 use crate::config::LspConfig;
+use crate::custom::ArcweftCustomRequest;
 use crate::diagnostics::{DocumentAnalysis, publish_diagnostics};
 use crate::documents::{DocumentError, DocumentSnapshot, DocumentStore};
 use crate::features;
 use crate::positions::PositionEncoding;
 use crate::profiles::{LspProfile, LspProfileResolver};
+use crate::repl_command::{LspReplCommandExecutor, LspReplCommandRequest, LspReplCommandResponse};
 use arcweft_verify_lsp::workspace_edit_from_tooling_edit;
 use lsp_server::{ErrorCode, Notification, Request, RequestId, Response};
 use lsp_types::notification::{
@@ -122,6 +124,15 @@ impl ArcweftLspSession {
 
     /// Handles one request and returns a response.
     pub fn handle_request(&mut self, request: Request) -> Response {
+        self.handle_request_with_repl_executor(request, None)
+    }
+
+    /// Handles one request with an optional borrowed REPL command executor.
+    pub fn handle_request_with_repl_executor(
+        &mut self,
+        request: Request,
+        repl: Option<&mut dyn LspReplCommandExecutor>,
+    ) -> Response {
         let id = request.id.clone();
         if self.cancelled.remove(&id) {
             return Response::new_err(
@@ -130,9 +141,10 @@ impl ArcweftLspSession {
                 "request was cancelled".to_owned(),
             );
         }
-        self.try_handle_request(request).unwrap_or_else(|error| {
-            Response::new_err(id, ErrorCode::InvalidParams as i32, error.to_string())
-        })
+        self.try_handle_request(request, repl)
+            .unwrap_or_else(|error| {
+                Response::new_err(id, ErrorCode::InvalidParams as i32, error.to_string())
+            })
     }
 
     /// Handles one notification and returns notifications to publish.
@@ -216,7 +228,11 @@ impl ArcweftLspSession {
         }
     }
 
-    fn try_handle_request(&self, request: Request) -> Result<Response, SessionError> {
+    fn try_handle_request(
+        &self,
+        request: Request,
+        repl: Option<&mut dyn LspReplCommandExecutor>,
+    ) -> Result<Response, SessionError> {
         match request.method.as_str() {
             Completion::METHOD => {
                 let (id, params) = extract::<CompletionParams>(request, Completion::METHOD)?;
@@ -297,6 +313,9 @@ impl ArcweftLspSession {
                     .map(features::inlay::hints);
                 Ok(Response::new_ok(id, result))
             }
+            method if method == ArcweftCustomRequest::ReplCommand.as_str() => {
+                Self::handle_repl_command_request(request, repl)
+            }
             ExecuteCommand::METHOD => {
                 let (id, params) =
                     extract::<ExecuteCommandParams>(request, ExecuteCommand::METHOD)?;
@@ -309,6 +328,19 @@ impl ArcweftLspSession {
                 format!("unsupported request `{}`", request.method),
             )),
         }
+    }
+
+    fn handle_repl_command_request(
+        request: Request,
+        repl: Option<&mut dyn LspReplCommandExecutor>,
+    ) -> Result<Response, SessionError> {
+        let (id, params) =
+            extract::<LspReplCommandRequest>(request, ArcweftCustomRequest::ReplCommand.as_str())?;
+        let result = match repl {
+            Some(executor) => executor.execute_repl_command(params),
+            None => LspReplCommandResponse::host_unavailable(&params),
+        };
+        Ok(Response::new_ok(id, result))
     }
 
     fn document_for_params(&self, uri: &lsp_types::Uri) -> Option<&DocumentSnapshot> {

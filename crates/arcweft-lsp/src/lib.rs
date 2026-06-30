@@ -11,6 +11,7 @@ pub mod documents;
 pub mod features;
 pub mod positions;
 pub mod profiles;
+pub mod repl_command;
 pub mod server;
 pub mod session;
 

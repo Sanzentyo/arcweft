@@ -4,14 +4,13 @@
 //! command host, and optional runtime task owner supplied by the concrete MCP
 //! host. It does not create task registries or parse formatted terminal text.
 
+use arcweft_agent_repl::ReplSession;
 use arcweft_agent_repl::command::{
-    ReplBackgroundRequestSink, ReplCommand, ReplCommandContext, ReplCommandDiagnostic,
-    ReplCommandDiagnosticCode, ReplCommandEvidence, ReplCommandHandler, ReplCommandHost,
-    ReplCommandId, ReplCommandJsonOptions, ReplCommandResult, ReplCommandStatus, ReplInput,
-    ReplProjectLoader, ReplTracePolicy, RuntimeTaskReplCommandHost, parse_repl_input,
-    repl_command_result_json,
+    ReplBackgroundRequestSink, ReplCommandEndpoint, ReplCommandEndpointRequest,
+    ReplCommandEndpointTracePolicy, ReplCommandHandler, ReplCommandHost, ReplCommandId,
+    ReplCommandJsonOptions, ReplCommandResult, ReplCommandStatus, ReplProjectLoader,
+    ReplTracePolicy, repl_command_result_json,
 };
-use arcweft_agent_repl::{ReplCellInput, ReplSession};
 use arcweft_runtime_driver::task::RuntimeTaskOwner;
 use serde::{Deserialize, Serialize};
 
@@ -53,12 +52,7 @@ pub enum McpReplTracePolicy {
 
 /// Borrowed execution surface used by a concrete MCP host.
 pub struct McpReplCommandEndpoint<'a> {
-    session: &'a mut ReplSession,
-    handler: &'a mut dyn ReplCommandHandler,
-    host: Option<&'a mut dyn ReplCommandHost>,
-    runtime_tasks: Option<&'a mut dyn RuntimeTaskOwner>,
-    loader: Option<&'a mut dyn ReplProjectLoader>,
-    background: Option<&'a mut dyn ReplBackgroundRequestSink>,
+    endpoint: ReplCommandEndpoint<'a>,
 }
 
 impl McpReplCommandRequest {
@@ -78,9 +72,26 @@ impl McpReplCommandRequest {
     fn repl_command_id(&self) -> ReplCommandId {
         ReplCommandId::new(self.command_id.max(1))
     }
+
+    fn endpoint_request(&self) -> ReplCommandEndpointRequest {
+        ReplCommandEndpointRequest {
+            input: self.input.clone(),
+            command_id: self.repl_command_id(),
+            trace_policy: self.trace_policy.into(),
+        }
+    }
 }
 
 impl From<McpReplTracePolicy> for ReplTracePolicy {
+    fn from(value: McpReplTracePolicy) -> Self {
+        match value {
+            McpReplTracePolicy::ReadWrite => Self::ReadWrite,
+            McpReplTracePolicy::ReadOnlyTrace => Self::ReadOnlyTrace,
+        }
+    }
+}
+
+impl From<McpReplTracePolicy> for ReplCommandEndpointTracePolicy {
     fn from(value: McpReplTracePolicy) -> Self {
         match value {
             McpReplTracePolicy::ReadWrite => Self::ReadWrite,
@@ -93,112 +104,41 @@ impl<'a> McpReplCommandEndpoint<'a> {
     #[must_use]
     pub fn new(session: &'a mut ReplSession, handler: &'a mut dyn ReplCommandHandler) -> Self {
         Self {
-            session,
-            handler,
-            host: None,
-            runtime_tasks: None,
-            loader: None,
-            background: None,
+            endpoint: ReplCommandEndpoint::new(session, handler).with_cell_execution_message(
+                "MCP REPL command endpoint accepts meta-commands; cell execution requires an Agent REPL evaluation runtime",
+            ),
         }
     }
 
     #[must_use]
     pub fn with_host(mut self, host: &'a mut dyn ReplCommandHost) -> Self {
-        self.host = Some(host);
+        self.endpoint = self.endpoint.with_host(host);
         self
     }
 
     #[must_use]
     pub fn with_runtime_tasks(mut self, runtime_tasks: &'a mut dyn RuntimeTaskOwner) -> Self {
-        self.runtime_tasks = Some(runtime_tasks);
+        self.endpoint = self.endpoint.with_runtime_tasks(runtime_tasks);
         self
     }
 
     #[must_use]
     pub fn with_loader(mut self, loader: &'a mut dyn ReplProjectLoader) -> Self {
-        self.loader = Some(loader);
+        self.endpoint = self.endpoint.with_loader(loader);
         self
     }
 
     #[must_use]
     pub fn with_background(mut self, background: &'a mut dyn ReplBackgroundRequestSink) -> Self {
-        self.background = Some(background);
+        self.endpoint = self.endpoint.with_background(background);
         self
     }
 
     /// Execute one typed request and return an MCP tool result containing JSON text.
     #[must_use]
     pub fn execute(&mut self, request: &McpReplCommandRequest) -> McpCallToolResult {
-        let result = self.result(request);
+        let result = self.endpoint.result(&request.endpoint_request());
         Self::tool_result(&result, request)
-    }
-
-    fn result(&mut self, request: &McpReplCommandRequest) -> ReplCommandResult {
-        let command_id = request.repl_command_id();
-        match parse_repl_input(&request.input) {
-            Ok(ReplInput::Empty) => ReplCommandResult::ok(command_id, ReplCommandEvidence::Empty),
-            Ok(ReplInput::Cell(cell)) => self.cell_result(command_id, request.trace_policy, &cell),
-            Ok(ReplInput::Command(command)) => {
-                self.command_result(command_id, request.trace_policy, command)
-            }
-            Err(error) => ReplCommandResult::error(
-                command_id,
-                ReplCommandEvidence::Empty,
-                error.into_diagnostic(),
-            ),
-        }
-    }
-
-    fn cell_result(
-        &mut self,
-        command_id: ReplCommandId,
-        trace_policy: McpReplTracePolicy,
-        cell: &ReplCellInput,
-    ) -> ReplCommandResult {
-        let mut context = ReplCommandContext::new(&mut *self.session)
-            .with_next_command_id(command_id)
-            .with_trace_policy(trace_policy.into());
-        if let Some(result) = context.reject_cell_submission_if_read_only(cell) {
-            return result;
-        }
-        ReplCommandResult::error(
-            command_id,
-            ReplCommandEvidence::Empty,
-            ReplCommandDiagnostic::error(
-                ReplCommandDiagnosticCode::UnhandledExtension,
-                "MCP REPL command endpoint accepts meta-commands; cell execution requires an Agent REPL evaluation runtime",
-            ),
-        )
-    }
-
-    fn command_result(
-        &mut self,
-        command_id: ReplCommandId,
-        trace_policy: McpReplTracePolicy,
-        command: ReplCommand,
-    ) -> ReplCommandResult {
-        let mut context = ReplCommandContext::new(&mut *self.session)
-            .with_next_command_id(command_id)
-            .with_trace_policy(trace_policy.into());
-        if let Some(loader) = self.loader.as_deref_mut() {
-            context = context.with_loader(loader);
-        }
-        if let Some(background) = self.background.as_deref_mut() {
-            context = context.with_background(background);
-        }
-
-        match (self.host.as_deref_mut(), self.runtime_tasks.as_deref_mut()) {
-            (Some(host), Some(runtime_tasks)) => {
-                let mut task_host = RuntimeTaskReplCommandHost::new(host, runtime_tasks);
-                let mut context = context.with_host(&mut task_host);
-                self.handler.handle(&mut context, command)
-            }
-            (Some(host), None) => {
-                let mut context = context.with_host(host);
-                self.handler.handle(&mut context, command)
-            }
-            (None, Some(_) | None) => self.handler.handle(&mut context, command),
-        }
     }
 
     fn tool_result(
@@ -274,6 +214,10 @@ mod tests {
         assert_eq!(
             ReplTracePolicy::from(McpReplTracePolicy::ReadOnlyTrace),
             ReplTracePolicy::ReadOnlyTrace
+        );
+        assert_eq!(
+            ReplCommandEndpointTracePolicy::from(McpReplTracePolicy::ReadOnlyTrace),
+            ReplCommandEndpointTracePolicy::ReadOnlyTrace
         );
     }
 }
