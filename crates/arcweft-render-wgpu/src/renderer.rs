@@ -1,8 +1,12 @@
 use crate::convert::{pixel_ceil_as_i32, pixel_floor_as_i32};
 use crate::geometry::{
-    PaintRect, PreparedFrame, RenderFontFamily, RenderImage, RenderStyledParagraph,
-    RenderStyledTextSpan, RenderTextBlock, RenderTextSlant, RenderTextStyle, RenderTextWeight,
+    PaintRect, PreparedFrame, PreparedUiScene, RenderFontFamily, RenderImage,
+    RenderStyledParagraph, RenderStyledTextSpan, RenderTextBlock, RenderTextSlant, RenderTextStyle,
+    RenderTextWeight,
 };
+use crate::ui_compositor::{UiCompositor, UiCompositorError, UiCompositorFrame};
+use crate::ui_direct_renderer::{WgpuPreparedUiMaskTextureProvider, WgpuUiDirectPrimitiveRenderer};
+use crate::ui_effects::UiTextureExtent;
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::image::ImageObjectFit;
 use arcweft_render_text::RichTextRange;
@@ -30,6 +34,8 @@ pub struct SharedRenderer {
     viewport: Viewport,
     atlas: TextAtlas,
     text_renderer: TextRenderer,
+    ui_compositor: UiCompositor,
+    ui_direct_renderer: WgpuUiDirectPrimitiveRenderer,
     registered_font_bytes: usize,
 }
 
@@ -42,6 +48,8 @@ pub enum SharedRendererError {
     TextPrepare(String),
     #[error("glyphon text rendering failed: {0}")]
     TextRender(String),
+    #[error("ui compositor failed: {0}")]
+    UiCompositor(#[from] UiCompositorError),
 }
 
 #[repr(C)]
@@ -67,6 +75,8 @@ impl SharedRenderer {
             TextRenderer::new(&mut atlas, device, wgpu::MultisampleState::default(), None);
         let (image_bind_group_layout, image_pipeline, image_sampler) =
             image_quad_pipeline(device, format);
+        let ui_compositor = UiCompositor::new(device, queue, format);
+        let ui_direct_renderer = WgpuUiDirectPrimitiveRenderer::new(device, format);
         Self {
             format,
             rectangle_pipeline: rectangle_pipeline(device, format),
@@ -79,6 +89,8 @@ impl SharedRenderer {
             swash_cache: SwashCache::new(),
             atlas,
             text_renderer,
+            ui_compositor,
+            ui_direct_renderer,
             registered_font_bytes: 0,
         }
     }
@@ -175,6 +187,27 @@ impl SharedRenderer {
                     frame.viewport.logical_height,
                 );
             }
+        }
+        for ui_scene in frame.ui_scenes() {
+            self.render_ui_scene(device, queue, &mut encoder, target, frame, ui_scene)?;
+        }
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("arcweft-shared-overlay-render-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: target,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
             if let Some((vertex_buffer, vertex_count)) = &overlay_vertex_buffer {
                 draw_rectangle_buffer(
                     &mut pass,
@@ -189,6 +222,37 @@ impl SharedRenderer {
         }
         queue.submit([encoder.finish()]);
         self.atlas.trim();
+        Ok(())
+    }
+
+    fn render_ui_scene(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        final_target: &wgpu::TextureView,
+        frame: &PreparedFrame,
+        prepared_ui: &PreparedUiScene,
+    ) -> Result<(), SharedRendererError> {
+        let mut mask_textures =
+            WgpuPreparedUiMaskTextureProvider::prepare(device, queue, &prepared_ui.resources);
+        let mut direct_renderer = self
+            .ui_direct_renderer
+            .for_resources(&prepared_ui.resources);
+        let result = self.ui_compositor.render_scene(&mut UiCompositorFrame {
+            device,
+            queue,
+            encoder,
+            final_target,
+            scene: &prepared_ui.scene,
+            target_extent: UiTextureExtent::new(
+                frame.viewport.physical_width,
+                frame.viewport.physical_height,
+            ),
+            direct_renderer: &mut direct_renderer,
+            mask_textures: &mut mask_textures,
+        });
+        result?;
         Ok(())
     }
 

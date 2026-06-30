@@ -143,6 +143,19 @@ pub enum UiCompositorError {
     ClipPath(#[from] UiClipPathPlanError),
     #[error("unsupported filter `{name}`: {reason}")]
     UnsupportedFilter { name: Box<str>, reason: Box<str> },
+    #[error("ui scene primitive range {start}..{end} is not present")]
+    InvalidPrimitiveRange { start: u32, end: u32 },
+    #[error("unsupported ui primitive `{primitive}`: {reason}")]
+    UnsupportedPrimitive {
+        primitive: &'static str,
+        reason: Box<str>,
+    },
+    #[error("missing ui image resource for resource index {resource_index}")]
+    MissingImageResource { resource_index: u32 },
+    #[error("ui glyph run {run_index} has no explicit PreparedFrame text handoff")]
+    UnhandledGlyphRun { run_index: u32 },
+    #[error("unsupported ui clip: {reason}")]
+    UnsupportedClip { reason: Box<str> },
 }
 
 #[repr(C)]

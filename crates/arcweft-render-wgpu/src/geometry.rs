@@ -1,4 +1,6 @@
 use crate::convert::saturating_usize_as_f32;
+use crate::ui_mask::UiMaskChannel;
+use crate::ui_scene::{UiMaskImage, UiScene};
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::{HitRect, HitTree};
 use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectFit, ImageObjectTransform};
@@ -81,6 +83,43 @@ pub struct RenderScene {
     pub preferences: RenderPreferences,
     pub interaction: InteractionVisualState,
     pub choice_scroll: ChoiceScroll,
+}
+
+/// One retained UI scene attached to the normal renderer frame.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreparedUiScene {
+    pub scene: UiScene,
+    pub resources: PreparedUiSceneResources,
+}
+
+/// Backend-neutral resource payloads required by one prepared `UiScene`.
+///
+/// The player/runtime adapter resolves URLs, bundle assets, and text handoffs
+/// before the frame reaches `arcweft-render-wgpu`; this type contains no I/O.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PreparedUiSceneResources {
+    images: Vec<PreparedUiImageResource>,
+    masks: Vec<PreparedUiMaskResource>,
+    glyph_handoffs: Vec<PreparedUiGlyphRunHandoff>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreparedUiImageResource {
+    pub resource_index: u32,
+    pub frame: RenderImageFrame,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreparedUiMaskResource {
+    pub image: UiMaskImage,
+    pub frame: RenderImageFrame,
+    pub channel: UiMaskChannel,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PreparedUiGlyphRunHandoff {
+    pub run_index: u32,
+    pub prepared_text_index: u32,
 }
 
 /// Minimal dialogue data consumed by the shared renderer.
@@ -275,6 +314,7 @@ pub struct PreparedFrame {
     pub text: Vec<RenderTextBlock>,
     pub styled_paragraphs: Vec<RenderStyledParagraph>,
     pub choices: Vec<RenderChoice>,
+    ui_scenes: Vec<PreparedUiScene>,
     dialogue_present: bool,
     focused_text_input: Option<PreparedTextInputTarget>,
 }
@@ -308,6 +348,21 @@ pub enum FramePlanError {
 }
 
 impl PreparedFrame {
+    #[must_use]
+    pub fn with_ui_scenes(mut self, ui_scenes: impl Into<Vec<PreparedUiScene>>) -> Self {
+        self.ui_scenes = ui_scenes.into();
+        self
+    }
+
+    pub fn push_ui_scene(&mut self, scene: PreparedUiScene) {
+        self.ui_scenes.push(scene);
+    }
+
+    #[must_use]
+    pub fn ui_scenes(&self) -> &[PreparedUiScene] {
+        &self.ui_scenes
+    }
+
     /// Returns the renderer-backed focused text target for platform IME sync.
     ///
     /// This is the single native/web focus-target source. It is populated only
@@ -320,6 +375,47 @@ impl PreparedFrame {
     #[must_use]
     pub const fn has_dialogue(&self) -> bool {
         self.dialogue_present
+    }
+}
+
+impl PreparedUiScene {
+    pub fn new(scene: UiScene) -> Self {
+        Self {
+            scene,
+            resources: PreparedUiSceneResources::default(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_resources(mut self, resources: PreparedUiSceneResources) -> Self {
+        self.resources = resources;
+        self
+    }
+}
+
+impl PreparedUiSceneResources {
+    pub fn push_image(&mut self, image: PreparedUiImageResource) {
+        self.images.push(image);
+    }
+
+    pub fn push_mask(&mut self, mask: PreparedUiMaskResource) {
+        self.masks.push(mask);
+    }
+
+    pub fn push_glyph_handoff(&mut self, handoff: PreparedUiGlyphRunHandoff) {
+        self.glyph_handoffs.push(handoff);
+    }
+
+    pub fn images(&self) -> &[PreparedUiImageResource] {
+        &self.images
+    }
+
+    pub fn masks(&self) -> &[PreparedUiMaskResource] {
+        &self.masks
+    }
+
+    pub fn glyph_handoffs(&self) -> &[PreparedUiGlyphRunHandoff] {
+        &self.glyph_handoffs
     }
 }
 
@@ -437,6 +533,7 @@ impl SharedFramePlanner {
             text,
             styled_paragraphs,
             choices,
+            ui_scenes: Vec::new(),
             dialogue_present: scene.dialogue.is_some(),
             focused_text_input,
         })
