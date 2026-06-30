@@ -1,0 +1,15 @@
+{
+  "bytecode_unit": {
+    "status": "hit",
+    "bytecode_unit_reuse_policy": "verified_reusable",
+    "actual_reuse_policy": "verified_reusable",
+    "recovery_action": "none_required"
+  },
+  "link_plan": {
+    "status": "hit",
+    "link_plan_reuse_policy": "verified_reusable",
+    "actual_reuse_policy": "verified_reusable",
+    "recovery_action": "none_required"
+  },
+  "note": "cache explain sees the underlying read-through result. arcw build reports hit_then_rebuilt because it has already rebuilt the stage in this cut."
+}

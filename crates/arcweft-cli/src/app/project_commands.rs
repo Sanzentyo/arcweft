@@ -14,7 +14,7 @@ use super::runtime::run::watch_inputs;
 use super::shared::print_json;
 use arcweft_bundle::{
     BundleFormat, BundleVirtualFileSpace,
-    container::{BundleView, ReadBudget},
+    container::{BundleSectionKind, BundleView, ReadBudget, SectionDescriptor},
     patch::BundlePatchArtifact,
     patch::encode_patch_bundle,
 };
@@ -23,11 +23,12 @@ use arcweft_compiler::{
     lower::lower_source_runtime_plan_with_options,
     parse::parse_source_text,
     persistent::{
-        BytecodeUnitFactsInput, HirBodyFactsInput, InterfaceSummaryFactsInput, LinkPlanFactsInput,
-        ParsedSyntaxFactsInput, PersistentFactsError, TypecheckGateFactsInput,
-        bytecode_unit_payload, hir_body_object, hir_body_payload, interface_summary_object,
-        interface_summary_payload, link_plan_payload, parsed_syntax_payload, typecheck_gate_object,
-        typecheck_gate_payload,
+        ActualBytecodeUnitFactsInput, ActualLinkPlanFactsInput, BytecodeUnitFactsInput,
+        HirBodyFactsInput, InterfaceSummaryFactsInput, LinkPlanFactsInput, ParsedSyntaxFactsInput,
+        PersistentFactsError, TypecheckGateFactsInput, actual_bytecode_unit_payload,
+        actual_link_plan_payload, bytecode_unit_payload, hir_body_object, hir_body_payload,
+        interface_summary_object, interface_summary_payload, link_plan_payload,
+        parsed_syntax_payload, typecheck_gate_object, typecheck_gate_payload,
     },
     project::{
         CompiledProject, CompiledProjectModule, InMemoryProjectCompileCache, NoProjectCompileCache,
@@ -41,8 +42,9 @@ use arcweft_project::{
     fingerprint::{BuildDigest, NamedDigest},
     incremental::{BuildSnapshot, CacheRecordStatus, InvalidationReason, QueryKind, QuerySnapshot},
     persistent_object::{
-        AwboEnvelope, CompilerBuildIdentity, CompilerObjectKey, CompilerObjectKind,
-        CompilerObjectPayload, HirBodyObject, InterfaceSummaryObject,
+        AwboEnvelope, BytecodeUnitObject, CompilerBuildIdentity, CompilerObjectKey,
+        CompilerObjectKind, CompilerObjectPayload, HirBodyObject, InterfaceSummaryObject,
+        LinkDescriptorObject,
     },
     sources::ProjectSourceFile,
 };
@@ -152,6 +154,22 @@ struct ProjectBuildCacheRecordReport {
     status: &'static str,
     key: String,
     object_digest: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reuse_evidence: Option<ProjectBuildPersistentReuseEvidence>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+enum ProjectBuildPersistentReuseEvidence {
+    ActualReusable {
+        producer: String,
+        identity: String,
+    },
+    Conservative {
+        producer: String,
+        missing_identity: String,
+        consumer_connection: String,
+    },
 }
 
 struct ProjectBuildCacheInputs<'a> {
@@ -170,6 +188,59 @@ struct PersistentQueryWriteThroughResult {
     reports: Vec<ProjectBuildCacheRecordReport>,
 }
 
+struct PersistentQueryWriteContext<'a> {
+    state: &'a ProjectCommandState,
+    snapshot: &'a BuildSnapshot,
+    cache_root: &'a Path,
+    store: &'a FilesystemCacheStore,
+    incremental: bool,
+    persistent_artifacts: &'a FullBuildPersistentArtifactContext,
+}
+
+struct ProjectBuildBundleOutput {
+    bundle_bytes: Vec<u8>,
+    bundle_cache_hit: bool,
+    persistent_artifacts: FullBuildPersistentArtifactContext,
+}
+
+#[derive(Clone, Debug)]
+struct FullBuildPersistentArtifactContext {
+    bytecode_units: Vec<FullBuildBytecodeUnitArtifact>,
+    link_plan: Option<FullBuildLinkPlanArtifact>,
+    conservative_reason: Option<FullBuildConservativeReason>,
+}
+
+#[derive(Clone, Debug)]
+struct FullBuildBytecodeUnitArtifact {
+    module: String,
+    runtime_plan_unit_digest: BuildDigest,
+    canonical_awbc_bytes: Vec<u8>,
+    awbc_schema_digest: BuildDigest,
+    verifier_policy_digest: BuildDigest,
+    codegen_policy_digest: BuildDigest,
+    relocation_import_table_digest: BuildDigest,
+}
+
+#[derive(Clone, Debug)]
+struct FullBuildLinkPlanArtifact {
+    module: String,
+    package: String,
+    ordered_unit_identities: Vec<NamedDigest>,
+    entrypoint_digest: BuildDigest,
+    resource_section_digest: BuildDigest,
+    adapter_requirements_digest: BuildDigest,
+    patch_compatibility_digest: BuildDigest,
+    product_build_options_digest: BuildDigest,
+}
+
+#[derive(Clone, Debug)]
+struct FullBuildConservativeReason {
+    bytecode_missing_identity: String,
+    bytecode_consumer_connection: String,
+    link_missing_identity: String,
+    link_consumer_connection: String,
+}
+
 struct PersistentQueryWriteItem {
     query: QueryKind,
     artifact_key: ArtifactKey,
@@ -177,6 +248,8 @@ struct PersistentQueryWriteItem {
     logical_item: String,
     payload: CompilerObjectPayload,
     object_digest: BuildDigest,
+    expected_link_descriptor: Option<LinkDescriptorObject>,
+    reuse_evidence: Option<ProjectBuildPersistentReuseEvidence>,
 }
 
 #[derive(Serialize)]
@@ -490,17 +563,20 @@ fn write_project_build_artifacts(
         "program-awfb",
         build_input_digest,
     );
-    let (bundle_bytes, bundle_cache_hit) = read_cached_project_bundle(&cache_root, bundle_key)
-        .map_or_else(
-            || compile_project_bundle_bytes(state),
-            |bytes| Ok((bytes, true)),
-        )?;
+    let ProjectBuildBundleOutput {
+        bundle_bytes,
+        bundle_cache_hit,
+        persistent_artifacts,
+    } = read_cached_project_bundle(&cache_root, bundle_key).map_or_else(
+        || compile_project_bundle_output(state, &plan_bytes),
+        |bytes| project_build_bundle_output_from_bytes(state, &plan_bytes, bytes, true),
+    )?;
     let mut phases = Vec::new();
     write_bundle_artifact(&bundle_path, bundle_bytes.clone(), &mut phases)?;
     let content_root = awfb_content_root_digest(&bundle_bytes)?;
     let mut snapshot = state.snapshot.clone().with_content_root(content_root);
     let persistent_write_through =
-        store_persistent_query_write_through(state, &snapshot, &cache_root)?;
+        store_persistent_query_write_through(state, &snapshot, &cache_root, &persistent_artifacts)?;
     snapshot = snapshot.with_additional_queries(persistent_write_through.queries);
     write_json_file(&snapshot_path, &snapshot)?;
     let cache_inputs = ProjectBuildCacheInputs {
@@ -562,7 +638,10 @@ fn awfb_content_root_digest(bundle_bytes: &[u8]) -> Result<BuildDigest, ExitCode
     Ok(BuildDigest::from_bytes(view.content_root().as_bytes()))
 }
 
-fn compile_project_bundle_bytes(state: &ProjectCommandState) -> Result<(Vec<u8>, bool), ExitCode> {
+fn compile_project_bundle_output(
+    state: &ProjectCommandState,
+    plan_bytes: &[u8],
+) -> Result<ProjectBuildBundleOutput, ExitCode> {
     let mut phases = Vec::new();
     let bundle = compile_bundle_for_selection(
         &state.selection,
@@ -576,7 +655,369 @@ fn compile_project_bundle_bytes(state: &ProjectCommandState) -> Result<(Vec<u8>,
             eprintln!("error: failed to encode project bundle: {error}");
             ExitCode::FAILURE
         })?;
-    Ok((bundle_bytes, false))
+    project_build_bundle_output_from_bytes(state, plan_bytes, bundle_bytes, false)
+}
+
+fn project_build_bundle_output_from_bytes(
+    state: &ProjectCommandState,
+    plan_bytes: &[u8],
+    bundle_bytes: Vec<u8>,
+    bundle_cache_hit: bool,
+) -> Result<ProjectBuildBundleOutput, ExitCode> {
+    let persistent_artifacts =
+        FullBuildPersistentArtifactContext::from_build_output(state, plan_bytes, &bundle_bytes)?;
+    Ok(ProjectBuildBundleOutput {
+        bundle_bytes,
+        bundle_cache_hit,
+        persistent_artifacts,
+    })
+}
+
+impl FullBuildPersistentArtifactContext {
+    fn from_build_output(
+        state: &ProjectCommandState,
+        plan_bytes: &[u8],
+        bundle_bytes: &[u8],
+    ) -> Result<Self, ExitCode> {
+        let view = BundleView::parse(bundle_bytes, ReadBudget::default()).map_err(|error| {
+            eprintln!("error: failed to inspect generated AWFB for persistent artifacts: {error}");
+            ExitCode::FAILURE
+        })?;
+        let canonical_awbc_bytes = project_product_awbc_bytes_from_view(&view)?;
+        let product_awbc_descriptor =
+            required_bundle_section_descriptor(&view, BundleSectionKind::ProgramBytecode)?;
+        let adapter_requirements_descriptor =
+            required_bundle_section_descriptor(&view, BundleSectionKind::AdapterRequirements)?;
+        let modules = state.compiled.modules();
+        let single_project_unit = modules.len() == 1
+            && state.compiled.compile_units().len() == 1
+            && state
+                .compiled
+                .compile_units()
+                .first()
+                .is_some_and(|unit| unit.modules().len() == 1);
+        if !single_project_unit {
+            return Ok(Self {
+                bytecode_units: Vec::new(),
+                link_plan: None,
+                conservative_reason: Some(FullBuildConservativeReason {
+                    bytecode_missing_identity: "current product AWBC is a linked-project artifact; no canonical per-module/per-SCC runtime-plan-unit digest plus narrowed AWBC bytes are available for this producer".to_owned(),
+                    bytecode_consumer_connection: "ordinary arcw build still rebuilds linked product bytecode for multi-module or multi-unit projects".to_owned(),
+                    link_missing_identity: "stable ordered VerifiedReusable unit identities are unavailable for every linked unit".to_owned(),
+                    link_consumer_connection: "ordinary arcw build still relinks the product bundle after shadow read-through".to_owned(),
+                }),
+            });
+        }
+
+        let module = modules
+            .first()
+            .expect("single_project_unit has one module")
+            .module()
+            .to_string();
+        let package = state
+            .loaded
+            .sources()
+            .manifest()
+            .package()
+            .name()
+            .as_str()
+            .to_owned();
+        let bytecode_unit = FullBuildBytecodeUnitArtifact {
+            module: module.clone(),
+            runtime_plan_unit_digest: BuildDigest::of(plan_bytes),
+            canonical_awbc_bytes,
+            awbc_schema_digest: bundle_section_schema_digest(product_awbc_descriptor),
+            verifier_policy_digest: full_build_bytecode_verifier_policy_digest(),
+            codegen_policy_digest: full_build_codegen_policy_digest(product_awbc_descriptor),
+            relocation_import_table_digest: bundle_section_identity_digest(
+                adapter_requirements_descriptor,
+            ),
+        };
+        let unit_identity = bytecode_unit.unit_identity_digest();
+        let link_plan = FullBuildLinkPlanArtifact {
+            module: module.clone(),
+            package,
+            ordered_unit_identities: vec![NamedDigest::new(module, unit_identity)],
+            entrypoint_digest: bundle_section_identity_digest(required_bundle_section_descriptor(
+                &view,
+                BundleSectionKind::Entrypoints,
+            )?),
+            resource_section_digest: full_build_resource_section_digest(&view),
+            adapter_requirements_digest: bundle_section_identity_digest(
+                adapter_requirements_descriptor,
+            ),
+            patch_compatibility_digest: full_build_patch_compatibility_digest(&view),
+            product_build_options_digest: full_build_product_options_digest(state),
+        };
+        Ok(Self {
+            bytecode_units: vec![bytecode_unit],
+            link_plan: Some(link_plan),
+            conservative_reason: None,
+        })
+    }
+
+    fn bytecode_unit(&self, module: &str) -> Option<&FullBuildBytecodeUnitArtifact> {
+        self.bytecode_units
+            .iter()
+            .find(|unit| unit.module == module)
+    }
+
+    fn link_plan(&self, module: &str) -> Option<&FullBuildLinkPlanArtifact> {
+        self.link_plan.as_ref().filter(|plan| plan.module == module)
+    }
+
+    fn expected_link_descriptor(
+        &self,
+        kind: CompilerObjectKind,
+        module: &str,
+        object_key: &CompilerObjectKey,
+    ) -> Option<LinkDescriptorObject> {
+        let plan = (kind == CompilerObjectKind::LinkPlan)
+            .then(|| self.link_plan(module))
+            .flatten()?;
+        Some(plan.descriptor(object_key.stage_inputs().dependency_body_digest_root()))
+    }
+
+    fn reuse_evidence(
+        &self,
+        kind: CompilerObjectKind,
+        module: &str,
+    ) -> Option<ProjectBuildPersistentReuseEvidence> {
+        match kind {
+            CompilerObjectKind::BytecodeUnit => self.bytecode_unit(module).map_or_else(
+                || {
+                    self.conservative_reason.as_ref().map(|reason| {
+                        ProjectBuildPersistentReuseEvidence::Conservative {
+                            producer: "full_build_bytecode_unit".to_owned(),
+                            missing_identity: reason.bytecode_missing_identity.clone(),
+                            consumer_connection: reason.bytecode_consumer_connection.clone(),
+                        }
+                    })
+                },
+                |unit| {
+                    Some(ProjectBuildPersistentReuseEvidence::ActualReusable {
+                        producer: "full_build_bytecode_unit".to_owned(),
+                        identity: unit.unit_identity_digest().to_hex(),
+                    })
+                },
+            ),
+            CompilerObjectKind::LinkPlan => self.link_plan(module).map_or_else(
+                || {
+                    self.conservative_reason.as_ref().map(|reason| {
+                        ProjectBuildPersistentReuseEvidence::Conservative {
+                            producer: "full_build_link_plan".to_owned(),
+                            missing_identity: reason.link_missing_identity.clone(),
+                            consumer_connection: reason.link_consumer_connection.clone(),
+                        }
+                    })
+                },
+                |plan| {
+                    Some(ProjectBuildPersistentReuseEvidence::ActualReusable {
+                        producer: "full_build_link_plan".to_owned(),
+                        identity: plan.link_identity_digest().to_hex(),
+                    })
+                },
+            ),
+            CompilerObjectKind::ParsedSyntax
+            | CompilerObjectKind::InterfaceSummary
+            | CompilerObjectKind::HirBody
+            | CompilerObjectKind::TypecheckGate
+            | CompilerObjectKind::LineTaskEvidence
+            | CompilerObjectKind::RuntimePlanUnit => None,
+        }
+    }
+}
+
+impl FullBuildBytecodeUnitArtifact {
+    fn unit_identity_digest(&self) -> BuildDigest {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"arcweft-full-build-bytecode-unit-identity-v1\0");
+        extend_build_digest(&mut bytes, self.runtime_plan_unit_digest);
+        extend_build_digest(&mut bytes, BuildDigest::of(&self.canonical_awbc_bytes));
+        extend_build_digest(&mut bytes, self.awbc_schema_digest);
+        extend_build_digest(&mut bytes, self.verifier_policy_digest);
+        extend_build_digest(&mut bytes, self.codegen_policy_digest);
+        extend_build_digest(&mut bytes, self.relocation_import_table_digest);
+        BuildDigest::of(&bytes)
+    }
+}
+
+impl FullBuildLinkPlanArtifact {
+    fn descriptor(&self, dependency_body_digest_root: BuildDigest) -> LinkDescriptorObject {
+        LinkDescriptorObject {
+            ordered_unit_identities: self.ordered_unit_identities.clone(),
+            entrypoint_digest: self.entrypoint_digest,
+            resource_section_digest: self.resource_section_digest,
+            adapter_requirements_digest: self.adapter_requirements_digest,
+            patch_compatibility_digest: self.patch_compatibility_digest,
+            product_build_options_digest: self.product_build_options_digest,
+            dependency_body_digest_root,
+        }
+    }
+
+    fn link_identity_digest(&self) -> BuildDigest {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"arcweft-full-build-link-plan-identity-v1\0");
+        for unit in &self.ordered_unit_identities {
+            bytes.extend_from_slice(unit.name().as_bytes());
+            bytes.push(0);
+            extend_build_digest(&mut bytes, unit.digest());
+        }
+        extend_build_digest(&mut bytes, self.entrypoint_digest);
+        extend_build_digest(&mut bytes, self.resource_section_digest);
+        extend_build_digest(&mut bytes, self.adapter_requirements_digest);
+        extend_build_digest(&mut bytes, self.patch_compatibility_digest);
+        extend_build_digest(&mut bytes, self.product_build_options_digest);
+        BuildDigest::of(&bytes)
+    }
+}
+
+fn project_product_awbc_bytes_from_view(view: &BundleView<'_>) -> Result<Vec<u8>, ExitCode> {
+    let descriptor = required_bundle_section_descriptor(view, BundleSectionKind::ProgramBytecode)?;
+    view.decoded_section(descriptor.id())
+        .map_err(|error| {
+            eprintln!("error: failed to decode generated AWFB ProgramBytecode section: {error}");
+            ExitCode::FAILURE
+        })?
+        .ok_or_else(|| {
+            eprintln!("error: generated AWFB ProgramBytecode section is not embedded");
+            ExitCode::FAILURE
+        })
+}
+
+fn required_bundle_section_descriptor<'a>(
+    view: &'a BundleView<'_>,
+    kind: BundleSectionKind,
+) -> Result<&'a SectionDescriptor, ExitCode> {
+    let mut matches = view
+        .sections()
+        .iter()
+        .filter(|descriptor| descriptor.known_kind() == Some(kind));
+    let Some(descriptor) = matches.next() else {
+        eprintln!("error: generated AWFB is missing required {kind:?} section");
+        return Err(ExitCode::FAILURE);
+    };
+    if matches.next().is_some() {
+        eprintln!("error: generated AWFB contains multiple {kind:?} sections");
+        return Err(ExitCode::FAILURE);
+    }
+    Ok(descriptor)
+}
+
+fn bundle_section_schema_digest(descriptor: &SectionDescriptor) -> BuildDigest {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"arcweft-awfb-product-awbc-section-schema-v1\0");
+    if let Some(kind) = descriptor.known_kind() {
+        bytes.extend_from_slice(&kind.encoded().to_le_bytes());
+    }
+    bytes.extend_from_slice(&descriptor.schema_version().to_le_bytes());
+    BuildDigest::of(&bytes)
+}
+
+fn bundle_section_identity_digest(descriptor: &SectionDescriptor) -> BuildDigest {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"arcweft-awfb-section-identity-v1\0");
+    bytes.extend_from_slice(&descriptor.kind_code().encoded().to_le_bytes());
+    bytes.extend_from_slice(&descriptor.schema_version().to_le_bytes());
+    bytes.extend_from_slice(&descriptor.decoded_size().to_le_bytes());
+    bytes.extend_from_slice(&descriptor.content_digest().as_bytes());
+    bytes.push(u8::from(descriptor.required()));
+    bytes.push(descriptor.residency().encoded());
+    BuildDigest::of(&bytes)
+}
+
+fn full_build_resource_section_digest(view: &BundleView<'_>) -> BuildDigest {
+    let mut descriptors = view
+        .sections()
+        .iter()
+        .filter(|descriptor| {
+            !matches!(
+                descriptor.known_kind(),
+                Some(
+                    BundleSectionKind::ProgramBytecode
+                        | BundleSectionKind::Entrypoints
+                        | BundleSectionKind::AdapterRequirements
+                )
+            )
+        })
+        .collect::<Vec<_>>();
+    descriptors.sort_by_key(|descriptor| descriptor.id());
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"arcweft-full-build-resource-sections-v1\0");
+    for descriptor in descriptors {
+        bytes.extend_from_slice(&descriptor.id().as_bytes());
+        bytes.extend_from_slice(&bundle_section_identity_digest(descriptor).as_bytes());
+    }
+    BuildDigest::of(&bytes)
+}
+
+fn full_build_patch_compatibility_digest(view: &BundleView<'_>) -> BuildDigest {
+    let mut descriptors = view.sections().iter().collect::<Vec<_>>();
+    descriptors.sort_by_key(|descriptor| descriptor.id());
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"arcweft-full-build-patch-compatibility-v1\0");
+    for descriptor in descriptors {
+        bytes.extend_from_slice(&descriptor.id().as_bytes());
+        bytes.extend_from_slice(&descriptor.kind_code().encoded().to_le_bytes());
+        if let Some(kind) = descriptor.known_kind() {
+            bytes.extend_from_slice(format!("{:?}", kind.patch_default_compatibility()).as_bytes());
+        }
+        bytes.push(0);
+        bytes.extend_from_slice(&descriptor.content_digest().as_bytes());
+    }
+    BuildDigest::of(&bytes)
+}
+
+fn full_build_bytecode_verifier_policy_digest() -> BuildDigest {
+    BuildDigest::of(
+        b"arcweft-full-build-bytecode-verifier-policy-v1:awbc-read-through:require_entrypoint=false",
+    )
+}
+
+fn full_build_codegen_policy_digest(descriptor: &SectionDescriptor) -> BuildDigest {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"arcweft-full-build-codegen-policy-v1\0");
+    bytes.extend_from_slice(b"product-awbc-lowerer-default\0");
+    bytes.extend_from_slice(&bundle_section_schema_digest(descriptor).as_bytes());
+    BuildDigest::of(&bytes)
+}
+
+fn full_build_product_options_digest(state: &ProjectCommandState) -> BuildDigest {
+    let project = state.snapshot.project();
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"arcweft-full-build-product-options-v1\0");
+    bytes.extend_from_slice(project.package().as_bytes());
+    bytes.push(0);
+    bytes.extend_from_slice(project.profile().as_bytes());
+    bytes.push(0);
+    bytes.extend_from_slice(project.target_triple().as_bytes());
+    bytes.push(0);
+    for feature in project.target_features() {
+        bytes.extend_from_slice(feature.as_bytes());
+        bytes.push(0);
+    }
+    bytes.extend_from_slice(b"bundle-format=awfb\0include-space=asset\0");
+    extend_build_digest(&mut bytes, project.adapter_environment_digest());
+    extend_build_digest(&mut bytes, project.launch_profile_digest());
+    extend_build_digest(&mut bytes, project.declared_environment_digest());
+    if let Some(profile) = state.selection.profile() {
+        bytes.extend_from_slice(b"selection=profile\0");
+        bytes.extend_from_slice(profile.id().as_str().as_bytes());
+    } else {
+        bytes.extend_from_slice(b"selection=project-default\0");
+    }
+    BuildDigest::of(&bytes)
+}
+
+fn persistent_feature_set_digest(features: &[String]) -> BuildDigest {
+    let mut features = features.to_vec();
+    features.sort();
+    features.dedup();
+    BuildDigest::of(features.join("\0").as_bytes())
+}
+
+fn extend_build_digest(bytes: &mut Vec<u8>, digest: BuildDigest) {
+    bytes.extend_from_slice(&digest.as_bytes());
 }
 
 fn read_cached_project_bundle(cache_root: &Path, key: ArtifactKey) -> Option<Vec<u8>> {
@@ -702,6 +1143,7 @@ fn store_project_build_cache_artifacts(
             },
             key: key.to_string(),
             object_digest: record.object_digest().to_string(),
+            reuse_evidence: None,
         })
     })
     .collect()
@@ -711,6 +1153,7 @@ fn store_persistent_query_write_through(
     state: &ProjectCommandState,
     snapshot: &BuildSnapshot,
     cache_root: &Path,
+    persistent_artifacts: &FullBuildPersistentArtifactContext,
 ) -> Result<PersistentQueryWriteThroughResult, ExitCode> {
     let sources = state.loaded.sources();
     let package = sources.manifest().package().name().as_str();
@@ -727,32 +1170,29 @@ fn store_persistent_query_write_through(
         queries: Vec::new(),
         reports: Vec::new(),
     };
+    let context = PersistentQueryWriteContext {
+        state,
+        snapshot,
+        cache_root,
+        store: &store,
+        incremental,
+        persistent_artifacts,
+    };
 
     for source in sources.modules() {
-        write_persistent_query_source(
-            state,
-            snapshot,
-            cache_root,
-            &store,
-            incremental,
-            source,
-            &mut result,
-        )?;
+        write_persistent_query_source(&context, source, &mut result)?;
     }
 
     Ok(result)
 }
 
 fn write_persistent_query_source(
-    state: &ProjectCommandState,
-    snapshot: &BuildSnapshot,
-    cache_root: &Path,
-    store: &FilesystemCacheStore,
-    incremental: bool,
+    context: &PersistentQueryWriteContext<'_>,
     source: &ProjectSourceFile,
     result: &mut PersistentQueryWriteThroughResult,
 ) -> Result<(), ExitCode> {
-    let compiled = state
+    let compiled = context
+        .state
         .compiled
         .modules()
         .iter()
@@ -767,7 +1207,7 @@ fn write_persistent_query_source(
         );
         return Err(ExitCode::FAILURE);
     }
-    let unit_cache_status = module_compile_cache_status(state, source);
+    let unit_cache_status = module_compile_cache_status(context.state, source);
     for kind in [
         CompilerObjectKind::ParsedSyntax,
         CompilerObjectKind::InterfaceSummary,
@@ -776,13 +1216,19 @@ fn write_persistent_query_source(
         CompilerObjectKind::BytecodeUnit,
         CompilerObjectKind::LinkPlan,
     ] {
-        if let Some(item) =
-            persistent_query_write_item(state, snapshot, source, compiled, &parsed, kind)?
-        {
+        if let Some(item) = persistent_query_write_item(
+            context.state,
+            context.snapshot,
+            source,
+            compiled,
+            &parsed,
+            context.persistent_artifacts,
+            kind,
+        )? {
             result.queries.push(commit_persistent_query_item(
-                store,
-                cache_root,
-                incremental,
+                context.store,
+                context.cache_root,
+                context.incremental,
                 unit_cache_status,
                 item,
                 &mut result.reports,
@@ -798,6 +1244,7 @@ fn persistent_query_write_item(
     source: &ProjectSourceFile,
     compiled: &CompiledProjectModule,
     parsed: &ParsedSource,
+    persistent_artifacts: &FullBuildPersistentArtifactContext,
     kind: CompilerObjectKind,
 ) -> Result<Option<PersistentQueryWriteItem>, ExitCode> {
     let Some(query) = kind.safe_read_through_query_kind() else {
@@ -844,8 +1291,19 @@ fn persistent_query_write_item(
         dependency_body_digests,
         query_options_digest,
     );
-    let payload = persistent_query_payload(kind, &object_key, source, compiled, parsed)?;
+    let payload = persistent_query_payload(
+        kind,
+        &object_key,
+        source,
+        compiled,
+        parsed,
+        persistent_artifacts,
+    )?;
     let object_digest = persistent_query_object_digest(&object_key, payload.clone())?;
+    let module_label = source.module().to_string();
+    let expected_link_descriptor =
+        persistent_artifacts.expected_link_descriptor(kind, &module_label, &object_key);
+    let reuse_evidence = persistent_artifacts.reuse_evidence(kind, &module_label);
     Ok(Some(PersistentQueryWriteItem {
         query,
         artifact_key,
@@ -853,6 +1311,8 @@ fn persistent_query_write_item(
         logical_item,
         payload,
         object_digest,
+        expected_link_descriptor,
+        reuse_evidence,
     }))
 }
 
@@ -862,6 +1322,7 @@ fn persistent_query_payload(
     source: &ProjectSourceFile,
     compiled: &CompiledProjectModule,
     parsed: &ParsedSource,
+    persistent_artifacts: &FullBuildPersistentArtifactContext,
 ) -> Result<CompilerObjectPayload, ExitCode> {
     let source_label = source.path().display().to_string();
     let module_label = source.module().to_string();
@@ -888,11 +1349,15 @@ fn persistent_query_payload(
         CompilerObjectKind::TypecheckGate => {
             typecheck_gate_payload_for_query(object_key, &module_label, compiled, parsed)
         }
-        CompilerObjectKind::BytecodeUnit => {
-            bytecode_unit_payload_for_query(object_key, &module_label, compiled, parsed)
-        }
+        CompilerObjectKind::BytecodeUnit => bytecode_unit_payload_for_query(
+            object_key,
+            &module_label,
+            compiled,
+            parsed,
+            persistent_artifacts,
+        ),
         CompilerObjectKind::LinkPlan => {
-            link_plan_payload_for_query(object_key, &module_label, parsed)
+            link_plan_payload_for_query(object_key, &module_label, parsed, persistent_artifacts)
         }
         CompilerObjectKind::LineTaskEvidence | CompilerObjectKind::RuntimePlanUnit => {
             unreachable!("safe query kind list is exhaustive")
@@ -929,6 +1394,7 @@ fn bytecode_unit_payload_for_query(
     module_label: &str,
     compiled: &CompiledProjectModule,
     parsed: &ParsedSource,
+    persistent_artifacts: &FullBuildPersistentArtifactContext,
 ) -> Result<CompilerObjectPayload, PersistentFactsError> {
     let (interface_summary, hir_body) =
         interface_and_hir_sibling_objects(object_key, module_label, compiled, parsed)?;
@@ -944,6 +1410,25 @@ fn bytecode_unit_payload_for_query(
         interface_summary: &interface_summary,
         hir_body: &hir_body,
     })?;
+    if let Some(actual) = persistent_artifacts.bytecode_unit(module_label) {
+        return actual_bytecode_unit_payload(&ActualBytecodeUnitFactsInput {
+            key: object_key,
+            module: module_label,
+            parsed,
+            hir_body: &hir_body,
+            typecheck_gate: &typecheck_gate,
+            runtime_plan_unit_digest: actual.runtime_plan_unit_digest,
+            canonical_awbc_bytes: &actual.canonical_awbc_bytes,
+            awbc_schema_digest: actual.awbc_schema_digest,
+            verifier_policy_digest: actual.verifier_policy_digest,
+            codegen_policy_digest: actual.codegen_policy_digest,
+            target_profile_digest: object_key.query_options_digest,
+            feature_set_digest: persistent_feature_set_digest(
+                &object_key.compiler.enabled_features,
+            ),
+            relocation_import_table_digest: actual.relocation_import_table_digest,
+        });
+    }
     bytecode_unit_payload(&BytecodeUnitFactsInput {
         key: object_key,
         module: module_label,
@@ -957,14 +1442,28 @@ fn link_plan_payload_for_query(
     object_key: &CompilerObjectKey,
     module_label: &str,
     parsed: &ParsedSource,
+    persistent_artifacts: &FullBuildPersistentArtifactContext,
 ) -> Result<CompilerObjectPayload, PersistentFactsError> {
+    if let Some(actual) = persistent_artifacts.link_plan(module_label) {
+        return actual_link_plan_payload(&ActualLinkPlanFactsInput {
+            key: object_key,
+            package: &actual.package,
+            parsed,
+            ordered_unit_identities: actual.ordered_unit_identities.clone(),
+            entrypoint_digest: actual.entrypoint_digest,
+            resource_section_digest: actual.resource_section_digest,
+            adapter_requirements_digest: actual.adapter_requirements_digest,
+            patch_compatibility_digest: actual.patch_compatibility_digest,
+            product_build_options_digest: actual.product_build_options_digest,
+        });
+    }
     link_plan_payload(&LinkPlanFactsInput {
         key: object_key,
         package: module_label,
         parsed,
         ordered_unit_digests: vec![NamedDigest::new(
             module_label.to_owned(),
-            arcweft_project::persistent_object::BytecodeUnitObject::conservative_canonical_bytecode_digest(),
+            BytecodeUnitObject::conservative_canonical_bytecode_digest(),
         )],
         product_build_options_digest: persistent_query_options_digest(QueryKind::LinkPlan),
     })
@@ -1019,25 +1518,17 @@ fn commit_persistent_query_item(
     store: &FilesystemCacheStore,
     cache_root: &Path,
     incremental: bool,
-    unit_cache_status: ProjectCompileCacheStatus,
+    _unit_cache_status: ProjectCompileCacheStatus,
     item: PersistentQueryWriteItem,
     reports: &mut Vec<ProjectBuildCacheRecordReport>,
 ) -> Result<QuerySnapshot, ExitCode> {
-    let (status, written_digest) = if !incremental {
-        (
-            CacheRecordStatus::Rebuilt {
-                reason: InvalidationReason::OptionsChanged,
-            },
-            item.object_digest,
-        )
-    } else if unit_cache_status.is_hit() {
-        (CacheRecordStatus::Hit, item.object_digest)
-    } else {
-        let read = store.read_persistent_query(&PersistentQueryReadRequest::new(
-            item.query,
-            item.artifact_key,
-            item.object_key.clone(),
-        ));
+    let (status, written_digest) = if incremental {
+        let mut read_request =
+            PersistentQueryReadRequest::new(item.query, item.artifact_key, item.object_key.clone());
+        if let Some(descriptor) = item.expected_link_descriptor.clone() {
+            read_request = read_request.with_expected_link_descriptor(descriptor);
+        }
+        let read = store.read_persistent_query(&read_request);
         let status = persistent_query_status_after_read(&read);
         let receipt = store
             .write_persistent_query(&PersistentQueryWriteRequest::new(
@@ -1062,8 +1553,16 @@ fn commit_persistent_query_item(
             status: status.as_str(),
             key: item.artifact_key.to_string(),
             object_digest: receipt.object_digest.to_string(),
+            reuse_evidence: item.reuse_evidence,
         });
         (status, receipt.object_digest)
+    } else {
+        (
+            CacheRecordStatus::Rebuilt {
+                reason: InvalidationReason::OptionsChanged,
+            },
+            item.object_digest,
+        )
     };
     Ok(QuerySnapshot::new(
         item.query,
@@ -1074,25 +1573,20 @@ fn commit_persistent_query_item(
 }
 
 fn persistent_query_status_after_read(read: &PersistentQueryReadOutcome) -> CacheRecordStatus {
-    match read {
-        PersistentQueryReadOutcome::Hit(hit) => hit
-            .object_kind
-            .conservative_read_through_policy()
-            .map_or_else(
-                || CacheRecordStatus::HitThenRebuilt {
-                    reason: InvalidationReason::ConservativeInvalidation {
-                        policy: "safe_awbo_facts_do_not_reconstruct_compiler_ir".to_owned(),
-                    },
-                },
-                |policy| CacheRecordStatus::HitThenRebuilt {
-                    reason: InvalidationReason::ConservativeInvalidation {
-                        policy: policy.to_owned(),
-                    },
-                },
-            ),
-        PersistentQueryReadOutcome::Miss(miss) => CacheRecordStatus::Rebuilt {
-            reason: miss.reason.invalidation_reason(),
+    match read.cache_record_status() {
+        CacheRecordStatus::Hit => CacheRecordStatus::HitThenRebuilt {
+            reason: InvalidationReason::ConservativeInvalidation {
+                policy: "full_build_shadow_validation_rebuilt_after_persistent_read_through"
+                    .to_owned(),
+            },
         },
+        CacheRecordStatus::HitThenRebuilt { reason } => {
+            CacheRecordStatus::HitThenRebuilt { reason }
+        }
+        CacheRecordStatus::Miss { reason } | CacheRecordStatus::Rebuilt { reason } => {
+            CacheRecordStatus::Rebuilt { reason }
+        }
+        CacheRecordStatus::Stored => CacheRecordStatus::Stored,
     }
 }
 
@@ -1699,330 +2193,4 @@ fn write_text_artifact(path: &Path, contents: &str) -> Result<(), ExitCode> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        CompileEmit, ProfileOptions, ProjectCommandReport, compile_project_command,
-        compile_project_command_with_cache, project_cache_root, write_project_build_artifacts,
-    };
-    use arcweft_compiler::project::InMemoryProjectCompileCache;
-    use arcweft_project::{
-        fingerprint::BuildDigest,
-        incremental::{CacheRecordStatus, InvalidationReason, QueryKind},
-    };
-    use arcweft_project_loader::cache::record::CacheRecord;
-    use arcweft_verify::VerificationMode;
-    use std::{
-        fs,
-        path::{Path, PathBuf},
-        time::{SystemTime, UNIX_EPOCH},
-    };
-
-    #[test]
-    fn compile_emit_owns_output_path_policy() {
-        assert_eq!(
-            CompileEmit::Hir
-                .output_path(Path::new("src/main.arcw"), None)
-                .expect("HIR output resolves")
-                .as_deref(),
-            Some(Path::new("src/main.hir"))
-        );
-        assert_eq!(
-            CompileEmit::Plan
-                .output_path(
-                    Path::new("src/main.arcw"),
-                    Some(Path::new("target/main.plan")),
-                )
-                .expect("explicit plan output resolves")
-                .as_deref(),
-            Some(Path::new("target/main.plan"))
-        );
-        assert!(
-            CompileEmit::Check
-                .output_path(Path::new("src/main.arcw"), Some(Path::new("unused")))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn release_project_diagnostics_reject_dynamic_goto() {
-        let root = temp_project_root("release-dynamic-goto");
-        let source_root = root.join("src");
-        fs::create_dir_all(&source_root).expect("source dir creates");
-        fs::write(
-            root.join("arcw.toml"),
-            r#"
-[package]
-name = "release_dynamic_goto"
-"#,
-        )
-        .expect("manifest writes");
-        fs::write(
-            source_root.join("main.arcw"),
-            r#"
-entry game {
-    start(@flow.opening)
-}
-
-flow opening {
-    let route = @flow.done
-    goto route
-}
-
-flow done {
-    return "done"
-}
-"#,
-        )
-        .expect("source writes");
-        let profile = ProfileOptions {
-            profile: None,
-            manifest: root.join("arcw.toml"),
-        };
-
-        let dev =
-            compile_project_command(&profile, VerificationMode::Dev).expect("dev project compiles");
-        assert!(
-            !dev.verification
-                .diagnostics
-                .iter()
-                .any(|diagnostic| { diagnostic.id.starts_with("diagnostic.release.dynamic_goto") })
-        );
-        let release = compile_project_command(&profile, VerificationMode::Release)
-            .expect("release project compiles before release diagnostics");
-
-        assert!(release.verification.has_errors());
-        assert!(release.verification.diagnostics.iter().any(|diagnostic| {
-            diagnostic.id.starts_with("diagnostic.release.dynamic_goto")
-                && diagnostic.message.contains("flow.opening")
-        }));
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn cache_build_writes_persistent_query_evidence_and_preserves_awfb_root() {
-        let (root, profile) = cache_test_project("persistent-query-evidence");
-        let target_root = root.join("target").join("debug");
-        let first = compile_project_command(&profile, VerificationMode::Dev)
-            .expect("first project compiles");
-        let first_report = ProjectCommandReport::from_state(&first);
-        let first_artifacts = write_project_build_artifacts(&first, &first_report, &target_root)
-            .expect("first artifacts write");
-        assert!(first_artifacts.snapshot.queries().iter().any(|query| {
-            query.query() == QueryKind::Parse
-                && matches!(
-                    query.status(),
-                    CacheRecordStatus::Rebuilt {
-                        reason: InvalidationReason::MissingRecord
-                    }
-                )
-        }));
-        assert!(first_artifacts.snapshot.queries().iter().any(|query| {
-            query.query() == QueryKind::Interface
-                && matches!(
-                    query.status(),
-                    CacheRecordStatus::Rebuilt {
-                        reason: InvalidationReason::MissingRecord
-                    }
-                )
-        }));
-
-        let second = compile_project_command(&profile, VerificationMode::Dev)
-            .expect("second project compiles");
-        let second_report = ProjectCommandReport::from_state(&second);
-        let second_artifacts = write_project_build_artifacts(&second, &second_report, &target_root)
-            .expect("second artifacts write");
-
-        assert_eq!(
-            first_artifacts.snapshot.content_root(),
-            second_artifacts.snapshot.content_root()
-        );
-        assert!(second_artifacts.snapshot.queries().iter().any(|query| {
-            matches!(query.query(), QueryKind::Interface | QueryKind::HirBody)
-                && matches!(
-                    query.status(),
-                    CacheRecordStatus::HitThenRebuilt {
-                        reason: InvalidationReason::ConservativeInvalidation { .. }
-                    }
-                )
-        }));
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn cache_watch_in_memory_hits_take_precedence_over_corrupt_disk_records() {
-        let (root, profile) = cache_test_project("watch-memory-precedence");
-        let target_root = root.join("target").join("debug");
-        let mut compile_cache = InMemoryProjectCompileCache::default();
-        let first =
-            compile_project_command_with_cache(&profile, VerificationMode::Dev, &mut compile_cache)
-                .expect("first watch build compiles");
-        let first_report = ProjectCommandReport::from_state(&first);
-        write_project_build_artifacts(&first, &first_report, &target_root)
-            .expect("first watch artifacts write");
-        corrupt_persistent_query_records(&project_cache_root(&target_root));
-
-        let second =
-            compile_project_command_with_cache(&profile, VerificationMode::Dev, &mut compile_cache)
-                .expect("second watch build compiles");
-        assert!(
-            second
-                .compiled
-                .compile_units()
-                .iter()
-                .all(|unit| unit.cache_status().is_hit())
-        );
-        let second_report = ProjectCommandReport::from_state(&second);
-        let second_artifacts = write_project_build_artifacts(&second, &second_report, &target_root)
-            .expect("second watch artifacts write");
-        assert!(second_artifacts.snapshot.queries().iter().any(|query| {
-            matches!(
-                query.query(),
-                QueryKind::Parse | QueryKind::Interface | QueryKind::HirBody
-            ) && query.status().is_hit()
-        }));
-        assert!(!second_artifacts.snapshot.queries().iter().any(|query| {
-            query.status().rebuild_reason().is_some_and(|reason| {
-                matches!(
-                    reason,
-                    InvalidationReason::CorruptRecord | InvalidationReason::CorruptObject
-                )
-            })
-        }));
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn cache_clean_build_records_corrupt_object_rebuild_reason() {
-        let (root, profile) = cache_test_project("corrupt-object-rebuild");
-        let target_root = root.join("target").join("debug");
-        let first = compile_project_command(&profile, VerificationMode::Dev)
-            .expect("first project compiles");
-        let first_report = ProjectCommandReport::from_state(&first);
-        write_project_build_artifacts(&first, &first_report, &target_root)
-            .expect("first artifacts write");
-        corrupt_persistent_query_objects(&project_cache_root(&target_root));
-
-        let second = compile_project_command(&profile, VerificationMode::Dev)
-            .expect("second project compiles");
-        let second_report = ProjectCommandReport::from_state(&second);
-        let second_artifacts = write_project_build_artifacts(&second, &second_report, &target_root)
-            .expect("second artifacts write");
-        assert!(second_artifacts.snapshot.queries().iter().any(|query| {
-            matches!(query.query(), QueryKind::Parse | QueryKind::Interface)
-                && matches!(
-                    query.status(),
-                    CacheRecordStatus::Rebuilt {
-                        reason: InvalidationReason::CorruptObject
-                    }
-                )
-        }));
-        let _ = fs::remove_dir_all(root);
-    }
-
-    fn temp_project_root(label: &str) -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "arcweft-project-command-{label}-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock")
-                .as_nanos()
-        ))
-    }
-
-    fn cache_test_project(label: &str) -> (PathBuf, ProfileOptions) {
-        let root = temp_project_root(label);
-        let source_root = root.join("src");
-        fs::create_dir_all(&source_root).expect("source dir creates");
-        fs::write(
-            root.join("arcw.toml"),
-            r#"
-[package]
-name = "cache_persistent_query"
-"#,
-        )
-        .expect("manifest writes");
-        fs::write(
-            source_root.join("main.arcw"),
-            r#"
-entry game {
-    start(@flow.opening)
-}
-
-flow opening {
-    goto @flow.done
-}
-
-flow done {
-    return "done"
-}
-"#,
-        )
-        .expect("source writes");
-        let profile = ProfileOptions {
-            profile: None,
-            manifest: root.join("arcw.toml"),
-        };
-        (root, profile)
-    }
-
-    fn corrupt_persistent_query_records(cache_root: &Path) {
-        for namespace in ["parse", "interface", "hir-body"] {
-            corrupt_records_under(&cache_root.join("records").join(namespace));
-        }
-    }
-
-    fn corrupt_records_under(path: &Path) {
-        if path.is_file() {
-            if path
-                .extension()
-                .is_some_and(|extension| extension == "awci")
-            {
-                fs::write(path, b"not-json").expect("record corrupts");
-            }
-            return;
-        }
-        if let Ok(entries) = fs::read_dir(path) {
-            for entry in entries.flatten() {
-                corrupt_records_under(&entry.path());
-            }
-        }
-    }
-
-    fn corrupt_persistent_query_objects(cache_root: &Path) {
-        for namespace in ["parse", "interface", "hir-body"] {
-            corrupt_objects_for_records(cache_root, &cache_root.join("records").join(namespace));
-        }
-    }
-
-    fn corrupt_objects_for_records(cache_root: &Path, path: &Path) {
-        if path.is_file() {
-            if path
-                .extension()
-                .is_some_and(|extension| extension == "awci")
-            {
-                let bytes = fs::read(path).expect("record reads");
-                let record = CacheRecord::from_slice(&bytes).expect("record decodes");
-                fs::write(
-                    cache_object_path(cache_root, record.object_digest()),
-                    b"not-awbo",
-                )
-                .expect("object corrupts");
-            }
-            return;
-        }
-        if let Ok(entries) = fs::read_dir(path) {
-            for entry in entries.flatten() {
-                corrupt_objects_for_records(cache_root, &entry.path());
-            }
-        }
-    }
-
-    fn cache_object_path(cache_root: &Path, digest: BuildDigest) -> PathBuf {
-        let hex = digest.to_hex();
-        cache_root
-            .join("objects")
-            .join("blake3")
-            .join(&hex[..2])
-            .join(&hex[2..])
-    }
-}
+mod tests;

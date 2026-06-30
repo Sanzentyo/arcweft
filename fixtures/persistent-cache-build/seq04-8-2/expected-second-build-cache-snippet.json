@@ -1,0 +1,25 @@
+{
+  "cache": {
+    "records": [
+      {
+        "query": "bytecode_unit",
+        "status": "hit_then_rebuilt",
+        "reuse_evidence": {
+          "kind": "actual_reusable",
+          "producer": "full_build_bytecode_unit",
+          "identity": "<real-full-build-bytecode-unit-identity-digest>"
+        }
+      },
+      {
+        "query": "link_plan",
+        "status": "hit_then_rebuilt",
+        "reuse_evidence": {
+          "kind": "actual_reusable",
+          "producer": "full_build_link_plan",
+          "identity": "<real-full-build-link-plan-identity-digest>"
+        }
+      }
+    ]
+  },
+  "note": "The exact key/object digests are build-output dependent. The important assertion is actual_reusable evidence with hit_then_rebuilt shadow-validation status."
+}
