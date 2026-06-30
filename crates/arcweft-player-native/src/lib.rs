@@ -4,6 +4,7 @@ mod native_audio;
 mod patch_endpoint;
 mod scene_windowed;
 mod text_input_bridge;
+mod window_driver;
 mod windowed_ingress;
 pub mod windowed_patch;
 mod windowed_runtime;

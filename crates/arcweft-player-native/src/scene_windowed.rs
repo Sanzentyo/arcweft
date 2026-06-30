@@ -4,6 +4,7 @@ use crate::text_input_bridge::{
     NativeTextInputBridge, NativeTextInputBridgeError, NativeTextInputBridgeOptions,
     NativeTextInputFocusReason, NativeTextInputFocusedControl, NativeTextInputWindowContext,
 };
+use crate::window_driver::{WindowCloseSignal, WinitOwnedWindowDriver};
 use crate::windowed_ingress::{
     WindowedPatchIngress, WindowedPatchIngressCompletion, WindowedPatchIngressConfig,
     WindowedPatchIngressMessage, WindowedPatchIngressReceiver,
@@ -13,7 +14,7 @@ use crate::windowed_runtime::{
     WindowedRuntimeOutcome, WindowedRuntimeOwner, WindowedRuntimeOwnerError,
 };
 use arcweft_bundle::ArcweftBundle;
-use arcweft_interaction_model::audio::AudioEvent;
+use arcweft_desktop_native::NativeDesktopBackend;
 use arcweft_player_scene::images::BundleImageCatalogError;
 use arcweft_player_scene::input::{InputController, InputOutcome};
 use arcweft_player_scene::text_controls::{
@@ -145,6 +146,7 @@ struct NativeSceneApp {
 
 struct NativeSceneState {
     window: Arc<dyn Window>,
+    close_signal: WindowCloseSignal,
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -152,7 +154,6 @@ struct NativeSceneState {
     renderer: SharedRenderer,
     runtime: WindowedRuntimeOwner,
     audio: Option<NativeAudioRuntime>,
-    audio_events: Vec<AudioEvent>,
     ingress_completion: WindowedPatchIngressCompletion,
     input: InputController,
     text_input: NativeTextInputBridge,
@@ -287,6 +288,7 @@ impl ApplicationHandler for NativeSceneApp {
         };
         match pollster::block_on(NativeSceneState::new(
             Arc::clone(&window),
+            self.title.clone(),
             bundle,
             self.ingress_completion.clone(),
             NativeTextInputWindowContext::from_winit_window(window.as_ref()),
@@ -365,6 +367,12 @@ impl ApplicationHandler for NativeSceneApp {
     fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
         self.drain_ingress_messages();
         if let Some(state) = self.state.as_ref() {
+            if state.take_close_requested() {
+                self.ingress_completion
+                    .close("native player requested close from owned-window adapter");
+                event_loop.exit();
+                return;
+            }
             state.window.request_redraw();
         }
         event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + EVENT_LOOP_TICK));
@@ -374,6 +382,7 @@ impl ApplicationHandler for NativeSceneApp {
 impl NativeSceneState {
     async fn new(
         window: Arc<dyn Window>,
+        title: String,
         bundle: ArcweftBundle,
         ingress_completion: WindowedPatchIngressCompletion,
         text_input_window: NativeTextInputWindowContext,
@@ -431,11 +440,24 @@ impl NativeSceneState {
         surface.configure(&device, &config);
         let mut renderer = SharedRenderer::new(&device, &queue, format);
         renderer.register_font_bytes(DEFAULT_FONT_BYTES.to_vec())?;
+        let close_signal = WindowCloseSignal::default();
+        let owned_window = Arc::new(
+            WinitOwnedWindowDriver::try_new(Arc::clone(&window), title, close_signal.clone())
+                .map_err(NativeSceneWindowError::Window)?,
+        );
+        let backend = NativeDesktopBackend::builder()
+            .with_owned_window_driver(owned_window)
+            .build();
         let audio = NativeAudioRuntime::from_bundle(&bundle)?;
-        let runtime = WindowedRuntimeOwner::from_bundle(&bundle, BundleSessionOptions::default())?;
+        let runtime = WindowedRuntimeOwner::from_bundle_with_desktop_backend(
+            &bundle,
+            BundleSessionOptions::default(),
+            backend,
+        )?;
         let text_input = NativeTextInputBridge::new(text_input_window, text_input_options);
         Ok(Self {
             window,
+            close_signal,
             surface,
             device,
             queue,
@@ -443,7 +465,6 @@ impl NativeSceneState {
             renderer,
             runtime,
             audio,
-            audio_events: Vec::new(),
             ingress_completion,
             input: InputController::default(),
             text_input,
@@ -452,6 +473,10 @@ impl NativeSceneState {
             started_at: Instant::now(),
             next_tick: 1,
         })
+    }
+
+    fn take_close_requested(&self) -> bool {
+        self.close_signal.take()
     }
 
     fn resize(&mut self, size: PhysicalSize<u32>) {
@@ -469,6 +494,7 @@ impl NativeSceneState {
     }
 
     fn redraw(&mut self) -> Result<(), NativeSceneWindowError> {
+        self.runtime.pump_main_thread()?;
         self.step_runtime()?;
         let prepared = self.prepare_frame()?;
         self.input.ensure_choice_focus(&prepared);
@@ -492,20 +518,19 @@ impl NativeSceneState {
             return Ok(());
         }
         if let Some(audio) = &mut self.audio {
-            audio.drain_events(&mut self.audio_events);
+            let mut events = Vec::new();
+            audio.drain_events(&mut events);
+            self.runtime.push_audio_events(events);
         }
         let clock = RuntimeClockStep::from_millis(self.next_tick, 16)?;
         self.next_tick = self.next_tick.saturating_add(1);
-        let audio_events = std::mem::take(&mut self.audio_events);
-        let step = self.runtime.session_mut().step_with_clock(
-            clock,
-            BundleStepInput {
-                audio_events,
-                ..BundleStepInput::default()
-            },
-        );
+        let step = self
+            .runtime
+            .step_with_clock(clock, BundleStepInput::default());
         if let Some(audio) = &mut self.audio {
-            audio.submit_commands(step.audio_commands, &mut self.audio_events);
+            let mut command_events = Vec::new();
+            audio.submit_commands(step.audio_commands, &mut command_events);
+            self.runtime.push_audio_events(command_events);
         }
         Ok(())
     }

@@ -202,12 +202,68 @@ fn check_windowed_path(root: &Path, failures: &mut Vec<String>) {
         &lib,
         "pub use scene_windowed::",
     );
+    require_contains(
+        failures,
+        "crates/arcweft-player-native/src/lib.rs",
+        &lib,
+        "mod window_driver;",
+    );
+    require_not_contains(
+        failures,
+        "crates/arcweft-player-native/src/lib.rs",
+        &lib,
+        "mod windowed;",
+    );
     require_not_contains(
         failures,
         "crates/arcweft-player-native/src/lib.rs",
         &lib,
         "run_bundle_adapter_windowed",
     );
+
+    let window_driver_rel = "crates/arcweft-player-native/src/window_driver.rs";
+    if !exists(root, window_driver_rel) {
+        failures.push(format!("{window_driver_rel} is missing"));
+    } else {
+        let window_driver = read(root, window_driver_rel);
+        require_contains(
+            failures,
+            window_driver_rel,
+            &window_driver,
+            "struct WinitOwnedWindowDriver",
+        );
+        require_contains(
+            failures,
+            window_driver_rel,
+            &window_driver,
+            "struct WindowCloseSignal",
+        );
+        require_contains(
+            failures,
+            window_driver_rel,
+            &window_driver,
+            "impl OwnedWindowDriver for WinitOwnedWindowDriver",
+        );
+        require_contains(
+            failures,
+            window_driver_rel,
+            &window_driver,
+            "OwnedWindowRequest::RequestClose",
+        );
+        require_contains(
+            failures,
+            window_driver_rel,
+            &window_driver,
+            "OwnedCursorRequest::SetGrab",
+        );
+    }
+
+    if exists(root, "crates/arcweft-player-native/src/windowed.rs") {
+        failures.push(
+            "crates/arcweft-player-native/src/windowed.rs must be absent after seq06.4k.2 migration"
+                .to_owned(),
+        );
+    }
 
     let scene = read(root, "crates/arcweft-player-native/src/scene_windowed.rs");
     require_contains(
@@ -228,18 +284,74 @@ fn check_windowed_path(root: &Path, failures: &mut Vec<String>) {
         &scene,
         "focused_text_input_target()",
     );
+    require_contains(
+        failures,
+        "crates/arcweft-player-native/src/scene_windowed.rs",
+        &scene,
+        "WinitOwnedWindowDriver::try_new",
+    );
+    require_contains(
+        failures,
+        "crates/arcweft-player-native/src/scene_windowed.rs",
+        &scene,
+        ".with_owned_window_driver(owned_window)",
+    );
+    require_contains(
+        failures,
+        "crates/arcweft-player-native/src/scene_windowed.rs",
+        &scene,
+        "WindowedRuntimeOwner::from_bundle_with_desktop_backend",
+    );
+    require_contains(
+        failures,
+        "crates/arcweft-player-native/src/scene_windowed.rs",
+        &scene,
+        "pump_main_thread",
+    );
+    require_contains(
+        failures,
+        "crates/arcweft-player-native/src/scene_windowed.rs",
+        &scene,
+        "push_audio_events",
+    );
+    require_contains(
+        failures,
+        "crates/arcweft-player-native/src/scene_windowed.rs",
+        &scene,
+        "close_signal.take()",
+    );
 
-    if exists(root, "crates/arcweft-player-native/src/windowed.rs")
-        && !exists(
-            root,
-            "docs/reviews/requests/2026-06-29-seq-06.4k.2-scene-windowed-owned-window-runtime-migration.md",
-        )
-    {
-        failures.push(
-            "windowed.rs still exists without the explicit seq06.4k.2 removal follow-up request"
-                .to_owned(),
-        );
-    }
+    let runtime = read(root, "crates/arcweft-player-native/src/windowed_runtime.rs");
+    require_contains(
+        failures,
+        "crates/arcweft-player-native/src/windowed_runtime.rs",
+        &runtime,
+        "from_bundle_with_desktop_backend",
+    );
+    require_contains(
+        failures,
+        "crates/arcweft-player-native/src/windowed_runtime.rs",
+        &runtime,
+        "NativeTaskBridge",
+    );
+    require_contains(
+        failures,
+        "crates/arcweft-player-native/src/windowed_runtime.rs",
+        &runtime,
+        "pump_main_thread",
+    );
+    require_contains(
+        failures,
+        "crates/arcweft-player-native/src/windowed_runtime.rs",
+        &runtime,
+        "push_audio_events",
+    );
+    require_contains(
+        failures,
+        "crates/arcweft-player-native/src/windowed_runtime.rs",
+        &runtime,
+        "complete_requested_tasks",
+    );
 }
 
 fn check_no_hidden_web_fallback(root: &Path, failures: &mut Vec<String>) {

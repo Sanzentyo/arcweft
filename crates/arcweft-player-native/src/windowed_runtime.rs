@@ -9,15 +9,27 @@ use crate::windowed_patch::{
     FrameBoundary, PatchEventSource, WindowedPatchError, WindowedPatchEvent, WindowedPatchQueue,
     WindowedPatchReport,
 };
+use arcweft_adapter_desktop::DesktopAdapterSet;
 use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::patch::{
     PatchBundleError, PatchCompatibility, apply_patch_bundle, decode_patch_bundle,
 };
-use arcweft_bundle::{ArcweftBundle, BundleFormat};
+use arcweft_bundle::{ArcweftBundle, BundleAdapterManifest, BundleFormat, BundleVirtualFile};
+use arcweft_core::task::TaskEvent;
+use arcweft_desktop_native::NativeDesktopBackend;
+use arcweft_host_adapter::{HostAdapterError, HostAdapterRegistryBuilder, HostCallPolicy};
+use arcweft_interaction_model::audio::AudioEvent;
 use arcweft_player_scene::images::{BundleImageCatalog, BundleImageCatalogError};
-use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions};
+use arcweft_runtime_driver::clock::RuntimeClockStep;
+use arcweft_runtime_driver::session::{
+    BundleSession, BundleSessionOptions, BundleSessionStep, BundleStepInput,
+};
 use arcweft_runtime_driver::swap::GenerationId;
-use std::path::Path;
+use arcweft_runtime_driver::task::HostTaskDispatch;
+use arcweft_runtime_host::NativeTaskBridge;
+use std::fs;
+use std::path::{Component, Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 /// Windowed patch processing result.
@@ -132,6 +144,20 @@ pub enum WindowedRuntimeOwnerError {
     DecodePatch(#[source] PatchBundleError),
     #[error("failed to materialize windowed patch target before commit: {0}")]
     MaterializePatch(#[source] PatchBundleError),
+    #[error("native adapter registration failed: {0}")]
+    NativeAdapter(#[from] HostAdapterError),
+    #[error("failed to create windowed runtime workspace: {0}")]
+    CreateWorkspace(std::io::Error),
+    #[error("failed to create windowed runtime source directory: {0}")]
+    CreateSourceDirectory(std::io::Error),
+    #[error("failed to materialize windowed runtime source: {0}")]
+    MaterializeSource(std::io::Error),
+    #[error("failed to create windowed runtime virtual file directory: {0}")]
+    CreateVirtualFileDirectory(std::io::Error),
+    #[error("failed to materialize windowed runtime virtual file: {0}")]
+    MaterializeVirtualFile(std::io::Error),
+    #[error("bundle virtual file path must be relative and normalized")]
+    InvalidVirtualFilePath,
 }
 
 /// Shared owner for windowed runtime session, active AWFB bytes, image catalog,
@@ -141,6 +167,11 @@ pub struct WindowedRuntimeOwner {
     endpoint: NativePatchEndpoint,
     images: BundleImageCatalog,
     patch_queue: WindowedPatchQueue,
+    _workspace: WindowedRuntimeWorkspace,
+    host: NativeTaskBridge,
+    pending_task_events: Vec<TaskEvent>,
+    pending_audio_events: Vec<AudioEvent>,
+    pending_host_dispatches: Vec<HostTaskDispatch>,
 }
 
 impl WindowedRuntimeOwner {
@@ -149,17 +180,72 @@ impl WindowedRuntimeOwner {
         bundle: &ArcweftBundle,
         options: BundleSessionOptions,
     ) -> Result<Self, WindowedRuntimeOwnerError> {
+        Self::from_bundle_with_adapter_installer(bundle, options, |_source_path, builder| {
+            Ok(builder)
+        })
+    }
+
+    /// Creates an owner from a decoded bundle and installs a native desktop backend
+    /// before the runtime session is started.
+    pub fn from_bundle_with_desktop_backend(
+        bundle: &ArcweftBundle,
+        options: BundleSessionOptions,
+        backend: NativeDesktopBackend,
+    ) -> Result<Self, WindowedRuntimeOwnerError> {
+        Self::from_bundle_with_adapter_installer(bundle, options, move |_source_path, builder| {
+            let (builder, _coordinator) =
+                DesktopAdapterSet::bind_current_thread(backend).register(builder)?;
+            Ok(builder)
+        })
+    }
+
+    /// Creates an owner from a decoded bundle and lets the embedding native host
+    /// install event-loop-owned adapters before the AWFB-backed session starts.
+    pub fn from_bundle_with_adapter_installer<F>(
+        bundle: &ArcweftBundle,
+        options: BundleSessionOptions,
+        install: F,
+    ) -> Result<Self, WindowedRuntimeOwnerError>
+    where
+        F: FnOnce(
+            &Path,
+            HostAdapterRegistryBuilder,
+        ) -> Result<HostAdapterRegistryBuilder, HostAdapterError>,
+    {
         let images = BundleImageCatalog::from_bundle(bundle)?;
         let awfb_bytes = bundle
             .to_format_bytes(BundleFormat::Awfb)
             .map_err(|error| WindowedRuntimeOwnerError::EncodeBundle {
                 message: error.to_string(),
             })?;
+        Self::from_decoded_bundle_and_awfb_bytes(bundle, awfb_bytes, images, options, install)
+    }
+
+    fn from_decoded_bundle_and_awfb_bytes<F>(
+        bundle: &ArcweftBundle,
+        awfb_bytes: Vec<u8>,
+        images: BundleImageCatalog,
+        options: BundleSessionOptions,
+        install: F,
+    ) -> Result<Self, WindowedRuntimeOwnerError>
+    where
+        F: FnOnce(
+            &Path,
+            HostAdapterRegistryBuilder,
+        ) -> Result<HostAdapterRegistryBuilder, HostAdapterError>,
+    {
+        let workspace = WindowedRuntimeWorkspace::create(bundle)?;
+        let host = windowed_native_task_bridge(bundle, workspace.source_path(), install)?;
         let endpoint = NativePatchEndpoint::from_awfb_bytes(awfb_bytes, options)?;
         Ok(Self {
             endpoint,
             images,
             patch_queue: WindowedPatchQueue::default(),
+            _workspace: workspace,
+            host,
+            pending_task_events: Vec::new(),
+            pending_audio_events: Vec::new(),
+            pending_host_dispatches: Vec::new(),
         })
     }
 
@@ -168,13 +254,20 @@ impl WindowedRuntimeOwner {
         awfb_bytes: Vec<u8>,
         options: BundleSessionOptions,
     ) -> Result<Self, WindowedRuntimeOwnerError> {
-        let images = images_from_awfb_bytes(&awfb_bytes)?;
-        let endpoint = NativePatchEndpoint::from_awfb_bytes(awfb_bytes, options)?;
-        Ok(Self {
-            endpoint,
+        let bundle =
+            ArcweftBundle::from_format_slice(BundleFormat::Awfb, &awfb_bytes).map_err(|error| {
+                WindowedRuntimeOwnerError::DecodeBundle {
+                    message: error.to_string(),
+                }
+            })?;
+        let images = BundleImageCatalog::from_bundle(&bundle)?;
+        Self::from_decoded_bundle_and_awfb_bytes(
+            &bundle,
+            awfb_bytes,
             images,
-            patch_queue: WindowedPatchQueue::default(),
-        })
+            options,
+            |_source_path, builder| Ok(builder),
+        )
     }
 
     /// Returns the active runtime session.
@@ -186,6 +279,70 @@ impl WindowedRuntimeOwner {
     /// this owner, so callers must only borrow mutably inside frame boundaries.
     pub fn session_mut(&mut self) -> &mut BundleSession {
         self.endpoint.session_mut()
+    }
+
+    /// Runs queued host-main-thread adapter work and stores deterministic task
+    /// events for the next runtime step.
+    pub fn pump_main_thread(&mut self) -> Result<usize, WindowedRuntimeOwnerError> {
+        self.host.pump_main_thread()?;
+        let completions = self.host.poll_completions();
+        let completion_count = completions.len();
+        let events = self.normalize_host_events(completions);
+        self.pending_task_events.extend(events);
+        Ok(completion_count)
+    }
+
+    /// Pushes native audio events into the scene-safe owner boundary.
+    pub fn push_audio_events(&mut self, events: impl IntoIterator<Item = AudioEvent>) {
+        self.pending_audio_events.extend(events);
+    }
+
+    /// Steps the runtime with queued host-task and audio events, then dispatches
+    /// new host task requests through the owner-held native task bridge.
+    pub fn step_with_clock(
+        &mut self,
+        clock: RuntimeClockStep,
+        mut input: BundleStepInput,
+    ) -> BundleSessionStep {
+        input.task_events.append(&mut self.pending_task_events);
+        input.audio_events.append(&mut self.pending_audio_events);
+        let step = self.endpoint.session_mut().step_with_clock(clock, input);
+        self.complete_requested_tasks(step.requested_tasks.clone());
+        step
+    }
+
+    fn complete_requested_tasks(&mut self, dispatches: Vec<HostTaskDispatch>) {
+        if dispatches.is_empty() {
+            return;
+        }
+        self.pending_host_dispatches
+            .extend(dispatches.iter().cloned());
+        let tasks = dispatches
+            .into_iter()
+            .map(|dispatch| dispatch.task)
+            .collect::<Vec<_>>();
+        let events = self.host.complete_tasks(tasks);
+        let events = self.normalize_host_events(events);
+        self.pending_task_events.extend(events);
+    }
+
+    fn normalize_host_events(&mut self, events: Vec<TaskEvent>) -> Vec<TaskEvent> {
+        events
+            .into_iter()
+            .map(|event| self.normalize_host_event(event))
+            .collect()
+    }
+
+    fn normalize_host_event(&mut self, event: TaskEvent) -> TaskEvent {
+        let Some(index) = self
+            .pending_host_dispatches
+            .iter()
+            .position(|dispatch| dispatch.task.id == event.task_id)
+        else {
+            return event;
+        };
+        let dispatch = self.pending_host_dispatches.remove(index);
+        dispatch.into_event(event.kind)
     }
 
     /// Returns the active image catalog used by the renderer.
@@ -419,6 +576,111 @@ fn images_from_awfb_bytes(bytes: &[u8]) -> Result<BundleImageCatalog, WindowedRu
         }
     })?;
     BundleImageCatalog::from_bundle(&bundle).map_err(WindowedRuntimeOwnerError::ImageCatalog)
+}
+
+#[derive(Debug)]
+struct WindowedRuntimeWorkspace {
+    root: PathBuf,
+    source_path: PathBuf,
+}
+
+impl WindowedRuntimeWorkspace {
+    fn create(bundle: &ArcweftBundle) -> Result<Self, WindowedRuntimeOwnerError> {
+        let root = std::env::temp_dir().join(format!(
+            "arcweft-windowed-runtime-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |duration| duration.as_nanos())
+        ));
+        fs::create_dir_all(&root).map_err(WindowedRuntimeOwnerError::CreateWorkspace)?;
+        let source_name = bundle_source_file_name(&bundle.source.label);
+        let source_path = root.join(source_name);
+        if let Some(parent) = source_path.parent() {
+            fs::create_dir_all(parent).map_err(WindowedRuntimeOwnerError::CreateSourceDirectory)?;
+        }
+        fs::write(&source_path, &bundle.source.text)
+            .map_err(WindowedRuntimeOwnerError::MaterializeSource)?;
+        materialize_bundle_virtual_files(&root, &bundle.virtual_files)?;
+        Ok(Self { root, source_path })
+    }
+
+    fn source_path(&self) -> &Path {
+        &self.source_path
+    }
+}
+
+impl Drop for WindowedRuntimeWorkspace {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+fn windowed_native_task_bridge<F>(
+    bundle: &ArcweftBundle,
+    source_path: &Path,
+    install: F,
+) -> Result<NativeTaskBridge, WindowedRuntimeOwnerError>
+where
+    F: FnOnce(
+        &Path,
+        HostAdapterRegistryBuilder,
+    ) -> Result<HostAdapterRegistryBuilder, HostAdapterError>,
+{
+    let builder = arcweft_runtime_host::native_task::standard_cli_registry_builder(source_path)?;
+    let registry = install(source_path, builder)?.build();
+    NativeTaskBridge::try_with_registry(windowed_host_policy(bundle), registry)
+        .map_err(WindowedRuntimeOwnerError::NativeAdapter)
+}
+
+fn windowed_host_policy(bundle: &ArcweftBundle) -> HostCallPolicy {
+    HostCallPolicy::from_host_call_ids(
+        bundle
+            .adapter_manifests
+            .iter()
+            .flat_map(BundleAdapterManifest::host_call_ids),
+    )
+}
+
+fn bundle_source_file_name(label: &str) -> String {
+    let path = Path::new(label);
+    path.file_name()
+        .filter(|name| {
+            Path::new(name)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("arcw"))
+        })
+        .map_or_else(
+            || "bundle.arcw".to_owned(),
+            |name| name.to_string_lossy().into_owned(),
+        )
+}
+
+fn materialize_bundle_virtual_files(
+    root: &Path,
+    files: &[BundleVirtualFile],
+) -> Result<(), WindowedRuntimeOwnerError> {
+    for file in files {
+        let relative = Path::new(&file.path);
+        validate_relative_virtual_path(relative)?;
+        let path = root
+            .join(".arcweft")
+            .join(file.space.as_str())
+            .join(relative);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(WindowedRuntimeOwnerError::CreateVirtualFileDirectory)?;
+        }
+        fs::write(&path, &file.bytes).map_err(WindowedRuntimeOwnerError::MaterializeVirtualFile)?;
+    }
+    Ok(())
+}
+
+fn validate_relative_virtual_path(path: &Path) -> Result<(), WindowedRuntimeOwnerError> {
+    path.components()
+        .all(|component| matches!(component, Component::Normal(_)))
+        .then_some(())
+        .ok_or(WindowedRuntimeOwnerError::InvalidVirtualFilePath)
 }
 
 #[cfg(test)]
