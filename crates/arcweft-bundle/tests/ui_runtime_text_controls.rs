@@ -112,6 +112,51 @@ fn runtime_text_control_session_is_stable_across_reorder() {
     assert_eq!(left_session, reordered_left_session);
 }
 
+#[test]
+fn ui_input_resource_stacks_default_text_control_bounds_by_height() {
+    let ui_input = UiInputResource {
+        options: vec![
+            text_input_option("input.title", UiInputKind::TextField, "text.title", None),
+            text_input_option("input.body", UiInputKind::TextArea, "text.body", None),
+            text_input_option(
+                "input.secret",
+                UiInputKind::SecureField,
+                "text.secret",
+                None,
+            ),
+        ],
+        adapter_requirements: Vec::new(),
+    };
+    let text = UiTextResource {
+        sources: vec![
+            literal_source("text.title", "line one"),
+            literal_source("text.body", "Tokyo"),
+            literal_source("text.secret", "secret"),
+        ],
+        display_frame_refs: Vec::new(),
+        source_ranges: Vec::new(),
+        reveal_policies: Vec::new(),
+        cursor_policies: Vec::new(),
+        redactions: Vec::new(),
+    };
+
+    let controls = ui_input.runtime_text_controls(Some(&text), None);
+
+    assert_eq!(controls.len(), 3);
+    assert_eq!(
+        controls[0].bounds,
+        UiRuntimeTextControlBounds::from_px(48, 48, 420, 48)
+    );
+    assert_eq!(
+        controls[1].bounds,
+        UiRuntimeTextControlBounds::from_px(48, 112, 420, 136)
+    );
+    assert_eq!(
+        controls[2].bounds,
+        UiRuntimeTextControlBounds::from_px(48, 264, 420, 48)
+    );
+}
+
 fn text_input_option(
     public_id: &str,
     kind: UiInputKind,

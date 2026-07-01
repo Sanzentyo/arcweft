@@ -115,6 +115,7 @@ pub(super) struct AgentNativeCaptureImageResult {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct AgentImageFrameStore {
+    pub(super) full_frame: Option<AgentStoredImageFrame>,
     pub(super) frames_by_object: BTreeMap<String, AgentStoredImageFrame>,
 }
 
@@ -140,6 +141,19 @@ pub(super) struct AgentStoredImagePlacement {
 }
 
 impl AgentImageFrameStore {
+    pub(super) fn set_full_frame(&mut self, width: u32, height: u32, rgba: Vec<u8>) {
+        self.full_frame = Some(AgentStoredImageFrame {
+            width,
+            height,
+            rgba,
+            placement: None,
+        });
+    }
+
+    pub(super) const fn full_frame(&self) -> Option<&AgentStoredImageFrame> {
+        self.full_frame.as_ref()
+    }
+
     #[cfg(test)]
     pub(super) fn insert(
         &mut self,
@@ -176,6 +190,9 @@ impl AgentImageFrameStore {
     }
 
     pub(super) fn extend(&mut self, other: AgentImageFrameStore) {
+        if other.full_frame.is_some() {
+            self.full_frame = other.full_frame;
+        }
         self.frames_by_object.extend(other.frames_by_object);
     }
 }
@@ -211,6 +228,9 @@ pub(super) fn agent_native_capture_image_with_frame_store(
     native_session: &mut arcweft_render_native::NativeOffscreenCaptureSession,
     image_frames: &AgentImageFrameStore,
 ) -> Result<AgentNativeCaptureImageResult, ExitCode> {
+    if let Some(result) = agent_native_shared_frame_capture(report, request, image_frames)? {
+        return Ok(result);
+    }
     if let Some(result) =
         agent_native_image_layer_frame_capture(report, request, native_session, image_frames)?
     {
@@ -268,6 +288,153 @@ pub(super) fn agent_native_capture_image_with_frame_store(
         Some(native_session),
     )?;
     agent_native_capture_result_from_raster(report, request, &capture)
+}
+
+fn agent_native_shared_frame_capture(
+    report: &AgentObservationReport,
+    request: &AgentCaptureReadRequest,
+    image_frames: &AgentImageFrameStore,
+) -> Result<Option<AgentNativeCaptureImageResult>, ExitCode> {
+    let Some(frame) = image_frames.full_frame() else {
+        return Ok(None);
+    };
+    let capture = match request.capture_kind {
+        AgentObserveCaptureKind::Color => agent_shared_color_frame_capture(report, request, frame)?,
+        AgentObserveCaptureKind::ObjectId | AgentObserveCaptureKind::Mask => {
+            agent_shared_debug_frame_capture(report, request)?
+        }
+    };
+    agent_native_capture_result_from_raster(report, request, &capture).map(Some)
+}
+
+fn agent_shared_color_frame_capture(
+    report: &AgentObservationReport,
+    request: &AgentCaptureReadRequest,
+    frame: &AgentStoredImageFrame,
+) -> Result<AgentRasterCapture, ExitCode> {
+    let full = AgentRasterCapture {
+        width: frame.width,
+        height: frame.height,
+        crop_origin: None,
+        composition: AgentImageComposition::Framebuffer,
+        background: [0, 0, 0, 0],
+        rgba: frame.rgba.clone(),
+        diagnostics: Vec::new(),
+    };
+    if matches!(request.scope, AgentCaptureScope::Viewport) {
+        return Ok(full);
+    }
+    let bbox = agent_capture_scope_bbox(report, &request.scope).ok_or_else(|| {
+        agent_report_missing_capture_scope(&request.scope);
+        ExitCode::from(2)
+    })?;
+    let (x, y, width, height) = agent_clamped_bbox_rect(
+        report.viewport.width.max(1),
+        report.viewport.height.max(1),
+        bbox.x,
+        bbox.y,
+        bbox.width,
+        bbox.height,
+    );
+    Ok(agent_crop_raster_capture(&full, x, y, width, height))
+}
+
+fn agent_shared_debug_frame_capture(
+    report: &AgentObservationReport,
+    request: &AgentCaptureReadRequest,
+) -> Result<AgentRasterCapture, ExitCode> {
+    let composition = match request.capture_kind {
+        AgentObserveCaptureKind::ObjectId => AgentImageComposition::ObjectIdAttachment,
+        AgentObserveCaptureKind::Mask => AgentImageComposition::MaskAttachment,
+        AgentObserveCaptureKind::Color => unreachable!("color handled by shared color capture"),
+    };
+    let mut full = AgentRasterCapture::new(
+        report.viewport.width.max(1),
+        report.viewport.height.max(1),
+        [0, 0, 0, 0],
+        composition,
+    );
+    let selected = agent_shared_capture_objects(report, &request.scope)?;
+    for object in selected {
+        let color = match request.capture_kind {
+            AgentObserveCaptureKind::ObjectId => agent_object_id_color(&object.id),
+            AgentObserveCaptureKind::Mask => [255, 255, 255, 255],
+            AgentObserveCaptureKind::Color => unreachable!("color handled by shared color capture"),
+        };
+        let (x, y, width, height) = agent_clamped_bbox_rect(
+            report.viewport.width.max(1),
+            report.viewport.height.max(1),
+            object.bbox.x,
+            object.bbox.y,
+            object.bbox.width,
+            object.bbox.height,
+        );
+        agent_fill_raster_rect(&mut full, x, y, width, height, color);
+    }
+    if matches!(request.scope, AgentCaptureScope::Viewport) {
+        return Ok(full);
+    }
+    let bbox = agent_capture_scope_bbox(report, &request.scope).ok_or_else(|| {
+        agent_report_missing_capture_scope(&request.scope);
+        ExitCode::from(2)
+    })?;
+    let (x, y, width, height) = agent_clamped_bbox_rect(
+        report.viewport.width.max(1),
+        report.viewport.height.max(1),
+        bbox.x,
+        bbox.y,
+        bbox.width,
+        bbox.height,
+    );
+    Ok(agent_crop_raster_capture(&full, x, y, width, height))
+}
+
+fn agent_shared_capture_objects<'a>(
+    report: &'a AgentObservationReport,
+    scope: &AgentCaptureScope,
+) -> Result<Vec<&'a AgentObservedObject>, ExitCode> {
+    match scope {
+        AgentCaptureScope::Viewport => Ok(report
+            .objects
+            .iter()
+            .filter(|object| object.visible)
+            .collect()),
+        AgentCaptureScope::Layer(layer) => {
+            let selected = report
+                .objects
+                .iter()
+                .filter(|object| object.visible && agent_object_matches_layer(object, layer))
+                .collect::<Vec<_>>();
+            if selected.is_empty() {
+                agent_report_missing_capture_scope(scope);
+                return Err(ExitCode::from(2));
+            }
+            Ok(selected)
+        }
+        AgentCaptureScope::Object(object_id) => report
+            .objects
+            .iter()
+            .find(|object| object.visible && object.id == *object_id)
+            .map(|object| vec![object])
+            .ok_or_else(|| {
+                agent_report_missing_capture_scope(scope);
+                ExitCode::from(2)
+            }),
+    }
+}
+
+fn agent_report_missing_capture_scope(scope: &AgentCaptureScope) {
+    match scope {
+        AgentCaptureScope::Viewport => {
+            eprintln!("error: no observed viewport is available for capture");
+        }
+        AgentCaptureScope::Layer(layer) => {
+            eprintln!("error: no observed object matches resource layer {layer}");
+        }
+        AgentCaptureScope::Object(object_id) => {
+            eprintln!("error: no observed object matches resource object {object_id}");
+        }
+    }
 }
 
 pub(super) fn agent_native_capture_result_from_raster(

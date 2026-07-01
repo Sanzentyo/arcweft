@@ -160,6 +160,16 @@ pub(super) fn agent_observation_for_options(
         &runtime.executor,
         options,
     );
+    let player_visual = agent_player_visual_observation_for_options(options)?;
+    observed.report.objects = player_visual.objects;
+    observed.image_frames.extend(player_visual.image_frames);
+    agent_refresh_observation_object_indexes(&mut observed.report);
+    observed
+        .report
+        .actions
+        .extend(agent_action_targets_for_runtime_status(
+            &runtime.executor.fiber().status,
+        ));
     Ok(AgentObservationState {
         report: observed.report,
         image_frames: observed.image_frames,

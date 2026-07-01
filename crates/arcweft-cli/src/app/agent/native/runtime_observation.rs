@@ -1174,6 +1174,10 @@ pub(super) fn agent_refresh_observation_object_indexes(report: &mut AgentObserva
     report.presentation_tree =
         AgentPresentationTree::from_layers_and_objects(&report.layers, &report.objects);
     report.actions = agent_action_targets(&report.objects);
+    report.ui_tree = AgentUiTree {
+        root: "ui.root".to_owned(),
+        children: report.layers.iter().map(|layer| layer.id.clone()).collect(),
+    };
 }
 
 pub(super) fn agent_action_targets(objects: &[AgentObservedObject]) -> Vec<AgentActionTarget> {

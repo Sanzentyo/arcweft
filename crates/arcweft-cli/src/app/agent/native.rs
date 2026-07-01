@@ -259,6 +259,7 @@ mod mcp_rag;
 mod mcp_resources;
 pub(in crate::app::agent) mod observe;
 mod observe_resources;
+mod player_observation;
 mod repl;
 mod repl_cli_command;
 mod repl_command_bridge;
@@ -337,12 +338,13 @@ use observe_resources::{
     agent_observe_image_resource, agent_observe_list_resources, agent_observe_mcp_resource_output,
     agent_observe_resource,
 };
+use player_observation::agent_player_visual_observation_for_options;
 use repl::agent_repl_command;
 use runtime_observation::{
-    AgentImageOutput, AgentRasterCapture, agent_image_kind, agent_image_scope_for_capture_scope,
-    agent_native_visual_diagnostics, agent_observe_image_output,
-    agent_refresh_observation_object_indexes, agent_runtime_presentation_image_observation,
-    run_agent_observation,
+    AgentImageOutput, AgentRasterCapture, agent_action_targets_for_runtime_status,
+    agent_image_kind, agent_image_scope_for_capture_scope, agent_native_visual_diagnostics,
+    agent_observe_image_output, agent_refresh_observation_object_indexes,
+    agent_runtime_presentation_image_observation, run_agent_observation,
 };
 
 pub(super) fn agent_command(

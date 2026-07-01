@@ -665,10 +665,15 @@ impl UiInputResource {
         text: Option<&UiTextResource>,
         program: Option<&UiProgramResource>,
     ) -> Vec<UiRuntimeTextControl> {
+        let mut next_y_milli = UiRuntimeTextControlBounds::DEFAULT_STACK_Y_MILLI;
         self.options
             .iter()
-            .enumerate()
-            .map(|(index, option)| option.runtime_text_control(index, text, program))
+            .map(|option| {
+                let bounds = UiRuntimeTextControlBounds::stacked_slot(next_y_milli, option.kind);
+                next_y_milli =
+                    UiRuntimeTextControlBounds::next_stacked_slot_y(next_y_milli, option.kind);
+                option.runtime_text_control_with_bounds(bounds, text, program)
+            })
             .collect()
     }
 }
@@ -677,6 +682,19 @@ impl UiInputOptions {
     pub fn runtime_text_control(
         &self,
         index: usize,
+        text: Option<&UiTextResource>,
+        program: Option<&UiProgramResource>,
+    ) -> UiRuntimeTextControl {
+        self.runtime_text_control_with_bounds(
+            UiRuntimeTextControlBounds::default_slot(index, self.kind),
+            text,
+            program,
+        )
+    }
+
+    fn runtime_text_control_with_bounds(
+        &self,
+        bounds: UiRuntimeTextControlBounds,
         text: Option<&UiTextResource>,
         program: Option<&UiProgramResource>,
     ) -> UiRuntimeTextControl {
@@ -694,7 +712,7 @@ impl UiInputOptions {
             selection: UiRuntimeTextSelection::collapsed_at_end(&value),
             options: UiRuntimeTextControlOptions::from_input(self),
             kind: self.kind,
-            bounds: UiRuntimeTextControlBounds::default_slot(index, self.kind),
+            bounds,
             value,
             label,
             handlers: UiRuntimeTextControlHandlers::from_input(self, program),
@@ -846,6 +864,11 @@ impl UiRuntimeTextSelection {
 }
 
 impl UiRuntimeTextControlBounds {
+    const DEFAULT_STACK_X_MILLI: i32 = 48_000;
+    const DEFAULT_STACK_Y_MILLI: i32 = 48_000;
+    const DEFAULT_STACK_WIDTH_MILLI: u32 = 420_000;
+    const DEFAULT_STACK_GAP_MILLI: i32 = 16_000;
+
     pub const fn new(x_milli: i32, y_milli: i32, width_milli: u32, height_milli: u32) -> Self {
         Self {
             x_milli,
@@ -866,12 +889,30 @@ impl UiRuntimeTextControlBounds {
 
     fn default_slot(index: usize, kind: UiInputKind) -> Self {
         let index = i32::try_from(index).unwrap_or(i32::MAX);
+        Self::stacked_slot(
+            Self::DEFAULT_STACK_Y_MILLI
+                .saturating_add(index.saturating_mul(Self::default_slot_pitch_milli())),
+            kind,
+        )
+    }
+
+    const fn stacked_slot(y_milli: i32, kind: UiInputKind) -> Self {
         Self::new(
-            48_000,
-            48_000_i32.saturating_add(index.saturating_mul(64_000)),
-            420_000,
+            Self::DEFAULT_STACK_X_MILLI,
+            y_milli,
+            Self::DEFAULT_STACK_WIDTH_MILLI,
             kind.default_height_milli(),
         )
+    }
+
+    fn next_stacked_slot_y(y_milli: i32, kind: UiInputKind) -> i32 {
+        y_milli
+            .saturating_add(i32::try_from(kind.default_height_milli()).unwrap_or(i32::MAX))
+            .saturating_add(Self::DEFAULT_STACK_GAP_MILLI)
+    }
+
+    const fn default_slot_pitch_milli() -> i32 {
+        64_000
     }
 }
 

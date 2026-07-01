@@ -517,6 +517,7 @@ dependencies = [
  "arcweft-launch",
  "arcweft-layout",
  "arcweft-player-native",
+ "arcweft-player-scene",
  "arcweft-presentation",
  "arcweft-project",
  "arcweft-project-loader",
@@ -542,10 +543,12 @@ dependencies = [
  "clap",
  "ed25519-dalek",
  "png",
+ "pollster",
  "reedline",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "wgpu",
 ]
 
 [[package]]

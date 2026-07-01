@@ -38,6 +38,7 @@ arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-project = { path = "../arcweft-project" }
 arcweft-project-loader = { path = "../arcweft-project-loader" }
 arcweft-player-native = { path = "../arcweft-player-native", optional = true }
+arcweft-player-scene = { path = "../arcweft-player-scene", optional = true }
 arcweft-render-native = { path = "../arcweft-render-native", optional = true }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-render-wgpu = { path = "../arcweft-render-wgpu", optional = true }
@@ -61,10 +62,12 @@ blake3.workspace = true
 clap = { workspace = true, features = ["derive"] }
 ed25519-dalek.workspace = true
 png.workspace = true
+pollster = { workspace = true, optional = true }
 reedline = { version = "0.48.0", default-features = false, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
+wgpu = { workspace = true, optional = true }
 
 [[bin]]
 name = "arcw"
@@ -74,7 +77,14 @@ path = "src/main.rs"
 default = ["native-player", "native-capture"]
 agent-repl = ["dep:reedline"]
 math-wgpu = ["arcweft-runtime-accelerator/math-wgpu"]
-native-capture = ["dep:arcweft-render-native", "dep:arcweft-render-wgpu"]
+native-capture = [
+    "dep:arcweft-player-scene",
+    "dep:arcweft-render-native",
+    "dep:arcweft-render-wgpu",
+    "dep:arcweft-runtime-driver",
+    "dep:pollster",
+    "dep:wgpu",
+]
 native-player = ["dep:arcweft-player-native", "dep:arcweft-runtime-driver"]
 
 [lints]
