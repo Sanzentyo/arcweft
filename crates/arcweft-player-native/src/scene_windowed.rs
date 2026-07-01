@@ -18,6 +18,7 @@ use arcweft_desktop_native::NativeDesktopBackend;
 use arcweft_player_scene::frame::{PlayerFrameError, PlayerFramePlanner, PlayerFrameRequest};
 use arcweft_player_scene::input::{InputController, InputOutcome};
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
+use arcweft_presentation::text_input::TextInputKeyDisposition;
 use arcweft_render_text::LineDisplayFrame;
 use arcweft_render_wgpu::geometry::{
     PreparedFrame, PreparedTextInputTarget, RenderPreferences, RenderViewport,
@@ -487,9 +488,19 @@ impl NativeSceneState {
 
     fn redraw(&mut self) -> Result<(), NativeSceneWindowError> {
         self.runtime.pump_main_thread()?;
+        if let Some(frame) = self.prepared.clone() {
+            self.drain_text_input_edits(&frame, TextInputKeyDisposition::ImeConsumed)?;
+        }
         self.step_runtime()?;
-        let prepared = self.prepare_frame()?;
+        let mut prepared = self.prepare_frame()?;
         self.sync_text_input_bridge(&prepared.frame, NativeTextInputFocusReason::RedrawRefresh)?;
+        if self.drain_text_input_edits(&prepared.frame, TextInputKeyDisposition::ImeConsumed)? {
+            prepared = self.prepare_frame()?;
+            self.sync_text_input_bridge(
+                &prepared.frame,
+                NativeTextInputFocusReason::RedrawRefresh,
+            )?;
+        }
         self.render(&prepared.frame)?;
         let patch_outcomes = self.drain_patch_events_after_render_submitted()?;
         if patch_outcomes
@@ -646,7 +657,9 @@ impl NativeSceneState {
             ElementState::Released => self.input.pointer_up(&frame, pointer, position),
         };
         self.apply_outcome(outcome)?;
-        self.sync_text_input_bridge(&frame, NativeTextInputFocusReason::Pointer)?;
+        let prepared = self.prepare_frame()?;
+        self.sync_text_input_bridge(&prepared.frame, NativeTextInputFocusReason::Pointer)?;
+        self.prepared = Some(prepared.frame);
         self.window.request_redraw();
         Ok(())
     }
@@ -685,9 +698,13 @@ impl NativeSceneState {
             .input
             .keyboard_with_ime(&frame, &label, phase, player_disposition);
         self.apply_outcome(outcome)?;
-        for edit in self.text_input.drain_platform_edits(player_disposition)? {
-            let outcome = self.input.text_input(&frame, edit.into_input())?;
-            self.apply_outcome(outcome)?;
+        if self.drain_text_input_edits(&frame, player_disposition)? {
+            let prepared = self.prepare_frame()?;
+            self.sync_text_input_bridge(
+                &prepared.frame,
+                NativeTextInputFocusReason::RedrawRefresh,
+            )?;
+            self.prepared = Some(prepared.frame);
         }
         self.window.request_redraw();
         Ok(())
@@ -710,6 +727,20 @@ impl NativeSceneState {
         self.text_input
             .sync_focus(focused_text_input_control(frame, reason))?;
         Ok(())
+    }
+
+    fn drain_text_input_edits(
+        &mut self,
+        frame: &PreparedFrame,
+        disposition: TextInputKeyDisposition,
+    ) -> Result<bool, NativeSceneWindowError> {
+        let mut drained = false;
+        for edit in self.text_input.drain_platform_edits(disposition)? {
+            drained = true;
+            let outcome = self.input.text_input(frame, edit.into_input())?;
+            self.apply_outcome(outcome)?;
+        }
+        Ok(drained)
     }
 
     fn apply_outcome(&mut self, outcome: InputOutcome) -> Result<(), NativeSceneWindowError> {
