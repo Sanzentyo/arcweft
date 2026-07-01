@@ -186,7 +186,12 @@ impl NativeTextInputBridge {
         };
         let focused = focused.with_capabilities(self.backend.capabilities());
         let snapshot = focused.snapshot();
-        let sync = self.core.sync_focus(Some(focused.focused()))?;
+        let sync = if focused.reason() == NativeTextInputFocusReason::Pointer {
+            self.core
+                .sync_focus_for_user_activation(Some(focused.focused()))?
+        } else {
+            self.core.sync_focus(Some(focused.focused()))?
+        };
         match sync.phase() {
             PlayerTextInputSyncPhase::Activated => {
                 self.trace.record_focus(

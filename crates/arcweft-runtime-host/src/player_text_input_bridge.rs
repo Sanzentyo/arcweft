@@ -222,6 +222,41 @@ impl PlayerTextInputBridgeCore {
         })
     }
 
+    /// Re-publishes focus for an explicit user activation even when the target
+    /// equals the currently active player focus.
+    ///
+    /// Native IME hosts can lose platform focus independently from Arcweft's
+    /// semantic focus. A pointer activation must therefore be able to issue a
+    /// fresh host activation instead of being collapsed as an idle redraw sync.
+    pub fn sync_focus_for_user_activation(
+        &mut self,
+        focused: Option<&PlayerTextInputFocusedControl>,
+    ) -> Result<PlayerTextInputSync, TextInputDispatchError> {
+        let Some(focused) = focused else {
+            return Ok(self.blur_active());
+        };
+        let snapshot = focused.snapshot();
+        let security = TextInputSecurityPolicy::from_options(snapshot.options());
+        let capabilities = focused.capabilities().narrow_for_security(security);
+        let transaction = self
+            .dispatch
+            .activate_with_capabilities(snapshot, capabilities);
+        let generation = transaction.generation();
+        let mut commands = transaction.into_commands();
+        commands.push(self.dispatch.update_geometry(focused.geometry())?);
+        self.published = Some(PlayerTextInputPublishedFocus::new(
+            focused,
+            security,
+            capabilities,
+        ));
+        Ok(PlayerTextInputSync {
+            phase: PlayerTextInputSyncPhase::Activated,
+            generation,
+            security,
+            commands,
+        })
+    }
+
     #[must_use]
     pub fn blur_active(&mut self) -> PlayerTextInputSync {
         self.published = None;
@@ -466,6 +501,28 @@ mod tests {
         let repeated = core.sync_focus(Some(&focused)).unwrap();
         assert_eq!(repeated.phase(), PlayerTextInputSyncPhase::Idle);
         assert!(repeated.commands().is_empty());
+    }
+
+    #[test]
+    fn user_activation_republishes_identical_focus() {
+        let target = target("reactivate");
+        let focused = focused(5, target, "abc", false);
+        let mut core = PlayerTextInputBridgeCore::default();
+
+        let activation = core.sync_focus(Some(&focused)).unwrap();
+        let first_generation = activation.generation();
+        let repeated = core.sync_focus_for_user_activation(Some(&focused)).unwrap();
+
+        assert_eq!(repeated.phase(), PlayerTextInputSyncPhase::Activated);
+        assert!(repeated.generation().0 > first_generation.0);
+        assert!(matches!(
+            repeated.commands()[0],
+            TextInputHostCommand::Activate { .. }
+        ));
+        assert!(matches!(
+            repeated.commands()[1],
+            TextInputHostCommand::UpdateGeometry(_)
+        ));
     }
 
     #[test]

@@ -259,7 +259,10 @@ impl InputController {
             }
             _ => Vec::new(),
         };
-        activation_outcome(frame, actions, is_activation)
+        let text_input_activation = routed
+            .event()
+            .is_some_and(|event| frame_target_is_text_input(frame, event.target()));
+        activation_outcome(frame, actions, is_activation && !text_input_activation)
     }
 
     pub fn pointer_cancel(&mut self, pointer: PointerId) -> InputOutcome {
@@ -472,6 +475,16 @@ fn choice_action(
         .map(|action| action.with_payload(choice.option_id.clone()))
 }
 
+fn frame_target_is_text_input(
+    frame: &PreparedFrame,
+    target: &arcweft_presentation::input::InteractionTarget,
+) -> bool {
+    frame
+        .semantics
+        .find(target)
+        .is_some_and(|node| node.role().is_text_input_control())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -483,7 +496,7 @@ mod tests {
         TextInputSessionId, TextRange,
     };
     use arcweft_render_wgpu::geometry::{
-        RenderPreferences, RenderScene, RenderViewport, SharedFramePlanner,
+        RenderDialogue, RenderPreferences, RenderScene, RenderViewport, SharedFramePlanner,
     };
 
     fn target(name: &str) -> arcweft_presentation::input::InteractionTarget {
@@ -509,6 +522,18 @@ mod tests {
             preferences: RenderPreferences::default(),
             interaction: InteractionVisualState::default(),
             choice_scroll: ChoiceScroll::default(),
+        }
+    }
+
+    fn scene_with_dialogue(control: RenderTextInputControl) -> RenderScene {
+        RenderScene {
+            dialogue: Some(RenderDialogue {
+                speaker: "narrator".to_owned(),
+                text: "click dialogue to advance".to_owned(),
+                base_styles: Vec::new(),
+                text_runs: Vec::new(),
+            }),
+            ..scene(control)
         }
     }
 
@@ -547,6 +572,29 @@ mod tests {
         assert_eq!(input.focused_text_editor().unwrap().text(), "abcd");
         let next_control = input.apply_live_text_control_state(control);
         assert_eq!(next_control.value, "abcd");
+    }
+
+    #[test]
+    fn pointer_activation_on_text_input_does_not_advance_dialogue() {
+        let target = target("text_input.pointer");
+        let control = RenderTextInputControl::new(
+            target,
+            TextInputSessionId(51),
+            "abc",
+            TextRange::new(TextByteOffset(3), TextByteOffset(3)),
+            TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(20.0, 30.0, 220.0, 32.0),
+        );
+        let frame = SharedFramePlanner::prepare(&scene_with_dialogue(control)).unwrap();
+        let mut input = InputController::default();
+        let position = ViewportPoint::new(30.0, 40.0);
+
+        let down = input.pointer_down(&frame, PointerId(0), position);
+        let up = input.pointer_up(&frame, PointerId(0), position);
+
+        assert!(!down.dialogue_advance);
+        assert!(!up.dialogue_advance);
     }
 
     #[test]
