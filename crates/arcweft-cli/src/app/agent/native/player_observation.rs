@@ -1,98 +1,82 @@
 use super::{
-    AgentImageFrameStore, AgentObserveImageKind, AgentObserveOptions, AgentUiImageObservation,
-    ExitCode, agent_capture_time_millis, agent_object_capture_refs_for_page,
-    agent_observe_capture_time_seconds, agent_observe_effective_steps, agent_textbox_object,
-    resolve_source_selection,
+    AgentImageFrameStore, AgentObservationState, AgentObserveImageKind, AgentObserveOptions,
+    ExitCode, NativeAdapterRegistrar, NativeAgentRuntimeState, NativeTaskBridge,
+    agent_action_targets, agent_action_targets_for_runtime_status, agent_capture_time_millis,
+    agent_mcp_project_context_from_hir, agent_native_capture_session_for_hir,
+    agent_object_capture_refs_for_page, agent_observe_capture_time_seconds,
+    agent_observe_effective_steps, agent_observe_layout_scene_graph,
+    agent_observe_report_capture_time_millis, agent_observed_layers, agent_overlay_svg,
+    agent_textbox_object, hash_hex, load_and_check_selection, native_host_policy_for_selection,
+    report_path, resolve_source_selection,
 };
 use crate::app::bundle::compile_bundle_for_selection;
 use arcweft_agent_protocol::{
+    diagnostic::{AgentDiagnostic, AgentDiagnosticSeverity},
     geometry::{AgentBBox, AgentCoordinateSpace, AgentViewport},
     object::{AgentObservedObject, AgentObservedObjectContent},
+    observation::AgentObservationReport,
+    presentation::AgentPresentationTree,
+    session::{AgentAssignment, AgentAudioState},
+    ui::AgentUiTree,
 };
-use arcweft_bundle::{ArcweftBundle, BundleVirtualFileSpace};
-use arcweft_player_scene::{
-    images::BundleImageCatalog, input::InputController, text_controls::RuntimeTextControlLowerer,
-};
+use arcweft_bundle::BundleVirtualFileSpace;
+use arcweft_core::engine::FlowFiberStatus;
+use arcweft_core::task::TaskEvent;
+use arcweft_interaction_model::input::RoutedInputEvent;
+use arcweft_player_scene::frame::{PlayerFramePlanner, PlayerFrameRequest, PlayerPreparedFrame};
+use arcweft_player_scene::{images::BundleImageCatalog, input::InputController};
 use arcweft_presentation::{hit::HitRect, semantic::SemanticRole};
 use arcweft_render_wgpu::{
-    geometry::{
-        PreparedFrame, RenderChoiceItem, RenderDialogue, RenderPreferences, RenderScene,
-        RenderTextInputControl, RenderViewport, SharedFramePlanner,
-    },
+    geometry::{PreparedFrame, RenderPreferences, RenderTextInputControl, RenderViewport},
     offscreen::SharedOffscreenCapture,
 };
 use arcweft_runtime_driver::{
     clock::RuntimeClockStep,
     display::BundlePresentationSnapshot,
     session::{BundleSession, BundleSessionOptions, BundleSessionStep, BundleStepInput},
+    task::HostTaskDispatch,
 };
 use std::path::Path;
 
-pub(super) fn agent_player_visual_observation_for_options(
+pub(super) fn agent_player_observation_for_options(
     options: &AgentObserveOptions,
-) -> Result<AgentUiImageObservation, ExitCode> {
-    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
-    let mut phases = Vec::new();
-    let compiled =
-        compile_bundle_for_selection(&selection, vec![BundleVirtualFileSpace::Asset], &mut phases)?;
-    let bundle = compiled.bundle;
-    let step = run_player_bundle_observation(&bundle, options)?;
-    let viewport = player_observe_viewport(options);
-    let visual_time_millis = u64::from(agent_capture_time_millis(
-        agent_observe_capture_time_seconds(options),
-    ));
-    let images = BundleImageCatalog::from_bundle(&bundle).map_err(|error| {
-        eprintln!("error: player-backed observe image catalog failed: {error}");
-        ExitCode::FAILURE
-    })?;
-    let mut input = InputController::default();
-    let scene = player_observe_render_scene(
-        &images,
-        &step.presentation,
-        viewport,
-        visual_time_millis,
-        &mut input,
-    )?;
-    let prepared = SharedFramePlanner::prepare(&scene).map_err(|error| {
-        eprintln!("error: player-backed observe frame planning failed: {error}");
-        ExitCode::FAILURE
-    })?;
-    input.ensure_choice_focus(&prepared);
-    let scene = player_observe_render_scene(
-        &images,
-        &step.presentation,
-        viewport,
-        visual_time_millis,
-        &mut input,
-    )?;
-    let prepared = SharedFramePlanner::prepare(&RenderScene {
-        interaction: input.visual_state(),
-        choice_scroll: input.choice_scroll(),
-        ..scene.clone()
-    })
-    .map_err(|error| {
-        eprintln!("error: player-backed observe frame planning failed: {error}");
-        ExitCode::FAILURE
-    })?;
-    let objects =
-        player_observed_objects(&scene, &prepared, &step.presentation, step.index, options);
-    let mut image_frames = AgentImageFrameStore::default();
-    if player_observe_requires_shared_capture(options) {
-        let capture = player_observe_capture_frame(&prepared)?;
-        image_frames.set_full_frame(capture.width, capture.height, capture.rgba);
-    }
-    Ok(AgentUiImageObservation {
-        objects,
-        image_frames,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<AgentObservationState, ExitCode> {
+    let mut runtime = native_player_runtime_state_for_options(options, adapter_registrars)?;
+    let observed = observe_native_player_runtime(&mut runtime, options, Vec::new())?;
+    Ok(AgentObservationState {
+        report: observed.report,
+        image_frames: observed.image_frames,
+        native_session: runtime.native_session,
     })
 }
 
-fn run_player_bundle_observation(
-    bundle: &ArcweftBundle,
+pub(super) struct NativePlayerObservedFrame {
+    pub(super) report: AgentObservationReport,
+    pub(super) image_frames: AgentImageFrameStore,
+}
+
+pub(super) fn native_player_runtime_state_for_options(
     options: &AgentObserveOptions,
-) -> Result<BundleSessionStep, ExitCode> {
-    let mut session = BundleSession::new(
-        bundle,
+    adapter_registrars: &[NativeAdapterRegistrar],
+) -> Result<NativeAgentRuntimeState, ExitCode> {
+    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
+    let checked = load_and_check_selection(&selection, None)?;
+    let project_context = agent_mcp_project_context_from_hir(&checked.hir, selection.path())
+        .map_err(|error| {
+            eprintln!("error: failed to build native project context: {error}");
+            ExitCode::FAILURE
+        })?;
+    let native_session = agent_native_capture_session_for_hir(&checked.hir)?;
+    let mut phases = Vec::new();
+    let compiled =
+        compile_bundle_for_selection(&selection, vec![BundleVirtualFileSpace::Asset], &mut phases)?;
+    let images = BundleImageCatalog::from_bundle(&compiled.bundle).map_err(|error| {
+        eprintln!("error: player-backed observe image catalog failed: {error}");
+        ExitCode::FAILURE
+    })?;
+    let session = BundleSession::new(
+        &compiled.bundle,
         BundleSessionOptions {
             entry: options.entry.clone(),
             flow: options.flow.clone(),
@@ -105,69 +89,155 @@ fn run_player_bundle_observation(
         eprintln!("error: player-backed observe session failed: {error}");
         ExitCode::FAILURE
     })?;
-    let effective_steps = agent_observe_effective_steps(options);
-    let force_capture_step = options.capture_step.is_some();
-    let mut last_step = None;
-    for step_index in 0..effective_steps {
-        let clock = RuntimeClockStep::from_millis(
-            u64::try_from(step_index.saturating_add(1)).unwrap_or(u64::MAX),
-            16,
-        )
+    let host_policy = native_host_policy_for_selection(&selection)?;
+    let host = NativeTaskBridge::try_new(selection.path(), host_policy, adapter_registrars)
+        .map(Some)
         .map_err(|error| {
-            eprintln!("error: player-backed observe clock failed: {error}");
+            eprintln!("error: failed to create native task bridge: {error}");
             ExitCode::FAILURE
         })?;
-        let step = session.step_with_clock(clock, BundleStepInput::default());
+    Ok(NativeAgentRuntimeState {
+        session,
+        images,
+        input: InputController::default(),
+        source_path: selection.path().to_owned(),
+        project_context,
+        native_session,
+        host,
+        task_events: Vec::new(),
+        next_clock_millis: 1,
+    })
+}
+
+pub(super) fn observe_native_player_runtime(
+    runtime: &mut NativeAgentRuntimeState,
+    options: &AgentObserveOptions,
+    input_events: Vec<RoutedInputEvent>,
+) -> Result<NativePlayerObservedFrame, ExitCode> {
+    let effective_steps = agent_observe_effective_steps(options);
+    let force_capture_step = options.capture_step.is_some();
+    let mut pending_input_events = input_events;
+    let mut diagnostics = Vec::new();
+    let mut task_request_count = 0usize;
+    let mut last_step = None;
+    for _ in 0..effective_steps {
+        let clock =
+            RuntimeClockStep::from_millis(runtime.next_clock_millis, 16).map_err(|error| {
+                eprintln!("error: player-backed observe clock failed: {error}");
+                ExitCode::FAILURE
+            })?;
+        runtime.next_clock_millis = runtime.next_clock_millis.saturating_add(1);
+        let step = runtime.session.step_with_clock(
+            clock,
+            BundleStepInput {
+                input_events: std::mem::take(&mut pending_input_events),
+                task_events: std::mem::take(&mut runtime.task_events),
+                ..BundleStepInput::default()
+            },
+        );
         let finished = step.finished;
+        diagnostics.extend(
+            step.diagnostics
+                .iter()
+                .cloned()
+                .map(|message| AgentDiagnostic {
+                    step: step.index,
+                    severity: AgentDiagnosticSeverity::Error,
+                    source: Some("runtime".to_owned()),
+                    code: None,
+                    effect_id: None,
+                    message,
+                }),
+        );
+        task_request_count = task_request_count.saturating_add(step.requested_tasks.len());
+        runtime.task_events = if finished {
+            Vec::new()
+        } else {
+            complete_player_runtime_tasks(runtime.host.as_mut(), &step.requested_tasks)
+        };
         last_step = Some(step);
         if finished && !force_capture_step {
             break;
         }
     }
-    last_step.ok_or_else(|| {
+    let step = last_step.ok_or_else(|| {
         eprintln!("error: player-backed observe requires at least one runtime step");
         ExitCode::from(2)
+    })?;
+    let prepared = prepare_player_runtime_frame(runtime, &step.presentation, options)?;
+    let objects = player_observed_objects(&prepared, &step.presentation, step.index, options);
+    let mut image_frames = AgentImageFrameStore::default();
+    if player_observe_requires_shared_capture(options) {
+        let capture = player_observe_capture_frame(&prepared.frame)?;
+        image_frames.set_full_frame(capture.width, capture.height, capture.rgba);
+    }
+    Ok(NativePlayerObservedFrame {
+        report: player_observation_report(
+            &runtime.source_path,
+            &prepared,
+            &step,
+            objects,
+            diagnostics,
+            task_request_count,
+            options,
+        ),
+        image_frames,
     })
 }
 
-fn player_observe_render_scene(
-    images: &BundleImageCatalog,
+fn complete_player_runtime_tasks(
+    host: Option<&mut NativeTaskBridge>,
+    requested_tasks: &[HostTaskDispatch],
+) -> Vec<TaskEvent> {
+    let Some(host) = host else {
+        return Vec::new();
+    };
+    let tasks = requested_tasks
+        .iter()
+        .map(|dispatch| dispatch.task.clone())
+        .collect::<Vec<_>>();
+    host.complete_tasks(tasks)
+        .into_iter()
+        .map(|event| align_player_task_event(event, requested_tasks))
+        .collect()
+}
+
+fn align_player_task_event(
+    mut event: TaskEvent,
+    requested_tasks: &[HostTaskDispatch],
+) -> TaskEvent {
+    if let Some(dispatch) = requested_tasks
+        .iter()
+        .find(|dispatch| dispatch.task.id == event.task_id)
+    {
+        event.logical_epoch = dispatch.logical_epoch;
+        event.sequence = dispatch.sequence;
+    }
+    event
+}
+
+fn prepare_player_runtime_frame(
+    runtime: &mut NativeAgentRuntimeState,
     presentation: &BundlePresentationSnapshot,
-    viewport: RenderViewport,
-    visual_time_millis: u64,
-    input: &mut InputController,
-) -> Result<RenderScene, ExitCode> {
-    let text_inputs = RuntimeTextControlLowerer::lower_for_frame(input, &presentation.text_inputs)
-        .map_err(|error| {
-            eprintln!("error: player-backed observe text-control lowering failed: {error}");
-            ExitCode::FAILURE
-        })?;
-    let images = images
-        .render_images(&presentation.images, visual_time_millis)
-        .map_err(|error| {
-            eprintln!("error: player-backed observe image rendering failed: {error}");
-            ExitCode::FAILURE
-        })?;
-    Ok(RenderScene {
-        dialogue: presentation
-            .dialogue
-            .as_ref()
-            .map(RenderDialogue::from_display_frame),
-        choices: presentation
-            .choices
-            .iter()
-            .map(|choice| RenderChoiceItem {
-                id: choice.id.clone(),
-                label: choice.label.clone(),
-            })
-            .collect(),
-        text_inputs,
-        images,
-        viewport,
-        visual_time_millis,
-        preferences: RenderPreferences::default(),
-        interaction: input.visual_state(),
-        choice_scroll: input.choice_scroll(),
+    options: &AgentObserveOptions,
+) -> Result<PlayerPreparedFrame, ExitCode> {
+    let visual_time_millis = u64::from(agent_capture_time_millis(
+        agent_observe_capture_time_seconds(options),
+    ));
+    PlayerFramePlanner::prepare(
+        &mut runtime.input,
+        PlayerFrameRequest {
+            presentation,
+            images: &runtime.images,
+            viewport: player_observe_viewport(options),
+            image_time_millis: visual_time_millis,
+            visual_time_millis,
+            preferences: RenderPreferences::default(),
+        },
+    )
+    .map_err(|error| {
+        eprintln!("error: player-backed observe frame planning failed: {error}");
+        ExitCode::FAILURE
     })
 }
 
@@ -217,16 +287,103 @@ fn player_observe_viewport(options: &AgentObserveOptions) -> RenderViewport {
     }
 }
 
+fn player_observation_report(
+    source_path: &Path,
+    prepared: &PlayerPreparedFrame,
+    step: &BundleSessionStep,
+    objects: Vec<AgentObservedObject>,
+    diagnostics: Vec<AgentDiagnostic>,
+    task_request_count: usize,
+    options: &AgentObserveOptions,
+) -> AgentObservationReport {
+    let viewport = AgentViewport {
+        width: prepared.scene.viewport.physical_width,
+        height: prepared.scene.viewport.physical_height,
+        scale: 1.0,
+    };
+    let object_refs = objects.iter().collect::<Vec<_>>();
+    let overlay_svg = agent_overlay_svg(&viewport, &object_refs);
+    let render_hash = hash_hex(overlay_svg.as_bytes());
+    let mut actions = agent_action_targets(&objects);
+    actions.extend(agent_action_targets_for_runtime_status(&step.fiber_status));
+    let layers = agent_observed_layers("cli", step.index, &objects);
+    let presentation_tree = AgentPresentationTree::from_layers_and_objects(&layers, &objects);
+    let state_hash = hash_hex(
+        format!(
+            "{}:{}:{}:{}:{}",
+            step.status_label,
+            step.index,
+            objects.len(),
+            step.diagnostics.len(),
+            task_request_count
+        )
+        .as_bytes(),
+    );
+    AgentObservationReport {
+        status: if matches!(step.fiber_status, FlowFiberStatus::Failed(_)) {
+            "failed".to_owned()
+        } else {
+            "ok".to_owned()
+        },
+        session_id: "cli".to_owned(),
+        tick: step.index,
+        frame_id: format!("frame.{}", step.index),
+        state_hash,
+        render_hash,
+        source: report_path(source_path),
+        viewport,
+        images: Vec::new(),
+        layers: layers.clone(),
+        objects,
+        presentation_tree,
+        actions,
+        ui_tree: AgentUiTree {
+            root: "ui.root".to_owned(),
+            children: layers.iter().map(|layer| layer.id.clone()).collect(),
+        },
+        scene_graph: vec![agent_observe_layout_scene_graph(&viewport)],
+        audio_state: AgentAudioState {
+            active_voices: Vec::new(),
+            pending_events: Vec::new(),
+        },
+        logs: step.observations.logs.clone(),
+        signals: step
+            .observations
+            .signals
+            .iter()
+            .map(|(name, value)| AgentAssignment {
+                name: name.clone(),
+                value: value.clone(),
+            })
+            .collect(),
+        metrics: step
+            .observations
+            .metrics
+            .iter()
+            .map(|(name, value)| AgentAssignment {
+                name: name.clone(),
+                value: value.clone(),
+            })
+            .collect(),
+        events: step.observations.events.clone(),
+        diagnostics,
+        steps: step.index.saturating_add(1),
+        capture_time_millis: agent_observe_report_capture_time_millis(options),
+        task_requests: task_request_count,
+        final_status: step.status_label.clone(),
+        overlay_svg: None,
+    }
+}
+
 fn player_observed_objects(
-    scene: &RenderScene,
-    prepared: &PreparedFrame,
+    prepared: &PlayerPreparedFrame,
     presentation: &BundlePresentationSnapshot,
     step: usize,
     options: &AgentObserveOptions,
 ) -> Vec<AgentObservedObject> {
     let viewport = AgentViewport {
-        width: scene.viewport.physical_width,
-        height: scene.viewport.physical_height,
+        width: prepared.scene.viewport.physical_width,
+        height: prepared.scene.viewport.physical_height,
         scale: 1.0,
     };
     let mut objects = Vec::new();
@@ -239,13 +396,21 @@ fn player_observed_objects(
             options,
         ));
     }
-    objects.extend(prepared.semantics.as_slice().iter().filter_map(|node| {
-        let control = scene
-            .text_inputs
+    objects.extend(
+        prepared
+            .frame
+            .semantics
+            .as_slice()
             .iter()
-            .find(|control| control.target == *node.target());
-        player_semantic_object(step, node, control)
-    }));
+            .filter_map(|node| {
+                let control = prepared
+                    .scene
+                    .text_inputs
+                    .iter()
+                    .find(|control| control.target == *node.target());
+                player_semantic_object(step, node, control)
+            }),
+    );
     objects
 }
 

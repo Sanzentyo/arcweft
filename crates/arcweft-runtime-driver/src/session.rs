@@ -27,6 +27,7 @@ use arcweft_core::bytecode::BytecodeVerificationError;
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::executor::{ArcweftRuntimeExecutor, RuntimeExecutor};
+use arcweft_core::observation::RuntimeObservationState;
 use arcweft_core::plan::{FlowEvent, RuntimePlanError};
 use arcweft_core::pure::VmRuntimePureCallBackend;
 use arcweft_core::source::{RuntimeSourceEvent, SourceId};
@@ -92,6 +93,7 @@ pub struct BundleSessionStep {
     pub status_label: String,
     pub stats: RuntimeStepStats,
     pub diagnostics: Vec<String>,
+    pub observations: RuntimeObservationState,
     pub flow_events: Vec<FlowEvent>,
     pub line_effects: Vec<LineEffectRequest>,
     pub presentation: BundlePresentationSnapshot,
@@ -814,6 +816,7 @@ impl BundleSession {
             &self.image_objects,
             &self.text_inputs,
         );
+        let observations = self.executor.fiber().observations.clone();
 
         let requested_tasks = self.dispatch_requested_tasks(clock, output.requests.tasks);
         let cancel_scopes = output.requests.cancel_scopes;
@@ -844,6 +847,7 @@ impl BundleSession {
             fiber_status: result.fiber_status,
             stats: result.stats,
             diagnostics,
+            observations,
             flow_events,
             line_effects,
             presentation: self.presentation.clone(),

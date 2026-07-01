@@ -260,67 +260,10 @@ pub(super) fn agent_mcp_run_observation(
 ) -> Result<AgentMcpObservation, String> {
     let options = agent_mcp_observe_options(arguments)?;
     validate_agent_observe_options(&options).map_err(|_| "invalid observe options".to_owned())?;
-    let selection = resolve_source_selection(options.path.as_ref(), &options.profile)
-        .map_err(|_| "failed to resolve MCP observe source".to_owned())?;
-    let pure_config = runtime_pure_config_for_selection(
-        &selection,
-        options.pure_backend,
-        options.pure_workers,
-        options.pure_batch_min_len,
-        options.pure_object_artifacts,
-        options.math_backend,
-        options.math_wgpu_min_elements,
-    )
-    .map_err(|_| "failed to resolve runtime pure config".to_owned())?;
-    let checked = load_and_check_selection(&selection, None)
-        .map_err(|_| "failed to check MCP observe source".to_owned())?;
-    let project_context = agent_mcp_project_context_from_hir(&checked.hir, selection.path())
-        .map_err(|error| format!("failed to build MCP project context: {error}"))?;
-    let host_policy = native_host_policy_for_selection(&selection)
-        .map_err(|_| "failed to resolve native host policy".to_owned())?;
-    let runtime_options = runtime_plan_options_for_selection(&selection);
-    let lowered = lower_source_runtime_plan_with_stats_and_options(&checked.hir, &runtime_options)
-        .map_err(|_| "failed to lower runtime plan".to_owned())?;
-    let native_session = agent_native_capture_session_for_hir(&checked.hir)
-        .map_err(|_| "failed to create native capture session".to_owned())?;
-    let mut plan = lowered.plan;
-    let entry = options.entry.as_deref().or(selection.entry());
-    apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())
-        .map_err(|_| "failed to select runtime entry".to_owned())?;
-    let mut runtime = NativeAgentRuntimeState {
-        executor: RuntimeExecutorInstance::new(plan, options.executor, pure_config),
-        catalog: lowered.line_display_catalog,
-        source_path: selection.path().to_owned(),
-        host_policy,
-        project_context,
-        native_session,
-        task_events: Vec::new(),
-        next_tick: 0,
-    };
-    let mut observed = run_agent_observation(
-        &mut runtime.executor,
-        &runtime.catalog,
-        AgentObservationRunContext {
-            host_config: NativeRunHost {
-                source_path: Some(&runtime.source_path),
-                policy: &runtime.host_policy,
-                adapter_registrars,
-            },
-            options: &options,
-            source_path: &runtime.source_path,
-            native_session: Some(&mut runtime.native_session),
-            tick_offset: 0,
-            input_events: Vec::new(),
-            task_events: &mut runtime.task_events,
-        },
-    )
-    .map_err(|error| error.to_string())?;
-    extend_agent_observation_with_runtime_images(
-        &mut observed,
-        &runtime.source_path,
-        &runtime.executor,
-        &options,
-    );
+    let mut runtime = native_player_runtime_state_for_options(&options, adapter_registrars)
+        .map_err(|_| "failed to initialize player-backed MCP observe runtime".to_owned())?;
+    let mut observed = observe_native_player_runtime(&mut runtime, &options, Vec::new())
+        .map_err(|_| "failed to run player-backed MCP observe runtime".to_owned())?;
     let image_output = agent_observe_image_output(
         &mut observed.report,
         &options,
@@ -328,7 +271,6 @@ pub(super) fn agent_mcp_run_observation(
         &observed.image_frames,
     )
     .map_err(|_| "failed to build MCP observe image output".to_owned())?;
-    runtime.next_tick = observed.report.tick.saturating_add(1);
     Ok(AgentMcpObservation {
         report: observed.report,
         image_output,
@@ -342,33 +284,10 @@ pub(super) fn agent_mcp_observe_runtime(
     runtime: &mut NativeAgentRuntimeState,
     options: &AgentObserveOptions,
     input_events: Vec<RoutedInputEvent>,
-    adapter_registrars: &[NativeAdapterRegistrar],
+    _adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<AgentMcpFrame, String> {
-    let tick_offset = runtime.next_tick;
-    let mut observed = run_agent_observation(
-        &mut runtime.executor,
-        &runtime.catalog,
-        AgentObservationRunContext {
-            host_config: NativeRunHost {
-                source_path: Some(&runtime.source_path),
-                policy: &runtime.host_policy,
-                adapter_registrars,
-            },
-            options,
-            source_path: &runtime.source_path,
-            native_session: Some(&mut runtime.native_session),
-            tick_offset,
-            input_events,
-            task_events: &mut runtime.task_events,
-        },
-    )
-    .map_err(|error| error.to_string())?;
-    extend_agent_observation_with_runtime_images(
-        &mut observed,
-        &runtime.source_path,
-        &runtime.executor,
-        options,
-    );
+    let mut observed = observe_native_player_runtime(runtime, options, input_events)
+        .map_err(|_| "failed to run player-backed MCP observe runtime".to_owned())?;
     let image_output = agent_observe_image_output(
         &mut observed.report,
         options,
@@ -378,34 +297,12 @@ pub(super) fn agent_mcp_observe_runtime(
     .map_err(|_| "failed to build MCP action image output".to_owned())?;
     let resources = agent_observe_list_resources(&observed.report, image_output.as_ref())
         .map_err(|_| "failed to build MCP action resources".to_owned())?;
-    runtime.next_tick = observed.report.tick.saturating_add(1);
     Ok(AgentMcpFrame {
         report: observed.report,
         image_output,
         image_frames: observed.image_frames,
         resources,
     })
-}
-
-pub(super) fn extend_agent_observation_with_runtime_images(
-    observed: &mut AgentObservationRunOutput,
-    source_path: &Path,
-    executor: &RuntimeExecutorInstance,
-    options: &AgentObserveOptions,
-) {
-    let (image_observation, image_diagnostics) = agent_runtime_presentation_image_observation(
-        source_path,
-        observed.report.tick,
-        &observed.report.viewport,
-        &executor.fiber().observations.calls,
-        agent_observe_capture_time_seconds(options),
-    );
-    observed.report.diagnostics.extend(image_diagnostics);
-    if !image_observation.objects.is_empty() {
-        observed.report.objects.extend(image_observation.objects);
-        observed.image_frames.extend(image_observation.image_frames);
-        agent_refresh_observation_object_indexes(&mut observed.report);
-    }
 }
 
 pub(super) fn agent_mcp_call_resource_read(

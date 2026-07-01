@@ -188,13 +188,6 @@ impl AgentImageFrameStore {
     pub(super) fn get(&self, object_id: &str) -> Option<&AgentStoredImageFrame> {
         self.frames_by_object.get(object_id)
     }
-
-    pub(super) fn extend(&mut self, other: AgentImageFrameStore) {
-        if other.full_frame.is_some() {
-            self.full_frame = other.full_frame;
-        }
-        self.frames_by_object.extend(other.frames_by_object);
-    }
 }
 
 pub(super) fn agent_native_capture_image(

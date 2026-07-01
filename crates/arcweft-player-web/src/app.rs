@@ -7,18 +7,13 @@ use crate::runtime_text_input::{
     register_runtime_bridge,
 };
 use arcweft_bundle::{ArcweftBundle, BundleFormat};
+use arcweft_player_scene::frame::{PlayerFrameError, PlayerFramePlanner, PlayerFrameRequest};
 use arcweft_player_scene::images::{BundleImageCatalog, BundleImageCatalogError};
 use arcweft_player_scene::input::{InputController, InputOutcome};
-use arcweft_player_scene::text_controls::{
-    RuntimeTextControlLowerer, RuntimeTextControlLoweringError,
-};
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
 use arcweft_presentation::text_input::TextInputKeyDisposition;
 use arcweft_render_web::web::{WebGpuCanvasHost, WebGpuCanvasHostError};
-use arcweft_render_wgpu::geometry::{
-    RenderChoiceItem, RenderDialogue, RenderPreferences, RenderScene, RenderViewport,
-    SharedFramePlanner,
-};
+use arcweft_render_wgpu::geometry::{RenderPreferences, RenderViewport};
 use arcweft_render_wgpu::renderer::SharedRenderer;
 use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions, BundleStepInput};
 use std::cell::RefCell;
@@ -61,16 +56,14 @@ enum WebPlayerError {
     Font(String),
     #[error("image catalog failed: {0}")]
     Image(String),
-    #[error("frame planning failed: {0}")]
-    FramePlan(String),
+    #[error("player frame failed: {0}")]
+    PlayerFrame(#[from] PlayerFrameError),
     #[error("diagnostic serialization failed: {0}")]
     Report(String),
     #[error("Web runtime text-input bridge failed: {0}")]
     TextInput(String),
     #[error("player text editor failed: {0}")]
     TextEditor(String),
-    #[error("runtime text-control lowering failed: {0}")]
-    TextControlLowering(#[from] RuntimeTextControlLoweringError),
 }
 
 struct ReadyGpu {
@@ -405,43 +398,18 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
         presentation.dialogue.as_ref(),
         host_millis.max(0.0) as u64,
     );
-    let images = state
-        .images
-        .render_images(&presentation.images, host_millis.max(0.0) as u64)
-        .map_err(WebPlayerError::from)?;
-    // Runtime text controls use the same player-owned lowering path as native;
-    // browser IME support is attached after PreparedFrame geometry is known.
-    let text_inputs =
-        RuntimeTextControlLowerer::lower_for_frame(&mut state.input, &presentation.text_inputs)?;
-    let scene = RenderScene {
-        dialogue: presentation
-            .dialogue
-            .as_ref()
-            .map(RenderDialogue::from_display_frame),
-        choices: presentation
-            .choices
-            .iter()
-            .map(|choice| RenderChoiceItem {
-                id: choice.id.clone(),
-                label: choice.label.clone(),
-            })
-            .collect(),
-        text_inputs,
-        images,
-        viewport,
-        visual_time_millis,
-        preferences: RenderPreferences::default(),
-        interaction: state.input.visual_state(),
-        choice_scroll: state.input.choice_scroll(),
-    };
-    let mut prepared = SharedFramePlanner::prepare(&scene)
-        .map_err(|error| WebPlayerError::FramePlan(error.to_string()))?;
-    state.input.ensure_choice_focus(&prepared);
-    prepared = SharedFramePlanner::prepare(&RenderScene {
-        interaction: state.input.visual_state(),
-        ..scene
-    })
-    .map_err(|error| WebPlayerError::FramePlan(error.to_string()))?;
+    let prepared = PlayerFramePlanner::prepare(
+        &mut state.input,
+        PlayerFrameRequest {
+            presentation,
+            images: &state.images,
+            viewport,
+            image_time_millis: host_millis.max(0.0) as u64,
+            visual_time_millis,
+            preferences: RenderPreferences::default(),
+        },
+    )?
+    .frame;
     update_text_input_client_transform(state)?;
     state
         .text_input

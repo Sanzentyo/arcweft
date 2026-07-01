@@ -68,19 +68,10 @@ use std::{fs, path::Path};
 #[cfg(feature = "native-capture")]
 use super::project::{
     load_and_check_selection, native_host_policy_for_selection, resolve_source_selection,
-    runtime_plan_options_for_selection, runtime_pure_config_for_selection,
 };
 
 #[cfg(feature = "native-capture")]
-use super::runtime::parse::step_options;
-#[cfg(feature = "native-capture")]
-use arcweft_compiler::lower::lower_source_runtime_plan_with_stats_and_options;
-#[cfg(feature = "native-capture")]
 use arcweft_core::engine::FlowFiberStatus;
-#[cfg(feature = "native-capture")]
-use arcweft_core::step::{RuntimeStepInput, RuntimeStepResult};
-#[cfg(feature = "native-capture")]
-use arcweft_render_text::LineDisplayCatalog;
 #[cfg(feature = "native-capture")]
 use arcweft_runtime_host::NativeTaskBridge;
 

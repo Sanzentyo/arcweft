@@ -158,35 +158,21 @@ pub(super) struct AgentObservationState {
     pub(super) native_session: arcweft_render_native::NativeOffscreenCaptureSession,
 }
 
-pub(super) struct AgentObservationRunOutput {
-    pub(super) report: AgentObservationReport,
-    pub(super) image_frames: AgentImageFrameStore,
-}
-
-pub(super) struct AgentObservationRunContext<'a> {
-    pub(super) host_config: NativeRunHost<'a>,
-    pub(super) options: &'a AgentObserveOptions,
-    pub(super) source_path: &'a Path,
-    pub(super) native_session: Option<&'a mut arcweft_render_native::NativeOffscreenCaptureSession>,
-    pub(super) tick_offset: usize,
-    pub(super) input_events: Vec<RoutedInputEvent>,
-    pub(super) task_events: &'a mut Vec<TaskEvent>,
-}
-
 pub(super) struct NativeAgentObservedSnapshot {
     pub(super) report: AgentObservationReport,
     pub(super) image_frames: AgentImageFrameStore,
 }
 
 pub(super) struct NativeAgentRuntimeState {
-    pub(super) executor: RuntimeExecutorInstance,
-    pub(super) catalog: LineDisplayCatalog,
+    pub(super) session: arcweft_runtime_driver::session::BundleSession,
+    pub(super) images: arcweft_player_scene::images::BundleImageCatalog,
+    pub(super) input: arcweft_player_scene::input::InputController,
     pub(super) source_path: PathBuf,
-    pub(super) host_policy: HostCallPolicy,
     pub(super) project_context: AgentMcpProjectContext,
     pub(super) native_session: arcweft_render_native::NativeOffscreenCaptureSession,
-    pub(super) task_events: Vec<TaskEvent>,
-    pub(super) next_tick: usize,
+    pub(super) host: Option<NativeTaskBridge>,
+    pub(super) task_events: Vec<arcweft_core::task::TaskEvent>,
+    pub(super) next_clock_millis: u64,
 }
 
 #[derive(Clone, Debug)]

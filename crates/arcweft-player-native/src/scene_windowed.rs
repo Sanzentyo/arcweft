@@ -15,16 +15,12 @@ use crate::windowed_runtime::{
 };
 use arcweft_bundle::ArcweftBundle;
 use arcweft_desktop_native::NativeDesktopBackend;
-use arcweft_player_scene::images::BundleImageCatalogError;
+use arcweft_player_scene::frame::{PlayerFrameError, PlayerFramePlanner, PlayerFrameRequest};
 use arcweft_player_scene::input::{InputController, InputOutcome};
-use arcweft_player_scene::text_controls::{
-    RuntimeTextControlLowerer, RuntimeTextControlLoweringError,
-};
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
 use arcweft_render_text::LineDisplayFrame;
 use arcweft_render_wgpu::geometry::{
-    PreparedFrame, PreparedTextInputTarget, RenderChoiceItem, RenderDialogue, RenderPreferences,
-    RenderScene, RenderViewport, SharedFramePlanner,
+    PreparedFrame, PreparedTextInputTarget, RenderPreferences, RenderViewport,
 };
 use arcweft_render_wgpu::renderer::{SharedRenderer, SharedRendererError};
 use arcweft_runtime_driver::clock::{RuntimeClockError, RuntimeClockStep};
@@ -99,16 +95,14 @@ enum NativeSceneWindowError {
     RuntimeOwner(#[from] WindowedRuntimeOwnerError),
     #[error("runtime clock failed: {0}")]
     Clock(#[from] RuntimeClockError),
-    #[error("bundle image catalog failed: {0}")]
-    Images(#[from] BundleImageCatalogError),
+    #[error("player frame failed: {0}")]
+    PlayerFrame(#[from] PlayerFrameError),
     #[error("native text-input bridge failed: {0}")]
     TextInputBridge(#[from] NativeTextInputBridgeError),
     #[error("native audio failed: {0}")]
     Audio(#[from] NativePlayerAudioError),
     #[error("player text editor failed: {0}")]
     TextEditor(#[from] arcweft_presentation::text_editor::TextEditorError),
-    #[error("runtime text-control lowering failed: {0}")]
-    TextControlLowering(#[from] RuntimeTextControlLoweringError),
     #[error("WebGPU surface creation failed: {0}")]
     SurfaceCreation(String),
     #[error("no WebGPU adapter is available for the native surface")]
@@ -119,8 +113,6 @@ enum NativeSceneWindowError {
     NoSurfaceFormat,
     #[error("shared renderer failed: {0}")]
     Renderer(#[from] SharedRendererError),
-    #[error("frame planning failed: {0}")]
-    FramePlan(String),
     #[error("surface is outdated")]
     SurfaceOutdated,
     #[error("surface was lost")]
@@ -497,10 +489,8 @@ impl NativeSceneState {
         self.runtime.pump_main_thread()?;
         self.step_runtime()?;
         let prepared = self.prepare_frame()?;
-        self.input.ensure_choice_focus(&prepared);
-        let prepared = self.prepare_frame_with_interaction()?;
-        self.sync_text_input_bridge(&prepared, NativeTextInputFocusReason::RedrawRefresh)?;
-        self.render(&prepared)?;
+        self.sync_text_input_bridge(&prepared.frame, NativeTextInputFocusReason::RedrawRefresh)?;
+        self.render(&prepared.frame)?;
         let patch_outcomes = self.drain_patch_events_after_render_submitted()?;
         if patch_outcomes
             .iter()
@@ -508,7 +498,7 @@ impl NativeSceneState {
         {
             self.prepared = None;
         } else {
-            self.prepared = Some(prepared);
+            self.prepared = Some(prepared.frame);
         }
         Ok(())
     }
@@ -552,25 +542,7 @@ impl NativeSceneState {
 
     fn prepare_frame(
         &mut self,
-    ) -> Result<arcweft_render_wgpu::geometry::PreparedFrame, NativeSceneWindowError> {
-        let scene = self.render_scene()?;
-        SharedFramePlanner::prepare(&scene)
-            .map_err(|error| NativeSceneWindowError::FramePlan(error.to_string()))
-    }
-
-    fn prepare_frame_with_interaction(
-        &mut self,
-    ) -> Result<arcweft_render_wgpu::geometry::PreparedFrame, NativeSceneWindowError> {
-        let scene = self.render_scene()?;
-        SharedFramePlanner::prepare(&RenderScene {
-            interaction: self.input.visual_state(),
-            choice_scroll: self.input.choice_scroll(),
-            ..scene
-        })
-        .map_err(|error| NativeSceneWindowError::FramePlan(error.to_string()))
-    }
-
-    fn render_scene(&mut self) -> Result<RenderScene, NativeSceneWindowError> {
+    ) -> Result<arcweft_player_scene::frame::PlayerPreparedFrame, NativeSceneWindowError> {
         let viewport = self.viewport();
         let elapsed = self.elapsed_millis();
         let presentation = self.runtime.session().presentation();
@@ -579,34 +551,17 @@ impl NativeSceneState {
             presentation.dialogue.as_ref(),
             elapsed,
         );
-        // Runtime text controls use the shared player-owned lowering path; IME
-        // activation still comes only from PreparedFrame geometry.
-        let text_inputs =
-            RuntimeTextControlLowerer::lower_for_frame(&mut self.input, &presentation.text_inputs)?;
-        Ok(RenderScene {
-            dialogue: presentation
-                .dialogue
-                .as_ref()
-                .map(RenderDialogue::from_display_frame),
-            choices: presentation
-                .choices
-                .iter()
-                .map(|choice| RenderChoiceItem {
-                    id: choice.id.clone(),
-                    label: choice.label.clone(),
-                })
-                .collect(),
-            text_inputs,
-            images: self
-                .runtime
-                .images()
-                .render_images(&presentation.images, elapsed)?,
-            viewport,
-            visual_time_millis,
-            preferences: RenderPreferences::default(),
-            interaction: self.input.visual_state(),
-            choice_scroll: self.input.choice_scroll(),
-        })
+        Ok(PlayerFramePlanner::prepare(
+            &mut self.input,
+            PlayerFrameRequest {
+                presentation,
+                images: self.runtime.images(),
+                viewport,
+                image_time_millis: elapsed,
+                visual_time_millis,
+                preferences: RenderPreferences::default(),
+            },
+        )?)
     }
 
     fn render(

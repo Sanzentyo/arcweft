@@ -971,6 +971,7 @@ dependencies = [
  "arcweft-image",
  "arcweft-presentation",
  "arcweft-render-wgpu",
+ "arcweft-runtime-driver",
  "num-traits",
  "thiserror 2.0.18",
 ]

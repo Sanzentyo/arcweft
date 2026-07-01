@@ -20,19 +20,6 @@ impl DeclaredImageObject {
     }
 }
 
-#[cfg(feature = "native-capture")]
-pub(in crate::app) fn load_declared_image_objects(
-    source_path: &std::path::Path,
-) -> Result<BTreeMap<String, DeclaredImageObject>, String> {
-    let source = std::fs::read_to_string(source_path).map_err(|error| {
-        format!(
-            "failed to read image object declarations from {}: {error}",
-            source_path.display()
-        )
-    })?;
-    Ok(parse_declared_image_objects(&source))
-}
-
 pub(in crate::app) fn parse_declared_image_objects(
     source: &str,
 ) -> BTreeMap<String, DeclaredImageObject> {
@@ -74,12 +61,6 @@ pub(in crate::app) fn declared_image_asset_refs(
     refs
 }
 
-#[cfg(feature = "native-capture")]
-pub(in crate::app) fn public_image_ref_arg(arg: &str) -> Option<String> {
-    let value = public_id_arg(arg)?;
-    value.starts_with("image.").then_some(value)
-}
-
 pub(in crate::app) fn public_asset_ref_arg(arg: &str) -> Option<String> {
     let value = public_id_arg(arg)?;
     value.starts_with("asset.").then_some(value)
@@ -97,7 +78,7 @@ fn image_decl_body_args(id: &str, body: &ImageDeclBody) -> Vec<String> {
     args
 }
 
-#[cfg(feature = "native-capture")]
+#[cfg(test)]
 pub(in crate::app) fn merge_declared_image_args(
     declaration: &DeclaredImageObject,
     override_args: impl IntoIterator<Item = String>,
@@ -117,7 +98,7 @@ pub(in crate::app) fn merge_declared_image_args(
         .collect()
 }
 
-#[cfg(feature = "native-capture")]
+#[cfg(test)]
 pub(in crate::app) fn runtime_arg_name(arg: &str) -> Option<&str> {
     arg.split_once(" = ").map(|(name, _)| name.trim())
 }

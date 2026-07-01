@@ -1,7 +1,4 @@
-use super::super::runtime::entry::apply_runtime_entry_selection;
-use super::super::runtime::executor::RuntimeExecutorInstance;
 use super::super::runtime::profile::report_path;
-use super::super::runtime::steps::NativeRunHost;
 use super::mcp_stdio::{StdioMcpEndpoint, StdioMcpTransport};
 use super::rag::source_index::{
     AgentSourceRagIndex, agent_program_summary_rag_candidate, agent_rag_program_hash,
@@ -28,17 +25,11 @@ use super::{
     AgentObserveResourceKind, AgentReplOptions, AgentRunner, AgentRunnerConfig,
     AgentScriptRunOptions, AgentScriptSignalArg, AgentScriptStateArg, AgentSession,
     CliRuntimeExecutorTier, CliRuntimePureWorkers, CliRuntimeStepMode, ExitCode, FlowFiberStatus,
-    LineDisplayCatalog, NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf,
-    ProfileOptions, RuntimeStepInput, RuntimeStepResult, fs, load_and_check_selection,
-    lower_source_runtime_plan_with_stats_and_options, native_host_policy_for_selection,
-    parse_runtime_binding_arg, parse_runtime_pure_workers, print_json, resolve_source_selection,
-    runtime_plan_options_for_selection, runtime_pure_config_for_selection, step_options,
+    NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf, ProfileOptions, fs,
+    load_and_check_selection, native_host_policy_for_selection, parse_runtime_binding_arg,
+    parse_runtime_pure_workers, print_json, resolve_source_selection,
 };
 use crate::app::debug::debug_project_readback_json;
-use crate::app::image_declarations::{
-    DeclaredImageObject, load_declared_image_objects, merge_declared_image_args,
-    public_image_ref_arg, runtime_arg_name,
-};
 use crate::app::local_embedding::{
     DEFAULT_LOCAL_EMBEDDING_DIMENSIONS, DEFAULT_LOCAL_EMBEDDING_MODEL_ID,
     DEFAULT_LOCAL_EMBEDDING_MODEL_REVISION, MAX_LOCAL_EMBEDDING_DIMENSIONS,
@@ -76,7 +67,7 @@ use arcweft_agent_protocol::object::{
 };
 use arcweft_agent_protocol::observation::AgentObservationReport;
 use arcweft_agent_protocol::predicate::{CompareOp, Predicate, Probe};
-use arcweft_agent_protocol::presentation::{AgentPresentationTree, AgentPresentationTreeQuery};
+use arcweft_agent_protocol::presentation::AgentPresentationTreeQuery;
 use arcweft_agent_protocol::protocol::{
     ActionResult, AgentAction, AgentInvokeAction, AgentSessionInfo, CaptureFormat, CaptureRequest,
     CaptureResult, CaptureTarget, ObservationEnvelope, ObserveRequest,
@@ -88,17 +79,11 @@ use arcweft_agent_protocol::resource::{
     AgentBinaryEncoding, AgentResource, AgentResourceBody, AgentResourceKind,
 };
 use arcweft_agent_protocol::rich_text::{
-    AgentGlyphOrientation, AgentGlyphVerticalForm, AgentHitRegion, AgentHitRegionKind,
-    AgentRichTextElementKind, AgentRichTextElementRef,
+    AgentHitRegion, AgentHitRegionKind, AgentRichTextElementKind, AgentRichTextElementRef,
 };
-use arcweft_agent_protocol::session::{AgentAssignment, AgentAudioState};
+use arcweft_agent_protocol::session::AgentAssignment;
 use arcweft_agent_protocol::trace::AgentTraceRecord;
-use arcweft_agent_protocol::ui::AgentUiTree;
 use arcweft_agent_protocol::value::AgentValue;
-use arcweft_core::effect::RuntimeCall;
-use arcweft_core::engine::FlowStatusLabelStyle;
-use arcweft_core::plan::FlowEvent;
-use arcweft_core::task::TaskEvent;
 use arcweft_debug_model::{
     chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass},
     diagnostic::DebugDiagnostic,
@@ -115,7 +100,6 @@ use arcweft_debug_model::{
 use arcweft_debug_sqlite::store::{
     ChunkSearchResult, DebugChunkSearchResult, DebugRagQueryAudit, DebugStore, DebugTimelineEvent,
 };
-use arcweft_host_adapter::HostCallPolicy;
 use arcweft_interaction_model::{
     id::Identifier,
     input::{InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent},
@@ -130,16 +114,9 @@ use arcweft_layout::{
     CaptureRendererKind, CaptureScope as LayoutCaptureScope, LayoutCoordinateSpace, LayoutPoint,
     LayoutRect, LayoutSize, ScalePolicy,
 };
-use arcweft_presentation::image::{
-    ImageObjectAlignment, ImageObjectParam, ImageObjectPlayback, ImageObjectProxy,
-    ImageObjectTransform,
-};
+use arcweft_presentation::image::{ImageObjectParam, ImageObjectProxy};
 use arcweft_rag::fusion::{FusionConfig, reciprocal_rank_fusion};
-use arcweft_render_text::{
-    LineDisplayFrame, Milli, RichTextControl, RichTextNode, RichTextObjectProxy, RichTextParam,
-    RichTextPresentation, RichTextRange, RichTextRubyAnnotation, RichTextTextRun,
-    RichTextTextSource, RuntimeLineContext,
-};
+use arcweft_render_text::{LineDisplayFrame, Milli, RichTextParam, RichTextRange};
 use arcweft_source::SourceName;
 #[cfg(feature = "agent-repl")]
 use arcweft_tooling::agent_repl::AgentReplCellCompletionKind;
@@ -165,15 +142,6 @@ use std::io::IsTerminal as _;
 use std::io::{BufRead as _, Read as _, Write as _};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
-
-#[derive(Clone, Debug)]
-struct AgentObservationTrace {
-    viewport: AgentViewport,
-    objects: Vec<AgentObservedObject>,
-    diagnostics: Vec<AgentDiagnostic>,
-    task_request_count: usize,
-    tick: usize,
-}
 
 #[derive(Clone, Debug)]
 struct AgentLocalDevVisualClassifier;
@@ -276,18 +244,16 @@ use capture::{
     AgentStoredImagePlacement, AgentUiImageObservation, agent_capture_request_from_uri,
     agent_image_object_for_capture_scope, agent_native_capture_image,
     agent_native_capture_image_with_frame_store,
-    agent_native_capture_resource_with_session_and_frame_store, agent_native_text_origin,
-    agent_observe_capture_resource,
+    agent_native_capture_resource_with_session_and_frame_store, agent_observe_capture_resource,
 };
 use image_mapping::{
     AgentSelectedCaptureMetadataSpec, agent_capture_uri, agent_encode_png,
-    agent_frame_capture_uri_for_page, agent_image_observation_from_ui_frame,
-    agent_layout_rect_from_bbox, agent_measure_frame_elements_with_session,
-    agent_native_rich_text_element_bboxes, agent_native_textbox_capture_bbox_for_page,
-    agent_object_capture_refs_for_page, agent_object_id_color, agent_object_layers,
-    agent_object_matches_layer, agent_observed_layers, agent_observed_rich_text, agent_overlay_svg,
-    agent_rich_text_child_objects, agent_rich_text_ranges_overlap, agent_scoped_capture_name,
-    agent_selected_capture_metadata_for_ref, agent_textbox_object, hash_hex,
+    agent_frame_capture_uri_for_page, agent_layout_rect_from_bbox,
+    agent_measure_frame_elements_with_session, agent_object_capture_refs_for_page,
+    agent_object_id_color, agent_object_layers, agent_object_matches_layer, agent_observed_layers,
+    agent_observed_rich_text, agent_overlay_svg, agent_rich_text_ranges_overlap,
+    agent_scoped_capture_name, agent_selected_capture_metadata_for_ref, agent_textbox_object,
+    hash_hex,
 };
 use mcp_debug::{
     agent_mcp_call_debug_close_stale_sessions, agent_mcp_call_debug_graph_inventory,
@@ -298,11 +264,10 @@ use mcp_debug::{
 };
 use mcp_protocol::{
     AgentMcpFrame, AgentMcpObservation, AgentMcpProjectContext, AgentMcpState,
-    AgentObservationRunContext, AgentObservationRunOutput, AgentObservationState,
-    AgentPublishedResourceCache, NativeAgentObservedSnapshot, NativeAgentRuntimeState,
-    agent_mcp_agent_value, agent_mcp_bool_argument, agent_mcp_cached_published_resource,
-    agent_mcp_command, agent_mcp_project_context_from_hir, agent_mcp_store_observation,
-    agent_publish_resource_for_state,
+    AgentObservationState, AgentPublishedResourceCache, NativeAgentObservedSnapshot,
+    NativeAgentRuntimeState, agent_mcp_agent_value, agent_mcp_bool_argument,
+    agent_mcp_cached_published_resource, agent_mcp_command, agent_mcp_project_context_from_hir,
+    agent_mcp_store_observation, agent_publish_resource_for_state,
 };
 use mcp_rag::{
     agent_mcp_call_rag_context_read, agent_mcp_call_rag_explain, agent_mcp_call_rag_query,
@@ -321,7 +286,7 @@ use mcp_resources::{
     agent_mcp_run_observation, agent_mcp_session_context_resource_for_uri,
     agent_mcp_success_response, agent_mcp_u32_argument, agent_mcp_u64_argument,
     agent_mcp_uncached_resource_by_uri, agent_mcp_usize_argument, agent_mcp_wait_report_value,
-    agent_native_capture_session_for_hir, extend_agent_observation_with_runtime_images,
+    agent_native_capture_session_for_hir,
 };
 use observe::{
     NativeAgentScriptSession, agent_assignment_value, agent_capture_time_millis,
@@ -338,13 +303,15 @@ use observe_resources::{
     agent_observe_image_resource, agent_observe_list_resources, agent_observe_mcp_resource_output,
     agent_observe_resource,
 };
-use player_observation::agent_player_visual_observation_for_options;
+use player_observation::{
+    agent_player_observation_for_options, native_player_runtime_state_for_options,
+    observe_native_player_runtime,
+};
 use repl::agent_repl_command;
 use runtime_observation::{
-    AgentImageOutput, AgentRasterCapture, agent_action_targets_for_runtime_status,
-    agent_image_kind, agent_image_scope_for_capture_scope, agent_native_visual_diagnostics,
-    agent_observe_image_output, agent_refresh_observation_object_indexes,
-    agent_runtime_presentation_image_observation, run_agent_observation,
+    AgentImageOutput, AgentRasterCapture, agent_action_targets,
+    agent_action_targets_for_runtime_status, agent_image_kind, agent_image_scope_for_capture_scope,
+    agent_native_visual_diagnostics, agent_observe_image_output, agent_observe_layout_scene_graph,
 };
 
 pub(super) fn agent_command(
