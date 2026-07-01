@@ -29,6 +29,7 @@ pub struct PlayerTextInputBridgeCore {
     dispatch: TextInputDispatchState,
     blur_policy: TextInputBlurPolicy,
     next_epoch: u64,
+    published: Option<PlayerTextInputPublishedFocus>,
 }
 
 /// Phase emitted by one focus synchronization pass.
@@ -55,6 +56,14 @@ pub struct PlayerTextInputSync {
 pub struct PlayerTextInputEdit {
     input: TextInput,
     key_disposition: TextInputKeyDisposition,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct PlayerTextInputPublishedFocus {
+    snapshot: TextInputClientSnapshot,
+    geometry: TextInputGeometrySnapshot,
+    security: TextInputSecurityPolicy,
+    capabilities: TextInputCapabilities,
 }
 
 /// Value-only host command sink implemented by native/Web shells.
@@ -104,6 +113,7 @@ impl Default for PlayerTextInputBridgeCore {
             dispatch: TextInputDispatchState::default(),
             blur_policy: TextInputBlurPolicy::PlatformDefault,
             next_epoch: 1,
+            published: None,
         }
     }
 }
@@ -172,6 +182,11 @@ impl PlayerTextInputBridgeCore {
             let generation = transaction.generation();
             commands.extend(transaction.into_commands());
             commands.push(self.dispatch.update_geometry(focused.geometry())?);
+            self.published = Some(PlayerTextInputPublishedFocus::new(
+                focused,
+                security,
+                capabilities,
+            ));
             return Ok(PlayerTextInputSync {
                 phase: PlayerTextInputSyncPhase::Activated,
                 generation,
@@ -186,6 +201,16 @@ impl PlayerTextInputBridgeCore {
             .map_or(self.dispatch.focus_generation(), |active| {
                 active.generation()
             });
+        let published = PlayerTextInputPublishedFocus::new(focused, security, capabilities);
+        if self.published.as_ref() == Some(&published) {
+            return Ok(PlayerTextInputSync {
+                phase: PlayerTextInputSyncPhase::Idle,
+                generation,
+                security,
+                commands: Vec::new(),
+            });
+        }
+        self.published = Some(published);
         Ok(PlayerTextInputSync {
             phase: PlayerTextInputSyncPhase::Updated,
             generation,
@@ -199,6 +224,7 @@ impl PlayerTextInputBridgeCore {
 
     #[must_use]
     pub fn blur_active(&mut self) -> PlayerTextInputSync {
+        self.published = None;
         let transaction = self.dispatch.blur(self.blur_policy);
         let phase = if transaction.commands().is_empty() {
             PlayerTextInputSyncPhase::Idle
@@ -241,6 +267,21 @@ impl PlayerTextInputBridgeCore {
         let epoch = InputEpoch(self.next_epoch);
         self.next_epoch = self.next_epoch.saturating_add(1);
         epoch
+    }
+}
+
+impl PlayerTextInputPublishedFocus {
+    fn new(
+        focused: &PlayerTextInputFocusedControl,
+        security: TextInputSecurityPolicy,
+        capabilities: TextInputCapabilities,
+    ) -> Self {
+        Self {
+            snapshot: focused.snapshot().clone(),
+            geometry: focused.geometry().clone(),
+            security,
+            capabilities,
+        }
     }
 }
 
@@ -411,6 +452,20 @@ mod tests {
                 .iter()
                 .any(|command| matches!(command, TextInputHostCommand::Deactivate { .. }))
         );
+    }
+
+    #[test]
+    fn repeated_identical_focus_sync_is_idle() {
+        let target = target("stable");
+        let focused = focused(4, target, "abc", false);
+        let mut core = PlayerTextInputBridgeCore::default();
+
+        let activation = core.sync_focus(Some(&focused)).unwrap();
+        assert_eq!(activation.phase(), PlayerTextInputSyncPhase::Activated);
+
+        let repeated = core.sync_focus(Some(&focused)).unwrap();
+        assert_eq!(repeated.phase(), PlayerTextInputSyncPhase::Idle);
+        assert!(repeated.commands().is_empty());
     }
 
     #[test]
