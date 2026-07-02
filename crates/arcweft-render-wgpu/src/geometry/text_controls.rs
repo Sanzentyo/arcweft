@@ -222,6 +222,22 @@ fn text_caret_rect(control: &RenderTextInputControl, layout: &LaidOutText, offse
     let offset = usize::try_from(offset)
         .unwrap_or(usize::MAX)
         .min(control.value.len());
+    if let Some(glyph) = layout.glyphs.windows(2).find_map(|pair| {
+        let previous = &pair[0];
+        let next = &pair[1];
+        (previous.range.end == offset
+            && previous.bounds.width > 0.0
+            && next.range.start == offset
+            && next.bounds.y > previous.bounds.y)
+            .then_some(previous)
+    }) {
+        return HitRect::new(
+            glyph.bounds.x + glyph.bounds.width,
+            glyph.bounds.y,
+            CARET_WIDTH,
+            glyph.bounds.height.max(1.0),
+        );
+    }
     if let Some(glyph) = layout
         .glyphs
         .iter()
@@ -439,6 +455,12 @@ fn laid_out_text_for_control(
         if options.is_multiline() && x > inner.x && x + width > inner.x + inner.width {
             x = inner.x;
             y += line_height;
+            glyphs.push(text_control_caret_anchor(
+                RichTextRange::new(start, start),
+                x,
+                y,
+                line_height,
+            ));
         }
         glyphs.push(LaidOutGlyph {
             run_index: 0,
@@ -463,13 +485,24 @@ fn laid_out_text_for_control(
 }
 
 fn empty_text_control_caret_anchor(inner: HitRect, line_height: f32) -> LaidOutGlyph {
+    text_control_caret_anchor(RichTextRange::new(0, 0), inner.x, inner.y, line_height)
+}
+
+fn text_control_caret_anchor(
+    range: RichTextRange,
+    x: f32,
+    y: f32,
+    line_height: f32,
+) -> LaidOutGlyph {
+    // Soft wraps have no source byte of their own, so a zero-width glyph keeps
+    // caret painting and platform IME geometry on the same visual line start.
     LaidOutGlyph {
         run_index: 0,
-        range: RichTextRange::new(0, 0),
+        range,
         text: String::new(),
-        origin: LayoutPoint::new(inner.x, inner.y),
+        origin: LayoutPoint::new(x, y),
         advance: LayoutSize::new(0.0, 0.0),
-        bounds: LayoutRect::new(inner.x, inner.y, 0.0, line_height),
+        bounds: LayoutRect::new(x, y, 0.0, line_height),
         writing_mode: RichTextWritingMode::HorizontalTb,
         orientation: GlyphOrientation::Upright,
         vertical_form: GlyphVerticalForm::None,
@@ -577,6 +610,18 @@ mod tests {
         )
     }
 
+    fn narrow_multiline_control(value: &str, selection: u32) -> RenderTextInputControl {
+        RenderTextInputControl::new(
+            target(),
+            TextInputSessionId(1),
+            value,
+            TextRange::new(TextByteOffset(selection), TextByteOffset(selection)),
+            TextInputOptions::default().multiline(true),
+            SemanticRole::TextArea,
+            HitRect::new(40.0, 30.0, 64.0, 136.0),
+        )
+    }
+
     fn assert_f32_near(actual: f32, expected: f32) {
         assert!(
             (actual - expected).abs() <= f32::EPSILON,
@@ -617,6 +662,59 @@ mod tests {
             caret.x < first.x + 120.0,
             "caret should be relative to the second line, got {caret:?}"
         );
+    }
+
+    #[test]
+    fn soft_wrap_boundary_uses_previous_visual_line_end() {
+        let wrap_offset = 3_u32;
+        let wrap_byte_offset = usize::try_from(wrap_offset).unwrap();
+        let control = narrow_multiline_control("abcdef", wrap_offset);
+        let visual = visual_layout_for_control(&control, &control.options);
+        let previous = visual
+            .laid_out
+            .glyphs
+            .windows(2)
+            .find_map(|pair| {
+                let previous = &pair[0];
+                let next = &pair[1];
+                (previous.range.end == wrap_byte_offset
+                    && next.range.start == wrap_byte_offset
+                    && next.bounds.y > previous.bounds.y)
+                    .then_some(previous)
+            })
+            .expect("test text should soft-wrap at the third byte");
+        let caret = text_caret_rect(&control, &visual.laid_out, wrap_offset);
+
+        assert_f32_near(caret.x, previous.bounds.x + previous.bounds.width);
+        assert_f32_near(caret.y, previous.bounds.y);
+    }
+
+    #[test]
+    fn soft_wrap_boundary_ime_geometry_matches_renderer_caret() {
+        let wrap_offset = 3_u32;
+        let control = narrow_multiline_control("abcdef", wrap_offset);
+        let visual = visual_layout_for_control(&control, &control.options);
+        let target = prepare_text_input_target(
+            RenderViewport {
+                logical_width: 800.0,
+                logical_height: 450.0,
+                physical_width: 800,
+                physical_height: 450,
+                scale_factor: 1.0,
+            },
+            &control,
+            &control.options,
+            &visual.laid_out,
+        )
+        .unwrap();
+        let expected = text_local_to_viewport_rect(
+            &control,
+            text_caret_rect(&control, &visual.laid_out, wrap_offset),
+        );
+        let caret = target.geometry.viewport_caret_rect();
+
+        assert_f32_near(caret.x, expected.x);
+        assert_f32_near(caret.y, expected.y);
     }
 
     #[test]

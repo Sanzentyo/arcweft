@@ -966,6 +966,31 @@ impl TextEditorLayout {
         index: &TextIndexSnapshot,
     ) -> Result<HitRect, TextEditorLayoutError> {
         index.validate_byte_offset(offset)?;
+        // At a visual line boundary, one source offset can sit after the
+        // previous glyph and before the next glyph. Renderer-backed controls do
+        // not carry a separate affinity value here, so use the visible glyph end.
+        if let Some(glyph) = self.glyphs.windows(2).find_map(|pair| {
+            let previous = pair[0];
+            let next = pair[1];
+            let previous_has_extent = match self.writing_mode {
+                TextWritingMode::HorizontalTb => previous.bounds.width > 0.0,
+                TextWritingMode::VerticalRl | TextWritingMode::VerticalLr => {
+                    previous.bounds.height > 0.0
+                }
+            };
+            let next_starts_visual_line = match self.writing_mode {
+                TextWritingMode::HorizontalTb => next.bounds.y > previous.bounds.y,
+                TextWritingMode::VerticalRl => next.bounds.x < previous.bounds.x,
+                TextWritingMode::VerticalLr => next.bounds.x > previous.bounds.x,
+            };
+            (*previous.range.end() == offset
+                && previous_has_extent
+                && *next.range.start() == offset
+                && next_starts_visual_line)
+                .then_some(previous)
+        }) {
+            return Ok(self.caret_rect_at_glyph_end(glyph));
+        }
         if let Some(glyph) = self
             .glyphs
             .iter()
