@@ -3,7 +3,6 @@ use crate::ui_mask::UiMaskChannel;
 use crate::ui_scene::{UiMaskImage, UiScene};
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::{HitRect, HitTree};
-use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectFit, ImageObjectTransform};
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::layer::{
     LayerContent, LayerId, LayerInputPolicy, LayerKind, LayerNode, LayerOrder, LayerTree,
@@ -20,7 +19,9 @@ use arcweft_render_text::{
 use num_traits::ToPrimitive;
 use thiserror::Error;
 
+mod images;
 mod text_controls;
+pub use images::{RenderImage, RenderImageFrame, RenderImageQuad, RenderImageTransformMatrix};
 pub use text_controls::RenderTextInputControl;
 
 /// Logical viewport shared by visual planning and hit-testing.
@@ -143,26 +144,6 @@ pub struct RenderChoiceItem {
 pub struct PaintRect {
     pub bounds: HitRect,
     pub rgba: [f32; 4],
-}
-
-/// One decoded RGBA image frame ready for GPU upload.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RenderImageFrame {
-    pub width: u32,
-    pub height: u32,
-    pub rgba: Vec<u8>,
-}
-
-/// One textured image quad in logical viewport coordinates.
-#[derive(Clone, Debug, PartialEq)]
-pub struct RenderImage {
-    pub id: String,
-    pub frame: RenderImageFrame,
-    pub bounds: HitRect,
-    pub fit: ImageObjectFit,
-    pub alignment: ImageObjectAlignment,
-    pub transform: ImageObjectTransform,
-    pub opacity_milli: u16,
 }
 
 /// One text block prepared for glyphon.

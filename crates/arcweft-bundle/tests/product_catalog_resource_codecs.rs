@@ -260,6 +260,8 @@ fn fixture_bundle() -> ArcweftBundle {
     .with_image_objects([BundleImageObject {
         id: "image.hero.logo".to_owned(),
         asset: "asset.ui.logo".to_owned(),
+        target: Some("target.hero.logo".to_owned()),
+        layer: Some("layer.foreground".to_owned()),
         bounds: BundleImageObjectBounds::from_px(10, 20, 320, 180),
         fit: BundleImageObjectFit::Cover,
         alignment: BundleImageObjectAlignment {

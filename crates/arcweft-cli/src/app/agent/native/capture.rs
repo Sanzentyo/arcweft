@@ -165,7 +165,6 @@ impl AgentImageFrameStore {
         self.insert_with_placement(object_id, width, height, rgba, None);
     }
 
-    #[cfg(test)]
     pub(super) fn insert_with_placement(
         &mut self,
         object_id: impl Into<String>,

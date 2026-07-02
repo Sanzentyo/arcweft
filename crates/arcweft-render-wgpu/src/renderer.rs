@@ -8,7 +8,6 @@ use crate::ui_compositor::{UiCompositor, UiCompositorError, UiCompositorFrame};
 use crate::ui_direct_renderer::{WgpuPreparedUiMaskTextureProvider, WgpuUiDirectPrimitiveRenderer};
 use crate::ui_effects::UiTextureExtent;
 use arcweft_presentation::hit::HitRect;
-use arcweft_presentation::image::ImageObjectFit;
 use arcweft_render_text::RichTextRange;
 use bytemuck::{Pod, Zeroable};
 use glyphon::{
@@ -1119,25 +1118,15 @@ fn scaled_alpha_milli(alpha: u8, opacity_milli: u16) -> u8 {
     u8::try_from(value.min(u32::from(u8::MAX))).unwrap_or(u8::MAX)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct ImageQuad {
-    rect: HitRect,
-    uv_left: f32,
-    uv_top: f32,
-    uv_right: f32,
-    uv_bottom: f32,
-}
-
 fn image_vertices(image: &RenderImage, width: f32, height: f32) -> [ImageVertex; 6] {
-    let quad = image_quad(image);
-    let top_left = transform_image_point(image, quad.rect.x, quad.rect.y);
-    let bottom_left = transform_image_point(image, quad.rect.x, quad.rect.y + quad.rect.height);
-    let bottom_right = transform_image_point(
-        image,
+    let quad = image.quad();
+    let top_left = image.transform_point(quad.rect.x, quad.rect.y);
+    let bottom_left = image.transform_point(quad.rect.x, quad.rect.y + quad.rect.height);
+    let bottom_right = image.transform_point(
         quad.rect.x + quad.rect.width,
         quad.rect.y + quad.rect.height,
     );
-    let top_right = transform_image_point(image, quad.rect.x + quad.rect.width, quad.rect.y);
+    let top_right = image.transform_point(quad.rect.x + quad.rect.width, quad.rect.y);
     let top_left = normalized_point(top_left, width, height);
     let bottom_left = normalized_point(bottom_left, width, height);
     let bottom_right = normalized_point(bottom_right, width, height);
@@ -1168,104 +1157,6 @@ fn image_vertices(image: &RenderImage, width: f32, height: f32) -> [ImageVertex;
             uv: [quad.uv_right, quad.uv_top],
         },
     ]
-}
-
-#[allow(clippy::cast_precision_loss)]
-fn image_quad(image: &RenderImage) -> ImageQuad {
-    let bounds = image.bounds;
-    let source_width = image.frame.width.max(1) as f32;
-    let source_height = image.frame.height.max(1) as f32;
-    let align_x = alignment_factor(image.alignment.x_milli());
-    let align_y = alignment_factor(image.alignment.y_milli());
-    match image.fit {
-        ImageObjectFit::Stretch => ImageQuad {
-            rect: bounds,
-            uv_left: 0.0,
-            uv_top: 0.0,
-            uv_right: 1.0,
-            uv_bottom: 1.0,
-        },
-        ImageObjectFit::Intrinsic => {
-            aligned_quad(bounds, source_width, source_height, align_x, align_y)
-        }
-        ImageObjectFit::Contain => {
-            let scale = (bounds.width / source_width)
-                .min(bounds.height / source_height)
-                .max(f32::EPSILON);
-            aligned_quad(
-                bounds,
-                source_width * scale,
-                source_height * scale,
-                align_x,
-                align_y,
-            )
-        }
-        ImageObjectFit::Cover => cover_quad(bounds, source_width, source_height, align_x, align_y),
-    }
-}
-
-fn aligned_quad(bounds: HitRect, width: f32, height: f32, align_x: f32, align_y: f32) -> ImageQuad {
-    ImageQuad {
-        rect: HitRect::new(
-            bounds.x + (bounds.width - width) * align_x,
-            bounds.y + (bounds.height - height) * align_y,
-            width,
-            height,
-        ),
-        uv_left: 0.0,
-        uv_top: 0.0,
-        uv_right: 1.0,
-        uv_bottom: 1.0,
-    }
-}
-
-fn cover_quad(
-    bounds: HitRect,
-    source_width: f32,
-    source_height: f32,
-    align_x: f32,
-    align_y: f32,
-) -> ImageQuad {
-    let source_ratio = source_width / source_height;
-    let target_ratio = bounds.width / bounds.height;
-    if source_ratio > target_ratio {
-        let visible_width = (target_ratio / source_ratio).clamp(0.0, 1.0);
-        let uv_left = (1.0 - visible_width) * align_x;
-        ImageQuad {
-            rect: bounds,
-            uv_left,
-            uv_top: 0.0,
-            uv_right: uv_left + visible_width,
-            uv_bottom: 1.0,
-        }
-    } else {
-        let visible_height = (source_ratio / target_ratio).clamp(0.0, 1.0);
-        let uv_top = (1.0 - visible_height) * align_y;
-        ImageQuad {
-            rect: bounds,
-            uv_left: 0.0,
-            uv_top,
-            uv_right: 1.0,
-            uv_bottom: uv_top + visible_height,
-        }
-    }
-}
-
-#[allow(clippy::cast_precision_loss)]
-fn alignment_factor(milli: i32) -> f32 {
-    (milli.clamp(0, 1_000) as f32) / 1_000.0
-}
-
-#[allow(clippy::cast_precision_loss)]
-fn transform_image_point(image: &RenderImage, x: f32, y: f32) -> [f32; 2] {
-    let transform = image.transform;
-    let m11 = transform.m11_milli as f32 / 1_000.0;
-    let m12 = transform.m12_milli as f32 / 1_000.0;
-    let m21 = transform.m21_milli as f32 / 1_000.0;
-    let m22 = transform.m22_milli as f32 / 1_000.0;
-    let tx = transform.tx_milli as f32 / 1_000.0;
-    let ty = transform.ty_milli as f32 / 1_000.0;
-    [m11 * x + m12 * y + tx, m21 * x + m22 * y + ty]
 }
 
 fn normalized_point(point: [f32; 2], width: f32, height: f32) -> [f32; 2] {

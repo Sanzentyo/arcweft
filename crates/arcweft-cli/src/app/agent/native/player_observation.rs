@@ -1,33 +1,41 @@
+use super::image_mapping::{
+    agent_image_geometry_from_native_quad, agent_object_capture_refs_with_source,
+};
 use super::{
     AgentImageFrameStore, AgentObservationState, AgentObserveImageKind, AgentObserveOptions,
-    ExitCode, NativeAdapterRegistrar, NativeAgentRuntimeState, NativeTaskBridge,
-    agent_action_targets, agent_action_targets_for_runtime_status, agent_capture_time_millis,
-    agent_mcp_project_context_from_hir, agent_native_capture_session_for_hir,
-    agent_object_capture_refs_for_page, agent_observe_capture_time_seconds,
-    agent_observe_effective_steps, agent_observe_layout_scene_graph,
-    agent_observe_report_capture_time_millis, agent_observed_layers, agent_overlay_svg,
-    agent_textbox_object, hash_hex, load_and_check_selection, native_host_policy_for_selection,
-    report_path, resolve_source_selection,
+    AgentStoredImagePlacement, ExitCode, NativeAdapterRegistrar, NativeAgentRuntimeState,
+    NativeTaskBridge, agent_action_targets, agent_action_targets_for_runtime_status,
+    agent_capture_time_millis, agent_mcp_project_context_from_hir,
+    agent_native_capture_session_for_hir, agent_object_capture_refs_for_page,
+    agent_observe_capture_time_seconds, agent_observe_effective_steps,
+    agent_observe_layout_scene_graph, agent_observe_report_capture_time_millis,
+    agent_observed_layers, agent_overlay_svg, agent_textbox_object, hash_hex,
+    load_and_check_selection, native_host_policy_for_selection, report_path,
+    resolve_source_selection,
 };
 use crate::app::bundle::compile_bundle_for_selection;
 use arcweft_agent_protocol::{
     diagnostic::{AgentDiagnostic, AgentDiagnosticSeverity},
     geometry::{AgentBBox, AgentCoordinateSpace, AgentViewport},
-    object::{AgentObservedObject, AgentObservedObjectContent},
+    image::{AgentCaptureSourceIdentity, AgentImageAlignment, AgentImageFit, AgentImageTransform},
+    object::{AgentObservedImageContent, AgentObservedObject, AgentObservedObjectContent},
     observation::AgentObservationReport,
     presentation::AgentPresentationTree,
     session::{AgentAssignment, AgentAudioState},
     ui::AgentUiTree,
 };
+use arcweft_bundle::BundleImageObject;
 use arcweft_bundle::BundleVirtualFileSpace;
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::task::TaskEvent;
 use arcweft_interaction_model::input::RoutedInputEvent;
 use arcweft_player_scene::frame::{PlayerFramePlanner, PlayerFrameRequest, PlayerPreparedFrame};
 use arcweft_player_scene::{images::BundleImageCatalog, input::InputController};
-use arcweft_presentation::{hit::HitRect, semantic::SemanticRole};
+use arcweft_presentation::{hit::HitRect, image::ImageObjectFit, semantic::SemanticRole};
 use arcweft_render_wgpu::{
-    geometry::{PreparedFrame, RenderPreferences, RenderTextInputControl, RenderViewport},
+    geometry::{
+        PreparedFrame, RenderImage, RenderPreferences, RenderTextInputControl, RenderViewport,
+    },
     offscreen::SharedOffscreenCapture,
 };
 use arcweft_runtime_driver::{
@@ -36,6 +44,7 @@ use arcweft_runtime_driver::{
     session::{BundleSession, BundleSessionOptions, BundleSessionStep, BundleStepInput},
     task::HostTaskDispatch,
 };
+use std::collections::BTreeMap;
 use std::path::Path;
 
 pub(super) fn agent_player_observation_for_options(
@@ -165,8 +174,25 @@ pub(super) fn observe_native_player_runtime(
         ExitCode::from(2)
     })?;
     let prepared = prepare_player_runtime_frame(runtime, &step.presentation, options)?;
-    let objects = player_observed_objects(&prepared, &step.presentation, step.index, options);
+    let viewport = player_observed_viewport(&prepared);
+    let mut objects = player_observed_objects(
+        &prepared,
+        &step.presentation,
+        step.index,
+        &viewport,
+        options,
+    );
     let mut image_frames = AgentImageFrameStore::default();
+    objects.extend(player_observed_image_objects(
+        &prepared,
+        &step.presentation,
+        step.index,
+        &viewport,
+        &mut image_frames,
+        u64::from(agent_capture_time_millis(
+            agent_observe_capture_time_seconds(options),
+        )),
+    ));
     if player_observe_requires_shared_capture(options) {
         let capture = player_observe_capture_frame(&prepared.frame)?;
         image_frames.set_full_frame(capture.width, capture.height, capture.rgba);
@@ -296,11 +322,7 @@ fn player_observation_report(
     task_request_count: usize,
     options: &AgentObserveOptions,
 ) -> AgentObservationReport {
-    let viewport = AgentViewport {
-        width: prepared.scene.viewport.physical_width,
-        height: prepared.scene.viewport.physical_height,
-        scale: 1.0,
-    };
+    let viewport = player_observed_viewport(prepared);
     let object_refs = objects.iter().collect::<Vec<_>>();
     let overlay_svg = agent_overlay_svg(&viewport, &object_refs);
     let render_hash = hash_hex(overlay_svg.as_bytes());
@@ -375,24 +397,28 @@ fn player_observation_report(
     }
 }
 
+fn player_observed_viewport(prepared: &PlayerPreparedFrame) -> AgentViewport {
+    AgentViewport {
+        width: prepared.scene.viewport.physical_width,
+        height: prepared.scene.viewport.physical_height,
+        scale: 1.0,
+    }
+}
+
 fn player_observed_objects(
     prepared: &PlayerPreparedFrame,
     presentation: &BundlePresentationSnapshot,
     step: usize,
+    viewport: &AgentViewport,
     options: &AgentObserveOptions,
 ) -> Vec<AgentObservedObject> {
-    let viewport = AgentViewport {
-        width: prepared.scene.viewport.physical_width,
-        height: prepared.scene.viewport.physical_height,
-        scale: 1.0,
-    };
     let mut objects = Vec::new();
     if let Some(dialogue) = &presentation.dialogue {
         objects.push(agent_textbox_object(
             step,
             0,
             dialogue.clone(),
-            &viewport,
+            viewport,
             options,
         ));
     }
@@ -412,6 +438,165 @@ fn player_observed_objects(
             }),
     );
     objects
+}
+
+fn player_observed_image_objects(
+    prepared: &PlayerPreparedFrame,
+    presentation: &BundlePresentationSnapshot,
+    step: usize,
+    viewport: &AgentViewport,
+    image_frames: &mut AgentImageFrameStore,
+    visual_time_millis: u64,
+) -> Vec<AgentObservedObject> {
+    prepared
+        .scene
+        .images
+        .iter()
+        .filter_map(|image| {
+            let source = presentation
+                .images
+                .iter()
+                .find(|object| object.id == image.id);
+            player_observed_image_object(
+                step,
+                viewport,
+                image,
+                source,
+                image_frames,
+                visual_time_millis,
+            )
+        })
+        .collect()
+}
+
+fn player_observed_image_object(
+    step: usize,
+    viewport: &AgentViewport,
+    image: &RenderImage,
+    source: Option<&BundleImageObject>,
+    image_frames: &mut AgentImageFrameStore,
+    visual_time_millis: u64,
+) -> Option<AgentObservedObject> {
+    if !source.is_none_or(|source| source.visible) {
+        return None;
+    }
+    let object_id = format!("object.image.{}", image.id);
+    let layer = source
+        .and_then(|source| source.layer.clone())
+        .unwrap_or_else(|| "image".to_owned());
+    let target = source.and_then(|source| source.target.clone());
+    let object_depth = source.map(|source| source.depth_milli);
+    let native_quad = player_render_image_native_quad(image);
+    let geometry = agent_image_geometry_from_native_quad(native_quad, viewport);
+    let bbox = geometry.bbox;
+    let polygon = geometry.polygon;
+    image_frames.insert_with_placement(
+        object_id.clone(),
+        image.frame.width,
+        image.frame.height,
+        image.frame.rgba.clone(),
+        Some(AgentStoredImagePlacement {
+            dst: native_quad.dst,
+            transform: native_quad.transform,
+            opacity_milli: native_quad.opacity_milli,
+        }),
+    );
+    Some(AgentObservedObject {
+        id: object_id.clone(),
+        parent_id: None,
+        entity: Some(image.id.clone()),
+        layer: layer.clone(),
+        role: "image".to_owned(),
+        visible: true,
+        enabled: true,
+        bbox: bbox.clone(),
+        polygon,
+        capture_refs: agent_object_capture_refs_with_source(
+            "cli",
+            step,
+            &object_id,
+            &bbox,
+            0,
+            AgentCaptureSourceIdentity::Object {
+                id: object_id.clone(),
+                parent_id: None,
+                entity: Some(image.id.clone()),
+                layer: layer.clone(),
+                role: "image".to_owned(),
+                object_layer: Some(layer.clone()),
+                object_depth,
+                rich_text: None,
+            },
+        ),
+        object_layer: Some(layer),
+        object_depth,
+        text: None,
+        rich_text_ref: None,
+        content: AgentObservedObjectContent::Image(Box::new(AgentObservedImageContent {
+            source: image.id.clone(),
+            object: Some(image.id.clone()),
+            target,
+            asset: source.map(|source| source.asset.clone()),
+            frame_index: None,
+            local_time_millis: source
+                .map(|source| source.playback.local_time_millis(visual_time_millis)),
+            opacity_milli: Some(image.opacity_milli),
+            fit: Some(player_agent_image_fit(image.fit)),
+            alignment: Some(AgentImageAlignment {
+                x_milli: image.alignment.x_milli(),
+                y_milli: image.alignment.y_milli(),
+            }),
+            transform: Some(AgentImageTransform {
+                m11_milli: image.transform.m11_milli,
+                m12_milli: image.transform.m12_milli,
+                m21_milli: image.transform.m21_milli,
+                m22_milli: image.transform.m22_milli,
+                tx_milli: image.transform.tx_milli,
+                ty_milli: image.transform.ty_milli,
+            }),
+            intrinsic_width: Some(image.frame.width),
+            intrinsic_height: Some(image.frame.height),
+            actions: Vec::new(),
+            params: BTreeMap::new(),
+            proxies: Vec::new(),
+        })),
+    })
+}
+
+fn player_render_image_native_quad(
+    image: &RenderImage,
+) -> arcweft_render_native::NativeImageQuad<'_> {
+    let quad = image.quad();
+    let transform = image.transform_matrix();
+    arcweft_render_native::NativeImageQuad {
+        width: image.frame.width,
+        height: image.frame.height,
+        rgba: &image.frame.rgba,
+        opacity_milli: image.opacity_milli,
+        dst: arcweft_render_native::NativeImageRect {
+            x: quad.rect.x,
+            y: quad.rect.y,
+            width: quad.rect.width,
+            height: quad.rect.height,
+        },
+        transform: arcweft_render_native::NativeImageTransform {
+            m11: transform.m11,
+            m12: transform.m12,
+            m21: transform.m21,
+            m22: transform.m22,
+            tx: transform.tx,
+            ty: transform.ty,
+        },
+    }
+}
+
+fn player_agent_image_fit(fit: ImageObjectFit) -> AgentImageFit {
+    match fit {
+        ImageObjectFit::Contain => AgentImageFit::Contain,
+        ImageObjectFit::Cover => AgentImageFit::Cover,
+        ImageObjectFit::Stretch => AgentImageFit::Stretch,
+        ImageObjectFit::Intrinsic => AgentImageFit::Intrinsic,
+    }
 }
 
 fn player_semantic_object(

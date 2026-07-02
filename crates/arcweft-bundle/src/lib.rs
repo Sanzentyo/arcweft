@@ -194,6 +194,10 @@ pub struct BundleImageAsset {
 pub struct BundleImageObject {
     pub id: String,
     pub asset: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<String>,
     pub bounds: BundleImageObjectBounds,
     #[serde(default)]
     pub fit: BundleImageObjectFit,
@@ -1465,6 +1469,8 @@ mod tests {
         let bundle = empty_test_bundle().with_image_objects([BundleImageObject {
             id: "image.hero.logo".to_owned(),
             asset: "asset.ui.logo".to_owned(),
+            target: Some("target.hero.logo".to_owned()),
+            layer: Some("layer.foreground".to_owned()),
             bounds: BundleImageObjectBounds::from_px(10, 20, 320, 180),
             fit: BundleImageObjectFit::Cover,
             alignment: BundleImageObjectAlignment {
@@ -1498,6 +1504,8 @@ mod tests {
             Some(&BundleImageObject {
                 id: "image.hero.logo".to_owned(),
                 asset: "asset.ui.logo".to_owned(),
+                target: Some("target.hero.logo".to_owned()),
+                layer: Some("layer.foreground".to_owned()),
                 bounds: BundleImageObjectBounds::from_px(10, 20, 320, 180),
                 fit: BundleImageObjectFit::Cover,
                 alignment: BundleImageObjectAlignment {

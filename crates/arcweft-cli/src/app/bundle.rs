@@ -1,7 +1,7 @@
 use super::diagnostics::emit_diagnostics_for_path;
 use super::image_declarations::{
     DeclaredImageObject, declaration_arg_value, declared_image_asset_refs,
-    parse_declared_image_objects, public_asset_ref_arg,
+    parse_declared_image_objects, public_asset_ref_arg, public_id_arg,
 };
 use super::progress::{CliProgress, CliProgressStatus};
 use super::project::{
@@ -827,6 +827,8 @@ fn bundle_image_object(declaration: &DeclaredImageObject) -> Result<BundleImageO
     Ok(BundleImageObject {
         id: declaration.id().to_owned(),
         asset,
+        target: declaration_arg_value(declaration.args(), "target").and_then(public_id_arg),
+        layer: declaration_arg_value(declaration.args(), "layer").and_then(public_id_arg),
         bounds,
         fit: image_fit_arg(declaration),
         alignment: image_alignment_arg(declaration),
@@ -1964,6 +1966,8 @@ flow main {
             r"
 image @image.sample.pulse {
     asset = @asset:.bg.pulse
+    target = @target.sample.pulse
+    layer = @layer.foreground
     x = 12px
     y = 34px
     width = 56px
@@ -1984,6 +1988,8 @@ image @image.sample.pulse {
             r"
 image @image.sample.pulse {
     asset = @asset:.bg.pulse
+    target = @target.sample.pulse
+    layer = @layer.foreground
     x = 12px
     y = 34px
     width = 56px
@@ -2008,6 +2014,8 @@ image @image.sample.pulse {
             vec![BundleImageObject {
                 id: "image.sample.pulse".to_owned(),
                 asset: "asset.bg.pulse".to_owned(),
+                target: Some("target.sample.pulse".to_owned()),
+                layer: Some("layer.foreground".to_owned()),
                 bounds: BundleImageObjectBounds::from_px(12, 34, 56, 78),
                 fit: BundleImageObjectFit::Intrinsic,
                 alignment: BundleImageObjectAlignment {

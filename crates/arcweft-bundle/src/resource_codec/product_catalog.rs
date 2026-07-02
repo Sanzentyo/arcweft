@@ -242,7 +242,15 @@ impl DisplayCatalogSection {
         unique_strings(
             self.image_objects
                 .iter()
-                .flat_map(|object| [object.id.clone(), object.asset.clone()]),
+                .flat_map(|object| {
+                    [
+                        Some(object.id.clone()),
+                        Some(object.asset.clone()),
+                        object.target.clone(),
+                        object.layer.clone(),
+                    ]
+                })
+                .flatten(),
         )
     }
 }

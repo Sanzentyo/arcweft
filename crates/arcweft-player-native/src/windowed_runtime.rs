@@ -937,6 +937,8 @@ mod tests {
         BundleImageObject {
             id: "sprite.object".to_owned(),
             asset: "sprite".to_owned(),
+            target: None,
+            layer: None,
             bounds: BundleImageObjectBounds {
                 x_milli: 0,
                 y_milli: 0,

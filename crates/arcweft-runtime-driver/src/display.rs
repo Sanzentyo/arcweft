@@ -270,6 +270,8 @@ fn inline_image_object(call: &RuntimeCall) -> Option<BundleImageObject> {
     Some(BundleImageObject {
         id,
         asset,
+        target: named_arg(&call.args, "target").and_then(public_id_arg),
+        layer: named_arg(&call.args, "layer").and_then(public_id_arg),
         bounds,
         fit: image_fit_arg(call),
         alignment: image_alignment_arg(call),
@@ -444,6 +446,8 @@ mod tests {
             args: vec![
                 "asset = @asset:.zundamon.normal".to_owned(),
                 "id = \"image.zundamon.stand\"".to_owned(),
+                "target = @target.zundamon.stand".to_owned(),
+                "layer = @layer.character".to_owned(),
                 "x = 760".to_owned(),
                 "y = 24".to_owned(),
                 "width = 360".to_owned(),
@@ -469,6 +473,8 @@ mod tests {
 
         assert_eq!(object.id, "image.zundamon.stand");
         assert_eq!(object.asset, "asset.zundamon.normal");
+        assert_eq!(object.target.as_deref(), Some("target.zundamon.stand"));
+        assert_eq!(object.layer.as_deref(), Some("layer.character"));
         assert_eq!(object.bounds.x_milli, 760_000);
         assert_eq!(object.bounds.height_milli, 600_000);
         assert_eq!(object.alignment.y_milli, 1_000);
