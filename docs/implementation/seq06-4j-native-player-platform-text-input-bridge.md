@@ -63,6 +63,30 @@ acceptance should use the same winit-backed native player route first; AppKit
 experiments remain diagnostic until the project intentionally replaces the
 window text source instead of layering it on top.
 
+## 2026-07-02 Geometry Follow-up
+
+Live Windows validation then showed that Japanese conversion itself reached the
+player, but visible carets and candidate windows were shifted to the right
+across the text field, text area, and secure field. The focused text-control
+geometry still used a provisional single-line advance estimate based on the
+full line box height, and the text-area text bounds exposed only one line of
+height. That made the Arcweft caret and the winit IME cursor area drift away
+from the glyphon-rendered text.
+
+The render-wgpu text-control planner now builds one text-local glyph geometry
+model per runtime text control and reuses it for the Arcweft-rendered caret,
+selection rectangles, and `PreparedTextInputTarget` geometry. The model handles
+newlines by moving caret/selection geometry onto the next visual line, uses
+font-size-based width estimates instead of full-line-height estimates, and gives
+multiline controls the full inner text bounds. This is still an approximation
+until runtime text controls consume exact glyphon layout output, but it removes
+the known right-shift and one-line text-area clipping root causes without adding
+a second native input path.
+
+The native text-input sample contract was also updated to stop requiring the
+removed `platform_event` trace record; live winit input is observed through
+`routed_text_input` records.
+
 ## Diagnostic Harness Boundary
 
 `windows-tsf-ime-sample` remains a backend diagnostic harness only. Passing that
@@ -106,6 +130,18 @@ Executed on 2026-07-02 after the winit-only event-source convergence:
 - `cargo clippy -p arcweft-player-native -p arcweft-player-scene -p arcweft-runtime-host -p arcweft-presentation -p arcweft-ui --all-targets -- -D warnings` passed.
 - `cargo build -p arcweft-cli --features native-player` passed.
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .` passed with `0 error(s), 124 warning(s)` across 1,045 Rust files and 491,089 Rust physical LOC.
+- `git diff --check` passed.
+
+Executed on 2026-07-02 after the text-control geometry follow-up:
+
+- `cargo fmt --all` passed.
+- `cargo test -p arcweft-render-wgpu text_controls::tests --lib` passed.
+- `cargo test -p arcweft-player-scene --test runtime_text_controls` passed.
+- `cargo test -p arcweft-player-native scene_windowed::tests --lib` passed.
+- `cargo check -p arcweft-render-wgpu -p arcweft-player-scene -p arcweft-player-native --all-targets` passed.
+- `cargo clippy -p arcweft-render-wgpu -p arcweft-player-scene -p arcweft-player-native --all-targets -- -D warnings` passed.
+- `cargo build -p arcweft-cli --features native-player` passed.
+- `cargo +nightly -Zscript tools/structure-audit.rs --root .` passed with `0 error(s), 124 warning(s)` across 1,045 Rust files and 491,247 Rust physical LOC.
 - `git diff --check` passed.
 
 Windows live validation:

@@ -58,7 +58,6 @@
     "focus",
     "snapshot",
     "geometry",
-    "platform_event",
     "routed_text_input",
     "runtime_write_back",
     "blur"

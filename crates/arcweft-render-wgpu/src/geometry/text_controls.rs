@@ -101,6 +101,7 @@ pub(super) fn build_text_inputs(
     for control in &scene.text_inputs {
         let options = control.resolved_options()?;
         let is_focused = scene.interaction.focused.as_ref() == Some(&control.target);
+        let layout = laid_out_text_for_control(control);
         rectangles.push(PaintRect {
             bounds: control.bounds,
             rgba: if is_focused {
@@ -111,8 +112,8 @@ pub(super) fn build_text_inputs(
         });
         if is_focused {
             super::push_focus_ring(rectangles, control.bounds, palette.focus_ring);
-            push_renderer_text_input_selection(rectangles, control, palette);
-            push_renderer_text_input_caret(rectangles, control, palette);
+            push_renderer_text_input_selection(rectangles, control, &layout, palette);
+            push_renderer_text_input_caret(rectangles, control, &layout, palette);
         }
 
         let display_value = if options.is_secure() {
@@ -147,6 +148,7 @@ pub(super) fn build_text_inputs(
                 scene.viewport,
                 control,
                 &options,
+                &layout,
             )?);
         }
     }
@@ -156,6 +158,7 @@ pub(super) fn build_text_inputs(
 fn push_renderer_text_input_selection(
     rectangles: &mut Vec<PaintRect>,
     control: &RenderTextInputControl,
+    layout: &LaidOutText,
     palette: &Palette,
 ) {
     let start = control.selection.start().get();
@@ -163,39 +166,105 @@ fn push_renderer_text_input_selection(
     if start == end {
         return;
     }
-    rectangles.push(PaintRect {
-        bounds: text_range_rect(control, start, end),
-        rgba: palette.choice_active,
-    });
+    rectangles.extend(
+        text_range_rects(layout, start, end)
+            .into_iter()
+            .map(|bounds| text_local_to_viewport_rect(control, bounds))
+            .map(|bounds| PaintRect {
+                bounds,
+                rgba: palette.choice_active,
+            }),
+    );
 }
 
 fn push_renderer_text_input_caret(
     rectangles: &mut Vec<PaintRect>,
     control: &RenderTextInputControl,
+    layout: &LaidOutText,
     palette: &Palette,
 ) {
     let caret = control.selection.end().get();
-    let inner = text_inner_bounds(control);
-    let x = inner.x + text_advance_to_byte(control, caret);
     rectangles.push(PaintRect {
-        bounds: HitRect::new(x, inner.y, CARET_WIDTH, inner.height),
+        bounds: text_local_to_viewport_rect(control, text_caret_rect(control, layout, caret)),
         rgba: palette.focus_ring,
     });
 }
 
-fn text_range_rect(control: &RenderTextInputControl, start: u32, end: u32) -> HitRect {
-    let inner = text_inner_bounds(control);
-    let x0 = inner.x + text_advance_to_byte(control, start);
-    let x1 = inner.x + text_advance_to_byte(control, end);
-    HitRect::new(x0.min(x1), inner.y, (x1 - x0).abs().max(1.0), inner.height)
+fn text_range_rects(layout: &LaidOutText, start: u32, end: u32) -> Vec<HitRect> {
+    let range = RichTextRange::new(
+        usize::try_from(start.min(end)).unwrap_or(usize::MAX),
+        usize::try_from(start.max(end)).unwrap_or(usize::MAX),
+    );
+    layout
+        .glyphs
+        .iter()
+        .filter(|glyph| rich_ranges_overlap(glyph.range, range))
+        .map(|glyph| layout_rect_to_hit_rect(glyph.bounds))
+        .collect()
+}
+
+fn text_caret_rect(control: &RenderTextInputControl, layout: &LaidOutText, offset: u32) -> HitRect {
+    let offset = usize::try_from(offset)
+        .unwrap_or(usize::MAX)
+        .min(control.value.len());
+    if let Some(glyph) = layout
+        .glyphs
+        .iter()
+        .find(|glyph| offset <= glyph.range.start)
+    {
+        return HitRect::new(
+            glyph.bounds.x,
+            glyph.bounds.y,
+            CARET_WIDTH,
+            glyph.bounds.height.max(1.0),
+        );
+    }
+    layout.glyphs.last().map_or_else(
+        || {
+            let inner = text_inner_bounds(control);
+            HitRect::new(
+                inner.x,
+                inner.y,
+                CARET_WIDTH,
+                text_control_line_height(control),
+            )
+        },
+        |glyph| {
+            HitRect::new(
+                glyph.bounds.x + glyph.bounds.width,
+                glyph.bounds.y,
+                CARET_WIDTH,
+                glyph.bounds.height.max(1.0),
+            )
+        },
+    )
 }
 
 fn text_inner_bounds(control: &RenderTextInputControl) -> HitRect {
+    let inner = text_local_inner_bounds(control);
     HitRect::new(
-        control.bounds.x + TEXT_INSET_X,
-        control.bounds.y + TEXT_INSET_Y,
+        control.bounds.x + inner.x,
+        control.bounds.y + inner.y,
+        inner.width,
+        inner.height,
+    )
+}
+
+fn text_local_inner_bounds(control: &RenderTextInputControl) -> HitRect {
+    HitRect::new(
+        TEXT_INSET_X,
+        TEXT_INSET_Y,
         (control.bounds.width - TEXT_INSET_X * 2.0).max(0.0),
-        text_control_line_height(control),
+        (control.bounds.height - TEXT_INSET_Y * 2.0).max(1.0),
+    )
+}
+
+fn text_local_to_viewport_rect(control: &RenderTextInputControl, rect: HitRect) -> HitRect {
+    HitRect::new(
+        control.bounds.x + rect.x,
+        control.bounds.y + rect.y,
+        rect.width,
+        rect.height,
     )
 }
 
@@ -204,13 +273,17 @@ fn text_control_font_size(control: &RenderTextInputControl) -> f32 {
 }
 
 fn text_control_line_height(control: &RenderTextInputControl) -> f32 {
-    (control.bounds.height - TEXT_INSET_Y * 2.0).max(1.0)
+    let inner_height = (control.bounds.height - TEXT_INSET_Y * 2.0).max(1.0);
+    (text_control_font_size(control) * 1.25)
+        .max(1.0)
+        .min(inner_height)
 }
 
 fn prepare_text_input_target(
     viewport: RenderViewport,
     control: &RenderTextInputControl,
     options: &TextInputOptions,
+    laid_out: &LaidOutText,
 ) -> Result<PreparedTextInputTarget, FramePlanError> {
     let editor = TextEditorState::from_text_control(
         control.session,
@@ -219,11 +292,10 @@ fn prepare_text_input_target(
         control.selection,
         options.clone(),
     )?;
-    let laid_out = laid_out_text_for_control(control);
     let scale_factor = viewport.scale_factor.to_f32().unwrap_or(f32::MAX);
     let layout = TextEditorGeometryPump::layout_from_laid_out_text(
         editor.text(),
-        &laid_out,
+        laid_out,
         TextEditorGeometryContext::default()
             .with_text_local_control_rect(HitRect::new(
                 0.0,
@@ -248,19 +320,39 @@ fn prepare_text_input_target(
 }
 
 fn laid_out_text_for_control(control: &RenderTextInputControl) -> LaidOutText {
+    let inner = text_local_inner_bounds(control);
     let line_height = text_control_line_height(control);
-    let mut x = TEXT_INSET_X;
+    let font_size = text_control_font_size(control);
+    let mut x = inner.x;
+    let mut y = inner.y;
     let mut glyphs = Vec::new();
     for (start, ch) in control.value.char_indices() {
         let end = start.saturating_add(ch.len_utf8());
-        let width = estimated_text_input_glyph_width(ch, line_height);
+        if ch == '\n' {
+            glyphs.push(LaidOutGlyph {
+                run_index: 0,
+                range: RichTextRange::new(start, end),
+                text: String::new(),
+                origin: LayoutPoint::new(inner.x, y + line_height),
+                advance: LayoutSize::new(0.0, line_height),
+                bounds: LayoutRect::new(inner.x, y + line_height, 0.0, line_height),
+                writing_mode: RichTextWritingMode::HorizontalTb,
+                orientation: GlyphOrientation::Upright,
+                vertical_form: GlyphVerticalForm::None,
+                presentation: RichTextPresentation::default(),
+            });
+            x = inner.x;
+            y += line_height;
+            continue;
+        }
+        let width = estimated_text_input_glyph_width(ch, font_size);
         glyphs.push(LaidOutGlyph {
             run_index: 0,
             range: RichTextRange::new(start, end),
             text: ch.to_string(),
-            origin: LayoutPoint::new(x, 4.0),
+            origin: LayoutPoint::new(x, y),
             advance: LayoutSize::new(width, 0.0),
-            bounds: LayoutRect::new(x, 4.0, width, line_height),
+            bounds: LayoutRect::new(x, y, width, line_height),
             writing_mode: RichTextWritingMode::HorizontalTb,
             orientation: GlyphOrientation::Upright,
             vertical_form: GlyphVerticalForm::None,
@@ -272,31 +364,97 @@ fn laid_out_text_for_control(control: &RenderTextInputControl) -> LaidOutText {
         glyphs,
         runs: Vec::new(),
         ruby: Vec::new(),
-        bounds: Some(LayoutRect::new(0.0, 0.0, x, control.bounds.height.max(1.0))),
+        bounds: Some(LayoutRect::new(
+            0.0,
+            0.0,
+            control.bounds.width.max(1.0),
+            control.bounds.height.max(1.0),
+        )),
     }
 }
 
-fn estimated_text_input_glyph_width(ch: char, line_height: f32) -> f32 {
-    if ch.is_ascii() {
-        (line_height * 0.55).max(7.0)
+fn estimated_text_input_glyph_width(ch: char, font_size: f32) -> f32 {
+    if ch.is_ascii_whitespace() {
+        (font_size * 0.35).max(4.0)
+    } else if ch.is_ascii() {
+        (font_size * 0.55).max(7.0)
     } else {
-        (line_height * 0.9).max(10.0)
+        font_size.max(10.0)
     }
 }
 
-fn text_advance_to_byte(control: &RenderTextInputControl, byte_offset: u32) -> f32 {
-    let limit = usize::try_from(byte_offset)
-        .unwrap_or(usize::MAX)
-        .min(control.value.len());
-    control
-        .value
-        .char_indices()
-        .take_while(|(index, _)| *index < limit)
-        .map(|(_, ch)| estimated_text_input_glyph_width(ch, text_control_line_height(control)))
-        .sum::<f32>()
-        .min((control.bounds.width - TEXT_INSET_X * 2.0).max(0.0))
+fn layout_rect_to_hit_rect(rect: LayoutRect) -> HitRect {
+    HitRect::new(rect.x, rect.y, rect.width, rect.height)
+}
+
+fn rich_ranges_overlap(left: RichTextRange, right: RichTextRange) -> bool {
+    left.start < right.end && right.start < left.end
 }
 
 fn mask_secure_text(value: &str) -> String {
     value.chars().map(|_| '*').collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcweft_id::PublicId;
+
+    fn target() -> InteractionTarget {
+        InteractionTarget::new(PublicId::try_new("input.test").unwrap())
+    }
+
+    fn control(value: &str, selection: u32, height: f32) -> RenderTextInputControl {
+        RenderTextInputControl::new(
+            target(),
+            TextInputSessionId(1),
+            value,
+            TextRange::new(TextByteOffset(selection), TextByteOffset(selection)),
+            TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(40.0, 30.0, 420.0, height),
+        )
+    }
+
+    #[test]
+    fn single_line_caret_uses_font_size_not_full_line_box_width() {
+        let control = control("Tokyo", 5, 48.0);
+        let layout = laid_out_text_for_control(&control);
+        let caret = text_local_to_viewport_rect(&control, text_caret_rect(&control, &layout, 5));
+
+        assert!(caret.x > 110.0);
+        assert!(
+            caret.x < 140.0,
+            "caret should stay near rendered Latin text, got {}",
+            caret.x
+        );
+    }
+
+    #[test]
+    fn multiline_caret_moves_to_following_visual_line_after_newline() {
+        let value = "line one\nTokyo";
+        let caret_offset = u32::try_from(value.len()).unwrap();
+        let control = control(value, caret_offset, 136.0);
+        let layout = laid_out_text_for_control(&control);
+        let first = text_local_to_viewport_rect(&control, text_caret_rect(&control, &layout, 0));
+        let caret =
+            text_local_to_viewport_rect(&control, text_caret_rect(&control, &layout, caret_offset));
+
+        assert!(
+            caret.y > first.y + 20.0,
+            "caret did not move down: {caret:?}"
+        );
+        assert!(
+            caret.x < first.x + 120.0,
+            "caret should be relative to the second line, got {caret:?}"
+        );
+    }
+
+    #[test]
+    fn text_area_inner_bounds_allow_multiple_lines() {
+        let control = control("line one\nTokyo", 14, 136.0);
+        let inner = text_inner_bounds(&control);
+
+        assert!(inner.height > text_control_line_height(&control) * 2.0);
+    }
 }
