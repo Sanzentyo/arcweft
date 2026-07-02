@@ -236,7 +236,7 @@ fn text_caret_rect(control: &RenderTextInputControl, layout: &LaidOutText, offse
     }
     layout.glyphs.last().map_or_else(
         || {
-            let inner = text_inner_bounds(control);
+            let inner = text_local_inner_bounds(control);
             HitRect::new(
                 inner.x,
                 inner.y,
@@ -412,6 +412,9 @@ fn laid_out_text_for_control(
     let mut x = inner.x;
     let mut y = inner.y;
     let mut glyphs = Vec::new();
+    if control.value.is_empty() {
+        glyphs.push(empty_text_control_caret_anchor(inner, line_height));
+    }
     for (start, ch) in control.value.char_indices() {
         let end = start.saturating_add(ch.len_utf8());
         if ch == '\n' && options.is_multiline() && !options.is_secure() {
@@ -456,6 +459,21 @@ fn laid_out_text_for_control(
         runs: Vec::new(),
         ruby: Vec::new(),
         bounds: None,
+    }
+}
+
+fn empty_text_control_caret_anchor(inner: HitRect, line_height: f32) -> LaidOutGlyph {
+    LaidOutGlyph {
+        run_index: 0,
+        range: RichTextRange::new(0, 0),
+        text: String::new(),
+        origin: LayoutPoint::new(inner.x, inner.y),
+        advance: LayoutSize::new(0.0, 0.0),
+        bounds: LayoutRect::new(inner.x, inner.y, 0.0, line_height),
+        writing_mode: RichTextWritingMode::HorizontalTb,
+        orientation: GlyphOrientation::Upright,
+        vertical_form: GlyphVerticalForm::None,
+        presentation: RichTextPresentation::default(),
     }
 }
 
@@ -559,6 +577,13 @@ mod tests {
         )
     }
 
+    fn assert_f32_near(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() <= f32::EPSILON,
+            "expected {actual} to equal {expected}"
+        );
+    }
+
     #[test]
     fn single_line_caret_uses_font_size_not_full_line_box_width() {
         let control = control("Tokyo", 5, 48.0);
@@ -600,6 +625,43 @@ mod tests {
         let inner = text_inner_bounds(&control);
 
         assert!(inner.height > text_control_line_height(&control) * 2.0);
+    }
+
+    #[test]
+    fn empty_text_field_caret_stays_at_visible_text_origin() {
+        let control = control("", 0, 48.0);
+        let visual = visual_layout_for_control(&control, &control.options);
+        let caret =
+            text_local_to_viewport_rect(&control, text_caret_rect(&control, &visual.laid_out, 0));
+        let expected = text_inner_bounds(&control);
+
+        assert_eq!(visual.display_value, "");
+        assert_f32_near(caret.x, expected.x);
+        assert_f32_near(caret.y, expected.y);
+    }
+
+    #[test]
+    fn empty_text_field_ime_geometry_uses_same_visible_origin() {
+        let control = control("", 0, 48.0);
+        let visual = visual_layout_for_control(&control, &control.options);
+        let target = prepare_text_input_target(
+            RenderViewport {
+                logical_width: 800.0,
+                logical_height: 450.0,
+                physical_width: 800,
+                physical_height: 450,
+                scale_factor: 1.0,
+            },
+            &control,
+            &control.options,
+            &visual.laid_out,
+        )
+        .unwrap();
+        let expected = text_inner_bounds(&control);
+        let caret = target.geometry.viewport_caret_rect();
+
+        assert_f32_near(caret.x, expected.x);
+        assert_f32_near(caret.y, expected.y);
     }
 
     #[test]
