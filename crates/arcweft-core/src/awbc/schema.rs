@@ -368,6 +368,7 @@ fn remap_constant_strings(constant: &mut AwbcConstant, remap: &[u32]) {
         | AwbcConstant::Sequence(_)
         | AwbcConstant::Record { .. }
         | AwbcConstant::Variant { .. }
+        | AwbcConstant::Range { .. }
         | AwbcConstant::Bytes(_)
         | AwbcConstant::TensorF32 { .. }
         | AwbcConstant::TensorF64 { .. } => {}
@@ -537,6 +538,11 @@ pub enum AwbcConstant {
         ty: AwbcTypeId,
         case: u32,
         payload: Option<AwbcConstantId>,
+    },
+    Range {
+        start: Option<AwbcConstantId>,
+        end: Option<AwbcConstantId>,
+        inclusive: bool,
     },
     Bytes(Vec<u8>),
     TensorF32 {

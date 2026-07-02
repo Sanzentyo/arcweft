@@ -248,6 +248,13 @@ fn summarize_runtime_expr(expr: &RuntimeExpr) -> PureHelperShape {
         | RuntimeExpr::Unary { expr: value, .. } => {
             merge_shape_summaries([summarize_runtime_expr(value)])
         }
+        RuntimeExpr::Range { start, end, .. } => merge_shape_summaries(
+            start
+                .as_deref()
+                .into_iter()
+                .chain(end.as_deref())
+                .map(summarize_runtime_expr),
+        ),
         RuntimeExpr::Record(fields) => merge_shape_summaries(
             fields
                 .iter()

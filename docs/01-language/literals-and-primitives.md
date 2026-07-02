@@ -106,14 +106,17 @@ let narrowed: f32 = std.f64.to_f32(widened)
 `std.f32.mul_add(a, b, c)` or `std.f64.mul_add(a, b, c)` when one-rounding FMA
 semantics are intended.
 
-Unsuffixed numeric literals require an expected type.
+Unsuffixed numeric literals use expected types when one is available. Without
+an expected type, integer literals default to `i32` and float literals default
+to `f64`.
 
 ```arcw
 let a: i32 = 10       // OK
 let b: f32 = 2.0      // OK
-let c = 10            // error: no expected numeric type
-let d = 10i32         // OK
-let e = 2.0f32        // OK
+let c = 10            // OK: defaults to i32
+let d = 2.0           // OK: defaults to f64
+let e = 10i32         // OK
+let f = 2.0f32        // OK
 ```
 
 Function signatures also provide expected types.

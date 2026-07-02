@@ -957,6 +957,17 @@ pub(crate) fn constant_value(
                 .transpose()?
                 .map(Box::new),
         }),
+        AwbcConstant::Range {
+            start,
+            end,
+            inclusive,
+        } => {
+            let start = start.map(|id| constant_value(program, id)).transpose()?;
+            let end = end.map(|id| constant_value(program, id)).transpose()?;
+            crate::value::RuntimeRange::new(start, end, *inclusive)
+                .map(RuntimeValue::Range)
+                .map_err(|error| VmError::Runtime(error.to_string()))
+        }
         AwbcConstant::Bytes(bytes) => Ok(RuntimeValue::Seq(RuntimeSeq::dense_bytes(bytes.clone()))),
         AwbcConstant::TensorF32 { shape, values } => crate::math::DenseTensorF32::new(
             shape_to_usize_vec(shape)?,

@@ -162,6 +162,7 @@ pub(super) fn iter_item_type(source_type: Option<&TypeKind>) -> TypeKind {
             | TypeKind::Array { item, .. }
             | TypeKind::Seq(item)
             | TypeKind::Slice(item)
+            | TypeKind::Range(item)
             | TypeKind::Stream { item, .. }
             | TypeKind::Source { item, .. },
         ) => item.as_ref().clone(),
@@ -932,7 +933,6 @@ fn atomic_type_kind_label(ty: &TypeKind) -> Option<&'static str> {
         TypeKind::Bytes => Some("Bytes"),
         TypeKind::TextCluster => Some("TextCluster"),
         TypeKind::Duration => Some("Duration"),
-        TypeKind::Range => Some("Range"),
         TypeKind::DisplayText => Some("DisplayText"),
         TypeKind::DebugStatePath => Some("DebugStatePath"),
         TypeKind::ObservationFieldPath => Some("ObservationFieldPath"),
@@ -966,6 +966,7 @@ pub(super) fn type_kind_label(ty: &TypeKind) -> String {
     match ty {
         TypeKind::Ref(entity) => entity_type_label(entity),
         TypeKind::Probe(inner) => format!("Probe<{}>", type_kind_label(inner)),
+        TypeKind::Range(inner) => format!("Range<{}>", type_kind_label(inner)),
         TypeKind::Vec(inner) => format!("Vec<{}>", type_kind_label(inner)),
         TypeKind::Array { item, len } => format!("Array<{}, {len}>", type_kind_label(item)),
         TypeKind::Slice(inner) => format!("[{}]", type_kind_label(inner)),

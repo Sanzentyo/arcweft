@@ -648,21 +648,63 @@ fn numeric_primitive_types_keep_explicit_widths() {
 }
 
 #[test]
-fn unsuffixed_numeric_literals_require_expected_type() {
+fn unsuffixed_numeric_literals_default_to_stable_widths() {
     let tree = parse_ok(
         r"
-flow @flow.bad bad {
+flow @flow.good good {
     let n = 1
+    let f = 1.0
 }
 ",
     );
     let hir = lower_to_hir(&tree).expect("unsuffixed literal fixture lowers");
-    let errors =
-        typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("untyped integer is rejected");
-    assert!(errors.iter().any(|error| {
-        error
-            .message()
-            .contains("unsuffixed integer literal requires an expected integer type")
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(report.judgments.iter().any(|judgment| {
+        matches!(
+            (&judgment.subject, judgment.rule, &judgment.ty),
+            (TypeJudgmentSubject::Expr { kind }, TypeJudgmentRule::Expr, TypeKind::I32)
+                if *kind == "literal"
+        )
+    }));
+    assert!(report.judgments.iter().any(|judgment| {
+        matches!(
+            (&judgment.subject, judgment.rule, &judgment.ty),
+            (TypeJudgmentSubject::Expr { kind }, TypeJudgmentRule::Expr, TypeKind::F64)
+                if *kind == "literal"
+        )
+    }));
+}
+
+#[test]
+fn range_expression_infers_item_type_from_bound() {
+    let tree = parse_ok(
+        r"
+flow @flow.range range {
+    let a = 2
+    for i in 0..a {
+        let j = i
+    }
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("range fixture lowers");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(report.judgments.iter().any(|judgment| {
+        matches!(
+            (&judgment.subject, &judgment.ty),
+            (TypeJudgmentSubject::Expr { kind }, TypeKind::Range(item))
+                if *kind == "range" && item.as_ref() == &TypeKind::I32
+        )
     }));
 }
 

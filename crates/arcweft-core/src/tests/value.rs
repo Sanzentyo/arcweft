@@ -3,16 +3,16 @@ use crate::{
     time::LogicalDuration,
     value::{
         DenseSeqKind, RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeExpr, RuntimeFieldValue,
-        RuntimeIntrinsic, RuntimeSeq, RuntimeUnaryOp, RuntimeValue, evaluate_std_float_intrinsic,
-        runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
-        runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
-        runtime_sequence_dense_f32, runtime_sequence_dense_f64, runtime_sequence_dense_i8,
-        runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
-        runtime_sequence_dense_i128, runtime_sequence_dense_isize, runtime_sequence_dense_strings,
-        runtime_sequence_dense_u8, runtime_sequence_dense_u16, runtime_sequence_dense_u32,
-        runtime_sequence_dense_u64, runtime_sequence_dense_u128, runtime_sequence_dense_units,
-        runtime_sequence_dense_usize, runtime_sequence_from_literal_values,
-        runtime_sequence_repeat_value, runtime_value_label,
+        RuntimeIntrinsic, RuntimeIterator, RuntimeRange, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
+        evaluate_std_float_intrinsic, runtime_sequence_dense_bool, runtime_sequence_dense_bytes,
+        runtime_sequence_dense_chars, runtime_sequence_dense_durations,
+        runtime_sequence_dense_entity_refs, runtime_sequence_dense_f32, runtime_sequence_dense_f64,
+        runtime_sequence_dense_i8, runtime_sequence_dense_i16, runtime_sequence_dense_i32,
+        runtime_sequence_dense_i64, runtime_sequence_dense_i128, runtime_sequence_dense_isize,
+        runtime_sequence_dense_strings, runtime_sequence_dense_u8, runtime_sequence_dense_u16,
+        runtime_sequence_dense_u32, runtime_sequence_dense_u64, runtime_sequence_dense_u128,
+        runtime_sequence_dense_units, runtime_sequence_dense_usize,
+        runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_value_label,
     },
 };
 
@@ -32,6 +32,24 @@ fn root_binding_ref_updates_existing_slots() {
     env.bind_all_root_ref(&second);
 
     assert_eq!(env.get("seed"), Some(&RuntimeValue::i64(2)));
+}
+
+#[test]
+fn runtime_range_iterates_one_value_at_a_time() {
+    let range = RuntimeValue::Range(
+        RuntimeRange::new(
+            Some(RuntimeValue::i32(0)),
+            Some(RuntimeValue::i32(3)),
+            false,
+        )
+        .expect("matching i32 range is valid"),
+    );
+    let mut iterator = RuntimeIterator::from_value(range).expect("range is iterable");
+
+    assert_eq!(iterator.next(), Some(RuntimeValue::i32(0)));
+    assert_eq!(iterator.next(), Some(RuntimeValue::i32(1)));
+    assert_eq!(iterator.next(), Some(RuntimeValue::i32(2)));
+    assert_eq!(iterator.next(), None);
 }
 
 #[test]

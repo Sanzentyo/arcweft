@@ -1196,6 +1196,7 @@ fn display_runtime_value(value: &RuntimeValue) -> String {
         RuntimeValue::String(value) => value.clone(),
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
+        RuntimeValue::Range(value) => value.label(),
         RuntimeValue::EntityRef(value) => format!("@{value}"),
         RuntimeValue::Seq(_) => "[...]".to_owned(),
         RuntimeValue::Tuple(_) => "(...)".to_owned(),
@@ -1216,6 +1217,7 @@ fn runtime_value_is_truthy(value: &RuntimeValue) -> bool {
         | RuntimeValue::MatrixF64(_)
         | RuntimeValue::TensorF32(_)
         | RuntimeValue::TensorF64(_)
+        | RuntimeValue::Range(_)
         | RuntimeValue::Variant { .. } => true,
         RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => !value.is_empty(),
         RuntimeValue::Char(value) => *value != '\0',

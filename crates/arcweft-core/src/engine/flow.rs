@@ -2,8 +2,8 @@ use super::{
     AwaitState, ChoiceState, DialogueState, Engine, FlowControlStackEntry,
     FlowControlStackEntryKind, FlowCursor, FlowEvent, FlowFiberStatus, FlowOp, FlowRuntimeId,
     HostCallState, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr,
-    RuntimePattern, RuntimeStepInput, RuntimeStepOutput, RuntimeValue,
-    runtime_value_into_sequence_values, runtime_value_label,
+    RuntimeIterator, RuntimePattern, RuntimeStepInput, RuntimeStepOutput, RuntimeValue,
+    runtime_value_label,
 };
 use crate::line_task::progress_live_line_task_group;
 use crate::pattern::pattern_binding_capacity;
@@ -331,10 +331,10 @@ impl Engine {
             } => {
                 self.advance_if_needed(next_op_index);
                 match self.evaluate_expr_with_backend(&source, pure_backend) {
-                    Ok(value) => match runtime_value_into_sequence_values(value) {
-                        Ok(items) => {
+                    Ok(value) => match RuntimeIterator::from_value(value) {
+                        Ok(iterator) => {
                             let body = Arc::from(body);
-                            self.push_for_next(pattern, items.into(), 0, &body, output);
+                            self.push_for_next(pattern, iterator, &body, output);
                         }
                         Err(value) => {
                             self.fail_eval(
@@ -348,11 +348,10 @@ impl Engine {
             }
             FlowOp::ForNext {
                 pattern,
-                items,
-                index,
+                iterator,
                 body,
             } => {
-                self.push_for_next(pattern, items, index, &body, output);
+                self.push_for_next(pattern, iterator, &body, output);
             }
             FlowOp::Thread { name, body } => {
                 self.advance_if_needed(next_op_index);
@@ -565,12 +564,11 @@ impl Engine {
     pub(super) fn push_for_next(
         &mut self,
         pattern: RuntimePattern,
-        items: Arc<[RuntimeValue]>,
-        index: usize,
+        mut iterator: RuntimeIterator,
         body: &Arc<[FlowOp]>,
         output: &mut RuntimeStepOutput,
     ) {
-        let Some(item) = items.get(index) else {
+        let Some(item) = iterator.next() else {
             return;
         };
         self.fiber
@@ -579,17 +577,17 @@ impl Engine {
         self.fiber.control_stack.push(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::Scope,
         });
-        match bind_simple_for_pattern(&mut self.fiber.env, &pattern, item) {
+        match bind_simple_for_pattern(&mut self.fiber.env, &pattern, &item) {
             Some(Ok(())) => {}
             Some(Err(error)) => {
                 self.fail_eval(error, output);
                 return;
             }
-            None => match self.try_bind_pattern(&pattern, item) {
+            None => match self.try_bind_pattern(&pattern, &item) {
                 Ok(true) => {}
                 Ok(false) => {
                     self.fail_eval(
-                        RuntimeEvalError::PatternMismatch(runtime_value_label(item)),
+                        RuntimeEvalError::PatternMismatch(runtime_value_label(&item)),
                         output,
                     );
                     return;
@@ -602,8 +600,7 @@ impl Engine {
         }
         let tail = FlowOp::ForNext {
             pattern,
-            items,
-            index: index + 1,
+            iterator,
             body: Arc::clone(body),
         };
         self.push_borrowed_ops_with_exit(body.as_ref(), Some(tail));

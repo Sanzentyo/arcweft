@@ -957,6 +957,46 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn runtime_plan_lowers_range_for_source_as_runtime_range_expr() {
+    let tree = parse_ok(
+        r"
+flow @flow.range range {
+    let a = 2
+    for i in 0..a {
+        log.info(i)
+    }
+    return a
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("range for fixture lowers to HIR");
+    validate_typecheck_ready(&hir).expect("range for fixture is typecheck-ready");
+
+    let plan = lower_runtime_plan(&hir).expect("range for runtime plan lowers");
+
+    let FlowOp::For { source, .. } = &plan.flows[0].ops[1] else {
+        panic!(
+            "expected second op to be for, got {:?}",
+            plan.flows[0].ops[1]
+        );
+    };
+    let RuntimeExpr::Range {
+        start,
+        end,
+        inclusive,
+    } = source
+    else {
+        panic!("expected range source, got {source:?}");
+    };
+    assert!(!inclusive);
+    assert!(matches!(
+        start.as_deref(),
+        Some(RuntimeExpr::Value(RuntimeValue::Int(value))) if value.exact_i32() == Some(0)
+    ));
+    assert!(matches!(end.as_deref(), Some(RuntimeExpr::Local(name)) if name == "a"));
+}
+
+#[test]
 fn line_plan_runtime_lowering_rejects_yield_effect() {
     let tree = parse_ok(
         r"

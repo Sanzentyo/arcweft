@@ -543,6 +543,10 @@ fn rewrite_known_record_projections_in_expr(expr: &mut RuntimeExpr, env: &[(Stri
         | RuntimeExpr::Unary { expr: value, .. } => {
             rewrite_known_record_projections_in_expr(value, env);
         }
+        RuntimeExpr::Range { start, end, .. } => {
+            rewrite_known_record_projections_in_optional_expr(start.as_deref_mut(), env);
+            rewrite_known_record_projections_in_optional_expr(end.as_deref_mut(), env);
+        }
         RuntimeExpr::Record(fields) => {
             for field in fields {
                 rewrite_known_record_projections_in_expr(&mut field.value, env);
@@ -921,6 +925,10 @@ fn count_runtime_expr_pure_calls(expr: &RuntimeExpr) -> usize {
             items.iter().map(count_runtime_expr_pure_calls).sum()
         }
         RuntimeExpr::RepeatSeq { value, .. } => count_runtime_expr_pure_calls(value),
+        RuntimeExpr::Range { start, end, .. } => {
+            start.as_deref().map_or(0, count_runtime_expr_pure_calls)
+                + end.as_deref().map_or(0, count_runtime_expr_pure_calls)
+        }
         RuntimeExpr::Record(fields) => fields
             .iter()
             .map(|field| count_runtime_expr_pure_calls(&field.value))
@@ -1104,6 +1112,10 @@ fn count_runtime_expr_local_uses_by_name(expr: &RuntimeExpr, name: &str) -> usiz
             .map(|item| count_runtime_expr_local_uses_by_name(item, name))
             .sum(),
         RuntimeExpr::RepeatSeq { value, .. } => count_runtime_expr_local_uses_by_name(value, name),
+        RuntimeExpr::Range { start, end, .. } => {
+            count_optional_runtime_expr_local_uses_by_name(start.as_deref(), name)
+                + count_optional_runtime_expr_local_uses_by_name(end.as_deref(), name)
+        }
         RuntimeExpr::Record(fields) => fields
             .iter()
             .map(|field| count_runtime_expr_local_uses_by_name(&field.value, name))

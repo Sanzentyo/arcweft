@@ -37,6 +37,11 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
         Expr::BracketSeq(items) => lower_runtime_bracket_seq(items),
         Expr::NumericBracketSeq(seq) => lower_runtime_numeric_bracket_seq(seq),
         Expr::ArrayRepeat { value, len } => lower_runtime_array_repeat(value, len),
+        Expr::Range {
+            start,
+            end,
+            inclusive,
+        } => lower_runtime_range_expr_lossy(start.as_deref(), end.as_deref(), *inclusive),
         Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => RuntimeExpr::Record(
             fields
                 .iter()
@@ -158,16 +163,14 @@ fn lower_runtime_expr_strict_with_helpers(
         Expr::BracketSeq(items) => lower_runtime_bracket_seq_strict(items, helpers),
         Expr::NumericBracketSeq(seq) => Ok(lower_runtime_numeric_bracket_seq(seq)),
         Expr::ArrayRepeat { value, len } => lower_runtime_array_repeat_strict(value, len, helpers),
-        Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => fields
-            .iter()
-            .map(|(name, value)| {
-                Ok(RuntimeFieldExpr {
-                    name: name.clone(),
-                    value: lower_runtime_expr_strict_with_helpers(value, helpers)?,
-                })
-            })
-            .collect::<Result<Vec<_>, String>>()
-            .map(RuntimeExpr::Record),
+        Expr::Range {
+            start,
+            end,
+            inclusive,
+        } => lower_runtime_range_expr(start.as_deref(), end.as_deref(), *inclusive, helpers),
+        Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => {
+            lower_runtime_record_expr_strict(fields, helpers)
+        }
         Expr::Field { target, field } => {
             lower_strict_field_or_constant(expr, target, field, helpers)
         }
@@ -232,7 +235,6 @@ fn lower_runtime_expr_strict_with_helpers(
             lower_runtime_expr_strict_with_helpers(expr, helpers)
         }
         Expr::Thread { .. }
-        | Expr::Range { .. }
         | Expr::Closure { .. }
         | Expr::LifetimePath { .. }
         | Expr::Placeholder(_)
@@ -251,7 +253,9 @@ fn lower_runtime_numeric_bracket_seq(
     RuntimeExpr::Value(match seq.suffix() {
         Some("i8") => collect_dense(seq.values(), i8::try_from, runtime_sequence_dense_i8),
         Some("i16") => collect_dense(seq.values(), i16::try_from, runtime_sequence_dense_i16),
-        Some("i32") => collect_dense(seq.values(), i32::try_from, runtime_sequence_dense_i32),
+        Some("i32") | None => {
+            collect_dense(seq.values(), i32::try_from, runtime_sequence_dense_i32)
+        }
         Some("i128") => collect_dense(seq.values(), i128::try_from, runtime_sequence_dense_i128),
         Some("isize") => collect_dense(
             seq.values(),
@@ -264,7 +268,7 @@ fn lower_runtime_numeric_bracket_seq(
         Some("u64") => collect_dense(seq.values(), u64::try_from, runtime_sequence_dense_u64),
         Some("u128") => collect_dense(seq.values(), u128::try_from, runtime_sequence_dense_u128),
         Some("usize") => collect_dense(seq.values(), u64::try_from, runtime_sequence_dense_usize),
-        _ => runtime_sequence_dense_i64(seq.values().to_vec()),
+        Some(_) => runtime_sequence_dense_i64(seq.values().to_vec()),
     })
 }
 
@@ -331,6 +335,53 @@ fn lower_runtime_bracket_seq_strict(
         .map(|item| lower_runtime_expr_strict_with_helpers(item, helpers))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(fold_value_sequence(lowered))
+}
+
+fn lower_runtime_range_expr(
+    start: Option<&Expr>,
+    end: Option<&Expr>,
+    inclusive: bool,
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
+    Ok(RuntimeExpr::Range {
+        start: start
+            .map(|start| lower_runtime_expr_strict_with_helpers(start, helpers))
+            .transpose()?
+            .map(Box::new),
+        end: end
+            .map(|end| lower_runtime_expr_strict_with_helpers(end, helpers))
+            .transpose()?
+            .map(Box::new),
+        inclusive,
+    })
+}
+
+fn lower_runtime_range_expr_lossy(
+    start: Option<&Expr>,
+    end: Option<&Expr>,
+    inclusive: bool,
+) -> RuntimeExpr {
+    RuntimeExpr::Range {
+        start: start.map(lower_runtime_expr).map(Box::new),
+        end: end.map(lower_runtime_expr).map(Box::new),
+        inclusive,
+    }
+}
+
+fn lower_runtime_record_expr_strict(
+    fields: &[(String, Expr)],
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
+    fields
+        .iter()
+        .map(|(name, value)| {
+            Ok(RuntimeFieldExpr {
+                name: name.clone(),
+                value: lower_runtime_expr_strict_with_helpers(value, helpers)?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()
+        .map(RuntimeExpr::Record)
 }
 
 fn fold_value_sequence(items: Vec<RuntimeExpr>) -> RuntimeExpr {
@@ -1013,85 +1064,7 @@ fn lower_runtime_literal(literal: &Literal) -> RuntimeValue {
     match literal {
         Literal::String(value) => RuntimeValue::String(decode_string_literal_value(value)),
         Literal::Char { value, .. } => RuntimeValue::Char(*value),
-        Literal::Int {
-            value,
-            suffix: Some(suffix),
-            ..
-        } if suffix == "i8" => {
-            i8::try_from(*value).map_or(RuntimeValue::i64(*value), RuntimeValue::i8)
-        }
-        Literal::Int {
-            value,
-            suffix: Some(suffix),
-            ..
-        } if suffix == "i16" => {
-            i16::try_from(*value).map_or(RuntimeValue::i64(*value), RuntimeValue::i16)
-        }
-        Literal::Int {
-            value,
-            suffix: Some(suffix),
-            ..
-        } if suffix == "i32" => {
-            i32::try_from(*value).map_or(RuntimeValue::i64(*value), RuntimeValue::i32)
-        }
-        Literal::Int {
-            value,
-            suffix: Some(suffix),
-            ..
-        } if suffix == "i64" => RuntimeValue::i64(*value),
-        Literal::Int {
-            value,
-            suffix: Some(suffix),
-            ..
-        } if suffix == "i128" => RuntimeValue::i128(i128::from(*value)),
-        Literal::Int {
-            value,
-            suffix: Some(suffix),
-            ..
-        } if suffix == "isize" => RuntimeValue::isize(*value),
-        Literal::Int {
-            value,
-            suffix: Some(suffix),
-            ..
-        } if suffix == "u8" => {
-            u8::try_from(*value).map_or(RuntimeValue::i64(*value), RuntimeValue::u8)
-        }
-        Literal::Int {
-            value,
-            suffix: Some(suffix),
-            ..
-        } if suffix == "u16" => {
-            u16::try_from(*value).map_or(RuntimeValue::i64(*value), RuntimeValue::u16)
-        }
-        Literal::Int {
-            value,
-            suffix: Some(suffix),
-            ..
-        } if suffix == "u32" => {
-            u32::try_from(*value).map_or(RuntimeValue::i64(*value), RuntimeValue::u32)
-        }
-        Literal::Int {
-            value,
-            suffix: Some(suffix),
-            ..
-        } if suffix == "u64" => {
-            u64::try_from(*value).map_or(RuntimeValue::i64(*value), RuntimeValue::u64)
-        }
-        Literal::Int {
-            value,
-            suffix: Some(suffix),
-            ..
-        } if suffix == "u128" => {
-            u128::try_from(*value).map_or(RuntimeValue::i64(*value), RuntimeValue::u128)
-        }
-        Literal::Int {
-            value,
-            suffix: Some(suffix),
-            ..
-        } if suffix == "usize" => {
-            u64::try_from(*value).map_or(RuntimeValue::i64(*value), RuntimeValue::usize)
-        }
-        Literal::Int { value, .. } => RuntimeValue::i64(*value),
+        Literal::Int { value, suffix, .. } => lower_runtime_int_literal(*value, suffix.as_deref()),
         Literal::Float {
             raw,
             suffix: Some(FloatSuffix::F32),
@@ -1109,6 +1082,25 @@ fn lower_runtime_literal(literal: &Literal) -> RuntimeValue {
             || RuntimeValue::String(literal_label(literal)),
             RuntimeValue::Duration,
         ),
+    }
+}
+
+fn lower_runtime_int_literal(value: i64, suffix: Option<&str>) -> RuntimeValue {
+    match suffix {
+        Some("i8") => i8::try_from(value).map_or(RuntimeValue::i64(value), RuntimeValue::i8),
+        Some("i16") => i16::try_from(value).map_or(RuntimeValue::i64(value), RuntimeValue::i16),
+        Some("i32") | None => {
+            i32::try_from(value).map_or(RuntimeValue::i64(value), RuntimeValue::i32)
+        }
+        Some("i128") => RuntimeValue::i128(i128::from(value)),
+        Some("isize") => RuntimeValue::isize(value),
+        Some("u8") => u8::try_from(value).map_or(RuntimeValue::i64(value), RuntimeValue::u8),
+        Some("u16") => u16::try_from(value).map_or(RuntimeValue::i64(value), RuntimeValue::u16),
+        Some("u32") => u32::try_from(value).map_or(RuntimeValue::i64(value), RuntimeValue::u32),
+        Some("u64") => u64::try_from(value).map_or(RuntimeValue::i64(value), RuntimeValue::u64),
+        Some("u128") => u128::try_from(value).map_or(RuntimeValue::i64(value), RuntimeValue::u128),
+        Some("usize") => u64::try_from(value).map_or(RuntimeValue::i64(value), RuntimeValue::usize),
+        Some(_) => RuntimeValue::i64(value),
     }
 }
 

@@ -34,7 +34,7 @@ use arcweft_core::source::{
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::stream::StreamRuntimeId;
 use arcweft_core::task::{HostTaskArgTemplate, HostTaskRequestTemplate};
-use arcweft_core::value::{RuntimeInt, RuntimeUInt, RuntimeValue};
+use arcweft_core::value::{RuntimeInt, RuntimeRange, RuntimeUInt, RuntimeValue};
 use arcweft_render_text::LineDisplayCatalog;
 use std::collections::BTreeMap;
 
@@ -398,6 +398,7 @@ impl AwbcInventory {
                     .as_deref()
                     .map(|payload| self.constant_runtime_value(payload)),
             },
+            RuntimeValue::Range(range) => self.range_constant(range),
             RuntimeValue::MatrixF32(matrix) => AwbcConstant::TensorF32 {
                 shape: vec![table_index(matrix.rows()), table_index(matrix.cols())],
                 values: matrix
@@ -439,6 +440,29 @@ impl AwbcInventory {
                     .iter()
                     .map(|value| value.to_bits())
                     .collect(),
+            },
+        }
+    }
+
+    fn range_constant(&mut self, range: &RuntimeRange) -> AwbcConstant {
+        match range {
+            RuntimeRange::Int {
+                start,
+                end,
+                inclusive,
+            } => AwbcConstant::Range {
+                start: start.map(|value| self.constant_runtime_value(&RuntimeValue::Int(value))),
+                end: end.map(|value| self.constant_runtime_value(&RuntimeValue::Int(value))),
+                inclusive: *inclusive,
+            },
+            RuntimeRange::UInt {
+                start,
+                end,
+                inclusive,
+            } => AwbcConstant::Range {
+                start: start.map(|value| self.constant_runtime_value(&RuntimeValue::UInt(value))),
+                end: end.map(|value| self.constant_runtime_value(&RuntimeValue::UInt(value))),
+                inclusive: *inclusive,
             },
         }
     }

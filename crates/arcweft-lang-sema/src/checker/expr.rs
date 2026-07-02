@@ -18,6 +18,7 @@ use arcweft_lang_syntax::expr::{
 };
 
 mod agent;
+mod range;
 
 impl TypeChecker<'_> {
     pub(super) fn expect_expr_type(&mut self, expr: &Expr, expected: &TypeKind, context: &str) {
@@ -103,7 +104,7 @@ impl TypeChecker<'_> {
                 Some(TypeKind::ThreadHandle(Box::new(TypeKind::Unit)))
             }
             Expr::Range { start, end, .. } => {
-                Some(self.check_range_expr(start.as_deref(), end.as_deref()))
+                Some(self.check_range_expr(start.as_deref(), end.as_deref(), expected))
             }
             Expr::Record { path, fields } => Some(self.check_record_expr(path, fields)),
             Expr::RecordLiteral(fields) => Some(self.check_record_literal_expr(fields)),
@@ -217,10 +218,7 @@ impl TypeChecker<'_> {
                 {
                     ty
                 } else {
-                    self.errors.push(TypeCheckError::new(
-                        "unsuffixed integer literal requires an expected integer type".to_owned(),
-                    ));
-                    TypeKind::Named("_".to_owned())
+                    TypeKind::I32
                 }
             }
             arcweft_lang_syntax::expr::Literal::Float { suffix, .. } => {
@@ -247,10 +245,7 @@ impl TypeChecker<'_> {
                 {
                     ty
                 } else {
-                    self.errors.push(TypeCheckError::new(
-                        "unsuffixed float literal requires an expected float type".to_owned(),
-                    ));
-                    TypeKind::Named("_".to_owned())
+                    TypeKind::F64
                 }
             }
             arcweft_lang_syntax::expr::Literal::UnitNumber { suffix, .. } => {
@@ -461,10 +456,7 @@ impl TypeChecker<'_> {
         {
             ty
         } else {
-            self.errors.push(TypeCheckError::new(
-                "unsuffixed integer sequence literal requires an expected integer type".to_owned(),
-            ));
-            TypeKind::Named("_".to_owned())
+            TypeKind::I32
         };
         self.finish_bracket_seq_type(seq.len(), item_type, expected)
     }
@@ -656,14 +648,6 @@ impl TypeChecker<'_> {
         for (_, value) in fields {
             self.check_expr(value);
         }
-    }
-
-    fn check_range_expr(&mut self, start: Option<&Expr>, end: Option<&Expr>) -> TypeKind {
-        let start_type = start.and_then(|start| self.check_expr(start));
-        if let Some(end) = end {
-            self.check_expr_with_expected(end, start_type.as_ref());
-        }
-        TypeKind::Range
     }
 
     fn check_call_expr(&mut self, callee: &Expr, args: &[CallArg]) -> Option<TypeKind> {
@@ -2031,18 +2015,33 @@ impl TypeChecker<'_> {
 
     fn check_binary_expr(&mut self, lhs: &Expr, op: BinaryOp, rhs: &Expr) -> Option<TypeKind> {
         let lhs_type = self.check_expr(lhs);
+        if op == BinaryOp::In {
+            let expected_range = lhs_type
+                .as_ref()
+                .filter(|ty| ty.is_integer())
+                .cloned()
+                .map(|ty| TypeKind::Range(Box::new(ty)));
+            let rhs_type = self.check_expr_with_expected(rhs, expected_range.as_ref());
+            let Some(TypeKind::Range(item_type)) = rhs_type.as_ref() else {
+                self.errors.push(TypeCheckError::new(format!(
+                    "`in` expression requires a range on the right, found {rhs_type:?}"
+                )));
+                return None;
+            };
+            if let Some(lhs_type) = lhs_type.as_ref()
+                && !self.types_compatible(item_type, lhs_type)
+            {
+                self.errors.push(TypeCheckError::new(format!(
+                    "`in` expression left operand must have range item type {item_type:?}, found {lhs_type:?}"
+                )));
+                return None;
+            }
+            return Some(TypeKind::Bool);
+        }
         let rhs_expected = rhs_expected_type_for_binary(op, lhs_type.as_ref());
         let rhs_type = self.check_expr_with_expected(rhs, rhs_expected);
         match op {
-            BinaryOp::In => {
-                if rhs_type != Some(TypeKind::Range) {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "`in` expression requires a range on the right, found {rhs_type:?}"
-                    )));
-                    return None;
-                }
-                Some(TypeKind::Bool)
-            }
+            BinaryOp::In => unreachable!("`in` is handled before rhs expected-type selection"),
             BinaryOp::Implies | BinaryOp::Or | BinaryOp::And => {
                 if lhs_type != Some(TypeKind::Bool) || rhs_type != Some(TypeKind::Bool) {
                     self.errors.push(TypeCheckError::new(format!(
@@ -2209,7 +2208,6 @@ fn rhs_expected_type_for_binary(op: BinaryOp, lhs_type: Option<&TypeKind>) -> Op
         | BinaryOp::Lte
         | BinaryOp::Gt
         | BinaryOp::Lt
-        | BinaryOp::In
             if lhs_type.is_integer() || lhs_type.is_float() || lhs_type == &TypeKind::Duration =>
         {
             Some(lhs_type)

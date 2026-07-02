@@ -1170,6 +1170,7 @@ fn static_image_asset_ref_expr(expr: &RuntimeExpr) -> Option<String> {
         | RuntimeExpr::Tuple(_)
         | RuntimeExpr::BracketSeq(_)
         | RuntimeExpr::RepeatSeq { .. }
+        | RuntimeExpr::Range { .. }
         | RuntimeExpr::Record(_)
         | RuntimeExpr::Variant { .. }
         | RuntimeExpr::Field { .. }

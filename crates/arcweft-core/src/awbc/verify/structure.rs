@@ -227,6 +227,14 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                     check_index(program.constants.len(), payload.0, "constants", &at)?;
                 }
             }
+            AwbcConstant::Range { start, end, .. } => {
+                if let Some(start) = start {
+                    check_index(program.constants.len(), start.0, "constants", &at)?;
+                }
+                if let Some(end) = end {
+                    check_index(program.constants.len(), end.0, "constants", &at)?;
+                }
+            }
             AwbcConstant::TensorF32 { shape, values } => {
                 verify_tensor_shape(shape, values.len(), &at)?;
             }

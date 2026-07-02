@@ -11,6 +11,7 @@ use super::{
     runtime_value_into_sequence_values, runtime_value_label, spread_runtime_values,
     sum_i64_sequence_ref,
 };
+use crate::value::RuntimeIterator;
 
 impl Engine {
     pub(super) fn evaluate_call_expr(
@@ -445,20 +446,21 @@ impl Engine {
         if let Some(value) = self.evaluate_i64_map_expr(source, param, body, pure_backend)? {
             return Ok(value);
         }
-        let items = match runtime_value_into_sequence_values(
+        let iterator = match RuntimeIterator::from_value(
             self.evaluate_expr_with_backend(source, pure_backend)?,
         ) {
-            Ok(items) => items,
+            Ok(iterator) => iterator,
             Err(value) => {
                 return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
                     &value,
                 )));
             }
         };
-        items
-            .iter()
+        iterator
+            .collect::<Vec<_>>()
+            .into_iter()
             .map(|item| {
-                self.with_temp_binding_ref(param, item, |this| {
+                self.with_temp_binding_ref(param, &item, |this| {
                     this.evaluate_expr_with_backend(body, pure_backend)
                 })
             })
@@ -1025,14 +1027,15 @@ impl Engine {
         {
             return Ok(RuntimeValue::i64(sum));
         }
-        let items = match runtime_value_into_sequence_values(value) {
-            Ok(items) => items,
+        let iterator = match RuntimeIterator::from_value(value) {
+            Ok(iterator) => iterator,
             Err(value) => {
                 return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
                     &value,
                 )));
             }
         };
+        let items = iterator.collect::<Vec<_>>();
         sum_i64_sequence_ref(&items).map(RuntimeValue::i64)
     }
 

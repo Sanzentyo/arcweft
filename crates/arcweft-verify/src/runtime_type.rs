@@ -78,6 +78,7 @@ enum RuntimeShape {
     String,
     Tuple,
     BracketSeq,
+    Range,
     Record,
     Variant,
     Unknown,
@@ -338,10 +339,13 @@ impl<'a> RuntimeTypeValidator<'a> {
 
     fn validate_for_ops(&mut self, path: &str, source: &RuntimeExpr, body: &[FlowOp]) {
         let shape = self.validate_expr(path, source);
-        if shape != RuntimeShape::Unknown && shape != RuntimeShape::BracketSeq {
+        if shape != RuntimeShape::Unknown
+            && shape != RuntimeShape::BracketSeq
+            && shape != RuntimeShape::Range
+        {
             self.error(
                 path,
-                format!("for source must be a bracket sequence, found {shape:?}"),
+                format!("for source must be iterable, found {shape:?}"),
             );
         }
         self.validate_ops(&format!("{path}.body"), body);
@@ -405,20 +409,17 @@ impl<'a> RuntimeTypeValidator<'a> {
             RuntimeExpr::EntityRef(_) => RuntimeShape::EntityRef,
             RuntimeExpr::Let { expr, body, .. } => self.validate_let_expr(path, expr, body),
             RuntimeExpr::Tuple(items) => {
-                for (index, item) in items.iter().enumerate() {
-                    self.validate_expr(&format!("{path}.tuple.{index}"), item);
-                }
-                RuntimeShape::Tuple
+                self.validate_expr_items(path, "tuple", items, RuntimeShape::Tuple)
             }
             RuntimeExpr::BracketSeq(items) => {
-                for (index, item) in items.iter().enumerate() {
-                    self.validate_expr(&format!("{path}.seq.{index}"), item);
-                }
-                RuntimeShape::BracketSeq
+                self.validate_expr_items(path, "seq", items, RuntimeShape::BracketSeq)
             }
             RuntimeExpr::RepeatSeq { value, .. } => {
                 self.validate_expr(&format!("{path}.repeat"), value);
                 RuntimeShape::BracketSeq
+            }
+            RuntimeExpr::Range { start, end, .. } => {
+                self.validate_range_expr(path, start.as_deref(), end.as_deref())
             }
             RuntimeExpr::Record(fields) => {
                 for field in fields {
@@ -433,11 +434,7 @@ impl<'a> RuntimeTypeValidator<'a> {
                 RuntimeShape::Variant
             }
             RuntimeExpr::MethodCall { receiver, args, .. } => {
-                self.validate_expr(&format!("{path}.receiver"), receiver);
-                for (index, arg) in args.iter().enumerate() {
-                    self.validate_expr(&format!("{path}.arg.{index}"), arg);
-                }
-                RuntimeShape::Unknown
+                self.validate_method_call_expr(path, receiver, args)
             }
             RuntimeExpr::Map { source, body, .. } => {
                 self.validate_expr(&format!("{path}.source"), source);
@@ -454,41 +451,108 @@ impl<'a> RuntimeTypeValidator<'a> {
                 condition,
                 then_expr,
                 else_expr,
-            } => {
-                let condition = self.validate_expr(&format!("{path}.condition"), condition);
-                self.require_bool(path, condition, "if expression condition");
-                let then_shape = self.validate_expr(&format!("{path}.then"), then_expr);
-                let else_shape = self.validate_expr(&format!("{path}.else"), else_expr);
-                merge_shapes(then_shape, else_shape)
-            }
+            } => self.validate_if_expr(path, condition, then_expr, else_expr),
             RuntimeExpr::IfLet {
                 expr,
                 guard,
                 then_expr,
                 else_expr,
                 ..
-            } => {
-                self.validate_expr(&format!("{path}.if_let"), expr);
-                if let Some(guard) = guard {
-                    let guard_shape = self.validate_expr(&format!("{path}.guard"), guard);
-                    self.require_bool(path, guard_shape, "if-let expression guard");
-                }
-                let then_shape = self.validate_expr(&format!("{path}.then"), then_expr);
-                let else_shape = self.validate_expr(&format!("{path}.else"), else_expr);
-                merge_shapes(then_shape, else_shape)
-            }
+            } => self.validate_if_let_expr(path, expr, guard.as_deref(), then_expr, else_expr),
             RuntimeExpr::Match { scrutinee, arms } => {
-                self.validate_expr(&format!("{path}.scrutinee"), scrutinee);
-                let mut shape = RuntimeShape::Unknown;
-                for (index, arm) in arms.iter().enumerate() {
-                    shape = merge_shapes(
-                        shape,
-                        self.validate_expr_match_arm(&format!("{path}.arm.{index}"), arm),
-                    );
-                }
-                shape
+                self.validate_match_expr(path, scrutinee, arms)
             }
         }
+    }
+
+    fn validate_expr_items(
+        &mut self,
+        path: &str,
+        label: &str,
+        items: &[RuntimeExpr],
+        shape: RuntimeShape,
+    ) -> RuntimeShape {
+        for (index, item) in items.iter().enumerate() {
+            self.validate_expr(&format!("{path}.{label}.{index}"), item);
+        }
+        shape
+    }
+
+    fn validate_range_expr(
+        &mut self,
+        path: &str,
+        start: Option<&RuntimeExpr>,
+        end: Option<&RuntimeExpr>,
+    ) -> RuntimeShape {
+        if let Some(start) = start {
+            self.validate_expr(&format!("{path}.range.start"), start);
+        }
+        if let Some(end) = end {
+            self.validate_expr(&format!("{path}.range.end"), end);
+        }
+        RuntimeShape::Range
+    }
+
+    fn validate_method_call_expr(
+        &mut self,
+        path: &str,
+        receiver: &RuntimeExpr,
+        args: &[RuntimeExpr],
+    ) -> RuntimeShape {
+        self.validate_expr(&format!("{path}.receiver"), receiver);
+        for (index, arg) in args.iter().enumerate() {
+            self.validate_expr(&format!("{path}.arg.{index}"), arg);
+        }
+        RuntimeShape::Unknown
+    }
+
+    fn validate_if_expr(
+        &mut self,
+        path: &str,
+        condition: &RuntimeExpr,
+        then_expr: &RuntimeExpr,
+        else_expr: &RuntimeExpr,
+    ) -> RuntimeShape {
+        let condition = self.validate_expr(&format!("{path}.condition"), condition);
+        self.require_bool(path, condition, "if expression condition");
+        let then_shape = self.validate_expr(&format!("{path}.then"), then_expr);
+        let else_shape = self.validate_expr(&format!("{path}.else"), else_expr);
+        merge_shapes(then_shape, else_shape)
+    }
+
+    fn validate_if_let_expr(
+        &mut self,
+        path: &str,
+        expr: &RuntimeExpr,
+        guard: Option<&RuntimeExpr>,
+        then_expr: &RuntimeExpr,
+        else_expr: &RuntimeExpr,
+    ) -> RuntimeShape {
+        self.validate_expr(&format!("{path}.if_let"), expr);
+        if let Some(guard) = guard {
+            let guard_shape = self.validate_expr(&format!("{path}.guard"), guard);
+            self.require_bool(path, guard_shape, "if-let expression guard");
+        }
+        let then_shape = self.validate_expr(&format!("{path}.then"), then_expr);
+        let else_shape = self.validate_expr(&format!("{path}.else"), else_expr);
+        merge_shapes(then_shape, else_shape)
+    }
+
+    fn validate_match_expr(
+        &mut self,
+        path: &str,
+        scrutinee: &RuntimeExpr,
+        arms: &[RuntimeExprMatchArm],
+    ) -> RuntimeShape {
+        self.validate_expr(&format!("{path}.scrutinee"), scrutinee);
+        arms.iter()
+            .enumerate()
+            .fold(RuntimeShape::Unknown, |shape, (index, arm)| {
+                merge_shapes(
+                    shape,
+                    self.validate_expr_match_arm(&format!("{path}.arm.{index}"), arm),
+                )
+            })
     }
 
     fn validate_let_expr(
@@ -630,6 +694,7 @@ fn runtime_value_shape(value: &RuntimeValue) -> RuntimeShape {
         RuntimeValue::String(_) | RuntimeValue::Char(_) => RuntimeShape::String,
         RuntimeValue::Tuple(_) => RuntimeShape::Tuple,
         RuntimeValue::Seq(_) => RuntimeShape::BracketSeq,
+        RuntimeValue::Range(_) => RuntimeShape::Range,
         RuntimeValue::Record(_) => RuntimeShape::Record,
         RuntimeValue::Variant { .. } => RuntimeShape::Variant,
     }

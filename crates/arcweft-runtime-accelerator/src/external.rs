@@ -320,6 +320,7 @@ fn runtime_value_to_data_value(value: &RuntimeValue) -> Result<Value, RuntimeEva
                 payload: payload.map(Box::new),
             }),
         RuntimeValue::Duration(_)
+        | RuntimeValue::Range(_)
         | RuntimeValue::MatrixF32(_)
         | RuntimeValue::MatrixF64(_)
         | RuntimeValue::TensorF32(_)
@@ -765,6 +766,7 @@ fn runtime_value_label_for_data(value: &RuntimeValue) -> String {
         RuntimeValue::Seq(seq) => format!("seq/{}", seq.len()),
         RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
         RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
+        RuntimeValue::Range(range) => range.label(),
         RuntimeValue::Variant { path, name, .. } => path
             .as_ref()
             .map_or_else(|| format!(".{name}"), |path| format!("{path}.{name}")),

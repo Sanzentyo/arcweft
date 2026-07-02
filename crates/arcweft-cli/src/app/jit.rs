@@ -305,6 +305,7 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
         RuntimeValue::String(value) => value.clone(),
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
+        RuntimeValue::Range(value) => value.label(),
         RuntimeValue::EntityRef(value) => format!("@{value}"),
         RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
         RuntimeValue::Seq(RuntimeSeq::Values(values)) => format!("seq/values/{}", values.len()),

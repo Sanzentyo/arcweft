@@ -286,6 +286,16 @@ impl Wire for AwbcConstant {
                 case.write_wire(writer)?;
                 payload.write_wire(writer)?;
             }
+            Self::Range {
+                start,
+                end,
+                inclusive,
+            } => {
+                writer.write_u8(17);
+                start.write_wire(writer)?;
+                end.write_wire(writer)?;
+                inclusive.write_wire(writer)?;
+            }
             Self::Bytes(bytes) => {
                 writer.write_u8(14);
                 bytes.write_wire(writer)?;
@@ -339,6 +349,11 @@ impl Wire for AwbcConstant {
                 ty: AwbcTypeId::read_wire(reader)?,
                 case: u32::read_wire(reader)?,
                 payload: Option::<AwbcConstantId>::read_wire(reader)?,
+            },
+            17 => Self::Range {
+                start: Option::<AwbcConstantId>::read_wire(reader)?,
+                end: Option::<AwbcConstantId>::read_wire(reader)?,
+                inclusive: bool::read_wire(reader)?,
             },
             14 => Self::Bytes(Vec::<u8>::read_wire(reader)?),
             15 => {

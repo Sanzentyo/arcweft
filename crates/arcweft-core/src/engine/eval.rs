@@ -15,10 +15,10 @@ use crate::pure::{
     RuntimeCallBackend, RuntimeFixedArgs, RuntimeFloat32Args, RuntimeFloat64Args, RuntimeI32Args,
     RuntimeI64Args, RuntimePureCallBackend, RuntimePureScalarInteger, VmRuntimePureCallBackend,
 };
-use crate::value::evaluate_std_float_intrinsic;
 use crate::value::{RuntimeBinaryOp, RuntimeExactInteger, RuntimeFieldExpr, RuntimeUInt};
 use crate::value::{RuntimeCallTarget, RuntimeIntrinsic};
 use crate::value::{RuntimeISizeValue, RuntimeUSizeValue};
+use crate::value::{evaluate_core_range_intrinsic, evaluate_std_float_intrinsic};
 
 mod calls;
 
@@ -120,6 +120,7 @@ impl Engine {
             RuntimeExpr::Tuple(_)
             | RuntimeExpr::BracketSeq(_)
             | RuntimeExpr::RepeatSeq { .. }
+            | RuntimeExpr::Range { .. }
             | RuntimeExpr::Record(_)
             | RuntimeExpr::Variant { .. }
             | RuntimeExpr::Field { .. }
@@ -198,6 +199,13 @@ impl Engine {
             RuntimeExpr::RepeatSeq { value, len } => {
                 self.evaluate_repeat_seq_expr(value, *len, pure_backend)
             }
+            RuntimeExpr::Range {
+                start,
+                end,
+                inclusive,
+            } => {
+                self.evaluate_range_expr(start.as_deref(), end.as_deref(), *inclusive, pure_backend)
+            }
             RuntimeExpr::Record(fields) => self.evaluate_record_expr(fields, pure_backend),
             RuntimeExpr::Variant {
                 path,
@@ -257,6 +265,22 @@ impl Engine {
             .map(|item| self.evaluate_expr_with_backend(item, pure_backend))
             .collect::<Result<Vec<_>, _>>()
             .map(runtime_sequence_from_literal_values)
+    }
+
+    fn evaluate_range_expr(
+        &mut self,
+        start: Option<&RuntimeExpr>,
+        end: Option<&RuntimeExpr>,
+        inclusive: bool,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let start = start
+            .map(|expr| self.evaluate_expr_with_backend(expr, pure_backend))
+            .transpose()?;
+        let end = end
+            .map(|expr| self.evaluate_expr_with_backend(expr, pure_backend))
+            .transpose()?;
+        crate::value::RuntimeRange::new(start, end, inclusive).map(RuntimeValue::Range)
     }
 
     fn evaluate_repeat_seq_expr(
@@ -1251,6 +1275,8 @@ pub(crate) fn evaluate_runtime_call(
             )
             .unwrap_or_else(|_| RuntimeValue::String("add(<unsupported>)".to_owned()))
         }
+        (Some(RuntimeIntrinsic::CoreRange), _) => evaluate_core_range_intrinsic(args)
+            .unwrap_or_else(|error| RuntimeValue::String(format!("core.range({error})"))),
         (
             Some(RuntimeIntrinsic::MathMatmulF32),
             [RuntimeValue::MatrixF32(lhs), RuntimeValue::MatrixF32(rhs)],

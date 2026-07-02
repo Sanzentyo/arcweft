@@ -26,6 +26,7 @@ pub(super) fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::String(_) => "string",
         RuntimeValue::Char(_) => "char",
         RuntimeValue::Duration(_) => "duration",
+        RuntimeValue::Range(_) => "range",
         RuntimeValue::EntityRef(_) => "entity_ref",
         RuntimeValue::Tuple(_) => "tuple",
         RuntimeValue::Seq(RuntimeSeq::Values(_)) => "seq_values",
@@ -800,6 +801,10 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
             1 + items.iter().map(runtime_expr_work_units).sum::<usize>()
         }
         RuntimeExpr::RepeatSeq { value, .. } => 2 + runtime_expr_work_units(value),
+        RuntimeExpr::Range { start, end, .. } => {
+            1 + start.as_deref().map_or(0, runtime_expr_work_units)
+                + end.as_deref().map_or(0, runtime_expr_work_units)
+        }
         RuntimeExpr::Record(fields) => {
             1 + fields
                 .iter()

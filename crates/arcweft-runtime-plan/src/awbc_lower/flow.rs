@@ -1122,6 +1122,10 @@ impl EntryParameterCollector {
             | RuntimeExpr::SpreadArg(value)
             | RuntimeExpr::Sum { source: value }
             | RuntimeExpr::Unary { expr: value, .. } => self.collect_expr(value),
+            RuntimeExpr::Range { start, end, .. } => {
+                self.collect_optional_expr(start.as_deref());
+                self.collect_optional_expr(end.as_deref());
+            }
             RuntimeExpr::Record(fields) => {
                 for field in fields {
                     self.collect_expr(&field.value);

@@ -5,7 +5,7 @@ use crate::source::SourcePlan;
 use crate::step::RuntimeHostCallMode;
 use crate::stream::StreamPlan;
 use crate::task::{AwaitManyTarget, AwaitTarget, NeedId, TaskId};
-use crate::value::{RuntimeBinding, RuntimeExpr, RuntimePayload, RuntimeValue};
+use crate::value::{RuntimeBinding, RuntimeExpr, RuntimeIterator, RuntimePayload};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use thiserror::Error;
@@ -245,8 +245,7 @@ pub enum FlowOp {
     },
     ForNext {
         pattern: RuntimePattern,
-        items: Arc<[RuntimeValue]>,
-        index: usize,
+        iterator: RuntimeIterator,
         body: Arc<[FlowOp]>,
     },
     Thread {

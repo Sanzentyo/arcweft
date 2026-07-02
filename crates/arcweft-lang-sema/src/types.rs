@@ -71,7 +71,7 @@ pub enum TypeKind {
     Bytes,
     TextCluster,
     Duration,
-    Range,
+    Range(Box<TypeKind>),
     DisplayText,
     DebugStatePath,
     ObservationFieldPath,

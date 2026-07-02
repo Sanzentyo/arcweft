@@ -4,8 +4,9 @@ use crate::step::RuntimePureCallStats;
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEnv, RuntimeEvalError,
     RuntimeExactInteger, RuntimeExpr, RuntimeFieldValue, RuntimeISizeValue, RuntimeIntrinsic,
-    RuntimeSeq, RuntimeUInt, RuntimeUSizeValue, RuntimeUnaryOp, RuntimeValue, evaluate_binary,
-    evaluate_numeric_op, evaluate_std_float_intrinsic, evaluate_unary, runtime_sequence_values,
+    RuntimeIterator, RuntimeSeq, RuntimeUInt, RuntimeUSizeValue, RuntimeUnaryOp, RuntimeValue,
+    evaluate_binary, evaluate_core_range_intrinsic, evaluate_numeric_op,
+    evaluate_std_float_intrinsic, evaluate_unary, runtime_sequence_values,
     runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
 };
 
@@ -1318,6 +1319,11 @@ impl PureEvaluator {
                 .collect::<Result<Vec<_>, _>>()
                 .map(runtime_sequence_values),
             RuntimeExpr::RepeatSeq { value, len } => self.evaluate_repeat_seq_expr(value, *len),
+            RuntimeExpr::Range {
+                start,
+                end,
+                inclusive,
+            } => self.evaluate_range_expr(start.as_deref(), end.as_deref(), *inclusive),
             RuntimeExpr::Record(fields) => fields
                 .iter()
                 .map(|field| {
@@ -1408,6 +1414,17 @@ impl PureEvaluator {
             .map(runtime_sequence_values)
     }
 
+    fn evaluate_range_expr(
+        &mut self,
+        start: Option<&RuntimeExpr>,
+        end: Option<&RuntimeExpr>,
+        inclusive: bool,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let start = start.map(|expr| self.evaluate_expr(expr)).transpose()?;
+        let end = end.map(|expr| self.evaluate_expr(expr)).transpose()?;
+        crate::value::RuntimeRange::new(start, end, inclusive).map(RuntimeValue::Range)
+    }
+
     fn evaluate_let_expr(
         &mut self,
         name: &str,
@@ -1484,15 +1501,16 @@ impl PureEvaluator {
         param: &str,
         body: &RuntimeExpr,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let items = match runtime_value_into_sequence_values(self.evaluate_expr(source)?) {
-            Ok(items) => items,
+        let iterator = match RuntimeIterator::from_value(self.evaluate_expr(source)?) {
+            Ok(iterator) => iterator,
             Err(value) => {
                 return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
                     &value,
                 )));
             }
         };
-        items
+        iterator
+            .collect::<Vec<_>>()
             .into_iter()
             .map(|item| {
                 self.env.push_scope_with_capacity(1);
@@ -1520,14 +1538,15 @@ impl PureEvaluator {
         {
             return Ok(RuntimeValue::i64(sum));
         }
-        let items = match runtime_value_into_sequence_values(value) {
-            Ok(items) => items,
+        let iterator = match RuntimeIterator::from_value(value) {
+            Ok(iterator) => iterator,
             Err(value) => {
                 return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
                     &value,
                 )));
             }
         };
+        let items = iterator.collect::<Vec<_>>();
         sum_i64_sequence_ref(&items).map(RuntimeValue::i64)
     }
 
@@ -1566,6 +1585,7 @@ impl PureEvaluator {
                     RuntimeValue::Int(*rhs),
                 )
             }
+            (Some(RuntimeIntrinsic::CoreRange), _) => evaluate_core_range_intrinsic(&args),
             (
                 Some(RuntimeIntrinsic::MathMatmulF32),
                 [RuntimeValue::MatrixF32(lhs), RuntimeValue::MatrixF32(rhs)],

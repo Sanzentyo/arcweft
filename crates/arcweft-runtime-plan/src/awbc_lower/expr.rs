@@ -105,6 +105,25 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                     });
                 dst
             }
+            RuntimeExpr::Range {
+                start,
+                end,
+                inclusive,
+            } => {
+                let start = self.lower_optional_range_bound(start.as_deref());
+                let end = self.lower_optional_range_bound(end.as_deref());
+                let inclusive =
+                    self.load_runtime_const(&arcweft_core::value::RuntimeValue::Bool(*inclusive));
+                let dst = self.frame.temp(self.inventory.dynamic_ty());
+                let intrinsic = self.intern_intrinsic("core.range", 3);
+                self.inventory
+                    .push_instruction(AwbcInstruction::CallIntrinsic {
+                        dst: Some(dst),
+                        intrinsic,
+                        args: vec![start, end, inclusive],
+                    });
+                dst
+            }
             RuntimeExpr::Record(fields) => {
                 let registers = fields
                     .iter()
@@ -338,6 +357,22 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                 intrinsic,
                 args,
             });
+        dst
+    }
+
+    fn lower_optional_range_bound(&mut self, expr: Option<&RuntimeExpr>) -> AwbcRegisterId {
+        if let Some(expr) = expr {
+            self.lower(expr)
+        } else {
+            self.load_runtime_const(&arcweft_core::value::RuntimeValue::Unit)
+        }
+    }
+
+    fn load_runtime_const(&mut self, value: &arcweft_core::value::RuntimeValue) -> AwbcRegisterId {
+        let dst = self.frame.temp(self.inventory.dynamic_ty());
+        let constant = self.inventory.constant_runtime_value(value);
+        self.inventory
+            .push_instruction(AwbcInstruction::LoadConst { dst, constant });
         dst
     }
 

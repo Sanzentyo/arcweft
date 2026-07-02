@@ -568,6 +568,7 @@ fn types_compatible(expected: &TypeKind, actual: &TypeKind) -> bool {
             types_compatible(expected, actual)
                 || matches!(actual.as_ref(), TypeKind::Named(name) if name == "_")
         }
+        (TypeKind::Range(expected), TypeKind::Range(actual)) => types_compatible(expected, actual),
         _ => false,
     }
 }
@@ -602,13 +603,14 @@ fn is_agent_value_type(ty: &TypeKind) -> bool {
         | TypeKind::CaptureRef
         | TypeKind::AgentResource
         | TypeKind::AgentResourceBody => true,
-        TypeKind::Vec(inner) | TypeKind::Array { item: inner, .. } | TypeKind::Slice(inner) => {
-            is_agent_value_type(inner)
-        }
+        TypeKind::Vec(inner)
+        | TypeKind::Array { item: inner, .. }
+        | TypeKind::Slice(inner)
+        | TypeKind::Range(inner)
+        | TypeKind::Option(inner) => is_agent_value_type(inner),
         TypeKind::Map { key, value, .. } => {
             types_compatible(&TypeKind::String, key) && is_agent_value_type(value)
         }
-        TypeKind::Option(inner) => is_agent_value_type(inner),
         TypeKind::Choice(alternatives) => alternatives.iter().all(is_agent_value_type),
         _ => false,
     }

@@ -7,7 +7,12 @@ use std::fmt;
 use thiserror::Error;
 
 mod env;
+mod integer;
+mod range;
 mod sequence_impls;
+
+pub use integer::{RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth};
+pub use range::{RuntimeIterator, RuntimeRange, RuntimeRangeIterator};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeBinding {
@@ -42,6 +47,7 @@ pub enum RuntimeValue {
     String(String),
     Char(char),
     Duration(LogicalDuration),
+    Range(RuntimeRange),
     EntityRef(String),
     Tuple(Vec<RuntimeValue>),
     Seq(RuntimeSeq),
@@ -51,208 +57,6 @@ pub enum RuntimeValue {
         name: String,
         payload: Option<Box<RuntimeValue>>,
     },
-}
-
-/// Width-preserving signed integer scalar.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum RuntimeInt {
-    I8(i8),
-    I16(i16),
-    I32(i32),
-    I64(i64),
-    I128(i128),
-    ISize(i64),
-}
-
-impl RuntimeInt {
-    pub const fn i8(value: i8) -> Self {
-        Self::I8(value)
-    }
-
-    pub const fn i16(value: i16) -> Self {
-        Self::I16(value)
-    }
-
-    pub const fn i32(value: i32) -> Self {
-        Self::I32(value)
-    }
-
-    pub const fn i64(value: i64) -> Self {
-        Self::I64(value)
-    }
-
-    pub const fn i128(value: i128) -> Self {
-        Self::I128(value)
-    }
-
-    pub const fn isize(value: i64) -> Self {
-        Self::ISize(value)
-    }
-
-    pub fn try_sum_as_i64(self) -> Option<i64> {
-        match self {
-            Self::I8(value) => Some(i64::from(value)),
-            Self::I16(value) => Some(i64::from(value)),
-            Self::I32(value) => Some(i64::from(value)),
-            Self::I64(value) | Self::ISize(value) => Some(value),
-            Self::I128(value) => i64::try_from(value).ok(),
-        }
-    }
-
-    pub fn try_into_i64(self) -> Option<i64> {
-        self.try_sum_as_i64()
-    }
-
-    pub const fn exact_i64(self) -> Option<i64> {
-        match self {
-            Self::I64(value) => Some(value),
-            Self::I8(_) | Self::I16(_) | Self::I32(_) | Self::I128(_) | Self::ISize(_) => None,
-        }
-    }
-
-    pub const fn exact_i32(self) -> Option<i32> {
-        match self {
-            Self::I32(value) => Some(value),
-            Self::I8(_) | Self::I16(_) | Self::I64(_) | Self::I128(_) | Self::ISize(_) => None,
-        }
-    }
-
-    pub fn try_into_i32(self) -> Option<i32> {
-        match self {
-            Self::I8(value) => Some(i32::from(value)),
-            Self::I16(value) => Some(i32::from(value)),
-            Self::I32(value) => Some(value),
-            Self::I64(value) | Self::ISize(value) => i32::try_from(value).ok(),
-            Self::I128(value) => i32::try_from(value).ok(),
-        }
-    }
-
-    pub fn label(self) -> String {
-        match self {
-            Self::I8(value) => value.to_string(),
-            Self::I16(value) => value.to_string(),
-            Self::I32(value) => value.to_string(),
-            Self::I64(value) | Self::ISize(value) => value.to_string(),
-            Self::I128(value) => value.to_string(),
-        }
-    }
-}
-
-impl fmt::Display for RuntimeInt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.label())
-    }
-}
-
-/// Width-preserving unsigned integer scalar.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum RuntimeUInt {
-    U8(u8),
-    U16(u16),
-    U32(u32),
-    U64(u64),
-    U128(u128),
-    USize(u64),
-}
-
-impl RuntimeUInt {
-    pub const fn u8(value: u8) -> Self {
-        Self::U8(value)
-    }
-
-    pub const fn u16(value: u16) -> Self {
-        Self::U16(value)
-    }
-
-    pub const fn u32(value: u32) -> Self {
-        Self::U32(value)
-    }
-
-    pub const fn u64(value: u64) -> Self {
-        Self::U64(value)
-    }
-
-    pub const fn u128(value: u128) -> Self {
-        Self::U128(value)
-    }
-
-    pub const fn usize(value: u64) -> Self {
-        Self::USize(value)
-    }
-
-    pub fn try_sum_as_i64(self) -> Option<i64> {
-        match self {
-            Self::U8(value) => Some(i64::from(value)),
-            Self::U16(value) => Some(i64::from(value)),
-            Self::U32(value) => Some(i64::from(value)),
-            Self::U64(value) | Self::USize(value) => i64::try_from(value).ok(),
-            Self::U128(value) => i64::try_from(value).ok(),
-        }
-    }
-
-    pub fn try_into_i64(self) -> Option<i64> {
-        self.try_sum_as_i64()
-    }
-
-    pub fn try_into_u64(self) -> Option<u64> {
-        match self {
-            Self::U8(value) => Some(u64::from(value)),
-            Self::U16(value) => Some(u64::from(value)),
-            Self::U32(value) => Some(u64::from(value)),
-            Self::U64(value) | Self::USize(value) => Some(value),
-            Self::U128(value) => u64::try_from(value).ok(),
-        }
-    }
-
-    pub fn try_into_i32(self) -> Option<i32> {
-        match self {
-            Self::U8(value) => Some(i32::from(value)),
-            Self::U16(value) => Some(i32::from(value)),
-            Self::U32(value) => i32::try_from(value).ok(),
-            Self::U64(value) | Self::USize(value) => i32::try_from(value).ok(),
-            Self::U128(value) => i32::try_from(value).ok(),
-        }
-    }
-
-    pub const fn exact_u32(self) -> Option<u32> {
-        match self {
-            Self::U32(value) => Some(value),
-            Self::U8(_) | Self::U16(_) | Self::U64(_) | Self::U128(_) | Self::USize(_) => None,
-        }
-    }
-
-    pub fn try_into_u32(self) -> Option<u32> {
-        match self {
-            Self::U8(value) => Some(u32::from(value)),
-            Self::U16(value) => Some(u32::from(value)),
-            Self::U32(value) => Some(value),
-            Self::U64(value) | Self::USize(value) => u32::try_from(value).ok(),
-            Self::U128(value) => u32::try_from(value).ok(),
-        }
-    }
-
-    pub const fn exact_u64(self) -> Option<u64> {
-        match self {
-            Self::U64(value) => Some(value),
-            Self::U8(_) | Self::U16(_) | Self::U32(_) | Self::U128(_) | Self::USize(_) => None,
-        }
-    }
-
-    pub fn label(self) -> String {
-        match self {
-            Self::U8(value) => value.to_string(),
-            Self::U16(value) => value.to_string(),
-            Self::U32(value) => value.to_string(),
-            Self::U64(value) | Self::USize(value) => value.to_string(),
-            Self::U128(value) => value.to_string(),
-        }
-    }
-}
-
-impl fmt::Display for RuntimeUInt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.label())
-    }
 }
 
 /// Runtime call target after syntax lowering.
@@ -301,6 +105,7 @@ impl fmt::Display for RuntimeCallTarget {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RuntimeIntrinsic {
     Add,
+    CoreRange,
     StdF32Abs,
     StdF32Floor,
     StdF32Ceil,
@@ -369,6 +174,7 @@ impl RuntimeIntrinsic {
     pub fn from_label(label: &str) -> Option<Self> {
         match label {
             "add" => Some(Self::Add),
+            "core.range" => Some(Self::CoreRange),
             "std.f32.abs" => Some(Self::StdF32Abs),
             "std.f32.floor" => Some(Self::StdF32Floor),
             "std.f32.ceil" => Some(Self::StdF32Ceil),
@@ -438,6 +244,7 @@ impl RuntimeIntrinsic {
     pub const fn as_label(self) -> &'static str {
         match self {
             Self::Add => "add",
+            Self::CoreRange => "core.range",
             Self::StdF32Abs => "std.f32.abs",
             Self::StdF32Floor => "std.f32.floor",
             Self::StdF32Ceil => "std.f32.ceil",
@@ -510,6 +317,7 @@ impl RuntimeIntrinsic {
             Self::PathTemp => Some("temp"),
             Self::PathExport => Some("export"),
             Self::Add
+            | Self::CoreRange
             | Self::StdF32Abs
             | Self::StdF32Floor
             | Self::StdF32Ceil
@@ -894,6 +702,11 @@ pub enum RuntimeExpr {
         value: Box<RuntimeExpr>,
         len: usize,
     },
+    Range {
+        start: Option<Box<RuntimeExpr>>,
+        end: Option<Box<RuntimeExpr>>,
+        inclusive: bool,
+    },
     Record(Vec<RuntimeFieldExpr>),
     Variant {
         path: Option<String>,
@@ -994,6 +807,7 @@ impl RuntimeExpr {
             | Self::Tuple(_)
             | Self::BracketSeq(_)
             | Self::RepeatSeq { .. }
+            | Self::Range { .. }
             | Self::Record(_)
             | Self::Variant { .. }
             | Self::Field { .. }
@@ -1021,6 +835,11 @@ impl fmt::Display for RuntimeExpr {
             Self::Tuple(items) => write!(f, "tuple/{}", items.len()),
             Self::BracketSeq(items) => write!(f, "bracket_seq/{}", items.len()),
             Self::RepeatSeq { len, .. } => write!(f, "repeat_seq/{len}"),
+            Self::Range { inclusive, .. } => f.write_str(if *inclusive {
+                "range/inclusive"
+            } else {
+                "range"
+            }),
             Self::Record(fields) => write!(f, "record/{}", fields.len()),
             Self::Variant { name, .. } => write!(f, ".{name}"),
             Self::Field { field, .. } => write!(f, ".{field}"),
@@ -1153,6 +972,8 @@ pub enum RuntimeEvalError {
     ExpectedEntityRef(String),
     #[error("expected bracket sequence expression, found {0}")]
     ExpectedBracketSeq(String),
+    #[error("runtime range is invalid: {reason}")]
+    InvalidRange { reason: String },
     #[error("field `{field}` does not exist on {value}")]
     MissingField { field: String, value: String },
     #[error("spread argument requires a tuple or bracket sequence, found {0}")]
@@ -1862,6 +1683,33 @@ pub(crate) fn materialize_i64_sequence(items: Vec<i64>) -> Vec<RuntimeValue> {
     items.into_iter().map(RuntimeValue::i64).collect()
 }
 
+pub fn evaluate_core_range_intrinsic(
+    args: &[RuntimeValue],
+) -> Result<RuntimeValue, RuntimeEvalError> {
+    let [start, end, RuntimeValue::Bool(inclusive)] = args else {
+        return Err(RuntimeEvalError::InvalidRange {
+            reason: format!(
+                "core.range expected (start|(), end|(), bool), got ({})",
+                args.iter()
+                    .map(runtime_value_label)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        });
+    };
+    let start = range_intrinsic_bound(start);
+    let end = range_intrinsic_bound(end);
+    RuntimeRange::new(start, end, *inclusive).map(RuntimeValue::Range)
+}
+
+fn range_intrinsic_bound(value: &RuntimeValue) -> Option<RuntimeValue> {
+    if matches!(value, RuntimeValue::Unit) {
+        None
+    } else {
+        Some(value.clone())
+    }
+}
+
 pub fn runtime_sequence_values(values: Vec<RuntimeValue>) -> RuntimeValue {
     RuntimeValue::Seq(RuntimeSeq::values(values))
 }
@@ -2440,6 +2288,7 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
         RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => value.clone(),
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
+        RuntimeValue::Range(value) => value.label(),
         RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
         RuntimeValue::Seq(seq) => match seq {
             RuntimeSeq::Values(values) => format!("seq/values/{}", values.len()),

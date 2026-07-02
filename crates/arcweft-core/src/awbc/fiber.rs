@@ -871,6 +871,7 @@ fn runtime_value_type_label(value: &RuntimeValue) -> String {
         RuntimeValue::String(_) => "string",
         RuntimeValue::Char(_) => "char",
         RuntimeValue::Duration(_) => "duration",
+        RuntimeValue::Range(_) => "range",
         RuntimeValue::EntityRef(_) => "entity",
         RuntimeValue::Tuple(_) => "tuple",
         RuntimeValue::Seq(_) => "sequence",

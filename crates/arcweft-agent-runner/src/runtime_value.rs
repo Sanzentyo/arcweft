@@ -46,6 +46,9 @@ pub(crate) fn runtime_value_to_json(value: &RuntimeValue) -> serde_json::Value {
             "name": name,
             "payload": payload.as_deref().map(runtime_value_to_json),
         }),
+        RuntimeValue::Range(range) => {
+            serde_json::to_value(range).unwrap_or(serde_json::Value::Null)
+        }
         RuntimeValue::Duration(_)
         | RuntimeValue::MatrixF32(_)
         | RuntimeValue::MatrixF64(_)
