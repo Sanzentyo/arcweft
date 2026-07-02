@@ -4,13 +4,11 @@ use super::NativeTextInputFocusReason;
 use super::backend::NativeTextInputBackendIdentity;
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::text_input::{
-    PlatformTextInputEvent, TextByteOffset, TextCompositionUpdate, TextControlWriteBack,
-    TextControlWriteBackKind, TextInput, TextInputCapabilities, TextInputCapabilitySupport,
-    TextInputClientSnapshot, TextInputFocusGeneration, TextInputGeometrySnapshot,
-    TextInputKeyDisposition, TextInputOperation, TextInputSecurityPolicy, TextInputSessionId,
-    TextRange,
+    TextByteOffset, TextCompositionUpdate, TextControlWriteBack, TextControlWriteBackKind,
+    TextInput, TextInputCapabilities, TextInputCapabilitySupport, TextInputClientSnapshot,
+    TextInputFocusGeneration, TextInputGeometrySnapshot, TextInputKeyDisposition,
+    TextInputOperation, TextInputSecurityPolicy, TextInputSessionId, TextRange,
 };
-use arcweft_runtime_host::TextInputDispatchError;
 use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
@@ -68,16 +66,6 @@ pub enum NativeTextInputTraceRecord {
         key: String,
         disposition: &'static str,
     },
-    PlatformEvent {
-        backend: NativeTextInputBackendIdentity,
-        adapter: String,
-        session: u64,
-        serial: u64,
-        generation: u64,
-        target: String,
-        kind: &'static str,
-        secure_redacted: bool,
-    },
     RoutedTextInput {
         backend: NativeTextInputBackendIdentity,
         session: u64,
@@ -96,10 +84,6 @@ pub enum NativeTextInputTraceRecord {
         selection: TraceTextRange,
         secure_redacted: bool,
         value_len: usize,
-    },
-    DispatchRejected {
-        backend: NativeTextInputBackendIdentity,
-        reason: String,
     },
 }
 
@@ -282,26 +266,6 @@ impl NativeTextInputTraceWriter {
             });
     }
 
-    pub(crate) fn record_platform_event(
-        &mut self,
-        backend: NativeTextInputBackendIdentity,
-        event: &PlatformTextInputEvent,
-        security: TextInputSecurityPolicy,
-    ) {
-        let context = event.context();
-        self.records
-            .push(NativeTextInputTraceRecord::PlatformEvent {
-                backend,
-                adapter: format!("{:?}", context.adapter()),
-                session: context.session().0,
-                serial: context.serial().0,
-                generation: context.generation().0,
-                target: format!("{:?}", context.target()),
-                kind: platform_event_kind(event),
-                secure_redacted: security == TextInputSecurityPolicy::SecureRedacted,
-            });
-    }
-
     pub(crate) fn record_routed_text_input(
         &mut self,
         backend: NativeTextInputBackendIdentity,
@@ -345,18 +309,6 @@ impl NativeTextInputTraceWriter {
                 } else {
                     write_back.value().as_str().len()
                 },
-            });
-    }
-
-    pub(crate) fn record_dispatch_rejection(
-        &mut self,
-        backend: NativeTextInputBackendIdentity,
-        error: &TextInputDispatchError,
-    ) {
-        self.records
-            .push(NativeTextInputTraceRecord::DispatchRejected {
-                backend,
-                reason: error.to_string(),
             });
     }
 
@@ -518,19 +470,6 @@ const fn focus_reason_label(value: NativeTextInputFocusReason) -> &'static str {
         NativeTextInputFocusReason::RedrawRefresh => "redraw_refresh",
         #[cfg(test)]
         NativeTextInputFocusReason::Fixture => "fixture",
-    }
-}
-
-const fn platform_event_kind(value: &PlatformTextInputEvent) -> &'static str {
-    match value {
-        PlatformTextInputEvent::StartComposition(_) => "start_composition",
-        PlatformTextInputEvent::SetComposition { .. } => "set_composition",
-        PlatformTextInputEvent::Commit { .. } => "commit",
-        PlatformTextInputEvent::EndComposition { .. } => "end_composition",
-        PlatformTextInputEvent::DeleteSurrounding { .. } => "delete_surrounding",
-        PlatformTextInputEvent::SetSelection { .. } => "set_selection",
-        PlatformTextInputEvent::Command { .. } => "command",
-        PlatformTextInputEvent::Batch { .. } => "batch",
     }
 }
 

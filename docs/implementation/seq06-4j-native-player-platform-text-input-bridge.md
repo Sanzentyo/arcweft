@@ -16,14 +16,14 @@ cargo run -p arcweft-cli --features native-player -- run \
 ```
 
 The bridge is owned by `arcweft-player-native`, uses the portable
-`TextInputDispatchState` contract, and keeps Windows TSF/AppKit/native handles
-inside native/player or desktop-native crates. Sans I/O crates continue to see
-only Arcweft text-input snapshots, geometry snapshots, host commands, and routed
+`TextInputDispatchState` contract, and keeps native handles inside the
+window-adapter or diagnostic crates. Sans I/O crates continue to see only
+Arcweft text-input snapshots, geometry snapshots, host commands, and routed
 `TextInput` batches.
 
 ## Implemented
 
-- Added `NativeTextInputBridge`, backend boundary, window-handle extraction, and
+- Added `NativeTextInputBridge`, winit window text-input source boundary, and
   JSON trace capture under `arcweft-player-native`.
 - Added native player run entry points that accept
   `NativeTextInputBridgeOptions`.
@@ -39,16 +39,17 @@ only Arcweft text-input snapshots, geometry snapshots, host commands, and routed
 The player-rendered sample now lowers focused Arcweft text controls into
 `PreparedTextInputTarget` snapshots and geometry. Live Windows traces showed
 focus and geometry records for the three controls, but ordinary key input did
-not reliably become platform text events through the TSF bridge alone.
+not reliably become platform text events through the previous TSF experiment.
 
-The native player now treats winit `WindowEvent::Ime` as the primary windowed
-text event source for the normal `arcw run --runner native` path. It enables and
-updates IME state from the prepared Arcweft snapshot/geometry, routes winit
+The native player now treats winit as the single windowed text source for the
+normal `arcw run --runner native` path. It enables and updates IME state from
+the prepared Arcweft snapshot/geometry, routes winit
 preedit/commit/disable/delete-surrounding events into the shared player-owned
-editor, and keeps secure controls from publishing surrounding text. While this
-winit path is available, the older TSF platform-event drain is suppressed to
-avoid duplicate partial commits; the TSF bridge still owns backend focus,
-geometry publication, capability trace, and Windows-specific diagnostics.
+editor, routes ordinary printable keyboard text from `KeyEvent.text`, and keeps
+secure controls from publishing surrounding text. The normal player no longer
+installs a separate TSF/AppKit backend on the same live window; those
+platform-specific adapters remain diagnostic/future specialized boundaries so
+they cannot compete with winit for focus, candidate UI, or key dispatch.
 
 The text-input contract also now has `TextDeleteUnit::Utf8Byte` so winit's
 UTF-8 byte `DeleteSurrounding` event is represented exactly instead of being
@@ -57,9 +58,10 @@ approximated as scalar or grapheme deletion.
 ## Explicit Gap
 
 Final Windows acceptance still needs a pinned real Japanese IME trace captured
-from the normal native player after this event-path update. macOS acceptance
-remains blocked until the AppKit in-window backend is attached; the
-helper-process AppKit sample is diagnostic only.
+from the normal native player after this winit-only event-source update. macOS
+acceptance should use the same winit-backed native player route first; AppKit
+experiments remain diagnostic until the project intentionally replaces the
+window text source instead of layering it on top.
 
 ## Diagnostic Harness Boundary
 
@@ -92,7 +94,7 @@ Executed on 2026-06-29:
 - `cargo clippy -p arcweft-player-native -p arcweft-cli --features arcweft-cli/native-player --all-targets -- -D warnings` passed.
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .` passed with `0 error(s), 117 warning(s)` across 982 Rust files and 466,233 Rust physical LOC.
 
-Executed on 2026-07-02 after the winit IME event-path update:
+Executed on 2026-07-02 after the winit-only event-source convergence:
 
 - `cargo fmt --all` passed.
 - `cargo test -p arcweft-presentation text_editor::tests::delete_surrounding_utf8_byte_unit --lib` passed.
@@ -103,7 +105,7 @@ Executed on 2026-07-02 after the winit IME event-path update:
 - `cargo check -p arcweft-player-native -p arcweft-player-scene -p arcweft-runtime-host -p arcweft-presentation -p arcweft-ui --all-targets` passed.
 - `cargo clippy -p arcweft-player-native -p arcweft-player-scene -p arcweft-runtime-host -p arcweft-presentation -p arcweft-ui --all-targets -- -D warnings` passed.
 - `cargo build -p arcweft-cli --features native-player` passed.
-- `cargo +nightly -Zscript tools/structure-audit.rs --root .` passed with `0 error(s), 124 warning(s)` across 1,046 Rust files and 491,589 Rust physical LOC.
+- `cargo +nightly -Zscript tools/structure-audit.rs --root .` passed with `0 error(s), 124 warning(s)` across 1,045 Rust files and 491,089 Rust physical LOC.
 - `git diff --check` passed.
 
 Windows live validation:
@@ -116,18 +118,21 @@ cargo run -p arcweft-cli --features native-player -- run `
 
 Expected live evidence after renderer-backed text input geometry exists:
 
-- backend `windows_tsf` with real capability records;
+- backend `winit_window_ime` with capability records;
 - focus records for distinct controls and focus generations;
-- platform events for composition, commit, selection, deletion, and commands;
+- routed text-input records for printable keyboard text;
+- routed text-input records for composition, commit, deletion, and commands when
+  winit emits IME events;
 - routed `TextInput` records through the player path;
 - non-zero screen caret/character geometry for plain fields;
 - `secure_redacted=true` and no plaintext/character geometry for secure fields.
 
-macOS live validation should use the same native player bridge once the AppKit
-in-window backend is attached. The helper-process AppKit sample is also
-diagnostic only.
+macOS live validation should use the same native player bridge and winit event
+source. The helper-process AppKit sample is also diagnostic only.
 
 ## Design Deviations
 
-No intentional architecture deviation. The only incomplete runtime behavior is
-the explicit `None` renderer hook described above.
+No intentional architecture deviation. The current architecture intentionally
+uses one live text source per native player window: winit for the normal player,
+with TSF/AppKit samples kept out of that path unless a future cut replaces the
+source end to end.

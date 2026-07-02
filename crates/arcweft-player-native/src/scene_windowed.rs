@@ -2,7 +2,7 @@ use crate::NativePlayerError;
 use crate::native_audio::{NativeAudioRuntime, NativePlayerAudioError};
 use crate::text_input_bridge::{
     NativeTextInputBridge, NativeTextInputBridgeError, NativeTextInputBridgeOptions,
-    NativeTextInputFocusReason, NativeTextInputFocusedControl, NativeTextInputWindowContext,
+    NativeTextInputFocusReason, NativeTextInputFocusedControl,
 };
 use crate::window_driver::{WindowCloseSignal, WinitOwnedWindowDriver};
 use crate::windowed_ingress::{
@@ -20,7 +20,7 @@ use arcweft_player_scene::input::{InputController, InputOutcome};
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
 use arcweft_presentation::text_input::{
     Capitalization, CompositionEndReason, TextAssistPolicy, TextByteOffset, TextCommit,
-    TextCompositionUpdate, TextDeleteUnit, TextInput, TextInputClientSnapshot,
+    TextCompositionUpdate, TextDeleteUnit, TextEditCommand, TextInput, TextInputClientSnapshot,
     TextInputGeometrySnapshot, TextInputKeyDisposition, TextInputOperation, TextInputOptions,
     TextInputPrivacy, TextInputPurpose, TextInputSerial, TextRange,
 };
@@ -38,7 +38,9 @@ use std::time::{Duration, Instant};
 use thiserror::Error;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Size};
-use winit::event::{ButtonSource, ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{
+    ButtonSource, ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent,
+};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{
@@ -295,7 +297,6 @@ impl ApplicationHandler for NativeSceneApp {
             self.title.clone(),
             bundle,
             self.ingress_completion.clone(),
-            NativeTextInputWindowContext::from_winit_window(window.as_ref()),
             self.text_input_options.clone(),
         )) {
             Ok(state) => {
@@ -353,9 +354,7 @@ impl ApplicationHandler for NativeSceneApp {
                 state.wheel(delta);
                 Ok(())
             }
-            WindowEvent::KeyboardInput { event, .. } => {
-                state.keyboard(&event.logical_key, event.state)
-            }
+            WindowEvent::KeyboardInput { event, .. } => state.keyboard(&event),
             WindowEvent::Ime(event) => state.ime(event),
             WindowEvent::RedrawRequested => state.redraw(),
             _ => Ok(()),
@@ -390,7 +389,6 @@ impl NativeSceneState {
         title: String,
         bundle: ArcweftBundle,
         ingress_completion: WindowedPatchIngressCompletion,
-        text_input_window: NativeTextInputWindowContext,
         text_input_options: NativeTextInputBridgeOptions,
     ) -> Result<Self, NativeSceneWindowError> {
         let instance = wgpu::Instance::default();
@@ -459,7 +457,7 @@ impl NativeSceneState {
             BundleSessionOptions::default(),
             backend,
         )?;
-        let text_input = NativeTextInputBridge::new(text_input_window, text_input_options);
+        let text_input = NativeTextInputBridge::new(text_input_options);
         Ok(Self {
             window,
             close_signal,
@@ -503,21 +501,10 @@ impl NativeSceneState {
 
     fn redraw(&mut self) -> Result<(), NativeSceneWindowError> {
         self.runtime.pump_main_thread()?;
-        if let Some(frame) = self.prepared.clone() {
-            self.drain_text_input_edits(&frame, TextInputKeyDisposition::ImeConsumed)?;
-        }
         self.step_runtime()?;
-        let mut prepared = self.prepare_frame()?;
+        let prepared = self.prepare_frame()?;
         self.sync_text_input_bridge(&prepared.frame, NativeTextInputFocusReason::RedrawRefresh)?;
         self.sync_window_ime(&prepared.frame);
-        if self.drain_text_input_edits(&prepared.frame, TextInputKeyDisposition::ImeConsumed)? {
-            prepared = self.prepare_frame()?;
-            self.sync_text_input_bridge(
-                &prepared.frame,
-                NativeTextInputFocusReason::RedrawRefresh,
-            )?;
-            self.sync_window_ime(&prepared.frame);
-        }
         self.render(&prepared.frame)?;
         let patch_outcomes = self.drain_patch_events_after_render_submitted()?;
         if patch_outcomes
@@ -693,18 +680,21 @@ impl NativeSceneState {
         self.window.request_redraw();
     }
 
-    fn keyboard(
-        &mut self,
-        key: &Key,
-        element_state: ElementState,
-    ) -> Result<(), NativeSceneWindowError> {
+    fn keyboard(&mut self, event: &KeyEvent) -> Result<(), NativeSceneWindowError> {
         let Some(frame) = self.prepared.clone() else {
             return Ok(());
         };
-        let phase = match element_state {
+        let phase = match event.state {
             ElementState::Pressed => KeyPhase::Down,
             ElementState::Released => KeyPhase::Up,
         };
+        if phase == KeyPhase::Down
+            && let Some(operation) = self.text_input_operation_from_key_event(event)
+        {
+            self.apply_window_ime_operations(vec![operation])?;
+            return Ok(());
+        }
+        let key = &event.logical_key;
         let label = key_label(key);
         let disposition = self.text_input.backend_key_disposition(&label);
         let player_disposition = if self.text_input.shortcuts_allowed(disposition) {
@@ -716,17 +706,52 @@ impl NativeSceneState {
             .input
             .keyboard_with_ime(&frame, &label, phase, player_disposition);
         self.apply_outcome(outcome)?;
-        if self.drain_text_input_edits(&frame, player_disposition)? {
-            let prepared = self.prepare_frame()?;
-            self.sync_text_input_bridge(
-                &prepared.frame,
-                NativeTextInputFocusReason::RedrawRefresh,
-            )?;
-            self.sync_window_ime(&prepared.frame);
-            self.prepared = Some(prepared.frame);
-        }
         self.window.request_redraw();
         Ok(())
+    }
+
+    fn text_input_operation_from_key_event(&self, event: &KeyEvent) -> Option<TextInputOperation> {
+        let editor = self.input.focused_text_editor()?;
+        match &event.logical_key {
+            Key::Named(NamedKey::Backspace) => {
+                Some(TextInputOperation::Command(TextEditCommand::Backspace))
+            }
+            Key::Named(NamedKey::Delete) => {
+                Some(TextInputOperation::Command(TextEditCommand::Delete))
+            }
+            Key::Named(NamedKey::ArrowLeft) => {
+                Some(TextInputOperation::Command(TextEditCommand::MoveLeft {
+                    selecting: false,
+                }))
+            }
+            Key::Named(NamedKey::ArrowRight) => {
+                Some(TextInputOperation::Command(TextEditCommand::MoveRight {
+                    selecting: false,
+                }))
+            }
+            Key::Named(NamedKey::Home) => Some(TextInputOperation::Command(
+                TextEditCommand::MoveLineStart { selecting: false },
+            )),
+            Key::Named(NamedKey::End) => {
+                Some(TextInputOperation::Command(TextEditCommand::MoveLineEnd {
+                    selecting: false,
+                }))
+            }
+            Key::Named(NamedKey::Enter) => {
+                if editor.options().is_multiline() {
+                    Some(TextInputOperation::Commit(TextCommit::new("\n")))
+                } else {
+                    Some(TextInputOperation::Command(TextEditCommand::Submit))
+                }
+            }
+            Key::Named(NamedKey::Escape) => {
+                Some(TextInputOperation::Command(TextEditCommand::Cancel))
+            }
+            _ => event
+                .text
+                .as_ref()
+                .and_then(|text| text_input_commit_from_key_text(text.as_str())),
+        }
     }
 
     fn ime(&mut self, event: Ime) -> Result<(), NativeSceneWindowError> {
@@ -770,7 +795,7 @@ impl NativeSceneState {
         let outcome = self.input.focus_changed(focused);
         self.apply_outcome(outcome)?;
         if !focused {
-            self.text_input.blur_active()?;
+            self.text_input.blur_active();
             self.disable_window_ime();
         }
         Ok(())
@@ -891,23 +916,6 @@ impl NativeSceneState {
     fn mark_window_ime_unsupported(&mut self) {
         self.window_ime_supported = false;
         self.window_ime_enabled = false;
-    }
-
-    fn drain_text_input_edits(
-        &mut self,
-        frame: &PreparedFrame,
-        disposition: TextInputKeyDisposition,
-    ) -> Result<bool, NativeSceneWindowError> {
-        if self.window_ime_supported {
-            return Ok(false);
-        }
-        let mut drained = false;
-        for edit in self.text_input.drain_platform_edits(disposition)? {
-            drained = true;
-            let outcome = self.input.text_input(frame, edit.into_input())?;
-            self.apply_outcome(outcome)?;
-        }
-        Ok(drained)
     }
 
     fn apply_outcome(&mut self, outcome: InputOutcome) -> Result<(), NativeSceneWindowError> {
@@ -1170,6 +1178,13 @@ fn window_ime_preedit_offset(preedit: &str, offset: usize) -> u32 {
     u32::try_from(offset).unwrap_or(u32::MAX)
 }
 
+fn text_input_commit_from_key_text(text: &str) -> Option<TextInputOperation> {
+    if text.is_empty() || text.chars().all(char::is_control) {
+        return None;
+    }
+    Some(TextInputOperation::Commit(TextCommit::new(text)))
+}
+
 fn key_label(key: &Key) -> String {
     match key {
         Key::Named(NamedKey::ArrowUp) => "ArrowUp".to_owned(),
@@ -1205,8 +1220,11 @@ fn dialogue_visual_time_millis(
 
 #[cfg(test)]
 mod tests {
-    use super::{surrounding_excerpt_range, window_ime_composition_selection};
-    use arcweft_presentation::text_input::{TextByteOffset, TextRange};
+    use super::{
+        surrounding_excerpt_range, text_input_commit_from_key_text,
+        window_ime_composition_selection,
+    };
+    use arcweft_presentation::text_input::{TextByteOffset, TextInputOperation, TextRange};
 
     fn native_scene_state_body(source: &str) -> &str {
         let struct_start = source
@@ -1289,6 +1307,17 @@ mod tests {
             selection,
             TextRange::new(TextByteOffset(6), TextByteOffset(6))
         );
+    }
+
+    #[test]
+    fn winit_keyboard_text_commits_printable_text_only() {
+        let Some(TextInputOperation::Commit(commit)) = text_input_commit_from_key_text("abc")
+        else {
+            panic!("printable keyboard text should become a commit");
+        };
+        assert_eq!(commit.text(), "abc");
+        assert!(text_input_commit_from_key_text("\r").is_none());
+        assert!(text_input_commit_from_key_text("").is_none());
     }
 
     #[test]

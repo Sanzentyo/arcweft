@@ -1,27 +1,24 @@
-//! Player-owned cross-platform bridge for native platform text input.
+//! Player-owned bridge for native window text input.
 //!
-//! The native scene/window owner integrates with this module once.  Platform
-//! implementations such as Windows TSF or macOS `AppKit` live behind the backend
-//! enum and normalize callbacks into `PlatformTextInputEvent` before anything is
-//! routed back into the scene.
+//! The native scene/window owner integrates with this module once.  The normal
+//! player route uses winit window IME and keyboard-text events as its source,
+//! then normalizes those events into player-owned `TextInput` batches before
+//! anything is routed back into the scene.
 
 mod backend;
-mod platform;
 mod trace;
 
-pub(crate) use platform::NativeTextInputWindowContext;
 pub use trace::NativeTextInputTraceOptions;
 
-use self::backend::{NativeTextInputBackend, NativeTextInputBackendError};
+use self::backend::NativeTextInputBackendIdentity;
 use self::trace::NativeTextInputTraceWriter;
 #[cfg(test)]
 use arcweft_presentation::input::InteractionTarget;
 #[cfg(test)]
 use arcweft_presentation::text_input::TextInputSessionId;
 use arcweft_presentation::text_input::{
-    PlatformTextInputEvent, TextControlWriteBack, TextInput, TextInputBlurPolicy,
-    TextInputCapabilities, TextInputClientSnapshot, TextInputFocusGeneration,
-    TextInputGeometrySnapshot, TextInputHostCommand, TextInputKeyDisposition,
+    TextControlWriteBack, TextInput, TextInputBlurPolicy, TextInputCapabilities,
+    TextInputClientSnapshot, TextInputGeometrySnapshot, TextInputKeyDisposition,
     TextInputSecurityPolicy,
 };
 use arcweft_runtime_host::{
@@ -53,18 +50,11 @@ pub struct NativeTextInputFocusedControl {
     reason: NativeTextInputFocusReason,
 }
 
-/// Validated edit drained from a platform backend and ready for
-/// `InputController::text_input`.
-#[derive(Clone, Debug, PartialEq)]
-pub struct NativeTextInputPlayerEdit {
-    input: TextInput,
-}
-
 /// Cross-platform bridge owned by one native player window.
 #[derive(Debug)]
 pub(crate) struct NativeTextInputBridge {
     core: PlayerTextInputBridgeCore,
-    backend: NativeTextInputBackend,
+    backend: NativeTextInputBackendIdentity,
     trace: NativeTextInputTraceWriter,
 }
 
@@ -72,8 +62,6 @@ pub(crate) struct NativeTextInputBridge {
 /// crate and do not cross into Sans I/O crates.
 #[derive(Debug, Error)]
 pub enum NativeTextInputBridgeError {
-    #[error("native text-input backend failed: {0}")]
-    Backend(#[from] NativeTextInputBackendError),
     #[error("text-input dispatch failed: {0}")]
     Dispatch(#[from] TextInputDispatchError),
 }
@@ -144,24 +132,15 @@ impl NativeTextInputFocusedControl {
     }
 }
 
-impl NativeTextInputPlayerEdit {
-    pub fn into_input(self) -> TextInput {
-        self.input
-    }
-}
-
 impl NativeTextInputBridge {
-    pub(crate) fn new(
-        window: NativeTextInputWindowContext,
-        options: NativeTextInputBridgeOptions,
-    ) -> Self {
+    pub(crate) fn new(options: NativeTextInputBridgeOptions) -> Self {
         let NativeTextInputBridgeOptions { trace, blur_policy } = options;
-        let backend = NativeTextInputBackend::for_window(window);
+        let backend = NativeTextInputBackendIdentity::winit_window_ime();
         let mut trace = NativeTextInputTraceWriter::new(trace);
-        trace.record_backend_selected(backend.identity());
-        trace.record_capabilities(backend.identity(), backend.capabilities());
+        trace.record_backend_selected(backend);
+        trace.record_capabilities(backend, backend.capabilities());
         if let Some(reason) = backend.unavailable_reason() {
-            trace.record_backend_unavailable(backend.identity(), reason);
+            trace.record_backend_unavailable(backend, reason);
         }
         Self {
             core: PlayerTextInputBridgeCore::default().with_blur_policy(blur_policy),
@@ -171,9 +150,9 @@ impl NativeTextInputBridge {
     }
 
     pub(crate) fn backend_key_disposition(&mut self, key: &str) -> TextInputKeyDisposition {
-        let disposition = self.backend.filter_key(key);
+        let disposition = self.backend.key_disposition();
         self.trace
-            .record_key_disposition(self.backend.identity(), key, disposition);
+            .record_key_disposition(self.backend, key, disposition);
         disposition
     }
 
@@ -182,7 +161,8 @@ impl NativeTextInputBridge {
         focused: Option<NativeTextInputFocusedControl>,
     ) -> Result<(), NativeTextInputBridgeError> {
         let Some(focused) = focused else {
-            return self.blur_active();
+            self.blur_active();
+            return Ok(());
         };
         let focused = focused.with_capabilities(self.backend.capabilities());
         let snapshot = focused.snapshot();
@@ -195,7 +175,7 @@ impl NativeTextInputBridge {
         match sync.phase() {
             PlayerTextInputSyncPhase::Activated => {
                 self.trace.record_focus(
-                    self.backend.identity(),
+                    self.backend,
                     focused.reason(),
                     snapshot,
                     sync.generation(),
@@ -204,7 +184,7 @@ impl NativeTextInputBridge {
             }
             PlayerTextInputSyncPhase::Updated => {
                 self.trace.record_snapshot(
-                    self.backend.identity(),
+                    self.backend,
                     "update",
                     snapshot,
                     sync.generation(),
@@ -217,45 +197,19 @@ impl NativeTextInputBridge {
             sync.phase(),
             PlayerTextInputSyncPhase::Activated | PlayerTextInputSyncPhase::Updated
         ) {
-            self.trace.record_geometry(
-                self.backend.identity(),
-                focused.geometry(),
-                sync.security(),
-            );
-        }
-        for command in sync.commands() {
-            self.apply_host_command(command, sync.generation(), Some(focused.geometry()))?;
+            self.trace
+                .record_geometry(self.backend, focused.geometry(), sync.security());
         }
         Ok(())
     }
 
-    pub(crate) fn blur_active(&mut self) -> Result<(), NativeTextInputBridgeError> {
+    pub(crate) fn blur_active(&mut self) {
         let ended_session = self.core.active_session();
         let sync = self.core.blur_active();
         if sync.phase() == PlayerTextInputSyncPhase::Idle {
-            return Ok(());
+            return;
         }
-        self.trace
-            .record_blur(self.backend.identity(), ended_session);
-        for command in sync.commands() {
-            self.apply_host_command(command, sync.generation(), None)?;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn drain_platform_edits(
-        &mut self,
-        disposition: TextInputKeyDisposition,
-    ) -> Result<Vec<NativeTextInputPlayerEdit>, NativeTextInputBridgeError> {
-        let security = self
-            .core
-            .active_security()
-            .unwrap_or(TextInputSecurityPolicy::Plain);
-        self.backend
-            .drain_platform_events()
-            .into_iter()
-            .map(|event| self.dispatch_platform_event(event, disposition, security))
-            .collect()
+        self.trace.record_blur(self.backend, ended_session);
     }
 
     pub(crate) fn shortcuts_allowed(&self, disposition: TextInputKeyDisposition) -> bool {
@@ -268,7 +222,7 @@ impl NativeTextInputBridge {
     ) {
         for write_back in write_backs {
             self.trace
-                .record_runtime_write_back(self.backend.identity(), write_back);
+                .record_runtime_write_back(self.backend, write_back);
         }
     }
 
@@ -282,61 +236,7 @@ impl NativeTextInputBridge {
             .active_security()
             .unwrap_or(TextInputSecurityPolicy::Plain);
         self.trace
-            .record_routed_text_input(self.backend.identity(), input, disposition, security);
-    }
-
-    fn dispatch_platform_event(
-        &mut self,
-        event: PlatformTextInputEvent,
-        disposition: TextInputKeyDisposition,
-        security: TextInputSecurityPolicy,
-    ) -> Result<NativeTextInputPlayerEdit, NativeTextInputBridgeError> {
-        self.trace
-            .record_platform_event(self.backend.identity(), &event, security);
-        let edit = match self.core.dispatch_platform_event(event, disposition) {
-            Ok(edit) => edit,
-            Err(error) => {
-                self.trace
-                    .record_dispatch_rejection(self.backend.identity(), &error);
-                return Err(error.into());
-            }
-        };
-        self.trace.record_routed_text_input(
-            self.backend.identity(),
-            edit.input(),
-            edit.key_disposition(),
-            security,
-        );
-        Ok(NativeTextInputPlayerEdit {
-            input: edit.into_input(),
-        })
-    }
-
-    fn apply_host_command(
-        &mut self,
-        command: &TextInputHostCommand,
-        generation: TextInputFocusGeneration,
-        geometry: Option<&TextInputGeometrySnapshot>,
-    ) -> Result<(), NativeTextInputBridgeError> {
-        match command {
-            TextInputHostCommand::Activate { snapshot, .. } => {
-                self.backend.activate(snapshot, generation, geometry)?;
-            }
-            TextInputHostCommand::Update(snapshot) => self.backend.update_snapshot(snapshot)?,
-            TextInputHostCommand::UpdateGeometry(geometry) => {
-                self.backend.update_geometry(geometry)?;
-            }
-            TextInputHostCommand::CommitComposition { session } => {
-                self.backend.commit_composition(*session);
-            }
-            TextInputHostCommand::CancelComposition { session } => {
-                self.backend.cancel_composition(*session);
-            }
-            TextInputHostCommand::Deactivate { .. } => {
-                self.backend.blur(self.core.blur_policy())?;
-            }
-        }
-        Ok(())
+            .record_routed_text_input(self.backend, input, disposition, security);
     }
 }
 
@@ -384,11 +284,8 @@ mod tests {
     }
 
     #[test]
-    fn unavailable_backend_reports_capabilities_without_platform_events() {
-        let mut bridge = NativeTextInputBridge::new(
-            NativeTextInputWindowContext::unavailable_for_tests(),
-            NativeTextInputBridgeOptions::default(),
-        );
+    fn winit_backend_reports_capabilities_without_native_identity() {
+        let mut bridge = NativeTextInputBridge::new(NativeTextInputBridgeOptions::default());
         let focus = NativeTextInputFocusedControl::new(
             snapshot(1, target("plain"), false),
             geometry(1),
@@ -396,19 +293,19 @@ mod tests {
         );
 
         bridge.sync_focus(Some(focus)).unwrap();
-        let edits = bridge
-            .drain_platform_edits(TextInputKeyDisposition::ShortcutCandidate)
-            .unwrap();
+        let trace = bridge.trace.records_for_tests();
 
-        assert!(edits.is_empty());
+        assert!(
+            trace
+                .iter()
+                .any(|record| record.contains("winit_window_ime"))
+        );
+        assert!(!trace.iter().any(|record| record.contains("windows_tsf")));
     }
 
     #[test]
     fn secure_focus_trace_is_redacted_before_backend_publication() {
-        let mut bridge = NativeTextInputBridge::new(
-            NativeTextInputWindowContext::unavailable_for_tests(),
-            NativeTextInputBridgeOptions::default(),
-        );
+        let mut bridge = NativeTextInputBridge::new(NativeTextInputBridgeOptions::default());
         let focus = NativeTextInputFocusedControl::new(
             snapshot(7, target("secure"), true),
             geometry(7),

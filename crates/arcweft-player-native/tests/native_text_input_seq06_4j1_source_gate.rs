@@ -8,17 +8,20 @@ fn bridge_trace_records_selected_backend_and_runtime_write_back() {
 }
 
 #[test]
-fn native_backend_identity_names_future_hosts_without_platform_identity_leak() {
+fn normal_player_backend_identity_is_winit_owned_without_platform_identity_leak() {
     let backend = include_str!("../src/text_input_bridge/backend.rs");
 
+    assert!(backend.contains("WinitWindowIme"));
     for token in [
         "WindowsTsf",
         "MacosAppKit",
-        "WaylandTextInputV3",
-        "AndroidInputConnection",
-        "IosUiTextInput",
+        "InputConnection",
+        "UiTextInput",
     ] {
-        assert!(backend.contains(token), "missing {token}");
+        assert!(
+            !backend.contains(token),
+            "normal native player backend should not name {token}"
+        );
     }
 
     let shared = [

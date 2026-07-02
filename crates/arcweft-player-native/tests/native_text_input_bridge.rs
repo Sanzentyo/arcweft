@@ -19,14 +19,18 @@ fn bridge_is_native_player_integration_point_not_tsf_scene_loop() {
     let root = workspace_root();
     let scene = read(root.join("crates/arcweft-player-native/src/scene_windowed.rs"));
     let bridge = read(root.join("crates/arcweft-player-native/src/text_input_bridge.rs"));
+    let backend = read(root.join("crates/arcweft-player-native/src/text_input_bridge/backend.rs"));
 
     assert!(scene.contains("text_input: NativeTextInputBridge,"));
-    assert!(scene.contains("NativeTextInputWindowContext::from_winit_window"));
+    assert!(scene.contains("WindowEvent::Ime"));
+    assert!(scene.contains("KeyEvent"));
+    assert!(backend.contains("WinitWindowIme"));
     assert!(scene.contains("keyboard_with_ime"));
     assert!(bridge.contains("PlayerTextInputBridgeCore"));
-    assert!(bridge.contains("PlatformTextInputEvent"));
     assert!(!scene.contains("WindowsTsfImeBridge"));
     assert!(!scene.contains("NSTextInputClient"));
+    assert!(!backend.contains("WindowsTsf"));
+    assert!(!backend.contains("MacosAppKit"));
 }
 
 #[test]
