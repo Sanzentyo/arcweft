@@ -2,7 +2,9 @@ use crate::borrow::{
     BorrowLocalState, BorrowStateCheckpoint, BorrowStateDelta, BorrowStateDeltaEntry,
     BorrowStateJournalEntry, merge_borrow_local_states,
 };
-use crate::diagnostics::{TypeCheckError, TypeCheckReadinessError, TypeCheckWarning};
+use crate::diagnostics::{
+    TraitDiagnostic, TypeCheckError, TypeCheckReadinessError, TypeCheckWarning,
+};
 use crate::effect_analysis::EffectAnalysisReport;
 use crate::effect_collector::EffectCollector;
 use crate::effects::{EffectId, EffectSet};
@@ -15,6 +17,9 @@ use crate::lifetime::{
     collect_type_kind_lifetimes, lifetime_key, lifetime_value_type, type_contains_borrow_ref,
 };
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
+use crate::traits::{
+    ProjectionError, ProjectionResolution, TraitCatalog, TraitPredicate, collect_trait_catalog,
+};
 use crate::types::{EntityKind, MapKind, TypeKind};
 use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::{
@@ -243,6 +248,8 @@ struct TypeChecker<'a> {
     global_function_signatures: HashMap<String, FunctionSignature>,
     global_function_effects: HashMap<String, Vec<String>>,
     global_type_aliases: HashMap<String, TypeKind>,
+    trait_catalog: TraitCatalog,
+    trait_predicate_stack: Vec<Vec<TraitPredicate>>,
     flow_params: HashMap<String, HashSet<String>>,
     locals: HashMap<String, TypeKind>,
     local_scope_stack: Vec<LocalBindingSnapshot>,
@@ -315,6 +322,8 @@ impl TypeChecker<'_> {
             global_function_signatures: HashMap::new(),
             global_function_effects: HashMap::new(),
             global_type_aliases: HashMap::new(),
+            trait_catalog: TraitCatalog::default(),
+            trait_predicate_stack: Vec::new(),
             flow_params: HashMap::new(),
             locals: HashMap::new(),
             local_scope_stack: Vec::new(),
@@ -425,6 +434,63 @@ impl TypeChecker<'_> {
         types_compatible(expected, actual)
     }
 
+    fn collect_and_store_trait_catalog(&mut self, module: &HirModule) {
+        let (catalog, diagnostics) = collect_trait_catalog(module);
+        self.trait_catalog = catalog;
+        self.errors.extend(diagnostics);
+    }
+
+    fn active_trait_predicates(&self) -> Vec<TraitPredicate> {
+        self.trait_predicate_stack
+            .iter()
+            .flat_map(|scope| scope.iter().cloned())
+            .collect()
+    }
+
+    fn resolve_type_projection(&mut self, ty: TypeKind) -> TypeKind {
+        match ty {
+            TypeKind::Projection { subject, assoc, .. } => {
+                match self.trait_catalog.resolve_projection(
+                    &subject,
+                    &assoc,
+                    &self.active_trait_predicates(),
+                ) {
+                    Ok(ProjectionResolution::Resolved(ty) | ProjectionResolution::Deferred(ty)) => {
+                        ty
+                    }
+                    Err(ProjectionError::UnknownAssociatedType { subject, assoc }) => {
+                        self.errors.push(TypeCheckError::trait_diagnostic(
+                            TraitDiagnostic::unknown_associated_type(format!("{subject:?}"), assoc),
+                        ));
+                        TypeKind::Named("_".to_owned())
+                    }
+                    Err(ProjectionError::Ambiguous { subject, assoc }) => {
+                        self.errors.push(TypeCheckError::trait_diagnostic(
+                            TraitDiagnostic::ambiguous_projection(format!("{subject:?}"), assoc),
+                        ));
+                        TypeKind::Named("_".to_owned())
+                    }
+                }
+            }
+            TypeKind::Vec(inner) => TypeKind::Vec(Box::new(self.resolve_type_projection(*inner))),
+            TypeKind::Seq(inner) => TypeKind::Seq(Box::new(self.resolve_type_projection(*inner))),
+            TypeKind::Range(inner) => {
+                TypeKind::Range(Box::new(self.resolve_type_projection(*inner)))
+            }
+            TypeKind::Slice(inner) => {
+                TypeKind::Slice(Box::new(self.resolve_type_projection(*inner)))
+            }
+            TypeKind::Option(inner) => {
+                TypeKind::Option(Box::new(self.resolve_type_projection(*inner)))
+            }
+            TypeKind::Result { ok, error } => TypeKind::Result {
+                ok: Box::new(self.resolve_type_projection(*ok)),
+                error: Box::new(self.resolve_type_projection(*error)),
+            },
+            other => other,
+        }
+    }
+
     fn clear_active_borrows(&mut self) {
         self.active_borrow_lifetimes.clear();
         self.active_borrow_total = 0;
@@ -512,11 +578,70 @@ fn function_param_type(param: &FnParam) -> FunctionParam {
 }
 
 fn function_param_local_type(param: &FnParam) -> TypeKind {
-    let ty = type_ref_kind(param.ty());
+    function_param_local_type_with_generics(param, &HashSet::new())
+}
+
+fn function_param_local_type_with_generics(
+    param: &FnParam,
+    generic_names: &HashSet<String>,
+) -> TypeKind {
+    let ty = type_ref_kind_with_generics(param.ty(), generic_names);
     if param.is_rest() {
         TypeKind::Vec(Box::new(ty))
     } else {
         ty
+    }
+}
+
+fn signature_generic_names(signature: &FnSignature) -> HashSet<String> {
+    signature
+        .generic_params()
+        .iter()
+        .filter_map(|param| param.as_type())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn type_ref_kind_with_generics(ty: &TypeRef, generic_names: &HashSet<String>) -> TypeKind {
+    match ty {
+        TypeRef::Path(path) if generic_names.contains(path) => TypeKind::GenericParam(path.clone()),
+        TypeRef::Projection { subject, assoc } => TypeKind::Projection {
+            subject: Box::new(type_ref_kind_with_generics(subject, generic_names)),
+            trait_name: None,
+            assoc: assoc.clone(),
+        },
+        TypeRef::Generic { base, args } if base == "Vec" && args.len() == 1 => TypeKind::Vec(
+            Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
+        ),
+        TypeRef::Generic { base, args } if base == "Option" && args.len() == 1 => TypeKind::Option(
+            Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
+        ),
+        TypeRef::Generic { base, args } if base == "Result" && args.len() == 2 => {
+            TypeKind::Result {
+                ok: Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
+                error: Box::new(type_ref_kind_with_generics(&args[1], generic_names)),
+            }
+        }
+        TypeRef::Generic { base, args } if base == "Need" && args.len() == 2 => TypeKind::Need {
+            ready: Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
+            error: Box::new(type_ref_kind_with_generics(&args[1], generic_names)),
+        },
+        TypeRef::Ref { lifetime, inner } => TypeKind::BorrowRef {
+            lifetime: lifetime
+                .as_ref()
+                .map(|lifetime| LifetimeScopeKind::parse(lifetime.name())),
+            inner: Box::new(type_ref_kind_with_generics(inner, generic_names)),
+        },
+        TypeRef::Slice(inner) => {
+            TypeKind::Slice(Box::new(type_ref_kind_with_generics(inner, generic_names)))
+        }
+        TypeRef::Choice(alternatives) => normalize_choice_type(
+            alternatives
+                .iter()
+                .map(|alternative| type_ref_kind_with_generics(alternative, generic_names))
+                .collect::<Vec<_>>(),
+        ),
+        _ => type_ref_kind(ty),
     }
 }
 

@@ -127,6 +127,17 @@ pub(crate) fn type_label(ty: &TypeRef) -> String {
             "{base}<{}>",
             args.iter().map(type_label).collect::<Vec<_>>().join(", ")
         ),
+        TypeRef::TraitBound(bound) => {
+            let mut args = bound.args().iter().map(type_label).collect::<Vec<_>>();
+            args.extend(
+                bound
+                    .assoc_bindings()
+                    .iter()
+                    .map(|binding| format!("{} = {}", binding.name(), type_label(binding.value()))),
+            );
+            format!("{}<{}>", bound.path(), args.join(", "))
+        }
+        TypeRef::Projection { subject, assoc } => format!("{}::{assoc}", type_label(subject)),
         TypeRef::Ref { lifetime, inner } => {
             let lifetime = lifetime
                 .as_ref()

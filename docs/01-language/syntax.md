@@ -50,6 +50,43 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 - 数値 primitive は `i32`, `u64`, `f32` のように bit 幅を明示する。
 - 型推論の期待型がない数値 literal は `10i32`, `2.0f32` のような suffix が必要。
 
+## Traits and impls
+
+Arcweft DSL type abstraction uses Rust-like `trait` and `impl` syntax:
+
+```arcw
+pub trait SourceLike {
+    type Item
+    fn current(self) -> Self::Item
+}
+
+impl SourceLike for ChapterSource {
+    type Item = ChapterId
+    fn current(self) -> ChapterId {
+        self.current_id
+    }
+}
+```
+
+Generic bounds can be written inline or in a `where` clause:
+
+```arcw
+fn current_item<T: SourceLike>(source: T) -> T::Item {
+    source.current()
+}
+
+fn exact<T>(source: T) -> ChapterId
+where T: SourceLike<Item = ChapterId>
+{
+    source.current()
+}
+```
+
+`Self::Assoc` and `T::Assoc` are associated type projections. In seq08.1,
+projections are compile-time type expressions; dynamic trait objects, fully
+qualified method syntax, default associated types, and GAT-like associated type
+constructors are deferred.
+
 ## `@` 参照
 
 ```arcw

@@ -23,6 +23,7 @@ pub mod project_index;
 pub mod resolve;
 pub mod semantic;
 pub mod symbols;
+pub mod traits;
 pub mod types;
 
 #[cfg(test)]

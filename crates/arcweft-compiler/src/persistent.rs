@@ -785,9 +785,13 @@ fn record_fn_signature(
                 put_str(bytes, "lifetime")?;
                 put_str(bytes, lifetime.name())?;
             }
-            GenericParam::Type(name) => {
+            GenericParam::Type(param) => {
                 put_str(bytes, "type")?;
-                put_str(bytes, name)?;
+                put_str(bytes, param.name())?;
+                put_len(bytes, "type bounds", param.bounds().len())?;
+                for bound in param.bounds() {
+                    record_type_ref(bound, bytes)?;
+                }
             }
         }
     }
@@ -851,6 +855,28 @@ fn record_type_ref(ty: &TypeRef, bytes: &mut Vec<u8>) -> Result<(), PersistentFa
             for arg in args {
                 record_type_ref(arg, bytes)?;
             }
+        }
+        TypeRef::TraitBound(bound) => {
+            put_str(bytes, "trait-bound")?;
+            put_str(bytes, bound.path())?;
+            put_len(bytes, "trait bound args", bound.args().len())?;
+            for arg in bound.args() {
+                record_type_ref(arg, bytes)?;
+            }
+            put_len(
+                bytes,
+                "associated type bindings",
+                bound.assoc_bindings().len(),
+            )?;
+            for binding in bound.assoc_bindings() {
+                put_str(bytes, binding.name())?;
+                record_type_ref(binding.value(), bytes)?;
+            }
+        }
+        TypeRef::Projection { subject, assoc } => {
+            put_str(bytes, "projection")?;
+            record_type_ref(subject, bytes)?;
+            put_str(bytes, assoc)?;
         }
         TypeRef::Ref { lifetime, inner } => {
             put_str(bytes, "ref")?;

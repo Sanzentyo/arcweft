@@ -1,0 +1,4 @@
+trait Mappable {
+    type Mapped<B>
+    fn map(self) -> Self::Mapped<i32>
+}

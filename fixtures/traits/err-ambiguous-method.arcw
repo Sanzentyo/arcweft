@@ -1,0 +1,21 @@
+struct Thing {}
+
+trait A {
+    fn label(self) -> String
+}
+
+trait B {
+    fn label(self) -> String
+}
+
+impl A for Thing {
+    fn label(self) -> String { "a" }
+}
+
+impl B for Thing {
+    fn label(self) -> String { "b" }
+}
+
+fn run(value: Thing) -> String {
+    value.label()
+}

@@ -747,7 +747,7 @@ pub impl<T> Mappable for Option<T> {
     ));
     assert!(matches!(
         &mappable.members()[2],
-        TraitMember::Function { signature }
+        TraitMember::Function { signature, .. }
             if signature.name() == "map"
                 && signature
                     .param_groups()

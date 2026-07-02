@@ -1,0 +1,18 @@
+struct ChapterSource {
+    current_id: i32
+}
+
+trait SourceLike {
+    type Item
+    fn current(self) -> Self::Item
+}
+
+impl SourceLike for ChapterSource {
+    type Item = i32
+    fn current(self) -> i32 { self.current_id }
+}
+
+impl SourceLike for ChapterSource {
+    type Item = i32
+    fn current(self) -> i32 { self.current_id }
+}

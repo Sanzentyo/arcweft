@@ -4,6 +4,41 @@ Arcweft は Rust 風の generics を採用するため、`trait` / `impl` / `whe
 
 同時に、`Option` / `Result` / `Need` / `Parser` / `Seq` / `Source` を自然に扱うため、Monad 的な抽象を標準 prelude に入れる。ただし、通常のユーザーには `Monad` という名前を前面に出さず、`map`、`and_then`、`?`、`await`、`traverse`、`seq`、`collect` として見せる。
 
+## Implementation status: seq08.1 trait substrate
+
+Seq08.1 implements the DSL trait substrate. The canonical abstraction keyword is
+`trait`; `protocol` remains reserved for host, wire, and Agent protocol
+concepts.
+
+Implemented in seq08.1:
+
+- trait declarations;
+- supertrait references;
+- required associated types;
+- required method signatures;
+- trait impl declarations;
+- inherent impl declarations;
+- associated type assignments;
+- `Self::Assoc` and `T::Assoc` projection syntax;
+- generic bounds and `where` predicates;
+- `Trait<Assoc = Type>` associated type equality constraints;
+- conservative impl coherence;
+- typed sema witness evidence.
+
+Parsed but rejected until later slices:
+
+- associated type defaults;
+- associated type constructors / GAT-like members such as `type Mapped<B>`;
+- default method bodies;
+- fully qualified method calls;
+- dynamic trait objects.
+
+Earlier sections of this document use `Seq` / `IntoSeq` to describe historical
+surface ideas for `for`. Seq08.2 must define standard `Iterator` /
+`IntoIterator`-style traits on top of the seq08.1 trait catalog and witness
+model. It must not introduce a separate `IntoSeq` conformance system or
+hard-code iteration as compiler magic.
+
 ## trait / impl / where
 
 ```arcw
@@ -44,7 +79,10 @@ where
 
 ## Associated type and GAT-like constructors
 
-Arcweft は Rust の associated type 風の設計を使う。`map` の戻り wrapper を表すために、GAT 風の associated type constructor を許可する。
+Arcweft は Rust の associated type 風の設計を使う。seq08.1 は通常の
+associated type requirement / assignment を実装する。`map` の戻り wrapper
+を表す GAT 風の associated type constructor は将来 slice の対象であり、
+seq08.1 の sema では構文を保持したうえで拒否する。
 
 ```arcw
 pub trait Mappable {

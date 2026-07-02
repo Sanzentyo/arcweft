@@ -3,7 +3,7 @@ pub trait Named {
     fn name(self) -> String
 }
 
-pub impl Named for RouteInfo {
+impl Named for RouteInfo {
     type Item = RouteInfo
 
     fn name(self) -> String {

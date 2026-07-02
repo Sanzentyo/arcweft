@@ -141,6 +141,12 @@ pub enum TypeKind {
     Function {
         return_type: Box<TypeKind>,
     },
+    GenericParam(String),
+    Projection {
+        subject: Box<TypeKind>,
+        trait_name: Option<String>,
+        assoc: String,
+    },
     Speaker(EntityKind),
     SpeakerPreset(EntityKind),
     CharacterPatch(EntityKind),

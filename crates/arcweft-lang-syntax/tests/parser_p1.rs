@@ -28,7 +28,7 @@ fn function_signatures_keep_generics_curried_groups_and_where_clauses() {
     ));
     assert!(matches!(
         &signature.generic_params()[1],
-        GenericParam::Type(name) if name == "T"
+        GenericParam::Type(param) if param.name() == "T"
     ));
     assert_eq!(signature.param_groups().len(), 2);
     assert_eq!(signature.param_groups()[0].params().len(), 1);

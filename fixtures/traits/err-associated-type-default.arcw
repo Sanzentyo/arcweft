@@ -1,0 +1,4 @@
+trait SourceLike {
+    type Item = i32
+    fn current(self) -> Self::Item
+}

@@ -825,6 +825,12 @@ pub(crate) fn type_ref_kind(ty: &TypeRef) -> TypeKind {
                 error: Box::new(type_ref_kind(&args[1])),
             }
         }
+        TypeRef::Projection { subject, assoc } => TypeKind::Projection {
+            subject: Box::new(type_ref_kind(subject)),
+            trait_name: None,
+            assoc: assoc.clone(),
+        },
+        TypeRef::TraitBound(bound) => named_type_label(bound.path()),
         TypeRef::Ref { lifetime, inner } => TypeKind::BorrowRef {
             lifetime: lifetime
                 .as_ref()
@@ -884,6 +890,16 @@ pub(super) fn type_ref_label(ty: &TypeRef) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
+        TypeRef::TraitBound(bound) => {
+            let mut args = bound.args().iter().map(type_ref_label).collect::<Vec<_>>();
+            args.extend(bound.assoc_bindings().iter().map(|binding| {
+                format!("{} = {}", binding.name(), type_ref_label(binding.value()))
+            }));
+            format!("{}<{}>", bound.path(), args.join(", "))
+        }
+        TypeRef::Projection { subject, assoc } => {
+            format!("{}::{assoc}", type_ref_label(subject))
+        }
         TypeRef::Ref { lifetime, inner } => {
             let lifetime = lifetime
                 .as_ref()
@@ -1017,10 +1033,18 @@ pub(super) fn type_kind_label(ty: &TypeKind) -> String {
         TypeKind::ThreadHandle(inner) => format!("ThreadHandle<{}>", type_kind_label(inner)),
         TypeKind::Shared(inner) => format!("Shared<{}>", type_kind_label(inner)),
         TypeKind::Function { return_type } => format!("fn -> {}", type_kind_label(return_type)),
+        TypeKind::GenericParam(name) | TypeKind::Named(name) => name.clone(),
+        TypeKind::Projection {
+            subject,
+            trait_name,
+            assoc,
+        } => trait_name.as_ref().map_or_else(
+            || format!("{}::{assoc}", type_kind_label(subject)),
+            |trait_name| format!("<{} as {trait_name}>::{assoc}", type_kind_label(subject)),
+        ),
         TypeKind::Speaker(kind) => format!("Speaker<{kind:?}>"),
         TypeKind::SpeakerPreset(kind) => format!("SpeakerPreset<{kind:?}>"),
         TypeKind::CharacterPatch(kind) => format!("CharacterPatch<{kind:?}>"),
-        TypeKind::Named(name) => name.clone(),
         TypeKind::Tuple(items) => format!(
             "({})",
             items

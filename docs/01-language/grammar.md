@@ -53,6 +53,37 @@ rest-pattern syntax. Deep dot runs such as `@...suffix` are accepted for
 generated or dense code, but authoring tools should prefer
 `@super.super.suffix`.
 
+## Trait and impl substrate
+
+Seq08.1 adds Rust-like DSL `trait` and `impl` syntax as the canonical type
+abstraction surface. `protocol` remains reserved for host, wire, and Agent
+protocol concepts.
+
+```text
+TraitDecl := Visibility? 'trait' Ident GenericParams? SuperTraits? WhereClause? TraitBody
+SuperTraits := ':' TraitBound ('+' TraitBound)*
+TraitBody := '{' TraitMember* '}'
+TraitMember := AssociatedTypeReq ';'? | FnSignature ';'? | FnSignature Block
+
+AssociatedTypeReq := 'type' Ident GenericParams? ('=' Type)?
+
+ImplDecl := Visibility? 'impl' GenericParams? (TraitBound 'for')? Type WhereClause? ImplBody
+ImplBody := '{' ImplMember* '}'
+ImplMember := AssociatedTypeAssign ';'? | FnSignature Block | FnSignature ';'?
+AssociatedTypeAssign := 'type' Ident GenericParams? '=' Type
+
+GenericParam := Lifetime | Ident (':' TraitBound ('+' TraitBound)*)?
+WherePredicate := Type ':' TraitBound ('+' TraitBound)*
+TraitBound := TypePath GenericTraitBoundArgs?
+GenericTraitBoundArgs := '<' TraitBoundArg (',' TraitBoundArg)* ','? '>'
+TraitBoundArg := Type | Ident '=' Type
+ProjectionType := TypePath '::' Ident
+```
+
+Associated type defaults, GAT-like associated type constructors, and default
+method bodies are preserved by parsing but rejected by semantic analysis until
+later sequence slices define their execution and coherence rules.
+
 ## Literals and primitive spellings
 
 ```text

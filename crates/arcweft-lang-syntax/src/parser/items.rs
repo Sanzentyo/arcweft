@@ -6,15 +6,15 @@ use crate::ast::items::{
     EntryRouteBinding, EntryRouteBindingSource, EnumItem, EnumVariant, ExternCapabilityItem,
     ExternModActivity, ExternModFunction, ExternModItem, ExternModMember, ExternModType,
     ExternModTypeKind, FunctionInit, FunctionItem, ImageDeclBody, ImageDeclField, ImplItem,
-    ImplMember, MemoFn, ParserItem, StateField, StateItem, StructField, StructItem, TraitItem,
-    TraitMember, TypeAliasItem,
+    ImplItemInit, ImplMember, MemoFn, ParserItem, StateField, StateItem, StructField, StructItem,
+    TraitItem, TraitMember, TypeAliasItem,
 };
 use crate::cst::{
     find_matching_angle_group, find_matching_punctuation, find_top_level_punctuation,
     split_first_string_literal, split_leading_ident, split_top_level_punctuation,
     split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
 };
-use crate::types::{parse_fn_signature, parse_type_ref};
+use crate::types::{parse_fn_signature, parse_type_ref, parse_where_clause_list};
 
 use super::headers::{
     parse_callable_kind, parse_contract_clauses, parse_contract_expr_list, parse_entity_decl_head,
@@ -394,19 +394,25 @@ impl Parser<'_> {
         let (visibility, rest) = parse_visibility_prefix(head.trim());
         let rest = rest.trim_start().strip_prefix("impl")?.trim();
         let (generics, rest) = parse_optional_angle_head(rest);
-        let (maybe_trait, target) = crate::cst::split_top_level_keyword_once(rest, "for");
-        let (trait_name, target) = target.map_or((None, rest.trim()), |target| {
+        let (impl_head, where_part) = crate::cst::split_top_level_keyword_once(rest, "where");
+        let (maybe_trait, target) = crate::cst::split_top_level_keyword_once(impl_head, "for");
+        let (trait_name, target) = target.map_or((None, impl_head.trim()), |target| {
             (Some(maybe_trait.trim().to_owned()), target.trim())
         });
-        Some(ImplItem::new(
+        let where_clauses = where_part
+            .map(parse_where_clause_list)
+            .and_then(Result::ok)
+            .unwrap_or_default();
+        Some(ImplItem::new(ImplItemInit {
             visibility,
             generics,
             trait_name,
-            target.to_owned(),
-            parse_impl_members(&body),
-            body.into_owned(),
-            TextRange::new(start_line.start, end),
-        ))
+            target: target.to_owned(),
+            where_clauses,
+            members: parse_impl_members(&body),
+            body: body.into_owned(),
+            range: TextRange::new(start_line.start, end),
+        }))
     }
 
     pub(super) fn parse_struct_item(&mut self) -> Option<StructItem> {
@@ -1192,10 +1198,25 @@ fn parse_trait_member(item: &str) -> TraitMember {
         };
     }
     if item.starts_with("fn ") {
-        let signature_source = split_brace_item(item).map_or(item, |(head, _)| head);
+        let (signature_source, body) =
+            split_brace_item(item).map_or((item, None), |(head, body)| (head, Some(body)));
         return parse_fn_signature(signature_source).map_or_else(
             |_| TraitMember::Raw(item.to_owned()),
-            |signature| TraitMember::Function { signature },
+            |signature| {
+                let (body, body_statements, body_value) = body.map_or_else(
+                    || (None, Vec::new(), None),
+                    |body| {
+                        let (body_statements, body_value) = parse_scope_expr_body(body);
+                        (Some(body.to_owned()), body_statements, body_value)
+                    },
+                );
+                TraitMember::Function {
+                    signature,
+                    body,
+                    body_statements,
+                    body_value,
+                }
+            },
         );
     }
     TraitMember::Raw(item.to_owned())

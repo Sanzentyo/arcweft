@@ -58,10 +58,6 @@ pub(super) fn split_function_header_lines<'a>(
                 _ => {}
             }
         }
-        if depth <= 0 && trimmed.contains(')') {
-            end_index = Some(index + 1);
-            break;
-        }
     }
     let end_index = end_index.unwrap_or(signature.len());
     (!signature.is_empty()).then(|| (signature.join("\n"), lines[end_index..].to_vec()))

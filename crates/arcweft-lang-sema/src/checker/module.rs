@@ -4,8 +4,9 @@ use super::{
     EffectScope, EntityKind, FlowKind, FunctionKind, FunctionSignature, HirModule, HirTopLevelDecl,
     LifetimeKey, LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker, TypeKind,
     YieldContext, choice_output_type, entity_kind_for_decl, function_param_local_type,
-    function_signature_type, ident_pattern_name, normalize_choice_type, stream_return_types,
-    type_ref_kind, validate_typecheck_ready,
+    function_param_local_type_with_generics, function_signature_type, ident_pattern_name,
+    normalize_choice_type, signature_generic_names, stream_return_types, type_ref_kind,
+    type_ref_kind_with_generics, validate_typecheck_ready,
 };
 use crate::checker::helpers::{type_kind_label, type_ref_label};
 use crate::effect_model::{
@@ -37,6 +38,7 @@ impl TypeChecker<'_> {
             );
         }
 
+        self.collect_and_store_trait_catalog(module);
         self.bind_top_level_entity_aliases(module);
         self.bind_top_level_type_aliases(module);
         self.bind_top_level_functions(module);
@@ -167,12 +169,19 @@ impl TypeChecker<'_> {
             self.active_presentation_defaults.clear();
             self.warn_public_signature_anonymous_sum(function);
             self.check_signature_type_refs(function.signature());
+            let generic_names = signature_generic_names(function.signature());
             for group in function.signature().param_groups() {
                 for param in group.params() {
-                    self.bind_function_param(param.pattern(), &function_param_local_type(param));
+                    self.bind_function_param(
+                        param.pattern(),
+                        &function_param_local_type_with_generics(param, &generic_names),
+                    );
                 }
             }
-            let expected_return = function.signature().return_type().map(type_ref_kind);
+            let expected_return = function
+                .signature()
+                .return_type()
+                .map(|ty| type_ref_kind_with_generics(ty, &generic_names));
             for contract in function.contracts() {
                 self.check_function_contract_clause(contract, expected_return.as_ref());
             }
@@ -181,8 +190,13 @@ impl TypeChecker<'_> {
             let previous_callable = self
                 .effect_collector
                 .enter(function_callable_id(function.name()));
+            let predicates = self
+                .trait_catalog
+                .predicates_for_signature(function.signature());
+            self.trait_predicate_stack.push(predicates);
             if function.kind() == FunctionKind::Stream {
                 self.check_stream_function(function);
+                self.trait_predicate_stack.pop();
                 self.effect_collector.restore(previous_callable);
                 self.effect_capabilities = effect_snapshot;
                 continue;
@@ -194,6 +208,7 @@ impl TypeChecker<'_> {
                     expected_return.as_ref(),
                 )
             });
+            self.trait_predicate_stack.pop();
             self.effect_collector.restore(previous_callable);
             self.effect_capabilities = effect_snapshot;
             if let (Some(expected), Some(actual)) = (expected_return, actual)
@@ -824,6 +839,15 @@ impl TypeChecker<'_> {
                     self.check_type_ref_shape(arg);
                 }
             }
+            TypeRef::TraitBound(bound) => {
+                for arg in bound.args() {
+                    self.check_type_ref_shape(arg);
+                }
+                for binding in bound.assoc_bindings() {
+                    self.check_type_ref_shape(binding.value());
+                }
+            }
+            TypeRef::Projection { subject, .. } => self.check_type_ref_shape(subject),
             TypeRef::Ref { inner, .. } | TypeRef::Slice(inner) => self.check_type_ref_shape(inner),
             TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Path(_) => {}
         }
@@ -1093,6 +1117,14 @@ fn type_ref_contains_choice(ty: &TypeRef) -> bool {
     match ty {
         TypeRef::Choice(_) => true,
         TypeRef::Generic { args, .. } => args.iter().any(type_ref_contains_choice),
+        TypeRef::TraitBound(bound) => {
+            bound.args().iter().any(type_ref_contains_choice)
+                || bound
+                    .assoc_bindings()
+                    .iter()
+                    .any(|binding| type_ref_contains_choice(binding.value()))
+        }
+        TypeRef::Projection { subject, .. } => type_ref_contains_choice(subject),
         TypeRef::Ref { inner, .. } | TypeRef::Slice(inner) => type_ref_contains_choice(inner),
         TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Path(_) => false,
     }

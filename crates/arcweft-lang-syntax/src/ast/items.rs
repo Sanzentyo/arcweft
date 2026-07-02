@@ -1,5 +1,5 @@
 use crate::expr::Expr;
-use crate::types::{FnSignature, TypeRef};
+use crate::types::{FnSignature, TypeRef, WhereClause};
 
 use super::common::{DocBlock, ModuleDecl, TextRange, UseItem, Visibility};
 use super::dialogue::DialogueDefaultsItem;
@@ -634,6 +634,9 @@ pub enum TraitMember {
     },
     Function {
         signature: FnSignature,
+        body: Option<String>,
+        body_statements: Vec<Stmt>,
+        body_value: Option<Expr>,
     },
     Raw(String),
 }
@@ -662,9 +665,23 @@ pub struct ImplItem {
     generics: Option<String>,
     trait_name: Option<String>,
     target: String,
+    where_clauses: Vec<WhereClause>,
     members: Vec<ImplMember>,
     body: String,
     range: TextRange,
+}
+
+/// Internal initializer for an impl declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ImplItemInit {
+    pub(crate) visibility: Option<Visibility>,
+    pub(crate) generics: Option<String>,
+    pub(crate) trait_name: Option<String>,
+    pub(crate) target: String,
+    pub(crate) where_clauses: Vec<WhereClause>,
+    pub(crate) members: Vec<ImplMember>,
+    pub(crate) body: String,
+    pub(crate) range: TextRange,
 }
 
 /// Top-level algebraic data type declaration.
@@ -1467,23 +1484,16 @@ impl TraitItem {
 }
 
 impl ImplItem {
-    pub(crate) const fn new(
-        visibility: Option<Visibility>,
-        generics: Option<String>,
-        trait_name: Option<String>,
-        target: String,
-        members: Vec<ImplMember>,
-        body: String,
-        range: TextRange,
-    ) -> Self {
+    pub(crate) fn new(init: ImplItemInit) -> Self {
         Self {
-            visibility,
-            generics,
-            trait_name,
-            target,
-            members,
-            body,
-            range,
+            visibility: init.visibility,
+            generics: init.generics,
+            trait_name: init.trait_name,
+            target: init.target,
+            where_clauses: init.where_clauses,
+            members: init.members,
+            body: init.body,
+            range: init.range,
         }
     }
 
@@ -1501,6 +1511,10 @@ impl ImplItem {
 
     pub fn target(&self) -> &str {
         &self.target
+    }
+
+    pub fn where_clauses(&self) -> &[WhereClause] {
+        &self.where_clauses
     }
 
     pub fn members(&self) -> &[ImplMember] {

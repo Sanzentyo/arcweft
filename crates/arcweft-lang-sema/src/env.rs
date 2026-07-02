@@ -820,6 +820,15 @@ fn normalize_type_kind(ty: TypeKind) -> TypeKind {
         TypeKind::Function { return_type } => TypeKind::Function {
             return_type: Box::new(normalize_type_kind(*return_type)),
         },
+        TypeKind::Projection {
+            subject,
+            trait_name,
+            assoc,
+        } => TypeKind::Projection {
+            subject: Box::new(normalize_type_kind(*subject)),
+            trait_name,
+            assoc,
+        },
         TypeKind::Tuple(items) => {
             TypeKind::Tuple(items.into_iter().map(normalize_type_kind).collect())
         }

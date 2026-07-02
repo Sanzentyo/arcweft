@@ -28,6 +28,11 @@ pub enum TypeRef {
         base: String,
         args: Vec<TypeRef>,
     },
+    TraitBound(TraitBound),
+    Projection {
+        subject: Box<TypeRef>,
+        assoc: String,
+    },
     Ref {
         lifetime: Option<LifetimeName>,
         inner: Box<TypeRef>,
@@ -49,7 +54,29 @@ pub struct FnSignature {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GenericParam {
     Lifetime(LifetimeName),
-    Type(String),
+    Type(GenericTypeParam),
+}
+
+/// Generic type parameter with inline trait bounds.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GenericTypeParam {
+    name: String,
+    bounds: Vec<TypeRef>,
+}
+
+/// Associated type equality inside a trait bound, such as `Iterator<Item = T>`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssocTypeBinding {
+    name: String,
+    value: TypeRef,
+}
+
+/// Trait bound syntax preserving associated type equality constraints.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TraitBound {
+    path: String,
+    args: Vec<TypeRef>,
+    assoc_bindings: Vec<AssocTypeBinding>,
 }
 
 /// One parenthesized parameter group.
@@ -304,15 +331,45 @@ fn parse_type_atom(source: &str) -> Result<TypeRef, TypeParseError> {
         return Ok(TypeRef::Slice(Box::new(parse_type_ref(inner.trim())?)));
     }
     if let Some((base, args)) = split_generic_type(source) {
+        let parsed_args = split_type_args(args)
+            .into_iter()
+            .map(parse_type_arg)
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut type_args = Vec::new();
+        let mut assoc_bindings = Vec::new();
+        for arg in parsed_args {
+            match arg {
+                TypeArg::Type(ty) => type_args.push(ty),
+                TypeArg::Assoc(binding) => assoc_bindings.push(binding),
+            }
+        }
+        if !assoc_bindings.is_empty() {
+            return Ok(TypeRef::TraitBound(TraitBound {
+                path: base.to_owned(),
+                args: type_args,
+                assoc_bindings,
+            }));
+        }
         return Ok(TypeRef::Generic {
             base: base.to_owned(),
-            args: split_type_args(args)
-                .into_iter()
-                .map(parse_type_ref)
-                .collect::<Result<Vec<_>, _>>()?,
+            args: type_args,
         });
     }
+    if let Some((subject, assoc)) = split_type_projection(source) {
+        let assoc = assoc.trim();
+        if !assoc.is_empty() && assoc.chars().all(|ch| ch.is_alphanumeric() || ch == '_') {
+            return Ok(TypeRef::Projection {
+                subject: Box::new(parse_type_ref(subject.trim())?),
+                assoc: assoc.to_owned(),
+            });
+        }
+    }
     Ok(TypeRef::Path(source.to_owned()))
+}
+
+enum TypeArg {
+    Type(TypeRef),
+    Assoc(AssocTypeBinding),
 }
 
 fn parenthesized_type(source: &str) -> Option<&str> {
@@ -350,6 +407,49 @@ fn split_type_args(source: &str) -> Vec<&str> {
     split_top_level_punctuation(source, ',')
 }
 
+fn parse_type_arg(source: &str) -> Result<TypeArg, TypeParseError> {
+    if let Some((name, value)) = split_top_level_punctuation_once(source, '=') {
+        let name = name.trim();
+        if name.is_empty() || !name.chars().all(|ch| ch.is_alphanumeric() || ch == '_') {
+            return Err(TypeParseError::new(
+                "expected associated type name before `=`",
+            ));
+        }
+        return Ok(TypeArg::Assoc(AssocTypeBinding {
+            name: name.to_owned(),
+            value: parse_type_ref(value.trim())?,
+        }));
+    }
+    Ok(TypeArg::Type(parse_type_ref(source.trim())?))
+}
+
+fn split_type_projection(source: &str) -> Option<(&str, &str)> {
+    let bytes = source.as_bytes();
+    let mut angle = 0usize;
+    let mut paren = 0usize;
+    let mut bracket = 0usize;
+    let mut split = None;
+    let mut index = 0usize;
+    while index + 1 < bytes.len() {
+        match bytes[index] as char {
+            '<' if paren == 0 && bracket == 0 => angle += 1,
+            '>' if angle > 0 && paren == 0 && bracket == 0 => angle -= 1,
+            '(' if angle == 0 && bracket == 0 => paren += 1,
+            ')' if paren > 0 && angle == 0 && bracket == 0 => paren -= 1,
+            '[' if angle == 0 && paren == 0 => bracket += 1,
+            ']' if bracket > 0 && angle == 0 && paren == 0 => bracket -= 1,
+            ':' if bytes[index + 1] == b':' && angle == 0 && paren == 0 && bracket == 0 => {
+                split = Some(index);
+                index += 1;
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    let split = split?;
+    Some((&source[..split], &source[split + 2..]))
+}
+
 fn take_angle_group(source: &str) -> Option<(&str, &str)> {
     source.strip_prefix('<')?;
     let close = find_matching_angle_group(source, 0)?;
@@ -367,13 +467,28 @@ fn parse_generic_params(source: &str) -> Result<Vec<GenericParam>, TypeParseErro
             if param.starts_with('\'') {
                 Ok(GenericParam::Lifetime(parse_lifetime_name(param)))
             } else {
-                Ok(GenericParam::Type(param.to_owned()))
+                let (name, bounds) =
+                    split_top_level_punctuation_once(param, ':').map_or((param, ""), |parts| parts);
+                let bounds = if bounds.trim().is_empty() {
+                    Vec::new()
+                } else {
+                    split_top_level_punctuation(bounds, '+')
+                        .into_iter()
+                        .map(str::trim)
+                        .filter(|bound| !bound.is_empty())
+                        .map(parse_type_ref)
+                        .collect::<Result<Vec<_>, _>>()?
+                };
+                Ok(GenericParam::Type(GenericTypeParam {
+                    name: name.trim().to_owned(),
+                    bounds,
+                }))
             }
         })
         .collect()
 }
 
-fn parse_where_clauses(source: &str) -> Result<Vec<WhereClause>, TypeParseError> {
+pub fn parse_where_clause_list(source: &str) -> Result<Vec<WhereClause>, TypeParseError> {
     if source.trim().is_empty() {
         return Err(TypeParseError::new("expected where clause predicate"));
     }
@@ -382,8 +497,8 @@ fn parse_where_clauses(source: &str) -> Result<Vec<WhereClause>, TypeParseError>
         .map(|clause| {
             let (subject, bounds) = split_top_level_punctuation_once(clause, ':')
                 .ok_or_else(|| TypeParseError::new("expected `Type: Bound` where predicate"))?;
-            let bounds = bounds
-                .split('+')
+            let bounds = split_top_level_punctuation(bounds, '+')
+                .into_iter()
                 .map(str::trim)
                 .filter(|bound| !bound.is_empty())
                 .map(parse_type_ref)
@@ -399,6 +514,10 @@ fn parse_where_clauses(source: &str) -> Result<Vec<WhereClause>, TypeParseError>
         .collect()
 }
 
+fn parse_where_clauses(source: &str) -> Result<Vec<WhereClause>, TypeParseError> {
+    parse_where_clause_list(source)
+}
+
 fn type_ref_has_whitespace_path(ty: &TypeRef) -> bool {
     match ty {
         TypeRef::Never | TypeRef::ConstInt(_) => false,
@@ -406,6 +525,17 @@ fn type_ref_has_whitespace_path(ty: &TypeRef) -> bool {
         TypeRef::Choice(alternatives) => alternatives.iter().any(type_ref_has_whitespace_path),
         TypeRef::Generic { base, args } => {
             base.chars().any(char::is_whitespace) || args.iter().any(type_ref_has_whitespace_path)
+        }
+        TypeRef::TraitBound(bound) => {
+            bound.path.chars().any(char::is_whitespace)
+                || bound.args.iter().any(type_ref_has_whitespace_path)
+                || bound
+                    .assoc_bindings
+                    .iter()
+                    .any(|binding| type_ref_has_whitespace_path(&binding.value))
+        }
+        TypeRef::Projection { subject, assoc } => {
+            assoc.chars().any(char::is_whitespace) || type_ref_has_whitespace_path(subject)
         }
         TypeRef::Ref { inner, .. } | TypeRef::Slice(inner) => type_ref_has_whitespace_path(inner),
     }
@@ -428,6 +558,24 @@ fn type_ref_parse_label(ty: &TypeRef) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
+        TypeRef::TraitBound(bound) => {
+            let mut args = bound
+                .args
+                .iter()
+                .map(type_ref_parse_label)
+                .collect::<Vec<_>>();
+            args.extend(bound.assoc_bindings.iter().map(|binding| {
+                format!(
+                    "{} = {}",
+                    binding.name,
+                    type_ref_parse_label(&binding.value)
+                )
+            }));
+            format!("{}<{}>", bound.path, args.join(", "))
+        }
+        TypeRef::Projection { subject, assoc } => {
+            format!("{}::{assoc}", type_ref_parse_label(subject))
+        }
         TypeRef::Ref { lifetime, inner } => {
             let lifetime = lifetime
                 .as_ref()
@@ -491,9 +639,58 @@ impl GenericParam {
     /// Generic parameter as a type name, when applicable.
     pub fn as_type(&self) -> Option<&str> {
         match self {
-            Self::Type(name) => Some(name),
+            Self::Type(param) => Some(param.name()),
             Self::Lifetime(_) => None,
         }
+    }
+
+    /// Generic parameter as a full type-parameter node, when applicable.
+    pub const fn as_type_param(&self) -> Option<&GenericTypeParam> {
+        match self {
+            Self::Type(param) => Some(param),
+            Self::Lifetime(_) => None,
+        }
+    }
+}
+
+impl GenericTypeParam {
+    /// Generic type parameter name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Inline bounds declared on the parameter.
+    pub fn bounds(&self) -> &[TypeRef] {
+        &self.bounds
+    }
+}
+
+impl AssocTypeBinding {
+    /// Associated type name constrained by this binding.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Required associated type value.
+    pub const fn value(&self) -> &TypeRef {
+        &self.value
+    }
+}
+
+impl TraitBound {
+    /// Trait path used by this bound.
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// Positional type arguments supplied to the trait.
+    pub fn args(&self) -> &[TypeRef] {
+        &self.args
+    }
+
+    /// Associated type equalities supplied to the trait.
+    pub fn assoc_bindings(&self) -> &[AssocTypeBinding] {
+        &self.assoc_bindings
     }
 }
 

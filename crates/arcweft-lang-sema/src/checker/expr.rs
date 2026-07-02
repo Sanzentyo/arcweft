@@ -12,6 +12,8 @@ use super::{
     TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext, entity_syntax_kind,
     normalize_choice_type,
 };
+use crate::diagnostics::TraitDiagnostic;
+use crate::traits::TraitMethodResolution;
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
 use arcweft_lang_syntax::expr::{
     BinaryOp, CallArg, ComputationBlockKind, Literal, MatchExprArm, UnaryOp,
@@ -217,6 +219,13 @@ impl TypeChecker<'_> {
                         unique_numeric_choice_alternative(expected, TypeKind::is_integer)
                 {
                     ty
+                } else if expected.is_some_and(|expected| {
+                    has_multiple_numeric_choice_alternatives(expected, TypeKind::is_integer)
+                }) {
+                    self.errors.push(TypeCheckError::new(
+                        "unsuffixed integer literal requires an expected integer type".to_owned(),
+                    ));
+                    TypeKind::Named("_".to_owned())
                 } else {
                     TypeKind::I32
                 }
@@ -244,6 +253,13 @@ impl TypeChecker<'_> {
                         unique_numeric_choice_alternative(expected, TypeKind::is_float)
                 {
                     ty
+                } else if expected.is_some_and(|expected| {
+                    has_multiple_numeric_choice_alternatives(expected, TypeKind::is_float)
+                }) {
+                    self.errors.push(TypeCheckError::new(
+                        "unsuffixed float literal requires an expected float type".to_owned(),
+                    ));
+                    TypeKind::Named("_".to_owned())
                 } else {
                     TypeKind::F64
                 }
@@ -1249,6 +1265,11 @@ impl TypeChecker<'_> {
             self.check_untyped_method_args(args);
             return Some(TypeKind::SpeakerPreset(EntityKind::Character));
         }
+        match self.check_trait_method_call(&receiver_type, method_name, args) {
+            TraitMethodCallOutcome::Missing => {}
+            TraitMethodCallOutcome::Typed(return_type) => return Some(return_type),
+            TraitMethodCallOutcome::Rejected => return None,
+        }
         self.check_untyped_method_args(args);
         self.env
             .method_type(&receiver_type, method_name)
@@ -1260,6 +1281,44 @@ impl TypeChecker<'_> {
                 )));
                 None
             })
+    }
+
+    fn check_trait_method_call(
+        &mut self,
+        receiver_type: &TypeKind,
+        method_name: &str,
+        args: &[CallArg],
+    ) -> TraitMethodCallOutcome {
+        match self.trait_catalog.resolve_method(
+            receiver_type,
+            method_name,
+            &self.active_trait_predicates(),
+        ) {
+            TraitMethodResolution::Missing => TraitMethodCallOutcome::Missing,
+            TraitMethodResolution::Inherent(method)
+            | TraitMethodResolution::Unique { method, .. } => {
+                let return_type = self.resolve_type_projection(method.return_type().clone());
+                self.check_signature_call_args(
+                    method_name,
+                    &trait_method_call_signature(method.signature(), return_type.clone()),
+                    args,
+                );
+                TraitMethodCallOutcome::Typed(return_type)
+            }
+            TraitMethodResolution::Ambiguous(candidates) => {
+                self.errors.push(TypeCheckError::trait_diagnostic(
+                    TraitDiagnostic::ambiguous_method(
+                        method_name,
+                        candidates
+                            .iter()
+                            .map(|candidate| candidate.trait_name.as_str())
+                            .collect::<Vec<_>>(),
+                    ),
+                ));
+                self.check_untyped_method_args(args);
+                TraitMethodCallOutcome::Rejected
+            }
+        }
     }
 
     fn check_integer_scalar_method_call(
@@ -2174,6 +2233,59 @@ fn unique_numeric_choice_alternative(
         .next()
         .is_none()
         .then(|| selected.clone())
+}
+
+fn has_multiple_numeric_choice_alternatives(
+    expected: &TypeKind,
+    predicate: impl Fn(&TypeKind) -> bool,
+) -> bool {
+    let TypeKind::Choice(alternatives) = expected else {
+        return false;
+    };
+    alternatives
+        .iter()
+        .filter(|alternative| predicate(alternative))
+        .count()
+        > 1
+}
+
+enum TraitMethodCallOutcome {
+    Missing,
+    Typed(TypeKind),
+    Rejected,
+}
+
+fn trait_method_call_signature(
+    signature: &arcweft_lang_syntax::types::FnSignature,
+    return_type: TypeKind,
+) -> FunctionSignature {
+    let params = signature
+        .param_groups()
+        .iter()
+        .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
+        .filter(|param| {
+            !matches!(
+                param.ty(),
+                arcweft_lang_syntax::types::TypeRef::Path(path) if path == "Self"
+            )
+        })
+        .map(|param| {
+            let name = match param.pattern() {
+                Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. } => {
+                    name.as_str()
+                }
+                _ => "_",
+            };
+            if param.is_rest() {
+                FunctionParam::rest(name, type_ref_kind(param.ty()))
+            } else if param.default().is_some() {
+                FunctionParam::defaulted(name, type_ref_kind(param.ty()))
+            } else {
+                FunctionParam::required(name, type_ref_kind(param.ty()))
+            }
+        })
+        .collect::<Vec<_>>();
+    FunctionSignature::new(return_type, params)
 }
 
 fn spread_item_type(ty: &TypeKind) -> Option<&TypeKind> {
