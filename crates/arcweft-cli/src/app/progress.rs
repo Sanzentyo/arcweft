@@ -58,7 +58,7 @@ impl CliProgressStatus {
     }
 }
 
-fn format_elapsed(elapsed: Duration) -> String {
+pub(in crate::app) fn format_elapsed(elapsed: Duration) -> String {
     let millis = elapsed.as_millis();
     if millis == 0 {
         "<1ms".to_owned()

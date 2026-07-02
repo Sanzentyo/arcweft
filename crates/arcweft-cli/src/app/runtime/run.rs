@@ -12,6 +12,7 @@ use crate::app::bundle::{
     write_bundle_artifact, write_patch_bundle_artifact,
 };
 use crate::app::diagnostics::emit_diagnostics_for_path;
+use crate::app::progress::format_elapsed;
 use crate::app::project::ProfileOptions;
 use crate::app::project::{
     CheckedModule, SourceSelection, load_and_check_selection, native_host_policy_for_selection,
@@ -39,7 +40,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 const RUN_BUNDLE_DIR: &str = "target/arcweft/run";
 const WEB_LOCAL_BUNDLE_DIR: &str = "web/local";
@@ -294,6 +295,7 @@ fn run_game_target(
         );
         return Err(ExitCode::from(2));
     }
+    let build_started = Instant::now();
     let mut phases = Vec::new();
     let compiled =
         compile_bundle_for_selection(selection, vec![BundleVirtualFileSpace::Asset], &mut phases)?;
@@ -333,14 +335,29 @@ fn run_game_target(
         CliRuntimeRunner::Native => {
             let output = run_bundle_output_path(selection, RUN_BUNDLE_DIR);
             write_run_bundle(&output, &bundle, &mut phases)?;
-            println!("Built {}", output.display());
+            println!(
+                "Built {} in {}",
+                output.display(),
+                format_elapsed(build_started.elapsed())
+            );
+            let native_started = Instant::now();
+            println!("Starting native player...");
             run_native_bundle(bundle, options.steps, options)?;
+            println!(
+                "Native player exited after {} (total {})",
+                format_elapsed(native_started.elapsed()),
+                format_elapsed(build_started.elapsed())
+            );
             Ok(RunTargetOutcome::Handled)
         }
         CliRuntimeRunner::Web => {
             let output = run_bundle_output_path(selection, WEB_LOCAL_BUNDLE_DIR);
             write_run_bundle(&output, &bundle, &mut phases)?;
-            println!("Built {}", output.display());
+            println!(
+                "Built {} in {}",
+                output.display(),
+                format_elapsed(build_started.elapsed())
+            );
             println!(
                 "Open web/index.html?bundle=./local/{} after building web/pkg.",
                 output
