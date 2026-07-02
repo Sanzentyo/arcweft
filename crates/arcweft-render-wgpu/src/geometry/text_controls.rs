@@ -23,6 +23,15 @@ const TEXT_INSET_X: f32 = 8.0;
 const TEXT_INSET_Y: f32 = 4.0;
 const CARET_WIDTH: f32 = 2.0;
 
+#[derive(Clone, Debug, PartialEq)]
+struct TextControlVisualLayout {
+    display_value: String,
+    laid_out: LaidOutText,
+    text_bounds: HitRect,
+    clip_bounds: HitRect,
+    buffer_size: LayoutSize,
+}
+
 /// Real text-control input lowered from runtime/product UI state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderTextInputControl {
@@ -101,7 +110,7 @@ pub(super) fn build_text_inputs(
     for control in &scene.text_inputs {
         let options = control.resolved_options()?;
         let is_focused = scene.interaction.focused.as_ref() == Some(&control.target);
-        let layout = laid_out_text_for_control(control);
+        let visual_layout = visual_layout_for_control(control, &options);
         rectangles.push(PaintRect {
             bounds: control.bounds,
             rgba: if is_focused {
@@ -112,18 +121,16 @@ pub(super) fn build_text_inputs(
         });
         if is_focused {
             super::push_focus_ring(rectangles, control.bounds, palette.focus_ring);
-            push_renderer_text_input_selection(rectangles, control, &layout, palette);
-            push_renderer_text_input_caret(rectangles, control, &layout, palette);
+            push_renderer_text_input_selection(rectangles, control, &visual_layout, palette);
+            push_renderer_text_input_caret(rectangles, control, &visual_layout, palette);
         }
 
-        let display_value = if options.is_secure() {
-            mask_secure_text(&control.value)
-        } else {
-            control.value.clone()
-        };
         text.push(RenderTextBlock {
-            text: display_value,
-            bounds: text_inner_bounds(control),
+            text: visual_layout.display_value.clone(),
+            bounds: visual_layout.text_bounds,
+            clip_bounds: Some(visual_layout.clip_bounds),
+            buffer_width: Some(visual_layout.buffer_size.width),
+            buffer_height: Some(visual_layout.buffer_size.height),
             font_size: text_control_font_size(control),
             line_height: text_control_line_height(control),
             font_family: RenderFontFamily::SansSerif,
@@ -148,7 +155,7 @@ pub(super) fn build_text_inputs(
                 scene.viewport,
                 control,
                 &options,
-                &layout,
+                &visual_layout.laid_out,
             )?);
         }
     }
@@ -158,7 +165,7 @@ pub(super) fn build_text_inputs(
 fn push_renderer_text_input_selection(
     rectangles: &mut Vec<PaintRect>,
     control: &RenderTextInputControl,
-    layout: &LaidOutText,
+    visual_layout: &TextControlVisualLayout,
     palette: &Palette,
 ) {
     let start = control.selection.start().get();
@@ -167,9 +174,12 @@ fn push_renderer_text_input_selection(
         return;
     }
     rectangles.extend(
-        text_range_rects(layout, start, end)
+        text_range_rects(&visual_layout.laid_out, start, end)
             .into_iter()
-            .map(|bounds| text_local_to_viewport_rect(control, bounds))
+            .filter_map(|bounds| {
+                clip_text_local_rect_to_inner(control, bounds)
+                    .map(|bounds| text_local_to_viewport_rect(control, bounds))
+            })
             .map(|bounds| PaintRect {
                 bounds,
                 rgba: palette.choice_active,
@@ -180,14 +190,19 @@ fn push_renderer_text_input_selection(
 fn push_renderer_text_input_caret(
     rectangles: &mut Vec<PaintRect>,
     control: &RenderTextInputControl,
-    layout: &LaidOutText,
+    visual_layout: &TextControlVisualLayout,
     palette: &Palette,
 ) {
     let caret = control.selection.end().get();
-    rectangles.push(PaintRect {
-        bounds: text_local_to_viewport_rect(control, text_caret_rect(control, layout, caret)),
-        rgba: palette.focus_ring,
-    });
+    if let Some(bounds) = clip_text_local_rect_to_inner(
+        control,
+        text_caret_rect(control, &visual_layout.laid_out, caret),
+    ) {
+        rectangles.push(PaintRect {
+            bounds: text_local_to_viewport_rect(control, bounds),
+            rgba: palette.focus_ring,
+        });
+    }
 }
 
 fn text_range_rects(layout: &LaidOutText, start: u32, end: u32) -> Vec<HitRect> {
@@ -268,6 +283,23 @@ fn text_local_to_viewport_rect(control: &RenderTextInputControl, rect: HitRect) 
     )
 }
 
+fn clip_text_local_rect_to_inner(
+    control: &RenderTextInputControl,
+    rect: HitRect,
+) -> Option<HitRect> {
+    intersect_hit_rect(rect, text_local_inner_bounds(control))
+}
+
+fn intersect_hit_rect(left: HitRect, right: HitRect) -> Option<HitRect> {
+    let x = left.x.max(right.x);
+    let y = left.y.max(right.y);
+    let right_edge = (left.x + left.width).min(right.x + right.width);
+    let bottom_edge = (left.y + left.height).min(right.y + right.height);
+    let width = right_edge - x;
+    let height = bottom_edge - y;
+    (width > 0.0 && height > 0.0).then(|| HitRect::new(x, y, width, height))
+}
+
 fn text_control_font_size(control: &RenderTextInputControl) -> f32 {
     (control.bounds.height * 0.55).clamp(12.0, 28.0)
 }
@@ -319,7 +351,61 @@ fn prepare_text_input_target(
     })
 }
 
-fn laid_out_text_for_control(control: &RenderTextInputControl) -> LaidOutText {
+fn visual_layout_for_control(
+    control: &RenderTextInputControl,
+    options: &TextInputOptions,
+) -> TextControlVisualLayout {
+    let display_value = display_value_for_control(control, options);
+    let unscrolled = laid_out_text_for_control(control, options);
+    let inner = text_local_inner_bounds(control);
+    let content_size = text_control_content_size(&unscrolled, inner);
+    let caret = text_caret_rect(control, &unscrolled, control.selection.end().get());
+    let scroll = text_control_scroll_offset(options, inner, content_size, caret);
+    let laid_out = scroll_laid_out_text(unscrolled, scroll);
+    let buffer_size = if options.is_multiline() {
+        LayoutSize::new(inner.width.max(1.0), content_size.height.max(inner.height))
+    } else {
+        LayoutSize::new(content_size.width.max(inner.width), inner.height.max(1.0))
+    };
+    TextControlVisualLayout {
+        display_value,
+        laid_out,
+        text_bounds: HitRect::new(
+            control.bounds.x + inner.x - scroll.x,
+            control.bounds.y + inner.y - scroll.y,
+            buffer_size.width,
+            buffer_size.height,
+        ),
+        clip_bounds: text_inner_bounds(control),
+        buffer_size,
+    }
+}
+
+fn display_value_for_control(
+    control: &RenderTextInputControl,
+    options: &TextInputOptions,
+) -> String {
+    control
+        .value
+        .chars()
+        .map(|ch| visual_text_input_char(ch, options))
+        .collect()
+}
+
+fn visual_text_input_char(ch: char, options: &TextInputOptions) -> char {
+    if options.is_secure() {
+        '*'
+    } else if ch == '\n' && !options.is_multiline() {
+        ' '
+    } else {
+        ch
+    }
+}
+
+fn laid_out_text_for_control(
+    control: &RenderTextInputControl,
+    options: &TextInputOptions,
+) -> LaidOutText {
     let inner = text_local_inner_bounds(control);
     let line_height = text_control_line_height(control);
     let font_size = text_control_font_size(control);
@@ -328,28 +414,33 @@ fn laid_out_text_for_control(control: &RenderTextInputControl) -> LaidOutText {
     let mut glyphs = Vec::new();
     for (start, ch) in control.value.char_indices() {
         let end = start.saturating_add(ch.len_utf8());
-        if ch == '\n' {
+        if ch == '\n' && options.is_multiline() && !options.is_secure() {
+            y += line_height;
             glyphs.push(LaidOutGlyph {
                 run_index: 0,
                 range: RichTextRange::new(start, end),
                 text: String::new(),
-                origin: LayoutPoint::new(inner.x, y + line_height),
+                origin: LayoutPoint::new(inner.x, y),
                 advance: LayoutSize::new(0.0, line_height),
-                bounds: LayoutRect::new(inner.x, y + line_height, 0.0, line_height),
+                bounds: LayoutRect::new(inner.x, y, 0.0, line_height),
                 writing_mode: RichTextWritingMode::HorizontalTb,
                 orientation: GlyphOrientation::Upright,
                 vertical_form: GlyphVerticalForm::None,
                 presentation: RichTextPresentation::default(),
             });
             x = inner.x;
-            y += line_height;
             continue;
         }
-        let width = estimated_text_input_glyph_width(ch, font_size);
+        let visual = visual_text_input_char(ch, options);
+        let width = estimated_text_input_glyph_width(visual, font_size);
+        if options.is_multiline() && x > inner.x && x + width > inner.x + inner.width {
+            x = inner.x;
+            y += line_height;
+        }
         glyphs.push(LaidOutGlyph {
             run_index: 0,
             range: RichTextRange::new(start, end),
-            text: ch.to_string(),
+            text: visual.to_string(),
             origin: LayoutPoint::new(x, y),
             advance: LayoutSize::new(width, 0.0),
             bounds: LayoutRect::new(x, y, width, line_height),
@@ -364,13 +455,69 @@ fn laid_out_text_for_control(control: &RenderTextInputControl) -> LaidOutText {
         glyphs,
         runs: Vec::new(),
         ruby: Vec::new(),
-        bounds: Some(LayoutRect::new(
-            0.0,
-            0.0,
-            control.bounds.width.max(1.0),
-            control.bounds.height.max(1.0),
-        )),
+        bounds: None,
     }
+}
+
+fn text_control_content_size(layout: &LaidOutText, inner: HitRect) -> LayoutSize {
+    let right = layout
+        .glyphs
+        .iter()
+        .map(|glyph| glyph.bounds.x + glyph.bounds.width)
+        .fold(inner.x, f32::max);
+    let bottom = layout
+        .glyphs
+        .iter()
+        .map(|glyph| glyph.bounds.y + glyph.bounds.height)
+        .fold(inner.y + 1.0, f32::max);
+    LayoutSize::new((right - inner.x).max(1.0), (bottom - inner.y).max(1.0))
+}
+
+fn text_control_scroll_offset(
+    options: &TextInputOptions,
+    inner: HitRect,
+    content_size: LayoutSize,
+    caret: HitRect,
+) -> LayoutPoint {
+    if options.is_multiline() {
+        let max_y = (content_size.height - inner.height).max(0.0);
+        let caret_bottom = caret.y + caret.height;
+        let y = if caret_bottom > inner.y + inner.height {
+            (caret_bottom - (inner.y + inner.height)).min(max_y)
+        } else if caret.y < inner.y {
+            (caret.y - inner.y).max(0.0)
+        } else {
+            0.0
+        };
+        LayoutPoint::new(0.0, y)
+    } else {
+        let max_x = (content_size.width - inner.width).max(0.0);
+        let caret_right = caret.x + caret.width;
+        let x = if caret_right > inner.x + inner.width {
+            (caret_right - (inner.x + inner.width)).min(max_x)
+        } else if caret.x < inner.x {
+            (caret.x - inner.x).max(0.0)
+        } else {
+            0.0
+        };
+        LayoutPoint::new(x, 0.0)
+    }
+}
+
+fn scroll_laid_out_text(mut layout: LaidOutText, scroll: LayoutPoint) -> LaidOutText {
+    for glyph in &mut layout.glyphs {
+        glyph.origin.x -= scroll.x;
+        glyph.origin.y -= scroll.y;
+        glyph.bounds.x -= scroll.x;
+        glyph.bounds.y -= scroll.y;
+    }
+    layout.bounds = union_layout_bounds(layout.glyphs.iter().map(|glyph| glyph.bounds));
+    layout
+}
+
+fn union_layout_bounds(mut bounds: impl Iterator<Item = LayoutRect>) -> Option<LayoutRect> {
+    let first = bounds.next()?;
+    Some(bounds.fold(first, LayoutRect::union))
 }
 
 fn estimated_text_input_glyph_width(ch: char, font_size: f32) -> f32 {
@@ -389,10 +536,6 @@ fn layout_rect_to_hit_rect(rect: LayoutRect) -> HitRect {
 
 fn rich_ranges_overlap(left: RichTextRange, right: RichTextRange) -> bool {
     left.start < right.end && right.start < left.end
-}
-
-fn mask_secure_text(value: &str) -> String {
-    value.chars().map(|_| '*').collect()
 }
 
 #[cfg(test)]
@@ -419,7 +562,7 @@ mod tests {
     #[test]
     fn single_line_caret_uses_font_size_not_full_line_box_width() {
         let control = control("Tokyo", 5, 48.0);
-        let layout = laid_out_text_for_control(&control);
+        let layout = laid_out_text_for_control(&control, &control.options);
         let caret = text_local_to_viewport_rect(&control, text_caret_rect(&control, &layout, 5));
 
         assert!(caret.x > 110.0);
@@ -434,8 +577,9 @@ mod tests {
     fn multiline_caret_moves_to_following_visual_line_after_newline() {
         let value = "line one\nTokyo";
         let caret_offset = u32::try_from(value.len()).unwrap();
-        let control = control(value, caret_offset, 136.0);
-        let layout = laid_out_text_for_control(&control);
+        let control = control(value, caret_offset, 136.0)
+            .with_options(TextInputOptions::default().multiline(true));
+        let layout = laid_out_text_for_control(&control, &control.options);
         let first = text_local_to_viewport_rect(&control, text_caret_rect(&control, &layout, 0));
         let caret =
             text_local_to_viewport_rect(&control, text_caret_rect(&control, &layout, caret_offset));
@@ -456,5 +600,54 @@ mod tests {
         let inner = text_inner_bounds(&control);
 
         assert!(inner.height > text_control_line_height(&control) * 2.0);
+    }
+
+    #[test]
+    fn secure_caret_uses_masked_visual_widths() {
+        let value = "あい";
+        let control = control(value, u32::try_from(value.len()).unwrap(), 48.0)
+            .with_options(TextInputOptions::default().secure(true));
+        let visual = visual_layout_for_control(&control, &control.options);
+        let caret = text_local_to_viewport_rect(
+            &control,
+            text_caret_rect(&control, &visual.laid_out, control.selection.end().get()),
+        );
+
+        assert_eq!(visual.display_value, "**");
+        assert!(
+            caret.x < 90.0,
+            "secure caret should follow displayed mask glyphs, got {caret:?}"
+        );
+    }
+
+    #[test]
+    fn multiline_text_control_wraps_and_scrolls_to_keep_caret_visible() {
+        let value = "abcdefghijklmnopqrstuvwxyz0123456789";
+        let control = RenderTextInputControl::new(
+            target(),
+            TextInputSessionId(1),
+            value,
+            TextRange::new(
+                TextByteOffset(u32::try_from(value.len()).unwrap()),
+                TextByteOffset(u32::try_from(value.len()).unwrap()),
+            ),
+            TextInputOptions::default().multiline(true),
+            SemanticRole::TextArea,
+            HitRect::new(40.0, 30.0, 110.0, 58.0),
+        );
+        let visual = visual_layout_for_control(&control, &control.options);
+        let first = visual.laid_out.glyphs.first().unwrap();
+        let last = visual.laid_out.glyphs.last().unwrap();
+        let caret = text_caret_rect(&control, &visual.laid_out, control.selection.end().get());
+        let inner = text_local_inner_bounds(&control);
+
+        assert!(
+            last.bounds.y >= first.bounds.y,
+            "long textarea text should wrap instead of overflowing horizontally"
+        );
+        assert!(
+            caret.y + caret.height <= inner.y + inner.height,
+            "textarea scroll should keep caret inside the visible control: {caret:?}"
+        );
     }
 }

@@ -350,8 +350,8 @@ fn text_buffer(font_system: &mut FontSystem, block: &RenderTextBlock) -> Buffer 
     );
     buffer.set_size(
         font_system,
-        Some(block.bounds.width),
-        Some(block.bounds.height),
+        Some(block.buffer_width.unwrap_or(block.bounds.width)),
+        Some(block.buffer_height.unwrap_or(block.bounds.height)),
     );
     buffer.set_text(
         font_system,
@@ -533,7 +533,7 @@ fn render_font_family(family: &RenderFontFamily) -> Family<'_> {
 
 fn text_area<'a>(buffer: &'a Buffer, block: &RenderTextBlock, scale_factor: f32) -> TextArea<'a> {
     let scale_factor = scale_factor.max(f32::EPSILON);
-    let scaled_bounds = scale_text_bounds(block.bounds, scale_factor);
+    let scaled_bounds = scale_text_bounds(block.clip_bounds.unwrap_or(block.bounds), scale_factor);
     TextArea {
         buffer,
         left: block.bounds.x * scale_factor,
