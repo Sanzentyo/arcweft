@@ -1,3 +1,4 @@
+use super::producer_identity::BytecodeLinkConservativeReason;
 use crate::{
     artifact::ArtifactKind,
     fingerprint::{
@@ -182,13 +183,6 @@ impl CompilerObjectKind {
         }
     }
 
-    pub const TYPECHECK_GATE_CONSERVATIVE_POLICY: &'static str =
-        "typecheck-gate-valid-but-linked-sema-rebuilt";
-    pub const BYTECODE_UNIT_CONSERVATIVE_POLICY: &'static str =
-        "bytecode-unit-gate-valid-but-awbc-rebuilt";
-    pub const LINK_PLAN_CONSERVATIVE_POLICY: &'static str =
-        "link-plan-gate-valid-but-product-relinked";
-
     pub fn read_through_hit_status(self) -> CacheRecordStatus {
         if let Some(policy) = self.conservative_read_through_policy() {
             CacheRecordStatus::HitThenRebuilt {
@@ -208,16 +202,26 @@ impl CompilerObjectKind {
         )
     }
 
-    pub const fn conservative_read_through_policy(self) -> Option<&'static str> {
+    pub const fn conservative_read_through_reason(self) -> Option<BytecodeLinkConservativeReason> {
         match self {
-            Self::TypecheckGate => Some(Self::TYPECHECK_GATE_CONSERVATIVE_POLICY),
-            Self::BytecodeUnit => Some(Self::BYTECODE_UNIT_CONSERVATIVE_POLICY),
-            Self::LinkPlan => Some(Self::LINK_PLAN_CONSERVATIVE_POLICY),
+            Self::TypecheckGate => {
+                Some(BytecodeLinkConservativeReason::TypecheckGateLinkedSemaUnavailable)
+            }
+            Self::BytecodeUnit | Self::LinkPlan => {
+                Some(BytecodeLinkConservativeReason::FullBuildMultiModuleProductAwbcNotNarrowed)
+            }
             Self::ParsedSyntax
             | Self::InterfaceSummary
             | Self::HirBody
             | Self::LineTaskEvidence
             | Self::RuntimePlanUnit => None,
+        }
+    }
+
+    pub const fn conservative_read_through_policy(self) -> Option<&'static str> {
+        match self.conservative_read_through_reason() {
+            Some(reason) => Some(reason.policy()),
+            None => None,
         }
     }
 

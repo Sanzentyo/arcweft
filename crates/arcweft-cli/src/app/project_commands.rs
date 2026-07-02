@@ -42,7 +42,8 @@ use arcweft_project::{
     fingerprint::{BuildDigest, NamedDigest},
     incremental::{BuildSnapshot, CacheRecordStatus, InvalidationReason, QueryKind, QuerySnapshot},
     persistent_object::{
-        AwboEnvelope, BytecodeUnitObject, CompilerBuildIdentity, CompilerObjectKey,
+        AwboEnvelope, BytecodeLinkConservativeReason, BytecodeLinkIdentityOwner,
+        BytecodeLinkProducerFamily, BytecodeUnitObject, CompilerBuildIdentity, CompilerObjectKey,
         CompilerObjectKind, CompilerObjectPayload, HirBodyObject, InterfaceSummaryObject,
         LinkDescriptorObject,
     },
@@ -162,14 +163,25 @@ struct ProjectBuildCacheRecordReport {
 #[serde(rename_all = "snake_case", tag = "kind")]
 enum ProjectBuildPersistentReuseEvidence {
     ActualReusable {
-        producer: String,
+        producer_family: BytecodeLinkProducerFamily,
+        identity_owner: BytecodeLinkIdentityOwner,
         identity: String,
     },
     Conservative {
-        producer: String,
-        missing_identity: String,
-        consumer_connection: String,
+        producer_family: BytecodeLinkProducerFamily,
+        identity_owner: BytecodeLinkIdentityOwner,
+        reason: BytecodeLinkConservativeReason,
+        missing_identity: &'static str,
+        consumer_boundary: &'static str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        follow_up_sequence: Option<&'static str>,
     },
+}
+
+impl ProjectBuildPersistentReuseEvidence {
+    const fn is_actual_reusable(&self) -> bool {
+        matches!(self, Self::ActualReusable { .. })
+    }
 }
 
 struct ProjectBuildCacheInputs<'a> {
@@ -235,10 +247,8 @@ struct FullBuildLinkPlanArtifact {
 
 #[derive(Clone, Debug)]
 struct FullBuildConservativeReason {
-    bytecode_missing_identity: String,
-    bytecode_consumer_connection: String,
-    link_missing_identity: String,
-    link_consumer_connection: String,
+    bytecode: BytecodeLinkConservativeReason,
+    link: BytecodeLinkConservativeReason,
 }
 
 struct PersistentQueryWriteItem {
@@ -701,10 +711,10 @@ impl FullBuildPersistentArtifactContext {
                 bytecode_units: Vec::new(),
                 link_plan: None,
                 conservative_reason: Some(FullBuildConservativeReason {
-                    bytecode_missing_identity: "current product AWBC is a linked-project artifact; no canonical per-module/per-SCC runtime-plan-unit digest plus narrowed AWBC bytes are available for this producer".to_owned(),
-                    bytecode_consumer_connection: "ordinary arcw build still rebuilds linked product bytecode for multi-module or multi-unit projects".to_owned(),
-                    link_missing_identity: "stable ordered VerifiedReusable unit identities are unavailable for every linked unit".to_owned(),
-                    link_consumer_connection: "ordinary arcw build still relinks the product bundle after shadow read-through".to_owned(),
+                    bytecode:
+                        BytecodeLinkConservativeReason::FullBuildMultiModuleProductAwbcNotNarrowed,
+                    link:
+                        BytecodeLinkConservativeReason::FullBuildMultiModuleProductAwbcNotNarrowed,
                 }),
             });
         }
@@ -788,15 +798,20 @@ impl FullBuildPersistentArtifactContext {
                 || {
                     self.conservative_reason.as_ref().map(|reason| {
                         ProjectBuildPersistentReuseEvidence::Conservative {
-                            producer: "full_build_bytecode_unit".to_owned(),
-                            missing_identity: reason.bytecode_missing_identity.clone(),
-                            consumer_connection: reason.bytecode_consumer_connection.clone(),
+                            producer_family: BytecodeLinkProducerFamily::FullBuild,
+                            identity_owner:
+                                BytecodeLinkIdentityOwner::FullBuildPersistentArtifactContext,
+                            reason: reason.bytecode,
+                            missing_identity: reason.bytecode.missing_identity(),
+                            consumer_boundary: reason.bytecode.consumer_boundary(),
+                            follow_up_sequence: reason.bytecode.follow_up_sequence(),
                         }
                     })
                 },
                 |unit| {
                     Some(ProjectBuildPersistentReuseEvidence::ActualReusable {
-                        producer: "full_build_bytecode_unit".to_owned(),
+                        producer_family: BytecodeLinkProducerFamily::FullBuild,
+                        identity_owner: BytecodeLinkIdentityOwner::FullBuildBytecodeUnitArtifact,
                         identity: unit.unit_identity_digest().to_hex(),
                     })
                 },
@@ -805,15 +820,20 @@ impl FullBuildPersistentArtifactContext {
                 || {
                     self.conservative_reason.as_ref().map(|reason| {
                         ProjectBuildPersistentReuseEvidence::Conservative {
-                            producer: "full_build_link_plan".to_owned(),
-                            missing_identity: reason.link_missing_identity.clone(),
-                            consumer_connection: reason.link_consumer_connection.clone(),
+                            producer_family: BytecodeLinkProducerFamily::FullBuild,
+                            identity_owner:
+                                BytecodeLinkIdentityOwner::FullBuildPersistentArtifactContext,
+                            reason: reason.link,
+                            missing_identity: reason.link.missing_identity(),
+                            consumer_boundary: reason.link.consumer_boundary(),
+                            follow_up_sequence: reason.link.follow_up_sequence(),
                         }
                     })
                 },
                 |plan| {
                     Some(ProjectBuildPersistentReuseEvidence::ActualReusable {
-                        producer: "full_build_link_plan".to_owned(),
+                        producer_family: BytecodeLinkProducerFamily::FullBuild,
+                        identity_owner: BytecodeLinkIdentityOwner::FullBuildLinkPlanArtifact,
                         identity: plan.link_identity_digest().to_hex(),
                     })
                 },
@@ -1518,7 +1538,7 @@ fn commit_persistent_query_item(
     store: &FilesystemCacheStore,
     cache_root: &Path,
     incremental: bool,
-    _unit_cache_status: ProjectCompileCacheStatus,
+    unit_cache_status: ProjectCompileCacheStatus,
     item: PersistentQueryWriteItem,
     reports: &mut Vec<ProjectBuildCacheRecordReport>,
 ) -> Result<QuerySnapshot, ExitCode> {
@@ -1529,7 +1549,12 @@ fn commit_persistent_query_item(
             read_request = read_request.with_expected_link_descriptor(descriptor);
         }
         let read = store.read_persistent_query(&read_request);
-        let status = persistent_query_status_after_read(&read);
+        let status = persistent_query_status_after_read(
+            &read,
+            item.object_key.kind,
+            unit_cache_status,
+            item.reuse_evidence.as_ref(),
+        );
         let receipt = store
             .write_persistent_query(&PersistentQueryWriteRequest::new(
                 item.query,
@@ -1572,14 +1597,39 @@ fn commit_persistent_query_item(
     ))
 }
 
-fn persistent_query_status_after_read(read: &PersistentQueryReadOutcome) -> CacheRecordStatus {
-    match read.cache_record_status() {
-        CacheRecordStatus::Hit => CacheRecordStatus::HitThenRebuilt {
-            reason: InvalidationReason::ConservativeInvalidation {
-                policy: "full_build_shadow_validation_rebuilt_after_persistent_read_through"
-                    .to_owned(),
-            },
-        },
+fn persistent_query_status_after_read(
+    read: &PersistentQueryReadOutcome,
+    object_kind: CompilerObjectKind,
+    unit_cache_status: ProjectCompileCacheStatus,
+    reuse_evidence: Option<&ProjectBuildPersistentReuseEvidence>,
+) -> CacheRecordStatus {
+    let read_status = read.cache_record_status();
+    if unit_cache_status.is_hit() && persistent_read_status_did_not_feed_build(&read_status) {
+        return persistent_query_status_from_unit_cache_hit(object_kind, reuse_evidence);
+    }
+
+    match read_status {
+        CacheRecordStatus::Hit
+            if reuse_evidence
+                .is_some_and(ProjectBuildPersistentReuseEvidence::is_actual_reusable) =>
+        {
+            CacheRecordStatus::Hit
+        }
+        CacheRecordStatus::Hit => {
+            let policy = reuse_evidence
+                .and_then(|evidence| match evidence {
+                    ProjectBuildPersistentReuseEvidence::Conservative { reason, .. } => {
+                        Some(reason.policy())
+                    }
+                    ProjectBuildPersistentReuseEvidence::ActualReusable { .. } => None,
+                })
+                .unwrap_or("full_build_shadow_validation_rebuilt_after_persistent_read_through");
+            CacheRecordStatus::HitThenRebuilt {
+                reason: InvalidationReason::ConservativeInvalidation {
+                    policy: policy.to_owned(),
+                },
+            }
+        }
         CacheRecordStatus::HitThenRebuilt { reason } => {
             CacheRecordStatus::HitThenRebuilt { reason }
         }
@@ -1587,6 +1637,41 @@ fn persistent_query_status_after_read(read: &PersistentQueryReadOutcome) -> Cach
             CacheRecordStatus::Rebuilt { reason }
         }
         CacheRecordStatus::Stored => CacheRecordStatus::Stored,
+    }
+}
+
+fn persistent_read_status_did_not_feed_build(status: &CacheRecordStatus) -> bool {
+    matches!(
+        status,
+        CacheRecordStatus::Miss { .. } | CacheRecordStatus::Rebuilt { .. }
+    )
+}
+
+fn persistent_query_status_from_unit_cache_hit(
+    object_kind: CompilerObjectKind,
+    reuse_evidence: Option<&ProjectBuildPersistentReuseEvidence>,
+) -> CacheRecordStatus {
+    if reuse_evidence.is_some_and(ProjectBuildPersistentReuseEvidence::is_actual_reusable) {
+        return CacheRecordStatus::Hit;
+    }
+
+    let policy = reuse_evidence
+        .and_then(|evidence| match evidence {
+            ProjectBuildPersistentReuseEvidence::Conservative { reason, .. } => {
+                Some(reason.policy())
+            }
+            ProjectBuildPersistentReuseEvidence::ActualReusable { .. } => None,
+        })
+        .or_else(|| object_kind.conservative_read_through_policy());
+
+    if let Some(policy) = policy {
+        CacheRecordStatus::HitThenRebuilt {
+            reason: InvalidationReason::ConservativeInvalidation {
+                policy: policy.to_owned(),
+            },
+        }
+    } else {
+        CacheRecordStatus::Hit
     }
 }
 

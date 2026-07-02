@@ -675,6 +675,8 @@ impl BytecodeUnitObject {
                 == Self::conservative_verifier_policy_digest()
             || self.facts.identity.codegen_policy_digest
                 == Self::conservative_codegen_policy_digest()
+            || self.facts.identity.relocation_import_table_digest
+                == Self::conservative_relocation_import_table_digest()
         {
             return Err(AwboError::MalformedPayload {
                 reason: "reusable bytecode unit still contains a conservative sentinel".to_owned(),
@@ -804,6 +806,20 @@ impl LinkPlanObject {
         {
             return Err(AwboError::MalformedPayload {
                 reason: "reusable link plan has no ordered unit identities".to_owned(),
+            });
+        }
+        if self.reuse_policy == LinkPlanReusePolicy::VerifiedReusable
+            && (self.facts.descriptor.entrypoint_digest == Self::conservative_entrypoint_digest()
+                || self.facts.descriptor.resource_section_digest
+                    == Self::conservative_resource_section_digest()
+                || self.facts.descriptor.adapter_requirements_digest
+                    == Self::conservative_adapter_requirements_digest()
+                || self.facts.descriptor.patch_compatibility_digest
+                    == Self::conservative_patch_compatibility_digest())
+        {
+            return Err(AwboError::MalformedPayload {
+                reason: "reusable link plan still contains a conservative descriptor sentinel"
+                    .to_owned(),
             });
         }
         Ok(())

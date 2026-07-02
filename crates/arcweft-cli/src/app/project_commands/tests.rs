@@ -7,6 +7,7 @@ use arcweft_compiler::project::InMemoryProjectCompileCache;
 use arcweft_project::{
     fingerprint::BuildDigest,
     incremental::{CacheRecordStatus, InvalidationReason, QueryKind},
+    persistent_object::{BytecodeLinkIdentityOwner, BytecodeLinkProducerFamily},
 };
 use arcweft_project_loader::cache::record::CacheRecord;
 use arcweft_verify::VerificationMode;
@@ -146,24 +147,30 @@ fn cache_build_writes_persistent_query_evidence_and_preserves_awfb_root() {
     }));
     assert!(second_artifacts.cache_records.iter().any(|record| {
         record.query == QueryKind::BytecodeUnit
-            && record.status == "hit_then_rebuilt"
+            && record.status == "hit"
             && matches!(
                 &record.reuse_evidence,
                 Some(ProjectBuildPersistentReuseEvidence::ActualReusable {
-                    producer,
+                    producer_family,
+                    identity_owner,
                     identity,
-                }) if producer == "full_build_bytecode_unit" && identity.len() == 64
+                }) if *producer_family == BytecodeLinkProducerFamily::FullBuild
+                    && *identity_owner == BytecodeLinkIdentityOwner::FullBuildBytecodeUnitArtifact
+                    && identity.len() == 64
             )
     }));
     assert!(second_artifacts.cache_records.iter().any(|record| {
         record.query == QueryKind::LinkPlan
-            && record.status == "hit_then_rebuilt"
+            && record.status == "hit"
             && matches!(
                 &record.reuse_evidence,
                 Some(ProjectBuildPersistentReuseEvidence::ActualReusable {
-                    producer,
+                    producer_family,
+                    identity_owner,
                     identity,
-                }) if producer == "full_build_link_plan" && identity.len() == 64
+                }) if *producer_family == BytecodeLinkProducerFamily::FullBuild
+                    && *identity_owner == BytecodeLinkIdentityOwner::FullBuildLinkPlanArtifact
+                    && identity.len() == 64
             )
     }));
     let _ = fs::remove_dir_all(root);

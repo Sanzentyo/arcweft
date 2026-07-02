@@ -14,14 +14,15 @@ use arcweft_project::{
     fingerprint::{BuildDigest, NamedDigest},
     incremental::{CACHE_SCHEMA_VERSION, CacheRecordStatus, InvalidationReason, QueryKind},
     persistent_object::{
-        AWBO_MAGIC, AWBO_SCHEMA_VERSION, AwboEnvelope, BytecodeUnitFactsObject,
-        BytecodeUnitIdentityObject, BytecodeUnitObject, BytecodeUnitReusePolicy,
-        CompilerBuildIdentity, CompilerObjectKey, CompilerObjectKind, CompilerObjectPayload,
-        CompilerObjectStability, HirBodyFactsObject, HirBodyObject, InterfaceSummaryObject,
-        LinkDescriptorObject, LinkPlanFactsObject, LinkPlanObject, LinkPlanReusePolicy,
-        ParsedSyntaxEvidenceObject, ParsedSyntaxObject, PublicSymbolKind, PublicSymbolObject,
-        StableDiagnosticSummaryObject, StableRangeObject, StableSourceSpanObject,
-        SyntaxStatsObject, TypecheckGateFactsObject, TypecheckGateObject, TypecheckGateReusePolicy,
+        AWBO_MAGIC, AWBO_SCHEMA_VERSION, AwboEnvelope, BytecodeLinkConservativeReason,
+        BytecodeUnitFactsObject, BytecodeUnitIdentityObject, BytecodeUnitObject,
+        BytecodeUnitReusePolicy, CompilerBuildIdentity, CompilerObjectKey, CompilerObjectKind,
+        CompilerObjectPayload, CompilerObjectStability, HirBodyFactsObject, HirBodyObject,
+        InterfaceSummaryObject, LinkDescriptorObject, LinkPlanFactsObject, LinkPlanObject,
+        LinkPlanReusePolicy, ParsedSyntaxEvidenceObject, ParsedSyntaxObject, PublicSymbolKind,
+        PublicSymbolObject, StableDiagnosticSummaryObject, StableRangeObject,
+        StableSourceSpanObject, SyntaxStatsObject, TypecheckGateFactsObject, TypecheckGateObject,
+        TypecheckGateReusePolicy,
     },
 };
 use std::{
@@ -619,7 +620,9 @@ fn persistent_query_write_through_stores_typecheck_gate_as_valid_but_rebuilt() {
         outcome.cache_record_status(),
         CacheRecordStatus::HitThenRebuilt {
             reason: InvalidationReason::ConservativeInvalidation {
-                policy: CompilerObjectKind::TYPECHECK_GATE_CONSERVATIVE_POLICY.to_owned(),
+                policy: BytecodeLinkConservativeReason::TypecheckGateLinkedSemaUnavailable
+                    .policy()
+                    .to_owned(),
             },
         }
     );
@@ -655,7 +658,9 @@ fn persistent_query_write_through_stores_bytecode_gate_as_valid_but_rebuilt() {
         outcome.cache_record_status(),
         CacheRecordStatus::HitThenRebuilt {
             reason: InvalidationReason::ConservativeInvalidation {
-                policy: CompilerObjectKind::BYTECODE_UNIT_CONSERVATIVE_POLICY.to_owned(),
+                policy: BytecodeLinkConservativeReason::FullBuildMultiModuleProductAwbcNotNarrowed
+                    .policy()
+                    .to_owned(),
             },
         }
     );
@@ -691,7 +696,9 @@ fn persistent_query_write_through_stores_link_plan_gate_as_valid_but_rebuilt() {
         outcome.cache_record_status(),
         CacheRecordStatus::HitThenRebuilt {
             reason: InvalidationReason::ConservativeInvalidation {
-                policy: CompilerObjectKind::LINK_PLAN_CONSERVATIVE_POLICY.to_owned(),
+                policy: BytecodeLinkConservativeReason::FullBuildMultiModuleProductAwbcNotNarrowed
+                    .policy()
+                    .to_owned(),
             },
         }
     );
@@ -769,6 +776,59 @@ fn persistent_query_verified_link_plan_descriptor_mismatch_is_soft_miss() {
         ),
         PersistentQueryMissReason::LinkDescriptorMismatch { .. }
     ));
+}
+
+#[test]
+fn verified_bytecode_unit_rejects_conservative_relocation_identity() {
+    let store = FilesystemCacheStore::new(temp_root("verified-bytecode-conservative-relocation"));
+    let request = bytecode_request();
+    let CompilerObjectPayload::BytecodeUnit(mut payload) =
+        actual_bytecode_payload(&request.object_key)
+    else {
+        panic!("actual bytecode helper returns bytecode payload");
+    };
+    payload.facts.identity.relocation_import_table_digest =
+        BytecodeUnitObject::conservative_relocation_import_table_digest();
+    payload.facts.bytecode_descriptor_digest =
+        BytecodeUnitObject::bytecode_descriptor_digest_for(&payload.facts);
+
+    assert!(
+        store
+            .write_persistent_query(&PersistentQueryWriteRequest::new(
+                request.query,
+                request.artifact_key,
+                request.object_key,
+                "bytecode-unit:main",
+                CompilerObjectPayload::BytecodeUnit(payload),
+            ))
+            .is_err()
+    );
+}
+
+#[test]
+fn verified_link_plan_rejects_conservative_descriptor_identity() {
+    let store = FilesystemCacheStore::new(temp_root("verified-link-conservative-entrypoint"));
+    let request = link_plan_request();
+    let CompilerObjectPayload::LinkPlan(mut payload) =
+        actual_link_plan_payload(&request.object_key)
+    else {
+        panic!("actual link helper returns link payload");
+    };
+    payload.facts.descriptor.entrypoint_digest = LinkPlanObject::conservative_entrypoint_digest();
+    payload.facts.link_descriptor_digest =
+        LinkPlanObject::link_descriptor_digest_for(&payload.facts.descriptor);
+
+    assert!(
+        store
+            .write_persistent_query(&PersistentQueryWriteRequest::new(
+                request.query,
+                request.artifact_key,
+                request.object_key,
+                "link-plan:main",
+                CompilerObjectPayload::LinkPlan(payload),
+            ))
+            .is_err()
+    );
 }
 
 #[test]

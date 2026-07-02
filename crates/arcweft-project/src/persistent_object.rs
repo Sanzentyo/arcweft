@@ -7,6 +7,7 @@
 
 mod codec;
 mod payload;
+mod producer_identity;
 mod schema;
 
 pub use codec::AwboEnvelope;
@@ -19,6 +20,11 @@ pub use payload::{
     StableDiagnosticSeverity, StableDiagnosticSummaryObject, StableRangeObject,
     StableSourceSpanObject, SyntaxStatsObject, TypecheckGateFactsObject, TypecheckGateObject,
     TypecheckGateReusePolicy,
+};
+pub use producer_identity::{
+    AUDITED_BYTECODE_LINK_PRODUCER_FAMILIES, BytecodeLinkConservativeReason,
+    BytecodeLinkIdentityOwner, BytecodeLinkProducerClassification, BytecodeLinkProducerEvidence,
+    BytecodeLinkProducerFamily,
 };
 pub use schema::{
     AWBO_MAGIC, AWBO_SCHEMA_VERSION, AwboError, CompilerBuildIdentity,

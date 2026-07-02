@@ -18,11 +18,12 @@ use arcweft_project::{
     fingerprint::{BuildDigest, NamedDigest},
     incremental::{CacheRecordStatus, InvalidationReason, QueryKind},
     persistent_object::{
-        AWBO_SCHEMA_VERSION, AwboEnvelope, AwboError, BytecodeUnitObject, BytecodeUnitReusePolicy,
-        CompilerBuildIdentity, CompilerIdentityNamespaceObject, CompilerObjectKey,
-        CompilerObjectKind, CompilerObjectPayload, CompilerStageInputsObject, HirBodyObject,
-        InterfaceSummaryObject, LinkDescriptorObject, LinkPlanObject, LinkPlanReusePolicy,
-        ParsedSyntaxObject, TypecheckGateObject, TypecheckGateReusePolicy,
+        AWBO_SCHEMA_VERSION, AwboEnvelope, AwboError, BytecodeLinkConservativeReason,
+        BytecodeLinkProducerClassification, BytecodeLinkProducerFamily, BytecodeUnitObject,
+        BytecodeUnitReusePolicy, CompilerBuildIdentity, CompilerIdentityNamespaceObject,
+        CompilerObjectKey, CompilerObjectKind, CompilerObjectPayload, CompilerStageInputsObject,
+        HirBodyObject, InterfaceSummaryObject, LinkDescriptorObject, LinkPlanObject,
+        LinkPlanReusePolicy, ParsedSyntaxObject, TypecheckGateObject, TypecheckGateReusePolicy,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -114,6 +115,12 @@ pub struct PersistentQueryExplainEvidence {
     pub query: QueryKind,
     pub artifact_key: String,
     pub object_kind: CompilerObjectKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub producer_family: Option<BytecodeLinkProducerFamily>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub producer_classification: Option<BytecodeLinkProducerClassification>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conservative_reason: Option<BytecodeLinkConservativeReason>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub query_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -460,10 +467,10 @@ impl PersistentQueryMissReason {
 
 impl PersistentQueryHitPayload {
     fn cache_record_status(&self) -> CacheRecordStatus {
-        if let Some(policy) = self.conservative_reuse_policy() {
+        if let Some(reason) = self.conservative_reason() {
             CacheRecordStatus::HitThenRebuilt {
                 reason: InvalidationReason::ConservativeInvalidation {
-                    policy: policy.to_owned(),
+                    policy: reason.policy().to_owned(),
                 },
             }
         } else {
@@ -471,18 +478,39 @@ impl PersistentQueryHitPayload {
         }
     }
 
-    fn conservative_reuse_policy(&self) -> Option<&'static str> {
+    fn producer_family(&self) -> Option<BytecodeLinkProducerFamily> {
         match self {
-            Self::TypecheckGate(_) => Some(CompilerObjectKind::TYPECHECK_GATE_CONSERVATIVE_POLICY),
+            Self::TypecheckGate(_) | Self::BytecodeUnit(_) | Self::LinkPlan(_) => {
+                Some(BytecodeLinkProducerFamily::FullBuild)
+            }
+            Self::ParsedSyntax(_) | Self::InterfaceSummary(_) | Self::HirBody(_) => None,
+        }
+    }
+
+    fn producer_classification(&self) -> Option<BytecodeLinkProducerClassification> {
+        match self {
+            Self::BytecodeUnit(payload)
+                if payload.reuse_policy == BytecodeUnitReusePolicy::VerifiedReusable =>
+            {
+                Some(BytecodeLinkProducerClassification::ActualReusableReady)
+            }
+            Self::LinkPlan(payload)
+                if payload.reuse_policy == LinkPlanReusePolicy::VerifiedReusable =>
+            {
+                Some(BytecodeLinkProducerClassification::ActualReusableReady)
+            }
+            Self::TypecheckGate(_) => {
+                Some(BytecodeLinkProducerClassification::ConservativeRequired)
+            }
             Self::BytecodeUnit(payload)
                 if payload.reuse_policy == BytecodeUnitReusePolicy::ConservativeRebuild =>
             {
-                Some(CompilerObjectKind::BYTECODE_UNIT_CONSERVATIVE_POLICY)
+                Some(BytecodeLinkProducerClassification::ConservativeRequired)
             }
             Self::LinkPlan(payload)
                 if payload.reuse_policy == LinkPlanReusePolicy::ConservativeRebuild =>
             {
-                Some(CompilerObjectKind::LINK_PLAN_CONSERVATIVE_POLICY)
+                Some(BytecodeLinkProducerClassification::ConservativeRequired)
             }
             Self::ParsedSyntax(_)
             | Self::InterfaceSummary(_)
@@ -490,6 +518,34 @@ impl PersistentQueryHitPayload {
             | Self::BytecodeUnit(_)
             | Self::LinkPlan(_) => None,
         }
+    }
+
+    fn conservative_reason(&self) -> Option<BytecodeLinkConservativeReason> {
+        match self {
+            Self::TypecheckGate(_) => {
+                Some(BytecodeLinkConservativeReason::TypecheckGateLinkedSemaUnavailable)
+            }
+            Self::BytecodeUnit(payload)
+                if payload.reuse_policy == BytecodeUnitReusePolicy::ConservativeRebuild =>
+            {
+                Some(BytecodeLinkConservativeReason::FullBuildMultiModuleProductAwbcNotNarrowed)
+            }
+            Self::LinkPlan(payload)
+                if payload.reuse_policy == LinkPlanReusePolicy::ConservativeRebuild =>
+            {
+                Some(BytecodeLinkConservativeReason::FullBuildMultiModuleProductAwbcNotNarrowed)
+            }
+            Self::ParsedSyntax(_)
+            | Self::InterfaceSummary(_)
+            | Self::HirBody(_)
+            | Self::BytecodeUnit(_)
+            | Self::LinkPlan(_) => None,
+        }
+    }
+
+    fn conservative_reuse_policy(&self) -> Option<&'static str> {
+        self.conservative_reason()
+            .map(BytecodeLinkConservativeReason::policy)
     }
 
     fn actual_reuse_policy(&self) -> Option<&'static str> {
@@ -1081,6 +1137,9 @@ fn explain_persistent_query_outcome(
             query: hit.query,
             artifact_key: hit.artifact_key.digest().to_hex(),
             object_kind: hit.object_kind,
+            producer_family: hit.payload.producer_family(),
+            producer_classification: hit.payload.producer_classification(),
+            conservative_reason: hit.payload.conservative_reason(),
             query_key: object_key.map(|key| key.digest().to_hex()),
             key_inputs: object_key.map(key_input_evidence),
             compiler_identity: object_key.map(|key| key.compiler.clone().canonicalized()),
@@ -1114,6 +1173,9 @@ fn explain_persistent_query_outcome(
                 query: miss.query,
                 artifact_key: miss.artifact_key.digest().to_hex(),
                 object_kind: miss.object_kind,
+                producer_family: producer_family_for_object_kind(miss.object_kind),
+                producer_classification: producer_classification_for_object_kind(miss.object_kind),
+                conservative_reason: miss.object_kind.conservative_read_through_reason(),
                 query_key: object_key.map(|key| key.digest().to_hex()),
                 key_inputs: object_key.map(key_input_evidence),
                 compiler_identity: object_key.map(|key| key.compiler.clone().canonicalized()),
@@ -1168,6 +1230,9 @@ fn explain_persistent_query_preflight_miss(
         query,
         artifact_key: record.key().digest().to_hex(),
         object_kind,
+        producer_family: producer_family_for_object_kind(object_kind),
+        producer_classification: producer_classification_for_object_kind(object_kind),
+        conservative_reason: object_kind.conservative_read_through_reason(),
         query_key: None,
         key_inputs: None,
         compiler_identity: None,
@@ -1195,6 +1260,38 @@ fn explain_persistent_query_preflight_miss(
             .conservative_read_through_policy()
             .map(str::to_owned),
         recovery_action: PersistentQueryRecoveryAction::RebuildFromSource,
+    }
+}
+
+fn producer_family_for_object_kind(
+    object_kind: CompilerObjectKind,
+) -> Option<BytecodeLinkProducerFamily> {
+    match object_kind {
+        CompilerObjectKind::TypecheckGate
+        | CompilerObjectKind::BytecodeUnit
+        | CompilerObjectKind::LinkPlan => Some(BytecodeLinkProducerFamily::FullBuild),
+        CompilerObjectKind::ParsedSyntax
+        | CompilerObjectKind::InterfaceSummary
+        | CompilerObjectKind::HirBody
+        | CompilerObjectKind::LineTaskEvidence
+        | CompilerObjectKind::RuntimePlanUnit => None,
+    }
+}
+
+fn producer_classification_for_object_kind(
+    object_kind: CompilerObjectKind,
+) -> Option<BytecodeLinkProducerClassification> {
+    match object_kind {
+        CompilerObjectKind::TypecheckGate
+        | CompilerObjectKind::BytecodeUnit
+        | CompilerObjectKind::LinkPlan => {
+            Some(BytecodeLinkProducerClassification::ConservativeRequired)
+        }
+        CompilerObjectKind::ParsedSyntax
+        | CompilerObjectKind::InterfaceSummary
+        | CompilerObjectKind::HirBody
+        | CompilerObjectKind::LineTaskEvidence
+        | CompilerObjectKind::RuntimePlanUnit => None,
     }
 }
 
