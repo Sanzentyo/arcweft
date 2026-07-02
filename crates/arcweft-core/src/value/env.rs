@@ -79,6 +79,34 @@ impl RuntimeEnv {
             .collect()
     }
 
+    pub(crate) fn replace_scopes_with_bindings(
+        &mut self,
+        scopes: impl IntoIterator<Item = Vec<RuntimeBinding>>,
+    ) {
+        self.spare_scopes
+            .extend(self.scopes.drain(..).map(|mut scope| {
+                scope.clear();
+                scope
+            }));
+
+        for bindings in scopes {
+            let mut scope = self
+                .spare_scopes
+                .pop()
+                .unwrap_or_else(|| RuntimeScope::with_capacity(bindings.len()));
+            scope.clear();
+            scope.reserve_bindings(bindings.len());
+            for binding in bindings {
+                scope.set(binding.name, binding.value);
+            }
+            self.scopes.push(scope);
+        }
+
+        if self.scopes.is_empty() {
+            self.push_scope();
+        }
+    }
+
     pub fn bind_all(&mut self, bindings: impl IntoIterator<Item = RuntimeBinding>) {
         for binding in bindings {
             self.set(binding.name, binding.value);

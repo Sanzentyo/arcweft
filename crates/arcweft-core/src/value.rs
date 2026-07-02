@@ -106,6 +106,7 @@ impl fmt::Display for RuntimeCallTarget {
 pub enum RuntimeIntrinsic {
     Add,
     CoreRange,
+    CoreIterCollect,
     StdF32Abs,
     StdF32Floor,
     StdF32Ceil,
@@ -175,6 +176,7 @@ impl RuntimeIntrinsic {
         match label {
             "add" => Some(Self::Add),
             "core.range" => Some(Self::CoreRange),
+            "core.iter.collect" => Some(Self::CoreIterCollect),
             "std.f32.abs" => Some(Self::StdF32Abs),
             "std.f32.floor" => Some(Self::StdF32Floor),
             "std.f32.ceil" => Some(Self::StdF32Ceil),
@@ -245,6 +247,7 @@ impl RuntimeIntrinsic {
         match self {
             Self::Add => "add",
             Self::CoreRange => "core.range",
+            Self::CoreIterCollect => "core.iter.collect",
             Self::StdF32Abs => "std.f32.abs",
             Self::StdF32Floor => "std.f32.floor",
             Self::StdF32Ceil => "std.f32.ceil",
@@ -318,6 +321,7 @@ impl RuntimeIntrinsic {
             Self::PathExport => Some("export"),
             Self::Add
             | Self::CoreRange
+            | Self::CoreIterCollect
             | Self::StdF32Abs
             | Self::StdF32Floor
             | Self::StdF32Ceil
@@ -1708,6 +1712,15 @@ fn range_intrinsic_bound(value: &RuntimeValue) -> Option<RuntimeValue> {
     } else {
         Some(value.clone())
     }
+}
+
+pub fn evaluate_core_iter_collect_intrinsic(
+    value: RuntimeValue,
+) -> Result<RuntimeValue, RuntimeEvalError> {
+    RuntimeIterator::from_value(value)
+        .map(Iterator::collect)
+        .map(runtime_sequence_values)
+        .map_err(|value| RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value)))
 }
 
 pub fn runtime_sequence_values(values: Vec<RuntimeValue>) -> RuntimeValue {

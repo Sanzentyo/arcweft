@@ -18,7 +18,10 @@ use crate::pure::{
 use crate::value::{RuntimeBinaryOp, RuntimeExactInteger, RuntimeFieldExpr, RuntimeUInt};
 use crate::value::{RuntimeCallTarget, RuntimeIntrinsic};
 use crate::value::{RuntimeISizeValue, RuntimeUSizeValue};
-use crate::value::{evaluate_core_range_intrinsic, evaluate_std_float_intrinsic};
+use crate::value::{
+    evaluate_core_iter_collect_intrinsic, evaluate_core_range_intrinsic,
+    evaluate_std_float_intrinsic,
+};
 
 mod calls;
 
@@ -1277,6 +1280,10 @@ pub(crate) fn evaluate_runtime_call(
         }
         (Some(RuntimeIntrinsic::CoreRange), _) => evaluate_core_range_intrinsic(args)
             .unwrap_or_else(|error| RuntimeValue::String(format!("core.range({error})"))),
+        (Some(RuntimeIntrinsic::CoreIterCollect), [value]) => {
+            evaluate_core_iter_collect_intrinsic(value.clone())
+                .unwrap_or_else(|error| RuntimeValue::String(format!("core.iter.collect({error})")))
+        }
         (
             Some(RuntimeIntrinsic::MathMatmulF32),
             [RuntimeValue::MatrixF32(lhs), RuntimeValue::MatrixF32(rhs)],

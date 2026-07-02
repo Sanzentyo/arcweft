@@ -360,6 +360,14 @@ fn host_template(capability: &str, operation: &str) -> HostTaskRequestTemplate {
     }
 }
 
+fn i32_range_expr(start: i32, end: i32) -> RuntimeExpr {
+    RuntimeExpr::Range {
+        start: Some(Box::new(RuntimeExpr::Value(RuntimeValue::i32(start)))),
+        end: Some(Box::new(RuntimeExpr::Value(RuntimeValue::i32(end)))),
+        inclusive: false,
+    }
+}
+
 #[test]
 fn awbc_product_parity_entry() {
     let steps = run_parity(
@@ -405,6 +413,126 @@ fn awbc_product_parity_entry_root_bindings_named_equivalent() {
         ],
         vec![RuntimeStepInput::default()],
     );
+
+    assert_step_boundary_eq(&steps[0]);
+}
+
+#[test]
+fn awbc_product_parity_for_range_effects() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::For {
+                pattern: RuntimePattern::Ident("i".to_owned()),
+                source: i32_range_expr(0, 3),
+                body: vec![FlowOp::Effect(call("effect.loop"))],
+            },
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(steps[0].structured.output.effects.line.len(), 3);
+    assert_eq!(
+        steps[0].awbc.output.effects.line,
+        steps[0].structured.output.effects.line
+    );
+}
+
+#[test]
+fn awbc_product_parity_for_empty_range_skips_body() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::For {
+                pattern: RuntimePattern::Ident("i".to_owned()),
+                source: i32_range_expr(0, 0),
+                body: vec![FlowOp::Effect(call("effect.loop"))],
+            },
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert!(steps[0].structured.output.effects.line.is_empty());
+    assert!(steps[0].awbc.output.effects.line.is_empty());
+}
+
+#[test]
+fn awbc_product_parity_for_empty_range_skips_return_body() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::For {
+                pattern: RuntimePattern::Ident("i".to_owned()),
+                source: i32_range_expr(0, 0),
+                body: vec![FlowOp::Return("loop".to_owned())],
+            },
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.flow_events,
+        vec![FlowEvent::Return {
+            value: "done".to_owned()
+        }]
+    );
+}
+
+#[test]
+fn awbc_product_parity_for_non_empty_range_can_return_from_body() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::For {
+                pattern: RuntimePattern::Ident("i".to_owned()),
+                source: i32_range_expr(0, 1),
+                body: vec![FlowOp::Return("loop".to_owned())],
+            },
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.flow_events,
+        vec![FlowEvent::Return {
+            value: "loop".to_owned()
+        }]
+    );
+}
+
+#[test]
+fn awbc_product_parity_for_range_dialogue_body_outputs() {
+    let group = LineTaskGroup {
+        root: LineTaskScope {
+            node: LineTaskNode::Seq(vec![LineTaskNode::Effect(call("loop_line"))]),
+            ..LineTaskScope::default()
+        },
+        ..LineTaskGroup::default()
+    };
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![
+                FlowOp::For {
+                    pattern: RuntimePattern::Ident("i".to_owned()),
+                    source: i32_range_expr(0, 2),
+                    body: vec![FlowOp::Dialogue {
+                        line: "line.loop.001".into(),
+                        task_group: 0,
+                    }],
+                },
+                FlowOp::Return("done".to_owned()),
+            ],
+        }],
+        vec![group],
+    )
+    .expect("runtime plan builds");
+    let steps = run_parity(plan, vec![RuntimeStepInput::default()]);
 
     assert_step_boundary_eq(&steps[0]);
 }

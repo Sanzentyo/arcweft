@@ -5,8 +5,8 @@ use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEnv, RuntimeEvalError,
     RuntimeExactInteger, RuntimeExpr, RuntimeFieldValue, RuntimeISizeValue, RuntimeIntrinsic,
     RuntimeIterator, RuntimeSeq, RuntimeUInt, RuntimeUSizeValue, RuntimeUnaryOp, RuntimeValue,
-    evaluate_binary, evaluate_core_range_intrinsic, evaluate_numeric_op,
-    evaluate_std_float_intrinsic, evaluate_unary, runtime_sequence_values,
+    evaluate_binary, evaluate_core_iter_collect_intrinsic, evaluate_core_range_intrinsic,
+    evaluate_numeric_op, evaluate_std_float_intrinsic, evaluate_unary, runtime_sequence_values,
     runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
 };
 
@@ -1586,6 +1586,9 @@ impl PureEvaluator {
                 )
             }
             (Some(RuntimeIntrinsic::CoreRange), _) => evaluate_core_range_intrinsic(&args),
+            (Some(RuntimeIntrinsic::CoreIterCollect), [value]) => {
+                evaluate_core_iter_collect_intrinsic(value.clone())
+            }
             (
                 Some(RuntimeIntrinsic::MathMatmulF32),
                 [RuntimeValue::MatrixF32(lhs), RuntimeValue::MatrixF32(rhs)],

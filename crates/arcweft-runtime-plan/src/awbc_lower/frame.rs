@@ -12,8 +12,9 @@ use std::collections::BTreeMap;
 pub enum FrameSlotKey {
     Local(String),
     Temp(u32),
+    RootTemp(u32),
     ReturnValue(u32),
-    RuntimeState(&'static str),
+    RuntimeState(String),
 }
 
 /// Function-local frame allocator.
@@ -22,6 +23,7 @@ pub struct FrameBuilder {
     slots: Vec<AwbcFrameSlot>,
     by_key: BTreeMap<FrameSlotKey, AwbcRegisterId>,
     temp_counter: u32,
+    runtime_state_counter: u32,
     scope_depth: u32,
     max_scope_depth: u32,
 }
@@ -32,6 +34,7 @@ impl FrameBuilder {
             slots: Vec::new(),
             by_key: BTreeMap::new(),
             temp_counter: 0,
+            runtime_state_counter: 0,
             scope_depth: 0,
             max_scope_depth: 0,
         }
@@ -44,6 +47,17 @@ impl FrameBuilder {
         ty: AwbcTypeId,
         role: AwbcFrameSlotRole,
     ) -> AwbcRegisterId {
+        self.slot_at_scope_depth(key, name, ty, role, self.scope_depth)
+    }
+
+    fn slot_at_scope_depth(
+        &mut self,
+        key: FrameSlotKey,
+        name: Option<AwbcStringId>,
+        ty: AwbcTypeId,
+        role: AwbcFrameSlotRole,
+        scope_depth: u32,
+    ) -> AwbcRegisterId {
         if let Some(register) = self.by_key.get(&key).copied() {
             return register;
         }
@@ -52,7 +66,7 @@ impl FrameBuilder {
             name,
             ty,
             role,
-            scope_depth: self.scope_depth,
+            scope_depth,
         });
         self.by_key.insert(key, register);
         register
@@ -87,24 +101,36 @@ impl FrameBuilder {
         self.slot(key, None, ty, AwbcFrameSlotRole::Temporary)
     }
 
+    pub fn root_temp(&mut self, ty: AwbcTypeId) -> AwbcRegisterId {
+        let key = FrameSlotKey::RootTemp(self.temp_counter);
+        self.temp_counter = self.temp_counter.saturating_add(1);
+        self.slot_at_scope_depth(key, None, ty, AwbcFrameSlotRole::Temporary, 0)
+    }
+
     pub fn return_value(&mut self, ty: AwbcTypeId) -> AwbcRegisterId {
         let key = FrameSlotKey::ReturnValue(self.temp_counter);
         self.temp_counter = self.temp_counter.saturating_add(1);
-        self.slot(key, None, ty, AwbcFrameSlotRole::ReturnValue)
+        self.slot_at_scope_depth(key, None, ty, AwbcFrameSlotRole::ReturnValue, 0)
     }
 
     pub fn runtime_state(
         &mut self,
-        name: &'static str,
+        name: &str,
         name_id: AwbcStringId,
         ty: AwbcTypeId,
     ) -> AwbcRegisterId {
         self.slot(
-            FrameSlotKey::RuntimeState(name),
+            FrameSlotKey::RuntimeState(name.to_owned()),
             Some(name_id),
             ty,
             AwbcFrameSlotRole::RuntimeState,
         )
+    }
+
+    pub fn next_runtime_state_name(&mut self, prefix: &str) -> String {
+        let ordinal = self.runtime_state_counter;
+        self.runtime_state_counter = self.runtime_state_counter.saturating_add(1);
+        format!("{prefix}.{ordinal}")
     }
 
     pub fn enter_scope(&mut self) -> AwbcScopeId {
@@ -116,6 +142,14 @@ impl FrameBuilder {
 
     pub fn exit_scope(&mut self) {
         self.scope_depth = self.scope_depth.saturating_sub(1);
+    }
+
+    pub fn exit_all_scopes(&mut self) {
+        self.scope_depth = 0;
+    }
+
+    pub fn active_scope_ids_for_exit(&self) -> Vec<AwbcScopeId> {
+        (0..self.scope_depth).rev().map(AwbcScopeId).collect()
     }
 
     pub fn register_for_local(&self, name: &str) -> Option<AwbcRegisterId> {

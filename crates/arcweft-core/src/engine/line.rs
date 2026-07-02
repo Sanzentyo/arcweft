@@ -1,6 +1,7 @@
 use super::{
-    Engine, FlowCursor, FlowEvent, FlowExit, FlowFiberStatus, FlowRuntimeId, LineEffectRequest,
-    RuntimeStepInput, RuntimeStepOutput, run_line_task_group_for_input,
+    Engine, FlowControlStackEntryKind, FlowCursor, FlowEvent, FlowExit, FlowFiberStatus,
+    FlowRuntimeId, LineEffectRequest, RuntimeStepInput, RuntimeStepOutput,
+    run_line_task_group_for_input,
 };
 use crate::pure::RuntimeCallBackend;
 
@@ -40,6 +41,7 @@ impl Engine {
 
     pub(super) fn goto(&mut self, target: &FlowRuntimeId, output: &mut RuntimeStepOutput) {
         self.fiber.pending_ops.clear();
+        self.unwind_control_stack();
         output.flow_events.push(FlowEvent::Goto {
             target: target.clone(),
         });
@@ -58,10 +60,19 @@ impl Engine {
 
     pub(super) fn return_value(&mut self, value: String, output: &mut RuntimeStepOutput) {
         self.fiber.pending_ops.clear();
+        self.unwind_control_stack();
         output.flow_events.push(FlowEvent::Return {
             value: value.clone(),
         });
         self.fiber.status = FlowFiberStatus::Done(FlowExit::Return(value));
+    }
+
+    fn unwind_control_stack(&mut self) {
+        while let Some(entry) = self.fiber.control_stack.pop() {
+            if matches!(entry.kind, FlowControlStackEntryKind::Scope) {
+                self.fiber.env.pop_scope();
+            }
+        }
     }
 
     pub(super) fn finish(&mut self, output: &mut RuntimeStepOutput) {

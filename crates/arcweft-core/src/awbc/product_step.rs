@@ -15,11 +15,11 @@ use crate::awbc::fiber::{
 };
 use crate::awbc::schema::{
     AwbcBackpressurePolicy, AwbcBlockId, AwbcChoiceId, AwbcContentUnitId, AwbcEffectPlanId,
-    AwbcEntryId, AwbcFunctionId, AwbcHostCallId, AwbcHostCallMode, AwbcInstruction,
-    AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger,
-    AwbcOverflowPolicy, AwbcPrivacyPolicy, AwbcProgram, AwbcReplayPolicy, AwbcResumePointId,
-    AwbcSourceEventKind, AwbcSourcePlanId, AwbcStreamPlanId, AwbcTaskPlanId, AwbcTerminator,
-    AwbcTrapCode,
+    AwbcEntryId, AwbcFrameSlotRole, AwbcFunctionId, AwbcHostCallId, AwbcHostCallMode,
+    AwbcInstruction, AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId,
+    AwbcLineTaskTrigger, AwbcOverflowPolicy, AwbcPrivacyPolicy, AwbcProgram, AwbcReplayPolicy,
+    AwbcResumePointId, AwbcSourceEventKind, AwbcSourcePlanId, AwbcStreamPlanId, AwbcTaskPlanId,
+    AwbcTerminator, AwbcTrapCode,
 };
 use crate::awbc::vm::{VmError, VmExit, VmHost, VmObservation, VmStepOptions, step_with_host};
 use crate::engine::{
@@ -501,7 +501,10 @@ impl AwbcProductStepExecutor {
             Ok(vm_output) => {
                 self.consume_observations(vm_output.observations, output);
                 match vm_output.exit {
-                    VmExit::Suspended(_) => self.initialize_suspension(output, pure_backend),
+                    VmExit::Suspended(_) => {
+                        self.sync_facade();
+                        self.initialize_suspension(output, pure_backend);
+                    }
                     VmExit::Returned(value) => Self::record_return(value.as_ref(), output),
                     VmExit::Running | VmExit::Trapped(_) | VmExit::BudgetYield(_) => {}
                 }
@@ -1918,17 +1921,33 @@ impl AwbcProductStepExecutor {
         if let Ok(frame) = self.fiber.active_frame()
             && let Some(layout) = self.program.frame_layouts.get(frame.layout.index())
         {
+            let active_scope_count = frame.scopes.len();
+            let mut scopes = vec![Vec::new(); active_scope_count.saturating_add(1)];
             for (index, slot) in layout.slots.iter().enumerate() {
+                let slot_depth = usize::try_from(slot.scope_depth).unwrap_or(usize::MAX);
+                if !matches!(
+                    slot.role,
+                    AwbcFrameSlotRole::Parameter | AwbcFrameSlotRole::Local
+                ) || slot_depth > active_scope_count
+                {
+                    continue;
+                }
                 let Some(name) = slot
                     .name
                     .and_then(|id| self.program.strings.get(id.index()))
                 else {
                     continue;
                 };
-                if let Some(value) = frame.registers.get(index).and_then(Option::as_ref) {
-                    self.facade_fiber.env.set_root(name.clone(), value.clone());
+                if let Some(value) = frame.registers.get(index).and_then(Option::as_ref)
+                    && let Some(scope) = scopes.get_mut(slot_depth)
+                {
+                    scope.push(RuntimeBinding {
+                        name: name.clone(),
+                        value: value.clone(),
+                    });
                 }
             }
+            self.facade_fiber.env.replace_scopes_with_bindings(scopes);
         }
         self.facade_fiber.line_cursor =
             usize::try_from(self.fiber.line_cursor).unwrap_or(usize::MAX);

@@ -7,11 +7,11 @@ use crate::awbc_lower::pattern::lower_pattern;
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::audio::RuntimeAudioCommand;
 use arcweft_core::awbc::schema::{
-    AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption, AwbcEffectSetId,
-    AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
-    AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcLineTaskGroupId, AwbcPureHelper,
-    AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind,
-    AwbcScopeId, AwbcTableRange, AwbcTerminator,
+    AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption,
+    AwbcEffectSetId, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
+    AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcLineTaskGroupId,
+    AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
+    AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator,
 };
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::pattern::RuntimePattern;
@@ -76,6 +76,34 @@ impl FlowBodyBuilder {
         });
         self.instruction_start = table_index(inventory.program.instructions.len());
         self.resume_points.push(resume);
+    }
+
+    fn close_block(
+        &mut self,
+        inventory: &mut AwbcInventory,
+        terminator: AwbcTerminator,
+        safe_point: AwbcSafePointKind,
+    ) -> AwbcBlockId {
+        let block = AwbcBlockId(table_index(inventory.program.blocks.len()));
+        let instruction_len =
+            table_range_len(self.instruction_start, inventory.program.instructions.len());
+        let safe_point = self.current_block_safe_point(inventory, safe_point);
+        inventory.push_block(AwbcBlock {
+            owner: self.owner,
+            instructions: AwbcTableRange::new(self.instruction_start, instruction_len),
+            terminator,
+            safe_point,
+            source_map: None,
+        });
+        self.instruction_start = table_index(inventory.program.instructions.len());
+        block
+    }
+
+    fn reopen_after_terminated_branch(&mut self, inventory: &AwbcInventory) -> AwbcBlockId {
+        let block = AwbcBlockId(table_index(inventory.program.blocks.len()));
+        self.instruction_start = table_index(inventory.program.instructions.len());
+        self.terminated = false;
+        block
     }
 
     fn terminate(
@@ -582,11 +610,7 @@ impl<'a> AwbcFlowLowerer<'a> {
                 source,
                 body: ops,
             } => {
-                let source = AwbcExprLowerer::new(self.inventory, frame, path).lower(source);
-                let pattern = lower_pattern(self.inventory, frame, pattern);
-                self.push_intrinsic_call("flow.for.iter", vec![source]);
-                let _ = pattern;
-                self.lower_ops(frame, body, ops, &format!("{path}.body"));
+                self.lower_for(frame, body, pattern, source, ops, path);
             }
             FlowOp::Scope(ops) => {
                 let scope = frame.enter_scope();
@@ -625,9 +649,17 @@ impl<'a> AwbcFlowLowerer<'a> {
             }
             FlowOp::ReturnExpr(value) => {
                 let value = AwbcExprLowerer::new(self.inventory, frame, path).lower(value);
+                let result = frame.return_value(self.inventory.dynamic_ty());
+                self.inventory.push_instruction(AwbcInstruction::Move {
+                    dst: result,
+                    src: value,
+                });
+                self.close_active_scopes_for_terminator(frame);
                 body.terminate(
                     self.inventory,
-                    AwbcTerminator::Return { value: Some(value) },
+                    AwbcTerminator::Return {
+                        value: Some(result),
+                    },
                     AwbcSafePointKind::Return,
                 );
             }
@@ -636,6 +668,7 @@ impl<'a> AwbcFlowLowerer<'a> {
             }
             FlowOp::Goto(target) => {
                 if let Some(function) = self.inventory.function_by_name(&target.0) {
+                    self.close_active_scopes_for_terminator(frame);
                     body.terminate(
                         self.inventory,
                         AwbcTerminator::GotoStatic {
@@ -650,10 +683,16 @@ impl<'a> AwbcFlowLowerer<'a> {
             }
             FlowOp::GotoExpr(expr) => {
                 let target = AwbcExprLowerer::new(self.inventory, frame, path).lower(expr);
+                let stable_target = frame.root_temp(self.inventory.dynamic_ty());
+                self.inventory.push_instruction(AwbcInstruction::Move {
+                    dst: stable_target,
+                    src: target,
+                });
+                self.close_active_scopes_for_terminator(frame);
                 body.terminate(
                     self.inventory,
                     AwbcTerminator::GotoDynamic {
-                        target,
+                        target: stable_target,
                         args: Vec::new(),
                     },
                     AwbcSafePointKind::CallableBoundary,
@@ -666,6 +705,7 @@ impl<'a> AwbcFlowLowerer<'a> {
                     dst,
                     constant: value,
                 });
+                self.close_active_scopes_for_terminator(frame);
                 body.terminate(
                     self.inventory,
                     AwbcTerminator::Return { value: Some(dst) },
@@ -771,20 +811,195 @@ impl<'a> AwbcFlowLowerer<'a> {
         }
     }
 
-    fn intrinsic(&mut self, label: &str) -> AwbcIntrinsicId {
-        if let Some((index, _)) = self
+    fn lower_for(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        pattern: &RuntimePattern,
+        source: &RuntimeExpr,
+        ops: &[FlowOp],
+        path: &str,
+    ) {
+        let sequence = self.lower_iterable_sequence(frame, source, path);
+        let index = self.initialize_for_index(frame);
+        let len = self.sequence_len(frame, sequence);
+
+        let condition_block = AwbcBlockId(table_index(
+            self.inventory.program.blocks.len().saturating_add(1),
+        ));
+        body.close_block(
+            self.inventory,
+            AwbcTerminator::Jump {
+                target: condition_block,
+            },
+            AwbcSafePointKind::None,
+        );
+
+        let condition = frame.temp(self.inventory.bool_ty());
+        self.inventory.push_instruction(AwbcInstruction::Binary {
+            dst: condition,
+            op: AwbcBinaryOp::Lt,
+            lhs: index,
+            rhs: len,
+        });
+        let condition_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
+        let body_block = AwbcBlockId(condition_block.0.saturating_add(1));
+        body.close_block(
+            self.inventory,
+            AwbcTerminator::Branch {
+                condition,
+                then_block: body_block,
+                else_block: body_block,
+            },
+            AwbcSafePointKind::LoopBackedge,
+        );
+
+        let scope = frame.enter_scope();
+        self.inventory
+            .push_instruction(AwbcInstruction::EnterScope { scope });
+        let value = frame.temp(self.inventory.dynamic_ty());
+        self.inventory
+            .push_instruction(AwbcInstruction::SequenceGet {
+                dst: value,
+                sequence,
+                index,
+            });
+        let pattern = lower_pattern(self.inventory, frame, pattern);
+        self.inventory
+            .push_instruction(AwbcInstruction::BindPattern {
+                pattern,
+                value,
+                mode: AwbcBindMode::Declare,
+            });
+        self.lower_ops(frame, body, ops, &format!("{path}.body"));
+        if body.terminated {
+            frame.exit_scope();
+            let after_block = body.reopen_after_terminated_branch(self.inventory);
+            patch_branch_else_block(self.inventory, condition_block, after_block);
+            return;
+        }
+        self.close_for_iteration(frame, body, scope, index, condition_block);
+    }
+
+    fn close_active_scopes_for_terminator(&mut self, frame: &mut FrameBuilder) {
+        for scope in frame.active_scope_ids_for_exit() {
+            self.inventory
+                .push_instruction(AwbcInstruction::ExitScope { scope });
+        }
+        frame.exit_all_scopes();
+    }
+
+    fn lower_iterable_sequence(
+        &mut self,
+        frame: &mut FrameBuilder,
+        source: &RuntimeExpr,
+        path: &str,
+    ) -> AwbcRegisterId {
+        let source = AwbcExprLowerer::new(self.inventory, frame, path).lower(source);
+        let sequence = frame.temp(self.inventory.dynamic_ty());
+        let collect = self.intrinsic("core.iter.collect", 1, Some(self.inventory.dynamic_ty()));
+        self.inventory
+            .push_instruction(AwbcInstruction::CallIntrinsic {
+                dst: Some(sequence),
+                intrinsic: collect,
+                args: vec![source],
+            });
+        sequence
+    }
+
+    fn initialize_for_index(&mut self, frame: &mut FrameBuilder) -> AwbcRegisterId {
+        let index_name = frame.next_runtime_state_name("flow.for.index");
+        let index = frame.runtime_state(
+            &index_name,
+            self.inventory.intern_string(&index_name),
+            self.inventory.dynamic_ty(),
+        );
+        self.load_usize_const(index, 0);
+        index
+    }
+
+    fn sequence_len(
+        &mut self,
+        frame: &mut FrameBuilder,
+        sequence: AwbcRegisterId,
+    ) -> AwbcRegisterId {
+        let len = frame.temp(self.inventory.dynamic_ty());
+        self.inventory
+            .push_instruction(AwbcInstruction::SequenceLen { dst: len, sequence });
+        len
+    }
+
+    fn close_for_iteration(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        scope: AwbcScopeId,
+        index: AwbcRegisterId,
+        condition_block: AwbcBlockId,
+    ) {
+        self.inventory
+            .push_instruction(AwbcInstruction::ExitScope { scope });
+        frame.exit_scope();
+        let one = frame.temp(self.inventory.dynamic_ty());
+        self.load_usize_const(one, 1);
+        self.inventory.push_instruction(AwbcInstruction::Binary {
+            dst: index,
+            op: AwbcBinaryOp::Add,
+            lhs: index,
+            rhs: one,
+        });
+        body.close_block(
+            self.inventory,
+            AwbcTerminator::Jump {
+                target: condition_block,
+            },
+            AwbcSafePointKind::LoopBackedge,
+        );
+        let after_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
+        patch_branch_else_block(self.inventory, condition_block, after_block);
+    }
+
+    fn load_usize_const(&mut self, dst: AwbcRegisterId, value: u64) {
+        let constant = self
             .inventory
-            .program
-            .intrinsics
-            .iter()
-            .enumerate()
-            .find(|(_, candidate)| self.inventory.string(candidate.public_id) == label)
+            .constant_runtime_value(&arcweft_core::value::RuntimeValue::usize(value));
+        self.inventory
+            .push_instruction(AwbcInstruction::LoadConst { dst, constant });
+    }
+
+    fn intrinsic(
+        &mut self,
+        label: &str,
+        arity: usize,
+        result: Option<arcweft_core::awbc::schema::AwbcTypeId>,
+    ) -> AwbcIntrinsicId {
+        if let Some((index, _)) =
+            self.inventory
+                .program
+                .intrinsics
+                .iter()
+                .enumerate()
+                .find(|(_, candidate)| {
+                    self.inventory.string(candidate.public_id) == label
+                        && self
+                            .inventory
+                            .program
+                            .signatures
+                            .get(candidate.signature.index())
+                            .is_some_and(|signature| {
+                                signature.params.len() == arity && signature.result == result
+                            })
+                })
         {
             return AwbcIntrinsicId(table_index(index));
         }
         let id = AwbcIntrinsicId(table_index(self.inventory.program.intrinsics.len()));
         let public_id = self.inventory.intern_string(label);
-        let signature = self.inventory.intern_unit_signature();
+        let signature = self.inventory.intern_signature(
+            vec![self.inventory.dynamic_ty(); arity],
+            result,
+            AwbcEffectSetId(0),
+        );
         self.inventory.program.intrinsics.push(AwbcIntrinsic {
             public_id,
             registry_code: 0,
@@ -795,7 +1010,7 @@ impl<'a> AwbcFlowLowerer<'a> {
     }
 
     fn push_intrinsic_call(&mut self, label: &str, args: Vec<AwbcRegisterId>) {
-        let intrinsic = self.intrinsic(label);
+        let intrinsic = self.intrinsic(label, args.len(), None);
         self.inventory
             .push_instruction(AwbcInstruction::CallIntrinsic {
                 dst: None,
@@ -803,6 +1018,23 @@ impl<'a> AwbcFlowLowerer<'a> {
                 args,
             });
     }
+}
+
+fn patch_branch_else_block(
+    inventory: &mut AwbcInventory,
+    branch_block: AwbcBlockId,
+    else_block: AwbcBlockId,
+) {
+    let Some(block) = inventory.program.blocks.get_mut(branch_block.index()) else {
+        return;
+    };
+    let AwbcTerminator::Branch {
+        else_block: target, ..
+    } = &mut block.terminator
+    else {
+        return;
+    };
+    *target = else_block;
 }
 
 fn entry_target_flow_names(plan: &RuntimePlan) -> BTreeSet<&str> {
