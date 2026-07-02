@@ -1,13 +1,14 @@
 use arcweft_bundle::{ArcweftBundle, BundleFormat};
 use arcweft_player_web::parity::{WebGpuParityFrameOptions, prepare_bundle_parity_frame};
 use arcweft_player_web::report::{WebFrameBounds, WebFrameObservationReport, WebFrameViewport};
+use arcweft_render_wgpu::renderer::StyledParagraphEvidenceFontContext;
 
 #[test]
 fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
     let report = demo_frame_report();
     let complete_report = demo_frame_report_at(2_500);
 
-    assert_eq!(report.schema_version, "arcweft.web_frame_observation.v1");
+    assert_eq!(report.schema_version, "arcweft.web_frame_observation.v3");
     assert_eq!(
         report.viewport,
         WebFrameViewport {
@@ -26,7 +27,8 @@ fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
         dialogue_text(&complete_report),
         "こちらはキャラクターsurfaceの色とフォントを使う行なのだ。波打つ文字と、右上のアニメーション画像も同じフレーム計画で動いているのだ。"
     );
-    assert_eq!(complete_report.text_count, 10);
+    assert_eq!(complete_report.text_count, 4);
+    assert_eq!(complete_report.styled_paragraph_count, 1);
     assert_eq!(
         report
             .images
@@ -94,6 +96,26 @@ fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
     assert!(report.text.iter().any(|text| text.text == "zunda_guide"));
 }
 
+#[test]
+fn web_frame_report_serializes_styled_paragraph_evidence() {
+    let report = demo_frame_report_at(2_500);
+    let paragraph = report
+        .styled_paragraphs
+        .iter()
+        .find(|paragraph| paragraph.text.contains("波打つ文字"))
+        .expect("styled paragraph");
+
+    assert!(!paragraph.line_boxes.is_empty());
+    assert!(!paragraph.glyph_bounds.is_empty());
+    assert!(
+        paragraph
+            .glyph_bounds
+            .iter()
+            .all(|glyph| glyph.style.rgba.len() == 4 && glyph.source_start < glyph.source_end)
+    );
+    serde_json::to_string(&report).expect("serialize v3 report");
+}
+
 fn demo_frame_report() -> WebFrameObservationReport {
     demo_frame_report_at(WebGpuParityFrameOptions::default().visual_time_millis)
 }
@@ -112,7 +134,13 @@ fn demo_frame_report_at(visual_time_millis: u64) -> WebFrameObservationReport {
         },
     )
     .expect("parity frame");
-    WebFrameObservationReport::from_prepared_frame(&prepared)
+    let mut evidence = StyledParagraphEvidenceFontContext::new();
+    evidence
+        .register_font_bytes(include_bytes!("../../../web/assets/arcweft-demo.ttf").to_vec())
+        .expect("font");
+    let paragraph_evidence = evidence.frame_styled_paragraph_layout_evidence(&prepared);
+    WebFrameObservationReport::from_prepared_frame(&prepared, &paragraph_evidence)
+        .expect("frame report")
 }
 
 fn dialogue_text(report: &WebFrameObservationReport) -> String {
@@ -126,5 +154,11 @@ fn dialogue_text(report: &WebFrameObservationReport) -> String {
             )
         })
         .map(|text| text.text.as_str())
+        .chain(report.styled_paragraphs.iter().map(|paragraph| {
+            paragraph
+                .text
+                .get(..paragraph.visible_end.min(paragraph.text.len()))
+                .unwrap_or("")
+        }))
         .collect()
 }

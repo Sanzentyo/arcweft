@@ -10,6 +10,7 @@ arcweft-render-wgpu = { path = "../crates/arcweft-render-wgpu" }
 arcweft-runtime-driver = { path = "../crates/arcweft-runtime-driver" }
 png = "0.18.1"
 pollster = "0.4.0"
+serde_json = "1.0.150"
 wgpu = { version = "29.0.3", default-features = false, features = ["std", "wgsl", "dx12", "metal", "vulkan"] }
 ---
 
@@ -17,12 +18,19 @@ use arcweft_bundle::{ArcweftBundle, BundleFormat};
 use arcweft_player_scene::images::BundleImageCatalog;
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, PreparedFrame, RenderChoiceItem, RenderDialogue,
-    RenderPreferences, RenderScene, RenderViewport, SharedFramePlanner,
+    RenderFontFamily, RenderGlyphTransformKind, RenderPreferences, RenderScene, RenderTextBlock,
+    RenderTextSlant, RenderTextWeight, RenderViewport, SharedFramePlanner,
 };
 use arcweft_render_wgpu::offscreen::SharedOffscreenCapture;
+use arcweft_render_wgpu::renderer::{
+    StyledParagraphEvidenceFontContext, StyledParagraphGlyphBounds,
+    StyledParagraphGlyphTransformEvidence, StyledParagraphLayoutEvidence, StyledParagraphLineBox,
+    StyledParagraphRevealState, StyledParagraphStyleEvidence, StyledParagraphTransformSupport,
+};
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions, BundleStepInput};
 use png::{BitDepth, ColorType, Encoder};
+use serde_json::{Value, json};
 use std::env;
 use std::error::Error;
 use std::fs;
@@ -328,145 +336,197 @@ fn write_frame_report(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let mut json = String::new();
-    json.push_str("{\n");
-    json.push_str("  \"schema_version\": \"arcweft.css_style_native_frame_observation.v2\",\n");
-    json.push_str("  \"checkpoint\": ");
-    push_json_string(&mut json, checkpoint);
-    json.push_str(",\n");
-    json.push_str(&format!(
-        "  \"visual_time_millis\": {visual_time_millis},\n"
-    ));
-    json.push_str("  \"font\": { \"path\": ");
-    push_json_string(&mut json, &font_path.display().to_string());
-    json.push_str(&format!(
-        ", \"byte_len\": {}, \"fnv1a64\": \"{}\" }},\n",
-        font_bytes.len(),
-        fnv1a64_hex(font_bytes)
-    ));
-    json.push_str(&format!(
-        concat!(
-            "  \"viewport\": {{ ",
-            "\"logical_width_milli\": {}, ",
-            "\"logical_height_milli\": {}, ",
-            "\"physical_width\": {}, ",
-            "\"physical_height\": {}, ",
-            "\"scale_factor_milli\": {} }},\n"
-        ),
-        f32_milli(frame.viewport.logical_width),
-        f32_milli(frame.viewport.logical_height),
-        frame.viewport.physical_width,
-        frame.viewport.physical_height,
-        f64_milli(frame.viewport.scale_factor)
-    ));
-    json.push_str(&format!(
-        "  \"rectangle_count\": {},\n  \"image_count\": {},\n  \"text_count\": {},\n  \"styled_paragraph_count\": {},\n  \"choice_count\": {},\n",
-        frame.rectangles.len(),
-        frame.images.len(),
-        frame.text.len() + frame.styled_paragraphs.len(),
-        frame.styled_paragraphs.len(),
-        frame.choices.len()
-    ));
-    json.push_str("  \"text\": [\n");
-    for (index, text) in frame.text.iter().enumerate() {
-        json.push_str("    { \"text\": ");
-        push_json_string(&mut json, &text.text);
-        json.push_str(&format!(
-            concat!(
-                ", \"bounds\": {{ ",
-                "\"x_milli\": {}, ",
-                "\"y_milli\": {}, ",
-                "\"width_milli\": {}, ",
-                "\"height_milli\": {} }}, ",
-                "\"font_size_milli\": {}, ",
-                "\"line_height_milli\": {}, ",
-                "\"rgba\": [{}, {}, {}, {}] }}"
-            ),
-            f32_milli(text.bounds.x),
-            f32_milli(text.bounds.y),
-            f32_milli(text.bounds.width),
-            f32_milli(text.bounds.height),
-            f32_milli(text.font_size),
-            f32_milli(text.line_height),
-            text.rgba[0],
-            text.rgba[1],
-            text.rgba[2],
-            text.rgba[3]
-        ));
-        if index + 1 != frame.text.len() {
-            json.push(',');
-        }
-        json.push('\n');
-    }
-    json.push_str("  ],\n");
-    json.push_str("  \"styled_paragraphs\": [\n");
-    for (index, paragraph) in frame.styled_paragraphs.iter().enumerate() {
-        json.push_str("    { \"text\": ");
-        push_json_string(&mut json, &paragraph.text);
-        json.push_str(&format!(
-            concat!(
-                ", \"bounds\": {{ ",
-                "\"x_milli\": {}, ",
-                "\"y_milli\": {}, ",
-                "\"width_milli\": {}, ",
-                "\"height_milli\": {} }}, ",
-                "\"visible_end\": {}, ",
-                "\"span_count\": {}, ",
-                "\"spans\": ["
-            ),
-            f32_milli(paragraph.bounds.x),
-            f32_milli(paragraph.bounds.y),
-            f32_milli(paragraph.bounds.width),
-            f32_milli(paragraph.bounds.height),
-            paragraph.reveal.visible_end,
-            paragraph.spans.len()
-        ));
-        for (span_index, span) in paragraph.spans.iter().enumerate() {
-            json.push_str(&format!(
-                concat!(
-                    "{{ \"start\": {}, \"end\": {}, ",
-                    "\"font_size_milli\": {}, ",
-                    "\"line_height_milli\": {}, ",
-                    "\"rgba\": [{}, {}, {}, {}] }}"
-                ),
-                span.range.start,
-                span.range.end,
-                f32_milli(span.style.font_size),
-                f32_milli(span.style.line_height),
-                span.style.color[0],
-                span.style.color[1],
-                span.style.color[2],
-                span.style.color[3]
-            ));
-            if span_index + 1 != paragraph.spans.len() {
-                json.push_str(", ");
-            }
-        }
-        json.push_str("] }");
-        if index + 1 != frame.styled_paragraphs.len() {
-            json.push(',');
-        }
-        json.push('\n');
-    }
-    json.push_str("  ]\n}\n");
-    fs::write(path, json)?;
+    let mut evidence_context = StyledParagraphEvidenceFontContext::new();
+    evidence_context.register_font_bytes(font_bytes.to_vec())?;
+    let paragraph_evidence = evidence_context.frame_styled_paragraph_layout_evidence(frame);
+    let report = json!({
+        "schema_version": "arcweft.css_style_native_frame_observation.v3",
+        "checkpoint": checkpoint,
+        "visual_time_millis": visual_time_millis,
+        "font": {
+            "path": font_path.display().to_string(),
+            "byte_len": font_bytes.len(),
+            "fnv1a64": fnv1a64_hex(font_bytes),
+        },
+        "viewport": {
+            "logical_width_milli": f32_milli(frame.viewport.logical_width),
+            "logical_height_milli": f32_milli(frame.viewport.logical_height),
+            "physical_width": frame.viewport.physical_width,
+            "physical_height": frame.viewport.physical_height,
+            "scale_factor_milli": f64_milli(frame.viewport.scale_factor),
+        },
+        "rectangle_count": frame.rectangles.len(),
+        "image_count": frame.images.len(),
+        "text_count": frame.text.len() + frame.styled_paragraphs.len(),
+        "styled_paragraph_count": frame.styled_paragraphs.len(),
+        "choice_count": frame.choices.len(),
+        "text": frame.text.iter().map(text_json).collect::<Vec<_>>(),
+        "styled_paragraphs": frame.styled_paragraphs.iter().zip(&paragraph_evidence).map(
+            |(paragraph, evidence)| styled_paragraph_json(paragraph, evidence)
+        ).collect::<Vec<_>>(),
+    });
+    fs::write(path, format!("{}\n", serde_json::to_string_pretty(&report)?))?;
     Ok(())
 }
 
-fn push_json_string(output: &mut String, value: &str) {
-    output.push('"');
-    for ch in value.chars() {
-        match ch {
-            '"' => output.push_str("\\\""),
-            '\\' => output.push_str("\\\\"),
-            '\n' => output.push_str("\\n"),
-            '\r' => output.push_str("\\r"),
-            '\t' => output.push_str("\\t"),
-            ch if ch.is_control() => output.push_str(&format!("\\u{:04x}", u32::from(ch))),
-            ch => output.push(ch),
-        }
+fn text_json(text: &RenderTextBlock) -> Value {
+    json!({
+        "text": text.text,
+        "bounds": bounds_json_values(text.bounds.x, text.bounds.y, text.bounds.width, text.bounds.height),
+        "font_size_milli": f32_milli(text.font_size),
+        "line_height_milli": f32_milli(text.line_height),
+        "rgba": text.rgba,
+    })
+}
+
+fn styled_paragraph_json(
+    paragraph: &arcweft_render_wgpu::geometry::RenderStyledParagraph,
+    evidence: &StyledParagraphLayoutEvidence,
+) -> Value {
+    let line_boxes = evidence
+        .line_boxes
+        .iter()
+        .map(line_box_json)
+        .collect::<Vec<_>>();
+    let glyph_bounds = evidence
+        .glyph_bounds
+        .iter()
+        .map(glyph_bounds_json)
+        .collect::<Vec<_>>();
+    let glyph_transforms = evidence
+        .glyph_transforms
+        .iter()
+        .map(glyph_transform_json)
+        .collect::<Vec<_>>();
+    json!({
+        "text": paragraph.text,
+        "bounds": bounds_json_values(evidence.bounds.x, evidence.bounds.y, evidence.bounds.width, evidence.bounds.height),
+        "text_len": evidence.text_len,
+        "visible_end": evidence.visible_end,
+        "default_style": style_evidence_json(&evidence.default_style),
+        "span_count": evidence.spans.len(),
+        "line_box_count": line_boxes.len(),
+        "glyph_count": glyph_bounds.len(),
+        "glyph_transform_count": glyph_transforms.len(),
+        "transform_support": transform_support_label(evidence.transform_support),
+        "spans": evidence.spans.iter().map(|span| {
+            let style = style_evidence_json(&span.style);
+            json!({
+                "start": span.range.start,
+                "end": span.range.end,
+                "node_index": span.node_index,
+                "font_size_milli": f32_milli(span.style.font_size),
+                "line_height_milli": f32_milli(span.style.line_height),
+                "rgba": span.style.rgba,
+                "style": style,
+            })
+        }).collect::<Vec<_>>(),
+        "line_boxes": line_boxes,
+        "glyph_bounds": glyph_bounds,
+        "glyph_transforms": glyph_transforms,
+    })
+}
+
+fn line_box_json(line: &StyledParagraphLineBox) -> Value {
+    json!({
+        "line_index": line.line_index,
+        "bounds": bounds_json_values(line.bounds.x, line.bounds.y, line.bounds.width, line.bounds.height),
+    })
+}
+
+fn glyph_bounds_json(glyph: &StyledParagraphGlyphBounds) -> Value {
+    json!({
+        "source_start": glyph.source_range.start,
+        "source_end": glyph.source_range.end,
+        "line_index": glyph.line_index,
+        "bounds": bounds_json_values(glyph.bounds.x, glyph.bounds.y, glyph.bounds.width, glyph.bounds.height),
+        "visible": glyph.visible,
+        "reveal_state": reveal_state_label(glyph.reveal_state),
+        "style": style_evidence_json(&glyph.style),
+        "glyph_transform": glyph.glyph_transform.as_ref().map(glyph_transform_json),
+    })
+}
+
+fn glyph_transform_json(transform: &StyledParagraphGlyphTransformEvidence) -> Value {
+    json!({
+        "source_start": transform.range.start,
+        "source_end": transform.range.end,
+        "node_index": transform.node_index,
+        "kind": glyph_transform_kind_label(transform.motion.kind),
+        "amplitude_milli": f32_milli(transform.motion.amplitude),
+        "frequency_milli": f32_milli(transform.motion.frequency),
+        "sampled_offset_y_milli": f32_milli(transform.sampled_offset_y),
+        "rendered": transform.rendered,
+        "support": "metadata_only_unsupported",
+    })
+}
+
+fn style_evidence_json(style: &StyledParagraphStyleEvidence) -> Value {
+    json!({
+        "font_size_milli": f32_milli(style.font_size),
+        "line_height_milli": f32_milli(style.line_height),
+        "rgba": style.rgba,
+        "font_family": font_family_label(&style.font_family),
+        "weight": text_weight_label(style.weight),
+        "slant": text_slant_label(style.slant),
+    })
+}
+
+fn bounds_json_values(x: f32, y: f32, width: f32, height: f32) -> Value {
+    json!({
+        "x_milli": f32_milli(x),
+        "y_milli": f32_milli(y),
+        "width_milli": f32_milli(width),
+        "height_milli": f32_milli(height),
+    })
+}
+
+fn font_family_label(family: &RenderFontFamily) -> &str {
+    match family {
+        RenderFontFamily::Serif => "serif",
+        RenderFontFamily::SansSerif => "sans_serif",
+        RenderFontFamily::Monospace => "monospace",
+        RenderFontFamily::Cursive => "cursive",
+        RenderFontFamily::Fantasy => "fantasy",
+        RenderFontFamily::Named(name) => name.as_str(),
     }
-    output.push('"');
+}
+
+fn text_weight_label(weight: RenderTextWeight) -> &'static str {
+    match weight {
+        RenderTextWeight::Regular => "regular",
+        RenderTextWeight::Bold => "bold",
+    }
+}
+
+fn text_slant_label(slant: RenderTextSlant) -> &'static str {
+    match slant {
+        RenderTextSlant::Upright => "upright",
+        RenderTextSlant::Italic => "italic",
+    }
+}
+
+fn reveal_state_label(state: StyledParagraphRevealState) -> &'static str {
+    match state {
+        StyledParagraphRevealState::Visible => "visible",
+        StyledParagraphRevealState::PartiallyVisible => "partially_visible",
+        StyledParagraphRevealState::Hidden => "hidden",
+    }
+}
+
+fn transform_support_label(support: StyledParagraphTransformSupport) -> &'static str {
+    match support {
+        StyledParagraphTransformSupport::NoTransforms => "no_transforms",
+        StyledParagraphTransformSupport::MetadataOnlyUnsupported => "metadata_only_unsupported",
+    }
+}
+
+fn glyph_transform_kind_label(kind: RenderGlyphTransformKind) -> &'static str {
+    match kind {
+        RenderGlyphTransformKind::Wave => "wave",
+        RenderGlyphTransformKind::Shake => "shake",
+        RenderGlyphTransformKind::Jitter => "jitter",
+    }
 }
 
 fn f32_milli(value: f32) -> i64 {

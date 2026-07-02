@@ -1,8 +1,8 @@
 use crate::convert::{pixel_ceil_as_i32, pixel_floor_as_i32};
 use crate::geometry::{
-    PaintRect, PreparedFrame, PreparedUiScene, RenderFontFamily, RenderImage,
-    RenderStyledParagraph, RenderStyledTextSpan, RenderTextBlock, RenderTextSlant, RenderTextStyle,
-    RenderTextWeight,
+    PaintRect, PreparedFrame, PreparedUiScene, RenderFontFamily, RenderGlyphMotion,
+    RenderGlyphTransformSpan, RenderImage, RenderStyledParagraph, RenderStyledTextSpan,
+    RenderTextBlock, RenderTextSlant, RenderTextStyle, RenderTextWeight,
 };
 use crate::ui_compositor::{UiCompositor, UiCompositorError, UiCompositorFrame};
 use crate::ui_direct_renderer::{WgpuPreparedUiMaskTextureProvider, WgpuUiDirectPrimitiveRenderer};
@@ -15,6 +15,7 @@ use glyphon::{
     Attrs, Buffer, Cache, Color, Family, FontSystem, Metrics, Resolution, Shaping, Style,
     SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer, Viewport, Weight,
 };
+use num_traits::ToPrimitive;
 use std::borrow::Cow;
 use thiserror::Error;
 use wgpu::util::DeviceExt;
@@ -112,6 +113,16 @@ impl SharedRenderer {
         self.registered_font_bytes = self.registered_font_bytes.saturating_add(bytes.len());
         self.font_system.db_mut().load_font_data(bytes);
         Ok(())
+    }
+
+    /// Extracts renderer-owned styled paragraph layout evidence with the same
+    /// registered font system that prepares text for rendering.
+    #[must_use]
+    pub fn frame_styled_paragraph_layout_evidence(
+        &mut self,
+        frame: &PreparedFrame,
+    ) -> Vec<StyledParagraphLayoutEvidence> {
+        frame_styled_paragraph_layout_evidence(&mut self.font_system, frame)
     }
 
     /// Renders one prepared Arcweft frame into a caller-supplied target.
@@ -555,20 +566,94 @@ fn scale_text_bounds(bounds: HitRect, scale_factor: f32) -> TextBounds {
     }
 }
 
-/// Paragraph-wide layout evidence consumed by seq06.10 raster parity.
+/// Font context used by tools/adapters that need renderer-owned paragraph
+/// evidence without owning a `SharedRenderer` instance.
+///
+/// The context is Sans I/O. Callers provide already-loaded font bytes.
+#[derive(Debug)]
+pub struct StyledParagraphEvidenceFontContext {
+    font_system: FontSystem,
+}
+
+impl StyledParagraphEvidenceFontContext {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            font_system: FontSystem::new(),
+        }
+    }
+
+    pub fn register_font_bytes(&mut self, bytes: Vec<u8>) -> Result<(), SharedRendererError> {
+        if bytes.is_empty() {
+            return Err(SharedRendererError::EmptyFont);
+        }
+        self.font_system.db_mut().load_font_data(bytes);
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn frame_styled_paragraph_layout_evidence(
+        &mut self,
+        frame: &PreparedFrame,
+    ) -> Vec<StyledParagraphLayoutEvidence> {
+        frame_styled_paragraph_layout_evidence(&mut self.font_system, frame)
+    }
+
+    #[must_use]
+    pub fn styled_paragraph_layout_evidence(
+        &mut self,
+        paragraph: &RenderStyledParagraph,
+    ) -> StyledParagraphLayoutEvidence {
+        styled_paragraph_layout_evidence(&mut self.font_system, paragraph)
+    }
+}
+
+impl Default for StyledParagraphEvidenceFontContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn frame_styled_paragraph_layout_evidence(
+    font_system: &mut FontSystem,
+    frame: &PreparedFrame,
+) -> Vec<StyledParagraphLayoutEvidence> {
+    frame
+        .styled_paragraphs
+        .iter()
+        .map(|paragraph| styled_paragraph_layout_evidence(font_system, paragraph))
+        .collect()
+}
+
+/// Paragraph-wide renderer-owned layout evidence consumed by text raster parity.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StyledParagraphLayoutEvidence {
+    pub bounds: HitRect,
+    pub text_len: usize,
+    pub visible_end: usize,
+    pub default_style: StyledParagraphStyleEvidence,
     pub spans: Vec<StyledParagraphSpanEvidence>,
     pub line_boxes: Vec<StyledParagraphLineBox>,
     pub glyph_bounds: Vec<StyledParagraphGlyphBounds>,
+    pub glyph_transforms: Vec<StyledParagraphGlyphTransformEvidence>,
+    pub transform_support: StyledParagraphTransformSupport,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StyledParagraphStyleEvidence {
+    pub font_size: f32,
+    pub line_height: f32,
+    pub rgba: [u8; 4],
+    pub font_family: RenderFontFamily,
+    pub weight: RenderTextWeight,
+    pub slant: RenderTextSlant,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct StyledParagraphSpanEvidence {
     pub range: RichTextRange,
-    pub font_size: f32,
-    pub line_height: f32,
-    pub rgba: [u8; 4],
+    pub node_index: usize,
+    pub style: StyledParagraphStyleEvidence,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -577,11 +662,43 @@ pub struct StyledParagraphLineBox {
     pub bounds: HitRect,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StyledParagraphRevealState {
+    Visible,
+    PartiallyVisible,
+    Hidden,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StyledParagraphTransformSupport {
+    NoTransforms,
+    MetadataOnlyUnsupported,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StyledParagraphGlyphTransformRenderSupport {
+    MetadataOnlyUnsupported,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StyledParagraphGlyphTransformEvidence {
+    pub range: RichTextRange,
+    pub node_index: usize,
+    pub motion: RenderGlyphMotion,
+    pub sampled_offset_y: f32,
+    pub rendered: bool,
+    pub render_support: StyledParagraphGlyphTransformRenderSupport,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct StyledParagraphGlyphBounds {
+    pub line_index: usize,
     pub source_range: RichTextRange,
     pub bounds: HitRect,
     pub visible: bool,
+    pub reveal_state: StyledParagraphRevealState,
+    pub style: StyledParagraphStyleEvidence,
+    pub glyph_transform: Option<StyledParagraphGlyphTransformEvidence>,
 }
 
 pub fn styled_paragraph_layout_evidence(
@@ -589,6 +706,8 @@ pub fn styled_paragraph_layout_evidence(
     paragraph: &RenderStyledParagraph,
 ) -> StyledParagraphLayoutEvidence {
     let buffer = styled_paragraph_buffer(font_system, paragraph);
+    let visible_end = paragraph.reveal.visible_end.min(paragraph.text.len());
+    let seconds = visual_seconds(paragraph.visual_time_millis);
     let mut line_boxes = Vec::new();
     let mut glyph_bounds = Vec::new();
     for (line_index, run) in buffer.layout_runs().enumerate() {
@@ -601,31 +720,131 @@ pub fn styled_paragraph_layout_evidence(
                 run.line_height,
             ),
         });
-        glyph_bounds.extend(run.glyphs.iter().map(|glyph| StyledParagraphGlyphBounds {
-            source_range: RichTextRange::new(glyph.start, glyph.end),
-            bounds: HitRect::new(
-                paragraph.bounds.x + glyph.x,
-                paragraph.bounds.y + run.line_top,
-                glyph.w,
-                run.line_height,
-            ),
-            visible: glyph.start < paragraph.reveal.visible_end,
+        glyph_bounds.extend(run.glyphs.iter().map(|glyph| {
+            let source_range = RichTextRange::new(glyph.start, glyph.end);
+            let reveal_state = reveal_state(source_range, visible_end);
+            StyledParagraphGlyphBounds {
+                line_index,
+                source_range,
+                bounds: HitRect::new(
+                    paragraph.bounds.x + glyph.x,
+                    paragraph.bounds.y + run.line_top,
+                    glyph.w,
+                    run.line_height,
+                ),
+                visible: !matches!(reveal_state, StyledParagraphRevealState::Hidden),
+                reveal_state,
+                style: style_evidence(style_for_source_range(paragraph, source_range)),
+                glyph_transform: glyph_transform_evidence_for_range(
+                    paragraph,
+                    source_range,
+                    seconds,
+                ),
+            }
         }));
     }
+    let glyph_transforms = paragraph
+        .glyph_transforms
+        .iter()
+        .map(|transform| glyph_transform_span_evidence(transform, seconds))
+        .collect::<Vec<_>>();
     StyledParagraphLayoutEvidence {
+        bounds: paragraph.bounds,
+        text_len: paragraph.text.len(),
+        visible_end,
+        default_style: style_evidence(&paragraph.default_style),
         spans: paragraph.spans.iter().map(span_evidence).collect(),
         line_boxes,
         glyph_bounds,
+        transform_support: if glyph_transforms.is_empty() {
+            StyledParagraphTransformSupport::NoTransforms
+        } else {
+            StyledParagraphTransformSupport::MetadataOnlyUnsupported
+        },
+        glyph_transforms,
     }
 }
 
 fn span_evidence(span: &RenderStyledTextSpan) -> StyledParagraphSpanEvidence {
     StyledParagraphSpanEvidence {
         range: span.range,
-        font_size: span.style.font_size,
-        line_height: span.style.line_height,
-        rgba: span.style.color,
+        node_index: span.node_index,
+        style: style_evidence(&span.style),
     }
+}
+
+fn style_evidence(style: &RenderTextStyle) -> StyledParagraphStyleEvidence {
+    StyledParagraphStyleEvidence {
+        font_size: style.font_size,
+        line_height: style.line_height,
+        rgba: style.color,
+        font_family: style.font_family.clone(),
+        weight: style.weight,
+        slant: style.slant,
+    }
+}
+
+fn style_for_source_range(
+    paragraph: &RenderStyledParagraph,
+    range: RichTextRange,
+) -> &RenderTextStyle {
+    let byte = range.start.min(paragraph.text.len().saturating_sub(1));
+    paragraph
+        .spans
+        .iter()
+        .find(|span| span.range.start <= byte && byte < span.range.end)
+        .map_or(&paragraph.default_style, |span| &span.style)
+}
+
+fn reveal_state(range: RichTextRange, visible_end: usize) -> StyledParagraphRevealState {
+    if range.end <= visible_end {
+        StyledParagraphRevealState::Visible
+    } else if range.start >= visible_end {
+        StyledParagraphRevealState::Hidden
+    } else {
+        StyledParagraphRevealState::PartiallyVisible
+    }
+}
+
+fn glyph_transform_evidence_for_range(
+    paragraph: &RenderStyledParagraph,
+    range: RichTextRange,
+    seconds: f32,
+) -> Option<StyledParagraphGlyphTransformEvidence> {
+    paragraph
+        .glyph_transforms
+        .iter()
+        .find(|transform| ranges_intersect(transform.range, range))
+        .map(|transform| StyledParagraphGlyphTransformEvidence {
+            range,
+            node_index: transform.node_index,
+            motion: transform.motion,
+            sampled_offset_y: transform.motion.offset_y(seconds, range.start),
+            rendered: false,
+            render_support: StyledParagraphGlyphTransformRenderSupport::MetadataOnlyUnsupported,
+        })
+}
+
+fn glyph_transform_span_evidence(
+    transform: &RenderGlyphTransformSpan,
+    seconds: f32,
+) -> StyledParagraphGlyphTransformEvidence {
+    StyledParagraphGlyphTransformEvidence {
+        range: transform.range,
+        node_index: transform.node_index,
+        motion: transform.motion,
+        sampled_offset_y: transform.motion.offset_y(seconds, transform.range.start),
+        rendered: false,
+        render_support: StyledParagraphGlyphTransformRenderSupport::MetadataOnlyUnsupported,
+    }
+}
+
+fn ranges_intersect(left: RichTextRange, right: RichTextRange) -> bool {
+    left.start < right.end && right.start < left.end
+}
+
+fn visual_seconds(visual_time_millis: u64) -> f32 {
+    visual_time_millis.to_f32().unwrap_or(f32::MAX) / 1_000.0
 }
 
 fn rectangle_vertex_buffer(

@@ -1,0 +1,109 @@
+{
+  "schema_version": "arcweft.web_frame_observation.v3",
+  "checkpoint": "default",
+  "visual_time_millis": 9000,
+  "viewport": {
+    "logical_width_milli": 1280000,
+    "logical_height_milli": 720000,
+    "physical_width": 1280,
+    "physical_height": 720,
+    "scale_factor_milli": 1000
+  },
+  "rectangle_count": 2,
+  "image_count": 0,
+  "text_count": 2,
+  "styled_paragraph_count": 1,
+  "choice_count": 0,
+  "text": [
+    {
+      "text": "Guide",
+      "bounds": { "x_milli": 92000, "y_milli": 482000, "width_milli": 1096000, "height_milli": 28000 },
+      "font_size_milli": 20000,
+      "line_height_milli": 26000,
+      "rgba": [245, 245, 245, 255]
+    }
+  ],
+  "styled_paragraphs": [
+    {
+      "text": "CSS-like style parity evidence",
+      "bounds": { "x_milli": 92000, "y_milli": 520000, "width_milli": 1096000, "height_milli": 124000 },
+      "text_len": 30,
+      "visible_end": 30,
+      "default_style": {
+        "font_size_milli": 25000,
+        "line_height_milli": 34000,
+        "rgba": [245, 245, 245, 255],
+        "font_family": "sans_serif",
+        "weight": "regular",
+        "slant": "upright"
+      },
+      "span_count": 1,
+      "line_box_count": 1,
+      "glyph_count": 2,
+      "glyph_transform_count": 0,
+      "transform_support": "no_transforms",
+      "spans": [
+        {
+          "start": 0,
+          "end": 30,
+          "node_index": 0,
+          "font_size_milli": 25000,
+          "line_height_milli": 34000,
+          "rgba": [245, 245, 245, 255],
+          "style": {
+            "font_size_milli": 25000,
+            "line_height_milli": 34000,
+            "rgba": [245, 245, 245, 255],
+            "font_family": "sans_serif",
+            "weight": "regular",
+            "slant": "upright"
+          }
+        }
+      ],
+      "line_boxes": [
+        {
+          "line_index": 0,
+          "bounds": { "x_milli": 92000, "y_milli": 520000, "width_milli": 310000, "height_milli": 34000 }
+        }
+      ],
+      "glyph_bounds": [
+        {
+          "source_start": 0,
+          "source_end": 3,
+          "line_index": 0,
+          "bounds": { "x_milli": 92000, "y_milli": 520000, "width_milli": 39000, "height_milli": 34000 },
+          "visible": true,
+          "reveal_state": "visible",
+          "style": {
+            "font_size_milli": 25000,
+            "line_height_milli": 34000,
+            "rgba": [245, 245, 245, 255],
+            "font_family": "sans_serif",
+            "weight": "regular",
+            "slant": "upright"
+          },
+          "glyph_transform": null
+        },
+        {
+          "source_start": 3,
+          "source_end": 4,
+          "line_index": 0,
+          "bounds": { "x_milli": 131000, "y_milli": 520000, "width_milli": 9000, "height_milli": 34000 },
+          "visible": true,
+          "reveal_state": "visible",
+          "style": {
+            "font_size_milli": 25000,
+            "line_height_milli": 34000,
+            "rgba": [245, 245, 245, 255],
+            "font_family": "sans_serif",
+            "weight": "regular",
+            "slant": "upright"
+          },
+          "glyph_transform": null
+        }
+      ],
+      "glyph_transforms": []
+    }
+  ],
+  "choices": []
+}

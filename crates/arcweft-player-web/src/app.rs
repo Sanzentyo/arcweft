@@ -416,14 +416,20 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
         .sync_prepared_frame(&prepared, WebRuntimeTextInputFocusReason::RedrawRefresh)
         .map_err(|error| WebPlayerError::TextInput(error.to_string()))?;
     drain_text_input_edits(state, &prepared)?;
-    let frame_report = WebFrameObservationReport::from_prepared_frame(&prepared);
-    let frame_json = serde_json::to_string(&frame_report)
-        .map_err(|error| WebPlayerError::Report(error.to_string()))?;
-    emit_event("arcweft-frame-observation", frame_json);
 
     let GpuState::Ready(gpu) = &mut state.gpu else {
         return Ok(());
     };
+    let paragraph_evidence = gpu
+        .renderer
+        .frame_styled_paragraph_layout_evidence(&prepared);
+    let frame_report =
+        WebFrameObservationReport::from_prepared_frame(&prepared, &paragraph_evidence)
+            .map_err(|error| WebPlayerError::Report(error.to_string()))?;
+    let frame_json = serde_json::to_string(&frame_report)
+        .map_err(|error| WebPlayerError::Report(error.to_string()))?;
+    emit_event("arcweft-frame-observation", frame_json);
+
     gpu.host.resize(browser_viewport.physical_size);
     let health = gpu.host.health();
     if let Some(error) = health.device_lost.or(health.uncaptured_error) {

@@ -199,7 +199,7 @@ async function assertCanvasOnlySample(page, checkpoint) {
     .count();
   expect(domGameText === 0, "DOM game text renderer is present");
   const frame = await page.evaluate(() => window.__arcweftLastFrameObservation);
-  expect(frame?.schema_version === "arcweft.web_frame_observation.v2", "bad frame schema");
+  expect(frame?.schema_version === "arcweft.web_frame_observation.v3", "bad frame schema");
   expect(frame.image_count === 0, "CSS style parity sample should have no image assets");
   expect(frame.text_count >= 2, `expected styled text evidence, got ${frame.text_count}`);
   expect(
@@ -212,6 +212,19 @@ async function assertCanvasOnlySample(page, checkpoint) {
     expect(text.includes("Bold"), `missing bold sample text for ${checkpoint}`);
     expect(text.includes("color"), `missing color sample text for ${checkpoint}`);
   }
+  const paragraph = frame.styled_paragraphs?.[0];
+  expect(paragraph?.line_boxes?.length > 0, `missing styled paragraph line boxes for ${checkpoint}`);
+  expect(paragraph?.glyph_bounds?.length > 0, `missing styled paragraph glyph bounds for ${checkpoint}`);
+  expect(
+    paragraph.glyph_bounds.every((glyph) =>
+      Number.isInteger(glyph.source_start) &&
+      Number.isInteger(glyph.source_end) &&
+      glyph.bounds &&
+      typeof glyph.reveal_state === "string" &&
+      glyph.style?.rgba?.length === 4
+    ),
+    `bad styled paragraph glyph evidence for ${checkpoint}`,
+  );
 }
 
 async function fontFingerprint() {

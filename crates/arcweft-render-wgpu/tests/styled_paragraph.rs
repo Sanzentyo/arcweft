@@ -8,7 +8,9 @@ use arcweft_render_wgpu::geometry::{
     RenderGlyphTransformKind, RenderPreferences, RenderScene, RenderTextWeight, RenderViewport,
     SharedFramePlanner,
 };
-use arcweft_render_wgpu::renderer::styled_paragraph_layout_evidence;
+use arcweft_render_wgpu::renderer::{
+    StyledParagraphRevealState, StyledParagraphTransformSupport, styled_paragraph_layout_evidence,
+};
 use glyphon::FontSystem;
 use std::collections::BTreeMap;
 
@@ -245,6 +247,88 @@ fn layout_evidence_wraps_across_style_boundaries() {
             .iter()
             .any(|glyph| glyph.source_range.start >= split)
     );
+}
+
+#[test]
+fn layout_evidence_records_reveal_state_per_glyph() {
+    let text = "Reveal slowly across glyphs".to_owned();
+    let mut params = BTreeMap::new();
+    params.insert("cps".to_owned(), RichTextParam::Int { value: 8 });
+    let effect = RichTextEffectDescriptor {
+        id: "typewriter".to_owned(),
+        params,
+        target: RichTextEffectTarget::default(),
+        phase: RichTextEffectPhase::GlyphMask,
+        state_scope: RichTextStateScope::default(),
+    };
+    let mut text_run = run(0, text.len(), 0, Vec::new());
+    text_run.presentation.effects.push(effect);
+    let dialogue = RenderDialogue {
+        speaker: "Guide".to_owned(),
+        text,
+        base_styles: Vec::new(),
+        text_runs: vec![text_run],
+    };
+    let mut test_scene = scene(dialogue);
+    test_scene.visual_time_millis = 250;
+
+    let frame = SharedFramePlanner::prepare(&test_scene).expect("frame plans");
+    let paragraph = frame.styled_paragraphs.first().expect("styled paragraph");
+    let mut font_system = FontSystem::new();
+    let evidence = styled_paragraph_layout_evidence(&mut font_system, paragraph);
+
+    assert!(evidence.visible_end < evidence.text_len);
+    assert!(
+        evidence
+            .glyph_bounds
+            .iter()
+            .any(|glyph| glyph.reveal_state == StyledParagraphRevealState::Visible)
+    );
+    assert!(
+        evidence
+            .glyph_bounds
+            .iter()
+            .any(|glyph| glyph.reveal_state == StyledParagraphRevealState::Hidden)
+    );
+}
+
+#[test]
+fn layout_evidence_records_transform_metadata_without_render_support() {
+    let text = "Wavy words stay deterministic".to_owned();
+    let mut params = BTreeMap::new();
+    params.insert(
+        "amp".to_owned(),
+        RichTextParam::Milli {
+            value: Milli(6_000),
+        },
+    );
+    let effect = RichTextEffectDescriptor {
+        id: "wave".to_owned(),
+        params,
+        target: RichTextEffectTarget::default(),
+        phase: RichTextEffectPhase::GlyphTransform,
+        state_scope: RichTextStateScope::default(),
+    };
+    let mut text_run = run(0, text.len(), 0, Vec::new());
+    text_run.presentation.effects.push(effect);
+    let dialogue = RenderDialogue {
+        speaker: "Guide".to_owned(),
+        text,
+        base_styles: Vec::new(),
+        text_runs: vec![text_run],
+    };
+
+    let frame = SharedFramePlanner::prepare(&scene(dialogue)).expect("frame plans");
+    let paragraph = frame.styled_paragraphs.first().expect("styled paragraph");
+    let mut font_system = FontSystem::new();
+    let evidence = styled_paragraph_layout_evidence(&mut font_system, paragraph);
+
+    assert_eq!(
+        evidence.transform_support,
+        StyledParagraphTransformSupport::MetadataOnlyUnsupported
+    );
+    assert_eq!(evidence.glyph_transforms.len(), 1);
+    assert!(!evidence.glyph_transforms[0].rendered);
 }
 
 #[test]

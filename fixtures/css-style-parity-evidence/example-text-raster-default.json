@@ -1,0 +1,32 @@
+{
+  "schema_version": "arcweft.text_raster_parity.v2",
+  "checkpoint": "default",
+  "contract": "typed paragraph glyph evidence plus text-mask/layout identity with backend-specific antialias allowance",
+  "passed": true,
+  "failure_reasons": [],
+  "aggregate": {
+    "max_mask_xor_ratio": 0.0,
+    "max_bbox_delta_px": 0.0,
+    "max_centroid_delta_px": 0.0,
+    "max_coverage_delta_ratio": 0.0,
+    "layout_mismatch_count": 0,
+    "failed_run_count": 0
+  },
+  "runs": [
+    {
+      "index": 0,
+      "text": "CSS",
+      "source": {
+        "kind": "styled_paragraph_glyph",
+        "paragraph_index": 0,
+        "line_index": 0,
+        "source_start": 0,
+        "source_end": 3,
+        "visible": true,
+        "reveal_state": "visible"
+      },
+      "passed": true,
+      "failure_reasons": []
+    }
+  ]
+}

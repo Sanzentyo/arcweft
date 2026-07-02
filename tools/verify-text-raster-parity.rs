@@ -310,6 +310,14 @@ impl FrameObservation {
             .max(self.text_runs_for_report().len())
     }
 
+    fn strict_evidence_errors(&self, label: &str) -> Vec<String> {
+        self.styled_paragraphs
+            .iter()
+            .enumerate()
+            .flat_map(|(index, paragraph)| paragraph.strict_evidence_errors(label, index))
+            .collect()
+    }
+
     fn text_runs_for_report(&self) -> Vec<FrameText> {
         self.text
             .iter()
@@ -317,7 +325,8 @@ impl FrameObservation {
             .chain(
                 self.styled_paragraphs
                     .iter()
-                    .flat_map(FrameStyledParagraph::text_runs_for_report),
+                    .enumerate()
+                    .flat_map(|(index, paragraph)| paragraph.text_runs_for_report(index)),
             )
             .collect()
     }
@@ -339,56 +348,320 @@ struct FrameText {
     font_size_milli: i64,
     line_height_milli: i64,
     rgba: [u8; 4],
+    #[serde(default = "default_true")]
+    visible: bool,
+    #[serde(skip)]
+    source: FrameTextSource,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 struct FrameStyledParagraph {
     text: String,
     bounds: FrameBounds,
-    #[serde(default)]
+    text_len: usize,
     visible_end: usize,
-    #[serde(default)]
     span_count: usize,
-    #[serde(default)]
     spans: Vec<FrameStyledSpan>,
+    line_box_count: usize,
+    glyph_count: usize,
+    glyph_transform_count: usize,
+    transform_support: String,
+    line_boxes: Vec<FrameStyledLineBox>,
+    glyph_bounds: Vec<FrameStyledGlyph>,
+    glyph_transforms: Vec<FrameStyledGlyphTransform>,
 }
 
 impl FrameStyledParagraph {
-    fn text_runs_for_report(&self) -> Vec<FrameText> {
-        self.spans
+    fn strict_evidence_errors(&self, label: &str, paragraph_index: usize) -> Vec<String> {
+        let mut errors = Vec::new();
+        if self.text_len != self.text.len() {
+            errors.push(format!(
+                "{label} styled paragraph {paragraph_index} text_len {} does not match text byte length {}",
+                self.text_len,
+                self.text.len()
+            ));
+        }
+        if self.visible_end > self.text_len {
+            errors.push(format!(
+                "{label} styled paragraph {paragraph_index} visible_end {} exceeds text_len {}",
+                self.visible_end, self.text_len
+            ));
+        }
+        if self.bounds.width_milli < 0 || self.bounds.height_milli < 0 {
+            errors.push(format!(
+                "{label} styled paragraph {paragraph_index} has negative paragraph bounds"
+            ));
+        }
+        if self.span_count != self.spans.len() {
+            errors.push(format!(
+                "{label} styled paragraph {paragraph_index} span_count {} does not match spans {}",
+                self.span_count,
+                self.spans.len()
+            ));
+        }
+        for (span_index, span) in self.spans.iter().enumerate() {
+            if span.start >= span.end || span.end > self.text_len {
+                errors.push(format!(
+                    "{label} styled paragraph {paragraph_index} span {span_index} has invalid byte range {}..{} for text_len {}",
+                    span.start, span.end, self.text_len
+                ));
+            }
+            if span.font_size_milli != span.style.font_size_milli
+                || span.line_height_milli != span.style.line_height_milli
+                || span.rgba != span.style.rgba
+            {
+                errors.push(format!(
+                    "{label} styled paragraph {paragraph_index} span {span_index} direct style fields diverge from nested style"
+                ));
+            }
+            if span.style.font_family.is_empty() || span.style.weight.is_empty() || span.style.slant.is_empty() {
+                errors.push(format!(
+                    "{label} styled paragraph {paragraph_index} span {span_index} has incomplete style labels"
+                ));
+            }
+            let _node_index = span.node_index;
+        }
+        if self.line_box_count != self.line_boxes.len() {
+            errors.push(format!(
+                "{label} styled paragraph {paragraph_index} line_box_count {} does not match line_boxes {}",
+                self.line_box_count,
+                self.line_boxes.len()
+            ));
+        }
+        for (line_position, line) in self.line_boxes.iter().enumerate() {
+            if line.line_index != line_position {
+                errors.push(format!(
+                    "{label} styled paragraph {paragraph_index} line box {line_position} has line_index {}",
+                    line.line_index
+                ));
+            }
+            if line.bounds.width_milli < 0 || line.bounds.height_milli < 0 {
+                errors.push(format!(
+                    "{label} styled paragraph {paragraph_index} line box {line_position} has negative bounds"
+                ));
+            }
+        }
+        if self.glyph_count != self.glyph_bounds.len() {
+            errors.push(format!(
+                "{label} styled paragraph {paragraph_index} glyph_count {} does not match glyph_bounds {}",
+                self.glyph_count,
+                self.glyph_bounds.len()
+            ));
+        }
+        for (glyph_index, glyph) in self.glyph_bounds.iter().enumerate() {
+            if glyph.line_index >= self.line_boxes.len() && !self.line_boxes.is_empty() {
+                errors.push(format!(
+                    "{label} styled paragraph {paragraph_index} glyph {glyph_index} references missing line {}",
+                    glyph.line_index
+                ));
+            }
+            if glyph.source_start >= glyph.source_end || glyph.source_end > self.text_len {
+                errors.push(format!(
+                    "{label} styled paragraph {paragraph_index} glyph {glyph_index} has invalid byte range {}..{} for text_len {}",
+                    glyph.source_start, glyph.source_end, self.text_len
+                ));
+            }
+            if glyph.style.font_family.is_empty()
+                || glyph.style.weight.is_empty()
+                || glyph.style.slant.is_empty()
+            {
+                errors.push(format!(
+                    "{label} styled paragraph {paragraph_index} glyph {glyph_index} has incomplete style labels"
+                ));
+            }
+            if let Some(transform) = &glyph.glyph_transform {
+                errors.extend(validate_glyph_transform(
+                    transform,
+                    label,
+                    paragraph_index,
+                    glyph_index,
+                    self.text_len,
+                ));
+            }
+        }
+        if self.glyph_transform_count != self.glyph_transforms.len() {
+            errors.push(format!(
+                "{label} styled paragraph {paragraph_index} glyph_transform_count {} does not match glyph_transforms {}",
+                self.glyph_transform_count,
+                self.glyph_transforms.len()
+            ));
+        }
+        for (transform_index, transform) in self.glyph_transforms.iter().enumerate() {
+            errors.extend(validate_glyph_transform(
+                transform,
+                label,
+                paragraph_index,
+                transform_index,
+                self.text_len,
+            ));
+        }
+        if self.glyph_transforms.is_empty() && self.transform_support != "no_transforms" {
+            errors.push(format!(
+                "{label} styled paragraph {paragraph_index} transform_support `{}` does not match empty transform set",
+                self.transform_support
+            ));
+        }
+        if !self.glyph_transforms.is_empty() && self.transform_support != "metadata_only_unsupported" {
+            errors.push(format!(
+                "{label} styled paragraph {paragraph_index} transform_support `{}` does not describe transform metadata",
+                self.transform_support
+            ));
+        }
+        if self.glyph_bounds.is_empty() && !self.text.is_empty() {
+            errors.push(format!(
+                "{label} styled paragraph {paragraph_index} has text but no renderer-owned glyph evidence"
+            ));
+        }
+        if self.line_boxes.is_empty() && !self.text.is_empty() {
+            errors.push(format!(
+                "{label} styled paragraph {paragraph_index} has text but no renderer-owned line evidence"
+            ));
+        }
+        errors
+    }
+
+    fn text_runs_for_report(&self, paragraph_index: usize) -> Vec<FrameText> {
+        self.glyph_bounds
             .iter()
-            .take(self.span_count.max(self.spans.len()))
-            .filter_map(|span| {
-                let start = span.start.min(self.text.len());
-                let end = span.end.min(self.text.len());
-                if start >= end {
-                    return None;
-                }
-                let visible_end = self.visible_end.min(self.text.len());
-                let text = self
-                    .text
-                    .get(start..end.min(visible_end))
-                    .unwrap_or("")
-                    .to_owned();
-                Some(FrameText {
-                    text,
-                    bounds: self.bounds,
-                    font_size_milli: span.font_size_milli,
-                    line_height_milli: span.line_height_milli,
-                    rgba: span.rgba,
-                })
-            })
+            .filter_map(|glyph| self.glyph_text_run_for_report(paragraph_index, glyph))
             .collect()
     }
+
+    fn glyph_text_run_for_report(
+        &self,
+        paragraph_index: usize,
+        glyph: &FrameStyledGlyph,
+    ) -> Option<FrameText> {
+        let start = glyph.source_start.min(self.text.len());
+        let end = glyph.source_end.min(self.text.len());
+        if start >= end {
+            return None;
+        }
+        let text = self.text.get(start..end).unwrap_or("").to_owned();
+        Some(FrameText {
+            text,
+            bounds: glyph.bounds,
+            font_size_milli: glyph.style.font_size_milli,
+            line_height_milli: glyph.style.line_height_milli,
+            rgba: glyph.style.rgba,
+            visible: glyph.visible,
+            source: FrameTextSource {
+                kind: TextRunSourceKind::StyledParagraphGlyph,
+                paragraph_index: Some(paragraph_index),
+                line_index: Some(glyph.line_index),
+                source_start: Some(start),
+                source_end: Some(end),
+                reveal_state: Some(glyph.reveal_state.clone()),
+            },
+        })
+    }
+}
+
+fn validate_glyph_transform(
+    transform: &FrameStyledGlyphTransform,
+    label: &str,
+    paragraph_index: usize,
+    transform_index: usize,
+    text_len: usize,
+) -> Vec<String> {
+    let mut errors = Vec::new();
+    if transform.source_start >= transform.source_end || transform.source_end > text_len {
+        errors.push(format!(
+            "{label} styled paragraph {paragraph_index} glyph transform {transform_index} has invalid byte range {}..{} for text_len {}",
+            transform.source_start, transform.source_end, text_len
+        ));
+    }
+    if transform.kind.is_empty() || transform.support.is_empty() {
+        errors.push(format!(
+            "{label} styled paragraph {paragraph_index} glyph transform {transform_index} has incomplete labels"
+        ));
+    }
+    if transform.rendered && transform.support == "metadata_only_unsupported" {
+        errors.push(format!(
+            "{label} styled paragraph {paragraph_index} glyph transform {transform_index} claims rendered metadata-only support"
+        ));
+    }
+    let _metadata = (
+        transform.node_index,
+        transform.amplitude_milli,
+        transform.frequency_milli,
+        transform.sampled_offset_y_milli,
+    );
+    errors
 }
 
 #[derive(Clone, Debug, Deserialize)]
 struct FrameStyledSpan {
     start: usize,
     end: usize,
+    node_index: usize,
     font_size_milli: i64,
     line_height_milli: i64,
     rgba: [u8; 4],
+    style: FrameTextStyle,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct FrameStyledLineBox {
+    line_index: usize,
+    bounds: FrameBounds,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct FrameStyledGlyph {
+    source_start: usize,
+    source_end: usize,
+    line_index: usize,
+    bounds: FrameBounds,
+    visible: bool,
+    reveal_state: String,
+    style: FrameTextStyle,
+    #[serde(default)]
+    glyph_transform: Option<FrameStyledGlyphTransform>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct FrameTextStyle {
+    font_size_milli: i64,
+    line_height_milli: i64,
+    rgba: [u8; 4],
+    font_family: String,
+    weight: String,
+    slant: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct FrameStyledGlyphTransform {
+    source_start: usize,
+    source_end: usize,
+    node_index: usize,
+    kind: String,
+    amplitude_milli: i64,
+    frequency_milli: i64,
+    sampled_offset_y_milli: i64,
+    rendered: bool,
+    support: String,
+}
+
+#[derive(Clone, Debug, Default)]
+struct FrameTextSource {
+    kind: TextRunSourceKind,
+    paragraph_index: Option<usize>,
+    line_index: Option<usize>,
+    source_start: Option<usize>,
+    source_end: Option<usize>,
+    reveal_state: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum TextRunSourceKind {
+    #[default]
+    TextBlock,
+    StyledParagraphGlyph,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -495,6 +768,7 @@ struct AggregateReport {
 struct TextRunReport {
     index: usize,
     text: String,
+    source: TextRunSourceReport,
     passed: bool,
     failure_reasons: Vec<String>,
     layout: LayoutReport,
@@ -505,6 +779,17 @@ struct TextRunReport {
     bbox_delta_px: Option<f64>,
     centroid_delta_px: Option<f64>,
     coverage_delta_ratio: f64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct TextRunSourceReport {
+    kind: &'static str,
+    paragraph_index: Option<usize>,
+    line_index: Option<usize>,
+    source_start: Option<usize>,
+    source_end: Option<usize>,
+    visible: bool,
+    reveal_state: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -628,6 +913,8 @@ fn compare_text_raster(
     {
         failure_reasons.push("typed viewport evidence differs between native and web".to_owned());
     }
+    failure_reasons.extend(native_frame.strict_evidence_errors("native"));
+    failure_reasons.extend(web_frame.strict_evidence_errors("web"));
 
     let native_runs = native_frame.text_runs_for_report();
     let web_runs = web_frame.text_runs_for_report();
@@ -667,9 +954,9 @@ fn compare_text_raster(
     let aggregate = aggregate_report(&runs);
     let passed = failure_reasons.is_empty();
     TextRasterReport {
-        schema_version: "arcweft.text_raster_parity.v1",
+        schema_version: "arcweft.text_raster_parity.v2",
         checkpoint: args.checkpoint.clone(),
-        contract: "text-mask/layout identity with backend-specific antialias allowance",
+        contract: "typed paragraph glyph evidence plus text-mask/layout identity with backend-specific antialias allowance",
         passed,
         failure_reasons,
         native: capture_summary(&args.native, &args.native_frame, native, native_frame),
@@ -738,7 +1025,8 @@ fn compare_text_run(
     let web_mask = text_mask(web_image, region, web_text.rgba, args.ink_affinity_threshold);
     let comparison = compare_masks(&native_mask, &web_mask);
 
-    let requires_ink = !native_text.text.trim().is_empty() || !web_text.text.trim().is_empty();
+    let requires_ink = (native_text.visible || web_text.visible)
+        && (!native_text.text.trim().is_empty() || !web_text.text.trim().is_empty());
     let mut failure_reasons = Vec::new();
     if !layout.matched {
         failure_reasons.push(format!(
@@ -790,6 +1078,7 @@ fn compare_text_run(
     TextRunReport {
         index,
         text: native_text.text.clone(),
+        source: text_run_source_report(native_text),
         passed: failure_reasons.is_empty(),
         failure_reasons,
         layout,
@@ -819,6 +1108,8 @@ fn compare_layout(
     let max_delta_milli = deltas.into_iter().max().unwrap_or(0);
     let matched = native_text.text == web_text.text
         && native_text.rgba == web_text.rgba
+        && native_text.visible == web_text.visible
+        && native_text.source.same_span(&web_text.source)
         && max_delta_milli <= tolerance_milli;
     LayoutReport {
         matched,
@@ -850,6 +1141,7 @@ fn missing_run_report(index: usize, text: &FrameText, reason: String) -> TextRun
     TextRunReport {
         index,
         text: text.text.clone(),
+        source: text_run_source_report(text),
         passed: false,
         failure_reasons: vec![reason],
         layout,
@@ -881,6 +1173,32 @@ fn aggregate_report(runs: &[TextRunReport]) -> AggregateReport {
         }
         aggregate
     })
+}
+
+impl FrameTextSource {
+    fn same_span(&self, other: &Self) -> bool {
+        self.kind == other.kind
+            && self.paragraph_index == other.paragraph_index
+            && self.line_index == other.line_index
+            && self.source_start == other.source_start
+            && self.source_end == other.source_end
+            && self.reveal_state == other.reveal_state
+    }
+}
+
+fn text_run_source_report(text: &FrameText) -> TextRunSourceReport {
+    TextRunSourceReport {
+        kind: match text.source.kind {
+            TextRunSourceKind::TextBlock => "text_block",
+            TextRunSourceKind::StyledParagraphGlyph => "styled_paragraph_glyph",
+        },
+        paragraph_index: text.source.paragraph_index,
+        line_index: text.source.line_index,
+        source_start: text.source.source_start,
+        source_end: text.source.source_end,
+        visible: text.visible,
+        reveal_state: text.source.reveal_state.clone(),
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -1139,6 +1457,8 @@ fn run_self_test() -> Result<(), Box<dyn Error>> {
             font_size_milli: 12_000,
             line_height_milli: 16_000,
             rgba: [255, 255, 255, 255],
+            visible: true,
+            source: FrameTextSource::default(),
         }],
         styled_paragraphs: Vec::new(),
     };
@@ -1157,5 +1477,151 @@ fn run_self_test() -> Result<(), Box<dyn Error>> {
     if !report.passed {
         return Err(format!("self-test should pass: {:?}", report.failure_reasons).into());
     }
+    run_styled_paragraph_self_test()?;
+    run_missing_styled_paragraph_evidence_self_test()?;
     Ok(())
+}
+
+fn run_styled_paragraph_self_test() -> Result<(), Box<dyn Error>> {
+    let mut native = RgbaImage::blank(18, 8, [0, 0, 0, 255]);
+    let mut web = RgbaImage::blank(18, 8, [0, 0, 0, 255]);
+    let glyph_rect = PixelRect {
+        left: 2,
+        top: 2,
+        right: 7,
+        bottom: 6,
+    };
+    native.fill_rect(glyph_rect, [240, 240, 240, 255]);
+    web.fill_rect(glyph_rect, [238, 238, 238, 255]);
+    let frame = styled_self_test_frame(true);
+    let args = Args {
+        checkpoint: "styled-self-test".to_owned(),
+        native: PathBuf::from("native.png"),
+        web: PathBuf::from("web.png"),
+        native_frame: PathBuf::from("native.frame.json"),
+        web_frame: PathBuf::from("web.frame.json"),
+        report: PathBuf::from("text-raster.json"),
+        font: None,
+        ink_affinity_threshold: 0.35,
+        thresholds: TextRasterThresholds::default(),
+    };
+    let report = compare_text_raster(&native, &web, &frame, &frame, &args, None);
+    if !report.passed {
+        return Err(format!(
+            "styled paragraph self-test should pass: {:?}",
+            report.failure_reasons
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn run_missing_styled_paragraph_evidence_self_test() -> Result<(), Box<dyn Error>> {
+    let image = RgbaImage::blank(18, 8, [0, 0, 0, 255]);
+    let frame = styled_self_test_frame(false);
+    let args = Args {
+        checkpoint: "styled-missing-evidence-self-test".to_owned(),
+        native: PathBuf::from("native.png"),
+        web: PathBuf::from("web.png"),
+        native_frame: PathBuf::from("native.frame.json"),
+        web_frame: PathBuf::from("web.frame.json"),
+        report: PathBuf::from("text-raster.json"),
+        font: None,
+        ink_affinity_threshold: 0.35,
+        thresholds: TextRasterThresholds::default(),
+    };
+    let report = compare_text_raster(&image, &image, &frame, &frame, &args, None);
+    if report.passed {
+        return Err("styled paragraph without glyph evidence should fail".into());
+    }
+    Ok(())
+}
+
+fn styled_self_test_frame(include_glyph_evidence: bool) -> FrameObservation {
+    let glyph_bounds = include_glyph_evidence
+        .then(|| {
+            vec![FrameStyledGlyph {
+                source_start: 0,
+                source_end: 1,
+                line_index: 0,
+                bounds: FrameBounds {
+                    x_milli: 2_000,
+                    y_milli: 2_000,
+                    width_milli: 5_000,
+                    height_milli: 4_000,
+                },
+                visible: true,
+                reveal_state: "visible".to_owned(),
+                style: FrameTextStyle {
+                    font_size_milli: 12_000,
+                    line_height_milli: 16_000,
+                    rgba: [240, 240, 240, 255],
+                    font_family: "sans_serif".to_owned(),
+                    weight: "regular".to_owned(),
+                    slant: "upright".to_owned(),
+                },
+                glyph_transform: None,
+            }]
+        })
+        .unwrap_or_default();
+    FrameObservation {
+        schema_version: "arcweft.text_raster_parity.styled_self_test".to_owned(),
+        viewport: FrameViewport {
+            logical_width_milli: 18_000,
+            logical_height_milli: 8_000,
+            physical_width: 18,
+            physical_height: 8,
+            scale_factor_milli: 1_000,
+        },
+        text_count: 1,
+        styled_paragraph_count: 1,
+        text: Vec::new(),
+        styled_paragraphs: vec![FrameStyledParagraph {
+            text: "AB".to_owned(),
+            bounds: FrameBounds {
+                x_milli: 2_000,
+                y_milli: 2_000,
+                width_milli: 10_000,
+                height_milli: 4_000,
+            },
+            text_len: 2,
+            visible_end: 2,
+            span_count: 1,
+            spans: vec![FrameStyledSpan {
+                start: 0,
+                end: 2,
+                node_index: 0,
+                font_size_milli: 12_000,
+                line_height_milli: 16_000,
+                rgba: [240, 240, 240, 255],
+                style: FrameTextStyle {
+                    font_size_milli: 12_000,
+                    line_height_milli: 16_000,
+                    rgba: [240, 240, 240, 255],
+                    font_family: "sans_serif".to_owned(),
+                    weight: "regular".to_owned(),
+                    slant: "upright".to_owned(),
+                },
+            }],
+            line_box_count: usize::from(include_glyph_evidence),
+            glyph_count: glyph_bounds.len(),
+            glyph_transform_count: 0,
+            transform_support: "no_transforms".to_owned(),
+            line_boxes: include_glyph_evidence
+                .then(|| {
+                    vec![FrameStyledLineBox {
+                        line_index: 0,
+                        bounds: FrameBounds {
+                            x_milli: 2_000,
+                            y_milli: 2_000,
+                            width_milli: 10_000,
+                            height_milli: 4_000,
+                        },
+                    }]
+                })
+                .unwrap_or_default(),
+            glyph_bounds,
+            glyph_transforms: Vec::new(),
+        }],
+    }
 }
