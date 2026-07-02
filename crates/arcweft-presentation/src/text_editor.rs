@@ -680,6 +680,12 @@ impl TextEditorState {
     ) -> Result<TextRange<TextByteOffset>, TextEditorError> {
         let index = self.index()?;
         match unit {
+            TextDeleteUnit::Utf8Byte => {
+                let text_len = u32::try_from(self.text.len()).unwrap_or(u32::MAX);
+                let start = TextByteOffset(self.caret.0.saturating_sub(before));
+                let end = TextByteOffset(self.caret.0.saturating_add(after).min(text_len));
+                Ok(index.validate_byte_range(TextRange::new(start, end))?)
+            }
             TextDeleteUnit::Utf16CodeUnit => {
                 let caret_utf16 = index.utf16_offset_for_byte(self.caret)?;
                 let start = TextUtf16Offset(caret_utf16.0.saturating_sub(before));
@@ -1197,5 +1203,79 @@ fn add_offset(start: TextByteOffset, relative: TextByteOffset) -> TextByteOffset
 impl From<TextRange<TextByteOffset>> for PlatformTextSelection {
     fn from(range: TextRange<TextByteOffset>) -> Self {
         Self::new(range, TextSelectionAffinity::Downstream)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::input::InteractionTarget;
+    use arcweft_id::PublicId;
+
+    fn target() -> InteractionTarget {
+        InteractionTarget::new(PublicId::try_new("test.text".to_owned()).unwrap())
+    }
+
+    #[test]
+    fn delete_surrounding_utf8_byte_unit_deletes_exact_byte_range() {
+        let session = TextInputSessionId(1);
+        let mut editor =
+            TextEditorState::new(session, target(), "a東京b", TextInputOptions::default()).unwrap();
+        let caret_after_second_kanji = TextByteOffset(7);
+        let input = TextInput::new(
+            session,
+            crate::text_input::TextInputSerial(1),
+            vec![
+                crate::text_input::TextInputOperation::SetSelection(PlatformTextSelection::new(
+                    TextRange::new(caret_after_second_kanji, caret_after_second_kanji),
+                    TextSelectionAffinity::Downstream,
+                )),
+                crate::text_input::TextInputOperation::DeleteSurrounding {
+                    before: 3,
+                    after: 0,
+                    unit: TextDeleteUnit::Utf8Byte,
+                },
+            ],
+        );
+
+        editor
+            .apply_text_input(&input, &mut TextEditorClipboard::default())
+            .unwrap();
+
+        assert_eq!(editor.text(), "a東b");
+        assert_eq!(
+            editor.selection(),
+            TextRange::new(TextByteOffset(4), TextByteOffset(4))
+        );
+    }
+
+    #[test]
+    fn delete_surrounding_utf8_byte_unit_rejects_non_boundary_range() {
+        let session = TextInputSessionId(1);
+        let mut editor =
+            TextEditorState::new(session, target(), "a東京b", TextInputOptions::default()).unwrap();
+        let caret_after_second_kanji = TextByteOffset(7);
+        let input = TextInput::new(
+            session,
+            crate::text_input::TextInputSerial(1),
+            vec![
+                crate::text_input::TextInputOperation::SetSelection(PlatformTextSelection::new(
+                    TextRange::new(caret_after_second_kanji, caret_after_second_kanji),
+                    TextSelectionAffinity::Downstream,
+                )),
+                crate::text_input::TextInputOperation::DeleteSurrounding {
+                    before: 1,
+                    after: 0,
+                    unit: TextDeleteUnit::Utf8Byte,
+                },
+            ],
+        );
+
+        let error = editor
+            .apply_text_input(&input, &mut TextEditorClipboard::default())
+            .unwrap_err();
+
+        assert!(matches!(error, TextEditorError::TextIndex(_)));
+        assert_eq!(editor.text(), "a東京b");
     }
 }

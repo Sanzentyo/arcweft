@@ -539,6 +539,7 @@ const fn text_delete_unit_code(unit: TextDeleteUnit) -> u32 {
         TextDeleteUnit::Utf16CodeUnit => 0,
         TextDeleteUnit::UnicodeScalar => 1,
         TextDeleteUnit::GraphemeCluster => 2,
+        TextDeleteUnit::Utf8Byte => 3,
     }
 }
 

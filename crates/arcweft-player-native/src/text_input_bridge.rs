@@ -272,6 +272,19 @@ impl NativeTextInputBridge {
         }
     }
 
+    pub(crate) fn record_window_ime_text_input(
+        &mut self,
+        input: &TextInput,
+        disposition: TextInputKeyDisposition,
+    ) {
+        let security = self
+            .core
+            .active_security()
+            .unwrap_or(TextInputSecurityPolicy::Plain);
+        self.trace
+            .record_routed_text_input(self.backend.identity(), input, disposition, security);
+    }
+
     fn dispatch_platform_event(
         &mut self,
         event: PlatformTextInputEvent,

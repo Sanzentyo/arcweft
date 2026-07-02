@@ -34,20 +34,32 @@ only Arcweft text-input snapshots, geometry snapshots, host commands, and routed
 - Added source gates for native identity leakage and CLI/native trace wiring.
 - Added a DSL-backed native text-input sample and trace schema fixture.
 
+## 2026-07-02 Event Path Update
+
+The player-rendered sample now lowers focused Arcweft text controls into
+`PreparedTextInputTarget` snapshots and geometry. Live Windows traces showed
+focus and geometry records for the three controls, but ordinary key input did
+not reliably become platform text events through the TSF bridge alone.
+
+The native player now treats winit `WindowEvent::Ime` as the primary windowed
+text event source for the normal `arcw run --runner native` path. It enables and
+updates IME state from the prepared Arcweft snapshot/geometry, routes winit
+preedit/commit/disable/delete-surrounding events into the shared player-owned
+editor, and keeps secure controls from publishing surrounding text. While this
+winit path is available, the older TSF platform-event drain is suppressed to
+avoid duplicate partial commits; the TSF bridge still owns backend focus,
+geometry publication, capability trace, and Windows-specific diagnostics.
+
+The text-input contract also now has `TextDeleteUnit::Utf8Byte` so winit's
+UTF-8 byte `DeleteSurrounding` event is represented exactly instead of being
+approximated as scalar or grapheme deletion.
+
 ## Explicit Gap
 
-`PreparedFrame::focused_text_input_target()` currently returns `None` because
-the current frame planner still does not lower real Arcweft text controls into
-renderer-backed `TextInputClientSnapshot` and `TextInputGeometrySnapshot`
-values. This is intentional: seq06.4j must not fabricate a native focus target
-or mark the white-window/candidate-position problem solved without real scene
-geometry.
-
-Final Windows/macOS acceptance remains blocked until the visible text controls
-from the native sample are lowered into prepared text-input geometry. Once that
-lands, the command above should show normal Arcweft text controls and produce
-trace records for focus generation, geometry, platform events, routed text
-input, and secure redaction.
+Final Windows acceptance still needs a pinned real Japanese IME trace captured
+from the normal native player after this event-path update. macOS acceptance
+remains blocked until the AppKit in-window backend is attached; the
+helper-process AppKit sample is diagnostic only.
 
 ## Diagnostic Harness Boundary
 
@@ -79,6 +91,20 @@ Executed on 2026-06-29:
 - `cargo test -p arcweft-cli --test native_text_input_trace_cli -- --nocapture` passed.
 - `cargo clippy -p arcweft-player-native -p arcweft-cli --features arcweft-cli/native-player --all-targets -- -D warnings` passed.
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .` passed with `0 error(s), 117 warning(s)` across 982 Rust files and 466,233 Rust physical LOC.
+
+Executed on 2026-07-02 after the winit IME event-path update:
+
+- `cargo fmt --all` passed.
+- `cargo test -p arcweft-presentation text_editor::tests::delete_surrounding_utf8_byte_unit --lib` passed.
+- `cargo test -p arcweft-player-native scene_windowed::tests --lib` passed.
+- `cargo test -p arcweft-player-scene text_input --lib` passed.
+- `cargo test -p arcweft-runtime-host player_text_input_bridge --lib` passed.
+- `cargo test -p arcweft-ui text_field --lib` passed.
+- `cargo check -p arcweft-player-native -p arcweft-player-scene -p arcweft-runtime-host -p arcweft-presentation -p arcweft-ui --all-targets` passed.
+- `cargo clippy -p arcweft-player-native -p arcweft-player-scene -p arcweft-runtime-host -p arcweft-presentation -p arcweft-ui --all-targets -- -D warnings` passed.
+- `cargo build -p arcweft-cli --features native-player` passed.
+- `cargo +nightly -Zscript tools/structure-audit.rs --root .` passed with `0 error(s), 124 warning(s)` across 1,046 Rust files and 491,589 Rust physical LOC.
+- `git diff --check` passed.
 
 Windows live validation:
 

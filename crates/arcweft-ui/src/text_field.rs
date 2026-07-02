@@ -1037,11 +1037,13 @@ fn surrounding_delete_range(
     let start = checked_boundary(document, selection.start())?;
     let end = checked_boundary(document, selection.end())?;
     let start = match unit {
+        TextDeleteUnit::Utf8Byte => offset_before_bytes(document, start, before)?,
         TextDeleteUnit::Utf16CodeUnit => offset_before_utf16(document, start, before),
         TextDeleteUnit::UnicodeScalar => offset_before_scalars(document, start, before),
         TextDeleteUnit::GraphemeCluster => offset_before_graphemes(document, start, before),
     };
     let end = match unit {
+        TextDeleteUnit::Utf8Byte => offset_after_bytes(document, end, after)?,
         TextDeleteUnit::Utf16CodeUnit => offset_after_utf16(document, end, after),
         TextDeleteUnit::UnicodeScalar => offset_after_scalars(document, end, after),
         TextDeleteUnit::GraphemeCluster => offset_after_graphemes(document, end, after),
@@ -1066,6 +1068,22 @@ fn checked_boundary(document: &str, offset: u32) -> Result<usize, TextEditError>
             range: UiTextByteRange::new(offset, offset),
         });
     }
+    Ok(offset)
+}
+
+fn offset_before_bytes(document: &str, start: usize, count: u32) -> Result<u32, TextEditError> {
+    let offset = start.saturating_sub(usize::try_from(count).unwrap_or(usize::MAX));
+    let offset = u32::try_from(offset).unwrap_or(u32::MAX);
+    let _ = checked_boundary(document, offset)?;
+    Ok(offset)
+}
+
+fn offset_after_bytes(document: &str, end: usize, count: u32) -> Result<u32, TextEditError> {
+    let offset = end
+        .saturating_add(usize::try_from(count).unwrap_or(usize::MAX))
+        .min(document.len());
+    let offset = u32::try_from(offset).unwrap_or(u32::MAX);
+    let _ = checked_boundary(document, offset)?;
     Ok(offset)
 }
 

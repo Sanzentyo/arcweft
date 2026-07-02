@@ -139,6 +139,7 @@ pub enum CompositionEndReason {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TextDeleteUnit {
+    Utf8Byte,
     Utf16CodeUnit,
     UnicodeScalar,
     GraphemeCluster,

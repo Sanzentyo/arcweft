@@ -18,7 +18,12 @@ use arcweft_desktop_native::NativeDesktopBackend;
 use arcweft_player_scene::frame::{PlayerFrameError, PlayerFramePlanner, PlayerFrameRequest};
 use arcweft_player_scene::input::{InputController, InputOutcome};
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
-use arcweft_presentation::text_input::TextInputKeyDisposition;
+use arcweft_presentation::text_input::{
+    Capitalization, CompositionEndReason, TextAssistPolicy, TextByteOffset, TextCommit,
+    TextCompositionUpdate, TextDeleteUnit, TextInput, TextInputClientSnapshot,
+    TextInputGeometrySnapshot, TextInputKeyDisposition, TextInputOperation, TextInputOptions,
+    TextInputPrivacy, TextInputPurpose, TextInputSerial, TextRange,
+};
 use arcweft_render_text::LineDisplayFrame;
 use arcweft_render_wgpu::geometry::{
     PreparedFrame, PreparedTextInputTarget, RenderPreferences, RenderViewport,
@@ -32,11 +37,14 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use winit::application::ApplicationHandler;
-use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize, Size};
-use winit::event::{ButtonSource, ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Size};
+use winit::event::{ButtonSource, ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
-use winit::window::{Window, WindowAttributes, WindowId};
+use winit::window::{
+    ImeCapabilities, ImeEnableRequest, ImeHint, ImePurpose, ImeRequest, ImeRequestData,
+    ImeRequestError, ImeSurroundingText, Window, WindowAttributes, WindowId,
+};
 
 const EVENT_LOOP_TICK: Duration = Duration::from_millis(16);
 const DEFAULT_FONT_BYTES: &[u8] = include_bytes!("../../../web/assets/arcweft-demo.ttf");
@@ -150,6 +158,9 @@ struct NativeSceneState {
     ingress_completion: WindowedPatchIngressCompletion,
     input: InputController,
     text_input: NativeTextInputBridge,
+    window_ime_supported: bool,
+    window_ime_enabled: bool,
+    next_window_ime_serial: u64,
     prepared: Option<arcweft_render_wgpu::geometry::PreparedFrame>,
     dialogue_visual_clock: DialogueVisualClock,
     started_at: Instant,
@@ -345,6 +356,7 @@ impl ApplicationHandler for NativeSceneApp {
             WindowEvent::KeyboardInput { event, .. } => {
                 state.keyboard(&event.logical_key, event.state)
             }
+            WindowEvent::Ime(event) => state.ime(event),
             WindowEvent::RedrawRequested => state.redraw(),
             _ => Ok(()),
         };
@@ -461,6 +473,9 @@ impl NativeSceneState {
             ingress_completion,
             input: InputController::default(),
             text_input,
+            window_ime_supported: true,
+            window_ime_enabled: false,
+            next_window_ime_serial: 1,
             prepared: None,
             dialogue_visual_clock: DialogueVisualClock::default(),
             started_at: Instant::now(),
@@ -494,12 +509,14 @@ impl NativeSceneState {
         self.step_runtime()?;
         let mut prepared = self.prepare_frame()?;
         self.sync_text_input_bridge(&prepared.frame, NativeTextInputFocusReason::RedrawRefresh)?;
+        self.sync_window_ime(&prepared.frame);
         if self.drain_text_input_edits(&prepared.frame, TextInputKeyDisposition::ImeConsumed)? {
             prepared = self.prepare_frame()?;
             self.sync_text_input_bridge(
                 &prepared.frame,
                 NativeTextInputFocusReason::RedrawRefresh,
             )?;
+            self.sync_window_ime(&prepared.frame);
         }
         self.render(&prepared.frame)?;
         let patch_outcomes = self.drain_patch_events_after_render_submitted()?;
@@ -659,6 +676,7 @@ impl NativeSceneState {
         self.apply_outcome(outcome)?;
         let prepared = self.prepare_frame()?;
         self.sync_text_input_bridge(&prepared.frame, NativeTextInputFocusReason::Pointer)?;
+        self.sync_window_ime(&prepared.frame);
         self.prepared = Some(prepared.frame);
         self.window.request_redraw();
         Ok(())
@@ -704,10 +722,48 @@ impl NativeSceneState {
                 &prepared.frame,
                 NativeTextInputFocusReason::RedrawRefresh,
             )?;
+            self.sync_window_ime(&prepared.frame);
             self.prepared = Some(prepared.frame);
         }
         self.window.request_redraw();
         Ok(())
+    }
+
+    fn ime(&mut self, event: Ime) -> Result<(), NativeSceneWindowError> {
+        match event {
+            Ime::Enabled => {
+                self.window_ime_supported = true;
+                self.window_ime_enabled = true;
+                if let Some(frame) = self.prepared.clone() {
+                    self.sync_window_ime(&frame);
+                }
+                Ok(())
+            }
+            Ime::Preedit(preedit, selection) => {
+                let selection = window_ime_composition_selection(&preedit, selection);
+                let update = TextCompositionUpdate::new(preedit, selection);
+                self.apply_window_ime_operations(vec![TextInputOperation::SetComposition(update)])
+            }
+            Ime::Commit(text) => {
+                self.apply_window_ime_operations(vec![TextInputOperation::Commit(TextCommit::new(
+                    text,
+                ))])
+            }
+            Ime::DeleteSurrounding {
+                before_bytes,
+                after_bytes,
+            } => self.apply_window_ime_operations(vec![TextInputOperation::DeleteSurrounding {
+                before: u32::try_from(before_bytes).unwrap_or(u32::MAX),
+                after: u32::try_from(after_bytes).unwrap_or(u32::MAX),
+                unit: TextDeleteUnit::Utf8Byte,
+            }]),
+            Ime::Disabled => {
+                self.window_ime_enabled = false;
+                self.apply_window_ime_operations(vec![TextInputOperation::EndComposition {
+                    reason: CompositionEndReason::PlatformDisabled,
+                }])
+            }
+        }
     }
 
     fn focus_changed(&mut self, focused: bool) -> Result<(), NativeSceneWindowError> {
@@ -715,8 +771,48 @@ impl NativeSceneState {
         self.apply_outcome(outcome)?;
         if !focused {
             self.text_input.blur_active()?;
+            self.disable_window_ime();
         }
         Ok(())
+    }
+
+    fn apply_window_ime_operations(
+        &mut self,
+        operations: Vec<TextInputOperation>,
+    ) -> Result<(), NativeSceneWindowError> {
+        if operations.is_empty() {
+            return Ok(());
+        }
+        let Some(frame) = self.prepared.clone() else {
+            return Ok(());
+        };
+        let Some(editor) = self.input.focused_text_editor() else {
+            return Ok(());
+        };
+        let session = editor.session();
+        let privacy = if editor.options().is_secure() {
+            TextInputPrivacy::Sensitive
+        } else {
+            TextInputPrivacy::Plain
+        };
+        let input = TextInput::new(session, self.next_window_ime_serial(), operations)
+            .with_privacy(privacy);
+        self.text_input
+            .record_window_ime_text_input(&input, TextInputKeyDisposition::ImeConsumed);
+        let outcome = self.input.text_input(&frame, input)?;
+        self.apply_outcome(outcome)?;
+        let prepared = self.prepare_frame()?;
+        self.sync_text_input_bridge(&prepared.frame, NativeTextInputFocusReason::RedrawRefresh)?;
+        self.sync_window_ime(&prepared.frame);
+        self.prepared = Some(prepared.frame);
+        self.window.request_redraw();
+        Ok(())
+    }
+
+    fn next_window_ime_serial(&mut self) -> TextInputSerial {
+        let serial = TextInputSerial(self.next_window_ime_serial);
+        self.next_window_ime_serial = self.next_window_ime_serial.saturating_add(1);
+        serial
     }
 
     fn sync_text_input_bridge(
@@ -729,11 +825,82 @@ impl NativeSceneState {
         Ok(())
     }
 
+    fn sync_window_ime(&mut self, frame: &PreparedFrame) {
+        if !self.window_ime_supported {
+            return;
+        }
+        let Some(PreparedTextInputTarget { snapshot, geometry }) =
+            frame.focused_text_input_target()
+        else {
+            self.disable_window_ime();
+            return;
+        };
+        let request = window_ime_request_data(&snapshot, &geometry);
+        if self.window_ime_enabled {
+            self.update_window_ime(request);
+        } else {
+            self.enable_window_ime(request);
+        }
+    }
+
+    fn enable_window_ime(&mut self, request: ImeRequestData) {
+        let capabilities = window_ime_capabilities_for_request(&request);
+        let Some(enable) = ImeEnableRequest::new(capabilities, request.clone()) else {
+            self.window_ime_supported = false;
+            return;
+        };
+        match self.window.request_ime_update(ImeRequest::Enable(enable)) {
+            Ok(()) | Err(ImeRequestError::AlreadyEnabled) => {
+                self.window_ime_enabled = true;
+                self.update_window_ime(request);
+            }
+            Err(ImeRequestError::NotEnabled) => {
+                self.window_ime_enabled = false;
+            }
+            Err(_) => {
+                self.mark_window_ime_unsupported();
+            }
+        }
+    }
+
+    fn update_window_ime(&mut self, request: ImeRequestData) {
+        match self
+            .window
+            .request_ime_update(ImeRequest::Update(request.clone()))
+        {
+            Ok(()) | Err(ImeRequestError::AlreadyEnabled) => {
+                self.window_ime_enabled = true;
+            }
+            Err(ImeRequestError::NotEnabled) => {
+                self.window_ime_enabled = false;
+                self.enable_window_ime(request);
+            }
+            Err(_) => {
+                self.mark_window_ime_unsupported();
+            }
+        }
+    }
+
+    fn disable_window_ime(&mut self) {
+        if self.window_ime_enabled {
+            let _ = self.window.request_ime_update(ImeRequest::Disable);
+        }
+        self.window_ime_enabled = false;
+    }
+
+    fn mark_window_ime_unsupported(&mut self) {
+        self.window_ime_supported = false;
+        self.window_ime_enabled = false;
+    }
+
     fn drain_text_input_edits(
         &mut self,
         frame: &PreparedFrame,
         disposition: TextInputKeyDisposition,
     ) -> Result<bool, NativeSceneWindowError> {
+        if self.window_ime_supported {
+            return Ok(false);
+        }
         let mut drained = false;
         for edit in self.text_input.drain_platform_edits(disposition)? {
             drained = true;
@@ -843,6 +1010,166 @@ fn focused_text_input_control(
     ))
 }
 
+fn window_ime_request_data(
+    snapshot: &TextInputClientSnapshot,
+    geometry: &TextInputGeometrySnapshot,
+) -> ImeRequestData {
+    let mut request = ImeRequestData::default()
+        .with_hint_and_purpose(
+            window_ime_hint(snapshot.options()),
+            window_ime_purpose(snapshot.options()),
+        )
+        .with_cursor_area(
+            window_ime_cursor_position(geometry),
+            window_ime_cursor_size(geometry),
+        );
+    if let Some(surrounding) = window_ime_surrounding_text(snapshot) {
+        request = request.with_surrounding_text(surrounding);
+    }
+    request
+}
+
+fn window_ime_capabilities_for_request(request: &ImeRequestData) -> ImeCapabilities {
+    let capabilities = ImeCapabilities::new()
+        .with_hint_and_purpose()
+        .with_cursor_area();
+    if request.surrounding_text.is_some() {
+        capabilities.with_surrounding_text()
+    } else {
+        capabilities
+    }
+}
+
+fn window_ime_cursor_position(geometry: &TextInputGeometrySnapshot) -> winit::dpi::Position {
+    let caret = geometry.viewport_caret_rect();
+    LogicalPosition::new(f64::from(caret.x), f64::from(caret.y)).into()
+}
+
+fn window_ime_cursor_size(geometry: &TextInputGeometrySnapshot) -> Size {
+    let caret = geometry.viewport_caret_rect();
+    LogicalSize::new(
+        f64::from(caret.width.max(1.0)),
+        f64::from(caret.height.max(1.0)),
+    )
+    .into()
+}
+
+fn window_ime_surrounding_text(snapshot: &TextInputClientSnapshot) -> Option<ImeSurroundingText> {
+    if snapshot.options().is_secure() {
+        return None;
+    }
+    let text = snapshot.surrounding_text();
+    let (cursor, anchor) = window_ime_selection_offsets(snapshot)?;
+    let (excerpt_start, excerpt_end) = surrounding_excerpt_range(text, cursor, anchor)?;
+    let excerpt = text.get(excerpt_start..excerpt_end)?.to_owned();
+    ImeSurroundingText::new(excerpt, cursor - excerpt_start, anchor - excerpt_start).ok()
+}
+
+fn window_ime_selection_offsets(snapshot: &TextInputClientSnapshot) -> Option<(usize, usize)> {
+    let base = snapshot.surrounding_start().get();
+    let start = snapshot.selection().start().get().checked_sub(base)?;
+    let end = snapshot.selection().end().get().checked_sub(base)?;
+    let start = usize::try_from(start).ok()?;
+    let end = usize::try_from(end).ok()?;
+    let text = snapshot.surrounding_text();
+    if start > text.len() || end > text.len() {
+        return None;
+    }
+    if !text.is_char_boundary(start) || !text.is_char_boundary(end) {
+        return None;
+    }
+    Some((end, start))
+}
+
+fn surrounding_excerpt_range(text: &str, cursor: usize, anchor: usize) -> Option<(usize, usize)> {
+    let first = cursor.min(anchor);
+    let last = cursor.max(anchor);
+    let max_len = ImeSurroundingText::MAX_TEXT_BYTES.saturating_sub(1);
+    if last.saturating_sub(first) > max_len {
+        return None;
+    }
+    let mut start = last.saturating_sub(max_len);
+    while start < first && !text.is_char_boundary(start) {
+        start = start.saturating_add(1);
+    }
+    if start > first {
+        start = first;
+    }
+    let mut end = text.len().min(start.saturating_add(max_len));
+    while end > last && !text.is_char_boundary(end) {
+        end = end.saturating_sub(1);
+    }
+    if end < last || start > end {
+        return None;
+    }
+    Some((start, end))
+}
+
+fn window_ime_hint(options: &TextInputOptions) -> ImeHint {
+    let mut hint = ImeHint::NONE;
+    if matches!(options.autocorrect(), TextAssistPolicy::Enabled) {
+        hint |= ImeHint::COMPLETION;
+    }
+    if matches!(options.spellcheck(), TextAssistPolicy::Enabled) {
+        hint |= ImeHint::SPELLCHECK;
+    }
+    match options.capitalization() {
+        Capitalization::None => {}
+        Capitalization::Sentences => hint |= ImeHint::AUTO_CAPITALIZATION,
+        Capitalization::Words => hint |= ImeHint::TITLECASE,
+        Capitalization::Characters => hint |= ImeHint::UPPERCASE,
+    }
+    if options.is_secure() {
+        hint |= ImeHint::HIDDEN_TEXT | ImeHint::SENSITIVE_DATA;
+    }
+    if options.is_multiline() {
+        hint |= ImeHint::MULTILINE;
+    }
+    if matches!(options.purpose(), TextInputPurpose::Terminal) {
+        hint |= ImeHint::LATIN;
+    }
+    hint
+}
+
+fn window_ime_purpose(options: &TextInputOptions) -> ImePurpose {
+    if options.is_secure() {
+        return ImePurpose::Password;
+    }
+    match options.purpose() {
+        TextInputPurpose::Email => ImePurpose::Email,
+        TextInputPurpose::Url => ImePurpose::Url,
+        TextInputPurpose::Telephone => ImePurpose::Phone,
+        TextInputPurpose::Number | TextInputPurpose::Decimal => ImePurpose::Number,
+        TextInputPurpose::Password => ImePurpose::Password,
+        TextInputPurpose::Pin => ImePurpose::Pin,
+        TextInputPurpose::Terminal => ImePurpose::Terminal,
+        TextInputPurpose::Text | TextInputPurpose::Search | TextInputPurpose::Name => {
+            ImePurpose::Normal
+        }
+    }
+}
+
+fn window_ime_composition_selection(
+    preedit: &str,
+    selection: Option<(usize, usize)>,
+) -> TextRange<TextByteOffset> {
+    let fallback = preedit.len();
+    let (start, end) = selection.unwrap_or((fallback, fallback));
+    TextRange::new(
+        TextByteOffset(window_ime_preedit_offset(preedit, start)),
+        TextByteOffset(window_ime_preedit_offset(preedit, end)),
+    )
+}
+
+fn window_ime_preedit_offset(preedit: &str, offset: usize) -> u32 {
+    let offset = if offset <= preedit.len() && preedit.is_char_boundary(offset) {
+        offset
+    } else {
+        preedit.len()
+    };
+    u32::try_from(offset).unwrap_or(u32::MAX)
+}
+
 fn key_label(key: &Key) -> String {
     match key {
         Key::Named(NamedKey::ArrowUp) => "ArrowUp".to_owned(),
@@ -878,6 +1205,9 @@ fn dialogue_visual_time_millis(
 
 #[cfg(test)]
 mod tests {
+    use super::{surrounding_excerpt_range, window_ime_composition_selection};
+    use arcweft_presentation::text_input::{TextByteOffset, TextRange};
+
     fn native_scene_state_body(source: &str) -> &str {
         let struct_start = source
             .find("struct NativeSceneState {")
@@ -924,7 +1254,7 @@ mod tests {
         let source = include_str!("scene_windowed.rs");
 
         assert!(source.contains(
-            "self.render(&prepared)?;\n        let patch_outcomes = self.drain_patch_events_after_render_submitted()?;"
+            "self.render(&prepared.frame)?;\n        let patch_outcomes = self.drain_patch_events_after_render_submitted()?;"
         ));
         assert!(source.contains("FrameBoundary::AfterRenderSubmitted"));
     }
@@ -939,5 +1269,40 @@ mod tests {
         assert!(source.contains("self.runtime.push_patch_event(envelope.event)"));
         assert!(source.contains("completed_at_frame_boundary(outcomes.len())"));
         assert!(source.contains("ingress_completion.close(\"native player closed\")"));
+    }
+
+    #[test]
+    fn winit_preedit_selection_uses_utf8_byte_offsets() {
+        let selection = window_ime_composition_selection("あい", Some((3, 6)));
+
+        assert_eq!(
+            selection,
+            TextRange::new(TextByteOffset(3), TextByteOffset(6))
+        );
+    }
+
+    #[test]
+    fn winit_preedit_selection_rejects_non_boundary_offsets_to_end() {
+        let selection = window_ime_composition_selection("あい", Some((1, 2)));
+
+        assert_eq!(
+            selection,
+            TextRange::new(TextByteOffset(6), TextByteOffset(6))
+        );
+    }
+
+    #[test]
+    fn surrounding_excerpt_keeps_cursor_and_anchor_inside_utf8_window() {
+        let text = format!("{}東京", "a".repeat(5000));
+        let cursor = 5006;
+        let anchor = 5003;
+
+        let (start, end) = surrounding_excerpt_range(&text, cursor, anchor).unwrap();
+
+        assert!(start <= anchor);
+        assert!(cursor <= end);
+        assert!(text.is_char_boundary(start));
+        assert!(text.is_char_boundary(end));
+        assert!(end - start < 4000);
     }
 }
