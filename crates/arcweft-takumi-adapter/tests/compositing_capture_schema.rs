@@ -1,5 +1,5 @@
 use arcweft_presentation::hit::HitRect;
-use arcweft_render_wgpu::ui_scene::{UiAffine2, UiBlendMode, UiIsolation, UiPrimitiveRange};
+use arcweft_render_wgpu::ui_scene::{UiAffine2D, UiBlendMode, UiIsolation, UiPrimitiveRange};
 use arcweft_takumi_adapter::{
     ArcweftNodeMetadata, COMPOSITING_EVIDENCE_SCHEMA_VERSION, TakumiCaptureFrame,
     TakumiCaptureRecord, TakumiCompositingCaptureRecord, TakumiCompositingGroupId,
@@ -24,7 +24,7 @@ fn schema_surface_exposes_layout_visual_hit_clip_mask_and_effect_bounds() {
         metadata(1, 10),
         UiPrimitiveRange { start: 0, end: 2 },
         HitRect::new(10.0, 20.0, 30.0, 40.0),
-        UiAffine2::IDENTITY,
+        UiAffine2D::IDENTITY,
         None,
     )
     .with_paint_node_id(TakumiPaintNodeId::new(2))

@@ -8,7 +8,7 @@ use arcweft_render_wgpu::ui_mask::{
     UiMaskAxisRepeat, UiMaskChainPlan, UiMaskChannel, UiMaskGradientPlan, UiMaskPlanError,
 };
 use arcweft_render_wgpu::ui_scene::{
-    UiAffine2, UiClipPath, UiColorRgba8, UiCompositingEffects, UiCompositingGroup,
+    UiAffine2D, UiClipPath, UiColorRgba8, UiCompositingEffects, UiCompositingGroup,
     UiElementMaskSource, UiFillRule, UiGradientStop, UiLength, UiMask, UiMaskGradient, UiMaskImage,
     UiMaskPosition, UiMaskRepeat, UiMaskSize, UiPaintNode, UiPoint, UiPrimitiveRange, UiScene,
     UiSceneContext, UiShapeRadius,
@@ -16,7 +16,7 @@ use arcweft_render_wgpu::ui_scene::{
 
 fn direct() -> UiPaintNode {
     UiPaintNode::Direct(UiSceneContext {
-        transform: UiAffine2::IDENTITY,
+        transform: UiAffine2D::IDENTITY,
         opacity: 1.0,
         clip: None,
         primitive_range: UiPrimitiveRange { start: 0, end: 1 },

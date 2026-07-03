@@ -5,7 +5,7 @@
 
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::ui_scene::{
-    UiAffine2, UiClipPath, UiColorRgba8, UiCompositingEffects, UiCompositingGroup, UiFillRule,
+    UiAffine2D, UiClipPath, UiColorRgba8, UiCompositingEffects, UiCompositingGroup, UiFillRule,
     UiGradientStop, UiMask, UiMaskGradient, UiMaskImage, UiMaskRepeat, UiPaintNode,
     UiPrimitiveRange, UiScene, UiSceneContext,
 };
@@ -53,7 +53,7 @@ fn seq06_13c_path_clip_gradient_mask_visual_smoke_fixture() {
             },
         )
         .with_children(vec![UiPaintNode::Direct(UiSceneContext {
-            transform: UiAffine2::default(),
+            transform: UiAffine2D::default(),
             opacity: 1.0,
             clip: None,
             primitive_range: UiPrimitiveRange { start: 0, end: 1 },

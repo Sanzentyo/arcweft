@@ -14,7 +14,7 @@ pub struct UiScene {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiSceneContext {
-    pub transform: UiAffine2,
+    pub transform: UiAffine2D,
     pub opacity: f32,
     pub clip: Option<UiClip>,
     pub primitive_range: UiPrimitiveRange,
@@ -49,7 +49,7 @@ pub struct UiTextFieldSceneStyle {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct UiAffine2 {
+pub struct UiAffine2D {
     pub m11: f32,
     pub m12: f32,
     pub m21: f32,
@@ -151,13 +151,13 @@ pub enum UiUnderlineStyle {
     Dashed,
 }
 
-impl Default for UiAffine2 {
+impl Default for UiAffine2D {
     fn default() -> Self {
         Self::IDENTITY
     }
 }
 
-impl UiAffine2 {
+impl UiAffine2D {
     pub const IDENTITY: Self = Self {
         m11: 1.0,
         m12: 0.0,
@@ -293,7 +293,7 @@ impl UiScene {
         let end = u32::try_from(self.primitives.len()).unwrap_or(u32::MAX);
         let range = UiPrimitiveRange { start, end };
         self.push_context(UiSceneContext {
-            transform: UiAffine2::IDENTITY,
+            transform: UiAffine2D::IDENTITY,
             opacity: 1.0,
             clip: Some(UiClip::Rect(buffer.bounds())),
             primitive_range: range,
@@ -305,7 +305,7 @@ impl UiScene {
 #[cfg(test)]
 mod tests {
     use super::{
-        UiAffine2, UiColorRgba8, UiPrimitive, UiPrimitiveRange, UiScene, UiSceneContext,
+        UiAffine2D, UiColorRgba8, UiPrimitive, UiPrimitiveRange, UiScene, UiSceneContext,
         UiSolidRect, UiTextFieldSceneStyle,
     };
     use crate::ui_scene::UiPaintNode;
@@ -325,7 +325,7 @@ mod tests {
             },
         }));
         scene.push_context(UiSceneContext {
-            transform: UiAffine2::IDENTITY,
+            transform: UiAffine2D::IDENTITY,
             opacity: 1.0,
             clip: None,
             primitive_range: UiPrimitiveRange { start: 0, end: 1 },

@@ -1,7 +1,7 @@
 use crate::metadata::ArcweftNodeMetadata;
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::ui_scene::{
-    UiAffine2, UiBlendMode, UiClip, UiIsolation, UiPrimitiveRange,
+    UiAffine2D, UiBlendMode, UiClip, UiIsolation, UiPrimitiveRange,
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -29,7 +29,7 @@ pub struct TakumiCaptureRecord {
     clip_bounds: Option<HitRect>,
     mask_bounds: Vec<HitRect>,
     effect_outsets: TakumiEffectOutsets,
-    transform: UiAffine2,
+    transform: UiAffine2D,
     clip: Option<UiClip>,
     compositing_group_id: Option<TakumiCompositingGroupId>,
     paint_node_id: Option<TakumiPaintNodeId>,
@@ -105,7 +105,7 @@ impl TakumiCaptureRecord {
         metadata: ArcweftNodeMetadata,
         primitive_range: UiPrimitiveRange,
         local_bounds: HitRect,
-        transform: UiAffine2,
+        transform: UiAffine2D,
         clip: Option<UiClip>,
     ) -> Self {
         let clip_bounds = clip.as_ref().map(ui_clip_bounds);
@@ -211,7 +211,7 @@ impl TakumiCaptureRecord {
         self.effect_outsets
     }
 
-    pub const fn transform(&self) -> UiAffine2 {
+    pub const fn transform(&self) -> UiAffine2D {
         self.transform
     }
 
@@ -407,7 +407,7 @@ mod tests {
             metadata(),
             UiPrimitiveRange { start: 4, end: 9 },
             HitRect::new(10.0, 20.0, 30.0, 40.0),
-            UiAffine2::IDENTITY,
+            UiAffine2D::IDENTITY,
             Some(UiClip::Rect(HitRect::new(12.0, 22.0, 20.0, 30.0))),
         )
         .with_paint_node_id(TakumiPaintNodeId::new(1))

@@ -24,7 +24,7 @@ pub use compositing::{
     UiShapeRadius,
 };
 pub use core::{
-    UiAffine2, UiBorder, UiCaretPrimitive, UiClip, UiColorRgba8, UiCompositionUnderline,
+    UiAffine2D, UiBorder, UiCaretPrimitive, UiClip, UiColorRgba8, UiCompositionUnderline,
     UiGlyphRun, UiGradientStop, UiImagePrimitive, UiLinearGradient, UiPrimitive, UiPrimitiveRange,
     UiRoundedRect, UiScene, UiSceneContext, UiSelectionPrimitive, UiSolidRect,
     UiTextFieldSceneStyle, UiUnderlineStyle,

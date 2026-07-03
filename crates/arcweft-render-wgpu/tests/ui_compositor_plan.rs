@@ -2,13 +2,13 @@ use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::ui_compositor::UiCompositorPlan;
 use arcweft_render_wgpu::ui_effects::UiTextureExtent;
 use arcweft_render_wgpu::ui_scene::{
-    UiAffine2, UiBlendMode, UiColorRgba8, UiCompositingEffects, UiCompositingGroup, UiFilter,
+    UiAffine2D, UiBlendMode, UiColorRgba8, UiCompositingEffects, UiCompositingGroup, UiFilter,
     UiFilterList, UiPaintNode, UiPrimitiveRange, UiScene, UiSceneContext,
 };
 
 fn direct(start: u32, end: u32) -> UiPaintNode {
     UiPaintNode::Direct(UiSceneContext {
-        transform: UiAffine2::IDENTITY,
+        transform: UiAffine2D::IDENTITY,
         opacity: 1.0,
         clip: None,
         primitive_range: UiPrimitiveRange { start, end },

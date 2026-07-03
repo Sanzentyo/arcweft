@@ -3,7 +3,7 @@ use arcweft_render_wgpu::ui_blend::{UiBlendPassPlan, UiBlendShaderMode, supporte
 use arcweft_render_wgpu::ui_box_shadow::{UiBoxShadowPassPlan, UiBoxShadowPlanError};
 use arcweft_render_wgpu::ui_compositor::{UiCompositorNodePlan, UiCompositorPlan};
 use arcweft_render_wgpu::ui_scene::{
-    UiAffine2, UiBlendMode, UiBoxShadow, UiBoxShadowList, UiColorRgba8, UiCompositingEffects,
+    UiAffine2D, UiBlendMode, UiBoxShadow, UiBoxShadowList, UiColorRgba8, UiCompositingEffects,
     UiCompositingGroup, UiPaintNode, UiPrimitiveRange, UiScene, UiSceneContext,
 };
 
@@ -18,7 +18,7 @@ fn rgba(alpha: u8) -> UiColorRgba8 {
 
 fn direct(start: u32, end: u32) -> UiPaintNode {
     UiPaintNode::Direct(UiSceneContext {
-        transform: UiAffine2::IDENTITY,
+        transform: UiAffine2D::IDENTITY,
         opacity: 1.0,
         clip: None,
         primitive_range: UiPrimitiveRange { start, end },

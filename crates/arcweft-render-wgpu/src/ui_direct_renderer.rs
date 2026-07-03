@@ -13,7 +13,7 @@ use crate::ui_compositor::{
 use crate::ui_effects::UiTextureExtent;
 use crate::ui_mask::UiMaskChannel;
 use crate::ui_scene::{
-    UiAffine2, UiBorder, UiCaretPrimitive, UiClip, UiColorRgba8, UiCompositionUnderline,
+    UiAffine2D, UiBorder, UiCaretPrimitive, UiClip, UiColorRgba8, UiCompositionUnderline,
     UiGlyphRun, UiImagePrimitive, UiLinearGradient, UiMaskImage, UiPrimitive, UiRoundedRect,
     UiScene, UiSceneContext, UiSelectionPrimitive, UiSolidRect, UiUnderlineStyle,
 };
@@ -717,7 +717,7 @@ fn nonnegative_ceil_to_u32(value: f32) -> u32 {
     value.max(0.0).ceil().to_u32().unwrap_or(u32::MAX)
 }
 
-fn apply_transform(transform: UiAffine2, point: LogicalPoint) -> LogicalPoint {
+fn apply_transform(transform: UiAffine2D, point: LogicalPoint) -> LogicalPoint {
     LogicalPoint {
         x: transform
             .m11

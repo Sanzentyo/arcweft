@@ -5,7 +5,7 @@ use arcweft_render_wgpu::geometry::{
 };
 use arcweft_render_wgpu::ui_compositor::UiCompositorPlan;
 use arcweft_render_wgpu::ui_scene::{
-    UiAffine2, UiColorRgba8, UiCompositingEffects, UiCompositingGroup, UiFilter, UiFilterList,
+    UiAffine2D, UiColorRgba8, UiCompositingEffects, UiCompositingGroup, UiFilter, UiFilterList,
     UiGlyphRun, UiPaintNode, UiPrimitive, UiPrimitiveRange, UiScene, UiSceneContext, UiSolidRect,
 };
 
@@ -50,7 +50,7 @@ fn direct_scene() -> UiScene {
         color: white(),
     }));
     scene.push_paint_node(UiPaintNode::Direct(UiSceneContext {
-        transform: UiAffine2::default(),
+        transform: UiAffine2D::default(),
         opacity: 1.0,
         clip: None,
         primitive_range: UiPrimitiveRange { start: 0, end: 1 },
@@ -93,7 +93,7 @@ fn filter_and_backdrop_scene_plans_offscreen_and_one_backdrop_copy() {
     };
     let group = UiCompositingGroup::new(HitRect::new(0.0, 0.0, 160.0, 90.0), effects)
         .with_children(vec![UiPaintNode::Direct(UiSceneContext {
-            transform: UiAffine2::default(),
+            transform: UiAffine2D::default(),
             opacity: 1.0,
             clip: None,
             primitive_range: UiPrimitiveRange { start: 0, end: 1 },
@@ -121,7 +121,7 @@ fn glyph_run_requires_explicit_text_handoff() {
         color: white(),
     }));
     scene.push_paint_node(UiPaintNode::Direct(UiSceneContext {
-        transform: UiAffine2::default(),
+        transform: UiAffine2D::default(),
         opacity: 1.0,
         clip: None,
         primitive_range: UiPrimitiveRange { start: 0, end: 1 },

@@ -9,7 +9,7 @@ use crate::{
 };
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::ui_scene::{
-    UiAffine2, UiBlendMode, UiBorder, UiBoxShadowList, UiClip, UiClipPath, UiColorRgba8,
+    UiAffine2D, UiBlendMode, UiBorder, UiBoxShadowList, UiClip, UiClipPath, UiColorRgba8,
     UiCompositingEffects, UiCompositingGroup, UiFillRule, UiFilter, UiFilterList, UiGradientStop,
     UiImagePrimitive, UiIsolation, UiLength, UiLinearGradient, UiMask, UiMaskGradient, UiMaskImage,
     UiPaintNode, UiPoint, UiPrimitive, UiPrimitiveRange, UiRoundedRect, UiScene, UiSceneContext,
@@ -946,8 +946,8 @@ fn ui_blend_mode_from_takumi(mode: TakumiBlendMode) -> UiBlendMode {
     }
 }
 
-fn affine_to_ui(values: [f32; 6]) -> UiAffine2 {
-    UiAffine2 {
+fn affine_to_ui(values: [f32; 6]) -> UiAffine2D {
+    UiAffine2D {
         m11: values[0],
         m12: values[1],
         m21: values[2],
@@ -1011,13 +1011,13 @@ mod tests {
     fn lowering_build_preserves_child_order_inside_compositing_group() {
         let mut build = UiSceneBuild::new(320.0, 180.0);
         let first = UiSceneContext {
-            transform: UiAffine2::IDENTITY,
+            transform: UiAffine2D::IDENTITY,
             opacity: 1.0,
             clip: None,
             primitive_range: UiPrimitiveRange { start: 0, end: 1 },
         };
         let second = UiSceneContext {
-            transform: UiAffine2::IDENTITY,
+            transform: UiAffine2D::IDENTITY,
             opacity: 1.0,
             clip: None,
             primitive_range: UiPrimitiveRange { start: 1, end: 2 },
@@ -1063,7 +1063,7 @@ mod tests {
         };
         let group = UiCompositingGroup::new(HitRect::new(10.0, 20.0, 80.0, 40.0), effects)
             .with_children(vec![UiPaintNode::Direct(UiSceneContext {
-                transform: UiAffine2::IDENTITY,
+                transform: UiAffine2D::IDENTITY,
                 opacity: 1.0,
                 clip: None,
                 primitive_range: UiPrimitiveRange { start: 2, end: 6 },
