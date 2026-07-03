@@ -22,6 +22,8 @@ run with `arcw`.
   profiles for provenance-aware runtime-plan and LSP cascade checks.
 - [css-style-parity](css-style-parity/README.md) - image-free Web/native
   renderer parity sample for CSS-like text and choice styling.
+- [css-layout-cascade-coverage](css-layout-cascade-coverage/README.md) -
+  retained UI CSS layout/cascade coverage sample and fixture entry for seq06.12.
 - [rich-text-windows-fonts.arcw](rich-text-windows-fonts.arcw) - Windows
   default font comparison sample using nested character `dialogue_style`
   typography for horizontal, mixed, and vertical text.

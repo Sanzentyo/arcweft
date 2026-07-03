@@ -1,4 +1,7 @@
-use crate::diagnostic::{TakumiAdapterError, TakumiDiagnostic};
+use crate::{
+    coverage::CssCoverageReport,
+    diagnostic::{TakumiAdapterError, TakumiDiagnostic},
+};
 use takumi::prelude::StyleSheet;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -42,6 +45,7 @@ pub enum CssPropertyClass {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DirectCssSupport {
     diagnostics: Vec<TakumiDiagnostic>,
+    coverage: CssCoverageReport,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -104,15 +108,24 @@ impl CssPropertyClass {
 
 impl DirectCssSupport {
     pub fn diagnose_css(css: &str) -> Self {
-        let diagnostics = unsupported_compositing_values(css)
+        let coverage = CssCoverageReport::analyze_css(css);
+        let mut diagnostics = unsupported_compositing_values(css)
             .into_iter()
             .map(TakumiDiagnostic::unsupported_css)
-            .collect();
-        Self { diagnostics }
+            .collect::<Vec<_>>();
+        diagnostics.extend(coverage.diagnostics().iter().cloned());
+        Self {
+            diagnostics,
+            coverage,
+        }
     }
 
     pub fn diagnostics(&self) -> &[TakumiDiagnostic] {
         &self.diagnostics
+    }
+
+    pub fn coverage(&self) -> &CssCoverageReport {
+        &self.coverage
     }
 
     pub fn is_direct_wgpu_ready(&self) -> bool {
@@ -151,13 +164,13 @@ impl TakumiCssBundle {
     }
 
     pub fn direct_support(&self) -> DirectCssSupport {
-        DirectCssSupport {
-            diagnostics: self
-                .stylesheets
-                .iter()
-                .flat_map(|css| DirectCssSupport::diagnose_css(css).diagnostics)
-                .collect(),
+        let mut support = DirectCssSupport::default();
+        for css in &self.stylesheets {
+            let next = DirectCssSupport::diagnose_css(css);
+            support.diagnostics.extend(next.diagnostics);
+            support.coverage.extend(next.coverage);
         }
+        support
     }
 }
 

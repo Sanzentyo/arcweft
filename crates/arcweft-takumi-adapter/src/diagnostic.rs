@@ -6,6 +6,9 @@ use thiserror::Error;
 pub enum TakumiDiagnosticCode {
     CssParseFailed,
     UnsupportedDirectCss,
+    CssCoverageGap,
+    UnsupportedCssSelector,
+    UnresolvedCssVariable,
     CpuRasterFallbackForbidden,
     MissingFragmentRoot,
     MissingTakumiLayout,
@@ -71,6 +74,36 @@ impl TakumiDiagnostic {
             TakumiDiagnosticCode::UnsupportedDirectCss,
             format!(
                 "CSS property `{property}` is accepted by Takumi but has no direct-wgpu lowering in this cut"
+            ),
+        )
+    }
+
+    pub fn css_coverage_gap(feature: impl Into<String>, status: impl std::fmt::Debug) -> Self {
+        let feature = feature.into();
+        Self::new(
+            TakumiDiagnosticCode::CssCoverageGap,
+            format!(
+                "CSS feature `{feature}` is classified as {status:?} by the seq06.12 coverage matrix"
+            ),
+        )
+    }
+
+    pub fn unsupported_css_selector(selector: impl Into<String>) -> Self {
+        let selector = selector.into();
+        Self::new(
+            TakumiDiagnosticCode::UnsupportedCssSelector,
+            format!(
+                "CSS selector `{selector}` is outside the seq06.12 retained UI selector subset"
+            ),
+        )
+    }
+
+    pub fn unresolved_css_variable(name: impl Into<String>) -> Self {
+        let name = name.into();
+        Self::new(
+            TakumiDiagnosticCode::UnresolvedCssVariable,
+            format!(
+                "CSS variable `{name}` is unresolved and has no fallback in the seq06.12 coverage cut"
             ),
         )
     }

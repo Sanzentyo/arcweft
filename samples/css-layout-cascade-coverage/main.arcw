@@ -1,0 +1,39 @@
+pub surface character layout_agent {
+    display = "Layout Coverage"
+    default_voice = auto
+    dialogue_style {
+        rich_text {
+            text {
+                font = "Arcweft Demo"
+                color = rgb("#f8fbff")
+                size = 28px
+            }
+        }
+    }
+}
+
+pub textbox coverage_panel {
+    rich_text {
+        text {
+            font = "Arcweft Demo"
+            color = rgb("#f8fbff")
+            size = 28px
+        }
+    }
+}
+
+pub dialogue defaults @dialogue.defaults {
+    window = @textbox.coverage_panel
+}
+
+entry game @entry.css_layout_cascade_coverage {
+    start @flow.css_layout_cascade_coverage
+}
+
+flow css_layout_cascade_coverage {
+    layout_agent(id=@say.css_layout_cascade_coverage.main, voice=auto):
+        CSS layout/cascade coverage uses a retained UI fixture separate from text raster parity.[p]
+        Supported selector, flex, gap, padding, size, overflow, and z-index paths are represented together with explicit diagnostics for grid, container queries, pseudo-elements, and structural selectors.[p]
+
+    return "css_layout_cascade_coverage_done"
+}

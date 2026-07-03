@@ -1,0 +1,36 @@
+{
+  "schema_version": "arcweft.css-layout-cascade-coverage.v1",
+  "viewport": { "name": "hidpi", "width": 720, "height": 405, "scale": 2.0 },
+  "computed_styles": [
+    {
+      "node_path": "0.1",
+      "property": "aspect-ratio",
+      "value": "16 / 9",
+      "winner": {
+        "selector": ".aw-screen .aw-panel",
+        "layer": "CssComponent",
+        "specificity": { "ids": 0, "classes": 2, "elements": 0 },
+        "source_order": 2,
+        "important": false
+      },
+      "invalidation": "LayoutScene"
+    },
+    {
+      "node_path": "0.1.0",
+      "property": "z-index",
+      "value": "2",
+      "winner": {
+        "selector": ".aw-panel > .aw-title[data-aw-part=\"1\"]:hover",
+        "layer": "CssComponent",
+        "specificity": { "ids": 0, "classes": 4, "elements": 0 },
+        "source_order": 6,
+        "important": false
+      },
+      "invalidation": "LayoutScene"
+    }
+  ],
+  "layout_boxes": [
+    { "node_path": "0", "x_milli": 0, "y_milli": 0, "width_milli": 1440000, "height_milli": 810000, "overflow": "Visible" },
+    { "node_path": "0.1", "x_milli": 48000, "y_milli": 48000, "width_milli": 1280000, "height_milli": 720000, "overflow": "Clip" }
+  ]
+}

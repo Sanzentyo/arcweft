@@ -10,6 +10,7 @@
 pub mod adapter;
 pub mod cache;
 pub mod capture;
+pub mod coverage;
 pub mod diagnostic;
 pub mod evidence;
 pub mod lowering;
@@ -26,6 +27,13 @@ pub use cache::{
 pub use capture::{
     TakumiCaptureFrame, TakumiCaptureRecord, TakumiCompositingCaptureRecord,
     TakumiCompositingGroupId, TakumiEffectOutsets, TakumiPaintNodeId,
+};
+pub use coverage::{
+    CSS_COVERAGE_MATRIX, CSS_LAYOUT_CASCADE_EVIDENCE_SCHEMA_VERSION, CssAtRuleCoverage,
+    CssCascadeLayer, CssCascadePriority, CssComputedStyleEvidence, CssCoverageFeature,
+    CssCoverageMatrixRow, CssCoverageReport, CssCoverageStatus, CssDeclarationCoverage,
+    CssLayoutBoxEvidence, CssMatchedDeclaration, CssOverflowEvidence, CssSelectorCoverage,
+    CssSelectorWinnerEvidence, CssSpecificity, winning_declaration,
 };
 pub use diagnostic::{TakumiAdapterError, TakumiDiagnostic, TakumiDiagnosticCode};
 pub use evidence::{COMPOSITING_EVIDENCE_SCHEMA_VERSION, capture_frame_to_json};

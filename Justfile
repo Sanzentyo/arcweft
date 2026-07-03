@@ -215,6 +215,10 @@ css-style-parity:
 css-style-parity-profile:
     @cargo +nightly -Zscript tools\profile-css-style-parity-startup.rs --output target\css-style-parity\startup-profile.json
 
+css-layout-cascade-coverage:
+    @cargo test -p arcweft-takumi-adapter css_layout_cascade --quiet
+    @cargo +nightly -Zscript tools\run-css-layout-cascade-coverage-gates.rs --fixtures fixtures\css-layout-cascade-coverage
+
 reactive-ui-style-sample:
     @New-Item -ItemType Directory -Force -Path web\local,target\reactive-ui-style,target\reactive-ui-style\interaction-states | Out-Null
     @cargo run -p arcweft-cli -- bundle samples/reactive-ui-style/src/main.arcw --output web/local/reactive-ui-style.awfb
