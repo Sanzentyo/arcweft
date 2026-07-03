@@ -14,6 +14,7 @@ pub mod sample;
 pub mod text_editor_geometry;
 pub mod ui;
 pub mod ui_blend;
+pub mod ui_box_shadow;
 pub mod ui_clip_path;
 pub mod ui_compositor;
 mod ui_compositor_uniform;

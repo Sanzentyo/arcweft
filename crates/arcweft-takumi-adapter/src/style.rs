@@ -66,10 +66,9 @@ impl CssPropertyClass {
             | "border-top-color"
             | "border-right-color"
             | "border-bottom-color"
-            | "border-left-color"
-            | "box-shadow" => Self::PaintOnly,
+            | "border-left-color" => Self::PaintOnly,
             "background-image" | "background" | "src" | "mask-image" => Self::Resource,
-            "filter" | "mix-blend-mode" | "isolation" => Self::Compositing,
+            "filter" | "mix-blend-mode" | "isolation" | "box-shadow" => Self::Compositing,
             "backdrop-filter" => Self::BackdropCompositing,
             "mask" | "mask-size" | "mask-position" | "mask-repeat" | "mask-mode"
             | "mask-origin" | "mask-clip" | "mask-composite" => Self::MaskCompositing,
@@ -246,6 +245,10 @@ mod tests {
         );
         assert_eq!(
             CssPropertyClass::classify("mix-blend-mode").invalidation(),
+            CssInvalidationClass::Compositing
+        );
+        assert_eq!(
+            CssPropertyClass::classify("box-shadow").invalidation(),
             CssInvalidationClass::Compositing
         );
     }

@@ -24,6 +24,7 @@ pub struct UiCompositingEffects {
     pub opacity: f32,
     pub filters: UiFilterList,
     pub backdrop_filters: UiFilterList,
+    pub box_shadows: UiBoxShadowList,
     pub masks: Vec<UiMask>,
     pub clip_path: Option<Box<UiClipPath>>,
     pub blend_mode: UiBlendMode,
@@ -38,6 +39,7 @@ pub struct UiCompositingRequirements {
 pub enum UiCompositingEffectClass {
     Compositing,
     BackdropCompositing,
+    BoxShadow,
     MaskCompositing,
     ClipGeometry,
     Resource,
@@ -46,6 +48,29 @@ pub enum UiCompositingEffectClass {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct UiFilterList {
     filters: Vec<UiFilter>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct UiBoxShadowList {
+    shadows: Vec<UiBoxShadow>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct UiBoxShadow {
+    pub offset_x_px: f32,
+    pub offset_y_px: f32,
+    pub blur_radius_px: f32,
+    pub spread_radius_px: f32,
+    pub border_radius_px: f32,
+    pub color: UiColorRgba8,
+    pub kind: UiBoxShadowKind,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum UiBoxShadowKind {
+    #[default]
+    Outer,
+    Inset,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -205,6 +230,7 @@ impl Default for UiCompositingEffects {
             opacity: 1.0,
             filters: UiFilterList::default(),
             backdrop_filters: UiFilterList::default(),
+            box_shadows: UiBoxShadowList::default(),
             masks: Vec::new(),
             clip_path: None,
             blend_mode: UiBlendMode::Normal,
@@ -301,6 +327,7 @@ impl UiCompositingEffects {
         self.opacity_is_identity()
             && self.filters.is_empty()
             && self.backdrop_filters.is_empty()
+            && self.box_shadows.is_empty()
             && self.masks.is_empty()
             && self.clip_path.is_none()
             && self.blend_mode == UiBlendMode::Normal
@@ -310,6 +337,7 @@ impl UiCompositingEffects {
         self.filters
             .visual_outset_px()
             .max(self.backdrop_filters.visual_outset_px())
+            .max(self.box_shadows.visual_outset_px())
             .max(
                 self.masks
                     .iter()
@@ -329,6 +357,10 @@ impl UiCompositingEffects {
         }
         if !self.backdrop_filters.is_empty() {
             requirements.insert(UiCompositingEffectClass::BackdropCompositing);
+        }
+        if !self.box_shadows.is_empty() {
+            requirements.insert(UiCompositingEffectClass::BoxShadow);
+            requirements.insert(UiCompositingEffectClass::Compositing);
         }
         if !self.masks.is_empty() {
             requirements.insert(UiCompositingEffectClass::MaskCompositing);
@@ -355,9 +387,10 @@ impl UiCompositingEffects {
 impl UiCompositingRequirements {
     const COMPOSITING: u16 = 1 << 0;
     const BACKDROP_COMPOSITING: u16 = 1 << 1;
-    const MASK_COMPOSITING: u16 = 1 << 2;
-    const CLIP_GEOMETRY: u16 = 1 << 3;
-    const RESOURCE: u16 = 1 << 4;
+    const BOX_SHADOW: u16 = 1 << 2;
+    const MASK_COMPOSITING: u16 = 1 << 3;
+    const CLIP_GEOMETRY: u16 = 1 << 4;
+    const RESOURCE: u16 = 1 << 5;
 
     pub fn insert(&mut self, class: UiCompositingEffectClass) {
         self.bits |= Self::bit(class);
@@ -378,6 +411,7 @@ impl UiCompositingRequirements {
     pub fn requires_offscreen_surface(self) -> bool {
         self.contains(UiCompositingEffectClass::Compositing)
             || self.contains(UiCompositingEffectClass::BackdropCompositing)
+            || self.contains(UiCompositingEffectClass::BoxShadow)
             || self.contains(UiCompositingEffectClass::MaskCompositing)
             || self.contains(UiCompositingEffectClass::ClipGeometry)
     }
@@ -386,6 +420,7 @@ impl UiCompositingRequirements {
         match class {
             UiCompositingEffectClass::Compositing => Self::COMPOSITING,
             UiCompositingEffectClass::BackdropCompositing => Self::BACKDROP_COMPOSITING,
+            UiCompositingEffectClass::BoxShadow => Self::BOX_SHADOW,
             UiCompositingEffectClass::MaskCompositing => Self::MASK_COMPOSITING,
             UiCompositingEffectClass::ClipGeometry => Self::CLIP_GEOMETRY,
             UiCompositingEffectClass::Resource => Self::RESOURCE,
@@ -430,6 +465,101 @@ impl UiFilterList {
 impl From<Vec<UiFilter>> for UiFilterList {
     fn from(value: Vec<UiFilter>) -> Self {
         Self::from_filters(value)
+    }
+}
+
+impl UiBoxShadowList {
+    pub fn new(shadows: impl IntoIterator<Item = UiBoxShadow>) -> Self {
+        Self {
+            shadows: shadows
+                .into_iter()
+                .filter(|shadow| !shadow.is_identity())
+                .collect(),
+        }
+    }
+
+    pub fn from_shadows(shadows: Vec<UiBoxShadow>) -> Self {
+        Self::new(shadows)
+    }
+
+    pub fn shadows(&self) -> &[UiBoxShadow] {
+        &self.shadows
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.shadows.is_empty()
+    }
+
+    pub fn visual_outset_px(&self) -> f32 {
+        self.shadows
+            .iter()
+            .copied()
+            .map(UiBoxShadow::visual_outset_px)
+            .fold(0.0, f32::max)
+    }
+}
+
+impl From<Vec<UiBoxShadow>> for UiBoxShadowList {
+    fn from(value: Vec<UiBoxShadow>) -> Self {
+        Self::from_shadows(value)
+    }
+}
+
+impl UiBoxShadow {
+    pub const fn outer(
+        horizontal_offset_px: f32,
+        vertical_offset_px: f32,
+        blur_radius_px: f32,
+        spread_radius_px: f32,
+        border_radius_px: f32,
+        color: UiColorRgba8,
+    ) -> Self {
+        Self {
+            offset_x_px: horizontal_offset_px,
+            offset_y_px: vertical_offset_px,
+            blur_radius_px,
+            spread_radius_px,
+            border_radius_px,
+            color,
+            kind: UiBoxShadowKind::Outer,
+        }
+    }
+
+    pub const fn inset(
+        horizontal_offset_px: f32,
+        vertical_offset_px: f32,
+        blur_radius_px: f32,
+        spread_radius_px: f32,
+        border_radius_px: f32,
+        color: UiColorRgba8,
+    ) -> Self {
+        Self {
+            offset_x_px: horizontal_offset_px,
+            offset_y_px: vertical_offset_px,
+            blur_radius_px,
+            spread_radius_px,
+            border_radius_px,
+            color,
+            kind: UiBoxShadowKind::Inset,
+        }
+    }
+
+    pub fn visual_outset_px(self) -> f32 {
+        if self.kind == UiBoxShadowKind::Inset || self.color.alpha == 0 {
+            return 0.0;
+        }
+        self.offset_x_px.abs().max(self.offset_y_px.abs())
+            + positive(self.spread_radius_px)
+            + positive(self.blur_radius_px) * FILTER_BLUR_OUTSET_MULTIPLIER
+    }
+
+    pub fn is_identity(self) -> bool {
+        self.color.alpha == 0
+            || (self.kind == UiBoxShadowKind::Outer
+                && self.offset_x_px.abs() <= EPSILON
+                && self.offset_y_px.abs() <= EPSILON
+                && positive(self.blur_radius_px) <= EPSILON
+                && self.spread_radius_px <= EPSILON)
     }
 }
 

@@ -29,6 +29,7 @@ const PASS_DROP_SHADOW: u32 = 3u;
 const PASS_MASK: u32 = 4u;
 const PASS_BLEND: u32 = 5u;
 const PASS_CLIP: u32 = 6u;
+const PASS_BOX_SHADOW: u32 = 7u;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOut {
@@ -201,6 +202,46 @@ fn clip_coverage(uv: vec2<f32>) -> f32 {
     return 1.0;
 }
 
+fn rounded_rect_coverage_at(position: vec2<f32>, rect: vec4<f32>, radius: f32) -> f32 {
+    let half_size = max(rect.zw * 0.5, vec2<f32>(0.0001));
+    let center = rect.xy + half_size;
+    let effective_radius = max(radius, 0.0);
+    let local = abs(position - center) - (half_size - vec2<f32>(effective_radius));
+    let outside = length(max(local, vec2<f32>(0.0))) - effective_radius;
+    let inside = min(max(local.x, local.y), 0.0);
+    return select(1.0, 0.0, outside + inside > 0.0);
+}
+
+fn box_shadow_caster_coverage(position: vec2<f32>, rect: vec4<f32>, radius: f32, blur: f32) -> f32 {
+    if (blur <= 0.0001) {
+        return rounded_rect_coverage_at(position, rect, radius);
+    }
+    let step = max(blur / 3.0, 0.5);
+    var coverage = rounded_rect_coverage_at(position, rect, radius) * 0.2270270270;
+    coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(step, 0.0), rect, radius) * 0.1209853623;
+    coverage = coverage + rounded_rect_coverage_at(position - vec2<f32>(step, 0.0), rect, radius) * 0.1209853623;
+    coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(0.0, step), rect, radius) * 0.1209853623;
+    coverage = coverage + rounded_rect_coverage_at(position - vec2<f32>(0.0, step), rect, radius) * 0.1209853623;
+    coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(step, step), rect, radius) * 0.0720141308;
+    coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(-step, step), rect, radius) * 0.0720141308;
+    coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(step, -step), rect, radius) * 0.0720141308;
+    coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(-step, -step), rect, radius) * 0.0720141308;
+    return clamp(coverage, 0.0, 1.0);
+}
+
+fn box_shadow_color(uv: vec2<f32>) -> vec4<f32> {
+    let position = logical_position(uv);
+    let body_rect = uniform_data.matrix[0];
+    let shadow_rect = uniform_data.matrix[1];
+    let blur = max(uniform_data.params0.x, 0.0);
+    let body_radius = max(uniform_data.params0.y, 0.0);
+    let shadow_radius = max(uniform_data.params0.z, 0.0);
+    let caster = box_shadow_caster_coverage(position, shadow_rect, shadow_radius, blur);
+    let body = rounded_rect_coverage_at(position, body_rect, body_radius);
+    let coverage = caster * (1.0 - body);
+    return vec4<f32>(uniform_data.offset.rgb, uniform_data.offset.a * coverage);
+}
+
 fn blend_channel_dodge(backdrop: f32, source: f32) -> f32 {
     if (source >= 1.0) { return 1.0; }
     return min(backdrop / (1.0 - source), 1.0);
@@ -352,6 +393,9 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     if (uniform_data.pass_kind == PASS_CLIP) {
         let coverage = clip_coverage(in.uv);
         return vec4<f32>(source.rgb, source.a * coverage);
+    }
+    if (uniform_data.pass_kind == PASS_BOX_SHADOW) {
+        return box_shadow_color(in.uv);
     }
     if (uniform_data.pass_kind == PASS_BLEND) {
         let backdrop = backdrop_color(in.uv);

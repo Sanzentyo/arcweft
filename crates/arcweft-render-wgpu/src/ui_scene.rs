@@ -17,9 +17,10 @@ mod core;
 pub mod compositing;
 
 pub use compositing::{
-    UiBlendMode, UiClipPath, UiCompositingEffectClass, UiCompositingEffects, UiCompositingGroup,
-    UiCompositingRequirements, UiFillRule, UiFilter, UiFilterList, UiIsolation, UiLength, UiMask,
-    UiMaskImage, UiMaskPosition, UiMaskRepeat, UiMaskSize, UiPaintNode, UiPoint, UiShapeRadius,
+    UiBlendMode, UiBoxShadow, UiBoxShadowKind, UiBoxShadowList, UiClipPath,
+    UiCompositingEffectClass, UiCompositingEffects, UiCompositingGroup, UiCompositingRequirements,
+    UiFillRule, UiFilter, UiFilterList, UiIsolation, UiLength, UiMask, UiMaskImage, UiMaskPosition,
+    UiMaskRepeat, UiMaskSize, UiPaintNode, UiPoint, UiShapeRadius,
 };
 pub use core::{
     UiAffine2, UiBorder, UiCaretPrimitive, UiClip, UiColorRgba8, UiCompositionUnderline,

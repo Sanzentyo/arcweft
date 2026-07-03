@@ -1,6 +1,7 @@
 //! Packed uniform contract for the shared UI compositor WGSL shader.
 
 use crate::ui_blend::UiBlendShaderMode;
+use crate::ui_box_shadow::UiBoxShadowPass;
 use crate::ui_clip_path::{MAX_CLIP_POLYGON_VERTICES, UiClipGeometryPlan, UiClipVertex};
 use crate::ui_effects::{UiBlurDirection, UiColorMatrix, UiTextureExtent};
 use crate::ui_mask::{UiMaskChannel, UiMaskSamplingPlan};
@@ -15,6 +16,7 @@ const PASS_DROP_SHADOW: u32 = 3;
 const PASS_MASK: u32 = 4;
 const PASS_BLEND: u32 = 5;
 const PASS_CLIP: u32 = 6;
+const PASS_BOX_SHADOW: u32 = 7;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -168,6 +170,49 @@ impl UiCompositorUniform {
                 }
             }
         }
+        uniform
+    }
+
+    pub(crate) fn box_shadow(
+        pass: &UiBoxShadowPass,
+        source_extent: UiTextureExtent,
+        origin_logical: [f32; 2],
+    ) -> Self {
+        let mut uniform = Self {
+            offset: [
+                f32::from(pass.shadow.color.red) / 255.0,
+                f32::from(pass.shadow.color.green) / 255.0,
+                f32::from(pass.shadow.color.blue) / 255.0,
+                f32::from(pass.shadow.color.alpha) / 255.0,
+            ],
+            params0: [
+                pass.shadow.blur_radius_px.max(0.0),
+                pass.body_radius_px,
+                pass.shadow_radius_px,
+                0.0,
+            ],
+            params1: [origin_logical[0], origin_logical[1], 0.0, 0.0],
+            params2: [
+                dimension_to_f32(source_extent.width),
+                dimension_to_f32(source_extent.height),
+                0.0,
+                0.0,
+            ],
+            pass_kind: PASS_BOX_SHADOW,
+            ..Self::from_matrix(UiColorMatrix::identity())
+        };
+        uniform.matrix[0] = [
+            pass.body_rect.x,
+            pass.body_rect.y,
+            pass.body_rect.width,
+            pass.body_rect.height,
+        ];
+        uniform.matrix[1] = [
+            pass.shadow_rect.x,
+            pass.shadow_rect.y,
+            pass.shadow_rect.width,
+            pass.shadow_rect.height,
+        ];
         uniform
     }
 

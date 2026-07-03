@@ -9,10 +9,10 @@ use crate::{
 };
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::ui_scene::{
-    UiAffine2, UiBlendMode, UiBorder, UiClip, UiClipPath, UiColorRgba8, UiCompositingEffects,
-    UiCompositingGroup, UiFillRule, UiFilter, UiFilterList, UiGradientStop, UiImagePrimitive,
-    UiIsolation, UiLength, UiLinearGradient, UiMask, UiMaskImage, UiPaintNode, UiPoint,
-    UiPrimitive, UiPrimitiveRange, UiRoundedRect, UiScene, UiSceneContext, UiShapeRadius,
+    UiAffine2, UiBlendMode, UiBorder, UiBoxShadowList, UiClip, UiClipPath, UiColorRgba8,
+    UiCompositingEffects, UiCompositingGroup, UiFillRule, UiFilter, UiFilterList, UiGradientStop,
+    UiImagePrimitive, UiIsolation, UiLength, UiLinearGradient, UiMask, UiMaskImage, UiPaintNode,
+    UiPoint, UiPrimitive, UiPrimitiveRange, UiRoundedRect, UiScene, UiSceneContext, UiShapeRadius,
     UiSolidRect,
 };
 use num_traits::ToPrimitive;
@@ -657,6 +657,7 @@ fn compositing_effects_from_takumi(
         opacity: style.opacity.0.clamp(0.0, 1.0),
         filters: filter_list_from_takumi(&style.filter, sizing, current_color),
         backdrop_filters: filter_list_from_takumi(&style.backdrop_filter, sizing, current_color),
+        box_shadows: UiBoxShadowList::default(),
         masks: masks_from_takumi(style),
         clip_path: style
             .clip_path

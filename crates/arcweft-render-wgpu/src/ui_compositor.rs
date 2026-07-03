@@ -6,6 +6,7 @@
 
 use crate::renderer::SharedRenderer;
 use crate::ui_blend::{UiBlendPassPlan, UiBlendShaderMode};
+use crate::ui_box_shadow::{UiBoxShadowPassPlan, UiBoxShadowPlanError};
 use crate::ui_clip_path::{UiClipGeometryPlan, UiClipPathPlanError};
 use crate::ui_compositor_uniform::UiCompositorUniform;
 use crate::ui_effects::{UiEffectPass, UiFilterPassPlan, UiTextureExtent};
@@ -35,7 +36,7 @@ pub enum UiCompositorNodePlan {
     },
     Group {
         visual_extent: UiTextureExtent,
-        effects: UiGroupEffectPlan,
+        effects: Box<UiGroupEffectPlan>,
         children: Vec<UiCompositorNodePlan>,
     },
 }
@@ -43,6 +44,7 @@ pub enum UiCompositorNodePlan {
 /// Effect plans attached to one compositing group.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiGroupEffectPlan {
+    pub box_shadows: Result<UiBoxShadowPassPlan, UiBoxShadowPlanError>,
     pub filters: UiFilterPassPlan,
     pub backdrop_filters: UiFilterPassPlan,
     pub masks: UiMaskChainPlan,
@@ -60,6 +62,7 @@ pub struct UiCompositorStats {
     pub backdrop_copies: u32,
     pub pool_reuses: u32,
     pub clip_passes: u32,
+    pub box_shadow_passes: u32,
 }
 
 /// The target given to direct primitive renderers.
@@ -135,6 +138,8 @@ pub enum UiCompositorError {
     ClipPath(#[from] UiClipPathPlanError),
     #[error("mask plan failed: {0}")]
     MaskPlan(#[from] UiMaskPlanError),
+    #[error("box-shadow plan failed: {0}")]
+    BoxShadowPlan(#[from] UiBoxShadowPlanError),
     #[error("unsupported filter `{name}`: {reason}")]
     UnsupportedFilter { name: Box<str>, reason: Box<str> },
     #[error("ui scene primitive range {start}..{end} is not present")]
@@ -364,6 +369,8 @@ impl UiCompositor {
         state.stats.offscreen_targets = state.stats.offscreen_targets.saturating_add(1);
         clear_target(state.encoder, &group_target.view);
 
+        self.render_box_shadows(state, &group_target, group)?;
+
         for child in &group.children {
             self.render_node(
                 state,
@@ -438,6 +445,42 @@ impl UiCompositor {
         self.pool.release(group_target);
         if let Some(backdrop) = backdrop_target {
             self.pool.release(backdrop);
+        }
+        Ok(())
+    }
+
+    fn render_box_shadows(
+        &mut self,
+        state: &mut UiCompositorRenderState<'_>,
+        target: &UiOffscreenTarget,
+        group: &UiCompositingGroup,
+    ) -> Result<(), UiCompositorError> {
+        let plan = UiBoxShadowPassPlan::from_shadows(&group.effects.box_shadows, group.bounds)?;
+        if plan.is_empty() {
+            return Ok(());
+        }
+
+        let visual_bounds = group.visual_bounds();
+        for pass in plan.passes() {
+            self.run_shader_pass(
+                state.device,
+                state.encoder,
+                &ShaderPassInputs {
+                    source: &self.defaults.transparent.view,
+                    backdrop: None,
+                    mask: None,
+                    output: &target.view,
+                    uniform: UiCompositorUniform::box_shadow(
+                        pass,
+                        target.extent,
+                        [visual_bounds.x, visual_bounds.y],
+                    ),
+                    load: wgpu::LoadOp::Load,
+                    blend_over_existing: true,
+                },
+            );
+            state.stats.shader_passes = state.stats.shader_passes.saturating_add(1);
+            state.stats.box_shadow_passes = state.stats.box_shadow_passes.saturating_add(1);
         }
         Ok(())
     }
@@ -886,6 +929,8 @@ fn plan_node(node: &UiPaintNode, device_pixel_ratio: f32) -> UiCompositorNodePla
                 device_pixel_ratio,
             );
             let masks = UiMaskChainPlan::from_masks(&group.effects.masks, UiMaskChannel::Alpha);
+            let box_shadows =
+                UiBoxShadowPassPlan::from_shadows(&group.effects.box_shadows, group.bounds);
             let clip_path = UiClipGeometryPlan::from_clip_path(
                 group.effects.clip_path.as_deref(),
                 group.bounds,
@@ -893,14 +938,15 @@ fn plan_node(node: &UiPaintNode, device_pixel_ratio: f32) -> UiCompositorNodePla
             let blend = UiBlendPassPlan::from_mode(group.effects.blend_mode);
             UiCompositorNodePlan::Group {
                 visual_extent,
-                effects: UiGroupEffectPlan {
+                effects: Box::new(UiGroupEffectPlan {
+                    box_shadows,
                     filters,
                     backdrop_filters,
                     masks,
                     clip_path,
                     blend,
                     requires_offscreen: group.requires_offscreen_surface(),
-                },
+                }),
                 children: group
                     .children
                     .iter()
@@ -928,6 +974,10 @@ fn count_node(node: &UiCompositorNodePlan) -> PlanCounters {
                 offscreen_targets: usize::from(effects.requires_offscreen),
                 shader_passes: effects.filters.passes().len()
                     + effects.backdrop_filters.passes().len()
+                    + effects
+                        .box_shadows
+                        .as_ref()
+                        .map_or(0, |plan| plan.passes().len())
                     + effects.masks.passes().len()
                     + usize::from(
                         effects
