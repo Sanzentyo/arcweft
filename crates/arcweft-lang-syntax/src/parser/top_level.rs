@@ -151,6 +151,15 @@ impl Parser<'_> {
         rest.starts_with("asset set ")
     }
 
+    fn top_level_item_has_removed_ui_action_button(trimmed: &str) -> bool {
+        let (_, rest) = super::headers::parse_visibility_prefix(trimmed);
+        let rest = rest.trim_start();
+        let rest = rest.strip_prefix("surface ").unwrap_or(rest);
+        rest == "ui action_button"
+            || rest.starts_with("ui action_button ")
+            || rest.starts_with("ui action_button{")
+    }
+
     fn top_level_item_has_removed_hot_checkpoint(trimmed: &str) -> bool {
         let (_, rest) = super::headers::parse_visibility_prefix(trimmed);
         let rest = rest.trim_start();
@@ -170,6 +179,10 @@ impl Parser<'_> {
         *sinks.source_attrs_open = false;
         if Self::top_level_item_has_removed_asset_set(trimmed) {
             self.reject_removed_asset_set_decl(range);
+            return;
+        }
+        if Self::top_level_item_has_removed_ui_action_button(trimmed) {
+            self.reject_removed_ui_action_button_decl(range);
             return;
         }
         if Self::top_level_item_has_removed_hot_checkpoint(trimmed) {
@@ -202,6 +215,26 @@ impl Parser<'_> {
             Some(line.text.trim()),
             [
                 "use direct typed entity references in source and manifest-backed finite sets for extern/reflection boundaries",
+            ],
+        );
+        self.reject_pending_doc(range);
+        self.reject_pending_attrs(range);
+        if line.text.contains('{') || self.next_nonblank_line_is_brace() {
+            let _ = self.take_flow_block_event();
+        } else {
+            self.index += 1;
+        }
+    }
+
+    fn reject_removed_ui_action_button_decl(&mut self, range: TextRange) {
+        let line = self.current().clone();
+        self.push_error(
+            range,
+            "`ui action_button` is not part of Arcweft component/View syntax",
+            ["Button(\"Send\").on_click { text_submit @input:.target }"],
+            Some(line.text.trim()),
+            [
+                "declare the text control with `ui text_input` and place the action with component/View `Button`",
             ],
         );
         self.reject_pending_doc(range);
@@ -542,13 +575,7 @@ fn normalize_style_decl_colon(entity: EntityRef, rest: &str) -> (EntityRef, Stri
 }
 
 fn style_decl_body(name: &str, module_path: Option<&str>) -> String {
-    module_path
-        .map(style_module_path)
-        .filter(|module| !module.is_empty())
-        .map_or_else(
-            || format!("style.{name}"),
-            |module| format!("style.{module}.{name}"),
-        )
+    EntityRef::module_scoped_declaration_body("style", name, module_path)
 }
 
 fn rebase_relative_style_decl_entity(
@@ -563,10 +590,6 @@ fn rebase_relative_style_decl_entity(
         return entity;
     };
     EntityRef::new(style_decl_body(suffix, module_path), false, *entity.range())
-}
-
-fn style_module_path(module_path: &str) -> String {
-    module_path.replace("::", ".")
 }
 
 fn parse_style_name_and_tail(input: &str) -> (Option<String>, String) {

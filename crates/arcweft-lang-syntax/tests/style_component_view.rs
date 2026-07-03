@@ -2,7 +2,7 @@ use arcweft_lang_syntax::{
     ast::{
         items::Item,
         style::StyleSyntax,
-        view::{ViewExpr, ViewModifier, ViewStyleModifier},
+        view::{ViewAction, ViewExpr, ViewModifier, ViewStyleModifier},
     },
     parser::parse_source,
 };
@@ -55,6 +55,82 @@ pub style danger_button: .Css {
 }
 
 #[test]
+fn component_view_button_on_click_text_submit_parses() {
+    let parsed = parse_source(
+        r#"
+ui text_input @input.feedback {
+  label = "Message"
+  value = ""
+  submit = @input.feedback
+}
+
+pub component FeedbackForm() -> View {
+  VStack {
+    TextField(@input:.feedback)
+      .placeholder("Type text")
+      .submit_action(.send)
+
+    Button("Send", id: @button:.feedback_send)
+      .style(@style:.primary_button)
+      .enabled(true)
+      .focusable(true)
+      .on_click(ime: .commit) {
+        text_submit @input:.feedback
+      }
+  }
+}
+"#,
+    );
+
+    assert_eq!(parsed.errors(), &[]);
+    let view = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(item) => item.component_body()?.view(),
+            _ => None,
+        })
+        .expect("component View body");
+
+    let button = find_button(view.value()).expect("button parsed");
+    assert!(matches!(
+        button.activation(),
+        Some(ViewAction::TextSubmit(_))
+    ));
+}
+
+#[test]
+fn ui_action_button_is_rejected() {
+    let parsed = parse_source(
+        r#"
+ui action_button @button.send {
+  label = "Send"
+  text_submit = @input.feedback
+}
+"#,
+    );
+
+    assert!(
+        parsed
+            .errors()
+            .iter()
+            .any(|error| error.message().contains("ui action_button"))
+    );
+}
+
+fn find_button(
+    expr: &arcweft_lang_syntax::ast::view::ViewExpr,
+) -> Option<&arcweft_lang_syntax::ast::view::ViewButton> {
+    match expr {
+        ViewExpr::Button(button) => Some(button),
+        ViewExpr::Fragment(children) => children.iter().find_map(find_button),
+        ViewExpr::Element(element) => element.children().iter().find_map(find_button),
+        _ => None,
+    }
+}
+
+#[test]
 fn component_view_style_references_are_module_scoped() {
     let parsed = parse_source(
         r#"
@@ -95,10 +171,8 @@ pub component ButtonRow() -> View {
         })
         .expect("component View body");
 
-    let ViewExpr::Element(element) = view.value() else {
-        panic!("expected root Button element");
-    };
-    let named_styles = element
+    let button = find_button(view.value()).expect("expected root Button");
+    let named_styles = button
         .modifiers()
         .iter()
         .filter_map(|modifier| match modifier {
@@ -113,11 +187,11 @@ pub component ButtonRow() -> View {
         named_styles,
         ["style.hoge.primary_button", "style.hoge.primary_button"]
     );
-    assert!(element.modifiers().iter().any(|modifier| matches!(
+    assert!(button.modifiers().iter().any(|modifier| matches!(
         modifier,
         ViewModifier::Style(ViewStyleModifier::InlineArcweft(_))
     )));
-    assert!(element.modifiers().iter().any(|modifier| matches!(
+    assert!(button.modifiers().iter().any(|modifier| matches!(
         modifier,
         ViewModifier::Style(ViewStyleModifier::InlineCss(_))
     )));

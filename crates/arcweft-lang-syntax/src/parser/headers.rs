@@ -111,7 +111,7 @@ pub(super) fn entity_decl_family(kind: EntityDeclKind) -> &'static str {
         EntityDeclKind::Asset => "asset",
         EntityDeclKind::Image => "image",
         EntityDeclKind::Character => "character",
-        EntityDeclKind::Component => "component",
+        EntityDeclKind::Component => "ui",
         EntityDeclKind::Activity => "activity",
         EntityDeclKind::Content => "content",
         EntityDeclKind::Signal => "signal",
@@ -132,6 +132,7 @@ pub(super) fn entity_decl_family(kind: EntityDeclKind) -> &'static str {
 pub(super) fn parse_entity_decl_head(
     head: &str,
     base: usize,
+    module_path: Option<&str>,
     errors: &mut Vec<ParseError>,
 ) -> Option<EntityDeclHead> {
     let (visibility, rest) = parse_visibility_prefix(head);
@@ -143,11 +144,18 @@ pub(super) fn parse_entity_decl_head(
     let family = entity_decl_family(kind);
     let rest = rest.trim_start();
     let (id, name, signature_tail) = if rest.starts_with('@') {
+        let id_source = rest;
         let id_base = base + slice_offset(head, rest);
         let (parsed_id, rest) =
             parse_required_decl_entity_ref_or_marker(rest, family, id_base, errors)?;
         let (id, rest) = match parsed_id {
-            DeclEntityId::Entity(id) => normalize_trailing_colon_id(id, rest),
+            DeclEntityId::Entity(id) => {
+                let (id, rest) = normalize_trailing_colon_id(id, rest);
+                (
+                    rebase_relative_declaration_entity(id, id_source, family, module_path),
+                    rest,
+                )
+            }
             DeclEntityId::NameMarker(marker) => {
                 let rest = rest.trim();
                 let (name, _) = parse_name_and_tail(rest);
@@ -161,7 +169,7 @@ pub(super) fn parse_entity_decl_head(
                     return None;
                 };
                 (
-                    EntityRef::new(format!("{family}.{name}"), false, marker.range),
+                    EntityRef::module_scoped_declaration(family, name, module_path, marker.range),
                     rest.to_owned(),
                 )
             }
@@ -182,13 +190,29 @@ pub(super) fn parse_entity_decl_head(
         };
         let range = entity_bare_name_range(head, base, &name);
         (
-            EntityRef::new(format!("{family}.{name}"), false, range),
+            EntityRef::module_scoped_declaration(family, &name, module_path, range),
             None,
             signature_tail,
         )
     };
     let (signature_tail, surface_alias) = split_surface_alias(signature_tail);
     Some((kind, visibility, id, name, surface_alias, signature_tail))
+}
+
+pub(super) fn rebase_relative_declaration_entity(
+    entity: EntityRef,
+    source: &str,
+    family: &str,
+    module_path: Option<&str>,
+) -> EntityRef {
+    let source = source.trim_start();
+    if !(source.starts_with("@.") || source.starts_with(&format!("@{family}:."))) {
+        return entity;
+    }
+    let Some(suffix) = entity.body().strip_prefix(&format!("{family}.")) else {
+        return entity;
+    };
+    EntityRef::module_scoped_declaration(family, suffix, module_path, *entity.range())
 }
 
 fn entity_bare_name_range(head: &str, base: usize, name: &str) -> TextRange {

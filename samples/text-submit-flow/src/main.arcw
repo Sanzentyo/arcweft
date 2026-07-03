@@ -10,17 +10,43 @@ entry game @entry.text_submit_flow {
 ui text_input @input.feedback {
   label = "Message"
   value = ""
-  placeholder = "Type text, then press Enter"
+  placeholder = "Type text, then press Enter or click Send"
   purpose = text
   enter_key = send
   submit = @input.feedback
   change = @input.feedback
 }
 
+pub style primary_button {
+  Button:hover {
+    background = rgba(54, 190, 170, 255)
+  }
+
+  Button:active {
+    background = rgba(42, 156, 140, 255)
+  }
+}
+
+pub component FeedbackForm() -> View {
+  VStack {
+    TextField(@input:.feedback)
+      .placeholder("Type text")
+      .submit_action(.send)
+
+    Button("Send", id: @button:.feedback_send)
+      .style(@style:.primary_button)
+      .enabled(true)
+      .focusable(true)
+      .on_click(ime: .commit) {
+        text_submit @input:.feedback
+      }
+  }
+}
+
 flow text_submit_flow {
   narrator:
     Type a short message in the Arcweft-rendered field.[p]
-    Press Enter or the IME send/done action to submit it.
+    Press Enter, use the IME send/done action, or activate the Send button.
 
   let submitted = text_submit @input.feedback
   let character_count = submitted.len()

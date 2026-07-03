@@ -33,6 +33,7 @@ pub enum ViewExpr {
     Text(ViewText),
     Image(ViewImage),
     TextField(ViewTextField),
+    Button(ViewButton),
     If(ViewIf),
     Match(ViewMatch),
     ForEach(ViewForEach),
@@ -79,7 +80,46 @@ pub struct ViewTextField {
     mode: ViewTextFieldMode,
     args: Vec<ViewArg>,
     modifiers: Vec<ViewModifier>,
+    input: Option<EntityRefSyntax>,
     range: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ViewButton {
+    label: ViewButtonLabel,
+    id: Option<EntityRefSyntax>,
+    enabled: Option<Expr>,
+    focusable: bool,
+    modifiers: Vec<ViewModifier>,
+    activation: Option<ViewAction>,
+    range: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ViewButtonLabel {
+    Literal(String),
+    Expr(Expr),
+    Empty,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ViewAction {
+    TextSubmit(ViewTextSubmitAction),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ViewTextSubmitAction {
+    input: EntityRefSyntax,
+    ime_policy: ViewTextSubmitImePolicy,
+    range: TextRange,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ViewTextSubmitImePolicy {
+    #[default]
+    Commit,
+    Cancel,
+    Reject,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -139,7 +179,15 @@ pub enum ViewModifier {
     Style(ViewStyleModifier),
     Part(String),
     AgentTarget(EntityRefSyntax),
-    OnEvent { name: String, body: Expr },
+    Placeholder(Expr),
+    SubmitAction(Expr),
+    Enabled(Expr),
+    Focusable(bool),
+    OnEvent {
+        name: String,
+        body: Expr,
+        ime_policy: Option<ViewTextSubmitImePolicy>,
+    },
     Environment(Vec<ViewArg>),
     Focus(String),
     Raw(String),
@@ -325,8 +373,15 @@ impl ViewTextField {
             mode,
             args,
             modifiers,
+            input: None,
             range,
         }
+    }
+
+    #[must_use]
+    pub fn with_input(mut self, input: EntityRefSyntax) -> Self {
+        self.input = Some(input);
+        self
     }
 
     pub const fn value(&self) -> &Expr {
@@ -341,6 +396,105 @@ impl ViewTextField {
     pub fn modifiers(&self) -> &[ViewModifier] {
         &self.modifiers
     }
+    pub const fn input(&self) -> Option<&EntityRefSyntax> {
+        self.input.as_ref()
+    }
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl ViewButton {
+    pub const fn new(
+        label: ViewButtonLabel,
+        modifiers: Vec<ViewModifier>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            label,
+            id: None,
+            enabled: None,
+            focusable: true,
+            modifiers,
+            activation: None,
+            range,
+        }
+    }
+
+    #[must_use]
+    pub fn with_id(mut self, id: Option<EntityRefSyntax>) -> Self {
+        self.id = id;
+        self
+    }
+
+    #[must_use]
+    pub fn with_enabled(mut self, enabled: Option<Expr>) -> Self {
+        self.enabled = enabled;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_focusable(mut self, focusable: bool) -> Self {
+        self.focusable = focusable;
+        self
+    }
+
+    #[must_use]
+    pub fn with_activation(mut self, activation: Option<ViewAction>) -> Self {
+        self.activation = activation;
+        self
+    }
+
+    pub const fn label(&self) -> &ViewButtonLabel {
+        &self.label
+    }
+
+    pub const fn id(&self) -> Option<&EntityRefSyntax> {
+        self.id.as_ref()
+    }
+
+    pub const fn enabled(&self) -> Option<&Expr> {
+        self.enabled.as_ref()
+    }
+
+    pub const fn focusable(&self) -> bool {
+        self.focusable
+    }
+
+    pub fn modifiers(&self) -> &[ViewModifier] {
+        &self.modifiers
+    }
+
+    pub const fn activation(&self) -> Option<&ViewAction> {
+        self.activation.as_ref()
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl ViewTextSubmitAction {
+    pub const fn new(
+        input: EntityRefSyntax,
+        ime_policy: ViewTextSubmitImePolicy,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            input,
+            ime_policy,
+            range,
+        }
+    }
+
+    pub const fn input(&self) -> &EntityRefSyntax {
+        &self.input
+    }
+
+    pub const fn ime_policy(&self) -> ViewTextSubmitImePolicy {
+        self.ime_policy
+    }
+
     pub const fn range(&self) -> TextRange {
         self.range
     }

@@ -527,25 +527,29 @@ fn collect_bundle_dsl_ui_resources(module: &HirModule) -> Result<BundleUiSidecar
             semantic_targets.push(dsl_ui_semantic_target(input));
         }
 
-        sidecars.program = Some(UiProgramResource {
-            program_id: "ui.program.dsl_controls".to_owned(),
-            root_component: "ui.component.dsl_controls".to_owned(),
-            instructions: Vec::new(),
-            child_spans: Vec::new(),
-            handlers: Vec::new(),
-            state_schema_hashes: Vec::new(),
-            exported_parts: Vec::new(),
-            semantic_targets,
-            action_buttons: Vec::new(),
-            adapter_requirements: Vec::new(),
-        });
-        sidecars.text = Some(UiTextResource {
-            sources: text_sources,
-            ..UiTextResource::default()
-        });
-        sidecars.input = Some(UiInputResource {
-            options: input_options,
-            adapter_requirements: Vec::new(),
+        sidecars = sidecars.merged(BundleUiSidecars {
+            program: Some(UiProgramResource {
+                program_id: "ui.program.dsl_controls".to_owned(),
+                root_component: "ui.component.dsl_controls".to_owned(),
+                instructions: Vec::new(),
+                child_spans: Vec::new(),
+                handlers: Vec::new(),
+                state_schema_hashes: Vec::new(),
+                exported_parts: Vec::new(),
+                semantic_targets,
+                action_buttons: Vec::new(),
+                adapter_requirements: Vec::new(),
+            }),
+            text: Some(UiTextResource {
+                sources: text_sources,
+                ..UiTextResource::default()
+            }),
+            input: Some(UiInputResource {
+                options: input_options,
+                adapter_requirements: Vec::new(),
+            }),
+            style: None,
+            theme: None,
         });
     }
 
@@ -2221,6 +2225,54 @@ component FeedbackForm() -> View {
         assert!(!style.rules.is_empty());
         assert!(!style.arcweft_sources.is_empty());
         assert!(!style.css_sources.is_empty());
+    }
+
+    #[test]
+    fn component_view_button_lowers_to_action_button_sidecar() {
+        let parsed = arcweft_lang_syntax::parser::parse_source(
+            r#"
+ui text_input @input.feedback {
+  label = "Message"
+  value = ""
+  submit = @input.feedback
+}
+
+component FeedbackForm() -> View {
+  VStack {
+    TextField(@input:.feedback)
+    Button("Send", id: @button:.feedback_send)
+      .on_click(ime: .reject) {
+        text_submit @input:.feedback
+      }
+  }
+}
+"#,
+        );
+        assert_eq!(parsed.errors(), &[]);
+        let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+        let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
+        let program = sidecars.program.expect("program sidecar");
+        let text = sidecars.text.expect("text sidecar");
+
+        let button = program
+            .action_buttons
+            .iter()
+            .find(|button| button.public_id == "button.feedback_send")
+            .expect("action button emitted");
+        assert_eq!(text.literal_text(&button.label_text_source), Some("Send"));
+        assert!(matches!(
+            &button.action,
+            arcweft_bundle::resource_codec::ui::UiActionButtonActionResource::TextInputSubmit {
+                input,
+                ime_policy,
+            } if input == "input.feedback"
+                && *ime_policy
+                    == arcweft_bundle::resource_codec::ui::UiTextSubmitImePolicy::Reject
+        ));
+        assert!(program.semantic_targets.iter().any(|target| {
+            target.public_id == "button.feedback_send"
+                && target.label_text_source.as_deref() == Some(&button.label_text_source)
+        }));
     }
 
     fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {

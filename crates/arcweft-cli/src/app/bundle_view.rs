@@ -1,12 +1,14 @@
 use arcweft_bundle::{
     container::BundleDigest,
     resource_codec::{
-        UiInputResource, UiProgramResource, UiStyleResource, UiTextResource,
+        UiActionButtonActionResource, UiActionButtonResource, UiInputResource, UiProgramResource,
+        UiRuntimeButtonBounds, UiStyleResource, UiTextResource,
         ui::{
             CompositionOnBlurPolicy, EnterKeyHint, StyleSourceIdentity, StyleSourceRef,
             StyleSyntax, TextAssistPolicy, TextCapitalization, UiElementKind, UiInputKind,
             UiInputOptions, UiInputPurpose, UiProgramInstruction, UiSecureInputPolicy,
             UiSemanticTarget, UiStyleApplyRef, UiTextSourceKind, UiTextSourceRecord,
+            UiTextSubmitImePolicy,
         },
     },
 };
@@ -15,8 +17,9 @@ use arcweft_lang_syntax::{
         ids::{EntityRef, EntityRefSyntax},
         items::EntityDeclItem,
         view::{
-            ComponentViewBody, ViewElement, ViewExpr, ViewImage, ViewModifier, ViewStyleModifier,
-            ViewText, ViewTextField, ViewTextFieldMode,
+            ComponentViewBody, ViewAction, ViewButton, ViewButtonLabel, ViewElement, ViewExpr,
+            ViewImage, ViewModifier, ViewStyleModifier, ViewText, ViewTextField, ViewTextFieldMode,
+            ViewTextSubmitImePolicy,
         },
     },
     expr::{Expr, Literal},
@@ -36,10 +39,12 @@ struct ViewLoweringState {
     text_sources: Vec<UiTextSourceRecord>,
     input_options: Vec<UiInputOptions>,
     semantic_targets: Vec<UiSemanticTarget>,
+    action_buttons: Vec<UiActionButtonResource>,
     inline_arcweft_sources: Vec<StyleSourceIdentity>,
     inline_css_sources: Vec<StyleSourceIdentity>,
     text_counter: u32,
     input_counter: u32,
+    button_counter: u32,
     handler_counter: u32,
     patch_counter: u32,
 }
@@ -59,6 +64,7 @@ pub(in crate::app) fn component_view_sidecars(
     if state.instructions.is_empty()
         && state.text_sources.is_empty()
         && state.input_options.is_empty()
+        && state.action_buttons.is_empty()
         && state.inline_arcweft_sources.is_empty()
         && state.inline_css_sources.is_empty()
     {
@@ -74,7 +80,7 @@ pub(in crate::app) fn component_view_sidecars(
             state_schema_hashes: Vec::new(),
             exported_parts: Vec::new(),
             semantic_targets: state.semantic_targets,
-            action_buttons: Vec::new(),
+            action_buttons: state.action_buttons,
             adapter_requirements: Vec::new(),
         }),
         style: (!state.inline_arcweft_sources.is_empty() || !state.inline_css_sources.is_empty())
@@ -114,6 +120,7 @@ fn lower_view_expr(component_id: &str, expr: &ViewExpr, state: &mut ViewLowering
         ViewExpr::Element(element) => lower_element(component_id, element, state),
         ViewExpr::Text(text) => lower_text(component_id, text, state),
         ViewExpr::TextField(field) => lower_text_field(component_id, field, state),
+        ViewExpr::Button(button) => lower_button(component_id, button, state),
         ViewExpr::Image(image) => lower_image(image, state),
         ViewExpr::Fragment(children) => {
             for child in children {
@@ -192,6 +199,25 @@ fn lower_text(component_id: &str, text: &ViewText, state: &mut ViewLoweringState
 }
 
 fn lower_text_field(component_id: &str, field: &ViewTextField, state: &mut ViewLoweringState) {
+    if let Some(input) = field.input() {
+        state.instructions.push(UiProgramInstruction::OpenElement {
+            element: ui_element_kind_for_text_field(field.mode()),
+            style: None,
+            part: first_part(field.modifiers()),
+            key: None,
+            source: None,
+        });
+        lower_modifiers(component_id, field.modifiers(), state);
+        state.instructions.push(UiProgramInstruction::CloseElement);
+        let input_id = normalize_entity_ref(input);
+        state.semantic_targets.push(UiSemanticTarget {
+            public_id: input_id.clone(),
+            target: input_id,
+            label_text_source: None,
+            source: None,
+        });
+        return;
+    }
     let id = next_input_id(component_id, field.mode(), state);
     let value_text_source = format!("text.value.{id}");
     state.text_sources.push(UiTextSourceRecord {
@@ -243,6 +269,52 @@ fn lower_text_field(component_id: &str, field: &ViewTextField, state: &mut ViewL
     state.instructions.push(UiProgramInstruction::CloseElement);
 }
 
+fn lower_button(component_id: &str, button: &ViewButton, state: &mut ViewLoweringState) {
+    let button_id = button
+        .id()
+        .map_or_else(|| next_button_id(component_id, state), normalize_entity_ref);
+    let label_text_source = format!("text.button.label.{button_id}");
+    let label = button_label_text(button.label());
+    state.text_sources.push(UiTextSourceRecord {
+        public_id: label_text_source.clone(),
+        kind: UiTextSourceKind::Literal {
+            value: label.clone(),
+        },
+        source: None,
+    });
+    state.instructions.push(UiProgramInstruction::OpenElement {
+        element: UiElementKind::Button,
+        style: None,
+        part: first_part(button.modifiers()),
+        key: None,
+        source: None,
+    });
+    lower_button_modifiers(component_id, button.modifiers(), state);
+    state.instructions.push(UiProgramInstruction::CloseElement);
+
+    let Some(ViewAction::TextSubmit(action)) = button.activation() else {
+        return;
+    };
+    let input = normalize_entity_ref(action.input());
+    state.action_buttons.push(UiActionButtonResource {
+        public_id: button_id.clone(),
+        label_text_source: label_text_source.clone(),
+        enabled: button_enabled(button.enabled()),
+        action: UiActionButtonActionResource::TextInputSubmit {
+            input,
+            ime_policy: lower_ime_policy(action.ime_policy()),
+        },
+        bounds: button_slot_bounds(state.action_buttons.len()),
+        source: None,
+    });
+    state.semantic_targets.push(UiSemanticTarget {
+        public_id: button_id.clone(),
+        target: button_id,
+        label_text_source: Some(label_text_source),
+        source: None,
+    });
+}
+
 fn lower_image(image: &ViewImage, state: &mut ViewLoweringState) {
     state.instructions.push(UiProgramInstruction::EmitImage {
         image: expr_source(image.source()),
@@ -274,9 +346,41 @@ fn lower_modifiers(component_id: &str, modifiers: &[ViewModifier], state: &mut V
             }
             ViewModifier::Part(_)
             | ViewModifier::AgentTarget(_)
+            | ViewModifier::Placeholder(_)
+            | ViewModifier::SubmitAction(_)
+            | ViewModifier::Enabled(_)
+            | ViewModifier::Focusable(_)
             | ViewModifier::Environment(_)
             | ViewModifier::Focus(_)
             | ViewModifier::Raw(_) => {}
+        }
+    }
+}
+
+fn lower_button_modifiers(
+    component_id: &str,
+    modifiers: &[ViewModifier],
+    state: &mut ViewLoweringState,
+) {
+    for modifier in modifiers {
+        match modifier {
+            ViewModifier::Style(style) => {
+                let style = lower_style_apply(component_id, style, state);
+                state.instructions.push(UiProgramInstruction::ApplyStyle {
+                    style,
+                    source: None,
+                });
+            }
+            ViewModifier::Part(_)
+            | ViewModifier::AgentTarget(_)
+            | ViewModifier::Placeholder(_)
+            | ViewModifier::SubmitAction(_)
+            | ViewModifier::Enabled(_)
+            | ViewModifier::Focusable(_)
+            | ViewModifier::Environment(_)
+            | ViewModifier::Focus(_)
+            | ViewModifier::Raw(_)
+            | ViewModifier::OnEvent { .. } => {}
         }
     }
 }
@@ -350,7 +454,17 @@ fn next_input_id(
     id
 }
 
+fn next_button_id(component_id: &str, state: &mut ViewLoweringState) -> String {
+    let id = format!("button.{component_id}.{}", state.button_counter);
+    state.button_counter += 1;
+    id
+}
+
 fn normalize_style_ref(reference: &EntityRefSyntax) -> String {
+    normalize_entity_ref(reference)
+}
+
+fn normalize_entity_ref(reference: &EntityRefSyntax) -> String {
     match reference {
         EntityRefSyntax::Absolute(entity) => entity.body().to_owned(),
         EntityRefSyntax::FamilyRelative(relative) => {
@@ -362,8 +476,8 @@ fn normalize_style_ref(reference: &EntityRefSyntax) -> String {
 fn ui_element_kind(value: &str) -> Option<UiElementKind> {
     Some(match value {
         "Surface" => UiElementKind::Surface,
-        "Row" => UiElementKind::Row,
-        "Column" => UiElementKind::Column,
+        "Row" | "HStack" => UiElementKind::Row,
+        "Column" | "VStack" => UiElementKind::Column,
         "Stack" => UiElementKind::Stack,
         "Button" => UiElementKind::Button,
         "TextField" => UiElementKind::TextField,
@@ -405,4 +519,36 @@ fn expr_source(expr: &Expr) -> String {
         Expr::EntityRef(reference) => normalize_style_ref(reference),
         other => format!("{other:?}"),
     }
+}
+
+fn button_label_text(label: &ViewButtonLabel) -> String {
+    match label {
+        ViewButtonLabel::Literal(value) => value.clone(),
+        ViewButtonLabel::Expr(expr) => expr_source(expr),
+        ViewButtonLabel::Empty => String::new(),
+    }
+}
+
+fn button_enabled(enabled: Option<&Expr>) -> bool {
+    match enabled {
+        Some(Expr::Literal(Literal::Bool(value))) => *value,
+        Some(_) | None => true,
+    }
+}
+
+fn lower_ime_policy(policy: ViewTextSubmitImePolicy) -> UiTextSubmitImePolicy {
+    match policy {
+        ViewTextSubmitImePolicy::Commit => UiTextSubmitImePolicy::Commit,
+        ViewTextSubmitImePolicy::Cancel => UiTextSubmitImePolicy::Cancel,
+        ViewTextSubmitImePolicy::Reject => UiTextSubmitImePolicy::Reject,
+    }
+}
+
+fn button_slot_bounds(index: usize) -> UiRuntimeButtonBounds {
+    let y = 112_000_i32.saturating_add(
+        i32::try_from(index)
+            .unwrap_or(i32::MAX)
+            .saturating_mul(56_000),
+    );
+    UiRuntimeButtonBounds::new(48_000, y, 180_000, 44_000)
 }

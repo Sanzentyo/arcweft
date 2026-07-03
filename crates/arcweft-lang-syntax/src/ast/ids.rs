@@ -63,6 +63,34 @@ impl EntityRef {
         }
     }
 
+    pub fn module_scoped_declaration(
+        family: &str,
+        suffix: &str,
+        module_path: Option<&str>,
+        range: TextRange,
+    ) -> Self {
+        Self::new(
+            Self::module_scoped_declaration_body(family, suffix, module_path),
+            false,
+            range,
+        )
+    }
+
+    pub fn module_scoped_declaration_body(
+        family: &str,
+        suffix: &str,
+        module_path: Option<&str>,
+    ) -> String {
+        module_path
+            .map(str::trim)
+            .filter(|module| !module.is_empty())
+            .map(|module| module.replace("::", "."))
+            .map_or_else(
+                || format!("{family}.{suffix}"),
+                |module| format!("{family}.{module}.{suffix}"),
+            )
+    }
+
     pub fn body(&self) -> &str {
         &self.body
     }

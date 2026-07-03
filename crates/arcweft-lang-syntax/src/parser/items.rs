@@ -510,8 +510,12 @@ impl Parser<'_> {
             .body_range
             .as_ref()
             .map(|range| TextRange::new(range.start, range.end));
-        let (kind, visibility, id, name, surface_alias, signature_tail) =
-            parse_entity_decl_head(head.trim(), start_line.start, &mut self.errors)?;
+        let (kind, visibility, id, name, surface_alias, signature_tail) = parse_entity_decl_head(
+            head.trim(),
+            start_line.start,
+            self.current_module_path.as_deref(),
+            &mut self.errors,
+        )?;
         let structured_body = parse_structured_entity_decl_body(
             kind,
             &signature_tail,
@@ -540,8 +544,12 @@ impl Parser<'_> {
         let attrs = self.take_pending_attrs();
         let line = self.current().clone();
         self.index += 1;
-        let (kind, visibility, id, name, surface_alias, signature_tail) =
-            parse_entity_decl_head(line.text.trim(), line.start, &mut self.errors)?;
+        let (kind, visibility, id, name, surface_alias, signature_tail) = parse_entity_decl_head(
+            line.text.trim(),
+            line.start,
+            self.current_module_path.as_deref(),
+            &mut self.errors,
+        )?;
         Some(EntityDeclItem::new(
             attrs,
             kind,
