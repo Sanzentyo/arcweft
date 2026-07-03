@@ -57,3 +57,44 @@ target/css-style-parity/parity-compact.json
   and bold text. The compact viewport validates the same sample's responsive
   first-line rendering, because the textbox visible area clips before the second
   styled line.
+
+## 2026-07-03 DSL Style Expansion
+
+Updated `samples/css-style-parity/main.arcw` so the sample uses more of the
+currently implemented DSL styling surface directly from Arcweft source:
+
+- visible rich text now covers font, color, size, strong, emphasis, ruby source
+  nodes, presentation opacity, transform offset, and wave effect declarations in
+  one player-rendered paragraph;
+- `ui style @style.css_style_parity` now authors typed CSS-like retained UI
+  tokens and rules for surface color, button hover/active/focus styling,
+  text-field caret and selection colors, placeholder color, composition
+  underline color, border radius, scale, opacity, and translate-y.
+
+Validation executed from `D:/git/arcweft`:
+
+```bash
+cargo fmt --all
+cargo test -p arcweft-cli --test css_style_parity_sample -- --nocapture
+cargo run -p arcweft-cli -- bundle samples/css-style-parity/main.arcw --format json --output target/css-dsl-observe/css-style-parity.bundle.json --json
+cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samples/css-style-parity/main.arcw --json --image png --out target/css-dsl-observe/css-style-parity-after.png --mode drain --steps 4 --max-ops 64
+```
+
+Observed evidence:
+
+- `target/css-dsl-observe/css-style-parity-after.png` shows the Arcweft-rendered
+  styled paragraph with colored, larger, bold, italic, transformed, and effect
+  target spans visible in the native player-backed observe path.
+- `target/css-dsl-observe/css-style-parity-after.observe.json` includes
+  `rich_text.presentation.opacity`, `rich_text.transform.offset`, and
+  `rich_text.effect.wave` contributions from the DSL source.
+- `target/css-dsl-observe/css-style-parity.bundle.json` includes the
+  `ui_style` product resource with `style.css_style_parity`, `color.accent`,
+  hover/active interaction rules, focus-visible rules, `caret-color`, and
+  `composition-underline-color`.
+
+Known boundary: retained `ui style` sidecar data is bundled and typed, but the
+current `agent observe` route primarily visualizes the dialogue/rich-text
+renderer. Retained UI sidecar consumption is validated through bundle JSON and
+the interactive UI renderer sample path until the retained UI program is fully
+instantiated by the player scene.

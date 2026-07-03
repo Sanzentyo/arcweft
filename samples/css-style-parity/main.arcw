@@ -6,7 +6,7 @@ pub surface character stylist {
             text {
                 font = "Arcweft Demo"
                 color = rgb("#ecf7ff")
-                size = 28px
+                size = 24px
             }
         }
     }
@@ -17,10 +17,10 @@ pub textbox style_panel {
         text {
             font = "Arcweft Demo"
             color = rgb("#f8fbff")
-            size = 29px
+            size = 24px
         }
         ruby {
-            size = 12px
+            size = 10px
             gap = 1px
         }
     }
@@ -30,15 +30,76 @@ pub dialogue defaults @dialogue.defaults {
     window = @textbox.style_panel
 }
 
+ui style @style.css_style_parity {
+  token font.display_stack = text("Arcweft Demo, Yu Gothic, Hiragino Sans, Noto Sans JP, system-ui")
+  token color.panel = rgba(15, 21, 31, 238)
+  token color.panel_hover = rgba(30, 44, 59, 242)
+  token color.accent = rgba(100, 210, 200, 255)
+  token color.selection = rgba(100, 210, 200, 96)
+  token metric.corner_lg = milli(8000)
+  token metric.focus_ring = milli(2000)
+  token motion.hover_lift = milli(-3000)
+  token motion.pressed_scale = milli(970)
+
+  rule surface {
+    background-color = token(color.panel)
+    color = system_color(surface_text)
+    font-family = token(font.display_stack)
+  }
+
+  rule button {
+    background-color = token(color.panel)
+    color = system_color(accent_text)
+    border-radius = token(metric.corner_lg)
+    opacity = milli(1000)
+    scale = milli(1000)
+    translate-y = milli(0)
+  }
+
+  rule button interaction(hover) {
+    background-color = token(color.panel_hover)
+    color = token(color.accent)
+    translate-y = token(motion.hover_lift)
+  }
+
+  rule button interaction(active) {
+    opacity = milli(920)
+    scale = token(motion.pressed_scale)
+  }
+
+  rule button state(focus_visible) {
+    outline-color = system_color(focus_ring)
+    outline-width = token(metric.focus_ring)
+  }
+
+  rule text_field {
+    caret-color = token(color.accent)
+    selection-color = token(color.selection)
+    placeholder-color = system_color(muted_text)
+    border-radius = token(metric.corner_lg)
+  }
+
+  rule text_field state(composing) {
+    composition-underline-color = token(color.accent)
+  }
+
+  rule text_field state(placeholder_shown) {
+    color = system_color(muted_text)
+  }
+
+  environment text_scale_at_least_milli = 1000
+}
+
 entry game @entry.css_style_parity {
     start @flow.css_style_parity
 }
 
 flow css_style_parity {
     stylist(id=@say.css_style_parity.main, voice=auto):
-        [font "Arcweft Demo"][color #64d2c8]CSS-like style parity[/color][/font] checks renderer-owned text styling only.[r]
-        [color #f6cc66]color[/color], [size 36]size[/size], [strong]Bold[/strong], [em]emphasis[/em], and |[ruby](ルビ) must match native and Web.[p]
-        [color #9be7ff]Styled paragraph wrap probe:[/color] this intentionally long sentence crosses [strong]bold text[/strong], [color #f6cc66]warm color[/color], and [size 34]larger glyph[/size] spans so one dialogue body must wrap as a single paragraph instead of restarting layout at each style run.[p]
+        [font "Arcweft Demo"][color #64d2c8][size 31]DSL-styled text[/size][/color][/font] uses [color #f6cc66]color[/color], [size 32]size[/size], [strong]strong[/strong], [em]emphasis[/em], |[星影](ほしかげ), [style .opacity 0.86][transform .offset x=6px y=-1px][color #9be7ff]opacity plus offset[/color][/transform][/style], and [effect .wave amp=2px dir=0,1 period=8 speed=1][color #b7f58b]wave motion[/color][/effect] in one Arcweft-rendered paragraph.[p]
+
+    stylist(id=@say.css_style_parity.wrap, voice=auto):
+        [color #9be7ff]Styled paragraph wrap probe:[/color] one sentence crosses [strong]bold[/strong], [color #f6cc66]warm color[/color], and [size 34]larger glyph[/size] spans so the paragraph wraps as one body.[p]
 
     choice @choice.css_style_parity {
         @choice.css_style_parity.accept "Keep styled route" -> @flow.done
