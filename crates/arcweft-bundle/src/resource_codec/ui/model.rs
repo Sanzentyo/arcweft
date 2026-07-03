@@ -15,6 +15,8 @@ pub struct UiProgramResource {
     pub state_schema_hashes: Vec<UiStateSchemaHashRef>,
     pub exported_parts: Vec<UiExportedPart>,
     pub semantic_targets: Vec<UiSemanticTarget>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub action_buttons: Vec<UiActionButtonResource>,
     pub adapter_requirements: Vec<CrossSectionRef>,
 }
 
@@ -149,6 +151,64 @@ pub struct UiSemanticTarget {
     pub target: String,
     pub label_text_source: Option<String>,
     pub source: Option<SourceRangeRef>,
+}
+
+/// Product-authored player-rendered action button metadata.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiActionButtonResource {
+    pub public_id: String,
+    pub label_text_source: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    pub action: UiActionButtonActionResource,
+    pub bounds: UiRuntimeButtonBounds,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<SourceRangeRef>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiActionButtonActionResource {
+    TextInputSubmit {
+        input: String,
+        ime_policy: UiTextSubmitImePolicy,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiTextSubmitImePolicy {
+    #[default]
+    Commit,
+    Cancel,
+    Reject,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiRuntimeButtonBounds {
+    pub x_milli: i32,
+    pub y_milli: i32,
+    pub width_milli: u32,
+    pub height_milli: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiRuntimeActionButton {
+    pub public_id: String,
+    pub target: String,
+    pub label: String,
+    pub enabled: bool,
+    pub bounds: UiRuntimeButtonBounds,
+    pub action: UiRuntimeActionButtonAction,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiRuntimeActionButtonAction {
+    TextInputSubmit {
+        input_target: String,
+        ime_policy: UiTextSubmitImePolicy,
+    },
 }
 
 /// Product style section decoded from `UiStyle`.
@@ -771,6 +831,33 @@ impl UiProgramResource {
             .iter()
             .find(|handler| handler.handler_id == handler_id)
     }
+
+    pub fn runtime_action_buttons(
+        &self,
+        text: Option<&UiTextResource>,
+    ) -> Vec<UiRuntimeActionButton> {
+        self.action_buttons
+            .iter()
+            .map(|button| UiRuntimeActionButton {
+                public_id: button.public_id.clone(),
+                target: button.public_id.clone(),
+                label: text
+                    .and_then(|resource| resource.literal_text(&button.label_text_source))
+                    .unwrap_or(&button.public_id)
+                    .to_owned(),
+                enabled: button.enabled,
+                bounds: button.bounds,
+                action: match &button.action {
+                    UiActionButtonActionResource::TextInputSubmit { input, ime_policy } => {
+                        UiRuntimeActionButtonAction::TextInputSubmit {
+                            input_target: input.clone(),
+                            ime_policy: *ime_policy,
+                        }
+                    }
+                },
+            })
+            .collect()
+    }
 }
 
 impl UiRuntimeTextControl {
@@ -916,6 +1003,17 @@ impl UiRuntimeTextControlBounds {
     }
 }
 
+impl UiRuntimeButtonBounds {
+    pub const fn new(x_milli: i32, y_milli: i32, width_milli: u32, height_milli: u32) -> Self {
+        Self {
+            x_milli,
+            y_milli,
+            width_milli,
+            height_milli,
+        }
+    }
+}
+
 impl UiRuntimeTextControlOptions {
     pub const fn from_input(input: &UiInputOptions) -> Self {
         Self {
@@ -929,6 +1027,10 @@ impl UiRuntimeTextControlOptions {
             composition_on_blur: input.composition_on_blur,
         }
     }
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 fn runtime_label_source<'a>(

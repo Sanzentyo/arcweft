@@ -46,10 +46,12 @@ pub use table::{EnumRegistry, EnumSymbol, PublicIdRef, PublicIdTable, StringId, 
 pub use types::{CrossSectionRef, DigestRef, SourceRangeRef, StableId};
 pub use ui::{
     CompactUiInputResource, CompactUiProgramResource, CompactUiStyleResource,
-    CompactUiTextResource, CompactUiThemeResource, UiInputResource, UiProgramResource,
-    UiResourceBudget, UiResourceCompatibility, UiRuntimeTextControl, UiRuntimeTextControlBounds,
+    CompactUiTextResource, CompactUiThemeResource, UiActionButtonActionResource,
+    UiActionButtonResource, UiInputResource, UiProgramResource, UiResourceBudget,
+    UiResourceCompatibility, UiRuntimeActionButton, UiRuntimeActionButtonAction,
+    UiRuntimeButtonBounds, UiRuntimeTextControl, UiRuntimeTextControlBounds,
     UiRuntimeTextControlHandler, UiRuntimeTextControlHandlerRuntime, UiRuntimeTextControlHandlers,
     UiRuntimeTextControlOptions, UiRuntimeTextSelection, UiStyleResource, UiTextResource,
-    UiThemeResource, migrated_ui_section_compatibility,
+    UiTextSubmitImePolicy, UiThemeResource, migrated_ui_section_compatibility,
 };
 pub use wire::{DecodedResourceSection, ProductResourceEnvelope};

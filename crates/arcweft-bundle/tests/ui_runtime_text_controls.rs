@@ -42,6 +42,7 @@ fn ui_input_resource_emits_runtime_text_control_shape() {
             label_text_source: Some("text.label.name".to_owned()),
             source: None,
         }],
+        action_buttons: Vec::new(),
         adapter_requirements: Vec::new(),
     };
 

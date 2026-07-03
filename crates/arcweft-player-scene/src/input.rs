@@ -15,7 +15,8 @@ use arcweft_presentation::text_input::{
     TextInputPrivacy,
 };
 use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, FramePlanError, InteractionVisualState, PreparedFrame, RenderTextInputControl,
+    ChoiceScroll, FramePlanError, InteractionVisualState, PreparedFrame, RenderActionButtonAction,
+    RenderTextInputControl, RenderTextSubmitImePolicy,
 };
 use std::collections::BTreeMap;
 
@@ -39,8 +40,26 @@ impl DragState {
 pub struct InputOutcome {
     pub actions: Vec<Action>,
     pub text_control_write_backs: Vec<TextControlWriteBack>,
+    pub diagnostics: Vec<InputDiagnostic>,
     pub dialogue_advance: bool,
     pub redraw: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InputDiagnostic {
+    pub kind: InputDiagnosticKind,
+    pub target: arcweft_presentation::input::InteractionTarget,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InputDiagnosticKind {
+    ImeCompositionRejectedActionButtonSubmit,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct ActionButtonSubmitOutcome {
+    write_back: Option<TextControlWriteBack>,
+    diagnostic: Option<InputDiagnostic>,
 }
 
 impl InputOutcome {
@@ -56,6 +75,7 @@ impl InputOutcome {
         Self {
             actions: Vec::new(),
             text_control_write_backs: Vec::new(),
+            diagnostics: Vec::new(),
             dialogue_advance: false,
             redraw,
         }
@@ -253,16 +273,34 @@ impl InputController {
         let is_activation = drag
             .as_ref()
             .is_some_and(|drag| drag.distance_squared() <= 64.0);
-        let actions = match (released, routed.decision(), is_activation) {
-            (Some(pressed), RouteDecision::Routed(event), true) if &pressed == event.target() => {
-                choice_action(frame, event.target()).into_iter().collect()
-            }
-            _ => Vec::new(),
-        };
+        let (actions, text_control_write_backs, diagnostics, action_button_activation) =
+            match (released, routed.decision(), is_activation) {
+                (Some(pressed), RouteDecision::Routed(event), true)
+                    if &pressed == event.target() =>
+                {
+                    let actions = choice_action(frame, event.target()).into_iter().collect();
+                    let submit = self.action_button_submit(frame, event.target());
+                    let text_control_write_backs = submit.write_back.into_iter().collect();
+                    let diagnostics = submit.diagnostic.into_iter().collect();
+                    (
+                        actions,
+                        text_control_write_backs,
+                        diagnostics,
+                        frame_target_is_action_button(frame, event.target()),
+                    )
+                }
+                _ => (Vec::new(), Vec::new(), Vec::new(), false),
+            };
         let text_input_activation = routed
             .event()
             .is_some_and(|event| frame_target_is_text_input(frame, event.target()));
-        activation_outcome(frame, actions, is_activation && !text_input_activation)
+        activation_outcome(
+            frame,
+            actions,
+            text_control_write_backs,
+            diagnostics,
+            is_activation && !text_input_activation && !action_button_activation,
+        )
     }
 
     pub fn pointer_cancel(&mut self, pointer: PointerId) -> InputOutcome {
@@ -307,14 +345,30 @@ impl InputController {
                 InputOutcome::redraw(true)
             }
             "Enter" | " " | "Space" => {
-                let actions = self
-                    .interaction
-                    .focus()
-                    .target()
+                let focused = self.interaction.focus().target().cloned();
+                let actions = focused
+                    .as_ref()
                     .and_then(|target| choice_action(frame, target))
                     .into_iter()
-                    .collect();
-                activation_outcome(frame, actions, true)
+                    .collect::<Vec<_>>();
+                let submit = focused
+                    .as_ref()
+                    .map_or_else(ActionButtonSubmitOutcome::default, |target| {
+                        self.action_button_submit(frame, target)
+                    });
+                let text_control_write_backs = submit.write_back.into_iter().collect();
+                let diagnostics = submit.diagnostic.into_iter().collect();
+                let activates_target = focused.as_ref().is_some_and(|target| {
+                    frame.choice_for_target(target).is_some()
+                        || frame.action_button_for_target(target).is_some()
+                });
+                activation_outcome(
+                    frame,
+                    actions,
+                    text_control_write_backs,
+                    diagnostics,
+                    !activates_target,
+                )
             }
             _ => InputOutcome::default(),
         }
@@ -331,6 +385,7 @@ impl InputController {
             return InputOutcome {
                 actions: Vec::new(),
                 text_control_write_backs: Vec::new(),
+                diagnostics: Vec::new(),
                 dialogue_advance: false,
                 redraw: self.ime_composing,
             };
@@ -407,6 +462,7 @@ impl InputController {
         Ok(InputOutcome {
             actions: Vec::new(),
             text_control_write_backs,
+            diagnostics: Vec::new(),
             dialogue_advance: false,
             redraw: true,
         })
@@ -445,18 +501,94 @@ impl InputController {
         self.next_epoch = self.next_epoch.saturating_add(1);
         RawInputEvent::new(epoch, kind)
     }
+
+    fn action_button_submit(
+        &mut self,
+        frame: &PreparedFrame,
+        target: &arcweft_presentation::input::InteractionTarget,
+    ) -> ActionButtonSubmitOutcome {
+        let Some(button) = frame.action_button_for_target(target) else {
+            return ActionButtonSubmitOutcome::default();
+        };
+        if !button.enabled {
+            return ActionButtonSubmitOutcome::default();
+        }
+        let RenderActionButtonAction::TextInputSubmit {
+            input_target,
+            session,
+            value,
+            selection,
+            revision,
+            ime_policy,
+        } = &button.action;
+        if self.ime_composing {
+            match ime_policy {
+                RenderTextSubmitImePolicy::Reject => {
+                    return ActionButtonSubmitOutcome {
+                        write_back: None,
+                        diagnostic: Some(InputDiagnostic {
+                            kind: InputDiagnosticKind::ImeCompositionRejectedActionButtonSubmit,
+                            target: button.target.clone(),
+                        }),
+                    };
+                }
+                RenderTextSubmitImePolicy::Commit | RenderTextSubmitImePolicy::Cancel => {
+                    self.ime_composing = false;
+                }
+            }
+        }
+        let write_back = self
+            .focused_text_editor
+            .as_ref()
+            .filter(|editor| editor.session() == *session && editor.target() == input_target)
+            .map_or_else(
+                || {
+                    Some(TextControlWriteBack::submit(
+                        input_target.clone(),
+                        *session,
+                        value.clone(),
+                        *selection,
+                        *revision,
+                    ))
+                },
+                |editor| {
+                    let privacy = if value.is_sensitive() || editor.options().is_secure() {
+                        TextInputPrivacy::Sensitive
+                    } else {
+                        TextInputPrivacy::Plain
+                    };
+                    Some(TextControlWriteBack::submit(
+                        input_target.clone(),
+                        *session,
+                        TextControlValue::new(editor.text(), privacy),
+                        editor.selection(),
+                        editor.revision(),
+                    ))
+                },
+            );
+        ActionButtonSubmitOutcome {
+            write_back,
+            diagnostic: None,
+        }
+    }
 }
 
 fn activation_outcome(
     frame: &PreparedFrame,
     actions: Vec<Action>,
-    is_activation: bool,
+    text_control_write_backs: Vec<TextControlWriteBack>,
+    diagnostics: Vec<InputDiagnostic>,
+    advances_dialogue: bool,
 ) -> InputOutcome {
-    let dialogue_advance =
-        is_activation && actions.is_empty() && frame.has_dialogue() && frame.choices.is_empty();
+    let dialogue_advance = advances_dialogue
+        && actions.is_empty()
+        && text_control_write_backs.is_empty()
+        && frame.has_dialogue()
+        && frame.choices.is_empty();
     InputOutcome {
         actions,
-        text_control_write_backs: Vec::new(),
+        text_control_write_backs,
+        diagnostics,
         dialogue_advance,
         redraw: true,
     }
@@ -485,6 +617,13 @@ fn frame_target_is_text_input(
         .is_some_and(|node| node.role().is_text_input_control())
 }
 
+fn frame_target_is_action_button(
+    frame: &PreparedFrame,
+    target: &arcweft_presentation::input::InteractionTarget,
+) -> bool {
+    frame.action_button_for_target(target).is_some()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -510,6 +649,7 @@ mod tests {
             dialogue: None,
             choices: Vec::new(),
             text_inputs: vec![control],
+            action_buttons: Vec::new(),
             images: Vec::new(),
             viewport: RenderViewport {
                 logical_width: 640.0,

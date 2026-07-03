@@ -324,6 +324,7 @@ fn fixture_program() -> UiProgramResource {
             label_text_source: Some("text.dialogue.title".to_owned()),
             source: None,
         }],
+        action_buttons: Vec::new(),
         adapter_requirements: vec![],
     }
 }

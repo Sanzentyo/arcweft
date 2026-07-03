@@ -29,6 +29,7 @@ fn scene(dialogue: RenderDialogue) -> RenderScene {
         dialogue: Some(dialogue),
         choices: Vec::new(),
         text_inputs: Vec::new(),
+        action_buttons: Vec::new(),
         images: Vec::new(),
         viewport: viewport(),
         visual_time_millis: 1_000,

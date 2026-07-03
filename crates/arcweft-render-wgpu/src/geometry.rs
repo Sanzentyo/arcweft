@@ -19,8 +19,12 @@ use arcweft_render_text::{
 use num_traits::ToPrimitive;
 use thiserror::Error;
 
+mod action_buttons;
 mod images;
 mod text_controls;
+pub use action_buttons::{
+    PreparedActionButton, RenderActionButton, RenderActionButtonAction, RenderTextSubmitImePolicy,
+};
 pub use images::{RenderImage, RenderImageFrame, RenderImageQuad, RenderImageTransformMatrix};
 pub use text_controls::RenderTextInputControl;
 
@@ -78,6 +82,7 @@ pub struct RenderScene {
     pub dialogue: Option<RenderDialogue>,
     pub choices: Vec<RenderChoiceItem>,
     pub text_inputs: Vec<RenderTextInputControl>,
+    pub action_buttons: Vec<RenderActionButton>,
     pub images: Vec<RenderImage>,
     pub viewport: RenderViewport,
     pub visual_time_millis: u64,
@@ -298,6 +303,7 @@ pub struct PreparedFrame {
     pub text: Vec<RenderTextBlock>,
     pub styled_paragraphs: Vec<RenderStyledParagraph>,
     pub choices: Vec<RenderChoice>,
+    pub action_buttons: Vec<PreparedActionButton>,
     ui_scenes: Vec<PreparedUiScene>,
     dialogue_present: bool,
     focused_text_input: Option<PreparedTextInputTarget>,
@@ -421,50 +427,7 @@ impl SharedFramePlanner {
     pub fn prepare(scene: &RenderScene) -> Result<PreparedFrame, FramePlanError> {
         validate_viewport(scene.viewport)?;
         let ids = FrameIds::new()?;
-        let mut layers = LayerTree::new(
-            LayerNode::new(
-                ids.root.clone(),
-                LayerKind::Root,
-                order(RenderPhase::Background, 0),
-            )
-            .with_input_policy(LayerInputPolicy::Ignore),
-        );
-        layers
-            .insert(
-                LayerNode::new(
-                    ids.dialogue.clone(),
-                    LayerKind::TextBox,
-                    order(RenderPhase::Dialogue, 0),
-                )
-                .with_parent(ids.root.clone())
-                .with_content(LayerContent::TextBox(ids.dialogue_content.clone()))
-                .with_input_policy(LayerInputPolicy::Ignore),
-            )
-            .expect("dialogue layer parent is present");
-        layers
-            .insert(
-                LayerNode::new(
-                    ids.choice.clone(),
-                    LayerKind::GameUi,
-                    order(RenderPhase::GameUi, 0),
-                )
-                .with_parent(ids.root.clone())
-                .with_content(LayerContent::NativeUi(ids.choice_content.clone()))
-                .with_input_policy(LayerInputPolicy::HitTest),
-            )
-            .expect("choice layer parent is present");
-        layers
-            .insert(
-                LayerNode::new(
-                    ids.text_input.clone(),
-                    LayerKind::GameUi,
-                    order(RenderPhase::GameUi, 1),
-                )
-                .with_parent(ids.root)
-                .with_content(LayerContent::NativeUi(ids.text_input_content.clone()))
-                .with_input_policy(LayerInputPolicy::HitTest),
-            )
-            .expect("text-input layer parent is present");
+        let layers = build_frame_layers(&ids);
 
         let palette = Palette::from_preferences(scene.preferences);
         let mut rectangles = vec![PaintRect {
@@ -505,6 +468,16 @@ impl SharedFramePlanner {
             &mut text,
             &palette,
         )?;
+        let submit_action = RenderActionKind::TextInputSubmit.public_id()?;
+        let action_buttons = action_buttons::build_action_buttons(
+            scene,
+            &ids.action_button,
+            &mut semantics,
+            &mut rectangles,
+            &mut text,
+            &palette,
+            &submit_action,
+        );
         let hits = semantics.to_hit_tree();
 
         Ok(PreparedFrame {
@@ -517,11 +490,72 @@ impl SharedFramePlanner {
             text,
             styled_paragraphs,
             choices,
+            action_buttons,
             ui_scenes: Vec::new(),
             dialogue_present: scene.dialogue.is_some(),
             focused_text_input,
         })
     }
+}
+
+fn build_frame_layers(ids: &FrameIds) -> LayerTree {
+    let mut layers = LayerTree::new(
+        LayerNode::new(
+            ids.root.clone(),
+            LayerKind::Root,
+            order(RenderPhase::Background, 0),
+        )
+        .with_input_policy(LayerInputPolicy::Ignore),
+    );
+    layers
+        .insert(
+            LayerNode::new(
+                ids.dialogue.clone(),
+                LayerKind::TextBox,
+                order(RenderPhase::Dialogue, 0),
+            )
+            .with_parent(ids.root.clone())
+            .with_content(LayerContent::TextBox(ids.dialogue_content.clone()))
+            .with_input_policy(LayerInputPolicy::Ignore),
+        )
+        .expect("dialogue layer parent is present");
+    layers
+        .insert(
+            LayerNode::new(
+                ids.choice.clone(),
+                LayerKind::GameUi,
+                order(RenderPhase::GameUi, 0),
+            )
+            .with_parent(ids.root.clone())
+            .with_content(LayerContent::NativeUi(ids.choice_content.clone()))
+            .with_input_policy(LayerInputPolicy::HitTest),
+        )
+        .expect("choice layer parent is present");
+    layers
+        .insert(
+            LayerNode::new(
+                ids.text_input.clone(),
+                LayerKind::GameUi,
+                order(RenderPhase::GameUi, 1),
+            )
+            .with_parent(ids.root.clone())
+            .with_content(LayerContent::NativeUi(ids.text_input_content.clone()))
+            .with_input_policy(LayerInputPolicy::HitTest),
+        )
+        .expect("text-input layer parent is present");
+    layers
+        .insert(
+            LayerNode::new(
+                ids.action_button.clone(),
+                LayerKind::GameUi,
+                order(RenderPhase::GameUi, 2),
+            )
+            .with_parent(ids.root.clone())
+            .with_content(LayerContent::NativeUi(ids.action_button_content.clone()))
+            .with_input_policy(LayerInputPolicy::HitTest),
+        )
+        .expect("action-button layer parent is present");
+    layers
 }
 
 fn push_dialogue_panel(
@@ -858,6 +892,15 @@ impl PreparedFrame {
         self.choices.iter().find(|choice| &choice.target == target)
     }
 
+    pub fn action_button_for_target(
+        &self,
+        target: &InteractionTarget,
+    ) -> Option<&PreparedActionButton> {
+        self.action_buttons
+            .iter()
+            .find(|button| &button.target == target)
+    }
+
     pub fn first_choice_target(&self) -> Option<InteractionTarget> {
         self.choices.first().map(|choice| choice.target.clone())
     }
@@ -870,8 +913,16 @@ impl PreparedFrame {
             .map(|node| node.target().clone())
     }
 
+    pub fn action_button_targets(&self) -> impl Iterator<Item = InteractionTarget> + '_ {
+        self.action_buttons
+            .iter()
+            .filter(|button| button.enabled)
+            .map(|button| button.target.clone())
+    }
+
     pub fn keyboard_focus_targets(&self) -> Vec<InteractionTarget> {
         self.text_input_targets()
+            .chain(self.action_button_targets())
             .chain(self.choices.iter().map(|choice| choice.target.clone()))
             .collect()
     }
@@ -1079,12 +1130,14 @@ const fn order(phase: RenderPhase, z: i32) -> LayerOrder {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RenderActionKind {
     ChoiceSelect,
+    TextInputSubmit,
 }
 
 impl RenderActionKind {
     const fn as_str(self) -> &'static str {
         match self {
             Self::ChoiceSelect => "action.choice.select",
+            Self::TextInputSubmit => "action.text_input.submit",
         }
     }
 
@@ -1101,9 +1154,11 @@ enum FrameStaticId {
     DialogueLayer,
     ChoiceLayer,
     TextInputLayer,
+    ActionButtonLayer,
     DialogueContent,
     ChoiceContent,
     TextInputContent,
+    ActionButtonContent,
 }
 
 impl FrameStaticId {
@@ -1113,9 +1168,11 @@ impl FrameStaticId {
             Self::DialogueLayer => "layer.player.dialogue",
             Self::ChoiceLayer => "layer.player.choice",
             Self::TextInputLayer => "layer.player.text_input",
+            Self::ActionButtonLayer => "layer.player.action_button",
             Self::DialogueContent => "textbox.player.dialogue",
             Self::ChoiceContent => "ui.player.choice",
             Self::TextInputContent => "ui.player.text_input",
+            Self::ActionButtonContent => "ui.player.action_button",
         }
     }
 
@@ -1145,9 +1202,11 @@ struct FrameIds {
     dialogue: LayerId,
     choice: LayerId,
     text_input: LayerId,
+    action_button: LayerId,
     dialogue_content: PublicId,
     choice_content: PublicId,
     text_input_content: PublicId,
+    action_button_content: PublicId,
 }
 
 impl FrameIds {
@@ -1157,9 +1216,11 @@ impl FrameIds {
             dialogue: FrameStaticId::DialogueLayer.layer_id()?,
             choice: FrameStaticId::ChoiceLayer.layer_id()?,
             text_input: FrameStaticId::TextInputLayer.layer_id()?,
+            action_button: FrameStaticId::ActionButtonLayer.layer_id()?,
             dialogue_content: FrameStaticId::DialogueContent.public_id()?,
             choice_content: FrameStaticId::ChoiceContent.public_id()?,
             text_input_content: FrameStaticId::TextInputContent.public_id()?,
+            action_button_content: FrameStaticId::ActionButtonContent.public_id()?,
         })
     }
 }

@@ -1,3 +1,4 @@
+use crate::action_buttons::{RuntimeActionButtonLowerer, RuntimeActionButtonLoweringError};
 use crate::images::{BundleImageCatalog, BundleImageCatalogError};
 use crate::input::InputController;
 use crate::text_controls::{RuntimeTextControlLowerer, RuntimeTextControlLoweringError};
@@ -30,6 +31,8 @@ pub enum PlayerFrameError {
     #[error(transparent)]
     TextControlLowering(#[from] RuntimeTextControlLoweringError),
     #[error(transparent)]
+    ActionButtonLowering(#[from] RuntimeActionButtonLoweringError),
+    #[error(transparent)]
     Images(#[from] BundleImageCatalogError),
     #[error(transparent)]
     FramePlan(#[from] FramePlanError),
@@ -50,6 +53,10 @@ impl PlayerFramePlanner {
     ) -> Result<RenderScene, PlayerFrameError> {
         let text_inputs =
             RuntimeTextControlLowerer::lower_for_frame(input, &request.presentation.text_inputs)?;
+        let action_buttons = RuntimeActionButtonLowerer::lower_buttons(
+            &request.presentation.action_buttons,
+            &text_inputs,
+        )?;
         Ok(RenderScene {
             dialogue: request
                 .presentation
@@ -66,6 +73,7 @@ impl PlayerFramePlanner {
                 })
                 .collect(),
             text_inputs,
+            action_buttons,
             images: request.images.render_images(
                 &request.presentation.images,
                 request.image_time_millis,

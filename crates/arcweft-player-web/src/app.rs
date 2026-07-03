@@ -493,6 +493,7 @@ fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) {
     let InputOutcome {
         actions,
         text_control_write_backs,
+        diagnostics: _,
         dialogue_advance,
         redraw: _,
     } = outcome;

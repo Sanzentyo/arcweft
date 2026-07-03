@@ -17,6 +17,7 @@ pub enum EntityKind {
     Text,
     Content,
     Input,
+    Button,
     Style,
     Asset,
     Image,

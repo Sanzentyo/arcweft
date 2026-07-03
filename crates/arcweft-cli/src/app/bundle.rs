@@ -391,6 +391,7 @@ fn merge_ui_programs(mut left: UiProgramResource, right: UiProgramResource) -> U
     left.state_schema_hashes.extend(right.state_schema_hashes);
     left.exported_parts.extend(right.exported_parts);
     left.semantic_targets.extend(right.semantic_targets);
+    left.action_buttons.extend(right.action_buttons);
     left.adapter_requirements.extend(right.adapter_requirements);
     left
 }
@@ -476,7 +477,6 @@ fn collect_bundle_dsl_ui_resources(module: &HirModule) -> Result<BundleUiSidecar
             _ => None,
         })
         .collect::<Vec<_>>();
-
     let mut sidecars = BundleUiSidecars {
         style: dsl_ui_style_resource(&styles)?,
         ..BundleUiSidecars::default()
@@ -493,14 +493,15 @@ fn collect_bundle_dsl_ui_resources(module: &HirModule) -> Result<BundleUiSidecar
         }
 
         sidecars.program = Some(UiProgramResource {
-            program_id: "ui.program.dsl_text_inputs".to_owned(),
-            root_component: "ui.component.dsl_text_inputs".to_owned(),
+            program_id: "ui.program.dsl_controls".to_owned(),
+            root_component: "ui.component.dsl_controls".to_owned(),
             instructions: Vec::new(),
             child_spans: Vec::new(),
             handlers: Vec::new(),
             state_schema_hashes: Vec::new(),
             exported_parts: Vec::new(),
             semantic_targets,
+            action_buttons: Vec::new(),
             adapter_requirements: Vec::new(),
         });
         sidecars.text = Some(UiTextResource {

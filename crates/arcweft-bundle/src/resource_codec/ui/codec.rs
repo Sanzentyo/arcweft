@@ -31,6 +31,7 @@ pub struct UiResourceBudget {
     pub state_schema_hashes: usize,
     pub exported_parts: usize,
     pub semantic_targets: usize,
+    pub action_buttons: usize,
     pub style_rules: usize,
     pub style_tokens: usize,
     pub selector_depth: usize,
@@ -74,6 +75,7 @@ impl Default for UiResourceBudget {
             state_schema_hashes: 65_536,
             exported_parts: 65_536,
             semantic_targets: 262_144,
+            action_buttons: 65_536,
             style_rules: 262_144,
             style_tokens: 65_536,
             selector_depth: 32,
@@ -160,6 +162,8 @@ impl UiProgramResource {
             .sort_by(|left, right| left.part_id.cmp(&right.part_id));
         self.semantic_targets
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
+        self.action_buttons
+            .sort_by(|left, right| left.public_id.cmp(&right.public_id));
     }
 
     fn validate(&self, budget: UiResourceBudget) -> Result<(), SectionCodecError> {
@@ -185,6 +189,11 @@ impl UiProgramResource {
             budget.semantic_targets,
             "ui_semantic_targets",
         )?;
+        check_budget(
+            self.action_buttons.len(),
+            budget.action_buttons,
+            "ui_action_buttons",
+        )?;
         self.child_spans.iter().try_for_each(|span| {
             if span.start_instruction > span.end_instruction
                 || span.end_instruction as usize > self.instructions.len()
@@ -209,6 +218,12 @@ impl UiProgramResource {
                 .iter()
                 .map(|target| target.public_id.clone()),
             "ui_semantic_targets",
+        )?;
+        reject_duplicates(
+            self.action_buttons
+                .iter()
+                .map(|button| button.public_id.clone()),
+            "ui_action_buttons",
         )
     }
 
@@ -240,12 +255,28 @@ impl UiProgramResource {
                     ]
                     .into_iter()
                     .flatten()
+                }))
+                .chain(self.action_buttons.iter().flat_map(|button| {
+                    let action_ids = match &button.action {
+                        super::model::UiActionButtonActionResource::TextInputSubmit {
+                            input,
+                            ..
+                        } => Some(input.clone()),
+                    };
+                    [
+                        Some(button.public_id.clone()),
+                        Some(button.label_text_source.clone()),
+                        action_ids,
+                    ]
+                    .into_iter()
+                    .flatten()
                 })),
         )
     }
 
     fn record_count(&self) -> u32 {
         saturating_u32(self.instructions.len())
+            .saturating_add(saturating_u32(self.action_buttons.len()))
     }
 }
 

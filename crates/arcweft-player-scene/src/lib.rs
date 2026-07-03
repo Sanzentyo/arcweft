@@ -1,5 +1,6 @@
 //! Host-neutral scene helpers shared by native and browser players.
 
+pub mod action_buttons;
 pub mod characters;
 pub mod frame;
 pub mod images;

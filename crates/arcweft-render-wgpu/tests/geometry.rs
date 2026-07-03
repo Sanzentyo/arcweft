@@ -35,6 +35,7 @@ fn scene() -> RenderScene {
             },
         ],
         text_inputs: Vec::new(),
+        action_buttons: Vec::new(),
         images: Vec::new(),
         viewport,
         visual_time_millis: 0,

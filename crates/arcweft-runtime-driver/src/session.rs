@@ -17,7 +17,9 @@ use arcweft_bundle::patch::{
     BundlePatchArtifact, PatchBundleError, PatchCompatibility, PatchValidationError,
     apply_patch_bundle, decode_patch_bundle,
 };
-use arcweft_bundle::resource_codec::{UiRuntimeTextControl, UiRuntimeTextSelection};
+use arcweft_bundle::resource_codec::{
+    UiRuntimeActionButton, UiRuntimeTextControl, UiRuntimeTextSelection,
+};
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleImageObject, BundleKind};
 use arcweft_core::awbc::{
     product_step::AwbcProductStepBuildError,
@@ -152,6 +154,7 @@ pub struct BundleSession {
     display: LineDisplayCatalog,
     image_objects: Vec<BundleImageObject>,
     text_inputs: Vec<UiRuntimeTextControl>,
+    action_buttons: Vec<UiRuntimeActionButton>,
     options: BundleSessionOptions,
     pending_input_events: Vec<RoutedInputEvent>,
     pending_text_control_write_backs: Vec<RuntimeTextControlWriteBack>,
@@ -398,6 +401,7 @@ impl BundleSession {
         let display = runtime.display.clone();
         let image_objects = runtime.image_objects.clone();
         let text_inputs = runtime.text_inputs.clone();
+        let action_buttons = runtime.action_buttons.clone();
         let source_label = runtime.source_label.clone();
 
         Ok(Self {
@@ -410,6 +414,7 @@ impl BundleSession {
             display,
             image_objects,
             text_inputs,
+            action_buttons,
             options,
             pending_input_events: Vec::new(),
             pending_text_control_write_backs: Vec::new(),
@@ -613,6 +618,7 @@ impl BundleSession {
                 self.display = bundle.display.clone();
                 self.image_objects.clone_from(&bundle.image_objects);
                 self.text_inputs.clone_from(&next_runtime.text_inputs);
+                self.action_buttons.clone_from(&next_runtime.action_buttons);
             }
             SwapCompatibility::CodeCompatible => {
                 self.activate_runtime(next_runtime.clone());
@@ -682,6 +688,7 @@ impl BundleSession {
                 self.display = bundle.display.clone();
                 self.image_objects.clone_from(&bundle.image_objects);
                 self.text_inputs.clone_from(&next_runtime.text_inputs);
+                self.action_buttons.clone_from(&next_runtime.action_buttons);
             }
             SwapCompatibility::CodeCompatible => {
                 self.activate_runtime(next_runtime.clone());
@@ -850,6 +857,7 @@ impl BundleSession {
             &line_effects,
             &self.image_objects,
             &self.text_inputs,
+            &self.action_buttons,
         );
         let observations = self.executor.fiber().observations.clone();
 
@@ -1007,6 +1015,7 @@ impl BundleSession {
         self.display = runtime.display;
         self.image_objects = runtime.image_objects;
         self.text_inputs = runtime.text_inputs;
+        self.action_buttons = runtime.action_buttons;
     }
 
     fn prune_runtime_images(&mut self) {
@@ -1167,6 +1176,7 @@ struct SessionRuntime {
     display: LineDisplayCatalog,
     image_objects: Vec<BundleImageObject>,
     text_inputs: Vec<UiRuntimeTextControl>,
+    action_buttons: Vec<UiRuntimeActionButton>,
 }
 
 fn initial_generation(bundle: &ArcweftBundle) -> Result<ProgramGeneration, BundleSessionError> {
@@ -1197,6 +1207,7 @@ impl SessionRuntime {
         display: LineDisplayCatalog,
         image_objects: Vec<BundleImageObject>,
         text_inputs: Vec<UiRuntimeTextControl>,
+        action_buttons: Vec<UiRuntimeActionButton>,
     ) -> Result<Self, AwbcProductStepBuildError> {
         let executor = ArcweftRuntimeExecutor::from_awbc_product(program.clone(), entry)?;
         Ok(Self {
@@ -1207,6 +1218,7 @@ impl SessionRuntime {
             display,
             image_objects,
             text_inputs,
+            action_buttons,
         })
     }
 
@@ -1223,6 +1235,7 @@ impl SessionRuntime {
             self.display.clone(),
             self.image_objects.clone(),
             self.text_inputs.clone(),
+            self.action_buttons.clone(),
         )
         .map_err(BundleEntryStartError::from)
     }
@@ -1247,6 +1260,9 @@ fn build_session_runtime(
     let text_inputs = bundle.ui_input.as_ref().map_or_else(Vec::new, |input| {
         input.runtime_text_controls(bundle.ui_text.as_ref(), bundle.ui_program.as_ref())
     });
+    let action_buttons = bundle.ui_program.as_ref().map_or_else(Vec::new, |program| {
+        program.runtime_action_buttons(bundle.ui_text.as_ref())
+    });
 
     SessionRuntime::new(
         bundle.manifest.source_label.clone(),
@@ -1255,6 +1271,7 @@ fn build_session_runtime(
         bundle.display.clone(),
         bundle.image_objects.clone(),
         text_inputs,
+        action_buttons,
     )
     .map_err(BundleSessionError::from)
 }

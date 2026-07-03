@@ -922,6 +922,7 @@ impl NativeSceneState {
         let InputOutcome {
             actions,
             text_control_write_backs,
+            diagnostics: _,
             dialogue_advance,
             redraw: _,
         } = outcome;
