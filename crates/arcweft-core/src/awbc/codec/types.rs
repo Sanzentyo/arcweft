@@ -9,7 +9,8 @@ use crate::awbc::schema::{
     AwbcPatternId, AwbcPureHelperId, AwbcRecordField, AwbcRegisterId, AwbcResourceId,
     AwbcResumePointId, AwbcRuntimeType, AwbcScopeId, AwbcSignature, AwbcSignatureId,
     AwbcSignedIntKind, AwbcSourceMapId, AwbcSourcePlanId, AwbcStreamPlanId, AwbcStringId,
-    AwbcTableRange, AwbcTaskPlanId, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantCase,
+    AwbcTableRange, AwbcTaskPlanId, AwbcTraitMethodId, AwbcTypeId, AwbcUnsignedIntKind,
+    AwbcVariantCase,
 };
 
 wire_id!(
@@ -40,6 +41,7 @@ wire_id!(
     AwbcStreamPlanId,
     AwbcSourcePlanId,
     AwbcPureHelperId,
+    AwbcTraitMethodId,
     AwbcDisplayMapId,
     AwbcSourceMapId,
     AwbcResourceId,
@@ -275,15 +277,26 @@ impl Wire for AwbcConstant {
                 writer.write_u8(11);
                 items.write_wire(writer)?;
             }
-            Self::Record { ty, fields } => {
+            Self::Record {
+                ty,
+                field_names,
+                fields,
+            } => {
                 writer.write_u8(12);
                 ty.write_wire(writer)?;
+                field_names.write_wire(writer)?;
                 fields.write_wire(writer)?;
             }
-            Self::Variant { ty, case, payload } => {
+            Self::Variant {
+                ty,
+                case,
+                case_name,
+                payload,
+            } => {
                 writer.write_u8(13);
                 ty.write_wire(writer)?;
                 case.write_wire(writer)?;
+                case_name.write_wire(writer)?;
                 payload.write_wire(writer)?;
             }
             Self::Range {
@@ -300,22 +313,8 @@ impl Wire for AwbcConstant {
                 writer.write_u8(14);
                 bytes.write_wire(writer)?;
             }
-            Self::TensorF32 { shape, values } => {
-                writer.write_u8(15);
-                shape.write_wire(writer)?;
-                writer.write_len(values.len())?;
-                for value in values {
-                    writer.write_u32_le(*value);
-                }
-            }
-            Self::TensorF64 { shape, values } => {
-                writer.write_u8(16);
-                shape.write_wire(writer)?;
-                writer.write_len(values.len())?;
-                for value in values {
-                    writer.write_u64_le(*value);
-                }
-            }
+            Self::TensorF32 { shape, values } => write_tensor_f32_constant(writer, shape, values)?,
+            Self::TensorF64 { shape, values } => write_tensor_f64_constant(writer, shape, values)?,
         }
         Ok(())
     }
@@ -343,11 +342,13 @@ impl Wire for AwbcConstant {
             11 => Self::Sequence(Vec::<AwbcConstantId>::read_wire(reader)?),
             12 => Self::Record {
                 ty: AwbcTypeId::read_wire(reader)?,
+                field_names: Vec::<AwbcStringId>::read_wire(reader)?,
                 fields: Vec::<AwbcConstantId>::read_wire(reader)?,
             },
             13 => Self::Variant {
                 ty: AwbcTypeId::read_wire(reader)?,
                 case: u32::read_wire(reader)?,
+                case_name: AwbcStringId::read_wire(reader)?,
                 payload: Option::<AwbcConstantId>::read_wire(reader)?,
             },
             17 => Self::Range {
@@ -383,6 +384,42 @@ impl Wire for AwbcConstant {
             }
         })
     }
+}
+
+fn write_tensor_f32_constant(
+    writer: &mut Writer,
+    shape: &[u32],
+    values: &[u32],
+) -> Result<(), AwbcCodecError> {
+    writer.write_u8(15);
+    write_u32_slice(writer, shape)?;
+    writer.write_len(values.len())?;
+    for value in values {
+        writer.write_u32_le(*value);
+    }
+    Ok(())
+}
+
+fn write_tensor_f64_constant(
+    writer: &mut Writer,
+    shape: &[u32],
+    values: &[u64],
+) -> Result<(), AwbcCodecError> {
+    writer.write_u8(16);
+    write_u32_slice(writer, shape)?;
+    writer.write_len(values.len())?;
+    for value in values {
+        writer.write_u64_le(*value);
+    }
+    Ok(())
+}
+
+fn write_u32_slice(writer: &mut Writer, values: &[u32]) -> Result<(), AwbcCodecError> {
+    writer.write_len(values.len())?;
+    for value in values {
+        writer.write_u32_le(*value);
+    }
+    Ok(())
 }
 
 impl Wire for AwbcEffectSet {

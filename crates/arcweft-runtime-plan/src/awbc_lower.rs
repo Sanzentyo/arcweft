@@ -15,6 +15,7 @@ mod pattern;
 mod source;
 #[cfg(test)]
 mod tests;
+mod trait_method;
 
 pub(crate) use audio::AwbcAudioLowerer;
 pub use expr::AwbcExprLowerer;
@@ -23,6 +24,7 @@ pub use frame::{FrameBuilder, FrameSlotKey};
 pub use inventory::{AwbcInventory, AwbcLowerDiagnostic, AwbcLowerStats};
 pub use line::AwbcLineLowerer;
 pub use source::AwbcSourceStreamLowerer;
+pub(crate) use trait_method::AwbcTraitMethodLowerer;
 
 use arcweft_core::awbc::schema::{AwbcProgram, AwbcSourceMapEntry};
 use arcweft_core::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};

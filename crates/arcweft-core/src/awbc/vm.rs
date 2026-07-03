@@ -13,8 +13,8 @@ use super::schema::{
     AwbcEffectPlanId, AwbcFunctionId, AwbcInstruction, AwbcInstructionId, AwbcIntrinsicId,
     AwbcOpcode, AwbcPattern, AwbcPatternId, AwbcProgram, AwbcPureHelperId, AwbcRegisterId,
     AwbcResumePointId, AwbcSignedIntKind, AwbcSourceMapId, AwbcSourcePlanId, AwbcStreamPlanId,
-    AwbcStringId, AwbcTaskPlanId, AwbcTerminator, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
-    AwbcUnsignedIntKind,
+    AwbcStringId, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTraitReceiverMode,
+    AwbcTrapCode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
 };
 use crate::time::LogicalDuration;
 use crate::value::{
@@ -109,6 +109,8 @@ pub enum VmError {
     MissingType(AwbcTypeId),
     #[error("AWBC intrinsic {0:?} was not resolved by the VM host")]
     MissingIntrinsic(AwbcIntrinsicId),
+    #[error("AWBC trait method {0:?} does not exist")]
+    MissingTraitMethod(AwbcTraitMethodId),
     #[error("runtime error: {0}")]
     Runtime(String),
 }
@@ -437,13 +439,18 @@ fn execute_instruction(
                 }
             }
         }
-        AwbcInstruction::MakeRecord { dst, fields, .. } => {
+        AwbcInstruction::MakeRecord {
+            dst,
+            field_names,
+            fields,
+            ..
+        } => {
             let fields = fields
                 .iter()
-                .enumerate()
-                .map(|(index, register_id)| {
+                .zip(field_names)
+                .map(|(register_id, field_name)| {
                     Ok(crate::value::RuntimeFieldValue {
-                        name: format!("field{index}"),
+                        name: string(program, *field_name)?.to_owned(),
                         value: register(fiber, *register_id)?.clone(),
                     })
                 })
@@ -453,7 +460,10 @@ fn execute_instruction(
                 .set_register(*dst, RuntimeValue::Record(fields))?;
         }
         AwbcInstruction::MakeVariant {
-            dst, case, payload, ..
+            dst,
+            case_name,
+            payload,
+            ..
         } => {
             let payload = payload
                 .map(|payload| register(fiber, payload).cloned())
@@ -463,7 +473,7 @@ fn execute_instruction(
                 *dst,
                 RuntimeValue::Variant {
                     path: None,
-                    name: format!("case{case}"),
+                    name: string(program, *case_name)?.to_owned(),
                     payload,
                 },
             )?;
@@ -534,6 +544,47 @@ fn execute_instruction(
                 .collect::<Result<Vec<_>, _>>()?;
             let value = host.call_pure_helper(program, *helper, &args)?;
             fiber.active_frame_mut()?.set_register(*dst, value)?;
+        }
+        AwbcInstruction::AssignField {
+            target,
+            field,
+            value,
+        } => {
+            let field = string(program, *field)?.to_owned();
+            let value = register(fiber, *value)?.clone();
+            let frame = fiber.active_frame_mut()?;
+            let Some(target_value) = frame
+                .registers
+                .get_mut(target.index())
+                .and_then(Option::as_mut)
+            else {
+                return Err(FiberStateError::RegisterOutOfBounds {
+                    register: target.0,
+                    layout: frame.layout.0,
+                }
+                .into());
+            };
+            set_record_field_value(target_value, &field, value)?;
+        }
+        AwbcInstruction::CallTraitMethod {
+            dst,
+            method,
+            receiver,
+            args,
+            receiver_out,
+        } => {
+            let outcome =
+                execute_trait_method_call(program, fiber, host, *method, *receiver, args)?;
+            fiber
+                .active_frame_mut()?
+                .set_register(*dst, outcome.value)?;
+            if let (Some(register), Some(updated_receiver)) =
+                (*receiver_out, outcome.updated_receiver)
+            {
+                fiber
+                    .active_frame_mut()?
+                    .set_register(register, updated_receiver)?;
+            }
         }
         AwbcInstruction::CallIntrinsic {
             dst,
@@ -640,6 +691,115 @@ fn execute_instruction(
     Ok(())
 }
 
+#[derive(Debug)]
+struct TraitMethodVmOutcome {
+    value: RuntimeValue,
+    updated_receiver: Option<RuntimeValue>,
+}
+
+fn execute_trait_method_call(
+    program: &AwbcProgram,
+    caller: &mut FiberState,
+    host: &mut impl VmHost,
+    method: AwbcTraitMethodId,
+    receiver: AwbcRegisterId,
+    args: &[AwbcRegisterId],
+) -> Result<TraitMethodVmOutcome, VmError> {
+    const TRAIT_METHOD_BUDGET: u64 = 4_096;
+
+    let method_record = program
+        .trait_methods
+        .get(method.index())
+        .ok_or(VmError::MissingTraitMethod(method))?;
+    let mut values = Vec::with_capacity(args.len() + 1);
+    values.push(register(caller, receiver)?.clone());
+    values.extend(register_values(caller, args)?);
+
+    let mut method_fiber = FiberState::for_function(
+        program,
+        caller.entry,
+        method_record.function,
+        caller.generation,
+        TRAIT_METHOD_BUDGET,
+    )?;
+    method_fiber
+        .active_frame_mut()?
+        .bind_positional_arguments(program, &values)?;
+
+    let mut executed = 0_u64;
+    loop {
+        let output = step_with_host(
+            program,
+            &mut method_fiber,
+            VmStepOptions {
+                max_instructions: TRAIT_METHOD_BUDGET,
+            },
+            host,
+        )?;
+        executed = executed.saturating_add(output.executed);
+        match output.exit {
+            VmExit::Running if executed < TRAIT_METHOD_BUDGET => {}
+            VmExit::Returned(Some(value)) => {
+                if executed > 0 && !caller.consume_budget(executed) {
+                    return Err(VmError::Runtime(
+                        "trait method call exceeded caller instruction budget".to_owned(),
+                    ));
+                }
+                let updated_receiver = if method_record.receiver == AwbcTraitReceiverMode::MutRef {
+                    let slot = method_record.receiver_state_slot.ok_or_else(|| {
+                        VmError::Runtime(
+                            "mut trait method is missing receiver state slot".to_owned(),
+                        )
+                    })?;
+                    Some(method_fiber.active_frame()?.register(slot)?.clone())
+                } else {
+                    None
+                };
+                return Ok(TraitMethodVmOutcome {
+                    value,
+                    updated_receiver,
+                });
+            }
+            VmExit::Returned(None) => {
+                return Err(VmError::Runtime(
+                    "trait method returned unit where a value was required".to_owned(),
+                ));
+            }
+            VmExit::Trapped(trap) => {
+                return Err(VmError::Runtime(format!("trait method trapped: {trap:?}")));
+            }
+            VmExit::Suspended(reason) => {
+                return Err(VmError::Runtime(format!(
+                    "trait method attempted to suspend: {reason:?}"
+                )));
+            }
+            VmExit::BudgetYield(_) | VmExit::Running => {
+                return Err(VmError::Runtime(
+                    "trait method did not complete within deterministic call budget".to_owned(),
+                ));
+            }
+        }
+    }
+}
+
+fn set_record_field_value(
+    target: &mut RuntimeValue,
+    field: &str,
+    value: RuntimeValue,
+) -> Result<(), VmError> {
+    let RuntimeValue::Record(fields) = target else {
+        return Err(VmError::Runtime(format!(
+            "field assignment expected record, found {}",
+            runtime_value_label(target)
+        )));
+    };
+    let Some(field_value) = fields.iter_mut().find(|candidate| candidate.name == field) else {
+        return Err(VmError::Runtime(format!("missing field `{field}`")));
+    };
+    field_value.value = value;
+    Ok(())
+}
+
 #[allow(
     clippy::too_many_lines,
     reason = "AWBC terminator dispatch keeps the shared fiber/suspension state machine in one match"
@@ -662,9 +822,13 @@ fn execute_terminator(
             then_block,
             else_block,
         } => {
-            let condition = register(fiber, *condition)?
-                .as_bool()
-                .ok_or_else(|| VmError::Runtime("branch condition expected bool".to_owned()))?;
+            let condition_value = register(fiber, *condition)?;
+            let condition = condition_value.as_bool().ok_or_else(|| {
+                VmError::Runtime(format!(
+                    "branch condition expected bool, found {}",
+                    runtime_value_label(condition_value)
+                ))
+            })?;
             jump(fiber, if condition { *then_block } else { *else_block });
             Ok(VmExit::Running)
         }
@@ -937,21 +1101,27 @@ pub(crate) fn constant_value(
                 .map(|item| constant_value(program, *item))
                 .collect::<Result<Vec<_>, _>>()?,
         )),
-        AwbcConstant::Record { fields, .. } => Ok(RuntimeValue::Record(
+        AwbcConstant::Record {
+            field_names,
+            fields,
+            ..
+        } => Ok(RuntimeValue::Record(
             fields
                 .iter()
-                .enumerate()
-                .map(|(index, field)| {
+                .zip(field_names)
+                .map(|(field, field_name)| {
                     Ok(crate::value::RuntimeFieldValue {
-                        name: format!("field{index}"),
+                        name: string(program, *field_name)?.to_owned(),
                         value: constant_value(program, *field)?,
                     })
                 })
                 .collect::<Result<Vec<_>, VmError>>()?,
         )),
-        AwbcConstant::Variant { case, payload, .. } => Ok(RuntimeValue::Variant {
+        AwbcConstant::Variant {
+            case_name, payload, ..
+        } => Ok(RuntimeValue::Variant {
             path: None,
-            name: format!("case{case}"),
+            name: string(program, *case_name)?.to_owned(),
             payload: payload
                 .map(|id| constant_value(program, id))
                 .transpose()?
@@ -1078,8 +1248,11 @@ pub(crate) fn test_pattern(
         AwbcPattern::Sequence { items, .. } => {
             matches!(value, RuntimeValue::Seq(sequence) if sequence.len() >= items.len() && items.iter().enumerate().all(|(index, pattern)| test_pattern(program, *pattern, &sequence.value_at(index)).unwrap_or(false)))
         }
-        AwbcPattern::Variant { case, payload, .. } => {
-            matches!(value, RuntimeValue::Variant { name, payload: actual, .. } if format!("case{case}") == *name && payload.is_none_or(|pattern| actual.as_deref().is_some_and(|value| test_pattern(program, pattern, value).unwrap_or(false))))
+        AwbcPattern::Variant {
+            case_name, payload, ..
+        } => {
+            let case_name = string(program, *case_name)?;
+            matches!(value, RuntimeValue::Variant { name, payload: actual, .. } if case_name == name && payload.is_none_or(|pattern| actual.as_deref().is_some_and(|value| test_pattern(program, pattern, value).unwrap_or(false))))
         }
         AwbcPattern::Whole { inner, .. } => test_pattern(program, *inner, value)?,
     })
@@ -1204,7 +1377,8 @@ impl VmError {
             | Self::MissingConstant(_)
             | Self::MissingString(_)
             | Self::MissingPattern(_)
-            | Self::MissingType(_) => None,
+            | Self::MissingType(_)
+            | Self::MissingTraitMethod(_) => None,
         }
     }
 }

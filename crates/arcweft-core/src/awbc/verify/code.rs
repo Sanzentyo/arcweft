@@ -12,7 +12,8 @@ use crate::awbc::schema::{
     AwbcBinaryOp, AwbcBindMode, AwbcBlockId, AwbcConstant, AwbcEffectSetId, AwbcFrameLayout,
     AwbcFrameSlotRole, AwbcFunctionFlags, AwbcFunctionKind, AwbcInstruction, AwbcPattern,
     AwbcPatternId, AwbcProgram, AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType,
-    AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcTerminator, AwbcTypeId, AwbcUnaryOp,
+    AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcTerminator, AwbcTraitReceiverMode,
+    AwbcTypeId, AwbcUnaryOp,
 };
 use std::collections::VecDeque;
 
@@ -146,6 +147,7 @@ fn verify_entry_safe_point(
     let expected = match function.kind {
         AwbcFunctionKind::Flow => AwbcSafePointKind::FlowEntry,
         AwbcFunctionKind::PureHelper
+        | AwbcFunctionKind::TraitMethod
         | AwbcFunctionKind::StreamTransform
         | AwbcFunctionKind::SourceOpen
         | AwbcFunctionKind::SourceHandler
@@ -411,23 +413,45 @@ fn apply_instruction(
                 return invalid_type(&at, "sequence input");
             }
         }
-        AwbcInstruction::MakeRecord { dst, ty, fields } => {
+        AwbcInstruction::MakeRecord {
+            dst,
+            ty,
+            field_names,
+            fields,
+        } => {
             check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
-            let Some(AwbcRuntimeType::Record {
-                fields: type_fields,
-                ..
-            }) = program.runtime_types.get(ty.index())
-            else {
-                return invalid_type(&at, "record type");
-            };
-            if type_fields.len() != fields.len() {
-                return argument_count(&at, type_fields.len(), fields.len());
+            if field_names.len() != fields.len() {
+                return argument_count(&at, field_names.len(), fields.len());
+            }
+            for field_name in field_names {
+                check_string(program, *field_name, &at)?;
             }
             let dst_ty = register_type(verifier, function, block, *dst)?;
             require_compatible(program, dst_ty, *ty, &at)?;
-            for (field, expected) in fields.iter().zip(type_fields) {
-                let actual = read_register(verifier, function, block, *field, state)?;
-                require_compatible(program, expected.ty, actual, &at)?;
+            match program.runtime_types.get(ty.index()) {
+                Some(AwbcRuntimeType::Record {
+                    fields: type_fields,
+                    ..
+                }) => {
+                    if type_fields.len() != fields.len() {
+                        return argument_count(&at, type_fields.len(), fields.len());
+                    }
+                    for ((field_name, field), expected) in
+                        field_names.iter().zip(fields).zip(type_fields)
+                    {
+                        if *field_name != expected.name {
+                            return invalid_type(&at, "record field name");
+                        }
+                        let actual = read_register(verifier, function, block, *field, state)?;
+                        require_compatible(program, expected.ty, actual, &at)?;
+                    }
+                }
+                Some(AwbcRuntimeType::Dynamic) => {
+                    for field in fields {
+                        read_register(verifier, function, block, *field, state)?;
+                    }
+                }
+                _ => return invalid_type(&at, "record type"),
             }
             write_register(verifier, function, block, *dst, state)?;
         }
@@ -435,32 +459,43 @@ fn apply_instruction(
             dst,
             ty,
             case,
+            case_name,
             payload,
         } => {
             check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
-            let Some(AwbcRuntimeType::Variant { cases, .. }) =
-                program.runtime_types.get(ty.index())
-            else {
-                return invalid_type(&at, "variant type");
-            };
-            let Some(case_layout) = cases.get(*case as usize) else {
-                return Err(AwbcVerifyError::IndexOutOfBounds {
-                    table: "variant cases",
-                    index: *case,
-                    at,
-                });
-            };
-            match (case_layout.payload, payload) {
-                (Some(expected), Some(register)) => {
-                    let actual = read_register(verifier, function, block, *register, state)?;
-                    require_compatible(program, expected, actual, "variant payload")?;
+            check_string(program, *case_name, &at)?;
+            match program.runtime_types.get(ty.index()) {
+                Some(AwbcRuntimeType::Variant { cases, .. }) => {
+                    let Some(case_layout) = cases.get(*case as usize) else {
+                        return Err(AwbcVerifyError::IndexOutOfBounds {
+                            table: "variant cases",
+                            index: *case,
+                            at,
+                        });
+                    };
+                    if case_layout.name != *case_name {
+                        return invalid_type(&at, "variant case name");
+                    }
+                    match (case_layout.payload, payload) {
+                        (Some(expected), Some(register)) => {
+                            let actual =
+                                read_register(verifier, function, block, *register, state)?;
+                            require_compatible(program, expected, actual, "variant payload")?;
+                        }
+                        (None, None) => {}
+                        _ => {
+                            return Err(AwbcVerifyError::ResultShapeMismatch {
+                                at: "variant payload".to_owned(),
+                            });
+                        }
+                    }
                 }
-                (None, None) => {}
-                _ => {
-                    return Err(AwbcVerifyError::ResultShapeMismatch {
-                        at: "variant payload".to_owned(),
-                    });
+                Some(AwbcRuntimeType::Dynamic) => {
+                    if let Some(register) = payload {
+                        read_register(verifier, function, block, *register, state)?;
+                    }
                 }
+                _ => return invalid_type(&at, "variant type"),
             }
             let dst_ty = register_type(verifier, function, block, *dst)?;
             require_compatible(program, dst_ty, *ty, "variant destination")?;
@@ -570,6 +605,53 @@ fn apply_instruction(
                 state,
                 &at,
                 &format!("pure helper {}", helper.public_id.0),
+            )?;
+        }
+        AwbcInstruction::AssignField {
+            target,
+            field,
+            value,
+        } => {
+            check_string(program, *field, &at)?;
+            let target_ty = read_register(verifier, function, block, *target, state)?;
+            let value_ty = read_register(verifier, function, block, *value, state)?;
+            match program.runtime_types.get(target_ty.index()) {
+                Some(AwbcRuntimeType::Record { fields, .. }) => {
+                    let Some(field_layout) =
+                        fields.iter().find(|candidate| candidate.name == *field)
+                    else {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at,
+                            message: "assigned field does not exist".to_owned(),
+                        });
+                    };
+                    require_compatible(program, field_layout.ty, value_ty, "field assignment")?;
+                }
+                Some(AwbcRuntimeType::Dynamic) => {}
+                _ => return invalid_type(&at, "record assignment target"),
+            }
+        }
+        AwbcInstruction::CallTraitMethod {
+            dst,
+            method,
+            receiver,
+            args,
+            receiver_out,
+        } => {
+            check_index(program.trait_methods.len(), method.0, "trait_methods", &at)?;
+            let method = &program.trait_methods[method.index()];
+            verify_trait_method_call(
+                verifier,
+                function,
+                block,
+                method.signature,
+                method.receiver,
+                *receiver,
+                args,
+                *dst,
+                *receiver_out,
+                state,
+                &at,
             )?;
         }
         AwbcInstruction::CallIntrinsic {
@@ -1102,6 +1184,79 @@ fn verify_resume(
 
 #[allow(
     clippy::too_many_arguments,
+    reason = "trait-call verification keeps receiver, arguments, and write-back state explicit"
+)]
+fn verify_trait_method_call(
+    verifier: &Verifier<'_, '_>,
+    function: usize,
+    block: usize,
+    signature_id: AwbcSignatureId,
+    receiver_mode: AwbcTraitReceiverMode,
+    receiver: AwbcRegisterId,
+    args: &[AwbcRegisterId],
+    dst: AwbcRegisterId,
+    receiver_out: Option<AwbcRegisterId>,
+    state: &mut FlowState,
+    at: &str,
+) -> Result<(), AwbcVerifyError> {
+    check_index(
+        verifier.program.signatures.len(),
+        signature_id.0,
+        "signatures",
+        at,
+    )?;
+    check_args_budget(verifier, args.len())?;
+    let program = verifier.program;
+    let signature = &program.signatures[signature_id.index()];
+    let Some(receiver_ty) = signature.params.first().copied() else {
+        return invalid_type(at, "trait method receiver parameter");
+    };
+    let actual_receiver = read_register(verifier, function, block, receiver, state)?;
+    require_compatible(program, receiver_ty, actual_receiver, at)?;
+
+    let expected_args = signature.params.len().saturating_sub(1);
+    if expected_args != args.len() {
+        return argument_count(at, expected_args, args.len());
+    }
+    for (expected, arg) in signature.params.iter().skip(1).zip(args) {
+        let actual = read_register(verifier, function, block, *arg, state)?;
+        require_compatible(program, *expected, actual, at)?;
+    }
+    require_effects(verifier, function, signature.effects, "trait method")?;
+
+    let Some(result) = signature.result else {
+        return Err(AwbcVerifyError::ResultShapeMismatch { at: at.to_owned() });
+    };
+    let dst_ty = register_type(verifier, function, block, dst)?;
+    require_compatible(program, result, dst_ty, at)?;
+    write_register(verifier, function, block, dst, state)?;
+
+    match receiver_mode {
+        AwbcTraitReceiverMode::MutRef => {
+            let Some(receiver_out) = receiver_out else {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.to_owned(),
+                    message: "mut trait call must write receiver_out".to_owned(),
+                });
+            };
+            let out_ty = register_type(verifier, function, block, receiver_out)?;
+            require_compatible(program, receiver_ty, out_ty, at)?;
+            write_register(verifier, function, block, receiver_out, state)?;
+        }
+        AwbcTraitReceiverMode::Owned | AwbcTraitReceiverMode::SharedRef => {
+            if receiver_out.is_some() {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.to_owned(),
+                    message: "non-mut trait call cannot write receiver_out".to_owned(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+#[allow(
+    clippy::too_many_arguments,
     reason = "call verification keeps the function/block/state operands visible at the ABI boundary"
 )]
 fn verify_callable(
@@ -1350,7 +1505,13 @@ fn validate_pattern(
                 }
             }
         }
-        AwbcPattern::Variant { ty, case, payload } => {
+        AwbcPattern::Variant {
+            ty,
+            case,
+            case_name,
+            payload,
+        } => {
+            check_string(program, *case_name, "variant pattern")?;
             if let Some(expected) = ty {
                 require_compatible(program, *expected, value_ty, "variant pattern")?;
             }
@@ -1364,6 +1525,9 @@ fn validate_pattern(
                         at: "variant pattern".to_owned(),
                     });
                 };
+                if case_layout.name != *case_name {
+                    return invalid_type("variant pattern", "variant case name");
+                }
                 match (case_layout.payload, payload) {
                     (Some(payload_ty), Some(pattern)) => validate_pattern(
                         verifier,

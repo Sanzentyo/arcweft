@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 /// Canonical AWBC executable ABI implemented by this schema.
 pub const AWBC_ABI_VERSION: u32 = 1;
 /// Canonical binary codec version used inside an `AWBC` product section.
-pub const AWBC_CODEC_VERSION: u16 = 5;
+///
+/// Version 6 adds the trait-method callable table plus `AssignField` and
+/// `CallTraitMethod` opcodes. V5 readers cannot skip the new canonical table.
+pub const AWBC_CODEC_VERSION: u16 = 6;
 /// Magic at the beginning of a standalone canonical AWBC payload.
 pub const AWBC_MAGIC: [u8; 8] = *b"AWBC\r\n\x1a\n";
 
@@ -70,6 +73,10 @@ awbc_id!(AwbcLineTaskNodeId, "Index into the line-task-node table.");
 awbc_id!(AwbcStreamPlanId, "Index into the stream-plan table.");
 awbc_id!(AwbcSourcePlanId, "Index into the source-plan table.");
 awbc_id!(AwbcPureHelperId, "Index into the pure-helper table.");
+awbc_id!(
+    AwbcTraitMethodId,
+    "Index into the trait-method callable table."
+);
 awbc_id!(AwbcDisplayMapId, "Index into the display-map table.");
 awbc_id!(AwbcSourceMapId, "Index into the source-map table.");
 awbc_id!(AwbcResourceId, "Index into the resource-reference table.");
@@ -131,6 +138,7 @@ pub struct AwbcProgram {
     pub stream_plans: Vec<AwbcStreamPlan>,
     pub source_plans: Vec<AwbcSourcePlan>,
     pub pure_helpers: Vec<AwbcPureHelper>,
+    pub trait_methods: Vec<AwbcTraitMethod>,
     pub display_map: Vec<AwbcDisplayMapEntry>,
     pub source_map: Vec<AwbcSourceMapEntry>,
     pub resources: Vec<AwbcResourceRef>,
@@ -166,6 +174,7 @@ impl Default for AwbcProgram {
             stream_plans: Vec::new(),
             source_plans: Vec::new(),
             pure_helpers: Vec::new(),
+            trait_methods: Vec::new(),
             display_map: Vec::new(),
             source_map: Vec::new(),
             resources: Vec::new(),
@@ -244,9 +253,7 @@ fn remap_program_strings(program: &mut AwbcProgram, remap: &[u32]) {
         remap_terminator_strings(&mut block.terminator, remap);
     }
     for pattern in &mut program.patterns {
-        if let AwbcPattern::Entity(entity) = pattern {
-            remap_string_id(entity, remap);
-        }
+        remap_pattern_strings(pattern, remap);
     }
     for intrinsic in &mut program.intrinsics {
         remap_string_id(&mut intrinsic.public_id, remap);
@@ -298,6 +305,9 @@ fn remap_program_strings(program: &mut AwbcProgram, remap: &[u32]) {
     }
     for helper in &mut program.pure_helpers {
         remap_string_id(&mut helper.public_id, remap);
+    }
+    for method in &mut program.trait_methods {
+        remap_string_id(&mut method.public_id, remap);
     }
     for display in &mut program.display_map {
         remap_string_id(&mut display.display_key, remap);
@@ -366,24 +376,50 @@ fn remap_constant_strings(constant: &mut AwbcConstant, remap: &[u32]) {
         | AwbcConstant::DurationNanos(_)
         | AwbcConstant::Tuple(_)
         | AwbcConstant::Sequence(_)
-        | AwbcConstant::Record { .. }
-        | AwbcConstant::Variant { .. }
         | AwbcConstant::Range { .. }
         | AwbcConstant::Bytes(_)
         | AwbcConstant::TensorF32 { .. }
         | AwbcConstant::TensorF64 { .. } => {}
+        AwbcConstant::Variant { case_name, .. } => remap_string_id(case_name, remap),
+        AwbcConstant::Record { field_names, .. } => {
+            for field_name in field_names {
+                remap_string_id(field_name, remap);
+            }
+        }
     }
 }
 
 fn remap_instruction_strings(instruction: &mut AwbcInstruction, remap: &[u32]) {
-    if let AwbcInstruction::ProjectField { field, .. } = instruction {
-        remap_string_id(field, remap);
+    match instruction {
+        AwbcInstruction::ProjectField { field, .. }
+        | AwbcInstruction::AssignField { field, .. } => remap_string_id(field, remap),
+        AwbcInstruction::MakeRecord { field_names, .. } => {
+            for field_name in field_names {
+                remap_string_id(field_name, remap);
+            }
+        }
+        AwbcInstruction::MakeVariant { case_name, .. } => remap_string_id(case_name, remap),
+        _ => {}
     }
 }
 
 fn remap_terminator_strings(terminator: &mut AwbcTerminator, remap: &[u32]) {
     if let AwbcTerminator::Trap { message, .. } = terminator {
         remap_optional_string_id(message, remap);
+    }
+}
+
+fn remap_pattern_strings(pattern: &mut AwbcPattern, remap: &[u32]) {
+    match pattern {
+        AwbcPattern::Entity(entity) => remap_string_id(entity, remap),
+        AwbcPattern::Variant { case_name, .. } => remap_string_id(case_name, remap),
+        AwbcPattern::Bind { .. }
+        | AwbcPattern::Discard
+        | AwbcPattern::Literal(_)
+        | AwbcPattern::Tuple(_)
+        | AwbcPattern::Record { .. }
+        | AwbcPattern::Sequence { .. }
+        | AwbcPattern::Whole { .. } => {}
     }
 }
 
@@ -532,11 +568,13 @@ pub enum AwbcConstant {
     Sequence(Vec<AwbcConstantId>),
     Record {
         ty: AwbcTypeId,
+        field_names: Vec<AwbcStringId>,
         fields: Vec<AwbcConstantId>,
     },
     Variant {
         ty: AwbcTypeId,
         case: u32,
+        case_name: AwbcStringId,
         payload: Option<AwbcConstantId>,
     },
     Range {
@@ -608,6 +646,7 @@ pub struct AwbcFunction {
 pub enum AwbcFunctionKind {
     Flow,
     PureHelper,
+    TraitMethod,
     StreamTransform,
     SourceOpen,
     SourceHandler,
@@ -681,6 +720,8 @@ pub enum AwbcOpcode {
     SourceClose,
     Drop,
     SourceYield,
+    AssignField,
+    CallTraitMethod,
     Jump,
     Branch,
     Match,
@@ -734,6 +775,8 @@ impl AwbcOpcode {
             Self::SourceClose => 0x1e,
             Self::Drop => 0x1f,
             Self::SourceYield => 0x20,
+            Self::AssignField => 0x21,
+            Self::CallTraitMethod => 0x22,
             Self::Jump => 0x80,
             Self::Branch => 0x81,
             Self::Match => 0x82,
@@ -787,6 +830,8 @@ impl AwbcOpcode {
             0x1e => Self::SourceClose,
             0x1f => Self::Drop,
             0x20 => Self::SourceYield,
+            0x21 => Self::AssignField,
+            0x22 => Self::CallTraitMethod,
             0x80 => Self::Jump,
             0x81 => Self::Branch,
             0x82 => Self::Match,
@@ -875,12 +920,14 @@ pub enum AwbcInstruction {
     MakeRecord {
         dst: AwbcRegisterId,
         ty: AwbcTypeId,
+        field_names: Vec<AwbcStringId>,
         fields: Vec<AwbcRegisterId>,
     },
     MakeVariant {
         dst: AwbcRegisterId,
         ty: AwbcTypeId,
         case: u32,
+        case_name: AwbcStringId,
         payload: Option<AwbcRegisterId>,
     },
     ProjectTuple {
@@ -953,6 +1000,18 @@ pub enum AwbcInstruction {
         source: AwbcSourcePlanId,
         value: AwbcRegisterId,
     },
+    AssignField {
+        target: AwbcRegisterId,
+        field: AwbcStringId,
+        value: AwbcRegisterId,
+    },
+    CallTraitMethod {
+        dst: AwbcRegisterId,
+        method: AwbcTraitMethodId,
+        receiver: AwbcRegisterId,
+        args: Vec<AwbcRegisterId>,
+        receiver_out: Option<AwbcRegisterId>,
+    },
 }
 
 impl AwbcInstruction {
@@ -991,8 +1050,26 @@ impl AwbcInstruction {
             Self::SourceClose { .. } => AwbcOpcode::SourceClose,
             Self::Drop { .. } => AwbcOpcode::Drop,
             Self::SourceYield { .. } => AwbcOpcode::SourceYield,
+            Self::AssignField { .. } => AwbcOpcode::AssignField,
+            Self::CallTraitMethod { .. } => AwbcOpcode::CallTraitMethod,
         }
     }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AwbcTraitMethod {
+    pub public_id: AwbcStringId,
+    pub signature: AwbcSignatureId,
+    pub function: AwbcFunctionId,
+    pub receiver: AwbcTraitReceiverMode,
+    pub receiver_state_slot: Option<AwbcRegisterId>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum AwbcTraitReceiverMode {
+    Owned,
+    SharedRef,
+    MutRef,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1196,6 +1273,7 @@ pub enum AwbcPattern {
     Variant {
         ty: Option<AwbcTypeId>,
         case: u32,
+        case_name: AwbcStringId,
         payload: Option<AwbcPatternId>,
     },
     Whole {

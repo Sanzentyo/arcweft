@@ -4,8 +4,9 @@ use crate::awbc_lower::pattern::lower_pattern;
 use crate::awbc_lower::table_index;
 use arcweft_core::awbc::schema::{
     AwbcBinaryOp, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcPureHelperId,
-    AwbcRegisterId, AwbcUnaryOp,
+    AwbcRegisterId, AwbcTraitMethodId, AwbcUnaryOp,
 };
+use arcweft_core::plan::RuntimeReceiverMode;
 use arcweft_core::value::{RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeUnaryOp};
 
 /// Expression lowerer used by flow/source/stream builders.
@@ -125,6 +126,10 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                 dst
             }
             RuntimeExpr::Record(fields) => {
+                let field_names = fields
+                    .iter()
+                    .map(|field| self.inventory.intern_string(&field.name))
+                    .collect();
                 let registers = fields
                     .iter()
                     .map(|field| self.lower(&field.value))
@@ -134,6 +139,7 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                     .push_instruction(AwbcInstruction::MakeRecord {
                         dst,
                         ty: self.inventory.dynamic_ty(),
+                        field_names,
                         fields: registers,
                     });
                 dst
@@ -141,11 +147,14 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
             RuntimeExpr::Variant { name, payload, .. } => {
                 let dst = self.frame.temp(self.inventory.dynamic_ty());
                 let payload = payload.as_deref().map(|payload| self.lower(payload));
+                let ty = self.inventory.dynamic_ty();
+                let case_name = self.inventory.intern_string(name);
                 self.inventory
                     .push_instruction(AwbcInstruction::MakeVariant {
                         dst,
-                        ty: self.inventory.dynamic_ty(),
+                        ty,
                         case: stable_case(name),
+                        case_name,
                         payload,
                     });
                 dst
@@ -186,27 +195,63 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                 expr,
                 body,
             } => {
-                let _ = self.lower(target);
-                let _ = self.lower(expr);
-                self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                    self.path.clone(),
-                    format!(
-                        "field assignment `{field}` requires trait-method runtime dispatch support in AWBC"
-                    ),
-                ));
+                let target = match target.as_ref() {
+                    RuntimeExpr::Local(name) => {
+                        self.frame.register_for_local(name).unwrap_or_else(|| {
+                            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                                self.path.clone(),
+                                format!(
+                                    "field assignment target `{name}` is not in the AWBC frame"
+                                ),
+                            ));
+                            self.frame.temp(self.inventory.dynamic_ty())
+                        })
+                    }
+                    other => {
+                        let _ = self.lower(other);
+                        self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                            self.path.clone(),
+                            format!("field assignment target `{other}` is not a local receiver"),
+                        ));
+                        self.frame.temp(self.inventory.dynamic_ty())
+                    }
+                };
+                let value = self.lower(expr);
+                let field = self.inventory.intern_string(field);
+                self.inventory
+                    .push_instruction(AwbcInstruction::AssignField {
+                        target,
+                        field,
+                        value,
+                    });
                 self.lower(body)
             }
             RuntimeExpr::Call { callee, args } => self.lower_call(callee, args),
-            RuntimeExpr::TraitCall { receiver, args, .. } => {
-                let _ = self.lower(receiver);
-                for arg in args {
-                    let _ = self.lower(arg);
-                }
-                self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                    self.path.clone(),
-                    "trait method runtime dispatch requires typed AWBC trait-method tables",
-                ));
-                self.frame.temp(self.inventory.dynamic_ty())
+            RuntimeExpr::TraitCall {
+                callable,
+                receiver,
+                receiver_mode,
+                args,
+            } => {
+                let receiver_register = self.lower(receiver);
+                let args = args.iter().map(|arg| self.lower(arg)).collect();
+                let dst = self.frame.temp(self.inventory.dynamic_ty());
+                let receiver_out = (*receiver_mode == RuntimeReceiverMode::MutRef).then(|| {
+                    if matches!(receiver.as_ref(), RuntimeExpr::Local(_)) {
+                        receiver_register
+                    } else {
+                        self.frame.temp(self.inventory.dynamic_ty())
+                    }
+                });
+                self.inventory
+                    .push_instruction(AwbcInstruction::CallTraitMethod {
+                        dst,
+                        method: AwbcTraitMethodId(table_index(callable.0)),
+                        receiver: receiver_register,
+                        args,
+                        receiver_out,
+                    });
+                dst
             }
             RuntimeExpr::PureCall { helper, args } => {
                 let args = args.iter().map(|arg| self.lower(arg)).collect();

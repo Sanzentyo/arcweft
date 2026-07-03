@@ -116,6 +116,7 @@ pub struct FunctionInterfaceFingerprint {
 pub enum RuntimeFunctionKind {
     Flow,
     PureHelper,
+    TraitMethod,
     StreamTransform,
     SourceOpen,
     SourceHandler,
@@ -886,11 +887,12 @@ impl RuntimeFunctionKind {
         match self {
             Self::Flow => 201,
             Self::PureHelper => 202,
-            Self::StreamTransform => 203,
-            Self::SourceOpen => 204,
-            Self::SourceHandler => 205,
-            Self::LineTask => 206,
-            Self::Synthetic => 207,
+            Self::TraitMethod => 203,
+            Self::StreamTransform => 204,
+            Self::SourceOpen => 205,
+            Self::SourceHandler => 206,
+            Self::LineTask => 207,
+            Self::Synthetic => 208,
         }
     }
 
@@ -898,11 +900,12 @@ impl RuntimeFunctionKind {
         match value {
             201 => Some(Self::Flow),
             202 => Some(Self::PureHelper),
-            203 => Some(Self::StreamTransform),
-            204 => Some(Self::SourceOpen),
-            205 => Some(Self::SourceHandler),
-            206 => Some(Self::LineTask),
-            207 => Some(Self::Synthetic),
+            203 => Some(Self::TraitMethod),
+            204 => Some(Self::StreamTransform),
+            205 => Some(Self::SourceOpen),
+            206 => Some(Self::SourceHandler),
+            207 => Some(Self::LineTask),
+            208 => Some(Self::Synthetic),
             _ => None,
         }
     }
@@ -913,6 +916,7 @@ impl From<AwbcFunctionKind> for RuntimeFunctionKind {
         match value {
             AwbcFunctionKind::Flow => Self::Flow,
             AwbcFunctionKind::PureHelper => Self::PureHelper,
+            AwbcFunctionKind::TraitMethod => Self::TraitMethod,
             AwbcFunctionKind::StreamTransform => Self::StreamTransform,
             AwbcFunctionKind::SourceOpen => Self::SourceOpen,
             AwbcFunctionKind::SourceHandler => Self::SourceHandler,

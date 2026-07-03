@@ -73,9 +73,11 @@ pub(crate) fn lower_pattern(
             let payload = payload
                 .as_deref()
                 .map(|payload| lower_pattern(inventory, frame, payload));
+            let case_name = inventory.intern_string(name);
             inventory.intern_pattern(AwbcPattern::Variant {
                 ty: None,
                 case: stable_case(name),
+                case_name,
                 payload,
             })
         }

@@ -86,6 +86,7 @@ pub struct AwbcLowerStats {
     pub task_plans: usize,
     pub source_plans: usize,
     pub stream_plans: usize,
+    pub trait_methods: usize,
     pub entries: usize,
 }
 
@@ -103,6 +104,7 @@ impl AwbcLowerStats {
             task_plans: program.task_plans.len(),
             source_plans: program.source_plans.len(),
             stream_plans: program.stream_plans.len(),
+            trait_methods: program.trait_methods.len(),
             entries: program.entries.len(),
         }
     }
@@ -386,6 +388,10 @@ impl AwbcInventory {
             ),
             RuntimeValue::Record(fields) => AwbcConstant::Record {
                 ty: self.dynamic_ty(),
+                field_names: fields
+                    .iter()
+                    .map(|field| self.intern_string(&field.name))
+                    .collect(),
                 fields: fields
                     .iter()
                     .map(|field| self.constant_runtime_value(&field.value))
@@ -394,6 +400,7 @@ impl AwbcInventory {
             RuntimeValue::Variant { name, payload, .. } => AwbcConstant::Variant {
                 ty: self.dynamic_ty(),
                 case: stable_ordinal(name),
+                case_name: self.intern_string(name),
                 payload: payload
                     .as_deref()
                     .map(|payload| self.constant_runtime_value(payload)),

@@ -9,7 +9,8 @@ use crate::awbc::schema::{
     AwbcConstant, AwbcEffectKind, AwbcEffectPlan, AwbcEffectSetId, AwbcEntryKind, AwbcEntryTarget,
     AwbcFrameSlotRole, AwbcFunctionId, AwbcFunctionKind, AwbcLineTaskNode, AwbcLineTaskTrigger,
     AwbcPattern, AwbcPatternId, AwbcProgram, AwbcRouteBindingSource, AwbcRuntimeType,
-    AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTypeId,
+    AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTraitMethod, AwbcTraitReceiverMode,
+    AwbcTypeId,
 };
 use std::collections::BTreeSet;
 
@@ -179,52 +180,98 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                     check_index(program.constants.len(), item.0, "constants", &at)?;
                 }
             }
-            AwbcConstant::Record { ty, fields } => {
+            AwbcConstant::Record {
+                ty,
+                field_names,
+                fields,
+            } => {
                 check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
+                if field_names.len() != fields.len() {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at: format!("constant {index}"),
+                        message: "record constant field name count does not match value count"
+                            .to_owned(),
+                    });
+                }
+                for field_name in field_names {
+                    check_string(program, *field_name, &at)?;
+                }
                 for field in fields {
                     check_index(program.constants.len(), field.0, "constants", &at)?;
                 }
-                let AwbcRuntimeType::Record {
-                    fields: type_fields,
-                    ..
-                } = &program.runtime_types[ty.index()]
-                else {
-                    return Err(AwbcVerifyError::InvalidInvariant {
-                        at,
-                        message: "record constant references a non-record type".to_owned(),
-                    });
-                };
-                if type_fields.len() != fields.len() {
-                    return Err(AwbcVerifyError::InvalidInvariant {
-                        at: format!("constant {index}"),
-                        message: "record constant field count does not match type".to_owned(),
-                    });
+                match &program.runtime_types[ty.index()] {
+                    AwbcRuntimeType::Record {
+                        fields: type_fields,
+                        ..
+                    } => {
+                        if type_fields.len() != fields.len() {
+                            return Err(AwbcVerifyError::InvalidInvariant {
+                                at: format!("constant {index}"),
+                                message: "record constant field count does not match type"
+                                    .to_owned(),
+                            });
+                        }
+                        for (actual, expected) in field_names.iter().zip(type_fields) {
+                            if *actual != expected.name {
+                                return Err(AwbcVerifyError::InvalidInvariant {
+                                    at: format!("constant {index}"),
+                                    message: "record constant field names do not match type"
+                                        .to_owned(),
+                                });
+                            }
+                        }
+                    }
+                    AwbcRuntimeType::Dynamic => {}
+                    _ => {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at,
+                            message: "record constant references a non-record type".to_owned(),
+                        });
+                    }
                 }
             }
-            AwbcConstant::Variant { ty, case, payload } => {
+            AwbcConstant::Variant {
+                ty,
+                case,
+                case_name,
+                payload,
+            } => {
                 check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
-                let AwbcRuntimeType::Variant { cases, .. } = &program.runtime_types[ty.index()]
-                else {
-                    return Err(AwbcVerifyError::InvalidInvariant {
-                        at,
-                        message: "variant constant references a non-variant type".to_owned(),
-                    });
-                };
-                let Some(case_layout) = cases.get(*case as usize) else {
-                    return Err(AwbcVerifyError::IndexOutOfBounds {
-                        table: "variant cases",
-                        index: *case,
-                        at: format!("constant {index}"),
-                    });
-                };
-                if case_layout.payload.is_some() != payload.is_some() {
-                    return Err(AwbcVerifyError::InvalidInvariant {
-                        at: format!("constant {index}"),
-                        message: "variant constant payload shape does not match type".to_owned(),
-                    });
-                }
+                check_string(program, *case_name, &at)?;
                 if let Some(payload) = payload {
                     check_index(program.constants.len(), payload.0, "constants", &at)?;
+                }
+                match &program.runtime_types[ty.index()] {
+                    AwbcRuntimeType::Variant { cases, .. } => {
+                        let Some(case_layout) = cases.get(*case as usize) else {
+                            return Err(AwbcVerifyError::IndexOutOfBounds {
+                                table: "variant cases",
+                                index: *case,
+                                at: format!("constant {index}"),
+                            });
+                        };
+                        if case_layout.name != *case_name {
+                            return Err(AwbcVerifyError::InvalidInvariant {
+                                at: format!("constant {index}"),
+                                message: "variant constant case name does not match type"
+                                    .to_owned(),
+                            });
+                        }
+                        if case_layout.payload.is_some() != payload.is_some() {
+                            return Err(AwbcVerifyError::InvalidInvariant {
+                                at: format!("constant {index}"),
+                                message: "variant constant payload shape does not match type"
+                                    .to_owned(),
+                            });
+                        }
+                    }
+                    AwbcRuntimeType::Dynamic => {}
+                    _ => {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at,
+                            message: "variant constant references a non-variant type".to_owned(),
+                        });
+                    }
                 }
             }
             AwbcConstant::Range { start, end, .. } => {
@@ -529,10 +576,16 @@ fn verify_patterns(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
                     check_index(program.patterns.len(), field.pattern.0, "patterns", &at)?;
                 }
             }
-            AwbcPattern::Variant { ty, payload, .. } => {
+            AwbcPattern::Variant {
+                ty,
+                case_name,
+                payload,
+                ..
+            } => {
                 if let Some(ty) = ty {
                     check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
                 }
+                check_string(program, *case_name, &at)?;
                 if let Some(payload) = payload {
                     check_index(program.patterns.len(), payload.0, "patterns", &at)?;
                 }
@@ -711,6 +764,70 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                 at,
                 message: "pure-helper table does not match function signature/kind".to_owned(),
             });
+        }
+    }
+    for (index, method) in program.trait_methods.iter().enumerate() {
+        let at = format!("trait method {index}");
+        check_string(program, method.public_id, &at)?;
+        check_index(
+            program.signatures.len(),
+            method.signature.0,
+            "signatures",
+            &at,
+        )?;
+        check_index(program.functions.len(), method.function.0, "functions", &at)?;
+        let function = &program.functions[method.function.index()];
+        if function.signature != method.signature || function.kind != AwbcFunctionKind::TraitMethod
+        {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "trait-method table does not match function signature/kind".to_owned(),
+            });
+        }
+        verify_trait_method_receiver(program, index, method)?;
+    }
+    Ok(())
+}
+
+fn verify_trait_method_receiver(
+    program: &AwbcProgram,
+    index: usize,
+    method: &AwbcTraitMethod,
+) -> Result<(), AwbcVerifyError> {
+    let at = format!("trait method {index}");
+    let signature = &program.signatures[method.signature.index()];
+    let Some(receiver_ty) = signature.params.first().copied() else {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at,
+            message: "trait method signature must include receiver parameter".to_owned(),
+        });
+    };
+    match method.receiver {
+        AwbcTraitReceiverMode::Owned | AwbcTraitReceiverMode::SharedRef => {
+            if method.receiver_state_slot.is_some() {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at,
+                    message: "non-mut trait receiver cannot declare receiver_state_slot".to_owned(),
+                });
+            }
+        }
+        AwbcTraitReceiverMode::MutRef => {
+            let Some(slot) = method.receiver_state_slot else {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at,
+                    message: "mut trait receiver must declare receiver_state_slot".to_owned(),
+                });
+            };
+            let function = &program.functions[method.function.index()];
+            let layout = &program.frame_layouts[function.frame_layout.index()];
+            check_index(layout.slots.len(), slot.0, "frame_slots", &at)?;
+            let slot = &layout.slots[slot.index()];
+            if slot.role != AwbcFrameSlotRole::Parameter || slot.ty != receiver_ty {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at,
+                    message: "mut receiver state slot must be a receiver parameter slot".to_owned(),
+                });
+            }
         }
     }
     Ok(())

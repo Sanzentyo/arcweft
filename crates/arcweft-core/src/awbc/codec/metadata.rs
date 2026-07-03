@@ -6,7 +6,7 @@ use crate::awbc::schema::{
     AwbcFunctionId, AwbcHeader, AwbcInstructionId, AwbcLineTaskGroupId, AwbcProgram,
     AwbcRegisterId, AwbcResourceId, AwbcResourceRef, AwbcResourceResidency, AwbcResumePointId,
     AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource, AwbcSignatureId, AwbcSourceMapEntry,
-    AwbcSourceMapId, AwbcStringId,
+    AwbcSourceMapId, AwbcStringId, AwbcTraitMethod, AwbcTraitReceiverMode,
 };
 
 impl Wire for AwbcProgram {
@@ -37,6 +37,7 @@ impl Wire for AwbcProgram {
         writer.write_table(&self.stream_plans)?;
         writer.write_table(&self.source_plans)?;
         writer.write_table(&self.pure_helpers)?;
+        writer.write_table(&self.trait_methods)?;
         writer.write_table(&self.display_map)?;
         writer.write_table(&self.source_map)?;
         writer.write_table(&self.resources)?;
@@ -72,6 +73,7 @@ impl Wire for AwbcProgram {
             stream_plans: reader.read_table("stream_plans", budget.stream_plans)?,
             source_plans: reader.read_table("source_plans", budget.source_plans)?,
             pure_helpers: reader.read_table("pure_helpers", budget.pure_helpers)?,
+            trait_methods: reader.read_table("trait_methods", budget.trait_methods)?,
             display_map: reader.read_table("display_map", budget.display_map)?,
             source_map: reader.read_table("source_map", budget.source_map)?,
             resources: reader.read_table("resources", budget.resources)?,
@@ -79,6 +81,32 @@ impl Wire for AwbcProgram {
         })
     }
 }
+
+impl Wire for AwbcTraitMethod {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.public_id.write_wire(writer)?;
+        self.signature.write_wire(writer)?;
+        self.function.write_wire(writer)?;
+        self.receiver.write_wire(writer)?;
+        self.receiver_state_slot.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            public_id: AwbcStringId::read_wire(reader)?,
+            signature: AwbcSignatureId::read_wire(reader)?,
+            function: AwbcFunctionId::read_wire(reader)?,
+            receiver: AwbcTraitReceiverMode::read_wire(reader)?,
+            receiver_state_slot: Option::<AwbcRegisterId>::read_wire(reader)?,
+        })
+    }
+}
+
+wire_enum!(AwbcTraitReceiverMode, "trait receiver mode", {
+    0 => AwbcTraitReceiverMode::Owned,
+    1 => AwbcTraitReceiverMode::SharedRef,
+    2 => AwbcTraitReceiverMode::MutRef,
+});
 
 impl Wire for AwbcContentUnit {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {

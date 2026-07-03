@@ -12,8 +12,8 @@ use crate::awbc::schema::{
     AwbcLineTaskGroupId, AwbcMatchArm, AwbcOpcode, AwbcPattern, AwbcPatternId, AwbcPureHelperId,
     AwbcRecordPatternField, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind,
     AwbcScopeId, AwbcSignatureId, AwbcSourceMapId, AwbcSourcePlanId, AwbcStreamPlanId,
-    AwbcStringId, AwbcTableRange, AwbcTaskPlanId, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
-    AwbcUnaryOp,
+    AwbcStringId, AwbcTableRange, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode,
+    AwbcTypeId, AwbcUnaryOp,
 };
 
 impl Wire for AwbcFunction {
@@ -43,11 +43,12 @@ impl Wire for AwbcFunction {
 wire_enum!(AwbcFunctionKind, "function kind", {
     0 => AwbcFunctionKind::Flow,
     1 => AwbcFunctionKind::PureHelper,
-    2 => AwbcFunctionKind::StreamTransform,
-    3 => AwbcFunctionKind::SourceOpen,
-    4 => AwbcFunctionKind::SourceHandler,
-    5 => AwbcFunctionKind::LineTask,
-    6 => AwbcFunctionKind::Synthetic,
+    2 => AwbcFunctionKind::TraitMethod,
+    3 => AwbcFunctionKind::StreamTransform,
+    4 => AwbcFunctionKind::SourceOpen,
+    5 => AwbcFunctionKind::SourceHandler,
+    6 => AwbcFunctionKind::LineTask,
+    7 => AwbcFunctionKind::Synthetic,
 });
 
 impl Wire for AwbcBlock {
@@ -138,20 +139,28 @@ impl Wire for AwbcInstruction {
                 sequence.write_wire(writer)?;
                 value.write_wire(writer)?;
             }
-            Self::MakeRecord { dst, ty, fields } => {
+            Self::MakeRecord {
+                dst,
+                ty,
+                field_names,
+                fields,
+            } => {
                 dst.write_wire(writer)?;
                 ty.write_wire(writer)?;
+                field_names.write_wire(writer)?;
                 fields.write_wire(writer)?;
             }
             Self::MakeVariant {
                 dst,
                 ty,
                 case,
+                case_name,
                 payload,
             } => {
                 dst.write_wire(writer)?;
                 ty.write_wire(writer)?;
                 case.write_wire(writer)?;
+                case_name.write_wire(writer)?;
                 payload.write_wire(writer)?;
             }
             Self::ProjectTuple {
@@ -226,6 +235,28 @@ impl Wire for AwbcInstruction {
             Self::SourceYield { source, value } => {
                 source.write_wire(writer)?;
                 value.write_wire(writer)?;
+            }
+            Self::AssignField {
+                target,
+                field,
+                value,
+            } => {
+                target.write_wire(writer)?;
+                field.write_wire(writer)?;
+                value.write_wire(writer)?;
+            }
+            Self::CallTraitMethod {
+                dst,
+                method,
+                receiver,
+                args,
+                receiver_out,
+            } => {
+                dst.write_wire(writer)?;
+                method.write_wire(writer)?;
+                receiver.write_wire(writer)?;
+                args.write_wire(writer)?;
+                receiver_out.write_wire(writer)?;
             }
         }
         Ok(())
@@ -311,12 +342,14 @@ impl Wire for AwbcInstruction {
             AwbcOpcode::MakeRecord => Self::MakeRecord {
                 dst: AwbcRegisterId::read_wire(reader)?,
                 ty: AwbcTypeId::read_wire(reader)?,
+                field_names: Vec::<AwbcStringId>::read_wire(reader)?,
                 fields: Vec::<AwbcRegisterId>::read_wire(reader)?,
             },
             AwbcOpcode::MakeVariant => Self::MakeVariant {
                 dst: AwbcRegisterId::read_wire(reader)?,
                 ty: AwbcTypeId::read_wire(reader)?,
                 case: u32::read_wire(reader)?,
+                case_name: AwbcStringId::read_wire(reader)?,
                 payload: Option::<AwbcRegisterId>::read_wire(reader)?,
             },
             AwbcOpcode::ProjectTuple => Self::ProjectTuple {
@@ -388,6 +421,18 @@ impl Wire for AwbcInstruction {
             AwbcOpcode::SourceYield => Self::SourceYield {
                 source: AwbcSourcePlanId::read_wire(reader)?,
                 value: AwbcRegisterId::read_wire(reader)?,
+            },
+            AwbcOpcode::AssignField => Self::AssignField {
+                target: AwbcRegisterId::read_wire(reader)?,
+                field: AwbcStringId::read_wire(reader)?,
+                value: AwbcRegisterId::read_wire(reader)?,
+            },
+            AwbcOpcode::CallTraitMethod => Self::CallTraitMethod {
+                dst: AwbcRegisterId::read_wire(reader)?,
+                method: AwbcTraitMethodId::read_wire(reader)?,
+                receiver: AwbcRegisterId::read_wire(reader)?,
+                args: Vec::<AwbcRegisterId>::read_wire(reader)?,
+                receiver_out: Option::<AwbcRegisterId>::read_wire(reader)?,
             },
             AwbcOpcode::Jump
             | AwbcOpcode::Branch
@@ -625,7 +670,9 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::StreamClose
             | AwbcOpcode::SourceClose
             | AwbcOpcode::Drop
-            | AwbcOpcode::SourceYield => unreachable!("instruction opcode rejected above"),
+            | AwbcOpcode::SourceYield
+            | AwbcOpcode::AssignField
+            | AwbcOpcode::CallTraitMethod => unreachable!("instruction opcode rejected above"),
         })
     }
 }
@@ -738,10 +785,16 @@ impl Wire for AwbcPattern {
                 items.write_wire(writer)?;
                 rest.write_wire(writer)?;
             }
-            Self::Variant { ty, case, payload } => {
+            Self::Variant {
+                ty,
+                case,
+                case_name,
+                payload,
+            } => {
                 writer.write_u8(7);
                 ty.write_wire(writer)?;
                 case.write_wire(writer)?;
+                case_name.write_wire(writer)?;
                 payload.write_wire(writer)?;
             }
             Self::Whole { target, inner } => {
@@ -777,6 +830,7 @@ impl Wire for AwbcPattern {
             7 => Self::Variant {
                 ty: Option::<AwbcTypeId>::read_wire(reader)?,
                 case: u32::read_wire(reader)?,
+                case_name: AwbcStringId::read_wire(reader)?,
                 payload: Option::<AwbcPatternId>::read_wire(reader)?,
             },
             8 => Self::Whole {

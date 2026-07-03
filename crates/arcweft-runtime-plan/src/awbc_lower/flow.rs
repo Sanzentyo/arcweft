@@ -1,4 +1,5 @@
 use crate::awbc_lower::AwbcAudioLowerer;
+use crate::awbc_lower::AwbcTraitMethodLowerer;
 use crate::awbc_lower::expr::AwbcExprLowerer;
 use crate::awbc_lower::frame::FrameBuilder;
 use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic};
@@ -11,15 +12,17 @@ use arcweft_core::awbc::schema::{
     AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
     AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcLineTaskGroupId, AwbcPureHelper,
     AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind,
-    AwbcScopeId, AwbcTableRange, AwbcTerminator,
+    AwbcScopeId, AwbcTableRange, AwbcTerminator, AwbcTraitMethodId,
 };
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
     ChoiceRuntimeOption, FlowOp, RuntimeEntryTarget, RuntimeFlow, RuntimeIteratorEvidence,
-    RuntimeMatchArm, RuntimePlan, RuntimePureHelper, RuntimePureHelperOrigin,
+    RuntimeIteratorIdentityWitnessCalls, RuntimeIteratorWitnessCalls,
+    RuntimeIteratorWitnessExecutable, RuntimeMatchArm, RuntimePlan, RuntimePureHelper,
+    RuntimePureHelperOrigin,
 };
-use arcweft_core::value::RuntimeExpr;
+use arcweft_core::value::{RuntimeExpr, RuntimeValue};
 use std::collections::BTreeSet;
 
 /// Builds one contiguous flow body while allowing host-visible suspension
@@ -196,6 +199,7 @@ impl<'a> AwbcFlowLowerer<'a> {
         for helper in &plan.pure_helpers {
             self.lower_pure_helper(helper);
         }
+        AwbcTraitMethodLowerer::new(self.inventory).lower_plan(plan);
         for (index, group) in plan.line_task_groups.iter().enumerate() {
             let group_id = self.inventory.lower_line_task_group(group);
             let public_id = format!("line_task_group.{index}");
@@ -837,6 +841,32 @@ impl<'a> AwbcFlowLowerer<'a> {
         body: &mut FlowBodyBuilder,
         input: ForLoweringInput<'_>,
     ) {
+        if let RuntimeIteratorEvidence::Witness(witness) = input.evidence {
+            match &witness.executable {
+                RuntimeIteratorWitnessExecutable::TraitCalls(calls) => {
+                    self.lower_trait_call_for(frame, body, input, calls);
+                }
+                RuntimeIteratorWitnessExecutable::IdentityIntoIterator(calls) => {
+                    self.lower_identity_trait_call_for(frame, body, input, *calls);
+                }
+                RuntimeIteratorWitnessExecutable::UnsupportedMethodBodyLowering => {
+                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                        input.path.to_owned(),
+                        "witness-backed IntoIterator evidence is not executable by AWBC trait calls",
+                    ));
+                }
+            }
+            return;
+        }
+        self.lower_intrinsic_iterator_for(frame, body, input);
+    }
+
+    fn lower_intrinsic_iterator_for(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        input: ForLoweringInput<'_>,
+    ) {
         let Some(evidence_label) = input.evidence.awbc_label() else {
             self.inventory.diagnostic(AwbcLowerDiagnostic::error(
                 input.path.to_owned(),
@@ -934,11 +964,157 @@ impl<'a> AwbcFlowLowerer<'a> {
         self.lower_ops(frame, body, input.ops, &format!("{}.body", input.path));
         if body.terminated {
             frame.exit_scope();
-            let after_block = body.reopen_after_terminated_branch(self.inventory);
-            patch_branch_else_block(self.inventory, condition_block, after_block);
+            self.reopen_loop_exit_after_terminated_body(frame, body, condition_block);
             return;
         }
         self.close_iterator_for_iteration(frame, body, scope, condition_block);
+    }
+
+    fn lower_trait_call_for(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        input: ForLoweringInput<'_>,
+        calls: &RuntimeIteratorWitnessCalls,
+    ) {
+        let source = AwbcExprLowerer::new(self.inventory, frame, input.path).lower(input.source);
+        let iterator_name = frame.next_runtime_state_name("flow.for.trait_iterator");
+        let iterator = frame.runtime_state(
+            &iterator_name,
+            self.inventory.intern_string(&iterator_name),
+            self.inventory.dynamic_ty(),
+        );
+        self.inventory
+            .push_instruction(AwbcInstruction::CallTraitMethod {
+                dst: iterator,
+                method: AwbcTraitMethodId(table_index(calls.into_iter.0)),
+                receiver: source,
+                args: Vec::new(),
+                receiver_out: None,
+            });
+        self.lower_trait_iterator_loop(frame, body, input, iterator, calls.next);
+    }
+
+    fn lower_identity_trait_call_for(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        input: ForLoweringInput<'_>,
+        calls: RuntimeIteratorIdentityWitnessCalls,
+    ) {
+        let source = AwbcExprLowerer::new(self.inventory, frame, input.path).lower(input.source);
+        let iterator_name = frame.next_runtime_state_name("flow.for.trait_iterator");
+        let iterator = frame.runtime_state(
+            &iterator_name,
+            self.inventory.intern_string(&iterator_name),
+            self.inventory.dynamic_ty(),
+        );
+        self.inventory.push_instruction(AwbcInstruction::Move {
+            dst: iterator,
+            src: source,
+        });
+        self.lower_trait_iterator_loop(frame, body, input, iterator, calls.next);
+    }
+
+    fn lower_trait_iterator_loop(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        input: ForLoweringInput<'_>,
+        iterator: AwbcRegisterId,
+        next: arcweft_core::plan::RuntimeTraitMethodId,
+    ) {
+        let condition_block = AwbcBlockId(table_index(
+            self.inventory.program.blocks.len().saturating_add(1),
+        ));
+        body.close_block(
+            self.inventory,
+            AwbcTerminator::Jump {
+                target: condition_block,
+            },
+            AwbcSafePointKind::None,
+        );
+
+        let next_value = frame.temp(self.inventory.dynamic_ty());
+        self.inventory
+            .push_instruction(AwbcInstruction::CallTraitMethod {
+                dst: next_value,
+                method: AwbcTraitMethodId(table_index(next.0)),
+                receiver: iterator,
+                args: Vec::new(),
+                receiver_out: Some(iterator),
+            });
+        let condition_ty = self.inventory.bool_ty();
+        let condition = frame.temp(condition_ty);
+        let is_some = self.intrinsic("core.option.is_some", 1, Some(condition_ty));
+        self.inventory
+            .push_instruction(AwbcInstruction::CallIntrinsic {
+                dst: Some(condition),
+                intrinsic: is_some,
+                args: vec![next_value],
+            });
+        let condition_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
+        let body_block = AwbcBlockId(condition_block.0.saturating_add(1));
+        body.close_block(
+            self.inventory,
+            AwbcTerminator::Branch {
+                condition,
+                then_block: body_block,
+                else_block: body_block,
+            },
+            AwbcSafePointKind::LoopBackedge,
+        );
+
+        let scope = frame.enter_scope();
+        self.inventory
+            .push_instruction(AwbcInstruction::EnterScope { scope });
+        let value = frame.temp(self.inventory.dynamic_ty());
+        let unwrap = self.intrinsic("core.option.unwrap", 1, Some(self.inventory.dynamic_ty()));
+        self.inventory
+            .push_instruction(AwbcInstruction::CallIntrinsic {
+                dst: Some(value),
+                intrinsic: unwrap,
+                args: vec![next_value],
+            });
+        let pattern = lower_pattern(self.inventory, frame, input.pattern);
+        self.inventory
+            .push_instruction(AwbcInstruction::BindPattern {
+                pattern,
+                value,
+                mode: AwbcBindMode::Declare,
+            });
+        self.lower_ops(frame, body, input.ops, &format!("{}.body", input.path));
+        if body.terminated {
+            frame.exit_scope();
+            self.reopen_loop_exit_after_terminated_body(frame, body, condition_block);
+            return;
+        }
+        self.close_iterator_for_iteration(frame, body, scope, condition_block);
+    }
+
+    fn reopen_loop_exit_after_terminated_body(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        condition_block: AwbcBlockId,
+    ) {
+        let after_block = body.reopen_after_terminated_branch(self.inventory);
+        patch_branch_else_block(self.inventory, condition_block, after_block);
+        if body.returns_value {
+            let unit = self.inventory.constant_runtime_value(&RuntimeValue::Unit);
+            let fallback = frame.return_value(self.inventory.dynamic_ty());
+            self.inventory.push_instruction(AwbcInstruction::LoadConst {
+                dst: fallback,
+                constant: unit,
+            });
+            body.terminate(
+                self.inventory,
+                AwbcTerminator::Return {
+                    value: Some(fallback),
+                },
+                AwbcSafePointKind::Return,
+            );
+        }
     }
 
     fn close_active_scopes_for_terminator(&mut self, frame: &mut FrameBuilder) {
