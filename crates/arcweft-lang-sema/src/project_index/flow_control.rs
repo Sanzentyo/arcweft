@@ -167,10 +167,15 @@ fn summarize_stmt_control(stmt: &Stmt) -> ProjectFlowControlSummary {
             summary.record_loop();
             summary.merge(summarize_stmt_body_control(body));
         }
-        Stmt::If { condition, body } => {
+        Stmt::If {
+            condition,
+            body,
+            else_body,
+        } => {
             summary.record_branch();
             summary.merge(summarize_expr_control(condition));
             summary.merge(summarize_stmt_body_control(body));
+            summary.merge(summarize_stmt_body_control(else_body));
         }
         Stmt::While { condition, body } => {
             summary.record_loop();

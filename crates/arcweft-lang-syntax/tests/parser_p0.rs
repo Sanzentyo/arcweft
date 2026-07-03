@@ -327,6 +327,24 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn block_comments_are_comments() {
+    let tree = parse_ok(
+        r"
+/*
+ordinary block comment
+*/
+flow @flow.opening opening {
+    goto @flow.title
+}
+",
+    );
+    let arcweft_lang_syntax::ast::items::Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
+    };
+    assert_eq!(flow.id().expect("flow id").body(), "flow.opening");
+}
+
+#[test]
 fn doc_comments_attach_to_function_and_parameters() {
     let tree = parse_ok(
         r#"

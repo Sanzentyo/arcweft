@@ -1104,9 +1104,6 @@ fn speaker_preset_edit_from_stmt(
         | Stmt::UnsafeLifetime {
             body: statements, ..
         }
-        | Stmt::If {
-            body: statements, ..
-        }
         | Stmt::Loop {
             body: statements, ..
         }
@@ -1119,6 +1116,10 @@ fn speaker_preset_edit_from_stmt(
         | Stmt::For {
             body: statements, ..
         } => speaker_preset_edit_from_stmts(source, statements, preset_name, option),
+        Stmt::If {
+            body, else_body, ..
+        } => speaker_preset_edit_from_stmts(source, body, preset_name, option)
+            .or_else(|| speaker_preset_edit_from_stmts(source, else_body, preset_name, option)),
         Stmt::Match { arms, .. } => arms.iter().find_map(|arm| {
             speaker_preset_edit_from_stmts(source, arm.body(), preset_name, option)
         }),

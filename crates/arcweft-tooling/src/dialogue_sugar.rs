@@ -201,74 +201,11 @@ fn collect_dialogue_text_sugar_edits_from_stmt(
             context,
         ),
         Stmt::LetElse { else_body, .. } => {
-            for stmt in else_body {
-                collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode, context);
-            }
+            collect_dialogue_text_sugar_edits_from_stmts(source, else_body, edits, mode, context);
         }
         Stmt::Assign { target, expr } => {
             collect_dialogue_text_sugar_edits_from_expr(target, None, None, edits, mode, context);
             collect_dialogue_text_sugar_edits_from_expr(expr, None, None, edits, mode, context);
-        }
-        Stmt::LetScope { scope, .. } => {
-            for stmt in scope.statements() {
-                collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode, context);
-            }
-        }
-        Stmt::LetLoop { block, .. } => {
-            for item in block.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(
-                    source, item, edits, mode, context,
-                );
-            }
-        }
-        Stmt::LetAwait { await_with, .. } => {
-            for branch in await_with.branches() {
-                for item in branch.body() {
-                    collect_dialogue_text_sugar_edits_from_flow_item(
-                        source, item, edits, mode, context,
-                    );
-                }
-            }
-        }
-        Stmt::Thread(thread) => {
-            for item in thread.body() {
-                collect_dialogue_text_sugar_edits_from_flow_item(
-                    source, item, edits, mode, context,
-                );
-            }
-        }
-        Stmt::DeferBlock { statements, .. }
-        | Stmt::On {
-            body: statements, ..
-        }
-        | Stmt::UnsafeLifetime {
-            body: statements, ..
-        }
-        | Stmt::If {
-            body: statements, ..
-        }
-        | Stmt::Loop {
-            body: statements, ..
-        }
-        | Stmt::While {
-            body: statements, ..
-        }
-        | Stmt::WhileLet {
-            body: statements, ..
-        }
-        | Stmt::For {
-            body: statements, ..
-        } => {
-            for stmt in statements {
-                collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode, context);
-            }
-        }
-        Stmt::Match { arms, .. } => {
-            for arm in arms {
-                for stmt in arm.body() {
-                    collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode, context);
-                }
-            }
         }
         Stmt::LetChoice { .. }
         | Stmt::Return(_)
@@ -285,6 +222,111 @@ fn collect_dialogue_text_sugar_edits_from_stmt(
         | Stmt::Continue { .. }
         | Stmt::Expr(_)
         | Stmt::Raw(_) => {}
+        _ => {
+            collect_dialogue_text_sugar_edits_from_stmt_children(
+                source, stmt, edits, mode, context,
+            );
+        }
+    }
+}
+
+fn collect_dialogue_text_sugar_edits_from_stmt_children(
+    source: &str,
+    stmt: &Stmt,
+    edits: &mut Vec<TextEdit>,
+    mode: DialogueSugarMode,
+    context: &DialogueSugarContext,
+) {
+    match stmt {
+        Stmt::LetScope { scope, .. } => {
+            collect_dialogue_text_sugar_edits_from_stmts(
+                source,
+                scope.statements(),
+                edits,
+                mode,
+                context,
+            );
+        }
+        Stmt::LetLoop { block, .. } => {
+            collect_dialogue_text_sugar_edits_from_flow_items(
+                source,
+                block.body(),
+                edits,
+                mode,
+                context,
+            );
+        }
+        Stmt::LetAwait { await_with, .. } => {
+            for branch in await_with.branches() {
+                collect_dialogue_text_sugar_edits_from_flow_items(
+                    source,
+                    branch.body(),
+                    edits,
+                    mode,
+                    context,
+                );
+            }
+        }
+        Stmt::Thread(thread) => {
+            collect_dialogue_text_sugar_edits_from_flow_items(
+                source,
+                thread.body(),
+                edits,
+                mode,
+                context,
+            );
+        }
+        Stmt::DeferBlock { statements, .. }
+        | Stmt::On {
+            body: statements, ..
+        }
+        | Stmt::UnsafeLifetime {
+            body: statements, ..
+        }
+        | Stmt::Loop {
+            body: statements, ..
+        }
+        | Stmt::While {
+            body: statements, ..
+        }
+        | Stmt::WhileLet {
+            body: statements, ..
+        }
+        | Stmt::For {
+            body: statements, ..
+        } => {
+            collect_dialogue_text_sugar_edits_from_stmts(source, statements, edits, mode, context);
+        }
+        Stmt::If {
+            body, else_body, ..
+        } => {
+            collect_dialogue_text_sugar_edits_from_stmts(source, body, edits, mode, context);
+            collect_dialogue_text_sugar_edits_from_stmts(source, else_body, edits, mode, context);
+        }
+        Stmt::Match { arms, .. } => {
+            for arm in arms {
+                collect_dialogue_text_sugar_edits_from_stmts(
+                    source,
+                    arm.body(),
+                    edits,
+                    mode,
+                    context,
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_dialogue_text_sugar_edits_from_stmts(
+    source: &str,
+    statements: &[Stmt],
+    edits: &mut Vec<TextEdit>,
+    mode: DialogueSugarMode,
+    context: &DialogueSugarContext,
+) {
+    for stmt in statements {
+        collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode, context);
     }
 }
 

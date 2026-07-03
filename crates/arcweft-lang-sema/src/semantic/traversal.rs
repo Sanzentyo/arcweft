@@ -114,9 +114,6 @@ fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
         | Stmt::UnsafeLifetime {
             body: statements, ..
         }
-        | Stmt::If {
-            body: statements, ..
-        }
         | Stmt::Loop { body: statements }
         | Stmt::While {
             body: statements, ..
@@ -127,6 +124,11 @@ fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
         | Stmt::For {
             body: statements, ..
         } => stmts_contain_unchecked_promotion(statements),
+        Stmt::If {
+            body, else_body, ..
+        } => {
+            stmts_contain_unchecked_promotion(body) || stmts_contain_unchecked_promotion(else_body)
+        }
         Stmt::Match { arms, .. } => arms
             .iter()
             .any(|arm| stmts_contain_unchecked_promotion(arm.body())),
@@ -469,9 +471,6 @@ fn collect_stmt_drop_keys(stmt: &Stmt, keys: &mut HashSet<LifetimeKey>) {
     match stmt {
         Stmt::Expr(expr) | Stmt::Defer { expr, .. } => collect_expr_drop_keys(expr, keys),
         Stmt::DeferBlock { statements, .. }
-        | Stmt::If {
-            body: statements, ..
-        }
         | Stmt::Loop { body: statements }
         | Stmt::While {
             body: statements, ..
@@ -489,6 +488,16 @@ fn collect_stmt_drop_keys(stmt: &Stmt, keys: &mut HashSet<LifetimeKey>) {
             body: statements, ..
         } => {
             for stmt in statements {
+                collect_stmt_drop_keys(stmt, keys);
+            }
+        }
+        Stmt::If {
+            body, else_body, ..
+        } => {
+            for stmt in body {
+                collect_stmt_drop_keys(stmt, keys);
+            }
+            for stmt in else_body {
                 collect_stmt_drop_keys(stmt, keys);
             }
         }
@@ -736,14 +745,19 @@ fn collect_thread_result_type_labels(stmt: &Stmt, labels: &mut BTreeSet<String>)
         Stmt::Out { expr, .. } => {
             labels.insert(expr_type_label(expr));
         }
-        Stmt::If { .. }
-        | Stmt::Loop { .. }
-        | Stmt::While { .. }
-        | Stmt::WhileLet { .. }
-        | Stmt::For { .. } => {
+        Stmt::If {
+            body, else_body, ..
+        } => {
+            for stmt in body {
+                collect_thread_result_type_labels(stmt, labels);
+            }
+            for stmt in else_body {
+                collect_thread_result_type_labels(stmt, labels);
+            }
+        }
+        Stmt::Loop { .. } | Stmt::While { .. } | Stmt::WhileLet { .. } | Stmt::For { .. } => {
             let body = match stmt {
-                Stmt::If { body, .. }
-                | Stmt::Loop { body }
+                Stmt::Loop { body }
                 | Stmt::While { body, .. }
                 | Stmt::WhileLet { body, .. }
                 | Stmt::For { body, .. } => body.as_slice(),

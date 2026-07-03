@@ -682,7 +682,16 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
             }
             collect_stmt_block(body, uses);
         }
-        Stmt::If { condition, body } | Stmt::While { condition, body } => {
+        Stmt::If {
+            condition,
+            body,
+            else_body,
+        } => {
+            collect_expr(condition, uses);
+            collect_stmt_block(body, uses);
+            collect_stmt_block(else_body, uses);
+        }
+        Stmt::While { condition, body } => {
             collect_expr(condition, uses);
             collect_stmt_block(body, uses);
         }

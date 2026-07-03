@@ -13,10 +13,15 @@ pub(crate) struct CstToken<'a> {
 pub(crate) fn lex_cst(source: &str) -> Vec<CstToken<'_>> {
     let mut tokens = Vec::new();
     let mut cursor = 0;
+    let mut in_block_comment = false;
 
     while cursor < source.len() {
         let rest = &source[cursor..];
-        let (kind, len) = next_token(rest);
+        let (kind, len) = if in_block_comment || rest.starts_with("/*") {
+            next_block_comment_token(rest, &mut in_block_comment)
+        } else {
+            next_token(rest)
+        };
         tokens.push(CstToken {
             kind,
             text: &source[cursor..cursor + len],
@@ -107,6 +112,36 @@ fn next_token(source: &str) -> (SyntaxKind, usize) {
     }
 
     (SyntaxKind::Text, first.len_utf8())
+}
+
+fn next_block_comment_token(source: &str, in_block_comment: &mut bool) -> (SyntaxKind, usize) {
+    if source.starts_with("\r\n") {
+        return (SyntaxKind::Newline, 2);
+    }
+    if source.starts_with('\n') || source.starts_with('\r') {
+        return (SyntaxKind::Newline, 1);
+    }
+
+    let close = source.find("*/");
+    let newline = source.find(['\r', '\n']);
+    match (close, newline) {
+        (Some(close), Some(newline)) if close < newline => {
+            *in_block_comment = false;
+            (SyntaxKind::Comment, close + "*/".len())
+        }
+        (Some(close), None) => {
+            *in_block_comment = false;
+            (SyntaxKind::Comment, close + "*/".len())
+        }
+        (_, Some(newline)) => {
+            *in_block_comment = true;
+            (SyntaxKind::Comment, newline)
+        }
+        (None, None) => {
+            *in_block_comment = true;
+            (SyntaxKind::Comment, source.len())
+        }
+    }
 }
 
 fn take_until_newline(source: &str) -> usize {

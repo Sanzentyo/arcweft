@@ -21,6 +21,7 @@ use arcweft_player_native::windowed_patch::{
 use arcweft_player_native::{WindowedRuntimeOutcome, WindowedRuntimeOwner};
 use arcweft_player_scene::input::InputController;
 use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
+use arcweft_render_wgpu::geometry::RenderViewport;
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{BundleEntryStart, BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_driver::swap::GenerationId;
@@ -777,11 +778,11 @@ impl WindowedSmokeHarness {
     }
 
     fn direct_image_probe(&self) -> ImageProbeSnapshot {
-        match self
-            .runtime
-            .images()
-            .render_images(&[fixture_image_object()], 0)
-        {
+        match self.runtime.images().render_images(
+            &[fixture_image_object()],
+            0,
+            fixture_image_probe_viewport(),
+        ) {
             Ok(rendered) => match rendered.as_slice() {
                 [image] => ImageProbeSnapshot::Rgba {
                     width: image.frame.width,
@@ -796,6 +797,16 @@ impl WindowedSmokeHarness {
                 message: error.to_string(),
             },
         }
+    }
+}
+
+fn fixture_image_probe_viewport() -> RenderViewport {
+    RenderViewport {
+        logical_width: 1.0,
+        logical_height: 1.0,
+        physical_width: 1,
+        physical_height: 1,
+        scale_factor: 1.0,
     }
 }
 

@@ -714,12 +714,11 @@ impl<'a> SemanticAnalyzer<'a> {
                     .extend(self.analyze_stmts(else_body, vec![facts], context).exits);
                 flow
             }
-            Stmt::If { condition, body } => {
-                self.collect_expr(condition, &mut facts);
-                let mut flow = BlockFlow::from_fallthrough(facts.clone());
-                flow.append(self.analyze_stmts(body, vec![facts], context));
-                flow
-            }
+            Stmt::If {
+                condition,
+                body,
+                else_body,
+            } => self.analyze_if_stmt(condition, body, else_body, facts, context),
             Stmt::Match { expr, arms } => {
                 self.collect_expr(expr, &mut facts);
                 let mut flow = BlockFlow::default();
@@ -800,6 +799,27 @@ impl<'a> SemanticAnalyzer<'a> {
                 BlockFlow::from_fallthrough(facts)
             }
         }
+    }
+
+    fn analyze_if_stmt(
+        &mut self,
+        condition: &Expr,
+        body: &[Stmt],
+        else_body: &[Stmt],
+        mut facts: FlowFacts,
+        context: ExitReason,
+    ) -> BlockFlow {
+        self.collect_expr(condition, &mut facts);
+        let then_flow = self.analyze_stmts(body, vec![facts.clone()], context);
+        let else_flow = if else_body.is_empty() {
+            BlockFlow::from_fallthrough(facts)
+        } else {
+            self.analyze_stmts(else_body, vec![facts], context)
+        };
+        let mut flow = BlockFlow::default();
+        flow.append(then_flow);
+        flow.append(else_flow);
+        flow
     }
 
     fn analyze_loop_stmts(
@@ -929,9 +949,14 @@ impl<'a> SemanticAnalyzer<'a> {
                 audit_insertion.as_ref(),
                 body,
             ),
-            Stmt::If { condition, body } => {
+            Stmt::If {
+                condition,
+                body,
+                else_body,
+            } => {
                 self.collect_expr(condition, state);
                 self.collect_nested_statement_scope(body, state);
+                self.collect_nested_statement_scope(else_body, state);
             }
             Stmt::Loop { body } | Stmt::While { body, .. } => {
                 if let Stmt::While { condition, .. } = stmt {

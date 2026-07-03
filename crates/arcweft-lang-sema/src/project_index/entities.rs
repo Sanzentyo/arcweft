@@ -167,25 +167,26 @@ fn index_stmt_agent_actions(
             expr, else_body, ..
         } => {
             index = index_expr_agent_actions(expr, index, source_name)?;
-            for stmt in else_body {
-                index = index_stmt_agent_actions(stmt, index, source_name)?;
-            }
+            index = index_stmt_body_agent_actions(else_body, index, source_name)?;
         }
         Stmt::DeferBlock { statements, .. } => {
-            for stmt in statements {
-                index = index_stmt_agent_actions(stmt, index, source_name)?;
-            }
+            index = index_stmt_body_agent_actions(statements, index, source_name)?;
         }
         Stmt::On { body, .. } | Stmt::UnsafeLifetime { body, .. } | Stmt::Loop { body } => {
-            for stmt in body {
-                index = index_stmt_agent_actions(stmt, index, source_name)?;
-            }
+            index = index_stmt_body_agent_actions(body, index, source_name)?;
         }
-        Stmt::If { condition, body } | Stmt::While { condition, body } => {
+        Stmt::If {
+            condition,
+            body,
+            else_body,
+        } => {
             index = index_expr_agent_actions(condition, index, source_name)?;
-            for stmt in body {
-                index = index_stmt_agent_actions(stmt, index, source_name)?;
-            }
+            index = index_stmt_body_agent_actions(body, index, source_name)?;
+            index = index_stmt_body_agent_actions(else_body, index, source_name)?;
+        }
+        Stmt::While { condition, body } => {
+            index = index_expr_agent_actions(condition, index, source_name)?;
+            index = index_stmt_body_agent_actions(body, index, source_name)?;
         }
         Stmt::WhileLet {
             expr, guard, body, ..
@@ -194,15 +195,11 @@ fn index_stmt_agent_actions(
             if let Some(guard) = guard {
                 index = index_expr_agent_actions(guard, index, source_name)?;
             }
-            for stmt in body {
-                index = index_stmt_agent_actions(stmt, index, source_name)?;
-            }
+            index = index_stmt_body_agent_actions(body, index, source_name)?;
         }
         Stmt::For { source, body, .. } => {
             index = index_expr_agent_actions(source, index, source_name)?;
-            for stmt in body {
-                index = index_stmt_agent_actions(stmt, index, source_name)?;
-            }
+            index = index_stmt_body_agent_actions(body, index, source_name)?;
         }
         Stmt::Match { expr, arms } => {
             index = index_expr_agent_actions(expr, index, source_name)?;
@@ -210,15 +207,11 @@ fn index_stmt_agent_actions(
                 if let Some(guard) = arm.guard() {
                     index = index_expr_agent_actions(guard, index, source_name)?;
                 }
-                for stmt in arm.body() {
-                    index = index_stmt_agent_actions(stmt, index, source_name)?;
-                }
+                index = index_stmt_body_agent_actions(arm.body(), index, source_name)?;
             }
         }
         Stmt::LetScope { scope, .. } => {
-            for stmt in scope.statements() {
-                index = index_stmt_agent_actions(stmt, index, source_name)?;
-            }
+            index = index_stmt_body_agent_actions(scope.statements(), index, source_name)?;
             if let Some(value) = scope.value() {
                 index = index_expr_agent_actions(value, index, source_name)?;
             }
@@ -231,6 +224,17 @@ fn index_stmt_agent_actions(
         | Stmt::Break { .. }
         | Stmt::Continue { .. }
         | Stmt::Raw(_) => {}
+    }
+    Ok(index)
+}
+
+fn index_stmt_body_agent_actions(
+    body: &[Stmt],
+    mut index: ProjectSemanticIndex,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    for stmt in body {
+        index = index_stmt_agent_actions(stmt, index, source_name)?;
     }
     Ok(index)
 }

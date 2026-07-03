@@ -1103,6 +1103,59 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn typecheck_accepts_plain_string_inline_function_without_failure_policy() {
+    let tree = parse_ok(
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.opening opening {
+    alice: #[i_to_string(score)]点[p]
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("inline string function fixture lowers");
+
+    typecheck_hir(
+        &hir,
+        &TypeCheckEnv::new()
+            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
+            .with_symbol("score", TypeKind::I32)
+            .with_function("i_to_string", TypeKind::String),
+    )
+    .expect("plain string inline function does not need an inline failure policy");
+}
+
+#[test]
+fn typecheck_accepts_diverging_if_else_function_body_for_declared_return() {
+    let tree = parse_ok(
+        r#"
+character @character.alice Alice as alice {}
+
+fn i_to_string(i: i32) -> string {
+    if i == 0 {
+        return "first"
+    } else if i == 1 {
+        return "second"
+    } else {
+        return "last"
+    }
+}
+
+flow @flow.opening opening {
+    alice: #[i_to_string(1i32)][p]
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("diverging if-else fixture lowers");
+
+    typecheck_hir(
+        &hir,
+        &TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character)),
+    )
+    .expect("diverging if-else function body satisfies declared return type");
+}
+
+#[test]
 fn typecheck_accepts_inline_function_failure_policy() {
     let tree = parse_ok(
         r#"

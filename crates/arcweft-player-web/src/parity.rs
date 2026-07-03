@@ -222,7 +222,11 @@ pub fn prepare_bundle_parity_frame(
             })
             .collect(),
         text_inputs: Vec::new(),
-        images: images.render_images(&presentation.images, options.visual_time_millis)?,
+        images: images.render_images(
+            &presentation.images,
+            options.visual_time_millis,
+            options.viewport,
+        )?,
         viewport: options.viewport,
         visual_time_millis: options.visual_time_millis,
         preferences: RenderPreferences::default(),

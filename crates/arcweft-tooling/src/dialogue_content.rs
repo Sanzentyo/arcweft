@@ -174,9 +174,6 @@ fn collect_dialogue_content_ranges_from_stmt(
         | Stmt::UnsafeLifetime {
             body: statements, ..
         }
-        | Stmt::If {
-            body: statements, ..
-        }
         | Stmt::Loop {
             body: statements, ..
         }
@@ -190,6 +187,16 @@ fn collect_dialogue_content_ranges_from_stmt(
             body: statements, ..
         } => {
             for stmt in statements {
+                collect_dialogue_content_ranges_from_stmt(source, stmt, ranges);
+            }
+        }
+        Stmt::If {
+            body, else_body, ..
+        } => {
+            for stmt in body {
+                collect_dialogue_content_ranges_from_stmt(source, stmt, ranges);
+            }
+            for stmt in else_body {
                 collect_dialogue_content_ranges_from_stmt(source, stmt, ranges);
             }
         }

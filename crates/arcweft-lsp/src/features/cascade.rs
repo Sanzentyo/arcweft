@@ -298,9 +298,6 @@ fn style_path_from_stmt(stmt: &Stmt, offset: usize) -> Option<String> {
         | Stmt::UnsafeLifetime {
             body: statements, ..
         }
-        | Stmt::If {
-            body: statements, ..
-        }
         | Stmt::Loop {
             body: statements, ..
         }
@@ -313,6 +310,11 @@ fn style_path_from_stmt(stmt: &Stmt, offset: usize) -> Option<String> {
         | Stmt::For {
             body: statements, ..
         } => style_path_from_stmts(statements, offset),
+        Stmt::If {
+            body, else_body, ..
+        } => {
+            style_path_from_stmts(body, offset).or_else(|| style_path_from_stmts(else_body, offset))
+        }
         Stmt::Match { arms, .. } => arms
             .iter()
             .find_map(|arm| style_path_from_stmts(arm.body(), offset)),

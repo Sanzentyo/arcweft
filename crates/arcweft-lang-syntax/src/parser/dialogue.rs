@@ -146,8 +146,9 @@ impl Parser<'_> {
                 self.take_indented_dialogue(indentation(&line.text) + 1, line.start)
             } else {
                 let content_start = line.start + line_leading + content_relative;
+                let inline_content = self.take_inline_dialogue_content(inline_content);
                 self.dialogue_content(
-                    inline_content.to_owned(),
+                    inline_content.clone(),
                     TextRange::new(content_start, content_start + inline_content.len()),
                 )
             };
@@ -478,6 +479,22 @@ impl Parser<'_> {
         self.dialogue_content(raw.clone(), TextRange::new(start, end))
     }
 
+    fn take_inline_dialogue_content(&mut self, first_line: &str) -> String {
+        let mut raw = first_line.to_owned();
+        let mut expr_bracket_depth = dialogue_expr_bracket_depth(first_line, 0);
+        while expr_bracket_depth > 0 && self.index < self.events.len() {
+            let line = self.current();
+            if !raw.is_empty() {
+                raw.push('\n');
+            }
+            let trimmed = line.text.trim();
+            raw.push_str(trimmed);
+            expr_bracket_depth = dialogue_expr_bracket_depth(trimmed, expr_bracket_depth);
+            self.index += 1;
+        }
+        raw
+    }
+
     fn take_indented_line_plan(
         &mut self,
         min_indent: usize,
@@ -517,6 +534,25 @@ impl Parser<'_> {
 fn starts_dialogue_defaults_relative_id(source: &str) -> bool {
     let trimmed = source.trim_start();
     trimmed.starts_with("@.") || trimmed.starts_with("@..")
+}
+
+fn dialogue_expr_bracket_depth(source: &str, mut depth: usize) -> usize {
+    let mut chars = source.char_indices().peekable();
+    while let Some((_, ch)) = chars.next() {
+        if depth == 0 {
+            if ch == '#' && chars.peek().is_some_and(|(_, next)| *next == '[') {
+                let _ = chars.next();
+                depth = 1;
+            }
+            continue;
+        }
+        match ch {
+            '[' => depth += 1,
+            ']' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    depth
 }
 
 fn parse_dialogue_default_assignments(

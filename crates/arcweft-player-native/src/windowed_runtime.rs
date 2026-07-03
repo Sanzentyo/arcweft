@@ -702,6 +702,7 @@ mod tests {
     use arcweft_render_text::{
         LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode,
     };
+    use arcweft_render_wgpu::geometry::RenderViewport;
     use arcweft_runtime_driver::clock::RuntimeClockStep;
     use arcweft_runtime_driver::session::BundleStepInput;
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
@@ -818,7 +819,7 @@ mod tests {
     fn rendered_rgba(owner: &WindowedRuntimeOwner) -> Vec<u8> {
         let rendered = owner
             .images()
-            .render_images(&[fixture_image_object()], 0)
+            .render_images(&[fixture_image_object()], 0, fixture_image_probe_viewport())
             .expect("fixture image renders");
         let [image] = rendered.as_slice() else {
             panic!("one fixture image renders");
@@ -968,6 +969,16 @@ mod tests {
             depth_milli: 0,
             opacity_milli: 1000,
             visible: true,
+        }
+    }
+
+    fn fixture_image_probe_viewport() -> RenderViewport {
+        RenderViewport {
+            logical_width: 1.0,
+            logical_height: 1.0,
+            physical_width: 1,
+            physical_height: 1,
+            scale_factor: 1.0,
         }
     }
 }

@@ -1178,7 +1178,12 @@ impl ObligationCollector {
                 audit_insertion.as_ref(),
                 body,
             ),
-            Stmt::If { condition, body } | Stmt::While { condition, body } => {
+            Stmt::If {
+                condition,
+                body,
+                else_body,
+            } => self.collect_if_stmt(condition, body, else_body),
+            Stmt::While { condition, body } => {
                 self.collect_expr(condition);
                 self.collect_stmts(body);
             }
@@ -1216,6 +1221,12 @@ impl ObligationCollector {
                 raw.range().map(|range| format!("{range:?}")),
             ),
         }
+    }
+
+    fn collect_if_stmt(&mut self, condition: &Expr, body: &[Stmt], else_body: &[Stmt]) {
+        self.collect_expr(condition);
+        self.collect_stmts(body);
+        self.collect_stmts(else_body);
     }
 
     fn collect_stmts(&mut self, stmts: &[Stmt]) {

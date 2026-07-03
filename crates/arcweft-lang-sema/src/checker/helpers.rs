@@ -639,6 +639,9 @@ pub(super) fn stmts_diverge(stmts: &[Stmt]) -> bool {
 pub(super) fn stmt_diverges(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Return(_) | Stmt::Goto(_) | Stmt::Break { .. } | Stmt::Continue { .. } => true,
+        Stmt::If {
+            body, else_body, ..
+        } => !else_body.is_empty() && stmts_diverge(body) && stmts_diverge(else_body),
         Stmt::Expr(expr) => expr_diverges(expr),
         Stmt::Raw(raw) => raw.source().starts_with("break"),
         _ => false,

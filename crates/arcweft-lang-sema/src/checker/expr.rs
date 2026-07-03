@@ -3,7 +3,7 @@
 use super::helpers::{
     array_len_matches, array_repeat_len_label, collection_index_type, expr_path_label,
     first_arg_type, is_drop_name, let_else_bindings, named_type_label, numeric_literal_suffix_type,
-    result_ok_type, type_kind_label, type_ref_kind, well_known_capacity_method_type,
+    result_ok_type, stmts_diverge, type_kind_label, type_ref_kind, well_known_capacity_method_type,
     well_known_field_type, well_known_runtime_method_type,
 };
 use super::{
@@ -1909,6 +1909,11 @@ impl TypeChecker<'_> {
                 this.check_expr_with_expected(value, expected)
             })
         });
+        let ty = if value.is_none() && stmts_diverge(statements) {
+            Some(TypeKind::Never)
+        } else {
+            ty
+        };
         self.reject_borrow_escape(ty.as_ref(), "block final value");
         ty
     }

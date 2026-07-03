@@ -229,9 +229,10 @@ impl TypeChecker<'_> {
         for token in tokens {
             match token {
                 DialogueToken::Expr(expr) => {
-                    self.check_expr(expr);
-                    reject_inline_calls_without_failure_policy(
+                    let expr_ty = self.check_expr(expr);
+                    reject_fallible_inline_value_without_failure_policy(
                         expr,
+                        expr_ty.as_ref(),
                         has_default_inline_failure_policy,
                         &mut self.errors,
                     );
@@ -343,11 +344,15 @@ fn inferred_tag_is_mark(name: &str) -> bool {
     )
 }
 
-fn reject_inline_calls_without_failure_policy(
+fn reject_fallible_inline_value_without_failure_policy(
     expr: &Expr,
+    expr_ty: Option<&TypeKind>,
     has_default_inline_failure_policy: bool,
     errors: &mut Vec<TypeCheckError>,
 ) {
+    if !matches!(expr_ty, Some(TypeKind::DisplayText)) {
+        return;
+    }
     match expr {
         Expr::Call { callee, args } => validate_inline_call_failure_policy(
             inline_callable_label(callee),
@@ -366,123 +371,6 @@ fn reject_inline_calls_without_failure_policy(
             errors,
         ),
         _ => {}
-    }
-
-    for child in inline_expr_children(expr) {
-        reject_inline_calls_without_failure_policy(
-            child,
-            has_default_inline_failure_policy,
-            errors,
-        );
-    }
-}
-
-fn inline_expr_children(expr: &Expr) -> Vec<&Expr> {
-    match expr {
-        Expr::Call { callee, args } => {
-            let mut children = Vec::with_capacity(args.len() + 1);
-            children.push(callee.as_ref());
-            children.extend(args.iter().filter_map(call_arg_inline_child));
-            children
-        }
-        Expr::MethodCall { receiver, args, .. } => {
-            let mut children = Vec::with_capacity(args.len() + 1);
-            children.push(receiver.as_ref());
-            children.extend(args.iter().filter_map(call_arg_inline_child));
-            children
-        }
-        Expr::Field { target, .. }
-        | Expr::Try { expr: target }
-        | Expr::Await {
-            expr: target,
-            applies_try: _,
-        }
-        | Expr::Unary {
-            op: _,
-            expr: target,
-        }
-        | Expr::Closure { body: target, .. }
-        | Expr::DialogueCall { callee: target, .. } => vec![target.as_ref()],
-        Expr::Index { target, index } => vec![target.as_ref(), index.as_ref()],
-        Expr::Pipe { lhs, rhs } | Expr::Binary { lhs, op: _, rhs } => {
-            vec![lhs.as_ref(), rhs.as_ref()]
-        }
-        Expr::Tuple(items) | Expr::BracketSeq(items) => items.iter().collect(),
-        Expr::ArrayRepeat { value, len } => vec![value.as_ref(), len.as_ref()],
-        Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => {
-            fields.iter().map(|(_, value)| value).collect()
-        }
-        Expr::Block { value, .. }
-        | Expr::ComputationBlock { value, .. }
-        | Expr::MemoBlock { value, .. }
-        | Expr::NamedBlock { value, .. } => value.iter().map(Box::as_ref).collect(),
-        Expr::If {
-            condition,
-            then_branch,
-            else_branch,
-        } => optional_tail(
-            vec![condition.as_ref(), then_branch.as_ref()],
-            else_branch.as_deref(),
-        ),
-        Expr::IfLet {
-            expr,
-            guard,
-            then_branch,
-            else_branch,
-            ..
-        } => optional_tail(
-            optional_tail(vec![expr.as_ref()], guard.as_deref())
-                .into_iter()
-                .chain([then_branch.as_ref()])
-                .collect(),
-            else_branch.as_deref(),
-        ),
-        Expr::Match { scrutinee, arms } => {
-            let mut children = Vec::with_capacity(arms.len() + 1);
-            children.push(scrutinee.as_ref());
-            children.extend(
-                arms.iter()
-                    .map(arcweft_lang_syntax::expr::MatchExprArm::value),
-            );
-            children
-        }
-        Expr::Range { start, end, .. } => [start.as_deref(), end.as_deref()]
-            .into_iter()
-            .flatten()
-            .collect(),
-        Expr::Literal(_)
-        | Expr::EntityRef(_)
-        | Expr::LifetimePath { .. }
-        | Expr::Path(_)
-        | Expr::Placeholder(_)
-        | Expr::NumericBracketSeq(_)
-        | Expr::Thread { .. }
-        | Expr::Raw(_) => Vec::new(),
-    }
-}
-
-fn optional_tail<'a>(mut values: Vec<&'a Expr>, tail: Option<&'a Expr>) -> Vec<&'a Expr> {
-    if let Some(tail) = tail {
-        values.push(tail);
-    }
-    values
-}
-
-fn call_arg_expr(arg: &CallArg) -> &Expr {
-    match arg {
-        CallArg::Positional(value) => value,
-        CallArg::Named { value, .. } | CallArg::Spread { value } => value,
-    }
-}
-
-fn call_arg_inline_child(arg: &CallArg) -> Option<&Expr> {
-    match arg {
-        CallArg::Named { name, .. }
-            if matches!(name.as_str(), "on_error" | "fallback" | "discard_error") =>
-        {
-            None
-        }
-        _ => Some(call_arg_expr(arg)),
     }
 }
 

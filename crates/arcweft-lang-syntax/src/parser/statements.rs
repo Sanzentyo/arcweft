@@ -10,6 +10,7 @@ use super::{
     split_top_level_binding, split_top_level_keyword_once,
     split_top_level_punctuation_sequence_once,
 };
+use crate::cst::CstPunctuationScan;
 use crate::cst::SyntaxParseStats;
 
 impl Parser<'_> {
@@ -283,6 +284,9 @@ fn wait_stmt_source(trimmed: &str) -> Option<&str> {
 }
 
 fn parse_braced_stmt(trimmed: &str) -> Option<Stmt> {
+    if trimmed.starts_with("if ") {
+        return parse_if_stmt(trimmed);
+    }
     let (head, body) = super::split_brace_item(trimmed)?;
     if head.starts_with("unsafe lifetime ") {
         let mut errors = Vec::new();
@@ -305,12 +309,6 @@ fn parse_braced_stmt(trimmed: &str) -> Option<Stmt> {
     }
     if head.starts_with("scope") {
         return Some(Stmt::Expr(parse_named_block_expr(head, body)));
-    }
-    if let Some(condition) = head.strip_prefix("if ") {
-        return Some(Stmt::If {
-            condition: parse_expr_lossy(condition.trim()),
-            body: parse_stmt_lines(body),
-        });
     }
     if head == "loop" {
         return Some(Stmt::Loop {
@@ -340,6 +338,40 @@ fn parse_braced_stmt(trimmed: &str) -> Option<Stmt> {
         expr: parse_expr_lossy(expr.trim()),
         arms: parse_stmt_match_arms(body),
     })
+}
+
+fn parse_if_stmt(source: &str) -> Option<Stmt> {
+    let (head, body, trailing) = split_braced_stmt_with_trailing(source)?;
+    let condition = head.strip_prefix("if ")?;
+    Some(Stmt::If {
+        condition: parse_expr_lossy(condition.trim()),
+        body: parse_stmt_lines(body),
+        else_body: parse_else_stmt_tail(trailing)?,
+    })
+}
+
+fn parse_else_stmt_tail(trailing: &str) -> Option<Vec<Stmt>> {
+    let trailing = trailing.trim();
+    if trailing.is_empty() {
+        return Some(Vec::new());
+    }
+    let rest = trailing.strip_prefix("else")?.trim_start();
+    if rest.starts_with("if ") {
+        return parse_if_stmt(rest).map(|stmt| vec![stmt]);
+    }
+    let (head, body, trailing) = split_braced_stmt_with_trailing(rest)?;
+    (head.is_empty() && trailing.trim().is_empty()).then(|| parse_stmt_lines(body))
+}
+
+fn split_braced_stmt_with_trailing(source: &str) -> Option<(&str, &str, &str)> {
+    let punctuation = CstPunctuationScan::new(source);
+    let open = punctuation.find_top_level_punctuation('{')?;
+    let close = punctuation.find_matching_punctuation(open, '{', '}')?;
+    Some((
+        source[..open].trim(),
+        source[open + '{'.len_utf8()..close].trim(),
+        source[close + '}'.len_utf8()..].trim(),
+    ))
 }
 
 pub(super) fn parse_unsafe_lifetime_block(

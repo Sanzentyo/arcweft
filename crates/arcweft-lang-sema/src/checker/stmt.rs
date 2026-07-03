@@ -55,21 +55,7 @@ impl TypeChecker<'_> {
             | Stmt::LetScope { .. }
             | Stmt::LetLoop { .. }
             | Stmt::LetAwait { .. } => self.reject_unlowered_stmt_binding(stmt),
-            Stmt::Return(expr) | Stmt::Close(expr) => {
-                let expected = self.expected_returns.last().cloned();
-                let ty = self.check_expr_with_expected(expr, expected.as_ref());
-                if let Some(ty) = ty.as_ref() {
-                    self.record_type_judgment(
-                        TypeJudgmentSubject::Return {
-                            context: "return statement".to_owned(),
-                        },
-                        TypeJudgmentRule::Return,
-                        ty.clone(),
-                        expected.as_ref(),
-                    );
-                }
-                self.reject_borrow_escape(ty.as_ref(), "function or flow return");
-            }
+            Stmt::Return(expr) | Stmt::Close(expr) => self.check_return_stmt(expr),
             Stmt::Expr(expr) | Stmt::Select(expr) => {
                 self.check_expr(expr);
                 self.release_direct_drop_expr(expr);
@@ -112,7 +98,11 @@ impl TypeChecker<'_> {
             Stmt::UnsafeLifetime { reason, body, .. } => {
                 self.check_unsafe_lifetime_stmt(reason.as_ref(), body);
             }
-            Stmt::If { condition, body } => self.check_if_stmt(condition, body),
+            Stmt::If {
+                condition,
+                body,
+                else_body,
+            } => self.check_if_stmt(condition, body, else_body),
             Stmt::Loop { body } => self.check_stmt_loop(body),
             Stmt::While { condition, body } => self.check_stmt_while(condition, body),
             Stmt::WhileLet {
@@ -135,6 +125,22 @@ impl TypeChecker<'_> {
                 raw.source()
             ))),
         }
+    }
+
+    fn check_return_stmt(&mut self, expr: &Expr) {
+        let expected = self.expected_returns.last().cloned();
+        let ty = self.check_expr_with_expected(expr, expected.as_ref());
+        if let Some(ty) = ty.as_ref() {
+            self.record_type_judgment(
+                TypeJudgmentSubject::Return {
+                    context: "return statement".to_owned(),
+                },
+                TypeJudgmentRule::Return,
+                ty.clone(),
+                expected.as_ref(),
+            );
+        }
+        self.reject_borrow_escape(ty.as_ref(), "function or flow return");
     }
 
     fn check_seq_stmt_policy(&mut self, stmt: &Stmt) {
@@ -332,7 +338,7 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_if_stmt(&mut self, condition: &Expr, body: &[Stmt]) {
+    fn check_if_stmt(&mut self, condition: &Expr, body: &[Stmt], else_body: &[Stmt]) {
         self.expect_expr_type(condition, &TypeKind::Bool, "if condition");
         let borrow_checkpoint = self.checkpoint_borrow_state();
         self.with_local_mutation_scope(|this| {
@@ -341,8 +347,20 @@ impl TypeChecker<'_> {
             }
         });
         let then_state = self.capture_borrow_state_delta(borrow_checkpoint);
+        self.restore_borrow_state(borrow_checkpoint);
+        self.with_local_mutation_scope(|this| {
+            for stmt in else_body {
+                this.check_stmt(stmt);
+            }
+        });
+        let else_state = self.capture_borrow_state_delta(borrow_checkpoint);
         let unchanged_state = BorrowStateDelta::default();
-        self.merge_borrow_state_from_deltas(borrow_checkpoint, &[&unchanged_state, &then_state]);
+        let else_state = if else_body.is_empty() {
+            &unchanged_state
+        } else {
+            &else_state
+        };
+        self.merge_borrow_state_from_deltas(borrow_checkpoint, &[&then_state, else_state]);
     }
 
     fn check_stmt_loop(&mut self, body: &[Stmt]) {

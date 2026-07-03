@@ -1884,11 +1884,11 @@ impl FlowRuntimeLowerer<'_> {
                     value: expr_label(expr),
                 }))]
             }
-            Stmt::If { condition, body } => vec![FlowOp::If {
-                condition: self.lower_runtime_expr(condition),
-                then_ops: self.lower_flow_stmt_list(flow_id, flow_index, body),
-                else_ops: Vec::new(),
-            }],
+            Stmt::If {
+                condition,
+                body,
+                else_body,
+            } => self.lower_if_stmt(flow_id, flow_index, condition, body, else_body),
             Stmt::Loop { body } => vec![FlowOp::Loop {
                 body: self.lower_flow_stmt_list(flow_id, flow_index, body),
             }],
@@ -1911,20 +1911,7 @@ impl FlowRuntimeLowerer<'_> {
                 pattern,
                 source,
                 body,
-            } => {
-                let Some(evidence) = self.next_for_iteration_evidence() else {
-                    self.errors.push(RuntimePlanLowerError::new(
-                        "missing trait-resolved IntoIterator evidence for `for` source",
-                    ));
-                    return Vec::new();
-                };
-                vec![FlowOp::For {
-                    pattern: lower_runtime_pattern(pattern),
-                    source: self.lower_runtime_expr(source),
-                    evidence,
-                    body: self.lower_flow_stmt_list(flow_id, flow_index, body),
-                }]
-            }
+            } => self.lower_for_stmt(flow_id, flow_index, pattern, source, body),
             Stmt::Thread(thread) => self.lower_thread_stmt(flow_id, flow_index, thread),
             Stmt::Match { expr, arms } => vec![FlowOp::Match {
                 scrutinee: self.lower_runtime_expr(expr),
@@ -1943,6 +1930,43 @@ impl FlowRuntimeLowerer<'_> {
                 Vec::new()
             }
         }
+    }
+
+    fn lower_if_stmt(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        flow_index: usize,
+        condition: &Expr,
+        body: &[Stmt],
+        else_body: &[Stmt],
+    ) -> Vec<FlowOp> {
+        vec![FlowOp::If {
+            condition: self.lower_runtime_expr(condition),
+            then_ops: self.lower_flow_stmt_list(flow_id, flow_index, body),
+            else_ops: self.lower_flow_stmt_list(flow_id, flow_index, else_body),
+        }]
+    }
+
+    fn lower_for_stmt(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        flow_index: usize,
+        pattern: &Pattern,
+        source: &Expr,
+        body: &[Stmt],
+    ) -> Vec<FlowOp> {
+        let Some(evidence) = self.next_for_iteration_evidence() else {
+            self.errors.push(RuntimePlanLowerError::new(
+                "missing trait-resolved IntoIterator evidence for `for` source",
+            ));
+            return Vec::new();
+        };
+        vec![FlowOp::For {
+            pattern: lower_runtime_pattern(pattern),
+            source: self.lower_runtime_expr(source),
+            evidence,
+            body: self.lower_flow_stmt_list(flow_id, flow_index, body),
+        }]
     }
 
     fn lower_let_stmt(

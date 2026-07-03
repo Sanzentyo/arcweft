@@ -247,7 +247,16 @@ fn index_stmt_symbol_dependency_relations(
         Stmt::On { body, .. } | Stmt::UnsafeLifetime { body, .. } | Stmt::Loop { body } => {
             index = index_stmt_body_symbol_dependency_relations(parent, body, index)?;
         }
-        Stmt::If { condition, body } | Stmt::While { condition, body } => {
+        Stmt::If {
+            condition,
+            body,
+            else_body,
+        } => {
+            index = index_expr_symbol_dependency_relations(parent, condition, index)?;
+            index = index_stmt_body_symbol_dependency_relations(parent, body, index)?;
+            index = index_stmt_body_symbol_dependency_relations(parent, else_body, index)?;
+        }
+        Stmt::While { condition, body } => {
             index = index_expr_symbol_dependency_relations(parent, condition, index)?;
             index = index_stmt_body_symbol_dependency_relations(parent, body, index)?;
         }
@@ -737,7 +746,16 @@ fn index_stmt_relations(
         Stmt::On { body, .. } | Stmt::UnsafeLifetime { body, .. } | Stmt::Loop { body } => {
             index = index_stmt_body_relations(parent, body, index)?;
         }
-        Stmt::If { condition, body } | Stmt::While { condition, body } => {
+        Stmt::If {
+            condition,
+            body,
+            else_body,
+        } => {
+            index = index_expr_dependency_relations(parent, condition, index)?;
+            index = index_stmt_body_relations(parent, body, index)?;
+            index = index_stmt_body_relations(parent, else_body, index)?;
+        }
+        Stmt::While { condition, body } => {
             index = index_expr_dependency_relations(parent, condition, index)?;
             index = index_stmt_body_relations(parent, body, index)?;
         }

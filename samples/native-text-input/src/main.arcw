@@ -7,7 +7,32 @@ entry game @entry.native_text_input_sample {
   start @flow.native_text_input_sample
 }
 
+fn i_to_string(i: i32) -> string {
+    if i == 0 {
+        return "first"
+    } else {
+        return "last"
+    }
+}
+
+fn i_to_string_2(i: i32) -> string {
+    if i == 0 {
+        return "first"
+    } else if i == 1 {
+        return "second"
+    } else {
+        return "last"
+    }
+}
+
 flow native_text_input_sample {
+    let a: i32 = 2
+
+    for i in 0i32..a {
+        narrator: This is a native text input sample. Iteration #[
+            i_to_string(i)
+        ] of #[a].
+    }
   narrator:
     Native player-rendered IME acceptance sample.[p]
     This scene owns three Arcweft-rendered text controls from product UI resources: jp_text_field, jp_text_area, and secret_secure_field.[p]

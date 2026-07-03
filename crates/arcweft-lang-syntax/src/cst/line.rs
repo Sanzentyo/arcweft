@@ -507,7 +507,7 @@ impl<'a> CstLine<'a> {
             text.truncate(text.len() - 1);
             end -= 1;
         }
-        let kind = classify_line(&text);
+        let kind = classify_node_line(node, &text);
         let punctuation = CstLinePunctuationSummary::from_node(node);
         let trim = line_trim_ranges(&text);
         Self {
@@ -531,7 +531,7 @@ impl<'a> CstLine<'a> {
             end -= 1;
         }
         let text = &source[start..end];
-        let kind = classify_line(text);
+        let kind = classify_node_line(node, text);
         let punctuation = CstLinePunctuationSummary::from_node(node);
         let trim = line_trim_ranges(text);
         Self {
@@ -682,6 +682,32 @@ fn line_trim_ranges(text: &str) -> CstLineTrimRanges {
         leading_trim_start,
     }
 }
+
+fn classify_node_line(node: &SyntaxNode, text: &str) -> CstLineKind {
+    let text_kind = classify_line(text);
+    if text_kind != CstLineKind::Code {
+        return text_kind;
+    }
+
+    let mut has_comment = false;
+    let mut has_code_token = false;
+    for token in node
+        .children_with_tokens()
+        .filter_map(rowan::NodeOrToken::into_token)
+    {
+        match token.kind() {
+            SyntaxKind::Whitespace | SyntaxKind::Newline => {}
+            SyntaxKind::Comment => has_comment = true,
+            _ => has_code_token = true,
+        }
+    }
+    if has_comment && !has_code_token {
+        CstLineKind::Comment
+    } else {
+        CstLineKind::Code
+    }
+}
+
 impl CstLinePunctuationSummary {
     fn from_node(node: &SyntaxNode) -> Self {
         let mut summary = Self::default();

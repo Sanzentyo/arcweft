@@ -699,6 +699,9 @@ fn types_compatible(expected: &TypeKind, actual: &TypeKind) -> bool {
     if expected == actual || matches!(expected, TypeKind::Named(name) if name == "_") {
         return true;
     }
+    if matches!(actual, TypeKind::Never) {
+        return true;
+    }
     match (expected, actual) {
         (TypeKind::Bytes, TypeKind::Vec(inner) | TypeKind::Slice(inner) | TypeKind::Seq(inner)) => {
             matches!(inner.as_ref(), TypeKind::U8)

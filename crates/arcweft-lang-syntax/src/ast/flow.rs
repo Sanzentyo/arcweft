@@ -375,6 +375,7 @@ pub enum Stmt {
     If {
         condition: Expr,
         body: Vec<Stmt>,
+        else_body: Vec<Stmt>,
     },
     /// `loop { ... }` inside typed statement bodies.
     Loop {

@@ -414,7 +414,16 @@ fn collect_speaker_presets_from_control_stmt(
     presets: &mut BTreeSet<String>,
 ) {
     match stmt {
-        Stmt::If { condition, body } | Stmt::While { condition, body } => {
+        Stmt::If {
+            condition,
+            body,
+            else_body,
+        } => {
+            collect_speaker_presets_from_expr(condition, character_aliases, presets);
+            collect_speaker_presets_from_stmts(body, character_aliases, presets);
+            collect_speaker_presets_from_stmts(else_body, character_aliases, presets);
+        }
+        Stmt::While { condition, body } => {
             collect_speaker_presets_from_expr(condition, character_aliases, presets);
             collect_speaker_presets_from_stmts(body, character_aliases, presets);
         }

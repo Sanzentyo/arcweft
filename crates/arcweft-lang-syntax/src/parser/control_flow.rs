@@ -8,6 +8,7 @@ use super::{
     split_top_level_binding, split_top_level_keyword_once, split_top_level_punctuation_once,
     split_top_level_punctuation_sequence_once,
 };
+use crate::cst::CstPunctuationScan;
 use std::ops::Range;
 
 impl Parser<'_> {
@@ -240,12 +241,12 @@ impl Parser<'_> {
                     self.parse_flow_body(&else_body, body_base),
                 )
             } else {
-                let else_body = self
-                    .take_optional_statement_else_block()
+                let else_items = self
+                    .take_optional_statement_else_items()
                     .unwrap_or_default();
                 (
                     self.parse_flow_body_from_block(&block, body_base),
-                    self.parse_flow_body(&else_body, body_base),
+                    else_items,
                 )
             };
         Some(IfBlock::new(
@@ -282,12 +283,12 @@ impl Parser<'_> {
                     self.parse_flow_body(&else_body, body_base),
                 )
             } else {
-                let else_body = self
-                    .take_optional_statement_else_block()
+                let else_items = self
+                    .take_optional_statement_else_items()
                     .unwrap_or_default();
                 (
                     self.parse_flow_body_from_block(&block, body_base),
-                    self.parse_flow_body(&else_body, body_base),
+                    else_items,
                 )
             };
         Some(IfLetBlock::new(
@@ -300,7 +301,7 @@ impl Parser<'_> {
         ))
     }
 
-    fn take_optional_statement_else_block(&mut self) -> Option<String> {
+    fn take_optional_statement_else_items(&mut self) -> Option<Vec<FlowItem>> {
         self.skip_blank_and_comments();
         if self.index >= self.events.len() {
             return None;
@@ -310,8 +311,93 @@ impl Parser<'_> {
         if !trimmed.starts_with("else") && !trimmed.starts_with("} else") {
             return None;
         }
+        if trimmed.starts_with("else if let ") || trimmed.starts_with("} else if let ") {
+            return self
+                .parse_else_if_let_block()
+                .map(|block| vec![FlowItem::IfLet(block)]);
+        }
+        if trimmed.starts_with("else if ") || trimmed.starts_with("} else if ") {
+            return self
+                .parse_else_if_block()
+                .map(|block| vec![FlowItem::If(block)]);
+        }
         let (_, body, _, ok) = self.take_brace_block();
-        ok.then(|| body.into_owned())
+        ok.then(|| self.parse_flow_body(&body, line.start))
+    }
+
+    fn parse_else_if_block(&mut self) -> Option<IfBlock> {
+        let start_line = self.current().clone();
+        let block = self.take_brace_block_event();
+        if !block.ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing else-if",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the else-if body"],
+            );
+            return None;
+        }
+        let condition = block
+            .head
+            .trim()
+            .strip_prefix('}')
+            .unwrap_or(block.head.trim())
+            .trim_start()
+            .strip_prefix("else")?
+            .trim_start()
+            .strip_prefix("if")?
+            .trim();
+        let body_base = start_line.start + block.head.len();
+        let else_body = self
+            .take_optional_statement_else_items()
+            .unwrap_or_default();
+        Some(IfBlock::new(
+            parse_expr_lossy(condition),
+            self.parse_flow_body_from_block(&block, body_base),
+            else_body,
+            TextRange::new(start_line.start, block.end),
+        ))
+    }
+
+    fn parse_else_if_let_block(&mut self) -> Option<IfLetBlock> {
+        let start_line = self.current().clone();
+        let block = self.take_brace_block_event();
+        if !block.ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing else-if-let",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the else-if-let body"],
+            );
+            return None;
+        }
+        let rest = block
+            .head
+            .trim()
+            .strip_prefix('}')
+            .unwrap_or(block.head.trim())
+            .trim_start()
+            .strip_prefix("else")?
+            .trim_start()
+            .strip_prefix("if let")?
+            .trim();
+        let (pattern, expr_and_guard) = split_top_level_binding(rest)?;
+        let (expr, guard) = split_top_level_keyword_once(expr_and_guard, "when");
+        let guard = guard.map(|guard| parse_expr_lossy(guard.trim()));
+        let body_base = start_line.start + block.head.len();
+        let else_body = self
+            .take_optional_statement_else_items()
+            .unwrap_or_default();
+        Some(IfLetBlock::new(
+            parse_pattern(pattern.trim()),
+            parse_expr_lossy(expr),
+            guard,
+            self.parse_flow_body_from_block(&block, body_base),
+            else_body,
+            TextRange::new(start_line.start, block.end),
+        ))
     }
 
     pub(super) fn parse_borrow_block(&mut self) -> Option<BorrowBlock> {
@@ -726,6 +812,11 @@ pub(super) fn parse_scope_expr_body_for_dialect(
 }
 
 pub(super) fn parse_final_block_expr(source: &str) -> Option<crate::expr::Expr> {
+    if source.trim_start().starts_with("if ")
+        && let Some(expr) = parse_if_expr_source(source)
+    {
+        return Some(expr);
+    }
     if let Some((condition, then_body, else_body)) = split_inline_if_else_expr(source) {
         return Some(crate::expr::Expr::If {
             condition: Box::new(parse_expr_lossy(condition)),
@@ -749,6 +840,36 @@ pub(super) fn parse_final_block_expr(source: &str) -> Option<crate::expr::Expr> 
         });
     }
     None
+}
+
+fn parse_if_expr_source(source: &str) -> Option<crate::expr::Expr> {
+    let (head, body, trailing) = split_braced_source_with_trailing(source)?;
+    let condition = head.strip_prefix("if ")?;
+    Some(crate::expr::Expr::If {
+        condition: Box::new(parse_expr_lossy(condition.trim())),
+        then_branch: Box::new(parse_block_expr(body)),
+        else_branch: Some(Box::new(parse_else_expr_tail(trailing)?)),
+    })
+}
+
+fn parse_else_expr_tail(trailing: &str) -> Option<crate::expr::Expr> {
+    let rest = trailing.trim().strip_prefix("else")?.trim_start();
+    if rest.starts_with("if ") {
+        return parse_if_expr_source(rest);
+    }
+    let (head, body, trailing) = split_braced_source_with_trailing(rest)?;
+    (head.is_empty() && trailing.trim().is_empty()).then(|| parse_block_expr(body))
+}
+
+fn split_braced_source_with_trailing(source: &str) -> Option<(&str, &str, &str)> {
+    let punctuation = CstPunctuationScan::new(source);
+    let open = punctuation.find_top_level_punctuation('{')?;
+    let close = punctuation.find_matching_punctuation(open, '{', '}')?;
+    Some((
+        source[..open].trim(),
+        source[open + '{'.len_utf8()..close].trim(),
+        source[close + '}'.len_utf8()..].trim(),
+    ))
 }
 
 fn split_inline_if_else_expr(source: &str) -> Option<(&str, &str, &str)> {

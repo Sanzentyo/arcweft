@@ -9,7 +9,7 @@ fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::Typed
 }
 
 use arcweft_lang_syntax::{
-    ast::{flow::FlowItem, items::Item},
+    ast::{dialogue::DialogueToken, flow::FlowItem, items::Item},
     expr::Expr,
     types::{FnParamKind, GenericParam, TypeRef, parse_fn_signature},
 };
@@ -154,6 +154,68 @@ flow opening {
         &source[line.range().as_range()],
         "    alice: |[夢](ゆめ)[p]"
     );
+}
+
+#[test]
+fn speaker_line_inline_interpolation_may_span_lines() {
+    let tree = parse_ok(
+        r"
+flow opening {
+    narrator: Iteration #[
+        i_to_string(i)
+    ] of #[a].
+}
+",
+    );
+    let Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
+    };
+    let FlowItem::SpeakerLine(line) = &flow.body()[0] else {
+        panic!("expected speaker line");
+    };
+    let expr_count = line
+        .content()
+        .tokens()
+        .iter()
+        .filter(|token| matches!(token, DialogueToken::Expr(_)))
+        .count();
+    assert_eq!(expr_count, 2);
+    assert_eq!(flow.body().len(), 1);
+}
+
+#[test]
+fn value_if_else_if_is_nested_if_not_raw_recovery() {
+    let tree = parse_ok(
+        r#"
+fn label(i: i32) -> string {
+    if i == 0 {
+        return "first"
+    } else if i == 1 {
+        return "second"
+    } else {
+        return "last"
+    }
+}
+"#,
+    );
+    let Item::Function(function) = &tree.items()[0] else {
+        panic!("expected function");
+    };
+    assert!(function.body_statements().is_empty());
+    let Some(Expr::If {
+        else_branch: Some(else_branch),
+        ..
+    }) = function.body_value()
+    else {
+        panic!("expected final if expression");
+    };
+    assert!(matches!(
+        else_branch.as_ref(),
+        Expr::If {
+            else_branch: Some(_),
+            ..
+        }
+    ));
 }
 
 #[test]
