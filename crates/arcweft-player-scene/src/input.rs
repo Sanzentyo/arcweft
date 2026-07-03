@@ -15,8 +15,8 @@ use arcweft_presentation::text_input::{
     TextInputPrivacy,
 };
 use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, FramePlanError, InteractionVisualState, PreparedFrame, RenderActionButtonAction,
-    RenderTextInputControl, RenderTextSubmitImePolicy,
+    ChoiceScroll, FocusNavigationDirection, FramePlanError, InteractionVisualState, PreparedFrame,
+    RenderActionButtonAction, RenderTextInputControl, RenderTextSubmitImePolicy,
 };
 use std::collections::BTreeMap;
 
@@ -316,15 +316,47 @@ impl InputController {
             return InputOutcome::default();
         }
         match key {
-            "ArrowUp" | "ArrowLeft" => {
-                let next =
-                    frame.adjacent_keyboard_focus_target(self.interaction.focus().target(), -1);
+            "ArrowUp" => {
+                let next = frame.directional_keyboard_focus_target(
+                    self.interaction.focus().target(),
+                    FocusNavigationDirection::Up,
+                );
                 if let Some(next) = next {
                     self.set_focus(frame, next);
                 }
                 InputOutcome::redraw(true)
             }
-            "ArrowDown" | "ArrowRight" | "Tab" => {
+            "ArrowDown" => {
+                let next = frame.directional_keyboard_focus_target(
+                    self.interaction.focus().target(),
+                    FocusNavigationDirection::Down,
+                );
+                if let Some(next) = next {
+                    self.set_focus(frame, next);
+                }
+                InputOutcome::redraw(true)
+            }
+            "ArrowLeft" => {
+                let next = frame.directional_keyboard_focus_target(
+                    self.interaction.focus().target(),
+                    FocusNavigationDirection::Left,
+                );
+                if let Some(next) = next {
+                    self.set_focus(frame, next);
+                }
+                InputOutcome::redraw(true)
+            }
+            "ArrowRight" => {
+                let next = frame.directional_keyboard_focus_target(
+                    self.interaction.focus().target(),
+                    FocusNavigationDirection::Right,
+                );
+                if let Some(next) = next {
+                    self.set_focus(frame, next);
+                }
+                InputOutcome::redraw(true)
+            }
+            "Tab" => {
                 let next =
                     frame.adjacent_keyboard_focus_target(self.interaction.focus().target(), 1);
                 if let Some(next) = next {

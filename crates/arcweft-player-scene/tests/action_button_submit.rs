@@ -97,6 +97,24 @@ fn keyboard_activation_on_focused_action_button_emits_submit_write_back() {
 }
 
 #[test]
+fn arrow_navigation_moves_from_text_field_to_right_action_button() {
+    let scene = scene(RenderTextSubmitImePolicy::Commit);
+    let frame = SharedFramePlanner::prepare(&scene).unwrap();
+    let mut input = InputController::default();
+    input.activate_text_control(&scene.text_inputs[0]).unwrap();
+    input.ensure_choice_focus(&frame);
+
+    input.keyboard(&frame, "ArrowRight", KeyPhase::Down);
+    let outcome = input.keyboard(&frame, "Enter", KeyPhase::Down);
+
+    assert_eq!(outcome.text_control_write_backs().len(), 1);
+    assert_eq!(
+        outcome.text_control_write_backs()[0].kind(),
+        TextControlWriteBackKind::Submit
+    );
+}
+
+#[test]
 fn reject_ime_policy_reports_diagnostic_without_submit() {
     let scene = scene(RenderTextSubmitImePolicy::Reject);
     let frame = SharedFramePlanner::prepare(&scene).unwrap();

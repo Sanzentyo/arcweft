@@ -76,6 +76,15 @@ pub struct InteractionVisualState {
     pub pressed: Option<InteractionTarget>,
 }
 
+/// Logical direction for keyboard, controller, or accessibility focus movement.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FocusNavigationDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
 /// Renderer input assembled by the player from portable runtime state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderScene {
@@ -318,6 +327,102 @@ pub struct PreparedFrame {
 pub struct PreparedTextInputTarget {
     pub snapshot: TextInputClientSnapshot,
     pub geometry: TextInputGeometrySnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct KeyboardFocusCandidate {
+    target: InteractionTarget,
+    bounds: HitRect,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct DirectionalFocusScore {
+    outside_beam: bool,
+    primary_distance: f32,
+    secondary_distance: f32,
+}
+
+impl DirectionalFocusScore {
+    fn new(
+        direction: FocusNavigationDirection,
+        origin: HitRect,
+        candidate: HitRect,
+    ) -> Option<Self> {
+        let origin_center = rect_center(origin);
+        let candidate_center = rect_center(candidate);
+        let (primary_distance, secondary_distance, outside_beam) = match direction {
+            FocusNavigationDirection::Up => (
+                origin_center.1 - candidate_center.1,
+                (origin_center.0 - candidate_center.0).abs(),
+                !ranges_overlap(
+                    origin.x,
+                    origin.x + origin.width,
+                    candidate.x,
+                    candidate.x + candidate.width,
+                ),
+            ),
+            FocusNavigationDirection::Down => (
+                candidate_center.1 - origin_center.1,
+                (origin_center.0 - candidate_center.0).abs(),
+                !ranges_overlap(
+                    origin.x,
+                    origin.x + origin.width,
+                    candidate.x,
+                    candidate.x + candidate.width,
+                ),
+            ),
+            FocusNavigationDirection::Left => (
+                origin_center.0 - candidate_center.0,
+                (origin_center.1 - candidate_center.1).abs(),
+                !ranges_overlap(
+                    origin.y,
+                    origin.y + origin.height,
+                    candidate.y,
+                    candidate.y + candidate.height,
+                ),
+            ),
+            FocusNavigationDirection::Right => (
+                candidate_center.0 - origin_center.0,
+                (origin_center.1 - candidate_center.1).abs(),
+                !ranges_overlap(
+                    origin.y,
+                    origin.y + origin.height,
+                    candidate.y,
+                    candidate.y + candidate.height,
+                ),
+            ),
+        };
+        (primary_distance > f32::EPSILON).then_some(Self {
+            outside_beam,
+            primary_distance,
+            secondary_distance,
+        })
+    }
+}
+
+impl Eq for DirectionalFocusScore {}
+
+impl Ord for DirectionalFocusScore {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.outside_beam
+            .cmp(&other.outside_beam)
+            .then_with(|| self.primary_distance.total_cmp(&other.primary_distance))
+            .then_with(|| self.secondary_distance.total_cmp(&other.secondary_distance))
+    }
+}
+
+impl PartialOrd for DirectionalFocusScore {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+fn rect_center(rect: HitRect) -> (f32, f32) {
+    (rect.x + rect.width * 0.5, rect.y + rect.height * 0.5)
+}
+
+fn ranges_overlap(a_start: f32, a_end: f32, b_start: f32, b_end: f32) -> bool {
+    a_start < b_end && b_start < a_end
 }
 
 /// Pure geometry planner shared by native and browser hosts.
@@ -927,6 +1032,21 @@ impl PreparedFrame {
             .collect()
     }
 
+    fn keyboard_focus_candidates(&self) -> Vec<KeyboardFocusCandidate> {
+        self.keyboard_focus_targets()
+            .into_iter()
+            .filter_map(|target| {
+                self.hits
+                    .find_target(&target)
+                    .filter(|record| record.visible() && record.enabled())
+                    .map(|record| KeyboardFocusCandidate {
+                        target,
+                        bounds: record.bounds(),
+                    })
+            })
+            .collect()
+    }
+
     pub fn first_keyboard_focus_target(&self) -> Option<InteractionTarget> {
         self.keyboard_focus_targets().into_iter().next()
     }
@@ -950,6 +1070,42 @@ impl PreparedFrame {
         let len = isize::try_from(targets.len()).ok()?;
         let next = (isize::try_from(current).ok()? + delta).rem_euclid(len);
         targets.get(usize::try_from(next).ok()?).cloned()
+    }
+
+    pub fn directional_keyboard_focus_target(
+        &self,
+        current: Option<&InteractionTarget>,
+        direction: FocusNavigationDirection,
+    ) -> Option<InteractionTarget> {
+        let candidates = self.keyboard_focus_candidates();
+        if candidates.is_empty() {
+            return None;
+        }
+        let Some(current) = current else {
+            return candidates.first().map(|candidate| candidate.target.clone());
+        };
+        let Some(origin) = candidates
+            .iter()
+            .find(|candidate| &candidate.target == current)
+        else {
+            return candidates.first().map(|candidate| candidate.target.clone());
+        };
+        candidates
+            .iter()
+            .enumerate()
+            .filter(|(_, candidate)| candidate.target != origin.target)
+            .filter_map(|(index, candidate)| {
+                DirectionalFocusScore::new(direction, origin.bounds, candidate.bounds)
+                    .map(|score| (score, index, candidate.target.clone()))
+            })
+            .min_by(
+                |(left_score, left_index, _), (right_score, right_index, _)| {
+                    left_score
+                        .cmp(right_score)
+                        .then_with(|| left_index.cmp(right_index))
+                },
+            )
+            .map(|(_, _, target)| target)
     }
 
     pub fn last_choice_target(&self) -> Option<InteractionTarget> {

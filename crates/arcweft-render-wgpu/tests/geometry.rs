@@ -8,9 +8,9 @@ use arcweft_presentation::text_input::{
 };
 use arcweft_render_text::{RichTextColor, RichTextFontFamily, RichTextStyle};
 use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, InteractionVisualState, RenderChoiceItem, RenderDialogue, RenderFontFamily,
-    RenderPreferences, RenderScene, RenderTextInputControl, RenderTextSlant, RenderTextWeight,
-    RenderViewport, SharedFramePlanner,
+    ChoiceScroll, FocusNavigationDirection, InteractionVisualState, RenderChoiceItem,
+    RenderDialogue, RenderFontFamily, RenderPreferences, RenderScene, RenderTextInputControl,
+    RenderTextSlant, RenderTextWeight, RenderViewport, SharedFramePlanner,
 };
 use arcweft_render_wgpu::sample::{DemoAnimationClock, DemoImageKind, generated_demo_images};
 
@@ -137,6 +137,70 @@ fn keyboard_navigation_wraps_across_stable_targets() {
         .adjacent_choice_target(Some(&first), -1)
         .expect("wrapped target");
     assert_eq!(previous, frame.choices[1].target);
+}
+
+#[test]
+fn directional_keyboard_navigation_uses_focus_target_geometry() {
+    let top_left = text_target("top_left");
+    let top_right = text_target("top_right");
+    let bottom_left = text_target("bottom_left");
+    let bottom_right = text_target("bottom_right");
+    let mut scene = scene();
+    scene.choices.clear();
+    scene.text_inputs = vec![
+        text_control(
+            top_left.clone(),
+            "",
+            SemanticRole::TextField,
+            TextInputOptions::default(),
+            HitRect::new(80.0, 80.0, 220.0, 44.0),
+        ),
+        text_control(
+            top_right.clone(),
+            "",
+            SemanticRole::TextField,
+            TextInputOptions::default(),
+            HitRect::new(360.0, 80.0, 220.0, 44.0),
+        ),
+        text_control(
+            bottom_left.clone(),
+            "",
+            SemanticRole::TextField,
+            TextInputOptions::default(),
+            HitRect::new(80.0, 180.0, 220.0, 44.0),
+        ),
+        text_control(
+            bottom_right.clone(),
+            "",
+            SemanticRole::TextField,
+            TextInputOptions::default(),
+            HitRect::new(360.0, 180.0, 220.0, 44.0),
+        ),
+    ];
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
+
+    assert_eq!(
+        frame.directional_keyboard_focus_target(Some(&top_left), FocusNavigationDirection::Right),
+        Some(top_right.clone())
+    );
+    assert_eq!(
+        frame.directional_keyboard_focus_target(Some(&top_left), FocusNavigationDirection::Down),
+        Some(bottom_left.clone())
+    );
+    assert_eq!(
+        frame.directional_keyboard_focus_target(Some(&bottom_right), FocusNavigationDirection::Up),
+        Some(top_right)
+    );
+    assert_eq!(
+        frame
+            .directional_keyboard_focus_target(Some(&bottom_right), FocusNavigationDirection::Left),
+        Some(bottom_left)
+    );
+    assert_eq!(
+        frame.directional_keyboard_focus_target(Some(&top_left), FocusNavigationDirection::Up),
+        None
+    );
 }
 
 #[test]
