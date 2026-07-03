@@ -236,6 +236,13 @@ fn summarize_runtime_expr(expr: &RuntimeExpr) -> PureHelperShape {
         RuntimeExpr::Let { expr, body, .. } => {
             merge_shape_summaries([summarize_runtime_expr(expr), summarize_runtime_expr(body)])
         }
+        RuntimeExpr::AssignField {
+            target, expr, body, ..
+        } => merge_shape_summaries([
+            summarize_runtime_expr(target),
+            summarize_runtime_expr(expr),
+            summarize_runtime_expr(body),
+        ]),
         RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => {
             merge_shape_summaries(items.iter().map(summarize_runtime_expr))
         }
@@ -268,7 +275,8 @@ fn summarize_runtime_expr(expr: &RuntimeExpr) -> PureHelperShape {
             shape.contains_call = true;
             shape
         }
-        RuntimeExpr::MethodCall { receiver, args, .. } => {
+        RuntimeExpr::MethodCall { receiver, args, .. }
+        | RuntimeExpr::TraitCall { receiver, args, .. } => {
             let mut shape = merge_shape_summaries(
                 std::iter::once(receiver.as_ref())
                     .chain(args.iter())
@@ -287,15 +295,7 @@ fn summarize_runtime_expr(expr: &RuntimeExpr) -> PureHelperShape {
             condition,
             then_expr,
             else_expr,
-        } => {
-            let mut shape = merge_shape_summaries([
-                summarize_runtime_expr(condition),
-                summarize_runtime_expr(then_expr),
-                summarize_runtime_expr(else_expr),
-            ]);
-            shape.contains_branch = true;
-            shape
-        }
+        } => summarize_if_expr(condition, then_expr, else_expr),
         RuntimeExpr::IfLet {
             expr,
             guard,
@@ -312,25 +312,44 @@ fn summarize_runtime_expr(expr: &RuntimeExpr) -> PureHelperShape {
             shape.contains_branch = true;
             shape
         }
-        RuntimeExpr::Match { scrutinee, arms } => {
-            let mut shape = merge_shape_summaries(
-                std::iter::once(summarize_runtime_expr(scrutinee)).chain(arms.iter().map(|arm| {
-                    merge_shape_summaries(
-                        arm.guard
-                            .as_ref()
-                            .map(summarize_runtime_expr)
-                            .into_iter()
-                            .chain(std::iter::once(summarize_runtime_expr(&arm.value))),
-                    )
-                })),
-            );
-            shape.contains_branch = true;
-            shape
-        }
+        RuntimeExpr::Match { scrutinee, arms } => summarize_match_expr(scrutinee, arms),
         RuntimeExpr::Value(_) | RuntimeExpr::Local(_) | RuntimeExpr::EntityRef(_) => {
             single_runtime_expr_shape()
         }
     }
+}
+
+fn summarize_if_expr(
+    condition: &RuntimeExpr,
+    then_expr: &RuntimeExpr,
+    else_expr: &RuntimeExpr,
+) -> PureHelperShape {
+    let mut shape = merge_shape_summaries([
+        summarize_runtime_expr(condition),
+        summarize_runtime_expr(then_expr),
+        summarize_runtime_expr(else_expr),
+    ]);
+    shape.contains_branch = true;
+    shape
+}
+
+fn summarize_match_expr(
+    scrutinee: &RuntimeExpr,
+    arms: &[arcweft_core::value::RuntimeExprMatchArm],
+) -> PureHelperShape {
+    let mut shape = merge_shape_summaries(
+        std::iter::once(summarize_runtime_expr(scrutinee)).chain(arms.iter().map(|arm| {
+            merge_shape_summaries(
+                arm.guard
+                    .as_ref()
+                    .map(summarize_runtime_expr)
+                    .into_iter()
+                    .chain(std::iter::once(summarize_runtime_expr(&arm.value))),
+            )
+        })),
+    );
+    shape.contains_branch = true;
+    shape
 }
 
 fn single_runtime_expr_shape() -> PureHelperShape {

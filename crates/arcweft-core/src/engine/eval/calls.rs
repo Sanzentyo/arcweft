@@ -11,7 +11,13 @@ use super::{
     runtime_value_into_sequence_values, runtime_value_label, spread_runtime_values,
     sum_i64_sequence_ref,
 };
+use crate::plan::{RuntimeReceiverMode, RuntimeTraitMethodId};
 use crate::value::RuntimeIterator;
+
+pub(crate) struct TraitMethodCallOutcome {
+    pub value: RuntimeValue,
+    pub updated_receiver: Option<RuntimeValue>,
+}
 
 impl Engine {
     pub(super) fn evaluate_call_expr(
@@ -116,6 +122,61 @@ impl Engine {
         let args = self.evaluate_call_args(args, pure_backend)?;
         let helper = &self.plan.pure_helpers[helper_id.0];
         pure_backend.call_values(helper, &args)
+    }
+
+    pub(crate) fn evaluate_trait_method_call(
+        &mut self,
+        callable: RuntimeTraitMethodId,
+        receiver_mode: RuntimeReceiverMode,
+        receiver: &RuntimeExpr,
+        args: &[RuntimeExpr],
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<TraitMethodCallOutcome, RuntimeEvalError> {
+        let Some(method) = self.plan.trait_methods.get(callable.0).cloned() else {
+            return Err(RuntimeEvalError::UnknownTraitMethod(callable.0));
+        };
+        let receiver_value = self.evaluate_expr_with_backend(receiver, pure_backend)?;
+        let arg_values = self.evaluate_call_args(args, pure_backend)?;
+        let expected_args = method.input_names.len().saturating_sub(1);
+        if expected_args != arg_values.len() {
+            return Err(RuntimeEvalError::TraitMethodArgumentCount {
+                method: method.identity.method_name.clone(),
+                expected: expected_args,
+                found: arg_values.len(),
+            });
+        }
+
+        self.fiber
+            .env
+            .push_scope_with_capacity(method.input_names.len());
+        if let Some(receiver_name) = method.input_names.first() {
+            self.fiber.env.set(receiver_name.clone(), receiver_value);
+        }
+        for (name, value) in method.input_names.iter().skip(1).zip(arg_values) {
+            self.fiber.env.set(name.clone(), value);
+        }
+        let value = self.evaluate_expr_with_backend(&method.body, pure_backend);
+        let updated_receiver = if receiver_mode == RuntimeReceiverMode::MutRef {
+            method
+                .input_names
+                .first()
+                .and_then(|name| self.fiber.env.get_cloned(name))
+        } else {
+            None
+        };
+        self.fiber.env.pop_scope();
+
+        let value = value?;
+        if receiver_mode == RuntimeReceiverMode::MutRef && updated_receiver.is_none() {
+            return Err(RuntimeEvalError::InvalidTraitReceiverUpdate {
+                method: method.identity.method_name,
+                receiver: method.identity.self_type,
+            });
+        }
+        Ok(TraitMethodCallOutcome {
+            value,
+            updated_receiver,
+        })
     }
 
     fn evaluate_exact_int_pure_call_any(

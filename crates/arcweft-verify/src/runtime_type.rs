@@ -409,6 +409,13 @@ impl<'a> RuntimeTypeValidator<'a> {
             | RuntimeExpr::SpreadArg(_) => RuntimeShape::Unknown,
             RuntimeExpr::EntityRef(_) => RuntimeShape::EntityRef,
             RuntimeExpr::Let { expr, body, .. } => self.validate_let_expr(path, expr, body),
+            RuntimeExpr::AssignField {
+                target, expr, body, ..
+            } => {
+                self.validate_expr(&format!("{path}.assign.target"), target);
+                self.validate_expr(&format!("{path}.assign.value"), expr);
+                self.validate_expr(&format!("{path}.assign.body"), body)
+            }
             RuntimeExpr::Tuple(items) => {
                 self.validate_expr_items(path, "tuple", items, RuntimeShape::Tuple)
             }
@@ -435,6 +442,9 @@ impl<'a> RuntimeTypeValidator<'a> {
                 RuntimeShape::Variant
             }
             RuntimeExpr::MethodCall { receiver, args, .. } => {
+                self.validate_method_call_expr(path, receiver, args)
+            }
+            RuntimeExpr::TraitCall { receiver, args, .. } => {
                 self.validate_method_call_expr(path, receiver, args)
             }
             RuntimeExpr::Map { source, body, .. } => {
@@ -833,6 +843,7 @@ mod tests {
             judgments: Vec::new(),
             effects: EffectAnalysisReport::default(),
             for_iteration_evidence: Vec::new(),
+            trait_catalog: Default::default(),
         }));
     }
 
@@ -872,6 +883,7 @@ mod tests {
             judgments,
             effects: EffectAnalysisReport::default(),
             for_iteration_evidence: Vec::new(),
+            trait_catalog: Default::default(),
         }
     }
 }

@@ -132,11 +132,20 @@ impl Engine {
             | RuntimeExpr::Variant { .. }
             | RuntimeExpr::Field { .. }
             | RuntimeExpr::ProjectTuple { .. }
-            | RuntimeExpr::ProjectRecord { .. } => self.evaluate_data_expr(expr, pure_backend),
+            | RuntimeExpr::ProjectRecord { .. }
+            | RuntimeExpr::AssignField { .. } => self.evaluate_data_expr(expr, pure_backend),
             RuntimeExpr::SpreadArg(_) => Err(RuntimeEvalError::SpreadOutsideCall),
             RuntimeExpr::Call { callee, args } => {
                 self.evaluate_call_expr(callee, args, pure_backend)
             }
+            RuntimeExpr::TraitCall {
+                callable,
+                receiver,
+                receiver_mode,
+                args,
+            } => self
+                .evaluate_trait_method_call(*callable, *receiver_mode, receiver, args, pure_backend)
+                .map(|outcome| outcome.value),
             RuntimeExpr::PureCall { helper, args } => {
                 self.evaluate_pure_call_expr(*helper, args, pure_backend)
             }
@@ -238,6 +247,12 @@ impl Engine {
             RuntimeExpr::ProjectRecord { target, ordinal } => {
                 self.evaluate_project_record_expr(target, *ordinal, pure_backend)
             }
+            RuntimeExpr::AssignField {
+                target,
+                field,
+                expr,
+                body,
+            } => self.evaluate_assign_field_expr(target, field, expr, body, pure_backend),
             _ => unreachable!("data expression helper received non-data expression"),
         }
     }
@@ -808,6 +823,32 @@ impl Engine {
         let result = self.evaluate_expr_with_backend(body, pure_backend);
         self.fiber.env.pop_scope();
         result
+    }
+
+    fn evaluate_assign_field_expr(
+        &mut self,
+        target: &RuntimeExpr,
+        field: &str,
+        expr: &RuntimeExpr,
+        body: &RuntimeExpr,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let RuntimeExpr::Local(binding) = target else {
+            let value = self.evaluate_expr_with_backend(target, pure_backend)?;
+            return Err(RuntimeEvalError::InvalidFieldAssignment {
+                field: field.to_owned(),
+                value: runtime_value_label(&value),
+            });
+        };
+        let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
+        self.fiber
+            .env
+            .set_record_field(binding, field, value)
+            .map_err(|target| RuntimeEvalError::InvalidFieldAssignment {
+                field: field.to_owned(),
+                value: runtime_value_label(&target),
+            })?;
+        self.evaluate_expr_with_backend(body, pure_backend)
     }
 
     pub(super) fn evaluate_if_let_expr(

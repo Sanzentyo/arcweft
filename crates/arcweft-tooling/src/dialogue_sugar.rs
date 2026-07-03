@@ -205,6 +205,10 @@ fn collect_dialogue_text_sugar_edits_from_stmt(
                 collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode, context);
             }
         }
+        Stmt::Assign { target, expr } => {
+            collect_dialogue_text_sugar_edits_from_expr(target, None, None, edits, mode, context);
+            collect_dialogue_text_sugar_edits_from_expr(expr, None, None, edits, mode, context);
+        }
         Stmt::LetScope { scope, .. } => {
             for stmt in scope.statements() {
                 collect_dialogue_text_sugar_edits_from_stmt(source, stmt, edits, mode, context);

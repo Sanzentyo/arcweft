@@ -72,12 +72,30 @@ impl TypeChecker<'_> {
 
 fn for_iteration_evidence(resolution: &IntoIteratorResolution) -> ForIterationEvidence {
     ForIterationEvidence {
-        family: standard_iterator_family(resolution.source_ty())
-            .map_or(ForIterationEvidenceFamily::WitnessUnsupported, |family| {
-                ForIterationEvidenceFamily::Builtin(family)
-            }),
+        family: standard_iterator_family(resolution.source_ty()).map_or_else(
+            || witness_iteration_family(resolution),
+            ForIterationEvidenceFamily::Builtin,
+        ),
         item_ty: resolution.item_ty().clone(),
         into_iter_ty: resolution.into_iter_ty().clone(),
+    }
+}
+
+fn witness_iteration_family(resolution: &IntoIteratorResolution) -> ForIterationEvidenceFamily {
+    match (
+        resolution.into_iterator().witness(),
+        resolution.iterator().witness(),
+    ) {
+        (Some(into_iterator), Some(iterator)) => ForIterationEvidenceFamily::Witness {
+            into_iterator,
+            iterator,
+        },
+        (None, _) => ForIterationEvidenceFamily::WitnessUnsupported {
+            reason: "IntoIterator conformance is predicate-only".to_owned(),
+        },
+        (_, None) => ForIterationEvidenceFamily::WitnessUnsupported {
+            reason: "Iterator conformance is predicate-only".to_owned(),
+        },
     }
 }
 

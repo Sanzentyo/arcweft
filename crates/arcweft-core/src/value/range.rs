@@ -2,7 +2,7 @@ use super::{
     RuntimeEvalError, RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth,
     RuntimeValue, runtime_value_label,
 };
-use crate::plan::{RuntimeBuiltinIteratorEvidence, RuntimeIteratorEvidence};
+use crate::plan::{RuntimeBuiltinIteratorEvidence, RuntimeIteratorEvidence, RuntimeTraitMethodId};
 use serde::{Deserialize, Serialize};
 
 /// Width-preserving integer range value.
@@ -142,6 +142,10 @@ pub enum RuntimeIterator {
         index: usize,
     },
     Range(RuntimeRangeIterator),
+    Witness {
+        state: Box<RuntimeValue>,
+        next: RuntimeTraitMethodId,
+    },
 }
 
 impl RuntimeIterator {
@@ -189,6 +193,13 @@ impl RuntimeIterator {
     pub fn values(items: Vec<RuntimeValue>) -> Self {
         Self::Values { items, index: 0 }
     }
+
+    pub fn witness(state: RuntimeValue, next: RuntimeTraitMethodId) -> Self {
+        Self::Witness {
+            state: Box::new(state),
+            next,
+        }
+    }
 }
 
 impl Iterator for RuntimeIterator {
@@ -202,6 +213,7 @@ impl Iterator for RuntimeIterator {
                 Some(value)
             }
             Self::Range(range) => range.next(),
+            Self::Witness { .. } => None,
         }
     }
 }

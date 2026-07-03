@@ -142,6 +142,10 @@ fn summarize_stmt_control(stmt: &Stmt) -> ProjectFlowControlSummary {
         | Stmt::Expr(expr) => {
             summary.merge(summarize_expr_control(expr));
         }
+        Stmt::Assign { target, expr } => {
+            summary.merge(summarize_expr_control(target));
+            summary.merge(summarize_expr_control(expr));
+        }
         Stmt::Signal { target, value } => {
             summary.merge(summarize_expr_control(target));
             summary.merge(summarize_expr_control(value));

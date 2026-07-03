@@ -72,6 +72,24 @@ impl RuntimeEnv {
         self.scopes.iter().rev().find_map(|scope| scope.get(name))
     }
 
+    pub(crate) fn get_cloned(&self, name: &str) -> Option<RuntimeValue> {
+        self.get(name).cloned()
+    }
+
+    pub(crate) fn set_record_field(
+        &mut self,
+        binding_name: &str,
+        field_name: &str,
+        value: RuntimeValue,
+    ) -> Result<(), RuntimeValue> {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(binding) = scope.binding_mut(binding_name) {
+                return set_runtime_record_field(&mut binding.value, field_name, value);
+            }
+        }
+        Err(RuntimeValue::String(binding_name.to_owned()))
+    }
+
     pub fn bindings_snapshot(&self) -> Vec<RuntimeBinding> {
         self.scopes
             .iter()
@@ -268,6 +286,13 @@ impl RuntimeScope {
             .map(|binding| &binding.value)
     }
 
+    fn binding_mut(&mut self, name: &str) -> Option<&mut RuntimeBinding> {
+        self.bindings
+            .iter_mut()
+            .rev()
+            .find(|binding| binding.name == name)
+    }
+
     fn clear(&mut self) {
         self.bindings.clear();
     }
@@ -437,4 +462,19 @@ impl RuntimeScope {
             .for_each(|(current, next)| current.value = next.value.clone());
         true
     }
+}
+
+fn set_runtime_record_field(
+    target: &mut RuntimeValue,
+    field_name: &str,
+    value: RuntimeValue,
+) -> Result<(), RuntimeValue> {
+    let RuntimeValue::Record(fields) = target else {
+        return Err(target.clone());
+    };
+    let Some(field) = fields.iter_mut().find(|field| field.name == field_name) else {
+        return Err(RuntimeValue::Record(fields.clone()));
+    };
+    field.value = value;
+    Ok(())
 }

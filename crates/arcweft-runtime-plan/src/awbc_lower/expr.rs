@@ -180,7 +180,34 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                     });
                 dst
             }
+            RuntimeExpr::AssignField {
+                target,
+                field,
+                expr,
+                body,
+            } => {
+                let _ = self.lower(target);
+                let _ = self.lower(expr);
+                self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                    self.path.clone(),
+                    format!(
+                        "field assignment `{field}` requires trait-method runtime dispatch support in AWBC"
+                    ),
+                ));
+                self.lower(body)
+            }
             RuntimeExpr::Call { callee, args } => self.lower_call(callee, args),
+            RuntimeExpr::TraitCall { receiver, args, .. } => {
+                let _ = self.lower(receiver);
+                for arg in args {
+                    let _ = self.lower(arg);
+                }
+                self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                    self.path.clone(),
+                    "trait method runtime dispatch requires typed AWBC trait-method tables",
+                ));
+                self.frame.temp(self.inventory.dynamic_ty())
+            }
             RuntimeExpr::PureCall { helper, args } => {
                 let args = args.iter().map(|arg| self.lower(arg)).collect();
                 let dst = self.frame.temp(self.inventory.dynamic_ty());

@@ -19,7 +19,7 @@ use arcweft_core::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec,
     RuntimeEntryTarget, RuntimeFlow, RuntimeIteratorEvidence, RuntimeLineId, RuntimeMatchArm,
     RuntimePlan, RuntimePureHelper, RuntimePureHelperId, RuntimeRouteBinding,
-    RuntimeRouteBindingSource, RuntimeRouteSpec,
+    RuntimeRouteBindingSource, RuntimeRouteSpec, RuntimeTraitMethod,
 };
 use arcweft_core::task::{
     AWAIT_MANY_ITEM_BINDING, AwaitManyTarget, AwaitTarget, HostTaskArgTemplate,
@@ -58,10 +58,11 @@ pub struct RuntimePlanLowerReport {
 }
 
 /// Options that select profile/build-context inputs for runtime-plan lowering.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct RuntimePlanLowerOptions {
     dialogue_defaults: Option<String>,
     for_iteration_evidence: Vec<RuntimeIteratorEvidence>,
+    trait_methods: Vec<RuntimeTraitMethod>,
 }
 
 impl RuntimePlanLowerOptions {
@@ -71,6 +72,7 @@ impl RuntimePlanLowerOptions {
         Self {
             dialogue_defaults: None,
             for_iteration_evidence: Vec::new(),
+            trait_methods: Vec::new(),
         }
     }
 
@@ -91,6 +93,15 @@ impl RuntimePlanLowerOptions {
         self
     }
 
+    #[must_use]
+    pub fn with_trait_methods(
+        mut self,
+        trait_methods: impl IntoIterator<Item = RuntimeTraitMethod>,
+    ) -> Self {
+        self.trait_methods = trait_methods.into_iter().collect();
+        self
+    }
+
     /// Selected dialogue defaults profile ID, if supplied by a launch profile.
     #[must_use]
     pub fn dialogue_defaults(&self) -> Option<&str> {
@@ -99,6 +110,10 @@ impl RuntimePlanLowerOptions {
 
     pub fn for_iteration_evidence(&self) -> &[RuntimeIteratorEvidence] {
         &self.for_iteration_evidence
+    }
+
+    pub fn trait_methods(&self) -> &[RuntimeTraitMethod] {
+        &self.trait_methods
     }
 }
 
@@ -195,7 +210,8 @@ pub fn lower_runtime_plan_with_stats_and_options(
             let plan = finalize_runtime_plan(
                 plan.with_entries(entries)
                     .with_generation_plans(stream_plans, source_plans)
-                    .with_pure_helpers(pure_helpers),
+                    .with_pure_helpers(pure_helpers)
+                    .with_trait_methods(options.trait_methods.clone()),
                 &mut stats,
             );
             RuntimePlanLowerReport {
@@ -545,6 +561,13 @@ fn rewrite_known_record_projections_in_expr(expr: &mut RuntimeExpr, env: &[(Stri
             rewrite_known_record_projections_in_expr(expr, env);
             rewrite_known_record_projections_in_expr(body, env);
         }
+        RuntimeExpr::AssignField {
+            target, expr, body, ..
+        } => {
+            rewrite_known_record_projections_in_expr(target, env);
+            rewrite_known_record_projections_in_expr(expr, env);
+            rewrite_known_record_projections_in_expr(body, env);
+        }
         RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => {
             for item in items {
                 rewrite_known_record_projections_in_expr(item, env);
@@ -577,11 +600,9 @@ fn rewrite_known_record_projections_in_expr(expr: &mut RuntimeExpr, env: &[(Stri
                 rewrite_known_record_projections_in_expr(arg, env);
             }
         }
-        RuntimeExpr::MethodCall { receiver, args, .. } => {
-            rewrite_known_record_projections_in_expr(receiver, env);
-            for arg in args {
-                rewrite_known_record_projections_in_expr(arg, env);
-            }
+        RuntimeExpr::MethodCall { receiver, args, .. }
+        | RuntimeExpr::TraitCall { receiver, args, .. } => {
+            rewrite_known_record_projections_in_receiver_args(receiver, args, env);
         }
         RuntimeExpr::Map { source, body, .. } => {
             rewrite_known_record_projections_in_expr(source, env);
@@ -624,6 +645,17 @@ fn rewrite_known_record_projections_in_expr(expr: &mut RuntimeExpr, env: &[(Stri
             }
         }
         RuntimeExpr::Value(_) | RuntimeExpr::Local(_) | RuntimeExpr::EntityRef(_) => {}
+    }
+}
+
+fn rewrite_known_record_projections_in_receiver_args(
+    receiver: &mut RuntimeExpr,
+    args: &mut [RuntimeExpr],
+    env: &[(String, Vec<String>)],
+) {
+    rewrite_known_record_projections_in_expr(receiver, env);
+    for arg in args {
+        rewrite_known_record_projections_in_expr(arg, env);
     }
 }
 
@@ -936,6 +968,13 @@ fn count_runtime_expr_pure_calls(expr: &RuntimeExpr) -> usize {
         RuntimeExpr::Let { expr, body, .. } => {
             count_runtime_expr_pure_calls(expr) + count_runtime_expr_pure_calls(body)
         }
+        RuntimeExpr::AssignField {
+            target, expr, body, ..
+        } => {
+            count_runtime_expr_pure_calls(target)
+                + count_runtime_expr_pure_calls(expr)
+                + count_runtime_expr_pure_calls(body)
+        }
         RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => {
             items.iter().map(count_runtime_expr_pure_calls).sum()
         }
@@ -956,7 +995,8 @@ fn count_runtime_expr_pure_calls(expr: &RuntimeExpr) -> usize {
         | RuntimeExpr::ProjectRecord { target, .. }
         | RuntimeExpr::SpreadArg(target) => count_runtime_expr_pure_calls(target),
         RuntimeExpr::Call { args, .. } => args.iter().map(count_runtime_expr_pure_calls).sum(),
-        RuntimeExpr::MethodCall { receiver, args, .. } => {
+        RuntimeExpr::MethodCall { receiver, args, .. }
+        | RuntimeExpr::TraitCall { receiver, args, .. } => {
             count_runtime_expr_pure_calls(receiver)
                 + args
                     .iter()
@@ -1122,6 +1162,13 @@ fn count_runtime_expr_local_uses_by_name(expr: &RuntimeExpr, name: &str) -> usiz
             count_runtime_expr_local_uses_by_name(expr, name)
                 + count_runtime_expr_local_uses_by_name(body, name)
         }
+        RuntimeExpr::AssignField {
+            target, expr, body, ..
+        } => {
+            count_runtime_expr_local_uses_by_name(target, name)
+                + count_runtime_expr_local_uses_by_name(expr, name)
+                + count_runtime_expr_local_uses_by_name(body, name)
+        }
         RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => items
             .iter()
             .map(|item| count_runtime_expr_local_uses_by_name(item, name))
@@ -1146,7 +1193,8 @@ fn count_runtime_expr_local_uses_by_name(expr: &RuntimeExpr, name: &str) -> usiz
             .iter()
             .map(|arg| count_runtime_expr_local_uses_by_name(arg, name))
             .sum(),
-        RuntimeExpr::MethodCall { receiver, args, .. } => {
+        RuntimeExpr::MethodCall { receiver, args, .. }
+        | RuntimeExpr::TraitCall { receiver, args, .. } => {
             count_runtime_expr_local_uses_by_name(receiver, name)
                 + args
                     .iter()

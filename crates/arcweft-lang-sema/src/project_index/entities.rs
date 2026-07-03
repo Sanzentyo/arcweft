@@ -155,6 +155,10 @@ fn index_stmt_agent_actions(
         | Stmt::Close(expr)
         | Stmt::Select(expr)
         | Stmt::Expr(expr) => index = index_expr_agent_actions(expr, index, source_name)?,
+        Stmt::Assign { target, expr } => {
+            index = index_expr_agent_actions(target, index, source_name)?;
+            index = index_expr_agent_actions(expr, index, source_name)?;
+        }
         Stmt::Signal { target, value } => {
             index = index_expr_agent_actions(target, index, source_name)?;
             index = index_expr_agent_actions(value, index, source_name)?;

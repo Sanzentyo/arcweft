@@ -193,7 +193,8 @@ fn parse_stmt_inner(
         }
         CstStmtKind::On => parse_on_stmt(trimmed),
         CstStmtKind::AmbiguousBlockHead => raw_stmt(trimmed),
-        CstStmtKind::Expr => Stmt::Expr(parse_expr_lossy_with_stats(trimmed, stats)),
+        CstStmtKind::Expr => parse_assign_stmt(trimmed, stats.as_deref_mut())
+            .unwrap_or_else(|| Stmt::Expr(parse_expr_lossy_with_stats(trimmed, stats))),
     }
 }
 
@@ -234,6 +235,20 @@ fn parse_let_stmt(
     } else {
         raw_stmt(trimmed)
     }
+}
+
+fn parse_assign_stmt(trimmed: &str, mut stats: Option<&mut SyntaxParseStats>) -> Option<Stmt> {
+    let (target, expr) = split_top_level_binding(trimmed)?;
+    if target.trim().is_empty() || expr.trim().is_empty() {
+        return None;
+    }
+    if target.trim_end().ends_with(['!', '<', '>', '=']) || expr.trim_start().starts_with('=') {
+        return None;
+    }
+    Some(Stmt::Assign {
+        target: parse_expr_lossy_with_stats(target.trim(), stats.as_deref_mut()),
+        expr: parse_expr_lossy_with_stats(expr.trim(), stats),
+    })
 }
 
 fn parse_on_stmt(trimmed: &str) -> Stmt {

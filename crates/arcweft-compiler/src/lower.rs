@@ -15,6 +15,7 @@ use arcweft_runtime_plan::pure::{
     lower_pure_helper_candidate, lower_pure_helper_candidates,
 };
 
+use crate::trait_methods::{lower_runtime_trait_methods_from_typecheck, runtime_witness_evidence};
 use crate::types::{
     TextPureHelperCandidateError, TextPureHelperCandidateReport, TextPureHelperKind,
 };
@@ -40,10 +41,8 @@ pub fn lower_source_runtime_plan_with_typecheck_and_options(
     typecheck: &TypeCheckReport,
     options: &RuntimePlanLowerOptions,
 ) -> Result<RuntimePlan, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
-    lower_runtime_plan_with_options(
-        hir,
-        &runtime_plan_options_with_typecheck_evidence(options, typecheck),
-    )
+    let options = runtime_plan_options_with_typecheck_evidence(options, typecheck)?;
+    lower_runtime_plan_with_options(hir, &options)
 }
 
 /// Lowers checked HIR into a runtime plan and display catalog with compiler counters.
@@ -61,52 +60,73 @@ pub fn lower_source_runtime_plan_with_typecheck_stats_and_options(
     typecheck: &TypeCheckReport,
     options: &RuntimePlanLowerOptions,
 ) -> Result<RuntimePlanLowerReport, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
-    lower_runtime_plan_with_stats_and_options(
-        hir,
-        &runtime_plan_options_with_typecheck_evidence(options, typecheck),
-    )
+    let options = runtime_plan_options_with_typecheck_evidence(options, typecheck)?;
+    lower_runtime_plan_with_stats_and_options(hir, &options)
 }
 
 pub fn runtime_plan_options_with_typecheck_evidence(
     options: &RuntimePlanLowerOptions,
     typecheck: &TypeCheckReport,
-) -> RuntimePlanLowerOptions {
-    options.clone().with_for_iteration_evidence(
-        typecheck
-            .for_iteration_evidence
-            .iter()
-            .map(runtime_iterator_evidence),
-    )
+) -> Result<RuntimePlanLowerOptions, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
+    let trait_methods = lower_runtime_trait_methods_from_typecheck(
+        &typecheck.trait_catalog,
+        &typecheck.for_iteration_evidence,
+    )?;
+    let evidence = typecheck
+        .for_iteration_evidence
+        .iter()
+        .map(|evidence| runtime_iterator_evidence(evidence, &trait_methods))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(options
+        .clone()
+        .with_for_iteration_evidence(evidence)
+        .with_trait_methods(trait_methods.methods))
 }
 
-fn runtime_iterator_evidence(evidence: &ForIterationEvidence) -> RuntimeIteratorEvidence {
+fn runtime_iterator_evidence(
+    evidence: &ForIterationEvidence,
+    trait_methods: &arcweft_runtime_plan::trait_methods::RuntimeTraitMethodInventory,
+) -> Result<RuntimeIteratorEvidence, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
     match evidence.family {
         ForIterationEvidenceFamily::Builtin(StandardIteratorFamily::Range) => {
-            RuntimeIteratorEvidence::builtin_range()
+            Ok(RuntimeIteratorEvidence::builtin_range())
         }
         ForIterationEvidenceFamily::Builtin(StandardIteratorFamily::Seq) => {
-            RuntimeIteratorEvidence::builtin_seq()
+            Ok(RuntimeIteratorEvidence::builtin_seq())
         }
         ForIterationEvidenceFamily::Builtin(StandardIteratorFamily::Stream) => {
-            RuntimeIteratorEvidence::builtin_stream()
+            Ok(RuntimeIteratorEvidence::builtin_stream())
         }
         ForIterationEvidenceFamily::Builtin(StandardIteratorFamily::Vec) => {
-            RuntimeIteratorEvidence::builtin_vec()
+            Ok(RuntimeIteratorEvidence::builtin_vec())
         }
         ForIterationEvidenceFamily::Builtin(StandardIteratorFamily::Array) => {
-            RuntimeIteratorEvidence::builtin_array()
+            Ok(RuntimeIteratorEvidence::builtin_array())
         }
         ForIterationEvidenceFamily::Builtin(StandardIteratorFamily::Slice) => {
-            RuntimeIteratorEvidence::builtin_slice()
+            Ok(RuntimeIteratorEvidence::builtin_slice())
         }
-        ForIterationEvidenceFamily::WitnessUnsupported => {
-            RuntimeIteratorEvidence::Witness(arcweft_core::plan::RuntimeIteratorWitnessEvidence {
-                item_type: format!("{:?}", evidence.item_ty),
-                into_iter_type: format!("{:?}", evidence.into_iter_ty),
-                executable:
-                    arcweft_core::plan::RuntimeIteratorWitnessExecutable::UnsupportedMethodBodyLowering,
-            })
-        }
+        ForIterationEvidenceFamily::Witness {
+            into_iterator,
+            iterator,
+        } => runtime_witness_evidence(
+            format!("{:?}", evidence.item_ty),
+            format!("{:?}", evidence.into_iter_ty),
+            trait_methods,
+            into_iterator,
+            iterator,
+        )
+        .map(RuntimeIteratorEvidence::Witness)
+        .ok_or_else(|| {
+            vec![arcweft_runtime_plan::errors::RuntimePlanLowerError::new(
+                "missing executable trait method body for IntoIterator/Iterator witness",
+            )]
+        }),
+        ForIterationEvidenceFamily::WitnessUnsupported { ref reason } => Err(vec![
+            arcweft_runtime_plan::errors::RuntimePlanLowerError::new(format!(
+                "unsupported IntoIterator witness dispatch: {reason}"
+            )),
+        ]),
     }
 }
 

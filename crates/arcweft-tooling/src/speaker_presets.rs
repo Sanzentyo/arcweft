@@ -375,6 +375,10 @@ fn collect_speaker_presets_from_stmt(
         | Stmt::Expr(expr) => {
             collect_speaker_presets_from_expr(expr, character_aliases, presets);
         }
+        Stmt::Assign { target, expr } => {
+            collect_speaker_presets_from_expr(target, character_aliases, presets);
+            collect_speaker_presets_from_expr(expr, character_aliases, presets);
+        }
         Stmt::Thread(block) => {
             collect_speaker_presets_from_flow_items(block.body(), character_aliases, presets);
         }

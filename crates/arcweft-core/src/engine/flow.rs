@@ -7,6 +7,7 @@ use super::{
 };
 use crate::line_task::progress_live_line_task_group;
 use crate::pattern::pattern_binding_capacity;
+use crate::plan::{RuntimeIteratorEvidence, RuntimeIteratorWitnessExecutable, RuntimeReceiverMode};
 use crate::pure::RuntimeCallBackend;
 use crate::step::{RuntimeHostCallId, RuntimeHostCallRequest};
 use crate::task::{
@@ -332,22 +333,24 @@ impl Engine {
             } => {
                 self.advance_if_needed(next_op_index);
                 match self.evaluate_expr_with_backend(&source, pure_backend) {
-                    Ok(value) => {
-                        match RuntimeIterator::from_value_with_evidence(value, &evidence) {
-                            Ok(iterator) => {
-                                let body = Arc::from(body);
-                                self.push_for_next(pattern, iterator, evidence, &body, output);
-                            }
-                            Err(value) => {
-                                self.fail_eval(
-                                    RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
-                                        &value,
-                                    )),
-                                    output,
-                                );
-                            }
+                    Ok(value) => match self.runtime_iterator_from_value_with_backend(
+                        value,
+                        &evidence,
+                        pure_backend,
+                    ) {
+                        Ok(iterator) => {
+                            let body = Arc::from(body);
+                            self.push_for_next(
+                                pattern,
+                                iterator,
+                                evidence,
+                                &body,
+                                output,
+                                pure_backend,
+                            );
                         }
-                    }
+                        Err(error) => self.fail_eval(error, output),
+                    },
                     Err(error) => self.fail_eval(error, output),
                 }
             }
@@ -357,7 +360,7 @@ impl Engine {
                 evidence,
                 body,
             } => {
-                self.push_for_next(pattern, iterator, evidence, &body, output);
+                self.push_for_next(pattern, iterator, evidence, &body, output, pure_backend);
             }
             FlowOp::Thread { name, body } => {
                 self.advance_if_needed(next_op_index);
@@ -571,30 +574,48 @@ impl Engine {
         &mut self,
         pattern: RuntimePattern,
         mut iterator: RuntimeIterator,
-        evidence: crate::plan::RuntimeIteratorEvidence,
+        evidence: RuntimeIteratorEvidence,
         body: &Arc<[FlowOp]>,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let Some(item) = iterator.next() else {
-            return;
+        let item = match self.next_runtime_iterator_item(&mut iterator, pure_backend) {
+            Ok(Some(item)) => item,
+            Ok(None) => return,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
         };
+        self.push_for_item(pattern, iterator, evidence, body, &item, output);
+    }
+
+    fn push_for_item(
+        &mut self,
+        pattern: RuntimePattern,
+        iterator: RuntimeIterator,
+        evidence: RuntimeIteratorEvidence,
+        body: &Arc<[FlowOp]>,
+        item: &RuntimeValue,
+        output: &mut RuntimeStepOutput,
+    ) {
         self.fiber
             .env
             .push_scope_with_capacity(pattern_binding_capacity(&pattern));
         self.fiber.control_stack.push(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::Scope,
         });
-        match bind_simple_for_pattern(&mut self.fiber.env, &pattern, &item) {
+        match bind_simple_for_pattern(&mut self.fiber.env, &pattern, item) {
             Some(Ok(())) => {}
             Some(Err(error)) => {
                 self.fail_eval(error, output);
                 return;
             }
-            None => match self.try_bind_pattern(&pattern, &item) {
+            None => match self.try_bind_pattern(&pattern, item) {
                 Ok(true) => {}
                 Ok(false) => {
                     self.fail_eval(
-                        RuntimeEvalError::PatternMismatch(runtime_value_label(&item)),
+                        RuntimeEvalError::PatternMismatch(runtime_value_label(item)),
                         output,
                     );
                     return;
@@ -612,6 +633,63 @@ impl Engine {
             body: Arc::clone(body),
         };
         self.push_borrowed_ops_with_exit(body.as_ref(), Some(tail));
+    }
+
+    fn runtime_iterator_from_value_with_backend(
+        &mut self,
+        value: RuntimeValue,
+        evidence: &RuntimeIteratorEvidence,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<RuntimeIterator, RuntimeEvalError> {
+        if let RuntimeIteratorEvidence::Witness(witness) = evidence {
+            let RuntimeIteratorWitnessExecutable::TraitCalls(calls) = &witness.executable else {
+                return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
+                    &value,
+                )));
+            };
+            let receiver = RuntimeExpr::Value(value);
+            let outcome = self.evaluate_trait_method_call(
+                calls.into_iter,
+                RuntimeReceiverMode::Owned,
+                &receiver,
+                &[],
+                pure_backend,
+            )?;
+            return Ok(RuntimeIterator::witness(outcome.value, calls.next));
+        }
+        RuntimeIterator::from_value_with_evidence(value, evidence)
+            .map_err(|value| RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value)))
+    }
+
+    fn next_runtime_iterator_item(
+        &mut self,
+        iterator: &mut RuntimeIterator,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let RuntimeIterator::Witness { state, next } = iterator else {
+            return Ok(iterator.next());
+        };
+        let receiver = RuntimeExpr::Value((**state).clone());
+        let outcome = self.evaluate_trait_method_call(
+            *next,
+            RuntimeReceiverMode::MutRef,
+            &receiver,
+            &[],
+            pure_backend,
+        )?;
+        if let Some(updated_receiver) = outcome.updated_receiver {
+            **state = updated_receiver;
+        }
+        let RuntimeValue::Variant { name, payload, .. } = outcome.value else {
+            return Ok(None);
+        };
+        if name == "None" {
+            return Ok(None);
+        }
+        if name == "Some" {
+            return Ok(payload.map(|value| *value));
+        }
+        Ok(None)
     }
 
     fn push_owned_scoped_ops(&mut self, ops: Vec<FlowOp>, prefix: Option<FlowOp>) {

@@ -232,7 +232,7 @@ fn method_impl(trait_id: TraitId, source: &str) -> TraitMethodImpl {
         trait_id: Some(trait_id),
         signature,
         return_type,
-        body_is_present: true,
+        body: None,
     }
 }
 

@@ -2,6 +2,7 @@ use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64
 use crate::pattern::RuntimePattern;
 use crate::plan::{
     RuntimeIteratorEvidence, RuntimePureHelperId, RuntimePureInputType, RuntimePureOutputType,
+    RuntimeReceiverMode, RuntimeTraitMethodId,
 };
 use crate::time::LogicalDuration;
 use serde::{Deserialize, Serialize};
@@ -748,8 +749,20 @@ pub enum RuntimeExpr {
         target: Box<RuntimeExpr>,
         ordinal: usize,
     },
+    AssignField {
+        target: Box<RuntimeExpr>,
+        field: String,
+        expr: Box<RuntimeExpr>,
+        body: Box<RuntimeExpr>,
+    },
     Call {
         callee: RuntimeCallTarget,
+        args: Vec<RuntimeExpr>,
+    },
+    TraitCall {
+        callable: RuntimeTraitMethodId,
+        receiver: Box<RuntimeExpr>,
+        receiver_mode: RuntimeReceiverMode,
         args: Vec<RuntimeExpr>,
     },
     PureCall {
@@ -836,7 +849,9 @@ impl RuntimeExpr {
             | Self::Field { .. }
             | Self::ProjectTuple { .. }
             | Self::ProjectRecord { .. }
+            | Self::AssignField { .. }
             | Self::Call { .. }
+            | Self::TraitCall { .. }
             | Self::PureCall { .. }
             | Self::SpreadArg(_)
             | Self::MethodCall { .. }
@@ -868,7 +883,9 @@ impl fmt::Display for RuntimeExpr {
             Self::Field { field, .. } => write!(f, ".{field}"),
             Self::ProjectTuple { ordinal, .. } => write!(f, ".{ordinal}"),
             Self::ProjectRecord { ordinal, .. } => write!(f, ".#{ordinal}"),
+            Self::AssignField { field, .. } => write!(f, "assign .{field}"),
             Self::Call { callee, .. } => write!(f, "{callee}()"),
+            Self::TraitCall { callable, .. } => write!(f, "trait#{}()", callable.0),
             Self::PureCall { helper, .. } => write!(f, "pure#{}()", helper.0),
             Self::SpreadArg(expr) => write!(f, "{expr}..."),
             Self::MethodCall { method, .. } => write!(f, ".{method}()"),
@@ -999,6 +1016,8 @@ pub enum RuntimeEvalError {
     InvalidRange { reason: String },
     #[error("field `{field}` does not exist on {value}")]
     MissingField { field: String, value: String },
+    #[error("cannot assign field `{field}` on {value}")]
+    InvalidFieldAssignment { field: String, value: String },
     #[error("spread argument requires a tuple or bracket sequence, found {0}")]
     InvalidSpread(String),
     #[error("spread argument cannot be evaluated outside a call argument list")]
@@ -1013,6 +1032,16 @@ pub enum RuntimeEvalError {
     },
     #[error("runtime pure helper id {0} does not exist")]
     UnknownPureHelper(usize),
+    #[error("runtime trait method id {0} does not exist")]
+    UnknownTraitMethod(usize),
+    #[error("trait method `{method}` expected {expected} argument(s), found {found}")]
+    TraitMethodArgumentCount {
+        method: String,
+        expected: usize,
+        found: usize,
+    },
+    #[error("trait method `{method}` cannot update receiver `{receiver}`")]
+    InvalidTraitReceiverUpdate { method: String, receiver: String },
     #[error("operator `{op}` is not supported for {lhs} and {rhs}")]
     UnsupportedBinary {
         op: &'static str,

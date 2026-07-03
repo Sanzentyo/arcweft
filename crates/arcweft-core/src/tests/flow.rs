@@ -144,6 +144,149 @@ fn engine_executes_runtime_pure_call_from_flow() {
     );
 }
 
+fn self_field(field: &str) -> RuntimeExpr {
+    RuntimeExpr::Field {
+        target: Box::new(RuntimeExpr::Local("self".to_owned())),
+        field: field.to_owned(),
+    }
+}
+
+fn counter_trait_identity(id: usize, method_name: &str) -> RuntimeTraitMethodIdentity {
+    RuntimeTraitMethodIdentity {
+        impl_id: id,
+        trait_id: Some(id),
+        witness: Some(id),
+        trait_name: Some(
+            if method_name == "next" {
+                "Iterator"
+            } else {
+                "IntoIterator"
+            }
+            .to_owned(),
+        ),
+        self_type: "CounterIter".to_owned(),
+        method_name: method_name.to_owned(),
+        monomorph_label: format!("CounterIter::{method_name}"),
+    }
+}
+
+fn counter_state() -> RuntimeValue {
+    RuntimeValue::Record(vec![
+        RuntimeFieldValue {
+            name: "current".to_owned(),
+            value: RuntimeValue::i64(0),
+        },
+        RuntimeFieldValue {
+            name: "end".to_owned(),
+            value: RuntimeValue::i64(1),
+        },
+    ])
+}
+
+fn counter_next_body() -> RuntimeExpr {
+    RuntimeExpr::If {
+        condition: Box::new(RuntimeExpr::Binary {
+            lhs: Box::new(self_field("current")),
+            op: RuntimeBinaryOp::Lt,
+            rhs: Box::new(self_field("end")),
+        }),
+        then_expr: Box::new(RuntimeExpr::Let {
+            name: "value".to_owned(),
+            expr: Box::new(self_field("current")),
+            body: Box::new(RuntimeExpr::AssignField {
+                target: Box::new(RuntimeExpr::Local("self".to_owned())),
+                field: "current".to_owned(),
+                expr: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("value".to_owned())),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(1))),
+                }),
+                body: Box::new(RuntimeExpr::Variant {
+                    path: None,
+                    name: "Some".to_owned(),
+                    payload: Some(Box::new(RuntimeExpr::Local("value".to_owned()))),
+                }),
+            }),
+        }),
+        else_expr: Box::new(RuntimeExpr::Variant {
+            path: None,
+            name: "None".to_owned(),
+            payload: None,
+        }),
+    }
+}
+
+fn counter_trait_methods() -> Vec<RuntimeTraitMethod> {
+    vec![
+        RuntimeTraitMethod {
+            id: RuntimeTraitMethodId(0),
+            identity: counter_trait_identity(0, "into_iter"),
+            receiver: RuntimeReceiverMode::Owned,
+            input_names: vec!["self".to_owned()],
+            input_types: vec![RuntimePureInputType::Value],
+            output_type: RuntimePureOutputType::Value,
+            body: RuntimeExpr::Local("self".to_owned()),
+        },
+        RuntimeTraitMethod {
+            id: RuntimeTraitMethodId(1),
+            identity: counter_trait_identity(1, "next"),
+            receiver: RuntimeReceiverMode::MutRef,
+            input_names: vec!["self".to_owned()],
+            input_types: vec![RuntimePureInputType::Value],
+            output_type: RuntimePureOutputType::Value,
+            body: counter_next_body(),
+        },
+    ]
+}
+
+fn counter_witness_plan() -> RuntimePlan {
+    RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![FlowOp::For {
+                pattern: RuntimePattern::Ident("item".to_owned()),
+                source: RuntimeExpr::Value(counter_state()),
+                evidence: RuntimeIteratorEvidence::Witness(RuntimeIteratorWitnessEvidence {
+                    item_type: "i64".to_owned(),
+                    into_iter_type: "CounterIter".to_owned(),
+                    executable: RuntimeIteratorWitnessExecutable::TraitCalls(
+                        RuntimeIteratorWitnessCalls {
+                            into_iter: RuntimeTraitMethodId(0),
+                            next: RuntimeTraitMethodId(1),
+                        },
+                    ),
+                }),
+                body: vec![FlowOp::ReturnExpr(RuntimeExpr::Local("item".to_owned()))],
+            }],
+        }],
+        Vec::new(),
+    )
+    .expect("flow plan is valid")
+    .with_trait_methods(counter_trait_methods())
+}
+
+#[test]
+fn engine_executes_for_loop_through_trait_method_witness_calls() {
+    let mut engine = Engine::new(counter_witness_plan());
+
+    let result = engine.step(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: RuntimeStepBudget { max_ops: 8 },
+        },
+    );
+
+    assert!(
+        matches!(
+            result.fiber_status,
+            FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "0"
+        ),
+        "unexpected runtime result: {result:#?}"
+    );
+}
+
 #[test]
 fn engine_routes_non_i64_pure_call_to_value_backend() {
     let plan = RuntimePlan::new(

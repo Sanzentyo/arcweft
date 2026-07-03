@@ -16,6 +16,7 @@ pub mod persistent;
 pub mod project;
 pub mod reachability;
 pub mod source;
+pub mod trait_methods;
 pub mod types;
 
 #[cfg(test)]

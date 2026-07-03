@@ -1,6 +1,9 @@
 use arcweft_agent_protocol::artifact::EffectCapability as AgentEffectCapability;
 use arcweft_bundle::BundleKind;
-use arcweft_core::plan::{FlowOp, RuntimeBuiltinIteratorEvidence, RuntimeIteratorEvidence};
+use arcweft_core::plan::{
+    FlowOp, RuntimeBuiltinIteratorEvidence, RuntimeIteratorEvidence,
+    RuntimeIteratorWitnessExecutable,
+};
 use arcweft_id::PublicId;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::env::{FunctionParam, FunctionSignature, TypeCheckEnv};
@@ -25,7 +28,9 @@ use crate::{
     error::CompileAgentError,
     hir::{lower_source_tree, validate_hir_with_env},
     lower::{
-        lower_source_runtime_plan_with_stats_and_options, lower_source_text_pure_helper_candidates,
+        lower_source_runtime_plan_with_stats_and_options,
+        lower_source_runtime_plan_with_typecheck_stats_and_options,
+        lower_source_text_pure_helper_candidates,
     },
     parse::parse_source_text,
     source::compile_source,
@@ -288,6 +293,76 @@ flow @flow.main main {
         evidence,
         &RuntimeIteratorEvidence::Builtin(RuntimeBuiltinIteratorEvidence::Range)
     );
+}
+
+#[test]
+fn lowers_user_defined_into_iterator_to_executable_trait_calls() {
+    let parsed = parse_source_text(
+        r"
+struct Counter { start: i64, end: i64 }
+struct CounterIter { current: i64, end: i64 }
+
+impl IntoIterator for Counter {
+    type Item = i64
+    type IntoIter = CounterIter
+
+    fn into_iter(self) -> CounterIter {
+        CounterIter { current: self.start, end: self.end }
+    }
+}
+
+impl Iterator for CounterIter {
+    type Item = i64
+
+    fn next(&mut self) -> Option<i64> {
+        None
+    }
+}
+
+flow @flow.main main {
+    let source = Counter { start: 0i64, end: 3i64 }
+    for value in source {
+        let copy = value
+    }
+}
+",
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("runtime plan lowers with executable witness trait calls");
+
+    assert_eq!(report.plan.trait_methods.len(), 2);
+    let evidence = report
+        .plan
+        .flows
+        .first()
+        .and_then(|flow| {
+            flow.ops.iter().find_map(|op| match op {
+                FlowOp::For { evidence, .. } => Some(evidence),
+                _ => None,
+            })
+        })
+        .expect("for loop carries iterator evidence");
+
+    let RuntimeIteratorEvidence::Witness(witness) = evidence else {
+        panic!("user-defined source must use witness iterator evidence");
+    };
+    let RuntimeIteratorWitnessExecutable::TraitCalls(calls) = witness.executable else {
+        panic!("user-defined witness must lower to executable trait calls");
+    };
+    assert_eq!(calls.into_iter.0, 0);
+    assert_eq!(calls.next.0, 1);
 }
 
 #[test]

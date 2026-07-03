@@ -634,9 +634,14 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
         | Stmt::Expr(expr) => {
             collect_expr(expr, uses);
         }
-        Stmt::Signal { target, value } => {
+        Stmt::Assign { target, expr }
+        | Stmt::Signal {
+            target,
+            value: expr,
+        }
+        | Stmt::LifetimeSet { target, expr } => {
             collect_expr(target, uses);
-            collect_expr(value, uses);
+            collect_expr(expr, uses);
         }
         Stmt::LetElse {
             expr, else_body, ..
@@ -669,10 +674,6 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
         }
         | Stmt::Select(expr)
         | Stmt::Out { expr, .. } => collect_expr(expr, uses),
-        Stmt::LifetimeSet { target, expr } => {
-            collect_expr(target, uses);
-            collect_expr(expr, uses);
-        }
         Stmt::Wait(target) => collect_wait_target(target, uses),
         Stmt::On { body, .. } | Stmt::Loop { body } => collect_stmt_block(body, uses),
         Stmt::UnsafeLifetime { reason, body, .. } => {

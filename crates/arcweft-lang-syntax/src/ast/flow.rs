@@ -297,6 +297,11 @@ pub enum Stmt {
         expr_source: Option<String>,
         expr_range: Option<TextRange>,
     },
+    /// `target = expr` mutation statement.
+    Assign {
+        target: Expr,
+        expr: Expr,
+    },
     /// `let PAT = EXPR else { ... }` binding whose else block must diverge.
     LetElse {
         pattern: Pattern,

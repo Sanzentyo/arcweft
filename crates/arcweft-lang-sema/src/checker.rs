@@ -196,6 +196,7 @@ pub struct TypeCheckReport {
     pub judgments: Vec<TypeJudgment>,
     pub effects: EffectAnalysisReport,
     pub for_iteration_evidence: Vec<ForIterationEvidence>,
+    pub trait_catalog: TraitCatalog,
 }
 
 impl TypeCheckReport {
@@ -226,6 +227,7 @@ pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport 
         judgments: checker.judgments,
         effects,
         for_iteration_evidence: checker.for_iteration_evidence,
+        trait_catalog: checker.trait_catalog,
     }
 }
 
@@ -239,7 +241,13 @@ pub struct ForIterationEvidence {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ForIterationEvidenceFamily {
     Builtin(StandardIteratorFamily),
-    WitnessUnsupported,
+    Witness {
+        into_iterator: crate::traits::TraitWitnessId,
+        iterator: crate::traits::TraitWitnessId,
+    },
+    WitnessUnsupported {
+        reason: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -300,6 +300,7 @@ fn stmt_binding_names(statement: &Stmt) -> Vec<String> {
             pattern_binding_names(pattern)
         }
         Stmt::Return(_)
+        | Stmt::Assign { .. }
         | Stmt::Out { .. }
         | Stmt::Goto(_)
         | Stmt::Thread(_)

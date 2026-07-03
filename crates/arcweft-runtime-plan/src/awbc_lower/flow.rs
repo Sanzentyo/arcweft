@@ -1359,6 +1359,13 @@ impl EntryParameterCollector {
                     this.collect_expr(body);
                 });
             }
+            RuntimeExpr::AssignField {
+                target, expr, body, ..
+            } => {
+                self.collect_expr(target);
+                self.collect_expr(expr);
+                self.collect_expr(body);
+            }
             RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => {
                 for item in items {
                     self.collect_expr(item);
@@ -1390,11 +1397,9 @@ impl EntryParameterCollector {
                     self.collect_expr(arg);
                 }
             }
-            RuntimeExpr::MethodCall { receiver, args, .. } => {
-                self.collect_expr(receiver);
-                for arg in args {
-                    self.collect_expr(arg);
-                }
+            RuntimeExpr::MethodCall { receiver, args, .. }
+            | RuntimeExpr::TraitCall { receiver, args, .. } => {
+                self.collect_receiver_args(receiver, args);
             }
             RuntimeExpr::Map {
                 source,
@@ -1442,6 +1447,13 @@ impl EntryParameterCollector {
                     });
                 }
             }
+        }
+    }
+
+    fn collect_receiver_args(&mut self, receiver: &RuntimeExpr, args: &[RuntimeExpr]) {
+        self.collect_expr(receiver);
+        for arg in args {
+            self.collect_expr(arg);
         }
     }
 

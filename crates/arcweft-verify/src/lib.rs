@@ -1143,6 +1143,10 @@ impl ObligationCollector {
             | Stmt::Close(expr)
             | Stmt::Select(expr)
             | Stmt::Expr(expr) => self.collect_expr(expr),
+            Stmt::Assign { target, expr } => {
+                self.collect_expr(target);
+                self.collect_expr(expr);
+            }
             Stmt::Thread(thread) => self.collect_thread(thread),
             Stmt::DeferBlock { statements, .. } => self.collect_stmts(statements),
             Stmt::Signal {

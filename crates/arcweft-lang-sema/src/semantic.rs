@@ -15,8 +15,8 @@ use arcweft_lang_hir::syntax::{
         choice::{ChoiceBlock, ChoicePlanItem},
         common::TextRange,
         flow::{
-            AwaitWith, FlowItem, LoopBlock, ScopeExprBlock, SelectBranchHead, Stmt, ThreadBlock,
-            UnsafeAuditInsertion, WaitTarget,
+            AwaitWith, FlowItem, LoopBlock, ScopeExprBlock, SelectBranchHead, Stmt, StmtMatchArm,
+            ThreadBlock, UnsafeAuditInsertion, WaitTarget,
         },
         ids::{EntityRefSyntax, IdRef},
         line_plan::{LinePlan, LinePlanItem, TriggerPattern},
@@ -896,7 +896,11 @@ impl<'a> SemanticAnalyzer<'a> {
             Stmt::DeferBlock { statements, .. } => {
                 self.collect_stmts(statements, state);
             }
-            Stmt::Signal { target, value }
+            Stmt::Assign {
+                target,
+                expr: value,
+            }
+            | Stmt::Signal { target, value }
             | Stmt::LifetimeSet {
                 target,
                 expr: value,
@@ -950,14 +954,7 @@ impl<'a> SemanticAnalyzer<'a> {
             }
             Stmt::Match { expr, arms } => {
                 self.collect_expr(expr, state);
-                for arm in arms {
-                    let mut arm_state = state.clone();
-                    if let Some(guard) = arm.guard() {
-                        self.collect_expr(guard, &mut arm_state);
-                    }
-                    self.collect_stmts(arm.body(), &mut arm_state);
-                    state.live_must_drop.extend(arm_state.live_must_drop);
-                }
+                self.collect_match_stmt_arms(arms, state);
             }
             Stmt::Break { expr: None, .. } | Stmt::Continue { .. } => {}
             Stmt::Raw(raw) => self.add_raw_obligation(
@@ -971,6 +968,17 @@ impl<'a> SemanticAnalyzer<'a> {
         let mut body_state = state.clone();
         self.collect_stmts(body, &mut body_state);
         state.live_must_drop.extend(body_state.live_must_drop);
+    }
+
+    fn collect_match_stmt_arms(&mut self, arms: &[StmtMatchArm], state: &mut FlowState) {
+        for arm in arms {
+            let mut arm_state = state.clone();
+            if let Some(guard) = arm.guard() {
+                self.collect_expr(guard, &mut arm_state);
+            }
+            self.collect_stmts(arm.body(), &mut arm_state);
+            state.live_must_drop.extend(arm_state.live_must_drop);
+        }
     }
 
     fn collect_choice(&mut self, choice: &HirChoice) {

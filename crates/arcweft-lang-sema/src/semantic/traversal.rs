@@ -91,6 +91,9 @@ fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
         | Stmt::Wait(WaitTarget::Duration(expr) | WaitTarget::Expr(expr)) => {
             expr_contains_unchecked_promotion(expr)
         }
+        Stmt::Assign { target, expr } => {
+            expr_contains_unchecked_promotion(target) || expr_contains_unchecked_promotion(expr)
+        }
         Stmt::Signal { target, value }
         | Stmt::LifetimeSet {
             target,

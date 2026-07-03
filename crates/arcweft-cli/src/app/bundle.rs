@@ -1178,7 +1178,9 @@ fn static_image_asset_ref_expr(expr: &RuntimeExpr) -> Option<String> {
         | RuntimeExpr::Field { .. }
         | RuntimeExpr::ProjectTuple { .. }
         | RuntimeExpr::ProjectRecord { .. }
+        | RuntimeExpr::AssignField { .. }
         | RuntimeExpr::Call { .. }
+        | RuntimeExpr::TraitCall { .. }
         | RuntimeExpr::PureCall { .. }
         | RuntimeExpr::SpreadArg(_)
         | RuntimeExpr::MethodCall { .. }

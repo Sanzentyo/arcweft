@@ -1123,6 +1123,7 @@ fn speaker_preset_edit_from_stmt(
             speaker_preset_edit_from_stmts(source, arm.body(), preset_name, option)
         }),
         Stmt::Let { .. }
+        | Stmt::Assign { .. }
         | Stmt::LetChoice { .. }
         | Stmt::Return(_)
         | Stmt::Out { .. }

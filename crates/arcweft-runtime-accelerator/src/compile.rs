@@ -798,6 +798,13 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
         RuntimeExpr::Let { expr, body, .. } => {
             2 + runtime_expr_work_units(expr) + runtime_expr_work_units(body)
         }
+        RuntimeExpr::AssignField {
+            target, expr, body, ..
+        } => {
+            8 + runtime_expr_work_units(target)
+                + runtime_expr_work_units(expr)
+                + runtime_expr_work_units(body)
+        }
         RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => {
             1 + items.iter().map(runtime_expr_work_units).sum::<usize>()
         }
@@ -822,7 +829,8 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
         RuntimeExpr::Call { args, .. } | RuntimeExpr::PureCall { args, .. } => {
             8 + args.iter().map(runtime_expr_work_units).sum::<usize>()
         }
-        RuntimeExpr::MethodCall { receiver, args, .. } => {
+        RuntimeExpr::MethodCall { receiver, args, .. }
+        | RuntimeExpr::TraitCall { receiver, args, .. } => {
             8 + runtime_expr_work_units(receiver)
                 + args.iter().map(runtime_expr_work_units).sum::<usize>()
         }

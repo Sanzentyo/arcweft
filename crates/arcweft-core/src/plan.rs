@@ -16,6 +16,7 @@ pub struct RuntimePlan {
     pub entries: Vec<RuntimeEntrySpec>,
     pub flows: Vec<RuntimeFlow>,
     pub pure_helpers: Vec<RuntimePureHelper>,
+    pub trait_methods: Vec<RuntimeTraitMethod>,
     pub line_task_groups: Vec<LineTaskGroup>,
     pub stream_plans: Vec<StreamPlan>,
     pub source_plans: Vec<SourcePlan>,
@@ -108,6 +109,44 @@ pub struct RuntimePureHelper {
     pub origin: RuntimePureHelperOrigin,
 }
 
+/// Runtime identifier for a lowered trait/impl method body.
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+)]
+pub struct RuntimeTraitMethodId(pub usize);
+
+/// Receiver ownership mode selected by the surface method signature.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum RuntimeReceiverMode {
+    Owned,
+    SharedRef,
+    MutRef,
+}
+
+/// Stable identity of a concrete trait method selected through a sema witness.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RuntimeTraitMethodIdentity {
+    pub impl_id: usize,
+    pub trait_id: Option<usize>,
+    pub witness: Option<usize>,
+    pub trait_name: Option<String>,
+    pub self_type: String,
+    pub method_name: String,
+    pub monomorph_label: String,
+}
+
+/// Lowered deterministic trait/impl method body callable by runtime dispatch.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct RuntimeTraitMethod {
+    pub id: RuntimeTraitMethodId,
+    pub identity: RuntimeTraitMethodIdentity,
+    pub receiver: RuntimeReceiverMode,
+    pub input_names: Vec<String>,
+    pub input_types: Vec<RuntimePureInputType>,
+    pub output_type: RuntimePureOutputType,
+    pub body: RuntimeExpr,
+}
+
 /// Runtime pure helper input representation.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub enum RuntimePureInputType {
@@ -178,8 +217,8 @@ pub enum RuntimeBuiltinIteratorEvidence {
 
 /// Lowered witness-backed iterator evidence.
 ///
-/// The current runtime can carry this evidence but intentionally rejects it
-/// until trait method bodies lower to executable runtime calls.
+/// Runtime dispatch can execute trait-call witnesses; AWBC lowering still
+/// requires a typed trait-method table before it can consume them.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RuntimeIteratorWitnessEvidence {
     pub item_type: String,
@@ -187,10 +226,16 @@ pub struct RuntimeIteratorWitnessEvidence {
     pub executable: RuntimeIteratorWitnessExecutable,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RuntimeIteratorWitnessExecutable {
-    StaticCalls,
+    TraitCalls(RuntimeIteratorWitnessCalls),
     UnsupportedMethodBodyLowering,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RuntimeIteratorWitnessCalls {
+    pub into_iter: RuntimeTraitMethodId,
+    pub next: RuntimeTraitMethodId,
 }
 
 impl RuntimeIteratorEvidence {
@@ -492,6 +537,7 @@ impl RuntimePlan {
             entries: Vec::new(),
             flows,
             pure_helpers: Vec::new(),
+            trait_methods: Vec::new(),
             line_task_groups,
             stream_plans: Vec::new(),
             source_plans: Vec::new(),
@@ -516,6 +562,12 @@ impl RuntimePlan {
     }
 
     #[must_use]
+    pub fn with_trait_methods(mut self, trait_methods: Vec<RuntimeTraitMethod>) -> Self {
+        self.trait_methods = trait_methods;
+        self
+    }
+
+    #[must_use]
     pub fn with_entries(mut self, entries: Vec<RuntimeEntrySpec>) -> Self {
         self.entries = entries;
         self
@@ -527,6 +579,7 @@ impl RuntimePlan {
             entries: Vec::new(),
             flows: Vec::new(),
             pure_helpers: Vec::new(),
+            trait_methods: Vec::new(),
             line_task_groups,
             stream_plans: Vec::new(),
             source_plans: Vec::new(),

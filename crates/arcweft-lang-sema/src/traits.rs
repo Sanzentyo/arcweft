@@ -10,7 +10,9 @@ mod standard_iter;
 use crate::diagnostics::{TraitDiagnostic, TypeCheckError};
 use crate::types::TypeKind;
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
+use arcweft_lang_syntax::ast::flow::Stmt;
 use arcweft_lang_syntax::ast::items::{ImplItem, ImplMember, TraitItem, TraitMember};
+use arcweft_lang_syntax::expr::Expr;
 use arcweft_lang_syntax::types::{
     AssocTypeBinding, FnParam, FnSignature, GenericParam, TypeRef, parse_type_ref,
 };
@@ -70,6 +72,27 @@ impl TraitWitnessId {
 
     pub const fn index(self) -> usize {
         self.0
+    }
+}
+
+impl TraitMethodBody {
+    pub fn new(statements: &[Stmt], value: Option<&Expr>) -> Option<Self> {
+        (!statements.is_empty() || value.is_some()).then(|| Self {
+            statements: statements.to_vec(),
+            value: value.cloned(),
+        })
+    }
+
+    pub fn statements(&self) -> &[Stmt] {
+        &self.statements
+    }
+
+    pub const fn value(&self) -> Option<&Expr> {
+        self.value.as_ref()
+    }
+
+    pub const fn is_present(&self) -> bool {
+        !self.statements.is_empty() || self.value.is_some()
     }
 }
 
@@ -149,7 +172,14 @@ pub struct TraitMethodImpl {
     trait_id: Option<TraitId>,
     signature: FnSignature,
     return_type: TypeKind,
-    body_is_present: bool,
+    body: Option<TraitMethodBody>,
+}
+
+/// Syntax body retained for runtime lowering of executable impl methods.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TraitMethodBody {
+    statements: Vec<Stmt>,
+    value: Option<Expr>,
 }
 
 /// Typed conformance witness.
@@ -159,6 +189,16 @@ pub struct TraitWitness {
     impl_id: ImplId,
     trait_id: TraitId,
     self_ty: TypeKind,
+}
+
+/// Concrete method selected through one trait witness.
+#[derive(Clone, Debug)]
+pub struct TraitMethodForWitness<'a> {
+    impl_id: ImplId,
+    trait_id: TraitId,
+    witness: TraitWitnessId,
+    self_ty: &'a TypeKind,
+    method: &'a TraitMethodImpl,
 }
 
 /// Method lookup result through the trait catalog.
@@ -275,6 +315,23 @@ impl TraitCatalog {
 
     pub fn trait_name(&self, id: TraitId) -> Option<&str> {
         self.trait_decl(id).map(TraitDecl::name)
+    }
+
+    pub fn witness_method(
+        &self,
+        witness: TraitWitnessId,
+        method_name: &str,
+    ) -> Option<TraitMethodForWitness<'_>> {
+        let witness_decl = self.witness(witness)?;
+        let impl_decl = self.trait_impl(witness_decl.impl_id)?;
+        let method = impl_decl.methods.get(method_name)?;
+        Some(TraitMethodForWitness {
+            impl_id: impl_decl.id,
+            trait_id: witness_decl.trait_id,
+            witness,
+            self_ty: &witness_decl.self_ty,
+            method,
+        })
     }
 
     pub fn resolve_into_iterator(
@@ -444,7 +501,7 @@ impl TraitCatalog {
                         trait_id: Some(requirement.trait_id),
                         signature: requirement.signature.clone(),
                         return_type,
-                        body_is_present: false,
+                        body: None,
                     },
                 ));
             }
@@ -658,12 +715,50 @@ impl AssocEquality {
 }
 
 impl TraitMethodImpl {
+    pub const fn trait_id(&self) -> Option<TraitId> {
+        self.trait_id
+    }
+
     pub const fn signature(&self) -> &FnSignature {
         &self.signature
     }
 
     pub const fn return_type(&self) -> &TypeKind {
         &self.return_type
+    }
+
+    pub const fn body(&self) -> Option<&TraitMethodBody> {
+        self.body.as_ref()
+    }
+}
+
+impl<'a> TraitMethodForWitness<'a> {
+    pub const fn impl_id(&self) -> ImplId {
+        self.impl_id
+    }
+
+    pub const fn trait_id(&self) -> TraitId {
+        self.trait_id
+    }
+
+    pub const fn witness(&self) -> TraitWitnessId {
+        self.witness
+    }
+
+    pub const fn self_ty(&self) -> &'a TypeKind {
+        self.self_ty
+    }
+
+    pub const fn signature(&self) -> &'a FnSignature {
+        self.method.signature()
+    }
+
+    pub const fn return_type(&self) -> &'a TypeKind {
+        self.method.return_type()
+    }
+
+    pub const fn body(&self) -> Option<&'a TraitMethodBody> {
+        self.method.body()
     }
 }
 
@@ -978,7 +1073,7 @@ impl TraitCatalogBuilder {
                 }
                 ImplMember::Function {
                     signature,
-                    body,
+                    body_statements,
                     body_value,
                     ..
                 } => {
@@ -999,7 +1094,7 @@ impl TraitCatalogBuilder {
                             trait_id: impl_decl.trait_id,
                             signature: signature.clone(),
                             return_type,
-                            body_is_present: !body.is_empty() || body_value.is_some(),
+                            body: TraitMethodBody::new(body_statements, body_value.as_ref()),
                         },
                     );
                 }
@@ -1051,7 +1146,7 @@ impl TraitCatalogBuilder {
                 ));
                 continue;
             };
-            if !actual.body_is_present {
+            if !actual.body().is_some_and(TraitMethodBody::is_present) {
                 self.diagnostics.push(TypeCheckError::trait_diagnostic(
                     TraitDiagnostic::missing_required_method_body(
                         trait_name,
@@ -1572,6 +1667,36 @@ fn substitute_self_type(
                 |assignment| assignment.value.clone(),
             )
         }
+        TypeRef::Generic { base, args } => {
+            let arg_types = args
+                .iter()
+                .map(|arg| substitute_self_type(arg, self_ty, impl_decl, generic_params))
+                .collect::<Vec<_>>();
+            generic_type_kind(base, &arg_types)
+        }
+        TypeRef::Choice(alternatives) => TypeKind::Choice(
+            alternatives
+                .iter()
+                .map(|alternative| {
+                    substitute_self_type(alternative, self_ty, impl_decl, generic_params)
+                })
+                .collect(),
+        ),
+        TypeRef::Ref { inner, .. } => TypeKind::BorrowRef {
+            lifetime: None,
+            inner: Box::new(substitute_self_type(
+                inner,
+                self_ty,
+                impl_decl,
+                generic_params,
+            )),
+        },
+        TypeRef::Slice(inner) => TypeKind::Slice(Box::new(substitute_self_type(
+            inner,
+            self_ty,
+            impl_decl,
+            generic_params,
+        ))),
         _ => trait_type_ref_kind(ty, generic_params),
     }
 }

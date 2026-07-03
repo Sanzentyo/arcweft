@@ -1356,6 +1356,9 @@ impl PureEvaluator {
                 self.evaluate_project_record_expr(target, *ordinal)
             }
             RuntimeExpr::Call { callee, args } => self.evaluate_call_expr(callee, args),
+            RuntimeExpr::AssignField { .. } | RuntimeExpr::TraitCall { .. } => {
+                Self::unsupported_flow_runtime_expr()
+            }
             RuntimeExpr::PureCall { .. } => Err(RuntimeEvalError::UnsupportedPure {
                 name: "pure call".to_owned(),
                 reason: "nested runtime pure calls require a runtime pure backend".to_owned(),
@@ -1386,13 +1389,7 @@ impl PureEvaluator {
                 condition,
                 then_expr,
                 else_expr,
-            } => {
-                if self.evaluate_bool(condition)? {
-                    self.evaluate_expr(then_expr)
-                } else {
-                    self.evaluate_expr(else_expr)
-                }
-            }
+            } => self.evaluate_if_expr(condition, then_expr, else_expr),
             RuntimeExpr::IfLet { .. } | RuntimeExpr::Match { .. } => {
                 Err(RuntimeEvalError::UnsupportedPure {
                     name: "control".to_owned(),
@@ -1414,6 +1411,26 @@ impl PureEvaluator {
             .map(|_| self.evaluate_expr(value))
             .collect::<Result<Vec<_>, _>>()
             .map(runtime_sequence_values)
+    }
+
+    fn evaluate_if_expr(
+        &mut self,
+        condition: &RuntimeExpr,
+        then_expr: &RuntimeExpr,
+        else_expr: &RuntimeExpr,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if self.evaluate_bool(condition)? {
+            self.evaluate_expr(then_expr)
+        } else {
+            self.evaluate_expr(else_expr)
+        }
+    }
+
+    fn unsupported_flow_runtime_expr() -> Result<RuntimeValue, RuntimeEvalError> {
+        Err(RuntimeEvalError::UnsupportedPure {
+            name: "trait method".to_owned(),
+            reason: "trait dispatch and mutation require the flow runtime".to_owned(),
+        })
     }
 
     fn evaluate_range_expr(

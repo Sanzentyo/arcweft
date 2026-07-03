@@ -44,6 +44,7 @@ impl TypeChecker<'_> {
             Stmt::Let {
                 pattern, ty, expr, ..
             } => self.check_let_stmt(pattern, ty.as_ref(), expr),
+            Stmt::Assign { target, expr } => self.check_assign_stmt(target, expr),
             Stmt::LetElse {
                 pattern,
                 ty,
@@ -177,6 +178,18 @@ impl TypeChecker<'_> {
     fn check_two_exprs(&mut self, first: &Expr, second: &Expr) {
         self.check_expr(first);
         self.check_expr(second);
+    }
+
+    fn check_assign_stmt(&mut self, target: &Expr, expr: &Expr) {
+        let target_ty = self.check_expr(target);
+        let expr_ty = self.check_expr_with_expected(expr, target_ty.as_ref());
+        if let (Some(target_ty), Some(expr_ty)) = (target_ty, expr_ty)
+            && !self.types_compatible(&target_ty, &expr_ty)
+        {
+            self.errors.push(TypeCheckError::new(format!(
+                "assignment expects {target_ty:?}, but expression has {expr_ty:?}"
+            )));
+        }
     }
 
     fn check_on_stmt(&mut self, stmt: &Stmt, body: &[Stmt]) {

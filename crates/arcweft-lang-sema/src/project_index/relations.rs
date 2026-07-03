@@ -227,6 +227,10 @@ fn index_stmt_symbol_dependency_relations(
         | Stmt::Goto(expr) => {
             index = index_expr_symbol_dependency_relations(parent, expr, index)?;
         }
+        Stmt::Assign { target, expr } => {
+            index = index_expr_symbol_dependency_relations(parent, target, index)?;
+            index = index_expr_symbol_dependency_relations(parent, expr, index)?;
+        }
         Stmt::Signal { target, value } => {
             index = index_expr_symbol_dependency_relations(parent, target, index)?;
             index = index_expr_symbol_dependency_relations(parent, value, index)?;
@@ -711,6 +715,10 @@ fn index_stmt_relations(
         | Stmt::Select(expr)
         | Stmt::Expr(expr)
         | Stmt::Goto(expr) => {
+            index = index_expr_dependency_relations(parent, expr, index)?;
+        }
+        Stmt::Assign { target, expr } => {
+            index = index_expr_dependency_relations(parent, target, index)?;
             index = index_expr_dependency_relations(parent, expr, index)?;
         }
         Stmt::Signal { target, value } => {
