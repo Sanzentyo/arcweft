@@ -15,6 +15,8 @@ use arcweft_core::value::{
 use arcweft_lang_sema::check::{TypeCheckReport, TypeJudgmentRule, TypeJudgmentSubject};
 #[cfg(test)]
 use arcweft_lang_sema::effect_analysis::EffectAnalysisReport;
+#[cfg(test)]
+use arcweft_lang_sema::traits::TraitCatalog;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -441,10 +443,8 @@ impl<'a> RuntimeTypeValidator<'a> {
                 }
                 RuntimeShape::Variant
             }
-            RuntimeExpr::MethodCall { receiver, args, .. } => {
-                self.validate_method_call_expr(path, receiver, args)
-            }
-            RuntimeExpr::TraitCall { receiver, args, .. } => {
+            RuntimeExpr::MethodCall { receiver, args, .. }
+            | RuntimeExpr::TraitCall { receiver, args, .. } => {
                 self.validate_method_call_expr(path, receiver, args)
             }
             RuntimeExpr::Map { source, body, .. } => {
@@ -843,7 +843,7 @@ mod tests {
             judgments: Vec::new(),
             effects: EffectAnalysisReport::default(),
             for_iteration_evidence: Vec::new(),
-            trait_catalog: Default::default(),
+            trait_catalog: TraitCatalog::default(),
         }));
     }
 
@@ -883,7 +883,7 @@ mod tests {
             judgments,
             effects: EffectAnalysisReport::default(),
             for_iteration_evidence: Vec::new(),
-            trait_catalog: Default::default(),
+            trait_catalog: TraitCatalog::default(),
         }
     }
 }

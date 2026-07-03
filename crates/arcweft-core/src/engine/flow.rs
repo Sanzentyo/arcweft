@@ -642,20 +642,25 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeIterator, RuntimeEvalError> {
         if let RuntimeIteratorEvidence::Witness(witness) = evidence {
-            let RuntimeIteratorWitnessExecutable::TraitCalls(calls) = &witness.executable else {
-                return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
-                    &value,
-                )));
+            return match &witness.executable {
+                RuntimeIteratorWitnessExecutable::TraitCalls(calls) => {
+                    let receiver = RuntimeExpr::Value(value);
+                    let outcome = self.evaluate_trait_method_call(
+                        calls.into_iter,
+                        RuntimeReceiverMode::Owned,
+                        &receiver,
+                        &[],
+                        pure_backend,
+                    )?;
+                    Ok(RuntimeIterator::witness(outcome.value, calls.next))
+                }
+                RuntimeIteratorWitnessExecutable::IdentityIntoIterator(calls) => {
+                    Ok(RuntimeIterator::witness(value, calls.next))
+                }
+                RuntimeIteratorWitnessExecutable::UnsupportedMethodBodyLowering => Err(
+                    RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value)),
+                ),
             };
-            let receiver = RuntimeExpr::Value(value);
-            let outcome = self.evaluate_trait_method_call(
-                calls.into_iter,
-                RuntimeReceiverMode::Owned,
-                &receiver,
-                &[],
-                pure_backend,
-            )?;
-            return Ok(RuntimeIterator::witness(outcome.value, calls.next));
         }
         RuntimeIterator::from_value_with_evidence(value, evidence)
             .map_err(|value| RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value)))

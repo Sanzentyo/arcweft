@@ -229,12 +229,18 @@ pub struct RuntimeIteratorWitnessEvidence {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RuntimeIteratorWitnessExecutable {
     TraitCalls(RuntimeIteratorWitnessCalls),
+    IdentityIntoIterator(RuntimeIteratorIdentityWitnessCalls),
     UnsupportedMethodBodyLowering,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RuntimeIteratorWitnessCalls {
     pub into_iter: RuntimeTraitMethodId,
+    pub next: RuntimeTraitMethodId,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RuntimeIteratorIdentityWitnessCalls {
     pub next: RuntimeTraitMethodId,
 }
 

@@ -1,8 +1,9 @@
 //! Compiler bridge from sema witnesses to runtime-plan trait method callables.
 
 use arcweft_core::plan::{
-    RuntimeIteratorWitnessCalls, RuntimeIteratorWitnessEvidence, RuntimeIteratorWitnessExecutable,
-    RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethodIdentity,
+    RuntimeIteratorIdentityWitnessCalls, RuntimeIteratorWitnessCalls,
+    RuntimeIteratorWitnessEvidence, RuntimeIteratorWitnessExecutable, RuntimePureInputType,
+    RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethodIdentity,
 };
 use arcweft_lang_sema::check::{ForIterationEvidence, ForIterationEvidenceFamily};
 use arcweft_lang_sema::traits::{TraitCatalog, TraitMethodForWitness, TraitWitnessId};
@@ -19,13 +20,19 @@ pub fn lower_runtime_trait_methods_from_typecheck(
 ) -> Result<RuntimeTraitMethodInventory, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
     let mut required = BTreeSet::new();
     for item in evidence {
-        if let ForIterationEvidenceFamily::Witness {
-            into_iterator,
-            iterator,
-        } = item.family
-        {
-            required.insert((into_iterator, "into_iter"));
-            required.insert((iterator, "next"));
+        match item.family {
+            ForIterationEvidenceFamily::Witness {
+                into_iterator,
+                iterator,
+            } => {
+                required.insert((into_iterator, "into_iter"));
+                required.insert((iterator, "next"));
+            }
+            ForIterationEvidenceFamily::IteratorWitness { iterator } => {
+                required.insert((iterator, "next"));
+            }
+            ForIterationEvidenceFamily::Builtin(_)
+            | ForIterationEvidenceFamily::WitnessUnsupported { .. } => {}
         }
     }
     let inputs = required
@@ -124,5 +131,24 @@ pub fn runtime_witness_evidence(
             into_iter,
             next,
         }),
+    })
+}
+
+pub fn runtime_iterator_identity_witness_evidence(
+    item_type: String,
+    into_iter_type: String,
+    inventory: &RuntimeTraitMethodInventory,
+    iterator: TraitWitnessId,
+) -> Option<RuntimeIteratorWitnessEvidence> {
+    let next = inventory
+        .by_witness_method
+        .get(&(iterator.index(), "next".to_owned()))
+        .copied()?;
+    Some(RuntimeIteratorWitnessEvidence {
+        item_type,
+        into_iter_type,
+        executable: RuntimeIteratorWitnessExecutable::IdentityIntoIterator(
+            RuntimeIteratorIdentityWitnessCalls { next },
+        ),
     })
 }

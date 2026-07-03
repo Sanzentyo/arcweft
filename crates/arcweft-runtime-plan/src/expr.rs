@@ -19,8 +19,7 @@ use arcweft_core::value::{
     runtime_sequence_dense_usize, runtime_sequence_from_literal_values,
 };
 use arcweft_lang_hir::syntax::{
-    ast::line_plan::LinePlanItem,
-    ast::pattern::Pattern,
+    ast::{flow::Stmt, line_plan::LinePlanItem, pattern::Pattern},
     expr::{BinaryOp, CallArg, Expr, FloatSuffix, Literal, MatchExprArm, UnaryOp},
 };
 use std::collections::BTreeMap;
@@ -211,24 +210,22 @@ fn lower_runtime_expr_strict_with_helpers(
             helpers,
         ),
         Expr::Match { scrutinee, arms } => lower_strict_match_expr(scrutinee, arms, helpers),
-        Expr::Block { value, .. }
-        | Expr::ComputationBlock { value, .. }
-        | Expr::MemoBlock { value, .. }
-        | Expr::NamedBlock { value, .. } => lower_strict_block_value(value.as_deref(), helpers),
+        Expr::Block { statements, value }
+        | Expr::ComputationBlock {
+            statements, value, ..
+        }
+        | Expr::MemoBlock {
+            statements, value, ..
+        }
+        | Expr::NamedBlock {
+            statements, value, ..
+        } => lower_strict_block_expr(statements, value.as_deref(), helpers),
         Expr::Call { callee, args } => lower_strict_call_expr(callee, args, helpers),
         Expr::MethodCall {
             receiver,
             method,
             args,
-        } => match lower_strict_math_method_call(receiver, method, args, helpers)
-            .or_else(|| lower_strict_std_float_method_call(receiver, method, args, helpers))
-            .or_else(|| lower_strict_path_method_call(receiver, method, args, helpers))
-            .or_else(|| {
-                lower_strict_external_namespace_method_call(receiver, method, args, helpers)
-            }) {
-            Some(lowered) => lowered,
-            None => lower_strict_method_call_expr(receiver, method, args, helpers),
-        },
+        } => lower_strict_method_call_dispatch(receiver, method, args, helpers),
         Expr::DialogueCall { plan, .. } => Ok(lower_dialogue_call_value(plan.as_ref())),
         Expr::Index { target, index } => lower_strict_index_expr(target, index, helpers),
         Expr::Try { expr } | Expr::Await { expr, .. } | Expr::Pipe { lhs: expr, .. } => {
@@ -239,6 +236,22 @@ fn lower_runtime_expr_strict_with_helpers(
         | Expr::LifetimePath { .. }
         | Expr::Placeholder(_)
         | Expr::Raw(_) => unsupported_strict_runtime_expr(expr),
+    }
+}
+
+fn lower_strict_method_call_dispatch(
+    receiver: &Expr,
+    method: &str,
+    args: &[CallArg],
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
+    match lower_strict_math_method_call(receiver, method, args, helpers)
+        .or_else(|| lower_strict_std_float_method_call(receiver, method, args, helpers))
+        .or_else(|| lower_strict_path_method_call(receiver, method, args, helpers))
+        .or_else(|| lower_strict_external_namespace_method_call(receiver, method, args, helpers))
+    {
+        Some(lowered) => lowered,
+        None => lower_strict_method_call_expr(receiver, method, args, helpers),
     }
 }
 
@@ -928,6 +941,51 @@ fn lower_strict_block_value(
         || Ok(RuntimeExpr::Value(RuntimeValue::Unit)),
         |value| lower_runtime_expr_strict_with_helpers(value, helpers),
     )
+}
+
+fn lower_strict_block_expr(
+    statements: &[Stmt],
+    value: Option<&Expr>,
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
+    let body = lower_strict_block_value(value, helpers)?;
+    statements.iter().rev().try_fold(body, |body, statement| {
+        lower_strict_block_statement(statement, body, helpers)
+    })
+}
+
+fn lower_strict_block_statement(
+    statement: &Stmt,
+    body: RuntimeExpr,
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
+    match statement {
+        Stmt::Let { pattern, expr, .. } => {
+            let name = pattern
+                .simple_binding_name()
+                .ok_or_else(|| format!("unsupported runtime let pattern `{pattern:?}`"))?
+                .to_owned();
+            Ok(RuntimeExpr::Let {
+                name,
+                expr: Box::new(lower_runtime_expr_strict_with_helpers(expr, helpers)?),
+                body: Box::new(body),
+            })
+        }
+        Stmt::Assign { target, expr } => {
+            let target = lower_runtime_expr_strict_with_helpers(target, helpers)?;
+            let RuntimeExpr::Field { target, field } = target else {
+                return Err(format!("unsupported runtime assignment target `{target}`"));
+            };
+            Ok(RuntimeExpr::AssignField {
+                target,
+                field,
+                expr: Box::new(lower_runtime_expr_strict_with_helpers(expr, helpers)?),
+                body: Box::new(body),
+            })
+        }
+        Stmt::Return(expr) => lower_runtime_expr_strict_with_helpers(expr, helpers),
+        other => Err(format!("unsupported runtime block statement `{other:?}`")),
+    }
 }
 
 fn lower_strict_if_expr(

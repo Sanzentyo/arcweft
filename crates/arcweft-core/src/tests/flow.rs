@@ -266,9 +266,68 @@ fn counter_witness_plan() -> RuntimePlan {
     .with_trait_methods(counter_trait_methods())
 }
 
+fn counter_identity_trait_methods() -> Vec<RuntimeTraitMethod> {
+    vec![RuntimeTraitMethod {
+        id: RuntimeTraitMethodId(0),
+        identity: counter_trait_identity(0, "next"),
+        receiver: RuntimeReceiverMode::MutRef,
+        input_names: vec!["self".to_owned()],
+        input_types: vec![RuntimePureInputType::Value],
+        output_type: RuntimePureOutputType::Value,
+        body: counter_next_body(),
+    }]
+}
+
+fn counter_identity_witness_plan() -> RuntimePlan {
+    RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![FlowOp::For {
+                pattern: RuntimePattern::Ident("item".to_owned()),
+                source: RuntimeExpr::Value(counter_state()),
+                evidence: RuntimeIteratorEvidence::Witness(RuntimeIteratorWitnessEvidence {
+                    item_type: "i64".to_owned(),
+                    into_iter_type: "Counter".to_owned(),
+                    executable: RuntimeIteratorWitnessExecutable::IdentityIntoIterator(
+                        RuntimeIteratorIdentityWitnessCalls {
+                            next: RuntimeTraitMethodId(0),
+                        },
+                    ),
+                }),
+                body: vec![FlowOp::ReturnExpr(RuntimeExpr::Local("item".to_owned()))],
+            }],
+        }],
+        Vec::new(),
+    )
+    .expect("flow plan is valid")
+    .with_trait_methods(counter_identity_trait_methods())
+}
+
 #[test]
 fn engine_executes_for_loop_through_trait_method_witness_calls() {
     let mut engine = Engine::new(counter_witness_plan());
+
+    let result = engine.step(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: RuntimeStepBudget { max_ops: 8 },
+        },
+    );
+
+    assert!(
+        matches!(
+            result.fiber_status,
+            FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "0"
+        ),
+        "unexpected runtime result: {result:#?}"
+    );
+}
+
+#[test]
+fn engine_executes_for_loop_through_iterator_identity_witness() {
+    let mut engine = Engine::new(counter_identity_witness_plan());
 
     let result = engine.step(
         RuntimeStepInput::default(),

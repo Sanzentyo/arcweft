@@ -259,8 +259,18 @@ pub struct IntoIteratorResolution {
     source_ty: TypeKind,
     item_ty: TypeKind,
     into_iter_ty: TypeKind,
-    into_iterator: TraitConformance,
-    iterator: TraitConformance,
+    kind: IntoIteratorResolutionKind,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IntoIteratorResolutionKind {
+    Explicit {
+        into_iterator: TraitConformance,
+        iterator: TraitConformance,
+    },
+    IteratorIdentity {
+        iterator: TraitConformance,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -346,9 +356,7 @@ impl TraitCatalog {
             predicates,
         ) {
             TraitConformanceResolution::Missing => {
-                return Err(IntoIteratorResolutionError::MissingIntoIterator {
-                    source: Box::new(source.clone()),
-                });
+                return self.resolve_iterator_identity_into_iterator(source, predicates);
             }
             TraitConformanceResolution::Ambiguous(candidates) => {
                 return Err(IntoIteratorResolutionError::AmbiguousIntoIterator {
@@ -393,8 +401,47 @@ impl TraitCatalog {
             source_ty: source.clone(),
             item_ty,
             into_iter_ty,
-            into_iterator,
-            iterator,
+            kind: IntoIteratorResolutionKind::Explicit {
+                into_iterator,
+                iterator,
+            },
+        })
+    }
+
+    fn resolve_iterator_identity_into_iterator(
+        &self,
+        source: &TypeKind,
+        predicates: &[TraitPredicate],
+    ) -> Result<IntoIteratorResolution, IntoIteratorResolutionError> {
+        let iterator = match self.resolve_trait_conformance_by_name(
+            source,
+            standard_iter::ITERATOR,
+            &[],
+            predicates,
+        ) {
+            TraitConformanceResolution::Missing => {
+                return Err(IntoIteratorResolutionError::MissingIntoIterator {
+                    source: Box::new(source.clone()),
+                });
+            }
+            TraitConformanceResolution::Ambiguous(candidates) => {
+                return Err(IntoIteratorResolutionError::AmbiguousIteratorForIntoIter {
+                    source: Box::new(source.clone()),
+                    into_iter: Box::new(source.clone()),
+                    candidates,
+                });
+            }
+            TraitConformanceResolution::Unique(conformance) => conformance,
+        };
+        let item_ty = iterator
+            .associated_type(standard_iter::ITEM)
+            .cloned()
+            .unwrap_or_else(|| TypeKind::Named("_".to_owned()));
+        Ok(IntoIteratorResolution {
+            source_ty: source.clone(),
+            item_ty,
+            into_iter_ty: source.clone(),
+            kind: IntoIteratorResolutionKind::IteratorIdentity { iterator },
         })
     }
 
@@ -797,12 +844,29 @@ impl IntoIteratorResolution {
         &self.into_iter_ty
     }
 
-    pub const fn into_iterator(&self) -> &TraitConformance {
-        &self.into_iterator
+    pub const fn kind(&self) -> &IntoIteratorResolutionKind {
+        &self.kind
+    }
+
+    pub const fn into_iterator(&self) -> Option<&TraitConformance> {
+        match &self.kind {
+            IntoIteratorResolutionKind::Explicit { into_iterator, .. } => Some(into_iterator),
+            IntoIteratorResolutionKind::IteratorIdentity { .. } => None,
+        }
     }
 
     pub const fn iterator(&self) -> &TraitConformance {
-        &self.iterator
+        match &self.kind {
+            IntoIteratorResolutionKind::Explicit { iterator, .. }
+            | IntoIteratorResolutionKind::IteratorIdentity { iterator } => iterator,
+        }
+    }
+
+    pub const fn is_iterator_identity(&self) -> bool {
+        matches!(
+            self.kind,
+            IntoIteratorResolutionKind::IteratorIdentity { .. }
+        )
     }
 }
 

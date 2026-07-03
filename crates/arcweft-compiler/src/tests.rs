@@ -1,8 +1,12 @@
 use arcweft_agent_protocol::artifact::EffectCapability as AgentEffectCapability;
 use arcweft_bundle::BundleKind;
-use arcweft_core::plan::{
-    FlowOp, RuntimeBuiltinIteratorEvidence, RuntimeIteratorEvidence,
-    RuntimeIteratorWitnessExecutable,
+use arcweft_core::{
+    engine::{Engine, FlowExit, FlowFiberStatus},
+    plan::{
+        FlowOp, RuntimeBuiltinIteratorEvidence, RuntimeIteratorEvidence,
+        RuntimeIteratorWitnessExecutable,
+    },
+    step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
 };
 use arcweft_id::PublicId;
 use arcweft_lang_hir::lower::lower_to_hir;
@@ -363,6 +367,74 @@ flow @flow.main main {
     };
     assert_eq!(calls.into_iter.0, 0);
     assert_eq!(calls.next.0, 1);
+}
+
+#[test]
+fn compiles_and_runs_bare_named_iterator_as_identity_into_iterator() {
+    let compiled = compile_source(
+        r"
+struct Hoge { current: i32, end: i32 }
+
+impl Iterator for Hoge {
+    type Item = i32
+
+    fn next(&mut self) -> Option<i32> {
+        if self.current < self.end {
+            let value = self.current
+            self.current = self.current + 1i32
+            Some(value)
+        } else {
+            None
+        }
+    }
+}
+
+flow @flow.main main -> i32 {
+    let source = Hoge { current: 0i32, end: 3i32 }
+    for value in source {
+        return value
+    }
+    return -1i32
+}
+",
+    )
+    .expect("bare named Iterator source compiles");
+
+    assert_eq!(compiled.plan.trait_methods.len(), 1);
+    let evidence = compiled
+        .plan
+        .flows
+        .first()
+        .and_then(|flow| {
+            flow.ops.iter().find_map(|op| match op {
+                FlowOp::For { evidence, .. } => Some(evidence),
+                _ => None,
+            })
+        })
+        .expect("for loop carries iterator evidence");
+    let RuntimeIteratorEvidence::Witness(witness) = evidence else {
+        panic!("bare named Iterator must use witness iterator evidence");
+    };
+    let RuntimeIteratorWitnessExecutable::IdentityIntoIterator(calls) = witness.executable else {
+        panic!("bare named Iterator must lower through identity into-iterator evidence");
+    };
+    assert_eq!(calls.next.0, 0);
+
+    let mut engine = Engine::new(compiled.plan);
+    let result = engine.step(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: RuntimeStepBudget { max_ops: 16 },
+        },
+    );
+    assert!(
+        matches!(
+            result.fiber_status,
+            FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "0"
+        ),
+        "unexpected runtime result: {result:#?}"
+    );
 }
 
 #[test]

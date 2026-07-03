@@ -82,8 +82,19 @@ fn for_iteration_evidence(resolution: &IntoIteratorResolution) -> ForIterationEv
 }
 
 fn witness_iteration_family(resolution: &IntoIteratorResolution) -> ForIterationEvidenceFamily {
+    if resolution.is_iterator_identity() {
+        return resolution.iterator().witness().map_or_else(
+            || ForIterationEvidenceFamily::WitnessUnsupported {
+                reason: "Iterator identity conformance is predicate-only".to_owned(),
+            },
+            |iterator| ForIterationEvidenceFamily::IteratorWitness { iterator },
+        );
+    }
+
     match (
-        resolution.into_iterator().witness(),
+        resolution
+            .into_iterator()
+            .and_then(crate::traits::TraitConformance::witness),
         resolution.iterator().witness(),
     ) {
         (Some(into_iterator), Some(iterator)) => ForIterationEvidenceFamily::Witness {

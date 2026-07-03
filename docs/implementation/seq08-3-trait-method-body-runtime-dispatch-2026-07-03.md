@@ -18,10 +18,20 @@ rediscovery, or compatibility shims.
 - Runtime iterator witness evidence now stores typed `TraitCalls` targets.
 - The core engine can call `into_iter(self)` and `next(&mut self)` through the
   witness call table and update witness iterator state.
+- Types that implement `Iterator` directly now resolve as identity
+  `IntoIterator` sources. The source value becomes the iterator state and only
+  the `next(&mut self)` witness is required at runtime.
 - Trait method return types substitute nested `Self::Assoc` occurrences, such
   as `Option<Self::Item>`, through impl associated type assignments.
 - Assignment statements are parsed and checked as `target = expr`, and runtime
   method bodies can assign direct record fields through `RuntimeExpr::AssignField`.
+- Strict runtime expression lowering now preserves `let` and direct field
+  assignment statements inside block expressions. This closes the source
+  method-body shape needed for `if { let value = self.current; self.current =
+  ...; Some(value) } else { None }`.
+- Expression parsing now treats `<` after a field access as a comparison unless
+  a complete method turbofish is immediately followed by a call, so
+  `self.current < self.end` no longer falls back to a raw expression.
 
 ## Verification
 
@@ -41,16 +51,21 @@ The focused tests cover:
 - engine execution of a `for` loop through runtime trait-method witness calls;
 - source-to-runtime-plan lowering of a user-defined `IntoIterator` /
   `Iterator` pair into `RuntimeIteratorWitnessExecutable::TraitCalls`;
+- source-to-runtime-plan lowering and core-engine execution of a bare named
+  DSL `struct Hoge` with only `impl Iterator for Hoge`, using
+  `RuntimeIteratorWitnessExecutable::IdentityIntoIterator`;
 - built-in iterator fast paths remain represented separately.
 
 Structural audit completed and reported the existing workspace hotspot set:
-3 error(s), 125 warning(s). The error-level files remain
+3 error(s), 126 warning(s). The error-level files remain
 `crates/arcweft-core/src/value.rs`,
 `crates/arcweft-lang-sema/src/checker/expr.rs`, and
 `crates/arcweft-runtime-plan/src/flow.rs`. New seq08.3 owner modules are below
 the repository warning threshold:
-`crates/arcweft-compiler/src/trait_methods.rs` is 128 physical LOC and
-`crates/arcweft-runtime-plan/src/trait_methods.rs` is 265 physical LOC.
+`crates/arcweft-compiler/src/trait_methods.rs` is 145 physical LOC and
+`crates/arcweft-runtime-plan/src/trait_methods.rs` is 254 physical LOC.
+The current report was written to
+`target/structure-audit-seq08-iterator-identity/`.
 
 ## Explicit Gaps
 
@@ -60,13 +75,11 @@ continues to reject witness-backed `for` lowering with an error diagnostic
 rather than pretending to lower through a stringly intrinsic. Follow-up:
 `docs/reviews/requests/2026-07-03-seq-08.3.1-awbc-trait-method-call-table-and-vm-closure.md`.
 
-The full package fixture with a multi-line `next(&mut self)` body containing
-`if self.current < self.end { ... } else { ... }` still exposes a source
-function-body expression closure gap. The runtime expression model can execute
-the needed condition, field read, and direct field assignment, but the full DSL
-fixture should be closed in a dedicated source-to-runtime regression package.
-Follow-up:
-`docs/reviews/requests/2026-07-03-seq-08.3.2-iterator-method-body-source-closure.md`.
+The source function-body expression closure gap for a multi-line
+`next(&mut self)` body containing `if self.current < self.end { ... } else {
+... }` is closed for `let`, direct field assignment, and value-producing block
+tails. Broader statement families inside runtime expression blocks remain out
+of scope unless they lower through typed runtime expressions.
 
 ## Design Deviations
 

@@ -15,7 +15,10 @@ use arcweft_runtime_plan::pure::{
     lower_pure_helper_candidate, lower_pure_helper_candidates,
 };
 
-use crate::trait_methods::{lower_runtime_trait_methods_from_typecheck, runtime_witness_evidence};
+use crate::trait_methods::{
+    lower_runtime_trait_methods_from_typecheck, runtime_iterator_identity_witness_evidence,
+    runtime_witness_evidence,
+};
 use crate::types::{
     TextPureHelperCandidateError, TextPureHelperCandidateReport, TextPureHelperKind,
 };
@@ -122,6 +125,20 @@ fn runtime_iterator_evidence(
                 "missing executable trait method body for IntoIterator/Iterator witness",
             )]
         }),
+        ForIterationEvidenceFamily::IteratorWitness { iterator } => {
+            runtime_iterator_identity_witness_evidence(
+                format!("{:?}", evidence.item_ty),
+                format!("{:?}", evidence.into_iter_ty),
+                trait_methods,
+                iterator,
+            )
+            .map(RuntimeIteratorEvidence::Witness)
+            .ok_or_else(|| {
+                vec![arcweft_runtime_plan::errors::RuntimePlanLowerError::new(
+                    "missing executable trait method body for Iterator identity witness",
+                )]
+            })
+        }
         ForIterationEvidenceFamily::WitnessUnsupported { ref reason } => Err(vec![
             arcweft_runtime_plan::errors::RuntimePlanLowerError::new(format!(
                 "unsupported IntoIterator witness dispatch: {reason}"

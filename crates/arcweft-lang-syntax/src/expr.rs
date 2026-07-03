@@ -1019,7 +1019,7 @@ impl ExprParser {
                 Token::Dot if min_bp <= 100 => {
                     self.bump();
                     let field = self.take_ident("expected field name after `.`")?;
-                    self.skip_method_turbofish()?;
+                    self.skip_method_turbofish_before_call();
                     if self.peek() == &Token::LParen {
                         let args = self.parse_call_args()?;
                         Expr::MethodCall {
@@ -1482,10 +1482,11 @@ impl ExprParser {
         }
     }
 
-    fn skip_method_turbofish(&mut self) -> Result<(), ExprParseError> {
+    fn skip_method_turbofish_before_call(&mut self) -> bool {
         if self.peek() != &Token::Op("<") {
-            return Ok(());
+            return false;
         }
+        let start = self.cursor;
         let mut depth = 0_i32;
         loop {
             match self.bump() {
@@ -1493,13 +1494,16 @@ impl ExprParser {
                 Token::Op(">") => {
                     depth -= 1;
                     if depth == 0 {
-                        return Ok(());
+                        if self.peek() == &Token::LParen {
+                            return true;
+                        }
+                        self.cursor = start;
+                        return false;
                     }
                 }
                 Token::Eof => {
-                    return Err(ExprParseError::new(
-                        "unclosed generic argument list in method call",
-                    ));
+                    self.cursor = start;
+                    return false;
                 }
                 _ => {}
             }
@@ -1939,5 +1943,22 @@ impl CallArg {
     /// Whether this is a positional spread argument.
     pub const fn is_spread(&self) -> bool {
         matches!(self, Self::Spread { .. })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BinaryOp, Expr, parse_expr};
+
+    #[test]
+    fn parses_field_access_comparison() {
+        let parsed = parse_expr("self.current < self.end")
+            .expect("field access comparison parses as an expression");
+        let Expr::Binary { lhs, op, rhs } = parsed else {
+            panic!("expected binary expression");
+        };
+        assert_eq!(op, BinaryOp::Lt);
+        assert!(matches!(*lhs, Expr::Field { .. }));
+        assert!(matches!(*rhs, Expr::Field { .. }));
     }
 }

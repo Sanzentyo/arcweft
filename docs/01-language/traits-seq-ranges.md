@@ -214,6 +214,10 @@ pub trait IntoIterator {
 に `IntoIterator` を提供する。`Range` は要素を materialize せず、runtime
 iterator state として進む。
 
+`Iterator` を実装する型は Rust と同じく identity `IntoIterator` として扱う。
+つまり `Hoge: Iterator<Item = T>` なら、明示 `impl IntoIterator for Hoge` を
+書かなくても `IntoIter = Hoge` として `for` の source にできる。
+
 ```arcw
 let labels =
     choices
@@ -225,6 +229,8 @@ let labels =
 
 `for` は `IntoIterator` を要求する。型検査は trait catalog の conformance
 evidence を使い、range や sequence の hard-coded fallback は持たない。
+明示 `IntoIterator` conformance がない場合だけ、`Iterator` conformance から
+identity `IntoIterator` evidence を作る。
 
 ```arcw
 for c in choices {

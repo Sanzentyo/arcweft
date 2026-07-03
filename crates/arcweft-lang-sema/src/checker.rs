@@ -245,6 +245,9 @@ pub enum ForIterationEvidenceFamily {
         into_iterator: crate::traits::TraitWitnessId,
         iterator: crate::traits::TraitWitnessId,
     },
+    IteratorWitness {
+        iterator: crate::traits::TraitWitnessId,
+    },
     WitnessUnsupported {
         reason: String,
     },
