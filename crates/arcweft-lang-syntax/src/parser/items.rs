@@ -655,24 +655,32 @@ pub(super) fn parse_enum_variants(body: &str) -> Vec<EnumVariant> {
 
 pub(super) fn parse_struct_fields(body: &str) -> Vec<StructField> {
     let mut docs = PendingDocLines::default();
-    collect_logical_block_items(body)
-        .into_iter()
-        .enumerate()
-        .filter_map(|(line_index, item)| {
-            let line = item.trim();
+    let mut fields = Vec::new();
+    for (line_index, item) in collect_logical_block_items(body).into_iter().enumerate() {
+        let item = item.trim();
+        if item.is_empty() {
+            continue;
+        }
+        if docs.push_if_doc(item, line_index) {
+            continue;
+        }
+        let parts = split_top_level_punctuation(item, ',');
+        for (part_index, part) in parts.into_iter().enumerate() {
+            let line = part.trim();
             if line.is_empty() {
-                return None;
+                continue;
             }
-            if docs.push_if_doc(line, line_index) {
-                return None;
+            let line = part.trim().trim_end_matches(',').trim();
+            let Some((name, ty)) = split_top_level_punctuation_once(line, ':') else {
+                continue;
+            };
+            let doc = if part_index == 0 { docs.take() } else { None };
+            if let Ok(ty) = parse_type_ref(ty.trim()) {
+                fields.push(StructField::new(doc, name.trim().to_owned(), ty));
             }
-            let line = line.trim_end_matches(',').trim();
-            let (name, ty) = split_top_level_punctuation_once(line, ':')?;
-            parse_type_ref(ty.trim())
-                .ok()
-                .map(|ty| StructField::new(docs.take(), name.trim().to_owned(), ty))
-        })
-        .collect()
+        }
+    }
+    fields
 }
 
 pub(super) fn parse_state_fields(body: &str) -> Vec<StateField> {

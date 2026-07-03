@@ -202,9 +202,33 @@ impl TypeChecker<'_> {
     }
 
     fn check_assign_stmt(&mut self, target: &Expr, expr: &Expr) {
-        let target_ty = self.check_expr(target);
-        let expr_ty = self.check_expr_with_expected(expr, target_ty.as_ref());
-        if let (Some(target_ty), Some(expr_ty)) = (target_ty, expr_ty)
+        let Some((receiver, field)) = direct_assignment_target(target) else {
+            self.errors
+                .push(TypeCheckError::unsupported_assignment_target(
+                    assignment_target_label(target),
+                    "only direct local record fields are executable",
+                ));
+            self.check_expr(expr);
+            return;
+        };
+        let Some(receiver_ty) = self.symbol_type(receiver).cloned() else {
+            self.errors.push(TypeCheckError::new(format!(
+                "assignment receiver `{receiver}` is not bound"
+            )));
+            self.check_expr(expr);
+            return;
+        };
+        let Some(target_ty) = self.nominal_field_type(&receiver_ty, field) else {
+            self.errors
+                .push(TypeCheckError::unsupported_assignment_target(
+                    assignment_target_label(target),
+                    format!("field `{field}` is not known on {receiver_ty:?}"),
+                ));
+            self.check_expr(expr);
+            return;
+        };
+        let expr_ty = self.check_expr_with_expected(expr, Some(&target_ty));
+        if let Some(expr_ty) = expr_ty
             && !self.types_compatible(&target_ty, &expr_ty)
         {
             self.errors.push(TypeCheckError::new(format!(
@@ -530,5 +554,28 @@ impl TypeChecker<'_> {
                 .rposition(|context| context.label.as_deref() == Some(label)),
             None => self.loop_stack.len().checked_sub(1),
         }
+    }
+}
+
+fn direct_assignment_target(target: &Expr) -> Option<(&str, &str)> {
+    let Expr::Field { target, field } = target else {
+        return None;
+    };
+    let Expr::Path(receiver) = target.as_ref() else {
+        return None;
+    };
+    Some((receiver, field))
+}
+
+fn assignment_target_label(target: &Expr) -> String {
+    match target {
+        Expr::Field { target, field } => format!("{}.{}", assignment_target_label(target), field),
+        Expr::Path(path) => path.clone(),
+        Expr::Index { target, .. } => format!("{}[]", assignment_target_label(target)),
+        Expr::Call { .. } => "call(...)".to_owned(),
+        Expr::MethodCall {
+            receiver, method, ..
+        } => format!("{}.{}(...)", assignment_target_label(receiver), method),
+        _ => format!("{target:?}"),
     }
 }

@@ -314,7 +314,7 @@ pub(super) fn classify_flow_item(trimmed: &str) -> CstFlowItemKind {
         CstFlowItemKind::AwaitWith
     } else if let Some(kind) = classify_let_flow_item(trimmed) {
         CstFlowItemKind::Let(kind)
-    } else if is_typed_stmt(trimmed) {
+    } else if is_typed_stmt(trimmed) || looks_like_assignment_stmt(trimmed) {
         CstFlowItemKind::TypedStmt
     } else {
         CstFlowItemKind::Other
@@ -488,6 +488,16 @@ fn is_typed_stmt(trimmed: &str) -> bool {
                 | "continue"
         )
     )
+}
+
+fn looks_like_assignment_stmt(trimmed: &str) -> bool {
+    let Some((target, expr)) = split_top_level_punctuation_once(trimmed, '=') else {
+        return false;
+    };
+    !target.trim().is_empty()
+        && !expr.trim().is_empty()
+        && !target.trim_end().ends_with(['!', '<', '>', '='])
+        && !expr.trim_start().starts_with('=')
 }
 
 pub(super) fn flow_line_starts_body(line: &CstLine, is_first_line: bool) -> bool {

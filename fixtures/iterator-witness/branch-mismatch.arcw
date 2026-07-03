@@ -1,0 +1,16 @@
+struct CounterIter {
+    current: i64,
+    end: i64,
+}
+
+impl Iterator for CounterIter {
+    type Item = i64
+
+    fn next(&mut self) -> Option<i64> {
+        if self.current < self.end {
+            Some(self.current)
+        } else {
+            0
+        }
+    }
+}

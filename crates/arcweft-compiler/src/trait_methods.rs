@@ -8,7 +8,7 @@ use arcweft_core::plan::{
 use arcweft_lang_sema::check::{ForIterationEvidence, ForIterationEvidenceFamily};
 use arcweft_lang_sema::traits::{TraitCatalog, TraitMethodForWitness, TraitWitnessId};
 use arcweft_lang_syntax::ast::pattern::Pattern;
-use arcweft_lang_syntax::types::{FnParam, FnSignature};
+use arcweft_lang_syntax::types::{FnParam, FnReceiverKind, FnSignature};
 use arcweft_runtime_plan::trait_methods::{
     RuntimeTraitMethodInventory, TraitMethodLowerInput, lower_trait_method_inventory,
 };
@@ -75,14 +75,11 @@ fn receiver_mode(signature: &FnSignature) -> Option<RuntimeReceiverMode> {
     let receiver = signature_params(signature).next()?;
     let name = param_name(receiver)?;
     if name == "self" {
-        let ty = format!("{:?}", receiver.ty());
-        if ty.contains("&mut") {
-            Some(RuntimeReceiverMode::MutRef)
-        } else if ty.contains('&') {
-            Some(RuntimeReceiverMode::SharedRef)
-        } else {
-            Some(RuntimeReceiverMode::Owned)
-        }
+        receiver.receiver_kind().map(|kind| match kind {
+            FnReceiverKind::Owned => RuntimeReceiverMode::Owned,
+            FnReceiverKind::SharedRef => RuntimeReceiverMode::SharedRef,
+            FnReceiverKind::MutRef => RuntimeReceiverMode::MutRef,
+        })
     } else {
         None
     }

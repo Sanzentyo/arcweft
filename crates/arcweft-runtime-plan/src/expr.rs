@@ -972,12 +972,9 @@ fn lower_strict_block_statement(
             })
         }
         Stmt::Assign { target, expr } => {
-            let target = lower_runtime_expr_strict_with_helpers(target, helpers)?;
-            let RuntimeExpr::Field { target, field } = target else {
-                return Err(format!("unsupported runtime assignment target `{target}`"));
-            };
+            let (target, field) = lower_direct_assignment_target(target, helpers)?;
             Ok(RuntimeExpr::AssignField {
-                target,
+                target: Box::new(target),
                 field,
                 expr: Box::new(lower_runtime_expr_strict_with_helpers(expr, helpers)?),
                 body: Box::new(body),
@@ -985,6 +982,31 @@ fn lower_strict_block_statement(
         }
         Stmt::Return(expr) => lower_runtime_expr_strict_with_helpers(expr, helpers),
         other => Err(format!("unsupported runtime block statement `{other:?}`")),
+    }
+}
+
+fn lower_direct_assignment_target(
+    target: &Expr,
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<(RuntimeExpr, String), String> {
+    let Expr::Field { target, field } = target else {
+        return Err(format!(
+            "unsupported runtime assignment target `{}`: only direct record fields are executable",
+            expr_label(target)
+        ));
+    };
+    let receiver = lower_runtime_expr_strict_with_helpers(target, helpers)?;
+    match receiver {
+        RuntimeExpr::Local(_) => Ok((receiver, field.clone())),
+        RuntimeExpr::Field { .. }
+        | RuntimeExpr::ProjectTuple { .. }
+        | RuntimeExpr::ProjectRecord { .. } => Err(format!(
+            "unsupported runtime assignment target `{}`: nested assignment targets require a future lvalue model",
+            expr_label(target)
+        )),
+        other => Err(format!(
+            "unsupported runtime assignment receiver `{other}`: assignment requires a local record value"
+        )),
     }
 }
 

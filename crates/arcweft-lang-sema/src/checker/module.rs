@@ -17,10 +17,10 @@ use arcweft_lang_hir::model::{HirAgent, HirFlow, HirFunction};
 use arcweft_lang_syntax::ast::common::Visibility;
 use arcweft_lang_syntax::ast::items::{
     EntityDeclItem, EntryItem, EntryRouteBinding, EntryRouteBindingSource, ExternModItem,
-    ExternModMember, TypeAliasItem, UiStyleItem, UiTextInputItem,
+    ExternModMember, ImplItem, ImplMember, StructItem, TypeAliasItem, UiStyleItem, UiTextInputItem,
 };
 use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
-use arcweft_lang_syntax::types::{FnSignature, TypeRef};
+use arcweft_lang_syntax::types::{FnParam, FnSignature, TypeRef, parse_type_ref};
 use std::collections::{HashMap, HashSet};
 
 impl TypeChecker<'_> {
@@ -41,6 +41,7 @@ impl TypeChecker<'_> {
         self.collect_and_store_trait_catalog(module);
         self.bind_top_level_entity_aliases(module);
         self.bind_top_level_type_aliases(module);
+        self.bind_top_level_nominal_fields(module);
         self.bind_top_level_functions(module);
         self.bind_extern_capability_functions(module);
         self.register_effect_callables(module);
@@ -324,6 +325,17 @@ impl TypeChecker<'_> {
         }
     }
 
+    fn bind_top_level_nominal_fields(&mut self, module: &HirModule) {
+        self.nominal_fields.clear();
+        for declaration in module.declarations() {
+            let HirTopLevelDecl::Struct(item) = declaration else {
+                continue;
+            };
+            self.nominal_fields
+                .insert(item.name().to_owned(), struct_field_types(item));
+        }
+    }
+
     fn bind_extern_capability_functions(&mut self, module: &HirModule) {
         for declaration in module.declarations() {
             let HirTopLevelDecl::ExternCapability(item) = declaration else {
@@ -446,12 +458,12 @@ impl TypeChecker<'_> {
         match declaration {
             HirTopLevelDecl::DialogueDefaults(_)
             | HirTopLevelDecl::Enum(_)
-            | HirTopLevelDecl::Impl(_)
             | HirTopLevelDecl::Proof(_)
             | HirTopLevelDecl::Struct(_)
             | HirTopLevelDecl::Trait(_)
             | HirTopLevelDecl::TrustedAxiom(_)
             | HirTopLevelDecl::ExternCapability(_) => {}
+            HirTopLevelDecl::Impl(item) => self.check_impl_item(item),
             HirTopLevelDecl::ExternMod(item) => self.check_extern_mod(item),
             HirTopLevelDecl::Entry(item) => {
                 self.expect_entity_kind(item.id(), &EntityKind::Entry, "entry id");
@@ -617,6 +629,80 @@ impl TypeChecker<'_> {
                 this.check_expr(clause);
             }
         });
+    }
+
+    fn check_impl_item(&mut self, item: &ImplItem) {
+        let self_ty = impl_target_type(item);
+        let generic_names = impl_generic_names(item.generics());
+        for member in item.members() {
+            let ImplMember::Function {
+                signature,
+                body_statements,
+                body_value,
+                ..
+            } = member
+            else {
+                continue;
+            };
+            self.clear_borrow_state();
+            self.locals.clear();
+            self.loop_stack.clear();
+            self.yield_stack.clear();
+            self.check_signature_type_refs(signature);
+            for group in signature.param_groups() {
+                for param in group.params() {
+                    self.bind_impl_method_param(param, &self_ty, &generic_names);
+                }
+            }
+            let expected_return = signature
+                .return_type()
+                .map(|ty| type_ref_kind_for_impl(ty, &self_ty, &generic_names));
+            let predicates = self.trait_catalog.predicates_for_signature(signature);
+            self.trait_predicate_stack.push(predicates);
+            let actual = self.with_expected_return(expected_return.as_ref(), |this| {
+                this.check_function_body_expr(
+                    body_statements,
+                    body_value.as_ref(),
+                    expected_return.as_ref(),
+                )
+            });
+            self.trait_predicate_stack.pop();
+            if let (Some(expected), Some(actual)) = (expected_return, actual)
+                && !self.types_compatible(&expected, &actual)
+            {
+                self.errors.push(TypeCheckError::new(format!(
+                    "impl method `{}` returns {expected:?}, but body has {actual:?}",
+                    signature.name()
+                )));
+            }
+        }
+        self.clear_borrow_state();
+        self.locals.clear();
+        self.loop_stack.clear();
+        self.yield_stack.clear();
+        self.active_presentation_defaults.clear();
+    }
+
+    fn bind_impl_method_param(
+        &mut self,
+        param: &FnParam,
+        self_ty: &TypeKind,
+        generic_names: &HashSet<String>,
+    ) {
+        let Some(name) = ident_pattern_name(param.pattern()) else {
+            return;
+        };
+        let ty = if name == "self" {
+            self_ty.clone()
+        } else {
+            let ty = type_ref_kind_for_impl(param.ty(), self_ty, generic_names);
+            if param.is_rest() {
+                TypeKind::Vec(Box::new(ty))
+            } else {
+                ty
+            }
+        };
+        self.bind_function_param(param.pattern(), &ty);
     }
 
     fn check_entry_item(&mut self, item: &EntryItem) {
@@ -1310,6 +1396,67 @@ fn declared_effect_set_from_contracts(
         }
     }
     declared
+}
+
+fn struct_field_types(item: &StructItem) -> HashMap<String, TypeKind> {
+    item.fields()
+        .iter()
+        .map(|field| (field.name().to_owned(), type_ref_kind(field.ty())))
+        .collect()
+}
+
+fn impl_target_type(item: &ImplItem) -> TypeKind {
+    parse_type_ref(item.target()).map_or_else(
+        |_| TypeKind::Named(item.target().to_owned()),
+        |ty| type_ref_kind_for_impl(&ty, &TypeKind::Named("Self".to_owned()), &HashSet::new()),
+    )
+}
+
+fn impl_generic_names(generics: Option<&str>) -> HashSet<String> {
+    generics
+        .into_iter()
+        .flat_map(|source| source.split(','))
+        .filter_map(|item| {
+            let name = item
+                .trim()
+                .trim_start_matches('<')
+                .trim_end_matches('>')
+                .split(':')
+                .next()
+                .unwrap_or_default()
+                .trim();
+            (!name.is_empty()).then_some(name.to_owned())
+        })
+        .collect()
+}
+
+fn type_ref_kind_for_impl(
+    ty: &TypeRef,
+    self_ty: &TypeKind,
+    generic_names: &HashSet<String>,
+) -> TypeKind {
+    match ty {
+        TypeRef::Path(path) if path == "Self" => self_ty.clone(),
+        TypeRef::Generic { base, args } if base == "Option" && args.len() == 1 => TypeKind::Option(
+            Box::new(type_ref_kind_for_impl(&args[0], self_ty, generic_names)),
+        ),
+        TypeRef::Generic { base, args } if base == "Vec" && args.len() == 1 => TypeKind::Vec(
+            Box::new(type_ref_kind_for_impl(&args[0], self_ty, generic_names)),
+        ),
+        TypeRef::Generic { base, args } if base == "Result" && args.len() == 2 => {
+            TypeKind::Result {
+                ok: Box::new(type_ref_kind_for_impl(&args[0], self_ty, generic_names)),
+                error: Box::new(type_ref_kind_for_impl(&args[1], self_ty, generic_names)),
+            }
+        }
+        TypeRef::Ref { lifetime, inner } => TypeKind::BorrowRef {
+            lifetime: lifetime
+                .as_ref()
+                .map(|lifetime| LifetimeScopeKind::parse(lifetime.name())),
+            inner: Box::new(type_ref_kind_for_impl(inner, self_ty, generic_names)),
+        },
+        _ => type_ref_kind_with_generics(ty, generic_names),
+    }
 }
 
 fn extern_rust_crate_name(source: &str) -> Option<&str> {

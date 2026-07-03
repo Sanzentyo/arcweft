@@ -15,6 +15,7 @@ use crate::source::lower_source_plan;
 use crate::stream::lower_stream_function;
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::line_task::{LineOutRequest, LineTaskGroup};
+use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec,
     RuntimeEntryTarget, RuntimeFlow, RuntimeHostCallTarget, RuntimeIteratorEvidence, RuntimeLineId,
@@ -1861,19 +1862,7 @@ impl FlowRuntimeLowerer<'_> {
                 pattern: lower_runtime_pattern(pattern),
                 body: self.lower_syntax_flow_items(flow_id, flow_index, block.body()),
             }],
-            Stmt::LetTextSubmit { pattern, target } => {
-                vec![FlowOp::HostCall {
-                    binding: Some(lower_runtime_pattern(pattern)),
-                    target: RuntimeHostCallTarget::new(
-                        "ui.text_input.await_submit",
-                        "ui.text_input",
-                        "await_submit",
-                        [self.lower_runtime_expr(target)],
-                        RuntimeHostCallMode::Suspend,
-                        true,
-                    ),
-                }]
-            }
+            Stmt::LetTextSubmit { pattern, target } => self.lower_text_submit_stmt(pattern, target),
             Stmt::LetElse {
                 pattern,
                 expr,
@@ -1889,6 +1878,15 @@ impl FlowRuntimeLowerer<'_> {
                 lower_runtime_expr_strict_with_pure(expr, self.pure_helpers)
                     .unwrap_or_else(|_| lower_runtime_expr(expr)),
             )],
+            Stmt::Assign { target, expr } => {
+                self.lower_assignment_stmt(target, expr)
+                    .map_or_else(Vec::new, |expr| {
+                        vec![FlowOp::Let {
+                            pattern: RuntimePattern::Discard,
+                            expr,
+                        }]
+                    })
+            }
             Stmt::Expr(expr) => self
                 .lower_agent_host_call_expr(expr)
                 .unwrap_or_else(|| vec![FlowOp::Effect(runtime_call_effect(expr))]),
@@ -1944,6 +1942,56 @@ impl FlowRuntimeLowerer<'_> {
                 Vec::new()
             }
         }
+    }
+
+    fn lower_text_submit_stmt(&mut self, pattern: &Pattern, target: &Expr) -> Vec<FlowOp> {
+        vec![FlowOp::HostCall {
+            binding: Some(lower_runtime_pattern(pattern)),
+            target: RuntimeHostCallTarget::new(
+                "ui.text_input.await_submit",
+                "ui.text_input",
+                "await_submit",
+                [self.lower_runtime_expr(target)],
+                RuntimeHostCallMode::Suspend,
+                true,
+            ),
+        }]
+    }
+
+    fn lower_assignment_stmt(&mut self, target: &Expr, expr: &Expr) -> Option<RuntimeExpr> {
+        let Expr::Field { target, field } = target else {
+            self.errors.push(RuntimePlanLowerError::new(format!(
+                "unsupported flow assignment target `{}`: only direct record fields are executable",
+                expr_label(target)
+            )));
+            return None;
+        };
+        let receiver = match lower_runtime_expr_strict_with_pure(target, self.pure_helpers) {
+            Ok(RuntimeExpr::Local(name)) => RuntimeExpr::Local(name),
+            Ok(other) => {
+                self.errors.push(RuntimePlanLowerError::new(format!(
+                    "unsupported flow assignment receiver `{other}`: assignment requires a local record value"
+                )));
+                return None;
+            }
+            Err(reason) => {
+                self.errors.push(RuntimePlanLowerError::new(reason));
+                return None;
+            }
+        };
+        let expr = match lower_runtime_expr_strict_with_pure(expr, self.pure_helpers) {
+            Ok(expr) => expr,
+            Err(reason) => {
+                self.errors.push(RuntimePlanLowerError::new(reason));
+                return None;
+            }
+        };
+        Some(RuntimeExpr::AssignField {
+            target: Box::new(receiver),
+            field: field.clone(),
+            expr: Box::new(expr),
+            body: Box::new(RuntimeExpr::Value(RuntimeValue::Unit)),
+        })
     }
 
     fn lower_if_stmt(

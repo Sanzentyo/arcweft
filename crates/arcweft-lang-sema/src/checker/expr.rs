@@ -78,7 +78,7 @@ impl TypeChecker<'_> {
             Expr::ArrayRepeat { value, len } => {
                 Some(self.check_array_repeat_expr(value, len, expected))
             }
-            Expr::Call { callee, args } => self.check_call_expr(callee, args),
+            Expr::Call { callee, args } => self.check_call_expr(callee, args, expected),
             Expr::MethodCall {
                 receiver,
                 method,
@@ -133,7 +133,7 @@ impl TypeChecker<'_> {
                 condition,
                 then_branch,
                 else_branch,
-            } => self.check_if_expr(condition, then_branch, else_branch.as_deref()),
+            } => self.check_if_expr(condition, then_branch, else_branch.as_deref(), expected),
             Expr::IfLet {
                 pattern,
                 expr,
@@ -279,6 +279,11 @@ impl TypeChecker<'_> {
         if let Some(ty) = self.expected_short_variant_type(path, expected) {
             return Some(ty);
         }
+        if path == "None"
+            && let Some(expected @ TypeKind::Option(_)) = expected
+        {
+            return Some(expected.clone());
+        }
         self.check_path_expr(path)
     }
 
@@ -362,7 +367,31 @@ impl TypeChecker<'_> {
     }
 
     fn check_record_expr(&mut self, path: &str, fields: &[(String, Expr)]) -> TypeKind {
-        self.check_record_fields(fields);
+        if let Some(expected_fields) = self.nominal_fields.get(path).cloned() {
+            for (name, value) in fields {
+                if let Some(expected) = expected_fields.get(name) {
+                    self.expect_expr_type(
+                        value,
+                        expected,
+                        &format!("record field `{path}.{name}`"),
+                    );
+                } else {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "record `{path}` has no field `{name}`"
+                    )));
+                    self.check_expr(value);
+                }
+            }
+            for required in expected_fields.keys() {
+                if !fields.iter().any(|(name, _)| name == required) {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "record `{path}` literal is missing field `{required}`"
+                    )));
+                }
+            }
+        } else {
+            self.check_record_fields(fields);
+        }
         TypeKind::Named(path.to_owned())
     }
 
@@ -666,7 +695,12 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_call_expr(&mut self, callee: &Expr, args: &[CallArg]) -> Option<TypeKind> {
+    fn check_call_expr(
+        &mut self,
+        callee: &Expr,
+        args: &[CallArg],
+        expected: Option<&TypeKind>,
+    ) -> Option<TypeKind> {
         if let Some(ty) = self.check_builtin_call_expr(callee, args) {
             return Some(ty);
         }
@@ -736,6 +770,12 @@ impl TypeChecker<'_> {
                 });
             }
             if name == "Some" {
+                if let Some(expected @ TypeKind::Option(item)) = expected {
+                    for arg in args {
+                        self.expect_expr_type(arg.value(), item, "Some payload");
+                    }
+                    return Some(expected.clone());
+                }
                 return Some(TypeKind::Option(Box::new(first_arg_type(&arg_types))));
             }
             return self.function_type(name).cloned().or_else(|| {
@@ -1823,7 +1863,14 @@ impl TypeChecker<'_> {
                 return Some(ty);
             }
         }
-        match self.check_expr(target) {
+        let receiver_type = self.check_expr(target);
+        if let Some(field_type) = receiver_type
+            .as_ref()
+            .and_then(|ty| self.nominal_field_type(ty, field))
+        {
+            return Some(field_type);
+        }
+        match receiver_type {
             Some(TypeKind::Observation) => agent_observation_field_type(field),
             Some(TypeKind::ObservedObject) => agent_observed_object_field_type(field),
             Some(TypeKind::AgentBBox) => agent_bbox_field_type(field),
@@ -1916,6 +1963,13 @@ impl TypeChecker<'_> {
         } else {
             ty
         };
+        if let (Some(expected), Some(actual)) = (expected, ty.as_ref())
+            && !self.types_compatible(expected, actual)
+        {
+            self.errors.push(TypeCheckError::new(format!(
+                "block final value must have type {expected:?}, found {actual:?}"
+            )));
+        }
         self.reject_borrow_escape(ty.as_ref(), "block final value");
         ty
     }
@@ -1963,13 +2017,15 @@ impl TypeChecker<'_> {
         condition: &Expr,
         then_branch: &Expr,
         else_branch: Option<&Expr>,
+        expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
         self.expect_expr_type(condition, &TypeKind::Bool, "if expression condition");
         let base_borrow_checkpoint = self.checkpoint_borrow_state();
-        let then_type = self.check_expr(then_branch);
+        let then_type = self.check_expr_with_expected(then_branch, expected);
         let then_borrow_state = self.capture_borrow_state_delta(base_borrow_checkpoint);
         self.restore_borrow_state(base_borrow_checkpoint);
-        let else_type = else_branch.and_then(|branch| self.check_expr(branch));
+        let else_type =
+            else_branch.and_then(|branch| self.check_expr_with_expected(branch, expected));
         let else_borrow_state = self.capture_borrow_state_delta(base_borrow_checkpoint);
         if else_branch.is_some() {
             self.merge_borrow_state_from_deltas(
@@ -1982,6 +2038,26 @@ impl TypeChecker<'_> {
                 base_borrow_checkpoint,
                 &[&unchanged_state, &then_borrow_state],
             );
+        }
+        if let Some(expected) = expected {
+            for (label, ty) in [("then", then_type.as_ref()), ("else", else_type.as_ref())] {
+                if let Some(ty) = ty
+                    && !self.types_compatible(expected, ty)
+                {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "if expression {label} branch must have type {expected:?}, found {ty:?}"
+                    )));
+                }
+            }
+            if then_type
+                .as_ref()
+                .is_some_and(|ty| self.types_compatible(expected, ty))
+                && else_type
+                    .as_ref()
+                    .is_some_and(|ty| self.types_compatible(expected, ty))
+            {
+                return Some(expected.clone());
+            }
         }
         match (then_type, else_type) {
             (Some(TypeKind::Never), Some(else_type)) => Some(else_type),

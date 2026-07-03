@@ -285,6 +285,7 @@ struct TypeChecker<'a> {
     global_function_signatures: HashMap<String, FunctionSignature>,
     global_function_effects: HashMap<String, Vec<String>>,
     global_type_aliases: HashMap<String, TypeKind>,
+    nominal_fields: HashMap<String, HashMap<String, TypeKind>>,
     trait_catalog: TraitCatalog,
     trait_predicate_stack: Vec<Vec<TraitPredicate>>,
     flow_params: HashMap<String, HashSet<String>>,
@@ -361,6 +362,7 @@ impl TypeChecker<'_> {
             global_function_signatures: HashMap::new(),
             global_function_effects: HashMap::new(),
             global_type_aliases: HashMap::new(),
+            nominal_fields: HashMap::new(),
             trait_catalog: TraitCatalog::default(),
             trait_predicate_stack: Vec::new(),
             flow_params: HashMap::new(),
@@ -561,6 +563,20 @@ impl TypeChecker<'_> {
         self.global_function_signatures
             .get(name)
             .or_else(|| self.env.function_signature(name))
+    }
+
+    fn nominal_field_type(&self, receiver: &TypeKind, field: &str) -> Option<TypeKind> {
+        match receiver {
+            TypeKind::Named(name) => self
+                .nominal_fields
+                .get(name)
+                .and_then(|fields| fields.get(field))
+                .cloned(),
+            TypeKind::BorrowRef { inner, .. } | TypeKind::Shared(inner) => {
+                self.nominal_field_type(inner, field)
+            }
+            _ => None,
+        }
     }
 
     fn is_dialogue_callee(&self, callee: &str) -> bool {

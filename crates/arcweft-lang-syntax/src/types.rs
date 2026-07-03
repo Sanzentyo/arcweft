@@ -93,6 +93,7 @@ pub struct FnParam {
     ty: TypeRef,
     kind: FnParamKind,
     default: Option<Expr>,
+    receiver_kind: Option<FnReceiverKind>,
 }
 
 /// Function parameter arity role.
@@ -102,6 +103,14 @@ pub enum FnParamKind {
     Fixed,
     /// A positional rest parameter declared as `name: ...T`.
     Rest,
+}
+
+/// Receiver ownership mode preserved from source syntax.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FnReceiverKind {
+    Owned,
+    SharedRef,
+    MutRef,
 }
 
 /// One `where` clause predicate.
@@ -194,13 +203,14 @@ fn parse_fn_param_groups(source: &str) -> Result<(Vec<FnParamGroup>, &str), Type
 }
 
 fn parse_fn_param(source: &str) -> Result<FnParam, TypeParseError> {
-    if matches!(source.trim(), "self" | "&self" | "&mut self" | "mut self") {
+    if let Some(receiver_kind) = receiver_kind(source.trim()) {
         return Ok(FnParam {
             doc: None,
             pattern: Pattern::Ident("self".to_owned()),
             ty: TypeRef::Path("Self".to_owned()),
             kind: FnParamKind::Fixed,
             default: None,
+            receiver_kind: Some(receiver_kind),
         });
     }
     let (doc, source) = take_param_doc(source);
@@ -231,6 +241,16 @@ fn parse_fn_param(source: &str) -> Result<FnParam, TypeParseError> {
         ty: parse_type_ref(ty)?,
         kind,
         default,
+        receiver_kind: None,
+    })
+}
+
+fn receiver_kind(source: &str) -> Option<FnReceiverKind> {
+    Some(match source {
+        "self" | "mut self" => FnReceiverKind::Owned,
+        "&self" => FnReceiverKind::SharedRef,
+        "&mut self" => FnReceiverKind::MutRef,
+        _ => return None,
     })
 }
 
@@ -741,6 +761,11 @@ impl FnParam {
 
     pub const fn default(&self) -> Option<&Expr> {
         self.default.as_ref()
+    }
+
+    /// Receiver ownership mode when this parameter is source `self`.
+    pub const fn receiver_kind(&self) -> Option<FnReceiverKind> {
+        self.receiver_kind
     }
 }
 

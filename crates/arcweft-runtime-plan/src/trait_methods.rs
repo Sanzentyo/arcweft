@@ -2,6 +2,7 @@
 
 use crate::errors::RuntimePlanLowerError;
 use crate::expr::lower_runtime_expr_strict_with_pure;
+use crate::labels::expr_label;
 use arcweft_core::plan::{
     RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethod,
     RuntimeTraitMethodId, RuntimeTraitMethodIdentity,
@@ -140,18 +141,7 @@ fn lower_prefix_statement(
             })
         }
         Stmt::Assign { target, expr } => {
-            let target = lower_runtime_expr_strict_with_pure(target, &BTreeMap::new()).map_err(
-                |reason| TraitMethodLowerDiagnostic::UnsupportedBody {
-                    method: method.to_owned(),
-                    reason,
-                },
-            )?;
-            let RuntimeExpr::Field { target, field } = target else {
-                return Err(TraitMethodLowerDiagnostic::UnsupportedBody {
-                    method: method.to_owned(),
-                    reason: format!("unsupported assignment target `{target}`"),
-                });
-            };
+            let (target, field) = lower_direct_assignment_target(method, target)?;
             let expr =
                 lower_runtime_expr_strict_with_pure(expr, &BTreeMap::new()).map_err(|reason| {
                     TraitMethodLowerDiagnostic::UnsupportedBody {
@@ -160,7 +150,7 @@ fn lower_prefix_statement(
                     }
                 })?;
             Ok(RuntimeExpr::AssignField {
-                target,
+                target: Box::new(target),
                 field,
                 expr: Box::new(expr),
                 body: Box::new(body),
@@ -169,6 +159,46 @@ fn lower_prefix_statement(
         other => Err(TraitMethodLowerDiagnostic::UnsupportedBody {
             method: method.to_owned(),
             reason: format!("unsupported statement `{other:?}`"),
+        }),
+    }
+}
+
+fn lower_direct_assignment_target(
+    method: &str,
+    target: &Expr,
+) -> Result<(RuntimeExpr, String), TraitMethodLowerDiagnostic> {
+    let Expr::Field { target, field } = target else {
+        return Err(TraitMethodLowerDiagnostic::UnsupportedBody {
+            method: method.to_owned(),
+            reason: format!(
+                "unsupported assignment target `{}`; only direct record fields are executable",
+                expr_label(target)
+            ),
+        });
+    };
+    let receiver =
+        lower_runtime_expr_strict_with_pure(target, &BTreeMap::new()).map_err(|reason| {
+            TraitMethodLowerDiagnostic::UnsupportedBody {
+                method: method.to_owned(),
+                reason,
+            }
+        })?;
+    match receiver {
+        RuntimeExpr::Local(_) => Ok((receiver, field.clone())),
+        RuntimeExpr::Field { .. }
+        | RuntimeExpr::ProjectTuple { .. }
+        | RuntimeExpr::ProjectRecord { .. } => Err(TraitMethodLowerDiagnostic::UnsupportedBody {
+            method: method.to_owned(),
+            reason: format!(
+                "unsupported nested assignment target `{}`; nested lvalues require a future RuntimeLValue model",
+                expr_label(target)
+            ),
+        }),
+        other => Err(TraitMethodLowerDiagnostic::UnsupportedBody {
+            method: method.to_owned(),
+            reason: format!(
+                "unsupported assignment receiver `{other}`; assignment requires a local record value"
+            ),
         }),
     }
 }

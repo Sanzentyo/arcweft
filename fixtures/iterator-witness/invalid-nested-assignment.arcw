@@ -1,0 +1,16 @@
+struct Point {
+    x: i64,
+}
+
+struct Wrapper {
+    point: Point,
+}
+
+impl Iterator for Wrapper {
+    type Item = i64
+
+    fn next(&mut self) -> Option<i64> {
+        self.point.x = 1
+        None
+    }
+}

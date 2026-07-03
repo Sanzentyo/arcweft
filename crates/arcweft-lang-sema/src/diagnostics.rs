@@ -22,6 +22,8 @@ pub enum TypeCheckErrorKind {
         expected: TypeKind,
         actual: TypeKind,
     },
+    /// An assignment target is not an executable lvalue in the current source grammar.
+    UnsupportedAssignmentTarget { target: String, reason: String },
     /// An `extern rust mod` declaration references a package without loaded ABI metadata.
     MissingRustPackageMetadata { package: String },
     /// An `extern rust mod` member is not present in loaded ABI metadata.
@@ -222,6 +224,18 @@ impl TypeCheckError {
                 expected,
                 actual,
             },
+        }
+    }
+
+    pub(crate) fn unsupported_assignment_target(
+        target: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        let target = target.into();
+        let reason = reason.into();
+        Self {
+            message: format!("unsupported assignment target `{target}`: {reason}"),
+            kind: TypeCheckErrorKind::UnsupportedAssignmentTarget { target, reason },
         }
     }
 
@@ -686,6 +700,9 @@ fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
         TypeCheckErrorKind::Message => "sema.typecheck".to_owned(),
         TypeCheckErrorKind::ArgumentTypeMismatch { .. } => {
             "sema.typecheck.argument_type_mismatch".to_owned()
+        }
+        TypeCheckErrorKind::UnsupportedAssignmentTarget { .. } => {
+            "sema.typecheck.unsupported_assignment_target".to_owned()
         }
         TypeCheckErrorKind::MissingRustPackageMetadata { .. } => {
             "sema.extern_rust.missing_metadata".to_owned()
