@@ -29,6 +29,7 @@
 | Gradient masks | Explicit diagnostic/deferred | design docs | Needs shader/resource contract. |
 | `mask: element(...)` | Explicit diagnostic/deferred | design docs | Needs element capture contract. |
 | HSL blend modes | Implemented first cut | `ui_blend.rs` patch, WGSL, tests | Non-premultiplied sRGB HSL rule. |
-| `box-shadow` parity | Deferred as seq06.13b | design docs | Explicit diagnostic recommended until implemented. |
+| `box-shadow` renderer parity | Implemented seq06.13b | `ui_box_shadow.rs`, compositor pass, WGSL | Renderer substrate supports outer/multiple/negative spread; inset diagnostic. |
+| CSS `box-shadow` lowering | Implemented seq06.13d | `arcweft-takumi-adapter::lowering`, `css_box_shadow_lowering.rs` | Takumi computed `BoxShadows` lower to `UiBoxShadowList`; `filter: drop-shadow(...)` remains separate. |
 | Native/web visual smoke at timestamps | Specified | `ui_compositor_gpu_smoke_timestamps.rs`, fixture docs | Ignored until pinned GPU golden harness is available. |
 | Existing seq06.9 compositor tests | Preserved by intent | validation commands | Run existing `ui_compositor_plan` and package tests after apply. |

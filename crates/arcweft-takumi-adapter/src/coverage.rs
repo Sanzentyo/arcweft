@@ -53,6 +53,7 @@ pub enum CssCoverageFeature {
     TextScaleQuery,
     ViewportMediaQuery,
     ContainerQuery,
+    BoxShadow,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -346,6 +347,11 @@ pub const CSS_COVERAGE_MATRIX: &[CssCoverageMatrixRow] = &[
         CssCoverageFeature::ContainerQuery,
         CssCoverageStatus::IntentionallyRejected,
         "Container queries require query containers and invalidation edges not implemented in this cut.",
+    ),
+    CssCoverageMatrixRow::new(
+        CssCoverageFeature::BoxShadow,
+        CssCoverageStatus::SupportedNow,
+        "Outer CSS box-shadow lowers from Takumi computed BoxShadows into UiBoxShadowList; inset remains a typed renderer diagnostic.",
     ),
 ];
 
@@ -1138,6 +1144,7 @@ fn is_supported_property(property: &str) -> bool {
             | "scale"
             | "filter"
             | "backdrop-filter"
+            | "box-shadow"
             | "clip-path"
             | "clip-rule"
             | "isolation"

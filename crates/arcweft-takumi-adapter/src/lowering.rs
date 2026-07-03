@@ -9,11 +9,11 @@ use crate::{
 };
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::ui_scene::{
-    UiAffine2D, UiBlendMode, UiBorder, UiBoxShadowList, UiClip, UiClipPath, UiColorRgba8,
-    UiCompositingEffects, UiCompositingGroup, UiFillRule, UiFilter, UiFilterList, UiGradientStop,
-    UiImagePrimitive, UiIsolation, UiLength, UiLinearGradient, UiMask, UiMaskGradient, UiMaskImage,
-    UiPaintNode, UiPoint, UiPrimitive, UiPrimitiveRange, UiRoundedRect, UiScene, UiSceneContext,
-    UiShapeRadius, UiSolidRect,
+    UiAffine2D, UiBlendMode, UiBorder, UiBoxShadow, UiBoxShadowList, UiClip, UiClipPath,
+    UiColorRgba8, UiCompositingEffects, UiCompositingGroup, UiFillRule, UiFilter, UiFilterList,
+    UiGradientStop, UiImagePrimitive, UiIsolation, UiLength, UiLinearGradient, UiMask,
+    UiMaskGradient, UiMaskImage, UiPaintNode, UiPoint, UiPrimitive, UiPrimitiveRange,
+    UiRoundedRect, UiScene, UiSceneContext, UiShapeRadius, UiSolidRect,
 };
 use num_traits::ToPrimitive;
 use std::{collections::HashMap, rc::Rc, sync::Arc};
@@ -24,9 +24,10 @@ use takumi::unstable::base::{
     layout::{
         style::{
             Affine, BackgroundImage, BasicShape, BlendMode as TakumiBlendMode,
-            Color as TakumiColor, ComputedStyle, FillRule as TakumiFillRule,
-            Filter as TakumiFilter, GradientStop, Isolation as TakumiIsolation, Length,
-            LinearGradient, ShapeRadius as TakumiShapeRadius, SizingContext,
+            BoxShadow as TakumiBoxShadow, Color as TakumiColor, ComputedStyle,
+            FillRule as TakumiFillRule, Filter as TakumiFilter, GradientStop,
+            Isolation as TakumiIsolation, Length, LinearGradient, ShapeRadius as TakumiShapeRadius,
+            SizingContext, SpacePair,
         },
         tree::{LayoutResults, LayoutTree, RenderNode},
     },
@@ -658,7 +659,12 @@ fn compositing_effects_from_takumi(
         opacity: style.opacity.0.clamp(0.0, 1.0),
         filters: filter_list_from_takumi(&style.filter, sizing, current_color),
         backdrop_filters: filter_list_from_takumi(&style.backdrop_filter, sizing, current_color),
-        box_shadows: UiBoxShadowList::default(),
+        box_shadows: box_shadow_list_from_takumi(
+            style.box_shadow.as_deref(),
+            style,
+            sizing,
+            current_color,
+        ),
         masks: masks_from_takumi(style, sizing, current_color),
         clip_path: style
             .clip_path
@@ -704,6 +710,73 @@ fn ui_filter_from_takumi(
             color: ui_color_from_takumi(shadow.color.resolve(current_color)),
         },
     }
+}
+
+fn box_shadow_list_from_takumi(
+    shadows: Option<&[TakumiBoxShadow]>,
+    style: &ComputedStyle,
+    sizing: &SizingContext,
+    current_color: TakumiColor,
+) -> UiBoxShadowList {
+    let Some(shadows) = shadows else {
+        return UiBoxShadowList::default();
+    };
+    let border_radius_px = box_shadow_border_radius_px(style, sizing);
+    UiBoxShadowList::new(
+        shadows
+            .iter()
+            .map(|shadow| box_shadow_from_takumi(shadow, border_radius_px, sizing, current_color)),
+    )
+}
+
+fn box_shadow_from_takumi(
+    shadow: &TakumiBoxShadow,
+    border_radius_px: f32,
+    sizing: &SizingContext,
+    current_color: TakumiColor,
+) -> UiBoxShadow {
+    let horizontal_shift_px = length_value_px(shadow.offset_x, sizing);
+    let vertical_shift_px = length_value_px(shadow.offset_y, sizing);
+    let blur_radius_px = length_value_px(shadow.blur_radius, sizing).max(0.0);
+    let spread_radius_px = length_value_px(shadow.spread_radius, sizing);
+    let color = ui_color_from_takumi(shadow.color.resolve(current_color));
+    if shadow.inset {
+        UiBoxShadow::inset(
+            horizontal_shift_px,
+            vertical_shift_px,
+            blur_radius_px,
+            spread_radius_px,
+            border_radius_px,
+            color,
+        )
+    } else {
+        UiBoxShadow::outer(
+            horizontal_shift_px,
+            vertical_shift_px,
+            blur_radius_px,
+            spread_radius_px,
+            border_radius_px,
+            color,
+        )
+    }
+}
+
+fn box_shadow_border_radius_px(style: &ComputedStyle, sizing: &SizingContext) -> f32 {
+    [
+        style.border_top_left_radius,
+        style.border_top_right_radius,
+        style.border_bottom_right_radius,
+        style.border_bottom_left_radius,
+    ]
+    .into_iter()
+    .map(|corner| circularized_corner_radius_px(corner, sizing))
+    .fold(0.0, f32::max)
+}
+
+fn circularized_corner_radius_px(radius: SpacePair<Length>, sizing: &SizingContext) -> f32 {
+    length_value_px(radius.x, sizing)
+        .max(0.0)
+        .min(length_value_px(radius.y, sizing).max(0.0))
 }
 
 fn masks_from_takumi(
@@ -892,6 +965,10 @@ fn ui_length_from_takumi(length: Length, sizing: &SizingContext) -> UiLength {
         Length::Percentage(value) => UiLength::Percent(value / 100.0),
         other => UiLength::Px(other.to_px(sizing, 0.0)),
     }
+}
+
+fn length_value_px(length: Length, sizing: &SizingContext) -> f32 {
+    length.to_px(sizing, 0.0)
 }
 
 fn length_px(length: Length, sizing: &SizingContext) -> f32 {

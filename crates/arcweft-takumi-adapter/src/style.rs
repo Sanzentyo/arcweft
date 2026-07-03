@@ -142,6 +142,7 @@ impl DirectCssSupport {
             DirectCssFeature::Opacity,
             DirectCssFeature::Transform,
             DirectCssFeature::TextPlaceholder,
+            DirectCssFeature::BoxShadow,
         ]
     }
 }
@@ -288,5 +289,20 @@ mod tests {
                 .message()
                 .contains("filter-url-reference")
         );
+    }
+
+    #[test]
+    fn box_shadow_is_advertised_as_direct_ready_after_typed_lowering() {
+        assert!(
+            DirectCssSupport::implementation_ready_features()
+                .contains(&DirectCssFeature::BoxShadow)
+        );
+
+        let support = DirectCssSupport::diagnose_css(
+            ".card { box-shadow: 0 12px 24px 2px rgba(0, 0, 0, 0.24); }",
+        );
+
+        assert!(support.is_direct_wgpu_ready());
+        assert!(support.diagnostics().is_empty());
     }
 }
