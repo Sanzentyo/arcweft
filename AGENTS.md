@@ -219,6 +219,12 @@ cargo +nightly -Zscript tools/structure-audit.rs --root .
 
 - Use `cargo fmt`.
 - Use `cargo clippy --workspace --all-targets --all-features` when feasible.
+- Keep Cargo feature sets stable to avoid unnecessary `target/` growth. Prefer
+  the checked-in `just` entrypoints and repeat the same feature combination for
+  a validation slice instead of alternating between default features,
+  `--all-features`, and ad hoc `--features ...` forms. Use extra feature
+  combinations only when they directly match the code path under test, and
+  record that reason in the final validation summary.
 - Remove wildcard imports when they are reported by the active clippy lint
   configuration, including `clippy::wildcard_imports`. Do not treat every
   private `use super::*` as a blanket structural violation unless clippy or the
