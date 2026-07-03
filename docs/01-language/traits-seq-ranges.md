@@ -33,11 +33,11 @@ Parsed but rejected until later slices:
 - fully qualified method calls;
 - dynamic trait objects.
 
-Earlier sections of this document use `Seq` / `IntoSeq` to describe historical
-surface ideas for `for`. Seq08.2 must define standard `Iterator` /
-`IntoIterator`-style traits on top of the seq08.1 trait catalog and witness
-model. It must not introduce a separate `IntoSeq` conformance system or
-hard-code iteration as compiler magic.
+Seq08.2 defines standard `Iterator` / `IntoIterator`-style traits on top of the
+seq08.1 trait catalog and witness model. `Seq<T>` remains a concrete lazy
+sequence type, not the iteration protocol. `IntoSeq` is not part of the stable
+surface model, and `for` must not be hard-coded as concrete range/sequence
+compiler magic.
 
 ## trait / impl / where
 
@@ -189,30 +189,42 @@ let bg =
     }
 ```
 
-## Seq and IntoSeq
+## Iterator, IntoIterator, and Seq
 
-Arcweft の表面 API は Rust の `Iterator` ではなく、pure lazy sequence の `Seq<T>` を使う。
+Arcweft の反復 API は Rust 風の `Iterator` / `IntoIterator` を使う。
+`Seq<T>` は pure lazy sequence を表す concrete type であり、標準 trait を
+実装する通常のコレクション/ビューとして扱う。
 
 ```arcw
-pub trait IntoSeq {
+pub trait Iterator {
     type Item
 
-    fn seq(self) -> Seq<Self::Item>
+    fn next(&mut self) -> Option<Self::Item>
+}
+
+pub trait IntoIterator {
+    type Item
+    type IntoIter
+
+    fn into_iter(self) -> Self::IntoIter
 }
 ```
 
-`Vec<T>` と整数 `Range<T>` は `IntoSeq` を実装する。
+標準 prelude は整数 `Range<T>`、`Seq<T>`、`Vec<T>`、`Array<T, N>`、`Slice<T>`
+に `IntoIterator` を提供する。`Range` は要素を materialize せず、runtime
+iterator state として進む。
 
 ```arcw
 let labels =
     choices
-        .seq()
+        .into_iter()
         .filter(_.enabled)
         .map(_.label)
         .collect<Vec<String>>()
 ```
 
-`for` は `IntoSeq` を要求する。
+`for` は `IntoIterator` を要求する。型検査は trait catalog の conformance
+evidence を使い、range や sequence の hard-coded fallback は持たない。
 
 ```arcw
 for c in choices {
@@ -302,7 +314,8 @@ Range 記法を標準で持つ。
 ..          // full range
 ```
 
-整数 range は `Step` により `Seq` 化できる。
+整数 range は `IntoIterator` を実装し、非 materialized な iterator state として
+反復できる。
 
 ```arcw
 for i in 0..10 {

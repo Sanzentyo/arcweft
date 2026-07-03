@@ -25,7 +25,7 @@ use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleVirtualFileSpace,
     patch::{PatchCompatibility, encode_patch_bundle},
 };
-use arcweft_compiler::lower::lower_source_runtime_plan_with_options;
+use arcweft_compiler::lower::lower_source_runtime_plan_with_typecheck_and_options;
 use arcweft_core::engine::FlowStatusLabelStyle;
 use arcweft_core::plan::RuntimeEntryKind;
 use arcweft_launch::{LaunchKind, ResolvedLaunchProfile};
@@ -138,14 +138,17 @@ fn runtime_run_headless_command(
     require_runtime_verification_safety(selection, &checked)?;
     let host_policy = native_host_policy_for_selection(selection)?;
     let runtime_options = runtime_plan_options_for_selection(selection);
-    let mut plan = lower_source_runtime_plan_with_options(&checked.hir, &runtime_options).map_err(
-        |errors| {
-            for error in errors {
-                eprintln!("error: {}", error.message());
-            }
-            ExitCode::FAILURE
-        },
-    )?;
+    let mut plan = lower_source_runtime_plan_with_typecheck_and_options(
+        &checked.hir,
+        &checked.typecheck_report,
+        &runtime_options,
+    )
+    .map_err(|errors| {
+        for error in errors {
+            eprintln!("error: {}", error.message());
+        }
+        ExitCode::FAILURE
+    })?;
     let entry = options.entry.as_deref().or(selection.entry());
     apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
     let trace = run_runtime_steps(

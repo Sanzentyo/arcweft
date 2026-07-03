@@ -20,7 +20,7 @@ use arcweft_bundle::{
 };
 use arcweft_compiler::{
     incremental::{BuildSnapshotRequest, snapshot_compiled_project},
-    lower::lower_source_runtime_plan_with_options,
+    lower::lower_source_runtime_plan_with_typecheck_and_options,
     parse::parse_source_text,
     persistent::{
         ActualBytecodeUnitFactsInput, ActualLinkPlanFactsInput, BytecodeUnitFactsInput,
@@ -2025,8 +2025,9 @@ pub(super) fn compile_command(options: &CompileOptions) -> Result<(), ExitCode> 
         }
         CompileEmit::Plan => {
             let plan = progress.run(CliProgressStatus::Compiling, "runtime plan", || {
-                lower_source_runtime_plan_with_options(
+                lower_source_runtime_plan_with_typecheck_and_options(
                     &checked.hir,
+                    &checked.typecheck_report,
                     &RuntimePlanLowerOptions::default(),
                 )
                 .map_err(|errors| {

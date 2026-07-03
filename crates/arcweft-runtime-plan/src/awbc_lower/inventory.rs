@@ -399,6 +399,9 @@ impl AwbcInventory {
                     .map(|payload| self.constant_runtime_value(payload)),
             },
             RuntimeValue::Range(range) => self.range_constant(range),
+            RuntimeValue::Iterator(_) => {
+                panic!("runtime iterator state cannot be encoded as an AWBC constant")
+            }
             RuntimeValue::MatrixF32(matrix) => AwbcConstant::TensorF32 {
                 shape: vec![table_index(matrix.rows()), table_index(matrix.cols())],
                 values: matrix

@@ -1,8 +1,10 @@
 use std::fmt;
 
-use arcweft_core::plan::RuntimePlan;
-use arcweft_core::plan::RuntimePureHelperOrigin;
+use arcweft_core::plan::{RuntimeIteratorEvidence, RuntimePlan, RuntimePureHelperOrigin};
 use arcweft_lang_hir::model::{HirFunction, HirModule};
+use arcweft_lang_sema::check::{
+    ForIterationEvidence, ForIterationEvidenceFamily, StandardIteratorFamily, TypeCheckReport,
+};
 use arcweft_runtime_plan::flow::{
     RuntimePlanLowerOptions, RuntimePlanLowerReport, lower_runtime_plan_with_options,
     lower_runtime_plan_with_stats_and_options,
@@ -32,12 +34,77 @@ pub fn lower_source_runtime_plan_with_options(
     lower_runtime_plan_with_options(hir, options)
 }
 
+/// Lowers checked HIR using the `for` iteration evidence recorded by type checking.
+pub fn lower_source_runtime_plan_with_typecheck_and_options(
+    hir: &HirModule,
+    typecheck: &TypeCheckReport,
+    options: &RuntimePlanLowerOptions,
+) -> Result<RuntimePlan, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
+    lower_runtime_plan_with_options(
+        hir,
+        &runtime_plan_options_with_typecheck_evidence(options, typecheck),
+    )
+}
+
 /// Lowers checked HIR into a runtime plan and display catalog with compiler counters.
 pub fn lower_source_runtime_plan_with_stats_and_options(
     hir: &HirModule,
     options: &RuntimePlanLowerOptions,
 ) -> Result<RuntimePlanLowerReport, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
     lower_runtime_plan_with_stats_and_options(hir, options)
+}
+
+/// Lowers checked HIR into a runtime plan and display catalog with type-checker
+/// iteration evidence.
+pub fn lower_source_runtime_plan_with_typecheck_stats_and_options(
+    hir: &HirModule,
+    typecheck: &TypeCheckReport,
+    options: &RuntimePlanLowerOptions,
+) -> Result<RuntimePlanLowerReport, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
+    lower_runtime_plan_with_stats_and_options(
+        hir,
+        &runtime_plan_options_with_typecheck_evidence(options, typecheck),
+    )
+}
+
+pub fn runtime_plan_options_with_typecheck_evidence(
+    options: &RuntimePlanLowerOptions,
+    typecheck: &TypeCheckReport,
+) -> RuntimePlanLowerOptions {
+    options.clone().with_for_iteration_evidence(
+        typecheck
+            .for_iteration_evidence
+            .iter()
+            .map(runtime_iterator_evidence),
+    )
+}
+
+fn runtime_iterator_evidence(evidence: &ForIterationEvidence) -> RuntimeIteratorEvidence {
+    match evidence.family {
+        ForIterationEvidenceFamily::Builtin(StandardIteratorFamily::Range) => {
+            RuntimeIteratorEvidence::builtin_range()
+        }
+        ForIterationEvidenceFamily::Builtin(StandardIteratorFamily::Seq) => {
+            RuntimeIteratorEvidence::builtin_seq()
+        }
+        ForIterationEvidenceFamily::Builtin(StandardIteratorFamily::Vec) => {
+            RuntimeIteratorEvidence::builtin_vec()
+        }
+        ForIterationEvidenceFamily::Builtin(StandardIteratorFamily::Array) => {
+            RuntimeIteratorEvidence::builtin_array()
+        }
+        ForIterationEvidenceFamily::Builtin(StandardIteratorFamily::Slice) => {
+            RuntimeIteratorEvidence::builtin_slice()
+        }
+        ForIterationEvidenceFamily::WitnessUnsupported => {
+            RuntimeIteratorEvidence::Witness(arcweft_core::plan::RuntimeIteratorWitnessEvidence {
+                item_type: format!("{:?}", evidence.item_ty),
+                into_iter_type: format!("{:?}", evidence.into_iter_ty),
+                executable:
+                    arcweft_core::plan::RuntimeIteratorWitnessExecutable::UnsupportedMethodBodyLowering,
+            })
+        }
+    }
 }
 
 /// Lowers pure helper candidates from checked HIR.

@@ -1,5 +1,6 @@
 use arcweft_agent_protocol::artifact::EffectCapability as AgentEffectCapability;
 use arcweft_bundle::BundleKind;
+use arcweft_core::plan::{FlowOp, RuntimeBuiltinIteratorEvidence, RuntimeIteratorEvidence};
 use arcweft_id::PublicId;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::env::{FunctionParam, FunctionSignature, TypeCheckEnv};
@@ -265,6 +266,28 @@ alice: Hello
 
     assert!(!compiled.plan.entries.is_empty());
     assert!(!compiled.display.lines().is_empty());
+}
+
+#[test]
+fn compiles_for_loop_with_trait_resolved_iterator_evidence() {
+    let compiled = compile_source(
+        r"
+flow @flow.main main {
+    for i in 0i32..3i32 {
+        let _ = i
+    }
+}
+",
+    )
+    .expect("for loop source compiles");
+
+    let FlowOp::For { evidence, .. } = &compiled.plan.flows[0].ops[0] else {
+        panic!("expected first runtime op to be for loop");
+    };
+    assert_eq!(
+        evidence,
+        &RuntimeIteratorEvidence::Builtin(RuntimeBuiltinIteratorEvidence::Range)
+    );
 }
 
 #[test]

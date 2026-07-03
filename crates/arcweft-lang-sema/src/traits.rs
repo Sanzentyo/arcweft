@@ -5,6 +5,7 @@
 //! rediscovering trait relationships from strings.
 
 mod format;
+mod standard_iter;
 
 use crate::diagnostics::{TraitDiagnostic, TypeCheckError};
 use crate::types::TypeKind;
@@ -196,6 +197,53 @@ pub enum ProjectionError {
     Ambiguous { subject: TypeKind, assoc: String },
 }
 
+/// Resolved conformance evidence for one subject type and trait.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TraitConformance {
+    witness: Option<TraitWitnessId>,
+    trait_id: TraitId,
+    impl_id: Option<ImplId>,
+    self_ty: TypeKind,
+    associated_types: BTreeMap<String, TypeKind>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TraitConformanceResolution {
+    Missing,
+    Unique(TraitConformance),
+    Ambiguous(Vec<TraitConformance>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IntoIteratorResolution {
+    source_ty: TypeKind,
+    item_ty: TypeKind,
+    into_iter_ty: TypeKind,
+    into_iterator: TraitConformance,
+    iterator: TraitConformance,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IntoIteratorResolutionError {
+    MissingIntoIterator {
+        source: Box<TypeKind>,
+    },
+    AmbiguousIntoIterator {
+        source: Box<TypeKind>,
+        candidates: Vec<TraitConformance>,
+    },
+    MissingIteratorForIntoIter {
+        source: Box<TypeKind>,
+        into_iter: Box<TypeKind>,
+        item: Box<TypeKind>,
+    },
+    AmbiguousIteratorForIntoIter {
+        source: Box<TypeKind>,
+        into_iter: Box<TypeKind>,
+        candidates: Vec<TraitConformance>,
+    },
+}
+
 impl TraitCatalog {
     pub fn traits(&self) -> &[TraitDecl] {
         &self.traits
@@ -209,6 +257,14 @@ impl TraitCatalog {
         &self.witnesses
     }
 
+    pub fn trait_impl(&self, id: ImplId) -> Option<&TraitImpl> {
+        self.impls.get(id.index())
+    }
+
+    pub fn witness(&self, id: TraitWitnessId) -> Option<&TraitWitness> {
+        self.witnesses.get(id.index())
+    }
+
     pub fn trait_id(&self, name: &str) -> Option<TraitId> {
         self.by_name.get(name).copied()
     }
@@ -219,6 +275,96 @@ impl TraitCatalog {
 
     pub fn trait_name(&self, id: TraitId) -> Option<&str> {
         self.trait_decl(id).map(TraitDecl::name)
+    }
+
+    pub fn resolve_into_iterator(
+        &self,
+        source: &TypeKind,
+        predicates: &[TraitPredicate],
+    ) -> Result<IntoIteratorResolution, IntoIteratorResolutionError> {
+        let into_iterator = match self.resolve_trait_conformance_by_name(
+            source,
+            standard_iter::INTO_ITERATOR,
+            &[],
+            predicates,
+        ) {
+            TraitConformanceResolution::Missing => {
+                return Err(IntoIteratorResolutionError::MissingIntoIterator {
+                    source: Box::new(source.clone()),
+                });
+            }
+            TraitConformanceResolution::Ambiguous(candidates) => {
+                return Err(IntoIteratorResolutionError::AmbiguousIntoIterator {
+                    source: Box::new(source.clone()),
+                    candidates,
+                });
+            }
+            TraitConformanceResolution::Unique(conformance) => conformance,
+        };
+        let item_ty = into_iterator
+            .associated_type(standard_iter::ITEM)
+            .cloned()
+            .unwrap_or_else(|| TypeKind::Named("_".to_owned()));
+        let into_iter_ty = into_iterator
+            .associated_type(standard_iter::INTO_ITER)
+            .cloned()
+            .unwrap_or_else(|| TypeKind::Named("_".to_owned()));
+        let item_eq = [AssocEquality::new(standard_iter::ITEM, item_ty.clone())];
+        let iterator = match self.resolve_trait_conformance_by_name(
+            &into_iter_ty,
+            standard_iter::ITERATOR,
+            &item_eq,
+            predicates,
+        ) {
+            TraitConformanceResolution::Missing => {
+                return Err(IntoIteratorResolutionError::MissingIteratorForIntoIter {
+                    source: Box::new(source.clone()),
+                    into_iter: Box::new(into_iter_ty),
+                    item: Box::new(item_ty),
+                });
+            }
+            TraitConformanceResolution::Ambiguous(candidates) => {
+                return Err(IntoIteratorResolutionError::AmbiguousIteratorForIntoIter {
+                    source: Box::new(source.clone()),
+                    into_iter: Box::new(into_iter_ty),
+                    candidates,
+                });
+            }
+            TraitConformanceResolution::Unique(conformance) => conformance,
+        };
+        Ok(IntoIteratorResolution {
+            source_ty: source.clone(),
+            item_ty,
+            into_iter_ty,
+            into_iterator,
+            iterator,
+        })
+    }
+
+    pub fn resolve_trait_conformance_by_name(
+        &self,
+        subject: &TypeKind,
+        trait_name: &str,
+        assoc_equalities: &[AssocEquality],
+        predicates: &[TraitPredicate],
+    ) -> TraitConformanceResolution {
+        let Some(trait_id) = self.trait_id(trait_name) else {
+            return TraitConformanceResolution::Missing;
+        };
+        let mut candidates = self
+            .impls
+            .iter()
+            .filter(|impl_decl| impl_decl.trait_id == Some(trait_id))
+            .filter_map(|impl_decl| conformance_from_impl(impl_decl, subject, assoc_equalities))
+            .collect::<Vec<_>>();
+        candidates.extend(predicates.iter().filter_map(|predicate| {
+            conformance_from_predicate(predicate, subject, trait_id, assoc_equalities)
+        }));
+        match candidates.as_slice() {
+            [] => TraitConformanceResolution::Missing,
+            [candidate] => TraitConformanceResolution::Unique(candidate.clone()),
+            _ => TraitConformanceResolution::Ambiguous(candidates),
+        }
     }
 
     pub fn predicates_for_signature(&self, signature: &FnSignature) -> Vec<TraitPredicate> {
@@ -521,6 +667,50 @@ impl TraitMethodImpl {
     }
 }
 
+impl TraitConformance {
+    pub const fn witness(&self) -> Option<TraitWitnessId> {
+        self.witness
+    }
+
+    pub const fn trait_id(&self) -> TraitId {
+        self.trait_id
+    }
+
+    pub const fn impl_id(&self) -> Option<ImplId> {
+        self.impl_id
+    }
+
+    pub const fn self_ty(&self) -> &TypeKind {
+        &self.self_ty
+    }
+
+    pub fn associated_type(&self, name: &str) -> Option<&TypeKind> {
+        self.associated_types.get(name)
+    }
+}
+
+impl IntoIteratorResolution {
+    pub const fn source_ty(&self) -> &TypeKind {
+        &self.source_ty
+    }
+
+    pub const fn item_ty(&self) -> &TypeKind {
+        &self.item_ty
+    }
+
+    pub const fn into_iter_ty(&self) -> &TypeKind {
+        &self.into_iter_ty
+    }
+
+    pub const fn into_iterator(&self) -> &TraitConformance {
+        &self.into_iterator
+    }
+
+    pub const fn iterator(&self) -> &TraitConformance {
+        &self.iterator
+    }
+}
+
 /// Builds a typed trait catalog and returns diagnostics for invalid declarations.
 pub fn collect_trait_catalog(module: &HirModule) -> (TraitCatalog, Vec<TypeCheckError>) {
     let mut builder = TraitCatalogBuilder::new(module);
@@ -547,6 +737,7 @@ impl TraitCatalogBuilder {
     }
 
     fn collect_traits(&mut self, module: &HirModule) {
+        standard_iter::install_standard_iterator_traits(&mut self.catalog, &mut self.next_assoc_id);
         for item in module.declarations().iter().filter_map(as_trait_item) {
             let id = TraitId::from_index(self.catalog.traits.len());
             if self.catalog.by_name.contains_key(item.name()) {
@@ -581,6 +772,7 @@ impl TraitCatalogBuilder {
     }
 
     fn collect_impls(&mut self, module: &HirModule) {
+        standard_iter::install_standard_iterator_impls(&mut self.catalog);
         for item in module.declarations().iter().filter_map(as_impl_item) {
             self.collect_impl(item);
         }
@@ -943,6 +1135,164 @@ impl TraitCatalogBuilder {
 
     fn finish(self) -> (TraitCatalog, Vec<TypeCheckError>) {
         (self.catalog, self.diagnostics)
+    }
+}
+
+fn conformance_from_impl(
+    impl_decl: &TraitImpl,
+    subject: &TypeKind,
+    assoc_equalities: &[AssocEquality],
+) -> Option<TraitConformance> {
+    let substitutions = match_type_pattern(&impl_decl.target, subject)?;
+    let associated_types = impl_decl
+        .associated_types
+        .iter()
+        .map(|(name, assignment)| {
+            (
+                name.clone(),
+                substitute_type(&assignment.value, &substitutions),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    assoc_equalities_match(&associated_types, assoc_equalities).then(|| TraitConformance {
+        witness: impl_decl.witness,
+        trait_id: impl_decl.trait_id.expect("trait impl has trait id"),
+        impl_id: Some(impl_decl.id),
+        self_ty: subject.clone(),
+        associated_types,
+    })
+}
+
+fn conformance_from_predicate(
+    predicate: &TraitPredicate,
+    subject: &TypeKind,
+    trait_id: TraitId,
+    assoc_equalities: &[AssocEquality],
+) -> Option<TraitConformance> {
+    if predicate.trait_id() != trait_id || predicate.subject() != subject {
+        return None;
+    }
+    let associated_types = predicate
+        .assoc_equalities()
+        .iter()
+        .map(|equality| (equality.name().to_owned(), equality.ty().clone()))
+        .collect::<BTreeMap<_, _>>();
+    assoc_equalities_match(&associated_types, assoc_equalities).then(|| TraitConformance {
+        witness: None,
+        trait_id,
+        impl_id: None,
+        self_ty: subject.clone(),
+        associated_types,
+    })
+}
+
+fn assoc_equalities_match(
+    associated_types: &BTreeMap<String, TypeKind>,
+    required: &[AssocEquality],
+) -> bool {
+    required.iter().all(|equality| {
+        associated_types
+            .get(equality.name())
+            .is_some_and(|actual| actual == equality.ty())
+    })
+}
+
+fn match_type_pattern(pattern: &TypeKind, actual: &TypeKind) -> Option<HashMap<String, TypeKind>> {
+    let mut substitutions = HashMap::new();
+    match_type_pattern_into(pattern, actual, &mut substitutions).then_some(substitutions)
+}
+
+fn match_type_pattern_into(
+    pattern: &TypeKind,
+    actual: &TypeKind,
+    substitutions: &mut HashMap<String, TypeKind>,
+) -> bool {
+    match (pattern, actual) {
+        (TypeKind::GenericParam(name), actual) => {
+            if let Some(existing) = substitutions.get(name) {
+                existing == actual
+            } else {
+                substitutions.insert(name.clone(), actual.clone());
+                true
+            }
+        }
+        (TypeKind::Vec(lhs), TypeKind::Vec(rhs))
+        | (TypeKind::Seq(lhs), TypeKind::Seq(rhs))
+        | (TypeKind::Slice(lhs), TypeKind::Slice(rhs))
+        | (TypeKind::Range(lhs), TypeKind::Range(rhs))
+        | (TypeKind::Array { item: lhs, .. }, TypeKind::Array { item: rhs, .. }) => {
+            match_type_pattern_into(lhs, rhs, substitutions)
+        }
+        (
+            TypeKind::IteratorState {
+                family: lhs_family,
+                item: lhs_item,
+            },
+            TypeKind::IteratorState {
+                family: rhs_family,
+                item: rhs_item,
+            },
+        ) if lhs_family == rhs_family => match_type_pattern_into(lhs_item, rhs_item, substitutions),
+        (TypeKind::Named(lhs), TypeKind::Named(rhs)) => {
+            match_named_pattern(lhs, rhs, substitutions)
+        }
+        _ => pattern == actual,
+    }
+}
+
+fn match_named_pattern(
+    pattern: &str,
+    actual: &str,
+    substitutions: &mut HashMap<String, TypeKind>,
+) -> bool {
+    if pattern == actual {
+        return true;
+    }
+    let Some((pattern_base, pattern_arg)) = split_one_generic_arg(pattern) else {
+        return false;
+    };
+    let Some((actual_base, actual_arg)) = split_one_generic_arg(actual) else {
+        return false;
+    };
+    if pattern_base != actual_base {
+        return false;
+    }
+    if let Some(existing) = substitutions.get(pattern_arg) {
+        existing == &TypeKind::Named(actual_arg.to_owned())
+    } else {
+        substitutions.insert(
+            pattern_arg.to_owned(),
+            TypeKind::Named(actual_arg.to_owned()),
+        );
+        true
+    }
+}
+
+fn split_one_generic_arg(value: &str) -> Option<(&str, &str)> {
+    let (base, rest) = value.split_once('<')?;
+    let arg = rest.strip_suffix('>')?.trim();
+    (!arg.contains(',')).then_some((base.trim(), arg))
+}
+
+fn substitute_type(ty: &TypeKind, substitutions: &HashMap<String, TypeKind>) -> TypeKind {
+    match ty {
+        TypeKind::GenericParam(name) => substitutions
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| ty.clone()),
+        TypeKind::Vec(inner) => TypeKind::Vec(Box::new(substitute_type(inner, substitutions))),
+        TypeKind::Seq(inner) => TypeKind::Seq(Box::new(substitute_type(inner, substitutions))),
+        TypeKind::Slice(inner) => TypeKind::Slice(Box::new(substitute_type(inner, substitutions))),
+        TypeKind::Range(inner) => TypeKind::Range(Box::new(substitute_type(inner, substitutions))),
+        TypeKind::IteratorState { family, item } => TypeKind::IteratorState {
+            family: *family,
+            item: Box::new(substitute_type(item, substitutions)),
+        },
+        TypeKind::Array { item, len } => TypeKind::Array {
+            item: Box::new(substitute_type(item, substitutions)),
+            len: len.clone(),
+        },
+        other => other.clone(),
     }
 }
 

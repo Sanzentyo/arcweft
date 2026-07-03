@@ -81,6 +81,7 @@ enum RuntimeShape {
     Range,
     Record,
     Variant,
+    Iterator,
     Unknown,
 }
 
@@ -697,6 +698,7 @@ fn runtime_value_shape(value: &RuntimeValue) -> RuntimeShape {
         RuntimeValue::Range(_) => RuntimeShape::Range,
         RuntimeValue::Record(_) => RuntimeShape::Record,
         RuntimeValue::Variant { .. } => RuntimeShape::Variant,
+        RuntimeValue::Iterator(_) => RuntimeShape::Iterator,
     }
 }
 

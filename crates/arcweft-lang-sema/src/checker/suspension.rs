@@ -1,6 +1,6 @@
 //! Suspension boundaries and runtime-scope helpers.
 
-use super::helpers::{iter_item_type, let_else_bindings, pattern_bindings_with_fallback};
+use super::helpers::{let_else_bindings, pattern_bindings_with_fallback};
 use super::{
     BorrowStateDelta, Expr, LifetimeScopeKind, LoopContext, TypeCheckError, TypeChecker,
     TypeCheckerScopeSnapshot, TypeKind, YieldContext, await_branch_pattern_type,
@@ -165,7 +165,9 @@ impl TypeChecker<'_> {
     pub(super) fn check_for_block(&mut self, block: &arcweft_lang_hir::model::HirFor) {
         let source_ty = self.check_expr(block.source());
         let borrow_checkpoint = self.checkpoint_borrow_state();
-        let item_ty = iter_item_type(source_ty.as_ref());
+        let item_ty = self
+            .check_for_iteration_source(source_ty.as_ref())
+            .map_or(TypeKind::Unit, |typing| typing.item_ty);
         let local_snapshot =
             self.insert_scoped_locals(pattern_bindings_with_fallback(block.pattern(), &item_ty));
         self.register_borrow_bindings(block.pattern(), &item_ty);

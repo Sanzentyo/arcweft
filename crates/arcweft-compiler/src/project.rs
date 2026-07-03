@@ -359,6 +359,77 @@ pub fn compile_project_with_cache<C>(
 where
     C: ProjectCompileCache,
 {
+    let (modules, summaries) = compile_project_units(project, cache)?;
+
+    let hir_project = HirProject::new(
+        modules
+            .iter()
+            .map(|module| HirProjectModule::new(module.module.clone(), module.hir.clone())),
+    )
+    .map_err(|error| {
+        linked_error(
+            ProjectCompileStage::HirProject,
+            [
+                Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                    .with_code("hir.project"),
+            ],
+        )
+    })?;
+    let linked_hir = hir_project.linked_module();
+    hir::resolve_hir_references(&linked_hir).map_err(|errors| {
+        linked_error(
+            ProjectCompileStage::Resolve,
+            errors.into_iter().map(|error| error.diagnostic()),
+        )
+    })?;
+    hir::validate_hir_typecheck_ready(&linked_hir).map_err(|errors| {
+        linked_error(
+            ProjectCompileStage::Readiness,
+            errors.into_iter().map(|error| error.diagnostic()),
+        )
+    })?;
+    let typecheck_report = hir::typecheck_hir_with_env(&linked_hir, env).map_err(|errors| {
+        linked_error(
+            ProjectCompileStage::TypeCheck,
+            errors.into_iter().map(|error| error.diagnostic()),
+        )
+    })?;
+    let line_task_groups = lower::lower_source_line_tasks(&linked_hir).map_err(|errors| {
+        linked_error(
+            ProjectCompileStage::LineTaskLower,
+            errors.into_iter().map(|error| error.diagnostic()),
+        )
+    })?;
+    let runtime_plan = lower::lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &linked_hir,
+        &typecheck_report,
+        runtime_options,
+    )
+    .map_err(|errors| {
+        linked_error(
+            ProjectCompileStage::RuntimePlanLower,
+            errors.into_iter().map(|error| error.diagnostic()),
+        )
+    })?;
+
+    Ok(CompiledProject {
+        modules,
+        units: summaries,
+        hir_project,
+        linked_hir,
+        typecheck_report,
+        line_task_groups,
+        runtime_plan,
+    })
+}
+
+fn compile_project_units<C>(
+    project: &ProjectSources,
+    cache: &mut C,
+) -> Result<(Vec<CompiledProjectModule>, Vec<ProjectCompileUnitSummary>), ProjectCompileError>
+where
+    C: ProjectCompileCache,
+{
     let fingerprints = build_unit_fingerprints(project);
     let incremental = project.manifest().build().incremental();
     let mut modules = Vec::with_capacity(project.modules().len());
@@ -402,64 +473,7 @@ where
         });
         modules.extend(compiled);
     }
-
-    let hir_project = HirProject::new(
-        modules
-            .iter()
-            .map(|module| HirProjectModule::new(module.module.clone(), module.hir.clone())),
-    )
-    .map_err(|error| {
-        linked_error(
-            ProjectCompileStage::HirProject,
-            [
-                Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                    .with_code("hir.project"),
-            ],
-        )
-    })?;
-    let linked_hir = hir_project.linked_module();
-    hir::resolve_hir_references(&linked_hir).map_err(|errors| {
-        linked_error(
-            ProjectCompileStage::Resolve,
-            errors.into_iter().map(|error| error.diagnostic()),
-        )
-    })?;
-    hir::validate_hir_typecheck_ready(&linked_hir).map_err(|errors| {
-        linked_error(
-            ProjectCompileStage::Readiness,
-            errors.into_iter().map(|error| error.diagnostic()),
-        )
-    })?;
-    let typecheck_report = hir::typecheck_hir_with_env(&linked_hir, env).map_err(|errors| {
-        linked_error(
-            ProjectCompileStage::TypeCheck,
-            errors.into_iter().map(|error| error.diagnostic()),
-        )
-    })?;
-    let line_task_groups = lower::lower_source_line_tasks(&linked_hir).map_err(|errors| {
-        linked_error(
-            ProjectCompileStage::LineTaskLower,
-            errors.into_iter().map(|error| error.diagnostic()),
-        )
-    })?;
-    let runtime_plan =
-        lower::lower_source_runtime_plan_with_stats_and_options(&linked_hir, runtime_options)
-            .map_err(|errors| {
-                linked_error(
-                    ProjectCompileStage::RuntimePlanLower,
-                    errors.into_iter().map(|error| error.diagnostic()),
-                )
-            })?;
-
-    Ok(CompiledProject {
-        modules,
-        units: summaries,
-        hir_project,
-        linked_hir,
-        typecheck_report,
-        line_task_groups,
-        runtime_plan,
-    })
+    Ok((modules, summaries))
 }
 
 fn compile_module(

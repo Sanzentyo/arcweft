@@ -16,7 +16,11 @@ use crate::pure::{
     RuntimeI64Args, RuntimePureCallBackend, RuntimePureScalarInteger, VmRuntimePureCallBackend,
 };
 use crate::value::{RuntimeBinaryOp, RuntimeExactInteger, RuntimeFieldExpr, RuntimeUInt};
-use crate::value::{RuntimeCallTarget, RuntimeIntrinsic};
+use crate::value::{
+    RuntimeCallTarget, RuntimeIntrinsic, evaluate_core_iter_into_iter_intrinsic,
+    evaluate_core_iter_next_intrinsic, evaluate_core_option_is_some_intrinsic,
+    evaluate_core_option_unwrap_intrinsic,
+};
 use crate::value::{RuntimeISizeValue, RuntimeUSizeValue};
 use crate::value::{
     evaluate_core_iter_collect_intrinsic, evaluate_core_range_intrinsic,
@@ -1259,6 +1263,39 @@ fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, Runti
     }
 }
 
+fn evaluate_core_iterator_intrinsic(
+    intrinsic: RuntimeIntrinsic,
+    args: &[RuntimeValue],
+) -> Option<RuntimeValue> {
+    match (intrinsic, args) {
+        (RuntimeIntrinsic::CoreIterCollect, [value]) => Some(
+            evaluate_core_iter_collect_intrinsic(value.clone()).unwrap_or_else(|error| {
+                RuntimeValue::String(format!("core.iter.collect({error})"))
+            }),
+        ),
+        (RuntimeIntrinsic::CoreIterIntoIter, [value, evidence]) => Some(
+            evaluate_core_iter_into_iter_intrinsic(value.clone(), evidence).unwrap_or_else(
+                |error| RuntimeValue::String(format!("core.iter.into_iter({error})")),
+            ),
+        ),
+        (RuntimeIntrinsic::CoreIterNext, [value]) => Some(
+            evaluate_core_iter_next_intrinsic(value.clone())
+                .unwrap_or_else(|error| RuntimeValue::String(format!("core.iter.next({error})"))),
+        ),
+        (RuntimeIntrinsic::CoreOptionIsSome, [value]) => Some(
+            evaluate_core_option_is_some_intrinsic(value).unwrap_or_else(|error| {
+                RuntimeValue::String(format!("core.option.is_some({error})"))
+            }),
+        ),
+        (RuntimeIntrinsic::CoreOptionUnwrap, [value]) => Some(
+            evaluate_core_option_unwrap_intrinsic(value.clone()).unwrap_or_else(|error| {
+                RuntimeValue::String(format!("core.option.unwrap({error})"))
+            }),
+        ),
+        _ => None,
+    }
+}
+
 pub(crate) fn evaluate_runtime_call(
     callee: &RuntimeCallTarget,
     args: &[RuntimeValue],
@@ -1266,6 +1303,11 @@ pub(crate) fn evaluate_runtime_call(
 ) -> RuntimeValue {
     if let Some(intrinsic) = callee.as_intrinsic()
         && let Ok(Some(value)) = evaluate_std_float_intrinsic(intrinsic, args)
+    {
+        return value;
+    }
+    if let Some(intrinsic) = callee.as_intrinsic()
+        && let Some(value) = evaluate_core_iterator_intrinsic(intrinsic, args)
     {
         return value;
     }
@@ -1280,10 +1322,6 @@ pub(crate) fn evaluate_runtime_call(
         }
         (Some(RuntimeIntrinsic::CoreRange), _) => evaluate_core_range_intrinsic(args)
             .unwrap_or_else(|error| RuntimeValue::String(format!("core.range({error})"))),
-        (Some(RuntimeIntrinsic::CoreIterCollect), [value]) => {
-            evaluate_core_iter_collect_intrinsic(value.clone())
-                .unwrap_or_else(|error| RuntimeValue::String(format!("core.iter.collect({error})")))
-        }
         (
             Some(RuntimeIntrinsic::MathMatmulF32),
             [RuntimeValue::MatrixF32(lhs), RuntimeValue::MatrixF32(rhs)],

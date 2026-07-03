@@ -8,7 +8,7 @@ use crate::app::project::{
 use crate::app::shared::print_json;
 use crate::server_adapter::{NativeHttpServerConfig, serve_native_http};
 use arcweft_adapter_context::standard;
-use arcweft_compiler::lower::lower_source_runtime_plan_with_options;
+use arcweft_compiler::lower::lower_source_runtime_plan_with_typecheck_and_options;
 use arcweft_launch::LaunchKind;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
 use arcweft_runtime_host::NativeAdapterRegistrar;
@@ -88,14 +88,17 @@ pub(in crate::app) fn runtime_serve_selection(
     let checked = load_and_check_selection(selection, adapter_override)?;
     let host_policy = native_host_policy_for_selection_with_adapter(selection, adapter_override)?;
     let runtime_options = runtime_plan_options_for_selection(selection);
-    let plan = lower_source_runtime_plan_with_options(&checked.hir, &runtime_options).map_err(
-        |errors| {
-            for error in errors {
-                eprintln!("error: {error}");
-            }
-            ExitCode::FAILURE
-        },
-    )?;
+    let plan = lower_source_runtime_plan_with_typecheck_and_options(
+        &checked.hir,
+        &checked.typecheck_report,
+        &runtime_options,
+    )
+    .map_err(|errors| {
+        for error in errors {
+            eprintln!("error: {error}");
+        }
+        ExitCode::FAILURE
+    })?;
     let entry = select_server_entry(&plan, entry_override.or(selection.entry()))?;
     let routes = server_routes(entry);
     if routes.is_empty() {

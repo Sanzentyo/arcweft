@@ -4,7 +4,7 @@ use super::helpers::let_else_bindings;
 use super::{
     BorrowStateDelta, EntityKind, Expr, LoopContext, Pattern, Stmt, TriggerPattern, TypeCheckError,
     TypeChecker, TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext,
-    default_presentation_slot_family, ident_pattern_name, is_local_ident, iter_item_type,
+    default_presentation_slot_family, ident_pattern_name, is_local_ident,
     pattern_bindings_with_fallback, stmts_diverge, type_ref_kind,
 };
 use arcweft_lang_syntax::{ast::flow::StmtMatchArm, types::TypeRef};
@@ -372,7 +372,9 @@ impl TypeChecker<'_> {
     fn check_stmt_for(&mut self, pattern: &Pattern, source: &Expr, body: &[Stmt]) {
         let source_ty = self.check_expr(source);
         let borrow_checkpoint = self.checkpoint_borrow_state();
-        let item_ty = iter_item_type(source_ty.as_ref());
+        let item_ty = self
+            .check_for_iteration_source(source_ty.as_ref())
+            .map_or(TypeKind::Unit, |typing| typing.item_ty);
         let local_snapshot =
             self.insert_scoped_locals(pattern_bindings_with_fallback(pattern, &item_ty));
         self.register_borrow_bindings(pattern, &item_ty);

@@ -1,4 +1,5 @@
 use super::support::*;
+use crate::check::{ForIterationEvidenceFamily, StandardIteratorFamily};
 
 #[test]
 fn typechecks_flow_signature_parameters_as_locals() {
@@ -13,6 +14,50 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
     assert!(hir.flows()[0].signature().is_some());
     validate_typecheck_ready(&hir).expect("flow signature fixture is typecheck-ready");
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("flow parameters bind as locals");
+}
+
+#[test]
+fn for_iteration_evidence_is_trait_resolved_for_runtime_flows() {
+    let tree = parse_ok(
+        r"
+fn helper() -> Unit {
+    for n in 0i32..1i32 {
+        let _ = n
+    }
+}
+
+flow @flow.iter iter {
+    for n in 0i32..2i32 {
+        let _ = n
+    }
+    for c in [1i32, 2i32] {
+        let _ = c
+    }
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("iterator evidence fixture lowers");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+
+    assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+    let families = report
+        .for_iteration_evidence
+        .iter()
+        .map(|evidence| evidence.family.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        families,
+        vec![
+            ForIterationEvidenceFamily::Builtin(StandardIteratorFamily::Range),
+            ForIterationEvidenceFamily::Builtin(StandardIteratorFamily::Vec),
+        ]
+    );
+    assert!(
+        report
+            .for_iteration_evidence
+            .iter()
+            .all(|evidence| evidence.item_ty == TypeKind::I32)
+    );
 }
 
 #[test]

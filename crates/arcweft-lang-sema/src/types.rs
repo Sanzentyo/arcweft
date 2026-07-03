@@ -72,6 +72,10 @@ pub enum TypeKind {
     TextCluster,
     Duration,
     Range(Box<TypeKind>),
+    IteratorState {
+        family: IteratorStateKind,
+        item: Box<TypeKind>,
+    },
     DisplayText,
     DebugStatePath,
     ObservationFieldPath,
@@ -277,6 +281,16 @@ impl TypeKind {
             _ => return None,
         })
     }
+}
+
+/// Standard iterator state family used by semantic trait witnesses.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IteratorStateKind {
+    Range,
+    Seq,
+    Vec,
+    Array,
+    Slice,
 }
 
 /// Deterministic map family preserved by semantic type checking.

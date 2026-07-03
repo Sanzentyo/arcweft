@@ -47,6 +47,7 @@ pub mod effects;
 pub mod expr;
 pub mod flow;
 pub mod helpers;
+pub mod iterator;
 pub mod lifetime_access;
 pub mod line_plan;
 pub mod module;
@@ -194,6 +195,7 @@ pub struct TypeCheckReport {
     pub stats: TypeCheckStats,
     pub judgments: Vec<TypeJudgment>,
     pub effects: EffectAnalysisReport,
+    pub for_iteration_evidence: Vec<ForIterationEvidence>,
 }
 
 impl TypeCheckReport {
@@ -223,7 +225,30 @@ pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport 
         stats: checker.stats,
         judgments: checker.judgments,
         effects,
+        for_iteration_evidence: checker.for_iteration_evidence,
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ForIterationEvidence {
+    pub family: ForIterationEvidenceFamily,
+    pub item_ty: TypeKind,
+    pub into_iter_ty: TypeKind,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ForIterationEvidenceFamily {
+    Builtin(StandardIteratorFamily),
+    WitnessUnsupported,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StandardIteratorFamily {
+    Range,
+    Seq,
+    Vec,
+    Array,
+    Slice,
 }
 
 /// Type-checks the lowered HIR with an explicit symbol/method environment.
@@ -268,6 +293,8 @@ struct TypeChecker<'a> {
     yield_stack: Vec<YieldContext>,
     stats: TypeCheckStats,
     judgments: Vec<TypeJudgment>,
+    for_iteration_evidence: Vec<ForIterationEvidence>,
+    record_runtime_for_iteration_evidence: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -346,6 +373,8 @@ impl TypeChecker<'_> {
             yield_stack: Vec::new(),
             stats: TypeCheckStats::default(),
             judgments: Vec::new(),
+            for_iteration_evidence: Vec::new(),
+            record_runtime_for_iteration_evidence: false,
         }
     }
 

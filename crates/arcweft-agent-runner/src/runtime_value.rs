@@ -49,6 +49,10 @@ pub(crate) fn runtime_value_to_json(value: &RuntimeValue) -> serde_json::Value {
         RuntimeValue::Range(range) => {
             serde_json::to_value(range).unwrap_or(serde_json::Value::Null)
         }
+        RuntimeValue::Iterator(_) => serde_json::json!({
+            "kind": "runtime_internal",
+            "value": "iterator",
+        }),
         RuntimeValue::Duration(_)
         | RuntimeValue::MatrixF32(_)
         | RuntimeValue::MatrixF64(_)
@@ -344,6 +348,7 @@ fn runtime_agent_value(value: &RuntimeValue) -> Result<AgentValue, String> {
         RuntimeValue::F64(value) => Ok(AgentValue::F64(*value)),
         RuntimeValue::String(value) => Ok(AgentValue::String(value.clone())),
         RuntimeValue::EntityRef(value) => parse_public_id_arg(value).map(AgentValue::Entity),
+        RuntimeValue::Iterator(_) => Err("runtime iterator state is not an Agent value".to_owned()),
         RuntimeValue::Tuple(values) => values
             .iter()
             .map(runtime_agent_value)

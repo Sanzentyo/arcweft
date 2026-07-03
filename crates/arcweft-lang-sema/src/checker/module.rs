@@ -47,7 +47,9 @@ impl TypeChecker<'_> {
         self.flow_params = collect_flow_params(module);
 
         self.check_module_agents(module.agents());
-        self.check_module_flows(module.flows());
+        self.with_runtime_for_iteration_evidence(|this| {
+            this.check_module_flows(module.flows());
+        });
         self.check_module_functions(module.functions());
         for declaration in module.declarations() {
             self.check_top_level_decl(declaration);
@@ -288,6 +290,14 @@ impl TypeChecker<'_> {
         } else {
             check(self)
         }
+    }
+
+    fn with_runtime_for_iteration_evidence<R>(&mut self, check: impl FnOnce(&mut Self) -> R) -> R {
+        let previous = self.record_runtime_for_iteration_evidence;
+        self.record_runtime_for_iteration_evidence = true;
+        let result = check(self);
+        self.record_runtime_for_iteration_evidence = previous;
+        result
     }
 
     fn bind_top_level_entity_aliases(&mut self, module: &HirModule) {

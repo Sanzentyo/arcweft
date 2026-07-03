@@ -2,6 +2,7 @@ use super::{
     RuntimeEvalError, RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth,
     RuntimeValue, runtime_value_label,
 };
+use crate::plan::{RuntimeBuiltinIteratorEvidence, RuntimeIteratorEvidence};
 use serde::{Deserialize, Serialize};
 
 /// Width-preserving integer range value.
@@ -150,6 +151,37 @@ impl RuntimeIterator {
             RuntimeValue::Tuple(values) => Ok(Self::values(values)),
             RuntimeValue::Range(range) => range.into_iterator().map_err(RuntimeValue::Range),
             value => Err(value),
+        }
+    }
+
+    pub fn from_value_with_evidence(
+        value: RuntimeValue,
+        evidence: &RuntimeIteratorEvidence,
+    ) -> Result<Self, RuntimeValue> {
+        match evidence {
+            RuntimeIteratorEvidence::Builtin(RuntimeBuiltinIteratorEvidence::Range) => {
+                match value {
+                    RuntimeValue::Range(range) => {
+                        range.into_iterator().map_err(RuntimeValue::Range)
+                    }
+                    value => Err(value),
+                }
+            }
+            RuntimeIteratorEvidence::Builtin(RuntimeBuiltinIteratorEvidence::Seq) => match value {
+                RuntimeValue::Seq(seq) => Ok(Self::values(seq.into_values())),
+                value => Err(value),
+            },
+            RuntimeIteratorEvidence::Builtin(
+                RuntimeBuiltinIteratorEvidence::Vec
+                | RuntimeBuiltinIteratorEvidence::Array
+                | RuntimeBuiltinIteratorEvidence::Slice
+                | RuntimeBuiltinIteratorEvidence::TupleHomogeneous,
+            ) => match value {
+                RuntimeValue::Seq(seq) => Ok(Self::values(seq.into_values())),
+                RuntimeValue::Tuple(values) => Ok(Self::values(values)),
+                value => Err(value),
+            },
+            RuntimeIteratorEvidence::Witness(_) => Err(value),
         }
     }
 

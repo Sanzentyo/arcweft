@@ -156,6 +156,102 @@ pub enum RuntimePureHelperOrigin {
     Inferred,
 }
 
+/// Serializable evidence that a `for` source was resolved through the standard
+/// `IntoIterator` / `Iterator` contract before runtime lowering.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum RuntimeIteratorEvidence {
+    Builtin(RuntimeBuiltinIteratorEvidence),
+    Witness(RuntimeIteratorWitnessEvidence),
+}
+
+/// Built-in iterator families that lower directly to runtime iterator state.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum RuntimeBuiltinIteratorEvidence {
+    Range,
+    Seq,
+    Vec,
+    Array,
+    Slice,
+    TupleHomogeneous,
+}
+
+/// Lowered witness-backed iterator evidence.
+///
+/// The current runtime can carry this evidence but intentionally rejects it
+/// until trait method bodies lower to executable runtime calls.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RuntimeIteratorWitnessEvidence {
+    pub item_type: String,
+    pub into_iter_type: String,
+    pub executable: RuntimeIteratorWitnessExecutable,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum RuntimeIteratorWitnessExecutable {
+    StaticCalls,
+    UnsupportedMethodBodyLowering,
+}
+
+impl RuntimeIteratorEvidence {
+    #[must_use]
+    pub const fn builtin_range() -> Self {
+        Self::Builtin(RuntimeBuiltinIteratorEvidence::Range)
+    }
+
+    #[must_use]
+    pub const fn builtin_seq() -> Self {
+        Self::Builtin(RuntimeBuiltinIteratorEvidence::Seq)
+    }
+
+    #[must_use]
+    pub const fn builtin_vec() -> Self {
+        Self::Builtin(RuntimeBuiltinIteratorEvidence::Vec)
+    }
+
+    #[must_use]
+    pub const fn builtin_array() -> Self {
+        Self::Builtin(RuntimeBuiltinIteratorEvidence::Array)
+    }
+
+    #[must_use]
+    pub const fn builtin_slice() -> Self {
+        Self::Builtin(RuntimeBuiltinIteratorEvidence::Slice)
+    }
+
+    #[must_use]
+    pub const fn builtin_tuple_homogeneous() -> Self {
+        Self::Builtin(RuntimeBuiltinIteratorEvidence::TupleHomogeneous)
+    }
+
+    #[must_use]
+    pub const fn awbc_label(&self) -> Option<&'static str> {
+        match self {
+            Self::Builtin(RuntimeBuiltinIteratorEvidence::Range) => Some("range"),
+            Self::Builtin(RuntimeBuiltinIteratorEvidence::Seq) => Some("seq"),
+            Self::Builtin(RuntimeBuiltinIteratorEvidence::Vec) => Some("vec"),
+            Self::Builtin(RuntimeBuiltinIteratorEvidence::Array) => Some("array"),
+            Self::Builtin(RuntimeBuiltinIteratorEvidence::Slice) => Some("slice"),
+            Self::Builtin(RuntimeBuiltinIteratorEvidence::TupleHomogeneous) => {
+                Some("tuple_homogeneous")
+            }
+            Self::Witness(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn from_awbc_label(label: &str) -> Option<Self> {
+        match label {
+            "range" => Some(Self::builtin_range()),
+            "seq" => Some(Self::builtin_seq()),
+            "vec" => Some(Self::builtin_vec()),
+            "array" => Some(Self::builtin_array()),
+            "slice" => Some(Self::builtin_slice()),
+            "tuple_homogeneous" => Some(Self::builtin_tuple_homogeneous()),
+            _ => None,
+        }
+    }
+}
+
 /// Runtime identifier for a lowered stream transform.
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -241,11 +337,13 @@ pub enum FlowOp {
     For {
         pattern: RuntimePattern,
         source: RuntimeExpr,
+        evidence: RuntimeIteratorEvidence,
         body: Vec<FlowOp>,
     },
     ForNext {
         pattern: RuntimePattern,
         iterator: RuntimeIterator,
+        evidence: RuntimeIteratorEvidence,
         body: Arc<[FlowOp]>,
     },
     Thread {

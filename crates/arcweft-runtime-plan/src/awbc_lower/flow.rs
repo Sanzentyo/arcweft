@@ -7,17 +7,17 @@ use crate::awbc_lower::pattern::lower_pattern;
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::audio::RuntimeAudioCommand;
 use arcweft_core::awbc::schema::{
-    AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption,
-    AwbcEffectSetId, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
-    AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcLineTaskGroupId,
-    AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
-    AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator,
+    AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption, AwbcEffectSetId,
+    AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
+    AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcLineTaskGroupId, AwbcPureHelper,
+    AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind,
+    AwbcScopeId, AwbcTableRange, AwbcTerminator,
 };
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
-    ChoiceRuntimeOption, FlowOp, RuntimeEntryTarget, RuntimeFlow, RuntimeMatchArm, RuntimePlan,
-    RuntimePureHelper, RuntimePureHelperOrigin,
+    ChoiceRuntimeOption, FlowOp, RuntimeEntryTarget, RuntimeFlow, RuntimeIteratorEvidence,
+    RuntimeMatchArm, RuntimePlan, RuntimePureHelper, RuntimePureHelperOrigin,
 };
 use arcweft_core::value::RuntimeExpr;
 use std::collections::BTreeSet;
@@ -32,6 +32,15 @@ struct FlowBodyBuilder {
     terminated: bool,
     returns_value: bool,
     has_dynamic_target: bool,
+}
+
+#[derive(Clone, Copy)]
+struct ForLoweringInput<'a> {
+    pattern: &'a RuntimePattern,
+    source: &'a RuntimeExpr,
+    evidence: &'a RuntimeIteratorEvidence,
+    ops: &'a [FlowOp],
+    path: &'a str,
 }
 
 impl FlowBodyBuilder {
@@ -608,9 +617,20 @@ impl<'a> AwbcFlowLowerer<'a> {
             FlowOp::For {
                 pattern,
                 source,
+                evidence,
                 body: ops,
             } => {
-                self.lower_for(frame, body, pattern, source, ops, path);
+                self.lower_for(
+                    frame,
+                    body,
+                    ForLoweringInput {
+                        pattern,
+                        source,
+                        evidence,
+                        ops,
+                        path,
+                    },
+                );
             }
             FlowOp::Scope(ops) => {
                 let scope = frame.enter_scope();
@@ -815,14 +835,30 @@ impl<'a> AwbcFlowLowerer<'a> {
         &mut self,
         frame: &mut FrameBuilder,
         body: &mut FlowBodyBuilder,
-        pattern: &RuntimePattern,
-        source: &RuntimeExpr,
-        ops: &[FlowOp],
-        path: &str,
+        input: ForLoweringInput<'_>,
     ) {
-        let sequence = self.lower_iterable_sequence(frame, source, path);
-        let index = self.initialize_for_index(frame);
-        let len = self.sequence_len(frame, sequence);
+        let Some(evidence_label) = input.evidence.awbc_label() else {
+            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                input.path.to_owned(),
+                "witness-backed IntoIterator lowering requires executable trait method bodies",
+            ));
+            return;
+        };
+        let source = AwbcExprLowerer::new(self.inventory, frame, input.path).lower(input.source);
+        let evidence = self.lower_iterator_evidence_constant(frame, evidence_label);
+        let iterator_name = frame.next_runtime_state_name("flow.for.iterator");
+        let iterator = frame.runtime_state(
+            &iterator_name,
+            self.inventory.intern_string(&iterator_name),
+            self.inventory.dynamic_ty(),
+        );
+        let into_iter = self.intrinsic("core.iter.into_iter", 2, Some(self.inventory.dynamic_ty()));
+        self.inventory
+            .push_instruction(AwbcInstruction::CallIntrinsic {
+                dst: Some(iterator),
+                intrinsic: into_iter,
+                args: vec![source, evidence],
+            });
 
         let condition_block = AwbcBlockId(table_index(
             self.inventory.program.blocks.len().saturating_add(1),
@@ -835,13 +871,36 @@ impl<'a> AwbcFlowLowerer<'a> {
             AwbcSafePointKind::None,
         );
 
-        let condition = frame.temp(self.inventory.bool_ty());
-        self.inventory.push_instruction(AwbcInstruction::Binary {
-            dst: condition,
-            op: AwbcBinaryOp::Lt,
-            lhs: index,
-            rhs: len,
-        });
+        let next_pair = frame.temp(self.inventory.dynamic_ty());
+        let next = self.intrinsic("core.iter.next", 1, Some(self.inventory.dynamic_ty()));
+        self.inventory
+            .push_instruction(AwbcInstruction::CallIntrinsic {
+                dst: Some(next_pair),
+                intrinsic: next,
+                args: vec![iterator],
+            });
+        self.inventory
+            .push_instruction(AwbcInstruction::ProjectTuple {
+                dst: iterator,
+                target: next_pair,
+                ordinal: 0,
+            });
+        let next_value = frame.temp(self.inventory.dynamic_ty());
+        self.inventory
+            .push_instruction(AwbcInstruction::ProjectTuple {
+                dst: next_value,
+                target: next_pair,
+                ordinal: 1,
+            });
+        let condition_ty = self.inventory.bool_ty();
+        let condition = frame.temp(condition_ty);
+        let is_some = self.intrinsic("core.option.is_some", 1, Some(condition_ty));
+        self.inventory
+            .push_instruction(AwbcInstruction::CallIntrinsic {
+                dst: Some(condition),
+                intrinsic: is_some,
+                args: vec![next_value],
+            });
         let condition_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
         let body_block = AwbcBlockId(condition_block.0.saturating_add(1));
         body.close_block(
@@ -858,27 +917,28 @@ impl<'a> AwbcFlowLowerer<'a> {
         self.inventory
             .push_instruction(AwbcInstruction::EnterScope { scope });
         let value = frame.temp(self.inventory.dynamic_ty());
+        let unwrap = self.intrinsic("core.option.unwrap", 1, Some(self.inventory.dynamic_ty()));
         self.inventory
-            .push_instruction(AwbcInstruction::SequenceGet {
-                dst: value,
-                sequence,
-                index,
+            .push_instruction(AwbcInstruction::CallIntrinsic {
+                dst: Some(value),
+                intrinsic: unwrap,
+                args: vec![next_value],
             });
-        let pattern = lower_pattern(self.inventory, frame, pattern);
+        let pattern = lower_pattern(self.inventory, frame, input.pattern);
         self.inventory
             .push_instruction(AwbcInstruction::BindPattern {
                 pattern,
                 value,
                 mode: AwbcBindMode::Declare,
             });
-        self.lower_ops(frame, body, ops, &format!("{path}.body"));
+        self.lower_ops(frame, body, input.ops, &format!("{}.body", input.path));
         if body.terminated {
             frame.exit_scope();
             let after_block = body.reopen_after_terminated_branch(self.inventory);
             patch_branch_else_block(self.inventory, condition_block, after_block);
             return;
         }
-        self.close_for_iteration(frame, body, scope, index, condition_block);
+        self.close_iterator_for_iteration(frame, body, scope, condition_block);
     }
 
     fn close_active_scopes_for_terminator(&mut self, frame: &mut FrameBuilder) {
@@ -889,65 +949,29 @@ impl<'a> AwbcFlowLowerer<'a> {
         frame.exit_all_scopes();
     }
 
-    fn lower_iterable_sequence(
+    fn lower_iterator_evidence_constant(
         &mut self,
         frame: &mut FrameBuilder,
-        source: &RuntimeExpr,
-        path: &str,
+        evidence: &str,
     ) -> AwbcRegisterId {
-        let source = AwbcExprLowerer::new(self.inventory, frame, path).lower(source);
-        let sequence = frame.temp(self.inventory.dynamic_ty());
-        let collect = self.intrinsic("core.iter.collect", 1, Some(self.inventory.dynamic_ty()));
+        let value = arcweft_core::value::RuntimeValue::String(evidence.to_owned());
+        let constant = self.inventory.constant_runtime_value(&value);
+        let dst = frame.temp(self.inventory.dynamic_ty());
         self.inventory
-            .push_instruction(AwbcInstruction::CallIntrinsic {
-                dst: Some(sequence),
-                intrinsic: collect,
-                args: vec![source],
-            });
-        sequence
+            .push_instruction(AwbcInstruction::LoadConst { dst, constant });
+        dst
     }
 
-    fn initialize_for_index(&mut self, frame: &mut FrameBuilder) -> AwbcRegisterId {
-        let index_name = frame.next_runtime_state_name("flow.for.index");
-        let index = frame.runtime_state(
-            &index_name,
-            self.inventory.intern_string(&index_name),
-            self.inventory.dynamic_ty(),
-        );
-        self.load_usize_const(index, 0);
-        index
-    }
-
-    fn sequence_len(
-        &mut self,
-        frame: &mut FrameBuilder,
-        sequence: AwbcRegisterId,
-    ) -> AwbcRegisterId {
-        let len = frame.temp(self.inventory.dynamic_ty());
-        self.inventory
-            .push_instruction(AwbcInstruction::SequenceLen { dst: len, sequence });
-        len
-    }
-
-    fn close_for_iteration(
+    fn close_iterator_for_iteration(
         &mut self,
         frame: &mut FrameBuilder,
         body: &mut FlowBodyBuilder,
         scope: AwbcScopeId,
-        index: AwbcRegisterId,
         condition_block: AwbcBlockId,
     ) {
         self.inventory
             .push_instruction(AwbcInstruction::ExitScope { scope });
         frame.exit_scope();
-        let one = frame.temp(self.inventory.dynamic_ty());
-        self.load_usize_const(one, 1);
-        self.inventory.push_instruction(AwbcInstruction::Binary {
-            dst: index,
-            op: AwbcBinaryOp::Add,
-            lhs: index,
-            rhs: one,
-        });
         body.close_block(
             self.inventory,
             AwbcTerminator::Jump {
@@ -957,14 +981,6 @@ impl<'a> AwbcFlowLowerer<'a> {
         );
         let after_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
         patch_branch_else_block(self.inventory, condition_block, after_block);
-    }
-
-    fn load_usize_const(&mut self, dst: AwbcRegisterId, value: u64) {
-        let constant = self
-            .inventory
-            .constant_runtime_value(&arcweft_core::value::RuntimeValue::usize(value));
-        self.inventory
-            .push_instruction(AwbcInstruction::LoadConst { dst, constant });
     }
 
     fn intrinsic(
@@ -1190,6 +1206,7 @@ impl EntryParameterCollector {
                 pattern,
                 source,
                 body,
+                ..
             } => {
                 self.collect_expr(source);
                 let names = pattern_names(pattern);

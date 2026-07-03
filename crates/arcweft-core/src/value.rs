@@ -1,6 +1,8 @@
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use crate::pattern::RuntimePattern;
-use crate::plan::{RuntimePureHelperId, RuntimePureInputType, RuntimePureOutputType};
+use crate::plan::{
+    RuntimeIteratorEvidence, RuntimePureHelperId, RuntimePureInputType, RuntimePureOutputType,
+};
 use crate::time::LogicalDuration;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -48,6 +50,7 @@ pub enum RuntimeValue {
     Char(char),
     Duration(LogicalDuration),
     Range(RuntimeRange),
+    Iterator(RuntimeIterator),
     EntityRef(String),
     Tuple(Vec<RuntimeValue>),
     Seq(RuntimeSeq),
@@ -107,6 +110,10 @@ pub enum RuntimeIntrinsic {
     Add,
     CoreRange,
     CoreIterCollect,
+    CoreIterIntoIter,
+    CoreIterNext,
+    CoreOptionIsSome,
+    CoreOptionUnwrap,
     StdF32Abs,
     StdF32Floor,
     StdF32Ceil,
@@ -177,6 +184,10 @@ impl RuntimeIntrinsic {
             "add" => Some(Self::Add),
             "core.range" => Some(Self::CoreRange),
             "core.iter.collect" => Some(Self::CoreIterCollect),
+            "core.iter.into_iter" => Some(Self::CoreIterIntoIter),
+            "core.iter.next" => Some(Self::CoreIterNext),
+            "core.option.is_some" => Some(Self::CoreOptionIsSome),
+            "core.option.unwrap" => Some(Self::CoreOptionUnwrap),
             "std.f32.abs" => Some(Self::StdF32Abs),
             "std.f32.floor" => Some(Self::StdF32Floor),
             "std.f32.ceil" => Some(Self::StdF32Ceil),
@@ -248,6 +259,10 @@ impl RuntimeIntrinsic {
             Self::Add => "add",
             Self::CoreRange => "core.range",
             Self::CoreIterCollect => "core.iter.collect",
+            Self::CoreIterIntoIter => "core.iter.into_iter",
+            Self::CoreIterNext => "core.iter.next",
+            Self::CoreOptionIsSome => "core.option.is_some",
+            Self::CoreOptionUnwrap => "core.option.unwrap",
             Self::StdF32Abs => "std.f32.abs",
             Self::StdF32Floor => "std.f32.floor",
             Self::StdF32Ceil => "std.f32.ceil",
@@ -322,6 +337,10 @@ impl RuntimeIntrinsic {
             Self::Add
             | Self::CoreRange
             | Self::CoreIterCollect
+            | Self::CoreIterIntoIter
+            | Self::CoreIterNext
+            | Self::CoreOptionIsSome
+            | Self::CoreOptionUnwrap
             | Self::StdF32Abs
             | Self::StdF32Floor
             | Self::StdF32Ceil
@@ -1723,6 +1742,124 @@ pub fn evaluate_core_iter_collect_intrinsic(
         .map_err(|value| RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value)))
 }
 
+pub fn evaluate_core_iter_into_iter_intrinsic(
+    value: RuntimeValue,
+    evidence: &RuntimeValue,
+) -> Result<RuntimeValue, RuntimeEvalError> {
+    let RuntimeValue::String(label) = evidence else {
+        return Err(RuntimeEvalError::ExpectedBracketSeq(format!(
+            "iterator evidence must be a string label, found {}",
+            runtime_value_label(evidence)
+        )));
+    };
+    let Some(evidence) = RuntimeIteratorEvidence::from_awbc_label(label) else {
+        return Err(RuntimeEvalError::ExpectedBracketSeq(format!(
+            "unknown iterator evidence `{label}`"
+        )));
+    };
+    RuntimeIterator::from_value_with_evidence(value, &evidence)
+        .map(RuntimeValue::Iterator)
+        .map_err(|value| RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value)))
+}
+
+pub fn evaluate_core_iter_next_intrinsic(
+    value: RuntimeValue,
+) -> Result<RuntimeValue, RuntimeEvalError> {
+    let RuntimeValue::Iterator(mut iterator) = value else {
+        return Err(RuntimeEvalError::ExpectedBracketSeq(format!(
+            "core.iter.next expected iterator, found {}",
+            runtime_value_label(&value)
+        )));
+    };
+    let item = iterator
+        .next()
+        .map_or_else(runtime_option_none, runtime_option_some);
+    Ok(RuntimeValue::Tuple(vec![
+        RuntimeValue::Iterator(iterator),
+        item,
+    ]))
+}
+
+pub fn evaluate_core_option_is_some_intrinsic(
+    value: &RuntimeValue,
+) -> Result<RuntimeValue, RuntimeEvalError> {
+    match runtime_option_payload(value) {
+        Some(RuntimeOptionPayload::Some) => Ok(RuntimeValue::Bool(true)),
+        Some(RuntimeOptionPayload::None) => Ok(RuntimeValue::Bool(false)),
+        None => Err(RuntimeEvalError::ExpectedBracketSeq(format!(
+            "core.option.is_some expected Option, found {}",
+            runtime_value_label(value)
+        ))),
+    }
+}
+
+pub fn evaluate_core_option_unwrap_intrinsic(
+    value: RuntimeValue,
+) -> Result<RuntimeValue, RuntimeEvalError> {
+    match value {
+        RuntimeValue::Variant {
+            path,
+            name,
+            payload: Some(payload),
+        } if is_option_path(path.as_deref()) && name == "Some" => Ok(*payload),
+        RuntimeValue::Variant {
+            path,
+            name,
+            payload: None,
+        } if is_option_path(path.as_deref()) && name == "None" => Err(
+            RuntimeEvalError::ExpectedBracketSeq("core.option.unwrap called on None".to_owned()),
+        ),
+        value => Err(RuntimeEvalError::ExpectedBracketSeq(format!(
+            "core.option.unwrap expected Option, found {}",
+            runtime_value_label(&value)
+        ))),
+    }
+}
+
+enum RuntimeOptionPayload {
+    Some,
+    None,
+}
+
+fn runtime_option_payload(value: &RuntimeValue) -> Option<RuntimeOptionPayload> {
+    let RuntimeValue::Variant {
+        path,
+        name,
+        payload,
+    } = value
+    else {
+        return None;
+    };
+    if !is_option_path(path.as_deref()) {
+        return None;
+    }
+    match (name.as_str(), payload.as_deref()) {
+        ("Some", Some(_)) => Some(RuntimeOptionPayload::Some),
+        ("None", None) => Some(RuntimeOptionPayload::None),
+        _ => None,
+    }
+}
+
+fn is_option_path(path: Option<&str>) -> bool {
+    path.is_none_or(|path| path == "Option")
+}
+
+fn runtime_option_some(value: RuntimeValue) -> RuntimeValue {
+    RuntimeValue::Variant {
+        path: Some("Option".to_owned()),
+        name: "Some".to_owned(),
+        payload: Some(Box::new(value)),
+    }
+}
+
+fn runtime_option_none() -> RuntimeValue {
+    RuntimeValue::Variant {
+        path: Some("Option".to_owned()),
+        name: "None".to_owned(),
+        payload: None,
+    }
+}
+
 pub fn runtime_sequence_values(values: Vec<RuntimeValue>) -> RuntimeValue {
     RuntimeValue::Seq(RuntimeSeq::values(values))
 }
@@ -2302,6 +2439,7 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::Range(value) => value.label(),
+        RuntimeValue::Iterator(_) => "iterator".to_owned(),
         RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
         RuntimeValue::Seq(seq) => match seq {
             RuntimeSeq::Values(values) => format!("seq/values/{}", values.len()),

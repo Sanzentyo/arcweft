@@ -9,8 +9,8 @@ use arcweft_core::line_task::{LineOutRequest, LineTaskGroup, LineTaskNode, LineT
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
     ChoiceRuntimeOption, FlowEvent, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeHostCallTarget,
-    RuntimePlan, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
-    RuntimePureInputType, RuntimePureOutputType,
+    RuntimeIteratorEvidence, RuntimePlan, RuntimePureHelper, RuntimePureHelperId,
+    RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType,
 };
 use arcweft_core::source::{
     RuntimeSourceEvent, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp, SourcePlan,
@@ -424,6 +424,7 @@ fn awbc_product_parity_for_range_effects() {
             FlowOp::For {
                 pattern: RuntimePattern::Ident("i".to_owned()),
                 source: i32_range_expr(0, 3),
+                evidence: RuntimeIteratorEvidence::builtin_range(),
                 body: vec![FlowOp::Effect(call("effect.loop"))],
             },
             FlowOp::Return("done".to_owned()),
@@ -446,6 +447,7 @@ fn awbc_product_parity_for_empty_range_skips_body() {
             FlowOp::For {
                 pattern: RuntimePattern::Ident("i".to_owned()),
                 source: i32_range_expr(0, 0),
+                evidence: RuntimeIteratorEvidence::builtin_range(),
                 body: vec![FlowOp::Effect(call("effect.loop"))],
             },
             FlowOp::Return("done".to_owned()),
@@ -465,6 +467,7 @@ fn awbc_product_parity_for_empty_range_skips_return_body() {
             FlowOp::For {
                 pattern: RuntimePattern::Ident("i".to_owned()),
                 source: i32_range_expr(0, 0),
+                evidence: RuntimeIteratorEvidence::builtin_range(),
                 body: vec![FlowOp::Return("loop".to_owned())],
             },
             FlowOp::Return("done".to_owned()),
@@ -488,6 +491,7 @@ fn awbc_product_parity_for_non_empty_range_can_return_from_body() {
             FlowOp::For {
                 pattern: RuntimePattern::Ident("i".to_owned()),
                 source: i32_range_expr(0, 1),
+                evidence: RuntimeIteratorEvidence::builtin_range(),
                 body: vec![FlowOp::Return("loop".to_owned())],
             },
             FlowOp::Return("done".to_owned()),
@@ -521,6 +525,7 @@ fn awbc_product_parity_for_range_dialogue_body_outputs() {
                 FlowOp::For {
                     pattern: RuntimePattern::Ident("i".to_owned()),
                     source: i32_range_expr(0, 2),
+                    evidence: RuntimeIteratorEvidence::builtin_range(),
                     body: vec![FlowOp::Dialogue {
                         line: "line.loop.001".into(),
                         task_group: 0,

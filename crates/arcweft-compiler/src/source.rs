@@ -1,10 +1,10 @@
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_syntax::parser::parse_source;
-use arcweft_runtime_plan::flow::lower_runtime_plan_with_stats;
 
 use crate::error::{CompileSourceError, ValidateHirError};
 use crate::hir::validate_hir_with_env;
+use crate::lower::lower_source_runtime_plan_with_typecheck_stats_and_options;
 use crate::types::CompiledSource;
 
 /// Compiles an Arcweft source string with the standard type-checking environment.
@@ -27,7 +27,12 @@ pub fn compile_source_with_env(
         ValidateHirError::Readiness(errors) => CompileSourceError::Readiness(errors),
         ValidateHirError::Type(errors) => CompileSourceError::Type(errors),
     })?;
-    let report = lower_runtime_plan_with_stats(&hir).map_err(CompileSourceError::RuntimePlan)?;
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck_report,
+        &arcweft_runtime_plan::flow::RuntimePlanLowerOptions::default(),
+    )
+    .map_err(CompileSourceError::RuntimePlan)?;
     Ok(CompiledSource {
         plan: report.plan,
         display: report.line_display_catalog,

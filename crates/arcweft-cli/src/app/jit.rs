@@ -384,6 +384,7 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
                 format!(".{name}")
             }
         }
+        RuntimeValue::Iterator(_) => "iterator".to_owned(),
     }
 }
 

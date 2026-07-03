@@ -453,6 +453,7 @@ fn runtime_value_kind(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Seq(_) => "Seq",
         RuntimeValue::Record(_) => "Record",
         RuntimeValue::Variant { .. } => "Variant",
+        RuntimeValue::Iterator(_) => "Iterator",
     }
 }
 

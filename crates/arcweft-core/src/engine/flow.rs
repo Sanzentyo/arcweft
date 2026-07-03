@@ -327,31 +327,37 @@ impl Engine {
             FlowOp::For {
                 pattern,
                 source,
+                evidence,
                 body,
             } => {
                 self.advance_if_needed(next_op_index);
                 match self.evaluate_expr_with_backend(&source, pure_backend) {
-                    Ok(value) => match RuntimeIterator::from_value(value) {
-                        Ok(iterator) => {
-                            let body = Arc::from(body);
-                            self.push_for_next(pattern, iterator, &body, output);
+                    Ok(value) => {
+                        match RuntimeIterator::from_value_with_evidence(value, &evidence) {
+                            Ok(iterator) => {
+                                let body = Arc::from(body);
+                                self.push_for_next(pattern, iterator, evidence, &body, output);
+                            }
+                            Err(value) => {
+                                self.fail_eval(
+                                    RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
+                                        &value,
+                                    )),
+                                    output,
+                                );
+                            }
                         }
-                        Err(value) => {
-                            self.fail_eval(
-                                RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value)),
-                                output,
-                            );
-                        }
-                    },
+                    }
                     Err(error) => self.fail_eval(error, output),
                 }
             }
             FlowOp::ForNext {
                 pattern,
                 iterator,
+                evidence,
                 body,
             } => {
-                self.push_for_next(pattern, iterator, &body, output);
+                self.push_for_next(pattern, iterator, evidence, &body, output);
             }
             FlowOp::Thread { name, body } => {
                 self.advance_if_needed(next_op_index);
@@ -565,6 +571,7 @@ impl Engine {
         &mut self,
         pattern: RuntimePattern,
         mut iterator: RuntimeIterator,
+        evidence: crate::plan::RuntimeIteratorEvidence,
         body: &Arc<[FlowOp]>,
         output: &mut RuntimeStepOutput,
     ) {
@@ -601,6 +608,7 @@ impl Engine {
         let tail = FlowOp::ForNext {
             pattern,
             iterator,
+            evidence,
             body: Arc::clone(body),
         };
         self.push_borrowed_ops_with_exit(body.as_ref(), Some(tail));

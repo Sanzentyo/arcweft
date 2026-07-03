@@ -1707,6 +1707,7 @@ fn for_loop_expands_one_iteration_at_a_time() {
                     RuntimeExpr::Value(RuntimeValue::i64(3)),
                     RuntimeExpr::Value(RuntimeValue::i64(4)),
                 ]),
+                evidence: crate::plan::RuntimeIteratorEvidence::builtin_seq(),
                 body: vec![FlowOp::Effect(call("observe.item"))],
             }],
         }],

@@ -17,9 +17,9 @@ use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::line_task::{LineOutRequest, LineTaskGroup};
 use arcweft_core::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec,
-    RuntimeEntryTarget, RuntimeFlow, RuntimeLineId, RuntimeMatchArm, RuntimePlan,
-    RuntimePureHelper, RuntimePureHelperId, RuntimeRouteBinding, RuntimeRouteBindingSource,
-    RuntimeRouteSpec,
+    RuntimeEntryTarget, RuntimeFlow, RuntimeIteratorEvidence, RuntimeLineId, RuntimeMatchArm,
+    RuntimePlan, RuntimePureHelper, RuntimePureHelperId, RuntimeRouteBinding,
+    RuntimeRouteBindingSource, RuntimeRouteSpec,
 };
 use arcweft_core::task::{
     AWAIT_MANY_ITEM_BINDING, AwaitManyTarget, AwaitTarget, HostTaskArgTemplate,
@@ -61,6 +61,7 @@ pub struct RuntimePlanLowerReport {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RuntimePlanLowerOptions {
     dialogue_defaults: Option<String>,
+    for_iteration_evidence: Vec<RuntimeIteratorEvidence>,
 }
 
 impl RuntimePlanLowerOptions {
@@ -69,6 +70,7 @@ impl RuntimePlanLowerOptions {
     pub const fn new() -> Self {
         Self {
             dialogue_defaults: None,
+            for_iteration_evidence: Vec::new(),
         }
     }
 
@@ -80,10 +82,23 @@ impl RuntimePlanLowerOptions {
         self
     }
 
+    #[must_use]
+    pub fn with_for_iteration_evidence(
+        mut self,
+        evidence: impl IntoIterator<Item = RuntimeIteratorEvidence>,
+    ) -> Self {
+        self.for_iteration_evidence = evidence.into_iter().collect();
+        self
+    }
+
     /// Selected dialogue defaults profile ID, if supplied by a launch profile.
     #[must_use]
     pub fn dialogue_defaults(&self) -> Option<&str> {
         self.dialogue_defaults.as_deref()
+    }
+
+    pub fn for_iteration_evidence(&self) -> &[RuntimeIteratorEvidence] {
+        &self.for_iteration_evidence
     }
 }
 
@@ -1294,6 +1309,8 @@ pub(crate) fn lower_runtime_flows(
         speaker_preset_scopes: Vec::new(),
         errors: Vec::new(),
         pure_helpers,
+        for_iteration_evidence: options.for_iteration_evidence(),
+        for_iteration_cursor: 0,
     };
     let flows = module
         .flows()
@@ -1332,6 +1349,8 @@ fn lower_agent_controller_flow(
         speaker_preset_scopes: Vec::new(),
         errors: Vec::new(),
         pure_helpers,
+        for_iteration_evidence: &[],
+        for_iteration_cursor: 0,
     };
     let id = agent.item().id().map_or_else(
         || FlowRuntimeId(format!("agent.{}", agent.item().name())),
@@ -1360,6 +1379,8 @@ struct FlowRuntimeLowerer<'a> {
     speaker_preset_scopes: Vec<BTreeMap<String, DialogueSpeakerPreset>>,
     errors: Vec<RuntimePlanLowerError>,
     pure_helpers: &'a BTreeMap<String, RuntimePureHelperId>,
+    for_iteration_evidence: &'a [RuntimeIteratorEvidence],
+    for_iteration_cursor: usize,
 }
 
 impl FlowRuntimeLowerer<'_> {
@@ -1375,6 +1396,15 @@ impl FlowRuntimeLowerer<'_> {
 
     fn lower_optional_runtime_expr(&mut self, expr: Option<&Expr>) -> Option<RuntimeExpr> {
         expr.map(|expr| self.lower_runtime_expr(expr))
+    }
+
+    fn next_for_iteration_evidence(&mut self) -> Option<RuntimeIteratorEvidence> {
+        let evidence = self
+            .for_iteration_evidence
+            .get(self.for_iteration_cursor)
+            .cloned();
+        self.for_iteration_cursor = self.for_iteration_cursor.saturating_add(1);
+        evidence
     }
 
     fn lower_flow(&mut self, index: usize, flow: &HirFlow) -> RuntimeFlow {
@@ -1482,11 +1512,18 @@ impl FlowRuntimeLowerer<'_> {
                     });
                 }
                 HirFlowItem::For(block) => {
-                    ops.push(FlowOp::For {
-                        pattern: lower_runtime_pattern(block.pattern()),
-                        source: self.lower_runtime_expr(block.source()),
-                        body: self.lower_flow_items(flow_id, block.body(), flow_index),
-                    });
+                    if let Some(evidence) = self.next_for_iteration_evidence() {
+                        ops.push(FlowOp::For {
+                            pattern: lower_runtime_pattern(block.pattern()),
+                            source: self.lower_runtime_expr(block.source()),
+                            evidence,
+                            body: self.lower_flow_items(flow_id, block.body(), flow_index),
+                        });
+                    } else {
+                        self.errors.push(RuntimePlanLowerError::new(
+                            "missing trait-resolved IntoIterator evidence for `for` source",
+                        ));
+                    }
                 }
                 other => {
                     self.errors.push(RuntimePlanLowerError::new(format!(
@@ -1826,11 +1863,20 @@ impl FlowRuntimeLowerer<'_> {
                 pattern,
                 source,
                 body,
-            } => vec![FlowOp::For {
-                pattern: lower_runtime_pattern(pattern),
-                source: self.lower_runtime_expr(source),
-                body: self.lower_flow_stmt_list(flow_id, flow_index, body),
-            }],
+            } => {
+                let Some(evidence) = self.next_for_iteration_evidence() else {
+                    self.errors.push(RuntimePlanLowerError::new(
+                        "missing trait-resolved IntoIterator evidence for `for` source",
+                    ));
+                    return Vec::new();
+                };
+                vec![FlowOp::For {
+                    pattern: lower_runtime_pattern(pattern),
+                    source: self.lower_runtime_expr(source),
+                    evidence,
+                    body: self.lower_flow_stmt_list(flow_id, flow_index, body),
+                }]
+            }
             Stmt::Thread(thread) => self.lower_thread_stmt(flow_id, flow_index, thread),
             Stmt::Match { expr, arms } => vec![FlowOp::Match {
                 scrutinee: self.lower_runtime_expr(expr),

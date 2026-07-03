@@ -99,7 +99,8 @@ pub(in crate::app) fn compile_profile_runtime_plan(
             ExitCode::FAILURE
         })
     })?;
-    let runtime_plan_report = profile_lower_runtime_plan(selection, &hir, phases)?;
+    let runtime_plan_report =
+        profile_lower_runtime_plan(selection, &hir, &typecheck_report, phases)?;
     let plan = runtime_plan_report.plan;
     let line_display_catalog = runtime_plan_report.line_display_catalog;
     let runtime_plan_stats = runtime_plan_report.stats;
@@ -268,18 +269,22 @@ fn add_syntax_stats(total: &mut SyntaxParseStats, item: &SyntaxParseStats) {
 fn profile_lower_runtime_plan(
     selection: &SourceSelection,
     hir: &arcweft_lang_hir::model::HirModule,
+    typecheck: &TypeCheckReport,
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<RuntimePlanLowerReport, ExitCode> {
     run_profile_phase(phases, "runtime_plan_lower", || {
         let runtime_options = runtime_plan_options_for_selection(selection);
-        lower::lower_source_runtime_plan_with_stats_and_options(hir, &runtime_options).map_err(
-            |errors| {
-                for error in errors {
-                    eprintln!("error: {}", error.message());
-                }
-                ExitCode::FAILURE
-            },
+        lower::lower_source_runtime_plan_with_typecheck_stats_and_options(
+            hir,
+            typecheck,
+            &runtime_options,
         )
+        .map_err(|errors| {
+            for error in errors {
+                eprintln!("error: {}", error.message());
+            }
+            ExitCode::FAILURE
+        })
     })
 }
 

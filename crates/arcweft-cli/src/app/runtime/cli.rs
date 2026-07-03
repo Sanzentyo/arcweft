@@ -8,7 +8,7 @@ use crate::app::project::{
 };
 use crate::app::shared::print_json;
 use crate::output::{RuntimeExecutorTier, RuntimeRunReport};
-use arcweft_compiler::lower::lower_source_runtime_plan_with_options;
+use arcweft_compiler::lower::lower_source_runtime_plan_with_typecheck_and_options;
 use arcweft_core::engine::FlowStatusLabelStyle;
 use arcweft_core::value::{RuntimeBinding, RuntimeValue, runtime_sequence_values};
 use arcweft_launch::LaunchKind;
@@ -33,14 +33,17 @@ pub(in crate::app) fn runtime_cli_command(
     let checked = load_and_check_selection(&selection, None)?;
     let host_policy = native_host_policy_for_selection(&selection)?;
     let runtime_options = runtime_plan_options_for_selection(&selection);
-    let mut plan = lower_source_runtime_plan_with_options(&checked.hir, &runtime_options).map_err(
-        |errors| {
-            for error in errors {
-                eprintln!("error: {error}");
-            }
-            ExitCode::FAILURE
-        },
-    )?;
+    let mut plan = lower_source_runtime_plan_with_typecheck_and_options(
+        &checked.hir,
+        &checked.typecheck_report,
+        &runtime_options,
+    )
+    .map_err(|errors| {
+        for error in errors {
+            eprintln!("error: {error}");
+        }
+        ExitCode::FAILURE
+    })?;
     let entry = options.entry.as_deref().or(selection.entry());
     apply_runtime_cli_entry_selection(&mut plan, entry)?;
     let mut bindings = options.values.clone();
