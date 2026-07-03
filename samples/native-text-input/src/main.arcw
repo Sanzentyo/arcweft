@@ -36,6 +36,34 @@ ui secure_field @input.secret_secure_field {
   change = @input.secret_secure_field
 }
 
+ui style @style.native_text_input_sample {
+  token font.jp_sans_stack = text("Yu Gothic, Hiragino Sans, Noto Sans JP, system-ui")
+  token font.jp_serif_stack = text("Yu Mincho, Hiragino Mincho ProN, Noto Serif JP, serif")
+  token style.focus_ring_width = milli(2000)
+
+  rule text_field {
+    font-family = token(font.jp_sans_stack)
+    border-color = system_color(border)
+  }
+
+  rule text_area {
+    font-family = token(font.jp_serif_stack)
+    line-height-milli = milli(1350)
+  }
+
+  rule secure_field {
+    font-family = text("system-ui")
+    secure-mask = text("asterisk")
+  }
+
+  rule state(focus_visible) {
+    focus-ring-color = system_color(focus_ring)
+    focus-ring-width-milli = token(style.focus_ring_width)
+  }
+
+  environment text_scale_at_least_milli = 1000
+}
+
 fn i_to_string(i: i32) -> string {
     if i == 0 {
         return "first"

@@ -131,6 +131,8 @@ pub(super) fn classify_top_level_item(trimmed: &str) -> CstTopLevelItemKind {
         CstTopLevelItemKind::Source
     } else if looks_like_ui_text_input(trimmed) {
         CstTopLevelItemKind::UiTextInput
+    } else if looks_like_ui_style(trimmed) {
+        CstTopLevelItemKind::UiStyle
     } else {
         CstTopLevelItemKind::FlowBodyItemOrRaw
     }
@@ -161,6 +163,12 @@ fn looks_like_ui_text_input(trimmed: &str) -> bool {
             tail.strip_prefix(prefix)
                 .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
         })
+}
+
+fn looks_like_ui_style(trimmed: &str) -> bool {
+    let tail = visible_tail(trimmed).trim_start();
+    tail.strip_prefix("ui style")
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
 }
 
 fn looks_like_use_line(trimmed: &str) -> bool {

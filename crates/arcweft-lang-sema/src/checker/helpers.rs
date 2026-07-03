@@ -20,6 +20,7 @@ pub(super) fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
         "text" => EntityKind::Text,
         "content" => EntityKind::Content,
         "input" => EntityKind::Input,
+        "style" => EntityKind::Style,
         "item" => EntityKind::Other("item".to_owned()),
         "asset" => EntityKind::Asset,
         "image" => EntityKind::Image,

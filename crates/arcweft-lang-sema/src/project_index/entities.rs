@@ -759,6 +759,7 @@ fn entity_kind_from_type_name(name: &str) -> Option<EntityKind> {
         "DialogueLine" => EntityKind::DialogueLine,
         "Text" => EntityKind::Text,
         "Content" => EntityKind::Content,
+        "Style" => EntityKind::Style,
         "Asset" => EntityKind::Asset,
         "Image" => EntityKind::Image,
         "Animation" => EntityKind::Animation,

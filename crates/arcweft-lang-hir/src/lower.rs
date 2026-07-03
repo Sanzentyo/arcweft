@@ -124,6 +124,10 @@ impl HirLoweringState {
                 self.declarations
                     .push(HirTopLevelDecl::UiTextInput(item.clone()));
             }
+            Item::UiStyle(item) => {
+                self.declarations
+                    .push(HirTopLevelDecl::UiStyle(item.clone()));
+            }
             Item::State(item) => {
                 self.declarations.push(HirTopLevelDecl::State(item.clone()));
             }

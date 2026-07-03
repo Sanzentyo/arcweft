@@ -7,8 +7,13 @@ This cut moves the native text-input sample's input controls out of
 
 - Added `ui text_input`, `ui text_area`, and `ui secure_field` top-level DSL
   declarations with typed `@input.*` IDs.
+- Added `ui style @style.*` top-level DSL declarations with retained
+  `token`, `rule`, and `environment` entries lowered into compact
+  `UiStyleResource`.
 - Added `EntityKind::Input` so input IDs are indexed, resolved, and type
   checked as a real entity family rather than `Other("input")`.
+- Added `EntityKind::Style` so style IDs are indexed, resolved, and type
+  checked as a real entity family.
 - Added `let PAT = text_submit @input.id` as a flow statement lowered to the
   suspending host call `ui.text_input.await_submit`.
 - Wired `BundleSession` so submitted text-control write-backs resume pending
@@ -18,8 +23,8 @@ This cut moves the native text-input sample's input controls out of
 - Fixed flow `if count < 5 { ... }` parsing: CST block detection no longer lets
   comparison `<` hide the following block `{`.
 - Updated `samples/native-text-input/src/main.arcw` to declare its three text
-  controls in DSL and removed the old input/program/text/scene-contract JSON
-  files.
+  controls and retained UI style in DSL, then removed the old
+  input/program/text/style/scene-contract JSON files.
 - Added `samples/text-submit-flow/`, a separate sample that waits for
   Enter/IME send, branches by submitted text length, uses the submitted string
   in dialogue, and returns it.
@@ -36,13 +41,15 @@ fallbacks. That is split into
 ## Verification
 
 - `cargo run -p arcweft-cli -- check --manifest-path samples/native-text-input/arcw.toml`
+- `cargo run -p arcweft-cli -- bundle samples/native-text-input/src/main.arcw --output target/arcweft/style-dsl-native-text-input.awfb`
 - `cargo run -p arcweft-cli -- check --manifest-path samples/text-submit-flow/arcw.toml`
 - `cargo run -p arcweft-cli -- run --runner headless samples/text-submit-flow/src/main.arcw --steps 2 --mode drain --max-ops 64`
 - `cargo test -p arcweft-lang-syntax flow_if_comparison_condition_is_structured --test parser_p1`
+- `cargo test -p arcweft-lang-syntax parses_retained_ui_style_item --all-features`
 - `cargo test -p arcweft-cli --test native_text_input_sample_sidecars`
-- `cargo check -p arcweft-core -p arcweft-lang-syntax -p arcweft-lang-hir -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-runtime-driver -p arcweft-cli --all-targets`
+- `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`
 
 The structure audit completed as a dry run and reported the current workspace
-baseline of `3 error(s), 126 warning(s)` without writing report files.
+baseline of `4 error(s), 125 warning(s)` without writing report files.

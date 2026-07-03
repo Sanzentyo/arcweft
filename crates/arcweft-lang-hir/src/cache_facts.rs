@@ -25,6 +25,7 @@ impl HirTopLevelDecl {
             Self::Parser(_) => "parser",
             Self::Source(_) => "source",
             Self::UiTextInput(_) => "ui_text_input",
+            Self::UiStyle(_) => "ui_style",
         }
     }
 }

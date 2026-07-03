@@ -232,6 +232,37 @@ fn cst_line_events_classify_top_level_dispatch() {
 }
 
 #[test]
+fn parses_retained_ui_style_item() {
+    let parsed = parse_source(
+        r#"
+ui style @style.native_text_input_sample {
+  token font.jp_sans_stack = text("Yu Gothic, system-ui")
+
+  rule text_field {
+    font-family = token(font.jp_sans_stack)
+    border-color = system_color(border)
+  }
+
+  rule state(focus_visible) {
+    focus-ring-width-milli = milli(2000)
+  }
+
+  environment text_scale_at_least_milli = 1000
+}
+"#,
+    );
+
+    assert_eq!(parsed.errors(), &[]);
+    let [Item::UiStyle(style)] = parsed.typed_tree().items() else {
+        panic!("expected a typed UI style item");
+    };
+    assert_eq!(style.id().body(), "style.native_text_input_sample");
+    assert_eq!(style.tokens().len(), 1);
+    assert_eq!(style.rules().len(), 2);
+    assert_eq!(style.environment_predicates().len(), 1);
+}
+
+#[test]
 fn cst_line_events_classify_flow_item_dispatch() {
     let root = crate::cst::parse_cst(
         "@choice old\nchoice @choice.opening {}\nlet selected = choice @choice.next {}\nlet bg = try await load_bg() with:\nlet route = load_route()?\ninclude @flow.next\nscope local {}\n",

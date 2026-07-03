@@ -18,7 +18,9 @@ use arcweft_lang_syntax::{
         flow::FlowKind,
         flow::Stmt,
         ids::EntityRef,
-        items::{CallableItem, CallableKind, EntityDeclKind, EntryItem},
+        items::{
+            CallableItem, CallableKind, EntityDeclKind, EntryItem, UiStyleItem, UiTextInputItem,
+        },
         pattern::Pattern,
     },
     expr::{CallArg, Expr, Literal, MatchExprArm},
@@ -982,13 +984,10 @@ fn index_top_level_declaration(
             );
         }
         HirTopLevelDecl::UiTextInput(item) => {
-            index = index.with_entity(entities::entity_symbol(
-                item.id(),
-                EntityKind::Input,
-                None,
-                source_name.clone(),
-                "input",
-            )?);
+            index = index_ui_text_input_entity(index, item, source_name)?;
+        }
+        HirTopLevelDecl::UiStyle(item) => {
+            index = index_ui_style_entity(index, item, source_name)?;
         }
         HirTopLevelDecl::State(_)
         | HirTopLevelDecl::Trait(_)
@@ -1006,6 +1005,38 @@ fn index_top_level_declaration(
         | HirTopLevelDecl::Parser(_) => {}
     }
     Ok(index)
+}
+
+fn index_ui_text_input_entity(
+    index: ProjectSemanticIndex,
+    item: &UiTextInputItem,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    index_ui_resource_entity(index, item.id(), EntityKind::Input, source_name, "input")
+}
+
+fn index_ui_style_entity(
+    index: ProjectSemanticIndex,
+    item: &UiStyleItem,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    index_ui_resource_entity(index, item.id(), EntityKind::Style, source_name, "style")
+}
+
+fn index_ui_resource_entity(
+    index: ProjectSemanticIndex,
+    id: &EntityRef,
+    kind: EntityKind,
+    source_name: &SourceName,
+    label: &'static str,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    Ok(index.with_entity(entities::entity_symbol(
+        id,
+        kind,
+        None,
+        source_name.clone(),
+        label,
+    )?))
 }
 impl Default for AgentCompilePolicy {
     fn default() -> Self {

@@ -12,7 +12,11 @@ use super::{
 use crate::ast::{
     common::{ModuleDecl, TextRange},
     ids::EntityRef,
-    items::{Item, RawItem, UiTextInputItem, UiTextInputKind},
+    items::{
+        Item, RawItem, UiStyleAssignOpDecl, UiStyleDeclarationDecl,
+        UiStyleEnvironmentPredicateDecl, UiStyleItem, UiStyleRuleDecl, UiStyleSelectorPartDecl,
+        UiStyleTokenDecl, UiStyleValueDecl, UiTextInputItem, UiTextInputKind,
+    },
 };
 use crate::cst::{CstTopLevelItemKind, CstTopLevelLineKind};
 use crate::expr::{Expr, Literal};
@@ -277,6 +281,7 @@ impl Parser<'_> {
                         | CstTopLevelItemKind::DialogueDefaults
                         | CstTopLevelItemKind::Source
                         | CstTopLevelItemKind::UiTextInput
+                        | CstTopLevelItemKind::UiStyle
                 ) {
                     self.reject_pending_attrs(range);
                 }
@@ -319,6 +324,7 @@ impl Parser<'_> {
             CstTopLevelItemKind::Parser => self.parse_parser_item().map(Item::Parser),
             CstTopLevelItemKind::Source => self.parse_source_item().map(Item::Source),
             CstTopLevelItemKind::UiTextInput => self.parse_ui_text_input().map(Item::UiTextInput),
+            CstTopLevelItemKind::UiStyle => self.parse_ui_style().map(Item::UiStyle),
             CstTopLevelItemKind::Flow
             | CstTopLevelItemKind::Agent
             | CstTopLevelItemKind::Function
@@ -400,6 +406,48 @@ impl Parser<'_> {
             .with_submit(fields.submit)
             .with_change(fields.change),
         )
+    }
+
+    fn parse_ui_style(&mut self) -> Option<UiStyleItem> {
+        let attrs = self.take_pending_attrs();
+        let start_line = self.current().clone();
+        let (head, body, end, ok) = self.take_flow_block();
+        if !ok {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unclosed block while parsing UI style declaration",
+                ["}"],
+                Some(start_line.text.trim()),
+                ["insert a closing `}` for the UI style body"],
+            );
+            return None;
+        }
+        let head = head.trim();
+        let (visibility, rest) = parse_visibility_prefix(head);
+        let rest = rest.trim_start().strip_prefix("ui")?.trim_start();
+        let rest = rest.strip_prefix("style")?.trim_start();
+        let id_base = start_line.start + slice_offset(head, rest);
+        let (id, trailing) =
+            parse_required_entity_ref(rest.trim_start(), id_base, &mut self.errors)?;
+        if !trailing.trim().is_empty() {
+            self.push_error(
+                TextRange::new(id.range().end(), start_line.end),
+                "unexpected text after UI style id",
+                ["{"],
+                Some(trailing.trim()),
+                ["move properties into the UI style body"],
+            );
+        }
+        let fields = UiStyleFields::parse(&body, start_line.start, &mut self.errors);
+        Some(UiStyleItem::new(
+            attrs,
+            visibility,
+            id,
+            fields.tokens,
+            fields.rules,
+            fields.environment_predicates,
+            TextRange::new(start_line.start, end),
+        ))
     }
 }
 
@@ -490,4 +538,275 @@ fn ui_field_entity(
     errors: &mut Vec<super::ParseError>,
 ) -> Option<EntityRef> {
     parse_required_entity_ref(value, base, errors).map(|(entity, _)| entity)
+}
+
+#[derive(Default)]
+struct UiStyleFields {
+    tokens: Vec<UiStyleTokenDecl>,
+    rules: Vec<UiStyleRuleDecl>,
+    environment_predicates: Vec<UiStyleEnvironmentPredicateDecl>,
+}
+
+#[derive(Debug)]
+struct PendingUiStyleRule {
+    selector: Vec<UiStyleSelectorPartDecl>,
+    declarations: Vec<UiStyleDeclarationDecl>,
+}
+
+impl UiStyleFields {
+    fn parse(body: &str, base: usize, errors: &mut Vec<super::ParseError>) -> Self {
+        let mut fields = Self::default();
+        let mut pending_rule: Option<PendingUiStyleRule> = None;
+        for line in body.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///") {
+                continue;
+            }
+            if trimmed == "}" {
+                if let Some(rule) = pending_rule.take() {
+                    fields
+                        .rules
+                        .push(UiStyleRuleDecl::new(rule.selector, rule.declarations));
+                } else {
+                    errors.push(simple_error(
+                        base,
+                        trimmed.len(),
+                        "unmatched UI style rule close",
+                        "rule selector { ... }",
+                    ));
+                }
+                continue;
+            }
+            if let Some(rule_head) = trimmed.strip_prefix("rule ") {
+                if let Some(rule) = pending_rule.take() {
+                    fields
+                        .rules
+                        .push(UiStyleRuleDecl::new(rule.selector, rule.declarations));
+                }
+                let selector = rule_head.trim_end_matches('{').trim();
+                if !trimmed.ends_with('{') {
+                    errors.push(simple_error(
+                        base,
+                        trimmed.len(),
+                        "UI style rule must open with `{`",
+                        "rule text_field {",
+                    ));
+                    continue;
+                }
+                pending_rule = Some(PendingUiStyleRule {
+                    selector: parse_ui_style_selector(selector, base, errors),
+                    declarations: Vec::new(),
+                });
+                continue;
+            }
+            if let Some(rule) = &mut pending_rule {
+                if let Some(declaration) = parse_ui_style_declaration(trimmed, base, errors) {
+                    rule.declarations.push(declaration);
+                }
+                continue;
+            }
+            if let Some(token) = trimmed.strip_prefix("token ") {
+                if let Some(token) = parse_ui_style_token(token, base, errors) {
+                    fields.tokens.push(token);
+                }
+                continue;
+            }
+            if let Some(predicate) = trimmed.strip_prefix("environment ") {
+                if let Some(predicate) = parse_ui_style_environment(predicate, base, errors) {
+                    fields.environment_predicates.push(predicate);
+                }
+                continue;
+            }
+            errors.push(simple_error(
+                base,
+                trimmed.len(),
+                &format!("invalid UI style declaration `{trimmed}`"),
+                "token name = value | environment name = value | rule selector { ... }",
+            ));
+        }
+        if let Some(rule) = pending_rule {
+            fields
+                .rules
+                .push(UiStyleRuleDecl::new(rule.selector, rule.declarations));
+        }
+        fields
+    }
+}
+
+fn parse_ui_style_token(
+    source: &str,
+    base: usize,
+    errors: &mut Vec<super::ParseError>,
+) -> Option<UiStyleTokenDecl> {
+    let Some((name, value)) = split_top_level_binding(source.trim()) else {
+        errors.push(simple_error(
+            base,
+            source.len(),
+            "invalid UI style token",
+            "token public.id = value",
+        ));
+        return None;
+    };
+    parse_ui_style_value(value.trim(), base, errors)
+        .map(|value| UiStyleTokenDecl::new(name.trim().to_owned(), value))
+}
+
+fn parse_ui_style_declaration(
+    source: &str,
+    base: usize,
+    errors: &mut Vec<super::ParseError>,
+) -> Option<UiStyleDeclarationDecl> {
+    let (op, body) = if let Some(rest) = source.strip_prefix("append ") {
+        (UiStyleAssignOpDecl::Append, rest.trim())
+    } else {
+        (UiStyleAssignOpDecl::Replace, source)
+    };
+    let Some((name, value)) = split_top_level_binding(body) else {
+        errors.push(simple_error(
+            base,
+            source.len(),
+            "invalid UI style declaration",
+            "property-name = value",
+        ));
+        return None;
+    };
+    parse_ui_style_value(value.trim(), base, errors)
+        .map(|value| UiStyleDeclarationDecl::new(name.trim().to_owned(), value, op))
+}
+
+fn parse_ui_style_environment(
+    source: &str,
+    base: usize,
+    errors: &mut Vec<super::ParseError>,
+) -> Option<UiStyleEnvironmentPredicateDecl> {
+    let Some((name, value)) = split_top_level_binding(source.trim()) else {
+        errors.push(simple_error(
+            base,
+            source.len(),
+            "invalid UI style environment predicate",
+            "environment text_scale_at_least_milli = 1000",
+        ));
+        return None;
+    };
+    match name.trim() {
+        "text_scale_at_least_milli" => parse_u32_literal(value.trim())
+            .map(UiStyleEnvironmentPredicateDecl::TextScaleAtLeastMilli),
+        other => {
+            errors.push(simple_error(
+                base,
+                other.len(),
+                &format!("unknown UI style environment predicate `{other}`"),
+                "text_scale_at_least_milli",
+            ));
+            None
+        }
+    }
+}
+
+fn parse_ui_style_selector(
+    source: &str,
+    base: usize,
+    errors: &mut Vec<super::ParseError>,
+) -> Vec<UiStyleSelectorPartDecl> {
+    let mut parts = Vec::new();
+    for token in source.split_whitespace() {
+        let part = if token == ">" {
+            UiStyleSelectorPartDecl::Child
+        } else if token == "*" {
+            UiStyleSelectorPartDecl::Descendant
+        } else if let Some(value) = call_arg(token, "part") {
+            UiStyleSelectorPartDecl::Part(value.to_owned())
+        } else if let Some(value) = call_arg(token, "state") {
+            UiStyleSelectorPartDecl::State(value.to_owned())
+        } else if let Some(value) = call_arg(token, "interaction") {
+            UiStyleSelectorPartDecl::Interaction(value.to_owned())
+        } else {
+            UiStyleSelectorPartDecl::Element(token.to_owned())
+        };
+        parts.push(part);
+    }
+    if parts.is_empty() {
+        errors.push(simple_error(
+            base,
+            source.len(),
+            "UI style rule selector cannot be empty",
+            "rule text_field {",
+        ));
+    }
+    parts
+}
+
+fn parse_ui_style_value(
+    source: &str,
+    base: usize,
+    errors: &mut Vec<super::ParseError>,
+) -> Option<UiStyleValueDecl> {
+    if let Some(value) = call_arg(source, "token") {
+        Some(UiStyleValueDecl::Token(value.to_owned()))
+    } else if let Some(value) = call_arg(source, "system_color") {
+        Some(UiStyleValueDecl::SystemColor(value.to_owned()))
+    } else if let Some(value) = call_arg(source, "milli") {
+        parse_i32_literal(value).map(UiStyleValueDecl::Milli)
+    } else if let Some(value) = call_arg(source, "text") {
+        ui_field_string(value).map(UiStyleValueDecl::Text)
+    } else if let Some(value) = call_arg(source, "resource") {
+        Some(UiStyleValueDecl::Resource(value.to_owned()))
+    } else if let Some(value) = call_arg(source, "rgba") {
+        parse_rgba_value(value, base, errors)
+    } else {
+        errors.push(simple_error(
+            base,
+            source.len(),
+            &format!("unknown UI style value `{source}`"),
+            "token(id) | system_color(name) | milli(1000) | text(\"value\") | resource(id) | rgba(r, g, b, a)",
+        ));
+        None
+    }
+}
+
+fn call_arg<'a>(source: &'a str, name: &str) -> Option<&'a str> {
+    source
+        .strip_prefix(name)
+        .and_then(|rest| rest.strip_prefix('('))
+        .and_then(|rest| rest.strip_suffix(')'))
+        .map(str::trim)
+}
+
+fn parse_rgba_value(
+    source: &str,
+    base: usize,
+    errors: &mut Vec<super::ParseError>,
+) -> Option<UiStyleValueDecl> {
+    let channels = source
+        .split(',')
+        .map(str::trim)
+        .map(parse_u8_literal)
+        .collect::<Option<Vec<_>>>()?;
+    let [red, green, blue, alpha] = channels.as_slice() else {
+        errors.push(simple_error(
+            base,
+            source.len(),
+            "rgba UI style value needs four channels",
+            "rgba(255, 255, 255, 255)",
+        ));
+        return None;
+    };
+    Some(UiStyleValueDecl::Rgba {
+        red: *red,
+        green: *green,
+        blue: *blue,
+        alpha: *alpha,
+    })
+}
+
+fn parse_i32_literal(value: &str) -> Option<i32> {
+    value.replace('_', "").parse::<i32>().ok()
+}
+
+fn parse_u32_literal(value: &str) -> Option<u32> {
+    value.replace('_', "").parse::<u32>().ok()
+}
+
+fn parse_u8_literal(value: &str) -> Option<u8> {
+    value.replace('_', "").parse::<u8>().ok()
 }

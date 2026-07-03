@@ -46,6 +46,7 @@ pub enum Item {
     Parser(ParserItem),
     Source(SourceItem),
     UiTextInput(UiTextInputItem),
+    UiStyle(UiStyleItem),
     FlowItem(Box<FlowItem>),
     Raw(RawItem),
 }
@@ -73,6 +74,80 @@ pub enum UiTextInputKind {
     TextField,
     TextArea,
     SecureField,
+}
+
+/// Top-level retained UI style declaration lowered into product UI resources.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiStyleItem {
+    attrs: Vec<Attribute>,
+    visibility: Option<Visibility>,
+    id: EntityRef,
+    tokens: Vec<UiStyleTokenDecl>,
+    rules: Vec<UiStyleRuleDecl>,
+    environment_predicates: Vec<UiStyleEnvironmentPredicateDecl>,
+    range: TextRange,
+}
+
+/// A named style token declared inside a `ui style` block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiStyleTokenDecl {
+    public_id: String,
+    value: UiStyleValueDecl,
+}
+
+/// A selector rule declared inside a `ui style` block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiStyleRuleDecl {
+    selector: Vec<UiStyleSelectorPartDecl>,
+    declarations: Vec<UiStyleDeclarationDecl>,
+}
+
+/// Selector segment for retained Arcweft-authored UI style rules.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UiStyleSelectorPartDecl {
+    Element(String),
+    Part(String),
+    State(String),
+    Interaction(String),
+    Descendant,
+    Child,
+}
+
+/// A single style property assignment in a `ui style` rule.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiStyleDeclarationDecl {
+    property: String,
+    value: UiStyleValueDecl,
+    op: UiStyleAssignOpDecl,
+}
+
+/// Assignment operation for retained UI style declarations.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiStyleAssignOpDecl {
+    Replace,
+    Append,
+}
+
+/// Style value syntax that maps directly to the product UI style model.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UiStyleValueDecl {
+    Token(String),
+    SystemColor(String),
+    Rgba {
+        red: u8,
+        green: u8,
+        blue: u8,
+        alpha: u8,
+    },
+    Milli(i32),
+    Text(String),
+    Resource(String),
+}
+
+/// Resource-level environment predicate for a `ui style` block.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UiStyleEnvironmentPredicateDecl {
+    TextScaleAtLeastMilli(u32),
 }
 
 /// Raw top-level item preserved for grammar families not lowered yet.
@@ -194,6 +269,7 @@ impl Item {
             Self::Parser(item) => Some(*item.range()),
             Self::Source(item) => Some(*item.range()),
             Self::UiTextInput(item) => Some(*item.range()),
+            Self::UiStyle(item) => Some(*item.range()),
             Self::Raw(item) => Some(*item.range()),
             Self::FlowItem(_) => None,
         }
@@ -312,6 +388,112 @@ impl UiTextInputItem {
 
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+}
+
+impl UiStyleItem {
+    pub(crate) const fn new(
+        attrs: Vec<Attribute>,
+        visibility: Option<Visibility>,
+        id: EntityRef,
+        tokens: Vec<UiStyleTokenDecl>,
+        rules: Vec<UiStyleRuleDecl>,
+        environment_predicates: Vec<UiStyleEnvironmentPredicateDecl>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            attrs,
+            visibility,
+            id,
+            tokens,
+            rules,
+            environment_predicates,
+            range,
+        }
+    }
+
+    pub fn attrs(&self) -> &[Attribute] {
+        &self.attrs
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub const fn id(&self) -> &EntityRef {
+        &self.id
+    }
+
+    pub fn tokens(&self) -> &[UiStyleTokenDecl] {
+        &self.tokens
+    }
+
+    pub fn rules(&self) -> &[UiStyleRuleDecl] {
+        &self.rules
+    }
+
+    pub fn environment_predicates(&self) -> &[UiStyleEnvironmentPredicateDecl] {
+        &self.environment_predicates
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+impl UiStyleTokenDecl {
+    pub(crate) fn new(public_id: String, value: UiStyleValueDecl) -> Self {
+        Self { public_id, value }
+    }
+
+    pub fn public_id(&self) -> &str {
+        &self.public_id
+    }
+
+    pub const fn value(&self) -> &UiStyleValueDecl {
+        &self.value
+    }
+}
+
+impl UiStyleRuleDecl {
+    pub(crate) fn new(
+        selector: Vec<UiStyleSelectorPartDecl>,
+        declarations: Vec<UiStyleDeclarationDecl>,
+    ) -> Self {
+        Self {
+            selector,
+            declarations,
+        }
+    }
+
+    pub fn selector(&self) -> &[UiStyleSelectorPartDecl] {
+        &self.selector
+    }
+
+    pub fn declarations(&self) -> &[UiStyleDeclarationDecl] {
+        &self.declarations
+    }
+}
+
+impl UiStyleDeclarationDecl {
+    pub(crate) fn new(property: String, value: UiStyleValueDecl, op: UiStyleAssignOpDecl) -> Self {
+        Self {
+            property,
+            value,
+            op,
+        }
+    }
+
+    pub fn property(&self) -> &str {
+        &self.property
+    }
+
+    pub const fn value(&self) -> &UiStyleValueDecl {
+        &self.value
+    }
+
+    pub const fn op(&self) -> UiStyleAssignOpDecl {
+        self.op
     }
 }
 
