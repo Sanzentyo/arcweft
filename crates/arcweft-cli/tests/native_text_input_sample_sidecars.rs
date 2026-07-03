@@ -44,3 +44,20 @@ fn text_submit_flow_sample_declares_submit_and_branches_by_length() {
     assert!(source.contains("if character_count < 5usize"));
     assert!(source.contains("return submitted"));
 }
+
+#[test]
+fn modern_feedback_ui_sample_uses_component_style_and_flow_submit() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = fs::read_to_string(root.join("samples/modern-feedback-ui/src/main.arcw"))
+        .expect("modern feedback UI source");
+
+    assert!(source.contains("pub style modern_feedback_panel"));
+    assert!(source.contains("pub component ModernFeedbackPanel() -> View"));
+    assert!(source.contains("Surface {"));
+    assert!(source.contains("TextField(@input:.visitor_name)"));
+    assert!(source.contains("TextArea(@input:.product_brief)"));
+    assert!(source.contains("Button(\"Send brief\", id: @button:.send_brief)"));
+    assert!(source.contains("let visitor_name = text_submit @input.visitor_name"));
+    assert!(source.contains("let brief = text_submit @input.product_brief"));
+    assert!(source.contains("return brief"));
+}

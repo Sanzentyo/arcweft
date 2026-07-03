@@ -1,0 +1,38 @@
+# Modern Feedback UI
+
+This sample exercises the current component/View and style authoring path with a
+flow that waits for player-rendered text-control submissions.
+
+It demonstrates:
+
+- `pub style modern_feedback_panel` with tokens, element selectors, hover,
+  active, disabled, and focus-visible states;
+- `pub component ModernFeedbackPanel() -> View` with `Surface`, `VStack`,
+  `HStack`, `Text`, `TextField`, `TextArea`, and player-rendered `Button`
+  actions;
+- `ui text_input` and `ui text_area` resources referenced from the component;
+- a flow that waits on `text_submit`, branches on submitted text length, and
+  returns the submitted brief.
+
+## Check
+
+```bash
+cargo run -p arcweft-cli -- check --manifest-path samples/modern-feedback-ui/arcw.toml
+```
+
+## Bundle
+
+```bash
+cargo run -p arcweft-cli -- bundle samples/modern-feedback-ui/src/main.arcw \
+  --output target/arcweft/modern-feedback-ui.awfb
+```
+
+## Native
+
+```bash
+cargo run -p arcweft-cli -- run --runner native samples/modern-feedback-ui/src/main.arcw \
+  --text-input-trace-out target/modern-feedback-ui/text-input-trace.json
+```
+
+The visible buttons are Arcweft player-rendered action buttons. They should not
+be replaced by DOM or native platform widgets.

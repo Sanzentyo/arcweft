@@ -1,0 +1,198 @@
+pub character concierge {
+  display = "Arcweft Concierge"
+  default_voice = auto
+}
+
+entry game @entry.modern_feedback_ui {
+  start @flow.modern_feedback_ui
+}
+
+ui text_input @input.visitor_name {
+  label = "Name"
+  value = ""
+  placeholder = "Your name"
+  purpose = name
+  enter_key = next
+  submit = @input.visitor_name
+  change = @input.visitor_name
+}
+
+ui text_area @input.product_brief {
+  label = "Product brief"
+  value = ""
+  placeholder = "Describe the moment you want this UI to support"
+  purpose = text
+  enter_key = send
+  submit = @input.product_brief
+  change = @input.product_brief
+}
+
+pub style modern_feedback_panel {
+  token font.ui_stack = text("Arcweft Demo, Yu Gothic, Hiragino Sans, Noto Sans JP, system-ui")
+  token color.canvas = rgba(11, 16, 22, 255)
+  token color.panel = rgba(24, 32, 44, 246)
+  token color.panel_hover = rgba(38, 51, 68, 250)
+  token color.field = rgba(14, 20, 30, 255)
+  token color.accent = rgba(94, 234, 212, 255)
+  token color.accent_pressed = rgba(45, 212, 191, 255)
+  token color.selection = rgba(94, 234, 212, 96)
+  token color.text = rgba(244, 247, 251, 255)
+  token color.muted = rgba(164, 176, 194, 255)
+  token metric.corner_lg = milli(14000)
+  token metric.corner_md = milli(9000)
+  token metric.focus_ring = milli(2000)
+  token metric.hover_lift = milli(-2000)
+  token metric.pressed_scale = milli(975)
+
+  Surface {
+    background-color = token(color.canvas)
+    color = token(color.text)
+    font-family = token(font.ui_stack)
+  }
+
+  Column {
+    gap = milli(14000)
+  }
+
+  Row {
+    gap = milli(10000)
+  }
+
+  TextField {
+    background-color = token(color.field)
+    color = token(color.text)
+    caret-color = token(color.accent)
+    selection-color = token(color.selection)
+    placeholder-color = token(color.muted)
+    border-color = rgba(94, 234, 212, 90)
+    border-radius = token(metric.corner_md)
+  }
+
+  TextArea {
+    background-color = token(color.field)
+    color = token(color.text)
+    caret-color = token(color.accent)
+    selection-color = token(color.selection)
+    placeholder-color = token(color.muted)
+    border-color = rgba(94, 234, 212, 90)
+    border-radius = token(metric.corner_md)
+    line-height-milli = milli(1380)
+  }
+
+  TextField:focus-visible {
+    focus-ring-color = token(color.accent)
+    focus-ring-width-milli = token(metric.focus_ring)
+  }
+
+  TextArea:focus-visible {
+    focus-ring-color = token(color.accent)
+    focus-ring-width-milli = token(metric.focus_ring)
+  }
+
+  Button {
+    background-color = token(color.panel)
+    color = token(color.text)
+    border-radius = token(metric.corner_lg)
+    opacity = milli(1000)
+    scale = milli(1000)
+    translate-y = milli(0)
+  }
+
+  Button:hover {
+    background-color = token(color.panel_hover)
+    color = token(color.accent)
+    translate-y = token(metric.hover_lift)
+  }
+
+  Button:active {
+    background-color = token(color.accent_pressed)
+    scale = token(metric.pressed_scale)
+  }
+
+  Button:disabled {
+    opacity = milli(460)
+  }
+
+  environment text_scale_at_least_milli = 1000
+}
+
+pub component ModernFeedbackPanel() -> View {
+  Surface {
+    VStack {
+      Text("Control deck")
+        .style {
+          color = rgba(244, 247, 251, 255)
+          font-size = milli(36000)
+          font-weight = text("720")
+        }
+
+      Text("A player-rendered component with Arcweft style tokens, input resources, and flow-backed submit actions.")
+        .style {
+          color = rgba(164, 176, 194, 255)
+          font-size = milli(16000)
+        }
+
+      HStack {
+        TextField(@input:.visitor_name)
+          .placeholder("Your name")
+          .submit_action(.next)
+          .style(@style:.modern_feedback_panel)
+
+        Button("Continue", id: @button:.continue)
+          .style(@style:.modern_feedback_panel)
+          .enabled(true)
+          .focusable(true)
+          .on_click(ime: .commit) {
+            text_submit @input:.visitor_name
+          }
+      }
+
+      TextArea(@input:.product_brief)
+        .placeholder("Write one sharp product idea")
+        .submit_action(.send)
+        .style(@style:.modern_feedback_panel)
+
+      HStack {
+        Button("Send brief", id: @button:.send_brief)
+          .style(@style:.modern_feedback_panel)
+          .enabled(true)
+          .focusable(true)
+          .on_click(ime: .commit) {
+            text_submit @input:.product_brief
+          }
+
+        Button("Draft saved", id: @button:.draft_status, enabled: false)
+          .style(@style:.modern_feedback_panel)
+          .focusable(false)
+      }
+    }
+  }
+}
+
+flow modern_feedback_ui {
+  concierge:
+    This sample pairs a modern component/View panel with a normal Arcweft flow.[p]
+    Fill the name field first, then submit the brief with Enter, IME send, or the Send brief button.
+
+  let visitor_name = text_submit @input.visitor_name
+
+  if visitor_name == "" {
+    concierge: We will keep the greeting anonymous for now.
+  }
+
+  if visitor_name != "" {
+    concierge: Nice to meet you, #[visitor_name].
+  }
+
+  let brief = text_submit @input.product_brief
+
+  if brief == "" {
+    concierge: No brief was submitted. The UI stays ready for another pass.
+  }
+
+  if brief != "" {
+    concierge: Captured the component-backed brief. The next runtime step can branch into a planning route.
+  }
+
+  return brief
+}
