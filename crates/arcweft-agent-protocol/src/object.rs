@@ -6,6 +6,7 @@ use crate::image::{
 use crate::proxy::AgentPresentationObjectProxyRef;
 use crate::rich_text::AgentRichTextElementRef;
 use crate::serde_helpers::default_true;
+use arcweft_layout::stage_placement::{ResolvedStagePlacement, StagePlacement};
 use arcweft_render_text::LineDisplayFrame;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -79,7 +80,7 @@ impl AgentObservedObjectContent {
 }
 
 /// Image-specific payload for an observed image presentation object.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct AgentObservedImageContent {
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -100,6 +101,10 @@ pub struct AgentObservedImageContent {
     pub alignment: Option<AgentImageAlignment>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transform: Option<AgentImageTransform>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authored_placement: Option<StagePlacement>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_placement: Option<ResolvedStagePlacement>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intrinsic_width: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

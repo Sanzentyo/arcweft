@@ -335,6 +335,8 @@ pub(super) fn agent_image_observation_from_ui_item(
                 transform: Some(agent_image_transform(transform)),
                 intrinsic_width: Some(dimensions.width()),
                 intrinsic_height: Some(dimensions.height()),
+                authored_placement: None,
+                resolved_placement: None,
                 actions: metadata.actions,
                 params: metadata.params,
                 proxies: metadata.proxies,

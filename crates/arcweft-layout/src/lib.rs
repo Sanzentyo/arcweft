@@ -1,5 +1,7 @@
 //! Sans I/O layout contracts shared by renderers, capture adapters, and Agent observation.
 
+pub mod stage_placement;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 

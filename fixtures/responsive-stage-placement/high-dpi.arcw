@@ -1,0 +1,21 @@
+// Same authored object as stand-top-right.arcw. Validate with a host viewport
+// of 1920x1080 logical pixels and 3840x2160 physical pixels.
+pub asset zundamon.normal {
+    kind = image
+    file = "zundamon/normal.png"
+}
+
+pub image @image.zundamon.stand.responsive.hidpi {
+    asset = @asset:.zundamon.normal
+    layer = @layer.character
+    target = @target.zundamon.stand
+    position = anchor(top_right)
+    object_anchor = top_right
+    margin.top = 20px
+    margin.right = 100px
+    size.width = 250px
+    size.height = 430px
+    scale = design
+    fit = "contain"
+    alignment.y = "bottom"
+}

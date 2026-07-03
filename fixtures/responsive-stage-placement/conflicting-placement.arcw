@@ -1,0 +1,39 @@
+pub asset zundamon.normal {
+    kind = image
+    file = "zundamon/normal.png"
+}
+
+pub image @image.bad.mixed {
+    asset = @asset:.zundamon.normal
+    position = anchor(top_right)
+    x = 930px
+    y = 20px
+    width = 250px
+    height = 430px
+    size.width = 250px
+    size.height = 430px
+}
+
+pub image @image.bad.missing_size {
+    asset = @asset:.zundamon.normal
+    position = anchor(top_right)
+    object_anchor = top_right
+}
+
+pub image @image.bad.independent_scale {
+    asset = @asset:.zundamon.normal
+    position = anchor(top_right)
+    object_anchor = top_right
+    size.width = 250px
+    size.height = 430px
+    scale.x = 1.5
+    scale.y = 1.0
+}
+
+entry game {
+    start @flow.main
+}
+
+flow main {
+    return "placement_conflict_fixture"
+}

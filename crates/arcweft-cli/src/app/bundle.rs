@@ -36,10 +36,9 @@ use arcweft_adapter_desktop::{
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleFormat,
     BundleImageAnimation, BundleImageAsset, BundleImageDimensions, BundleImageFormat,
-    BundleImageObject, BundleImageObjectAlignment, BundleImageObjectBounds, BundleImageObjectFit,
-    BundleImageObjectPlayback, BundleImageObjectTransform, BundleLaunchKind, BundleManifest,
-    BundleRuntimeSummary, BundleSource, BundleVirtualFile, BundleVirtualFileRef,
-    BundleVirtualFileSpace,
+    BundleImageObject, BundleImageObjectAlignment, BundleImageObjectFit, BundleImageObjectPlayback,
+    BundleImageObjectTransform, BundleLaunchKind, BundleManifest, BundleRuntimeSummary,
+    BundleSource, BundleVirtualFile, BundleVirtualFileRef, BundleVirtualFileSpace,
     container::{BundleDigest, BundleView, ReadBudget},
     patch::{
         BundlePatchArtifact, PatchCompatibility, apply_patch_bundle_bytes, encode_patch_bundle,
@@ -71,6 +70,9 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
+
+mod stage_placement;
+use stage_placement::{image_design_bounds, image_stage_placement};
 
 #[derive(Args, Clone, Debug)]
 pub(in crate::app) struct BundleOptions {
@@ -818,18 +820,15 @@ fn bundle_image_object(declaration: &DeclaredImageObject) -> Result<BundleImageO
             );
             ExitCode::from(2)
         })?;
-    let bounds = BundleImageObjectBounds {
-        x_milli: image_px_milli_arg(declaration, "x")?,
-        y_milli: image_px_milli_arg(declaration, "y")?,
-        width_milli: image_px_milli_arg(declaration, "width").and_then(width_height_milli)?,
-        height_milli: image_px_milli_arg(declaration, "height").and_then(width_height_milli)?,
-    };
+    let placement = image_stage_placement(declaration)?;
+    let bounds = image_design_bounds(&placement)?;
     Ok(BundleImageObject {
         id: declaration.id().to_owned(),
         asset,
         target: declaration_arg_value(declaration.args(), "target").and_then(public_id_arg),
         layer: declaration_arg_value(declaration.args(), "layer").and_then(public_id_arg),
         bounds,
+        placement: Some(placement),
         fit: image_fit_arg(declaration),
         alignment: image_alignment_arg(declaration),
         playback: image_playback_arg(declaration),
@@ -841,30 +840,6 @@ fn bundle_image_object(declaration: &DeclaredImageObject) -> Result<BundleImageO
         visible: declaration_arg_value(declaration.args(), "visible")
             .and_then(parse_bool_arg)
             .unwrap_or(true),
-    })
-}
-
-fn image_px_milli_arg(declaration: &DeclaredImageObject, name: &str) -> Result<i32, ExitCode> {
-    let Some(value) = declaration_arg_value(declaration.args(), name) else {
-        eprintln!(
-            "error: image object `{}` is missing `{name}`",
-            declaration.id()
-        );
-        return Err(ExitCode::from(2));
-    };
-    parse_px_milli(value).ok_or_else(|| {
-        eprintln!(
-            "error: image object `{}` has invalid `{name}` value `{value}`",
-            declaration.id()
-        );
-        ExitCode::from(2)
-    })
-}
-
-fn width_height_milli(value: i32) -> Result<u32, ExitCode> {
-    u32::try_from(value).map_err(|_| {
-        eprintln!("error: image width/height must be non-negative");
-        ExitCode::from(2)
     })
 }
 
@@ -1657,6 +1632,7 @@ fn validate_relative_virtual_path(path: &Path) -> Result<(), ExitCode> {
 mod tests {
     use super::*;
     use arcweft_bundle::{
+        BundleImageObjectBounds,
         container::{BundleView, ReadBudget},
         patch::{BundlePatchArtifact, encode_patch_bundle},
     };
@@ -1665,6 +1641,7 @@ mod tests {
     use arcweft_core::task::{
         AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
     };
+    use arcweft_layout::stage_placement::{StagePlacement, StageRect};
     use arcweft_render_text::LineDisplayCatalog;
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 
@@ -2019,6 +1996,9 @@ image @image.sample.pulse {
                 target: Some("target.sample.pulse".to_owned()),
                 layer: Some("layer.foreground".to_owned()),
                 bounds: BundleImageObjectBounds::from_px(12, 34, 56, 78),
+                placement: Some(StagePlacement::absolute(StageRect::new(
+                    12_000, 34_000, 56_000, 78_000,
+                ))),
                 fit: BundleImageObjectFit::Intrinsic,
                 alignment: BundleImageObjectAlignment {
                     x_milli: 1_000,

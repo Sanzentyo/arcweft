@@ -11,6 +11,7 @@ arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
 arcweft-audio-core = { workspace = true }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-data = { workspace = true }
+arcweft-layout.workspace = true
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-serde-bridge = { workspace = true, optional = true }
 apache-avro = { workspace = true, optional = true }

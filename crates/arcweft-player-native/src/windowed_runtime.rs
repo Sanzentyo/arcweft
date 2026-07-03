@@ -945,6 +945,7 @@ mod tests {
                 width_milli: 1000,
                 height_milli: 1000,
             },
+            placement: None,
             fit: BundleImageObjectFit::Stretch,
             alignment: BundleImageObjectAlignment {
                 x_milli: 500,

@@ -20,6 +20,7 @@ use arcweft_core::awbc::schema::AwbcProgram;
 use arcweft_core::bytecode::BytecodeProgram;
 #[cfg(feature = "format-yaml")]
 use arcweft_data::{Number, Value};
+use arcweft_layout::stage_placement::StagePlacement;
 use arcweft_render_text::LineDisplayCatalog;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "format-yaml")]
@@ -199,6 +200,10 @@ pub struct BundleImageObject {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layer: Option<String>,
     pub bounds: BundleImageObjectBounds,
+    /// Authored placement contract. When absent, `bounds` is explicit absolute
+    /// placement for image object data that has no responsive stage placement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placement: Option<StagePlacement>,
     #[serde(default)]
     pub fit: BundleImageObjectFit,
     #[serde(default)]
@@ -1472,6 +1477,7 @@ mod tests {
             target: Some("target.hero.logo".to_owned()),
             layer: Some("layer.foreground".to_owned()),
             bounds: BundleImageObjectBounds::from_px(10, 20, 320, 180),
+            placement: None,
             fit: BundleImageObjectFit::Cover,
             alignment: BundleImageObjectAlignment {
                 x_milli: 250,
@@ -1507,6 +1513,7 @@ mod tests {
                 target: Some("target.hero.logo".to_owned()),
                 layer: Some("layer.foreground".to_owned()),
                 bounds: BundleImageObjectBounds::from_px(10, 20, 320, 180),
+                placement: None,
                 fit: BundleImageObjectFit::Cover,
                 alignment: BundleImageObjectAlignment {
                     x_milli: 250,

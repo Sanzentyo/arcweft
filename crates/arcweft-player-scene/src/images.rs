@@ -1,8 +1,12 @@
 use arcweft_bundle::{ArcweftBundle, BundleCodecError, BundleImageFormat, BundleImageObject};
 use arcweft_image::{DecodedImage, ImageDecodeOptions, ImageError, ImageFormat};
+use arcweft_layout::{
+    LayoutRect, LayoutSize, ScalePolicy,
+    stage_placement::{ResolvedStagePlacement, StagePlacement, StagePlacementContext, StageRect},
+};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectFit, ImageObjectTransform};
-use arcweft_render_wgpu::geometry::{RenderImage, RenderImageFrame};
+use arcweft_render_wgpu::geometry::{RenderImage, RenderImageFrame, RenderViewport};
 use num_traits::ToPrimitive;
 use thiserror::Error;
 
@@ -29,6 +33,8 @@ pub enum BundleImageCatalogError {
     Decode { asset_id: String, message: String },
     #[error("bundle image object `{object_id}` has empty bounds")]
     EmptyBounds { object_id: String },
+    #[error("bundle image object `{object_id}` placement failed: {message}")]
+    Placement { object_id: String, message: String },
 }
 
 impl BundleImageCatalog {
@@ -60,10 +66,11 @@ impl BundleImageCatalog {
         &self,
         objects: &[BundleImageObject],
         elapsed_millis: u64,
+        viewport: RenderViewport,
     ) -> Result<Vec<RenderImage>, BundleImageCatalogError> {
         objects
             .iter()
-            .map(|object| self.render_image(object, elapsed_millis))
+            .map(|object| self.render_image(object, elapsed_millis, viewport))
             .collect()
     }
 
@@ -71,6 +78,7 @@ impl BundleImageCatalog {
         &self,
         object: &BundleImageObject,
         elapsed_millis: u64,
+        viewport: RenderViewport,
     ) -> Result<RenderImage, BundleImageCatalogError> {
         let decoded = self
             .images
@@ -87,6 +95,7 @@ impl BundleImageCatalog {
                 asset_id: object.asset.clone(),
                 message: "decoded image has no frame at visual time".to_owned(),
             })?;
+        let placement = render_placement(object, viewport)?;
         Ok(RenderImage {
             id: object.id.clone(),
             frame: RenderImageFrame {
@@ -94,7 +103,8 @@ impl BundleImageCatalog {
                 height: frame.dimensions().height(),
                 rgba: frame.rgba().to_vec(),
             },
-            bounds: render_bounds(object)?,
+            bounds: hit_rect_from_layout(placement.output_bbox),
+            placement: Some(placement),
             fit: render_fit(object.fit),
             alignment: ImageObjectAlignment::new(
                 object.alignment.x_milli,
@@ -111,6 +121,52 @@ impl BundleImageCatalog {
             opacity_milli: object.opacity_milli,
         })
     }
+}
+
+fn render_placement(
+    object: &BundleImageObject,
+    viewport: RenderViewport,
+) -> Result<ResolvedStagePlacement, BundleImageCatalogError> {
+    let placement = object.placement.unwrap_or_else(|| {
+        StagePlacement::absolute(StageRect::new(
+            object.bounds.x_milli,
+            object.bounds.y_milli,
+            object.bounds.width_milli,
+            object.bounds.height_milli,
+        ))
+    });
+    placement
+        .resolve(
+            StagePlacementContext::new(
+                LayoutSize::new(1280.0, 720.0),
+                LayoutSize::new(viewport.logical_width, viewport.logical_height),
+            )
+            .with_physical_viewport(LayoutSize::new(
+                viewport
+                    .physical_width
+                    .to_f32()
+                    .unwrap_or(viewport.logical_width),
+                viewport
+                    .physical_height
+                    .to_f32()
+                    .unwrap_or(viewport.logical_height),
+            ))
+            .with_scale_factor(viewport.physical_scale_factor_f32())
+            .with_viewport_policy(ScalePolicy::Contain),
+        )
+        .map_err(|error| BundleImageCatalogError::Placement {
+            object_id: object.id.clone(),
+            message: error.to_string(),
+        })
+}
+
+fn hit_rect_from_layout(rect: LayoutRect) -> HitRect {
+    HitRect::new(
+        rect.origin.x,
+        rect.origin.y,
+        rect.size.width,
+        rect.size.height,
+    )
 }
 
 impl BundleImageCatalogError {
@@ -145,27 +201,4 @@ fn render_fit(fit: arcweft_bundle::BundleImageObjectFit) -> ImageObjectFit {
         arcweft_bundle::BundleImageObjectFit::Stretch => ImageObjectFit::Stretch,
         arcweft_bundle::BundleImageObjectFit::Intrinsic => ImageObjectFit::Intrinsic,
     }
-}
-
-fn render_bounds(object: &BundleImageObject) -> Result<HitRect, BundleImageCatalogError> {
-    let bounds = object.bounds;
-    if bounds.width_milli == 0 || bounds.height_milli == 0 {
-        return Err(BundleImageCatalogError::EmptyBounds {
-            object_id: object.id.clone(),
-        });
-    }
-    Ok(HitRect::new(
-        milli_i32_to_f32(bounds.x_milli),
-        milli_i32_to_f32(bounds.y_milli),
-        milli_u32_to_f32(bounds.width_milli),
-        milli_u32_to_f32(bounds.height_milli),
-    ))
-}
-
-fn milli_i32_to_f32(value: i32) -> f32 {
-    value.to_f32().unwrap_or(0.0) / 1_000.0
-}
-
-fn milli_u32_to_f32(value: u32) -> f32 {
-    value.to_f32().unwrap_or(f32::MAX) / 1_000.0
 }

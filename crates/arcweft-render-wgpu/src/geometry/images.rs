@@ -1,3 +1,4 @@
+use arcweft_layout::stage_placement::ResolvedStagePlacement;
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectFit, ImageObjectTransform};
 use num_traits::ToPrimitive;
@@ -16,6 +17,7 @@ pub struct RenderImage {
     pub id: String,
     pub frame: RenderImageFrame,
     pub bounds: HitRect,
+    pub placement: Option<ResolvedStagePlacement>,
     pub fit: ImageObjectFit,
     pub alignment: ImageObjectAlignment,
     pub transform: ImageObjectTransform,

@@ -10,6 +10,7 @@ repository.workspace = true
 arcweft-bundle = { path = "../arcweft-bundle", default-features = false }
 arcweft-id = { path = "../arcweft-id" }
 arcweft-image = { path = "../arcweft-image" }
+arcweft-layout.workspace = true
 arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-render-wgpu = { path = "../arcweft-render-wgpu" }
 arcweft-runtime-driver = { path = "../arcweft-runtime-driver" }

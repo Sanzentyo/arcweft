@@ -66,9 +66,11 @@ impl PlayerFramePlanner {
                 })
                 .collect(),
             text_inputs,
-            images: request
-                .images
-                .render_images(&request.presentation.images, request.image_time_millis)?,
+            images: request.images.render_images(
+                &request.presentation.images,
+                request.image_time_millis,
+                request.viewport,
+            )?,
             viewport: request.viewport,
             visual_time_millis: request.visual_time_millis,
             preferences: request.preferences,

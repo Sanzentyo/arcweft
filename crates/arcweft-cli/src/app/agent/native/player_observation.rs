@@ -554,6 +554,8 @@ fn player_observed_image_object(
                 tx_milli: image.transform.tx_milli,
                 ty_milli: image.transform.ty_milli,
             }),
+            authored_placement: source.and_then(|source| source.placement),
+            resolved_placement: image.placement.clone(),
             intrinsic_width: Some(image.frame.width),
             intrinsic_height: Some(image.frame.height),
             actions: Vec::new(),

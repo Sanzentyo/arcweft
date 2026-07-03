@@ -789,6 +789,8 @@ fn test_observed_image_content() -> AgentObservedImageContent {
             tx_milli: 12_000,
             ty_milli: 8_000,
         }),
+        authored_placement: None,
+        resolved_placement: None,
         intrinsic_width: Some(64),
         intrinsic_height: Some(32),
         actions: vec!["action.inspect".to_owned()],

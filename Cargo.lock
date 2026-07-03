@@ -438,6 +438,7 @@ dependencies = [
  "arcweft-core",
  "arcweft-data",
  "arcweft-interaction-model",
+ "arcweft-layout",
  "arcweft-render-text",
  "arcweft-serde-bridge",
  "blake3",
@@ -542,6 +543,7 @@ dependencies = [
  "blake3",
  "clap",
  "ed25519-dalek",
+ "num-traits",
  "png",
  "pollster",
  "reedline",
@@ -879,6 +881,7 @@ dependencies = [
 name = "arcweft-layout"
 version = "0.1.0"
 dependencies = [
+ "num-traits",
  "serde",
  "thiserror 2.0.18",
 ]
@@ -969,6 +972,7 @@ dependencies = [
  "arcweft-bundle",
  "arcweft-id",
  "arcweft-image",
+ "arcweft-layout",
  "arcweft-presentation",
  "arcweft-render-wgpu",
  "arcweft-runtime-driver",
@@ -1163,6 +1167,7 @@ dependencies = [
  "arcweft-core",
  "arcweft-id",
  "arcweft-interaction-model",
+ "arcweft-layout",
  "arcweft-presentation",
  "arcweft-render-text",
  "arcweft-runtime-plan",

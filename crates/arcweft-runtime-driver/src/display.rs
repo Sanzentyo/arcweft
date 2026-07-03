@@ -6,6 +6,7 @@ use arcweft_bundle::{
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::plan::FlowEvent;
+use arcweft_layout::stage_placement::{StagePlacement, StageRect};
 use arcweft_render_text::{LineDisplayCatalog, LineDisplayFrame, RuntimeLineContext};
 use core::fmt;
 use serde::{Deserialize, Serialize};
@@ -138,26 +139,24 @@ fn choices_from_status(status: &FlowFiberStatus) -> Vec<BundleChoice> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum PresentationImageEffect {
     Object(String),
-    InlineObject(BundleImageObject),
+    InlineObject(Box<BundleImageObject>),
     BackgroundAsset(String),
 }
 
 impl PresentationImageEffect {
     fn from_call(call: &RuntimeCall) -> Option<Self> {
         match call.callee.as_str() {
-            "image" | "image.show" => {
-                inline_image_object(call)
-                    .map(Self::InlineObject)
-                    .or_else(|| {
-                        call.args
-                            .first()
-                            .map(String::as_str)
-                            .or_else(|| named_arg(&call.args, "id"))
-                            .and_then(public_id_arg)
-                            .filter(|id| id.starts_with("image."))
-                            .map(Self::Object)
-                    })
-            }
+            "image" | "image.show" => inline_image_object(call)
+                .map(|object| Self::InlineObject(Box::new(object)))
+                .or_else(|| {
+                    call.args
+                        .first()
+                        .map(String::as_str)
+                        .or_else(|| named_arg(&call.args, "id"))
+                        .and_then(public_id_arg)
+                        .filter(|id| id.starts_with("image."))
+                        .map(Self::Object)
+                }),
             "bg" | "background" => call
                 .args
                 .first()
@@ -196,7 +195,7 @@ fn images_from_effects(
                 }
                 PresentationImageEffect::InlineObject(object) => {
                     if object.visible {
-                        upsert_image_object(&mut active, object);
+                        upsert_image_object(&mut active, *object);
                     }
                 }
                 PresentationImageEffect::BackgroundAsset(asset) => {
@@ -267,12 +266,19 @@ fn inline_image_object(call: &RuntimeCall) -> Option<BundleImageObject> {
         height_milli: u32::try_from(named_arg(&call.args, "height").and_then(parse_px_milli)?)
             .ok()?,
     };
+    let placement = StagePlacement::absolute(StageRect::new(
+        bounds.x_milli,
+        bounds.y_milli,
+        bounds.width_milli,
+        bounds.height_milli,
+    ));
     Some(BundleImageObject {
         id,
         asset,
         target: named_arg(&call.args, "target").and_then(public_id_arg),
         layer: named_arg(&call.args, "layer").and_then(public_id_arg),
         bounds,
+        placement: Some(placement),
         fit: image_fit_arg(call),
         alignment: image_alignment_arg(call),
         playback: image_playback_arg(call),

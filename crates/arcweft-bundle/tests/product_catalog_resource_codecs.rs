@@ -263,6 +263,7 @@ fn fixture_bundle() -> ArcweftBundle {
         target: Some("target.hero.logo".to_owned()),
         layer: Some("layer.foreground".to_owned()),
         bounds: BundleImageObjectBounds::from_px(10, 20, 320, 180),
+        placement: None,
         fit: BundleImageObjectFit::Cover,
         alignment: BundleImageObjectAlignment {
             x_milli: 250,
