@@ -12,8 +12,8 @@ use crate::ui_compositor_uniform::UiCompositorUniform;
 use crate::ui_effects::{UiEffectPass, UiFilterPassPlan, UiTextureExtent};
 use crate::ui_mask::{UiMaskChainPlan, UiMaskChannel, UiMaskImagePlan, UiMaskPlanError};
 use crate::ui_scene::{
-    UiBlendMode, UiCompositingGroup, UiMaskImage, UiPaintNode, UiPrimitiveRange, UiScene,
-    UiSceneContext,
+    UiBlendMode, UiBoxShadowKind, UiCompositingGroup, UiMaskImage, UiPaintNode, UiPrimitiveRange,
+    UiScene, UiSceneContext,
 };
 use thiserror::Error;
 use wgpu::util::DeviceExt;
@@ -369,7 +369,15 @@ impl UiCompositor {
         state.stats.offscreen_targets = state.stats.offscreen_targets.saturating_add(1);
         clear_target(state.encoder, &group_target.view);
 
-        self.render_box_shadows(state, &group_target, group)?;
+        let box_shadow_plan =
+            UiBoxShadowPassPlan::from_shadows(&group.effects.box_shadows, group.bounds)?;
+        self.render_box_shadows(
+            state,
+            &group_target,
+            group,
+            &box_shadow_plan,
+            UiBoxShadowKind::Outer,
+        );
 
         for child in &group.children {
             self.render_node(
@@ -378,6 +386,14 @@ impl UiCompositor {
                 group_target.as_target([visual_bounds.x, visual_bounds.y]),
             )?;
         }
+
+        self.render_box_shadows(
+            state,
+            &group_target,
+            group,
+            &box_shadow_plan,
+            UiBoxShadowKind::Inset,
+        );
 
         group_target = self.apply_filter_plan(
             state,
@@ -454,14 +470,11 @@ impl UiCompositor {
         state: &mut UiCompositorRenderState<'_>,
         target: &UiOffscreenTarget,
         group: &UiCompositingGroup,
-    ) -> Result<(), UiCompositorError> {
-        let plan = UiBoxShadowPassPlan::from_shadows(&group.effects.box_shadows, group.bounds)?;
-        if plan.is_empty() {
-            return Ok(());
-        }
-
+        plan: &UiBoxShadowPassPlan,
+        kind: UiBoxShadowKind,
+    ) {
         let visual_bounds = group.visual_bounds();
-        for pass in plan.passes() {
+        for pass in plan.passes_for_kind(kind) {
             self.run_shader_pass(
                 state.device,
                 state.encoder,
@@ -482,7 +495,6 @@ impl UiCompositor {
             state.stats.shader_passes = state.stats.shader_passes.saturating_add(1);
             state.stats.box_shadow_passes = state.stats.box_shadow_passes.saturating_add(1);
         }
-        Ok(())
     }
 
     fn apply_filter_plan(

@@ -1,10 +1,11 @@
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::ui_blend::{UiBlendPassPlan, UiBlendShaderMode, supported_blend_modes};
-use arcweft_render_wgpu::ui_box_shadow::{UiBoxShadowPassPlan, UiBoxShadowPlanError};
+use arcweft_render_wgpu::ui_box_shadow::UiBoxShadowPassPlan;
 use arcweft_render_wgpu::ui_compositor::{UiCompositorNodePlan, UiCompositorPlan};
 use arcweft_render_wgpu::ui_scene::{
-    UiAffine2D, UiBlendMode, UiBoxShadow, UiBoxShadowList, UiColorRgba8, UiCompositingEffects,
-    UiCompositingGroup, UiPaintNode, UiPrimitiveRange, UiScene, UiSceneContext,
+    UiAffine2D, UiBlendMode, UiBoxShadow, UiBoxShadowKind, UiBoxShadowList, UiColorRgba8,
+    UiCompositingEffects, UiCompositingGroup, UiPaintNode, UiPrimitiveRange, UiScene,
+    UiSceneContext,
 };
 
 fn rgba(alpha: u8) -> UiColorRgba8 {
@@ -65,13 +66,49 @@ fn outer_box_shadow_plans_before_children_and_expands_visual_extent() {
 }
 
 #[test]
-fn inset_box_shadow_is_a_typed_diagnostic() {
+fn inset_box_shadow_plans_as_typed_inset_pass() {
     let shadows = UiBoxShadowList::new([UiBoxShadow::inset(0.0, 2.0, 6.0, 0.0, 8.0, rgba(190))]);
 
+    let plan = UiBoxShadowPassPlan::from_shadows(&shadows, HitRect::new(0.0, 0.0, 80.0, 40.0))
+        .expect("inset shadow should plan after seq06.13e");
+
+    assert_eq!(plan.passes().len(), 1);
+    assert_eq!(plan.passes()[0].shadow.kind, UiBoxShadowKind::Inset);
+    assert!(plan.visual_outset_px().abs() <= f32::EPSILON);
+    assert!(plan.visual_inset_px() > 0.0);
+}
+
+#[test]
+fn mixed_outer_and_inset_shadows_preserve_stage_metadata() {
+    let shadows = UiBoxShadowList::new([
+        UiBoxShadow::outer(0.0, 8.0, 12.0, 2.0, 8.0, rgba(120)),
+        UiBoxShadow::inset(0.0, 2.0, 6.0, 1.0, 8.0, rgba(190)),
+    ]);
+
+    let plan = UiBoxShadowPassPlan::from_shadows(&shadows, HitRect::new(0.0, 0.0, 80.0, 40.0))
+        .expect("mixed shadows should plan");
+
     assert_eq!(
-        UiBoxShadowPassPlan::from_shadows(&shadows, HitRect::new(0.0, 0.0, 80.0, 40.0)),
-        Err(UiBoxShadowPlanError::InsetUnsupported { shadow_index: 0 })
+        plan.passes()
+            .iter()
+            .map(|pass| pass.shadow_index)
+            .collect::<Vec<_>>(),
+        vec![1, 0]
     );
+    assert_eq!(
+        plan.passes_for_kind(UiBoxShadowKind::Outer)
+            .map(|pass| pass.shadow_index)
+            .collect::<Vec<_>>(),
+        vec![0]
+    );
+    assert_eq!(
+        plan.passes_for_kind(UiBoxShadowKind::Inset)
+            .map(|pass| pass.shadow_index)
+            .collect::<Vec<_>>(),
+        vec![1]
+    );
+    assert!(plan.visual_outset_px() > 0.0);
+    assert!(plan.visual_inset_px() > 0.0);
 }
 
 #[test]

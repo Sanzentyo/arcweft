@@ -8,7 +8,7 @@ use crate::ui_mask::{
     MAX_MASK_GRADIENT_STOPS, UiMaskAxisRepeat, UiMaskChannel, UiMaskGradientKind,
     UiMaskGradientPlan, UiMaskSamplingPlan,
 };
-use crate::ui_scene::{UiColorRgba8, UiFillRule};
+use crate::ui_scene::{UiBoxShadowKind, UiColorRgba8, UiFillRule};
 use bytemuck::{Pod, Zeroable};
 use num_traits::ToPrimitive;
 
@@ -216,13 +216,17 @@ impl UiCompositorUniform {
         source_extent: UiTextureExtent,
         origin_logical: [f32; 2],
     ) -> Self {
+        let shadow_kind = match pass.shadow.kind {
+            UiBoxShadowKind::Outer => 0.0,
+            UiBoxShadowKind::Inset => 1.0,
+        };
         let mut uniform = Self {
             offset: rgba_to_unit(pass.shadow.color),
             params0: [
                 pass.shadow.blur_radius_px.max(0.0),
                 pass.body_radius_px,
                 pass.shadow_radius_px,
-                0.0,
+                shadow_kind,
             ],
             params1: [origin_logical[0], origin_logical[1], 0.0, 0.0],
             params2: [

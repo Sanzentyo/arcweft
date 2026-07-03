@@ -1,0 +1,32 @@
+{
+  "schema": "arcweft.seq06.13e.inset-box-shadow-smoke.v1",
+  "fixture": "seq06.13e-inset-box-shadow-card",
+  "date": "2026-07-03",
+  "target": "native",
+  "route": [
+    "author CSS",
+    "Takumi StyleSheet parse/cascade",
+    "ComputedStyle::box_shadow typed value",
+    "arcweft-takumi-adapter box_shadow_list_from_takumi",
+    "UiCompositingEffects::box_shadows",
+    "UiCompositor::render_group",
+    "PASS_BOX_SHADOW kind=outer before child paint",
+    "PASS_BOX_SHADOW kind=inset after child paint and before filter/clip/mask"
+  ],
+  "expectations": {
+    "rounded_inset_shadow_count": 1,
+    "mixed_outer_inset_shadow_count": 2,
+    "paint_order": "outer stage filters UiBoxShadowKind::Outer from reversed CSS order; inset stage filters UiBoxShadowKind::Inset from the same unified plan",
+    "negative_spread": "covered by focused plan tests; fixture keeps positive spread for visible smoke",
+    "drop_shadow_probe": "filter: drop-shadow(...) populates UiFilter::DropShadow and not UiBoxShadowList",
+    "visual_golden_promotion": "manual in pinned native/web environment"
+  },
+  "forbidden_paths": [
+    "DOM clipping",
+    "browser CSS shadow rendering",
+    "canvas fallback",
+    "SVG filter",
+    "CPU raster",
+    "bitmap screenshot mask"
+  ]
+}

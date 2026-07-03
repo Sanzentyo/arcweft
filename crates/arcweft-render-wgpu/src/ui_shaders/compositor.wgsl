@@ -340,9 +340,12 @@ fn box_shadow_color(uv: vec2<f32>) -> vec4<f32> {
     let blur = max(uniform_data.params0.x, 0.0);
     let body_radius = max(uniform_data.params0.y, 0.0);
     let shadow_radius = max(uniform_data.params0.z, 0.0);
+    let kind = u32(uniform_data.params0.w + 0.5);
     let caster = box_shadow_caster_coverage(position, shadow_rect, shadow_radius, blur);
     let body = rounded_rect_coverage_at(position, body_rect, body_radius);
-    let coverage = caster * (1.0 - body);
+    let outer_coverage = caster * (1.0 - body);
+    let inset_coverage = body * (1.0 - caster);
+    let coverage = select(outer_coverage, inset_coverage, kind == 1u);
     return vec4<f32>(uniform_data.offset.rgb, uniform_data.offset.a * coverage);
 }
 

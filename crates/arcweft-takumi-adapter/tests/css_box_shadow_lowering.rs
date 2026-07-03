@@ -1,5 +1,5 @@
 use arcweft_presentation::hit::HitRect;
-use arcweft_render_wgpu::ui_box_shadow::{UiBoxShadowPassPlan, UiBoxShadowPlanError};
+use arcweft_render_wgpu::ui_box_shadow::UiBoxShadowPassPlan;
 use arcweft_render_wgpu::ui_scene::{
     UiBoxShadow, UiBoxShadowKind, UiColorRgba8, UiCompositingEffectClass, UiFilter,
 };
@@ -195,7 +195,7 @@ fn transparent_shadow_canonicalizes_to_empty_list() {
 }
 
 #[test]
-fn inset_shadow_is_lowered_then_rejected_by_typed_renderer_diagnostic() {
+fn inset_shadow_reaches_renderer_plan_as_typed_inset_pass() {
     let style = computed_style_with_radius_and_shadows(
         6.0,
         [takumi_shadow(
@@ -214,13 +214,15 @@ fn inset_shadow_is_lowered_then_rejected_by_typed_renderer_diagnostic() {
         lowered.effects.box_shadows.shadows()[0].kind,
         UiBoxShadowKind::Inset
     );
-    assert_eq!(
-        UiBoxShadowPassPlan::from_shadows(
-            &lowered.effects.box_shadows,
-            HitRect::new(0.0, 0.0, 80.0, 40.0),
-        ),
-        Err(UiBoxShadowPlanError::InsetUnsupported { shadow_index: 0 })
-    );
+
+    let plan = UiBoxShadowPassPlan::from_shadows(
+        &lowered.effects.box_shadows,
+        HitRect::new(0.0, 0.0, 80.0, 40.0),
+    )
+    .expect("seq06.13e renderer accepts typed inset shadows");
+
+    assert_eq!(plan.passes()[0].shadow.kind, UiBoxShadowKind::Inset);
+    assert!(plan.visual_inset_px() > 0.0);
 }
 
 #[test]

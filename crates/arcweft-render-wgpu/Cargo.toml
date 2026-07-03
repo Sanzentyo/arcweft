@@ -19,6 +19,10 @@ num-traits = "0.2.19"
 thiserror.workspace = true
 wgpu.workspace = true
 
+[dev-dependencies]
+pollster.workspace = true
+wgpu = { workspace = true, features = ["dx12", "metal", "vulkan"] }
+
 [lib]
 path = "src/lib.rs"
 

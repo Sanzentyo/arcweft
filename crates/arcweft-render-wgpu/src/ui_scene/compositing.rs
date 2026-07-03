@@ -525,11 +525,29 @@ impl UiBoxShadowList {
             .map(UiBoxShadow::visual_outset_px)
             .fold(0.0, f32::max)
     }
+
+    pub fn visual_inset_px(&self) -> f32 {
+        self.shadows
+            .iter()
+            .copied()
+            .map(UiBoxShadow::visual_inset_px)
+            .fold(0.0, f32::max)
+    }
 }
 
 impl From<Vec<UiBoxShadow>> for UiBoxShadowList {
     fn from(value: Vec<UiBoxShadow>) -> Self {
         Self::from_shadows(value)
+    }
+}
+
+impl UiBoxShadowKind {
+    pub const fn is_outer(self) -> bool {
+        matches!(self, Self::Outer)
+    }
+
+    pub const fn is_inset(self) -> bool {
+        matches!(self, Self::Inset)
     }
 }
 
@@ -573,7 +591,16 @@ impl UiBoxShadow {
     }
 
     pub fn visual_outset_px(self) -> f32 {
-        if self.kind == UiBoxShadowKind::Inset || self.color.alpha == 0 {
+        if self.kind.is_inset() || self.color.alpha == 0 {
+            return 0.0;
+        }
+        self.offset_x_px.abs().max(self.offset_y_px.abs())
+            + positive(self.spread_radius_px)
+            + positive(self.blur_radius_px) * FILTER_BLUR_OUTSET_MULTIPLIER
+    }
+
+    pub fn visual_inset_px(self) -> f32 {
+        if self.kind.is_outer() || self.color.alpha == 0 {
             return 0.0;
         }
         self.offset_x_px.abs().max(self.offset_y_px.abs())
@@ -582,12 +609,31 @@ impl UiBoxShadow {
     }
 
     pub fn is_identity(self) -> bool {
-        self.color.alpha == 0
-            || (self.kind == UiBoxShadowKind::Outer
-                && self.offset_x_px.abs() <= EPSILON
-                && self.offset_y_px.abs() <= EPSILON
-                && positive(self.blur_radius_px) <= EPSILON
-                && self.spread_radius_px <= EPSILON)
+        if self.color.alpha == 0 {
+            return true;
+        }
+        if !self.offset_x_px.is_finite()
+            || !self.offset_y_px.is_finite()
+            || !self.blur_radius_px.is_finite()
+            || !self.spread_radius_px.is_finite()
+            || !self.border_radius_px.is_finite()
+        {
+            return false;
+        }
+        match self.kind {
+            UiBoxShadowKind::Outer => {
+                self.offset_x_px.abs() <= EPSILON
+                    && self.offset_y_px.abs() <= EPSILON
+                    && positive(self.blur_radius_px) <= EPSILON
+                    && self.spread_radius_px <= EPSILON
+            }
+            UiBoxShadowKind::Inset => {
+                self.offset_x_px.abs() <= EPSILON
+                    && self.offset_y_px.abs() <= EPSILON
+                    && positive(self.blur_radius_px) <= EPSILON
+                    && self.spread_radius_px.abs() <= EPSILON
+            }
+        }
     }
 }
 
