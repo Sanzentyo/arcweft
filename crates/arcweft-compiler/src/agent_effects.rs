@@ -15,6 +15,7 @@ pub(crate) fn entity_kind_label(kind: &EntityKind) -> &str {
         EntityKind::DialogueLine => "dialogue_line",
         EntityKind::Text => "text",
         EntityKind::Content => "content",
+        EntityKind::Input => "input",
         EntityKind::Asset => "asset",
         EntityKind::Image => "image",
         EntityKind::Animation => "animation",

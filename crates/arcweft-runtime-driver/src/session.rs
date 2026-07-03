@@ -32,11 +32,12 @@ use arcweft_core::plan::{FlowEvent, RuntimePlanError};
 use arcweft_core::pure::VmRuntimePureCallBackend;
 use arcweft_core::source::{RuntimeSourceEvent, SourceId};
 use arcweft_core::step::{
-    RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepStats,
-    RuntimeStepStopReason,
+    RuntimeHostCallError, RuntimeHostCallErrorKind, RuntimeHostCallId, RuntimeHostCallRequest,
+    RuntimeHostCallResult, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode,
+    RuntimeStepOptions, RuntimeStepStats, RuntimeStepStopReason,
 };
 use arcweft_core::task::{CancelScopeId, LogicalEpoch, TaskEvent, TaskEventKind, TaskSequence};
-use arcweft_core::value::RuntimeBinding;
+use arcweft_core::value::{RuntimeBinding, RuntimePayload, RuntimeValue};
 use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioEvent};
 use arcweft_interaction_model::id::Identifier;
 use arcweft_interaction_model::input::{
@@ -154,6 +155,8 @@ pub struct BundleSession {
     options: BundleSessionOptions,
     pending_input_events: Vec<RoutedInputEvent>,
     pending_text_control_write_backs: Vec<RuntimeTextControlWriteBack>,
+    pending_host_call_results: Vec<RuntimeHostCallResult>,
+    waiting_text_submit_calls: Vec<PendingTextSubmitCall>,
     presentation: BundlePresentationSnapshot,
     next_step_index: usize,
     next_task_sequence: u64,
@@ -163,6 +166,12 @@ pub struct BundleSession {
     tasks: RuntimeTaskRegistry,
     next_generation_id: u64,
     active_container_content_root: Option<BundleDigest>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PendingTextSubmitCall {
+    request: RuntimeHostCallId,
+    control_id: String,
 }
 
 /// Error raised before a portable session can start.
@@ -404,6 +413,8 @@ impl BundleSession {
             options,
             pending_input_events: Vec::new(),
             pending_text_control_write_backs: Vec::new(),
+            pending_host_call_results: Vec::new(),
+            waiting_text_submit_calls: Vec::new(),
             presentation: BundlePresentationSnapshot::default(),
             next_step_index: 0,
             next_task_sequence: 0,
@@ -525,6 +536,7 @@ impl BundleSession {
     ) -> Result<(), BundleSessionError> {
         let runtime_write_back =
             apply_text_control_write_back_to_controls(&mut self.text_inputs, write_back)?;
+        self.resolve_waiting_text_submit_calls(&runtime_write_back);
         self.pending_text_control_write_backs
             .push(runtime_write_back);
         self.presentation.replace_text_inputs(&self.text_inputs);
@@ -545,6 +557,25 @@ impl BundleSession {
 
     pub fn pending_text_control_write_backs(&self) -> &[RuntimeTextControlWriteBack] {
         &self.pending_text_control_write_backs
+    }
+
+    fn resolve_waiting_text_submit_calls(&mut self, write_back: &RuntimeTextControlWriteBack) {
+        if !write_back.is_submit() {
+            return;
+        }
+        let control_id = write_back.control_id();
+        let mut index = 0;
+        while index < self.waiting_text_submit_calls.len() {
+            if self.waiting_text_submit_calls[index].control_id == control_id {
+                let call = self.waiting_text_submit_calls.remove(index);
+                self.pending_host_call_results.push(RuntimeHostCallResult {
+                    id: call.request,
+                    outcome: Ok(RuntimePayload::from(write_back.value().as_str().to_owned())),
+                });
+            } else {
+                index += 1;
+            }
+        }
     }
 
     pub fn hot_swap_bundle(
@@ -586,6 +617,8 @@ impl BundleSession {
             SwapCompatibility::CodeCompatible => {
                 self.activate_runtime(next_runtime.clone());
                 self.pending_input_events.clear();
+                self.pending_host_call_results.clear();
+                self.waiting_text_submit_calls.clear();
                 self.presentation = BundlePresentationSnapshot::default();
             }
             SwapCompatibility::CodeGenerational => {
@@ -653,6 +686,8 @@ impl BundleSession {
             SwapCompatibility::CodeCompatible => {
                 self.activate_runtime(next_runtime.clone());
                 self.pending_input_events.clear();
+                self.pending_host_call_results.clear();
+                self.waiting_text_submit_calls.clear();
                 self.presentation = BundlePresentationSnapshot::default();
             }
             SwapCompatibility::CodeGenerational => {
@@ -783,7 +818,7 @@ impl BundleSession {
             task_events,
             audio_events: input.audio_events,
             source_events: input.source_events,
-            host_call_results: Vec::new(),
+            host_call_results: std::mem::take(&mut self.pending_host_call_results),
         };
         let mut pure_backend = VmRuntimePureCallBackend::default();
         let result = self.executor.step_with_root_bindings_and_pure_backend(
@@ -819,6 +854,7 @@ impl BundleSession {
         let observations = self.executor.fiber().observations.clone();
 
         let requested_tasks = self.dispatch_requested_tasks(clock, output.requests.tasks);
+        self.capture_text_submit_host_calls(output.requests.host_calls, &mut diagnostics);
         let cancel_scopes = output.requests.cancel_scopes;
         for scope in &cancel_scopes {
             self.tasks
@@ -893,6 +929,38 @@ impl BundleSession {
                 dispatch
             })
             .collect()
+    }
+
+    fn capture_text_submit_host_calls(
+        &mut self,
+        requests: Vec<RuntimeHostCallRequest>,
+        diagnostics: &mut Vec<String>,
+    ) {
+        for request in requests {
+            if request.capability == "ui.text_input" && request.operation == "await_submit" {
+                match text_submit_control_id(&request) {
+                    Some(control_id) => {
+                        self.waiting_text_submit_calls.push(PendingTextSubmitCall {
+                            request: request.id,
+                            control_id,
+                        });
+                    }
+                    None => self.pending_host_call_results.push(RuntimeHostCallResult {
+                        id: request.id,
+                        outcome: Err(RuntimeHostCallError {
+                            kind: RuntimeHostCallErrorKind::Rejected,
+                            message: "ui.text_input.await_submit requires one text input target"
+                                .to_owned(),
+                        }),
+                    }),
+                }
+            } else {
+                diagnostics.push(format!(
+                    "unsupported runtime host call {}.{}",
+                    request.capability, request.operation
+                ));
+            }
+        }
     }
 
     fn release_completed_task_generation_pins(&mut self, task_events: &[TaskEvent]) {
@@ -1189,6 +1257,20 @@ fn build_session_runtime(
         text_inputs,
     )
     .map_err(BundleSessionError::from)
+}
+
+fn text_submit_control_id(request: &RuntimeHostCallRequest) -> Option<String> {
+    let value = request.args.first()?.value();
+    match value {
+        RuntimeValue::EntityRef(value) | RuntimeValue::String(value) => {
+            Some(input_control_id(value))
+        }
+        _ => None,
+    }
+}
+
+fn input_control_id(value: &str) -> String {
+    value.strip_prefix("input.").unwrap_or(value).to_owned()
 }
 
 fn selected_awbc_entry(

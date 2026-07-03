@@ -17,7 +17,7 @@ use arcweft_lang_hir::model::{HirAgent, HirFlow, HirFunction};
 use arcweft_lang_syntax::ast::common::Visibility;
 use arcweft_lang_syntax::ast::items::{
     EntityDeclItem, EntryItem, EntryRouteBinding, EntryRouteBindingSource, ExternModItem,
-    ExternModMember, TypeAliasItem,
+    ExternModMember, TypeAliasItem, UiTextInputItem,
 };
 use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
 use arcweft_lang_syntax::types::{FnSignature, TypeRef};
@@ -526,6 +526,17 @@ impl TypeChecker<'_> {
                 }
                 self.check_source_item(item);
             }
+            HirTopLevelDecl::UiTextInput(item) => self.check_ui_text_input_decl(item),
+        }
+    }
+
+    fn check_ui_text_input_decl(&mut self, item: &UiTextInputItem) {
+        self.expect_entity_kind(item.id(), &EntityKind::Input, "UI text input id");
+        if let Some(target) = item.submit() {
+            self.expect_entity_kind(target, &EntityKind::Input, "UI text input submit target");
+        }
+        if let Some(target) = item.change() {
+            self.expect_entity_kind(target, &EntityKind::Input, "UI text input change target");
         }
     }
 

@@ -208,6 +208,7 @@ fn collect_dialogue_content_ranges_from_stmt(
             }
         }
         Stmt::LetChoice { .. }
+        | Stmt::LetTextSubmit { .. }
         | Stmt::Return(_)
         | Stmt::Out { .. }
         | Stmt::Goto(_)

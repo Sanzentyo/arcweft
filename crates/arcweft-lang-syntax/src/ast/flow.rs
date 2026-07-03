@@ -329,6 +329,11 @@ pub enum Stmt {
         pattern: Pattern,
         await_with: AwaitWith,
     },
+    /// `let PAT = text_submit @input.id` waits for a player-owned text control submit.
+    LetTextSubmit {
+        pattern: Pattern,
+        target: Expr,
+    },
     Return(Expr),
     /// `out expr` or `out 'label expr` from a line/cue/content continuation.
     Out {

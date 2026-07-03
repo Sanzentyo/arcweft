@@ -24,6 +24,7 @@ impl HirTopLevelDecl {
             Self::Bench(_) => "bench",
             Self::Parser(_) => "parser",
             Self::Source(_) => "source",
+            Self::UiTextInput(_) => "ui_text_input",
         }
     }
 }

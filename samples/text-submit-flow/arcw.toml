@@ -1,0 +1,7 @@
+[package]
+name = "text-submit-flow"
+version = "0.1.0"
+
+[launch.main]
+kind = "game"
+source = "src/main.arcw"

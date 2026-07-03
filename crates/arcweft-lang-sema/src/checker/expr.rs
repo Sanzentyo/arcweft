@@ -1498,12 +1498,14 @@ impl TypeChecker<'_> {
             return None;
         }
         match receiver_type {
-            TypeKind::Vec(_) | TypeKind::Seq(_) | TypeKind::Slice(_) | TypeKind::Array { .. } => {
-                Some(TypeKind::USize)
-            }
+            TypeKind::String
+            | TypeKind::Vec(_)
+            | TypeKind::Seq(_)
+            | TypeKind::Slice(_)
+            | TypeKind::Array { .. } => Some(TypeKind::USize),
             other => {
                 self.errors.push(TypeCheckError::new(format!(
-                    "len receiver must be an iterable sequence, found {other:?}"
+                    "len receiver must be a string or iterable sequence, found {other:?}"
                 )));
                 None
             }

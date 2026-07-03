@@ -64,6 +64,9 @@ pub fn registry_from_hir(module: &HirModule) -> NameRegistry {
             HirTopLevelDecl::Entry(item) => {
                 registry.insert(item.id().body(), EntityKind::Entry);
             }
+            HirTopLevelDecl::UiTextInput(item) => {
+                registry.insert(item.id().body(), EntityKind::Input);
+            }
             HirTopLevelDecl::Test(item) => {
                 if let Some(id) = item.id().as_absolute() {
                     registry.insert(id.body(), EntityKind::Test);

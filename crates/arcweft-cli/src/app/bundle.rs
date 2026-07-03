@@ -45,6 +45,11 @@ use arcweft_bundle::{
     },
     resource_codec::{
         UiInputResource, UiProgramResource, UiStyleResource, UiTextResource, UiThemeResource,
+        ui::{
+            CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization,
+            UiInputKind, UiInputOptions, UiInputPurpose, UiSecureInputPolicy, UiSemanticTarget,
+            UiTextSourceKind, UiTextSourceRecord,
+        },
     },
 };
 use arcweft_core::{
@@ -53,6 +58,8 @@ use arcweft_core::{
     plan::{FlowOp, RuntimeEntryKind, RuntimePlan},
     value::{RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
+use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
+use arcweft_lang_syntax::ast::items::{UiTextInputItem, UiTextInputKind};
 use arcweft_launch::LaunchKind;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
 use arcweft_runtime_host::{
@@ -300,7 +307,8 @@ pub(in crate::app) fn compile_bundle_for_selection(
     let image_assets = collect_bundle_image_assets(&virtual_files)?;
     let image_declarations = parse_declared_image_objects(&source);
     let image_objects = bundle_image_objects(&image_declarations)?;
-    let ui_sidecars = collect_bundle_ui_sidecars(selection.path())?;
+    let ui_sidecars = collect_bundle_ui_sidecars(selection.path())?
+        .merged(collect_bundle_dsl_ui_resources(&compiled.hir));
     validate_referenced_bundle_image_assets(&compiled.plan, &image_declarations, &image_assets)?;
     let bundle = attach_bundle_ui_sidecars(
         ArcweftBundle::new(
@@ -344,6 +352,57 @@ struct BundleUiSidecars {
     text: Option<UiTextResource>,
     input: Option<UiInputResource>,
     theme: Option<UiThemeResource>,
+}
+
+impl BundleUiSidecars {
+    fn merged(mut self, other: Self) -> Self {
+        self.program = merge_optional(self.program, other.program, merge_ui_programs);
+        self.text = merge_optional(self.text, other.text, merge_ui_text);
+        self.input = merge_optional(self.input, other.input, merge_ui_input);
+        self.style = self.style.or(other.style);
+        self.theme = self.theme.or(other.theme);
+        self
+    }
+}
+
+fn merge_optional<T>(
+    left: Option<T>,
+    right: Option<T>,
+    merge: impl FnOnce(T, T) -> T,
+) -> Option<T> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(merge(left, right)),
+        (Some(left), None) => Some(left),
+        (None, Some(right)) => Some(right),
+        (None, None) => None,
+    }
+}
+
+fn merge_ui_programs(mut left: UiProgramResource, right: UiProgramResource) -> UiProgramResource {
+    left.instructions.extend(right.instructions);
+    left.child_spans.extend(right.child_spans);
+    left.handlers.extend(right.handlers);
+    left.state_schema_hashes.extend(right.state_schema_hashes);
+    left.exported_parts.extend(right.exported_parts);
+    left.semantic_targets.extend(right.semantic_targets);
+    left.adapter_requirements.extend(right.adapter_requirements);
+    left
+}
+
+fn merge_ui_text(mut left: UiTextResource, right: UiTextResource) -> UiTextResource {
+    left.sources.extend(right.sources);
+    left.display_frame_refs.extend(right.display_frame_refs);
+    left.source_ranges.extend(right.source_ranges);
+    left.reveal_policies.extend(right.reveal_policies);
+    left.cursor_policies.extend(right.cursor_policies);
+    left.redactions.extend(right.redactions);
+    left
+}
+
+fn merge_ui_input(mut left: UiInputResource, right: UiInputResource) -> UiInputResource {
+    left.options.extend(right.options);
+    left.adapter_requirements.extend(right.adapter_requirements);
+    left
 }
 
 fn collect_bundle_ui_sidecars(source_path: &Path) -> Result<BundleUiSidecars, ExitCode> {
@@ -392,6 +451,166 @@ where
         );
         ExitCode::FAILURE
     })
+}
+
+fn collect_bundle_dsl_ui_resources(module: &HirModule) -> BundleUiSidecars {
+    let inputs = module
+        .declarations()
+        .iter()
+        .filter_map(|decl| match decl {
+            HirTopLevelDecl::UiTextInput(item) => Some(item),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if inputs.is_empty() {
+        return BundleUiSidecars::default();
+    }
+
+    let mut text_sources = Vec::new();
+    let mut input_options = Vec::new();
+    let mut semantic_targets = Vec::new();
+    for input in inputs {
+        push_dsl_ui_text_sources(&mut text_sources, input);
+        input_options.push(dsl_ui_input_options(input));
+        semantic_targets.push(dsl_ui_semantic_target(input));
+    }
+
+    BundleUiSidecars {
+        program: Some(UiProgramResource {
+            program_id: "ui.program.dsl_text_inputs".to_owned(),
+            root_component: "ui.component.dsl_text_inputs".to_owned(),
+            instructions: Vec::new(),
+            child_spans: Vec::new(),
+            handlers: Vec::new(),
+            state_schema_hashes: Vec::new(),
+            exported_parts: Vec::new(),
+            semantic_targets,
+            adapter_requirements: Vec::new(),
+        }),
+        text: Some(UiTextResource {
+            sources: text_sources,
+            ..UiTextResource::default()
+        }),
+        input: Some(UiInputResource {
+            options: input_options,
+            adapter_requirements: Vec::new(),
+        }),
+        ..BundleUiSidecars::default()
+    }
+}
+
+fn push_dsl_ui_text_sources(sources: &mut Vec<UiTextSourceRecord>, input: &UiTextInputItem) {
+    let id = dsl_ui_input_public_id(input);
+    sources.push(ui_literal_text_source(
+        dsl_ui_text_source_id("label", &id),
+        input.label().unwrap_or(&id),
+    ));
+    sources.push(ui_literal_text_source(
+        dsl_ui_text_source_id("value", &id),
+        input.value().unwrap_or_default(),
+    ));
+    if let Some(placeholder) = input.placeholder() {
+        sources.push(ui_literal_text_source(
+            dsl_ui_text_source_id("placeholder", &id),
+            placeholder,
+        ));
+    }
+}
+
+fn ui_literal_text_source(public_id: String, value: &str) -> UiTextSourceRecord {
+    UiTextSourceRecord {
+        public_id,
+        kind: UiTextSourceKind::Literal {
+            value: value.to_owned(),
+        },
+        source: None,
+    }
+}
+
+fn dsl_ui_input_options(input: &UiTextInputItem) -> UiInputOptions {
+    let id = dsl_ui_input_public_id(input);
+    UiInputOptions {
+        public_id: id.clone(),
+        kind: dsl_ui_input_kind(input.kind()),
+        value_text_source: dsl_ui_text_source_id("value", &id),
+        placeholder_text_source: input
+            .placeholder()
+            .map(|_| dsl_ui_text_source_id("placeholder", &id)),
+        purpose: dsl_ui_input_purpose(input.purpose()),
+        autocorrect: TextAssistPolicy::PlatformDefault,
+        spellcheck: TextAssistPolicy::PlatformDefault,
+        capitalization: TextCapitalization::None,
+        enter_key: dsl_ui_enter_key(input.enter_key()),
+        multiline: input.kind() == UiTextInputKind::TextArea,
+        secure_policy: if input.kind() == UiTextInputKind::SecureField {
+            UiSecureInputPolicy::Password
+        } else {
+            UiSecureInputPolicy::Plain
+        },
+        composition_on_blur: CompositionOnBlurPolicy::Commit,
+        submit_handler: input.submit().map(|target| target.body().to_owned()),
+        change_handler: input.change().map(|target| target.body().to_owned()),
+        adapter_requirements: Vec::new(),
+    }
+}
+
+fn dsl_ui_semantic_target(input: &UiTextInputItem) -> UiSemanticTarget {
+    let id = dsl_ui_input_public_id(input);
+    UiSemanticTarget {
+        public_id: id.clone(),
+        target: id.clone(),
+        label_text_source: Some(dsl_ui_text_source_id("label", &id)),
+        source: None,
+    }
+}
+
+fn dsl_ui_input_public_id(input: &UiTextInputItem) -> String {
+    input
+        .id()
+        .body()
+        .strip_prefix("input.")
+        .unwrap_or(input.id().body())
+        .to_owned()
+}
+
+fn dsl_ui_text_source_id(kind: &str, public_id: &str) -> String {
+    format!("text.{kind}.{public_id}")
+}
+
+fn dsl_ui_input_kind(kind: UiTextInputKind) -> UiInputKind {
+    match kind {
+        UiTextInputKind::TextField => UiInputKind::TextField,
+        UiTextInputKind::TextArea => UiInputKind::TextArea,
+        UiTextInputKind::SecureField => UiInputKind::SecureField,
+    }
+}
+
+fn dsl_ui_input_purpose(value: Option<&str>) -> UiInputPurpose {
+    match value.unwrap_or("text") {
+        "search" => UiInputPurpose::Search,
+        "name" => UiInputPurpose::Name,
+        "email" => UiInputPurpose::Email,
+        "url" => UiInputPurpose::Url,
+        "telephone" | "tel" => UiInputPurpose::Telephone,
+        "number" => UiInputPurpose::Number,
+        "decimal" => UiInputPurpose::Decimal,
+        "password" => UiInputPurpose::Password,
+        "pin" => UiInputPurpose::Pin,
+        "terminal" => UiInputPurpose::Terminal,
+        _ => UiInputPurpose::Text,
+    }
+}
+
+fn dsl_ui_enter_key(value: Option<&str>) -> EnterKeyHint {
+    match value.unwrap_or("default") {
+        "enter" => EnterKeyHint::Enter,
+        "done" => EnterKeyHint::Done,
+        "go" => EnterKeyHint::Go,
+        "next" => EnterKeyHint::Next,
+        "search" => EnterKeyHint::Search,
+        "send" => EnterKeyHint::Send,
+        _ => EnterKeyHint::Default,
+    }
 }
 
 fn attach_bundle_ui_sidecars(

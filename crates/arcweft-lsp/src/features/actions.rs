@@ -363,6 +363,7 @@ fn callable_item_range(items: &[Item], callable: &CallableId) -> Option<TextRang
         | Item::Bench(_)
         | Item::Parser(_)
         | Item::Source(_)
+        | Item::UiTextInput(_)
         | Item::FlowItem(_)
         | Item::Raw(_) => None,
     })
@@ -1126,6 +1127,7 @@ fn speaker_preset_edit_from_stmt(
         Stmt::Let { .. }
         | Stmt::Assign { .. }
         | Stmt::LetChoice { .. }
+        | Stmt::LetTextSubmit { .. }
         | Stmt::Return(_)
         | Stmt::Out { .. }
         | Stmt::Goto(_)

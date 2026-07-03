@@ -724,7 +724,7 @@ impl CstLinePunctuationSummary {
             if token.kind() != SyntaxKind::Punctuation {
                 continue;
             }
-            if token.text() == "{" && paren == 0 && square == 0 && brace == 0 && angle == 0 {
+            if token.text() == "{" && paren == 0 && square == 0 && brace == 0 {
                 let offset = usize::from(token.text_range().start()) - node_start;
                 if summary.first_top_level_brace_open.is_none() {
                     summary.first_top_level_brace_open = Some(offset);

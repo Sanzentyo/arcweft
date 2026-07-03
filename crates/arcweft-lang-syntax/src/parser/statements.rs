@@ -222,6 +222,14 @@ fn parse_let_stmt(
     if let Some((pattern, expr)) = split_top_level_binding(rest) {
         let (pattern, ty) = parse_binding_pattern(pattern);
         let expr = expr.trim();
+        if ty.is_none()
+            && let Some(target) = expr.strip_prefix("text_submit ")
+        {
+            return Stmt::LetTextSubmit {
+                pattern,
+                target: parse_expr_lossy_with_stats(target.trim(), stats),
+            };
+        }
         let expr_start = trimmed
             .len()
             .checked_sub(expr.len())

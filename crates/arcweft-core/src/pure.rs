@@ -1816,6 +1816,9 @@ impl PureEvaluator {
                 Ok(RuntimeValue::String(value.trim().to_owned()))
             }
             (RuntimeValue::String(value), "to_string", []) => Ok(RuntimeValue::String(value)),
+            (RuntimeValue::String(value), "len", []) => {
+                Ok(runtime_len_value(value.chars().count()))
+            }
             (RuntimeValue::Seq(seq), "len", []) => Ok(runtime_len_value(seq.len())),
             (RuntimeValue::Seq(seq), "contains", [needle]) => Ok(RuntimeValue::Bool(
                 seq.into_values().iter().any(|item| item == needle),

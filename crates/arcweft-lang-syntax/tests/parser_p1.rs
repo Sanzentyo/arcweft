@@ -75,6 +75,30 @@ fn function_signatures_reject_misplaced_rest_parameters() {
 }
 
 #[test]
+fn flow_if_comparison_condition_is_structured() {
+    let tree = parse_ok(
+        r#"
+flow main {
+    let count = 3usize
+    if count < 5usize {
+        narrator: short.
+    }
+    return "done"
+}
+"#,
+    );
+
+    let Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
+    };
+    assert!(
+        flow.body()
+            .iter()
+            .any(|item| matches!(item, FlowItem::If(_)))
+    );
+}
+
+#[test]
 fn dialogue_line_options_are_structured_not_raw_args() {
     let source = r#"
 alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto, window=@textbox.side, hooks=[@hook.dialogue.read_state_color], style=@style.dream, rich_text=rich_text_style(ruby=ruby_style(size=11px)), look=smile, source_locale="ja-JP", custom=foo(size=12px)): 今日は少しだけ。[p]

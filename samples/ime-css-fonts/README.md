@@ -61,8 +61,8 @@ cargo run -p arcweft-cli --features native-player -- run \
 ```
 
 This opens a normal Arcweft native player window and renders `TextField`,
-`TextArea`, and `SecureField` controls from
-`samples/native-text-input/.arcweft/content/`. Pointer focus, keyboard
+`TextArea`, and `SecureField` controls declared in
+`samples/native-text-input/src/main.arcw`. Pointer focus, keyboard
 traversal, platform IME preedit/commit, routed text-input batches, runtime
 write-back, and secure redaction are validated through the same player bridge.
 

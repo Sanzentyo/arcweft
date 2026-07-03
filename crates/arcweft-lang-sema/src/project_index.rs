@@ -981,6 +981,15 @@ fn index_top_level_declaration(
                 entities::project_callable_symbol(item, source_name.clone())?,
             );
         }
+        HirTopLevelDecl::UiTextInput(item) => {
+            index = index.with_entity(entities::entity_symbol(
+                item.id(),
+                EntityKind::Input,
+                None,
+                source_name.clone(),
+                "input",
+            )?);
+        }
         HirTopLevelDecl::State(_)
         | HirTopLevelDecl::Trait(_)
         | HirTopLevelDecl::Impl(_)

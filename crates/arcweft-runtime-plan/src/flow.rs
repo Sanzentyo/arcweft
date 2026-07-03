@@ -17,10 +17,11 @@ use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::line_task::{LineOutRequest, LineTaskGroup};
 use arcweft_core::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec,
-    RuntimeEntryTarget, RuntimeFlow, RuntimeIteratorEvidence, RuntimeLineId, RuntimeMatchArm,
-    RuntimePlan, RuntimePureHelper, RuntimePureHelperId, RuntimeRouteBinding,
+    RuntimeEntryTarget, RuntimeFlow, RuntimeHostCallTarget, RuntimeIteratorEvidence, RuntimeLineId,
+    RuntimeMatchArm, RuntimePlan, RuntimePureHelper, RuntimePureHelperId, RuntimeRouteBinding,
     RuntimeRouteBindingSource, RuntimeRouteSpec, RuntimeTraitMethod,
 };
+use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::task::{
     AWAIT_MANY_ITEM_BINDING, AwaitManyTarget, AwaitTarget, HostTaskArgTemplate,
     HostTaskRequestTemplate, NeedId, TaskId,
@@ -1860,6 +1861,19 @@ impl FlowRuntimeLowerer<'_> {
                 pattern: lower_runtime_pattern(pattern),
                 body: self.lower_syntax_flow_items(flow_id, flow_index, block.body()),
             }],
+            Stmt::LetTextSubmit { pattern, target } => {
+                vec![FlowOp::HostCall {
+                    binding: Some(lower_runtime_pattern(pattern)),
+                    target: RuntimeHostCallTarget::new(
+                        "ui.text_input.await_submit",
+                        "ui.text_input",
+                        "await_submit",
+                        [self.lower_runtime_expr(target)],
+                        RuntimeHostCallMode::Suspend,
+                        true,
+                    ),
+                }]
+            }
             Stmt::LetElse {
                 pattern,
                 expr,

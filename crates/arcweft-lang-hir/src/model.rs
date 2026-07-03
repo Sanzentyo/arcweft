@@ -8,7 +8,7 @@ use arcweft_lang_syntax::{
         items::{
             AgentItem, Attribute, CallableItem, EntityDeclItem, EntryDeclItem, EnumItem,
             ExternCapabilityItem, ExternModItem, FunctionKind, HookItem, ImplItem, MemoFn,
-            ParserItem, StateItem, StructItem, TraitItem, TypeAliasItem,
+            ParserItem, StateItem, StructItem, TraitItem, TypeAliasItem, UiTextInputItem,
         },
         line_plan::LinePlan,
         pattern::Pattern,
@@ -96,6 +96,7 @@ pub enum HirTopLevelDecl {
     Bench(BenchItem),
     Parser(ParserItem),
     Source(SourceItem),
+    UiTextInput(UiTextInputItem),
 }
 
 /// HIR-facing flow item.

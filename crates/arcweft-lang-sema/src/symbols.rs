@@ -7,7 +7,7 @@ use arcweft_lang_syntax::{
             AwaitWith, ContractClause, FlowItem, SelectBranchHead, Stmt, StmtMatchArm, WaitTarget,
         },
         ids::{EntityRef, EntityRefSyntax, IdRef},
-        items::{ImplMember, RawSyntax, TraitMember},
+        items::{ImplMember, RawSyntax, TraitMember, UiTextInputItem},
         line_plan::{LinePlan, LinePlanItem, TriggerPattern},
         pattern::{Pattern, VariantPatternPayload},
     },
@@ -175,6 +175,17 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
                 collect_stmt(stmt, uses);
             }
         }
+        HirTopLevelDecl::UiTextInput(item) => collect_ui_text_input_decl(item, uses),
+    }
+}
+
+fn collect_ui_text_input_decl(item: &UiTextInputItem, uses: &mut Vec<SymbolUse>) {
+    push_entity(uses, item.id());
+    if let Some(target) = item.submit() {
+        push_entity(uses, target);
+    }
+    if let Some(target) = item.change() {
+        push_entity(uses, target);
     }
 }
 
@@ -651,6 +662,7 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
                 collect_stmt(stmt, uses);
             }
         }
+        Stmt::LetTextSubmit { pattern, target } => collect_text_submit_stmt(pattern, target, uses),
         Stmt::LetChoice { choice, .. } => collect_choice_stmt(choice, uses),
         Stmt::LetScope { scope, .. } => {
             for stmt in scope.statements() {
@@ -721,6 +733,11 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
         Stmt::Break { expr: None, .. } | Stmt::Continue { .. } => {}
         Stmt::Raw(raw) => collect_raw_stmt(raw, uses),
     }
+}
+
+fn collect_text_submit_stmt(pattern: &Pattern, target: &Expr, uses: &mut Vec<SymbolUse>) {
+    collect_pattern(pattern, uses);
+    collect_expr(target, uses);
 }
 
 fn collect_raw_stmt(raw: &RawSyntax, uses: &mut Vec<SymbolUse>) {

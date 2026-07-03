@@ -1,0 +1,45 @@
+pub surface character narrator {
+  display = "Arcweft Text Submit"
+  default_voice = auto
+}
+
+entry game @entry.text_submit_flow {
+  start @flow.text_submit_flow
+}
+
+ui text_input @input.feedback {
+  label = "Message"
+  value = ""
+  placeholder = "Type text, then press Enter"
+  purpose = text
+  enter_key = send
+  submit = @input.feedback
+  change = @input.feedback
+}
+
+flow text_submit_flow {
+  narrator:
+    Type a short message in the Arcweft-rendered field.[p]
+    Press Enter or the IME send/done action to submit it.
+
+  let submitted = text_submit @input.feedback
+  let character_count = submitted.len()
+
+  if character_count == 0usize {
+    narrator: Nothing was submitted.
+  }
+
+  if character_count > 0usize {
+    narrator: Submitted #[submitted].
+  }
+
+  if character_count < 5usize {
+    narrator: The submitted text is short: #[character_count] character(s).
+  }
+
+  if character_count >= 5usize {
+    narrator: The submitted text has #[character_count] character(s), so it takes the longer branch.
+  }
+
+  return submitted
+}

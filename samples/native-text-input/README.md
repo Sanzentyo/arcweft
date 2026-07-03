@@ -10,8 +10,8 @@ cargo run -p arcweft-cli --features native-player -- run \
   --text-input-trace-out target/native-text-input-trace/native-player-ime.real.json
 ```
 
-The window should show Arcweft-rendered controls from the product/runtime UI
-resource sidecars in `.arcweft/content/`, including `ui.style.json` font/style
+The window should show Arcweft-rendered controls declared directly in
+`src/main.arcw`. The remaining `ui.style.json` sidecar provides font/style
 cases for Japanese sans, Japanese serif, focus ring, and secure masking:
 
 - `jp_text_field` — single-line `TextField`;

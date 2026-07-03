@@ -19,6 +19,7 @@ pub(super) fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
         "say" => EntityKind::DialogueLine,
         "text" => EntityKind::Text,
         "content" => EntityKind::Content,
+        "input" => EntityKind::Input,
         "item" => EntityKind::Other("item".to_owned()),
         "asset" => EntityKind::Asset,
         "image" => EntityKind::Image,

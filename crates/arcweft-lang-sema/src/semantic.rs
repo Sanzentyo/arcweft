@@ -900,6 +900,7 @@ impl<'a> SemanticAnalyzer<'a> {
             Stmt::LetScope { scope, .. } => self.collect_scope_expr_syntax(scope),
             Stmt::LetLoop { block, .. } => self.collect_loop_syntax(block),
             Stmt::LetAwait { await_with, .. } => self.collect_await_syntax(await_with),
+            Stmt::LetTextSubmit { target, .. } => self.collect_expr(target, state),
             Stmt::Return(expr)
             | Stmt::Close(expr)
             | Stmt::Expr(expr)
@@ -953,11 +954,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 condition,
                 body,
                 else_body,
-            } => {
-                self.collect_expr(condition, state);
-                self.collect_nested_statement_scope(body, state);
-                self.collect_nested_statement_scope(else_body, state);
-            }
+            } => self.collect_if_stmt(condition, body, else_body, state),
             Stmt::Loop { body } | Stmt::While { body, .. } => {
                 if let Stmt::While { condition, .. } = stmt {
                     self.collect_expr(condition, state);
@@ -987,6 +984,18 @@ impl<'a> SemanticAnalyzer<'a> {
                 raw.range().map(|range| format!("{range:?}")),
             ),
         }
+    }
+
+    fn collect_if_stmt(
+        &mut self,
+        condition: &Expr,
+        body: &[Stmt],
+        else_body: &[Stmt],
+        state: &mut FlowState,
+    ) {
+        self.collect_expr(condition, state);
+        self.collect_nested_statement_scope(body, state);
+        self.collect_nested_statement_scope(else_body, state);
     }
 
     fn collect_nested_statement_scope(&mut self, body: &[Stmt], state: &mut FlowState) {

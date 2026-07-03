@@ -45,8 +45,34 @@ pub enum Item {
     Bench(BenchItem),
     Parser(ParserItem),
     Source(SourceItem),
+    UiTextInput(UiTextInputItem),
     FlowItem(Box<FlowItem>),
     Raw(RawItem),
+}
+
+/// Top-level text-input declaration lowered into product UI resources.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiTextInputItem {
+    attrs: Vec<Attribute>,
+    visibility: Option<Visibility>,
+    id: EntityRef,
+    kind: UiTextInputKind,
+    label: Option<String>,
+    value: Option<String>,
+    placeholder: Option<String>,
+    purpose: Option<String>,
+    enter_key: Option<String>,
+    submit: Option<EntityRef>,
+    change: Option<EntityRef>,
+    range: TextRange,
+}
+
+/// Text-control kind for DSL-authored product UI input declarations.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiTextInputKind {
+    TextField,
+    TextArea,
+    SecureField,
 }
 
 /// Raw top-level item preserved for grammar families not lowered yet.
@@ -167,9 +193,125 @@ impl Item {
             Self::Bench(item) => Some(*item.range()),
             Self::Parser(item) => Some(*item.range()),
             Self::Source(item) => Some(*item.range()),
+            Self::UiTextInput(item) => Some(*item.range()),
             Self::Raw(item) => Some(*item.range()),
             Self::FlowItem(_) => None,
         }
+    }
+}
+
+impl UiTextInputItem {
+    pub(crate) const fn new(
+        attrs: Vec<Attribute>,
+        visibility: Option<Visibility>,
+        id: EntityRef,
+        kind: UiTextInputKind,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            attrs,
+            visibility,
+            id,
+            kind,
+            label: None,
+            value: None,
+            placeholder: None,
+            purpose: None,
+            enter_key: None,
+            submit: None,
+            change: None,
+            range,
+        }
+    }
+
+    #[must_use]
+    pub fn with_label(mut self, label: Option<String>) -> Self {
+        self.label = label;
+        self
+    }
+
+    #[must_use]
+    pub fn with_value(mut self, value: Option<String>) -> Self {
+        self.value = value;
+        self
+    }
+
+    #[must_use]
+    pub fn with_placeholder(mut self, placeholder: Option<String>) -> Self {
+        self.placeholder = placeholder;
+        self
+    }
+
+    #[must_use]
+    pub fn with_purpose(mut self, purpose: Option<String>) -> Self {
+        self.purpose = purpose;
+        self
+    }
+
+    #[must_use]
+    pub fn with_enter_key(mut self, enter_key: Option<String>) -> Self {
+        self.enter_key = enter_key;
+        self
+    }
+
+    #[must_use]
+    pub fn with_submit(mut self, submit: Option<EntityRef>) -> Self {
+        self.submit = submit;
+        self
+    }
+
+    #[must_use]
+    pub fn with_change(mut self, change: Option<EntityRef>) -> Self {
+        self.change = change;
+        self
+    }
+
+    pub fn attrs(&self) -> &[Attribute] {
+        &self.attrs
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub const fn id(&self) -> &EntityRef {
+        &self.id
+    }
+
+    pub const fn kind(&self) -> UiTextInputKind {
+        self.kind
+    }
+
+    pub fn label(&self) -> Option<&str> {
+        self.label.as_deref()
+    }
+
+    pub fn value(&self) -> Option<&str> {
+        self.value.as_deref()
+    }
+
+    pub fn placeholder(&self) -> Option<&str> {
+        self.placeholder.as_deref()
+    }
+
+    pub fn purpose(&self) -> Option<&str> {
+        self.purpose.as_deref()
+    }
+
+    pub fn enter_key(&self) -> Option<&str> {
+        self.enter_key.as_deref()
+    }
+
+    pub const fn submit(&self) -> Option<&EntityRef> {
+        self.submit.as_ref()
+    }
+
+    pub const fn change(&self) -> Option<&EntityRef> {
+        self.change.as_ref()
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
     }
 }
 

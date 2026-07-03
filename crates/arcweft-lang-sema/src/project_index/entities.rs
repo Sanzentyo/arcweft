@@ -169,6 +169,9 @@ fn index_stmt_agent_actions(
             index = index_expr_agent_actions(expr, index, source_name)?;
             index = index_stmt_body_agent_actions(else_body, index, source_name)?;
         }
+        Stmt::LetTextSubmit { target, .. } => {
+            index = index_expr_agent_actions(target, index, source_name)?;
+        }
         Stmt::DeferBlock { statements, .. } => {
             index = index_stmt_body_agent_actions(statements, index, source_name)?;
         }

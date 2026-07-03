@@ -157,6 +157,7 @@ fn summarize_stmt_control(stmt: &Stmt) -> ProjectFlowControlSummary {
             summary.merge(summarize_expr_control(expr));
             summary.merge(summarize_stmt_body_control(else_body));
         }
+        Stmt::LetTextSubmit { target, .. } => summary.merge(summarize_text_submit_control(target)),
         Stmt::DeferBlock { statements, .. } => {
             summary.merge(summarize_stmt_body_control(statements));
         }
@@ -220,6 +221,13 @@ fn summarize_stmt_control(stmt: &Stmt) -> ProjectFlowControlSummary {
         | Stmt::Continue { .. }
         | Stmt::Raw(_) => {}
     }
+    summary
+}
+
+fn summarize_text_submit_control(target: &Expr) -> ProjectFlowControlSummary {
+    let mut summary = ProjectFlowControlSummary::default();
+    summary.record_await();
+    summary.merge(summarize_expr_control(target));
     summary
 }
 

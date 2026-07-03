@@ -7,6 +7,35 @@ entry game @entry.native_text_input_sample {
   start @flow.native_text_input_sample
 }
 
+ui text_input @input.jp_text_field {
+  label = "Japanese TextField / 日本語入力"
+  value = "Tokyo"
+  placeholder = "日本語 IME text"
+  purpose = text
+  enter_key = done
+  submit = @input.jp_text_field
+  change = @input.jp_text_field
+}
+
+ui text_area @input.jp_text_area {
+  label = "Multiline TextArea / 複数行"
+  value = "line one"
+  placeholder = "複数行の IME text"
+  purpose = text
+  enter_key = enter
+  change = @input.jp_text_area
+}
+
+ui secure_field @input.secret_secure_field {
+  label = "SecureField / redacted"
+  value = "sekret-1234"
+  placeholder = "secret"
+  purpose = password
+  enter_key = done
+  submit = @input.secret_secure_field
+  change = @input.secret_secure_field
+}
+
 fn i_to_string(i: i32) -> string {
     if i == 0 {
         return "first"
@@ -35,7 +64,7 @@ flow native_text_input_sample {
     }
   narrator:
     Native player-rendered IME acceptance sample.[p]
-    This scene owns three Arcweft-rendered text controls from product UI resources: jp_text_field, jp_text_area, and secret_secure_field.[p]
+    This scene owns three Arcweft-rendered text controls declared in this DSL source: jp_text_field, jp_text_area, and secret_secure_field.[p]
     Use pointer focus or keyboard traversal to focus a control, then enter Latin or Japanese text with the active platform IME.[p]
     Local trace output belongs under target/native-text-input-trace/.
 

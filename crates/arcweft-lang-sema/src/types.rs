@@ -16,6 +16,7 @@ pub enum EntityKind {
     DialogueLine,
     Text,
     Content,
+    Input,
     Asset,
     Image,
     Animation,
