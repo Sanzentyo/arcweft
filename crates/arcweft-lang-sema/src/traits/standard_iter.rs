@@ -15,6 +15,7 @@ pub(super) const ITEM: &str = "Item";
 pub(super) const INTO_ITER: &str = "IntoIter";
 
 const TYPE_PARAM_T: &str = "T";
+const TYPE_PARAM_E: &str = "E";
 const TYPE_PARAM_N: &str = "N";
 
 pub(super) fn install_standard_iterator_traits(
@@ -45,6 +46,7 @@ pub(super) fn install_standard_iterator_impls(catalog: &mut TraitCatalog) {
     };
 
     let t = TypeKind::GenericParam(TYPE_PARAM_T.to_owned());
+    let e = TypeKind::GenericParam(TYPE_PARAM_E.to_owned());
     let n = TYPE_PARAM_N.to_owned();
 
     push_builtin_impl(
@@ -98,6 +100,17 @@ pub(super) fn install_standard_iterator_impls(catalog: &mut TraitCatalog) {
         )],
     );
 
+    install_container_into_iter(
+        catalog,
+        iterator,
+        into_iterator,
+        IteratorStateKind::Stream,
+        TypeKind::Stream {
+            item: Box::new(t.clone()),
+            error: Box::new(e),
+        },
+        t.clone(),
+    );
     install_container_into_iter(
         catalog,
         iterator,

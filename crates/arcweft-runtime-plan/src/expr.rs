@@ -1783,7 +1783,7 @@ mod tests {
     }
 
     #[test]
-    fn numeric_bracket_seq_lowers_to_dense_i64_sequence() {
+    fn numeric_bracket_seq_lowers_to_dense_i32_sequence() {
         let expr = Expr::NumericBracketSeq(arcweft_lang_hir::syntax::expr::NumericBracketSeq::new(
             vec![1, 2, 3],
             None,
@@ -1794,7 +1794,7 @@ mod tests {
         assert!(matches!(
             lowered,
             RuntimeExpr::Value(RuntimeValue::Seq(seq))
-                if seq.as_i64_slice() == Some([1, 2, 3].as_slice())
+                if seq.as_i32_slice() == Some([1, 2, 3].as_slice())
         ));
     }
 

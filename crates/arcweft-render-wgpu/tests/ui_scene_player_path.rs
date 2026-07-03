@@ -58,14 +58,14 @@ fn direct_scene() -> UiScene {
 }
 
 #[test]
-fn ui_scene_attaches_to_prepared_frame_without_replacing_legacy_fields() {
+fn ui_scene_attaches_to_prepared_frame_without_replacing_base_fields() {
     let prepared = SharedFramePlanner::prepare(&empty_scene())
         .expect("base prepared frame")
         .with_ui_scenes([PreparedUiScene::new(direct_scene())]);
 
     assert_eq!(prepared.ui_scenes().len(), 1);
     assert_eq!(prepared.ui_scenes()[0].scene.primitives().len(), 1);
-    assert!(!prepared.rectangles.is_empty(), "legacy background remains");
+    assert!(!prepared.rectangles.is_empty(), "base background remains");
 }
 
 #[test]

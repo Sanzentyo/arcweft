@@ -1,0 +1,206 @@
+{
+  "fixture": "normal-conservative-multi",
+  "command_shape": "arcw build --manifest-path <FIXTURE>/arcw.toml --target-dir <TEMP>/target --json",
+  "first_build": {
+    "report": {
+      "status": "ok",
+      "package": "seq04_8_4_conservative_cache",
+      "selected_profile": null,
+      "modules": [
+        "crate",
+        "crate::support"
+      ],
+      "compile_units": [
+        {
+          "id": 0,
+          "modules": [
+            "crate"
+          ],
+          "cache": "miss"
+        },
+        {
+          "id": 1,
+          "modules": [
+            "crate::support"
+          ],
+          "cache": "miss"
+        }
+      ]
+    },
+    "cache_records": {
+      "bytecode_unit": [
+        {
+          "query": "bytecode_unit",
+          "artifact_kind": "bytecode_unit",
+          "logical_item": "bytecode-unit:crate",
+          "status": "rebuilt",
+          "key": "<DIGEST>",
+          "object_digest": "<DIGEST>",
+          "reuse_evidence": {
+            "kind": "conservative",
+            "producer_family": "full_build",
+            "identity_owner": "full_build_persistent_artifact_context",
+            "reason": "full_build_multi_module_product_awbc_not_narrowed",
+            "missing_identity": "per-module or per-SCC runtime-plan-unit digest plus narrowed canonical AWBC unit bytes",
+            "consumer_boundary": "ordinary build/watch still relinks linked product AWBC for multi-module projects",
+            "follow_up_sequence": "seq04.8.3.2"
+          }
+        },
+        {
+          "query": "bytecode_unit",
+          "artifact_kind": "bytecode_unit",
+          "logical_item": "bytecode-unit:crate::support",
+          "status": "rebuilt",
+          "key": "<DIGEST>",
+          "object_digest": "<DIGEST>",
+          "reuse_evidence": {
+            "kind": "conservative",
+            "producer_family": "full_build",
+            "identity_owner": "full_build_persistent_artifact_context",
+            "reason": "full_build_multi_module_product_awbc_not_narrowed",
+            "missing_identity": "per-module or per-SCC runtime-plan-unit digest plus narrowed canonical AWBC unit bytes",
+            "consumer_boundary": "ordinary build/watch still relinks linked product AWBC for multi-module projects",
+            "follow_up_sequence": "seq04.8.3.2"
+          }
+        }
+      ],
+      "link_plan": [
+        {
+          "query": "link_plan",
+          "artifact_kind": "link_plan",
+          "logical_item": "link-plan:crate",
+          "status": "rebuilt",
+          "key": "<DIGEST>",
+          "object_digest": "<DIGEST>",
+          "reuse_evidence": {
+            "kind": "conservative",
+            "producer_family": "full_build",
+            "identity_owner": "full_build_persistent_artifact_context",
+            "reason": "full_build_multi_module_product_awbc_not_narrowed",
+            "missing_identity": "per-module or per-SCC runtime-plan-unit digest plus narrowed canonical AWBC unit bytes",
+            "consumer_boundary": "ordinary build/watch still relinks linked product AWBC for multi-module projects",
+            "follow_up_sequence": "seq04.8.3.2"
+          }
+        },
+        {
+          "query": "link_plan",
+          "artifact_kind": "link_plan",
+          "logical_item": "link-plan:crate::support",
+          "status": "rebuilt",
+          "key": "<DIGEST>",
+          "object_digest": "<DIGEST>",
+          "reuse_evidence": {
+            "kind": "conservative",
+            "producer_family": "full_build",
+            "identity_owner": "full_build_persistent_artifact_context",
+            "reason": "full_build_multi_module_product_awbc_not_narrowed",
+            "missing_identity": "per-module or per-SCC runtime-plan-unit digest plus narrowed canonical AWBC unit bytes",
+            "consumer_boundary": "ordinary build/watch still relinks linked product AWBC for multi-module projects",
+            "follow_up_sequence": "seq04.8.3.2"
+          }
+        }
+      ]
+    }
+  },
+  "second_build": {
+    "report": {
+      "status": "ok",
+      "package": "seq04_8_4_conservative_cache",
+      "selected_profile": null,
+      "modules": [
+        "crate",
+        "crate::support"
+      ],
+      "compile_units": [
+        {
+          "id": 0,
+          "modules": [
+            "crate"
+          ],
+          "cache": "miss"
+        },
+        {
+          "id": 1,
+          "modules": [
+            "crate::support"
+          ],
+          "cache": "miss"
+        }
+      ]
+    },
+    "cache_records": {
+      "bytecode_unit": [
+        {
+          "query": "bytecode_unit",
+          "artifact_kind": "bytecode_unit",
+          "logical_item": "bytecode-unit:crate",
+          "status": "hit_then_rebuilt",
+          "key": "<DIGEST>",
+          "object_digest": "<DIGEST>",
+          "reuse_evidence": {
+            "kind": "conservative",
+            "producer_family": "full_build",
+            "identity_owner": "full_build_persistent_artifact_context",
+            "reason": "full_build_multi_module_product_awbc_not_narrowed",
+            "missing_identity": "per-module or per-SCC runtime-plan-unit digest plus narrowed canonical AWBC unit bytes",
+            "consumer_boundary": "ordinary build/watch still relinks linked product AWBC for multi-module projects",
+            "follow_up_sequence": "seq04.8.3.2"
+          }
+        },
+        {
+          "query": "bytecode_unit",
+          "artifact_kind": "bytecode_unit",
+          "logical_item": "bytecode-unit:crate::support",
+          "status": "hit_then_rebuilt",
+          "key": "<DIGEST>",
+          "object_digest": "<DIGEST>",
+          "reuse_evidence": {
+            "kind": "conservative",
+            "producer_family": "full_build",
+            "identity_owner": "full_build_persistent_artifact_context",
+            "reason": "full_build_multi_module_product_awbc_not_narrowed",
+            "missing_identity": "per-module or per-SCC runtime-plan-unit digest plus narrowed canonical AWBC unit bytes",
+            "consumer_boundary": "ordinary build/watch still relinks linked product AWBC for multi-module projects",
+            "follow_up_sequence": "seq04.8.3.2"
+          }
+        }
+      ],
+      "link_plan": [
+        {
+          "query": "link_plan",
+          "artifact_kind": "link_plan",
+          "logical_item": "link-plan:crate",
+          "status": "hit_then_rebuilt",
+          "key": "<DIGEST>",
+          "object_digest": "<DIGEST>",
+          "reuse_evidence": {
+            "kind": "conservative",
+            "producer_family": "full_build",
+            "identity_owner": "full_build_persistent_artifact_context",
+            "reason": "full_build_multi_module_product_awbc_not_narrowed",
+            "missing_identity": "per-module or per-SCC runtime-plan-unit digest plus narrowed canonical AWBC unit bytes",
+            "consumer_boundary": "ordinary build/watch still relinks linked product AWBC for multi-module projects",
+            "follow_up_sequence": "seq04.8.3.2"
+          }
+        },
+        {
+          "query": "link_plan",
+          "artifact_kind": "link_plan",
+          "logical_item": "link-plan:crate::support",
+          "status": "hit_then_rebuilt",
+          "key": "<DIGEST>",
+          "object_digest": "<DIGEST>",
+          "reuse_evidence": {
+            "kind": "conservative",
+            "producer_family": "full_build",
+            "identity_owner": "full_build_persistent_artifact_context",
+            "reason": "full_build_multi_module_product_awbc_not_narrowed",
+            "missing_identity": "per-module or per-SCC runtime-plan-unit digest plus narrowed canonical AWBC unit bytes",
+            "consumer_boundary": "ordinary build/watch still relinks linked product AWBC for multi-module projects",
+            "follow_up_sequence": "seq04.8.3.2"
+          }
+        }
+      ]
+    }
+  }
+}

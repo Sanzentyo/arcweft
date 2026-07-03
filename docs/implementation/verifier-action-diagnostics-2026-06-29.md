@@ -28,7 +28,7 @@ arcweft-seq07.2-verifier-action-diagnostics-2026-06-29.zip
 
 ## Validation
 
-Executed in `D:\git\arcweft` after applying the package:
+Executed from the repository root after applying the package:
 
 ```bash
 cargo fmt --all -- --check

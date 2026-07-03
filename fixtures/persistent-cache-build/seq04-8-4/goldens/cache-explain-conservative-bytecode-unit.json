@@ -1,0 +1,32 @@
+{
+  "status": "found",
+  "query": "bytecode-unit:crate",
+  "matches": [
+    {
+      "kind": "record",
+      "artifact_kind": "bytecode_unit",
+      "logical_item": "bytecode-unit:crate",
+      "object_status": "present",
+      "persistent_query": {
+        "query": "bytecode_unit",
+        "object_kind": "bytecode_unit",
+        "producer_family": "full_build",
+        "producer_classification": "conservative_required",
+        "conservative_reason": "full_build_multi_module_product_awbc_not_narrowed",
+        "payload_kind": "bytecode_unit",
+        "status": "hit",
+        "cache_record_status": {
+          "kind": "hit_then_rebuilt",
+          "reason": {
+            "kind": "conservative_invalidation",
+            "policy": "full-build-product-awbc-not-narrowed-to-reusable-unit"
+          }
+        },
+        "bytecode_unit_reuse_policy": "conservative_rebuild",
+        "conservative_reuse_policy": "full-build-product-awbc-not-narrowed-to-reusable-unit",
+        "recovery_action": "rebuild_from_source"
+      }
+    }
+  ],
+  "issues": []
+}

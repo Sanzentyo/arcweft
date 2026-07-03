@@ -28,8 +28,8 @@ use arcweft_core::task::{
 };
 use arcweft_core::time::LogicalDuration;
 use arcweft_core::value::{
-    RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeExpr, RuntimePayload, RuntimeSeq,
-    RuntimeValue,
+    RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEnv, RuntimeExpr, RuntimePayload,
+    RuntimeSeq, RuntimeValue,
 };
 use arcweft_interaction_model::{
     audio::{AudioCommand, AudioDispatchId, AudioMillis, GainDbMilli},
@@ -180,9 +180,10 @@ fn assert_facade_fiber_eq(step: &ParityStep) {
     ) {
         return;
     }
-    assert_eq!(
-        step.awbc_fiber.env, step.structured_fiber.env,
-        "facade environment mismatch"
+    assert_runtime_env_bindings_eq(
+        &step.awbc_fiber.env,
+        &step.structured_fiber.env,
+        "facade environment mismatch",
     );
     assert_eq!(
         step.awbc_fiber.observations, step.structured_fiber.observations,
@@ -197,6 +198,14 @@ fn assert_facade_fiber_eq(step: &ParityStep) {
         normalized_status(&step.structured_fiber.status),
         "facade status mismatch"
     );
+}
+
+fn assert_runtime_env_bindings_eq(left: &RuntimeEnv, right: &RuntimeEnv, message: &str) {
+    let mut left_bindings = left.bindings_snapshot();
+    let mut right_bindings = right.bindings_snapshot();
+    left_bindings.sort_by(|left, right| left.name.cmp(&right.name));
+    right_bindings.sort_by(|left, right| left.name.cmp(&right.name));
+    assert_eq!(left_bindings, right_bindings, "{message}");
 }
 
 fn normalized_status(status: &FlowFiberStatus) -> FlowFiberStatus {

@@ -36,7 +36,7 @@ The old branch that matched selected `ReplCommand` variants and manufactured loc
 
 ### Command IDs
 
-`ReplCommandContext::with_next_command_id` lets the CLI seed command IDs from the existing cell index. This is an inherent method on the owned context type rather than a CLI helper or compatibility shim.
+`ReplCommandContext::with_next_command_id` lets the CLI seed command IDs from the existing cell index. This is an inherent method on the owned context type rather than a CLI-side adapter shortcut.
 
 ### Session-backed commands
 

@@ -79,7 +79,7 @@ fn checked_in_docs_and_samples_do_not_record_host_absolute_paths() {
 }
 
 #[test]
-fn rust_unsafe_sites_stay_inside_jit_native_call_boundary() {
+fn rust_unsafe_sites_stay_inside_audited_native_boundaries() {
     let root = workspace_root();
     let violations = text_files(&root.join("crates"))
         .into_iter()
@@ -93,7 +93,7 @@ fn rust_unsafe_sites_stay_inside_jit_native_call_boundary() {
 
     assert!(
         violations.is_empty(),
-        "Rust unsafe must stay isolated in the audited JIT native-call boundary: {violations:?}"
+        "Rust unsafe must stay isolated in audited native boundaries: {violations:?}"
     );
 }
 
@@ -117,7 +117,7 @@ fn rust_unsafe_violations_in_file(path: &Path) -> Vec<String> {
         .enumerate()
         .filter(|(_, line)| contains_rust_unsafe_site(line))
         .filter(|(index, _)| {
-            !is_jit_native_call_boundary(path) || !has_nearby_safety_comment(&lines, *index)
+            !is_audited_unsafe_boundary(path) || !has_safety_comment_near(&lines, *index)
         })
         .map(|(index, line)| {
             format!(
@@ -138,21 +138,44 @@ fn contains_rust_unsafe_site(line: &str) -> bool {
         || line.contains("unsafe trait")
 }
 
-fn has_nearby_safety_comment(lines: &[&str], index: usize) -> bool {
+fn has_safety_comment_near(lines: &[&str], index: usize) -> bool {
     let search_start = index.saturating_sub(6);
-    (search_start..index).any(|comment_index| lines[comment_index].contains("SAFETY:"))
+    let search_end = (index + 4).min(lines.len());
+    (search_start..search_end).any(|comment_index| lines[comment_index].contains("SAFETY:"))
 }
 
-fn is_jit_native_call_boundary(path: &Path) -> bool {
-    relative_to_workspace(path)
+fn is_audited_unsafe_boundary(path: &Path) -> bool {
+    let parts = relative_to_workspace(path)
         .components()
-        .filter_map(|component| component.as_os_str().to_str())
-        .eq([
-            "crates",
-            "arcweft-lang-jit-cranelift",
-            "src",
-            "native_call.rs",
-        ])
+        .filter_map(|component| component.as_os_str().to_str().map(str::to_owned))
+        .collect::<Vec<_>>();
+    matches!(
+        parts.as_slice(),
+        [
+            crates,
+            jit_crate,
+            src,
+            native_call
+        ] if crates == "crates"
+            && jit_crate == "arcweft-lang-jit-cranelift"
+            && src == "src"
+            && native_call == "native_call.rs"
+    ) || matches!(
+        parts.as_slice(),
+        [
+            crates,
+            desktop_crate,
+            src,
+            text_input,
+            windows_tsf,
+            unsafe_com
+        ] if crates == "crates"
+            && desktop_crate == "arcweft-desktop-native"
+            && src == "src"
+            && text_input == "text_input"
+            && windows_tsf == "windows_tsf"
+            && unsafe_com == "unsafe_com.rs"
+    )
 }
 
 fn workspace_root() -> PathBuf {

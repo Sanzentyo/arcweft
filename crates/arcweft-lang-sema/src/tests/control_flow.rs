@@ -437,7 +437,13 @@ flow @flow.title title {}
     typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
-            .with_symbol("frames", TypeKind::Named("Stream".to_owned()))
+            .with_symbol(
+                "frames",
+                TypeKind::Stream {
+                    item: Box::new(TypeKind::Named("Frame".to_owned())),
+                    error: Box::new(TypeKind::Named("CaptureError".to_owned())),
+                },
+            )
             .with_function("rms", TypeKind::I64),
     )
     .expect("typecheck succeeds");

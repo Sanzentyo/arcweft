@@ -26,6 +26,7 @@ Current refresh targets:
 | `web/assets/generated-pulse.webp` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
 | `web/.arcweft/asset/generated/*` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
 | `crates/arcweft-lang-syntax/src/jlreq_punctuation_data.rs` | `tools/generate_jlreq_punctuation_data.rs` | `just generate-jlreq-punctuation` |
+| `fixtures/persistent-cache-build/seq04-8-4/goldens/*.json` | normal `arcw build` CLI fixture verifier | `just persistent-cache-build-seq04-8-4-goldens-regenerate` |
 
 Focused validation run by `just fixture-refresh-check`:
 
@@ -33,6 +34,7 @@ Focused validation run by `just fixture-refresh-check`:
 cargo run -p arcweft-cli --quiet -- inspect web/demo.awfb --json
 cargo test -p arcweft-player-web --test parity --all-features --quiet
 cargo test -p arcweft-cli --test arcw_fixtures_check_run --quiet
+cargo test -p arcweft-cli --test seq04_8_4_persistent_cache_build_cli_goldens --quiet
 ```
 
 ## Full Refresh With Native Candidates

@@ -76,7 +76,7 @@ path because it conflicted with the shared command owner model.
 
 ## Validation
 
-Executed in `D:\git\arcweft` after applying the package:
+Executed from the repository root after applying the package:
 
 ```bash
 cargo fmt --all

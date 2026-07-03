@@ -246,6 +246,7 @@ pub enum ForIterationEvidenceFamily {
 pub enum StandardIteratorFamily {
     Range,
     Seq,
+    Stream,
     Vec,
     Array,
     Slice,

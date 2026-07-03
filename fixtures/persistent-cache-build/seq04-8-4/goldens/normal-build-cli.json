@@ -1,0 +1,141 @@
+{
+  "fixture": "normal-single",
+  "command_shape": "arcw build --manifest-path <FIXTURE>/arcw.toml --target-dir <TEMP>/target --json",
+  "first_build": {
+    "report": {
+      "status": "ok",
+      "package": "seq04_8_4_normal_build_cache",
+      "selected_profile": null,
+      "modules": [
+        "crate"
+      ],
+      "compile_units": [
+        {
+          "id": 0,
+          "modules": [
+            "crate"
+          ],
+          "cache": "miss"
+        }
+      ]
+    },
+    "artifacts": {
+      "awfb": true,
+      "project_json": true,
+      "plan": true,
+      "snapshot_json": true
+    },
+    "cache_records": {
+      "bytecode_unit": {
+        "query": "bytecode_unit",
+        "artifact_kind": "bytecode_unit",
+        "logical_item": "bytecode-unit:crate",
+        "status": "rebuilt",
+        "key": "<DIGEST>",
+        "object_digest": "<DIGEST>",
+        "reuse_evidence": {
+          "kind": "actual_reusable",
+          "producer_family": "full_build",
+          "identity_owner": "full_build_bytecode_unit_artifact",
+          "identity": "<DIGEST>"
+        }
+      },
+      "link_plan": {
+        "query": "link_plan",
+        "artifact_kind": "link_plan",
+        "logical_item": "link-plan:crate",
+        "status": "rebuilt",
+        "key": "<DIGEST>",
+        "object_digest": "<DIGEST>",
+        "reuse_evidence": {
+          "kind": "actual_reusable",
+          "producer_family": "full_build",
+          "identity_owner": "full_build_link_plan_artifact",
+          "identity": "<DIGEST>"
+        }
+      }
+    },
+    "snapshot_queries": {
+      "bytecode_unit": {
+        "kind": "rebuilt",
+        "reason": {
+          "kind": "missing_record"
+        }
+      },
+      "link_plan": {
+        "kind": "rebuilt",
+        "reason": {
+          "kind": "missing_record"
+        }
+      }
+    }
+  },
+  "second_build": {
+    "report": {
+      "status": "ok",
+      "package": "seq04_8_4_normal_build_cache",
+      "selected_profile": null,
+      "modules": [
+        "crate"
+      ],
+      "compile_units": [
+        {
+          "id": 0,
+          "modules": [
+            "crate"
+          ],
+          "cache": "miss"
+        }
+      ]
+    },
+    "artifacts": {
+      "awfb": true,
+      "project_json": true,
+      "plan": true,
+      "snapshot_json": true
+    },
+    "cache_records": {
+      "bytecode_unit": {
+        "query": "bytecode_unit",
+        "artifact_kind": "bytecode_unit",
+        "logical_item": "bytecode-unit:crate",
+        "status": "hit",
+        "key": "<DIGEST>",
+        "object_digest": "<DIGEST>",
+        "reuse_evidence": {
+          "kind": "actual_reusable",
+          "producer_family": "full_build",
+          "identity_owner": "full_build_bytecode_unit_artifact",
+          "identity": "<DIGEST>"
+        }
+      },
+      "link_plan": {
+        "query": "link_plan",
+        "artifact_kind": "link_plan",
+        "logical_item": "link-plan:crate",
+        "status": "hit",
+        "key": "<DIGEST>",
+        "object_digest": "<DIGEST>",
+        "reuse_evidence": {
+          "kind": "actual_reusable",
+          "producer_family": "full_build",
+          "identity_owner": "full_build_link_plan_artifact",
+          "identity": "<DIGEST>"
+        }
+      }
+    },
+    "snapshot_queries": {
+      "bytecode_unit": {
+        "kind": "hit"
+      },
+      "link_plan": {
+        "kind": "hit"
+      }
+    }
+  },
+  "byte_stability": {
+    "content_root_equal": true,
+    "awfb_bytes_equal": true,
+    "program_awbc_bytes_equal": true
+  }
+}

@@ -37,7 +37,7 @@ Protocol requests use `trace_policy: "read_only_trace"`. Rejections preserve `Re
 
 ## Local validation
 
-Run in `D:\git\arcweft` after applying the package to current `main`:
+Run from the repository root after applying the package to current `main`:
 
 ```bash
 cargo fmt --all

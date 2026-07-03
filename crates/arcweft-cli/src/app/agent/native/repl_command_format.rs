@@ -480,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn repl_command_formatter_formats_help_without_legacy_table() {
+    fn repl_command_formatter_formats_help_with_typed_evidence() {
         let result = ReplCommandResult::ok(
             ReplCommandId::new(1),
             ReplCommandEvidence::Help(ReplHelpEvidence {

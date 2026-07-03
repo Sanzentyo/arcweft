@@ -148,8 +148,8 @@ All commands passed. The structure audit reported 0 errors and 119 warnings.
   tests instead of adding standalone test crates with partially used fixture
   support.
 - The CLI artifact spec parser was changed from `splitn(3, ':')` to
-  first-colon / last-colon parsing so Windows absolute source paths such as
-  `C:\...` work with the existing `kind:source:dest` syntax.
+  first-colon / last-colon parsing so Windows absolute source paths work with
+  the existing `kind:source:dest` syntax.
 - Successful remote publication now keeps staged objects until all final
   objects are committed and verified, then performs best-effort staged cleanup.
   This is more robust for object-store style commit protocols and still keeps

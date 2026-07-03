@@ -832,6 +832,7 @@ mod tests {
             stats: TypeCheckStats::default(),
             judgments: Vec::new(),
             effects: EffectAnalysisReport::default(),
+            for_iteration_evidence: Vec::new(),
         }));
     }
 
@@ -870,6 +871,7 @@ mod tests {
             },
             judgments,
             effects: EffectAnalysisReport::default(),
+            for_iteration_evidence: Vec::new(),
         }
     }
 }

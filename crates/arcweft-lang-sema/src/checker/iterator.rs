@@ -85,6 +85,7 @@ fn standard_iterator_family(ty: &TypeKind) -> Option<StandardIteratorFamily> {
     match ty {
         TypeKind::Range(_) => Some(StandardIteratorFamily::Range),
         TypeKind::Seq(_) => Some(StandardIteratorFamily::Seq),
+        TypeKind::Stream { .. } => Some(StandardIteratorFamily::Stream),
         TypeKind::Vec(_) => Some(StandardIteratorFamily::Vec),
         TypeKind::Array { .. } => Some(StandardIteratorFamily::Array),
         TypeKind::Slice(_) => Some(StandardIteratorFamily::Slice),

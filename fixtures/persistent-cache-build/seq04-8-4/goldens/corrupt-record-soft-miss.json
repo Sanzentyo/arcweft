@@ -1,0 +1,44 @@
+{
+  "fixture": "normal-single",
+  "corrupted_query": "bytecode_unit",
+  "corrupted_record": "<CACHE>/records/bytecode-unit/<ARTIFACT-KEY>.awci",
+  "third_build": {
+    "report": {
+      "status": "ok",
+      "package": "seq04_8_4_normal_build_cache",
+      "selected_profile": null,
+      "modules": [
+        "crate"
+      ],
+      "compile_units": [
+        {
+          "id": 0,
+          "modules": [
+            "crate"
+          ],
+          "cache": "miss"
+        }
+      ]
+    },
+    "cache_record": {
+      "query": "bytecode_unit",
+      "artifact_kind": "bytecode_unit",
+      "logical_item": "bytecode-unit:crate",
+      "status": "rebuilt",
+      "key": "<DIGEST>",
+      "object_digest": "<DIGEST>",
+      "reuse_evidence": {
+        "kind": "actual_reusable",
+        "producer_family": "full_build",
+        "identity_owner": "full_build_bytecode_unit_artifact",
+        "identity": "<DIGEST>"
+      }
+    },
+    "snapshot_query": {
+      "kind": "rebuilt",
+      "reason": {
+        "kind": "corrupt_record"
+      }
+    }
+  }
+}

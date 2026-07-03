@@ -169,6 +169,7 @@ pub enum RuntimeIteratorEvidence {
 pub enum RuntimeBuiltinIteratorEvidence {
     Range,
     Seq,
+    Stream,
     Vec,
     Array,
     Slice,
@@ -204,6 +205,11 @@ impl RuntimeIteratorEvidence {
     }
 
     #[must_use]
+    pub const fn builtin_stream() -> Self {
+        Self::Builtin(RuntimeBuiltinIteratorEvidence::Stream)
+    }
+
+    #[must_use]
     pub const fn builtin_vec() -> Self {
         Self::Builtin(RuntimeBuiltinIteratorEvidence::Vec)
     }
@@ -228,6 +234,7 @@ impl RuntimeIteratorEvidence {
         match self {
             Self::Builtin(RuntimeBuiltinIteratorEvidence::Range) => Some("range"),
             Self::Builtin(RuntimeBuiltinIteratorEvidence::Seq) => Some("seq"),
+            Self::Builtin(RuntimeBuiltinIteratorEvidence::Stream) => Some("stream"),
             Self::Builtin(RuntimeBuiltinIteratorEvidence::Vec) => Some("vec"),
             Self::Builtin(RuntimeBuiltinIteratorEvidence::Array) => Some("array"),
             Self::Builtin(RuntimeBuiltinIteratorEvidence::Slice) => Some("slice"),
@@ -243,6 +250,7 @@ impl RuntimeIteratorEvidence {
         match label {
             "range" => Some(Self::builtin_range()),
             "seq" => Some(Self::builtin_seq()),
+            "stream" => Some(Self::builtin_stream()),
             "vec" => Some(Self::builtin_vec()),
             "array" => Some(Self::builtin_array()),
             "slice" => Some(Self::builtin_slice()),

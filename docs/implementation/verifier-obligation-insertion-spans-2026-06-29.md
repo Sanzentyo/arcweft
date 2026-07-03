@@ -26,7 +26,7 @@ Seq07.2 introduced typed verifier actions with optional source edit payloads, bu
 
 ## Validation
 
-Executed in `D:\git\arcweft` after applying the package:
+Executed from the repository root after applying the package:
 
 ```bash
 cargo fmt --all

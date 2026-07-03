@@ -13,7 +13,7 @@ seq06.7 exact native golden requirements:
 - Windows pinned run with `ARW_EXACT_NATIVE_GOLDEN_REQUIRED=1`.
 - `ARW_EXACT_NATIVE_GOLDEN_PINNED=1`.
 - `ARW_EXACT_NATIVE_GOLDEN_BACKEND=native_rich_text_observer`.
-- Pinned `MS Mincho` font probe at `C:\WINDOWS\Fonts\msmincho.ttc`.
+- Pinned `MS Mincho` font probe from the Windows Fonts directory.
 - `imq 0.1.0` with `psnr`, `ssim`, `mse`, `mae`, and `maxae`.
 - Same-run candidate PNG, observe JSON, `imq` JSON, and environment JSON.
 

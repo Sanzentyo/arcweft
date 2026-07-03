@@ -167,33 +167,41 @@ fn runtime_run_headless_command(
         steps: trace.steps,
         final_status: trace.final_status.status_label(FlowStatusLabelStyle::Debug),
     };
-    if options.json {
-        print_json(&report)
-    } else {
-        for step in &report.steps {
-            println!(
-                "step {}: {} flow event(s), {} effect(s), {} task request(s), {} diagnostic(s)",
-                step.index,
-                step.flow_events.len(),
-                step.line_effects.len(),
-                step.task_requests.len(),
-                step.diagnostics.len()
-            );
-            for event in &step.flow_events {
-                println!("  event {event}");
-            }
-            for effect in &step.line_effects {
-                println!("  effect {effect}");
-            }
-        }
-        println!(
-            "ok: {} ({} step(s), final_status={})",
-            selection.path().display(),
-            report.steps.len(),
-            report.final_status
-        );
-        Ok(())
+    print_runtime_run_report(selection, &report, options.json)
+}
+
+fn print_runtime_run_report(
+    selection: &SourceSelection,
+    report: &RuntimeRunReport,
+    json: bool,
+) -> Result<(), ExitCode> {
+    if json {
+        return print_json(report);
     }
+
+    for step in &report.steps {
+        println!(
+            "step {}: {} flow event(s), {} effect(s), {} task request(s), {} diagnostic(s)",
+            step.index,
+            step.flow_events.len(),
+            step.line_effects.len(),
+            step.task_requests.len(),
+            step.diagnostics.len()
+        );
+        for event in &step.flow_events {
+            println!("  event {event}");
+        }
+        for effect in &step.line_effects {
+            println!("  effect {effect}");
+        }
+    }
+    println!(
+        "ok: {} ({} step(s), final_status={})",
+        selection.path().display(),
+        report.steps.len(),
+        report.final_status
+    );
+    Ok(())
 }
 
 fn require_runtime_verification_safety(

@@ -87,6 +87,9 @@ fn runtime_iterator_evidence(evidence: &ForIterationEvidence) -> RuntimeIterator
         ForIterationEvidenceFamily::Builtin(StandardIteratorFamily::Seq) => {
             RuntimeIteratorEvidence::builtin_seq()
         }
+        ForIterationEvidenceFamily::Builtin(StandardIteratorFamily::Stream) => {
+            RuntimeIteratorEvidence::builtin_stream()
+        }
         ForIterationEvidenceFamily::Builtin(StandardIteratorFamily::Vec) => {
             RuntimeIteratorEvidence::builtin_vec()
         }

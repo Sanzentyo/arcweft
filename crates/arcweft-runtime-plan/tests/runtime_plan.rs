@@ -5,14 +5,19 @@ use arcweft_core::{
     },
     line_task::{LineChildTask, LineOutRequest, LineTaskNode, LineTaskTrigger},
     pattern::RuntimePattern,
-    plan::{FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget},
+    plan::{FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget, RuntimeIteratorEvidence},
     source::{SourceHandlerPlan, SourceOp},
     stream::StreamOp,
     time::LogicalDuration,
     value::{RuntimeCallTarget, RuntimeExpr, RuntimeValue},
 };
 use arcweft_lang_hir::lower::lower_to_hir;
-use arcweft_lang_sema::check::validate_typecheck_ready;
+use arcweft_lang_sema::{
+    check::{
+        ForIterationEvidenceFamily, StandardIteratorFamily, analyze_types, validate_typecheck_ready,
+    },
+    env::TypeCheckEnv,
+};
 use arcweft_lang_syntax::{
     ast::items::TypedSyntaxTree,
     expr::{Expr, parse_expr},
@@ -20,7 +25,8 @@ use arcweft_lang_syntax::{
 };
 use arcweft_runtime_plan::{
     flow::{
-        lower_agent_controller_plan_with_stats, lower_runtime_plan, lower_runtime_plan_with_stats,
+        RuntimePlanLowerOptions, lower_agent_controller_plan_with_stats, lower_runtime_plan,
+        lower_runtime_plan_with_options, lower_runtime_plan_with_stats,
     },
     line_task::lower_line_task_groups,
 };
@@ -971,8 +977,28 @@ flow @flow.range range {
     );
     let hir = lower_to_hir(&tree).expect("range for fixture lowers to HIR");
     validate_typecheck_ready(&hir).expect("range for fixture is typecheck-ready");
+    let typecheck = analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "{:?}",
+        typecheck.diagnostics
+    );
+    assert_eq!(
+        typecheck
+            .for_iteration_evidence
+            .first()
+            .map(|evidence| &evidence.family),
+        Some(&ForIterationEvidenceFamily::Builtin(
+            StandardIteratorFamily::Range
+        ))
+    );
 
-    let plan = lower_runtime_plan(&hir).expect("range for runtime plan lowers");
+    let plan = lower_runtime_plan_with_options(
+        &hir,
+        &RuntimePlanLowerOptions::default()
+            .with_for_iteration_evidence([RuntimeIteratorEvidence::builtin_range()]),
+    )
+    .expect("range for runtime plan lowers");
 
     let FlowOp::For { source, .. } = &plan.flows[0].ops[1] else {
         panic!(

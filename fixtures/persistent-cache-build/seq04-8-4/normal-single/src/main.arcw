@@ -1,0 +1,11 @@
+entry game {
+  start(@flow.opening)
+}
+
+flow opening {
+  goto @flow.done
+}
+
+flow done {
+  return "done"
+}

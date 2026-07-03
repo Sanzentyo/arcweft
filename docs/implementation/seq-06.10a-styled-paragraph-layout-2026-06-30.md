@@ -40,7 +40,7 @@ glyphon rich-text `TextArea` path for paragraph rendering. It keeps
 but does not yet apply wave/shake/jitter to glyph instances in the Web-safe
 shared path.
 
-This is not a compatibility shim for the old dialogue run-per-block layout.
+This is a direct replacement for the old dialogue run-per-block layout.
 Dialogue body text is still replaced at the root by one
 `RenderStyledParagraph`. The remaining gap is tracked by:
 

@@ -8,12 +8,16 @@ fn native_and_web_use_the_same_runtime_writeback_entrypoint() {
 }
 
 #[test]
-fn submit_is_not_handled_by_platform_scene_builders() {
+fn submit_writeback_is_owned_by_shared_scene_input() {
     let native = include_str!("../../arcweft-player-native/src/scene_windowed.rs");
     let web = include_str!("../../arcweft-player-web/src/app.rs");
+    let shared_input = include_str!("../src/input.rs");
 
-    assert!(!native.contains("TextEditCommand::Submit"));
-    assert!(!web.contains("TextEditCommand::Submit"));
+    assert!(shared_input.contains("TextControlWriteBack::submit"));
+    assert!(!native.contains("TextControlWriteBack::submit"));
+    assert!(!web.contains("TextControlWriteBack::submit"));
+    assert!(!native.contains("TextControlWriteBackKind::Submit"));
+    assert!(!web.contains("TextControlWriteBackKind::Submit"));
 }
 
 #[test]

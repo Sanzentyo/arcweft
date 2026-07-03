@@ -288,6 +288,7 @@ impl TypeKind {
 pub enum IteratorStateKind {
     Range,
     Seq,
+    Stream,
     Vec,
     Array,
     Slice,

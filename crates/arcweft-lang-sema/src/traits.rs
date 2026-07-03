@@ -1207,22 +1207,162 @@ fn match_type_pattern_into(
     actual: &TypeKind,
     substitutions: &mut HashMap<String, TypeKind>,
 ) -> bool {
+    if let TypeKind::GenericParam(name) = pattern {
+        return match_generic_param_pattern(name, actual, substitutions);
+    }
+    if let Some((lhs, rhs)) = unary_type_pattern(pattern, actual) {
+        return match_type_pattern_into(lhs, rhs, substitutions);
+    }
+    if let Some(((lhs_first, lhs_second), (rhs_first, rhs_second))) =
+        binary_type_pattern(pattern, actual)
+    {
+        return match_type_pattern_into(lhs_first, rhs_first, substitutions)
+            && match_type_pattern_into(lhs_second, rhs_second, substitutions);
+    }
+    if let Some(((lhs_key, lhs_value), (rhs_key, rhs_value))) = map_type_pattern(pattern, actual) {
+        return match_type_pattern_into(lhs_key, rhs_key, substitutions)
+            && match_type_pattern_into(lhs_value, rhs_value, substitutions);
+    }
+    if let Some((lhs, rhs)) = borrow_ref_type_pattern(pattern, actual) {
+        return match_type_pattern_into(lhs, rhs, substitutions);
+    }
+    if let Some((lhs, rhs)) = iterator_state_type_pattern(pattern, actual) {
+        return match_type_pattern_into(lhs, rhs, substitutions);
+    }
+    if let (TypeKind::Named(lhs), TypeKind::Named(rhs)) = (pattern, actual) {
+        return match_named_pattern(lhs, rhs, substitutions);
+    }
+    pattern == actual
+}
+
+fn match_generic_param_pattern(
+    name: &str,
+    actual: &TypeKind,
+    substitutions: &mut HashMap<String, TypeKind>,
+) -> bool {
+    if let Some(existing) = substitutions.get(name) {
+        existing == actual
+    } else {
+        substitutions.insert(name.to_owned(), actual.clone());
+        true
+    }
+}
+
+fn unary_type_pattern<'a>(
+    pattern: &'a TypeKind,
+    actual: &'a TypeKind,
+) -> Option<(&'a TypeKind, &'a TypeKind)> {
     match (pattern, actual) {
-        (TypeKind::GenericParam(name), actual) => {
-            if let Some(existing) = substitutions.get(name) {
-                existing == actual
-            } else {
-                substitutions.insert(name.clone(), actual.clone());
-                true
-            }
-        }
         (TypeKind::Vec(lhs), TypeKind::Vec(rhs))
         | (TypeKind::Seq(lhs), TypeKind::Seq(rhs))
         | (TypeKind::Slice(lhs), TypeKind::Slice(rhs))
         | (TypeKind::Range(lhs), TypeKind::Range(rhs))
+        | (TypeKind::Option(lhs), TypeKind::Option(rhs))
+        | (TypeKind::ThreadHandle(lhs), TypeKind::ThreadHandle(rhs))
+        | (TypeKind::Shared(lhs), TypeKind::Shared(rhs))
         | (TypeKind::Array { item: lhs, .. }, TypeKind::Array { item: rhs, .. }) => {
-            match_type_pattern_into(lhs, rhs, substitutions)
+            Some((lhs, rhs))
         }
+        _ => None,
+    }
+}
+
+type BinaryTypePattern<'a> = ((&'a TypeKind, &'a TypeKind), (&'a TypeKind, &'a TypeKind));
+
+fn binary_type_pattern<'a>(
+    pattern: &'a TypeKind,
+    actual: &'a TypeKind,
+) -> Option<BinaryTypePattern<'a>> {
+    match (pattern, actual) {
+        (
+            TypeKind::Need {
+                ready: lhs_ready,
+                error: lhs_error,
+            },
+            TypeKind::Need {
+                ready: rhs_ready,
+                error: rhs_error,
+            },
+        )
+        | (
+            TypeKind::Stream {
+                item: lhs_ready,
+                error: lhs_error,
+            },
+            TypeKind::Stream {
+                item: rhs_ready,
+                error: rhs_error,
+            },
+        )
+        | (
+            TypeKind::Source {
+                item: lhs_ready,
+                error: lhs_error,
+            },
+            TypeKind::Source {
+                item: rhs_ready,
+                error: rhs_error,
+            },
+        )
+        | (
+            TypeKind::Result {
+                ok: lhs_ready,
+                error: lhs_error,
+            },
+            TypeKind::Result {
+                ok: rhs_ready,
+                error: rhs_error,
+            },
+        ) => Some(((lhs_ready, lhs_error), (rhs_ready, rhs_error))),
+        _ => None,
+    }
+}
+
+fn map_type_pattern<'a>(
+    pattern: &'a TypeKind,
+    actual: &'a TypeKind,
+) -> Option<BinaryTypePattern<'a>> {
+    match (pattern, actual) {
+        (
+            TypeKind::Map {
+                kind: lhs_kind,
+                key: lhs_key,
+                value: lhs_value,
+            },
+            TypeKind::Map {
+                kind: rhs_kind,
+                key: rhs_key,
+                value: rhs_value,
+            },
+        ) if lhs_kind == rhs_kind => Some(((lhs_key, lhs_value), (rhs_key, rhs_value))),
+        _ => None,
+    }
+}
+
+fn borrow_ref_type_pattern<'a>(
+    pattern: &'a TypeKind,
+    actual: &'a TypeKind,
+) -> Option<(&'a TypeKind, &'a TypeKind)> {
+    match (pattern, actual) {
+        (
+            TypeKind::BorrowRef {
+                lifetime: lhs_lifetime,
+                inner: lhs_inner,
+            },
+            TypeKind::BorrowRef {
+                lifetime: rhs_lifetime,
+                inner: rhs_inner,
+            },
+        ) if lhs_lifetime == rhs_lifetime => Some((lhs_inner, rhs_inner)),
+        _ => None,
+    }
+}
+
+fn iterator_state_type_pattern<'a>(
+    pattern: &'a TypeKind,
+    actual: &'a TypeKind,
+) -> Option<(&'a TypeKind, &'a TypeKind)> {
+    match (pattern, actual) {
         (
             TypeKind::IteratorState {
                 family: lhs_family,
@@ -1232,11 +1372,8 @@ fn match_type_pattern_into(
                 family: rhs_family,
                 item: rhs_item,
             },
-        ) if lhs_family == rhs_family => match_type_pattern_into(lhs_item, rhs_item, substitutions),
-        (TypeKind::Named(lhs), TypeKind::Named(rhs)) => {
-            match_named_pattern(lhs, rhs, substitutions)
-        }
-        _ => pattern == actual,
+        ) if lhs_family == rhs_family => Some((lhs_item, rhs_item)),
+        _ => None,
     }
 }
 
@@ -1284,9 +1421,43 @@ fn substitute_type(ty: &TypeKind, substitutions: &HashMap<String, TypeKind>) -> 
         TypeKind::Seq(inner) => TypeKind::Seq(Box::new(substitute_type(inner, substitutions))),
         TypeKind::Slice(inner) => TypeKind::Slice(Box::new(substitute_type(inner, substitutions))),
         TypeKind::Range(inner) => TypeKind::Range(Box::new(substitute_type(inner, substitutions))),
+        TypeKind::Option(inner) => {
+            TypeKind::Option(Box::new(substitute_type(inner, substitutions)))
+        }
+        TypeKind::ThreadHandle(inner) => {
+            TypeKind::ThreadHandle(Box::new(substitute_type(inner, substitutions)))
+        }
+        TypeKind::Shared(inner) => {
+            TypeKind::Shared(Box::new(substitute_type(inner, substitutions)))
+        }
+        TypeKind::BorrowRef { lifetime, inner } => TypeKind::BorrowRef {
+            lifetime: lifetime.clone(),
+            inner: Box::new(substitute_type(inner, substitutions)),
+        },
         TypeKind::IteratorState { family, item } => TypeKind::IteratorState {
             family: *family,
             item: Box::new(substitute_type(item, substitutions)),
+        },
+        TypeKind::Need { ready, error } => TypeKind::Need {
+            ready: Box::new(substitute_type(ready, substitutions)),
+            error: Box::new(substitute_type(error, substitutions)),
+        },
+        TypeKind::Stream { item, error } => TypeKind::Stream {
+            item: Box::new(substitute_type(item, substitutions)),
+            error: Box::new(substitute_type(error, substitutions)),
+        },
+        TypeKind::Source { item, error } => TypeKind::Source {
+            item: Box::new(substitute_type(item, substitutions)),
+            error: Box::new(substitute_type(error, substitutions)),
+        },
+        TypeKind::Result { ok, error } => TypeKind::Result {
+            ok: Box::new(substitute_type(ok, substitutions)),
+            error: Box::new(substitute_type(error, substitutions)),
+        },
+        TypeKind::Map { kind, key, value } => TypeKind::Map {
+            kind: *kind,
+            key: Box::new(substitute_type(key, substitutions)),
+            value: Box::new(substitute_type(value, substitutions)),
         },
         TypeKind::Array { item, len } => TypeKind::Array {
             item: Box::new(substitute_type(item, substitutions)),

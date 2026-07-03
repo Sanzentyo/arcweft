@@ -171,6 +171,8 @@ impl RuntimeIterator {
                 RuntimeValue::Seq(seq) => Ok(Self::values(seq.into_values())),
                 value => Err(value),
             },
+            RuntimeIteratorEvidence::Builtin(RuntimeBuiltinIteratorEvidence::Stream)
+            | RuntimeIteratorEvidence::Witness(_) => Err(value),
             RuntimeIteratorEvidence::Builtin(
                 RuntimeBuiltinIteratorEvidence::Vec
                 | RuntimeBuiltinIteratorEvidence::Array
@@ -181,7 +183,6 @@ impl RuntimeIterator {
                 RuntimeValue::Tuple(values) => Ok(Self::values(values)),
                 value => Err(value),
             },
-            RuntimeIteratorEvidence::Witness(_) => Err(value),
         }
     }
 
