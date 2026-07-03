@@ -1,5 +1,6 @@
 //! Sans I/O bundle data model and deterministic codecs.
 
+pub mod character_package;
 pub mod container;
 pub mod patch;
 mod product;
@@ -7,6 +8,7 @@ pub mod product_awbc;
 pub mod release;
 pub mod resource_codec;
 
+use crate::character_package::BundleCharacterPackage;
 use crate::resource_codec::{
     UiInputResource, UiProgramResource, UiStyleResource, UiTextResource, UiThemeResource,
 };
@@ -35,7 +37,7 @@ use yaml_rust2::yaml::Hash;
 #[cfg(feature = "format-yaml")]
 use yaml_rust2::{Yaml, YamlEmitter, YamlLoader};
 
-pub const ARCWEFT_BUNDLE_SCHEMA_VERSION: u32 = 4;
+pub const ARCWEFT_BUNDLE_SCHEMA_VERSION: u32 = 5;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ArcweftBundle {
@@ -56,6 +58,8 @@ pub struct ArcweftBundle {
     pub virtual_files: Vec<BundleVirtualFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub image_assets: Vec<BundleImageAsset>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub character_packages: Vec<BundleCharacterPackage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio: Option<AudioGraph>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -370,6 +374,21 @@ pub enum BundleCodecError {
     DuplicateImageAsset { id: String },
     #[error("bundle contains duplicate image object id `{id}`")]
     DuplicateImageObject { id: String },
+    #[error("bundle contains duplicate character package `{id}`")]
+    DuplicateCharacterPackage { id: String },
+    #[error(
+        "bundle character package `{character_id}` references missing virtual file asset:{path}"
+    )]
+    MissingCharacterPackageFile { character_id: String, path: String },
+    #[error(
+        "bundle character package `{character_id}` is missing layer payload `{path}` for `{part}.{variant}`"
+    )]
+    MissingCharacterLayerPayload {
+        character_id: String,
+        path: String,
+        part: String,
+        variant: String,
+    },
 }
 
 #[cfg(feature = "format-yaml")]
@@ -484,6 +503,7 @@ impl ArcweftBundle {
             adapter_manifests: Vec::new(),
             virtual_files: Vec::new(),
             image_assets: Vec::new(),
+            character_packages: Vec::new(),
             audio: None,
             image_objects: Vec::new(),
             ui_program: None,
@@ -526,6 +546,23 @@ impl ArcweftBundle {
         self.image_assets
             .sort_by(|left, right| left.id.cmp(&right.id));
         self
+    }
+
+    #[must_use]
+    pub fn with_character_packages(
+        mut self,
+        packages: impl IntoIterator<Item = BundleCharacterPackage>,
+    ) -> Self {
+        self.character_packages.extend(packages);
+        self.character_packages
+            .sort_by(|left, right| left.character.cmp(&right.character));
+        self
+    }
+
+    pub fn character_package(&self, id: &str) -> Option<&BundleCharacterPackage> {
+        self.character_packages
+            .iter()
+            .find(|package| package.character == id)
     }
 
     #[must_use]
@@ -923,6 +960,16 @@ impl ArcweftBundle {
                     id: asset.id.clone(),
                 });
             }
+        }
+
+        let mut character_package_ids = BTreeSet::new();
+        for package in &self.character_packages {
+            if !character_package_ids.insert(package.character.as_str()) {
+                return Err(BundleCodecError::DuplicateCharacterPackage {
+                    id: package.character.clone(),
+                });
+            }
+            package.validate_files(&self.virtual_files)?;
         }
 
         let mut image_object_ids = BTreeSet::new();

@@ -1,0 +1,9 @@
+mod crate
+
+flow @flow.main main {
+    show(@character.zundamon, look = .normal)
+    zundamon: "通常の表情なのだ。"
+
+    show(@character.zundamon, look = .smile)
+    zundamon: "笑顔に切り替えても、PSDキャンバスアンカーは固定なのだ。"
+}

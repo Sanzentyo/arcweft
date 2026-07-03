@@ -637,7 +637,7 @@ pub(in crate::app) fn load_and_check_with_env(
     })?;
 
     run_profile_phase(&mut phases, "resolve", || {
-        hir::resolve_hir_references(&hir).map_err(|errors| {
+        hir::resolve_hir_references_with_env(&hir, env).map_err(|errors| {
             emit_phase_error_diagnostics(
                 &emitter,
                 &diagnostic_source,

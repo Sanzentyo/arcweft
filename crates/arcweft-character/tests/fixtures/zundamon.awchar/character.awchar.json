@@ -1,0 +1,167 @@
+{
+  "format": "arcweft.character",
+  "version": 1,
+  "character": "character.zundamon",
+  "canvas": {
+    "width": 96,
+    "height": 128
+  },
+  "anchor": {
+    "x": 48,
+    "y": 128
+  },
+  "default_look": "normal",
+  "parts": [
+    {
+      "id": "body",
+      "z": 0,
+      "variants": [
+        {
+          "id": "default",
+          "asset": "layers/body--default.png",
+          "rect": {
+            "x": 0,
+            "y": 0,
+            "width": 96,
+            "height": 128
+          },
+          "opacity": 255,
+          "blend": "normal",
+          "clipping": false,
+          "source_layer": {
+            "index": 1,
+            "group": "part:body",
+            "layer": "default"
+          }
+        }
+      ]
+    },
+    {
+      "id": "eyes",
+      "z": 10,
+      "variants": [
+        {
+          "id": "normal",
+          "asset": "layers/eyes--normal.png",
+          "rect": {
+            "x": 34,
+            "y": 48,
+            "width": 28,
+            "height": 8
+          },
+          "opacity": 255,
+          "blend": "normal",
+          "clipping": false,
+          "source_layer": {
+            "index": 2,
+            "group": "part:eyes",
+            "layer": "normal"
+          }
+        },
+        {
+          "id": "smile",
+          "asset": "layers/eyes--smile.png",
+          "rect": {
+            "x": 34,
+            "y": 48,
+            "width": 28,
+            "height": 8
+          },
+          "opacity": 255,
+          "blend": "normal",
+          "clipping": false,
+          "source_layer": {
+            "index": 3,
+            "group": "part:eyes",
+            "layer": "smile"
+          }
+        }
+      ]
+    },
+    {
+      "id": "mouth",
+      "z": 20,
+      "variants": [
+        {
+          "id": "neutral",
+          "asset": "layers/mouth--neutral.png",
+          "rect": {
+            "x": 42,
+            "y": 72,
+            "width": 12,
+            "height": 8
+          },
+          "opacity": 255,
+          "blend": "normal",
+          "clipping": false,
+          "source_layer": {
+            "index": 4,
+            "group": "part:mouth",
+            "layer": "neutral"
+          }
+        },
+        {
+          "id": "smile",
+          "asset": "layers/mouth--smile.png",
+          "rect": {
+            "x": 42,
+            "y": 72,
+            "width": 12,
+            "height": 8
+          },
+          "opacity": 255,
+          "blend": "normal",
+          "clipping": false,
+          "source_layer": {
+            "index": 5,
+            "group": "part:mouth",
+            "layer": "smile"
+          }
+        }
+      ]
+    }
+  ],
+  "looks": [
+    {
+      "id": "normal",
+      "select": [
+        {
+          "part": "body",
+          "variant": "default"
+        },
+        {
+          "part": "eyes",
+          "variant": "normal"
+        },
+        {
+          "part": "mouth",
+          "variant": "neutral"
+        }
+      ]
+    },
+    {
+      "id": "smile",
+      "select": [
+        {
+          "part": "body",
+          "variant": "default"
+        },
+        {
+          "part": "eyes",
+          "variant": "smile"
+        },
+        {
+          "part": "mouth",
+          "variant": "smile"
+        }
+      ]
+    }
+  ],
+  "source": {
+    "kind": "psd",
+    "file_name": "zundamon.synthetic.psd",
+    "blake3": "synthetic-fixture-no-source-psd",
+    "importer": "arcweft-character-psd/test-fixture",
+    "warnings": []
+  }
+}

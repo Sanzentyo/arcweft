@@ -308,7 +308,7 @@ pub(in crate::app) fn profile_validate_hir(
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<TypeCheckReport, ExitCode> {
     run_profile_phase(phases, "resolve", || {
-        hir::resolve_hir_references(hir).map_err(|errors| {
+        hir::resolve_hir_references_with_env(hir, env).map_err(|errors| {
             for error in errors {
                 eprintln!("error: {error}");
             }

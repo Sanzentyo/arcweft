@@ -194,6 +194,7 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         adapter_manifests: adapters.adapter_manifests,
         virtual_files: assets.virtual_files,
         image_assets: assets.image_assets,
+        character_packages: Vec::new(),
         audio,
         image_objects: display.image_objects,
         ui_program,

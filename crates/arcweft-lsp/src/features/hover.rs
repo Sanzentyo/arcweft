@@ -1,5 +1,6 @@
 use crate::documents::DocumentSnapshot;
 use crate::features::cascade::effective_dialogue_cascade_at;
+use crate::features::character_metadata::character_hover_markdown;
 use crate::profiles::LspProfile;
 use arcweft_lang_syntax::ast::dialogue::{
     DialogueDefaultAssignOp, DialogueDefaultAssignment, DialogueDefaultsItem,
@@ -27,6 +28,12 @@ pub fn hover(
         return Some(hover);
     }
     let word = word_at_position(document, position)?;
+    if let Some(text) = character_hover_markdown(profile, &word) {
+        return Some(Hover {
+            contents: HoverContents::Scalar(MarkedString::String(text)),
+            range: None,
+        });
+    }
     profile_hover(&profile.context(), &word)
 }
 

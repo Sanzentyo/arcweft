@@ -1,6 +1,7 @@
+use crate::env::TypeCheckEnv;
 use crate::project_index::ProjectSemanticIndex;
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
-use crate::types::EntityKind;
+use crate::types::{EntityKind, TypeKind};
 use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::ast::flow::FlowKind;
 use arcweft_lang_syntax::ast::items::EntityDeclKind;
@@ -81,6 +82,18 @@ pub fn registry_from_hir(module: &HirModule) -> NameRegistry {
                 }
             }
             _ => {}
+        }
+    }
+    registry
+}
+
+/// Builds a registry from one HIR module plus externally supplied semantic symbols.
+#[must_use]
+pub fn registry_from_hir_and_env(module: &HirModule, env: &TypeCheckEnv) -> NameRegistry {
+    let mut registry = registry_from_hir(module);
+    for (name, ty) in &env.symbols {
+        if let TypeKind::Ref(entity) = ty {
+            registry.insert(name.as_str(), entity.kind().clone());
         }
     }
     registry

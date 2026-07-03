@@ -38,6 +38,25 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn resolves_hir_entity_references_from_external_semantic_env() {
+    let tree = parse_ok(
+        r"
+flow @flow.opening opening {
+    show(@character.zundamon)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("external symbol fixture lowers");
+    let env = TypeCheckEnv::new().with_symbol(
+        "character.zundamon",
+        TypeKind::entity_ref(EntityKind::Character),
+    );
+    let registry = registry_from_hir_and_env(&hir, &env);
+
+    validate_hir_references(&hir, &registry).expect("manifest-backed character resolves");
+}
+
+#[test]
 fn collects_hir_symbol_uses_for_type_checking_without_reparsing() {
     let tree = parse_ok(
         r#"

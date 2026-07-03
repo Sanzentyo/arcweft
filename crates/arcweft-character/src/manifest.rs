@@ -750,6 +750,11 @@ impl CharacterManifest {
         &self.parts
     }
 
+    /// Returns one manifest part by id.
+    pub fn part(&self, id: &CharacterPartId) -> Option<&CharacterPart> {
+        self.parts.iter().find(|part| part.id() == id)
+    }
+
     pub fn looks(&self) -> &[CharacterLook] {
         &self.looks
     }

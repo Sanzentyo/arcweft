@@ -376,7 +376,7 @@ where
         )
     })?;
     let linked_hir = hir_project.linked_module();
-    hir::resolve_hir_references(&linked_hir).map_err(|errors| {
+    hir::resolve_hir_references_with_env(&linked_hir, env).map_err(|errors| {
         linked_error(
             ProjectCompileStage::Resolve,
             errors.into_iter().map(|error| error.diagnostic()),

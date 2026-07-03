@@ -1,13 +1,151 @@
 use crate::profiles::LspProfile;
+use arcweft_character::manifest::{CharacterManifest, CharacterPart, CharacterVariant};
 use arcweft_lang_sema::types::TypeKind;
 use arcweft_verify_lsp::profile_completions;
 use lsp_types::{CompletionItem, CompletionItemKind, Documentation};
+use std::collections::BTreeSet;
 
-/// Computes completion items from resolved adapter and runtime-host facts.
+/// Computes completion items from resolved adapter, runtime-host, and character facts.
 pub fn completions(profile: &LspProfile) -> Vec<CompletionItem> {
     let mut items = profile_completions(&profile.context());
+    items.extend(character_metadata_completions(profile));
     items.extend(enum_variant_completions(profile));
-    items
+    dedup_completion_items(items)
+}
+
+fn character_metadata_completions(profile: &LspProfile) -> Vec<CompletionItem> {
+    profile
+        .characters()
+        .manifests()
+        .flat_map(|manifest| {
+            let mut items = vec![character_completion(manifest)];
+            items.extend(manifest.looks().iter().map(|look| CompletionItem {
+                label: format!(".{}", look.id().as_str()),
+                kind: Some(CompletionItemKind::ENUM_MEMBER),
+                detail: Some(format!(
+                    "CharacterLook<{}>.{}",
+                    manifest.character().as_str(),
+                    look.id().as_str()
+                )),
+                documentation: Some(Documentation::String(format!(
+                    "Look `{}` for `{}`.\n{}",
+                    look.id(),
+                    manifest.character(),
+                    look
+                        .selections()
+                        .iter()
+                        .map(|selection| format!(
+                            "- {} = {}",
+                            selection.part(),
+                            selection.variant()
+                        ))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                ))),
+                filter_text: Some(format!(".{}", look.id().as_str())),
+                insert_text: Some(format!(".{}", look.id().as_str())),
+                ..CompletionItem::default()
+            }));
+            items.extend(
+                manifest
+                    .parts()
+                    .iter()
+                    .map(|part| part_completion(manifest, part)),
+            );
+            items.extend(manifest.parts().iter().flat_map(|part| {
+                part.variants()
+                    .iter()
+                    .map(move |variant| variant_completion(manifest, part, variant))
+            }));
+            items
+        })
+        .collect()
+}
+
+fn character_completion(manifest: &CharacterManifest) -> CompletionItem {
+    CompletionItem {
+        label: format!("@{}", manifest.character().as_str()),
+        kind: Some(CompletionItemKind::CLASS),
+        detail: Some(".awchar character".to_owned()),
+        documentation: Some(Documentation::String(format!(
+            "Character package `{}`\ncanvas: {}x{}\nanchor: {},{}\ndefault look: {}",
+            manifest.character(),
+            manifest.canvas().width(),
+            manifest.canvas().height(),
+            manifest.anchor().x(),
+            manifest.anchor().y(),
+            manifest.default_look()
+        ))),
+        filter_text: Some(manifest.character().as_str().to_owned()),
+        insert_text: Some(format!("@{}", manifest.character().as_str())),
+        ..CompletionItem::default()
+    }
+}
+
+fn part_completion(manifest: &CharacterManifest, part: &CharacterPart) -> CompletionItem {
+    CompletionItem {
+        label: format!(".{}", part.id().as_str()),
+        kind: Some(CompletionItemKind::PROPERTY),
+        detail: Some(format!(
+            "CharacterPart<{}>.{}",
+            manifest.character().as_str(),
+            part.id().as_str()
+        )),
+        documentation: Some(Documentation::String(format!(
+            "Part `{}` for `{}` with {} variant(s).",
+            part.id(),
+            manifest.character(),
+            part.variants().len()
+        ))),
+        filter_text: Some(format!(".{}", part.id().as_str())),
+        insert_text: Some(format!(".{}", part.id().as_str())),
+        ..CompletionItem::default()
+    }
+}
+
+fn variant_completion(
+    manifest: &CharacterManifest,
+    part: &CharacterPart,
+    variant: &CharacterVariant,
+) -> CompletionItem {
+    CompletionItem {
+        label: format!(".{}", variant.id().as_str()),
+        kind: Some(CompletionItemKind::ENUM_MEMBER),
+        detail: Some(format!(
+            "CharacterVariant<{},{}>.{}",
+            manifest.character().as_str(),
+            part.id().as_str(),
+            variant.id().as_str()
+        )),
+        documentation: Some(Documentation::String(variant_documentation(part, variant))),
+        filter_text: Some(format!(".{}", variant.id().as_str())),
+        insert_text: Some(format!(".{}", variant.id().as_str())),
+        ..CompletionItem::default()
+    }
+}
+
+fn variant_documentation(part: &CharacterPart, variant: &CharacterVariant) -> String {
+    let rect = variant.rect();
+    let mut lines = vec![format!(
+        "Variant `{}.{}`\nasset: {}\nrect: {},{} {}x{}\nz: {}",
+        part.id(),
+        variant.id(),
+        variant.asset().as_str(),
+        rect.x(),
+        rect.y(),
+        rect.width(),
+        rect.height(),
+        part.z()
+    )];
+    if let Some(source) = variant.source_layer() {
+        lines.push(format!(
+            "source PSD layer: {} / {} (#{})",
+            source.group(),
+            source.layer(),
+            source.index()
+        ));
+    }
+    lines.join("\n")
 }
 
 fn enum_variant_completions(profile: &LspProfile) -> Vec<CompletionItem> {
@@ -33,6 +171,14 @@ fn enum_variant_completions(profile: &LspProfile) -> Vec<CompletionItem> {
                 }
             })
         })
+        .collect()
+}
+
+fn dedup_completion_items(items: Vec<CompletionItem>) -> Vec<CompletionItem> {
+    let mut seen = BTreeSet::new();
+    items
+        .into_iter()
+        .filter(|item| seen.insert((item.label.clone(), item.detail.clone())))
         .collect()
 }
 

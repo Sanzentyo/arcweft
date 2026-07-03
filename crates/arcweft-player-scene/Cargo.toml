@@ -8,6 +8,8 @@ repository.workspace = true
 
 [dependencies]
 arcweft-bundle = { path = "../arcweft-bundle", default-features = false }
+arcweft-character = { path = "../arcweft-character" }
+arcweft-character-ui = { path = "../arcweft-character-ui" }
 arcweft-id = { path = "../arcweft-id" }
 arcweft-image = { path = "../arcweft-image" }
 arcweft-layout.workspace = true

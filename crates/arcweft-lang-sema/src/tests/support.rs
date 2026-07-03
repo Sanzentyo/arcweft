@@ -4,7 +4,9 @@ pub(super) use crate::check::{
 };
 pub(super) use crate::diagnostics::TypeCheckErrorKind;
 pub(super) use crate::env::{FunctionParam, FunctionSignature, TypeCheckEnv};
-pub(super) use crate::resolve::{NameRegistry, registry_from_hir, validate_hir_references};
+pub(super) use crate::resolve::{
+    NameRegistry, registry_from_hir, registry_from_hir_and_env, validate_hir_references,
+};
 pub(super) use crate::semantic::{
     SemanticDischarge, SemanticMode, SemanticObligationKind, SemanticPolicy, SemanticReport,
     analyze_semantics,

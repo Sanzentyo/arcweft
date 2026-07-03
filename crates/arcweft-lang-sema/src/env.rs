@@ -1,4 +1,4 @@
-use crate::types::{EntityType, TypeKind};
+use crate::types::{EntityKind, EntityType, TypeKind};
 use arcweft_character::manifest::CharacterManifest;
 use arcweft_lang_syntax::types::FnParamKind;
 use std::collections::{HashMap, HashSet};
@@ -399,6 +399,12 @@ impl TypeCheckEnv {
     #[must_use]
     pub fn with_character_manifest(mut self, manifest: &CharacterManifest) -> Self {
         let character = manifest.character().as_str();
+        self = self.with_symbol(character, TypeKind::entity_ref(EntityKind::Character));
+        if let Some(compact_name) = character.strip_prefix("character.")
+            && !compact_name.is_empty()
+        {
+            self = self.with_symbol(compact_name, TypeKind::entity_ref(EntityKind::Character));
+        }
         self = self.with_enum_variants(
             TypeKind::character_look(character),
             manifest.looks().iter().map(|look| look.id().as_str()),

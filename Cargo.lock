@@ -435,6 +435,7 @@ dependencies = [
  "apache-avro",
  "arcweft-agent-protocol",
  "arcweft-audio-core",
+ "arcweft-character",
  "arcweft-core",
  "arcweft-data",
  "arcweft-interaction-model",
@@ -970,6 +971,8 @@ name = "arcweft-player-scene"
 version = "0.1.0"
 dependencies = [
  "arcweft-bundle",
+ "arcweft-character",
+ "arcweft-character-ui",
  "arcweft-id",
  "arcweft-image",
  "arcweft-layout",

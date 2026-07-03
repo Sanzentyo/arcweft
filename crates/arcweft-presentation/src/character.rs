@@ -4,10 +4,36 @@ use arcweft_character::{
     id::{CharacterId, CharacterLookId, CharacterPartId, CharacterVariantId},
     manifest::{
         CharacterAssetPath, CharacterBlendMode, CharacterCanvas, CharacterManifest,
-        CharacterManifestError, CharacterPoint, CharacterRect,
+        CharacterManifestError, CharacterPoint, CharacterRect, CharacterSourceLayer,
     },
 };
 use arcweft_id::PublicId;
+
+/// Stable source-canvas bbox of a staged character relative to its anchor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CharacterStageBounds {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+/// Stable diagnostic categories emitted by character render preparation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CharacterRenderDiagnosticKind {
+    UnsupportedBlendMode,
+    UnsupportedClipping,
+}
+
+/// Typed diagnostic for preserved PSD metadata the baseline renderer cannot reproduce.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CharacterRenderDiagnostic {
+    kind: CharacterRenderDiagnosticKind,
+    part: CharacterPartId,
+    variant: CharacterVariantId,
+    source_layer: Option<CharacterSourceLayer>,
+    message: String,
+}
 
 /// One resolved image layer in a character-stage object.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -21,6 +47,7 @@ pub struct CharacterRenderLayer {
     opacity: u8,
     blend: CharacterBlendMode,
     clipping: bool,
+    source_layer: Option<CharacterSourceLayer>,
 }
 
 /// Renderer-independent character composition for one selected look.
@@ -54,6 +81,7 @@ impl CharacterRenderSpec {
                 opacity: resolved.variant().opacity(),
                 blend: resolved.variant().blend(),
                 clipping: resolved.variant().clipping(),
+                source_layer: resolved.variant().source_layer().cloned(),
             })
             .collect();
         Ok(Self {
@@ -88,8 +116,49 @@ impl CharacterRenderSpec {
         self.anchor
     }
 
+    /// Stable bbox derived from the source canvas and anchor, not cropped layers.
+    pub fn source_canvas_bounds(&self) -> CharacterStageBounds {
+        CharacterStageBounds::from_canvas_anchor(self.canvas, self.anchor)
+    }
+
     pub fn layers(&self) -> &[CharacterRenderLayer] {
         &self.layers
+    }
+
+    /// Reports preserved metadata that the baseline renderer cannot reproduce exactly.
+    pub fn diagnostics(&self) -> Vec<CharacterRenderDiagnostic> {
+        self.layers
+            .iter()
+            .flat_map(CharacterRenderLayer::diagnostics)
+            .collect()
+    }
+}
+
+impl CharacterStageBounds {
+    /// Computes stage-local bounds for a source canvas anchored at `anchor`.
+    pub fn from_canvas_anchor(canvas: CharacterCanvas, anchor: CharacterPoint) -> Self {
+        Self {
+            x: -anchor.x(),
+            y: -anchor.y(),
+            width: canvas.width(),
+            height: canvas.height(),
+        }
+    }
+
+    pub const fn x(self) -> i32 {
+        self.x
+    }
+
+    pub const fn y(self) -> i32 {
+        self.y
+    }
+
+    pub const fn width(self) -> u32 {
+        self.width
+    }
+
+    pub const fn height(self) -> u32 {
+        self.height
     }
 }
 
@@ -128,6 +197,71 @@ impl CharacterRenderLayer {
 
     pub const fn clipping(&self) -> bool {
         self.clipping
+    }
+
+    pub const fn source_layer(&self) -> Option<&CharacterSourceLayer> {
+        self.source_layer.as_ref()
+    }
+
+    fn diagnostics(&self) -> Vec<CharacterRenderDiagnostic> {
+        let mut diagnostics = Vec::new();
+        if !self.blend.is_baseline_renderer_supported() {
+            diagnostics.push(CharacterRenderDiagnostic::new(
+                CharacterRenderDiagnosticKind::UnsupportedBlendMode,
+                self,
+                format!(
+                    "character layer `{}.{}` uses {:?}; metadata is preserved but the baseline renderer cannot reproduce it exactly",
+                    self.part, self.variant, self.blend
+                ),
+            ));
+        }
+        if self.clipping {
+            diagnostics.push(CharacterRenderDiagnostic::new(
+                CharacterRenderDiagnosticKind::UnsupportedClipping,
+                self,
+                format!(
+                    "character layer `{}.{}` uses clipping; metadata is preserved but retained UI clipping is not implemented",
+                    self.part, self.variant
+                ),
+            ));
+        }
+        diagnostics
+    }
+}
+
+impl CharacterRenderDiagnostic {
+    fn new(
+        kind: CharacterRenderDiagnosticKind,
+        layer: &CharacterRenderLayer,
+        message: String,
+    ) -> Self {
+        Self {
+            kind,
+            part: layer.part.clone(),
+            variant: layer.variant.clone(),
+            source_layer: layer.source_layer.clone(),
+            message,
+        }
+    }
+
+    pub const fn kind(&self) -> CharacterRenderDiagnosticKind {
+        self.kind
+    }
+
+    pub const fn part(&self) -> &CharacterPartId {
+        &self.part
+    }
+
+    pub const fn variant(&self) -> &CharacterVariantId {
+        &self.variant
+    }
+
+    pub const fn source_layer(&self) -> Option<&CharacterSourceLayer> {
+        self.source_layer.as_ref()
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
     }
 }
 
@@ -169,5 +303,12 @@ mod tests {
         .expect("manifest");
         let spec = CharacterRenderSpec::from_manifest(&manifest, &look_id).expect("spec");
         assert_eq!(spec.layers()[0].z(), 4);
+        assert_eq!(
+            spec.source_canvas_bounds(),
+            CharacterStageBounds::from_canvas_anchor(
+                CharacterCanvas::new(32, 64),
+                CharacterPoint::new(16, 64)
+            )
+        );
     }
 }

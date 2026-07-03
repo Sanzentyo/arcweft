@@ -1,0 +1,13 @@
+default = "dev"
+
+[package]
+name = "zundamon-awchar"
+
+[build]
+source-dir = "src"
+
+[profiles.dev]
+kind = "game"
+source = "src/main.arcw"
+adapter = "sans-io"
+character_manifests = ["assets/zundamon.awchar"]
