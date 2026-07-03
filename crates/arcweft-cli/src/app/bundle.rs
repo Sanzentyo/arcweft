@@ -1,3 +1,4 @@
+use super::bundle_view::component_view_sidecars;
 use super::diagnostics::emit_diagnostics_for_path;
 use super::image_declarations::{
     DeclaredImageObject, declaration_arg_value, declared_image_asset_refs,
@@ -46,12 +47,12 @@ use arcweft_bundle::{
     resource_codec::{
         UiInputResource, UiProgramResource, UiStyleResource, UiTextResource, UiThemeResource,
         ui::{
-            CompositionOnBlurPolicy, EnterKeyHint, RgbaColor, StyleAssignOp, SystemColor,
-            TextAssistPolicy, TextCapitalization, UiElementKind, UiElementState,
-            UiEnvironmentPredicate, UiInputKind, UiInputOptions, UiInputPurpose,
-            UiInteractionState, UiSecureInputPolicy, UiSemanticTarget, UiStyleDeclaration,
-            UiStyleRule, UiStyleSelector, UiStyleSelectorPart, UiStyleToken, UiStyleValue,
-            UiTextSourceKind, UiTextSourceRecord,
+            CompositionOnBlurPolicy, EnterKeyHint, RgbaColor, StyleAssignOp, StyleSourceIdentity,
+            StyleSourceRef, StyleSyntax as ProductStyleSyntax, SystemColor, TextAssistPolicy,
+            TextCapitalization, UiElementKind, UiElementState, UiEnvironmentPredicate, UiInputKind,
+            UiInputOptions, UiInputPurpose, UiInteractionState, UiSecureInputPolicy,
+            UiSemanticTarget, UiStyleDeclaration, UiStyleRule, UiStyleSelector,
+            UiStyleSelectorPart, UiStyleToken, UiStyleValue, UiTextSourceKind, UiTextSourceRecord,
         },
     },
 };
@@ -62,9 +63,12 @@ use arcweft_core::{
     value::{RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
-use arcweft_lang_syntax::ast::items::{
-    UiStyleAssignOpDecl, UiStyleEnvironmentPredicateDecl, UiStyleItem, UiStyleSelectorPartDecl,
-    UiStyleValueDecl, UiTextInputItem, UiTextInputKind,
+use arcweft_lang_syntax::ast::{
+    items::{
+        StyleItem, UiStyleAssignOpDecl, UiStyleEnvironmentPredicateDecl, UiStyleSelectorPartDecl,
+        UiStyleValueDecl, UiTextInputItem, UiTextInputKind,
+    },
+    style::StyleSyntax,
 };
 use arcweft_launch::LaunchKind;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
@@ -365,7 +369,7 @@ impl BundleUiSidecars {
         self.program = merge_optional(self.program, other.program, merge_ui_programs);
         self.text = merge_optional(self.text, other.text, merge_ui_text);
         self.input = merge_optional(self.input, other.input, merge_ui_input);
-        self.style = self.style.or(other.style);
+        self.style = merge_optional(self.style, other.style, merge_ui_style);
         self.theme = self.theme.or(other.theme);
         self
     }
@@ -408,6 +412,21 @@ fn merge_ui_text(mut left: UiTextResource, right: UiTextResource) -> UiTextResou
 
 fn merge_ui_input(mut left: UiInputResource, right: UiInputResource) -> UiInputResource {
     left.options.extend(right.options);
+    left.adapter_requirements.extend(right.adapter_requirements);
+    left
+}
+
+fn merge_ui_style(mut left: UiStyleResource, right: UiStyleResource) -> UiStyleResource {
+    left.arcweft_sources.extend(right.arcweft_sources);
+    left.css_sources.extend(right.css_sources);
+    left.tokens.extend(right.tokens);
+    left.rules.extend(right.rules);
+    left.part_rules.extend(right.part_rules);
+    left.environment_predicates
+        .extend(right.environment_predicates);
+    left.source_map_refs.extend(right.source_map_refs);
+    left.external_css_descriptors
+        .extend(right.external_css_descriptors);
     left.adapter_requirements.extend(right.adapter_requirements);
     left
 }
@@ -473,7 +492,15 @@ fn collect_bundle_dsl_ui_resources(module: &HirModule) -> Result<BundleUiSidecar
         .declarations()
         .iter()
         .filter_map(|decl| match decl {
-            HirTopLevelDecl::UiStyle(item) => Some(item),
+            HirTopLevelDecl::Style(item) => Some(item),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let components = module
+        .declarations()
+        .iter()
+        .filter_map(|decl| match decl {
+            HirTopLevelDecl::EntityDecl(item) if item.component_body().is_some() => Some(item),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -481,6 +508,14 @@ fn collect_bundle_dsl_ui_resources(module: &HirModule) -> Result<BundleUiSidecar
         style: dsl_ui_style_resource(&styles)?,
         ..BundleUiSidecars::default()
     };
+    let component_sidecars = component_view_sidecars(&components);
+    sidecars = sidecars.merged(BundleUiSidecars {
+        program: component_sidecars.program,
+        style: component_sidecars.style,
+        text: component_sidecars.text,
+        input: component_sidecars.input,
+        theme: None,
+    });
 
     if !inputs.is_empty() {
         let mut text_sources = Vec::new();
@@ -517,13 +552,23 @@ fn collect_bundle_dsl_ui_resources(module: &HirModule) -> Result<BundleUiSidecar
     Ok(sidecars)
 }
 
-fn dsl_ui_style_resource(styles: &[&UiStyleItem]) -> Result<Option<UiStyleResource>, ExitCode> {
+fn dsl_ui_style_resource(styles: &[&StyleItem]) -> Result<Option<UiStyleResource>, ExitCode> {
     let mut style_program_id = None;
+    let mut arcweft_sources = Vec::new();
+    let mut css_sources = Vec::new();
     let mut tokens = Vec::new();
     let mut rules = Vec::new();
     let mut environment_predicates = Vec::new();
     for style in styles {
         style_program_id.get_or_insert_with(|| style.id().body().to_owned());
+        if let Some(source) = style.inline_source() {
+            match style.syntax() {
+                StyleSyntax::Arcweft => {
+                    arcweft_sources.push(dsl_style_source_identity(style, source));
+                }
+                StyleSyntax::Css => css_sources.push(dsl_style_source_identity(style, source)),
+            }
+        }
         for token in style.tokens() {
             tokens.push(dsl_ui_style_token(token)?);
         }
@@ -539,8 +584,8 @@ fn dsl_ui_style_resource(styles: &[&UiStyleItem]) -> Result<Option<UiStyleResour
     }
     Ok(style_program_id.map(|style_program_id| UiStyleResource {
         style_program_id,
-        arcweft_sources: Vec::new(),
-        css_sources: Vec::new(),
+        arcweft_sources,
+        css_sources,
         tokens,
         rules,
         part_rules: Vec::new(),
@@ -549,6 +594,19 @@ fn dsl_ui_style_resource(styles: &[&UiStyleItem]) -> Result<Option<UiStyleResour
         external_css_descriptors: Vec::new(),
         adapter_requirements: Vec::new(),
     }))
+}
+
+fn dsl_style_source_identity(style: &StyleItem, source: &str) -> StyleSourceIdentity {
+    let source_digest = BundleDigest::of(source.as_bytes());
+    StyleSourceIdentity {
+        public_id: format!("{}.source", style.id().body()),
+        syntax: match style.syntax() {
+            StyleSyntax::Arcweft => ProductStyleSyntax::Arcweft,
+            StyleSyntax::Css => ProductStyleSyntax::Css,
+        },
+        identity: StyleSourceRef::Inline { source_digest },
+        content_digest: Some(source_digest),
+    }
 }
 
 fn dsl_ui_style_token(
@@ -2126,6 +2184,43 @@ mod tests {
             }],
             ..RuntimePlan::default()
         }
+    }
+
+    #[test]
+    fn component_view_dsl_lowers_to_ui_sidecars() {
+        let parsed = arcweft_lang_syntax::parser::parse_source(
+            r#"
+style primary_button {
+  Button:hover {
+    background-color = rgba(54, 190, 170, 255)
+  }
+}
+
+component FeedbackForm() -> View {
+  TextField("Tokyo")
+    .style(@style:.primary_button)
+    .style(.Css) {
+      color: white;
+    }
+}
+"#,
+        );
+        assert_eq!(parsed.errors(), &[]);
+        let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+        let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
+
+        let program = sidecars.program.expect("program sidecar");
+        assert!(!program.instructions.is_empty());
+        assert!(!program.semantic_targets.is_empty());
+
+        let input = sidecars.input.expect("input sidecar");
+        assert_eq!(input.options.len(), 1);
+
+        let style = sidecars.style.expect("style sidecar");
+        assert_eq!(style.style_program_id, "style.primary_button");
+        assert!(!style.rules.is_empty());
+        assert!(!style.arcweft_sources.is_empty());
+        assert!(!style.css_sources.is_empty());
     }
 
     fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {

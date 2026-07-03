@@ -68,7 +68,7 @@ pub fn registry_from_hir(module: &HirModule) -> NameRegistry {
             HirTopLevelDecl::UiTextInput(item) => {
                 registry.insert(item.id().body(), EntityKind::Input);
             }
-            HirTopLevelDecl::UiStyle(item) => {
+            HirTopLevelDecl::Style(item) => {
                 registry.insert(item.id().body(), EntityKind::Style);
             }
             HirTopLevelDecl::Test(item) => {

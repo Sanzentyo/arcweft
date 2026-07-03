@@ -11,7 +11,8 @@ fn native_text_input_sample_declares_required_controls_in_dsl() {
     assert!(source.contains("ui text_input @input.jp_text_field"));
     assert!(source.contains("ui text_area @input.jp_text_area"));
     assert!(source.contains("ui secure_field @input.secret_secure_field"));
-    assert!(source.contains("ui style @style.native_text_input_sample"));
+    assert!(source.contains("style native_text_input_sample"));
+    assert!(!source.contains("ui style"));
     assert!(source.contains("font-family = token(font.jp_sans_stack)"));
     assert!(!sample.join("scene-contract.json").exists());
     assert!(!sample.join(".arcweft/content/ui.input.json").exists());

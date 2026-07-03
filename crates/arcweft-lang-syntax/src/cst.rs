@@ -205,7 +205,7 @@ pub(crate) enum CstTopLevelItemKind {
     Parser,
     Source,
     UiTextInput,
-    UiStyle,
+    Style,
     FlowBodyItemOrRaw,
 }
 

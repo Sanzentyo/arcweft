@@ -66,8 +66,8 @@ currently implemented DSL styling surface directly from Arcweft source:
 - visible rich text now covers font, color, size, strong, emphasis, ruby source
   nodes, presentation opacity, transform offset, and wave effect declarations in
   one player-rendered paragraph;
-- `ui style @style.css_style_parity` now authors typed CSS-like retained UI
-  tokens and rules for surface color, button hover/active/focus styling,
+- `style css_style_parity` now authors typed CSS-like retained UI tokens and
+  selector rules for surface color, button hover/active/focus styling,
   text-field caret and selection colors, placeholder color, composition
   underline color, border radius, scale, opacity, and translate-y.
 
@@ -93,8 +93,8 @@ Observed evidence:
   hover/active interaction rules, focus-visible rules, `caret-color`, and
   `composition-underline-color`.
 
-Known boundary: retained `ui style` sidecar data is bundled and typed, but the
-current `agent observe` route primarily visualizes the dialogue/rich-text
-renderer. Retained UI sidecar consumption is validated through bundle JSON and
-the interactive UI renderer sample path until the retained UI program is fully
-instantiated by the player scene.
+Known boundary: retained `style` sidecar data is bundled into the product
+`ui_style` resource, but the current `agent observe` route primarily visualizes
+the dialogue/rich-text renderer. Retained UI sidecar consumption is validated
+through bundle JSON and the interactive UI renderer sample path until the
+retained UI program is fully instantiated by the player scene.

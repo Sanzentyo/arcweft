@@ -19,7 +19,7 @@ use arcweft_lang_syntax::{
         flow::Stmt,
         ids::EntityRef,
         items::{
-            CallableItem, CallableKind, EntityDeclKind, EntryItem, UiStyleItem, UiTextInputItem,
+            CallableItem, CallableKind, EntityDeclKind, EntryItem, StyleItem, UiTextInputItem,
         },
         pattern::Pattern,
     },
@@ -986,7 +986,7 @@ fn index_top_level_declaration(
         HirTopLevelDecl::UiTextInput(item) => {
             index = index_ui_text_input_entity(index, item, source_name)?;
         }
-        HirTopLevelDecl::UiStyle(item) => {
+        HirTopLevelDecl::Style(item) => {
             index = index_ui_style_entity(index, item, source_name)?;
         }
         HirTopLevelDecl::State(_)
@@ -1017,7 +1017,7 @@ fn index_ui_text_input_entity(
 
 fn index_ui_style_entity(
     index: ProjectSemanticIndex,
-    item: &UiStyleItem,
+    item: &StyleItem,
     source_name: &SourceName,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     index_ui_resource_entity(index, item.id(), EntityKind::Style, source_name, "style")

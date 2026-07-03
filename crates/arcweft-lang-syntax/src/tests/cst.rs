@@ -232,18 +232,18 @@ fn cst_line_events_classify_top_level_dispatch() {
 }
 
 #[test]
-fn parses_retained_ui_style_item() {
+fn parses_retained_style_item() {
     let parsed = parse_source(
         r#"
-ui style @style.native_text_input_sample {
+style native_text_input_sample {
   token font.jp_sans_stack = text("Yu Gothic, system-ui")
 
-  rule text_field {
+  TextField {
     font-family = token(font.jp_sans_stack)
     border-color = system_color(border)
   }
 
-  rule state(focus_visible) {
+  TextField:focus-visible {
     focus-ring-width-milli = milli(2000)
   }
 
@@ -253,8 +253,8 @@ ui style @style.native_text_input_sample {
     );
 
     assert_eq!(parsed.errors(), &[]);
-    let [Item::UiStyle(style)] = parsed.typed_tree().items() else {
-        panic!("expected a typed UI style item");
+    let [Item::Style(style)] = parsed.typed_tree().items() else {
+        panic!("expected a typed style item");
     };
     assert_eq!(style.id().body(), "style.native_text_input_sample");
     assert_eq!(style.tokens().len(), 1);

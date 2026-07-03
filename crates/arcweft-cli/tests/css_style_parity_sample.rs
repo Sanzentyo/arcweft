@@ -25,10 +25,10 @@ fn css_style_parity_sample_authors_observable_and_ui_styles_in_dsl() {
         .items()
         .iter()
         .find_map(|item| match item {
-            Item::UiStyle(style) if style.id().body() == "style.css_style_parity" => Some(style),
+            Item::Style(style) if style.id().body() == "style.css_style_parity" => Some(style),
             _ => None,
         })
-        .expect("css-style-parity ui style item");
+        .expect("css-style-parity style item");
 
     assert!(
         style

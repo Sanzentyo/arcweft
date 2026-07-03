@@ -1,13 +1,13 @@
 use crate::ast::common::TextRange;
 use crate::ast::ids::{EntityRef, EntityRefSyntax};
 use crate::ast::items::{
-    AgentItem, AgentItemInit, CallableItem, CallableItemInit, CapabilityFn, ContentDeclBody,
-    EntityDeclBody, EntityDeclItem, EntityDeclKind, EntryDeclItem, EntryItem, EntryKind,
-    EntryRouteBinding, EntryRouteBindingSource, EnumItem, EnumVariant, ExternCapabilityItem,
-    ExternModActivity, ExternModFunction, ExternModItem, ExternModMember, ExternModType,
-    ExternModTypeKind, FunctionInit, FunctionItem, ImageDeclBody, ImageDeclField, ImplItem,
-    ImplItemInit, ImplMember, MemoFn, ParserItem, StateField, StateItem, StructField, StructItem,
-    TraitItem, TraitMember, TypeAliasItem,
+    AgentItem, AgentItemInit, CallableItem, CallableItemInit, CapabilityFn, ComponentDeclBody,
+    ContentDeclBody, EntityDeclBody, EntityDeclItem, EntityDeclKind, EntryDeclItem, EntryItem,
+    EntryKind, EntryRouteBinding, EntryRouteBindingSource, EnumItem, EnumVariant,
+    ExternCapabilityItem, ExternModActivity, ExternModFunction, ExternModItem, ExternModMember,
+    ExternModType, ExternModTypeKind, FunctionInit, FunctionItem, ImageDeclBody, ImageDeclField,
+    ImplItem, ImplItemInit, ImplMember, MemoFn, ParserItem, StateField, StateItem, StructField,
+    StructItem, TraitItem, TraitMember, TypeAliasItem,
 };
 use crate::cst::{
     find_matching_angle_group, find_matching_punctuation, find_top_level_punctuation,
@@ -23,6 +23,7 @@ use super::headers::{
     parse_required_entity_ref, parse_required_entity_ref_syntax, parse_visibility_prefix,
     simple_error, split_function_header_lines, split_supertraits,
 };
+use super::view::parse_component_view_body;
 use super::{
     Parser, PendingDocLines, SourceDialect, collect_logical_block_items, parse_expr_lossy,
     parse_scope_expr_body, parse_scope_expr_body_for_dialect, split_brace_item,
@@ -511,8 +512,14 @@ impl Parser<'_> {
             .map(|range| TextRange::new(range.start, range.end));
         let (kind, visibility, id, name, surface_alias, signature_tail) =
             parse_entity_decl_head(head.trim(), start_line.start, &mut self.errors)?;
-        let structured_body =
-            parse_structured_entity_decl_body(kind, &body, start_line.start, &mut self.errors);
+        let structured_body = parse_structured_entity_decl_body(
+            kind,
+            &signature_tail,
+            &body,
+            start_line.start,
+            self.current_module_path.as_deref(),
+            &mut self.errors,
+        );
         let raw_body = structured_body.is_none().then(|| body.into_owned());
         Some(EntityDeclItem::new(
             attrs,
@@ -715,8 +722,10 @@ pub(super) fn parse_state_fields(body: &str) -> Vec<StateField> {
 
 fn parse_structured_entity_decl_body(
     kind: EntityDeclKind,
+    signature_tail: &str,
     body: &str,
     base: usize,
+    module_path: Option<&str>,
     errors: &mut Vec<super::recovery::ParseError>,
 ) -> Option<EntityDeclBody> {
     match kind {
@@ -726,8 +735,19 @@ fn parse_structured_entity_decl_body(
         EntityDeclKind::Image => Some(EntityDeclBody::Image(ImageDeclBody::new(
             parse_image_decl_fields(body, base, errors),
         ))),
+        EntityDeclKind::Component if entity_signature_returns_view(signature_tail) => {
+            Some(EntityDeclBody::Component(Box::new(ComponentDeclBody::new(
+                parse_component_view_body(body, base, module_path, errors),
+            ))))
+        }
         _ => None,
     }
+}
+
+fn entity_signature_returns_view(signature_tail: &str) -> bool {
+    signature_tail
+        .split_once("->")
+        .is_some_and(|(_, ty)| ty.trim() == "View")
 }
 
 fn parse_image_decl_fields(

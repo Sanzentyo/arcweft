@@ -364,7 +364,7 @@ fn callable_item_range(items: &[Item], callable: &CallableId) -> Option<TextRang
         | Item::Parser(_)
         | Item::Source(_)
         | Item::UiTextInput(_)
-        | Item::UiStyle(_)
+        | Item::Style(_)
         | Item::FlowItem(_)
         | Item::Raw(_) => None,
     })

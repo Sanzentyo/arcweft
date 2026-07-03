@@ -6,8 +6,8 @@ use std::path::Path;
 fn reactive_ui_style_sample_sidecars_define_css_and_arcweft_sources() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let style_path = root.join("samples/reactive-ui-style/.arcweft/content/ui.style.json");
-    let style: Value = serde_json::from_slice(&fs::read(style_path).expect("ui style sidecar"))
-        .expect("ui style json");
+    let style: Value =
+        serde_json::from_slice(&fs::read(style_path).expect("style sidecar")).expect("style json");
 
     assert_eq!(
         style["arcweft_sources"][0]["identity"]["file"]["path"],
@@ -23,8 +23,8 @@ fn reactive_ui_style_sample_sidecars_define_css_and_arcweft_sources() {
 fn reactive_ui_style_sample_sidecars_define_interaction_selectors() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let style_path = root.join("samples/reactive-ui-style/.arcweft/content/ui.style.json");
-    let style: Value = serde_json::from_slice(&fs::read(style_path).expect("ui style sidecar"))
-        .expect("ui style json");
+    let style: Value =
+        serde_json::from_slice(&fs::read(style_path).expect("style sidecar")).expect("style json");
 
     let interactions = style["rules"]
         .as_array()

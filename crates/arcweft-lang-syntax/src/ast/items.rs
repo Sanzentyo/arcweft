@@ -7,6 +7,8 @@ use super::flow::{ContractClause, Flow, FlowItem, Stmt};
 use super::ids::{EntityRef, WikiLink};
 use super::proof::{BenchItem, ProofItem, TestItem, TrustedAxiomItem};
 use super::source::SourceItem;
+use super::style::StyleSyntax;
+use super::view::ComponentViewBody;
 
 /// Typed syntax view of an `.arcw` source with module/use headers and items.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -46,7 +48,7 @@ pub enum Item {
     Parser(ParserItem),
     Source(SourceItem),
     UiTextInput(UiTextInputItem),
-    UiStyle(UiStyleItem),
+    Style(StyleItem),
     FlowItem(Box<FlowItem>),
     Raw(RawItem),
 }
@@ -76,26 +78,40 @@ pub enum UiTextInputKind {
     SecureField,
 }
 
-/// Top-level retained UI style declaration lowered into product UI resources.
+/// Top-level retained style declaration lowered into product UI resources.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiStyleItem {
+pub struct StyleItem {
     attrs: Vec<Attribute>,
     visibility: Option<Visibility>,
     id: EntityRef,
+    syntax: StyleSyntax,
+    inline_source: Option<String>,
     tokens: Vec<UiStyleTokenDecl>,
     rules: Vec<UiStyleRuleDecl>,
     environment_predicates: Vec<UiStyleEnvironmentPredicateDecl>,
     range: TextRange,
 }
 
-/// A named style token declared inside a `ui style` block.
+pub(crate) struct StyleItemInit {
+    pub(crate) attrs: Vec<Attribute>,
+    pub(crate) visibility: Option<Visibility>,
+    pub(crate) id: EntityRef,
+    pub(crate) syntax: StyleSyntax,
+    pub(crate) inline_source: Option<String>,
+    pub(crate) tokens: Vec<UiStyleTokenDecl>,
+    pub(crate) rules: Vec<UiStyleRuleDecl>,
+    pub(crate) environment_predicates: Vec<UiStyleEnvironmentPredicateDecl>,
+    pub(crate) range: TextRange,
+}
+
+/// A named style token declared inside a `style` block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UiStyleTokenDecl {
     public_id: String,
     value: UiStyleValueDecl,
 }
 
-/// A selector rule declared inside a `ui style` block.
+/// A selector rule declared inside a `style` block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UiStyleRuleDecl {
     selector: Vec<UiStyleSelectorPartDecl>,
@@ -113,7 +129,7 @@ pub enum UiStyleSelectorPartDecl {
     Child,
 }
 
-/// A single style property assignment in a `ui style` rule.
+/// A single style property assignment in a `style` selector rule.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UiStyleDeclarationDecl {
     property: String,
@@ -144,7 +160,7 @@ pub enum UiStyleValueDecl {
     Resource(String),
 }
 
-/// Resource-level environment predicate for a `ui style` block.
+/// Resource-level environment predicate for a `style` block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UiStyleEnvironmentPredicateDecl {
     TextScaleAtLeastMilli(u32),
@@ -269,7 +285,7 @@ impl Item {
             Self::Parser(item) => Some(*item.range()),
             Self::Source(item) => Some(*item.range()),
             Self::UiTextInput(item) => Some(*item.range()),
-            Self::UiStyle(item) => Some(*item.range()),
+            Self::Style(item) => Some(*item.range()),
             Self::Raw(item) => Some(*item.range()),
             Self::FlowItem(_) => None,
         }
@@ -391,24 +407,18 @@ impl UiTextInputItem {
     }
 }
 
-impl UiStyleItem {
-    pub(crate) const fn new(
-        attrs: Vec<Attribute>,
-        visibility: Option<Visibility>,
-        id: EntityRef,
-        tokens: Vec<UiStyleTokenDecl>,
-        rules: Vec<UiStyleRuleDecl>,
-        environment_predicates: Vec<UiStyleEnvironmentPredicateDecl>,
-        range: TextRange,
-    ) -> Self {
+impl StyleItem {
+    pub(crate) fn new(init: StyleItemInit) -> Self {
         Self {
-            attrs,
-            visibility,
-            id,
-            tokens,
-            rules,
-            environment_predicates,
-            range,
+            attrs: init.attrs,
+            visibility: init.visibility,
+            id: init.id,
+            syntax: init.syntax,
+            inline_source: init.inline_source,
+            tokens: init.tokens,
+            rules: init.rules,
+            environment_predicates: init.environment_predicates,
+            range: init.range,
         }
     }
 
@@ -422,6 +432,14 @@ impl UiStyleItem {
 
     pub const fn id(&self) -> &EntityRef {
         &self.id
+    }
+
+    pub const fn syntax(&self) -> StyleSyntax {
+        self.syntax
+    }
+
+    pub fn inline_source(&self) -> Option<&str> {
+        self.inline_source.as_deref()
     }
 
     pub fn tokens(&self) -> &[UiStyleTokenDecl] {
@@ -718,6 +736,13 @@ pub struct EntityDeclItem {
 pub enum EntityDeclBody {
     Content(ContentDeclBody),
     Image(ImageDeclBody),
+    Component(Box<ComponentDeclBody>),
+}
+
+/// Structured body for `component ... -> View` declarations.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ComponentDeclBody {
+    view: Option<ComponentViewBody>,
 }
 
 /// Content availability unit body declared with explicit root IDs.
@@ -1309,14 +1334,21 @@ impl EntityDeclItem {
     pub const fn content_body(&self) -> Option<&ContentDeclBody> {
         match self.structured_body.as_ref() {
             Some(EntityDeclBody::Content(body)) => Some(body),
-            Some(EntityDeclBody::Image(_)) | None => None,
+            Some(EntityDeclBody::Image(_) | EntityDeclBody::Component(_)) | None => None,
         }
     }
 
     pub const fn image_body(&self) -> Option<&ImageDeclBody> {
         match self.structured_body.as_ref() {
             Some(EntityDeclBody::Image(body)) => Some(body),
-            Some(EntityDeclBody::Content(_)) | None => None,
+            Some(EntityDeclBody::Content(_) | EntityDeclBody::Component(_)) | None => None,
+        }
+    }
+
+    pub fn component_body(&self) -> Option<&ComponentDeclBody> {
+        match self.structured_body.as_ref() {
+            Some(EntityDeclBody::Component(body)) => Some(body.as_ref()),
+            Some(EntityDeclBody::Content(_) | EntityDeclBody::Image(_)) | None => None,
         }
     }
 
@@ -1336,6 +1368,16 @@ impl ContentDeclBody {
 
     pub fn roots(&self) -> &[EntityRef] {
         &self.roots
+    }
+}
+
+impl ComponentDeclBody {
+    pub(crate) const fn new(view: Option<ComponentViewBody>) -> Self {
+        Self { view }
+    }
+
+    pub const fn view(&self) -> Option<&ComponentViewBody> {
+        self.view.as_ref()
     }
 }
 

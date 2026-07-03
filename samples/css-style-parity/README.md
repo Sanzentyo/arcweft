@@ -9,12 +9,12 @@ The `.arcw` source exercises two styling layers:
 
 - visible dialogue rich text for `font`, `color`, `size`, `strong`, `em`, ruby,
   opacity, transform offset, and wave motion;
-- product UI style rules for typed `ui style` tokens, `button` hover/active
+- product UI style rules for typed `style` tokens, `Button` hover/active
   rules, focus-visible outlines, text-field caret/selection colors, and
   composition underline color.
 
-The retained `ui style` resource is bundled into the product as CSS-like typed
-style data. The current `agent observe` path primarily validates the
+The retained `style` declaration is bundled into the product `UiStyleResource`
+as CSS-like typed style data. The current `agent observe` path primarily validates the
 player-rendered dialogue layer; retained UI sidecar consumption is covered by
 bundle checks and the interactive UI renderer samples.
 

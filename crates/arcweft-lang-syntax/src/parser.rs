@@ -41,6 +41,7 @@ pub mod recovery;
 pub mod source;
 pub mod statements;
 pub mod top_level;
+pub mod view;
 use await_::{is_await_with_head, parse_await_with};
 use control_flow::{
     parse_block_expr, parse_braced_while_let_stmt, parse_named_block_expr, parse_scope_expr_body,
@@ -142,6 +143,7 @@ struct Parser<'a> {
     pending_attrs: Vec<Attribute>,
     syntax_stats: SyntaxParseStats,
     source_dialect: SourceDialect,
+    current_module_path: Option<String>,
 }
 
 impl<'a> Parser<'a> {
@@ -180,6 +182,7 @@ impl<'a> Parser<'a> {
             pending_attrs: Vec::new(),
             syntax_stats,
             source_dialect: SourceDialect::Game,
+            current_module_path: None,
         }
     }
 

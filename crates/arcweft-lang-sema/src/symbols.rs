@@ -7,7 +7,7 @@ use arcweft_lang_syntax::{
             AwaitWith, ContractClause, FlowItem, SelectBranchHead, Stmt, StmtMatchArm, WaitTarget,
         },
         ids::{EntityRef, EntityRefSyntax, IdRef},
-        items::{ImplMember, RawSyntax, TraitMember, UiStyleItem, UiTextInputItem},
+        items::{ImplMember, RawSyntax, StyleItem, TraitMember, UiTextInputItem},
         line_plan::{LinePlan, LinePlanItem, TriggerPattern},
         pattern::{Pattern, VariantPatternPayload},
     },
@@ -176,11 +176,11 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
             }
         }
         HirTopLevelDecl::UiTextInput(item) => collect_ui_text_input_decl(item, uses),
-        HirTopLevelDecl::UiStyle(item) => collect_ui_style_decl(item, uses),
+        HirTopLevelDecl::Style(item) => collect_style_decl(item, uses),
     }
 }
 
-fn collect_ui_style_decl(item: &UiStyleItem, uses: &mut Vec<SymbolUse>) {
+fn collect_style_decl(item: &StyleItem, uses: &mut Vec<SymbolUse>) {
     push_entity(uses, item.id());
 }
 

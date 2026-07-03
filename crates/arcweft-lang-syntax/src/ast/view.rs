@@ -190,6 +190,98 @@ impl ComponentViewBody {
     }
 }
 
+impl ViewElement {
+    pub const fn new(
+        callee: String,
+        args: Vec<ViewArg>,
+        children: Vec<ViewExpr>,
+        modifiers: Vec<ViewModifier>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            callee,
+            args,
+            children,
+            modifiers,
+            range,
+        }
+    }
+
+    pub fn callee(&self) -> &str {
+        &self.callee
+    }
+
+    pub fn args(&self) -> &[ViewArg] {
+        &self.args
+    }
+
+    pub fn children(&self) -> &[ViewExpr] {
+        &self.children
+    }
+
+    pub fn modifiers(&self) -> &[ViewModifier] {
+        &self.modifiers
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl ViewComponentCall {
+    pub const fn new(
+        component: Expr,
+        args: Vec<ViewArg>,
+        modifiers: Vec<ViewModifier>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            component,
+            args,
+            modifiers,
+            range,
+        }
+    }
+
+    pub const fn component(&self) -> &Expr {
+        &self.component
+    }
+
+    pub fn args(&self) -> &[ViewArg] {
+        &self.args
+    }
+
+    pub fn modifiers(&self) -> &[ViewModifier] {
+        &self.modifiers
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl ViewImage {
+    pub const fn new(source: Expr, modifiers: Vec<ViewModifier>, range: TextRange) -> Self {
+        Self {
+            source,
+            modifiers,
+            range,
+        }
+    }
+
+    pub const fn source(&self) -> &Expr {
+        &self.source
+    }
+
+    pub fn modifiers(&self) -> &[ViewModifier] {
+        &self.modifiers
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
 impl ViewText {
     pub const fn new(source: Expr, modifiers: Vec<ViewModifier>, range: TextRange) -> Self {
         Self {

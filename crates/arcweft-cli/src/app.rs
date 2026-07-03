@@ -1,5 +1,6 @@
 mod agent;
 mod bundle;
+pub(in crate::app) mod bundle_view;
 mod cache;
 mod commands;
 mod debug;

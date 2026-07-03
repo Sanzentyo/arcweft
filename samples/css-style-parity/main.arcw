@@ -30,7 +30,7 @@ pub dialogue defaults @dialogue.defaults {
     window = @textbox.style_panel
 }
 
-ui style @style.css_style_parity {
+style css_style_parity {
   token font.display_stack = text("Arcweft Demo, Yu Gothic, Hiragino Sans, Noto Sans JP, system-ui")
   token color.panel = rgba(15, 21, 31, 238)
   token color.panel_hover = rgba(30, 44, 59, 242)
@@ -41,13 +41,13 @@ ui style @style.css_style_parity {
   token motion.hover_lift = milli(-3000)
   token motion.pressed_scale = milli(970)
 
-  rule surface {
+  Surface {
     background-color = token(color.panel)
     color = system_color(surface_text)
     font-family = token(font.display_stack)
   }
 
-  rule button {
+  Button {
     background-color = token(color.panel)
     color = system_color(accent_text)
     border-radius = token(metric.corner_lg)
@@ -56,34 +56,34 @@ ui style @style.css_style_parity {
     translate-y = milli(0)
   }
 
-  rule button interaction(hover) {
+  Button:hover {
     background-color = token(color.panel_hover)
     color = token(color.accent)
     translate-y = token(motion.hover_lift)
   }
 
-  rule button interaction(active) {
+  Button:active {
     opacity = milli(920)
     scale = token(motion.pressed_scale)
   }
 
-  rule button state(focus_visible) {
+  Button:focus-visible {
     outline-color = system_color(focus_ring)
     outline-width = token(metric.focus_ring)
   }
 
-  rule text_field {
+  TextField {
     caret-color = token(color.accent)
     selection-color = token(color.selection)
     placeholder-color = system_color(muted_text)
     border-radius = token(metric.corner_lg)
   }
 
-  rule text_field state(composing) {
+  TextField:composing {
     composition-underline-color = token(color.accent)
   }
 
-  rule text_field state(placeholder_shown) {
+  TextField:placeholder-shown {
     color = system_color(muted_text)
   }
 

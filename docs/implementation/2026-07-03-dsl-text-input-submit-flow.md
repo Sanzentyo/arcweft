@@ -7,8 +7,8 @@ This cut moves the native text-input sample's input controls out of
 
 - Added `ui text_input`, `ui text_area`, and `ui secure_field` top-level DSL
   declarations with typed `@input.*` IDs.
-- Added `ui style @style.*` top-level DSL declarations with retained
-  `token`, `rule`, and `environment` entries lowered into compact
+- Added `style` top-level DSL declarations with retained `token`, selector
+  blocks, and `environment` entries lowered into compact
   `UiStyleResource`.
 - Added `EntityKind::Input` so input IDs are indexed, resolved, and type
   checked as a real entity family rather than `Other("input")`.
@@ -45,7 +45,7 @@ fallbacks. That is split into
 - `cargo run -p arcweft-cli -- check --manifest-path samples/text-submit-flow/arcw.toml`
 - `cargo run -p arcweft-cli -- run --runner headless samples/text-submit-flow/src/main.arcw --steps 2 --mode drain --max-ops 64`
 - `cargo test -p arcweft-lang-syntax flow_if_comparison_condition_is_structured --test parser_p1`
-- `cargo test -p arcweft-lang-syntax parses_retained_ui_style_item --all-features`
+- `cargo test -p arcweft-lang-syntax parses_retained_style_item --all-features`
 - `cargo test -p arcweft-cli --test native_text_input_sample_sidecars`
 - `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`

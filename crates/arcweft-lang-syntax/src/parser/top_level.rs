@@ -2,7 +2,10 @@
 
 use super::{
     Parser, TopLevelDispatch, TopLevelSinks,
-    headers::{parse_required_entity_ref, parse_visibility_prefix, simple_error, slice_offset},
+    headers::{
+        DeclEntityId, parse_required_decl_entity_ref_or_marker, parse_required_entity_ref,
+        parse_visibility_prefix, simple_error, slice_offset,
+    },
     helpers::{
         is_relative_id_path, normalize_module_path, parse_inner_attribute, parse_outer_attribute,
         parse_use_line,
@@ -13,10 +16,11 @@ use crate::ast::{
     common::{ModuleDecl, TextRange},
     ids::EntityRef,
     items::{
-        Item, RawItem, UiStyleAssignOpDecl, UiStyleDeclarationDecl,
-        UiStyleEnvironmentPredicateDecl, UiStyleItem, UiStyleRuleDecl, UiStyleSelectorPartDecl,
+        Item, RawItem, StyleItem, StyleItemInit, UiStyleAssignOpDecl, UiStyleDeclarationDecl,
+        UiStyleEnvironmentPredicateDecl, UiStyleRuleDecl, UiStyleSelectorPartDecl,
         UiStyleTokenDecl, UiStyleValueDecl, UiTextInputItem, UiTextInputKind,
     },
+    style::StyleSyntax,
 };
 use crate::cst::{CstTopLevelItemKind, CstTopLevelLineKind};
 use crate::expr::{Expr, Literal};
@@ -69,8 +73,9 @@ impl Parser<'_> {
                 self.reject_pending_doc(range);
                 self.reject_pending_attrs(range);
                 if self.validate_module_path(path, range) {
-                    *sinks.module =
-                        Some(ModuleDecl::new(normalize_module_path(path.trim()), range));
+                    let module_path = normalize_module_path(path.trim());
+                    self.current_module_path = Some(module_path.clone());
+                    *sinks.module = Some(ModuleDecl::new(module_path, range));
                 }
                 self.index += 1;
             }
@@ -281,7 +286,7 @@ impl Parser<'_> {
                         | CstTopLevelItemKind::DialogueDefaults
                         | CstTopLevelItemKind::Source
                         | CstTopLevelItemKind::UiTextInput
-                        | CstTopLevelItemKind::UiStyle
+                        | CstTopLevelItemKind::Style
                 ) {
                     self.reject_pending_attrs(range);
                 }
@@ -324,7 +329,7 @@ impl Parser<'_> {
             CstTopLevelItemKind::Parser => self.parse_parser_item().map(Item::Parser),
             CstTopLevelItemKind::Source => self.parse_source_item().map(Item::Source),
             CstTopLevelItemKind::UiTextInput => self.parse_ui_text_input().map(Item::UiTextInput),
-            CstTopLevelItemKind::UiStyle => self.parse_ui_style().map(Item::UiStyle),
+            CstTopLevelItemKind::Style => self.parse_style().map(Item::Style),
             CstTopLevelItemKind::Flow
             | CstTopLevelItemKind::Agent
             | CstTopLevelItemKind::Function
@@ -408,46 +413,204 @@ impl Parser<'_> {
         )
     }
 
-    fn parse_ui_style(&mut self) -> Option<UiStyleItem> {
+    fn parse_style(&mut self) -> Option<StyleItem> {
         let attrs = self.take_pending_attrs();
         let start_line = self.current().clone();
         let (head, body, end, ok) = self.take_flow_block();
         if !ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
-                "unclosed block while parsing UI style declaration",
+                "unclosed block while parsing style declaration",
                 ["}"],
                 Some(start_line.text.trim()),
-                ["insert a closing `}` for the UI style body"],
+                ["insert a closing `}` for the style body"],
             );
             return None;
         }
         let head = head.trim();
         let (visibility, rest) = parse_visibility_prefix(head);
-        let rest = rest.trim_start().strip_prefix("ui")?.trim_start();
-        let rest = rest.strip_prefix("style")?.trim_start();
+        let rest = rest.trim_start().strip_prefix("style")?.trim_start();
         let id_base = start_line.start + slice_offset(head, rest);
-        let (id, trailing) =
-            parse_required_entity_ref(rest.trim_start(), id_base, &mut self.errors)?;
+        let module_path = self.current_module_path.as_deref();
+        let (id, syntax, trailing) =
+            parse_style_decl_head(rest, id_base, module_path, &mut self.errors)?;
         if !trailing.trim().is_empty() {
             self.push_error(
                 TextRange::new(id.range().end(), start_line.end),
-                "unexpected text after UI style id",
-                ["{"],
+                "unexpected text after style declaration head",
+                ["{", ": .Css {"],
                 Some(trailing.trim()),
-                ["move properties into the UI style body"],
+                ["move properties into the style body or place `: .Css` before the body"],
             );
         }
-        let fields = UiStyleFields::parse(&body, start_line.start, &mut self.errors);
-        Some(UiStyleItem::new(
+        let inline_source = Some(body.to_string());
+        let fields = match syntax {
+            StyleSyntax::Arcweft => UiStyleFields::parse(&body, start_line.start, &mut self.errors),
+            StyleSyntax::Css => UiStyleFields::default(),
+        };
+        Some(StyleItem::new(StyleItemInit {
             attrs,
             visibility,
             id,
-            fields.tokens,
-            fields.rules,
-            fields.environment_predicates,
-            TextRange::new(start_line.start, end),
-        ))
+            syntax,
+            inline_source,
+            tokens: fields.tokens,
+            rules: fields.rules,
+            environment_predicates: fields.environment_predicates,
+            range: TextRange::new(start_line.start, end),
+        }))
+    }
+}
+
+fn parse_style_decl_head(
+    input: &str,
+    base: usize,
+    module_path: Option<&str>,
+    errors: &mut Vec<super::ParseError>,
+) -> Option<(EntityRef, StyleSyntax, String)> {
+    let input = input.trim_start();
+    let (id, tail) = if input.starts_with('@') {
+        let (parsed, rest) =
+            parse_required_decl_entity_ref_or_marker(input, "style", base, errors)?;
+        match parsed {
+            DeclEntityId::Entity(entity) => {
+                let (entity, rest) = normalize_style_decl_colon(entity, rest);
+                (
+                    rebase_relative_style_decl_entity(entity, input, module_path),
+                    rest,
+                )
+            }
+            DeclEntityId::NameMarker(marker) => {
+                let rest = rest.trim_start();
+                let (name, tail) = parse_style_name_and_tail(rest);
+                let Some(name) = name else {
+                    errors.push(simple_error(
+                        marker.range.start(),
+                        marker.range.end() - marker.range.start(),
+                        "relative style declaration marker needs a following style name",
+                        "@style:. primary_button",
+                    ));
+                    return None;
+                };
+                (
+                    EntityRef::new(
+                        style_decl_body(&name, module_path),
+                        false,
+                        TextRange::new(marker.range.end(), marker.range.end() + name.len()),
+                    ),
+                    tail,
+                )
+            }
+        }
+    } else {
+        let (name, tail) = parse_style_name_and_tail(input);
+        let Some(name) = name else {
+            errors.push(simple_error(
+                base,
+                input.len(),
+                "style declaration needs a canonical style name or declaration id",
+                "style primary_button",
+            ));
+            return None;
+        };
+        let start = input
+            .find(&name)
+            .map_or(base, |offset| base.saturating_add(offset));
+        (
+            EntityRef::new(
+                style_decl_body(&name, module_path),
+                false,
+                TextRange::new(start, start + name.len()),
+            ),
+            tail,
+        )
+    };
+    let (syntax, tail) = parse_style_syntax_tail(&tail, id.range().end(), errors)?;
+    Some((id, syntax, tail))
+}
+
+fn normalize_style_decl_colon(entity: EntityRef, rest: &str) -> (EntityRef, String) {
+    if entity.is_delimited() || !entity.body().ends_with(':') {
+        return (entity, rest.to_owned());
+    }
+    let body = entity.body().trim_end_matches(':').to_owned();
+    let range = TextRange::new(entity.range().start(), entity.range().end() - 1);
+    (
+        EntityRef::new(body, false, range),
+        format!(": {}", rest.trim_start()),
+    )
+}
+
+fn style_decl_body(name: &str, module_path: Option<&str>) -> String {
+    module_path
+        .map(style_module_path)
+        .filter(|module| !module.is_empty())
+        .map_or_else(
+            || format!("style.{name}"),
+            |module| format!("style.{module}.{name}"),
+        )
+}
+
+fn rebase_relative_style_decl_entity(
+    entity: EntityRef,
+    source: &str,
+    module_path: Option<&str>,
+) -> EntityRef {
+    if !(source.starts_with("@.") || source.starts_with("@style:.")) {
+        return entity;
+    }
+    let Some(suffix) = entity.body().strip_prefix("style.") else {
+        return entity;
+    };
+    EntityRef::new(style_decl_body(suffix, module_path), false, *entity.range())
+}
+
+fn style_module_path(module_path: &str) -> String {
+    module_path.replace("::", ".")
+}
+
+fn parse_style_name_and_tail(input: &str) -> (Option<String>, String) {
+    let trimmed = input.trim_start();
+    let Some((first, mut tail)) = crate::cst::split_leading_ident(trimmed) else {
+        return (None, trimmed.to_owned());
+    };
+    let mut name = first.to_owned();
+    while let Some(after_dot) = tail.strip_prefix('.') {
+        let Some((segment, next_tail)) = crate::cst::split_leading_ident(after_dot) else {
+            break;
+        };
+        name.push('.');
+        name.push_str(segment);
+        tail = next_tail;
+    }
+    (Some(name), tail.trim().to_owned())
+}
+
+fn parse_style_syntax_tail(
+    tail: &str,
+    base: usize,
+    errors: &mut Vec<super::ParseError>,
+) -> Option<(StyleSyntax, String)> {
+    let tail = tail.trim_start();
+    if tail.is_empty() {
+        return Some((StyleSyntax::Arcweft, String::new()));
+    }
+    let Some(rest) = tail.strip_prefix(':') else {
+        return Some((StyleSyntax::Arcweft, tail.to_owned()));
+    };
+    let syntax = rest.trim_start();
+    if let Some(trailing) = syntax.strip_prefix(".Css") {
+        Some((StyleSyntax::Css, trailing.to_owned()))
+    } else if let Some(trailing) = syntax.strip_prefix(".Arcweft") {
+        Some((StyleSyntax::Arcweft, trailing.to_owned()))
+    } else {
+        errors.push(simple_error(
+            base,
+            tail.len(),
+            "style declaration syntax must be `.Css` or `.Arcweft`",
+            ": .Css",
+        ));
+        None
     }
 }
 
@@ -571,25 +734,25 @@ impl UiStyleFields {
                     errors.push(simple_error(
                         base,
                         trimmed.len(),
-                        "unmatched UI style rule close",
-                        "rule selector { ... }",
+                        "unmatched style rule close",
+                        "Button:hover { ... }",
                     ));
                 }
                 continue;
             }
-            if let Some(rule_head) = trimmed.strip_prefix("rule ") {
+            if trimmed.ends_with('{') {
                 if let Some(rule) = pending_rule.take() {
                     fields
                         .rules
                         .push(UiStyleRuleDecl::new(rule.selector, rule.declarations));
                 }
-                let selector = rule_head.trim_end_matches('{').trim();
-                if !trimmed.ends_with('{') {
+                let selector = trimmed.trim_end_matches('{').trim();
+                if selector.is_empty() {
                     errors.push(simple_error(
                         base,
                         trimmed.len(),
-                        "UI style rule must open with `{`",
-                        "rule text_field {",
+                        "style rule selector cannot be empty",
+                        "Button:hover {",
                     ));
                     continue;
                 }
@@ -620,8 +783,8 @@ impl UiStyleFields {
             errors.push(simple_error(
                 base,
                 trimmed.len(),
-                &format!("invalid UI style declaration `{trimmed}`"),
-                "token name = value | environment name = value | rule selector { ... }",
+                &format!("invalid style declaration `{trimmed}`"),
+                "token name = value | environment name = value | Button:hover { ... }",
             ));
         }
         if let Some(rule) = pending_rule {
@@ -710,30 +873,80 @@ fn parse_ui_style_selector(
 ) -> Vec<UiStyleSelectorPartDecl> {
     let mut parts = Vec::new();
     for token in source.split_whitespace() {
-        let part = if token == ">" {
-            UiStyleSelectorPartDecl::Child
+        if token == ">" {
+            parts.push(UiStyleSelectorPartDecl::Child);
         } else if token == "*" {
-            UiStyleSelectorPartDecl::Descendant
+            parts.push(UiStyleSelectorPartDecl::Descendant);
         } else if let Some(value) = call_arg(token, "part") {
-            UiStyleSelectorPartDecl::Part(value.to_owned())
+            parts.push(UiStyleSelectorPartDecl::Part(value.to_owned()));
         } else if let Some(value) = call_arg(token, "state") {
-            UiStyleSelectorPartDecl::State(value.to_owned())
+            parts.push(UiStyleSelectorPartDecl::State(value.to_owned()));
         } else if let Some(value) = call_arg(token, "interaction") {
-            UiStyleSelectorPartDecl::Interaction(value.to_owned())
+            parts.push(UiStyleSelectorPartDecl::Interaction(value.to_owned()));
         } else {
-            UiStyleSelectorPartDecl::Element(token.to_owned())
-        };
-        parts.push(part);
+            push_style_selector_compound(token, &mut parts);
+        }
     }
     if parts.is_empty() {
         errors.push(simple_error(
             base,
             source.len(),
-            "UI style rule selector cannot be empty",
-            "rule text_field {",
+            "style rule selector cannot be empty",
+            "Button:hover {",
         ));
     }
     parts
+}
+
+fn push_style_selector_compound(token: &str, parts: &mut Vec<UiStyleSelectorPartDecl>) {
+    let mut segments = token.split(':');
+    if let Some(head) = segments
+        .next()
+        .map(str::trim)
+        .filter(|head| !head.is_empty())
+    {
+        if let Some(part) = head.strip_prefix('.') {
+            parts.push(UiStyleSelectorPartDecl::Part(part.to_owned()));
+        } else {
+            parts.push(UiStyleSelectorPartDecl::Element(canonical_style_element(
+                head,
+            )));
+        }
+    }
+    parts.extend(
+        segments
+            .filter(|segment| !segment.trim().is_empty())
+            .map(|segment| {
+                let selector = canonical_style_selector_symbol(segment.trim());
+                if is_interaction_selector(&selector) {
+                    UiStyleSelectorPartDecl::Interaction(selector)
+                } else {
+                    UiStyleSelectorPartDecl::State(selector)
+                }
+            }),
+    );
+}
+
+fn canonical_style_element(source: &str) -> String {
+    match source {
+        "Surface" | "surface" => "surface".to_owned(),
+        "Row" | "row" => "row".to_owned(),
+        "Column" | "column" => "column".to_owned(),
+        "Stack" | "stack" => "stack".to_owned(),
+        "Button" | "button" => "button".to_owned(),
+        "TextField" | "text_field" | "text-field" => "text_field".to_owned(),
+        "TextArea" | "text_area" | "text-area" => "text_area".to_owned(),
+        "SecureField" | "secure_field" | "secure-field" => "secure_field".to_owned(),
+        other => other.to_owned(),
+    }
+}
+
+fn canonical_style_selector_symbol(source: &str) -> String {
+    source.replace('-', "_")
+}
+
+fn is_interaction_selector(source: &str) -> bool {
+    matches!(source, "hover" | "active" | "disabled")
 }
 
 fn parse_ui_style_value(
