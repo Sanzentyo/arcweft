@@ -8,6 +8,7 @@ pub mod frame;
 pub mod handler;
 pub mod image;
 pub mod layout;
+pub mod motion;
 pub mod presentation_image;
 pub mod program;
 pub mod reactive;
@@ -42,6 +43,10 @@ pub use image::{
 pub use layout::{
     LayoutBox, LayoutKind, LayoutLength, LayoutNode, LayoutPoint, LayoutResults, LayoutSize,
     LayoutTree,
+};
+pub use motion::{
+    UiCubicBezier, UiEasingFunction, UiKeyframe, UiKeyframeTrack, UiMotionError, UiMotionSample,
+    UiReducedMotionPolicy, UiStepPosition, UiTimelineMillis, UiTransition, UiTransitionSpec,
 };
 pub use presentation_image::{UiImagePresentationFrame, UiImagePresentationInput};
 pub use program::{

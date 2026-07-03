@@ -4,6 +4,8 @@ use crate::ui_scene::{UiClipPath, UiFillRule, UiLength, UiPoint, UiShapeRadius};
 use arcweft_presentation::hit::HitRect;
 use thiserror::Error;
 
+pub const MAX_CLIP_POLYGON_VERTICES: usize = 16;
+
 /// Device-independent clip geometry consumed by stencil or analytic shader paths.
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiClipGeometryPlan {
@@ -39,6 +41,10 @@ pub enum UiClipPathPlanError {
     Unsupported(Box<str>),
     #[error("clip-path length `{0}` cannot be resolved against the current bounds")]
     UnresolvableLength(Box<str>),
+    #[error(
+        "clip-path polygon has {count} vertices but the first shader cut supports at most {maximum}"
+    )]
+    TooManyPolygonVertices { count: usize, maximum: usize },
 }
 
 impl UiClipGeometryPlan {
@@ -104,13 +110,21 @@ impl UiClipGeometryPlan {
                 radius_x_px: resolve_shape_radius(radius_x, bounds, true)?,
                 radius_y_px: resolve_shape_radius(radius_y, bounds, false)?,
             }),
-            UiClipPath::Polygon { fill_rule, points } => Ok(Self::Polygon {
-                fill_rule: *fill_rule,
-                vertices: points
-                    .iter()
-                    .map(|point| resolve_point(point, bounds))
-                    .collect::<Result<Vec<_>, _>>()?,
-            }),
+            UiClipPath::Polygon { fill_rule, points } => {
+                if points.len() > MAX_CLIP_POLYGON_VERTICES {
+                    return Err(UiClipPathPlanError::TooManyPolygonVertices {
+                        count: points.len(),
+                        maximum: MAX_CLIP_POLYGON_VERTICES,
+                    });
+                }
+                Ok(Self::Polygon {
+                    fill_rule: *fill_rule,
+                    vertices: points
+                        .iter()
+                        .map(|point| resolve_point(point, bounds))
+                        .collect::<Result<Vec<_>, _>>()?,
+                })
+            }
             UiClipPath::Path { .. } => Err(UiClipPathPlanError::PathUnsupported),
             UiClipPath::Unsupported(reason) => {
                 Err(UiClipPathPlanError::Unsupported(reason.clone()))

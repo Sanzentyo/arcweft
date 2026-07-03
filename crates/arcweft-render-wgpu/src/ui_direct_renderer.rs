@@ -10,6 +10,7 @@ use crate::ui_compositor::{
     UiCompositorError, UiCompositorTarget, UiDirectPrimitiveRenderer, UiMaskTextureProvider,
     UiMaskTextureView,
 };
+use crate::ui_effects::UiTextureExtent;
 use crate::ui_mask::UiMaskChannel;
 use crate::ui_scene::{
     UiAffine2, UiBorder, UiCaretPrimitive, UiClip, UiColorRgba8, UiCompositionUnderline,
@@ -46,6 +47,7 @@ pub(crate) struct WgpuUiDirectPrimitiveRenderFrame<'a> {
 struct WgpuPreparedUiMaskTexture {
     image: UiMaskImage,
     channel: UiMaskChannel,
+    extent: UiTextureExtent,
     _texture: wgpu::Texture,
     view: wgpu::TextureView,
 }
@@ -335,6 +337,7 @@ impl UiMaskTextureProvider for WgpuPreparedUiMaskTextureProvider {
             .map(|mask| UiMaskTextureView {
                 view: &mask.view,
                 channel: mask.channel,
+                extent: mask.extent,
             })
     }
 }
@@ -349,6 +352,7 @@ fn upload_mask_resource(
     WgpuPreparedUiMaskTexture {
         image: resource.image.clone(),
         channel: resource.channel,
+        extent: UiTextureExtent::new(resource.frame.width, resource.frame.height),
         _texture: texture,
         view,
     }

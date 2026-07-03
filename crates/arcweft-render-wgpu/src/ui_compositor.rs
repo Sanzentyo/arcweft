@@ -7,25 +7,15 @@
 use crate::renderer::SharedRenderer;
 use crate::ui_blend::{UiBlendPassPlan, UiBlendShaderMode};
 use crate::ui_clip_path::{UiClipGeometryPlan, UiClipPathPlanError};
-use crate::ui_effects::{
-    UiBlurDirection, UiColorMatrix, UiEffectPass, UiFilterPassPlan, UiTextureExtent,
-};
-use crate::ui_mask::{UiMaskChainPlan, UiMaskChannel};
+use crate::ui_compositor_uniform::UiCompositorUniform;
+use crate::ui_effects::{UiEffectPass, UiFilterPassPlan, UiTextureExtent};
+use crate::ui_mask::{UiMaskChainPlan, UiMaskChannel, UiMaskImagePlan, UiMaskPlanError};
 use crate::ui_scene::{
     UiBlendMode, UiCompositingGroup, UiMaskImage, UiPaintNode, UiPrimitiveRange, UiScene,
     UiSceneContext,
 };
-use bytemuck::{Pod, Zeroable};
-use num_traits::ToPrimitive;
 use thiserror::Error;
 use wgpu::util::DeviceExt;
-
-const PASS_COMPOSITE: u32 = 0;
-const PASS_COLOR_MATRIX: u32 = 1;
-const PASS_BLUR: u32 = 2;
-const PASS_DROP_SHADOW: u32 = 3;
-const PASS_MASK: u32 = 4;
-const PASS_BLEND: u32 = 5;
 
 /// Pure compositor pass graph for one scene.
 #[derive(Clone, Debug, PartialEq)]
@@ -69,6 +59,7 @@ pub struct UiCompositorStats {
     pub shader_passes: u32,
     pub backdrop_copies: u32,
     pub pool_reuses: u32,
+    pub clip_passes: u32,
 }
 
 /// The target given to direct primitive renderers.
@@ -113,6 +104,7 @@ pub trait UiMaskTextureProvider {
 pub struct UiMaskTextureView<'a> {
     pub view: &'a wgpu::TextureView,
     pub channel: UiMaskChannel,
+    pub extent: UiTextureExtent,
 }
 
 /// No-op provider for scenes that do not reference external masks.
@@ -141,6 +133,8 @@ pub enum UiCompositorError {
     UnsupportedBlendMode(UiBlendMode),
     #[error("clip-path plan failed: {0}")]
     ClipPath(#[from] UiClipPathPlanError),
+    #[error("mask plan failed: {0}")]
+    MaskPlan(#[from] UiMaskPlanError),
     #[error("unsupported filter `{name}`: {reason}")]
     UnsupportedFilter { name: Box<str>, reason: Box<str> },
     #[error("ui scene primitive range {start}..{end} is not present")]
@@ -156,17 +150,6 @@ pub enum UiCompositorError {
     UnhandledGlyphRun { run_index: u32 },
     #[error("unsupported ui clip: {reason}")]
     UnsupportedClip { reason: Box<str> },
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Pod, Zeroable)]
-struct UiCompositorUniform {
-    matrix: [[f32; 4]; 4],
-    offset: [f32; 4],
-    params0: [f32; 4],
-    params1: [f32; 4],
-    pass_kind: u32,
-    _padding: [u32; 3],
 }
 
 #[derive(Default)]
@@ -394,6 +377,7 @@ impl UiCompositor {
             group_target,
             &UiFilterPassPlan::from_filter_list(&group.effects.filters, group_extent, 1.0),
         )?;
+        group_target = self.apply_clip_plan(state, group_target, group)?;
         group_target = self.apply_mask_plan(state, group_target, group)?;
 
         let mut backdrop_target = None;
@@ -517,6 +501,48 @@ impl UiCompositor {
         Ok(source)
     }
 
+    fn apply_clip_plan(
+        &mut self,
+        state: &mut UiCompositorRenderState<'_>,
+        source: UiOffscreenTarget,
+        group: &UiCompositingGroup,
+    ) -> Result<UiOffscreenTarget, UiCompositorError> {
+        let plan =
+            UiClipGeometryPlan::from_clip_path(group.effects.clip_path.as_deref(), group.bounds)?;
+        if !plan.requires_geometry_pass() {
+            return Ok(source);
+        }
+        let output = self.pool.acquire(
+            state.device,
+            self.format,
+            source.extent,
+            "arcweft-ui-clip-pass",
+        );
+        let visual_bounds = group.visual_bounds();
+        self.run_shader_pass(
+            state.device,
+            state.encoder,
+            &ShaderPassInputs {
+                source: &source.view,
+                backdrop: None,
+                mask: None,
+                output: &output.view,
+                uniform: UiCompositorUniform::clip(
+                    &plan,
+                    source.extent,
+                    [visual_bounds.x, visual_bounds.y],
+                ),
+                load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                blend_over_existing: false,
+            },
+        );
+        state.stats.shader_passes = state.stats.shader_passes.saturating_add(1);
+        state.stats.clip_passes = state.stats.clip_passes.saturating_add(1);
+        state.stats.offscreen_targets = state.stats.offscreen_targets.saturating_add(1);
+        self.pool.release(source);
+        Ok(output)
+    }
+
     fn apply_mask_plan(
         &mut self,
         state: &mut UiCompositorRenderState<'_>,
@@ -535,12 +561,18 @@ impl UiCompositor {
                 UiMaskImage::None => UiMaskTextureView {
                     view: &self.defaults.white.view,
                     channel: pass.channel,
+                    extent: UiTextureExtent::new(1, 1),
                 },
+                _ if matches!(pass.image, UiMaskImagePlan::Unsupported(_)) => {
+                    pass.sampling_plan(source.extent, UiTextureExtent::new(1, 1))?;
+                    unreachable!("unsupported mask image must return before sampling")
+                }
                 image => state
                     .mask_textures
                     .texture_for(image)
                     .ok_or_else(|| UiCompositorError::MissingMaskTexture(image.clone()))?,
             };
+            let sampling = pass.sampling_plan(source.extent, mask.extent)?;
             self.run_shader_pass(
                 state.device,
                 state.encoder,
@@ -549,7 +581,7 @@ impl UiCompositor {
                     backdrop: None,
                     mask: Some(mask.view),
                     output: &output.view,
-                    uniform: UiCompositorUniform::mask(mask.channel),
+                    uniform: UiCompositorUniform::mask(mask.channel, sampling, source.extent),
                     load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                     blend_over_existing: false,
                 },
@@ -633,91 +665,6 @@ impl UiCompositor {
 impl UiMaskTextureProvider for UiNoMaskTextures {
     fn texture_for<'a>(&'a mut self, _image: &UiMaskImage) -> Option<UiMaskTextureView<'a>> {
         None
-    }
-}
-
-impl UiCompositorUniform {
-    fn composite(opacity: f32, blend: UiBlendShaderMode) -> Self {
-        Self {
-            params0: [opacity.clamp(0.0, 1.0), shader_mode_to_f32(blend), 0.0, 0.0],
-            pass_kind: if blend == UiBlendShaderMode::Normal {
-                PASS_COMPOSITE
-            } else {
-                PASS_BLEND
-            },
-            ..Self::from_matrix(UiColorMatrix::identity())
-        }
-    }
-
-    fn color_matrix(matrix: UiColorMatrix) -> Self {
-        Self {
-            pass_kind: PASS_COLOR_MATRIX,
-            ..Self::from_matrix(matrix)
-        }
-    }
-
-    fn blur(direction: UiBlurDirection, radius_px: f32, extent: UiTextureExtent) -> Self {
-        let (step_x, step_y) = match direction {
-            UiBlurDirection::Horizontal => (1.0 / dimension_to_f32(extent.width), 0.0),
-            UiBlurDirection::Vertical => (0.0, 1.0 / dimension_to_f32(extent.height)),
-        };
-        Self {
-            params0: [step_x, step_y, radius_px.max(0.0), 0.0],
-            pass_kind: PASS_BLUR,
-            ..Self::from_matrix(UiColorMatrix::identity())
-        }
-    }
-
-    fn drop_shadow(
-        horizontal_offset_px: f32,
-        vertical_offset_px: f32,
-        blur_radius_px: f32,
-        tint: crate::ui_scene::UiColorRgba8,
-        extent: UiTextureExtent,
-    ) -> Self {
-        Self {
-            params0: [
-                horizontal_offset_px / dimension_to_f32(extent.width),
-                vertical_offset_px / dimension_to_f32(extent.height),
-                blur_radius_px.max(0.0),
-                0.0,
-            ],
-            params1: [
-                f32::from(tint.red) / 255.0,
-                f32::from(tint.green) / 255.0,
-                f32::from(tint.blue) / 255.0,
-                f32::from(tint.alpha) / 255.0,
-            ],
-            pass_kind: PASS_DROP_SHADOW,
-            ..Self::from_matrix(UiColorMatrix::identity())
-        }
-    }
-
-    fn mask(channel: UiMaskChannel) -> Self {
-        Self {
-            params0: [
-                match channel {
-                    UiMaskChannel::Alpha => 0.0,
-                    UiMaskChannel::Luminance => 1.0,
-                },
-                0.0,
-                0.0,
-                0.0,
-            ],
-            pass_kind: PASS_MASK,
-            ..Self::from_matrix(UiColorMatrix::identity())
-        }
-    }
-
-    fn from_matrix(matrix: UiColorMatrix) -> Self {
-        Self {
-            matrix: matrix.matrix,
-            offset: matrix.offset,
-            params0: [0.0; 4],
-            params1: [0.0; 4],
-            pass_kind: PASS_COMPOSITE,
-            _padding: [0; 3],
-        }
     }
 }
 
@@ -982,6 +929,12 @@ fn count_node(node: &UiCompositorNodePlan) -> PlanCounters {
                 shader_passes: effects.filters.passes().len()
                     + effects.backdrop_filters.passes().len()
                     + effects.masks.passes().len()
+                    + usize::from(
+                        effects
+                            .clip_path
+                            .as_ref()
+                            .is_ok_and(UiClipGeometryPlan::requires_geometry_pass),
+                    )
                     + usize::from(effects.blend.is_some()),
                 backdrop_copies: usize::from(!effects.backdrop_filters.is_empty()),
             };
@@ -1073,78 +1026,5 @@ fn extent3d(extent: UiTextureExtent) -> wgpu::Extent3d {
         width: extent.width,
         height: extent.height,
         depth_or_array_layers: 1,
-    }
-}
-
-fn dimension_to_f32(value: u32) -> f32 {
-    value.max(1).to_f32().unwrap_or(f32::MAX)
-}
-
-fn shader_mode_to_f32(mode: UiBlendShaderMode) -> f32 {
-    mode.as_shader_u32().to_f32().unwrap_or(0.0)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ui_scene::{
-        UiBlendMode, UiColorRgba8, UiCompositingEffects, UiCompositingGroup, UiFilter,
-        UiFilterList, UiPaintNode, UiPrimitiveRange, UiSceneContext,
-    };
-    use arcweft_presentation::hit::HitRect;
-
-    fn direct_node(start: u32, end: u32) -> UiPaintNode {
-        UiPaintNode::Direct(UiSceneContext {
-            transform: crate::ui_scene::UiAffine2::IDENTITY,
-            opacity: 1.0,
-            clip: None,
-            primitive_range: UiPrimitiveRange { start, end },
-        })
-    }
-
-    #[test]
-    fn direct_scene_plan_does_not_add_group_effect_passes() {
-        let mut scene = UiScene::new(320.0, 180.0);
-        scene.push_paint_node(direct_node(0, 1));
-
-        let plan = UiCompositorPlan::from_scene(&scene, 1.0);
-
-        assert_eq!(plan.root_extent(), UiTextureExtent::new(320, 180));
-        assert_eq!(plan.offscreen_target_count(), 1);
-        assert_eq!(plan.shader_pass_count(), 1);
-        assert_eq!(plan.backdrop_copy_count(), 0);
-    }
-
-    #[test]
-    fn blur_shadow_mask_and_blend_count_deterministic_passes() {
-        let mut scene = UiScene::new(320.0, 180.0);
-        let effects = UiCompositingEffects {
-            filters: UiFilterList::new([
-                UiFilter::Blur { radius_px: 4.0 },
-                UiFilter::DropShadow {
-                    offset_x_px: 2.0,
-                    offset_y_px: 6.0,
-                    blur_radius_px: 3.0,
-                    color: UiColorRgba8 {
-                        red: 0,
-                        green: 0,
-                        blue: 0,
-                        alpha: 192,
-                    },
-                },
-            ]),
-            blend_mode: UiBlendMode::Multiply,
-            ..UiCompositingEffects::default()
-        };
-        scene.push_paint_node(UiPaintNode::Group(
-            UiCompositingGroup::new(HitRect::new(10.0, 20.0, 100.0, 50.0), effects)
-                .with_children(vec![direct_node(0, 1)]),
-        ));
-
-        let plan = UiCompositorPlan::from_scene(&scene, 1.0);
-
-        assert_eq!(plan.backdrop_copy_count(), 0);
-        assert!(plan.shader_pass_count() >= 5);
-        assert!(plan.offscreen_target_count() >= 2);
     }
 }

@@ -151,6 +151,21 @@ impl Milli {
     pub const fn value(self) -> i32 {
         self.0
     }
+
+    #[must_use]
+    pub fn lerp(self, target: Self, progress: Self) -> Self {
+        let progress = i64::from(progress.value().clamp(0, Self::ONE.value()));
+        let source = i64::from(self.value());
+        let delta = i64::from(target.value()).saturating_sub(source);
+        let value = source.saturating_add(
+            (delta.saturating_mul(progress) + i64::from(Self::ONE.value() / 2))
+                / i64::from(Self::ONE.value()),
+        );
+        Self(
+            i32::try_from(value.clamp(i64::from(i32::MIN), i64::from(i32::MAX)))
+                .unwrap_or(if value < 0 { i32::MIN } else { i32::MAX }),
+        )
+    }
 }
 
 impl Rgba8 {
@@ -171,9 +186,75 @@ impl Rgba8 {
             alpha: color.alpha,
         }
     }
+
+    #[must_use]
+    pub fn lerp(self, target: Self, progress: Milli) -> Self {
+        let progress = progress
+            .value()
+            .clamp(Milli::ZERO.value(), Milli::ONE.value());
+        Self {
+            red: lerp_channel(self.red, target.red, progress),
+            green: lerp_channel(self.green, target.green, progress),
+            blue: lerp_channel(self.blue, target.blue, progress),
+            alpha: lerp_channel(self.alpha, target.alpha, progress),
+        }
+    }
 }
 
 impl UiPropertyKind {
+    pub const fn is_transitionable(self) -> bool {
+        matches!(
+            self,
+            Self::Opacity
+                | Self::TranslateX
+                | Self::TranslateY
+                | Self::Scale
+                | Self::Rotate
+                | Self::Color
+                | Self::BackgroundColor
+                | Self::PlaceholderColor
+                | Self::SelectionColor
+                | Self::CaretColor
+                | Self::CompositionUnderlineColor
+                | Self::OutlineColor
+                | Self::OutlineWidth
+                | Self::BorderRadius
+        )
+    }
+
+    pub fn interpolate_value(
+        self,
+        source: UiPropertyValue,
+        target: UiPropertyValue,
+        progress: Milli,
+    ) -> Option<UiPropertyValue> {
+        if !self.is_transitionable() || !self.accepts(source) || !self.accepts(target) {
+            return None;
+        }
+        match (source, target) {
+            (UiPropertyValue::Milli(source), UiPropertyValue::Milli(target)) => {
+                Some(UiPropertyValue::Milli(source.lerp(target, progress)))
+            }
+            (UiPropertyValue::Color(source), UiPropertyValue::Color(target)) => {
+                Some(UiPropertyValue::Color(source.lerp(target, progress)))
+            }
+            (
+                UiPropertyValue::Bool(_)
+                | UiPropertyValue::SystemColor(_)
+                | UiPropertyValue::Resource(_),
+                _,
+            )
+            | (
+                _,
+                UiPropertyValue::Bool(_)
+                | UiPropertyValue::SystemColor(_)
+                | UiPropertyValue::Resource(_),
+            )
+            | (UiPropertyValue::Milli(_), UiPropertyValue::Color(_))
+            | (UiPropertyValue::Color(_), UiPropertyValue::Milli(_)) => None,
+        }
+    }
+
     pub const fn default_invalidation(self) -> Invalidation {
         match self {
             Self::Opacity
@@ -574,4 +655,13 @@ impl ResolvedUiStyle {
     pub fn scale(&self) -> Milli {
         self.milli(UiPropertyKind::Scale).unwrap_or(Milli::ONE)
     }
+}
+
+fn lerp_channel(source: u8, target: u8, progress: i32) -> u8 {
+    let source = i32::from(source);
+    let delta = i32::from(target).saturating_sub(source);
+    let value = source.saturating_add(
+        (delta.saturating_mul(progress) + Milli::ONE.value() / 2) / Milli::ONE.value(),
+    );
+    u8::try_from(value.clamp(0, 255)).unwrap_or(0)
 }

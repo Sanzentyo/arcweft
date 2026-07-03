@@ -20,6 +20,10 @@ pub enum UiBlendShaderMode {
     Exclusion = 11,
     PlusLighter = 12,
     PlusDarker = 13,
+    Hue = 14,
+    Saturation = 15,
+    Color = 16,
+    Luminosity = 17,
 }
 
 /// Per-group blend pass contract consumed by `UiCompositor`.
@@ -62,12 +66,10 @@ impl UiBlendShaderMode {
             UiBlendMode::Exclusion => Self::Exclusion,
             UiBlendMode::PlusLighter => Self::PlusLighter,
             UiBlendMode::PlusDarker => Self::PlusDarker,
-            UiBlendMode::Hue
-            | UiBlendMode::Saturation
-            | UiBlendMode::Color
-            | UiBlendMode::Luminosity => {
-                return None;
-            }
+            UiBlendMode::Hue => Self::Hue,
+            UiBlendMode::Saturation => Self::Saturation,
+            UiBlendMode::Color => Self::Color,
+            UiBlendMode::Luminosity => Self::Luminosity,
         })
     }
 
@@ -92,6 +94,10 @@ pub fn supported_blend_modes() -> &'static [UiBlendMode] {
         UiBlendMode::Exclusion,
         UiBlendMode::PlusLighter,
         UiBlendMode::PlusDarker,
+        UiBlendMode::Hue,
+        UiBlendMode::Saturation,
+        UiBlendMode::Color,
+        UiBlendMode::Luminosity,
     ]
 }
 
@@ -107,8 +113,14 @@ mod tests {
     }
 
     #[test]
-    fn artistic_color_blends_stay_explicitly_unsupported_in_first_cut() {
-        assert!(UiBlendPassPlan::from_mode(UiBlendMode::Hue).is_none());
-        assert!(UiBlendPassPlan::from_mode(UiBlendMode::Luminosity).is_none());
+    fn hsl_family_blends_are_shader_supported() {
+        assert_eq!(
+            UiBlendPassPlan::from_mode(UiBlendMode::Hue).map(|plan| plan.shader_mode),
+            Some(UiBlendShaderMode::Hue)
+        );
+        assert_eq!(
+            UiBlendPassPlan::from_mode(UiBlendMode::Luminosity).map(|plan| plan.shader_mode),
+            Some(UiBlendShaderMode::Luminosity)
+        );
     }
 }

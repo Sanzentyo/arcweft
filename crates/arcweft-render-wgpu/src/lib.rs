@@ -16,6 +16,7 @@ pub mod ui;
 pub mod ui_blend;
 pub mod ui_clip_path;
 pub mod ui_compositor;
+mod ui_compositor_uniform;
 pub mod ui_direct_renderer;
 pub mod ui_effects;
 pub mod ui_mask;
