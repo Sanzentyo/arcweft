@@ -9,7 +9,8 @@ struct UiCompositorUniform {
     params0: vec4<f32>,
     params1: vec4<f32>,
     params2: vec4<f32>,
-    clip_vertices: array<vec4<f32>, 16>,
+    clip_vertices: array<vec4<f32>, 96>,
+    gradient_stops: array<vec4<f32>, 8>,
     pass_kind: u32,
     _padding0: u32,
     _padding1: u32,
@@ -30,6 +31,9 @@ const PASS_MASK: u32 = 4u;
 const PASS_BLEND: u32 = 5u;
 const PASS_CLIP: u32 = 6u;
 const PASS_BOX_SHADOW: u32 = 7u;
+const PASS_MASK_GRADIENT: u32 = 8u;
+const PI: f32 = 3.141592653589793;
+const TAU: f32 = 6.283185307179586;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOut {
@@ -74,35 +78,108 @@ fn shadow_color(uv: vec2<f32>) -> vec4<f32> {
     return vec4<f32>(uniform_data.params1.rgb * uniform_data.params1.a, alpha * uniform_data.params1.a);
 }
 
-fn mask_axis_uv(position_px: f32, tile_size_px: f32, repeat_enabled: f32) -> f32 {
-    if (tile_size_px <= 0.0) {
-        return -1.0;
+fn mask_axis_uv(position_px: f32, origin_px: f32, tile_size_px_in: f32, stride_px_in: f32, tile_count_f: f32, mode_f: f32) -> f32 {
+    let tile_size_px = max(tile_size_px_in, 0.0001);
+    let stride_px = max(stride_px_in, 0.0001);
+    let mode = u32(mode_f + 0.5);
+    let local = position_px - origin_px;
+    if (mode == 0u) {
+        let raw = local / tile_size_px;
+        if (raw < 0.0 || raw > 1.0) { return -1.0; }
+        return clamp(raw, 0.0, 1.0);
     }
-    let raw = position_px / tile_size_px;
-    if (repeat_enabled > 0.5) {
-        return fract(raw);
+    if (mode == 1u) {
+        return fract(local / tile_size_px);
     }
-    if (raw < 0.0 || raw > 1.0) {
-        return -1.0;
-    }
-    return clamp(raw, 0.0, 1.0);
+
+    let count = u32(max(tile_count_f, 0.0) + 0.5);
+    if (count == 0u) { return -1.0; }
+    let index = floor(local / stride_px + 0.00001);
+    if (index < 0.0 || index >= f32(count)) { return -1.0; }
+    let offset = local - index * stride_px;
+    if (offset < 0.0 || offset > tile_size_px) { return -1.0; }
+    return clamp(offset / tile_size_px, 0.0, 1.0);
 }
 
-fn mask_coverage(uv: vec2<f32>) -> f32 {
+fn mask_tile_uv(uv: vec2<f32>) -> vec2<f32> {
     let source_position_px = uv * uniform_data.params2.xy;
-    let mask_position_px = source_position_px - uniform_data.params1.xy;
-    let mask_uv = vec2<f32>(
-        mask_axis_uv(mask_position_px.x, uniform_data.params1.z, uniform_data.params0.y),
-        mask_axis_uv(mask_position_px.y, uniform_data.params1.w, uniform_data.params0.z),
+    return vec2<f32>(
+        mask_axis_uv(
+            source_position_px.x,
+            uniform_data.params1.x,
+            uniform_data.params1.z,
+            uniform_data.params2.z,
+            uniform_data.offset.x,
+            uniform_data.params0.y,
+        ),
+        mask_axis_uv(
+            source_position_px.y,
+            uniform_data.params1.y,
+            uniform_data.params1.w,
+            uniform_data.params2.w,
+            uniform_data.offset.y,
+            uniform_data.params0.z,
+        ),
     );
-    if (mask_uv.x < 0.0 || mask_uv.y < 0.0) {
-        return 0.0;
-    }
+}
+
+fn texture_mask_coverage(uv: vec2<f32>) -> f32 {
+    let mask_uv = mask_tile_uv(uv);
+    if (mask_uv.x < 0.0 || mask_uv.y < 0.0) { return 0.0; }
     let mask = textureSample(mask_texture, source_sampler, mask_uv);
     if (uniform_data.params0.x > 0.5) {
         return dot(mask.rgb, vec3<f32>(0.2126, 0.7152, 0.0722)) * mask.a;
     }
     return mask.a;
+}
+
+fn stop_coverage(stop: vec4<f32>) -> f32 {
+    return select(stop.y, stop.z, uniform_data.params0.x > 0.5);
+}
+
+fn gradient_stop_coverage(t_in: f32) -> f32 {
+    let t = clamp(t_in, 0.0, 1.0);
+    let count = u32(max(uniform_data.matrix[1].z, 0.0) + 0.5);
+    if (count == 0u) { return 0.0; }
+    var previous = uniform_data.gradient_stops[0];
+    if (t <= previous.x || count == 1u) { return stop_coverage(previous); }
+    for (var i = 1u; i < 8u; i = i + 1u) {
+        if (i >= count) { break; }
+        let current = uniform_data.gradient_stops[i];
+        if (t <= current.x) {
+            let span = max(current.x - previous.x, 0.0001);
+            let mix_t = clamp((t - previous.x) / span, 0.0, 1.0);
+            return mix(stop_coverage(previous), stop_coverage(current), mix_t);
+        }
+        previous = current;
+    }
+    return stop_coverage(previous);
+}
+
+fn generated_gradient_coverage(uv: vec2<f32>) -> f32 {
+    let tile_uv = mask_tile_uv(uv);
+    if (tile_uv.x < 0.0 || tile_uv.y < 0.0) { return 0.0; }
+    let kind = u32(uniform_data.params0.w + 0.5);
+    if (kind == 1u) {
+        let angle = uniform_data.matrix[0].x * PI / 180.0;
+        let axis = vec2<f32>(cos(angle), sin(angle));
+        let t = dot(tile_uv - vec2<f32>(0.5), axis) + 0.5;
+        return gradient_stop_coverage(t);
+    }
+    let tile_px = tile_uv * uniform_data.params1.zw;
+    if (kind == 2u) {
+        let center = uniform_data.matrix[0].yz;
+        let radius = max(uniform_data.matrix[1].xy, vec2<f32>(0.0001));
+        return gradient_stop_coverage(length((tile_px - center) / radius));
+    }
+    if (kind == 3u) {
+        let center = uniform_data.matrix[0].yz;
+        let from = uniform_data.matrix[0].w / 360.0;
+        let delta = tile_px - center;
+        let t = fract(atan2(delta.y, delta.x) / TAU - from + 1.0);
+        return gradient_stop_coverage(t);
+    }
+    return 1.0;
 }
 
 fn logical_position(uv: vec2<f32>) -> vec2<f32> {
@@ -119,7 +196,6 @@ fn inset_clip_coverage(position: vec2<f32>) -> f32 {
     if (position.x < left || position.x > right || position.y < top || position.y > bottom) {
         return 0.0;
     }
-
     var radius = 0.0;
     var center = position;
     if (position.x < left + radii.x && position.y < top + radii.x) {
@@ -135,10 +211,7 @@ fn inset_clip_coverage(position: vec2<f32>) -> f32 {
         radius = radii.w;
         center = vec2<f32>(left + radius, bottom - radius);
     }
-
-    if (radius > 0.0 && distance(position, center) > radius) {
-        return 0.0;
-    }
+    if (radius > 0.0 && distance(position, center) > radius) { return 0.0; }
     return 1.0;
 }
 
@@ -175,13 +248,42 @@ fn polygon_non_zero_coverage(position: vec2<f32>, count: u32) -> f32 {
         if (i >= count) { break; }
         let current = uniform_data.clip_vertices[i].xy;
         if (previous.y <= position.y) {
-            if (current.y > position.y && is_left(previous, current, position) > 0.0) {
-                winding = winding + 1i;
-            }
+            if (current.y > position.y && is_left(previous, current, position) > 0.0) { winding = winding + 1i; }
         } else if (current.y <= position.y && is_left(previous, current, position) < 0.0) {
             winding = winding - 1i;
         }
         previous = current;
+    }
+    return select(0.0, 1.0, winding != 0i);
+}
+
+fn path_even_odd_coverage(position: vec2<f32>, count: u32) -> f32 {
+    var inside = false;
+    for (var i = 0u; i < 96u; i = i + 1u) {
+        if (i >= count) { break; }
+        let edge = uniform_data.clip_vertices[i];
+        let a = edge.xy;
+        let b = edge.zw;
+        if (((a.y > position.y) != (b.y > position.y)) &&
+            (position.x < (b.x - a.x) * (position.y - a.y) / (b.y - a.y) + a.x)) {
+            inside = !inside;
+        }
+    }
+    return select(0.0, 1.0, inside);
+}
+
+fn path_non_zero_coverage(position: vec2<f32>, count: u32) -> f32 {
+    var winding = 0i;
+    for (var i = 0u; i < 96u; i = i + 1u) {
+        if (i >= count) { break; }
+        let edge = uniform_data.clip_vertices[i];
+        let a = edge.xy;
+        let b = edge.zw;
+        if (a.y <= position.y) {
+            if (b.y > position.y && is_left(a, b, position) > 0.0) { winding = winding + 1i; }
+        } else if (b.y <= position.y && is_left(a, b, position) < 0.0) {
+            winding = winding - 1i;
+        }
     }
     return select(0.0, 1.0, winding != 0i);
 }
@@ -194,10 +296,14 @@ fn clip_coverage(uv: vec2<f32>) -> f32 {
     if (kind == 3u) {
         let count = u32(uniform_data.params0.z + 0.5);
         if (count < 3u) { return 0.0; }
-        if (uniform_data.params0.y > 0.5) {
-            return polygon_even_odd_coverage(position, count);
-        }
+        if (uniform_data.params0.y > 0.5) { return polygon_even_odd_coverage(position, count); }
         return polygon_non_zero_coverage(position, count);
+    }
+    if (kind == 4u) {
+        let count = u32(uniform_data.params0.z + 0.5);
+        if (count == 0u) { return 0.0; }
+        if (uniform_data.params0.y > 0.5) { return path_even_odd_coverage(position, count); }
+        return path_non_zero_coverage(position, count);
     }
     return 1.0;
 }
@@ -213,9 +319,7 @@ fn rounded_rect_coverage_at(position: vec2<f32>, rect: vec4<f32>, radius: f32) -
 }
 
 fn box_shadow_caster_coverage(position: vec2<f32>, rect: vec4<f32>, radius: f32, blur: f32) -> f32 {
-    if (blur <= 0.0001) {
-        return rounded_rect_coverage_at(position, rect, radius);
-    }
+    if (blur <= 0.0001) { return rounded_rect_coverage_at(position, rect, radius); }
     let step = max(blur / 3.0, 0.5);
     var coverage = rounded_rect_coverage_at(position, rect, radius) * 0.2270270270;
     coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(step, 0.0), rect, radius) * 0.1209853623;
@@ -266,9 +370,7 @@ fn rgb_to_hsl(color: vec3<f32>) -> vec3<f32> {
     let min_channel = min(min(color.r, color.g), color.b);
     let delta = max_channel - min_channel;
     let lightness = (max_channel + min_channel) * 0.5;
-    if (delta <= 0.00001) {
-        return vec3<f32>(0.0, 0.0, lightness);
-    }
+    if (delta <= 0.00001) { return vec3<f32>(0.0, 0.0, lightness); }
     let saturation = delta / (1.0 - abs(2.0 * lightness - 1.0));
     var hue = 0.0;
     if (max_channel == color.r) {
@@ -294,9 +396,7 @@ fn hsl_to_rgb(hsl: vec3<f32>) -> vec3<f32> {
     let hue = hsl.x;
     let saturation = clamp(hsl.y, 0.0, 1.0);
     let lightness = clamp(hsl.z, 0.0, 1.0);
-    if (saturation <= 0.00001) {
-        return vec3<f32>(lightness);
-    }
+    if (saturation <= 0.00001) { return vec3<f32>(lightness); }
     let q = select(lightness + saturation - lightness * saturation, lightness * (1.0 + saturation), lightness < 0.5);
     let p = 2.0 * lightness - q;
     return vec3<f32>(
@@ -328,20 +428,8 @@ fn blend_rgb(mode: u32, backdrop: vec3<f32>, source: vec3<f32>) -> vec3<f32> {
     }
     if (mode == 4u) { return min(backdrop, source); }
     if (mode == 5u) { return max(backdrop, source); }
-    if (mode == 6u) {
-        return vec3<f32>(
-            blend_channel_dodge(backdrop.r, source.r),
-            blend_channel_dodge(backdrop.g, source.g),
-            blend_channel_dodge(backdrop.b, source.b),
-        );
-    }
-    if (mode == 7u) {
-        return vec3<f32>(
-            blend_channel_burn(backdrop.r, source.r),
-            blend_channel_burn(backdrop.g, source.g),
-            blend_channel_burn(backdrop.b, source.b),
-        );
-    }
+    if (mode == 6u) { return vec3<f32>(blend_channel_dodge(backdrop.r, source.r), blend_channel_dodge(backdrop.g, source.g), blend_channel_dodge(backdrop.b, source.b)); }
+    if (mode == 7u) { return vec3<f32>(blend_channel_burn(backdrop.r, source.r), blend_channel_burn(backdrop.g, source.g), blend_channel_burn(backdrop.b, source.b)); }
     if (mode == 8u) {
         return vec3<f32>(
             select(2.0 * backdrop.r * source.r, 1.0 - 2.0 * (1.0 - backdrop.r) * (1.0 - source.r), source.r > 0.5),
@@ -349,13 +437,7 @@ fn blend_rgb(mode: u32, backdrop: vec3<f32>, source: vec3<f32>) -> vec3<f32> {
             select(2.0 * backdrop.b * source.b, 1.0 - 2.0 * (1.0 - backdrop.b) * (1.0 - source.b), source.b > 0.5),
         );
     }
-    if (mode == 9u) {
-        return vec3<f32>(
-            soft_light(backdrop.r, source.r),
-            soft_light(backdrop.g, source.g),
-            soft_light(backdrop.b, source.b),
-        );
-    }
+    if (mode == 9u) { return vec3<f32>(soft_light(backdrop.r, source.r), soft_light(backdrop.g, source.g), soft_light(backdrop.b, source.b)); }
     if (mode == 10u) { return abs(backdrop - source); }
     if (mode == 11u) { return backdrop + source - 2.0 * backdrop * source; }
     if (mode == 12u) { return min(backdrop + source, vec3<f32>(1.0)); }
@@ -366,9 +448,7 @@ fn blend_rgb(mode: u32, backdrop: vec3<f32>, source: vec3<f32>) -> vec3<f32> {
 
 fn composite_source_over(backdrop: vec4<f32>, source: vec4<f32>) -> vec4<f32> {
     let out_alpha = source.a + backdrop.a * (1.0 - source.a);
-    if (out_alpha <= 0.0) {
-        return vec4<f32>(0.0);
-    }
+    if (out_alpha <= 0.0) { return vec4<f32>(0.0); }
     let out_rgb = (source.rgb * source.a + backdrop.rgb * backdrop.a * (1.0 - source.a)) / out_alpha;
     return vec4<f32>(out_rgb, out_alpha);
 }
@@ -376,27 +456,25 @@ fn composite_source_over(backdrop: vec4<f32>, source: vec4<f32>) -> vec4<f32> {
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let source = source_color(in.uv);
-    if (uniform_data.pass_kind == PASS_COLOR_MATRIX) {
-        return apply_color_matrix(source);
-    }
-    if (uniform_data.pass_kind == PASS_BLUR) {
-        return blur_color(in.uv);
-    }
+    if (uniform_data.pass_kind == PASS_COLOR_MATRIX) { return apply_color_matrix(source); }
+    if (uniform_data.pass_kind == PASS_BLUR) { return blur_color(in.uv); }
     if (uniform_data.pass_kind == PASS_DROP_SHADOW) {
         let shadow = shadow_color(in.uv);
         return composite_source_over(shadow, source);
     }
     if (uniform_data.pass_kind == PASS_MASK) {
-        let coverage = mask_coverage(in.uv);
+        let coverage = texture_mask_coverage(in.uv);
+        return vec4<f32>(source.rgb, source.a * coverage);
+    }
+    if (uniform_data.pass_kind == PASS_MASK_GRADIENT) {
+        let coverage = generated_gradient_coverage(in.uv);
         return vec4<f32>(source.rgb, source.a * coverage);
     }
     if (uniform_data.pass_kind == PASS_CLIP) {
         let coverage = clip_coverage(in.uv);
         return vec4<f32>(source.rgb, source.a * coverage);
     }
-    if (uniform_data.pass_kind == PASS_BOX_SHADOW) {
-        return box_shadow_color(in.uv);
-    }
+    if (uniform_data.pass_kind == PASS_BOX_SHADOW) { return box_shadow_color(in.uv); }
     if (uniform_data.pass_kind == PASS_BLEND) {
         let backdrop = backdrop_color(in.uv);
         let mode = u32(uniform_data.params0.y);

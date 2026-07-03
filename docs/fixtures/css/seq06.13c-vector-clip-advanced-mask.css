@@ -1,0 +1,37 @@
+/* seq06.13c fixture: vector clip path, gradient masks, repeat distribution. */
+.arcweft-seq06-13c-path-nonzero {
+  width: 160px;
+  height: 96px;
+  background: #ffcc44;
+  clip-path: path(nonzero, "M0 0 C80 12 120 12 160 0 L160 96 L0 96 Z");
+  mask-image: linear-gradient(90deg, rgba(255, 0, 0, 1) 0%, rgba(0, 0, 0, 0) 100%);
+  mask-mode: luminance;
+  mask-repeat: no-repeat;
+}
+
+.arcweft-seq06-13c-path-evenodd {
+  width: 160px;
+  height: 96px;
+  background: #44ccff;
+  clip-path: path(evenodd, "M0 0 L160 0 L160 96 L0 96 Z M40 24 L120 24 L120 72 L40 72 Z");
+  mask-image: url("arcweft://mask/dots");
+  mask-size: 30px 20px;
+  mask-repeat: space;
+}
+
+.arcweft-seq06-13c-round-mask {
+  width: 160px;
+  height: 96px;
+  background: #dd66ff;
+  clip-path: ellipse(50% 45% at 50% 50%);
+  mask-image: url("arcweft://mask/ridges");
+  mask-size: 30px 20px;
+  mask-repeat: round;
+}
+
+.arcweft-seq06-13c-element-mask-diagnostic {
+  width: 160px;
+  height: 96px;
+  background: #ffffff;
+  mask: element(#speaker-portrait);
+}

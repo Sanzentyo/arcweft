@@ -600,31 +600,42 @@ impl UiCompositor {
                 source.extent,
                 "arcweft-ui-mask-pass",
             );
-            let mask = match &group.effects.masks[pass.mask_index].image {
-                UiMaskImage::None => UiMaskTextureView {
-                    view: &self.defaults.white.view,
-                    channel: pass.channel,
-                    extent: UiTextureExtent::new(1, 1),
-                },
-                _ if matches!(pass.image, UiMaskImagePlan::Unsupported(_)) => {
+            let (mask_view, mask_channel, mask_extent) = match &pass.image {
+                UiMaskImagePlan::None => (
+                    Some(&self.defaults.white.view),
+                    pass.channel,
+                    UiTextureExtent::new(1, 1),
+                ),
+                UiMaskImagePlan::Texture { .. } => {
+                    let image = &group.effects.masks[pass.mask_index].image;
+                    let mask = state
+                        .mask_textures
+                        .texture_for(image)
+                        .ok_or_else(|| UiCompositorError::MissingMaskTexture(image.clone()))?;
+                    (Some(mask.view), mask.channel, mask.extent)
+                }
+                UiMaskImagePlan::Gradient(_) => (None, pass.channel, source.extent),
+                UiMaskImagePlan::Element(_) | UiMaskImagePlan::Unsupported(_) => {
                     pass.sampling_plan(source.extent, UiTextureExtent::new(1, 1))?;
                     unreachable!("unsupported mask image must return before sampling")
                 }
-                image => state
-                    .mask_textures
-                    .texture_for(image)
-                    .ok_or_else(|| UiCompositorError::MissingMaskTexture(image.clone()))?,
             };
-            let sampling = pass.sampling_plan(source.extent, mask.extent)?;
+            let sampling = pass.sampling_plan(source.extent, mask_extent)?;
+            let gradient = pass.gradient_plan(sampling.tile_size_px)?;
+            let uniform = if let Some(gradient) = gradient.as_ref() {
+                UiCompositorUniform::gradient_mask(mask_channel, sampling, gradient, source.extent)
+            } else {
+                UiCompositorUniform::mask(mask_channel, sampling, source.extent)
+            };
             self.run_shader_pass(
                 state.device,
                 state.encoder,
                 &ShaderPassInputs {
                     source: &source.view,
                     backdrop: None,
-                    mask: Some(mask.view),
+                    mask: mask_view,
                     output: &output.view,
-                    uniform: UiCompositorUniform::mask(mask.channel, sampling, source.extent),
+                    uniform,
                     load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                     blend_over_existing: false,
                 },

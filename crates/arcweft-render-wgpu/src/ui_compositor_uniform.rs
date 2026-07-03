@@ -2,9 +2,12 @@
 
 use crate::ui_blend::UiBlendShaderMode;
 use crate::ui_box_shadow::UiBoxShadowPass;
-use crate::ui_clip_path::{MAX_CLIP_POLYGON_VERTICES, UiClipGeometryPlan, UiClipVertex};
+use crate::ui_clip_path::{MAX_CLIP_PATH_EDGES, UiClipGeometryPlan, UiClipPathEdge, UiClipVertex};
 use crate::ui_effects::{UiBlurDirection, UiColorMatrix, UiTextureExtent};
-use crate::ui_mask::{UiMaskChannel, UiMaskSamplingPlan};
+use crate::ui_mask::{
+    MAX_MASK_GRADIENT_STOPS, UiMaskAxisRepeat, UiMaskChannel, UiMaskGradientKind,
+    UiMaskGradientPlan, UiMaskSamplingPlan,
+};
 use crate::ui_scene::{UiColorRgba8, UiFillRule};
 use bytemuck::{Pod, Zeroable};
 use num_traits::ToPrimitive;
@@ -17,6 +20,7 @@ const PASS_MASK: u32 = 4;
 const PASS_BLEND: u32 = 5;
 const PASS_CLIP: u32 = 6;
 const PASS_BOX_SHADOW: u32 = 7;
+const PASS_MASK_GRADIENT: u32 = 8;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -26,7 +30,8 @@ pub(crate) struct UiCompositorUniform {
     params0: [f32; 4],
     params1: [f32; 4],
     params2: [f32; 4],
-    clip_vertices: [[f32; 4]; MAX_CLIP_POLYGON_VERTICES],
+    clip_vertices: [[f32; 4]; MAX_CLIP_PATH_EDGES],
+    gradient_stops: [[f32; 4]; MAX_MASK_GRADIENT_STOPS],
     pass_kind: u32,
     _padding: [u32; 3],
 }
@@ -81,12 +86,7 @@ impl UiCompositorUniform {
                 blur_radius_px.max(0.0),
                 0.0,
             ],
-            params1: [
-                f32::from(tint.red) / 255.0,
-                f32::from(tint.green) / 255.0,
-                f32::from(tint.blue) / 255.0,
-                f32::from(tint.alpha) / 255.0,
-            ],
+            params1: rgba_to_unit(tint),
             pass_kind: PASS_DROP_SHADOW,
             ..Self::from_matrix(UiColorMatrix::identity())
         }
@@ -99,12 +99,9 @@ impl UiCompositorUniform {
     ) -> Self {
         Self {
             params0: [
-                match channel {
-                    UiMaskChannel::Alpha => 0.0,
-                    UiMaskChannel::Luminance => 1.0,
-                },
-                f32::from(u8::from(sampling.repeat_x)),
-                f32::from(u8::from(sampling.repeat_y)),
+                mask_channel_to_f32(channel),
+                repeat_mode_to_f32(sampling.repeat_mode_x),
+                repeat_mode_to_f32(sampling.repeat_mode_y),
                 0.0,
             ],
             params1: [
@@ -116,12 +113,40 @@ impl UiCompositorUniform {
             params2: [
                 dimension_to_f32(source_extent.width),
                 dimension_to_f32(source_extent.height),
+                sampling.tile_stride_px[0],
+                sampling.tile_stride_px[1],
+            ],
+            offset: [
+                sampling.tile_count[0].to_f32().unwrap_or(0.0),
+                sampling.tile_count[1].to_f32().unwrap_or(0.0),
                 0.0,
                 0.0,
             ],
             pass_kind: PASS_MASK,
             ..Self::from_matrix(UiColorMatrix::identity())
         }
+    }
+
+    pub(crate) fn gradient_mask(
+        channel: UiMaskChannel,
+        sampling: UiMaskSamplingPlan,
+        gradient: &UiMaskGradientPlan,
+        source_extent: UiTextureExtent,
+    ) -> Self {
+        let mut uniform = Self::mask(channel, sampling, source_extent);
+        uniform.pass_kind = PASS_MASK_GRADIENT;
+        uniform.params0[3] = gradient_kind_to_f32(gradient.kind);
+        uniform.matrix[0] = gradient_header_0(gradient.kind);
+        uniform.matrix[1] = gradient_header_1(gradient.kind, gradient.stops.len());
+        for (index, stop) in gradient.stops.iter().copied().enumerate() {
+            uniform.gradient_stops[index] = [
+                stop.offset,
+                stop.alpha_coverage,
+                stop.luminance_coverage,
+                0.0,
+            ];
+        }
+        uniform
     }
 
     pub(crate) fn clip(
@@ -169,6 +194,19 @@ impl UiCompositorUniform {
                     uniform.clip_vertices[index] = clip_vertex_uniform(vertex);
                 }
             }
+            UiClipGeometryPlan::Path {
+                fill_rule, edges, ..
+            } => {
+                uniform.params0 = [
+                    4.0,
+                    fill_rule_to_f32(*fill_rule),
+                    edges.len().to_f32().unwrap_or(0.0),
+                    0.0,
+                ];
+                for (index, edge) in edges.iter().copied().enumerate() {
+                    uniform.clip_vertices[index] = clip_edge_uniform(edge);
+                }
+            }
         }
         uniform
     }
@@ -179,12 +217,7 @@ impl UiCompositorUniform {
         origin_logical: [f32; 2],
     ) -> Self {
         let mut uniform = Self {
-            offset: [
-                f32::from(pass.shadow.color.red) / 255.0,
-                f32::from(pass.shadow.color.green) / 255.0,
-                f32::from(pass.shadow.color.blue) / 255.0,
-                f32::from(pass.shadow.color.alpha) / 255.0,
-            ],
+            offset: rgba_to_unit(pass.shadow.color),
             params0: [
                 pass.shadow.blur_radius_px.max(0.0),
                 pass.body_radius_px,
@@ -223,7 +256,8 @@ impl UiCompositorUniform {
             params0: [0.0; 4],
             params1: [0.0; 4],
             params2: [0.0; 4],
-            clip_vertices: [[0.0; 4]; MAX_CLIP_POLYGON_VERTICES],
+            clip_vertices: [[0.0; 4]; MAX_CLIP_PATH_EDGES],
+            gradient_stops: [[0.0; 4]; MAX_MASK_GRADIENT_STOPS],
             pass_kind: PASS_COMPOSITE,
             _padding: [0; 3],
         }
@@ -245,6 +279,68 @@ fn fill_rule_to_f32(fill_rule: UiFillRule) -> f32 {
     }
 }
 
+fn mask_channel_to_f32(channel: UiMaskChannel) -> f32 {
+    match channel {
+        UiMaskChannel::Alpha => 0.0,
+        UiMaskChannel::Luminance => 1.0,
+    }
+}
+
+fn repeat_mode_to_f32(mode: UiMaskAxisRepeat) -> f32 {
+    match mode {
+        UiMaskAxisRepeat::NoRepeat => 0.0,
+        UiMaskAxisRepeat::Repeat => 1.0,
+        UiMaskAxisRepeat::Space => 2.0,
+        UiMaskAxisRepeat::Round => 3.0,
+    }
+}
+
+fn gradient_kind_to_f32(kind: UiMaskGradientKind) -> f32 {
+    match kind {
+        UiMaskGradientKind::Linear { .. } => 1.0,
+        UiMaskGradientKind::Radial { .. } => 2.0,
+        UiMaskGradientKind::Conic { .. } => 3.0,
+    }
+}
+
+fn gradient_header_0(kind: UiMaskGradientKind) -> [f32; 4] {
+    match kind {
+        UiMaskGradientKind::Linear { angle_degrees } => [angle_degrees, 0.0, 0.0, 0.0],
+        UiMaskGradientKind::Radial { center_px, .. } => [0.0, center_px[0], center_px[1], 0.0],
+        UiMaskGradientKind::Conic {
+            center_px,
+            from_degrees,
+        } => [0.0, center_px[0], center_px[1], from_degrees],
+    }
+}
+
+fn gradient_header_1(kind: UiMaskGradientKind, stop_count: usize) -> [f32; 4] {
+    match kind {
+        UiMaskGradientKind::Linear { .. } | UiMaskGradientKind::Conic { .. } => {
+            [0.0, 0.0, stop_count.to_f32().unwrap_or(0.0), 0.0]
+        }
+        UiMaskGradientKind::Radial { radius_px, .. } => [
+            radius_px[0],
+            radius_px[1],
+            stop_count.to_f32().unwrap_or(0.0),
+            0.0,
+        ],
+    }
+}
+
 fn clip_vertex_uniform(vertex: UiClipVertex) -> [f32; 4] {
     [vertex.x, vertex.y, 0.0, 0.0]
+}
+
+fn clip_edge_uniform(edge: UiClipPathEdge) -> [f32; 4] {
+    [edge.from.x, edge.from.y, edge.to.x, edge.to.y]
+}
+
+fn rgba_to_unit(color: UiColorRgba8) -> [f32; 4] {
+    [
+        f32::from(color.red) / 255.0,
+        f32::from(color.green) / 255.0,
+        f32::from(color.blue) / 255.0,
+        f32::from(color.alpha) / 255.0,
+    ]
 }

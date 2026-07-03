@@ -1,4 +1,4 @@
-use super::core::{UiColorRgba8, UiSceneContext};
+use super::core::{UiColorRgba8, UiGradientStop, UiSceneContext};
 use arcweft_presentation::hit::HitRect;
 
 const FILTER_BLUR_OUTSET_MULTIPLIER: f32 = 3.0;
@@ -110,7 +110,34 @@ pub struct UiMask {
 pub enum UiMaskImage {
     None,
     Url(Box<str>),
+    Gradient(UiMaskGradient),
+    Element(UiElementMaskSource),
     Unsupported(Box<str>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum UiMaskGradient {
+    Linear {
+        angle_degrees: f32,
+        stops: Vec<UiGradientStop>,
+    },
+    Radial {
+        center: UiPoint,
+        radius_x: UiLength,
+        radius_y: UiLength,
+        stops: Vec<UiGradientStop>,
+    },
+    Conic {
+        center: UiPoint,
+        from_degrees: f32,
+        stops: Vec<UiGradientStop>,
+    },
+    Unsupported(Box<str>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiElementMaskSource {
+    pub element_id: Box<str>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -163,6 +190,7 @@ pub enum UiClipPath {
         fill_rule: UiFillRule,
         data: Box<str>,
     },
+    Url(Box<str>),
     Unsupported(Box<str>),
 }
 
@@ -627,7 +655,22 @@ impl UiMask {
 
 impl UiMaskImage {
     pub fn requires_resource_revision(&self) -> bool {
-        matches!(self, Self::Url(_))
+        matches!(self, Self::Url(_) | Self::Element(_))
+    }
+}
+
+impl UiMaskGradient {
+    pub fn stops(&self) -> Option<&[UiGradientStop]> {
+        match self {
+            Self::Linear { stops, .. } | Self::Radial { stops, .. } | Self::Conic { stops, .. } => {
+                Some(stops)
+            }
+            Self::Unsupported(_) => None,
+        }
+    }
+
+    pub fn is_supported(&self) -> bool {
+        !matches!(self, Self::Unsupported(_))
     }
 }
 

@@ -11,9 +11,9 @@ use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::ui_scene::{
     UiAffine2, UiBlendMode, UiBorder, UiBoxShadowList, UiClip, UiClipPath, UiColorRgba8,
     UiCompositingEffects, UiCompositingGroup, UiFillRule, UiFilter, UiFilterList, UiGradientStop,
-    UiImagePrimitive, UiIsolation, UiLength, UiLinearGradient, UiMask, UiMaskImage, UiPaintNode,
-    UiPoint, UiPrimitive, UiPrimitiveRange, UiRoundedRect, UiScene, UiSceneContext, UiShapeRadius,
-    UiSolidRect,
+    UiImagePrimitive, UiIsolation, UiLength, UiLinearGradient, UiMask, UiMaskGradient, UiMaskImage,
+    UiPaintNode, UiPoint, UiPrimitive, UiPrimitiveRange, UiRoundedRect, UiScene, UiSceneContext,
+    UiShapeRadius, UiSolidRect,
 };
 use num_traits::ToPrimitive;
 use std::{collections::HashMap, rc::Rc, sync::Arc};
@@ -25,8 +25,8 @@ use takumi::unstable::base::{
         style::{
             Affine, BackgroundImage, BasicShape, BlendMode as TakumiBlendMode,
             Color as TakumiColor, ComputedStyle, FillRule as TakumiFillRule,
-            Filter as TakumiFilter, Isolation as TakumiIsolation, Length,
-            ShapeRadius as TakumiShapeRadius, SizingContext,
+            Filter as TakumiFilter, GradientStop, Isolation as TakumiIsolation, Length,
+            LinearGradient, ShapeRadius as TakumiShapeRadius, SizingContext,
         },
         tree::{LayoutResults, LayoutTree, RenderNode},
     },
@@ -620,6 +620,7 @@ fn clip_bounds_for_group(group: &UiCompositingGroup) -> Option<HitRect> {
         | UiClipPath::Ellipse { .. }
         | UiClipPath::Polygon { .. }
         | UiClipPath::Path { .. }
+        | UiClipPath::Url(_)
         | UiClipPath::Unsupported(_) => Some(group.bounds),
     }
 }
@@ -658,7 +659,7 @@ fn compositing_effects_from_takumi(
         filters: filter_list_from_takumi(&style.filter, sizing, current_color),
         backdrop_filters: filter_list_from_takumi(&style.backdrop_filter, sizing, current_color),
         box_shadows: UiBoxShadowList::default(),
-        masks: masks_from_takumi(style),
+        masks: masks_from_takumi(style, sizing, current_color),
         clip_path: style
             .clip_path
             .as_ref()
@@ -705,7 +706,11 @@ fn ui_filter_from_takumi(
     }
 }
 
-fn masks_from_takumi(style: &ComputedStyle) -> Vec<UiMask> {
+fn masks_from_takumi(
+    style: &ComputedStyle,
+    sizing: &SizingContext,
+    current_color: TakumiColor,
+) -> Vec<UiMask> {
     style
         .mask_image
         .as_ref()
@@ -713,7 +718,7 @@ fn masks_from_takumi(style: &ComputedStyle) -> Vec<UiMask> {
             images
                 .iter()
                 .filter_map(|image| {
-                    let image = mask_image_from_takumi(image);
+                    let image = mask_image_from_takumi(image, sizing, current_color);
                     (!matches!(image, UiMaskImage::None)).then_some(UiMask {
                         image,
                         ..UiMask::default()
@@ -724,13 +729,97 @@ fn masks_from_takumi(style: &ComputedStyle) -> Vec<UiMask> {
         .unwrap_or_default()
 }
 
-fn mask_image_from_takumi(image: &BackgroundImage) -> UiMaskImage {
+fn mask_image_from_takumi(
+    image: &BackgroundImage,
+    sizing: &SizingContext,
+    current_color: TakumiColor,
+) -> UiMaskImage {
     match image {
         BackgroundImage::None => UiMaskImage::None,
         BackgroundImage::Url(url) => UiMaskImage::Url(url.to_string().into_boxed_str()),
-        BackgroundImage::Linear(_) => UiMaskImage::Unsupported("linear-gradient mask".into()),
+        BackgroundImage::Linear(gradient) => {
+            linear_mask_gradient_from_takumi(gradient, sizing, current_color)
+        }
         BackgroundImage::Radial(_) => UiMaskImage::Unsupported("radial-gradient mask".into()),
         BackgroundImage::Conic(_) => UiMaskImage::Unsupported("conic-gradient mask".into()),
+    }
+}
+
+fn linear_mask_gradient_from_takumi(
+    gradient: &LinearGradient,
+    sizing: &SizingContext,
+    current_color: TakumiColor,
+) -> UiMaskImage {
+    if gradient.repeating {
+        return UiMaskImage::Unsupported("repeating-linear-gradient mask".into());
+    }
+    let Some(stops) = gradient_stops_from_takumi(&gradient.stops, sizing, current_color) else {
+        return UiMaskImage::Unsupported("linear-gradient mask stops".into());
+    };
+    UiMaskImage::Gradient(UiMaskGradient::Linear {
+        angle_degrees: gradient_angle_degrees(gradient.direction),
+        stops,
+    })
+}
+
+fn gradient_stops_from_takumi(
+    stops: &[GradientStop],
+    sizing: &SizingContext,
+    current_color: TakumiColor,
+) -> Option<Vec<UiGradientStop>> {
+    let color_stop_count = stops
+        .iter()
+        .filter(|stop| matches!(stop, GradientStop::ColorHint { .. }))
+        .count();
+    if color_stop_count < 2 {
+        return None;
+    }
+    let mut color_index = 0usize;
+    let mut result = Vec::with_capacity(color_stop_count);
+    for stop in stops {
+        match stop {
+            GradientStop::ColorHint { color, hint } => {
+                let fallback_offset = fallback_gradient_offset(color_index, color_stop_count);
+                let offset = match hint {
+                    Some(hint) => stop_position_to_offset(hint.0, sizing)?,
+                    None => fallback_offset,
+                };
+                result.push(UiGradientStop {
+                    offset: offset.clamp(0.0, 1.0),
+                    color: ui_color_from_takumi(color.resolve(current_color)),
+                });
+                color_index += 1;
+            }
+            _ => return None,
+        }
+    }
+    Some(result)
+}
+
+fn fallback_gradient_offset(index: usize, len: usize) -> f32 {
+    if len <= 1 {
+        return 0.0;
+    }
+    index.to_f32().unwrap_or(0.0) / (len - 1).to_f32().unwrap_or(1.0)
+}
+
+fn stop_position_to_offset(length: Length, sizing: &SizingContext) -> Option<f32> {
+    match length {
+        Length::Percentage(value) => Some(value / 100.0),
+        Length::Px(value) if (0.0..=1.0).contains(&value) => Some(value),
+        Length::Calc(_) => Some(length.to_px(sizing, 1.0)),
+        _ => None,
+    }
+}
+
+fn gradient_angle_degrees(
+    direction: takumi::unstable::base::layout::style::LinearGradientDirection,
+) -> f32 {
+    match direction {
+        takumi::unstable::base::layout::style::LinearGradientDirection::Angle(angle) => *angle,
+        takumi::unstable::base::layout::style::LinearGradientDirection::Keyword(keyword) => {
+            *keyword.to_angle()
+        }
     }
 }
 
