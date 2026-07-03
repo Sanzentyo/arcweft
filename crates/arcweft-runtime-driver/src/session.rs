@@ -1106,6 +1106,7 @@ mod text_control_writeback_tests {
         UiInputPurpose, UiRuntimeTextControlBounds, UiRuntimeTextControlHandlers,
         UiRuntimeTextControlOptions, UiSecureInputPolicy,
     };
+    use arcweft_core::step::RuntimeHostCallMode;
     use arcweft_id::PublicId;
     use arcweft_presentation::input::InteractionTarget as PresentationTarget;
     use arcweft_presentation::text_input::{
@@ -1164,6 +1165,24 @@ mod text_control_writeback_tests {
         let mut incompatible = vec![runtime_control("field.other", 8, "default")];
         preserve_runtime_text_control_values(&current, &mut incompatible);
         assert_eq!(incompatible[0].value, "default");
+    }
+
+    #[test]
+    fn text_submit_host_call_keeps_input_family_target() {
+        let request = RuntimeHostCallRequest {
+            id: RuntimeHostCallId("host.text_submit.0".to_owned()),
+            public_id: "host.text_submit.0".to_owned(),
+            capability: "ui.text_input".to_owned(),
+            operation: "await_submit".to_owned(),
+            args: vec![RuntimePayload::from("input.feedback")],
+            mode: RuntimeHostCallMode::Suspend,
+            deterministic: true,
+        };
+
+        assert_eq!(
+            text_submit_control_id(&request).as_deref(),
+            Some("input.feedback")
+        );
     }
 }
 
@@ -1279,15 +1298,9 @@ fn build_session_runtime(
 fn text_submit_control_id(request: &RuntimeHostCallRequest) -> Option<String> {
     let value = request.args.first()?.value();
     match value {
-        RuntimeValue::EntityRef(value) | RuntimeValue::String(value) => {
-            Some(input_control_id(value))
-        }
+        RuntimeValue::EntityRef(value) | RuntimeValue::String(value) => Some(value.to_owned()),
         _ => None,
     }
-}
-
-fn input_control_id(value: &str) -> String {
-    value.strip_prefix("input.").unwrap_or(value).to_owned()
 }
 
 fn selected_awbc_entry(

@@ -174,9 +174,9 @@ fn generated_gradient_coverage(uv: vec2<f32>) -> f32 {
     }
     if (kind == 3u) {
         let center = uniform_data.matrix[0].yz;
-        let from = uniform_data.matrix[0].w / 360.0;
+        let start_turns = uniform_data.matrix[0].w / 360.0;
         let delta = tile_px - center;
-        let t = fract(atan2(delta.y, delta.x) / TAU - from + 1.0);
+        let t = fract(atan2(delta.y, delta.x) / TAU - start_turns + 1.0);
         return gradient_stop_coverage(t);
     }
     return 1.0;

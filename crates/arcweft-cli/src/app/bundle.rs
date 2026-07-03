@@ -843,12 +843,7 @@ fn dsl_ui_semantic_target(input: &UiTextInputItem) -> UiSemanticTarget {
 }
 
 fn dsl_ui_input_public_id(input: &UiTextInputItem) -> String {
-    input
-        .id()
-        .body()
-        .strip_prefix("input.")
-        .unwrap_or(input.id().body())
-        .to_owned()
+    input.id().body().to_owned()
 }
 
 fn dsl_ui_text_source_id(kind: &str, public_id: &str) -> String {
@@ -2253,12 +2248,27 @@ component FeedbackForm() -> View {
         let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
         let program = sidecars.program.expect("program sidecar");
         let text = sidecars.text.expect("text sidecar");
+        let input = sidecars.input.expect("input sidecar");
 
         let button = program
             .action_buttons
             .iter()
             .find(|button| button.public_id == "button.feedback_send")
             .expect("action button emitted");
+        assert!(
+            input
+                .options
+                .iter()
+                .any(|option| option.public_id == "input.feedback")
+        );
+        assert_eq!(
+            program
+                .semantic_targets
+                .iter()
+                .filter(|target| target.public_id == "input.feedback")
+                .count(),
+            1
+        );
         assert_eq!(text.literal_text(&button.label_text_source), Some("Send"));
         assert!(matches!(
             &button.action,

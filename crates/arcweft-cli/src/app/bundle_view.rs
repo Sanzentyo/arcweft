@@ -199,7 +199,7 @@ fn lower_text(component_id: &str, text: &ViewText, state: &mut ViewLoweringState
 }
 
 fn lower_text_field(component_id: &str, field: &ViewTextField, state: &mut ViewLoweringState) {
-    if let Some(input) = field.input() {
+    if field.input().is_some() {
         state.instructions.push(UiProgramInstruction::OpenElement {
             element: ui_element_kind_for_text_field(field.mode()),
             style: None,
@@ -209,13 +209,6 @@ fn lower_text_field(component_id: &str, field: &ViewTextField, state: &mut ViewL
         });
         lower_modifiers(component_id, field.modifiers(), state);
         state.instructions.push(UiProgramInstruction::CloseElement);
-        let input_id = normalize_entity_ref(input);
-        state.semantic_targets.push(UiSemanticTarget {
-            public_id: input_id.clone(),
-            target: input_id,
-            label_text_source: None,
-            source: None,
-        });
         return;
     }
     let id = next_input_id(component_id, field.mode(), state);
