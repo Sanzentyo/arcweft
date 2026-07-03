@@ -7,35 +7,6 @@ entry game @entry.native_text_input_sample {
   start @flow.native_text_input_sample
 }
 
-ui text_input @input.jp_text_field {
-  label = "Japanese TextField / 日本語入力"
-  value = "Tokyo"
-  placeholder = "日本語 IME text"
-  purpose = text
-  enter_key = done
-  submit = @input.jp_text_field
-  change = @input.jp_text_field
-}
-
-ui text_area @input.jp_text_area {
-  label = "Multiline TextArea / 複数行"
-  value = "line one"
-  placeholder = "複数行の IME text"
-  purpose = text
-  enter_key = enter
-  change = @input.jp_text_area
-}
-
-ui secure_field @input.secret_secure_field {
-  label = "SecureField / redacted"
-  value = "sekret-1234"
-  placeholder = "secret"
-  purpose = password
-  enter_key = done
-  submit = @input.secret_secure_field
-  change = @input.secret_secure_field
-}
-
 style native_text_input_sample {
   token font.jp_sans_stack = text("Yu Gothic, Hiragino Sans, Noto Sans JP, system-ui")
   token font.jp_serif_stack = text("Yu Mincho, Hiragino Mincho ProN, Noto Serif JP, serif")
@@ -72,6 +43,19 @@ style native_text_input_sample {
   }
 
   environment text_scale_at_least_milli = 1000
+}
+
+pub component NativeTextInputPanel() -> View {
+  VStack {
+    TextField(id: @input:.jp_text_field, label: "Japanese TextField / 日本語入力", value: "Tokyo", placeholder: "日本語 IME text", purpose: text, enter_key: done, submit: @input:.jp_text_field, change: @input:.jp_text_field)
+      .style(@style:.native_text_input_sample)
+
+    TextArea(id: @input:.jp_text_area, label: "Multiline TextArea / 複数行", value: "line one", placeholder: "複数行の IME text", purpose: text, enter_key: enter, change: @input:.jp_text_area)
+      .style(@style:.native_text_input_sample)
+
+    SecureField(id: @input:.secret_secure_field, label: "SecureField / redacted", value: "sekret-1234", placeholder: "secret", purpose: password, enter_key: done, submit: @input:.secret_secure_field, change: @input:.secret_secure_field)
+      .style(@style:.native_text_input_sample)
+  }
 }
 
 fn i_to_string(i: i32) -> string {

@@ -61,6 +61,11 @@ pub fn registry_from_hir(module: &HirModule) -> NameRegistry {
             }
             HirTopLevelDecl::EntityDecl(item) => {
                 registry.insert(item.id().body(), entity_decl_registry_kind(item.kind()));
+                if let Some(view) = item.component_body().and_then(|body| body.view()) {
+                    for input in view.text_control_inputs() {
+                        registry.insert(input.canonical_body(), EntityKind::Input);
+                    }
+                }
             }
             HirTopLevelDecl::Entry(item) => {
                 registry.insert(item.id().body(), EntityKind::Entry);

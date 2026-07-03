@@ -2,8 +2,8 @@
 
 This sample demonstrates the seq-06.16.1 authoring surface:
 
-- transitional `ui text_input @input.feedback` declares the text-control resource;
-- component/View `TextField(@input:.feedback)` places that control;
+- component/View `TextField(id: @input:.feedback, ...)` declares and places the
+  text-control resource;
 - component/View `Button("Send")` lowers to `UiProgramResource.action_buttons`;
 - Enter/IME send and button activation all produce the same typed
   `TextControlWriteBack::submit` path.

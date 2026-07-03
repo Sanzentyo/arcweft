@@ -7,26 +7,6 @@ entry game @entry.modern_feedback_ui {
   start @flow.modern_feedback_ui
 }
 
-ui text_input @input.visitor_name {
-  label = "Name"
-  value = ""
-  placeholder = "Your name"
-  purpose = name
-  enter_key = next
-  submit = @input.visitor_name
-  change = @input.visitor_name
-}
-
-ui text_area @input.product_brief {
-  label = "Product brief"
-  value = ""
-  placeholder = "Describe the moment you want this UI to support"
-  purpose = text
-  enter_key = send
-  submit = @input.product_brief
-  change = @input.product_brief
-}
-
 pub style modern_feedback_panel {
   token font.ui_stack = text("Arcweft Demo, Yu Gothic, Hiragino Sans, Noto Sans JP, system-ui")
   token color.canvas = rgba(11, 16, 22, 255)
@@ -130,12 +110,10 @@ pub component ModernFeedbackPanel() -> View {
         .style {
           color = rgba(164, 176, 194, 255)
           font-size = milli(16000)
-        }
+      }
 
       HStack {
-        TextField(@input:.visitor_name)
-          .placeholder("Your name")
-          .submit_action(.next)
+        TextField(id: @input:.visitor_name, label: "Name", value: "", placeholder: "Your name", purpose: name, enter_key: next, submit: @input:.visitor_name, change: @input:.visitor_name)
           .style(@style:.modern_feedback_panel)
 
         Button("Continue", id: @button:.continue)
@@ -147,9 +125,7 @@ pub component ModernFeedbackPanel() -> View {
           }
       }
 
-      TextArea(@input:.product_brief)
-        .placeholder("Write one sharp product idea")
-        .submit_action(.send)
+      TextArea(id: @input:.product_brief, label: "Product brief", value: "", placeholder: "Write one sharp product idea", purpose: text, enter_key: send, submit: @input:.product_brief, change: @input:.product_brief)
         .style(@style:.modern_feedback_panel)
 
       HStack {

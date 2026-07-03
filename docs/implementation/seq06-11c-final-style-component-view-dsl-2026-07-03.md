@@ -42,10 +42,10 @@ keep their existing compact names such as `UiStyleResource` and
   parser branch that exists only to preserve historical syntax.
 - Product resource and codec names remain `UiStyleResource` /
   `UiProgramResource`; the rename is source-language-facing only.
-- Top-level `ui text_input` / `ui text_area` / `ui secure_field` remain for the
-  current text-control resource declaration path. Their final component/View
-  replacement is tracked by
-  `docs/reviews/requests/2026-07-03-seq-06.16.1-component-view-text-submit-button-lowering.md`.
+- Superseded on 2026-07-04: top-level `ui text_input` / `ui text_area` /
+  `ui secure_field` are no longer the current text-control resource
+  declaration path. Component/View-owned text controls are recorded in
+  `docs/implementation/component-text-input-unification-2026-07-04.md`.
 
 ## Validation
 

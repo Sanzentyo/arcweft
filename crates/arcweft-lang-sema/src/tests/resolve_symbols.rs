@@ -57,6 +57,26 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn resolves_component_view_text_control_inputs() {
+    let tree = parse_ok(
+        r#"
+component FeedbackForm() -> View {
+    TextField(id: @input:.feedback, value: "")
+}
+
+flow @flow.submit submit {
+    let submitted = text_submit @input.feedback
+    return submitted
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("component input fixture lowers");
+    let registry = registry_from_hir(&hir);
+
+    validate_hir_references(&hir, &registry).expect("component text input resolves");
+}
+
+#[test]
 fn collects_hir_symbol_uses_for_type_checking_without_reparsing() {
     let tree = parse_ok(
         r#"

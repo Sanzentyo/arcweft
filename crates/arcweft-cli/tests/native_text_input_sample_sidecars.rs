@@ -8,9 +8,13 @@ fn native_text_input_sample_declares_required_controls_in_dsl() {
     let source =
         fs::read_to_string(sample.join("src/main.arcw")).expect("native text input source");
 
-    assert!(source.contains("ui text_input @input.jp_text_field"));
-    assert!(source.contains("ui text_area @input.jp_text_area"));
-    assert!(source.contains("ui secure_field @input.secret_secure_field"));
+    assert!(!source.contains("ui text_input"));
+    assert!(!source.contains("ui text_area"));
+    assert!(!source.contains("ui secure_field"));
+    assert!(source.contains("pub component NativeTextInputPanel() -> View"));
+    assert!(source.contains("TextField(id: @input:.jp_text_field"));
+    assert!(source.contains("TextArea(id: @input:.jp_text_area"));
+    assert!(source.contains("SecureField(id: @input:.secret_secure_field"));
     assert!(source.contains("style native_text_input_sample"));
     assert!(!source.contains("ui style"));
     assert!(source.contains("font-family = token(font.jp_sans_stack)"));
@@ -37,8 +41,9 @@ fn text_submit_flow_sample_declares_submit_and_branches_by_length() {
     let source = fs::read_to_string(root.join("samples/text-submit-flow/src/main.arcw"))
         .expect("text submit flow source");
 
-    assert!(source.contains("ui text_input @input.feedback"));
-    assert!(source.contains("submit = @input.feedback"));
+    assert!(!source.contains("ui text_input"));
+    assert!(source.contains("TextField(id: @input:.feedback"));
+    assert!(source.contains("submit: @input:.feedback"));
     assert!(source.contains("let submitted = text_submit @input.feedback"));
     assert!(source.contains("let character_count = submitted.len()"));
     assert!(source.contains("if character_count < 5usize"));
@@ -54,8 +59,8 @@ fn modern_feedback_ui_sample_uses_component_style_and_flow_submit() {
     assert!(source.contains("pub style modern_feedback_panel"));
     assert!(source.contains("pub component ModernFeedbackPanel() -> View"));
     assert!(source.contains("Surface {"));
-    assert!(source.contains("TextField(@input:.visitor_name)"));
-    assert!(source.contains("TextArea(@input:.product_brief)"));
+    assert!(source.contains("TextField(id: @input:.visitor_name"));
+    assert!(source.contains("TextArea(id: @input:.product_brief"));
     assert!(source.contains("Button(\"Send brief\", id: @button:.send_brief)"));
     assert!(source.contains("let visitor_name = text_submit @input.visitor_name"));
     assert!(source.contains("let brief = text_submit @input.product_brief"));

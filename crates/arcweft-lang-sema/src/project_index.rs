@@ -19,7 +19,8 @@ use arcweft_lang_syntax::{
         flow::Stmt,
         ids::EntityRef,
         items::{
-            CallableItem, CallableKind, EntityDeclKind, EntryItem, StyleItem, UiTextInputItem,
+            CallableItem, CallableKind, EntityDeclItem, EntityDeclKind, EntryItem, StyleItem,
+            UiTextInputItem,
         },
         pattern::Pattern,
     },
@@ -941,6 +942,7 @@ fn index_top_level_declaration(
                 source_name.clone(),
                 entities::entity_decl_kind_label(item.kind()),
             )?);
+            index = index_component_view_text_control_inputs(index, item, source_name)?;
             if let Some(content) = item.content_body() {
                 index = relations::index_content_root_relations(item.id(), content.roots(), index)?;
             }
@@ -1037,6 +1039,21 @@ fn index_ui_resource_entity(
         source_name.clone(),
         label,
     )?))
+}
+
+fn index_component_view_text_control_inputs(
+    mut index: ProjectSemanticIndex,
+    item: &EntityDeclItem,
+    source_name: &SourceName,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    let Some(view) = item.component_body().and_then(|body| body.view()) else {
+        return Ok(index);
+    };
+    for input in view.text_control_inputs() {
+        let input = input.canonical_entity_ref();
+        index = index_ui_resource_entity(index, &input, EntityKind::Input, source_name, "input")?;
+    }
+    Ok(index)
 }
 impl Default for AgentCompilePolicy {
     fn default() -> Self {

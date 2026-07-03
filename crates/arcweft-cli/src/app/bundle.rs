@@ -2226,15 +2226,9 @@ component FeedbackForm() -> View {
     fn component_view_button_lowers_to_action_button_sidecar() {
         let parsed = arcweft_lang_syntax::parser::parse_source(
             r#"
-ui text_input @input.feedback {
-  label = "Message"
-  value = ""
-  submit = @input.feedback
-}
-
 component FeedbackForm() -> View {
   VStack {
-    TextField(@input:.feedback)
+    TextField(id: @input:.feedback, label: "Message", value: "", placeholder: "Type text", purpose: text, enter_key: send, submit: @input:.feedback, change: @input:.feedback)
     Button("Send", id: @button:.feedback_send)
       .on_click(ime: .reject) {
         text_submit @input:.feedback
@@ -2261,6 +2255,17 @@ component FeedbackForm() -> View {
                 .iter()
                 .any(|option| option.public_id == "input.feedback")
         );
+        let option = input
+            .options
+            .iter()
+            .find(|option| option.public_id == "input.feedback")
+            .expect("component text field input option");
+        assert_eq!(
+            option.placeholder_text_source.as_deref(),
+            Some("text.placeholder.input.feedback")
+        );
+        assert_eq!(option.submit_handler.as_deref(), Some("input.feedback"));
+        assert_eq!(option.change_handler.as_deref(), Some("input.feedback"));
         assert_eq!(
             program
                 .semantic_targets

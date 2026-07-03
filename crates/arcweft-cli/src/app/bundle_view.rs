@@ -17,9 +17,9 @@ use arcweft_lang_syntax::{
         ids::{EntityRef, EntityRefSyntax},
         items::EntityDeclItem,
         view::{
-            ComponentViewBody, ViewAction, ViewButton, ViewButtonLabel, ViewElement, ViewExpr,
-            ViewImage, ViewModifier, ViewStyleModifier, ViewText, ViewTextField, ViewTextFieldMode,
-            ViewTextSubmitImePolicy,
+            ComponentViewBody, ViewAction, ViewArg, ViewButton, ViewButtonLabel, ViewElement,
+            ViewExpr, ViewImage, ViewModifier, ViewStyleModifier, ViewText, ViewTextField,
+            ViewTextFieldMode, ViewTextSubmitImePolicy,
         },
     },
     expr::{Expr, Literal},
@@ -47,6 +47,19 @@ struct ViewLoweringState {
     button_counter: u32,
     handler_counter: u32,
     patch_counter: u32,
+}
+
+struct AuthoredTextControl {
+    public_id: String,
+    value: String,
+    label: Option<String>,
+    placeholder: Option<String>,
+    purpose: UiInputPurpose,
+    enter_key: EnterKeyHint,
+    multiline: bool,
+    secure_policy: UiSecureInputPolicy,
+    submit_handler: Option<String>,
+    change_handler: Option<String>,
 }
 
 pub(in crate::app) fn component_view_sidecars(
@@ -199,56 +212,54 @@ fn lower_text(component_id: &str, text: &ViewText, state: &mut ViewLoweringState
 }
 
 fn lower_text_field(component_id: &str, field: &ViewTextField, state: &mut ViewLoweringState) {
-    if field.input().is_some() {
-        state.instructions.push(UiProgramInstruction::OpenElement {
-            element: ui_element_kind_for_text_field(field.mode()),
-            style: None,
-            part: first_part(field.modifiers()),
-            key: None,
-            source: None,
-        });
-        lower_modifiers(component_id, field.modifiers(), state);
-        state.instructions.push(UiProgramInstruction::CloseElement);
-        return;
-    }
-    let id = next_input_id(component_id, field.mode(), state);
-    let value_text_source = format!("text.value.{id}");
+    let control = AuthoredTextControl::from_field(component_id, field, state);
+    let value_text_source = input_text_source_id("value", &control.public_id);
     state.text_sources.push(UiTextSourceRecord {
         public_id: value_text_source.clone(),
         kind: UiTextSourceKind::Literal {
-            value: expr_source(field.value()),
+            value: control.value,
         },
         source: None,
     });
+    let label_text_source = control.label.map(|label| {
+        let id = input_text_source_id("label", &control.public_id);
+        state.text_sources.push(UiTextSourceRecord {
+            public_id: id.clone(),
+            kind: UiTextSourceKind::Literal { value: label },
+            source: None,
+        });
+        id
+    });
+    let placeholder_text_source = control.placeholder.map(|placeholder| {
+        let id = input_text_source_id("placeholder", &control.public_id);
+        state.text_sources.push(UiTextSourceRecord {
+            public_id: id.clone(),
+            kind: UiTextSourceKind::Literal { value: placeholder },
+            source: None,
+        });
+        id
+    });
     state.input_options.push(UiInputOptions {
-        public_id: id.clone(),
+        public_id: control.public_id.clone(),
         kind: ui_input_kind(field.mode()),
         value_text_source,
-        placeholder_text_source: None,
-        purpose: if field.mode() == ViewTextFieldMode::SecureField {
-            UiInputPurpose::Password
-        } else {
-            UiInputPurpose::Text
-        },
+        placeholder_text_source,
+        purpose: control.purpose,
         autocorrect: TextAssistPolicy::PlatformDefault,
         spellcheck: TextAssistPolicy::PlatformDefault,
         capitalization: TextCapitalization::None,
-        enter_key: EnterKeyHint::Default,
-        multiline: field.mode() == ViewTextFieldMode::TextArea,
-        secure_policy: if field.mode() == ViewTextFieldMode::SecureField {
-            UiSecureInputPolicy::Password
-        } else {
-            UiSecureInputPolicy::Plain
-        },
+        enter_key: control.enter_key,
+        multiline: control.multiline,
+        secure_policy: control.secure_policy,
         composition_on_blur: CompositionOnBlurPolicy::Commit,
-        submit_handler: None,
-        change_handler: None,
+        submit_handler: control.submit_handler,
+        change_handler: control.change_handler,
         adapter_requirements: Vec::new(),
     });
     state.semantic_targets.push(UiSemanticTarget {
-        public_id: id.clone(),
-        target: id,
-        label_text_source: None,
+        public_id: control.public_id.clone(),
+        target: control.public_id,
+        label_text_source,
         source: None,
     });
     state.instructions.push(UiProgramInstruction::OpenElement {
@@ -458,12 +469,7 @@ fn normalize_style_ref(reference: &EntityRefSyntax) -> String {
 }
 
 fn normalize_entity_ref(reference: &EntityRefSyntax) -> String {
-    match reference {
-        EntityRefSyntax::Absolute(entity) => entity.body().to_owned(),
-        EntityRefSyntax::FamilyRelative(relative) => {
-            format!("{}.{}", relative.family(), relative.relative().suffix())
-        }
-    }
+    reference.canonical_body()
 }
 
 fn ui_element_kind(value: &str) -> Option<UiElementKind> {
@@ -544,4 +550,138 @@ fn button_slot_bounds(index: usize) -> UiRuntimeButtonBounds {
             .saturating_mul(56_000),
     );
     UiRuntimeButtonBounds::new(48_000, y, 180_000, 44_000)
+}
+
+impl AuthoredTextControl {
+    fn from_field(
+        component_id: &str,
+        field: &ViewTextField,
+        state: &mut ViewLoweringState,
+    ) -> Self {
+        let public_id = field.input().map_or_else(
+            || next_input_id(component_id, field.mode(), state),
+            normalize_entity_ref,
+        );
+        let purpose = text_control_symbol_arg(field.args(), &["purpose"]);
+        let enter_key = text_control_symbol_arg(field.args(), &["enter_key", "enterKey"])
+            .or_else(|| modifier_submit_action(field.modifiers()));
+        let secure_policy =
+            text_control_symbol_arg(field.args(), &["secure_policy", "securePolicy"]);
+        Self {
+            public_id,
+            value: expr_source(field.value()),
+            label: text_control_text_arg(field.args(), &["label"]),
+            placeholder: text_control_text_arg(field.args(), &["placeholder"])
+                .or_else(|| modifier_placeholder(field.modifiers())),
+            purpose: text_control_purpose(purpose.as_deref(), field.mode()),
+            enter_key: text_control_enter_key(enter_key.as_deref()),
+            multiline: text_control_bool_arg(field.args(), "multiline")
+                .unwrap_or(field.mode() == ViewTextFieldMode::TextArea),
+            secure_policy: text_control_secure_policy(secure_policy.as_deref(), field.mode()),
+            submit_handler: text_control_handler_arg(field.args(), "submit"),
+            change_handler: text_control_handler_arg(field.args(), "change"),
+        }
+    }
+}
+
+fn input_text_source_id(kind: &str, public_id: &str) -> String {
+    format!("text.{kind}.{public_id}")
+}
+
+fn text_control_text_arg(args: &[ViewArg], names: &[&str]) -> Option<String> {
+    names
+        .iter()
+        .find_map(|name| text_control_arg(args, name))
+        .map(expr_source)
+}
+
+fn text_control_symbol_arg(args: &[ViewArg], names: &[&str]) -> Option<String> {
+    names
+        .iter()
+        .find_map(|name| text_control_arg(args, name))
+        .and_then(symbol_expr_name)
+}
+
+fn text_control_handler_arg(args: &[ViewArg], name: &str) -> Option<String> {
+    text_control_arg(args, name).map(|expr| match expr {
+        Expr::EntityRef(reference) => normalize_entity_ref(reference),
+        expr => expr_source(expr),
+    })
+}
+
+fn text_control_bool_arg(args: &[ViewArg], name: &str) -> Option<bool> {
+    match text_control_arg(args, name) {
+        Some(Expr::Literal(Literal::Bool(value))) => Some(*value),
+        _ => None,
+    }
+}
+
+fn text_control_arg<'a>(args: &'a [ViewArg], name: &str) -> Option<&'a Expr> {
+    args.iter().find_map(|arg| match arg {
+        ViewArg::Named {
+            name: actual,
+            value,
+        } if actual == name => Some(value),
+        _ => None,
+    })
+}
+
+fn modifier_placeholder(modifiers: &[ViewModifier]) -> Option<String> {
+    modifiers.iter().find_map(|modifier| match modifier {
+        ViewModifier::Placeholder(expr) => Some(expr_source(expr)),
+        _ => None,
+    })
+}
+
+fn modifier_submit_action(modifiers: &[ViewModifier]) -> Option<String> {
+    modifiers.iter().find_map(|modifier| match modifier {
+        ViewModifier::SubmitAction(expr) => symbol_expr_name(expr),
+        _ => None,
+    })
+}
+
+fn symbol_expr_name(expr: &Expr) -> Option<String> {
+    let value = expr_source(expr);
+    let value = value.trim().trim_start_matches('.');
+    (!value.is_empty()).then(|| value.to_owned())
+}
+
+fn text_control_purpose(value: Option<&str>, mode: ViewTextFieldMode) -> UiInputPurpose {
+    match value {
+        Some("search") => UiInputPurpose::Search,
+        Some("name") => UiInputPurpose::Name,
+        Some("email") => UiInputPurpose::Email,
+        Some("url") => UiInputPurpose::Url,
+        Some("telephone" | "tel") => UiInputPurpose::Telephone,
+        Some("number") => UiInputPurpose::Number,
+        Some("decimal") => UiInputPurpose::Decimal,
+        Some("password") => UiInputPurpose::Password,
+        Some("pin") => UiInputPurpose::Pin,
+        Some("terminal") => UiInputPurpose::Terminal,
+        _ if mode == ViewTextFieldMode::SecureField => UiInputPurpose::Password,
+        _ => UiInputPurpose::Text,
+    }
+}
+
+fn text_control_enter_key(value: Option<&str>) -> EnterKeyHint {
+    match value {
+        Some("enter") => EnterKeyHint::Enter,
+        Some("done") => EnterKeyHint::Done,
+        Some("go") => EnterKeyHint::Go,
+        Some("next") => EnterKeyHint::Next,
+        Some("search") => EnterKeyHint::Search,
+        Some("send") => EnterKeyHint::Send,
+        _ => EnterKeyHint::Default,
+    }
+}
+
+fn text_control_secure_policy(value: Option<&str>, mode: ViewTextFieldMode) -> UiSecureInputPolicy {
+    match value {
+        Some("plain") => UiSecureInputPolicy::Plain,
+        Some("sensitive") => UiSecureInputPolicy::Sensitive,
+        Some("password") => UiSecureInputPolicy::Password,
+        Some("one_time_code" | "oneTimeCode" | "otp") => UiSecureInputPolicy::OneTimeCode,
+        _ if mode == ViewTextFieldMode::SecureField => UiSecureInputPolicy::Password,
+        _ => UiSecureInputPolicy::Plain,
+    }
 }

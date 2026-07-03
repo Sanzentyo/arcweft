@@ -208,6 +208,17 @@ impl EntityRefSyntax {
         }
     }
 
+    pub fn canonical_body(&self) -> String {
+        match self {
+            Self::Absolute(entity) => entity.body().to_owned(),
+            Self::FamilyRelative(relative) => relative.canonical_body(),
+        }
+    }
+
+    pub fn canonical_entity_ref(&self) -> EntityRef {
+        EntityRef::new(self.canonical_body(), self.is_delimited(), *self.range())
+    }
+
     pub const fn as_absolute(&self) -> Option<&EntityRef> {
         match self {
             Self::Absolute(entity) => Some(entity),
@@ -248,6 +259,10 @@ impl FamilyRelativeEntityRef {
 
     pub fn family(&self) -> &str {
         &self.family
+    }
+
+    pub fn canonical_body(&self) -> String {
+        format!("{}.{}", self.family, self.relative.suffix())
     }
 
     pub const fn relative(&self) -> &RelativeId {

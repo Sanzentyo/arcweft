@@ -7,16 +7,6 @@ entry game @entry.text_submit_flow {
   start @flow.text_submit_flow
 }
 
-ui text_input @input.feedback {
-  label = "Message"
-  value = ""
-  placeholder = "Type text, then press Enter or click Send"
-  purpose = text
-  enter_key = send
-  submit = @input.feedback
-  change = @input.feedback
-}
-
 pub style primary_button {
   Button:hover {
     background = rgba(54, 190, 170, 255)
@@ -29,9 +19,7 @@ pub style primary_button {
 
 pub component FeedbackForm() -> View {
   VStack {
-    TextField(@input:.feedback)
-      .placeholder("Type text")
-      .submit_action(.send)
+    TextField(id: @input:.feedback, label: "Message", value: "", placeholder: "Type text, then press Enter or click Send", purpose: text, enter_key: send, submit: @input:.feedback, change: @input:.feedback)
 
     Button("Send", id: @button:.feedback_send)
       .style(@style:.primary_button)

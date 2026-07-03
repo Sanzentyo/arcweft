@@ -10,7 +10,8 @@ It demonstrates:
 - `pub component ModernFeedbackPanel() -> View` with `Surface`, `VStack`,
   `HStack`, `Text`, `TextField`, `TextArea`, and player-rendered `Button`
   actions;
-- `ui text_input` and `ui text_area` resources referenced from the component;
+- component-owned `TextField` and `TextArea` resources referenced by the same
+  submit targets used by the buttons and flow;
 - a flow that waits on `text_submit`, branches on submitted text length, and
   returns the submitted brief.
 

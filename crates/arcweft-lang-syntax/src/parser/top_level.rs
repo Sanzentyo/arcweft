@@ -160,6 +160,18 @@ impl Parser<'_> {
             || rest.starts_with("ui action_button{")
     }
 
+    fn top_level_item_has_removed_ui_text_input(trimmed: &str) -> bool {
+        let (_, rest) = super::headers::parse_visibility_prefix(trimmed);
+        let rest = rest.trim_start();
+        let rest = rest.strip_prefix("surface ").unwrap_or(rest);
+        ["ui text_input", "ui text_area", "ui secure_field"]
+            .iter()
+            .any(|prefix| {
+                rest.strip_prefix(prefix)
+                    .is_some_and(|tail| tail.is_empty() || tail.starts_with(char::is_whitespace))
+            })
+    }
+
     fn top_level_item_has_removed_hot_checkpoint(trimmed: &str) -> bool {
         let (_, rest) = super::headers::parse_visibility_prefix(trimmed);
         let rest = rest.trim_start();
@@ -183,6 +195,10 @@ impl Parser<'_> {
         }
         if Self::top_level_item_has_removed_ui_action_button(trimmed) {
             self.reject_removed_ui_action_button_decl(range);
+            return;
+        }
+        if Self::top_level_item_has_removed_ui_text_input(trimmed) {
+            self.reject_removed_ui_text_input_decl(range);
             return;
         }
         if Self::top_level_item_has_removed_hot_checkpoint(trimmed) {
@@ -233,8 +249,30 @@ impl Parser<'_> {
             "`ui action_button` is not part of Arcweft component/View syntax",
             ["Button(\"Send\").on_click { text_submit @input:.target }"],
             Some(line.text.trim()),
+            ["declare text controls and action buttons inside component/View"],
+        );
+        self.reject_pending_doc(range);
+        self.reject_pending_attrs(range);
+        if line.text.contains('{') || self.next_nonblank_line_is_brace() {
+            let _ = self.take_flow_block_event();
+        } else {
+            self.index += 1;
+        }
+    }
+
+    fn reject_removed_ui_text_input_decl(&mut self, range: TextRange) {
+        let line = self.current().clone();
+        self.push_error(
+            range,
+            "`ui text_input`, `ui text_area`, and `ui secure_field` were removed from top-level Arcweft syntax",
             [
-                "declare the text control with `ui text_input` and place the action with component/View `Button`",
+                "TextField(id: @input:.target, value: \"\")",
+                "TextArea(id: @input:.target, value: \"\")",
+                "SecureField(id: @input:.target, value: \"\")",
+            ],
+            Some(line.text.trim()),
+            [
+                "move the text control resource shape into a component/View `TextField`, `TextArea`, or `SecureField`",
             ],
         );
         self.reject_pending_doc(range);

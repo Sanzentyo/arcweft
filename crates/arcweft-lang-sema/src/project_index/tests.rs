@@ -240,6 +240,30 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn project_index_from_hir_preserves_component_view_text_control_inputs() {
+    let tree = parse_source(
+        r#"
+component FeedbackForm() -> View {
+    TextField(id: @input:.feedback, value: "")
+}
+"#,
+    )
+    .into_typed_tree();
+    let hir = lower_to_hir(&tree).expect("source lowers to HIR");
+    let index = project_semantic_index_from_hir(
+        &hir,
+        ProgramHash::new("program-a"),
+        &SourceName::path("game.arcw"),
+    )
+    .expect("HIR indexes for Agent Script");
+
+    assert_eq!(
+        index.typecheck_env().symbol_type("input.feedback"),
+        Some(&TypeKind::entity_ref(EntityKind::Input))
+    );
+}
+
+#[test]
 fn project_index_from_hir_preserves_project_callables_separately_from_agent_prelude() {
     let tree = parse_source(
         r#"

@@ -271,21 +271,21 @@ fn parse_view_head(line: &str, base: usize, errors: &mut Vec<ParseError>) -> Vie
             source: first_arg_expr(args_source),
         },
         "TextField" => ViewHead::TextField {
-            value: first_arg_expr(args_source),
+            value: text_field_value_expr(&args),
             mode: ViewTextFieldMode::TextField,
-            input: first_entity_arg(&args),
+            input: text_field_input_arg(&args),
             args,
         },
         "TextArea" => ViewHead::TextField {
-            value: first_arg_expr(args_source),
+            value: text_field_value_expr(&args),
             mode: ViewTextFieldMode::TextArea,
-            input: first_entity_arg(&args),
+            input: text_field_input_arg(&args),
             args,
         },
         "SecureField" => ViewHead::TextField {
-            value: first_arg_expr(args_source),
+            value: text_field_value_expr(&args),
             mode: ViewTextFieldMode::SecureField,
-            input: first_entity_arg(&args),
+            input: text_field_input_arg(&args),
             args,
         },
         other if other.chars().next().is_some_and(char::is_uppercase) => ViewHead::Element {
@@ -503,6 +503,25 @@ fn first_entity_arg(args: &[ViewArg]) -> Option<EntityRefSyntax> {
         ViewArg::Positional(expr) => entity_ref_expr(expr),
         ViewArg::Named { .. } => None,
     })
+}
+
+fn text_field_input_arg(args: &[ViewArg]) -> Option<EntityRefSyntax> {
+    named_entity_arg(args, "id")
+        .or_else(|| named_entity_arg(args, "input"))
+        .or_else(|| first_entity_arg(args))
+}
+
+fn text_field_value_expr(args: &[ViewArg]) -> Expr {
+    named_arg(args, "value")
+        .or_else(|| named_arg(args, "initial"))
+        .cloned()
+        .or_else(|| {
+            args.iter().find_map(|arg| match arg {
+                ViewArg::Positional(expr) if entity_ref_expr(expr).is_none() => Some(expr.clone()),
+                ViewArg::Positional(_) | ViewArg::Named { .. } => None,
+            })
+        })
+        .unwrap_or_else(|| parse_expr_lossy("\"\""))
 }
 
 fn named_entity_arg(args: &[ViewArg], name: &str) -> Option<EntityRefSyntax> {

@@ -58,17 +58,9 @@ pub style danger_button: .Css {
 fn component_view_button_on_click_text_submit_parses() {
     let parsed = parse_source(
         r#"
-ui text_input @input.feedback {
-  label = "Message"
-  value = ""
-  submit = @input.feedback
-}
-
 pub component FeedbackForm() -> View {
   VStack {
-    TextField(@input:.feedback)
-      .placeholder("Type text")
-      .submit_action(.send)
+    TextField(id: @input:.feedback, label: "Message", value: "", placeholder: "Type text", enter_key: send)
 
     Button("Send", id: @button:.feedback_send)
       .style(@style:.primary_button)
@@ -98,6 +90,30 @@ pub component FeedbackForm() -> View {
         button.activation(),
         Some(ViewAction::TextSubmit(_))
     ));
+    let field = find_text_field(view.value()).expect("text field parsed");
+    assert_eq!(
+        field
+            .input()
+            .map(arcweft_lang_syntax::ast::ids::EntityRefSyntax::canonical_body),
+        Some("input.feedback".to_owned())
+    );
+}
+
+#[test]
+fn top_level_ui_text_input_is_rejected() {
+    let parsed = parse_source(
+        r#"
+ui text_input @input.feedback {
+  label = "Message"
+}
+"#,
+    );
+
+    assert!(parsed.errors().iter().any(|error| {
+        error
+            .message()
+            .contains("were removed from top-level Arcweft syntax")
+    }));
 }
 
 #[test]
@@ -126,6 +142,17 @@ fn find_button(
         ViewExpr::Button(button) => Some(button),
         ViewExpr::Fragment(children) => children.iter().find_map(find_button),
         ViewExpr::Element(element) => element.children().iter().find_map(find_button),
+        _ => None,
+    }
+}
+
+fn find_text_field(
+    expr: &arcweft_lang_syntax::ast::view::ViewExpr,
+) -> Option<&arcweft_lang_syntax::ast::view::ViewTextField> {
+    match expr {
+        ViewExpr::TextField(field) => Some(field),
+        ViewExpr::Fragment(children) => children.iter().find_map(find_text_field),
+        ViewExpr::Element(element) => element.children().iter().find_map(find_text_field),
         _ => None,
     }
 }

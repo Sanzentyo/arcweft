@@ -233,6 +233,12 @@ impl ComponentViewBody {
         &self.value
     }
 
+    pub fn text_control_inputs(&self) -> Vec<&EntityRefSyntax> {
+        let mut inputs = Vec::new();
+        collect_text_control_inputs(&self.value, &mut inputs);
+        inputs
+    }
+
     pub const fn range(&self) -> TextRange {
         self.range
     }
@@ -527,5 +533,35 @@ impl ViewModifier {
 
     pub fn style_css(source: impl Into<String>) -> Self {
         Self::Style(ViewStyleModifier::inline_css(source))
+    }
+}
+
+fn collect_text_control_inputs<'a>(expr: &'a ViewExpr, inputs: &mut Vec<&'a EntityRefSyntax>) {
+    match expr {
+        ViewExpr::Fragment(children) => {
+            for child in children {
+                collect_text_control_inputs(child, inputs);
+            }
+        }
+        ViewExpr::Element(element) => {
+            for child in element.children() {
+                collect_text_control_inputs(child, inputs);
+            }
+        }
+        ViewExpr::TextField(field) => {
+            if let Some(input) = field.input() {
+                inputs.push(input);
+            }
+        }
+        ViewExpr::ComponentCall(_)
+        | ViewExpr::Text(_)
+        | ViewExpr::Image(_)
+        | ViewExpr::Button(_)
+        | ViewExpr::If(_)
+        | ViewExpr::Match(_)
+        | ViewExpr::ForEach(_)
+        | ViewExpr::Await(_)
+        | ViewExpr::Expr(_)
+        | ViewExpr::Raw(_) => {}
     }
 }
