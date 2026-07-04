@@ -37,6 +37,22 @@ This cut applies the component/View text-control unification note from
 - No new layout-bounds resource contract; current runtime text-control bounds
   remain the existing stacked/default resource behavior.
 
+## Remaining TODOs / follow-up requests
+
+- Define and implement a typed layout-bounds resource contract for
+  component-authored text controls. Follow-up request:
+  `docs/reviews/requests/2026-07-04-seq-06.16.2-component-text-control-layout-bounds-resource-contract.md`.
+- Run and document the native interactive window smoke. The native samples
+  bundle cleanly without top-level input declarations, but interactive launch
+  was not executed in this cut. Follow-up request:
+  `docs/reviews/requests/2026-07-04-seq-06.16.3-component-text-input-native-interactive-smoke.md`.
+
+## Design deviations
+
+- No new layout-bounds resource contract was added; this is tracked as
+  seq06.16.2.
+- Native interactive launch was not run; this is tracked as seq06.16.3.
+
 ## Validation
 
 - `cargo test -p arcweft-lang-syntax --test style_component_view`
