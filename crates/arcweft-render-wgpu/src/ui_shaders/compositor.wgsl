@@ -308,28 +308,67 @@ fn clip_coverage(uv: vec2<f32>) -> f32 {
     return 1.0;
 }
 
-fn rounded_rect_coverage_at(position: vec2<f32>, rect: vec4<f32>, radius: f32) -> f32 {
-    let half_size = max(rect.zw * 0.5, vec2<f32>(0.0001));
-    let center = rect.xy + half_size;
-    let effective_radius = max(radius, 0.0);
-    let local = abs(position - center) - (half_size - vec2<f32>(effective_radius));
-    let outside = length(max(local, vec2<f32>(0.0))) - effective_radius;
-    let inside = min(max(local.x, local.y), 0.0);
-    return select(1.0, 0.0, outside + inside > 0.0);
+fn rounded_rect_coverage_at(
+    position: vec2<f32>,
+    rect: vec4<f32>,
+    radii0_in: vec4<f32>,
+    radii1_in: vec4<f32>,
+) -> f32 {
+    let radii0 = max(radii0_in, vec4<f32>(0.0));
+    let radii1 = max(radii1_in, vec4<f32>(0.0));
+    let top_left = radii0.xy;
+    let top_right = radii0.zw;
+    let bottom_right = radii1.xy;
+    let bottom_left = radii1.zw;
+    let left = rect.x;
+    let top = rect.y;
+    let right = rect.x + rect.z;
+    let bottom = rect.y + rect.w;
+    if (position.x < left || position.x > right || position.y < top || position.y > bottom) {
+        return 0.0;
+    }
+
+    var radius = vec2<f32>(0.0);
+    var center = position;
+    if (position.x < left + top_left.x && position.y < top + top_left.y) {
+        radius = top_left;
+        center = vec2<f32>(left + radius.x, top + radius.y);
+    } else if (position.x > right - top_right.x && position.y < top + top_right.y) {
+        radius = top_right;
+        center = vec2<f32>(right - radius.x, top + radius.y);
+    } else if (position.x > right - bottom_right.x && position.y > bottom - bottom_right.y) {
+        radius = bottom_right;
+        center = vec2<f32>(right - radius.x, bottom - radius.y);
+    } else if (position.x < left + bottom_left.x && position.y > bottom - bottom_left.y) {
+        radius = bottom_left;
+        center = vec2<f32>(left + radius.x, bottom - radius.y);
+    }
+
+    if (radius.x > 0.0001 && radius.y > 0.0001) {
+        let normalized = (position - center) / radius;
+        if (dot(normalized, normalized) > 1.0) { return 0.0; }
+    }
+    return 1.0;
 }
 
-fn box_shadow_caster_coverage(position: vec2<f32>, rect: vec4<f32>, radius: f32, blur: f32) -> f32 {
-    if (blur <= 0.0001) { return rounded_rect_coverage_at(position, rect, radius); }
+fn box_shadow_caster_coverage(
+    position: vec2<f32>,
+    rect: vec4<f32>,
+    radii0: vec4<f32>,
+    radii1: vec4<f32>,
+    blur: f32,
+) -> f32 {
+    if (blur <= 0.0001) { return rounded_rect_coverage_at(position, rect, radii0, radii1); }
     let step = max(blur / 3.0, 0.5);
-    var coverage = rounded_rect_coverage_at(position, rect, radius) * 0.2270270270;
-    coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(step, 0.0), rect, radius) * 0.1209853623;
-    coverage = coverage + rounded_rect_coverage_at(position - vec2<f32>(step, 0.0), rect, radius) * 0.1209853623;
-    coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(0.0, step), rect, radius) * 0.1209853623;
-    coverage = coverage + rounded_rect_coverage_at(position - vec2<f32>(0.0, step), rect, radius) * 0.1209853623;
-    coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(step, step), rect, radius) * 0.0720141308;
-    coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(-step, step), rect, radius) * 0.0720141308;
-    coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(step, -step), rect, radius) * 0.0720141308;
-    coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(-step, -step), rect, radius) * 0.0720141308;
+    var coverage = rounded_rect_coverage_at(position, rect, radii0, radii1) * 0.2270270270;
+    coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(step, 0.0), rect, radii0, radii1) * 0.1209853623;
+    coverage = coverage + rounded_rect_coverage_at(position - vec2<f32>(step, 0.0), rect, radii0, radii1) * 0.1209853623;
+    coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(0.0, step), rect, radii0, radii1) * 0.1209853623;
+    coverage = coverage + rounded_rect_coverage_at(position - vec2<f32>(0.0, step), rect, radii0, radii1) * 0.1209853623;
+    coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(step, step), rect, radii0, radii1) * 0.0720141308;
+    coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(-step, step), rect, radii0, radii1) * 0.0720141308;
+    coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(step, -step), rect, radii0, radii1) * 0.0720141308;
+    coverage = coverage + rounded_rect_coverage_at(position + vec2<f32>(-step, -step), rect, radii0, radii1) * 0.0720141308;
     return clamp(coverage, 0.0, 1.0);
 }
 
@@ -337,12 +376,14 @@ fn box_shadow_color(uv: vec2<f32>) -> vec4<f32> {
     let position = logical_position(uv);
     let body_rect = uniform_data.matrix[0];
     let shadow_rect = uniform_data.matrix[1];
+    let body_radii0 = uniform_data.matrix[2];
+    let body_radii1 = uniform_data.matrix[3];
+    let shadow_radii0 = uniform_data.clip_vertices[0];
+    let shadow_radii1 = uniform_data.clip_vertices[1];
     let blur = max(uniform_data.params0.x, 0.0);
-    let body_radius = max(uniform_data.params0.y, 0.0);
-    let shadow_radius = max(uniform_data.params0.z, 0.0);
     let kind = u32(uniform_data.params0.w + 0.5);
-    let caster = box_shadow_caster_coverage(position, shadow_rect, shadow_radius, blur);
-    let body = rounded_rect_coverage_at(position, body_rect, body_radius);
+    let caster = box_shadow_caster_coverage(position, shadow_rect, shadow_radii0, shadow_radii1, blur);
+    let body = rounded_rect_coverage_at(position, body_rect, body_radii0, body_radii1);
     let outer_coverage = caster * (1.0 - body);
     let inset_coverage = body * (1.0 - caster);
     let coverage = select(outer_coverage, inset_coverage, kind == 1u);

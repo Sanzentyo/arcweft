@@ -61,9 +61,37 @@ pub struct UiBoxShadow {
     pub offset_y_px: f32,
     pub blur_radius_px: f32,
     pub spread_radius_px: f32,
-    pub border_radius_px: f32,
+    pub border_radii: UiBoxShadowRadii,
     pub color: UiColorRgba8,
     pub kind: UiBoxShadowKind,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct UiBoxShadowRadii {
+    pub top_left: UiBoxShadowCornerRadius,
+    pub top_right: UiBoxShadowCornerRadius,
+    pub bottom_right: UiBoxShadowCornerRadius,
+    pub bottom_left: UiBoxShadowCornerRadius,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct UiBoxShadowCornerRadius {
+    pub x_px: f32,
+    pub y_px: f32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiBoxShadowCorner {
+    TopLeft,
+    TopRight,
+    BottomRight,
+    BottomLeft,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiBoxShadowRadiusAxis {
+    X,
+    Y,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -551,6 +579,157 @@ impl UiBoxShadowKind {
     }
 }
 
+impl UiBoxShadowCornerRadius {
+    pub const ZERO: Self = Self {
+        x_px: 0.0,
+        y_px: 0.0,
+    };
+
+    pub const fn new(x_px: f32, y_px: f32) -> Self {
+        Self { x_px, y_px }
+    }
+
+    pub const fn circular(radius_px: f32) -> Self {
+        Self {
+            x_px: radius_px,
+            y_px: radius_px,
+        }
+    }
+
+    pub fn is_finite(self) -> bool {
+        self.x_px.is_finite() && self.y_px.is_finite()
+    }
+
+    fn has_negative(self) -> bool {
+        self.x_px < -EPSILON || self.y_px < -EPSILON
+    }
+
+    fn non_negative(self) -> Self {
+        Self {
+            x_px: self.x_px.max(0.0),
+            y_px: self.y_px.max(0.0),
+        }
+    }
+
+    fn with_spread(self, spread_px: f32) -> Self {
+        Self {
+            x_px: (self.x_px + spread_px).max(0.0),
+            y_px: (self.y_px + spread_px).max(0.0),
+        }
+    }
+
+    fn scaled(self, scale: f32) -> Self {
+        Self {
+            x_px: self.x_px * scale,
+            y_px: self.y_px * scale,
+        }
+    }
+}
+
+impl UiBoxShadowRadii {
+    pub const ZERO: Self = Self {
+        top_left: UiBoxShadowCornerRadius::ZERO,
+        top_right: UiBoxShadowCornerRadius::ZERO,
+        bottom_right: UiBoxShadowCornerRadius::ZERO,
+        bottom_left: UiBoxShadowCornerRadius::ZERO,
+    };
+
+    pub const fn uniform(radius_px: f32) -> Self {
+        Self {
+            top_left: UiBoxShadowCornerRadius::circular(radius_px),
+            top_right: UiBoxShadowCornerRadius::circular(radius_px),
+            bottom_right: UiBoxShadowCornerRadius::circular(radius_px),
+            bottom_left: UiBoxShadowCornerRadius::circular(radius_px),
+        }
+    }
+
+    pub const fn from_corners(
+        top_left: UiBoxShadowCornerRadius,
+        top_right: UiBoxShadowCornerRadius,
+        bottom_right: UiBoxShadowCornerRadius,
+        bottom_left: UiBoxShadowCornerRadius,
+    ) -> Self {
+        Self {
+            top_left,
+            top_right,
+            bottom_right,
+            bottom_left,
+        }
+    }
+
+    pub fn corners(self) -> [(UiBoxShadowCorner, UiBoxShadowCornerRadius); 4] {
+        [
+            (UiBoxShadowCorner::TopLeft, self.top_left),
+            (UiBoxShadowCorner::TopRight, self.top_right),
+            (UiBoxShadowCorner::BottomRight, self.bottom_right),
+            (UiBoxShadowCorner::BottomLeft, self.bottom_left),
+        ]
+    }
+
+    pub fn is_finite(self) -> bool {
+        self.corners().iter().all(|(_, radius)| radius.is_finite())
+    }
+
+    #[must_use]
+    pub fn clamped_to_rect(self, rect: HitRect) -> Self {
+        let radii = self.non_negative();
+        let width = rect.width.max(0.0);
+        let height = rect.height.max(0.0);
+        let scale = corner_scale_limit(
+            corner_scale_limit(
+                corner_scale_limit(
+                    corner_scale_limit(1.0, width, radii.top_left.x_px + radii.top_right.x_px),
+                    width,
+                    radii.bottom_left.x_px + radii.bottom_right.x_px,
+                ),
+                height,
+                radii.top_left.y_px + radii.bottom_left.y_px,
+            ),
+            height,
+            radii.top_right.y_px + radii.bottom_right.y_px,
+        );
+        if scale < 1.0 {
+            radii.scaled(scale)
+        } else {
+            radii
+        }
+    }
+
+    #[must_use]
+    pub fn with_spread(self, spread_px: f32) -> Self {
+        Self {
+            top_left: self.top_left.with_spread(spread_px),
+            top_right: self.top_right.with_spread(spread_px),
+            bottom_right: self.bottom_right.with_spread(spread_px),
+            bottom_left: self.bottom_left.with_spread(spread_px),
+        }
+    }
+
+    fn has_negative(self) -> bool {
+        self.corners()
+            .iter()
+            .any(|(_, radius)| radius.has_negative())
+    }
+
+    fn non_negative(self) -> Self {
+        Self {
+            top_left: self.top_left.non_negative(),
+            top_right: self.top_right.non_negative(),
+            bottom_right: self.bottom_right.non_negative(),
+            bottom_left: self.bottom_left.non_negative(),
+        }
+    }
+
+    fn scaled(self, scale: f32) -> Self {
+        Self {
+            top_left: self.top_left.scaled(scale),
+            top_right: self.top_right.scaled(scale),
+            bottom_right: self.bottom_right.scaled(scale),
+            bottom_left: self.bottom_left.scaled(scale),
+        }
+    }
+}
+
 impl UiBoxShadow {
     pub const fn outer(
         horizontal_offset_px: f32,
@@ -560,12 +739,30 @@ impl UiBoxShadow {
         border_radius_px: f32,
         color: UiColorRgba8,
     ) -> Self {
+        Self::outer_with_radii(
+            horizontal_offset_px,
+            vertical_offset_px,
+            blur_radius_px,
+            spread_radius_px,
+            UiBoxShadowRadii::uniform(border_radius_px),
+            color,
+        )
+    }
+
+    pub const fn outer_with_radii(
+        horizontal_offset_px: f32,
+        vertical_offset_px: f32,
+        blur_radius_px: f32,
+        spread_radius_px: f32,
+        border_radii: UiBoxShadowRadii,
+        color: UiColorRgba8,
+    ) -> Self {
         Self {
             offset_x_px: horizontal_offset_px,
             offset_y_px: vertical_offset_px,
             blur_radius_px,
             spread_radius_px,
-            border_radius_px,
+            border_radii,
             color,
             kind: UiBoxShadowKind::Outer,
         }
@@ -579,12 +776,30 @@ impl UiBoxShadow {
         border_radius_px: f32,
         color: UiColorRgba8,
     ) -> Self {
+        Self::inset_with_radii(
+            horizontal_offset_px,
+            vertical_offset_px,
+            blur_radius_px,
+            spread_radius_px,
+            UiBoxShadowRadii::uniform(border_radius_px),
+            color,
+        )
+    }
+
+    pub const fn inset_with_radii(
+        horizontal_offset_px: f32,
+        vertical_offset_px: f32,
+        blur_radius_px: f32,
+        spread_radius_px: f32,
+        border_radii: UiBoxShadowRadii,
+        color: UiColorRgba8,
+    ) -> Self {
         Self {
             offset_x_px: horizontal_offset_px,
             offset_y_px: vertical_offset_px,
             blur_radius_px,
             spread_radius_px,
-            border_radius_px,
+            border_radii,
             color,
             kind: UiBoxShadowKind::Inset,
         }
@@ -616,7 +831,8 @@ impl UiBoxShadow {
             || !self.offset_y_px.is_finite()
             || !self.blur_radius_px.is_finite()
             || !self.spread_radius_px.is_finite()
-            || !self.border_radius_px.is_finite()
+            || !self.border_radii.is_finite()
+            || self.border_radii.has_negative()
         {
             return false;
         }
@@ -762,6 +978,14 @@ impl UiPoint {
             x: UiLength::Percent(x),
             y: UiLength::Percent(y),
         }
+    }
+}
+
+fn corner_scale_limit(current: f32, basis_px: f32, sum_px: f32) -> f32 {
+    if sum_px <= EPSILON {
+        current
+    } else {
+        current.min((basis_px / sum_px).clamp(0.0, 1.0))
     }
 }
 

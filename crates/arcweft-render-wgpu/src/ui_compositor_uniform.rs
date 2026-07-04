@@ -8,7 +8,7 @@ use crate::ui_mask::{
     MAX_MASK_GRADIENT_STOPS, UiMaskAxisRepeat, UiMaskChannel, UiMaskGradientKind,
     UiMaskGradientPlan, UiMaskSamplingPlan,
 };
-use crate::ui_scene::{UiBoxShadowKind, UiColorRgba8, UiFillRule};
+use crate::ui_scene::{UiBoxShadowKind, UiBoxShadowRadii, UiColorRgba8, UiFillRule};
 use bytemuck::{Pod, Zeroable};
 use num_traits::ToPrimitive;
 
@@ -222,12 +222,7 @@ impl UiCompositorUniform {
         };
         let mut uniform = Self {
             offset: rgba_to_unit(pass.shadow.color),
-            params0: [
-                pass.shadow.blur_radius_px.max(0.0),
-                pass.body_radius_px,
-                pass.shadow_radius_px,
-                shadow_kind,
-            ],
+            params0: [pass.shadow.blur_radius_px.max(0.0), 0.0, 0.0, shadow_kind],
             params1: [origin_logical[0], origin_logical[1], 0.0, 0.0],
             params2: [
                 dimension_to_f32(source_extent.width),
@@ -250,9 +245,12 @@ impl UiCompositorUniform {
             pass.shadow_rect.width,
             pass.shadow_rect.height,
         ];
+        uniform.matrix[2] = radii_head_uniform(pass.body_radii);
+        uniform.matrix[3] = radii_tail_uniform(pass.body_radii);
+        uniform.clip_vertices[0] = radii_head_uniform(pass.shadow_radii);
+        uniform.clip_vertices[1] = radii_tail_uniform(pass.shadow_radii);
         uniform
     }
-
     fn from_matrix(matrix: UiColorMatrix) -> Self {
         Self {
             matrix: matrix.matrix,
@@ -338,6 +336,24 @@ fn clip_vertex_uniform(vertex: UiClipVertex) -> [f32; 4] {
 
 fn clip_edge_uniform(edge: UiClipPathEdge) -> [f32; 4] {
     [edge.from.x, edge.from.y, edge.to.x, edge.to.y]
+}
+
+fn radii_head_uniform(radii: UiBoxShadowRadii) -> [f32; 4] {
+    [
+        radii.top_left.x_px,
+        radii.top_left.y_px,
+        radii.top_right.x_px,
+        radii.top_right.y_px,
+    ]
+}
+
+fn radii_tail_uniform(radii: UiBoxShadowRadii) -> [f32; 4] {
+    [
+        radii.bottom_right.x_px,
+        radii.bottom_right.y_px,
+        radii.bottom_left.x_px,
+        radii.bottom_left.y_px,
+    ]
 }
 
 fn rgba_to_unit(color: UiColorRgba8) -> [f32; 4] {

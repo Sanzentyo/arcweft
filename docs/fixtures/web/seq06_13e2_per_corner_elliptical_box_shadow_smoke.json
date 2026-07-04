@@ -1,0 +1,31 @@
+{
+  "schema": "arcweft.seq06.13e2.per-corner-elliptical-box-shadow-radius-smoke.v1",
+  "fixture": "seq06.13e2-per-corner-elliptical-box-shadow-card",
+  "date": "2026-07-04",
+  "route": [
+    "author CSS",
+    "Takumi StyleSheet parse/cascade",
+    "ComputedStyle border_*_radius typed SpacePair<Length>",
+    "arcweft-takumi-adapter box_shadow_border_radii",
+    "UiBoxShadowRadii typed scene contract",
+    "UiBoxShadowPassPlan body_radii/shadow_radii",
+    "UiCompositorUniform box-shadow radius rows",
+    "PASS_BOX_SHADOW per-corner elliptical coverage"
+  ],
+  "expectations": {
+    "mixed_corner_outer_shadow_count": 1,
+    "elliptical_inset_shadow_count": 1,
+    "scalar_radius_collapse": "forbidden",
+    "paint_order": "outer box-shadow stage before children; inset box-shadow stage after children and before filters/clip/mask/blend",
+    "visual_golden_promotion": "manual in pinned native/web environment"
+  },
+  "forbidden_paths": [
+    "DOM clipping",
+    "browser CSS shadow rendering",
+    "canvas fallback",
+    "SVG filter",
+    "CPU raster",
+    "bitmap screenshot mask"
+  ],
+  "target": "web"
+}

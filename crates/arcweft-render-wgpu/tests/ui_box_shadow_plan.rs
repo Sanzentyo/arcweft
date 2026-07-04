@@ -1,9 +1,10 @@
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::ui_blend::{UiBlendPassPlan, UiBlendShaderMode, supported_blend_modes};
-use arcweft_render_wgpu::ui_box_shadow::UiBoxShadowPassPlan;
+use arcweft_render_wgpu::ui_box_shadow::{UiBoxShadowPassPlan, UiBoxShadowPlanError};
 use arcweft_render_wgpu::ui_compositor::{UiCompositorNodePlan, UiCompositorPlan};
 use arcweft_render_wgpu::ui_scene::{
-    UiAffine2D, UiBlendMode, UiBoxShadow, UiBoxShadowKind, UiBoxShadowList, UiColorRgba8,
+    UiAffine2D, UiBlendMode, UiBoxShadow, UiBoxShadowCorner, UiBoxShadowCornerRadius,
+    UiBoxShadowKind, UiBoxShadowList, UiBoxShadowRadii, UiBoxShadowRadiusAxis, UiColorRgba8,
     UiCompositingEffects, UiCompositingGroup, UiPaintNode, UiPrimitiveRange, UiScene,
     UiSceneContext,
 };
@@ -24,6 +25,15 @@ fn direct(start: u32, end: u32) -> UiPaintNode {
         clip: None,
         primitive_range: UiPrimitiveRange { start, end },
     })
+}
+
+fn per_corner_radii() -> UiBoxShadowRadii {
+    UiBoxShadowRadii::from_corners(
+        UiBoxShadowCornerRadius::new(16.0, 8.0),
+        UiBoxShadowCornerRadius::new(4.0, 12.0),
+        UiBoxShadowCornerRadius::new(20.0, 10.0),
+        UiBoxShadowCornerRadius::new(6.0, 18.0),
+    )
 }
 
 #[test]
@@ -109,6 +119,145 @@ fn mixed_outer_and_inset_shadows_preserve_stage_metadata() {
     );
     assert!(plan.visual_outset_px() > 0.0);
     assert!(plan.visual_inset_px() > 0.0);
+}
+
+#[test]
+fn outer_shadow_plan_preserves_per_corner_radii() {
+    let shadows = UiBoxShadowList::new([UiBoxShadow::outer_with_radii(
+        0.0,
+        8.0,
+        12.0,
+        2.0,
+        per_corner_radii(),
+        rgba(160),
+    )]);
+
+    let plan = UiBoxShadowPassPlan::from_shadows(&shadows, HitRect::new(0.0, 0.0, 160.0, 90.0))
+        .expect("per-corner outer shadow plans");
+
+    assert_eq!(plan.passes()[0].body_radii, per_corner_radii());
+    assert_eq!(
+        plan.passes()[0].shadow_radii,
+        UiBoxShadowRadii::from_corners(
+            UiBoxShadowCornerRadius::new(18.0, 10.0),
+            UiBoxShadowCornerRadius::new(6.0, 14.0),
+            UiBoxShadowCornerRadius::new(22.0, 12.0),
+            UiBoxShadowCornerRadius::new(8.0, 20.0),
+        )
+    );
+}
+
+#[test]
+fn inset_shadow_plan_preserves_elliptical_radii() {
+    let shadows = UiBoxShadowList::new([UiBoxShadow::inset_with_radii(
+        0.0,
+        2.0,
+        6.0,
+        1.0,
+        per_corner_radii(),
+        rgba(190),
+    )]);
+
+    let plan = UiBoxShadowPassPlan::from_shadows(&shadows, HitRect::new(0.0, 0.0, 160.0, 90.0))
+        .expect("elliptical inset shadow plans");
+
+    assert_eq!(plan.passes()[0].body_radii, per_corner_radii());
+    assert_eq!(
+        plan.passes()[0].shadow_radii,
+        UiBoxShadowRadii::from_corners(
+            UiBoxShadowCornerRadius::new(15.0, 7.0),
+            UiBoxShadowCornerRadius::new(3.0, 11.0),
+            UiBoxShadowCornerRadius::new(19.0, 9.0),
+            UiBoxShadowCornerRadius::new(5.0, 17.0),
+        )
+    );
+}
+
+#[test]
+fn oversized_mixed_corner_radii_are_css_normalized() {
+    let radii = UiBoxShadowRadii::from_corners(
+        UiBoxShadowCornerRadius::new(90.0, 60.0),
+        UiBoxShadowCornerRadius::new(90.0, 60.0),
+        UiBoxShadowCornerRadius::new(90.0, 60.0),
+        UiBoxShadowCornerRadius::new(90.0, 60.0),
+    );
+    let shadows = UiBoxShadowList::new([UiBoxShadow::outer_with_radii(
+        0.0,
+        8.0,
+        12.0,
+        0.0,
+        radii,
+        rgba(160),
+    )]);
+
+    let plan = UiBoxShadowPassPlan::from_shadows(&shadows, HitRect::new(0.0, 0.0, 100.0, 50.0))
+        .expect("oversized radii normalize");
+
+    assert_eq!(
+        plan.passes()[0].body_radii,
+        UiBoxShadowRadii::from_corners(
+            UiBoxShadowCornerRadius::new(37.5, 25.0),
+            UiBoxShadowCornerRadius::new(37.5, 25.0),
+            UiBoxShadowCornerRadius::new(37.5, 25.0),
+            UiBoxShadowCornerRadius::new(37.5, 25.0),
+        )
+    );
+}
+
+#[test]
+fn non_finite_radius_is_typed_diagnostic() {
+    let radii = UiBoxShadowRadii::from_corners(
+        UiBoxShadowCornerRadius::new(16.0, 8.0),
+        UiBoxShadowCornerRadius::new(4.0, f32::INFINITY),
+        UiBoxShadowCornerRadius::new(20.0, 10.0),
+        UiBoxShadowCornerRadius::new(6.0, 18.0),
+    );
+    let shadows = UiBoxShadowList::new([UiBoxShadow::outer_with_radii(
+        0.0,
+        8.0,
+        12.0,
+        2.0,
+        radii,
+        rgba(160),
+    )]);
+
+    assert_eq!(
+        UiBoxShadowPassPlan::from_shadows(&shadows, HitRect::new(0.0, 0.0, 160.0, 90.0)),
+        Err(UiBoxShadowPlanError::NonFiniteRadius {
+            shadow_index: 0,
+            corner: UiBoxShadowCorner::TopRight,
+            axis: UiBoxShadowRadiusAxis::Y,
+        })
+    );
+}
+
+#[test]
+fn negative_radius_is_typed_diagnostic() {
+    let radii = UiBoxShadowRadii::from_corners(
+        UiBoxShadowCornerRadius::new(16.0, 8.0),
+        UiBoxShadowCornerRadius::new(4.0, 12.0),
+        UiBoxShadowCornerRadius::new(-2.0, 10.0),
+        UiBoxShadowCornerRadius::new(6.0, 18.0),
+    );
+    let shadows = UiBoxShadowList::new([UiBoxShadow::outer_with_radii(
+        0.0,
+        8.0,
+        12.0,
+        2.0,
+        radii,
+        rgba(160),
+    )]);
+
+    assert_eq!(
+        UiBoxShadowPassPlan::from_shadows(&shadows, HitRect::new(0.0, 0.0, 160.0, 90.0)),
+        Err(UiBoxShadowPlanError::DegenerateRadius {
+            shadow_index: 0,
+            corner: UiBoxShadowCorner::BottomRight,
+            axis: UiBoxShadowRadiusAxis::X,
+            value: -2.0,
+            reason: "corner radius cannot be negative",
+        })
+    );
 }
 
 #[test]

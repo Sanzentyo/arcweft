@@ -5,8 +5,9 @@ use arcweft_render_wgpu::ui_compositor::{
 };
 use arcweft_render_wgpu::ui_effects::UiTextureExtent;
 use arcweft_render_wgpu::ui_scene::{
-    UiAffine2D, UiBoxShadow, UiBoxShadowList, UiColorRgba8, UiCompositingEffects,
-    UiCompositingGroup, UiPaintNode, UiPrimitiveRange, UiScene, UiSceneContext,
+    UiAffine2D, UiBoxShadow, UiBoxShadowCornerRadius, UiBoxShadowList, UiBoxShadowRadii,
+    UiColorRgba8, UiCompositingEffects, UiCompositingGroup, UiPaintNode, UiPrimitiveRange, UiScene,
+    UiSceneContext,
 };
 
 struct NoopDirectRenderer;
@@ -43,6 +44,20 @@ fn direct(start: u32, end: u32) -> UiPaintNode {
     })
 }
 
+fn radii(
+    top_left: (f32, f32),
+    top_right: (f32, f32),
+    bottom_right: (f32, f32),
+    bottom_left: (f32, f32),
+) -> UiBoxShadowRadii {
+    UiBoxShadowRadii::from_corners(
+        UiBoxShadowCornerRadius::new(top_left.0, top_left.1),
+        UiBoxShadowCornerRadius::new(top_right.0, top_right.1),
+        UiBoxShadowCornerRadius::new(bottom_right.0, bottom_right.1),
+        UiBoxShadowCornerRadius::new(bottom_left.0, bottom_left.1),
+    )
+}
+
 fn gpu_context() -> Option<(wgpu::Device, wgpu::Queue)> {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -70,12 +85,12 @@ fn smoke_scene() -> UiScene {
         UiCompositingGroup::new(
             HitRect::new(24.0, 24.0, 112.0, 72.0),
             UiCompositingEffects {
-                box_shadows: UiBoxShadowList::new([UiBoxShadow::inset(
+                box_shadows: UiBoxShadowList::new([UiBoxShadow::inset_with_radii(
                     0.0,
                     3.0,
                     12.0,
                     2.0,
-                    14.0,
+                    radii((18.0, 7.0), (6.0, 16.0), (20.0, 9.0), (8.0, 14.0)),
                     rgba(0, 0, 0, 144),
                 )]),
                 ..UiCompositingEffects::default()
@@ -89,7 +104,14 @@ fn smoke_scene() -> UiScene {
             HitRect::new(176.0, 40.0, 112.0, 72.0),
             UiCompositingEffects {
                 box_shadows: UiBoxShadowList::new([
-                    UiBoxShadow::outer(0.0, 10.0, 18.0, 2.0, 16.0, rgba(0, 0, 0, 96)),
+                    UiBoxShadow::outer_with_radii(
+                        0.0,
+                        10.0,
+                        18.0,
+                        2.0,
+                        radii((24.0, 10.0), (8.0, 20.0), (16.0, 6.0), (4.0, 14.0)),
+                        rgba(0, 0, 0, 96),
+                    ),
                     UiBoxShadow::inset(0.0, -2.0, 10.0, 1.0, 16.0, rgba(255, 255, 255, 88)),
                 ]),
                 ..UiCompositingEffects::default()
@@ -103,7 +125,7 @@ fn smoke_scene() -> UiScene {
 
 #[test]
 #[ignore = "requires a local wgpu adapter; exact PNG promotion remains manual"]
-fn rounded_inset_and_mixed_shadow_cards_execute_gpu_compositor_path() {
+fn per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_path() {
     let Some((device, queue)) = gpu_context() else {
         eprintln!("no compatible wgpu adapter available for seq06.13e smoke");
         return;

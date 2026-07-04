@@ -1,7 +1,8 @@
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::ui_box_shadow::UiBoxShadowPassPlan;
 use arcweft_render_wgpu::ui_scene::{
-    UiBoxShadow, UiBoxShadowKind, UiColorRgba8, UiCompositingEffectClass, UiFilter,
+    UiBoxShadow, UiBoxShadowCornerRadius, UiBoxShadowKind, UiBoxShadowRadii, UiColorRgba8,
+    UiCompositingEffectClass, UiFilter,
 };
 use arcweft_takumi_adapter::{DirectCssFeature, DirectCssSupport, TakumiCompositingStyle};
 use takumi::prelude::Viewport;
@@ -66,6 +67,28 @@ fn computed_style_with_radius_and_shadows(
     }
 }
 
+fn computed_style_with_corner_radii_and_shadows(
+    corners: &[SpacePair<Length>; 4],
+    shadows: impl IntoIterator<Item = TakumiBoxShadow>,
+) -> ComputedStyle {
+    let [top_left, top_right, bottom_right, bottom_left] = *corners;
+    ComputedStyle {
+        border_top_left_radius: top_left,
+        border_top_right_radius: top_right,
+        border_bottom_right_radius: bottom_right,
+        border_bottom_left_radius: bottom_left,
+        box_shadow: Some(shadows.into_iter().collect::<Vec<_>>().into_boxed_slice()),
+        ..Default::default()
+    }
+}
+
+fn corner(x_px: f32, y_px: f32) -> SpacePair<Length> {
+    SpacePair {
+        x: Length::Px(x_px),
+        y: Length::Px(y_px),
+    }
+}
+
 fn compositing_style(style: &ComputedStyle) -> TakumiCompositingStyle {
     TakumiCompositingStyle::from_computed_style(style, &sizing_context(), current_color())
 }
@@ -103,6 +126,70 @@ fn one_outer_shadow_lowers_to_ui_box_shadow_list() {
             .requirements()
             .contains(UiCompositingEffectClass::BoxShadow)
     );
+}
+
+#[test]
+fn four_different_corner_radii_lower_to_typed_shadow_radius_contract() {
+    let style = computed_style_with_corner_radii_and_shadows(
+        &[
+            corner(4.0, 5.0),
+            corner(8.0, 9.0),
+            corner(12.0, 13.0),
+            corner(16.0, 17.0),
+        ],
+        [takumi_shadow(
+            false,
+            4.0,
+            8.0,
+            12.0,
+            3.0,
+            takumi_color(10, 20, 30, 180),
+        )],
+    );
+
+    let lowered = compositing_style(&style);
+    let shadow = lowered.effects.box_shadows.shadows()[0];
+
+    assert_eq!(
+        shadow.border_radii,
+        UiBoxShadowRadii::from_corners(
+            UiBoxShadowCornerRadius::new(4.0, 5.0),
+            UiBoxShadowCornerRadius::new(8.0, 9.0),
+            UiBoxShadowCornerRadius::new(12.0, 13.0),
+            UiBoxShadowCornerRadius::new(16.0, 17.0),
+        )
+    );
+}
+
+#[test]
+fn elliptical_corner_radii_lower_without_scalar_collapse() {
+    let style = computed_style_with_corner_radii_and_shadows(
+        &[
+            corner(18.0, 6.0),
+            corner(10.0, 22.0),
+            corner(14.0, 8.0),
+            corner(30.0, 12.0),
+        ],
+        [takumi_shadow(
+            true,
+            0.0,
+            2.0,
+            6.0,
+            1.0,
+            takumi_color(0, 0, 0, 192),
+        )],
+    );
+
+    let lowered = compositing_style(&style);
+    let shadow = lowered.effects.box_shadows.shadows()[0];
+
+    assert_eq!(shadow.kind, UiBoxShadowKind::Inset);
+    assert_eq!(
+        shadow.border_radii.top_left,
+        UiBoxShadowCornerRadius::new(18.0, 6.0)
+    );
+    assert_ne!(shadow.border_radii, UiBoxShadowRadii::uniform(6.0));
+    assert_ne!(shadow.border_radii, UiBoxShadowRadii::uniform(18.0));
 }
 
 #[test]
