@@ -54,6 +54,14 @@ fn run() -> Result<(), String> {
         &root,
         "docs/implementation/seq-06.13e.1-inset-box-shadow-pinned-png-golden-promotion-2026-07-04.md",
     )?;
+    let native_capture = read_required(
+        &root,
+        "tools/capture-seq06-13e1-inset-shadow-native-frame.rs",
+    )?;
+    let collector = read_required(
+        &root,
+        "tools/collect-seq06-13e1-inset-shadow-pinned-golden-evidence.rs",
+    )?;
     let css = read_required(&root, "docs/fixtures/css/seq06.13e-inset-box-shadow-card.css")?;
     let smoke = read_required(&root, "crates/arcweft-render-wgpu/tests/ui_box_shadow_gpu_smoke.rs")?;
 
@@ -82,6 +90,14 @@ fn run() -> Result<(), String> {
 
     require_contains(&note, "No PNG baseline is promoted", "implementation note")?;
     require_contains(&note, "pinned visual-golden run", "implementation note")?;
+    require_contains(&native_capture, "UiCompositor::render_group", "native capture")?;
+    require_contains(&native_capture, "PASS_BOX_SHADOW WGSL kind flag", "native capture")?;
+    require_contains(&native_capture, "seq06_13e1_inset_box_shadow.candidate.png", "native capture")?;
+    require_contains(&native_capture, "seq06_13e1_inset_box_shadow.observe.json", "native capture")?;
+    require_contains(&collector, "ready_for_first_promotion_review", "collector")?;
+    require_contains(&collector, "baseline_missing", "collector")?;
+    require_contains(&collector, "max_mse", "collector")?;
+    require_contains(&collector, "max_mae", "collector")?;
     require_contains(&css, "box-shadow: inset", "CSS fixture")?;
     require_contains(&css, "filter: drop-shadow", "CSS fixture")?;
     require_contains(&smoke, "UiBoxShadow::inset", "GPU smoke")?;

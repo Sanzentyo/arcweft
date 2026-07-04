@@ -282,6 +282,12 @@ seq06-13e1-inset-shadow-policy:
     @cargo +nightly -Zscript tools\source-gates\seq06_13e1_inset_shadow_exact_golden_policy.rs --root .
     @cargo test -p arcweft-render-wgpu --test ui_box_shadow_exact_png_golden seq06_13e1_inset_shadow_policy_pins_typed_compositor_route --all-features -- --exact
 
+seq06-13e1-inset-shadow-native-capture out="target\\seq06.13e.1-inset-box-shadow-golden":
+    @cargo +nightly -Zscript tools\capture-seq06-13e1-inset-shadow-native-frame.rs --root . --out-dir "{{out}}"
+
+seq06-13e1-inset-shadow-pinned-native-golden out="target\\seq06.13e.1-inset-box-shadow-golden":
+    @cargo +nightly -Zscript tools\collect-seq06-13e1-inset-shadow-pinned-golden-evidence.rs --root . --out-dir "{{out}}" --mode native --run
+
 seq06-13e1-inset-shadow-pinned-golden out="target\\seq06.13e.1-inset-box-shadow-golden":
     @cargo +nightly -Zscript tools\collect-seq06-13e1-inset-shadow-pinned-golden-evidence.rs --root . --out-dir "{{out}}" --mode both --run
     @cargo test -p arcweft-render-wgpu --test ui_box_shadow_exact_png_golden --all-features -- --ignored --exact --nocapture

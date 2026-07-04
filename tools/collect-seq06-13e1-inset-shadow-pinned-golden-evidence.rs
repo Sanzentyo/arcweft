@@ -6,6 +6,10 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.96"
 publish = false
+
+[dependencies]
+serde_json = "1.0.150"
+sha2 = "0.10.9"
 ---
 
 /*
@@ -27,7 +31,10 @@ cargo +nightly -Zscript tools/collect-seq06-13e1-inset-shadow-pinned-golden-evid
 
 use std::env;
 use std::fmt::Write as _;
-use std::fs;
+use serde_json::Value;
+use sha2::{Digest, Sha256};
+use std::fs::{self, File};
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -38,6 +45,8 @@ const NATIVE_BACKEND_ENV: &str = "ARW_SEQ06_13E1_INSET_SHADOW_NATIVE_BACKEND";
 const WEBGPU_ENV: &str = "ARW_SEQ06_13E1_INSET_SHADOW_WEBGPU";
 const NATIVE_BACKEND: &str = "wgpu_offscreen_compositor";
 const METRICS: &str = "psnr,ssim,mse,mae,maxae";
+const MAX_MSE: f64 = 0.002;
+const MAX_MAE: f64 = 0.003;
 
 fn main() {
     if let Err(error) = run() {
@@ -429,6 +438,31 @@ fn run_smoke_and_capture_commands(root: &Path, out_dir: &Path, target: Target) -
     fs::create_dir_all(&log_dir).map_err(|error| format!("create {}: {error}", log_dir.display()))?;
     match target {
         Target::Native => {
+            let capture_output = Command::new("cargo")
+                .current_dir(root)
+                .args([
+                    "+nightly",
+                    "-Zscript",
+                    "tools/capture-seq06-13e1-inset-shadow-native-frame.rs",
+                    "--root",
+                ])
+                .arg(root)
+                .arg("--out-dir")
+                .arg(out_dir)
+                .env(NATIVE_BACKEND_ENV, NATIVE_BACKEND)
+                .output()
+                .map_err(|error| format!("run native exact PNG capture: {error}"))?;
+            write_command_log(
+                &log_dir.join("native-exact-png-capture.log"),
+                "cargo +nightly -Zscript tools/capture-seq06-13e1-inset-shadow-native-frame.rs --root . --out-dir target/seq06.13e.1-inset-box-shadow-golden",
+                &capture_output,
+            )?;
+            if !capture_output.status.success() {
+                return Err(String::from(
+                    "native exact PNG capture failed; exact PNG packet is not valid",
+                ));
+            }
+
             let output = Command::new("cargo")
                 .current_dir(root)
                 .args([
@@ -477,17 +511,79 @@ fn validate_existing_artifact_packet(root: &Path, out_dir: &Path, target: Target
         .join("fixtures/visual-smoke-goldens/seq06.13e.1-inset-box-shadow")
         .join(target.as_str())
         .join("seq06_13e1_inset_box_shadow.png");
-    let required = [&candidate, &observe, &environment, &reference];
+    let paths = PacketPaths {
+        candidate: &candidate,
+        reference: &reference,
+        observe: &observe,
+        metrics: &metrics,
+        environment: &environment,
+    };
+    let required = [&candidate, &observe, &environment];
     let missing = required
         .iter()
         .filter(|path| !path.exists())
         .map(|path| path.display().to_string())
         .collect::<Vec<_>>();
     if !missing.is_empty() {
+        write_packet_review_decision(
+            root,
+            out_dir,
+            target,
+            "hard_visual_regression",
+            &format!("required packet artifacts are missing: {}", missing.join(", ")),
+            &paths,
+            None,
+            None,
+            None,
+        )?;
         return Err(format!(
-            "{} pinned packet is incomplete or baseline_missing; missing: {}",
+            "{} pinned packet is incomplete; missing: {}",
             target.as_str(),
             missing.join(", ")
+        ));
+    }
+
+    let candidate_dimensions = png_dimensions(&candidate)?;
+    if !reference.exists() {
+        write_baseline_missing_metrics(root, target, &paths, candidate_dimensions)?;
+        write_packet_review_decision(
+            root,
+            out_dir,
+            target,
+            "ready_for_first_promotion_review",
+            "candidate, observation, environment, and command logs are present; checked-in reference PNG is still absent",
+            &paths,
+            Some(candidate_dimensions),
+            None,
+            None,
+        )?;
+        println!(
+            "{} exact PNG packet is ready for first-promotion review; reference baseline is absent",
+            target.as_str()
+        );
+        return Ok(());
+    }
+
+    let reference_dimensions = png_dimensions(&reference)?;
+    if candidate_dimensions != reference_dimensions {
+        write_packet_review_decision(
+            root,
+            out_dir,
+            target,
+            "hard_visual_regression",
+            "candidate and reference PNG dimensions differ",
+            &paths,
+            Some(candidate_dimensions),
+            Some(reference_dimensions),
+            None,
+        )?;
+        return Err(format!(
+            "{} exact PNG dimensions differ: candidate={}x{}, reference={}x{}",
+            target.as_str(),
+            candidate_dimensions.width,
+            candidate_dimensions.height,
+            reference_dimensions.width,
+            reference_dimensions.height
         ));
     }
 
@@ -503,16 +599,341 @@ fn validate_existing_artifact_packet(root: &Path, out_dir: &Path, target: Target
         .map_err(|error| format!("run imq for {} packet: {error}", target.as_str()))?;
     fs::write(&metrics, &imq_output.stdout)
         .map_err(|error| format!("write {}: {error}", metrics.display()))?;
-    if imq_output.status.success() {
-        Ok(())
-    } else {
-        Err(format!(
+    if !imq_output.status.success() {
+        write_packet_review_decision(
+            root,
+            out_dir,
+            target,
+            "hard_visual_regression",
+            "imq comparison failed",
+            &paths,
+            Some(candidate_dimensions),
+            Some(reference_dimensions),
+            None,
+        )?;
+        return Err(format!(
             "{} imq comparison failed; metrics={}, stderr={}",
             target.as_str(),
             metrics.display(),
             String::from_utf8_lossy(&imq_output.stderr)
+        ));
+    }
+
+    let imq_json: Value = serde_json::from_slice(&imq_output.stdout)
+        .map_err(|error| format!("parse {} imq JSON: {error}", metrics.display()))?;
+    let mse = metric_score(&imq_json, "mse")?;
+    let mae = metric_score(&imq_json, "mae")?;
+    let metric_summary = MetricSummary { mse, mae };
+    if mse <= MAX_MSE && mae <= MAX_MAE {
+        write_packet_review_decision(
+            root,
+            out_dir,
+            target,
+            "passed_existing_baseline_gate",
+            "candidate matches the existing checked-in baseline within seq06.13e.1 thresholds",
+            &paths,
+            Some(candidate_dimensions),
+            Some(reference_dimensions),
+            Some(metric_summary),
+        )?;
+        Ok(())
+    } else {
+        write_packet_review_decision(
+            root,
+            out_dir,
+            target,
+            "baseline_drift",
+            "candidate exceeds seq06.13e.1 MSE/MAE thresholds against the existing checked-in baseline",
+            &paths,
+            Some(candidate_dimensions),
+            Some(reference_dimensions),
+            Some(metric_summary),
+        )?;
+        Err(format!(
+            "{} exact PNG baseline drift: mse={mse}, mae={mae}, max_mse={MAX_MSE}, max_mae={MAX_MAE}",
+            target.as_str()
         ))
     }
+}
+
+#[derive(Clone, Copy)]
+struct PacketPaths<'a> {
+    candidate: &'a Path,
+    reference: &'a Path,
+    observe: &'a Path,
+    metrics: &'a Path,
+    environment: &'a Path,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PngDimensions {
+    width: u32,
+    height: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct MetricSummary {
+    mse: f64,
+    mae: f64,
+}
+
+fn write_baseline_missing_metrics(
+    root: &Path,
+    target: Target,
+    paths: &PacketPaths<'_>,
+    candidate_dimensions: PngDimensions,
+) -> Result<(), String> {
+    let mut json = String::new();
+    writeln!(&mut json, "{{").unwrap();
+    writeln!(
+        &mut json,
+        "  \"schema\": \"arcweft.seq06.13e1.inset_box_shadow.imq_report.v1\","
+    )
+    .unwrap();
+    writeln!(&mut json, "  \"status\": \"baseline_missing\",").unwrap();
+    writeln!(&mut json, "  \"target\": {},", json_string(target.as_str())).unwrap();
+    writeln!(
+        &mut json,
+        "  \"reason\": \"checked-in reference PNG is absent; imq comparison is deferred until first-promotion review copies the candidate into the reference path\","
+    )
+    .unwrap();
+    writeln!(&mut json, "  \"metric_set\": [\"psnr\", \"ssim\", \"mse\", \"mae\", \"maxae\"],").unwrap();
+    writeln!(&mut json, "  \"metrics\": null,").unwrap();
+    writeln!(&mut json, "  \"thresholds\": {{\"max_mse\": {MAX_MSE}, \"max_mae\": {MAX_MAE}}},").unwrap();
+    writeln!(
+        &mut json,
+        "  \"candidate_dimensions\": {{\"width\": {}, \"height\": {}}},",
+        candidate_dimensions.width, candidate_dimensions.height
+    )
+    .unwrap();
+    writeln!(&mut json, "  \"artifacts\": {{").unwrap();
+    writeln!(
+        &mut json,
+        "    \"candidate\": {},",
+        artifact_review_json(root, paths.candidate)
+    )
+    .unwrap();
+    writeln!(
+        &mut json,
+        "    \"reference\": {}",
+        artifact_review_json(root, paths.reference)
+    )
+    .unwrap();
+    writeln!(&mut json, "  }}").unwrap();
+    writeln!(&mut json, "}}").unwrap();
+    fs::write(paths.metrics, json)
+        .map_err(|error| format!("write {}: {error}", paths.metrics.display()))
+}
+
+fn write_packet_review_decision(
+    root: &Path,
+    out_dir: &Path,
+    target: Target,
+    status: &str,
+    reason: &str,
+    paths: &PacketPaths<'_>,
+    candidate_dimensions: Option<PngDimensions>,
+    reference_dimensions: Option<PngDimensions>,
+    metrics: Option<MetricSummary>,
+) -> Result<(), String> {
+    let review_dir = out_dir.join("review");
+    fs::create_dir_all(&review_dir).map_err(|error| format!("create {}: {error}", review_dir.display()))?;
+    let path = review_dir.join(format!(
+        "seq06_13e1_{}_promotion_decision.json",
+        target.as_str()
+    ));
+    let mut json = String::new();
+    writeln!(&mut json, "{{").unwrap();
+    writeln!(
+        &mut json,
+        "  \"schema\": \"arcweft.seq06.13e1.inset_box_shadow.promotion_decision.v1\","
+    )
+    .unwrap();
+    writeln!(&mut json, "  \"target\": {},", json_string(target.as_str())).unwrap();
+    writeln!(&mut json, "  \"status\": {},", json_string(status)).unwrap();
+    writeln!(&mut json, "  \"reason\": {},", json_string(reason)).unwrap();
+    writeln!(&mut json, "  \"promoted\": false,").unwrap();
+    writeln!(&mut json, "  \"thresholds\": {{").unwrap();
+    writeln!(&mut json, "    \"max_mse\": {MAX_MSE},").unwrap();
+    writeln!(&mut json, "    \"max_mae\": {MAX_MAE}").unwrap();
+    writeln!(&mut json, "  }},").unwrap();
+    writeln!(&mut json, "  \"metrics\": {},", metric_summary_json(metrics)).unwrap();
+    writeln!(&mut json, "  \"dimensions\": {{").unwrap();
+    writeln!(
+        &mut json,
+        "    \"candidate\": {},",
+        dimensions_json(candidate_dimensions)
+    )
+    .unwrap();
+    writeln!(
+        &mut json,
+        "    \"reference\": {}",
+        dimensions_json(reference_dimensions)
+    )
+    .unwrap();
+    writeln!(&mut json, "  }},").unwrap();
+    writeln!(&mut json, "  \"source_hashes\": {{").unwrap();
+    writeln!(
+        &mut json,
+        "    \"policy_git\": {},",
+        json_option(
+            git_hash_object_path(
+                root,
+                &root.join(
+                    "fixtures/visual-smoke-goldens/seq06.13e.1-inset-box-shadow-exact-png-policy.json"
+                ),
+            )
+            .as_deref()
+        )
+    )
+    .unwrap();
+    writeln!(
+        &mut json,
+        "    \"fixture_doc_git\": {},",
+        json_option(git_hash_object_path(root, &fixture_doc_path(root, target)).as_deref())
+    )
+    .unwrap();
+    writeln!(
+        &mut json,
+        "    \"source_css_git\": {}",
+        json_option(
+            git_hash_object_path(root, &root.join("docs/fixtures/css/seq06.13e-inset-box-shadow-card.css"))
+                .as_deref()
+        )
+    )
+    .unwrap();
+    writeln!(&mut json, "  }},").unwrap();
+    writeln!(&mut json, "  \"artifacts\": {{").unwrap();
+    writeln!(
+        &mut json,
+        "    \"candidate\": {},",
+        artifact_review_json(root, paths.candidate)
+    )
+    .unwrap();
+    writeln!(
+        &mut json,
+        "    \"reference\": {},",
+        artifact_review_json(root, paths.reference)
+    )
+    .unwrap();
+    writeln!(
+        &mut json,
+        "    \"observe_json\": {},",
+        artifact_review_json(root, paths.observe)
+    )
+    .unwrap();
+    writeln!(
+        &mut json,
+        "    \"metrics_json\": {},",
+        artifact_review_json(root, paths.metrics)
+    )
+    .unwrap();
+    writeln!(
+        &mut json,
+        "    \"environment_json\": {}",
+        artifact_review_json(root, paths.environment)
+    )
+    .unwrap();
+    writeln!(&mut json, "  }}").unwrap();
+    writeln!(&mut json, "}}").unwrap();
+    fs::write(&path, json).map_err(|error| format!("write {}: {error}", path.display()))
+}
+
+fn fixture_doc_path(root: &Path, target: Target) -> PathBuf {
+    root.join("docs/fixtures")
+        .join(target.as_str())
+        .join("seq06_13e1_inset_box_shadow_exact_golden.json")
+}
+
+fn dimensions_json(dimensions: Option<PngDimensions>) -> String {
+    dimensions.map_or_else(|| String::from("null"), |dimensions| {
+        format!(
+            "{{\"width\": {}, \"height\": {}}}",
+            dimensions.width, dimensions.height
+        )
+    })
+}
+
+fn metric_summary_json(metrics: Option<MetricSummary>) -> String {
+    metrics.map_or_else(|| String::from("null"), |metrics| {
+        format!(
+            "{{\"mse\": {:.12}, \"mae\": {:.12}, \"passed\": {}}}",
+            metrics.mse,
+            metrics.mae,
+            metrics.mse <= MAX_MSE && metrics.mae <= MAX_MAE
+        )
+    })
+}
+
+fn artifact_review_json(root: &Path, path: &Path) -> String {
+    format!(
+        "{{\"path\": {}, \"exists\": {}, \"sha256\": {}, \"git_hash_object\": {}}}",
+        json_string(&display_path(path)),
+        path.exists(),
+        json_option(sha256_file(path).ok().as_deref()),
+        json_option(git_hash_object_path(root, path).as_deref())
+    )
+}
+
+fn png_dimensions(path: &Path) -> Result<PngDimensions, String> {
+    let bytes = fs::read(path).map_err(|error| format!("read PNG {}: {error}", path.display()))?;
+    if bytes.len() < 24 || &bytes[..8] != b"\x89PNG\r\n\x1a\n" {
+        return Err(format!("{} is not a PNG with an IHDR chunk", path.display()));
+    }
+    Ok(PngDimensions {
+        width: u32::from_be_bytes(bytes[16..20].try_into().expect("PNG width bytes")),
+        height: u32::from_be_bytes(bytes[20..24].try_into().expect("PNG height bytes")),
+    })
+}
+
+fn metric_score(report: &Value, metric_name: &str) -> Result<f64, String> {
+    report["metrics"]
+        .as_array()
+        .and_then(|metrics| {
+            metrics
+                .iter()
+                .find(|metric| metric["name"].as_str() == Some(metric_name))
+        })
+        .and_then(|metric| metric["score"].as_f64())
+        .ok_or_else(|| format!("{metric_name} score should be present in imq JSON: {report}"))
+}
+
+fn sha256_file(path: &Path) -> io::Result<String> {
+    let mut file = File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn git_hash_object_path(root: &Path, path: &Path) -> Option<String> {
+    if !path.exists() {
+        return None;
+    }
+    command_stdout(
+        Command::new("git")
+            .arg("-C")
+            .arg(git_path(root))
+            .arg("hash-object")
+            .arg(git_path(path)),
+    )
+}
+
+fn git_path(path: &Path) -> String {
+    display_path(path)
+}
+
+fn display_path(path: &Path) -> String {
+    let text = path.display().to_string();
+    text.strip_prefix(r"\\?\").unwrap_or(&text).to_owned()
 }
 
 fn write_command_log(path: &Path, command: &str, output: &Output) -> Result<(), String> {
