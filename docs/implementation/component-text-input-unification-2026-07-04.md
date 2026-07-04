@@ -39,6 +39,20 @@ This cut applies the component/View text-control unification note from
   and semantic-target bounds. See
   `docs/implementation/component-text-control-layout-bounds-resource-contract-2026-07-04.md`.
 
+## Native interactive smoke follow-up
+
+- Seq06.16.3 records the native-window smoke contract in
+  `docs/implementation/component-text-input-native-interactive-smoke-2026-07-04.md`.
+- The smoke uses `samples/native-text-input` as the primary real-window/IME
+  sample and keeps `samples/text-submit-flow` plus `samples/modern-feedback-ui`
+  as submit-route and component/View preflight samples.
+- The manual launch writes native text-input trace evidence under
+  `target/native-text-input-trace/seq06.16.3/` and validates it with
+  `tools/verify-seq06-16-3-native-smoke-trace.rs`.
+- The seq06.4j.1 source gate now checks the current component-authored,
+  no-sidecar contract instead of the removed `.arcweft/content/ui.input.json`
+  sidecar path.
+
 ## Modern feedback UI debug notes
 
 - `samples/modern-feedback-ui` bundles cleanly after the placement fix.
@@ -63,10 +77,11 @@ This cut applies the component/View text-control unification note from
 
 ## Remaining TODOs / follow-up requests
 
-- Run and document the native interactive window smoke. The native samples
-  bundle cleanly without top-level input declarations, but interactive launch
-  was not executed in this cut. Follow-up request:
-  `docs/reviews/requests/2026-07-04-seq-06.16.3-component-text-input-native-interactive-smoke.md`.
+- Execute the seq06.16.3 native interactive smoke on real target machines and
+  attach the resulting command log, environment fingerprint, trace, and optional
+  screenshots/observe JSON under `target/native-text-input-trace/seq06.16.3/`.
+  The checked-in implementation note and ignored test define the required
+  operator steps; this documentation package does not claim a real-machine pass.
 - Resolve modern feedback UI authored style rules, transparency, and
   `box-shadow` into the actual player-rendered runtime controls without
   bypassing the existing retained UI/style substrate. Follow-up request:
@@ -77,7 +92,9 @@ This cut applies the component/View text-control unification note from
 - The original layout-bounds omission is closed by seq06.16.2. The remaining
   limitation is that these bounds are deterministic component-structure bounds,
   not full style-driven layout.
-- Native interactive launch was not run; this is tracked as seq06.16.3.
+- Native interactive launch remains a real-machine manual evidence step tracked
+  by seq06.16.3; this cut adds the repeatable commands, trace gate, and ignored
+  launch fixture rather than claiming a bundle-only pass.
 - Authored modern feedback UI style rules are carried as product UI resources
   but are not yet resolved into the player-rendered runtime text-control/button
   draw path; this is tracked as seq06.16.4 and should align with seq06.11.
@@ -87,13 +104,17 @@ This cut applies the component/View text-control unification note from
 - `cargo test -p arcweft-lang-syntax --test style_component_view`
 - `cargo test -p arcweft-cli component_view_button_lowers_to_action_button_sidecar`
 - `cargo test -p arcweft-cli --test native_text_input_sample_sidecars`
+- `cargo test -p arcweft-cli --test native_text_input_native_interactive_smoke --quiet`
 - `cargo test -p arcweft-runtime-driver text_submit`
 - `cargo test -p arcweft-lang-sema resolves_component_view_text_control_inputs`
 - `cargo test -p arcweft-lang-sema project_index_from_hir_preserves_component_view_text_control_inputs`
+- `cargo run -p arcweft-cli -- check --manifest-path samples/native-text-input/arcw.toml`
+- `cargo run -p arcweft-cli -- check --manifest-path samples/text-submit-flow/arcw.toml`
 - `cargo run -p arcweft-cli -- check --manifest-path samples/modern-feedback-ui/arcw.toml`
 - `cargo run -p arcweft-cli -- bundle samples/text-submit-flow/src/main.arcw --output target/arcweft/text-submit-flow-button.awfb`
 - `cargo run -p arcweft-cli -- bundle samples/native-text-input/src/main.arcw --output target/arcweft/native-text-input.awfb`
 - `cargo run -p arcweft-cli -- bundle samples/modern-feedback-ui/src/main.arcw --output target/arcweft/modern-feedback-ui.awfb`
+- `cargo +nightly -Zscript tools/source-gates/seq06_4j1_native_ime_player_rendered_gates.rs --root .`
 - `cargo fmt --all -- --check`
 - `cargo clippy -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-cli --all-targets -- -D warnings`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`
@@ -105,4 +126,4 @@ This cut applies the component/View text-control unification note from
 - `cargo test -p arcweft-takumi-adapter --test adapter_contract transform_and_opacity_are_paint_only_invalidations -- --nocapture`
 
 Structure audit completed as a dry run and reported the current workspace
-baseline of `4 error(s), 125 warning(s)` without writing report files.
+baseline of `4 error(s), 127 warning(s)` without writing report files.
