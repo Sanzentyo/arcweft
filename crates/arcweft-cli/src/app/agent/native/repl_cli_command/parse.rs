@@ -279,13 +279,16 @@ fn capture_command(
     let args = parts.arg_text.split_whitespace().collect::<Vec<_>>();
     let target = match args.as_slice() {
         [] | ["viewport"] => CliCaptureTarget::Viewport,
+        ["component", id] => CliCaptureTarget::Component {
+            id: (*id).to_owned(),
+        },
         ["layer", id] => CliCaptureTarget::Layer {
             id: (*id).to_owned(),
         },
         ["object", id] => CliCaptureTarget::Object {
             id: (*id).to_owned(),
         },
-        [kind] if matches!(*kind, "layer" | "object") => {
+        [kind] if matches!(*kind, "component" | "layer" | "object") => {
             return Err(CliReplCommandParseError::new(
                 ReplCommandDiagnosticCode::MissingArgument,
                 Some(qualified_name(parts)),

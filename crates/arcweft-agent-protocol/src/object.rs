@@ -1,7 +1,7 @@
 use crate::geometry::{AgentBBox, AgentPoint};
 use crate::image::{
-    AgentImageAlignment, AgentImageFit, AgentImageObjectContentRef, AgentImageObjectParam,
-    AgentImageTransform, AgentLayerCaptureRefs, AgentObjectCaptureRefs,
+    AgentComponentCaptureRefs, AgentImageAlignment, AgentImageFit, AgentImageObjectContentRef,
+    AgentImageObjectParam, AgentImageTransform, AgentLayerCaptureRefs, AgentObjectCaptureRefs,
 };
 use crate::proxy::AgentPresentationObjectProxyRef;
 use crate::rich_text::AgentRichTextElementRef;
@@ -19,6 +19,20 @@ pub struct AgentObservedLayer {
     pub bbox: AgentBBox,
     pub object_count: usize,
     pub capture_refs: AgentLayerCaptureRefs,
+}
+
+/// Stable component boundary known to the Agent observer.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct AgentObservedComponent {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+    pub visible: bool,
+    pub bbox: AgentBBox,
+    pub object_count: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub object_refs: Vec<String>,
+    pub capture_refs: AgentComponentCaptureRefs,
 }
 
 /// Visible object or UI element known to the Agent observer.

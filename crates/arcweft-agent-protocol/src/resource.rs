@@ -122,6 +122,7 @@ impl AgentBinaryEncoding {
 pub enum AgentResourceKind {
     SessionContext,
     ObservationLatest,
+    Components,
     Objects,
     PresentationTree,
     OverlaySvg,
@@ -137,6 +138,7 @@ impl AgentResourceKind {
         match self {
             Self::SessionContext => "session_context",
             Self::ObservationLatest => "observation_latest",
+            Self::Components => "components",
             Self::Objects => "objects",
             Self::PresentationTree => "presentation_tree",
             Self::OverlaySvg => "overlay_svg",
@@ -152,6 +154,7 @@ impl AgentResourceKind {
         match self {
             Self::SessionContext => "Session context",
             Self::ObservationLatest => "Latest observation",
+            Self::Components => "Observed components",
             Self::Objects => "Observed objects",
             Self::PresentationTree => "Presentation tree",
             Self::OverlaySvg => "Overlay SVG",
@@ -168,6 +171,7 @@ impl AgentResourceKind {
             self,
             Self::SessionContext
                 | Self::ObservationLatest
+                | Self::Components
                 | Self::Objects
                 | Self::PresentationTree
                 | Self::OverlaySvg

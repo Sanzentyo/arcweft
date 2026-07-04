@@ -54,7 +54,9 @@ pub(super) fn agent_capture_uri(
     extension: &str,
     options: &AgentObserveOptions,
 ) -> String {
-    let name = if let Some(object_id) = &options.object {
+    let name = if let Some(component_id) = &options.component {
+        agent_scoped_capture_name("component", component_id, default_name)
+    } else if let Some(object_id) = &options.object {
         agent_scoped_capture_name("object", object_id, default_name)
     } else if let Some(layer) = &options.layer {
         agent_scoped_capture_name("layer", layer, default_name)
@@ -715,6 +717,185 @@ pub(super) fn agent_observed_layers(
         .collect()
 }
 
+pub(super) fn agent_observed_components(
+    session_id: &str,
+    tick: usize,
+    objects: &[AgentObservedObject],
+) -> Vec<AgentObservedComponent> {
+    let mut grouped = BTreeMap::<String, Vec<&AgentObservedObject>>::new();
+    for object in objects.iter().filter(|object| object.visible) {
+        let component_id = agent_component_id_for_object(object);
+        grouped.entry(component_id).or_default().push(object);
+    }
+    grouped
+        .into_iter()
+        .filter_map(|(component_id, objects)| {
+            let bbox = objects
+                .iter()
+                .map(|object| object.bbox.clone())
+                .reduce(|left, right| agent_union_bbox(&left, &right))?;
+            let object_refs = objects
+                .iter()
+                .map(|object| object.id.clone())
+                .collect::<Vec<_>>();
+            Some(AgentObservedComponent {
+                id: component_id.clone(),
+                parent_id: None,
+                visible: objects.iter().any(|object| object.visible),
+                bbox: bbox.clone(),
+                object_count: objects.len(),
+                object_refs: object_refs.clone(),
+                capture_refs: agent_component_capture_refs(
+                    session_id,
+                    tick,
+                    &component_id,
+                    &bbox,
+                    objects.len(),
+                    object_refs,
+                ),
+            })
+        })
+        .collect()
+}
+
+pub(super) fn agent_component_id_for_object(object: &AgentObservedObject) -> String {
+    object
+        .parent_id
+        .clone()
+        .or_else(|| object.entity.clone())
+        .unwrap_or_else(|| object.id.clone())
+}
+
+pub(super) fn agent_component_scope_for_id<'a>(
+    report: &'a AgentObservationReport,
+    component_id: &str,
+) -> Option<&'a AgentObservedComponent> {
+    report
+        .components
+        .iter()
+        .find(|component| component.id == component_id)
+}
+
+pub(super) fn agent_component_capture_refs(
+    session_id: &str,
+    tick: usize,
+    component_id: &str,
+    bbox: &AgentBBox,
+    object_count: usize,
+    object_refs: Vec<String>,
+) -> AgentComponentCaptureRefs {
+    let name = agent_scoped_capture_name("component", component_id, "color");
+    let object_id_name = agent_scoped_capture_name("component", component_id, "object-id");
+    let mask_name = agent_scoped_capture_name("component", component_id, "mask");
+    let source = AgentCaptureSourceIdentity::Component {
+        id: component_id.to_owned(),
+        parent_id: None,
+        object_count,
+        object_refs,
+    };
+    AgentComponentCaptureRefs {
+        captures: vec![
+            agent_component_capture_ref(AgentComponentCaptureRefSpec {
+                session_id,
+                tick,
+                name: &name,
+                extension: "png",
+                kind: AgentImageKind::Color,
+                bbox,
+                source: source.clone(),
+            }),
+            agent_component_capture_ref(AgentComponentCaptureRefSpec {
+                session_id,
+                tick,
+                name: &name,
+                extension: "rgba",
+                kind: AgentImageKind::Color,
+                bbox,
+                source: source.clone(),
+            }),
+            agent_component_capture_ref(AgentComponentCaptureRefSpec {
+                session_id,
+                tick,
+                name: &object_id_name,
+                extension: "png",
+                kind: AgentImageKind::ObjectId,
+                bbox,
+                source: source.clone(),
+            }),
+            agent_component_capture_ref(AgentComponentCaptureRefSpec {
+                session_id,
+                tick,
+                name: &object_id_name,
+                extension: "rgba",
+                kind: AgentImageKind::ObjectId,
+                bbox,
+                source: source.clone(),
+            }),
+            agent_component_capture_ref(AgentComponentCaptureRefSpec {
+                session_id,
+                tick,
+                name: &mask_name,
+                extension: "png",
+                kind: AgentImageKind::Mask,
+                bbox,
+                source: source.clone(),
+            }),
+            agent_component_capture_ref(AgentComponentCaptureRefSpec {
+                session_id,
+                tick,
+                name: &mask_name,
+                extension: "rgba",
+                kind: AgentImageKind::Mask,
+                bbox,
+                source,
+            }),
+        ],
+    }
+}
+
+struct AgentComponentCaptureRefSpec<'a> {
+    session_id: &'a str,
+    tick: usize,
+    name: &'a str,
+    extension: &'a str,
+    kind: AgentImageKind,
+    bbox: &'a AgentBBox,
+    source: AgentCaptureSourceIdentity,
+}
+
+fn agent_component_capture_ref(spec: AgentComponentCaptureRefSpec<'_>) -> AgentComponentCaptureRef {
+    let scope = match &spec.source {
+        AgentCaptureSourceIdentity::Component { id, .. } => {
+            AgentCaptureScope::Component(id.clone())
+        }
+        AgentCaptureSourceIdentity::Viewport { .. }
+        | AgentCaptureSourceIdentity::Layer { .. }
+        | AgentCaptureSourceIdentity::Object { .. } => {
+            AgentCaptureScope::Component(spec.name.to_owned())
+        }
+    };
+    AgentComponentCaptureRef {
+        kind: spec.kind,
+        uri: agent_frame_capture_uri(spec.session_id, spec.tick, spec.name, spec.extension),
+        mime_type: agent_capture_mime_type(spec.extension).to_owned(),
+        page: 0,
+        width: spec.bbox.width.max(1),
+        height: spec.bbox.height.max(1),
+        selected_capture: Some(agent_selected_capture_metadata_for_ref(
+            AgentSelectedCaptureMetadataSpec {
+                scope: &scope,
+                kind: spec.kind,
+                composition: spec.kind.default_capture_composition(),
+                unclipped: spec.bbox,
+                clipped: spec.bbox,
+                source: spec.source,
+                mask: None,
+                viewport: None,
+            },
+        )),
+    }
+}
+
 pub(super) fn agent_union_bbox(left: &AgentBBox, right: &AgentBBox) -> AgentBBox {
     let x = left.x.min(right.x);
     let y = left.y.min(right.y);
@@ -823,9 +1004,9 @@ fn agent_layer_capture_ref(spec: AgentLayerCaptureRefSpec<'_>) -> AgentLayerCapt
     let source = spec.source;
     let layer_id = match &source {
         AgentCaptureSourceIdentity::Layer { id, .. } => id.clone(),
-        AgentCaptureSourceIdentity::Viewport { .. } | AgentCaptureSourceIdentity::Object { .. } => {
-            spec.name.to_owned()
-        }
+        AgentCaptureSourceIdentity::Viewport { .. }
+        | AgentCaptureSourceIdentity::Component { .. }
+        | AgentCaptureSourceIdentity::Object { .. } => spec.name.to_owned(),
     };
     let scope = AgentCaptureScope::Layer(layer_id.clone());
     AgentLayerCaptureRef {
@@ -968,7 +1149,9 @@ struct AgentObjectCaptureRefSpec<'a> {
 fn agent_object_capture_ref(spec: AgentObjectCaptureRefSpec<'_>) -> AgentObjectCaptureRef {
     let scope = match &spec.source {
         AgentCaptureSourceIdentity::Object { id, .. } => AgentCaptureScope::Object(id.clone()),
-        AgentCaptureSourceIdentity::Viewport { .. } | AgentCaptureSourceIdentity::Layer { .. } => {
+        AgentCaptureSourceIdentity::Viewport { .. }
+        | AgentCaptureSourceIdentity::Component { .. }
+        | AgentCaptureSourceIdentity::Layer { .. } => {
             AgentCaptureScope::Object(spec.name.to_owned())
         }
     };
@@ -1022,11 +1205,15 @@ pub(super) fn agent_selected_capture_metadata_for_ref(
             bounds: clipped_rect,
             object_ids: match spec.scope {
                 AgentCaptureScope::Object(object_id) => vec![object_id.clone()],
-                AgentCaptureScope::Viewport | AgentCaptureScope::Layer(_) => Vec::new(),
+                AgentCaptureScope::Viewport
+                | AgentCaptureScope::Component(_)
+                | AgentCaptureScope::Layer(_) => Vec::new(),
             },
             layer_ids: match spec.scope {
                 AgentCaptureScope::Layer(layer_id) => vec![layer_id.clone()],
-                AgentCaptureScope::Viewport | AgentCaptureScope::Object(_) => Vec::new(),
+                AgentCaptureScope::Viewport
+                | AgentCaptureScope::Component(_)
+                | AgentCaptureScope::Object(_) => Vec::new(),
             },
             has_object_id_attachment: true,
             has_alpha_mask: spec.kind == AgentImageKind::Mask,
@@ -1079,6 +1266,7 @@ pub(super) fn agent_fit_transform_for_selected_capture(
 pub(super) fn agent_layout_capture_scope(scope: &AgentCaptureScope) -> LayoutCaptureScope {
     match scope {
         AgentCaptureScope::Viewport => LayoutCaptureScope::Viewport,
+        AgentCaptureScope::Component(id) => LayoutCaptureScope::Component { id: id.clone() },
         AgentCaptureScope::Layer(id) => LayoutCaptureScope::Layer { id: id.clone() },
         AgentCaptureScope::Object(id) => LayoutCaptureScope::Object { id: id.clone() },
     }

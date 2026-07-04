@@ -3,14 +3,16 @@ use crate::diagnostic::{AgentDiagnostic, AgentDiagnosticSeverity};
 use crate::geometry::{AgentBBox, AgentCoordinateSpace, AgentRgbaColor, AgentViewport};
 use crate::hit_test::AgentHitTestHit;
 use crate::image::{
-    AgentCaptureSourceIdentity, AgentImageAlignment, AgentImageComposition, AgentImageContentBBox,
-    AgentImageCropOrigin, AgentImageFit, AgentImageKind, AgentImageMetadata, AgentImageObjectParam,
-    AgentImageObjectRef, AgentImageRenderer, AgentImageResource, AgentImageScope,
-    AgentImageTransform, AgentLayerCaptureRef, AgentLayerCaptureRefs, AgentObjectCaptureRef,
-    AgentObjectCaptureRefs, AgentSelectedCaptureMetadata,
+    AgentCaptureSourceIdentity, AgentComponentCaptureRef, AgentComponentCaptureRefs,
+    AgentImageAlignment, AgentImageComposition, AgentImageContentBBox, AgentImageCropOrigin,
+    AgentImageFit, AgentImageKind, AgentImageMetadata, AgentImageObjectParam, AgentImageObjectRef,
+    AgentImageRenderer, AgentImageResource, AgentImageScope, AgentImageTransform,
+    AgentLayerCaptureRef, AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs,
+    AgentSelectedCaptureMetadata,
 };
 use crate::object::{
-    AgentObservedImageContent, AgentObservedLayer, AgentObservedObject, AgentObservedObjectContent,
+    AgentObservedComponent, AgentObservedImageContent, AgentObservedLayer, AgentObservedObject,
+    AgentObservedObjectContent,
 };
 use crate::observation::AgentObservationReport;
 use crate::presentation::AgentPresentationTree;
@@ -63,6 +65,20 @@ fn test_layer_capture_refs() -> AgentLayerCaptureRefs {
         captures: vec![AgentLayerCaptureRef {
             kind: AgentImageKind::Color,
             uri: "arcweft://session/cli/frame/1/layer.dialogue.png".to_owned(),
+            mime_type: "image/png".to_owned(),
+            page: 0,
+            width: 10,
+            height: 20,
+            selected_capture: None,
+        }],
+    }
+}
+
+fn test_component_capture_refs() -> AgentComponentCaptureRefs {
+    AgentComponentCaptureRefs {
+        captures: vec![AgentComponentCaptureRef {
+            kind: AgentImageKind::Color,
+            uri: "arcweft://session/cli/frame/1/component.dialogue_box.png".to_owned(),
             mime_type: "image/png".to_owned(),
             page: 0,
             width: 10,
@@ -134,6 +150,7 @@ fn test_raw_mask_image_resource() -> AgentImageResource {
         }),
         content_pixels: Some(12),
         object: None,
+        component: None,
         selected_capture: None,
         diagnostics: Vec::new(),
         written: None,
@@ -176,11 +193,13 @@ fn test_mcp_observation_report() -> AgentObservationReport {
             content_viewport_bbox: None,
             content_pixels: None,
             object: None,
+            component: None,
             selected_capture: None,
             diagnostics: Vec::new(),
             written: None,
         }],
         layers: Vec::new(),
+        components: Vec::new(),
         objects: Vec::new(),
         presentation_tree: AgentPresentationTree::from_layers_and_objects(&[], &[]),
         actions: Vec::new(),
@@ -244,6 +263,15 @@ fn test_serialization_observation_report() -> AgentObservationReport {
             frame: Box::new(test_line_display_frame()),
         },
     }];
+    let components = vec![AgentObservedComponent {
+        id: "dialogue_box".to_owned(),
+        parent_id: None,
+        visible: true,
+        bbox: bbox.clone(),
+        object_count: 1,
+        object_refs: vec!["object.dialogue.0.0".to_owned()],
+        capture_refs: test_component_capture_refs(),
+    }];
     let presentation_tree = AgentPresentationTree::from_layers_and_objects(&layers, &objects);
     AgentObservationReport {
         status: "ok".to_owned(),
@@ -276,11 +304,13 @@ fn test_serialization_observation_report() -> AgentObservationReport {
             content_viewport_bbox: None,
             content_pixels: None,
             object: None,
+            component: None,
             selected_capture: None,
             diagnostics: Vec::new(),
             written: None,
         }],
         layers,
+        components,
         objects,
         presentation_tree,
         actions: vec![AgentActionTarget {
@@ -361,6 +391,36 @@ fn test_rich_text_ref(bbox: &AgentBBox) -> AgentRichTextElementRef {
 }
 
 #[test]
+fn component_scope_serializes_and_scrubs_source_identity() {
+    let source = AgentCaptureSourceIdentity::Component {
+        id: "ui.login_form".to_owned(),
+        parent_id: Some("ui.root".to_owned()),
+        object_count: 2,
+        object_refs: vec!["field.email".to_owned(), "button.submit".to_owned()],
+    };
+
+    let json = serde_json::to_value(&source).expect("component source serializes");
+    assert_eq!(json["kind"], "component");
+    assert_eq!(json["id"], "ui.login_form");
+    assert_eq!(json["object_refs"].as_array().unwrap().len(), 2);
+
+    let mut metadata = AgentSelectedCaptureMetadata::from_layout(
+        test_layout_capture_metadata(
+            CaptureScope::Component {
+                id: "ui.login_form".to_owned(),
+            },
+            CaptureComposition::FramebufferCrop,
+        ),
+        source,
+    );
+    metadata.scrub_for_external_publication("opaque");
+    let json = serde_json::to_value(metadata.source).expect("scrubbed component source serializes");
+    assert_eq!(json["id"], "component.opaque");
+    assert!(json.get("parent_id").is_none());
+    assert_eq!(json["object_refs"][0], "object.opaque.0");
+}
+
+#[test]
 #[allow(clippy::too_many_lines)]
 fn observation_report_serializes_stable_snake_case_enums() {
     let report = test_serialization_observation_report();
@@ -388,6 +448,15 @@ fn observation_report_serializes_stable_snake_case_enums() {
     );
     assert_eq!(
         json["layers"][0]["capture_refs"]["captures"][0]["kind"],
+        "color"
+    );
+    assert_eq!(json["components"][0]["id"], "dialogue_box");
+    assert_eq!(
+        json["components"][0]["object_refs"][0],
+        "object.dialogue.0.0"
+    );
+    assert_eq!(
+        json["components"][0]["capture_refs"]["captures"][0]["kind"],
         "color"
     );
     assert_eq!(json["objects"][0]["bbox"]["space"], "viewport");
@@ -1004,6 +1073,7 @@ fn observation_report_builds_mcp_style_resources() {
             content_viewport_bbox: None,
             content_pixels: None,
             object: None,
+            component: None,
             selected_capture: None,
             diagnostics: Vec::new(),
         },
@@ -1043,6 +1113,7 @@ fn observation_report_builds_mcp_style_resources() {
             }),
             content_pixels: Some(12),
             object: None,
+            component: None,
             selected_capture: None,
             diagnostics: Vec::new(),
         },

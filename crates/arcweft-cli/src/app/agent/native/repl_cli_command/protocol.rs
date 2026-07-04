@@ -175,6 +175,7 @@ fn evidence_json(evidence: &CliReplCommandEvidence) -> Value {
 fn capture_target_json(target: &CliCaptureTarget) -> Value {
     match target {
         CliCaptureTarget::Viewport => json!({ "kind": "viewport" }),
+        CliCaptureTarget::Component { id } => json!({ "kind": "component", "id": id }),
         CliCaptureTarget::Layer { id } => json!({ "kind": "layer", "id": id }),
         CliCaptureTarget::Object { id } => json!({ "kind": "object", "id": id }),
     }

@@ -1,9 +1,11 @@
 use super::capture::{
-    AgentNativeCaptureContext, AgentNativeCaptureTarget, agent_native_debug_capture,
-    agent_native_image_object_geometry_capture, agent_native_masked_framebuffer_capture,
+    AgentNativeCaptureContext, AgentNativeCaptureTarget, agent_native_capture_targets_for_scope,
+    agent_native_debug_capture, agent_native_image_object_geometry_capture,
+    agent_native_masked_framebuffer_capture,
 };
 use super::image_mapping::{
     agent_image_objects_from_ui_frame, agent_image_observation_from_ui_frame,
+    agent_observed_components,
 };
 use super::mcp_protocol::{
     agent_mcp_call_get_state, agent_mcp_call_log_query, agent_mcp_call_session_info,
@@ -110,6 +112,7 @@ fn test_agent_observation_report(capture_time_millis: Option<u32>) -> AgentObser
         },
         images: Vec::new(),
         layers: Vec::new(),
+        components: Vec::new(),
         objects: Vec::new(),
         presentation_tree: AgentPresentationTree::from_layers_and_objects(&[], &[]),
         actions: Vec::new(),
@@ -2693,6 +2696,7 @@ fn test_agent_raw_rgba_capture_resource(kind: AgentImageKind) -> AgentResource {
             content_viewport_bbox: None,
             content_pixels: None,
             object: None,
+            component: None,
             selected_capture: None,
             diagnostics: Vec::new(),
         }),
@@ -2722,6 +2726,90 @@ fn uri_capture_request_preserves_report_capture_time() {
         panic!("request should target an object scope");
     };
     assert_eq!(object_id, "object.dialogue.0.0");
+}
+
+#[test]
+fn component_uri_capture_request_parses_scope_and_kind() {
+    let report = test_agent_observation_report(Some(1250));
+    let request = agent_capture_request_from_uri(
+        &report,
+        "arcweft://session/cli/frame/3/component.ui.login_form.object-id.png",
+    )
+    .expect("component object-id URI should parse");
+
+    assert_seconds_close(request.capture_time_seconds, 1.25);
+    assert_eq!(request.image_kind, AgentObserveImageKind::Png);
+    assert_eq!(request.capture_kind, AgentObserveCaptureKind::ObjectId);
+    let AgentCaptureScope::Component(component_id) = request.scope else {
+        panic!("request should target a component scope");
+    };
+    assert_eq!(component_id, "ui.login_form");
+}
+
+#[test]
+fn observed_components_group_visible_objects_by_parent_id() {
+    let mut label = test_observed_object("object.input.label", 10, 20, 40, 12);
+    label.parent_id = Some("ui.login_form".to_owned());
+    let mut field = test_observed_object("object.input.field", 20, 40, 80, 20);
+    field.parent_id = Some("ui.login_form".to_owned());
+    let mut hidden = test_observed_object("object.hidden", 200, 200, 10, 10);
+    hidden.parent_id = Some("ui.login_form".to_owned());
+    hidden.visible = false;
+
+    let components = agent_observed_components("cli", 3, &[label, field, hidden]);
+
+    assert_eq!(components.len(), 1);
+    let component = &components[0];
+    assert_eq!(component.id, "ui.login_form");
+    assert_eq!(component.object_count, 2);
+    assert_eq!(
+        component.object_refs,
+        vec![
+            "object.input.label".to_owned(),
+            "object.input.field".to_owned()
+        ]
+    );
+    assert_eq!(component.bbox.x, 10);
+    assert_eq!(component.bbox.y, 20);
+    assert_eq!(component.bbox.width, 90);
+    assert_eq!(component.bbox.height, 40);
+    assert!(
+        component
+            .capture_refs
+            .captures
+            .iter()
+            .any(|capture| capture.uri.ends_with("/component.ui.login_form.mask.rgba"))
+    );
+}
+
+#[test]
+fn native_component_capture_targets_select_member_objects() {
+    let mut first = test_observed_object("object.input.label", 10, 20, 40, 12);
+    first.parent_id = Some("ui.login_form".to_owned());
+    let mut second = test_observed_object("object.input.field", 20, 40, 80, 20);
+    second.parent_id = Some("ui.login_form".to_owned());
+    let outside = test_observed_object("object.other", 200, 200, 10, 10);
+    let objects = vec![first, second, outside];
+    let frame = test_line_display_frame();
+
+    let selected = agent_native_capture_targets_for_scope(
+        AgentNativeCaptureContext {
+            frame: &frame,
+            left: 0.0,
+            top: 0.0,
+            objects: &objects,
+            page_index: 0,
+            capture_time_seconds: 0.0,
+        },
+        &AgentCaptureScope::Component("ui.login_form".to_owned()),
+    )
+    .expect("component scope selects its member objects");
+
+    let ids = selected
+        .iter()
+        .map(AgentNativeCaptureTarget::id)
+        .collect::<Vec<_>>();
+    assert_eq!(ids, vec!["object.input.label", "object.input.field"]);
 }
 
 fn test_observed_object(id: &str, x: u32, y: u32, width: u32, height: u32) -> AgentObservedObject {

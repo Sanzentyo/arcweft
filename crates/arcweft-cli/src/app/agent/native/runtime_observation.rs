@@ -275,6 +275,7 @@ pub(super) fn agent_observe_image_output(
                 content_viewport_bbox: None,
                 content_pixels: None,
                 object: agent_image_object_for_capture_scope(report, &scope),
+                component: agent_image_component_for_capture_scope(report, &scope),
                 selected_capture: None,
                 diagnostics: Vec::new(),
                 written: options.out.as_deref().map(report_path),
@@ -362,7 +363,9 @@ pub(super) fn agent_capture_request_for_options(
 }
 
 pub(super) fn agent_capture_scope_for_options(options: &AgentObserveOptions) -> AgentCaptureScope {
-    if let Some(object_id) = &options.object {
+    if let Some(component_id) = &options.component {
+        AgentCaptureScope::Component(component_id.clone())
+    } else if let Some(object_id) = &options.object {
         AgentCaptureScope::Object(object_id.clone())
     } else if let Some(layer) = &options.layer {
         AgentCaptureScope::Layer(layer.clone())
@@ -374,6 +377,7 @@ pub(super) fn agent_capture_scope_for_options(options: &AgentObserveOptions) -> 
 pub(super) fn agent_image_scope_for_capture_scope(scope: &AgentCaptureScope) -> AgentImageScope {
     match scope {
         AgentCaptureScope::Viewport => AgentImageScope::Viewport,
+        AgentCaptureScope::Component(id) => AgentImageScope::Component { id: id.clone() },
         AgentCaptureScope::Layer(id) => AgentImageScope::Layer { id: id.clone() },
         AgentCaptureScope::Object(id) => AgentImageScope::Object { id: id.clone() },
     }
@@ -383,6 +387,17 @@ pub(super) fn select_agent_capture_objects<'a>(
     objects: &'a [AgentObservedObject],
     options: &AgentObserveOptions,
 ) -> Result<Vec<&'a AgentObservedObject>, ExitCode> {
+    if let Some(component_id) = &options.component {
+        let selected = objects
+            .iter()
+            .filter(|object| agent_component_id_for_object(object) == *component_id)
+            .collect::<Vec<_>>();
+        if selected.is_empty() {
+            eprintln!("error: no observed object matches --component {component_id}");
+            return Err(ExitCode::from(2));
+        }
+        return Ok(selected);
+    }
     if let Some(object_id) = &options.object {
         let Some(object) = objects.iter().find(|object| object.id == *object_id) else {
             eprintln!("error: no observed object matches --object {object_id}");

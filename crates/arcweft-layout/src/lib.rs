@@ -278,6 +278,7 @@ pub enum TextFitDiagnosticCode {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CaptureScope {
     Viewport,
+    Component { id: String },
     Layer { id: String },
     Object { id: String },
 }

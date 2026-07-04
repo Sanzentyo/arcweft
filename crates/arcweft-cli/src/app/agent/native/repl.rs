@@ -1085,15 +1085,26 @@ fn agent_repl_remote_capture_request(index: usize, target: &str) -> Result<Captu
             .next()
             .ok_or_else(|| format!(":capture {kind} requires an id"))?;
         if parts.next().is_some() {
-            return Err(":capture accepts only viewport, layer ID, or object ID".to_owned());
+            return Err(
+                ":capture accepts only viewport, component ID, layer ID, or object ID".to_owned(),
+            );
         }
         match kind {
+            "component" => CaptureTarget::Component {
+                id: AgentPublicId::new(id.to_owned())
+                    .map_err(|error| format!("invalid component id `{id}`: {error}"))?,
+            },
             "layer" => CaptureTarget::Layer {
                 id: AgentPublicId::new(id.to_owned())
                     .map_err(|error| format!("invalid layer id `{id}`: {error}"))?,
             },
             "object" => CaptureTarget::Object { id: id.to_owned() },
-            _ => return Err(":capture accepts only viewport, layer ID, or object ID".to_owned()),
+            _ => {
+                return Err(
+                    ":capture accepts only viewport, component ID, layer ID, or object ID"
+                        .to_owned(),
+                );
+            }
         }
     };
     Ok(CaptureRequest {
@@ -1269,6 +1280,7 @@ pub(super) fn agent_repl_observe_options(
         image: None,
         capture: None,
         layer: None,
+        component: None,
         object: None,
         page: None,
         capture_time_seconds: options.capture_time_seconds,

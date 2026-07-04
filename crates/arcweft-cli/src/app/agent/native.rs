@@ -55,15 +55,17 @@ use arcweft_agent_protocol::hit_test::{AgentHitTestHit, AgentHitTestReport};
 use arcweft_agent_protocol::ids::PublicId as AgentPublicId;
 use arcweft_agent_protocol::ids::{AgentResourceUri, AgentRunId, PublicId, SessionId, StableHash};
 use arcweft_agent_protocol::image::{
-    AgentCaptureMaskAvailability, AgentCaptureSourceIdentity, AgentImageAlignment,
-    AgentImageComposition, AgentImageContentBBox, AgentImageCropOrigin, AgentImageFit,
-    AgentImageKind, AgentImageMetadata, AgentImageObjectParam, AgentImageObjectRef,
-    AgentImageRenderer, AgentImageResource, AgentImageScope, AgentImageTransform,
-    AgentLayerCaptureRef, AgentLayerCaptureRefs, AgentObjectCaptureRef, AgentObjectCaptureRefs,
-    AgentSelectedCaptureMask, AgentSelectedCaptureMetadata,
+    AgentCaptureMaskAvailability, AgentCaptureSourceIdentity, AgentComponentCaptureRef,
+    AgentComponentCaptureRefs, AgentImageAlignment, AgentImageComponentRef, AgentImageComposition,
+    AgentImageContentBBox, AgentImageCropOrigin, AgentImageFit, AgentImageKind, AgentImageMetadata,
+    AgentImageObjectParam, AgentImageObjectRef, AgentImageRenderer, AgentImageResource,
+    AgentImageScope, AgentImageTransform, AgentLayerCaptureRef, AgentLayerCaptureRefs,
+    AgentObjectCaptureRef, AgentObjectCaptureRefs, AgentSelectedCaptureMask,
+    AgentSelectedCaptureMetadata,
 };
 use arcweft_agent_protocol::object::{
-    AgentObservedImageContent, AgentObservedLayer, AgentObservedObject, AgentObservedObjectContent,
+    AgentObservedComponent, AgentObservedImageContent, AgentObservedLayer, AgentObservedObject,
+    AgentObservedObjectContent,
 };
 use arcweft_agent_protocol::observation::AgentObservationReport;
 use arcweft_agent_protocol::predicate::{CompareOp, Predicate, Probe};
@@ -242,15 +244,16 @@ mod tests;
 use capture::{
     AgentCaptureReadRequest, AgentCaptureScope, AgentImageFrameStore, AgentStoredImageFrame,
     AgentStoredImagePlacement, AgentUiImageObservation, agent_capture_request_from_uri,
-    agent_image_object_for_capture_scope, agent_native_capture_image,
-    agent_native_capture_image_with_frame_store,
+    agent_image_component_for_capture_scope, agent_image_object_for_capture_scope,
+    agent_native_capture_image, agent_native_capture_image_with_frame_store,
     agent_native_capture_resource_with_session_and_frame_store, agent_observe_capture_resource,
 };
 use image_mapping::{
-    AgentSelectedCaptureMetadataSpec, agent_capture_uri, agent_encode_png,
-    agent_frame_capture_uri_for_page, agent_layout_rect_from_bbox,
-    agent_measure_frame_elements_with_session, agent_object_capture_refs_for_page,
-    agent_object_id_color, agent_object_layers, agent_object_matches_layer, agent_observed_layers,
+    AgentSelectedCaptureMetadataSpec, agent_capture_uri, agent_component_id_for_object,
+    agent_component_scope_for_id, agent_encode_png, agent_frame_capture_uri_for_page,
+    agent_layout_rect_from_bbox, agent_measure_frame_elements_with_session,
+    agent_object_capture_refs_for_page, agent_object_id_color, agent_object_layers,
+    agent_object_matches_layer, agent_observed_components, agent_observed_layers,
     agent_observed_rich_text, agent_overlay_svg, agent_rich_text_ranges_overlap,
     agent_scoped_capture_name, agent_selected_capture_metadata_for_ref, agent_textbox_object,
     hash_hex,

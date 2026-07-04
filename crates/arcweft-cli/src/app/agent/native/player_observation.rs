@@ -9,8 +9,8 @@ use super::{
     agent_native_capture_session_for_hir, agent_object_capture_refs_for_page,
     agent_observe_capture_time_seconds, agent_observe_effective_steps,
     agent_observe_layout_scene_graph, agent_observe_report_capture_time_millis,
-    agent_observed_layers, agent_overlay_svg, agent_textbox_object, hash_hex,
-    load_and_check_selection, native_host_policy_for_selection, report_path,
+    agent_observed_components, agent_observed_layers, agent_overlay_svg, agent_textbox_object,
+    hash_hex, load_and_check_selection, native_host_policy_for_selection, report_path,
     resolve_source_selection,
 };
 use crate::app::bundle::compile_bundle_for_selection;
@@ -329,6 +329,7 @@ fn player_observation_report(
     let mut actions = agent_action_targets(&objects);
     actions.extend(agent_action_targets_for_runtime_status(&step.fiber_status));
     let layers = agent_observed_layers("cli", step.index, &objects);
+    let components = agent_observed_components("cli", step.index, &objects);
     let presentation_tree = AgentPresentationTree::from_layers_and_objects(&layers, &objects);
     let state_hash = hash_hex(
         format!(
@@ -356,6 +357,7 @@ fn player_observation_report(
         viewport,
         images: Vec::new(),
         layers: layers.clone(),
+        components,
         objects,
         presentation_tree,
         actions,

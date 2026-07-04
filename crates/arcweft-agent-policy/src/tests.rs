@@ -77,6 +77,7 @@ fn raw_rgba_resource(kind: AgentImageKind, pixels: Vec<u8>) -> AgentResource {
             content_viewport_bbox: None,
             content_pixels: None,
             object: None,
+            component: None,
             selected_capture: None,
             diagnostics: Vec::new(),
         }),

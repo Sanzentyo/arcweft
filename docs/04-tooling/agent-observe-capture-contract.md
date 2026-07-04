@@ -19,8 +19,8 @@ Related:
 returns image bytes plus the same descriptor metadata. A debugger must be able
 to answer these questions from one observation:
 
-- what frame, viewport, layers, objects, and rich-text child ranges exist
-- which full-frame, layer, object, and rich-text child captures are available
+- what frame, viewport, layers, components, objects, and rich-text child ranges exist
+- which full-frame, component, layer, object, and rich-text child captures are available
 - which URI reads reproduce the exact bytes and metadata for a listed capture
 - how image-local pixels map back to viewport coordinates and source ranges
 
@@ -43,6 +43,7 @@ An observation represents a single rendered frame:
   "viewport": { "width": 1280, "height": 720 },
   "images": [],
   "layers": [],
+  "components": [],
   "objects": [],
   "diagnostics": []
 }
@@ -106,7 +107,7 @@ Every image resource has these semantic axes:
 |---|---|
 | `kind` | `color`, `overlay`, `overlay_svg`, `object_id`, `mask` |
 | `renderer` | `native` |
-| `scope` | `viewport`, `layer { id }`, `object { id }` |
+| `scope` | `viewport`, `component { id }`, `layer { id }`, `object { id }` |
 | `composition` | `framebuffer`, `overlay_vector`, `framebuffer_crop`, `object_id_attachment`, `mask_attachment`, `masked_framebuffer_crop`, `isolated_regions`, `debug_geometry` |
 | `mime_type` | `image/png`, `image/x-arcweft-rgba8`, `image/svg+xml` |
 
@@ -114,6 +115,8 @@ Required capture families:
 
 - full viewport color image
 - full viewport object-id and mask images when supported by the renderer
+- component color crop or isolated component image
+- component object-id and mask image
 - layer color crop or isolated layer image
 - layer object-id and mask image
 - object color crop or isolated object image
@@ -143,6 +146,12 @@ contents still carry the MCP blob itself; clients that need image metadata
 should use the Agent tool response or the session resource descriptors rather
 than expecting metadata to be embedded inside the blob content.
 
+Component-scoped image metadata carries a `component` reference in addition to
+`scope.component.id`. The reference preserves the component id, optional parent
+id, object count, member object refs, bbox, and component capture refs so clients
+can inspect the captured component without deriving membership from URI or object
+name conventions.
+
 ---
 
 ## Scope semantics
@@ -154,6 +163,12 @@ viewport size. This is the primary regression artifact for CI and human review.
 framebuffer crop, a mask attachment, or an isolated-region render, but it must
 report the actual `composition`. The layer descriptor lists its available
 `capture_refs`.
+
+`scope = component { id }` captures the union of visible objects belonging to an
+observed component boundary. Current native observation conservatively groups by
+`parent_id` when available and otherwise by entity/id until authored component
+identity is exposed by frame lowering. The component descriptor lists its
+available `capture_refs`.
 
 `scope = object { id }` captures a single observed object. Rich-text child
 objects are normal object scopes with additional rich-text metadata, not a
@@ -175,6 +190,12 @@ arcweft://session/{session}/frame/{frame}/observation.json
 arcweft://session/{session}/frame/{frame}/presentation-tree.json
 arcweft://session/{session}/frame/{frame}/viewport.png
 arcweft://session/{session}/frame/{frame}/viewport.rgba
+arcweft://session/{session}/frame/{frame}/component.{id}.png
+arcweft://session/{session}/frame/{frame}/component.{id}.rgba
+arcweft://session/{session}/frame/{frame}/component.{id}.object-id.png
+arcweft://session/{session}/frame/{frame}/component.{id}.object-id.rgba
+arcweft://session/{session}/frame/{frame}/component.{id}.mask.png
+arcweft://session/{session}/frame/{frame}/component.{id}.mask.rgba
 arcweft://session/{session}/frame/{frame}/layer.{id}.png
 arcweft://session/{session}/frame/{frame}/layer.{id}.mask.png
 arcweft://session/{session}/frame/{frame}/object.{id}.png
@@ -411,6 +432,7 @@ CLI examples:
 ```bash
 arcw agent observe game/routes/opening.arcw --json
 arcw agent observe game/routes/opening.arcw --image png --out viewport.png --json
+arcw agent observe game/routes/opening.arcw --image png --component ui.login_form --out component.png --json
 arcw agent observe game/routes/opening.arcw --image png --layer dialogue --out dialogue.png --json
 arcw agent observe game/routes/opening.arcw --image raw-rgba --object object.dialogue.0.0 --out object.rgba --json
 arcw agent observe game/routes/opening.arcw --read-uri arcweft://session/cli/frame/0/object.object.dialogue.0.0.png
