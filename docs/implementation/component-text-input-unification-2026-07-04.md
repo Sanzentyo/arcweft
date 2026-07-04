@@ -29,6 +29,24 @@ This cut applies the component/View text-control unification note from
 - `samples/text-submit-flow`, `samples/modern-feedback-ui`, and
   `samples/native-text-input` no longer rely on top-level text-control
   declarations.
+- Runtime submit button fallback bounds now derive from the target text-control
+  slot. Single-line targets place submit buttons to the right of the field;
+  multiline targets place submit buttons below the text area. This fixes the
+  modern feedback UI overlap where the first button defaulted onto the
+  following text area's stacked slot.
+
+## Modern feedback UI debug notes
+
+- `samples/modern-feedback-ui` bundles cleanly after the placement fix.
+- The CSS/Takumi/WGPU substrate for opacity and CSS `box-shadow` is present:
+  focused box-shadow lowering and renderer plan tests pass, and opacity is
+  treated as a paint-only property in the Takumi adapter path.
+- The visible modern component path still does not apply `UiStyleResource`
+  rules to player-rendered `RenderTextInputControl` /
+  `RenderActionButton` instances. Those renderer types currently carry bounds,
+  labels, enabled state, and actions, but not resolved authored style or
+  box-shadow data. This is a style-resolution/runtime-control contract gap, not
+  a CSS parser or shadow renderer failure.
 
 ## Non-goals
 
@@ -36,6 +54,8 @@ This cut applies the component/View text-control unification note from
 - No platform-widget fallback for submit buttons.
 - No new layout-bounds resource contract; current runtime text-control bounds
   remain the existing stacked/default resource behavior.
+- No end-to-end authored style resolution for player-rendered runtime text
+  controls and action buttons in this cut.
 
 ## Remaining TODOs / follow-up requests
 
@@ -46,12 +66,19 @@ This cut applies the component/View text-control unification note from
   bundle cleanly without top-level input declarations, but interactive launch
   was not executed in this cut. Follow-up request:
   `docs/reviews/requests/2026-07-04-seq-06.16.3-component-text-input-native-interactive-smoke.md`.
+- Resolve modern feedback UI authored style rules, transparency, and
+  `box-shadow` into the actual player-rendered runtime controls without
+  bypassing the existing retained UI/style substrate. Follow-up request:
+  `docs/reviews/requests/2026-07-04-seq-06.16.4-modern-feedback-ui-style-to-runtime-control-rendering.md`.
 
 ## Design deviations
 
 - No new layout-bounds resource contract was added; this is tracked as
   seq06.16.2.
 - Native interactive launch was not run; this is tracked as seq06.16.3.
+- Authored modern feedback UI style rules are carried as product UI resources
+  but are not yet resolved into the player-rendered runtime text-control/button
+  draw path; this is tracked as seq06.16.4 and should align with seq06.11.
 
 ## Validation
 
@@ -68,6 +95,12 @@ This cut applies the component/View text-control unification note from
 - `cargo fmt --all -- --check`
 - `cargo clippy -p arcweft-lang-syntax -p arcweft-lang-sema -p arcweft-cli --all-targets -- -D warnings`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`
+- `cargo test -p arcweft-cli component_view_ -- --nocapture`
+- `cargo test -p arcweft-bundle ui_input_resource_stacks_default_text_control_bounds_by_height -- --nocapture`
+- `cargo run -p arcweft-cli -- bundle samples/modern-feedback-ui/src/main.arcw --output target/arcweft/modern-feedback-ui-debug.awfb`
+- `cargo test -p arcweft-takumi-adapter --test css_box_shadow_lowering --all-features -- --nocapture`
+- `cargo test -p arcweft-render-wgpu --test ui_box_shadow_plan --all-features -- --nocapture`
+- `cargo test -p arcweft-takumi-adapter --test adapter_contract transform_and_opacity_are_paint_only_invalidations -- --nocapture`
 
 Structure audit completed as a dry run and reported the current workspace
 baseline of `4 error(s), 125 warning(s)` without writing report files.

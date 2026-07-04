@@ -4,7 +4,8 @@ use arcweft_bundle::{
         UiActionButtonActionResource, UiActionButtonResource, UiFocusDirection, UiFocusGroupPolicy,
         UiFocusGroupResource, UiFocusInitialPolicy, UiFocusNavigationEdge,
         UiFocusNavigationResource, UiFocusSkipPolicy, UiFocusTargetResolution, UiFocusWrapPolicy,
-        UiInputResource, UiProgramResource, UiRuntimeButtonBounds, UiStyleResource, UiTextResource,
+        UiInputResource, UiProgramResource, UiRuntimeButtonBounds, UiRuntimeTextControlBounds,
+        UiStyleResource, UiTextResource,
         ui::{
             CompositionOnBlurPolicy, EnterKeyHint, StyleSourceIdentity, StyleSourceRef,
             StyleSyntax, TextAssistPolicy, TextCapitalization, UiElementKind, UiInputKind,
@@ -81,6 +82,7 @@ pub(in crate::app) fn component_view_sidecars(
             lower_component_view(component.id(), body, &mut state);
         }
     }
+    assign_action_button_bounds(&mut state);
     if state.instructions.is_empty()
         && state.text_sources.is_empty()
         && state.input_options.is_empty()
@@ -331,7 +333,7 @@ fn lower_button(component_id: &str, button: &ViewButton, state: &mut ViewLowerin
             input,
             ime_policy: lower_ime_policy(action.ime_policy()),
         },
-        bounds: button_slot_bounds(state.action_buttons.len()),
+        bounds: UiRuntimeButtonBounds::default_slot(state.action_buttons.len()),
         source: None,
     });
     state.semantic_targets.push(UiSemanticTarget {
@@ -682,13 +684,42 @@ fn lower_ime_policy(policy: ViewTextSubmitImePolicy) -> UiTextSubmitImePolicy {
     }
 }
 
-fn button_slot_bounds(index: usize) -> UiRuntimeButtonBounds {
-    let y = 112_000_i32.saturating_add(
-        i32::try_from(index)
-            .unwrap_or(i32::MAX)
-            .saturating_mul(56_000),
+fn assign_action_button_bounds(state: &mut ViewLoweringState) {
+    if state.action_buttons.is_empty() || state.input_options.is_empty() {
+        return;
+    }
+    let input_bounds = UiRuntimeTextControlBounds::default_stacked_slots(
+        state.input_options.iter().map(|option| option.kind),
     );
-    UiRuntimeButtonBounds::new(48_000, y, 180_000, 44_000)
+    let mut submit_counts_by_input: Vec<(String, usize)> = Vec::new();
+    for (fallback_index, button) in state.action_buttons.iter_mut().enumerate() {
+        let UiActionButtonActionResource::TextInputSubmit { input, .. } = &button.action;
+        let Some((input_index, input_option)) = state
+            .input_options
+            .iter()
+            .enumerate()
+            .find(|(_, option)| option.public_id == *input)
+        else {
+            button.bounds = UiRuntimeButtonBounds::default_slot(fallback_index);
+            continue;
+        };
+        let ordinal = action_button_submit_ordinal(&mut submit_counts_by_input, input);
+        button.bounds = UiRuntimeButtonBounds::default_submit_slot(
+            input_bounds[input_index],
+            input_option.kind,
+            ordinal,
+        );
+    }
+}
+
+fn action_button_submit_ordinal(counts: &mut Vec<(String, usize)>, input: &str) -> usize {
+    if let Some((_, count)) = counts.iter_mut().find(|(public_id, _)| public_id == input) {
+        let ordinal = *count;
+        *count = count.saturating_add(1);
+        return ordinal;
+    }
+    counts.push((input.to_owned(), 1));
+    0
 }
 
 impl AuthoredTextControl {

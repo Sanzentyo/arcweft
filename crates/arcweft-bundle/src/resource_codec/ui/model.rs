@@ -856,15 +856,12 @@ impl UiInputResource {
         text: Option<&UiTextResource>,
         program: Option<&UiProgramResource>,
     ) -> Vec<UiRuntimeTextControl> {
-        let mut next_y_milli = UiRuntimeTextControlBounds::DEFAULT_STACK_Y_MILLI;
         self.options
             .iter()
-            .map(|option| {
-                let bounds = UiRuntimeTextControlBounds::stacked_slot(next_y_milli, option.kind);
-                next_y_milli =
-                    UiRuntimeTextControlBounds::next_stacked_slot_y(next_y_milli, option.kind);
-                option.runtime_text_control_with_bounds(bounds, text, program)
-            })
+            .zip(UiRuntimeTextControlBounds::default_stacked_slots(
+                self.options.iter().map(|option| option.kind),
+            ))
+            .map(|(option, bounds)| option.runtime_text_control_with_bounds(bounds, text, program))
             .collect()
     }
 }
@@ -1176,6 +1173,18 @@ impl UiRuntimeTextControlBounds {
         )
     }
 
+    pub fn default_stacked_slots(kinds: impl IntoIterator<Item = UiInputKind>) -> Vec<Self> {
+        let mut next_y_milli = Self::DEFAULT_STACK_Y_MILLI;
+        kinds
+            .into_iter()
+            .map(|kind| {
+                let bounds = Self::stacked_slot(next_y_milli, kind);
+                next_y_milli = Self::next_stacked_slot_y(next_y_milli, kind);
+                bounds
+            })
+            .collect()
+    }
+
     fn default_slot(index: usize, kind: UiInputKind) -> Self {
         let index = i32::try_from(index).unwrap_or(i32::MAX);
         Self::stacked_slot(
@@ -1206,6 +1215,13 @@ impl UiRuntimeTextControlBounds {
 }
 
 impl UiRuntimeButtonBounds {
+    const DEFAULT_STACK_X_MILLI: i32 = 48_000;
+    const DEFAULT_STACK_Y_MILLI: i32 = 112_000;
+    const DEFAULT_STACK_GAP_MILLI: i32 = 16_000;
+    const DEFAULT_SLOT_PITCH_MILLI: i32 = 56_000;
+    const DEFAULT_WIDTH_MILLI: u32 = 180_000;
+    const DEFAULT_HEIGHT_MILLI: u32 = 44_000;
+
     pub const fn new(x_milli: i32, y_milli: i32, width_milli: u32, height_milli: u32) -> Self {
         Self {
             x_milli,
@@ -1213,6 +1229,54 @@ impl UiRuntimeButtonBounds {
             width_milli,
             height_milli,
         }
+    }
+
+    pub fn default_slot(index: usize) -> Self {
+        let index = i32::try_from(index).unwrap_or(i32::MAX);
+        Self::new(
+            Self::DEFAULT_STACK_X_MILLI,
+            Self::DEFAULT_STACK_Y_MILLI
+                .saturating_add(index.saturating_mul(Self::DEFAULT_SLOT_PITCH_MILLI)),
+            Self::DEFAULT_WIDTH_MILLI,
+            Self::DEFAULT_HEIGHT_MILLI,
+        )
+    }
+
+    pub fn default_submit_slot(
+        input_bounds: UiRuntimeTextControlBounds,
+        input_kind: UiInputKind,
+        ordinal_for_input: usize,
+    ) -> Self {
+        let ordinal = i32::try_from(ordinal_for_input).unwrap_or(i32::MAX);
+        let pitch = u32_to_i32_saturating(Self::DEFAULT_WIDTH_MILLI)
+            .saturating_add(Self::DEFAULT_STACK_GAP_MILLI);
+        let cross_axis_offset = ordinal.saturating_mul(pitch);
+        if input_kind.is_multiline() {
+            return Self::new(
+                input_bounds.x_milli.saturating_add(cross_axis_offset),
+                input_bounds
+                    .y_milli
+                    .saturating_add(u32_to_i32_saturating(input_bounds.height_milli))
+                    .saturating_add(Self::DEFAULT_STACK_GAP_MILLI),
+                Self::DEFAULT_WIDTH_MILLI,
+                Self::DEFAULT_HEIGHT_MILLI,
+            );
+        }
+        let centered_y = input_bounds.y_milli.saturating_add(
+            u32_to_i32_saturating(input_bounds.height_milli)
+                .saturating_sub(u32_to_i32_saturating(Self::DEFAULT_HEIGHT_MILLI))
+                / 2,
+        );
+        Self::new(
+            input_bounds
+                .x_milli
+                .saturating_add(u32_to_i32_saturating(input_bounds.width_milli))
+                .saturating_add(Self::DEFAULT_STACK_GAP_MILLI)
+                .saturating_add(cross_axis_offset),
+            centered_y,
+            Self::DEFAULT_WIDTH_MILLI,
+            Self::DEFAULT_HEIGHT_MILLI,
+        )
     }
 }
 
@@ -1273,6 +1337,10 @@ fn clamp_text_byte_offset(value: &str, offset: u32) -> u32 {
         index = index.saturating_sub(1);
     }
     u32::try_from(index).unwrap_or(u32::MAX)
+}
+
+fn u32_to_i32_saturating(value: u32) -> i32 {
+    i32::try_from(value).unwrap_or(i32::MAX)
 }
 
 #[cfg(test)]

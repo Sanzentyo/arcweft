@@ -2288,10 +2288,70 @@ component FeedbackForm() -> View {
                 && *ime_policy
                     == arcweft_bundle::resource_codec::ui::UiTextSubmitImePolicy::Reject
         ));
+        assert_eq!(
+            button.bounds,
+            arcweft_bundle::resource_codec::UiRuntimeButtonBounds::new(
+                484_000, 50_000, 180_000, 44_000,
+            )
+        );
         assert!(program.semantic_targets.iter().any(|target| {
             target.public_id == "button.feedback_send"
                 && target.label_text_source.as_deref() == Some(&button.label_text_source)
         }));
+    }
+
+    #[test]
+    fn component_view_submit_buttons_follow_target_text_control_slots() {
+        let parsed = arcweft_lang_syntax::parser::parse_source(
+            r#"
+component FeedbackForm() -> View {
+  VStack {
+    HStack {
+      TextField(id: @input:.name, label: "Name", value: "", placeholder: "Name", purpose: name, enter_key: next, submit: @input:.name, change: @input:.name)
+      Button("Continue", id: @button:.continue)
+        .on_click(ime: .commit) {
+          text_submit @input:.name
+        }
+    }
+    TextArea(id: @input:.brief, label: "Brief", value: "", placeholder: "Idea", purpose: text, enter_key: send, submit: @input:.brief, change: @input:.brief)
+    HStack {
+      Button("Send", id: @button:.send)
+        .on_click(ime: .commit) {
+          text_submit @input:.brief
+        }
+    }
+  }
+}
+"#,
+        );
+        assert_eq!(parsed.errors(), &[]);
+        let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+        let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
+        let program = sidecars.program.expect("program sidecar");
+
+        let continue_button = program
+            .action_buttons
+            .iter()
+            .find(|button| button.public_id == "button.continue")
+            .expect("continue action button emitted");
+        let send_button = program
+            .action_buttons
+            .iter()
+            .find(|button| button.public_id == "button.send")
+            .expect("send action button emitted");
+
+        assert_eq!(
+            continue_button.bounds,
+            arcweft_bundle::resource_codec::UiRuntimeButtonBounds::new(
+                484_000, 50_000, 180_000, 44_000,
+            )
+        );
+        assert_eq!(
+            send_button.bounds,
+            arcweft_bundle::resource_codec::UiRuntimeButtonBounds::new(
+                48_000, 264_000, 180_000, 44_000,
+            )
+        );
     }
 
     fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
