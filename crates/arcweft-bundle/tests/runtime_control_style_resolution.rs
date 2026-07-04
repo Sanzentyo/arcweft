@@ -34,6 +34,29 @@ fn text_control_resolves_authored_background_alpha_and_border_color() {
 }
 
 #[test]
+fn text_control_resolves_selection_and_caret_colors() {
+    let style = UiStyleResource {
+        rules: vec![rule(
+            UiStyleSelectorPart::Element(UiElementKind::TextArea),
+            vec![
+                decl("selection-color", rgba(64, 128, 200, 160)),
+                decl("caret-color", rgba(240, 220, 90, 255)),
+            ],
+        )],
+        ..UiStyleResource::default()
+    };
+
+    let resolved = style.runtime_text_control_style("input.message", UiInputKind::TextArea);
+    let normal = resolved
+        .style
+        .visual_for_state(UiRuntimeControlState::Normal);
+
+    assert_eq!(normal.selection, Some(RgbaColor::rgba(64, 128, 200, 160)));
+    assert_eq!(normal.caret, Some(RgbaColor::rgb(240, 220, 90)));
+    assert!(resolved.diagnostics.is_empty());
+}
+
+#[test]
 fn button_hover_pressed_and_disabled_selectors_resolve_deterministically() {
     let style = UiStyleResource {
         rules: vec![

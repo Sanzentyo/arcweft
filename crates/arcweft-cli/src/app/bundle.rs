@@ -52,7 +52,8 @@ use arcweft_bundle::{
             TextCapitalization, UiElementKind, UiElementState, UiEnvironmentPredicate, UiInputKind,
             UiInputOptions, UiInputPurpose, UiInteractionState, UiSecureInputPolicy,
             UiSemanticTarget, UiStyleDeclaration, UiStyleRule, UiStyleSelector,
-            UiStyleSelectorPart, UiStyleToken, UiStyleValue, UiTextSourceKind, UiTextSourceRecord,
+            UiStyleSelectorPart, UiStyleToken, UiStyleValue, UiTextSelectionPolicy,
+            UiTextShortcutPolicy, UiTextSourceKind, UiTextSourceRecord, UiTextTabPolicy,
         },
     },
 };
@@ -826,6 +827,9 @@ fn dsl_ui_input_options(input: &UiTextInputItem) -> UiInputOptions {
         capitalization: TextCapitalization::None,
         enter_key: dsl_ui_enter_key(input.enter_key()),
         multiline: input.kind() == UiTextInputKind::TextArea,
+        selection_policy: UiTextSelectionPolicy::Enabled,
+        shortcut_policy: UiTextShortcutPolicy::Enabled,
+        tab_policy: UiTextTabPolicy::FocusNavigation,
         secure_policy: if input.kind() == UiTextInputKind::SecureField {
             UiSecureInputPolicy::Password
         } else {

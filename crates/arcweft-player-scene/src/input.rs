@@ -14,8 +14,8 @@ use arcweft_presentation::text_editor::{
     TextEditorClipboard, TextEditorError, TextEditorOutput, TextEditorState,
 };
 use arcweft_presentation::text_input::{
-    TextControlValue, TextControlWriteBack, TextInput, TextInputKeyDisposition, TextInputOperation,
-    TextInputPrivacy,
+    TextByteOffset, TextCharacterBounds, TextControlValue, TextControlWriteBack, TextInput,
+    TextInputKeyDisposition, TextInputOperation, TextInputPrivacy,
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, FocusNavigationDirection, FramePlanError, InteractionVisualState, PreparedFrame,
@@ -29,6 +29,14 @@ pub struct DragState {
     pub target: arcweft_presentation::input::InteractionTarget,
     pub start: ViewportPoint,
     pub current: ViewportPoint,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct TextPointerSelectionState {
+    pointer: PointerId,
+    target: arcweft_presentation::input::InteractionTarget,
+    position: ViewportPoint,
+    selecting: bool,
 }
 
 impl DragState {
@@ -112,6 +120,7 @@ pub struct InputController {
     pointer_positions: BTreeMap<u64, ViewportPoint>,
     pressed: BTreeMap<u64, arcweft_presentation::input::InteractionTarget>,
     drags: BTreeMap<u64, DragState>,
+    pending_text_pointer_selection: Option<TextPointerSelectionState>,
     choice_scroll: ChoiceScroll,
     controller: ControllerInputNormalizer,
     window_focused: bool,
@@ -225,6 +234,9 @@ impl InputController {
         if let Some(drag) = self.drags.get_mut(&pointer.0) {
             drag.current = position;
         }
+        if let Some(selection) = self.text_drag_selection(frame, pointer, position, true) {
+            let _ = self.apply_or_defer_text_pointer_selection(frame, selection);
+        }
         let raw = self.raw(RawInputKind::Pointer(PointerInput {
             pointer,
             position,
@@ -250,6 +262,16 @@ impl InputController {
         if let RouteDecision::Routed(event) = routed.decision() {
             let target = event.target().clone();
             if let Some(node) = frame.semantics.find(&target) {
+                if frame_target_is_text_input(frame, &target) {
+                    self.pending_text_pointer_selection = Some(TextPointerSelectionState {
+                        pointer,
+                        target: target.clone(),
+                        position,
+                        selecting: false,
+                    });
+                } else {
+                    self.pending_text_pointer_selection = None;
+                }
                 self.interaction
                     .set_focus(FocusState::new(node.layer().clone(), target.clone()));
                 self.interaction.capture_pointer(PointerCapture::new(
@@ -297,6 +319,20 @@ impl InputController {
         let is_activation = drag
             .as_ref()
             .is_some_and(|drag| drag.distance_squared() <= 64.0);
+        if let Some(drag) = drag
+            .as_ref()
+            .filter(|drag| frame_target_is_text_input(frame, &drag.target))
+        {
+            let _ = self.apply_or_defer_text_pointer_selection(
+                frame,
+                TextPointerSelectionState {
+                    pointer,
+                    target: drag.target.clone(),
+                    position,
+                    selecting: !is_activation,
+                },
+            );
+        }
         let (actions, text_control_write_backs, diagnostics, action_button_activation) =
             match (released, routed.decision(), is_activation) {
                 (Some(pressed), RouteDecision::Routed(event), true)
@@ -331,8 +367,25 @@ impl InputController {
         self.pointer_positions.remove(&pointer.0);
         self.pressed.remove(&pointer.0);
         self.drags.remove(&pointer.0);
+        if self
+            .pending_text_pointer_selection
+            .as_ref()
+            .is_some_and(|selection| selection.pointer == pointer)
+        {
+            self.pending_text_pointer_selection = None;
+        }
         self.interaction.clear_pointer(pointer);
         InputOutcome::redraw(true)
+    }
+
+    pub fn apply_pending_text_pointer_selection(
+        &mut self,
+        frame: &PreparedFrame,
+    ) -> Result<bool, TextEditorError> {
+        let Some(selection) = self.pending_text_pointer_selection.take() else {
+            return Ok(false);
+        };
+        self.apply_or_defer_text_pointer_selection(frame, selection)
     }
 
     pub fn keyboard(&mut self, frame: &PreparedFrame, key: &str, phase: KeyPhase) -> InputOutcome {
@@ -567,6 +620,7 @@ impl InputController {
             self.pointer_positions.clear();
             self.pressed.clear();
             self.drags.clear();
+            self.pending_text_pointer_selection = None;
             self.focused_text_editor = None;
             self.interaction.clear_pointer_state();
         }
@@ -588,6 +642,49 @@ impl InputController {
         let epoch = InputEpoch(self.next_epoch);
         self.next_epoch = self.next_epoch.saturating_add(1);
         RawInputEvent::new(epoch, kind)
+    }
+
+    fn text_drag_selection(
+        &self,
+        frame: &PreparedFrame,
+        pointer: PointerId,
+        position: ViewportPoint,
+        selecting: bool,
+    ) -> Option<TextPointerSelectionState> {
+        let drag = self.drags.get(&pointer.0)?;
+        frame_target_is_text_input(frame, &drag.target).then(|| TextPointerSelectionState {
+            pointer,
+            target: drag.target.clone(),
+            position,
+            selecting,
+        })
+    }
+
+    fn apply_or_defer_text_pointer_selection(
+        &mut self,
+        frame: &PreparedFrame,
+        selection: TextPointerSelectionState,
+    ) -> Result<bool, TextEditorError> {
+        let Some(focused) = frame.focused_text_input_target() else {
+            self.pending_text_pointer_selection = Some(selection);
+            return Ok(false);
+        };
+        let Some(editor) = self.focused_text_editor.as_mut() else {
+            self.pending_text_pointer_selection = Some(selection);
+            return Ok(false);
+        };
+        if focused.snapshot.target() != &selection.target || editor.target() != &selection.target {
+            self.pending_text_pointer_selection = Some(selection);
+            return Ok(false);
+        }
+        let before_selection = editor.selection();
+        let before_caret = editor.caret();
+        let caret = viewport_text_hit_offset(
+            focused.geometry.viewport_character_bounds(),
+            selection.position,
+        );
+        editor.set_caret_to_text_offset(caret, selection.selecting)?;
+        Ok(editor.selection() != before_selection || editor.caret() != before_caret)
     }
 
     fn action_button_submit(
@@ -659,6 +756,36 @@ impl InputController {
             diagnostic: None,
         }
     }
+}
+
+fn viewport_text_hit_offset(
+    bounds: &[TextCharacterBounds],
+    position: ViewportPoint,
+) -> TextByteOffset {
+    let same_line = bounds
+        .iter()
+        .copied()
+        .filter(|bounds| {
+            position.y >= bounds.bounds.y && position.y <= bounds.bounds.y + bounds.bounds.height
+        })
+        .collect::<Vec<_>>();
+    let candidates = if same_line.is_empty() {
+        bounds
+    } else {
+        same_line.as_slice()
+    };
+    if candidates.is_empty() {
+        return TextByteOffset(0);
+    }
+    for bounds in candidates {
+        let midpoint = bounds.bounds.x + bounds.bounds.width * 0.5;
+        if position.x <= midpoint {
+            return *bounds.range.start();
+        }
+    }
+    candidates
+        .last()
+        .map_or(TextByteOffset(0), |bounds| *bounds.range.end())
 }
 
 fn activation_outcome(

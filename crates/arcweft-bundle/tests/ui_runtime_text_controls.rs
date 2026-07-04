@@ -2,7 +2,8 @@ use arcweft_bundle::resource_codec::ui::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
     UiInputOptions, UiInputPurpose, UiInputResource, UiLayoutBoundsResource, UiLogicalRect,
     UiProgramResource, UiRuntimeTextControlBounds, UiRuntimeTextSelection, UiSecureInputPolicy,
-    UiSemanticTarget, UiTextResource, UiTextSourceKind, UiTextSourceRecord,
+    UiSemanticTarget, UiTextResource, UiTextSelectionPolicy, UiTextShortcutPolicy,
+    UiTextSourceKind, UiTextSourceRecord, UiTextTabPolicy,
 };
 
 #[test]
@@ -247,6 +248,9 @@ fn text_input_option(
         capitalization: TextCapitalization::None,
         enter_key: EnterKeyHint::Default,
         multiline: kind.is_multiline(),
+        selection_policy: UiTextSelectionPolicy::Enabled,
+        shortcut_policy: UiTextShortcutPolicy::Enabled,
+        tab_policy: UiTextTabPolicy::FocusNavigation,
         secure_policy: UiSecureInputPolicy::Plain,
         composition_on_blur: CompositionOnBlurPolicy::Commit,
         submit_handler: None,

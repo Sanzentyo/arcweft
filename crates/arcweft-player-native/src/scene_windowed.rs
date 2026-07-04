@@ -695,7 +695,8 @@ impl NativeSceneState {
             ElementState::Released => KeyPhase::Up,
         };
         if phase == KeyPhase::Down
-            && let Some(operation) = self.text_input_operation_from_key_event(event)
+            && let Some(operation) =
+                self.text_input_operation_from_key_event(event, self.keyboard_modifiers)
         {
             self.apply_window_ime_operations(vec![operation])?;
             return Ok(());
@@ -720,8 +721,18 @@ impl NativeSceneState {
         Ok(())
     }
 
-    fn text_input_operation_from_key_event(&self, event: &KeyEvent) -> Option<TextInputOperation> {
+    fn text_input_operation_from_key_event(
+        &self,
+        event: &KeyEvent,
+        modifiers: ModifiersState,
+    ) -> Option<TextInputOperation> {
         let editor = self.input.focused_text_editor()?;
+        let selecting = modifiers.shift_key() && editor.options().selection_enabled();
+        if editor.options().shortcuts_enabled()
+            && let Some(command) = shortcut_command_from_key(&event.logical_key, modifiers)
+        {
+            return Some(TextInputOperation::Command(command));
+        }
         match &event.logical_key {
             Key::Named(NamedKey::Backspace) => {
                 Some(TextInputOperation::Command(TextEditCommand::Backspace))
@@ -729,23 +740,32 @@ impl NativeSceneState {
             Key::Named(NamedKey::Delete) => {
                 Some(TextInputOperation::Command(TextEditCommand::Delete))
             }
-            Key::Named(NamedKey::ArrowLeft) => {
-                Some(TextInputOperation::Command(TextEditCommand::MoveLeft {
-                    selecting: false,
+            Key::Named(NamedKey::ArrowLeft) => Some(TextInputOperation::Command(
+                left_arrow_text_command(modifiers, selecting),
+            )),
+            Key::Named(NamedKey::ArrowRight) => Some(TextInputOperation::Command(
+                right_arrow_text_command(modifiers, selecting),
+            )),
+            Key::Named(NamedKey::ArrowUp) => {
+                Some(TextInputOperation::Command(TextEditCommand::MoveUp {
+                    selecting,
                 }))
             }
-            Key::Named(NamedKey::ArrowRight) => {
-                Some(TextInputOperation::Command(TextEditCommand::MoveRight {
-                    selecting: false,
+            Key::Named(NamedKey::ArrowDown) => {
+                Some(TextInputOperation::Command(TextEditCommand::MoveDown {
+                    selecting,
                 }))
             }
             Key::Named(NamedKey::Home) => Some(TextInputOperation::Command(
-                TextEditCommand::MoveLineStart { selecting: false },
+                TextEditCommand::MoveLineStart { selecting },
             )),
             Key::Named(NamedKey::End) => {
                 Some(TextInputOperation::Command(TextEditCommand::MoveLineEnd {
-                    selecting: false,
+                    selecting,
                 }))
+            }
+            Key::Named(NamedKey::Tab) if editor.options().tab_inserts_text() => {
+                Some(TextInputOperation::Commit(TextCommit::new("\t")))
             }
             Key::Named(NamedKey::Enter) => {
                 if editor.options().is_multiline() {
@@ -757,6 +777,7 @@ impl NativeSceneState {
             Key::Named(NamedKey::Escape) => {
                 Some(TextInputOperation::Command(TextEditCommand::Cancel))
             }
+            _ if shortcut_modifier_active(modifiers) => None,
             _ => event
                 .text
                 .as_ref()
@@ -1195,6 +1216,50 @@ fn text_input_commit_from_key_text(text: &str) -> Option<TextInputOperation> {
         return None;
     }
     Some(TextInputOperation::Commit(TextCommit::new(text)))
+}
+
+fn shortcut_command_from_key(key: &Key, modifiers: ModifiersState) -> Option<TextEditCommand> {
+    if !shortcut_modifier_active(modifiers) {
+        return None;
+    }
+    let Key::Character(value) = key else {
+        return None;
+    };
+    if value.eq_ignore_ascii_case("a") {
+        Some(TextEditCommand::SelectAll)
+    } else if value.eq_ignore_ascii_case("c") {
+        Some(TextEditCommand::Copy)
+    } else if value.eq_ignore_ascii_case("x") {
+        Some(TextEditCommand::Cut)
+    } else if value.eq_ignore_ascii_case("v") {
+        Some(TextEditCommand::Paste)
+    } else {
+        None
+    }
+}
+
+fn left_arrow_text_command(modifiers: ModifiersState, selecting: bool) -> TextEditCommand {
+    if modifiers.meta_key() {
+        TextEditCommand::MoveLineStart { selecting }
+    } else if modifiers.control_key() || modifiers.alt_key() {
+        TextEditCommand::MoveWordLeft { selecting }
+    } else {
+        TextEditCommand::MoveLeft { selecting }
+    }
+}
+
+fn right_arrow_text_command(modifiers: ModifiersState, selecting: bool) -> TextEditCommand {
+    if modifiers.meta_key() {
+        TextEditCommand::MoveLineEnd { selecting }
+    } else if modifiers.control_key() || modifiers.alt_key() {
+        TextEditCommand::MoveWordRight { selecting }
+    } else {
+        TextEditCommand::MoveRight { selecting }
+    }
+}
+
+fn shortcut_modifier_active(modifiers: ModifiersState) -> bool {
+    modifiers.control_key() || modifiers.meta_key()
 }
 
 fn key_label(key: &Key) -> String {

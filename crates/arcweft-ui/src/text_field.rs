@@ -469,12 +469,14 @@ impl TextEditState {
                 Ok(TextEditOutcome::new(false, false, self.revision))
             }
             TextEditCommand::MoveLeft { selecting: _ }
+            | TextEditCommand::MoveUp { selecting: _ }
             | TextEditCommand::MoveWordLeft { selecting: _ }
             | TextEditCommand::MoveLineStart { selecting: _ } => {
                 self.selection = UiTextByteRange::new(0, 0);
                 Ok(TextEditOutcome::new(false, false, self.revision))
             }
             TextEditCommand::MoveRight { selecting: _ }
+            | TextEditCommand::MoveDown { selecting: _ }
             | TextEditCommand::MoveWordRight { selecting: _ }
             | TextEditCommand::MoveLineEnd { selecting: _ } => {
                 let end = u32::try_from(self.document.len()).unwrap_or(u32::MAX);
@@ -1019,6 +1021,8 @@ impl TextEditState {
             | TextEditCommand::Cancel
             | TextEditCommand::MoveLeft { .. }
             | TextEditCommand::MoveRight { .. }
+            | TextEditCommand::MoveUp { .. }
+            | TextEditCommand::MoveDown { .. }
             | TextEditCommand::MoveWordLeft { .. }
             | TextEditCommand::MoveWordRight { .. }
             | TextEditCommand::MoveLineStart { .. }

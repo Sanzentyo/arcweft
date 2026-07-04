@@ -87,6 +87,45 @@ fn focused_text_control_uses_authored_focus_ring() {
 }
 
 #[test]
+fn focused_text_control_uses_authored_selection_and_caret_colors() {
+    let input_target = target("input.feedback");
+    let control = text_control(input_target.clone())
+        .with_selection(TextRange::new(TextByteOffset(0), TextByteOffset(2)))
+        .with_style(RenderControlStyle {
+            normal: RenderControlVisualStyle {
+                selection: Some([0.2, 0.5, 0.8, 0.6]),
+                caret: Some([0.9, 0.8, 0.1, 1.0]),
+                ..RenderControlVisualStyle::default()
+            },
+            ..RenderControlStyle::default()
+        });
+    let scene = scene(
+        vec![control],
+        Vec::new(),
+        InteractionVisualState {
+            focused: Some(input_target),
+            hovered: None,
+            pressed: None,
+        },
+    );
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+
+    assert!(
+        frame
+            .rectangles
+            .iter()
+            .any(|rect| rgba_near(rect.rgba, [0.2, 0.5, 0.8, 0.6]))
+    );
+    assert!(
+        frame
+            .rectangles
+            .iter()
+            .any(|rect| rgba_near(rect.rgba, [0.9, 0.8, 0.1, 1.0]))
+    );
+}
+
+#[test]
 fn supported_box_shadow_reaches_existing_shadow_pass_plan() {
     let button_target = target("button.submit_feedback");
     let scene = scene_with_button(button_target.clone(), InteractionVisualState::default());

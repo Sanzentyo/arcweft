@@ -17,6 +17,8 @@ pub struct RenderControlStyle {
 pub struct RenderControlVisualStyle {
     pub fill: Option<[f32; 4]>,
     pub text: Option<[u8; 4]>,
+    pub selection: Option<[f32; 4]>,
+    pub caret: Option<[f32; 4]>,
     pub border: Option<RenderControlBorderStyle>,
     pub focus_ring: Option<RenderControlFocusRingStyle>,
     pub opacity: Option<f32>,
@@ -121,6 +123,12 @@ impl RenderControlVisualStyle {
         }
         if patch.text.is_some() {
             self.text = patch.text;
+        }
+        if patch.selection.is_some() {
+            self.selection = patch.selection;
+        }
+        if patch.caret.is_some() {
+            self.caret = patch.caret;
         }
         if patch.border.is_some() {
             self.border = patch.border;

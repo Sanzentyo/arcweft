@@ -10,7 +10,7 @@ use arcweft_presentation::text_input::{
     CompositionEndReason, PlatformTextSelection, TextByteOffset, TextCommit, TextCompositionUpdate,
     TextEditCommand, TextInput, TextInputOperation, TextInputOptions, TextInputPrivacy,
     TextInputSecurityPolicy, TextInputSerial, TextInputSessionId, TextRange, TextRevision,
-    TextSelectionAffinity, TextWritingMode,
+    TextSelectionAffinity, TextSelectionPolicy, TextShortcutPolicy, TextWritingMode,
 };
 
 fn target() -> InteractionTarget {
@@ -157,6 +157,77 @@ fn secure_clipboard_commands_are_rejected_before_text_leaks() {
     assert_eq!(
         error,
         TextEditorError::SecureClipboardCommand(TextEditCommand::Copy)
+    );
+    assert_eq!(clipboard.read(), None);
+}
+
+#[test]
+fn selection_disabled_policy_collapses_platform_and_shift_selection() {
+    let mut editor = TextEditorState::new(
+        TextInputSessionId(42),
+        target(),
+        "abcd",
+        TextInputOptions::default().with_selection_policy(TextSelectionPolicy::Disabled),
+    )
+    .unwrap();
+    let mut clipboard = TextEditorClipboard::default();
+
+    editor
+        .apply_text_input(
+            &input(TextInputOperation::SetSelection(
+                PlatformTextSelection::new(
+                    TextRange::new(TextByteOffset(1), TextByteOffset(3)),
+                    TextSelectionAffinity::Downstream,
+                ),
+            )),
+            &mut clipboard,
+        )
+        .unwrap();
+
+    assert_eq!(
+        editor.selection(),
+        TextRange::new(TextByteOffset(3), TextByteOffset(3))
+    );
+
+    editor
+        .apply_text_input(
+            &input(TextInputOperation::Command(TextEditCommand::MoveLeft {
+                selecting: true,
+            })),
+            &mut clipboard,
+        )
+        .unwrap();
+
+    assert_eq!(editor.selection().start(), editor.selection().end());
+}
+
+#[test]
+fn shortcut_disabled_policy_blocks_select_all_and_clipboard_commands() {
+    let mut editor = TextEditorState::new(
+        TextInputSessionId(42),
+        target(),
+        "abcd",
+        TextInputOptions::default().with_shortcut_policy(TextShortcutPolicy::Disabled),
+    )
+    .unwrap();
+    let mut clipboard = TextEditorClipboard::default();
+
+    editor
+        .apply_text_input(
+            &input(TextInputOperation::Command(TextEditCommand::SelectAll)),
+            &mut clipboard,
+        )
+        .unwrap();
+    editor
+        .apply_text_input(
+            &input(TextInputOperation::Command(TextEditCommand::Copy)),
+            &mut clipboard,
+        )
+        .unwrap();
+
+    assert_eq!(
+        editor.selection(),
+        TextRange::new(TextByteOffset(4), TextByteOffset(4))
     );
     assert_eq!(clipboard.read(), None);
 }

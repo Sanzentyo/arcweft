@@ -59,12 +59,15 @@ This cut applies the component/View text-control unification note from
 - The CSS/Takumi/WGPU substrate for opacity and CSS `box-shadow` is present:
   focused box-shadow lowering and renderer plan tests pass, and opacity is
   treated as a paint-only property in the Takumi adapter path.
-- The visible modern component path still does not apply `UiStyleResource`
-  rules to player-rendered `RenderTextInputControl` /
-  `RenderActionButton` instances. Those renderer types currently carry bounds,
-  labels, enabled state, and actions, but not resolved authored style or
-  box-shadow data. This is a style-resolution/runtime-control contract gap, not
-  a CSS parser or shadow renderer failure.
+- The visible modern component path now applies resolved `UiStyleResource`
+  visual rules to player-rendered `RenderTextInputControl` and
+  `RenderActionButton` instances for fill, text color, border, focus ring,
+  opacity, box shadow, and text-control selection/caret color. Style-driven
+  layout remains outside this contract; component structure bounds still own
+  runtime-control placement.
+- Text-control selection, shortcut, tab, mouse selection, and selection/caret
+  style behavior are tracked in
+  `docs/implementation/text-control-selection-policy-2026-07-04.md`.
 
 ## Non-goals
 
@@ -72,8 +75,7 @@ This cut applies the component/View text-control unification note from
 - No platform-widget fallback for submit buttons.
 - No style-driven layout resolver; seq06.16.2 adds deterministic component
   structure bounds, while future style/layout work may refine them.
-- No end-to-end authored style resolution for player-rendered runtime text
-  controls and action buttons in this cut.
+- No style-driven layout resolver for player-rendered runtime controls.
 
 ## Remaining TODOs / follow-up requests
 
@@ -82,10 +84,9 @@ This cut applies the component/View text-control unification note from
   screenshots/observe JSON under `target/native-text-input-trace/seq06.16.3/`.
   The checked-in implementation note and ignored test define the required
   operator steps; this documentation package does not claim a real-machine pass.
-- Resolve modern feedback UI authored style rules, transparency, and
-  `box-shadow` into the actual player-rendered runtime controls without
-  bypassing the existing retained UI/style substrate. Follow-up request:
-  `docs/reviews/requests/2026-07-04-seq-06.16.4-modern-feedback-ui-style-to-runtime-control-rendering.md`.
+- Continue visual QA of the modern feedback UI sample under native/Web player
+  launches. The authored runtime-control visual style path is now wired, but
+  style-driven layout and any sample-specific polish remain separate work.
 
 ## Design deviations
 
@@ -95,9 +96,10 @@ This cut applies the component/View text-control unification note from
 - Native interactive launch remains a real-machine manual evidence step tracked
   by seq06.16.3; this cut adds the repeatable commands, trace gate, and ignored
   launch fixture rather than claiming a bundle-only pass.
-- Authored modern feedback UI style rules are carried as product UI resources
-  but are not yet resolved into the player-rendered runtime text-control/button
-  draw path; this is tracked as seq06.16.4 and should align with seq06.11.
+- Authored modern feedback UI style rules are resolved into the
+  player-rendered runtime text-control/button draw path for the supported
+  visual properties. Layout remains deterministic component bounds, not CSS
+  layout.
 
 ## Validation
 

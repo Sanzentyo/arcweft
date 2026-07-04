@@ -10,8 +10,8 @@ use arcweft_bundle::{
             CompositionOnBlurPolicy, EnterKeyHint, StyleSourceIdentity, StyleSourceRef,
             StyleSyntax, TextAssistPolicy, TextCapitalization, UiElementKind, UiInputKind,
             UiInputOptions, UiInputPurpose, UiProgramInstruction, UiSecureInputPolicy,
-            UiSemanticTarget, UiStyleApplyRef, UiTextSourceKind, UiTextSourceRecord,
-            UiTextSubmitImePolicy,
+            UiSemanticTarget, UiStyleApplyRef, UiTextSelectionPolicy, UiTextShortcutPolicy,
+            UiTextSourceKind, UiTextSourceRecord, UiTextSubmitImePolicy, UiTextTabPolicy,
         },
     },
 };
@@ -66,6 +66,9 @@ struct AuthoredTextControl {
     purpose: UiInputPurpose,
     enter_key: EnterKeyHint,
     multiline: bool,
+    selection_policy: UiTextSelectionPolicy,
+    shortcut_policy: UiTextShortcutPolicy,
+    tab_policy: UiTextTabPolicy,
     secure_policy: UiSecureInputPolicy,
     submit_handler: Option<String>,
     change_handler: Option<String>,
@@ -473,6 +476,9 @@ fn lower_text_field(
         capitalization: TextCapitalization::None,
         enter_key: control.enter_key,
         multiline: control.multiline,
+        selection_policy: control.selection_policy,
+        shortcut_policy: control.shortcut_policy,
+        tab_policy: control.tab_policy,
         secure_policy: control.secure_policy,
         composition_on_blur: CompositionOnBlurPolicy::Commit,
         submit_handler: control.submit_handler,
@@ -972,6 +978,15 @@ impl AuthoredTextControl {
             .or_else(|| modifier_submit_action(field.modifiers()));
         let secure_policy =
             text_control_symbol_arg(field.args(), &["secure_policy", "securePolicy"]);
+        let selection_policy = text_control_symbol_arg(
+            field.args(),
+            &["selection", "selection_policy", "selectionPolicy"],
+        );
+        let shortcut_policy = text_control_symbol_arg(
+            field.args(),
+            &["shortcuts", "shortcut_policy", "shortcutPolicy"],
+        );
+        let tab_policy = text_control_symbol_arg(field.args(), &["tab", "tab_policy", "tabPolicy"]);
         Self {
             public_id,
             value: expr_source(field.value()),
@@ -982,6 +997,9 @@ impl AuthoredTextControl {
             enter_key: text_control_enter_key(enter_key.as_deref()),
             multiline: text_control_bool_arg(field.args(), "multiline")
                 .unwrap_or(field.mode() == ViewTextFieldMode::TextArea),
+            selection_policy: text_control_selection_policy(selection_policy.as_deref()),
+            shortcut_policy: text_control_shortcut_policy(shortcut_policy.as_deref()),
+            tab_policy: text_control_tab_policy(tab_policy.as_deref()),
             secure_policy: text_control_secure_policy(secure_policy.as_deref(), field.mode()),
             submit_handler: text_control_handler_arg(field.args(), "submit"),
             change_handler: text_control_handler_arg(field.args(), "change"),
@@ -1077,6 +1095,27 @@ fn text_control_enter_key(value: Option<&str>) -> EnterKeyHint {
         Some("search") => EnterKeyHint::Search,
         Some("send") => EnterKeyHint::Send,
         _ => EnterKeyHint::Default,
+    }
+}
+
+fn text_control_selection_policy(value: Option<&str>) -> UiTextSelectionPolicy {
+    match value {
+        Some("disabled" | "none" | "false") => UiTextSelectionPolicy::Disabled,
+        _ => UiTextSelectionPolicy::Enabled,
+    }
+}
+
+fn text_control_shortcut_policy(value: Option<&str>) -> UiTextShortcutPolicy {
+    match value {
+        Some("disabled" | "none" | "false") => UiTextShortcutPolicy::Disabled,
+        _ => UiTextShortcutPolicy::Enabled,
+    }
+}
+
+fn text_control_tab_policy(value: Option<&str>) -> UiTextTabPolicy {
+    match value {
+        Some("insert" | "insert_tab" | "insertTab" | "text") => UiTextTabPolicy::InsertTab,
+        _ => UiTextTabPolicy::FocusNavigation,
     }
 }
 

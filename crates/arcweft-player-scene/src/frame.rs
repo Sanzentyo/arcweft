@@ -3,6 +3,7 @@ use crate::frame::focus_navigation::{render_focus_groups, render_focus_navigatio
 use crate::images::{BundleImageCatalog, BundleImageCatalogError};
 use crate::input::InputController;
 use crate::text_controls::{RuntimeTextControlLowerer, RuntimeTextControlLoweringError};
+use arcweft_presentation::text_editor::TextEditorError;
 use arcweft_render_wgpu::geometry::{
     FramePlanError, PreparedFrame, RenderChoiceItem, RenderDialogue, RenderPreferences,
     RenderScene, RenderViewport, SharedFramePlanner,
@@ -37,6 +38,8 @@ pub enum PlayerFrameError {
     ActionButtonLowering(#[from] RuntimeActionButtonLoweringError),
     #[error(transparent)]
     Images(#[from] BundleImageCatalogError),
+    #[error(transparent)]
+    TextEditor(#[from] TextEditorError),
     #[error("invalid focus navigation public id `{value}`")]
     InvalidId { value: String },
     #[error(transparent)]
@@ -103,6 +106,11 @@ impl PlayerFramePlanner {
         input.ensure_choice_focus(&frame);
         let scene = Self::render_scene(input, request)?;
         let frame = SharedFramePlanner::prepare(&scene)?;
+        if input.apply_pending_text_pointer_selection(&frame)? {
+            let scene = Self::render_scene(input, request)?;
+            let frame = SharedFramePlanner::prepare(&scene)?;
+            return Ok(PlayerPreparedFrame { scene, frame });
+        }
         Ok(PlayerPreparedFrame { scene, frame })
     }
 }

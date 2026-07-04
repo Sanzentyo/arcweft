@@ -347,6 +347,17 @@ impl TextEditorState {
         self.move_caret_to(caret, selecting)
     }
 
+    /// Moves the caret to a renderer/platform hit-test offset. The editor still
+    /// owns policy enforcement, so selection-disabled controls collapse the
+    /// range even when the caller requests extension.
+    pub fn set_caret_to_text_offset(
+        &mut self,
+        caret: TextByteOffset,
+        selecting: bool,
+    ) -> Result<(), TextEditorError> {
+        self.move_caret_to(caret, selecting)
+    }
+
     /// Builds fresh client and geometry snapshots from the current state and
     /// renderer layout data.
     pub fn snapshots(
@@ -519,9 +530,14 @@ impl TextEditorState {
         command: TextEditCommand,
         clipboard: &mut TextEditorClipboard,
     ) -> Result<TextEditorOutput, TextEditorError> {
+        if !self.options.shortcuts_enabled() && command_is_shortcut(command) {
+            return Ok(TextEditorOutput::None);
+        }
         match command {
             TextEditCommand::MoveLeft { selecting } => self.move_left(selecting),
             TextEditCommand::MoveRight { selecting } => self.move_right(selecting),
+            TextEditCommand::MoveUp { selecting } => self.move_up(selecting),
+            TextEditCommand::MoveDown { selecting } => self.move_down(selecting),
             TextEditCommand::MoveWordLeft { selecting } => self.move_word_left(selecting),
             TextEditCommand::MoveWordRight { selecting } => self.move_word_right(selecting),
             TextEditCommand::MoveLineStart { selecting } => self.move_line_start(selecting),
@@ -545,6 +561,39 @@ impl TextEditorState {
             index.previous_grapheme_boundary(self.caret)?
         };
         self.move_caret_to(caret, selecting)?;
+        Ok(TextEditorOutput::None)
+    }
+
+    fn move_up(&mut self, selecting: bool) -> Result<TextEditorOutput, TextEditorError> {
+        let current_start = self.line_start_for(self.caret)?;
+        if current_start.0 == 0 {
+            self.move_caret_to(TextByteOffset(0), selecting)?;
+            return Ok(TextEditorOutput::None);
+        }
+        let previous_end = TextByteOffset(current_start.0.saturating_sub(1));
+        let previous_start = self.line_start_for(previous_end)?;
+        let column = self.caret.0.saturating_sub(current_start.0);
+        let raw_target =
+            TextByteOffset(previous_start.0.saturating_add(column).min(previous_end.0));
+        let target = self.grapheme_boundary_at_or_before(raw_target)?;
+        self.move_caret_to(target, selecting)?;
+        Ok(TextEditorOutput::None)
+    }
+
+    fn move_down(&mut self, selecting: bool) -> Result<TextEditorOutput, TextEditorError> {
+        let current_start = self.line_start_for(self.caret)?;
+        let current_end = self.line_end_for(self.caret)?;
+        let text_len = self.index()?.len_bytes();
+        if current_end.0 >= text_len.0 {
+            self.move_caret_to(text_len, selecting)?;
+            return Ok(TextEditorOutput::None);
+        }
+        let next_start = TextByteOffset(current_end.0.saturating_add(1));
+        let next_end = self.line_end_for(next_start)?;
+        let column = self.caret.0.saturating_sub(current_start.0);
+        let raw_target = TextByteOffset(next_start.0.saturating_add(column).min(next_end.0));
+        let target = self.grapheme_boundary_at_or_before(raw_target)?;
+        self.move_caret_to(target, selecting)?;
         Ok(TextEditorOutput::None)
     }
 
@@ -610,6 +659,9 @@ impl TextEditorState {
     }
 
     fn select_all(&mut self) -> Result<TextEditorOutput, TextEditorError> {
+        if !self.options.selection_enabled() {
+            return Ok(TextEditorOutput::None);
+        }
         let end = self.index()?.len_bytes();
         self.selection = TextRange::new(TextByteOffset(0), end);
         self.selection_anchor = TextByteOffset(0);
@@ -623,7 +675,7 @@ impl TextEditorState {
         clipboard: &mut TextEditorClipboard,
     ) -> Result<TextEditorOutput, TextEditorError> {
         self.reject_secure_clipboard(TextEditCommand::Copy)?;
-        if self.selection_is_collapsed() {
+        if !self.options.selection_enabled() || self.selection_is_collapsed() {
             clipboard.clear();
             return Ok(TextEditorOutput::ClipboardWrite(String::new()));
         }
@@ -722,9 +774,16 @@ impl TextEditorState {
         selection: TextRange<TextByteOffset>,
     ) -> Result<(), TextEditorError> {
         let selection = self.index()?.validate_byte_range(selection)?;
-        self.selection = selection;
-        self.selection_anchor = *selection.start();
-        self.caret = *selection.end();
+        let caret = *selection.end();
+        if self.options.selection_enabled() {
+            self.selection = selection;
+            self.selection_anchor = *selection.start();
+            self.caret = caret;
+        } else {
+            self.selection = TextRange::new(caret, caret);
+            self.selection_anchor = caret;
+            self.caret = caret;
+        }
         self.revision = self.revision.next();
         Ok(())
     }
@@ -735,7 +794,7 @@ impl TextEditorState {
         selecting: bool,
     ) -> Result<(), TextEditorError> {
         let caret = self.index()?.validate_byte_offset(caret)?;
-        if selecting {
+        if selecting && self.options.selection_enabled() {
             let start = TextByteOffset(self.selection_anchor.0.min(caret.0));
             let end = TextByteOffset(self.selection_anchor.0.max(caret.0));
             self.selection = TextRange::new(start, end);
@@ -794,6 +853,19 @@ impl TextEditorState {
             .find('\n')
             .map_or(self.text.len(), |byte| tail_start.saturating_add(byte));
         Ok(TextByteOffset(u32::try_from(end).unwrap_or(u32::MAX)))
+    }
+
+    fn grapheme_boundary_at_or_before(
+        &self,
+        offset: TextByteOffset,
+    ) -> Result<TextByteOffset, TextEditorError> {
+        let index = self.index()?;
+        Ok(index
+            .grapheme_boundaries()
+            .into_iter()
+            .take_while(|boundary| boundary.0 <= offset.0)
+            .last()
+            .unwrap_or(TextByteOffset(0)))
     }
 
     fn composition_update(&self) -> Result<Option<TextCompositionUpdate>, TextEditorError> {
@@ -864,7 +936,7 @@ impl TextEditorState {
     }
 
     fn selection_rects(&self, layout: &TextEditorLayout) -> Vec<TextRangeRect> {
-        if self.selection_is_collapsed() {
+        if !self.options.selection_enabled() || self.selection_is_collapsed() {
             return Vec::new();
         }
         layout.range_rects(self.selection)
@@ -1219,6 +1291,16 @@ impl std::error::Error for TextEditorError {}
 
 fn ranges_overlap(left: TextRange<TextByteOffset>, right: TextRange<TextByteOffset>) -> bool {
     left.start().0 < right.end().0 && right.start().0 < left.end().0
+}
+
+const fn command_is_shortcut(command: TextEditCommand) -> bool {
+    matches!(
+        command,
+        TextEditCommand::SelectAll
+            | TextEditCommand::Copy
+            | TextEditCommand::Cut
+            | TextEditCommand::Paste
+    )
 }
 
 fn add_offset(start: TextByteOffset, relative: TextByteOffset) -> TextByteOffset {

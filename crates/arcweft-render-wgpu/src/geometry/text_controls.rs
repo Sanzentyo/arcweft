@@ -152,8 +152,18 @@ pub(super) fn build_text_inputs(
             } else {
                 super::push_focus_ring(rectangles, control.bounds, palette.focus_ring);
             }
-            push_renderer_text_input_selection(rectangles, control, &visual_layout, palette);
-            push_renderer_text_input_caret(rectangles, control, &visual_layout, palette);
+            push_renderer_text_input_selection(
+                rectangles,
+                control,
+                &visual_layout,
+                visual.selection.unwrap_or(palette.choice_active),
+            );
+            push_renderer_text_input_caret(
+                rectangles,
+                control,
+                &visual_layout,
+                visual.caret.unwrap_or(palette.focus_ring),
+            );
         }
 
         text.push(RenderTextBlock {
@@ -197,7 +207,7 @@ fn push_renderer_text_input_selection(
     rectangles: &mut Vec<PaintRect>,
     control: &RenderTextInputControl,
     visual_layout: &TextControlVisualLayout,
-    palette: &Palette,
+    color: [f32; 4],
 ) {
     let start = control.selection.start().get();
     let end = control.selection.end().get();
@@ -213,7 +223,7 @@ fn push_renderer_text_input_selection(
             })
             .map(|bounds| PaintRect {
                 bounds,
-                rgba: palette.choice_active,
+                rgba: color,
             }),
     );
 }
@@ -222,7 +232,7 @@ fn push_renderer_text_input_caret(
     rectangles: &mut Vec<PaintRect>,
     control: &RenderTextInputControl,
     visual_layout: &TextControlVisualLayout,
-    palette: &Palette,
+    color: [f32; 4],
 ) {
     let caret = control.selection.end().get();
     if let Some(bounds) = clip_text_local_rect_to_inner(
@@ -231,7 +241,7 @@ fn push_renderer_text_input_caret(
     ) {
         rectangles.push(PaintRect {
             bounds: text_local_to_viewport_rect(control, bounds),
-            rgba: palette.focus_ring,
+            rgba: color,
         });
     }
 }

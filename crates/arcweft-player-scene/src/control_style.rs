@@ -22,6 +22,8 @@ fn lower_visual_style(style: &UiRuntimeControlVisualStyle) -> RenderControlVisua
     RenderControlVisualStyle {
         fill: style.fill.map(rgba_f32),
         text: style.text.map(rgba_u8),
+        selection: style.selection.map(rgba_f32),
+        caret: style.caret.map(rgba_f32),
         border: style.border.map(lower_border),
         focus_ring: style.focus_ring.map(lower_focus_ring),
         opacity: style.opacity_milli.map(|value| f32::from(value) / 1_000.0),

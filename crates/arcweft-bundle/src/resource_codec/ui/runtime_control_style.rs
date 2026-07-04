@@ -33,6 +33,10 @@ pub struct UiRuntimeControlVisualStyle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<RgbaColor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection: Option<RgbaColor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caret: Option<RgbaColor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub border: Option<UiRuntimeControlBorderStyle>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub focus_ring: Option<UiRuntimeControlFocusRingStyle>,
@@ -165,6 +169,12 @@ impl UiRuntimeControlVisualStyle {
         }
         if patch.text.is_some() {
             self.text = patch.text;
+        }
+        if patch.selection.is_some() {
+            self.selection = patch.selection;
+        }
+        if patch.caret.is_some() {
+            self.caret = patch.caret;
         }
         if patch.border.is_some() {
             self.border = patch.border;
@@ -459,34 +469,18 @@ fn apply_declaration(
     let visual = visual_slot(style, state);
     let value = &declaration.value;
     let raw_property = declaration.property.as_str();
+    if apply_color_property_declaration(
+        style_resource,
+        value,
+        diagnostics,
+        target,
+        property.as_str(),
+        raw_property,
+        visual,
+    ) {
+        return;
+    }
     match property.as_str() {
-        "background" | "background-color" | "fill" => apply_color_declaration(
-            style_resource,
-            value,
-            diagnostics,
-            target,
-            raw_property,
-            visual,
-            |visual, color| visual.fill = Some(color),
-        ),
-        "color" | "text-color" => apply_color_declaration(
-            style_resource,
-            value,
-            diagnostics,
-            target,
-            raw_property,
-            visual,
-            |visual, color| visual.text = Some(color),
-        ),
-        "border-color" => apply_color_declaration(
-            style_resource,
-            value,
-            diagnostics,
-            target,
-            raw_property,
-            visual,
-            |visual, color| upsert_border(visual, |border| border.color = color),
-        ),
         "border-width" => apply_length_declaration(
             style_resource,
             value,
@@ -495,15 +489,6 @@ fn apply_declaration(
             raw_property,
             visual,
             |visual, width_milli| upsert_border(visual, |border| border.width_milli = width_milli),
-        ),
-        "focus-ring-color" | "outline-color" => apply_color_declaration(
-            style_resource,
-            value,
-            diagnostics,
-            target,
-            raw_property,
-            visual,
-            |visual, color| upsert_focus_ring(visual, |ring| ring.color = color),
         ),
         "focus-ring-width" | "outline-width" => apply_length_declaration(
             style_resource,
@@ -550,6 +535,92 @@ fn apply_declaration(
             declaration.op,
         ),
         _ => push_unsupported_property(diagnostics, target, raw_property),
+    }
+}
+
+fn apply_color_property_declaration(
+    style_resource: &UiStyleResource,
+    value: &UiStyleValue,
+    diagnostics: &mut UiRuntimeControlStyleDiagnostics,
+    target: &str,
+    property: &str,
+    raw_property: &str,
+    visual: &mut UiRuntimeControlVisualStyle,
+) -> bool {
+    match property {
+        "background" | "background-color" | "fill" => {
+            apply_color_declaration(
+                style_resource,
+                value,
+                diagnostics,
+                target,
+                raw_property,
+                visual,
+                |visual, color| visual.fill = Some(color),
+            );
+            true
+        }
+        "color" | "text-color" => {
+            apply_color_declaration(
+                style_resource,
+                value,
+                diagnostics,
+                target,
+                raw_property,
+                visual,
+                |visual, color| visual.text = Some(color),
+            );
+            true
+        }
+        "selection-color" | "selection-background-color" => {
+            apply_color_declaration(
+                style_resource,
+                value,
+                diagnostics,
+                target,
+                raw_property,
+                visual,
+                |visual, color| visual.selection = Some(color),
+            );
+            true
+        }
+        "caret-color" => {
+            apply_color_declaration(
+                style_resource,
+                value,
+                diagnostics,
+                target,
+                raw_property,
+                visual,
+                |visual, color| visual.caret = Some(color),
+            );
+            true
+        }
+        "border-color" => {
+            apply_color_declaration(
+                style_resource,
+                value,
+                diagnostics,
+                target,
+                raw_property,
+                visual,
+                |visual, color| upsert_border(visual, |border| border.color = color),
+            );
+            true
+        }
+        "focus-ring-color" | "outline-color" => {
+            apply_color_declaration(
+                style_resource,
+                value,
+                diagnostics,
+                target,
+                raw_property,
+                visual,
+                |visual, color| upsert_focus_ring(visual, |ring| ring.color = color),
+            );
+            true
+        }
+        _ => false,
     }
 }
 

@@ -1140,6 +1140,7 @@ mod text_control_writeback_tests {
         CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
         UiInputPurpose, UiRuntimeControlStyle, UiRuntimeTextControlBounds,
         UiRuntimeTextControlHandlers, UiRuntimeTextControlOptions, UiSecureInputPolicy,
+        UiTextSelectionPolicy, UiTextShortcutPolicy, UiTextTabPolicy,
     };
     use arcweft_core::step::RuntimeHostCallMode;
     use arcweft_id::PublicId;
@@ -1162,6 +1163,9 @@ mod text_control_writeback_tests {
                 capitalization: TextCapitalization::None,
                 enter_key: EnterKeyHint::Default,
                 multiline: false,
+                selection_policy: UiTextSelectionPolicy::Enabled,
+                shortcut_policy: UiTextShortcutPolicy::Enabled,
+                tab_policy: UiTextTabPolicy::FocusNavigation,
                 secure_policy: UiSecureInputPolicy::Plain,
                 composition_on_blur: CompositionOnBlurPolicy::Commit,
             },

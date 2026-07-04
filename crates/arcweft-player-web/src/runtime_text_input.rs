@@ -738,6 +738,8 @@ fn command_from_label(
     Ok(match label {
         "move_left" => TextEditCommand::MoveLeft { selecting },
         "move_right" => TextEditCommand::MoveRight { selecting },
+        "move_up" => TextEditCommand::MoveUp { selecting },
+        "move_down" => TextEditCommand::MoveDown { selecting },
         "move_word_left" => TextEditCommand::MoveWordLeft { selecting },
         "move_word_right" => TextEditCommand::MoveWordRight { selecting },
         "move_line_start" => TextEditCommand::MoveLineStart { selecting },

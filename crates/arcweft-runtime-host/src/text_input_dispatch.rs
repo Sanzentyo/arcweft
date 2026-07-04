@@ -233,10 +233,9 @@ impl TextInputDispatchState {
     /// Returns true when a key shortcut should continue through normal routing.
     pub fn shortcuts_allowed(&self, disposition: TextInputKeyDisposition) -> bool {
         !disposition.shortcuts_suppressed()
-            && self
-                .active
-                .as_ref()
-                .is_none_or(|active| !active.composition_active)
+            && self.active.as_ref().is_none_or(|active| {
+                !active.composition_active && active.options.shortcuts_enabled()
+            })
     }
 
     fn validate_context(

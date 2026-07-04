@@ -3,7 +3,8 @@ use crate::input::InputController;
 use arcweft_bundle::resource_codec::ui::{
     EnterKeyHint as UiEnterKeyHint, TextAssistPolicy as UiTextAssistPolicy,
     TextCapitalization as UiTextCapitalization, UiInputKind, UiInputPurpose, UiRuntimeTextControl,
-    UiRuntimeTextControlBounds, UiRuntimeTextSelection,
+    UiRuntimeTextControlBounds, UiRuntimeTextSelection, UiTextSelectionPolicy,
+    UiTextShortcutPolicy, UiTextTabPolicy,
 };
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::HitRect;
@@ -11,7 +12,8 @@ use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::semantic::SemanticRole;
 use arcweft_presentation::text_input::{
     Capitalization, EnterKeyHint, TextAssistPolicy, TextByteOffset, TextInputOptions,
-    TextInputPurpose, TextInputSessionId, TextRange,
+    TextInputPurpose, TextInputSessionId, TextRange, TextSelectionPolicy, TextShortcutPolicy,
+    TextTabPolicy,
 };
 use arcweft_render_wgpu::geometry::{FramePlanError, RenderTextInputControl};
 use num_traits::ToPrimitive;
@@ -130,6 +132,9 @@ fn lower_options(control: &UiRuntimeTextControl) -> TextInputOptions {
         .with_capitalization(lower_capitalization(control.options.capitalization))
         .with_enter_key(lower_enter_key(control.options.enter_key))
         .multiline(control.options.multiline || control.kind.is_multiline())
+        .with_selection_policy(lower_selection_policy(control.options.selection_policy))
+        .with_shortcut_policy(lower_shortcut_policy(control.options.shortcut_policy))
+        .with_tab_policy(lower_tab_policy(control.options.tab_policy))
         .secure(control.options.secure_policy.is_secure() || control.kind.is_secure())
 }
 
@@ -175,6 +180,27 @@ fn lower_enter_key(enter_key: UiEnterKeyHint) -> EnterKeyHint {
         UiEnterKeyHint::Next => EnterKeyHint::Next,
         UiEnterKeyHint::Search => EnterKeyHint::Search,
         UiEnterKeyHint::Send => EnterKeyHint::Send,
+    }
+}
+
+fn lower_selection_policy(policy: UiTextSelectionPolicy) -> TextSelectionPolicy {
+    match policy {
+        UiTextSelectionPolicy::Enabled => TextSelectionPolicy::Enabled,
+        UiTextSelectionPolicy::Disabled => TextSelectionPolicy::Disabled,
+    }
+}
+
+fn lower_shortcut_policy(policy: UiTextShortcutPolicy) -> TextShortcutPolicy {
+    match policy {
+        UiTextShortcutPolicy::Enabled => TextShortcutPolicy::Enabled,
+        UiTextShortcutPolicy::Disabled => TextShortcutPolicy::Disabled,
+    }
+}
+
+fn lower_tab_policy(policy: UiTextTabPolicy) -> TextTabPolicy {
+    match policy {
+        UiTextTabPolicy::FocusNavigation => TextTabPolicy::FocusNavigation,
+        UiTextTabPolicy::InsertTab => TextTabPolicy::InsertTab,
     }
 }
 

@@ -559,5 +559,7 @@ const fn text_edit_command_code(command: TextEditCommand) -> u32 {
         TextEditCommand::Paste => 17,
         TextEditCommand::Submit => 18,
         TextEditCommand::Cancel => 19,
+        TextEditCommand::MoveUp { selecting } => 20 + selecting_code(selecting),
+        TextEditCommand::MoveDown { selecting } => 22 + selecting_code(selecting),
     }
 }

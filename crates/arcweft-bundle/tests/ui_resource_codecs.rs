@@ -9,9 +9,9 @@ use arcweft_bundle::resource_codec::ui::{
     UiObserveClassification, UiProgramInstruction, UiProgramResource, UiResourceBudget,
     UiResourceCompatibility, UiSecureInputPolicy, UiSecureRedactionMetadata, UiSemanticTarget,
     UiStateSchemaHashRef, UiStyleDeclaration, UiStyleResource, UiStyleRule, UiStyleSelector,
-    UiStyleSelectorPart, UiStyleToken, UiStyleValue, UiTextResource, UiTextSourceKind,
-    UiTextSourceRecord, UiThemeEnvironmentDefaults, UiThemeResource,
-    migrated_ui_section_compatibility,
+    UiStyleSelectorPart, UiStyleToken, UiStyleValue, UiTextResource, UiTextSelectionPolicy,
+    UiTextShortcutPolicy, UiTextSourceKind, UiTextSourceRecord, UiTextTabPolicy,
+    UiThemeEnvironmentDefaults, UiThemeResource, migrated_ui_section_compatibility,
 };
 use arcweft_bundle::resource_codec::{
     FieldId, ProductResourceEnvelope, ProductSectionCodecKind, ResourceField, ResourceWireType,
@@ -465,6 +465,9 @@ fn fixture_input(secure_policy: UiSecureInputPolicy) -> UiInputResource {
             capitalization: TextCapitalization::Words,
             enter_key: EnterKeyHint::Done,
             multiline: false,
+            selection_policy: UiTextSelectionPolicy::Enabled,
+            shortcut_policy: UiTextShortcutPolicy::Enabled,
+            tab_policy: UiTextTabPolicy::FocusNavigation,
             secure_policy,
             composition_on_blur: CompositionOnBlurPolicy::Commit,
             submit_handler: Some("handler.dialogue.submit".to_owned()),

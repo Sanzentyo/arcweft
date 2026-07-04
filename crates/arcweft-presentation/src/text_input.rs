@@ -162,6 +162,8 @@ pub enum TextSelectionAffinity {
 pub enum TextEditCommand {
     MoveLeft { selecting: bool },
     MoveRight { selecting: bool },
+    MoveUp { selecting: bool },
+    MoveDown { selecting: bool },
     MoveWordLeft { selecting: bool },
     MoveWordRight { selecting: bool },
     MoveLineStart { selecting: bool },
@@ -256,6 +258,9 @@ pub struct TextInputOptions {
     enter_key: EnterKeyHint,
     secure: bool,
     multiline: bool,
+    selection: TextSelectionPolicy,
+    shortcuts: TextShortcutPolicy,
+    tab: TextTabPolicy,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -280,6 +285,32 @@ pub enum TextAssistPolicy {
     PlatformDefault,
     Enabled,
     Disabled,
+}
+
+/// Whether a text control accepts ranged selection from pointer, keyboard, or
+/// platform-native selection updates.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum TextSelectionPolicy {
+    #[default]
+    Enabled,
+    Disabled,
+}
+
+/// Whether a text control accepts product-level edit shortcuts such as
+/// select-all, copy, cut, and paste.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum TextShortcutPolicy {
+    #[default]
+    Enabled,
+    Disabled,
+}
+
+/// Product behavior for the Tab key while a text control has focus.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum TextTabPolicy {
+    #[default]
+    FocusNavigation,
+    InsertTab,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -775,6 +806,9 @@ impl Default for TextInputOptions {
             enter_key: EnterKeyHint::Default,
             secure: false,
             multiline: false,
+            selection: TextSelectionPolicy::Enabled,
+            shortcuts: TextShortcutPolicy::Enabled,
+            tab: TextTabPolicy::FocusNavigation,
         }
     }
 }
@@ -826,6 +860,24 @@ impl TextInputOptions {
         self
     }
 
+    #[must_use]
+    pub const fn with_selection_policy(mut self, selection: TextSelectionPolicy) -> Self {
+        self.selection = selection;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_shortcut_policy(mut self, shortcuts: TextShortcutPolicy) -> Self {
+        self.shortcuts = shortcuts;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_tab_policy(mut self, tab: TextTabPolicy) -> Self {
+        self.tab = tab;
+        self
+    }
+
     pub const fn autocorrect(&self) -> TextAssistPolicy {
         self.autocorrect
     }
@@ -848,6 +900,30 @@ impl TextInputOptions {
 
     pub const fn is_multiline(&self) -> bool {
         self.multiline
+    }
+
+    pub const fn selection_policy(&self) -> TextSelectionPolicy {
+        self.selection
+    }
+
+    pub const fn shortcut_policy(&self) -> TextShortcutPolicy {
+        self.shortcuts
+    }
+
+    pub const fn tab_policy(&self) -> TextTabPolicy {
+        self.tab
+    }
+
+    pub const fn selection_enabled(&self) -> bool {
+        matches!(self.selection, TextSelectionPolicy::Enabled)
+    }
+
+    pub const fn shortcuts_enabled(&self) -> bool {
+        matches!(self.shortcuts, TextShortcutPolicy::Enabled)
+    }
+
+    pub const fn tab_inserts_text(&self) -> bool {
+        matches!(self.tab, TextTabPolicy::InsertTab)
     }
 }
 
