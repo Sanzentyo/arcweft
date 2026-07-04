@@ -61,6 +61,25 @@
     "imq_json": "target/seq06.13e.1-inset-box-shadow-golden/native/seq06_13e1_inset_box_shadow.imq.json",
     "environment_json": "target/seq06.13e.1-inset-box-shadow-golden/native/seq06_13e1_inset_box_shadow.environment.json"
   },
-  "promotion_status": "not_promoted_in_this_package",
-  "promotion_reason": "The authoring sandbox is not the pinned native visual-golden environment and no candidate PNG/imq packet was produced in a same run."
+  "promotion_status": "promoted_from_user_approved_current_pinned_environment",
+  "promotion_reason": "Promoted on 2026-07-04 from the current Windows pinned environment after same-run candidate PNG, observe JSON, imq JSON, environment fingerprint, command logs, and review decision were collected.",
+  "promotion_evidence": {
+    "arcweft_commit": "bd4cc31756063ba2bb863e560d9734f92fbb13be",
+    "candidate_sha256": "1106d553d834d9f9f90eddd0ef2655608c9646733e63141a9646b4bc1612b95c",
+    "reference_sha256": "1106d553d834d9f9f90eddd0ef2655608c9646733e63141a9646b4bc1612b95c",
+    "imq": {
+      "version": "imq 0.1.0",
+      "mse": 0.0,
+      "mae": 0.0,
+      "maxae": 0.0,
+      "ssim": 1.0
+    },
+    "environment": {
+      "os": "Microsoft Windows [Version 10.0.26200.8737]",
+      "gpu": "NVIDIA GeForce RTX 3080 Ti",
+      "backend": "Vulkan",
+      "driver": "NVIDIA 591.86",
+      "native_backend_env": "wgpu_offscreen_compositor"
+    }
+  }
 }

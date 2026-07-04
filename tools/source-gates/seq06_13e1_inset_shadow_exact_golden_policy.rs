@@ -88,7 +88,8 @@ fn run() -> Result<(), String> {
         require_contains(text, "CPU raster fallback", label)?;
     }
 
-    require_contains(&note, "No PNG baseline is promoted", "implementation note")?;
+    require_contains(&note, "The native PNG baseline is promoted", "implementation note")?;
+    require_contains(&note, "Web PNG baseline remains", "implementation note")?;
     require_contains(&note, "pinned visual-golden run", "implementation note")?;
     require_contains(&native_capture, "UiCompositor::render_group", "native capture")?;
     require_contains(&native_capture, "PASS_BOX_SHADOW WGSL kind flag", "native capture")?;

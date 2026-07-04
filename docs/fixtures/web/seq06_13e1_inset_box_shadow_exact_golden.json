@@ -61,6 +61,6 @@
     "imq_json": "target/seq06.13e.1-inset-box-shadow-golden/web/seq06_13e1_inset_box_shadow.imq.json",
     "environment_json": "target/seq06.13e.1-inset-box-shadow-golden/web/seq06_13e1_inset_box_shadow.environment.json"
   },
-  "promotion_status": "not_promoted_in_this_package",
-  "promotion_reason": "The authoring sandbox is not the pinned WebGPU browser visual-golden environment and no candidate PNG/imq packet was produced in a same run."
+  "promotion_status": "not_promoted_web_exact_readback_harness_pending",
+  "promotion_reason": "The current repository has Playwright/WebGPU smoke coverage, but no seq06.13e.1 browser/WebGPU exact readback harness that writes this fixture's candidate PNG, observe JSON, imq JSON, command logs, and review decision. DOM/CSS screenshots remain forbidden."
 }

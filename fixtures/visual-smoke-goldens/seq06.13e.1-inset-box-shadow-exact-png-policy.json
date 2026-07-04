@@ -4,7 +4,7 @@
   "fixture": "seq06_13e1_inset_box_shadow_exact_png",
   "tier": "tier2_environment_gated",
   "default_fast_path": false,
-  "status": "policy_ready_no_png_promoted_from_unpinned_authoring_environment",
+  "status": "native_png_promoted_from_user_approved_current_pinned_environment_web_pending",
   "source_request": "docs/reviews/requests/2026-07-04-seq-06.13e.1-inset-box-shadow-pinned-png-golden-promotion.md",
   "renderer_contract": {
     "must_use": [

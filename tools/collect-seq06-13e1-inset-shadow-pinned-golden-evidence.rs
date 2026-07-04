@@ -471,7 +471,7 @@ fn run_smoke_and_capture_commands(root: &Path, out_dir: &Path, target: Target) -
                     "arcweft-render-wgpu",
                     "--test",
                     "ui_box_shadow_gpu_smoke",
-                    "rounded_inset_and_mixed_shadow_cards_execute_gpu_compositor_path",
+                    "per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_path",
                     "--all-features",
                     "--",
                     "--ignored",
@@ -480,7 +480,7 @@ fn run_smoke_and_capture_commands(root: &Path, out_dir: &Path, target: Target) -
                 ])
                 .output()
                 .map_err(|error| format!("run native compositor smoke: {error}"))?;
-            write_command_log(&log_dir.join("native-compositor-smoke.log"), "cargo test -p arcweft-render-wgpu --test ui_box_shadow_gpu_smoke rounded_inset_and_mixed_shadow_cards_execute_gpu_compositor_path --all-features -- --ignored --exact --nocapture", &output)?;
+            write_command_log(&log_dir.join("native-compositor-smoke.log"), "cargo test -p arcweft-render-wgpu --test ui_box_shadow_gpu_smoke per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_path --all-features -- --ignored --exact --nocapture", &output)?;
             if !output.status.success() {
                 return Err(String::from("native compositor smoke failed; exact PNG capture is not valid"));
             }
