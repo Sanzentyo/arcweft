@@ -1,12 +1,18 @@
-use arcweft_presentation::hit::HitRect;
-use arcweft_render_wgpu::ui_compositor::{
-    UiCompositor, UiCompositorError, UiCompositorFrame, UiCompositorTarget,
-    UiDirectPrimitiveRenderer, UiNoMaskTextures,
+use arcweft_bundle::resource_codec::ui::{
+    RgbaColor, StyleAssignOp, StyleSourceIdentity, StyleSourceRef, StyleSyntax, UiElementKind,
+    UiRuntimeControlState, UiRuntimeControlVisualStyle, UiRuntimeShadow, UiRuntimeShadowKind,
+    UiStyleDeclaration, UiStyleResource, UiStyleRule, UiStyleSelector, UiStyleSelectorPart,
+    UiStyleValue,
 };
+use arcweft_presentation::hit::HitRect;
+use arcweft_render_wgpu::geometry::PreparedUiSceneResources;
+use arcweft_render_wgpu::ui_compositor::{UiCompositor, UiCompositorFrame, UiNoMaskTextures};
+use arcweft_render_wgpu::ui_direct_renderer::WgpuUiDirectPrimitiveRenderer;
 use arcweft_render_wgpu::ui_effects::UiTextureExtent;
 use arcweft_render_wgpu::ui_scene::{
     UiAffine2D, UiBoxShadow, UiBoxShadowList, UiColorRgba8, UiCompositingEffects,
-    UiCompositingGroup, UiPaintNode, UiPrimitiveRange, UiScene, UiSceneContext,
+    UiCompositingGroup, UiPaintNode, UiPrimitive, UiPrimitiveRange, UiRoundedRect, UiScene,
+    UiSceneContext,
 };
 use js_sys::{Object, Reflect, Uint8Array};
 use std::fmt::Write as _;
@@ -52,22 +58,6 @@ async fn capture_js_value() -> Result<JsValue, String> {
         JsValue::from_str(&adapter_info_json(&capture.adapter)),
     )?;
     Ok(object.into())
-}
-
-struct NoopDirectRenderer;
-
-impl UiDirectPrimitiveRenderer for NoopDirectRenderer {
-    fn render_direct_range(
-        &mut self,
-        _device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-        _encoder: &mut wgpu::CommandEncoder,
-        _scene: &UiScene,
-        _context: &UiSceneContext,
-        _target: UiCompositorTarget<'_>,
-    ) -> Result<(), UiCompositorError> {
-        Ok(())
-    }
 }
 
 struct CaptureOutput {
@@ -126,10 +116,13 @@ async fn render_capture() -> Result<CaptureOutput, String> {
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("arcweft-seq06-13e1-web-exact-render-encoder"),
     });
+    let validation_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
     clear_target(&mut encoder, &final_view);
 
-    let scene = smoke_scene();
-    let mut direct_renderer = NoopDirectRenderer;
+    let scene = smoke_scene()?;
+    let direct_renderer_backend = WgpuUiDirectPrimitiveRenderer::new(&device, FORMAT);
+    let resources = PreparedUiSceneResources::default();
+    let mut direct_renderer = direct_renderer_backend.for_resources(&resources);
     let mut mask_textures = UiNoMaskTextures;
     let mut compositor = UiCompositor::new(&device, &queue, FORMAT);
     let mut frame = UiCompositorFrame {
@@ -157,11 +150,25 @@ async fn render_capture() -> Result<CaptureOutput, String> {
         padded_row_bytes,
     );
     queue.submit([encoder.finish()]);
+    wait_for_submitted_work(&queue).await?;
+    if let Some(error) = validation_scope.pop().await {
+        return Err(format!(
+            "browser WebGPU validation error during seq06.13e.1 exact capture: {error}"
+        ));
+    }
     let rgba = map_readback_buffer(&readback, WIDTH, HEIGHT, padded_row_bytes).await?;
     let content = content_stats(&rgba);
     if content.non_transparent_pixels == 0 {
-        return Err(String::from(
-            "browser WebGPU readback produced a fully transparent seq06.13e.1 candidate",
+        return Err(format!(
+            "browser WebGPU readback produced a fully transparent seq06.13e.1 candidate; adapter={} backend={:?} driver={}; direct_ranges={}; offscreen_targets={}; shader_passes={}; box_shadow_passes={}; max_channel={}",
+            adapter_info.name,
+            adapter_info.backend,
+            adapter_info.driver,
+            stats.direct_ranges,
+            stats.offscreen_targets,
+            stats.shader_passes,
+            stats.box_shadow_passes,
+            content.max_channel,
         ));
     }
     Ok(CaptureOutput {
@@ -172,51 +179,197 @@ async fn render_capture() -> Result<CaptureOutput, String> {
     })
 }
 
-fn smoke_scene() -> UiScene {
+fn smoke_scene() -> Result<UiScene, String> {
     let mut scene = UiScene::new(WIDTH as f32, HEIGHT as f32);
+    let style = exact_style_resource();
 
-    scene.push_paint_node(UiPaintNode::Group(
-        UiCompositingGroup::new(
-            HitRect::new(24.0, 24.0, 112.0, 72.0),
-            UiCompositingEffects {
-                box_shadows: UiBoxShadowList::new([UiBoxShadow::inset(
-                    0.0,
-                    3.0,
-                    12.0,
-                    2.0,
-                    14.0,
-                    rgba(0, 0, 0, 144),
-                )]),
-                ..UiCompositingEffects::default()
-            },
-        )
-        .with_children(vec![direct(0, 0)]),
-    ));
+    push_styled_card(
+        &mut scene,
+        &style,
+        "rounded_inset_shadow_card",
+        HitRect::new(24.0, 24.0, 112.0, 72.0),
+    )?;
+    push_styled_card(
+        &mut scene,
+        &style,
+        "mixed_outer_inset_shadow_card",
+        HitRect::new(176.0, 40.0, 112.0, 72.0),
+    )?;
 
-    scene.push_paint_node(UiPaintNode::Group(
-        UiCompositingGroup::new(
-            HitRect::new(176.0, 40.0, 112.0, 72.0),
-            UiCompositingEffects {
-                box_shadows: UiBoxShadowList::new([
-                    UiBoxShadow::outer(0.0, 10.0, 18.0, 2.0, 16.0, rgba(0, 0, 0, 96)),
-                    UiBoxShadow::inset(0.0, -2.0, 10.0, 1.0, 16.0, rgba(255, 255, 255, 88)),
-                ]),
-                ..UiCompositingEffects::default()
-            },
-        )
-        .with_children(vec![direct(0, 0)]),
-    ));
-
-    scene
+    Ok(scene)
 }
 
-fn rgba(red: u8, green: u8, blue: u8, alpha: u8) -> UiColorRgba8 {
-    UiColorRgba8 {
-        red,
-        green,
-        blue,
-        alpha,
+fn exact_style_resource() -> UiStyleResource {
+    UiStyleResource {
+        style_program_id: "style.seq06_13e1_inset_box_shadow_exact".to_owned(),
+        css_sources: vec![StyleSourceIdentity {
+            public_id: "style.source.seq06_13e_inset_box_shadow_card_css".to_owned(),
+            syntax: StyleSyntax::Css,
+            identity: StyleSourceRef::File {
+                path: "docs/fixtures/css/seq06.13e-inset-box-shadow-card.css".to_owned(),
+            },
+            content_digest: None,
+        }],
+        rules: vec![
+            surface_rule(
+                "rounded_inset_shadow_card",
+                [
+                    decl("background-color", style_rgba(36, 42, 54, 255)),
+                    decl("border-radius", UiStyleValue::Text("14px".to_owned())),
+                    decl(
+                        "box-shadow",
+                        UiStyleValue::Text(
+                            "inset 0px 3px 12px 2px rgba(0,0,0,0.56)".to_owned(),
+                        ),
+                    ),
+                ],
+            ),
+            surface_rule(
+                "mixed_outer_inset_shadow_card",
+                [
+                    decl("background-color", style_rgba(255, 255, 255, 255)),
+                    decl("border-radius", UiStyleValue::Text("16px".to_owned())),
+                    decl(
+                        "box-shadow",
+                        UiStyleValue::Text(
+                            "0px 10px 18px 2px rgba(0,0,0,0.38), inset 0px -2px 10px 1px rgba(255,255,255,0.35)"
+                                .to_owned(),
+                        ),
+                    ),
+                ],
+            ),
+        ],
+        ..UiStyleResource::default()
     }
+}
+
+fn surface_rule<const N: usize>(
+    public_id: &str,
+    declarations: [UiStyleDeclaration; N],
+) -> UiStyleRule {
+    UiStyleRule {
+        selector: UiStyleSelector {
+            parts: vec![
+                UiStyleSelectorPart::Element(UiElementKind::Surface),
+                UiStyleSelectorPart::Part(public_id.to_owned()),
+            ],
+        },
+        declarations: declarations.into(),
+        source: None,
+    }
+}
+
+fn decl(property: &str, value: UiStyleValue) -> UiStyleDeclaration {
+    UiStyleDeclaration {
+        property: property.to_owned(),
+        value,
+        op: StyleAssignOp::Replace,
+    }
+}
+
+fn style_rgba(red: u8, green: u8, blue: u8, alpha: u8) -> UiStyleValue {
+    UiStyleValue::Rgba(RgbaColor::rgba(red, green, blue, alpha))
+}
+
+fn push_styled_card(
+    scene: &mut UiScene,
+    style: &UiStyleResource,
+    public_id: &str,
+    bounds: HitRect,
+) -> Result<(), String> {
+    let resolved = style.runtime_surface_style(public_id);
+    if !resolved.diagnostics.is_empty() {
+        let diagnostics = resolved
+            .diagnostics
+            .diagnostics
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(format!(
+            "resolve seq06.13e.1 exact surface style `{public_id}`: {diagnostics}"
+        ));
+    }
+
+    let visual = resolved
+        .style
+        .visual_for_state(UiRuntimeControlState::Normal);
+    let range = push_style_fill(scene, bounds, &visual, public_id)?;
+    scene.push_paint_node(UiPaintNode::Group(
+        UiCompositingGroup::new(bounds, compositing_effects_from_style(&visual))
+            .with_children(vec![direct(range.start, range.end)]),
+    ));
+    Ok(())
+}
+
+fn push_style_fill(
+    scene: &mut UiScene,
+    bounds: HitRect,
+    visual: &UiRuntimeControlVisualStyle,
+    public_id: &str,
+) -> Result<UiPrimitiveRange, String> {
+    let fill = visual
+        .fill
+        .ok_or_else(|| format!("seq06.13e.1 exact surface style `{public_id}` missing fill"))?;
+    let radius = visual
+        .radius_milli
+        .map(milli_u32_to_f32)
+        .unwrap_or_default();
+    let start = u32::try_from(scene.primitives().len()).unwrap_or(u32::MAX);
+    scene.push_primitive(UiPrimitive::RoundedRect(UiRoundedRect {
+        bounds,
+        radius,
+        color: ui_rgba(fill),
+    }));
+    let end = u32::try_from(scene.primitives().len()).unwrap_or(u32::MAX);
+    Ok(UiPrimitiveRange { start, end })
+}
+
+fn compositing_effects_from_style(visual: &UiRuntimeControlVisualStyle) -> UiCompositingEffects {
+    UiCompositingEffects {
+        box_shadows: UiBoxShadowList::new(
+            visual
+                .shadows
+                .iter()
+                .copied()
+                .map(ui_box_shadow_from_runtime),
+        ),
+        ..UiCompositingEffects::default()
+    }
+}
+
+fn ui_box_shadow_from_runtime(shadow: UiRuntimeShadow) -> UiBoxShadow {
+    let offset_x = milli_i32_to_f32(shadow.offset_x_milli);
+    let offset_y = milli_i32_to_f32(shadow.offset_y_milli);
+    let blur = milli_u32_to_f32(shadow.blur_milli);
+    let spread = milli_i32_to_f32(shadow.spread_milli);
+    let radius = milli_u32_to_f32(shadow.radius_milli);
+    let color = ui_rgba(shadow.color);
+    match shadow.kind {
+        UiRuntimeShadowKind::Outer => {
+            UiBoxShadow::outer(offset_x, offset_y, blur, spread, radius, color)
+        }
+        UiRuntimeShadowKind::Inset => {
+            UiBoxShadow::inset(offset_x, offset_y, blur, spread, radius, color)
+        }
+    }
+}
+
+fn ui_rgba(color: RgbaColor) -> UiColorRgba8 {
+    UiColorRgba8 {
+        red: color.red,
+        green: color.green,
+        blue: color.blue,
+        alpha: color.alpha,
+    }
+}
+
+fn milli_i32_to_f32(value: i32) -> f32 {
+    value as f32 / 1_000.0
+}
+
+fn milli_u32_to_f32(value: u32) -> f32 {
+    value as f32 / 1_000.0
 }
 
 fn direct(start: u32, end: u32) -> UiPaintNode {
@@ -315,6 +468,16 @@ async fn map_readback_buffer(
     Ok(rgba)
 }
 
+async fn wait_for_submitted_work(queue: &wgpu::Queue) -> Result<(), String> {
+    let (sender, receiver) = futures_channel::oneshot::channel();
+    queue.on_submitted_work_done(move || {
+        let _ = sender.send(());
+    });
+    receiver
+        .await
+        .map_err(|_| String::from("queue submitted-work callback was dropped"))
+}
+
 fn padded_rgba_row_bytes(width: u32) -> u32 {
     let row_bytes = width.saturating_mul(4);
     row_bytes.saturating_add(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT - 1)
@@ -358,6 +521,9 @@ fn observe_json(capture: &CaptureOutput) -> String {
     writeln!(&mut json, "  }},").unwrap();
     writeln!(&mut json, "  \"route\": [").unwrap();
     let route_entries = [
+        "UiStyleResource::runtime_surface_style",
+        "UiRuntimeControlVisualStyle fill/radius/shadows",
+        "UiRoundedRect direct primitive from style fill and border-radius",
         "UiCompositingEffects::box_shadows",
         "UiBoxShadowPassPlan unified outer/inset pass list",
         "UiCompositor::render_group",
@@ -379,6 +545,12 @@ fn observe_json(capture: &CaptureOutput) -> String {
         "    \"cards\": [\"rounded_inset_shadow_card\", \"mixed_outer_inset_shadow_card\"],"
     )
     .unwrap();
+    writeln!(
+        &mut json,
+        "    \"style_source\": \"UiStyleResource typed CSS-lowered surface rules\","
+    )
+    .unwrap();
+    writeln!(&mut json, "    \"rounded_rect_fill\": true,").unwrap();
     writeln!(&mut json, "    \"box_shadow\": \"outer and inset\",").unwrap();
     writeln!(&mut json, "    \"inset\": true").unwrap();
     writeln!(&mut json, "  }},").unwrap();

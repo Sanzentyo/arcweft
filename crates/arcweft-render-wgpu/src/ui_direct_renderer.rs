@@ -34,14 +34,15 @@ pub struct WgpuUiDirectPrimitiveRenderer {
     image_sampler: wgpu::Sampler,
 }
 
+/// Renderer-owned direct primitive frame bound to one prepared UI scene resource table.
+pub struct WgpuUiDirectPrimitiveRenderFrame<'a> {
+    renderer: &'a WgpuUiDirectPrimitiveRenderer,
+    resources: &'a PreparedUiSceneResources,
+}
+
 /// Renderer-owned mask texture provider for one prepared UI scene.
 pub struct WgpuPreparedUiMaskTextureProvider {
     masks: Vec<WgpuPreparedUiMaskTexture>,
-}
-
-pub(crate) struct WgpuUiDirectPrimitiveRenderFrame<'a> {
-    renderer: &'a WgpuUiDirectPrimitiveRenderer,
-    resources: &'a PreparedUiSceneResources,
 }
 
 struct WgpuPreparedUiMaskTexture {
@@ -94,7 +95,7 @@ impl WgpuUiDirectPrimitiveRenderer {
         }
     }
 
-    pub(crate) const fn for_resources<'a>(
+    pub const fn for_resources<'a>(
         &'a self,
         resources: &'a PreparedUiSceneResources,
     ) -> WgpuUiDirectPrimitiveRenderFrame<'a> {

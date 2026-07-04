@@ -152,6 +152,41 @@ fn focus_visible_ring_and_supported_box_shadow_are_typed() {
 }
 
 #[test]
+fn surface_style_resolves_radius_fill_and_box_shadow() {
+    let style = UiStyleResource {
+        rules: vec![UiStyleRule {
+            selector: UiStyleSelector {
+                parts: vec![
+                    UiStyleSelectorPart::Element(UiElementKind::Surface),
+                    UiStyleSelectorPart::Part("card.feedback".to_owned()),
+                ],
+            },
+            declarations: vec![
+                decl("background-color", rgba(36, 42, 54, 255)),
+                decl("border-radius", UiStyleValue::Text("16px".to_owned())),
+                decl(
+                    "box-shadow",
+                    UiStyleValue::Text("inset 0px 3px 14px 2px rgba(0,0,0,0.38)".to_owned()),
+                ),
+            ],
+            source: None,
+        }],
+        ..UiStyleResource::default()
+    };
+
+    let resolved = style.runtime_surface_style("card.feedback");
+    let visual = resolved
+        .style
+        .visual_for_state(UiRuntimeControlState::Normal);
+
+    assert_eq!(visual.fill, Some(RgbaColor::rgb(36, 42, 54)));
+    assert_eq!(visual.radius_milli, Some(16_000));
+    assert_eq!(visual.shadows.len(), 1);
+    assert_eq!(visual.shadows[0].radius_milli, 16_000);
+    assert!(resolved.diagnostics.is_empty());
+}
+
+#[test]
 fn unsupported_style_property_produces_structured_diagnostic() {
     let style = UiStyleResource {
         rules: vec![rule(

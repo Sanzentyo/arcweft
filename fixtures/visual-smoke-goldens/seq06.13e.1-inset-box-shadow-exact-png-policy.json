@@ -4,11 +4,15 @@
   "fixture": "seq06_13e1_inset_box_shadow_exact_png",
   "tier": "tier2_environment_gated",
   "default_fast_path": false,
-  "status": "native_png_promoted_web_exact_readback_harness_implemented_web_reference_pending_review",
+  "status": "native_and_web_png_promoted_web_exact_readback_harness_implemented",
   "source_request": "docs/reviews/requests/2026-07-04-seq-06.13e.1.1-web-exact-png-readback-harness.md",
   "renderer_contract": {
     "must_use": [
       "Takumi typed CSS parse/cascade for authored CSS fixture",
+      "UiStyleResource typed surface style rules",
+      "UiStyleResource::runtime_surface_style",
+      "UiRuntimeControlVisualStyle fill/radius/shadows",
+      "UiRoundedRect direct primitive from style fill and border-radius",
       "arcweft-takumi-adapter box_shadow_list_from_takumi",
       "UiCompositingEffects::box_shadows",
       "UiBoxShadowPassPlan unified outer/inset pass list",
@@ -25,7 +29,7 @@
       "renderer/lowering/shader redesign without pinned defect evidence"
     ],
     "smoke_fixture_decision": "keep the existing ignored GPU smoke as a compositor execution regression; exact PNG native and Web fixtures are separate because promotion requires fingerprints, candidate PNGs, imq JSON, command logs, and a review decision packet",
-    "web_capture_decision": "Playwright launches the pinned browser, but pixels come from the wasm-exported Arcweft WGPU compositor reading back an Arcweft-owned rgba8unorm texture. The browser test script only writes PNG/JSON artifacts. It does not call Playwright screenshot APIs or use DOM/CSS rendering as evidence."
+    "web_capture_decision": "Playwright launches the pinned browser, but pixels come from the wasm-exported Arcweft WGPU compositor reading back an Arcweft-owned rgba8unorm texture. The wasm fixture resolves typed surface style rules into fill, border-radius, and box-shadow before building UiRoundedRect children and UiCompositingEffects. The browser test script only writes PNG/JSON artifacts. It does not call Playwright screenshot APIs or use DOM/CSS rendering as evidence."
   },
   "fixtures": [
     {

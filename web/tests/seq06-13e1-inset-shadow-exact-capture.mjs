@@ -16,6 +16,7 @@ const METRICS = "psnr,ssim,mse,mae,maxae";
 const WEBGPU_ENV = "ARW_SEQ06_13E1_INSET_SHADOW_WEBGPU";
 const REQUIRED_ENV = "ARW_SEQ06_13E1_INSET_SHADOW_GOLDEN_REQUIRED";
 const PINNED_ENV = "ARW_SEQ06_13E1_INSET_SHADOW_GOLDEN_PINNED";
+const HEADLESS_ENV = "ARW_PLAYWRIGHT_HEADLESS";
 
 const contentTypes = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -153,6 +154,10 @@ function launchArgs() {
   return args;
 }
 
+function launchHeadless() {
+  return process.env[HEADLESS_ENV] !== "0";
+}
+
 async function collectConsoleErrors(page) {
   const errors = [];
   page.on("console", (message) => {
@@ -169,31 +174,39 @@ async function captureFromBrowser(page, baseUrl) {
   await page.goto(`${baseUrl}/seq06-13e1-inset-shadow-capture.html`);
   await page.waitForFunction(() => globalThis.__arcweftSeq0613e1CaptureHostReady === true);
   expect(await page.evaluate(() => Boolean(navigator.gpu)), "navigator.gpu is unavailable");
-  const result = await page.evaluate(async () => {
-    const module = await import("/pkg/arcweft_player_web.js");
-    await module.default();
-    const capture = await module.capture_seq06_13e1_inset_box_shadow_exact_png();
-    const canvas = document.querySelector("#seq06-13e1-canvas-fingerprint");
-    return {
-      width: capture.width,
-      height: capture.height,
-      format: capture.format,
-      rgba: Array.from(capture.rgba),
-      observeJson: capture.observe_json,
-      adapterInfoJson: capture.adapter_info_json,
-      page: {
-        userAgent: navigator.userAgent,
-        language: navigator.language,
-        secureContext: globalThis.isSecureContext,
-        webgpuAvailable: Boolean(navigator.gpu),
-        devicePixelRatio: window.devicePixelRatio,
-        canvasWidth: canvas?.width ?? null,
-        canvasHeight: canvas?.height ?? null,
-        canvasClientWidth: canvas?.clientWidth ?? null,
-        canvasClientHeight: canvas?.clientHeight ?? null,
-      },
-    };
-  });
+  let result;
+  try {
+    result = await page.evaluate(async () => {
+      const module = await import("/pkg/arcweft_player_web.js");
+      await module.default();
+      const capture = await module.capture_seq06_13e1_inset_box_shadow_exact_png();
+      const canvas = document.querySelector("#seq06-13e1-canvas-fingerprint");
+      return {
+        width: capture.width,
+        height: capture.height,
+        format: capture.format,
+        rgba: Array.from(capture.rgba),
+        observeJson: capture.observe_json,
+        adapterInfoJson: capture.adapter_info_json,
+        page: {
+          userAgent: navigator.userAgent,
+          language: navigator.language,
+          secureContext: globalThis.isSecureContext,
+          webgpuAvailable: Boolean(navigator.gpu),
+          devicePixelRatio: window.devicePixelRatio,
+          canvasWidth: canvas?.width ?? null,
+          canvasHeight: canvas?.height ?? null,
+          canvasClientWidth: canvas?.clientWidth ?? null,
+          canvasClientHeight: canvas?.clientHeight ?? null,
+        },
+      };
+    });
+  } catch (error) {
+    if (errors.length > 0) {
+      fail(`${error instanceof Error ? error.message : error}\nconsole errors:\n${errors.join("\n")}`);
+    }
+    throw error;
+  }
   expect(errors.length === 0, `console errors: ${errors.join("\n")}`);
   expect(result.width === WIDTH, `unexpected capture width: ${result.width}`);
   expect(result.height === HEIGHT, `unexpected capture height: ${result.height}`);
@@ -435,7 +448,7 @@ async function main() {
   const { server, baseUrl } = await startServer();
   const browser = await chromium.launch({
     channel: args.browserChannel,
-    headless: true,
+    headless: launchHeadless(),
     args: launchArgs(),
   });
   try {

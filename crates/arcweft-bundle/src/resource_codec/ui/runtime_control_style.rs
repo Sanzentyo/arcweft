@@ -268,6 +268,10 @@ impl UiStyleResource {
         )
     }
 
+    pub fn runtime_surface_style(&self, public_id: &str) -> UiRuntimeControlStyleResolution {
+        self.resolve_runtime_control_style(public_id, UiElementKind::Surface, None)
+    }
+
     fn resolve_runtime_control_style(
         &self,
         target: &str,

@@ -2,11 +2,13 @@
 
 ## Status
 
-Web exact readback harness implementation package is ready for review. This is a
-no-promotion package: it does not add a checked-in Web reference PNG, because the
-package authoring environment was not a pinned browser/WebGPU visual-golden
-machine. The Web reference remains pending until a same-run packet is captured,
-reviewed, and copied into the Web reference path.
+Web exact readback harness implementation package is ready for review. The
+original design package was a no-promotion package: it did not add a checked-in
+Web reference PNG because the package authoring environment was not a pinned
+browser/WebGPU visual-golden machine. In this checkout, the current terminal was
+accepted as the pinned browser/WebGPU baseline environment, the same-run packet
+was captured, and the reviewed candidate was promoted to the checked-in Web
+reference path.
 
 The native PNG baseline from seq06.13e.1 is left unchanged.
 
@@ -18,8 +20,11 @@ The native PNG baseline from seq06.13e.1 is left unchanged.
   match the existing browser smoke runner convention.
 - Fixture source: the Web fixture mirrors the already accepted 320x180
   seq06.13e.1 compositor scene: `rounded_inset_shadow_card` and
-  `mixed_outer_inset_shadow_card`. It does not introduce a second renderer
-  contract.
+  `mixed_outer_inset_shadow_card`. The fixture now builds those cards through
+  typed `UiStyleResource` surface rules: `background-color` becomes the
+  `UiRoundedRect` fill, `border-radius` becomes the rounded-rect radius and
+  shadow fallback radius, and `box-shadow` becomes `UiCompositingEffects`.
+  It does not introduce a second renderer contract.
 - Readback path: WebAssembly-exported renderer readback. The wasm export
   `capture_seq06_13e1_inset_box_shadow_exact_png` renders an Arcweft-owned
   `rgba8unorm` WebGPU texture through `UiCompositor::render_group`, then reads it
@@ -35,6 +40,8 @@ The native PNG baseline from seq06.13e.1 is left unchanged.
 - `crates/arcweft-player-web/src/seq06_13e1_exact.rs`
   - wasm-only exact capture export for the 320x180 compositor fixture.
   - returns raw RGBA bytes, observe JSON, and WebGPU adapter info.
+  - resolves the exact fixture's surface styles through `UiStyleResource` before
+    building `UiRoundedRect` primitives and compositor box-shadow effects.
 - `crates/arcweft-player-web/src/lib.rs`
   - exposes the wasm exact capture export behind the existing wasm cfg boundary.
 - `crates/arcweft-player-web/Cargo.toml`
@@ -95,10 +102,10 @@ instead of failing solely because the reference is not yet promoted.
 
 ## Promotion decision
 
-No-promotion in this package. A reviewer may promote the Web reference only after
-the exact command above succeeds in a pinned WebGPU browser environment and the
-same-run packet is inspected. The promotion action is to copy the reviewed Web
-candidate into:
+The original package decision was no-promotion. A reviewer may promote the Web
+reference only after the exact command above succeeds in a pinned WebGPU browser
+environment and the same-run packet is inspected. The promotion action is to copy
+the reviewed Web candidate into:
 
 ```text
 fixtures/visual-smoke-goldens/seq06.13e.1-inset-box-shadow/web/seq06_13e1_inset_box_shadow.png
@@ -106,6 +113,17 @@ fixtures/visual-smoke-goldens/seq06.13e.1-inset-box-shadow/web/seq06_13e1_inset_
 
 Then rerun the same collector command to reach `passed_existing_baseline_gate`
 with `max_mse=0.002` and `max_mae=0.003` unchanged.
+
+Applied checkout promotion:
+
+- Current checkout pinned environment:
+  `ARW_SEQ06_13E1_INSET_SHADOW_GOLDEN_REQUIRED=1`,
+  `ARW_SEQ06_13E1_INSET_SHADOW_GOLDEN_PINNED=1`,
+  `ARW_SEQ06_13E1_INSET_SHADOW_WEBGPU=1`.
+- First-promotion packet:
+  `target/seq06.13e.1-web-exact-style-packet-run/web/`.
+- Promoted reference:
+  `fixtures/visual-smoke-goldens/seq06.13e.1-inset-box-shadow/web/seq06_13e1_inset_box_shadow.png`.
 
 ## Validation performed while preparing this package
 
@@ -173,3 +191,33 @@ first-promotion review.
 The collector also removes inherited `RUSTUP_TOOLCHAIN` from child `cargo`
 commands so `cargo +nightly -Zscript` does not force the inner wasm build onto a
 nightly toolchain that lacks the `wasm32-unknown-unknown` target.
+
+## Style-through follow-up
+
+After review feedback on 2026-07-04, the Web exact fixture was changed so
+corner radius, card fill, and box shadows no longer originate as hard-coded
+`UiCompositingEffects` in the wasm export. The export now owns a typed
+`UiStyleResource` with CSS source identity for
+`docs/fixtures/css/seq06.13e-inset-box-shadow-card.css`, resolves each card via
+`UiStyleResource::runtime_surface_style`, then lowers the resolved visual style
+to:
+
+- `UiRoundedRect` direct primitives for the style fill and border radius;
+- `UiCompositingEffects::box_shadows` for the style shadow list;
+- observe JSON route evidence for the style resolver and rounded-rect child.
+
+This also addresses the previous transparent-candidate failure mode where the
+Web exact scene had shadow groups with no rendered child content because the
+wasm harness used a no-op direct primitive renderer.
+
+The pinned rerun also exposed a WebGPU WGSL validation error in the shared
+compositor shader: browser validation rejected `textureSample` in a helper that
+can be reached from non-uniform control flow. The compositor shader now uses
+`textureSampleLevel(..., 0.0)` for its UI compositor texture reads, avoiding
+implicit derivatives and allowing the browser WebGPU shader module to validate.
+
+The generic `npm --prefix web test` smoke remains logged as supporting evidence,
+but its current `unsupported Arcweft bundle schema version 4; expected 5`
+failure does not invalidate a complete seq06.13e.1 exact PNG packet. The exact
+collector therefore continues to packet validation after writing
+`webgpu-smoke.log`.

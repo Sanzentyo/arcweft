@@ -50,11 +50,11 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOut {
 }
 
 fn source_color(uv: vec2<f32>) -> vec4<f32> {
-    return textureSample(source_texture, source_sampler, uv);
+    return textureSampleLevel(source_texture, source_sampler, uv, 0.0);
 }
 
 fn backdrop_color(uv: vec2<f32>) -> vec4<f32> {
-    return textureSample(backdrop_texture, source_sampler, uv);
+    return textureSampleLevel(backdrop_texture, source_sampler, uv, 0.0);
 }
 
 fn apply_color_matrix(color: vec4<f32>) -> vec4<f32> {
@@ -74,7 +74,7 @@ fn blur_color(uv: vec2<f32>) -> vec4<f32> {
 }
 
 fn shadow_color(uv: vec2<f32>) -> vec4<f32> {
-    let alpha = textureSample(source_texture, source_sampler, uv - uniform_data.params0.xy).a;
+    let alpha = textureSampleLevel(source_texture, source_sampler, uv - uniform_data.params0.xy, 0.0).a;
     return vec4<f32>(uniform_data.params1.rgb * uniform_data.params1.a, alpha * uniform_data.params1.a);
 }
 
@@ -126,7 +126,7 @@ fn mask_tile_uv(uv: vec2<f32>) -> vec2<f32> {
 fn texture_mask_coverage(uv: vec2<f32>) -> f32 {
     let mask_uv = mask_tile_uv(uv);
     if (mask_uv.x < 0.0 || mask_uv.y < 0.0) { return 0.0; }
-    let mask = textureSample(mask_texture, source_sampler, mask_uv);
+    let mask = textureSampleLevel(mask_texture, source_sampler, mask_uv, 0.0);
     if (uniform_data.params0.x > 0.5) {
         return dot(mask.rgb, vec3<f32>(0.2126, 0.7152, 0.0722)) * mask.a;
     }
