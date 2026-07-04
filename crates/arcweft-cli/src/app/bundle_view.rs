@@ -557,6 +557,7 @@ fn lower_button(
             ime_policy: lower_ime_policy(action.ime_policy()),
         },
         bounds: UiRuntimeButtonBounds::default_slot(state.action_buttons.len()),
+        style: None,
         source: None,
     });
     state.semantic_targets.push(UiSemanticTarget {

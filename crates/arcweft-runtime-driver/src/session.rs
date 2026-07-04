@@ -20,8 +20,8 @@ use arcweft_bundle::patch::{
     apply_patch_bundle, decode_patch_bundle,
 };
 use arcweft_bundle::resource_codec::{
-    UiProgramResource, UiRuntimeActionButton, UiRuntimeFocusGroup, UiRuntimeFocusNavigation,
-    UiRuntimeTextControl, UiRuntimeTextSelection,
+    UiProgramResource, UiRuntimeActionButton, UiRuntimeControlStyleDiagnostics,
+    UiRuntimeFocusGroup, UiRuntimeFocusNavigation, UiRuntimeTextControl, UiRuntimeTextSelection,
 };
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleImageObject, BundleKind};
 use arcweft_core::awbc::{
@@ -158,6 +158,7 @@ pub struct BundleSession {
     image_objects: Vec<BundleImageObject>,
     text_inputs: Vec<UiRuntimeTextControl>,
     action_buttons: Vec<UiRuntimeActionButton>,
+    runtime_control_style_diagnostics: UiRuntimeControlStyleDiagnostics,
     focus_groups: Vec<UiRuntimeFocusGroup>,
     focus_navigation: Vec<UiRuntimeFocusNavigation>,
     options: BundleSessionOptions,
@@ -407,6 +408,7 @@ impl BundleSession {
         let image_objects = runtime.image_objects.clone();
         let text_inputs = runtime.text_inputs.clone();
         let action_buttons = runtime.action_buttons.clone();
+        let runtime_control_style_diagnostics = runtime.runtime_control_style_diagnostics.clone();
         let focus_groups = runtime.focus_groups.clone();
         let focus_navigation = runtime.focus_navigation.clone();
         let source_label = runtime.source_label.clone();
@@ -422,6 +424,7 @@ impl BundleSession {
             image_objects,
             text_inputs,
             action_buttons,
+            runtime_control_style_diagnostics,
             focus_groups,
             focus_navigation,
             options,
@@ -628,6 +631,8 @@ impl BundleSession {
                 self.image_objects.clone_from(&bundle.image_objects);
                 self.text_inputs.clone_from(&next_runtime.text_inputs);
                 self.action_buttons.clone_from(&next_runtime.action_buttons);
+                self.runtime_control_style_diagnostics
+                    .clone_from(&next_runtime.runtime_control_style_diagnostics);
                 self.focus_groups.clone_from(&next_runtime.focus_groups);
                 self.focus_navigation
                     .clone_from(&next_runtime.focus_navigation);
@@ -701,6 +706,8 @@ impl BundleSession {
                 self.image_objects.clone_from(&bundle.image_objects);
                 self.text_inputs.clone_from(&next_runtime.text_inputs);
                 self.action_buttons.clone_from(&next_runtime.action_buttons);
+                self.runtime_control_style_diagnostics
+                    .clone_from(&next_runtime.runtime_control_style_diagnostics);
                 self.focus_groups.clone_from(&next_runtime.focus_groups);
                 self.focus_navigation
                     .clone_from(&next_runtime.focus_navigation);
@@ -866,6 +873,12 @@ impl BundleSession {
             .map(|diagnostic| diagnostic.message)
             .collect::<Vec<_>>();
         diagnostics.extend(display.diagnostics.iter().cloned());
+        diagnostics.extend(
+            self.runtime_control_style_diagnostics
+                .diagnostics
+                .iter()
+                .map(ToString::to_string),
+        );
         self.presentation.update(
             &display,
             &result.fiber_status,
@@ -1035,6 +1048,7 @@ impl BundleSession {
         self.image_objects = runtime.image_objects;
         self.text_inputs = runtime.text_inputs;
         self.action_buttons = runtime.action_buttons;
+        self.runtime_control_style_diagnostics = runtime.runtime_control_style_diagnostics;
         self.focus_groups = runtime.focus_groups;
         self.focus_navigation = runtime.focus_navigation;
     }
@@ -1124,8 +1138,8 @@ mod text_control_writeback_tests {
     use super::*;
     use arcweft_bundle::resource_codec::ui::{
         CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
-        UiInputPurpose, UiRuntimeTextControlBounds, UiRuntimeTextControlHandlers,
-        UiRuntimeTextControlOptions, UiSecureInputPolicy,
+        UiInputPurpose, UiRuntimeControlStyle, UiRuntimeTextControlBounds,
+        UiRuntimeTextControlHandlers, UiRuntimeTextControlOptions, UiSecureInputPolicy,
     };
     use arcweft_core::step::RuntimeHostCallMode;
     use arcweft_id::PublicId;
@@ -1155,6 +1169,7 @@ mod text_control_writeback_tests {
             bounds: UiRuntimeTextControlBounds::from_px(0, 0, 100, 24),
             label: None,
             handlers: UiRuntimeTextControlHandlers::default(),
+            style: UiRuntimeControlStyle::default(),
         }
     }
 
@@ -1217,6 +1232,7 @@ struct SessionRuntime {
     image_objects: Vec<BundleImageObject>,
     text_inputs: Vec<UiRuntimeTextControl>,
     action_buttons: Vec<UiRuntimeActionButton>,
+    runtime_control_style_diagnostics: UiRuntimeControlStyleDiagnostics,
     focus_groups: Vec<UiRuntimeFocusGroup>,
     focus_navigation: Vec<UiRuntimeFocusNavigation>,
 }
@@ -1227,6 +1243,7 @@ struct SessionRuntimeResources {
     image_objects: Vec<BundleImageObject>,
     text_inputs: Vec<UiRuntimeTextControl>,
     action_buttons: Vec<UiRuntimeActionButton>,
+    runtime_control_style_diagnostics: UiRuntimeControlStyleDiagnostics,
     focus_groups: Vec<UiRuntimeFocusGroup>,
     focus_navigation: Vec<UiRuntimeFocusNavigation>,
 }
@@ -1268,6 +1285,7 @@ impl SessionRuntime {
             image_objects: resources.image_objects,
             text_inputs: resources.text_inputs,
             action_buttons: resources.action_buttons,
+            runtime_control_style_diagnostics: resources.runtime_control_style_diagnostics,
             focus_groups: resources.focus_groups,
             focus_navigation: resources.focus_navigation,
         })
@@ -1288,6 +1306,7 @@ impl SessionRuntime {
                 image_objects: self.image_objects.clone(),
                 text_inputs: self.text_inputs.clone(),
                 action_buttons: self.action_buttons.clone(),
+                runtime_control_style_diagnostics: self.runtime_control_style_diagnostics.clone(),
                 focus_groups: self.focus_groups.clone(),
                 focus_navigation: self.focus_navigation.clone(),
             },
@@ -1312,12 +1331,30 @@ fn build_session_runtime(
         .clone();
     let entry = selected_awbc_entry(&program, bundle, options)?;
     ensure_session_awbc_entry_selects_flow(&program, entry)?;
-    let text_inputs = bundle.ui_input.as_ref().map_or_else(Vec::new, |input| {
-        input.runtime_text_controls(bundle.ui_text.as_ref(), bundle.ui_program.as_ref())
-    });
-    let action_buttons = bundle.ui_program.as_ref().map_or_else(Vec::new, |program| {
-        program.runtime_action_buttons(bundle.ui_text.as_ref())
-    });
+    let text_controls = bundle
+        .ui_input
+        .as_ref()
+        .map_or_else(Default::default, |input| {
+            input.runtime_text_controls_with_style(
+                bundle.ui_text.as_ref(),
+                bundle.ui_program.as_ref(),
+                bundle.ui_style.as_ref(),
+            )
+        });
+    let action_button_controls =
+        bundle
+            .ui_program
+            .as_ref()
+            .map_or_else(Default::default, |program| {
+                program.runtime_action_buttons_with_style(
+                    bundle.ui_text.as_ref(),
+                    bundle.ui_style.as_ref(),
+                )
+            });
+    let text_inputs = text_controls.controls;
+    let action_buttons = action_button_controls.controls;
+    let mut runtime_control_style_diagnostics = text_controls.diagnostics;
+    runtime_control_style_diagnostics.extend(action_button_controls.diagnostics);
     let focus_groups = bundle
         .ui_program
         .as_ref()
@@ -1336,6 +1373,7 @@ fn build_session_runtime(
             image_objects: bundle.image_objects.clone(),
             text_inputs,
             action_buttons,
+            runtime_control_style_diagnostics,
             focus_groups,
             focus_navigation,
         },

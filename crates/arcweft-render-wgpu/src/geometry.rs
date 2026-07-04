@@ -20,11 +20,17 @@ use num_traits::ToPrimitive;
 use thiserror::Error;
 
 mod action_buttons;
+mod control_style;
 mod focus_navigation;
 mod images;
 mod text_controls;
 pub use action_buttons::{
     PreparedActionButton, RenderActionButton, RenderActionButtonAction, RenderTextSubmitImePolicy,
+};
+pub use control_style::{
+    PreparedControlShadow, RenderControlBorderStyle, RenderControlFocusRingStyle,
+    RenderControlShadow, RenderControlShadowKind, RenderControlStyle, RenderControlVisualState,
+    RenderControlVisualStyle,
 };
 pub use focus_navigation::{
     FocusNavigationDebug, FocusNavigationDebugCandidate, PreparedFocusGraph, PreparedFocusGroup,
@@ -324,6 +330,7 @@ pub struct PreparedFrame {
     pub styled_paragraphs: Vec<RenderStyledParagraph>,
     pub choices: Vec<RenderChoice>,
     pub action_buttons: Vec<PreparedActionButton>,
+    pub control_shadows: Vec<PreparedControlShadow>,
     pub focus_graph: PreparedFocusGraph,
     ui_scenes: Vec<PreparedUiScene>,
     dialogue_present: bool,
@@ -579,6 +586,7 @@ impl SharedFramePlanner {
             &palette,
             &action,
         )?;
+        let mut control_shadows = Vec::new();
         let focused_text_input = text_controls::build_text_inputs(
             scene,
             &ids.text_input,
@@ -586,14 +594,18 @@ impl SharedFramePlanner {
             &mut rectangles,
             &mut text,
             &palette,
+            &mut control_shadows,
         )?;
         let submit_action = RenderActionKind::TextInputSubmit.public_id()?;
         let action_buttons = action_buttons::build_action_buttons(
             scene,
             &ids.action_button,
-            &mut semantics,
-            &mut rectangles,
-            &mut text,
+            action_buttons::ActionButtonBuildOutput {
+                semantics: &mut semantics,
+                rectangles: &mut rectangles,
+                text: &mut text,
+                control_shadows: &mut control_shadows,
+            },
             &palette,
             &submit_action,
         );
@@ -610,6 +622,7 @@ impl SharedFramePlanner {
             styled_paragraphs,
             choices,
             action_buttons,
+            control_shadows,
             focus_graph: PreparedFocusGraph::new(
                 scene.focus_groups.clone(),
                 scene.focus_navigation.clone(),

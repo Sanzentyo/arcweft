@@ -1,3 +1,8 @@
+use super::control_style::{
+    ControlInteractionStyleState, ControlPointerStyleState, PreparedControlShadow,
+    RenderControlStyle, fill_with_opacity, push_control_border, push_control_focus_ring,
+    push_control_shadow_plan, state_from_interaction,
+};
 use super::{
     PaintRect, Palette, RenderFontFamily, RenderScene, RenderTextBlock, RenderTextSlant,
     RenderTextWeight,
@@ -18,6 +23,7 @@ pub struct RenderActionButton {
     pub label: String,
     pub enabled: bool,
     pub bounds: HitRect,
+    pub style: RenderControlStyle,
     pub action: RenderActionButtonAction,
 }
 
@@ -52,18 +58,29 @@ pub struct PreparedActionButton {
     pub action: RenderActionButtonAction,
 }
 
+pub(super) struct ActionButtonBuildOutput<'a> {
+    pub(super) semantics: &'a mut SemanticTree,
+    pub(super) rectangles: &'a mut Vec<PaintRect>,
+    pub(super) text: &'a mut Vec<RenderTextBlock>,
+    pub(super) control_shadows: &'a mut Vec<PreparedControlShadow>,
+}
+
 pub(super) fn build_action_buttons(
     scene: &RenderScene,
     layer: &LayerId,
-    semantics: &mut SemanticTree,
-    rectangles: &mut Vec<PaintRect>,
-    text: &mut Vec<RenderTextBlock>,
+    output: ActionButtonBuildOutput<'_>,
     palette: &Palette,
     action_id: &PublicId,
 ) -> Vec<PreparedActionButton> {
     let scale = f32::from(scene.preferences.text_scale_milli) / 1_000.0;
     let font_size = 20.0 * scale;
     let line_height = 28.0 * scale;
+    let ActionButtonBuildOutput {
+        semantics,
+        rectangles,
+        text,
+        control_shadows,
+    } = output;
     scene
         .action_buttons
         .iter()
@@ -71,17 +88,30 @@ pub(super) fn build_action_buttons(
             let is_focused = scene.interaction.focused.as_ref() == Some(&button.target);
             let is_hovered = scene.interaction.hovered.as_ref() == Some(&button.target);
             let is_pressed = scene.interaction.pressed.as_ref() == Some(&button.target);
-            let state = ActionButtonVisualState::from_interaction(
+            let state = state_from_interaction(ControlInteractionStyleState {
+                enabled: button.enabled,
+                focused: is_focused,
+                pointer: ControlPointerStyleState::from_interaction(is_hovered, is_pressed),
+            });
+            let visual = button.style.visual_for_state(state);
+            push_control_shadow_plan(control_shadows, &button.target, button.bounds, &visual);
+            let fallback_fill = action_button_fill(
                 button.enabled,
                 is_focused || is_hovered,
                 is_pressed,
+                palette,
             );
             rectangles.push(PaintRect {
                 bounds: button.bounds,
-                rgba: action_button_fill(state, palette),
+                rgba: fill_with_opacity(visual.fill.unwrap_or(fallback_fill), visual.opacity),
             });
+            push_control_border(rectangles, button.bounds, visual.border);
             if is_focused {
-                super::push_focus_ring(rectangles, button.bounds, palette.focus_ring);
+                if let Some(ring) = visual.focus_ring {
+                    push_control_focus_ring(rectangles, button.bounds, ring);
+                } else {
+                    super::push_focus_ring(rectangles, button.bounds, palette.focus_ring);
+                }
             }
             text.push(RenderTextBlock {
                 text: button.label.clone(),
@@ -99,7 +129,7 @@ pub(super) fn build_action_buttons(
                 font_family: RenderFontFamily::SansSerif,
                 weight: RenderTextWeight::Bold,
                 slant: RenderTextSlant::Upright,
-                rgba: palette.choice_text,
+                rgba: visual.text.unwrap_or(palette.choice_text),
             });
             semantics.push(
                 SemanticNode::new(
@@ -122,34 +152,15 @@ pub(super) fn build_action_buttons(
         .collect()
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ActionButtonVisualState {
-    Disabled,
-    Pressed,
-    Active,
-    Idle,
-}
-
-impl ActionButtonVisualState {
-    const fn from_interaction(enabled: bool, active: bool, pressed: bool) -> Self {
-        if !enabled {
-            Self::Disabled
-        } else if pressed {
-            Self::Pressed
-        } else if active {
-            Self::Active
-        } else {
-            Self::Idle
-        }
-    }
-}
-
-fn action_button_fill(state: ActionButtonVisualState, palette: &Palette) -> [f32; 4] {
-    match state {
-        ActionButtonVisualState::Disabled => palette.choice_idle.map(|channel| channel * 0.72),
-        ActionButtonVisualState::Pressed => palette.choice_pressed,
-        ActionButtonVisualState::Active => palette.choice_active,
-        ActionButtonVisualState::Idle => palette.choice_idle,
+fn action_button_fill(enabled: bool, active: bool, pressed: bool, palette: &Palette) -> [f32; 4] {
+    if !enabled {
+        palette.choice_idle.map(|channel| channel * 0.72)
+    } else if pressed {
+        palette.choice_pressed
+    } else if active {
+        palette.choice_active
+    } else {
+        palette.choice_idle
     }
 }
 

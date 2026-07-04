@@ -1,3 +1,8 @@
+use super::control_style::{
+    ControlInteractionStyleState, ControlPointerStyleState, PreparedControlShadow,
+    RenderControlStyle, fill_with_opacity, push_control_border, push_control_focus_ring,
+    push_control_shadow_plan, state_from_interaction,
+};
 use super::{
     FramePlanError, PaintRect, Palette, PreparedTextInputTarget, RenderFontFamily, RenderTextBlock,
     RenderTextSlant, RenderTextWeight, RenderViewport,
@@ -43,6 +48,7 @@ pub struct RenderTextInputControl {
     pub role: SemanticRole,
     pub bounds: HitRect,
     pub label: Option<String>,
+    pub style: RenderControlStyle,
 }
 
 impl RenderTextInputControl {
@@ -64,12 +70,19 @@ impl RenderTextInputControl {
             role,
             bounds,
             label: None,
+            style: RenderControlStyle::default(),
         }
     }
 
     #[must_use]
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_style(mut self, style: RenderControlStyle) -> Self {
+        self.style = style;
         self
     }
 
@@ -105,22 +118,40 @@ pub(super) fn build_text_inputs(
     rectangles: &mut Vec<PaintRect>,
     text: &mut Vec<RenderTextBlock>,
     palette: &Palette,
+    control_shadows: &mut Vec<PreparedControlShadow>,
 ) -> Result<Option<PreparedTextInputTarget>, FramePlanError> {
     let mut focused = None;
     for control in &scene.text_inputs {
         let options = control.resolved_options()?;
         let is_focused = scene.interaction.focused.as_ref() == Some(&control.target);
+        let is_hovered = scene.interaction.hovered.as_ref() == Some(&control.target);
+        let is_pressed = scene.interaction.pressed.as_ref() == Some(&control.target);
+        let state = state_from_interaction(ControlInteractionStyleState {
+            enabled: true,
+            focused: is_focused,
+            pointer: ControlPointerStyleState::from_interaction(is_hovered, is_pressed),
+        });
+        let visual = control.style.visual_for_state(state);
         let visual_layout = visual_layout_for_control(control, &options);
+        push_control_shadow_plan(control_shadows, &control.target, control.bounds, &visual);
         rectangles.push(PaintRect {
             bounds: control.bounds,
-            rgba: if is_focused {
-                palette.choice_active
-            } else {
-                palette.choice_idle
-            },
+            rgba: fill_with_opacity(
+                visual.fill.unwrap_or(if is_focused {
+                    palette.choice_active
+                } else {
+                    palette.choice_idle
+                }),
+                visual.opacity,
+            ),
         });
+        push_control_border(rectangles, control.bounds, visual.border);
         if is_focused {
-            super::push_focus_ring(rectangles, control.bounds, palette.focus_ring);
+            if let Some(ring) = visual.focus_ring {
+                push_control_focus_ring(rectangles, control.bounds, ring);
+            } else {
+                super::push_focus_ring(rectangles, control.bounds, palette.focus_ring);
+            }
             push_renderer_text_input_selection(rectangles, control, &visual_layout, palette);
             push_renderer_text_input_caret(rectangles, control, &visual_layout, palette);
         }
@@ -136,7 +167,7 @@ pub(super) fn build_text_inputs(
             font_family: RenderFontFamily::SansSerif,
             weight: RenderTextWeight::Regular,
             slant: RenderTextSlant::Upright,
-            rgba: palette.choice_text,
+            rgba: visual.text.unwrap_or(palette.choice_text),
         });
 
         let mut node = SemanticNode::new(

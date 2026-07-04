@@ -1,0 +1,157 @@
+{
+  "sequence": "seq06.16.4",
+  "sample": "samples/modern-feedback-ui",
+  "evidence_kind": "static-contract-smoke",
+  "execution_status": "static_contract_fixture",
+  "reason": "deterministic runtime-control style fixture; not a native PNG capture",
+  "viewport": {
+    "logical_width": 800,
+    "logical_height": 480,
+    "scale_factor": 1.0
+  },
+  "controls": [
+    {
+      "target": "input.feedback.name",
+      "kind": "text_field",
+      "bounds_px": {
+        "x": 80,
+        "y": 96,
+        "width": 420,
+        "height": 48
+      },
+      "state": "focus_visible",
+      "resolved_style": {
+        "fill_rgba8": [
+          16,
+          24,
+          32,
+          184
+        ],
+        "opacity_milli": 880,
+        "border_rgba8": [
+          80,
+          112,
+          96,
+          255
+        ],
+        "border_width_milli": 1000,
+        "focus_ring_rgba8": [
+          226,
+          233,
+          98,
+          255
+        ],
+        "focus_ring_width_milli": 3000,
+        "radius_milli": 12000,
+        "shadows": [
+          {
+            "kind": "outer",
+            "offset_px": [
+              0,
+              8
+            ],
+            "blur_px": 18,
+            "spread_px": 0,
+            "radius_px": 12,
+            "color_rgba8": [
+              0,
+              0,
+              0,
+              128
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "target": "input.feedback.message",
+      "kind": "text_area",
+      "bounds_px": {
+        "x": 80,
+        "y": 160,
+        "width": 520,
+        "height": 136
+      },
+      "state": "normal",
+      "resolved_style": {
+        "fill_rgba8": [
+          16,
+          24,
+          32,
+          168
+        ],
+        "opacity_milli": 880,
+        "border_rgba8": [
+          80,
+          112,
+          96,
+          255
+        ],
+        "border_width_milli": 1000,
+        "radius_milli": 12000,
+        "shadows": [
+          {
+            "kind": "outer",
+            "offset_px": [
+              0,
+              8
+            ],
+            "blur_px": 18,
+            "spread_px": 0,
+            "radius_px": 12,
+            "color_rgba8": [
+              0,
+              0,
+              0,
+              128
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "target": "button.submit_feedback",
+      "kind": "button",
+      "bounds_px": {
+        "x": 484,
+        "y": 312,
+        "width": 128,
+        "height": 48
+      },
+      "states": {
+        "normal_fill_rgba8": [
+          32,
+          64,
+          42,
+          240
+        ],
+        "hover_fill_rgba8": [
+          48,
+          88,
+          56,
+          255
+        ],
+        "pressed_fill_rgba8": [
+          70,
+          102,
+          58,
+          255
+        ],
+        "disabled_fill_rgba8": [
+          32,
+          32,
+          25,
+          160
+        ]
+      },
+      "text_rgba8": [
+        255,
+        252,
+        238,
+        255
+      ]
+    }
+  ],
+  "native_web_contract": "identical prepared-frame path; no DOM overlay or browser CSS controls",
+  "host": "native"
+}

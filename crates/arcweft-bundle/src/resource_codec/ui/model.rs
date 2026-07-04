@@ -1,3 +1,4 @@
+use super::runtime_control_style::UiRuntimeControlStyle;
 use crate::BundleVirtualFileRef;
 use crate::container::BundleDigest;
 use crate::resource_codec::types::{CrossSectionRef, DigestRef, SourceRangeRef};
@@ -197,6 +198,8 @@ pub struct UiActionButtonResource {
     pub action: UiActionButtonActionResource,
     pub bounds: UiRuntimeButtonBounds,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceRangeRef>,
 }
 
@@ -234,6 +237,8 @@ pub struct UiRuntimeActionButton {
     pub enabled: bool,
     pub bounds: UiRuntimeButtonBounds,
     pub action: UiRuntimeActionButtonAction,
+    #[serde(default, skip_serializing_if = "UiRuntimeControlStyle::is_default")]
+    pub style: UiRuntimeControlStyle,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -758,6 +763,8 @@ pub struct UiRuntimeTextControl {
         skip_serializing_if = "UiRuntimeTextControlHandlers::is_empty"
     )]
     pub handlers: UiRuntimeTextControlHandlers,
+    #[serde(default, skip_serializing_if = "UiRuntimeControlStyle::is_default")]
+    pub style: UiRuntimeControlStyle,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -940,6 +947,7 @@ impl UiInputOptions {
             value,
             label,
             handlers: UiRuntimeTextControlHandlers::from_input(self, program),
+            style: UiRuntimeControlStyle::default(),
         }
     }
 
@@ -989,6 +997,7 @@ impl fmt::Debug for UiRuntimeTextControl {
             .field("bounds", &self.bounds)
             .field("label", &self.label)
             .field("handlers", &self.handlers)
+            .field("style", &self.style)
             .finish()
     }
 }
@@ -1023,6 +1032,7 @@ impl UiProgramResource {
                         }
                     }
                 },
+                style: UiRuntimeControlStyle::default(),
             })
             .collect()
     }

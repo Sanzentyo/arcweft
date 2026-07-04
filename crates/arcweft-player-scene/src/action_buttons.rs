@@ -1,3 +1,4 @@
+use crate::control_style::lower_control_style;
 use arcweft_bundle::resource_codec::ui::{
     UiRuntimeActionButton, UiRuntimeActionButtonAction, UiRuntimeButtonBounds,
     UiTextSubmitImePolicy,
@@ -43,6 +44,7 @@ impl RuntimeActionButtonLowerer {
             label: button.label.clone(),
             enabled: button.enabled,
             bounds: lower_bounds(button.bounds),
+            style: lower_control_style(&button.style),
             action: lower_action(button, text_inputs)?,
         })
     }

@@ -1,3 +1,4 @@
+use crate::control_style::lower_control_style;
 use crate::input::InputController;
 use arcweft_bundle::resource_codec::ui::{
     EnterKeyHint as UiEnterKeyHint, TextAssistPolicy as UiTextAssistPolicy,
@@ -67,6 +68,7 @@ impl RuntimeTextControlLowerer {
         if let Some(label) = &control.label {
             render = render.with_label(label.clone());
         }
+        render = render.with_style(lower_control_style(&control.style));
         Ok(render)
     }
 

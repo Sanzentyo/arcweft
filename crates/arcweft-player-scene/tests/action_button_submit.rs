@@ -9,8 +9,8 @@ use arcweft_presentation::text_input::{
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderActionButton, RenderActionButtonAction,
-    RenderPreferences, RenderScene, RenderTextInputControl, RenderTextSubmitImePolicy,
-    RenderViewport, SharedFramePlanner,
+    RenderControlStyle, RenderPreferences, RenderScene, RenderTextInputControl,
+    RenderTextSubmitImePolicy, RenderViewport, SharedFramePlanner,
 };
 
 fn target(value: &str) -> InteractionTarget {
@@ -38,6 +38,7 @@ fn scene(ime_policy: RenderTextSubmitImePolicy) -> RenderScene {
             label: "Send".to_owned(),
             enabled: true,
             bounds: HitRect::new(484.0, 48.0, 128.0, 48.0),
+            style: RenderControlStyle::default(),
             action: RenderActionButtonAction::TextInputSubmit {
                 input_target,
                 session: TextInputSessionId(41),

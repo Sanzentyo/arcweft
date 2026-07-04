@@ -10,7 +10,9 @@
 mod codec;
 mod compat;
 mod model;
+mod runtime_control_style;
 
 pub use codec::{UiResourceBudget, UiResourceExport};
 pub use compat::{UiResourceCompatibility, migrated_ui_section_compatibility};
 pub use model::*;
+pub use runtime_control_style::*;
