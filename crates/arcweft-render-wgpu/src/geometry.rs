@@ -28,7 +28,7 @@ pub use action_buttons::{
     PreparedActionButton, RenderActionButton, RenderActionButtonAction, RenderTextSubmitImePolicy,
 };
 pub use control_style::{
-    PreparedControlBackdrop, PreparedControlFilter, PreparedControlShadow,
+    PreparedControlBackdrop, PreparedControlFilter, PreparedControlPaint, PreparedControlShadow,
     RenderControlBorderStyle, RenderControlFilter, RenderControlFilterList,
     RenderControlFocusRingStyle, RenderControlShadow, RenderControlShadowKind, RenderControlStyle,
     RenderControlVisualState, RenderControlVisualStyle, RuntimeControlBackdropSamplePolicy,
@@ -334,6 +334,7 @@ pub struct PreparedFrame {
     pub control_backdrops: Vec<PreparedControlBackdrop>,
     pub control_shadows: Vec<PreparedControlShadow>,
     pub control_filters: Vec<PreparedControlFilter>,
+    pub control_paints: Vec<PreparedControlPaint>,
     pub focus_graph: PreparedFocusGraph,
     ui_scenes: Vec<PreparedUiScene>,
     dialogue_present: bool,
@@ -593,7 +594,7 @@ impl SharedFramePlanner {
         let mut control_backdrops = Vec::new();
         let mut control_shadows = Vec::new();
         let mut control_filters = Vec::new();
-        let (focused_text_input, action_buttons) = build_runtime_controls(
+        let runtime_controls = build_runtime_controls(
             scene,
             &ids,
             &mut semantics,
@@ -617,10 +618,11 @@ impl SharedFramePlanner {
             text,
             styled_paragraphs,
             choices,
-            action_buttons,
+            action_buttons: runtime_controls.action_buttons,
             control_backdrops,
             control_shadows,
             control_filters,
+            control_paints: runtime_controls.control_paints,
             focus_graph: PreparedFocusGraph::new(
                 scene.focus_groups.clone(),
                 scene.focus_navigation.clone(),
@@ -628,9 +630,15 @@ impl SharedFramePlanner {
             ui_scenes: Vec::new(),
             dialogue_present: scene.dialogue.is_some(),
             interaction: scene.interaction.clone(),
-            focused_text_input,
+            focused_text_input: runtime_controls.focused_text_input,
         })
     }
+}
+
+struct RuntimeControlsBuildOutput {
+    focused_text_input: Option<PreparedTextInputTarget>,
+    action_buttons: Vec<PreparedActionButton>,
+    control_paints: Vec<PreparedControlPaint>,
 }
 
 enum RuntimeControlPlanItem {
@@ -676,7 +684,7 @@ fn build_runtime_controls(
     control_backdrops: &mut Vec<PreparedControlBackdrop>,
     control_shadows: &mut Vec<PreparedControlShadow>,
     control_filters: &mut Vec<PreparedControlFilter>,
-) -> Result<(Option<PreparedTextInputTarget>, Vec<PreparedActionButton>), FramePlanError> {
+) -> Result<RuntimeControlsBuildOutput, FramePlanError> {
     let mut items = Vec::with_capacity(scene.text_inputs.len() + scene.action_buttons.len());
     items.extend(
         scene
@@ -705,11 +713,12 @@ fn build_runtime_controls(
     let line_height = 28.0 * scale;
     let mut focused_text_input = None;
     let mut prepared_buttons = Vec::new();
+    let mut control_paints = Vec::new();
 
     for item in items {
         match item {
             RuntimeControlPlanItem::TextInput { index, .. } => {
-                if let Some(target) = text_controls::build_text_input(
+                let (target, paint) = text_controls::build_text_input(
                     scene,
                     &ids.text_input,
                     &scene.text_inputs[index],
@@ -720,12 +729,14 @@ fn build_runtime_controls(
                     control_backdrops,
                     control_shadows,
                     control_filters,
-                )? {
+                )?;
+                control_paints.push(paint);
+                if let Some(target) = target {
                     focused_text_input = Some(target);
                 }
             }
             RuntimeControlPlanItem::ActionButton { index, .. } => {
-                prepared_buttons.push(action_buttons::build_action_button(
+                let (button, paint) = action_buttons::build_action_button(
                     scene,
                     &ids.action_button,
                     &scene.action_buttons[index],
@@ -741,12 +752,18 @@ fn build_runtime_controls(
                     submit_action,
                     font_size,
                     line_height,
-                ));
+                );
+                prepared_buttons.push(button);
+                control_paints.push(paint);
             }
         }
     }
 
-    Ok((focused_text_input, prepared_buttons))
+    Ok(RuntimeControlsBuildOutput {
+        focused_text_input,
+        action_buttons: prepared_buttons,
+        control_paints,
+    })
 }
 
 fn build_frame_layers(ids: &FrameIds) -> LayerTree {

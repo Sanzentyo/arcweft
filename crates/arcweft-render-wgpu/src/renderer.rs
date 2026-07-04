@@ -1,10 +1,13 @@
 use crate::convert::{pixel_ceil_as_i32, pixel_floor_as_i32};
 use crate::geometry::{
-    PaintRect, PreparedFrame, PreparedUiScene, RenderFontFamily, RenderGlyphMotion,
-    RenderGlyphTransformSpan, RenderImage, RenderStyledParagraph, RenderStyledTextSpan,
-    RenderTextBlock, RenderTextSlant, RenderTextStyle, RenderTextWeight,
+    PaintRect, PreparedControlPaint, PreparedFrame, PreparedUiScene, RenderFontFamily,
+    RenderGlyphMotion, RenderGlyphTransformSpan, RenderImage, RenderStyledParagraph,
+    RenderStyledTextSpan, RenderTextBlock, RenderTextSlant, RenderTextStyle, RenderTextWeight,
 };
-use crate::ui_compositor::{UiCompositor, UiCompositorError, UiCompositorFrame};
+use crate::ui_compositor::{
+    UiCompositor, UiCompositorError, UiCompositorFrame, UiCompositorTarget,
+    UiInlineBackdropFilterFrame,
+};
 use crate::ui_direct_renderer::{WgpuPreparedUiMaskTextureProvider, WgpuUiDirectPrimitiveRenderer};
 use crate::ui_effects::UiTextureExtent;
 use arcweft_presentation::hit::HitRect;
@@ -16,6 +19,7 @@ use glyphon::{
 };
 use num_traits::ToPrimitive;
 use std::borrow::Cow;
+use std::ops::Range;
 use thiserror::Error;
 use wgpu::util::DeviceExt;
 
@@ -64,6 +68,13 @@ struct RectVertex {
 struct ImageVertex {
     position: [f32; 2],
     uv: [f32; 2],
+}
+
+struct TextRangeRenderRequest<'a> {
+    target: &'a wgpu::TextureView,
+    frame: &'a PreparedFrame,
+    text_range: Range<usize>,
+    styled_paragraph_range: Range<usize>,
 }
 
 impl SharedRenderer {
@@ -135,6 +146,29 @@ impl SharedRenderer {
         target: &wgpu::TextureView,
         frame: &PreparedFrame,
     ) -> Result<(), SharedRendererError> {
+        let target_extent = UiTextureExtent::new(
+            frame.viewport.physical_width.max(1),
+            frame.viewport.physical_height.max(1),
+        );
+        let scene_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("arcweft-shared-runtime-scene-target"),
+            size: wgpu::Extent3d {
+                width: target_extent.width,
+                height: target_extent.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let scene_view = scene_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
         self.viewport.update(
             queue,
             Resolution {
@@ -143,93 +177,24 @@ impl SharedRenderer {
             },
         );
 
-        self.prepare_text_content(device, queue, frame)?;
-
-        let background_vertex_buffer = rectangle_vertex_buffer(
-            device,
-            "arcweft-shared-background-rectangle",
-            frame.rectangles.get(..1).unwrap_or_default(),
-            frame.viewport.logical_width,
-            frame.viewport.logical_height,
-        );
-        let overlay_vertex_buffer = rectangle_vertex_buffer(
-            device,
-            "arcweft-shared-overlay-rectangles",
-            frame.rectangles.get(1..).unwrap_or_default(),
-            frame.viewport.logical_width,
-            frame.viewport.logical_height,
-        );
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("arcweft-shared-render-frame"),
         });
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("arcweft-shared-render-pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: target,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            if let Some((vertex_buffer, vertex_count)) = &background_vertex_buffer {
-                draw_rectangle_buffer(
-                    &mut pass,
-                    &self.rectangle_pipeline,
-                    vertex_buffer,
-                    *vertex_count,
-                );
-            }
-            for image in &frame.images {
-                self.render_image_quad(
-                    device,
-                    queue,
-                    &mut pass,
-                    image,
-                    frame.viewport.logical_width,
-                    frame.viewport.logical_height,
-                );
-            }
-        }
+        self.render_background_and_images(device, queue, &mut encoder, &scene_view, frame);
         for ui_scene in frame.ui_scenes() {
-            self.render_ui_scene(device, queue, &mut encoder, target, frame, ui_scene)?;
+            self.render_ui_scene(device, queue, &mut encoder, &scene_view, frame, ui_scene)?;
         }
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("arcweft-shared-overlay-render-pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: target,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            if let Some((vertex_buffer, vertex_count)) = &overlay_vertex_buffer {
-                draw_rectangle_buffer(
-                    &mut pass,
-                    &self.rectangle_pipeline,
-                    vertex_buffer,
-                    *vertex_count,
-                );
-            }
-            self.text_renderer
-                .render(&self.atlas, &self.viewport, &mut pass)
-                .map_err(|error| SharedRendererError::TextRender(error.to_string()))?;
-        }
+        self.render_ordered_frame_content(
+            device,
+            queue,
+            &mut encoder,
+            &scene_texture,
+            &scene_view,
+            target_extent,
+            frame,
+        )?;
+        self.ui_compositor
+            .composite_texture_to_view(device, &mut encoder, &scene_view, target);
         queue.submit([encoder.finish()]);
         self.atlas.trim();
         Ok(())
@@ -266,31 +231,269 @@ impl SharedRenderer {
         Ok(())
     }
 
-    fn prepare_text_content(
+    fn render_background_and_images(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &wgpu::TextureView,
+        frame: &PreparedFrame,
+    ) {
+        let background_vertex_buffer = rectangle_vertex_buffer(
+            device,
+            "arcweft-shared-background-rectangle",
+            frame.rectangles.get(..1).unwrap_or_default(),
+            frame.viewport.logical_width,
+            frame.viewport.logical_height,
+        );
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("arcweft-shared-render-pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        if let Some((vertex_buffer, vertex_count)) = &background_vertex_buffer {
+            draw_rectangle_buffer(
+                &mut pass,
+                &self.rectangle_pipeline,
+                vertex_buffer,
+                *vertex_count,
+            );
+        }
+        for image in &frame.images {
+            self.render_image_quad(
+                device,
+                queue,
+                &mut pass,
+                image,
+                frame.viewport.logical_width,
+                frame.viewport.logical_height,
+            );
+        }
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Rendering one prepared frame needs the caller-owned GPU handles and target state."
+    )]
+    fn render_ordered_frame_content(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        target_texture: &wgpu::Texture,
+        target_view: &wgpu::TextureView,
+        target_extent: UiTextureExtent,
         frame: &PreparedFrame,
     ) -> Result<(), SharedRendererError> {
-        let mut block_buffers = frame
-            .text
+        let mut next_rectangle = 1;
+        let mut next_text = 0;
+        let mut styled_paragraphs = 0..frame.styled_paragraphs.len();
+        let mut controls = frame.control_paints.iter().collect::<Vec<_>>();
+        controls.sort_by_key(|paint| (paint.rectangle_range.start, paint.text_range.start));
+
+        for paint in controls {
+            self.render_rectangle_range(
+                device,
+                encoder,
+                target_view,
+                frame,
+                next_rectangle..paint.rectangle_range.start,
+                "arcweft-shared-pre-control-rectangles",
+            );
+            next_rectangle = next_rectangle.max(paint.rectangle_range.start);
+            self.render_text_ranges(
+                device,
+                queue,
+                encoder,
+                TextRangeRenderRequest {
+                    target: target_view,
+                    frame,
+                    text_range: next_text..paint.text_range.start,
+                    styled_paragraph_range: styled_paragraphs.clone(),
+                },
+            )?;
+            next_text = next_text.max(paint.text_range.start);
+            styled_paragraphs = 0..0;
+
+            self.render_control_backdrops(
+                device,
+                encoder,
+                target_texture,
+                target_view,
+                target_extent,
+                frame,
+                paint,
+            )?;
+            self.render_rectangle_range(
+                device,
+                encoder,
+                target_view,
+                frame,
+                paint.rectangle_range.clone(),
+                "arcweft-shared-runtime-control-rectangles",
+            );
+            next_rectangle = next_rectangle.max(paint.rectangle_range.end);
+            self.render_text_ranges(
+                device,
+                queue,
+                encoder,
+                TextRangeRenderRequest {
+                    target: target_view,
+                    frame,
+                    text_range: paint.text_range.clone(),
+                    styled_paragraph_range: 0..0,
+                },
+            )?;
+            next_text = next_text.max(paint.text_range.end);
+        }
+
+        self.render_rectangle_range(
+            device,
+            encoder,
+            target_view,
+            frame,
+            next_rectangle..frame.rectangles.len(),
+            "arcweft-shared-post-control-rectangles",
+        );
+        self.render_text_ranges(
+            device,
+            queue,
+            encoder,
+            TextRangeRenderRequest {
+                target: target_view,
+                frame,
+                text_range: next_text..frame.text.len(),
+                styled_paragraph_range: styled_paragraphs,
+            },
+        )
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "The compositor call needs the prepared control span and active target."
+    )]
+    fn render_control_backdrops(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        target_texture: &wgpu::Texture,
+        target_view: &wgpu::TextureView,
+        target_extent: UiTextureExtent,
+        frame: &PreparedFrame,
+        paint: &PreparedControlPaint,
+    ) -> Result<(), SharedRendererError> {
+        let backdrops = slice_range(&frame.control_backdrops, paint.backdrop_range.clone());
+        for backdrop in backdrops {
+            let target = UiCompositorTarget {
+                texture: target_texture,
+                view: target_view,
+                extent: target_extent,
+                origin_logical: [0.0, 0.0],
+            };
+            let mut request = UiInlineBackdropFilterFrame {
+                device,
+                encoder: &mut *encoder,
+                target,
+                bounds: backdrop.bounds,
+                filters: &backdrop.filters,
+                device_pixel_ratio: frame.viewport.physical_scale_factor_f32(),
+                logical_extent: [
+                    frame.viewport.logical_width.max(0.0001),
+                    frame.viewport.logical_height.max(0.0001),
+                ],
+            };
+            self.ui_compositor
+                .render_inline_backdrop_filter(&mut request)?;
+        }
+        Ok(())
+    }
+
+    fn render_rectangle_range(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &wgpu::TextureView,
+        frame: &PreparedFrame,
+        range: Range<usize>,
+        label: &'static str,
+    ) {
+        let rectangles = slice_range(&frame.rectangles, range);
+        let Some((vertex_buffer, vertex_count)) = rectangle_vertex_buffer(
+            device,
+            label,
+            rectangles,
+            frame.viewport.logical_width,
+            frame.viewport.logical_height,
+        ) else {
+            return;
+        };
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("arcweft-shared-rectangle-range-render-pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        draw_rectangle_buffer(
+            &mut pass,
+            &self.rectangle_pipeline,
+            &vertex_buffer,
+            vertex_count,
+        );
+    }
+
+    fn render_text_ranges(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        request: TextRangeRenderRequest<'_>,
+    ) -> Result<(), SharedRendererError> {
+        let text_blocks = slice_range(&request.frame.text, request.text_range);
+        let styled_paragraphs = slice_range(
+            &request.frame.styled_paragraphs,
+            request.styled_paragraph_range,
+        );
+        if text_blocks.is_empty() && styled_paragraphs.is_empty() {
+            return Ok(());
+        }
+        let mut block_buffers = text_blocks
             .iter()
             .map(|block| text_buffer(&mut self.font_system, block))
             .collect::<Vec<_>>();
-        let text_scale_factor = frame.viewport.physical_scale_factor_f32();
+        let text_scale_factor = request.frame.viewport.physical_scale_factor_f32();
         let text_areas = block_buffers
             .iter_mut()
-            .zip(&frame.text)
+            .zip(text_blocks)
             .map(|(buffer, block)| text_area(buffer, block, text_scale_factor))
             .collect::<Vec<_>>();
-        let paragraph_buffers = frame
-            .styled_paragraphs
+        let paragraph_buffers = styled_paragraphs
             .iter()
             .map(|paragraph| styled_paragraph_buffer(&mut self.font_system, paragraph))
             .collect::<Vec<_>>();
         let paragraph_areas = paragraph_buffers
             .iter()
-            .zip(&frame.styled_paragraphs)
+            .zip(styled_paragraphs)
             .map(|(buffer, paragraph)| {
                 styled_paragraph_text_area(buffer, paragraph, text_scale_factor)
             })
@@ -310,6 +513,27 @@ impl SharedRenderer {
                 &mut self.swash_cache,
             )
             .map_err(|error| SharedRendererError::TextPrepare(error.to_string()))
+            .and_then(|()| {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("arcweft-shared-text-range-render-pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: request.target,
+                        resolve_target: None,
+                        depth_slice: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                self.text_renderer
+                    .render(&self.atlas, &self.viewport, &mut pass)
+                    .map_err(|error| SharedRendererError::TextRender(error.to_string()))
+            })
     }
 
     fn render_image_quad(
@@ -351,6 +575,12 @@ impl SharedRenderer {
         pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         pass.draw(0..u32::try_from(vertices.len()).unwrap_or(u32::MAX), 0..1);
     }
+}
+
+fn slice_range<T>(items: &[T], range: Range<usize>) -> &[T] {
+    let start = range.start.min(items.len());
+    let end = range.end.min(items.len()).max(start);
+    &items[start..end]
 }
 
 fn text_buffer(font_system: &mut FontSystem, block: &RenderTextBlock) -> Buffer {

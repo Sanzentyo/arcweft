@@ -34,22 +34,32 @@ sample terms and does not depend on external image licensing.
   - `border-color`, `border-width`, `border-radius`;
   - `focus-ring-color`, `focus-ring-width`, `focus-ring-offset`;
   - `box-shadow`;
-  - `depth` / `z-index`.
+  - `depth` / `z-index`;
+  - `backdrop-filter: blur(...)` / `-webkit-backdrop-filter: blur(...)`
+    through the seq06.16.4.1 follow-up.
 - Not supported for runtime controls yet:
-  - `backdrop-filter`;
-  - CSS `filter: blur(...)`;
-  - per-control backdrop sampling or glass blur behind TextField/TextArea/Button.
+  - CSS foreground `filter: blur(...)` execution beyond prepared plan records.
 
 ## Backdrop Blur Gap
 
-Runtime controls are currently planned as overlay rectangles, shadow plans, and
-text blocks after the image/background pass. They do not render as retained UI
-compositor nodes and therefore have no typed backdrop-filter effect or backdrop
-texture sampling step. The lower compositor already has blur/backdrop concepts,
-but player-owned runtime controls do not enter that path.
+At the time of this slice, runtime controls were planned as overlay
+rectangles, shadow plans, and text blocks after the image/background pass. They
+did not render as retained UI compositor nodes and therefore had no typed
+backdrop-filter effect or backdrop texture sampling step. The lower compositor
+already had blur/backdrop concepts, but player-owned runtime controls did not
+enter that path.
 
 The follow-up design request is
 `docs/reviews/requests/2026-07-04-seq-06.16.4.1-runtime-control-backdrop-filter.md`.
+
+## 2026-07-04 Backdrop Follow-up
+
+The `PreparedControlBackdrop` part of this gap is now implemented in the
+shared native/web renderer path. See
+`docs/implementation/seq-06.16.4.1-runtime-control-backdrop-filter-2026-07-04.md`.
+The current follow-up boundary is checked-in visual baseline promotion and
+foreground `PreparedControlFilter` execution, not typed backdrop-filter
+planning or native/web inline blur execution.
 
 ## Validation
 
@@ -68,12 +78,13 @@ The structural audit reported `0 error(s)` and existing warning-level hotspots.
 
 ## Remaining TODOs
 
-- Add typed runtime-control backdrop-filter / blur support after the follow-up
-  request defines the contract and rendering order.
-- Capture native/web visual smoke artifacts for this exact sample if this slice
-  becomes a pinned visual baseline milestone.
+- Capture and promote pinned native/web visual smoke artifacts for this exact
+  sample if this slice becomes a visual baseline milestone.
+- Implement foreground `PreparedControlFilter` execution if CSS `filter` needs
+  runtime-control rendering parity beyond the prepared plan.
 
 ## Design Deviations
 
-None for the implemented scope. Backdrop blur is intentionally not treated as
-implemented because no runtime-control backdrop-filter contract exists yet.
+None for the implemented scope. The historical backdrop-blur gap above was
+closed by the seq06.16.4.1 follow-up for `PreparedControlBackdrop`; visual
+baseline promotion remains separate.

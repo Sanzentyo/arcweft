@@ -32,6 +32,7 @@ const PASS_BLEND: u32 = 5u;
 const PASS_CLIP: u32 = 6u;
 const PASS_BOX_SHADOW: u32 = 7u;
 const PASS_MASK_GRADIENT: u32 = 8u;
+const PASS_CLIPPED_COMPOSITE: u32 = 9u;
 const PI: f32 = 3.141592653589793;
 const TAU: f32 = 6.283185307179586;
 
@@ -59,6 +60,15 @@ fn backdrop_color(uv: vec2<f32>) -> vec4<f32> {
 
 fn apply_color_matrix(color: vec4<f32>) -> vec4<f32> {
     return clamp(uniform_data.matrix * color + uniform_data.offset, vec4<f32>(0.0), vec4<f32>(1.0));
+}
+
+fn clipped_rect_coverage(uv: vec2<f32>) -> f32 {
+    let position = uv * uniform_data.params2.xy;
+    let rect = uniform_data.params1;
+    let right = rect.x + rect.z;
+    let bottom = rect.y + rect.w;
+    let inside = position.x >= rect.x && position.x <= right && position.y >= rect.y && position.y <= bottom;
+    return select(0.0, 1.0, inside);
 }
 
 fn blur_color(uv: vec2<f32>) -> vec4<f32> {
@@ -519,6 +529,11 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         return vec4<f32>(source.rgb, source.a * coverage);
     }
     if (uniform_data.pass_kind == PASS_BOX_SHADOW) { return box_shadow_color(in.uv); }
+    if (uniform_data.pass_kind == PASS_CLIPPED_COMPOSITE) {
+        let coverage = clipped_rect_coverage(in.uv);
+        let opacity = clamp(uniform_data.params0.x, 0.0, 1.0);
+        return vec4<f32>(source.rgb, source.a * opacity * coverage);
+    }
     if (uniform_data.pass_kind == PASS_BLEND) {
         let backdrop = backdrop_color(in.uv);
         let mode = u32(uniform_data.params0.y);

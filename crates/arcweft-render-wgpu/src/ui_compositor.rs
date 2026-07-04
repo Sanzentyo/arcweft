@@ -12,9 +12,10 @@ use crate::ui_compositor_uniform::UiCompositorUniform;
 use crate::ui_effects::{UiEffectPass, UiFilterPassPlan, UiTextureExtent};
 use crate::ui_mask::{UiMaskChainPlan, UiMaskChannel, UiMaskImagePlan, UiMaskPlanError};
 use crate::ui_scene::{
-    UiBlendMode, UiBoxShadowKind, UiCompositingGroup, UiMaskImage, UiPaintNode, UiPrimitiveRange,
-    UiScene, UiSceneContext,
+    UiBlendMode, UiBoxShadowKind, UiCompositingGroup, UiFilterList, UiMaskImage, UiPaintNode,
+    UiPrimitiveRange, UiScene, UiSceneContext,
 };
+use arcweft_presentation::hit::HitRect;
 use thiserror::Error;
 use wgpu::util::DeviceExt;
 
@@ -84,6 +85,17 @@ pub struct UiCompositorFrame<'a> {
     pub target_extent: UiTextureExtent,
     pub direct_renderer: &'a mut dyn UiDirectPrimitiveRenderer,
     pub mask_textures: &'a mut dyn UiMaskTextureProvider,
+}
+
+/// Inline backdrop filter request for prepared runtime controls.
+pub(crate) struct UiInlineBackdropFilterFrame<'a> {
+    pub device: &'a wgpu::Device,
+    pub encoder: &'a mut wgpu::CommandEncoder,
+    pub target: UiCompositorTarget<'a>,
+    pub bounds: HitRect,
+    pub filters: &'a UiFilterList,
+    pub device_pixel_ratio: f32,
+    pub logical_extent: [f32; 2],
 }
 
 /// Draws a seq06.9a direct primitive range into the current target.
@@ -287,6 +299,7 @@ impl UiCompositor {
         &mut self,
         frame: &mut UiCompositorFrame<'_>,
     ) -> Result<UiCompositorStats, UiCompositorError> {
+        self.pool.reused_this_frame = 0;
         let final_target = frame.final_target;
         let root_extent = frame.target_extent.clamped(self.max_extent);
         let root = self
@@ -327,6 +340,103 @@ impl UiCompositor {
         let frame_result = state.stats;
         self.pool.release(root);
         Ok(frame_result)
+    }
+
+    pub(crate) fn render_inline_backdrop_filter(
+        &mut self,
+        frame: &mut UiInlineBackdropFilterFrame<'_>,
+    ) -> Result<UiCompositorStats, UiCompositorError> {
+        if frame.filters.is_empty() || frame.bounds.width <= 0.0 || frame.bounds.height <= 0.0 {
+            return Ok(UiCompositorStats::default());
+        }
+        let pool_reuses_at_start = self.pool.reused_this_frame;
+        let mut stats = UiCompositorStats::default();
+        let mut backdrop = self.pool.acquire(
+            frame.device,
+            self.format,
+            frame.target.extent,
+            "arcweft-runtime-control-backdrop-copy",
+        );
+        stats.offscreen_targets = stats.offscreen_targets.saturating_add(1);
+        frame.encoder.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: frame.target.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: &backdrop.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            extent3d(frame.target.extent),
+        );
+        stats.backdrop_copies = stats.backdrop_copies.saturating_add(1);
+        backdrop = self.apply_filter_plan_to_target(
+            frame.device,
+            frame.encoder,
+            &mut stats,
+            backdrop,
+            &UiFilterPassPlan::from_filter_list_fixed_extent(
+                frame.filters,
+                frame.target.extent,
+                frame.device_pixel_ratio,
+            ),
+        )?;
+        self.run_shader_pass(
+            frame.device,
+            frame.encoder,
+            &ShaderPassInputs {
+                source: &backdrop.view,
+                backdrop: None,
+                mask: None,
+                output: frame.target.view,
+                uniform: UiCompositorUniform::clipped_composite(
+                    1.0,
+                    UiBlendShaderMode::Normal,
+                    [
+                        frame.bounds.x,
+                        frame.bounds.y,
+                        frame.bounds.width,
+                        frame.bounds.height,
+                    ],
+                    frame.logical_extent,
+                ),
+                load: wgpu::LoadOp::Load,
+                blend_over_existing: true,
+            },
+        );
+        stats.shader_passes = stats.shader_passes.saturating_add(1);
+        stats.pool_reuses = self
+            .pool
+            .reused_this_frame
+            .saturating_sub(pool_reuses_at_start);
+        self.pool.release(backdrop);
+        Ok(stats)
+    }
+
+    pub(crate) fn composite_texture_to_view(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        source: &wgpu::TextureView,
+        output: &wgpu::TextureView,
+    ) {
+        self.run_shader_pass(
+            device,
+            encoder,
+            &ShaderPassInputs {
+                source,
+                backdrop: None,
+                mask: None,
+                output,
+                uniform: UiCompositorUniform::composite(1.0, UiBlendShaderMode::Normal),
+                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                blend_over_existing: false,
+            },
+        );
     }
 
     fn render_node(
@@ -500,6 +610,23 @@ impl UiCompositor {
     fn apply_filter_plan(
         &mut self,
         state: &mut UiCompositorRenderState<'_>,
+        source: UiOffscreenTarget,
+        plan: &UiFilterPassPlan,
+    ) -> Result<UiOffscreenTarget, UiCompositorError> {
+        self.apply_filter_plan_to_target(
+            state.device,
+            state.encoder,
+            &mut state.stats,
+            source,
+            plan,
+        )
+    }
+
+    fn apply_filter_plan_to_target(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        stats: &mut UiCompositorStats,
         mut source: UiOffscreenTarget,
         plan: &UiFilterPassPlan,
     ) -> Result<UiOffscreenTarget, UiCompositorError> {
@@ -516,12 +643,12 @@ impl UiCompositor {
                 }
             };
             let output = self.pool.acquire(
-                state.device,
+                device,
                 self.format,
                 output_extent.bucketed(self.max_extent),
                 "arcweft-ui-effect-pass",
             );
-            state.stats.offscreen_targets = state.stats.offscreen_targets.saturating_add(1);
+            stats.offscreen_targets = stats.offscreen_targets.saturating_add(1);
             let uniform = match pass {
                 UiEffectPass::ColorMatrix(matrix) => UiCompositorUniform::color_matrix(*matrix),
                 UiEffectPass::Blur(plan) => {
@@ -537,8 +664,8 @@ impl UiCompositor {
                 UiEffectPass::Unsupported { .. } => unreachable!(),
             };
             self.run_shader_pass(
-                state.device,
-                state.encoder,
+                device,
+                encoder,
                 &ShaderPassInputs {
                     source: &source.view,
                     backdrop: None,
@@ -549,7 +676,7 @@ impl UiCompositor {
                     blend_over_existing: false,
                 },
             );
-            state.stats.shader_passes = state.stats.shader_passes.saturating_add(1);
+            stats.shader_passes = stats.shader_passes.saturating_add(1);
             self.pool.release(source);
             source = output;
         }

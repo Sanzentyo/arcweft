@@ -178,6 +178,38 @@ fn backdrop_filter_reaches_runtime_control_backdrop_plan() {
 }
 
 #[test]
+fn runtime_control_paint_span_carries_inline_backdrop_order() {
+    let input_target = target("input.feedback");
+    let control = text_control(input_target.clone()).with_style(RenderControlStyle {
+        normal: RenderControlVisualStyle {
+            backdrop_filters: Some(RenderControlFilterList {
+                filters: vec![RenderControlFilter::Blur { radius_px: 8.0 }],
+            }),
+            fill: Some([0.2, 0.4, 0.6, 0.5]),
+            ..RenderControlVisualStyle::default()
+        },
+        ..RenderControlStyle::default()
+    });
+    let scene = scene(vec![control], Vec::new(), InteractionVisualState::default());
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let paint = frame
+        .control_paints
+        .iter()
+        .find(|paint| paint.target == input_target)
+        .expect("control paint span exists");
+
+    assert_eq!(paint.backdrop_range, 0..1);
+    assert_eq!(paint.text_range.len(), 1);
+    assert!(
+        frame.rectangles[paint.rectangle_range.clone()]
+            .iter()
+            .any(|rect| rgba_near(rect.rgba, [0.2, 0.4, 0.6, 0.5]))
+    );
+    assert_eq!(frame.text[paint.text_range.start].text, "hello");
+}
+
+#[test]
 fn foreground_filter_reaches_runtime_control_filter_plan() {
     let button_target = target("button.submit_feedback");
     let input_target = target("input.feedback");

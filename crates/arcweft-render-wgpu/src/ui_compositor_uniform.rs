@@ -21,6 +21,7 @@ const PASS_BLEND: u32 = 5;
 const PASS_CLIP: u32 = 6;
 const PASS_BOX_SHADOW: u32 = 7;
 const PASS_MASK_GRADIENT: u32 = 8;
+const PASS_CLIPPED_COMPOSITE: u32 = 9;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -42,6 +43,30 @@ impl UiCompositorUniform {
             params0: [opacity.clamp(0.0, 1.0), shader_mode_to_f32(blend), 0.0, 0.0],
             pass_kind: if blend == UiBlendShaderMode::Normal {
                 PASS_COMPOSITE
+            } else {
+                PASS_BLEND
+            },
+            ..Self::from_matrix(UiColorMatrix::identity())
+        }
+    }
+
+    pub(crate) fn clipped_composite(
+        opacity: f32,
+        blend: UiBlendShaderMode,
+        rect_logical: [f32; 4],
+        target_logical_extent: [f32; 2],
+    ) -> Self {
+        Self {
+            params0: [opacity.clamp(0.0, 1.0), shader_mode_to_f32(blend), 0.0, 0.0],
+            params1: rect_logical,
+            params2: [
+                target_logical_extent[0].max(0.0001),
+                target_logical_extent[1].max(0.0001),
+                0.0,
+                0.0,
+            ],
+            pass_kind: if blend == UiBlendShaderMode::Normal {
+                PASS_CLIPPED_COMPOSITE
             } else {
                 PASS_BLEND
             },

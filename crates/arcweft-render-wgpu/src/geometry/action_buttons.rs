@@ -1,7 +1,7 @@
 use super::control_style::{
     ControlInteractionStyleState, ControlPointerStyleState, PreparedControlBackdrop,
-    PreparedControlFilter, PreparedControlShadow, RenderControlStyle, fill_with_opacity,
-    push_control_backdrop_plan, push_control_border, push_control_filter_plan,
+    PreparedControlFilter, PreparedControlPaint, PreparedControlShadow, RenderControlStyle,
+    fill_with_opacity, push_control_backdrop_plan, push_control_border, push_control_filter_plan,
     push_control_focus_ring, push_control_shadow_plan, state_from_interaction,
 };
 use super::{
@@ -90,7 +90,7 @@ pub(super) fn build_action_button(
     action_id: &PublicId,
     font_size: f32,
     line_height: f32,
-) -> PreparedActionButton {
+) -> (PreparedActionButton, PreparedControlPaint) {
     let ActionButtonBuildOutput {
         semantics,
         rectangles,
@@ -105,6 +105,7 @@ pub(super) fn build_action_button(
     let visual = button
         .style
         .visual_for_state(visual_state_for_button(scene, button));
+    let backdrop_start = control_backdrops.len();
     push_control_backdrop_plan(control_backdrops, &button.target, button.bounds, &visual);
     push_control_shadow_plan(control_shadows, &button.target, button.bounds, &visual);
     let fallback_fill = action_button_fill(
@@ -113,6 +114,7 @@ pub(super) fn build_action_button(
         is_pressed,
         palette,
     );
+    let rectangle_start = rectangles.len();
     rectangles.push(PaintRect {
         bounds: button.bounds,
         rgba: fill_with_opacity(visual.fill.unwrap_or(fallback_fill), visual.opacity),
@@ -125,6 +127,7 @@ pub(super) fn build_action_button(
             super::push_focus_ring(rectangles, button.bounds, palette.focus_ring);
         }
     }
+    let text_start = text.len();
     text.push(RenderTextBlock {
         text: button.label.clone(),
         bounds: HitRect::new(
@@ -143,7 +146,16 @@ pub(super) fn build_action_button(
         slant: RenderTextSlant::Upright,
         rgba: visual.text.unwrap_or(palette.choice_text),
     });
+    let filter_start = control_filters.len();
     push_control_filter_plan(control_filters, &button.target, button.bounds, &visual);
+    let paint = PreparedControlPaint {
+        target: button.target.clone(),
+        bounds: button.bounds,
+        rectangle_range: rectangle_start..rectangles.len(),
+        text_range: text_start..text.len(),
+        backdrop_range: backdrop_start..control_backdrops.len(),
+        filter_range: filter_start..control_filters.len(),
+    };
     semantics.push(
         SemanticNode::new(
             layer.clone(),
@@ -155,12 +167,15 @@ pub(super) fn build_action_button(
         .with_action(action_id.clone())
         .with_enabled(button.enabled),
     );
-    PreparedActionButton {
-        target: button.target.clone(),
-        label: button.label.clone(),
-        enabled: button.enabled,
-        action: button.action.clone(),
-    }
+    (
+        PreparedActionButton {
+            target: button.target.clone(),
+            label: button.label.clone(),
+            enabled: button.enabled,
+            action: button.action.clone(),
+        },
+        paint,
+    )
 }
 
 fn action_button_fill(enabled: bool, active: bool, pressed: bool, palette: &Palette) -> [f32; 4] {

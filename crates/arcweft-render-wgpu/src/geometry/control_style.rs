@@ -3,6 +3,7 @@ use crate::ui_box_shadow::UiBoxShadowPassPlan;
 use crate::ui_scene::{UiBoxShadow, UiBoxShadowList, UiColorRgba8, UiFilter, UiFilterList};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
+use std::ops::Range;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RenderControlStyle {
@@ -98,6 +99,16 @@ pub struct PreparedControlFilter {
     pub target: InteractionTarget,
     pub bounds: HitRect,
     pub filters: UiFilterList,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreparedControlPaint {
+    pub target: InteractionTarget,
+    pub bounds: HitRect,
+    pub rectangle_range: Range<usize>,
+    pub text_range: Range<usize>,
+    pub backdrop_range: Range<usize>,
+    pub filter_range: Range<usize>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

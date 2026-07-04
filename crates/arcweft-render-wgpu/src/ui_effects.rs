@@ -380,6 +380,33 @@ impl UiFilterPassPlan {
         input_extent: UiTextureExtent,
         device_pixel_ratio: f32,
     ) -> Self {
+        Self::from_filter_list_with_extent_policy(
+            filters,
+            input_extent,
+            device_pixel_ratio,
+            FilterExtentPolicy::ExpandForVisualOutset,
+        )
+    }
+
+    pub fn from_filter_list_fixed_extent(
+        filters: &UiFilterList,
+        input_extent: UiTextureExtent,
+        device_pixel_ratio: f32,
+    ) -> Self {
+        Self::from_filter_list_with_extent_policy(
+            filters,
+            input_extent,
+            device_pixel_ratio,
+            FilterExtentPolicy::KeepInputExtent,
+        )
+    }
+
+    fn from_filter_list_with_extent_policy(
+        filters: &UiFilterList,
+        input_extent: UiTextureExtent,
+        device_pixel_ratio: f32,
+        extent_policy: FilterExtentPolicy,
+    ) -> Self {
         let mut passes = Vec::new();
         let mut current_extent = input_extent;
         let scale = positive_f32(device_pixel_ratio).max(1.0);
@@ -393,20 +420,20 @@ impl UiFilterPassPlan {
             match filter {
                 UiFilter::Blur { radius_px } => {
                     let radius_px = positive_f32(*radius_px) * scale;
-                    let expanded = current_extent.expanded(ceil_positive(radius_px * 3.0));
+                    let output_extent = extent_policy.output_extent(current_extent, radius_px);
                     passes.push(UiEffectPass::Blur(UiBlurPassPlan {
                         direction: UiBlurDirection::Horizontal,
                         radius_px,
                         input_extent: current_extent,
-                        output_extent: expanded,
+                        output_extent,
                     }));
                     passes.push(UiEffectPass::Blur(UiBlurPassPlan {
                         direction: UiBlurDirection::Vertical,
                         radius_px,
-                        input_extent: expanded,
-                        output_extent: expanded,
+                        input_extent: output_extent,
+                        output_extent,
                     }));
-                    current_extent = expanded;
+                    current_extent = output_extent;
                 }
                 UiFilter::DropShadow {
                     offset_x_px,
@@ -470,6 +497,21 @@ impl UiFilterPassPlan {
 
     pub fn is_empty(&self) -> bool {
         self.passes.is_empty()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FilterExtentPolicy {
+    ExpandForVisualOutset,
+    KeepInputExtent,
+}
+
+impl FilterExtentPolicy {
+    fn output_extent(self, input: UiTextureExtent, blur_radius_px: f32) -> UiTextureExtent {
+        match self {
+            Self::ExpandForVisualOutset => input.expanded(ceil_positive(blur_radius_px * 3.0)),
+            Self::KeepInputExtent => input,
+        }
     }
 }
 
@@ -552,6 +594,17 @@ mod tests {
         assert_eq!(plan.passes().len(), 4);
         assert!(plan.output_extent().width > 32);
         assert!(plan.output_extent().height > 16);
+    }
+
+    #[test]
+    fn fixed_extent_filter_plan_keeps_backdrop_target_size() {
+        let filters = UiFilterList::new([UiFilter::Blur { radius_px: 4.0 }]);
+        let extent = UiTextureExtent::new(32, 16);
+        let plan = UiFilterPassPlan::from_filter_list_fixed_extent(&filters, extent, 1.0);
+
+        assert_eq!(plan.passes().len(), 2);
+        assert_eq!(plan.input_extent(), extent);
+        assert_eq!(plan.output_extent(), extent);
     }
 
     #[test]

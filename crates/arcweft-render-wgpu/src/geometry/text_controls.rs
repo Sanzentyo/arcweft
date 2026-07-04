@@ -1,7 +1,7 @@
 use super::control_style::{
     ControlInteractionStyleState, ControlPointerStyleState, PreparedControlBackdrop,
-    PreparedControlFilter, PreparedControlShadow, RenderControlStyle, fill_with_opacity,
-    push_control_backdrop_plan, push_control_border, push_control_filter_plan,
+    PreparedControlFilter, PreparedControlPaint, PreparedControlShadow, RenderControlStyle,
+    fill_with_opacity, push_control_backdrop_plan, push_control_border, push_control_filter_plan,
     push_control_focus_ring, push_control_shadow_plan, state_from_interaction,
 };
 use super::{
@@ -139,14 +139,16 @@ pub(super) fn build_text_input(
     control_backdrops: &mut Vec<PreparedControlBackdrop>,
     control_shadows: &mut Vec<PreparedControlShadow>,
     control_filters: &mut Vec<PreparedControlFilter>,
-) -> Result<Option<PreparedTextInputTarget>, FramePlanError> {
+) -> Result<(Option<PreparedTextInputTarget>, PreparedControlPaint), FramePlanError> {
     let options = control.resolved_options()?;
     let is_focused = scene.interaction.focused.as_ref() == Some(&control.target);
     let state = visual_state_for_control(scene, control);
     let visual = control.style.visual_for_state(state);
     let visual_layout = visual_layout_for_control(control, &options);
+    let backdrop_start = control_backdrops.len();
     push_control_backdrop_plan(control_backdrops, &control.target, control.bounds, &visual);
     push_control_shadow_plan(control_shadows, &control.target, control.bounds, &visual);
+    let rectangle_start = rectangles.len();
     rectangles.push(PaintRect {
         bounds: control.bounds,
         rgba: fill_with_opacity(
@@ -179,6 +181,7 @@ pub(super) fn build_text_input(
         );
     }
 
+    let text_start = text.len();
     text.push(RenderTextBlock {
         text: visual_layout.display_value.clone(),
         bounds: visual_layout.text_bounds,
@@ -192,7 +195,16 @@ pub(super) fn build_text_input(
         slant: RenderTextSlant::Upright,
         rgba: visual.text.unwrap_or(palette.choice_text),
     });
+    let filter_start = control_filters.len();
     push_control_filter_plan(control_filters, &control.target, control.bounds, &visual);
+    let paint = PreparedControlPaint {
+        target: control.target.clone(),
+        bounds: control.bounds,
+        rectangle_range: rectangle_start..rectangles.len(),
+        text_range: text_start..text.len(),
+        backdrop_range: backdrop_start..control_backdrops.len(),
+        filter_range: filter_start..control_filters.len(),
+    };
 
     let mut node = SemanticNode::new(
         layer.clone(),
@@ -205,16 +217,17 @@ pub(super) fn build_text_input(
     }
     semantics.push(node);
 
-    if is_focused {
-        Ok(Some(prepare_text_input_target(
+    let focused_target = if is_focused {
+        Some(prepare_text_input_target(
             scene.viewport,
             control,
             &options,
             &visual_layout.laid_out,
-        )?))
+        )?)
     } else {
-        Ok(None)
-    }
+        None
+    };
+    Ok((focused_target, paint))
 }
 
 fn visual_state_for_control(
