@@ -185,6 +185,13 @@ rather than adding wrapper helpers or compatibility shims.
 ## Remaining TODOs
 
 - Promote exact native/web PNG goldens only in the pinned visual-golden
-  environment.
+  environment. Follow-up request:
+  `docs/reviews/requests/2026-07-04-seq-06.13e.1-inset-box-shadow-pinned-png-golden-promotion.md`.
 - Keep per-corner / elliptical shadow radii as a separate renderer contract
   extension; this package preserves the existing scalar radius contract.
+  Follow-up request:
+  `docs/reviews/requests/2026-07-04-seq-06.13e.2-per-corner-elliptical-box-shadow-radius-contract.md`.
+
+## Design deviations
+
+None.
