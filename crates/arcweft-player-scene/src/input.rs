@@ -11,7 +11,7 @@ use arcweft_presentation::interaction::{
 };
 use arcweft_presentation::router::{InputRouter, RouteDecision};
 use arcweft_presentation::text_editor::{
-    TextEditorClipboard, TextEditorError, TextEditorOutput, TextEditorState,
+    TextEditorClipboard, TextEditorError, TextEditorLayout, TextEditorOutput, TextEditorState,
 };
 use arcweft_presentation::text_input::{
     TextByteOffset, TextCharacterBounds, TextControlValue, TextControlWriteBack, TextInput,
@@ -546,7 +546,25 @@ impl InputController {
         {
             let before_text = editor.text().to_owned();
             let before_selection = editor.selection();
-            let outputs = editor.apply_text_input(&input, &mut self.text_editor_clipboard)?;
+            let visual_layout = frame
+                .focused_text_input_target()
+                .filter(|focused| {
+                    focused.snapshot.session() == editor.session()
+                        && focused.snapshot.target() == editor.target()
+                        && editor.options().visual_line_vertical_navigation_enabled()
+                })
+                .and_then(|focused| {
+                    TextEditorLayout::from_geometry_snapshot_for_text(
+                        editor.text(),
+                        &focused.geometry,
+                    )
+                    .ok()
+                });
+            let outputs = editor.apply_text_input_with_layout(
+                &input,
+                &mut self.text_editor_clipboard,
+                visual_layout.as_ref(),
+            )?;
             let submitted = input.submits_runtime_text_control()
                 || outputs
                     .iter()

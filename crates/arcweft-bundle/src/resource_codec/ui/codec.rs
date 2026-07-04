@@ -802,6 +802,7 @@ impl UiInputOptions {
             || self.selection_policy != next.selection_policy
             || self.shortcut_policy != next.shortcut_policy
             || self.tab_policy != next.tab_policy
+            || self.vertical_navigation_policy != next.vertical_navigation_policy
             || self.secure_policy != next.secure_policy
             || self.adapter_requirements != next.adapter_requirements
         {

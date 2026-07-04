@@ -11,7 +11,8 @@ use arcweft_bundle::resource_codec::ui::{
     UiStateSchemaHashRef, UiStyleDeclaration, UiStyleResource, UiStyleRule, UiStyleSelector,
     UiStyleSelectorPart, UiStyleToken, UiStyleValue, UiTextResource, UiTextSelectionPolicy,
     UiTextShortcutPolicy, UiTextSourceKind, UiTextSourceRecord, UiTextTabPolicy,
-    UiThemeEnvironmentDefaults, UiThemeResource, migrated_ui_section_compatibility,
+    UiTextVerticalNavigationPolicy, UiThemeEnvironmentDefaults, UiThemeResource,
+    migrated_ui_section_compatibility,
 };
 use arcweft_bundle::resource_codec::{
     FieldId, ProductResourceEnvelope, ProductSectionCodecKind, ResourceField, ResourceWireType,
@@ -468,6 +469,7 @@ fn fixture_input(secure_policy: UiSecureInputPolicy) -> UiInputResource {
             selection_policy: UiTextSelectionPolicy::Enabled,
             shortcut_policy: UiTextShortcutPolicy::Enabled,
             tab_policy: UiTextTabPolicy::FocusNavigation,
+            vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
             secure_policy,
             composition_on_blur: CompositionOnBlurPolicy::Commit,
             submit_handler: Some("handler.dialogue.submit".to_owned()),

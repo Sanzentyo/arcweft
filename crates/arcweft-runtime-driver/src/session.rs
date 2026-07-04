@@ -1141,6 +1141,7 @@ mod text_control_writeback_tests {
         UiInputPurpose, UiRuntimeControlStyle, UiRuntimeTextControlBounds,
         UiRuntimeTextControlHandlers, UiRuntimeTextControlOptions, UiSecureInputPolicy,
         UiTextSelectionPolicy, UiTextShortcutPolicy, UiTextTabPolicy,
+        UiTextVerticalNavigationPolicy,
     };
     use arcweft_core::step::RuntimeHostCallMode;
     use arcweft_id::PublicId;
@@ -1166,6 +1167,7 @@ mod text_control_writeback_tests {
                 selection_policy: UiTextSelectionPolicy::Enabled,
                 shortcut_policy: UiTextShortcutPolicy::Enabled,
                 tab_policy: UiTextTabPolicy::FocusNavigation,
+                vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
                 secure_policy: UiSecureInputPolicy::Plain,
                 composition_on_blur: CompositionOnBlurPolicy::Commit,
             },

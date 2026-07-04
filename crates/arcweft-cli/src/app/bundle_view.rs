@@ -12,6 +12,7 @@ use arcweft_bundle::{
             UiInputOptions, UiInputPurpose, UiProgramInstruction, UiSecureInputPolicy,
             UiSemanticTarget, UiStyleApplyRef, UiTextSelectionPolicy, UiTextShortcutPolicy,
             UiTextSourceKind, UiTextSourceRecord, UiTextSubmitImePolicy, UiTextTabPolicy,
+            UiTextVerticalNavigationPolicy,
         },
     },
 };
@@ -69,6 +70,7 @@ struct AuthoredTextControl {
     selection_policy: UiTextSelectionPolicy,
     shortcut_policy: UiTextShortcutPolicy,
     tab_policy: UiTextTabPolicy,
+    vertical_navigation_policy: UiTextVerticalNavigationPolicy,
     secure_policy: UiSecureInputPolicy,
     submit_handler: Option<String>,
     change_handler: Option<String>,
@@ -479,6 +481,7 @@ fn lower_text_field(
         selection_policy: control.selection_policy,
         shortcut_policy: control.shortcut_policy,
         tab_policy: control.tab_policy,
+        vertical_navigation_policy: control.vertical_navigation_policy,
         secure_policy: control.secure_policy,
         composition_on_blur: CompositionOnBlurPolicy::Commit,
         submit_handler: control.submit_handler,
@@ -987,6 +990,15 @@ impl AuthoredTextControl {
             &["shortcuts", "shortcut_policy", "shortcutPolicy"],
         );
         let tab_policy = text_control_symbol_arg(field.args(), &["tab", "tab_policy", "tabPolicy"]);
+        let vertical_navigation_policy = text_control_symbol_arg(
+            field.args(),
+            &[
+                "vertical_navigation",
+                "vertical_navigation_policy",
+                "verticalNavigation",
+                "verticalNavigationPolicy",
+            ],
+        );
         Self {
             public_id,
             value: expr_source(field.value()),
@@ -1000,6 +1012,9 @@ impl AuthoredTextControl {
             selection_policy: text_control_selection_policy(selection_policy.as_deref()),
             shortcut_policy: text_control_shortcut_policy(shortcut_policy.as_deref()),
             tab_policy: text_control_tab_policy(tab_policy.as_deref()),
+            vertical_navigation_policy: text_control_vertical_navigation_policy(
+                vertical_navigation_policy.as_deref(),
+            ),
             secure_policy: text_control_secure_policy(secure_policy.as_deref(), field.mode()),
             submit_handler: text_control_handler_arg(field.args(), "submit"),
             change_handler: text_control_handler_arg(field.args(), "change"),
@@ -1116,6 +1131,15 @@ fn text_control_tab_policy(value: Option<&str>) -> UiTextTabPolicy {
     match value {
         Some("insert" | "insert_tab" | "insertTab" | "text") => UiTextTabPolicy::InsertTab,
         _ => UiTextTabPolicy::FocusNavigation,
+    }
+}
+
+fn text_control_vertical_navigation_policy(value: Option<&str>) -> UiTextVerticalNavigationPolicy {
+    match value {
+        Some("visual" | "visual_line" | "visualLine" | "soft_wrap" | "softWrap") => {
+            UiTextVerticalNavigationPolicy::VisualLine
+        }
+        _ => UiTextVerticalNavigationPolicy::LogicalLine,
     }
 }
 

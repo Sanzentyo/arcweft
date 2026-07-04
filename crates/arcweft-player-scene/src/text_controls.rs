@@ -4,7 +4,7 @@ use arcweft_bundle::resource_codec::ui::{
     EnterKeyHint as UiEnterKeyHint, TextAssistPolicy as UiTextAssistPolicy,
     TextCapitalization as UiTextCapitalization, UiInputKind, UiInputPurpose, UiRuntimeTextControl,
     UiRuntimeTextControlBounds, UiRuntimeTextSelection, UiTextSelectionPolicy,
-    UiTextShortcutPolicy, UiTextTabPolicy,
+    UiTextShortcutPolicy, UiTextTabPolicy, UiTextVerticalNavigationPolicy,
 };
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::HitRect;
@@ -13,7 +13,7 @@ use arcweft_presentation::semantic::SemanticRole;
 use arcweft_presentation::text_input::{
     Capitalization, EnterKeyHint, TextAssistPolicy, TextByteOffset, TextInputOptions,
     TextInputPurpose, TextInputSessionId, TextRange, TextSelectionPolicy, TextShortcutPolicy,
-    TextTabPolicy,
+    TextTabPolicy, TextVerticalNavigationPolicy,
 };
 use arcweft_render_wgpu::geometry::{FramePlanError, RenderTextInputControl};
 use num_traits::ToPrimitive;
@@ -135,6 +135,9 @@ fn lower_options(control: &UiRuntimeTextControl) -> TextInputOptions {
         .with_selection_policy(lower_selection_policy(control.options.selection_policy))
         .with_shortcut_policy(lower_shortcut_policy(control.options.shortcut_policy))
         .with_tab_policy(lower_tab_policy(control.options.tab_policy))
+        .with_vertical_navigation_policy(lower_vertical_navigation_policy(
+            control.options.vertical_navigation_policy,
+        ))
         .secure(control.options.secure_policy.is_secure() || control.kind.is_secure())
 }
 
@@ -201,6 +204,15 @@ fn lower_tab_policy(policy: UiTextTabPolicy) -> TextTabPolicy {
     match policy {
         UiTextTabPolicy::FocusNavigation => TextTabPolicy::FocusNavigation,
         UiTextTabPolicy::InsertTab => TextTabPolicy::InsertTab,
+    }
+}
+
+fn lower_vertical_navigation_policy(
+    policy: UiTextVerticalNavigationPolicy,
+) -> TextVerticalNavigationPolicy {
+    match policy {
+        UiTextVerticalNavigationPolicy::LogicalLine => TextVerticalNavigationPolicy::LogicalLine,
+        UiTextVerticalNavigationPolicy::VisualLine => TextVerticalNavigationPolicy::VisualLine,
     }
 }
 

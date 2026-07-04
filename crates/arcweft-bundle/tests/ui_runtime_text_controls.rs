@@ -3,7 +3,7 @@ use arcweft_bundle::resource_codec::ui::{
     UiInputOptions, UiInputPurpose, UiInputResource, UiLayoutBoundsResource, UiLogicalRect,
     UiProgramResource, UiRuntimeTextControlBounds, UiRuntimeTextSelection, UiSecureInputPolicy,
     UiSemanticTarget, UiTextResource, UiTextSelectionPolicy, UiTextShortcutPolicy,
-    UiTextSourceKind, UiTextSourceRecord, UiTextTabPolicy,
+    UiTextSourceKind, UiTextSourceRecord, UiTextTabPolicy, UiTextVerticalNavigationPolicy,
 };
 
 #[test]
@@ -251,6 +251,7 @@ fn text_input_option(
         selection_policy: UiTextSelectionPolicy::Enabled,
         shortcut_policy: UiTextShortcutPolicy::Enabled,
         tab_policy: UiTextTabPolicy::FocusNavigation,
+        vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
         secure_policy: UiSecureInputPolicy::Plain,
         composition_on_blur: CompositionOnBlurPolicy::Commit,
         submit_handler: None,

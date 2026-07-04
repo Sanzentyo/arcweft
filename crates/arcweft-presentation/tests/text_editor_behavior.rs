@@ -10,7 +10,8 @@ use arcweft_presentation::text_input::{
     CompositionEndReason, PlatformTextSelection, TextByteOffset, TextCommit, TextCompositionUpdate,
     TextEditCommand, TextInput, TextInputOperation, TextInputOptions, TextInputPrivacy,
     TextInputSecurityPolicy, TextInputSerial, TextInputSessionId, TextRange, TextRevision,
-    TextSelectionAffinity, TextSelectionPolicy, TextShortcutPolicy, TextWritingMode,
+    TextSelectionAffinity, TextSelectionPolicy, TextShortcutPolicy, TextVerticalNavigationPolicy,
+    TextWritingMode,
 };
 
 fn target() -> InteractionTarget {
@@ -387,6 +388,137 @@ fn renderer_backed_caret_at_soft_wrap_boundary_uses_previous_visual_line_end() {
     assert_f32_near(caret.y, 4.0);
 }
 
+#[test]
+fn visual_line_vertical_navigation_uses_soft_wrap_when_enabled() {
+    let layout = soft_wrap_layout("abcdefghi");
+    let mut logical = editor("abcdefghi", false);
+    let mut visual = TextEditorState::new(
+        TextInputSessionId(42),
+        target(),
+        "abcdefghi",
+        TextInputOptions::default()
+            .with_vertical_navigation_policy(TextVerticalNavigationPolicy::VisualLine),
+    )
+    .unwrap();
+    let mut clipboard = TextEditorClipboard::default();
+    for editor in [&mut logical, &mut visual] {
+        editor
+            .apply_text_input(
+                &input(TextInputOperation::SetSelection(
+                    PlatformTextSelection::new(
+                        TextRange::new(TextByteOffset(2), TextByteOffset(2)),
+                        TextSelectionAffinity::Downstream,
+                    ),
+                )),
+                &mut clipboard,
+            )
+            .unwrap();
+    }
+
+    logical
+        .apply_text_input_with_layout(
+            &input(TextInputOperation::Command(TextEditCommand::MoveDown {
+                selecting: false,
+            })),
+            &mut clipboard,
+            Some(&layout),
+        )
+        .unwrap();
+    visual
+        .apply_text_input_with_layout(
+            &input(TextInputOperation::Command(TextEditCommand::MoveDown {
+                selecting: false,
+            })),
+            &mut clipboard,
+            Some(&layout),
+        )
+        .unwrap();
+    visual
+        .apply_text_input_with_layout(
+            &input(TextInputOperation::Command(TextEditCommand::MoveDown {
+                selecting: false,
+            })),
+            &mut clipboard,
+            Some(&layout),
+        )
+        .unwrap();
+
+    assert_eq!(logical.caret(), TextByteOffset(9));
+    assert_eq!(visual.caret(), TextByteOffset(8));
+}
+
+#[test]
+fn visual_line_vertical_navigation_preserves_column_after_short_line_clamp() {
+    let mut editor = TextEditorState::new(
+        TextInputSessionId(42),
+        target(),
+        "abcdefghi",
+        TextInputOptions::default()
+            .with_vertical_navigation_policy(TextVerticalNavigationPolicy::VisualLine),
+    )
+    .unwrap();
+    let mut clipboard = TextEditorClipboard::default();
+    editor
+        .apply_text_input(
+            &input(TextInputOperation::SetSelection(
+                PlatformTextSelection::new(
+                    TextRange::new(TextByteOffset(4), TextByteOffset(4)),
+                    TextSelectionAffinity::Downstream,
+                ),
+            )),
+            &mut clipboard,
+        )
+        .unwrap();
+    let layout = TextEditorLayout::from_renderer_parts_for_text(
+        editor.text(),
+        TextEditorLayoutParts {
+            source: TextEditorLayoutSource::Renderer,
+            text_local_control_rect: HitRect::new(0.0, 0.0, 96.0, 72.0),
+            glyphs: vec![
+                glyph_at(0, 1, 0.0, 4.0, 10.0),
+                glyph_at(1, 2, 10.0, 4.0, 10.0),
+                glyph_at(2, 3, 20.0, 4.0, 10.0),
+                glyph_at(3, 4, 30.0, 4.0, 10.0),
+                glyph_at(4, 4, 0.0, 26.0, 0.0),
+                glyph_at(4, 5, 0.0, 26.0, 10.0),
+                glyph_at(5, 5, 0.0, 48.0, 0.0),
+                glyph_at(5, 6, 0.0, 48.0, 10.0),
+                glyph_at(6, 7, 10.0, 48.0, 10.0),
+                glyph_at(7, 8, 20.0, 48.0, 10.0),
+                glyph_at(8, 9, 30.0, 48.0, 10.0),
+            ],
+            caret_width: 1.0,
+            writing_mode: TextWritingMode::HorizontalTb,
+            text_local_to_viewport:
+                arcweft_presentation::text_input::TextGeometryTransform::identity(),
+            viewport_to_screen: arcweft_presentation::text_input::TextGeometryTransform::identity(),
+        },
+    )
+    .unwrap();
+
+    editor
+        .apply_text_input_with_layout(
+            &input(TextInputOperation::Command(TextEditCommand::MoveDown {
+                selecting: false,
+            })),
+            &mut clipboard,
+            Some(&layout),
+        )
+        .unwrap();
+    assert_eq!(editor.caret(), TextByteOffset(5));
+
+    editor
+        .apply_text_input_with_layout(
+            &input(TextInputOperation::Command(TextEditCommand::MoveDown {
+                selecting: false,
+            })),
+            &mut clipboard,
+            Some(&layout),
+        )
+        .unwrap();
+    assert_eq!(editor.caret(), TextByteOffset(9));
+}
+
 fn assert_f32_near(actual: f32, expected: f32) {
     assert!(
         (actual - expected).abs() <= f32::EPSILON,
@@ -403,4 +535,33 @@ fn glyph_at(start: u32, end: u32, x: f32, y: f32, width: f32) -> TextEditorGlyph
         TextRange::new(TextByteOffset(start), TextByteOffset(end)),
         HitRect::new(x, y, width, 18.0),
     )
+}
+
+fn soft_wrap_layout(text: &str) -> TextEditorLayout {
+    TextEditorLayout::from_renderer_parts_for_text(
+        text,
+        TextEditorLayoutParts {
+            source: TextEditorLayoutSource::Renderer,
+            text_local_control_rect: HitRect::new(0.0, 0.0, 96.0, 72.0),
+            glyphs: vec![
+                glyph_at(0, 1, 0.0, 4.0, 10.0),
+                glyph_at(1, 2, 10.0, 4.0, 10.0),
+                glyph_at(2, 3, 20.0, 4.0, 10.0),
+                glyph_at(3, 3, 0.0, 26.0, 0.0),
+                glyph_at(3, 4, 0.0, 26.0, 10.0),
+                glyph_at(4, 5, 10.0, 26.0, 10.0),
+                glyph_at(5, 6, 20.0, 26.0, 10.0),
+                glyph_at(6, 6, 0.0, 48.0, 0.0),
+                glyph_at(6, 7, 0.0, 48.0, 10.0),
+                glyph_at(7, 8, 10.0, 48.0, 10.0),
+                glyph_at(8, 9, 20.0, 48.0, 10.0),
+            ],
+            caret_width: 1.0,
+            writing_mode: TextWritingMode::HorizontalTb,
+            text_local_to_viewport:
+                arcweft_presentation::text_input::TextGeometryTransform::identity(),
+            viewport_to_screen: arcweft_presentation::text_input::TextGeometryTransform::identity(),
+        },
+    )
+    .unwrap()
 }

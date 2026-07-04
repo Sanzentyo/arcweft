@@ -54,6 +54,7 @@ use arcweft_bundle::{
             UiSemanticTarget, UiStyleDeclaration, UiStyleRule, UiStyleSelector,
             UiStyleSelectorPart, UiStyleToken, UiStyleValue, UiTextSelectionPolicy,
             UiTextShortcutPolicy, UiTextSourceKind, UiTextSourceRecord, UiTextTabPolicy,
+            UiTextVerticalNavigationPolicy,
         },
     },
 };
@@ -830,6 +831,7 @@ fn dsl_ui_input_options(input: &UiTextInputItem) -> UiInputOptions {
         selection_policy: UiTextSelectionPolicy::Enabled,
         shortcut_policy: UiTextShortcutPolicy::Enabled,
         tab_policy: UiTextTabPolicy::FocusNavigation,
+        vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
         secure_policy: if input.kind() == UiTextInputKind::SecureField {
             UiSecureInputPolicy::Password
         } else {

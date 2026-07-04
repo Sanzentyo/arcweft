@@ -261,6 +261,7 @@ pub struct TextInputOptions {
     selection: TextSelectionPolicy,
     shortcuts: TextShortcutPolicy,
     tab: TextTabPolicy,
+    vertical_navigation: TextVerticalNavigationPolicy,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -311,6 +312,18 @@ pub enum TextTabPolicy {
     #[default]
     FocusNavigation,
     InsertTab,
+}
+
+/// Up/Down caret behavior for controls whose rendered text can soft-wrap.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum TextVerticalNavigationPolicy {
+    /// Preserve the historical model: Up/Down moves between newline-delimited
+    /// logical lines and ignores renderer soft-wrap geometry.
+    #[default]
+    LogicalLine,
+    /// When renderer glyph geometry is available, Up/Down moves between visual
+    /// soft-wrap lines while preserving the preferred visual column.
+    VisualLine,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -809,6 +822,7 @@ impl Default for TextInputOptions {
             selection: TextSelectionPolicy::Enabled,
             shortcuts: TextShortcutPolicy::Enabled,
             tab: TextTabPolicy::FocusNavigation,
+            vertical_navigation: TextVerticalNavigationPolicy::LogicalLine,
         }
     }
 }
@@ -878,6 +892,15 @@ impl TextInputOptions {
         self
     }
 
+    #[must_use]
+    pub const fn with_vertical_navigation_policy(
+        mut self,
+        vertical_navigation: TextVerticalNavigationPolicy,
+    ) -> Self {
+        self.vertical_navigation = vertical_navigation;
+        self
+    }
+
     pub const fn autocorrect(&self) -> TextAssistPolicy {
         self.autocorrect
     }
@@ -914,6 +937,10 @@ impl TextInputOptions {
         self.tab
     }
 
+    pub const fn vertical_navigation_policy(&self) -> TextVerticalNavigationPolicy {
+        self.vertical_navigation
+    }
+
     pub const fn selection_enabled(&self) -> bool {
         matches!(self.selection, TextSelectionPolicy::Enabled)
     }
@@ -924,6 +951,13 @@ impl TextInputOptions {
 
     pub const fn tab_inserts_text(&self) -> bool {
         matches!(self.tab, TextTabPolicy::InsertTab)
+    }
+
+    pub const fn visual_line_vertical_navigation_enabled(&self) -> bool {
+        matches!(
+            self.vertical_navigation,
+            TextVerticalNavigationPolicy::VisualLine
+        )
     }
 }
 

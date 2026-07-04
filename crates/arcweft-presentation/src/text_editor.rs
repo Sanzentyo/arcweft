@@ -17,7 +17,7 @@ use crate::text_input::{
     TextRange, TextRangeRect, TextRevision, TextSelectionAffinity, TextUtf16Offset,
     TextWritingMode,
 };
-use core::fmt;
+use core::{cmp::Ordering, fmt};
 
 /// Complete shared editor state for one focused Arcweft text control.
 #[derive(Clone, Debug, PartialEq)]
@@ -28,6 +28,7 @@ pub struct TextEditorState {
     selection: TextRange<TextByteOffset>,
     selection_anchor: TextByteOffset,
     caret: TextByteOffset,
+    preferred_visual_x: Option<f32>,
     composition: Option<ActiveTextComposition>,
     revision: TextRevision,
     options: TextInputOptions,
@@ -132,6 +133,20 @@ struct ActiveTextComposition {
     segments: Vec<TextCompositionSegment>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TextEditorVerticalDirection {
+    Up,
+    Down,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct TextEditorVisualLine {
+    start: usize,
+    end: usize,
+    top: f32,
+    bottom: f32,
+}
+
 impl TextEditorState {
     /// Creates a shared editor from Arcweft text-control state.
     pub fn new(
@@ -150,6 +165,7 @@ impl TextEditorState {
             selection: TextRange::new(end, end),
             selection_anchor: end,
             caret: end,
+            preferred_visual_x: None,
             composition: None,
             revision: TextRevision(0),
             options,
@@ -179,6 +195,7 @@ impl TextEditorState {
             selection,
             selection_anchor: *selection.start(),
             caret,
+            preferred_visual_x: None,
             composition: None,
             revision: TextRevision::default(),
             options,
@@ -197,6 +214,7 @@ impl TextEditorState {
             selection,
             selection_anchor: *selection.start(),
             caret,
+            preferred_visual_x: None,
             composition: snapshot
                 .composition()
                 .map(|composition| ActiveTextComposition {
@@ -258,6 +276,17 @@ impl TextEditorState {
         input: &TextInput,
         clipboard: &mut TextEditorClipboard,
     ) -> Result<Vec<TextEditorOutput>, TextEditorError> {
+        self.apply_text_input_with_layout(input, clipboard, None)
+    }
+
+    /// Applies a platform-normalized batch with optional renderer glyph
+    /// geometry for visual-line vertical navigation.
+    pub fn apply_text_input_with_layout(
+        &mut self,
+        input: &TextInput,
+        clipboard: &mut TextEditorClipboard,
+        layout: Option<&TextEditorLayout>,
+    ) -> Result<Vec<TextEditorOutput>, TextEditorError> {
         if input.session() != self.session {
             return Err(TextEditorError::SessionMismatch {
                 expected: self.session,
@@ -267,7 +296,7 @@ impl TextEditorState {
         input
             .operations()
             .iter()
-            .map(|operation| self.apply_operation(operation, clipboard))
+            .map(|operation| self.apply_operation_with_layout(operation, clipboard, layout))
             .collect()
     }
 
@@ -277,6 +306,15 @@ impl TextEditorState {
         &mut self,
         operation: &crate::text_input::TextInputOperation,
         clipboard: &mut TextEditorClipboard,
+    ) -> Result<TextEditorOutput, TextEditorError> {
+        self.apply_operation_with_layout(operation, clipboard, None)
+    }
+
+    fn apply_operation_with_layout(
+        &mut self,
+        operation: &crate::text_input::TextInputOperation,
+        clipboard: &mut TextEditorClipboard,
+        layout: Option<&TextEditorLayout>,
     ) -> Result<TextEditorOutput, TextEditorError> {
         match operation {
             crate::text_input::TextInputOperation::StartComposition => self.start_composition(),
@@ -296,7 +334,7 @@ impl TextEditorState {
                 self.set_platform_selection(*selection)
             }
             crate::text_input::TextInputOperation::Command(command) => {
-                self.apply_command(*command, clipboard)
+                self.apply_command_with_layout(*command, clipboard, layout)
             }
         }
     }
@@ -525,10 +563,11 @@ impl TextEditorState {
         Ok(TextEditorOutput::None)
     }
 
-    fn apply_command(
+    fn apply_command_with_layout(
         &mut self,
         command: TextEditCommand,
         clipboard: &mut TextEditorClipboard,
+        layout: Option<&TextEditorLayout>,
     ) -> Result<TextEditorOutput, TextEditorError> {
         if !self.options.shortcuts_enabled() && command_is_shortcut(command) {
             return Ok(TextEditorOutput::None);
@@ -536,8 +575,10 @@ impl TextEditorState {
         match command {
             TextEditCommand::MoveLeft { selecting } => self.move_left(selecting),
             TextEditCommand::MoveRight { selecting } => self.move_right(selecting),
-            TextEditCommand::MoveUp { selecting } => self.move_up(selecting),
-            TextEditCommand::MoveDown { selecting } => self.move_down(selecting),
+            TextEditCommand::MoveUp { selecting } => self.move_up_with_layout(selecting, layout),
+            TextEditCommand::MoveDown { selecting } => {
+                self.move_down_with_layout(selecting, layout)
+            }
             TextEditCommand::MoveWordLeft { selecting } => self.move_word_left(selecting),
             TextEditCommand::MoveWordRight { selecting } => self.move_word_right(selecting),
             TextEditCommand::MoveLineStart { selecting } => self.move_line_start(selecting),
@@ -564,6 +605,20 @@ impl TextEditorState {
         Ok(TextEditorOutput::None)
     }
 
+    fn move_up_with_layout(
+        &mut self,
+        selecting: bool,
+        layout: Option<&TextEditorLayout>,
+    ) -> Result<TextEditorOutput, TextEditorError> {
+        if let Some(layout) = layout
+            && self.options.visual_line_vertical_navigation_enabled()
+            && self.move_visual_vertical(layout, selecting, TextEditorVerticalDirection::Up)?
+        {
+            return Ok(TextEditorOutput::None);
+        }
+        self.move_up(selecting)
+    }
+
     fn move_up(&mut self, selecting: bool) -> Result<TextEditorOutput, TextEditorError> {
         let current_start = self.line_start_for(self.caret)?;
         if current_start.0 == 0 {
@@ -578,6 +633,20 @@ impl TextEditorState {
         let target = self.grapheme_boundary_at_or_before(raw_target)?;
         self.move_caret_to(target, selecting)?;
         Ok(TextEditorOutput::None)
+    }
+
+    fn move_down_with_layout(
+        &mut self,
+        selecting: bool,
+        layout: Option<&TextEditorLayout>,
+    ) -> Result<TextEditorOutput, TextEditorError> {
+        if let Some(layout) = layout
+            && self.options.visual_line_vertical_navigation_enabled()
+            && self.move_visual_vertical(layout, selecting, TextEditorVerticalDirection::Down)?
+        {
+            return Ok(TextEditorOutput::None);
+        }
+        self.move_down(selecting)
     }
 
     fn move_down(&mut self, selecting: bool) -> Result<TextEditorOutput, TextEditorError> {
@@ -595,6 +664,31 @@ impl TextEditorState {
         let target = self.grapheme_boundary_at_or_before(raw_target)?;
         self.move_caret_to(target, selecting)?;
         Ok(TextEditorOutput::None)
+    }
+
+    fn move_visual_vertical(
+        &mut self,
+        layout: &TextEditorLayout,
+        selecting: bool,
+        direction: TextEditorVerticalDirection,
+    ) -> Result<bool, TextEditorError> {
+        if !layout.supports_visual_vertical_navigation() {
+            return Ok(false);
+        }
+        let index = self.index()?;
+        let preferred_x = self.preferred_visual_x.unwrap_or_else(|| {
+            layout
+                .caret_rect_for_offset(self.caret, &index)
+                .map_or(layout.text_local_control_rect.x, |rect| rect.x)
+        });
+        let Some(target) =
+            layout.visual_vertical_target(self.caret, preferred_x, direction, &index)?
+        else {
+            return Ok(false);
+        };
+        self.move_caret_to(target, selecting)?;
+        self.preferred_visual_x = Some(preferred_x);
+        Ok(true)
     }
 
     fn move_right(&mut self, selecting: bool) -> Result<TextEditorOutput, TextEditorError> {
@@ -666,6 +760,7 @@ impl TextEditorState {
         self.selection = TextRange::new(TextByteOffset(0), end);
         self.selection_anchor = TextByteOffset(0);
         self.caret = end;
+        self.preferred_visual_x = None;
         self.revision = self.revision.next();
         Ok(TextEditorOutput::None)
     }
@@ -784,6 +879,7 @@ impl TextEditorState {
             self.selection_anchor = caret;
             self.caret = caret;
         }
+        self.preferred_visual_x = None;
         self.revision = self.revision.next();
         Ok(())
     }
@@ -804,6 +900,7 @@ impl TextEditorState {
             self.selection_anchor = caret;
             self.caret = caret;
         }
+        self.preferred_visual_x = None;
         self.revision = self.revision.next();
         Ok(())
     }
@@ -834,6 +931,7 @@ impl TextEditorState {
         );
         TextIndexSnapshot::try_new(text.clone())?.validate_byte_offset(replacement_end)?;
         self.text = text;
+        self.preferred_visual_x = None;
         self.revision = self.revision.next();
         Ok(TextRange::new(*range.start(), replacement_end))
     }
@@ -1020,6 +1118,35 @@ impl TextEditorLayout {
         })
     }
 
+    pub fn from_geometry_snapshot_for_text(
+        text: &str,
+        geometry: &TextInputGeometrySnapshot,
+    ) -> Result<Self, TextEditorLayoutError> {
+        let caret_width = match geometry.writing_mode() {
+            TextWritingMode::HorizontalTb => geometry.text_local_caret_rect().width,
+            TextWritingMode::VerticalRl | TextWritingMode::VerticalLr => {
+                geometry.text_local_caret_rect().height
+            }
+        };
+        let glyphs = geometry
+            .text_local_character_bounds()
+            .iter()
+            .map(|bounds| TextEditorGlyphGeometry::new(bounds.range, bounds.bounds))
+            .collect();
+        Self::from_renderer_parts_for_text(
+            text,
+            TextEditorLayoutParts {
+                source: TextEditorLayoutSource::Renderer,
+                text_local_control_rect: geometry.text_local_control_rect(),
+                glyphs,
+                caret_width,
+                writing_mode: geometry.writing_mode(),
+                text_local_to_viewport: TextGeometryTransform::identity(),
+                viewport_to_screen: TextGeometryTransform::identity(),
+            },
+        )
+    }
+
     pub const fn source(&self) -> TextEditorLayoutSource {
         self.source
     }
@@ -1030,6 +1157,101 @@ impl TextEditorLayout {
 
     pub fn glyphs(&self) -> &[TextEditorGlyphGeometry] {
         &self.glyphs
+    }
+
+    fn supports_visual_vertical_navigation(&self) -> bool {
+        self.is_renderer_backed()
+            && self.writing_mode == TextWritingMode::HorizontalTb
+            && !self.glyphs.is_empty()
+    }
+
+    fn visual_vertical_target(
+        &self,
+        caret: TextByteOffset,
+        preferred_x: f32,
+        direction: TextEditorVerticalDirection,
+        index: &TextIndexSnapshot,
+    ) -> Result<Option<TextByteOffset>, TextEditorLayoutError> {
+        let lines = self.horizontal_visual_lines();
+        if lines.is_empty() {
+            return Ok(None);
+        }
+        let caret_rect = self.caret_rect_for_offset(caret, index)?;
+        let current = current_horizontal_visual_line(&lines, caret_rect);
+        let target = match direction {
+            TextEditorVerticalDirection::Up if current == 0 => TextByteOffset(0),
+            TextEditorVerticalDirection::Up => {
+                self.horizontal_line_offset_for_x(lines[current - 1], preferred_x, index)?
+            }
+            TextEditorVerticalDirection::Down if current + 1 >= lines.len() => index.len_bytes(),
+            TextEditorVerticalDirection::Down => {
+                self.horizontal_line_offset_for_x(lines[current + 1], preferred_x, index)?
+            }
+        };
+        Ok(Some(target))
+    }
+
+    fn horizontal_visual_lines(&self) -> Vec<TextEditorVisualLine> {
+        let Some(first) = self.glyphs.first() else {
+            return Vec::new();
+        };
+        let mut lines = Vec::new();
+        let mut start = 0;
+        let mut top = first.bounds.y;
+        let mut bottom = first.bounds.y + first.bounds.height;
+        for (index, glyph) in self.glyphs.iter().enumerate().skip(1) {
+            if horizontal_bounds_overlap(top, bottom, glyph.bounds) {
+                top = top.min(glyph.bounds.y);
+                bottom = bottom.max(glyph.bounds.y + glyph.bounds.height);
+            } else {
+                lines.push(TextEditorVisualLine {
+                    start,
+                    end: index,
+                    top,
+                    bottom,
+                });
+                start = index;
+                top = glyph.bounds.y;
+                bottom = glyph.bounds.y + glyph.bounds.height;
+            }
+        }
+        lines.push(TextEditorVisualLine {
+            start,
+            end: self.glyphs.len(),
+            top,
+            bottom,
+        });
+        lines
+    }
+
+    fn horizontal_line_offset_for_x(
+        &self,
+        line: TextEditorVisualLine,
+        preferred_x: f32,
+        index: &TextIndexSnapshot,
+    ) -> Result<TextByteOffset, TextEditorLayoutError> {
+        let mut best = None::<(f32, TextByteOffset)>;
+        for glyph in &self.glyphs[line.start..line.end] {
+            let candidates = [
+                (glyph.bounds.x, *glyph.range.start()),
+                (glyph.bounds.x + glyph.bounds.width, *glyph.range.end()),
+            ];
+            for (x, offset) in candidates {
+                let distance = (x - preferred_x).abs();
+                best = match best {
+                    Some((best_distance, best_offset)) => {
+                        match distance.total_cmp(&best_distance) {
+                            Ordering::Less => Some((distance, offset)),
+                            Ordering::Equal if offset.0 < best_offset.0 => Some((distance, offset)),
+                            _ => Some((best_distance, best_offset)),
+                        }
+                    }
+                    _ => Some((distance, offset)),
+                };
+            }
+        }
+        let offset = best.map_or(TextByteOffset(0), |(_, offset)| offset);
+        Ok(index.validate_byte_offset(offset)?)
     }
 
     fn caret_rect_for_offset(
@@ -1291,6 +1513,37 @@ impl std::error::Error for TextEditorError {}
 
 fn ranges_overlap(left: TextRange<TextByteOffset>, right: TextRange<TextByteOffset>) -> bool {
     left.start().0 < right.end().0 && right.start().0 < left.end().0
+}
+
+fn horizontal_bounds_overlap(line_top: f32, line_bottom: f32, bounds: HitRect) -> bool {
+    bounds.y < line_bottom && line_top < bounds.y + bounds.height
+}
+
+fn current_horizontal_visual_line(lines: &[TextEditorVisualLine], caret_rect: HitRect) -> usize {
+    let caret_y = caret_rect.y + caret_rect.height * 0.5;
+    lines
+        .iter()
+        .position(|line| caret_y >= line.top && caret_y <= line.bottom)
+        .unwrap_or_else(|| {
+            lines
+                .iter()
+                .enumerate()
+                .min_by(|(_, left), (_, right)| {
+                    vertical_distance_to_line(caret_y, left)
+                        .total_cmp(&vertical_distance_to_line(caret_y, right))
+                })
+                .map_or(0, |(index, _)| index)
+        })
+}
+
+fn vertical_distance_to_line(y: f32, line: &TextEditorVisualLine) -> f32 {
+    if y < line.top {
+        line.top - y
+    } else if y > line.bottom {
+        y - line.bottom
+    } else {
+        0.0
+    }
 }
 
 const fn command_is_shortcut(command: TextEditCommand) -> bool {

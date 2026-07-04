@@ -667,6 +667,8 @@ pub struct UiInputOptions {
     pub shortcut_policy: UiTextShortcutPolicy,
     #[serde(default)]
     pub tab_policy: UiTextTabPolicy,
+    #[serde(default)]
+    pub vertical_navigation_policy: UiTextVerticalNavigationPolicy,
     pub secure_policy: UiSecureInputPolicy,
     pub composition_on_blur: CompositionOnBlurPolicy,
     pub submit_handler: Option<String>,
@@ -731,6 +733,14 @@ pub enum UiTextTabPolicy {
     #[default]
     FocusNavigation,
     InsertTab,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiTextVerticalNavigationPolicy {
+    #[default]
+    LogicalLine,
+    VisualLine,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -848,6 +858,8 @@ pub struct UiRuntimeTextControlOptions {
     pub shortcut_policy: UiTextShortcutPolicy,
     #[serde(default)]
     pub tab_policy: UiTextTabPolicy,
+    #[serde(default)]
+    pub vertical_navigation_policy: UiTextVerticalNavigationPolicy,
     pub secure_policy: UiSecureInputPolicy,
     pub composition_on_blur: CompositionOnBlurPolicy,
 }
@@ -1502,6 +1514,7 @@ impl UiRuntimeTextControlOptions {
             selection_policy: input.selection_policy,
             shortcut_policy: input.shortcut_policy,
             tab_policy: input.tab_policy,
+            vertical_navigation_policy: input.vertical_navigation_policy,
             secure_policy: input.secure_policy,
             composition_on_blur: input.composition_on_blur,
         }
@@ -1576,6 +1589,7 @@ mod tests {
             selection_policy: UiTextSelectionPolicy::Enabled,
             shortcut_policy: UiTextShortcutPolicy::Enabled,
             tab_policy: UiTextTabPolicy::FocusNavigation,
+            vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
             secure_policy: UiSecureInputPolicy::Plain,
             composition_on_blur: CompositionOnBlurPolicy::Commit,
             submit_handler: Some("handler.name.submit".to_owned()),

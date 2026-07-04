@@ -3,6 +3,7 @@ use arcweft_bundle::resource_codec::ui::{
     UiInputPurpose, UiRuntimeControlStyle, UiRuntimeTextControl, UiRuntimeTextControlBounds,
     UiRuntimeTextControlHandlers, UiRuntimeTextControlOptions, UiRuntimeTextSelection,
     UiSecureInputPolicy, UiTextSelectionPolicy, UiTextShortcutPolicy, UiTextTabPolicy,
+    UiTextVerticalNavigationPolicy,
 };
 use arcweft_player_scene::input::InputController;
 use arcweft_player_scene::text_controls::RuntimeTextControlLowerer;
@@ -10,7 +11,7 @@ use arcweft_presentation::input::{InteractionTarget, PointerId};
 use arcweft_presentation::text_input::{
     PlatformTextSelection, TextByteOffset, TextInput, TextInputOperation, TextInputSerial,
     TextInputSessionId, TextRange, TextSelectionAffinity, TextSelectionPolicy, TextShortcutPolicy,
-    TextTabPolicy,
+    TextTabPolicy, TextVerticalNavigationPolicy,
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderPreferences, RenderScene, RenderTextInputControl,
@@ -234,6 +235,7 @@ fn runtime_text_control_lowers_selection_shortcut_and_tab_policies() {
     runtime.options.selection_policy = UiTextSelectionPolicy::Disabled;
     runtime.options.shortcut_policy = UiTextShortcutPolicy::Disabled;
     runtime.options.tab_policy = UiTextTabPolicy::InsertTab;
+    runtime.options.vertical_navigation_policy = UiTextVerticalNavigationPolicy::VisualLine;
     let mut input = InputController::default();
 
     let controls = RuntimeTextControlLowerer::lower_for_frame(&mut input, &[runtime])
@@ -248,6 +250,10 @@ fn runtime_text_control_lowers_selection_shortcut_and_tab_policies() {
         TextShortcutPolicy::Disabled
     );
     assert_eq!(controls[0].options.tab_policy(), TextTabPolicy::InsertTab);
+    assert_eq!(
+        controls[0].options.vertical_navigation_policy(),
+        TextVerticalNavigationPolicy::VisualLine
+    );
 }
 
 fn runtime_control(public_id: &str, kind: UiInputKind, value: &str) -> UiRuntimeTextControl {
@@ -268,6 +274,7 @@ fn runtime_control(public_id: &str, kind: UiInputKind, value: &str) -> UiRuntime
             selection_policy: UiTextSelectionPolicy::Enabled,
             shortcut_policy: UiTextShortcutPolicy::Enabled,
             tab_policy: UiTextTabPolicy::FocusNavigation,
+            vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
             secure_policy: if kind.is_secure() {
                 UiSecureInputPolicy::Password
             } else {

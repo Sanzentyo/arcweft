@@ -5,6 +5,7 @@ use arcweft_bundle::resource_codec::ui::{
     UiRuntimeTextControl, UiRuntimeTextControlBounds, UiRuntimeTextControlHandlers,
     UiRuntimeTextControlOptions, UiRuntimeTextSelection, UiSecureInputPolicy,
     UiTextSelectionPolicy, UiTextShortcutPolicy, UiTextSubmitImePolicy, UiTextTabPolicy,
+    UiTextVerticalNavigationPolicy,
 };
 use arcweft_player_scene::action_buttons::RuntimeActionButtonLowerer;
 use arcweft_player_scene::input::InputController;
@@ -90,6 +91,7 @@ fn text_control_with_style(public_id: &str, style: UiRuntimeControlStyle) -> UiR
             selection_policy: UiTextSelectionPolicy::Enabled,
             shortcut_policy: UiTextShortcutPolicy::Enabled,
             tab_policy: UiTextTabPolicy::FocusNavigation,
+            vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
             secure_policy: UiSecureInputPolicy::Plain,
             composition_on_blur: CompositionOnBlurPolicy::Commit,
         },
