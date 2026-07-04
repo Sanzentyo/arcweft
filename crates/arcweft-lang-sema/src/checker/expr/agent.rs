@@ -3,7 +3,7 @@ use super::super::{
     AgentActionEnvParam, DebugPathKind, EntityKind, Expr, MapKind, TypeCheckError, TypeChecker,
     TypeKind,
 };
-use super::{
+use super::support::{
     AgentInvokeArgs, agent_attach_resource_type, agent_result, set_agent_arg_slot, spread_item_type,
 };
 use arcweft_lang_syntax::expr::{CallArg, Literal};

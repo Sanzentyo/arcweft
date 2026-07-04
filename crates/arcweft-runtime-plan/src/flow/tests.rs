@@ -1,0 +1,378 @@
+use super::*;
+use arcweft_core::pattern::RuntimePattern;
+use arcweft_core::value::{RuntimeFieldValue, RuntimeSeq, runtime_sequence_from_literal_values};
+use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_syntax::parser::parse_source;
+use arcweft_render_text::{
+    InlineFailurePolicy, RichTextCascadeLayer, RichTextColor, RichTextSettingSource, RichTextStyle,
+};
+
+#[test]
+fn optimizer_rewrites_local_record_field_to_ordinal_projection() {
+    let rows = runtime_sequence_from_literal_values(vec![
+        RuntimeValue::Record(vec![
+            RuntimeFieldValue {
+                name: "score".to_owned(),
+                value: RuntimeValue::i64(1),
+            },
+            RuntimeFieldValue {
+                name: "active".to_owned(),
+                value: RuntimeValue::Bool(true),
+            },
+        ]),
+        RuntimeValue::Record(vec![
+            RuntimeFieldValue {
+                name: "score".to_owned(),
+                value: RuntimeValue::i64(2),
+            },
+            RuntimeFieldValue {
+                name: "active".to_owned(),
+                value: RuntimeValue::Bool(false),
+            },
+        ]),
+    ]);
+    assert!(matches!(
+        rows,
+        RuntimeValue::Seq(RuntimeSeq::RecordColumns(_))
+    ));
+    let mut ops = vec![
+        FlowOp::Let {
+            pattern: RuntimePattern::Ident("rows".to_owned()),
+            expr: RuntimeExpr::Value(rows),
+        },
+        FlowOp::ReturnExpr(RuntimeExpr::Sum {
+            source: Box::new(RuntimeExpr::Field {
+                target: Box::new(RuntimeExpr::Local("rows".to_owned())),
+                field: "score".to_owned(),
+            }),
+        }),
+    ];
+    let mut stats = RuntimePlanLowerStats::default();
+
+    optimize_flow_ops(&mut ops, &mut stats);
+
+    assert!(matches!(
+        &ops[1],
+        FlowOp::ReturnExpr(RuntimeExpr::Sum { source })
+            if matches!(
+                source.as_ref(),
+                RuntimeExpr::ProjectRecord { ordinal: 0, target }
+                    if matches!(target.as_ref(), RuntimeExpr::Local(name) if name == "rows")
+            )
+    ));
+}
+
+#[test]
+fn runtime_plan_options_select_dialogue_defaults_profile() {
+    let parsed = parse_source(
+        r##"
+pub dialogue defaults @dialogue.defaults {
+    text_color = rgb("#101112")
+}
+
+pub dialogue defaults @dialogue:.defaults.mobile {
+    text_color = rgb("#202122")
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: Hello[p]
+}
+"##,
+    );
+    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let report = lower_runtime_plan_with_stats_and_options(
+        &hir,
+        &RuntimePlanLowerOptions::default().with_dialogue_defaults("dialogue.defaults.mobile"),
+    )
+    .expect("runtime plan lowers with selected dialogue defaults");
+    let spec = report
+        .line_display_catalog
+        .lines()
+        .first()
+        .expect("line display spec");
+
+    assert_eq!(
+        spec.base_styles,
+        vec![RichTextStyle::Color {
+            value: RichTextColor::Rgb {
+                red: 32,
+                green: 33,
+                blue: 34
+            }
+        }]
+    );
+}
+
+#[test]
+fn speaker_preset_styles_join_dialogue_cascade() {
+    let source = r##"
+pub dialogue defaults @dialogue.defaults {
+    text_color = rgb("#101112")
+}
+
+character @character.alice Alice as alice {
+    dialogue_style {
+        text_color = rgb("#202122")
+    }
+}
+
+flow @flow.main main {
+    let alice_side = alice(rich_text=rich_text_style(text=text_style(color=rgb("#303132"))), inline_error=InlineFailure.fallback("preset"))
+    let alice_worried = alice_side(rich_text=rich_text_style(text=text_style(color=rgb("#404142"))))
+
+    alice_worried(text_color=rgb("#505152")): Hello #[missing][p]
+}
+"##;
+    let preset_value = r##"rich_text_style(text=text_style(color=rgb("#404142")))"##;
+    let preset_value_start = source
+        .find(preset_value)
+        .expect("preset value is present in fixture");
+    let preset_value_end = preset_value_start + preset_value.len();
+    let parsed = parse_source(source);
+    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let report = lower_runtime_plan_with_stats(&hir).expect("runtime plan lowers");
+    let spec = report
+        .line_display_catalog
+        .lines()
+        .first()
+        .expect("line display spec");
+
+    assert_eq!(
+        spec.base_styles,
+        vec![
+            RichTextStyle::Color {
+                value: RichTextColor::Rgb {
+                    red: 16,
+                    green: 17,
+                    blue: 18,
+                }
+            },
+            RichTextStyle::Color {
+                value: RichTextColor::Rgb {
+                    red: 32,
+                    green: 33,
+                    blue: 34,
+                }
+            },
+            RichTextStyle::Color {
+                value: RichTextColor::Rgb {
+                    red: 48,
+                    green: 49,
+                    blue: 50,
+                }
+            },
+            RichTextStyle::Color {
+                value: RichTextColor::Rgb {
+                    red: 64,
+                    green: 65,
+                    blue: 66,
+                }
+            },
+            RichTextStyle::Color {
+                value: RichTextColor::Rgb {
+                    red: 80,
+                    green: 81,
+                    blue: 82,
+                }
+            },
+        ]
+    );
+    assert!(matches!(
+        spec.default_inline_failure_policy,
+        Some(InlineFailurePolicy::Fallback { .. })
+    ));
+    assert!(spec.style_contributions.iter().any(|contribution| {
+        contribution.layer == RichTextCascadeLayer::SpeakerPreset
+            && contribution.path == "rich_text.text.color"
+            && contribution.value == "rgb(\"#404142\")"
+            && contribution.active
+            && contribution.style_index == Some(3)
+            && matches!(
+                &contribution.source,
+                RichTextSettingSource::SourceFile {
+                    range: Some(range),
+                    ..
+                } if range.start == preset_value_start && range.end == preset_value_end
+            )
+    }));
+    assert!(spec.style_contributions.iter().any(|contribution| {
+        contribution.layer == RichTextCascadeLayer::SpeakerPreset
+            && contribution.path == "rich_text.text.color"
+            && contribution.value == "rgb(\"#303132\")"
+            && !contribution.active
+            && contribution.shadowed_by.is_some()
+    }));
+    assert!(spec.style_contributions.iter().any(|contribution| {
+        contribution.layer == RichTextCascadeLayer::LineOptions
+            && contribution.path == "text_color"
+            && contribution.value == "rgb(\"#505152\")"
+            && contribution.active
+            && contribution.style_index == Some(4)
+    }));
+}
+
+#[test]
+fn textbox_theme_styles_join_dialogue_cascade() {
+    let parsed = parse_source(
+        r##"
+pub dialogue defaults @dialogue.defaults {
+    window = @textbox.phone_message
+}
+
+pub textbox @textbox.phone_message PhoneMessageBox {
+    rich_text {
+        text {
+            color = rgb("#303132")
+        }
+    }
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice(rich_text=rich_text_style(text=text_style(color=rgb("#404142")))): Hello[p]
+}
+"##,
+    );
+    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let report = lower_runtime_plan_with_stats(&hir).expect("runtime plan lowers");
+    let spec = report
+        .line_display_catalog
+        .lines()
+        .first()
+        .expect("line display spec");
+
+    assert_eq!(spec.window.as_deref(), Some("textbox.phone_message"));
+    assert!(spec.base_styles.iter().any(|style| {
+        matches!(
+            style,
+            RichTextStyle::Color {
+                value: RichTextColor::Rgb {
+                    red: 48,
+                    green: 49,
+                    blue: 50,
+                }
+            }
+        )
+    }));
+    assert!(spec.style_contributions.iter().any(|contribution| {
+        contribution.layer == RichTextCascadeLayer::TextBoxTheme
+            && contribution.path == "rich_text.text.color"
+            && contribution.value == "rgb(\"#303132\")"
+            && !contribution.active
+            && contribution.shadowed_by.is_some()
+    }));
+    assert!(spec.style_contributions.iter().any(|contribution| {
+        contribution.layer == RichTextCascadeLayer::LineOptions
+            && contribution.path == "rich_text.text.color"
+            && contribution.value == "rgb(\"#404142\")"
+            && contribution.active
+    }));
+}
+
+#[test]
+fn runtime_plan_reports_ambiguous_dialogue_defaults_profiles() {
+    let parsed = parse_source(
+        r##"
+pub dialogue defaults @dialogue.defaults.debug {
+    text_color = rgb("#101112")
+}
+
+pub dialogue defaults @dialogue.defaults.mobile {
+    text_color = rgb("#202122")
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: Hello[p]
+}
+"##,
+    );
+    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let errors = lower_runtime_plan_with_stats(&hir)
+        .expect_err("ambiguous dialogue defaults should fail runtime lowering");
+
+    assert!(
+        errors.iter().any(|error| error
+            .message()
+            .contains("multiple dialogue defaults profiles")),
+        "{errors:#?}"
+    );
+}
+
+#[test]
+fn runtime_plan_reports_missing_selected_dialogue_defaults_profile() {
+    let parsed = parse_source(
+        r##"
+pub dialogue defaults @dialogue.defaults {
+    text_color = rgb("#101112")
+}
+
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: Hello[p]
+}
+"##,
+    );
+    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let errors = lower_runtime_plan_with_stats_and_options(
+        &hir,
+        &RuntimePlanLowerOptions::default().with_dialogue_defaults("dialogue.defaults.mobile"),
+    )
+    .expect_err("missing selected dialogue defaults should fail runtime lowering");
+
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("dialogue.defaults.mobile")),
+        "{errors:#?}"
+    );
+}
+
+#[test]
+fn agent_controller_plan_lowers_expect_and_deny_to_evaluated_tasks() {
+    let parsed = parse_source(
+        r#"
+#[agent(version = 1)]
+agent @agent.assertions assertions()
+effects {}
+{
+    let accepted = true
+    let denied = false
+    expect(accepted, message = "accepted should be true")
+    deny(denied)
+}
+"#,
+    );
+    let hir = lower_to_hir(parsed.typed_tree()).expect("agent fixture lowers");
+    let agent = hir.agents().first().expect("agent exists");
+    let report = lower_agent_controller_plan_with_stats(&hir, agent)
+        .expect("agent assertions lower to runtime plan");
+    let assertion_tasks = report.plan.flows[0]
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            FlowOp::Await {
+                binding: None,
+                target,
+                ..
+            } if target.request.capability.0 == "agent" => {
+                Some((target.request.operation.as_str(), target.request.args.len()))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        assertion_tasks.contains(&("expect", 2)),
+        "{assertion_tasks:?}"
+    );
+    assert!(
+        assertion_tasks.contains(&("deny", 1)),
+        "{assertion_tasks:?}"
+    );
+}
