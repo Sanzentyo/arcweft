@@ -16,7 +16,7 @@ The existing seq06.13a boundaries remain the right ownership split:
 - `UiCompositorUniform` owns GPU packing for the shared compositor WGSL contract.
 - `UiMaskTextureProvider` remains the only path for external texture/capture resources.
 
-No browser fallback or compatibility shim is introduced. Unsupported features continue to fail through structured diagnostics.
+No browser fallback or compatibility layer is introduced. Unsupported features continue to fail through structured diagnostics.
 
 ## Vector `clip-path: path(...)` substrate decision
 

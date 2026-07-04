@@ -76,7 +76,7 @@ The prepared frame exposes `focus_graph`, `focus_debug()`, and navigation candid
 ## Intentional non-goals
 
 - No DOM/native widget fallback.
-- No compatibility shims or removed syntax aliases.
+- No compatibility layers or removed syntax aliases.
 - No root-level broad re-export beyond deliberate facade exports already used by UI resources.
 - No redesign of text editor, IME, or action button activation behavior.
 
@@ -113,7 +113,7 @@ cargo test -p arcweft-player-web focus_navigation_report -- --nocapture
 cargo test -p arcweft-player-web --test focus_navigation_report -- --nocapture
 cargo clippy --all-targets --workspace -- -D warnings
 cargo run -p arcweft-cli -- check samples/focus-navigation-controller-dsl/src/main.arcw
-cargo run -p arcweft-cli -- bundle samples/focus-navigation-controller-dsl/src/main.arcw --output /tmp/focus-navigation-controller-dsl.awfb
+cargo run -p arcweft-cli -- bundle samples/focus-navigation-controller-dsl/src/main.arcw --output target/focus-navigation-controller-dsl.awfb
 ```
 
 Validation results:

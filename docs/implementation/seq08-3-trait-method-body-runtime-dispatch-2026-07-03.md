@@ -6,7 +6,7 @@ Applied from `D:/sanze/Downloads/arcweft-seq08.3-trait-method-body-runtime-dispa
 
 The package asked for executable user-authored `IntoIterator` / `Iterator`
 witness dispatch without `IntoSeq`, range fallback, stringly conformance
-rediscovery, or compatibility shims.
+rediscovery, or compatibility layers.
 
 ## Applied
 
@@ -83,7 +83,7 @@ of scope unless they lower through typed runtime expressions.
 
 ## Design Deviations
 
-- No compatibility shim was introduced for unsupported witnesses.
+- No compatibility layer was introduced for unsupported witnesses.
 - No `IntoSeq` or range fallback was added.
 - AWBC trait dispatch is intentionally not represented as `trait.method.N`
   intrinsics; unsupported AWBC paths remain explicit diagnostics until the typed

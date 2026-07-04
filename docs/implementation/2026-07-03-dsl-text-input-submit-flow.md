@@ -34,7 +34,7 @@ This cut moves the native text-input sample's input controls out of
 The new sample supports Enter and the platform IME send/done action. A visible
 Arcweft-rendered submit button is not implemented in this cut because it needs
 a typed UI action/handler contract that can synthesize the same text-control
-submit write-back on web and native without HTML/DOM or compatibility shim
+submit write-back on web and native without HTML/DOM or compatibility-layer
 fallbacks. That is split into
 `docs/reviews/requests/2026-07-03-seq-06.16-player-rendered-text-submit-button-package.md`.
 

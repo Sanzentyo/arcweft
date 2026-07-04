@@ -83,7 +83,7 @@ The package keeps `character.awchar.json` plus `layers/*.png`.  `validation/visu
 
 ## Validation status
 
-Applied and validated in `D:\git\arcweft` on 2026-07-03.
+Applied and validated in a repository checkout on 2026-07-03.
 
 Commands run:
 

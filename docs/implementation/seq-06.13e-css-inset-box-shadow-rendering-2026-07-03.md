@@ -149,7 +149,7 @@ source and includes the validation commands that must be run in a real checkout.
 
 ## Applied checkout validation result
 
-Validated in `D:\git\arcweft` on 2026-07-04 after applying the package:
+Validated in a repository checkout on 2026-07-04 after applying the package:
 
 - `cargo fmt --all -- --check`: pass.
 - `cargo test -p arcweft-render-wgpu --test ui_box_shadow_plan --all-features -- --nocapture`: pass, 4 tests.
@@ -180,7 +180,7 @@ This change modifies production renderer planning, compositor orchestration, and
 WGSL. A structural audit is required after apply. Expected changed production
 files remain cohesive responsibility modules; if local line counts exceed
 AGENTS.md thresholds after merge with concurrent work, split by responsibility
-rather than adding wrapper helpers or compatibility shims.
+rather than adding wrapper helpers or compatibility layers.
 
 ## Remaining TODOs
 

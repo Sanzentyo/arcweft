@@ -32,7 +32,7 @@ This cut applies the component/View text-control unification note from
 
 ## Non-goals
 
-- No compatibility shim for top-level `ui text_input` resources.
+- No compatibility layer for top-level `ui text_input` resources.
 - No platform-widget fallback for submit buttons.
 - No new layout-bounds resource contract; current runtime text-control bounds
   remain the existing stacked/default resource behavior.

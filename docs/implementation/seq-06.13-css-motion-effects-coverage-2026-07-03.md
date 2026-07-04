@@ -51,7 +51,7 @@ The overlay follows Arcweft's owned-boundary rule:
 - `UiClipGeometryPlan` owns the polygon shader-budget diagnostic.
 - `UiBlendShaderMode` owns the newly supported HSL blend mappings.
 
-No extension trait, compatibility shim, or scattered local helper is introduced
+No extension trait, compatibility layer, or scattered local helper is introduced
 for these boundary behaviors.
 
 ### Sans I/O boundaries
@@ -124,7 +124,7 @@ public compatibility claim.
 
 ## Validation commands
 
-Applied in `D:\git\arcweft` on 2026-07-03. The package tests originally
+Applied in a repository checkout on 2026-07-03. The package tests originally
 expected floor rounding for midpoint fixed-point samples; the production
 implementation uses nearest rounding consistently for `Milli` and `Rgba8`
 interpolation, so the package test expectations were adjusted by one unit at

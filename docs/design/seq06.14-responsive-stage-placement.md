@@ -127,7 +127,7 @@ The ordinary object `bbox` continues to be the renderer-visible output bbox so e
 3. Use `object_anchor = name` so author intent is explicit.
 4. Use `size.width`/`size.height` instead of overloading old `width`/`height` inside anchored mode.
 5. Existing `x/y/width/height` remains only absolute mode.
-6. Do not add compatibility shims for ambiguous syntax; mixed syntax is a typed diagnostic.
+6. Do not add compatibility layers for ambiguous syntax; mixed syntax is a typed diagnostic.
 
 ## Non-goal boundary
 
