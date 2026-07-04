@@ -586,29 +586,18 @@ impl SharedFramePlanner {
             &palette,
             &action,
         )?;
+        let submit_action = RenderActionKind::TextInputSubmit.public_id()?;
         let mut control_shadows = Vec::new();
-        let focused_text_input = text_controls::build_text_inputs(
+        let (focused_text_input, action_buttons) = build_runtime_controls(
             scene,
-            &ids.text_input,
+            &ids,
             &mut semantics,
             &mut rectangles,
             &mut text,
             &palette,
+            &submit_action,
             &mut control_shadows,
         )?;
-        let submit_action = RenderActionKind::TextInputSubmit.public_id()?;
-        let action_buttons = action_buttons::build_action_buttons(
-            scene,
-            &ids.action_button,
-            action_buttons::ActionButtonBuildOutput {
-                semantics: &mut semantics,
-                rectangles: &mut rectangles,
-                text: &mut text,
-                control_shadows: &mut control_shadows,
-            },
-            &palette,
-            &submit_action,
-        );
         let hits = semantics.to_hit_tree();
 
         Ok(PreparedFrame {
@@ -633,6 +622,116 @@ impl SharedFramePlanner {
             focused_text_input,
         })
     }
+}
+
+enum RuntimeControlPlanItem {
+    TextInput { index: usize, depth_milli: i32 },
+    ActionButton { index: usize, depth_milli: i32 },
+}
+
+impl RuntimeControlPlanItem {
+    const fn depth_milli(&self) -> i32 {
+        match self {
+            Self::TextInput { depth_milli, .. } | Self::ActionButton { depth_milli, .. } => {
+                *depth_milli
+            }
+        }
+    }
+
+    const fn source_order(&self) -> usize {
+        match self {
+            Self::TextInput { index, .. } | Self::ActionButton { index, .. } => *index,
+        }
+    }
+
+    const fn kind_order(&self) -> u8 {
+        match self {
+            Self::TextInput { .. } => 0,
+            Self::ActionButton { .. } => 1,
+        }
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The frame planner explicitly owns shared render buffers at this boundary."
+)]
+fn build_runtime_controls(
+    scene: &RenderScene,
+    ids: &FrameIds,
+    semantics: &mut SemanticTree,
+    rectangles: &mut Vec<PaintRect>,
+    text: &mut Vec<RenderTextBlock>,
+    palette: &Palette,
+    submit_action: &PublicId,
+    control_shadows: &mut Vec<PreparedControlShadow>,
+) -> Result<(Option<PreparedTextInputTarget>, Vec<PreparedActionButton>), FramePlanError> {
+    let mut items = Vec::with_capacity(scene.text_inputs.len() + scene.action_buttons.len());
+    items.extend(
+        scene
+            .text_inputs
+            .iter()
+            .enumerate()
+            .map(|(index, control)| RuntimeControlPlanItem::TextInput {
+                index,
+                depth_milli: text_controls::text_input_depth_milli(scene, control),
+            }),
+    );
+    items.extend(
+        scene
+            .action_buttons
+            .iter()
+            .enumerate()
+            .map(|(index, button)| RuntimeControlPlanItem::ActionButton {
+                index,
+                depth_milli: action_buttons::action_button_depth_milli(scene, button),
+            }),
+    );
+    items.sort_by_key(|item| (item.depth_milli(), item.kind_order(), item.source_order()));
+
+    let scale = f32::from(scene.preferences.text_scale_milli) / 1_000.0;
+    let font_size = 20.0 * scale;
+    let line_height = 28.0 * scale;
+    let mut focused_text_input = None;
+    let mut prepared_buttons = Vec::new();
+
+    for item in items {
+        match item {
+            RuntimeControlPlanItem::TextInput { index, .. } => {
+                if let Some(target) = text_controls::build_text_input(
+                    scene,
+                    &ids.text_input,
+                    &scene.text_inputs[index],
+                    semantics,
+                    rectangles,
+                    text,
+                    palette,
+                    control_shadows,
+                )? {
+                    focused_text_input = Some(target);
+                }
+            }
+            RuntimeControlPlanItem::ActionButton { index, .. } => {
+                prepared_buttons.push(action_buttons::build_action_button(
+                    scene,
+                    &ids.action_button,
+                    &scene.action_buttons[index],
+                    action_buttons::ActionButtonBuildOutput {
+                        semantics,
+                        rectangles,
+                        text,
+                        control_shadows,
+                    },
+                    palette,
+                    submit_action,
+                    font_size,
+                    line_height,
+                ));
+            }
+        }
+    }
+
+    Ok((focused_text_input, prepared_buttons))
 }
 
 fn build_frame_layers(ids: &FrameIds) -> LayerTree {

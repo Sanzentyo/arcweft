@@ -44,6 +44,8 @@ pub struct UiRuntimeControlVisualStyle {
     pub opacity_milli: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub radius_milli: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth_milli: Option<i32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shadows: Vec<UiRuntimeShadow>,
 }
@@ -187,6 +189,9 @@ impl UiRuntimeControlVisualStyle {
         }
         if patch.radius_milli.is_some() {
             self.radius_milli = patch.radius_milli;
+        }
+        if patch.depth_milli.is_some() {
+            self.depth_milli = patch.depth_milli;
         }
         if !patch.shadows.is_empty() {
             self.shadows.clone_from(&patch.shadows);
@@ -529,6 +534,10 @@ fn apply_declaration(
             visual,
             |visual, radius_milli| visual.radius_milli = Some(radius_milli),
         ),
+        "depth" | "depth-milli" | "z-index" => match depth_milli(style_resource, value) {
+            Some(depth_milli) => visual.depth_milli = Some(depth_milli),
+            None => push_unsupported_value(diagnostics, target, raw_property),
+        },
         "box-shadow" => apply_shadow_declaration(
             style_resource,
             value,
@@ -802,6 +811,22 @@ fn opacity_milli(style: &UiStyleResource, value: &UiStyleValue) -> Option<u16> {
     }
 }
 
+fn depth_milli(style: &UiStyleResource, value: &UiStyleValue) -> Option<i32> {
+    match value {
+        UiStyleValue::Milli(value) => Some(*value),
+        UiStyleValue::Text(value) => parse_depth_milli(value),
+        UiStyleValue::Token(token) => style
+            .tokens
+            .iter()
+            .find(|candidate| candidate.public_id == *token)
+            .and_then(|token| depth_milli(style, &token.value)),
+        UiStyleValue::SystemColor(_)
+        | UiStyleValue::Rgba(_)
+        | UiStyleValue::Resource(_)
+        | UiStyleValue::Digest(_) => None,
+    }
+}
+
 fn shadow_list(
     style: &UiStyleResource,
     value: &UiStyleValue,
@@ -831,6 +856,10 @@ fn parse_opacity_milli(raw: &str) -> Option<u16> {
     }
     let value = value.parse::<f64>().ok()?;
     rounded_clamped_i32(value * 1_000.0, 0.0, 1_000.0).and_then(|value| u16::try_from(value).ok())
+}
+
+fn parse_depth_milli(raw: &str) -> Option<i32> {
+    raw.trim().parse::<i32>().ok()
 }
 
 fn parse_length_milli(raw: &str) -> Option<i32> {

@@ -65,91 +65,95 @@ pub(super) struct ActionButtonBuildOutput<'a> {
     pub(super) control_shadows: &'a mut Vec<PreparedControlShadow>,
 }
 
-pub(super) fn build_action_buttons(
+pub(super) fn action_button_depth_milli(scene: &RenderScene, button: &RenderActionButton) -> i32 {
+    let state = visual_state_for_button(scene, button);
+    button
+        .style
+        .visual_for_state(state)
+        .depth_milli
+        .unwrap_or_default()
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The geometry sinks are intentionally explicit at this renderer boundary."
+)]
+pub(super) fn build_action_button(
     scene: &RenderScene,
     layer: &LayerId,
+    button: &RenderActionButton,
     output: ActionButtonBuildOutput<'_>,
     palette: &Palette,
     action_id: &PublicId,
-) -> Vec<PreparedActionButton> {
-    let scale = f32::from(scene.preferences.text_scale_milli) / 1_000.0;
-    let font_size = 20.0 * scale;
-    let line_height = 28.0 * scale;
+    font_size: f32,
+    line_height: f32,
+) -> PreparedActionButton {
     let ActionButtonBuildOutput {
         semantics,
         rectangles,
         text,
         control_shadows,
     } = output;
-    scene
-        .action_buttons
-        .iter()
-        .map(|button| {
-            let is_focused = scene.interaction.focused.as_ref() == Some(&button.target);
-            let is_hovered = scene.interaction.hovered.as_ref() == Some(&button.target);
-            let is_pressed = scene.interaction.pressed.as_ref() == Some(&button.target);
-            let state = state_from_interaction(ControlInteractionStyleState {
-                enabled: button.enabled,
-                focused: is_focused,
-                pointer: ControlPointerStyleState::from_interaction(is_hovered, is_pressed),
-            });
-            let visual = button.style.visual_for_state(state);
-            push_control_shadow_plan(control_shadows, &button.target, button.bounds, &visual);
-            let fallback_fill = action_button_fill(
-                button.enabled,
-                is_focused || is_hovered,
-                is_pressed,
-                palette,
-            );
-            rectangles.push(PaintRect {
-                bounds: button.bounds,
-                rgba: fill_with_opacity(visual.fill.unwrap_or(fallback_fill), visual.opacity),
-            });
-            push_control_border(rectangles, button.bounds, visual.border);
-            if is_focused {
-                if let Some(ring) = visual.focus_ring {
-                    push_control_focus_ring(rectangles, button.bounds, ring);
-                } else {
-                    super::push_focus_ring(rectangles, button.bounds, palette.focus_ring);
-                }
-            }
-            text.push(RenderTextBlock {
-                text: button.label.clone(),
-                bounds: HitRect::new(
-                    button.bounds.x + 18.0,
-                    button.bounds.y + (button.bounds.height - line_height) * 0.5,
-                    (button.bounds.width - 36.0).max(1.0),
-                    line_height,
-                ),
-                clip_bounds: Some(button.bounds),
-                buffer_width: Some((button.bounds.width - 36.0).max(1.0)),
-                buffer_height: Some(line_height),
-                font_size,
-                line_height,
-                font_family: RenderFontFamily::SansSerif,
-                weight: RenderTextWeight::Bold,
-                slant: RenderTextSlant::Upright,
-                rgba: visual.text.unwrap_or(palette.choice_text),
-            });
-            semantics.push(
-                SemanticNode::new(
-                    layer.clone(),
-                    button.target.clone(),
-                    SemanticRole::Button,
-                    button.bounds,
-                )
-                .with_label(button.label.clone())
-                .with_action(action_id.clone())
-                .with_enabled(button.enabled),
-            );
-            PreparedActionButton {
-                target: button.target.clone(),
-                label: button.label.clone(),
-                enabled: button.enabled,
-                action: button.action.clone(),
-            }
-        })
-        .collect()
+    let is_focused = scene.interaction.focused.as_ref() == Some(&button.target);
+    let is_hovered = scene.interaction.hovered.as_ref() == Some(&button.target);
+    let is_pressed = scene.interaction.pressed.as_ref() == Some(&button.target);
+    let visual = button
+        .style
+        .visual_for_state(visual_state_for_button(scene, button));
+    push_control_shadow_plan(control_shadows, &button.target, button.bounds, &visual);
+    let fallback_fill = action_button_fill(
+        button.enabled,
+        is_focused || is_hovered,
+        is_pressed,
+        palette,
+    );
+    rectangles.push(PaintRect {
+        bounds: button.bounds,
+        rgba: fill_with_opacity(visual.fill.unwrap_or(fallback_fill), visual.opacity),
+    });
+    push_control_border(rectangles, button.bounds, visual.border);
+    if is_focused {
+        if let Some(ring) = visual.focus_ring {
+            push_control_focus_ring(rectangles, button.bounds, ring);
+        } else {
+            super::push_focus_ring(rectangles, button.bounds, palette.focus_ring);
+        }
+    }
+    text.push(RenderTextBlock {
+        text: button.label.clone(),
+        bounds: HitRect::new(
+            button.bounds.x + 18.0,
+            button.bounds.y + (button.bounds.height - line_height) * 0.5,
+            (button.bounds.width - 36.0).max(1.0),
+            line_height,
+        ),
+        clip_bounds: Some(button.bounds),
+        buffer_width: Some((button.bounds.width - 36.0).max(1.0)),
+        buffer_height: Some(line_height),
+        font_size,
+        line_height,
+        font_family: RenderFontFamily::SansSerif,
+        weight: RenderTextWeight::Bold,
+        slant: RenderTextSlant::Upright,
+        rgba: visual.text.unwrap_or(palette.choice_text),
+    });
+    semantics.push(
+        SemanticNode::new(
+            layer.clone(),
+            button.target.clone(),
+            SemanticRole::Button,
+            button.bounds,
+        )
+        .with_label(button.label.clone())
+        .with_action(action_id.clone())
+        .with_enabled(button.enabled),
+    );
+    PreparedActionButton {
+        target: button.target.clone(),
+        label: button.label.clone(),
+        enabled: button.enabled,
+        action: button.action.clone(),
+    }
 }
 
 fn action_button_fill(enabled: bool, active: bool, pressed: bool, palette: &Palette) -> [f32; 4] {
@@ -162,6 +166,20 @@ fn action_button_fill(enabled: bool, active: bool, pressed: bool, palette: &Pale
     } else {
         palette.choice_idle
     }
+}
+
+fn visual_state_for_button(
+    scene: &RenderScene,
+    button: &RenderActionButton,
+) -> super::RenderControlVisualState {
+    let is_focused = scene.interaction.focused.as_ref() == Some(&button.target);
+    let is_hovered = scene.interaction.hovered.as_ref() == Some(&button.target);
+    let is_pressed = scene.interaction.pressed.as_ref() == Some(&button.target);
+    state_from_interaction(ControlInteractionStyleState {
+        enabled: button.enabled,
+        focused: is_focused,
+        pointer: ControlPointerStyleState::from_interaction(is_hovered, is_pressed),
+    })
 }
 
 impl RenderActionButtonAction {

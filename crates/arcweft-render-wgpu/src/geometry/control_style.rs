@@ -23,6 +23,7 @@ pub struct RenderControlVisualStyle {
     pub focus_ring: Option<RenderControlFocusRingStyle>,
     pub opacity: Option<f32>,
     pub radius_px: Option<f32>,
+    pub depth_milli: Option<i32>,
     pub shadows: Vec<RenderControlShadow>,
 }
 
@@ -141,6 +142,9 @@ impl RenderControlVisualStyle {
         }
         if patch.radius_px.is_some() {
             self.radius_px = patch.radius_px;
+        }
+        if patch.depth_milli.is_some() {
+            self.depth_milli = patch.depth_milli;
         }
         if !patch.shadows.is_empty() {
             self.shadows.clone_from(&patch.shadows);

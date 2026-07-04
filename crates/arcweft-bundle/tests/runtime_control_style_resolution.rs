@@ -14,6 +14,7 @@ fn text_control_resolves_authored_background_alpha_and_border_color() {
                 decl("border-color", rgba(80, 112, 96, 255)),
                 decl("border-width", UiStyleValue::Milli(2_000)),
                 decl("opacity", UiStyleValue::Milli(720)),
+                decl("z-index", UiStyleValue::Milli(2_500)),
             ],
         )],
         ..UiStyleResource::default()
@@ -26,9 +27,46 @@ fn text_control_resolves_authored_background_alpha_and_border_color() {
 
     assert_eq!(normal.fill, Some(RgbaColor::rgba(16, 24, 32, 180)));
     assert_eq!(normal.opacity_milli, Some(720));
+    assert_eq!(normal.depth_milli, Some(2_500));
     assert_eq!(
         normal.border.expect("border style").color,
         RgbaColor::rgb(80, 112, 96)
+    );
+    assert!(resolved.diagnostics.is_empty());
+}
+
+#[test]
+fn runtime_control_depth_overlays_for_interaction_state() {
+    let style = UiStyleResource {
+        rules: vec![
+            rule(
+                UiStyleSelectorPart::Element(UiElementKind::Button),
+                vec![decl("depth", UiStyleValue::Text("1000".to_owned()))],
+            ),
+            state_rule(
+                UiInteractionState::Hover,
+                decl("z-index", UiStyleValue::Text("3000".to_owned())),
+            ),
+        ],
+        ..UiStyleResource::default()
+    };
+
+    let resolved = style
+        .resolve_runtime_control_style_for_test("button.submit_feedback", UiElementKind::Button);
+
+    assert_eq!(
+        resolved
+            .style
+            .visual_for_state(UiRuntimeControlState::Normal)
+            .depth_milli,
+        Some(1_000)
+    );
+    assert_eq!(
+        resolved
+            .style
+            .visual_for_state(UiRuntimeControlState::Hover)
+            .depth_milli,
+        Some(3_000)
     );
     assert!(resolved.diagnostics.is_empty());
 }

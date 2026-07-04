@@ -28,6 +28,7 @@ fn lower_visual_style(style: &UiRuntimeControlVisualStyle) -> RenderControlVisua
         focus_ring: style.focus_ring.map(lower_focus_ring),
         opacity: style.opacity_milli.map(|value| f32::from(value) / 1_000.0),
         radius_px: style.radius_milli.map(milli_u32_to_f32),
+        depth_milli: style.depth_milli,
         shadows: style.shadows.iter().copied().map(lower_shadow).collect(),
     }
 }

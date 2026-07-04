@@ -5,8 +5,11 @@ flow that waits for player-rendered text-control submissions.
 
 It demonstrates:
 
+- a bundled, project-authored background image rendered behind the component
+  controls;
 - `pub style modern_feedback_panel` with tokens, element selectors, hover,
-  active, disabled, and focus-visible states;
+  active, disabled, focus-visible states, translucent fills, `box-shadow`, and
+  style-authored control depth;
 - `pub component ModernFeedbackPanel() -> View` with `Surface`, `VStack`,
   `HStack`, `Text`, `TextField`, `TextArea`, and player-rendered `Button`
   actions;
@@ -37,3 +40,9 @@ cargo run -p arcweft-cli -- run --runner native samples/modern-feedback-ui/src/m
 
 The visible buttons are Arcweft player-rendered action buttons. They should not
 be replaced by DOM or native platform widgets.
+
+## Assets
+
+`src/.arcweft/asset/bg/glass_lights.png` is a deterministic Arcweft-authored
+sample image included for this repository. It is distributed under the same
+license terms as the sample code and does not require external attribution.

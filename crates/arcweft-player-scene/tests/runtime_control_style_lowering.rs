@@ -13,7 +13,8 @@ use arcweft_player_scene::text_controls::RuntimeTextControlLowerer;
 #[test]
 fn runtime_text_control_style_reaches_render_text_input_control() {
     let mut input = InputController::default();
-    let runtime = text_control_with_style("input.feedback", styled_fill(12, 24, 48, 192));
+    let runtime =
+        text_control_with_style("input.feedback", styled_fill_depth(12, 24, 48, 192, 1_700));
 
     let render = RuntimeTextControlLowerer::lower_for_frame(&mut input, &[runtime])
         .expect("text control lowers");
@@ -22,6 +23,7 @@ fn runtime_text_control_style_reaches_render_text_input_control() {
         render[0].style.normal.fill,
         Some([12.0 / 255.0, 24.0 / 255.0, 48.0 / 255.0, 192.0 / 255.0])
     );
+    assert_eq!(render[0].style.normal.depth_milli, Some(1_700));
 }
 
 #[test]
@@ -41,7 +43,7 @@ fn runtime_action_button_style_reaches_render_action_button() {
             input_target: "input.feedback".to_owned(),
             ime_policy: UiTextSubmitImePolicy::Commit,
         },
-        style: styled_fill(64, 96, 64, 255),
+        style: styled_fill_depth(64, 96, 64, 255, 2_100),
     };
 
     let render =
@@ -51,12 +53,20 @@ fn runtime_action_button_style_reaches_render_action_button() {
         render[0].style.normal.fill,
         Some([64.0 / 255.0, 96.0 / 255.0, 64.0 / 255.0, 1.0])
     );
+    assert_eq!(render[0].style.normal.depth_milli, Some(2_100));
 }
 
-fn styled_fill(red: u8, green: u8, blue: u8, alpha: u8) -> UiRuntimeControlStyle {
+fn styled_fill_depth(
+    red: u8,
+    green: u8,
+    blue: u8,
+    alpha: u8,
+    depth_milli: i32,
+) -> UiRuntimeControlStyle {
     UiRuntimeControlStyle {
         normal: UiRuntimeControlVisualStyle {
             fill: Some(RgbaColor::rgba(red, green, blue, alpha)),
+            depth_milli: Some(depth_milli),
             ..UiRuntimeControlVisualStyle::default()
         },
         ..UiRuntimeControlStyle::default()

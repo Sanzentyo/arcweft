@@ -111,96 +111,119 @@ impl RenderTextInputControl {
     }
 }
 
-pub(super) fn build_text_inputs(
+pub(super) fn text_input_depth_milli(
+    scene: &super::RenderScene,
+    control: &RenderTextInputControl,
+) -> i32 {
+    let state = visual_state_for_control(scene, control);
+    control
+        .style
+        .visual_for_state(state)
+        .depth_milli
+        .unwrap_or_default()
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The geometry sinks are intentionally explicit at this renderer boundary."
+)]
+pub(super) fn build_text_input(
     scene: &super::RenderScene,
     layer: &LayerId,
+    control: &RenderTextInputControl,
     semantics: &mut SemanticTree,
     rectangles: &mut Vec<PaintRect>,
     text: &mut Vec<RenderTextBlock>,
     palette: &Palette,
     control_shadows: &mut Vec<PreparedControlShadow>,
 ) -> Result<Option<PreparedTextInputTarget>, FramePlanError> {
-    let mut focused = None;
-    for control in &scene.text_inputs {
-        let options = control.resolved_options()?;
-        let is_focused = scene.interaction.focused.as_ref() == Some(&control.target);
-        let is_hovered = scene.interaction.hovered.as_ref() == Some(&control.target);
-        let is_pressed = scene.interaction.pressed.as_ref() == Some(&control.target);
-        let state = state_from_interaction(ControlInteractionStyleState {
-            enabled: true,
-            focused: is_focused,
-            pointer: ControlPointerStyleState::from_interaction(is_hovered, is_pressed),
-        });
-        let visual = control.style.visual_for_state(state);
-        let visual_layout = visual_layout_for_control(control, &options);
-        push_control_shadow_plan(control_shadows, &control.target, control.bounds, &visual);
-        rectangles.push(PaintRect {
-            bounds: control.bounds,
-            rgba: fill_with_opacity(
-                visual.fill.unwrap_or(if is_focused {
-                    palette.choice_active
-                } else {
-                    palette.choice_idle
-                }),
-                visual.opacity,
-            ),
-        });
-        push_control_border(rectangles, control.bounds, visual.border);
-        if is_focused {
-            if let Some(ring) = visual.focus_ring {
-                push_control_focus_ring(rectangles, control.bounds, ring);
+    let options = control.resolved_options()?;
+    let is_focused = scene.interaction.focused.as_ref() == Some(&control.target);
+    let state = visual_state_for_control(scene, control);
+    let visual = control.style.visual_for_state(state);
+    let visual_layout = visual_layout_for_control(control, &options);
+    push_control_shadow_plan(control_shadows, &control.target, control.bounds, &visual);
+    rectangles.push(PaintRect {
+        bounds: control.bounds,
+        rgba: fill_with_opacity(
+            visual.fill.unwrap_or(if is_focused {
+                palette.choice_active
             } else {
-                super::push_focus_ring(rectangles, control.bounds, palette.focus_ring);
-            }
-            push_renderer_text_input_selection(
-                rectangles,
-                control,
-                &visual_layout,
-                visual.selection.unwrap_or(palette.choice_active),
-            );
-            push_renderer_text_input_caret(
-                rectangles,
-                control,
-                &visual_layout,
-                visual.caret.unwrap_or(palette.focus_ring),
-            );
+                palette.choice_idle
+            }),
+            visual.opacity,
+        ),
+    });
+    push_control_border(rectangles, control.bounds, visual.border);
+    if is_focused {
+        if let Some(ring) = visual.focus_ring {
+            push_control_focus_ring(rectangles, control.bounds, ring);
+        } else {
+            super::push_focus_ring(rectangles, control.bounds, palette.focus_ring);
         }
-
-        text.push(RenderTextBlock {
-            text: visual_layout.display_value.clone(),
-            bounds: visual_layout.text_bounds,
-            clip_bounds: Some(visual_layout.clip_bounds),
-            buffer_width: Some(visual_layout.buffer_size.width),
-            buffer_height: Some(visual_layout.buffer_size.height),
-            font_size: text_control_font_size(control),
-            line_height: text_control_line_height(control),
-            font_family: RenderFontFamily::SansSerif,
-            weight: RenderTextWeight::Regular,
-            slant: RenderTextSlant::Upright,
-            rgba: visual.text.unwrap_or(palette.choice_text),
-        });
-
-        let mut node = SemanticNode::new(
-            layer.clone(),
-            control.target.clone(),
-            control.role,
-            control.bounds,
+        push_renderer_text_input_selection(
+            rectangles,
+            control,
+            &visual_layout,
+            visual.selection.unwrap_or(palette.choice_active),
         );
-        if let Some(label) = &control.label {
-            node = node.with_label(label.clone());
-        }
-        semantics.push(node);
-
-        if is_focused {
-            focused = Some(prepare_text_input_target(
-                scene.viewport,
-                control,
-                &options,
-                &visual_layout.laid_out,
-            )?);
-        }
+        push_renderer_text_input_caret(
+            rectangles,
+            control,
+            &visual_layout,
+            visual.caret.unwrap_or(palette.focus_ring),
+        );
     }
-    Ok(focused)
+
+    text.push(RenderTextBlock {
+        text: visual_layout.display_value.clone(),
+        bounds: visual_layout.text_bounds,
+        clip_bounds: Some(visual_layout.clip_bounds),
+        buffer_width: Some(visual_layout.buffer_size.width),
+        buffer_height: Some(visual_layout.buffer_size.height),
+        font_size: text_control_font_size(control),
+        line_height: text_control_line_height(control),
+        font_family: RenderFontFamily::SansSerif,
+        weight: RenderTextWeight::Regular,
+        slant: RenderTextSlant::Upright,
+        rgba: visual.text.unwrap_or(palette.choice_text),
+    });
+
+    let mut node = SemanticNode::new(
+        layer.clone(),
+        control.target.clone(),
+        control.role,
+        control.bounds,
+    );
+    if let Some(label) = &control.label {
+        node = node.with_label(label.clone());
+    }
+    semantics.push(node);
+
+    if is_focused {
+        Ok(Some(prepare_text_input_target(
+            scene.viewport,
+            control,
+            &options,
+            &visual_layout.laid_out,
+        )?))
+    } else {
+        Ok(None)
+    }
+}
+
+fn visual_state_for_control(
+    scene: &super::RenderScene,
+    control: &RenderTextInputControl,
+) -> super::RenderControlVisualState {
+    let is_focused = scene.interaction.focused.as_ref() == Some(&control.target);
+    let is_hovered = scene.interaction.hovered.as_ref() == Some(&control.target);
+    let is_pressed = scene.interaction.pressed.as_ref() == Some(&control.target);
+    state_from_interaction(ControlInteractionStyleState {
+        enabled: true,
+        focused: is_focused,
+        pointer: ControlPointerStyleState::from_interaction(is_hovered, is_pressed),
+    })
 }
 
 fn push_renderer_text_input_selection(

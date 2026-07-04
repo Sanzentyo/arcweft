@@ -141,6 +141,60 @@ fn supported_box_shadow_reaches_existing_shadow_pass_plan() {
     assert_f32_near(shadow.plan.passes()[0].shadow.blur_radius_px, 18.0);
 }
 
+#[test]
+fn authored_control_depth_orders_text_inputs_and_buttons_together() {
+    let input_target = target("input.feedback");
+    let button_target = target("button.submit_feedback");
+    let input = text_control(input_target.clone()).with_style(RenderControlStyle {
+        normal: RenderControlVisualStyle {
+            fill: Some([0.8, 0.1, 0.1, 0.75]),
+            depth_milli: Some(3_000),
+            ..RenderControlVisualStyle::default()
+        },
+        ..RenderControlStyle::default()
+    });
+    let button = RenderActionButton {
+        target: button_target,
+        label: "Send".to_owned(),
+        enabled: true,
+        bounds: HitRect::new(72.0, 52.0, 128.0, 48.0),
+        style: RenderControlStyle {
+            normal: RenderControlVisualStyle {
+                fill: Some([0.1, 0.2, 0.8, 0.75]),
+                depth_milli: Some(1_000),
+                ..RenderControlVisualStyle::default()
+            },
+            ..RenderControlStyle::default()
+        },
+        action: RenderActionButtonAction::TextInputSubmit {
+            input_target,
+            session: TextInputSessionId(41),
+            value: TextControlValue::plain("hello"),
+            selection: TextRange::new(TextByteOffset(5), TextByteOffset(5)),
+            revision: TextRevision::default(),
+            ime_policy: RenderTextSubmitImePolicy::Commit,
+        },
+    };
+    let scene = scene(vec![input], vec![button], InteractionVisualState::default());
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+
+    let button_rect = frame
+        .rectangles
+        .iter()
+        .position(|rect| rgba_near(rect.rgba, [0.1, 0.2, 0.8, 0.75]))
+        .expect("button rectangle exists");
+    let input_rect = frame
+        .rectangles
+        .iter()
+        .position(|rect| rgba_near(rect.rgba, [0.8, 0.1, 0.1, 0.75]))
+        .expect("input rectangle exists");
+    assert!(
+        button_rect < input_rect,
+        "lower-depth button should be painted before higher-depth text input"
+    );
+}
+
 fn scene_with_button(
     button_target: InteractionTarget,
     interaction: InteractionVisualState,
