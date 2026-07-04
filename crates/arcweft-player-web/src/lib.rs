@@ -14,6 +14,10 @@ pub mod web_text_input;
 
 #[cfg(target_arch = "wasm32")]
 mod app;
+#[cfg(target_arch = "wasm32")]
+mod seq06_13e1_exact;
 
 #[cfg(target_arch = "wasm32")]
 pub use app::start_arcweft_player;
+#[cfg(target_arch = "wasm32")]
+pub use seq06_13e1_exact::capture_seq06_13e1_inset_box_shadow_exact_png;

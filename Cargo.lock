@@ -998,6 +998,7 @@ dependencies = [
  "arcweft-render-wgpu",
  "arcweft-runtime-driver",
  "arcweft-runtime-host",
+ "futures-channel",
  "js-sys",
  "num-traits",
  "serde",
@@ -1006,6 +1007,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "wgpu",
  "winit",
 ]
 

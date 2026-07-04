@@ -28,7 +28,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ButtonSource, ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::keyboard::{Key, NamedKey};
+use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::platform::web::WindowAttributesWeb;
 use winit::window::{Window, WindowAttributes, WindowId};
 
@@ -87,6 +87,7 @@ struct PlayerState {
     images: BundleImageCatalog,
     input: InputController,
     text_input: WebPlayerTextInputBridgeHandle,
+    keyboard_modifiers: ModifiersState,
     clock: LogicalClockQuantizer,
     font_bytes: Option<Vec<u8>>,
     prepared: Option<arcweft_render_wgpu::geometry::PreparedFrame>,
@@ -183,6 +184,7 @@ fn start(
         images,
         input: InputController::default(),
         text_input,
+        keyboard_modifiers: ModifiersState::default(),
         clock,
         font_bytes: Some(font_bytes),
         prepared: None,
@@ -308,6 +310,9 @@ impl ApplicationHandler for BrowserApp {
                 apply_outcome(&mut state, outcome);
                 window.request_redraw();
             }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                state.keyboard_modifiers = modifiers.state();
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 let key = key_label(&event.logical_key);
                 let phase = match event.state {
@@ -323,11 +328,12 @@ impl ApplicationHandler for BrowserApp {
                         .text_input
                         .key_disposition()
                         .unwrap_or(TextInputKeyDisposition::ShortcutCandidate);
+                    let shift_pressed = state.keyboard_modifiers.shift_key();
                     let outcome = state.input.keyboard_with_modifiers_and_ime(
                         &frame,
                         &key,
                         phase,
-                        event.modifiers.shift_key(),
+                        shift_pressed,
                         disposition,
                     );
                     apply_outcome(&mut state, outcome);

@@ -4,8 +4,8 @@
   "fixture": "seq06_13e1_inset_box_shadow_exact_png",
   "tier": "tier2_environment_gated",
   "default_fast_path": false,
-  "status": "native_png_promoted_from_user_approved_current_pinned_environment_web_pending",
-  "source_request": "docs/reviews/requests/2026-07-04-seq-06.13e.1-inset-box-shadow-pinned-png-golden-promotion.md",
+  "status": "native_png_promoted_web_exact_readback_harness_implemented_web_reference_pending_review",
+  "source_request": "docs/reviews/requests/2026-07-04-seq-06.13e.1.1-web-exact-png-readback-harness.md",
   "renderer_contract": {
     "must_use": [
       "Takumi typed CSS parse/cascade for authored CSS fixture",
@@ -13,7 +13,8 @@
       "UiCompositingEffects::box_shadows",
       "UiBoxShadowPassPlan unified outer/inset pass list",
       "UiCompositor::render_group",
-      "PASS_BOX_SHADOW WGSL kind flag"
+      "PASS_BOX_SHADOW WGSL kind flag",
+      "WebAssembly-exported renderer readback for the browser/WebGPU exact packet"
     ],
     "must_not_use": [
       "browser DOM CSS box-shadow screenshots",
@@ -23,7 +24,8 @@
       "bitmap mask screenshot replacement",
       "renderer/lowering/shader redesign without pinned defect evidence"
     ],
-    "smoke_fixture_decision": "keep the existing ignored GPU smoke as a compositor execution regression; exact PNG native and Web fixtures are separate because promotion requires fingerprints, candidate PNGs, imq JSON, command logs, and a review decision packet"
+    "smoke_fixture_decision": "keep the existing ignored GPU smoke as a compositor execution regression; exact PNG native and Web fixtures are separate because promotion requires fingerprints, candidate PNGs, imq JSON, command logs, and a review decision packet",
+    "web_capture_decision": "Playwright launches the pinned browser, but pixels come from the wasm-exported Arcweft WGPU compositor reading back an Arcweft-owned rgba8unorm texture. The browser test script only writes PNG/JSON artifacts. It does not call Playwright screenshot APIs or use DOM/CSS rendering as evidence."
   },
   "fixtures": [
     {
@@ -40,11 +42,20 @@
       "id": "seq06_13e1_inset_box_shadow_web_exact",
       "target": "web",
       "scene": "the same rounded inset shadow card plus mixed outer+inset card and render state",
+      "capture_html": "web/seq06-13e1-inset-shadow-capture.html",
+      "capture_script": "web/tests/seq06-13e1-inset-shadow-exact-capture.mjs",
+      "wasm_export": "crates/arcweft-player-web/src/seq06_13e1_exact.rs",
       "candidate_png": "target/seq06.13e.1-inset-box-shadow-golden/web/seq06_13e1_inset_box_shadow.candidate.png",
       "reference_png": "fixtures/visual-smoke-goldens/seq06.13e.1-inset-box-shadow/web/seq06_13e1_inset_box_shadow.png",
       "observation_json": "target/seq06.13e.1-inset-box-shadow-golden/web/seq06_13e1_inset_box_shadow.observe.json",
       "imq_json": "target/seq06.13e.1-inset-box-shadow-golden/web/seq06_13e1_inset_box_shadow.imq.json",
-      "environment_json": "target/seq06.13e.1-inset-box-shadow-golden/web/seq06_13e1_inset_box_shadow.environment.json"
+      "environment_json": "target/seq06.13e.1-inset-box-shadow-golden/web/seq06_13e1_inset_box_shadow.environment.json",
+      "command_logs": [
+        "target/seq06.13e.1-inset-box-shadow-golden/web/command-logs/web-wasm-cargo-build.log",
+        "target/seq06.13e.1-inset-box-shadow-golden/web/command-logs/web-wasm-bindgen.log",
+        "target/seq06.13e.1-inset-box-shadow-golden/web/command-logs/web-exact-png-capture.log",
+        "target/seq06.13e.1-inset-box-shadow-golden/web/command-logs/webgpu-smoke.log"
+      ]
     }
   ],
   "native_environment_fingerprint": {
@@ -80,15 +91,7 @@
       "viewport.device_pixel_ratio": 1.0,
       "font.state": "MS Mincho probe recorded even though the direct compositor fixture is texture-only; missing font remains an environment_blocker to avoid weakening exact native policy",
       "png.format": "rgba8unorm PNG emitted from the shared wgpu compositor readback path"
-    },
-    "same_run_values_required_before_promotion": [
-      "os.version_family",
-      "gpu.adapter_label",
-      "gpu.adapter_vendor",
-      "gpu.adapter_device",
-      "gpu.driver",
-      "imq.version"
-    ]
+    }
   },
   "web_environment_fingerprint": {
     "schema": "arcweft.seq06.13e1.inset_box_shadow.web_environment.v1",
@@ -96,6 +99,14 @@
       "ARW_SEQ06_13E1_INSET_SHADOW_GOLDEN_REQUIRED": "1",
       "ARW_SEQ06_13E1_INSET_SHADOW_GOLDEN_PINNED": "1",
       "ARW_SEQ06_13E1_INSET_SHADOW_WEBGPU": "1"
+    },
+    "runner": {
+      "browser": "Playwright chromium with channel from ARW_PLAYWRIGHT_CHANNEL or chrome",
+      "launch_flags": [
+        "--enable-unsafe-webgpu",
+        "--use-angle=d3d11 on Windows"
+      ],
+      "readback": "WebAssembly-exported renderer readback from an Arcweft-owned WebGPU rgba8unorm texture"
     },
     "required_fields": [
       "browser.name",
@@ -123,7 +134,7 @@
       "device_pixel_ratio": 1.0,
       "required_feature_flags": [
         "WebGPU enabled",
-        "deterministic canvas readback enabled"
+        "deterministic Arcweft WGPU texture copy/readback enabled"
       ]
     },
     "same_run_values_required_before_promotion": [
@@ -133,7 +144,9 @@
       "webgpu.adapter_label",
       "webgpu.backend",
       "webgpu.driver",
-      "imq.version"
+      "imq.version",
+      "candidate.hash",
+      "reference.hash"
     ]
   },
   "acceptance_metrics": {
@@ -142,23 +155,15 @@
       "dimensions_must_match": true,
       "max_mse": 0.002,
       "max_mae": 0.003,
-      "record_only": [
-        "psnr",
-        "ssim",
-        "maxae"
-      ],
+      "record_only": ["psnr", "ssim", "maxae"],
       "strict_hash": false
     },
     "web": {
-      "policy": "same pinned Web baseline policy for this WebGPU fixture; do not compare against DOM/CSS screenshots",
+      "policy": "separate Web-specific baseline for this browser/WebGPU fixture; do not compare against DOM/CSS screenshots and do not promote from native without Web same-run evidence",
       "dimensions_must_match": true,
       "max_mse": 0.002,
       "max_mae": 0.003,
-      "record_only": [
-        "psnr",
-        "ssim",
-        "maxae"
-      ],
+      "record_only": ["psnr", "ssim", "maxae"],
       "strict_hash": false
     }
   },
@@ -173,6 +178,7 @@
   "promotion_rule": {
     "checked_in_png_updates_allowed_from_unpinned_environment": false,
     "blind_regeneration_allowed": false,
+    "web_reference_promoted_separately_from_native": true,
     "required_review_packet": [
       "candidate PNG",
       "observation JSON",

@@ -149,13 +149,13 @@ Native promotion result:
   `seq06_13e1_inset_shadow_native_exact_png_packet_is_complete` passed with the
   pinned env set.
 
-The Web exact capture harness remains pending because the existing `web`
-Playwright smoke validates the application canvas but does not render this
-320x180 seq06.13e.1 compositor fixture through a pinned browser/WebGPU readback
-path. DOM/CSS screenshots remain forbidden for this fixture.
-
-Follow-up design/implementation request:
-`docs/reviews/requests/2026-07-04-seq-06.13e.1.1-web-exact-png-readback-harness.md`.
+The Web exact capture harness follow-up is now applied in
+`docs/implementation/seq-06.13e.1.1-web-exact-png-readback-harness-2026-07-04.md`.
+The harness builds the wasm player, runs `wasm-bindgen`, launches the pinned
+browser/WebGPU route, and rejects DOM/CSS screenshot fallbacks. The current
+pinned browser attempt is still not promotable: the wasm readback reached the
+browser but produced a fully transparent candidate and is classified as
+`transparent_candidate`. No Web reference PNG has been added or updated.
 
 Additional local validation after adding the native capture harness:
 

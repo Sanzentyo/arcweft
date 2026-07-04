@@ -12,8 +12,6 @@ publish = false
 Validates that seq06.13e.1 exact golden policy/docs keep the typed Arcweft
 compositor route and the no-fallback contract. This gate is safe outside the
 pinned visual-golden environment because it does not compare pixels.
-
-cargo +nightly -Zscript tools/source-gates/seq06_13e1_inset_shadow_exact_golden_policy.rs --root .
 */
 
 use std::env;
@@ -52,11 +50,19 @@ fn run() -> Result<(), String> {
     )?;
     let note = read_required(
         &root,
-        "docs/implementation/seq-06.13e.1-inset-box-shadow-pinned-png-golden-promotion-2026-07-04.md",
+        "docs/implementation/seq-06.13e.1.1-web-exact-png-readback-harness-2026-07-04.md",
     )?;
     let native_capture = read_required(
         &root,
         "tools/capture-seq06-13e1-inset-shadow-native-frame.rs",
+    )?;
+    let web_capture = read_required(
+        &root,
+        "crates/arcweft-player-web/src/seq06_13e1_exact.rs",
+    )?;
+    let web_script = read_required(
+        &root,
+        "web/tests/seq06-13e1-inset-shadow-exact-capture.mjs",
     )?;
     let collector = read_required(
         &root,
@@ -73,6 +79,7 @@ fn run() -> Result<(), String> {
         "browser DOM CSS box-shadow screenshots",
         "canvas 2D fallback",
         "CPU raster fallback",
+        "WebAssembly-exported renderer readback",
         "environment_not_pinned",
         "baseline_missing",
         "max_mse",
@@ -88,15 +95,27 @@ fn run() -> Result<(), String> {
         require_contains(text, "CPU raster fallback", label)?;
     }
 
-    require_contains(&note, "The native PNG baseline is promoted", "implementation note")?;
-    require_contains(&note, "Web PNG baseline remains", "implementation note")?;
-    require_contains(&note, "pinned visual-golden run", "implementation note")?;
+    require_contains(&note, "Web exact readback harness", "implementation note")?;
+    require_contains(&note, "no-promotion", "implementation note")?;
+    require_contains(&note, "WebAssembly-exported renderer readback", "implementation note")?;
     require_contains(&native_capture, "UiCompositor::render_group", "native capture")?;
     require_contains(&native_capture, "PASS_BOX_SHADOW WGSL kind flag", "native capture")?;
     require_contains(&native_capture, "seq06_13e1_inset_box_shadow.candidate.png", "native capture")?;
     require_contains(&native_capture, "seq06_13e1_inset_box_shadow.observe.json", "native capture")?;
+    require_contains(&web_capture, "capture_seq06_13e1_inset_box_shadow_exact_png", "web wasm capture")?;
+    require_contains(&web_capture, "UiCompositor::render_group", "web wasm capture")?;
+    require_contains(&web_capture, "copy_texture_to_buffer", "web wasm capture")?;
+    require_absent(&web_capture, "getContext", "web wasm capture")?;
+    require_contains(&web_script, "capture_seq06_13e1_inset_box_shadow_exact_png", "web capture script")?;
+    for forbidden in [".screenshot(", "getContext(\"2d\")", "toDataURL", "drawImage"] {
+        require_absent(&web_script, forbidden, "web capture script")?;
+    }
+    require_contains(&collector, "web-exact-png-capture.log", "collector")?;
     require_contains(&collector, "ready_for_first_promotion_review", "collector")?;
     require_contains(&collector, "baseline_missing", "collector")?;
+    require_contains(&collector, "missing_browser_runtime", "collector")?;
+    require_contains(&collector, "missing_candidate_png", "collector")?;
+    require_contains(&collector, "transparent_candidate", "collector")?;
     require_contains(&collector, "max_mse", "collector")?;
     require_contains(&collector, "max_mae", "collector")?;
     require_contains(&css, "box-shadow: inset", "CSS fixture")?;
@@ -141,9 +160,7 @@ fn next_arg(
     values: &mut std::iter::Peekable<impl Iterator<Item = String>>,
     name: &str,
 ) -> Result<String, String> {
-    values
-        .next()
-        .ok_or_else(|| format!("{name} requires a value"))
+    values.next().ok_or_else(|| format!("{name} requires a value"))
 }
 
 fn read_required(root: &Path, relative: &str) -> Result<String, String> {
@@ -156,5 +173,13 @@ fn require_contains(text: &str, needle: &str, label: &str) -> Result<(), String>
         Ok(())
     } else {
         Err(format!("{label} is missing required fragment `{needle}`"))
+    }
+}
+
+fn require_absent(text: &str, needle: &str, label: &str) -> Result<(), String> {
+    if text.contains(needle) {
+        Err(format!("{label} contains forbidden fragment `{needle}`"))
+    } else {
+        Ok(())
     }
 }

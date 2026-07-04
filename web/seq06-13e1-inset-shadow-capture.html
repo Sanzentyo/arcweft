@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Arcweft seq06.13e.1 Web exact readback capture</title>
+    <style>
+      html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        background: transparent;
+      }
+      #seq06-13e1-canvas-fingerprint {
+        width: 320px;
+        height: 180px;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas
+      id="seq06-13e1-canvas-fingerprint"
+      width="320"
+      height="180"
+      data-arcweft-fixture="seq06_13e1_inset_box_shadow"
+    ></canvas>
+    <script type="module">
+      globalThis.__arcweftSeq0613e1CaptureHostReady = true;
+    </script>
+  </body>
+</html>

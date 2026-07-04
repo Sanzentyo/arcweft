@@ -41,7 +41,8 @@
     "UiCompositingEffects::box_shadows",
     "UiBoxShadowPassPlan unified outer/inset pass list",
     "UiCompositor::render_group",
-    "PASS_BOX_SHADOW WGSL kind flag"
+    "PASS_BOX_SHADOW WGSL kind flag",
+    "WebAssembly-exported renderer readback from an Arcweft-owned WebGPU texture"
   ],
   "forbidden_paths": [
     "browser DOM CSS box-shadow screenshots",
@@ -51,6 +52,23 @@
     "bitmap mask screenshot replacement",
     "renderer/lowering/shader redesign without pinned defect evidence"
   ],
+  "browser_runner": {
+    "tool": "Playwright chromium",
+    "channel": "ARW_PLAYWRIGHT_CHANNEL or chrome",
+    "launch_flags": [
+      "--enable-unsafe-webgpu",
+      "--use-angle=d3d11 on Windows"
+    ],
+    "host_page": "web/seq06-13e1-inset-shadow-capture.html",
+    "capture_script": "web/tests/seq06-13e1-inset-shadow-exact-capture.mjs"
+  },
+  "readback_path": {
+    "owner": "Arcweft wasm export",
+    "export": "capture_seq06_13e1_inset_box_shadow_exact_png",
+    "source": "Arcweft-owned wgpu rgba8unorm texture rendered by UiCompositor",
+    "operation": "copy_texture_to_buffer",
+    "png_writer": "Node writes PNG from raw RGBA bytes returned by the wasm export; browser screenshots are not used"
+  },
   "artifact_paths": {
     "id": "seq06_13e1_inset_box_shadow_web_exact",
     "target": "web",
@@ -59,8 +77,9 @@
     "reference_png": "fixtures/visual-smoke-goldens/seq06.13e.1-inset-box-shadow/web/seq06_13e1_inset_box_shadow.png",
     "observation_json": "target/seq06.13e.1-inset-box-shadow-golden/web/seq06_13e1_inset_box_shadow.observe.json",
     "imq_json": "target/seq06.13e.1-inset-box-shadow-golden/web/seq06_13e1_inset_box_shadow.imq.json",
-    "environment_json": "target/seq06.13e.1-inset-box-shadow-golden/web/seq06_13e1_inset_box_shadow.environment.json"
+    "environment_json": "target/seq06.13e.1-inset-box-shadow-golden/web/seq06_13e1_inset_box_shadow.environment.json",
+    "command_logs": "target/seq06.13e.1-inset-box-shadow-golden/web/command-logs/"
   },
-  "promotion_status": "not_promoted_web_exact_readback_harness_pending",
-  "promotion_reason": "The current repository has Playwright/WebGPU smoke coverage, but no seq06.13e.1 browser/WebGPU exact readback harness that writes this fixture's candidate PNG, observe JSON, imq JSON, command logs, and review decision. DOM/CSS screenshots remain forbidden."
+  "promotion_status": "not_promoted_web_reference_pending_pinned_review",
+  "promotion_reason": "The harness is implemented, but this package was not produced from a pinned browser/WebGPU run. The checked-in Web reference PNG must be promoted separately only after the collector writes a same-run Web packet and review decision."
 }

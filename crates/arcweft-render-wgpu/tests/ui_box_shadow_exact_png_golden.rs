@@ -34,6 +34,22 @@ impl Target {
             .join(self.as_str())
             .join("seq06_13e1_inset_box_shadow.png")
     }
+
+    fn capture_log(self) -> PathBuf {
+        self.artifact_dir().join("command-logs").join(match self {
+            Self::Native => "native-exact-png-capture.log",
+            Self::Web => "web-exact-png-capture.log",
+        })
+    }
+
+    fn review_decision(self) -> PathBuf {
+        workspace_root()
+            .join("target/seq06.13e.1-inset-box-shadow-golden/review")
+            .join(format!(
+                "seq06_13e1_{}_promotion_decision.json",
+                self.as_str()
+            ))
+    }
 }
 
 #[test]
@@ -48,6 +64,7 @@ fn seq06_13e1_inset_shadow_policy_pins_typed_compositor_route() {
         "UiCompositor::render_group",
         "PASS_BOX_SHADOW",
         "CPU raster fallback",
+        "WebAssembly-exported renderer readback",
     ] {
         assert!(
             policy.contains(required),
@@ -87,6 +104,53 @@ fn seq06_13e1_inset_shadow_policy_pins_typed_compositor_route() {
     .expect("read seq06.13e GPU smoke source");
     assert!(smoke.contains("UiBoxShadow::inset"));
     assert!(smoke.contains("stats.box_shadow_passes, 3"));
+
+    let web_export =
+        fs::read_to_string(root.join("crates/arcweft-player-web/src/seq06_13e1_exact.rs"))
+            .expect("read Web exact wasm export source");
+    assert!(web_export.contains("capture_seq06_13e1_inset_box_shadow_exact_png"));
+    assert!(web_export.contains("UiCompositor::render_group"));
+    assert!(web_export.contains("copy_texture_to_buffer"));
+    assert!(!web_export.contains("getContext"));
+
+    let web_script =
+        fs::read_to_string(root.join("web/tests/seq06-13e1-inset-shadow-exact-capture.mjs"))
+            .expect("read Web exact capture script");
+    assert!(web_script.contains("capture_seq06_13e1_inset_box_shadow_exact_png"));
+    for forbidden in [
+        ".screenshot(",
+        "getContext(\"2d\")",
+        "toDataURL",
+        "drawImage",
+    ] {
+        assert!(
+            !web_script.contains(forbidden),
+            "Web exact capture script must not use forbidden fallback fragment `{forbidden}`"
+        );
+    }
+}
+
+#[test]
+fn seq06_13e1_inset_shadow_web_collector_classifies_exact_failures() {
+    let collector = fs::read_to_string(
+        workspace_root().join("tools/collect-seq06-13e1-inset-shadow-pinned-golden-evidence.rs"),
+    )
+    .expect("read seq06.13e.1 collector source");
+    for required in [
+        "webgpu_pin_missing",
+        "missing_browser_runtime",
+        "missing_web_runtime_tool",
+        "missing_candidate_png",
+        "transparent_candidate",
+        "candidate and reference PNG dimensions differ",
+        "imq comparison failed",
+        "web-exact-png-capture.log",
+    ] {
+        assert!(
+            collector.contains(required),
+            "collector should retain Web exact failure classification `{required}`"
+        );
+    }
 }
 
 #[test]
@@ -108,7 +172,16 @@ fn assert_exact_png_packet(target: Target) {
     let metrics = dir.join("seq06_13e1_inset_box_shadow.imq.json");
     let environment = dir.join("seq06_13e1_inset_box_shadow.environment.json");
     let reference = target.reference_png();
-    let required = [&candidate, &reference, &observe, &metrics, &environment];
+    let capture_log = target.capture_log();
+    let review = target.review_decision();
+    let required = [
+        &candidate,
+        &observe,
+        &metrics,
+        &environment,
+        &capture_log,
+        &review,
+    ];
     let missing = required
         .iter()
         .filter(|path| !path.exists())
@@ -126,9 +199,39 @@ fn assert_exact_png_packet(target: Target) {
     }
 
     assert_png_dimensions(&candidate, EXPECTED_SIZE, "candidate");
-    assert_png_dimensions(&reference, EXPECTED_SIZE, "reference");
-    assert_json_contains(&observe, &["PASS_BOX_SHADOW", "box_shadow", "inset"]);
-    assert_json_contains(&environment, &["environment", "imq", "arcweft"]);
+    if reference.exists() {
+        assert_png_dimensions(&reference, EXPECTED_SIZE, "reference");
+        assert_json_contains(
+            &review,
+            &["passed_existing_baseline_gate", "promoted", "false"],
+        );
+    } else {
+        assert_json_contains(&metrics, &["baseline_missing", "max_mse", "max_mae"]);
+        assert_json_contains(
+            &review,
+            &["ready_for_first_promotion_review", "promoted", "false"],
+        );
+    }
+    assert_json_contains(
+        &observe,
+        &[
+            "PASS_BOX_SHADOW",
+            "box_shadow",
+            "inset",
+            "UiCompositor::render_group",
+            "copy_texture_to_buffer",
+        ],
+    );
+    assert_json_contains(
+        &environment,
+        &["environment", "imq", "arcweft", "candidate", "reference"],
+    );
+    if matches!(target, Target::Web) {
+        assert_json_contains(
+            &environment,
+            &["browser", "runtime", "webgpu", "device_pixel_ratio"],
+        );
+    }
     assert_json_contains(&metrics, METRICS);
 }
 
