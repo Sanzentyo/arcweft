@@ -1119,6 +1119,7 @@ dependencies = [
  "glyphon",
  "num-traits",
  "pollster",
+ "serde",
  "thiserror 2.0.18",
  "wgpu",
 ]

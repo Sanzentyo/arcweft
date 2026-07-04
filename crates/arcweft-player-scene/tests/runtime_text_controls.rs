@@ -202,6 +202,8 @@ fn scene_with_text_inputs(
         choices: Vec::new(),
         text_inputs,
         action_buttons: Vec::new(),
+        focus_groups: Vec::new(),
+        focus_navigation: Vec::new(),
         images: Vec::new(),
         viewport: RenderViewport {
             logical_width: 800.0,

@@ -2,7 +2,8 @@ use crate::ast::common::TextRange;
 use crate::ast::ids::{EntityRef, EntityRefSyntax, IdRef};
 use crate::ast::view::{
     ComponentViewBody, ViewAction, ViewArg, ViewButton, ViewButtonLabel, ViewElement, ViewExpr,
-    ViewImage, ViewModifier, ViewStyleModifier, ViewText, ViewTextField, ViewTextFieldMode,
+    ViewImage, ViewModifier, ViewNavigationDirection, ViewNavigationEdge, ViewNavigationModifier,
+    ViewNavigationTarget, ViewStyleModifier, ViewText, ViewTextField, ViewTextFieldMode,
     ViewTextSubmitAction, ViewTextSubmitImePolicy,
 };
 use crate::cst::{split_top_level_punctuation, split_top_level_punctuation_once};
@@ -334,6 +335,13 @@ fn parse_view_modifier(
     if let Some(part) = call_arg(line, ".part") {
         return Some((ViewModifier::Part(part.trim().to_owned()), 1));
     }
+    if let Some(value) = call_arg(line, ".nav") {
+        let range = TextRange::new(base, base.saturating_add(line.len()));
+        return Some((
+            ViewModifier::Navigation(parse_navigation_modifier(value, range)?),
+            1,
+        ));
+    }
     if let Some(value) = call_arg(line, ".placeholder") {
         return Some((ViewModifier::Placeholder(parse_expr_lossy(value)), 1));
     }
@@ -398,6 +406,47 @@ fn rebase_style_ref_entity(entity: EntityRef, module_path: Option<&str>) -> Enti
         return entity;
     };
     EntityRef::module_scoped_declaration("style", suffix, module_path, *entity.range())
+}
+
+fn parse_navigation_modifier(source: &str, range: TextRange) -> Option<ViewNavigationModifier> {
+    let edges = parse_view_args(source)
+        .into_iter()
+        .filter_map(|arg| {
+            let ViewArg::Named { name, value } = arg else {
+                return None;
+            };
+            Some(ViewNavigationEdge::new(
+                parse_navigation_direction(&name)?,
+                parse_navigation_target(&value)?,
+            ))
+        })
+        .collect::<Vec<_>>();
+    (!edges.is_empty()).then(|| ViewNavigationModifier::new(edges, range))
+}
+
+fn parse_navigation_direction(value: &str) -> Option<ViewNavigationDirection> {
+    match value.trim().trim_start_matches('.') {
+        "up" => Some(ViewNavigationDirection::Up),
+        "down" => Some(ViewNavigationDirection::Down),
+        "left" => Some(ViewNavigationDirection::Left),
+        "right" => Some(ViewNavigationDirection::Right),
+        "next" => Some(ViewNavigationDirection::Next),
+        "previous" => Some(ViewNavigationDirection::Previous),
+        _ => None,
+    }
+}
+
+fn parse_navigation_target(value: &Expr) -> Option<ViewNavigationTarget> {
+    match value {
+        Expr::EntityRef(reference) => Some(ViewNavigationTarget::Explicit(reference.clone())),
+        Expr::Raw(value) | Expr::Path(value) => match value.trim().trim_start_matches('.') {
+            "auto" => Some(ViewNavigationTarget::Auto),
+            "none" => Some(ViewNavigationTarget::None),
+            "boundary" | "group_boundary" => Some(ViewNavigationTarget::GroupBoundary),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 fn build_view_expr(chain: ParsedViewChain, range: TextRange) -> ViewExpr {

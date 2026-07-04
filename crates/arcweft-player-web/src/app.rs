@@ -323,9 +323,13 @@ impl ApplicationHandler for BrowserApp {
                         .text_input
                         .key_disposition()
                         .unwrap_or(TextInputKeyDisposition::ShortcutCandidate);
-                    let outcome = state
-                        .input
-                        .keyboard_with_ime(&frame, &key, phase, disposition);
+                    let outcome = state.input.keyboard_with_modifiers_and_ime(
+                        &frame,
+                        &key,
+                        phase,
+                        event.modifiers.shift_key(),
+                        disposition,
+                    );
                     apply_outcome(&mut state, outcome);
                 }
                 window.request_redraw();
@@ -495,6 +499,7 @@ fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) {
         text_control_write_backs,
         diagnostics: _,
         dialogue_advance,
+        cancel: _,
         redraw: _,
     } = outcome;
     if dialogue_advance {
@@ -568,6 +573,7 @@ fn key_label(key: &Key) -> String {
         Key::Named(NamedKey::Enter) => "Enter".to_owned(),
         Key::Named(NamedKey::Home) => "Home".to_owned(),
         Key::Named(NamedKey::End) => "End".to_owned(),
+        Key::Named(NamedKey::Tab) => "Tab".to_owned(),
         Key::Character(value) if value == " " => "Space".to_owned(),
         Key::Character(value) => value.to_string(),
         _ => format!("{key:?}"),

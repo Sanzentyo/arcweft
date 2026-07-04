@@ -25,6 +25,8 @@ fn empty_scene() -> RenderScene {
         choices: Vec::new(),
         text_inputs: Vec::new(),
         action_buttons: Vec::new(),
+        focus_groups: Vec::new(),
+        focus_navigation: Vec::new(),
         images: Vec::new(),
         viewport: viewport(),
         visual_time_millis: 0,

@@ -1,0 +1,34 @@
+{
+  "program_id": "ui.program.focus_navigation_controller_sample",
+  "root_component": "FocusNavigationControllerSample",
+  "focus_groups": [
+    {
+      "public_id": "group.settings",
+      "policy": "modal",
+      "initial": { "explicit": { "target": "input.name" } },
+      "wrap": "no_wrap",
+      "disabled_skip": "skip",
+      "hidden_skip": "skip"
+    }
+  ],
+  "focus_navigation": [
+    {
+      "public_id": "input.name",
+      "group": "group.settings",
+      "edges": [
+        { "direction": "right", "target": { "explicit": { "target": "button.apply" } } },
+        { "direction": "down", "target": { "explicit": { "target": "input.notes" } } },
+        { "direction": "previous", "target": "group_boundary" }
+      ]
+    },
+    {
+      "public_id": "button.apply",
+      "group": "group.settings",
+      "edges": [
+        { "direction": "left", "target": { "explicit": { "target": "input.name" } } },
+        { "direction": "down", "target": { "explicit": { "target": "button.danger" } } },
+        { "direction": "next", "target": { "explicit": { "target": "input.notes" } } }
+      ]
+    }
+  ]
+}

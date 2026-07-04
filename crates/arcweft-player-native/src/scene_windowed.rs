@@ -42,7 +42,7 @@ use winit::event::{
     ButtonSource, ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent,
 };
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::keyboard::{Key, NamedKey};
+use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::window::{
     ImeCapabilities, ImeEnableRequest, ImeHint, ImePurpose, ImeRequest, ImeRequestData,
     ImeRequestError, ImeSurroundingText, Window, WindowAttributes, WindowId,
@@ -159,6 +159,7 @@ struct NativeSceneState {
     audio: Option<NativeAudioRuntime>,
     ingress_completion: WindowedPatchIngressCompletion,
     input: InputController,
+    keyboard_modifiers: ModifiersState,
     text_input: NativeTextInputBridge,
     window_ime_supported: bool,
     window_ime_enabled: bool,
@@ -355,6 +356,10 @@ impl ApplicationHandler for NativeSceneApp {
                 Ok(())
             }
             WindowEvent::KeyboardInput { event, .. } => state.keyboard(&event),
+            WindowEvent::ModifiersChanged(modifiers) => {
+                state.keyboard_modifiers = modifiers.state();
+                Ok(())
+            }
             WindowEvent::Ime(event) => state.ime(event),
             WindowEvent::RedrawRequested => state.redraw(),
             _ => Ok(()),
@@ -470,6 +475,7 @@ impl NativeSceneState {
             audio,
             ingress_completion,
             input: InputController::default(),
+            keyboard_modifiers: ModifiersState::default(),
             text_input,
             window_ime_supported: true,
             window_ime_enabled: false,
@@ -702,9 +708,13 @@ impl NativeSceneState {
         } else {
             arcweft_presentation::text_input::TextInputKeyDisposition::ImeConsumed
         };
-        let outcome = self
-            .input
-            .keyboard_with_ime(&frame, &label, phase, player_disposition);
+        let outcome = self.input.keyboard_with_modifiers_and_ime(
+            &frame,
+            &label,
+            phase,
+            self.keyboard_modifiers.shift_key(),
+            player_disposition,
+        );
         self.apply_outcome(outcome)?;
         self.window.request_redraw();
         Ok(())
@@ -924,6 +934,7 @@ impl NativeSceneState {
             text_control_write_backs,
             diagnostics: _,
             dialogue_advance,
+            cancel: _,
             redraw: _,
         } = outcome;
         if dialogue_advance {

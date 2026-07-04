@@ -1,5 +1,7 @@
 use crate::clock::RuntimeClockStep;
-use crate::display::{BundlePresentationSnapshot, resolve_display_frames};
+use crate::display::{
+    BundlePresentationResources, BundlePresentationSnapshot, resolve_display_frames,
+};
 use crate::generation_runtime::{
     GenerationRuntimeError, GenerationRuntimeImage, GenerationRuntimeTable,
 };
@@ -18,7 +20,8 @@ use arcweft_bundle::patch::{
     apply_patch_bundle, decode_patch_bundle,
 };
 use arcweft_bundle::resource_codec::{
-    UiRuntimeActionButton, UiRuntimeTextControl, UiRuntimeTextSelection,
+    UiProgramResource, UiRuntimeActionButton, UiRuntimeFocusGroup, UiRuntimeFocusNavigation,
+    UiRuntimeTextControl, UiRuntimeTextSelection,
 };
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleImageObject, BundleKind};
 use arcweft_core::awbc::{
@@ -155,6 +158,8 @@ pub struct BundleSession {
     image_objects: Vec<BundleImageObject>,
     text_inputs: Vec<UiRuntimeTextControl>,
     action_buttons: Vec<UiRuntimeActionButton>,
+    focus_groups: Vec<UiRuntimeFocusGroup>,
+    focus_navigation: Vec<UiRuntimeFocusNavigation>,
     options: BundleSessionOptions,
     pending_input_events: Vec<RoutedInputEvent>,
     pending_text_control_write_backs: Vec<RuntimeTextControlWriteBack>,
@@ -402,6 +407,8 @@ impl BundleSession {
         let image_objects = runtime.image_objects.clone();
         let text_inputs = runtime.text_inputs.clone();
         let action_buttons = runtime.action_buttons.clone();
+        let focus_groups = runtime.focus_groups.clone();
+        let focus_navigation = runtime.focus_navigation.clone();
         let source_label = runtime.source_label.clone();
 
         Ok(Self {
@@ -415,6 +422,8 @@ impl BundleSession {
             image_objects,
             text_inputs,
             action_buttons,
+            focus_groups,
+            focus_navigation,
             options,
             pending_input_events: Vec::new(),
             pending_text_control_write_backs: Vec::new(),
@@ -619,6 +628,9 @@ impl BundleSession {
                 self.image_objects.clone_from(&bundle.image_objects);
                 self.text_inputs.clone_from(&next_runtime.text_inputs);
                 self.action_buttons.clone_from(&next_runtime.action_buttons);
+                self.focus_groups.clone_from(&next_runtime.focus_groups);
+                self.focus_navigation
+                    .clone_from(&next_runtime.focus_navigation);
             }
             SwapCompatibility::CodeCompatible => {
                 self.activate_runtime(next_runtime.clone());
@@ -689,6 +701,9 @@ impl BundleSession {
                 self.image_objects.clone_from(&bundle.image_objects);
                 self.text_inputs.clone_from(&next_runtime.text_inputs);
                 self.action_buttons.clone_from(&next_runtime.action_buttons);
+                self.focus_groups.clone_from(&next_runtime.focus_groups);
+                self.focus_navigation
+                    .clone_from(&next_runtime.focus_navigation);
             }
             SwapCompatibility::CodeCompatible => {
                 self.activate_runtime(next_runtime.clone());
@@ -855,9 +870,13 @@ impl BundleSession {
             &display,
             &result.fiber_status,
             &line_effects,
-            &self.image_objects,
-            &self.text_inputs,
-            &self.action_buttons,
+            BundlePresentationResources {
+                image_objects: &self.image_objects,
+                text_inputs: &self.text_inputs,
+                action_buttons: &self.action_buttons,
+                focus_groups: &self.focus_groups,
+                focus_navigation: &self.focus_navigation,
+            },
         );
         let observations = self.executor.fiber().observations.clone();
 
@@ -1016,6 +1035,8 @@ impl BundleSession {
         self.image_objects = runtime.image_objects;
         self.text_inputs = runtime.text_inputs;
         self.action_buttons = runtime.action_buttons;
+        self.focus_groups = runtime.focus_groups;
+        self.focus_navigation = runtime.focus_navigation;
     }
 
     fn prune_runtime_images(&mut self) {
@@ -1196,6 +1217,18 @@ struct SessionRuntime {
     image_objects: Vec<BundleImageObject>,
     text_inputs: Vec<UiRuntimeTextControl>,
     action_buttons: Vec<UiRuntimeActionButton>,
+    focus_groups: Vec<UiRuntimeFocusGroup>,
+    focus_navigation: Vec<UiRuntimeFocusNavigation>,
+}
+
+#[derive(Clone, Debug)]
+struct SessionRuntimeResources {
+    display: LineDisplayCatalog,
+    image_objects: Vec<BundleImageObject>,
+    text_inputs: Vec<UiRuntimeTextControl>,
+    action_buttons: Vec<UiRuntimeActionButton>,
+    focus_groups: Vec<UiRuntimeFocusGroup>,
+    focus_navigation: Vec<UiRuntimeFocusNavigation>,
 }
 
 fn initial_generation(bundle: &ArcweftBundle) -> Result<ProgramGeneration, BundleSessionError> {
@@ -1223,10 +1256,7 @@ impl SessionRuntime {
         source_label: String,
         program: AwbcProgram,
         entry: AwbcEntryId,
-        display: LineDisplayCatalog,
-        image_objects: Vec<BundleImageObject>,
-        text_inputs: Vec<UiRuntimeTextControl>,
-        action_buttons: Vec<UiRuntimeActionButton>,
+        resources: SessionRuntimeResources,
     ) -> Result<Self, AwbcProductStepBuildError> {
         let executor = ArcweftRuntimeExecutor::from_awbc_product(program.clone(), entry)?;
         Ok(Self {
@@ -1234,10 +1264,12 @@ impl SessionRuntime {
             program,
             entry,
             executor,
-            display,
-            image_objects,
-            text_inputs,
-            action_buttons,
+            display: resources.display,
+            image_objects: resources.image_objects,
+            text_inputs: resources.text_inputs,
+            action_buttons: resources.action_buttons,
+            focus_groups: resources.focus_groups,
+            focus_navigation: resources.focus_navigation,
         })
     }
 
@@ -1251,10 +1283,14 @@ impl SessionRuntime {
             self.source_label.clone(),
             self.program.clone(),
             entry,
-            self.display.clone(),
-            self.image_objects.clone(),
-            self.text_inputs.clone(),
-            self.action_buttons.clone(),
+            SessionRuntimeResources {
+                display: self.display.clone(),
+                image_objects: self.image_objects.clone(),
+                text_inputs: self.text_inputs.clone(),
+                action_buttons: self.action_buttons.clone(),
+                focus_groups: self.focus_groups.clone(),
+                focus_navigation: self.focus_navigation.clone(),
+            },
         )
         .map_err(BundleEntryStartError::from)
     }
@@ -1282,15 +1318,27 @@ fn build_session_runtime(
     let action_buttons = bundle.ui_program.as_ref().map_or_else(Vec::new, |program| {
         program.runtime_action_buttons(bundle.ui_text.as_ref())
     });
+    let focus_groups = bundle
+        .ui_program
+        .as_ref()
+        .map_or_else(Vec::new, UiProgramResource::runtime_focus_groups);
+    let focus_navigation = bundle
+        .ui_program
+        .as_ref()
+        .map_or_else(Vec::new, UiProgramResource::runtime_focus_navigation);
 
     SessionRuntime::new(
         bundle.manifest.source_label.clone(),
         program,
         entry,
-        bundle.display.clone(),
-        bundle.image_objects.clone(),
-        text_inputs,
-        action_buttons,
+        SessionRuntimeResources {
+            display: bundle.display.clone(),
+            image_objects: bundle.image_objects.clone(),
+            text_inputs,
+            action_buttons,
+            focus_groups,
+            focus_navigation,
+        },
     )
     .map_err(BundleSessionError::from)
 }

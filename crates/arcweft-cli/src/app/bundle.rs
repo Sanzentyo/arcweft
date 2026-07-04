@@ -396,6 +396,8 @@ fn merge_ui_programs(mut left: UiProgramResource, right: UiProgramResource) -> U
     left.exported_parts.extend(right.exported_parts);
     left.semantic_targets.extend(right.semantic_targets);
     left.action_buttons.extend(right.action_buttons);
+    left.focus_groups.extend(right.focus_groups);
+    left.focus_navigation.extend(right.focus_navigation);
     left.adapter_requirements.extend(right.adapter_requirements);
     left
 }
@@ -538,6 +540,8 @@ fn collect_bundle_dsl_ui_resources(module: &HirModule) -> Result<BundleUiSidecar
                 exported_parts: Vec::new(),
                 semantic_targets,
                 action_buttons: Vec::new(),
+                focus_groups: Vec::new(),
+                focus_navigation: Vec::new(),
                 adapter_requirements: Vec::new(),
             }),
             text: Some(UiTextResource {

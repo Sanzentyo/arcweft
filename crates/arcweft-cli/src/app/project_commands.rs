@@ -77,6 +77,7 @@ use std::{
 pub(in crate::app) struct ProjectCheckOptions {
     #[command(flatten)]
     profile: ProfileOptions,
+    path: Option<PathBuf>,
     #[arg(long)]
     json: bool,
 }
@@ -394,6 +395,19 @@ impl ProjectCommandReport {
 }
 
 pub(super) fn project_check_command(options: &ProjectCheckOptions) -> Result<(), ExitCode> {
+    if let Some(path) = &options.path {
+        if options.profile.profile.is_some() {
+            eprintln!("error: source path and --profile cannot be used together");
+            return Err(ExitCode::from(2));
+        }
+        return compile_command(&CompileOptions {
+            input: path.clone(),
+            emit: CompileEmit::Check,
+            output: None,
+            json: options.json,
+        });
+    }
+
     let progress = CliProgress::new(!options.json);
     let state = progress.run(CliProgressStatus::Checking, "project", || {
         compile_project_command(&options.profile, VerificationMode::Dev)

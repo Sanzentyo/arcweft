@@ -1,3 +1,6 @@
+use crate::controller::{
+    ControllerInputChange, ControllerInputNormalizer, NormalizedControllerAction,
+};
 use arcweft_id::PublicId;
 use arcweft_presentation::input::{
     Action, InputEpoch, KeyPhase, PointerId, PointerInput, PointerPhase, RawInputEvent,
@@ -42,6 +45,7 @@ pub struct InputOutcome {
     pub text_control_write_backs: Vec<TextControlWriteBack>,
     pub diagnostics: Vec<InputDiagnostic>,
     pub dialogue_advance: bool,
+    pub cancel: bool,
     pub redraw: bool,
 }
 
@@ -77,8 +81,27 @@ impl InputOutcome {
             text_control_write_backs: Vec::new(),
             diagnostics: Vec::new(),
             dialogue_advance: false,
+            cancel: false,
             redraw,
         }
+    }
+
+    pub fn cancel() -> Self {
+        Self {
+            cancel: true,
+            redraw: true,
+            ..Self::default()
+        }
+    }
+
+    pub fn merge(&mut self, other: Self) {
+        self.actions.extend(other.actions);
+        self.text_control_write_backs
+            .extend(other.text_control_write_backs);
+        self.diagnostics.extend(other.diagnostics);
+        self.dialogue_advance |= other.dialogue_advance;
+        self.cancel |= other.cancel;
+        self.redraw |= other.redraw;
     }
 }
 
@@ -90,6 +113,7 @@ pub struct InputController {
     pressed: BTreeMap<u64, arcweft_presentation::input::InteractionTarget>,
     drags: BTreeMap<u64, DragState>,
     choice_scroll: ChoiceScroll,
+    controller: ControllerInputNormalizer,
     window_focused: bool,
     ime_composing: bool,
     focused_text_editor: Option<TextEditorState>,
@@ -316,54 +340,11 @@ impl InputController {
             return InputOutcome::default();
         }
         match key {
-            "ArrowUp" => {
-                let next = frame.directional_keyboard_focus_target(
-                    self.interaction.focus().target(),
-                    FocusNavigationDirection::Up,
-                );
-                if let Some(next) = next {
-                    self.set_focus(frame, next);
-                }
-                InputOutcome::redraw(true)
-            }
-            "ArrowDown" => {
-                let next = frame.directional_keyboard_focus_target(
-                    self.interaction.focus().target(),
-                    FocusNavigationDirection::Down,
-                );
-                if let Some(next) = next {
-                    self.set_focus(frame, next);
-                }
-                InputOutcome::redraw(true)
-            }
-            "ArrowLeft" => {
-                let next = frame.directional_keyboard_focus_target(
-                    self.interaction.focus().target(),
-                    FocusNavigationDirection::Left,
-                );
-                if let Some(next) = next {
-                    self.set_focus(frame, next);
-                }
-                InputOutcome::redraw(true)
-            }
-            "ArrowRight" => {
-                let next = frame.directional_keyboard_focus_target(
-                    self.interaction.focus().target(),
-                    FocusNavigationDirection::Right,
-                );
-                if let Some(next) = next {
-                    self.set_focus(frame, next);
-                }
-                InputOutcome::redraw(true)
-            }
-            "Tab" => {
-                let next =
-                    frame.adjacent_keyboard_focus_target(self.interaction.focus().target(), 1);
-                if let Some(next) = next {
-                    self.set_focus(frame, next);
-                }
-                InputOutcome::redraw(true)
-            }
+            "ArrowUp" => self.move_focus(frame, FocusNavigationDirection::Up),
+            "ArrowDown" => self.move_focus(frame, FocusNavigationDirection::Down),
+            "ArrowLeft" => self.move_focus(frame, FocusNavigationDirection::Left),
+            "ArrowRight" => self.move_focus(frame, FocusNavigationDirection::Right),
+            "Tab" => self.move_focus(frame, FocusNavigationDirection::Next),
             "Home" => {
                 if let Some(target) = frame.first_keyboard_focus_target() {
                     self.set_focus(frame, target);
@@ -376,34 +357,22 @@ impl InputController {
                 }
                 InputOutcome::redraw(true)
             }
-            "Enter" | " " | "Space" => {
-                let focused = self.interaction.focus().target().cloned();
-                let actions = focused
-                    .as_ref()
-                    .and_then(|target| choice_action(frame, target))
-                    .into_iter()
-                    .collect::<Vec<_>>();
-                let submit = focused
-                    .as_ref()
-                    .map_or_else(ActionButtonSubmitOutcome::default, |target| {
-                        self.action_button_submit(frame, target)
-                    });
-                let text_control_write_backs = submit.write_back.into_iter().collect();
-                let diagnostics = submit.diagnostic.into_iter().collect();
-                let activates_target = focused.as_ref().is_some_and(|target| {
-                    frame.choice_for_target(target).is_some()
-                        || frame.action_button_for_target(target).is_some()
-                });
-                activation_outcome(
-                    frame,
-                    actions,
-                    text_control_write_backs,
-                    diagnostics,
-                    !activates_target,
-                )
-            }
+            "Enter" | " " | "Space" => self.activate_focused(frame),
             _ => InputOutcome::default(),
         }
+    }
+
+    pub fn keyboard_with_modifiers(
+        &mut self,
+        frame: &PreparedFrame,
+        key: &str,
+        phase: KeyPhase,
+        shift: bool,
+    ) -> InputOutcome {
+        if key == "Tab" && phase == KeyPhase::Down && shift {
+            return self.move_focus(frame, FocusNavigationDirection::Previous);
+        }
+        self.keyboard(frame, key, phase)
     }
 
     pub fn keyboard_with_ime(
@@ -419,10 +388,96 @@ impl InputController {
                 text_control_write_backs: Vec::new(),
                 diagnostics: Vec::new(),
                 dialogue_advance: false,
+                cancel: false,
                 redraw: self.ime_composing,
             };
         }
         self.keyboard(frame, key, phase)
+    }
+
+    pub fn keyboard_with_modifiers_and_ime(
+        &mut self,
+        frame: &PreparedFrame,
+        key: &str,
+        phase: KeyPhase,
+        shift: bool,
+        disposition: TextInputKeyDisposition,
+    ) -> InputOutcome {
+        if disposition.shortcuts_suppressed() || self.ime_composing {
+            return InputOutcome {
+                actions: Vec::new(),
+                text_control_write_backs: Vec::new(),
+                diagnostics: Vec::new(),
+                dialogue_advance: false,
+                cancel: false,
+                redraw: self.ime_composing,
+            };
+        }
+        self.keyboard_with_modifiers(frame, key, phase, shift)
+    }
+
+    pub fn controller(
+        &mut self,
+        frame: &PreparedFrame,
+        change: ControllerInputChange,
+    ) -> InputOutcome {
+        self.controller.normalize(change).into_iter().fold(
+            InputOutcome::default(),
+            |mut outcome, action| {
+                outcome.merge(self.normalized_controller_action(frame, action));
+                outcome
+            },
+        )
+    }
+
+    fn normalized_controller_action(
+        &mut self,
+        frame: &PreparedFrame,
+        action: NormalizedControllerAction,
+    ) -> InputOutcome {
+        match action {
+            NormalizedControllerAction::Move(direction) => self.move_focus(frame, direction),
+            NormalizedControllerAction::Confirm => self.activate_focused(frame),
+            NormalizedControllerAction::Cancel => InputOutcome::cancel(),
+        }
+    }
+
+    fn move_focus(
+        &mut self,
+        frame: &PreparedFrame,
+        direction: FocusNavigationDirection,
+    ) -> InputOutcome {
+        if let Some(next) = frame.focus_target(self.interaction.focus().target(), direction) {
+            self.set_focus(frame, next);
+        }
+        InputOutcome::redraw(true)
+    }
+
+    fn activate_focused(&mut self, frame: &PreparedFrame) -> InputOutcome {
+        let focused = self.interaction.focus().target().cloned();
+        let actions = focused
+            .as_ref()
+            .and_then(|target| choice_action(frame, target))
+            .into_iter()
+            .collect::<Vec<_>>();
+        let submit = focused
+            .as_ref()
+            .map_or_else(ActionButtonSubmitOutcome::default, |target| {
+                self.action_button_submit(frame, target)
+            });
+        let text_control_write_backs = submit.write_back.into_iter().collect();
+        let diagnostics = submit.diagnostic.into_iter().collect();
+        let activates_target = focused.as_ref().is_some_and(|target| {
+            frame.choice_for_target(target).is_some()
+                || frame.action_button_for_target(target).is_some()
+        });
+        activation_outcome(
+            frame,
+            actions,
+            text_control_write_backs,
+            diagnostics,
+            !activates_target,
+        )
     }
 
     pub fn text_input(
@@ -496,6 +551,7 @@ impl InputController {
             text_control_write_backs,
             diagnostics: Vec::new(),
             dialogue_advance: false,
+            cancel: false,
             redraw: true,
         })
     }
@@ -622,6 +678,7 @@ fn activation_outcome(
         text_control_write_backs,
         diagnostics,
         dialogue_advance,
+        cancel: false,
         redraw: true,
     }
 }
@@ -682,6 +739,8 @@ mod tests {
             choices: Vec::new(),
             text_inputs: vec![control],
             action_buttons: Vec::new(),
+            focus_groups: Vec::new(),
+            focus_navigation: Vec::new(),
             images: Vec::new(),
             viewport: RenderViewport {
                 logical_width: 640.0,

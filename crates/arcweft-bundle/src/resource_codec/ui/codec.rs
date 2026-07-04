@@ -32,6 +32,9 @@ pub struct UiResourceBudget {
     pub exported_parts: usize,
     pub semantic_targets: usize,
     pub action_buttons: usize,
+    pub focus_groups: usize,
+    pub focus_targets: usize,
+    pub focus_edges: usize,
     pub style_rules: usize,
     pub style_tokens: usize,
     pub selector_depth: usize,
@@ -76,6 +79,9 @@ impl Default for UiResourceBudget {
             exported_parts: 65_536,
             semantic_targets: 262_144,
             action_buttons: 65_536,
+            focus_groups: 65_536,
+            focus_targets: 262_144,
+            focus_edges: 1_000_000,
             style_rules: 262_144,
             style_tokens: 65_536,
             selector_depth: 32,
@@ -164,9 +170,20 @@ impl UiProgramResource {
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
         self.action_buttons
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
+        self.focus_groups
+            .sort_by(|left, right| left.public_id.cmp(&right.public_id));
+        self.focus_navigation
+            .sort_by(|left, right| left.public_id.cmp(&right.public_id));
     }
 
     fn validate(&self, budget: UiResourceBudget) -> Result<(), SectionCodecError> {
+        self.validate_budgets(budget)?;
+        self.validate_child_spans()?;
+        self.validate_unique_ids()?;
+        self.validate_focus_targets()
+    }
+
+    fn validate_budgets(&self, budget: UiResourceBudget) -> Result<(), SectionCodecError> {
         check_budget(
             self.instructions.len(),
             budget.program_instructions,
@@ -194,6 +211,28 @@ impl UiProgramResource {
             budget.action_buttons,
             "ui_action_buttons",
         )?;
+        check_budget(
+            self.focus_groups.len(),
+            budget.focus_groups,
+            "ui_focus_groups",
+        )?;
+        check_budget(
+            self.focus_navigation.len(),
+            budget.focus_targets,
+            "ui_focus_navigation",
+        )?;
+        check_budget(
+            self.focus_navigation
+                .iter()
+                .map(|target| target.edges.len())
+                .sum::<usize>(),
+            budget.focus_edges,
+            "ui_focus_edges",
+        )?;
+        Ok(())
+    }
+
+    fn validate_child_spans(&self) -> Result<(), SectionCodecError> {
         self.child_spans.iter().try_for_each(|span| {
             if span.start_instruction > span.end_instruction
                 || span.end_instruction as usize > self.instructions.len()
@@ -202,7 +241,10 @@ impl UiProgramResource {
             } else {
                 Ok(())
             }
-        })?;
+        })
+    }
+
+    fn validate_unique_ids(&self) -> Result<(), SectionCodecError> {
         reject_duplicates(
             self.handlers
                 .iter()
@@ -224,7 +266,55 @@ impl UiProgramResource {
                 .iter()
                 .map(|button| button.public_id.clone()),
             "ui_action_buttons",
+        )?;
+        reject_duplicates(
+            self.focus_groups
+                .iter()
+                .map(|group| group.public_id.clone()),
+            "ui_focus_groups",
+        )?;
+        reject_duplicates(
+            self.focus_navigation
+                .iter()
+                .map(|target| target.public_id.clone()),
+            "ui_focus_navigation",
         )
+    }
+
+    fn validate_focus_targets(&self) -> Result<(), SectionCodecError> {
+        let authored_targets = self
+            .focus_navigation
+            .iter()
+            .map(|target| target.public_id.as_str())
+            .chain(
+                self.semantic_targets
+                    .iter()
+                    .map(|target| target.public_id.as_str()),
+            )
+            .chain(
+                self.action_buttons
+                    .iter()
+                    .map(|button| button.public_id.as_str()),
+            )
+            .collect::<BTreeSet<_>>();
+        for explicit in self
+            .focus_groups
+            .iter()
+            .filter_map(|group| group.initial.explicit_target())
+            .chain(self.focus_navigation.iter().flat_map(|target| {
+                target
+                    .edges
+                    .iter()
+                    .filter_map(|edge| edge.target.explicit_target())
+            }))
+        {
+            if !authored_targets.contains(explicit) {
+                return Err(SectionCodecError::NonCanonicalTable(
+                    "ui_focus_missing_target",
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn public_ids(&self) -> Vec<String> {
@@ -270,6 +360,23 @@ impl UiProgramResource {
                     ]
                     .into_iter()
                     .flatten()
+                }))
+                .chain(self.focus_groups.iter().flat_map(|group| {
+                    [
+                        Some(group.public_id.clone()),
+                        group.parent.clone(),
+                        group.initial.explicit_target().map(ToOwned::to_owned),
+                    ]
+                    .into_iter()
+                    .flatten()
+                }))
+                .chain(self.focus_navigation.iter().flat_map(|target| {
+                    [Some(target.public_id.clone()), target.group.clone()]
+                        .into_iter()
+                        .flatten()
+                        .chain(target.edges.iter().filter_map(|edge| {
+                            edge.target.explicit_target().map(ToOwned::to_owned)
+                        }))
                 })),
         )
     }
@@ -277,6 +384,8 @@ impl UiProgramResource {
     fn record_count(&self) -> u32 {
         saturating_u32(self.instructions.len())
             .saturating_add(saturating_u32(self.action_buttons.len()))
+            .saturating_add(saturating_u32(self.focus_groups.len()))
+            .saturating_add(saturating_u32(self.focus_navigation.len()))
     }
 }
 

@@ -1,4 +1,5 @@
 use crate::action_buttons::{RuntimeActionButtonLowerer, RuntimeActionButtonLoweringError};
+use crate::frame::focus_navigation::{render_focus_groups, render_focus_navigation};
 use crate::images::{BundleImageCatalog, BundleImageCatalogError};
 use crate::input::InputController;
 use crate::text_controls::{RuntimeTextControlLowerer, RuntimeTextControlLoweringError};
@@ -8,6 +9,8 @@ use arcweft_render_wgpu::geometry::{
 };
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use thiserror::Error;
+
+mod focus_navigation;
 
 /// Player-owned frame inputs shared by native, web, and Agent observation.
 #[derive(Clone, Copy, Debug)]
@@ -34,6 +37,8 @@ pub enum PlayerFrameError {
     ActionButtonLowering(#[from] RuntimeActionButtonLoweringError),
     #[error(transparent)]
     Images(#[from] BundleImageCatalogError),
+    #[error("invalid focus navigation public id `{value}`")]
+    InvalidId { value: String },
     #[error(transparent)]
     FramePlan(#[from] FramePlanError),
 }
@@ -74,6 +79,8 @@ impl PlayerFramePlanner {
                 .collect(),
             text_inputs,
             action_buttons,
+            focus_groups: render_focus_groups(&request.presentation.focus_groups)?,
+            focus_navigation: render_focus_navigation(&request.presentation.focus_navigation)?,
             images: request.images.render_images(
                 &request.presentation.images,
                 request.image_time_millis,

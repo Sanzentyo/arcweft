@@ -43,6 +43,8 @@ fn ui_input_resource_emits_runtime_text_control_shape() {
             source: None,
         }],
         action_buttons: Vec::new(),
+        focus_groups: Vec::new(),
+        focus_navigation: Vec::new(),
         adapter_requirements: Vec::new(),
     };
 

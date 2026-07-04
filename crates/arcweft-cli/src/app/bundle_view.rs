@@ -1,8 +1,10 @@
 use arcweft_bundle::{
     container::BundleDigest,
     resource_codec::{
-        UiActionButtonActionResource, UiActionButtonResource, UiInputResource, UiProgramResource,
-        UiRuntimeButtonBounds, UiStyleResource, UiTextResource,
+        UiActionButtonActionResource, UiActionButtonResource, UiFocusDirection, UiFocusGroupPolicy,
+        UiFocusGroupResource, UiFocusInitialPolicy, UiFocusNavigationEdge,
+        UiFocusNavigationResource, UiFocusSkipPolicy, UiFocusTargetResolution, UiFocusWrapPolicy,
+        UiInputResource, UiProgramResource, UiRuntimeButtonBounds, UiStyleResource, UiTextResource,
         ui::{
             CompositionOnBlurPolicy, EnterKeyHint, StyleSourceIdentity, StyleSourceRef,
             StyleSyntax, TextAssistPolicy, TextCapitalization, UiElementKind, UiInputKind,
@@ -18,7 +20,8 @@ use arcweft_lang_syntax::{
         items::EntityDeclItem,
         view::{
             ComponentViewBody, ViewAction, ViewArg, ViewButton, ViewButtonLabel, ViewElement,
-            ViewExpr, ViewImage, ViewModifier, ViewStyleModifier, ViewText, ViewTextField,
+            ViewExpr, ViewImage, ViewModifier, ViewNavigationDirection, ViewNavigationInitial,
+            ViewNavigationTarget, ViewNavigationTrap, ViewStyleModifier, ViewText, ViewTextField,
             ViewTextFieldMode, ViewTextSubmitImePolicy,
         },
     },
@@ -40,11 +43,15 @@ struct ViewLoweringState {
     input_options: Vec<UiInputOptions>,
     semantic_targets: Vec<UiSemanticTarget>,
     action_buttons: Vec<UiActionButtonResource>,
+    focus_groups: Vec<UiFocusGroupResource>,
+    focus_navigation: Vec<UiFocusNavigationResource>,
+    focus_group_stack: Vec<String>,
     inline_arcweft_sources: Vec<StyleSourceIdentity>,
     inline_css_sources: Vec<StyleSourceIdentity>,
     text_counter: u32,
     input_counter: u32,
     button_counter: u32,
+    group_counter: u32,
     handler_counter: u32,
     patch_counter: u32,
 }
@@ -78,6 +85,8 @@ pub(in crate::app) fn component_view_sidecars(
         && state.text_sources.is_empty()
         && state.input_options.is_empty()
         && state.action_buttons.is_empty()
+        && state.focus_groups.is_empty()
+        && state.focus_navigation.is_empty()
         && state.inline_arcweft_sources.is_empty()
         && state.inline_css_sources.is_empty()
     {
@@ -94,6 +103,8 @@ pub(in crate::app) fn component_view_sidecars(
             exported_parts: Vec::new(),
             semantic_targets: state.semantic_targets,
             action_buttons: state.action_buttons,
+            focus_groups: state.focus_groups,
+            focus_navigation: state.focus_navigation,
             adapter_requirements: Vec::new(),
         }),
         style: (!state.inline_arcweft_sources.is_empty() || !state.inline_css_sources.is_empty())
@@ -177,9 +188,13 @@ fn lower_element(component_id: &str, element: &ViewElement, state: &mut ViewLowe
             key: None,
             source: None,
         });
+        let pushed_group = lower_navigation_group(component_id, element, state);
         lower_modifiers(component_id, element.modifiers(), state);
         for child in element.children() {
             lower_view_expr(component_id, child, state);
+        }
+        if pushed_group {
+            state.focus_group_stack.pop();
         }
         state.instructions.push(UiProgramInstruction::CloseElement);
     } else {
@@ -262,6 +277,13 @@ fn lower_text_field(component_id: &str, field: &ViewTextField, state: &mut ViewL
         label_text_source,
         source: None,
     });
+    let target = state
+        .semantic_targets
+        .last()
+        .map(|target| target.public_id.clone());
+    if let Some(target) = target {
+        lower_navigation_target(&target, field.modifiers(), state);
+    }
     state.instructions.push(UiProgramInstruction::OpenElement {
         element: ui_element_kind_for_text_field(field.mode()),
         style: None,
@@ -295,6 +317,7 @@ fn lower_button(component_id: &str, button: &ViewButton, state: &mut ViewLowerin
     });
     lower_button_modifiers(component_id, button.modifiers(), state);
     state.instructions.push(UiProgramInstruction::CloseElement);
+    lower_navigation_target(&button_id, button.modifiers(), state);
 
     let Some(ViewAction::TextSubmit(action)) = button.activation() else {
         return;
@@ -356,6 +379,7 @@ fn lower_modifiers(component_id: &str, modifiers: &[ViewModifier], state: &mut V
             | ViewModifier::Focusable(_)
             | ViewModifier::Environment(_)
             | ViewModifier::Focus(_)
+            | ViewModifier::Navigation(_)
             | ViewModifier::Raw(_) => {}
         }
     }
@@ -383,9 +407,118 @@ fn lower_button_modifiers(
             | ViewModifier::Focusable(_)
             | ViewModifier::Environment(_)
             | ViewModifier::Focus(_)
+            | ViewModifier::Navigation(_)
             | ViewModifier::Raw(_)
             | ViewModifier::OnEvent { .. } => {}
         }
+    }
+}
+
+fn lower_navigation_group(
+    component_id: &str,
+    element: &ViewElement,
+    state: &mut ViewLoweringState,
+) -> bool {
+    let Some(group) = element.navigation_group() else {
+        return false;
+    };
+    let public_id = group.group().map_or_else(
+        || next_focus_group_id(component_id, state),
+        normalize_entity_ref,
+    );
+    let parent = group
+        .parent()
+        .map(normalize_entity_ref)
+        .or_else(|| state.focus_group_stack.last().cloned());
+    state.focus_groups.push(UiFocusGroupResource {
+        public_id: public_id.clone(),
+        parent,
+        policy: lower_navigation_trap(group.trap()),
+        initial: lower_navigation_initial(group.initial()),
+        wrap: group.wrap().map_or(UiFocusWrapPolicy::Wrap, |wrap| {
+            if wrap {
+                UiFocusWrapPolicy::Wrap
+            } else {
+                UiFocusWrapPolicy::NoWrap
+            }
+        }),
+        disabled_skip: UiFocusSkipPolicy::Skip,
+        hidden_skip: UiFocusSkipPolicy::Skip,
+        source: None,
+    });
+    state.focus_group_stack.push(public_id);
+    true
+}
+
+fn lower_navigation_target(
+    public_id: &str,
+    modifiers: &[ViewModifier],
+    state: &mut ViewLoweringState,
+) {
+    let edges = modifiers
+        .iter()
+        .filter_map(|modifier| match modifier {
+            ViewModifier::Navigation(navigation) => Some(navigation),
+            _ => None,
+        })
+        .flat_map(|navigation| {
+            navigation.edges().iter().map(|edge| UiFocusNavigationEdge {
+                direction: lower_navigation_direction(edge.direction()),
+                target: lower_navigation_target_resolution(edge.target()),
+                source: None,
+            })
+        })
+        .collect::<Vec<_>>();
+    if edges.is_empty() {
+        return;
+    }
+    state.focus_navigation.push(UiFocusNavigationResource {
+        public_id: public_id.to_owned(),
+        group: state.focus_group_stack.last().cloned(),
+        edges,
+        source: None,
+    });
+}
+
+fn lower_navigation_direction(direction: ViewNavigationDirection) -> UiFocusDirection {
+    match direction {
+        ViewNavigationDirection::Up => UiFocusDirection::Up,
+        ViewNavigationDirection::Down => UiFocusDirection::Down,
+        ViewNavigationDirection::Left => UiFocusDirection::Left,
+        ViewNavigationDirection::Right => UiFocusDirection::Right,
+        ViewNavigationDirection::Next => UiFocusDirection::Next,
+        ViewNavigationDirection::Previous => UiFocusDirection::Previous,
+    }
+}
+
+fn lower_navigation_target_resolution(target: &ViewNavigationTarget) -> UiFocusTargetResolution {
+    match target {
+        ViewNavigationTarget::Explicit(target) => UiFocusTargetResolution::Explicit {
+            target: normalize_entity_ref(target),
+        },
+        ViewNavigationTarget::Auto => UiFocusTargetResolution::Auto,
+        ViewNavigationTarget::None => UiFocusTargetResolution::None,
+        ViewNavigationTarget::GroupBoundary => UiFocusTargetResolution::GroupBoundary,
+    }
+}
+
+fn lower_navigation_initial(initial: &ViewNavigationInitial) -> UiFocusInitialPolicy {
+    match initial {
+        ViewNavigationInitial::Auto => UiFocusInitialPolicy::Auto,
+        ViewNavigationInitial::First => UiFocusInitialPolicy::First,
+        ViewNavigationInitial::Last => UiFocusInitialPolicy::Last,
+        ViewNavigationInitial::Explicit(target) => UiFocusInitialPolicy::Explicit {
+            target: normalize_entity_ref(target),
+        },
+        ViewNavigationInitial::None => UiFocusInitialPolicy::None,
+    }
+}
+
+fn lower_navigation_trap(trap: ViewNavigationTrap) -> UiFocusGroupPolicy {
+    match trap {
+        ViewNavigationTrap::Normal => UiFocusGroupPolicy::Normal,
+        ViewNavigationTrap::Trap => UiFocusGroupPolicy::Trap,
+        ViewNavigationTrap::Modal => UiFocusGroupPolicy::Modal,
     }
 }
 
@@ -461,6 +594,12 @@ fn next_input_id(
 fn next_button_id(component_id: &str, state: &mut ViewLoweringState) -> String {
     let id = format!("button.{component_id}.{}", state.button_counter);
     state.button_counter += 1;
+    id
+}
+
+fn next_focus_group_id(component_id: &str, state: &mut ViewLoweringState) -> String {
+    let id = format!("group.{component_id}.{}", state.group_counter);
+    state.group_counter += 1;
     id
 }
 

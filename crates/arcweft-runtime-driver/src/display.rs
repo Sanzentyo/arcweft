@@ -1,4 +1,6 @@
-use arcweft_bundle::resource_codec::{UiRuntimeActionButton, UiRuntimeTextControl};
+use arcweft_bundle::resource_codec::{
+    UiRuntimeActionButton, UiRuntimeFocusGroup, UiRuntimeFocusNavigation, UiRuntimeTextControl,
+};
 use arcweft_bundle::{
     BundleImageObject, BundleImageObjectAlignment, BundleImageObjectBounds, BundleImageObjectFit,
     BundleImageObjectPlayback, BundleImageObjectTransform,
@@ -38,6 +40,20 @@ pub struct BundlePresentationSnapshot {
     pub text_inputs: Vec<UiRuntimeTextControl>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub action_buttons: Vec<UiRuntimeActionButton>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub focus_groups: Vec<UiRuntimeFocusGroup>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub focus_navigation: Vec<UiRuntimeFocusNavigation>,
+}
+
+/// Runtime resources that affect portable presentation state.
+#[derive(Clone, Copy)]
+pub(crate) struct BundlePresentationResources<'a> {
+    pub(crate) image_objects: &'a [BundleImageObject],
+    pub(crate) text_inputs: &'a [UiRuntimeTextControl],
+    pub(crate) action_buttons: &'a [UiRuntimeActionButton],
+    pub(crate) focus_groups: &'a [UiRuntimeFocusGroup],
+    pub(crate) focus_navigation: &'a [UiRuntimeFocusNavigation],
 }
 
 /// Resolves dialogue flow events into host-renderable, Sans I/O display frames.
@@ -66,9 +82,7 @@ impl BundlePresentationSnapshot {
         resolution: &DisplayResolution,
         status: &FlowFiberStatus,
         effects: &[LineEffectRequest],
-        image_objects: &[BundleImageObject],
-        text_inputs: &[UiRuntimeTextControl],
-        action_buttons: &[UiRuntimeActionButton],
+        resources: BundlePresentationResources<'_>,
     ) {
         let next_dialogue = resolution
             .frames
@@ -76,14 +90,18 @@ impl BundlePresentationSnapshot {
             .cloned()
             .or_else(|| self.dialogue.clone());
         let next_choices = choices_from_status(status);
-        let next_images = images_from_effects(&self.images, effects, image_objects);
-        let next_text_inputs = text_inputs.to_vec();
-        let next_action_buttons = action_buttons.to_vec();
+        let next_images = images_from_effects(&self.images, effects, resources.image_objects);
+        let next_text_inputs = resources.text_inputs.to_vec();
+        let next_action_buttons = resources.action_buttons.to_vec();
+        let next_focus_groups = resources.focus_groups.to_vec();
+        let next_focus_navigation = resources.focus_navigation.to_vec();
         if self.dialogue != next_dialogue
             || self.choices != next_choices
             || self.images != next_images
             || self.text_inputs != next_text_inputs
             || self.action_buttons != next_action_buttons
+            || self.focus_groups != next_focus_groups
+            || self.focus_navigation != next_focus_navigation
         {
             self.revision = self.revision.saturating_add(1);
             self.dialogue = next_dialogue;
@@ -91,6 +109,8 @@ impl BundlePresentationSnapshot {
             self.images = next_images;
             self.text_inputs = next_text_inputs;
             self.action_buttons = next_action_buttons;
+            self.focus_groups = next_focus_groups;
+            self.focus_navigation = next_focus_navigation;
         }
     }
 
@@ -125,6 +145,8 @@ impl fmt::Debug for BundlePresentationSnapshot {
             .field("images", &self.images)
             .field("text_inputs", &self.redacted_for_observation().text_inputs)
             .field("action_buttons", &self.action_buttons)
+            .field("focus_groups", &self.focus_groups)
+            .field("focus_navigation", &self.focus_navigation)
             .finish()
     }
 }

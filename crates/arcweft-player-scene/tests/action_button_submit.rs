@@ -47,6 +47,8 @@ fn scene(ime_policy: RenderTextSubmitImePolicy) -> RenderScene {
                 ime_policy,
             },
         }],
+        focus_groups: Vec::new(),
+        focus_navigation: Vec::new(),
         images: Vec::new(),
         viewport: RenderViewport {
             logical_width: 800.0,

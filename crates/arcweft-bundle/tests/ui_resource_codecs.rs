@@ -325,6 +325,8 @@ fn fixture_program() -> UiProgramResource {
             source: None,
         }],
         action_buttons: Vec::new(),
+        focus_groups: Vec::new(),
+        focus_navigation: Vec::new(),
         adapter_requirements: vec![],
     }
 }

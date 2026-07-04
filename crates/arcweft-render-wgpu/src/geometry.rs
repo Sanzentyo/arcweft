@@ -20,10 +20,17 @@ use num_traits::ToPrimitive;
 use thiserror::Error;
 
 mod action_buttons;
+mod focus_navigation;
 mod images;
 mod text_controls;
 pub use action_buttons::{
     PreparedActionButton, RenderActionButton, RenderActionButtonAction, RenderTextSubmitImePolicy,
+};
+pub use focus_navigation::{
+    FocusNavigationDebug, FocusNavigationDebugCandidate, PreparedFocusGraph, PreparedFocusGroup,
+    PreparedFocusNavigationTarget, RenderFocusGroup, RenderFocusGroupPolicy,
+    RenderFocusInitialPolicy, RenderFocusNavigation, RenderFocusNavigationEdge,
+    RenderFocusSkipPolicy, RenderFocusTargetResolution, RenderFocusWrapPolicy,
 };
 pub use images::{RenderImage, RenderImageFrame, RenderImageQuad, RenderImageTransformMatrix};
 pub use text_controls::RenderTextInputControl;
@@ -83,6 +90,8 @@ pub enum FocusNavigationDirection {
     Down,
     Left,
     Right,
+    Next,
+    Previous,
 }
 
 /// Renderer input assembled by the player from portable runtime state.
@@ -92,6 +101,8 @@ pub struct RenderScene {
     pub choices: Vec<RenderChoiceItem>,
     pub text_inputs: Vec<RenderTextInputControl>,
     pub action_buttons: Vec<RenderActionButton>,
+    pub focus_groups: Vec<RenderFocusGroup>,
+    pub focus_navigation: Vec<RenderFocusNavigation>,
     pub images: Vec<RenderImage>,
     pub viewport: RenderViewport,
     pub visual_time_millis: u64,
@@ -313,8 +324,10 @@ pub struct PreparedFrame {
     pub styled_paragraphs: Vec<RenderStyledParagraph>,
     pub choices: Vec<RenderChoice>,
     pub action_buttons: Vec<PreparedActionButton>,
+    pub focus_graph: PreparedFocusGraph,
     ui_scenes: Vec<PreparedUiScene>,
     dialogue_present: bool,
+    interaction: InteractionVisualState,
     focused_text_input: Option<PreparedTextInputTarget>,
 }
 
@@ -391,6 +404,7 @@ impl DirectionalFocusScore {
                     candidate.y + candidate.height,
                 ),
             ),
+            FocusNavigationDirection::Next | FocusNavigationDirection::Previous => return None,
         };
         (primary_distance > f32::EPSILON).then_some(Self {
             outside_beam,
@@ -596,8 +610,13 @@ impl SharedFramePlanner {
             styled_paragraphs,
             choices,
             action_buttons,
+            focus_graph: PreparedFocusGraph::new(
+                scene.focus_groups.clone(),
+                scene.focus_navigation.clone(),
+            ),
             ui_scenes: Vec::new(),
             dialogue_present: scene.dialogue.is_some(),
+            interaction: scene.interaction.clone(),
             focused_text_input,
         })
     }
@@ -1060,6 +1079,15 @@ impl PreparedFrame {
         current: Option<&InteractionTarget>,
         delta: isize,
     ) -> Option<InteractionTarget> {
+        self.adjacent_keyboard_focus_target_with_wrap(current, delta, true)
+    }
+
+    pub fn adjacent_keyboard_focus_target_with_wrap(
+        &self,
+        current: Option<&InteractionTarget>,
+        delta: isize,
+        wrap: bool,
+    ) -> Option<InteractionTarget> {
         let targets = self.keyboard_focus_targets();
         if targets.is_empty() {
             return None;
@@ -1067,8 +1095,16 @@ impl PreparedFrame {
         let current = current
             .and_then(|target| targets.iter().position(|candidate| candidate == target))
             .unwrap_or(0);
+        let current = isize::try_from(current).ok()?;
         let len = isize::try_from(targets.len()).ok()?;
-        let next = (isize::try_from(current).ok()? + delta).rem_euclid(len);
+        let raw_next = current + delta;
+        let next = if wrap {
+            raw_next.rem_euclid(len)
+        } else if (0..len).contains(&raw_next) {
+            raw_next
+        } else {
+            return None;
+        };
         targets.get(usize::try_from(next).ok()?).cloned()
     }
 
@@ -1077,13 +1113,18 @@ impl PreparedFrame {
         current: Option<&InteractionTarget>,
         direction: FocusNavigationDirection,
     ) -> Option<InteractionTarget> {
+        self.focus_target(current, direction)
+    }
+
+    pub fn geometric_keyboard_focus_target(
+        &self,
+        current: &InteractionTarget,
+        direction: FocusNavigationDirection,
+    ) -> Option<InteractionTarget> {
         let candidates = self.keyboard_focus_candidates();
         if candidates.is_empty() {
             return None;
         }
-        let Some(current) = current else {
-            return candidates.first().map(|candidate| candidate.target.clone());
-        };
         let Some(origin) = candidates
             .iter()
             .find(|candidate| &candidate.target == current)
@@ -1106,6 +1147,16 @@ impl PreparedFrame {
                 },
             )
             .map(|(_, _, target)| target)
+    }
+
+    pub fn is_enabled_keyboard_focus_target(&self, target: &InteractionTarget) -> bool {
+        self.hits
+            .find_target(target)
+            .is_some_and(|record| record.visible() && record.enabled())
+    }
+
+    pub const fn interaction_focused_target(&self) -> Option<&InteractionTarget> {
+        self.interaction.focused.as_ref()
     }
 
     pub fn last_choice_target(&self) -> Option<InteractionTarget> {

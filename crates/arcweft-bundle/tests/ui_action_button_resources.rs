@@ -26,6 +26,8 @@ fn runtime_action_button_resolves_label_and_typed_submit_action() {
             bounds: UiRuntimeButtonBounds::new(484_000, 48_000, 128_000, 48_000),
             source: None,
         }],
+        focus_groups: Vec::new(),
+        focus_navigation: Vec::new(),
         adapter_requirements: Vec::new(),
     };
     let text = UiTextResource {

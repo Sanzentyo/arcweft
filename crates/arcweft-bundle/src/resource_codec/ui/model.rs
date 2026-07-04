@@ -17,6 +17,10 @@ pub struct UiProgramResource {
     pub semantic_targets: Vec<UiSemanticTarget>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub action_buttons: Vec<UiActionButtonResource>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub focus_groups: Vec<UiFocusGroupResource>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub focus_navigation: Vec<UiFocusNavigationResource>,
     pub adapter_requirements: Vec<CrossSectionRef>,
 }
 
@@ -209,6 +213,133 @@ pub enum UiRuntimeActionButtonAction {
         input_target: String,
         ime_policy: UiTextSubmitImePolicy,
     },
+}
+
+/// Authored focus group metadata for Arcweft-owned player navigation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiFocusGroupResource {
+    pub public_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    #[serde(default)]
+    pub policy: UiFocusGroupPolicy,
+    #[serde(default)]
+    pub initial: UiFocusInitialPolicy,
+    #[serde(default)]
+    pub wrap: UiFocusWrapPolicy,
+    #[serde(default)]
+    pub disabled_skip: UiFocusSkipPolicy,
+    #[serde(default)]
+    pub hidden_skip: UiFocusSkipPolicy,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<SourceRangeRef>,
+}
+
+/// Runtime-facing focus group emitted in display snapshots.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiRuntimeFocusGroup {
+    pub public_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    pub policy: UiFocusGroupPolicy,
+    pub initial: UiFocusInitialPolicy,
+    pub wrap: UiFocusWrapPolicy,
+    pub disabled_skip: UiFocusSkipPolicy,
+    pub hidden_skip: UiFocusSkipPolicy,
+}
+
+/// Focus target and directional edges authored by the View DSL.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiFocusNavigationResource {
+    pub public_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edges: Vec<UiFocusNavigationEdge>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<SourceRangeRef>,
+}
+
+/// Runtime-facing focus navigation emitted in display snapshots.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiRuntimeFocusNavigation {
+    pub public_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edges: Vec<UiRuntimeFocusNavigationEdge>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiFocusNavigationEdge {
+    pub direction: UiFocusDirection,
+    pub target: UiFocusTargetResolution,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<SourceRangeRef>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiRuntimeFocusNavigationEdge {
+    pub direction: UiFocusDirection,
+    pub target: UiFocusTargetResolution,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiFocusDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+    Next,
+    Previous,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiFocusTargetResolution {
+    Explicit { target: String },
+    Auto,
+    None,
+    GroupBoundary,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiFocusGroupPolicy {
+    #[default]
+    Normal,
+    Trap,
+    Modal,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiFocusInitialPolicy {
+    #[default]
+    Auto,
+    First,
+    Last,
+    Explicit {
+        target: String,
+    },
+    None,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiFocusWrapPolicy {
+    #[default]
+    Wrap,
+    NoWrap,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiFocusSkipPolicy {
+    #[default]
+    Skip,
+    Stop,
 }
 
 /// Product style section decoded from `UiStyle`.
@@ -857,6 +988,77 @@ impl UiProgramResource {
                 },
             })
             .collect()
+    }
+
+    pub fn runtime_focus_groups(&self) -> Vec<UiRuntimeFocusGroup> {
+        self.focus_groups
+            .iter()
+            .map(|group| UiRuntimeFocusGroup {
+                public_id: group.public_id.clone(),
+                parent: group.parent.clone(),
+                policy: group.policy,
+                initial: group.initial.clone(),
+                wrap: group.wrap,
+                disabled_skip: group.disabled_skip,
+                hidden_skip: group.hidden_skip,
+            })
+            .collect()
+    }
+
+    pub fn runtime_focus_navigation(&self) -> Vec<UiRuntimeFocusNavigation> {
+        self.focus_navigation
+            .iter()
+            .map(|target| UiRuntimeFocusNavigation {
+                public_id: target.public_id.clone(),
+                group: target.group.clone(),
+                edges: target
+                    .edges
+                    .iter()
+                    .map(|edge| UiRuntimeFocusNavigationEdge {
+                        direction: edge.direction,
+                        target: edge.target.clone(),
+                    })
+                    .collect(),
+            })
+            .collect()
+    }
+}
+
+impl UiFocusDirection {
+    pub const fn is_spatial(self) -> bool {
+        matches!(self, Self::Up | Self::Down | Self::Left | Self::Right)
+    }
+
+    pub const fn linear_delta(self) -> Option<isize> {
+        match self {
+            Self::Next => Some(1),
+            Self::Previous => Some(-1),
+            Self::Up | Self::Down | Self::Left | Self::Right => None,
+        }
+    }
+}
+
+impl UiFocusTargetResolution {
+    pub fn explicit_target(&self) -> Option<&str> {
+        match self {
+            Self::Explicit { target } => Some(target.as_str()),
+            Self::Auto | Self::None | Self::GroupBoundary => None,
+        }
+    }
+}
+
+impl UiFocusInitialPolicy {
+    pub fn explicit_target(&self) -> Option<&str> {
+        match self {
+            Self::Explicit { target } => Some(target.as_str()),
+            Self::Auto | Self::First | Self::Last | Self::None => None,
+        }
+    }
+}
+
+impl UiFocusWrapPolicy {
+    pub const fn allows_wrap(self) -> bool {
+        matches!(self, Self::Wrap)
     }
 }
 

@@ -2,6 +2,7 @@
 
 pub mod action_buttons;
 pub mod characters;
+pub mod controller;
 pub mod frame;
 pub mod images;
 pub mod input;

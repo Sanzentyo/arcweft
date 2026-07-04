@@ -9,8 +9,11 @@ use arcweft_presentation::text_input::{
 use arcweft_render_text::{RichTextColor, RichTextFontFamily, RichTextStyle};
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, FocusNavigationDirection, InteractionVisualState, RenderChoiceItem,
-    RenderDialogue, RenderFontFamily, RenderPreferences, RenderScene, RenderTextInputControl,
-    RenderTextSlant, RenderTextWeight, RenderViewport, SharedFramePlanner,
+    RenderDialogue, RenderFocusGroup, RenderFocusGroupPolicy, RenderFocusInitialPolicy,
+    RenderFocusNavigation, RenderFocusNavigationEdge, RenderFocusSkipPolicy,
+    RenderFocusTargetResolution, RenderFocusWrapPolicy, RenderFontFamily, RenderPreferences,
+    RenderScene, RenderTextInputControl, RenderTextSlant, RenderTextWeight, RenderViewport,
+    SharedFramePlanner,
 };
 use arcweft_render_wgpu::sample::{DemoAnimationClock, DemoImageKind, generated_demo_images};
 
@@ -36,6 +39,8 @@ fn scene() -> RenderScene {
         ],
         text_inputs: Vec::new(),
         action_buttons: Vec::new(),
+        focus_groups: Vec::new(),
+        focus_navigation: Vec::new(),
         images: Vec::new(),
         viewport,
         visual_time_millis: 0,
@@ -199,6 +204,113 @@ fn directional_keyboard_navigation_uses_focus_target_geometry() {
     );
     assert_eq!(
         frame.directional_keyboard_focus_target(Some(&top_left), FocusNavigationDirection::Up),
+        None
+    );
+}
+
+#[test]
+fn focus_navigation_explicit_edge_overrides_geometry() {
+    let top_left = text_target("focus_nav.top_left");
+    let top_right = text_target("focus_nav.top_right");
+    let bottom_left = text_target("focus_nav.bottom_left");
+    let mut scene = scene();
+    scene.choices.clear();
+    scene.text_inputs = vec![
+        text_control(
+            top_left.clone(),
+            "",
+            SemanticRole::TextField,
+            TextInputOptions::default(),
+            HitRect::new(80.0, 80.0, 220.0, 44.0),
+        ),
+        text_control(
+            top_right,
+            "",
+            SemanticRole::TextField,
+            TextInputOptions::default(),
+            HitRect::new(360.0, 80.0, 220.0, 44.0),
+        ),
+        text_control(
+            bottom_left.clone(),
+            "",
+            SemanticRole::TextField,
+            TextInputOptions::default(),
+            HitRect::new(80.0, 180.0, 220.0, 44.0),
+        ),
+    ];
+    scene.focus_navigation = vec![RenderFocusNavigation {
+        target: top_left.clone(),
+        group: None,
+        edges: vec![RenderFocusNavigationEdge {
+            direction: FocusNavigationDirection::Right,
+            target: RenderFocusTargetResolution::Explicit(bottom_left.clone()),
+        }],
+    }];
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
+
+    assert_eq!(
+        frame.focus_target(Some(&top_left), FocusNavigationDirection::Right),
+        Some(bottom_left)
+    );
+}
+
+#[test]
+fn focus_navigation_next_previous_respects_no_wrap_group() {
+    let first = text_target("focus_nav.first");
+    let second = text_target("focus_nav.second");
+    let mut scene = scene();
+    scene.choices.clear();
+    scene.text_inputs = vec![
+        text_control(
+            first.clone(),
+            "",
+            SemanticRole::TextField,
+            TextInputOptions::default(),
+            HitRect::new(80.0, 80.0, 220.0, 44.0),
+        ),
+        text_control(
+            second.clone(),
+            "",
+            SemanticRole::TextField,
+            TextInputOptions::default(),
+            HitRect::new(360.0, 80.0, 220.0, 44.0),
+        ),
+    ];
+    scene.focus_groups = vec![RenderFocusGroup {
+        public_id: "group.focus_nav".to_owned(),
+        parent: None,
+        policy: RenderFocusGroupPolicy::Normal,
+        initial: RenderFocusInitialPolicy::Auto,
+        wrap: RenderFocusWrapPolicy::NoWrap,
+        disabled_skip: RenderFocusSkipPolicy::Skip,
+        hidden_skip: RenderFocusSkipPolicy::Skip,
+    }];
+    scene.focus_navigation = vec![
+        RenderFocusNavigation {
+            target: first.clone(),
+            group: Some("group.focus_nav".to_owned()),
+            edges: Vec::new(),
+        },
+        RenderFocusNavigation {
+            target: second.clone(),
+            group: Some("group.focus_nav".to_owned()),
+            edges: Vec::new(),
+        },
+    ];
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
+
+    assert_eq!(
+        frame.focus_target(Some(&first), FocusNavigationDirection::Next),
+        Some(second.clone())
+    );
+    assert_eq!(
+        frame.focus_target(Some(&second), FocusNavigationDirection::Next),
+        None
+    );
+    assert_eq!(
+        frame.focus_target(Some(&first), FocusNavigationDirection::Previous),
         None
     );
 }

@@ -20,6 +20,8 @@ fn frame() -> arcweft_render_wgpu::geometry::PreparedFrame {
         ],
         text_inputs: Vec::new(),
         action_buttons: Vec::new(),
+        focus_groups: Vec::new(),
+        focus_navigation: Vec::new(),
         images: Vec::new(),
         viewport: RenderViewport {
             logical_width: 1280.0,

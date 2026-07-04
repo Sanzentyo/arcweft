@@ -190,7 +190,75 @@ pub enum ViewModifier {
     },
     Environment(Vec<ViewArg>),
     Focus(String),
+    Navigation(ViewNavigationModifier),
     Raw(String),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ViewNavigationModifier {
+    edges: Vec<ViewNavigationEdge>,
+    range: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ViewNavigationEdge {
+    direction: ViewNavigationDirection,
+    target: ViewNavigationTarget,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ViewNavigationDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+    Next,
+    Previous,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ViewNavigationTarget {
+    Explicit(EntityRefSyntax),
+    Auto,
+    None,
+    GroupBoundary,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ViewNavigationGroup {
+    group: Option<EntityRefSyntax>,
+    parent: Option<EntityRefSyntax>,
+    axis: ViewNavigationAxis,
+    wrap: Option<bool>,
+    initial: ViewNavigationInitial,
+    trap: ViewNavigationTrap,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ViewNavigationAxis {
+    #[default]
+    Auto,
+    Horizontal,
+    Vertical,
+    Grid,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum ViewNavigationInitial {
+    #[default]
+    Auto,
+    First,
+    Last,
+    Explicit(EntityRefSyntax),
+    None,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ViewNavigationTrap {
+    #[default]
+    Normal,
+    Trap,
+    Modal,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -279,6 +347,10 @@ impl ViewElement {
 
     pub const fn range(&self) -> TextRange {
         self.range
+    }
+
+    pub fn navigation_group(&self) -> Option<ViewNavigationGroup> {
+        ViewNavigationGroup::from_args(&self.args)
     }
 }
 
@@ -533,6 +605,155 @@ impl ViewModifier {
 
     pub fn style_css(source: impl Into<String>) -> Self {
         Self::Style(ViewStyleModifier::inline_css(source))
+    }
+}
+
+impl ViewNavigationModifier {
+    pub const fn new(edges: Vec<ViewNavigationEdge>, range: TextRange) -> Self {
+        Self { edges, range }
+    }
+
+    pub fn edges(&self) -> &[ViewNavigationEdge] {
+        &self.edges
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl ViewNavigationEdge {
+    pub const fn new(direction: ViewNavigationDirection, target: ViewNavigationTarget) -> Self {
+        Self { direction, target }
+    }
+
+    pub const fn direction(&self) -> ViewNavigationDirection {
+        self.direction
+    }
+
+    pub const fn target(&self) -> &ViewNavigationTarget {
+        &self.target
+    }
+}
+
+impl ViewNavigationGroup {
+    pub fn from_args(args: &[ViewArg]) -> Option<Self> {
+        let axis = args
+            .iter()
+            .find_map(|arg| named_raw_arg(arg, "nav"))
+            .and_then(parse_axis)?;
+        Some(Self {
+            group: args.iter().find_map(|arg| named_entity_arg(arg, "group")),
+            parent: args.iter().find_map(|arg| named_entity_arg(arg, "parent")),
+            axis,
+            wrap: args.iter().find_map(|arg| named_bool_arg(arg, "wrap")),
+            initial: args
+                .iter()
+                .find_map(|arg| named_initial_arg(arg, "initial"))
+                .unwrap_or_default(),
+            trap: args
+                .iter()
+                .find_map(|arg| named_raw_arg(arg, "trap"))
+                .and_then(parse_trap)
+                .unwrap_or_default(),
+        })
+    }
+
+    pub const fn group(&self) -> Option<&EntityRefSyntax> {
+        self.group.as_ref()
+    }
+
+    pub const fn parent(&self) -> Option<&EntityRefSyntax> {
+        self.parent.as_ref()
+    }
+
+    pub const fn axis(&self) -> ViewNavigationAxis {
+        self.axis
+    }
+
+    pub const fn wrap(&self) -> Option<bool> {
+        self.wrap
+    }
+
+    pub const fn initial(&self) -> &ViewNavigationInitial {
+        &self.initial
+    }
+
+    pub const fn trap(&self) -> ViewNavigationTrap {
+        self.trap
+    }
+}
+
+fn named_raw_arg<'a>(arg: &'a ViewArg, name: &str) -> Option<&'a str> {
+    match arg {
+        ViewArg::Named {
+            name: actual,
+            value: Expr::Raw(value) | Expr::Path(value),
+        } if actual == name => Some(value.as_str()),
+        _ => None,
+    }
+}
+
+fn named_entity_arg(arg: &ViewArg, name: &str) -> Option<EntityRefSyntax> {
+    match arg {
+        ViewArg::Named {
+            name: actual,
+            value: Expr::EntityRef(value),
+        } if actual == name => Some(value.clone()),
+        _ => None,
+    }
+}
+
+fn named_bool_arg(arg: &ViewArg, name: &str) -> Option<bool> {
+    match arg {
+        ViewArg::Named {
+            name: actual,
+            value: Expr::Literal(crate::expr::Literal::Bool(value)),
+        } if actual == name => Some(*value),
+        _ => None,
+    }
+}
+
+fn named_initial_arg(arg: &ViewArg, name: &str) -> Option<ViewNavigationInitial> {
+    match arg {
+        ViewArg::Named {
+            name: actual,
+            value,
+        } if actual == name => match value {
+            Expr::EntityRef(value) => Some(ViewNavigationInitial::Explicit(value.clone())),
+            Expr::Raw(value) | Expr::Path(value) => parse_initial(value),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn parse_axis(value: &str) -> Option<ViewNavigationAxis> {
+    match value.trim().trim_start_matches('.') {
+        "auto" => Some(ViewNavigationAxis::Auto),
+        "horizontal" => Some(ViewNavigationAxis::Horizontal),
+        "vertical" => Some(ViewNavigationAxis::Vertical),
+        "grid" => Some(ViewNavigationAxis::Grid),
+        _ => None,
+    }
+}
+
+fn parse_initial(value: &str) -> Option<ViewNavigationInitial> {
+    match value.trim().trim_start_matches('.') {
+        "auto" => Some(ViewNavigationInitial::Auto),
+        "first" => Some(ViewNavigationInitial::First),
+        "last" => Some(ViewNavigationInitial::Last),
+        "none" => Some(ViewNavigationInitial::None),
+        _ => None,
+    }
+}
+
+fn parse_trap(value: &str) -> Option<ViewNavigationTrap> {
+    match value.trim().trim_start_matches('.') {
+        "normal" => Some(ViewNavigationTrap::Normal),
+        "trap" => Some(ViewNavigationTrap::Trap),
+        "modal" => Some(ViewNavigationTrap::Modal),
+        _ => None,
     }
 }
 

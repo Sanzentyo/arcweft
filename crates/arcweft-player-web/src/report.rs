@@ -77,6 +77,7 @@ pub struct WebFrameObservationReport {
     pub text: Vec<WebFrameText>,
     pub styled_paragraphs: Vec<WebFrameStyledParagraph>,
     pub choices: Vec<WebFrameChoice>,
+    pub focus: arcweft_render_wgpu::geometry::FocusNavigationDebug,
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -262,6 +263,7 @@ impl WebFrameObservationReport {
                         })
                 })
                 .collect(),
+            focus: frame.focus_debug(),
         })
     }
 }
