@@ -46,6 +46,10 @@ pub struct UiRuntimeControlVisualStyle {
     pub radius_milli: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depth_milli: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filters: Option<UiRuntimeControlFilterList>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backdrop_filters: Option<UiRuntimeControlFilterList>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shadows: Vec<UiRuntimeShadow>,
 }
@@ -80,6 +84,24 @@ pub enum UiRuntimeShadowKind {
     #[default]
     Outer,
     Inset,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiRuntimeControlFilterList {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub filters: Vec<UiRuntimeControlFilter>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum UiRuntimeControlFilter {
+    Blur { radius_milli: u32 },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RuntimeControlFilterSlot {
+    Filter,
+    BackdropFilter,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -192,6 +214,12 @@ impl UiRuntimeControlVisualStyle {
         }
         if patch.depth_milli.is_some() {
             self.depth_milli = patch.depth_milli;
+        }
+        if patch.filters.is_some() {
+            self.filters.clone_from(&patch.filters);
+        }
+        if patch.backdrop_filters.is_some() {
+            self.backdrop_filters.clone_from(&patch.backdrop_filters);
         }
         if !patch.shadows.is_empty() {
             self.shadows.clone_from(&patch.shadows);
@@ -538,6 +566,24 @@ fn apply_declaration(
             Some(depth_milli) => visual.depth_milli = Some(depth_milli),
             None => push_unsupported_value(diagnostics, target, raw_property),
         },
+        "filter" => apply_filter_declaration(
+            style_resource,
+            value,
+            diagnostics,
+            target,
+            raw_property,
+            visual,
+            RuntimeControlFilterSlot::Filter,
+        ),
+        "backdrop-filter" | "-webkit-backdrop-filter" => apply_filter_declaration(
+            style_resource,
+            value,
+            diagnostics,
+            target,
+            raw_property,
+            visual,
+            RuntimeControlFilterSlot::BackdropFilter,
+        ),
         "box-shadow" => apply_shadow_declaration(
             style_resource,
             value,
@@ -702,6 +748,24 @@ fn apply_shadow_declaration(
     }
 }
 
+fn apply_filter_declaration(
+    style_resource: &UiStyleResource,
+    value: &UiStyleValue,
+    diagnostics: &mut UiRuntimeControlStyleDiagnostics,
+    target: &str,
+    property: &str,
+    visual: &mut UiRuntimeControlVisualStyle,
+    slot: RuntimeControlFilterSlot,
+) {
+    match filter_list(style_resource, value) {
+        Some(filters) => match slot {
+            RuntimeControlFilterSlot::Filter => visual.filters = Some(filters),
+            RuntimeControlFilterSlot::BackdropFilter => visual.backdrop_filters = Some(filters),
+        },
+        None => push_unsupported_value(diagnostics, target, property),
+    }
+}
+
 fn push_unsupported_value(
     diagnostics: &mut UiRuntimeControlStyleDiagnostics,
     target: &str,
@@ -847,6 +911,25 @@ fn shadow_list(
     }
 }
 
+fn filter_list(
+    style: &UiStyleResource,
+    value: &UiStyleValue,
+) -> Option<UiRuntimeControlFilterList> {
+    match value {
+        UiStyleValue::Text(value) => parse_filter_list(value),
+        UiStyleValue::Token(token) => style
+            .tokens
+            .iter()
+            .find(|candidate| candidate.public_id == *token)
+            .and_then(|token| filter_list(style, &token.value)),
+        UiStyleValue::SystemColor(_)
+        | UiStyleValue::Rgba(_)
+        | UiStyleValue::Milli(_)
+        | UiStyleValue::Resource(_)
+        | UiStyleValue::Digest(_) => None,
+    }
+}
+
 fn parse_opacity_milli(raw: &str) -> Option<u16> {
     let value = raw.trim();
     if let Some(percent) = value.strip_suffix('%') {
@@ -886,6 +969,46 @@ fn parse_shadow_list(raw: &str, fallback_radius_milli: u32) -> Option<Vec<UiRunt
         .into_iter()
         .map(|item| parse_shadow_item(&item, fallback_radius_milli))
         .collect()
+}
+
+fn parse_filter_list(raw: &str) -> Option<UiRuntimeControlFilterList> {
+    let value = raw.trim();
+    if value.eq_ignore_ascii_case("none") {
+        return Some(UiRuntimeControlFilterList::default());
+    }
+
+    let mut rest = value;
+    let mut filters = Vec::new();
+    while !rest.trim_start().is_empty() {
+        let trimmed = rest.trim_start();
+        let open = trimmed.find('(')?;
+        let name = trimmed[..open].trim();
+        let after_open = &trimmed[open + 1..];
+        let close = after_open.find(')')?;
+        let argument = &after_open[..close];
+        if !name.eq_ignore_ascii_case("blur") {
+            return None;
+        }
+        filters.push(UiRuntimeControlFilter::Blur {
+            radius_milli: parse_filter_blur_radius_milli(argument)?,
+        });
+        rest = &after_open[close + 1..];
+    }
+
+    (!filters.is_empty()).then_some(UiRuntimeControlFilterList { filters })
+}
+
+fn parse_filter_blur_radius_milli(raw: &str) -> Option<u32> {
+    let value = raw.trim();
+    if value == "0" {
+        return Some(0);
+    }
+    let px = value.strip_suffix("px")?.trim().parse::<f64>().ok()?;
+    if px < 0.0 {
+        return None;
+    }
+    rounded_clamped_i32(px * 1_000.0, 0.0, f64::from(i32::MAX))
+        .and_then(|value| u32::try_from(value).ok())
 }
 
 fn split_shadow_items(value: &str) -> Vec<String> {

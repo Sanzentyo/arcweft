@@ -1,10 +1,12 @@
 use arcweft_bundle::resource_codec::ui::{
-    RgbaColor, UiRuntimeControlBorderStyle, UiRuntimeControlFocusRingStyle, UiRuntimeControlStyle,
-    UiRuntimeControlVisualStyle, UiRuntimeShadow, UiRuntimeShadowKind,
+    RgbaColor, UiRuntimeControlBorderStyle, UiRuntimeControlFilter, UiRuntimeControlFilterList,
+    UiRuntimeControlFocusRingStyle, UiRuntimeControlStyle, UiRuntimeControlVisualStyle,
+    UiRuntimeShadow, UiRuntimeShadowKind,
 };
 use arcweft_render_wgpu::geometry::{
-    RenderControlBorderStyle, RenderControlFocusRingStyle, RenderControlShadow,
-    RenderControlShadowKind, RenderControlStyle, RenderControlVisualStyle,
+    RenderControlBorderStyle, RenderControlFilter, RenderControlFilterList,
+    RenderControlFocusRingStyle, RenderControlShadow, RenderControlShadowKind, RenderControlStyle,
+    RenderControlVisualStyle,
 };
 use num_traits::ToPrimitive;
 
@@ -29,6 +31,8 @@ fn lower_visual_style(style: &UiRuntimeControlVisualStyle) -> RenderControlVisua
         opacity: style.opacity_milli.map(|value| f32::from(value) / 1_000.0),
         radius_px: style.radius_milli.map(milli_u32_to_f32),
         depth_milli: style.depth_milli,
+        filters: style.filters.as_ref().map(lower_filter_list),
+        backdrop_filters: style.backdrop_filters.as_ref().map(lower_filter_list),
         shadows: style.shadows.iter().copied().map(lower_shadow).collect(),
     }
 }
@@ -45,6 +49,20 @@ fn lower_focus_ring(ring: UiRuntimeControlFocusRingStyle) -> RenderControlFocusR
         color: rgba_f32(ring.color),
         width_px: milli_u32_to_f32(ring.width_milli),
         offset_px: milli_i32_to_f32(ring.offset_milli),
+    }
+}
+
+fn lower_filter_list(list: &UiRuntimeControlFilterList) -> RenderControlFilterList {
+    RenderControlFilterList {
+        filters: list.filters.iter().copied().map(lower_filter).collect(),
+    }
+}
+
+fn lower_filter(filter: UiRuntimeControlFilter) -> RenderControlFilter {
+    match filter {
+        UiRuntimeControlFilter::Blur { radius_milli } => RenderControlFilter::Blur {
+            radius_px: milli_u32_to_f32(radius_milli),
+        },
     }
 }
 

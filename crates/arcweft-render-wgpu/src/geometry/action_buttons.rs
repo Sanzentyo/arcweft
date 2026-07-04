@@ -1,7 +1,8 @@
 use super::control_style::{
-    ControlInteractionStyleState, ControlPointerStyleState, PreparedControlShadow,
-    RenderControlStyle, fill_with_opacity, push_control_border, push_control_focus_ring,
-    push_control_shadow_plan, state_from_interaction,
+    ControlInteractionStyleState, ControlPointerStyleState, PreparedControlBackdrop,
+    PreparedControlFilter, PreparedControlShadow, RenderControlStyle, fill_with_opacity,
+    push_control_backdrop_plan, push_control_border, push_control_filter_plan,
+    push_control_focus_ring, push_control_shadow_plan, state_from_interaction,
 };
 use super::{
     PaintRect, Palette, RenderFontFamily, RenderScene, RenderTextBlock, RenderTextSlant,
@@ -62,7 +63,9 @@ pub(super) struct ActionButtonBuildOutput<'a> {
     pub(super) semantics: &'a mut SemanticTree,
     pub(super) rectangles: &'a mut Vec<PaintRect>,
     pub(super) text: &'a mut Vec<RenderTextBlock>,
+    pub(super) control_backdrops: &'a mut Vec<PreparedControlBackdrop>,
     pub(super) control_shadows: &'a mut Vec<PreparedControlShadow>,
+    pub(super) control_filters: &'a mut Vec<PreparedControlFilter>,
 }
 
 pub(super) fn action_button_depth_milli(scene: &RenderScene, button: &RenderActionButton) -> i32 {
@@ -92,7 +95,9 @@ pub(super) fn build_action_button(
         semantics,
         rectangles,
         text,
+        control_backdrops,
         control_shadows,
+        control_filters,
     } = output;
     let is_focused = scene.interaction.focused.as_ref() == Some(&button.target);
     let is_hovered = scene.interaction.hovered.as_ref() == Some(&button.target);
@@ -100,6 +105,7 @@ pub(super) fn build_action_button(
     let visual = button
         .style
         .visual_for_state(visual_state_for_button(scene, button));
+    push_control_backdrop_plan(control_backdrops, &button.target, button.bounds, &visual);
     push_control_shadow_plan(control_shadows, &button.target, button.bounds, &visual);
     let fallback_fill = action_button_fill(
         button.enabled,
@@ -137,6 +143,7 @@ pub(super) fn build_action_button(
         slant: RenderTextSlant::Upright,
         rgba: visual.text.unwrap_or(palette.choice_text),
     });
+    push_control_filter_plan(control_filters, &button.target, button.bounds, &visual);
     semantics.push(
         SemanticNode::new(
             layer.clone(),

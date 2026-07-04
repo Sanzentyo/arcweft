@@ -28,9 +28,10 @@ pub use action_buttons::{
     PreparedActionButton, RenderActionButton, RenderActionButtonAction, RenderTextSubmitImePolicy,
 };
 pub use control_style::{
-    PreparedControlShadow, RenderControlBorderStyle, RenderControlFocusRingStyle,
-    RenderControlShadow, RenderControlShadowKind, RenderControlStyle, RenderControlVisualState,
-    RenderControlVisualStyle,
+    PreparedControlBackdrop, PreparedControlFilter, PreparedControlShadow,
+    RenderControlBorderStyle, RenderControlFilter, RenderControlFilterList,
+    RenderControlFocusRingStyle, RenderControlShadow, RenderControlShadowKind, RenderControlStyle,
+    RenderControlVisualState, RenderControlVisualStyle, RuntimeControlBackdropSamplePolicy,
 };
 pub use focus_navigation::{
     FocusNavigationDebug, FocusNavigationDebugCandidate, PreparedFocusGraph, PreparedFocusGroup,
@@ -330,7 +331,9 @@ pub struct PreparedFrame {
     pub styled_paragraphs: Vec<RenderStyledParagraph>,
     pub choices: Vec<RenderChoice>,
     pub action_buttons: Vec<PreparedActionButton>,
+    pub control_backdrops: Vec<PreparedControlBackdrop>,
     pub control_shadows: Vec<PreparedControlShadow>,
+    pub control_filters: Vec<PreparedControlFilter>,
     pub focus_graph: PreparedFocusGraph,
     ui_scenes: Vec<PreparedUiScene>,
     dialogue_present: bool,
@@ -587,7 +590,9 @@ impl SharedFramePlanner {
             &action,
         )?;
         let submit_action = RenderActionKind::TextInputSubmit.public_id()?;
+        let mut control_backdrops = Vec::new();
         let mut control_shadows = Vec::new();
+        let mut control_filters = Vec::new();
         let (focused_text_input, action_buttons) = build_runtime_controls(
             scene,
             &ids,
@@ -596,7 +601,9 @@ impl SharedFramePlanner {
             &mut text,
             &palette,
             &submit_action,
+            &mut control_backdrops,
             &mut control_shadows,
+            &mut control_filters,
         )?;
         let hits = semantics.to_hit_tree();
 
@@ -611,7 +618,9 @@ impl SharedFramePlanner {
             styled_paragraphs,
             choices,
             action_buttons,
+            control_backdrops,
             control_shadows,
+            control_filters,
             focus_graph: PreparedFocusGraph::new(
                 scene.focus_groups.clone(),
                 scene.focus_navigation.clone(),
@@ -664,7 +673,9 @@ fn build_runtime_controls(
     text: &mut Vec<RenderTextBlock>,
     palette: &Palette,
     submit_action: &PublicId,
+    control_backdrops: &mut Vec<PreparedControlBackdrop>,
     control_shadows: &mut Vec<PreparedControlShadow>,
+    control_filters: &mut Vec<PreparedControlFilter>,
 ) -> Result<(Option<PreparedTextInputTarget>, Vec<PreparedActionButton>), FramePlanError> {
     let mut items = Vec::with_capacity(scene.text_inputs.len() + scene.action_buttons.len());
     items.extend(
@@ -706,7 +717,9 @@ fn build_runtime_controls(
                     rectangles,
                     text,
                     palette,
+                    control_backdrops,
                     control_shadows,
+                    control_filters,
                 )? {
                     focused_text_input = Some(target);
                 }
@@ -720,7 +733,9 @@ fn build_runtime_controls(
                         semantics,
                         rectangles,
                         text,
+                        control_backdrops,
                         control_shadows,
+                        control_filters,
                     },
                     palette,
                     submit_action,

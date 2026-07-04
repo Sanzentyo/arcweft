@@ -1,6 +1,6 @@
 use super::PaintRect;
 use crate::ui_box_shadow::UiBoxShadowPassPlan;
-use crate::ui_scene::{UiBoxShadow, UiBoxShadowList, UiColorRgba8};
+use crate::ui_scene::{UiBoxShadow, UiBoxShadowList, UiColorRgba8, UiFilter, UiFilterList};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
 
@@ -24,6 +24,8 @@ pub struct RenderControlVisualStyle {
     pub opacity: Option<f32>,
     pub radius_px: Option<f32>,
     pub depth_milli: Option<i32>,
+    pub filters: Option<RenderControlFilterList>,
+    pub backdrop_filters: Option<RenderControlFilterList>,
     pub shadows: Vec<RenderControlShadow>,
 }
 
@@ -58,6 +60,16 @@ pub enum RenderControlShadowKind {
     Inset,
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RenderControlFilterList {
+    pub filters: Vec<RenderControlFilter>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RenderControlFilter {
+    Blur { radius_px: f32 },
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RenderControlVisualState {
     Normal,
@@ -71,6 +83,26 @@ pub enum RenderControlVisualState {
 pub struct PreparedControlShadow {
     pub target: InteractionTarget,
     pub plan: UiBoxShadowPassPlan,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreparedControlBackdrop {
+    pub target: InteractionTarget,
+    pub bounds: HitRect,
+    pub filters: UiFilterList,
+    pub sample_policy: RuntimeControlBackdropSamplePolicy,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreparedControlFilter {
+    pub target: InteractionTarget,
+    pub bounds: HitRect,
+    pub filters: UiFilterList,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeControlBackdropSamplePolicy {
+    PriorFrameContentAndEarlierRuntimeControls,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -146,6 +178,12 @@ impl RenderControlVisualStyle {
         if patch.depth_milli.is_some() {
             self.depth_milli = patch.depth_milli;
         }
+        if patch.filters.is_some() {
+            self.filters.clone_from(&patch.filters);
+        }
+        if patch.backdrop_filters.is_some() {
+            self.backdrop_filters.clone_from(&patch.backdrop_filters);
+        }
         if !patch.shadows.is_empty() {
             self.shadows.clone_from(&patch.shadows);
         }
@@ -177,6 +215,26 @@ impl RenderControlShadow {
                 self.border_radius_px,
                 color,
             ),
+        }
+    }
+}
+
+impl RenderControlFilterList {
+    fn ui_filter_list(&self) -> UiFilterList {
+        UiFilterList::from_filters(
+            self.filters
+                .iter()
+                .copied()
+                .map(RenderControlFilter::ui_filter)
+                .collect(),
+        )
+    }
+}
+
+impl RenderControlFilter {
+    const fn ui_filter(self) -> UiFilter {
+        match self {
+            Self::Blur { radius_px } => UiFilter::Blur { radius_px },
         }
     }
 }
@@ -262,6 +320,48 @@ pub(super) fn push_control_focus_ring(
             rgba: ring.color,
         },
     ]);
+}
+
+pub(super) fn push_control_backdrop_plan(
+    output: &mut Vec<PreparedControlBackdrop>,
+    target: &InteractionTarget,
+    bounds: HitRect,
+    visual: &RenderControlVisualStyle,
+) {
+    let Some(filters) = &visual.backdrop_filters else {
+        return;
+    };
+    let filters = filters.ui_filter_list();
+    if filters.is_empty() {
+        return;
+    }
+    output.push(PreparedControlBackdrop {
+        target: target.clone(),
+        bounds,
+        filters,
+        sample_policy:
+            RuntimeControlBackdropSamplePolicy::PriorFrameContentAndEarlierRuntimeControls,
+    });
+}
+
+pub(super) fn push_control_filter_plan(
+    output: &mut Vec<PreparedControlFilter>,
+    target: &InteractionTarget,
+    bounds: HitRect,
+    visual: &RenderControlVisualStyle,
+) {
+    let Some(filters) = &visual.filters else {
+        return;
+    };
+    let filters = filters.ui_filter_list();
+    if filters.is_empty() {
+        return;
+    }
+    output.push(PreparedControlFilter {
+        target: target.clone(),
+        bounds,
+        filters,
+    });
 }
 
 pub(super) fn push_control_shadow_plan(

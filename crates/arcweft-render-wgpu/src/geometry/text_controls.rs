@@ -1,7 +1,8 @@
 use super::control_style::{
-    ControlInteractionStyleState, ControlPointerStyleState, PreparedControlShadow,
-    RenderControlStyle, fill_with_opacity, push_control_border, push_control_focus_ring,
-    push_control_shadow_plan, state_from_interaction,
+    ControlInteractionStyleState, ControlPointerStyleState, PreparedControlBackdrop,
+    PreparedControlFilter, PreparedControlShadow, RenderControlStyle, fill_with_opacity,
+    push_control_backdrop_plan, push_control_border, push_control_filter_plan,
+    push_control_focus_ring, push_control_shadow_plan, state_from_interaction,
 };
 use super::{
     FramePlanError, PaintRect, Palette, PreparedTextInputTarget, RenderFontFamily, RenderTextBlock,
@@ -135,13 +136,16 @@ pub(super) fn build_text_input(
     rectangles: &mut Vec<PaintRect>,
     text: &mut Vec<RenderTextBlock>,
     palette: &Palette,
+    control_backdrops: &mut Vec<PreparedControlBackdrop>,
     control_shadows: &mut Vec<PreparedControlShadow>,
+    control_filters: &mut Vec<PreparedControlFilter>,
 ) -> Result<Option<PreparedTextInputTarget>, FramePlanError> {
     let options = control.resolved_options()?;
     let is_focused = scene.interaction.focused.as_ref() == Some(&control.target);
     let state = visual_state_for_control(scene, control);
     let visual = control.style.visual_for_state(state);
     let visual_layout = visual_layout_for_control(control, &options);
+    push_control_backdrop_plan(control_backdrops, &control.target, control.bounds, &visual);
     push_control_shadow_plan(control_shadows, &control.target, control.bounds, &visual);
     rectangles.push(PaintRect {
         bounds: control.bounds,
@@ -188,6 +192,7 @@ pub(super) fn build_text_input(
         slant: RenderTextSlant::Upright,
         rgba: visual.text.unwrap_or(palette.choice_text),
     });
+    push_control_filter_plan(control_filters, &control.target, control.bounds, &visual);
 
     let mut node = SemanticNode::new(
         layer.clone(),

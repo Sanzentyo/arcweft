@@ -1,15 +1,16 @@
 use arcweft_bundle::resource_codec::ui::{
     CompositionOnBlurPolicy, EnterKeyHint, RgbaColor, TextAssistPolicy, TextCapitalization,
     UiInputKind, UiInputPurpose, UiRuntimeActionButton, UiRuntimeActionButtonAction,
-    UiRuntimeButtonBounds, UiRuntimeControlStyle, UiRuntimeControlVisualStyle,
-    UiRuntimeTextControl, UiRuntimeTextControlBounds, UiRuntimeTextControlHandlers,
-    UiRuntimeTextControlOptions, UiRuntimeTextSelection, UiSecureInputPolicy,
-    UiTextSelectionPolicy, UiTextShortcutPolicy, UiTextSubmitImePolicy, UiTextTabPolicy,
-    UiTextVerticalNavigationPolicy,
+    UiRuntimeButtonBounds, UiRuntimeControlFilter, UiRuntimeControlFilterList,
+    UiRuntimeControlStyle, UiRuntimeControlVisualStyle, UiRuntimeTextControl,
+    UiRuntimeTextControlBounds, UiRuntimeTextControlHandlers, UiRuntimeTextControlOptions,
+    UiRuntimeTextSelection, UiSecureInputPolicy, UiTextSelectionPolicy, UiTextShortcutPolicy,
+    UiTextSubmitImePolicy, UiTextTabPolicy, UiTextVerticalNavigationPolicy,
 };
 use arcweft_player_scene::action_buttons::RuntimeActionButtonLowerer;
 use arcweft_player_scene::input::InputController;
 use arcweft_player_scene::text_controls::RuntimeTextControlLowerer;
+use arcweft_render_wgpu::geometry::{RenderControlFilter, RenderControlFilterList};
 
 #[test]
 fn runtime_text_control_style_reaches_render_text_input_control() {
@@ -55,6 +56,35 @@ fn runtime_action_button_style_reaches_render_action_button() {
         Some([64.0 / 255.0, 96.0 / 255.0, 64.0 / 255.0, 1.0])
     );
     assert_eq!(render[0].style.normal.depth_milli, Some(2_100));
+}
+
+#[test]
+fn runtime_control_backdrop_filter_reaches_render_style() {
+    let mut input = InputController::default();
+    let runtime = text_control_with_style(
+        "input.feedback",
+        UiRuntimeControlStyle {
+            normal: UiRuntimeControlVisualStyle {
+                backdrop_filters: Some(UiRuntimeControlFilterList {
+                    filters: vec![UiRuntimeControlFilter::Blur {
+                        radius_milli: 12_000,
+                    }],
+                }),
+                ..UiRuntimeControlVisualStyle::default()
+            },
+            ..UiRuntimeControlStyle::default()
+        },
+    );
+
+    let render = RuntimeTextControlLowerer::lower_for_frame(&mut input, &[runtime])
+        .expect("text control lowers");
+
+    assert_eq!(
+        render[0].style.normal.backdrop_filters,
+        Some(RenderControlFilterList {
+            filters: vec![RenderControlFilter::Blur { radius_px: 12.0 }]
+        })
+    );
 }
 
 fn styled_fill_depth(

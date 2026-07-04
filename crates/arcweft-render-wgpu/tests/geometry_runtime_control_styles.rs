@@ -7,11 +7,13 @@ use arcweft_presentation::text_input::{
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderActionButton, RenderActionButtonAction,
-    RenderControlBorderStyle, RenderControlFocusRingStyle, RenderControlShadow,
-    RenderControlShadowKind, RenderControlStyle, RenderControlVisualStyle, RenderPreferences,
-    RenderScene, RenderTextInputControl, RenderTextSubmitImePolicy, RenderViewport,
+    RenderControlBorderStyle, RenderControlFilter, RenderControlFilterList,
+    RenderControlFocusRingStyle, RenderControlShadow, RenderControlShadowKind, RenderControlStyle,
+    RenderControlVisualStyle, RenderPreferences, RenderScene, RenderTextInputControl,
+    RenderTextSubmitImePolicy, RenderViewport, RuntimeControlBackdropSamplePolicy,
     SharedFramePlanner,
 };
+use arcweft_render_wgpu::ui_scene::UiFilter;
 
 #[test]
 fn action_button_hover_uses_authored_fill_and_text_color() {
@@ -139,6 +141,86 @@ fn supported_box_shadow_reaches_existing_shadow_pass_plan() {
 
     assert_eq!(shadow.plan.passes().len(), 1);
     assert_f32_near(shadow.plan.passes()[0].shadow.blur_radius_px, 18.0);
+}
+
+#[test]
+fn backdrop_filter_reaches_runtime_control_backdrop_plan() {
+    let input_target = target("input.feedback");
+    let control = text_control(input_target.clone()).with_style(RenderControlStyle {
+        normal: RenderControlVisualStyle {
+            backdrop_filters: Some(RenderControlFilterList {
+                filters: vec![RenderControlFilter::Blur { radius_px: 12.0 }],
+            }),
+            fill: Some([0.8, 0.8, 0.9, 0.42]),
+            depth_milli: Some(2_000),
+            ..RenderControlVisualStyle::default()
+        },
+        ..RenderControlStyle::default()
+    });
+    let scene = scene(vec![control], Vec::new(), InteractionVisualState::default());
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let backdrop = frame
+        .control_backdrops
+        .iter()
+        .find(|backdrop| backdrop.target == input_target)
+        .expect("control backdrop plan exists");
+
+    assert_eq!(backdrop.bounds, HitRect::new(48.0, 48.0, 420.0, 48.0));
+    assert_eq!(
+        backdrop.sample_policy,
+        RuntimeControlBackdropSamplePolicy::PriorFrameContentAndEarlierRuntimeControls
+    );
+    assert_eq!(
+        backdrop.filters.filters(),
+        &[UiFilter::Blur { radius_px: 12.0 }]
+    );
+}
+
+#[test]
+fn foreground_filter_reaches_runtime_control_filter_plan() {
+    let button_target = target("button.submit_feedback");
+    let input_target = target("input.feedback");
+    let button = RenderActionButton {
+        target: button_target.clone(),
+        label: "Send".to_owned(),
+        enabled: true,
+        bounds: HitRect::new(484.0, 48.0, 128.0, 48.0),
+        style: RenderControlStyle {
+            normal: RenderControlVisualStyle {
+                filters: Some(RenderControlFilterList {
+                    filters: vec![RenderControlFilter::Blur { radius_px: 2.5 }],
+                }),
+                ..RenderControlVisualStyle::default()
+            },
+            ..RenderControlStyle::default()
+        },
+        action: RenderActionButtonAction::TextInputSubmit {
+            input_target: input_target.clone(),
+            session: TextInputSessionId(41),
+            value: TextControlValue::plain("hello"),
+            selection: TextRange::new(TextByteOffset(5), TextByteOffset(5)),
+            revision: TextRevision::default(),
+            ime_policy: RenderTextSubmitImePolicy::Commit,
+        },
+    };
+    let scene = scene(
+        vec![text_control(input_target)],
+        vec![button],
+        InteractionVisualState::default(),
+    );
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let filter = frame
+        .control_filters
+        .iter()
+        .find(|filter| filter.target == button_target)
+        .expect("control filter plan exists");
+
+    assert_eq!(
+        filter.filters.filters(),
+        &[UiFilter::Blur { radius_px: 2.5 }]
+    );
 }
 
 #[test]

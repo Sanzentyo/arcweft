@@ -1,7 +1,8 @@
 use arcweft_bundle::resource_codec::ui::{
     RgbaColor, StyleAssignOp, UiElementKind, UiElementState, UiInputKind, UiInteractionState,
-    UiRuntimeControlState, UiRuntimeControlStyleDiagnosticReason, UiStyleDeclaration,
-    UiStyleResource, UiStyleRule, UiStyleSelector, UiStyleSelectorPart, UiStyleValue,
+    UiRuntimeControlFilter, UiRuntimeControlState, UiRuntimeControlStyleDiagnosticReason,
+    UiStyleDeclaration, UiStyleResource, UiStyleRule, UiStyleSelector, UiStyleSelectorPart,
+    UiStyleValue,
 };
 
 #[test]
@@ -225,13 +226,101 @@ fn surface_style_resolves_radius_fill_and_box_shadow() {
 }
 
 #[test]
-fn unsupported_style_property_produces_structured_diagnostic() {
+fn backdrop_filter_blur_resolves_to_typed_runtime_control_effect() {
     let style = UiStyleResource {
         rules: vec![rule(
             UiStyleSelectorPart::Element(UiElementKind::TextField),
             vec![decl(
                 "backdrop-filter",
-                UiStyleValue::Text("blur(8px)".to_owned()),
+                UiStyleValue::Text("blur(12px)".to_owned()),
+            )],
+        )],
+        ..UiStyleResource::default()
+    };
+
+    let resolved = style.runtime_text_control_style("input.feedback", UiInputKind::TextField);
+    let normal = resolved
+        .style
+        .visual_for_state(UiRuntimeControlState::Normal);
+
+    assert_eq!(
+        normal
+            .backdrop_filters
+            .as_ref()
+            .expect("backdrop filter")
+            .filters
+            .as_slice(),
+        &[UiRuntimeControlFilter::Blur {
+            radius_milli: 12_000,
+        }]
+    );
+    assert!(resolved.diagnostics.is_empty());
+}
+
+#[test]
+fn foreground_filter_blur_resolves_to_typed_runtime_control_effect() {
+    let style = UiStyleResource {
+        rules: vec![rule(
+            UiStyleSelectorPart::Element(UiElementKind::Button),
+            vec![decl("filter", UiStyleValue::Text("blur(2.5px)".to_owned()))],
+        )],
+        ..UiStyleResource::default()
+    };
+
+    let resolved = style
+        .resolve_runtime_control_style_for_test("button.submit_feedback", UiElementKind::Button);
+    let normal = resolved
+        .style
+        .visual_for_state(UiRuntimeControlState::Normal);
+
+    assert_eq!(
+        normal
+            .filters
+            .as_ref()
+            .expect("foreground filter")
+            .filters
+            .as_slice(),
+        &[UiRuntimeControlFilter::Blur {
+            radius_milli: 2_500,
+        }]
+    );
+    assert!(resolved.diagnostics.is_empty());
+}
+
+#[test]
+fn unsupported_filter_function_produces_structured_diagnostic() {
+    let style = UiStyleResource {
+        rules: vec![rule(
+            UiStyleSelectorPart::Element(UiElementKind::TextField),
+            vec![decl(
+                "backdrop-filter",
+                UiStyleValue::Text("brightness(120%)".to_owned()),
+            )],
+        )],
+        ..UiStyleResource::default()
+    };
+
+    let resolved = style.runtime_text_control_style("input.feedback", UiInputKind::TextField);
+
+    assert_eq!(resolved.diagnostics.diagnostics.len(), 1);
+    assert_eq!(
+        resolved.diagnostics.diagnostics[0].reason,
+        UiRuntimeControlStyleDiagnosticReason::UnsupportedValue
+    );
+    assert_eq!(
+        resolved.diagnostics.diagnostics[0].property,
+        "backdrop-filter"
+    );
+}
+
+#[test]
+fn unsupported_style_property_produces_structured_diagnostic() {
+    let style = UiStyleResource {
+        rules: vec![rule(
+            UiStyleSelectorPart::Element(UiElementKind::TextField),
+            vec![decl(
+                "transform",
+                UiStyleValue::Text("translateX(8px)".to_owned()),
             )],
         )],
         ..UiStyleResource::default()
@@ -244,10 +333,7 @@ fn unsupported_style_property_produces_structured_diagnostic() {
         resolved.diagnostics.diagnostics[0].reason,
         UiRuntimeControlStyleDiagnosticReason::UnsupportedProperty
     );
-    assert_eq!(
-        resolved.diagnostics.diagnostics[0].property,
-        "backdrop-filter"
-    );
+    assert_eq!(resolved.diagnostics.diagnostics[0].property, "transform");
 }
 
 fn rule(part: UiStyleSelectorPart, declarations: Vec<UiStyleDeclaration>) -> UiStyleRule {
