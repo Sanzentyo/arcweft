@@ -15,4 +15,4 @@
 | Shader contract | Implemented | `PASS_BOX_SHADOW`, `params0.w` kind flag | No new pipeline or bind group layout. |
 | `filter: drop-shadow(...)` separation | Preserved | existing Takumi adapter test | Remains `UiFilter::DropShadow`. |
 | GPU smoke | Implemented/ignored and locally passed | `ui_box_shadow_gpu_smoke.rs` | Requires local wgpu adapter; passed in the 2026-07-04 apply checkout. |
-| Exact PNG promotion | Manual remaining work | fixture JSON + implementation note | No exact visual-golden promotion is claimed here. |
+| Exact PNG promotion | Gated no-promotion until pinned evidence | `seq06.13e.1-inset-box-shadow-exact-png-policy.json` + seq06.13e.1 implementation note | Exact native/Web baselines must still be promoted only from pinned visual-golden jobs; unpinned packages claim no PNG promotion. |

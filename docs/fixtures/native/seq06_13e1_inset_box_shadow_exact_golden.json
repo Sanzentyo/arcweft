@@ -1,0 +1,66 @@
+{
+  "schema": "arcweft.seq06.13e1.inset_box_shadow.exact_png_fixture.v1",
+  "target": "native",
+  "fixture": "seq06_13e1_inset_box_shadow",
+  "date": "2026-07-04",
+  "source_css": "docs/fixtures/css/seq06.13e-inset-box-shadow-card.css",
+  "scene": {
+    "viewport": {
+      "width": 320,
+      "height": 180,
+      "device_pixel_ratio": 1.0
+    },
+    "cards": [
+      {
+        "id": "rounded_inset_shadow_card",
+        "bounds": {
+          "x": 24,
+          "y": 24,
+          "width": 112,
+          "height": 72
+        },
+        "shadow": "inset 0 3px 12px 2px rgba(0,0,0,0.56)",
+        "radius_px": 14
+      },
+      {
+        "id": "mixed_outer_inset_shadow_card",
+        "bounds": {
+          "x": 176,
+          "y": 40,
+          "width": 112,
+          "height": 72
+        },
+        "shadow": "0 10px 18px 2px rgba(0,0,0,0.38), inset 0 -2px 10px 1px rgba(255,255,255,0.35)",
+        "radius_px": 16
+      }
+    ]
+  },
+  "route": [
+    "Takumi typed CSS parse/cascade for authored CSS fixture",
+    "arcweft-takumi-adapter box_shadow_list_from_takumi",
+    "UiCompositingEffects::box_shadows",
+    "UiBoxShadowPassPlan unified outer/inset pass list",
+    "UiCompositor::render_group",
+    "PASS_BOX_SHADOW WGSL kind flag"
+  ],
+  "forbidden_paths": [
+    "browser DOM CSS box-shadow screenshots",
+    "SVG filters",
+    "canvas 2D fallback",
+    "CPU raster fallback",
+    "bitmap mask screenshot replacement",
+    "renderer/lowering/shader redesign without pinned defect evidence"
+  ],
+  "artifact_paths": {
+    "id": "seq06_13e1_inset_box_shadow_native_exact",
+    "target": "native",
+    "scene": "rounded inset shadow card plus mixed outer+inset card",
+    "candidate_png": "target/seq06.13e.1-inset-box-shadow-golden/native/seq06_13e1_inset_box_shadow.candidate.png",
+    "reference_png": "fixtures/visual-smoke-goldens/seq06.13e.1-inset-box-shadow/native/seq06_13e1_inset_box_shadow.png",
+    "observation_json": "target/seq06.13e.1-inset-box-shadow-golden/native/seq06_13e1_inset_box_shadow.observe.json",
+    "imq_json": "target/seq06.13e.1-inset-box-shadow-golden/native/seq06_13e1_inset_box_shadow.imq.json",
+    "environment_json": "target/seq06.13e.1-inset-box-shadow-golden/native/seq06_13e1_inset_box_shadow.environment.json"
+  },
+  "promotion_status": "not_promoted_in_this_package",
+  "promotion_reason": "The authoring sandbox is not the pinned native visual-golden environment and no candidate PNG/imq packet was produced in a same run."
+}

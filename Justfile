@@ -278,6 +278,16 @@ test-slow-agent-observe:
 
 test-tier2: test-slow-mcp test-slow-agent-observe test-visual-golden
 
+seq06-13e1-inset-shadow-policy:
+    @cargo +nightly -Zscript tools\source-gates\seq06_13e1_inset_shadow_exact_golden_policy.rs --root .
+    @cargo test -p arcweft-render-wgpu --test ui_box_shadow_exact_png_golden seq06_13e1_inset_shadow_policy_pins_typed_compositor_route --all-features -- --exact
+
+seq06-13e1-inset-shadow-pinned-golden out="target\\seq06.13e.1-inset-box-shadow-golden":
+    @cargo +nightly -Zscript tools\collect-seq06-13e1-inset-shadow-pinned-golden-evidence.rs --root . --out-dir "{{out}}" --mode both --run
+    @cargo test -p arcweft-render-wgpu --test ui_box_shadow_exact_png_golden --all-features -- --ignored --exact --nocapture
+
+test-seq06-13e1-inset-shadow-pinned-golden: seq06-13e1-inset-shadow-policy seq06-13e1-inset-shadow-pinned-golden
+
 generate-jlreq-punctuation:
     @rustc tools\generate_jlreq_punctuation_data.rs -o target\generate_jlreq_punctuation_data.exe
     @.\target\generate_jlreq_punctuation_data.exe --apply

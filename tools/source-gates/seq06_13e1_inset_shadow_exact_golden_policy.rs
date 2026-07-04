@@ -1,0 +1,143 @@
+#!/usr/bin/env -S cargo +nightly -Zscript
+---
+[package]
+name = "seq06-13e1-inset-shadow-exact-golden-policy-gate"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+publish = false
+---
+
+/*
+Validates that seq06.13e.1 exact golden policy/docs keep the typed Arcweft
+compositor route and the no-fallback contract. This gate is safe outside the
+pinned visual-golden environment because it does not compare pixels.
+
+cargo +nightly -Zscript tools/source-gates/seq06_13e1_inset_shadow_exact_golden_policy.rs --root .
+*/
+
+use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("error: {error}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), String> {
+    let args = Args::parse(env::args().skip(1))?;
+    if args.help {
+        println!("usage: cargo +nightly -Zscript tools/source-gates/seq06_13e1_inset_shadow_exact_golden_policy.rs --root .");
+        return Ok(());
+    }
+    let root = args
+        .root
+        .canonicalize()
+        .map_err(|error| format!("canonicalize {}: {error}", args.root.display()))?;
+
+    let policy = read_required(
+        &root,
+        "fixtures/visual-smoke-goldens/seq06.13e.1-inset-box-shadow-exact-png-policy.json",
+    )?;
+    let native = read_required(
+        &root,
+        "docs/fixtures/native/seq06_13e1_inset_box_shadow_exact_golden.json",
+    )?;
+    let web = read_required(
+        &root,
+        "docs/fixtures/web/seq06_13e1_inset_box_shadow_exact_golden.json",
+    )?;
+    let note = read_required(
+        &root,
+        "docs/implementation/seq-06.13e.1-inset-box-shadow-pinned-png-golden-promotion-2026-07-04.md",
+    )?;
+    let css = read_required(&root, "docs/fixtures/css/seq06.13e-inset-box-shadow-card.css")?;
+    let smoke = read_required(&root, "crates/arcweft-render-wgpu/tests/ui_box_shadow_gpu_smoke.rs")?;
+
+    for required in [
+        "UiCompositor::render_group",
+        "PASS_BOX_SHADOW",
+        "UiBoxShadowPassPlan",
+        "box_shadow_list_from_takumi",
+        "browser DOM CSS box-shadow screenshots",
+        "canvas 2D fallback",
+        "CPU raster fallback",
+        "environment_not_pinned",
+        "baseline_missing",
+        "max_mse",
+        "max_mae",
+    ] {
+        require_contains(&policy, required, "policy")?;
+    }
+
+    for (label, text) in [("native fixture", &native), ("web fixture", &web)] {
+        require_contains(text, "rounded_inset_shadow_card", label)?;
+        require_contains(text, "mixed_outer_inset_shadow_card", label)?;
+        require_contains(text, "PASS_BOX_SHADOW", label)?;
+        require_contains(text, "CPU raster fallback", label)?;
+    }
+
+    require_contains(&note, "No PNG baseline is promoted", "implementation note")?;
+    require_contains(&note, "pinned visual-golden run", "implementation note")?;
+    require_contains(&css, "box-shadow: inset", "CSS fixture")?;
+    require_contains(&css, "filter: drop-shadow", "CSS fixture")?;
+    require_contains(&smoke, "UiBoxShadow::inset", "GPU smoke")?;
+    require_contains(&smoke, "stats.box_shadow_passes, 3", "GPU smoke")?;
+
+    println!("seq06.13e.1 inset shadow exact-golden policy gate passed");
+    Ok(())
+}
+
+#[derive(Debug)]
+struct Args {
+    root: PathBuf,
+    help: bool,
+}
+
+impl Args {
+    fn parse(values: impl Iterator<Item = String>) -> Result<Self, String> {
+        let mut root = None;
+        let mut help = false;
+        let mut values = values.peekable();
+        while let Some(arg) = values.next() {
+            match arg.as_str() {
+                "--root" => root = Some(PathBuf::from(next_arg(&mut values, "--root")?)),
+                "--help" | "-h" => help = true,
+                unknown => return Err(format!("unknown argument `{unknown}`")),
+            }
+        }
+        Ok(Self {
+            root: if help {
+                root.unwrap_or_else(|| PathBuf::from("."))
+            } else {
+                root.ok_or_else(|| String::from("missing --root"))?
+            },
+            help,
+        })
+    }
+}
+
+fn next_arg(
+    values: &mut std::iter::Peekable<impl Iterator<Item = String>>,
+    name: &str,
+) -> Result<String, String> {
+    values
+        .next()
+        .ok_or_else(|| format!("{name} requires a value"))
+}
+
+fn read_required(root: &Path, relative: &str) -> Result<String, String> {
+    let path = root.join(relative);
+    fs::read_to_string(&path).map_err(|error| format!("read {}: {error}", path.display()))
+}
+
+fn require_contains(text: &str, needle: &str, label: &str) -> Result<(), String> {
+    if text.contains(needle) {
+        Ok(())
+    } else {
+        Err(format!("{label} is missing required fragment `{needle}`"))
+    }
+}
