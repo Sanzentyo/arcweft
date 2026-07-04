@@ -1034,15 +1034,13 @@ fn window_ime_request_data(
     snapshot: &TextInputClientSnapshot,
     geometry: &TextInputGeometrySnapshot,
 ) -> ImeRequestData {
+    let (cursor_area_position, cursor_area_size) = window_ime_cursor_area(geometry);
     let mut request = ImeRequestData::default()
         .with_hint_and_purpose(
             window_ime_hint(snapshot.options()),
             window_ime_purpose(snapshot.options()),
         )
-        .with_cursor_area(
-            window_ime_cursor_position(geometry),
-            window_ime_cursor_size(geometry),
-        );
+        .with_cursor_area(cursor_area_position, cursor_area_size);
     if let Some(surrounding) = window_ime_surrounding_text(snapshot) {
         request = request.with_surrounding_text(surrounding);
     }
@@ -1060,18 +1058,32 @@ fn window_ime_capabilities_for_request(request: &ImeRequestData) -> ImeCapabilit
     }
 }
 
-fn window_ime_cursor_position(geometry: &TextInputGeometrySnapshot) -> winit::dpi::Position {
-    let caret = geometry.viewport_caret_rect();
-    LogicalPosition::new(f64::from(caret.x), f64::from(caret.y)).into()
+fn window_ime_cursor_area(geometry: &TextInputGeometrySnapshot) -> (winit::dpi::Position, Size) {
+    let area = window_ime_cursor_area_rect(geometry);
+    (
+        LogicalPosition::new(f64::from(area.x), f64::from(area.y)).into(),
+        LogicalSize::new(
+            f64::from(area.width.max(1.0)),
+            f64::from(area.height.max(1.0)),
+        )
+        .into(),
+    )
 }
 
-fn window_ime_cursor_size(geometry: &TextInputGeometrySnapshot) -> Size {
+fn window_ime_cursor_area_rect(
+    geometry: &TextInputGeometrySnapshot,
+) -> arcweft_presentation::hit::HitRect {
+    let control = geometry.viewport_control_rect();
+    if control.width > 0.0 && control.height > 0.0 {
+        return control;
+    }
     let caret = geometry.viewport_caret_rect();
-    LogicalSize::new(
-        f64::from(caret.width.max(1.0)),
-        f64::from(caret.height.max(1.0)),
+    arcweft_presentation::hit::HitRect::new(
+        caret.x,
+        caret.y,
+        caret.width.max(1.0),
+        caret.height.max(1.0),
     )
-    .into()
 }
 
 fn window_ime_surrounding_text(snapshot: &TextInputClientSnapshot) -> Option<ImeSurroundingText> {
@@ -1234,9 +1246,14 @@ fn dialogue_visual_time_millis(
 mod tests {
     use super::{
         surrounding_excerpt_range, text_input_commit_from_key_text,
-        window_ime_composition_selection,
+        window_ime_composition_selection, window_ime_cursor_area_rect,
     };
-    use arcweft_presentation::text_input::{TextByteOffset, TextInputOperation, TextRange};
+    use arcweft_presentation::hit::HitRect;
+    use arcweft_presentation::text_input::{
+        TextByteOffset, TextGeometryTransform, TextInputGeometrySnapshot,
+        TextInputGeometrySnapshotParts, TextInputOperation, TextInputSessionId, TextRange,
+        TextRevision, TextWritingMode,
+    };
 
     fn native_scene_state_body(source: &str) -> &str {
         let struct_start = source
@@ -1299,6 +1316,27 @@ mod tests {
         assert!(source.contains("self.runtime.push_patch_event(envelope.event)"));
         assert!(source.contains("completed_at_frame_boundary(outcomes.len())"));
         assert!(source.contains("ingress_completion.close(\"native player closed\")"));
+    }
+
+    #[test]
+    fn window_ime_cursor_area_uses_control_exclusion_rect() {
+        let geometry = TextInputGeometrySnapshot::new(TextInputGeometrySnapshotParts {
+            session: TextInputSessionId(1),
+            revision: TextRevision(0),
+            writing_mode: TextWritingMode::HorizontalTb,
+            text_local_control_rect: HitRect::new(0.0, 0.0, 420.0, 48.0),
+            text_local_caret_rect: HitRect::new(68.0, 8.0, 2.0, 26.0),
+            text_local_character_bounds: Vec::new(),
+            text_local_selection_rects: Vec::new(),
+            text_local_composition_rects: Vec::new(),
+            text_local_to_viewport: TextGeometryTransform::translation(48.0, 128.0),
+            viewport_to_screen: TextGeometryTransform::identity(),
+        });
+
+        assert_eq!(
+            window_ime_cursor_area_rect(&geometry),
+            HitRect::new(48.0, 128.0, 420.0, 48.0)
+        );
     }
 
     #[test]
