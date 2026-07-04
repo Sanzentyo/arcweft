@@ -5,12 +5,13 @@ use arcweft_bundle::resource_codec::ui::{
     ExternalCssDescriptorRef, ExternalCssIdentity, RgbaColor, StyleAssignOp, StyleSourceIdentity,
     StyleSourceRef, StyleSyntax, SystemColor, SystemColorOverride, TextAssistPolicy,
     TextCapitalization, UiChildSpan, UiElementKind, UiElementState, UiHandlerRef, UiInputKind,
-    UiInputOptions, UiInputPurpose, UiInputResource, UiObserveClassification, UiProgramInstruction,
-    UiProgramResource, UiResourceBudget, UiResourceCompatibility, UiSecureInputPolicy,
-    UiSecureRedactionMetadata, UiSemanticTarget, UiStateSchemaHashRef, UiStyleDeclaration,
-    UiStyleResource, UiStyleRule, UiStyleSelector, UiStyleSelectorPart, UiStyleToken, UiStyleValue,
-    UiTextResource, UiTextSourceKind, UiTextSourceRecord, UiThemeEnvironmentDefaults,
-    UiThemeResource, migrated_ui_section_compatibility,
+    UiInputOptions, UiInputPurpose, UiInputResource, UiLayoutBoundsResource, UiLogicalRect,
+    UiObserveClassification, UiProgramInstruction, UiProgramResource, UiResourceBudget,
+    UiResourceCompatibility, UiSecureInputPolicy, UiSecureRedactionMetadata, UiSemanticTarget,
+    UiStateSchemaHashRef, UiStyleDeclaration, UiStyleResource, UiStyleRule, UiStyleSelector,
+    UiStyleSelectorPart, UiStyleToken, UiStyleValue, UiTextResource, UiTextSourceKind,
+    UiTextSourceRecord, UiThemeEnvironmentDefaults, UiThemeResource,
+    migrated_ui_section_compatibility,
 };
 use arcweft_bundle::resource_codec::{
     FieldId, ProductResourceEnvelope, ProductSectionCodecKind, ResourceField, ResourceWireType,
@@ -144,6 +145,22 @@ fn ui_resource_budget_failures_are_reported() {
             },
         )
         .is_err()
+    );
+}
+
+#[test]
+fn ui_program_layout_bounds_reject_zero_size_rects() {
+    let mut program = fixture_program();
+    program
+        .layout_bounds
+        .push(UiLayoutBoundsResource::text_control(
+            "input.dialogue.invalid",
+            UiLogicalRect::new(48_000, 48_000, 0, 48_000),
+        ));
+
+    assert!(
+        program.encode_canonical_section().is_err(),
+        "zero-width layout bounds are not canonical UI resources",
     );
 }
 
@@ -324,6 +341,16 @@ fn fixture_program() -> UiProgramResource {
             label_text_source: Some("text.dialogue.title".to_owned()),
             source: None,
         }],
+        layout_bounds: vec![
+            UiLayoutBoundsResource::text_control(
+                "input.dialogue.name",
+                UiLogicalRect::from_px(48, 48, 420, 48),
+            ),
+            UiLayoutBoundsResource::semantic_target(
+                "input.dialogue.name",
+                UiLogicalRect::from_px(48, 48, 420, 48),
+            ),
+        ],
         action_buttons: Vec::new(),
         focus_groups: Vec::new(),
         focus_navigation: Vec::new(),

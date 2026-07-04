@@ -34,6 +34,10 @@ This cut applies the component/View text-control unification note from
   multiline targets place submit buttons below the text area. This fixes the
   modern feedback UI overlap where the first button defaulted onto the
   following text area's stacked slot.
+- The seq06.16.2 follow-up now adds a typed
+  `UiProgramResource::layout_bounds` table for component-authored text-control
+  and semantic-target bounds. See
+  `docs/implementation/component-text-control-layout-bounds-resource-contract-2026-07-04.md`.
 
 ## Modern feedback UI debug notes
 
@@ -52,16 +56,13 @@ This cut applies the component/View text-control unification note from
 
 - No compatibility layer for top-level `ui text_input` resources.
 - No platform-widget fallback for submit buttons.
-- No new layout-bounds resource contract; current runtime text-control bounds
-  remain the existing stacked/default resource behavior.
+- No style-driven layout resolver; seq06.16.2 adds deterministic component
+  structure bounds, while future style/layout work may refine them.
 - No end-to-end authored style resolution for player-rendered runtime text
   controls and action buttons in this cut.
 
 ## Remaining TODOs / follow-up requests
 
-- Define and implement a typed layout-bounds resource contract for
-  component-authored text controls. Follow-up request:
-  `docs/reviews/requests/2026-07-04-seq-06.16.2-component-text-control-layout-bounds-resource-contract.md`.
 - Run and document the native interactive window smoke. The native samples
   bundle cleanly without top-level input declarations, but interactive launch
   was not executed in this cut. Follow-up request:
@@ -73,8 +74,9 @@ This cut applies the component/View text-control unification note from
 
 ## Design deviations
 
-- No new layout-bounds resource contract was added; this is tracked as
-  seq06.16.2.
+- The original layout-bounds omission is closed by seq06.16.2. The remaining
+  limitation is that these bounds are deterministic component-structure bounds,
+  not full style-driven layout.
 - Native interactive launch was not run; this is tracked as seq06.16.3.
 - Authored modern feedback UI style rules are carried as product UI resources
   but are not yet resolved into the player-rendered runtime text-control/button

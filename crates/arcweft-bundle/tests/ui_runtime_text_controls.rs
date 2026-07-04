@@ -1,8 +1,8 @@
 use arcweft_bundle::resource_codec::ui::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
-    UiInputOptions, UiInputPurpose, UiInputResource, UiProgramResource, UiRuntimeTextControlBounds,
-    UiRuntimeTextSelection, UiSecureInputPolicy, UiSemanticTarget, UiTextResource,
-    UiTextSourceKind, UiTextSourceRecord,
+    UiInputOptions, UiInputPurpose, UiInputResource, UiLayoutBoundsResource, UiLogicalRect,
+    UiProgramResource, UiRuntimeTextControlBounds, UiRuntimeTextSelection, UiSecureInputPolicy,
+    UiSemanticTarget, UiTextResource, UiTextSourceKind, UiTextSourceRecord,
 };
 
 #[test]
@@ -42,6 +42,7 @@ fn ui_input_resource_emits_runtime_text_control_shape() {
             label_text_source: Some("text.label.name".to_owned()),
             source: None,
         }],
+        layout_bounds: Vec::new(),
         action_buttons: Vec::new(),
         focus_groups: Vec::new(),
         focus_navigation: Vec::new(),
@@ -157,6 +158,75 @@ fn ui_input_resource_stacks_default_text_control_bounds_by_height() {
     assert_eq!(
         controls[2].bounds,
         UiRuntimeTextControlBounds::from_px(48, 264, 420, 48)
+    );
+}
+
+#[test]
+fn ui_program_layout_bounds_override_stacked_runtime_text_control_fallback() {
+    let ui_input = UiInputResource {
+        options: vec![
+            text_input_option("input.title", UiInputKind::TextField, "text.title", None),
+            text_input_option("input.body", UiInputKind::TextArea, "text.body", None),
+        ],
+        adapter_requirements: Vec::new(),
+    };
+    let text = UiTextResource {
+        sources: vec![
+            literal_source("text.title", "Title"),
+            literal_source("text.body", "Body"),
+        ],
+        display_frame_refs: Vec::new(),
+        source_ranges: Vec::new(),
+        reveal_policies: Vec::new(),
+        cursor_policies: Vec::new(),
+        redactions: Vec::new(),
+    };
+    let program = UiProgramResource {
+        program_id: "ui.program.feedback".to_owned(),
+        root_component: "component.feedback".to_owned(),
+        instructions: Vec::new(),
+        child_spans: Vec::new(),
+        handlers: Vec::new(),
+        state_schema_hashes: Vec::new(),
+        exported_parts: Vec::new(),
+        semantic_targets: Vec::new(),
+        layout_bounds: vec![
+            UiLayoutBoundsResource::text_control(
+                "input.title",
+                UiLogicalRect::from_px(80, 64, 360, 48),
+            ),
+            UiLayoutBoundsResource::text_control(
+                "input.body",
+                UiLogicalRect::from_px(80, 128, 480, 136),
+            ),
+            UiLayoutBoundsResource::semantic_target(
+                "input.title",
+                UiLogicalRect::from_px(80, 64, 360, 48),
+            ),
+            UiLayoutBoundsResource::semantic_target(
+                "input.body",
+                UiLogicalRect::from_px(80, 128, 480, 136),
+            ),
+        ],
+        action_buttons: Vec::new(),
+        focus_groups: Vec::new(),
+        focus_navigation: Vec::new(),
+        adapter_requirements: Vec::new(),
+    };
+
+    let controls = ui_input.runtime_text_controls(Some(&text), Some(&program));
+
+    assert_eq!(
+        controls[0].bounds,
+        UiRuntimeTextControlBounds::from_px(80, 64, 360, 48)
+    );
+    assert_eq!(
+        controls[1].bounds,
+        UiRuntimeTextControlBounds::from_px(80, 128, 480, 136)
+    );
+    assert_eq!(
+        program.semantic_target_bounds_for("input.body"),
+        Some(UiRuntimeTextControlBounds::from_px(80, 128, 480, 136))
     );
 }
 

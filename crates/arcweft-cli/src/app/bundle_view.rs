@@ -4,8 +4,8 @@ use arcweft_bundle::{
         UiActionButtonActionResource, UiActionButtonResource, UiFocusDirection, UiFocusGroupPolicy,
         UiFocusGroupResource, UiFocusInitialPolicy, UiFocusNavigationEdge,
         UiFocusNavigationResource, UiFocusSkipPolicy, UiFocusTargetResolution, UiFocusWrapPolicy,
-        UiInputResource, UiProgramResource, UiRuntimeButtonBounds, UiRuntimeTextControlBounds,
-        UiStyleResource, UiTextResource,
+        UiInputResource, UiLayoutBoundsResource, UiLogicalRect, UiProgramResource,
+        UiRuntimeButtonBounds, UiRuntimeTextControlBounds, UiStyleResource, UiTextResource,
         ui::{
             CompositionOnBlurPolicy, EnterKeyHint, StyleSourceIdentity, StyleSourceRef,
             StyleSyntax, TextAssistPolicy, TextCapitalization, UiElementKind, UiInputKind,
@@ -43,6 +43,7 @@ struct ViewLoweringState {
     text_sources: Vec<UiTextSourceRecord>,
     input_options: Vec<UiInputOptions>,
     semantic_targets: Vec<UiSemanticTarget>,
+    layout_bounds: Vec<UiLayoutBoundsResource>,
     action_buttons: Vec<UiActionButtonResource>,
     focus_groups: Vec<UiFocusGroupResource>,
     focus_navigation: Vec<UiFocusNavigationResource>,
@@ -70,6 +71,85 @@ struct AuthoredTextControl {
     change_handler: Option<String>,
 }
 
+const VIEW_LAYOUT_ROOT_X_MILLI: i32 = 48_000;
+const VIEW_LAYOUT_ROOT_Y_MILLI: i32 = 48_000;
+const VIEW_LAYOUT_GAP_MILLI: i32 = 16_000;
+const VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI: u32 = 420_000;
+const VIEW_LAYOUT_TEXT_LINE_HEIGHT_MILLI: u32 = 24_000;
+const VIEW_LAYOUT_BUTTON_WIDTH_MILLI: u32 = 180_000;
+const VIEW_LAYOUT_BUTTON_HEIGHT_MILLI: u32 = 44_000;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ViewLayoutCursor {
+    x_milli: i32,
+    y_milli: i32,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct ViewLayoutFrame {
+    width_milli: u32,
+    height_milli: u32,
+}
+
+impl ViewLayoutCursor {
+    const fn root() -> Self {
+        Self {
+            x_milli: VIEW_LAYOUT_ROOT_X_MILLI,
+            y_milli: VIEW_LAYOUT_ROOT_Y_MILLI,
+        }
+    }
+
+    const fn text_control_rect(self, kind: UiInputKind) -> UiLogicalRect {
+        UiLogicalRect::new(
+            self.x_milli,
+            self.y_milli,
+            VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI,
+            kind.default_text_control_height_milli(),
+        )
+    }
+}
+
+impl ViewLayoutFrame {
+    const fn zero() -> Self {
+        Self {
+            width_milli: 0,
+            height_milli: 0,
+        }
+    }
+
+    const fn new(width_milli: u32, height_milli: u32) -> Self {
+        Self {
+            width_milli,
+            height_milli,
+        }
+    }
+
+    const fn text_line() -> Self {
+        Self::new(
+            VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI,
+            VIEW_LAYOUT_TEXT_LINE_HEIGHT_MILLI,
+        )
+    }
+
+    const fn text_control(kind: UiInputKind) -> Self {
+        Self::new(
+            VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI,
+            kind.default_text_control_height_milli(),
+        )
+    }
+
+    const fn action_button() -> Self {
+        Self::new(
+            VIEW_LAYOUT_BUTTON_WIDTH_MILLI,
+            VIEW_LAYOUT_BUTTON_HEIGHT_MILLI,
+        )
+    }
+
+    const fn is_empty(self) -> bool {
+        self.width_milli == 0 || self.height_milli == 0
+    }
+}
+
 pub(in crate::app) fn component_view_sidecars(
     components: &[&EntityDeclItem],
 ) -> ComponentViewBundleSidecars {
@@ -86,6 +166,7 @@ pub(in crate::app) fn component_view_sidecars(
     if state.instructions.is_empty()
         && state.text_sources.is_empty()
         && state.input_options.is_empty()
+        && state.layout_bounds.is_empty()
         && state.action_buttons.is_empty()
         && state.focus_groups.is_empty()
         && state.focus_navigation.is_empty()
@@ -104,6 +185,7 @@ pub(in crate::app) fn component_view_sidecars(
             state_schema_hashes: Vec::new(),
             exported_parts: Vec::new(),
             semantic_targets: state.semantic_targets,
+            layout_bounds: state.layout_bounds,
             action_buttons: state.action_buttons,
             focus_groups: state.focus_groups,
             focus_navigation: state.focus_navigation,
@@ -138,21 +220,23 @@ fn lower_component_view(
     body: &ComponentViewBody,
     state: &mut ViewLoweringState,
 ) {
-    lower_view_expr(component_id.body(), body.value(), state);
+    let mut layout = ViewLayoutCursor::root();
+    lower_view_expr(component_id.body(), body.value(), state, &mut layout);
 }
 
-fn lower_view_expr(component_id: &str, expr: &ViewExpr, state: &mut ViewLoweringState) {
+fn lower_view_expr(
+    component_id: &str,
+    expr: &ViewExpr,
+    state: &mut ViewLoweringState,
+    layout: &mut ViewLayoutCursor,
+) -> ViewLayoutFrame {
     match expr {
-        ViewExpr::Element(element) => lower_element(component_id, element, state),
+        ViewExpr::Element(element) => lower_element(component_id, element, state, layout),
         ViewExpr::Text(text) => lower_text(component_id, text, state),
-        ViewExpr::TextField(field) => lower_text_field(component_id, field, state),
+        ViewExpr::TextField(field) => lower_text_field(component_id, field, state, layout),
         ViewExpr::Button(button) => lower_button(component_id, button, state),
         ViewExpr::Image(image) => lower_image(image, state),
-        ViewExpr::Fragment(children) => {
-            for child in children {
-                lower_view_expr(component_id, child, state);
-            }
-        }
+        ViewExpr::Fragment(children) => lower_layout_column(component_id, children, state, *layout),
         ViewExpr::ComponentCall(call) => {
             state
                 .instructions
@@ -166,22 +250,31 @@ fn lower_view_expr(component_id: &str, expr: &ViewExpr, state: &mut ViewLowering
                     source: None,
                 });
             lower_modifiers(component_id, call.modifiers(), state);
+            ViewLayoutFrame::zero()
         }
-        ViewExpr::Raw(raw) => state.instructions.push(UiProgramInstruction::EmitCustom {
-            element: raw.clone(),
-            style: None,
-            part: None,
-            source: None,
-        }),
+        ViewExpr::Raw(raw) => {
+            state.instructions.push(UiProgramInstruction::EmitCustom {
+                element: raw.clone(),
+                style: None,
+                part: None,
+                source: None,
+            });
+            ViewLayoutFrame::zero()
+        }
         ViewExpr::If(_)
         | ViewExpr::Match(_)
         | ViewExpr::ForEach(_)
         | ViewExpr::Await(_)
-        | ViewExpr::Expr(_) => {}
+        | ViewExpr::Expr(_) => ViewLayoutFrame::zero(),
     }
 }
 
-fn lower_element(component_id: &str, element: &ViewElement, state: &mut ViewLoweringState) {
+fn lower_element(
+    component_id: &str,
+    element: &ViewElement,
+    state: &mut ViewLoweringState,
+    layout: &mut ViewLayoutCursor,
+) -> ViewLayoutFrame {
     if let Some(kind) = ui_element_kind(element.callee()) {
         state.instructions.push(UiProgramInstruction::OpenElement {
             element: kind,
@@ -192,13 +285,26 @@ fn lower_element(component_id: &str, element: &ViewElement, state: &mut ViewLowe
         });
         let pushed_group = lower_navigation_group(component_id, element, state);
         lower_modifiers(component_id, element.modifiers(), state);
-        for child in element.children() {
-            lower_view_expr(component_id, child, state);
-        }
+        let frame = match kind {
+            UiElementKind::Row => {
+                lower_layout_row(component_id, element.children(), state, *layout)
+            }
+            UiElementKind::Column => {
+                lower_layout_column(component_id, element.children(), state, *layout)
+            }
+            UiElementKind::Surface | UiElementKind::Stack => {
+                lower_layout_stack(component_id, element.children(), state, *layout)
+            }
+            UiElementKind::Button => ViewLayoutFrame::action_button(),
+            UiElementKind::TextField | UiElementKind::TextArea | UiElementKind::SecureField => kind
+                .text_input_kind()
+                .map_or(ViewLayoutFrame::zero(), ViewLayoutFrame::text_control),
+        };
         if pushed_group {
             state.focus_group_stack.pop();
         }
         state.instructions.push(UiProgramInstruction::CloseElement);
+        frame
     } else {
         state.instructions.push(UiProgramInstruction::EmitCustom {
             element: element.callee().to_owned(),
@@ -207,10 +313,101 @@ fn lower_element(component_id: &str, element: &ViewElement, state: &mut ViewLowe
             source: None,
         });
         lower_modifiers(component_id, element.modifiers(), state);
+        ViewLayoutFrame::zero()
     }
 }
 
-fn lower_text(component_id: &str, text: &ViewText, state: &mut ViewLoweringState) {
+fn lower_layout_column(
+    component_id: &str,
+    children: &[ViewExpr],
+    state: &mut ViewLoweringState,
+    origin: ViewLayoutCursor,
+) -> ViewLayoutFrame {
+    let mut cursor = origin;
+    let mut width_milli = 0_u32;
+    let mut height_milli = 0_u32;
+    let mut placed = false;
+    for child in children {
+        if placed {
+            cursor.y_milli = cursor.y_milli.saturating_add(VIEW_LAYOUT_GAP_MILLI);
+        }
+        let frame = lower_view_expr(component_id, child, state, &mut cursor);
+        if frame.is_empty() {
+            continue;
+        }
+        width_milli = width_milli.max(frame.width_milli);
+        height_milli = height_milli
+            .saturating_add(if placed {
+                VIEW_LAYOUT_GAP_MILLI as u32
+            } else {
+                0
+            })
+            .saturating_add(frame.height_milli);
+        cursor.y_milli = cursor
+            .y_milli
+            .saturating_add(u32_to_i32_saturating(frame.height_milli));
+        placed = true;
+    }
+    ViewLayoutFrame::new(width_milli, height_milli)
+}
+
+fn lower_layout_row(
+    component_id: &str,
+    children: &[ViewExpr],
+    state: &mut ViewLoweringState,
+    origin: ViewLayoutCursor,
+) -> ViewLayoutFrame {
+    let mut cursor = origin;
+    let mut width_milli = 0_u32;
+    let mut height_milli = 0_u32;
+    let mut placed = false;
+    for child in children {
+        if placed {
+            cursor.x_milli = cursor.x_milli.saturating_add(VIEW_LAYOUT_GAP_MILLI);
+        }
+        let frame = lower_view_expr(component_id, child, state, &mut cursor);
+        if frame.is_empty() {
+            continue;
+        }
+        width_milli = width_milli
+            .saturating_add(if placed {
+                VIEW_LAYOUT_GAP_MILLI as u32
+            } else {
+                0
+            })
+            .saturating_add(frame.width_milli);
+        height_milli = height_milli.max(frame.height_milli);
+        cursor.x_milli = cursor
+            .x_milli
+            .saturating_add(u32_to_i32_saturating(frame.width_milli));
+        placed = true;
+    }
+    ViewLayoutFrame::new(width_milli, height_milli)
+}
+
+fn lower_layout_stack(
+    component_id: &str,
+    children: &[ViewExpr],
+    state: &mut ViewLoweringState,
+    origin: ViewLayoutCursor,
+) -> ViewLayoutFrame {
+    children
+        .iter()
+        .fold(ViewLayoutFrame::zero(), |frame, child| {
+            let mut cursor = origin;
+            let child_frame = lower_view_expr(component_id, child, state, &mut cursor);
+            ViewLayoutFrame::new(
+                frame.width_milli.max(child_frame.width_milli),
+                frame.height_milli.max(child_frame.height_milli),
+            )
+        })
+}
+
+fn lower_text(
+    component_id: &str,
+    text: &ViewText,
+    state: &mut ViewLoweringState,
+) -> ViewLayoutFrame {
     let id = next_text_source_id(component_id, state);
     state.text_sources.push(UiTextSourceRecord {
         public_id: id.clone(),
@@ -226,10 +423,19 @@ fn lower_text(component_id: &str, text: &ViewText, state: &mut ViewLoweringState
         source: None,
     });
     lower_modifiers(component_id, text.modifiers(), state);
+    ViewLayoutFrame::text_line()
 }
 
-fn lower_text_field(component_id: &str, field: &ViewTextField, state: &mut ViewLoweringState) {
+fn lower_text_field(
+    component_id: &str,
+    field: &ViewTextField,
+    state: &mut ViewLoweringState,
+    layout: &mut ViewLayoutCursor,
+) -> ViewLayoutFrame {
     let control = AuthoredTextControl::from_field(component_id, field, state);
+    let public_id = control.public_id.clone();
+    let kind = ui_input_kind(field.mode());
+    let rect = layout.text_control_rect(kind);
     let value_text_source = input_text_source_id("value", &control.public_id);
     state.text_sources.push(UiTextSourceRecord {
         public_id: value_text_source.clone(),
@@ -258,7 +464,7 @@ fn lower_text_field(component_id: &str, field: &ViewTextField, state: &mut ViewL
     });
     state.input_options.push(UiInputOptions {
         public_id: control.public_id.clone(),
-        kind: ui_input_kind(field.mode()),
+        kind,
         value_text_source,
         placeholder_text_source,
         purpose: control.purpose,
@@ -273,9 +479,21 @@ fn lower_text_field(component_id: &str, field: &ViewTextField, state: &mut ViewL
         change_handler: control.change_handler,
         adapter_requirements: Vec::new(),
     });
+    state
+        .layout_bounds
+        .push(UiLayoutBoundsResource::text_control(
+            public_id.clone(),
+            rect,
+        ));
+    state
+        .layout_bounds
+        .push(UiLayoutBoundsResource::semantic_target(
+            public_id.clone(),
+            rect,
+        ));
     state.semantic_targets.push(UiSemanticTarget {
-        public_id: control.public_id.clone(),
-        target: control.public_id,
+        public_id: public_id.clone(),
+        target: public_id,
         label_text_source,
         source: None,
     });
@@ -295,9 +513,14 @@ fn lower_text_field(component_id: &str, field: &ViewTextField, state: &mut ViewL
     });
     lower_modifiers(component_id, field.modifiers(), state);
     state.instructions.push(UiProgramInstruction::CloseElement);
+    ViewLayoutFrame::text_control(kind)
 }
 
-fn lower_button(component_id: &str, button: &ViewButton, state: &mut ViewLoweringState) {
+fn lower_button(
+    component_id: &str,
+    button: &ViewButton,
+    state: &mut ViewLoweringState,
+) -> ViewLayoutFrame {
     let button_id = button
         .id()
         .map_or_else(|| next_button_id(component_id, state), normalize_entity_ref);
@@ -322,7 +545,7 @@ fn lower_button(component_id: &str, button: &ViewButton, state: &mut ViewLowerin
     lower_navigation_target(&button_id, button.modifiers(), state);
 
     let Some(ViewAction::TextSubmit(action)) = button.activation() else {
-        return;
+        return ViewLayoutFrame::action_button();
     };
     let input = normalize_entity_ref(action.input());
     state.action_buttons.push(UiActionButtonResource {
@@ -342,9 +565,10 @@ fn lower_button(component_id: &str, button: &ViewButton, state: &mut ViewLowerin
         label_text_source: Some(label_text_source),
         source: None,
     });
+    ViewLayoutFrame::action_button()
 }
 
-fn lower_image(image: &ViewImage, state: &mut ViewLoweringState) {
+fn lower_image(image: &ViewImage, state: &mut ViewLoweringState) -> ViewLayoutFrame {
     state.instructions.push(UiProgramInstruction::EmitImage {
         image: expr_source(image.source()),
         style: None,
@@ -352,6 +576,7 @@ fn lower_image(image: &ViewImage, state: &mut ViewLoweringState) {
         source: None,
     });
     lower_modifiers("", image.modifiers(), state);
+    ViewLayoutFrame::zero()
 }
 
 fn lower_modifiers(component_id: &str, modifiers: &[ViewModifier], state: &mut ViewLoweringState) {
@@ -688,7 +913,7 @@ fn assign_action_button_bounds(state: &mut ViewLoweringState) {
     if state.action_buttons.is_empty() || state.input_options.is_empty() {
         return;
     }
-    let input_bounds = UiRuntimeTextControlBounds::default_stacked_slots(
+    let fallback_input_bounds = UiRuntimeTextControlBounds::default_stacked_slots(
         state.input_options.iter().map(|option| option.kind),
     );
     let mut submit_counts_by_input: Vec<(String, usize)> = Vec::new();
@@ -704,12 +929,21 @@ fn assign_action_button_bounds(state: &mut ViewLoweringState) {
             continue;
         };
         let ordinal = action_button_submit_ordinal(&mut submit_counts_by_input, input);
-        button.bounds = UiRuntimeButtonBounds::default_submit_slot(
-            input_bounds[input_index],
-            input_option.kind,
-            ordinal,
-        );
+        let input_bounds = state
+            .layout_bounds
+            .iter()
+            .find(|bounds| bounds.is_text_control_for(input))
+            .map_or(
+                fallback_input_bounds[input_index],
+                UiLayoutBoundsResource::runtime_text_control_bounds,
+            );
+        button.bounds =
+            UiRuntimeButtonBounds::default_submit_slot(input_bounds, input_option.kind, ordinal);
     }
+}
+
+fn u32_to_i32_saturating(value: u32) -> i32 {
+    i32::try_from(value).unwrap_or(i32::MAX)
 }
 
 fn action_button_submit_ordinal(counts: &mut Vec<(String, usize)>, input: &str) -> usize {

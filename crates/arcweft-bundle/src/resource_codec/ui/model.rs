@@ -16,6 +16,8 @@ pub struct UiProgramResource {
     pub exported_parts: Vec<UiExportedPart>,
     pub semantic_targets: Vec<UiSemanticTarget>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub layout_bounds: Vec<UiLayoutBoundsResource>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub action_buttons: Vec<UiActionButtonResource>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub focus_groups: Vec<UiFocusGroupResource>,
@@ -155,6 +157,34 @@ pub struct UiSemanticTarget {
     pub target: String,
     pub label_text_source: Option<String>,
     pub source: Option<SourceRangeRef>,
+}
+
+/// Resolved logical bounds for UI program targets authored by the View DSL.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiLayoutBoundsResource {
+    pub public_id: String,
+    pub kind: UiLayoutBoundsKind,
+    pub rect: UiLogicalRect,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hit_rect: Option<UiLogicalRect>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<SourceRangeRef>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiLayoutBoundsKind {
+    TextControl,
+    SemanticTarget,
+}
+
+/// Logical-pixel rectangle serialized in milli-pixel units.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiLogicalRect {
+    pub x_milli: i32,
+    pub y_milli: i32,
+    pub width_milli: u32,
+    pub height_milli: u32,
 }
 
 /// Product-authored player-rendered action button metadata.
@@ -856,12 +886,18 @@ impl UiInputResource {
         text: Option<&UiTextResource>,
         program: Option<&UiProgramResource>,
     ) -> Vec<UiRuntimeTextControl> {
+        let fallback_bounds = UiRuntimeTextControlBounds::default_stacked_slots(
+            self.options.iter().map(|option| option.kind),
+        );
         self.options
             .iter()
-            .zip(UiRuntimeTextControlBounds::default_stacked_slots(
-                self.options.iter().map(|option| option.kind),
-            ))
-            .map(|(option, bounds)| option.runtime_text_control_with_bounds(bounds, text, program))
+            .zip(fallback_bounds)
+            .map(|(option, fallback)| {
+                let bounds = program
+                    .and_then(|program| program.text_control_bounds_for(&option.public_id))
+                    .unwrap_or(fallback);
+                option.runtime_text_control_with_bounds(bounds, text, program)
+            })
             .collect()
     }
 }
@@ -921,11 +957,15 @@ impl UiInputKind {
         matches!(self, Self::TextArea)
     }
 
-    const fn default_height_milli(self) -> u32 {
+    pub const fn default_text_control_height_milli(self) -> u32 {
         match self {
             Self::TextField | Self::SecureField => 48_000,
             Self::TextArea => 136_000,
         }
+    }
+
+    const fn default_height_milli(self) -> u32 {
+        self.default_text_control_height_milli()
     }
 }
 
@@ -1018,6 +1058,130 @@ impl UiProgramResource {
                     .collect(),
             })
             .collect()
+    }
+
+    pub fn text_control_bounds_for(&self, public_id: &str) -> Option<UiRuntimeTextControlBounds> {
+        self.layout_bounds
+            .iter()
+            .find(|bounds| bounds.is_text_control_for(public_id))
+            .map(UiLayoutBoundsResource::runtime_text_control_bounds)
+    }
+
+    pub fn semantic_target_bounds_for(
+        &self,
+        public_id: &str,
+    ) -> Option<UiRuntimeTextControlBounds> {
+        self.layout_bounds
+            .iter()
+            .find(|bounds| bounds.is_semantic_target_for(public_id))
+            .map(UiLayoutBoundsResource::runtime_text_control_bounds)
+    }
+}
+
+impl UiLayoutBoundsResource {
+    pub fn text_control(public_id: impl Into<String>, rect: UiLogicalRect) -> Self {
+        Self::new(public_id, UiLayoutBoundsKind::TextControl, rect)
+    }
+
+    pub fn semantic_target(public_id: impl Into<String>, rect: UiLogicalRect) -> Self {
+        Self::new(public_id, UiLayoutBoundsKind::SemanticTarget, rect)
+    }
+
+    pub fn new(
+        public_id: impl Into<String>,
+        kind: UiLayoutBoundsKind,
+        rect: UiLogicalRect,
+    ) -> Self {
+        Self {
+            public_id: public_id.into(),
+            kind,
+            rect,
+            hit_rect: None,
+            source: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_hit_rect(mut self, hit_rect: UiLogicalRect) -> Self {
+        self.hit_rect = Some(hit_rect);
+        self
+    }
+
+    pub fn is_text_control_for(&self, public_id: &str) -> bool {
+        self.kind == UiLayoutBoundsKind::TextControl && self.public_id == public_id
+    }
+
+    pub fn is_semantic_target_for(&self, public_id: &str) -> bool {
+        self.kind == UiLayoutBoundsKind::SemanticTarget && self.public_id == public_id
+    }
+
+    pub fn identity_key(&self) -> String {
+        format!("{}:{}", self.kind.as_str(), self.public_id)
+    }
+
+    pub const fn is_valid(&self) -> bool {
+        self.rect.is_valid()
+            && match self.hit_rect {
+                Some(hit_rect) => hit_rect.is_valid(),
+                None => true,
+            }
+    }
+
+    pub fn runtime_text_control_bounds(&self) -> UiRuntimeTextControlBounds {
+        self.hit_rect
+            .unwrap_or(self.rect)
+            .runtime_text_control_bounds()
+    }
+}
+
+impl UiLayoutBoundsKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::TextControl => "text_control",
+            Self::SemanticTarget => "semantic_target",
+        }
+    }
+}
+
+impl UiLogicalRect {
+    pub const fn new(x_milli: i32, y_milli: i32, width_milli: u32, height_milli: u32) -> Self {
+        Self {
+            x_milli,
+            y_milli,
+            width_milli,
+            height_milli,
+        }
+    }
+
+    pub const fn from_px(x: i32, y: i32, width: u32, height: u32) -> Self {
+        Self::new(
+            x.saturating_mul(1_000),
+            y.saturating_mul(1_000),
+            width.saturating_mul(1_000),
+            height.saturating_mul(1_000),
+        )
+    }
+
+    pub const fn is_valid(self) -> bool {
+        self.width_milli > 0 && self.height_milli > 0
+    }
+
+    pub const fn runtime_text_control_bounds(self) -> UiRuntimeTextControlBounds {
+        UiRuntimeTextControlBounds::new(
+            self.x_milli,
+            self.y_milli,
+            self.width_milli,
+            self.height_milli,
+        )
+    }
+
+    pub const fn runtime_button_bounds(self) -> UiRuntimeButtonBounds {
+        UiRuntimeButtonBounds::new(
+            self.x_milli,
+            self.y_milli,
+            self.width_milli,
+            self.height_milli,
+        )
     }
 }
 

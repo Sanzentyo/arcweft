@@ -15,6 +15,7 @@ fn runtime_action_button_resolves_label_and_typed_submit_action() {
         state_schema_hashes: Vec::new(),
         exported_parts: Vec::new(),
         semantic_targets: Vec::new(),
+        layout_bounds: Vec::new(),
         action_buttons: vec![UiActionButtonResource {
             public_id: "button.submit_feedback".to_owned(),
             label_text_source: "text.label.submit_feedback".to_owned(),

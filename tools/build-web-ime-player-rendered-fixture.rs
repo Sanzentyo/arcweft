@@ -8,8 +8,9 @@ arcweft-render-text = { path = "../crates/arcweft-render-text" }
 
 use arcweft_bundle::resource_codec::ui::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
-    UiInputOptions, UiInputPurpose, UiInputResource, UiProgramResource, UiSecureInputPolicy,
-    UiSemanticTarget, UiTextResource, UiTextSourceKind, UiTextSourceRecord,
+    UiInputOptions, UiInputPurpose, UiInputResource, UiLayoutBoundsResource, UiLogicalRect,
+    UiProgramResource, UiSecureInputPolicy, UiSemanticTarget, UiTextResource, UiTextSourceKind,
+    UiTextSourceRecord,
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
@@ -109,8 +110,39 @@ fn ui_program() -> UiProgramResource {
             semantic("target.long_latin_area", "input.long_latin_area", "text.label.long_latin_area"),
             semantic("target.secret_secure_field", "input.secret_secure_field", "text.label.secret_secure_field"),
         ],
+        layout_bounds: vec![
+            text_control_layout("input.jp_text_field", 48, 48, 420, 48),
+            semantic_layout("target.jp_text_field", 48, 48, 420, 48),
+            text_control_layout("input.long_latin_area", 48, 112, 420, 136),
+            semantic_layout("target.long_latin_area", 48, 112, 420, 136),
+            text_control_layout("input.secret_secure_field", 48, 264, 420, 48),
+            semantic_layout("target.secret_secure_field", 48, 264, 420, 48),
+        ],
+        action_buttons: Vec::new(),
+        focus_groups: Vec::new(),
+        focus_navigation: Vec::new(),
         adapter_requirements: Vec::new(),
     }
+}
+
+fn text_control_layout(
+    public_id: &str,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> UiLayoutBoundsResource {
+    UiLayoutBoundsResource::text_control(public_id, UiLogicalRect::from_px(x, y, width, height))
+}
+
+fn semantic_layout(
+    public_id: &str,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> UiLayoutBoundsResource {
+    UiLayoutBoundsResource::semantic_target(public_id, UiLogicalRect::from_px(x, y, width, height))
 }
 
 fn semantic(public_id: &str, target: &str, label_text_source: &str) -> UiSemanticTarget {

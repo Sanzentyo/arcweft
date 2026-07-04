@@ -395,6 +395,7 @@ fn merge_ui_programs(mut left: UiProgramResource, right: UiProgramResource) -> U
     left.state_schema_hashes.extend(right.state_schema_hashes);
     left.exported_parts.extend(right.exported_parts);
     left.semantic_targets.extend(right.semantic_targets);
+    left.layout_bounds.extend(right.layout_bounds);
     left.action_buttons.extend(right.action_buttons);
     left.focus_groups.extend(right.focus_groups);
     left.focus_navigation.extend(right.focus_navigation);
@@ -539,6 +540,7 @@ fn collect_bundle_dsl_ui_resources(module: &HirModule) -> Result<BundleUiSidecar
                 state_schema_hashes: Vec::new(),
                 exported_parts: Vec::new(),
                 semantic_targets,
+                layout_bounds: Vec::new(),
                 action_buttons: Vec::new(),
                 focus_groups: Vec::new(),
                 focus_navigation: Vec::new(),
@@ -2215,6 +2217,7 @@ component FeedbackForm() -> View {
         let program = sidecars.program.expect("program sidecar");
         assert!(!program.instructions.is_empty());
         assert!(!program.semantic_targets.is_empty());
+        assert!(!program.layout_bounds.is_empty());
 
         let input = sidecars.input.expect("input sidecar");
         assert_eq!(input.options.len(), 1);
@@ -2270,6 +2273,21 @@ component FeedbackForm() -> View {
         );
         assert_eq!(option.submit_handler.as_deref(), Some("input.feedback"));
         assert_eq!(option.change_handler.as_deref(), Some("input.feedback"));
+        let runtime_controls = input.runtime_text_controls(Some(&text), Some(&program));
+        let feedback_control = runtime_controls
+            .iter()
+            .find(|control| control.public_id == "input.feedback")
+            .expect("component text field runtime control");
+        assert_eq!(
+            feedback_control.bounds,
+            arcweft_bundle::resource_codec::UiRuntimeTextControlBounds::new(
+                48_000, 48_000, 420_000, 48_000,
+            )
+        );
+        assert_eq!(
+            program.text_control_bounds_for("input.feedback"),
+            Some(feedback_control.bounds),
+        );
         assert_eq!(
             program
                 .semantic_targets
@@ -2298,6 +2316,57 @@ component FeedbackForm() -> View {
             target.public_id == "button.feedback_send"
                 && target.label_text_source.as_deref() == Some(&button.label_text_source)
         }));
+    }
+
+    #[test]
+    fn component_view_text_area_and_secure_field_emit_layout_bounds() {
+        let parsed = arcweft_lang_syntax::parser::parse_source(
+            r#"
+component Credentials() -> View {
+  VStack {
+    TextArea(id: @input:.bio, label: "Bio", value: "", placeholder: "Bio")
+    SecureField(id: @input:.password, label: "Password", value: "", placeholder: "Password")
+  }
+}
+"#,
+        );
+        assert_eq!(parsed.errors(), &[]);
+        let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+        let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
+        let program = sidecars.program.expect("program sidecar");
+        let input = sidecars.input.expect("input sidecar");
+        let text = sidecars.text.expect("text sidecar");
+
+        let controls = input.runtime_text_controls(Some(&text), Some(&program));
+        let bio = controls
+            .iter()
+            .find(|control| control.public_id == "input.bio")
+            .expect("text area runtime control");
+        let password = controls
+            .iter()
+            .find(|control| control.public_id == "input.password")
+            .expect("secure field runtime control");
+
+        assert_eq!(
+            bio.bounds,
+            arcweft_bundle::resource_codec::UiRuntimeTextControlBounds::new(
+                48_000, 48_000, 420_000, 136_000,
+            )
+        );
+        assert_eq!(
+            password.bounds,
+            arcweft_bundle::resource_codec::UiRuntimeTextControlBounds::new(
+                48_000, 200_000, 420_000, 48_000,
+            )
+        );
+        assert_eq!(
+            program.semantic_target_bounds_for("input.bio"),
+            Some(bio.bounds),
+        );
+        assert_eq!(
+            program.semantic_target_bounds_for("input.password"),
+            Some(password.bounds),
+        );
     }
 
     #[test]

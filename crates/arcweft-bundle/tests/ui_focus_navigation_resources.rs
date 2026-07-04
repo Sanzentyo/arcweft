@@ -14,6 +14,7 @@ fn program() -> UiProgramResource {
         state_schema_hashes: Vec::new(),
         exported_parts: Vec::new(),
         semantic_targets: Vec::new(),
+        layout_bounds: Vec::new(),
         action_buttons: Vec::new(),
         focus_groups: vec![UiFocusGroupResource {
             public_id: "group.settings".to_owned(),

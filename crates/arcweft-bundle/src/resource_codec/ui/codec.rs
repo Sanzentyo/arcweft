@@ -31,6 +31,7 @@ pub struct UiResourceBudget {
     pub state_schema_hashes: usize,
     pub exported_parts: usize,
     pub semantic_targets: usize,
+    pub layout_bounds: usize,
     pub action_buttons: usize,
     pub focus_groups: usize,
     pub focus_targets: usize,
@@ -78,6 +79,7 @@ impl Default for UiResourceBudget {
             state_schema_hashes: 65_536,
             exported_parts: 65_536,
             semantic_targets: 262_144,
+            layout_bounds: 262_144,
             action_buttons: 65_536,
             focus_groups: 65_536,
             focus_targets: 262_144,
@@ -168,6 +170,11 @@ impl UiProgramResource {
             .sort_by(|left, right| left.part_id.cmp(&right.part_id));
         self.semantic_targets
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
+        self.layout_bounds.sort_by(|left, right| {
+            left.public_id
+                .cmp(&right.public_id)
+                .then(left.kind.cmp(&right.kind))
+        });
         self.action_buttons
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
         self.focus_groups
@@ -180,6 +187,7 @@ impl UiProgramResource {
         self.validate_budgets(budget)?;
         self.validate_child_spans()?;
         self.validate_unique_ids()?;
+        self.validate_layout_bounds()?;
         self.validate_focus_targets()
     }
 
@@ -205,6 +213,11 @@ impl UiProgramResource {
             self.semantic_targets.len(),
             budget.semantic_targets,
             "ui_semantic_targets",
+        )?;
+        check_budget(
+            self.layout_bounds.len(),
+            budget.layout_bounds,
+            "ui_layout_bounds",
         )?;
         check_budget(
             self.action_buttons.len(),
@@ -262,6 +275,12 @@ impl UiProgramResource {
             "ui_semantic_targets",
         )?;
         reject_duplicates(
+            self.layout_bounds
+                .iter()
+                .map(super::model::UiLayoutBoundsResource::identity_key),
+            "ui_layout_bounds",
+        )?;
+        reject_duplicates(
             self.action_buttons
                 .iter()
                 .map(|button| button.public_id.clone()),
@@ -279,6 +298,18 @@ impl UiProgramResource {
                 .map(|target| target.public_id.clone()),
             "ui_focus_navigation",
         )
+    }
+
+    fn validate_layout_bounds(&self) -> Result<(), SectionCodecError> {
+        if self
+            .layout_bounds
+            .iter()
+            .all(super::model::UiLayoutBoundsResource::is_valid)
+        {
+            Ok(())
+        } else {
+            Err(SectionCodecError::NonCanonicalTable("ui_layout_bounds"))
+        }
     }
 
     fn validate_focus_targets(&self) -> Result<(), SectionCodecError> {
@@ -346,6 +377,11 @@ impl UiProgramResource {
                     .into_iter()
                     .flatten()
                 }))
+                .chain(
+                    self.layout_bounds
+                        .iter()
+                        .map(|bounds| bounds.public_id.clone()),
+                )
                 .chain(self.action_buttons.iter().flat_map(|button| {
                     let action_ids = match &button.action {
                         super::model::UiActionButtonActionResource::TextInputSubmit {
@@ -383,6 +419,7 @@ impl UiProgramResource {
 
     fn record_count(&self) -> u32 {
         saturating_u32(self.instructions.len())
+            .saturating_add(saturating_u32(self.layout_bounds.len()))
             .saturating_add(saturating_u32(self.action_buttons.len()))
             .saturating_add(saturating_u32(self.focus_groups.len()))
             .saturating_add(saturating_u32(self.focus_navigation.len()))
