@@ -487,7 +487,7 @@ impl RenderGlyphMotion {
 }
 
 /// Font family requested by a prepared text block.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub enum RenderFontFamily {
     Serif,
     #[default]
@@ -671,11 +671,32 @@ fn ranges_overlap(a_start: f32, a_end: f32, b_start: f32, b_end: f32) -> bool {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SharedFramePlanner;
 
+/// Stateful geometry planner context for hosts that prepare many frames.
+///
+/// This owns the same kind of font system used by rendering, so custom
+/// project-provided font bytes can be registered once and then reused for
+/// renderer-exact text-control caret, selection, and IME geometry planning.
+#[derive(Debug, Default)]
+pub struct SharedFramePlanContext {
+    text_control_font_context: text_controls::TextControlFontContext,
+}
+
+/// Counters exposed by the stateful frame planner.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SharedFramePlanStats {
+    pub registered_font_bytes: usize,
+    pub text_control_layout_cache_hits: u64,
+    pub text_control_layout_cache_misses: u64,
+    pub text_control_layout_cache_entries: usize,
+}
+
 /// Invalid frame inputs rejected before GPU work.
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum FramePlanError {
     #[error("viewport must have non-zero logical and physical dimensions")]
     EmptyViewport,
+    #[error("font bytes must not be empty")]
+    EmptyFont,
     #[error("failed to construct stable presentation id `{value}`")]
     InvalidId { value: String },
     #[error("semantic role {role:?} is not a text-input control")]
@@ -973,6 +994,30 @@ impl SharedFramePlanner {
     /// Panics if internal layer parent ids are inconsistent. That indicates a
     /// planner bug rather than invalid caller input.
     pub fn prepare(scene: &RenderScene) -> Result<PreparedFrame, FramePlanError> {
+        SharedFramePlanContext::new().prepare(scene)
+    }
+}
+
+impl SharedFramePlanContext {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn register_font_bytes(&mut self, bytes: Vec<u8>) -> Result<(), FramePlanError> {
+        self.text_control_font_context.register_font_bytes(bytes)
+    }
+
+    #[must_use]
+    pub fn stats(&self) -> SharedFramePlanStats {
+        self.text_control_font_context.stats()
+    }
+
+    /// # Panics
+    ///
+    /// Panics if internal layer parent ids are inconsistent. That indicates a
+    /// planner bug rather than invalid caller input.
+    pub fn prepare(&mut self, scene: &RenderScene) -> Result<PreparedFrame, FramePlanError> {
         validate_viewport(scene.viewport)?;
         let ids = FrameIds::new()?;
         let layers = build_frame_layers(&ids);
@@ -1012,7 +1057,6 @@ impl SharedFramePlanner {
         let mut control_backdrops = Vec::new();
         let mut control_shadows = Vec::new();
         let mut control_filters = Vec::new();
-        let mut text_control_font_context = text_controls::TextControlFontContext::new();
         let runtime_controls = build_runtime_controls(
             scene,
             &ids,
@@ -1021,7 +1065,7 @@ impl SharedFramePlanner {
             &mut text,
             &palette,
             &submit_action,
-            &mut text_control_font_context,
+            &mut self.text_control_font_context,
             &mut control_backdrops,
             &mut control_shadows,
             &mut control_filters,

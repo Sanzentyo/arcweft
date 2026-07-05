@@ -27,11 +27,13 @@ use arcweft_text_layout::{
 };
 use glyphon::{Attrs, Buffer, FontSystem, Metrics, Shaping, Wrap};
 use num_traits::ToPrimitive;
+use std::collections::HashMap;
 use std::ops::Range;
 
 const TEXT_INSET_X: f32 = 8.0;
 const TEXT_INSET_Y: f32 = 4.0;
 const CARET_WIDTH: f32 = 2.0;
+const TEXT_CONTROL_LAYOUT_CACHE_LIMIT: usize = 128;
 
 #[derive(Clone, Debug, PartialEq)]
 struct TextControlVisualLayout {
@@ -45,6 +47,26 @@ struct TextControlVisualLayout {
 #[derive(Debug)]
 pub(super) struct TextControlFontContext {
     font_system: FontSystem,
+    layout_cache: HashMap<TextControlLayoutCacheKey, TextControlVisualLayout>,
+    layout_cache_hits: u64,
+    layout_cache_misses: u64,
+    registered_font_bytes: usize,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct TextControlLayoutCacheKey {
+    target: InteractionTarget,
+    value: String,
+    selection_end: u32,
+    bounds_x: u32,
+    bounds_y: u32,
+    bounds_width: u32,
+    bounds_height: u32,
+    font_size: u32,
+    line_height: u32,
+    font_family: super::RenderFontFamily,
+    multiline: bool,
+    secure: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -63,7 +85,53 @@ impl TextControlFontContext {
     pub(super) fn new() -> Self {
         Self {
             font_system: FontSystem::new(),
+            layout_cache: HashMap::new(),
+            layout_cache_hits: 0,
+            layout_cache_misses: 0,
+            registered_font_bytes: 0,
         }
+    }
+
+    pub(super) fn register_font_bytes(&mut self, bytes: Vec<u8>) -> Result<(), FramePlanError> {
+        if bytes.is_empty() {
+            return Err(FramePlanError::EmptyFont);
+        }
+        self.registered_font_bytes = self.registered_font_bytes.saturating_add(bytes.len());
+        self.font_system.db_mut().load_font_data(bytes);
+        self.layout_cache.clear();
+        Ok(())
+    }
+
+    pub(super) fn stats(&self) -> super::SharedFramePlanStats {
+        super::SharedFramePlanStats {
+            registered_font_bytes: self.registered_font_bytes,
+            text_control_layout_cache_hits: self.layout_cache_hits,
+            text_control_layout_cache_misses: self.layout_cache_misses,
+            text_control_layout_cache_entries: self.layout_cache.len(),
+        }
+    }
+
+    fn visual_layout(
+        &mut self,
+        key: &TextControlLayoutCacheKey,
+    ) -> Option<TextControlVisualLayout> {
+        let layout = self.layout_cache.get(key).cloned();
+        if layout.is_some() {
+            self.layout_cache_hits = self.layout_cache_hits.saturating_add(1);
+        }
+        layout
+    }
+
+    fn cache_visual_layout(
+        &mut self,
+        key: TextControlLayoutCacheKey,
+        layout: TextControlVisualLayout,
+    ) {
+        self.layout_cache_misses = self.layout_cache_misses.saturating_add(1);
+        if self.layout_cache.len() >= TEXT_CONTROL_LAYOUT_CACHE_LIMIT {
+            self.layout_cache.clear();
+        }
+        self.layout_cache.insert(key, layout);
     }
 }
 
@@ -497,6 +565,10 @@ fn visual_layout_for_control(
     font_context: &mut TextControlFontContext,
 ) -> TextControlVisualLayout {
     let display_text = display_text_for_control(control, options);
+    let key = TextControlLayoutCacheKey::new(control, options, visual);
+    if let Some(layout) = font_context.visual_layout(&key) {
+        return layout;
+    }
     let unscrolled =
         laid_out_text_for_control(control, options, visual, &display_text, font_context);
     let inner = text_local_inner_bounds(control);
@@ -509,7 +581,7 @@ fn visual_layout_for_control(
     } else {
         LayoutSize::new(content_size.width.max(inner.width), inner.height.max(1.0))
     };
-    TextControlVisualLayout {
+    let layout = TextControlVisualLayout {
         display_value: display_text.value,
         laid_out,
         text_bounds: HitRect::new(
@@ -520,7 +592,9 @@ fn visual_layout_for_control(
         ),
         clip_bounds: text_inner_bounds(control),
         buffer_size,
-    }
+    };
+    font_context.cache_visual_layout(key, layout.clone());
+    layout
 }
 
 fn display_text_for_control(
@@ -807,6 +881,37 @@ fn scroll_laid_out_text(mut layout: LaidOutText, scroll: LayoutPoint) -> LaidOut
     }
     layout.bounds = union_layout_bounds(layout.glyphs.iter().map(|glyph| glyph.bounds));
     layout
+}
+
+impl TextControlLayoutCacheKey {
+    fn new(
+        control: &RenderTextInputControl,
+        options: &TextInputOptions,
+        visual: &super::RenderControlVisualStyle,
+    ) -> Self {
+        Self {
+            target: control.target.clone(),
+            value: control.value.clone(),
+            selection_end: control.selection.end().get(),
+            bounds_x: f32_cache_key(control.bounds.x),
+            bounds_y: f32_cache_key(control.bounds.y),
+            bounds_width: f32_cache_key(control.bounds.width),
+            bounds_height: f32_cache_key(control.bounds.height),
+            font_size: f32_cache_key(text_control_font_size(control)),
+            line_height: f32_cache_key(text_control_line_height(control)),
+            font_family: control_font_family(visual),
+            multiline: options.is_multiline(),
+            secure: options.is_secure(),
+        }
+    }
+}
+
+fn f32_cache_key(value: f32) -> u32 {
+    if value == 0.0 {
+        0.0_f32.to_bits()
+    } else {
+        value.to_bits()
+    }
 }
 
 fn union_layout_bounds(mut bounds: impl Iterator<Item = LayoutRect>) -> Option<LayoutRect> {

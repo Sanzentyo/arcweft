@@ -9,7 +9,7 @@ use crate::runtime_text_input::{
 use arcweft_bundle::{ArcweftBundle, BundleFormat};
 use arcweft_layout::ScalePolicy;
 use arcweft_player_scene::frame::{
-    PlayerFrameError, PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest,
+    PlayerFrameError, PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest,
 };
 use arcweft_player_scene::images::{BundleImageCatalog, BundleImageCatalogError};
 use arcweft_player_scene::input::{InputController, InputOutcome};
@@ -89,6 +89,7 @@ struct PlayerState {
     broker: BrowserTaskBroker,
     images: BundleImageCatalog,
     input: InputController,
+    frame_planner: PlayerFramePlannerState,
     text_input: WebPlayerTextInputBridgeHandle,
     keyboard_modifiers: ModifiersState,
     frame_fit: PlayerFrameFit,
@@ -222,6 +223,7 @@ fn start(
         broker,
         images,
         input: InputController::default(),
+        frame_planner: PlayerFramePlannerState::new(),
         text_input,
         keyboard_modifiers: ModifiersState::default(),
         frame_fit: options.frame_fit,
@@ -448,8 +450,13 @@ async fn initialize_gpu(
         .take()
         .ok_or_else(|| WebPlayerError::Font("font bytes were already consumed".to_owned()))?;
     renderer
-        .register_font_bytes(font_bytes)
+        .register_font_bytes(font_bytes.clone())
         .map_err(|error| WebPlayerError::Font(error.to_string()))?;
+    state
+        .borrow_mut()
+        .frame_planner
+        .register_font_bytes(font_bytes)
+        .map_err(WebPlayerError::from)?;
     state.borrow_mut().gpu = GpuState::Ready(ReadyGpu { host, renderer });
     Ok(())
 }
@@ -536,19 +543,21 @@ fn prepare_web_player_frame(
         presentation.dialogue.as_ref(),
         host_millis,
     );
-    Ok(PlayerFramePlanner::prepare(
-        &mut state.input,
-        PlayerFrameRequest {
-            presentation,
-            images: &state.images,
-            viewport,
-            fit: state.frame_fit,
-            image_time_millis: host_millis,
-            visual_time_millis,
-            preferences: RenderPreferences::default(),
-        },
-    )?
-    .frame)
+    Ok(state
+        .frame_planner
+        .prepare(
+            &mut state.input,
+            PlayerFrameRequest {
+                presentation,
+                images: &state.images,
+                viewport,
+                fit: state.frame_fit,
+                image_time_millis: host_millis,
+                visual_time_millis,
+                preferences: RenderPreferences::default(),
+            },
+        )?
+        .frame)
 }
 
 fn dialogue_visual_time_millis(

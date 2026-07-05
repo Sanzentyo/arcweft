@@ -208,11 +208,14 @@ impl InputController {
             })
     }
 
-    pub fn ensure_choice_focus(&mut self, frame: &PreparedFrame) {
+    pub fn ensure_choice_focus(&mut self, frame: &PreparedFrame) -> bool {
         if self.interaction.focus().target().is_none()
             && let Some(target) = frame.first_keyboard_focus_target()
         {
             self.set_focus(frame, target);
+            true
+        } else {
+            false
         }
     }
 

@@ -51,8 +51,9 @@ box-shadow rectangle. The observe JSON has empty runtime style diagnostics.
 
 ## Remaining Notes
 
-- This does not add bundled Japanese font assets. Native and web parity still
-  depends on host/system font availability unless a sample or product bundle
-  registers the same font bytes for both backends.
+- This does not add bundled Japanese font assets. Long-lived native and Web
+  player hosts now register their loaded font bytes with both the renderer and
+  the frame planner, but parity for one-shot tools still depends on those tools
+  choosing the same font bytes or system font stack.
 - The observe image is content-only; the native interactive window includes the
   OS title bar and typed runtime state. Those differences remain expected.

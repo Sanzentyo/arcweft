@@ -17,7 +17,7 @@ use arcweft_bundle::ArcweftBundle;
 use arcweft_desktop_native::NativeDesktopBackend;
 use arcweft_layout::ScalePolicy;
 use arcweft_player_scene::frame::{
-    PlayerFrameError, PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest,
+    PlayerFrameError, PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest,
 };
 use arcweft_player_scene::input::{InputController, InputOutcome};
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
@@ -209,6 +209,7 @@ struct NativeSceneState {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     renderer: SharedRenderer,
+    frame_planner: PlayerFramePlannerState,
     runtime: WindowedRuntimeOwner,
     audio: Option<NativeAudioRuntime>,
     ingress_completion: WindowedPatchIngressCompletion,
@@ -503,7 +504,9 @@ impl NativeSceneState {
         };
         surface.configure(&device, &config);
         let mut renderer = SharedRenderer::new(&device, &queue, format);
+        let mut frame_planner = PlayerFramePlannerState::new();
         renderer.register_font_bytes(DEFAULT_FONT_BYTES.to_vec())?;
+        frame_planner.register_font_bytes(DEFAULT_FONT_BYTES.to_vec())?;
         let close_signal = WindowCloseSignal::default();
         let owned_window = Arc::new(
             WinitOwnedWindowDriver::try_new(Arc::clone(&window), title, close_signal.clone())
@@ -527,6 +530,7 @@ impl NativeSceneState {
             queue,
             config,
             renderer,
+            frame_planner,
             runtime,
             audio,
             ingress_completion,
@@ -629,7 +633,7 @@ impl NativeSceneState {
             presentation.dialogue.as_ref(),
             elapsed,
         );
-        Ok(PlayerFramePlanner::prepare(
+        Ok(self.frame_planner.prepare(
             &mut self.input,
             PlayerFrameRequest {
                 presentation,

@@ -7,7 +7,7 @@ use arcweft_layout::{ContentRect, LayoutError, LayoutSize, ScalePolicy};
 use arcweft_presentation::text_editor::TextEditorError;
 use arcweft_render_wgpu::geometry::{
     FramePlanError, PreparedFrame, RenderChoiceItem, RenderDialogue, RenderPreferences,
-    RenderScene, RenderViewport, SharedFramePlanner,
+    RenderScene, RenderViewport, SharedFramePlanContext, SharedFramePlanStats,
 };
 use arcweft_runtime_driver::display::{BundlePresentationSnapshot, BundleViewportFit};
 use num_traits::ToPrimitive;
@@ -65,6 +65,16 @@ pub enum PlayerFrameError {
 /// observation.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct PlayerFramePlanner;
+
+/// Stateful player frame planner for long-lived native/web player windows.
+///
+/// The stateless `PlayerFramePlanner` facade remains for tests and one-shot
+/// observation. Hosts that register project-owned font bytes should keep this
+/// state and register the same bytes here and in the renderer.
+#[derive(Debug, Default)]
+pub struct PlayerFramePlannerState {
+    shared: SharedFramePlanContext,
+}
 
 impl PlayerFrameFit {
     pub const fn raw() -> Self {
@@ -178,6 +188,31 @@ impl PlayerFramePlanner {
         input: &mut InputController,
         request: PlayerFrameRequest<'_>,
     ) -> Result<PlayerPreparedFrame, PlayerFrameError> {
+        PlayerFramePlannerState::new().prepare(input, request)
+    }
+}
+
+impl PlayerFramePlannerState {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn register_font_bytes(&mut self, bytes: Vec<u8>) -> Result<(), PlayerFrameError> {
+        self.shared.register_font_bytes(bytes)?;
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn stats(&self) -> SharedFramePlanStats {
+        self.shared.stats()
+    }
+
+    pub fn prepare(
+        &mut self,
+        input: &mut InputController,
+        request: PlayerFrameRequest<'_>,
+    ) -> Result<PlayerPreparedFrame, PlayerFrameError> {
         let fit = request.fit.with_presentation_override(request.presentation);
         let design_request = PlayerFrameRequest {
             viewport: fit.planning_viewport(request.viewport),
@@ -185,15 +220,15 @@ impl PlayerFramePlanner {
             ..request
         };
         let content_rect = fit.content_rect(request.viewport)?;
-        let scene = Self::render_scene(input, design_request)?;
-        let frame = map_prepared_frame(SharedFramePlanner::prepare(&scene)?, request, content_rect);
-        input.ensure_choice_focus(&frame);
-        let scene = Self::render_scene(input, design_request)?;
-        let frame = map_prepared_frame(SharedFramePlanner::prepare(&scene)?, request, content_rect);
+        let mut scene = PlayerFramePlanner::render_scene(input, design_request)?;
+        let mut frame = map_prepared_frame(self.shared.prepare(&scene)?, request, content_rect);
+        if input.ensure_choice_focus(&frame) {
+            scene = PlayerFramePlanner::render_scene(input, design_request)?;
+            frame = map_prepared_frame(self.shared.prepare(&scene)?, request, content_rect);
+        }
         if input.apply_pending_text_pointer_selection(&frame)? {
-            let scene = Self::render_scene(input, design_request)?;
-            let frame =
-                map_prepared_frame(SharedFramePlanner::prepare(&scene)?, request, content_rect);
+            let scene = PlayerFramePlanner::render_scene(input, design_request)?;
+            let frame = map_prepared_frame(self.shared.prepare(&scene)?, request, content_rect);
             return Ok(PlayerPreparedFrame { scene, frame });
         }
         Ok(PlayerPreparedFrame { scene, frame })

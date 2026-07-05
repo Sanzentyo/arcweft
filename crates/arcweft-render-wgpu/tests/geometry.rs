@@ -13,7 +13,7 @@ use arcweft_render_wgpu::geometry::{
     RenderFocusNavigation, RenderFocusNavigationEdge, RenderFocusSkipPolicy,
     RenderFocusTargetResolution, RenderFocusWrapPolicy, RenderFontFamily, RenderPreferences,
     RenderScene, RenderTextInputControl, RenderTextSlant, RenderTextWeight, RenderViewport,
-    SharedFramePlanner,
+    SharedFramePlanContext, SharedFramePlanner,
 };
 use arcweft_render_wgpu::sample::{DemoAnimationClock, DemoImageKind, generated_demo_images};
 
@@ -496,6 +496,48 @@ fn focused_text_input_target_produces_real_focused_text_field() {
     assert_eq!(
         frame.semantics.find(&target).expect("semantic node").role(),
         SemanticRole::TextField,
+    );
+}
+
+#[test]
+fn stateful_planner_reuses_text_control_layout_cache_with_registered_fonts() {
+    let target = text_target("real.cached_text_field");
+    let control = text_control(
+        target.clone(),
+        "llll wide あいう",
+        SemanticRole::TextField,
+        TextInputOptions::default(),
+        HitRect::new(96.0, 88.0, 360.0, 48.0),
+    );
+    let mut scene = scene();
+    scene.choices.clear();
+    scene.text_inputs = vec![control];
+    scene.interaction.focused = Some(target);
+
+    let font_bytes = include_bytes!("../../../web/assets/arcweft-demo.ttf");
+    let mut planner = SharedFramePlanContext::new();
+    planner
+        .register_font_bytes(font_bytes.to_vec())
+        .expect("font bytes register");
+    let initial = planner.stats();
+    assert_eq!(initial.registered_font_bytes, font_bytes.len());
+
+    planner.prepare(&scene).expect("first frame plans");
+    let first = planner.stats();
+    assert!(
+        first.text_control_layout_cache_misses > initial.text_control_layout_cache_misses,
+        "first prepare should shape and populate the text-control layout cache"
+    );
+
+    planner.prepare(&scene).expect("second frame plans");
+    let second = planner.stats();
+    assert!(
+        second.text_control_layout_cache_hits > first.text_control_layout_cache_hits,
+        "second prepare of the same scene should reuse the shaped text-control layout"
+    );
+    assert_eq!(
+        second.text_control_layout_cache_misses, first.text_control_layout_cache_misses,
+        "same scene should not shape again after the cache is warm"
     );
 }
 
