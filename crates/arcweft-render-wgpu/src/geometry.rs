@@ -1012,6 +1012,7 @@ impl SharedFramePlanner {
         let mut control_backdrops = Vec::new();
         let mut control_shadows = Vec::new();
         let mut control_filters = Vec::new();
+        let mut text_control_font_context = text_controls::TextControlFontContext::new();
         let runtime_controls = build_runtime_controls(
             scene,
             &ids,
@@ -1020,6 +1021,7 @@ impl SharedFramePlanner {
             &mut text,
             &palette,
             &submit_action,
+            &mut text_control_font_context,
             &mut control_backdrops,
             &mut control_shadows,
             &mut control_filters,
@@ -1099,6 +1101,7 @@ fn build_runtime_controls(
     text: &mut Vec<RenderTextBlock>,
     palette: &Palette,
     submit_action: &PublicId,
+    text_control_font_context: &mut text_controls::TextControlFontContext,
     control_backdrops: &mut Vec<PreparedControlBackdrop>,
     control_shadows: &mut Vec<PreparedControlShadow>,
     control_filters: &mut Vec<PreparedControlFilter>,
@@ -1144,6 +1147,7 @@ fn build_runtime_controls(
                     rectangles,
                     text,
                     palette,
+                    text_control_font_context,
                     control_backdrops,
                     control_shadows,
                     control_filters,
