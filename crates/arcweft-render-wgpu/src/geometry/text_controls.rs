@@ -148,6 +148,7 @@ pub(super) fn build_text_input(
     let visual_layout = visual_layout_for_control(control, &options);
     let backdrop_start = control_backdrops.len();
     push_control_backdrop_plan(control_backdrops, &control.target, control.bounds, &visual);
+    let shadow_start = control_shadows.len();
     push_control_shadow_plan(control_shadows, &control.target, control.bounds, &visual);
     let rectangle_start = rectangles.len();
     rectangles.push(PaintRect::with_radii(
@@ -207,6 +208,7 @@ pub(super) fn build_text_input(
         rectangle_range: rectangle_start..rectangles.len(),
         text_range: text_start..text.len(),
         backdrop_range: backdrop_start..control_backdrops.len(),
+        shadow_range: shadow_start..control_shadows.len(),
         filter_range: filter_start..control_filters.len(),
     };
 
@@ -677,6 +679,10 @@ fn rich_ranges_overlap(left: RichTextRange, right: RichTextRange) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::{
+        ChoiceScroll, InteractionVisualState, RenderControlShadow, RenderControlShadowKind,
+        RenderPreferences, RenderScene,
+    };
     use arcweft_id::PublicId;
 
     fn target() -> InteractionTarget {
@@ -712,6 +718,29 @@ mod tests {
             (actual - expected).abs() <= f32::EPSILON,
             "expected {actual} to equal {expected}"
         );
+    }
+
+    fn scene_with_control(control: RenderTextInputControl) -> RenderScene {
+        RenderScene {
+            dialogue: None,
+            choices: Vec::new(),
+            text_inputs: vec![control],
+            action_buttons: Vec::new(),
+            focus_groups: Vec::new(),
+            focus_navigation: Vec::new(),
+            images: Vec::new(),
+            viewport: RenderViewport {
+                logical_width: 800.0,
+                logical_height: 450.0,
+                physical_width: 800,
+                physical_height: 450,
+                scale_factor: 1.0,
+            },
+            visual_time_millis: 0,
+            preferences: RenderPreferences::default(),
+            interaction: InteractionVisualState::default(),
+            choice_scroll: ChoiceScroll::default(),
+        }
     }
 
     #[test]
@@ -845,6 +874,45 @@ mod tests {
 
         assert_f32_near(caret.x, expected.x);
         assert_f32_near(caret.y, expected.y);
+    }
+
+    #[test]
+    fn text_control_paint_records_shadow_range() {
+        let mut style = RenderControlStyle::default();
+        style.normal.shadows.push(RenderControlShadow {
+            offset_x_px: 0.0,
+            offset_y_px: 8.0,
+            blur_radius_px: 18.0,
+            spread_radius_px: 0.0,
+            border_radius_px: 8.0,
+            color: [0, 0, 0, 128],
+            kind: RenderControlShadowKind::Outer,
+        });
+        let control = control("shadow", 6, 48.0).with_style(style);
+        let scene = scene_with_control(control.clone());
+        let mut semantics = SemanticTree::default();
+        let mut rectangles = Vec::new();
+        let mut text = Vec::new();
+        let mut backdrops = Vec::new();
+        let mut shadows = Vec::new();
+        let mut filters = Vec::new();
+
+        let (_, paint) = build_text_input(
+            &scene,
+            &LayerId::new(PublicId::try_new("layer.test").unwrap()),
+            &control,
+            &mut semantics,
+            &mut rectangles,
+            &mut text,
+            &Palette::from_preferences(RenderPreferences::default()),
+            &mut backdrops,
+            &mut shadows,
+            &mut filters,
+        )
+        .expect("text input builds");
+
+        assert_eq!(paint.shadow_range, 0..1);
+        assert_eq!(shadows.len(), 1);
     }
 
     #[test]

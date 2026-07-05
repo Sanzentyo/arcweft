@@ -9,7 +9,7 @@ use arcweft_render_wgpu::geometry::{
     FramePlanError, PreparedFrame, RenderChoiceItem, RenderDialogue, RenderPreferences,
     RenderScene, RenderViewport, SharedFramePlanner,
 };
-use arcweft_runtime_driver::display::BundlePresentationSnapshot;
+use arcweft_runtime_driver::display::{BundlePresentationSnapshot, BundleViewportFit};
 use num_traits::ToPrimitive;
 use thiserror::Error;
 
@@ -76,11 +76,20 @@ impl PlayerFrameFit {
     }
 
     pub const fn design_1280x720(scale_policy: ScalePolicy) -> Self {
+        Self::design(1280, 720, scale_policy)
+    }
+
+    pub const fn design(design_width: u32, design_height: u32, scale_policy: ScalePolicy) -> Self {
         Self {
-            design_width: 1280,
-            design_height: 720,
+            design_width: if design_width == 0 { 1 } else { design_width },
+            design_height: if design_height == 0 { 1 } else { design_height },
             scale_policy,
         }
+    }
+
+    #[must_use]
+    pub fn with_presentation_override(self, presentation: &BundlePresentationSnapshot) -> Self {
+        presentation.viewport_fit.map_or(self, Self::from)
     }
 
     fn planning_viewport(self, output: RenderViewport) -> RenderViewport {
@@ -109,6 +118,16 @@ impl PlayerFrameFit {
             self.scale_policy,
         )
         .map(Some)
+    }
+}
+
+impl From<BundleViewportFit> for PlayerFrameFit {
+    fn from(value: BundleViewportFit) -> Self {
+        if value.scale_policy == ScalePolicy::Raw {
+            Self::raw()
+        } else {
+            Self::design(value.design_width, value.design_height, value.scale_policy)
+        }
     }
 }
 
@@ -159,11 +178,13 @@ impl PlayerFramePlanner {
         input: &mut InputController,
         request: PlayerFrameRequest<'_>,
     ) -> Result<PlayerPreparedFrame, PlayerFrameError> {
+        let fit = request.fit.with_presentation_override(request.presentation);
         let design_request = PlayerFrameRequest {
-            viewport: request.fit.planning_viewport(request.viewport),
+            viewport: fit.planning_viewport(request.viewport),
+            fit,
             ..request
         };
-        let content_rect = request.fit.content_rect(request.viewport)?;
+        let content_rect = fit.content_rect(request.viewport)?;
         let scene = Self::render_scene(input, design_request)?;
         let frame = map_prepared_frame(SharedFramePlanner::prepare(&scene)?, request, content_rect);
         input.ensure_choice_focus(&frame);

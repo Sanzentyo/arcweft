@@ -25,6 +25,10 @@ impl TypeChecker<'_> {
                     "PresentationHandle<ImageSurface>".to_owned(),
                 ))
             }
+            "player_viewport" | "viewport.fit" | "player.viewport" | "player.viewport.fit" => {
+                self.check_presentation_viewport_args(args);
+                Some(TypeKind::Named("PresentationHandle<Viewport>".to_owned()))
+            }
             "show" => {
                 self.check_positional_entity_arg(args, 0, &EntityKind::Character, "show character");
                 self.check_character_look_arg(args);
@@ -59,6 +63,27 @@ impl TypeChecker<'_> {
                 Some(TypeKind::Named("Option<CharacterSurface>".to_owned()))
             }
             _ => None,
+        }
+    }
+
+    fn check_presentation_viewport_args(&mut self, args: &[CallArg]) {
+        for arg in args {
+            match arg {
+                CallArg::Positional(value) => self.check_presentation_image_loose_value(value),
+                CallArg::Named { name, value } => match name.as_str() {
+                    "width" | "height" | "design_width" | "design_height" | "design-width"
+                    | "design-height" => self.check_presentation_viewport_dimension_value(value),
+                    "fit" | "policy" | "scale_policy" | "scale-policy" => {
+                        self.check_presentation_image_loose_value(value);
+                    }
+                    _ => {
+                        self.check_expr(value);
+                    }
+                },
+                CallArg::Spread { value } => {
+                    self.check_expr(value);
+                }
+            }
         }
     }
 
@@ -384,6 +409,21 @@ impl TypeChecker<'_> {
                 self.expect_expr_type(expr, &TypeKind::F64, context);
             }
             Expr::Literal(Literal::String(_)) | Expr::Path(_) => {}
+            other => {
+                self.check_expr(other);
+            }
+        }
+    }
+
+    fn check_presentation_viewport_dimension_value(&mut self, expr: &Expr) {
+        match expr {
+            Expr::Literal(Literal::UnitNumber { .. } | Literal::String(_)) => {}
+            Expr::Literal(Literal::Int { suffix: None, .. }) => {
+                self.expect_expr_type(expr, &TypeKind::I32, "viewport dimension");
+            }
+            Expr::Literal(Literal::Float { suffix: None, .. }) => {
+                self.expect_expr_type(expr, &TypeKind::F64, "viewport dimension");
+            }
             other => {
                 self.check_expr(other);
             }

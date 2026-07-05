@@ -28,7 +28,9 @@ use arcweft_bundle::{
 use arcweft_compiler::lower::lower_source_runtime_plan_with_typecheck_and_options;
 use arcweft_core::engine::FlowStatusLabelStyle;
 use arcweft_core::plan::RuntimeEntryKind;
-use arcweft_launch::{LaunchKind, ResolvedLaunchProfile};
+use arcweft_launch::{LaunchKind, LaunchPlayerViewportFit, ResolvedLaunchProfile};
+#[cfg(feature = "native-player")]
+use arcweft_layout::ScalePolicy;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
 use arcweft_runtime_host::{NativeAdapterRegistrar, host_system_info};
 use arcweft_source::SourceName;
@@ -353,7 +355,7 @@ fn run_game_target(
             );
             let native_started = Instant::now();
             println!("Starting native player...");
-            run_native_bundle(bundle, options.steps, options)?;
+            run_native_bundle(bundle, options.steps, options, selection)?;
             println!(
                 "Native player exited after {} (total {})",
                 format_elapsed(native_started.elapsed()),
@@ -370,11 +372,12 @@ fn run_game_target(
                 format_elapsed(build_started.elapsed())
             );
             println!(
-                "Open web/index.html?bundle=./local/{} after building web/pkg.",
+                "Open web/index.html?bundle=./local/{}{} after building web/pkg.",
                 output
                     .file_name()
                     .and_then(std::ffi::OsStr::to_str)
-                    .unwrap_or("game.awfb")
+                    .unwrap_or("game.awfb"),
+                web_player_frame_fit_query(selection)
             );
             Ok(RunTargetOutcome::Handled)
         }
@@ -418,11 +421,12 @@ fn run_watch_target(
     );
     if matches!(runner, CliRuntimeRunner::Web) {
         println!(
-            "watch: open web/index.html?bundle=./local/{} after building web/pkg.",
+            "watch: open web/index.html?bundle=./local/{}{} after building web/pkg.",
             output
                 .file_name()
                 .and_then(std::ffi::OsStr::to_str)
-                .unwrap_or("game.awfb")
+                .unwrap_or("game.awfb"),
+            web_player_frame_fit_query(selection)
         );
     }
 
@@ -501,11 +505,11 @@ fn run_native_windowed_watch_target(
         output.display(),
         inputs.len(),
     );
-    let text_input_options = native_text_input_options(&options);
+    let native_options = native_player_options(&options, &selection);
     run_native_bundle_with_ingress(
         initial_bundle,
         options.steps,
-        text_input_options,
+        native_options,
         move |ingress| {
             thread::spawn(move || {
                 if let Err(code) = native_windowed_watch_producer_loop(
@@ -939,11 +943,12 @@ fn run_native_bundle(
     bundle: ArcweftBundle,
     steps: usize,
     options: &RuntimeRunOptions,
+    selection: &SourceSelection,
 ) -> Result<(), ExitCode> {
-    arcweft_player_native::run_bundle_windowed_with_text_input_options(
+    arcweft_player_native::run_bundle_windowed_with_options(
         bundle,
         steps,
-        native_text_input_options(options),
+        native_player_options(options, selection),
     )
     .map_err(|error| {
         eprintln!("error: native player failed: {error}");
@@ -955,16 +960,16 @@ fn run_native_bundle(
 fn run_native_bundle_with_ingress<F>(
     bundle: ArcweftBundle,
     steps: usize,
-    text_input_options: arcweft_player_native::NativeTextInputBridgeOptions,
+    options: arcweft_player_native::NativePlayerOptions,
     ingress_ready: F,
 ) -> Result<(), ExitCode>
 where
     F: FnOnce(arcweft_player_native::WindowedPatchIngress) + Send + 'static,
 {
-    arcweft_player_native::run_bundle_windowed_with_ingress_and_text_input_options(
+    arcweft_player_native::run_bundle_windowed_with_ingress_and_options(
         bundle,
         steps,
-        text_input_options,
+        options,
         ingress_ready,
     )
     .map_err(|error| {
@@ -986,14 +991,70 @@ fn native_text_input_options(
     bridge
 }
 
+#[cfg(feature = "native-player")]
+fn native_player_options(
+    options: &RuntimeRunOptions,
+    selection: &SourceSelection,
+) -> arcweft_player_native::NativePlayerOptions {
+    let mut native_options = arcweft_player_native::NativePlayerOptions::default()
+        .with_text_input_options(native_text_input_options(options));
+    if let Some(frame_fit) = frame_fit_for_selection(selection) {
+        native_options = native_options.with_frame_fit(frame_fit);
+    }
+    native_options
+}
+
+#[cfg(feature = "native-player")]
+fn frame_fit_for_selection(
+    selection: &SourceSelection,
+) -> Option<arcweft_player_scene::frame::PlayerFrameFit> {
+    let viewport = selection.profile()?.player().viewport()?;
+    let scale_policy = match viewport.fit() {
+        LaunchPlayerViewportFit::Raw => ScalePolicy::Raw,
+        LaunchPlayerViewportFit::Contain => ScalePolicy::Contain,
+        LaunchPlayerViewportFit::Cover => ScalePolicy::Cover,
+        LaunchPlayerViewportFit::Stretch => ScalePolicy::Stretch,
+    };
+    Some(if scale_policy == ScalePolicy::Raw {
+        arcweft_player_scene::frame::PlayerFrameFit::raw()
+    } else {
+        arcweft_player_scene::frame::PlayerFrameFit::design(
+            viewport.design_width(),
+            viewport.design_height(),
+            scale_policy,
+        )
+    })
+}
+
 #[cfg(not(feature = "native-player"))]
 fn run_native_bundle(
     _bundle: ArcweftBundle,
     _steps: usize,
     _options: &RuntimeRunOptions,
+    _selection: &SourceSelection,
 ) -> Result<(), ExitCode> {
     eprintln!("error: native player support is not enabled for this arcw build");
     Err(ExitCode::from(2))
+}
+
+fn web_player_frame_fit_query(selection: &SourceSelection) -> String {
+    let Some(viewport) = selection
+        .profile()
+        .and_then(|profile| profile.player().viewport())
+    else {
+        return String::new();
+    };
+    let fit = match viewport.fit() {
+        LaunchPlayerViewportFit::Raw => "raw",
+        LaunchPlayerViewportFit::Contain => "contain",
+        LaunchPlayerViewportFit::Cover => "cover",
+        LaunchPlayerViewportFit::Stretch => "stretch",
+    };
+    format!(
+        "&fit={fit}&designWidth={}&designHeight={}",
+        viewport.design_width(),
+        viewport.design_height()
+    )
 }
 
 #[cfg(test)]

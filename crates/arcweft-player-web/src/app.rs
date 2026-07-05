@@ -91,6 +91,7 @@ struct PlayerState {
     input: InputController,
     text_input: WebPlayerTextInputBridgeHandle,
     keyboard_modifiers: ModifiersState,
+    frame_fit: PlayerFrameFit,
     clock: LogicalClockQuantizer,
     font_bytes: Option<Vec<u8>>,
     prepared: Option<arcweft_render_wgpu::geometry::PreparedFrame>,
@@ -107,10 +108,23 @@ struct BrowserApp {
     state: Rc<RefCell<PlayerState>>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct WebPlayerOptions {
+    frame_fit: PlayerFrameFit,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct DialogueVisualClock {
     line: Option<arcweft_core::plan::RuntimeLineId>,
     started_at_millis: u64,
+}
+
+impl Default for WebPlayerOptions {
+    fn default() -> Self {
+        Self {
+            frame_fit: PlayerFrameFit::design_1280x720(ScalePolicy::Contain),
+        }
+    }
 }
 
 impl PlayerState {
@@ -148,14 +162,36 @@ pub fn start_arcweft_player(
     bundle_bytes: Vec<u8>,
     font_bytes: Vec<u8>,
 ) -> Result<(), JsValue> {
-    start(canvas_id, bundle_bytes, font_bytes)
-        .map_err(|error| JsValue::from_str(&error.to_string()))
+    start(
+        canvas_id,
+        bundle_bytes,
+        font_bytes,
+        WebPlayerOptions::default(),
+    )
+    .map_err(|error| JsValue::from_str(&error.to_string()))
+}
+
+#[wasm_bindgen]
+pub fn start_arcweft_player_with_options(
+    canvas_id: String,
+    bundle_bytes: Vec<u8>,
+    font_bytes: Vec<u8>,
+    options: JsValue,
+) -> Result<(), JsValue> {
+    start(
+        canvas_id,
+        bundle_bytes,
+        font_bytes,
+        web_player_options_from_js(&options),
+    )
+    .map_err(|error| JsValue::from_str(&error.to_string()))
 }
 
 fn start(
     canvas_id: String,
     bundle_bytes: Vec<u8>,
     font_bytes: Vec<u8>,
+    options: WebPlayerOptions,
 ) -> Result<(), WebPlayerError> {
     let document = web_sys::window()
         .and_then(|window| window.document())
@@ -188,6 +224,7 @@ fn start(
         input: InputController::default(),
         text_input,
         keyboard_modifiers: ModifiersState::default(),
+        frame_fit: options.frame_fit,
         clock,
         font_bytes: Some(font_bytes),
         prepared: None,
@@ -199,6 +236,44 @@ fn start(
     event_loop
         .run_app(BrowserApp { state })
         .map_err(|error| WebPlayerError::EventLoop(error.to_string()))
+}
+
+fn web_player_options_from_js(options: &JsValue) -> WebPlayerOptions {
+    let mut parsed = WebPlayerOptions::default();
+    let Some(frame_fit) = js_property(options, "frameFit") else {
+        return parsed;
+    };
+    let fit = js_string_property(&frame_fit, "fit").unwrap_or_else(|| "contain".to_owned());
+    let design_width = js_u32_property(&frame_fit, "designWidth")
+        .or_else(|| js_u32_property(&frame_fit, "design_width"))
+        .unwrap_or(1280);
+    let design_height = js_u32_property(&frame_fit, "designHeight")
+        .or_else(|| js_u32_property(&frame_fit, "design_height"))
+        .unwrap_or(720);
+    parsed.frame_fit = match fit.as_str() {
+        "raw" | "none" => PlayerFrameFit::raw(),
+        "cover" => PlayerFrameFit::design(design_width, design_height, ScalePolicy::Cover),
+        "stretch" => PlayerFrameFit::design(design_width, design_height, ScalePolicy::Stretch),
+        _ => PlayerFrameFit::design(design_width, design_height, ScalePolicy::Contain),
+    };
+    parsed
+}
+
+fn js_property(parent: &JsValue, key: &str) -> Option<JsValue> {
+    let value = js_sys::Reflect::get(parent, &JsValue::from_str(key)).ok()?;
+    (!value.is_undefined() && !value.is_null()).then_some(value)
+}
+
+fn js_string_property(parent: &JsValue, key: &str) -> Option<String> {
+    js_property(parent, key)?.as_string()
+}
+
+fn js_u32_property(parent: &JsValue, key: &str) -> Option<u32> {
+    let number = js_property(parent, key)?.as_f64()?.round();
+    if !number.is_finite() || number < 1.0 {
+        return None;
+    }
+    Some(number.min(f64::from(u32::MAX)) as u32)
 }
 
 impl ApplicationHandler for BrowserApp {
@@ -405,31 +480,20 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
 
     let browser_viewport = state.browser_viewport(window);
     let viewport = browser_viewport.render;
-    let presentation = state.session.presentation();
-    let visual_time_millis = dialogue_visual_time_millis(
-        &mut state.dialogue_visual_clock,
-        presentation.dialogue.as_ref(),
-        host_millis.max(0.0) as u64,
-    );
-    let prepared = PlayerFramePlanner::prepare(
-        &mut state.input,
-        PlayerFrameRequest {
-            presentation,
-            images: &state.images,
-            viewport,
-            fit: PlayerFrameFit::design_1280x720(ScalePolicy::Contain),
-            image_time_millis: host_millis.max(0.0) as u64,
-            visual_time_millis,
-            preferences: RenderPreferences::default(),
-        },
-    )?
-    .frame;
+    let host_millis_u64 = host_millis.max(0.0) as u64;
+    let mut prepared = prepare_web_player_frame(state, viewport, host_millis_u64)?;
     update_text_input_client_transform(state)?;
     state
         .text_input
         .sync_prepared_frame(&prepared, WebRuntimeTextInputFocusReason::RedrawRefresh)
         .map_err(|error| WebPlayerError::TextInput(error.to_string()))?;
-    drain_text_input_edits(state, &prepared)?;
+    if drain_text_input_edits(state, &prepared)? {
+        prepared = prepare_web_player_frame(state, viewport, host_millis_u64)?;
+        state
+            .text_input
+            .sync_prepared_frame(&prepared, WebRuntimeTextInputFocusReason::RedrawRefresh)
+            .map_err(|error| WebPlayerError::TextInput(error.to_string()))?;
+    }
 
     let GpuState::Ready(gpu) = &mut state.gpu else {
         return Ok(());
@@ -459,6 +523,32 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
     }
     state.prepared = Some(prepared);
     Ok(())
+}
+
+fn prepare_web_player_frame(
+    state: &mut PlayerState,
+    viewport: RenderViewport,
+    host_millis: u64,
+) -> Result<arcweft_render_wgpu::geometry::PreparedFrame, WebPlayerError> {
+    let presentation = state.session.presentation();
+    let visual_time_millis = dialogue_visual_time_millis(
+        &mut state.dialogue_visual_clock,
+        presentation.dialogue.as_ref(),
+        host_millis,
+    );
+    Ok(PlayerFramePlanner::prepare(
+        &mut state.input,
+        PlayerFrameRequest {
+            presentation,
+            images: &state.images,
+            viewport,
+            fit: state.frame_fit,
+            image_time_millis: host_millis,
+            visual_time_millis,
+            preferences: RenderPreferences::default(),
+        },
+    )?
+    .frame)
 }
 
 fn dialogue_visual_time_millis(
@@ -543,11 +633,12 @@ fn update_text_input_client_transform(state: &mut PlayerState) -> Result<(), Web
 fn drain_text_input_edits(
     state: &mut PlayerState,
     frame: &arcweft_render_wgpu::geometry::PreparedFrame,
-) -> Result<(), WebPlayerError> {
+) -> Result<bool, WebPlayerError> {
     let edits = state
         .text_input
         .drain_pending_edits()
         .map_err(|error| WebPlayerError::TextInput(error.to_string()))?;
+    let changed = !edits.is_empty();
     for edit in edits {
         let outcome = state
             .input
@@ -555,7 +646,7 @@ fn drain_text_input_edits(
             .map_err(|error| WebPlayerError::TextEditor(error.to_string()))?;
         apply_outcome(state, outcome);
     }
-    Ok(())
+    Ok(changed)
 }
 
 fn logical_position(position: PhysicalPosition<f64>, scale_factor: f64) -> ViewportPoint {

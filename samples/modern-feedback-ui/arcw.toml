@@ -1,7 +1,14 @@
+default = "main"
+
 [package]
 name = "modern-feedback-ui"
 version = "0.1.0"
 
-[launch.main]
+[profiles.main]
 kind = "game"
 source = "src/main.arcw"
+
+[profiles.main.player.viewport]
+design-width = 1280
+design-height = 720
+fit = "contain"

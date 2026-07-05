@@ -108,6 +108,7 @@ pub(super) fn build_action_button(
     let radii = visual.radii();
     let backdrop_start = control_backdrops.len();
     push_control_backdrop_plan(control_backdrops, &button.target, button.bounds, &visual);
+    let shadow_start = control_shadows.len();
     push_control_shadow_plan(control_shadows, &button.target, button.bounds, &visual);
     let fallback_fill = action_button_fill(
         button.enabled,
@@ -156,6 +157,7 @@ pub(super) fn build_action_button(
         rectangle_range: rectangle_start..rectangles.len(),
         text_range: text_start..text.len(),
         backdrop_range: backdrop_start..control_backdrops.len(),
+        shadow_range: shadow_start..control_shadows.len(),
         filter_range: filter_start..control_filters.len(),
     };
     semantics.push(

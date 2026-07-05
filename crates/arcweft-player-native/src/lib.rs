@@ -14,8 +14,9 @@ pub use patch_endpoint::{
     NativePatchTransportEnvelope,
 };
 pub use scene_windowed::{
-    run_bundle_windowed, run_bundle_windowed_with_ingress,
-    run_bundle_windowed_with_ingress_and_text_input_options,
+    NativePlayerOptions, run_bundle_windowed, run_bundle_windowed_with_ingress,
+    run_bundle_windowed_with_ingress_and_options,
+    run_bundle_windowed_with_ingress_and_text_input_options, run_bundle_windowed_with_options,
     run_bundle_windowed_with_text_input_options,
 };
 pub use text_input_bridge::{NativeTextInputBridgeOptions, NativeTextInputTraceOptions};

@@ -8,6 +8,7 @@ use arcweft_bundle::{
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::plan::FlowEvent;
+use arcweft_layout::ScalePolicy;
 use arcweft_layout::stage_placement::{StagePlacement, StageRect};
 use arcweft_render_text::{LineDisplayCatalog, LineDisplayFrame, RuntimeLineContext};
 use core::fmt;
@@ -18,6 +19,14 @@ use serde::{Deserialize, Serialize};
 pub struct BundleChoice {
     pub id: String,
     pub label: String,
+}
+
+/// Runtime-selected player viewport fit.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BundleViewportFit {
+    pub design_width: u32,
+    pub design_height: u32,
+    pub scale_policy: ScalePolicy,
 }
 
 /// Display frames and non-fatal display diagnostics resolved from one VM step.
@@ -36,6 +45,8 @@ pub struct BundlePresentationSnapshot {
     pub dialogue: Option<LineDisplayFrame>,
     pub choices: Vec<BundleChoice>,
     pub images: Vec<BundleImageObject>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub viewport_fit: Option<BundleViewportFit>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub text_inputs: Vec<UiRuntimeTextControl>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -91,6 +102,7 @@ impl BundlePresentationSnapshot {
             .or_else(|| self.dialogue.clone());
         let next_choices = choices_from_status(status);
         let next_images = images_from_effects(&self.images, effects, resources.image_objects);
+        let next_viewport_fit = viewport_fit_from_effects(self.viewport_fit, effects);
         let next_text_inputs = resources.text_inputs.to_vec();
         let next_action_buttons = resources.action_buttons.to_vec();
         let next_focus_groups = resources.focus_groups.to_vec();
@@ -98,6 +110,7 @@ impl BundlePresentationSnapshot {
         if self.dialogue != next_dialogue
             || self.choices != next_choices
             || self.images != next_images
+            || self.viewport_fit != next_viewport_fit
             || self.text_inputs != next_text_inputs
             || self.action_buttons != next_action_buttons
             || self.focus_groups != next_focus_groups
@@ -107,6 +120,7 @@ impl BundlePresentationSnapshot {
             self.dialogue = next_dialogue;
             self.choices = next_choices;
             self.images = next_images;
+            self.viewport_fit = next_viewport_fit;
             self.text_inputs = next_text_inputs;
             self.action_buttons = next_action_buttons;
             self.focus_groups = next_focus_groups;
@@ -143,11 +157,30 @@ impl fmt::Debug for BundlePresentationSnapshot {
             .field("dialogue", &self.dialogue)
             .field("choices", &self.choices)
             .field("images", &self.images)
+            .field("viewport_fit", &self.viewport_fit)
             .field("text_inputs", &self.redacted_for_observation().text_inputs)
             .field("action_buttons", &self.action_buttons)
             .field("focus_groups", &self.focus_groups)
             .field("focus_navigation", &self.focus_navigation)
             .finish()
+    }
+}
+
+impl BundleViewportFit {
+    pub const fn raw() -> Self {
+        Self {
+            design_width: 0,
+            design_height: 0,
+            scale_policy: ScalePolicy::Raw,
+        }
+    }
+
+    pub const fn design(design_width: u32, design_height: u32, scale_policy: ScalePolicy) -> Self {
+        Self {
+            design_width,
+            design_height,
+            scale_policy,
+        }
     }
 }
 
@@ -163,6 +196,78 @@ fn choices_from_status(status: &FlowFiberStatus) -> Vec<BundleChoice> {
             label: option.label.clone(),
         })
         .collect()
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PresentationViewportEffect {
+    Set(BundleViewportFit),
+    Clear,
+}
+
+impl PresentationViewportEffect {
+    fn from_call(call: &RuntimeCall) -> Option<Self> {
+        match call.callee.as_str() {
+            "player_viewport"
+            | "viewport"
+            | "viewport.fit"
+            | "player.viewport"
+            | "player.viewport.fit" => viewport_effect_from_call(call),
+            _ => None,
+        }
+    }
+}
+
+fn viewport_fit_from_effects(
+    previous: Option<BundleViewportFit>,
+    effects: &[LineEffectRequest],
+) -> Option<BundleViewportFit> {
+    effects
+        .iter()
+        .filter_map(|effect| {
+            let LineEffectRequest::Call(call) = effect else {
+                return None;
+            };
+            PresentationViewportEffect::from_call(call)
+        })
+        .fold(previous, |_active, effect| match effect {
+            PresentationViewportEffect::Set(fit) => Some(fit),
+            PresentationViewportEffect::Clear => None,
+        })
+}
+
+fn viewport_effect_from_call(call: &RuntimeCall) -> Option<PresentationViewportEffect> {
+    let fit_arg = named_arg(&call.args, "fit")
+        .or_else(|| named_arg(&call.args, "policy"))
+        .or_else(|| named_arg(&call.args, "scale_policy"))
+        .or_else(|| named_arg(&call.args, "scale-policy"))
+        .map_or("contain", unquote_arg);
+    match fit_arg {
+        "default" | "host" | "inherit" => Some(PresentationViewportEffect::Clear),
+        "raw" | "none" => Some(PresentationViewportEffect::Set(BundleViewportFit::raw())),
+        "contain" | "cover" | "stretch" => {
+            let design_width = named_arg(&call.args, "design_width")
+                .or_else(|| named_arg(&call.args, "design-width"))
+                .or_else(|| named_arg(&call.args, "width"))
+                .and_then(parse_positive_u32_px)
+                .unwrap_or(1280);
+            let design_height = named_arg(&call.args, "design_height")
+                .or_else(|| named_arg(&call.args, "design-height"))
+                .or_else(|| named_arg(&call.args, "height"))
+                .and_then(parse_positive_u32_px)
+                .unwrap_or(720);
+            let scale_policy = match fit_arg {
+                "cover" => ScalePolicy::Cover,
+                "stretch" => ScalePolicy::Stretch,
+                _ => ScalePolicy::Contain,
+            };
+            Some(PresentationViewportEffect::Set(BundleViewportFit::design(
+                design_width,
+                design_height,
+                scale_policy,
+            )))
+        }
+        _ => None,
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -458,6 +563,17 @@ fn parse_px_milli(value: &str) -> Option<i32> {
     rounded_i32(parsed * 1_000.0)
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn parse_positive_u32_px(value: &str) -> Option<u32> {
+    let value = unquote_arg(value);
+    let pixels = value.strip_suffix("px").unwrap_or(value).trim();
+    let parsed = pixels.parse::<f64>().ok()?.round();
+    if !parsed.is_finite() || parsed < 1.0 {
+        return None;
+    }
+    Some(parsed.min(f64::from(u32::MAX)) as u32)
+}
+
 #[allow(clippy::cast_possible_truncation)]
 fn rounded_i32(value: f64) -> Option<i32> {
     let rounded = value.round();
@@ -513,5 +629,32 @@ mod tests {
         assert_eq!(object.bounds.x_milli, 760_000);
         assert_eq!(object.bounds.height_milli, 600_000);
         assert_eq!(object.alignment.y_milli, 1_000);
+    }
+
+    #[test]
+    fn viewport_effect_sets_and_clears_runtime_fit() {
+        let contain = RuntimeCall {
+            callee: "player.viewport".to_owned(),
+            args: vec![
+                "design-width = 1920".to_owned(),
+                "design-height = 1080px".to_owned(),
+                "fit = \"cover\"".to_owned(),
+            ],
+        };
+        let reset = RuntimeCall {
+            callee: "viewport".to_owned(),
+            args: vec!["fit = \"default\"".to_owned()],
+        };
+
+        let fit = viewport_fit_from_effects(None, &[LineEffectRequest::Call(contain.clone())])
+            .expect("viewport fit is set");
+        assert_eq!(fit.design_width, 1920);
+        assert_eq!(fit.design_height, 1080);
+        assert_eq!(fit.scale_policy, ScalePolicy::Cover);
+
+        assert_eq!(
+            viewport_fit_from_effects(Some(fit), &[LineEffectRequest::Call(reset)]),
+            None
+        );
     }
 }

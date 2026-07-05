@@ -175,6 +175,7 @@ pub component ModernFeedbackPanel() -> View {
 }
 
 flow modern_feedback_ui {
+  player_viewport(width = 1280px, height = 720px, fit = contain)
   image(@image.modern.glass_bg)
 
   concierge:

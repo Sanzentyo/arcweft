@@ -111,6 +111,15 @@ pub(crate) struct UiInlineForegroundFilterFrame<'a> {
     pub logical_extent: [f32; 2],
 }
 
+/// Inline box-shadow request for prepared runtime controls.
+pub(crate) struct UiInlineBoxShadowFrame<'a> {
+    pub device: &'a wgpu::Device,
+    pub encoder: &'a mut wgpu::CommandEncoder,
+    pub target: UiCompositorTarget<'a>,
+    pub plan: &'a UiBoxShadowPassPlan,
+    pub kind: UiBoxShadowKind,
+}
+
 /// Draws a seq06.9a direct primitive range into the current target.
 pub trait UiDirectPrimitiveRenderer {
     fn render_direct_range(
@@ -502,6 +511,38 @@ impl UiCompositor {
             .saturating_sub(pool_reuses_at_start);
         self.pool.release(foreground);
         Ok(stats)
+    }
+
+    pub(crate) fn render_inline_box_shadow(
+        &mut self,
+        frame: &mut UiInlineBoxShadowFrame<'_>,
+    ) -> UiCompositorStats {
+        if frame.plan.is_empty() {
+            return UiCompositorStats::default();
+        }
+        let mut stats = UiCompositorStats::default();
+        for pass in frame.plan.passes_for_kind(frame.kind) {
+            self.run_shader_pass(
+                frame.device,
+                frame.encoder,
+                &ShaderPassInputs {
+                    source: &self.defaults.transparent.view,
+                    backdrop: None,
+                    mask: None,
+                    output: frame.target.view,
+                    uniform: UiCompositorUniform::box_shadow(
+                        pass,
+                        frame.target.extent,
+                        frame.target.origin_logical,
+                    ),
+                    load: wgpu::LoadOp::Load,
+                    blend_over_existing: true,
+                },
+            );
+            stats.shader_passes = stats.shader_passes.saturating_add(1);
+            stats.box_shadow_passes = stats.box_shadow_passes.saturating_add(1);
+        }
+        stats
     }
 
     pub(crate) fn composite_texture_to_view(

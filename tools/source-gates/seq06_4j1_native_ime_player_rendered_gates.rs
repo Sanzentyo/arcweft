@@ -58,7 +58,7 @@ fn main() {
     assert_contains(
         &root,
         "crates/arcweft-cli/src/app/runtime/run.rs",
-        "run_bundle_windowed_with_text_input_options",
+        "run_bundle_windowed_with_options",
         &mut errors,
     );
     assert_contains(

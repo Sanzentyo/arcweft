@@ -1,16 +1,17 @@
 use crate::convert::{pixel_ceil_as_i32, pixel_floor_as_i32};
 use crate::geometry::{
-    PaintRect, PreparedControlPaint, PreparedFrame, PreparedUiScene, RenderFontFamily,
-    RenderGlyphMotion, RenderGlyphTransformSpan, RenderImage, RenderStyledParagraph,
-    RenderStyledTextSpan, RenderTextBlock, RenderTextSlant, RenderTextStyle, RenderTextWeight,
-    RuntimeControlBackdropSamplePolicy,
+    PaintRect, PreparedControlPaint, PreparedControlShadow, PreparedFrame, PreparedUiScene,
+    RenderFontFamily, RenderGlyphMotion, RenderGlyphTransformSpan, RenderImage,
+    RenderStyledParagraph, RenderStyledTextSpan, RenderTextBlock, RenderTextSlant, RenderTextStyle,
+    RenderTextWeight, RuntimeControlBackdropSamplePolicy,
 };
 use crate::ui_compositor::{
     UiCompositor, UiCompositorError, UiCompositorFrame, UiCompositorTarget,
-    UiInlineBackdropFilterFrame, UiInlineForegroundFilterFrame,
+    UiInlineBackdropFilterFrame, UiInlineBoxShadowFrame, UiInlineForegroundFilterFrame,
 };
 use crate::ui_direct_renderer::{WgpuPreparedUiMaskTextureProvider, WgpuUiDirectPrimitiveRenderer};
 use crate::ui_effects::UiTextureExtent;
+use crate::ui_scene::UiBoxShadowKind;
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_text::RichTextRange;
 use bytemuck::{Pod, Zeroable};
@@ -405,6 +406,19 @@ impl SharedRenderer {
         *next_text = (*next_text).max(paint.text_range.start);
         *styled_paragraphs = 0..0;
 
+        let shadow_target = RuntimeControlShadowTarget {
+            texture: target_texture,
+            view: target_view,
+            extent: target_extent,
+        };
+        self.render_control_shadows(
+            device,
+            encoder,
+            shadow_target,
+            frame,
+            paint,
+            UiBoxShadowKind::Outer,
+        );
         self.render_control_backdrops(
             device,
             encoder,
@@ -423,6 +437,14 @@ impl SharedRenderer {
                 frame,
                 paint.rectangle_range.clone(),
                 "arcweft-shared-runtime-control-rectangles",
+            );
+            self.render_control_shadows(
+                device,
+                encoder,
+                shadow_target,
+                frame,
+                paint,
+                UiBoxShadowKind::Inset,
             );
             self.render_text_ranges(
                 device,
@@ -446,10 +468,56 @@ impl SharedRenderer {
                 frame,
                 paint,
             )?;
+            self.render_control_shadows(
+                device,
+                encoder,
+                shadow_target,
+                frame,
+                paint,
+                UiBoxShadowKind::Inset,
+            );
         }
         *next_rectangle = (*next_rectangle).max(paint.rectangle_range.end);
         *next_text = (*next_text).max(paint.text_range.end);
         Ok(())
+    }
+
+    fn render_control_shadows(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        target: RuntimeControlShadowTarget<'_>,
+        frame: &PreparedFrame,
+        paint: &PreparedControlPaint,
+        kind: UiBoxShadowKind,
+    ) {
+        for shadow in slice_range(&frame.control_shadows, paint.shadow_range.clone()) {
+            self.render_control_shadow(device, encoder, target, shadow, kind);
+        }
+    }
+
+    fn render_control_shadow(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        target: RuntimeControlShadowTarget<'_>,
+        shadow: &PreparedControlShadow,
+        kind: UiBoxShadowKind,
+    ) {
+        let target = UiCompositorTarget {
+            texture: target.texture,
+            view: target.view,
+            extent: target.extent,
+            origin_logical: [0.0, 0.0],
+        };
+        let mut request = UiInlineBoxShadowFrame {
+            device,
+            encoder,
+            target,
+            plan: &shadow.plan,
+            kind,
+        };
+        let _ = self.ui_compositor.render_inline_box_shadow(&mut request);
     }
 
     #[expect(
@@ -799,6 +867,13 @@ fn slice_range<T>(items: &[T], range: Range<usize>) -> &[T] {
     let start = range.start.min(items.len());
     let end = range.end.min(items.len()).max(start);
     &items[start..end]
+}
+
+#[derive(Clone, Copy)]
+struct RuntimeControlShadowTarget<'a> {
+    texture: &'a wgpu::Texture,
+    view: &'a wgpu::TextureView,
+    extent: UiTextureExtent,
 }
 
 struct RuntimeControlBackdropSource {

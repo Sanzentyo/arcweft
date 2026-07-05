@@ -211,6 +211,21 @@ pub enum LaunchHotReloadStatePolicy {
     Strict,
 }
 
+/// Player viewport fit selected by a launch profile.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum LaunchPlayerViewportFit {
+    /// Use the host surface coordinates directly.
+    Raw,
+    /// Preserve aspect ratio and fit the whole design viewport.
+    #[default]
+    Contain,
+    /// Preserve aspect ratio and fill the host surface.
+    Cover,
+    /// Scale width and height independently to the host surface.
+    Stretch,
+}
+
 /// Project-level profile manifest parsed from `arcw.toml`.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 pub struct LaunchProfileManifest {
@@ -247,6 +262,27 @@ pub struct LaunchProfileSpec {
     content: BTreeMap<String, LaunchContentProfileSpec>,
     #[serde(default)]
     rust_metadata: Vec<PathBuf>,
+    #[serde(default)]
+    player: LaunchPlayerProfileSpec,
+}
+
+/// Optional player-host defaults for one launch profile.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+pub struct LaunchPlayerProfileSpec {
+    #[serde(default)]
+    viewport: Option<LaunchPlayerViewportSpec>,
+}
+
+/// Optional design viewport and host-fit policy for the player.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub struct LaunchPlayerViewportSpec {
+    #[serde(default, alias = "design_width")]
+    design_width: Option<u32>,
+    #[serde(default, alias = "design_height")]
+    design_height: Option<u32>,
+    #[serde(default)]
+    fit: LaunchPlayerViewportFit,
 }
 
 /// Optional build policy for one launch profile.
@@ -320,6 +356,7 @@ pub struct ResolvedLaunchProfile {
     hot_reload: Option<LaunchHotReloadProfileSpec>,
     content: BTreeMap<String, LaunchContentProfileSpec>,
     rust_metadata: Vec<PathBuf>,
+    player: LaunchPlayerProfileSpec,
 }
 
 /// Errors from parsing or resolving launch profile data.
@@ -333,6 +370,11 @@ pub enum LaunchProfileError {
     MissingSource(String),
     #[error("launch profile `{profile}` uses unknown adapter `{adapter}`")]
     UnknownAdapter { profile: String, adapter: String },
+    #[error("launch profile `{profile}` player viewport {field} must be greater than zero")]
+    InvalidPlayerViewport {
+        profile: String,
+        field: &'static str,
+    },
 }
 
 impl ProfileId {
@@ -386,6 +428,7 @@ impl LaunchProfileManifest {
                 adapter: adapter.to_owned(),
             });
         }
+        spec.player.validate(id)?;
         let source = if spec.source.is_absolute() {
             spec.source.clone()
         } else {
@@ -439,6 +482,7 @@ impl LaunchProfileManifest {
             hot_reload: spec.hot_reload.clone(),
             content: spec.content.clone(),
             rust_metadata,
+            player: spec.player.clone(),
         })
     }
 
@@ -481,6 +525,11 @@ impl LaunchProfileSpec {
     /// Content unit packaging policy selected by this profile.
     pub fn content(&self) -> &BTreeMap<String, LaunchContentProfileSpec> {
         &self.content
+    }
+
+    /// Player-host defaults selected by this profile.
+    pub const fn player(&self) -> &LaunchPlayerProfileSpec {
+        &self.player
     }
 }
 
@@ -553,6 +602,63 @@ impl ResolvedLaunchProfile {
     /// Rust ABI metadata files selected by this profile.
     pub fn rust_metadata(&self) -> &[PathBuf] {
         &self.rust_metadata
+    }
+
+    /// Player-host defaults selected by the profile.
+    pub const fn player(&self) -> &LaunchPlayerProfileSpec {
+        &self.player
+    }
+}
+
+impl LaunchPlayerProfileSpec {
+    /// Optional player viewport default.
+    pub const fn viewport(&self) -> Option<LaunchPlayerViewportSpec> {
+        self.viewport
+    }
+
+    fn validate(&self, profile: &str) -> Result<(), LaunchProfileError> {
+        let Some(viewport) = self.viewport else {
+            return Ok(());
+        };
+        if viewport.fit == LaunchPlayerViewportFit::Raw {
+            return Ok(());
+        }
+        if viewport.design_width.unwrap_or(1280) == 0 {
+            return Err(LaunchProfileError::InvalidPlayerViewport {
+                profile: profile.to_owned(),
+                field: "design-width",
+            });
+        }
+        if viewport.design_height.unwrap_or(720) == 0 {
+            return Err(LaunchProfileError::InvalidPlayerViewport {
+                profile: profile.to_owned(),
+                field: "design-height",
+            });
+        }
+        Ok(())
+    }
+}
+
+impl LaunchPlayerViewportSpec {
+    /// Design viewport width in logical pixels.
+    pub const fn design_width(self) -> u32 {
+        match self.design_width {
+            Some(width) => width,
+            None => 1280,
+        }
+    }
+
+    /// Design viewport height in logical pixels.
+    pub const fn design_height(self) -> u32 {
+        match self.design_height {
+            Some(height) => height,
+            None => 720,
+        }
+    }
+
+    /// Host fit policy for the design viewport.
+    pub const fn fit(self) -> LaunchPlayerViewportFit {
+        self.fit
     }
 }
 
@@ -745,6 +851,11 @@ mode = "swap"
 fallback = "restart"
 state = "strict"
 
+[profiles.release.player.viewport]
+design-width = 1280
+design-height = 720
+fit = "contain"
+
 [profiles.release.content."content.chapter_two"]
 residency = "on-demand"
 placement = "external"
@@ -780,6 +891,10 @@ placement = "embedded"
             Some(LaunchHotReloadFallback::Restart)
         );
         assert_eq!(hot_reload.state(), Some(LaunchHotReloadStatePolicy::Strict));
+        let viewport = release.player().viewport().expect("player viewport policy");
+        assert_eq!(viewport.design_width(), 1280);
+        assert_eq!(viewport.design_height(), 720);
+        assert_eq!(viewport.fit(), LaunchPlayerViewportFit::Contain);
 
         let content = release
             .content()
@@ -848,5 +963,28 @@ adapter_manifests = ["adapters/custom-http.toml"]
             custom.adapter_manifests(),
             &[PathBuf::from("game/adapters/custom-http.toml")]
         );
+    }
+
+    #[test]
+    fn rejects_zero_sized_player_design_viewport() {
+        let manifest = LaunchProfileManifest::parse_toml(
+            r#"
+[profiles.bad]
+kind = "game"
+source = "game.arcw"
+
+[profiles.bad.player.viewport]
+design-width = 0
+design-height = 720
+fit = "contain"
+"#,
+        )
+        .expect("manifest parses");
+
+        assert!(matches!(
+            manifest.resolve_profile("bad", Path::new(".")),
+            Err(LaunchProfileError::InvalidPlayerViewport { profile, field })
+                if profile == "bad" && field == "design-width"
+        ));
     }
 }

@@ -53,8 +53,35 @@ use winit::window::{
 
 const EVENT_LOOP_TICK: Duration = Duration::from_millis(16);
 const DEFAULT_FONT_BYTES: &[u8] = include_bytes!("../../../web/assets/arcweft-demo.ttf");
-const SCENE_ASPECT_WIDTH: u32 = 16;
-const SCENE_ASPECT_HEIGHT: u32 = 9;
+
+#[derive(Clone, Debug)]
+pub struct NativePlayerOptions {
+    text_input: NativeTextInputBridgeOptions,
+    frame_fit: PlayerFrameFit,
+}
+
+impl Default for NativePlayerOptions {
+    fn default() -> Self {
+        Self {
+            text_input: NativeTextInputBridgeOptions::default(),
+            frame_fit: PlayerFrameFit::design_1280x720(ScalePolicy::Contain),
+        }
+    }
+}
+
+impl NativePlayerOptions {
+    #[must_use]
+    pub fn with_text_input_options(mut self, options: NativeTextInputBridgeOptions) -> Self {
+        self.text_input = options;
+        self
+    }
+
+    #[must_use]
+    pub fn with_frame_fit(mut self, frame_fit: PlayerFrameFit) -> Self {
+        self.frame_fit = frame_fit;
+        self
+    }
+}
 
 pub fn run_bundle_windowed(
     bundle: ArcweftBundle,
@@ -69,7 +96,21 @@ pub fn run_bundle_windowed_with_text_input_options(
     _max_steps: usize,
     text_input_options: NativeTextInputBridgeOptions,
 ) -> Result<(), NativePlayerError> {
-    run_shared_scene_window_with_options("Arcweft Player", bundle, text_input_options, |_| {})
+    run_shared_scene_window_with_options(
+        "Arcweft Player",
+        bundle,
+        NativePlayerOptions::default().with_text_input_options(text_input_options),
+        |_| {},
+    )
+    .map_err(|error| NativePlayerError::SceneWindow(error.to_string()))
+}
+
+pub fn run_bundle_windowed_with_options(
+    bundle: ArcweftBundle,
+    _max_steps: usize,
+    options: NativePlayerOptions,
+) -> Result<(), NativePlayerError> {
+    run_shared_scene_window_with_options("Arcweft Player", bundle, options, |_| {})
         .map_err(|error| NativePlayerError::SceneWindow(error.to_string()))
 }
 
@@ -91,10 +132,20 @@ pub fn run_bundle_windowed_with_ingress_and_text_input_options(
     run_shared_scene_window_with_options(
         "Arcweft Player",
         bundle,
-        text_input_options,
+        NativePlayerOptions::default().with_text_input_options(text_input_options),
         configure_ingress,
     )
     .map_err(|error| NativePlayerError::SceneWindow(error.to_string()))
+}
+
+pub fn run_bundle_windowed_with_ingress_and_options(
+    bundle: ArcweftBundle,
+    _max_steps: usize,
+    options: NativePlayerOptions,
+    configure_ingress: impl FnOnce(WindowedPatchIngress),
+) -> Result<(), NativePlayerError> {
+    run_shared_scene_window_with_options("Arcweft Player", bundle, options, configure_ingress)
+        .map_err(|error| NativePlayerError::SceneWindow(error.to_string()))
 }
 
 #[derive(Debug, Error)]
@@ -142,7 +193,7 @@ enum NativeSceneWindowError {
 struct NativeSceneApp {
     title: String,
     bundle: Option<ArcweftBundle>,
-    text_input_options: NativeTextInputBridgeOptions,
+    options: NativePlayerOptions,
     state: Option<NativeSceneState>,
     ingress: WindowedPatchIngressReceiver,
     ingress_completion: WindowedPatchIngressCompletion,
@@ -167,6 +218,7 @@ struct NativeSceneState {
     window_ime_supported: bool,
     window_ime_enabled: bool,
     next_window_ime_serial: u64,
+    frame_fit: PlayerFrameFit,
     prepared: Option<arcweft_render_wgpu::geometry::PreparedFrame>,
     dialogue_visual_clock: DialogueVisualClock,
     started_at: Instant,
@@ -194,7 +246,7 @@ fn run_shared_scene_window_with_ingress(
     run_shared_scene_window_with_options(
         title,
         bundle,
-        NativeTextInputBridgeOptions::default(),
+        NativePlayerOptions::default(),
         configure_ingress,
     )
 }
@@ -202,7 +254,7 @@ fn run_shared_scene_window_with_ingress(
 fn run_shared_scene_window_with_options(
     title: &str,
     bundle: ArcweftBundle,
-    text_input_options: NativeTextInputBridgeOptions,
+    options: NativePlayerOptions,
     configure_ingress: impl FnOnce(WindowedPatchIngress),
 ) -> Result<(), NativeSceneWindowError> {
     let event_loop =
@@ -218,7 +270,7 @@ fn run_shared_scene_window_with_options(
         .run_app(NativeSceneApp {
             title: title.to_owned(),
             bundle: Some(bundle),
-            text_input_options,
+            options,
             state: None,
             ingress: ingress_rx,
             ingress_completion: ingress_completion.clone(),
@@ -283,13 +335,14 @@ impl ApplicationHandler for NativeSceneApp {
             );
             return;
         };
-        let window = match event_loop.create_window(
-            WindowAttributes::default()
-                .with_title(self.title.clone())
-                .with_surface_size(LogicalSize::new(1280.0, 720.0))
-                .with_min_surface_size(LogicalSize::new(640.0, 360.0))
-                .with_surface_resize_increments(LogicalSize::new(16.0, 9.0)),
-        ) {
+        let mut attributes = WindowAttributes::default()
+            .with_title(self.title.clone())
+            .with_surface_size(frame_fit_surface_size(self.options.frame_fit))
+            .with_min_surface_size(frame_fit_min_surface_size(self.options.frame_fit));
+        if let Some(increments) = frame_fit_resize_increments(self.options.frame_fit) {
+            attributes = attributes.with_surface_resize_increments(increments);
+        }
+        let window = match event_loop.create_window(attributes) {
             Ok(window) => Arc::<dyn Window>::from(window),
             Err(error) => {
                 self.fail(event_loop, error.to_string());
@@ -301,7 +354,7 @@ impl ApplicationHandler for NativeSceneApp {
             self.title.clone(),
             bundle,
             self.ingress_completion.clone(),
-            self.text_input_options.clone(),
+            self.options.clone(),
         )) {
             Ok(state) => {
                 self.state = Some(state);
@@ -397,7 +450,7 @@ impl NativeSceneState {
         title: String,
         bundle: ArcweftBundle,
         ingress_completion: WindowedPatchIngressCompletion,
-        text_input_options: NativeTextInputBridgeOptions,
+        options: NativePlayerOptions,
     ) -> Result<Self, NativeSceneWindowError> {
         let instance = wgpu::Instance::default();
         let surface = instance
@@ -428,7 +481,7 @@ impl NativeSceneState {
             .find(wgpu::TextureFormat::is_srgb)
             .or_else(|| capabilities.formats.first().copied())
             .ok_or(NativeSceneWindowError::NoSurfaceFormat)?;
-        let size = scene_aspect_size(window.surface_size());
+        let size = scene_aspect_size(window.surface_size(), options.frame_fit);
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
@@ -465,7 +518,7 @@ impl NativeSceneState {
             BundleSessionOptions::default(),
             backend,
         )?;
-        let text_input = NativeTextInputBridge::new(text_input_options);
+        let text_input = NativeTextInputBridge::new(options.text_input.clone());
         Ok(Self {
             window,
             close_signal,
@@ -483,6 +536,7 @@ impl NativeSceneState {
             window_ime_supported: true,
             window_ime_enabled: false,
             next_window_ime_serial: 1,
+            frame_fit: options.frame_fit,
             prepared: None,
             dialogue_visual_clock: DialogueVisualClock::default(),
             started_at: Instant::now(),
@@ -496,7 +550,7 @@ impl NativeSceneState {
 
     fn resize(&mut self, size: PhysicalSize<u32>) {
         let requested = non_zero_size(size);
-        let size = scene_aspect_size(requested);
+        let size = scene_aspect_size(requested, self.frame_fit);
         if size != requested {
             let _ = self.window.request_surface_size(Size::Physical(size));
         }
@@ -581,7 +635,7 @@ impl NativeSceneState {
                 presentation,
                 images: self.runtime.images(),
                 viewport,
-                fit: PlayerFrameFit::design_1280x720(ScalePolicy::Contain),
+                fit: self.frame_fit,
                 image_time_millis: elapsed,
                 visual_time_millis,
                 preferences: RenderPreferences::default(),
@@ -992,21 +1046,47 @@ fn non_zero_size(size: PhysicalSize<u32>) -> PhysicalSize<u32> {
     PhysicalSize::new(size.width.max(1), size.height.max(1))
 }
 
-fn scene_aspect_size(size: PhysicalSize<u32>) -> PhysicalSize<u32> {
+fn frame_fit_surface_size(frame_fit: PlayerFrameFit) -> LogicalSize<f64> {
+    match frame_fit.scale_policy {
+        ScalePolicy::Raw => LogicalSize::new(1280.0, 720.0),
+        ScalePolicy::Contain | ScalePolicy::Cover | ScalePolicy::Stretch => LogicalSize::new(
+            f64::from(frame_fit.design_width.max(1)),
+            f64::from(frame_fit.design_height.max(1)),
+        ),
+    }
+}
+
+fn frame_fit_min_surface_size(frame_fit: PlayerFrameFit) -> LogicalSize<f64> {
+    let size = frame_fit_surface_size(frame_fit);
+    LogicalSize::new(
+        (size.width * 0.5).max(320.0),
+        (size.height * 0.5).max(180.0),
+    )
+}
+
+fn frame_fit_resize_increments(frame_fit: PlayerFrameFit) -> Option<LogicalSize<f64>> {
+    let (width, height) = frame_fit_aspect(frame_fit)?;
+    Some(LogicalSize::new(f64::from(width), f64::from(height)))
+}
+
+fn scene_aspect_size(size: PhysicalSize<u32>, frame_fit: PlayerFrameFit) -> PhysicalSize<u32> {
     let size = non_zero_size(size);
-    if u64::from(size.width) * u64::from(SCENE_ASPECT_HEIGHT)
-        == u64::from(size.height) * u64::from(SCENE_ASPECT_WIDTH)
+    let Some((aspect_width, aspect_height)) = frame_fit_aspect(frame_fit) else {
+        return size;
+    };
+    if u64::from(size.width) * u64::from(aspect_height)
+        == u64::from(size.height) * u64::from(aspect_width)
     {
         return size;
     }
     let max_u32 = u64::from(u32::MAX);
-    let width_for_height = ((u64::from(size.height) * u64::from(SCENE_ASPECT_WIDTH)
-        + u64::from(SCENE_ASPECT_HEIGHT / 2))
-        / u64::from(SCENE_ASPECT_HEIGHT))
+    let width_for_height = ((u64::from(size.height) * u64::from(aspect_width)
+        + u64::from(aspect_height / 2))
+        / u64::from(aspect_height))
     .clamp(1, max_u32);
-    let height_for_width = ((u64::from(size.width) * u64::from(SCENE_ASPECT_HEIGHT)
-        + u64::from(SCENE_ASPECT_WIDTH / 2))
-        / u64::from(SCENE_ASPECT_WIDTH))
+    let height_for_width = ((u64::from(size.width) * u64::from(aspect_height)
+        + u64::from(aspect_width / 2))
+        / u64::from(aspect_width))
     .clamp(1, max_u32);
     let width_for_height = u32::try_from(width_for_height).unwrap_or(u32::MAX);
     let height_for_width = u32::try_from(height_for_width).unwrap_or(u32::MAX);
@@ -1016,6 +1096,27 @@ fn scene_aspect_size(size: PhysicalSize<u32>) -> PhysicalSize<u32> {
     } else {
         PhysicalSize::new(width_for_height, size.height)
     }
+}
+
+fn frame_fit_aspect(frame_fit: PlayerFrameFit) -> Option<(u32, u32)> {
+    match frame_fit.scale_policy {
+        ScalePolicy::Contain | ScalePolicy::Cover => {
+            let width = frame_fit.design_width.max(1);
+            let height = frame_fit.design_height.max(1);
+            let divisor = gcd(width, height).max(1);
+            Some((width / divisor, height / divisor))
+        }
+        ScalePolicy::Raw | ScalePolicy::Stretch => None,
+    }
+}
+
+fn gcd(mut left: u32, mut right: u32) -> u32 {
+    while right != 0 {
+        let next = left % right;
+        left = right;
+        right = next;
+    }
+    left
 }
 
 fn surface_texture(

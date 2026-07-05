@@ -117,6 +117,7 @@ pub struct PreparedControlPaint {
     pub rectangle_range: Range<usize>,
     pub text_range: Range<usize>,
     pub backdrop_range: Range<usize>,
+    pub shadow_range: Range<usize>,
     pub filter_range: Range<usize>,
 }
 

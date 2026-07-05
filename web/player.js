@@ -96,6 +96,7 @@ export async function startArcweftWebPlayer(options = {}) {
     if (typeof wasm.start_arcweft_player_with_options === "function") {
       wasm.start_arcweft_player_with_options(canvasId, bundleBytes, fontBytes, {
         textInput: options.textInput ?? true,
+        frameFit: resolveFrameFitOptions(options, params),
       });
     } else {
       wasm.start_arcweft_player(canvasId, bundleBytes, fontBytes);
@@ -104,6 +105,27 @@ export async function startArcweftWebPlayer(options = {}) {
   } catch (error) {
     showFatal(error);
   }
+}
+
+function resolveFrameFitOptions(options, params) {
+  const explicit = options.frameFit ?? globalThis.__arcweftWebPlayerFrameFit;
+  const fit = params.get("fit") ?? explicit?.fit;
+  const designWidth = numberOption(params.get("designWidth")) ?? numberOption(explicit?.designWidth);
+  const designHeight =
+    numberOption(params.get("designHeight")) ?? numberOption(explicit?.designHeight);
+  if (!fit && !designWidth && !designHeight) {
+    return undefined;
+  }
+  return {
+    fit: fit || "contain",
+    designWidth: designWidth || 1280,
+    designHeight: designHeight || 720,
+  };
+}
+
+function numberOption(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.round(number) : undefined;
 }
 
 function wasmDelegate(wasm) {

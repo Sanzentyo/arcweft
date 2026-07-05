@@ -287,6 +287,24 @@ selected entry through the bytecode VM. For `server`, `test`, and `bench`
 profiles it dispatches to the corresponding planning/execution path so profile
 selection stays the canonical context model.
 
+Interactive player profiles may set a launch-time viewport fit default under
+`[profiles.<name>.player.viewport]`. This default is host configuration: it
+chooses the initial/native or web player design viewport and scale policy, but
+runtime content can still override it through presentation effects or game
+settings that emit the same runtime viewport contract.
+
+```toml
+[profiles.game.player.viewport]
+design-width = 1280
+design-height = 720
+fit = "contain"
+```
+
+`fit` accepts `raw`, `contain`, `cover`, and `stretch`. `contain` is the normal
+player default for design-space UI. Runtime DSL can override or clear this
+host default with `player_viewport(width = 1280px, height = 720px, fit =
+contain)` or `player_viewport(fit = default)`.
+
 ```bash
 arcw run game/routes/opening.arcw --steps 8
 arcw run game/routes/opening.arcw --entry main --mode drain --steps 8
