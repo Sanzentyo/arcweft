@@ -35,9 +35,16 @@ pub(crate) fn lower_dialogue_display_with_speaker_presets(
 ) -> LineDisplaySpec {
     let default_inline_failure_policy =
         lower_effective_inline_failure_policy(dialogue, defaults, speaker_presets);
+    let preset_chain = speaker_preset_chain(dialogue.callee(), speaker_presets);
+    let character_callee = preset_chain
+        .first()
+        .map_or_else(|| dialogue.callee(), |preset| preset.callee());
     LineDisplaySpec {
         line,
         callee: dialogue.callee().to_owned(),
+        speaker_label: defaults
+            .speaker_label_for_callee(character_callee)
+            .map(str::to_owned),
         text_key: dialogue.text_key().map(|id| id.body().to_owned()),
         window: effective_dialogue_window(dialogue, defaults, speaker_presets),
         voice: dialogue.voice().map(expr_label),

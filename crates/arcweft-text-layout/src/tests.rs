@@ -14,6 +14,7 @@ fn frame_with_run(text: &str, presentation: RichTextPresentation) -> LineDisplay
     LineDisplayFrame {
         line: arcweft_core::plan::RuntimeLineId("say.test.001".to_owned()),
         callee: "alice.say".to_owned(),
+        speaker_label: None,
         text: text.to_owned(),
         base_styles: Vec::new(),
         default_inline_failure_policy: None,
@@ -55,6 +56,7 @@ fn frame_with_split_runs(
     LineDisplayFrame {
         line: arcweft_core::plan::RuntimeLineId("say.test.001".to_owned()),
         callee: "alice.say".to_owned(),
+        speaker_label: None,
         text: text.to_owned(),
         base_styles: Vec::new(),
         default_inline_failure_policy: None,

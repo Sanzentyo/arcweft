@@ -211,6 +211,7 @@ fn test_line_display_frame() -> LineDisplayFrame {
     LineDisplayFrame {
         line: arcweft_core::plan::RuntimeLineId("line.test".to_owned()),
         callee: "test".to_owned(),
+        speaker_label: None,
         text: String::new(),
         base_styles: Vec::new(),
         default_inline_failure_policy: None,
@@ -227,6 +228,7 @@ fn test_resolved_line_display_frame() -> LineDisplayFrame {
     let spec = arcweft_render_text::LineDisplaySpec {
         line: arcweft_core::plan::RuntimeLineId("line.test".to_owned()),
         callee: "test".to_owned(),
+        speaker_label: None,
         text_key: None,
         window: None,
         voice: None,

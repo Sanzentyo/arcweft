@@ -92,6 +92,7 @@ fn test_line_display_frame() -> LineDisplayFrame {
     LineDisplayFrame {
         line: RuntimeLineId("say.test.001".to_owned()),
         callee: "alice".to_owned(),
+        speaker_label: None,
         text: "Hello".to_owned(),
         base_styles: Vec::new(),
         default_inline_failure_policy: None,

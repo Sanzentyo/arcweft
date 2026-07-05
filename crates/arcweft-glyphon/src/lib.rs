@@ -1204,6 +1204,7 @@ mod tests {
         let frame = arcweft_render_text::LineDisplayFrame {
             line: arcweft_core::plan::RuntimeLineId("say.test.001".to_owned()),
             callee: "alice.say".to_owned(),
+            speaker_label: None,
             text: "A".to_owned(),
             base_styles: Vec::new(),
             default_inline_failure_policy: None,

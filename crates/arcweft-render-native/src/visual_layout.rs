@@ -241,6 +241,7 @@ pub(super) fn page_local_layout_frame(
         LineDisplayFrame {
             line: frame.line.clone(),
             callee: frame.callee.clone(),
+            speaker_label: frame.speaker_label.clone(),
             text,
             base_styles: frame.base_styles.clone(),
             default_inline_failure_policy: frame.default_inline_failure_policy.clone(),

@@ -1,6 +1,6 @@
 use arcweft_lang_hir::syntax::ast::dialogue::{DialogueDefaultAssignment, DialogueDefaultsItem};
 use arcweft_lang_hir::syntax::ast::items::EntityDeclItem;
-use arcweft_lang_hir::syntax::expr::{Expr, parse_expr};
+use arcweft_lang_hir::syntax::expr::{Expr, Literal, parse_expr};
 use arcweft_render_text::{
     RichTextAssignOp, RichTextCascadeLayer, RichTextSettingSource, RichTextStyleContribution,
 };
@@ -47,6 +47,24 @@ pub(crate) fn character_style_defaults(item: &EntityDeclItem) -> DialogueStyleDe
 
 pub(crate) fn character_style_keys(item: &EntityDeclItem) -> Vec<String> {
     entity_style_keys(item)
+}
+
+pub(crate) fn character_display_label(item: &EntityDeclItem) -> Option<String> {
+    item.body()
+        .and_then(character_display_assignment)
+        .or_else(|| item.name().map(str::to_owned))
+        .filter(|label| !label.trim().is_empty())
+}
+
+fn character_display_assignment(body: &str) -> Option<String> {
+    style_block_assignments(body, None)
+        .into_iter()
+        .rev()
+        .find(|assignment| assignment.name == "display")
+        .and_then(|assignment| match parse_expr(assignment.value).ok()? {
+            Expr::Literal(Literal::String(value)) => Some(value),
+            _ => None,
+        })
 }
 
 pub(crate) fn textbox_style_defaults(item: &EntityDeclItem) -> DialogueStyleDefaults {

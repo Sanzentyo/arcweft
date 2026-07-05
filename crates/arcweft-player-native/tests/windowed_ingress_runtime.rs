@@ -179,6 +179,7 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
     let display = LineDisplayCatalog::new(vec![LineDisplaySpec {
         line,
         callee: "alice".to_owned(),
+        speaker_label: None,
         text_key: None,
         window: None,
         voice: None,

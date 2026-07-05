@@ -1306,7 +1306,10 @@ impl RenderDialogue {
 
     pub fn from_display_frame(frame: &LineDisplayFrame) -> Self {
         Self {
-            speaker: frame.callee.clone(),
+            speaker: frame
+                .speaker_label
+                .clone()
+                .unwrap_or_else(|| frame.callee.clone()),
             text: frame.text.clone(),
             base_styles: frame.base_styles.clone(),
             text_runs: frame.display_map.text_runs.clone(),

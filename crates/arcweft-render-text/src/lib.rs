@@ -28,6 +28,8 @@ pub struct LineDisplayCatalog {
 pub struct LineDisplaySpec {
     pub line: RuntimeLineId,
     pub callee: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker_label: Option<String>,
     pub text_key: Option<String>,
     pub window: Option<String>,
     pub voice: Option<String>,
@@ -316,6 +318,8 @@ pub struct RuntimeLineContext {
 pub struct LineDisplayFrame {
     pub line: RuntimeLineId,
     pub callee: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker_label: Option<String>,
     pub text: String,
     pub base_styles: Vec<RichTextStyle>,
     pub default_inline_failure_policy: Option<InlineFailurePolicy>,
@@ -912,6 +916,7 @@ impl<'a> LineDisplayFrameResolver<'a> {
         LineDisplayFrame {
             line: self.spec.line.clone(),
             callee: self.spec.callee.clone(),
+            speaker_label: self.spec.speaker_label.clone(),
             text: self.text,
             base_styles: self.spec.base_styles.clone(),
             default_inline_failure_policy: self.spec.default_inline_failure_policy.clone(),
@@ -1240,6 +1245,7 @@ mod tests {
         let spec = LineDisplaySpec {
             line: RuntimeLineId("say.opening.001".to_owned()),
             callee: "alice".to_owned(),
+            speaker_label: None,
             text_key: None,
             window: None,
             voice: None,
@@ -1342,6 +1348,7 @@ mod tests {
         let spec = LineDisplaySpec {
             line: RuntimeLineId("say.opening.002".to_owned()),
             callee: "alice".to_owned(),
+            speaker_label: None,
             text_key: None,
             window: None,
             voice: None,
@@ -1398,6 +1405,7 @@ mod tests {
         let spec = LineDisplaySpec {
             line: RuntimeLineId("say.opening.003".to_owned()),
             callee: "alice".to_owned(),
+            speaker_label: None,
             text_key: None,
             window: None,
             voice: None,
@@ -1427,6 +1435,7 @@ mod tests {
         let spec = LineDisplaySpec {
             line: RuntimeLineId("say.opening.004".to_owned()),
             callee: "alice".to_owned(),
+            speaker_label: None,
             text_key: None,
             window: None,
             voice: None,
@@ -1465,6 +1474,7 @@ mod tests {
         let spec = LineDisplaySpec {
             line: RuntimeLineId("say.opening.conditional".to_owned()),
             callee: "alice".to_owned(),
+            speaker_label: None,
             text_key: None,
             window: None,
             voice: None,
@@ -1536,6 +1546,7 @@ mod tests {
         let spec = LineDisplaySpec {
             line: RuntimeLineId("say.opening.conditional_gated".to_owned()),
             callee: "alice".to_owned(),
+            speaker_label: None,
             text_key: None,
             window: None,
             voice: None,
@@ -1632,6 +1643,7 @@ mod tests {
         let spec = LineDisplaySpec {
             line: RuntimeLineId("say.opening.005".to_owned()),
             callee: "alice".to_owned(),
+            speaker_label: None,
             text_key: None,
             window: None,
             voice: None,

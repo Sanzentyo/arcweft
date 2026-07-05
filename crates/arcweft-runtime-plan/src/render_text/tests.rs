@@ -1418,6 +1418,44 @@ flow @flow.main main {
     }));
 }
 
+#[test]
+fn dialogue_display_uses_character_display_label_for_speaker() {
+    let source = r#"
+pub character concierge {
+    display = "Arcweft Concierge"
+}
+
+flow @flow.main main {
+    concierge: Welcome back.
+}
+"#;
+    let parsed = parse_source(source);
+    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let defaults = DialogueDisplayDefaults::from_module(&hir);
+    let dialogue = hir
+        .flows()
+        .first()
+        .and_then(|flow| flow.body().first())
+        .and_then(|item| match item {
+            arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
+            _ => None,
+        })
+        .expect("dialogue item");
+
+    let spec = lower_dialogue_display(
+        RuntimeLineId("say.opening.display_label".to_owned()),
+        dialogue,
+        &defaults,
+    );
+    let frame = spec
+        .resolve_frame(&RuntimeLineContext::default())
+        .expect("frame resolves");
+
+    assert_eq!(spec.callee, "concierge");
+    assert_eq!(spec.speaker_label.as_deref(), Some("Arcweft Concierge"));
+    assert_eq!(frame.speaker_label.as_deref(), Some("Arcweft Concierge"));
+}
+
 fn contribution_source_range(contribution: &RichTextStyleContribution) -> Option<(usize, usize)> {
     match &contribution.source {
         RichTextSettingSource::SourceFile {

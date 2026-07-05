@@ -212,6 +212,7 @@ mod tests {
         let display = LineDisplayCatalog::new(vec![LineDisplaySpec {
             line,
             callee: "alice".to_owned(),
+            speaker_label: None,
             text_key: None,
             window: None,
             voice: None,

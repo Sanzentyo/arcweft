@@ -12,8 +12,9 @@ use arcweft_render_text::{
 
 use super::attrs::{param_from_value, parse_attr_args, trim_quotes, truthy_attr};
 use super::entity_defaults::{
-    character_callee_keys, character_style_defaults, character_style_keys, entity_ref_keys,
-    entity_style_keys, style_defaults_from_dialogue_defaults, textbox_style_defaults,
+    character_callee_keys, character_display_label, character_style_defaults, character_style_keys,
+    entity_ref_keys, entity_style_keys, style_defaults_from_dialogue_defaults,
+    textbox_style_defaults,
 };
 
 pub(crate) const DEFAULT_DIALOGUE_WINDOW: &str = "textbox.main";
@@ -23,6 +24,7 @@ pub(crate) struct DialogueDisplayDefaults {
     pub(crate) global: DialogueStyleDefaults,
     pub(crate) textboxes: BTreeMap<String, DialogueStyleDefaults>,
     pub(crate) characters: BTreeMap<String, DialogueStyleDefaults>,
+    pub(crate) character_labels: BTreeMap<String, String>,
     pub(crate) text_proxies: BTreeMap<String, TextProxyTypeDefaults>,
 }
 
@@ -69,6 +71,11 @@ impl DialogueDisplayDefaults {
         for declaration in module.declarations() {
             match declaration {
                 HirTopLevelDecl::EntityDecl(item) if item.kind() == EntityDeclKind::Character => {
+                    if let Some(label) = character_display_label(item) {
+                        for key in character_style_keys(item) {
+                            defaults.character_labels.insert(key, label.clone());
+                        }
+                    }
                     let style = character_style_defaults(item);
                     if !style.is_empty() {
                         for key in character_style_keys(item) {
@@ -101,6 +108,12 @@ impl DialogueDisplayDefaults {
         character_callee_keys(callee)
             .into_iter()
             .find_map(|key| self.characters.get(&key))
+    }
+
+    pub(crate) fn speaker_label_for_callee(&self, callee: &str) -> Option<&str> {
+        character_callee_keys(callee)
+            .into_iter()
+            .find_map(|key| self.character_labels.get(&key).map(String::as_str))
     }
 
     pub(crate) fn textbox_for_window(&self, window: &str) -> Option<&DialogueStyleDefaults> {
