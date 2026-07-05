@@ -500,7 +500,12 @@ impl InputController {
         frame: &PreparedFrame,
         direction: FocusNavigationDirection,
     ) -> InputOutcome {
-        if let Some(next) = frame.focus_target(self.interaction.focus().target(), direction) {
+        let current = self.interaction.focus().target().or_else(|| {
+            self.focused_text_editor
+                .as_ref()
+                .map(TextEditorState::target)
+        });
+        if let Some(next) = frame.focus_target(current, direction) {
             self.set_focus(frame, next);
         }
         InputOutcome::redraw(true)

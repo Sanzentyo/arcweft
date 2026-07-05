@@ -40,6 +40,7 @@ pub struct SharedRenderer {
     viewport: Viewport,
     atlas: TextAtlas,
     text_renderer: TextRenderer,
+    aux_text_renderers: Vec<TextRenderer>,
     ui_compositor: UiCompositor,
     ui_direct_renderer: WgpuUiDirectPrimitiveRenderer,
     registered_font_bytes: usize,
@@ -86,6 +87,14 @@ struct TextRangeRenderRequest<'a> {
     frame: &'a PreparedFrame,
     text_range: Range<usize>,
     styled_paragraph_range: Range<usize>,
+    excluded_text_ranges: &'a [Range<usize>],
+}
+
+struct TextRenderState<'a> {
+    font_system: &'a mut FontSystem,
+    atlas: &'a mut TextAtlas,
+    swash_cache: &'a mut SwashCache,
+    viewport: &'a Viewport,
 }
 
 impl SharedRenderer {
@@ -111,6 +120,7 @@ impl SharedRenderer {
             swash_cache: SwashCache::new(),
             atlas,
             text_renderer,
+            aux_text_renderers: Vec::new(),
             ui_compositor,
             ui_direct_renderer,
             registered_font_bytes: 0,
@@ -307,14 +317,20 @@ impl SharedRenderer {
         target_extent: UiTextureExtent,
         frame: &PreparedFrame,
     ) -> Result<(), SharedRendererError> {
+        self.aux_text_renderers.clear();
         let mut next_rectangle = 1;
-        let mut next_text = 0;
-        let mut styled_paragraphs = 0..frame.styled_paragraphs.len();
+        let styled_paragraphs = 0..frame.styled_paragraphs.len();
         let mut controls = frame.control_paints.iter().collect::<Vec<_>>();
         controls.sort_by_key(|paint| (paint.rectangle_range.start, paint.text_range.start));
+        let filtered_text_ranges = controls
+            .iter()
+            .filter(|paint| {
+                !slice_range(&frame.control_filters, paint.filter_range.clone()).is_empty()
+            })
+            .map(|paint| paint.text_range.clone())
+            .collect::<Vec<_>>();
         let runtime_backdrop_source = self.prepare_runtime_control_backdrop_source(
             device,
-            queue,
             encoder,
             target_texture,
             target_view,
@@ -322,9 +338,7 @@ impl SharedRenderer {
             frame,
             &controls,
             &mut next_rectangle,
-            &mut next_text,
-            &mut styled_paragraphs,
-        )?;
+        );
 
         for paint in controls {
             self.render_runtime_control_paint(
@@ -338,8 +352,6 @@ impl SharedRenderer {
                 runtime_backdrop_source.as_ref(),
                 paint,
                 &mut next_rectangle,
-                &mut next_text,
-                &mut styled_paragraphs,
             )?;
         }
 
@@ -358,10 +370,12 @@ impl SharedRenderer {
             TextRangeRenderRequest {
                 target: target_view,
                 frame,
-                text_range: next_text..frame.text.len(),
+                text_range: 0..frame.text.len(),
                 styled_paragraph_range: styled_paragraphs,
+                excluded_text_ranges: &filtered_text_ranges,
             },
-        )
+        )?;
+        Ok(())
     }
 
     #[expect(
@@ -380,8 +394,6 @@ impl SharedRenderer {
         runtime_backdrop_source: Option<&RuntimeControlBackdropSource>,
         paint: &PreparedControlPaint,
         next_rectangle: &mut usize,
-        next_text: &mut usize,
-        styled_paragraphs: &mut Range<usize>,
     ) -> Result<(), SharedRendererError> {
         self.render_rectangle_range(
             device,
@@ -392,19 +404,6 @@ impl SharedRenderer {
             "arcweft-shared-pre-control-rectangles",
         );
         *next_rectangle = (*next_rectangle).max(paint.rectangle_range.start);
-        self.render_text_ranges(
-            device,
-            queue,
-            encoder,
-            TextRangeRenderRequest {
-                target: target_view,
-                frame,
-                text_range: *next_text..paint.text_range.start,
-                styled_paragraph_range: styled_paragraphs.clone(),
-            },
-        )?;
-        *next_text = (*next_text).max(paint.text_range.start);
-        *styled_paragraphs = 0..0;
 
         let shadow_target = RuntimeControlShadowTarget {
             texture: target_texture,
@@ -446,17 +445,6 @@ impl SharedRenderer {
                 paint,
                 UiBoxShadowKind::Inset,
             );
-            self.render_text_ranges(
-                device,
-                queue,
-                encoder,
-                TextRangeRenderRequest {
-                    target: target_view,
-                    frame,
-                    text_range: paint.text_range.clone(),
-                    styled_paragraph_range: 0..0,
-                },
-            )?;
         } else {
             self.render_filtered_control(
                 device,
@@ -478,7 +466,6 @@ impl SharedRenderer {
             );
         }
         *next_rectangle = (*next_rectangle).max(paint.rectangle_range.end);
-        *next_text = (*next_text).max(paint.text_range.end);
         Ok(())
     }
 
@@ -527,7 +514,6 @@ impl SharedRenderer {
     fn prepare_runtime_control_backdrop_source(
         &mut self,
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         target_texture: &wgpu::Texture,
         target_view: &wgpu::TextureView,
@@ -535,12 +521,8 @@ impl SharedRenderer {
         frame: &PreparedFrame,
         controls: &[&PreparedControlPaint],
         next_rectangle: &mut usize,
-        next_text: &mut usize,
-        styled_paragraphs: &mut Range<usize>,
-    ) -> Result<Option<RuntimeControlBackdropSource>, SharedRendererError> {
-        let Some(first_control) = controls.first().copied() else {
-            return Ok(None);
-        };
+    ) -> Option<RuntimeControlBackdropSource> {
+        let first_control = controls.first().copied()?;
         self.render_rectangle_range(
             device,
             encoder,
@@ -550,30 +532,15 @@ impl SharedRenderer {
             "arcweft-shared-pre-control-rectangles",
         );
         *next_rectangle = (*next_rectangle).max(first_control.rectangle_range.start);
-        self.render_text_ranges(
-            device,
-            queue,
-            encoder,
-            TextRangeRenderRequest {
-                target: target_view,
-                frame,
-                text_range: *next_text..first_control.text_range.start,
-                styled_paragraph_range: styled_paragraphs.clone(),
-            },
-        )?;
-        *next_text = (*next_text).max(first_control.text_range.start);
-        *styled_paragraphs = 0..0;
-        Ok(
-            controls_need_prior_frame_backdrop_source(controls, frame).then(|| {
-                runtime_control_backdrop_source_texture(
-                    device,
-                    encoder,
-                    self.format,
-                    target_texture,
-                    target_extent,
-                )
-            }),
-        )
+        controls_need_prior_frame_backdrop_source(controls, frame).then(|| {
+            runtime_control_backdrop_source_texture(
+                device,
+                encoder,
+                self.format,
+                target_texture,
+                target_extent,
+            )
+        })
     }
 
     #[expect(
@@ -662,15 +629,33 @@ impl SharedRenderer {
             paint.rectangle_range.clone(),
             "arcweft-shared-runtime-control-filter-rectangles",
         );
-        self.render_text_ranges(
+        self.aux_text_renderers.push(TextRenderer::new(
+            &mut self.atlas,
+            device,
+            wgpu::MultisampleState::default(),
+            None,
+        ));
+        let text_renderer = self
+            .aux_text_renderers
+            .last_mut()
+            .expect("auxiliary text renderer was just pushed");
+        render_text_ranges_with_renderer(
             device,
             queue,
             encoder,
+            text_renderer,
+            TextRenderState {
+                font_system: &mut self.font_system,
+                atlas: &mut self.atlas,
+                swash_cache: &mut self.swash_cache,
+                viewport: &self.viewport,
+            },
             TextRangeRenderRequest {
                 target: &control_view,
                 frame,
                 text_range: paint.text_range.clone(),
                 styled_paragraph_range: 0..0,
+                excluded_text_ranges: &[],
             },
         )?;
         let source = UiCompositorTarget {
@@ -755,71 +740,19 @@ impl SharedRenderer {
         encoder: &mut wgpu::CommandEncoder,
         request: TextRangeRenderRequest<'_>,
     ) -> Result<(), SharedRendererError> {
-        let text_blocks = slice_range(&request.frame.text, request.text_range);
-        let styled_paragraphs = slice_range(
-            &request.frame.styled_paragraphs,
-            request.styled_paragraph_range,
-        );
-        if text_blocks.is_empty() && styled_paragraphs.is_empty() {
-            return Ok(());
-        }
-        let mut block_buffers = text_blocks
-            .iter()
-            .map(|block| text_buffer(&mut self.font_system, block))
-            .collect::<Vec<_>>();
-        let text_scale_factor = request.frame.viewport.physical_scale_factor_f32();
-        let text_areas = block_buffers
-            .iter_mut()
-            .zip(text_blocks)
-            .map(|(buffer, block)| text_area(buffer, block, text_scale_factor))
-            .collect::<Vec<_>>();
-        let paragraph_buffers = styled_paragraphs
-            .iter()
-            .map(|paragraph| styled_paragraph_buffer(&mut self.font_system, paragraph))
-            .collect::<Vec<_>>();
-        let paragraph_areas = paragraph_buffers
-            .iter()
-            .zip(styled_paragraphs)
-            .map(|(buffer, paragraph)| {
-                styled_paragraph_text_area(buffer, paragraph, text_scale_factor)
-            })
-            .collect::<Vec<_>>();
-        let text_areas = text_areas
-            .into_iter()
-            .chain(paragraph_areas)
-            .collect::<Vec<_>>();
-        self.text_renderer
-            .prepare(
-                device,
-                queue,
-                &mut self.font_system,
-                &mut self.atlas,
-                &self.viewport,
-                text_areas,
-                &mut self.swash_cache,
-            )
-            .map_err(|error| SharedRendererError::TextPrepare(error.to_string()))
-            .and_then(|()| {
-                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("arcweft-shared-text-range-render-pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: request.target,
-                        resolve_target: None,
-                        depth_slice: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                });
-                self.text_renderer
-                    .render(&self.atlas, &self.viewport, &mut pass)
-                    .map_err(|error| SharedRendererError::TextRender(error.to_string()))
-            })
+        render_text_ranges_with_renderer(
+            device,
+            queue,
+            encoder,
+            &mut self.text_renderer,
+            TextRenderState {
+                font_system: &mut self.font_system,
+                atlas: &mut self.atlas,
+                swash_cache: &mut self.swash_cache,
+                viewport: &self.viewport,
+            },
+            request,
+        )
     }
 
     fn render_image_quad(
@@ -861,6 +794,97 @@ impl SharedRenderer {
         pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         pass.draw(0..u32::try_from(vertices.len()).unwrap_or(u32::MAX), 0..1);
     }
+}
+
+fn render_text_ranges_with_renderer(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    encoder: &mut wgpu::CommandEncoder,
+    text_renderer: &mut TextRenderer,
+    state: TextRenderState<'_>,
+    request: TextRangeRenderRequest<'_>,
+) -> Result<(), SharedRendererError> {
+    let TextRenderState {
+        font_system,
+        atlas,
+        swash_cache,
+        viewport,
+    } = state;
+    let text_range = request.text_range.clone();
+    let text_blocks = slice_range(&request.frame.text, text_range.clone())
+        .iter()
+        .enumerate()
+        .filter_map(|(offset, block)| {
+            let index = text_range.start + offset;
+            (!text_index_is_excluded(index, request.excluded_text_ranges)).then_some(block)
+        })
+        .collect::<Vec<_>>();
+    let styled_paragraphs = slice_range(
+        &request.frame.styled_paragraphs,
+        request.styled_paragraph_range,
+    );
+    if text_blocks.is_empty() && styled_paragraphs.is_empty() {
+        return Ok(());
+    }
+    let mut block_buffers = text_blocks
+        .iter()
+        .map(|&block| text_buffer(font_system, block))
+        .collect::<Vec<_>>();
+    let text_scale_factor = request.frame.viewport.physical_scale_factor_f32();
+    let text_areas = block_buffers
+        .iter_mut()
+        .zip(text_blocks.iter().copied())
+        .map(|(buffer, block)| text_area(buffer, block, text_scale_factor))
+        .collect::<Vec<_>>();
+    let paragraph_buffers = styled_paragraphs
+        .iter()
+        .map(|paragraph| styled_paragraph_buffer(font_system, paragraph))
+        .collect::<Vec<_>>();
+    let paragraph_areas = paragraph_buffers
+        .iter()
+        .zip(styled_paragraphs)
+        .map(|(buffer, paragraph)| styled_paragraph_text_area(buffer, paragraph, text_scale_factor))
+        .collect::<Vec<_>>();
+    let text_areas = text_areas
+        .into_iter()
+        .chain(paragraph_areas)
+        .collect::<Vec<_>>();
+    text_renderer
+        .prepare(
+            device,
+            queue,
+            font_system,
+            atlas,
+            viewport,
+            text_areas,
+            swash_cache,
+        )
+        .map_err(|error| SharedRendererError::TextPrepare(error.to_string()))
+        .and_then(|()| {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("arcweft-shared-text-range-render-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: request.target,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            text_renderer
+                .render(atlas, viewport, &mut pass)
+                .map_err(|error| SharedRendererError::TextRender(error.to_string()))
+        })
+}
+
+fn text_index_is_excluded(index: usize, excluded: &[Range<usize>]) -> bool {
+    excluded.iter().any(|range| range.contains(&index))
 }
 
 fn slice_range<T>(items: &[T], range: Range<usize>) -> &[T] {

@@ -69,6 +69,21 @@ This does not fake blur by DOM overlays, screenshots, or sample-specific
 images. Native window/offscreen and web canvas hosts consume the same
 `SharedRenderer` path.
 
+## 2026-07-06 rendering-order follow-up
+
+Modern feedback UI debugging exposed that `glyphon::TextRenderer` cannot be
+prepared repeatedly on the same renderer while earlier render commands in the
+same command encoder still reference its vertex buffer. The visible symptoms
+were missing runtime-control labels, partially missing styled dialogue text,
+and occasional `glyphon vertices` validation failures.
+
+The shared renderer now keeps ordinary frame text in one final main text pass.
+Foreground-filtered controls still render completed control content, including
+their text, into the filter source, but they use auxiliary text-renderer
+instances retained on `SharedRenderer` until the next submitted frame. The main
+text pass excludes those foreground-filtered control text ranges to avoid
+unfiltered duplicate labels.
+
 ## Tests added or updated
 
 - `crates/arcweft-bundle/tests/runtime_control_style_resolution.rs`
@@ -102,6 +117,10 @@ cargo test -p arcweft-player-scene --test runtime_control_style_lowering runtime
 cargo test -p arcweft-render-wgpu --test geometry_runtime_control_styles backdrop_filter
 cargo test -p arcweft-render-wgpu --test geometry_runtime_control_styles foreground_filter
 cargo test -p arcweft-render-wgpu --test runtime_control_backdrop_gpu_smoke -- --ignored
+cargo test -p arcweft-player-scene --test action_button_submit
+cargo test -p arcweft-player-scene --test runtime_text_controls
+cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samples/modern-feedback-ui/src/main.arcw --json --image png --out target/modern-feedback-ui-debug/single-text-pass-aux.png --mode drain --steps 8 --max-ops 128
+cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samples/native-text-input/src/main.arcw --json --image png --out target/modern-feedback-ui-debug/native-text-input-single-pass-aux.png --mode drain --steps 8 --max-ops 128
 cargo run -p arcweft-cli -- check --manifest-path samples/modern-feedback-ui/arcw.toml
 cargo run -p arcweft-cli -- bundle samples/modern-feedback-ui/src/main.arcw --output target/arcweft/modern-feedback-ui-backdrop-filter.awfb
 cargo run -p arcweft-cli --features native-capture -- agent observe samples/modern-feedback-ui/src/main.arcw --json --image png --capture color --content-policy-mode local-dev --out target/modern-feedback-ui/backdrop-filter-observe.png --mode drain --steps 4 --max-ops 64
