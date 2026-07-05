@@ -644,7 +644,7 @@ fn apply_declaration(
             Some(opacity_milli) => visual.opacity_milli = Some(opacity_milli),
             None => push_unsupported_value(diagnostics, target, raw_property),
         },
-        "font-family" => match text_value(style_resource, value) {
+        "font-family" => match font_family_value(style_resource, value) {
             Some(font_family) => visual.font_family = Some(font_family),
             None => push_unsupported_value(diagnostics, target, raw_property),
         },
@@ -902,7 +902,10 @@ impl RuntimeControlStyleValueExt for UiStyleResource {
                 .find(|candidate| candidate.public_id == *token)
                 .and_then(|token| self.color_value(&token.value)),
             UiStyleValue::Text(text) => parse_color(text),
-            UiStyleValue::Milli(_) | UiStyleValue::Resource(_) | UiStyleValue::Digest(_) => None,
+            UiStyleValue::Milli(_)
+            | UiStyleValue::List(_)
+            | UiStyleValue::Resource(_)
+            | UiStyleValue::Digest(_) => None,
         }
     }
 }
@@ -951,6 +954,7 @@ fn signed_length_milli(style: &UiStyleResource, value: &UiStyleValue) -> Option<
             .and_then(|token| signed_length_milli(style, &token.value)),
         UiStyleValue::SystemColor(_)
         | UiStyleValue::Rgba(_)
+        | UiStyleValue::List(_)
         | UiStyleValue::Resource(_)
         | UiStyleValue::Digest(_) => None,
     }
@@ -967,6 +971,7 @@ fn opacity_milli(style: &UiStyleResource, value: &UiStyleValue) -> Option<u16> {
             .and_then(|token| opacity_milli(style, &token.value)),
         UiStyleValue::SystemColor(_)
         | UiStyleValue::Rgba(_)
+        | UiStyleValue::List(_)
         | UiStyleValue::Resource(_)
         | UiStyleValue::Digest(_) => None,
     }
@@ -983,28 +988,38 @@ fn depth_milli(style: &UiStyleResource, value: &UiStyleValue) -> Option<i32> {
             .and_then(|token| depth_milli(style, &token.value)),
         UiStyleValue::SystemColor(_)
         | UiStyleValue::Rgba(_)
+        | UiStyleValue::List(_)
         | UiStyleValue::Resource(_)
         | UiStyleValue::Digest(_) => None,
     }
 }
 
-fn text_value(style: &UiStyleResource, value: &UiStyleValue) -> Option<String> {
+fn font_family_value(style: &UiStyleResource, value: &UiStyleValue) -> Option<String> {
     match value {
-        UiStyleValue::Text(value) => {
-            let value = value.trim();
-            (!value.is_empty()).then(|| value.to_owned())
+        UiStyleValue::Text(value) => normalized_text_value(value),
+        UiStyleValue::List(values) => {
+            let values = values
+                .iter()
+                .map(|value| font_family_value(style, value))
+                .collect::<Option<Vec<_>>>()?;
+            (!values.is_empty()).then(|| values.join(", "))
         }
         UiStyleValue::Token(token) => style
             .tokens
             .iter()
             .find(|candidate| candidate.public_id == *token)
-            .and_then(|token| text_value(style, &token.value)),
+            .and_then(|token| font_family_value(style, &token.value)),
         UiStyleValue::SystemColor(_)
         | UiStyleValue::Rgba(_)
         | UiStyleValue::Milli(_)
         | UiStyleValue::Resource(_)
         | UiStyleValue::Digest(_) => None,
     }
+}
+
+fn normalized_text_value(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_owned())
 }
 
 fn shadow_list(
@@ -1022,6 +1037,7 @@ fn shadow_list(
         UiStyleValue::SystemColor(_)
         | UiStyleValue::Rgba(_)
         | UiStyleValue::Milli(_)
+        | UiStyleValue::List(_)
         | UiStyleValue::Resource(_)
         | UiStyleValue::Digest(_) => None,
     }
@@ -1041,6 +1057,7 @@ fn filter_list(
         UiStyleValue::SystemColor(_)
         | UiStyleValue::Rgba(_)
         | UiStyleValue::Milli(_)
+        | UiStyleValue::List(_)
         | UiStyleValue::Resource(_)
         | UiStyleValue::Digest(_) => None,
     }
@@ -1083,6 +1100,7 @@ fn radius_declaration(
             .and_then(|token| radius_declaration(style, &token.value)),
         UiStyleValue::SystemColor(_)
         | UiStyleValue::Rgba(_)
+        | UiStyleValue::List(_)
         | UiStyleValue::Resource(_)
         | UiStyleValue::Digest(_) => None,
     }
@@ -1361,9 +1379,13 @@ mod tests {
         let style = UiStyleResource {
             tokens: vec![UiStyleToken {
                 public_id: "font.ui_stack".to_owned(),
-                value: UiStyleValue::Text(
-                    "Arcweft Demo, Yu Gothic, Hiragino Sans, Noto Sans JP, system-ui".to_owned(),
-                ),
+                value: UiStyleValue::List(vec![
+                    UiStyleValue::Text("Arcweft Demo".to_owned()),
+                    UiStyleValue::Text("Yu Gothic".to_owned()),
+                    UiStyleValue::Text("Hiragino Sans".to_owned()),
+                    UiStyleValue::Text("Noto Sans JP".to_owned()),
+                    UiStyleValue::Text("system-ui".to_owned()),
+                ]),
             }],
             rules: vec![UiStyleRule {
                 selector: UiStyleSelector {

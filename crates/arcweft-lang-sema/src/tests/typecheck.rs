@@ -17,6 +17,26 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 }
 
 #[test]
+fn typechecks_component_mount_builtin() {
+    let tree = parse_ok(
+        r#"
+component Panel() -> View {
+  TextField(@input:.name)
+    .label("Name")
+}
+
+flow main {
+  component(@component:.Panel)
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("component mount fixture lowers");
+    validate_hir_references(&hir, &registry_from_hir(&hir))
+        .expect("component mount references resolve");
+    typecheck_hir(&hir, &TypeCheckEnv::standard()).expect("component mount builtin typechecks");
+}
+
+#[test]
 fn for_iteration_evidence_is_trait_resolved_for_runtime_flows() {
     let tree = parse_ok(
         r"

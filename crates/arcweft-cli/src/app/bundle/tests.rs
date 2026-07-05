@@ -78,6 +78,10 @@ component FeedbackForm() -> View {
       color: white;
     }
 }
+
+flow test {
+  component(@component:.FeedbackForm)
+}
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
@@ -100,17 +104,41 @@ component FeedbackForm() -> View {
 }
 
 #[test]
+fn component_view_declaration_is_not_mounted_implicitly() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+component FeedbackForm() -> View {
+  TextField(@input:.feedback)
+    .label("Message")
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
+
+    assert!(sidecars.program.is_none());
+    assert!(sidecars.text.is_none());
+    assert!(sidecars.input.is_none());
+}
+
+#[test]
 fn component_view_button_lowers_to_action_button_sidecar() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
 component FeedbackForm() -> View {
   VStack {
-    TextField(id: @input:.feedback, label: "Message", value: "", placeholder: "Type text", purpose: text, enter_key: send, submit: @input:.feedback, change: @input:.feedback)
-    Button("Send", id: @button:.feedback_send)
-      .on_click(ime: .reject) {
-        text_submit @input:.feedback
-      }
+    TextField(@input:.feedback, value: "", purpose: text, enter_key: send)
+      .label("Message")
+      .placeholder("Type text")
+    Button(@button:.feedback_send)
+      .label("Send")
+      .on_click(|| text_submit(@input:.feedback, ime: .reject))
   }
+}
+
+flow test {
+  component(@component:.FeedbackForm)
 }
 "#,
     );
@@ -194,9 +222,17 @@ fn component_view_text_area_and_secure_field_emit_layout_bounds() {
         r#"
 component Credentials() -> View {
   VStack {
-    TextArea(id: @input:.bio, label: "Bio", value: "", placeholder: "Bio")
-    SecureField(id: @input:.password, label: "Password", value: "", placeholder: "Password")
+    TextArea(@input:.bio, value: "")
+      .label("Bio")
+      .placeholder("Bio")
+    SecureField(@input:.password, value: "")
+      .label("Password")
+      .placeholder("Password")
   }
+}
+
+flow test {
+  component(@component:.Credentials)
 }
 "#,
     );
@@ -246,20 +282,26 @@ fn component_view_submit_buttons_follow_target_text_control_slots() {
 component FeedbackForm() -> View {
   VStack {
     HStack {
-      TextField(id: @input:.name, label: "Name", value: "", placeholder: "Name", purpose: name, enter_key: next, submit: @input:.name, change: @input:.name)
-      Button("Continue", id: @button:.continue)
-        .on_click(ime: .commit) {
-          text_submit @input:.name
-        }
+      TextField(@input:.name, value: "", purpose: name, enter_key: next)
+        .label("Name")
+        .placeholder("Name")
+      Button(@button:.continue)
+        .label("Continue")
+        .on_click(|| text_submit @input:.name)
     }
-    TextArea(id: @input:.brief, label: "Brief", value: "", placeholder: "Idea", purpose: text, enter_key: send, submit: @input:.brief, change: @input:.brief)
+    TextArea(@input:.brief, value: "", purpose: text, enter_key: send)
+      .label("Brief")
+      .placeholder("Idea")
     HStack {
-      Button("Send", id: @button:.send)
-        .on_click(ime: .commit) {
-          text_submit @input:.brief
-        }
+      Button(@button:.send)
+        .label("Send")
+        .on_click(|| text_submit @input:.brief)
     }
   }
+}
+
+flow test {
+  component(@component:.FeedbackForm)
 }
 "#,
     );

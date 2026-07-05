@@ -27,7 +27,7 @@ use arcweft_lang_syntax::{
             ViewTextFieldMode, ViewTextSubmitImePolicy,
         },
     },
-    expr::{Expr, Literal},
+    expr::{Expr, Literal, UnitNumberSuffix},
 };
 
 #[derive(Clone, Debug, Default)]
@@ -239,7 +239,7 @@ fn lower_view_expr(
         ViewExpr::Element(element) => lower_element(component_id, element, state, layout),
         ViewExpr::Text(text) => lower_text(component_id, text, state),
         ViewExpr::TextField(field) => lower_text_field(component_id, field, state, layout),
-        ViewExpr::Button(button) => lower_button(component_id, button, state),
+        ViewExpr::Button(button) => lower_button(component_id, button, state, *layout),
         ViewExpr::Image(image) => lower_image(image, state),
         ViewExpr::Fragment(children) => lower_layout_column(component_id, children, state, *layout),
         ViewExpr::ComponentCall(call) => {
@@ -529,12 +529,13 @@ fn lower_button(
     component_id: &str,
     button: &ViewButton,
     state: &mut ViewLoweringState,
+    layout: ViewLayoutCursor,
 ) -> ViewLayoutFrame {
     let button_id = button
         .id()
         .map_or_else(|| next_button_id(component_id, state), normalize_entity_ref);
     let label_text_source = format!("text.button.label.{button_id}");
-    let label = button_label_text(button.label());
+    let label = button_display_label(button, &button_id);
     state.text_sources.push(UiTextSourceRecord {
         public_id: label_text_source.clone(),
         kind: UiTextSourceKind::Literal {
@@ -553,19 +554,19 @@ fn lower_button(
     state.instructions.push(UiProgramInstruction::CloseElement);
     lower_navigation_target(&button_id, button.modifiers(), state);
 
-    let Some(ViewAction::TextSubmit(action)) = button.activation() else {
-        return ViewLayoutFrame::action_button();
+    let action = match button.activation() {
+        Some(ViewAction::TextSubmit(action)) => UiActionButtonActionResource::TextInputSubmit {
+            input: normalize_entity_ref(action.input()),
+            ime_policy: lower_ime_policy(action.ime_policy()),
+        },
+        Some(ViewAction::Noop) | None => UiActionButtonActionResource::Noop,
     };
-    let input = normalize_entity_ref(action.input());
     state.action_buttons.push(UiActionButtonResource {
         public_id: button_id.clone(),
         label_text_source: label_text_source.clone(),
         enabled: button_enabled(button.enabled()),
-        action: UiActionButtonActionResource::TextInputSubmit {
-            input,
-            ime_policy: lower_ime_policy(action.ime_policy()),
-        },
-        bounds: UiRuntimeButtonBounds::default_slot(state.action_buttons.len()),
+        action,
+        bounds: button_bounds(button, layout),
         style: None,
         source: None,
     });
@@ -609,6 +610,7 @@ fn lower_modifiers(component_id: &str, modifiers: &[ViewModifier], state: &mut V
                 });
             }
             ViewModifier::Part(_)
+            | ViewModifier::Label(_)
             | ViewModifier::AgentTarget(_)
             | ViewModifier::Placeholder(_)
             | ViewModifier::SubmitAction(_)
@@ -637,6 +639,7 @@ fn lower_button_modifiers(
                 });
             }
             ViewModifier::Part(_)
+            | ViewModifier::Label(_)
             | ViewModifier::AgentTarget(_)
             | ViewModifier::Placeholder(_)
             | ViewModifier::SubmitAction(_)
@@ -904,11 +907,133 @@ fn button_label_text(label: &ViewButtonLabel) -> String {
     }
 }
 
+fn button_display_label(button: &ViewButton, button_id: &str) -> String {
+    modifier_label(button.modifiers())
+        .or_else(|| {
+            let value = button_label_text(button.label());
+            (!value.is_empty()).then_some(value)
+        })
+        .unwrap_or_else(|| fallback_label_from_public_id(button_id))
+}
+
+fn fallback_label_from_public_id(public_id: &str) -> String {
+    public_id
+        .rsplit('.')
+        .next()
+        .unwrap_or(public_id)
+        .split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect::<String>(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn button_enabled(enabled: Option<&Expr>) -> bool {
     match enabled {
         Some(Expr::Literal(Literal::Bool(value))) => *value,
         Some(_) | None => true,
     }
+}
+
+fn button_bounds(button: &ViewButton, layout: ViewLayoutCursor) -> UiRuntimeButtonBounds {
+    UiRuntimeButtonBounds::new(
+        named_layout_length_i32(button.args(), &["x"]).unwrap_or(layout.x_milli),
+        named_layout_length_i32(button.args(), &["y"]).unwrap_or(layout.y_milli),
+        named_layout_length_u32(button.args(), &["width", "w"])
+            .unwrap_or(VIEW_LAYOUT_BUTTON_WIDTH_MILLI),
+        named_layout_length_u32(button.args(), &["height", "h"])
+            .unwrap_or(VIEW_LAYOUT_BUTTON_HEIGHT_MILLI),
+    )
+}
+
+fn named_layout_length_i32(args: &[ViewArg], names: &[&str]) -> Option<i32> {
+    names
+        .iter()
+        .find_map(|name| named_arg(args, name))
+        .and_then(expr_px_milli)
+}
+
+fn named_arg<'a>(args: &'a [ViewArg], name: &str) -> Option<&'a Expr> {
+    args.iter().find_map(|arg| match arg {
+        ViewArg::Named {
+            name: actual,
+            value,
+        } if actual == name => Some(value),
+        _ => None,
+    })
+}
+
+fn named_layout_length_u32(args: &[ViewArg], names: &[&str]) -> Option<u32> {
+    named_layout_length_i32(args, names).and_then(|value| u32::try_from(value.max(0)).ok())
+}
+
+fn expr_px_milli(expr: &Expr) -> Option<i32> {
+    match expr {
+        Expr::Literal(Literal::UnitNumber {
+            raw,
+            suffix: UnitNumberSuffix::Px,
+        }) => parse_px_milli(raw),
+        Expr::Literal(Literal::Int { value, .. }) => {
+            i32::try_from(value.saturating_mul(1_000)).ok()
+        }
+        Expr::Raw(value) | Expr::Path(value) => value
+            .trim()
+            .strip_suffix("px")
+            .map(str::trim)
+            .and_then(parse_px_milli),
+        _ => None,
+    }
+}
+
+fn parse_px_milli(raw: &str) -> Option<i32> {
+    let source = raw.trim().replace('_', "");
+    let (negative, unsigned) = source
+        .strip_prefix('-')
+        .map_or((false, source.as_str()), |rest| (true, rest));
+    let unsigned = unsigned.strip_prefix('+').unwrap_or(unsigned);
+    let (whole, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    if whole.is_empty() && fraction.is_empty() {
+        return None;
+    }
+    if !whole.chars().all(|ch| ch.is_ascii_digit())
+        || !fraction.chars().all(|ch| ch.is_ascii_digit())
+    {
+        return None;
+    }
+
+    let whole_milli = if whole.is_empty() {
+        0
+    } else {
+        whole.parse::<i64>().ok()?.checked_mul(1_000)?
+    };
+    let (fraction_milli, round_up) = fractional_px_milli(fraction)?;
+    let magnitude = whole_milli
+        .checked_add(fraction_milli)?
+        .checked_add(i64::from(round_up))?;
+    let signed = if negative { -magnitude } else { magnitude };
+    i32::try_from(signed).ok()
+}
+
+fn fractional_px_milli(fraction: &str) -> Option<(i64, bool)> {
+    let mut milli = 0_i64;
+    let mut scale = 100_i64;
+    for digit in fraction.chars().take(3) {
+        let value = i64::from(digit.to_digit(10)?);
+        milli = milli.checked_add(value.checked_mul(scale)?)?;
+        scale /= 10;
+    }
+    let round_up = fraction
+        .chars()
+        .nth(3)
+        .and_then(|digit| digit.to_digit(10))
+        .is_some_and(|digit| digit >= 5);
+    Some((milli, round_up))
 }
 
 fn lower_ime_policy(policy: ViewTextSubmitImePolicy) -> UiTextSubmitImePolicy {
@@ -928,7 +1053,14 @@ fn assign_action_button_bounds(state: &mut ViewLoweringState) {
     );
     let mut submit_counts_by_input: Vec<(String, usize)> = Vec::new();
     for (fallback_index, button) in state.action_buttons.iter_mut().enumerate() {
-        let UiActionButtonActionResource::TextInputSubmit { input, .. } = &button.action;
+        let UiActionButtonActionResource::TextInputSubmit { input, .. } = &button.action else {
+            button.bounds = if button.bounds.width_milli == 0 || button.bounds.height_milli == 0 {
+                UiRuntimeButtonBounds::default_slot(fallback_index)
+            } else {
+                button.bounds
+            };
+            continue;
+        };
         let Some((input_index, input_option)) = state
             .input_options
             .iter()
@@ -1000,9 +1132,10 @@ impl AuthoredTextControl {
             ],
         );
         Self {
-            public_id,
+            public_id: public_id.clone(),
             value: expr_source(field.value()),
-            label: text_control_text_arg(field.args(), &["label"]),
+            label: text_control_text_arg(field.args(), &["label"])
+                .or_else(|| modifier_label(field.modifiers())),
             placeholder: text_control_text_arg(field.args(), &["placeholder"])
                 .or_else(|| modifier_placeholder(field.modifiers())),
             purpose: text_control_purpose(purpose.as_deref(), field.mode()),
@@ -1016,8 +1149,10 @@ impl AuthoredTextControl {
                 vertical_navigation_policy.as_deref(),
             ),
             secure_policy: text_control_secure_policy(secure_policy.as_deref(), field.mode()),
-            submit_handler: text_control_handler_arg(field.args(), "submit"),
-            change_handler: text_control_handler_arg(field.args(), "change"),
+            submit_handler: text_control_handler_arg(field.args(), "submit")
+                .or_else(|| Some(public_id.clone())),
+            change_handler: text_control_handler_arg(field.args(), "change")
+                .or_else(|| Some(public_id.clone())),
         }
     }
 }
@@ -1067,6 +1202,13 @@ fn text_control_arg<'a>(args: &'a [ViewArg], name: &str) -> Option<&'a Expr> {
 fn modifier_placeholder(modifiers: &[ViewModifier]) -> Option<String> {
     modifiers.iter().find_map(|modifier| match modifier {
         ViewModifier::Placeholder(expr) => Some(expr_source(expr)),
+        _ => None,
+    })
+}
+
+fn modifier_label(modifiers: &[ViewModifier]) -> Option<String> {
+    modifiers.iter().find_map(|modifier| match modifier {
+        ViewModifier::Label(expr) => Some(expr_source(expr)),
         _ => None,
     })
 }

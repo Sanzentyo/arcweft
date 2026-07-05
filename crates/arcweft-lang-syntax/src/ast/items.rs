@@ -157,6 +157,7 @@ pub enum UiStyleValueDecl {
     },
     Milli(i32),
     Text(String),
+    List(Vec<UiStyleValueDecl>),
     Resource(String),
 }
 

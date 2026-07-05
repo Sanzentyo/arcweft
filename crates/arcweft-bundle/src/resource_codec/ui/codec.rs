@@ -384,6 +384,7 @@ impl UiProgramResource {
                 )
                 .chain(self.action_buttons.iter().flat_map(|button| {
                     let action_ids = match &button.action {
+                        super::model::UiActionButtonActionResource::Noop => None,
                         super::model::UiActionButtonActionResource::TextInputSubmit {
                             input,
                             ..
@@ -557,7 +558,7 @@ impl UiStyleResource {
                 .chain(self.tokens.iter().flat_map(|token| {
                     [Some(token.public_id.clone())]
                         .into_iter()
-                        .chain(style_value_public_id(&token.value).map(Some))
+                        .chain(style_value_public_ids(&token.value).into_iter().map(Some))
                         .flatten()
                 }))
                 .chain(self.rules.iter().flat_map(style_rule_public_ids))
@@ -566,9 +567,11 @@ impl UiStyleResource {
                         .into_iter()
                         .chain(style_selector_public_ids(&rule.selector).map(Some))
                         .chain(rule.declarations.iter().flat_map(|declaration| {
-                            [Some(declaration.property.clone())]
-                                .into_iter()
-                                .chain(style_value_public_id(&declaration.value).map(Some))
+                            [Some(declaration.property.clone())].into_iter().chain(
+                                style_value_public_ids(&declaration.value)
+                                    .into_iter()
+                                    .map(Some),
+                            )
                         }))
                         .flatten()
                 }))
@@ -1107,7 +1110,11 @@ fn style_rule_public_ids(rule: &UiStyleRule) -> Vec<String> {
         .chain(rule.declarations.iter().flat_map(|declaration| {
             [Some(declaration.property.clone())]
                 .into_iter()
-                .chain(style_value_public_id(&declaration.value).map(Some))
+                .chain(
+                    style_value_public_ids(&declaration.value)
+                        .into_iter()
+                        .map(Some),
+                )
                 .flatten()
         }))
         .collect()
@@ -1120,14 +1127,15 @@ fn style_selector_public_ids(selector: &UiStyleSelector) -> impl Iterator<Item =
     })
 }
 
-fn style_value_public_id(value: &UiStyleValue) -> Option<String> {
+fn style_value_public_ids(value: &UiStyleValue) -> Vec<String> {
     match value {
-        UiStyleValue::Token(id) | UiStyleValue::Resource(id) => Some(id.clone()),
+        UiStyleValue::Token(id) | UiStyleValue::Resource(id) => vec![id.clone()],
+        UiStyleValue::List(values) => values.iter().flat_map(style_value_public_ids).collect(),
         UiStyleValue::SystemColor(_)
         | UiStyleValue::Rgba(_)
         | UiStyleValue::Milli(_)
         | UiStyleValue::Text(_)
-        | UiStyleValue::Digest(_) => None,
+        | UiStyleValue::Digest(_) => Vec::new(),
     }
 }
 

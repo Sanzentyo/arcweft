@@ -1,19 +1,15 @@
 pub component @ui.sample.toolbar ActionToolbar(actions: Vec<ToolbarAction>) -> View {
     HStack(spacing = 10) {
         ForEach(actions, id = _.id) |action_item| {
-            Button(action_item.label)
-                .agent_target(action_item.id)
+            Button(@button:.toolbar_item)
+                .label(action_item.label)
+                .agent_target(@ui.sample.toolbar.item)
                 .enabled(action_item.enabled)
-                .interaction_style {
-                    idle { background = .toolbar_button; opacity = 1.0 }
-                    hovered { background = .toolbar_button_hover }
-                    focused { outline_color = .focus; outline_width = 2px }
-                    pressed { background = .toolbar_button_pressed; scale = 0.97 }
-                    disabled { opacity = 0.45 }
+                .style {
+                    background-color = rgba(44, 58, 78, 255)
+                    focus-ring-width = milli(2000)
                 }
-                .on_click {
-                    action.invoke(@action.toolbar.invoke, payload = action_item.id)
-                }
+                .on_click(|| action.invoke(@action.toolbar.invoke, payload = action_item.id))
         }
     }
 }

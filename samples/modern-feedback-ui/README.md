@@ -15,6 +15,9 @@ It demonstrates:
   actions;
 - component-owned `TextField` and `TextArea` resources referenced by the same
   submit targets used by the buttons and flow;
+- explicit `component(@component:.ModernFeedbackPanel)` mounting from the flow,
+  so the component declaration is reusable and does not display by declaration
+  alone;
 - a flow that waits on `text_submit`, branches on submitted text length, and
   returns the submitted brief.
 

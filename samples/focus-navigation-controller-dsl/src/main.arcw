@@ -10,30 +10,36 @@ entry game @entry.focus_navigation_controller_dsl {
 pub component FocusNavigationControllerSample() -> View {
   VStack(nav: .vertical, group: @group:.settings, wrap: false, initial: @input:.name, trap: .modal) {
     HStack(nav: .horizontal, group: @group:.settings.row_one, parent: @group:.settings, wrap: true) {
-      TextField(@input:.name, value: "Aster", label: "Name")
+      TextField(@input:.name, value: "Aster")
+        .label("Name")
         .nav(right: @button:.apply, down: @input:.notes, previous: boundary)
 
-      Button("Apply", id: @button:.apply)
+      Button(@button:.apply)
+        .label("Apply")
         .nav(left: @input:.name, down: @button:.danger, next: @input:.notes)
-        .on_click(ime: .commit) {
-          text_submit @input:.name
-        }
+        .on_click(|| text_submit @input:.name)
     }
 
     HStack(nav: .horizontal, group: @group:.settings.row_two, parent: @group:.settings, wrap: true) {
-      TextArea(@input:.notes, value: "Notes", label: "Notes")
+      TextArea(@input:.notes, value: "Notes")
+        .label("Notes")
         .nav(up: @input:.name, right: @button:.close)
 
-      Button("Danger disabled", id: @button:.danger, enabled: false)
+      Button(@button:.danger)
+        .label("Danger disabled")
+        .enabled(false)
         .nav(up: @button:.apply, left: auto, right: @button:.close)
 
-      Button("Close", id: @button:.close)
+      Button(@button:.close)
+        .label("Close")
         .nav(left: @input:.notes, up: @button:.apply, next: boundary)
     }
   }
 }
 
 flow focus_navigation_controller_dsl {
+  component(@component:.FocusNavigationControllerSample)
+
   narrator:
     Focus navigation controller sample.
 

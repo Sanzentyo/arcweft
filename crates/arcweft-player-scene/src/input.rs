@@ -728,7 +728,10 @@ impl InputController {
             selection,
             revision,
             ime_policy,
-        } = &button.action;
+        } = &button.action
+        else {
+            return ActionButtonSubmitOutcome::default();
+        };
         if self.ime_composing {
             match ime_policy {
                 RenderTextSubmitImePolicy::Reject => {

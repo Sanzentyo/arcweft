@@ -29,6 +29,7 @@ pub struct RenderActionButton {
 /// Action emitted by a player-rendered button.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RenderActionButtonAction {
+    Noop,
     TextInputSubmit {
         input_target: InteractionTarget,
         session: TextInputSessionId,
@@ -208,16 +209,18 @@ fn visual_state_for_button(
 
 impl RenderActionButtonAction {
     #[must_use]
-    pub const fn input_target(&self) -> &InteractionTarget {
+    pub const fn input_target(&self) -> Option<&InteractionTarget> {
         match self {
-            Self::TextInputSubmit { input_target, .. } => input_target,
+            Self::Noop => None,
+            Self::TextInputSubmit { input_target, .. } => Some(input_target),
         }
     }
 
     #[must_use]
-    pub const fn ime_policy(&self) -> RenderTextSubmitImePolicy {
+    pub const fn ime_policy(&self) -> Option<RenderTextSubmitImePolicy> {
         match self {
-            Self::TextInputSubmit { ime_policy, .. } => *ime_policy,
+            Self::Noop => None,
+            Self::TextInputSubmit { ime_policy, .. } => Some(*ime_policy),
         }
     }
 }

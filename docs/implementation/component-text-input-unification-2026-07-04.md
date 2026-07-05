@@ -29,6 +29,19 @@ This cut applies the component/View text-control unification note from
 - `samples/text-submit-flow`, `samples/modern-feedback-ui`, and
   `samples/native-text-input` no longer rely on top-level text-control
   declarations.
+- Component/View declarations are inert resource declarations. A declared
+  component is included in bundle UI sidecars only when a flow explicitly mounts
+  it with `component(@component:.Name)`. This keeps reusable component
+  declarations from appearing just because they are present in the source file.
+- Component/View text controls and buttons now use the compact head plus
+  modifier form in samples, for example
+  `TextField(@input:.name).label("Name")` and
+  `Button(@button:.send).label("Send").on_click(|| text_submit @input:.name)`.
+  Button IME policy is not a Button option; submit-specific IME behavior belongs
+  on the `text_submit` action.
+- Style `font-family` tokens may be authored as string lists such as
+  `["Yu Gothic", "Hiragino Sans", "Noto Sans JP", "system-ui"]`, which lower to
+  the runtime CSS-style fallback stack.
 - Runtime submit button fallback bounds now derive from the target text-control
   slot. Single-line targets place submit buttons to the right of the field;
   multiline targets place submit buttons below the text area. This fixes the
@@ -73,6 +86,7 @@ This cut applies the component/View text-control unification note from
 
 - No compatibility layer for top-level `ui text_input` resources.
 - No platform-widget fallback for submit buttons.
+- No implicit component mount for declaration-only component/View resources.
 - No style-driven layout resolver; seq06.16.2 adds deterministic component
   structure bounds, while future style/layout work may refine them.
 - No style-driven layout resolver for player-rendered runtime controls.

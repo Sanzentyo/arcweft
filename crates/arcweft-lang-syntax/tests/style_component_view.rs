@@ -60,15 +60,16 @@ fn component_view_button_on_click_text_submit_parses() {
         r#"
 pub component FeedbackForm() -> View {
   VStack {
-    TextField(id: @input:.feedback, label: "Message", value: "", placeholder: "Type text", enter_key: send)
+    TextField(@input:.feedback, value: "", enter_key: send)
+      .label("Message")
+      .placeholder("Type text")
 
-    Button("Send", id: @button:.feedback_send)
+    Button(@button:.feedback_send)
+      .label("Send")
       .style(@style:.primary_button)
       .enabled(true)
       .focusable(true)
-      .on_click(ime: .commit) {
-        text_submit @input:.feedback
-      }
+      .on_click(|| text_submit @input:.feedback)
   }
 }
 "#,
@@ -170,7 +171,8 @@ pub style primary_button {
 }
 
 pub component ButtonRow() -> View {
-    Button("Confirm")
+    Button(@button:.confirm)
+        .label("Confirm")
         .style(@.primary_button)
         .style(@style:.primary_button)
         .style {
@@ -180,9 +182,7 @@ pub component ButtonRow() -> View {
             color: white;
         }
         .part(confirm)
-        .on_click {
-            true
-        }
+        .on_click(|| noop)
 }
 "#,
     );

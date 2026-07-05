@@ -7,7 +7,7 @@ use crate::ast::view::{
     ViewTextSubmitAction, ViewTextSubmitImePolicy,
 };
 use crate::cst::{split_top_level_punctuation, split_top_level_punctuation_once};
-use crate::expr::{Expr, Literal};
+use crate::expr::{CallArg, Expr, Literal};
 
 use super::headers::{normalize_decl_id_ref, parse_required_id_ref, simple_error};
 use super::recovery::ParseError;
@@ -34,6 +34,7 @@ enum ViewHead {
     },
     Button {
         label: ViewButtonLabel,
+        args: Vec<ViewArg>,
         id: Option<EntityRefSyntax>,
         enabled: Option<Expr>,
         focusable: bool,
@@ -102,7 +103,7 @@ fn parse_view_exprs(
             index += 1;
             continue;
         }
-        if line.starts_with('.') {
+        if is_view_modifier_line(line) {
             errors.push(simple_error(
                 base,
                 line.len(),
@@ -186,12 +187,17 @@ fn collect_view_chain_lines(lines: &[&str]) -> usize {
     let mut consumed = 1;
     while consumed < lines.len() {
         let line = lines[consumed].trim();
-        if !line.starts_with('.') {
+        if !is_view_modifier_line(line) {
             break;
         }
         consumed += collect_modifier_lines(&lines[consumed..]).max(1);
     }
     consumed
+}
+
+fn is_view_modifier_line(line: &str) -> bool {
+    let line = line.trim_start();
+    line.starts_with('.')
 }
 
 fn collect_modifier_lines(lines: &[&str]) -> usize {
@@ -236,7 +242,7 @@ fn parse_view_chain(
                 base,
                 line.len(),
                 &format!("unsupported View modifier `{line}`"),
-                ".style(@style:.name) | .style { ... } | .style(.Css) { ... } | .part(name) | .on_click { ... }",
+                ".label(\"Text\") | .on_click(|| text_submit @input:.name) | .style(@style:.name)",
             ));
             index += 1;
         }
@@ -252,7 +258,8 @@ fn parse_view_head(line: &str, base: usize, errors: &mut Vec<ParseError>) -> Vie
     match callee {
         "Button" => ViewHead::Button {
             label: button_label(&args),
-            id: named_entity_arg(&args, "id"),
+            args: args.clone(),
+            id: named_entity_arg(&args, "id").or_else(|| first_entity_arg(&args)),
             enabled: named_arg(&args, "enabled").cloned(),
             focusable: named_arg_bool(&args, "focusable").unwrap_or(true),
         },
@@ -335,6 +342,11 @@ fn parse_view_modifier(
     if let Some(part) = call_arg(line, ".part") {
         return Some((ViewModifier::Part(part.trim().to_owned()), 1));
     }
+    if let Some(value) = call_arg(line, ".agent_target")
+        && let Some(target) = entity_ref_expr(&parse_expr_lossy(value))
+    {
+        return Some((ViewModifier::AgentTarget(target), 1));
+    }
     if let Some(value) = call_arg(line, ".nav") {
         let range = TextRange::new(base, base.saturating_add(line.len()));
         return Some((
@@ -345,6 +357,19 @@ fn parse_view_modifier(
     if let Some(value) = call_arg(line, ".placeholder") {
         return Some((ViewModifier::Placeholder(parse_expr_lossy(value)), 1));
     }
+    if let Some(value) = call_arg(line, ".label") {
+        return Some((ViewModifier::Label(parse_expr_lossy(value)), 1));
+    }
+    if let Some(value) = call_arg(line, ".on_click") {
+        return Some((
+            ViewModifier::OnEvent {
+                name: "click".to_owned(),
+                body: parse_expr_lossy(value),
+                ime_policy: None,
+            },
+            1,
+        ));
+    }
     if let Some(value) = call_arg(line, ".submit_action") {
         return Some((ViewModifier::SubmitAction(parse_expr_lossy(value)), 1));
     }
@@ -354,32 +379,6 @@ fn parse_view_modifier(
     if let Some(value) = call_arg(line, ".focusable") {
         let focusable = matches!(parse_expr_lossy(value), Expr::Literal(Literal::Bool(true)));
         return Some((ViewModifier::Focusable(focusable), 1));
-    }
-    if line.starts_with(".on_") && line.contains('{') {
-        let event_head = line
-            .trim_start_matches('.')
-            .split_once('{')
-            .map_or(line.trim_start_matches('.'), |(head, _)| head.trim())
-            .trim_start_matches("on_");
-        let event = event_head
-            .split_once('(')
-            .map_or(event_head, |(event, _)| event)
-            .trim()
-            .to_owned();
-        let ime_policy = event_head
-            .split_once('(')
-            .and_then(|(_, args)| args.trim_end_matches(')').trim().strip_prefix("ime:"))
-            .and_then(parse_ime_policy);
-        let head = line.split('{').next().unwrap_or(line);
-        let (source, consumed) = collect_inline_modifier_block(lines, head);
-        return Some((
-            ViewModifier::OnEvent {
-                name: event,
-                body: parse_expr_lossy(source.trim()),
-                ime_policy,
-            },
-            consumed,
-        ));
     }
     None
 }
@@ -484,17 +483,18 @@ fn build_view_expr(chain: ParsedViewChain, range: TextRange) -> ViewExpr {
         }
         ViewHead::Button {
             label,
+            args,
             id,
             enabled,
             focusable,
         } => {
-            let activation = button_activation(&chain.modifiers, range);
+            let activation = button_activation_modifier(&chain.modifiers, range);
             let enabled = enabled
                 .or_else(|| modifier_enabled(&chain.modifiers))
                 .or(Some(Expr::Literal(Literal::Bool(true))));
             let focusable = modifier_focusable(&chain.modifiers).unwrap_or(focusable);
             ViewExpr::Button(
-                ViewButton::new(label, chain.modifiers, range)
+                ViewButton::new(label, args, chain.modifiers, range)
                     .with_id(id)
                     .with_enabled(enabled)
                     .with_focusable(focusable)
@@ -536,8 +536,9 @@ fn parse_view_args(source: &str) -> Vec<ViewArg> {
 
 fn button_label(args: &[ViewArg]) -> ViewButtonLabel {
     let Some(expr) = args.iter().find_map(|arg| match arg {
-        ViewArg::Positional(expr) => Some(expr),
-        ViewArg::Named { .. } => None,
+        ViewArg::Positional(expr) if entity_ref_expr(expr).is_none() => Some(expr),
+        ViewArg::Named { name, value } if name == "label" => Some(value),
+        ViewArg::Positional(_) | ViewArg::Named { .. } => None,
     }) else {
         return ViewButtonLabel::Empty;
     };
@@ -615,34 +616,142 @@ fn entity_ref_expr(expr: &Expr) -> Option<EntityRefSyntax> {
     }
 }
 
-fn button_activation(modifiers: &[ViewModifier], range: TextRange) -> Option<ViewAction> {
-    modifiers.iter().find_map(|modifier| {
-        let ViewModifier::OnEvent {
-            name,
-            body,
-            ime_policy,
-        } = modifier
-        else {
-            return None;
-        };
-        (name == "click")
-            .then(|| text_submit_action(body, ime_policy.unwrap_or_default(), range))?
+fn button_activation_modifier(modifiers: &[ViewModifier], range: TextRange) -> Option<ViewAction> {
+    modifiers.iter().find_map(|modifier| match modifier {
+        ViewModifier::OnEvent { name, body, .. } if name == "click" => click_action(body, range),
+        _ => None,
     })
 }
 
-fn text_submit_action(
-    expr: &Expr,
-    ime_policy: ViewTextSubmitImePolicy,
-    range: TextRange,
-) -> Option<ViewAction> {
+fn click_action(expr: &Expr, range: TextRange) -> Option<ViewAction> {
+    match expr {
+        Expr::Closure { body, .. } => click_action(body, range),
+        Expr::Raw(source) => {
+            let body = source
+                .trim()
+                .strip_prefix("||")
+                .map(str::trim)
+                .or_else(|| strip_parameterized_closure_body(source.trim()))
+                .unwrap_or(source.trim());
+            let parsed = parse_expr_lossy(body);
+            text_submit_action(&parsed, range)
+                .or_else(|| noop_action(&parsed))
+                .or_else(|| text_submit_action(&Expr::Raw(body.to_owned()), range))
+                .or_else(|| noop_action(&Expr::Raw(body.to_owned())))
+        }
+        _ => text_submit_action(expr, range).or_else(|| noop_action(expr)),
+    }
+}
+
+fn noop_action(expr: &Expr) -> Option<ViewAction> {
+    let source = match expr {
+        Expr::Raw(source) | Expr::Path(source) => source.trim(),
+        Expr::Closure { body, .. } => return noop_action(body),
+        _ => return None,
+    };
+    let source = source
+        .strip_prefix("||")
+        .map(str::trim)
+        .or_else(|| strip_parameterized_closure_body(source))
+        .unwrap_or(source);
+    (source == "noop").then_some(ViewAction::Noop)
+}
+
+fn text_submit_action(expr: &Expr, range: TextRange) -> Option<ViewAction> {
+    if let Expr::Closure { body, .. } = expr {
+        return text_submit_action(body, range);
+    }
+    if let Expr::Call { callee, args } = expr {
+        return text_submit_call_action(callee, args, range);
+    }
     let source = match expr {
         Expr::Raw(source) | Expr::Path(source) => source.trim(),
         _ => return None,
     };
+    let source = source
+        .strip_prefix("||")
+        .map(str::trim)
+        .or_else(|| strip_parameterized_closure_body(source))
+        .unwrap_or(source);
     let input = source.strip_prefix("text_submit")?.trim();
+    if let Some(call_args) = input
+        .strip_prefix('(')
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        return text_submit_source_call_action(call_args, range);
+    }
     let input = parse_expr_lossy(input);
-    entity_ref_expr(&input)
-        .map(|input| ViewAction::TextSubmit(ViewTextSubmitAction::new(input, ime_policy, range)))
+    entity_ref_expr(&input).map(|input| {
+        ViewAction::TextSubmit(ViewTextSubmitAction::new(
+            input,
+            ViewTextSubmitImePolicy::Commit,
+            range,
+        ))
+    })
+}
+
+fn text_submit_call_action(
+    callee: &Expr,
+    args: &[CallArg],
+    range: TextRange,
+) -> Option<ViewAction> {
+    let (Expr::Path(callee) | Expr::Raw(callee)) = callee else {
+        return None;
+    };
+    if callee != "text_submit" {
+        return None;
+    }
+    let input = args.iter().find_map(|arg| match arg {
+        CallArg::Positional(expr) => entity_ref_expr(expr),
+        CallArg::Named { .. } | CallArg::Spread { .. } => None,
+    })?;
+    let ime_policy = args
+        .iter()
+        .find_map(|arg| match arg {
+            CallArg::Named { name, value } if name == "ime" || name == "ime_policy" => {
+                ime_policy_expr(value)
+            }
+            CallArg::Positional(_) | CallArg::Named { .. } | CallArg::Spread { .. } => None,
+        })
+        .unwrap_or_default();
+    Some(ViewAction::TextSubmit(ViewTextSubmitAction::new(
+        input, ime_policy, range,
+    )))
+}
+
+fn text_submit_source_call_action(call_args: &str, range: TextRange) -> Option<ViewAction> {
+    let args = parse_view_args(call_args);
+    let input = args.iter().find_map(|arg| match arg {
+        ViewArg::Positional(expr) => entity_ref_expr(expr),
+        ViewArg::Named { .. } => None,
+    })?;
+    let ime_policy = args
+        .iter()
+        .find_map(|arg| match arg {
+            ViewArg::Named { name, value } if name == "ime" || name == "ime_policy" => {
+                ime_policy_expr(value)
+            }
+            ViewArg::Positional(_) | ViewArg::Named { .. } => None,
+        })
+        .unwrap_or_default();
+    Some(ViewAction::TextSubmit(ViewTextSubmitAction::new(
+        input, ime_policy, range,
+    )))
+}
+
+fn strip_parameterized_closure_body(source: &str) -> Option<&str> {
+    let rest = source.strip_prefix('|')?;
+    let (_, body) = rest.split_once('|')?;
+    Some(body.trim())
+}
+
+fn ime_policy_expr(expr: &Expr) -> Option<ViewTextSubmitImePolicy> {
+    match expr {
+        Expr::Path(value) | Expr::Raw(value) | Expr::Literal(Literal::String(value)) => {
+            parse_ime_policy(value)
+        }
+        _ => None,
+    }
 }
 
 fn parse_ime_policy(source: &str) -> Option<ViewTextSubmitImePolicy> {

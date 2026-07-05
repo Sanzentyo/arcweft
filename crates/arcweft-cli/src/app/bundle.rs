@@ -90,7 +90,9 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 
+mod component_mounts;
 mod stage_placement;
+use component_mounts::{mounted_component_ids, mounted_component_matches};
 use stage_placement::{image_design_bounds, image_stage_placement};
 
 #[derive(Args, Clone, Debug)]
@@ -501,11 +503,17 @@ fn collect_bundle_dsl_ui_resources(module: &HirModule) -> Result<BundleUiSidecar
             _ => None,
         })
         .collect::<Vec<_>>();
+    let mounted_components = mounted_component_ids(module);
     let components = module
         .declarations()
         .iter()
         .filter_map(|decl| match decl {
-            HirTopLevelDecl::EntityDecl(item) if item.component_body().is_some() => Some(item),
+            HirTopLevelDecl::EntityDecl(item)
+                if item.component_body().is_some()
+                    && mounted_component_matches(&mounted_components, item.id().body()) =>
+            {
+                Some(item)
+            }
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -704,6 +712,12 @@ fn dsl_ui_style_value(value: &UiStyleValueDecl) -> Result<UiStyleValue, ExitCode
         }),
         UiStyleValueDecl::Milli(value) => UiStyleValue::Milli(*value),
         UiStyleValueDecl::Text(value) => UiStyleValue::Text(value.clone()),
+        UiStyleValueDecl::List(values) => UiStyleValue::List(
+            values
+                .iter()
+                .map(dsl_ui_style_value)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
         UiStyleValueDecl::Resource(value) => UiStyleValue::Resource(value.clone()),
     })
 }

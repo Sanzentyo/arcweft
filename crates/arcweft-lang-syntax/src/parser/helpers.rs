@@ -145,9 +145,7 @@ pub(super) fn parse_binding_pattern(source: &str) -> (Pattern, Option<crate::typ
 }
 
 pub(super) fn is_expression_statement_call(trimmed: &str) -> bool {
-    if find_top_level_punctuation(trimmed, ':').is_some()
-        || find_top_level_punctuation(trimmed, '[').is_some()
-    {
+    if find_top_level_punctuation(trimmed, '[').is_some() {
         return false;
     }
     matches!(

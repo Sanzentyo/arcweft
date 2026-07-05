@@ -27,7 +27,7 @@ entry game @entry.modern_feedback_ui {
 }
 
 pub style modern_feedback_panel {
-  token font.ui_stack = text("Arcweft Demo, Yu Gothic, Hiragino Sans, Noto Sans JP, system-ui")
+  token font.ui_stack = ["Arcweft Demo", "Yu Gothic", "Hiragino Sans", "Noto Sans JP", "system-ui"]
   token color.canvas = rgba(11, 16, 22, 210)
   token color.panel = rgba(28, 41, 56, 178)
   token color.panel_hover = rgba(50, 70, 88, 214)
@@ -142,32 +142,36 @@ pub component ModernFeedbackPanel() -> View {
       }
 
       HStack {
-        TextField(id: @input:.visitor_name, label: "Name", value: "", placeholder: "Your name", purpose: name, enter_key: next, submit: @input:.visitor_name, change: @input:.visitor_name)
+        TextField(@input:.visitor_name, value: "", purpose: name, enter_key: next)
+          .label("Name")
+          .placeholder("Your name")
           .style(@style:.modern_feedback_panel)
 
-        Button("Continue", id: @button:.continue)
+        Button(@button:.continue)
+          .label("Continue")
           .style(@style:.modern_feedback_panel)
           .enabled(true)
           .focusable(true)
-          .on_click(ime: .commit) {
-            text_submit @input:.visitor_name
-          }
+          .on_click(|| text_submit @input:.visitor_name)
       }
 
-      TextArea(id: @input:.product_brief, label: "Product brief", value: "", placeholder: "Write one sharp product idea", purpose: text, enter_key: send, submit: @input:.product_brief, change: @input:.product_brief)
+      TextArea(@input:.product_brief, value: "", purpose: text, enter_key: send)
+        .label("Product brief")
+        .placeholder("Write one sharp product idea")
         .style(@style:.modern_feedback_panel)
 
       HStack {
-        Button("Send brief", id: @button:.send_brief)
+        Button(@button:.send_brief)
+          .label("Send brief")
           .style(@style:.modern_feedback_panel)
           .enabled(true)
           .focusable(true)
-          .on_click(ime: .commit) {
-            text_submit @input:.product_brief
-          }
+          .on_click(|| text_submit @input:.product_brief)
 
-        Button("Draft saved", id: @button:.draft_status, enabled: false)
+        Button(@button:.draft_status)
+          .label("Draft saved")
           .style(@style:.modern_feedback_panel)
+          .enabled(false)
           .focusable(false)
       }
     }
@@ -177,6 +181,7 @@ pub component ModernFeedbackPanel() -> View {
 flow modern_feedback_ui {
   player_viewport(width = 1280px, height = 720px, fit = contain)
   image(@image.modern.glass_bg)
+  component(@component:.ModernFeedbackPanel)
 
   concierge:
     This sample pairs a translucent component/View panel with a normal Arcweft flow.[p]

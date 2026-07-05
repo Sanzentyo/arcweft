@@ -206,6 +206,7 @@ pub struct UiActionButtonResource {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UiActionButtonActionResource {
+    Noop,
     TextInputSubmit {
         input: String,
         ime_policy: UiTextSubmitImePolicy,
@@ -244,6 +245,7 @@ pub struct UiRuntimeActionButton {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UiRuntimeActionButtonAction {
+    Noop,
     TextInputSubmit {
         input_target: String,
         ime_policy: UiTextSubmitImePolicy,
@@ -496,6 +498,7 @@ pub enum UiStyleValue {
     Rgba(RgbaColor),
     Milli(i32),
     Text(String),
+    List(Vec<UiStyleValue>),
     Resource(String),
     Digest(BundleDigest),
 }
@@ -1073,6 +1076,7 @@ impl UiProgramResource {
                 enabled: button.enabled,
                 bounds: button.bounds,
                 action: match &button.action {
+                    UiActionButtonActionResource::Noop => UiRuntimeActionButtonAction::Noop,
                     UiActionButtonActionResource::TextInputSubmit { input, ime_policy } => {
                         UiRuntimeActionButtonAction::TextInputSubmit {
                             input_target: input.clone(),

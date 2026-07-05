@@ -87,6 +87,7 @@ pub struct ViewTextField {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewButton {
     label: ViewButtonLabel,
+    args: Vec<ViewArg>,
     id: Option<EntityRefSyntax>,
     enabled: Option<Expr>,
     focusable: bool,
@@ -104,6 +105,7 @@ pub enum ViewButtonLabel {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ViewAction {
+    Noop,
     TextSubmit(ViewTextSubmitAction),
 }
 
@@ -178,6 +180,7 @@ pub struct ViewAwaitBranch {
 pub enum ViewModifier {
     Style(ViewStyleModifier),
     Part(String),
+    Label(Expr),
     AgentTarget(EntityRefSyntax),
     Placeholder(Expr),
     SubmitAction(Expr),
@@ -485,11 +488,13 @@ impl ViewTextField {
 impl ViewButton {
     pub const fn new(
         label: ViewButtonLabel,
+        args: Vec<ViewArg>,
         modifiers: Vec<ViewModifier>,
         range: TextRange,
     ) -> Self {
         Self {
             label,
+            args,
             id: None,
             enabled: None,
             focusable: true,
@@ -525,6 +530,10 @@ impl ViewButton {
 
     pub const fn label(&self) -> &ViewButtonLabel {
         &self.label
+    }
+
+    pub fn args(&self) -> &[ViewArg] {
+        &self.args
     }
 
     pub const fn id(&self) -> Option<&EntityRefSyntax> {

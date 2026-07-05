@@ -8,8 +8,8 @@ entry game @entry.native_text_input_sample {
 }
 
 style native_text_input_sample {
-  token font.jp_sans_stack = text("Yu Gothic, Hiragino Sans, Noto Sans JP, system-ui")
-  token font.jp_serif_stack = text("Yu Mincho, Hiragino Mincho ProN, Noto Serif JP, serif")
+  token font.jp_sans_stack = ["Yu Gothic", "Hiragino Sans", "Noto Sans JP", "system-ui"]
+  token font.jp_serif_stack = ["Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", "serif"]
   token style.focus_ring_width = milli(2000)
 
   TextField {
@@ -47,13 +47,19 @@ style native_text_input_sample {
 
 pub component NativeTextInputPanel() -> View {
   VStack {
-    TextField(id: @input:.jp_text_field, label: "Japanese TextField / 日本語入力", value: "Tokyo", placeholder: "日本語 IME text", purpose: text, enter_key: done, submit: @input:.jp_text_field, change: @input:.jp_text_field)
+    TextField(@input:.jp_text_field, value: "Tokyo", purpose: text, enter_key: done)
+      .label("Japanese TextField / 日本語入力")
+      .placeholder("日本語 IME text")
       .style(@style:.native_text_input_sample)
 
-    TextArea(id: @input:.jp_text_area, label: "Multiline TextArea / 複数行", value: "line one", placeholder: "複数行の IME text", purpose: text, enter_key: enter, change: @input:.jp_text_area)
+    TextArea(@input:.jp_text_area, value: "line one", purpose: text, enter_key: enter)
+      .label("Multiline TextArea / 複数行")
+      .placeholder("複数行の IME text")
       .style(@style:.native_text_input_sample)
 
-    SecureField(id: @input:.secret_secure_field, label: "SecureField / redacted", value: "sekret-1234", placeholder: "secret", purpose: password, enter_key: done, submit: @input:.secret_secure_field, change: @input:.secret_secure_field)
+    SecureField(@input:.secret_secure_field, value: "sekret-1234", purpose: password, enter_key: done)
+      .label("SecureField / redacted")
+      .placeholder("secret")
       .style(@style:.native_text_input_sample)
   }
 }
@@ -77,6 +83,8 @@ fn i_to_string_2(i: i32) -> string {
 }
 
 flow native_text_input_sample {
+  component(@component:.NativeTextInputPanel)
+
     let a: i32 = 2
 
     for i in 0i32..a {

@@ -40,9 +40,10 @@ fn seq06_16_3_native_text_input_sample_is_component_authored() {
     for required in [
         "entry game @entry.native_text_input_sample",
         "pub component NativeTextInputPanel() -> View",
-        "TextField(id: @input:.jp_text_field",
-        "TextArea(id: @input:.jp_text_area",
-        "SecureField(id: @input:.secret_secure_field",
+        "component(@component:.NativeTextInputPanel)",
+        "TextField(@input:.jp_text_field",
+        "TextArea(@input:.jp_text_area",
+        "SecureField(@input:.secret_secure_field",
         "Local trace output belongs under target/native-text-input-trace/",
     ] {
         assert!(
@@ -69,9 +70,11 @@ fn seq06_16_3_submit_samples_share_player_backed_text_submit_routes() {
     let root = workspace_root();
     let text_submit = read(root.join("samples/text-submit-flow/src/main.arcw"));
     for required in [
-        "TextField(id: @input:.feedback",
-        r#"Button("Send", id: @button:.feedback_send)"#,
-        ".on_click(ime: .commit)",
+        "component(@component:.FeedbackForm)",
+        "TextField(@input:.feedback",
+        "Button(@button:.feedback_send)",
+        ".label(\"Send\")",
+        ".on_click(|| text_submit @input:.feedback)",
         "text_submit @input:.feedback",
         "let submitted = text_submit @input.feedback",
         "return submitted",
@@ -84,10 +87,11 @@ fn seq06_16_3_submit_samples_share_player_backed_text_submit_routes() {
 
     let modern = read(root.join("samples/modern-feedback-ui/src/main.arcw"));
     for required in [
-        "TextField(id: @input:.visitor_name",
-        "TextArea(id: @input:.product_brief",
-        r#"Button("Continue", id: @button:.continue)"#,
-        r#"Button("Send brief", id: @button:.send_brief)"#,
+        "component(@component:.ModernFeedbackPanel)",
+        "TextField(@input:.visitor_name",
+        "TextArea(@input:.product_brief",
+        "Button(@button:.continue)",
+        "Button(@button:.send_brief)",
         "text_submit @input:.visitor_name",
         "text_submit @input:.product_brief",
         "let visitor_name = text_submit @input.visitor_name",

@@ -306,6 +306,16 @@ impl TypeCheckEnv {
             .with_symbol("content", TypeKind::Named("ContentNamespace".to_owned()))
             .with_data_format_symbols()
             .with_content_functions()
+            .with_function_signature(
+                "component",
+                FunctionSignature::new(
+                    TypeKind::Unit,
+                    [FunctionParam::required(
+                        "component",
+                        TypeKind::entity_ref(crate::types::EntityKind::Component),
+                    )],
+                ),
+            )
             .with_enum_variants(TypeKind::DataFormat, data_format_variant_names())
             .with_function_signature(
                 "data.encode",

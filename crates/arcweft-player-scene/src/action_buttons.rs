@@ -55,6 +55,7 @@ fn lower_action(
     text_inputs: &[RenderTextInputControl],
 ) -> Result<RenderActionButtonAction, RuntimeActionButtonLoweringError> {
     match &button.action {
+        UiRuntimeActionButtonAction::Noop => Ok(RenderActionButtonAction::Noop),
         UiRuntimeActionButtonAction::TextInputSubmit {
             input_target,
             ime_policy,

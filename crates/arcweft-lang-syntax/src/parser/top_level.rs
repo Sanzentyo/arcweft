@@ -22,7 +22,7 @@ use crate::ast::{
     },
     style::StyleSyntax,
 };
-use crate::cst::{CstTopLevelItemKind, CstTopLevelLineKind};
+use crate::cst::{CstTopLevelItemKind, CstTopLevelLineKind, split_top_level_punctuation};
 use crate::expr::{Expr, Literal};
 use crate::parser::SourceDialect;
 
@@ -247,7 +247,7 @@ impl Parser<'_> {
         self.push_error(
             range,
             "`ui action_button` is not part of Arcweft component/View syntax",
-            ["Button(\"Send\").on_click { text_submit @input:.target }"],
+            ["Button(\"Send\", on_click: || text_submit @input:.target)"],
             Some(line.text.trim()),
             ["declare text controls and action buttons inside component/View"],
         );
@@ -1023,6 +1023,8 @@ fn parse_ui_style_value(
         parse_i32_literal(value).map(UiStyleValueDecl::Milli)
     } else if let Some(value) = call_arg(source, "text") {
         ui_field_string(value).map(UiStyleValueDecl::Text)
+    } else if source.starts_with('[') && source.ends_with(']') {
+        parse_ui_style_list_value(source, base, errors)
     } else if let Some(value) = call_arg(source, "resource") {
         Some(UiStyleValueDecl::Resource(value.to_owned()))
     } else if let Some(value) = call_arg(source, "rgba") {
@@ -1032,9 +1034,40 @@ fn parse_ui_style_value(
             base,
             source.len(),
             &format!("unknown UI style value `{source}`"),
-            "token(id) | system_color(name) | milli(1000) | text(\"value\") | resource(id) | rgba(r, g, b, a)",
+            "token(id) | system_color(name) | milli(1000) | text(\"value\") | [\"value\", ...] | resource(id) | rgba(r, g, b, a)",
         ));
         None
+    }
+}
+
+fn parse_ui_style_list_value(
+    source: &str,
+    base: usize,
+    errors: &mut Vec<super::ParseError>,
+) -> Option<UiStyleValueDecl> {
+    let inner = source.trim().strip_prefix('[')?.strip_suffix(']')?.trim();
+    let values = split_top_level_punctuation(inner, ',')
+        .into_iter()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| parse_ui_style_list_item(value, base, errors))
+        .collect::<Option<Vec<_>>>()?;
+    Some(UiStyleValueDecl::List(values))
+}
+
+fn parse_ui_style_list_item(
+    source: &str,
+    base: usize,
+    errors: &mut Vec<super::ParseError>,
+) -> Option<UiStyleValueDecl> {
+    match parse_expr_lossy(source) {
+        Expr::Literal(Literal::String(value)) | Expr::Path(value) => {
+            Some(UiStyleValueDecl::Text(value))
+        }
+        Expr::Raw(value) if !value.trim().is_empty() && !value.contains(char::is_whitespace) => {
+            Some(UiStyleValueDecl::Text(value.trim().to_owned()))
+        }
+        _ => parse_ui_style_value(source, base, errors),
     }
 }
 

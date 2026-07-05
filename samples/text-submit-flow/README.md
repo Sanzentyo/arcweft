@@ -2,9 +2,11 @@
 
 This sample demonstrates the seq-06.16.1 authoring surface:
 
-- component/View `TextField(id: @input:.feedback, ...)` declares and places the
-  text-control resource;
-- component/View `Button("Send")` lowers to `UiProgramResource.action_buttons`;
+- `flow text_submit_flow` explicitly mounts `component(@component:.FeedbackForm)`;
+- component/View `TextField(@input:.feedback, ...)` declares and places the
+  text-control resource once mounted;
+- component/View `Button(@button:.feedback_send).label("Send")` lowers to
+  `UiProgramResource.action_buttons`;
 - Enter/IME send and button activation all produce the same typed
   `TextControlWriteBack::submit` path.
 

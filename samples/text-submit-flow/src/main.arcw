@@ -19,19 +19,22 @@ pub style primary_button {
 
 pub component FeedbackForm() -> View {
   VStack {
-    TextField(id: @input:.feedback, label: "Message", value: "", placeholder: "Type text, then press Enter or click Send", purpose: text, enter_key: send, submit: @input:.feedback, change: @input:.feedback)
+    TextField(@input:.feedback, value: "", purpose: text, enter_key: send)
+      .label("Message")
+      .placeholder("Type text, then press Enter or click Send")
 
-    Button("Send", id: @button:.feedback_send)
+    Button(@button:.feedback_send)
+      .label("Send")
       .style(@style:.primary_button)
       .enabled(true)
       .focusable(true)
-      .on_click(ime: .commit) {
-        text_submit @input:.feedback
-      }
+      .on_click(|| text_submit @input:.feedback)
   }
 }
 
 flow text_submit_flow {
+  component(@component:.FeedbackForm)
+
   narrator:
     Type a short message in the Arcweft-rendered field.[p]
     Press Enter, use the IME send/done action, or activate the Send button.

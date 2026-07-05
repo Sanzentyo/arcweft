@@ -1,27 +1,24 @@
 pub component @ui.sample.settings SettingsPanel(config: Binding<Config>) -> View {
     VStack(spacing = 16) {
-        Text("Settings").font(.title)
-        Button("Audio")
+        Text("Settings")
+            .style {
+                font-size = milli(24000)
+            }
+        Button(@button:.audio)
+            .label("Audio")
             .agent_target(@ui.sample.settings.audio)
-            .interaction_style {
-                idle { background = .button }
-                hovered { background = .button_hover }
-                focused { outline_color = .focus; outline_width = 3px }
-                pressed { background = .button_pressed; scale = 0.98 }
-                disabled { background = .button_disabled }
+            .style {
+                background-color = rgba(48, 64, 84, 255)
+                focus-ring-width = milli(3000)
             }
-            .on_click { action.invoke(@action.settings.audio) }
-        Button("Close")
+            .on_click(|| action.invoke(@action.settings.audio))
+        Button(@button:.close)
+            .label("Close")
             .agent_target(@ui.sample.settings.close)
-            .interaction_style {
-                idle { background = .button }
-                hovered { background = .button_hover }
-                focused { outline_color = .focus; outline_width = 3px }
-                pressed { scale = 0.98 }
+            .style {
+                background-color = rgba(48, 64, 84, 255)
+                focus-ring-width = milli(3000)
             }
-            .on_click { action.invoke(@action.settings.close) }
+            .on_click(|| action.invoke(@action.settings.close))
     }
-    .padding(24)
-    .background(.panel)
-    .corner_radius(16)
 }
