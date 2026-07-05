@@ -1,13 +1,11 @@
 use super::control_style::{
     ControlInteractionStyleState, ControlPointerStyleState, PreparedControlBackdrop,
     PreparedControlFilter, PreparedControlPaint, PreparedControlShadow, RenderControlStyle,
-    fill_with_opacity, push_control_backdrop_plan, push_control_border, push_control_filter_plan,
-    push_control_focus_ring, push_control_shadow_plan, state_from_interaction,
+    control_font_family, fill_with_opacity, push_control_backdrop_plan, push_control_border,
+    push_control_filter_plan, push_control_focus_ring, push_control_shadow_plan,
+    state_from_interaction,
 };
-use super::{
-    PaintRect, Palette, RenderFontFamily, RenderScene, RenderTextBlock, RenderTextSlant,
-    RenderTextWeight,
-};
+use super::{PaintRect, Palette, RenderScene, RenderTextBlock, RenderTextSlant, RenderTextWeight};
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
@@ -144,7 +142,7 @@ pub(super) fn build_action_button(
         buffer_height: Some(line_height),
         font_size,
         line_height,
-        font_family: RenderFontFamily::SansSerif,
+        font_family: control_font_family(&visual),
         weight: RenderTextWeight::Bold,
         slant: RenderTextSlant::Upright,
         rgba: visual.text.unwrap_or(palette.choice_text),

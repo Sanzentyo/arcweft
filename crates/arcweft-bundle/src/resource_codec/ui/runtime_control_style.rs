@@ -33,6 +33,8 @@ pub struct UiRuntimeControlVisualStyle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<RgbaColor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_family: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selection: Option<RgbaColor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub caret: Option<RgbaColor>,
@@ -274,6 +276,9 @@ impl UiRuntimeControlVisualStyle {
         }
         if patch.text.is_some() {
             self.text = patch.text;
+        }
+        if patch.font_family.is_some() {
+            self.font_family.clone_from(&patch.font_family);
         }
         if patch.selection.is_some() {
             self.selection = patch.selection;
@@ -639,6 +644,10 @@ fn apply_declaration(
             Some(opacity_milli) => visual.opacity_milli = Some(opacity_milli),
             None => push_unsupported_value(diagnostics, target, raw_property),
         },
+        "font-family" => match text_value(style_resource, value) {
+            Some(font_family) => visual.font_family = Some(font_family),
+            None => push_unsupported_value(diagnostics, target, raw_property),
+        },
         "border-radius" | "radius" => match radius_declaration(style_resource, value) {
             Some(UiRuntimeControlRadiusDeclaration::Uniform(radius_milli)) => {
                 visual.radius_milli = Some(radius_milli);
@@ -974,6 +983,25 @@ fn depth_milli(style: &UiStyleResource, value: &UiStyleValue) -> Option<i32> {
             .and_then(|token| depth_milli(style, &token.value)),
         UiStyleValue::SystemColor(_)
         | UiStyleValue::Rgba(_)
+        | UiStyleValue::Resource(_)
+        | UiStyleValue::Digest(_) => None,
+    }
+}
+
+fn text_value(style: &UiStyleResource, value: &UiStyleValue) -> Option<String> {
+    match value {
+        UiStyleValue::Text(value) => {
+            let value = value.trim();
+            (!value.is_empty()).then(|| value.to_owned())
+        }
+        UiStyleValue::Token(token) => style
+            .tokens
+            .iter()
+            .find(|candidate| candidate.public_id == *token)
+            .and_then(|token| text_value(style, &token.value)),
+        UiStyleValue::SystemColor(_)
+        | UiStyleValue::Rgba(_)
+        | UiStyleValue::Milli(_)
         | UiStyleValue::Resource(_)
         | UiStyleValue::Digest(_) => None,
     }
@@ -1321,4 +1349,42 @@ fn parse_alpha_channel(raw: &str) -> Option<u8> {
     }
     let value = raw.trim().parse::<f64>().ok()?;
     rounded_clamped_i32(value * 255.0, 0.0, 255.0).and_then(|value| u8::try_from(value).ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::model::{UiStyleRule, UiStyleToken};
+    use super::*;
+
+    #[test]
+    fn font_family_token_resolves_for_runtime_text_controls() {
+        let style = UiStyleResource {
+            tokens: vec![UiStyleToken {
+                public_id: "font.ui_stack".to_owned(),
+                value: UiStyleValue::Text(
+                    "Arcweft Demo, Yu Gothic, Hiragino Sans, Noto Sans JP, system-ui".to_owned(),
+                ),
+            }],
+            rules: vec![UiStyleRule {
+                selector: UiStyleSelector {
+                    parts: vec![UiStyleSelectorPart::Element(UiElementKind::TextField)],
+                },
+                declarations: vec![UiStyleDeclaration {
+                    property: "font-family".to_owned(),
+                    value: UiStyleValue::Token("font.ui_stack".to_owned()),
+                    op: StyleAssignOp::Replace,
+                }],
+                source: None,
+            }],
+            ..UiStyleResource::default()
+        };
+
+        let resolution = style.runtime_text_control_style("input.feedback", UiInputKind::TextField);
+
+        assert_eq!(
+            resolution.style.normal.font_family.as_deref(),
+            Some("Arcweft Demo, Yu Gothic, Hiragino Sans, Noto Sans JP, system-ui")
+        );
+        assert!(resolution.diagnostics.is_empty());
+    }
 }

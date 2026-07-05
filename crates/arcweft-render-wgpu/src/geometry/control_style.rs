@@ -1,6 +1,9 @@
-use super::{PaintRect, PaintRectRadii};
+use super::{PaintRect, PaintRectRadii, RenderFontFamily};
 use crate::ui_box_shadow::UiBoxShadowPassPlan;
-use crate::ui_scene::{UiBoxShadow, UiBoxShadowList, UiColorRgba8, UiFilter, UiFilterList};
+use crate::ui_scene::{
+    UiBoxShadow, UiBoxShadowCornerRadius, UiBoxShadowList, UiBoxShadowRadii, UiColorRgba8,
+    UiFilter, UiFilterList,
+};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
 use std::ops::Range;
@@ -18,6 +21,7 @@ pub struct RenderControlStyle {
 pub struct RenderControlVisualStyle {
     pub fill: Option<[f32; 4]>,
     pub text: Option<[u8; 4]>,
+    pub font_family: Option<String>,
     pub selection: Option<[f32; 4]>,
     pub caret: Option<[f32; 4]>,
     pub border: Option<RenderControlBorderStyle>,
@@ -184,6 +188,9 @@ impl RenderControlVisualStyle {
         if patch.text.is_some() {
             self.text = patch.text;
         }
+        if patch.font_family.is_some() {
+            self.font_family.clone_from(&patch.font_family);
+        }
         if patch.selection.is_some() {
             self.selection = patch.selection;
         }
@@ -223,7 +230,7 @@ impl RenderControlVisualStyle {
 }
 
 impl RenderControlShadow {
-    fn ui_box_shadow(self) -> UiBoxShadow {
+    fn ui_box_shadow(self, border_radii: UiBoxShadowRadii) -> UiBoxShadow {
         let color = UiColorRgba8 {
             red: self.color[0],
             green: self.color[1],
@@ -231,20 +238,20 @@ impl RenderControlShadow {
             alpha: self.color[3],
         };
         match self.kind {
-            RenderControlShadowKind::Outer => UiBoxShadow::outer(
+            RenderControlShadowKind::Outer => UiBoxShadow::outer_with_radii(
                 self.offset_x_px,
                 self.offset_y_px,
                 self.blur_radius_px,
                 self.spread_radius_px,
-                self.border_radius_px,
+                border_radii,
                 color,
             ),
-            RenderControlShadowKind::Inset => UiBoxShadow::inset(
+            RenderControlShadowKind::Inset => UiBoxShadow::inset_with_radii(
                 self.offset_x_px,
                 self.offset_y_px,
                 self.blur_radius_px,
                 self.spread_radius_px,
-                self.border_radius_px,
+                border_radii,
                 color,
             ),
         }
@@ -285,6 +292,15 @@ pub(super) fn fill_with_opacity(fill: [f32; 4], opacity: Option<f32>) -> [f32; 4
     fill
 }
 
+pub(super) fn control_font_family(visual: &RenderControlVisualStyle) -> RenderFontFamily {
+    visual
+        .font_family
+        .as_ref()
+        .map_or(RenderFontFamily::SansSerif, |font_family| {
+            RenderFontFamily::Named(font_family.clone())
+        })
+}
+
 pub(super) fn push_control_border(
     rectangles: &mut Vec<PaintRect>,
     bounds: HitRect,
@@ -302,38 +318,7 @@ pub(super) fn push_control_border(
     if width <= f32::EPSILON || border.color[3] <= f32::EPSILON {
         return;
     }
-    rectangles.extend([
-        PaintRect::new(
-            HitRect::new(bounds.x, bounds.y, bounds.width, width),
-            border.color,
-        )
-        .clipped_to_radii(bounds, radii),
-        PaintRect::new(
-            HitRect::new(
-                bounds.x,
-                bounds.y + bounds.height - width,
-                bounds.width,
-                width,
-            ),
-            border.color,
-        )
-        .clipped_to_radii(bounds, radii),
-        PaintRect::new(
-            HitRect::new(bounds.x, bounds.y, width, bounds.height),
-            border.color,
-        )
-        .clipped_to_radii(bounds, radii),
-        PaintRect::new(
-            HitRect::new(
-                bounds.x + bounds.width - width,
-                bounds.y,
-                width,
-                bounds.height,
-            ),
-            border.color,
-        )
-        .clipped_to_radii(bounds, radii),
-    ]);
+    rectangles.push(PaintRect::stroke(bounds, border.color, radii, width));
 }
 
 pub(super) fn push_control_focus_ring(
@@ -347,30 +332,8 @@ pub(super) fn push_control_focus_ring(
         return;
     }
     let outer = bounds.outset(ring.offset_px + width);
-    let inner = bounds.outset(ring.offset_px);
     let outer_radii = radii.outset(ring.offset_px + width);
-    rectangles.extend([
-        PaintRect::new(
-            HitRect::new(outer.x, outer.y, outer.width, width),
-            ring.color,
-        )
-        .clipped_to_radii(outer, outer_radii),
-        PaintRect::new(
-            HitRect::new(outer.x, inner.y + inner.height, outer.width, width),
-            ring.color,
-        )
-        .clipped_to_radii(outer, outer_radii),
-        PaintRect::new(
-            HitRect::new(outer.x, outer.y, width, outer.height),
-            ring.color,
-        )
-        .clipped_to_radii(outer, outer_radii),
-        PaintRect::new(
-            HitRect::new(inner.x + inner.width, outer.y, width, outer.height),
-            ring.color,
-        )
-        .clipped_to_radii(outer, outer_radii),
-    ]);
+    rectangles.push(PaintRect::stroke(outer, ring.color, outer_radii, width));
 }
 
 pub(super) fn push_control_backdrop_plan(
@@ -420,13 +383,16 @@ pub(super) fn push_control_shadow_plan(
     bounds: HitRect,
     visual: &RenderControlVisualStyle,
 ) {
-    let shadows = UiBoxShadowList::new(
-        visual
-            .shadows
-            .iter()
-            .copied()
-            .map(RenderControlShadow::ui_box_shadow),
-    );
+    let control_radii = visual.radii();
+    let has_control_radii = visual.radius_px.is_some() || visual.radii_px.is_some();
+    let shadows = UiBoxShadowList::new(visual.shadows.iter().copied().map(|shadow| {
+        let border_radii = if has_control_radii {
+            paint_radii_to_box_shadow(control_radii)
+        } else {
+            UiBoxShadowRadii::uniform(shadow.border_radius_px)
+        };
+        shadow.ui_box_shadow(border_radii)
+    }));
     if shadows.is_empty() {
         return;
     }
@@ -438,6 +404,21 @@ pub(super) fn push_control_shadow_plan(
             plan,
         });
     }
+}
+
+fn paint_radii_to_box_shadow(radii: PaintRectRadii) -> UiBoxShadowRadii {
+    UiBoxShadowRadii::from_corners(
+        paint_corner_radius_to_box_shadow(radii.top_left),
+        paint_corner_radius_to_box_shadow(radii.top_right),
+        paint_corner_radius_to_box_shadow(radii.bottom_right),
+        paint_corner_radius_to_box_shadow(radii.bottom_left),
+    )
+}
+
+fn paint_corner_radius_to_box_shadow(
+    radius: super::PaintRectCornerRadius,
+) -> UiBoxShadowCornerRadius {
+    UiBoxShadowCornerRadius::new(radius.x_px, radius.y_px)
 }
 
 pub(super) fn state_from_interaction(

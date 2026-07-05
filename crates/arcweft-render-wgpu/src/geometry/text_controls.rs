@@ -1,12 +1,13 @@
 use super::control_style::{
     ControlInteractionStyleState, ControlPointerStyleState, PreparedControlBackdrop,
     PreparedControlFilter, PreparedControlPaint, PreparedControlShadow, RenderControlStyle,
-    fill_with_opacity, push_control_backdrop_plan, push_control_border, push_control_filter_plan,
-    push_control_focus_ring, push_control_shadow_plan, state_from_interaction,
+    control_font_family, fill_with_opacity, push_control_backdrop_plan, push_control_border,
+    push_control_filter_plan, push_control_focus_ring, push_control_shadow_plan,
+    state_from_interaction,
 };
 use super::{
-    FramePlanError, PaintRect, Palette, PreparedTextInputTarget, RenderFontFamily, RenderTextBlock,
-    RenderTextSlant, RenderTextWeight, RenderViewport,
+    FramePlanError, PaintRect, Palette, PreparedTextInputTarget, RenderTextBlock, RenderTextSlant,
+    RenderTextWeight, RenderViewport,
 };
 use crate::text_editor_geometry::{TextEditorGeometryContext, TextEditorGeometryPump};
 use arcweft_presentation::hit::HitRect;
@@ -195,7 +196,7 @@ pub(super) fn build_text_input(
         buffer_height: Some(visual_layout.buffer_size.height),
         font_size: text_control_font_size(control),
         line_height: text_control_line_height(control),
-        font_family: RenderFontFamily::SansSerif,
+        font_family: control_font_family(&visual),
         weight: RenderTextWeight::Regular,
         slant: RenderTextSlant::Upright,
         rgba: visual.text.unwrap_or(palette.choice_text),

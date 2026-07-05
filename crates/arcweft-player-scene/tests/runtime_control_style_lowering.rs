@@ -87,6 +87,29 @@ fn runtime_control_backdrop_filter_reaches_render_style() {
     );
 }
 
+#[test]
+fn runtime_control_font_family_reaches_render_style() {
+    let mut input = InputController::default();
+    let runtime = text_control_with_style(
+        "input.feedback",
+        UiRuntimeControlStyle {
+            normal: UiRuntimeControlVisualStyle {
+                font_family: Some("Arcweft Demo, Yu Gothic, system-ui".to_owned()),
+                ..UiRuntimeControlVisualStyle::default()
+            },
+            ..UiRuntimeControlStyle::default()
+        },
+    );
+
+    let render = RuntimeTextControlLowerer::lower_for_frame(&mut input, &[runtime])
+        .expect("text control lowers");
+
+    assert_eq!(
+        render[0].style.normal.font_family.as_deref(),
+        Some("Arcweft Demo, Yu Gothic, system-ui")
+    );
+}
+
 fn styled_fill_depth(
     red: u8,
     green: u8,

@@ -180,6 +180,7 @@ pub struct PaintRect {
     pub bounds: HitRect,
     pub rgba: [f32; 4],
     pub radii: PaintRectRadii,
+    pub stroke_width_px: f32,
     pub clip: Option<PaintRectClip>,
 }
 
@@ -210,6 +211,7 @@ impl PaintRect {
             bounds,
             rgba,
             radii: PaintRectRadii::ZERO,
+            stroke_width_px: 0.0,
             clip: None,
         }
     }
@@ -225,6 +227,23 @@ impl PaintRect {
             bounds,
             rgba,
             radii,
+            stroke_width_px: 0.0,
+            clip: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn stroke(
+        bounds: HitRect,
+        rgba: [f32; 4],
+        radii: PaintRectRadii,
+        stroke_width_px: f32,
+    ) -> Self {
+        Self {
+            bounds,
+            rgba,
+            radii,
+            stroke_width_px,
             clip: None,
         }
     }
@@ -841,6 +860,7 @@ impl PreparedFrameViewportMapping {
 fn map_paint_rect(mut rect: PaintRect, mapping: PreparedFrameViewportMapping) -> PaintRect {
     rect.bounds = mapping.rect(rect.bounds);
     rect.radii = rect.radii.scaled(mapping.scale_x, mapping.scale_y);
+    rect.stroke_width_px *= mapping.text_scale;
     rect.clip = rect.clip.map(|clip| PaintRectClip {
         bounds: mapping.rect(clip.bounds),
         radii: clip.radii.scaled(mapping.scale_x, mapping.scale_y),

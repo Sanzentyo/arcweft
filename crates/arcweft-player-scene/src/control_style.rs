@@ -24,6 +24,7 @@ fn lower_visual_style(style: &UiRuntimeControlVisualStyle) -> RenderControlVisua
     RenderControlVisualStyle {
         fill: style.fill.map(rgba_f32),
         text: style.text.map(rgba_u8),
+        font_family: style.font_family.clone(),
         selection: style.selection.map(rgba_f32),
         caret: style.caret.map(rgba_f32),
         border: style.border.map(lower_border),

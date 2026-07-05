@@ -9,9 +9,9 @@ use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, PaintRectCornerRadius, PaintRectRadii,
     RenderActionButton, RenderActionButtonAction, RenderControlBorderStyle, RenderControlFilter,
     RenderControlFilterList, RenderControlFocusRingStyle, RenderControlShadow,
-    RenderControlShadowKind, RenderControlStyle, RenderControlVisualStyle, RenderPreferences,
-    RenderScene, RenderTextInputControl, RenderTextSubmitImePolicy, RenderViewport,
-    RuntimeControlBackdropSamplePolicy, SharedFramePlanner,
+    RenderControlShadowKind, RenderControlStyle, RenderControlVisualStyle, RenderFontFamily,
+    RenderPreferences, RenderScene, RenderTextInputControl, RenderTextSubmitImePolicy,
+    RenderViewport, RuntimeControlBackdropSamplePolicy, SharedFramePlanner,
 };
 use arcweft_render_wgpu::ui_scene::UiFilter;
 
@@ -86,6 +86,19 @@ fn focused_text_control_uses_authored_focus_ring() {
             .iter()
             .any(|rect| rgba_near(rect.rgba, [0.5, 0.8, 0.5, 1.0]))
     );
+    let focus_ring = frame
+        .rectangles
+        .iter()
+        .find(|rect| rgba_near(rect.rgba, [1.0, 0.9, 0.1, 1.0]))
+        .expect("focus ring rectangle exists");
+    let border = frame
+        .rectangles
+        .iter()
+        .find(|rect| rgba_near(rect.rgba, [0.5, 0.8, 0.5, 1.0]))
+        .expect("border rectangle exists");
+
+    assert_f32_near(focus_ring.stroke_width_px, 3.0);
+    assert_f32_near(border.stroke_width_px, 2.0);
 }
 
 #[test]
@@ -254,6 +267,67 @@ fn runtime_control_paint_span_carries_inline_backdrop_order() {
             .any(|rect| rgba_near(rect.rgba, [0.2, 0.4, 0.6, 0.5]))
     );
     assert_eq!(frame.text[paint.text_range.start].text, "hello");
+}
+
+#[test]
+fn text_controls_and_buttons_use_authored_font_family() {
+    let input_target = target("input.feedback");
+    let button_target = target("button.submit_feedback");
+    let font_family = "Arcweft Demo, Yu Gothic, system-ui".to_owned();
+    let control = text_control(input_target.clone()).with_style(RenderControlStyle {
+        normal: RenderControlVisualStyle {
+            font_family: Some(font_family.clone()),
+            ..RenderControlVisualStyle::default()
+        },
+        ..RenderControlStyle::default()
+    });
+    let button = RenderActionButton {
+        target: button_target,
+        label: "Send".to_owned(),
+        enabled: true,
+        bounds: HitRect::new(484.0, 48.0, 128.0, 48.0),
+        style: RenderControlStyle {
+            normal: RenderControlVisualStyle {
+                font_family: Some(font_family.clone()),
+                ..RenderControlVisualStyle::default()
+            },
+            ..RenderControlStyle::default()
+        },
+        action: RenderActionButtonAction::TextInputSubmit {
+            input_target,
+            session: TextInputSessionId(41),
+            value: TextControlValue::plain("hello"),
+            selection: TextRange::new(TextByteOffset(5), TextByteOffset(5)),
+            revision: TextRevision::default(),
+            ime_policy: RenderTextSubmitImePolicy::Commit,
+        },
+    };
+    let scene = scene(
+        vec![control],
+        vec![button],
+        InteractionVisualState::default(),
+    );
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let input_text = frame
+        .text
+        .iter()
+        .find(|text| text.text == "hello")
+        .expect("input text block exists");
+    let button_text = frame
+        .text
+        .iter()
+        .find(|text| text.text == "Send")
+        .expect("button text block exists");
+
+    assert_eq!(
+        input_text.font_family,
+        RenderFontFamily::Named(font_family.clone())
+    );
+    assert_eq!(
+        button_text.font_family,
+        RenderFontFamily::Named(font_family)
+    );
 }
 
 #[test]
