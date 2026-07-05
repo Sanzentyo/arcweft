@@ -8,6 +8,7 @@ use crate::runtime_text_input::{
 };
 use arcweft_bundle::{ArcweftBundle, BundleFormat};
 use arcweft_layout::ScalePolicy;
+use arcweft_player_scene::fonts::PlayerFontSet;
 use arcweft_player_scene::frame::{
     PlayerFrameError, PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest,
 };
@@ -449,15 +450,12 @@ async fn initialize_gpu(
         .font_bytes
         .take()
         .ok_or_else(|| WebPlayerError::Font("font bytes were already consumed".to_owned()))?;
-    renderer
-        .register_font_bytes(font_bytes.clone())
+    let font_set = PlayerFontSet::single(font_bytes);
+    let mut state = state.borrow_mut();
+    font_set
+        .register_with_renderer_and_planner(&mut renderer, &mut state.frame_planner)
         .map_err(|error| WebPlayerError::Font(error.to_string()))?;
-    state
-        .borrow_mut()
-        .frame_planner
-        .register_font_bytes(font_bytes)
-        .map_err(WebPlayerError::from)?;
-    state.borrow_mut().gpu = GpuState::Ready(ReadyGpu { host, renderer });
+    state.gpu = GpuState::Ready(ReadyGpu { host, renderer });
     Ok(())
 }
 

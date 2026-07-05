@@ -29,8 +29,9 @@ use arcweft_bundle::BundleVirtualFileSpace;
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::task::TaskEvent;
 use arcweft_interaction_model::input::RoutedInputEvent;
+use arcweft_player_scene::fonts::PlayerFontSet;
 use arcweft_player_scene::frame::{
-    PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest, PlayerPreparedFrame,
+    PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest, PlayerPreparedFrame,
 };
 use arcweft_player_scene::{images::BundleImageCatalog, input::InputController};
 use arcweft_presentation::{hit::HitRect, image::ImageObjectFit, semantic::SemanticRole};
@@ -65,6 +66,11 @@ pub(super) fn agent_player_observation_for_options(
 pub(super) struct NativePlayerObservedFrame {
     pub(super) report: AgentObservationReport,
     pub(super) image_frames: AgentImageFrameStore,
+}
+
+struct PreparedPlayerRuntimeFrame {
+    prepared: PlayerPreparedFrame,
+    fonts: PlayerFontSet,
 }
 
 pub(super) fn native_player_runtime_state_for_options(
@@ -175,18 +181,14 @@ pub(super) fn observe_native_player_runtime(
         eprintln!("error: player-backed observe requires at least one runtime step");
         ExitCode::from(2)
     })?;
-    let prepared = prepare_player_runtime_frame(runtime, &step.presentation, options)?;
-    let viewport = player_observed_viewport(&prepared);
-    let mut objects = player_observed_objects(
-        &prepared,
-        &step.presentation,
-        step.index,
-        &viewport,
-        options,
-    );
+    let prepared_runtime = prepare_player_runtime_frame(runtime, &step.presentation, options)?;
+    let prepared = &prepared_runtime.prepared;
+    let viewport = player_observed_viewport(prepared);
+    let mut objects =
+        player_observed_objects(prepared, &step.presentation, step.index, &viewport, options);
     let mut image_frames = AgentImageFrameStore::default();
     objects.extend(player_observed_image_objects(
-        &prepared,
+        prepared,
         &step.presentation,
         step.index,
         &viewport,
@@ -196,13 +198,13 @@ pub(super) fn observe_native_player_runtime(
         )),
     ));
     if player_observe_requires_shared_capture(options) {
-        let capture = player_observe_capture_frame(&prepared.frame)?;
+        let capture = player_observe_capture_frame(&prepared.frame, &prepared_runtime.fonts)?;
         image_frames.set_full_frame(capture.width, capture.height, capture.rgba);
     }
     Ok(NativePlayerObservedFrame {
         report: player_observation_report(
             &runtime.source_path,
-            &prepared,
+            prepared,
             &step,
             objects,
             diagnostics,
@@ -248,30 +250,39 @@ fn prepare_player_runtime_frame(
     runtime: &mut NativeAgentRuntimeState,
     presentation: &BundlePresentationSnapshot,
     options: &AgentObserveOptions,
-) -> Result<PlayerPreparedFrame, ExitCode> {
+) -> Result<PreparedPlayerRuntimeFrame, ExitCode> {
     let visual_time_millis = u64::from(agent_capture_time_millis(
         agent_observe_capture_time_seconds(options),
     ));
-    PlayerFramePlanner::prepare(
-        &mut runtime.input,
-        PlayerFrameRequest {
-            presentation,
-            images: &runtime.images,
-            viewport: player_observe_viewport(options),
-            fit: PlayerFrameFit::raw(),
-            image_time_millis: visual_time_millis,
-            visual_time_millis,
-            preferences: RenderPreferences::default(),
-        },
-    )
-    .map_err(|error| {
-        eprintln!("error: player-backed observe frame planning failed: {error}");
+    let fonts = PlayerFontSet::bundled_default();
+    let mut planner = PlayerFramePlannerState::new();
+    fonts.register_with_planner(&mut planner).map_err(|error| {
+        eprintln!("error: player-backed observe font registration failed: {error}");
         ExitCode::FAILURE
-    })
+    })?;
+    let prepared = planner
+        .prepare(
+            &mut runtime.input,
+            PlayerFrameRequest {
+                presentation,
+                images: &runtime.images,
+                viewport: player_observe_viewport(options),
+                fit: PlayerFrameFit::raw(),
+                image_time_millis: visual_time_millis,
+                visual_time_millis,
+                preferences: RenderPreferences::default(),
+            },
+        )
+        .map_err(|error| {
+            eprintln!("error: player-backed observe frame planning failed: {error}");
+            ExitCode::FAILURE
+        })?;
+    Ok(PreparedPlayerRuntimeFrame { prepared, fonts })
 }
 
 fn player_observe_capture_frame(
     prepared: &PreparedFrame,
+    fonts: &PlayerFontSet,
 ) -> Result<arcweft_render_wgpu::offscreen::SharedFrameCapture, ExitCode> {
     let mut capture = pollster::block_on(SharedOffscreenCapture::new(
         wgpu::TextureFormat::Rgba8UnormSrgb,
@@ -280,6 +291,12 @@ fn player_observe_capture_frame(
         eprintln!("error: player-backed observe shared renderer setup failed: {error}");
         ExitCode::FAILURE
     })?;
+    fonts
+        .register_with_offscreen_capture(&mut capture)
+        .map_err(|error| {
+            eprintln!("error: player-backed observe font registration failed: {error}");
+            ExitCode::FAILURE
+        })?;
     capture.capture_frame(prepared).map_err(|error| {
         eprintln!("error: player-backed observe shared renderer capture failed: {error}");
         ExitCode::FAILURE

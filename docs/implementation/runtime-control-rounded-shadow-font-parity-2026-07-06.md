@@ -36,6 +36,10 @@ CSS-style font family propagation for Japanese input/display text.
   available, while preserving the previous per-shadow single-radius fallback.
 - The box-shadow compositor shader now uses signed-distance coverage for blur
   instead of the sparse shifted sample kernel.
+- Player font registration now uses `PlayerFontSet` as the shared contract for
+  the frame planner and renderer. Native window, Web player, and player-backed
+  Agent observe all register the same font bytes through that contract instead
+  of relying on per-host ad hoc registration.
 
 ## Evidence
 
@@ -49,11 +53,22 @@ cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samp
 The capture shows continuous rounded strokes and no duplicate shifted
 box-shadow rectangle. The observe JSON has empty runtime style diagnostics.
 
+- `target/modern-feedback-ui-debug/observe-native-font-unified.png` was
+  captured through:
+
+```bash
+cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samples/modern-feedback-ui/src/main.arcw --json --image png --out target/modern-feedback-ui-debug/observe-native-font-unified.png --viewport-width 2048 --viewport-height 1152 --mode drain --steps 8 --max-ops 128
+```
+
+This verifies that player-backed observe registers the bundled player font set
+with both the planner and offscreen renderer before capture.
+
 ## Remaining Notes
 
 - This does not add bundled Japanese font assets. Long-lived native and Web
   player hosts now register their loaded font bytes with both the renderer and
-  the frame planner, but parity for one-shot tools still depends on those tools
-  choosing the same font bytes or system font stack.
+  the frame planner, and player-backed Agent observe does the same for its
+  offscreen capture path. Other one-shot tools that bypass the player-backed
+  path must still explicitly choose the same font bytes or system font stack.
 - The observe image is content-only; the native interactive window includes the
   OS title bar and typed runtime state. Those differences remain expected.

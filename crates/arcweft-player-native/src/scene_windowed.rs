@@ -16,6 +16,7 @@ use crate::windowed_runtime::{
 use arcweft_bundle::ArcweftBundle;
 use arcweft_desktop_native::NativeDesktopBackend;
 use arcweft_layout::ScalePolicy;
+use arcweft_player_scene::fonts::PlayerFontSet;
 use arcweft_player_scene::frame::{
     PlayerFrameError, PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest,
 };
@@ -52,7 +53,6 @@ use winit::window::{
 };
 
 const EVENT_LOOP_TICK: Duration = Duration::from_millis(16);
-const DEFAULT_FONT_BYTES: &[u8] = include_bytes!("../../../web/assets/arcweft-demo.ttf");
 
 #[derive(Clone, Debug)]
 pub struct NativePlayerOptions {
@@ -178,6 +178,8 @@ enum NativeSceneWindowError {
     NoSurfaceFormat,
     #[error("shared renderer failed: {0}")]
     Renderer(#[from] SharedRendererError),
+    #[error("player font registration failed: {0}")]
+    Font(String),
     #[error("surface is outdated")]
     SurfaceOutdated,
     #[error("surface was lost")]
@@ -505,8 +507,9 @@ impl NativeSceneState {
         surface.configure(&device, &config);
         let mut renderer = SharedRenderer::new(&device, &queue, format);
         let mut frame_planner = PlayerFramePlannerState::new();
-        renderer.register_font_bytes(DEFAULT_FONT_BYTES.to_vec())?;
-        frame_planner.register_font_bytes(DEFAULT_FONT_BYTES.to_vec())?;
+        PlayerFontSet::bundled_default()
+            .register_with_renderer_and_planner(&mut renderer, &mut frame_planner)
+            .map_err(|error| NativeSceneWindowError::Font(error.to_string()))?;
         let close_signal = WindowCloseSignal::default();
         let owned_window = Arc::new(
             WinitOwnedWindowDriver::try_new(Arc::clone(&window), title, close_signal.clone())

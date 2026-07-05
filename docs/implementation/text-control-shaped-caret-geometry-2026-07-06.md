@@ -26,6 +26,10 @@ advance differently from wider glyphs such as `a`.
   now register their loaded font bytes with both the renderer and the planner,
   so dynamically supplied font data is available to caret, selection, scroll,
   and IME geometry planning.
+- Added `PlayerFontSet` as the shared host contract for applying the same font
+  bytes to the planner, the live renderer, and the offscreen observe renderer.
+  Player-backed Agent observe now uses the same bundled default font set as the
+  native player window.
 - Added text-control layout cache counters and reused shaped layouts across
   unchanged stateful prepares. The player frame planner now only rebuilds a
   second frame when initial keyboard focus actually changes, instead of
@@ -37,6 +41,7 @@ advance differently from wider glyphs such as `a`.
 - `cargo test -p arcweft-render-wgpu --test geometry_runtime_control_styles`
 - `cargo test -p arcweft-render-wgpu --lib font_family::tests -- --nocapture`
 - `cargo test -p arcweft-render-wgpu stateful_planner_reuses_text_control_layout_cache_with_registered_fonts -- --nocapture`
+- `cargo test -p arcweft-player-scene fonts -- --nocapture`
 - `cargo test -p arcweft-player-scene --test action_button_submit -- --nocapture`
 - `cargo check -p arcweft-render-wgpu`
 - `cargo check -p arcweft-player-scene -p arcweft-player-native -p arcweft-player-web -p arcweft-render-wgpu`
@@ -46,9 +51,10 @@ advance differently from wider glyphs such as `a`.
 ## Remaining Notes
 
 - Long-lived native and Web hosts should use `PlayerFramePlannerState` or
-  `SharedFramePlanContext` and register the same font bytes that they register
-  with `SharedRenderer`. The stateless `SharedFramePlanner::prepare` remains a
-  one-shot compatibility facade and intentionally uses a fresh planner context.
+  `SharedFramePlanContext` through `PlayerFontSet` and register the same font
+  bytes that they register with `SharedRenderer`. The stateless
+  `SharedFramePlanner::prepare` remains a one-shot compatibility facade and
+  intentionally uses a fresh planner context.
 - This change reduces repeated shaping/prepare work, but the native and Web
   event loops still request continuous redraws for runtime/animation safety.
   Idle redraw scheduling can be tightened separately once the runtime exposes a
