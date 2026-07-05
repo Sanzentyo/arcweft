@@ -253,6 +253,12 @@ fn foreground_filter_reaches_runtime_control_filter_plan() {
         filter.filters.filters(),
         &[UiFilter::Blur { radius_px: 2.5 }]
     );
+    let paint = frame
+        .control_paints
+        .iter()
+        .find(|paint| paint.target == button_target)
+        .expect("button paint span exists");
+    assert_eq!(paint.filter_range, 0..1);
 }
 
 #[test]

@@ -37,8 +37,10 @@ sample terms and does not depend on external image licensing.
   - `depth` / `z-index`;
   - `backdrop-filter: blur(...)` / `-webkit-backdrop-filter: blur(...)`
     through the seq06.16.4.1 follow-up.
-- Not supported for runtime controls yet:
-  - CSS foreground `filter: blur(...)` execution beyond prepared plan records.
+- Supported in renderer smoke coverage, though not currently authored by this
+  sample:
+  - CSS foreground `filter: blur(...)` execution for completed runtime-control
+    content through `PreparedControlFilter`.
 
 ## Backdrop Blur Gap
 
@@ -57,9 +59,10 @@ The follow-up design request is
 The `PreparedControlBackdrop` part of this gap is now implemented in the
 shared native/web renderer path. See
 `docs/implementation/seq-06.16.4.1-runtime-control-backdrop-filter-2026-07-04.md`.
-The current follow-up boundary is checked-in visual baseline promotion and
-foreground `PreparedControlFilter` execution, not typed backdrop-filter
-planning or native/web inline blur execution.
+Foreground `PreparedControlFilter` execution is also implemented in the shared
+renderer path. The current follow-up boundary is checked-in visual baseline
+promotion, not typed backdrop/filter planning or native/web inline blur
+execution.
 
 ## Validation
 
@@ -80,11 +83,9 @@ The structural audit reported `0 error(s)` and existing warning-level hotspots.
 
 - Capture and promote pinned native/web visual smoke artifacts for this exact
   sample if this slice becomes a visual baseline milestone.
-- Implement foreground `PreparedControlFilter` execution if CSS `filter` needs
-  runtime-control rendering parity beyond the prepared plan.
 
 ## Design Deviations
 
 None for the implemented scope. The historical backdrop-blur gap above was
-closed by the seq06.16.4.1 follow-up for `PreparedControlBackdrop`; visual
-baseline promotion remains separate.
+closed by the seq06.16.4.1 follow-up for `PreparedControlBackdrop` and
+`PreparedControlFilter`; visual baseline promotion remains separate.

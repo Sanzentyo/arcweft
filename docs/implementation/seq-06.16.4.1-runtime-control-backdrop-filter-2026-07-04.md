@@ -47,12 +47,23 @@ tests, sample update gate, and native/web exact visual evidence requirements.
   copies the current Arcweft-owned intermediate target, runs a fixed-extent
   `UiFilterPassPlan` blur, and composites the blurred result back through a
   logical-rect clip before painting that control's fill/text.
+- Executes `PreparedControlFilter` inline in `SharedRenderer`: filtered runtime
+  controls are replayed into a transparent Arcweft-owned intermediate texture,
+  passed through the same fixed-extent `UiFilterPassPlan`, and composited back
+  through the control bounds. This filters the completed control content without
+  blurring the already-painted backdrop.
 - Keeps native and web surface textures at their existing render-attachment
   usage by rendering first into an Arcweft-owned intermediate texture, then
   compositing to the host-provided target view.
 - Adds an ignored GPU smoke that verifies a transparent text-control
   `backdrop-filter: blur(...)` changes captured pixels through the shared
   offscreen renderer path.
+- Adds an ignored GPU smoke that verifies a foreground `filter: blur(...)`
+  changes the completed control-content pixels through the shared offscreen
+  renderer path.
+- Updates `samples/modern-feedback-ui` so TextField, TextArea, and Button use
+  authored `backdrop-filter: blur(...)` now that the native/web shared renderer
+  path executes runtime-control backdrops.
 
 This does not fake blur by DOM overlays, screenshots, or sample-specific
 images. Native window/offscreen and web canvas hosts consume the same
@@ -74,7 +85,9 @@ images. Native window/offscreen and web canvas hosts consume the same
   - `runtime_control_paint_span_carries_inline_backdrop_order`
 - `crates/arcweft-render-wgpu/tests/runtime_control_backdrop_gpu_smoke.rs`
   - `prepared_control_backdrop_blur_executes_shared_renderer_path`
-    is ignored by default and can be run explicitly on a local GPU adapter.
+  - `prepared_control_foreground_filter_blur_executes_shared_renderer_path`
+  - both are ignored by default and can be run explicitly on a local GPU
+    adapter.
 
 ## Validation
 
@@ -88,8 +101,11 @@ cargo test -p arcweft-bundle --test runtime_control_style_resolution unsupported
 cargo test -p arcweft-player-scene --test runtime_control_style_lowering runtime_control_backdrop_filter
 cargo test -p arcweft-render-wgpu --test geometry_runtime_control_styles backdrop_filter
 cargo test -p arcweft-render-wgpu --test geometry_runtime_control_styles foreground_filter
-cargo test -p arcweft-render-wgpu
 cargo test -p arcweft-render-wgpu --test runtime_control_backdrop_gpu_smoke -- --ignored
+cargo run -p arcweft-cli -- check --manifest-path samples/modern-feedback-ui/arcw.toml
+cargo run -p arcweft-cli -- bundle samples/modern-feedback-ui/src/main.arcw --output target/arcweft/modern-feedback-ui-backdrop-filter.awfb
+cargo run -p arcweft-cli --features native-capture -- agent observe samples/modern-feedback-ui/src/main.arcw --json --image png --capture color --content-policy-mode local-dev --out target/modern-feedback-ui/backdrop-filter-observe.png --mode drain --steps 4 --max-ops 64
+cargo test -p arcweft-render-wgpu
 cargo check -p arcweft-player-native
 cargo check -p arcweft-render-web
 cargo check -p arcweft-player-web
@@ -105,8 +121,6 @@ written.
 - Checked-in PNG baselines are not updated by this package.
 - `samples/modern-feedback-ui` still needs pinned exact visual-golden evidence
   before any checked-in PNG baseline promotion.
-- `PreparedControlFilter` foreground execution remains a follow-up. This slice
-  implements `PreparedControlBackdrop` inline blur execution.
 - Unsupported filter functions stay diagnosed until each function has a typed
   payload and renderer execution path.
 - The package does not add GPU/platform dependencies to `arcweft-bundle` or

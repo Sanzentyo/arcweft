@@ -98,6 +98,18 @@ pub(crate) struct UiInlineBackdropFilterFrame<'a> {
     pub logical_extent: [f32; 2],
 }
 
+/// Inline foreground filter request for prepared runtime controls.
+pub(crate) struct UiInlineForegroundFilterFrame<'a> {
+    pub device: &'a wgpu::Device,
+    pub encoder: &'a mut wgpu::CommandEncoder,
+    pub source: UiCompositorTarget<'a>,
+    pub output: UiCompositorTarget<'a>,
+    pub bounds: HitRect,
+    pub filters: &'a UiFilterList,
+    pub device_pixel_ratio: f32,
+    pub logical_extent: [f32; 2],
+}
+
 /// Draws a seq06.9a direct primitive range into the current target.
 pub trait UiDirectPrimitiveRenderer {
     fn render_direct_range(
@@ -414,6 +426,80 @@ impl UiCompositor {
             .reused_this_frame
             .saturating_sub(pool_reuses_at_start);
         self.pool.release(backdrop);
+        Ok(stats)
+    }
+
+    pub(crate) fn render_inline_foreground_filter(
+        &mut self,
+        frame: &mut UiInlineForegroundFilterFrame<'_>,
+    ) -> Result<UiCompositorStats, UiCompositorError> {
+        if frame.filters.is_empty() || frame.bounds.width <= 0.0 || frame.bounds.height <= 0.0 {
+            return Ok(UiCompositorStats::default());
+        }
+        let pool_reuses_at_start = self.pool.reused_this_frame;
+        let mut stats = UiCompositorStats::default();
+        let mut foreground = self.pool.acquire(
+            frame.device,
+            self.format,
+            frame.source.extent,
+            "arcweft-runtime-control-foreground-copy",
+        );
+        stats.offscreen_targets = stats.offscreen_targets.saturating_add(1);
+        frame.encoder.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: frame.source.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: &foreground.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            extent3d(frame.source.extent),
+        );
+        foreground = self.apply_filter_plan_to_target(
+            frame.device,
+            frame.encoder,
+            &mut stats,
+            foreground,
+            &UiFilterPassPlan::from_filter_list_fixed_extent(
+                frame.filters,
+                frame.source.extent,
+                frame.device_pixel_ratio,
+            ),
+        )?;
+        self.run_shader_pass(
+            frame.device,
+            frame.encoder,
+            &ShaderPassInputs {
+                source: &foreground.view,
+                backdrop: None,
+                mask: None,
+                output: frame.output.view,
+                uniform: UiCompositorUniform::clipped_composite(
+                    1.0,
+                    UiBlendShaderMode::Normal,
+                    [
+                        frame.bounds.x,
+                        frame.bounds.y,
+                        frame.bounds.width,
+                        frame.bounds.height,
+                    ],
+                    frame.logical_extent,
+                ),
+                load: wgpu::LoadOp::Load,
+                blend_over_existing: true,
+            },
+        );
+        stats.shader_passes = stats.shader_passes.saturating_add(1);
+        stats.pool_reuses = self
+            .pool
+            .reused_this_frame
+            .saturating_sub(pool_reuses_at_start);
+        self.pool.release(foreground);
         Ok(stats)
     }
 

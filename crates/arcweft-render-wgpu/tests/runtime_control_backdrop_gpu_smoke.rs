@@ -41,11 +41,64 @@ fn prepared_control_backdrop_blur_executes_shared_renderer_path() {
     );
 }
 
+#[test]
+#[ignore = "requires a local wgpu adapter; exact PNG promotion remains pinned-only"]
+fn prepared_control_foreground_filter_blur_executes_shared_renderer_path() {
+    let Ok(mut capture) =
+        pollster::block_on(SharedOffscreenCapture::new(wgpu::TextureFormat::Rgba8Unorm))
+    else {
+        eprintln!("no compatible wgpu adapter available for runtime foreground filter smoke");
+        return;
+    };
+    let baseline = SharedFramePlanner::prepare(&foreground_scene(false))
+        .expect("baseline foreground frame prepares");
+    let blurred = SharedFramePlanner::prepare(&foreground_scene(true))
+        .expect("blurred foreground frame prepares");
+
+    let baseline = capture
+        .capture_frame(&baseline)
+        .expect("baseline foreground frame captures");
+    let blurred = capture
+        .capture_frame(&blurred)
+        .expect("blurred foreground frame captures");
+
+    assert_eq!(baseline.width, blurred.width);
+    assert_eq!(baseline.height, blurred.height);
+    assert_ne!(
+        pixel(&baseline.rgba, baseline.width, 33, 33),
+        pixel(&blurred.rgba, blurred.width, 33, 33),
+        "foreground blur should affect control-content edge pixels without blurring the backdrop"
+    );
+}
+
 fn scene(backdrop: bool) -> RenderScene {
     RenderScene {
         dialogue: None,
         choices: Vec::new(),
         text_inputs: vec![control(backdrop)],
+        action_buttons: Vec::new(),
+        focus_groups: Vec::new(),
+        focus_navigation: Vec::new(),
+        images: vec![checker_image()],
+        viewport: RenderViewport {
+            logical_width: 160.0,
+            logical_height: 128.0,
+            physical_width: 160,
+            physical_height: 128,
+            scale_factor: 1.0,
+        },
+        visual_time_millis: 0,
+        preferences: RenderPreferences::default(),
+        interaction: InteractionVisualState::default(),
+        choice_scroll: ChoiceScroll::default(),
+    }
+}
+
+fn foreground_scene(filter: bool) -> RenderScene {
+    RenderScene {
+        dialogue: None,
+        choices: Vec::new(),
+        text_inputs: vec![foreground_control(filter)],
         action_buttons: Vec::new(),
         focus_groups: Vec::new(),
         focus_navigation: Vec::new(),
@@ -78,6 +131,29 @@ fn control(backdrop: bool) -> RenderTextInputControl {
     RenderTextInputControl::new(
         target("input.backdrop"),
         TextInputSessionId(9),
+        "",
+        TextRange::new(TextByteOffset(0), TextByteOffset(0)),
+        TextInputOptions::default(),
+        SemanticRole::TextField,
+        HitRect::new(32.0, 32.0, 96.0, 80.0),
+    )
+    .with_style(style)
+}
+
+fn foreground_control(filter: bool) -> RenderTextInputControl {
+    let style = RenderControlStyle {
+        normal: RenderControlVisualStyle {
+            fill: Some([1.0, 1.0, 1.0, 1.0]),
+            filters: filter.then_some(RenderControlFilterList {
+                filters: vec![RenderControlFilter::Blur { radius_px: 6.0 }],
+            }),
+            ..RenderControlVisualStyle::default()
+        },
+        ..RenderControlStyle::default()
+    };
+    RenderTextInputControl::new(
+        target("input.foreground_filter"),
+        TextInputSessionId(10),
         "",
         TextRange::new(TextByteOffset(0), TextByteOffset(0)),
         TextInputOptions::default(),

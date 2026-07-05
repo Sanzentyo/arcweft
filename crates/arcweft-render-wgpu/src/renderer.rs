@@ -6,7 +6,7 @@ use crate::geometry::{
 };
 use crate::ui_compositor::{
     UiCompositor, UiCompositorError, UiCompositorFrame, UiCompositorTarget,
-    UiInlineBackdropFilterFrame,
+    UiInlineBackdropFilterFrame, UiInlineForegroundFilterFrame,
 };
 use crate::ui_direct_renderer::{WgpuPreparedUiMaskTextureProvider, WgpuUiDirectPrimitiveRenderer};
 use crate::ui_effects::UiTextureExtent;
@@ -335,26 +335,39 @@ impl SharedRenderer {
                 frame,
                 paint,
             )?;
-            self.render_rectangle_range(
-                device,
-                encoder,
-                target_view,
-                frame,
-                paint.rectangle_range.clone(),
-                "arcweft-shared-runtime-control-rectangles",
-            );
-            next_rectangle = next_rectangle.max(paint.rectangle_range.end);
-            self.render_text_ranges(
-                device,
-                queue,
-                encoder,
-                TextRangeRenderRequest {
-                    target: target_view,
+            if slice_range(&frame.control_filters, paint.filter_range.clone()).is_empty() {
+                self.render_rectangle_range(
+                    device,
+                    encoder,
+                    target_view,
                     frame,
-                    text_range: paint.text_range.clone(),
-                    styled_paragraph_range: 0..0,
-                },
-            )?;
+                    paint.rectangle_range.clone(),
+                    "arcweft-shared-runtime-control-rectangles",
+                );
+                self.render_text_ranges(
+                    device,
+                    queue,
+                    encoder,
+                    TextRangeRenderRequest {
+                        target: target_view,
+                        frame,
+                        text_range: paint.text_range.clone(),
+                        styled_paragraph_range: 0..0,
+                    },
+                )?;
+            } else {
+                self.render_filtered_control(
+                    device,
+                    queue,
+                    encoder,
+                    target_texture,
+                    target_view,
+                    target_extent,
+                    frame,
+                    paint,
+                )?;
+            }
+            next_rectangle = next_rectangle.max(paint.rectangle_range.end);
             next_text = next_text.max(paint.text_range.end);
         }
 
@@ -415,6 +428,85 @@ impl SharedRenderer {
             };
             self.ui_compositor
                 .render_inline_backdrop_filter(&mut request)?;
+        }
+        Ok(())
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Filtered runtime-control replay needs source and destination GPU handles."
+    )]
+    fn render_filtered_control(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        target_texture: &wgpu::Texture,
+        target_view: &wgpu::TextureView,
+        target_extent: UiTextureExtent,
+        frame: &PreparedFrame,
+        paint: &PreparedControlPaint,
+    ) -> Result<(), SharedRendererError> {
+        let control_texture = runtime_control_filter_texture(
+            device,
+            self.format,
+            target_extent,
+            "arcweft-shared-runtime-control-filter-source",
+        );
+        let control_view = control_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        clear_texture_view(
+            encoder,
+            &control_view,
+            wgpu::Color::TRANSPARENT,
+            "arcweft-shared-runtime-control-filter-clear",
+        );
+        self.render_rectangle_range(
+            device,
+            encoder,
+            &control_view,
+            frame,
+            paint.rectangle_range.clone(),
+            "arcweft-shared-runtime-control-filter-rectangles",
+        );
+        self.render_text_ranges(
+            device,
+            queue,
+            encoder,
+            TextRangeRenderRequest {
+                target: &control_view,
+                frame,
+                text_range: paint.text_range.clone(),
+                styled_paragraph_range: 0..0,
+            },
+        )?;
+        let source = UiCompositorTarget {
+            texture: &control_texture,
+            view: &control_view,
+            extent: target_extent,
+            origin_logical: [0.0, 0.0],
+        };
+        let output = UiCompositorTarget {
+            texture: target_texture,
+            view: target_view,
+            extent: target_extent,
+            origin_logical: [0.0, 0.0],
+        };
+        for filter in slice_range(&frame.control_filters, paint.filter_range.clone()) {
+            let mut request = UiInlineForegroundFilterFrame {
+                device,
+                encoder: &mut *encoder,
+                source,
+                output,
+                bounds: filter.bounds,
+                filters: &filter.filters,
+                device_pixel_ratio: frame.viewport.physical_scale_factor_f32(),
+                logical_extent: [
+                    frame.viewport.logical_width.max(0.0001),
+                    frame.viewport.logical_height.max(0.0001),
+                ],
+            };
+            self.ui_compositor
+                .render_inline_foreground_filter(&mut request)?;
         }
         Ok(())
     }
@@ -581,6 +673,52 @@ fn slice_range<T>(items: &[T], range: Range<usize>) -> &[T] {
     let start = range.start.min(items.len());
     let end = range.end.min(items.len()).max(start);
     &items[start..end]
+}
+
+fn runtime_control_filter_texture(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    extent: UiTextureExtent,
+    label: &'static str,
+) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d {
+            width: extent.width,
+            height: extent.height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    })
+}
+
+fn clear_texture_view(
+    encoder: &mut wgpu::CommandEncoder,
+    target: &wgpu::TextureView,
+    color: wgpu::Color,
+    label: &'static str,
+) {
+    let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some(label),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: target,
+            resolve_target: None,
+            depth_slice: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(color),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
 }
 
 fn text_buffer(font_system: &mut FontSystem, block: &RenderTextBlock) -> Buffer {
