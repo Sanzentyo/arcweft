@@ -1,12 +1,12 @@
 use arcweft_bundle::resource_codec::ui::{
-    RgbaColor, UiRuntimeControlBorderStyle, UiRuntimeControlFilter, UiRuntimeControlFilterList,
-    UiRuntimeControlFocusRingStyle, UiRuntimeControlStyle, UiRuntimeControlVisualStyle,
-    UiRuntimeShadow, UiRuntimeShadowKind,
+    RgbaColor, UiRuntimeControlBorderStyle, UiRuntimeControlCornerRadius, UiRuntimeControlFilter,
+    UiRuntimeControlFilterList, UiRuntimeControlFocusRingStyle, UiRuntimeControlRadii,
+    UiRuntimeControlStyle, UiRuntimeControlVisualStyle, UiRuntimeShadow, UiRuntimeShadowKind,
 };
 use arcweft_render_wgpu::geometry::{
-    RenderControlBorderStyle, RenderControlFilter, RenderControlFilterList,
-    RenderControlFocusRingStyle, RenderControlShadow, RenderControlShadowKind, RenderControlStyle,
-    RenderControlVisualStyle,
+    PaintRectCornerRadius, PaintRectRadii, RenderControlBorderStyle, RenderControlFilter,
+    RenderControlFilterList, RenderControlFocusRingStyle, RenderControlShadow,
+    RenderControlShadowKind, RenderControlStyle, RenderControlVisualStyle,
 };
 use num_traits::ToPrimitive;
 
@@ -30,6 +30,7 @@ fn lower_visual_style(style: &UiRuntimeControlVisualStyle) -> RenderControlVisua
         focus_ring: style.focus_ring.map(lower_focus_ring),
         opacity: style.opacity_milli.map(|value| f32::from(value) / 1_000.0),
         radius_px: style.radius_milli.map(milli_u32_to_f32),
+        radii_px: style.radii_milli.map(lower_radii),
         depth_milli: style.depth_milli,
         filters: style.filters.as_ref().map(lower_filter_list),
         backdrop_filters: style.backdrop_filters.as_ref().map(lower_filter_list),
@@ -52,6 +53,22 @@ fn lower_focus_ring(ring: UiRuntimeControlFocusRingStyle) -> RenderControlFocusR
     }
 }
 
+fn lower_radii(radii: UiRuntimeControlRadii) -> PaintRectRadii {
+    PaintRectRadii::new(
+        lower_corner_radius(radii.top_left),
+        lower_corner_radius(radii.top_right),
+        lower_corner_radius(radii.bottom_right),
+        lower_corner_radius(radii.bottom_left),
+    )
+}
+
+fn lower_corner_radius(radius: UiRuntimeControlCornerRadius) -> PaintRectCornerRadius {
+    PaintRectCornerRadius::new(
+        milli_u32_to_f32(radius.x_milli),
+        milli_u32_to_f32(radius.y_milli),
+    )
+}
+
 fn lower_filter_list(list: &UiRuntimeControlFilterList) -> RenderControlFilterList {
     RenderControlFilterList {
         filters: list.filters.iter().copied().map(lower_filter).collect(),
@@ -60,6 +77,32 @@ fn lower_filter_list(list: &UiRuntimeControlFilterList) -> RenderControlFilterLi
 
 fn lower_filter(filter: UiRuntimeControlFilter) -> RenderControlFilter {
     match filter {
+        UiRuntimeControlFilter::Brightness { factor_milli } => RenderControlFilter::Brightness {
+            factor: milli_u32_to_f32(factor_milli),
+        },
+        UiRuntimeControlFilter::Contrast { factor_milli } => RenderControlFilter::Contrast {
+            factor: milli_u32_to_f32(factor_milli),
+        },
+        UiRuntimeControlFilter::Grayscale { amount_milli } => RenderControlFilter::Grayscale {
+            amount: f32::from(amount_milli) / 1_000.0,
+        },
+        UiRuntimeControlFilter::Saturate { factor_milli } => RenderControlFilter::Saturate {
+            factor: milli_u32_to_f32(factor_milli),
+        },
+        UiRuntimeControlFilter::HueRotate { degrees_milli } => {
+            RenderControlFilter::HueRotateDegrees {
+                degrees: milli_i32_to_f32(degrees_milli),
+            }
+        }
+        UiRuntimeControlFilter::Invert { amount_milli } => RenderControlFilter::Invert {
+            amount: f32::from(amount_milli) / 1_000.0,
+        },
+        UiRuntimeControlFilter::Sepia { amount_milli } => RenderControlFilter::Sepia {
+            amount: f32::from(amount_milli) / 1_000.0,
+        },
+        UiRuntimeControlFilter::Opacity { amount_milli } => RenderControlFilter::Opacity {
+            amount: f32::from(amount_milli) / 1_000.0,
+        },
         UiRuntimeControlFilter::Blur { radius_milli } => RenderControlFilter::Blur {
             radius_px: milli_u32_to_f32(radius_milli),
         },

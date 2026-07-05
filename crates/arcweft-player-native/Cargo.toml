@@ -23,6 +23,7 @@ arcweft-desktop-native = { path = "../arcweft-desktop-native" }
 arcweft-host-adapter = { path = "../arcweft-host-adapter" }
 arcweft-id = { path = "../arcweft-id" }
 arcweft-interaction-model = { path = "../arcweft-interaction-model" }
+arcweft-layout.workspace = true
 arcweft-player-scene = { path = "../arcweft-player-scene" }
 arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-render-native = { path = "../arcweft-render-native" }

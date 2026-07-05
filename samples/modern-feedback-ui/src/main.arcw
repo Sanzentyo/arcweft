@@ -105,7 +105,6 @@ pub style modern_feedback_panel {
     border-color = rgba(255, 255, 255, 44)
     opacity = milli(960)
     box-shadow = token(shadow.glass_button)
-    backdrop-filter = token(filter.glass_blur)
     z-index = token(depth.button)
   }
 

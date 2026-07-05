@@ -185,6 +185,22 @@ impl SemanticTree {
         self.nodes.push(node);
     }
 
+    #[must_use]
+    pub fn with_transformed_bounds(
+        mut self,
+        translate_x: f32,
+        translate_y: f32,
+        scale_x: f32,
+        scale_y: f32,
+    ) -> Self {
+        for node in &mut self.nodes {
+            node.bounds = node
+                .bounds
+                .transformed(translate_x, translate_y, scale_x, scale_y);
+        }
+        self
+    }
+
     pub fn as_slice(&self) -> &[SemanticNode] {
         &self.nodes
     }

@@ -3,12 +3,14 @@ use crate::frame::focus_navigation::{render_focus_groups, render_focus_navigatio
 use crate::images::{BundleImageCatalog, BundleImageCatalogError};
 use crate::input::InputController;
 use crate::text_controls::{RuntimeTextControlLowerer, RuntimeTextControlLoweringError};
+use arcweft_layout::{ContentRect, LayoutError, LayoutSize, ScalePolicy};
 use arcweft_presentation::text_editor::TextEditorError;
 use arcweft_render_wgpu::geometry::{
     FramePlanError, PreparedFrame, RenderChoiceItem, RenderDialogue, RenderPreferences,
     RenderScene, RenderViewport, SharedFramePlanner,
 };
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
+use num_traits::ToPrimitive;
 use thiserror::Error;
 
 mod focus_navigation;
@@ -19,9 +21,17 @@ pub struct PlayerFrameRequest<'a> {
     pub presentation: &'a BundlePresentationSnapshot,
     pub images: &'a BundleImageCatalog,
     pub viewport: RenderViewport,
+    pub fit: PlayerFrameFit,
     pub image_time_millis: u64,
     pub visual_time_millis: u64,
     pub preferences: RenderPreferences,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PlayerFrameFit {
+    pub design_width: u32,
+    pub design_height: u32,
+    pub scale_policy: ScalePolicy,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -40,6 +50,8 @@ pub enum PlayerFrameError {
     Images(#[from] BundleImageCatalogError),
     #[error(transparent)]
     TextEditor(#[from] TextEditorError),
+    #[error(transparent)]
+    Layout(#[from] LayoutError),
     #[error("invalid focus navigation public id `{value}`")]
     InvalidId { value: String },
     #[error(transparent)]
@@ -53,6 +65,52 @@ pub enum PlayerFrameError {
 /// observation.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct PlayerFramePlanner;
+
+impl PlayerFrameFit {
+    pub const fn raw() -> Self {
+        Self {
+            design_width: 0,
+            design_height: 0,
+            scale_policy: ScalePolicy::Raw,
+        }
+    }
+
+    pub const fn design_1280x720(scale_policy: ScalePolicy) -> Self {
+        Self {
+            design_width: 1280,
+            design_height: 720,
+            scale_policy,
+        }
+    }
+
+    fn planning_viewport(self, output: RenderViewport) -> RenderViewport {
+        if self.scale_policy == ScalePolicy::Raw {
+            return output;
+        }
+        RenderViewport {
+            logical_width: dimension_to_f32(self.design_width),
+            logical_height: dimension_to_f32(self.design_height),
+            physical_width: output.physical_width,
+            physical_height: output.physical_height,
+            scale_factor: output.scale_factor,
+        }
+    }
+
+    fn content_rect(self, output: RenderViewport) -> Result<Option<ContentRect>, LayoutError> {
+        if self.scale_policy == ScalePolicy::Raw {
+            return Ok(None);
+        }
+        ContentRect::calculate(
+            LayoutSize::new(
+                dimension_to_f32(self.design_width),
+                dimension_to_f32(self.design_height),
+            ),
+            LayoutSize::new(output.logical_width, output.logical_height),
+            self.scale_policy,
+        )
+        .map(Some)
+    }
+}
 
 impl PlayerFramePlanner {
     pub fn render_scene(
@@ -101,16 +159,37 @@ impl PlayerFramePlanner {
         input: &mut InputController,
         request: PlayerFrameRequest<'_>,
     ) -> Result<PlayerPreparedFrame, PlayerFrameError> {
-        let scene = Self::render_scene(input, request)?;
-        let frame = SharedFramePlanner::prepare(&scene)?;
+        let design_request = PlayerFrameRequest {
+            viewport: request.fit.planning_viewport(request.viewport),
+            ..request
+        };
+        let content_rect = request.fit.content_rect(request.viewport)?;
+        let scene = Self::render_scene(input, design_request)?;
+        let frame = map_prepared_frame(SharedFramePlanner::prepare(&scene)?, request, content_rect);
         input.ensure_choice_focus(&frame);
-        let scene = Self::render_scene(input, request)?;
-        let frame = SharedFramePlanner::prepare(&scene)?;
+        let scene = Self::render_scene(input, design_request)?;
+        let frame = map_prepared_frame(SharedFramePlanner::prepare(&scene)?, request, content_rect);
         if input.apply_pending_text_pointer_selection(&frame)? {
-            let scene = Self::render_scene(input, request)?;
-            let frame = SharedFramePlanner::prepare(&scene)?;
+            let scene = Self::render_scene(input, design_request)?;
+            let frame =
+                map_prepared_frame(SharedFramePlanner::prepare(&scene)?, request, content_rect);
             return Ok(PlayerPreparedFrame { scene, frame });
         }
         Ok(PlayerPreparedFrame { scene, frame })
     }
+}
+
+fn map_prepared_frame(
+    frame: PreparedFrame,
+    request: PlayerFrameRequest<'_>,
+    content_rect: Option<ContentRect>,
+) -> PreparedFrame {
+    match content_rect {
+        Some(content_rect) => frame.mapped_to_viewport(request.viewport, content_rect),
+        None => frame,
+    }
+}
+
+fn dimension_to_f32(value: u32) -> f32 {
+    value.to_f32().unwrap_or(f32::MAX)
 }

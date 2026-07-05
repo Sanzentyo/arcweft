@@ -1,8 +1,8 @@
 use arcweft_bundle::resource_codec::ui::{
     RgbaColor, StyleAssignOp, UiElementKind, UiElementState, UiInputKind, UiInteractionState,
-    UiRuntimeControlFilter, UiRuntimeControlState, UiRuntimeControlStyleDiagnosticReason,
-    UiStyleDeclaration, UiStyleResource, UiStyleRule, UiStyleSelector, UiStyleSelectorPart,
-    UiStyleValue,
+    UiRuntimeControlCornerRadius, UiRuntimeControlFilter, UiRuntimeControlRadii,
+    UiRuntimeControlState, UiRuntimeControlStyleDiagnosticReason, UiStyleDeclaration,
+    UiStyleResource, UiStyleRule, UiStyleSelector, UiStyleSelectorPart, UiStyleValue,
 };
 
 #[test]
@@ -226,6 +226,37 @@ fn surface_style_resolves_radius_fill_and_box_shadow() {
 }
 
 #[test]
+fn border_radius_shorthand_resolves_four_corners_and_elliptical_axes() {
+    let style = UiStyleResource {
+        rules: vec![rule(
+            UiStyleSelectorPart::Element(UiElementKind::TextArea),
+            vec![decl(
+                "border-radius",
+                UiStyleValue::Text("12px 10px 8px 6px / 5px 4px 3px 2px".to_owned()),
+            )],
+        )],
+        ..UiStyleResource::default()
+    };
+
+    let resolved = style.runtime_text_control_style("input.message", UiInputKind::TextArea);
+    let normal = resolved
+        .style
+        .visual_for_state(UiRuntimeControlState::Normal);
+
+    assert_eq!(normal.radius_milli, None);
+    assert_eq!(
+        normal.radii_milli,
+        Some(UiRuntimeControlRadii::new(
+            UiRuntimeControlCornerRadius::new(12_000, 5_000),
+            UiRuntimeControlCornerRadius::new(10_000, 4_000),
+            UiRuntimeControlCornerRadius::new(8_000, 3_000),
+            UiRuntimeControlCornerRadius::new(6_000, 2_000),
+        ))
+    );
+    assert!(resolved.diagnostics.is_empty());
+}
+
+#[test]
 fn backdrop_filter_blur_resolves_to_typed_runtime_control_effect() {
     let style = UiStyleResource {
         rules: vec![rule(
@@ -253,6 +284,51 @@ fn backdrop_filter_blur_resolves_to_typed_runtime_control_effect() {
         &[UiRuntimeControlFilter::Blur {
             radius_milli: 12_000,
         }]
+    );
+    assert!(resolved.diagnostics.is_empty());
+}
+
+#[test]
+fn backdrop_filter_color_matrix_functions_resolve_to_typed_runtime_control_effects() {
+    let style = UiStyleResource {
+        rules: vec![rule(
+            UiStyleSelectorPart::Element(UiElementKind::TextField),
+            vec![decl(
+                "backdrop-filter",
+                UiStyleValue::Text(
+                    "brightness(120%) contrast(0.9) saturate(140%) hue-rotate(12deg) opacity(85%)"
+                        .to_owned(),
+                ),
+            )],
+        )],
+        ..UiStyleResource::default()
+    };
+
+    let resolved = style.runtime_text_control_style("input.feedback", UiInputKind::TextField);
+    let normal = resolved
+        .style
+        .visual_for_state(UiRuntimeControlState::Normal);
+
+    assert_eq!(
+        normal
+            .backdrop_filters
+            .as_ref()
+            .expect("backdrop filter")
+            .filters
+            .as_slice(),
+        &[
+            UiRuntimeControlFilter::Brightness {
+                factor_milli: 1_200,
+            },
+            UiRuntimeControlFilter::Contrast { factor_milli: 900 },
+            UiRuntimeControlFilter::Saturate {
+                factor_milli: 1_400,
+            },
+            UiRuntimeControlFilter::HueRotate {
+                degrees_milli: 12_000,
+            },
+            UiRuntimeControlFilter::Opacity { amount_milli: 850 },
+        ]
     );
     assert!(resolved.diagnostics.is_empty());
 }
@@ -294,7 +370,7 @@ fn unsupported_filter_function_produces_structured_diagnostic() {
             UiStyleSelectorPart::Element(UiElementKind::TextField),
             vec![decl(
                 "backdrop-filter",
-                UiStyleValue::Text("brightness(120%)".to_owned()),
+                UiStyleValue::Text("drop-shadow(0px 4px 8px rgba(0,0,0,0.4))".to_owned()),
             )],
         )],
         ..UiStyleResource::default()

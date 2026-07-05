@@ -62,10 +62,7 @@ fn paint_item(layout: arcweft_ui::LayoutBox, style: &ResolvedUiStyle) -> Vec<Pai
 
     let mut rectangles = Vec::new();
     if let Some(color) = style.color(UiPropertyKind::BackgroundColor) {
-        rectangles.push(PaintRect {
-            bounds,
-            rgba: rgba(color, opacity),
-        });
+        rectangles.push(PaintRect::new(bounds, rgba(color, opacity)));
     }
 
     let outline_width = style
@@ -87,27 +84,24 @@ fn paint_item(layout: arcweft_ui::LayoutBox, style: &ResolvedUiStyle) -> Vec<Pai
 fn outline_rectangles(bounds: HitRect, width: f32, color: [f32; 4]) -> [PaintRect; 4] {
     let outer = bounds.outset(width);
     [
-        PaintRect {
-            bounds: HitRect::new(outer.x, outer.y, outer.width, width),
-            rgba: color,
-        },
-        PaintRect {
-            bounds: HitRect::new(outer.x, outer.y + outer.height - width, outer.width, width),
-            rgba: color,
-        },
-        PaintRect {
-            bounds: HitRect::new(outer.x, outer.y + width, width, outer.height - width * 2.0),
-            rgba: color,
-        },
-        PaintRect {
-            bounds: HitRect::new(
+        PaintRect::new(HitRect::new(outer.x, outer.y, outer.width, width), color),
+        PaintRect::new(
+            HitRect::new(outer.x, outer.y + outer.height - width, outer.width, width),
+            color,
+        ),
+        PaintRect::new(
+            HitRect::new(outer.x, outer.y + width, width, outer.height - width * 2.0),
+            color,
+        ),
+        PaintRect::new(
+            HitRect::new(
                 outer.x + outer.width - width,
                 outer.y + width,
                 width,
                 outer.height - width * 2.0,
             ),
-            rgba: color,
-        },
+            color,
+        ),
     ]
 }
 

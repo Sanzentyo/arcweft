@@ -29,7 +29,9 @@ use arcweft_bundle::BundleVirtualFileSpace;
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::task::TaskEvent;
 use arcweft_interaction_model::input::RoutedInputEvent;
-use arcweft_player_scene::frame::{PlayerFramePlanner, PlayerFrameRequest, PlayerPreparedFrame};
+use arcweft_player_scene::frame::{
+    PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest, PlayerPreparedFrame,
+};
 use arcweft_player_scene::{images::BundleImageCatalog, input::InputController};
 use arcweft_presentation::{hit::HitRect, image::ImageObjectFit, semantic::SemanticRole};
 use arcweft_render_wgpu::{
@@ -256,6 +258,7 @@ fn prepare_player_runtime_frame(
             presentation,
             images: &runtime.images,
             viewport: player_observe_viewport(options),
+            fit: PlayerFrameFit::raw(),
             image_time_millis: visual_time_millis,
             visual_time_millis,
             preferences: RenderPreferences::default(),

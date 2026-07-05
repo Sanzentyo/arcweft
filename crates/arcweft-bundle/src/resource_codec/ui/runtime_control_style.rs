@@ -45,6 +45,8 @@ pub struct UiRuntimeControlVisualStyle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub radius_milli: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radii_milli: Option<UiRuntimeControlRadii>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depth_milli: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filters: Option<UiRuntimeControlFilterList>,
@@ -65,6 +67,77 @@ pub struct UiRuntimeControlFocusRingStyle {
     pub color: RgbaColor,
     pub width_milli: u32,
     pub offset_milli: i32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiRuntimeControlRadii {
+    pub top_left: UiRuntimeControlCornerRadius,
+    pub top_right: UiRuntimeControlCornerRadius,
+    pub bottom_right: UiRuntimeControlCornerRadius,
+    pub bottom_left: UiRuntimeControlCornerRadius,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiRuntimeControlCornerRadius {
+    pub x_milli: u32,
+    pub y_milli: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum UiRuntimeControlRadiusDeclaration {
+    Uniform(u32),
+    Corners(UiRuntimeControlRadii),
+}
+
+impl UiRuntimeControlRadii {
+    pub const fn uniform(radius_milli: u32) -> Self {
+        let radius = UiRuntimeControlCornerRadius::circular(radius_milli);
+        Self {
+            top_left: radius,
+            top_right: radius,
+            bottom_right: radius,
+            bottom_left: radius,
+        }
+    }
+
+    pub const fn new(
+        top_left: UiRuntimeControlCornerRadius,
+        top_right: UiRuntimeControlCornerRadius,
+        bottom_right: UiRuntimeControlCornerRadius,
+        bottom_left: UiRuntimeControlCornerRadius,
+    ) -> Self {
+        Self {
+            top_left,
+            top_right,
+            bottom_right,
+            bottom_left,
+        }
+    }
+
+    fn is_uniform_circular(self) -> Option<u32> {
+        if self.top_left.x_milli == self.top_left.y_milli
+            && self.top_left == self.top_right
+            && self.top_left == self.bottom_right
+            && self.top_left == self.bottom_left
+        {
+            Some(self.top_left.x_milli)
+        } else {
+            None
+        }
+    }
+}
+
+impl UiRuntimeControlCornerRadius {
+    pub const fn circular(radius_milli: u32) -> Self {
+        Self {
+            x_milli: radius_milli,
+            y_milli: radius_milli,
+        }
+    }
+
+    pub const fn new(x_milli: u32, y_milli: u32) -> Self {
+        Self { x_milli, y_milli }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -95,6 +168,14 @@ pub struct UiRuntimeControlFilterList {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum UiRuntimeControlFilter {
+    Brightness { factor_milli: u32 },
+    Contrast { factor_milli: u32 },
+    Grayscale { amount_milli: u16 },
+    Saturate { factor_milli: u32 },
+    HueRotate { degrees_milli: i32 },
+    Invert { amount_milli: u16 },
+    Sepia { amount_milli: u16 },
+    Opacity { amount_milli: u16 },
     Blur { radius_milli: u32 },
 }
 
@@ -211,6 +292,11 @@ impl UiRuntimeControlVisualStyle {
         }
         if patch.radius_milli.is_some() {
             self.radius_milli = patch.radius_milli;
+            self.radii_milli = None;
+        }
+        if patch.radii_milli.is_some() {
+            self.radii_milli = patch.radii_milli;
+            self.radius_milli = None;
         }
         if patch.depth_milli.is_some() {
             self.depth_milli = patch.depth_milli;
@@ -553,15 +639,17 @@ fn apply_declaration(
             Some(opacity_milli) => visual.opacity_milli = Some(opacity_milli),
             None => push_unsupported_value(diagnostics, target, raw_property),
         },
-        "border-radius" | "radius" => apply_length_declaration(
-            style_resource,
-            value,
-            diagnostics,
-            target,
-            raw_property,
-            visual,
-            |visual, radius_milli| visual.radius_milli = Some(radius_milli),
-        ),
+        "border-radius" | "radius" => match radius_declaration(style_resource, value) {
+            Some(UiRuntimeControlRadiusDeclaration::Uniform(radius_milli)) => {
+                visual.radius_milli = Some(radius_milli);
+                visual.radii_milli = None;
+            }
+            Some(UiRuntimeControlRadiusDeclaration::Corners(radii_milli)) => {
+                visual.radii_milli = Some(radii_milli);
+                visual.radius_milli = None;
+            }
+            None => push_unsupported_value(diagnostics, target, raw_property),
+        },
         "depth" | "depth-milli" | "z-index" => match depth_milli(style_resource, value) {
             Some(depth_milli) => visual.depth_milli = Some(depth_milli),
             None => push_unsupported_value(diagnostics, target, raw_property),
@@ -951,6 +1039,69 @@ fn parse_length_milli(raw: &str) -> Option<i32> {
     rounded_clamped_i32(px * 1_000.0, f64::from(i32::MIN), f64::from(i32::MAX))
 }
 
+fn radius_declaration(
+    style: &UiStyleResource,
+    value: &UiStyleValue,
+) -> Option<UiRuntimeControlRadiusDeclaration> {
+    match value {
+        UiStyleValue::Milli(value) => u32::try_from((*value).max(0))
+            .ok()
+            .map(UiRuntimeControlRadiusDeclaration::Uniform),
+        UiStyleValue::Text(value) => parse_radius_declaration(value),
+        UiStyleValue::Token(token) => style
+            .tokens
+            .iter()
+            .find(|candidate| candidate.public_id == *token)
+            .and_then(|token| radius_declaration(style, &token.value)),
+        UiStyleValue::SystemColor(_)
+        | UiStyleValue::Rgba(_)
+        | UiStyleValue::Resource(_)
+        | UiStyleValue::Digest(_) => None,
+    }
+}
+
+fn parse_radius_declaration(raw: &str) -> Option<UiRuntimeControlRadiusDeclaration> {
+    let (horizontal, vertical) = raw
+        .split_once('/')
+        .map_or((raw, None), |(horizontal, vertical)| {
+            (horizontal, Some(vertical))
+        });
+    let horizontal = expand_radius_values(horizontal)?;
+    let vertical = vertical.map_or_else(|| Some(horizontal), expand_radius_values)?;
+    let radii = UiRuntimeControlRadii::new(
+        UiRuntimeControlCornerRadius::new(horizontal[0], vertical[0]),
+        UiRuntimeControlCornerRadius::new(horizontal[1], vertical[1]),
+        UiRuntimeControlCornerRadius::new(horizontal[2], vertical[2]),
+        UiRuntimeControlCornerRadius::new(horizontal[3], vertical[3]),
+    );
+    radii.is_uniform_circular().map_or_else(
+        || Some(UiRuntimeControlRadiusDeclaration::Corners(radii)),
+        |radius| Some(UiRuntimeControlRadiusDeclaration::Uniform(radius)),
+    )
+}
+
+fn expand_radius_values(raw: &str) -> Option<[u32; 4]> {
+    let values = raw
+        .split_whitespace()
+        .map(parse_non_negative_length_milli)
+        .collect::<Option<Vec<_>>>()?;
+    match values.as_slice() {
+        [one] => Some([*one, *one, *one, *one]),
+        [vertical, horizontal] => Some([*vertical, *horizontal, *vertical, *horizontal]),
+        [top_left, horizontal, bottom_right] => {
+            Some([*top_left, *horizontal, *bottom_right, *horizontal])
+        }
+        [top_left, top_right, bottom_right, bottom_left] => {
+            Some([*top_left, *top_right, *bottom_right, *bottom_left])
+        }
+        _ => None,
+    }
+}
+
+fn parse_non_negative_length_milli(raw: &str) -> Option<u32> {
+    parse_length_milli(raw).and_then(|value| u32::try_from(value.max(0)).ok())
+}
+
 fn rounded_clamped_i32(value: f64, min: f64, max: f64) -> Option<i32> {
     if !value.is_finite() {
         return None;
@@ -986,16 +1137,44 @@ fn parse_filter_list(raw: &str) -> Option<UiRuntimeControlFilterList> {
         let after_open = &trimmed[open + 1..];
         let close = after_open.find(')')?;
         let argument = &after_open[..close];
-        if !name.eq_ignore_ascii_case("blur") {
-            return None;
-        }
-        filters.push(UiRuntimeControlFilter::Blur {
-            radius_milli: parse_filter_blur_radius_milli(argument)?,
-        });
+        filters.push(parse_filter_function(name, argument)?);
         rest = &after_open[close + 1..];
     }
 
     (!filters.is_empty()).then_some(UiRuntimeControlFilterList { filters })
+}
+
+fn parse_filter_function(name: &str, argument: &str) -> Option<UiRuntimeControlFilter> {
+    match name.to_ascii_lowercase().as_str() {
+        "brightness" => Some(UiRuntimeControlFilter::Brightness {
+            factor_milli: parse_filter_factor_milli(argument)?,
+        }),
+        "contrast" => Some(UiRuntimeControlFilter::Contrast {
+            factor_milli: parse_filter_factor_milli(argument)?,
+        }),
+        "grayscale" => Some(UiRuntimeControlFilter::Grayscale {
+            amount_milli: parse_filter_amount_milli(argument)?,
+        }),
+        "saturate" => Some(UiRuntimeControlFilter::Saturate {
+            factor_milli: parse_filter_factor_milli(argument)?,
+        }),
+        "hue-rotate" => Some(UiRuntimeControlFilter::HueRotate {
+            degrees_milli: parse_filter_degrees_milli(argument)?,
+        }),
+        "invert" => Some(UiRuntimeControlFilter::Invert {
+            amount_milli: parse_filter_amount_milli(argument)?,
+        }),
+        "sepia" => Some(UiRuntimeControlFilter::Sepia {
+            amount_milli: parse_filter_amount_milli(argument)?,
+        }),
+        "opacity" => Some(UiRuntimeControlFilter::Opacity {
+            amount_milli: parse_filter_amount_milli(argument)?,
+        }),
+        "blur" => Some(UiRuntimeControlFilter::Blur {
+            radius_milli: parse_filter_blur_radius_milli(argument)?,
+        }),
+        _ => None,
+    }
 }
 
 fn parse_filter_blur_radius_milli(raw: &str) -> Option<u32> {
@@ -1009,6 +1188,35 @@ fn parse_filter_blur_radius_milli(raw: &str) -> Option<u32> {
     }
     rounded_clamped_i32(px * 1_000.0, 0.0, f64::from(i32::MAX))
         .and_then(|value| u32::try_from(value).ok())
+}
+
+fn parse_filter_factor_milli(raw: &str) -> Option<u32> {
+    parse_filter_number_or_percent_milli(raw, 0.0, f64::from(i32::MAX))
+        .and_then(|value| u32::try_from(value).ok())
+}
+
+fn parse_filter_amount_milli(raw: &str) -> Option<u16> {
+    parse_filter_number_or_percent_milli(raw, 0.0, 1_000.0)
+        .and_then(|value| u16::try_from(value).ok())
+}
+
+fn parse_filter_number_or_percent_milli(raw: &str, min: f64, max: f64) -> Option<i32> {
+    let value = raw.trim();
+    if let Some(percent) = value.strip_suffix('%') {
+        let percent = percent.trim().parse::<f64>().ok()?;
+        return rounded_clamped_i32((percent / 100.0) * 1_000.0, min, max);
+    }
+    let value = value.parse::<f64>().ok()?;
+    rounded_clamped_i32(value * 1_000.0, min, max)
+}
+
+fn parse_filter_degrees_milli(raw: &str) -> Option<i32> {
+    let value = raw.trim();
+    if value == "0" {
+        return Some(0);
+    }
+    let degrees = value.strip_suffix("deg")?.trim().parse::<f64>().ok()?;
+    rounded_clamped_i32(degrees * 1_000.0, f64::from(i32::MIN), f64::from(i32::MAX))
 }
 
 fn split_shadow_items(value: &str) -> Vec<String> {

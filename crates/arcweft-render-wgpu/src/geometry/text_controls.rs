@@ -144,14 +144,15 @@ pub(super) fn build_text_input(
     let is_focused = scene.interaction.focused.as_ref() == Some(&control.target);
     let state = visual_state_for_control(scene, control);
     let visual = control.style.visual_for_state(state);
+    let radii = visual.radii();
     let visual_layout = visual_layout_for_control(control, &options);
     let backdrop_start = control_backdrops.len();
     push_control_backdrop_plan(control_backdrops, &control.target, control.bounds, &visual);
     push_control_shadow_plan(control_shadows, &control.target, control.bounds, &visual);
     let rectangle_start = rectangles.len();
-    rectangles.push(PaintRect {
-        bounds: control.bounds,
-        rgba: fill_with_opacity(
+    rectangles.push(PaintRect::with_radii(
+        control.bounds,
+        fill_with_opacity(
             visual.fill.unwrap_or(if is_focused {
                 palette.choice_active
             } else {
@@ -159,11 +160,12 @@ pub(super) fn build_text_input(
             }),
             visual.opacity,
         ),
-    });
-    push_control_border(rectangles, control.bounds, visual.border);
+        radii,
+    ));
+    push_control_border(rectangles, control.bounds, visual.border, radii);
     if is_focused {
         if let Some(ring) = visual.focus_ring {
-            push_control_focus_ring(rectangles, control.bounds, ring);
+            push_control_focus_ring(rectangles, control.bounds, ring, radii);
         } else {
             super::push_focus_ring(rectangles, control.bounds, palette.focus_ring);
         }
@@ -172,12 +174,14 @@ pub(super) fn build_text_input(
             control,
             &visual_layout,
             visual.selection.unwrap_or(palette.choice_active),
+            radii,
         );
         push_renderer_text_input_caret(
             rectangles,
             control,
             &visual_layout,
             visual.caret.unwrap_or(palette.focus_ring),
+            radii,
         );
     }
 
@@ -249,6 +253,7 @@ fn push_renderer_text_input_selection(
     control: &RenderTextInputControl,
     visual_layout: &TextControlVisualLayout,
     color: [f32; 4],
+    radii: super::PaintRectRadii,
 ) {
     let start = control.selection.start().get();
     let end = control.selection.end().get();
@@ -262,10 +267,7 @@ fn push_renderer_text_input_selection(
                 clip_text_local_rect_to_inner(control, bounds)
                     .map(|bounds| text_local_to_viewport_rect(control, bounds))
             })
-            .map(|bounds| PaintRect {
-                bounds,
-                rgba: color,
-            }),
+            .map(|bounds| PaintRect::new(bounds, color).clipped_to_radii(control.bounds, radii)),
     );
 }
 
@@ -274,16 +276,17 @@ fn push_renderer_text_input_caret(
     control: &RenderTextInputControl,
     visual_layout: &TextControlVisualLayout,
     color: [f32; 4],
+    radii: super::PaintRectRadii,
 ) {
     let caret = control.selection.end().get();
     if let Some(bounds) = clip_text_local_rect_to_inner(
         control,
         text_caret_rect(control, &visual_layout.laid_out, caret),
     ) {
-        rectangles.push(PaintRect {
-            bounds: text_local_to_viewport_rect(control, bounds),
-            rgba: color,
-        });
+        rectangles.push(
+            PaintRect::new(text_local_to_viewport_rect(control, bounds), color)
+                .clipped_to_radii(control.bounds, radii),
+        );
     }
 }
 

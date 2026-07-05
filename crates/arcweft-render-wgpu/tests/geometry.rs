@@ -567,6 +567,67 @@ fn focused_text_input_target_browser_and_native_use_same_geometry_snapshot_sourc
 }
 
 #[test]
+fn prepared_frame_fit_mapping_scales_runtime_control_geometry_and_ime_snapshots() {
+    let target = text_target("geometry.fit");
+    let bounds = HitRect::new(50.0, 60.0, 300.0, 40.0);
+    let control = text_control(
+        target.clone(),
+        "hi",
+        SemanticRole::TextField,
+        TextInputOptions::default(),
+        bounds,
+    );
+    let mut scene = scene();
+    scene.choices.clear();
+    scene.text_inputs = vec![control];
+    scene.interaction.focused = Some(target.clone());
+    let frame = SharedFramePlanner::prepare(&scene).expect("text input frame plans");
+    let output = RenderViewport {
+        logical_width: 640.0,
+        logical_height: 360.0,
+        physical_width: 640,
+        physical_height: 360,
+        scale_factor: 1.0,
+    };
+    let content = ContentRect::calculate(
+        LayoutSize::new(1280.0, 720.0),
+        LayoutSize::new(640.0, 360.0),
+        ScalePolicy::Contain,
+    )
+    .expect("content rect");
+
+    let mapped = frame.mapped_to_viewport(output, content);
+    let focused = mapped
+        .focused_text_input_target()
+        .expect("focused target remains available");
+
+    assert_eq!(
+        mapped
+            .semantics
+            .find(&target)
+            .expect("mapped semantic")
+            .bounds(),
+        HitRect::new(25.0, 30.0, 150.0, 20.0)
+    );
+    assert_eq!(
+        mapped
+            .hits
+            .find_target(&target)
+            .expect("mapped hit")
+            .bounds(),
+        HitRect::new(25.0, 30.0, 150.0, 20.0)
+    );
+    assert_eq!(
+        focused.snapshot.control_rect(),
+        HitRect::new(25.0, 30.0, 150.0, 20.0)
+    );
+    assert_eq!(
+        focused.geometry.viewport_control_rect(),
+        HitRect::new(25.0, 30.0, 150.0, 20.0)
+    );
+}
+
+#[test]
 fn generated_visual_demo_supplies_background_character_and_animated_frames() {
     let frame_a = SharedFramePlanner::prepare(&generated_scene(0)).expect("frame plans");
     let frame_b = SharedFramePlanner::prepare(&generated_scene(170)).expect("frame plans");

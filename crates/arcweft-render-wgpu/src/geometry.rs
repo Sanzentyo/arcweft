@@ -2,6 +2,7 @@ use crate::convert::saturating_usize_as_f32;
 use crate::ui_mask::UiMaskChannel;
 use crate::ui_scene::{UiMaskImage, UiScene};
 use arcweft_id::PublicId;
+use arcweft_layout::ContentRect;
 use arcweft_presentation::hit::{HitRect, HitTree};
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::layer::{
@@ -10,7 +11,9 @@ use arcweft_presentation::layer::{
 };
 use arcweft_presentation::semantic::{SemanticNode, SemanticRole, SemanticTree};
 use arcweft_presentation::text_editor::TextEditorError;
-use arcweft_presentation::text_input::{TextInputClientSnapshot, TextInputGeometrySnapshot};
+use arcweft_presentation::text_input::{
+    TextGeometryTransform, TextInputClientSnapshot, TextInputGeometrySnapshot,
+};
 use arcweft_render_text::{
     LineDisplayFrame, RichTextColor, RichTextEffectDescriptor, RichTextEffectPhase,
     RichTextFontFamily, RichTextParam, RichTextRange, RichTextStyle, RichTextTextRun,
@@ -176,6 +179,201 @@ pub struct RenderChoiceItem {
 pub struct PaintRect {
     pub bounds: HitRect,
     pub rgba: [f32; 4],
+    pub radii: PaintRectRadii,
+    pub clip: Option<PaintRectClip>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PaintRectClip {
+    pub bounds: HitRect,
+    pub radii: PaintRectRadii,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PaintRectRadii {
+    pub top_left: PaintRectCornerRadius,
+    pub top_right: PaintRectCornerRadius,
+    pub bottom_right: PaintRectCornerRadius,
+    pub bottom_left: PaintRectCornerRadius,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PaintRectCornerRadius {
+    pub x_px: f32,
+    pub y_px: f32,
+}
+
+impl PaintRect {
+    #[must_use]
+    pub const fn new(bounds: HitRect, rgba: [f32; 4]) -> Self {
+        Self {
+            bounds,
+            rgba,
+            radii: PaintRectRadii::ZERO,
+            clip: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn rounded(bounds: HitRect, rgba: [f32; 4], radius_px: f32) -> Self {
+        Self::with_radii(bounds, rgba, PaintRectRadii::uniform(radius_px))
+    }
+
+    #[must_use]
+    pub const fn with_radii(bounds: HitRect, rgba: [f32; 4], radii: PaintRectRadii) -> Self {
+        Self {
+            bounds,
+            rgba,
+            radii,
+            clip: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn clipped_to(mut self, bounds: HitRect, radius_px: f32) -> Self {
+        self.clip = Some(PaintRectClip {
+            bounds,
+            radii: PaintRectRadii::uniform(radius_px),
+        });
+        self
+    }
+
+    #[must_use]
+    pub const fn clipped_to_radii(mut self, bounds: HitRect, radii: PaintRectRadii) -> Self {
+        self.clip = Some(PaintRectClip { bounds, radii });
+        self
+    }
+}
+
+impl PaintRectRadii {
+    pub const ZERO: Self = Self {
+        top_left: PaintRectCornerRadius::ZERO,
+        top_right: PaintRectCornerRadius::ZERO,
+        bottom_right: PaintRectCornerRadius::ZERO,
+        bottom_left: PaintRectCornerRadius::ZERO,
+    };
+
+    #[must_use]
+    pub const fn uniform(radius_px: f32) -> Self {
+        let radius = PaintRectCornerRadius::circular(radius_px);
+        Self {
+            top_left: radius,
+            top_right: radius,
+            bottom_right: radius,
+            bottom_left: radius,
+        }
+    }
+
+    #[must_use]
+    pub const fn new(
+        top_left: PaintRectCornerRadius,
+        top_right: PaintRectCornerRadius,
+        bottom_right: PaintRectCornerRadius,
+        bottom_left: PaintRectCornerRadius,
+    ) -> Self {
+        Self {
+            top_left,
+            top_right,
+            bottom_right,
+            bottom_left,
+        }
+    }
+
+    #[must_use]
+    pub fn outset(self, amount_px: f32) -> Self {
+        Self {
+            top_left: self.top_left.outset(amount_px),
+            top_right: self.top_right.outset(amount_px),
+            bottom_right: self.bottom_right.outset(amount_px),
+            bottom_left: self.bottom_left.outset(amount_px),
+        }
+    }
+
+    #[must_use]
+    pub fn scaled(self, scale_x: f32, scale_y: f32) -> Self {
+        Self {
+            top_left: self.top_left.scaled(scale_x, scale_y),
+            top_right: self.top_right.scaled(scale_x, scale_y),
+            bottom_right: self.bottom_right.scaled(scale_x, scale_y),
+            bottom_left: self.bottom_left.scaled(scale_x, scale_y),
+        }
+    }
+
+    #[must_use]
+    pub fn normalized_for(self, width: f32, height: f32) -> Self {
+        let radii = Self {
+            top_left: self.top_left.non_negative(),
+            top_right: self.top_right.non_negative(),
+            bottom_right: self.bottom_right.non_negative(),
+            bottom_left: self.bottom_left.non_negative(),
+        };
+        let mut scale: f32 = 1.0;
+        scale = corner_scale_limit(scale, width, radii.top_left.x_px + radii.top_right.x_px);
+        scale = corner_scale_limit(
+            scale,
+            width,
+            radii.bottom_left.x_px + radii.bottom_right.x_px,
+        );
+        scale = corner_scale_limit(scale, height, radii.top_left.y_px + radii.bottom_left.y_px);
+        scale = corner_scale_limit(
+            scale,
+            height,
+            radii.top_right.y_px + radii.bottom_right.y_px,
+        );
+        radii.scaled(scale, scale)
+    }
+}
+
+impl PaintRectCornerRadius {
+    pub const ZERO: Self = Self {
+        x_px: 0.0,
+        y_px: 0.0,
+    };
+
+    #[must_use]
+    pub const fn new(x_px: f32, y_px: f32) -> Self {
+        Self { x_px, y_px }
+    }
+
+    #[must_use]
+    pub const fn circular(radius_px: f32) -> Self {
+        Self {
+            x_px: radius_px,
+            y_px: radius_px,
+        }
+    }
+
+    #[must_use]
+    pub fn outset(self, amount_px: f32) -> Self {
+        Self {
+            x_px: (self.x_px + amount_px).max(0.0),
+            y_px: (self.y_px + amount_px).max(0.0),
+        }
+    }
+
+    #[must_use]
+    pub fn scaled(self, scale_x: f32, scale_y: f32) -> Self {
+        Self {
+            x_px: self.x_px * scale_x,
+            y_px: self.y_px * scale_y,
+        }
+    }
+
+    #[must_use]
+    pub fn non_negative(self) -> Self {
+        Self {
+            x_px: self.x_px.max(0.0),
+            y_px: self.y_px.max(0.0),
+        }
+    }
+}
+
+fn corner_scale_limit(current: f32, basis_px: f32, sum_px: f32) -> f32 {
+    if sum_px <= f32::EPSILON {
+        current
+    } else {
+        current.min((basis_px / sum_px).clamp(0.0, 1.0))
+    }
 }
 
 /// One text block prepared for glyphon.
@@ -496,6 +694,206 @@ impl PreparedFrame {
     pub const fn has_dialogue(&self) -> bool {
         self.dialogue_present
     }
+
+    #[must_use]
+    pub fn mapped_to_viewport(mut self, viewport: RenderViewport, content: ContentRect) -> Self {
+        let mapping = PreparedFrameViewportMapping::new(viewport, content);
+        self.viewport = viewport;
+        self.map_surface_geometry(mapping);
+        self.map_runtime_control_geometry(mapping);
+        self.map_focused_text_input(mapping);
+        self
+    }
+
+    fn map_surface_geometry(&mut self, mapping: PreparedFrameViewportMapping) {
+        self.semantics = core::mem::take(&mut self.semantics).with_transformed_bounds(
+            mapping.translate_x,
+            mapping.translate_y,
+            mapping.scale_x,
+            mapping.scale_y,
+        );
+        self.hits = core::mem::take(&mut self.hits).with_transformed_bounds(
+            mapping.translate_x,
+            mapping.translate_y,
+            mapping.scale_x,
+            mapping.scale_y,
+        );
+        self.rectangles = self
+            .rectangles
+            .drain(..)
+            .map(|rect| map_paint_rect(rect, mapping))
+            .collect();
+        self.images = self
+            .images
+            .drain(..)
+            .map(|mut image| {
+                image.bounds = mapping.rect(image.bounds);
+                image
+            })
+            .collect();
+        self.text = self
+            .text
+            .drain(..)
+            .map(|block| map_text_block(block, mapping))
+            .collect();
+        self.styled_paragraphs = self
+            .styled_paragraphs
+            .drain(..)
+            .map(|paragraph| map_styled_paragraph(paragraph, mapping))
+            .collect();
+    }
+
+    fn map_runtime_control_geometry(&mut self, mapping: PreparedFrameViewportMapping) {
+        self.control_backdrops = self
+            .control_backdrops
+            .drain(..)
+            .map(|mut backdrop| {
+                backdrop.bounds = mapping.rect(backdrop.bounds);
+                backdrop
+            })
+            .collect();
+        self.control_filters = self
+            .control_filters
+            .drain(..)
+            .map(|mut filter| {
+                filter.bounds = mapping.rect(filter.bounds);
+                filter
+            })
+            .collect();
+        self.control_shadows = self
+            .control_shadows
+            .drain(..)
+            .map(|mut shadow| {
+                shadow.plan = shadow.plan.transformed(
+                    mapping.translate_x,
+                    mapping.translate_y,
+                    mapping.scale_x,
+                    mapping.scale_y,
+                );
+                shadow
+            })
+            .collect();
+        self.control_paints = self
+            .control_paints
+            .drain(..)
+            .map(|mut paint| {
+                paint.bounds = mapping.rect(paint.bounds);
+                paint
+            })
+            .collect();
+    }
+
+    fn map_focused_text_input(&mut self, mapping: PreparedFrameViewportMapping) {
+        self.focused_text_input =
+            self.focused_text_input
+                .take()
+                .map(|target| PreparedTextInputTarget {
+                    snapshot: target.snapshot.transformed(mapping.viewport_transform),
+                    geometry: target
+                        .geometry
+                        .transformed_viewport(mapping.viewport_transform, mapping.screen_transform),
+                });
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct PreparedFrameViewportMapping {
+    translate_x: f32,
+    translate_y: f32,
+    scale_x: f32,
+    scale_y: f32,
+    text_scale: f32,
+    viewport_transform: TextGeometryTransform,
+    screen_transform: TextGeometryTransform,
+}
+
+impl PreparedFrameViewportMapping {
+    fn new(viewport: RenderViewport, content: ContentRect) -> Self {
+        let translate_x = content.rect.origin.x;
+        let translate_y = content.rect.origin.y;
+        let scale_x = content.scale_x;
+        let scale_y = content.scale_y;
+        Self {
+            translate_x,
+            translate_y,
+            scale_x,
+            scale_y,
+            text_scale: ((scale_x.abs() + scale_y.abs()) * 0.5).max(f32::EPSILON),
+            viewport_transform: TextGeometryTransform::scale(scale_x, scale_y)
+                .then(TextGeometryTransform::translation(translate_x, translate_y)),
+            screen_transform: TextGeometryTransform::scale(
+                viewport.physical_scale_factor_f32(),
+                viewport.physical_scale_factor_f32(),
+            ),
+        }
+    }
+
+    fn rect(self, rect: HitRect) -> HitRect {
+        rect.transformed(
+            self.translate_x,
+            self.translate_y,
+            self.scale_x,
+            self.scale_y,
+        )
+    }
+}
+
+fn map_paint_rect(mut rect: PaintRect, mapping: PreparedFrameViewportMapping) -> PaintRect {
+    rect.bounds = mapping.rect(rect.bounds);
+    rect.radii = rect.radii.scaled(mapping.scale_x, mapping.scale_y);
+    rect.clip = rect.clip.map(|clip| PaintRectClip {
+        bounds: mapping.rect(clip.bounds),
+        radii: clip.radii.scaled(mapping.scale_x, mapping.scale_y),
+    });
+    rect
+}
+
+fn map_text_block(
+    mut block: RenderTextBlock,
+    mapping: PreparedFrameViewportMapping,
+) -> RenderTextBlock {
+    block.bounds = mapping.rect(block.bounds);
+    block.clip_bounds = block.clip_bounds.map(|bounds| mapping.rect(bounds));
+    block.buffer_width = block
+        .buffer_width
+        .map(|width| width * mapping.scale_x.abs());
+    block.buffer_height = block
+        .buffer_height
+        .map(|height| height * mapping.scale_y.abs());
+    block.font_size *= mapping.text_scale;
+    block.line_height *= mapping.text_scale;
+    block
+}
+
+fn map_styled_paragraph(
+    mut paragraph: RenderStyledParagraph,
+    mapping: PreparedFrameViewportMapping,
+) -> RenderStyledParagraph {
+    paragraph.bounds = mapping.rect(paragraph.bounds);
+    paragraph.default_style = map_text_style(paragraph.default_style, mapping.text_scale);
+    paragraph.spans = paragraph
+        .spans
+        .into_iter()
+        .map(|mut span| {
+            span.style = map_text_style(span.style, mapping.text_scale);
+            span
+        })
+        .collect();
+    paragraph.glyph_transforms = paragraph
+        .glyph_transforms
+        .into_iter()
+        .map(|mut transform| {
+            transform.motion.amplitude *= mapping.text_scale;
+            transform
+        })
+        .collect();
+    paragraph
+}
+
+fn map_text_style(mut style: RenderTextStyle, text_scale: f32) -> RenderTextStyle {
+    style.font_size *= text_scale;
+    style.line_height *= text_scale;
+    style
 }
 
 impl PreparedUiScene {
@@ -560,15 +958,15 @@ impl SharedFramePlanner {
         let layers = build_frame_layers(&ids);
 
         let palette = Palette::from_preferences(scene.preferences);
-        let mut rectangles = vec![PaintRect {
-            bounds: HitRect::new(
+        let mut rectangles = vec![PaintRect::new(
+            HitRect::new(
                 0.0,
                 0.0,
                 scene.viewport.logical_width,
                 scene.viewport.logical_height,
             ),
-            rgba: palette.background,
-        }];
+            palette.background,
+        )];
         let mut text = Vec::new();
         let mut styled_paragraphs = Vec::new();
         push_dialogue_panel(
@@ -837,10 +1235,7 @@ fn push_dialogue_panel(
         return;
     };
     let panel = dialogue_panel(scene.viewport);
-    rectangles.push(PaintRect {
-        bounds: panel,
-        rgba: palette.dialogue_panel,
-    });
+    rectangles.push(PaintRect::new(panel, palette.dialogue_panel));
     let inset = 28.0;
     let scale = f32::from(scene.preferences.text_scale_milli) / 1_000.0;
     let base_style = text_style_from_styles(
@@ -1373,16 +1768,16 @@ fn build_choices(
             let is_focused = scene.interaction.focused.as_ref() == Some(&target);
             let is_hovered = scene.interaction.hovered.as_ref() == Some(&target);
             let is_pressed = scene.interaction.pressed.as_ref() == Some(&target);
-            rectangles.push(PaintRect {
+            rectangles.push(PaintRect::new(
                 bounds,
-                rgba: if is_pressed {
+                if is_pressed {
                     palette.choice_pressed
                 } else if is_focused || is_hovered {
                     palette.choice_active
                 } else {
                     palette.choice_idle
                 },
-            });
+            ));
             if is_focused {
                 push_focus_ring(rectangles, bounds, palette.focus_ring);
             }
@@ -1421,32 +1816,32 @@ fn build_choices(
 fn push_focus_ring(rectangles: &mut Vec<PaintRect>, bounds: HitRect, color: [f32; 4]) {
     let thickness = 3.0;
     rectangles.extend([
-        PaintRect {
-            bounds: HitRect::new(bounds.x, bounds.y, bounds.width, thickness),
-            rgba: color,
-        },
-        PaintRect {
-            bounds: HitRect::new(
+        PaintRect::new(
+            HitRect::new(bounds.x, bounds.y, bounds.width, thickness),
+            color,
+        ),
+        PaintRect::new(
+            HitRect::new(
                 bounds.x,
                 bounds.y + bounds.height - thickness,
                 bounds.width,
                 thickness,
             ),
-            rgba: color,
-        },
-        PaintRect {
-            bounds: HitRect::new(bounds.x, bounds.y, thickness, bounds.height),
-            rgba: color,
-        },
-        PaintRect {
-            bounds: HitRect::new(
+            color,
+        ),
+        PaintRect::new(
+            HitRect::new(bounds.x, bounds.y, thickness, bounds.height),
+            color,
+        ),
+        PaintRect::new(
+            HitRect::new(
                 bounds.x + bounds.width - thickness,
                 bounds.y,
                 thickness,
                 bounds.height,
             ),
-            rgba: color,
-        },
+            color,
+        ),
     ]);
 }
 

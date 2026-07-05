@@ -7,7 +7,10 @@ use crate::runtime_text_input::{
     register_runtime_bridge,
 };
 use arcweft_bundle::{ArcweftBundle, BundleFormat};
-use arcweft_player_scene::frame::{PlayerFrameError, PlayerFramePlanner, PlayerFrameRequest};
+use arcweft_layout::ScalePolicy;
+use arcweft_player_scene::frame::{
+    PlayerFrameError, PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest,
+};
 use arcweft_player_scene::images::{BundleImageCatalog, BundleImageCatalogError};
 use arcweft_player_scene::input::{InputController, InputOutcome};
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
@@ -414,6 +417,7 @@ fn redraw(state: &mut PlayerState, window: &Arc<dyn Window>) -> Result<(), WebPl
             presentation,
             images: &state.images,
             viewport,
+            fit: PlayerFrameFit::design_1280x720(ScalePolicy::Contain),
             image_time_millis: host_millis.max(0.0) as u64,
             visual_time_millis,
             preferences: RenderPreferences::default(),

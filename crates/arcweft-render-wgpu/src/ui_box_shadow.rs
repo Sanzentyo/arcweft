@@ -124,6 +124,52 @@ impl UiBoxShadowPassPlan {
     pub const fn visual_inset_px(&self) -> f32 {
         self.visual_inset_px
     }
+
+    #[must_use]
+    pub fn transformed(
+        mut self,
+        translate_x: f32,
+        translate_y: f32,
+        scale_x: f32,
+        scale_y: f32,
+    ) -> Self {
+        let uniform_scale = ((scale_x.abs() + scale_y.abs()) * 0.5).max(f32::EPSILON);
+        for pass in &mut self.passes {
+            pass.shadow.offset_x_px *= scale_x;
+            pass.shadow.offset_y_px *= scale_y;
+            pass.shadow.blur_radius_px *= uniform_scale;
+            pass.shadow.spread_radius_px *= uniform_scale;
+            pass.shadow.border_radii = scaled_radii_xy(pass.shadow.border_radii, scale_x, scale_y);
+            pass.body_rect = pass
+                .body_rect
+                .transformed(translate_x, translate_y, scale_x, scale_y);
+            pass.shadow_rect =
+                pass.shadow_rect
+                    .transformed(translate_x, translate_y, scale_x, scale_y);
+            pass.body_radii = scaled_radii_xy(pass.body_radii, scale_x, scale_y);
+            pass.shadow_radii = scaled_radii_xy(pass.shadow_radii, scale_x, scale_y);
+        }
+        self.visual_outset_px *= uniform_scale;
+        self.visual_inset_px *= uniform_scale;
+        self
+    }
+}
+
+fn scaled_radii_xy(radii: UiBoxShadowRadii, scale_x: f32, scale_y: f32) -> UiBoxShadowRadii {
+    UiBoxShadowRadii {
+        top_left: scaled_radius_xy(radii.top_left, scale_x, scale_y),
+        top_right: scaled_radius_xy(radii.top_right, scale_x, scale_y),
+        bottom_right: scaled_radius_xy(radii.bottom_right, scale_x, scale_y),
+        bottom_left: scaled_radius_xy(radii.bottom_left, scale_x, scale_y),
+    }
+}
+
+fn scaled_radius_xy(
+    radius: crate::ui_scene::UiBoxShadowCornerRadius,
+    scale_x: f32,
+    scale_y: f32,
+) -> crate::ui_scene::UiBoxShadowCornerRadius {
+    crate::ui_scene::UiBoxShadowCornerRadius::new(radius.x_px * scale_x, radius.y_px * scale_y)
 }
 
 impl UiBoxShadowPass {

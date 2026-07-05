@@ -807,6 +807,14 @@ impl TextInputClientSnapshot {
     pub const fn options(&self) -> &TextInputOptions {
         &self.options
     }
+
+    #[must_use]
+    pub fn transformed(mut self, transform: TextGeometryTransform) -> Self {
+        self.control_rect = transform.transform_rect(self.control_rect);
+        self.caret_rect = transform.transform_rect(self.caret_rect);
+        self.character_bounds = transform_character_bounds(&self.character_bounds, transform);
+        self
+    }
 }
 
 impl Default for TextInputOptions {
@@ -1569,6 +1577,31 @@ impl TextInputGeometrySnapshot {
 
     pub fn screen_composition_rects(&self) -> &[TextRangeRect] {
         &self.screen_composition_rects
+    }
+
+    #[must_use]
+    pub fn transformed_viewport(
+        mut self,
+        viewport_transform: TextGeometryTransform,
+        viewport_to_screen: TextGeometryTransform,
+    ) -> Self {
+        self.viewport_control_rect = viewport_transform.transform_rect(self.viewport_control_rect);
+        self.viewport_caret_rect = viewport_transform.transform_rect(self.viewport_caret_rect);
+        self.viewport_character_bounds =
+            transform_character_bounds(&self.viewport_character_bounds, viewport_transform);
+        self.viewport_selection_rects =
+            transform_range_rects(&self.viewport_selection_rects, viewport_transform);
+        self.viewport_composition_rects =
+            transform_range_rects(&self.viewport_composition_rects, viewport_transform);
+        self.screen_control_rect = viewport_to_screen.transform_rect(self.viewport_control_rect);
+        self.screen_caret_rect = viewport_to_screen.transform_rect(self.viewport_caret_rect);
+        self.screen_character_bounds =
+            transform_character_bounds(&self.viewport_character_bounds, viewport_to_screen);
+        self.screen_selection_rects =
+            transform_range_rects(&self.viewport_selection_rects, viewport_to_screen);
+        self.screen_composition_rects =
+            transform_range_rects(&self.viewport_composition_rects, viewport_to_screen);
+        self
     }
 
     #[must_use]

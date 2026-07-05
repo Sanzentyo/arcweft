@@ -105,6 +105,7 @@ pub(super) fn build_action_button(
     let visual = button
         .style
         .visual_for_state(visual_state_for_button(scene, button));
+    let radii = visual.radii();
     let backdrop_start = control_backdrops.len();
     push_control_backdrop_plan(control_backdrops, &button.target, button.bounds, &visual);
     push_control_shadow_plan(control_shadows, &button.target, button.bounds, &visual);
@@ -115,14 +116,15 @@ pub(super) fn build_action_button(
         palette,
     );
     let rectangle_start = rectangles.len();
-    rectangles.push(PaintRect {
-        bounds: button.bounds,
-        rgba: fill_with_opacity(visual.fill.unwrap_or(fallback_fill), visual.opacity),
-    });
-    push_control_border(rectangles, button.bounds, visual.border);
+    rectangles.push(PaintRect::with_radii(
+        button.bounds,
+        fill_with_opacity(visual.fill.unwrap_or(fallback_fill), visual.opacity),
+        radii,
+    ));
+    push_control_border(rectangles, button.bounds, visual.border, radii);
     if is_focused {
         if let Some(ring) = visual.focus_ring {
-            push_control_focus_ring(rectangles, button.bounds, ring);
+            push_control_focus_ring(rectangles, button.bounds, ring, radii);
         } else {
             super::push_focus_ring(rectangles, button.bounds, palette.focus_ring);
         }

@@ -1,4 +1,4 @@
-use super::PaintRect;
+use super::{PaintRect, PaintRectRadii};
 use crate::ui_box_shadow::UiBoxShadowPassPlan;
 use crate::ui_scene::{UiBoxShadow, UiBoxShadowList, UiColorRgba8, UiFilter, UiFilterList};
 use arcweft_presentation::hit::HitRect;
@@ -24,6 +24,7 @@ pub struct RenderControlVisualStyle {
     pub focus_ring: Option<RenderControlFocusRingStyle>,
     pub opacity: Option<f32>,
     pub radius_px: Option<f32>,
+    pub radii_px: Option<PaintRectRadii>,
     pub depth_milli: Option<i32>,
     pub filters: Option<RenderControlFilterList>,
     pub backdrop_filters: Option<RenderControlFilterList>,
@@ -68,6 +69,14 @@ pub struct RenderControlFilterList {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RenderControlFilter {
+    Brightness { factor: f32 },
+    Contrast { factor: f32 },
+    Grayscale { amount: f32 },
+    Saturate { factor: f32 },
+    HueRotateDegrees { degrees: f32 },
+    Invert { amount: f32 },
+    Sepia { amount: f32 },
+    Opacity { amount: f32 },
     Blur { radius_px: f32 },
 }
 
@@ -113,6 +122,7 @@ pub struct PreparedControlPaint {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RuntimeControlBackdropSamplePolicy {
+    PriorFrameContent,
     PriorFrameContentAndEarlierRuntimeControls,
 }
 
@@ -161,6 +171,11 @@ impl RenderControlStyle {
 }
 
 impl RenderControlVisualStyle {
+    pub fn radii(&self) -> PaintRectRadii {
+        self.radii_px
+            .unwrap_or_else(|| PaintRectRadii::uniform(self.radius_px.unwrap_or_default()))
+    }
+
     fn overlay(&mut self, patch: &Self) {
         if patch.fill.is_some() {
             self.fill = patch.fill;
@@ -185,6 +200,11 @@ impl RenderControlVisualStyle {
         }
         if patch.radius_px.is_some() {
             self.radius_px = patch.radius_px;
+            self.radii_px = None;
+        }
+        if patch.radii_px.is_some() {
+            self.radii_px = patch.radii_px;
+            self.radius_px = None;
         }
         if patch.depth_milli.is_some() {
             self.depth_milli = patch.depth_milli;
@@ -245,6 +265,14 @@ impl RenderControlFilterList {
 impl RenderControlFilter {
     const fn ui_filter(self) -> UiFilter {
         match self {
+            Self::Brightness { factor } => UiFilter::Brightness(factor),
+            Self::Contrast { factor } => UiFilter::Contrast(factor),
+            Self::Grayscale { amount } => UiFilter::Grayscale(amount),
+            Self::Saturate { factor } => UiFilter::Saturate(factor),
+            Self::HueRotateDegrees { degrees } => UiFilter::HueRotateDegrees(degrees),
+            Self::Invert { amount } => UiFilter::Invert(amount),
+            Self::Sepia { amount } => UiFilter::Sepia(amount),
+            Self::Opacity { amount } => UiFilter::Opacity(amount),
             Self::Blur { radius_px } => UiFilter::Blur { radius_px },
         }
     }
@@ -260,6 +288,7 @@ pub(super) fn push_control_border(
     rectangles: &mut Vec<PaintRect>,
     bounds: HitRect,
     border: Option<RenderControlBorderStyle>,
+    radii: PaintRectRadii,
 ) {
     let Some(border) = border else {
         return;
@@ -273,32 +302,36 @@ pub(super) fn push_control_border(
         return;
     }
     rectangles.extend([
-        PaintRect {
-            bounds: HitRect::new(bounds.x, bounds.y, bounds.width, width),
-            rgba: border.color,
-        },
-        PaintRect {
-            bounds: HitRect::new(
+        PaintRect::new(
+            HitRect::new(bounds.x, bounds.y, bounds.width, width),
+            border.color,
+        )
+        .clipped_to_radii(bounds, radii),
+        PaintRect::new(
+            HitRect::new(
                 bounds.x,
                 bounds.y + bounds.height - width,
                 bounds.width,
                 width,
             ),
-            rgba: border.color,
-        },
-        PaintRect {
-            bounds: HitRect::new(bounds.x, bounds.y, width, bounds.height),
-            rgba: border.color,
-        },
-        PaintRect {
-            bounds: HitRect::new(
+            border.color,
+        )
+        .clipped_to_radii(bounds, radii),
+        PaintRect::new(
+            HitRect::new(bounds.x, bounds.y, width, bounds.height),
+            border.color,
+        )
+        .clipped_to_radii(bounds, radii),
+        PaintRect::new(
+            HitRect::new(
                 bounds.x + bounds.width - width,
                 bounds.y,
                 width,
                 bounds.height,
             ),
-            rgba: border.color,
-        },
+            border.color,
+        )
+        .clipped_to_radii(bounds, radii),
     ]);
 }
 
@@ -306,6 +339,7 @@ pub(super) fn push_control_focus_ring(
     rectangles: &mut Vec<PaintRect>,
     bounds: HitRect,
     ring: RenderControlFocusRingStyle,
+    radii: PaintRectRadii,
 ) {
     let width = ring.width_px.max(0.0);
     if width <= f32::EPSILON || ring.color[3] <= f32::EPSILON {
@@ -313,23 +347,28 @@ pub(super) fn push_control_focus_ring(
     }
     let outer = bounds.outset(ring.offset_px + width);
     let inner = bounds.outset(ring.offset_px);
+    let outer_radii = radii.outset(ring.offset_px + width);
     rectangles.extend([
-        PaintRect {
-            bounds: HitRect::new(outer.x, outer.y, outer.width, width),
-            rgba: ring.color,
-        },
-        PaintRect {
-            bounds: HitRect::new(outer.x, inner.y + inner.height, outer.width, width),
-            rgba: ring.color,
-        },
-        PaintRect {
-            bounds: HitRect::new(outer.x, outer.y, width, outer.height),
-            rgba: ring.color,
-        },
-        PaintRect {
-            bounds: HitRect::new(inner.x + inner.width, outer.y, width, outer.height),
-            rgba: ring.color,
-        },
+        PaintRect::new(
+            HitRect::new(outer.x, outer.y, outer.width, width),
+            ring.color,
+        )
+        .clipped_to_radii(outer, outer_radii),
+        PaintRect::new(
+            HitRect::new(outer.x, inner.y + inner.height, outer.width, width),
+            ring.color,
+        )
+        .clipped_to_radii(outer, outer_radii),
+        PaintRect::new(
+            HitRect::new(outer.x, outer.y, width, outer.height),
+            ring.color,
+        )
+        .clipped_to_radii(outer, outer_radii),
+        PaintRect::new(
+            HitRect::new(inner.x + inner.width, outer.y, width, outer.height),
+            ring.color,
+        )
+        .clipped_to_radii(outer, outer_radii),
     ]);
 }
 
@@ -350,8 +389,7 @@ pub(super) fn push_control_backdrop_plan(
         target: target.clone(),
         bounds,
         filters,
-        sample_policy:
-            RuntimeControlBackdropSamplePolicy::PriorFrameContentAndEarlierRuntimeControls,
+        sample_policy: RuntimeControlBackdropSamplePolicy::PriorFrameContent,
     });
 }
 

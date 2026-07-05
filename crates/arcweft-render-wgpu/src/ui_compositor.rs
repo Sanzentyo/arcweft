@@ -91,6 +91,7 @@ pub struct UiCompositorFrame<'a> {
 pub(crate) struct UiInlineBackdropFilterFrame<'a> {
     pub device: &'a wgpu::Device,
     pub encoder: &'a mut wgpu::CommandEncoder,
+    pub source: UiCompositorTarget<'a>,
     pub target: UiCompositorTarget<'a>,
     pub bounds: HitRect,
     pub filters: &'a UiFilterList,
@@ -372,7 +373,7 @@ impl UiCompositor {
         stats.offscreen_targets = stats.offscreen_targets.saturating_add(1);
         frame.encoder.copy_texture_to_texture(
             wgpu::TexelCopyTextureInfo {
-                texture: frame.target.texture,
+                texture: frame.source.texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,

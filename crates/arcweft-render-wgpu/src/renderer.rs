@@ -3,6 +3,7 @@ use crate::geometry::{
     PaintRect, PreparedControlPaint, PreparedFrame, PreparedUiScene, RenderFontFamily,
     RenderGlyphMotion, RenderGlyphTransformSpan, RenderImage, RenderStyledParagraph,
     RenderStyledTextSpan, RenderTextBlock, RenderTextSlant, RenderTextStyle, RenderTextWeight,
+    RuntimeControlBackdropSamplePolicy,
 };
 use crate::ui_compositor::{
     UiCompositor, UiCompositorError, UiCompositorFrame, UiCompositorTarget,
@@ -61,6 +62,15 @@ pub enum SharedRendererError {
 struct RectVertex {
     position: [f32; 2],
     color: [f32; 4],
+    local: [f32; 2],
+    size: [f32; 2],
+    radii_top: [f32; 4],
+    radii_bottom: [f32; 4],
+    clip_local: [f32; 2],
+    clip_size: [f32; 2],
+    clip_radii_top: [f32; 4],
+    clip_radii_bottom: [f32; 4],
+    clip_params: [f32; 2],
 }
 
 #[repr(C)]
@@ -301,74 +311,35 @@ impl SharedRenderer {
         let mut styled_paragraphs = 0..frame.styled_paragraphs.len();
         let mut controls = frame.control_paints.iter().collect::<Vec<_>>();
         controls.sort_by_key(|paint| (paint.rectangle_range.start, paint.text_range.start));
+        let runtime_backdrop_source = self.prepare_runtime_control_backdrop_source(
+            device,
+            queue,
+            encoder,
+            target_texture,
+            target_view,
+            target_extent,
+            frame,
+            &controls,
+            &mut next_rectangle,
+            &mut next_text,
+            &mut styled_paragraphs,
+        )?;
 
         for paint in controls {
-            self.render_rectangle_range(
-                device,
-                encoder,
-                target_view,
-                frame,
-                next_rectangle..paint.rectangle_range.start,
-                "arcweft-shared-pre-control-rectangles",
-            );
-            next_rectangle = next_rectangle.max(paint.rectangle_range.start);
-            self.render_text_ranges(
+            self.render_runtime_control_paint(
                 device,
                 queue,
-                encoder,
-                TextRangeRenderRequest {
-                    target: target_view,
-                    frame,
-                    text_range: next_text..paint.text_range.start,
-                    styled_paragraph_range: styled_paragraphs.clone(),
-                },
-            )?;
-            next_text = next_text.max(paint.text_range.start);
-            styled_paragraphs = 0..0;
-
-            self.render_control_backdrops(
-                device,
                 encoder,
                 target_texture,
                 target_view,
                 target_extent,
                 frame,
+                runtime_backdrop_source.as_ref(),
                 paint,
+                &mut next_rectangle,
+                &mut next_text,
+                &mut styled_paragraphs,
             )?;
-            if slice_range(&frame.control_filters, paint.filter_range.clone()).is_empty() {
-                self.render_rectangle_range(
-                    device,
-                    encoder,
-                    target_view,
-                    frame,
-                    paint.rectangle_range.clone(),
-                    "arcweft-shared-runtime-control-rectangles",
-                );
-                self.render_text_ranges(
-                    device,
-                    queue,
-                    encoder,
-                    TextRangeRenderRequest {
-                        target: target_view,
-                        frame,
-                        text_range: paint.text_range.clone(),
-                        styled_paragraph_range: 0..0,
-                    },
-                )?;
-            } else {
-                self.render_filtered_control(
-                    device,
-                    queue,
-                    encoder,
-                    target_texture,
-                    target_view,
-                    target_extent,
-                    frame,
-                    paint,
-                )?;
-            }
-            next_rectangle = next_rectangle.max(paint.rectangle_range.end);
-            next_text = next_text.max(paint.text_range.end);
         }
 
         self.render_rectangle_range(
@@ -394,6 +365,151 @@ impl SharedRenderer {
 
     #[expect(
         clippy::too_many_arguments,
+        reason = "Runtime controls are interleaved with shared frame spans."
+    )]
+    fn render_runtime_control_paint(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        target_texture: &wgpu::Texture,
+        target_view: &wgpu::TextureView,
+        target_extent: UiTextureExtent,
+        frame: &PreparedFrame,
+        runtime_backdrop_source: Option<&RuntimeControlBackdropSource>,
+        paint: &PreparedControlPaint,
+        next_rectangle: &mut usize,
+        next_text: &mut usize,
+        styled_paragraphs: &mut Range<usize>,
+    ) -> Result<(), SharedRendererError> {
+        self.render_rectangle_range(
+            device,
+            encoder,
+            target_view,
+            frame,
+            *next_rectangle..paint.rectangle_range.start,
+            "arcweft-shared-pre-control-rectangles",
+        );
+        *next_rectangle = (*next_rectangle).max(paint.rectangle_range.start);
+        self.render_text_ranges(
+            device,
+            queue,
+            encoder,
+            TextRangeRenderRequest {
+                target: target_view,
+                frame,
+                text_range: *next_text..paint.text_range.start,
+                styled_paragraph_range: styled_paragraphs.clone(),
+            },
+        )?;
+        *next_text = (*next_text).max(paint.text_range.start);
+        *styled_paragraphs = 0..0;
+
+        self.render_control_backdrops(
+            device,
+            encoder,
+            target_texture,
+            target_view,
+            target_extent,
+            frame,
+            runtime_backdrop_source,
+            paint,
+        )?;
+        if slice_range(&frame.control_filters, paint.filter_range.clone()).is_empty() {
+            self.render_rectangle_range(
+                device,
+                encoder,
+                target_view,
+                frame,
+                paint.rectangle_range.clone(),
+                "arcweft-shared-runtime-control-rectangles",
+            );
+            self.render_text_ranges(
+                device,
+                queue,
+                encoder,
+                TextRangeRenderRequest {
+                    target: target_view,
+                    frame,
+                    text_range: paint.text_range.clone(),
+                    styled_paragraph_range: 0..0,
+                },
+            )?;
+        } else {
+            self.render_filtered_control(
+                device,
+                queue,
+                encoder,
+                target_texture,
+                target_view,
+                target_extent,
+                frame,
+                paint,
+            )?;
+        }
+        *next_rectangle = (*next_rectangle).max(paint.rectangle_range.end);
+        *next_text = (*next_text).max(paint.text_range.end);
+        Ok(())
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "The source snapshot has to be taken between ordered frame spans."
+    )]
+    fn prepare_runtime_control_backdrop_source(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        target_texture: &wgpu::Texture,
+        target_view: &wgpu::TextureView,
+        target_extent: UiTextureExtent,
+        frame: &PreparedFrame,
+        controls: &[&PreparedControlPaint],
+        next_rectangle: &mut usize,
+        next_text: &mut usize,
+        styled_paragraphs: &mut Range<usize>,
+    ) -> Result<Option<RuntimeControlBackdropSource>, SharedRendererError> {
+        let Some(first_control) = controls.first().copied() else {
+            return Ok(None);
+        };
+        self.render_rectangle_range(
+            device,
+            encoder,
+            target_view,
+            frame,
+            *next_rectangle..first_control.rectangle_range.start,
+            "arcweft-shared-pre-control-rectangles",
+        );
+        *next_rectangle = (*next_rectangle).max(first_control.rectangle_range.start);
+        self.render_text_ranges(
+            device,
+            queue,
+            encoder,
+            TextRangeRenderRequest {
+                target: target_view,
+                frame,
+                text_range: *next_text..first_control.text_range.start,
+                styled_paragraph_range: styled_paragraphs.clone(),
+            },
+        )?;
+        *next_text = (*next_text).max(first_control.text_range.start);
+        *styled_paragraphs = 0..0;
+        Ok(
+            controls_need_prior_frame_backdrop_source(controls, frame).then(|| {
+                runtime_control_backdrop_source_texture(
+                    device,
+                    encoder,
+                    self.format,
+                    target_texture,
+                    target_extent,
+                )
+            }),
+        )
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
         reason = "The compositor call needs the prepared control span and active target."
     )]
     fn render_control_backdrops(
@@ -404,6 +520,7 @@ impl SharedRenderer {
         target_view: &wgpu::TextureView,
         target_extent: UiTextureExtent,
         frame: &PreparedFrame,
+        runtime_backdrop_source: Option<&RuntimeControlBackdropSource>,
         paint: &PreparedControlPaint,
     ) -> Result<(), SharedRendererError> {
         let backdrops = slice_range(&frame.control_backdrops, paint.backdrop_range.clone());
@@ -414,9 +531,18 @@ impl SharedRenderer {
                 extent: target_extent,
                 origin_logical: [0.0, 0.0],
             };
+            let source = match backdrop.sample_policy {
+                RuntimeControlBackdropSamplePolicy::PriorFrameContent => {
+                    runtime_backdrop_source.map_or(target, RuntimeControlBackdropSource::as_target)
+                }
+                RuntimeControlBackdropSamplePolicy::PriorFrameContentAndEarlierRuntimeControls => {
+                    target
+                }
+            };
             let mut request = UiInlineBackdropFilterFrame {
                 device,
                 encoder: &mut *encoder,
+                source,
                 target,
                 bounds: backdrop.bounds,
                 filters: &backdrop.filters,
@@ -675,10 +801,97 @@ fn slice_range<T>(items: &[T], range: Range<usize>) -> &[T] {
     &items[start..end]
 }
 
+struct RuntimeControlBackdropSource {
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    extent: UiTextureExtent,
+}
+
+impl RuntimeControlBackdropSource {
+    fn as_target(&self) -> UiCompositorTarget<'_> {
+        UiCompositorTarget {
+            texture: &self.texture,
+            view: &self.view,
+            extent: self.extent,
+            origin_logical: [0.0, 0.0],
+        }
+    }
+}
+
+fn controls_need_prior_frame_backdrop_source(
+    controls: &[&PreparedControlPaint],
+    frame: &PreparedFrame,
+) -> bool {
+    controls.iter().any(|paint| {
+        slice_range(&frame.control_backdrops, paint.backdrop_range.clone())
+            .iter()
+            .any(|backdrop| {
+                backdrop.sample_policy == RuntimeControlBackdropSamplePolicy::PriorFrameContent
+            })
+    })
+}
+
+fn runtime_control_backdrop_source_texture(
+    device: &wgpu::Device,
+    encoder: &mut wgpu::CommandEncoder,
+    format: wgpu::TextureFormat,
+    source_texture: &wgpu::Texture,
+    extent: UiTextureExtent,
+) -> RuntimeControlBackdropSource {
+    let texture = runtime_control_texture(
+        device,
+        format,
+        extent,
+        wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::TEXTURE_BINDING,
+        "arcweft-shared-runtime-control-backdrop-source",
+    );
+    encoder.copy_texture_to_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: source_texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        texture_extent_3d(extent),
+    );
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    RuntimeControlBackdropSource {
+        texture,
+        view,
+        extent,
+    }
+}
+
 fn runtime_control_filter_texture(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
     extent: UiTextureExtent,
+    label: &'static str,
+) -> wgpu::Texture {
+    runtime_control_texture(
+        device,
+        format,
+        extent,
+        wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::TEXTURE_BINDING,
+        label,
+    )
+}
+
+fn runtime_control_texture(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    extent: UiTextureExtent,
+    usage: wgpu::TextureUsages,
     label: &'static str,
 ) -> wgpu::Texture {
     device.create_texture(&wgpu::TextureDescriptor {
@@ -692,9 +905,17 @@ fn runtime_control_filter_texture(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        usage,
         view_formats: &[],
     })
+}
+
+fn texture_extent_3d(extent: UiTextureExtent) -> wgpu::Extent3d {
+    wgpu::Extent3d {
+        width: extent.width,
+        height: extent.height,
+        depth_or_array_layers: 1,
+    }
 }
 
 fn clear_texture_view(
@@ -1253,34 +1474,66 @@ fn rectangle_vertices(rectangles: &[PaintRect], width: f32, height: f32) -> Vec<
             let top = 1.0 - (rect.bounds.y / height) * 2.0;
             let bottom = 1.0 - ((rect.bounds.y + rect.bounds.height) / height) * 2.0;
             let color = rect.rgba;
-            [
-                RectVertex {
-                    position: [left, top],
-                    color,
+            let size = [rect.bounds.width, rect.bounds.height];
+            let rect_radii = rect
+                .radii
+                .normalized_for(rect.bounds.width, rect.bounds.height);
+            let (clip_bounds, clip_radii, clip_enabled) = rect.clip.map_or(
+                (rect.bounds, crate::geometry::PaintRectRadii::ZERO, 0.0),
+                |clip| {
+                    (
+                        clip.bounds,
+                        clip.radii
+                            .normalized_for(clip.bounds.width, clip.bounds.height),
+                        1.0,
+                    )
                 },
-                RectVertex {
-                    position: [left, bottom],
-                    color,
-                },
-                RectVertex {
-                    position: [right, bottom],
-                    color,
-                },
-                RectVertex {
-                    position: [left, top],
-                    color,
-                },
-                RectVertex {
-                    position: [right, bottom],
-                    color,
-                },
-                RectVertex {
-                    position: [right, top],
-                    color,
-                },
-            ]
+            );
+            let (radii_top, radii_bottom) = rectangle_radii_vertices(rect_radii);
+            let (clip_radii_top, clip_radii_bottom) = rectangle_radii_vertices(clip_radii);
+            let vertices = [
+                ([left, top], [0.0, 0.0]),
+                ([left, bottom], [0.0, rect.bounds.height]),
+                ([right, bottom], [rect.bounds.width, rect.bounds.height]),
+                ([left, top], [0.0, 0.0]),
+                ([right, bottom], [rect.bounds.width, rect.bounds.height]),
+                ([right, top], [rect.bounds.width, 0.0]),
+            ];
+            vertices.map(|(position, local)| RectVertex {
+                position,
+                color,
+                local,
+                size,
+                radii_top,
+                radii_bottom,
+                clip_local: [
+                    rect.bounds.x + local[0] - clip_bounds.x,
+                    rect.bounds.y + local[1] - clip_bounds.y,
+                ],
+                clip_size: [clip_bounds.width, clip_bounds.height],
+                clip_radii_top,
+                clip_radii_bottom,
+                clip_params: [clip_enabled, 0.0],
+            })
         })
         .collect()
+}
+
+fn rectangle_radii_vertices(radii: crate::geometry::PaintRectRadii) -> ([f32; 4], [f32; 4]) {
+    (
+        [
+            radii.top_left.x_px,
+            radii.top_left.y_px,
+            radii.top_right.x_px,
+            radii.top_right.y_px,
+        ],
+        [
+            radii.bottom_right.x_px,
+            radii.bottom_right.y_px,
+            radii.bottom_left.x_px,
+            radii.bottom_left.y_px,
+        ],
+    )
 }
 
 fn rectangle_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::RenderPipeline {
@@ -1311,8 +1564,53 @@ fn rectangle_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgp
                     },
                     wgpu::VertexAttribute {
                         format: wgpu::VertexFormat::Float32x4,
-                        offset: std::mem::size_of::<[f32; 2]>() as u64,
+                        offset: std::mem::offset_of!(RectVertex, color) as u64,
                         shader_location: 1,
+                    },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x2,
+                        offset: std::mem::offset_of!(RectVertex, local) as u64,
+                        shader_location: 2,
+                    },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x2,
+                        offset: std::mem::offset_of!(RectVertex, size) as u64,
+                        shader_location: 3,
+                    },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x4,
+                        offset: std::mem::offset_of!(RectVertex, radii_top) as u64,
+                        shader_location: 4,
+                    },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x4,
+                        offset: std::mem::offset_of!(RectVertex, radii_bottom) as u64,
+                        shader_location: 5,
+                    },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x2,
+                        offset: std::mem::offset_of!(RectVertex, clip_local) as u64,
+                        shader_location: 6,
+                    },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x2,
+                        offset: std::mem::offset_of!(RectVertex, clip_size) as u64,
+                        shader_location: 7,
+                    },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x4,
+                        offset: std::mem::offset_of!(RectVertex, clip_radii_top) as u64,
+                        shader_location: 8,
+                    },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x4,
+                        offset: std::mem::offset_of!(RectVertex, clip_radii_bottom) as u64,
+                        shader_location: 9,
+                    },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x2,
+                        offset: std::mem::offset_of!(RectVertex, clip_params) as u64,
+                        shader_location: 10,
                     },
                 ],
             }],
@@ -1538,22 +1836,94 @@ const RECTANGLE_SHADER: &str = r"
 struct VertexOut {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
+    @location(1) local: vec2<f32>,
+    @location(2) size: vec2<f32>,
+    @location(3) radii_top: vec4<f32>,
+    @location(4) radii_bottom: vec4<f32>,
+    @location(5) clip_local: vec2<f32>,
+    @location(6) clip_size: vec2<f32>,
+    @location(7) clip_radii_top: vec4<f32>,
+    @location(8) clip_radii_bottom: vec4<f32>,
+    @location(9) clip_params: vec2<f32>,
 }
 
 @vertex
 fn vs_main(
     @location(0) position: vec2<f32>,
     @location(1) color: vec4<f32>,
+    @location(2) local: vec2<f32>,
+    @location(3) size: vec2<f32>,
+    @location(4) radii_top: vec4<f32>,
+    @location(5) radii_bottom: vec4<f32>,
+    @location(6) clip_local: vec2<f32>,
+    @location(7) clip_size: vec2<f32>,
+    @location(8) clip_radii_top: vec4<f32>,
+    @location(9) clip_radii_bottom: vec4<f32>,
+    @location(10) clip_params: vec2<f32>,
 ) -> VertexOut {
     var out: VertexOut;
     out.position = vec4<f32>(position, 0.0, 1.0);
     out.color = color;
+    out.local = local;
+    out.size = size;
+    out.radii_top = radii_top;
+    out.radii_bottom = radii_bottom;
+    out.clip_local = clip_local;
+    out.clip_size = clip_size;
+    out.clip_radii_top = clip_radii_top;
+    out.clip_radii_bottom = clip_radii_bottom;
+    out.clip_params = clip_params;
     return out;
+}
+
+fn ellipse_corner_alpha(local: vec2<f32>, center: vec2<f32>, radius: vec2<f32>) -> f32 {
+    let safe_radius = max(radius, vec2<f32>(0.0001, 0.0001));
+    let normalized = (local - center) / safe_radius;
+    let signed_distance = (length(normalized) - 1.0) * min(safe_radius.x, safe_radius.y);
+    return 1.0 - smoothstep(0.0, 1.0, signed_distance);
+}
+
+fn rounded_alpha(
+    local: vec2<f32>,
+    size: vec2<f32>,
+    radii_top: vec4<f32>,
+    radii_bottom: vec4<f32>,
+) -> f32 {
+    let safe_size = max(size, vec2<f32>(0.0001, 0.0001));
+    let tl = radii_top.xy;
+    let tr = radii_top.zw;
+    let br = radii_bottom.xy;
+    let bl = radii_bottom.zw;
+    if (max(max(max(tl.x, tl.y), max(tr.x, tr.y)), max(max(br.x, br.y), max(bl.x, bl.y))) <= 0.0001) {
+        return 1.0;
+    }
+    if (local.x < tl.x && local.y < tl.y) {
+        return ellipse_corner_alpha(local, tl, tl);
+    }
+    if (local.x > safe_size.x - tr.x && local.y < tr.y) {
+        return ellipse_corner_alpha(local, vec2<f32>(safe_size.x - tr.x, tr.y), tr);
+    }
+    if (local.x > safe_size.x - br.x && local.y > safe_size.y - br.y) {
+        return ellipse_corner_alpha(local, safe_size - br, br);
+    }
+    if (local.x < bl.x && local.y > safe_size.y - bl.y) {
+        return ellipse_corner_alpha(local, vec2<f32>(bl.x, safe_size.y - bl.y), bl);
+    }
+    return 1.0;
 }
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-    return in.color;
+    var alpha = rounded_alpha(in.local, in.size, in.radii_top, in.radii_bottom);
+    if (in.clip_params.x > 0.5) {
+        alpha = alpha * rounded_alpha(
+            in.clip_local,
+            in.clip_size,
+            in.clip_radii_top,
+            in.clip_radii_bottom,
+        );
+    }
+    return vec4<f32>(in.color.rgb, in.color.a * alpha);
 }
 ";
 

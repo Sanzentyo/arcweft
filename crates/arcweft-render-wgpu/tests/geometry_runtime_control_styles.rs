@@ -6,12 +6,12 @@ use arcweft_presentation::text_input::{
     TextByteOffset, TextControlValue, TextInputOptions, TextInputSessionId, TextRange, TextRevision,
 };
 use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, InteractionVisualState, RenderActionButton, RenderActionButtonAction,
-    RenderControlBorderStyle, RenderControlFilter, RenderControlFilterList,
-    RenderControlFocusRingStyle, RenderControlShadow, RenderControlShadowKind, RenderControlStyle,
-    RenderControlVisualStyle, RenderPreferences, RenderScene, RenderTextInputControl,
-    RenderTextSubmitImePolicy, RenderViewport, RuntimeControlBackdropSamplePolicy,
-    SharedFramePlanner,
+    ChoiceScroll, InteractionVisualState, PaintRectCornerRadius, PaintRectRadii,
+    RenderActionButton, RenderActionButtonAction, RenderControlBorderStyle, RenderControlFilter,
+    RenderControlFilterList, RenderControlFocusRingStyle, RenderControlShadow,
+    RenderControlShadowKind, RenderControlStyle, RenderControlVisualStyle, RenderPreferences,
+    RenderScene, RenderTextInputControl, RenderTextSubmitImePolicy, RenderViewport,
+    RuntimeControlBackdropSamplePolicy, SharedFramePlanner,
 };
 use arcweft_render_wgpu::ui_scene::UiFilter;
 
@@ -128,6 +128,53 @@ fn focused_text_control_uses_authored_selection_and_caret_colors() {
 }
 
 #[test]
+fn text_control_fill_and_inner_marks_use_authored_corner_radii() {
+    let input_target = target("input.feedback");
+    let radii = PaintRectRadii::new(
+        PaintRectCornerRadius::new(12.0, 6.0),
+        PaintRectCornerRadius::new(10.0, 5.0),
+        PaintRectCornerRadius::new(8.0, 4.0),
+        PaintRectCornerRadius::new(6.0, 3.0),
+    );
+    let control = text_control(input_target.clone())
+        .with_selection(TextRange::new(TextByteOffset(0), TextByteOffset(2)))
+        .with_style(RenderControlStyle {
+            normal: RenderControlVisualStyle {
+                fill: Some([0.1, 0.2, 0.3, 0.4]),
+                selection: Some([0.2, 0.5, 0.8, 0.6]),
+                caret: Some([0.9, 0.8, 0.1, 1.0]),
+                radii_px: Some(radii),
+                ..RenderControlVisualStyle::default()
+            },
+            ..RenderControlStyle::default()
+        });
+    let scene = scene(
+        vec![control],
+        Vec::new(),
+        InteractionVisualState {
+            focused: Some(input_target),
+            hovered: None,
+            pressed: None,
+        },
+    );
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let fill = frame
+        .rectangles
+        .iter()
+        .find(|rect| rgba_near(rect.rgba, [0.1, 0.2, 0.3, 0.4]))
+        .expect("fill rect exists");
+    let selection = frame
+        .rectangles
+        .iter()
+        .find(|rect| rgba_near(rect.rgba, [0.2, 0.5, 0.8, 0.6]))
+        .expect("selection rect exists");
+
+    assert_eq!(fill.radii, radii);
+    assert_eq!(selection.clip.expect("selection clip").radii, radii);
+}
+
+#[test]
 fn supported_box_shadow_reaches_existing_shadow_pass_plan() {
     let button_target = target("button.submit_feedback");
     let scene = scene_with_button(button_target.clone(), InteractionVisualState::default());
@@ -169,7 +216,7 @@ fn backdrop_filter_reaches_runtime_control_backdrop_plan() {
     assert_eq!(backdrop.bounds, HitRect::new(48.0, 48.0, 420.0, 48.0));
     assert_eq!(
         backdrop.sample_policy,
-        RuntimeControlBackdropSamplePolicy::PriorFrameContentAndEarlierRuntimeControls
+        RuntimeControlBackdropSamplePolicy::PriorFrameContent
     );
     assert_eq!(
         backdrop.filters.filters(),
@@ -259,6 +306,45 @@ fn foreground_filter_reaches_runtime_control_filter_plan() {
         .find(|paint| paint.target == button_target)
         .expect("button paint span exists");
     assert_eq!(paint.filter_range, 0..1);
+}
+
+#[test]
+fn runtime_control_color_matrix_filters_reach_ui_filter_plan() {
+    let input_target = target("input.feedback");
+    let control = text_control(input_target.clone()).with_style(RenderControlStyle {
+        normal: RenderControlVisualStyle {
+            backdrop_filters: Some(RenderControlFilterList {
+                filters: vec![
+                    RenderControlFilter::Brightness { factor: 1.2 },
+                    RenderControlFilter::Contrast { factor: 0.9 },
+                    RenderControlFilter::Saturate { factor: 1.4 },
+                    RenderControlFilter::HueRotateDegrees { degrees: 12.0 },
+                    RenderControlFilter::Opacity { amount: 0.85 },
+                ],
+            }),
+            ..RenderControlVisualStyle::default()
+        },
+        ..RenderControlStyle::default()
+    });
+    let scene = scene(vec![control], Vec::new(), InteractionVisualState::default());
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let backdrop = frame
+        .control_backdrops
+        .iter()
+        .find(|backdrop| backdrop.target == input_target)
+        .expect("control backdrop plan exists");
+
+    assert_eq!(
+        backdrop.filters.filters(),
+        &[
+            UiFilter::Brightness(1.2),
+            UiFilter::Contrast(0.9),
+            UiFilter::Saturate(1.4),
+            UiFilter::HueRotateDegrees(12.0),
+            UiFilter::Opacity(0.85),
+        ]
+    );
 }
 
 #[test]

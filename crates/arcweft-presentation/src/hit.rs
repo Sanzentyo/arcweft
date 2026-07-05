@@ -82,6 +82,22 @@ impl HitRect {
             height,
         }
     }
+
+    #[must_use]
+    pub fn transformed(
+        self,
+        translate_x: f32,
+        translate_y: f32,
+        scale_x: f32,
+        scale_y: f32,
+    ) -> Self {
+        Self {
+            x: translate_x + self.x * scale_x,
+            y: translate_y + self.y * scale_y,
+            width: self.width * scale_x,
+            height: self.height * scale_y,
+        }
+    }
 }
 
 impl HitRecord {
@@ -149,6 +165,22 @@ impl HitRecord {
 impl HitTree {
     pub fn push(&mut self, record: HitRecord) {
         self.records.push(record);
+    }
+
+    #[must_use]
+    pub fn with_transformed_bounds(
+        mut self,
+        translate_x: f32,
+        translate_y: f32,
+        scale_x: f32,
+        scale_y: f32,
+    ) -> Self {
+        for record in &mut self.records {
+            record.bounds = record
+                .bounds
+                .transformed(translate_x, translate_y, scale_x, scale_y);
+        }
+        self
     }
 
     pub fn as_slice(&self) -> &[HitRecord] {
