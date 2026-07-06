@@ -7,7 +7,7 @@
 use crate::ast::common::TextRange;
 use crate::ast::ids::EntityRefSyntax;
 use crate::ast::pattern::Pattern;
-use crate::expr::Expr;
+use crate::expr::{CallArg, Expr};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ComponentViewBody {
@@ -34,6 +34,7 @@ pub enum ViewExpr {
     Image(ViewImage),
     TextField(ViewTextField),
     Button(ViewButton),
+    Let(ViewLet),
     If(ViewIf),
     Match(ViewMatch),
     ForEach(ViewForEach),
@@ -93,6 +94,13 @@ pub struct ViewButton {
     focusable: bool,
     modifiers: Vec<ViewModifier>,
     activation: Option<ViewAction>,
+    range: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ViewLet {
+    pattern: Pattern,
+    value: Expr,
     range: TextRange,
 }
 
@@ -649,6 +657,32 @@ impl ViewActionInvokeAction {
     }
 }
 
+impl ViewLet {
+    pub(crate) const fn new(pattern: Pattern, value: Expr, range: TextRange) -> Self {
+        Self {
+            pattern,
+            value,
+            range,
+        }
+    }
+
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    pub const fn value(&self) -> &Expr {
+        &self.value
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+
+    pub fn input_handle(&self) -> Option<&EntityRefSyntax> {
+        input_handle_entity(&self.value)
+    }
+}
+
 impl ViewIf {
     pub(crate) const fn new(
         condition: Expr,
@@ -989,6 +1023,11 @@ fn collect_text_control_inputs<'a>(expr: &'a ViewExpr, inputs: &mut Vec<&'a Enti
                 inputs.push(input);
             }
         }
+        ViewExpr::Let(view_let) => {
+            if let Some(input) = view_let.input_handle() {
+                inputs.push(input);
+            }
+        }
         ViewExpr::If(view_if) => {
             collect_text_control_inputs(view_if.then_branch(), inputs);
             if let Some(else_branch) = view_if.else_branch() {
@@ -1051,11 +1090,44 @@ fn collect_action_invokes<'a>(expr: &'a ViewExpr, invokes: &mut Vec<&'a ViewActi
                 collect_action_invokes(&branch.value, invokes);
             }
         }
-        ViewExpr::ComponentCall(_)
+        ViewExpr::Let(_)
+        | ViewExpr::ComponentCall(_)
         | ViewExpr::Text(_)
         | ViewExpr::Image(_)
         | ViewExpr::TextField(_)
         | ViewExpr::Expr(_)
         | ViewExpr::Raw(_) => {}
     }
+}
+
+fn input_handle_entity(expr: &Expr) -> Option<&EntityRefSyntax> {
+    match expr {
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } if expression_path_is(receiver, &["input"])
+            && matches!(method.as_str(), "text" | "secure") =>
+        {
+            first_positional_entity_arg(args)
+        }
+        Expr::Call { callee, args } if expression_path_is(callee, &["input", "text"]) => {
+            first_positional_entity_arg(args)
+        }
+        Expr::Call { callee, args } if expression_path_is(callee, &["input", "secure"]) => {
+            first_positional_entity_arg(args)
+        }
+        _ => None,
+    }
+}
+
+fn expression_path_is(expr: &Expr, segments: &[&str]) -> bool {
+    matches!(expr, Expr::Path(path) if path.matches_segments(segments))
+}
+
+fn first_positional_entity_arg(args: &[CallArg]) -> Option<&EntityRefSyntax> {
+    args.iter().find_map(|arg| match arg {
+        CallArg::Positional(Expr::EntityRef(reference)) => Some(reference),
+        CallArg::Named { .. } | CallArg::Spread { .. } | CallArg::Positional(_) => None,
+    })
 }

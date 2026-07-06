@@ -77,6 +77,11 @@ pub enum UiProgramInstruction {
         body_span: u32,
         source: Option<SourceRangeRef>,
     },
+    BindLocal {
+        pattern_schema: DigestRef,
+        value_schema: DigestRef,
+        source: Option<SourceRangeRef>,
+    },
     ApplyStyle {
         style: UiStyleApplyRef,
         source: Option<SourceRangeRef>,

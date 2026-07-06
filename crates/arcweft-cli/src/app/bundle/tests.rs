@@ -104,6 +104,59 @@ flow test {
 }
 
 #[test]
+fn component_view_local_let_input_handle_lowers_to_program_binding() {
+    use arcweft_bundle::resource_codec::ui::{UiProgramInstruction, UiTextSourceKind};
+
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+component FeedbackForm() {
+  let visitor_name = input.text(@input:.visitor_name, initial = "")
+  Column {
+    TextField(visitor_name)
+      .placeholder("Your name")
+  }
+}
+
+flow test {
+  component(@component:.FeedbackForm)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
+
+    let program = sidecars.program.expect("program sidecar");
+    assert!(program.instructions.iter().any(|instruction| {
+        matches!(
+            instruction,
+            UiProgramInstruction::BindLocal {
+                pattern_schema: _,
+                value_schema: _,
+                source: None
+            }
+        )
+    }));
+
+    let input = sidecars.input.expect("input sidecar");
+    assert_eq!(input.options.len(), 1);
+    assert_eq!(input.options[0].public_id, "input.visitor_name");
+
+    let text = sidecars.text.expect("text sidecar");
+    let value_source = text
+        .sources
+        .iter()
+        .find(|source| source.public_id == "text.value.input.visitor_name")
+        .expect("value text source");
+    assert_eq!(
+        value_source.kind,
+        UiTextSourceKind::Literal {
+            value: String::new()
+        }
+    );
+}
+
+#[test]
 fn component_view_box_and_scroll_lower_to_typed_ui_resources() {
     use arcweft_bundle::resource_codec::ui::{
         UiElementKind, UiProgramInstruction, UiStyleSelectorPart,

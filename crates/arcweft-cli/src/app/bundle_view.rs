@@ -25,13 +25,13 @@ use arcweft_lang_syntax::{
         pattern::Pattern,
         view::{
             ComponentViewBody, ViewAction, ViewActionPayload, ViewArg, ViewButton, ViewButtonLabel,
-            ViewElement, ViewExpr, ViewForEach, ViewIf, ViewImage, ViewMatch, ViewMatchArm,
-            ViewModifier, ViewNavigationDirection, ViewNavigationInitial, ViewNavigationTarget,
-            ViewNavigationTrap, ViewStyleModifier, ViewText, ViewTextControlPayloadField,
-            ViewTextField, ViewTextFieldMode, ViewTextSubmitImePolicy,
+            ViewElement, ViewExpr, ViewForEach, ViewIf, ViewImage, ViewLet, ViewMatch,
+            ViewMatchArm, ViewModifier, ViewNavigationDirection, ViewNavigationInitial,
+            ViewNavigationTarget, ViewNavigationTrap, ViewStyleModifier, ViewText,
+            ViewTextControlPayloadField, ViewTextField, ViewTextFieldMode, ViewTextSubmitImePolicy,
         },
     },
-    expr::{Expr, Literal, UnitNumberSuffix},
+    expr::{CallArg, Expr, Literal, UnitNumberSuffix},
 };
 
 #[derive(Clone, Debug, Default)]
@@ -55,6 +55,7 @@ struct ViewLoweringState {
     focus_group_stack: Vec<String>,
     inline_arcweft_sources: Vec<StyleSourceIdentity>,
     inline_css_sources: Vec<StyleSourceIdentity>,
+    input_handle_bindings: Vec<InputHandleBinding>,
     text_counter: u32,
     input_counter: u32,
     button_counter: u32,
@@ -78,6 +79,13 @@ struct AuthoredTextControl {
     secure_policy: UiSecureInputPolicy,
     submit_handler: Option<String>,
     change_handler: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct InputHandleBinding {
+    name: String,
+    public_id: String,
+    initial_value: String,
 }
 
 const VIEW_LAYOUT_ROOT_X_MILLI: i32 = 48_000;
@@ -253,6 +261,7 @@ fn lower_view_expr(
         ViewExpr::TextField(field) => lower_text_field(component_id, field, state, layout),
         ViewExpr::Button(button) => lower_button(component_id, button, state, *layout),
         ViewExpr::Image(image) => lower_image(image, state),
+        ViewExpr::Let(view_let) => lower_view_let(view_let, state),
         ViewExpr::Fragment(children) => lower_layout_column(component_id, children, state, *layout),
         ViewExpr::ComponentCall(call) => {
             state
@@ -285,6 +294,16 @@ fn lower_view_expr(
         }
         ViewExpr::Await(_) | ViewExpr::Expr(_) => ViewLayoutFrame::zero(),
     }
+}
+
+fn lower_view_let(view_let: &ViewLet, state: &mut ViewLoweringState) -> ViewLayoutFrame {
+    state.instructions.push(UiProgramInstruction::BindLocal {
+        pattern_schema: schema_ref_for_source(&pattern_schema_source(view_let.pattern())),
+        value_schema: expr_schema_ref(view_let.value()),
+        source: None,
+    });
+    register_input_handle_binding(view_let, state);
+    ViewLayoutFrame::zero()
 }
 
 fn lower_view_if(
@@ -1415,15 +1434,116 @@ fn action_button_submit_ordinal(counts: &mut Vec<(String, usize)>, input: &str) 
     0
 }
 
+fn register_input_handle_binding(view_let: &ViewLet, state: &mut ViewLoweringState) {
+    let Some(name) = view_let.pattern().simple_binding_name() else {
+        return;
+    };
+    let Some(binding) = input_handle_binding(name, view_let.value()) else {
+        return;
+    };
+    if let Some(existing) = state
+        .input_handle_bindings
+        .iter_mut()
+        .find(|existing| existing.name == binding.name)
+    {
+        *existing = binding;
+    } else {
+        state.input_handle_bindings.push(binding);
+    }
+}
+
+fn input_handle_binding(name: &str, value: &Expr) -> Option<InputHandleBinding> {
+    let args = match value {
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } if expr_path_matches(receiver, &["input"])
+            && matches!(method.as_str(), "text" | "secure") =>
+        {
+            args
+        }
+        Expr::Call { callee, args }
+            if expr_path_matches(callee, &["input", "text"])
+                || expr_path_matches(callee, &["input", "secure"]) =>
+        {
+            args
+        }
+        _ => return None,
+    };
+    let input = first_positional_entity_arg(args)?;
+    let initial_value = named_call_arg(args, &["initial", "value"])
+        .map(input_handle_initial_value)
+        .unwrap_or_default();
+    Some(InputHandleBinding {
+        name: name.to_owned(),
+        public_id: normalize_input_payload_ref(&input.canonical_body()),
+        initial_value,
+    })
+}
+
+fn text_field_bound_input<'a>(
+    field: &ViewTextField,
+    state: &'a ViewLoweringState,
+) -> Option<&'a InputHandleBinding> {
+    if field.input().is_some() {
+        return None;
+    }
+    let name = simple_path_name(field.value())?;
+    state
+        .input_handle_bindings
+        .iter()
+        .rev()
+        .find(|binding| binding.name == name)
+}
+
+fn simple_path_name(expr: &Expr) -> Option<&str> {
+    match expr {
+        Expr::Path(path) if path.segments().len() == 1 => Some(path.as_label()),
+        _ => None,
+    }
+}
+
+fn expr_path_matches(expr: &Expr, segments: &[&str]) -> bool {
+    matches!(expr, Expr::Path(path) if path.matches_segments(segments))
+}
+
+fn first_positional_entity_arg(args: &[CallArg]) -> Option<&EntityRefSyntax> {
+    args.iter().find_map(|arg| match arg {
+        CallArg::Positional(Expr::EntityRef(reference)) => Some(reference),
+        CallArg::Positional(_) | CallArg::Named { .. } | CallArg::Spread { .. } => None,
+    })
+}
+
+fn named_call_arg<'a>(args: &'a [CallArg], names: &[&str]) -> Option<&'a Expr> {
+    args.iter().find_map(|arg| match arg {
+        CallArg::Named { name, value } if names.contains(&name.as_str()) => Some(value.as_ref()),
+        CallArg::Positional(_) | CallArg::Named { .. } | CallArg::Spread { .. } => None,
+    })
+}
+
+fn input_handle_initial_value(expr: &Expr) -> String {
+    match expr {
+        Expr::Literal(Literal::String(value)) => value.clone(),
+        _ => expr_source(expr),
+    }
+}
+
 impl AuthoredTextControl {
     fn from_field(
         component_id: &str,
         field: &ViewTextField,
         state: &mut ViewLoweringState,
     ) -> Self {
-        let public_id = field.input().map_or_else(
-            || next_input_id(component_id, field.mode(), state),
-            normalize_entity_ref,
+        let binding = text_field_bound_input(field, state).cloned();
+        let public_id = field
+            .input()
+            .map(normalize_entity_ref)
+            .or_else(|| binding.as_ref().map(|binding| binding.public_id.clone()))
+            .unwrap_or_else(|| next_input_id(component_id, field.mode(), state));
+        let value = binding.as_ref().map_or_else(
+            || expr_source(field.value()),
+            |binding| binding.initial_value.clone(),
         );
         let purpose = text_control_symbol_arg(field.args(), &["purpose"]);
         let enter_key = text_control_symbol_arg(field.args(), &["enter_key", "enterKey"])
@@ -1450,7 +1570,7 @@ impl AuthoredTextControl {
         );
         Self {
             public_id: public_id.clone(),
-            value: expr_source(field.value()),
+            value,
             label: text_control_text_arg(field.args(), &["label"])
                 .or_else(|| modifier_label(field.modifiers())),
             placeholder: text_control_text_arg(field.args(), &["placeholder"])

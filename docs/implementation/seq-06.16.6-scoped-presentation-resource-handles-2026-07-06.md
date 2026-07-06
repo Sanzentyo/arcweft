@@ -182,3 +182,35 @@ value-position `image(...)` / `component(...)` handle creation, lexical cleanup
 stack lowering, native/web/Agent parity tests for scoped handles, or save/load
 rollback integration. The save/load work is now split to
 `docs/reviews/requests/2026-07-06-seq-06.16.6.1-save-load-scoped-presentation-handles.md`.
+
+## 2026-07-06 follow-up slice: View-local input handle let binding
+
+The final UI syntax follow-up now covers the first View-local handle-binding
+slice:
+
+- `let visitor_name = input.text(@input:.visitor_name, initial = "")` parses as
+  `ViewExpr::Let` inside component/View bodies.
+- The syntax AST reports `input.text` / `input.secure` builder handles through
+  `ComponentViewBody::text_control_inputs()`.
+- Bundle UI program lowering emits `UiProgramInstruction::BindLocal` with
+  deterministic pattern and value schema digests.
+- `TextField(visitor_name)` resolves the local handle to
+  `UiInputOptions.public_id = "input.visitor_name"` and uses the builder
+  initial value for the value text source.
+
+Validation:
+
+```bash
+cargo fmt
+cargo test -p arcweft-lang-syntax --all-features component_view_local_let_input_handle_parses
+cargo test -p arcweft-cli --all-features component_view_local_let_input_handle_lowers_to_program_binding
+cargo test -p arcweft-lang-syntax --all-features
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit\current
+```
+
+The structure audit reported 0 errors and 139 warnings after this slice.
+
+This slice does not close await/pending builder integration, scroll runtime
+behavior, adapter parity coverage, or the save/load request linked above.

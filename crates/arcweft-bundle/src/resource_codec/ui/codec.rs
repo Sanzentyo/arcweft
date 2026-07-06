@@ -1054,7 +1054,10 @@ fn saturating_u32(value: usize) -> u32 {
 fn instruction_public_ids(instruction: &UiProgramInstruction) -> Vec<String> {
     match instruction {
         UiProgramInstruction::OpenElement { style, part, .. } => option_ids([style, part]),
-        UiProgramInstruction::CloseElement => Vec::new(),
+        UiProgramInstruction::CloseElement
+        | UiProgramInstruction::Branch { .. }
+        | UiProgramInstruction::RepeatKeyed { .. }
+        | UiProgramInstruction::BindLocal { .. } => Vec::new(),
         UiProgramInstruction::EmitText {
             text_source,
             style,
@@ -1088,9 +1091,6 @@ fn instruction_public_ids(instruction: &UiProgramInstruction) -> Vec<String> {
             .into_iter()
             .flatten()
             .collect(),
-        UiProgramInstruction::Branch { .. } | UiProgramInstruction::RepeatKeyed { .. } => {
-            Vec::new()
-        }
         UiProgramInstruction::ApplyStyle { style, .. } => match style {
             UiStyleApplyRef::Named(id) => vec![id.clone()],
             UiStyleApplyRef::InlineArcweft { .. } | UiStyleApplyRef::InlineCss { .. } => Vec::new(),

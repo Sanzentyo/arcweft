@@ -184,6 +184,50 @@ pub component FeedbackForm() {
 }
 
 #[test]
+fn component_view_local_let_input_handle_parses() {
+    let parsed = parse_source(
+        r#"
+pub component FeedbackForm() {
+  let visitor_name = input.text(@input:.visitor_name, initial = "")
+  Column {
+    TextField(visitor_name)
+      .placeholder("Your name")
+  }
+}
+"#,
+    );
+
+    assert_eq!(parsed.errors(), &[]);
+    let view = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(item) => item.component_body()?.view(),
+            _ => None,
+        })
+        .expect("component View body");
+
+    let ViewExpr::Fragment(items) = view.value() else {
+        panic!("expected root View fragment");
+    };
+    let Some(ViewExpr::Let(binding)) = items.first() else {
+        panic!("expected View-local let binding");
+    };
+    assert_eq!(
+        binding.pattern().simple_binding_name(),
+        Some("visitor_name")
+    );
+    assert_eq!(
+        view.text_control_inputs()
+            .into_iter()
+            .map(arcweft_lang_syntax::ast::ids::EntityRefSyntax::canonical_body)
+            .collect::<Vec<_>>(),
+        vec!["input.visitor_name".to_owned()]
+    );
+}
+
+#[test]
 fn component_view_reactive_if_match_for_parse_to_structured_view_exprs() {
     let parsed = parse_source(
         r"

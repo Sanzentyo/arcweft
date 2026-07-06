@@ -625,6 +625,38 @@ files:
 | `crates/arcweft-lang-syntax/tests/style_component_view.rs` | 12,106 | 490 | test | false | Component/View parser coverage |
 | `crates/arcweft-cli/src/app/bundle/tests.rs` | 28,488 | 920 | test | false | Bundle sidecar lowering coverage |
 
+## View-Local Input Handle Let Binding
+
+- Added View-local `let name = expr` parsing for component/View bodies. The
+  parser records the binding as `ViewExpr::Let` rather than treating it as a
+  custom element or raw line, so later lowering can consume handle builders
+  without reparsing source strings.
+- Added direct input-handle discovery for `input.text(@input:.id, initial =
+  "...")` and `input.secure(@input:.id, initial = "...")` builder values.
+  Component/View `text_control_inputs()` now reports these handles even when the
+  following `TextField(name)` uses the local handle instead of spelling the
+  input id inline.
+- Added `UiProgramInstruction::BindLocal` so bundle UI programs preserve the
+  authored local binding with deterministic pattern/value schema digests. This
+  gives runtime-plan cleanup and later pending/await builder work a typed
+  instruction to extend instead of a stringly custom element.
+- Bundle Component/View lowering now resolves `TextField(local_name)` through
+  the preceding input-handle binding. The generated `UiInputOptions.public_id`
+  uses the authored input id, and the initial text source uses the builder's
+  displayed initial value instead of the local variable name.
+
+### Verification
+
+- `cargo fmt`
+- `cargo test -p arcweft-lang-syntax --all-features component_view_local_let_input_handle_parses`
+- `cargo test -p arcweft-cli --all-features component_view_local_let_input_handle_lowers_to_program_binding`
+- `cargo test -p arcweft-lang-syntax --all-features`
+- `cargo check --workspace --all-targets --all-features`
+- `cargo clippy --workspace --all-targets --all-features`
+- `cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit\current`
+
+The structure audit reported 0 errors and 139 warnings after this slice.
+
 ## Remaining Work
 
 - End-to-end save subsystem wiring is split to
@@ -641,7 +673,7 @@ files:
 - `Scroll` is now a typed resource and sidecar element, but scroll offsets,
   clipping, input routing, save/restore of scroll state, and native/web/observe
   parity tests still need the dedicated scroll runtime behavior slice.
-- The final UI syntax direction still needs View-local `let` binding and
-  await/pending builder integration from the broader input/scroll syntax
-  request. Ordinary `if`, `match`, and `for` View branching is covered by this
-  cut.
+- The final UI syntax direction still needs await/pending builder integration
+  from the broader input/scroll syntax request. View-local input handle `let`
+  bindings and ordinary `if`, `match`, and `for` View branching are covered by
+  this cut.

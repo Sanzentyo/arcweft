@@ -3,7 +3,7 @@ use crate::ast::flow::Stmt;
 use crate::ast::ids::{EntityRef, EntityRefSyntax, IdRef};
 use crate::ast::view::{
     ComponentViewBody, ViewAction, ViewActionInvokeAction, ViewActionPayload, ViewArg, ViewButton,
-    ViewButtonLabel, ViewElement, ViewExpr, ViewForEach, ViewIf, ViewImage, ViewMatch,
+    ViewButtonLabel, ViewElement, ViewExpr, ViewForEach, ViewIf, ViewImage, ViewLet, ViewMatch,
     ViewMatchArm, ViewModifier, ViewNavigationDirection, ViewNavigationEdge,
     ViewNavigationModifier, ViewNavigationTarget, ViewStyleModifier, ViewText,
     ViewTextControlPayloadField, ViewTextField, ViewTextFieldMode, ViewTextSubmitAction,
@@ -145,6 +145,11 @@ fn parse_view_exprs(
             index += 1;
             continue;
         }
+        if line.starts_with("let ") {
+            items.push(parse_view_let_line(line, base, errors));
+            index += 1;
+            continue;
+        }
         if line.starts_with("if ") && line.ends_with('{') {
             let (nested, consumed) =
                 parse_view_if_block(&lines[index..], base, module_path, errors);
@@ -182,6 +187,24 @@ fn parse_view_exprs(
         [single] => single.clone(),
         _ => ViewExpr::Fragment(items),
     }
+}
+
+fn parse_view_let_line(line: &str, base: usize, errors: &mut Vec<ParseError>) -> ViewExpr {
+    let rest = line.strip_prefix("let").map(str::trim).unwrap_or_default();
+    let Some((pattern, value)) = split_top_level_binding(rest) else {
+        errors.push(simple_error(
+            base,
+            line.len(),
+            "View `let` binding needs `=`",
+            "let visitor_name = input.text(@input:.visitor_name, initial = \"\")",
+        ));
+        return ViewExpr::Raw(line.to_owned());
+    };
+    ViewExpr::Let(ViewLet::new(
+        parse_pattern(pattern.trim()),
+        parse_expr_lossy(value.trim()),
+        TextRange::new(base, base.saturating_add(line.len())),
+    ))
 }
 
 fn parse_view_if_block(
