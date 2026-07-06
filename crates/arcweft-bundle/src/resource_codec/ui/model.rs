@@ -219,6 +219,11 @@ pub enum UiActionButtonActionResource {
         input: String,
         ime_policy: UiTextSubmitImePolicy,
     },
+    ActionInvoke {
+        action: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        payload: Option<String>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -257,6 +262,11 @@ pub enum UiRuntimeActionButtonAction {
     TextInputSubmit {
         input_target: String,
         ime_policy: UiTextSubmitImePolicy,
+    },
+    ActionInvoke {
+        action: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        payload: Option<String>,
     },
 }
 
@@ -1089,6 +1099,12 @@ impl UiProgramResource {
                         UiRuntimeActionButtonAction::TextInputSubmit {
                             input_target: input.clone(),
                             ime_policy: *ime_policy,
+                        }
+                    }
+                    UiActionButtonActionResource::ActionInvoke { action, payload } => {
+                        UiRuntimeActionButtonAction::ActionInvoke {
+                            action: action.clone(),
+                            payload: payload.clone(),
                         }
                     }
                 },

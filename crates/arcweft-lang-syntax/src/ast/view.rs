@@ -107,12 +107,20 @@ pub enum ViewButtonLabel {
 pub enum ViewAction {
     Noop,
     TextSubmit(ViewTextSubmitAction),
+    ActionInvoke(ViewActionInvokeAction),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewTextSubmitAction {
     input: EntityRefSyntax,
     ime_policy: ViewTextSubmitImePolicy,
+    range: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ViewActionInvokeAction {
+    action: EntityRefSyntax,
+    payload: Option<String>,
     range: TextRange,
 }
 
@@ -580,6 +588,28 @@ impl ViewTextSubmitAction {
 
     pub const fn ime_policy(&self) -> ViewTextSubmitImePolicy {
         self.ime_policy
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl ViewActionInvokeAction {
+    pub fn new(action: EntityRefSyntax, payload: Option<String>, range: TextRange) -> Self {
+        Self {
+            action,
+            payload,
+            range,
+        }
+    }
+
+    pub const fn action(&self) -> &EntityRefSyntax {
+        &self.action
+    }
+
+    pub fn payload(&self) -> Option<&String> {
+        self.payload.as_ref()
     }
 
     pub const fn range(&self) -> TextRange {

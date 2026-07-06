@@ -70,11 +70,16 @@ pub enum InputDiagnosticKind {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct ActionButtonSubmitOutcome {
+    action: Option<Action>,
     write_back: Option<TextControlWriteBack>,
     diagnostic: Option<InputDiagnostic>,
 }
 
 impl InputOutcome {
+    pub fn actions(&self) -> &[Action] {
+        &self.actions
+    }
+
     pub fn text_control_write_backs(&self) -> &[TextControlWriteBack] {
         &self.text_control_write_backs
     }
@@ -341,8 +346,11 @@ impl InputController {
                 (Some(pressed), RouteDecision::Routed(event), true)
                     if &pressed == event.target() =>
                 {
-                    let actions = choice_action(frame, event.target()).into_iter().collect();
+                    let mut actions = choice_action(frame, event.target())
+                        .into_iter()
+                        .collect::<Vec<_>>();
                     let submit = self.action_button_submit(frame, event.target());
+                    actions.extend(submit.action);
                     let text_control_write_backs = submit.write_back.into_iter().collect();
                     let diagnostics = submit.diagnostic.into_iter().collect();
                     (
@@ -526,6 +534,8 @@ impl InputController {
             .map_or_else(ActionButtonSubmitOutcome::default, |target| {
                 self.action_button_submit(frame, target)
             });
+        let mut actions = actions;
+        actions.extend(submit.action);
         let text_control_write_backs = submit.write_back.into_iter().collect();
         let diagnostics = submit.diagnostic.into_iter().collect();
         let activates_target = focused.as_ref().is_some_and(|target| {
@@ -770,12 +780,28 @@ impl InputController {
             ime_policy,
         } = &button.action
         else {
+            if let RenderActionButtonAction::ActionInvoke { action, payload } = &button.action {
+                let action = frame
+                    .semantics
+                    .lower_action(target, action)
+                    .ok()
+                    .map(|action| match payload {
+                        Some(payload) => action.with_payload(payload.clone()),
+                        None => action,
+                    });
+                return ActionButtonSubmitOutcome {
+                    action,
+                    write_back: None,
+                    diagnostic: None,
+                };
+            }
             return ActionButtonSubmitOutcome::default();
         };
         if self.ime_composing {
             match ime_policy {
                 RenderTextSubmitImePolicy::Reject => {
                     return ActionButtonSubmitOutcome {
+                        action: None,
                         write_back: None,
                         diagnostic: Some(InputDiagnostic {
                             kind: InputDiagnosticKind::ImeCompositionRejectedActionButtonSubmit,
@@ -818,6 +844,7 @@ impl InputController {
                 },
             );
         ActionButtonSubmitOutcome {
+            action: None,
             write_back,
             diagnostic: None,
         }

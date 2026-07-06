@@ -436,6 +436,22 @@ fn session_requires_explicit_clock_and_exposes_presentation() {
 }
 
 #[test]
+fn session_accepts_generic_semantic_action_invoke() {
+    let bundle = fixture_bundle();
+    let mut session =
+        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
+    let action = Action::new(
+        ActionTarget::Runtime,
+        PublicId::try_new("action.feedback.submit_name").expect("action id"),
+    )
+    .with_payload("visitor_name.text");
+
+    session
+        .queue_semantic_action(&action)
+        .expect("generic semantic action is accepted");
+}
+
+#[test]
 fn session_rejects_unverified_bytecode_before_construction() {
     let mut bundle = structured_vm_fixture_bundle();
     bundle.bytecode.program.abi_version = BYTECODE_ABI_VERSION + 1;

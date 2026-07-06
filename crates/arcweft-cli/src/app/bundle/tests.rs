@@ -399,6 +399,45 @@ flow test {
     );
 }
 
+#[test]
+fn component_view_action_invoke_button_lowers_to_action_resource() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+pub action feedback.submit(value: String)
+
+component FeedbackForm() {
+  Button(@button:.continue, label = "Continue")
+    .on_click {
+      action.invoke(@action:.feedback.submit, value = visitor_name.text)
+    }
+}
+
+flow test {
+  component(@component:.FeedbackForm)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
+    let program = sidecars.program.expect("program sidecar");
+
+    let button = program
+        .action_buttons
+        .iter()
+        .find(|button| button.public_id == "button.continue")
+        .expect("continue action button emitted");
+
+    assert!(matches!(
+        &button.action,
+        arcweft_bundle::resource_codec::ui::UiActionButtonActionResource::ActionInvoke {
+            action,
+            payload,
+        } if action == "action.feedback.submit"
+            && payload.as_deref() == Some("visitor_name.text")
+    ));
+}
+
 fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.test".to_owned())),

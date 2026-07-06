@@ -384,19 +384,22 @@ impl UiProgramResource {
                 )
                 .chain(self.action_buttons.iter().flat_map(|button| {
                     let action_ids = match &button.action {
-                        super::model::UiActionButtonActionResource::Noop => None,
+                        super::model::UiActionButtonActionResource::Noop => Vec::new(),
                         super::model::UiActionButtonActionResource::TextInputSubmit {
                             input,
                             ..
-                        } => Some(input.clone()),
+                        } => vec![input.clone()],
+                        super::model::UiActionButtonActionResource::ActionInvoke {
+                            action, ..
+                        } => vec![action.clone()],
                     };
                     [
                         Some(button.public_id.clone()),
                         Some(button.label_text_source.clone()),
-                        action_ids,
                     ]
                     .into_iter()
                     .flatten()
+                    .chain(action_ids)
                 }))
                 .chain(self.focus_groups.iter().flat_map(|group| {
                     [

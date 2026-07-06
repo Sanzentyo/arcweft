@@ -1,10 +1,11 @@
 use crate::ast::common::TextRange;
+use crate::ast::flow::Stmt;
 use crate::ast::ids::{EntityRef, EntityRefSyntax, IdRef};
 use crate::ast::view::{
-    ComponentViewBody, ViewAction, ViewArg, ViewButton, ViewButtonLabel, ViewElement, ViewExpr,
-    ViewImage, ViewModifier, ViewNavigationDirection, ViewNavigationEdge, ViewNavigationModifier,
-    ViewNavigationTarget, ViewStyleModifier, ViewText, ViewTextField, ViewTextFieldMode,
-    ViewTextSubmitAction, ViewTextSubmitImePolicy,
+    ComponentViewBody, ViewAction, ViewActionInvokeAction, ViewArg, ViewButton, ViewButtonLabel,
+    ViewElement, ViewExpr, ViewImage, ViewModifier, ViewNavigationDirection, ViewNavigationEdge,
+    ViewNavigationModifier, ViewNavigationTarget, ViewStyleModifier, ViewText, ViewTextField,
+    ViewTextFieldMode, ViewTextSubmitAction, ViewTextSubmitImePolicy,
 };
 use crate::cst::{split_top_level_punctuation, split_top_level_punctuation_once};
 use crate::expr::{CallArg, Expr, Literal};
@@ -398,6 +399,17 @@ fn parse_view_modifier(
             1,
         ));
     }
+    if line.starts_with(".on_click") && line.contains('{') {
+        let (source, consumed) = collect_inline_modifier_block(lines, ".on_click");
+        return Some((
+            ViewModifier::OnEvent {
+                name: "click".to_owned(),
+                body: parse_expr_lossy(&source),
+                ime_policy: None,
+            },
+            consumed,
+        ));
+    }
     if let Some(value) = call_arg(line, ".submit_action") {
         return Some((ViewModifier::SubmitAction(parse_expr_lossy(value)), 1));
     }
@@ -675,11 +687,15 @@ fn click_action(expr: &Expr, range: TextRange) -> Option<ViewAction> {
                 .unwrap_or(source.trim());
             let parsed = parse_expr_lossy(body);
             text_submit_action(&parsed, range)
+                .or_else(|| action_invoke_action(&parsed, range))
                 .or_else(|| noop_action(&parsed))
                 .or_else(|| text_submit_action(&Expr::Raw(body.to_owned()), range))
+                .or_else(|| action_invoke_action(&Expr::Raw(body.to_owned()), range))
                 .or_else(|| noop_action(&Expr::Raw(body.to_owned())))
         }
-        _ => text_submit_action(expr, range).or_else(|| noop_action(expr)),
+        _ => text_submit_action(expr, range)
+            .or_else(|| action_invoke_action(expr, range))
+            .or_else(|| noop_action(expr)),
     }
 }
 
@@ -781,6 +797,150 @@ fn text_submit_source_call_action(call_args: &str, range: TextRange) -> Option<V
     Some(ViewAction::TextSubmit(ViewTextSubmitAction::new(
         input, ime_policy, range,
     )))
+}
+
+fn action_invoke_action(expr: &Expr, range: TextRange) -> Option<ViewAction> {
+    match expr {
+        Expr::Closure { body, .. } => action_invoke_action(body, range),
+        Expr::Block { statements, value } => value
+            .as_deref()
+            .and_then(|value| action_invoke_action(value, range))
+            .or_else(|| {
+                statements.iter().find_map(|statement| match statement {
+                    Stmt::Expr(expr) => action_invoke_action(expr, range),
+                    _ => None,
+                })
+            }),
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } if method == "invoke" && expr_source(receiver).as_deref() == Some("action") => {
+            action_invoke_call_action(args, range)
+        }
+        Expr::Call { callee, args } if is_action_invoke_callee(callee) => {
+            action_invoke_call_action(args, range)
+        }
+        Expr::Raw(source) => {
+            let source = source
+                .trim()
+                .strip_prefix("||")
+                .map(str::trim)
+                .or_else(|| strip_parameterized_closure_body(source.trim()))
+                .unwrap_or(source.trim());
+            let source = source
+                .trim()
+                .strip_prefix('{')
+                .and_then(|value| value.strip_suffix('}'))
+                .map_or(source.trim(), str::trim);
+            let parsed = parse_expr_lossy(source);
+            match parsed {
+                Expr::Raw(_) => action_invoke_source_call_action(source, range),
+                _ => action_invoke_action(&parsed, range)
+                    .or_else(|| action_invoke_source_call_action(source, range)),
+            }
+        }
+        _ => None,
+    }
+}
+
+fn is_action_invoke_callee(callee: &Expr) -> bool {
+    match callee {
+        Expr::Path(path) => path.matches_segments(&["action", "invoke"]),
+        Expr::Raw(source) => source.trim() == "action.invoke",
+        Expr::Field { target, field } => {
+            field == "invoke" && expr_source(target).as_deref() == Some("action")
+        }
+        _ => false,
+    }
+}
+
+fn action_invoke_call_action(args: &[CallArg], range: TextRange) -> Option<ViewAction> {
+    let action = args.iter().find_map(|arg| match arg {
+        CallArg::Positional(expr) => entity_ref_expr(expr),
+        CallArg::Named { name, value } if name == "action" => entity_ref_expr(value),
+        CallArg::Named { .. } | CallArg::Spread { .. } => None,
+    })?;
+    let payload = args.iter().find_map(|arg| match arg {
+        CallArg::Named { name, value } if name == "value" || name == "payload" => {
+            action_payload_source(value)
+        }
+        CallArg::Positional(_) | CallArg::Named { .. } | CallArg::Spread { .. } => None,
+    });
+    Some(ViewAction::ActionInvoke(ViewActionInvokeAction::new(
+        action, payload, range,
+    )))
+}
+
+fn action_invoke_source_call_action(source: &str, range: TextRange) -> Option<ViewAction> {
+    let args = source
+        .trim()
+        .strip_prefix("action.invoke")?
+        .trim_start()
+        .strip_prefix('(')?
+        .trim_end()
+        .strip_suffix(')')?;
+    let args = parse_view_args(args);
+    let action = args.iter().find_map(|arg| match arg {
+        ViewArg::Positional(expr) => entity_ref_expr(expr),
+        ViewArg::Named { name, value } if name == "action" => entity_ref_expr(value),
+        ViewArg::Named { .. } => None,
+    })?;
+    let payload = args.iter().find_map(|arg| match arg {
+        ViewArg::Named { name, value } if name == "value" || name == "payload" => {
+            action_payload_source(value)
+        }
+        ViewArg::Positional(_) | ViewArg::Named { .. } => None,
+    });
+    Some(ViewAction::ActionInvoke(ViewActionInvokeAction::new(
+        action, payload, range,
+    )))
+}
+
+fn action_payload_source(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Literal(Literal::String(value)) => Some(value.clone()),
+        _ => expr_source(expr),
+    }
+}
+
+fn expr_source(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Literal(Literal::String(value)) => Some(format!("{value:?}")),
+        Expr::Literal(Literal::Bool(value)) => Some(value.to_string()),
+        Expr::EntityRef(reference) => Some(reference.canonical_body()),
+        Expr::Path(path) => Some(path.as_label().to_owned()),
+        Expr::ShortVariant(value) => Some(format!(".{}", value.as_str())),
+        Expr::Raw(source) => Some(source.trim().to_owned()),
+        Expr::Field { target, field } => Some(format!("{}.{}", expr_source(target)?, field)),
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } => Some(format!(
+            "{}.{}({})",
+            expr_source(receiver)?,
+            method,
+            call_args_source(args)?
+        )),
+        Expr::Call { callee, args } => Some(format!(
+            "{}({})",
+            expr_source(callee)?,
+            call_args_source(args)?
+        )),
+        _ => None,
+    }
+}
+
+fn call_args_source(args: &[CallArg]) -> Option<String> {
+    args.iter()
+        .map(|arg| match arg {
+            CallArg::Positional(expr) => expr_source(expr),
+            CallArg::Named { name, value } => Some(format!("{name} = {}", expr_source(value)?)),
+            CallArg::Spread { value } => Some(format!("..{}", expr_source(value)?)),
+        })
+        .collect::<Option<Vec<_>>>()
+        .map(|args| args.join(", "))
 }
 
 fn strip_parameterized_closure_body(source: &str) -> Option<&str> {

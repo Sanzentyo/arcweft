@@ -559,6 +559,10 @@ fn lower_button(
             input: normalize_entity_ref(action.input()),
             ime_policy: lower_ime_policy(action.ime_policy()),
         },
+        Some(ViewAction::ActionInvoke(action)) => UiActionButtonActionResource::ActionInvoke {
+            action: normalize_entity_ref(action.action()),
+            payload: action.payload().cloned(),
+        },
         Some(ViewAction::Noop) | None => UiActionButtonActionResource::Noop,
     };
     state.action_buttons.push(UiActionButtonResource {

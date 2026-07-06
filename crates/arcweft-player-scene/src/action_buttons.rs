@@ -20,6 +20,8 @@ pub struct RuntimeActionButtonLowerer;
 pub enum RuntimeActionButtonLoweringError {
     #[error("invalid runtime action-button target `{target}`")]
     InvalidTarget { target: String },
+    #[error("action button `{button}` references invalid action `{action}`")]
+    InvalidAction { button: String, action: String },
     #[error("action button `{button}` references missing text-control target `{target}`")]
     MissingTextControlTarget { button: String, target: String },
 }
@@ -81,6 +83,18 @@ fn lower_action(
                 selection: input.selection,
                 revision: TextRevision::default(),
                 ime_policy: lower_ime_policy(*ime_policy),
+            })
+        }
+        UiRuntimeActionButtonAction::ActionInvoke { action, payload } => {
+            let action = PublicId::try_new(action).map_err(|_| {
+                RuntimeActionButtonLoweringError::InvalidAction {
+                    button: button.public_id.clone(),
+                    action: action.clone(),
+                }
+            })?;
+            Ok(RenderActionButtonAction::ActionInvoke {
+                action,
+                payload: payload.clone(),
             })
         }
     }

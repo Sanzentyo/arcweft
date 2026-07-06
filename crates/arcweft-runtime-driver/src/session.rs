@@ -328,6 +328,7 @@ impl RuntimeInputTargetKind {
 enum RuntimeInputKind {
     Advance,
     Choice,
+    ActionInvoke,
 }
 
 impl RuntimeInputKind {
@@ -335,6 +336,7 @@ impl RuntimeInputKind {
         match self {
             Self::Advance => "advance",
             Self::Choice => "choice",
+            Self::ActionInvoke => "action.invoke",
         }
     }
 
@@ -513,16 +515,44 @@ impl BundleSession {
         self.pending_input_events.push(event);
     }
 
-    /// Final semantic bridge from Arcweft presentation actions to the current
-    /// core choice input format. DOM controls are never involved.
+    /// Final semantic bridge from Arcweft presentation actions to core input
+    /// events. DOM controls are never involved.
     pub fn queue_semantic_action(&mut self, action: &Action) -> Result<(), BundleSessionError> {
-        let semantic_action = RuntimeSemanticAction::from_action(action)?;
-        let option = action.payload().cloned().ok_or_else(|| {
-            BundleSessionError::MissingSemanticActionPayload {
-                action: semantic_action.as_str().to_owned(),
+        match RuntimeSemanticAction::from_action(action) {
+            Ok(RuntimeSemanticAction::ChoiceSelect) => {
+                let option = action.payload().cloned().ok_or_else(|| {
+                    BundleSessionError::MissingSemanticActionPayload {
+                        action: RuntimeSemanticAction::ChoiceSelect.as_str().to_owned(),
+                    }
+                })?;
+                self.queue_choice_selection(option);
+            }
+            Err(BundleSessionError::UnsupportedSemanticAction { .. }) => {
+                self.queue_action_invoke(action)?;
+            }
+            Err(error) => return Err(error),
+        }
+        Ok(())
+    }
+
+    fn queue_action_invoke(&mut self, action: &Action) -> Result<(), BundleSessionError> {
+        let target = InteractionTarget::new(action.kind().as_str()).map_err(|_| {
+            BundleSessionError::UnsupportedSemanticAction {
+                action: action.kind().as_str().to_owned(),
             }
         })?;
-        self.queue_choice_selection(option);
+        let event = RoutedInputEvent::new(
+            InputEpoch::default(),
+            InputSequence::default(),
+            target,
+            RuntimeInputKind::ActionInvoke.event_kind(),
+        );
+        let event = if let Some(payload) = action.payload() {
+            event.with_payload(InteractionPayload::Text(payload.clone()))
+        } else {
+            event
+        };
+        self.queue_input(event);
         Ok(())
     }
 

@@ -65,6 +65,39 @@ fn scene(ime_policy: RenderTextSubmitImePolicy) -> RenderScene {
     }
 }
 
+fn action_invoke_scene() -> RenderScene {
+    RenderScene {
+        dialogue: None,
+        choices: Vec::new(),
+        text_inputs: Vec::new(),
+        action_buttons: vec![RenderActionButton {
+            target: target("button.continue"),
+            label: "Continue".to_owned(),
+            enabled: true,
+            bounds: HitRect::new(48.0, 48.0, 180.0, 48.0),
+            style: RenderControlStyle::default(),
+            action: RenderActionButtonAction::ActionInvoke {
+                action: PublicId::try_new("action.feedback.submit_name").unwrap(),
+                payload: Some("visitor_name.text".to_owned()),
+            },
+        }],
+        focus_groups: Vec::new(),
+        focus_navigation: Vec::new(),
+        images: Vec::new(),
+        viewport: RenderViewport {
+            logical_width: 800.0,
+            logical_height: 480.0,
+            physical_width: 800,
+            physical_height: 480,
+            scale_factor: 1.0,
+        },
+        visual_time_millis: 0,
+        preferences: RenderPreferences::default(),
+        interaction: InteractionVisualState::default(),
+        choice_scroll: ChoiceScroll::default(),
+    }
+}
+
 #[test]
 fn pointer_activation_on_action_button_emits_submit_write_back() {
     let scene = scene(RenderTextSubmitImePolicy::Commit);
@@ -80,6 +113,28 @@ fn pointer_activation_on_action_button_emits_submit_write_back() {
     let write_back = &outcome.text_control_write_backs()[0];
     assert_eq!(write_back.kind(), TextControlWriteBackKind::Submit);
     assert_eq!(write_back.value().as_str(), "hello");
+}
+
+#[test]
+fn pointer_activation_on_action_invoke_button_emits_semantic_action() {
+    let scene = action_invoke_scene();
+    let frame = SharedFramePlanner::prepare(&scene).unwrap();
+    let mut input = InputController::default();
+    let position = ViewportPoint::new(64.0, 64.0);
+
+    input.pointer_down(&frame, PointerId(0), position);
+    let outcome = input.pointer_up(&frame, PointerId(0), position);
+
+    assert!(outcome.text_control_write_backs().is_empty());
+    assert_eq!(outcome.actions().len(), 1);
+    assert_eq!(
+        outcome.actions()[0].kind().as_str(),
+        "action.feedback.submit_name"
+    );
+    assert_eq!(
+        outcome.actions()[0].payload().map(String::as_str),
+        Some("visitor_name.text")
+    );
 }
 
 #[test]

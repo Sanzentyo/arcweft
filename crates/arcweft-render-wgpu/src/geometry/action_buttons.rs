@@ -38,6 +38,10 @@ pub enum RenderActionButtonAction {
         revision: TextRevision,
         ime_policy: RenderTextSubmitImePolicy,
     },
+    ActionInvoke {
+        action: PublicId,
+        payload: Option<String>,
+    },
 }
 
 /// How button activation should handle an active IME composition.
@@ -168,7 +172,7 @@ pub(super) fn build_action_button(
             button.bounds,
         )
         .with_label(button.label.clone())
-        .with_action(action_id.clone())
+        .with_action(button.action.semantic_action_id(action_id).clone())
         .with_enabled(button.enabled),
     );
     (
@@ -212,16 +216,24 @@ impl RenderActionButtonAction {
     #[must_use]
     pub const fn input_target(&self) -> Option<&InteractionTarget> {
         match self {
-            Self::Noop => None,
             Self::TextInputSubmit { input_target, .. } => Some(input_target),
+            Self::Noop | Self::ActionInvoke { .. } => None,
         }
     }
 
     #[must_use]
     pub const fn ime_policy(&self) -> Option<RenderTextSubmitImePolicy> {
         match self {
-            Self::Noop => None,
             Self::TextInputSubmit { ime_policy, .. } => Some(*ime_policy),
+            Self::Noop | Self::ActionInvoke { .. } => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn semantic_action_id<'a>(&'a self, fallback: &'a PublicId) -> &'a PublicId {
+        match self {
+            Self::ActionInvoke { action, .. } => action,
+            Self::Noop | Self::TextInputSubmit { .. } => fallback,
         }
     }
 }

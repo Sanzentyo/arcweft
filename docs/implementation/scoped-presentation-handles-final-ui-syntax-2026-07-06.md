@@ -80,8 +80,67 @@ file sizes:
   embedded tests; existing size warning remains.
 - `crates/arcweft-lang-syntax/src/parser/items.rs`: 1354 physical LOC,
   production, no embedded tests; existing size warning remains.
-- `crates/arcweft-lang-syntax/src/parser/view.rs`: 860 physical LOC,
+- `crates/arcweft-lang-syntax/src/parser/view.rs`: 967 physical LOC,
   production, no embedded tests.
+
+## Action Invoke Button Substrate
+
+- Component/View `Button(...).on_click { action.invoke(@action:.name, value = expr) }`
+  now parses into a typed `ViewAction::ActionInvoke` activation. The parser
+  accepts the block callback form and normalizes both call-shaped
+  `action.invoke(...)` and method-call-shaped `action.invoke(...)` expression
+  ASTs into the same action node.
+- `UiActionButtonActionResource`, `UiRuntimeActionButtonAction`, and
+  `RenderActionButtonAction` now carry `ActionInvoke { action, payload }`
+  alongside the existing `TextInputSubmit` route. Runtime action-button
+  lowering validates the authored action public id before rendering.
+- Rendered action buttons register their authored action id in the semantic
+  tree, and player-scene pointer/keyboard activation lowers it into
+  `InputOutcome.actions`. Native and web session bridges now accept generic
+  semantic actions by queueing a deterministic `action.invoke` custom input
+  targeted at the action id instead of rejecting anything except
+  `action.choice.select`.
+- Payloads are currently stored as authored expression source strings. Literal
+  string payloads are stored as literal values, while values such as
+  `visitor_name.text` are preserved as source text until the typed input-handle
+  evaluator and `receive action(...)` flow primitive are implemented.
+
+### Verification
+
+- `cargo test -p arcweft-lang-syntax --all-features component_view_button_on_click_action_invoke_block_parses`
+- `cargo test -p arcweft-bundle --all-features runtime_action_button_resolves_action_invoke_action`
+- `cargo test -p arcweft-player-scene --all-features pointer_activation_on_action_invoke_button_emits_semantic_action`
+- `cargo test -p arcweft-runtime-driver --all-features session_accepts_generic_semantic_action_invoke`
+- `cargo test -p arcweft-cli --all-features component_view_action_invoke_button_lowers_to_action_resource`
+- `cargo check --workspace --all-targets --all-features`
+- `cargo clippy --workspace --all-targets --all-features`
+- `cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit\current`
+
+The action-invoke cut was measured at Jujutsu change `nqnzzvoz` /
+`39e9c9c5`. The current structure audit still reports 0 errors and 138
+warnings. Relevant changed production files:
+
+| Path | Bytes | LOC | Classification | Responsibility |
+| --- | ---: | ---: | --- | --- |
+| `crates/arcweft-lang-syntax/src/parser/view.rs` | 35,170 | 967 | production | View element/modifier parsing and action callback normalization |
+| `crates/arcweft-lang-syntax/src/ast/view.rs` | 19,257 | 726 | production | Typed component/View AST, including button activation payloads |
+| `crates/arcweft-bundle/src/resource_codec/ui/model.rs` | 49,503 | 1,480 | production with embedded tests | UI resource/runtime model and runtime projection |
+| `crates/arcweft-bundle/src/resource_codec/ui/codec.rs` | 39,725 | 1,080 | production | UI resource codec reference accounting |
+| `crates/arcweft-cli/src/app/bundle_view.rs` | 46,123 | 1,227 | production | Component/View sidecar lowering into bundle resources |
+| `crates/arcweft-player-scene/src/action_buttons.rs` | 5,116 | 130 | production | Runtime action-button resource lowering |
+| `crates/arcweft-player-scene/src/input.rs` | 46,658 | 1,245 | production with embedded tests | Routed input, focus, text editing, and action-button activation |
+| `crates/arcweft-render-wgpu/src/geometry/action_buttons.rs` | 8,460 | 227 | production | Action-button render geometry and semantic node emission |
+| `crates/arcweft-runtime-driver/src/session.rs` | 58,208 | 1,433 | production with embedded tests | Bundle session input queueing and runtime bridge |
+
+Relevant changed test files:
+
+| Path | Bytes | LOC |
+| --- | ---: | ---: |
+| `crates/arcweft-bundle/tests/ui_action_button_resources.rs` | 3,969 | 100 |
+| `crates/arcweft-cli/src/app/bundle/tests.rs` | 26,667 | 790 |
+| `crates/arcweft-lang-syntax/tests/style_component_view.rs` | 9,207 | 346 |
+| `crates/arcweft-player-scene/tests/action_button_submit.rs` | 7,493 | 183 |
+| `crates/arcweft-runtime-driver/tests/session.rs` | 35,874 | 905 |
 
 ## Remaining Work
 
@@ -97,7 +156,8 @@ file sizes:
 - `Scroll` is now a typed resource and sidecar element, but scroll offsets,
   clipping, input routing, save/restore of scroll state, and native/web/observe
   parity tests still need the dedicated scroll runtime behavior slice.
-- The final UI syntax direction still needs action payload sema/resource
-  contracts, `action.invoke`, `receive action(...)`, generic callback block
-  sugar, and richer reactive branching surface from the broader input/scroll
-  syntax request.
+- The final UI syntax direction still needs action payload sema/evaluation
+  contracts, `receive action(...)`, typed input-handle expression evaluation,
+  generic callback block sugar beyond the `on_click` `action.invoke` route, and
+  richer reactive branching surface from the broader input/scroll syntax
+  request.
