@@ -381,7 +381,7 @@ fn omitted_entry_target_flow_effects_are_inferred_without_source_upper_bound() {
     let tree = parse_ok(
         r#"
 extern capability cli { fn stdout(text: String) effects { stdio.write } }
-entry cli @entry.main { run(@flow.main) }
+entry cli @entry.main { goto @flow.main }
 flow @flow.main main {
     cli.stdout("missing effects declaration")
 }

@@ -31,7 +31,7 @@ pub dialogue defaults @dialogue.defaults {
 }
 
 entry game @entry.reactive_ui_style {
-    start @flow.reactive_ui_style
+    goto @flow.reactive_ui_style
 }
 
 flow reactive_ui_style {

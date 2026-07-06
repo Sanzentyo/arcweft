@@ -134,7 +134,7 @@ flow @flow.shooting_gallery_intro opening(state: GameState) -> Result<FlowExit, 
 
 ```arcw
 test @test.shooter_touch_fallback scenario {
-    start(@flow.shooting_gallery_intro)
+    goto @flow.shooting_gallery_intro
     permission.deny(.usb, @usb.lightgun)
 
     wait.object(@control.shooter.fire, state=.visible)

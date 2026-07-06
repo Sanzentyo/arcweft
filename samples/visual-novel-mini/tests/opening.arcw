@@ -9,7 +9,7 @@ effects { signal.write }
 }
 
 test @test.opening_smoke scenario {
-    start @flow.opening
+    goto @flow.opening
     expect log.info contains "test opening"
     expect signal @signal.current_flow == @flow.opening
     expect no_assertion_failures

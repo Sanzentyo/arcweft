@@ -128,7 +128,7 @@ pub flow @flow.enter_truck_game enter_truck_game(state: GameState) -> Result<Flo
 
 ```arcw
 test @test.mobile_controller_drives_truck scenario {
-    start(@flow.enter_truck_game)
+    goto @flow.enter_truck_game
 
     wait.object(@control.action_a, state=.visible)
 

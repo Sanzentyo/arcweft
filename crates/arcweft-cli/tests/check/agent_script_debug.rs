@@ -2656,7 +2656,7 @@ fn write_project_callable_rag_fixture(source_path: &Path) {
 signal @signal.current_flow: Watch<Ref<Flow>>
 
 entry game @entry.main {
-    start @flow.opening
+    goto @flow.opening
 }
 
 pub reducer update_route(state: GameState, event: GameEvent) -> GameState {

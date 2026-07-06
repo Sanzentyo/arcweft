@@ -987,11 +987,11 @@ fn parse_entry_body_item(
     if let Some(target) = parse_entry_target(item, "goto", base, errors) {
         return EntryItem::Goto(target);
     }
-    if let Some(target) = parse_entry_target(item, "start", base, errors) {
-        return EntryItem::Start(target);
+    if parse_removed_entry_dispatch(item, "start", base, errors) {
+        return EntryItem::Raw(item.to_owned());
     }
-    if let Some(target) = parse_entry_target(item, "run", base, errors) {
-        return EntryItem::Run(target);
+    if parse_removed_entry_dispatch(item, "run", base, errors) {
+        return EntryItem::Raw(item.to_owned());
     }
     if let Some(rest) = item.strip_prefix("route ") {
         return parse_entry_route(rest, base, errors)
@@ -1004,6 +1004,27 @@ fn parse_entry_body_item(
         };
     }
     EntryItem::Raw(item.to_owned())
+}
+
+fn parse_removed_entry_dispatch(
+    item: &str,
+    name: &str,
+    base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> bool {
+    let Some(rest) = item.strip_prefix(name) else {
+        return false;
+    };
+    if rest
+        .chars()
+        .next()
+        .is_some_and(|ch| !ch.is_whitespace() && ch != '(')
+    {
+        return false;
+    }
+    let message = format!("`{name}` was removed from entry bodies; use `goto @flow.name`");
+    errors.push(simple_error(base, item.len(), &message, "goto @flow.name"));
+    true
 }
 
 fn parse_entry_target(

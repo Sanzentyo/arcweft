@@ -35,10 +35,10 @@ flow @flow.main main {
 }
 
 #[test]
-fn entry_selects_runtime_start_flow() {
+fn entry_selects_runtime_goto_flow() {
     let tree = parse_ok(
         r#"
-entry game @entry.main { start(@flow.second) }
+entry game @entry.main { goto @flow.second }
 flow @flow.first first { return "wrong" }
 flow @flow.second second { return "right" }
 "#,
@@ -48,11 +48,11 @@ flow @flow.second second { return "right" }
 }
 
 #[test]
-fn entry_accepts_bare_start_flow_target() {
+fn entry_accepts_bare_goto_flow_target() {
     let tree = parse_ok(
         r#"
 entry game {
-    start @flow.second
+    goto @flow.second
 }
 flow @flow.first first { return "wrong" }
 flow @flow.second second { return "right" }
@@ -71,7 +71,7 @@ extern capability fs {
     fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }
 }
 extern capability path { fn save(path: String) -> VirtualPath }
-entry cli @entry.main { run(@flow.main) }
+entry cli @entry.main { goto @flow.main }
 flow @flow.main main effects { fs.read(save) } {
     let text = try await fs.read_text(path.save("profile.json")) with {
         error e => return "missing"

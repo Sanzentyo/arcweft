@@ -162,10 +162,10 @@ flow @flow.main main {
 }
 
 #[test]
-fn entry_selects_runtime_start_flow_from_compile_gap_fixture() {
+fn entry_selects_runtime_goto_flow_from_compile_gap_fixture() {
     let tree = parse_ok(
         r#"
-entry game @entry.main { start(@flow.second) }
+entry game @entry.main { goto @flow.second }
 flow @flow.first first { return "wrong" }
 flow @flow.second second { return "right" }
 "#,
@@ -181,11 +181,11 @@ flow @flow.second second { return "right" }
 }
 
 #[test]
-fn entry_accepts_bare_start_flow_target_from_compile_gap_fixture() {
+fn entry_accepts_bare_goto_flow_target_from_compile_gap_fixture() {
     let tree = parse_ok(
         r#"
 entry game {
-    start @flow.second
+    goto @flow.second
 }
 flow @flow.first first { return "wrong" }
 flow @flow.second second { return "right" }

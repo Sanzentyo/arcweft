@@ -69,7 +69,7 @@ pub surface character narrator {
 }
 
 entry game {
-    start @flow.windows_font_showcase
+    goto @flow.windows_font_showcase
 }
 
 flow windows_font_showcase {

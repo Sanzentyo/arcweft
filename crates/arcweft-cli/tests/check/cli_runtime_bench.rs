@@ -1543,7 +1543,7 @@ fn cli_json_selects_cli_entry_and_binds_args() {
     let path = temp_arcw(
         "cli-entry",
         r"
-entry cli @entry.main { run(@flow.main) }
+entry cli @entry.main { goto @flow.main }
 
 flow @flow.main main(argc: i32) {
     return argc
@@ -1590,7 +1590,7 @@ extern capability fs {
     fn write_text(path: VirtualPath, body: String) -> Need<Unit, FsError> effects { fs.write }
 }
 extern capability path { fn save(path: String) -> VirtualPath }
-entry cli @entry.main { run(@flow.main) }
+entry cli @entry.main { goto @flow.main }
 flow @flow.main main effects { fs.read(save), fs.write(save) } {
     let text = try await fs.read_text(path.save("input.txt")) with { error e => return "read_failed" }
     try await fs.write_text(path.save("output.txt"), text) with { error e => return "write_failed" }
@@ -1885,7 +1885,7 @@ extern capability fs {
     fn write_text(path: VirtualPath, body: String) -> Need<Unit, FsError> effects { fs.write }
 }
 extern capability path { fn save(path: String) -> VirtualPath }
-entry cli @entry.main { run(@flow.main) }
+entry cli @entry.main { goto @flow.main }
 flow @flow.main main effects { fs.read(save), fs.write(save) } {
     let text = try await fs.read_text(path.save("input.txt")) with { error e => return "read_failed" }
     try await fs.write_text(path.save("output.txt"), text) with { error e => return "write_failed" }
@@ -2260,7 +2260,7 @@ extern capability fs {
     fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }
 }
 extern capability path { fn save(path: String) -> VirtualPath }
-entry cli @entry.main { run(@flow.main) }
+entry cli @entry.main { goto @flow.main }
 flow @flow.main main effects { fs.read(save) } {
     let paths = [path.save("a.txt"), path.save("b.txt"), path.save("c.txt")]
     let values = try await paths.traverse(fs.read_text).parallel(limit = 2) with { error e => return "read_failed" }
@@ -2318,7 +2318,7 @@ extern capability system {
     fn thread_count() -> Need<String, SystemError> effects { system.read }
     fn available_parallelism() -> Need<String, SystemError> effects { system.read }
 }
-entry cli @entry.main { run(@flow.main) }
+entry cli @entry.main { goto @flow.main }
 flow @flow.main main effects { system.read } {
     let cores = try await system.core_count() with { error e => return "core_failed" }
     let threads = try await system.thread_count() with { error e => return "thread_failed" }
@@ -2962,7 +2962,7 @@ fn test_json_lists_script_tests() {
         "script-test",
         r"
 test @test.opening scenario {
-    start(@flow.opening)
+    goto @flow.opening
     expect.no_assertion_failures()
 }
 ",
@@ -2992,9 +2992,9 @@ fn test_json_executes_headless_scenario_expectations() {
     let path = temp_arcw(
         "script-test-headless",
         r#"
-signal @signal:.current_flow: Watch<Ref<Flow>>
+signal current_flow: Watch<Ref<Flow>>
 
-flow @flow.observed observed
+flow observed
 effects { signal.write }
 {
     log.info("enter observed")
@@ -3003,7 +3003,7 @@ effects { signal.write }
 }
 
 test @test.observed scenario {
-    start(@flow.observed)
+    goto @flow.observed
     expect.log(.info, contains="enter observed")
     expect.signal(@signal.current_flow, @flow.observed)
     expect.no_assertion_failures()
@@ -3078,7 +3078,7 @@ fn bench_json_measures_headless_runtime_sections() {
         "script-bench-measured",
         r#"
 bench @bench.runtime {
-    measure iterations = 2 { start(@flow.bench) }
+    measure iterations = 2 { goto @flow.bench }
 }
 
 flow @flow.bench bench {
@@ -3136,7 +3136,7 @@ fn bench_json_can_measure_aot_executor_sections() {
         "script-bench-aot",
         r#"
 bench @bench.runtime_aot {
-    measure iterations = 1 { start(@flow.bench) }
+    measure iterations = 1 { goto @flow.bench }
 }
 
 flow @flow.bench bench {
@@ -3187,7 +3187,7 @@ fn score(base: i64, bonus: i64) -> i64 {
 }
 
 bench @bench.for_pure {
-    measure iterations = 2 { start(@flow.for_pure) }
+    measure iterations = 2 { goto @flow.for_pure }
 }
 
 flow @flow.for_pure for_pure {
@@ -3290,7 +3290,7 @@ fn score(base: i64, bonus: i64) -> i64 {
 }
 
 bench @bench.bracket_pure {
-    measure iterations = 2 { start(@flow.bracket_pure) }
+    measure iterations = 2 { goto @flow.bracket_pure }
 }
 
 flow @flow.bracket_pure bracket_pure {
@@ -3398,7 +3398,7 @@ fn score(base: i64, bonus: i64) -> i64 {
 }
 
 bench @bench.bracket_pure_sum {
-    measure iterations = 2 { start(@flow.bracket_pure_sum) }
+    measure iterations = 2 { goto @flow.bracket_pure_sum }
 }
 
 flow @flow.bracket_pure_sum bracket_pure_sum {
@@ -3477,7 +3477,7 @@ fn score(base: i64, bonus: i64) -> i64 {
 }
 
 bench @bench.bracket_pure {
-    measure iterations = 2 { start(@flow.bracket_pure) }
+    measure iterations = 2 { goto @flow.bracket_pure }
 }
 
 flow @flow.bracket_pure bracket_pure {
@@ -3584,7 +3584,7 @@ fn score(base: i64, bonus: i64) -> i64 {
 }
 
 bench @bench.map_pure {
-    measure iterations = 2 { start(@flow.map_pure) }
+    measure iterations = 2 { goto @flow.map_pure }
 }
 
 flow @flow.map_pure map_pure {
@@ -3662,7 +3662,7 @@ fn score(base: i64, bonus: i64) -> i64 {
 }
 
 bench @bench.map_pure_sum {
-    measure iterations = 2 { start(@flow.map_pure_sum) }
+    measure iterations = 2 { goto @flow.map_pure_sum }
 }
 
 flow @flow.map_pure_sum map_pure_sum {
@@ -3737,7 +3737,7 @@ fn score(base: i64, bonus: i64) -> i64 {
 }
 
 bench @bench.map_pure {
-    measure iterations = 2 { start(@flow.map_pure) }
+    measure iterations = 2 { goto @flow.map_pure }
 }
 
 flow @flow.map_pure map_pure {
@@ -3823,7 +3823,7 @@ fn score(base: i64, bonus: i64, scale: i64) -> i64 {
 }
 
 bench @bench.branch_for_pure {
-    measure iterations = 2 { start(@flow.branch_for_pure) }
+    measure iterations = 2 { goto @flow.branch_for_pure }
 }
 
 flow @flow.branch_for_pure branch_for_pure {
@@ -3903,7 +3903,7 @@ fn score(base: i64, bonus: i64) -> i64 {
 }
 
 bench @bench.match_pure {
-    measure iterations = 2 { start(@flow.match_pure) }
+    measure iterations = 2 { goto @flow.match_pure }
 }
 
 flow @flow.match_pure match_pure {
@@ -3985,7 +3985,7 @@ fn bench_json_measures_thread_scheduling_characteristics() {
         "script-bench-thread-scheduling",
         r#"
 bench @bench.threads {
-    measure iterations = 1 { start(@flow.threads) }
+    measure iterations = 1 { goto @flow.threads }
 }
 
 flow @flow.threads threads {
@@ -5421,7 +5421,7 @@ fn profile_inference_matmul_bias_adapter_measurement(math_backend: &str) -> serd
         &source,
         r"
 bench @bench.infer_matmul_bias_add_f32 {
-    measure iterations = 3 { start(@flow.infer_matmul_bias_add_f32) }
+    measure iterations = 3 { goto @flow.infer_matmul_bias_add_f32 }
 }
 
 flow @flow.infer_matmul_bias_add_f32 infer_matmul_bias_add_f32(lhs: TensorF32, rhs: TensorF32, bias: TensorF32) -> TensorF32 {
@@ -6341,7 +6341,7 @@ fn bench_json_checks_runtime_assert_sections() {
 signal @signal:.bench_done: Watch<Bool>
 
 bench @bench.runtime_assert {
-    measure iterations = 1 { start(@flow.bench) }
+    measure iterations = 1 { goto @flow.bench }
     assert { expect.log(.info, contains="bench observed") }
     assert { expect.signal(@signal.bench_done, true) }
     assert { expect.no_assertion_failures() }
@@ -6388,7 +6388,7 @@ fn bench_json_fails_runtime_assert_sections() {
 signal @signal:.bench_done: Watch<Bool>
 
 bench @bench.runtime_assert_fail {
-    measure iterations = 1 { start(@flow.bench) }
+    measure iterations = 1 { goto @flow.bench }
     assert { expect.signal(@signal.bench_done, false) }
 }
 
@@ -6443,7 +6443,7 @@ extern capability fs {
 extern capability path { fn save(path: String) -> VirtualPath }
 
 bench @bench.native_io {
-    measure iterations = 1 { start(@flow.bench_io) }
+    measure iterations = 1 { goto @flow.bench_io }
     assert { expect.file(path.save("output.txt"), equals="bench-native-ok") }
 }
 
@@ -6517,7 +6517,7 @@ extern capability fs {
 extern capability path { fn save(path: String) -> VirtualPath }
 
 bench @bench.parallel_io {
-    measure iterations = 1 { start(@flow.parallel_io) }
+    measure iterations = 1 { goto @flow.parallel_io }
     assert { expect.file(path.save("output.txt"), equals="done") }
 }
 
@@ -6590,7 +6590,7 @@ extern capability fs {
 extern capability path { fn save(path: String) -> VirtualPath }
 
 bench @bench.threaded_reads {
-    measure iterations = 1 { start(@flow.threaded_reads) }
+    measure iterations = 1 { goto @flow.threaded_reads }
 }
 
 flow @flow.threaded_reads threaded_reads effects { fs.read(save) } {
@@ -6686,7 +6686,7 @@ extern capability fs {
 extern capability path { fn save(path: String) -> VirtualPath }
 
 bench @bench.native_file_assert {
-    measure iterations = 1 { start(@flow.write_actual) }
+    measure iterations = 1 { goto @flow.write_actual }
     assert { expect.file(path.save("output.txt"), equals="expected") }
 }
 
@@ -7073,9 +7073,7 @@ fn serve_json_treats_server_run_entry_as_default_route() {
     let path = temp_arcw(
         "serve-run",
         r#"
-entry server @entry.server {
-    run(@flow.main)
-}
+entry server @entry.server { goto @flow.main }
 
 flow @flow.main main {
     return "server"
@@ -7796,7 +7794,7 @@ fn profile_rejects_unknown_adapter() {
     fs::write(
         &source,
         r#"
-entry server @entry.http { run(@flow.main) }
+entry server @entry.http { goto @flow.main }
 
 flow @flow.main main {
     return "ok"
@@ -7843,7 +7841,7 @@ fn cli_test_and_bench_profiles_use_profile_sources() {
     fs::write(
         &cli_source,
         r"
-entry cli @entry.main { run(@flow.main) }
+entry cli @entry.main { goto @flow.main }
 
 flow @flow.main main(argc: i32) {
     return argc
@@ -7855,7 +7853,7 @@ flow @flow.main main(argc: i32) {
         &test_source,
         r#"
 test @test.opening scenario {
-    start(@flow.opening)
+    goto @flow.opening
     expect.no_assertion_failures()
 }
 

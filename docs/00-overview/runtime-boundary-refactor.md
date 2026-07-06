@@ -511,13 +511,13 @@ Example:
 
 ```arcw
 entry game @entry.main {
-    start(@flow.opening)
+    goto @flow.opening
 }
 ```
 
 ```arcw
 entry cli @entry.greet {
-    run(@flow.cli_main)
+    goto @flow.cli_main
 }
 ```
 

@@ -1,5 +1,5 @@
 entry cli @entry.main {
-    run @flow.main
+    goto @flow.main
 }
 
 flow @flow.main main(argc: i32) {

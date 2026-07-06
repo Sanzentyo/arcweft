@@ -38,7 +38,7 @@ fn project_index_records_entry_and_flow_entity_relations() {
     let tree = parse_source(
         r#"
 entry game @entry.main {
-    start @flow.opening
+    goto @flow.opening
     goto @flow.listen
 }
 
@@ -84,7 +84,7 @@ flow @flow.listen listen {
         })
         .collect::<Vec<_>>();
 
-    assert!(relations.contains(&("entry.main", "flow.opening", "entry_start")));
+    assert!(relations.contains(&("entry.main", "flow.opening", "entry_goto")));
     assert!(relations.contains(&("entry.main", "flow.listen", "entry_goto")));
     assert!(relations.contains(&("flow.opening", "say.opening", "contains_dialogue")));
     assert!(relations.contains(&("flow.opening", "choice.opening", "contains_choice")));

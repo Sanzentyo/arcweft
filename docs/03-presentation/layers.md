@@ -423,7 +423,7 @@ arcw agent click --x 520 --y 540 --layer layer.ui.modal
 
 ```arcw
 test @test.modal_blocks_world_input scenario {
-    start(@flow.opening)
+    goto @flow.opening
     ui.open(@ui.settings_html)
 
     input.click(@character.alice)
@@ -435,7 +435,7 @@ test @test.modal_blocks_world_input scenario {
 
 ```arcw
 test #test_choice_layer_bbox visual {
-    start(@flow.opening)
+    goto @flow.opening
     wait.object(@choice.opening.listen, state=.visible)
 
     assert.layer(@choice.opening.listen, equals=@layer.ui.game)

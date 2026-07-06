@@ -74,7 +74,7 @@ fn source_glow(t: f32, glyph: f32, seed: f32) -> f32 {
 }
 
 entry game {
-    start @flow.rich_text_effects_animation
+    goto @flow.rich_text_effects_animation
 }
 
 flow rich_text_effects_animation {

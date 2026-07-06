@@ -4,10 +4,10 @@ use arcweft_runtime_host::NativeTaskBridge;
 use arcweft_test::{ScriptStep, ScriptTest};
 use std::path::Path;
 
-pub(in crate::app) fn test_start_flow(test: &ScriptTest) -> Option<String> {
+pub(in crate::app) fn test_goto_flow(test: &ScriptTest) -> Option<String> {
     test.steps
         .iter()
-        .find_map(|step| parse_start_flow_call(&step.text))
+        .find_map(|step| parse_goto_flow_in_text(&step.text))
 }
 
 pub(in crate::app) fn test_expectation_failures(
@@ -125,20 +125,23 @@ pub(in crate::app) fn evaluate_runtime_expectation(
     Err(format!("unsupported runtime expectation `{text}`"))
 }
 
-pub(in crate::app) fn parse_start_flow_call(text: &str) -> Option<String> {
-    let Expr::Call { callee, args } = parse_expr(text).ok()? else {
-        return None;
-    };
-    let Expr::Path(name) = callee.as_ref() else {
-        return None;
-    };
-    if name != "start" {
+pub(in crate::app) fn parse_goto_flow_statement(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    let rest = trimmed.strip_prefix("goto")?;
+    if !rest.chars().next().is_some_and(char::is_whitespace) {
         return None;
     }
-    let [flow] = args.as_slice() else {
+    let target = rest.trim();
+    if !target.starts_with('@') || target.contains(char::is_whitespace) {
         return None;
-    };
-    entity_ref_label(flow.value())
+    }
+    target.strip_prefix('@').map(str::to_owned)
+}
+
+pub(in crate::app) fn parse_goto_flow_in_text(text: &str) -> Option<String> {
+    text.lines()
+        .flat_map(|line| line.split(['{', ';', '}']))
+        .find_map(parse_goto_flow_statement)
 }
 
 fn parse_expect_signal_call(text: &str) -> Option<(String, String)> {
@@ -238,13 +241,6 @@ fn virtual_path_label(expr: &Expr) -> Option<String> {
         "{method}:{}",
         string_literal_value(relative.value())?
     ))
-}
-
-fn entity_ref_label(expr: &Expr) -> Option<String> {
-    match expr {
-        Expr::EntityRef(entity) => Some(entity.body().to_owned()),
-        _ => None,
-    }
 }
 
 fn expectation_value_label(expr: &Expr) -> Option<String> {

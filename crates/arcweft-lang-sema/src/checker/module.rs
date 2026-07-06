@@ -707,7 +707,7 @@ impl TypeChecker<'_> {
 
     fn check_entry_item(&mut self, item: &EntryItem) {
         match item {
-            EntryItem::Goto(target) | EntryItem::Start(target) | EntryItem::Run(target) => {
+            EntryItem::Goto(target) => {
                 self.expect_entity_kind(target, &EntityKind::Flow, "entry flow target");
             }
             EntryItem::Route {
@@ -1320,10 +1320,7 @@ fn entry_target_flow_names(module: &HirModule) -> HashSet<String> {
 
 fn entry_item_flow_target(item: &EntryItem) -> Option<&arcweft_lang_syntax::ast::ids::EntityRef> {
     match item {
-        EntryItem::Goto(target)
-        | EntryItem::Start(target)
-        | EntryItem::Run(target)
-        | EntryItem::Route { target, .. } => Some(target),
+        EntryItem::Goto(target) | EntryItem::Route { target, .. } => Some(target),
         EntryItem::Option { .. } | EntryItem::Raw(_) => None,
     }
 }

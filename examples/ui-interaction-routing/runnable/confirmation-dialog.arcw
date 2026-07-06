@@ -1,7 +1,7 @@
 character system System {
 }
 
-entry game @entry.main { start(@flow.main) }
+entry game @entry.main { goto @flow.main }
 
 flow main {
     system: Confirmation dialog sample. A choice behaves like a modal decision surface.

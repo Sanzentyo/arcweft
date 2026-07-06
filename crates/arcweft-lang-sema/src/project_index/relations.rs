@@ -20,22 +20,6 @@ pub(super) fn index_entry_relations(
                     index,
                 )?;
             }
-            EntryItem::Start(target) => {
-                index = index_entity_relation(
-                    entry_id,
-                    target,
-                    ProjectGraphRelationKind::EntryStart,
-                    index,
-                )?;
-            }
-            EntryItem::Run(target) => {
-                index = index_entity_relation(
-                    entry_id,
-                    target,
-                    ProjectGraphRelationKind::EntryRun,
-                    index,
-                )?;
-            }
             EntryItem::Route { target, .. } => {
                 index = index_entity_relation(
                     entry_id,

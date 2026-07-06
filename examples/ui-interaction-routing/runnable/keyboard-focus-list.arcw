@@ -1,7 +1,7 @@
 character narrator Narrator {
 }
 
-entry game @entry.main { start(@flow.main) }
+entry game @entry.main { goto @flow.main }
 
 flow main {
     narrator: Keyboard focus sample. Arrow keys wrap across the stable targets; Home and End jump to the edges.

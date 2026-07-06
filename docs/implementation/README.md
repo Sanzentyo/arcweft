@@ -428,7 +428,7 @@ Phase 0 / Phase 1 minimal Rust workspace:
   The object bytes are not executed by the runtime cache yet; typed AOT and
   native JIT remain the executable paths, while object artifacts are measured
   build-time AOT evidence for a future loader/linker boundary.
-- `arcw bench` runs measurable `measure { start(@flow.id) }` sections through
+- `arcw bench` runs measurable `measure { goto @flow.id }` sections through
   the selected headless runtime executor, includes deterministic runtime
   counters in JSON, completes native file task requests through the CLI adapter,
   and evaluates `assert { expect.*(...) }` sections against a separate
@@ -1580,10 +1580,10 @@ Current high-confidence state:
   parsed as structured declarations and lowered into HIR metadata. The
   `arcweft-test` crate extracts a Sans I/O manifest. `arcw test` now executes
   `scenario` declarations through the headless runtime when they contain
-  `start(@flow.id)`, evaluates initial signal/log/no-assertion expectations, and
+  `goto @flow.id`, evaluates initial signal/log/no-assertion expectations, and
   reports pass/fail/skipped JSON. `arcw bench` now validates headless bench
   plans, requires `measure`, accepts `setup`/`measure`/`assert`/`report`
-  sections, measures `measure` bodies that name `start(@flow...)`, and reports
+  sections, measures `measure` bodies that name `goto @flow...`, and reports
   measured/validated/skipped/failed JSON. Measured bench counters include
   median task requests and task events consumed, allowing native file I/O
   sections to be timed and checked without embedding local absolute paths.

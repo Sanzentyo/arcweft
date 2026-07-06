@@ -451,6 +451,52 @@ changed Rust files:
 | `crates/arcweft-lang-syntax/src/expr.rs` | 69,590 | 2,265 | production | true | Expression tokenization and Pratt parsing |
 | `crates/arcweft-lang-syntax/tests/parser_p0.rs` | 18,644 | 630 | generated/test | false | Parser regression coverage |
 
+## Entry/Test/Bench Goto Dispatch
+
+- Removed `EntryItem::Start` and `EntryItem::Run` from the surface AST. Entry
+  bodies now keep only `goto @flow...` as the structured flow dispatch item;
+  removed `start` / `run` entry items recover as raw entry items with parser
+  diagnostics that point authors to `goto @flow.name`.
+- Updated semantic indexing, symbol collection, type checking, runtime-plan
+  entry target lowering, compiler graph fixtures, samples, examples, and stable
+  docs to use `goto @flow...` rather than entry-only `start` / `run` words.
+- Updated script test and script bench launch extraction to use `goto @flow...`
+  as well. Bench sections may write the canonical compact form
+  `measure iterations = N { goto @flow.name }`; the runtime bench runner scans
+  section bodies for that goto statement instead of parsing `start(@flow...)`.
+- Direct script test/bench sources that have no explicit `entry` now use the
+  first script manifest `goto @flow...` as the product-AWBC entry fallback, so
+  headless script routes no longer need a separate entry-only start spelling.
+
+### Verification
+
+- `cargo test -p arcweft-lang-syntax --all-features entry_goto`
+- `cargo test -p arcweft-lang-syntax --all-features`
+- `cargo test -p arcweft-lang-sema --all-features entry_`
+- `cargo test -p arcweft-lang-sema --all-features script_tests`
+- `cargo test -p arcweft-test --all-features`
+- `cargo test -p arcweft-runtime-plan --all-features entry_`
+- `cargo test -p arcweft-cli --all-features test_json_lists_script_tests -- --nocapture`
+- `cargo test -p arcweft-cli --all-features bench_json_measures_headless_runtime_sections -- --nocapture`
+- `cargo check --workspace --all-targets --all-features`
+- `cargo clippy --workspace --all-targets --all-features`
+- `cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit\current`
+
+The entry/test/bench goto cut was measured at Jujutsu change `ntmowtry`. The
+structure audit reported 0 errors and 138 warnings. Relevant changed Rust files:
+
+| Path | Bytes | LOC | Classification | Embedded Tests | Responsibility |
+| --- | ---: | ---: | --- | --- | --- |
+| `crates/arcweft-cli/src/app/runtime/expectations.rs` | 7,938 | 263 | production | false | Script expectation and script goto target parsing |
+| `crates/arcweft-cli/src/app/runtime/profile.rs` | 14,697 | 392 | production | false | Runtime profile compilation and script manifest entry fallback |
+| `crates/arcweft-cli/src/app/runtime/script_bench/run.rs` | 17,853 | 507 | production | false | Script bench execution and assertion replay |
+| `crates/arcweft-cli/src/app/runtime/script_bench/samples.rs` | 29,509 | 629 | production | false | Script bench section validation and flow target extraction |
+| `crates/arcweft-lang-syntax/src/ast/items.rs` | 53,074 | 2,217 | production | false | Surface item AST, including entry body items |
+| `crates/arcweft-lang-syntax/src/parser/items.rs` | 47,938 | 1,375 | production | false | Top-level item parsing and entry dispatch diagnostics |
+| `crates/arcweft-lang-sema/src/project_index.rs` | 30,753 | 1,092 | production | false | Project graph relation kinds |
+| `crates/arcweft-lang-sema/src/project_index/relations.rs` | 42,442 | 1,170 | production | false | Project graph relation indexing |
+| `crates/arcweft-runtime-plan/src/flow.rs` | 90,672 | 2,464 | production | false | Runtime entry target lowering |
+
 ## Remaining Work
 
 - End-to-end save subsystem wiring still needs to consume the runtime display

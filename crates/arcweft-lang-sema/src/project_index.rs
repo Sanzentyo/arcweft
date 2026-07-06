@@ -126,8 +126,6 @@ pub enum ProjectCallableKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProjectGraphRelationKind {
     EntryGoto,
-    EntryStart,
-    EntryRun,
     EntryRoute,
     ContainsDialogue,
     ContainsChoice,
@@ -553,8 +551,6 @@ impl ProjectGraphRelationKind {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::EntryGoto => "entry_goto",
-            Self::EntryStart => "entry_start",
-            Self::EntryRun => "entry_run",
             Self::EntryRoute => "entry_route",
             Self::ContainsDialogue => "contains_dialogue",
             Self::ContainsChoice => "contains_choice",

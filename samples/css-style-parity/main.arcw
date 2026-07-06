@@ -91,7 +91,7 @@ style css_style_parity {
 }
 
 entry game @entry.css_style_parity {
-    start @flow.css_style_parity
+    goto @flow.css_style_parity
 }
 
 flow css_style_parity {

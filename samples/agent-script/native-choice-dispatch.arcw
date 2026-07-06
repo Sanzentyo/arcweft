@@ -1,7 +1,7 @@
 signal @signal.current_flow: Watch<Ref<Flow>>
 
 entry game @entry.main {
-    start @flow.opening
+    goto @flow.opening
 }
 
 flow opening effects { signal.write } {

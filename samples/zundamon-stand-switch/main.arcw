@@ -87,7 +87,7 @@ pub image @image.zundamon.smile {
 }
 
 entry game {
-    start @flow.normal
+    goto @flow.normal
 }
 
 flow normal {

@@ -4,7 +4,7 @@ use super::super::expectations::{RuntimeExpectationView, evaluate_runtime_expect
 use super::super::options::ScriptBenchOptions;
 use super::super::steps::{RuntimeStepRunConfig, run_runtime_steps};
 use super::BenchRuntimeContext;
-use super::samples::{RuntimeBenchSamples, bench_start_flow, validate_bench_section};
+use super::samples::{RuntimeBenchSamples, bench_goto_flow, validate_bench_section};
 use crate::app::jit::{
     JitBuiltinCase, JitCheckOptions, JitCheckReport, JitCheckTarget, jit_check_input_array,
     per_iteration_ns, run_jit_check, speedup_x, timing_samples,
@@ -124,9 +124,9 @@ fn bench_expectation_failures(
     if assertions.is_empty() {
         return Vec::new();
     }
-    let Some(flow) = bench.sections.iter().find_map(bench_start_flow) else {
+    let Some(flow) = bench.sections.iter().find_map(bench_goto_flow) else {
         return vec![
-            "bench assertions require a runnable `measure { start(@flow.id) }` section".to_owned(),
+            "bench assertions require a runnable `measure { goto @flow.id }` section".to_owned(),
         ];
     };
     let mut assertion_plan = plan.clone();
@@ -427,7 +427,7 @@ fn run_bench_section(
             validated,
         );
     }
-    let Some(flow) = bench_start_flow(section) else {
+    let Some(flow) = bench_goto_flow(section) else {
         return validated;
     };
     run_bench_flow_section(

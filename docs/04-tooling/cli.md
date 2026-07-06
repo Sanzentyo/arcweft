@@ -1084,7 +1084,7 @@ host adapter should bind.
 
 If `--entry` is omitted, the first `entry server` is selected. A server entry
 with `route METHOD "PATH" -> @flow.id` exposes those routes directly. A server
-entry with `run(@flow.id)` is treated as a default `* * -> flow.id` route for
+entry with `goto @flow.id` is treated as a default `* * -> flow.id` route for
 headless adapter planning.
 
 Routes that capture path parameters bind them explicitly to target flow
@@ -1133,11 +1133,11 @@ manifest mismatch instead of writing a response. The route-plan report uses
 `arcw test` and `arcw bench` expose Sans I/O script test data. They parse,
 lower, resolve, and typecheck the module before reporting test or bench status.
 `arcw test` executes `scenario` tests through the headless runtime when the test
-contains `start(@flow.id)`; non-headless categories such as `visual` and `audio`
+contains `goto @flow.id`; non-headless categories such as `visual` and `audio`
 are reported as skipped until a player adapter owns those backends.
 `arcw bench` validates bench declarations as headless plans. It requires a
 `measure` section, accepts `setup`, `measure`, `assert`, and `report` sections,
-measures headless `measure` bodies that name `start(@flow...)`, and reports
+measures headless `measure` bodies that name `goto @flow...`, and reports
 per-bench `measured`, `validated`, `skipped`, or `failed` status in JSON.
 The same native file task bridge used by `arcw run` and `arcw test` is active
 inside measured headless bench iterations, so `fs.read_text`, `fs.read_bytes`,
@@ -1299,7 +1299,7 @@ Headless scenario expectations currently cover `expect.no_assertion_failures()`,
 `expect.signal(@signal.id, value)`, and `expect.log(.level, contains="text")`.
 Bench declarations use the same expectation calls inside
 `assert { expect.*(...) }` sections. After a runnable
-`measure { start(@flow.id) }` section is measured, `arcw bench` performs one
+`measure { goto @flow.id }` section is measured, `arcw bench` performs one
 additional headless correctness run and fails the bench if any assert section
 does not match the runtime observations. Bench JSON also includes the same
 compiler phase timings and type, borrow, runtime-type, bytecode, and AOT counters as

@@ -83,7 +83,7 @@ pub dialogue defaults @dialogue.defaults {
 }
 
 entry game @entry.main {
-    start @flow.rich_text_showcase
+    goto @flow.rich_text_showcase
 }
 
 flow rich_text_showcase {

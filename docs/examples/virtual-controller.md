@@ -54,7 +54,7 @@ Headless test:
 
 ```arcw
 test @test.virtual_controller_confirm scenario {
-    start(@flow.action_demo)
+    goto @flow.action_demo
 
     invoke(@control.confirm, .press)
 

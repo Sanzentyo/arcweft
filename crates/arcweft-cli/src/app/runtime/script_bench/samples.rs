@@ -1,5 +1,5 @@
 use super::super::bench::RuntimeBenchTrace;
-use super::super::expectations::parse_start_flow_call;
+use super::super::expectations::parse_goto_flow_in_text;
 use crate::output::{
     ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary, ScriptBenchSectionRunSummary,
 };
@@ -500,11 +500,8 @@ fn median_task_class_field(
     median_usize(&mut counts)
 }
 
-pub(in crate::app) fn bench_start_flow(section: &BenchSection) -> Option<String> {
-    let start = section.text.find("start(")?;
-    let tail = &section.text[start..];
-    let close = tail.find(')')?;
-    parse_start_flow_call(&tail[..=close])
+pub(in crate::app) fn bench_goto_flow(section: &BenchSection) -> Option<String> {
+    parse_goto_flow_in_text(&section.text)
 }
 
 fn median_u128(values: &mut [u128]) -> u128 {

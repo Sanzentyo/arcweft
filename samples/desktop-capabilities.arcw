@@ -4,7 +4,7 @@ extern capability desktop.platform {
 }
 
 entry cli @entry.main {
-    run @flow.main
+    goto @flow.main
 }
 
 flow main effects { desktop.platform.read } {

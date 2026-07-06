@@ -202,8 +202,6 @@ fn collect_entry_decl(
     for item in item.items() {
         match item {
             arcweft_lang_syntax::ast::items::EntryItem::Goto(target)
-            | arcweft_lang_syntax::ast::items::EntryItem::Start(target)
-            | arcweft_lang_syntax::ast::items::EntryItem::Run(target)
             | arcweft_lang_syntax::ast::items::EntryItem::Route { target, .. } => {
                 push_entity(uses, target);
             }

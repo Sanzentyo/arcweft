@@ -57,7 +57,7 @@ pub surface character alice {
 }
 
 entry game {
-    start @flow.profiled_rich_text
+    goto @flow.profiled_rich_text
 }
 
 flow profiled_rich_text {

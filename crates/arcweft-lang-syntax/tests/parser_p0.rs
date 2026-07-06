@@ -268,6 +268,28 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn entry_goto_is_the_structured_flow_dispatch_item() {
+    let tree = parse_ok(
+        r#"
+entry game @entry.main {
+    goto @flow.opening
+}
+
+flow @flow.opening opening {
+    return "ok"
+}
+"#,
+    );
+    let arcweft_lang_syntax::ast::items::Item::Entry(entry) = &tree.items()[0] else {
+        panic!("expected entry");
+    };
+    let [arcweft_lang_syntax::ast::items::EntryItem::Goto(target)] = entry.items() else {
+        panic!("expected one goto entry item: {:?}", entry.items());
+    };
+assert_eq!(target.body(), "flow.opening");
+}
+
+#[test]
 fn indented_defer_body_groups_multiline_statements_from_cst_lines() {
     let tree = parse_ok(
         r"

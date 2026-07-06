@@ -1,5 +1,5 @@
 entry game @entry.main {
-    start @flow.main
+    goto @flow.main
 }
 
 flow main effects { desktop.window.owned.control } {

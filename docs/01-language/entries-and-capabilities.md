@@ -22,7 +22,7 @@ HttpMethod := 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
 
 ```arcw
 entry game @entry.main {
-    start(@flow.opening)
+    goto @flow.opening
 }
 
 flow @flow.opening opening {
@@ -35,7 +35,7 @@ flow @flow.opening opening {
 
 ```arcw
 entry cli @entry.main {
-    run(@flow.cli_main)
+    goto @flow.cli_main
 }
 
 flow @flow.cli_main main effects { stdio.write, process.exit } {

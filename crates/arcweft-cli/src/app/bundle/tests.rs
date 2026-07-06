@@ -578,9 +578,7 @@ name = "product_awbc_builder"
     fs::write(
         &source_path,
         r#"
-entry game {
-    start(@flow.main)
-}
+entry game { goto @flow.main }
 
 flow main {
     return "done"

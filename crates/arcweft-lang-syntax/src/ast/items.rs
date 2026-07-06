@@ -797,8 +797,6 @@ pub enum EntryKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EntryItem {
     Goto(EntityRef),
-    Start(EntityRef),
-    Run(EntityRef),
     Route {
         method: String,
         path: String,

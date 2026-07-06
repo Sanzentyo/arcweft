@@ -69,7 +69,7 @@ pub dialogue defaults @dialogue:.defaults.full {
 }
 
 entry game {
-    start @flow.rich_text_full_grammar
+    goto @flow.rich_text_full_grammar
 }
 
 flow rich_text_full_grammar {

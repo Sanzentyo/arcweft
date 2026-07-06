@@ -1,3 +1,4 @@
+use super::expectations::{parse_goto_flow_in_text, parse_goto_flow_statement};
 use crate::app::diagnostics::{DiagnosticEmitter, DiagnosticSource};
 use crate::app::project::{
     SourceSelection, print_project_compile_error, runtime_plan_options_for_selection,
@@ -8,7 +9,7 @@ use arcweft_core::{
     aot::{AotProgram, AotProgramStats},
     awbc::schema::AwbcProgram,
     bytecode::{BytecodeProgram, BytecodeStats},
-    plan::RuntimePlan,
+    plan::{FlowRuntimeId, RuntimePlan},
 };
 use arcweft_lang_sema::{check::TypeCheckReport, env::TypeCheckEnv};
 use arcweft_lang_syntax::cst::SyntaxParseStats;
@@ -18,6 +19,7 @@ use arcweft_runtime_plan::{
     flow::{RuntimePlanLowerReport, RuntimePlanLowerStats},
 };
 use arcweft_source::SourceName;
+use arcweft_test::collect_script_tests;
 use arcweft_verify::{RuntimeTypeValidationStats, validate_runtime_plan_types};
 use std::fs;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -101,7 +103,8 @@ pub(in crate::app) fn compile_profile_runtime_plan(
     })?;
     let runtime_plan_report =
         profile_lower_runtime_plan(selection, &hir, &typecheck_report, phases)?;
-    let plan = runtime_plan_report.plan;
+    let mut plan = runtime_plan_report.plan;
+    apply_script_manifest_entry_fallback(&mut plan, &hir);
     let line_display_catalog = runtime_plan_report.line_display_catalog;
     let runtime_plan_stats = runtime_plan_report.stats;
     let runtime_type_validation_stats = run_profile_phase(phases, "runtime_type_validate", || {
@@ -179,6 +182,35 @@ fn profile_lower_product_awbc(
         );
     }
     Ok(report.program)
+}
+
+fn apply_script_manifest_entry_fallback(
+    plan: &mut RuntimePlan,
+    hir: &arcweft_lang_hir::model::HirModule,
+) {
+    if plan.entry_flow.is_some() || !plan.entries.is_empty() {
+        return;
+    }
+    if let Some(flow) = script_manifest_goto_flow(hir) {
+        plan.entry_flow = Some(FlowRuntimeId(flow));
+    }
+}
+
+fn script_manifest_goto_flow(hir: &arcweft_lang_hir::model::HirModule) -> Option<String> {
+    let manifest = collect_script_tests(hir);
+    manifest
+        .tests
+        .iter()
+        .filter(|test| test.kind == "scenario")
+        .flat_map(|test| test.steps.iter().map(|step| step.text.as_str()))
+        .find_map(parse_goto_flow_statement)
+        .or_else(|| {
+            manifest
+                .benches
+                .iter()
+                .flat_map(|bench| bench.sections.iter().map(|section| section.text.as_str()))
+                .find_map(parse_goto_flow_in_text)
+        })
 }
 
 fn compile_project_runtime_plan(

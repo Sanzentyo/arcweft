@@ -27,7 +27,7 @@ pub dialogue defaults @dialogue.defaults {
 }
 
 entry game @entry.css_layout_cascade_coverage {
-    start @flow.css_layout_cascade_coverage
+    goto @flow.css_layout_cascade_coverage
 }
 
 flow css_layout_cascade_coverage {

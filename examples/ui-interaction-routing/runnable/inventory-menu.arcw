@@ -1,7 +1,7 @@
 character operator Operator {
 }
 
-entry game @entry.main { start(@flow.main) }
+entry game @entry.main { goto @flow.main }
 
 flow main {
     operator: Inventory sample. Navigate the stable choice targets with pointer or arrow keys.

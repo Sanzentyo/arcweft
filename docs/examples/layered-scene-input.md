@@ -73,7 +73,7 @@ component @ui.settings SettingsPanel(config: Binding<Config>) {
 
 ```arcw
 test @test.layered_input_blocks_lower scenario {
-    start(@flow.opening)
+    goto @flow.opening
 
     ui.open(@ui.settings)
 

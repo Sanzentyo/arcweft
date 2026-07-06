@@ -80,7 +80,7 @@ is delegated to headless/player adapters.
 
 ```arcw
 test @test.opening_listen_route scenario {
-    start(@flow.opening)
+    goto @flow.opening
 
     expect.log(.info, contains="enter flow")
     expect.signal(@signal.current_flow, @flow.opening)
@@ -97,7 +97,7 @@ Visual test:
 
 ```arcw
 test @test.opening_choices_visual visual {
-    start(@flow.opening)
+    goto @flow.opening
     wait.object(@choice.opening.listen, state=.visible)
     capture.image(.overlay, path="opening_choices.png")
     assert.bbox(@choice.opening.listen, within=rect(400, 500, 400, 80))
@@ -161,7 +161,7 @@ Test:
 
 ```arcw
 test @test.choice_hook_fires scenario {
-    start(@flow.opening)
+    goto @flow.opening
     wait.object(@choice.opening.listen, state=.visible)
     expect.hook(@hook.opening.choice_visible, state=.fired)
     expect.signal(@signal.choice_visible, true)

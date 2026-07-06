@@ -80,7 +80,7 @@ fn agent_project_graph_snapshot_preserves_project_relations() {
         .with_relation(ProjectGraphRelation::new(
             public_id("entry.main"),
             public_id("flow.opening"),
-            ProjectGraphRelationKind::EntryStart,
+            ProjectGraphRelationKind::EntryGoto,
         ));
 
     let graph = agent_project_graph_from_project(&project).expect("graph snapshot builds");
@@ -263,7 +263,7 @@ fn compiles_dialogue_source_to_plan_and_display_catalog() {
 character @character.alice Alice as alice {}
 
 entry game @entry.main {
-start(@flow.main)
+goto @flow.main
 }
 
 flow @flow.main main {

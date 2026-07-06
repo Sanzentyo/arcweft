@@ -1528,7 +1528,7 @@ pub surface character alice {
 }
 
 entry game {
-    start @flow.main
+    goto @flow.main
 }
 
 flow main {

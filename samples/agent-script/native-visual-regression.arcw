@@ -6,7 +6,7 @@ pub surface character narrator {
 signal @signal.current_flow: Watch<Ref<Flow>>
 
 entry game @entry.main {
-    start @flow.opening
+    goto @flow.opening
 }
 
 flow @flow.opening opening effects { signal.write } {

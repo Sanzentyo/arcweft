@@ -12,7 +12,7 @@ signal @signal:.current_flow: Watch<Ref<Flow>>
 metric gauge @metric:.opening_lines: i32
 
 entry game @entry.main {
-    start @flow.opening
+    goto @flow.opening
 }
 
 flow opening

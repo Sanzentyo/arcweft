@@ -68,7 +68,7 @@ pub surface character narrator {
 }
 
 entry game {
-    start @flow.image_static_png
+    goto @flow.image_static_png
 }
 
 flow image_static_png {

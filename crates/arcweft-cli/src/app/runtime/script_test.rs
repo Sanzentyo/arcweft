@@ -1,4 +1,4 @@
-use super::expectations::{test_expectation_failures, test_start_flow};
+use super::expectations::{test_expectation_failures, test_goto_flow};
 use super::options::ScriptTestOptions;
 use super::steps::{RuntimeStepRunConfig, run_runtime_steps};
 use crate::app::project::{
@@ -137,12 +137,12 @@ fn run_script_test(
             ),
         );
     }
-    let Some(start) = test_start_flow(test) else {
+    let Some(start) = test_goto_flow(test) else {
         return ScriptTestRunSummary::completed(
             test,
             false,
             ScriptTestFinalStatus::NotStarted,
-            vec!["scenario test requires `start(@flow.id)`".to_owned()],
+            vec!["scenario test requires `goto @flow.id`".to_owned()],
             Vec::new(),
         );
     };
