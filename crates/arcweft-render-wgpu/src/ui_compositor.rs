@@ -16,6 +16,7 @@ use crate::ui_scene::{
     UiPrimitiveRange, UiScene, UiSceneContext,
 };
 use arcweft_presentation::hit::HitRect;
+use num_traits::ToPrimitive;
 use thiserror::Error;
 use wgpu::util::DeviceExt;
 
@@ -73,6 +74,13 @@ pub struct UiCompositorTarget<'a> {
     pub view: &'a wgpu::TextureView,
     pub extent: UiTextureExtent,
     pub origin_logical: [f32; 2],
+    /// Logical coordinate span represented by the target texture.
+    ///
+    /// Root/runtime targets usually map a physical texture back to the design
+    /// viewport. Offscreen group targets use their texture extent because they
+    /// are rendered as target-local logical pixels with any bucketed slack left
+    /// unused.
+    pub logical_extent: [f32; 2],
 }
 
 /// All host-owned state needed to render one compositor frame.
@@ -340,7 +348,10 @@ impl UiCompositor {
         clear_target(state.encoder, &root.view);
 
         for node in state.scene.paint_nodes() {
-            let root_target = root.as_target([0.0, 0.0]);
+            let root_target = root.as_target(
+                [0.0, 0.0],
+                [state.scene.viewport_width(), state.scene.viewport_height()],
+            );
             self.render_node(&mut state, node, root_target)?;
         }
 
@@ -532,8 +543,8 @@ impl UiCompositor {
                     output: frame.target.view,
                     uniform: UiCompositorUniform::box_shadow(
                         pass,
-                        frame.target.extent,
                         frame.target.origin_logical,
+                        frame.target.logical_extent,
                     ),
                     load: wgpu::LoadOp::Load,
                     blend_over_existing: true,
@@ -589,6 +600,10 @@ impl UiCompositor {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Group rendering coordinates ordered compositor passes; splitting would obscure pass order."
+    )]
     fn render_group(
         &mut self,
         state: &mut UiCompositorRenderState<'_>,
@@ -621,7 +636,10 @@ impl UiCompositor {
             self.render_node(
                 state,
                 child,
-                group_target.as_target([visual_bounds.x, visual_bounds.y]),
+                group_target.as_target(
+                    [visual_bounds.x, visual_bounds.y],
+                    logical_extent_from_texture(group_target.extent),
+                ),
             )?;
         }
 
@@ -712,6 +730,10 @@ impl UiCompositor {
         kind: UiBoxShadowKind,
     ) {
         let visual_bounds = group.visual_bounds();
+        let target = target.as_target(
+            [visual_bounds.x, visual_bounds.y],
+            logical_extent_from_texture(target.extent),
+        );
         for pass in plan.passes_for_kind(kind) {
             self.run_shader_pass(
                 state.device,
@@ -720,11 +742,11 @@ impl UiCompositor {
                     source: &self.defaults.transparent.view,
                     backdrop: None,
                     mask: None,
-                    output: &target.view,
+                    output: target.view,
                     uniform: UiCompositorUniform::box_shadow(
                         pass,
-                        target.extent,
-                        [visual_bounds.x, visual_bounds.y],
+                        target.origin_logical,
+                        target.logical_extent,
                     ),
                     load: wgpu::LoadOp::Load,
                     blend_over_existing: true,
@@ -839,7 +861,7 @@ impl UiCompositor {
                 output: &output.view,
                 uniform: UiCompositorUniform::clip(
                     &plan,
-                    source.extent,
+                    logical_extent_from_texture(source.extent),
                     [visual_bounds.x, visual_bounds.y],
                 ),
                 load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
@@ -1052,12 +1074,17 @@ impl UiOffscreenTarget {
         }
     }
 
-    fn as_target(&self, origin_logical: [f32; 2]) -> UiCompositorTarget<'_> {
+    fn as_target(
+        &self,
+        origin_logical: [f32; 2],
+        logical_extent: [f32; 2],
+    ) -> UiCompositorTarget<'_> {
         UiCompositorTarget {
             texture: &self.texture,
             view: &self.view,
             extent: self.extent,
             origin_logical,
+            logical_extent,
         }
     }
 }
@@ -1355,4 +1382,11 @@ fn extent3d(extent: UiTextureExtent) -> wgpu::Extent3d {
         height: extent.height,
         depth_or_array_layers: 1,
     }
+}
+
+fn logical_extent_from_texture(extent: UiTextureExtent) -> [f32; 2] {
+    [
+        extent.width.max(1).to_f32().unwrap_or(f32::MAX),
+        extent.height.max(1).to_f32().unwrap_or(f32::MAX),
+    ]
 }

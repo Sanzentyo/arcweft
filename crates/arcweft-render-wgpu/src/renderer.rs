@@ -411,6 +411,7 @@ impl SharedRenderer {
             texture: target_texture,
             view: target_view,
             extent: target_extent,
+            logical_extent: frame_logical_extent(frame),
         };
         self.render_control_shadows(
             device,
@@ -498,6 +499,7 @@ impl SharedRenderer {
             view: target.view,
             extent: target.extent,
             origin_logical: [0.0, 0.0],
+            logical_extent: target.logical_extent,
         };
         let mut request = UiInlineBoxShadowFrame {
             device,
@@ -541,6 +543,7 @@ impl SharedRenderer {
                 self.format,
                 target_texture,
                 target_extent,
+                frame_logical_extent(frame),
             )
         })
     }
@@ -561,12 +564,14 @@ impl SharedRenderer {
         paint: &PreparedControlPaint,
     ) -> Result<(), SharedRendererError> {
         let backdrops = slice_range(&frame.control_backdrops, paint.backdrop_range.clone());
+        let logical_extent = frame_logical_extent(frame);
         for backdrop in backdrops {
             let target = UiCompositorTarget {
                 texture: target_texture,
                 view: target_view,
                 extent: target_extent,
                 origin_logical: [0.0, 0.0],
+                logical_extent,
             };
             let source = match backdrop.sample_policy {
                 RuntimeControlBackdropSamplePolicy::PriorFrameContent => {
@@ -584,10 +589,7 @@ impl SharedRenderer {
                 bounds: backdrop.bounds,
                 filters: &backdrop.filters,
                 device_pixel_ratio: frame.viewport.physical_scale_factor_f32(),
-                logical_extent: [
-                    frame.viewport.logical_width.max(0.0001),
-                    frame.viewport.logical_height.max(0.0001),
-                ],
+                logical_extent,
             };
             self.ui_compositor
                 .render_inline_backdrop_filter(&mut request)?;
@@ -660,17 +662,20 @@ impl SharedRenderer {
                 excluded_text_ranges: &[],
             },
         )?;
+        let logical_extent = frame_logical_extent(frame);
         let source = UiCompositorTarget {
             texture: &control_texture,
             view: &control_view,
             extent: target_extent,
             origin_logical: [0.0, 0.0],
+            logical_extent,
         };
         let output = UiCompositorTarget {
             texture: target_texture,
             view: target_view,
             extent: target_extent,
             origin_logical: [0.0, 0.0],
+            logical_extent,
         };
         for filter in slice_range(&frame.control_filters, paint.filter_range.clone()) {
             let mut request = UiInlineForegroundFilterFrame {
@@ -681,10 +686,7 @@ impl SharedRenderer {
                 bounds: filter.bounds,
                 filters: &filter.filters,
                 device_pixel_ratio: frame.viewport.physical_scale_factor_f32(),
-                logical_extent: [
-                    frame.viewport.logical_width.max(0.0001),
-                    frame.viewport.logical_height.max(0.0001),
-                ],
+                logical_extent,
             };
             self.ui_compositor
                 .render_inline_foreground_filter(&mut request)?;
@@ -895,17 +897,26 @@ fn slice_range<T>(items: &[T], range: Range<usize>) -> &[T] {
     &items[start..end]
 }
 
+fn frame_logical_extent(frame: &PreparedFrame) -> [f32; 2] {
+    [
+        frame.viewport.logical_width.max(0.0001),
+        frame.viewport.logical_height.max(0.0001),
+    ]
+}
+
 #[derive(Clone, Copy)]
 struct RuntimeControlShadowTarget<'a> {
     texture: &'a wgpu::Texture,
     view: &'a wgpu::TextureView,
     extent: UiTextureExtent,
+    logical_extent: [f32; 2],
 }
 
 struct RuntimeControlBackdropSource {
     texture: wgpu::Texture,
     view: wgpu::TextureView,
     extent: UiTextureExtent,
+    logical_extent: [f32; 2],
 }
 
 impl RuntimeControlBackdropSource {
@@ -915,6 +926,7 @@ impl RuntimeControlBackdropSource {
             view: &self.view,
             extent: self.extent,
             origin_logical: [0.0, 0.0],
+            logical_extent: self.logical_extent,
         }
     }
 }
@@ -938,6 +950,7 @@ fn runtime_control_backdrop_source_texture(
     format: wgpu::TextureFormat,
     source_texture: &wgpu::Texture,
     extent: UiTextureExtent,
+    logical_extent: [f32; 2],
 ) -> RuntimeControlBackdropSource {
     let texture = runtime_control_texture(
         device,
@@ -968,6 +981,7 @@ fn runtime_control_backdrop_source_texture(
         texture,
         view,
         extent,
+        logical_extent,
     }
 }
 

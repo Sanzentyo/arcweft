@@ -40,6 +40,16 @@ CSS-style font family propagation for Japanese input/display text.
   the frame planner and renderer. Native window, Web player, and player-backed
   Agent observe all register the same font bytes through that contract instead
   of relying on per-host ad hoc registration.
+- `UiCompositorTarget` now carries an explicit logical extent separate from its
+  physical texture extent. Root and runtime-control targets map physical
+  textures back to the design viewport, while offscreen group targets keep a
+  target-local logical pixel domain for bucketed slack.
+- Direct primitive NDC conversion, scissor calculation, clip uniforms, and
+  analytic box-shadow uniforms now consume that explicit logical extent instead
+  of inferring coordinate scale from texture dimensions or target origin. This
+  fixes the class of observe/native display mismatches where shadows, rounded
+  clips, and control surfaces could be displaced when the output texture was
+  larger than the design viewport.
 
 ## Evidence
 
@@ -63,6 +73,32 @@ cargo run -p arcweft-cli --features native-capture --quiet -- agent observe samp
 This verifies that player-backed observe registers the bundled player font set
 with both the planner and offscreen renderer before capture.
 
+- `target/modern-feedback-ui-debug/modern-feedback-ui-logical-extents.png` was
+  captured through:
+
+```bash
+cargo run -p arcweft-cli --features native-capture -- agent observe samples/modern-feedback-ui/src/main.arcw --json --image png --out target/modern-feedback-ui-debug/modern-feedback-ui-logical-extents.png --viewport-width 2048 --viewport-height 1152 --mode drain --steps 8 --max-ops 128
+```
+
+This capture verifies that the 1280x720 design-space controls render into a
+2048x1152 output without the earlier ghost shadow rectangles or rounded-corner
+misalignment. The new unit coverage checks that clip and box-shadow uniforms
+preserve the explicit logical extent contract.
+
+Validation for this coordinate-contract fix:
+
+```bash
+cargo test -p arcweft-render-wgpu ui_compositor_uniform -- --nocapture
+cargo test -p arcweft-render-wgpu --test geometry_runtime_control_styles -- --nocapture
+cargo check -p arcweft-render-wgpu -p arcweft-player-scene -p arcweft-player-native -p arcweft-player-web -p arcweft-cli --features native-player,native-capture --all-targets
+cargo clippy -p arcweft-render-wgpu -p arcweft-player-scene -p arcweft-player-native -p arcweft-player-web -p arcweft-cli --features native-player,native-capture --all-targets
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+```
+
+The structure audit scanned 2368 files, 1132 Rust files, and 534664 Rust
+physical LOC. It reported 0 errors and 138 warnings, with no report files
+written.
+
 ## Remaining Notes
 
 - This does not add bundled Japanese font assets. Long-lived native and Web
@@ -72,3 +108,7 @@ with both the planner and offscreen renderer before capture.
   path must still explicitly choose the same font bytes or system font stack.
 - The observe image is content-only; the native interactive window includes the
   OS title bar and typed runtime state. Those differences remain expected.
+- Scope-coupled presentation resource handles such as `let handle = image(...)`
+  with automatic hide/unmount/drop semantics are not part of the current DSL or
+  runtime contract. That design work is split to
+  `docs/reviews/requests/2026-07-06-seq-06.16.6-scoped-presentation-resource-handles.md`.

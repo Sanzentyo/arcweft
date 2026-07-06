@@ -176,14 +176,14 @@ impl UiCompositorUniform {
 
     pub(crate) fn clip(
         plan: &UiClipGeometryPlan,
-        source_extent: UiTextureExtent,
+        logical_extent: [f32; 2],
         origin_logical: [f32; 2],
     ) -> Self {
         let mut uniform = Self {
             params1: [origin_logical[0], origin_logical[1], 0.0, 0.0],
             params2: [
-                dimension_to_f32(source_extent.width),
-                dimension_to_f32(source_extent.height),
+                logical_extent[0].max(0.0001),
+                logical_extent[1].max(0.0001),
                 0.0,
                 0.0,
             ],
@@ -238,8 +238,8 @@ impl UiCompositorUniform {
 
     pub(crate) fn box_shadow(
         pass: &UiBoxShadowPass,
-        source_extent: UiTextureExtent,
         origin_logical: [f32; 2],
+        logical_extent: [f32; 2],
     ) -> Self {
         let shadow_kind = match pass.shadow.kind {
             UiBoxShadowKind::Outer => 0.0,
@@ -250,8 +250,8 @@ impl UiCompositorUniform {
             params0: [pass.shadow.blur_radius_px.max(0.0), 0.0, 0.0, shadow_kind],
             params1: [origin_logical[0], origin_logical[1], 0.0, 0.0],
             params2: [
-                dimension_to_f32(source_extent.width),
-                dimension_to_f32(source_extent.height),
+                logical_extent[0].max(0.0001),
+                logical_extent[1].max(0.0001),
                 0.0,
                 0.0,
             ],
@@ -388,4 +388,69 @@ fn rgba_to_unit(color: UiColorRgba8) -> [f32; 4] {
         f32::from(color.blue) / 255.0,
         f32::from(color.alpha) / 255.0,
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::UiCompositorUniform;
+    use crate::ui_box_shadow::UiBoxShadowPassPlan;
+    use crate::ui_clip_path::UiClipGeometryPlan;
+    use crate::ui_scene::{UiBoxShadow, UiBoxShadowList, UiColorRgba8};
+    use arcweft_presentation::hit::HitRect;
+
+    #[test]
+    fn clip_uniform_uses_explicit_logical_extent() {
+        let plan = UiClipGeometryPlan::Inset {
+            rect: HitRect::new(80.0, 240.0, 672.0, 220.0),
+            radii_px: [24.0, 24.0, 24.0, 24.0],
+        };
+
+        let uniform = UiCompositorUniform::clip(&plan, [1280.0, 720.0], [80.0, 240.0]);
+
+        assert_uniform_value(uniform.params1[0], 80.0);
+        assert_uniform_value(uniform.params1[1], 240.0);
+        assert_uniform_value(uniform.params2[0], 1280.0);
+        assert_uniform_value(uniform.params2[1], 720.0);
+        assert_uniform_row(uniform.matrix[0], [80.0, 240.0, 672.0, 220.0]);
+    }
+
+    #[test]
+    fn box_shadow_uniform_uses_explicit_logical_extent() {
+        let shadows = UiBoxShadowList::new([UiBoxShadow::outer(
+            0.0,
+            18.0,
+            42.0,
+            0.0,
+            9.0,
+            UiColorRgba8 {
+                red: 0,
+                green: 0,
+                blue: 0,
+                alpha: 128,
+            },
+        )]);
+        let plan =
+            UiBoxShadowPassPlan::from_shadows(&shadows, HitRect::new(80.0, 240.0, 672.0, 220.0))
+                .expect("shadow plans");
+
+        let uniform =
+            UiCompositorUniform::box_shadow(&plan.passes()[0], [0.0, 0.0], [1280.0, 720.0]);
+
+        assert_uniform_value(uniform.params2[0], 1280.0);
+        assert_uniform_value(uniform.params2[1], 720.0);
+        assert_uniform_row(uniform.matrix[1], [80.0, 258.0, 672.0, 220.0]);
+    }
+
+    fn assert_uniform_row(actual: [f32; 4], expected: [f32; 4]) {
+        for (actual, expected) in actual.into_iter().zip(expected) {
+            assert_uniform_value(actual, expected);
+        }
+    }
+
+    fn assert_uniform_value(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() <= f32::EPSILON,
+            "expected {expected}, got {actual}"
+        );
+    }
 }

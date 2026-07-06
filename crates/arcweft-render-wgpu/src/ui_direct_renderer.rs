@@ -668,22 +668,14 @@ fn image_vertices(
 }
 
 fn logical_to_ndc(
-    scene: &UiScene,
+    _scene: &UiScene,
     context: &UiSceneContext,
     target: UiCompositorTarget<'_>,
     point: LogicalPoint,
 ) -> [f32; 2] {
     let transformed = apply_transform(context.transform, point);
-    let scale_x = target_scale(
-        target.extent.width,
-        scene.viewport_width(),
-        target.origin_logical[0],
-    );
-    let scale_y = target_scale(
-        target.extent.height,
-        scene.viewport_height(),
-        target.origin_logical[1],
-    );
+    let scale_x = target_axis_scale(target.extent.width, target.logical_extent[0]);
+    let scale_y = target_axis_scale(target.extent.height, target.logical_extent[1]);
     let x = (transformed.x - target.origin_logical[0]) * scale_x;
     let y = (transformed.y - target.origin_logical[1]) * scale_y;
     let target_width = u32_to_f32(target.extent.width.max(1));
@@ -694,12 +686,8 @@ fn logical_to_ndc(
     ]
 }
 
-fn target_scale(extent: u32, scene_dimension: f32, origin: f32) -> f32 {
-    if origin.abs() <= EPSILON {
-        u32_to_f32(extent.max(1)) / scene_dimension.max(EPSILON)
-    } else {
-        1.0
-    }
+fn target_axis_scale(extent: u32, logical_extent: f32) -> f32 {
+    u32_to_f32(extent.max(1)) / logical_extent.max(EPSILON)
 }
 
 fn u32_to_f32(value: u32) -> f32 {
@@ -731,7 +719,7 @@ fn apply_transform(transform: UiAffine2D, point: LogicalPoint) -> LogicalPoint {
 
 fn apply_context_scissor(
     pass: &mut wgpu::RenderPass<'_>,
-    scene: &UiScene,
+    _scene: &UiScene,
     context: &UiSceneContext,
     target: UiCompositorTarget<'_>,
 ) -> Result<(), UiCompositorError> {
@@ -741,16 +729,8 @@ fn apply_context_scissor(
     let bounds = match clip {
         UiClip::Rect(bounds) | UiClip::RoundedRect { bounds, .. } => *bounds,
     };
-    let scale_x = target_scale(
-        target.extent.width,
-        scene.viewport_width(),
-        target.origin_logical[0],
-    );
-    let scale_y = target_scale(
-        target.extent.height,
-        scene.viewport_height(),
-        target.origin_logical[1],
-    );
+    let scale_x = target_axis_scale(target.extent.width, target.logical_extent[0]);
+    let scale_y = target_axis_scale(target.extent.height, target.logical_extent[1]);
     let x = nonnegative_floor_to_u32((bounds.x - target.origin_logical[0]) * scale_x);
     let y = nonnegative_floor_to_u32((bounds.y - target.origin_logical[1]) * scale_y);
     let max_width = target.extent.width.saturating_sub(x);
