@@ -555,13 +555,16 @@ impl BundleSession {
             target,
             RuntimeInputKind::ActionInvoke.event_kind(),
         );
-        let event = if let Some(payload) = action.payload() {
+        let payload = action
+            .payload()
+            .map(|payload| action_payload_value(payload, &self.text_inputs));
+        let event = if let Some(payload) = &payload {
             event.with_payload(InteractionPayload::Text(payload.clone()))
         } else {
             event
         };
         self.queue_input(event);
-        self.resolve_waiting_action_receive_calls(action);
+        self.resolve_waiting_action_receive_calls(action.kind().as_str(), payload.as_deref());
         Ok(())
     }
 
@@ -635,15 +638,14 @@ impl BundleSession {
         }
     }
 
-    fn resolve_waiting_action_receive_calls(&mut self, action: &Action) {
-        let action_id = action.kind().as_str();
+    fn resolve_waiting_action_receive_calls(&mut self, action_id: &str, payload: Option<&str>) {
         let mut index = 0;
         while index < self.waiting_action_receive_calls.len() {
             if self.waiting_action_receive_calls[index].action_id == action_id {
                 let call = self.waiting_action_receive_calls.remove(index);
                 self.pending_host_call_results.push(RuntimeHostCallResult {
                     id: call.request,
-                    outcome: Ok(action_receive_payload(action)),
+                    outcome: Ok(action_receive_payload(action_id, payload)),
                 });
             } else {
                 index += 1;
@@ -1228,6 +1230,55 @@ fn same_runtime_text_control_identity(
         && left.session == right.session
 }
 
+fn action_payload_value(payload: &str, text_inputs: &[UiRuntimeTextControl]) -> String {
+    text_control_payload_reference(payload)
+        .and_then(|reference| text_control_payload_value(reference, text_inputs))
+        .unwrap_or_else(|| payload.to_owned())
+}
+
+fn text_control_payload_reference(payload: &str) -> Option<&str> {
+    let payload = payload.trim();
+    let reference = payload
+        .strip_suffix(".text")
+        .or_else(|| payload.strip_suffix(".value"))?;
+    if reference.is_empty()
+        || reference
+            .chars()
+            .any(|ch| ch.is_whitespace() || matches!(ch, '"' | '\'' | '(' | ')' | '[' | ']'))
+    {
+        return None;
+    }
+    Some(reference)
+}
+
+fn text_control_payload_value(
+    reference: &str,
+    text_inputs: &[UiRuntimeTextControl],
+) -> Option<String> {
+    let mut matches = text_inputs
+        .iter()
+        .filter(|control| text_control_reference_matches(reference, control));
+    let value = matches.next()?.value.clone();
+    matches.next().is_none().then_some(value)
+}
+
+fn text_control_reference_matches(reference: &str, control: &UiRuntimeTextControl) -> bool {
+    text_control_id_matches(reference, &control.public_id)
+        || text_control_id_matches(reference, &control.target)
+}
+
+fn text_control_id_matches(reference: &str, id: &str) -> bool {
+    let reference = reference.strip_prefix('@').unwrap_or(reference);
+    let reference = reference.strip_prefix("input:.").unwrap_or(reference);
+    reference == id
+        || input_relative_id(reference).is_some_and(|relative| relative == id)
+        || input_relative_id(id).is_some_and(|relative| relative == reference)
+}
+
+fn input_relative_id(id: &str) -> Option<&str> {
+    id.strip_prefix("input.")
+}
+
 #[cfg(test)]
 mod text_control_writeback_tests {
     use super::*;
@@ -1302,6 +1353,38 @@ mod text_control_writeback_tests {
         let mut incompatible = vec![runtime_control("field.other", 8, "default")];
         preserve_runtime_text_control_values(&current, &mut incompatible);
         assert_eq!(incompatible[0].value, "default");
+    }
+
+    #[test]
+    fn action_payload_value_resolves_text_control_handle_references() {
+        let controls = vec![runtime_control("input.visitor_name", 7, "Ada")];
+
+        assert_eq!(action_payload_value("visitor_name.text", &controls), "Ada");
+        assert_eq!(
+            action_payload_value("input.visitor_name.value", &controls),
+            "Ada"
+        );
+        assert_eq!(
+            action_payload_value("@input:.visitor_name.text", &controls),
+            "Ada"
+        );
+    }
+
+    #[test]
+    fn action_payload_value_keeps_unresolved_or_ambiguous_source() {
+        let controls = vec![
+            runtime_control("input.visitor_name", 7, "Ada"),
+            runtime_control("visitor_name", 8, "Grace"),
+        ];
+
+        assert_eq!(
+            action_payload_value("missing.text", &controls),
+            "missing.text"
+        );
+        assert_eq!(
+            action_payload_value("visitor_name.text", &controls),
+            "visitor_name.text"
+        );
     }
 
     #[test]
@@ -1498,15 +1581,15 @@ fn action_receive_action_id(request: &RuntimeHostCallRequest) -> Option<String> 
     }
 }
 
-fn action_receive_payload(action: &Action) -> RuntimePayload {
+fn action_receive_payload(action_id: &str, payload: Option<&str>) -> RuntimePayload {
     RuntimePayload::from(RuntimeValue::Record(vec![
         RuntimeFieldValue {
             name: "action".to_owned(),
-            value: RuntimeValue::EntityRef(action.kind().as_str().to_owned()),
+            value: RuntimeValue::EntityRef(action_id.to_owned()),
         },
         RuntimeFieldValue {
             name: "value".to_owned(),
-            value: RuntimeValue::String(action.payload().cloned().unwrap_or_default()),
+            value: RuntimeValue::String(payload.unwrap_or_default().to_owned()),
         },
     ]))
 }
