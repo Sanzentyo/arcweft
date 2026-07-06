@@ -1221,6 +1221,12 @@ impl ExprParser {
                             method: field,
                             args,
                         }
+                    } else if self.peek() == &Token::LBrace {
+                        Expr::MethodCall {
+                            receiver: Box::new(lhs),
+                            method: field,
+                            args: vec![CallArg::Positional(self.parse_callback_block_closure()?)],
+                        }
                     } else {
                         Expr::Field {
                             target: Box::new(lhs),
@@ -1639,6 +1645,49 @@ impl ExprParser {
         })
     }
 
+    fn parse_callback_block_closure(&mut self) -> Result<Expr, ExprParseError> {
+        let tokens = self.take_braced_tokens()?;
+        let (params, body_tokens) = callback_block_parts(&tokens)?;
+        let body_source = body_tokens
+            .iter()
+            .map(token_source)
+            .collect::<Vec<_>>()
+            .join(" ");
+        if body_source.trim().is_empty() {
+            return Err(ExprParseError::new(
+                "callback block requires a body expression",
+            ));
+        }
+        Ok(Expr::Closure {
+            params,
+            body: Box::new(parse_expr(body_source.trim())?),
+        })
+    }
+
+    fn take_braced_tokens(&mut self) -> Result<Vec<Token>, ExprParseError> {
+        self.expect(&Token::LBrace)?;
+        let mut depth = 1_u32;
+        let mut tokens = Vec::new();
+        loop {
+            let token = self.bump();
+            match token {
+                Token::LBrace => {
+                    depth = depth.saturating_add(1);
+                    tokens.push(Token::LBrace);
+                }
+                Token::RBrace => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        return Ok(tokens);
+                    }
+                    tokens.push(Token::RBrace);
+                }
+                Token::Eof => return Err(ExprParseError::new("unclosed callback block")),
+                other => tokens.push(other),
+            }
+        }
+    }
+
     fn parse_record_fields(&mut self) -> Result<Vec<(String, Expr)>, ExprParseError> {
         let mut fields = Vec::new();
         if self.peek() == &Token::RBrace {
@@ -1784,6 +1833,62 @@ fn literal_exprs_from_tokens(tokens: &[Token]) -> Vec<Expr> {
             _ => None,
         })
         .collect()
+}
+
+fn callback_block_parts(tokens: &[Token]) -> Result<(Vec<String>, &[Token]), ExprParseError> {
+    let Some(arrow) = top_level_callback_arrow(tokens) else {
+        return Ok((Vec::new(), tokens));
+    };
+    let params = callback_block_params(&tokens[..arrow])?;
+    Ok((params, &tokens[arrow + 1..]))
+}
+
+fn top_level_callback_arrow(tokens: &[Token]) -> Option<usize> {
+    let mut paren_depth = 0_u32;
+    let mut bracket_depth = 0_u32;
+    let mut brace_depth = 0_u32;
+    tokens.iter().enumerate().find_map(|(index, token)| {
+        match token {
+            Token::LParen => paren_depth = paren_depth.saturating_add(1),
+            Token::RParen => paren_depth = paren_depth.saturating_sub(1),
+            Token::LBracket => bracket_depth = bracket_depth.saturating_add(1),
+            Token::RBracket => bracket_depth = bracket_depth.saturating_sub(1),
+            Token::LBrace => brace_depth = brace_depth.saturating_add(1),
+            Token::RBrace => brace_depth = brace_depth.saturating_sub(1),
+            Token::Op("=>") if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 => {
+                return Some(index);
+            }
+            _ => {}
+        }
+        None
+    })
+}
+
+fn callback_block_params(tokens: &[Token]) -> Result<Vec<String>, ExprParseError> {
+    let mut params = Vec::new();
+    let mut expecting_param = true;
+    for token in tokens {
+        match token {
+            Token::Ident(name) if expecting_param => {
+                params.push(name.to_owned());
+                expecting_param = false;
+            }
+            Token::Comma if !expecting_param => {
+                expecting_param = true;
+            }
+            _ => {
+                return Err(ExprParseError::new(
+                    "callback block parameters must be identifiers separated by `,`",
+                ));
+            }
+        }
+    }
+    if params.is_empty() || expecting_param {
+        return Err(ExprParseError::new(
+            "callback block parameter list must appear before `=>`",
+        ));
+    }
+    Ok(params)
 }
 
 fn token_source(token: &Token) -> String {

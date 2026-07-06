@@ -326,6 +326,52 @@ fn call_arguments_keep_positional_spread_nodes() {
 }
 
 #[test]
+fn postfix_callback_block_lowers_to_method_call_closure_arg() {
+    let expr = parse_expr(
+        r#"Button("Send").on_click { action.invoke(@action:.feedback.submit, value = name.text) }"#,
+    )
+    .expect("callback block parses");
+    let Expr::MethodCall {
+        receiver,
+        method,
+        args,
+    } = expr
+    else {
+        panic!("expected method call");
+    };
+
+    assert_eq!(method, "on_click");
+    assert!(matches!(receiver.as_ref(), Expr::Call { .. }));
+    let [CallArg::Positional(Expr::Closure { params, body })] = args.as_slice() else {
+        panic!("expected single closure arg: {args:?}");
+    };
+    assert!(params.is_empty());
+    assert!(matches!(
+        body.as_ref(),
+        Expr::MethodCall { method, .. } if method == "invoke"
+    ));
+}
+
+#[test]
+fn postfix_callback_block_supports_parameterized_closure() {
+    let expr = parse_expr("items.map { item, index => item.label(index) }")
+        .expect("parameterized callback block parses");
+    let Expr::MethodCall { method, args, .. } = expr else {
+        panic!("expected method call");
+    };
+
+    assert_eq!(method, "map");
+    let [CallArg::Positional(Expr::Closure { params, body })] = args.as_slice() else {
+        panic!("expected single closure arg: {args:?}");
+    };
+    assert_eq!(params, &["item".to_owned(), "index".to_owned()]);
+    assert!(matches!(
+        body.as_ref(),
+        Expr::MethodCall { method, .. } if method == "label"
+    ));
+}
+
+#[test]
 fn at_is_entity_ref_and_slash_comments_are_comments() {
     let tree = parse_ok(
         r"

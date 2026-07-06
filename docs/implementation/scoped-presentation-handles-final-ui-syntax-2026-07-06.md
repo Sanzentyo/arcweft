@@ -413,6 +413,44 @@ Relevant changed Rust files:
 | `crates/arcweft-cli/src/app/agent/native/player_observation.rs` | 41,503 | 1,181 | production | true | Native Agent observe object/layer/component mapping and capture diagnostics |
 | `crates/arcweft-runtime-plan/src/flow/tests.rs` | 18,114 | 593 | test | true | Flow lowering regression tests |
 
+## Generic Callback Block Sugar
+
+- Added expression-parser support for generic postfix callback block sugar.
+  `expr.name { body }` now parses as a `MethodCall` whose single positional
+  argument is a zero-argument `Closure`, matching the canonical callback
+  spelling `expr.name(|| body)`.
+- Added parameterized callback block support for the expression surface:
+  `expr.name { item, index => body }` parses as a method call with a closure
+  carrying the listed parameters. The parser recognizes the callback block
+  generically after any postfix member name; type checking remains responsible
+  for deciding whether the named member accepts a closure.
+- The surface AST still preserves `Call` and `MethodCall` as distinct source
+  shapes so later diagnostics and receiver-based resolution keep precise
+  syntax evidence. A later HIR/typed lowering pass can still normalize both
+  into one resolved call representation with `target`, optional `receiver`,
+  arguments, and source-form metadata.
+- This cut intentionally covers single-expression callback bodies. Multi
+  statement callback bodies still need a later block-expression/statement parser
+  integration so newline-sensitive Arcweft statements are preserved instead of
+  being flattened by the expression lexer.
+
+### Verification
+
+- `cargo test -p arcweft-lang-syntax --all-features postfix_callback_block`
+- `cargo test -p arcweft-lang-syntax --all-features`
+- `cargo check --workspace --all-targets --all-features`
+- `cargo clippy --workspace --all-targets --all-features`
+- `cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit\current`
+
+The generic callback block sugar cut was measured at Jujutsu change
+`kooomrzl`. The structure audit reported 0 errors and 138 warnings. Relevant
+changed Rust files:
+
+| Path | Bytes | LOC | Classification | Embedded Tests | Responsibility |
+| --- | ---: | ---: | --- | --- | --- |
+| `crates/arcweft-lang-syntax/src/expr.rs` | 69,590 | 2,265 | production | true | Expression tokenization and Pratt parsing |
+| `crates/arcweft-lang-syntax/tests/parser_p0.rs` | 18,644 | 630 | generated/test | false | Parser regression coverage |
+
 ## Remaining Work
 
 - End-to-end save subsystem wiring still needs to consume the runtime display
@@ -429,7 +467,6 @@ Relevant changed Rust files:
 - `Scroll` is now a typed resource and sidecar element, but scroll offsets,
   clipping, input routing, save/restore of scroll state, and native/web/observe
   parity tests still need the dedicated scroll runtime behavior slice.
-- The final UI syntax direction still needs action payload signature checking,
-  generic callback block sugar beyond the `on_click` `action.invoke` route, and
-  richer reactive branching surface from the broader input/scroll syntax
-  request.
+- The final UI syntax direction still needs multi-statement callback block
+  bodies, action payload signature checking, and richer reactive branching
+  surface from the broader input/scroll syntax request.
