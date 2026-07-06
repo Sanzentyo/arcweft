@@ -135,6 +135,7 @@ pub struct ViewTextSubmitAction {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewActionInvokeAction {
     action: EntityRefSyntax,
+    payload_name: Option<Box<str>>,
     payload: Option<ViewActionPayload>,
     range: TextRange,
 }
@@ -331,6 +332,12 @@ impl ComponentViewBody {
         let mut inputs = Vec::new();
         collect_text_control_inputs(&self.value, &mut inputs);
         inputs
+    }
+
+    pub fn action_invokes(&self) -> Vec<&ViewActionInvokeAction> {
+        let mut invokes = Vec::new();
+        collect_action_invokes(&self.value, &mut invokes);
+        invokes
     }
 
     pub const fn range(&self) -> TextRange {
@@ -613,11 +620,13 @@ impl ViewTextSubmitAction {
 impl ViewActionInvokeAction {
     pub fn new(
         action: EntityRefSyntax,
+        payload_name: Option<String>,
         payload: Option<ViewActionPayload>,
         range: TextRange,
     ) -> Self {
         Self {
             action,
+            payload_name: payload_name.map(String::into_boxed_str),
             payload,
             range,
         }
@@ -625,6 +634,10 @@ impl ViewActionInvokeAction {
 
     pub const fn action(&self) -> &EntityRefSyntax {
         &self.action
+    }
+
+    pub fn payload_name(&self) -> Option<&str> {
+        self.payload_name.as_deref()
     }
 
     pub const fn payload(&self) -> Option<&ViewActionPayload> {
@@ -846,6 +859,49 @@ fn collect_text_control_inputs<'a>(expr: &'a ViewExpr, inputs: &mut Vec<&'a Enti
         | ViewExpr::Match(_)
         | ViewExpr::ForEach(_)
         | ViewExpr::Await(_)
+        | ViewExpr::Expr(_)
+        | ViewExpr::Raw(_) => {}
+    }
+}
+
+fn collect_action_invokes<'a>(expr: &'a ViewExpr, invokes: &mut Vec<&'a ViewActionInvokeAction>) {
+    match expr {
+        ViewExpr::Fragment(children) => {
+            for child in children {
+                collect_action_invokes(child, invokes);
+            }
+        }
+        ViewExpr::Element(element) => {
+            for child in &element.children {
+                collect_action_invokes(child, invokes);
+            }
+        }
+        ViewExpr::Button(button) => {
+            if let Some(ViewAction::ActionInvoke(action)) = button.activation() {
+                invokes.push(action);
+            }
+        }
+        ViewExpr::If(view_if) => {
+            collect_action_invokes(&view_if.then_branch, invokes);
+            if let Some(else_branch) = view_if.else_branch.as_deref() {
+                collect_action_invokes(else_branch, invokes);
+            }
+        }
+        ViewExpr::Match(view_match) => {
+            for arm in &view_match.arms {
+                collect_action_invokes(&arm.value, invokes);
+            }
+        }
+        ViewExpr::ForEach(view_for_each) => collect_action_invokes(&view_for_each.body, invokes),
+        ViewExpr::Await(view_await) => {
+            for branch in &view_await.branches {
+                collect_action_invokes(&branch.value, invokes);
+            }
+        }
+        ViewExpr::ComponentCall(_)
+        | ViewExpr::Text(_)
+        | ViewExpr::Image(_)
+        | ViewExpr::TextField(_)
         | ViewExpr::Expr(_)
         | ViewExpr::Raw(_) => {}
     }

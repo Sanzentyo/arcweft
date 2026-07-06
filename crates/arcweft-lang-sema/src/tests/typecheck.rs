@@ -58,6 +58,51 @@ flow action_wait {
 }
 
 #[test]
+fn typechecks_component_action_invoke_payload_signature() {
+    let tree = parse_ok(
+        r#"
+pub action feedback.submit(value: String)
+pub action feedback.label(name: String)
+
+component FeedbackForm() {
+  Button("Continue")
+    .on_click {
+      action.invoke(@action:.feedback.submit, value = "ready")
+    }
+  Button("Label")
+    .on_click {
+      action.invoke(@action:.feedback.label, name = "Ada")
+    }
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("component action fixture lowers");
+    validate_typecheck_ready(&hir).expect("component action fixture is typecheck-ready");
+    typecheck_hir(&hir, &TypeCheckEnv::standard())
+        .expect("component action payload matches declaration signature");
+}
+
+#[test]
+fn typechecks_component_action_invoke_without_payload() {
+    let tree = parse_ok(
+        r#"
+pub action settings.close
+
+component SettingsPanel() {
+  Button("Close")
+    .on_click {
+      action.invoke(@action:.settings.close)
+    }
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("component action fixture lowers");
+    validate_typecheck_ready(&hir).expect("component action fixture is typecheck-ready");
+    typecheck_hir(&hir, &TypeCheckEnv::standard())
+        .expect("component action without payload matches declaration signature");
+}
+
+#[test]
 fn for_iteration_evidence_is_trait_resolved_for_runtime_flows() {
     let tree = parse_ok(
         r"

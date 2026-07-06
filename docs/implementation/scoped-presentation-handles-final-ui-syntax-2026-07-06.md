@@ -39,8 +39,8 @@ handles and final component/View authoring syntax.
 - Added the first typed action declaration substrate: `action` is now a
   canonical entity declaration family, parses as `EntityDeclKind::Action`,
   lowers through HIR declarations, registers as `EntityKind::Action`, and
-  resolves `@action...` references. Payload signature checking and event
-  dispatch are intentionally left to the follow-up action/receive slice.
+  resolves `@action...` references. Event dispatch is covered by the later
+  action-invoke and receive-action slices below.
 - Updated current samples, parser fixtures, and stable docs/examples to use the
   canonical syntax. Historical review request markdown remains unchanged.
 
@@ -497,6 +497,54 @@ structure audit reported 0 errors and 138 warnings. Relevant changed Rust files:
 | `crates/arcweft-lang-sema/src/project_index/relations.rs` | 42,442 | 1,170 | production | false | Project graph relation indexing |
 | `crates/arcweft-runtime-plan/src/flow.rs` | 90,672 | 2,464 | production | false | Runtime entry target lowering |
 
+## Action Payload Signature Checking
+
+- Component/View `action.invoke(...)` now preserves the authored payload field
+  name in the syntax AST instead of keeping only the payload value. The payload
+  name is stored compactly as `Box<str>` so the existing `ViewExpr` size profile
+  does not regress.
+- `ComponentViewBody` exposes a typed `action_invokes()` traversal so later
+  sema/lowering layers can inspect action emit sites without reparsing View
+  source strings or reaching into private AST fields.
+- Type checking now builds a module-local signature registry from
+  `pub action name(...)` declarations. Empty action declarations accept no
+  payload; declared named payload parameters such as `value: String` or
+  `name: String` are parsed through the existing function signature/type
+  reference parser and currently validate against the UI payload
+  representation, which is `String` for literal strings and text-control
+  projections.
+- Component action emits are checked against the declaration: undeclared action
+  targets, wrong target families, unexpected payload names, missing required
+  payloads, and payload type mismatches now produce type-check errors before
+  bundle lowering.
+- A temporary rejection test confirmed that
+  `action.invoke(@action:.feedback.submit, payload = "ready")` is rejected when
+  the declaration is `pub action feedback.submit(value: String)`. Per current
+  test policy, that rejection test was removed after confirming the behavior.
+
+### Verification
+
+- `cargo test -p arcweft-lang-syntax --all-features component_view_button_on_click_action_invoke_block_parses`
+- `cargo test -p arcweft-lang-sema --all-features typechecks_component_action_invoke`
+- `cargo test -p arcweft-cli --all-features component_view_action_invoke_button_lowers_to_action_resource`
+- `cargo check --workspace --all-targets --all-features`
+- `cargo clippy --workspace --all-targets --all-features`
+- `cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit\current`
+
+The action payload signature checking cut was measured at Jujutsu change
+`rqlxylyl` / commit `7289f89d`. The structure audit reported 0 errors and 138
+warnings. Relevant changed Rust files:
+
+| Path | Bytes | LOC | Classification | Embedded Tests | Responsibility |
+| --- | ---: | ---: | --- | --- | --- |
+| `crates/arcweft-lang-syntax/src/ast/view.rs` | 21,577 | 796 | production | false | Component/View AST action payload-name retention and traversal |
+| `crates/arcweft-lang-syntax/src/parser/view.rs` | 36,271 | 994 | production | false | View action callback parsing and action payload-name capture |
+| `crates/arcweft-lang-sema/src/checker.rs` | 30,439 | 819 | production | false | Type checker state and local action signature model |
+| `crates/arcweft-lang-sema/src/checker/module.rs` | 62,712 | 1,559 | production | false | Module-level action declaration signature collection and component emit validation |
+| `crates/arcweft-lang-sema/src/tests/typecheck.rs` | 67,110 | 2,093 | test | false | Type-check coverage for matching action emit signatures |
+| `crates/arcweft-lang-syntax/tests/style_component_view.rs` | 9,458 | 353 | test | false | Component/View parser coverage for action payload names |
+| `crates/arcweft-lang-syntax/tests/parser_p0.rs` | 19,196 | 599 | test | false | Parser regression formatting cleanup |
+
 ## Remaining Work
 
 - End-to-end save subsystem wiring still needs to consume the runtime display
@@ -514,5 +562,5 @@ structure audit reported 0 errors and 138 warnings. Relevant changed Rust files:
   clipping, input routing, save/restore of scroll state, and native/web/observe
   parity tests still need the dedicated scroll runtime behavior slice.
 - The final UI syntax direction still needs multi-statement callback block
-  bodies, action payload signature checking, and richer reactive branching
-  surface from the broader input/scroll syntax request.
+  bodies and richer reactive branching surface from the broader input/scroll
+  syntax request.

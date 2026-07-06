@@ -286,7 +286,7 @@ flow @flow.opening opening {
     let [arcweft_lang_syntax::ast::items::EntryItem::Goto(target)] = entry.items() else {
         panic!("expected one goto entry item: {:?}", entry.items());
     };
-assert_eq!(target.body(), "flow.opening");
+    assert_eq!(target.body(), "flow.opening");
 }
 
 #[test]

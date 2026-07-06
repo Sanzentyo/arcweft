@@ -863,13 +863,16 @@ fn action_invoke_call_action(args: &[CallArg], range: TextRange) -> Option<ViewA
         CallArg::Named { .. } | CallArg::Spread { .. } => None,
     })?;
     let payload = args.iter().find_map(|arg| match arg {
-        CallArg::Named { name, value } if name == "value" || name == "payload" => {
-            action_payload(value)
+        CallArg::Named { name, value } if name != "action" => {
+            action_payload(value).map(|payload| (name.clone(), payload))
         }
         CallArg::Positional(_) | CallArg::Named { .. } | CallArg::Spread { .. } => None,
     });
     Some(ViewAction::ActionInvoke(ViewActionInvokeAction::new(
-        action, payload, range,
+        action,
+        payload.as_ref().map(|(name, _)| name.clone()),
+        payload.map(|(_, payload)| payload),
+        range,
     )))
 }
 
@@ -888,13 +891,16 @@ fn action_invoke_source_call_action(source: &str, range: TextRange) -> Option<Vi
         ViewArg::Named { .. } => None,
     })?;
     let payload = args.iter().find_map(|arg| match arg {
-        ViewArg::Named { name, value } if name == "value" || name == "payload" => {
-            action_payload(value)
+        ViewArg::Named { name, value } if name != "action" => {
+            action_payload(value).map(|payload| (name.clone(), payload))
         }
         ViewArg::Positional(_) | ViewArg::Named { .. } => None,
     });
     Some(ViewAction::ActionInvoke(ViewActionInvokeAction::new(
-        action, payload, range,
+        action,
+        payload.as_ref().map(|(name, _)| name.clone()),
+        payload.map(|(_, payload)| payload),
+        range,
     )))
 }
 

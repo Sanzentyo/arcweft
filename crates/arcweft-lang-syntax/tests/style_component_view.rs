@@ -134,6 +134,7 @@ pub component FeedbackForm() {
         panic!("expected action.invoke activation");
     };
     assert_eq!(action.action().canonical_body(), "action.feedback.submit");
+    assert_eq!(action.payload_name(), Some("value"));
     assert_eq!(
         action.payload(),
         Some(&ViewActionPayload::TextControlProjection {

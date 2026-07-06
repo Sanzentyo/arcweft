@@ -285,6 +285,7 @@ struct TypeChecker<'a> {
     global_function_signatures: HashMap<String, FunctionSignature>,
     global_function_effects: HashMap<String, Vec<String>>,
     global_type_aliases: HashMap<String, TypeKind>,
+    action_signatures: HashMap<String, ActionSignature>,
     nominal_fields: HashMap<String, HashMap<String, TypeKind>>,
     trait_catalog: TraitCatalog,
     trait_predicate_stack: Vec<Vec<TraitPredicate>>,
@@ -317,6 +318,56 @@ struct TypeCheckerScopeSnapshot {
     lifetime_guarantees: HashSet<LifetimeKey>,
     dropped_lifetime_keys: HashSet<LifetimeKey>,
     available_lifetimes: Vec<LifetimeScopeKind>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ActionSignature {
+    params: Vec<ActionParam>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ActionParam {
+    name: String,
+    ty: TypeKind,
+    has_default: bool,
+}
+
+impl ActionSignature {
+    fn new(params: impl IntoIterator<Item = ActionParam>) -> Self {
+        Self {
+            params: params.into_iter().collect(),
+        }
+    }
+
+    fn params(&self) -> &[ActionParam] {
+        &self.params
+    }
+
+    fn param(&self, name: &str) -> Option<&ActionParam> {
+        self.params.iter().find(|param| param.name() == name)
+    }
+}
+
+impl ActionParam {
+    fn new(name: impl Into<String>, ty: TypeKind, has_default: bool) -> Self {
+        Self {
+            name: name.into(),
+            ty,
+            has_default,
+        }
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    const fn ty(&self) -> &TypeKind {
+        &self.ty
+    }
+
+    const fn has_default(&self) -> bool {
+        self.has_default
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -362,6 +413,7 @@ impl TypeChecker<'_> {
             global_function_signatures: HashMap::new(),
             global_function_effects: HashMap::new(),
             global_type_aliases: HashMap::new(),
+            action_signatures: HashMap::new(),
             nominal_fields: HashMap::new(),
             trait_catalog: TraitCatalog::default(),
             trait_predicate_stack: Vec::new(),
