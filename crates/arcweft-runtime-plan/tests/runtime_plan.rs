@@ -168,6 +168,27 @@ flow @flow.second second { return "right" }
 }
 
 #[test]
+fn entry_goto_selects_runtime_flow_from_final_syntax() {
+    let tree = parse_ok(
+        r#"
+entry game {
+    goto @flow.second
+}
+flow @flow.first first { return "wrong" }
+flow @flow.second second { return "right" }
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("entry goto lowers");
+
+    let plan = lower_runtime_plan(&hir).expect("runtime plan lowers with goto entry");
+    assert!(
+        plan.entry_flow
+            .as_ref()
+            .is_some_and(|id| id.0 == "flow.second")
+    );
+}
+
+#[test]
 fn agent_controller_plan_lowers_body_to_entry_flow() {
     let tree = parse_agent_ok(
         r"

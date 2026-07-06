@@ -766,7 +766,7 @@ pub struct ImageDeclField {
     value: Expr,
 }
 
-/// Program entry declaration such as `entry game @entry.main { start(@flow.opening) }`.
+/// Program entry declaration such as `entry game @entry.main { goto @flow.opening }`.
 ///
 /// Entries are launch manifests in source form. They select an executable flow
 /// or adapter route without making the first flow in a file special.
@@ -794,6 +794,7 @@ pub enum EntryKind {
 /// Structured item inside an entry block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EntryItem {
+    Goto(EntityRef),
     Start(EntityRef),
     Run(EntityRef),
     Route {

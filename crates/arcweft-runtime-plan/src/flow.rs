@@ -1314,7 +1314,7 @@ fn lower_entry_target(items: &[EntryItem]) -> RuntimeEntryTarget {
     items
         .iter()
         .find_map(|item| match item {
-            EntryItem::Start(target) | EntryItem::Run(target) => {
+            EntryItem::Goto(target) | EntryItem::Start(target) | EntryItem::Run(target) => {
                 Some(RuntimeEntryTarget::Flow(flow_runtime_id(target)))
             }
             EntryItem::Route { .. } | EntryItem::Option { .. } | EntryItem::Raw(_) => None,

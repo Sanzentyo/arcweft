@@ -8,7 +8,7 @@ pub asset bg.glass_lights {
   file = "bg/glass_lights.png"
 }
 
-pub image @image.modern.glass_bg {
+pub image glass_bg {
   asset = @asset:.bg.glass_lights
   target = @target.modern.glass_bg
   layer = @layer.background
@@ -23,7 +23,7 @@ pub image @image.modern.glass_bg {
 }
 
 entry game @entry.modern_feedback_ui {
-  start @flow.modern_feedback_ui
+  goto @flow.modern_feedback_ui
 }
 
 pub style modern_feedback_panel {
@@ -187,7 +187,7 @@ pub component ModernFeedbackPanel() -> View {
 
 flow modern_feedback_ui {
   player_viewport(width = 1280px, height = 720px, fit = contain)
-  image(@image.modern.glass_bg)
+  image(@image.glass_bg)
   component(@component:.ModernFeedbackPanel)
 
   concierge:

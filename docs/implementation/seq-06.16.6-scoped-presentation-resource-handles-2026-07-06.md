@@ -128,3 +128,55 @@ acceptance criteria in the design document:
   current conservative observation grouping;
 - native/web/Agent parity tests once the parser/runtime-plan surface emits the
   canonical calls.
+
+## 2026-07-06 follow-up slice: entry goto and sample lint cleanup
+
+The next implementation slice completed the entry-dispatch part of the final UI
+syntax direction and fixed a misleading sample hint observed through
+`arcw run --runner native`.
+
+Implemented:
+
+- `entry { goto @flow.id }` now parses as a typed `EntryItem::Goto`.
+- runtime-plan lowering treats entry `goto` as a flow target, preserving
+  existing `start` / `run` behavior for older fixtures.
+- semantic checking validates entry `goto` targets as `Flow` references.
+- the project semantic graph records `entry_goto` edges separately from
+  `entry_start`, `entry_run`, and `entry_route`.
+- symbol-use collection includes entry `goto` targets.
+- `samples/modern-feedback-ui` now uses canonical entry `goto` and compact
+  `image glass_bg` declaration spelling.
+- direct-source runtime profile builds now emit syntax lints through the same
+  structured diagnostic renderer used by `check`, so any remaining valid hints
+  get source spans and patch previews instead of terse single-line output.
+- `AWF0103 style::explicit_decl_id` now checks the original source spelling
+  before firing. Parser-generated default ids for compact declarations such as
+  `pub character concierge` no longer produce false hints.
+
+Validation used a single Cargo feature mode (`--all-features`) for compile/test
+commands in this slice after the feature-cache churn was identified:
+
+```bash
+cargo fmt
+cargo test -p arcweft-lang-syntax --all-features lint::tests -- --nocapture
+cargo test -p arcweft-runtime-plan --all-features entry_goto_selects_runtime_flow_from_final_syntax -- --nocapture
+cargo test -p arcweft-lang-sema --all-features project_index_records_entry_and_flow_entity_relations -- --nocapture
+cargo check -p arcweft-cli --all-features
+cargo run -p arcweft-cli --all-features -- check --manifest-path samples\modern-feedback-ui\arcw.toml
+cargo run -p arcweft-cli --all-features -- run --runner web --manifest-path samples\modern-feedback-ui\arcw.toml
+cargo run -p arcweft-cli --all-features -- run --runner web .\samples\modern-feedback-ui\src\main.arcw
+cargo run -p arcweft-cli --all-features -- run --runner headless --mode drain --steps 16 --manifest-path samples\modern-feedback-ui\arcw.toml
+cargo clippy -p arcweft-cli --all-targets --all-features
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+```
+
+Results: focused tests passed; `arcweft-cli` check and clippy passed with
+`--all-features`; the modern feedback UI sample checked with 0 warnings and ran
+headless with 0 diagnostics; manifest and direct-source web bundle builds
+succeeded without AWF0103 hints; structural audit reported 0 errors and 138
+warnings.
+
+The broader final syntax goal remains open. This slice does not implement
+value-position `image(...)` / `component(...)` handle creation, lexical cleanup
+stack lowering, save/load rollback integration, or native/web/Agent parity tests
+for scoped handles.

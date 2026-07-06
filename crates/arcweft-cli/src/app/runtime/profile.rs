@@ -1,3 +1,4 @@
+use crate::app::diagnostics::{DiagnosticEmitter, DiagnosticSource};
 use crate::app::project::{
     SourceSelection, print_project_compile_error, runtime_plan_options_for_selection,
 };
@@ -16,6 +17,7 @@ use arcweft_runtime_plan::{
     awbc_lower::{AwbcLowerError, AwbcLowerer},
     flow::{RuntimePlanLowerReport, RuntimePlanLowerStats},
 };
+use arcweft_source::SourceName;
 use arcweft_verify::{RuntimeTypeValidationStats, validate_runtime_plan_types};
 use std::fs;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -71,18 +73,16 @@ pub(in crate::app) fn compile_profile_runtime_plan(
         }
         return Err(ExitCode::FAILURE);
     }
+    let source_text = parsed.source().to_owned();
+    let source_name = SourceName::path(selection.path().display().to_string());
+    let diagnostic_source = DiagnosticSource::new(selection.path(), &source_text);
+    let emitter = DiagnosticEmitter::stderr();
     let syntax_stats = parsed.syntax_stats();
     let tree = parsed.into_typed_tree();
     let syntax_warnings = run_profile_phase(phases, "lint", || {
         let lints = parse::lint_source_tree(&tree);
         for lint in &lints {
-            eprintln!(
-                "{}[{} {}]: {}",
-                lint.severity().label(),
-                lint.code().stable_code(),
-                lint.code().domain_name(),
-                lint.message()
-            );
+            emitter.emit(&lint.diagnostic(&source_name), &diagnostic_source);
         }
         if parse::has_error_lints(&lints) {
             return Err(ExitCode::FAILURE);

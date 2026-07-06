@@ -12,6 +12,14 @@ pub(super) fn index_entry_relations(
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     for item in items {
         match item {
+            EntryItem::Goto(target) => {
+                index = index_entity_relation(
+                    entry_id,
+                    target,
+                    ProjectGraphRelationKind::EntryGoto,
+                    index,
+                )?;
+            }
             EntryItem::Start(target) => {
                 index = index_entity_relation(
                     entry_id,

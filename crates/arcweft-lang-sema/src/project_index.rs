@@ -126,6 +126,7 @@ pub enum ProjectCallableKind {
 /// Kind of semantic relation represented in the project graph.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProjectGraphRelationKind {
+    EntryGoto,
     EntryStart,
     EntryRun,
     EntryRoute,
@@ -552,6 +553,7 @@ impl ProjectCallableKind {
 impl ProjectGraphRelationKind {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::EntryGoto => "entry_goto",
             Self::EntryStart => "entry_start",
             Self::EntryRun => "entry_run",
             Self::EntryRoute => "entry_route",

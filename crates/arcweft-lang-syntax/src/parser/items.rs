@@ -978,6 +978,9 @@ fn parse_entry_body_item(
     base: usize,
     errors: &mut Vec<super::recovery::ParseError>,
 ) -> EntryItem {
+    if let Some(target) = parse_entry_target(item, "goto", base, errors) {
+        return EntryItem::Goto(target);
+    }
     if let Some(target) = parse_entry_target(item, "start", base, errors) {
         return EntryItem::Start(target);
     }

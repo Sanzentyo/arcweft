@@ -112,12 +112,12 @@ impl SyntaxLintSeverity {
 pub fn lint_id_policy(tree: &TypedSyntaxTree) -> Vec<SyntaxLint> {
     let mut lints = Vec::new();
     for item in tree.items() {
-        lint_item_ids(item, tree, &mut lints);
+        lint_item_ids(item, tree, tree.source(), &mut lints);
     }
     lints
 }
 
-fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, lints: &mut Vec<SyntaxLint>) {
+fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, source: &str, lints: &mut Vec<SyntaxLint>) {
     let source_attrs = tree.attrs();
     match item {
         Item::Flow(flow) => {
@@ -133,7 +133,9 @@ fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, lints: &mut Vec<SyntaxLint
                     source_attrs,
                     lints,
                 );
-            } else if let Some(id) = flow.id() {
+            } else if let Some(id) = flow.id()
+                && source_range_starts_with_at(source, *id.range())
+            {
                 let name = flow
                     .name()
                     .or_else(|| id.body().rsplit('.').next())
@@ -184,7 +186,9 @@ fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, lints: &mut Vec<SyntaxLint
                     source_attrs,
                     lints,
                 );
-            } else if let Some(name) = item.id().body().rsplit('.').next() {
+            } else if source_range_starts_with_at(source, *item.id().range())
+                && let Some(name) = item.id().body().rsplit('.').next()
+            {
                 lint_explicit_decl_id(
                     item.kind().keyword(),
                     item.id().body(),
@@ -196,7 +200,9 @@ fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, lints: &mut Vec<SyntaxLint
                 );
             }
         }
-        Item::Source(source) => lint_source_identity(source, source_attrs, lints),
+        Item::Source(source_item) => {
+            lint_source_identity(source_item, source, source_attrs, lints);
+        }
         Item::FlowItem(item) => lint_flow_item_ids(item, lints),
         _ => {}
     }
@@ -204,6 +210,7 @@ fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, lints: &mut Vec<SyntaxLint
 
 fn lint_source_identity(
     source: &SourceItem,
+    source_text: &str,
     source_attrs: &[Attribute],
     lints: &mut Vec<SyntaxLint>,
 ) {
@@ -220,7 +227,9 @@ fn lint_source_identity(
             );
         }
         (Some(id), None) => {
-            if let Some(name) = id.body().rsplit('.').next() {
+            if source_range_starts_with_at(source_text, *id.range())
+                && let Some(name) = id.body().rsplit('.').next()
+            {
                 lint_explicit_decl_id(
                     "source",
                     id.body(),
@@ -234,6 +243,12 @@ fn lint_source_identity(
         }
         (None, _) => {}
     }
+}
+
+fn source_range_starts_with_at(source: &str, range: TextRange) -> bool {
+    source
+        .get(range.start()..range.end())
+        .is_some_and(|spelling| spelling.trim_start().starts_with('@'))
 }
 
 fn lint_decl_identity(
@@ -803,6 +818,29 @@ character alice {
 
         assert!(!codes.contains(&SyntaxLintCode::RedundantDeclIdentity));
         assert!(!codes.contains(&SyntaxLintCode::DeclBindingMismatch));
+        assert!(!codes.contains(&SyntaxLintCode::ExplicitDeclId));
+    }
+
+    #[test]
+    fn compact_declaration_spelling_does_not_emit_explicit_id_hint() {
+        let codes = lint_codes(
+            r#"
+pub character concierge {
+}
+
+pub asset bg.glass_lights {
+}
+
+pub component ModernFeedbackPanel() -> View {
+    Text("ok")
+}
+
+flow opening {
+}
+"#,
+        );
+
+        assert!(!codes.contains(&SyntaxLintCode::ExplicitDeclId));
     }
 
     #[test]

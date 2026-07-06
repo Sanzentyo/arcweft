@@ -37,7 +37,7 @@ cargo run -p arcweft-cli -- bundle samples/modern-feedback-ui/src/main.arcw \
 ## Native
 
 ```bash
-cargo run -p arcweft-cli -- run --runner native samples/modern-feedback-ui/src/main.arcw \
+cargo run -p arcweft-cli --all-features -- run --runner native --manifest-path samples/modern-feedback-ui/arcw.toml \
   --text-input-trace-out target/modern-feedback-ui/text-input-trace.json
 ```
 
