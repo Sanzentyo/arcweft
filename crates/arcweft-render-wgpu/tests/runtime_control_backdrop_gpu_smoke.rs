@@ -7,9 +7,10 @@ use arcweft_presentation::text_input::{
     TextByteOffset, TextInputOptions, TextInputSessionId, TextRange,
 };
 use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, InteractionVisualState, RenderControlFilter, RenderControlFilterList,
-    RenderControlStyle, RenderControlVisualStyle, RenderImage, RenderImageFrame, RenderPreferences,
-    RenderScene, RenderTextInputControl, RenderViewport, SharedFramePlanner,
+    ChoiceScroll, InteractionVisualState, RenderControlBorderStyle, RenderControlFilter,
+    RenderControlFilterList, RenderControlStyle, RenderControlVisualStyle, RenderImage,
+    RenderImageFrame, RenderPreferences, RenderScene, RenderTextInputControl, RenderViewport,
+    SharedFramePlanner,
 };
 use arcweft_render_wgpu::offscreen::SharedOffscreenCapture;
 
@@ -71,11 +72,67 @@ fn prepared_control_foreground_filter_blur_executes_shared_renderer_path() {
     );
 }
 
+#[test]
+#[ignore = "requires a local wgpu adapter; exact PNG promotion remains pinned-only"]
+fn rounded_runtime_control_stroke_draws_straight_edges() {
+    let Ok(mut capture) =
+        pollster::block_on(SharedOffscreenCapture::new(wgpu::TextureFormat::Rgba8Unorm))
+    else {
+        eprintln!("no compatible wgpu adapter available for runtime stroke smoke");
+        return;
+    };
+    let baseline = SharedFramePlanner::prepare(&stroke_scene(false)).expect("baseline prepares");
+    let stroked = SharedFramePlanner::prepare(&stroke_scene(true)).expect("stroked prepares");
+
+    let baseline = capture
+        .capture_frame(&baseline)
+        .expect("baseline frame captures");
+    let stroked = capture
+        .capture_frame(&stroked)
+        .expect("stroked frame captures");
+
+    assert_eq!(baseline.width, stroked.width);
+    assert_eq!(baseline.height, stroked.height);
+    assert_ne!(
+        pixel(&baseline.rgba, baseline.width, 80, 33),
+        pixel(&stroked.rgba, stroked.width, 80, 33),
+        "rounded stroke should paint the top straight edge, not only the corners"
+    );
+    assert_ne!(
+        pixel(&baseline.rgba, baseline.width, 33, 72),
+        pixel(&stroked.rgba, stroked.width, 33, 72),
+        "rounded stroke should paint the left straight edge, not only the corners"
+    );
+}
+
 fn scene(backdrop: bool) -> RenderScene {
     RenderScene {
         dialogue: None,
         choices: Vec::new(),
         text_inputs: vec![control(backdrop)],
+        action_buttons: Vec::new(),
+        focus_groups: Vec::new(),
+        focus_navigation: Vec::new(),
+        images: vec![checker_image()],
+        viewport: RenderViewport {
+            logical_width: 160.0,
+            logical_height: 128.0,
+            physical_width: 160,
+            physical_height: 128,
+            scale_factor: 1.0,
+        },
+        visual_time_millis: 0,
+        preferences: RenderPreferences::default(),
+        interaction: InteractionVisualState::default(),
+        choice_scroll: ChoiceScroll::default(),
+    }
+}
+
+fn stroke_scene(stroke: bool) -> RenderScene {
+    RenderScene {
+        dialogue: None,
+        choices: Vec::new(),
+        text_inputs: vec![stroke_control(stroke)],
         action_buttons: Vec::new(),
         focus_groups: Vec::new(),
         focus_navigation: Vec::new(),
@@ -115,6 +172,31 @@ fn foreground_scene(filter: bool) -> RenderScene {
         interaction: InteractionVisualState::default(),
         choice_scroll: ChoiceScroll::default(),
     }
+}
+
+fn stroke_control(stroke: bool) -> RenderTextInputControl {
+    let style = RenderControlStyle {
+        normal: RenderControlVisualStyle {
+            fill: Some([0.0, 0.0, 0.0, 0.0]),
+            radius_px: Some(14.0),
+            border: stroke.then_some(RenderControlBorderStyle {
+                color: [0.0, 1.0, 0.65, 1.0],
+                width_px: 4.0,
+            }),
+            ..RenderControlVisualStyle::default()
+        },
+        ..RenderControlStyle::default()
+    };
+    RenderTextInputControl::new(
+        target("input.stroke"),
+        TextInputSessionId(11),
+        "",
+        TextRange::new(TextByteOffset(0), TextByteOffset(0)),
+        TextInputOptions::default(),
+        SemanticRole::TextField,
+        HitRect::new(32.0, 32.0, 96.0, 80.0),
+    )
+    .with_style(style)
 }
 
 fn control(backdrop: bool) -> RenderTextInputControl {

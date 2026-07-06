@@ -2003,6 +2003,9 @@ fn rounded_alpha(
     radii_bottom: vec4<f32>,
 ) -> f32 {
     let safe_size = max(size, vec2<f32>(0.0001, 0.0001));
+    if (local.x < 0.0 || local.y < 0.0 || local.x > safe_size.x || local.y > safe_size.y) {
+        return 0.0;
+    }
     let tl = radii_top.xy;
     let tr = radii_top.zw;
     let br = radii_bottom.xy;
