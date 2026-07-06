@@ -47,6 +47,9 @@ pub style modern_feedback_panel {
   token metric.corner_lg = milli(14000)
   token metric.corner_md = milli(9000)
   token metric.focus_ring = milli(2000)
+  token metric.corner_frame = milli(26000)
+  token metric.corner_frame_width = milli(3000)
+  token metric.corner_frame_offset = milli(2000)
 
   Surface {
     background-color = token(color.canvas)
@@ -82,6 +85,10 @@ pub style modern_feedback_panel {
     selection-color = token(color.selection)
     border-color = token(color.glass_border)
     border-radius = token(metric.corner_md)
+    corner-frame-color = rgba(158, 245, 231, 210)
+    corner-frame-width = token(metric.corner_frame_width)
+    corner-frame-length = token(metric.corner_frame)
+    corner-frame-offset = token(metric.corner_frame_offset)
     opacity = milli(920)
     box-shadow = token(shadow.glass_control)
     backdrop-filter = token(filter.glass_blur)

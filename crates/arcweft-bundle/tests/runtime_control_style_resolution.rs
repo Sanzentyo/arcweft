@@ -1,8 +1,9 @@
 use arcweft_bundle::resource_codec::ui::{
     RgbaColor, StyleAssignOp, UiElementKind, UiElementState, UiInputKind, UiInteractionState,
-    UiRuntimeControlCornerRadius, UiRuntimeControlFilter, UiRuntimeControlRadii,
-    UiRuntimeControlState, UiRuntimeControlStyleDiagnosticReason, UiStyleDeclaration,
-    UiStyleResource, UiStyleRule, UiStyleSelector, UiStyleSelectorPart, UiStyleValue,
+    UiRuntimeControlCornerFrameStyle, UiRuntimeControlCornerRadius, UiRuntimeControlFilter,
+    UiRuntimeControlRadii, UiRuntimeControlState, UiRuntimeControlStyleDiagnosticReason,
+    UiStyleDeclaration, UiStyleResource, UiStyleRule, UiStyleSelector, UiStyleSelectorPart,
+    UiStyleValue,
 };
 
 #[test]
@@ -92,6 +93,38 @@ fn text_control_resolves_selection_and_caret_colors() {
 
     assert_eq!(normal.selection, Some(RgbaColor::rgba(64, 128, 200, 160)));
     assert_eq!(normal.caret, Some(RgbaColor::rgb(240, 220, 90)));
+    assert!(resolved.diagnostics.is_empty());
+}
+
+#[test]
+fn text_control_resolves_corner_frame_decoration() {
+    let style = UiStyleResource {
+        rules: vec![rule(
+            UiStyleSelectorPart::Element(UiElementKind::TextArea),
+            vec![
+                decl("corner-frame-color", rgba(94, 234, 212, 220)),
+                decl("corner-frame-width", UiStyleValue::Milli(3_000)),
+                decl("corner-frame-length", UiStyleValue::Milli(24_000)),
+                decl("corner-frame-offset", UiStyleValue::Milli(2_000)),
+            ],
+        )],
+        ..UiStyleResource::default()
+    };
+
+    let resolved = style.runtime_text_control_style("input.message", UiInputKind::TextArea);
+    let normal = resolved
+        .style
+        .visual_for_state(UiRuntimeControlState::Normal);
+
+    assert_eq!(
+        normal.corner_frame,
+        Some(UiRuntimeControlCornerFrameStyle {
+            color: RgbaColor::rgba(94, 234, 212, 220),
+            width_milli: 3_000,
+            length_milli: 24_000,
+            offset_milli: 2_000,
+        })
+    );
     assert!(resolved.diagnostics.is_empty());
 }
 

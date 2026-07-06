@@ -2,8 +2,8 @@ use super::control_style::{
     ControlInteractionStyleState, ControlPointerStyleState, PreparedControlBackdrop,
     PreparedControlFilter, PreparedControlPaint, PreparedControlShadow, RenderControlStyle,
     control_font_family, fill_with_opacity, push_control_backdrop_plan, push_control_border,
-    push_control_filter_plan, push_control_focus_ring, push_control_shadow_plan,
-    state_from_interaction,
+    push_control_corner_frame, push_control_filter_plan, push_control_focus_ring,
+    push_control_shadow_plan, state_from_interaction,
 };
 use super::{
     FramePlanError, PaintRect, Palette, PreparedTextInputTarget, RenderTextBlock, RenderTextSlant,
@@ -268,6 +268,7 @@ pub(super) fn build_text_input(
         radii,
     ));
     push_control_border(rectangles, control.bounds, visual.border, radii);
+    push_control_corner_frame(rectangles, control.bounds, visual.corner_frame);
     if is_focused {
         if let Some(ring) = visual.focus_ring {
             push_control_focus_ring(rectangles, control.bounds, ring, radii);
@@ -781,19 +782,14 @@ fn push_newline_caret_anchors(
         .iter()
         .filter(|item| display_text.value.get(item.display.clone()) == Some("\n"))
     {
-        let next_line_fallback = line_offsets
+        let next_line = line_offsets
             .iter()
             .position(|offset| *offset == item.display.end)
             .and_then(|line| line.to_f32())
             .unwrap_or_default();
-        let y = glyphs
-            .iter()
-            .find(|glyph| glyph.range.start >= item.source.end)
-            .map_or(inner.y + next_line_fallback * line_height, |glyph| {
-                glyph.bounds.y
-            });
+        let y = inner.y + next_line * line_height;
         glyphs.push(text_control_caret_anchor(
-            RichTextRange::new(item.source.start, item.source.end),
+            RichTextRange::new(item.source.end, item.source.end),
             inner.x,
             y,
             line_height,
@@ -1065,6 +1061,26 @@ mod tests {
             caret.x < first.x + 120.0,
             "caret should be relative to the second line, got {caret:?}"
         );
+    }
+
+    #[test]
+    fn consecutive_empty_lines_have_distinct_caret_rows() {
+        let value = "a\n\n\nb";
+        let control =
+            control(value, 0, 136.0).with_options(TextInputOptions::default().multiline(true));
+        let layout = laid_out_for_test(&control);
+        let inner = text_local_inner_bounds(&control);
+        let line_height = text_control_line_height(&control);
+        let after_first_newline = text_caret_rect(&control, &layout, 2);
+        let after_second_newline = text_caret_rect(&control, &layout, 3);
+        let after_third_newline = text_caret_rect(&control, &layout, 4);
+
+        assert_f32_near(after_first_newline.x, inner.x);
+        assert_f32_near(after_second_newline.x, inner.x);
+        assert_f32_near(after_third_newline.x, inner.x);
+        assert_f32_near(after_first_newline.y, inner.y + line_height);
+        assert_f32_near(after_second_newline.y, inner.y + line_height * 2.0);
+        assert_f32_near(after_third_newline.y, inner.y + line_height * 3.0);
     }
 
     #[test]

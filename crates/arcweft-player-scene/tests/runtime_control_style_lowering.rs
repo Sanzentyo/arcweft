@@ -1,11 +1,12 @@
 use arcweft_bundle::resource_codec::ui::{
     CompositionOnBlurPolicy, EnterKeyHint, RgbaColor, TextAssistPolicy, TextCapitalization,
     UiInputKind, UiInputPurpose, UiRuntimeActionButton, UiRuntimeActionButtonAction,
-    UiRuntimeButtonBounds, UiRuntimeControlFilter, UiRuntimeControlFilterList,
-    UiRuntimeControlStyle, UiRuntimeControlVisualStyle, UiRuntimeTextControl,
-    UiRuntimeTextControlBounds, UiRuntimeTextControlHandlers, UiRuntimeTextControlOptions,
-    UiRuntimeTextSelection, UiSecureInputPolicy, UiTextSelectionPolicy, UiTextShortcutPolicy,
-    UiTextSubmitImePolicy, UiTextTabPolicy, UiTextVerticalNavigationPolicy,
+    UiRuntimeButtonBounds, UiRuntimeControlCornerFrameStyle, UiRuntimeControlFilter,
+    UiRuntimeControlFilterList, UiRuntimeControlStyle, UiRuntimeControlVisualStyle,
+    UiRuntimeTextControl, UiRuntimeTextControlBounds, UiRuntimeTextControlHandlers,
+    UiRuntimeTextControlOptions, UiRuntimeTextSelection, UiSecureInputPolicy,
+    UiTextSelectionPolicy, UiTextShortcutPolicy, UiTextSubmitImePolicy, UiTextTabPolicy,
+    UiTextVerticalNavigationPolicy,
 };
 use arcweft_player_scene::action_buttons::RuntimeActionButtonLowerer;
 use arcweft_player_scene::input::InputController;
@@ -107,6 +108,56 @@ fn runtime_control_font_family_reaches_render_style() {
     assert_eq!(
         render[0].style.normal.font_family.as_deref(),
         Some("Arcweft Demo, Yu Gothic, system-ui")
+    );
+}
+
+#[test]
+fn runtime_control_corner_frame_reaches_render_style() {
+    let mut input = InputController::default();
+    let runtime = text_control_with_style(
+        "input.feedback",
+        UiRuntimeControlStyle {
+            normal: UiRuntimeControlVisualStyle {
+                corner_frame: Some(UiRuntimeControlCornerFrameStyle {
+                    color: RgbaColor::rgba(94, 234, 212, 220),
+                    width_milli: 3_000,
+                    length_milli: 24_000,
+                    offset_milli: 2_000,
+                }),
+                ..UiRuntimeControlVisualStyle::default()
+            },
+            ..UiRuntimeControlStyle::default()
+        },
+    );
+
+    let render = RuntimeTextControlLowerer::lower_for_frame(&mut input, &[runtime])
+        .expect("text control lowers");
+    let corner_frame = render[0]
+        .style
+        .normal
+        .corner_frame
+        .expect("corner frame lowers");
+
+    assert_rgba_near(
+        corner_frame.color,
+        [94.0 / 255.0, 234.0 / 255.0, 212.0 / 255.0, 220.0 / 255.0],
+    );
+    assert_f32_near(corner_frame.width_px, 3.0);
+    assert_f32_near(corner_frame.length_px, 24.0);
+    assert_f32_near(corner_frame.offset_px, 2.0);
+}
+
+fn assert_rgba_near(actual: [f32; 4], expected: [f32; 4]) {
+    actual
+        .into_iter()
+        .zip(expected)
+        .for_each(|(actual, expected)| assert_f32_near(actual, expected));
+}
+
+fn assert_f32_near(actual: f32, expected: f32) {
+    assert!(
+        (actual - expected).abs() <= f32::EPSILON,
+        "expected {actual} to equal {expected}"
     );
 }
 

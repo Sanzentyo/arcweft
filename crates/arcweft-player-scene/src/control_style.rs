@@ -1,11 +1,12 @@
 use arcweft_bundle::resource_codec::ui::{
-    RgbaColor, UiRuntimeControlBorderStyle, UiRuntimeControlCornerRadius, UiRuntimeControlFilter,
-    UiRuntimeControlFilterList, UiRuntimeControlFocusRingStyle, UiRuntimeControlRadii,
-    UiRuntimeControlStyle, UiRuntimeControlVisualStyle, UiRuntimeShadow, UiRuntimeShadowKind,
+    RgbaColor, UiRuntimeControlBorderStyle, UiRuntimeControlCornerFrameStyle,
+    UiRuntimeControlCornerRadius, UiRuntimeControlFilter, UiRuntimeControlFilterList,
+    UiRuntimeControlFocusRingStyle, UiRuntimeControlRadii, UiRuntimeControlStyle,
+    UiRuntimeControlVisualStyle, UiRuntimeShadow, UiRuntimeShadowKind,
 };
 use arcweft_render_wgpu::geometry::{
-    PaintRectCornerRadius, PaintRectRadii, RenderControlBorderStyle, RenderControlFilter,
-    RenderControlFilterList, RenderControlFocusRingStyle, RenderControlShadow,
+    PaintRectCornerRadius, PaintRectRadii, RenderControlBorderStyle, RenderControlCornerFrameStyle,
+    RenderControlFilter, RenderControlFilterList, RenderControlFocusRingStyle, RenderControlShadow,
     RenderControlShadowKind, RenderControlStyle, RenderControlVisualStyle,
 };
 use num_traits::ToPrimitive;
@@ -28,6 +29,7 @@ fn lower_visual_style(style: &UiRuntimeControlVisualStyle) -> RenderControlVisua
         selection: style.selection.map(rgba_f32),
         caret: style.caret.map(rgba_f32),
         border: style.border.map(lower_border),
+        corner_frame: style.corner_frame.map(lower_corner_frame),
         focus_ring: style.focus_ring.map(lower_focus_ring),
         opacity: style.opacity_milli.map(|value| f32::from(value) / 1_000.0),
         radius_px: style.radius_milli.map(milli_u32_to_f32),
@@ -43,6 +45,15 @@ fn lower_border(border: UiRuntimeControlBorderStyle) -> RenderControlBorderStyle
     RenderControlBorderStyle {
         color: rgba_f32(border.color),
         width_px: milli_u32_to_f32(border.width_milli),
+    }
+}
+
+fn lower_corner_frame(frame: UiRuntimeControlCornerFrameStyle) -> RenderControlCornerFrameStyle {
+    RenderControlCornerFrameStyle {
+        color: rgba_f32(frame.color),
+        width_px: milli_u32_to_f32(frame.width_milli),
+        length_px: milli_u32_to_f32(frame.length_milli),
+        offset_px: milli_i32_to_f32(frame.offset_milli),
     }
 }
 

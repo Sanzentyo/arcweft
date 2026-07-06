@@ -41,6 +41,8 @@ pub struct UiRuntimeControlVisualStyle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub border: Option<UiRuntimeControlBorderStyle>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub corner_frame: Option<UiRuntimeControlCornerFrameStyle>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub focus_ring: Option<UiRuntimeControlFocusRingStyle>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opacity_milli: Option<u16>,
@@ -62,6 +64,14 @@ pub struct UiRuntimeControlVisualStyle {
 pub struct UiRuntimeControlBorderStyle {
     pub color: RgbaColor,
     pub width_milli: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UiRuntimeControlCornerFrameStyle {
+    pub color: RgbaColor,
+    pub width_milli: u32,
+    pub length_milli: u32,
+    pub offset_milli: i32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -288,6 +298,9 @@ impl UiRuntimeControlVisualStyle {
         }
         if patch.border.is_some() {
             self.border = patch.border;
+        }
+        if patch.corner_frame.is_some() {
+            self.corner_frame = patch.corner_frame;
         }
         if patch.focus_ring.is_some() {
             self.focus_ring = patch.focus_ring;
@@ -608,38 +621,18 @@ fn apply_declaration(
     ) {
         return;
     }
+    if apply_metric_property_declaration(
+        style_resource,
+        value,
+        diagnostics,
+        target,
+        property.as_str(),
+        raw_property,
+        visual,
+    ) {
+        return;
+    }
     match property.as_str() {
-        "border-width" => apply_length_declaration(
-            style_resource,
-            value,
-            diagnostics,
-            target,
-            raw_property,
-            visual,
-            |visual, width_milli| upsert_border(visual, |border| border.width_milli = width_milli),
-        ),
-        "focus-ring-width" | "outline-width" => apply_length_declaration(
-            style_resource,
-            value,
-            diagnostics,
-            target,
-            raw_property,
-            visual,
-            |visual, width_milli| {
-                upsert_focus_ring(visual, |ring| ring.width_milli = width_milli);
-            },
-        ),
-        "focus-ring-offset" | "outline-offset" => apply_signed_length_declaration(
-            style_resource,
-            value,
-            diagnostics,
-            target,
-            raw_property,
-            visual,
-            |visual, offset_milli| {
-                upsert_focus_ring(visual, |ring| ring.offset_milli = offset_milli);
-            },
-        ),
         "opacity" => match opacity_milli(style_resource, value) {
             Some(opacity_milli) => visual.opacity_milli = Some(opacity_milli),
             None => push_unsupported_value(diagnostics, target, raw_property),
@@ -692,6 +685,85 @@ fn apply_declaration(
         ),
         _ => push_unsupported_property(diagnostics, target, raw_property),
     }
+}
+
+fn apply_metric_property_declaration(
+    style_resource: &UiStyleResource,
+    value: &UiStyleValue,
+    diagnostics: &mut UiRuntimeControlStyleDiagnostics,
+    target: &str,
+    property: &str,
+    raw_property: &str,
+    visual: &mut UiRuntimeControlVisualStyle,
+) -> bool {
+    match property {
+        "border-width" => apply_length_declaration(
+            style_resource,
+            value,
+            diagnostics,
+            target,
+            raw_property,
+            visual,
+            |visual, width_milli| upsert_border(visual, |border| border.width_milli = width_milli),
+        ),
+        "corner-frame-width" => apply_length_declaration(
+            style_resource,
+            value,
+            diagnostics,
+            target,
+            raw_property,
+            visual,
+            |visual, width_milli| {
+                upsert_corner_frame(visual, |frame| frame.width_milli = width_milli);
+            },
+        ),
+        "corner-frame-length" => apply_length_declaration(
+            style_resource,
+            value,
+            diagnostics,
+            target,
+            raw_property,
+            visual,
+            |visual, length_milli| {
+                upsert_corner_frame(visual, |frame| frame.length_milli = length_milli);
+            },
+        ),
+        "corner-frame-offset" => apply_signed_length_declaration(
+            style_resource,
+            value,
+            diagnostics,
+            target,
+            raw_property,
+            visual,
+            |visual, offset_milli| {
+                upsert_corner_frame(visual, |frame| frame.offset_milli = offset_milli);
+            },
+        ),
+        "focus-ring-width" | "outline-width" => apply_length_declaration(
+            style_resource,
+            value,
+            diagnostics,
+            target,
+            raw_property,
+            visual,
+            |visual, width_milli| {
+                upsert_focus_ring(visual, |ring| ring.width_milli = width_milli);
+            },
+        ),
+        "focus-ring-offset" | "outline-offset" => apply_signed_length_declaration(
+            style_resource,
+            value,
+            diagnostics,
+            target,
+            raw_property,
+            visual,
+            |visual, offset_milli| {
+                upsert_focus_ring(visual, |ring| ring.offset_milli = offset_milli);
+            },
+        ),
+        _ => return false,
+    }
+    true
 }
 
 fn apply_color_property_declaration(
@@ -761,6 +833,18 @@ fn apply_color_property_declaration(
                 raw_property,
                 visual,
                 |visual, color| upsert_border(visual, |border| border.color = color),
+            );
+            true
+        }
+        "corner-frame-color" => {
+            apply_color_declaration(
+                style_resource,
+                value,
+                diagnostics,
+                target,
+                raw_property,
+                visual,
+                |visual, color| upsert_corner_frame(visual, |frame| frame.color = color),
             );
             true
         }
@@ -923,6 +1007,21 @@ fn upsert_border(
         width_milli: 1_000,
     });
     update(border);
+}
+
+fn upsert_corner_frame(
+    visual: &mut UiRuntimeControlVisualStyle,
+    update: impl FnOnce(&mut UiRuntimeControlCornerFrameStyle),
+) {
+    let corner_frame = visual
+        .corner_frame
+        .get_or_insert(UiRuntimeControlCornerFrameStyle {
+            color: SystemColor::FocusRing.runtime_control_rgba(),
+            width_milli: 2_000,
+            length_milli: 18_000,
+            offset_milli: 0,
+        });
+    update(corner_frame);
 }
 
 fn upsert_focus_ring(

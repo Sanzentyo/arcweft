@@ -2,8 +2,8 @@ use super::control_style::{
     ControlInteractionStyleState, ControlPointerStyleState, PreparedControlBackdrop,
     PreparedControlFilter, PreparedControlPaint, PreparedControlShadow, RenderControlStyle,
     control_font_family, fill_with_opacity, push_control_backdrop_plan, push_control_border,
-    push_control_filter_plan, push_control_focus_ring, push_control_shadow_plan,
-    state_from_interaction,
+    push_control_corner_frame, push_control_filter_plan, push_control_focus_ring,
+    push_control_shadow_plan, state_from_interaction,
 };
 use super::{PaintRect, Palette, RenderScene, RenderTextBlock, RenderTextSlant, RenderTextWeight};
 use arcweft_id::PublicId;
@@ -122,6 +122,7 @@ pub(super) fn build_action_button(
         radii,
     ));
     push_control_border(rectangles, button.bounds, visual.border, radii);
+    push_control_corner_frame(rectangles, button.bounds, visual.corner_frame);
     if is_focused {
         if let Some(ring) = visual.focus_ring {
             push_control_focus_ring(rectangles, button.bounds, ring, radii);

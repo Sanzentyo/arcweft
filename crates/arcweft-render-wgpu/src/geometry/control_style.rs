@@ -25,6 +25,7 @@ pub struct RenderControlVisualStyle {
     pub selection: Option<[f32; 4]>,
     pub caret: Option<[f32; 4]>,
     pub border: Option<RenderControlBorderStyle>,
+    pub corner_frame: Option<RenderControlCornerFrameStyle>,
     pub focus_ring: Option<RenderControlFocusRingStyle>,
     pub opacity: Option<f32>,
     pub radius_px: Option<f32>,
@@ -39,6 +40,14 @@ pub struct RenderControlVisualStyle {
 pub struct RenderControlBorderStyle {
     pub color: [f32; 4],
     pub width_px: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RenderControlCornerFrameStyle {
+    pub color: [f32; 4],
+    pub width_px: f32,
+    pub length_px: f32,
+    pub offset_px: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -200,6 +209,9 @@ impl RenderControlVisualStyle {
         if patch.border.is_some() {
             self.border = patch.border;
         }
+        if patch.corner_frame.is_some() {
+            self.corner_frame = patch.corner_frame;
+        }
         if patch.focus_ring.is_some() {
             self.focus_ring = patch.focus_ring;
         }
@@ -319,6 +331,48 @@ pub(super) fn push_control_border(
         return;
     }
     rectangles.push(PaintRect::stroke(bounds, border.color, radii, width));
+}
+
+pub(super) fn push_control_corner_frame(
+    rectangles: &mut Vec<PaintRect>,
+    bounds: HitRect,
+    frame: Option<RenderControlCornerFrameStyle>,
+) {
+    let Some(frame) = frame else {
+        return;
+    };
+    let width = frame
+        .width_px
+        .max(0.0)
+        .min(bounds.width * 0.5)
+        .min(bounds.height * 0.5);
+    let length = frame
+        .length_px
+        .max(width)
+        .min(bounds.width.max(bounds.height));
+    if width <= f32::EPSILON || length <= f32::EPSILON || frame.color[3] <= f32::EPSILON {
+        return;
+    }
+    let rect = bounds.outset(frame.offset_px);
+    let horizontal = length.min(rect.width.max(0.0));
+    let vertical = length.min(rect.height.max(0.0));
+    let right = rect.x + rect.width - width;
+    let bottom = rect.y + rect.height - width;
+    let horizontal_right = rect.x + rect.width - horizontal;
+    let vertical_bottom = rect.y + rect.height - vertical;
+    [
+        HitRect::new(rect.x, rect.y, horizontal, width),
+        HitRect::new(rect.x, rect.y, width, vertical),
+        HitRect::new(horizontal_right, rect.y, horizontal, width),
+        HitRect::new(right, rect.y, width, vertical),
+        HitRect::new(horizontal_right, bottom, horizontal, width),
+        HitRect::new(right, vertical_bottom, width, vertical),
+        HitRect::new(rect.x, bottom, horizontal, width),
+        HitRect::new(rect.x, vertical_bottom, width, vertical),
+    ]
+    .into_iter()
+    .filter(|segment| segment.width > 0.0 && segment.height > 0.0)
+    .for_each(|segment| rectangles.push(PaintRect::new(segment, frame.color)));
 }
 
 pub(super) fn push_control_focus_ring(

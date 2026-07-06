@@ -32,9 +32,10 @@ pub use action_buttons::{
 };
 pub use control_style::{
     PreparedControlBackdrop, PreparedControlFilter, PreparedControlPaint, PreparedControlShadow,
-    RenderControlBorderStyle, RenderControlFilter, RenderControlFilterList,
-    RenderControlFocusRingStyle, RenderControlShadow, RenderControlShadowKind, RenderControlStyle,
-    RenderControlVisualState, RenderControlVisualStyle, RuntimeControlBackdropSamplePolicy,
+    RenderControlBorderStyle, RenderControlCornerFrameStyle, RenderControlFilter,
+    RenderControlFilterList, RenderControlFocusRingStyle, RenderControlShadow,
+    RenderControlShadowKind, RenderControlStyle, RenderControlVisualState,
+    RenderControlVisualStyle, RuntimeControlBackdropSamplePolicy,
 };
 pub use focus_navigation::{
     FocusNavigationDebug, FocusNavigationDebugCandidate, PreparedFocusGraph, PreparedFocusGroup,

@@ -7,11 +7,12 @@ use arcweft_presentation::text_input::{
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, PaintRectCornerRadius, PaintRectRadii,
-    RenderActionButton, RenderActionButtonAction, RenderControlBorderStyle, RenderControlFilter,
-    RenderControlFilterList, RenderControlFocusRingStyle, RenderControlShadow,
-    RenderControlShadowKind, RenderControlStyle, RenderControlVisualStyle, RenderFontFamily,
-    RenderPreferences, RenderScene, RenderTextInputControl, RenderTextSubmitImePolicy,
-    RenderViewport, RuntimeControlBackdropSamplePolicy, SharedFramePlanner,
+    RenderActionButton, RenderActionButtonAction, RenderControlBorderStyle,
+    RenderControlCornerFrameStyle, RenderControlFilter, RenderControlFilterList,
+    RenderControlFocusRingStyle, RenderControlShadow, RenderControlShadowKind, RenderControlStyle,
+    RenderControlVisualStyle, RenderFontFamily, RenderPreferences, RenderScene,
+    RenderTextInputControl, RenderTextSubmitImePolicy, RenderViewport,
+    RuntimeControlBackdropSamplePolicy, SharedFramePlanner,
 };
 use arcweft_render_wgpu::ui_scene::UiFilter;
 
@@ -185,6 +186,45 @@ fn text_control_fill_and_inner_marks_use_authored_corner_radii() {
 
     assert_eq!(fill.radii, radii);
     assert_eq!(selection.clip.expect("selection clip").radii, radii);
+}
+
+#[test]
+fn text_control_corner_frame_draws_independent_corner_segments() {
+    let input_target = target("input.feedback");
+    let control = text_control(input_target).with_style(RenderControlStyle {
+        normal: RenderControlVisualStyle {
+            corner_frame: Some(RenderControlCornerFrameStyle {
+                color: [0.1, 0.9, 0.8, 1.0],
+                width_px: 3.0,
+                length_px: 24.0,
+                offset_px: 2.0,
+            }),
+            ..RenderControlVisualStyle::default()
+        },
+        ..RenderControlStyle::default()
+    });
+    let scene = scene(vec![control], Vec::new(), InteractionVisualState::default());
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame prepares");
+    let corner_segments = frame
+        .rectangles
+        .iter()
+        .filter(|rect| rgba_near(rect.rgba, [0.1, 0.9, 0.8, 1.0]))
+        .collect::<Vec<_>>();
+
+    assert_eq!(corner_segments.len(), 8);
+    assert!(
+        corner_segments
+            .iter()
+            .any(|rect| rect.bounds.width > rect.bounds.height),
+        "corner frame should include horizontal segments"
+    );
+    assert!(
+        corner_segments
+            .iter()
+            .any(|rect| rect.bounds.height > rect.bounds.width),
+        "corner frame should include vertical segments"
+    );
 }
 
 #[test]
