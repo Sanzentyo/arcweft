@@ -1,3 +1,10 @@
+use crate::presentation_handles::{
+    PresentationHandleDiagnostic, PresentationHandleRecord, apply_presentation_handle_operations,
+    apply_presentation_image_handles, filter_presentation_action_buttons,
+    filter_presentation_focus_groups, filter_presentation_focus_navigation,
+    filter_presentation_text_inputs, hidden_focus_diagnostics,
+    presentation_handle_operations_from_effects,
+};
 use arcweft_bundle::resource_codec::{
     UiRuntimeActionButton, UiRuntimeFocusGroup, UiRuntimeFocusNavigation, UiRuntimeTextControl,
 };
@@ -45,6 +52,8 @@ pub struct BundlePresentationSnapshot {
     pub dialogue: Option<LineDisplayFrame>,
     pub choices: Vec<BundleChoice>,
     pub images: Vec<BundleImageObject>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub presentation_handles: Vec<PresentationHandleRecord>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub viewport_fit: Option<BundleViewportFit>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -94,22 +103,50 @@ impl BundlePresentationSnapshot {
         status: &FlowFiberStatus,
         effects: &[LineEffectRequest],
         resources: BundlePresentationResources<'_>,
-    ) {
+    ) -> Vec<PresentationHandleDiagnostic> {
         let next_dialogue = resolution
             .frames
             .last()
             .cloned()
             .or_else(|| self.dialogue.clone());
         let next_choices = choices_from_status(status);
-        let next_images = images_from_effects(&self.images, effects, resources.image_objects);
+        let (handle_operations, mut handle_diagnostics) =
+            presentation_handle_operations_from_effects(effects);
+        let mut next_presentation_handles = self.presentation_handles.clone();
+        handle_diagnostics.extend(apply_presentation_handle_operations(
+            &mut next_presentation_handles,
+            &handle_operations,
+        ));
+        let mut next_images = images_from_effects(&self.images, effects, resources.image_objects);
+        apply_presentation_image_handles(
+            &mut next_images,
+            &next_presentation_handles,
+            resources.image_objects,
+        );
         let next_viewport_fit = viewport_fit_from_effects(self.viewport_fit, effects);
-        let next_text_inputs = resources.text_inputs.to_vec();
-        let next_action_buttons = resources.action_buttons.to_vec();
-        let next_focus_groups = resources.focus_groups.to_vec();
-        let next_focus_navigation = resources.focus_navigation.to_vec();
+        let next_text_inputs = filter_presentation_text_inputs(
+            resources.text_inputs.to_vec(),
+            &next_presentation_handles,
+        );
+        let next_action_buttons = filter_presentation_action_buttons(
+            resources.action_buttons.to_vec(),
+            &next_presentation_handles,
+        );
+        let next_focus_groups = filter_presentation_focus_groups(
+            resources.focus_groups.to_vec(),
+            &next_presentation_handles,
+        );
+        let raw_focus_navigation = resources.focus_navigation.to_vec();
+        handle_diagnostics.extend(hidden_focus_diagnostics(
+            &next_presentation_handles,
+            &raw_focus_navigation,
+        ));
+        let next_focus_navigation =
+            filter_presentation_focus_navigation(raw_focus_navigation, &next_presentation_handles);
         if self.dialogue != next_dialogue
             || self.choices != next_choices
             || self.images != next_images
+            || self.presentation_handles != next_presentation_handles
             || self.viewport_fit != next_viewport_fit
             || self.text_inputs != next_text_inputs
             || self.action_buttons != next_action_buttons
@@ -120,12 +157,14 @@ impl BundlePresentationSnapshot {
             self.dialogue = next_dialogue;
             self.choices = next_choices;
             self.images = next_images;
+            self.presentation_handles = next_presentation_handles;
             self.viewport_fit = next_viewport_fit;
             self.text_inputs = next_text_inputs;
             self.action_buttons = next_action_buttons;
             self.focus_groups = next_focus_groups;
             self.focus_navigation = next_focus_navigation;
         }
+        handle_diagnostics
     }
 
     pub(crate) fn replace_text_inputs(&mut self, text_inputs: &[UiRuntimeTextControl]) {
@@ -157,6 +196,7 @@ impl fmt::Debug for BundlePresentationSnapshot {
             .field("dialogue", &self.dialogue)
             .field("choices", &self.choices)
             .field("images", &self.images)
+            .field("presentation_handles", &self.presentation_handles)
             .field("viewport_fit", &self.viewport_fit)
             .field("text_inputs", &self.redacted_for_observation().text_inputs)
             .field("action_buttons", &self.action_buttons)

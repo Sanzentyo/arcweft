@@ -1,6 +1,7 @@
 use crate::clock::RuntimeClockStep;
 use crate::display::{
-    BundlePresentationResources, BundlePresentationSnapshot, resolve_display_frames,
+    BundlePresentationResources, BundlePresentationSnapshot, DisplayResolution,
+    resolve_display_frames,
 };
 use crate::generation_runtime::{
     GenerationRuntimeError, GenerationRuntimeImage, GenerationRuntimeTable,
@@ -879,17 +880,11 @@ impl BundleSession {
                 .iter()
                 .map(ToString::to_string),
         );
-        self.presentation.update(
+        self.update_presentation_snapshot(
             &display,
             &result.fiber_status,
             &line_effects,
-            BundlePresentationResources {
-                image_objects: &self.image_objects,
-                text_inputs: &self.text_inputs,
-                action_buttons: &self.action_buttons,
-                focus_groups: &self.focus_groups,
-                focus_navigation: &self.focus_navigation,
-            },
+            &mut diagnostics,
         );
         let observations = self.executor.fiber().observations.clone();
 
@@ -941,6 +936,32 @@ impl BundleSession {
             &self.executor.fiber().status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         )
+    }
+
+    fn update_presentation_snapshot(
+        &mut self,
+        display: &DisplayResolution,
+        status: &FlowFiberStatus,
+        line_effects: &[LineEffectRequest],
+        diagnostics: &mut Vec<String>,
+    ) {
+        let presentation_handle_diagnostics = self.presentation.update(
+            display,
+            status,
+            line_effects,
+            BundlePresentationResources {
+                image_objects: &self.image_objects,
+                text_inputs: &self.text_inputs,
+                action_buttons: &self.action_buttons,
+                focus_groups: &self.focus_groups,
+                focus_navigation: &self.focus_navigation,
+            },
+        );
+        diagnostics.extend(
+            presentation_handle_diagnostics
+                .iter()
+                .map(ToString::to_string),
+        );
     }
 
     fn dispatch_requested_tasks(
