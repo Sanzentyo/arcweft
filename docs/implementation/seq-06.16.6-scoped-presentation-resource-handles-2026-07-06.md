@@ -178,7 +178,7 @@ succeeded without AWF0103 hints; structural audit reported 0 errors and 138
 warnings.
 
 The broader final syntax goal remains open. This slice does not implement
-value-position `image(...)` / `component(...)` handle creation, lexical cleanup
+value-position `image(...)` / `view(...)` handle creation, lexical cleanup
 stack lowering, native/web/Agent parity tests for scoped handles, or save/load
 rollback integration. The save/load work is now split to
 `docs/reviews/requests/2026-07-06-seq-06.16.6.1-save-load-scoped-presentation-handles.md`.
@@ -189,9 +189,9 @@ The final UI syntax follow-up now covers the first View-local handle-binding
 slice:
 
 - `let visitor_name = input.text(@input:.visitor_name, initial = "")` parses as
-  `ViewExpr::Let` inside component/View bodies.
+  `ViewExpr::Let` inside View bodies.
 - The syntax AST reports `input.text` / `input.secure` builder handles through
-  `ComponentViewBody::text_control_inputs()`.
+  `ViewBody::text_control_inputs()`.
 - Bundle UI program lowering emits `UiProgramInstruction::BindLocal` with
   deterministic pattern and value schema digests.
 - `TextField(visitor_name)` resolves the local handle to
@@ -202,8 +202,8 @@ Validation:
 
 ```bash
 cargo fmt
-cargo test -p arcweft-lang-syntax --all-features component_view_local_let_input_handle_parses
-cargo test -p arcweft-cli --all-features component_view_local_let_input_handle_lowers_to_program_binding
+cargo test -p arcweft-lang-syntax --all-features view_local_let_input_handle_parses
+cargo test -p arcweft-cli --all-features view_local_let_input_handle_lowers_to_program_binding
 cargo test -p arcweft-lang-syntax --all-features
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features

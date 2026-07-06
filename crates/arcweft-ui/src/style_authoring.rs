@@ -1,4 +1,4 @@
-//! Author-facing UI style declarations and component-local style overrides.
+//! Author-facing UI style declarations and view-local style overrides.
 //!
 //! The renderer consumes resolved `UiStyle`/paint data, not this authoring model.
 //! Both Arcweft native style syntax and CSS lower into this representation before
@@ -113,7 +113,7 @@ pub enum EnvironmentStylePredicate {
 pub struct StyleExpressionId(pub u32);
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct ComponentStyleOverride {
+pub struct ViewStyleOverride {
     layers: Vec<StyleOverrideLayer>,
     exported_parts: BTreeMap<StylePartId, PublicId>,
 }
@@ -302,7 +302,7 @@ impl StyleOverrideLayer {
     }
 }
 
-impl ComponentStyleOverride {
+impl ViewStyleOverride {
     pub fn push_layer(&mut self, layer: StyleOverrideLayer) {
         self.layers.push(layer);
     }
@@ -323,8 +323,8 @@ impl ComponentStyleOverride {
 #[cfg(test)]
 mod tests {
     use super::{
-        ComponentStyleOverride, StyleFileMode, StyleFileRef, StyleOverrideLayer, StylePatch,
-        StyleSource, StyleSyntax,
+        StyleFileMode, StyleFileRef, StyleOverrideLayer, StylePatch, StyleSource, StyleSyntax,
+        ViewStyleOverride,
     };
     use crate::{Milli, UiPropertyKind, UiPropertyValue};
     use arcweft_id::PublicId;
@@ -341,10 +341,10 @@ mod tests {
     }
 
     #[test]
-    fn component_style_overrides_keep_ordered_layers_and_exported_parts() {
+    fn view_style_overrides_keep_ordered_layers_and_exported_parts() {
         let mut patch = StylePatch::default();
         patch.push_property(UiPropertyKind::Opacity, UiPropertyValue::Milli(Milli(900)));
-        let mut overrides = ComponentStyleOverride::default();
+        let mut overrides = ViewStyleOverride::default();
         overrides.push_layer(StyleOverrideLayer::arcweft_inline("opacity: 0.9", patch));
         overrides.push_layer(StyleOverrideLayer::css_file(
             "ui/dialogue.css",

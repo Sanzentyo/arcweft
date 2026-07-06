@@ -1,5 +1,5 @@
 bench @bench.dense_u64_sum {
-    measure iterations = 4 { start(@flow.dense_u64_sum) }
+    measure iterations = 4 { goto @flow.dense_u64_sum }
 }
 
 flow @flow.dense_u64_sum dense_u64_sum {

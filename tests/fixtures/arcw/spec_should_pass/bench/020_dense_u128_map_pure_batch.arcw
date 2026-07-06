@@ -4,7 +4,7 @@ fn score_u128(base: u128, bonus: u128) -> u128 {
 }
 
 bench @bench.dense_u128_map_pure_batch {
-    measure iterations = 4 { start(@flow.dense_u128_map_pure_batch) }
+    measure iterations = 4 { goto @flow.dense_u128_map_pure_batch }
 }
 
 flow @flow.dense_u128_map_pure_batch dense_u128_map_pure_batch {

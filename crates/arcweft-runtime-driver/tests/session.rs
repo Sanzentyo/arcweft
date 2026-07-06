@@ -6,6 +6,11 @@ use arcweft_bundle::patch::{
     PatchCompatibility, PatchMaterializationContract, RuntimeAbiRange, SectionChangeDerivation,
     SectionChangeOperation, SectionCompatibilityFingerprint, SectionOperation, encode_patch_bundle,
 };
+use arcweft_bundle::resource_codec::ui::{
+    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
+    UiInputOptions, UiInputPurpose, UiInputResource, UiSecureInputPolicy, UiTextSelectionPolicy,
+    UiTextShortcutPolicy, UiTextTabPolicy, UiTextVerticalNavigationPolicy,
+};
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
 };
@@ -25,7 +30,13 @@ use arcweft_core::task::{
 };
 use arcweft_core::value::{RuntimeExpr, RuntimePayload, RuntimeValue};
 use arcweft_id::PublicId;
-use arcweft_presentation::input::{Action, ActionTarget};
+use arcweft_presentation::input::{
+    Action, ActionTarget, InteractionTarget as PresentationInteractionTarget,
+};
+use arcweft_presentation::text_input::{
+    TextByteOffset, TextControlValue, TextControlWriteBack, TextInputSessionId, TextRange,
+    TextRevision,
+};
 use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{
@@ -365,6 +376,35 @@ fn fixture_action_receive_bundle() -> ArcweftBundle {
     bundle.with_product_awbc(product_awbc)
 }
 
+fn fixture_action_receive_bundle_with_submit_input() -> ArcweftBundle {
+    fixture_action_receive_bundle().with_ui_input(UiInputResource {
+        options: vec![UiInputOptions {
+            public_id: "input.feedback".to_owned(),
+            view: Some("view.FeedbackForm".to_owned()),
+            containing_scroll_region: None,
+            kind: UiInputKind::TextField,
+            value_text_source: "text.value.input.feedback".to_owned(),
+            placeholder_text_source: None,
+            purpose: UiInputPurpose::Text,
+            autocorrect: TextAssistPolicy::PlatformDefault,
+            spellcheck: TextAssistPolicy::PlatformDefault,
+            capitalization: TextCapitalization::None,
+            enter_key: EnterKeyHint::Send,
+            multiline: false,
+            selection_policy: UiTextSelectionPolicy::Enabled,
+            shortcut_policy: UiTextShortcutPolicy::Enabled,
+            tab_policy: UiTextTabPolicy::FocusNavigation,
+            vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
+            secure_policy: UiSecureInputPolicy::Plain,
+            composition_on_blur: CompositionOnBlurPolicy::Commit,
+            submit_handler: Some("action.feedback.submit".to_owned()),
+            change_handler: Some("input.feedback".to_owned()),
+            adapter_requirements: Vec::new(),
+        }],
+        adapter_requirements: Vec::new(),
+    })
+}
+
 fn fixture_await_replacement_bundle() -> ArcweftBundle {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.main".to_owned())),
@@ -515,6 +555,70 @@ fn session_accepts_generic_semantic_action_invoke() {
 }
 
 #[test]
+fn product_awbc_session_flow_option_selects_flow_function() {
+    let bundle = fixture_bundle_with("WebGPU dialogue", true, false);
+
+    for selector in ["extra", "flow.extra"] {
+        let mut session = BundleSession::new(
+            &bundle,
+            BundleSessionOptions {
+                flow: Some(selector.to_owned()),
+                ..BundleSessionOptions::default()
+            },
+        )
+        .expect("flow selector starts Product AWBC session");
+
+        let mut step = session.step_with_clock(
+            RuntimeClockStep::from_millis(1, 16).expect("clock"),
+            BundleStepInput::default(),
+        );
+        for tick in 2..=4 {
+            if step.finished {
+                break;
+            }
+            step = session.step_with_clock(
+                RuntimeClockStep::from_millis(tick, 16).expect("clock"),
+                BundleStepInput::default(),
+            );
+        }
+
+        assert!(
+            step.finished,
+            "{selector} should return, stopped at {:?} with {}; diagnostics: {}",
+            step.stop_reason,
+            step.status_label,
+            step.diagnostics.join("; ")
+        );
+        assert!(
+            step.status_label.contains("extra"),
+            "{selector} should run flow.extra, got {}",
+            step.status_label
+        );
+    }
+}
+
+#[test]
+fn product_awbc_session_flow_option_reports_unknown_flow() {
+    let bundle = fixture_bundle_with("WebGPU dialogue", true, false);
+
+    let error = BundleSession::new(
+        &bundle,
+        BundleSessionOptions {
+            flow: Some("missing".to_owned()),
+            ..BundleSessionOptions::default()
+        },
+    )
+    .expect_err("unknown flow rejects");
+
+    assert_eq!(
+        error,
+        BundleSessionError::UnknownFlow {
+            flow: "flow.missing".to_owned()
+        }
+    );
+}
+
+#[test]
 fn session_receive_action_host_call_resumes_with_event_value() {
     let bundle = fixture_action_receive_bundle();
     let mut session =
@@ -533,6 +637,49 @@ fn session_receive_action_host_call_resumes_with_event_value() {
     session
         .queue_semantic_action(&action)
         .expect("generic semantic action is accepted");
+    let resumed = session.step_with_clock(
+        RuntimeClockStep::from_millis(2, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+
+    assert!(resumed.finished);
+    assert!(resumed.flow_events.iter().any(|event| {
+        matches!(
+            event,
+            FlowEvent::Return { value } if value == "Ada"
+        )
+    }));
+}
+
+#[test]
+fn session_text_control_submit_handler_resumes_receive_action() {
+    let bundle = fixture_action_receive_bundle_with_submit_input();
+    let submit_session = bundle
+        .ui_input
+        .as_ref()
+        .expect("fixture has input resource")
+        .options[0]
+        .runtime_text_session();
+    let mut session =
+        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
+    let waiting = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    assert!(!waiting.finished);
+
+    let submit = TextControlWriteBack::submit(
+        PresentationInteractionTarget::new(
+            PublicId::try_new("input.feedback").expect("valid target"),
+        ),
+        TextInputSessionId(submit_session),
+        TextControlValue::plain("Ada"),
+        TextRange::new(TextByteOffset(3), TextByteOffset(3)),
+        TextRevision(1),
+    );
+    session
+        .queue_text_control_write_back(&submit)
+        .expect("submit writeback is accepted");
     let resumed = session.step_with_clock(
         RuntimeClockStep::from_millis(2, 16).expect("clock"),
         BundleStepInput::default(),

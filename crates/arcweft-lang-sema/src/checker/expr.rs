@@ -25,11 +25,11 @@ mod support;
 
 use builtin::{BuiltinCallSpec, CapabilityFunctionSpec};
 use support::{
-    ChoicePatternCoverage, TraitMethodCallOutcome, agent_action_result_field_type,
-    agent_action_target_field_type, agent_bbox_field_type, agent_capture_ref_field_type,
-    agent_entity_ref_field_type, agent_observation_field_type, agent_observed_object_field_type,
-    agent_resource_body_field_type, agent_resource_field_type, agent_result,
-    choice_pattern_coverage, collection_index_key_type, expr_kind_name,
+    BuiltinCollectionMethodCallOutcome, ChoicePatternCoverage, TraitMethodCallOutcome,
+    agent_action_result_field_type, agent_action_target_field_type, agent_bbox_field_type,
+    agent_capture_ref_field_type, agent_entity_ref_field_type, agent_observation_field_type,
+    agent_observed_object_field_type, agent_resource_body_field_type, agent_resource_field_type,
+    agent_result, choice_pattern_coverage, collection_index_key_type, expr_kind_name,
     has_multiple_numeric_choice_alternatives, inline_failure_builtin_variant_type,
     is_character_speaker_type, is_unit_number_type, join_branch_types, looks_like_os_absolute_path,
     rhs_expected_type_for_binary, signature_param_label, spread_item_type, std_float_constant_type,
@@ -780,6 +780,11 @@ impl TypeChecker<'_> {
         {
             return Some(ty);
         }
+        if let Expr::Path(name) = callee
+            && let Some(ty) = self.check_presentation_call(name, args)
+        {
+            return Some(ty);
+        }
         if let Some(name) = expr_path_label(callee)
             && let Some(ty) = self
                 .function_type(&name)
@@ -797,9 +802,6 @@ impl TypeChecker<'_> {
             return Some(ty);
         }
         if let Expr::Path(name) = callee {
-            if let Some(ty) = self.check_presentation_call(name, args) {
-                return Some(ty);
-            }
             if matches!(name.as_str(), "promote" | "promote_unchecked") {
                 for arg in args.iter().filter_map(|arg| match arg {
                     CallArg::Named { value, .. } => Some(value.as_ref()),
@@ -1327,17 +1329,14 @@ impl TypeChecker<'_> {
             }
             return Some(signature.return_type().clone());
         }
-        if method_name == "len" {
-            return self.check_sequence_len_method_call(&receiver_type, args);
+        match self.check_builtin_collection_method_call(&receiver_type, method_name, args) {
+            BuiltinCollectionMethodCallOutcome::Missing => {}
+            BuiltinCollectionMethodCallOutcome::Checked(return_type) => return return_type,
         }
-        if method_name == "map" {
-            return self.check_vec_map_method_call(&receiver_type, args);
-        }
-        if method_name == "sum" {
-            return self.check_vec_sum_method_call(&receiver_type, args);
-        }
-        if method_name == "contains" {
-            return Some(self.check_sequence_contains_method_call(&receiver_type, args));
+        if let Some(return_type) =
+            self.check_presentation_handle_lifecycle_method(&receiver_type, method_name, args)
+        {
+            return Some(return_type);
         }
         if matches!(method_name, "clamp" | "min" | "max") && receiver_type.is_integer() {
             return Some(self.check_integer_scalar_method_call(receiver_type, method_name, args));
@@ -1406,6 +1405,60 @@ impl TypeChecker<'_> {
                 )));
                 None
             })
+    }
+
+    fn check_presentation_handle_lifecycle_method(
+        &mut self,
+        receiver_type: &TypeKind,
+        method_name: &str,
+        args: &[CallArg],
+    ) -> Option<TypeKind> {
+        if let TypeKind::Handle { name, .. } = receiver_type
+            && matches!(
+                method_name,
+                "show" | "hide" | "unmount" | "release" | "destroy"
+            )
+        {
+            return Some(self.check_no_arg_method(
+                &format!("presentation handle `{name}` method `{method_name}`"),
+                args,
+                TypeKind::Unit,
+            ));
+        }
+        if let TypeKind::Handle { name, .. } = receiver_type
+            && name == "Overlay"
+            && method_name == "pop"
+        {
+            return Some(self.check_no_arg_method(
+                "presentation handle `Overlay` method `pop`",
+                args,
+                TypeKind::Unit,
+            ));
+        }
+        None
+    }
+
+    fn check_builtin_collection_method_call(
+        &mut self,
+        receiver_type: &TypeKind,
+        method_name: &str,
+        args: &[CallArg],
+    ) -> BuiltinCollectionMethodCallOutcome {
+        match method_name {
+            "len" => BuiltinCollectionMethodCallOutcome::Checked(
+                self.check_sequence_len_method_call(receiver_type, args),
+            ),
+            "map" => BuiltinCollectionMethodCallOutcome::Checked(
+                self.check_vec_map_method_call(receiver_type, args),
+            ),
+            "sum" => BuiltinCollectionMethodCallOutcome::Checked(
+                self.check_vec_sum_method_call(receiver_type, args),
+            ),
+            "contains" => BuiltinCollectionMethodCallOutcome::Checked(Some(
+                self.check_sequence_contains_method_call(receiver_type, args),
+            )),
+            _ => BuiltinCollectionMethodCallOutcome::Missing,
+        }
     }
 
     fn check_trait_method_call(

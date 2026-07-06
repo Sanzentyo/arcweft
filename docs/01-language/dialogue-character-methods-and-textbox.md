@@ -327,7 +327,7 @@ narrator = "textbox.narrator"
 missing = "textbox.main"
 ```
 
-Custom dialogue windows can be declared as UI components or text surfaces:
+Custom dialogue windows can be declared as UI views or text surfaces:
 
 ```arcw
 pub textbox @textbox.phone_message PhoneMessageBox {

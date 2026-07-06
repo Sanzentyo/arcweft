@@ -302,7 +302,8 @@ fn runtime_control(public_id: &str, kind: UiInputKind, value: &str) -> UiRuntime
     UiRuntimeTextControl {
         public_id: public_id.to_owned(),
         target: public_id.to_owned(),
-        component: None,
+        view: None,
+        containing_scroll_region: None,
         session: stable_test_session(public_id),
         value: value.to_owned(),
         selection: UiRuntimeTextSelection::new(end, end),
@@ -359,6 +360,7 @@ fn scene_with_text_inputs(
             pressed: None,
         },
         choice_scroll: ChoiceScroll::default(),
+        scroll_regions: Vec::new(),
     }
 }
 

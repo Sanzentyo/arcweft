@@ -33,21 +33,13 @@ fn css_layout_cascade_specificity_then_source_order_chooses_winner() {
         ".card.title",
         "color",
         "red",
-        CssCascadePriority::new(
-            CssCascadeLayer::CssComponent,
-            CssSpecificity::new(0, 2, 0),
-            1,
-        ),
+        CssCascadePriority::new(CssCascadeLayer::CssView, CssSpecificity::new(0, 2, 0), 1),
     );
     let later = CssMatchedDeclaration::new(
         ".panel .title",
         "color",
         "blue",
-        CssCascadePriority::new(
-            CssCascadeLayer::CssComponent,
-            CssSpecificity::new(0, 2, 0),
-            2,
-        ),
+        CssCascadePriority::new(CssCascadeLayer::CssView, CssSpecificity::new(0, 2, 0), 2),
     );
 
     assert_eq!(
@@ -59,7 +51,7 @@ fn css_layout_cascade_specificity_then_source_order_chooses_winner() {
 #[test]
 fn css_layout_cascade_arcweft_and_css_layers_resolve_deterministically() {
     let arcweft = CssCascadePriority::new(
-        CssCascadeLayer::ArcweftComponent,
+        CssCascadeLayer::ArcweftView,
         CssSpecificity::new(1, 0, 0),
         99,
     );

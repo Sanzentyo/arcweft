@@ -1,9 +1,10 @@
 use arcweft_bundle::resource_codec::ui::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
-    UiInputOptions, UiInputPurpose, UiInputResource, UiLayoutBoundsResource, UiLogicalRect,
-    UiProgramResource, UiRuntimeTextControlBounds, UiRuntimeTextSelection, UiSecureInputPolicy,
-    UiSemanticTarget, UiTextResource, UiTextSelectionPolicy, UiTextShortcutPolicy,
-    UiTextSourceKind, UiTextSourceRecord, UiTextTabPolicy, UiTextVerticalNavigationPolicy,
+    UiInputOptions, UiInputPurpose, UiInputResource, UiLogicalRect, UiRuntimeTextControlBounds,
+    UiRuntimeTextSelection, UiSecureInputPolicy, UiTextResource, UiTextSelectionPolicy,
+    UiTextShortcutPolicy, UiTextSourceKind, UiTextSourceRecord, UiTextTabPolicy,
+    UiTextVerticalNavigationPolicy, ViewLayoutBoundsResource, ViewProgramResource,
+    ViewSemanticTarget,
 };
 
 #[test]
@@ -29,22 +30,24 @@ fn ui_input_resource_emits_runtime_text_control_shape() {
         cursor_policies: Vec::new(),
         redactions: Vec::new(),
     };
-    let program = UiProgramResource {
+    let program = ViewProgramResource {
         program_id: "ui.program.main".to_owned(),
-        root_component: "ui.root".to_owned(),
+        root_view: "ui.root".to_owned(),
         instructions: Vec::new(),
         child_spans: Vec::new(),
         handlers: Vec::new(),
         state_schema_hashes: Vec::new(),
         exported_parts: Vec::new(),
-        semantic_targets: vec![UiSemanticTarget {
+        semantic_targets: vec![ViewSemanticTarget {
             public_id: "target.player_name".to_owned(),
             target: "input.player_name".to_owned(),
-            component: None,
+            view: None,
             label_text_source: Some("text.label.name".to_owned()),
             source: None,
         }],
         layout_bounds: Vec::new(),
+        scroll_regions: Vec::new(),
+        text_blocks: Vec::new(),
         action_buttons: Vec::new(),
         focus_groups: Vec::new(),
         focus_navigation: Vec::new(),
@@ -183,9 +186,9 @@ fn ui_program_layout_bounds_override_stacked_runtime_text_control_fallback() {
         cursor_policies: Vec::new(),
         redactions: Vec::new(),
     };
-    let program = UiProgramResource {
+    let program = ViewProgramResource {
         program_id: "ui.program.feedback".to_owned(),
-        root_component: "component.feedback".to_owned(),
+        root_view: "view.feedback".to_owned(),
         instructions: Vec::new(),
         child_spans: Vec::new(),
         handlers: Vec::new(),
@@ -193,23 +196,25 @@ fn ui_program_layout_bounds_override_stacked_runtime_text_control_fallback() {
         exported_parts: Vec::new(),
         semantic_targets: Vec::new(),
         layout_bounds: vec![
-            UiLayoutBoundsResource::text_control(
+            ViewLayoutBoundsResource::text_control(
                 "input.title",
                 UiLogicalRect::from_px(80, 64, 360, 48),
             ),
-            UiLayoutBoundsResource::text_control(
+            ViewLayoutBoundsResource::text_control(
                 "input.body",
                 UiLogicalRect::from_px(80, 128, 480, 136),
             ),
-            UiLayoutBoundsResource::semantic_target(
+            ViewLayoutBoundsResource::semantic_target(
                 "input.title",
                 UiLogicalRect::from_px(80, 64, 360, 48),
             ),
-            UiLayoutBoundsResource::semantic_target(
+            ViewLayoutBoundsResource::semantic_target(
                 "input.body",
                 UiLogicalRect::from_px(80, 128, 480, 136),
             ),
         ],
+        scroll_regions: Vec::new(),
+        text_blocks: Vec::new(),
         action_buttons: Vec::new(),
         focus_groups: Vec::new(),
         focus_navigation: Vec::new(),
@@ -240,7 +245,8 @@ fn text_input_option(
 ) -> UiInputOptions {
     UiInputOptions {
         public_id: public_id.to_owned(),
-        component: None,
+        view: None,
+        containing_scroll_region: None,
         kind,
         value_text_source: value_text_source.to_owned(),
         placeholder_text_source: placeholder_text_source.map(ToOwned::to_owned),

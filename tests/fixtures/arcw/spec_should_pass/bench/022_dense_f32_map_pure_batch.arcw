@@ -4,7 +4,7 @@ fn score_f32(base: f32, scale: f32) -> f32 {
 }
 
 bench @bench.dense_f32_map_pure_batch {
-    measure iterations = 4 { start(@flow.dense_f32_map_pure_batch) }
+    measure iterations = 4 { goto @flow.dense_f32_map_pure_batch }
 }
 
 flow @flow.dense_f32_map_pure_batch dense_f32_map_pure_batch {

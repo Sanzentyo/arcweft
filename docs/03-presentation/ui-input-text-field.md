@@ -27,7 +27,7 @@ it. Preedit updates only repaint layout/parts.
 ## Candidate window geometry
 
 The layout system computes composition cursor geometry in text-local coordinates,
-then maps it through component/layer/viewport transforms. The platform adapter
+then maps it through view/layer/viewport transforms. The platform adapter
 receives that rect through a `TextInputHostCommand::Update` snapshot.
 
 ## Focus/session safety

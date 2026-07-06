@@ -1,5 +1,5 @@
 bench @bench.mixed_aot_prefix {
-    measure iterations = 6 { start(@flow.mixed_aot_prefix) }
+    measure iterations = 6 { goto @flow.mixed_aot_prefix }
 }
 
 flow @flow.mixed_aot_prefix mixed_aot_prefix {

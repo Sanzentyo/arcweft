@@ -257,11 +257,35 @@ fn fixture_bundle() -> ArcweftBundle {
         animation: BundleImageAnimation::Animated,
         dimensions: Some(BundleImageDimensions::new(320, 180)),
     }])
-    .with_image_objects([BundleImageObject {
+    .with_image_objects([fixture_image_object()])
+    .with_audio_graph(AudioGraph {
+        master_bus: master_bus.clone(),
+        assets: vec![AudioAsset {
+            id: AudioResourceId::new("asset.voice.opening").expect("audio asset id"),
+            path: "audio/opening.wav".to_owned(),
+            format: AudioFormat::Wav,
+            strategy: AudioDecodeStrategy::Preload,
+            default_loop: AudioLoopMode::None,
+        }],
+        buses: vec![AudioBusDef {
+            id: master_bus,
+            parent: None,
+            gain: GainDbMilli::UNITY,
+            muted: false,
+            effects: Vec::new(),
+        }],
+        snapshots: Vec::new(),
+    })
+}
+
+fn fixture_image_object() -> BundleImageObject {
+    BundleImageObject {
         id: "image.hero.logo".to_owned(),
         asset: "asset.ui.logo".to_owned(),
         target: Some("target.hero.logo".to_owned()),
         layer: Some("layer.foreground".to_owned()),
+        view: None,
+        containing_scroll_region: None,
         bounds: BundleImageObjectBounds::from_px(10, 20, 320, 180),
         placement: None,
         fit: BundleImageObjectFit::Cover,
@@ -285,26 +309,11 @@ fn fixture_bundle() -> ArcweftBundle {
         },
         depth_milli: 2_400,
         opacity_milli: 900,
+        actions: Vec::new(),
+        params: std::collections::BTreeMap::default(),
+        proxies: Vec::new(),
         visible: true,
-    }])
-    .with_audio_graph(AudioGraph {
-        master_bus: master_bus.clone(),
-        assets: vec![AudioAsset {
-            id: AudioResourceId::new("asset.voice.opening").expect("audio asset id"),
-            path: "audio/opening.wav".to_owned(),
-            format: AudioFormat::Wav,
-            strategy: AudioDecodeStrategy::Preload,
-            default_loop: AudioLoopMode::None,
-        }],
-        buses: vec![AudioBusDef {
-            id: master_bus,
-            parent: None,
-            gain: GainDbMilli::UNITY,
-            muted: false,
-            effects: Vec::new(),
-        }],
-        snapshots: Vec::new(),
-    })
+    }
 }
 
 fn minimal_awbc_program() -> AwbcProgram {

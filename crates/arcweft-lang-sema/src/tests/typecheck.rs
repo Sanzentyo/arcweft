@@ -17,23 +17,91 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 }
 
 #[test]
-fn typechecks_component_mount_builtin() {
+fn typechecks_view_mount_builtin() {
     let tree = parse_ok(
         r#"
-component Panel() {
+view Panel() {
   TextField(@input:.name)
     .label("Name")
 }
 
 flow main {
-  component(@component:.Panel)
+  view(@view:.Panel)
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("component mount fixture lowers");
+    let hir = lower_to_hir(&tree).expect("view mount fixture lowers");
+    validate_hir_references(&hir, &registry_from_hir(&hir)).expect("view mount references resolve");
+    typecheck_hir(&hir, &TypeCheckEnv::standard()).expect("view mount builtin typechecks");
+}
+
+#[test]
+fn typechecks_view_handle_release() {
+    let tree = parse_ok(
+        r#"
+view Panel() {
+  Text("Ready")
+}
+
+flow main {
+  let panel = view(@view:.Panel)
+  panel.release()
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("view handle fixture lowers");
     validate_hir_references(&hir, &registry_from_hir(&hir))
-        .expect("component mount references resolve");
-    typecheck_hir(&hir, &TypeCheckEnv::standard()).expect("component mount builtin typechecks");
+        .expect("view handle references resolve");
+    typecheck_hir(&hir, &TypeCheckEnv::standard()).expect("view handle release typechecks");
+}
+
+#[test]
+fn rejects_removed_view_handle_close_alias() {
+    let tree = parse_ok(
+        r#"
+view Panel() {
+  Text("Ready")
+}
+
+flow main {
+  let panel = view(@view:.Panel)
+  panel.close()
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("view handle fixture lowers");
+    validate_hir_references(&hir, &registry_from_hir(&hir))
+        .expect("view handle references resolve");
+    let errors =
+        typecheck_hir(&hir, &TypeCheckEnv::standard()).expect_err("removed close alias rejects");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message().contains("unknown method `close`")),
+        "{errors:#?}"
+    );
+}
+
+#[test]
+fn typechecks_overlay_handle_pop() {
+    let tree = parse_ok(
+        r#"
+view MenuOverlay() {
+  Panel {
+    Text("Menu")
+  }
+}
+
+flow main {
+  let overlay_handle = overlay(@view:.MenuOverlay)
+  overlay_handle.pop()
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("overlay handle fixture lowers");
+    validate_hir_references(&hir, &registry_from_hir(&hir))
+        .expect("overlay handle references resolve");
+    typecheck_hir(&hir, &TypeCheckEnv::standard()).expect("overlay pop typechecks");
 }
 
 #[test]
@@ -58,13 +126,13 @@ flow action_wait {
 }
 
 #[test]
-fn typechecks_component_action_invoke_payload_signature() {
+fn typechecks_view_action_invoke_payload_signature() {
     let tree = parse_ok(
         r#"
 pub action feedback.submit(value: String)
 pub action feedback.label(name: String)
 
-component FeedbackForm() {
+view FeedbackForm() {
   Button("Continue")
     .on_click {
       action.invoke(@action:.feedback.submit, value = "ready")
@@ -76,19 +144,19 @@ component FeedbackForm() {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("component action fixture lowers");
-    validate_typecheck_ready(&hir).expect("component action fixture is typecheck-ready");
+    let hir = lower_to_hir(&tree).expect("view action fixture lowers");
+    validate_typecheck_ready(&hir).expect("view action fixture is typecheck-ready");
     typecheck_hir(&hir, &TypeCheckEnv::standard())
-        .expect("component action payload matches declaration signature");
+        .expect("view action payload matches declaration signature");
 }
 
 #[test]
-fn typechecks_component_action_invoke_without_payload() {
+fn typechecks_view_action_invoke_without_payload() {
     let tree = parse_ok(
         r#"
 pub action settings.close
 
-component SettingsPanel() {
+view SettingsPanel() {
   Button("Close")
     .on_click {
       action.invoke(@action:.settings.close)
@@ -96,10 +164,55 @@ component SettingsPanel() {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("component action fixture lowers");
-    validate_typecheck_ready(&hir).expect("component action fixture is typecheck-ready");
+    let hir = lower_to_hir(&tree).expect("view action fixture lowers");
+    validate_typecheck_ready(&hir).expect("view action fixture is typecheck-ready");
     typecheck_hir(&hir, &TypeCheckEnv::standard())
-        .expect("component action without payload matches declaration signature");
+        .expect("view action without payload matches declaration signature");
+}
+
+#[test]
+fn typechecks_generic_view_callback_action_invoke_payload_signature() {
+    let tree = parse_ok(
+        r#"
+pub action feedback.focus(value: String)
+
+view FeedbackForm() {
+  Button("Continue")
+    .on_focus {
+      action.invoke(@action:.feedback.focus, value = "focused")
+    }
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("generic callback action fixture lowers");
+    validate_typecheck_ready(&hir).expect("generic callback action fixture is typecheck-ready");
+    typecheck_hir(&hir, &TypeCheckEnv::standard())
+        .expect("generic callback action payload matches declaration signature");
+}
+
+#[test]
+fn rejects_generic_view_callback_action_invoke_payload_signature() {
+    let tree = parse_ok(
+        r#"
+pub action feedback.focus(value: String)
+
+view FeedbackForm() {
+  Button("Continue")
+    .on_focus {
+      action.invoke(@action:.feedback.focus, label = "focused")
+    }
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("generic callback action fixture lowers");
+    validate_typecheck_ready(&hir).expect("generic callback action fixture is typecheck-ready");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::standard())
+        .expect_err("generic callback action payload name mismatch is rejected");
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("action `action.feedback.focus` does not declare payload `label`")
+    }));
 }
 
 #[test]
@@ -730,7 +843,7 @@ fn result_constructors(cond: Bool) -> Result<i64, i64> {
     );
     let hir = lower_to_hir(&tree).expect("result constructor fixture lowers");
     typecheck_hir(&hir, &TypeCheckEnv::new())
-        .expect("Ok and Err payloads use expected Result component types");
+        .expect("Ok and Err payloads use expected Result view types");
 }
 
 #[test]

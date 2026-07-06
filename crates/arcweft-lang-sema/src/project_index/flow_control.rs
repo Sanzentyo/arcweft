@@ -158,7 +158,6 @@ fn summarize_stmt_control(stmt: &Stmt) -> ProjectFlowControlSummary {
             summary.merge(summarize_expr_control(expr));
             summary.merge(summarize_stmt_body_control(else_body));
         }
-        Stmt::LetTextSubmit { target, .. } => summary.merge(summarize_await_expr_control(target)),
         Stmt::LetActionReceive { action, .. } => {
             summary.merge(summarize_await_expr_control(action));
         }

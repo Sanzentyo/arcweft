@@ -12,8 +12,8 @@ use crate::resource_codec::{
     CompactDisplayCatalogSection, CompactSourceMapSection,
 };
 use crate::resource_codec::{
-    CompactUiInputResource, CompactUiProgramResource, CompactUiStyleResource,
-    CompactUiTextResource, CompactUiThemeResource,
+    CompactUiInputResource, CompactUiStyleResource, CompactUiTextResource, CompactUiThemeResource,
+    CompactViewProgramResource,
 };
 use crate::{
     ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleAwbcProgram, BundleBytecodeEncoding,
@@ -278,7 +278,7 @@ fn optional_ui_program_section(
         bundle
             .ui_program
             .as_ref()
-            .map(CompactUiProgramResource::encode_canonical_section),
+            .map(CompactViewProgramResource::encode_canonical_section),
     )
 }
 
@@ -403,12 +403,12 @@ fn optional_audio_graph(
 fn optional_ui_program(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
-) -> Result<Option<CompactUiProgramResource>, BundleCodecError> {
+) -> Result<Option<CompactViewProgramResource>, BundleCodecError> {
     optional_compact_payload(
         view,
         external_sections,
         BundleSectionKind::UiProgram,
-        CompactUiProgramResource::decode_canonical_section,
+        CompactViewProgramResource::decode_canonical_section,
     )
 }
 

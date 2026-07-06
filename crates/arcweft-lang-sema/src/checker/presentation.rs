@@ -11,31 +11,40 @@ impl TypeChecker<'_> {
         args: &[CallArg],
     ) -> Option<TypeKind> {
         match name {
+            "view" => {
+                self.check_positional_entity_arg(args, 0, &EntityKind::View, "view mount");
+                self.check_presentation_view_named_args(args);
+                Some(TypeKind::presentation_handle("View"))
+            }
+            "menu" => {
+                self.check_positional_entity_arg(args, 0, &EntityKind::View, "menu mount");
+                self.check_presentation_view_named_args(args);
+                Some(TypeKind::presentation_handle("Menu"))
+            }
+            "overlay" => {
+                self.check_positional_entity_arg(args, 0, &EntityKind::View, "overlay mount");
+                self.check_presentation_view_named_args(args);
+                Some(TypeKind::presentation_handle("Overlay"))
+            }
             "bg" => {
                 self.check_positional_entity_arg(args, 0, &EntityKind::Asset, "bg asset");
                 self.check_presentation_background_named_args(args);
-                Some(TypeKind::Named(
-                    "PresentationHandle<BackgroundSurface>".to_owned(),
-                ))
+                Some(TypeKind::presentation_handle("BackgroundSurface"))
             }
             "image" | "image.show" => {
                 self.check_presentation_image_source_arg(args);
                 self.check_presentation_image_named_args(args);
-                Some(TypeKind::Named(
-                    "PresentationHandle<ImageSurface>".to_owned(),
-                ))
+                Some(TypeKind::presentation_handle("ImageSurface"))
             }
             "player_viewport" | "viewport.fit" | "player.viewport" | "player.viewport.fit" => {
                 self.check_presentation_viewport_args(args);
-                Some(TypeKind::Named("PresentationHandle<Viewport>".to_owned()))
+                Some(TypeKind::presentation_handle("Viewport"))
             }
             "show" => {
                 self.check_positional_entity_arg(args, 0, &EntityKind::Character, "show character");
                 self.check_character_look_arg(args);
                 self.check_presentation_named_args(args, "character");
-                Some(TypeKind::Named(
-                    "PresentationHandle<CharacterSurface>".to_owned(),
-                ))
+                Some(TypeKind::presentation_handle("CharacterSurface"))
             }
             "ref.bg" => {
                 self.check_presentation_named_args(args, "background");
@@ -83,6 +92,56 @@ impl TypeChecker<'_> {
                 CallArg::Spread { value } => {
                     self.check_expr(value);
                 }
+            }
+        }
+    }
+
+    fn check_presentation_view_named_args(&mut self, args: &[CallArg]) {
+        for arg in args {
+            let CallArg::Named { name, value } = arg else {
+                continue;
+            };
+            match name.as_str() {
+                "lifetime" => self.check_presentation_lifetime_arg(value),
+                "target" => self.check_presentation_image_id_value(value, &EntityKind::Target),
+                "layer" => self.check_presentation_image_id_value(value, &EntityKind::Layer),
+                "id" | "handle" | "key" | "mount" => {
+                    self.check_presentation_image_loose_value(value);
+                }
+                "depth" => self.expect_expr_type(value, &TypeKind::I32, "view depth"),
+                "visible" | "enabled" => {
+                    self.expect_expr_type(value, &TypeKind::Bool, "view lifecycle flag");
+                }
+                _ => {
+                    self.check_expr(value);
+                }
+            }
+        }
+    }
+
+    fn check_presentation_lifetime_arg(&mut self, expr: &Expr) {
+        match expr {
+            Expr::ShortVariant(value)
+                if matches!(
+                    value.as_str(),
+                    "scope" | "manual" | "detached" | "global" | "line" | "flow"
+                ) => {}
+            Expr::Path(value)
+                if matches!(
+                    value.as_label().trim_start_matches('.'),
+                    "scope" | "manual" | "detached" | "global" | "line" | "flow"
+                ) => {}
+            Expr::Literal(Literal::String(value))
+                if matches!(
+                    value.as_str(),
+                    "scope" | "manual" | "detached" | "global" | "line" | "flow"
+                ) => {}
+            other => {
+                self.check_expr(other);
+                self.errors.push(TypeCheckError::new(
+                    "view/image lifetime must be one of `.scope`, `.manual`, `.detached`, `.global`, `.line`, or `.flow`"
+                        .to_owned(),
+                ));
             }
         }
     }
@@ -268,6 +327,7 @@ impl TypeChecker<'_> {
             };
             match name.as_str() {
                 "asset" => {}
+                "lifetime" => self.check_presentation_lifetime_arg(value),
                 "target" => self.check_presentation_image_id_value(value, &EntityKind::Target),
                 "layer" => self.check_presentation_image_id_value(value, &EntityKind::Layer),
                 "id" | "action" | "actions" | "fit" | "proxy.id" | "proxy.type" | "proxy.role" => {
@@ -289,7 +349,7 @@ impl TypeChecker<'_> {
                     self.check_expr(value);
                 }
                 "transform.m11" | "transform.m12" | "transform.m21" | "transform.m22" => {
-                    self.check_presentation_image_transform_component_value(value);
+                    self.check_presentation_image_transform_view_value(value);
                 }
                 "playback.start"
                 | "playback.start_time"
@@ -451,13 +511,13 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_presentation_image_transform_component_value(&mut self, expr: &Expr) {
+    fn check_presentation_image_transform_view_value(&mut self, expr: &Expr) {
         match expr {
             Expr::Literal(Literal::Int { suffix: None, .. }) => {
-                self.expect_expr_type(expr, &TypeKind::I32, "image transform component milli");
+                self.expect_expr_type(expr, &TypeKind::I32, "image transform view milli");
             }
             Expr::Literal(Literal::Float { suffix: None, .. }) => {
-                self.expect_expr_type(expr, &TypeKind::F64, "image transform component ratio");
+                self.expect_expr_type(expr, &TypeKind::F64, "image transform view ratio");
             }
             Expr::Literal(Literal::String(_)) | Expr::Path(_) => {}
             other => {

@@ -7,31 +7,35 @@ use serde::{Deserialize, Serialize};
 
 /// Product UI program section decoded from `UiProgram`.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiProgramResource {
+pub struct ViewProgramResource {
     pub program_id: String,
-    pub root_component: String,
-    pub instructions: Vec<UiProgramInstruction>,
-    pub child_spans: Vec<UiChildSpan>,
-    pub handlers: Vec<UiHandlerRef>,
-    pub state_schema_hashes: Vec<UiStateSchemaHashRef>,
-    pub exported_parts: Vec<UiExportedPart>,
-    pub semantic_targets: Vec<UiSemanticTarget>,
+    pub root_view: String,
+    pub instructions: Vec<ViewProgramInstruction>,
+    pub child_spans: Vec<ViewChildSpan>,
+    pub handlers: Vec<ViewHandlerRef>,
+    pub state_schema_hashes: Vec<ViewStateSchemaHashRef>,
+    pub exported_parts: Vec<ViewExportedPart>,
+    pub semantic_targets: Vec<ViewSemanticTarget>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub layout_bounds: Vec<UiLayoutBoundsResource>,
+    pub layout_bounds: Vec<ViewLayoutBoundsResource>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub action_buttons: Vec<UiActionButtonResource>,
+    pub scroll_regions: Vec<ViewScrollRegionResource>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub focus_groups: Vec<UiFocusGroupResource>,
+    pub text_blocks: Vec<ViewTextBlockResource>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub focus_navigation: Vec<UiFocusNavigationResource>,
+    pub action_buttons: Vec<ViewActionButtonResource>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub focus_groups: Vec<ViewFocusGroupResource>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub focus_navigation: Vec<ViewFocusNavigationResource>,
     pub adapter_requirements: Vec<CrossSectionRef>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum UiProgramInstruction {
+pub enum ViewProgramInstruction {
     OpenElement {
-        element: UiElementKind,
+        element: ViewElementKind,
         style: Option<String>,
         part: Option<String>,
         key: Option<u64>,
@@ -56,8 +60,8 @@ pub enum UiProgramInstruction {
         part: Option<String>,
         source: Option<SourceRangeRef>,
     },
-    CallComponent {
-        component: String,
+    CallView {
+        view: String,
         child_span: u32,
         props_schema: Option<DigestRef>,
         style: Option<String>,
@@ -77,13 +81,21 @@ pub enum UiProgramInstruction {
         body_span: u32,
         source: Option<SourceRangeRef>,
     },
+    Await {
+        source_schema: DigestRef,
+        pending_branch: Option<ViewAwaitBranchSpan>,
+        ready_branch: Option<ViewAwaitBranchSpan>,
+        error_branch: Option<ViewAwaitBranchSpan>,
+        denied_branch: Option<ViewAwaitBranchSpan>,
+        source: Option<SourceRangeRef>,
+    },
     BindLocal {
         pattern_schema: DigestRef,
         value_schema: DigestRef,
         source: Option<SourceRangeRef>,
     },
     ApplyStyle {
-        style: UiStyleApplyRef,
+        style: ViewStyleApplyRef,
         source: Option<SourceRangeRef>,
     },
     BindHandler {
@@ -98,10 +110,16 @@ pub enum UiProgramInstruction {
     },
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ViewAwaitBranchSpan {
+    pub pattern_schema: DigestRef,
+    pub body_span: u32,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum UiElementKind {
-    Surface,
+pub enum ViewElementKind {
+    Panel,
     Box,
     Scroll,
     Row,
@@ -113,13 +131,13 @@ pub enum UiElementKind {
     SecureField,
 }
 
-impl UiElementKind {
+impl ViewElementKind {
     pub const fn text_input_kind(self) -> Option<UiInputKind> {
         match self {
             Self::TextField => Some(UiInputKind::TextField),
             Self::TextArea => Some(UiInputKind::TextArea),
             Self::SecureField => Some(UiInputKind::SecureField),
-            Self::Surface
+            Self::Panel
             | Self::Box
             | Self::Scroll
             | Self::Row
@@ -132,20 +150,20 @@ impl UiElementKind {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum UiStyleApplyRef {
+pub enum ViewStyleApplyRef {
     Named(String),
     InlineArcweft { patch_id: u32 },
     InlineCss { patch_id: u32 },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiChildSpan {
+pub struct ViewChildSpan {
     pub start_instruction: u32,
     pub end_instruction: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiHandlerRef {
+pub struct ViewHandlerRef {
     pub handler_id: String,
     pub event: String,
     pub awbc_function_index: u32,
@@ -154,32 +172,32 @@ pub struct UiHandlerRef {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiStateSchemaHashRef {
+pub struct ViewStateSchemaHashRef {
     pub public_id: Option<String>,
     pub hash: BundleDigest,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiExportedPart {
+pub struct ViewExportedPart {
     pub part_id: String,
     pub public_name: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiSemanticTarget {
+pub struct ViewSemanticTarget {
     pub public_id: String,
     pub target: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub component: Option<String>,
+    pub view: Option<String>,
     pub label_text_source: Option<String>,
     pub source: Option<SourceRangeRef>,
 }
 
 /// Resolved logical bounds for UI program targets authored by the View DSL.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiLayoutBoundsResource {
+pub struct ViewLayoutBoundsResource {
     pub public_id: String,
-    pub kind: UiLayoutBoundsKind,
+    pub kind: ViewLayoutBoundsKind,
     pub rect: UiLogicalRect,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hit_rect: Option<UiLogicalRect>,
@@ -189,7 +207,7 @@ pub struct UiLayoutBoundsResource {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum UiLayoutBoundsKind {
+pub enum ViewLayoutBoundsKind {
     TextControl,
     SemanticTarget,
 }
@@ -205,66 +223,54 @@ pub struct UiLogicalRect {
 
 /// Product-authored player-rendered action button metadata.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiActionButtonResource {
+pub struct ViewActionButtonResource {
     pub public_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub component: Option<String>,
+    pub view: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub containing_scroll_region: Option<String>,
     pub label_text_source: String,
     #[serde(default = "default_true")]
     pub enabled: bool,
-    pub action: UiActionButtonActionResource,
-    pub bounds: UiRuntimeButtonBounds,
+    pub action: ViewActionButtonActionResource,
+    pub bounds: ViewRuntimeButtonBounds,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceRangeRef>,
 }
 
+/// Product-authored player-rendered text metadata.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum UiActionButtonActionResource {
-    Noop,
-    TextInputSubmit {
-        input: String,
-        ime_policy: UiTextSubmitImePolicy,
-    },
-    ActionInvoke {
-        action: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        payload: Option<UiActionPayloadResource>,
-    },
+pub struct ViewTextBlockResource {
+    pub public_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub containing_scroll_region: Option<String>,
+    pub text_source: String,
+    pub bounds: ViewRuntimeTextBlockBounds,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<SourceRangeRef>,
 }
 
+/// Runtime-facing text block emitted in display snapshots.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum UiActionPayloadResource {
-    LiteralString {
-        value: String,
-    },
-    TextControlProjection {
-        input: String,
-        field: UiActionTextControlPayloadField,
-    },
+pub struct ViewRuntimeTextBlock {
+    pub public_id: String,
+    pub target: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub containing_scroll_region: Option<String>,
+    pub text: String,
+    pub bounds: ViewRuntimeTextBlockBounds,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum UiActionTextControlPayloadField {
-    Text,
-    Value,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum UiTextSubmitImePolicy {
-    #[default]
-    Commit,
-    Cancel,
-    Reject,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiRuntimeButtonBounds {
+pub struct ViewRuntimeTextBlockBounds {
     pub x_milli: i32,
     pub y_milli: i32,
     pub width_milli: u32,
@@ -272,106 +278,205 @@ pub struct UiRuntimeButtonBounds {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiRuntimeActionButton {
+#[serde(rename_all = "snake_case")]
+pub enum ViewActionButtonActionResource {
+    Noop,
+    ActionInvoke {
+        action: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        payload: Option<ViewActionPayloadResource>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ViewActionPayloadResource {
+    LiteralString {
+        value: String,
+    },
+    TextControlProjection {
+        input: String,
+        field: ViewActionTextControlPayloadField,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewActionTextControlPayloadField {
+    Text,
+    Value,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ViewRuntimeButtonBounds {
+    pub x_milli: i32,
+    pub y_milli: i32,
+    pub width_milli: u32,
+    pub height_milli: u32,
+}
+
+/// Authored scroll viewport metadata for Arcweft-owned player scrolling.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ViewScrollRegionResource {
+    pub public_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<String>,
+    pub bounds: UiLogicalRect,
+    pub content_width_milli: u32,
+    pub content_height_milli: u32,
+    pub axis: ViewScrollAxis,
+    #[serde(default, skip_serializing_if = "ViewScrollOverflowPolicy::is_default")]
+    pub overflow: ViewScrollOverflowPolicy,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<SourceRangeRef>,
+}
+
+/// Runtime-facing scroll viewport emitted in display snapshots.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ViewRuntimeScrollRegion {
     pub public_id: String,
     pub target: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub component: Option<String>,
+    pub view: Option<String>,
+    pub bounds: ViewRuntimeScrollRegionBounds,
+    pub content_width_milli: u32,
+    pub content_height_milli: u32,
+    pub axis: ViewScrollAxis,
+    #[serde(default, skip_serializing_if = "ViewScrollOverflowPolicy::is_default")]
+    pub overflow: ViewScrollOverflowPolicy,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ViewRuntimeScrollRegionBounds {
+    pub x_milli: i32,
+    pub y_milli: i32,
+    pub width_milli: u32,
+    pub height_milli: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewScrollAxis {
+    Vertical,
+    Horizontal,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewScrollOverflowPolicy {
+    #[default]
+    Auto,
+    Scroll,
+    Hidden,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ViewRuntimeActionButton {
+    pub public_id: String,
+    pub target: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub containing_scroll_region: Option<String>,
     pub label: String,
     pub enabled: bool,
-    pub bounds: UiRuntimeButtonBounds,
-    pub action: UiRuntimeActionButtonAction,
+    pub bounds: ViewRuntimeButtonBounds,
+    pub action: ViewRuntimeActionButtonAction,
     #[serde(default, skip_serializing_if = "UiRuntimeControlStyle::is_default")]
     pub style: UiRuntimeControlStyle,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum UiRuntimeActionButtonAction {
+pub enum ViewRuntimeActionButtonAction {
     Noop,
-    TextInputSubmit {
-        input_target: String,
-        ime_policy: UiTextSubmitImePolicy,
-    },
     ActionInvoke {
         action: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        payload: Option<UiActionPayloadResource>,
+        payload: Option<ViewActionPayloadResource>,
     },
 }
 
 /// Authored focus group metadata for Arcweft-owned player navigation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiFocusGroupResource {
+pub struct ViewFocusGroupResource {
     pub public_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
     #[serde(default)]
-    pub policy: UiFocusGroupPolicy,
+    pub policy: ViewFocusGroupPolicy,
     #[serde(default)]
-    pub initial: UiFocusInitialPolicy,
+    pub initial: ViewFocusInitialPolicy,
     #[serde(default)]
-    pub wrap: UiFocusWrapPolicy,
+    pub wrap: ViewFocusWrapPolicy,
     #[serde(default)]
-    pub disabled_skip: UiFocusSkipPolicy,
+    pub disabled_skip: ViewFocusSkipPolicy,
     #[serde(default)]
-    pub hidden_skip: UiFocusSkipPolicy,
+    pub hidden_skip: ViewFocusSkipPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceRangeRef>,
 }
 
 /// Runtime-facing focus group emitted in display snapshots.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiRuntimeFocusGroup {
+pub struct ViewRuntimeFocusGroup {
     pub public_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
-    pub policy: UiFocusGroupPolicy,
-    pub initial: UiFocusInitialPolicy,
-    pub wrap: UiFocusWrapPolicy,
-    pub disabled_skip: UiFocusSkipPolicy,
-    pub hidden_skip: UiFocusSkipPolicy,
+    pub policy: ViewFocusGroupPolicy,
+    pub initial: ViewFocusInitialPolicy,
+    pub wrap: ViewFocusWrapPolicy,
+    pub disabled_skip: ViewFocusSkipPolicy,
+    pub hidden_skip: ViewFocusSkipPolicy,
 }
 
 /// Focus target and directional edges authored by the View DSL.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiFocusNavigationResource {
+pub struct ViewFocusNavigationResource {
     pub public_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub edges: Vec<UiFocusNavigationEdge>,
+    pub edges: Vec<ViewFocusNavigationEdge>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceRangeRef>,
 }
 
 /// Runtime-facing focus navigation emitted in display snapshots.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiRuntimeFocusNavigation {
+pub struct ViewRuntimeFocusNavigation {
     pub public_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub edges: Vec<UiRuntimeFocusNavigationEdge>,
+    pub edges: Vec<ViewRuntimeFocusNavigationEdge>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiFocusNavigationEdge {
-    pub direction: UiFocusDirection,
-    pub target: UiFocusTargetResolution,
+pub struct ViewFocusNavigationEdge {
+    pub direction: ViewFocusDirection,
+    pub target: ViewFocusTargetResolution,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceRangeRef>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiRuntimeFocusNavigationEdge {
-    pub direction: UiFocusDirection,
-    pub target: UiFocusTargetResolution,
+pub struct ViewRuntimeFocusNavigationEdge {
+    pub direction: ViewFocusDirection,
+    pub target: ViewFocusTargetResolution,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum UiFocusDirection {
+pub enum ViewFocusDirection {
     Up,
     Down,
     Left,
@@ -382,7 +487,7 @@ pub enum UiFocusDirection {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum UiFocusTargetResolution {
+pub enum ViewFocusTargetResolution {
     Explicit { target: String },
     Auto,
     None,
@@ -391,7 +496,7 @@ pub enum UiFocusTargetResolution {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum UiFocusGroupPolicy {
+pub enum ViewFocusGroupPolicy {
     #[default]
     Normal,
     Trap,
@@ -400,7 +505,7 @@ pub enum UiFocusGroupPolicy {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum UiFocusInitialPolicy {
+pub enum ViewFocusInitialPolicy {
     #[default]
     Auto,
     First,
@@ -413,7 +518,7 @@ pub enum UiFocusInitialPolicy {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum UiFocusWrapPolicy {
+pub enum ViewFocusWrapPolicy {
     #[default]
     Wrap,
     NoWrap,
@@ -421,7 +526,7 @@ pub enum UiFocusWrapPolicy {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum UiFocusSkipPolicy {
+pub enum ViewFocusSkipPolicy {
     #[default]
     Skip,
     Stop,
@@ -433,10 +538,10 @@ pub struct UiStyleResource {
     pub style_program_id: String,
     pub arcweft_sources: Vec<StyleSourceIdentity>,
     pub css_sources: Vec<StyleSourceIdentity>,
-    pub tokens: Vec<UiStyleToken>,
-    pub rules: Vec<UiStyleRule>,
-    pub part_rules: Vec<UiPartStyleRule>,
-    pub environment_predicates: Vec<UiEnvironmentPredicate>,
+    pub tokens: Vec<ViewStyleToken>,
+    pub rules: Vec<ViewStyleRule>,
+    pub part_rules: Vec<ViewPartStyleRule>,
+    pub environment_predicates: Vec<ViewEnvironmentPredicate>,
     pub source_map_refs: Vec<SourceRangeRef>,
     pub external_css_descriptors: Vec<ExternalCssDescriptorRef>,
     pub adapter_requirements: Vec<CrossSectionRef>,
@@ -468,46 +573,46 @@ pub enum StyleSourceRef {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiStyleToken {
+pub struct ViewStyleToken {
     pub public_id: String,
-    pub value: UiStyleValue,
+    pub value: ViewStyleValue,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiStyleRule {
-    pub selector: UiStyleSelector,
-    pub declarations: Vec<UiStyleDeclaration>,
+pub struct ViewStyleRule {
+    pub selector: ViewStyleSelector,
+    pub declarations: Vec<ViewStyleDeclaration>,
     pub source: Option<SourceRangeRef>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiPartStyleRule {
+pub struct ViewPartStyleRule {
     pub part: String,
-    pub selector: UiStyleSelector,
-    pub declarations: Vec<UiStyleDeclaration>,
+    pub selector: ViewStyleSelector,
+    pub declarations: Vec<ViewStyleDeclaration>,
     pub source: Option<SourceRangeRef>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiStyleSelector {
-    pub parts: Vec<UiStyleSelectorPart>,
+pub struct ViewStyleSelector {
+    pub parts: Vec<ViewStyleSelectorPart>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum UiStyleSelectorPart {
-    Element(UiElementKind),
+pub enum ViewStyleSelectorPart {
+    Element(ViewElementKind),
     Part(String),
-    State(UiElementState),
-    Interaction(UiInteractionState),
-    Environment(UiEnvironmentPredicate),
+    State(ViewElementState),
+    Interaction(ViewInteractionState),
+    Environment(ViewEnvironmentPredicate),
     Descendant,
     Child,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum UiElementState {
+pub enum ViewElementState {
     FocusVisible,
     ReadOnly,
     Invalid,
@@ -517,16 +622,16 @@ pub enum UiElementState {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum UiInteractionState {
+pub enum ViewInteractionState {
     Hover,
     Active,
     Disabled,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiStyleDeclaration {
+pub struct ViewStyleDeclaration {
     pub property: String,
-    pub value: UiStyleValue,
+    pub value: ViewStyleValue,
     pub op: StyleAssignOp,
 }
 
@@ -540,13 +645,13 @@ pub enum StyleAssignOp {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum UiStyleValue {
+pub enum ViewStyleValue {
     Token(String),
     SystemColor(SystemColor),
     Rgba(RgbaColor),
     Milli(i32),
     Text(String),
-    List(Vec<UiStyleValue>),
+    List(Vec<ViewStyleValue>),
     Resource(String),
     Digest(BundleDigest),
 }
@@ -556,9 +661,9 @@ pub enum UiStyleValue {
 pub enum SystemColor {
     Canvas,
     CanvasText,
-    Surface,
-    SurfaceText,
-    RaisedSurface,
+    Panel,
+    PanelText,
+    RaisedPanel,
     MutedText,
     Border,
     Accent,
@@ -581,7 +686,7 @@ pub struct RgbaColor {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum UiEnvironmentPredicate {
+pub enum ViewEnvironmentPredicate {
     ColorScheme(ColorSchemeDefault),
     Contrast(ContrastPreference),
     ReduceMotion(bool),
@@ -704,7 +809,9 @@ pub struct UiInputResource {
 pub struct UiInputOptions {
     pub public_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub component: Option<String>,
+    pub view: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub containing_scroll_region: Option<String>,
     pub kind: UiInputKind,
     pub value_text_source: String,
     pub placeholder_text_source: Option<String>,
@@ -844,7 +951,9 @@ pub struct UiRuntimeTextControl {
     pub public_id: String,
     pub target: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub component: Option<String>,
+    pub view: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub containing_scroll_region: Option<String>,
     pub session: u64,
     pub value: String,
     pub selection: UiRuntimeTextSelection,
@@ -943,7 +1052,7 @@ pub struct UiThemeEnvironmentDefaults {
     pub text_scale_milli: u32,
 }
 
-impl UiChildSpan {
+impl ViewChildSpan {
     pub const fn new(start_instruction: u32, end_instruction: u32) -> Self {
         Self {
             start_instruction,
@@ -967,10 +1076,10 @@ impl RgbaColor {
     }
 }
 
-impl UiStyleSelector {
+impl ViewStyleSelector {
     pub fn max_depth(&self) -> usize {
         self.parts.iter().fold(0_usize, |depth, part| match part {
-            UiStyleSelectorPart::Descendant | UiStyleSelectorPart::Child => depth + 1,
+            ViewStyleSelectorPart::Descendant | ViewStyleSelectorPart::Child => depth + 1,
             _ => depth.max(1),
         })
     }
@@ -994,7 +1103,7 @@ impl UiInputResource {
     pub fn runtime_text_controls(
         &self,
         text: Option<&UiTextResource>,
-        program: Option<&UiProgramResource>,
+        program: Option<&ViewProgramResource>,
     ) -> Vec<UiRuntimeTextControl> {
         let fallback_bounds = UiRuntimeTextControlBounds::default_stacked_slots(
             self.options.iter().map(|option| option.kind),
@@ -1017,7 +1126,7 @@ impl UiInputOptions {
         &self,
         index: usize,
         text: Option<&UiTextResource>,
-        program: Option<&UiProgramResource>,
+        program: Option<&ViewProgramResource>,
     ) -> UiRuntimeTextControl {
         self.runtime_text_control_with_bounds(
             UiRuntimeTextControlBounds::default_slot(index, self.kind),
@@ -1030,7 +1139,7 @@ impl UiInputOptions {
         &self,
         bounds: UiRuntimeTextControlBounds,
         text: Option<&UiTextResource>,
-        program: Option<&UiProgramResource>,
+        program: Option<&ViewProgramResource>,
     ) -> UiRuntimeTextControl {
         let value = text
             .and_then(|resource| resource.literal_text(&self.value_text_source))
@@ -1042,7 +1151,8 @@ impl UiInputOptions {
         UiRuntimeTextControl {
             public_id: self.public_id.clone(),
             target: self.public_id.clone(),
-            component: self.component.clone(),
+            view: self.view.clone(),
+            containing_scroll_region: self.containing_scroll_region.clone(),
             session: self.runtime_text_session(),
             selection: UiRuntimeTextSelection::collapsed_at_end(&value),
             options: UiRuntimeTextControlOptions::from_input(self),
@@ -1093,7 +1203,8 @@ impl fmt::Debug for UiRuntimeTextControl {
             .debug_struct("UiRuntimeTextControl")
             .field("public_id", &self.public_id)
             .field("target", &self.target)
-            .field("component", &self.component)
+            .field("view", &self.view)
+            .field("containing_scroll_region", &self.containing_scroll_region)
             .field("session", &self.session)
             .field("value", &self.diagnostic_value())
             .field("selection", &self.selection)
@@ -1107,8 +1218,8 @@ impl fmt::Debug for UiRuntimeTextControl {
     }
 }
 
-impl UiProgramResource {
-    pub fn handler_ref(&self, handler_id: &str) -> Option<&UiHandlerRef> {
+impl ViewProgramResource {
+    pub fn handler_ref(&self, handler_id: &str) -> Option<&ViewHandlerRef> {
         self.handlers
             .iter()
             .find(|handler| handler.handler_id == handler_id)
@@ -1117,13 +1228,14 @@ impl UiProgramResource {
     pub fn runtime_action_buttons(
         &self,
         text: Option<&UiTextResource>,
-    ) -> Vec<UiRuntimeActionButton> {
+    ) -> Vec<ViewRuntimeActionButton> {
         self.action_buttons
             .iter()
-            .map(|button| UiRuntimeActionButton {
+            .map(|button| ViewRuntimeActionButton {
                 public_id: button.public_id.clone(),
                 target: button.public_id.clone(),
-                component: button.component.clone(),
+                view: button.view.clone(),
+                containing_scroll_region: button.containing_scroll_region.clone(),
                 label: text
                     .and_then(|resource| resource.literal_text(&button.label_text_source))
                     .unwrap_or(&button.public_id)
@@ -1131,15 +1243,9 @@ impl UiProgramResource {
                 enabled: button.enabled,
                 bounds: button.bounds,
                 action: match &button.action {
-                    UiActionButtonActionResource::Noop => UiRuntimeActionButtonAction::Noop,
-                    UiActionButtonActionResource::TextInputSubmit { input, ime_policy } => {
-                        UiRuntimeActionButtonAction::TextInputSubmit {
-                            input_target: input.clone(),
-                            ime_policy: *ime_policy,
-                        }
-                    }
-                    UiActionButtonActionResource::ActionInvoke { action, payload } => {
-                        UiRuntimeActionButtonAction::ActionInvoke {
+                    ViewActionButtonActionResource::Noop => ViewRuntimeActionButtonAction::Noop,
+                    ViewActionButtonActionResource::ActionInvoke { action, payload } => {
+                        ViewRuntimeActionButtonAction::ActionInvoke {
                             action: action.clone(),
                             payload: payload.clone(),
                         }
@@ -1150,11 +1256,29 @@ impl UiProgramResource {
             .collect()
     }
 
-    pub fn runtime_focus_groups(&self) -> Vec<UiRuntimeFocusGroup> {
+    pub fn runtime_text_blocks(&self, text: Option<&UiTextResource>) -> Vec<ViewRuntimeTextBlock> {
+        self.text_blocks
+            .iter()
+            .map(|block| ViewRuntimeTextBlock {
+                public_id: block.public_id.clone(),
+                target: block.public_id.clone(),
+                view: block.view.clone(),
+                containing_scroll_region: block.containing_scroll_region.clone(),
+                text: text
+                    .and_then(|resource| resource.literal_text(&block.text_source))
+                    .unwrap_or_default()
+                    .to_owned(),
+                bounds: block.bounds,
+            })
+            .collect()
+    }
+
+    pub fn runtime_focus_groups(&self) -> Vec<ViewRuntimeFocusGroup> {
         self.focus_groups
             .iter()
-            .map(|group| UiRuntimeFocusGroup {
+            .map(|group| ViewRuntimeFocusGroup {
                 public_id: group.public_id.clone(),
+                view: group.view.clone(),
                 parent: group.parent.clone(),
                 policy: group.policy,
                 initial: group.initial.clone(),
@@ -1165,16 +1289,17 @@ impl UiProgramResource {
             .collect()
     }
 
-    pub fn runtime_focus_navigation(&self) -> Vec<UiRuntimeFocusNavigation> {
+    pub fn runtime_focus_navigation(&self) -> Vec<ViewRuntimeFocusNavigation> {
         self.focus_navigation
             .iter()
-            .map(|target| UiRuntimeFocusNavigation {
+            .map(|target| ViewRuntimeFocusNavigation {
                 public_id: target.public_id.clone(),
+                view: target.view.clone(),
                 group: target.group.clone(),
                 edges: target
                     .edges
                     .iter()
-                    .map(|edge| UiRuntimeFocusNavigationEdge {
+                    .map(|edge| ViewRuntimeFocusNavigationEdge {
                         direction: edge.direction,
                         target: edge.target.clone(),
                     })
@@ -1183,11 +1308,18 @@ impl UiProgramResource {
             .collect()
     }
 
+    pub fn runtime_scroll_regions(&self) -> Vec<ViewRuntimeScrollRegion> {
+        self.scroll_regions
+            .iter()
+            .map(ViewScrollRegionResource::runtime_scroll_region)
+            .collect()
+    }
+
     pub fn text_control_bounds_for(&self, public_id: &str) -> Option<UiRuntimeTextControlBounds> {
         self.layout_bounds
             .iter()
             .find(|bounds| bounds.is_text_control_for(public_id))
-            .map(UiLayoutBoundsResource::runtime_text_control_bounds)
+            .map(ViewLayoutBoundsResource::runtime_text_control_bounds)
     }
 
     pub fn semantic_target_bounds_for(
@@ -1197,22 +1329,22 @@ impl UiProgramResource {
         self.layout_bounds
             .iter()
             .find(|bounds| bounds.is_semantic_target_for(public_id))
-            .map(UiLayoutBoundsResource::runtime_text_control_bounds)
+            .map(ViewLayoutBoundsResource::runtime_text_control_bounds)
     }
 }
 
-impl UiLayoutBoundsResource {
+impl ViewLayoutBoundsResource {
     pub fn text_control(public_id: impl Into<String>, rect: UiLogicalRect) -> Self {
-        Self::new(public_id, UiLayoutBoundsKind::TextControl, rect)
+        Self::new(public_id, ViewLayoutBoundsKind::TextControl, rect)
     }
 
     pub fn semantic_target(public_id: impl Into<String>, rect: UiLogicalRect) -> Self {
-        Self::new(public_id, UiLayoutBoundsKind::SemanticTarget, rect)
+        Self::new(public_id, ViewLayoutBoundsKind::SemanticTarget, rect)
     }
 
     pub fn new(
         public_id: impl Into<String>,
-        kind: UiLayoutBoundsKind,
+        kind: ViewLayoutBoundsKind,
         rect: UiLogicalRect,
     ) -> Self {
         Self {
@@ -1231,11 +1363,11 @@ impl UiLayoutBoundsResource {
     }
 
     pub fn is_text_control_for(&self, public_id: &str) -> bool {
-        self.kind == UiLayoutBoundsKind::TextControl && self.public_id == public_id
+        self.kind == ViewLayoutBoundsKind::TextControl && self.public_id == public_id
     }
 
     pub fn is_semantic_target_for(&self, public_id: &str) -> bool {
-        self.kind == UiLayoutBoundsKind::SemanticTarget && self.public_id == public_id
+        self.kind == ViewLayoutBoundsKind::SemanticTarget && self.public_id == public_id
     }
 
     pub fn identity_key(&self) -> String {
@@ -1257,7 +1389,86 @@ impl UiLayoutBoundsResource {
     }
 }
 
-impl UiLayoutBoundsKind {
+impl ViewTextBlockResource {
+    pub fn new(
+        public_id: impl Into<String>,
+        view: Option<String>,
+        containing_scroll_region: Option<String>,
+        text_source: impl Into<String>,
+        bounds: ViewRuntimeTextBlockBounds,
+    ) -> Self {
+        Self {
+            public_id: public_id.into(),
+            view,
+            containing_scroll_region,
+            text_source: text_source.into(),
+            bounds,
+            style: None,
+            source: None,
+        }
+    }
+
+    pub const fn is_valid(&self) -> bool {
+        self.bounds.is_valid()
+    }
+}
+
+impl ViewScrollRegionResource {
+    pub fn new(
+        public_id: impl Into<String>,
+        view: Option<String>,
+        bounds: UiLogicalRect,
+        content_width_milli: u32,
+        content_height_milli: u32,
+        axis: ViewScrollAxis,
+    ) -> Self {
+        Self {
+            public_id: public_id.into(),
+            view,
+            bounds,
+            content_width_milli,
+            content_height_milli,
+            axis,
+            overflow: ViewScrollOverflowPolicy::default(),
+            source: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_overflow(mut self, overflow: ViewScrollOverflowPolicy) -> Self {
+        self.overflow = overflow;
+        self
+    }
+
+    pub const fn is_valid(&self) -> bool {
+        self.bounds.is_valid() && self.content_width_milli > 0 && self.content_height_milli > 0
+    }
+
+    pub fn runtime_scroll_region(&self) -> ViewRuntimeScrollRegion {
+        ViewRuntimeScrollRegion {
+            public_id: self.public_id.clone(),
+            target: self.public_id.clone(),
+            view: self.view.clone(),
+            bounds: self.bounds.runtime_scroll_region_bounds(),
+            content_width_milli: self.content_width_milli,
+            content_height_milli: self.content_height_milli,
+            axis: self.axis,
+            overflow: self.overflow,
+        }
+    }
+}
+
+impl ViewScrollOverflowPolicy {
+    pub const fn is_default(&self) -> bool {
+        matches!(self, Self::Auto)
+    }
+
+    pub const fn scroll_enabled(self) -> bool {
+        matches!(self, Self::Auto | Self::Scroll)
+    }
+}
+
+impl ViewLayoutBoundsKind {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::TextControl => "text_control",
@@ -1298,8 +1509,17 @@ impl UiLogicalRect {
         )
     }
 
-    pub const fn runtime_button_bounds(self) -> UiRuntimeButtonBounds {
-        UiRuntimeButtonBounds::new(
+    pub const fn runtime_button_bounds(self) -> ViewRuntimeButtonBounds {
+        ViewRuntimeButtonBounds::new(
+            self.x_milli,
+            self.y_milli,
+            self.width_milli,
+            self.height_milli,
+        )
+    }
+
+    pub const fn runtime_scroll_region_bounds(self) -> ViewRuntimeScrollRegionBounds {
+        ViewRuntimeScrollRegionBounds::new(
             self.x_milli,
             self.y_milli,
             self.width_milli,
@@ -1308,7 +1528,7 @@ impl UiLogicalRect {
     }
 }
 
-impl UiFocusDirection {
+impl ViewFocusDirection {
     pub const fn is_spatial(self) -> bool {
         matches!(self, Self::Up | Self::Down | Self::Left | Self::Right)
     }
@@ -1322,7 +1542,7 @@ impl UiFocusDirection {
     }
 }
 
-impl UiFocusTargetResolution {
+impl ViewFocusTargetResolution {
     pub fn explicit_target(&self) -> Option<&str> {
         match self {
             Self::Explicit { target } => Some(target.as_str()),
@@ -1331,7 +1551,7 @@ impl UiFocusTargetResolution {
     }
 }
 
-impl UiFocusInitialPolicy {
+impl ViewFocusInitialPolicy {
     pub fn explicit_target(&self) -> Option<&str> {
         match self {
             Self::Explicit { target } => Some(target.as_str()),
@@ -1340,7 +1560,7 @@ impl UiFocusInitialPolicy {
     }
 }
 
-impl UiFocusWrapPolicy {
+impl ViewFocusWrapPolicy {
     pub const fn allows_wrap(self) -> bool {
         matches!(self, Self::Wrap)
     }
@@ -1373,7 +1593,7 @@ impl UiRuntimeTextControl {
 }
 
 impl UiRuntimeTextControlHandlers {
-    pub fn from_input(input: &UiInputOptions, program: Option<&UiProgramResource>) -> Self {
+    pub fn from_input(input: &UiInputOptions, program: Option<&ViewProgramResource>) -> Self {
         Self {
             change: input
                 .change_handler
@@ -1399,13 +1619,13 @@ impl UiRuntimeTextControlHandler {
         }
     }
 
-    pub fn from_program(program: Option<&UiProgramResource>, handler_id: &str) -> Self {
+    pub fn from_program(program: Option<&ViewProgramResource>, handler_id: &str) -> Self {
         program
             .and_then(|program| program.handler_ref(handler_id))
             .map_or_else(|| Self::unresolved(handler_id), Self::from_handler_ref)
     }
 
-    pub fn from_handler_ref(handler: &UiHandlerRef) -> Self {
+    pub fn from_handler_ref(handler: &ViewHandlerRef) -> Self {
         Self {
             handler_id: handler.handler_id.clone(),
             runtime: Some(UiRuntimeTextControlHandlerRuntime {
@@ -1501,7 +1721,7 @@ impl UiRuntimeTextControlBounds {
     }
 }
 
-impl UiRuntimeButtonBounds {
+impl ViewRuntimeButtonBounds {
     const DEFAULT_STACK_X_MILLI: i32 = 48_000;
     const DEFAULT_STACK_Y_MILLI: i32 = 112_000;
     const DEFAULT_STACK_GAP_MILLI: i32 = 16_000;
@@ -1567,6 +1787,41 @@ impl UiRuntimeButtonBounds {
     }
 }
 
+impl ViewRuntimeTextBlockBounds {
+    pub const fn new(x_milli: i32, y_milli: i32, width_milli: u32, height_milli: u32) -> Self {
+        Self {
+            x_milli,
+            y_milli,
+            width_milli,
+            height_milli,
+        }
+    }
+
+    pub const fn from_px(x: i32, y: i32, width: u32, height: u32) -> Self {
+        Self::new(
+            x.saturating_mul(1_000),
+            y.saturating_mul(1_000),
+            width.saturating_mul(1_000),
+            height.saturating_mul(1_000),
+        )
+    }
+
+    pub const fn is_valid(self) -> bool {
+        self.width_milli > 0 && self.height_milli > 0
+    }
+}
+
+impl ViewRuntimeScrollRegionBounds {
+    pub const fn new(x_milli: i32, y_milli: i32, width_milli: u32, height_milli: u32) -> Self {
+        Self {
+            x_milli,
+            y_milli,
+            width_milli,
+            height_milli,
+        }
+    }
+}
+
 impl UiRuntimeTextControlOptions {
     pub const fn from_input(input: &UiInputOptions) -> Self {
         Self {
@@ -1591,7 +1846,7 @@ const fn default_true() -> bool {
 }
 
 fn runtime_label_source<'a>(
-    program: Option<&'a UiProgramResource>,
+    program: Option<&'a ViewProgramResource>,
     input: &'a UiInputOptions,
 ) -> Option<&'a str> {
     program
@@ -1614,7 +1869,7 @@ fn stable_text_session(public_id: &str) -> u64 {
     if hash == 0 { 1 } else { hash }
 }
 
-pub type CompactUiProgramResource = UiProgramResource;
+pub type CompactViewProgramResource = ViewProgramResource;
 pub type CompactUiStyleResource = UiStyleResource;
 pub type CompactUiTextResource = UiTextResource;
 pub type CompactUiInputResource = UiInputResource;
@@ -1642,7 +1897,8 @@ mod tests {
     fn runtime_text_control_carries_authored_change_and_submit_handlers() {
         let input = UiInputOptions {
             public_id: "field.name".to_owned(),
-            component: None,
+            view: None,
+            containing_scroll_region: None,
             kind: UiInputKind::TextField,
             value_text_source: "text.name".to_owned(),
             placeholder_text_source: None,

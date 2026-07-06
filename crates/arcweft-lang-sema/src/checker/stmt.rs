@@ -55,9 +55,6 @@ impl TypeChecker<'_> {
             | Stmt::LetScope { .. }
             | Stmt::LetLoop { .. }
             | Stmt::LetAwait { .. } => self.reject_unlowered_stmt_binding(stmt),
-            Stmt::LetTextSubmit { pattern, target } => {
-                self.check_text_submit_binding(pattern, target);
-            }
             Stmt::LetActionReceive { pattern, action } => {
                 self.check_action_receive_binding(pattern, action);
             }
@@ -165,7 +162,6 @@ impl TypeChecker<'_> {
                 | Stmt::Signal { .. }
                 | Stmt::LifetimeSet { .. }
                 | Stmt::Wait(_)
-                | Stmt::LetTextSubmit { .. }
                 | Stmt::LetActionReceive { .. }
                 | Stmt::On { .. }
                 | Stmt::Select(_)
@@ -187,17 +183,6 @@ impl TypeChecker<'_> {
         self.errors.push(TypeCheckError::new(format!(
             "{kind} expression binding must be lowered before type checking"
         )));
-    }
-
-    fn check_text_submit_binding(&mut self, pattern: &Pattern, target: &Expr) {
-        self.expect_expr_type(
-            target,
-            &TypeKind::entity_ref(EntityKind::Input),
-            "text submit target",
-        );
-        if let Some(name) = ident_pattern_name(pattern) {
-            self.bind_local(name.to_owned(), TypeKind::String);
-        }
     }
 
     fn check_action_receive_binding(&mut self, pattern: &Pattern, action: &Expr) {

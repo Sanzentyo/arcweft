@@ -18,7 +18,6 @@ use arcweft_lang_syntax::ast::common::Visibility;
 use arcweft_lang_syntax::ast::items::{
     EntityDeclItem, EntityDeclKind, EntryItem, EntryRouteBinding, EntryRouteBindingSource,
     ExternModItem, ExternModMember, ImplItem, ImplMember, StructItem, StyleItem, TypeAliasItem,
-    UiTextInputItem,
 };
 use arcweft_lang_syntax::ast::view::{ViewActionInvokeAction, ViewActionPayload};
 use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
@@ -492,7 +491,7 @@ impl TypeChecker<'_> {
                     &entity_kind_for_decl(item.kind()),
                     "entity declaration id",
                 );
-                self.check_component_action_invokes(item);
+                self.check_view_action_invokes(item);
             }
             HirTopLevelDecl::Callable(item) => {
                 self.clear_borrow_state();
@@ -544,7 +543,6 @@ impl TypeChecker<'_> {
                 }
                 self.check_source_item(item);
             }
-            HirTopLevelDecl::UiTextInput(item) => self.check_ui_text_input_decl(item),
             HirTopLevelDecl::Style(item) => self.check_style_decl(item),
         }
     }
@@ -553,22 +551,12 @@ impl TypeChecker<'_> {
         self.expect_entity_kind(item.id(), &EntityKind::Style, "style id");
     }
 
-    fn check_ui_text_input_decl(&mut self, item: &UiTextInputItem) {
-        self.expect_entity_kind(item.id(), &EntityKind::Input, "UI text input id");
-        if let Some(target) = item.submit() {
-            self.expect_entity_kind(target, &EntityKind::Input, "UI text input submit target");
-        }
-        if let Some(target) = item.change() {
-            self.expect_entity_kind(target, &EntityKind::Input, "UI text input change target");
-        }
-    }
-
-    fn check_component_action_invokes(&mut self, item: &EntityDeclItem) {
-        let Some(view) = item.component_body().and_then(|body| body.view()) else {
+    fn check_view_action_invokes(&mut self, item: &EntityDeclItem) {
+        let Some(view) = item.view_body().and_then(|body| body.view()) else {
             return;
         };
         for action in view.action_invokes() {
-            self.check_view_action_invoke(action);
+            self.check_view_action_invoke(&action);
         }
     }
 

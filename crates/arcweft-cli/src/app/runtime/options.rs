@@ -102,6 +102,10 @@ pub(in crate::app) struct RuntimeRunOptions {
     pub(in crate::app) watch_iterations: usize,
     #[arg(long = "text-input-trace-out")]
     pub(in crate::app) text_input_trace_out: Option<PathBuf>,
+    #[arg(long = "session-load")]
+    pub(in crate::app) session_load: Option<PathBuf>,
+    #[arg(long = "session-save-out")]
+    pub(in crate::app) session_save_out: Option<PathBuf>,
     #[arg(long)]
     pub(in crate::app) json: bool,
 }

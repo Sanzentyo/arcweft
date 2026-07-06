@@ -8,7 +8,7 @@ pub surface character @character.alice Alice as alice {
 }
 
 entry game {
-    start @flow.vertical_jlreq_preset_normal_golden
+    goto @flow.vertical_jlreq_preset_normal_golden
 }
 
 flow @flow.vertical_jlreq_preset_normal_golden vertical_jlreq_preset_normal_golden {

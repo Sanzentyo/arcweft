@@ -4,7 +4,7 @@ fn score_f64(base: f64, scale: f64) -> f64 {
 }
 
 bench @bench.dense_f64_map_pure_batch {
-    measure iterations = 4 { start(@flow.dense_f64_map_pure_batch) }
+    measure iterations = 4 { goto @flow.dense_f64_map_pure_batch }
 }
 
 flow @flow.dense_f64_map_pure_batch dense_f64_map_pure_batch {

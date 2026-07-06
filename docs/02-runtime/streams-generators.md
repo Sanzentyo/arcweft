@@ -83,7 +83,7 @@ pub struct Watch<T> {
 }
 ```
 
-`Need<T, E>` never coerces into `T`. A visible `flow` or `component` must describe what to show while it is pending.
+`Need<T, E>` never coerces into `T`. A visible `flow` or `view` must describe what to show while it is pending.
 
 ```arcw
 let usb =

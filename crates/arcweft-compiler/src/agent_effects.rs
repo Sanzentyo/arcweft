@@ -9,7 +9,7 @@ pub(crate) fn entity_kind_label(kind: &EntityKind) -> &str {
         EntityKind::Choice => "choice",
         EntityKind::ChoiceOption => "choice_option",
         EntityKind::Character => "character",
-        EntityKind::Component => "component",
+        EntityKind::View => "view",
         EntityKind::Action => "action",
         EntityKind::Activity => "activity",
         EntityKind::Textbox => "textbox",

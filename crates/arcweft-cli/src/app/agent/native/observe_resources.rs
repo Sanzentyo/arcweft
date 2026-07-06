@@ -90,9 +90,9 @@ pub(super) fn agent_observe_resource(
                 .objects_resource()
                 .map_err(|error| agent_json_error(&error))?,
         )),
-        AgentObserveResourceKind::Components => AgentObserveResourceOutput::One(Box::new(
+        AgentObserveResourceKind::Views => AgentObserveResourceOutput::One(Box::new(
             report
-                .components_resource()
+                .views_resource()
                 .map_err(|error| agent_json_error(&error))?,
         )),
         AgentObserveResourceKind::PresentationTree => AgentObserveResourceOutput::One(Box::new(
@@ -156,9 +156,8 @@ pub(super) fn agent_observe_all_resources(
             resources.push(agent_observe_resource_by_uri(report, uri)?);
         }
     }
-    for uri in report.components.iter().flat_map(|component| {
-        component
-            .capture_refs
+    for uri in report.views.iter().flat_map(|view| {
+        view.capture_refs
             .captures
             .iter()
             .map(|capture| capture.uri.as_str())
@@ -197,12 +196,10 @@ pub(super) fn agent_observe_list_resources(
             }
         }
     }
-    for component in &report.components {
-        for capture in &component.capture_refs.captures {
+    for view in &report.views {
+        for capture in &view.capture_refs.captures {
             if known.insert(capture.uri.clone()) {
-                resources.push(agent_component_capture_ref_resource(
-                    report, component, capture,
-                ));
+                resources.push(agent_view_capture_ref_resource(report, view, capture));
             }
         }
     }
@@ -228,7 +225,7 @@ pub(super) fn agent_observe_base_resources(
             .objects_resource()
             .map_err(|error| agent_json_error(&error))?,
         report
-            .components_resource()
+            .views_resource()
             .map_err(|error| agent_json_error(&error))?,
         report
             .presentation_tree_resource()
@@ -270,16 +267,16 @@ pub(super) fn agent_layer_capture_ref_resource(
             width: capture.width,
             height: capture.height,
             object: None,
-            component: None,
+            view: None,
             selected_capture: capture.selected_capture.clone(),
         },
     )
 }
 
-pub(super) fn agent_component_capture_ref_resource(
+pub(super) fn agent_view_capture_ref_resource(
     report: &AgentObservationReport,
-    component: &AgentObservedComponent,
-    capture: &AgentComponentCaptureRef,
+    view: &AgentObservedView,
+    capture: &AgentViewCaptureRef,
 ) -> AgentResource {
     agent_capture_ref_resource(
         report,
@@ -287,14 +284,14 @@ pub(super) fn agent_component_capture_ref_resource(
             uri: &capture.uri,
             mime_type: &capture.mime_type,
             kind: capture.kind,
-            scope: AgentImageScope::Component {
-                id: component.id.clone(),
+            scope: AgentImageScope::View {
+                id: view.id.clone(),
             },
             page: capture.page,
             width: capture.width,
             height: capture.height,
             object: None,
-            component: Some(AgentImageComponentRef::from_observed(component)),
+            view: Some(AgentImageViewRef::from_observed(view)),
             selected_capture: capture.selected_capture.clone(),
         },
     )
@@ -318,7 +315,7 @@ pub(super) fn agent_object_capture_ref_resource(
             width: capture.width,
             height: capture.height,
             object: Some(AgentImageObjectRef::from_observed(object)),
-            component: None,
+            view: None,
             selected_capture: capture.selected_capture.clone(),
         },
     )
@@ -333,7 +330,7 @@ pub(super) struct AgentCaptureRefResourceSpec<'a> {
     pub(super) width: u32,
     pub(super) height: u32,
     pub(super) object: Option<AgentImageObjectRef>,
-    pub(super) component: Option<AgentImageComponentRef>,
+    pub(super) view: Option<AgentImageViewRef>,
     pub(super) selected_capture: Option<AgentSelectedCaptureMetadata>,
 }
 
@@ -365,7 +362,7 @@ pub(super) fn agent_capture_ref_resource(
             content_viewport_bbox: None,
             content_pixels: None,
             object: spec.object,
-            component: spec.component,
+            view: spec.view,
             selected_capture: spec.selected_capture,
             diagnostics: Vec::new(),
         }),

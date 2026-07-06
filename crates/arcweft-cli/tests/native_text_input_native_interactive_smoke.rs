@@ -21,7 +21,7 @@ fn read(path: impl AsRef<Path>) -> String {
 }
 
 #[test]
-fn seq06_16_3_native_text_input_sample_is_component_authored() {
+fn seq06_16_3_native_text_input_sample_is_view_authored() {
     let root = workspace_root();
     let sample = root.join("samples/native-text-input");
     let source = read(sample.join("src/main.arcw"));
@@ -39,11 +39,14 @@ fn seq06_16_3_native_text_input_sample_is_component_authored() {
     }
     for required in [
         "entry game @entry.native_text_input_sample",
-        "pub component NativeTextInputPanel()",
-        "component(@component:.NativeTextInputPanel)",
-        "TextField(@input:.jp_text_field",
-        "TextArea(@input:.jp_text_area",
-        "SecureField(@input:.secret_secure_field",
+        "pub view NativeTextInputPanel()",
+        "view(@view:.NativeTextInputPanel)",
+        "let jp_text_field = input.text(@input:.jp_text_field",
+        "TextField(jp_text_field)",
+        "let jp_text_area = input.text(@input:.jp_text_area",
+        "TextArea(jp_text_area)",
+        "let secret_secure_field = input.secure(@input:.secret_secure_field",
+        "SecureField(secret_secure_field)",
         "Local trace output belongs under target/native-text-input-trace/",
     ] {
         assert!(
@@ -60,49 +63,58 @@ fn seq06_16_3_native_text_input_sample_is_component_authored() {
     ] {
         assert!(
             !sample.join(obsolete_sidecar).exists(),
-            "component-authored native text controls must not require obsolete sidecar {obsolete_sidecar}"
+            "view-authored native text controls must not require obsolete sidecar {obsolete_sidecar}"
         );
     }
 }
 
 #[test]
-fn seq06_16_3_submit_samples_share_player_backed_text_submit_routes() {
+fn seq06_16_3_submit_samples_share_player_backed_semantic_action_routes() {
     let root = workspace_root();
-    let text_submit = read(root.join("samples/text-submit-flow/src/main.arcw"));
+    let submit_sample = read(root.join("samples/text-submit-flow/src/main.arcw"));
     for required in [
-        "component(@component:.FeedbackForm)",
-        "TextField(@input:.feedback",
-        "Button(@button:.feedback_send)",
-        ".label(\"Send\")",
-        ".on_click(|| text_submit @input:.feedback)",
-        "text_submit @input:.feedback",
-        "let submitted = text_submit @input.feedback",
+        "view(@view:.FeedbackForm)",
+        "pub action feedback.submit(value: String)",
+        "let feedback = input.text(@input:.feedback",
+        "TextField(feedback)",
+        ".on_submit {",
+        "Button(@button:.feedback_send, label = \"Send\")",
+        "action.invoke(@action:.feedback.submit, value = feedback.text)",
+        "let event = receive action(@action:.feedback.submit)",
+        "let submitted = event.value",
         "return submitted",
     ] {
         assert!(
-            text_submit.contains(required),
+            submit_sample.contains(required),
             "text-submit-flow must retain shared submit route {required:?}"
         );
     }
 
     let modern = read(root.join("samples/modern-feedback-ui/src/main.arcw"));
     for required in [
-        "let panel = component(@component:.ModernFeedbackPanel",
-        "TextField(@input:.visitor_name",
-        "TextArea(@input:.product_brief",
-        "Button(@button:.continue)",
-        "Button(@button:.send_brief)",
-        "text_submit @input:.visitor_name",
-        "text_submit @input:.product_brief",
-        "let visitor_name = text_submit @input.visitor_name",
-        "let brief = text_submit @input.product_brief",
-        "panel.close()",
+        "let panel = view(@view:.ModernFeedbackPanel",
+        "pub action feedback.submit_name(value: String)",
+        "pub action feedback.submit_brief(value: String)",
+        "TextField(visitor_name)",
+        "TextArea(product_brief)",
+        "Button(@button:.continue, label = \"Continue\")",
+        "Button(@button:.send_brief, label = \"Send brief\")",
+        "action.invoke(@action:.feedback.submit_name, value = visitor_name.text)",
+        "action.invoke(@action:.feedback.submit_brief, value = product_brief.text)",
+        "let name_event = receive action(@action:.feedback.submit_name)",
+        "let visitor_name = name_event.value",
+        "let brief_event = receive action(@action:.feedback.submit_brief)",
+        "let brief = brief_event.value",
     ] {
         assert!(
             modern.contains(required),
             "modern-feedback-ui must retain shared submit route {required:?}"
         );
     }
+    assert!(
+        !modern.contains("panel.close()"),
+        "modern-feedback-ui must rely on scope-owned view cleanup rather than the removed close alias"
+    );
 }
 
 #[test]

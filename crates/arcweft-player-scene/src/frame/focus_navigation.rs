@@ -1,6 +1,7 @@
 use arcweft_bundle::resource_codec::{
-    UiFocusDirection, UiFocusGroupPolicy, UiFocusInitialPolicy, UiFocusSkipPolicy,
-    UiFocusTargetResolution, UiFocusWrapPolicy, UiRuntimeFocusGroup, UiRuntimeFocusNavigation,
+    ViewFocusDirection, ViewFocusGroupPolicy, ViewFocusInitialPolicy, ViewFocusSkipPolicy,
+    ViewFocusTargetResolution, ViewFocusWrapPolicy, ViewRuntimeFocusGroup,
+    ViewRuntimeFocusNavigation,
 };
 use arcweft_id::PublicId;
 use arcweft_presentation::input::InteractionTarget;
@@ -13,7 +14,7 @@ use arcweft_render_wgpu::geometry::{
 use super::PlayerFrameError;
 
 pub(super) fn render_focus_groups(
-    groups: &[UiRuntimeFocusGroup],
+    groups: &[ViewRuntimeFocusGroup],
 ) -> Result<Vec<RenderFocusGroup>, PlayerFrameError> {
     groups
         .iter()
@@ -32,7 +33,7 @@ pub(super) fn render_focus_groups(
 }
 
 pub(super) fn render_focus_navigation(
-    navigation: &[UiRuntimeFocusNavigation],
+    navigation: &[ViewRuntimeFocusNavigation],
 ) -> Result<Vec<RenderFocusNavigation>, PlayerFrameError> {
     navigation
         .iter()
@@ -55,63 +56,63 @@ pub(super) fn render_focus_navigation(
         .collect()
 }
 
-fn render_group_policy(policy: UiFocusGroupPolicy) -> RenderFocusGroupPolicy {
+fn render_group_policy(policy: ViewFocusGroupPolicy) -> RenderFocusGroupPolicy {
     match policy {
-        UiFocusGroupPolicy::Normal => RenderFocusGroupPolicy::Normal,
-        UiFocusGroupPolicy::Trap => RenderFocusGroupPolicy::Trap,
-        UiFocusGroupPolicy::Modal => RenderFocusGroupPolicy::Modal,
+        ViewFocusGroupPolicy::Normal => RenderFocusGroupPolicy::Normal,
+        ViewFocusGroupPolicy::Trap => RenderFocusGroupPolicy::Trap,
+        ViewFocusGroupPolicy::Modal => RenderFocusGroupPolicy::Modal,
     }
 }
 
 fn render_initial(
-    initial: &UiFocusInitialPolicy,
+    initial: &ViewFocusInitialPolicy,
 ) -> Result<RenderFocusInitialPolicy, PlayerFrameError> {
     Ok(match initial {
-        UiFocusInitialPolicy::Auto => RenderFocusInitialPolicy::Auto,
-        UiFocusInitialPolicy::First => RenderFocusInitialPolicy::First,
-        UiFocusInitialPolicy::Last => RenderFocusInitialPolicy::Last,
-        UiFocusInitialPolicy::None => RenderFocusInitialPolicy::None,
-        UiFocusInitialPolicy::Explicit { target } => {
+        ViewFocusInitialPolicy::Auto => RenderFocusInitialPolicy::Auto,
+        ViewFocusInitialPolicy::First => RenderFocusInitialPolicy::First,
+        ViewFocusInitialPolicy::Last => RenderFocusInitialPolicy::Last,
+        ViewFocusInitialPolicy::None => RenderFocusInitialPolicy::None,
+        ViewFocusInitialPolicy::Explicit { target } => {
             RenderFocusInitialPolicy::Explicit(interaction_target(target)?)
         }
     })
 }
 
-fn render_wrap(wrap: UiFocusWrapPolicy) -> RenderFocusWrapPolicy {
+fn render_wrap(wrap: ViewFocusWrapPolicy) -> RenderFocusWrapPolicy {
     match wrap {
-        UiFocusWrapPolicy::Wrap => RenderFocusWrapPolicy::Wrap,
-        UiFocusWrapPolicy::NoWrap => RenderFocusWrapPolicy::NoWrap,
+        ViewFocusWrapPolicy::Wrap => RenderFocusWrapPolicy::Wrap,
+        ViewFocusWrapPolicy::NoWrap => RenderFocusWrapPolicy::NoWrap,
     }
 }
 
-fn render_skip(skip: UiFocusSkipPolicy) -> RenderFocusSkipPolicy {
+fn render_skip(skip: ViewFocusSkipPolicy) -> RenderFocusSkipPolicy {
     match skip {
-        UiFocusSkipPolicy::Skip => RenderFocusSkipPolicy::Skip,
-        UiFocusSkipPolicy::Stop => RenderFocusSkipPolicy::Stop,
+        ViewFocusSkipPolicy::Skip => RenderFocusSkipPolicy::Skip,
+        ViewFocusSkipPolicy::Stop => RenderFocusSkipPolicy::Stop,
     }
 }
 
-fn render_direction(direction: UiFocusDirection) -> FocusNavigationDirection {
+fn render_direction(direction: ViewFocusDirection) -> FocusNavigationDirection {
     match direction {
-        UiFocusDirection::Up => FocusNavigationDirection::Up,
-        UiFocusDirection::Down => FocusNavigationDirection::Down,
-        UiFocusDirection::Left => FocusNavigationDirection::Left,
-        UiFocusDirection::Right => FocusNavigationDirection::Right,
-        UiFocusDirection::Next => FocusNavigationDirection::Next,
-        UiFocusDirection::Previous => FocusNavigationDirection::Previous,
+        ViewFocusDirection::Up => FocusNavigationDirection::Up,
+        ViewFocusDirection::Down => FocusNavigationDirection::Down,
+        ViewFocusDirection::Left => FocusNavigationDirection::Left,
+        ViewFocusDirection::Right => FocusNavigationDirection::Right,
+        ViewFocusDirection::Next => FocusNavigationDirection::Next,
+        ViewFocusDirection::Previous => FocusNavigationDirection::Previous,
     }
 }
 
 fn render_target(
-    target: &UiFocusTargetResolution,
+    target: &ViewFocusTargetResolution,
 ) -> Result<RenderFocusTargetResolution, PlayerFrameError> {
     Ok(match target {
-        UiFocusTargetResolution::Explicit { target } => {
+        ViewFocusTargetResolution::Explicit { target } => {
             RenderFocusTargetResolution::Explicit(interaction_target(target)?)
         }
-        UiFocusTargetResolution::Auto => RenderFocusTargetResolution::Auto,
-        UiFocusTargetResolution::None => RenderFocusTargetResolution::None,
-        UiFocusTargetResolution::GroupBoundary => RenderFocusTargetResolution::GroupBoundary,
+        ViewFocusTargetResolution::Auto => RenderFocusTargetResolution::Auto,
+        ViewFocusTargetResolution::None => RenderFocusTargetResolution::None,
+        ViewFocusTargetResolution::GroupBoundary => RenderFocusTargetResolution::GroupBoundary,
     })
 }
 

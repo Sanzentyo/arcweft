@@ -1,4 +1,4 @@
-use super::bundle_view::component_view_sidecars;
+use super::bundle_view::view_sidecars;
 use super::diagnostics::emit_diagnostics_for_path;
 use super::image_declarations::{
     DeclaredImageObject, declaration_arg_value, declared_image_asset_refs,
@@ -37,24 +37,21 @@ use arcweft_adapter_desktop::{
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleFormat,
     BundleImageAnimation, BundleImageAsset, BundleImageDimensions, BundleImageFormat,
-    BundleImageObject, BundleImageObjectAlignment, BundleImageObjectFit, BundleImageObjectPlayback,
-    BundleImageObjectTransform, BundleLaunchKind, BundleManifest, BundleRuntimeSummary,
-    BundleSource, BundleVirtualFile, BundleVirtualFileRef, BundleVirtualFileSpace,
+    BundleImageObject, BundleImageObjectAlignment, BundleImageObjectFit, BundleImageObjectParam,
+    BundleImageObjectPlayback, BundleImageObjectProxy, BundleImageObjectTransform,
+    BundleLaunchKind, BundleManifest, BundleRuntimeSummary, BundleSource, BundleVirtualFile,
+    BundleVirtualFileRef, BundleVirtualFileSpace,
     container::{BundleDigest, BundleView, ReadBudget},
     patch::{
         BundlePatchArtifact, PatchCompatibility, apply_patch_bundle_bytes, encode_patch_bundle,
     },
     resource_codec::{
-        UiInputResource, UiProgramResource, UiStyleResource, UiTextResource, UiThemeResource,
+        UiInputResource, UiStyleResource, UiTextResource, UiThemeResource, ViewProgramResource,
         ui::{
-            CompositionOnBlurPolicy, EnterKeyHint, RgbaColor, StyleAssignOp, StyleSourceIdentity,
-            StyleSourceRef, StyleSyntax as ProductStyleSyntax, SystemColor, TextAssistPolicy,
-            TextCapitalization, UiElementKind, UiElementState, UiEnvironmentPredicate, UiInputKind,
-            UiInputOptions, UiInputPurpose, UiInteractionState, UiSecureInputPolicy,
-            UiSemanticTarget, UiStyleDeclaration, UiStyleRule, UiStyleSelector,
-            UiStyleSelectorPart, UiStyleToken, UiStyleValue, UiTextSelectionPolicy,
-            UiTextShortcutPolicy, UiTextSourceKind, UiTextSourceRecord, UiTextTabPolicy,
-            UiTextVerticalNavigationPolicy,
+            RgbaColor, StyleAssignOp, StyleSourceIdentity, StyleSourceRef,
+            StyleSyntax as ProductStyleSyntax, SystemColor, ViewElementKind, ViewElementState,
+            ViewEnvironmentPredicate, ViewInteractionState, ViewStyleDeclaration, ViewStyleRule,
+            ViewStyleSelector, ViewStyleSelectorPart, ViewStyleToken, ViewStyleValue,
         },
     },
 };
@@ -68,7 +65,7 @@ use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::ast::{
     items::{
         StyleItem, UiStyleAssignOpDecl, UiStyleEnvironmentPredicateDecl, UiStyleSelectorPartDecl,
-        UiStyleValueDecl, UiTextInputItem, UiTextInputKind,
+        UiStyleValueDecl,
     },
     style::StyleSyntax,
 };
@@ -90,10 +87,10 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 
-mod component_mounts;
 mod stage_placement;
-use component_mounts::{mounted_component_ids, mounted_component_matches};
+mod view_mounts;
 use stage_placement::{image_design_bounds, image_stage_placement};
+use view_mounts::{mounted_view_ids, mounted_view_matches};
 
 #[derive(Args, Clone, Debug)]
 pub(in crate::app) struct BundleOptions {
@@ -320,9 +317,11 @@ pub(in crate::app) fn compile_bundle_for_selection(
     let virtual_files = collect_bundle_virtual_files(selection.path(), include_spaces)?;
     let image_assets = collect_bundle_image_assets(&virtual_files)?;
     let image_declarations = parse_declared_image_objects(&source);
-    let image_objects = bundle_image_objects(&image_declarations)?;
-    let ui_sidecars = collect_bundle_ui_sidecars(selection.path())?
-        .merged(collect_bundle_dsl_ui_resources(&compiled.hir)?);
+    let mut image_objects = bundle_image_objects(&image_declarations)?;
+    let ui_sidecars = collect_bundle_ui_sidecars(selection.path())?.merged(
+        collect_bundle_dsl_ui_resources(&compiled.hir, &image_objects)?,
+    );
+    image_objects.extend(ui_sidecars.image_objects.iter().cloned());
     validate_referenced_bundle_image_assets(&compiled.plan, &image_declarations, &image_assets)?;
     let bundle = attach_bundle_ui_sidecars(
         ArcweftBundle::new(
@@ -361,11 +360,12 @@ fn emit_bundle_verification_diagnostics(selection: &SourceSelection, report: &Ve
 
 #[derive(Clone, Debug, Default)]
 struct BundleUiSidecars {
-    program: Option<UiProgramResource>,
+    program: Option<ViewProgramResource>,
     style: Option<UiStyleResource>,
     text: Option<UiTextResource>,
     input: Option<UiInputResource>,
     theme: Option<UiThemeResource>,
+    image_objects: Vec<BundleImageObject>,
 }
 
 impl BundleUiSidecars {
@@ -375,6 +375,7 @@ impl BundleUiSidecars {
         self.input = merge_optional(self.input, other.input, merge_ui_input);
         self.style = merge_optional(self.style, other.style, merge_ui_style);
         self.theme = self.theme.or(other.theme);
+        self.image_objects.extend(other.image_objects);
         self
     }
 }
@@ -392,7 +393,10 @@ fn merge_optional<T>(
     }
 }
 
-fn merge_ui_programs(mut left: UiProgramResource, right: UiProgramResource) -> UiProgramResource {
+fn merge_ui_programs(
+    mut left: ViewProgramResource,
+    right: ViewProgramResource,
+) -> ViewProgramResource {
     left.instructions.extend(right.instructions);
     left.child_spans.extend(right.child_spans);
     left.handlers.extend(right.handlers);
@@ -400,6 +404,8 @@ fn merge_ui_programs(mut left: UiProgramResource, right: UiProgramResource) -> U
     left.exported_parts.extend(right.exported_parts);
     left.semantic_targets.extend(right.semantic_targets);
     left.layout_bounds.extend(right.layout_bounds);
+    left.scroll_regions.extend(right.scroll_regions);
+    left.text_blocks.extend(right.text_blocks);
     left.action_buttons.extend(right.action_buttons);
     left.focus_groups.extend(right.focus_groups);
     left.focus_navigation.extend(right.focus_navigation);
@@ -459,6 +465,7 @@ fn collect_bundle_ui_sidecars(source_path: &Path) -> Result<BundleUiSidecars, Ex
         text: read_optional_json_sidecar(&root.join("ui.text.json"))?,
         input: read_optional_json_sidecar(&root.join("ui.input.json"))?,
         theme: read_optional_json_sidecar(&root.join("ui.theme.json"))?,
+        image_objects: Vec::new(),
     })
 }
 
@@ -486,15 +493,10 @@ where
     })
 }
 
-fn collect_bundle_dsl_ui_resources(module: &HirModule) -> Result<BundleUiSidecars, ExitCode> {
-    let inputs = module
-        .declarations()
-        .iter()
-        .filter_map(|decl| match decl {
-            HirTopLevelDecl::UiTextInput(item) => Some(item),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+fn collect_bundle_dsl_ui_resources(
+    module: &HirModule,
+    image_objects: &[BundleImageObject],
+) -> Result<BundleUiSidecars, ExitCode> {
     let styles = module
         .declarations()
         .iter()
@@ -503,71 +505,37 @@ fn collect_bundle_dsl_ui_resources(module: &HirModule) -> Result<BundleUiSidecar
             _ => None,
         })
         .collect::<Vec<_>>();
-    let mounted_components = mounted_component_ids(module);
-    let components = module
+    let mounted_views = mounted_view_ids(module);
+    let views = module
         .declarations()
         .iter()
         .filter_map(|decl| match decl {
             HirTopLevelDecl::EntityDecl(item)
-                if item.component_body().is_some()
-                    && mounted_component_matches(&mounted_components, item.id().body()) =>
+                if item.view_body().is_some()
+                    && mounted_view_matches(&mounted_views, item.id().body()) =>
             {
                 Some(item)
             }
             _ => None,
         })
         .collect::<Vec<_>>();
+    let style = dsl_ui_style_resource(&styles)?;
+    let view_sidecars = view_sidecars(&views, style.as_ref(), image_objects).map_err(|error| {
+        eprintln!("{error}");
+        ExitCode::FAILURE
+    })?;
     let mut sidecars = BundleUiSidecars {
-        style: dsl_ui_style_resource(&styles)?,
+        style,
         ..BundleUiSidecars::default()
     };
-    let component_sidecars = component_view_sidecars(&components);
     sidecars = sidecars.merged(BundleUiSidecars {
-        program: component_sidecars.program,
-        style: component_sidecars.style,
-        text: component_sidecars.text,
-        input: component_sidecars.input,
+        program: view_sidecars.program,
+        style: view_sidecars.style,
+        text: view_sidecars.text,
+        input: view_sidecars.input,
         theme: None,
+        image_objects: view_sidecars.image_objects,
     });
-
-    if !inputs.is_empty() {
-        let mut text_sources = Vec::new();
-        let mut input_options = Vec::new();
-        let mut semantic_targets = Vec::new();
-        for input in inputs {
-            push_dsl_ui_text_sources(&mut text_sources, input);
-            input_options.push(dsl_ui_input_options(input));
-            semantic_targets.push(dsl_ui_semantic_target(input));
-        }
-
-        sidecars = sidecars.merged(BundleUiSidecars {
-            program: Some(UiProgramResource {
-                program_id: "ui.program.dsl_controls".to_owned(),
-                root_component: "ui.component.dsl_controls".to_owned(),
-                instructions: Vec::new(),
-                child_spans: Vec::new(),
-                handlers: Vec::new(),
-                state_schema_hashes: Vec::new(),
-                exported_parts: Vec::new(),
-                semantic_targets,
-                layout_bounds: Vec::new(),
-                action_buttons: Vec::new(),
-                focus_groups: Vec::new(),
-                focus_navigation: Vec::new(),
-                adapter_requirements: Vec::new(),
-            }),
-            text: Some(UiTextResource {
-                sources: text_sources,
-                ..UiTextResource::default()
-            }),
-            input: Some(UiInputResource {
-                options: input_options,
-                adapter_requirements: Vec::new(),
-            }),
-            style: None,
-            theme: None,
-        });
-    }
 
     Ok(sidecars)
 }
@@ -602,7 +570,10 @@ fn dsl_ui_style_resource(styles: &[&StyleItem]) -> Result<Option<UiStyleResource
                 .map(dsl_ui_style_environment_predicate),
         );
     }
-    Ok(style_program_id.map(|style_program_id| UiStyleResource {
+    let Some(style_program_id) = style_program_id else {
+        return Ok(None);
+    };
+    let resource = UiStyleResource {
         style_program_id,
         arcweft_sources,
         css_sources,
@@ -613,7 +584,141 @@ fn dsl_ui_style_resource(styles: &[&StyleItem]) -> Result<Option<UiStyleResource
         source_map_refs: Vec::new(),
         external_css_descriptors: Vec::new(),
         adapter_requirements: Vec::new(),
-    }))
+    };
+    validate_view_interactive_overflow_style_rules(&resource)?;
+    Ok(Some(resource))
+}
+
+fn validate_view_interactive_overflow_style_rules(style: &UiStyleResource) -> Result<(), ExitCode> {
+    for rule in &style.rules {
+        let Some(element) = view_style_rule_element(rule) else {
+            continue;
+        };
+        if element == ViewElementKind::Scroll {
+            continue;
+        }
+        for declaration in &rule.declarations {
+            if !view_style_overflow_property_is_interactive(
+                style,
+                &declaration.property,
+                &declaration.value,
+            ) {
+                continue;
+            }
+            eprintln!(
+                "error[AWF0617 view::interactive_overflow_requires_scroll]: style rule selector `{}` cannot use `{}: {}` as an interactive overflow container; wrap the content in `Scroll {{ ... }}` or move `{}` to the Scroll element",
+                view_style_element_label(element),
+                normalize_view_style_property(&declaration.property),
+                view_style_value_label(&declaration.value),
+                normalize_view_style_property(&declaration.property)
+            );
+            return Err(ExitCode::FAILURE);
+        }
+    }
+    Ok(())
+}
+
+fn view_style_rule_element(rule: &ViewStyleRule) -> Option<ViewElementKind> {
+    rule.selector.parts.iter().find_map(|part| match part {
+        ViewStyleSelectorPart::Element(element) => Some(*element),
+        ViewStyleSelectorPart::Part(_)
+        | ViewStyleSelectorPart::State(_)
+        | ViewStyleSelectorPart::Interaction(_)
+        | ViewStyleSelectorPart::Environment(_)
+        | ViewStyleSelectorPart::Descendant
+        | ViewStyleSelectorPart::Child => None,
+    })
+}
+
+fn view_style_overflow_property_is_interactive(
+    style: &UiStyleResource,
+    property: &str,
+    value: &ViewStyleValue,
+) -> bool {
+    let property = normalize_view_style_property(property);
+    if !matches!(property.as_str(), "overflow" | "overflow-x" | "overflow-y") {
+        return false;
+    }
+    view_style_interactive_overflow_value(style, value, 0)
+}
+
+fn view_style_interactive_overflow_value(
+    style: &UiStyleResource,
+    value: &ViewStyleValue,
+    depth: u8,
+) -> bool {
+    if depth > 8 {
+        return false;
+    }
+    match value {
+        ViewStyleValue::Text(value) | ViewStyleValue::Resource(value) => {
+            matches!(
+                value.trim().trim_matches('"').trim_start_matches('.'),
+                "auto" | "scroll"
+            )
+        }
+        ViewStyleValue::Token(token) => style
+            .tokens
+            .iter()
+            .find(|candidate| id_or_tail_matches(token, &candidate.public_id))
+            .is_some_and(|token| {
+                view_style_interactive_overflow_value(style, &token.value, depth + 1)
+            }),
+        ViewStyleValue::SystemColor(_)
+        | ViewStyleValue::Rgba(_)
+        | ViewStyleValue::Milli(_)
+        | ViewStyleValue::List(_)
+        | ViewStyleValue::Digest(_) => false,
+    }
+}
+
+fn view_style_value_label(value: &ViewStyleValue) -> String {
+    match value {
+        ViewStyleValue::Token(value)
+        | ViewStyleValue::Text(value)
+        | ViewStyleValue::Resource(value) => value.trim().trim_matches('"').to_owned(),
+        ViewStyleValue::SystemColor(value) => format!("{value:?}"),
+        ViewStyleValue::Rgba(color) => format!(
+            "rgba({}, {}, {}, {})",
+            color.red, color.green, color.blue, color.alpha
+        ),
+        ViewStyleValue::Milli(value) => value.to_string(),
+        ViewStyleValue::List(values) => values
+            .iter()
+            .map(view_style_value_label)
+            .collect::<Vec<_>>()
+            .join(" "),
+        ViewStyleValue::Digest(value) => value.to_string(),
+    }
+}
+
+fn normalize_view_style_property(value: &str) -> String {
+    value.trim().replace('_', "-").to_ascii_lowercase()
+}
+
+fn view_style_element_label(element: ViewElementKind) -> &'static str {
+    match element {
+        ViewElementKind::Panel => "Panel",
+        ViewElementKind::Box => "Box",
+        ViewElementKind::Scroll => "Scroll",
+        ViewElementKind::Row => "Row",
+        ViewElementKind::Column => "Column",
+        ViewElementKind::Stack => "Stack",
+        ViewElementKind::Button => "Button",
+        ViewElementKind::TextField => "TextField",
+        ViewElementKind::TextArea => "TextArea",
+        ViewElementKind::SecureField => "SecureField",
+    }
+}
+
+fn id_or_tail_matches(candidate: &str, target: &str) -> bool {
+    let candidate = candidate.trim().trim_start_matches('.');
+    let target = target.trim().trim_start_matches('@');
+    candidate == target
+        || target
+            .rsplit('.')
+            .next()
+            .is_some_and(|tail| candidate == tail)
 }
 
 fn dsl_style_source_identity(style: &StyleItem, source: &str) -> StyleSourceIdentity {
@@ -631,8 +736,8 @@ fn dsl_style_source_identity(style: &StyleItem, source: &str) -> StyleSourceIden
 
 fn dsl_ui_style_token(
     token: &arcweft_lang_syntax::ast::items::UiStyleTokenDecl,
-) -> Result<UiStyleToken, ExitCode> {
-    Ok(UiStyleToken {
+) -> Result<ViewStyleToken, ExitCode> {
+    Ok(ViewStyleToken {
         public_id: token.public_id().to_owned(),
         value: dsl_ui_style_value(token.value())?,
     })
@@ -640,14 +745,14 @@ fn dsl_ui_style_token(
 
 fn dsl_ui_style_rule(
     rule: &arcweft_lang_syntax::ast::items::UiStyleRuleDecl,
-) -> Result<UiStyleRule, ExitCode> {
+) -> Result<ViewStyleRule, ExitCode> {
     let parts = rule
         .selector()
         .iter()
         .map(dsl_ui_style_selector_part)
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(UiStyleRule {
-        selector: UiStyleSelector { parts },
+    Ok(ViewStyleRule {
+        selector: ViewStyleSelector { parts },
         declarations: rule
             .declarations()
             .iter()
@@ -659,27 +764,27 @@ fn dsl_ui_style_rule(
 
 fn dsl_ui_style_selector_part(
     part: &UiStyleSelectorPartDecl,
-) -> Result<UiStyleSelectorPart, ExitCode> {
+) -> Result<ViewStyleSelectorPart, ExitCode> {
     Ok(match part {
         UiStyleSelectorPartDecl::Element(value) => {
-            UiStyleSelectorPart::Element(dsl_ui_element_kind(value)?)
+            ViewStyleSelectorPart::Element(dsl_ui_element_kind(value)?)
         }
-        UiStyleSelectorPartDecl::Part(value) => UiStyleSelectorPart::Part(value.clone()),
+        UiStyleSelectorPartDecl::Part(value) => ViewStyleSelectorPart::Part(value.clone()),
         UiStyleSelectorPartDecl::State(value) => {
-            UiStyleSelectorPart::State(dsl_ui_element_state(value)?)
+            ViewStyleSelectorPart::State(dsl_ui_element_state(value)?)
         }
         UiStyleSelectorPartDecl::Interaction(value) => {
-            UiStyleSelectorPart::Interaction(dsl_ui_interaction_state(value)?)
+            ViewStyleSelectorPart::Interaction(dsl_ui_interaction_state(value)?)
         }
-        UiStyleSelectorPartDecl::Descendant => UiStyleSelectorPart::Descendant,
-        UiStyleSelectorPartDecl::Child => UiStyleSelectorPart::Child,
+        UiStyleSelectorPartDecl::Descendant => ViewStyleSelectorPart::Descendant,
+        UiStyleSelectorPartDecl::Child => ViewStyleSelectorPart::Child,
     })
 }
 
 fn dsl_ui_style_declaration(
     declaration: &arcweft_lang_syntax::ast::items::UiStyleDeclarationDecl,
-) -> Result<UiStyleDeclaration, ExitCode> {
-    Ok(UiStyleDeclaration {
+) -> Result<ViewStyleDeclaration, ExitCode> {
+    Ok(ViewStyleDeclaration {
         property: declaration.property().to_owned(),
         value: dsl_ui_style_value(declaration.value())?,
         op: dsl_ui_style_assign_op(declaration.op()),
@@ -693,57 +798,57 @@ fn dsl_ui_style_assign_op(op: UiStyleAssignOpDecl) -> StyleAssignOp {
     }
 }
 
-fn dsl_ui_style_value(value: &UiStyleValueDecl) -> Result<UiStyleValue, ExitCode> {
+fn dsl_ui_style_value(value: &UiStyleValueDecl) -> Result<ViewStyleValue, ExitCode> {
     Ok(match value {
-        UiStyleValueDecl::Token(value) => UiStyleValue::Token(value.clone()),
+        UiStyleValueDecl::Token(value) => ViewStyleValue::Token(value.clone()),
         UiStyleValueDecl::SystemColor(value) => {
-            UiStyleValue::SystemColor(dsl_ui_system_color(value)?)
+            ViewStyleValue::SystemColor(dsl_ui_system_color(value)?)
         }
         UiStyleValueDecl::Rgba {
             red,
             green,
             blue,
             alpha,
-        } => UiStyleValue::Rgba(RgbaColor {
+        } => ViewStyleValue::Rgba(RgbaColor {
             red: *red,
             green: *green,
             blue: *blue,
             alpha: *alpha,
         }),
-        UiStyleValueDecl::Milli(value) => UiStyleValue::Milli(*value),
-        UiStyleValueDecl::Text(value) => UiStyleValue::Text(value.clone()),
-        UiStyleValueDecl::List(values) => UiStyleValue::List(
+        UiStyleValueDecl::Milli(value) => ViewStyleValue::Milli(*value),
+        UiStyleValueDecl::Text(value) => ViewStyleValue::Text(value.clone()),
+        UiStyleValueDecl::List(values) => ViewStyleValue::List(
             values
                 .iter()
                 .map(dsl_ui_style_value)
                 .collect::<Result<Vec<_>, _>>()?,
         ),
-        UiStyleValueDecl::Resource(value) => UiStyleValue::Resource(value.clone()),
+        UiStyleValueDecl::Resource(value) => ViewStyleValue::Resource(value.clone()),
     })
 }
 
 fn dsl_ui_style_environment_predicate(
     predicate: &UiStyleEnvironmentPredicateDecl,
-) -> UiEnvironmentPredicate {
+) -> ViewEnvironmentPredicate {
     match predicate {
         UiStyleEnvironmentPredicateDecl::TextScaleAtLeastMilli(value) => {
-            UiEnvironmentPredicate::TextScaleAtLeastMilli(*value)
+            ViewEnvironmentPredicate::TextScaleAtLeastMilli(*value)
         }
     }
 }
 
-fn dsl_ui_element_kind(value: &str) -> Result<UiElementKind, ExitCode> {
+fn dsl_ui_element_kind(value: &str) -> Result<ViewElementKind, ExitCode> {
     match value {
-        "panel" => Ok(UiElementKind::Surface),
-        "box" => Ok(UiElementKind::Box),
-        "scroll" => Ok(UiElementKind::Scroll),
-        "row" => Ok(UiElementKind::Row),
-        "column" => Ok(UiElementKind::Column),
-        "stack" => Ok(UiElementKind::Stack),
-        "button" => Ok(UiElementKind::Button),
-        "text_field" => Ok(UiElementKind::TextField),
-        "text_area" => Ok(UiElementKind::TextArea),
-        "secure_field" => Ok(UiElementKind::SecureField),
+        "panel" => Ok(ViewElementKind::Panel),
+        "box" => Ok(ViewElementKind::Box),
+        "scroll" => Ok(ViewElementKind::Scroll),
+        "row" => Ok(ViewElementKind::Row),
+        "column" => Ok(ViewElementKind::Column),
+        "stack" => Ok(ViewElementKind::Stack),
+        "button" => Ok(ViewElementKind::Button),
+        "text_field" => Ok(ViewElementKind::TextField),
+        "text_area" => Ok(ViewElementKind::TextArea),
+        "secure_field" => Ok(ViewElementKind::SecureField),
         other => {
             eprintln!("error: unknown UI style element selector `{other}`");
             Err(ExitCode::FAILURE)
@@ -751,13 +856,13 @@ fn dsl_ui_element_kind(value: &str) -> Result<UiElementKind, ExitCode> {
     }
 }
 
-fn dsl_ui_element_state(value: &str) -> Result<UiElementState, ExitCode> {
+fn dsl_ui_element_state(value: &str) -> Result<ViewElementState, ExitCode> {
     match value {
-        "focus_visible" => Ok(UiElementState::FocusVisible),
-        "read_only" => Ok(UiElementState::ReadOnly),
-        "invalid" => Ok(UiElementState::Invalid),
-        "composing" => Ok(UiElementState::Composing),
-        "placeholder_shown" => Ok(UiElementState::PlaceholderShown),
+        "focus_visible" => Ok(ViewElementState::FocusVisible),
+        "read_only" => Ok(ViewElementState::ReadOnly),
+        "invalid" => Ok(ViewElementState::Invalid),
+        "composing" => Ok(ViewElementState::Composing),
+        "placeholder_shown" => Ok(ViewElementState::PlaceholderShown),
         other => {
             eprintln!("error: unknown UI style element state `{other}`");
             Err(ExitCode::FAILURE)
@@ -765,11 +870,11 @@ fn dsl_ui_element_state(value: &str) -> Result<UiElementState, ExitCode> {
     }
 }
 
-fn dsl_ui_interaction_state(value: &str) -> Result<UiInteractionState, ExitCode> {
+fn dsl_ui_interaction_state(value: &str) -> Result<ViewInteractionState, ExitCode> {
     match value {
-        "hover" => Ok(UiInteractionState::Hover),
-        "active" => Ok(UiInteractionState::Active),
-        "disabled" => Ok(UiInteractionState::Disabled),
+        "hover" => Ok(ViewInteractionState::Hover),
+        "active" => Ok(ViewInteractionState::Active),
+        "disabled" => Ok(ViewInteractionState::Disabled),
         other => {
             eprintln!("error: unknown UI style interaction state `{other}`");
             Err(ExitCode::FAILURE)
@@ -781,9 +886,9 @@ fn dsl_ui_system_color(value: &str) -> Result<SystemColor, ExitCode> {
     match value {
         "canvas" => Ok(SystemColor::Canvas),
         "canvas_text" => Ok(SystemColor::CanvasText),
-        "surface" => Ok(SystemColor::Surface),
-        "surface_text" => Ok(SystemColor::SurfaceText),
-        "raised_surface" => Ok(SystemColor::RaisedSurface),
+        "panel" => Ok(SystemColor::Panel),
+        "panel_text" => Ok(SystemColor::PanelText),
+        "raised_panel" => Ok(SystemColor::RaisedPanel),
         "muted_text" => Ok(SystemColor::MutedText),
         "border" => Ok(SystemColor::Border),
         "accent" => Ok(SystemColor::Accent),
@@ -798,121 +903,6 @@ fn dsl_ui_system_color(value: &str) -> Result<SystemColor, ExitCode> {
             eprintln!("error: unknown UI style system color `{other}`");
             Err(ExitCode::FAILURE)
         }
-    }
-}
-
-fn push_dsl_ui_text_sources(sources: &mut Vec<UiTextSourceRecord>, input: &UiTextInputItem) {
-    let id = dsl_ui_input_public_id(input);
-    sources.push(ui_literal_text_source(
-        dsl_ui_text_source_id("label", &id),
-        input.label().unwrap_or(&id),
-    ));
-    sources.push(ui_literal_text_source(
-        dsl_ui_text_source_id("value", &id),
-        input.value().unwrap_or_default(),
-    ));
-    if let Some(placeholder) = input.placeholder() {
-        sources.push(ui_literal_text_source(
-            dsl_ui_text_source_id("placeholder", &id),
-            placeholder,
-        ));
-    }
-}
-
-fn ui_literal_text_source(public_id: String, value: &str) -> UiTextSourceRecord {
-    UiTextSourceRecord {
-        public_id,
-        kind: UiTextSourceKind::Literal {
-            value: value.to_owned(),
-        },
-        source: None,
-    }
-}
-
-fn dsl_ui_input_options(input: &UiTextInputItem) -> UiInputOptions {
-    let id = dsl_ui_input_public_id(input);
-    UiInputOptions {
-        public_id: id.clone(),
-        component: None,
-        kind: dsl_ui_input_kind(input.kind()),
-        value_text_source: dsl_ui_text_source_id("value", &id),
-        placeholder_text_source: input
-            .placeholder()
-            .map(|_| dsl_ui_text_source_id("placeholder", &id)),
-        purpose: dsl_ui_input_purpose(input.purpose()),
-        autocorrect: TextAssistPolicy::PlatformDefault,
-        spellcheck: TextAssistPolicy::PlatformDefault,
-        capitalization: TextCapitalization::None,
-        enter_key: dsl_ui_enter_key(input.enter_key()),
-        multiline: input.kind() == UiTextInputKind::TextArea,
-        selection_policy: UiTextSelectionPolicy::Enabled,
-        shortcut_policy: UiTextShortcutPolicy::Enabled,
-        tab_policy: UiTextTabPolicy::FocusNavigation,
-        vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
-        secure_policy: if input.kind() == UiTextInputKind::SecureField {
-            UiSecureInputPolicy::Password
-        } else {
-            UiSecureInputPolicy::Plain
-        },
-        composition_on_blur: CompositionOnBlurPolicy::Commit,
-        submit_handler: input.submit().map(|target| target.body().to_owned()),
-        change_handler: input.change().map(|target| target.body().to_owned()),
-        adapter_requirements: Vec::new(),
-    }
-}
-
-fn dsl_ui_semantic_target(input: &UiTextInputItem) -> UiSemanticTarget {
-    let id = dsl_ui_input_public_id(input);
-    UiSemanticTarget {
-        public_id: id.clone(),
-        target: id.clone(),
-        component: None,
-        label_text_source: Some(dsl_ui_text_source_id("label", &id)),
-        source: None,
-    }
-}
-
-fn dsl_ui_input_public_id(input: &UiTextInputItem) -> String {
-    input.id().body().to_owned()
-}
-
-fn dsl_ui_text_source_id(kind: &str, public_id: &str) -> String {
-    format!("text.{kind}.{public_id}")
-}
-
-fn dsl_ui_input_kind(kind: UiTextInputKind) -> UiInputKind {
-    match kind {
-        UiTextInputKind::TextField => UiInputKind::TextField,
-        UiTextInputKind::TextArea => UiInputKind::TextArea,
-        UiTextInputKind::SecureField => UiInputKind::SecureField,
-    }
-}
-
-fn dsl_ui_input_purpose(value: Option<&str>) -> UiInputPurpose {
-    match value.unwrap_or("text") {
-        "search" => UiInputPurpose::Search,
-        "name" => UiInputPurpose::Name,
-        "email" => UiInputPurpose::Email,
-        "url" => UiInputPurpose::Url,
-        "telephone" | "tel" => UiInputPurpose::Telephone,
-        "number" => UiInputPurpose::Number,
-        "decimal" => UiInputPurpose::Decimal,
-        "password" => UiInputPurpose::Password,
-        "pin" => UiInputPurpose::Pin,
-        "terminal" => UiInputPurpose::Terminal,
-        _ => UiInputPurpose::Text,
-    }
-}
-
-fn dsl_ui_enter_key(value: Option<&str>) -> EnterKeyHint {
-    match value.unwrap_or("default") {
-        "enter" => EnterKeyHint::Enter,
-        "done" => EnterKeyHint::Done,
-        "go" => EnterKeyHint::Go,
-        "next" => EnterKeyHint::Next,
-        "search" => EnterKeyHint::Search,
-        "send" => EnterKeyHint::Send,
-        _ => EnterKeyHint::Default,
     }
 }
 
@@ -1351,6 +1341,8 @@ fn bundle_image_object(declaration: &DeclaredImageObject) -> Result<BundleImageO
         asset,
         target: declaration_arg_value(declaration.args(), "target").and_then(public_id_arg),
         layer: declaration_arg_value(declaration.args(), "layer").and_then(public_id_arg),
+        view: None,
+        containing_scroll_region: None,
         bounds,
         placement: Some(placement),
         fit: image_fit_arg(declaration),
@@ -1361,6 +1353,9 @@ fn bundle_image_object(declaration: &DeclaredImageObject) -> Result<BundleImageO
             .and_then(parse_depth_arg)
             .unwrap_or_default(),
         opacity_milli: image_opacity_milli_arg(declaration)?,
+        actions: image_actions_arg(declaration),
+        params: image_params_arg(declaration),
+        proxies: image_proxies_arg(declaration),
         visible: declaration_arg_value(declaration.args(), "visible")
             .and_then(parse_bool_arg)
             .unwrap_or(true),
@@ -1441,6 +1436,112 @@ fn image_transform_arg(declaration: &DeclaredImageObject) -> BundleImageObjectTr
         ty_milli: declaration_arg_value(declaration.args(), "transform.ty")
             .and_then(parse_px_milli)
             .unwrap_or_default(),
+    }
+}
+
+fn image_actions_arg(declaration: &DeclaredImageObject) -> Vec<String> {
+    declaration
+        .args()
+        .iter()
+        .filter_map(|arg| {
+            let (name, value) = arg.split_once(" = ")?;
+            match name.trim() {
+                "action" => Some(vec![public_id_arg(value).unwrap_or_else(|| {
+                    unquote_arg(value.trim().trim_start_matches('@')).to_owned()
+                })]),
+                "actions" => Some(
+                    unquote_arg(value)
+                        .trim_matches(['[', ']'])
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(|value| {
+                            public_id_arg(value).unwrap_or_else(|| {
+                                unquote_arg(value.trim().trim_start_matches('@')).to_owned()
+                            })
+                        })
+                        .collect(),
+                ),
+                _ => None,
+            }
+        })
+        .flatten()
+        .collect()
+}
+
+fn image_params_arg(declaration: &DeclaredImageObject) -> BTreeMap<String, BundleImageObjectParam> {
+    declaration
+        .args()
+        .iter()
+        .filter_map(|arg| {
+            let (name, value) = arg.split_once(" = ")?;
+            let name = name.trim();
+            name.strip_prefix("param.").map(|_| {
+                (
+                    name.to_owned(),
+                    bundle_image_object_param_from_arg(value.trim()),
+                )
+            })
+        })
+        .collect()
+}
+
+fn image_proxies_arg(declaration: &DeclaredImageObject) -> Vec<BundleImageObjectProxy> {
+    let Some(id) = declaration_arg_value(declaration.args(), "proxy.id").and_then(public_id_arg)
+    else {
+        return Vec::new();
+    };
+    let params = declaration
+        .args()
+        .iter()
+        .filter_map(|arg| {
+            let (name, value) = arg.split_once(" = ")?;
+            name.trim().strip_prefix("proxy.param.").map(|name| {
+                (
+                    name.to_owned(),
+                    bundle_image_object_param_from_arg(value.trim()),
+                )
+            })
+        })
+        .collect();
+    vec![BundleImageObjectProxy {
+        id,
+        type_name: declaration_arg_value(declaration.args(), "proxy.type")
+            .map(unquote_arg)
+            .map(str::to_owned),
+        role: declaration_arg_value(declaration.args(), "proxy.role")
+            .map(unquote_arg)
+            .map(str::to_owned),
+        layer: declaration_arg_value(declaration.args(), "proxy.layer").and_then(public_id_arg),
+        depth_milli: declaration_arg_value(declaration.args(), "proxy.depth")
+            .and_then(parse_depth_arg),
+        hit_test: declaration_arg_value(declaration.args(), "proxy.hit_test")
+            .and_then(parse_bool_arg)
+            .unwrap_or_default(),
+        params,
+    }]
+}
+
+fn bundle_image_object_param_from_arg(value: &str) -> BundleImageObjectParam {
+    let trimmed = value.trim();
+    if let Some(value) = parse_bool_arg(trimmed) {
+        return BundleImageObjectParam::Bool { value };
+    }
+    if let Ok(value) = unquote_arg(trimmed).parse::<i64>() {
+        return BundleImageObjectParam::Integer { value };
+    }
+    if unquote_arg(trimmed).ends_with('%')
+        && let Some(value) = parse_milli_arg(trimmed)
+    {
+        return BundleImageObjectParam::Milli { value };
+    }
+    if trimmed.trim_start().starts_with('@')
+        && let Some(value) = public_id_arg(trimmed)
+    {
+        return BundleImageObjectParam::Id { value };
+    }
+    BundleImageObjectParam::Text {
+        value: unquote_arg(trimmed).to_owned(),
     }
 }
 

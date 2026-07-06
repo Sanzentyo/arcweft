@@ -299,17 +299,26 @@ fn lint_explicit_decl_id(
     if allows_lint(attrs, source_attrs, SyntaxLintCode::ExplicitDeclId) {
         return;
     }
+    let compact = compact_decl_name(kind, id, name);
     lints.push(
         SyntaxLint::new(
             SyntaxLintCode::ExplicitDeclId,
-            format!("`{kind} @{id}` spells the default declaration family explicitly; `{kind} {name}` is the compact authoring form"),
+            format!("`{kind} @{id}` spells the default declaration family explicitly; `{kind} {compact}` is the compact authoring form"),
             range,
         )
         .with_suggestion(SyntaxLintSuggestion::machine_applicable(
-            format!("replace explicit `@{id}` with compact `{name}`"),
-            SyntaxLintEdit::new(range, name),
+            format!("replace explicit `@{id}` with compact `{compact}`"),
+            SyntaxLintEdit::new(range, compact),
         )),
     );
+}
+
+fn compact_decl_name(kind: &str, id: &str, fallback: &str) -> String {
+    let prefix = format!("{kind}.");
+    id.strip_prefix(&prefix)
+        .filter(|name| !name.is_empty())
+        .unwrap_or(fallback)
+        .to_owned()
 }
 
 fn lint_generated_surface_form(
@@ -782,6 +791,9 @@ flow @flow.opening {
 asset @asset.bg_room {
 }
 
+image @image.sample.pulse_sprite {
+}
+
 content @content.chapter_two {
     roots = []
 }
@@ -793,13 +805,18 @@ content @content.chapter_two {
             .filter(|lint| lint.code() == SyntaxLintCode::ExplicitDeclId)
             .collect::<Vec<_>>();
 
-        assert_eq!(explicit.len(), 2);
+        assert_eq!(explicit.len(), 3);
         assert!(explicit.iter().any(|lint| {
             lint.message().contains("asset bg_room")
                 && lint
                     .message()
                     .contains("default declaration family explicitly")
         }));
+        assert!(
+            explicit
+                .iter()
+                .any(|lint| lint.message().contains("image sample.pulse_sprite"))
+        );
         assert!(
             explicit
                 .iter()
@@ -831,7 +848,7 @@ pub character concierge {
 pub asset bg.glass_lights {
 }
 
-pub component ModernFeedbackPanel() {
+pub view ModernFeedbackPanel() {
     Text("ok")
 }
 

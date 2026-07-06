@@ -80,7 +80,7 @@ pub(super) fn entity_decl_kind(input: &str) -> Option<(EntityDeclKind, &str)> {
         ("asset", EntityDeclKind::Asset),
         ("image", EntityDeclKind::Image),
         ("character", EntityDeclKind::Character),
-        ("component", EntityDeclKind::Component),
+        ("view", EntityDeclKind::View),
         ("action", EntityDeclKind::Action),
         ("activity", EntityDeclKind::Activity),
         ("content", EntityDeclKind::Content),
@@ -112,7 +112,7 @@ pub(super) fn entity_decl_family(kind: EntityDeclKind) -> &'static str {
         EntityDeclKind::Asset => "asset",
         EntityDeclKind::Image => "image",
         EntityDeclKind::Character => "character",
-        EntityDeclKind::Component => "ui",
+        EntityDeclKind::View => "view",
         EntityDeclKind::Action => "action",
         EntityDeclKind::Activity => "activity",
         EntityDeclKind::Content => "content",
@@ -265,9 +265,7 @@ pub(super) fn parse_callable_kind(input: &str) -> Option<(CallableKind, &str)> {
     if let Some(rest) = input.strip_prefix("reducer") {
         return Some((CallableKind::Reducer, rest.trim_start()));
     }
-    input
-        .strip_prefix("view")
-        .map(|rest| (CallableKind::View, rest.trim_start()))
+    None
 }
 
 pub(super) fn parse_flow_kind(input: &str) -> Option<(FlowKind, &str)> {

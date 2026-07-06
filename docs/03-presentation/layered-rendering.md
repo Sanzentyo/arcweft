@@ -53,7 +53,7 @@ pub struct LayerNode {
 }
 ```
 
-`LayerId` は frame 内だけの一時 ID ではなく、可能なら `EntityId` に紐づく安定 ID を持つ。`say` や `choice`、UI component、Activity、HTML panel はすべて layer へ投影できる。
+`LayerId` は frame 内だけの一時 ID ではなく、可能なら `EntityId` に紐づく安定 ID を持つ。`say` や `choice`、UI view、Activity、HTML panel はすべて layer へ投影できる。
 
 ## LayerKind
 
@@ -272,14 +272,14 @@ scope {
 }
 ```
 
-## UI component との関係
+## UI view との関係
 
-Game Native UI component は内部的に layer subtree を生成する。
+Game Native UI view は内部的に layer subtree を生成する。
 
 ```arcw
-component ChoiceList(choices: Vec<ChoiceView>) {
+view ChoiceList(choices: Vec<ChoiceView>) {
     Column {
-        ForEach(choices, id = _.id) |choice| {
+        for choice in choices key = choice.id {
             ChoiceButton(choice)
                 .layer(@layer.choices)
                 .agent_target(choice.id)
@@ -288,7 +288,7 @@ component ChoiceList(choices: Vec<ChoiceView>) {
 }
 ```
 
-UI component の `.layer(...)` は描画先 layer と入力 policy を決める。指定しない場合は親 component の layer を継承する。
+UI view の `.layer(...)` は描画先 layer と入力 policy を決める。指定しない場合は親 view の layer を継承する。
 
 ## Activity layer
 
@@ -348,10 +348,10 @@ ensures z > layer(@layer.dialogue).z
 }
 ```
 
-UI component の contract と組み合わせる。
+UI view の contract と組み合わせる。
 
 ```arcw
-component ChoiceButton(choice: ChoiceView)
+view ChoiceButton(choice: ChoiceView)
 ensures result.layer.input.accepts_click
 ensures result.has_action("select")
 {

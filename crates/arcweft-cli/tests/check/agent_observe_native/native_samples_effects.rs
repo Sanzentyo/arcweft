@@ -2626,7 +2626,7 @@ fn agent_observe_read_uri_preserves_animated_image_object_frame_metadata() {
     assert_eq!(resource["image"]["crop_origin"]["y"], 84);
     assert_eq!(resource["image"]["content_pixels"], 64_800);
     let image_ref = &resource["image"]["object"]["image_ref"];
-    assert_eq!(image_ref["source"], "ui.image.1");
+    assert_eq!(image_ref["source"], "image.sample.pulse_sprite");
     assert_eq!(image_ref["object"], "image.sample.pulse_sprite");
     assert_eq!(image_ref["target"], "target.sample.pulse_sprite");
     assert_eq!(image_ref["asset"], "asset.bg.pulse");
@@ -2658,6 +2658,410 @@ fn agent_observe_read_uri_preserves_animated_image_object_frame_metadata() {
     assert!(
         bytes.chunks_exact(4).any(|pixel| pixel[3] == 127),
         "half-opacity animated image resource should preserve frame alpha"
+    );
+}
+
+#[test]
+fn agent_observe_reports_missing_scope_for_released_image_handle_object() {
+    let source_path = workspace_root().join("samples/image-animation.arcw");
+    let object_id = "object.image.image.sample.pulse_sprite";
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(&source_path)
+        .arg("--entry")
+        .arg("image_sprite_released")
+        .arg("--steps")
+        .arg("4")
+        .arg("--max-ops")
+        .arg("64")
+        .arg("--mode")
+        .arg("drain")
+        .arg("--capture-time")
+        .arg("0.15")
+        .arg("--json")
+        .arg("--object")
+        .arg(object_id)
+        .output()
+        .expect("arcw agent observe runs released image handle sample");
+
+    assert!(
+        output.status.success(),
+        "released image handle observe should succeed with a structured diagnostic, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("released image observe output is JSON");
+
+    assert!(
+        json["objects"]
+            .as_array()
+            .expect("objects are reported")
+            .iter()
+            .all(|object| object["id"] != object_id),
+        "released image object should be absent from observed objects: {json}"
+    );
+    assert!(json["diagnostics"].as_array().is_some_and(|diagnostics| {
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic["code"] == "AGENT_CAPTURE_MISSING_SCOPE"
+                && diagnostic["message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains(object_id))
+        })
+    }));
+}
+
+#[test]
+fn agent_observe_reports_authored_scroll_view_capture_and_release_filtering() {
+    let path = temp_arcw(
+        "agent-observe-authored-scroll-view",
+        AUTHORED_SCROLL_AGENT_SOURCE,
+    );
+
+    let live = agent_observe_json_for_path(
+        &path,
+        &authored_scroll_live_observe_args(),
+        "authored Scroll live observe",
+    );
+    assert_authored_scroll_live_observation(&live);
+    let view_raw_uri = authored_scroll_view_raw_uri(&live);
+    let view_resource = read_agent_observe_image_resource_for_path(
+        &path,
+        &view_raw_uri,
+        &authored_scroll_live_read_uri_args(),
+        "authored Scroll view read-uri",
+    );
+    assert_authored_scroll_view_resource(&view_resource, &view_raw_uri);
+
+    let clipped = agent_observe_json_for_path(
+        &path,
+        &[
+            "--flow",
+            "scroll_agent_live",
+            "--steps",
+            "3",
+            "--max-ops",
+            "64",
+            "--mode",
+            "drain",
+            "--json",
+            "--object",
+            "button.below_scroll",
+        ],
+        "authored Scroll clipped object observe",
+    );
+    assert_agent_missing_scope_diagnostic(&clipped, "button.below_scroll", "object");
+    assert_released_authored_scroll_missing_scopes(&path);
+
+    fs::remove_file(&path).expect("remove temp authored Scroll observe source");
+}
+
+const AUTHORED_SCROLL_AGENT_SOURCE: &str = r#"
+pub action feedback.submit(value: String)
+
+entry game @entry.scroll_agent_parity {
+  goto @flow.scroll_agent_live
+}
+
+pub view ScrollPanel() {
+  let feedback = input.text(@input:.feedback, initial = "Ada")
+  Panel {
+    Scroll {
+      TextField(feedback)
+        .label("Feedback")
+        .on_submit {
+          action.invoke(@action:.feedback.submit, value = feedback.text)
+        }
+      Button(@button:.send, label = "Send")
+        .on_click {
+          action.invoke(@action:.feedback.submit, value = feedback.text)
+        }
+      Button(@button:.more, label = "More")
+        .on_click {
+          action.invoke(@action:.feedback.submit, value = feedback.text)
+        }
+      Button(@button:.below_scroll, label = "Below")
+        .on_click {
+          action.invoke(@action:.feedback.submit, value = feedback.text)
+        }
+    }
+  }
+}
+
+flow scroll_agent_live {
+  let panel = view(@view:.ScrollPanel, lifetime = .manual)
+  let event = receive action(@action:.feedback.submit)
+  return event.value
+}
+
+flow scroll_agent_released {
+  let panel = view(@view:.ScrollPanel, lifetime = .manual)
+  panel.release()
+  return "released"
+}
+
+flow scroll_agent_unmounted {
+  let panel = view(@view:.ScrollPanel, lifetime = .manual)
+  panel.unmount()
+  return "unmounted"
+}
+
+flow scroll_agent_destroyed {
+  let panel = view(@view:.ScrollPanel, lifetime = .manual)
+  panel.destroy()
+  return "destroyed"
+}
+"#;
+
+fn assert_released_authored_scroll_missing_scopes(path: &Path) {
+    let released_view = agent_observe_json_for_path(
+        path,
+        &[
+            "--flow",
+            "scroll_agent_released",
+            "--steps",
+            "4",
+            "--max-ops",
+            "64",
+            "--mode",
+            "drain",
+            "--json",
+            "--view",
+            "view.ScrollPanel",
+        ],
+        "released authored Scroll view observe",
+    );
+    assert!(released_view["objects"].as_array().is_some_and(Vec::is_empty));
+    assert!(released_view["views"].as_array().is_some_and(Vec::is_empty));
+    assert_agent_missing_scope_diagnostic(&released_view, "view.ScrollPanel", "view");
+
+    let released_object = agent_observe_json_for_path(
+        path,
+        &[
+            "--flow",
+            "scroll_agent_released",
+            "--steps",
+            "4",
+            "--max-ops",
+            "64",
+            "--mode",
+            "drain",
+            "--json",
+            "--object",
+            "input.feedback",
+        ],
+        "released authored Scroll object observe",
+    );
+    assert_agent_missing_scope_diagnostic(&released_object, "input.feedback", "object");
+
+    let unmounted_view = agent_observe_json_for_path(
+        path,
+        &[
+            "--flow",
+            "scroll_agent_unmounted",
+            "--steps",
+            "4",
+            "--max-ops",
+            "64",
+            "--mode",
+            "drain",
+            "--json",
+            "--view",
+            "view.ScrollPanel",
+        ],
+        "unmounted authored Scroll view observe",
+    );
+    assert!(unmounted_view["objects"].as_array().is_some_and(Vec::is_empty));
+    assert!(unmounted_view["views"].as_array().is_some_and(Vec::is_empty));
+    assert_agent_missing_scope_diagnostic(&unmounted_view, "view.ScrollPanel", "view");
+
+    let destroyed_view = agent_observe_json_for_path(
+        path,
+        &[
+            "--flow",
+            "scroll_agent_destroyed",
+            "--steps",
+            "4",
+            "--max-ops",
+            "64",
+            "--mode",
+            "drain",
+            "--json",
+            "--view",
+            "view.ScrollPanel",
+        ],
+        "destroyed authored Scroll view observe",
+    );
+    assert!(destroyed_view["objects"].as_array().is_some_and(Vec::is_empty));
+    assert!(destroyed_view["views"].as_array().is_some_and(Vec::is_empty));
+    assert_agent_missing_scope_diagnostic(&destroyed_view, "view.ScrollPanel", "view");
+}
+
+fn assert_authored_scroll_live_observation(live: &serde_json::Value) {
+    let view = authored_scroll_view(live);
+    assert_eq!(view["visible"], true);
+    assert_eq!(view["object_count"], 3);
+    assert_eq!(view["bbox"]["x"], 48);
+    assert_eq!(view["bbox"]["y"], 48);
+    assert_eq!(view["bbox"]["width"], 420);
+    assert_eq!(view["bbox"]["height"], 168);
+    assert_eq!(
+        view["object_refs"]
+            .as_array()
+            .expect("view reports object refs")
+            .iter()
+            .map(|value| value.as_str().expect("object ref is a string"))
+            .collect::<Vec<_>>(),
+        vec!["input.feedback", "button.send", "button.more"]
+    );
+
+    let objects = live["objects"]
+        .as_array()
+        .expect("live observe reports objects");
+    let input = objects
+        .iter()
+        .find(|object| object["id"] == "input.feedback")
+        .unwrap_or_else(|| panic!("Scroll-owned input should be observed: {live}"));
+    assert_eq!(input["parent_id"], "view.ScrollPanel");
+    assert_eq!(input["role"], "text_field");
+    assert_eq!(input["text"], "Ada");
+    assert_eq!(input["bbox"]["x"], 48);
+    assert_eq!(input["bbox"]["y"], 48);
+    assert_eq!(input["bbox"]["width"], 420);
+    assert_eq!(input["bbox"]["height"], 48);
+    assert!(objects.iter().any(|object| {
+        object["id"] == "button.more"
+            && object["parent_id"] == "view.ScrollPanel"
+            && object["bbox"]["y"] == 172
+    }));
+    assert!(
+        objects.iter().all(|object| object["id"] != "button.below_scroll"),
+        "button fully outside the authored Scroll viewport must be absent: {live}"
+    );
+}
+
+fn assert_authored_scroll_view_resource(resource: &serde_json::Value, expected_uri: &str) {
+    assert_eq!(resource["kind"], "image");
+    assert_eq!(resource["uri"], expected_uri);
+    assert_eq!(resource["image"]["renderer"], "native");
+    assert_eq!(resource["image"]["scope"]["kind"], "view");
+    assert_eq!(resource["image"]["scope"]["id"], "view.ScrollPanel");
+    assert_eq!(resource["image"]["width"], 420);
+    assert_eq!(resource["image"]["height"], 168);
+    assert!(resource["image"]["content_pixels"].as_u64().unwrap() > 0);
+}
+
+fn authored_scroll_view_raw_uri(live: &serde_json::Value) -> String {
+    authored_scroll_view(live)["capture_refs"]["captures"]
+        .as_array()
+        .expect("view reports capture refs")
+        .iter()
+        .find(|capture| {
+            capture["kind"] == "color" && capture["mime_type"] == "application/octet-stream"
+        })
+        .and_then(|capture| capture["uri"].as_str())
+        .expect("view reports raw color capture ref")
+        .to_owned()
+}
+
+fn authored_scroll_view(live: &serde_json::Value) -> &serde_json::Value {
+    live["views"]
+        .as_array()
+        .expect("live observe reports views")
+        .iter()
+        .find(|view| view["id"] == "view.ScrollPanel")
+        .unwrap_or_else(|| panic!("live Scroll view should be observed: {live}"))
+}
+
+fn authored_scroll_live_observe_args() -> [&'static str; 9] {
+    [
+        "--flow",
+        "scroll_agent_live",
+        "--steps",
+        "3",
+        "--max-ops",
+        "64",
+        "--mode",
+        "drain",
+        "--json",
+    ]
+}
+
+fn authored_scroll_live_read_uri_args() -> [&'static str; 8] {
+    [
+        "--flow",
+        "scroll_agent_live",
+        "--steps",
+        "3",
+        "--max-ops",
+        "64",
+        "--mode",
+        "drain",
+    ]
+}
+
+fn agent_observe_json_for_path(path: &Path, args: &[&str], context: &str) -> serde_json::Value {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(path)
+        .args(args)
+        .output()
+        .unwrap_or_else(|error| panic!("arcw agent observe runs {context}: {error}"));
+
+    assert!(
+        output.status.success(),
+        "{context} should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|error| panic!("{context} output is JSON: {error}"))
+}
+
+fn read_agent_observe_image_resource_for_path(
+    path: &Path,
+    uri: &str,
+    args: &[&str],
+    context: &str,
+) -> serde_json::Value {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("observe")
+        .arg(path)
+        .arg("--json")
+        .arg("--read-uri")
+        .arg(uri)
+        .args(args)
+        .output()
+        .unwrap_or_else(|error| panic!("arcw agent observe reads {context}: {error}"));
+
+    assert!(
+        output.status.success(),
+        "{context} should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|error| panic!("{context} resource is JSON: {error}"))
+}
+
+fn assert_agent_missing_scope_diagnostic(
+    report: &serde_json::Value,
+    expected_id: &str,
+    expected_kind: &str,
+) {
+    assert!(
+        report["diagnostics"]
+            .as_array()
+            .expect("diagnostics are reported")
+            .iter()
+            .any(|diagnostic| {
+                diagnostic["code"] == "AGENT_CAPTURE_MISSING_SCOPE"
+                    && diagnostic["message"].as_str().is_some_and(|message| {
+                        message.contains(expected_id)
+                            && message.contains(&format!("observed {expected_kind}"))
+                    })
+            }),
+        "expected missing-scope diagnostic for {expected_kind} `{expected_id}`: {report}"
     );
 }
 
@@ -5648,4 +6052,3 @@ flow @flow.main main {
     fs::remove_file(&path).expect("remove temp native rich-text layer object-id source");
     fs::remove_dir_all(&dir).expect("remove temp native rich-text layer object-id dir");
 }
-

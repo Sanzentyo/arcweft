@@ -11,9 +11,6 @@ use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::layer::LayerId;
 use arcweft_presentation::semantic::{SemanticNode, SemanticRole, SemanticTree};
-use arcweft_presentation::text_input::{
-    TextByteOffset, TextControlValue, TextInputSessionId, TextRange, TextRevision,
-};
 
 /// Player-rendered action button lowered from product UI resources.
 #[derive(Clone, Debug, PartialEq)]
@@ -21,7 +18,9 @@ pub struct RenderActionButton {
     pub target: InteractionTarget,
     pub label: String,
     pub enabled: bool,
+    pub containing_scroll_region: Option<String>,
     pub bounds: HitRect,
+    pub viewport_clip: Option<HitRect>,
     pub style: RenderControlStyle,
     pub action: RenderActionButtonAction,
 }
@@ -30,27 +29,10 @@ pub struct RenderActionButton {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RenderActionButtonAction {
     Noop,
-    TextInputSubmit {
-        input_target: InteractionTarget,
-        session: TextInputSessionId,
-        value: TextControlValue,
-        selection: TextRange<TextByteOffset>,
-        revision: TextRevision,
-        ime_policy: RenderTextSubmitImePolicy,
-    },
     ActionInvoke {
         action: PublicId,
         payload: Option<String>,
     },
-}
-
-/// How button activation should handle an active IME composition.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum RenderTextSubmitImePolicy {
-    #[default]
-    Commit,
-    Cancel,
-    Reject,
 }
 
 /// Prepared button hit-test and activation payload.
@@ -80,17 +62,12 @@ pub(super) fn action_button_depth_milli(scene: &RenderScene, button: &RenderActi
         .unwrap_or_default()
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "The geometry sinks are intentionally explicit at this renderer boundary."
-)]
 pub(super) fn build_action_button(
     scene: &RenderScene,
     layer: &LayerId,
     button: &RenderActionButton,
     output: ActionButtonBuildOutput<'_>,
     palette: &Palette,
-    action_id: &PublicId,
     font_size: f32,
     line_height: f32,
 ) -> (PreparedActionButton, PreparedControlPaint) {
@@ -109,10 +86,11 @@ pub(super) fn build_action_button(
         .style
         .visual_for_state(visual_state_for_button(scene, button));
     let radii = visual.radii();
+    let visible_bounds = visible_button_bounds(button).unwrap_or(button.bounds);
     let backdrop_start = control_backdrops.len();
-    push_control_backdrop_plan(control_backdrops, &button.target, button.bounds, &visual);
+    push_control_backdrop_plan(control_backdrops, &button.target, visible_bounds, &visual);
     let shadow_start = control_shadows.len();
-    push_control_shadow_plan(control_shadows, &button.target, button.bounds, &visual);
+    push_control_shadow_plan(control_shadows, &button.target, visible_bounds, &visual);
     let fallback_fill = action_button_fill(
         button.enabled,
         is_focused || is_hovered,
@@ -135,46 +113,51 @@ pub(super) fn build_action_button(
         }
     }
     let text_start = text.len();
-    text.push(RenderTextBlock {
-        text: button.label.clone(),
-        bounds: HitRect::new(
-            button.bounds.x + 18.0,
-            button.bounds.y + (button.bounds.height - line_height) * 0.5,
-            (button.bounds.width - 36.0).max(1.0),
-            line_height,
-        ),
-        clip_bounds: Some(button.bounds),
-        buffer_width: Some((button.bounds.width - 36.0).max(1.0)),
-        buffer_height: Some(line_height),
-        font_size,
+    let text_bounds = HitRect::new(
+        button.bounds.x + 18.0,
+        button.bounds.y + (button.bounds.height - line_height) * 0.5,
+        (button.bounds.width - 36.0).max(1.0),
         line_height,
-        font_family: control_font_family(&visual),
-        weight: RenderTextWeight::Bold,
-        slant: RenderTextSlant::Upright,
-        rgba: visual.text.unwrap_or(palette.choice_text),
-    });
+    );
+    if let Some(clip_bounds) = clipped_viewport_bounds(button.bounds, button) {
+        text.push(RenderTextBlock {
+            text: button.label.clone(),
+            bounds: text_bounds,
+            clip_bounds: Some(clip_bounds),
+            buffer_width: Some((button.bounds.width - 36.0).max(1.0)),
+            buffer_height: Some(line_height),
+            font_size,
+            line_height,
+            font_family: control_font_family(&visual),
+            weight: RenderTextWeight::Bold,
+            slant: RenderTextSlant::Upright,
+            rgba: visual.text.unwrap_or(palette.choice_text),
+        });
+    }
     let filter_start = control_filters.len();
-    push_control_filter_plan(control_filters, &button.target, button.bounds, &visual);
+    push_control_filter_plan(control_filters, &button.target, visible_bounds, &visual);
+    apply_viewport_clip_to_rectangles(&mut rectangles[rectangle_start..], button.viewport_clip);
     let paint = PreparedControlPaint {
         target: button.target.clone(),
-        bounds: button.bounds,
+        bounds: visible_bounds,
         rectangle_range: rectangle_start..rectangles.len(),
         text_range: text_start..text.len(),
         backdrop_range: backdrop_start..control_backdrops.len(),
         shadow_range: shadow_start..control_shadows.len(),
         filter_range: filter_start..control_filters.len(),
     };
-    semantics.push(
-        SemanticNode::new(
-            layer.clone(),
-            button.target.clone(),
-            SemanticRole::Button,
-            button.bounds,
-        )
-        .with_label(button.label.clone())
-        .with_action(button.action.semantic_action_id(action_id).clone())
-        .with_enabled(button.enabled),
-    );
+    let mut node = SemanticNode::new(
+        layer.clone(),
+        button.target.clone(),
+        SemanticRole::Button,
+        visible_bounds,
+    )
+    .with_label(button.label.clone())
+    .with_enabled(button.enabled);
+    if let Some(action) = button.action.semantic_action_id() {
+        node = node.with_action(action.clone());
+    }
+    semantics.push(node);
     (
         PreparedActionButton {
             target: button.target.clone(),
@@ -184,6 +167,48 @@ pub(super) fn build_action_button(
         },
         paint,
     )
+}
+
+fn visible_button_bounds(button: &RenderActionButton) -> Option<HitRect> {
+    button.viewport_clip.map_or(Some(button.bounds), |clip| {
+        super::intersect_hit_rect(button.bounds, clip)
+    })
+}
+
+fn clipped_viewport_bounds(bounds: HitRect, button: &RenderActionButton) -> Option<HitRect> {
+    button
+        .viewport_clip
+        .map_or(Some(bounds), |clip| super::intersect_hit_rect(bounds, clip))
+}
+
+fn apply_viewport_clip_to_rectangles(rectangles: &mut [PaintRect], viewport_clip: Option<HitRect>) {
+    let Some(viewport_clip) = viewport_clip else {
+        return;
+    };
+    for rectangle in rectangles {
+        let next_clip = rectangle.clip.map_or(
+            Some(super::PaintRectClip {
+                bounds: viewport_clip,
+                radii: super::PaintRectRadii::ZERO,
+            }),
+            |clip| {
+                super::intersect_hit_rect(clip.bounds, viewport_clip).map(|bounds| {
+                    super::PaintRectClip {
+                        bounds,
+                        radii: clip.radii,
+                    }
+                })
+            },
+        );
+        match next_clip {
+            Some(clip) => {
+                rectangle.clip = Some(clip);
+            }
+            None => {
+                rectangle.rgba[3] = 0.0;
+            }
+        }
+    }
 }
 
 fn action_button_fill(enabled: bool, active: bool, pressed: bool, palette: &Palette) -> [f32; 4] {
@@ -214,26 +239,10 @@ fn visual_state_for_button(
 
 impl RenderActionButtonAction {
     #[must_use]
-    pub const fn input_target(&self) -> Option<&InteractionTarget> {
+    pub const fn semantic_action_id(&self) -> Option<&PublicId> {
         match self {
-            Self::TextInputSubmit { input_target, .. } => Some(input_target),
-            Self::Noop | Self::ActionInvoke { .. } => None,
-        }
-    }
-
-    #[must_use]
-    pub const fn ime_policy(&self) -> Option<RenderTextSubmitImePolicy> {
-        match self {
-            Self::TextInputSubmit { ime_policy, .. } => Some(*ime_policy),
-            Self::Noop | Self::ActionInvoke { .. } => None,
-        }
-    }
-
-    #[must_use]
-    pub const fn semantic_action_id<'a>(&'a self, fallback: &'a PublicId) -> &'a PublicId {
-        match self {
-            Self::ActionInvoke { action, .. } => action,
-            Self::Noop | Self::TextInputSubmit { .. } => fallback,
+            Self::ActionInvoke { action, .. } => Some(action),
+            Self::Noop => None,
         }
     }
 }

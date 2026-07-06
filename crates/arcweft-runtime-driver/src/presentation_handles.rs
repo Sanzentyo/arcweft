@@ -1,6 +1,7 @@
 use arcweft_bundle::BundleImageObject;
 use arcweft_bundle::resource_codec::{
-    UiRuntimeActionButton, UiRuntimeFocusGroup, UiRuntimeFocusNavigation, UiRuntimeTextControl,
+    UiRuntimeTextControl, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
+    ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeTextBlock,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use serde::{Deserialize, Serialize};
@@ -49,7 +50,7 @@ impl From<PresentationHandleId> for String {
 #[serde(rename_all = "snake_case")]
 pub enum PresentationHandleKind {
     Image,
-    Component,
+    View,
     Menu,
     Overlay,
     TextBox,
@@ -61,7 +62,7 @@ impl PresentationHandleKind {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Image => "image",
-            Self::Component => "component",
+            Self::View => "view",
             Self::Menu => "menu",
             Self::Overlay => "overlay",
             Self::TextBox => "text_box",
@@ -72,7 +73,7 @@ impl PresentationHandleKind {
     fn from_arg(value: &str) -> Option<Self> {
         match clean_runtime_arg(value) {
             "image" => Some(Self::Image),
-            "component" => Some(Self::Component),
+            "view" => Some(Self::View),
             "menu" => Some(Self::Menu),
             "overlay" => Some(Self::Overlay),
             "text_box" => Some(Self::TextBox),
@@ -265,7 +266,7 @@ impl PresentationHandleOperation {
             return Err(PresentationHandleDiagnostic::new(
                 PresentationHandleDiagnosticCode::InvalidCall,
                 Some(id),
-                "presentation.handle.create requires kind = image|component|menu|overlay|text_box|runtime_control",
+                "presentation.handle.create requires kind = image|view|menu|overlay|text_box|runtime_control",
             ));
         };
         let resource_id = named_runtime_arg(&call.args, "resource")
@@ -588,8 +589,8 @@ pub(crate) fn filter_presentation_text_inputs(
         .into_iter()
         .filter(|control| {
             let mut aliases = vec![control.public_id.as_str(), control.target.as_str()];
-            if let Some(component) = control.component.as_deref() {
-                aliases.push(component);
+            if let Some(view) = control.view.as_deref() {
+                aliases.push(view);
             }
             resource_is_render_visible(handles, &RUNTIME_CONTROL_FAMILIES, &aliases)
         })
@@ -597,15 +598,47 @@ pub(crate) fn filter_presentation_text_inputs(
 }
 
 pub(crate) fn filter_presentation_action_buttons(
-    controls: Vec<UiRuntimeActionButton>,
+    controls: Vec<ViewRuntimeActionButton>,
     handles: &[PresentationHandleRecord],
-) -> Vec<UiRuntimeActionButton> {
+) -> Vec<ViewRuntimeActionButton> {
     controls
         .into_iter()
         .filter(|control| {
             let mut aliases = vec![control.public_id.as_str(), control.target.as_str()];
-            if let Some(component) = control.component.as_deref() {
-                aliases.push(component);
+            if let Some(view) = control.view.as_deref() {
+                aliases.push(view);
+            }
+            resource_is_render_visible(handles, &RUNTIME_CONTROL_FAMILIES, &aliases)
+        })
+        .collect()
+}
+
+pub(crate) fn filter_presentation_scroll_regions(
+    regions: Vec<ViewRuntimeScrollRegion>,
+    handles: &[PresentationHandleRecord],
+) -> Vec<ViewRuntimeScrollRegion> {
+    regions
+        .into_iter()
+        .filter(|region| {
+            let mut aliases = vec![region.public_id.as_str(), region.target.as_str()];
+            if let Some(view) = region.view.as_deref() {
+                aliases.push(view);
+            }
+            resource_is_render_visible(handles, &RUNTIME_CONTROL_FAMILIES, &aliases)
+        })
+        .collect()
+}
+
+pub(crate) fn filter_presentation_text_blocks(
+    blocks: Vec<ViewRuntimeTextBlock>,
+    handles: &[PresentationHandleRecord],
+) -> Vec<ViewRuntimeTextBlock> {
+    blocks
+        .into_iter()
+        .filter(|block| {
+            let mut aliases = vec![block.public_id.as_str(), block.target.as_str()];
+            if let Some(view) = block.view.as_deref() {
+                aliases.push(view);
             }
             resource_is_render_visible(handles, &RUNTIME_CONTROL_FAMILIES, &aliases)
         })
@@ -613,47 +646,56 @@ pub(crate) fn filter_presentation_action_buttons(
 }
 
 pub(crate) fn filter_presentation_focus_groups(
-    groups: Vec<UiRuntimeFocusGroup>,
+    groups: Vec<ViewRuntimeFocusGroup>,
     handles: &[PresentationHandleRecord],
-) -> Vec<UiRuntimeFocusGroup> {
+) -> Vec<ViewRuntimeFocusGroup> {
     groups
         .into_iter()
         .filter(|group| {
-            resource_is_render_visible(
-                handles,
-                &RUNTIME_CONTROL_FAMILIES,
-                &[group.public_id.as_str()],
-            )
+            let mut aliases = vec![group.public_id.as_str()];
+            if let Some(view) = group.view.as_deref() {
+                aliases.push(view);
+            }
+            resource_is_render_visible(handles, &RUNTIME_CONTROL_FAMILIES, &aliases)
         })
         .collect()
 }
 
 pub(crate) fn filter_presentation_focus_navigation(
-    navigation: Vec<UiRuntimeFocusNavigation>,
+    navigation: Vec<ViewRuntimeFocusNavigation>,
     handles: &[PresentationHandleRecord],
-) -> Vec<UiRuntimeFocusNavigation> {
+) -> Vec<ViewRuntimeFocusNavigation> {
     navigation
         .into_iter()
         .filter(|target| {
-            resource_is_render_visible(
-                handles,
-                &RUNTIME_CONTROL_FAMILIES,
-                &[target.public_id.as_str()],
-            ) && target.group.as_ref().is_none_or(|group| {
-                resource_is_render_visible(handles, &RUNTIME_CONTROL_FAMILIES, &[group.as_str()])
-            })
+            let mut aliases = vec![target.public_id.as_str()];
+            if let Some(view) = target.view.as_deref() {
+                aliases.push(view);
+            }
+            resource_is_render_visible(handles, &RUNTIME_CONTROL_FAMILIES, &aliases)
+                && target.group.as_ref().is_none_or(|group| {
+                    resource_is_render_visible(
+                        handles,
+                        &RUNTIME_CONTROL_FAMILIES,
+                        &[group.as_str()],
+                    )
+                })
         })
         .collect()
 }
 
 pub(crate) fn hidden_focus_diagnostics(
     handles: &[PresentationHandleRecord],
-    navigation: &[UiRuntimeFocusNavigation],
+    navigation: &[ViewRuntimeFocusNavigation],
 ) -> Vec<PresentationHandleDiagnostic> {
     navigation
         .iter()
         .filter_map(|target| {
-            hidden_matching_handle(handles, &RUNTIME_CONTROL_FAMILIES, &[target.public_id.as_str()]).map(
+            let mut aliases = vec![target.public_id.as_str()];
+            if let Some(view) = target.view.as_deref() {
+                aliases.push(view);
+            }
+            hidden_matching_handle(handles, &RUNTIME_CONTROL_FAMILIES, &aliases).map(
                 |handle| {
                     PresentationHandleDiagnostic::new(
                         PresentationHandleDiagnosticCode::HiddenButFocusable,
@@ -670,7 +712,7 @@ pub(crate) fn hidden_focus_diagnostics(
 }
 
 const RUNTIME_CONTROL_FAMILIES: [PresentationHandleKind; 5] = [
-    PresentationHandleKind::Component,
+    PresentationHandleKind::View,
     PresentationHandleKind::Menu,
     PresentationHandleKind::Overlay,
     PresentationHandleKind::TextBox,
@@ -817,7 +859,7 @@ mod tests {
             PresentationHandleOperation::Create {
                 id: id.clone(),
                 kind: PresentationHandleKind::Overlay,
-                resource_id: "component.MainMenu".to_owned(),
+                resource_id: "view.MainMenu".to_owned(),
                 owner: Some("flow.menu/block.0".to_owned()),
                 visible: true,
                 layer: None,
@@ -853,8 +895,8 @@ mod tests {
         let operations = vec![
             PresentationHandleOperation::Create {
                 id: handle("handle.flow.a.menu"),
-                kind: PresentationHandleKind::Component,
-                resource_id: "component.MainMenu".to_owned(),
+                kind: PresentationHandleKind::View,
+                resource_id: "view.MainMenu".to_owned(),
                 owner: Some("flow.a".to_owned()),
                 visible: true,
                 layer: None,
@@ -862,8 +904,8 @@ mod tests {
             },
             PresentationHandleOperation::Create {
                 id: handle("handle.flow.b.menu"),
-                kind: PresentationHandleKind::Component,
-                resource_id: "component.MainMenu".to_owned(),
+                kind: PresentationHandleKind::View,
+                resource_id: "view.MainMenu".to_owned(),
                 owner: Some("flow.b".to_owned()),
                 visible: true,
                 layer: None,
@@ -886,12 +928,12 @@ mod tests {
     fn create_is_idempotent_for_same_live_handle() {
         let mut handles = Vec::new();
         let mut operation_epoch = 0;
-        let id = handle("handle.flow.main.mount.component.component.MainMenu");
+        let id = handle("handle.flow.main.mount.view.view.MainMenu");
         let operations = vec![
             PresentationHandleOperation::Create {
                 id: id.clone(),
-                kind: PresentationHandleKind::Component,
-                resource_id: "component.MainMenu".to_owned(),
+                kind: PresentationHandleKind::View,
+                resource_id: "view.MainMenu".to_owned(),
                 owner: Some("flow.main".to_owned()),
                 visible: true,
                 layer: Some("layer.controls".to_owned()),
@@ -899,8 +941,8 @@ mod tests {
             },
             PresentationHandleOperation::Create {
                 id,
-                kind: PresentationHandleKind::Component,
-                resource_id: "component.MainMenu".to_owned(),
+                kind: PresentationHandleKind::View,
+                resource_id: "view.MainMenu".to_owned(),
                 owner: Some("flow.main/reentry".to_owned()),
                 visible: false,
                 layer: Some("layer.overlay".to_owned()),
@@ -930,8 +972,8 @@ mod tests {
         let operations = vec![
             PresentationHandleOperation::Create {
                 id: id.clone(),
-                kind: PresentationHandleKind::Component,
-                resource_id: "component.RollbackPanel".to_owned(),
+                kind: PresentationHandleKind::View,
+                resource_id: "view.RollbackPanel".to_owned(),
                 owner: Some("flow.rollback/block.0".to_owned()),
                 visible: true,
                 layer: None,

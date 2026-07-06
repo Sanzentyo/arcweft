@@ -68,6 +68,9 @@ impl RuntimeTextControlLowerer {
             role,
             lower_bounds(control.bounds),
         );
+        if let Some(scroll_region) = &control.containing_scroll_region {
+            render = render.with_containing_scroll_region(scroll_region.clone());
+        }
         if let Some(label) = &control.label {
             render = render.with_label(label.clone());
         }

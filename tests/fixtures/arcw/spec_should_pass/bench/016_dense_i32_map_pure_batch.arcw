@@ -4,7 +4,7 @@ fn score_i32(base: i32, bonus: i32) -> i32 {
 }
 
 bench @bench.dense_i32_map_pure_batch {
-    measure iterations = 4 { start(@flow.dense_i32_map_pure_batch) }
+    measure iterations = 4 { goto @flow.dense_i32_map_pure_batch }
 }
 
 flow @flow.dense_i32_map_pure_batch dense_i32_map_pure_batch {

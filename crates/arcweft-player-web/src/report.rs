@@ -283,7 +283,7 @@ impl WebFrameImage {
     fn from_render_image(image: &RenderImage) -> Self {
         Self {
             id: image.id.clone(),
-            bounds: WebFrameBounds::from_hit_rect(image.bounds),
+            bounds: WebFrameBounds::from_hit_rect(image.visible_bounds().unwrap_or(image.bounds)),
             frame_width: image.frame.width,
             frame_height: image.frame.height,
             opacity_milli: image.opacity_milli,

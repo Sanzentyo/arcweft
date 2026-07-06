@@ -4,8 +4,8 @@ use super::schema::{
     AwbcBlockId, AwbcChoiceId, AwbcContentUnitId, AwbcEffectPlanId, AwbcEntryId, AwbcEntryTarget,
     AwbcFrameLayoutId, AwbcFrameSlotRole, AwbcFunctionId, AwbcHostCallId, AwbcLineTaskGroupId,
     AwbcPatternId, AwbcProgram, AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType, AwbcScopeId,
-    AwbcSignedIntKind, AwbcSourceMapId, AwbcSourcePlanId, AwbcStreamPlanId, AwbcTaskPlanId,
-    AwbcTrapCode, AwbcTypeId, AwbcUnsignedIntKind,
+    AwbcSignatureId, AwbcSignedIntKind, AwbcSourceMapId, AwbcSourcePlanId, AwbcStreamPlanId,
+    AwbcTaskPlanId, AwbcTrapCode, AwbcTypeId, AwbcUnsignedIntKind,
 };
 use crate::value::{RuntimeBinding, RuntimeInt, RuntimeUInt, RuntimeValue};
 use serde::{Deserialize, Serialize};
@@ -321,9 +321,33 @@ impl FiberState {
         if entry.signature != function.signature {
             return Err(FiberStateError::InvalidFrame);
         }
+        self.bind_active_frame_arguments(program, entry.signature, bindings)
+    }
+
+    /// Transactionally binds arguments to the active function frame.
+    pub fn bind_function_arguments(
+        &mut self,
+        program: &AwbcProgram,
+        bindings: &[RuntimeBinding],
+    ) -> Result<(), FiberStateError> {
+        let frame = self.active_frame()?;
+        let function = program
+            .functions
+            .get(frame.function.index())
+            .ok_or(FiberStateError::UnknownFunction(frame.function.0))?;
+        self.bind_active_frame_arguments(program, function.signature, bindings)
+    }
+
+    fn bind_active_frame_arguments(
+        &mut self,
+        program: &AwbcProgram,
+        signature_id: AwbcSignatureId,
+        bindings: &[RuntimeBinding],
+    ) -> Result<(), FiberStateError> {
+        let frame = self.active_frame()?;
         let signature = program
             .signatures
-            .get(entry.signature.index())
+            .get(signature_id.index())
             .ok_or(FiberStateError::InvalidFrame)?;
         let layout = program
             .frame_layouts
@@ -413,6 +437,54 @@ impl FiberState {
 
     pub fn restore(&mut self, checkpoint: FiberCheckpoint) {
         *self = *checkpoint.state;
+    }
+
+    pub fn validate_for_program(&self, program: &AwbcProgram) -> Result<(), FiberStateError> {
+        if program.entries.get(self.entry.index()).is_none()
+            && !(program.entries.is_empty() && self.entry == AwbcEntryId(0))
+        {
+            return Err(FiberStateError::UnknownEntry(self.entry.0));
+        }
+        validate_fiber_terminal_shape(self)?;
+        validate_cursor(program, self.cursor)?;
+        for (index, frame) in self.frames.iter().enumerate() {
+            validate_frame(program, frame)?;
+            if index == 0 && frame.return_to.is_some() {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            if let Some(return_to) = frame.return_to {
+                let caller = self
+                    .frames
+                    .get(index.saturating_sub(1))
+                    .ok_or(FiberStateError::InvalidFrame)?;
+                validate_return_point(program, caller, return_to)?;
+            }
+        }
+        if matches!(self.status, FiberStatus::Running | FiberStatus::Suspended)
+            && self.frames.is_empty()
+        {
+            return Err(FiberStateError::MissingFrame);
+        }
+        if let Some(suspension) = &self.suspension {
+            if self.status != FiberStatus::Suspended {
+                return Err(FiberStateError::InvalidStatus {
+                    actual: self.status,
+                    expected: FiberStatus::Suspended,
+                });
+            }
+            validate_suspension(program, self, suspension)?;
+        }
+        for source in &self.sources {
+            if program.source_plans.get(source.plan.index()).is_none() {
+                return Err(FiberStateError::InvalidFrame);
+            }
+        }
+        for stream in &self.streams {
+            if program.stream_plans.get(stream.plan.index()).is_none() {
+                return Err(FiberStateError::InvalidFrame);
+            }
+        }
+        Ok(())
     }
 
     pub fn active_frame(&self) -> Result<&FiberFrame, FiberStateError> {
@@ -654,6 +726,218 @@ impl FiberState {
             })
         }
     }
+}
+
+fn validate_fiber_terminal_shape(state: &FiberState) -> Result<(), FiberStateError> {
+    match state.status {
+        FiberStatus::Running => {
+            if state.suspension.is_some() || state.terminal.is_some() {
+                return Err(FiberStateError::InvalidStatus {
+                    actual: state.status,
+                    expected: FiberStatus::Running,
+                });
+            }
+        }
+        FiberStatus::Suspended => {
+            if state.suspension.is_none() || state.terminal.is_some() {
+                return Err(FiberStateError::InvalidStatus {
+                    actual: state.status,
+                    expected: FiberStatus::Suspended,
+                });
+            }
+        }
+        FiberStatus::Returned | FiberStatus::Trapped => {
+            if state.suspension.is_some() || state.terminal.is_none() {
+                return Err(FiberStateError::InvalidStatus {
+                    actual: state.status,
+                    expected: state.status,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_cursor(program: &AwbcProgram, cursor: FiberCursor) -> Result<(), FiberStateError> {
+    let function = program
+        .functions
+        .get(cursor.function.index())
+        .ok_or(FiberStateError::UnknownFunction(cursor.function.0))?;
+    if !function_owns_block(function, cursor.block) || cursor.instruction_offset != 0 {
+        return Err(FiberStateError::InvalidFrame);
+    }
+    if program.blocks.get(cursor.block.index()).is_none() {
+        return Err(FiberStateError::InvalidFrame);
+    }
+    Ok(())
+}
+
+fn validate_frame(program: &AwbcProgram, frame: &FiberFrame) -> Result<(), FiberStateError> {
+    let function = program
+        .functions
+        .get(frame.function.index())
+        .ok_or(FiberStateError::UnknownFunction(frame.function.0))?;
+    if function.frame_layout != frame.layout {
+        return Err(FiberStateError::InvalidFrame);
+    }
+    let layout = program
+        .frame_layouts
+        .get(frame.layout.index())
+        .ok_or(FiberStateError::UnknownFrameLayout(frame.layout.0))?;
+    if frame.registers.len() != layout.slots.len() {
+        return Err(FiberStateError::InvalidFrame);
+    }
+    for (index, value) in frame.registers.iter().enumerate() {
+        let Some(value) = value else {
+            continue;
+        };
+        let slot = layout
+            .slots
+            .get(index)
+            .ok_or(FiberStateError::InvalidFrame)?;
+        if !runtime_value_matches_type(program, value, slot.ty, 0) {
+            let register = u32::try_from(index).unwrap_or(u32::MAX);
+            return Err(FiberStateError::RegisterOutOfBounds {
+                register,
+                layout: frame.layout.0,
+            });
+        }
+    }
+    for cleanup in &frame.root_cleanups {
+        validate_cleanup(program, cleanup)?;
+    }
+    for scope in &frame.scopes {
+        if scope.depth > layout.max_scope_depth {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        for cleanup in &scope.cleanups {
+            validate_cleanup(program, cleanup)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_cleanup(
+    program: &AwbcProgram,
+    cleanup: &FiberScopeCleanup,
+) -> Result<(), FiberStateError> {
+    if cleanup.key.is_empty() || program.effect_plans.get(cleanup.effect.index()).is_none() {
+        return Err(FiberStateError::InvalidFrame);
+    }
+    Ok(())
+}
+
+fn validate_return_point(
+    program: &AwbcProgram,
+    caller: &FiberFrame,
+    return_to: FiberReturnPoint,
+) -> Result<(), FiberStateError> {
+    let point = program
+        .resume_points
+        .get(return_to.resume.index())
+        .ok_or(FiberStateError::UnknownResumePoint(return_to.resume.0))?;
+    if point.function != caller.function {
+        return Err(FiberStateError::ResumeFunctionMismatch {
+            resume: return_to.resume.0,
+            actual: point.function.0,
+            expected: caller.function.0,
+        });
+    }
+    if point.frame_layout != caller.layout {
+        return Err(FiberStateError::ResumeLayoutMismatch {
+            resume: return_to.resume.0,
+            actual: point.frame_layout.0,
+            expected: caller.layout.0,
+        });
+    }
+    if let Some(destination) = return_to.destination
+        && destination.index() >= caller.registers.len()
+    {
+        return Err(FiberStateError::RegisterOutOfBounds {
+            register: destination.0,
+            layout: caller.layout.0,
+        });
+    }
+    Ok(())
+}
+
+fn validate_suspension(
+    program: &AwbcProgram,
+    state: &FiberState,
+    suspension: &FiberSuspension,
+) -> Result<(), FiberStateError> {
+    let frame = state.active_frame()?;
+    validate_return_point(
+        program,
+        frame,
+        FiberReturnPoint {
+            resume: suspension.resume,
+            destination: None,
+        },
+    )?;
+    match &suspension.reason {
+        FiberSuspensionReason::Dialogue {
+            content,
+            line_task_group,
+        } => {
+            if program.content_units.get(content.index()).is_none()
+                || program
+                    .line_task_groups
+                    .get(line_task_group.index())
+                    .is_none()
+            {
+                return Err(FiberStateError::InvalidFrame);
+            }
+        }
+        FiberSuspensionReason::Choice {
+            choice,
+            destination,
+        } => {
+            if program.choices.get(choice.index()).is_none() {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            if destination.index() >= frame.registers.len() {
+                return Err(FiberStateError::RegisterOutOfBounds {
+                    register: destination.0,
+                    layout: frame.layout.0,
+                });
+            }
+        }
+        FiberSuspensionReason::Await { binding, .. } => {
+            if let Some(binding) = binding
+                && program.patterns.get(binding.index()).is_none()
+            {
+                return Err(FiberStateError::InvalidFrame);
+            }
+        }
+        FiberSuspensionReason::AwaitMany(await_many) => {
+            if program.task_plans.get(await_many.plan.index()).is_none() {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            if let Some(binding) = await_many.binding
+                && program.patterns.get(binding.index()).is_none()
+            {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            if await_many.results.len() > await_many.items.len() {
+                return Err(FiberStateError::InvalidFrame);
+            }
+        }
+        FiberSuspensionReason::HostCall { call, .. } => {
+            if program.host_calls.get(call.index()).is_none() {
+                return Err(FiberStateError::InvalidFrame);
+            }
+        }
+        FiberSuspensionReason::BudgetYield => {}
+    }
+    Ok(())
+}
+
+fn function_owns_block(function: &super::schema::AwbcFunction, block: AwbcBlockId) -> bool {
+    let Some(end) = function.blocks.checked_end() else {
+        return false;
+    };
+    block.0 >= function.blocks.start && block.0 < end
 }
 
 impl FiberFrame {
@@ -1076,5 +1360,18 @@ mod tests {
             ),
             Err(FiberStateError::DuplicateEntryArgument { .. })
         ));
+    }
+
+    #[test]
+    fn fiber_snapshot_validation_rejects_invalid_cursor_shape() {
+        let program = entry_arguments_program();
+        let mut fiber = FiberState::for_entry(&program, Default::default(), 0, 64).unwrap();
+        fiber.validate_for_program(&program).unwrap();
+
+        fiber.cursor.instruction_offset = 1;
+        assert_eq!(
+            fiber.validate_for_program(&program),
+            Err(FiberStateError::InvalidFrame)
+        );
     }
 }

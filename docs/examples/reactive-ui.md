@@ -1,7 +1,7 @@
 # Reactive UI example
 
 ```arcw
-pub component @ui.choice_button ChoiceButton(choice: ChoiceView)
+pub view ChoiceButton(choice: ChoiceView)
 requires choice.label.len() > 0
 ensures result.has_action("select")
 {

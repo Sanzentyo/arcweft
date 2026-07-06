@@ -7,8 +7,13 @@
 mod audio;
 mod control;
 mod mapping;
+mod snapshot;
 
 use self::mapping::{MappedEffect, content_request, source_diagnostic, task_spec};
+pub use self::snapshot::{
+    AwbcProductActiveChoiceSnapshot, AwbcProductActiveDialogueSnapshot,
+    AwbcProductExecutorSnapshot, AwbcProductPendingHostCallSnapshot,
+};
 use crate::awbc::fiber::{
     FiberAwaitManyInFlight, FiberBudget, FiberCursor, FiberState, FiberStateError, FiberStatus,
     FiberSuspensionReason, FiberTerminalValue, FiberTrap,
@@ -87,6 +92,8 @@ pub enum AwbcProductStepBuildError {
     },
     #[error("failed to initialize product AWBC fiber state: {message}")]
     FiberState { message: String },
+    #[error("failed to restore product AWBC executor snapshot: {message}")]
+    RestoreSnapshot { message: String },
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -225,6 +232,24 @@ impl AwbcProductStepExecutor {
                 }
             })?
         };
+        Ok(Self::for_fiber(program, fiber))
+    }
+
+    pub fn for_function(
+        program: AwbcProgram,
+        entry: AwbcEntryId,
+        function: AwbcFunctionId,
+        budget_quantum: u64,
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        program.ensure_product_step_parity()?;
+        let fiber = FiberState::for_function(&program, entry, function, 0, budget_quantum.max(1))
+            .map_err(|error| AwbcProductStepBuildError::FiberState {
+            message: error.to_string(),
+        })?;
+        Ok(Self::for_fiber(program, fiber))
+    }
+
+    fn for_fiber(program: AwbcProgram, fiber: FiberState) -> Self {
         let mut facade_fiber = FlowFiber {
             line_cursor: 0,
             cursor: None,
@@ -260,7 +285,7 @@ impl AwbcProductStepExecutor {
                 .stream_states
                 .insert(id.clone(), StreamRuntimeState::new(id));
         }
-        Ok(Self {
+        Self {
             program,
             fiber,
             facade_fiber,
@@ -276,7 +301,7 @@ impl AwbcProductStepExecutor {
             next_host_call_sequence: 0,
             next_audio_sequence: 0,
             compact_pure_stats: crate::step::RuntimePureCallStats::default(),
-        })
+        }
     }
 
     pub const fn program(&self) -> &AwbcProgram {
@@ -337,10 +362,7 @@ impl AwbcProductStepExecutor {
                     entry_bindings.push(binding.clone());
                 }
             }
-            if let Err(error) = self
-                .fiber
-                .bind_entry_arguments(&self.program, &entry_bindings)
-            {
+            if let Err(error) = self.bind_root_arguments(&entry_bindings) {
                 output.diagnostics.push(entry_argument_diagnostic(&error));
                 self.sync_facade();
                 return self.finish_result(
@@ -1629,6 +1651,30 @@ impl AwbcProductStepExecutor {
             }
             Err(error) => self.record_error(ProductStepError::Internal(error.to_string()), output),
         }
+    }
+
+    fn bind_root_arguments(
+        &mut self,
+        bindings: &[RuntimeBinding],
+    ) -> Result<(), crate::awbc::fiber::FiberStateError> {
+        if self.entry_targets_active_function() {
+            self.fiber.bind_entry_arguments(&self.program, bindings)
+        } else {
+            self.fiber.bind_function_arguments(&self.program, bindings)
+        }
+    }
+
+    fn entry_targets_active_function(&self) -> bool {
+        let Some(entry) = self.program.entries.get(self.fiber.entry.index()) else {
+            return false;
+        };
+        let Some(entry_function) = entry.target.function() else {
+            return false;
+        };
+        self.fiber
+            .frames
+            .first()
+            .is_some_and(|frame| frame.function == entry_function)
     }
 
     fn apply_source_events(

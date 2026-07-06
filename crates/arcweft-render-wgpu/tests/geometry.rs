@@ -1,6 +1,7 @@
 use arcweft_id::PublicId;
 use arcweft_layout::{ContentRect, LayoutPoint, LayoutRect, LayoutSize, ScalePolicy};
 use arcweft_presentation::hit::HitRect;
+use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectFit, ImageObjectTransform};
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::semantic::SemanticRole;
 use arcweft_presentation::text_input::{
@@ -8,11 +9,14 @@ use arcweft_presentation::text_input::{
 };
 use arcweft_render_text::{RichTextColor, RichTextFontFamily, RichTextStyle};
 use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, FocusNavigationDirection, InteractionVisualState, RenderChoiceItem,
+    ChoiceScroll, FocusNavigationDirection, InteractionVisualState, RenderActionButton,
+    RenderActionButtonAction, RenderChoiceItem, RenderControlFilter, RenderControlFilterList,
+    RenderControlShadow, RenderControlShadowKind, RenderControlStyle, RenderControlVisualStyle,
     RenderDialogue, RenderFocusGroup, RenderFocusGroupPolicy, RenderFocusInitialPolicy,
     RenderFocusNavigation, RenderFocusNavigationEdge, RenderFocusSkipPolicy,
-    RenderFocusTargetResolution, RenderFocusWrapPolicy, RenderFontFamily, RenderPreferences,
-    RenderScene, RenderTextInputControl, RenderTextSlant, RenderTextWeight, RenderViewport,
+    RenderFocusTargetResolution, RenderFocusWrapPolicy, RenderFontFamily, RenderImage,
+    RenderImageFrame, RenderPreferences, RenderScene, RenderScrollAxis, RenderScrollOverflow,
+    RenderScrollRegion, RenderTextInputControl, RenderTextSlant, RenderTextWeight, RenderViewport,
     SharedFramePlanContext, SharedFramePlanner,
 };
 use arcweft_render_wgpu::sample::{DemoAnimationClock, DemoImageKind, generated_demo_images};
@@ -47,6 +51,7 @@ fn scene() -> RenderScene {
         preferences: RenderPreferences::default(),
         interaction: InteractionVisualState::default(),
         choice_scroll: ChoiceScroll::default(),
+        scroll_regions: Vec::new(),
     }
 }
 
@@ -58,6 +63,26 @@ fn generated_scene(elapsed_millis: u64) -> RenderScene {
     );
     scene.visual_time_millis = elapsed_millis;
     scene
+}
+
+fn render_image(id: &str, bounds: HitRect) -> RenderImage {
+    RenderImage {
+        id: id.to_owned(),
+        frame: RenderImageFrame {
+            index: None,
+            width: 10,
+            height: 10,
+            rgba: vec![255; 10 * 10 * 4],
+        },
+        bounds,
+        containing_scroll_region: None,
+        viewport_clip: None,
+        placement: None,
+        fit: ImageObjectFit::Stretch,
+        alignment: ImageObjectAlignment::center(),
+        transform: ImageObjectTransform::identity(),
+        opacity_milli: 1_000,
+    }
 }
 
 #[test]
@@ -384,6 +409,306 @@ fn choice_geometry_ignores_scroll_offset() {
             .expect("scrolled hit")
             .bounds()
     );
+}
+
+#[test]
+fn scroll_regions_survive_frame_planning_and_viewport_mapping() {
+    let frame = SharedFramePlanner::prepare(&RenderScene {
+        scroll_regions: vec![RenderScrollRegion {
+            id: "scroll.story".to_owned(),
+            bounds: HitRect::new(100.0, 50.0, 300.0, 120.0),
+            content_width: 300.0,
+            content_height: 480.0,
+            offset_x: 0.0,
+            offset_y: 90.0,
+            axis: RenderScrollAxis::Vertical,
+            overflow: RenderScrollOverflow::Auto,
+        }],
+        ..scene()
+    })
+    .expect("frame plans")
+    .mapped_to_viewport(
+        RenderViewport {
+            logical_width: 640.0,
+            logical_height: 360.0,
+            physical_width: 640,
+            physical_height: 360,
+            scale_factor: 1.0,
+        },
+        ContentRect::calculate(
+            LayoutSize::new(1280.0, 720.0),
+            LayoutSize::new(640.0, 360.0),
+            ScalePolicy::Contain,
+        )
+        .expect("content rect"),
+    );
+
+    let region = frame.scroll_regions.first().expect("scroll region");
+    assert_eq!(region.id, "scroll.story");
+    assert_eq!(region.bounds, HitRect::new(50.0, 25.0, 150.0, 60.0));
+    assert!((region.content_width - 150.0).abs() < f32::EPSILON);
+    assert!((region.content_height - 240.0).abs() < f32::EPSILON);
+    assert!(region.offset_x.abs() < f32::EPSILON);
+    assert!((region.offset_y - 45.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn hidden_scroll_region_reports_no_scroll_range() {
+    let region = RenderScrollRegion {
+        id: "scroll.story".to_owned(),
+        bounds: HitRect::new(100.0, 50.0, 300.0, 120.0),
+        content_width: 300.0,
+        content_height: 480.0,
+        offset_x: 0.0,
+        offset_y: 0.0,
+        axis: RenderScrollAxis::Vertical,
+        overflow: RenderScrollOverflow::Hidden,
+    };
+
+    assert!(region.max_offset_y().abs() < f32::EPSILON);
+    assert!(region.clamped_offset_y(90.0).abs() < f32::EPSILON);
+}
+
+#[test]
+fn scroll_region_offsets_and_clips_owned_text_controls() {
+    let target = text_target("scroll.feedback.input");
+    let control = text_control(
+        target.clone(),
+        "inside scroll",
+        SemanticRole::TextField,
+        TextInputOptions::default(),
+        HitRect::new(100.0, 170.0, 280.0, 48.0),
+    )
+    .with_containing_scroll_region("scroll.feedback");
+
+    let mut scene = scene();
+    scene.choices.clear();
+    scene.text_inputs = vec![control];
+    scene.scroll_regions = vec![RenderScrollRegion {
+        id: "scroll.feedback".to_owned(),
+        bounds: HitRect::new(100.0, 100.0, 320.0, 80.0),
+        content_width: 320.0,
+        content_height: 240.0,
+        offset_x: 0.0,
+        offset_y: 60.0,
+        axis: RenderScrollAxis::Vertical,
+        overflow: RenderScrollOverflow::Auto,
+    }];
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
+    let hit = frame.hits.find_target(&target).expect("scrolled hit");
+    assert_eq!(hit.bounds(), HitRect::new(100.0, 110.0, 280.0, 48.0));
+    let semantic = frame.semantics.find(&target).expect("scrolled semantic");
+    assert_eq!(semantic.bounds(), HitRect::new(100.0, 110.0, 280.0, 48.0));
+
+    let text = frame
+        .text
+        .iter()
+        .find(|block| block.text == "inside scroll")
+        .expect("scrolled text block");
+    assert_eq!(
+        text.clip_bounds,
+        Some(HitRect::new(108.0, 114.0, 264.0, 40.0))
+    );
+}
+
+#[test]
+fn horizontal_scroll_region_offsets_and_clips_owned_text_controls() {
+    let target = text_target("scroll.gallery.input");
+    let control = text_control(
+        target.clone(),
+        "inside horizontal scroll",
+        SemanticRole::TextField,
+        TextInputOptions::default(),
+        HitRect::new(260.0, 100.0, 280.0, 48.0),
+    )
+    .with_containing_scroll_region("scroll.gallery");
+
+    let mut scene = scene();
+    scene.choices.clear();
+    scene.text_inputs = vec![control];
+    scene.scroll_regions = vec![RenderScrollRegion {
+        id: "scroll.gallery".to_owned(),
+        bounds: HitRect::new(100.0, 100.0, 320.0, 80.0),
+        content_width: 640.0,
+        content_height: 80.0,
+        offset_x: 160.0,
+        offset_y: 0.0,
+        axis: RenderScrollAxis::Horizontal,
+        overflow: RenderScrollOverflow::Auto,
+    }];
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
+    let hit = frame.hits.find_target(&target).expect("scrolled hit");
+    assert_eq!(hit.bounds(), HitRect::new(100.0, 100.0, 280.0, 48.0));
+    let semantic = frame.semantics.find(&target).expect("scrolled semantic");
+    assert_eq!(semantic.bounds(), HitRect::new(100.0, 100.0, 280.0, 48.0));
+    let text = frame
+        .text
+        .iter()
+        .find(|block| block.text == "inside horizontal scroll")
+        .expect("scrolled text block");
+    assert_eq!(
+        text.clip_bounds,
+        Some(HitRect::new(108.0, 104.0, 264.0, 40.0))
+    );
+}
+
+#[test]
+fn scroll_region_offsets_and_clips_owned_images() {
+    let mut image = render_image("image.scroll.card", HitRect::new(100.0, 170.0, 200.0, 80.0));
+    image.containing_scroll_region = Some("scroll.gallery".to_owned());
+
+    let mut scene = scene();
+    scene.choices.clear();
+    scene.images = vec![image];
+    scene.scroll_regions = vec![RenderScrollRegion {
+        id: "scroll.gallery".to_owned(),
+        bounds: HitRect::new(100.0, 100.0, 160.0, 80.0),
+        content_width: 240.0,
+        content_height: 260.0,
+        offset_x: 0.0,
+        offset_y: 60.0,
+        axis: RenderScrollAxis::Vertical,
+        overflow: RenderScrollOverflow::Auto,
+    }];
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
+    assert_eq!(frame.images.len(), 1);
+    let image = &frame.images[0];
+    assert_eq!(image.bounds, HitRect::new(100.0, 110.0, 200.0, 80.0));
+    assert_eq!(
+        image.viewport_clip,
+        Some(HitRect::new(100.0, 100.0, 160.0, 80.0))
+    );
+    let quad = image.visible_quad().expect("image is partially visible");
+    assert_eq!(quad.rect, HitRect::new(100.0, 110.0, 160.0, 70.0));
+    assert!((quad.uv_left - 0.0).abs() < f32::EPSILON);
+    assert!((quad.uv_top - 0.0).abs() < f32::EPSILON);
+    assert!((quad.uv_right - 0.8).abs() < f32::EPSILON);
+    assert!((quad.uv_bottom - 0.875).abs() < f32::EPSILON);
+}
+
+#[test]
+fn scroll_region_drops_images_outside_viewport() {
+    let mut image = render_image(
+        "image.scroll.offscreen",
+        HitRect::new(100.0, 280.0, 200.0, 80.0),
+    );
+    image.containing_scroll_region = Some("scroll.gallery".to_owned());
+
+    let mut scene = scene();
+    scene.choices.clear();
+    scene.images = vec![image];
+    scene.scroll_regions = vec![RenderScrollRegion {
+        id: "scroll.gallery".to_owned(),
+        bounds: HitRect::new(100.0, 100.0, 160.0, 80.0),
+        content_width: 240.0,
+        content_height: 360.0,
+        offset_x: 0.0,
+        offset_y: 60.0,
+        axis: RenderScrollAxis::Vertical,
+        overflow: RenderScrollOverflow::Auto,
+    }];
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
+    assert!(frame.images.is_empty());
+}
+
+#[test]
+fn scroll_region_offsets_and_clips_owned_action_buttons() {
+    let target = text_target("scroll.feedback.send");
+    let mut scene = scene();
+    scene.choices.clear();
+    scene.action_buttons = vec![RenderActionButton {
+        target: target.clone(),
+        label: "Send".to_owned(),
+        enabled: true,
+        containing_scroll_region: Some("scroll.feedback".to_owned()),
+        bounds: HitRect::new(100.0, 170.0, 180.0, 48.0),
+        viewport_clip: None,
+        style: RenderControlStyle::default(),
+        action: RenderActionButtonAction::Noop,
+    }];
+    scene.scroll_regions = vec![RenderScrollRegion {
+        id: "scroll.feedback".to_owned(),
+        bounds: HitRect::new(100.0, 100.0, 320.0, 80.0),
+        content_width: 320.0,
+        content_height: 240.0,
+        offset_x: 0.0,
+        offset_y: 60.0,
+        axis: RenderScrollAxis::Vertical,
+        overflow: RenderScrollOverflow::Auto,
+    }];
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
+    let hit = frame.hits.find_target(&target).expect("scrolled hit");
+    assert_eq!(hit.bounds(), HitRect::new(100.0, 110.0, 180.0, 48.0));
+    let semantic = frame.semantics.find(&target).expect("scrolled semantic");
+    assert_eq!(semantic.bounds(), HitRect::new(100.0, 110.0, 180.0, 48.0));
+    let text = frame
+        .text
+        .iter()
+        .find(|block| block.text == "Send")
+        .expect("button text block");
+    assert_eq!(
+        text.clip_bounds,
+        Some(HitRect::new(100.0, 110.0, 180.0, 48.0))
+    );
+}
+
+#[test]
+fn scroll_region_uses_visible_bounds_for_runtime_control_effect_plans() {
+    let target = text_target("scroll.feedback.effects");
+    let mut scene = scene();
+    scene.choices.clear();
+    scene.action_buttons = vec![RenderActionButton {
+        target,
+        label: "Send".to_owned(),
+        enabled: true,
+        containing_scroll_region: Some("scroll.feedback".to_owned()),
+        bounds: HitRect::new(100.0, 170.0, 180.0, 48.0),
+        viewport_clip: None,
+        style: RenderControlStyle {
+            normal: RenderControlVisualStyle {
+                filters: Some(RenderControlFilterList {
+                    filters: vec![RenderControlFilter::Blur { radius_px: 2.0 }],
+                }),
+                backdrop_filters: Some(RenderControlFilterList {
+                    filters: vec![RenderControlFilter::Brightness { factor: 1.1 }],
+                }),
+                shadows: vec![RenderControlShadow {
+                    offset_x_px: 0.0,
+                    offset_y_px: 8.0,
+                    blur_radius_px: 18.0,
+                    spread_radius_px: 0.0,
+                    border_radius_px: 12.0,
+                    color: [0, 0, 0, 128],
+                    kind: RenderControlShadowKind::Outer,
+                }],
+                ..RenderControlVisualStyle::default()
+            },
+            ..RenderControlStyle::default()
+        },
+        action: RenderActionButtonAction::Noop,
+    }];
+    scene.scroll_regions = vec![RenderScrollRegion {
+        id: "scroll.feedback".to_owned(),
+        bounds: HitRect::new(100.0, 100.0, 320.0, 80.0),
+        content_width: 320.0,
+        content_height: 240.0,
+        offset_x: 0.0,
+        offset_y: 60.0,
+        axis: RenderScrollAxis::Vertical,
+        overflow: RenderScrollOverflow::Auto,
+    }];
+
+    let frame = SharedFramePlanner::prepare(&scene).expect("frame plans");
+    let visible = HitRect::new(100.0, 110.0, 180.0, 48.0);
+    assert_eq!(frame.control_backdrops[0].bounds, visible);
+    assert_eq!(frame.control_filters[0].bounds, visible);
+    assert_eq!(frame.control_paints[0].bounds, visible);
+    assert_eq!(frame.control_shadows[0].plan.passes()[0].body_rect, visible);
 }
 
 #[test]

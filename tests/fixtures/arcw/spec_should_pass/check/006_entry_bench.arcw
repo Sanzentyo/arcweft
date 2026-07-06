@@ -1,5 +1,5 @@
 entry bench @entry.bench {
-    run(@flow.main)
+    goto @flow.main
 }
 
 flow @flow.main main {

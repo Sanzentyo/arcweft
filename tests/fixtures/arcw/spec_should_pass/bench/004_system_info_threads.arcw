@@ -6,7 +6,7 @@ extern capability system {
 }
 
 bench @bench.system_threads {
-    measure iterations = 1 { start(@flow.system_threads) }
+    measure iterations = 1 { goto @flow.system_threads }
 }
 
 flow @flow.system_threads system_threads effects { system.read } {

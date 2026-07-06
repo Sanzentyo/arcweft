@@ -34,7 +34,7 @@ pub enum LayoutKind {
     Text,
     RichText,
     Image,
-    Component,
+    View,
     Custom,
 }
 
@@ -106,7 +106,7 @@ impl LayoutKind {
             FragmentKind::Text(_) => Self::Text,
             FragmentKind::RichText(_) => Self::RichText,
             FragmentKind::Image(_) => Self::Image,
-            FragmentKind::Component(_) => Self::Component,
+            FragmentKind::View(_) => Self::View,
             FragmentKind::Custom(_) => Self::Custom,
         }
     }

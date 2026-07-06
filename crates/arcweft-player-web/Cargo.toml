@@ -23,6 +23,11 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+arcweft-lang-hir = { path = "../arcweft-lang-hir" }
+arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 arcweft-render-web = { path = "../arcweft-render-web" }
 futures-channel.workspace = true

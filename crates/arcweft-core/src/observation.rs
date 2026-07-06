@@ -1,7 +1,8 @@
 use crate::effect::{LineEffectRequest, RuntimeCall, RuntimeEvent, RuntimeLog};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeObservationState {
     pub signals: BTreeMap<String, String>,
     pub metrics: BTreeMap<String, String>,

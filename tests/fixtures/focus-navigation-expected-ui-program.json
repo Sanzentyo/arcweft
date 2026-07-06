@@ -1,6 +1,6 @@
 {
   "program_id": "ui.program.focus_navigation_controller_sample",
-  "root_component": "FocusNavigationControllerSample",
+  "root_view": "FocusNavigationControllerSample",
   "focus_groups": [
     {
       "public_id": "group.settings",

@@ -2664,7 +2664,7 @@ pub reducer update_route(state: GameState, event: GameEvent) -> GameState {
     state
 }
 
-pub view current_route(state: GameState) -> Ref<Flow> {
+pub reducer current_route(state: GameState) -> Ref<Flow> {
     @flow.opening
 }
 
@@ -2939,9 +2939,9 @@ fn assert_debug_db_graph_exposes_project_callables(
     );
     assert!(
         symbols.iter().any(|symbol| {
-            symbol["qualified_name"] == "current_route" && symbol["kind"] == "project_view"
+            symbol["qualified_name"] == "current_route" && symbol["kind"] == "project_reducer"
         }),
-        "debug db graph should expose project view symbols: {graph_report}"
+        "debug db graph should expose project callable symbols: {graph_report}"
     );
     assert!(
         edges

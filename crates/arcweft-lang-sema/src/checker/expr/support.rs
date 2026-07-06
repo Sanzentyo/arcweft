@@ -68,6 +68,11 @@ pub(super) enum TraitMethodCallOutcome {
     Rejected,
 }
 
+pub(super) enum BuiltinCollectionMethodCallOutcome {
+    Missing,
+    Checked(Option<TypeKind>),
+}
+
 pub(super) fn trait_method_call_signature(
     signature: &arcweft_lang_syntax::types::FnSignature,
     return_type: TypeKind,

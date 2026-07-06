@@ -10,7 +10,7 @@ pub mod resource_codec;
 
 use crate::character_package::BundleCharacterPackage;
 use crate::resource_codec::{
-    UiInputResource, UiProgramResource, UiStyleResource, UiTextResource, UiThemeResource,
+    UiInputResource, UiStyleResource, UiTextResource, UiThemeResource, ViewProgramResource,
 };
 #[cfg(feature = "format-avro")]
 use apache_avro::types::Value as AvroValue;
@@ -25,9 +25,7 @@ use arcweft_data::{Number, Value};
 use arcweft_layout::stage_placement::StagePlacement;
 use arcweft_render_text::LineDisplayCatalog;
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "format-yaml")]
-use std::collections::BTreeMap;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 #[cfg(feature = "format-cbor")]
 use std::io::Cursor;
 use std::path::Path;
@@ -65,7 +63,7 @@ pub struct ArcweftBundle {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub image_objects: Vec<BundleImageObject>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ui_program: Option<UiProgramResource>,
+    pub ui_program: Option<ViewProgramResource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ui_style: Option<UiStyleResource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -203,6 +201,10 @@ pub struct BundleImageObject {
     pub target: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub containing_scroll_region: Option<String>,
     pub bounds: BundleImageObjectBounds,
     /// Authored placement contract. When absent, `bounds` is explicit absolute
     /// placement for image object data that has no responsive stage placement.
@@ -220,8 +222,41 @@ pub struct BundleImageObject {
     pub depth_milli: i32,
     #[serde(default = "default_opacity_milli")]
     pub opacity_milli: u16,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, BundleImageObjectParam>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub proxies: Vec<BundleImageObjectProxy>,
     #[serde(default = "default_true")]
     pub visible: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BundleImageObjectParam {
+    Bool { value: bool },
+    Integer { value: i64 },
+    Milli { value: i32 },
+    Text { value: String },
+    Id { value: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BundleImageObjectProxy {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub type_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth_milli: Option<i32>,
+    #[serde(default)]
+    pub hit_test: bool,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, BundleImageObjectParam>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -583,7 +618,7 @@ impl ArcweftBundle {
     }
 
     #[must_use]
-    pub fn with_ui_program(mut self, resource: UiProgramResource) -> Self {
+    pub fn with_ui_program(mut self, resource: ViewProgramResource) -> Self {
         self.ui_program = Some(resource);
         self
     }
@@ -1518,11 +1553,13 @@ mod tests {
 
     #[test]
     fn bundle_image_objects_round_trip_as_typed_metadata() {
-        let bundle = empty_test_bundle().with_image_objects([BundleImageObject {
+        let expected = BundleImageObject {
             id: "image.hero.logo".to_owned(),
             asset: "asset.ui.logo".to_owned(),
             target: Some("target.hero.logo".to_owned()),
             layer: Some("layer.foreground".to_owned()),
+            view: None,
+            containing_scroll_region: None,
             bounds: BundleImageObjectBounds::from_px(10, 20, 320, 180),
             placement: None,
             fit: BundleImageObjectFit::Cover,
@@ -1546,45 +1583,37 @@ mod tests {
             },
             depth_milli: 2400,
             opacity_milli: 900,
+            actions: vec!["action.inspect.logo".to_owned()],
+            params: [(
+                "param.role".to_owned(),
+                BundleImageObjectParam::Text {
+                    value: "hero".to_owned(),
+                },
+            )]
+            .into(),
+            proxies: vec![BundleImageObjectProxy {
+                id: "proxy.logo.hotspot".to_owned(),
+                type_name: Some("LogoHotspot".to_owned()),
+                role: Some("inspect".to_owned()),
+                layer: Some("layer.hit".to_owned()),
+                depth_milli: Some(2600),
+                hit_test: true,
+                params: [(
+                    "channel".to_owned(),
+                    BundleImageObjectParam::Text {
+                        value: "preview".to_owned(),
+                    },
+                )]
+                .into(),
+            }],
             visible: true,
-        }]);
+        };
+        let bundle = empty_test_bundle().with_image_objects([expected.clone()]);
 
         let bytes = bundle.to_json_bytes().expect("bundle encodes");
         let decoded = ArcweftBundle::from_json_slice(&bytes).expect("bundle decodes");
 
-        assert_eq!(
-            decoded.image_object("image.hero.logo"),
-            Some(&BundleImageObject {
-                id: "image.hero.logo".to_owned(),
-                asset: "asset.ui.logo".to_owned(),
-                target: Some("target.hero.logo".to_owned()),
-                layer: Some("layer.foreground".to_owned()),
-                bounds: BundleImageObjectBounds::from_px(10, 20, 320, 180),
-                placement: None,
-                fit: BundleImageObjectFit::Cover,
-                alignment: BundleImageObjectAlignment {
-                    x_milli: 250,
-                    y_milli: 750,
-                },
-                playback: BundleImageObjectPlayback {
-                    start_time_millis: 40,
-                    rate_milli: 500,
-                    paused_at_millis: None,
-                    pinned_local_time_millis: Some(160),
-                },
-                transform: BundleImageObjectTransform {
-                    m11_milli: 1_000,
-                    m12_milli: 0,
-                    m21_milli: 0,
-                    m22_milli: 1_000,
-                    tx_milli: 12_000,
-                    ty_milli: -3_000,
-                },
-                depth_milli: 2400,
-                opacity_milli: 900,
-                visible: true,
-            })
-        );
+        assert_eq!(decoded.image_object("image.hero.logo"), Some(&expected));
     }
 
     #[test]

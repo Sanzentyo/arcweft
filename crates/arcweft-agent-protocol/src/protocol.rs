@@ -158,7 +158,7 @@ pub struct ActionResult {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CaptureTarget {
     Viewport,
-    Component { id: PublicId },
+    View { id: PublicId },
     Layer { id: PublicId },
     Object { id: String },
 }

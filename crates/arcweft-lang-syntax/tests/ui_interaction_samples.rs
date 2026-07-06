@@ -19,25 +19,21 @@ const SAMPLES: &[(&str, &str)] = &[
     ),
     (
         "settings-panel-surface",
-        include_str!(
-            "../../../examples/ui-interaction-routing/component-surface/settings-panel.arcw"
-        ),
+        include_str!("../../../examples/ui-interaction-routing/view-surface/settings-panel.arcw"),
     ),
     (
         "confirmation-surface",
         include_str!(
-            "../../../examples/ui-interaction-routing/component-surface/confirmation-dialog.arcw"
+            "../../../examples/ui-interaction-routing/view-surface/confirmation-dialog.arcw"
         ),
     ),
     (
         "inventory-grid-surface",
-        include_str!(
-            "../../../examples/ui-interaction-routing/component-surface/inventory-grid.arcw"
-        ),
+        include_str!("../../../examples/ui-interaction-routing/view-surface/inventory-grid.arcw"),
     ),
     (
         "toolbar-surface",
-        include_str!("../../../examples/ui-interaction-routing/component-surface/toolbar.arcw"),
+        include_str!("../../../examples/ui-interaction-routing/view-surface/toolbar.arcw"),
     ),
 ];
 

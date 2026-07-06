@@ -14,7 +14,7 @@ pub enum ArcweftInlineParticipantKind {
     Text,
     RichText,
     TextField(TextFieldId),
-    InlineComponent,
+    InlineView,
 }
 
 #[derive(Clone, Debug, PartialEq)]

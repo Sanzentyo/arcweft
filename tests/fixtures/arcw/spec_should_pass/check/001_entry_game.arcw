@@ -1,5 +1,5 @@
 entry game @entry.game {
-    start(@flow.main)
+    goto @flow.main
 }
 
 flow @flow.main main {

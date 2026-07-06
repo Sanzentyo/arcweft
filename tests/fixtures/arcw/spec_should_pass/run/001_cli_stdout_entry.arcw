@@ -2,7 +2,7 @@ extern capability cli {
     fn stdout(text: String) effects { stdio.write }
     fn exit(code: i32) -> Never effects { process.exit }
 }
-entry cli @entry.main { run(@flow.main) }
+entry cli @entry.main { goto @flow.main }
 flow @flow.main main effects { stdio.write, process.exit } {
     cli.stdout("hello")
     return cli.exit(0i32)

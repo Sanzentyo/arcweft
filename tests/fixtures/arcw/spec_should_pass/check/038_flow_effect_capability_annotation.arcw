@@ -1,5 +1,5 @@
 extern capability cli { fn stdout(text: String) effects { stdio.write } }
-entry cli @entry.main { run(@flow.main) }
+entry cli @entry.main { goto @flow.main }
 flow @flow.main main effects { stdio.write } {
     cli.stdout("ok")
     return "done"

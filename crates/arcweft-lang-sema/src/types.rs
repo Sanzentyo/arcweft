@@ -10,7 +10,7 @@ pub enum EntityKind {
     Choice,
     ChoiceOption,
     Character,
-    Component,
+    View,
     Action,
     Activity,
     Textbox,
@@ -208,6 +208,16 @@ impl TypeKind {
             "value" => Self::String,
             _ => return None,
         })
+    }
+
+    #[must_use]
+    pub fn presentation_handle(name: impl Into<String>) -> Self {
+        Self::Handle {
+            name: name.into(),
+            lifetime: LifetimeScopeKind::Flow,
+            state: HandleState::Live,
+            must_drop: true,
+        }
     }
 
     #[must_use]

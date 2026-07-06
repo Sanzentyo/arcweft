@@ -71,6 +71,14 @@ pub(in crate::app) fn runtime_run_command(
         eprintln!("error: --text-input-trace-out requires --runner native");
         return Err(ExitCode::from(2));
     }
+    if has_session_save_options(options) && !matches!(options.runner, CliRuntimeRunner::Native) {
+        eprintln!("error: --session-load and --session-save-out require --runner native");
+        return Err(ExitCode::from(2));
+    }
+    if has_session_save_options(options) && options.watch {
+        eprintln!("error: --session-load and --session-save-out cannot be combined with --watch");
+        return Err(ExitCode::from(2));
+    }
     if should_try_bundle_run(options, &selection) {
         let pure_config = runtime_pure_config_for_selection(
             &selection,
@@ -290,6 +298,10 @@ fn has_headless_debug_options(options: &RuntimeRunOptions) -> bool {
         || options.pure_object_artifacts
         || options.math_backend.is_some()
         || options.math_wgpu_min_elements.is_some()
+}
+
+fn has_session_save_options(options: &RuntimeRunOptions) -> bool {
+    options.session_load.is_some() || options.session_save_out.is_some()
 }
 
 fn run_game_target(
@@ -1000,6 +1012,12 @@ fn native_player_options(
         .with_text_input_options(native_text_input_options(options));
     if let Some(frame_fit) = frame_fit_for_selection(selection) {
         native_options = native_options.with_frame_fit(frame_fit);
+    }
+    if let Some(path) = options.session_load.as_ref() {
+        native_options = native_options.with_session_load_path(path.clone());
+    }
+    if let Some(path) = options.session_save_out.as_ref() {
+        native_options = native_options.with_session_save_out_path(path.clone());
     }
     native_options
 }

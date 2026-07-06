@@ -3,7 +3,7 @@ use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::semantic::SemanticRole;
 use arcweft_presentation::text_input::{
-    TextByteOffset, TextControlValue, TextInputOptions, TextInputSessionId, TextRange, TextRevision,
+    TextByteOffset, TextInputOptions, TextInputSessionId, TextRange,
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, PaintRectCornerRadius, PaintRectRadii,
@@ -11,8 +11,7 @@ use arcweft_render_wgpu::geometry::{
     RenderControlCornerFrameStyle, RenderControlFilter, RenderControlFilterList,
     RenderControlFocusRingStyle, RenderControlShadow, RenderControlShadowKind, RenderControlStyle,
     RenderControlVisualStyle, RenderFontFamily, RenderPreferences, RenderScene,
-    RenderTextInputControl, RenderTextSubmitImePolicy, RenderViewport,
-    RuntimeControlBackdropSamplePolicy, SharedFramePlanner,
+    RenderTextInputControl, RenderViewport, RuntimeControlBackdropSamplePolicy, SharedFramePlanner,
 };
 use arcweft_render_wgpu::ui_scene::UiFilter;
 
@@ -325,7 +324,9 @@ fn text_controls_and_buttons_use_authored_font_family() {
         target: button_target,
         label: "Send".to_owned(),
         enabled: true,
+        containing_scroll_region: None,
         bounds: HitRect::new(484.0, 48.0, 128.0, 48.0),
+        viewport_clip: None,
         style: RenderControlStyle {
             normal: RenderControlVisualStyle {
                 font_family: Some(font_family.clone()),
@@ -333,14 +334,7 @@ fn text_controls_and_buttons_use_authored_font_family() {
             },
             ..RenderControlStyle::default()
         },
-        action: RenderActionButtonAction::TextInputSubmit {
-            input_target,
-            session: TextInputSessionId(41),
-            value: TextControlValue::plain("hello"),
-            selection: TextRange::new(TextByteOffset(5), TextByteOffset(5)),
-            revision: TextRevision::default(),
-            ime_policy: RenderTextSubmitImePolicy::Commit,
-        },
+        action: RenderActionButtonAction::Noop,
     };
     let scene = scene(
         vec![control],
@@ -378,7 +372,9 @@ fn foreground_filter_reaches_runtime_control_filter_plan() {
         target: button_target.clone(),
         label: "Send".to_owned(),
         enabled: true,
+        containing_scroll_region: None,
         bounds: HitRect::new(484.0, 48.0, 128.0, 48.0),
+        viewport_clip: None,
         style: RenderControlStyle {
             normal: RenderControlVisualStyle {
                 filters: Some(RenderControlFilterList {
@@ -388,14 +384,7 @@ fn foreground_filter_reaches_runtime_control_filter_plan() {
             },
             ..RenderControlStyle::default()
         },
-        action: RenderActionButtonAction::TextInputSubmit {
-            input_target: input_target.clone(),
-            session: TextInputSessionId(41),
-            value: TextControlValue::plain("hello"),
-            selection: TextRange::new(TextByteOffset(5), TextByteOffset(5)),
-            revision: TextRevision::default(),
-            ime_policy: RenderTextSubmitImePolicy::Commit,
-        },
+        action: RenderActionButtonAction::Noop,
     };
     let scene = scene(
         vec![text_control(input_target)],
@@ -477,7 +466,9 @@ fn authored_control_depth_orders_text_inputs_and_buttons_together() {
         target: button_target,
         label: "Send".to_owned(),
         enabled: true,
+        containing_scroll_region: None,
         bounds: HitRect::new(72.0, 52.0, 128.0, 48.0),
+        viewport_clip: None,
         style: RenderControlStyle {
             normal: RenderControlVisualStyle {
                 fill: Some([0.1, 0.2, 0.8, 0.75]),
@@ -486,14 +477,7 @@ fn authored_control_depth_orders_text_inputs_and_buttons_together() {
             },
             ..RenderControlStyle::default()
         },
-        action: RenderActionButtonAction::TextInputSubmit {
-            input_target,
-            session: TextInputSessionId(41),
-            value: TextControlValue::plain("hello"),
-            selection: TextRange::new(TextByteOffset(5), TextByteOffset(5)),
-            revision: TextRevision::default(),
-            ime_policy: RenderTextSubmitImePolicy::Commit,
-        },
+        action: RenderActionButtonAction::Noop,
     };
     let scene = scene(vec![input], vec![button], InteractionVisualState::default());
 
@@ -526,7 +510,9 @@ fn scene_with_button(
             target: button_target,
             label: "Send".to_owned(),
             enabled: true,
+            containing_scroll_region: None,
             bounds: HitRect::new(484.0, 48.0, 128.0, 48.0),
+            viewport_clip: None,
             style: RenderControlStyle {
                 normal: RenderControlVisualStyle {
                     fill: Some([0.07, 0.12, 0.09, 0.72]),
@@ -548,14 +534,7 @@ fn scene_with_button(
                 }),
                 ..RenderControlStyle::default()
             },
-            action: RenderActionButtonAction::TextInputSubmit {
-                input_target,
-                session: TextInputSessionId(41),
-                value: TextControlValue::plain("hello"),
-                selection: TextRange::new(TextByteOffset(5), TextByteOffset(5)),
-                revision: TextRevision::default(),
-                ime_policy: RenderTextSubmitImePolicy::Commit,
-            },
+            action: RenderActionButtonAction::Noop,
         }],
         interaction,
     )
@@ -597,6 +576,7 @@ fn scene(
         preferences: RenderPreferences::default(),
         interaction,
         choice_scroll: ChoiceScroll::default(),
+        scroll_regions: Vec::new(),
     }
 }
 

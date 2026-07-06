@@ -7,7 +7,7 @@ use arcweft_lang_syntax::{
             AwaitWith, ContractClause, FlowItem, SelectBranchHead, Stmt, StmtMatchArm, WaitTarget,
         },
         ids::{EntityRef, EntityRefSyntax, IdRef},
-        items::{ImplMember, RawSyntax, StyleItem, TraitMember, UiTextInputItem},
+        items::{ImplMember, RawSyntax, StyleItem, TraitMember},
         line_plan::{LinePlan, LinePlanItem, TriggerPattern},
         pattern::{Pattern, VariantPatternPayload},
     },
@@ -175,23 +175,12 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
                 collect_stmt(stmt, uses);
             }
         }
-        HirTopLevelDecl::UiTextInput(item) => collect_ui_text_input_decl(item, uses),
         HirTopLevelDecl::Style(item) => collect_style_decl(item, uses),
     }
 }
 
 fn collect_style_decl(item: &StyleItem, uses: &mut Vec<SymbolUse>) {
     push_entity(uses, item.id());
-}
-
-fn collect_ui_text_input_decl(item: &UiTextInputItem, uses: &mut Vec<SymbolUse>) {
-    push_entity(uses, item.id());
-    if let Some(target) = item.submit() {
-        push_entity(uses, target);
-    }
-    if let Some(target) = item.change() {
-        push_entity(uses, target);
-    }
 }
 
 fn collect_entry_decl(
@@ -664,7 +653,6 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
             collect_expr(expr, uses);
             collect_stmt_block(else_body, uses);
         }
-        Stmt::LetTextSubmit { pattern, target } => collect_binding_expr_stmt(pattern, target, uses),
         Stmt::LetActionReceive { pattern, action } => {
             collect_binding_expr_stmt(pattern, action, uses);
         }

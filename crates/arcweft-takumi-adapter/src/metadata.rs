@@ -1,7 +1,7 @@
 use arcweft_id::PublicId;
 use arcweft_ui::{
-    ComponentId, EventBinding, FragmentKind, FragmentNode, HandlerId, NodeId, NodeKey,
-    SemanticSpecId, StyleId, UiPartId, UiProgramId,
+    EventBinding, FragmentKind, FragmentNode, HandlerId, NodeId, NodeKey, SemanticSpecId, StyleId,
+    UiPartId, UiProgramId, ViewId,
 };
 use std::collections::BTreeMap;
 
@@ -9,7 +9,7 @@ const ATTR_NODE: &str = "data-aw-node";
 const ATTR_KEY: &str = "data-aw-key";
 const ATTR_KIND: &str = "data-aw-kind";
 const ATTR_STYLE: &str = "data-aw-style";
-const ATTR_COMPONENT: &str = "data-aw-component";
+const ATTR_VIEW: &str = "data-aw-view";
 const ATTR_PROGRAM: &str = "data-aw-program";
 const ATTR_PART: &str = "data-aw-part";
 const ATTR_SEMANTIC: &str = "data-aw-semantic";
@@ -26,7 +26,7 @@ pub struct ArcweftNodeMetadata {
     key: NodeKey,
     kind: FragmentKind,
     style: StyleId,
-    component: Option<ComponentId>,
+    view: Option<ViewId>,
     program: Option<UiProgramId>,
     part: Option<UiPartId>,
     semantic: Option<SemanticSpecId>,
@@ -106,7 +106,7 @@ impl ArcweftNodeMetadata {
             key,
             kind,
             style,
-            component: None,
+            view: None,
             program: None,
             part: None,
             semantic,
@@ -149,8 +149,8 @@ impl ArcweftNodeMetadata {
         self.style
     }
 
-    pub fn component(&self) -> Option<ComponentId> {
-        self.component
+    pub fn view(&self) -> Option<ViewId> {
+        self.view
     }
 
     pub fn program(&self) -> Option<UiProgramId> {
@@ -174,8 +174,8 @@ impl ArcweftNodeMetadata {
     }
 
     #[must_use]
-    pub fn with_component(mut self, component: ComponentId) -> Self {
-        self.component = Some(component);
+    pub fn with_view(mut self, view: ViewId) -> Self {
+        self.view = Some(view);
         self
     }
 
@@ -204,8 +204,8 @@ impl ArcweftNodeMetadata {
         insert_attr(&mut attributes, ATTR_KIND, self.kind_attribute());
         insert_attr(&mut attributes, ATTR_STYLE, self.style.0.to_string());
         insert_attr(&mut attributes, ATTR_PATH, path.to_attribute());
-        if let Some(component) = self.component {
-            insert_attr(&mut attributes, ATTR_COMPONENT, component.0.to_string());
+        if let Some(view) = self.view {
+            insert_attr(&mut attributes, ATTR_VIEW, view.0.to_string());
         }
         if let Some(program) = self.program {
             insert_attr(&mut attributes, ATTR_PROGRAM, program.0.to_string());
@@ -239,7 +239,7 @@ impl ArcweftNodeMetadata {
             FragmentKind::Text(id) => format!("text.{}", id.0),
             FragmentKind::RichText(id) => format!("rich_text.{}", id.0),
             FragmentKind::Image(id) => format!("image.{}", id.0),
-            FragmentKind::Component(entity) => format!("component.{entity:?}"),
+            FragmentKind::View(entity) => format!("view.{entity:?}"),
             FragmentKind::Custom(id) => format!("custom.{}", id.0),
         }
     }
@@ -303,7 +303,7 @@ mod tests {
             [HandlerId(11)],
             Some(SemanticSpecId(13)),
         )
-        .with_component(ComponentId(17))
+        .with_view(ViewId(17))
         .with_program(UiProgramId(19))
         .with_part(UiPartId(23))
         .with_agent(PublicId::try_new("agent.dialogue").expect("valid agent id"));
@@ -313,7 +313,7 @@ mod tests {
 
         assert_eq!(attrs.get(ATTR_NODE).map(Box::as_ref), Some("2"));
         assert_eq!(attrs.get(ATTR_KEY).map(Box::as_ref), Some("7"));
-        assert_eq!(attrs.get(ATTR_COMPONENT).map(Box::as_ref), Some("17"));
+        assert_eq!(attrs.get(ATTR_VIEW).map(Box::as_ref), Some("17"));
         assert_eq!(attrs.get(ATTR_PROGRAM).map(Box::as_ref), Some("19"));
         assert_eq!(attrs.get(ATTR_PART).map(Box::as_ref), Some("23"));
         assert_eq!(attrs.get(ATTR_SEMANTIC).map(Box::as_ref), Some("13"));

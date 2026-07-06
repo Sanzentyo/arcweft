@@ -125,6 +125,7 @@ fn scene(backdrop: bool) -> RenderScene {
         preferences: RenderPreferences::default(),
         interaction: InteractionVisualState::default(),
         choice_scroll: ChoiceScroll::default(),
+        scroll_regions: Vec::new(),
     }
 }
 
@@ -148,6 +149,7 @@ fn stroke_scene(stroke: bool) -> RenderScene {
         preferences: RenderPreferences::default(),
         interaction: InteractionVisualState::default(),
         choice_scroll: ChoiceScroll::default(),
+        scroll_regions: Vec::new(),
     }
 }
 
@@ -171,6 +173,7 @@ fn foreground_scene(filter: bool) -> RenderScene {
         preferences: RenderPreferences::default(),
         interaction: InteractionVisualState::default(),
         choice_scroll: ChoiceScroll::default(),
+        scroll_regions: Vec::new(),
     }
 }
 
@@ -249,11 +252,14 @@ fn checker_image() -> RenderImage {
     RenderImage {
         id: "checker".to_owned(),
         frame: RenderImageFrame {
+            index: None,
             width: 160,
             height: 128,
             rgba: checker_rgba(160, 128),
         },
         bounds: HitRect::new(0.0, 0.0, 160.0, 128.0),
+        containing_scroll_region: None,
+        viewport_clip: None,
         placement: None,
         fit: ImageObjectFit::Stretch,
         alignment: ImageObjectAlignment::top_left(),

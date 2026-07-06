@@ -6,7 +6,7 @@ use crate::{
 };
 use arcweft_id::PublicId;
 use arcweft_ui::{
-    ComponentId, ContainerKind, FragmentKind, ImageId, NodeId, UiPartId, UiProgram, ViewFragment,
+    ContainerKind, FragmentKind, ImageId, NodeId, UiPartId, UiProgram, ViewFragment, ViewId,
 };
 use takumi::prelude::{Node, StyleSheet};
 
@@ -16,7 +16,7 @@ pub struct TakumiAdapterInput<'a> {
     pub root: NodeId,
     pub stylesheets: TakumiCssBundle,
     pub text: &'a ArcweftTextLayoutBridge,
-    pub component: Option<ComponentId>,
+    pub view: Option<ViewId>,
     pub program: Option<&'a UiProgram>,
     pub node_parts: &'a [(NodeId, UiPartId)],
     pub agent: Option<&'a PublicId>,
@@ -65,8 +65,8 @@ impl TakumiAdapter {
         let mut arcweft_metadata =
             ArcweftNodeMetadata::from_fragment_node(node_id, fragment_node, event_bindings);
 
-        if let Some(component) = input.component {
-            arcweft_metadata = arcweft_metadata.with_component(component);
+        if let Some(view) = input.view {
+            arcweft_metadata = arcweft_metadata.with_view(view);
         }
         if let Some(program) = input.program {
             arcweft_metadata = arcweft_metadata.with_program(program.id());
@@ -98,7 +98,7 @@ impl TakumiAdapter {
         metadata.push(path, arcweft_metadata);
 
         Ok(match fragment_node.kind() {
-            FragmentKind::Container(_) | FragmentKind::Component(_) | FragmentKind::Custom(_) => {
+            FragmentKind::Container(_) | FragmentKind::View(_) | FragmentKind::Custom(_) => {
                 Node::container(children)
             }
             FragmentKind::Text(_) | FragmentKind::RichText(_) => {
@@ -125,7 +125,7 @@ fn class_name(kind: FragmentKind) -> &'static str {
         FragmentKind::Text(_) => "aw-text",
         FragmentKind::RichText(_) => "aw-rich-text",
         FragmentKind::Image(_) => "aw-image",
-        FragmentKind::Component(_) => "aw-component",
+        FragmentKind::View(_) => "aw-view",
         FragmentKind::Custom(_) => "aw-custom",
     }
 }
@@ -137,7 +137,7 @@ fn tag_name(kind: FragmentKind) -> &'static str {
         | FragmentKind::RichText(_) => "span",
         FragmentKind::Image(_) => "img",
         FragmentKind::Container(ContainerKind::Block | ContainerKind::Stack)
-        | FragmentKind::Component(_)
+        | FragmentKind::View(_)
         | FragmentKind::Custom(_) => "div",
     }
 }
@@ -179,7 +179,7 @@ mod tests {
             root,
             stylesheets: TakumiCssBundle::new([".aw-text { opacity: 1; }"]),
             text: &ArcweftTextLayoutBridge::default(),
-            component: Some(ComponentId(7)),
+            view: Some(ViewId(7)),
             program: None,
             node_parts: &[(text, UiPartId(8))],
             agent: None,
@@ -187,7 +187,7 @@ mod tests {
         .expect("adapter output");
 
         let metadata = output.metadata.get_by_node(text).expect("text metadata");
-        assert_eq!(metadata.component(), Some(ComponentId(7)));
+        assert_eq!(metadata.view(), Some(ViewId(7)));
         assert_eq!(metadata.part(), Some(UiPartId(8)));
         assert_eq!(metadata.semantic(), Some(SemanticSpecId(4)));
         assert_eq!(metadata.handlers(), &[HandlerId(3)]);

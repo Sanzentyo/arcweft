@@ -489,12 +489,12 @@ hit_test = "layout_boxes"
 
 ---
 
-## 11. UI componentとの接続
+## 11. UI viewとの接続
 
-Game Native UI component は暗黙に `NativeUi` layer を生成してもよい。
+Game Native UI view は暗黙に `NativeUi` layer を生成してもよい。
 
 ```arcw
-component Hud(state: GameState) {
+view Hud(state: GameState) {
     Row {
         Button("設定").agent_target(@ui.settings.open)
     }

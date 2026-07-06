@@ -1,5 +1,5 @@
 entry server @entry.server {
-    run(@flow.main)
+    goto @flow.main
 }
 
 flow @flow.main main {

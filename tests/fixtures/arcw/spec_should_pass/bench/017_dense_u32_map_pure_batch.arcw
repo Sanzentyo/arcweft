@@ -4,7 +4,7 @@ fn score_u32(base: u32, bonus: u32) -> u32 {
 }
 
 bench @bench.dense_u32_map_pure_batch {
-    measure iterations = 4 { start(@flow.dense_u32_map_pure_batch) }
+    measure iterations = 4 { goto @flow.dense_u32_map_pure_batch }
 }
 
 flow @flow.dense_u32_map_pure_batch dense_u32_map_pure_batch {

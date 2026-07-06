@@ -4,7 +4,7 @@ fn score_u8(base: u8, bonus: u8) -> u8 {
 }
 
 bench @bench.dense_u8_map_pure_batch {
-    measure iterations = 4 { start(@flow.dense_u8_map_pure_batch) }
+    measure iterations = 4 { goto @flow.dense_u8_map_pure_batch }
 }
 
 flow @flow.dense_u8_map_pure_batch dense_u8_map_pure_batch {

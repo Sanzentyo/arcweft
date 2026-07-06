@@ -3,10 +3,10 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 
 use super::model::{
-    RgbaColor, StyleAssignOp, SystemColor, UiActionButtonResource, UiElementKind, UiElementState,
-    UiInputKind, UiInputResource, UiInteractionState, UiPartStyleRule, UiProgramResource,
-    UiRuntimeActionButton, UiRuntimeTextControl, UiStyleDeclaration, UiStyleResource,
-    UiStyleSelector, UiStyleSelectorPart, UiStyleValue, UiTextResource,
+    RgbaColor, StyleAssignOp, SystemColor, UiInputKind, UiInputResource, UiRuntimeTextControl,
+    UiStyleResource, UiTextResource, ViewActionButtonResource, ViewElementKind, ViewElementState,
+    ViewInteractionState, ViewPartStyleRule, ViewProgramResource, ViewRuntimeActionButton,
+    ViewStyleDeclaration, ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue,
 };
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -369,9 +369,9 @@ impl SystemColor {
         match self {
             Self::Canvas => RgbaColor::rgb(5, 7, 6),
             Self::CanvasText => RgbaColor::rgb(248, 246, 234),
-            Self::Surface => RgbaColor::rgb(32, 32, 25),
-            Self::SurfaceText | Self::AccentText => RgbaColor::rgb(255, 252, 238),
-            Self::RaisedSurface => RgbaColor::rgb(48, 52, 40),
+            Self::Panel => RgbaColor::rgb(32, 32, 25),
+            Self::PanelText | Self::AccentText => RgbaColor::rgb(255, 252, 238),
+            Self::RaisedPanel => RgbaColor::rgb(48, 52, 40),
             Self::MutedText => RgbaColor::rgb(172, 178, 150),
             Self::Border => RgbaColor::rgb(104, 116, 80),
             Self::Accent => RgbaColor::rgb(53, 77, 42),
@@ -396,23 +396,23 @@ impl UiStyleResource {
 
     pub fn runtime_action_button_style(
         &self,
-        button: &UiActionButtonResource,
+        button: &ViewActionButtonResource,
     ) -> UiRuntimeControlStyleResolution {
         self.resolve_runtime_control_style(
             &button.public_id,
-            UiElementKind::Button,
+            ViewElementKind::Button,
             button.style.as_deref(),
         )
     }
 
     pub fn runtime_surface_style(&self, public_id: &str) -> UiRuntimeControlStyleResolution {
-        self.resolve_runtime_control_style(public_id, UiElementKind::Surface, None)
+        self.resolve_runtime_control_style(public_id, ViewElementKind::Panel, None)
     }
 
     fn resolve_runtime_control_style(
         &self,
         target: &str,
-        element: UiElementKind,
+        element: ViewElementKind,
         explicit_style: Option<&str>,
     ) -> UiRuntimeControlStyleResolution {
         let mut resolution = UiRuntimeControlStyleResolution::default();
@@ -450,7 +450,7 @@ impl UiInputResource {
     pub fn runtime_text_controls_with_style(
         &self,
         text: Option<&UiTextResource>,
-        program: Option<&UiProgramResource>,
+        program: Option<&ViewProgramResource>,
         style: Option<&UiStyleResource>,
     ) -> UiRuntimeStyledControls<UiRuntimeTextControl> {
         let mut diagnostics = UiRuntimeControlStyleDiagnostics::default();
@@ -469,12 +469,12 @@ impl UiInputResource {
     }
 }
 
-impl UiProgramResource {
+impl ViewProgramResource {
     pub fn runtime_action_buttons_with_style(
         &self,
         text: Option<&UiTextResource>,
         style: Option<&UiStyleResource>,
-    ) -> UiRuntimeStyledControls<UiRuntimeActionButton> {
+    ) -> UiRuntimeStyledControls<ViewRuntimeActionButton> {
         let mut diagnostics = UiRuntimeControlStyleDiagnostics::default();
         let mut controls = self.runtime_action_buttons(text);
         if let Some(style) = style {
@@ -498,23 +498,23 @@ impl UiProgramResource {
 }
 
 impl UiInputKind {
-    pub const fn runtime_control_element(self) -> UiElementKind {
+    pub const fn runtime_control_element(self) -> ViewElementKind {
         match self {
-            Self::TextField => UiElementKind::TextField,
-            Self::TextArea => UiElementKind::TextArea,
-            Self::SecureField => UiElementKind::SecureField,
+            Self::TextField => ViewElementKind::TextField,
+            Self::TextArea => ViewElementKind::TextArea,
+            Self::SecureField => ViewElementKind::SecureField,
         }
     }
 }
 
-fn part_matches(rule: &UiPartStyleRule, target: &str, explicit_style: Option<&str>) -> bool {
+fn part_matches(rule: &ViewPartStyleRule, target: &str, explicit_style: Option<&str>) -> bool {
     rule.part == target || explicit_style.is_some_and(|style| rule.part == style)
 }
 
 fn matching_state(
-    selector: &UiStyleSelector,
+    selector: &ViewStyleSelector,
     target: &str,
-    element: UiElementKind,
+    element: ViewElementKind,
     explicit_style: Option<&str>,
     resolution: &mut UiRuntimeControlStyleResolution,
 ) -> Option<UiRuntimeControlState> {
@@ -522,27 +522,27 @@ fn matching_state(
     let mut state = UiRuntimeControlState::Normal;
     for part in &selector.parts {
         match part {
-            UiStyleSelectorPart::Element(candidate) if *candidate == element => {
+            ViewStyleSelectorPart::Element(candidate) if *candidate == element => {
                 has_positive_match = true;
             }
-            UiStyleSelectorPart::Part(part) if part == target => has_positive_match = true,
-            UiStyleSelectorPart::Part(part) if explicit_style.is_some_and(|id| id == part) => {
+            ViewStyleSelectorPart::Part(part) if part == target => has_positive_match = true,
+            ViewStyleSelectorPart::Part(part) if explicit_style.is_some_and(|id| id == part) => {
                 has_positive_match = true;
             }
-            UiStyleSelectorPart::Element(_) | UiStyleSelectorPart::Part(_) => return None,
-            UiStyleSelectorPart::State(UiElementState::FocusVisible) => {
+            ViewStyleSelectorPart::Element(_) | ViewStyleSelectorPart::Part(_) => return None,
+            ViewStyleSelectorPart::State(ViewElementState::FocusVisible) => {
                 state = UiRuntimeControlState::FocusVisible;
             }
-            UiStyleSelectorPart::Interaction(UiInteractionState::Hover) => {
+            ViewStyleSelectorPart::Interaction(ViewInteractionState::Hover) => {
                 state = UiRuntimeControlState::Hover;
             }
-            UiStyleSelectorPart::Interaction(UiInteractionState::Active) => {
+            ViewStyleSelectorPart::Interaction(ViewInteractionState::Active) => {
                 state = UiRuntimeControlState::Pressed;
             }
-            UiStyleSelectorPart::Interaction(UiInteractionState::Disabled) => {
+            ViewStyleSelectorPart::Interaction(ViewInteractionState::Disabled) => {
                 state = UiRuntimeControlState::Disabled;
             }
-            UiStyleSelectorPart::State(state) => {
+            ViewStyleSelectorPart::State(state) => {
                 resolution.diagnostics.push(
                     target,
                     format!("state::{state:?}"),
@@ -550,7 +550,7 @@ fn matching_state(
                 );
                 return None;
             }
-            UiStyleSelectorPart::Environment(predicate) => {
+            ViewStyleSelectorPart::Environment(predicate) => {
                 resolution.diagnostics.push(
                     target,
                     format!("environment::{predicate:?}"),
@@ -558,7 +558,7 @@ fn matching_state(
                 );
                 return None;
             }
-            UiStyleSelectorPart::Descendant | UiStyleSelectorPart::Child => {
+            ViewStyleSelectorPart::Descendant | ViewStyleSelectorPart::Child => {
                 resolution.diagnostics.push(
                     target,
                     format!("selector::{part:?}"),
@@ -576,7 +576,7 @@ fn apply_declarations(
     target: &str,
     resolution: &mut UiRuntimeControlStyleResolution,
     state: UiRuntimeControlState,
-    declarations: &[UiStyleDeclaration],
+    declarations: &[ViewStyleDeclaration],
 ) {
     for declaration in declarations {
         apply_declaration(style_resource, target, resolution, state, declaration);
@@ -603,7 +603,7 @@ fn apply_declaration(
     target: &str,
     resolution: &mut UiRuntimeControlStyleResolution,
     state: UiRuntimeControlState,
-    declaration: &UiStyleDeclaration,
+    declaration: &ViewStyleDeclaration,
 ) {
     let property = normalize_property(&declaration.property);
     let UiRuntimeControlStyleResolution { style, diagnostics } = resolution;
@@ -689,7 +689,7 @@ fn apply_declaration(
 
 fn apply_metric_property_declaration(
     style_resource: &UiStyleResource,
-    value: &UiStyleValue,
+    value: &ViewStyleValue,
     diagnostics: &mut UiRuntimeControlStyleDiagnostics,
     target: &str,
     property: &str,
@@ -768,7 +768,7 @@ fn apply_metric_property_declaration(
 
 fn apply_color_property_declaration(
     style_resource: &UiStyleResource,
-    value: &UiStyleValue,
+    value: &ViewStyleValue,
     diagnostics: &mut UiRuntimeControlStyleDiagnostics,
     target: &str,
     property: &str,
@@ -866,7 +866,7 @@ fn apply_color_property_declaration(
 
 fn apply_color_declaration(
     style_resource: &UiStyleResource,
-    value: &UiStyleValue,
+    value: &ViewStyleValue,
     diagnostics: &mut UiRuntimeControlStyleDiagnostics,
     target: &str,
     property: &str,
@@ -881,7 +881,7 @@ fn apply_color_declaration(
 
 fn apply_length_declaration(
     style_resource: &UiStyleResource,
-    value: &UiStyleValue,
+    value: &ViewStyleValue,
     diagnostics: &mut UiRuntimeControlStyleDiagnostics,
     target: &str,
     property: &str,
@@ -896,7 +896,7 @@ fn apply_length_declaration(
 
 fn apply_signed_length_declaration(
     style_resource: &UiStyleResource,
-    value: &UiStyleValue,
+    value: &ViewStyleValue,
     diagnostics: &mut UiRuntimeControlStyleDiagnostics,
     target: &str,
     property: &str,
@@ -911,7 +911,7 @@ fn apply_signed_length_declaration(
 
 fn apply_shadow_declaration(
     style_resource: &UiStyleResource,
-    value: &UiStyleValue,
+    value: &ViewStyleValue,
     diagnostics: &mut UiRuntimeControlStyleDiagnostics,
     target: &str,
     property: &str,
@@ -931,7 +931,7 @@ fn apply_shadow_declaration(
 
 fn apply_filter_declaration(
     style_resource: &UiStyleResource,
-    value: &UiStyleValue,
+    value: &ViewStyleValue,
     diagnostics: &mut UiRuntimeControlStyleDiagnostics,
     target: &str,
     property: &str,
@@ -972,24 +972,24 @@ fn push_unsupported_property(
 }
 
 trait RuntimeControlStyleValueExt {
-    fn color_value(&self, value: &UiStyleValue) -> Option<RgbaColor>;
+    fn color_value(&self, value: &ViewStyleValue) -> Option<RgbaColor>;
 }
 
 impl RuntimeControlStyleValueExt for UiStyleResource {
-    fn color_value(&self, value: &UiStyleValue) -> Option<RgbaColor> {
+    fn color_value(&self, value: &ViewStyleValue) -> Option<RgbaColor> {
         match value {
-            UiStyleValue::Rgba(color) => Some(*color),
-            UiStyleValue::SystemColor(color) => Some(color.runtime_control_rgba()),
-            UiStyleValue::Token(token) => self
+            ViewStyleValue::Rgba(color) => Some(*color),
+            ViewStyleValue::SystemColor(color) => Some(color.runtime_control_rgba()),
+            ViewStyleValue::Token(token) => self
                 .tokens
                 .iter()
                 .find(|candidate| candidate.public_id == *token)
                 .and_then(|token| self.color_value(&token.value)),
-            UiStyleValue::Text(text) => parse_color(text),
-            UiStyleValue::Milli(_)
-            | UiStyleValue::List(_)
-            | UiStyleValue::Resource(_)
-            | UiStyleValue::Digest(_) => None,
+            ViewStyleValue::Text(text) => parse_color(text),
+            ViewStyleValue::Milli(_)
+            | ViewStyleValue::List(_)
+            | ViewStyleValue::Resource(_)
+            | ViewStyleValue::Digest(_) => None,
         }
     }
 }
@@ -1038,81 +1038,81 @@ fn upsert_focus_ring(
     update(focus_ring);
 }
 
-fn length_milli(style: &UiStyleResource, value: &UiStyleValue) -> Option<u32> {
+fn length_milli(style: &UiStyleResource, value: &ViewStyleValue) -> Option<u32> {
     signed_length_milli(style, value).and_then(|value| u32::try_from(value.max(0)).ok())
 }
 
-fn signed_length_milli(style: &UiStyleResource, value: &UiStyleValue) -> Option<i32> {
+fn signed_length_milli(style: &UiStyleResource, value: &ViewStyleValue) -> Option<i32> {
     match value {
-        UiStyleValue::Milli(value) => Some(*value),
-        UiStyleValue::Text(value) => parse_length_milli(value),
-        UiStyleValue::Token(token) => style
+        ViewStyleValue::Milli(value) => Some(*value),
+        ViewStyleValue::Text(value) => parse_length_milli(value),
+        ViewStyleValue::Token(token) => style
             .tokens
             .iter()
             .find(|candidate| candidate.public_id == *token)
             .and_then(|token| signed_length_milli(style, &token.value)),
-        UiStyleValue::SystemColor(_)
-        | UiStyleValue::Rgba(_)
-        | UiStyleValue::List(_)
-        | UiStyleValue::Resource(_)
-        | UiStyleValue::Digest(_) => None,
+        ViewStyleValue::SystemColor(_)
+        | ViewStyleValue::Rgba(_)
+        | ViewStyleValue::List(_)
+        | ViewStyleValue::Resource(_)
+        | ViewStyleValue::Digest(_) => None,
     }
 }
 
-fn opacity_milli(style: &UiStyleResource, value: &UiStyleValue) -> Option<u16> {
+fn opacity_milli(style: &UiStyleResource, value: &ViewStyleValue) -> Option<u16> {
     match value {
-        UiStyleValue::Milli(value) => u16::try_from((*value).clamp(0, 1_000)).ok(),
-        UiStyleValue::Text(value) => parse_opacity_milli(value),
-        UiStyleValue::Token(token) => style
+        ViewStyleValue::Milli(value) => u16::try_from((*value).clamp(0, 1_000)).ok(),
+        ViewStyleValue::Text(value) => parse_opacity_milli(value),
+        ViewStyleValue::Token(token) => style
             .tokens
             .iter()
             .find(|candidate| candidate.public_id == *token)
             .and_then(|token| opacity_milli(style, &token.value)),
-        UiStyleValue::SystemColor(_)
-        | UiStyleValue::Rgba(_)
-        | UiStyleValue::List(_)
-        | UiStyleValue::Resource(_)
-        | UiStyleValue::Digest(_) => None,
+        ViewStyleValue::SystemColor(_)
+        | ViewStyleValue::Rgba(_)
+        | ViewStyleValue::List(_)
+        | ViewStyleValue::Resource(_)
+        | ViewStyleValue::Digest(_) => None,
     }
 }
 
-fn depth_milli(style: &UiStyleResource, value: &UiStyleValue) -> Option<i32> {
+fn depth_milli(style: &UiStyleResource, value: &ViewStyleValue) -> Option<i32> {
     match value {
-        UiStyleValue::Milli(value) => Some(*value),
-        UiStyleValue::Text(value) => parse_depth_milli(value),
-        UiStyleValue::Token(token) => style
+        ViewStyleValue::Milli(value) => Some(*value),
+        ViewStyleValue::Text(value) => parse_depth_milli(value),
+        ViewStyleValue::Token(token) => style
             .tokens
             .iter()
             .find(|candidate| candidate.public_id == *token)
             .and_then(|token| depth_milli(style, &token.value)),
-        UiStyleValue::SystemColor(_)
-        | UiStyleValue::Rgba(_)
-        | UiStyleValue::List(_)
-        | UiStyleValue::Resource(_)
-        | UiStyleValue::Digest(_) => None,
+        ViewStyleValue::SystemColor(_)
+        | ViewStyleValue::Rgba(_)
+        | ViewStyleValue::List(_)
+        | ViewStyleValue::Resource(_)
+        | ViewStyleValue::Digest(_) => None,
     }
 }
 
-fn font_family_value(style: &UiStyleResource, value: &UiStyleValue) -> Option<String> {
+fn font_family_value(style: &UiStyleResource, value: &ViewStyleValue) -> Option<String> {
     match value {
-        UiStyleValue::Text(value) => normalized_text_value(value),
-        UiStyleValue::List(values) => {
+        ViewStyleValue::Text(value) => normalized_text_value(value),
+        ViewStyleValue::List(values) => {
             let values = values
                 .iter()
                 .map(|value| font_family_value(style, value))
                 .collect::<Option<Vec<_>>>()?;
             (!values.is_empty()).then(|| values.join(", "))
         }
-        UiStyleValue::Token(token) => style
+        ViewStyleValue::Token(token) => style
             .tokens
             .iter()
             .find(|candidate| candidate.public_id == *token)
             .and_then(|token| font_family_value(style, &token.value)),
-        UiStyleValue::SystemColor(_)
-        | UiStyleValue::Rgba(_)
-        | UiStyleValue::Milli(_)
-        | UiStyleValue::Resource(_)
-        | UiStyleValue::Digest(_) => None,
+        ViewStyleValue::SystemColor(_)
+        | ViewStyleValue::Rgba(_)
+        | ViewStyleValue::Milli(_)
+        | ViewStyleValue::Resource(_)
+        | ViewStyleValue::Digest(_) => None,
     }
 }
 
@@ -1123,42 +1123,42 @@ fn normalized_text_value(value: &str) -> Option<String> {
 
 fn shadow_list(
     style: &UiStyleResource,
-    value: &UiStyleValue,
+    value: &ViewStyleValue,
     fallback_radius_milli: u32,
 ) -> Option<Vec<UiRuntimeShadow>> {
     match value {
-        UiStyleValue::Text(value) => parse_shadow_list(value, fallback_radius_milli),
-        UiStyleValue::Token(token) => style
+        ViewStyleValue::Text(value) => parse_shadow_list(value, fallback_radius_milli),
+        ViewStyleValue::Token(token) => style
             .tokens
             .iter()
             .find(|candidate| candidate.public_id == *token)
             .and_then(|token| shadow_list(style, &token.value, fallback_radius_milli)),
-        UiStyleValue::SystemColor(_)
-        | UiStyleValue::Rgba(_)
-        | UiStyleValue::Milli(_)
-        | UiStyleValue::List(_)
-        | UiStyleValue::Resource(_)
-        | UiStyleValue::Digest(_) => None,
+        ViewStyleValue::SystemColor(_)
+        | ViewStyleValue::Rgba(_)
+        | ViewStyleValue::Milli(_)
+        | ViewStyleValue::List(_)
+        | ViewStyleValue::Resource(_)
+        | ViewStyleValue::Digest(_) => None,
     }
 }
 
 fn filter_list(
     style: &UiStyleResource,
-    value: &UiStyleValue,
+    value: &ViewStyleValue,
 ) -> Option<UiRuntimeControlFilterList> {
     match value {
-        UiStyleValue::Text(value) => parse_filter_list(value),
-        UiStyleValue::Token(token) => style
+        ViewStyleValue::Text(value) => parse_filter_list(value),
+        ViewStyleValue::Token(token) => style
             .tokens
             .iter()
             .find(|candidate| candidate.public_id == *token)
             .and_then(|token| filter_list(style, &token.value)),
-        UiStyleValue::SystemColor(_)
-        | UiStyleValue::Rgba(_)
-        | UiStyleValue::Milli(_)
-        | UiStyleValue::List(_)
-        | UiStyleValue::Resource(_)
-        | UiStyleValue::Digest(_) => None,
+        ViewStyleValue::SystemColor(_)
+        | ViewStyleValue::Rgba(_)
+        | ViewStyleValue::Milli(_)
+        | ViewStyleValue::List(_)
+        | ViewStyleValue::Resource(_)
+        | ViewStyleValue::Digest(_) => None,
     }
 }
 
@@ -1185,23 +1185,23 @@ fn parse_length_milli(raw: &str) -> Option<i32> {
 
 fn radius_declaration(
     style: &UiStyleResource,
-    value: &UiStyleValue,
+    value: &ViewStyleValue,
 ) -> Option<UiRuntimeControlRadiusDeclaration> {
     match value {
-        UiStyleValue::Milli(value) => u32::try_from((*value).max(0))
+        ViewStyleValue::Milli(value) => u32::try_from((*value).max(0))
             .ok()
             .map(UiRuntimeControlRadiusDeclaration::Uniform),
-        UiStyleValue::Text(value) => parse_radius_declaration(value),
-        UiStyleValue::Token(token) => style
+        ViewStyleValue::Text(value) => parse_radius_declaration(value),
+        ViewStyleValue::Token(token) => style
             .tokens
             .iter()
             .find(|candidate| candidate.public_id == *token)
             .and_then(|token| radius_declaration(style, &token.value)),
-        UiStyleValue::SystemColor(_)
-        | UiStyleValue::Rgba(_)
-        | UiStyleValue::List(_)
-        | UiStyleValue::Resource(_)
-        | UiStyleValue::Digest(_) => None,
+        ViewStyleValue::SystemColor(_)
+        | ViewStyleValue::Rgba(_)
+        | ViewStyleValue::List(_)
+        | ViewStyleValue::Resource(_)
+        | ViewStyleValue::Digest(_) => None,
     }
 }
 
@@ -1470,29 +1470,29 @@ fn parse_alpha_channel(raw: &str) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::model::{UiStyleRule, UiStyleToken};
+    use super::super::model::{ViewStyleRule, ViewStyleToken};
     use super::*;
 
     #[test]
     fn font_family_token_resolves_for_runtime_text_controls() {
         let style = UiStyleResource {
-            tokens: vec![UiStyleToken {
+            tokens: vec![ViewStyleToken {
                 public_id: "font.ui_stack".to_owned(),
-                value: UiStyleValue::List(vec![
-                    UiStyleValue::Text("Arcweft Demo".to_owned()),
-                    UiStyleValue::Text("Yu Gothic".to_owned()),
-                    UiStyleValue::Text("Hiragino Sans".to_owned()),
-                    UiStyleValue::Text("Noto Sans JP".to_owned()),
-                    UiStyleValue::Text("system-ui".to_owned()),
+                value: ViewStyleValue::List(vec![
+                    ViewStyleValue::Text("Arcweft Demo".to_owned()),
+                    ViewStyleValue::Text("Yu Gothic".to_owned()),
+                    ViewStyleValue::Text("Hiragino Sans".to_owned()),
+                    ViewStyleValue::Text("Noto Sans JP".to_owned()),
+                    ViewStyleValue::Text("system-ui".to_owned()),
                 ]),
             }],
-            rules: vec![UiStyleRule {
-                selector: UiStyleSelector {
-                    parts: vec![UiStyleSelectorPart::Element(UiElementKind::TextField)],
+            rules: vec![ViewStyleRule {
+                selector: ViewStyleSelector {
+                    parts: vec![ViewStyleSelectorPart::Element(ViewElementKind::TextField)],
                 },
-                declarations: vec![UiStyleDeclaration {
+                declarations: vec![ViewStyleDeclaration {
                     property: "font-family".to_owned(),
-                    value: UiStyleValue::Token("font.ui_stack".to_owned()),
+                    value: ViewStyleValue::Token("font.ui_stack".to_owned()),
                     op: StyleAssignOp::Replace,
                 }],
                 source: None,

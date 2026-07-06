@@ -1,13 +1,13 @@
 use crate::ast::common::TextRange;
 use crate::ast::ids::{EntityRef, EntityRefSyntax};
 use crate::ast::items::{
-    AgentItem, AgentItemInit, CallableItem, CallableItemInit, CapabilityFn, ComponentDeclBody,
-    ContentDeclBody, EntityDeclBody, EntityDeclItem, EntityDeclKind, EntryDeclItem, EntryItem,
-    EntryKind, EntryRouteBinding, EntryRouteBindingSource, EnumItem, EnumVariant,
-    ExternCapabilityItem, ExternModActivity, ExternModFunction, ExternModItem, ExternModMember,
-    ExternModType, ExternModTypeKind, FunctionInit, FunctionItem, ImageDeclBody, ImageDeclField,
-    ImplItem, ImplItemInit, ImplMember, MemoFn, ParserItem, StateField, StateItem, StructField,
-    StructItem, TraitItem, TraitMember, TypeAliasItem,
+    AgentItem, AgentItemInit, CallableItem, CallableItemInit, CapabilityFn, ContentDeclBody,
+    EntityDeclBody, EntityDeclItem, EntityDeclKind, EntryDeclItem, EntryItem, EntryKind,
+    EntryRouteBinding, EntryRouteBindingSource, EnumItem, EnumVariant, ExternCapabilityItem,
+    ExternModActivity, ExternModFunction, ExternModItem, ExternModMember, ExternModType,
+    ExternModTypeKind, FunctionInit, FunctionItem, ImageDeclBody, ImageDeclField, ImplItem,
+    ImplItemInit, ImplMember, MemoFn, ParserItem, StateField, StateItem, StructField, StructItem,
+    TraitItem, TraitMember, TypeAliasItem, ViewDeclBody,
 };
 use crate::cst::{
     find_matching_angle_group, find_matching_punctuation, find_top_level_punctuation,
@@ -23,7 +23,7 @@ use super::headers::{
     parse_required_entity_ref, parse_required_entity_ref_syntax, parse_visibility_prefix,
     simple_error, split_function_header_lines, split_supertraits,
 };
-use super::view::parse_component_view_body;
+use super::view::parse_view_body;
 use super::{
     Parser, PendingDocLines, SourceDialect, collect_logical_block_items, parse_expr_lossy,
     parse_scope_expr_body, parse_scope_expr_body_for_dialect, split_brace_item,
@@ -743,17 +743,17 @@ fn parse_structured_entity_decl_body(
         EntityDeclKind::Image => Some(EntityDeclBody::Image(ImageDeclBody::new(
             parse_image_decl_fields(body, base, errors),
         ))),
-        EntityDeclKind::Component => {
+        EntityDeclKind::View => {
             if entity_signature_has_return_type(signature_tail) {
                 errors.push(simple_error(
                     base,
                     signature_tail.len(),
-                    "`component` always builds View; remove the `-> View` return annotation",
-                    "component Name(...) { ... }",
+                    "invalid view declaration signature",
+                    "view Name(...) { ... }",
                 ));
             }
-            Some(EntityDeclBody::Component(Box::new(ComponentDeclBody::new(
-                parse_component_view_body(body, base, module_path, errors),
+            Some(EntityDeclBody::View(Box::new(ViewDeclBody::new(
+                parse_view_body(body, base, module_path, errors),
             ))))
         }
         _ => None,
@@ -987,12 +987,6 @@ fn parse_entry_body_item(
     if let Some(target) = parse_entry_target(item, "goto", base, errors) {
         return EntryItem::Goto(target);
     }
-    if parse_removed_entry_dispatch(item, "start", base, errors) {
-        return EntryItem::Raw(item.to_owned());
-    }
-    if parse_removed_entry_dispatch(item, "run", base, errors) {
-        return EntryItem::Raw(item.to_owned());
-    }
     if let Some(rest) = item.strip_prefix("route ") {
         return parse_entry_route(rest, base, errors)
             .unwrap_or_else(|| EntryItem::Raw(item.to_owned()));
@@ -1004,27 +998,6 @@ fn parse_entry_body_item(
         };
     }
     EntryItem::Raw(item.to_owned())
-}
-
-fn parse_removed_entry_dispatch(
-    item: &str,
-    name: &str,
-    base: usize,
-    errors: &mut Vec<super::recovery::ParseError>,
-) -> bool {
-    let Some(rest) = item.strip_prefix(name) else {
-        return false;
-    };
-    if rest
-        .chars()
-        .next()
-        .is_some_and(|ch| !ch.is_whitespace() && ch != '(')
-    {
-        return false;
-    }
-    let message = format!("`{name}` was removed from entry bodies; use `goto @flow.name`");
-    errors.push(simple_error(base, item.len(), &message, "goto @flow.name"));
-    true
 }
 
 fn parse_entry_target(

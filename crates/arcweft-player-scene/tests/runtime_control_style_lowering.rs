@@ -1,12 +1,11 @@
 use arcweft_bundle::resource_codec::ui::{
     CompositionOnBlurPolicy, EnterKeyHint, RgbaColor, TextAssistPolicy, TextCapitalization,
-    UiInputKind, UiInputPurpose, UiRuntimeActionButton, UiRuntimeActionButtonAction,
-    UiRuntimeButtonBounds, UiRuntimeControlCornerFrameStyle, UiRuntimeControlFilter,
+    UiInputKind, UiInputPurpose, UiRuntimeControlCornerFrameStyle, UiRuntimeControlFilter,
     UiRuntimeControlFilterList, UiRuntimeControlStyle, UiRuntimeControlVisualStyle,
     UiRuntimeTextControl, UiRuntimeTextControlBounds, UiRuntimeTextControlHandlers,
     UiRuntimeTextControlOptions, UiRuntimeTextSelection, UiSecureInputPolicy,
-    UiTextSelectionPolicy, UiTextShortcutPolicy, UiTextSubmitImePolicy, UiTextTabPolicy,
-    UiTextVerticalNavigationPolicy,
+    UiTextSelectionPolicy, UiTextShortcutPolicy, UiTextTabPolicy, UiTextVerticalNavigationPolicy,
+    ViewRuntimeActionButton, ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds,
 };
 use arcweft_player_scene::action_buttons::RuntimeActionButtonLowerer;
 use arcweft_player_scene::input::InputController;
@@ -36,17 +35,15 @@ fn runtime_action_button_style_reaches_render_action_button() {
         UiRuntimeControlStyle::default(),
     )])
     .expect("text input lowers");
-    let button = UiRuntimeActionButton {
+    let button = ViewRuntimeActionButton {
         public_id: "button.submit_feedback".to_owned(),
         target: "button.submit_feedback".to_owned(),
-        component: None,
+        view: None,
+        containing_scroll_region: None,
         label: "Send".to_owned(),
         enabled: true,
-        bounds: UiRuntimeButtonBounds::new(484_000, 48_000, 128_000, 48_000),
-        action: UiRuntimeActionButtonAction::TextInputSubmit {
-            input_target: "input.feedback".to_owned(),
-            ime_policy: UiTextSubmitImePolicy::Commit,
-        },
+        bounds: ViewRuntimeButtonBounds::new(484_000, 48_000, 128_000, 48_000),
+        action: ViewRuntimeActionButtonAction::Noop,
         style: styled_fill_depth(64, 96, 64, 255, 2_100),
     };
 
@@ -183,7 +180,8 @@ fn text_control_with_style(public_id: &str, style: UiRuntimeControlStyle) -> UiR
     UiRuntimeTextControl {
         public_id: public_id.to_owned(),
         target: public_id.to_owned(),
-        component: None,
+        view: None,
+        containing_scroll_region: None,
         session: 41,
         value: "hello".to_owned(),
         selection: UiRuntimeTextSelection::new(5, 5),

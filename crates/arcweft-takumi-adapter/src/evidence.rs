@@ -151,13 +151,7 @@ fn push_metadata(out: &mut String, depth: usize, metadata: &ArcweftNodeMetadata,
         true,
     );
     push_field_u32(out, depth + 1, "style", metadata.style().0, true);
-    push_optional_u32(
-        out,
-        depth + 1,
-        "component",
-        metadata.component().map(|id| id.0),
-        true,
-    );
+    push_optional_u32(out, depth + 1, "view", metadata.view().map(|id| id.0), true);
     push_optional_u32(
         out,
         depth + 1,

@@ -628,7 +628,7 @@ fn private_helper(value: String | Bytes) -> Unit {
 }
 
 #[test]
-fn parses_documented_state_reducer_and_view_items() {
+fn parses_documented_state_reducer_and_function_items() {
     let tree = parse_ok(
         r"
 pub state GameState {
@@ -647,10 +647,8 @@ requires state_is_valid
     }
 }
 
-pub view current_scene(state: GameState) -> Scene {
-    scene {
-        layer bg = image(@asset:.bg.room)
-    }
+pub fn current_scene(state: GameState) -> Bool {
+    true
 }
 ",
     );
@@ -682,24 +680,24 @@ pub view current_scene(state: GameState) -> Scene {
     assert!(reducer.body_statements().is_empty());
     assert!(matches!(reducer.body_value(), Some(Expr::Match { .. })));
 
-    let Item::Callable(view) = &tree.items()[2] else {
-        panic!("expected view item");
+    let Item::Function(function) = &tree.items()[2] else {
+        panic!("expected function item");
     };
-    assert_eq!(view.kind(), CallableKind::View);
-    assert_eq!(view.name(), "current_scene");
-    assert!(view.body_statements().is_empty());
-    assert!(matches!(view.body_value(), Some(Expr::NamedBlock { name, .. }) if name == "scene"));
+    assert_eq!(function.kind(), FunctionKind::Function);
+    assert_eq!(function.signature().name(), "current_scene");
+    assert!(function.body_statements().is_empty());
+    assert!(matches!(
+        function.body_value(),
+        Some(Expr::Literal(Literal::Bool(true)))
+    ));
 
     let hir = lower_to_hir(&tree).expect("syntax-only state/callable items do not block HIR");
     assert!(hir.flows().is_empty());
+    assert_eq!(hir.functions().len(), 1);
     validate_typecheck_ready(&hir).expect("state defaults lower without raw expressions");
     assert!(matches!(
         hir.declarations(),
-        [
-            HirTopLevelDecl::State(_),
-            HirTopLevelDecl::Callable(_),
-            HirTopLevelDecl::Callable(_)
-        ]
+        [HirTopLevelDecl::State(_), HirTopLevelDecl::Callable(_)]
     ));
 }
 
@@ -1267,7 +1265,7 @@ activity @activity.truck_game TruckGame {
 
 action feedback.submit(value: String)
 
-component @ui.settings SettingsPanel(config: Binding<Config>) {
+view @view.settings SettingsPanel(config: Binding<Config>) {
     SettingsView(config)
 }
 ",
@@ -1288,7 +1286,7 @@ component @ui.settings SettingsPanel(config: Binding<Config>) {
             EntityDeclKind::Layer,
             EntityDeclKind::Activity,
             EntityDeclKind::Action,
-            EntityDeclKind::Component,
+            EntityDeclKind::View,
         ]
     );
 

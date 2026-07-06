@@ -38,6 +38,11 @@ pub enum BundleImageCatalogError {
 }
 
 impl BundleImageCatalog {
+    #[must_use]
+    pub fn empty() -> Self {
+        Self { images: Vec::new() }
+    }
+
     pub fn from_bundle(bundle: &ArcweftBundle) -> Result<Self, BundleImageCatalogError> {
         bundle
             .image_assets
@@ -99,11 +104,14 @@ impl BundleImageCatalog {
         Ok(RenderImage {
             id: object.id.clone(),
             frame: RenderImageFrame {
+                index: usize::try_from(frame.index()).ok(),
                 width: frame.dimensions().width(),
                 height: frame.dimensions().height(),
                 rgba: frame.rgba().to_vec(),
             },
             bounds: hit_rect_from_layout(placement.output_bbox),
+            containing_scroll_region: object.containing_scroll_region.clone(),
+            viewport_clip: None,
             placement: Some(placement),
             fit: render_fit(object.fit),
             alignment: ImageObjectAlignment::new(

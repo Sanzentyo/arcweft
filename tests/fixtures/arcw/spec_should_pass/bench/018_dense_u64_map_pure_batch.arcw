@@ -4,7 +4,7 @@ fn score_u64(base: u64, bonus: u64) -> u64 {
 }
 
 bench @bench.dense_u64_map_pure_batch {
-    measure iterations = 4 { start(@flow.dense_u64_map_pure_batch) }
+    measure iterations = 4 { goto @flow.dense_u64_map_pure_batch }
 }
 
 flow @flow.dense_u64_map_pure_batch dense_u64_map_pure_batch {

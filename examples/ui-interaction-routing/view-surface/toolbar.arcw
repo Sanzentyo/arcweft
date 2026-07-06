@@ -1,4 +1,4 @@
-pub component @ui.sample.toolbar ActionToolbar(actions: Vec<ToolbarAction>) {
+pub view @ui.sample.toolbar ActionToolbar(actions: Vec<ToolbarAction>) {
     Row(spacing = 10) {
         ForEach(actions, id = _.id) |action_item| {
             Button(@button:.toolbar_item)

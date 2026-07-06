@@ -2,13 +2,13 @@
 
 Game Native UI は SwiftUI 風の宣言的・リアクティブ UI。HTML/CSS とは別に、ゲーム画面、選択肢、HUD、text box、debug overlay、Agent 観測に使う。
 
-## Component
+## View
 
 ```arcw
-pub component @ui.settings SettingsPanel(
+pub view SettingsPanel(
     config: Binding<Config>,
     props: SettingsProps,
-) -> View {
+) {
     local state tab: SettingsTab = .Audio
 
     Column(spacing = 16) {
@@ -58,13 +58,13 @@ Binding<f32> {
 
 ## Reactive dependencies
 
-component 評価中に読んだ依存を記録する。
+view 評価中に読んだ依存を記録する。
 
 ```rust
 pub enum UiDependency {
     StatePath(StatePathId),
     Signal(EntityId),
-    LocalState(ComponentLocalId),
+    LocalState(ViewLocalId),
     Environment(EnvironmentKey),
     Resource(AssetId),
     Font(FontId),
@@ -72,7 +72,7 @@ pub enum UiDependency {
 }
 ```
 
-変更時は該当 component だけ invalidated。
+変更時は該当 view だけ invalidated。
 
 ## View / Modifier
 
@@ -115,12 +115,12 @@ pub struct UiNode {
 
 
 
-## Memoized component and hooks
+## Memoized view and hooks
 
-UI component は dependency tracking によって必要部分だけ再評価される。高価な派生値には `memo` を使う。
+UI view は dependency tracking によって必要部分だけ再評価される。高価な派生値には `memo` を使う。
 
 ```arcw
-component @ui.choice_list ChoiceList(state: GameState) {
+view ChoiceList(state: GameState) {
     let choices = memo(scope=frame, key=(state.route, state.affection)) {
         opening_choices()
             .filter(choice_available(state))

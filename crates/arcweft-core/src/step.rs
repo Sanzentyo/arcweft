@@ -68,7 +68,18 @@ pub struct HostRequestBatch {
 }
 
 /// Stable identifier for one host call request/result exchange.
-#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    serde::Deserialize,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    serde::Serialize,
+)]
 pub struct RuntimeHostCallId(pub String);
 
 /// Whether a host call may complete in the emitting step or requires a later
@@ -164,7 +175,7 @@ pub struct RuntimeStepStats {
 }
 
 /// Deterministic counters for runtime pure helper acceleration.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize, PartialEq, serde::Serialize)]
 pub struct RuntimePureCallStats {
     pub pure_calls: usize,
     pub math_calls: usize,
@@ -190,8 +201,28 @@ pub struct RuntimePureCallStats {
     pub parallel_skipped_backend: usize,
     pub parallel_skipped_small: usize,
     pub thread_pool_jobs: usize,
+    #[serde(with = "u128_string")]
     pub thread_pool_build_elapsed_ns: u128,
     pub fallbacks: usize,
+}
+
+mod u128_string {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &u128, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&value.to_string())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<u128, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        value.parse::<u128>().map_err(serde::de::Error::custom)
+    }
 }
 
 impl RuntimePureCallStats {

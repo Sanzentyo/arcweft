@@ -1,7 +1,7 @@
-entry game @entry.main { start(@flow.opening) }
+entry game @entry.main { goto @flow.opening }
 flow @flow.opening opening { return "done" }
 
 test @test.entry_starts scenario {
-    start(@entry.main)
+    goto @flow.opening
     expect.no_assertion_failures()
 }

@@ -64,7 +64,7 @@ flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
 Modal UI:
 
 ```arcw
-component @ui.settings SettingsPanel(config: Binding<Config>) {
+view SettingsPanel(config: Binding<Config>) {
     Column {
         Text("Settings")
         Button("閉じる")

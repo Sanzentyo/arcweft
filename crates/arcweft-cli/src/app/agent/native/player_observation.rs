@@ -9,26 +9,30 @@ use super::{
     agent_native_capture_session_for_hir, agent_object_capture_refs_for_page,
     agent_observe_capture_time_seconds, agent_observe_effective_steps,
     agent_observe_layout_scene_graph, agent_observe_report_capture_time_millis,
-    agent_observed_components, agent_observed_layers, agent_overlay_svg, agent_textbox_object,
-    hash_hex, load_and_check_selection, native_host_policy_for_selection, report_path,
+    agent_observed_layers, agent_observed_views, agent_overlay_svg, agent_textbox_object, hash_hex,
+    load_and_check_selection, native_host_policy_for_selection, report_path,
     resolve_source_selection,
 };
 use crate::app::bundle::compile_bundle_for_selection;
 use arcweft_agent_protocol::{
     diagnostic::{AgentDiagnostic, AgentDiagnosticSeverity},
     geometry::{AgentBBox, AgentCoordinateSpace, AgentViewport},
-    image::{AgentCaptureSourceIdentity, AgentImageAlignment, AgentImageFit, AgentImageTransform},
+    image::{
+        AgentCaptureSourceIdentity, AgentImageAlignment, AgentImageFit, AgentImageObjectParam,
+        AgentImageTransform,
+    },
     object::{
-        AgentObservedComponent, AgentObservedImageContent, AgentObservedLayer, AgentObservedObject,
-        AgentObservedObjectContent,
+        AgentObservedImageContent, AgentObservedLayer, AgentObservedObject,
+        AgentObservedObjectContent, AgentObservedView,
     },
     observation::AgentObservationReport,
     presentation::AgentPresentationTree,
+    proxy::AgentPresentationObjectProxyRef,
     session::{AgentAssignment, AgentAudioState},
     ui::AgentUiTree,
 };
-use arcweft_bundle::BundleImageObject;
 use arcweft_bundle::BundleVirtualFileSpace;
+use arcweft_bundle::{BundleImageObject, BundleImageObjectParam, BundleImageObjectProxy};
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::task::TaskEvent;
 use arcweft_interaction_model::input::RoutedInputEvent;
@@ -38,6 +42,7 @@ use arcweft_player_scene::frame::{
 };
 use arcweft_player_scene::{images::BundleImageCatalog, input::InputController};
 use arcweft_presentation::{hit::HitRect, image::ImageObjectFit, semantic::SemanticRole};
+use arcweft_render_text::{Milli, RichTextParam};
 use arcweft_render_wgpu::{
     geometry::{
         PreparedFrame, RenderImage, RenderPreferences, RenderTextInputControl, RenderViewport,
@@ -352,13 +357,13 @@ fn player_observation_report(
     let mut actions = agent_action_targets(&objects);
     actions.extend(agent_action_targets_for_runtime_status(&step.fiber_status));
     let layers = agent_observed_layers("cli", step.index, &objects);
-    let components = agent_observed_components("cli", step.index, &objects);
+    let views = agent_observed_views("cli", step.index, &objects);
     push_missing_requested_scope_diagnostic(
         &mut diagnostics,
         step.index,
         options,
         &layers,
-        &components,
+        &views,
         &objects,
     );
     let presentation_tree = AgentPresentationTree::from_layers_and_objects(&layers, &objects);
@@ -388,7 +393,7 @@ fn player_observation_report(
         viewport,
         images: Vec::new(),
         layers: layers.clone(),
-        components,
+        views,
         objects,
         presentation_tree,
         actions,
@@ -435,7 +440,7 @@ fn push_missing_requested_scope_diagnostic(
     step: usize,
     options: &AgentObserveOptions,
     layers: &[AgentObservedLayer],
-    components: &[AgentObservedComponent],
+    views: &[AgentObservedView],
     objects: &[AgentObservedObject],
 ) {
     push_missing_capture_scope_diagnostics(
@@ -443,7 +448,7 @@ fn push_missing_requested_scope_diagnostic(
         step,
         requested_capture_scopes(options),
         layers,
-        components,
+        views,
         objects,
     );
 }
@@ -456,7 +461,7 @@ struct RequestedCaptureScope<'a> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RequestedCaptureScopeKind {
-    Component,
+    View,
     Object,
     Layer,
 }
@@ -464,7 +469,7 @@ enum RequestedCaptureScopeKind {
 impl RequestedCaptureScopeKind {
     fn label(self) -> &'static str {
         match self {
-            Self::Component => "component",
+            Self::View => "view",
             Self::Object => "object",
             Self::Layer => "layer",
         }
@@ -475,13 +480,10 @@ fn requested_capture_scopes(
     options: &AgentObserveOptions,
 ) -> [Option<RequestedCaptureScope<'_>>; 3] {
     [
-        options
-            .component
-            .as_deref()
-            .map(|id| RequestedCaptureScope {
-                kind: RequestedCaptureScopeKind::Component,
-                id,
-            }),
+        options.view.as_deref().map(|id| RequestedCaptureScope {
+            kind: RequestedCaptureScopeKind::View,
+            id,
+        }),
         options.object.as_deref().map(|id| RequestedCaptureScope {
             kind: RequestedCaptureScopeKind::Object,
             id,
@@ -498,13 +500,13 @@ fn push_missing_capture_scope_diagnostics(
     step: usize,
     requested_scopes: [Option<RequestedCaptureScope<'_>>; 3],
     layers: &[AgentObservedLayer],
-    components: &[AgentObservedComponent],
+    views: &[AgentObservedView],
     objects: &[AgentObservedObject],
 ) {
     for scope in requested_scopes
         .into_iter()
         .flatten()
-        .filter(|scope| !capture_scope_is_observed(*scope, layers, components, objects))
+        .filter(|scope| !capture_scope_is_observed(*scope, layers, views, objects))
     {
         diagnostics.push(AgentDiagnostic {
             step,
@@ -524,13 +526,11 @@ fn push_missing_capture_scope_diagnostics(
 fn capture_scope_is_observed(
     scope: RequestedCaptureScope<'_>,
     layers: &[AgentObservedLayer],
-    components: &[AgentObservedComponent],
+    views: &[AgentObservedView],
     objects: &[AgentObservedObject],
 ) -> bool {
     match scope.kind {
-        RequestedCaptureScopeKind::Component => {
-            components.iter().any(|observed| observed.id == scope.id)
-        }
+        RequestedCaptureScopeKind::View => views.iter().any(|observed| observed.id == scope.id),
         RequestedCaptureScopeKind::Object => objects.iter().any(|observed| observed.id == scope.id),
         RequestedCaptureScopeKind::Layer => layers.iter().any(|observed| observed.id == scope.id),
     }
@@ -552,7 +552,7 @@ fn player_observed_objects(
     options: &AgentObserveOptions,
 ) -> Vec<AgentObservedObject> {
     let mut objects = Vec::new();
-    let component_by_target = player_runtime_component_by_target(presentation);
+    let view_by_target = player_runtime_view_by_target(presentation);
     if let Some(dialogue) = &presentation.dialogue {
         objects.push(agent_textbox_object(
             step,
@@ -574,44 +574,34 @@ fn player_observed_objects(
                     .text_inputs
                     .iter()
                     .find(|control| control.target == *node.target());
-                player_semantic_object(step, node, control, &component_by_target)
+                player_semantic_object(step, node, control, &view_by_target)
             }),
     );
     objects
 }
 
-fn player_runtime_component_by_target(
+fn player_runtime_view_by_target(
     presentation: &BundlePresentationSnapshot,
 ) -> BTreeMap<String, String> {
     presentation
         .text_inputs
         .iter()
-        .filter_map(|control| {
-            control
-                .component
-                .as_ref()
-                .map(|component| (control, component))
-        })
-        .flat_map(|(control, component)| {
+        .filter_map(|control| control.view.as_ref().map(|view| (control, view)))
+        .flat_map(|(control, view)| {
             [
-                (control.public_id.clone(), component.clone()),
-                (control.target.clone(), component.clone()),
+                (control.public_id.clone(), view.clone()),
+                (control.target.clone(), view.clone()),
             ]
         })
         .chain(
             presentation
                 .action_buttons
                 .iter()
-                .filter_map(|button| {
-                    button
-                        .component
-                        .as_ref()
-                        .map(|component| (button, component))
-                })
-                .flat_map(|(button, component)| {
+                .filter_map(|button| button.view.as_ref().map(|view| (button, view)))
+                .flat_map(|(button, view)| {
                     [
-                        (button.public_id.clone(), component.clone()),
-                        (button.target.clone(), component.clone()),
+                        (button.public_id.clone(), view.clone()),
+                        (button.target.clone(), view.clone()),
                     ]
                 }),
         )
@@ -627,7 +617,7 @@ fn player_observed_image_objects(
     visual_time_millis: u64,
 ) -> Vec<AgentObservedObject> {
     prepared
-        .scene
+        .frame
         .images
         .iter()
         .filter_map(|image| {
@@ -664,7 +654,7 @@ fn player_observed_image_object(
         .unwrap_or_else(|| "image".to_owned());
     let target = source.and_then(|source| source.target.clone());
     let object_depth = source.map(|source| source.depth_milli);
-    let native_quad = player_render_image_native_quad(image);
+    let native_quad = player_render_image_native_quad(image)?;
     let geometry = agent_image_geometry_from_native_quad(native_quad, viewport);
     let bbox = geometry.bbox;
     let polygon = geometry.polygon;
@@ -715,7 +705,7 @@ fn player_observed_image_object(
             object: Some(image.id.clone()),
             target,
             asset: source.map(|source| source.asset.clone()),
-            frame_index: None,
+            frame_index: image.frame.index,
             local_time_millis: source
                 .map(|source| source.playback.local_time_millis(visual_time_millis)),
             opacity_milli: Some(image.opacity_milli),
@@ -736,19 +726,88 @@ fn player_observed_image_object(
             resolved_placement: image.placement.clone(),
             intrinsic_width: Some(image.frame.width),
             intrinsic_height: Some(image.frame.height),
-            actions: Vec::new(),
-            params: BTreeMap::new(),
-            proxies: Vec::new(),
+            actions: source
+                .map(|source| source.actions.clone())
+                .unwrap_or_default(),
+            params: source
+                .map(|source| bundle_image_params(&source.params))
+                .unwrap_or_default(),
+            proxies: source
+                .map(|source| bundle_image_proxies(&source.proxies))
+                .unwrap_or_default(),
         })),
     })
 }
 
+fn bundle_image_params(
+    params: &BTreeMap<String, BundleImageObjectParam>,
+) -> BTreeMap<String, AgentImageObjectParam> {
+    params
+        .iter()
+        .map(|(key, value)| (key.clone(), bundle_image_param(value)))
+        .collect()
+}
+
+fn bundle_image_param(value: &BundleImageObjectParam) -> AgentImageObjectParam {
+    match value {
+        BundleImageObjectParam::Bool { value } => AgentImageObjectParam::Bool { value: *value },
+        BundleImageObjectParam::Integer { value } => {
+            AgentImageObjectParam::Integer { value: *value }
+        }
+        BundleImageObjectParam::Milli { value } => AgentImageObjectParam::Milli { value: *value },
+        BundleImageObjectParam::Text { value } => AgentImageObjectParam::Text {
+            value: value.clone(),
+        },
+        BundleImageObjectParam::Id { value } => AgentImageObjectParam::Id {
+            value: value.clone(),
+        },
+    }
+}
+
+fn bundle_image_proxies(
+    proxies: &[BundleImageObjectProxy],
+) -> Vec<AgentPresentationObjectProxyRef> {
+    proxies
+        .iter()
+        .map(|proxy| AgentPresentationObjectProxyRef {
+            id: proxy.id.clone(),
+            type_name: proxy.type_name.clone(),
+            role: proxy.role.clone(),
+            layer: proxy.layer.clone(),
+            depth: proxy.depth_milli,
+            declaration: None,
+            hit_test: proxy.hit_test,
+            params: proxy
+                .params
+                .iter()
+                .map(|(key, value)| (key.clone(), bundle_image_proxy_param(value)))
+                .collect(),
+        })
+        .collect()
+}
+
+fn bundle_image_proxy_param(value: &BundleImageObjectParam) -> RichTextParam {
+    match value {
+        BundleImageObjectParam::Bool { value } => RichTextParam::Bool { value: *value },
+        BundleImageObjectParam::Integer { value } => RichTextParam::Int { value: *value },
+        BundleImageObjectParam::Milli { value } => RichTextParam::Milli {
+            value: Milli(*value),
+        },
+        BundleImageObjectParam::Text { value } => RichTextParam::Text {
+            value: value.clone(),
+        },
+        BundleImageObjectParam::Id { value } => RichTextParam::Selector {
+            value: value.clone(),
+        },
+    }
+}
+
 fn player_render_image_native_quad(
     image: &RenderImage,
-) -> arcweft_render_native::NativeImageQuad<'_> {
-    let quad = image.quad();
+) -> Option<arcweft_render_native::NativeImageQuad<'_>> {
+    let quad = image.visible_quad()?;
     let transform = image.transform_matrix();
-    arcweft_render_native::NativeImageQuad {
+    Some(arcweft_render_native::NativeImageQuad {
         width: image.frame.width,
         height: image.frame.height,
         rgba: &image.frame.rgba,
@@ -767,7 +826,7 @@ fn player_render_image_native_quad(
             tx: transform.tx,
             ty: transform.ty,
         },
-    }
+    })
 }
 
 fn player_agent_image_fit(fit: ImageObjectFit) -> AgentImageFit {
@@ -783,7 +842,7 @@ fn player_semantic_object(
     step: usize,
     node: &arcweft_presentation::semantic::SemanticNode,
     control: Option<&RenderTextInputControl>,
-    component_by_target: &BTreeMap<String, String>,
+    view_by_target: &BTreeMap<String, String>,
 ) -> Option<AgentObservedObject> {
     if !node.visible() {
         return None;
@@ -793,7 +852,7 @@ fn player_semantic_object(
     let text = player_semantic_text(node.role(), node.label(), control);
     let mut object = AgentObservedObject {
         id: id.clone(),
-        parent_id: component_by_target.get(&id).cloned(),
+        parent_id: view_by_target.get(&id).cloned(),
         entity: Some(id.clone()),
         layer: node.layer().public_id().as_str().to_owned(),
         role: player_semantic_role(node.role()).to_owned(),
@@ -905,9 +964,9 @@ mod tests {
         UiTextTabPolicy, UiTextVerticalNavigationPolicy,
     };
     use arcweft_bundle::resource_codec::{
-        UiRuntimeActionButton, UiRuntimeActionButtonAction, UiRuntimeButtonBounds,
         UiRuntimeControlStyle, UiRuntimeTextControl, UiRuntimeTextControlBounds,
         UiRuntimeTextControlHandlers, UiRuntimeTextControlOptions, UiRuntimeTextSelection,
+        ViewRuntimeActionButton, ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds,
     };
     use arcweft_bundle::{
         BundleImageObjectBounds, BundleImageObjectFit, BundleImageObjectPlayback,
@@ -921,13 +980,13 @@ mod tests {
     use arcweft_render_wgpu::geometry::RenderImageFrame;
 
     #[test]
-    fn player_semantic_objects_preserve_runtime_component_parent() {
+    fn player_semantic_objects_preserve_runtime_view_parent() {
         let presentation = BundlePresentationSnapshot {
             text_inputs: vec![runtime_text_control("input.visitor_name")],
             action_buttons: vec![runtime_action_button("button.continue")],
             ..BundlePresentationSnapshot::default()
         };
-        let component_by_target = player_runtime_component_by_target(&presentation);
+        let view_by_target = player_runtime_view_by_target(&presentation);
         let input_target = interaction_target("input.visitor_name");
         let input_node = SemanticNode::new(
             layer_id("ui.text_input"),
@@ -954,19 +1013,15 @@ mod tests {
             HitRect::new(484.0, 48.0, 180.0, 48.0),
         );
 
-        let input =
-            player_semantic_object(7, &input_node, Some(&render_control), &component_by_target)
-                .expect("input object");
-        let button = player_semantic_object(7, &button_node, None, &component_by_target)
-            .expect("button object");
+        let input = player_semantic_object(7, &input_node, Some(&render_control), &view_by_target)
+            .expect("input object");
+        let button =
+            player_semantic_object(7, &button_node, None, &view_by_target).expect("button object");
 
-        assert_eq!(
-            input.parent_id.as_deref(),
-            Some("component.ModernFeedbackPanel")
-        );
+        assert_eq!(input.parent_id.as_deref(), Some("view.ModernFeedbackPanel"));
         assert_eq!(
             button.parent_id.as_deref(),
-            Some("component.ModernFeedbackPanel")
+            Some("view.ModernFeedbackPanel")
         );
     }
 
@@ -979,8 +1034,8 @@ mod tests {
             9,
             [
                 Some(RequestedCaptureScope {
-                    kind: RequestedCaptureScopeKind::Component,
-                    id: "component.HiddenPanel",
+                    kind: RequestedCaptureScopeKind::View,
+                    id: "view.HiddenPanel",
                 }),
                 Some(RequestedCaptureScope {
                     kind: RequestedCaptureScopeKind::Object,
@@ -1000,7 +1055,7 @@ mod tests {
                 && diagnostic.source.as_deref() == Some("agent.observe")
                 && diagnostic.code.as_deref() == Some("AGENT_CAPTURE_MISSING_SCOPE")
         }));
-        assert!(diagnostics[0].message.contains("component.HiddenPanel"));
+        assert!(diagnostics[0].message.contains("view.HiddenPanel"));
         assert!(diagnostics[1].message.contains("button.hidden"));
     }
 
@@ -1039,6 +1094,42 @@ mod tests {
         assert!(visible_frames.get(&visible.id).is_some());
         assert!(hidden.is_none());
         assert!(hidden_frames.get("object.image.image.glass_bg").is_none());
+    }
+
+    #[test]
+    fn player_image_object_observation_uses_scroll_clipped_visible_quad() {
+        let viewport = AgentViewport {
+            width: 1280,
+            height: 720,
+            scale: 1.0,
+        };
+        let mut render_image = render_image("image.glass_bg");
+        render_image.fit = ImageObjectFit::Stretch;
+        render_image.bounds = HitRect::new(100.0, 170.0, 200.0, 80.0);
+        render_image.viewport_clip = Some(HitRect::new(100.0, 100.0, 160.0, 80.0));
+        let source = bundle_image_object("image.glass_bg", true);
+        let mut frames = AgentImageFrameStore::default();
+
+        let object = player_observed_image_object(
+            3,
+            &viewport,
+            &render_image,
+            Some(&source),
+            &mut frames,
+            125,
+        )
+        .expect("visible image object");
+
+        assert_eq!(object.bbox.x, 100);
+        assert_eq!(object.bbox.y, 170);
+        assert_eq!(object.bbox.width, 160);
+        assert_eq!(object.bbox.height, 10);
+        let frame = frames.get(&object.id).expect("image frame stored");
+        let placement = frame.placement.as_ref().expect("placement stored");
+        assert!((placement.dst.x - 100.0).abs() < f32::EPSILON);
+        assert!((placement.dst.y - 170.0).abs() < f32::EPSILON);
+        assert!((placement.dst.width - 160.0).abs() < f32::EPSILON);
+        assert!((placement.dst.height - 10.0).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -1093,11 +1184,48 @@ mod tests {
         );
     }
 
+    #[test]
+    fn released_image_object_capture_scope_reports_missing_scope_diagnostic() {
+        let objects = Vec::new();
+        let frames = AgentImageFrameStore::default();
+        let mut diagnostics = Vec::new();
+
+        push_missing_capture_scope_diagnostics(
+            &mut diagnostics,
+            5,
+            [
+                None,
+                Some(RequestedCaptureScope {
+                    kind: RequestedCaptureScopeKind::Object,
+                    id: "object.image.image.glass_bg",
+                }),
+                None,
+            ],
+            &[],
+            &[],
+            &objects,
+        );
+
+        assert!(frames.get("object.image.image.glass_bg").is_none());
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].step, 5);
+        assert_eq!(
+            diagnostics[0].code.as_deref(),
+            Some("AGENT_CAPTURE_MISSING_SCOPE")
+        );
+        assert!(
+            diagnostics[0]
+                .message
+                .contains("object.image.image.glass_bg")
+        );
+    }
+
     fn runtime_text_control(public_id: &str) -> UiRuntimeTextControl {
         UiRuntimeTextControl {
             public_id: public_id.to_owned(),
             target: public_id.to_owned(),
-            component: Some("component.ModernFeedbackPanel".to_owned()),
+            view: Some("view.ModernFeedbackPanel".to_owned()),
+            containing_scroll_region: None,
             session: 41,
             value: String::new(),
             selection: UiRuntimeTextSelection::new(0, 0),
@@ -1123,15 +1251,16 @@ mod tests {
         }
     }
 
-    fn runtime_action_button(public_id: &str) -> UiRuntimeActionButton {
-        UiRuntimeActionButton {
+    fn runtime_action_button(public_id: &str) -> ViewRuntimeActionButton {
+        ViewRuntimeActionButton {
             public_id: public_id.to_owned(),
             target: public_id.to_owned(),
-            component: Some("component.ModernFeedbackPanel".to_owned()),
+            view: Some("view.ModernFeedbackPanel".to_owned()),
+            containing_scroll_region: None,
             label: "Continue".to_owned(),
             enabled: true,
-            bounds: UiRuntimeButtonBounds::new(484_000, 48_000, 180_000, 48_000),
-            action: UiRuntimeActionButtonAction::Noop,
+            bounds: ViewRuntimeButtonBounds::new(484_000, 48_000, 180_000, 48_000),
+            action: ViewRuntimeActionButtonAction::Noop,
             style: UiRuntimeControlStyle::default(),
         }
     }
@@ -1148,11 +1277,14 @@ mod tests {
         RenderImage {
             id: id.to_owned(),
             frame: RenderImageFrame {
+                index: None,
                 width: 2,
                 height: 1,
                 rgba: vec![10, 20, 30, 255, 40, 50, 60, 255],
             },
             bounds: HitRect::new(0.0, 0.0, 1280.0, 720.0),
+            containing_scroll_region: None,
+            viewport_clip: None,
             placement: None,
             fit: ImageObjectFit::Cover,
             alignment: ImageObjectAlignment::top_left(),
@@ -1167,6 +1299,8 @@ mod tests {
             asset: "asset.glass_bg".to_owned(),
             target: Some("target.glass_bg".to_owned()),
             layer: Some("layer.background".to_owned()),
+            view: None,
+            containing_scroll_region: None,
             bounds: BundleImageObjectBounds::from_px(0, 0, 1280, 720),
             placement: None,
             fit: BundleImageObjectFit::Cover,
@@ -1175,6 +1309,9 @@ mod tests {
             transform: BundleImageObjectTransform::default(),
             depth_milli: -10_000,
             opacity_milli: 1_000,
+            actions: Vec::new(),
+            params: BTreeMap::default(),
+            proxies: Vec::new(),
             visible,
         }
     }

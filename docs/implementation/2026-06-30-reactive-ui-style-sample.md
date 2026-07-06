@@ -38,7 +38,7 @@ The product bundle substrate also stores the intended style contract:
 
 - `UiProgramResource`
 - `UiStyleResource`
-- `UiStyleSelectorPart::Interaction`
+- `ViewStyleSelectorPart::Interaction`
 - `StyleSourceIdentity` for both Arcweft and CSS authoring sources
 
 The missing production connection is player/runtime use of those product UI

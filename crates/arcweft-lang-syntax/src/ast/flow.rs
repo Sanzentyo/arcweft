@@ -329,11 +329,6 @@ pub enum Stmt {
         pattern: Pattern,
         await_with: AwaitWith,
     },
-    /// `let PAT = text_submit @input.id` waits for a player-owned text control submit.
-    LetTextSubmit {
-        pattern: Pattern,
-        target: Expr,
-    },
     /// `let PAT = receive action(@action.id)` waits for a typed semantic action.
     LetActionReceive {
         pattern: Pattern,

@@ -3,8 +3,8 @@ use arcweft_lang_syntax::{
         items::Item,
         style::StyleSyntax,
         view::{
-            ViewAction, ViewActionPayload, ViewExpr, ViewModifier, ViewStyleModifier,
-            ViewTextControlPayloadField,
+            ViewAction, ViewActionPayload, ViewAwaitBranchKind, ViewExpr, ViewModifier,
+            ViewStyleModifier, ViewTextControlPayloadField,
         },
     },
     parser::parse_source,
@@ -58,10 +58,12 @@ pub style danger_button: .Css {
 }
 
 #[test]
-fn component_view_button_on_click_text_submit_parses() {
+fn view_button_on_click_action_invoke_parses() {
     let parsed = parse_source(
         r#"
-pub component FeedbackForm() {
+pub action feedback.submit(value: String)
+
+pub view FeedbackForm() {
   Column {
     TextField(@input:.feedback, value: "", enter_key: send)
       .label("Message")
@@ -72,7 +74,7 @@ pub component FeedbackForm() {
       .style(@style:.primary_button)
       .enabled(true)
       .focusable(true)
-      .on_click(|| text_submit @input:.feedback)
+      .on_click(|| action.invoke(@action:.feedback.submit, value = @input:.feedback.text))
   }
 }
 "#,
@@ -84,15 +86,15 @@ pub component FeedbackForm() {
         .items()
         .iter()
         .find_map(|item| match item {
-            Item::EntityDecl(item) => item.component_body()?.view(),
+            Item::EntityDecl(item) => item.view_body()?.view(),
             _ => None,
         })
-        .expect("component View body");
+        .expect("view View body");
 
     let button = find_button(view.value()).expect("button parsed");
     assert!(matches!(
         button.activation(),
-        Some(ViewAction::TextSubmit(_))
+        Some(ViewAction::ActionInvoke(_))
     ));
     let field = find_text_field(view.value()).expect("text field parsed");
     assert_eq!(
@@ -104,12 +106,12 @@ pub component FeedbackForm() {
 }
 
 #[test]
-fn component_view_button_on_click_action_invoke_block_parses() {
+fn view_button_on_click_action_invoke_block_parses() {
     let parsed = parse_source(
         r#"
 pub action feedback.submit(value: String)
 
-pub component FeedbackForm() {
+pub view FeedbackForm() {
   Button("Continue")
     .on_click {
       action.invoke(@action:.feedback.submit, value = visitor_name.text)
@@ -124,10 +126,10 @@ pub component FeedbackForm() {
         .items()
         .iter()
         .find_map(|item| match item {
-            Item::EntityDecl(item) => item.component_body()?.view(),
+            Item::EntityDecl(item) => item.view_body()?.view(),
             _ => None,
         })
-        .expect("component View body");
+        .expect("view View body");
 
     let button = find_button(view.value()).expect("button parsed");
     let Some(ViewAction::ActionInvoke(action)) = button.activation() else {
@@ -145,12 +147,91 @@ pub component FeedbackForm() {
 }
 
 #[test]
-fn component_view_button_on_click_multi_statement_block_uses_final_action() {
+fn view_text_field_on_submit_action_invoke_block_parses() {
     let parsed = parse_source(
         r#"
 pub action feedback.submit(value: String)
 
-pub component FeedbackForm() {
+pub view FeedbackForm() {
+  let feedback = input.text(@input:.feedback, initial = "")
+
+  TextField(feedback)
+    .purpose(.text)
+    .enter_key(.send)
+    .on_submit {
+      action.invoke(@action:.feedback.submit, value = feedback.text)
+    }
+}
+"#,
+    );
+
+    assert_eq!(parsed.errors(), &[]);
+    let view = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(item) => item.view_body()?.view(),
+            _ => None,
+        })
+        .expect("view body");
+    let invokes = view.action_invokes();
+    assert_eq!(invokes.len(), 1);
+    assert_eq!(
+        invokes[0].action().canonical_body(),
+        "action.feedback.submit"
+    );
+}
+
+#[test]
+fn view_generic_callback_block_modifier_parses() {
+    let parsed = parse_source(
+        r#"
+pub action feedback.focus(value: String)
+
+pub view FeedbackForm() {
+  Button("Continue")
+    .on_focus {
+      action.invoke(@action:.feedback.focus, value = "focused")
+    }
+}
+"#,
+    );
+
+    assert_eq!(parsed.errors(), &[]);
+    let view = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(item) => item.view_body()?.view(),
+            _ => None,
+        })
+        .expect("view body");
+    let button = find_button(view.value()).expect("button parsed");
+    assert!(button.modifiers().iter().any(|modifier| {
+        matches!(
+            modifier,
+            ViewModifier::OnEvent { name, body }
+                if name == "focus" && matches!(body, arcweft_lang_syntax::expr::Expr::Block { .. })
+        )
+    }));
+    assert!(button.activation().is_none());
+    let invokes = view.action_invokes();
+    assert_eq!(invokes.len(), 1);
+    assert_eq!(
+        invokes[0].action().canonical_body(),
+        "action.feedback.focus"
+    );
+}
+
+#[test]
+fn view_button_on_click_multi_statement_block_uses_final_action() {
+    let parsed = parse_source(
+        r#"
+pub action feedback.submit(value: String)
+
+pub view FeedbackForm() {
   Button("Continue")
     .on_click {
       let value = visitor_name.text
@@ -166,10 +247,10 @@ pub component FeedbackForm() {
         .items()
         .iter()
         .find_map(|item| match item {
-            Item::EntityDecl(item) => item.component_body()?.view(),
+            Item::EntityDecl(item) => item.view_body()?.view(),
             _ => None,
         })
-        .expect("component View body");
+        .expect("view View body");
 
     let button = find_button(view.value()).expect("button parsed");
     let Some(ViewAction::ActionInvoke(action)) = button.activation() else {
@@ -184,10 +265,10 @@ pub component FeedbackForm() {
 }
 
 #[test]
-fn component_view_local_let_input_handle_parses() {
+fn view_local_let_input_handle_parses() {
     let parsed = parse_source(
         r#"
-pub component FeedbackForm() {
+pub view FeedbackForm() {
   let visitor_name = input.text(@input:.visitor_name, initial = "")
   Column {
     TextField(visitor_name)
@@ -203,10 +284,10 @@ pub component FeedbackForm() {
         .items()
         .iter()
         .find_map(|item| match item {
-            Item::EntityDecl(item) => item.component_body()?.view(),
+            Item::EntityDecl(item) => item.view_body()?.view(),
             _ => None,
         })
-        .expect("component View body");
+        .expect("view View body");
 
     let ViewExpr::Fragment(items) = view.value() else {
         panic!("expected root View fragment");
@@ -228,10 +309,10 @@ pub component FeedbackForm() {
 }
 
 #[test]
-fn component_view_reactive_if_match_for_parse_to_structured_view_exprs() {
+fn view_reactive_if_match_for_parse_to_structured_view_exprs() {
     let parsed = parse_source(
         r"
-pub component ReactivePanel() {
+pub view ReactivePanel() {
   Column {
     if true {
       TextField(@input:.empty)
@@ -258,10 +339,10 @@ pub component ReactivePanel() {
         .items()
         .iter()
         .find_map(|item| match item {
-            Item::EntityDecl(item) => item.component_body()?.view(),
+            Item::EntityDecl(item) => item.view_body()?.view(),
             _ => None,
         })
-        .expect("component View body");
+        .expect("view View body");
 
     let column = find_element(view.value(), "Column").expect("column parsed");
     assert!(matches!(column.children().first(), Some(ViewExpr::If(_))));
@@ -288,7 +369,62 @@ pub component ReactivePanel() {
 }
 
 #[test]
-fn component_view_box_and_scroll_parse_as_canonical_elements() {
+fn view_await_parse_to_structured_branches() {
+    let parsed = parse_source(
+        r"
+pub view AvatarPanel() {
+  Column {
+    AwaitView(load_avatar(user)) {
+      pending _ => TextField(@input:.loading)
+      ready img => Image(img)
+      error _ => TextField(@input:.fallback)
+    }
+  }
+}
+",
+    );
+
+    assert_eq!(parsed.errors(), &[]);
+    let view = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(item) => item.view_body()?.view(),
+            _ => None,
+        })
+        .expect("view View body");
+
+    let column = find_element(view.value(), "Column").expect("column parsed");
+    let Some(ViewExpr::Await(view_await)) = column.children().first() else {
+        panic!("expected View await expression");
+    };
+    let kinds = view_await
+        .branches()
+        .iter()
+        .map(arcweft_lang_syntax::ast::view::ViewAwaitBranch::kind)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        kinds,
+        vec![
+            ViewAwaitBranchKind::Pending,
+            ViewAwaitBranchKind::Ready,
+            ViewAwaitBranchKind::Error
+        ]
+    );
+    let inputs = view
+        .text_control_inputs()
+        .into_iter()
+        .map(arcweft_lang_syntax::ast::ids::EntityRefSyntax::canonical_body)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        inputs,
+        vec!["input.loading".to_owned(), "input.fallback".to_owned()]
+    );
+}
+
+#[test]
+fn view_box_and_scroll_parse_as_canonical_elements() {
     let parsed = parse_source(
         r#"
 pub style glass_shell {
@@ -297,15 +433,20 @@ pub style glass_shell {
   }
 
   Scroll {
+    axis = text("vertical")
     opacity = milli(920)
   }
 }
 
-pub component FeedbackForm() {
+pub view FeedbackForm() {
   Box {
-    Scroll {
+    Scroll(id = @scroll:.feedback_body, axis = .vertical, width = 360px, height = 120px, overflow = .hidden) {
       Text("Message")
     }
+
+    Button(@button:.send)
+      .width(220px)
+      .clip(false)
   }
 }
 "#,
@@ -317,55 +458,39 @@ pub component FeedbackForm() {
         .items()
         .iter()
         .find_map(|item| match item {
-            Item::EntityDecl(item) => item.component_body()?.view(),
+            Item::EntityDecl(item) => item.view_body()?.view(),
             _ => None,
         })
-        .expect("component View body");
+        .expect("view View body");
 
     assert!(find_element(view.value(), "Box").is_some());
-    assert!(find_element(view.value(), "Scroll").is_some());
-}
-
-#[test]
-fn component_view_removed_return_annotation_is_rejected() {
-    let parsed = parse_source(
-        r#"
-pub component FeedbackForm() -> View {
-  Panel {
-    Text("Message")
-  }
-}
-"#,
-    );
-
+    let scroll = find_element(view.value(), "Scroll").expect("scroll parsed");
+    assert_eq!(scroll.args().len(), 5);
+    let button = find_button(view.value()).expect("button parsed");
+    assert!(button.modifiers().iter().any(
+        |modifier| matches!(modifier, ViewModifier::Property { name, .. } if name == "width")
+    ));
     assert!(
-        parsed
-            .errors()
-            .iter()
-            .any(|error| error.message().contains("remove the `-> View`"))
+        button.modifiers().iter().any(
+            |modifier| matches!(modifier, ViewModifier::Property { name, .. } if name == "clip")
+        )
     );
 }
 
 #[test]
-fn removed_view_element_names_are_rejected() {
+fn unsupported_view_element_names_are_rejected() {
     let parsed = parse_source(
         r#"
-pub component FeedbackForm() {
-  Surface {
+pub view FeedbackForm() {
+  Card {
     Text("Message")
   }
 }
 
-pub component ListForm() {
-  VStack {
+pub view ListForm() {
+  Badge("Message")
+    .tone(.info)
     Text("Message")
-  }
-}
-
-pub component RowForm() {
-  HStack {
-    Text("Message")
-  }
 }
 "#,
     );
@@ -378,17 +503,12 @@ pub component RowForm() {
     assert!(
         messages
             .iter()
-            .any(|message| message.contains("`Surface` was removed"))
+            .any(|message| message.contains("unsupported View element `Card`"))
     );
     assert!(
         messages
             .iter()
-            .any(|message| message.contains("`VStack` was removed"))
-    );
-    assert!(
-        messages
-            .iter()
-            .any(|message| message.contains("`HStack` was removed"))
+            .any(|message| message.contains("unsupported View expression head `Badge`"))
     );
 }
 
@@ -402,11 +522,19 @@ ui text_input @input.feedback {
 "#,
     );
 
-    assert!(parsed.errors().iter().any(|error| {
-        error
-            .message()
-            .contains("were removed from top-level Arcweft syntax")
-    }));
+    assert!(
+        parsed
+            .typed_tree()
+            .items()
+            .iter()
+            .any(|item| matches!(item, Item::Raw(_)))
+    );
+    assert!(
+        !parsed
+            .errors()
+            .iter()
+            .any(|error| error.message().contains("removed"))
+    );
 }
 
 #[test]
@@ -415,13 +543,20 @@ fn ui_action_button_is_rejected() {
         r#"
 ui action_button @button.send {
   label = "Send"
-  text_submit = @input.feedback
+  action = @action.feedback.submit
 }
 "#,
     );
 
     assert!(
         parsed
+            .typed_tree()
+            .items()
+            .iter()
+            .any(|item| matches!(item, Item::Raw(_)))
+    );
+    assert!(
+        !parsed
             .errors()
             .iter()
             .any(|error| error.message().contains("ui action_button"))
@@ -468,7 +603,7 @@ fn find_element<'a>(
 }
 
 #[test]
-fn component_view_style_references_are_module_scoped() {
+fn view_style_references_are_module_scoped() {
     let parsed = parse_source(
         r#"
 mod hoge
@@ -479,7 +614,7 @@ pub style primary_button {
     }
 }
 
-pub component ButtonRow() {
+pub view ButtonRow() {
     Button(@button:.confirm)
         .label("Confirm")
         .style(@.primary_button)
@@ -502,10 +637,10 @@ pub component ButtonRow() {
         .items()
         .iter()
         .find_map(|item| match item {
-            Item::EntityDecl(item) => item.component_body()?.view(),
+            Item::EntityDecl(item) => item.view_body()?.view(),
             _ => None,
         })
-        .expect("component View body");
+        .expect("view View body");
 
     let button = find_button(view.value()).expect("expected root Button");
     let named_styles = button

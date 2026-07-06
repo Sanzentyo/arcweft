@@ -6,6 +6,7 @@ use num_traits::ToPrimitive;
 /// One decoded RGBA image frame ready for GPU upload.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RenderImageFrame {
+    pub index: Option<usize>,
     pub width: u32,
     pub height: u32,
     pub rgba: Vec<u8>,
@@ -17,6 +18,8 @@ pub struct RenderImage {
     pub id: String,
     pub frame: RenderImageFrame,
     pub bounds: HitRect,
+    pub containing_scroll_region: Option<String>,
+    pub viewport_clip: Option<HitRect>,
     pub placement: Option<ResolvedStagePlacement>,
     pub fit: ImageObjectFit,
     pub alignment: ImageObjectAlignment,
@@ -48,6 +51,23 @@ pub struct RenderImageTransformMatrix {
 impl RenderImage {
     #[must_use]
     pub fn quad(&self) -> RenderImageQuad {
+        self.unclipped_quad()
+    }
+
+    #[must_use]
+    pub fn visible_quad(&self) -> Option<RenderImageQuad> {
+        let quad = self.unclipped_quad();
+        self.viewport_clip
+            .map_or(Some(quad), |clip| clipped_image_quad(quad, clip))
+    }
+
+    #[must_use]
+    pub fn visible_bounds(&self) -> Option<HitRect> {
+        self.visible_quad().map(|quad| quad.rect)
+    }
+
+    #[must_use]
+    fn unclipped_quad(&self) -> RenderImageQuad {
         let bounds = self.bounds;
         let source_width = self.frame.width.max(1).to_f32().unwrap_or(f32::MAX);
         let source_height = self.frame.height.max(1).to_f32().unwrap_or(f32::MAX);
@@ -103,6 +123,31 @@ impl RenderImage {
             transform.m21 * x + transform.m22 * y + transform.ty,
         ]
     }
+}
+
+fn clipped_image_quad(quad: RenderImageQuad, clip: HitRect) -> Option<RenderImageQuad> {
+    let clipped_left = quad.rect.x.max(clip.x);
+    let clipped_top = quad.rect.y.max(clip.y);
+    let clipped_right = (quad.rect.x + quad.rect.width).min(clip.x + clip.width);
+    let clipped_bottom = (quad.rect.y + quad.rect.height).min(clip.y + clip.height);
+    let clipped_width = clipped_right - clipped_left;
+    let clipped_height = clipped_bottom - clipped_top;
+    if clipped_width <= 0.0 || clipped_height <= 0.0 {
+        return None;
+    }
+    let u_span = quad.uv_right - quad.uv_left;
+    let v_span = quad.uv_bottom - quad.uv_top;
+    let left_ratio = (clipped_left - quad.rect.x) / quad.rect.width.max(f32::EPSILON);
+    let top_ratio = (clipped_top - quad.rect.y) / quad.rect.height.max(f32::EPSILON);
+    let right_ratio = (clipped_right - quad.rect.x) / quad.rect.width.max(f32::EPSILON);
+    let bottom_ratio = (clipped_bottom - quad.rect.y) / quad.rect.height.max(f32::EPSILON);
+    Some(RenderImageQuad {
+        rect: HitRect::new(clipped_left, clipped_top, clipped_width, clipped_height),
+        uv_left: quad.uv_left + u_span * left_ratio,
+        uv_top: quad.uv_top + v_span * top_ratio,
+        uv_right: quad.uv_left + u_span * right_ratio,
+        uv_bottom: quad.uv_top + v_span * bottom_ratio,
+    })
 }
 
 fn aligned_image_quad(

@@ -1238,6 +1238,8 @@ fn fixture_image_object() -> BundleImageObject {
         asset: "sprite".to_owned(),
         target: None,
         layer: None,
+        view: None,
+        containing_scroll_region: None,
         bounds: BundleImageObjectBounds {
             x_milli: 0,
             y_milli: 0,
@@ -1266,6 +1268,9 @@ fn fixture_image_object() -> BundleImageObject {
         },
         depth_milli: 0,
         opacity_milli: 1000,
+        actions: Vec::new(),
+        params: std::collections::BTreeMap::default(),
+        proxies: Vec::new(),
         visible: true,
     }
 }

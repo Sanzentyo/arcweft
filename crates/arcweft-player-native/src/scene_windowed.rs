@@ -20,7 +20,9 @@ use arcweft_player_scene::fonts::PlayerFontSet;
 use arcweft_player_scene::frame::{
     PlayerFrameError, PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest,
 };
-use arcweft_player_scene::input::{InputController, InputOutcome};
+use arcweft_player_scene::input::{
+    InputController, InputControllerSnapshot, InputControllerSnapshotError, InputOutcome,
+};
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
 use arcweft_presentation::text_input::{
     Capitalization, CompositionEndReason, TextAssistPolicy, TextByteOffset, TextCommit,
@@ -35,8 +37,12 @@ use arcweft_render_wgpu::geometry::{
 use arcweft_render_wgpu::renderer::{SharedRenderer, SharedRendererError};
 use arcweft_runtime_driver::clock::{RuntimeClockError, RuntimeClockStep};
 use arcweft_runtime_driver::session::{BundleSessionError, BundleSessionOptions, BundleStepInput};
+use arcweft_runtime_driver::session_save::BundleSessionSaveError;
 use num_traits::ToPrimitive;
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use thiserror::Error;
@@ -53,11 +59,15 @@ use winit::window::{
 };
 
 const EVENT_LOOP_TICK: Duration = Duration::from_millis(16);
+const NATIVE_PLAYER_SESSION_SAVE_SCHEMA_ID: &str = "arcweft.native_player_session";
+const NATIVE_PLAYER_SESSION_SAVE_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Debug)]
 pub struct NativePlayerOptions {
     text_input: NativeTextInputBridgeOptions,
     frame_fit: PlayerFrameFit,
+    session_load: Option<PathBuf>,
+    session_save_out: Option<PathBuf>,
 }
 
 impl Default for NativePlayerOptions {
@@ -65,6 +75,8 @@ impl Default for NativePlayerOptions {
         Self {
             text_input: NativeTextInputBridgeOptions::default(),
             frame_fit: PlayerFrameFit::design_1280x720(ScalePolicy::Contain),
+            session_load: None,
+            session_save_out: None,
         }
     }
 }
@@ -79,6 +91,18 @@ impl NativePlayerOptions {
     #[must_use]
     pub fn with_frame_fit(mut self, frame_fit: PlayerFrameFit) -> Self {
         self.frame_fit = frame_fit;
+        self
+    }
+
+    #[must_use]
+    pub fn with_session_load_path(mut self, path: PathBuf) -> Self {
+        self.session_load = Some(path);
+        self
+    }
+
+    #[must_use]
+    pub fn with_session_save_out_path(mut self, path: PathBuf) -> Self {
+        self.session_save_out = Some(path);
         self
     }
 }
@@ -156,6 +180,27 @@ enum NativeSceneWindowError {
     Window(String),
     #[error("bundle session failed: {0}")]
     Session(#[from] BundleSessionError),
+    #[error("bundle session save failed: {0}")]
+    SessionSave(#[from] BundleSessionSaveError),
+    #[error("failed to {operation} native player session save {path}: {source}")]
+    SessionSaveIo {
+        operation: &'static str,
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("native player session save schema id `{actual}` does not match expected `{expected}`")]
+    NativePlayerSessionSaveSchemaId { actual: String, expected: String },
+    #[error(
+        "native player session save schema version {actual} is not supported; expected {expected}"
+    )]
+    NativePlayerSessionSaveSchemaVersion { actual: u32, expected: u32 },
+    #[error("failed to encode native player session save: {message}")]
+    NativePlayerSessionSaveEncode { message: String },
+    #[error("failed to decode native player session save: {message}")]
+    NativePlayerSessionSaveDecode { message: String },
+    #[error("player input snapshot restore failed: {0}")]
+    InputSnapshot(#[from] InputControllerSnapshotError),
     #[error("windowed runtime owner failed: {0}")]
     RuntimeOwner(#[from] WindowedRuntimeOwnerError),
     #[error("runtime clock failed: {0}")]
@@ -222,10 +267,54 @@ struct NativeSceneState {
     window_ime_enabled: bool,
     next_window_ime_serial: u64,
     frame_fit: PlayerFrameFit,
+    session_save_out: Option<PathBuf>,
+    session_save_on_exit_completed: bool,
     prepared: Option<arcweft_render_wgpu::geometry::PreparedFrame>,
     dialogue_visual_clock: DialogueVisualClock,
     started_at: Instant,
     next_tick: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct NativePlayerSessionSaveSchema {
+    id: String,
+    version: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+struct NativePlayerSessionSave {
+    schema: NativePlayerSessionSaveSchema,
+    runtime_session: Vec<u8>,
+    input: InputControllerSnapshot,
+}
+
+impl Default for NativePlayerSessionSaveSchema {
+    fn default() -> Self {
+        Self {
+            id: NATIVE_PLAYER_SESSION_SAVE_SCHEMA_ID.to_owned(),
+            version: NATIVE_PLAYER_SESSION_SAVE_SCHEMA_VERSION,
+        }
+    }
+}
+
+impl NativePlayerSessionSaveSchema {
+    fn validate(&self) -> Result<(), NativeSceneWindowError> {
+        if self.id != NATIVE_PLAYER_SESSION_SAVE_SCHEMA_ID {
+            return Err(NativeSceneWindowError::NativePlayerSessionSaveSchemaId {
+                actual: self.id.clone(),
+                expected: NATIVE_PLAYER_SESSION_SAVE_SCHEMA_ID.to_owned(),
+            });
+        }
+        if self.version != NATIVE_PLAYER_SESSION_SAVE_SCHEMA_VERSION {
+            return Err(
+                NativeSceneWindowError::NativePlayerSessionSaveSchemaVersion {
+                    actual: self.version,
+                    expected: NATIVE_PLAYER_SESSION_SAVE_SCHEMA_VERSION,
+                },
+            );
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -385,11 +474,14 @@ impl ApplicationHandler for NativeSceneApp {
             return;
         }
         let result = match event {
-            WindowEvent::CloseRequested => {
-                self.ingress_completion.close("native player closed");
-                event_loop.exit();
-                Ok(())
-            }
+            WindowEvent::CloseRequested => match state.save_session_on_exit() {
+                Ok(()) => {
+                    self.ingress_completion.close("native player closed");
+                    event_loop.exit();
+                    Ok(())
+                }
+                Err(error) => Err(error),
+            },
             WindowEvent::SurfaceResized(size) => {
                 state.resize(size);
                 state.window.request_redraw();
@@ -410,10 +502,7 @@ impl ApplicationHandler for NativeSceneApp {
                 position,
                 ..
             } => state.pointer_button(&button, element_state, position),
-            WindowEvent::MouseWheel { delta, .. } => {
-                state.wheel(delta);
-                Ok(())
-            }
+            WindowEvent::MouseWheel { delta, .. } => state.wheel(delta),
             WindowEvent::KeyboardInput { event, .. } => state.keyboard(&event),
             WindowEvent::ModifiersChanged(modifiers) => {
                 state.keyboard_modifiers = modifiers.state();
@@ -434,8 +523,12 @@ impl ApplicationHandler for NativeSceneApp {
 
     fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
         self.drain_ingress_messages();
-        if let Some(state) = self.state.as_ref() {
+        if let Some(state) = self.state.as_mut() {
             if state.take_close_requested() {
+                if let Err(error) = state.save_session_on_exit() {
+                    self.fail(event_loop, error.to_string());
+                    return;
+                }
                 self.ingress_completion
                     .close("native player requested close from owned-window adapter");
                 event_loop.exit();
@@ -519,11 +612,8 @@ impl NativeSceneState {
             .with_owned_window_driver(owned_window)
             .build();
         let audio = NativeAudioRuntime::from_bundle(&bundle)?;
-        let runtime = WindowedRuntimeOwner::from_bundle_with_desktop_backend(
-            &bundle,
-            BundleSessionOptions::default(),
-            backend,
-        )?;
+        let (runtime, input) =
+            restored_windowed_runtime_and_input(&bundle, backend, options.session_load.as_deref())?;
         let text_input = NativeTextInputBridge::new(options.text_input.clone());
         Ok(Self {
             window,
@@ -537,13 +627,15 @@ impl NativeSceneState {
             runtime,
             audio,
             ingress_completion,
-            input: InputController::default(),
+            input,
             keyboard_modifiers: ModifiersState::default(),
             text_input,
             window_ime_supported: true,
             window_ime_enabled: false,
             next_window_ime_serial: 1,
             frame_fit: options.frame_fit,
+            session_save_out: options.session_save_out.clone(),
+            session_save_on_exit_completed: false,
             prepared: None,
             dialogue_visual_clock: DialogueVisualClock::default(),
             started_at: Instant::now(),
@@ -553,6 +645,18 @@ impl NativeSceneState {
 
     fn take_close_requested(&self) -> bool {
         self.close_signal.take()
+    }
+
+    fn save_session_on_exit(&mut self) -> Result<(), NativeSceneWindowError> {
+        if self.session_save_on_exit_completed {
+            return Ok(());
+        }
+        let Some(path) = self.session_save_out.clone() else {
+            return Ok(());
+        };
+        save_native_player_session(&path, &self.runtime, &self.input)?;
+        self.session_save_on_exit_completed = true;
+        Ok(())
     }
 
     fn resize(&mut self, size: PhysicalSize<u32>) {
@@ -740,15 +844,24 @@ impl NativeSceneState {
         Ok(())
     }
 
-    fn wheel(&mut self, delta: MouseScrollDelta) {
+    fn wheel(&mut self, delta: MouseScrollDelta) -> Result<(), NativeSceneWindowError> {
+        let Some(frame) = self.prepared.clone() else {
+            return Ok(());
+        };
         let delta_y = match delta {
             MouseScrollDelta::LineDelta(_, y) => y * 32.0,
             MouseScrollDelta::PixelDelta(position) => (position.y / self.window.scale_factor())
                 .to_f32()
                 .unwrap_or(0.0),
         };
-        self.input.wheel(delta_y);
+        let outcome = self.input.wheel(&frame, delta_y);
+        self.apply_outcome(outcome)?;
+        let prepared = self.prepare_frame()?;
+        self.sync_text_input_bridge(&prepared.frame, NativeTextInputFocusReason::RedrawRefresh)?;
+        self.sync_window_ime(&prepared.frame);
+        self.prepared = Some(prepared.frame);
         self.window.request_redraw();
+        Ok(())
     }
 
     fn keyboard(&mut self, event: &KeyEvent) -> Result<(), NativeSceneWindowError> {
@@ -1409,6 +1522,92 @@ fn key_label(key: &Key) -> String {
     }
 }
 
+fn load_native_player_session_save(
+    runtime: &mut WindowedRuntimeOwner,
+    path: Option<&Path>,
+) -> Result<Option<InputControllerSnapshot>, NativeSceneWindowError> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let bytes = fs::read(path).map_err(|source| NativeSceneWindowError::SessionSaveIo {
+        operation: "read",
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let save = arcweft_save::decode_typed_json_save::<NativePlayerSessionSave>(
+        &bytes,
+        &arcweft_save::SaveSchemaId::new(NATIVE_PLAYER_SESSION_SAVE_SCHEMA_ID),
+        NATIVE_PLAYER_SESSION_SAVE_SCHEMA_VERSION,
+        &arcweft_save::SaveDecodeOptions::default(),
+    )
+    .map_err(
+        |error| NativeSceneWindowError::NativePlayerSessionSaveDecode {
+            message: error.to_string(),
+        },
+    )?;
+    save.schema.validate()?;
+    runtime.session_mut().import_session_save_bytes(
+        &save.runtime_session,
+        &arcweft_save::SaveDecodeOptions::default(),
+    )?;
+    Ok(Some(save.input))
+}
+
+fn restored_windowed_runtime_and_input(
+    bundle: &ArcweftBundle,
+    backend: NativeDesktopBackend,
+    session_load: Option<&Path>,
+) -> Result<(WindowedRuntimeOwner, InputController), NativeSceneWindowError> {
+    let mut runtime = WindowedRuntimeOwner::from_bundle_with_desktop_backend(
+        bundle,
+        BundleSessionOptions::default(),
+        backend,
+    )?;
+    let input_snapshot = load_native_player_session_save(&mut runtime, session_load)?;
+    let mut input = InputController::default();
+    if let Some(snapshot) = input_snapshot {
+        input.restore_snapshot(snapshot)?;
+    }
+    Ok((runtime, input))
+}
+
+fn save_native_player_session(
+    path: &Path,
+    runtime: &WindowedRuntimeOwner,
+    input: &InputController,
+) -> Result<(), NativeSceneWindowError> {
+    let save = NativePlayerSessionSave {
+        schema: NativePlayerSessionSaveSchema::default(),
+        runtime_session: runtime.session().export_session_save_bytes()?,
+        input: input.snapshot(),
+    };
+    let bytes = arcweft_save::encode_typed_json_save(
+        &save,
+        arcweft_save::SaveSchemaId::new(NATIVE_PLAYER_SESSION_SAVE_SCHEMA_ID),
+        NATIVE_PLAYER_SESSION_SAVE_SCHEMA_VERSION,
+    )
+    .map_err(
+        |error| NativeSceneWindowError::NativePlayerSessionSaveEncode {
+            message: error.to_string(),
+        },
+    )?;
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent).map_err(|source| NativeSceneWindowError::SessionSaveIo {
+            operation: "create parent directory for",
+            path: path.to_path_buf(),
+            source,
+        })?;
+    }
+    fs::write(path, bytes).map_err(|source| NativeSceneWindowError::SessionSaveIo {
+        operation: "write",
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
 fn dialogue_visual_time_millis(
     clock: &mut DialogueVisualClock,
     dialogue: Option<&LineDisplayFrame>,
@@ -1495,6 +1694,20 @@ mod tests {
         assert!(source.contains("self.runtime.push_patch_event(envelope.event)"));
         assert!(source.contains("completed_at_frame_boundary(outcomes.len())"));
         assert!(source.contains("ingress_completion.close(\"native player closed\")"));
+    }
+
+    #[test]
+    fn native_player_session_save_pairs_runtime_and_input_snapshots() {
+        let source = include_str!("scene_windowed.rs");
+
+        assert!(source.contains("arcweft.native_player_session"));
+        assert!(source.contains("runtime_session: Vec<u8>"));
+        assert!(source.contains("input: InputControllerSnapshot"));
+        assert!(source.contains("import_session_save_bytes"));
+        assert!(source.contains("export_session_save_bytes"));
+        assert!(source.contains("input.restore_snapshot(snapshot)?"));
+        assert!(source.contains("input.snapshot()"));
+        assert!(source.contains("save_session_on_exit()?"));
     }
 
     #[test]

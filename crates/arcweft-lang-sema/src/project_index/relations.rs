@@ -233,9 +233,6 @@ fn index_stmt_symbol_dependency_relations(
             index = index_expr_symbol_dependency_relations(parent, expr, index)?;
             index = index_stmt_body_symbol_dependency_relations(parent, else_body, index)?;
         }
-        Stmt::LetTextSubmit { target, .. } => {
-            index = index_expr_symbol_dependency_relations(parent, target, index)?;
-        }
         Stmt::LetActionReceive { action, .. } => {
             index = index_expr_symbol_dependency_relations(parent, action, index)?;
         }
@@ -738,9 +735,6 @@ fn index_stmt_relations(
         } => {
             index = index_expr_dependency_relations(parent, expr, index)?;
             index = index_stmt_body_relations(parent, else_body, index)?;
-        }
-        Stmt::LetTextSubmit { target, .. } => {
-            index = index_expr_dependency_relations(parent, target, index)?;
         }
         Stmt::LetActionReceive { action, .. } => {
             index = index_expr_dependency_relations(parent, action, index)?;

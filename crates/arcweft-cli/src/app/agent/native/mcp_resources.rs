@@ -852,10 +852,10 @@ pub(super) fn agent_mcp_capture_request(
     report: &AgentObservationReport,
 ) -> Result<AgentCaptureReadRequest, String> {
     if let Some(uri) = arguments.get("uri").and_then(serde_json::Value::as_str) {
-        for key in ["format", "capture", "component", "layer", "object"] {
+        for key in ["format", "capture", "view", "layer", "object"] {
             if arguments.get(key).is_some() {
                 return Err(
-                    "arcweft.capture accepts arguments.uri or format/capture/component/layer/object selectors, not both"
+                    "arcweft.capture accepts arguments.uri or format/capture/view/layer/object selectors, not both"
                         .to_owned(),
                 );
             }
@@ -895,22 +895,22 @@ pub(super) fn agent_mcp_capture_request(
         .get("layer")
         .and_then(serde_json::Value::as_str)
         .map(ToOwned::to_owned);
-    let component = arguments
-        .get("component")
+    let view = arguments
+        .get("view")
         .and_then(serde_json::Value::as_str)
         .map(ToOwned::to_owned);
     let object = arguments
         .get("object")
         .and_then(serde_json::Value::as_str)
         .map(ToOwned::to_owned);
-    if [layer.is_some(), component.is_some(), object.is_some()]
+    if [layer.is_some(), view.is_some(), object.is_some()]
         .into_iter()
         .filter(|selected| *selected)
         .count()
         > 1
     {
         return Err(
-            "arcweft.capture accepts one of arguments.component, arguments.layer, or arguments.object"
+            "arcweft.capture accepts one of arguments.view, arguments.layer, or arguments.object"
                 .to_owned(),
         );
     }
@@ -921,9 +921,9 @@ pub(super) fn agent_mcp_capture_request(
             return Err("arcweft.capture supports format png or raw-rgba".to_owned());
         }
     };
-    let (scope, name) = if let Some(component) = component {
-        let name = agent_scoped_capture_name("component", &component, capture_kind.resource_name());
-        (AgentCaptureScope::Component(component), name)
+    let (scope, name) = if let Some(view) = view {
+        let name = agent_scoped_capture_name("view", &view, capture_kind.resource_name());
+        (AgentCaptureScope::View(view), name)
     } else if let Some(object) = object {
         let name = agent_scoped_capture_name("object", &object, capture_kind.resource_name());
         (AgentCaptureScope::Object(object), name)
@@ -1075,8 +1075,8 @@ pub(super) fn agent_mcp_observe_options(
             .get("layer")
             .and_then(serde_json::Value::as_str)
             .map(ToOwned::to_owned),
-        component: arguments
-            .get("component")
+        view: arguments
+            .get("view")
             .and_then(serde_json::Value::as_str)
             .map(ToOwned::to_owned),
         object: arguments

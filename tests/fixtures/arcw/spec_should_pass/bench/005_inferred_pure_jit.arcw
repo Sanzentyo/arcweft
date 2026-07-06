@@ -3,7 +3,7 @@ fn score(base: i64, bonus: i64) -> i64 {
 }
 
 bench @bench.inferred_pure {
-    measure iterations = 4 { start(@flow.inferred_pure) }
+    measure iterations = 4 { goto @flow.inferred_pure }
 }
 
 flow @flow.inferred_pure inferred_pure {

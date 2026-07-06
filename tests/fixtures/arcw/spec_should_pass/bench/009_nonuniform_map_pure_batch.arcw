@@ -4,7 +4,7 @@ fn score(base: i64, bonus: i64) -> i64 {
 }
 
 bench @bench.nonuniform_map_pure_batch {
-    measure iterations = 4 { start(@flow.nonuniform_map_pure_batch) }
+    measure iterations = 4 { goto @flow.nonuniform_map_pure_batch }
 }
 
 flow @flow.nonuniform_map_pure_batch nonuniform_map_pure_batch {

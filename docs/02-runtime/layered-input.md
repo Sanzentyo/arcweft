@@ -227,7 +227,7 @@ layer @layer.modal.settings: Modal {
 }
 ```
 
-UI component:
+UI view:
 
 ```arcw
 Button("閉じる")

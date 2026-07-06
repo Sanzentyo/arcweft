@@ -1,5 +1,5 @@
 bench @bench.dense_integer_widths_sum {
-    measure iterations = 4 { start(@flow.dense_integer_widths_sum) }
+    measure iterations = 4 { goto @flow.dense_integer_widths_sum }
 }
 
 flow @flow.dense_integer_widths_sum dense_integer_widths_sum {

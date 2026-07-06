@@ -31,7 +31,7 @@ fn render_tree_for(css: &str) -> (RenderNode, arcweft_takumi_adapter::TakumiMeta
         root,
         stylesheets: TakumiCssBundle::new([css]),
         text: &text,
-        component: None,
+        view: None,
         program: None,
         node_parts: &[],
         agent: None,

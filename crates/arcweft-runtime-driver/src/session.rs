@@ -6,6 +6,12 @@ use crate::display::{
 use crate::generation_runtime::{
     GenerationRuntimeError, GenerationRuntimeImage, GenerationRuntimeTable,
 };
+use crate::session_save::{
+    BUNDLE_SESSION_SAVE_SCHEMA_ID, BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
+    BundleSessionExecutorSnapshot, BundleSessionGenerationSnapshot, BundleSessionPendingBlocker,
+    BundleSessionPendingSnapshot, BundleSessionRuntimeSnapshot, BundleSessionSaveError,
+    BundleSessionSaveSchema, BundleSessionSnapshot, digest_label, validate_presentation_snapshot,
+};
 use crate::swap::{
     GenerationBuildError, GenerationId, ProgramGeneration, SwapCompatibility, SwapError,
     SwapSession, classify_swap,
@@ -21,18 +27,21 @@ use arcweft_bundle::patch::{
     apply_patch_bundle, decode_patch_bundle,
 };
 use arcweft_bundle::resource_codec::{
-    UiProgramResource, UiRuntimeActionButton, UiRuntimeControlStyleDiagnostics,
-    UiRuntimeFocusGroup, UiRuntimeFocusNavigation, UiRuntimeTextControl, UiRuntimeTextSelection,
+    UiRuntimeControlStyleDiagnostics, UiRuntimeTextControl, UiRuntimeTextSelection,
+    ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
+    ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeTextBlock,
 };
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleImageObject, BundleKind};
 use arcweft_core::awbc::{
     product_step::AwbcProductStepBuildError,
-    schema::{AwbcEntryId, AwbcProgram},
+    schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram},
 };
 use arcweft_core::bytecode::BytecodeVerificationError;
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
-use arcweft_core::executor::{ArcweftRuntimeExecutor, RuntimeExecutor};
+use arcweft_core::executor::{
+    ArcweftExecutionTier, ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot, RuntimeExecutor,
+};
 use arcweft_core::observation::RuntimeObservationState;
 use arcweft_core::plan::{FlowEvent, RuntimePlanError};
 use arcweft_core::pure::VmRuntimePureCallBackend;
@@ -158,15 +167,16 @@ pub struct BundleSession {
     display: LineDisplayCatalog,
     image_objects: Vec<BundleImageObject>,
     text_inputs: Vec<UiRuntimeTextControl>,
-    action_buttons: Vec<UiRuntimeActionButton>,
+    action_buttons: Vec<ViewRuntimeActionButton>,
+    scroll_regions: Vec<ViewRuntimeScrollRegion>,
+    text_blocks: Vec<ViewRuntimeTextBlock>,
     runtime_control_style_diagnostics: UiRuntimeControlStyleDiagnostics,
-    focus_groups: Vec<UiRuntimeFocusGroup>,
-    focus_navigation: Vec<UiRuntimeFocusNavigation>,
+    focus_groups: Vec<ViewRuntimeFocusGroup>,
+    focus_navigation: Vec<ViewRuntimeFocusNavigation>,
     options: BundleSessionOptions,
     pending_input_events: Vec<RoutedInputEvent>,
     pending_text_control_write_backs: Vec<RuntimeTextControlWriteBack>,
     pending_host_call_results: Vec<RuntimeHostCallResult>,
-    waiting_text_submit_calls: Vec<PendingTextSubmitCall>,
     waiting_action_receive_calls: Vec<PendingActionReceiveCall>,
     presentation: BundlePresentationSnapshot,
     next_step_index: usize,
@@ -177,12 +187,6 @@ pub struct BundleSession {
     tasks: RuntimeTaskRegistry,
     next_generation_id: u64,
     active_container_content_root: Option<BundleDigest>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct PendingTextSubmitCall {
-    request: RuntimeHostCallId,
-    control_id: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -418,6 +422,8 @@ impl BundleSession {
         let image_objects = runtime.image_objects.clone();
         let text_inputs = runtime.text_inputs.clone();
         let action_buttons = runtime.action_buttons.clone();
+        let scroll_regions = runtime.scroll_regions.clone();
+        let text_blocks = runtime.text_blocks.clone();
         let runtime_control_style_diagnostics = runtime.runtime_control_style_diagnostics.clone();
         let focus_groups = runtime.focus_groups.clone();
         let focus_navigation = runtime.focus_navigation.clone();
@@ -434,6 +440,8 @@ impl BundleSession {
             image_objects,
             text_inputs,
             action_buttons,
+            scroll_regions,
+            text_blocks,
             runtime_control_style_diagnostics,
             focus_groups,
             focus_navigation,
@@ -441,7 +449,6 @@ impl BundleSession {
             pending_input_events: Vec::new(),
             pending_text_control_write_backs: Vec::new(),
             pending_host_call_results: Vec::new(),
-            waiting_text_submit_calls: Vec::new(),
             waiting_action_receive_calls: Vec::new(),
             presentation: BundlePresentationSnapshot::default(),
             next_step_index: 0,
@@ -596,7 +603,7 @@ impl BundleSession {
     ) -> Result<(), BundleSessionError> {
         let runtime_write_back =
             apply_text_control_write_back_to_controls(&mut self.text_inputs, write_back)?;
-        self.resolve_waiting_text_submit_calls(&runtime_write_back);
+        self.resolve_text_control_submit_action(&runtime_write_back);
         self.pending_text_control_write_backs
             .push(runtime_write_back);
         self.presentation.replace_text_inputs(&self.text_inputs);
@@ -619,22 +626,18 @@ impl BundleSession {
         &self.pending_text_control_write_backs
     }
 
-    fn resolve_waiting_text_submit_calls(&mut self, write_back: &RuntimeTextControlWriteBack) {
+    fn resolve_text_control_submit_action(&mut self, write_back: &RuntimeTextControlWriteBack) {
         if !write_back.is_submit() {
             return;
         }
-        let control_id = write_back.control_id();
-        let mut index = 0;
-        while index < self.waiting_text_submit_calls.len() {
-            if self.waiting_text_submit_calls[index].control_id == control_id {
-                let call = self.waiting_text_submit_calls.remove(index);
-                self.pending_host_call_results.push(RuntimeHostCallResult {
-                    id: call.request,
-                    outcome: Ok(RuntimePayload::from(write_back.value().as_str().to_owned())),
-                });
-            } else {
-                index += 1;
-            }
+        let Some(handler) = write_back.handler() else {
+            return;
+        };
+        if handler.handler_id.starts_with("action.") {
+            self.resolve_waiting_action_receive_calls(
+                &handler.handler_id,
+                Some(write_back.value().as_str()),
+            );
         }
     }
 
@@ -689,6 +692,7 @@ impl BundleSession {
                 self.image_objects.clone_from(&bundle.image_objects);
                 self.text_inputs.clone_from(&next_runtime.text_inputs);
                 self.action_buttons.clone_from(&next_runtime.action_buttons);
+                self.scroll_regions.clone_from(&next_runtime.scroll_regions);
                 self.runtime_control_style_diagnostics
                     .clone_from(&next_runtime.runtime_control_style_diagnostics);
                 self.focus_groups.clone_from(&next_runtime.focus_groups);
@@ -699,7 +703,6 @@ impl BundleSession {
                 self.activate_runtime(next_runtime.clone());
                 self.pending_input_events.clear();
                 self.pending_host_call_results.clear();
-                self.waiting_text_submit_calls.clear();
                 self.waiting_action_receive_calls.clear();
                 self.presentation = BundlePresentationSnapshot::default();
             }
@@ -765,6 +768,7 @@ impl BundleSession {
                 self.image_objects.clone_from(&bundle.image_objects);
                 self.text_inputs.clone_from(&next_runtime.text_inputs);
                 self.action_buttons.clone_from(&next_runtime.action_buttons);
+                self.scroll_regions.clone_from(&next_runtime.scroll_regions);
                 self.runtime_control_style_diagnostics
                     .clone_from(&next_runtime.runtime_control_style_diagnostics);
                 self.focus_groups.clone_from(&next_runtime.focus_groups);
@@ -775,7 +779,6 @@ impl BundleSession {
                 self.activate_runtime(next_runtime.clone());
                 self.pending_input_events.clear();
                 self.pending_host_call_results.clear();
-                self.waiting_text_submit_calls.clear();
                 self.waiting_action_receive_calls.clear();
                 self.presentation = BundlePresentationSnapshot::default();
             }
@@ -1012,6 +1015,8 @@ impl BundleSession {
                 image_objects: &self.image_objects,
                 text_inputs: &self.text_inputs,
                 action_buttons: &self.action_buttons,
+                scroll_regions: &self.scroll_regions,
+                text_blocks: &self.text_blocks,
                 focus_groups: &self.focus_groups,
                 focus_navigation: &self.focus_navigation,
             },
@@ -1057,24 +1062,7 @@ impl BundleSession {
         diagnostics: &mut Vec<String>,
     ) {
         for request in requests {
-            if request.capability == "ui.text_input" && request.operation == "await_submit" {
-                match text_submit_control_id(&request) {
-                    Some(control_id) => {
-                        self.waiting_text_submit_calls.push(PendingTextSubmitCall {
-                            request: request.id,
-                            control_id,
-                        });
-                    }
-                    None => self.pending_host_call_results.push(RuntimeHostCallResult {
-                        id: request.id,
-                        outcome: Err(RuntimeHostCallError {
-                            kind: RuntimeHostCallErrorKind::Rejected,
-                            message: "ui.text_input.await_submit requires one text input target"
-                                .to_owned(),
-                        }),
-                    }),
-                }
-            } else if request.capability == "ui.action" && request.operation == "await" {
+            if request.capability == "ui.action" && request.operation == "await" {
                 match action_receive_action_id(&request) {
                     Some(action_id) => {
                         self.waiting_action_receive_calls
@@ -1138,6 +1126,220 @@ impl BundleSession {
         Ok(StartedForegroundEntry { generation, entry })
     }
 
+    pub fn snapshot_session(&self) -> Result<BundleSessionSnapshot, BundleSessionSaveError> {
+        let blockers = self.session_save_blockers();
+        if !blockers.is_empty() {
+            return Err(BundleSessionSaveError::NonQuiescent { blockers });
+        }
+        validate_presentation_snapshot(&self.presentation)?;
+        let active = self.active_generation();
+        let executor = match self.executor.snapshot()? {
+            ArcweftRuntimeExecutorSnapshot::AwbcProduct(state) => {
+                BundleSessionExecutorSnapshot::ProductAwbc {
+                    generation: active.id,
+                    state: Box::new(state),
+                }
+            }
+        };
+        Ok(BundleSessionSnapshot {
+            schema: BundleSessionSaveSchema::default(),
+            generation: BundleSessionGenerationSnapshot {
+                active_generation: active.id,
+                content_root: active.content_root,
+                active_container_content_root: self.active_container_content_root,
+                bytecode_abi: active.bytecode_abi,
+                adapter_requirements: active.adapter_requirements,
+            },
+            runtime: BundleSessionRuntimeSnapshot {
+                source_label: self.source_label.clone(),
+                next_step_index: u64::try_from(self.next_step_index).unwrap_or(u64::MAX),
+                next_task_sequence: self.next_task_sequence,
+                next_generation_id: self.next_generation_id,
+                runtime_generation_pin: self.runtime_generation_pin.as_ref().map(|pin| pin.id),
+            },
+            executor,
+            presentation: self.presentation.clone(),
+            pending: BundleSessionPendingSnapshot::quiescent(),
+        })
+    }
+
+    pub fn export_session_save_bytes(&self) -> Result<Vec<u8>, BundleSessionSaveError> {
+        let snapshot = self.snapshot_session()?;
+        arcweft_save::encode_typed_json_save(
+            &snapshot,
+            arcweft_save::SaveSchemaId::new(BUNDLE_SESSION_SAVE_SCHEMA_ID),
+            BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
+        )
+        .map_err(|error| BundleSessionSaveError::Encode {
+            message: error.to_string(),
+        })
+    }
+
+    pub fn import_session_save_bytes(
+        &mut self,
+        bytes: &[u8],
+        options: &arcweft_save::SaveDecodeOptions,
+    ) -> Result<(), BundleSessionSaveError> {
+        let snapshot = arcweft_save::decode_typed_json_save::<BundleSessionSnapshot>(
+            bytes,
+            &arcweft_save::SaveSchemaId::new(BUNDLE_SESSION_SAVE_SCHEMA_ID),
+            BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
+            options,
+        )
+        .map_err(|error| BundleSessionSaveError::Decode {
+            message: error.to_string(),
+        })?;
+        self.restore_session_snapshot(snapshot)
+    }
+
+    pub fn restore_session_snapshot(
+        &mut self,
+        snapshot: BundleSessionSnapshot,
+    ) -> Result<(), BundleSessionSaveError> {
+        snapshot.schema.validate()?;
+        if !snapshot.pending.is_quiescent() {
+            return Err(BundleSessionSaveError::NonQuiescent {
+                blockers: Vec::new(),
+            });
+        }
+        self.validate_session_save_generation(&snapshot.generation)?;
+        validate_presentation_snapshot(&snapshot.presentation)?;
+        let active_generation = self.active_generation().id;
+        let executor_snapshot = match snapshot.executor {
+            BundleSessionExecutorSnapshot::ProductAwbc { generation, state } => {
+                if generation != active_generation {
+                    return Err(BundleSessionSaveError::GenerationMismatch {
+                        field: "executor_generation",
+                        saved: format!("{generation:?}"),
+                        actual: format!("{active_generation:?}"),
+                    });
+                }
+                ArcweftRuntimeExecutorSnapshot::AwbcProduct(*state)
+            }
+            BundleSessionExecutorSnapshot::StructuredVm => {
+                return Err(BundleSessionSaveError::UnsupportedExecutorTier {
+                    tier: ArcweftExecutionTier::StructuredVm.as_str().to_owned(),
+                });
+            }
+            BundleSessionExecutorSnapshot::StructuredAot => {
+                return Err(BundleSessionSaveError::UnsupportedExecutorTier {
+                    tier: ArcweftExecutionTier::StructuredAot.as_str().to_owned(),
+                });
+            }
+        };
+        self.executor.restore_snapshot(executor_snapshot)?;
+        self.source_label = snapshot.runtime.source_label;
+        self.next_step_index = usize::try_from(snapshot.runtime.next_step_index).map_err(|_| {
+            BundleSessionSaveError::CounterOutOfRange {
+                field: "next_step_index",
+                value: snapshot.runtime.next_step_index,
+            }
+        })?;
+        self.next_task_sequence = snapshot.runtime.next_task_sequence;
+        self.next_generation_id = snapshot.runtime.next_generation_id;
+        self.runtime_generation_pin = match snapshot.runtime.runtime_generation_pin {
+            Some(id) if id == active_generation => Some(self.swap.pin_active_generation()),
+            Some(id) => {
+                return Err(BundleSessionSaveError::GenerationMismatch {
+                    field: "runtime_generation_pin",
+                    saved: format!("{id:?}"),
+                    actual: format!("{active_generation:?}"),
+                });
+            }
+            None => None,
+        };
+        self.pending_input_events.clear();
+        self.pending_text_control_write_backs.clear();
+        self.pending_host_call_results.clear();
+        self.waiting_action_receive_calls.clear();
+        self.task_generation_pins.clear();
+        self.tasks = RuntimeTaskRegistry::default();
+        self.presentation = snapshot.presentation;
+        self.retire_unused_generations();
+        Ok(())
+    }
+
+    fn session_save_blockers(&self) -> Vec<BundleSessionPendingBlocker> {
+        let mut blockers = Vec::new();
+        if !self.pending_input_events.is_empty() {
+            blockers.push(BundleSessionPendingBlocker::PendingInputEvents {
+                count: self.pending_input_events.len(),
+            });
+        }
+        if !self.pending_text_control_write_backs.is_empty() {
+            blockers.push(BundleSessionPendingBlocker::PendingTextControlWriteBacks {
+                count: self.pending_text_control_write_backs.len(),
+            });
+        }
+        if !self.pending_host_call_results.is_empty() {
+            blockers.push(BundleSessionPendingBlocker::PendingHostCallResults {
+                count: self.pending_host_call_results.len(),
+            });
+        }
+        if !self.waiting_action_receive_calls.is_empty() {
+            blockers.push(BundleSessionPendingBlocker::WaitingActionReceiveCalls {
+                count: self.waiting_action_receive_calls.len(),
+            });
+        }
+        let active_tasks = self.tasks.list(RuntimeTaskListOptions::default()).len();
+        let queued_task_events = self.tasks.queued_task_event_count();
+        if active_tasks > 0 || queued_task_events > 0 {
+            blockers.push(BundleSessionPendingBlocker::HostTasks {
+                active: active_tasks,
+                queued_events: queued_task_events,
+            });
+        }
+        if !self.task_generation_pins.is_empty() {
+            blockers.push(BundleSessionPendingBlocker::TaskGenerationPins {
+                count: self.task_generation_pins.len(),
+            });
+        }
+        blockers
+    }
+
+    fn validate_session_save_generation(
+        &self,
+        snapshot: &BundleSessionGenerationSnapshot,
+    ) -> Result<(), BundleSessionSaveError> {
+        let active = self.active_generation();
+        if snapshot.active_generation != active.id {
+            return Err(BundleSessionSaveError::GenerationMismatch {
+                field: "active_generation",
+                saved: format!("{:?}", snapshot.active_generation),
+                actual: format!("{:?}", active.id),
+            });
+        }
+        if snapshot.content_root != active.content_root {
+            return Err(BundleSessionSaveError::GenerationMismatch {
+                field: "content_root",
+                saved: digest_label(&snapshot.content_root),
+                actual: digest_label(&active.content_root),
+            });
+        }
+        if snapshot.active_container_content_root != self.active_container_content_root {
+            return Err(BundleSessionSaveError::GenerationMismatch {
+                field: "active_container_content_root",
+                saved: format!("{:?}", snapshot.active_container_content_root),
+                actual: format!("{:?}", self.active_container_content_root),
+            });
+        }
+        if snapshot.bytecode_abi != active.bytecode_abi {
+            return Err(BundleSessionSaveError::GenerationMismatch {
+                field: "bytecode_abi",
+                saved: snapshot.bytecode_abi.to_string(),
+                actual: active.bytecode_abi.to_string(),
+            });
+        }
+        if snapshot.adapter_requirements != active.adapter_requirements {
+            return Err(BundleSessionSaveError::GenerationMismatch {
+                field: "adapter_requirements",
+                saved: digest_label(&snapshot.adapter_requirements),
+                actual: digest_label(&active.adapter_requirements),
+            });
+        }
+        Ok(())
+    }
+
     fn activate_runtime(&mut self, runtime: SessionRuntime) {
         self.source_label = runtime.source_label;
         self.executor = runtime.executor;
@@ -1145,6 +1347,8 @@ impl BundleSession {
         self.image_objects = runtime.image_objects;
         self.text_inputs = runtime.text_inputs;
         self.action_buttons = runtime.action_buttons;
+        self.scroll_regions = runtime.scroll_regions;
+        self.text_blocks = runtime.text_blocks;
         self.runtime_control_style_diagnostics = runtime.runtime_control_style_diagnostics;
         self.focus_groups = runtime.focus_groups;
         self.focus_navigation = runtime.focus_navigation;
@@ -1240,7 +1444,6 @@ mod text_control_writeback_tests {
         UiTextSelectionPolicy, UiTextShortcutPolicy, UiTextTabPolicy,
         UiTextVerticalNavigationPolicy,
     };
-    use arcweft_core::step::RuntimeHostCallMode;
     use arcweft_id::PublicId;
     use arcweft_presentation::input::InteractionTarget as PresentationTarget;
     use arcweft_presentation::text_input::{
@@ -1251,7 +1454,8 @@ mod text_control_writeback_tests {
         UiRuntimeTextControl {
             public_id: target.to_owned(),
             target: target.to_owned(),
-            component: None,
+            view: None,
+            containing_scroll_region: None,
             session,
             value: value.to_owned(),
             selection: UiRuntimeTextSelection::collapsed_at_end(value),
@@ -1306,24 +1510,6 @@ mod text_control_writeback_tests {
         preserve_runtime_text_control_values(&current, &mut incompatible);
         assert_eq!(incompatible[0].value, "default");
     }
-
-    #[test]
-    fn text_submit_host_call_keeps_input_family_target() {
-        let request = RuntimeHostCallRequest {
-            id: RuntimeHostCallId("host.text_submit.0".to_owned()),
-            public_id: "host.text_submit.0".to_owned(),
-            capability: "ui.text_input".to_owned(),
-            operation: "await_submit".to_owned(),
-            args: vec![RuntimePayload::from("input.feedback")],
-            mode: RuntimeHostCallMode::Suspend,
-            deterministic: true,
-        };
-
-        assert_eq!(
-            text_submit_control_id(&request).as_deref(),
-            Some("input.feedback")
-        );
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -1331,14 +1517,34 @@ struct SessionRuntime {
     source_label: String,
     program: AwbcProgram,
     entry: AwbcEntryId,
+    launch_target: SessionLaunchTarget,
     executor: ArcweftRuntimeExecutor,
     display: LineDisplayCatalog,
     image_objects: Vec<BundleImageObject>,
     text_inputs: Vec<UiRuntimeTextControl>,
-    action_buttons: Vec<UiRuntimeActionButton>,
+    action_buttons: Vec<ViewRuntimeActionButton>,
+    scroll_regions: Vec<ViewRuntimeScrollRegion>,
+    text_blocks: Vec<ViewRuntimeTextBlock>,
     runtime_control_style_diagnostics: UiRuntimeControlStyleDiagnostics,
-    focus_groups: Vec<UiRuntimeFocusGroup>,
-    focus_navigation: Vec<UiRuntimeFocusNavigation>,
+    focus_groups: Vec<ViewRuntimeFocusGroup>,
+    focus_navigation: Vec<ViewRuntimeFocusNavigation>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SessionLaunchTarget {
+    Entry(AwbcEntryId),
+    Function {
+        entry: AwbcEntryId,
+        function: AwbcFunctionId,
+    },
+}
+
+impl SessionLaunchTarget {
+    const fn entry(self) -> AwbcEntryId {
+        match self {
+            Self::Entry(entry) | Self::Function { entry, .. } => entry,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1346,10 +1552,12 @@ struct SessionRuntimeResources {
     display: LineDisplayCatalog,
     image_objects: Vec<BundleImageObject>,
     text_inputs: Vec<UiRuntimeTextControl>,
-    action_buttons: Vec<UiRuntimeActionButton>,
+    action_buttons: Vec<ViewRuntimeActionButton>,
+    scroll_regions: Vec<ViewRuntimeScrollRegion>,
+    text_blocks: Vec<ViewRuntimeTextBlock>,
     runtime_control_style_diagnostics: UiRuntimeControlStyleDiagnostics,
-    focus_groups: Vec<UiRuntimeFocusGroup>,
-    focus_navigation: Vec<UiRuntimeFocusNavigation>,
+    focus_groups: Vec<ViewRuntimeFocusGroup>,
+    focus_navigation: Vec<ViewRuntimeFocusNavigation>,
 }
 
 fn initial_generation(bundle: &ArcweftBundle) -> Result<ProgramGeneration, BundleSessionError> {
@@ -1376,19 +1584,34 @@ impl SessionRuntime {
     fn new(
         source_label: String,
         program: AwbcProgram,
-        entry: AwbcEntryId,
+        launch_target: SessionLaunchTarget,
         resources: SessionRuntimeResources,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        let executor = ArcweftRuntimeExecutor::from_awbc_product(program.clone(), entry)?;
+        let entry = launch_target.entry();
+        let executor = match launch_target {
+            SessionLaunchTarget::Entry(entry) => {
+                ArcweftRuntimeExecutor::from_awbc_product(program.clone(), entry)?
+            }
+            SessionLaunchTarget::Function { entry, function } => {
+                ArcweftRuntimeExecutor::from_awbc_product_function(
+                    program.clone(),
+                    entry,
+                    function,
+                )?
+            }
+        };
         Ok(Self {
             source_label,
             program,
             entry,
+            launch_target,
             executor,
             display: resources.display,
             image_objects: resources.image_objects,
             text_inputs: resources.text_inputs,
             action_buttons: resources.action_buttons,
+            scroll_regions: resources.scroll_regions,
+            text_blocks: resources.text_blocks,
             runtime_control_style_diagnostics: resources.runtime_control_style_diagnostics,
             focus_groups: resources.focus_groups,
             focus_navigation: resources.focus_navigation,
@@ -1396,20 +1619,24 @@ impl SessionRuntime {
     }
 
     fn start_entry(&self, start: BundleEntryStart) -> Result<Self, BundleEntryStartError> {
-        let entry = match start {
-            BundleEntryStart::SessionDefault => self.entry,
-            BundleEntryStart::Entry(entry) => entry,
+        let launch_target = match start {
+            BundleEntryStart::SessionDefault => self.launch_target,
+            BundleEntryStart::Entry(entry) => {
+                ensure_start_awbc_entry_selects_flow(&self.program, entry)?;
+                SessionLaunchTarget::Entry(entry)
+            }
         };
-        ensure_start_awbc_entry_selects_flow(&self.program, entry)?;
         Self::new(
             self.source_label.clone(),
             self.program.clone(),
-            entry,
+            launch_target,
             SessionRuntimeResources {
                 display: self.display.clone(),
                 image_objects: self.image_objects.clone(),
                 text_inputs: self.text_inputs.clone(),
                 action_buttons: self.action_buttons.clone(),
+                scroll_regions: self.scroll_regions.clone(),
+                text_blocks: self.text_blocks.clone(),
                 runtime_control_style_diagnostics: self.runtime_control_style_diagnostics.clone(),
                 focus_groups: self.focus_groups.clone(),
                 focus_navigation: self.focus_navigation.clone(),
@@ -1433,8 +1660,10 @@ fn build_session_runtime(
         .product_awbc_program()
         .map_err(|_| BundleSessionError::MissingProductAwbc)?
         .clone();
-    let entry = selected_awbc_entry(&program, bundle, options)?;
-    ensure_session_awbc_entry_selects_flow(&program, entry)?;
+    let launch_target = selected_awbc_launch_target(&program, bundle, options)?;
+    if let SessionLaunchTarget::Entry(entry) = launch_target {
+        ensure_session_awbc_entry_selects_flow(&program, entry)?;
+    }
     let text_controls = bundle
         .ui_input
         .as_ref()
@@ -1457,40 +1686,41 @@ fn build_session_runtime(
             });
     let text_inputs = text_controls.controls;
     let action_buttons = action_button_controls.controls;
+    let scroll_regions = bundle
+        .ui_program
+        .as_ref()
+        .map_or_else(Vec::new, ViewProgramResource::runtime_scroll_regions);
+    let text_blocks = bundle.ui_program.as_ref().map_or_else(Vec::new, |program| {
+        program.runtime_text_blocks(bundle.ui_text.as_ref())
+    });
     let mut runtime_control_style_diagnostics = text_controls.diagnostics;
     runtime_control_style_diagnostics.extend(action_button_controls.diagnostics);
     let focus_groups = bundle
         .ui_program
         .as_ref()
-        .map_or_else(Vec::new, UiProgramResource::runtime_focus_groups);
+        .map_or_else(Vec::new, ViewProgramResource::runtime_focus_groups);
     let focus_navigation = bundle
         .ui_program
         .as_ref()
-        .map_or_else(Vec::new, UiProgramResource::runtime_focus_navigation);
+        .map_or_else(Vec::new, ViewProgramResource::runtime_focus_navigation);
 
     SessionRuntime::new(
         bundle.manifest.source_label.clone(),
         program,
-        entry,
+        launch_target,
         SessionRuntimeResources {
             display: bundle.display.clone(),
             image_objects: bundle.image_objects.clone(),
             text_inputs,
             action_buttons,
+            scroll_regions,
+            text_blocks,
             runtime_control_style_diagnostics,
             focus_groups,
             focus_navigation,
         },
     )
     .map_err(BundleSessionError::from)
-}
-
-fn text_submit_control_id(request: &RuntimeHostCallRequest) -> Option<String> {
-    let value = request.args.first()?.value();
-    match value {
-        RuntimeValue::EntityRef(value) | RuntimeValue::String(value) => Some(value.to_owned()),
-        _ => None,
-    }
 }
 
 fn action_receive_action_id(request: &RuntimeHostCallRequest) -> Option<String> {
@@ -1514,21 +1744,36 @@ fn action_receive_payload(action_id: &str, payload: Option<&str>) -> RuntimePayl
     ]))
 }
 
-fn selected_awbc_entry(
+fn selected_awbc_launch_target(
     program: &AwbcProgram,
     bundle: &ArcweftBundle,
     options: &BundleSessionOptions,
-) -> Result<AwbcEntryId, BundleSessionError> {
+) -> Result<SessionLaunchTarget, BundleSessionError> {
     if options.entry.is_some() && options.flow.is_some() {
         return Err(BundleSessionError::ConflictingEntrySelection);
     }
     if let Some(flow) = options.flow.as_deref() {
-        return Err(BundleSessionError::UnknownFlow {
-            flow: RuntimeEntityFamily::Flow.selector(flow),
-        });
+        let selected = RuntimeEntityFamily::Flow.selector(flow);
+        return program
+            .functions
+            .iter()
+            .enumerate()
+            .find_map(|(index, function)| {
+                if !function.kind.is_flow() {
+                    return None;
+                }
+                let public_id = function
+                    .public_id
+                    .and_then(|public_id| program.strings.get(public_id.index()))?;
+                (public_id == &selected).then(|| SessionLaunchTarget::Function {
+                    entry: AwbcEntryId(0),
+                    function: AwbcFunctionId(u32::try_from(index).unwrap_or(u32::MAX)),
+                })
+            })
+            .ok_or(BundleSessionError::UnknownFlow { flow: selected });
     }
     let Some(entry) = selected_entry(bundle, options) else {
-        return Ok(AwbcEntryId(0));
+        return Ok(SessionLaunchTarget::Entry(AwbcEntryId(0)));
     };
     let selected = RuntimeEntityFamily::Entry.selector(entry);
     program
@@ -1537,8 +1782,9 @@ fn selected_awbc_entry(
         .enumerate()
         .find_map(|(index, candidate)| {
             let public_id = program.strings.get(candidate.public_id.index())?;
-            (public_id == entry || public_id == &selected)
-                .then(|| AwbcEntryId(u32::try_from(index).unwrap_or(u32::MAX)))
+            (public_id == entry || public_id == &selected).then(|| {
+                SessionLaunchTarget::Entry(AwbcEntryId(u32::try_from(index).unwrap_or(u32::MAX)))
+            })
         })
         .ok_or(BundleSessionError::ProductAwbcEntry { entry: selected })
 }

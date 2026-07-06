@@ -457,10 +457,10 @@ ensures z > @layer.ui.game.z
 }
 ```
 
-UI component でも所属 layer を保証できる。
+UI view でも所属 layer を保証できる。
 
 ```arcw
-component ChoiceList(choices: Vec<ChoiceView>)
+view ChoiceList(choices: Vec<ChoiceView>)
 ensures result.layer == @layer.ui.game
 ensures result.actions.all(_.layer == @layer.ui.game)
 {

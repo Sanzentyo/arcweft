@@ -1,5 +1,5 @@
 bench @bench.linear_aot {
-    measure iterations = 4 { start(@flow.linear_aot) }
+    measure iterations = 4 { goto @flow.linear_aot }
 }
 
 flow @flow.linear_aot linear_aot {

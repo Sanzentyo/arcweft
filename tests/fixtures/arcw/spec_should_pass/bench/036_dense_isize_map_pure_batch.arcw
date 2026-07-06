@@ -4,7 +4,7 @@ fn score_isize(base: isize, bonus: isize) -> isize {
 }
 
 bench @bench.dense_isize_map_pure_batch {
-    measure iterations = 4 { start(@flow.dense_isize_map_pure_batch) }
+    measure iterations = 4 { goto @flow.dense_isize_map_pure_batch }
 }
 
 flow @flow.dense_isize_map_pure_batch dense_isize_map_pure_batch {

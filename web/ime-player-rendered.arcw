@@ -10,7 +10,7 @@
 // - input.long_latin_area: TextArea, long Latin/Japanese text
 // - input.secret_secure_field: SecureField, redacted diagnostics
 
-entry game @entry.main { start(@flow.web_ime_player_rendered) }
+entry game @entry.main { goto @flow.web_ime_player_rendered }
 
 flow web_ime_player_rendered {
     return "web_ime_player_rendered_fixture"

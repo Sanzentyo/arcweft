@@ -4,19 +4,21 @@ use arcweft_bundle::resource_codec::ui::{
     ColorSchemeDefault, CompositionOnBlurPolicy, ContrastPreference, EnterKeyHint,
     ExternalCssDescriptorRef, ExternalCssIdentity, RgbaColor, StyleAssignOp, StyleSourceIdentity,
     StyleSourceRef, StyleSyntax, SystemColor, SystemColorOverride, TextAssistPolicy,
-    TextCapitalization, UiChildSpan, UiElementKind, UiElementState, UiHandlerRef, UiInputKind,
-    UiInputOptions, UiInputPurpose, UiInputResource, UiLayoutBoundsResource, UiLogicalRect,
-    UiObserveClassification, UiProgramInstruction, UiProgramResource, UiResourceBudget,
-    UiResourceCompatibility, UiSecureInputPolicy, UiSecureRedactionMetadata, UiSemanticTarget,
-    UiStateSchemaHashRef, UiStyleDeclaration, UiStyleResource, UiStyleRule, UiStyleSelector,
-    UiStyleSelectorPart, UiStyleToken, UiStyleValue, UiTextResource, UiTextSelectionPolicy,
-    UiTextShortcutPolicy, UiTextSourceKind, UiTextSourceRecord, UiTextTabPolicy,
-    UiTextVerticalNavigationPolicy, UiThemeEnvironmentDefaults, UiThemeResource,
-    migrated_ui_section_compatibility,
+    TextCapitalization, UiInputKind, UiInputOptions, UiInputPurpose, UiInputResource,
+    UiLogicalRect, UiObserveClassification, UiResourceBudget, UiResourceCompatibility,
+    UiSecureInputPolicy, UiSecureRedactionMetadata, UiStyleResource, UiTextResource,
+    UiTextSelectionPolicy, UiTextShortcutPolicy, UiTextSourceKind, UiTextSourceRecord,
+    UiTextTabPolicy, UiTextVerticalNavigationPolicy, UiThemeEnvironmentDefaults, UiThemeResource,
+    ViewAwaitBranchSpan, ViewChildSpan, ViewElementKind, ViewElementState, ViewHandlerRef,
+    ViewLayoutBoundsResource, ViewProgramInstruction, ViewProgramResource,
+    ViewRuntimeTextBlockBounds, ViewScrollAxis, ViewScrollOverflowPolicy, ViewScrollRegionResource,
+    ViewSemanticTarget, ViewStateSchemaHashRef, ViewStyleDeclaration, ViewStyleRule,
+    ViewStyleSelector, ViewStyleSelectorPart, ViewStyleToken, ViewStyleValue,
+    ViewTextBlockResource, migrated_ui_section_compatibility,
 };
 use arcweft_bundle::resource_codec::{
-    FieldId, ProductResourceEnvelope, ProductSectionCodecKind, ResourceField, ResourceWireType,
-    SectionCodecBudget,
+    DigestRef, FieldId, ProductResourceEnvelope, ProductSectionCodecKind, ResourceField,
+    ResourceWireType, SectionCodecBudget,
 };
 use arcweft_bundle::{BundleVirtualFileRef, BundleVirtualFileSpace};
 
@@ -26,7 +28,7 @@ fn ui_resource_compact_sections_round_trip_with_deterministic_bytes() {
     assert_round_trip(
         ProductSectionCodecKind::UiProgram,
         &program.encode_canonical_section().expect("program encodes"),
-        UiProgramResource::decode_canonical_section,
+        ViewProgramResource::decode_canonical_section,
         &program,
     );
 
@@ -100,10 +102,20 @@ fn ui_resource_budget_failures_are_reported() {
         .encode_canonical_section()
         .expect("program encodes");
     assert!(
-        UiProgramResource::decode_canonical_section_with_budget(
+        ViewProgramResource::decode_canonical_section_with_budget(
             &program_bytes,
             UiResourceBudget {
                 program_instructions: 0,
+                ..UiResourceBudget::default()
+            },
+        )
+        .is_err()
+    );
+    assert!(
+        ViewProgramResource::decode_canonical_section_with_budget(
+            &program_bytes,
+            UiResourceBudget {
+                text_blocks: 0,
                 ..UiResourceBudget::default()
             },
         )
@@ -154,7 +166,7 @@ fn ui_program_layout_bounds_reject_zero_size_rects() {
     let mut program = fixture_program();
     program
         .layout_bounds
-        .push(UiLayoutBoundsResource::text_control(
+        .push(ViewLayoutBoundsResource::text_control(
             "input.dialogue.invalid",
             UiLogicalRect::new(48_000, 48_000, 0, 48_000),
         ));
@@ -163,6 +175,17 @@ fn ui_program_layout_bounds_reject_zero_size_rects() {
         program.encode_canonical_section().is_err(),
         "zero-width layout bounds are not canonical UI resources",
     );
+}
+
+#[test]
+fn ui_program_scroll_regions_reject_pre_axis_payload_shape() {
+    for removed_field in ["content_width_milli", "axis"] {
+        let bytes = ui_program_bytes_without_scroll_region_field(removed_field);
+        assert!(
+            ViewProgramResource::decode_canonical_section(&bytes).is_err(),
+            "scroll regions must reject payloads missing `{removed_field}`",
+        );
+    }
 }
 
 #[test]
@@ -252,7 +275,7 @@ trait EncodeAgain {
     fn encode_again(&self, codec: ProductSectionCodecKind) -> Vec<u8>;
 }
 
-impl EncodeAgain for UiProgramResource {
+impl EncodeAgain for ViewProgramResource {
     fn encode_again(&self, codec: ProductSectionCodecKind) -> Vec<u8> {
         assert_eq!(codec, ProductSectionCodecKind::UiProgram);
         self.encode_canonical_section().expect("program re-encodes")
@@ -303,56 +326,147 @@ fn envelope_with_extra_field(envelope: &ProductResourceEnvelope, field: Resource
     .expect("envelope re-encodes")
 }
 
-fn fixture_program() -> UiProgramResource {
-    UiProgramResource {
+fn ui_program_bytes_without_scroll_region_field(field_name: &str) -> Vec<u8> {
+    let bytes = fixture_program()
+        .encode_canonical_section()
+        .expect("program encodes");
+    let envelope = ProductResourceEnvelope::decode_all_fields(
+        &bytes,
+        ProductSectionCodecKind::UiProgram,
+        SectionCodecBudget::default(),
+    )
+    .expect("envelope decodes");
+    let transcript = envelope
+        .fields
+        .iter()
+        .find(|field| field.id == FieldId(1))
+        .expect("ui transcript field exists");
+    let mut json: serde_json::Value =
+        serde_json::from_slice(&transcript.payload).expect("transcript is JSON");
+    json["scroll_regions"][0]
+        .as_object_mut()
+        .expect("scroll region transcript is an object")
+        .remove(field_name);
+    let updated_transcript = serde_json::to_vec(&json).expect("updated transcript encodes");
+    let fields: Vec<ResourceField> = envelope
+        .fields
+        .iter()
+        .map(|field| {
+            if field.id == FieldId(1) {
+                ResourceField::new(
+                    field.id,
+                    field.requirement,
+                    field.wire_type,
+                    field.nesting_depth,
+                    field.reference_count,
+                    updated_transcript.clone(),
+                )
+            } else {
+                field.clone()
+            }
+        })
+        .collect();
+    ProductResourceEnvelope::new(
+        envelope.header.codec,
+        envelope.strings,
+        envelope.public_ids,
+        envelope.enums,
+        fields,
+        envelope.header.record_count,
+    )
+    .expect("envelope rebuilds")
+    .encode_canonical()
+    .expect("envelope re-encodes")
+}
+
+fn fixture_program() -> ViewProgramResource {
+    ViewProgramResource {
         program_id: "ui.program.dialogue".to_owned(),
-        root_component: "component.dialogue".to_owned(),
+        root_view: "view.dialogue".to_owned(),
         instructions: vec![
-            UiProgramInstruction::OpenElement {
-                element: UiElementKind::Column,
+            ViewProgramInstruction::OpenElement {
+                element: ViewElementKind::Column,
                 style: Some("style.dialogue".to_owned()),
                 part: Some("part.root".to_owned()),
                 key: Some(7),
                 source: None,
             },
-            UiProgramInstruction::EmitText {
+            ViewProgramInstruction::EmitText {
                 text_source: "text.dialogue.title".to_owned(),
                 style: Some("style.dialogue.title".to_owned()),
                 part: Some("part.title".to_owned()),
                 source: None,
             },
-            UiProgramInstruction::CloseElement,
+            ViewProgramInstruction::Await {
+                source_schema: DigestRef {
+                    digest: BundleDigest::of(b"avatar-need-schema"),
+                },
+                pending_branch: Some(ViewAwaitBranchSpan {
+                    pattern_schema: DigestRef {
+                        digest: BundleDigest::of(b"pending-pattern"),
+                    },
+                    body_span: 1,
+                }),
+                ready_branch: Some(ViewAwaitBranchSpan {
+                    pattern_schema: DigestRef {
+                        digest: BundleDigest::of(b"ready-pattern"),
+                    },
+                    body_span: 1,
+                }),
+                error_branch: None,
+                denied_branch: None,
+                source: None,
+            },
+            ViewProgramInstruction::CloseElement,
         ],
-        child_spans: vec![UiChildSpan::new(1, 2)],
-        handlers: vec![UiHandlerRef {
+        child_spans: vec![ViewChildSpan::new(1, 2)],
+        handlers: vec![ViewHandlerRef {
             handler_id: "handler.dialogue.submit".to_owned(),
             event: "submit".to_owned(),
             awbc_function_index: 2,
             handler_abi: BundleDigest::of(b"handler-abi"),
             function_binding: None,
         }],
-        state_schema_hashes: vec![UiStateSchemaHashRef {
+        state_schema_hashes: vec![ViewStateSchemaHashRef {
             public_id: Some("state.dialogue".to_owned()),
             hash: BundleDigest::of(b"state-schema"),
         }],
         exported_parts: vec![],
-        semantic_targets: vec![UiSemanticTarget {
+        semantic_targets: vec![ViewSemanticTarget {
             public_id: "semantic.dialogue.title".to_owned(),
             target: "heading".to_owned(),
-            component: None,
+            view: None,
             label_text_source: Some("text.dialogue.title".to_owned()),
             source: None,
         }],
         layout_bounds: vec![
-            UiLayoutBoundsResource::text_control(
+            ViewLayoutBoundsResource::text_control(
                 "input.dialogue.name",
                 UiLogicalRect::from_px(48, 48, 420, 48),
             ),
-            UiLayoutBoundsResource::semantic_target(
+            ViewLayoutBoundsResource::semantic_target(
                 "input.dialogue.name",
                 UiLogicalRect::from_px(48, 48, 420, 48),
             ),
         ],
+        scroll_regions: vec![
+            ViewScrollRegionResource::new(
+                "scroll.dialogue.body",
+                Some("view.dialogue".to_owned()),
+                UiLogicalRect::from_px(48, 112, 420, 180),
+                640_000,
+                360_000,
+                ViewScrollAxis::Horizontal,
+            )
+            .with_overflow(ViewScrollOverflowPolicy::Hidden),
+        ],
+        text_blocks: vec![ViewTextBlockResource::new(
+            "text.block.dialogue.title",
+            Some("view.dialogue".to_owned()),
+            Some("scroll.dialogue.body".to_owned()),
+            "text.dialogue.title",
+            ViewRuntimeTextBlockBounds::from_px(48, 112, 420, 24),
+        )],
         action_buttons: Vec::new(),
         focus_groups: Vec::new(),
         focus_navigation: Vec::new(),
@@ -379,20 +493,20 @@ fn fixture_style() -> UiStyleResource {
             },
             content_digest: Some(BundleDigest::of(b"dialogue-css")),
         }],
-        tokens: vec![UiStyleToken {
+        tokens: vec![ViewStyleToken {
             public_id: "token.accent".to_owned(),
-            value: UiStyleValue::SystemColor(SystemColor::Accent),
+            value: ViewStyleValue::SystemColor(SystemColor::Accent),
         }],
-        rules: vec![UiStyleRule {
-            selector: UiStyleSelector {
+        rules: vec![ViewStyleRule {
+            selector: ViewStyleSelector {
                 parts: vec![
-                    UiStyleSelectorPart::Element(UiElementKind::Button),
-                    UiStyleSelectorPart::State(UiElementState::FocusVisible),
+                    ViewStyleSelectorPart::Element(ViewElementKind::Button),
+                    ViewStyleSelectorPart::State(ViewElementState::FocusVisible),
                 ],
             },
-            declarations: vec![UiStyleDeclaration {
+            declarations: vec![ViewStyleDeclaration {
                 property: "border_color".to_owned(),
-                value: UiStyleValue::Token("token.accent".to_owned()),
+                value: ViewStyleValue::Token("token.accent".to_owned()),
                 op: StyleAssignOp::Replace,
             }],
             source: None,
@@ -458,7 +572,8 @@ fn fixture_input(secure_policy: UiSecureInputPolicy) -> UiInputResource {
     UiInputResource {
         options: vec![UiInputOptions {
             public_id: "input.dialogue.name".to_owned(),
-            component: None,
+            view: None,
+            containing_scroll_region: None,
             kind: UiInputKind::TextField,
             value_text_source: "text.dialogue.name".to_owned(),
             placeholder_text_source: Some("text.dialogue.placeholder".to_owned()),

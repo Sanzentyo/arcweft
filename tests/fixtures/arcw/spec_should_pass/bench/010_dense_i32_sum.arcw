@@ -1,5 +1,5 @@
 bench @bench.dense_i32_sum {
-    measure iterations = 4 { start(@flow.dense_i32_sum) }
+    measure iterations = 4 { goto @flow.dense_i32_sum }
 }
 
 flow @flow.dense_i32_sum dense_i32_sum {

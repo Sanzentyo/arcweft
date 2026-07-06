@@ -9,7 +9,6 @@ use arcweft_lang_syntax::{
             AgentItem, Attribute, CallableItem, EntityDeclItem, EntryDeclItem, EnumItem,
             ExternCapabilityItem, ExternModItem, FunctionKind, HookItem, ImplItem, MemoFn,
             ParserItem, StateItem, StructItem, StyleItem, TraitItem, TypeAliasItem,
-            UiTextInputItem,
         },
         line_plan::LinePlan,
         pattern::Pattern,
@@ -97,7 +96,6 @@ pub enum HirTopLevelDecl {
     Bench(BenchItem),
     Parser(ParserItem),
     Source(SourceItem),
-    UiTextInput(UiTextInputItem),
     Style(StyleItem),
 }
 

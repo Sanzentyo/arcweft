@@ -9,7 +9,7 @@ flow @flow:.next next {
 }
 
 test @test:.opening scenario {
-    start(@flow:.main)
+    goto @flow:.main
     expect.no_assertion_failures()
 }
 

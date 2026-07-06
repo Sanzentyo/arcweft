@@ -27,9 +27,7 @@ mod control_style;
 mod focus_navigation;
 mod images;
 mod text_controls;
-pub use action_buttons::{
-    PreparedActionButton, RenderActionButton, RenderActionButtonAction, RenderTextSubmitImePolicy,
-};
+pub use action_buttons::{PreparedActionButton, RenderActionButton, RenderActionButtonAction};
 pub use control_style::{
     PreparedControlBackdrop, PreparedControlFilter, PreparedControlPaint, PreparedControlShadow,
     RenderControlBorderStyle, RenderControlCornerFrameStyle, RenderControlFilter,
@@ -86,6 +84,92 @@ pub struct ChoiceScroll {
     pub offset_y: f32,
 }
 
+/// One scrollable retained UI region in logical viewport coordinates.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RenderScrollRegion {
+    pub id: String,
+    pub bounds: HitRect,
+    pub content_width: f32,
+    pub content_height: f32,
+    pub offset_x: f32,
+    pub offset_y: f32,
+    pub axis: RenderScrollAxis,
+    pub overflow: RenderScrollOverflow,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RenderScrollAxis {
+    #[default]
+    Vertical,
+    Horizontal,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RenderScrollOverflow {
+    #[default]
+    Auto,
+    Scroll,
+    Hidden,
+}
+
+impl RenderScrollRegion {
+    #[must_use]
+    pub fn max_offset_x(&self) -> f32 {
+        if self.axis != RenderScrollAxis::Horizontal || !self.overflow.scroll_enabled() {
+            return 0.0;
+        }
+        if self.content_width.is_finite() && self.bounds.width.is_finite() {
+            (self.content_width - self.bounds.width).max(0.0)
+        } else {
+            0.0
+        }
+    }
+
+    #[must_use]
+    pub fn max_offset_y(&self) -> f32 {
+        if self.axis != RenderScrollAxis::Vertical || !self.overflow.scroll_enabled() {
+            return 0.0;
+        }
+        if self.content_height.is_finite() && self.bounds.height.is_finite() {
+            (self.content_height - self.bounds.height).max(0.0)
+        } else {
+            0.0
+        }
+    }
+
+    #[must_use]
+    pub fn clamped_offset_x(&self, offset_x: f32) -> f32 {
+        if offset_x.is_finite() {
+            offset_x.clamp(0.0, self.max_offset_x())
+        } else {
+            0.0
+        }
+    }
+
+    #[must_use]
+    pub fn clamped_offset_y(&self, offset_y: f32) -> f32 {
+        if offset_y.is_finite() {
+            offset_y.clamp(0.0, self.max_offset_y())
+        } else {
+            0.0
+        }
+    }
+
+    #[must_use]
+    pub fn contains(&self, point: arcweft_presentation::input::ViewportPoint) -> bool {
+        point.x >= self.bounds.x
+            && point.x <= self.bounds.x + self.bounds.width
+            && point.y >= self.bounds.y
+            && point.y <= self.bounds.y + self.bounds.height
+    }
+}
+
+impl RenderScrollOverflow {
+    pub const fn scroll_enabled(self) -> bool {
+        matches!(self, Self::Auto | Self::Scroll)
+    }
+}
+
 /// Frame-crossing interaction visuals rendered into the canvas.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct InteractionVisualState {
@@ -120,6 +204,7 @@ pub struct RenderScene {
     pub preferences: RenderPreferences,
     pub interaction: InteractionVisualState,
     pub choice_scroll: ChoiceScroll,
+    pub scroll_regions: Vec<RenderScrollRegion>,
 }
 
 /// One retained UI scene attached to the normal renderer frame.
@@ -553,6 +638,7 @@ pub struct PreparedFrame {
     pub control_shadows: Vec<PreparedControlShadow>,
     pub control_filters: Vec<PreparedControlFilter>,
     pub control_paints: Vec<PreparedControlPaint>,
+    pub scroll_regions: Vec<RenderScrollRegion>,
     pub focus_graph: PreparedFocusGraph,
     ui_scenes: Vec<PreparedUiScene>,
     dialogue_present: bool,
@@ -743,6 +829,7 @@ impl PreparedFrame {
         self.map_surface_geometry(mapping);
         self.map_runtime_control_geometry(mapping);
         self.map_focused_text_input(mapping);
+        self.map_scroll_regions(mapping);
         self
     }
 
@@ -769,6 +856,7 @@ impl PreparedFrame {
             .drain(..)
             .map(|mut image| {
                 image.bounds = mapping.rect(image.bounds);
+                image.viewport_clip = image.viewport_clip.map(|clip| mapping.rect(clip));
                 image
             })
             .collect();
@@ -822,6 +910,16 @@ impl PreparedFrame {
                 paint
             })
             .collect();
+    }
+
+    fn map_scroll_regions(&mut self, mapping: PreparedFrameViewportMapping) {
+        for region in &mut self.scroll_regions {
+            region.bounds = mapping.rect(region.bounds);
+            region.content_width *= mapping.scale_x;
+            region.content_height *= mapping.scale_y;
+            region.offset_x *= mapping.scale_x;
+            region.offset_y *= mapping.scale_y;
+        }
     }
 
     fn map_focused_text_input(&mut self, mapping: PreparedFrameViewportMapping) {
@@ -930,6 +1028,16 @@ fn map_styled_paragraph(
         })
         .collect();
     paragraph
+}
+
+pub(super) fn intersect_hit_rect(left: HitRect, right: HitRect) -> Option<HitRect> {
+    let x = left.x.max(right.x);
+    let y = left.y.max(right.y);
+    let right_edge = (left.x + left.width).min(right.x + right.width);
+    let bottom_edge = (left.y + left.height).min(right.y + right.height);
+    let width = right_edge - x;
+    let height = bottom_edge - y;
+    (width > 0.0 && height > 0.0).then(|| HitRect::new(x, y, width, height))
 }
 
 fn map_text_style(mut style: RenderTextStyle, text_scale: f32) -> RenderTextStyle {
@@ -1054,7 +1162,6 @@ impl SharedFramePlanContext {
             &palette,
             &action,
         )?;
-        let submit_action = RenderActionKind::TextInputSubmit.public_id()?;
         let mut control_backdrops = Vec::new();
         let mut control_shadows = Vec::new();
         let mut control_filters = Vec::new();
@@ -1065,7 +1172,6 @@ impl SharedFramePlanContext {
             &mut rectangles,
             &mut text,
             &palette,
-            &submit_action,
             &mut self.text_control_font_context,
             &mut control_backdrops,
             &mut control_shadows,
@@ -1079,7 +1185,7 @@ impl SharedFramePlanContext {
             semantics,
             hits,
             rectangles,
-            images: scene.images.clone(),
+            images: build_retained_images(scene),
             text,
             styled_paragraphs,
             choices,
@@ -1088,6 +1194,7 @@ impl SharedFramePlanContext {
             control_shadows,
             control_filters,
             control_paints: runtime_controls.control_paints,
+            scroll_regions: scene.scroll_regions.clone(),
             focus_graph: PreparedFocusGraph::new(
                 scene.focus_groups.clone(),
                 scene.focus_navigation.clone(),
@@ -1098,6 +1205,24 @@ impl SharedFramePlanContext {
             focused_text_input: runtime_controls.focused_text_input,
         })
     }
+}
+
+fn build_retained_images(scene: &RenderScene) -> Vec<RenderImage> {
+    scene
+        .images
+        .iter()
+        .filter_map(|image| {
+            let mut image = image.clone();
+            let (bounds, viewport_clip) = scroll_adjusted_bounds(
+                scene,
+                image.containing_scroll_region.as_deref(),
+                image.bounds,
+            )?;
+            image.bounds = bounds;
+            image.viewport_clip = viewport_clip;
+            Some(image)
+        })
+        .collect()
 }
 
 struct RuntimeControlsBuildOutput {
@@ -1145,7 +1270,6 @@ fn build_runtime_controls(
     rectangles: &mut Vec<PaintRect>,
     text: &mut Vec<RenderTextBlock>,
     palette: &Palette,
-    submit_action: &PublicId,
     text_control_font_context: &mut text_controls::TextControlFontContext,
     control_backdrops: &mut Vec<PreparedControlBackdrop>,
     control_shadows: &mut Vec<PreparedControlShadow>,
@@ -1184,10 +1308,20 @@ fn build_runtime_controls(
     for item in items {
         match item {
             RuntimeControlPlanItem::TextInput { index, .. } => {
+                let mut control = scene.text_inputs[index].clone();
+                let Some((bounds, viewport_clip)) = scroll_adjusted_bounds(
+                    scene,
+                    control.containing_scroll_region.as_deref(),
+                    control.bounds,
+                ) else {
+                    continue;
+                };
+                control.bounds = bounds;
+                control.viewport_clip = viewport_clip;
                 let (target, paint) = text_controls::build_text_input(
                     scene,
                     &ids.text_input,
-                    &scene.text_inputs[index],
+                    &control,
                     semantics,
                     rectangles,
                     text,
@@ -1203,10 +1337,20 @@ fn build_runtime_controls(
                 }
             }
             RuntimeControlPlanItem::ActionButton { index, .. } => {
+                let mut button = scene.action_buttons[index].clone();
+                let Some((bounds, viewport_clip)) = scroll_adjusted_bounds(
+                    scene,
+                    button.containing_scroll_region.as_deref(),
+                    button.bounds,
+                ) else {
+                    continue;
+                };
+                button.bounds = bounds;
+                button.viewport_clip = viewport_clip;
                 let (button, paint) = action_buttons::build_action_button(
                     scene,
                     &ids.action_button,
-                    &scene.action_buttons[index],
+                    &button,
                     action_buttons::ActionButtonBuildOutput {
                         semantics,
                         rectangles,
@@ -1216,7 +1360,6 @@ fn build_runtime_controls(
                         control_filters,
                     },
                     palette,
-                    submit_action,
                     font_size,
                     line_height,
                 );
@@ -1231,6 +1374,27 @@ fn build_runtime_controls(
         action_buttons: prepared_buttons,
         control_paints,
     })
+}
+
+fn scroll_adjusted_bounds(
+    scene: &RenderScene,
+    containing_scroll_region: Option<&str>,
+    bounds: HitRect,
+) -> Option<(HitRect, Option<HitRect>)> {
+    let Some(scroll_region) = containing_scroll_region else {
+        return Some((bounds, None));
+    };
+    let region = scene
+        .scroll_regions
+        .iter()
+        .find(|region| region.id == scroll_region)?;
+    let shifted = HitRect::new(
+        bounds.x - region.clamped_offset_x(region.offset_x),
+        bounds.y - region.clamped_offset_y(region.offset_y),
+        bounds.width,
+        bounds.height,
+    );
+    intersect_hit_rect(shifted, region.bounds).map(|_| (shifted, Some(region.bounds)))
 }
 
 fn build_frame_layers(ids: &FrameIds) -> LayerTree {
@@ -1948,14 +2112,12 @@ const fn order(phase: RenderPhase, z: i32) -> LayerOrder {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RenderActionKind {
     ChoiceSelect,
-    TextInputSubmit,
 }
 
 impl RenderActionKind {
     const fn as_str(self) -> &'static str {
         match self {
             Self::ChoiceSelect => "action.choice.select",
-            Self::TextInputSubmit => "action.text_input.submit",
         }
     }
 

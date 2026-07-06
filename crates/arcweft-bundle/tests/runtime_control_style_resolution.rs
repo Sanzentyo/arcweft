@@ -1,22 +1,22 @@
 use arcweft_bundle::resource_codec::ui::{
-    RgbaColor, StyleAssignOp, UiElementKind, UiElementState, UiInputKind, UiInteractionState,
-    UiRuntimeControlCornerFrameStyle, UiRuntimeControlCornerRadius, UiRuntimeControlFilter,
-    UiRuntimeControlRadii, UiRuntimeControlState, UiRuntimeControlStyleDiagnosticReason,
-    UiStyleDeclaration, UiStyleResource, UiStyleRule, UiStyleSelector, UiStyleSelectorPart,
-    UiStyleValue,
+    RgbaColor, StyleAssignOp, UiInputKind, UiRuntimeControlCornerFrameStyle,
+    UiRuntimeControlCornerRadius, UiRuntimeControlFilter, UiRuntimeControlRadii,
+    UiRuntimeControlState, UiRuntimeControlStyleDiagnosticReason, UiStyleResource, ViewElementKind,
+    ViewElementState, ViewInteractionState, ViewStyleDeclaration, ViewStyleRule, ViewStyleSelector,
+    ViewStyleSelectorPart, ViewStyleValue,
 };
 
 #[test]
 fn text_control_resolves_authored_background_alpha_and_border_color() {
     let style = UiStyleResource {
         rules: vec![rule(
-            UiStyleSelectorPart::Element(UiElementKind::TextField),
+            ViewStyleSelectorPart::Element(ViewElementKind::TextField),
             vec![
                 decl("background-color", rgba(16, 24, 32, 180)),
                 decl("border-color", rgba(80, 112, 96, 255)),
-                decl("border-width", UiStyleValue::Milli(2_000)),
-                decl("opacity", UiStyleValue::Milli(720)),
-                decl("z-index", UiStyleValue::Milli(2_500)),
+                decl("border-width", ViewStyleValue::Milli(2_000)),
+                decl("opacity", ViewStyleValue::Milli(720)),
+                decl("z-index", ViewStyleValue::Milli(2_500)),
             ],
         )],
         ..UiStyleResource::default()
@@ -42,19 +42,19 @@ fn runtime_control_depth_overlays_for_interaction_state() {
     let style = UiStyleResource {
         rules: vec![
             rule(
-                UiStyleSelectorPart::Element(UiElementKind::Button),
-                vec![decl("depth", UiStyleValue::Text("1000".to_owned()))],
+                ViewStyleSelectorPart::Element(ViewElementKind::Button),
+                vec![decl("depth", ViewStyleValue::Text("1000".to_owned()))],
             ),
             state_rule(
-                UiInteractionState::Hover,
-                decl("z-index", UiStyleValue::Text("3000".to_owned())),
+                ViewInteractionState::Hover,
+                decl("z-index", ViewStyleValue::Text("3000".to_owned())),
             ),
         ],
         ..UiStyleResource::default()
     };
 
     let resolved = style
-        .resolve_runtime_control_style_for_test("button.submit_feedback", UiElementKind::Button);
+        .resolve_runtime_control_style_for_test("button.submit_feedback", ViewElementKind::Button);
 
     assert_eq!(
         resolved
@@ -77,7 +77,7 @@ fn runtime_control_depth_overlays_for_interaction_state() {
 fn text_control_resolves_selection_and_caret_colors() {
     let style = UiStyleResource {
         rules: vec![rule(
-            UiStyleSelectorPart::Element(UiElementKind::TextArea),
+            ViewStyleSelectorPart::Element(ViewElementKind::TextArea),
             vec![
                 decl("selection-color", rgba(64, 128, 200, 160)),
                 decl("caret-color", rgba(240, 220, 90, 255)),
@@ -100,12 +100,12 @@ fn text_control_resolves_selection_and_caret_colors() {
 fn text_control_resolves_corner_frame_decoration() {
     let style = UiStyleResource {
         rules: vec![rule(
-            UiStyleSelectorPart::Element(UiElementKind::TextArea),
+            ViewStyleSelectorPart::Element(ViewElementKind::TextArea),
             vec![
                 decl("corner-frame-color", rgba(94, 234, 212, 220)),
-                decl("corner-frame-width", UiStyleValue::Milli(3_000)),
-                decl("corner-frame-length", UiStyleValue::Milli(24_000)),
-                decl("corner-frame-offset", UiStyleValue::Milli(2_000)),
+                decl("corner-frame-width", ViewStyleValue::Milli(3_000)),
+                decl("corner-frame-length", ViewStyleValue::Milli(24_000)),
+                decl("corner-frame-offset", ViewStyleValue::Milli(2_000)),
             ],
         )],
         ..UiStyleResource::default()
@@ -133,19 +133,19 @@ fn button_hover_pressed_and_disabled_selectors_resolve_deterministically() {
     let style = UiStyleResource {
         rules: vec![
             rule(
-                UiStyleSelectorPart::Element(UiElementKind::Button),
+                ViewStyleSelectorPart::Element(ViewElementKind::Button),
                 vec![decl("background-color", rgba(20, 30, 40, 255))],
             ),
             state_rule(
-                UiInteractionState::Hover,
+                ViewInteractionState::Hover,
                 decl("background-color", rgba(40, 60, 80, 255)),
             ),
             state_rule(
-                UiInteractionState::Active,
+                ViewInteractionState::Active,
                 decl("background-color", rgba(70, 90, 110, 255)),
             ),
             state_rule(
-                UiInteractionState::Disabled,
+                ViewInteractionState::Disabled,
                 decl("background-color", rgba(12, 12, 12, 160)),
             ),
         ],
@@ -153,7 +153,7 @@ fn button_hover_pressed_and_disabled_selectors_resolve_deterministically() {
     };
 
     let resolved = style
-        .resolve_runtime_control_style_for_test("button.submit_feedback", UiElementKind::Button);
+        .resolve_runtime_control_style_for_test("button.submit_feedback", ViewElementKind::Button);
 
     assert_eq!(
         resolved
@@ -183,25 +183,25 @@ fn focus_visible_ring_and_supported_box_shadow_are_typed() {
     let style = UiStyleResource {
         rules: vec![
             rule(
-                UiStyleSelectorPart::Element(UiElementKind::TextArea),
+                ViewStyleSelectorPart::Element(ViewElementKind::TextArea),
                 vec![
-                    decl("border-radius", UiStyleValue::Milli(12_000)),
+                    decl("border-radius", ViewStyleValue::Milli(12_000)),
                     decl(
                         "box-shadow",
-                        UiStyleValue::Text("0px 8px 20px 0px rgba(0,0,0,0.35)".to_owned()),
+                        ViewStyleValue::Text("0px 8px 20px 0px rgba(0,0,0,0.35)".to_owned()),
                     ),
                 ],
             ),
-            UiStyleRule {
-                selector: UiStyleSelector {
+            ViewStyleRule {
+                selector: ViewStyleSelector {
                     parts: vec![
-                        UiStyleSelectorPart::Element(UiElementKind::TextArea),
-                        UiStyleSelectorPart::State(UiElementState::FocusVisible),
+                        ViewStyleSelectorPart::Element(ViewElementKind::TextArea),
+                        ViewStyleSelectorPart::State(ViewElementState::FocusVisible),
                     ],
                 },
                 declarations: vec![
                     decl("focus-ring-color", rgba(226, 233, 98, 255)),
-                    decl("focus-ring-width", UiStyleValue::Milli(3_000)),
+                    decl("focus-ring-width", ViewStyleValue::Milli(3_000)),
                 ],
                 source: None,
             },
@@ -226,19 +226,19 @@ fn focus_visible_ring_and_supported_box_shadow_are_typed() {
 #[test]
 fn surface_style_resolves_radius_fill_and_box_shadow() {
     let style = UiStyleResource {
-        rules: vec![UiStyleRule {
-            selector: UiStyleSelector {
+        rules: vec![ViewStyleRule {
+            selector: ViewStyleSelector {
                 parts: vec![
-                    UiStyleSelectorPart::Element(UiElementKind::Surface),
-                    UiStyleSelectorPart::Part("card.feedback".to_owned()),
+                    ViewStyleSelectorPart::Element(ViewElementKind::Panel),
+                    ViewStyleSelectorPart::Part("card.feedback".to_owned()),
                 ],
             },
             declarations: vec![
                 decl("background-color", rgba(36, 42, 54, 255)),
-                decl("border-radius", UiStyleValue::Text("16px".to_owned())),
+                decl("border-radius", ViewStyleValue::Text("16px".to_owned())),
                 decl(
                     "box-shadow",
-                    UiStyleValue::Text("inset 0px 3px 14px 2px rgba(0,0,0,0.38)".to_owned()),
+                    ViewStyleValue::Text("inset 0px 3px 14px 2px rgba(0,0,0,0.38)".to_owned()),
                 ),
             ],
             source: None,
@@ -262,10 +262,10 @@ fn surface_style_resolves_radius_fill_and_box_shadow() {
 fn border_radius_shorthand_resolves_four_corners_and_elliptical_axes() {
     let style = UiStyleResource {
         rules: vec![rule(
-            UiStyleSelectorPart::Element(UiElementKind::TextArea),
+            ViewStyleSelectorPart::Element(ViewElementKind::TextArea),
             vec![decl(
                 "border-radius",
-                UiStyleValue::Text("12px 10px 8px 6px / 5px 4px 3px 2px".to_owned()),
+                ViewStyleValue::Text("12px 10px 8px 6px / 5px 4px 3px 2px".to_owned()),
             )],
         )],
         ..UiStyleResource::default()
@@ -293,10 +293,10 @@ fn border_radius_shorthand_resolves_four_corners_and_elliptical_axes() {
 fn backdrop_filter_blur_resolves_to_typed_runtime_control_effect() {
     let style = UiStyleResource {
         rules: vec![rule(
-            UiStyleSelectorPart::Element(UiElementKind::TextField),
+            ViewStyleSelectorPart::Element(ViewElementKind::TextField),
             vec![decl(
                 "backdrop-filter",
-                UiStyleValue::Text("blur(12px)".to_owned()),
+                ViewStyleValue::Text("blur(12px)".to_owned()),
             )],
         )],
         ..UiStyleResource::default()
@@ -325,10 +325,10 @@ fn backdrop_filter_blur_resolves_to_typed_runtime_control_effect() {
 fn backdrop_filter_color_matrix_functions_resolve_to_typed_runtime_control_effects() {
     let style = UiStyleResource {
         rules: vec![rule(
-            UiStyleSelectorPart::Element(UiElementKind::TextField),
+            ViewStyleSelectorPart::Element(ViewElementKind::TextField),
             vec![decl(
                 "backdrop-filter",
-                UiStyleValue::Text(
+                ViewStyleValue::Text(
                     "brightness(120%) contrast(0.9) saturate(140%) hue-rotate(12deg) opacity(85%)"
                         .to_owned(),
                 ),
@@ -370,14 +370,17 @@ fn backdrop_filter_color_matrix_functions_resolve_to_typed_runtime_control_effec
 fn foreground_filter_blur_resolves_to_typed_runtime_control_effect() {
     let style = UiStyleResource {
         rules: vec![rule(
-            UiStyleSelectorPart::Element(UiElementKind::Button),
-            vec![decl("filter", UiStyleValue::Text("blur(2.5px)".to_owned()))],
+            ViewStyleSelectorPart::Element(ViewElementKind::Button),
+            vec![decl(
+                "filter",
+                ViewStyleValue::Text("blur(2.5px)".to_owned()),
+            )],
         )],
         ..UiStyleResource::default()
     };
 
     let resolved = style
-        .resolve_runtime_control_style_for_test("button.submit_feedback", UiElementKind::Button);
+        .resolve_runtime_control_style_for_test("button.submit_feedback", ViewElementKind::Button);
     let normal = resolved
         .style
         .visual_for_state(UiRuntimeControlState::Normal);
@@ -400,10 +403,10 @@ fn foreground_filter_blur_resolves_to_typed_runtime_control_effect() {
 fn unsupported_filter_function_produces_structured_diagnostic() {
     let style = UiStyleResource {
         rules: vec![rule(
-            UiStyleSelectorPart::Element(UiElementKind::TextField),
+            ViewStyleSelectorPart::Element(ViewElementKind::TextField),
             vec![decl(
                 "backdrop-filter",
-                UiStyleValue::Text("drop-shadow(0px 4px 8px rgba(0,0,0,0.4))".to_owned()),
+                ViewStyleValue::Text("drop-shadow(0px 4px 8px rgba(0,0,0,0.4))".to_owned()),
             )],
         )],
         ..UiStyleResource::default()
@@ -426,10 +429,10 @@ fn unsupported_filter_function_produces_structured_diagnostic() {
 fn unsupported_style_property_produces_structured_diagnostic() {
     let style = UiStyleResource {
         rules: vec![rule(
-            UiStyleSelectorPart::Element(UiElementKind::TextField),
+            ViewStyleSelectorPart::Element(ViewElementKind::TextField),
             vec![decl(
                 "transform",
-                UiStyleValue::Text("translateX(8px)".to_owned()),
+                ViewStyleValue::Text("translateX(8px)".to_owned()),
             )],
         )],
         ..UiStyleResource::default()
@@ -445,20 +448,20 @@ fn unsupported_style_property_produces_structured_diagnostic() {
     assert_eq!(resolved.diagnostics.diagnostics[0].property, "transform");
 }
 
-fn rule(part: UiStyleSelectorPart, declarations: Vec<UiStyleDeclaration>) -> UiStyleRule {
-    UiStyleRule {
-        selector: UiStyleSelector { parts: vec![part] },
+fn rule(part: ViewStyleSelectorPart, declarations: Vec<ViewStyleDeclaration>) -> ViewStyleRule {
+    ViewStyleRule {
+        selector: ViewStyleSelector { parts: vec![part] },
         declarations,
         source: None,
     }
 }
 
-fn state_rule(state: UiInteractionState, declaration: UiStyleDeclaration) -> UiStyleRule {
-    UiStyleRule {
-        selector: UiStyleSelector {
+fn state_rule(state: ViewInteractionState, declaration: ViewStyleDeclaration) -> ViewStyleRule {
+    ViewStyleRule {
+        selector: ViewStyleSelector {
             parts: vec![
-                UiStyleSelectorPart::Element(UiElementKind::Button),
-                UiStyleSelectorPart::Interaction(state),
+                ViewStyleSelectorPart::Element(ViewElementKind::Button),
+                ViewStyleSelectorPart::Interaction(state),
             ],
         },
         declarations: vec![declaration],
@@ -466,23 +469,23 @@ fn state_rule(state: UiInteractionState, declaration: UiStyleDeclaration) -> UiS
     }
 }
 
-fn decl(property: &str, value: UiStyleValue) -> UiStyleDeclaration {
-    UiStyleDeclaration {
+fn decl(property: &str, value: ViewStyleValue) -> ViewStyleDeclaration {
+    ViewStyleDeclaration {
         property: property.to_owned(),
         value,
         op: StyleAssignOp::Replace,
     }
 }
 
-fn rgba(red: u8, green: u8, blue: u8, alpha: u8) -> UiStyleValue {
-    UiStyleValue::Rgba(RgbaColor::rgba(red, green, blue, alpha))
+fn rgba(red: u8, green: u8, blue: u8, alpha: u8) -> ViewStyleValue {
+    ViewStyleValue::Rgba(RgbaColor::rgba(red, green, blue, alpha))
 }
 
 trait RuntimeControlStyleTestExt {
     fn resolve_runtime_control_style_for_test(
         &self,
         target: &str,
-        element: UiElementKind,
+        element: ViewElementKind,
     ) -> arcweft_bundle::resource_codec::ui::UiRuntimeControlStyleResolution;
 }
 
@@ -490,43 +493,41 @@ impl RuntimeControlStyleTestExt for UiStyleResource {
     fn resolve_runtime_control_style_for_test(
         &self,
         target: &str,
-        element: UiElementKind,
+        element: ViewElementKind,
     ) -> arcweft_bundle::resource_codec::ui::UiRuntimeControlStyleResolution {
         match element {
-            UiElementKind::Button => {
+            ViewElementKind::Button => {
                 use arcweft_bundle::resource_codec::ui::{
-                    UiActionButtonActionResource, UiActionButtonResource, UiRuntimeButtonBounds,
-                    UiTextSubmitImePolicy,
+                    ViewActionButtonActionResource, ViewActionButtonResource,
+                    ViewRuntimeButtonBounds,
                 };
-                self.runtime_action_button_style(&UiActionButtonResource {
+                self.runtime_action_button_style(&ViewActionButtonResource {
                     public_id: target.to_owned(),
-                    component: None,
+                    view: None,
+                    containing_scroll_region: None,
                     label_text_source: "text.submit".to_owned(),
                     enabled: true,
-                    action: UiActionButtonActionResource::TextInputSubmit {
-                        input: "input.feedback".to_owned(),
-                        ime_policy: UiTextSubmitImePolicy::Commit,
-                    },
-                    bounds: UiRuntimeButtonBounds::new(0, 0, 100_000, 40_000),
+                    action: ViewActionButtonActionResource::Noop,
+                    bounds: ViewRuntimeButtonBounds::new(0, 0, 100_000, 40_000),
                     style: None,
                     source: None,
                 })
             }
-            UiElementKind::TextField => {
+            ViewElementKind::TextField => {
                 self.runtime_text_control_style(target, UiInputKind::TextField)
             }
-            UiElementKind::TextArea => {
+            ViewElementKind::TextArea => {
                 self.runtime_text_control_style(target, UiInputKind::TextArea)
             }
-            UiElementKind::SecureField => {
+            ViewElementKind::SecureField => {
                 self.runtime_text_control_style(target, UiInputKind::SecureField)
             }
-            UiElementKind::Surface
-            | UiElementKind::Box
-            | UiElementKind::Scroll
-            | UiElementKind::Row
-            | UiElementKind::Column
-            | UiElementKind::Stack => {
+            ViewElementKind::Panel
+            | ViewElementKind::Box
+            | ViewElementKind::Scroll
+            | ViewElementKind::Row
+            | ViewElementKind::Column
+            | ViewElementKind::Stack => {
                 panic!("unsupported test element")
             }
         }

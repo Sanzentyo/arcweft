@@ -129,8 +129,6 @@ pub(super) fn classify_top_level_item(trimmed: &str) -> CstTopLevelItemKind {
         CstTopLevelItemKind::Parser
     } else if looks_like_source_item(trimmed) {
         CstTopLevelItemKind::Source
-    } else if looks_like_ui_text_input(trimmed) {
-        CstTopLevelItemKind::UiTextInput
     } else if looks_like_style_item(trimmed) {
         CstTopLevelItemKind::Style
     } else {
@@ -153,16 +151,6 @@ fn visible_tail(input: &str) -> &str {
 
 fn visible_head(input: &str) -> &str {
     visible_tail(input).trim_start()
-}
-
-fn looks_like_ui_text_input(trimmed: &str) -> bool {
-    let tail = visible_tail(trimmed).trim_start();
-    ["ui text_input", "ui text_area", "ui secure_field"]
-        .iter()
-        .any(|prefix| {
-            tail.strip_prefix(prefix)
-                .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
-        })
 }
 
 fn looks_like_style_item(trimmed: &str) -> bool {
@@ -196,7 +184,7 @@ pub(super) fn looks_like_agent_item(trimmed: &str) -> bool {
 
 fn looks_like_callable_item(trimmed: &str) -> bool {
     let rest = visible_head(trimmed);
-    rest.starts_with("reducer ") || rest.starts_with("view ")
+    rest.starts_with("reducer ")
 }
 
 fn looks_like_state_item(trimmed: &str) -> bool {
@@ -233,7 +221,7 @@ fn looks_like_entity_decl_item(trimmed: &str) -> bool {
         "asset",
         "image",
         "character",
-        "component",
+        "view",
         "action",
         "activity",
         "content",

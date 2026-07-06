@@ -787,7 +787,9 @@ impl SharedRenderer {
                 },
             ],
         });
-        let vertices = image_vertices(image, logical_width, logical_height);
+        let Some(vertices) = image_vertices(image, logical_width, logical_height) else {
+            return;
+        };
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("arcweft-shared-image-vertices"),
             contents: bytemuck::cast_slice(&vertices),
@@ -1894,8 +1896,8 @@ fn scaled_alpha_milli(alpha: u8, opacity_milli: u16) -> u8 {
     u8::try_from(value.min(u32::from(u8::MAX))).unwrap_or(u8::MAX)
 }
 
-fn image_vertices(image: &RenderImage, width: f32, height: f32) -> [ImageVertex; 6] {
-    let quad = image.quad();
+fn image_vertices(image: &RenderImage, width: f32, height: f32) -> Option<[ImageVertex; 6]> {
+    let quad = image.visible_quad()?;
     let top_left = image.transform_point(quad.rect.x, quad.rect.y);
     let bottom_left = image.transform_point(quad.rect.x, quad.rect.y + quad.rect.height);
     let bottom_right = image.transform_point(
@@ -1907,7 +1909,7 @@ fn image_vertices(image: &RenderImage, width: f32, height: f32) -> [ImageVertex;
     let bottom_left = normalized_point(bottom_left, width, height);
     let bottom_right = normalized_point(bottom_right, width, height);
     let top_right = normalized_point(top_right, width, height);
-    [
+    Some([
         ImageVertex {
             position: top_left,
             uv: [quad.uv_left, quad.uv_top],
@@ -1932,7 +1934,7 @@ fn image_vertices(image: &RenderImage, width: f32, height: f32) -> [ImageVertex;
             position: top_right,
             uv: [quad.uv_right, quad.uv_top],
         },
-    ]
+    ])
 }
 
 fn normalized_point(point: [f32; 2], width: f32, height: f32) -> [f32; 2] {

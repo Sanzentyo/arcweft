@@ -1,14 +1,15 @@
-# text-submit-flow sample with component/View submit Button
+# text-submit-flow sample with View semantic submit action
 
-This sample demonstrates the seq-06.16.1 authoring surface:
+This sample demonstrates the current View/action authoring surface:
 
-- `flow text_submit_flow` explicitly mounts `component(@component:.FeedbackForm)`;
-- component/View `TextField(@input:.feedback, ...)` declares and places the
-  text-control resource once mounted;
-- component/View `Button(@button:.feedback_send).label("Send")` lowers to
-  `UiProgramResource.action_buttons`;
-- Enter/IME send and button activation all produce the same typed
-  `TextControlWriteBack::submit` path.
+- `flow text_submit_flow` explicitly mounts `view(@view:.FeedbackForm)`;
+- `let feedback = input.text(@input:.feedback, initial = "")` owns the text
+  input handle used by `TextField(feedback)`;
+- `pub action feedback.submit(value: String)` defines the semantic submit
+  route;
+- `TextField(feedback).on_submit { action.invoke(...) }` and
+  `Button(...).on_click { action.invoke(...) }` emit the same typed action;
+- the flow waits with `let event = receive action(@action:.feedback.submit)`.
 
 ## Native smoke
 
@@ -35,8 +36,9 @@ target/arcweft/traces/text-submit-flow-native.jsonl
 Expected entries:
 
 - presentation snapshot contains one `action_buttons` record with label `Send`;
-- button pointer activation writes `RuntimeTextControlWriteBackKind::Submit`;
-- focused-button keyboard activation writes `RuntimeTextControlWriteBackKind::Submit`;
+- button pointer activation emits `action.feedback.submit`;
+- text-field Enter/IME send writes `RuntimeTextControlWriteBackKind::Submit`
+  and resumes the same `receive action` wait through the submit handler;
 - text-field Enter/IME send reaches the same flow result.
 
 ## Web smoke

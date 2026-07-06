@@ -1100,7 +1100,7 @@ mod tests {
     };
 
     const SOURCE: &str = r#"
-pub view current_route() -> Ref<Flow> {
+pub reducer current_route() -> Ref<Flow> {
 return @flow.done
 }
 

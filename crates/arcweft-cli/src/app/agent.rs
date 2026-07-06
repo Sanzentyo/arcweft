@@ -126,7 +126,7 @@ pub(super) struct AgentObserveOptions {
     #[arg(long)]
     layer: Option<String>,
     #[arg(long, conflicts_with_all = ["layer", "object"])]
-    component: Option<String>,
+    view: Option<String>,
     #[arg(long)]
     object: Option<String>,
     #[arg(long)]
@@ -506,7 +506,7 @@ enum AgentObserveCaptureKind {
 enum AgentObserveResourceKind {
     Observation,
     Objects,
-    Components,
+    Views,
     PresentationTree,
     Overlay,
     Image,

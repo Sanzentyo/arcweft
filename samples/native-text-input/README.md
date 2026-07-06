@@ -5,13 +5,13 @@ This is the canonical native IME acceptance sample for seq06.4j.1.
 Run:
 
 ```bash
-cargo run -p arcweft-cli --features native-player -- run \
+cargo run -p arcweft-cli --all-features -- run \
   --runner native samples/native-text-input/src/main.arcw \
   --text-input-trace-out target/native-text-input-trace/native-player-ime.real.json
 ```
 
 The window should show Arcweft-rendered controls declared directly in the
-`NativeTextInputPanel` component in `src/main.arcw`. The remaining
+`NativeTextInputPanel` view in `src/main.arcw`. The remaining
 `ui.style.json` sidecar provides font/style cases for Japanese sans, Japanese
 serif, focus ring, and secure masking:
 

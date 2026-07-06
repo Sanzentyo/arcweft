@@ -8,7 +8,7 @@ use super::ids::{EntityRef, WikiLink};
 use super::proof::{BenchItem, ProofItem, TestItem, TrustedAxiomItem};
 use super::source::SourceItem;
 use super::style::StyleSyntax;
-use super::view::ComponentViewBody;
+use super::view::ViewBody;
 
 /// Typed syntax view of an `.arcw` source with module/use headers and items.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -47,35 +47,9 @@ pub enum Item {
     Bench(BenchItem),
     Parser(ParserItem),
     Source(SourceItem),
-    UiTextInput(UiTextInputItem),
     Style(StyleItem),
     FlowItem(Box<FlowItem>),
     Raw(RawItem),
-}
-
-/// Top-level text-input declaration lowered into product UI resources.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiTextInputItem {
-    attrs: Vec<Attribute>,
-    visibility: Option<Visibility>,
-    id: EntityRef,
-    kind: UiTextInputKind,
-    label: Option<String>,
-    value: Option<String>,
-    placeholder: Option<String>,
-    purpose: Option<String>,
-    enter_key: Option<String>,
-    submit: Option<EntityRef>,
-    change: Option<EntityRef>,
-    range: TextRange,
-}
-
-/// Text-control kind for DSL-authored product UI input declarations.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UiTextInputKind {
-    TextField,
-    TextArea,
-    SecureField,
 }
 
 /// Top-level retained style declaration lowered into product UI resources.
@@ -285,126 +259,10 @@ impl Item {
             Self::Bench(item) => Some(*item.range()),
             Self::Parser(item) => Some(*item.range()),
             Self::Source(item) => Some(*item.range()),
-            Self::UiTextInput(item) => Some(*item.range()),
             Self::Style(item) => Some(*item.range()),
             Self::Raw(item) => Some(*item.range()),
             Self::FlowItem(_) => None,
         }
-    }
-}
-
-impl UiTextInputItem {
-    pub(crate) const fn new(
-        attrs: Vec<Attribute>,
-        visibility: Option<Visibility>,
-        id: EntityRef,
-        kind: UiTextInputKind,
-        range: TextRange,
-    ) -> Self {
-        Self {
-            attrs,
-            visibility,
-            id,
-            kind,
-            label: None,
-            value: None,
-            placeholder: None,
-            purpose: None,
-            enter_key: None,
-            submit: None,
-            change: None,
-            range,
-        }
-    }
-
-    #[must_use]
-    pub fn with_label(mut self, label: Option<String>) -> Self {
-        self.label = label;
-        self
-    }
-
-    #[must_use]
-    pub fn with_value(mut self, value: Option<String>) -> Self {
-        self.value = value;
-        self
-    }
-
-    #[must_use]
-    pub fn with_placeholder(mut self, placeholder: Option<String>) -> Self {
-        self.placeholder = placeholder;
-        self
-    }
-
-    #[must_use]
-    pub fn with_purpose(mut self, purpose: Option<String>) -> Self {
-        self.purpose = purpose;
-        self
-    }
-
-    #[must_use]
-    pub fn with_enter_key(mut self, enter_key: Option<String>) -> Self {
-        self.enter_key = enter_key;
-        self
-    }
-
-    #[must_use]
-    pub fn with_submit(mut self, submit: Option<EntityRef>) -> Self {
-        self.submit = submit;
-        self
-    }
-
-    #[must_use]
-    pub fn with_change(mut self, change: Option<EntityRef>) -> Self {
-        self.change = change;
-        self
-    }
-
-    pub fn attrs(&self) -> &[Attribute] {
-        &self.attrs
-    }
-
-    pub const fn visibility(&self) -> Option<Visibility> {
-        self.visibility
-    }
-
-    pub const fn id(&self) -> &EntityRef {
-        &self.id
-    }
-
-    pub const fn kind(&self) -> UiTextInputKind {
-        self.kind
-    }
-
-    pub fn label(&self) -> Option<&str> {
-        self.label.as_deref()
-    }
-
-    pub fn value(&self) -> Option<&str> {
-        self.value.as_deref()
-    }
-
-    pub fn placeholder(&self) -> Option<&str> {
-        self.placeholder.as_deref()
-    }
-
-    pub fn purpose(&self) -> Option<&str> {
-        self.purpose.as_deref()
-    }
-
-    pub fn enter_key(&self) -> Option<&str> {
-        self.enter_key.as_deref()
-    }
-
-    pub const fn submit(&self) -> Option<&EntityRef> {
-        self.submit.as_ref()
-    }
-
-    pub const fn change(&self) -> Option<&EntityRef> {
-        self.change.as_ref()
-    }
-
-    pub const fn range(&self) -> &TextRange {
-        &self.range
     }
 }
 
@@ -673,7 +531,7 @@ pub enum EntityDeclKind {
     Asset,
     Image,
     Character,
-    Component,
+    View,
     Action,
     Activity,
     Content,
@@ -697,7 +555,7 @@ impl EntityDeclKind {
             Self::Asset => "asset",
             Self::Image => "image",
             Self::Character => "character",
-            Self::Component => "component",
+            Self::View => "view",
             Self::Action => "action",
             Self::Activity => "activity",
             Self::Content => "content",
@@ -717,7 +575,7 @@ impl EntityDeclKind {
     }
 }
 
-/// Top-level entity declaration such as `character`, `component`, `activity`,
+/// Top-level entity declaration such as `character`, `view`, `activity`,
 /// `signal`, or `layer`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EntityDeclItem {
@@ -739,13 +597,13 @@ pub struct EntityDeclItem {
 pub enum EntityDeclBody {
     Content(ContentDeclBody),
     Image(ImageDeclBody),
-    Component(Box<ComponentDeclBody>),
+    View(Box<ViewDeclBody>),
 }
 
-/// Structured retained View body for `component ...` declarations.
+/// Structured retained View body for `view ...` declarations.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ComponentDeclBody {
-    view: Option<ComponentViewBody>,
+pub struct ViewDeclBody {
+    view: Option<ViewBody>,
 }
 
 /// Content availability unit body declared with explicit root IDs.
@@ -1336,20 +1194,20 @@ impl EntityDeclItem {
     pub const fn content_body(&self) -> Option<&ContentDeclBody> {
         match self.structured_body.as_ref() {
             Some(EntityDeclBody::Content(body)) => Some(body),
-            Some(EntityDeclBody::Image(_) | EntityDeclBody::Component(_)) | None => None,
+            Some(EntityDeclBody::Image(_) | EntityDeclBody::View(_)) | None => None,
         }
     }
 
     pub const fn image_body(&self) -> Option<&ImageDeclBody> {
         match self.structured_body.as_ref() {
             Some(EntityDeclBody::Image(body)) => Some(body),
-            Some(EntityDeclBody::Content(_) | EntityDeclBody::Component(_)) | None => None,
+            Some(EntityDeclBody::Content(_) | EntityDeclBody::View(_)) | None => None,
         }
     }
 
-    pub fn component_body(&self) -> Option<&ComponentDeclBody> {
+    pub fn view_body(&self) -> Option<&ViewDeclBody> {
         match self.structured_body.as_ref() {
-            Some(EntityDeclBody::Component(body)) => Some(body.as_ref()),
+            Some(EntityDeclBody::View(body)) => Some(body.as_ref()),
             Some(EntityDeclBody::Content(_) | EntityDeclBody::Image(_)) | None => None,
         }
     }
@@ -1373,12 +1231,12 @@ impl ContentDeclBody {
     }
 }
 
-impl ComponentDeclBody {
-    pub(crate) const fn new(view: Option<ComponentViewBody>) -> Self {
+impl ViewDeclBody {
+    pub(crate) const fn new(view: Option<ViewBody>) -> Self {
         Self { view }
     }
 
-    pub const fn view(&self) -> Option<&ComponentViewBody> {
+    pub const fn view(&self) -> Option<&ViewBody> {
         self.view.as_ref()
     }
 }

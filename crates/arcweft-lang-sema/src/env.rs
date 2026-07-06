@@ -63,7 +63,7 @@ pub struct EffectCapability {
     label: String,
 }
 
-/// Parsed components of a canonical effect capability label.
+/// Parsed views of a canonical effect capability label.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EffectCapabilityParts {
     family: String,
@@ -307,13 +307,19 @@ impl TypeCheckEnv {
             .with_data_format_symbols()
             .with_content_functions()
             .with_function_signature(
-                "component",
+                "view",
                 FunctionSignature::new(
-                    TypeKind::Unit,
-                    [FunctionParam::required(
-                        "component",
-                        TypeKind::entity_ref(crate::types::EntityKind::Component),
-                    )],
+                    TypeKind::presentation_handle("View"),
+                    [
+                        FunctionParam::required(
+                            "view",
+                            TypeKind::entity_ref(crate::types::EntityKind::View),
+                        ),
+                        FunctionParam::defaulted(
+                            "lifetime",
+                            TypeKind::Named("PresentationLifetime".to_owned()),
+                        ),
+                    ],
                 ),
             )
             .with_enum_variants(TypeKind::DataFormat, data_format_variant_names())

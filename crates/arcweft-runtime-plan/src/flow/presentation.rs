@@ -15,8 +15,10 @@ pub(super) fn presentation_mount_call(expr: &Expr) -> Option<PresentationMountCa
         return None;
     };
     let kind = match callee.as_ref() {
-        Expr::Path(path) if path.is_single("component") => "component",
+        Expr::Path(path) if path.is_single("view") => "view",
         Expr::Path(path) if path.is_single("image") => "image",
+        Expr::Path(path) if path.is_single("menu") => "menu",
+        Expr::Path(path) if path.is_single("overlay") => "overlay",
         _ => return None,
     };
     let resource = args.iter().find_map(|arg| match arg {

@@ -1,5 +1,5 @@
 entry game {
-    start @flow.second
+    goto @flow.second
 }
 
 flow @flow.first first { return "wrong" }

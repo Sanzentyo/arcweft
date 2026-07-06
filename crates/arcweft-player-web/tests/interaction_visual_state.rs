@@ -34,6 +34,7 @@ fn frame() -> arcweft_render_wgpu::geometry::PreparedFrame {
         preferences: RenderPreferences::default(),
         interaction: InteractionVisualState::default(),
         choice_scroll: ChoiceScroll::default(),
+        scroll_regions: Vec::new(),
     })
     .unwrap()
 }

@@ -14,7 +14,7 @@ pub(super) struct AgentCaptureReadRequest {
 #[derive(Clone, Debug)]
 pub(super) enum AgentCaptureScope {
     Viewport,
-    Component(String),
+    View(String),
     Layer(String),
     Object(String),
 }
@@ -48,8 +48,8 @@ pub(super) fn agent_capture_request_from_uri(
     };
     let scope = if capture_stem.is_empty() || capture_stem == "color" {
         AgentCaptureScope::Viewport
-    } else if let Some(component) = capture_stem.strip_prefix("component.") {
-        AgentCaptureScope::Component(component.to_owned())
+    } else if let Some(view) = capture_stem.strip_prefix("view.") {
+        AgentCaptureScope::View(view.to_owned())
     } else if let Some(layer) = capture_stem.strip_prefix("layer.") {
         AgentCaptureScope::Layer(layer.to_owned())
     } else if let Some(object) = capture_stem.strip_prefix("object.") {
@@ -223,22 +223,22 @@ pub(super) fn agent_native_capture_image_with_frame_store(
     native_session: &mut arcweft_render_native::NativeOffscreenCaptureSession,
     image_frames: &AgentImageFrameStore,
 ) -> Result<AgentNativeCaptureImageResult, ExitCode> {
-    if let Some(result) = agent_native_shared_frame_capture(report, request, image_frames)? {
-        return Ok(result);
-    }
     if let Some(result) =
         agent_native_image_layer_frame_capture(report, request, native_session, image_frames)?
     {
         return Ok(result);
     }
     if let Some(result) =
-        agent_native_image_component_frame_capture(report, request, native_session, image_frames)?
+        agent_native_image_view_frame_capture(report, request, native_session, image_frames)?
     {
         return Ok(result);
     }
     if let Some(result) =
         agent_native_image_object_frame_capture(report, request, native_session, image_frames)?
     {
+        return Ok(result);
+    }
+    if let Some(result) = agent_native_shared_frame_capture(report, request, image_frames)? {
         return Ok(result);
     }
     if let Some(result) = agent_native_image_object_geometry_capture(report, request)? {
@@ -411,12 +411,12 @@ fn agent_shared_capture_objects<'a>(
             }
             Ok(selected)
         }
-        AgentCaptureScope::Component(component_id) => {
-            let Some(component) = agent_component_scope_for_id(report, component_id) else {
+        AgentCaptureScope::View(view_id) => {
+            let Some(view) = agent_view_scope_for_id(report, view_id) else {
                 agent_report_missing_capture_scope(scope);
                 return Err(ExitCode::from(2));
             };
-            let selected = component
+            let selected = view
                 .object_refs
                 .iter()
                 .filter_map(|id| {
@@ -452,8 +452,8 @@ fn agent_report_missing_capture_scope(scope: &AgentCaptureScope) {
         AgentCaptureScope::Layer(layer) => {
             eprintln!("error: no observed object matches resource layer {layer}");
         }
-        AgentCaptureScope::Component(component) => {
-            eprintln!("error: no observed component matches resource component {component}");
+        AgentCaptureScope::View(view) => {
+            eprintln!("error: no observed view matches resource view {view}");
         }
         AgentCaptureScope::Object(object_id) => {
             eprintln!("error: no observed object matches resource object {object_id}");
@@ -493,7 +493,7 @@ pub(super) fn agent_native_capture_result_from_raster(
         content_viewport_bbox,
         content_pixels: Some(stats.content_pixels),
         object: agent_image_object_for_capture_scope(report, &request.scope),
-        component: agent_image_component_for_capture_scope(report, &request.scope),
+        view: agent_image_view_for_capture_scope(report, &request.scope),
         selected_capture,
         diagnostics: agent_native_visual_diagnostics(request.capture_step, &capture.diagnostics),
         written: None,
@@ -589,13 +589,13 @@ pub(super) fn agent_native_image_layer_frame_capture(
 }
 
 #[allow(clippy::cast_precision_loss)]
-pub(super) fn agent_native_image_component_frame_capture(
+pub(super) fn agent_native_image_view_frame_capture(
     report: &AgentObservationReport,
     request: &AgentCaptureReadRequest,
     native_session: &mut arcweft_render_native::NativeOffscreenCaptureSession,
     image_frames: &AgentImageFrameStore,
 ) -> Result<Option<AgentNativeCaptureImageResult>, ExitCode> {
-    let AgentCaptureScope::Component(_) = &request.scope else {
+    let AgentCaptureScope::View(_) = &request.scope else {
         return Ok(None);
     };
     let image_items = agent_shared_capture_objects(report, &request.scope)?
@@ -648,7 +648,7 @@ pub(super) fn agent_native_image_component_frame_capture(
         }
     }
     .map_err(|error| {
-        eprintln!("error: native image component capture failed: {error}");
+        eprintln!("error: native image view capture failed: {error}");
         ExitCode::FAILURE
     })?;
     let raster = AgentRasterCapture {
@@ -958,27 +958,27 @@ pub(super) fn agent_image_object_for_capture_scope(
         .map(AgentImageObjectRef::from_observed)
 }
 
-pub(super) fn agent_image_component_for_capture_scope(
+pub(super) fn agent_image_view_for_capture_scope(
     report: &AgentObservationReport,
     scope: &AgentCaptureScope,
-) -> Option<AgentImageComponentRef> {
-    let AgentCaptureScope::Component(component_id) = scope else {
+) -> Option<AgentImageViewRef> {
+    let AgentCaptureScope::View(view_id) = scope else {
         return None;
     };
     report
-        .components
+        .views
         .iter()
-        .find(|component| component.id == *component_id)
-        .map(AgentImageComponentRef::from_observed)
+        .find(|view| view.id == *view_id)
+        .map(AgentImageViewRef::from_observed)
 }
 
 pub(super) fn agent_native_textbox_for_capture<'a>(
     report: &'a AgentObservationReport,
     scope: &AgentCaptureScope,
 ) -> Option<&'a AgentObservedObject> {
-    if let AgentCaptureScope::Component(component_id) = scope {
-        let component = agent_component_scope_for_id(report, component_id)?;
-        return component.object_refs.iter().find_map(|object_id| {
+    if let AgentCaptureScope::View(view_id) = scope {
+        let view = agent_view_scope_for_id(report, view_id)?;
+        return view.object_refs.iter().find_map(|object_id| {
             report
                 .objects
                 .iter()
@@ -1067,7 +1067,7 @@ pub(super) fn agent_native_scoped_capture(
         let AgentCaptureScope::Viewport = scope else {
             if matches!(
                 scope,
-                AgentCaptureScope::Layer(_) | AgentCaptureScope::Component(_)
+                AgentCaptureScope::Layer(_) | AgentCaptureScope::View(_)
             ) && selected
                 .iter()
                 .any(|target| !target.role().starts_with("rich_text_"))
@@ -1198,7 +1198,7 @@ pub(super) fn agent_native_capture_targets_for_page<'a>(
 ) -> Result<Vec<AgentNativeCaptureTarget<'a>>, ExitCode> {
     if !matches!(
         scope,
-        AgentCaptureScope::Layer(_) | AgentCaptureScope::Component(_)
+        AgentCaptureScope::Layer(_) | AgentCaptureScope::View(_)
     ) {
         return Ok(selected);
     }
@@ -2071,13 +2071,14 @@ pub(super) fn agent_native_capture_targets_for_scope<'a>(
         AgentCaptureScope::Viewport => Ok(context
             .objects
             .iter()
+            .filter(|object| object.visible)
             .map(AgentNativeCaptureTarget::Observed)
             .collect()),
         AgentCaptureScope::Layer(layer) => {
             let selected = context
                 .objects
                 .iter()
-                .filter(|object| agent_object_matches_layer(object, layer))
+                .filter(|object| object.visible && agent_object_matches_layer(object, layer))
                 .map(AgentNativeCaptureTarget::Observed)
                 .collect::<Vec<_>>();
             if selected.is_empty() {
@@ -2086,18 +2087,19 @@ pub(super) fn agent_native_capture_targets_for_scope<'a>(
             }
             Ok(selected)
         }
-        AgentCaptureScope::Component(component_id) => {
+        AgentCaptureScope::View(view_id) => {
             let selected = context
                 .objects
                 .iter()
                 .filter(|object| {
-                    agent_component_scope_for_id_from_objects(context.objects, component_id)
-                        .is_some_and(|refs| refs.iter().any(|id| id == &object.id))
+                    object.visible
+                        && agent_view_scope_for_id_from_objects(context.objects, view_id)
+                            .is_some_and(|refs| refs.iter().any(|id| id == &object.id))
                 })
                 .map(AgentNativeCaptureTarget::Observed)
                 .collect::<Vec<_>>();
             if selected.is_empty() {
-                eprintln!("error: no observed object matches resource component {component_id}");
+                eprintln!("error: no observed object matches resource view {view_id}");
                 return Err(ExitCode::from(2));
             }
             Ok(selected)
@@ -2106,7 +2108,7 @@ pub(super) fn agent_native_capture_targets_for_scope<'a>(
             if let Some(object) = context
                 .objects
                 .iter()
-                .find(|object| object.id == *object_id)
+                .find(|object| object.visible && object.id == *object_id)
             {
                 return Ok(vec![AgentNativeCaptureTarget::Observed(object)]);
             }
@@ -2124,10 +2126,9 @@ pub(super) fn agent_native_rich_text_target_for_object_id<'a>(
     object_id: &str,
 ) -> Option<AgentNativeCaptureTarget<'a>> {
     let parent_id = agent_rich_text_child_parent_object_id(object_id)?;
-    let parent = context
-        .objects
-        .iter()
-        .find(|candidate| agent_is_dialogue_textbox(candidate) && candidate.id == parent_id)?;
+    let parent = context.objects.iter().find(|candidate| {
+        candidate.visible && agent_is_dialogue_textbox(candidate) && candidate.id == parent_id
+    })?;
     let (element, role) = agent_native_element_and_role_for_object_id(object_id)?;
     Some(AgentNativeCaptureTarget::RichTextElement {
         id: object_id.to_owned(),
@@ -2205,11 +2206,11 @@ pub(super) fn agent_capture_scope_bbox(
             .iter()
             .find(|layer| layer.id == *layer_id)
             .map(|layer| layer.bbox.clone()),
-        AgentCaptureScope::Component(component_id) => report
-            .components
+        AgentCaptureScope::View(view_id) => report
+            .views
             .iter()
-            .find(|component| component.id == *component_id)
-            .map(|component| component.bbox.clone()),
+            .find(|view| view.id == *view_id)
+            .map(|view| view.bbox.clone()),
         AgentCaptureScope::Object(object_id) => report
             .objects
             .iter()
@@ -2237,18 +2238,18 @@ pub(super) fn agent_capture_source_identity(
                 },
                 AgentCaptureSourceIdentity::from_layer,
             ),
-        AgentCaptureScope::Component(component_id) => report
-            .components
+        AgentCaptureScope::View(view_id) => report
+            .views
             .iter()
-            .find(|component| component.id == *component_id)
+            .find(|view| view.id == *view_id)
             .map_or_else(
-                || AgentCaptureSourceIdentity::Component {
-                    id: component_id.clone(),
+                || AgentCaptureSourceIdentity::View {
+                    id: view_id.clone(),
                     parent_id: None,
                     object_count: 0,
                     object_refs: Vec::new(),
                 },
-                AgentCaptureSourceIdentity::from_component,
+                AgentCaptureSourceIdentity::from_view,
             ),
         AgentCaptureScope::Object(object_id) => report
             .objects
@@ -2292,12 +2293,12 @@ pub(super) fn agent_capture_mask_for_scope(
                 .collect(),
             vec![layer_id.clone()],
         ),
-        AgentCaptureScope::Component(component_id) => {
+        AgentCaptureScope::View(view_id) => {
             let object_ids = report
-                .components
+                .views
                 .iter()
-                .find(|component| component.id == *component_id)
-                .map(|component| component.object_refs.clone())
+                .find(|view| view.id == *view_id)
+                .map(|view| view.object_refs.clone())
                 .unwrap_or_default();
             let layer_ids = object_ids
                 .iter()
@@ -2336,13 +2337,13 @@ pub(super) fn agent_capture_mask_for_scope(
     })
 }
 
-pub(super) fn agent_component_scope_for_id_from_objects(
+pub(super) fn agent_view_scope_for_id_from_objects(
     objects: &[AgentObservedObject],
-    component_id: &str,
+    view_id: &str,
 ) -> Option<Vec<String>> {
     let refs = objects
         .iter()
-        .filter(|object| agent_component_id_for_object(object) == component_id)
+        .filter(|object| object.visible && agent_view_id_for_object(object) == view_id)
         .map(|object| object.id.clone())
         .collect::<Vec<_>>();
     (!refs.is_empty()).then_some(refs)

@@ -1,9 +1,9 @@
 //! Unified UI text source table.
 //!
-//! Public Component DSL exposes one `Text` view. The retained renderer-facing
+//! Public View DSL exposes one `Text` view. The retained renderer-facing
 //! source table distinguishes plain strings, localized text keys, rich text
 //! documents, and dialogue display-frame projections without exposing separate
-//! public `Text` and `RichText` view components.
+//! public `Text` and `RichText` view views.
 
 use crate::{TextSourceId, UiError};
 use arcweft_id::{PublicId, TextKey};

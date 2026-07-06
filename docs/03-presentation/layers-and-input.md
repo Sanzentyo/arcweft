@@ -444,7 +444,7 @@ scope {
 }
 ```
 
-### UI component での layer 指定
+### UI view での layer 指定
 
 ```arcw
 ChoiceList(choices)

@@ -38,6 +38,7 @@ fn scene(dialogue: RenderDialogue) -> RenderScene {
         preferences: RenderPreferences::default(),
         interaction: InteractionVisualState::default(),
         choice_scroll: ChoiceScroll::default(),
+        scroll_regions: Vec::new(),
     }
 }
 

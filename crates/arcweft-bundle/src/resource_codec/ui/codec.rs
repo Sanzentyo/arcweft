@@ -14,9 +14,9 @@ use crate::resource_codec::wire::ProductResourceEnvelope;
 
 use super::compat::UiResourceCompatibility;
 use super::model::{
-    UiInputOptions, UiInputResource, UiProgramInstruction, UiProgramResource, UiStyleApplyRef,
-    UiStyleResource, UiStyleRule, UiStyleSelector, UiStyleSelectorPart, UiStyleValue,
-    UiTextResource, UiTextSourceKind, UiThemeResource,
+    UiInputOptions, UiInputResource, UiStyleResource, UiTextResource, UiTextSourceKind,
+    UiThemeResource, ViewProgramInstruction, ViewProgramResource, ViewStyleApplyRef, ViewStyleRule,
+    ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue,
 };
 
 const FIELD_UI_TRANSCRIPT: FieldId = FieldId(1);
@@ -32,6 +32,8 @@ pub struct UiResourceBudget {
     pub exported_parts: usize,
     pub semantic_targets: usize,
     pub layout_bounds: usize,
+    pub scroll_regions: usize,
+    pub text_blocks: usize,
     pub action_buttons: usize,
     pub focus_groups: usize,
     pub focus_targets: usize,
@@ -80,6 +82,8 @@ impl Default for UiResourceBudget {
             exported_parts: 65_536,
             semantic_targets: 262_144,
             layout_bounds: 262_144,
+            scroll_regions: 65_536,
+            text_blocks: 262_144,
             action_buttons: 65_536,
             focus_groups: 65_536,
             focus_targets: 262_144,
@@ -99,18 +103,18 @@ impl Default for UiResourceBudget {
     }
 }
 
-impl UiProgramResource {
+impl ViewProgramResource {
     pub fn encode_canonical_section(&self) -> Result<Vec<u8>, SectionCodecError> {
         let mut section = self.clone();
         section.canonicalize();
-        section.validate(UiResourceBudget::default())?;
+        section.validate(&UiResourceBudget::default())?;
         encode_ui_section(
             ProductSectionCodecKind::UiProgram,
             "ui_program",
             &section,
             section.public_ids(),
             section.record_count(),
-            UiResourceBudget::default(),
+            &UiResourceBudget::default(),
         )
     }
 
@@ -126,10 +130,10 @@ impl UiProgramResource {
             bytes,
             ProductSectionCodecKind::UiProgram,
             "ui_program",
-            budget,
+            &budget,
         )?;
         section.canonicalize();
-        section.validate(budget)?;
+        section.validate(&budget)?;
         Ok(section)
     }
 
@@ -177,21 +181,27 @@ impl UiProgramResource {
         });
         self.action_buttons
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
+        self.scroll_regions
+            .sort_by(|left, right| left.public_id.cmp(&right.public_id));
+        self.text_blocks
+            .sort_by(|left, right| left.public_id.cmp(&right.public_id));
         self.focus_groups
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
         self.focus_navigation
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
     }
 
-    fn validate(&self, budget: UiResourceBudget) -> Result<(), SectionCodecError> {
+    fn validate(&self, budget: &UiResourceBudget) -> Result<(), SectionCodecError> {
         self.validate_budgets(budget)?;
         self.validate_child_spans()?;
         self.validate_unique_ids()?;
         self.validate_layout_bounds()?;
+        self.validate_scroll_regions()?;
+        self.validate_text_blocks()?;
         self.validate_focus_targets()
     }
 
-    fn validate_budgets(&self, budget: UiResourceBudget) -> Result<(), SectionCodecError> {
+    fn validate_budgets(&self, budget: &UiResourceBudget) -> Result<(), SectionCodecError> {
         check_budget(
             self.instructions.len(),
             budget.program_instructions,
@@ -224,6 +234,12 @@ impl UiProgramResource {
             budget.action_buttons,
             "ui_action_buttons",
         )?;
+        check_budget(
+            self.scroll_regions.len(),
+            budget.scroll_regions,
+            "ui_scroll_regions",
+        )?;
+        check_budget(self.text_blocks.len(), budget.text_blocks, "ui_text_blocks")?;
         check_budget(
             self.focus_groups.len(),
             budget.focus_groups,
@@ -277,7 +293,7 @@ impl UiProgramResource {
         reject_duplicates(
             self.layout_bounds
                 .iter()
-                .map(super::model::UiLayoutBoundsResource::identity_key),
+                .map(super::model::ViewLayoutBoundsResource::identity_key),
             "ui_layout_bounds",
         )?;
         reject_duplicates(
@@ -285,6 +301,16 @@ impl UiProgramResource {
                 .iter()
                 .map(|button| button.public_id.clone()),
             "ui_action_buttons",
+        )?;
+        reject_duplicates(
+            self.scroll_regions
+                .iter()
+                .map(|region| region.public_id.clone()),
+            "ui_scroll_regions",
+        )?;
+        reject_duplicates(
+            self.text_blocks.iter().map(|block| block.public_id.clone()),
+            "ui_text_blocks",
         )?;
         reject_duplicates(
             self.focus_groups
@@ -304,11 +330,35 @@ impl UiProgramResource {
         if self
             .layout_bounds
             .iter()
-            .all(super::model::UiLayoutBoundsResource::is_valid)
+            .all(super::model::ViewLayoutBoundsResource::is_valid)
         {
             Ok(())
         } else {
             Err(SectionCodecError::NonCanonicalTable("ui_layout_bounds"))
+        }
+    }
+
+    fn validate_scroll_regions(&self) -> Result<(), SectionCodecError> {
+        if self
+            .scroll_regions
+            .iter()
+            .all(super::model::ViewScrollRegionResource::is_valid)
+        {
+            Ok(())
+        } else {
+            Err(SectionCodecError::NonCanonicalTable("ui_scroll_regions"))
+        }
+    }
+
+    fn validate_text_blocks(&self) -> Result<(), SectionCodecError> {
+        if self
+            .text_blocks
+            .iter()
+            .all(super::model::ViewTextBlockResource::is_valid)
+        {
+            Ok(())
+        } else {
+            Err(SectionCodecError::NonCanonicalTable("ui_text_blocks"))
         }
     }
 
@@ -350,7 +400,7 @@ impl UiProgramResource {
 
     fn public_ids(&self) -> Vec<String> {
         unique_strings(
-            [self.program_id.clone(), self.root_component.clone()]
+            [self.program_id.clone(), self.root_view.clone()]
                 .into_iter()
                 .chain(self.instructions.iter().flat_map(instruction_public_ids))
                 .chain(
@@ -372,7 +422,7 @@ impl UiProgramResource {
                     [
                         Some(target.public_id.clone()),
                         Some(target.target.clone()),
-                        target.component.clone(),
+                        target.view.clone(),
                         target.label_text_source.clone(),
                     ]
                     .into_iter()
@@ -385,12 +435,8 @@ impl UiProgramResource {
                 )
                 .chain(self.action_buttons.iter().flat_map(|button| {
                     let action_ids = match &button.action {
-                        super::model::UiActionButtonActionResource::Noop => Vec::new(),
-                        super::model::UiActionButtonActionResource::TextInputSubmit {
-                            input,
-                            ..
-                        } => vec![input.clone()],
-                        super::model::UiActionButtonActionResource::ActionInvoke {
+                        super::model::ViewActionButtonActionResource::Noop => Vec::new(),
+                        super::model::ViewActionButtonActionResource::ActionInvoke {
                             action,
                             payload,
                         } => std::iter::once(action.clone())
@@ -399,16 +445,33 @@ impl UiProgramResource {
                     };
                     [
                         Some(button.public_id.clone()),
-                        button.component.clone(),
+                        button.view.clone(),
+                        button.containing_scroll_region.clone(),
                         Some(button.label_text_source.clone()),
                     ]
                     .into_iter()
                     .flatten()
                     .chain(action_ids)
                 }))
+                .chain(self.scroll_regions.iter().flat_map(|region| {
+                    [Some(region.public_id.clone()), region.view.clone()]
+                        .into_iter()
+                        .flatten()
+                }))
+                .chain(self.text_blocks.iter().flat_map(|block| {
+                    [
+                        Some(block.public_id.clone()),
+                        block.view.clone(),
+                        block.containing_scroll_region.clone(),
+                        Some(block.text_source.clone()),
+                    ]
+                    .into_iter()
+                    .flatten()
+                }))
                 .chain(self.focus_groups.iter().flat_map(|group| {
                     [
                         Some(group.public_id.clone()),
+                        group.view.clone(),
                         group.parent.clone(),
                         group.initial.explicit_target().map(ToOwned::to_owned),
                     ]
@@ -416,12 +479,18 @@ impl UiProgramResource {
                     .flatten()
                 }))
                 .chain(self.focus_navigation.iter().flat_map(|target| {
-                    [Some(target.public_id.clone()), target.group.clone()]
-                        .into_iter()
-                        .flatten()
-                        .chain(target.edges.iter().filter_map(|edge| {
+                    [
+                        Some(target.public_id.clone()),
+                        target.view.clone(),
+                        target.group.clone(),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .chain(
+                        target.edges.iter().filter_map(|edge| {
                             edge.target.explicit_target().map(ToOwned::to_owned)
-                        }))
+                        }),
+                    )
                 })),
         )
     }
@@ -430,6 +499,8 @@ impl UiProgramResource {
         saturating_u32(self.instructions.len())
             .saturating_add(saturating_u32(self.layout_bounds.len()))
             .saturating_add(saturating_u32(self.action_buttons.len()))
+            .saturating_add(saturating_u32(self.scroll_regions.len()))
+            .saturating_add(saturating_u32(self.text_blocks.len()))
             .saturating_add(saturating_u32(self.focus_groups.len()))
             .saturating_add(saturating_u32(self.focus_navigation.len()))
     }
@@ -439,14 +510,14 @@ impl UiStyleResource {
     pub fn encode_canonical_section(&self) -> Result<Vec<u8>, SectionCodecError> {
         let mut section = self.clone();
         section.canonicalize();
-        section.validate(UiResourceBudget::default())?;
+        section.validate(&UiResourceBudget::default())?;
         encode_ui_section(
             ProductSectionCodecKind::UiStyle,
             "ui_style",
             &section,
             section.public_ids(),
             section.record_count(),
-            UiResourceBudget::default(),
+            &UiResourceBudget::default(),
         )
     }
 
@@ -459,9 +530,9 @@ impl UiStyleResource {
         budget: UiResourceBudget,
     ) -> Result<Self, SectionCodecError> {
         let mut section: Self =
-            decode_ui_section(bytes, ProductSectionCodecKind::UiStyle, "ui_style", budget)?;
+            decode_ui_section(bytes, ProductSectionCodecKind::UiStyle, "ui_style", &budget)?;
         section.canonicalize();
-        section.validate(budget)?;
+        section.validate(&budget)?;
         Ok(section)
     }
 
@@ -500,7 +571,7 @@ impl UiStyleResource {
             .sort_by(|left, right| left.part.cmp(&right.part));
     }
 
-    fn validate(&self, budget: UiResourceBudget) -> Result<(), SectionCodecError> {
+    fn validate(&self, budget: &UiResourceBudget) -> Result<(), SectionCodecError> {
         check_budget(self.rules.len(), budget.style_rules, "ui_style_rules")?;
         check_budget(
             self.part_rules.len(),
@@ -600,14 +671,14 @@ impl UiTextResource {
     pub fn encode_canonical_section(&self) -> Result<Vec<u8>, SectionCodecError> {
         let mut section = self.clone();
         section.canonicalize();
-        section.validate(UiResourceBudget::default())?;
+        section.validate(&UiResourceBudget::default())?;
         encode_ui_section(
             ProductSectionCodecKind::UiText,
             "ui_text",
             &section,
             section.public_ids(),
             section.record_count(),
-            UiResourceBudget::default(),
+            &UiResourceBudget::default(),
         )
     }
 
@@ -620,9 +691,9 @@ impl UiTextResource {
         budget: UiResourceBudget,
     ) -> Result<Self, SectionCodecError> {
         let mut section: Self =
-            decode_ui_section(bytes, ProductSectionCodecKind::UiText, "ui_text", budget)?;
+            decode_ui_section(bytes, ProductSectionCodecKind::UiText, "ui_text", &budget)?;
         section.canonicalize();
-        section.validate(budget)?;
+        section.validate(&budget)?;
         Ok(section)
     }
 
@@ -659,7 +730,7 @@ impl UiTextResource {
             .sort_by(|left, right| left.text_source.cmp(&right.text_source));
     }
 
-    fn validate(&self, budget: UiResourceBudget) -> Result<(), SectionCodecError> {
+    fn validate(&self, budget: &UiResourceBudget) -> Result<(), SectionCodecError> {
         check_budget(self.sources.len(), budget.text_sources, "ui_text_sources")?;
         check_budget(
             self.source_ranges.len(),
@@ -715,14 +786,14 @@ impl UiInputResource {
     pub fn encode_canonical_section(&self) -> Result<Vec<u8>, SectionCodecError> {
         let mut section = self.clone();
         section.canonicalize();
-        section.validate(UiResourceBudget::default())?;
+        section.validate(&UiResourceBudget::default())?;
         encode_ui_section(
             ProductSectionCodecKind::UiInput,
             "ui_input",
             &section,
             section.public_ids(),
             section.record_count(),
-            UiResourceBudget::default(),
+            &UiResourceBudget::default(),
         )
     }
 
@@ -735,9 +806,9 @@ impl UiInputResource {
         budget: UiResourceBudget,
     ) -> Result<Self, SectionCodecError> {
         let mut section: Self =
-            decode_ui_section(bytes, ProductSectionCodecKind::UiInput, "ui_input", budget)?;
+            decode_ui_section(bytes, ProductSectionCodecKind::UiInput, "ui_input", &budget)?;
         section.canonicalize();
-        section.validate(budget)?;
+        section.validate(&budget)?;
         Ok(section)
     }
 
@@ -788,7 +859,7 @@ impl UiInputResource {
             .sort_by(|left, right| left.public_id.cmp(&right.public_id));
     }
 
-    fn validate(&self, budget: UiResourceBudget) -> Result<(), SectionCodecError> {
+    fn validate(&self, budget: &UiResourceBudget) -> Result<(), SectionCodecError> {
         check_budget(self.options.len(), budget.input_options, "ui_input_options")?;
         reject_duplicates(
             self.options.iter().map(|option| option.public_id.clone()),
@@ -825,6 +896,8 @@ impl UiInputOptions {
     fn public_ids(&self) -> Vec<String> {
         [
             Some(self.public_id.clone()),
+            self.view.clone(),
+            self.containing_scroll_region.clone(),
             Some(self.value_text_source.clone()),
             self.placeholder_text_source.clone(),
             self.submit_handler.clone(),
@@ -840,14 +913,14 @@ impl UiThemeResource {
     pub fn encode_canonical_section(&self) -> Result<Vec<u8>, SectionCodecError> {
         let mut section = self.clone();
         section.canonicalize();
-        section.validate(UiResourceBudget::default())?;
+        section.validate(&UiResourceBudget::default())?;
         encode_ui_section(
             ProductSectionCodecKind::UiTheme,
             "ui_theme",
             &section,
             section.public_ids(),
             section.record_count(),
-            UiResourceBudget::default(),
+            &UiResourceBudget::default(),
         )
     }
 
@@ -860,9 +933,9 @@ impl UiThemeResource {
         budget: UiResourceBudget,
     ) -> Result<Self, SectionCodecError> {
         let mut section: Self =
-            decode_ui_section(bytes, ProductSectionCodecKind::UiTheme, "ui_theme", budget)?;
+            decode_ui_section(bytes, ProductSectionCodecKind::UiTheme, "ui_theme", &budget)?;
         section.canonicalize();
-        section.validate(budget)?;
+        section.validate(&budget)?;
         Ok(section)
     }
 
@@ -888,7 +961,7 @@ impl UiThemeResource {
         self.dark_mode_visual_golden_ids.sort();
     }
 
-    fn validate(&self, budget: UiResourceBudget) -> Result<(), SectionCodecError> {
+    fn validate(&self, budget: &UiResourceBudget) -> Result<(), SectionCodecError> {
         check_budget(
             self.palette_overrides.len(),
             budget.palette_entries,
@@ -917,7 +990,7 @@ fn encode_ui_section<T>(
     value: &T,
     public_ids: impl IntoIterator<Item = String>,
     record_count: u32,
-    budget: UiResourceBudget,
+    budget: &UiResourceBudget,
 ) -> Result<Vec<u8>, SectionCodecError>
 where
     T: Serialize,
@@ -971,7 +1044,7 @@ fn decode_ui_section<T>(
     bytes: &[u8],
     codec: ProductSectionCodecKind,
     family_label: &'static str,
-    budget: UiResourceBudget,
+    budget: &UiResourceBudget,
 ) -> Result<T, SectionCodecError>
 where
     T: for<'de> Deserialize<'de>,
@@ -1051,14 +1124,15 @@ fn saturating_u32(value: usize) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
 }
 
-fn instruction_public_ids(instruction: &UiProgramInstruction) -> Vec<String> {
+fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
     match instruction {
-        UiProgramInstruction::OpenElement { style, part, .. } => option_ids([style, part]),
-        UiProgramInstruction::CloseElement
-        | UiProgramInstruction::Branch { .. }
-        | UiProgramInstruction::RepeatKeyed { .. }
-        | UiProgramInstruction::BindLocal { .. } => Vec::new(),
-        UiProgramInstruction::EmitText {
+        ViewProgramInstruction::OpenElement { style, part, .. } => option_ids([style, part]),
+        ViewProgramInstruction::CloseElement
+        | ViewProgramInstruction::Branch { .. }
+        | ViewProgramInstruction::RepeatKeyed { .. }
+        | ViewProgramInstruction::Await { .. }
+        | ViewProgramInstruction::BindLocal { .. } => Vec::new(),
+        ViewProgramInstruction::EmitText {
             text_source,
             style,
             part,
@@ -1067,13 +1141,13 @@ fn instruction_public_ids(instruction: &UiProgramInstruction) -> Vec<String> {
             .into_iter()
             .flatten()
             .collect(),
-        UiProgramInstruction::EmitImage {
+        ViewProgramInstruction::EmitImage {
             image, style, part, ..
         } => [Some(image.clone()), style.clone(), part.clone()]
             .into_iter()
             .flatten()
             .collect(),
-        UiProgramInstruction::EmitCustom {
+        ViewProgramInstruction::EmitCustom {
             element,
             style,
             part,
@@ -1082,23 +1156,22 @@ fn instruction_public_ids(instruction: &UiProgramInstruction) -> Vec<String> {
             .into_iter()
             .flatten()
             .collect(),
-        UiProgramInstruction::CallComponent {
-            component,
-            style,
-            part,
-            ..
-        } => [Some(component.clone()), style.clone(), part.clone()]
+        ViewProgramInstruction::CallView {
+            view, style, part, ..
+        } => [Some(view.clone()), style.clone(), part.clone()]
             .into_iter()
             .flatten()
             .collect(),
-        UiProgramInstruction::ApplyStyle { style, .. } => match style {
-            UiStyleApplyRef::Named(id) => vec![id.clone()],
-            UiStyleApplyRef::InlineArcweft { .. } | UiStyleApplyRef::InlineCss { .. } => Vec::new(),
+        ViewProgramInstruction::ApplyStyle { style, .. } => match style {
+            ViewStyleApplyRef::Named(id) => vec![id.clone()],
+            ViewStyleApplyRef::InlineArcweft { .. } | ViewStyleApplyRef::InlineCss { .. } => {
+                Vec::new()
+            }
         },
-        UiProgramInstruction::BindHandler { event, handler, .. } => {
+        ViewProgramInstruction::BindHandler { event, handler, .. } => {
             vec![event.clone(), handler.clone()]
         }
-        UiProgramInstruction::AttachSemantic {
+        ViewProgramInstruction::AttachSemantic {
             target,
             label_text_source,
             ..
@@ -1114,17 +1187,17 @@ fn option_ids<const N: usize>(values: [&Option<String>; N]) -> Vec<String> {
 }
 
 fn action_payload_refs(
-    payload: Option<&super::model::UiActionPayloadResource>,
+    payload: Option<&super::model::ViewActionPayloadResource>,
 ) -> impl Iterator<Item = String> + '_ {
     payload.into_iter().filter_map(|payload| match payload {
-        super::model::UiActionPayloadResource::LiteralString { .. } => None,
-        super::model::UiActionPayloadResource::TextControlProjection { input, .. } => {
+        super::model::ViewActionPayloadResource::LiteralString { .. } => None,
+        super::model::ViewActionPayloadResource::TextControlProjection { input, .. } => {
             Some(input.clone())
         }
     })
 }
 
-fn style_rule_public_ids(rule: &UiStyleRule) -> Vec<String> {
+fn style_rule_public_ids(rule: &ViewStyleRule) -> Vec<String> {
     style_selector_public_ids(&rule.selector)
         .chain(rule.declarations.iter().flat_map(|declaration| {
             [Some(declaration.property.clone())]
@@ -1139,22 +1212,22 @@ fn style_rule_public_ids(rule: &UiStyleRule) -> Vec<String> {
         .collect()
 }
 
-fn style_selector_public_ids(selector: &UiStyleSelector) -> impl Iterator<Item = String> + '_ {
+fn style_selector_public_ids(selector: &ViewStyleSelector) -> impl Iterator<Item = String> + '_ {
     selector.parts.iter().filter_map(|part| match part {
-        UiStyleSelectorPart::Part(id) => Some(id.clone()),
+        ViewStyleSelectorPart::Part(id) => Some(id.clone()),
         _ => None,
     })
 }
 
-fn style_value_public_ids(value: &UiStyleValue) -> Vec<String> {
+fn style_value_public_ids(value: &ViewStyleValue) -> Vec<String> {
     match value {
-        UiStyleValue::Token(id) | UiStyleValue::Resource(id) => vec![id.clone()],
-        UiStyleValue::List(values) => values.iter().flat_map(style_value_public_ids).collect(),
-        UiStyleValue::SystemColor(_)
-        | UiStyleValue::Rgba(_)
-        | UiStyleValue::Milli(_)
-        | UiStyleValue::Text(_)
-        | UiStyleValue::Digest(_) => Vec::new(),
+        ViewStyleValue::Token(id) | ViewStyleValue::Resource(id) => vec![id.clone()],
+        ViewStyleValue::List(values) => values.iter().flat_map(style_value_public_ids).collect(),
+        ViewStyleValue::SystemColor(_)
+        | ViewStyleValue::Rgba(_)
+        | ViewStyleValue::Milli(_)
+        | ViewStyleValue::Text(_)
+        | ViewStyleValue::Digest(_) => Vec::new(),
     }
 }
 

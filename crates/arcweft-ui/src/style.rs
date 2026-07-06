@@ -85,7 +85,7 @@ pub enum Invalidation {
     Fragment,
 }
 
-/// Dynamic property binding emitted by Rust or Arcweft component rendering.
+/// Dynamic property binding emitted by Rust or Arcweft view rendering.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PropertyBinding {
     property: UiPropertyId,
@@ -116,7 +116,7 @@ pub struct ResolvedUiProperty {
 
 /// One interaction-specific style override.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct UiStyleRule {
+pub struct ViewStyleRule {
     selector: UiInteractionSelector,
     property: ResolvedUiProperty,
 }
@@ -125,7 +125,7 @@ pub struct UiStyleRule {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct UiStyle {
     base: Vec<ResolvedUiProperty>,
-    rules: Vec<UiStyleRule>,
+    rules: Vec<ViewStyleRule>,
 }
 
 /// Style registry keyed by the `StyleId` stored in each fragment node.
@@ -477,7 +477,7 @@ impl ResolvedUiProperty {
     }
 }
 
-impl UiStyleRule {
+impl ViewStyleRule {
     pub fn new(
         selector: UiInteractionSelector,
         kind: UiPropertyKind,
@@ -524,7 +524,7 @@ impl UiStyle {
         {
             return Err(UiError::DuplicateStyleRule { selector, kind });
         }
-        self.rules.push(UiStyleRule::new(selector, kind, value)?);
+        self.rules.push(ViewStyleRule::new(selector, kind, value)?);
         Ok(())
     }
 
@@ -532,7 +532,7 @@ impl UiStyle {
         &self.base
     }
 
-    pub fn rules(&self) -> &[UiStyleRule] {
+    pub fn rules(&self) -> &[ViewStyleRule] {
         &self.rules
     }
 

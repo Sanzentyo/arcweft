@@ -9,6 +9,8 @@ description = "Sans-I/O Arcweft save envelope and migration boundary."
 [dependencies]
 arcweft-data = { path = "../arcweft-data" }
 blake3.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

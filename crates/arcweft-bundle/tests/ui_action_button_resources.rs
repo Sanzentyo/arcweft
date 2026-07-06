@@ -1,15 +1,14 @@
 use arcweft_bundle::resource_codec::ui::{
-    UiActionButtonActionResource, UiActionButtonResource, UiActionPayloadResource,
-    UiActionTextControlPayloadField, UiProgramResource, UiRuntimeActionButtonAction,
-    UiRuntimeButtonBounds, UiTextResource, UiTextSourceKind, UiTextSourceRecord,
-    UiTextSubmitImePolicy,
+    UiTextResource, UiTextSourceKind, UiTextSourceRecord, ViewActionButtonActionResource,
+    ViewActionButtonResource, ViewActionPayloadResource, ViewActionTextControlPayloadField,
+    ViewProgramResource, ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds,
 };
 
 #[test]
-fn runtime_action_button_resolves_label_and_typed_submit_action() {
-    let program = UiProgramResource {
+fn runtime_action_button_resolves_label_and_noop_action() {
+    let program = ViewProgramResource {
         program_id: "ui.program.test".to_owned(),
-        root_component: "ui.component.test".to_owned(),
+        root_view: "ui.view.test".to_owned(),
         instructions: Vec::new(),
         child_spans: Vec::new(),
         handlers: Vec::new(),
@@ -17,16 +16,16 @@ fn runtime_action_button_resolves_label_and_typed_submit_action() {
         exported_parts: Vec::new(),
         semantic_targets: Vec::new(),
         layout_bounds: Vec::new(),
-        action_buttons: vec![UiActionButtonResource {
+        scroll_regions: Vec::new(),
+        text_blocks: Vec::new(),
+        action_buttons: vec![ViewActionButtonResource {
             public_id: "button.submit_feedback".to_owned(),
-            component: None,
+            view: None,
+            containing_scroll_region: None,
             label_text_source: "text.label.submit_feedback".to_owned(),
             enabled: true,
-            action: UiActionButtonActionResource::TextInputSubmit {
-                input: "input.feedback".to_owned(),
-                ime_policy: UiTextSubmitImePolicy::Commit,
-            },
-            bounds: UiRuntimeButtonBounds::new(484_000, 48_000, 128_000, 48_000),
+            action: ViewActionButtonActionResource::Noop,
+            bounds: ViewRuntimeButtonBounds::new(484_000, 48_000, 128_000, 48_000),
             style: None,
             source: None,
         }],
@@ -50,18 +49,14 @@ fn runtime_action_button_resolves_label_and_typed_submit_action() {
     assert_eq!(buttons.len(), 1);
     assert_eq!(buttons[0].target, "button.submit_feedback");
     assert_eq!(buttons[0].label, "Send");
-    assert!(matches!(
-        buttons[0].action,
-        UiRuntimeActionButtonAction::TextInputSubmit { ref input_target, ime_policy }
-            if input_target == "input.feedback" && ime_policy == UiTextSubmitImePolicy::Commit
-    ));
+    assert_eq!(buttons[0].action, ViewRuntimeActionButtonAction::Noop);
 }
 
 #[test]
 fn runtime_action_button_resolves_action_invoke_action() {
-    let program = UiProgramResource {
+    let program = ViewProgramResource {
         program_id: "ui.program.test".to_owned(),
-        root_component: "ui.component.test".to_owned(),
+        root_view: "ui.view.test".to_owned(),
         instructions: Vec::new(),
         child_spans: Vec::new(),
         handlers: Vec::new(),
@@ -69,19 +64,22 @@ fn runtime_action_button_resolves_action_invoke_action() {
         exported_parts: Vec::new(),
         semantic_targets: Vec::new(),
         layout_bounds: Vec::new(),
-        action_buttons: vec![UiActionButtonResource {
+        scroll_regions: Vec::new(),
+        text_blocks: Vec::new(),
+        action_buttons: vec![ViewActionButtonResource {
             public_id: "button.continue".to_owned(),
-            component: None,
+            view: None,
+            containing_scroll_region: None,
             label_text_source: "text.label.continue".to_owned(),
             enabled: true,
-            action: UiActionButtonActionResource::ActionInvoke {
+            action: ViewActionButtonActionResource::ActionInvoke {
                 action: "action.feedback.submit_name".to_owned(),
-                payload: Some(UiActionPayloadResource::TextControlProjection {
+                payload: Some(ViewActionPayloadResource::TextControlProjection {
                     input: "input.visitor_name".to_owned(),
-                    field: UiActionTextControlPayloadField::Text,
+                    field: ViewActionTextControlPayloadField::Text,
                 }),
             },
-            bounds: UiRuntimeButtonBounds::new(484_000, 48_000, 128_000, 48_000),
+            bounds: ViewRuntimeButtonBounds::new(484_000, 48_000, 128_000, 48_000),
             style: None,
             source: None,
         }],
@@ -105,11 +103,11 @@ fn runtime_action_button_resolves_action_invoke_action() {
     assert_eq!(buttons.len(), 1);
     assert!(matches!(
         &buttons[0].action,
-        UiRuntimeActionButtonAction::ActionInvoke { action, payload }
+        ViewRuntimeActionButtonAction::ActionInvoke { action, payload }
             if action == "action.feedback.submit_name"
-                && payload == &Some(UiActionPayloadResource::TextControlProjection {
+                && payload == &Some(ViewActionPayloadResource::TextControlProjection {
                     input: "input.visitor_name".to_owned(),
-                    field: UiActionTextControlPayloadField::Text,
+                    field: ViewActionTextControlPayloadField::Text,
                 })
     ));
 }

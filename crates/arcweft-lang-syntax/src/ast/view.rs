@@ -1,16 +1,17 @@
-//! Syntax-level View DSL nodes for Arcweft Components.
+//! Syntax-level View DSL nodes for Arcweft views.
 //!
 //! These nodes are intentionally still syntax/HIR-facing. They preserve source
 //! structure for diagnostics and lowering without depending on runtime, UI, or
 //! renderer crates.
 
 use crate::ast::common::TextRange;
+use crate::ast::flow::Stmt;
 use crate::ast::ids::EntityRefSyntax;
 use crate::ast::pattern::Pattern;
-use crate::expr::{CallArg, Expr};
+use crate::expr::{CallArg, Expr, Literal, MatchExprArm};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ComponentViewBody {
+pub struct ViewBody {
     locals: Vec<ViewLocalState>,
     stylesheets: Vec<EntityRefSyntax>,
     value: ViewExpr,
@@ -29,7 +30,7 @@ pub struct ViewLocalState {
 pub enum ViewExpr {
     Fragment(Vec<ViewExpr>),
     Element(ViewElement),
-    ComponentCall(ViewComponentCall),
+    ViewCall(ViewCall),
     Text(ViewText),
     Image(ViewImage),
     TextField(ViewTextField),
@@ -53,8 +54,8 @@ pub struct ViewElement {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ViewComponentCall {
-    component: Expr,
+pub struct ViewCall {
+    view: Expr,
     args: Vec<ViewArg>,
     modifiers: Vec<ViewModifier>,
     range: TextRange,
@@ -82,6 +83,7 @@ pub struct ViewTextField {
     args: Vec<ViewArg>,
     modifiers: Vec<ViewModifier>,
     input: Option<EntityRefSyntax>,
+    submit_action: Option<ViewAction>,
     range: TextRange,
 }
 
@@ -114,7 +116,6 @@ pub enum ViewButtonLabel {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ViewAction {
     Noop,
-    TextSubmit(ViewTextSubmitAction),
     ActionInvoke(ViewActionInvokeAction),
 }
 
@@ -134,26 +135,11 @@ pub enum ViewTextControlPayloadField {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ViewTextSubmitAction {
-    input: EntityRefSyntax,
-    ime_policy: ViewTextSubmitImePolicy,
-    range: TextRange,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewActionInvokeAction {
     action: EntityRefSyntax,
     payload_name: Option<Box<str>>,
     payload: Option<ViewActionPayload>,
     range: TextRange,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum ViewTextSubmitImePolicy {
-    #[default]
-    Commit,
-    Cancel,
-    Reject,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -204,8 +190,17 @@ pub struct ViewAwait {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewAwaitBranch {
+    kind: ViewAwaitBranchKind,
     pattern: Pattern,
     value: ViewExpr,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ViewAwaitBranchKind {
+    Pending,
+    Ready,
+    Error,
+    Denied,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -215,14 +210,12 @@ pub enum ViewModifier {
     Label(Expr),
     AgentTarget(EntityRefSyntax),
     Placeholder(Expr),
-    SubmitAction(Expr),
+    Purpose(Expr),
+    EnterKey(Expr),
     Enabled(Expr),
     Focusable(bool),
-    OnEvent {
-        name: String,
-        body: Expr,
-        ime_policy: Option<ViewTextSubmitImePolicy>,
-    },
+    Property { name: String, value: Expr },
+    OnEvent { name: String, body: Expr },
     Environment(Vec<ViewArg>),
     Focus(String),
     Navigation(ViewNavigationModifier),
@@ -309,7 +302,7 @@ pub enum ViewArg {
     Named { name: String, value: Expr },
 }
 
-impl ComponentViewBody {
+impl ViewBody {
     pub const fn new(
         locals: Vec<ViewLocalState>,
         stylesheets: Vec<EntityRefSyntax>,
@@ -342,7 +335,7 @@ impl ComponentViewBody {
         inputs
     }
 
-    pub fn action_invokes(&self) -> Vec<&ViewActionInvokeAction> {
+    pub fn action_invokes(&self) -> Vec<ViewActionInvokeAction> {
         let mut invokes = Vec::new();
         collect_action_invokes(&self.value, &mut invokes);
         invokes
@@ -395,23 +388,23 @@ impl ViewElement {
     }
 }
 
-impl ViewComponentCall {
+impl ViewCall {
     pub const fn new(
-        component: Expr,
+        view: Expr,
         args: Vec<ViewArg>,
         modifiers: Vec<ViewModifier>,
         range: TextRange,
     ) -> Self {
         Self {
-            component,
+            view,
             args,
             modifiers,
             range,
         }
     }
 
-    pub const fn component(&self) -> &Expr {
-        &self.component
+    pub const fn view(&self) -> &Expr {
+        &self.view
     }
 
     pub fn args(&self) -> &[ViewArg] {
@@ -493,6 +486,7 @@ impl ViewTextField {
             args,
             modifiers,
             input: None,
+            submit_action: None,
             range,
         }
     }
@@ -500,6 +494,12 @@ impl ViewTextField {
     #[must_use]
     pub fn with_input(mut self, input: EntityRefSyntax) -> Self {
         self.input = Some(input);
+        self
+    }
+
+    #[must_use]
+    pub fn with_submit_action(mut self, submit_action: Option<ViewAction>) -> Self {
+        self.submit_action = submit_action;
         self
     }
 
@@ -517,6 +517,9 @@ impl ViewTextField {
     }
     pub const fn input(&self) -> Option<&EntityRefSyntax> {
         self.input.as_ref()
+    }
+    pub const fn submit_action(&self) -> Option<&ViewAction> {
+        self.submit_action.as_ref()
     }
     pub const fn range(&self) -> TextRange {
         self.range
@@ -592,32 +595,6 @@ impl ViewButton {
 
     pub const fn activation(&self) -> Option<&ViewAction> {
         self.activation.as_ref()
-    }
-
-    pub const fn range(&self) -> TextRange {
-        self.range
-    }
-}
-
-impl ViewTextSubmitAction {
-    pub const fn new(
-        input: EntityRefSyntax,
-        ime_policy: ViewTextSubmitImePolicy,
-        range: TextRange,
-    ) -> Self {
-        Self {
-            input,
-            ime_policy,
-            range,
-        }
-    }
-
-    pub const fn input(&self) -> &EntityRefSyntax {
-        &self.input
-    }
-
-    pub const fn ime_policy(&self) -> ViewTextSubmitImePolicy {
-        self.ime_policy
     }
 
     pub const fn range(&self) -> TextRange {
@@ -798,6 +775,18 @@ impl ViewForEach {
 }
 
 impl ViewAwait {
+    pub(crate) const fn new(
+        source: Expr,
+        branches: Vec<ViewAwaitBranch>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            source,
+            branches,
+            range,
+        }
+    }
+
     pub const fn source(&self) -> &Expr {
         &self.source
     }
@@ -812,6 +801,18 @@ impl ViewAwait {
 }
 
 impl ViewAwaitBranch {
+    pub(crate) const fn new(kind: ViewAwaitBranchKind, pattern: Pattern, value: ViewExpr) -> Self {
+        Self {
+            kind,
+            pattern,
+            value,
+        }
+    }
+
+    pub const fn kind(&self) -> ViewAwaitBranchKind {
+        self.kind
+    }
+
     pub const fn pattern(&self) -> &Pattern {
         &self.pattern
     }
@@ -1047,7 +1048,7 @@ fn collect_text_control_inputs<'a>(expr: &'a ViewExpr, inputs: &mut Vec<&'a Enti
                 collect_text_control_inputs(branch.value(), inputs);
             }
         }
-        ViewExpr::ComponentCall(_)
+        ViewExpr::ViewCall(_)
         | ViewExpr::Text(_)
         | ViewExpr::Image(_)
         | ViewExpr::Button(_)
@@ -1056,7 +1057,7 @@ fn collect_text_control_inputs<'a>(expr: &'a ViewExpr, inputs: &mut Vec<&'a Enti
     }
 }
 
-fn collect_action_invokes<'a>(expr: &'a ViewExpr, invokes: &mut Vec<&'a ViewActionInvokeAction>) {
+fn collect_action_invokes(expr: &ViewExpr, invokes: &mut Vec<ViewActionInvokeAction>) {
     match expr {
         ViewExpr::Fragment(children) => {
             for child in children {
@@ -1064,14 +1065,36 @@ fn collect_action_invokes<'a>(expr: &'a ViewExpr, invokes: &mut Vec<&'a ViewActi
             }
         }
         ViewExpr::Element(element) => {
+            collect_modifier_action_invokes(&element.modifiers, element.range, None, invokes);
             for child in &element.children {
                 collect_action_invokes(child, invokes);
             }
         }
+        ViewExpr::ViewCall(call) => {
+            collect_modifier_action_invokes(&call.modifiers, call.range, None, invokes);
+        }
+        ViewExpr::Text(text) => {
+            collect_modifier_action_invokes(&text.modifiers, text.range, None, invokes);
+        }
+        ViewExpr::Image(image) => {
+            collect_modifier_action_invokes(&image.modifiers, image.range, None, invokes);
+        }
         ViewExpr::Button(button) => {
             if let Some(ViewAction::ActionInvoke(action)) = button.activation() {
-                invokes.push(action);
+                invokes.push(action.clone());
             }
+            collect_modifier_action_invokes(
+                &button.modifiers,
+                button.range,
+                Some("click"),
+                invokes,
+            );
+        }
+        ViewExpr::TextField(field) => {
+            if let Some(ViewAction::ActionInvoke(action)) = field.submit_action() {
+                invokes.push(action.clone());
+            }
+            collect_modifier_action_invokes(&field.modifiers, field.range, Some("submit"), invokes);
         }
         ViewExpr::If(view_if) => {
             collect_action_invokes(&view_if.then_branch, invokes);
@@ -1090,13 +1113,423 @@ fn collect_action_invokes<'a>(expr: &'a ViewExpr, invokes: &mut Vec<&'a ViewActi
                 collect_action_invokes(&branch.value, invokes);
             }
         }
-        ViewExpr::Let(_)
-        | ViewExpr::ComponentCall(_)
-        | ViewExpr::Text(_)
-        | ViewExpr::Image(_)
-        | ViewExpr::TextField(_)
-        | ViewExpr::Expr(_)
-        | ViewExpr::Raw(_) => {}
+        ViewExpr::Let(_) | ViewExpr::Expr(_) | ViewExpr::Raw(_) => {}
+    }
+}
+
+fn collect_modifier_action_invokes(
+    modifiers: &[ViewModifier],
+    range: TextRange,
+    skip_event: Option<&str>,
+    invokes: &mut Vec<ViewActionInvokeAction>,
+) {
+    for modifier in modifiers {
+        let ViewModifier::OnEvent { name, body } = modifier else {
+            continue;
+        };
+        if skip_event.is_some_and(|event| event == name) {
+            continue;
+        }
+        collect_expr_action_invokes(body, range, invokes);
+    }
+}
+
+fn collect_expr_action_invokes(
+    expr: &Expr,
+    range: TextRange,
+    invokes: &mut Vec<ViewActionInvokeAction>,
+) {
+    if let Some(action) = direct_action_invoke(expr, range) {
+        invokes.push(action);
+        return;
+    }
+
+    match expr {
+        Expr::Call { callee, args } => {
+            collect_expr_action_invokes(callee, range, invokes);
+            collect_call_arg_action_invokes(args, range, invokes);
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            collect_expr_action_invokes(receiver, range, invokes);
+            collect_call_arg_action_invokes(args, range, invokes);
+        }
+        Expr::Closure { body, .. } => collect_expr_action_invokes(body, range, invokes),
+        Expr::Block { statements, value }
+        | Expr::ComputationBlock {
+            statements, value, ..
+        }
+        | Expr::MemoBlock {
+            statements, value, ..
+        }
+        | Expr::NamedBlock {
+            statements, value, ..
+        } => {
+            collect_expr_block_action_invokes(statements, value.as_deref(), range, invokes);
+        }
+        Expr::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            collect_if_expr_action_invokes(
+                condition,
+                then_branch,
+                else_branch.as_deref(),
+                range,
+                invokes,
+            );
+        }
+        Expr::IfLet {
+            expr,
+            guard,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            collect_if_let_expr_action_invokes(
+                expr,
+                guard.as_deref(),
+                then_branch,
+                else_branch.as_deref(),
+                range,
+                invokes,
+            );
+        }
+        Expr::Match { scrutinee, arms } => {
+            collect_match_expr_action_invokes(scrutinee, arms, range, invokes);
+        }
+        Expr::Tuple(items) | Expr::BracketSeq(items) => {
+            collect_expr_list_action_invokes(items, range, invokes);
+        }
+        Expr::ArrayRepeat { value, len } => {
+            collect_two_expr_action_invokes(value, len, range, invokes);
+        }
+        Expr::Field { target, .. }
+        | Expr::Try { expr: target }
+        | Expr::Await { expr: target, .. }
+        | Expr::Unary { expr: target, .. } => {
+            collect_expr_action_invokes(target, range, invokes);
+        }
+        Expr::Index { target, index } => {
+            collect_expr_action_invokes(target, range, invokes);
+            collect_expr_action_invokes(index, range, invokes);
+        }
+        Expr::Pipe { lhs, rhs } | Expr::Binary { lhs, rhs, .. } => {
+            collect_two_expr_action_invokes(lhs, rhs, range, invokes);
+        }
+        Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => {
+            collect_record_field_action_invokes(fields, range, invokes);
+        }
+        Expr::DialogueCall { callee, .. } => collect_expr_action_invokes(callee, range, invokes),
+        Expr::Range { start, end, .. } => {
+            if let Some(start) = start.as_deref() {
+                collect_expr_action_invokes(start, range, invokes);
+            }
+            if let Some(end) = end.as_deref() {
+                collect_expr_action_invokes(end, range, invokes);
+            }
+        }
+        Expr::Literal(_)
+        | Expr::EntityRef(_)
+        | Expr::LifetimePath { .. }
+        | Expr::Path(_)
+        | Expr::ShortVariant(_)
+        | Expr::Placeholder(_)
+        | Expr::NumericBracketSeq(_)
+        | Expr::Thread { .. }
+        | Expr::Raw(_) => {}
+    }
+}
+
+fn direct_action_invoke(expr: &Expr, range: TextRange) -> Option<ViewActionInvokeAction> {
+    match expr {
+        Expr::Call { callee, args } if is_action_invoke_callee(callee) => {
+            action_invoke_call_action(args, range)
+        }
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } if method == "invoke" && expression_path_is(receiver, &["action"]) => {
+            action_invoke_call_action(args, range)
+        }
+        _ => None,
+    }
+}
+
+fn collect_expr_block_action_invokes(
+    statements: &[Stmt],
+    value: Option<&Expr>,
+    range: TextRange,
+    invokes: &mut Vec<ViewActionInvokeAction>,
+) {
+    collect_stmt_list_action_invokes(statements, range, invokes);
+    if let Some(value) = value {
+        collect_expr_action_invokes(value, range, invokes);
+    }
+}
+
+fn collect_if_expr_action_invokes(
+    condition: &Expr,
+    then_branch: &Expr,
+    else_branch: Option<&Expr>,
+    range: TextRange,
+    invokes: &mut Vec<ViewActionInvokeAction>,
+) {
+    collect_expr_action_invokes(condition, range, invokes);
+    collect_expr_action_invokes(then_branch, range, invokes);
+    if let Some(else_branch) = else_branch {
+        collect_expr_action_invokes(else_branch, range, invokes);
+    }
+}
+
+fn collect_if_let_expr_action_invokes(
+    expr: &Expr,
+    guard: Option<&Expr>,
+    then_branch: &Expr,
+    else_branch: Option<&Expr>,
+    range: TextRange,
+    invokes: &mut Vec<ViewActionInvokeAction>,
+) {
+    collect_expr_action_invokes(expr, range, invokes);
+    if let Some(guard) = guard {
+        collect_expr_action_invokes(guard, range, invokes);
+    }
+    collect_expr_action_invokes(then_branch, range, invokes);
+    if let Some(else_branch) = else_branch {
+        collect_expr_action_invokes(else_branch, range, invokes);
+    }
+}
+
+fn collect_match_expr_action_invokes(
+    scrutinee: &Expr,
+    arms: &[MatchExprArm],
+    range: TextRange,
+    invokes: &mut Vec<ViewActionInvokeAction>,
+) {
+    collect_expr_action_invokes(scrutinee, range, invokes);
+    for arm in arms {
+        if let Some(guard) = arm.guard() {
+            collect_expr_action_invokes(guard, range, invokes);
+        }
+        collect_expr_action_invokes(arm.value(), range, invokes);
+    }
+}
+
+fn collect_expr_list_action_invokes(
+    items: &[Expr],
+    range: TextRange,
+    invokes: &mut Vec<ViewActionInvokeAction>,
+) {
+    for item in items {
+        collect_expr_action_invokes(item, range, invokes);
+    }
+}
+
+fn collect_two_expr_action_invokes(
+    first: &Expr,
+    second: &Expr,
+    range: TextRange,
+    invokes: &mut Vec<ViewActionInvokeAction>,
+) {
+    collect_expr_action_invokes(first, range, invokes);
+    collect_expr_action_invokes(second, range, invokes);
+}
+
+fn collect_record_field_action_invokes(
+    fields: &[(String, Expr)],
+    range: TextRange,
+    invokes: &mut Vec<ViewActionInvokeAction>,
+) {
+    for (_, value) in fields {
+        collect_expr_action_invokes(value, range, invokes);
+    }
+}
+
+fn collect_call_arg_action_invokes(
+    args: &[CallArg],
+    range: TextRange,
+    invokes: &mut Vec<ViewActionInvokeAction>,
+) {
+    for arg in args {
+        match arg {
+            CallArg::Positional(expr) => collect_expr_action_invokes(expr, range, invokes),
+            CallArg::Named { value, .. } | CallArg::Spread { value } => {
+                collect_expr_action_invokes(value, range, invokes);
+            }
+        }
+    }
+}
+
+fn collect_stmt_action_invokes(
+    statement: &Stmt,
+    range: TextRange,
+    invokes: &mut Vec<ViewActionInvokeAction>,
+) {
+    match statement {
+        Stmt::Let { expr, .. }
+        | Stmt::Assign { expr, .. }
+        | Stmt::LetActionReceive { action: expr, .. }
+        | Stmt::Return(expr)
+        | Stmt::Goto(expr)
+        | Stmt::Defer { expr, .. }
+        | Stmt::Yield(expr)
+        | Stmt::Close(expr)
+        | Stmt::Select(expr)
+        | Stmt::Expr(expr)
+        | Stmt::Out { expr, .. } => collect_expr_action_invokes(expr, range, invokes),
+        Stmt::Signal { target, value } => {
+            collect_expr_action_invokes(target, range, invokes);
+            collect_expr_action_invokes(value, range, invokes);
+        }
+        Stmt::LifetimeSet { target, expr } => {
+            collect_expr_action_invokes(target, range, invokes);
+            collect_expr_action_invokes(expr, range, invokes);
+        }
+        Stmt::LetElse {
+            expr, else_body, ..
+        } => {
+            collect_expr_action_invokes(expr, range, invokes);
+            collect_stmt_list_action_invokes(else_body, range, invokes);
+        }
+        Stmt::Wait(target) => match target {
+            crate::ast::flow::WaitTarget::Duration(expr)
+            | crate::ast::flow::WaitTarget::Expr(expr) => {
+                collect_expr_action_invokes(expr, range, invokes);
+            }
+        },
+        Stmt::DeferBlock { statements, .. }
+        | Stmt::On {
+            body: statements, ..
+        }
+        | Stmt::UnsafeLifetime {
+            body: statements, ..
+        }
+        | Stmt::Loop { body: statements } => {
+            collect_stmt_list_action_invokes(statements, range, invokes);
+        }
+        Stmt::If {
+            condition,
+            body,
+            else_body,
+        } => {
+            collect_expr_action_invokes(condition, range, invokes);
+            collect_stmt_list_action_invokes(body, range, invokes);
+            collect_stmt_list_action_invokes(else_body, range, invokes);
+        }
+        Stmt::While { condition, body } => {
+            collect_expr_action_invokes(condition, range, invokes);
+            collect_stmt_list_action_invokes(body, range, invokes);
+        }
+        Stmt::WhileLet {
+            expr, guard, body, ..
+        } => {
+            collect_expr_action_invokes(expr, range, invokes);
+            if let Some(guard) = guard {
+                collect_expr_action_invokes(guard, range, invokes);
+            }
+            collect_stmt_list_action_invokes(body, range, invokes);
+        }
+        Stmt::For { source, body, .. } => {
+            collect_expr_action_invokes(source, range, invokes);
+            collect_stmt_list_action_invokes(body, range, invokes);
+        }
+        Stmt::Match { expr, arms } => {
+            collect_expr_action_invokes(expr, range, invokes);
+            for arm in arms {
+                if let Some(guard) = arm.guard() {
+                    collect_expr_action_invokes(guard, range, invokes);
+                }
+                collect_stmt_list_action_invokes(arm.body(), range, invokes);
+            }
+        }
+        Stmt::Break { expr, .. } => {
+            if let Some(expr) = expr {
+                collect_expr_action_invokes(expr, range, invokes);
+            }
+        }
+        Stmt::LetChoice { .. }
+        | Stmt::LetScope { .. }
+        | Stmt::LetLoop { .. }
+        | Stmt::LetAwait { .. }
+        | Stmt::Thread(_)
+        | Stmt::Continue { .. }
+        | Stmt::Raw(_) => {}
+    }
+}
+
+fn collect_stmt_list_action_invokes(
+    statements: &[Stmt],
+    range: TextRange,
+    invokes: &mut Vec<ViewActionInvokeAction>,
+) {
+    for statement in statements {
+        collect_stmt_action_invokes(statement, range, invokes);
+    }
+}
+
+fn is_action_invoke_callee(callee: &Expr) -> bool {
+    match callee {
+        Expr::Path(path) => path.matches_segments(&["action", "invoke"]),
+        Expr::Field { target, field } => {
+            field == "invoke" && expression_path_is(target, &["action"])
+        }
+        _ => false,
+    }
+}
+
+fn action_invoke_call_action(args: &[CallArg], range: TextRange) -> Option<ViewActionInvokeAction> {
+    let action = args.iter().find_map(|arg| match arg {
+        CallArg::Positional(expr) => entity_ref_expr(expr).cloned(),
+        CallArg::Named { name, value } if name == "action" => entity_ref_expr(value).cloned(),
+        CallArg::Named { .. } | CallArg::Spread { .. } => None,
+    })?;
+    let payload = args.iter().find_map(|arg| match arg {
+        CallArg::Named { name, value } if name != "action" => {
+            action_payload(value).map(|payload| (name.clone(), payload))
+        }
+        CallArg::Positional(_) | CallArg::Named { .. } | CallArg::Spread { .. } => None,
+    });
+    Some(ViewActionInvokeAction::new(
+        action,
+        payload.as_ref().map(|(name, _)| name.clone()),
+        payload.map(|(_, payload)| payload),
+        range,
+    ))
+}
+
+fn action_payload(expr: &Expr) -> Option<ViewActionPayload> {
+    match expr {
+        Expr::Literal(Literal::String(value)) => {
+            Some(ViewActionPayload::LiteralString(value.clone()))
+        }
+        Expr::Field { target, field } => text_control_payload_target(target)
+            .zip(text_control_payload_field(field))
+            .map(|(input, field)| ViewActionPayload::TextControlProjection { input, field }),
+        _ => None,
+    }
+}
+
+fn text_control_payload_field(field: &str) -> Option<ViewTextControlPayloadField> {
+    match field {
+        "text" => Some(ViewTextControlPayloadField::Text),
+        "value" => Some(ViewTextControlPayloadField::Value),
+        _ => None,
+    }
+}
+
+fn text_control_payload_target(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::EntityRef(reference) => Some(reference.canonical_body()),
+        Expr::Path(path) => Some(path.as_label().to_owned()),
+        _ => None,
+    }
+}
+
+fn entity_ref_expr(expr: &Expr) -> Option<&EntityRefSyntax> {
+    match expr {
+        Expr::EntityRef(reference) => Some(reference),
+        _ => None,
     }
 }
 

@@ -1,6 +1,5 @@
-//! Sans I/O UI component, entity, and fragment data for Arcweft presentation.
+//! Sans I/O UI view, entity, and fragment data for Arcweft presentation.
 
-pub mod component;
 pub mod display;
 pub mod entity;
 pub mod fragment;
@@ -17,13 +16,10 @@ pub mod style;
 pub mod style_authoring;
 pub mod text_field;
 pub mod text_source;
+pub mod view;
 
 use thiserror::Error;
 
-pub use component::{
-    ComponentDescriptor, ComponentId, ComponentImplementation, ComponentRegistry,
-    ComponentSchemaId, RustComponentId, UiProgramId,
-};
 pub use display::{
     DisplayItem, DisplayItemId, DisplayItemKind, DisplayList, ResolvedDisplayItem,
     ResolvedDisplayList,
@@ -50,17 +46,17 @@ pub use motion::{
 };
 pub use presentation_image::{UiImagePresentationFrame, UiImagePresentationInput};
 pub use program::{
-    UiBranch, UiComponentCall, UiCustomSpec, UiElementKind, UiElementSpec, UiEventBindingSpec,
-    UiExpressionId, UiHandlerProgram, UiImageSpec, UiInstruction, UiInstructionRange, UiPartExport,
-    UiPartId, UiProgram, UiProgramBuilder, UiRepeat, UiSemanticSpec, UiStableKey, UiStyleApply,
-    UiStylePatchId, UiTextSpec,
+    UiBranch, UiCustomSpec, UiElementSpec, UiEventBindingSpec, UiExpressionId, UiHandlerProgram,
+    UiImageSpec, UiInstruction, UiInstructionRange, UiPartExport, UiPartId, UiProgram,
+    UiProgramBuilder, UiRepeat, UiSemanticSpec, UiStableKey, UiStyleApply, UiStylePatchId,
+    UiTextSpec, UiViewCall, ViewElementKind,
 };
 pub use reactive::{EntityInvalidation, ReactiveGraph, ReactiveInvalidation, Revision};
 pub use semantics::{UiNodeId, UiSemanticFragment, UiSemanticFragmentBuilder, UiSemanticNode};
 pub use style::{
     Invalidation, Milli, PropertyBinding, PropertyBindingTable, PropertyBindingTableBuilder,
     ResolvedUiProperty, ResolvedUiStyle, Rgba8, UiInteractionSelector, UiPropertyId,
-    UiPropertyKind, UiPropertyValue, UiStyle, UiStyleRule, UiStyleTable, ValueSourceId,
+    UiPropertyKind, UiPropertyValue, UiStyle, UiStyleTable, ValueSourceId, ViewStyleRule,
 };
 pub use text_field::{
     ExternalTextUpdatePolicy, TextEditError, TextEditOutcome, TextEditState, TextEditorMode,
@@ -69,6 +65,9 @@ pub use text_field::{
     TextFieldSpec, TextFieldVisualBuffer,
 };
 pub use text_source::{UiRichTextHandle, UiTextByteRange, UiTextSource, UiTextSourceTable};
+pub use view::{
+    RustViewId, UiProgramId, ViewDescriptor, ViewId, ViewImplementation, ViewRegistry, ViewSchemaId,
+};
 
 /// Stable key for one retained UI fragment node.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -79,8 +78,8 @@ pub struct NodeKey(pub u64);
 pub enum UiError {
     #[error("duplicate UI node key {0:?}")]
     DuplicateNodeKey(NodeKey),
-    #[error("duplicate component public id {0}")]
-    DuplicateComponentPublicId(arcweft_id::PublicId),
+    #[error("duplicate view public id {0}")]
+    DuplicateViewPublicId(arcweft_id::PublicId),
     #[error("stale UI entity {0:?}")]
     StaleEntity(RawEntity),
     #[error("UI entity has a different state type: {0:?}")]
@@ -183,14 +182,14 @@ mod tests {
     }
 
     #[test]
-    fn view_fragment_keeps_text_media_component_and_custom_nodes_flat() {
+    fn view_fragment_keeps_text_media_view_and_custom_nodes_flat() {
         let mut entities = EntityStore::default();
-        let component_state = entities
+        let view_state = entities
             .insert(
                 DialogueSkinState {
                     hovered_nameplate: false,
                 },
-                Some(ComponentId(4)),
+                Some(ViewId(4)),
             )
             .unwrap();
 
@@ -215,10 +214,10 @@ mod tests {
                 None,
             )
             .unwrap();
-        let nested_component = builder
+        let nested_view = builder
             .push_node(
                 NodeKey(12),
-                FragmentKind::Component(component_state.raw()),
+                FragmentKind::View(view_state.raw()),
                 StyleId(3),
                 &[],
                 &[],
@@ -240,7 +239,7 @@ mod tests {
                 NodeKey(14),
                 FragmentKind::Container(ContainerKind::Stack),
                 StyleId(5),
-                &[rich_text, image, nested_component, custom],
+                &[rich_text, image, nested_view, custom],
                 &[],
                 None,
             )
@@ -250,7 +249,7 @@ mod tests {
         assert_eq!(fragment.nodes().len(), 5);
         assert_eq!(
             fragment.node_children(root),
-            Some([rich_text, image, nested_component, custom].as_slice())
+            Some([rich_text, image, nested_view, custom].as_slice())
         );
         assert_eq!(
             fragment.node_events(rich_text),
@@ -374,12 +373,12 @@ mod tests {
     #[test]
     fn display_list_emits_laid_out_paint_nodes_in_fragment_order() {
         let mut entities = EntityStore::default();
-        let component = entities
+        let view = entities
             .insert(
                 DialogueSkinState {
                     hovered_nameplate: false,
                 },
-                Some(ComponentId(1)),
+                Some(ViewId(1)),
             )
             .unwrap();
         let mut builder = ViewFragmentBuilder::default();
@@ -416,7 +415,7 @@ mod tests {
         let mounted = builder
             .push_node(
                 NodeKey(4),
-                FragmentKind::Component(component.raw()),
+                FragmentKind::View(view.raw()),
                 StyleId(1),
                 &[],
                 &[],
@@ -700,20 +699,20 @@ mod tests {
     }
 
     #[test]
-    fn component_registry_resolves_dense_component_ids() {
-        let mut registry = ComponentRegistry::default();
+    fn view_registry_resolves_dense_view_ids() {
+        let mut registry = ViewRegistry::default();
         let public_id = public_id("ui.dialogue.standard");
-        let descriptor = ComponentDescriptor::new(
+        let descriptor = ViewDescriptor::new(
             Some(public_id.clone()),
-            ComponentSchemaId(7),
+            ViewSchemaId(7),
             0x1234,
-            ComponentImplementation::Arcweft(UiProgramId(3)),
+            ViewImplementation::Arcweft(UiProgramId(3)),
         );
 
         let id = registry.register(descriptor).unwrap();
-        assert_eq!(id, ComponentId(0));
+        assert_eq!(id, ViewId(0));
         assert_eq!(registry.resolve_public_id(&public_id), Some(id));
-        assert_eq!(registry.get(id).unwrap().schema(), ComponentSchemaId(7));
+        assert_eq!(registry.get(id).unwrap().schema(), ViewSchemaId(7));
     }
 
     #[test]
@@ -792,7 +791,7 @@ mod tests {
                 DialogueSkinState {
                     hovered_nameplate: false,
                 },
-                Some(ComponentId(3)),
+                Some(ViewId(3)),
             )
             .unwrap();
         let mut bindings = PropertyBindingTableBuilder::default();
@@ -852,22 +851,22 @@ mod tests {
     }
 
     #[test]
-    fn component_registry_rejects_duplicate_public_ids() {
-        let mut registry = ComponentRegistry::default();
+    fn view_registry_rejects_duplicate_public_ids() {
+        let mut registry = ViewRegistry::default();
         let public_id = public_id("ui.dialogue.standard");
         let descriptor = || {
-            ComponentDescriptor::new(
+            ViewDescriptor::new(
                 Some(public_id.clone()),
-                ComponentSchemaId(1),
+                ViewSchemaId(1),
                 0,
-                ComponentImplementation::Rust(RustComponentId(1)),
+                ViewImplementation::Rust(RustViewId(1)),
             )
         };
         registry.register(descriptor()).unwrap();
 
         assert_eq!(
             registry.register(descriptor()),
-            Err(UiError::DuplicateComponentPublicId(public_id))
+            Err(UiError::DuplicateViewPublicId(public_id))
         );
     }
 
@@ -879,10 +878,10 @@ mod tests {
                 DialogueSkinState {
                     hovered_nameplate: false,
                 },
-                Some(ComponentId(1)),
+                Some(ViewId(1)),
             )
             .unwrap();
-        assert_eq!(store.component(first), Some(ComponentId(1)));
+        assert_eq!(store.view(first), Some(ViewId(1)));
         assert!(store.dirty(first).unwrap().contains(DirtyFlags::FRAGMENT));
 
         let removed = store.remove(first).unwrap();
@@ -894,7 +893,7 @@ mod tests {
         );
 
         let second = store
-            .insert(InventoryState { selected_slot: 2 }, Some(ComponentId(2)))
+            .insert(InventoryState { selected_slot: 2 }, Some(ViewId(2)))
             .unwrap();
         assert_eq!(second.raw().index(), first.raw().index());
         assert_ne!(second.raw().generation(), first.raw().generation());

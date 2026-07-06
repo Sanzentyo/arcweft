@@ -1,4 +1,4 @@
-//! Routed presentation input to retained component handler dispatch.
+//! Routed presentation input to retained view handler dispatch.
 
 use crate::{EventKind, HandlerId, NodeId, UiError, UiSemanticFragment, ViewFragment};
 use arcweft_presentation::input::{InputEpoch, InputEvent, InteractionTarget};

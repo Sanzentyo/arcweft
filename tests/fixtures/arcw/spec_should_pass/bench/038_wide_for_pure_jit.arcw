@@ -9,7 +9,7 @@ fn score_u128(base: u128, bias: u128) -> u128 {
 }
 
 bench @bench.wide_for_pure_jit {
-    measure iterations = 4 { start(@flow.wide_for_pure_jit) }
+    measure iterations = 4 { goto @flow.wide_for_pure_jit }
 }
 
 flow @flow.wide_for_pure_jit wide_for_pure_jit {

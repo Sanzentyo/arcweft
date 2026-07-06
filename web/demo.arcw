@@ -92,7 +92,7 @@ pub image @image.generated.webp_pulse {
     height = 96px
 }
 
-entry game @entry.main { start(@flow.main) }
+entry game @entry.main { goto @flow.main }
 
 flow main {
     image(@image.generated.background)

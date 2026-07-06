@@ -9,15 +9,15 @@ use arcweft_layout::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Capture resources addressable for one observed component boundary.
+/// Capture resources addressable for one observed view boundary.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct AgentComponentCaptureRefs {
-    pub captures: Vec<AgentComponentCaptureRef>,
+pub struct AgentViewCaptureRefs {
+    pub captures: Vec<AgentViewCaptureRef>,
 }
 
-/// One image capture resource that can be requested for a component.
+/// One image capture resource that can be requested for a view.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct AgentComponentCaptureRef {
+pub struct AgentViewCaptureRef {
     pub kind: AgentImageKind,
     pub uri: String,
     pub mime_type: String,
@@ -154,7 +154,7 @@ impl AgentImageComposition {
 pub enum AgentImageScope {
     #[default]
     Viewport,
-    Component {
+    View {
         id: String,
     },
     Layer {
@@ -169,7 +169,7 @@ impl AgentImageScope {
     pub fn description(&self) -> String {
         match self {
             Self::Viewport => "viewport".to_owned(),
-            Self::Component { id } => format!("component:{id}"),
+            Self::View { id } => format!("view:{id}"),
             Self::Layer { id } => format!("layer:{id}"),
             Self::Object { id } => format!("object:{id}"),
         }
@@ -180,8 +180,8 @@ impl AgentImageScope {
     pub fn with_opaque_id(&self, opaque_id: &str) -> Self {
         match self {
             Self::Viewport => Self::Viewport,
-            Self::Component { .. } => Self::Component {
-                id: format!("component.{opaque_id}"),
+            Self::View { .. } => Self::View {
+                id: format!("view.{opaque_id}"),
             },
             Self::Layer { .. } => Self::Layer {
                 id: format!("layer.{opaque_id}"),
@@ -219,7 +219,7 @@ impl From<CaptureRendererKind> for AgentSelectedCaptureRenderer {
 pub enum AgentSelectedCaptureScope {
     #[default]
     Viewport,
-    Component {
+    View {
         id: String,
     },
     Layer {
@@ -236,8 +236,8 @@ impl AgentSelectedCaptureScope {
     pub fn with_opaque_id(&self, opaque_id: &str) -> Self {
         match self {
             Self::Viewport => Self::Viewport,
-            Self::Component { .. } => Self::Component {
-                id: format!("component.{opaque_id}"),
+            Self::View { .. } => Self::View {
+                id: format!("view.{opaque_id}"),
             },
             Self::Layer { .. } => Self::Layer {
                 id: format!("layer.{opaque_id}"),
@@ -253,7 +253,7 @@ impl From<CaptureScope> for AgentSelectedCaptureScope {
     fn from(value: CaptureScope) -> Self {
         match value {
             CaptureScope::Viewport => Self::Viewport,
-            CaptureScope::Component { id } => Self::Component { id },
+            CaptureScope::View { id } => Self::View { id },
             CaptureScope::Layer { id } => Self::Layer { id },
             CaptureScope::Object { id } => Self::Object { id },
         }
@@ -264,7 +264,7 @@ impl From<&AgentImageScope> for AgentSelectedCaptureScope {
     fn from(value: &AgentImageScope) -> Self {
         match value {
             AgentImageScope::Viewport => Self::Viewport,
-            AgentImageScope::Component { id } => Self::Component { id: id.clone() },
+            AgentImageScope::View { id } => Self::View { id: id.clone() },
             AgentImageScope::Layer { id } => Self::Layer { id: id.clone() },
             AgentImageScope::Object { id } => Self::Object { id: id.clone() },
         }
@@ -442,7 +442,7 @@ pub enum AgentCaptureSourceIdentity {
         width: u32,
         height: u32,
     },
-    Component {
+    View {
         id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parent_id: Option<String>,
@@ -486,12 +486,12 @@ impl AgentCaptureSourceIdentity {
     }
 
     #[must_use]
-    pub fn from_component(component: &crate::object::AgentObservedComponent) -> Self {
-        Self::Component {
-            id: component.id.clone(),
-            parent_id: component.parent_id.clone(),
-            object_count: component.object_count,
-            object_refs: component.object_refs.clone(),
+    pub fn from_view(view: &crate::object::AgentObservedView) -> Self {
+        Self::View {
+            id: view.id.clone(),
+            parent_id: view.parent_id.clone(),
+            object_count: view.object_count,
+            object_refs: view.object_refs.clone(),
         }
     }
 
@@ -515,13 +515,13 @@ impl AgentCaptureSourceIdentity {
     fn scrub_for_external_publication(&mut self, opaque_scope_id: &str) {
         match self {
             Self::Viewport { .. } => {}
-            Self::Component {
+            Self::View {
                 id,
                 parent_id,
                 object_count,
                 object_refs,
             } => {
-                *id = format!("component.{opaque_scope_id}");
+                *id = format!("view.{opaque_scope_id}");
                 *parent_id = None;
                 *object_refs = (0..*object_count)
                     .map(|index| format!("object.{opaque_scope_id}.{index}"))
@@ -704,7 +704,7 @@ pub struct AgentImageResource {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object: Option<AgentImageObjectRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub component: Option<AgentImageComponentRef>,
+    pub view: Option<AgentImageViewRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected_capture: Option<AgentSelectedCaptureMetadata>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -743,7 +743,7 @@ pub struct AgentImageMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object: Option<AgentImageObjectRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub component: Option<AgentImageComponentRef>,
+    pub view: Option<AgentImageViewRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected_capture: Option<AgentSelectedCaptureMetadata>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -771,7 +771,7 @@ impl AgentImageMetadata {
             content_viewport_bbox: image.content_viewport_bbox,
             content_pixels: image.content_pixels,
             object: image.object.clone(),
-            component: image.component.clone(),
+            view: image.view.clone(),
             selected_capture: image.selected_capture.clone(),
             diagnostics: image.diagnostics.clone(),
         }
@@ -782,7 +782,7 @@ impl AgentImageMetadata {
     pub fn scrub_for_external_publication(&mut self, opaque_scope_id: &str) {
         self.scope = self.scope.with_opaque_id(opaque_scope_id);
         self.object = None;
-        self.component = None;
+        self.view = None;
         self.diagnostics.clear();
         if let Some(selected_capture) = &mut self.selected_capture {
             selected_capture.scrub_for_external_publication(opaque_scope_id);
@@ -887,9 +887,9 @@ impl AgentImageObjectRef {
     }
 }
 
-/// Observed component metadata preserved on an image resource that captures a component.
+/// Observed view metadata preserved on an image resource that captures a view.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct AgentImageComponentRef {
+pub struct AgentImageViewRef {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_id: Option<String>,
@@ -898,19 +898,19 @@ pub struct AgentImageComponentRef {
     pub object_count: usize,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub object_refs: Vec<String>,
-    pub capture_refs: AgentComponentCaptureRefs,
+    pub capture_refs: AgentViewCaptureRefs,
 }
 
-impl AgentImageComponentRef {
-    pub fn from_observed(component: &crate::object::AgentObservedComponent) -> Self {
+impl AgentImageViewRef {
+    pub fn from_observed(view: &crate::object::AgentObservedView) -> Self {
         Self {
-            id: component.id.clone(),
-            parent_id: component.parent_id.clone(),
-            visible: component.visible,
-            bbox: component.bbox.clone(),
-            object_count: component.object_count,
-            object_refs: component.object_refs.clone(),
-            capture_refs: component.capture_refs.clone(),
+            id: view.id.clone(),
+            parent_id: view.parent_id.clone(),
+            visible: view.visible,
+            bbox: view.bbox.clone(),
+            object_count: view.object_count,
+            object_refs: view.object_refs.clone(),
+            capture_refs: view.capture_refs.clone(),
         }
     }
 }

@@ -24,7 +24,7 @@ fn score_f64(base: f64, scale: f64) -> f64 {
 }
 
 bench @bench.mixed_width_for_iter_pure_jit {
-    measure iterations = 4 { start(@flow.mixed_width_for_iter_pure_jit) }
+    measure iterations = 4 { goto @flow.mixed_width_for_iter_pure_jit }
 }
 
 flow @flow.mixed_width_for_iter_pure_jit mixed_width_for_iter_pure_jit {

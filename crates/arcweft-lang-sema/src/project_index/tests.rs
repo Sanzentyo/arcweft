@@ -242,10 +242,10 @@ flow @flow.opening opening {
 }
 
 #[test]
-fn project_index_from_hir_preserves_component_view_text_control_inputs() {
+fn project_index_from_hir_preserves_view_text_control_inputs() {
     let tree = parse_source(
         r#"
-component FeedbackForm() {
+view FeedbackForm() {
     TextField(id: @input:.feedback, value: "")
 }
 "#,
@@ -274,7 +274,7 @@ pub reducer update_route(state: GameState, event: GameEvent) -> GameState {
     state
 }
 
-pub view current_route(state: GameState) -> Ref<Flow> {
+pub reducer current_route(state: GameState) -> Ref<Flow> {
     @flow.opening
 }
 
@@ -320,12 +320,12 @@ flow @flow.done done {
             .contains("hir:callable:reducer:update_route")
     );
 
-    let view = index
+    let current_route = index
         .project_callable(&QualifiedName::new("current_route"))
-        .expect("view callable indexed");
-    assert_eq!(view.kind(), ProjectCallableKind::View);
+        .expect("current_route callable indexed");
+    assert_eq!(current_route.kind(), ProjectCallableKind::Reducer);
     assert_eq!(
-        view.signature().return_type(),
+        current_route.signature().return_type(),
         &TypeKind::entity_ref(EntityKind::Flow)
     );
     let relations = index

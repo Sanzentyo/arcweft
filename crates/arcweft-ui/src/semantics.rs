@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct UiNodeId(pub u32);
 
-/// Flat retained semantic node produced by UI component rendering.
+/// Flat retained semantic node produced by UI view rendering.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiSemanticNode {
     key: NodeKey,
@@ -26,7 +26,7 @@ pub struct UiSemanticNode {
     visible: bool,
 }
 
-/// Ordered semantic fragment emitted by UI components before presentation merge.
+/// Ordered semantic fragment emitted by UI views before presentation merge.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct UiSemanticFragment {
     nodes: Vec<UiSemanticNode>,

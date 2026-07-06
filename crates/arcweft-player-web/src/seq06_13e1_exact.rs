@@ -1,8 +1,8 @@
 use arcweft_bundle::resource_codec::ui::{
-    RgbaColor, StyleAssignOp, StyleSourceIdentity, StyleSourceRef, StyleSyntax, UiElementKind,
+    RgbaColor, StyleAssignOp, StyleSourceIdentity, StyleSourceRef, StyleSyntax,
     UiRuntimeControlState, UiRuntimeControlVisualStyle, UiRuntimeShadow, UiRuntimeShadowKind,
-    UiStyleDeclaration, UiStyleResource, UiStyleRule, UiStyleSelector, UiStyleSelectorPart,
-    UiStyleValue,
+    UiStyleResource, ViewElementKind, ViewStyleDeclaration, ViewStyleRule, ViewStyleSelector,
+    ViewStyleSelectorPart, ViewStyleValue,
 };
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::geometry::PreparedUiSceneResources;
@@ -215,10 +215,10 @@ fn exact_style_resource() -> UiStyleResource {
                 "rounded_inset_shadow_card",
                 [
                     decl("background-color", style_rgba(36, 42, 54, 255)),
-                    decl("border-radius", UiStyleValue::Text("14px".to_owned())),
+                    decl("border-radius", ViewStyleValue::Text("14px".to_owned())),
                     decl(
                         "box-shadow",
-                        UiStyleValue::Text(
+                        ViewStyleValue::Text(
                             "inset 0px 3px 12px 2px rgba(0,0,0,0.56)".to_owned(),
                         ),
                     ),
@@ -228,10 +228,10 @@ fn exact_style_resource() -> UiStyleResource {
                 "mixed_outer_inset_shadow_card",
                 [
                     decl("background-color", style_rgba(255, 255, 255, 255)),
-                    decl("border-radius", UiStyleValue::Text("16px".to_owned())),
+                    decl("border-radius", ViewStyleValue::Text("16px".to_owned())),
                     decl(
                         "box-shadow",
-                        UiStyleValue::Text(
+                        ViewStyleValue::Text(
                             "0px 10px 18px 2px rgba(0,0,0,0.38), inset 0px -2px 10px 1px rgba(255,255,255,0.35)"
                                 .to_owned(),
                         ),
@@ -245,13 +245,13 @@ fn exact_style_resource() -> UiStyleResource {
 
 fn surface_rule<const N: usize>(
     public_id: &str,
-    declarations: [UiStyleDeclaration; N],
-) -> UiStyleRule {
-    UiStyleRule {
-        selector: UiStyleSelector {
+    declarations: [ViewStyleDeclaration; N],
+) -> ViewStyleRule {
+    ViewStyleRule {
+        selector: ViewStyleSelector {
             parts: vec![
-                UiStyleSelectorPart::Element(UiElementKind::Surface),
-                UiStyleSelectorPart::Part(public_id.to_owned()),
+                ViewStyleSelectorPart::Element(ViewElementKind::Panel),
+                ViewStyleSelectorPart::Part(public_id.to_owned()),
             ],
         },
         declarations: declarations.into(),
@@ -259,16 +259,16 @@ fn surface_rule<const N: usize>(
     }
 }
 
-fn decl(property: &str, value: UiStyleValue) -> UiStyleDeclaration {
-    UiStyleDeclaration {
+fn decl(property: &str, value: ViewStyleValue) -> ViewStyleDeclaration {
+    ViewStyleDeclaration {
         property: property.to_owned(),
         value,
         op: StyleAssignOp::Replace,
     }
 }
 
-fn style_rgba(red: u8, green: u8, blue: u8, alpha: u8) -> UiStyleValue {
-    UiStyleValue::Rgba(RgbaColor::rgba(red, green, blue, alpha))
+fn style_rgba(red: u8, green: u8, blue: u8, alpha: u8) -> ViewStyleValue {
+    ViewStyleValue::Rgba(RgbaColor::rgba(red, green, blue, alpha))
 }
 
 fn push_styled_card(

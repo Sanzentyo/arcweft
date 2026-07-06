@@ -14,7 +14,7 @@ fn score_f32(base: f32, scale: f32) -> f32 {
 }
 
 bench @bench.mixed_for_iter_pure_jit {
-    measure iterations = 4 { start(@flow.mixed_for_iter_pure_jit) }
+    measure iterations = 4 { goto @flow.mixed_for_iter_pure_jit }
 }
 
 flow @flow.mixed_for_iter_pure_jit mixed_for_iter_pure_jit {

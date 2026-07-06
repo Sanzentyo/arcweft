@@ -63,18 +63,19 @@ fn optimizer_rewrites_local_record_field_to_ordinal_projection() {
 }
 
 #[test]
-fn value_position_component_handle_lowers_to_create_cleanup_and_close_cancel() {
+fn value_position_view_handle_lowers_to_create_cleanup_and_release_cancel() {
     let parsed = parse_source(
         r#"
-component ModernPanel() {
+view ModernPanel() {
   Panel {
     Text("Ready")
   }
 }
 
 flow main {
-  let panel = component(@component:.ModernPanel, lifetime = .scope)
-  panel.close()
+  let panel = view(@view:.ModernPanel)
+  panel.unmount()
+  panel.release()
   return "done"
 }
 "#,
@@ -89,7 +90,7 @@ flow main {
         FlowOp::Effect(LineEffectRequest::Call(call))
             if call.callee == "presentation.handle.create"
                 && call.args.iter().any(|arg| arg == "handle = @handle.flow.main.panel")
-                && call.args.iter().any(|arg| arg == "kind = \"component\"")
+                && call.args.iter().any(|arg| arg == "kind = \"view\"")
     ));
     assert!(matches!(
         &ops[1],
@@ -105,11 +106,17 @@ flow main {
     assert!(matches!(
         &ops[3],
         FlowOp::Effect(LineEffectRequest::Call(call))
-            if call.callee == "presentation.handle.dispose"
+            if call.callee == "presentation.handle.unmount"
                 && call.args == ["handle = @handle.flow.main.panel"]
     ));
     assert!(matches!(
         &ops[4],
+        FlowOp::Effect(LineEffectRequest::Call(call))
+            if call.callee == "presentation.handle.release"
+                && call.args == ["handle = @handle.flow.main.panel"]
+    ));
+    assert!(matches!(
+        &ops[5],
         FlowOp::CancelCleanup { key } if key == "handle.flow.main.panel"
     ));
 }
@@ -134,7 +141,7 @@ pub image card {
 }
 
 flow main {
-  let sprite = image(@image.card, lifetime = .scope, visible = false, depth = 42)
+  let sprite = image(@image.card, visible = false, depth = 42)
   sprite.show()
   sprite.hide()
   sprite.destroy()
@@ -197,7 +204,62 @@ flow main {
 }
 
 #[test]
-fn explicit_component_and_image_mount_exprs_lower_to_scoped_handle_create() {
+fn value_position_overlay_handle_lowers_pop_to_dispose_and_cleanup_cancel() {
+    let parsed = parse_source(
+        r#"
+view MenuOverlay() {
+  Panel {
+    Text("Menu")
+  }
+}
+
+flow main {
+  let overlay_handle = overlay(@view:.MenuOverlay, layer = @layer.overlay)
+  overlay_handle.pop()
+  return "done"
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
+    let ops = &plan.flows[0].ops;
+
+    assert!(
+        matches!(
+            &ops[0],
+            FlowOp::Effect(LineEffectRequest::Call(call))
+                if call.callee == "presentation.handle.create"
+                    && call.args.iter().any(|arg| arg == "handle = @handle.flow.main.overlay_handle")
+                    && call.args.iter().any(|arg| arg == "kind = \"overlay\"")
+                    && call.args.iter().any(|arg| arg == "resource = @view.MenuOverlay")
+                    && call.args.iter().any(|arg| arg == "layer = @layer.overlay")
+        ),
+        "{ops:#?}"
+    );
+    assert!(
+        matches!(
+            &ops[1],
+            FlowOp::RegisterCleanup { key, effect: LineEffectRequest::Call(call) }
+                if key == "handle.flow.main.overlay_handle"
+                    && call.callee == "presentation.handle.dispose"
+        ),
+        "{ops:#?}"
+    );
+    assert!(matches!(
+        &ops[3],
+        FlowOp::Effect(LineEffectRequest::Call(call))
+            if call.callee == "presentation.handle.dispose"
+                && call.args == ["handle = @handle.flow.main.overlay_handle"]
+    ));
+    assert!(matches!(
+        &ops[4],
+        FlowOp::CancelCleanup { key } if key == "handle.flow.main.overlay_handle"
+    ));
+}
+
+#[test]
+fn explicit_view_and_image_mount_exprs_lower_to_scoped_handle_create() {
     let parsed = parse_source(
         r#"
 pub asset bg.card {
@@ -215,7 +277,7 @@ pub image card {
   visible = true
 }
 
-component ModernPanel() {
+view ModernPanel() {
   Panel {
     Text("Ready")
   }
@@ -223,7 +285,7 @@ component ModernPanel() {
 
 flow main {
   image(@image.card, depth = -1000)
-  component(@component:.ModernPanel)
+  view(@view:.ModernPanel)
   return "done"
 }
 "#,
@@ -259,9 +321,9 @@ flow main {
             &ops[2],
             FlowOp::Effect(LineEffectRequest::Call(call))
                 if call.callee == "presentation.handle.create"
-                    && call.args.iter().any(|arg| arg == "handle = @handle.flow.main.mount.component.component.ModernPanel")
-                    && call.args.iter().any(|arg| arg == "kind = \"component\"")
-                    && call.args.iter().any(|arg| arg == "resource = @component.ModernPanel")
+                    && call.args.iter().any(|arg| arg == "handle = @handle.flow.main.mount.view.view.ModernPanel")
+                    && call.args.iter().any(|arg| arg == "kind = \"view\"")
+                    && call.args.iter().any(|arg| arg == "resource = @view.ModernPanel")
         ),
         "{ops:#?}"
     );
@@ -269,7 +331,74 @@ flow main {
         matches!(
             &ops[3],
             FlowOp::RegisterCleanup { key, effect: LineEffectRequest::Call(call) }
-                if key == "handle.flow.main.mount.component.component.ModernPanel"
+                if key == "handle.flow.main.mount.view.view.ModernPanel"
+                    && call.callee == "presentation.handle.dispose"
+        ),
+        "{ops:#?}"
+    );
+    assert!(matches!(&ops[4], FlowOp::ReturnExpr(_)));
+}
+
+#[test]
+fn explicit_menu_and_overlay_mount_exprs_lower_to_scoped_handle_create() {
+    let parsed = parse_source(
+        r#"
+view ModernPanel() {
+  Panel {
+    Text("Ready")
+  }
+}
+
+flow main {
+  menu(@view:.ModernPanel, layer = @layer.menu)
+  overlay(@view:.ModernPanel, layer = @layer.overlay)
+  return "done"
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
+    let ops = &plan.flows[0].ops;
+
+    assert!(
+        matches!(
+            &ops[0],
+            FlowOp::Effect(LineEffectRequest::Call(call))
+                if call.callee == "presentation.handle.create"
+                    && call.args.iter().any(|arg| arg == "handle = @handle.flow.main.mount.menu.view.ModernPanel")
+                    && call.args.iter().any(|arg| arg == "kind = \"menu\"")
+                    && call.args.iter().any(|arg| arg == "resource = @view.ModernPanel")
+                    && call.args.iter().any(|arg| arg == "layer = @layer.menu")
+        ),
+        "{ops:#?}"
+    );
+    assert!(
+        matches!(
+            &ops[1],
+            FlowOp::RegisterCleanup { key, effect: LineEffectRequest::Call(call) }
+                if key == "handle.flow.main.mount.menu.view.ModernPanel"
+                    && call.callee == "presentation.handle.dispose"
+        ),
+        "{ops:#?}"
+    );
+    assert!(
+        matches!(
+            &ops[2],
+            FlowOp::Effect(LineEffectRequest::Call(call))
+                if call.callee == "presentation.handle.create"
+                    && call.args.iter().any(|arg| arg == "handle = @handle.flow.main.mount.overlay.view.ModernPanel")
+                    && call.args.iter().any(|arg| arg == "kind = \"overlay\"")
+                    && call.args.iter().any(|arg| arg == "resource = @view.ModernPanel")
+                    && call.args.iter().any(|arg| arg == "layer = @layer.overlay")
+        ),
+        "{ops:#?}"
+    );
+    assert!(
+        matches!(
+            &ops[3],
+            FlowOp::RegisterCleanup { key, effect: LineEffectRequest::Call(call) }
+                if key == "handle.flow.main.mount.overlay.view.ModernPanel"
                     && call.callee == "presentation.handle.dispose"
         ),
         "{ops:#?}"

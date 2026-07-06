@@ -1,6 +1,6 @@
 # Touch Virtual Controller
 
-Arcweft includes a Game Native UI virtual controller for touch screens. It is not a separate overlay hack: it is a first-class UI component, an input layer, and an Agent-observable action surface.
+Arcweft includes a Game Native UI virtual controller for touch screens. It is not a separate overlay hack: it is a first-class UI view, an input layer, and an Agent-observable action surface.
 
 Related chapters:
 
@@ -16,7 +16,7 @@ Related chapters:
 The virtual controller is implemented as:
 
 ```text
-Reactive UI component
+Reactive UI view
   + LayerTree input consumer/producer
   + InputAction mapper
   + Agent action target provider
@@ -79,14 +79,14 @@ pub virtual_controller @controller.touch_default: TouchController {
 }
 ```
 
-## UI component form
+## UI view form
 
-A controller can also be authored as a component.
+A controller can also be authored as a view.
 
 ```arcw
-pub component @ui.touch_controller TouchControllerView(
+pub view TouchControllerView(
     config: TouchControllerConfig,
-) -> View {
+) {
     ZStack {
         VirtualJoystick(@control.left_stick)
             .agent_target(@control.left_stick)

@@ -149,6 +149,50 @@ fn root_cleanup_effects_drain_on_return_unless_cancelled() {
     assert_eq!(output.effects.line, vec![super::call("cleanup.toast")]);
 }
 
+#[test]
+fn scoped_overlay_cleanup_drains_on_goto_scene_transition() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.scene_a".to_owned())),
+        vec![
+            RuntimeFlow {
+                id: FlowRuntimeId("flow.scene_a".to_owned()),
+                ops: vec![FlowOp::Scope(vec![
+                    FlowOp::RegisterCleanup {
+                        key: "handle.flow.scene_a.overlay".to_owned(),
+                        effect: super::call("presentation.handle.dispose.overlay"),
+                    },
+                    FlowOp::Goto(FlowRuntimeId("flow.scene_b".to_owned())),
+                ])],
+            },
+            RuntimeFlow {
+                id: FlowRuntimeId("flow.scene_b".to_owned()),
+                ops: vec![FlowOp::Return("done".to_owned())],
+            },
+        ],
+        Vec::new(),
+    )
+    .expect("cleanup plan is valid");
+    let mut engine = Engine::new(plan);
+
+    let output = engine
+        .step(RuntimeStepInput::default(), drain_step_options(16))
+        .output;
+
+    assert_eq!(
+        output.effects.line,
+        vec![super::call("presentation.handle.dispose.overlay")]
+    );
+    let expected_target = FlowRuntimeId("flow.scene_b".to_owned());
+    assert!(
+        output
+            .flow_events
+            .iter()
+            .any(|event| matches!(event, FlowEvent::Goto { target } if target == &expected_target)),
+        "{:#?}",
+        output.flow_events
+    );
+}
+
 fn drain_step_options(max_ops: usize) -> RuntimeStepOptions {
     RuntimeStepOptions {
         mode: RuntimeStepMode::Drain,

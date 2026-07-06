@@ -169,9 +169,6 @@ fn index_stmt_agent_actions(
             index = index_expr_agent_actions(expr, index, source_name)?;
             index = index_stmt_body_agent_actions(else_body, index, source_name)?;
         }
-        Stmt::LetTextSubmit { target, .. } => {
-            index = index_expr_agent_actions(target, index, source_name)?;
-        }
         Stmt::LetActionReceive { action, .. } => {
             index = index_expr_agent_actions(action, index, source_name)?;
         }
@@ -759,7 +756,7 @@ fn entity_kind_from_type_name(name: &str) -> Option<EntityKind> {
         "Choice" => EntityKind::Choice,
         "ChoiceOption" => EntityKind::ChoiceOption,
         "Character" => EntityKind::Character,
-        "Component" => EntityKind::Component,
+        "View" => EntityKind::View,
         "Action" => EntityKind::Action,
         "Activity" => EntityKind::Activity,
         "Textbox" => EntityKind::Textbox,
@@ -798,7 +795,7 @@ pub(super) fn entity_decl_kind(kind: EntityDeclKind) -> EntityKind {
         EntityDeclKind::Asset => EntityKind::Asset,
         EntityDeclKind::Image => EntityKind::Image,
         EntityDeclKind::Character => EntityKind::Character,
-        EntityDeclKind::Component => EntityKind::Component,
+        EntityDeclKind::View => EntityKind::View,
         EntityDeclKind::Action => EntityKind::Action,
         EntityDeclKind::Activity => EntityKind::Activity,
         EntityDeclKind::Content => EntityKind::Content,
@@ -822,7 +819,7 @@ pub(super) fn entity_decl_kind_label(kind: EntityDeclKind) -> &'static str {
         EntityDeclKind::Asset => "asset",
         EntityDeclKind::Image => "image",
         EntityDeclKind::Character => "character",
-        EntityDeclKind::Component => "component",
+        EntityDeclKind::View => "view",
         EntityDeclKind::Action => "action",
         EntityDeclKind::Activity => "activity",
         EntityDeclKind::Content => "content",

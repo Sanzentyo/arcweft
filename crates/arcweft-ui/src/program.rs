@@ -1,21 +1,21 @@
-//! Bundle-owned UI program data produced by Arcweft Component DSL lowering.
+//! Bundle-owned UI program data produced by Arcweft View DSL lowering.
 //!
 //! This is the retained, Sans I/O execution substrate for Arcweft-authored
-//! Components. It intentionally does not evaluate expressions or allocate GPU
-//! resources. Component evaluators consume `UiProgram`, props, local state, and
+//! Views. It intentionally does not evaluate expressions or allocate GPU
+//! resources. View evaluators consume `UiProgram`, props, local state, and
 //! environment snapshots, then emit `ViewFragment`, `UiFrameResources`, handlers,
 //! semantics, and style overlays.
 
 use crate::{
-    ComponentId, CustomElementId, EventKind, HandlerId, ImageId, SemanticSpecId, StyleId,
-    TextSourceId, UiProgramId,
+    CustomElementId, EventKind, HandlerId, ImageId, SemanticSpecId, StyleId, TextSourceId,
+    UiProgramId, ViewId,
 };
 use arcweft_id::PublicId;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UiProgram {
     id: UiProgramId,
-    component: ComponentId,
+    view: ViewId,
     instructions: Vec<UiInstruction>,
     exported_parts: Vec<UiPartExport>,
     handler_programs: Vec<UiHandlerProgram>,
@@ -25,7 +25,7 @@ pub struct UiProgram {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UiProgramBuilder {
     id: UiProgramId,
-    component: ComponentId,
+    view: ViewId,
     instructions: Vec<UiInstruction>,
     exported_parts: Vec<UiPartExport>,
     handler_programs: Vec<UiHandlerProgram>,
@@ -39,7 +39,7 @@ pub enum UiInstruction {
     EmitText(UiTextSpec),
     EmitImage(UiImageSpec),
     EmitCustom(UiCustomSpec),
-    CallComponent(UiComponentCall),
+    CallView(UiViewCall),
     Branch(UiBranch),
     RepeatKeyed(UiRepeat),
     ApplyStyle(UiStyleApply),
@@ -49,7 +49,7 @@ pub enum UiInstruction {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UiElementSpec {
-    pub kind: UiElementKind,
+    pub kind: ViewElementKind,
     pub style: Option<StyleId>,
     pub part: Option<UiPartId>,
     pub key: Option<UiStableKey>,
@@ -65,7 +65,7 @@ pub struct UiPartExport {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum UiElementKind {
+pub enum ViewElementKind {
     Surface,
     Box,
     Scroll,
@@ -103,8 +103,8 @@ pub struct UiCustomSpec {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiComponentCall {
-    pub component: ComponentId,
+pub struct UiViewCall {
+    pub view: ViewId,
     pub props: UiExpressionId,
     pub style: Option<StyleId>,
     pub part: Option<UiPartId>,
@@ -184,10 +184,10 @@ impl UiPartExport {
 }
 
 impl UiProgramBuilder {
-    pub fn new(id: UiProgramId, component: ComponentId, state_schema_hash: u64) -> Self {
+    pub fn new(id: UiProgramId, view: ViewId, state_schema_hash: u64) -> Self {
         Self {
             id,
-            component,
+            view,
             instructions: Vec::new(),
             exported_parts: Vec::new(),
             handler_programs: Vec::new(),
@@ -212,7 +212,7 @@ impl UiProgramBuilder {
     pub fn finish(self) -> UiProgram {
         UiProgram::new(
             self.id,
-            self.component,
+            self.view,
             self.state_schema_hash,
             self.instructions,
         )
@@ -224,13 +224,13 @@ impl UiProgramBuilder {
 impl UiProgram {
     pub fn new(
         id: UiProgramId,
-        component: ComponentId,
+        view: ViewId,
         state_schema_hash: u64,
         instructions: Vec<UiInstruction>,
     ) -> Self {
         Self {
             id,
-            component,
+            view,
             instructions,
             exported_parts: Vec::new(),
             handler_programs: Vec::new(),
@@ -254,8 +254,8 @@ impl UiProgram {
         self.id
     }
 
-    pub const fn component(&self) -> ComponentId {
-        self.component
+    pub const fn view(&self) -> ViewId {
+        self.view
     }
 
     pub const fn state_schema_hash(&self) -> u64 {
@@ -278,15 +278,15 @@ impl UiProgram {
 #[cfg(test)]
 mod tests {
     use super::{
-        UiElementKind, UiElementSpec, UiInstruction, UiPartExport, UiPartId, UiProgramBuilder,
+        UiElementSpec, UiInstruction, UiPartExport, UiPartId, UiProgramBuilder, ViewElementKind,
     };
-    use crate::{ComponentId, UiProgramId};
+    use crate::{UiProgramId, ViewId};
 
     #[test]
     fn ui_program_builder_preserves_instruction_order_before_fragment_lowering() {
-        let mut builder = UiProgramBuilder::new(UiProgramId(1), ComponentId(2), 0xCAFE);
+        let mut builder = UiProgramBuilder::new(UiProgramId(1), ViewId(2), 0xCAFE);
         builder.push(UiInstruction::OpenElement(UiElementSpec {
-            kind: UiElementKind::TextField,
+            kind: ViewElementKind::TextField,
             style: None,
             part: Some(UiPartId(1)),
             key: None,

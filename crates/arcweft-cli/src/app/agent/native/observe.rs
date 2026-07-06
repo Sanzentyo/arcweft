@@ -197,7 +197,7 @@ impl<'a> NativeAgentScriptSession<'a> {
                 image: None,
                 capture: None,
                 layer: None,
-                component: None,
+                view: None,
                 object: None,
                 page: None,
                 capture_time_seconds: options.capture_time_seconds,
@@ -510,8 +510,8 @@ pub(super) fn native_agent_capture_uri(
     };
     let name = match &request.target {
         CaptureTarget::Viewport => capture_kind.resource_name().to_owned(),
-        CaptureTarget::Component { id } => {
-            agent_scoped_capture_name("component", id.as_str(), capture_kind.resource_name())
+        CaptureTarget::View { id } => {
+            agent_scoped_capture_name("view", id.as_str(), capture_kind.resource_name())
         }
         CaptureTarget::Layer { id } => {
             agent_scoped_capture_name("layer", id.as_str(), capture_kind.resource_name())
@@ -641,7 +641,7 @@ pub(super) fn agent_hit_test_observe_options(options: &AgentHitTestOptions) -> A
         image: None,
         capture: None,
         layer: None,
-        component: None,
+        view: None,
         object: None,
         page: None,
         capture_time_seconds: options.capture_time_seconds,

@@ -235,6 +235,7 @@ pub fn prepare_bundle_parity_frame(
         preferences: RenderPreferences::default(),
         interaction: InteractionVisualState::default(),
         choice_scroll: ChoiceScroll::default(),
+        scroll_regions: Vec::new(),
     };
     let prepared = SharedFramePlanner::prepare(&scene)
         .map_err(|error| WebGpuParityFrameError::FramePlan(error.to_string()))?;

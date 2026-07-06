@@ -26,5 +26,5 @@ that path is connected.
 
 Current limitation: the player still renders this `.arcw` sample as dialogue and
 choice UI. It does not yet instantiate the retained UI program from
-`UiProgramResource` or resolve the CSS/Arcweft style source layers into a
+`ViewProgramResource` or resolve the CSS/Arcweft style source layers into a
 player-owned `UiLayerOutput`. See the seq06.11 request for that follow-up.

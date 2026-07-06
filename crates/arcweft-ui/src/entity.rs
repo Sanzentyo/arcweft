@@ -1,6 +1,6 @@
-//! Safe generational UI entity storage for stateful components.
+//! Safe generational UI entity storage for stateful views.
 
-use crate::{ComponentId, UiError};
+use crate::{UiError, ViewId};
 use core::{any::Any, marker::PhantomData, num::NonZeroU32};
 
 /// Untyped generational entity handle.
@@ -10,14 +10,14 @@ pub struct RawEntity {
     generation: NonZeroU32,
 }
 
-/// Typed generational handle for component-local state.
+/// Typed generational handle for view-local state.
 #[repr(transparent)]
 pub struct Entity<T> {
     raw: RawEntity,
     marker: PhantomData<fn() -> T>,
 }
 
-/// Dirty flags tracked on stateful component entities.
+/// Dirty flags tracked on stateful view entities.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DirtyFlags(u8);
 
@@ -25,12 +25,12 @@ pub struct DirtyFlags(u8);
 struct EntitySlot {
     generation: NonZeroU32,
     state: Option<Box<dyn Any>>,
-    component: Option<ComponentId>,
+    view: Option<ViewId>,
     dirty: DirtyFlags,
     queued: bool,
 }
 
-/// Reusable store for stateful UI component entities.
+/// Reusable store for stateful UI view entities.
 #[derive(Debug, Default)]
 pub struct EntityStore {
     slots: Vec<EntitySlot>,
@@ -116,11 +116,11 @@ impl DirtyFlags {
 }
 
 impl EntitySlot {
-    fn occupied<T: 'static>(state: T, component: Option<ComponentId>) -> Self {
+    fn occupied<T: 'static>(state: T, view: Option<ViewId>) -> Self {
         Self {
             generation: NonZeroU32::MIN,
             state: Some(Box::new(state)),
-            component,
+            view,
             dirty: DirtyFlags::all(),
             queued: true,
         }
@@ -142,7 +142,7 @@ impl EntityStore {
     pub fn insert<T: 'static>(
         &mut self,
         state: T,
-        component: Option<ComponentId>,
+        view: Option<ViewId>,
     ) -> Result<Entity<T>, UiError> {
         if let Some(index) = self.free.pop() {
             let slot = self
@@ -151,14 +151,14 @@ impl EntityStore {
                 .ok_or(UiError::CapacityExceeded)?;
             let generation = slot.next_generation()?;
             slot.state = Some(Box::new(state));
-            slot.component = component;
+            slot.view = view;
             slot.dirty = DirtyFlags::all();
             slot.queued = true;
             return Ok(Entity::from_raw(RawEntity::new(index, generation)));
         }
 
         let index = u32::try_from(self.slots.len()).map_err(|_| UiError::CapacityExceeded)?;
-        self.slots.push(EntitySlot::occupied(state, component));
+        self.slots.push(EntitySlot::occupied(state, view));
         Ok(Entity::from_raw(RawEntity::new(index, NonZeroU32::MIN)))
     }
 
@@ -188,15 +188,15 @@ impl EntityStore {
         let state = boxed
             .downcast::<T>()
             .map_err(|_| UiError::EntityTypeMismatch(entity.raw))?;
-        slot.component = None;
+        slot.view = None;
         slot.dirty = DirtyFlags::NONE;
         slot.queued = false;
         self.free.push(entity.raw.index);
         Ok(*state)
     }
 
-    pub fn component<T>(&self, entity: Entity<T>) -> Option<ComponentId> {
-        self.valid_slot(entity.raw).and_then(|slot| slot.component)
+    pub fn view<T>(&self, entity: Entity<T>) -> Option<ViewId> {
+        self.valid_slot(entity.raw).and_then(|slot| slot.view)
     }
 
     pub fn dirty<T>(&self, entity: Entity<T>) -> Option<DirtyFlags> {

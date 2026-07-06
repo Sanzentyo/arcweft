@@ -1,4 +1,4 @@
-pub component @ui.sample.confirmation ConfirmationDialog(message: String) {
+pub view @ui.sample.confirmation ConfirmationDialog(message: String) {
     Column(spacing = 20) {
         Text(message)
             .style {

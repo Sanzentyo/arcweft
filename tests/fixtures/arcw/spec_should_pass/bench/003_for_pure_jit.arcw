@@ -4,7 +4,7 @@ fn score(base: i64, bonus: i64) -> i64 {
 }
 
 bench @bench.for_pure {
-    measure iterations = 8 { start(@flow.for_pure) }
+    measure iterations = 8 { goto @flow.for_pure }
 }
 
 flow @flow.for_pure for_pure {

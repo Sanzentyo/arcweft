@@ -54,6 +54,8 @@ pub fn generated_demo_images(
             id: DemoImageKind::Background.asset_id().to_owned(),
             frame: gradient_background_frame(),
             bounds: HitRect::new(0.0, 0.0, width, height),
+            containing_scroll_region: None,
+            viewport_clip: None,
             placement: None,
             fit: ImageObjectFit::Cover,
             alignment: ImageObjectAlignment::center(),
@@ -64,6 +66,8 @@ pub fn generated_demo_images(
             id: DemoImageKind::CharacterStand.asset_id().to_owned(),
             frame: character_stand_frame(),
             bounds: HitRect::new(width * 0.61, height * 0.14, width * 0.22, height * 0.62),
+            containing_scroll_region: None,
+            viewport_clip: None,
             placement: None,
             fit: ImageObjectFit::Contain,
             alignment: ImageObjectAlignment::center(),
@@ -74,6 +78,8 @@ pub fn generated_demo_images(
             id: DemoImageKind::GifPulse.asset_id().to_owned(),
             frame: pulse_frame(clock.frame_index(160, 4), [255, 111, 88, 255]),
             bounds: HitRect::new(width * 0.08, height * 0.12, 76.0, 76.0),
+            containing_scroll_region: None,
+            viewport_clip: None,
             placement: None,
             fit: ImageObjectFit::Stretch,
             alignment: ImageObjectAlignment::center(),
@@ -84,6 +90,8 @@ pub fn generated_demo_images(
             id: DemoImageKind::WebPPulse.asset_id().to_owned(),
             frame: pulse_frame(clock.frame_index(130, 5), [98, 205, 255, 255]),
             bounds: HitRect::new(width * 0.17, height * 0.16, 68.0, 68.0),
+            containing_scroll_region: None,
+            viewport_clip: None,
             placement: None,
             fit: ImageObjectFit::Stretch,
             alignment: ImageObjectAlignment::center(),
@@ -105,6 +113,7 @@ fn gradient_background_frame() -> RenderImageFrame {
         }
     }
     RenderImageFrame {
+        index: None,
         width: WIDTH,
         height: HEIGHT,
         rgba,
@@ -142,6 +151,7 @@ fn character_stand_frame() -> RenderImageFrame {
         }
     }
     RenderImageFrame {
+        index: None,
         width: WIDTH,
         height: HEIGHT,
         rgba,
@@ -169,6 +179,7 @@ fn pulse_frame(frame: u64, color: [u8; 4]) -> RenderImageFrame {
         }
     }
     RenderImageFrame {
+        index: usize::try_from(frame).ok(),
         width: WIDTH,
         height: HEIGHT,
         rgba,

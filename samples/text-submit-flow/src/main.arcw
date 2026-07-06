@@ -3,6 +3,8 @@ pub character narrator {
   default_voice = auto
 }
 
+pub action feedback.submit(value: String)
+
 entry game @entry.text_submit_flow {
   goto @flow.text_submit_flow
 }
@@ -17,29 +19,38 @@ pub style primary_button {
   }
 }
 
-pub component FeedbackForm() {
+pub view FeedbackForm() {
+  let feedback = input.text(@input:.feedback, initial = "")
+
   Column {
-    TextField(@input:.feedback, value: "", purpose: text, enter_key: send)
+    TextField(feedback)
       .label("Message")
       .placeholder("Type text, then press Enter or click Send")
+      .purpose(.text)
+      .enter_key(.send)
+      .on_submit {
+        action.invoke(@action:.feedback.submit, value = feedback.text)
+      }
 
-    Button(@button:.feedback_send)
-      .label("Send")
+    Button(@button:.feedback_send, label = "Send")
       .style(@style:.primary_button)
       .enabled(true)
       .focusable(true)
-      .on_click(|| text_submit @input:.feedback)
+      .on_click {
+        action.invoke(@action:.feedback.submit, value = feedback.text)
+      }
   }
 }
 
 flow text_submit_flow {
-  component(@component:.FeedbackForm)
+  view(@view:.FeedbackForm)
 
   narrator:
     Type a short message in the Arcweft-rendered field.[p]
     Press Enter, use the IME send/done action, or activate the Send button.
 
-  let submitted = text_submit @input.feedback
+  let event = receive action(@action:.feedback.submit)
+  let submitted = event.value
   let character_count = submitted.len()
 
   if character_count == 0usize {

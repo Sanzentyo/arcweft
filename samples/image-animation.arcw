@@ -25,7 +25,7 @@ pub asset bg.loop {
     animation = true
 }
 
-pub image @image.sample.pulse_sprite {
+pub image sample.pulse_sprite {
     asset = @asset:.bg.pulse
     target = @target.sample.pulse_sprite
     layer = @layer.foreground
@@ -69,6 +69,10 @@ pub surface character narrator {
 
 entry game {
     goto @flow.image_static_png
+}
+
+entry game @entry.image_sprite_released {
+    goto @flow.image_sprite_released
 }
 
 flow image_static_png {
@@ -130,6 +134,18 @@ flow image_sprite_overlay {
     ]
 
     return "image_sprite_overlay"
+}
+
+flow image_sprite_released {
+    bg(@asset:.bg.room)
+    let sprite = image(@image.sample.pulse_sprite)
+    sprite.release()
+
+    narrator.say(id=@say.image.sprite_released, voice=auto)[
+        Released image handles are absent from Agent observe objects and capture scopes.[p]
+    ]
+
+    return "image_sprite_released"
 }
 
 flow image_clipped_object {

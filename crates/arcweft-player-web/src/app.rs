@@ -387,8 +387,10 @@ impl ApplicationHandler for BrowserApp {
                         (position.y / window.scale_factor()) as f32
                     }
                 };
-                let outcome = state.input.wheel(delta_y);
-                apply_outcome(&mut state, outcome);
+                if let Some(frame) = state.prepared.clone() {
+                    let outcome = state.input.wheel(&frame, delta_y);
+                    apply_outcome(&mut state, outcome);
+                }
                 window.request_redraw();
             }
             WindowEvent::ModifiersChanged(modifiers) => {

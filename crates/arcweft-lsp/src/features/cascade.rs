@@ -319,7 +319,6 @@ fn style_path_from_stmt(stmt: &Stmt, offset: usize) -> Option<String> {
             .iter()
             .find_map(|arm| style_path_from_stmts(arm.body(), offset)),
         Stmt::LetChoice { .. }
-        | Stmt::LetTextSubmit { .. }
         | Stmt::LetActionReceive { .. }
         | Stmt::Assign { .. }
         | Stmt::Return(_)

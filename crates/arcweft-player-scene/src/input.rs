@@ -19,9 +19,11 @@ use arcweft_presentation::text_input::{
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, FocusNavigationDirection, FramePlanError, InteractionVisualState, PreparedFrame,
-    RenderActionButtonAction, RenderTextInputControl, RenderTextSubmitImePolicy,
+    RenderActionButtonAction, RenderTextInputControl,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use thiserror::Error;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DragState {
@@ -37,6 +39,48 @@ struct TextPointerSelectionState {
     target: arcweft_presentation::input::InteractionTarget,
     position: ViewportPoint,
     selecting: bool,
+}
+
+/// Portable player-input state that can be stored alongside a runtime save.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct InputControllerSnapshot {
+    #[serde(default, skip_serializing_if = "is_zero_f32")]
+    pub choice_scroll_offset_y: f32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scroll_offsets: Vec<InputScrollOffsetSnapshot>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct InputScrollOffsetSnapshot {
+    pub region_id: String,
+    pub offset_x: f32,
+    pub offset_y: f32,
+}
+
+#[derive(Clone, Debug, Error, PartialEq)]
+pub enum InputControllerSnapshotError {
+    #[error("input snapshot has non-finite choice scroll offset {offset_y}")]
+    NonFiniteChoiceScroll { offset_y: f32 },
+    #[error("input snapshot has negative choice scroll offset {offset_y}")]
+    NegativeChoiceScroll { offset_y: f32 },
+    #[error("input snapshot has an empty scroll region id")]
+    EmptyScrollRegionId,
+    #[error(
+        "input snapshot has non-finite scroll offset ({offset_x}, {offset_y}) for region `{region_id}`"
+    )]
+    NonFiniteScrollOffset {
+        region_id: String,
+        offset_x: f32,
+        offset_y: f32,
+    },
+    #[error(
+        "input snapshot has negative scroll offset ({offset_x}, {offset_y}) for region `{region_id}`"
+    )]
+    NegativeScrollOffset {
+        region_id: String,
+        offset_x: f32,
+        offset_y: f32,
+    },
 }
 
 impl DragState {
@@ -64,15 +108,29 @@ pub struct InputDiagnostic {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum InputDiagnosticKind {
-    ImeCompositionRejectedActionButtonSubmit,
-}
+pub enum InputDiagnosticKind {}
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct ActionButtonSubmitOutcome {
     action: Option<Action>,
     write_back: Option<TextControlWriteBack>,
     diagnostic: Option<InputDiagnostic>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct ScrollOffset {
+    x: f32,
+    y: f32,
+}
+
+impl ScrollOffset {
+    const fn new(x: f32, y: f32) -> Self {
+        Self { x, y }
+    }
+
+    fn is_zero(self) -> bool {
+        is_zero_f32(&self.x) && is_zero_f32(&self.y)
+    }
 }
 
 impl InputOutcome {
@@ -127,6 +185,7 @@ pub struct InputController {
     drags: BTreeMap<u64, DragState>,
     pending_text_pointer_selection: Option<TextPointerSelectionState>,
     choice_scroll: ChoiceScroll,
+    scroll_offsets: BTreeMap<String, ScrollOffset>,
     controller: ControllerInputNormalizer,
     window_focused: bool,
     ime_composing: bool,
@@ -141,6 +200,82 @@ impl InputController {
 
     pub const fn choice_scroll(&self) -> ChoiceScroll {
         self.choice_scroll
+    }
+
+    pub fn scroll_offset_y(&self, region_id: &str) -> f32 {
+        self.scroll_offsets
+            .get(region_id)
+            .map_or(0.0, |offset| offset.y)
+    }
+
+    pub fn scroll_offset_x(&self, region_id: &str) -> f32 {
+        self.scroll_offsets
+            .get(region_id)
+            .map_or(0.0, |offset| offset.x)
+    }
+
+    #[must_use]
+    pub fn snapshot(&self) -> InputControllerSnapshot {
+        InputControllerSnapshot {
+            choice_scroll_offset_y: self.choice_scroll.offset_y,
+            scroll_offsets: self
+                .scroll_offsets
+                .iter()
+                .filter(|(_, offset)| !offset.is_zero())
+                .map(|(region_id, offset)| InputScrollOffsetSnapshot {
+                    region_id: region_id.clone(),
+                    offset_x: offset.x,
+                    offset_y: offset.y,
+                })
+                .collect(),
+        }
+    }
+
+    pub fn restore_snapshot(
+        &mut self,
+        snapshot: InputControllerSnapshot,
+    ) -> Result<(), InputControllerSnapshotError> {
+        let choice_scroll_offset_y = snapshot.choice_scroll_offset_y;
+        if !choice_scroll_offset_y.is_finite() {
+            return Err(InputControllerSnapshotError::NonFiniteChoiceScroll {
+                offset_y: choice_scroll_offset_y,
+            });
+        }
+        if choice_scroll_offset_y < 0.0 {
+            return Err(InputControllerSnapshotError::NegativeChoiceScroll {
+                offset_y: choice_scroll_offset_y,
+            });
+        }
+        let scroll_offsets = snapshot.scroll_offsets.into_iter().try_fold(
+            BTreeMap::new(),
+            |mut offsets, entry| {
+                if entry.region_id.is_empty() {
+                    return Err(InputControllerSnapshotError::EmptyScrollRegionId);
+                }
+                if !entry.offset_x.is_finite() || !entry.offset_y.is_finite() {
+                    return Err(InputControllerSnapshotError::NonFiniteScrollOffset {
+                        region_id: entry.region_id,
+                        offset_x: entry.offset_x,
+                        offset_y: entry.offset_y,
+                    });
+                }
+                if entry.offset_x < 0.0 || entry.offset_y < 0.0 {
+                    return Err(InputControllerSnapshotError::NegativeScrollOffset {
+                        region_id: entry.region_id,
+                        offset_x: entry.offset_x,
+                        offset_y: entry.offset_y,
+                    });
+                }
+                let offset = ScrollOffset::new(entry.offset_x, entry.offset_y);
+                if !offset.is_zero() {
+                    offsets.insert(entry.region_id, offset);
+                }
+                Ok(offsets)
+            },
+        )?;
+        self.choice_scroll.offset_y = choice_scroll_offset_y;
+        self.scroll_offsets = scroll_offsets;
+        Ok(())
     }
 
     pub const fn window_focused(&self) -> bool {
@@ -360,7 +495,7 @@ impl InputController {
                     let mut actions = choice_action(frame, event.target())
                         .into_iter()
                         .collect::<Vec<_>>();
-                    let submit = self.action_button_submit(frame, event.target());
+                    let submit = Self::action_button_submit(frame, event.target());
                     actions.extend(submit.action);
                     let text_control_write_backs = submit.write_back.into_iter().collect();
                     let diagnostics = submit.diagnostic.into_iter().collect();
@@ -543,7 +678,7 @@ impl InputController {
         let submit = focused
             .as_ref()
             .map_or_else(ActionButtonSubmitOutcome::default, |target| {
-                self.action_button_submit(frame, target)
+                Self::action_button_submit(frame, target)
             });
         let mut actions = actions;
         actions.extend(submit.action);
@@ -662,8 +797,38 @@ impl InputController {
         })
     }
 
-    pub fn wheel(&mut self, _delta_y: f32) -> InputOutcome {
+    pub fn wheel(&mut self, frame: &PreparedFrame, delta_y: f32) -> InputOutcome {
+        if let Some(position) = self.primary_pointer_position()
+            && let Some(region) = frame
+                .scroll_regions
+                .iter()
+                .rev()
+                .find(|region| region.contains(position))
+        {
+            let current = self
+                .scroll_offsets
+                .get(&region.id)
+                .copied()
+                .unwrap_or_else(|| ScrollOffset::new(region.offset_x, region.offset_y));
+            let next = match region.axis {
+                arcweft_render_wgpu::geometry::RenderScrollAxis::Vertical => {
+                    ScrollOffset::new(0.0, region.clamped_offset_y(current.y - delta_y))
+                }
+                arcweft_render_wgpu::geometry::RenderScrollAxis::Horizontal => {
+                    ScrollOffset::new(region.clamped_offset_x(current.x - delta_y), 0.0)
+                }
+            };
+            if next.is_zero() {
+                self.scroll_offsets.remove(&region.id);
+            } else {
+                self.scroll_offsets.insert(region.id.clone(), next);
+            }
+        }
         InputOutcome::redraw(true)
+    }
+
+    fn primary_pointer_position(&self) -> Option<ViewportPoint> {
+        self.pointer_positions.values().next().copied()
     }
 
     pub fn focus_changed(&mut self, focused: bool) -> InputOutcome {
@@ -778,7 +943,6 @@ impl InputController {
     }
 
     fn action_button_submit(
-        &mut self,
         frame: &PreparedFrame,
         target: &arcweft_presentation::input::InteractionTarget,
     ) -> ActionButtonSubmitOutcome {
@@ -788,87 +952,21 @@ impl InputController {
         if !button.enabled {
             return ActionButtonSubmitOutcome::default();
         }
-        let RenderActionButtonAction::TextInputSubmit {
-            input_target,
-            session,
-            value,
-            selection,
-            revision,
-            ime_policy,
-        } = &button.action
-        else {
-            if let RenderActionButtonAction::ActionInvoke { action, payload } = &button.action {
-                let action = frame
-                    .semantics
-                    .lower_action(target, action)
-                    .ok()
-                    .map(|action| match payload {
-                        Some(payload) => action.with_payload(payload.clone()),
-                        None => action,
-                    });
-                return ActionButtonSubmitOutcome {
-                    action,
-                    write_back: None,
-                    diagnostic: None,
-                };
-            }
+        let RenderActionButtonAction::ActionInvoke { action, payload } = &button.action else {
             return ActionButtonSubmitOutcome::default();
         };
-        if !frame
-            .text_input_targets()
-            .any(|target| &target == input_target)
-        {
-            return ActionButtonSubmitOutcome::default();
-        }
-        if self.ime_composing {
-            match ime_policy {
-                RenderTextSubmitImePolicy::Reject => {
-                    return ActionButtonSubmitOutcome {
-                        action: None,
-                        write_back: None,
-                        diagnostic: Some(InputDiagnostic {
-                            kind: InputDiagnosticKind::ImeCompositionRejectedActionButtonSubmit,
-                            target: button.target.clone(),
-                        }),
-                    };
-                }
-                RenderTextSubmitImePolicy::Commit | RenderTextSubmitImePolicy::Cancel => {
-                    self.ime_composing = false;
-                }
-            }
-        }
-        let write_back = self
-            .focused_text_editor
-            .as_ref()
-            .filter(|editor| editor.session() == *session && editor.target() == input_target)
-            .map_or_else(
-                || {
-                    Some(TextControlWriteBack::submit(
-                        input_target.clone(),
-                        *session,
-                        value.clone(),
-                        *selection,
-                        *revision,
-                    ))
-                },
-                |editor| {
-                    let privacy = if value.is_sensitive() || editor.options().is_secure() {
-                        TextInputPrivacy::Sensitive
-                    } else {
-                        TextInputPrivacy::Plain
-                    };
-                    Some(TextControlWriteBack::submit(
-                        input_target.clone(),
-                        *session,
-                        TextControlValue::new(editor.text(), privacy),
-                        editor.selection(),
-                        editor.revision(),
-                    ))
-                },
-            );
+        let action =
+            frame
+                .semantics
+                .lower_action(target, action)
+                .ok()
+                .map(|action| match payload {
+                    Some(payload) => action.with_payload(payload.clone()),
+                    None => action,
+                });
         ActionButtonSubmitOutcome {
-            action: None,
-            write_back,
+            action,
+            write_back: None,
             diagnostic: None,
         }
     }
@@ -948,6 +1046,11 @@ fn activation_outcome(
     }
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero_f32(value: &f32) -> bool {
+    value.abs() <= f32::EPSILON
+}
+
 fn choice_action(
     frame: &PreparedFrame,
     target: &arcweft_presentation::input::InteractionTarget,
@@ -989,7 +1092,8 @@ mod tests {
         TextInputSessionId, TextRange,
     };
     use arcweft_render_wgpu::geometry::{
-        RenderDialogue, RenderPreferences, RenderScene, RenderViewport, SharedFramePlanner,
+        RenderDialogue, RenderPreferences, RenderScene, RenderScrollAxis, RenderScrollOverflow,
+        RenderScrollRegion, RenderViewport, SharedFramePlanner,
     };
 
     fn target(name: &str) -> arcweft_presentation::input::InteractionTarget {
@@ -1018,6 +1122,7 @@ mod tests {
             preferences: RenderPreferences::default(),
             interaction: InteractionVisualState::default(),
             choice_scroll: ChoiceScroll::default(),
+            scroll_regions: Vec::new(),
         }
     }
 
@@ -1031,6 +1136,56 @@ mod tests {
             }),
             ..scene(control)
         }
+    }
+
+    fn scroll_frame() -> PreparedFrame {
+        SharedFramePlanner::prepare(&RenderScene {
+            dialogue: None,
+            choices: Vec::new(),
+            text_inputs: Vec::new(),
+            action_buttons: Vec::new(),
+            focus_groups: Vec::new(),
+            focus_navigation: Vec::new(),
+            images: Vec::new(),
+            viewport: RenderViewport {
+                logical_width: 640.0,
+                logical_height: 360.0,
+                physical_width: 640,
+                physical_height: 360,
+                scale_factor: 1.0,
+            },
+            visual_time_millis: 0,
+            preferences: RenderPreferences::default(),
+            interaction: InteractionVisualState::default(),
+            choice_scroll: ChoiceScroll::default(),
+            scroll_regions: vec![RenderScrollRegion {
+                id: "scroll.editor".to_owned(),
+                bounds: HitRect::new(20.0, 30.0, 220.0, 80.0),
+                content_width: 220.0,
+                content_height: 260.0,
+                offset_x: 0.0,
+                offset_y: 0.0,
+                axis: RenderScrollAxis::Vertical,
+                overflow: RenderScrollOverflow::Auto,
+            }],
+        })
+        .expect("scroll frame prepares")
+    }
+
+    #[test]
+    fn wheel_updates_scroll_region_under_pointer_and_clamps() {
+        let frame = scroll_frame();
+        let mut input = InputController::default();
+
+        input.pointer_move(&frame, PointerId(0), ViewportPoint::new(30.0, 40.0));
+        input.wheel(&frame, -90.0);
+        assert!((input.scroll_offset_y("scroll.editor") - 90.0).abs() < f32::EPSILON);
+
+        input.wheel(&frame, -300.0);
+        assert!((input.scroll_offset_y("scroll.editor") - 180.0).abs() < f32::EPSILON);
+
+        input.wheel(&frame, 300.0);
+        assert!(input.scroll_offset_y("scroll.editor").abs() < f32::EPSILON);
     }
 
     #[test]

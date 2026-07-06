@@ -2,7 +2,7 @@ use crate::action::AgentActionTarget;
 use crate::diagnostic::AgentDiagnostic;
 use crate::geometry::AgentViewport;
 use crate::image::AgentImageResource;
-use crate::object::{AgentObservedComponent, AgentObservedLayer, AgentObservedObject};
+use crate::object::{AgentObservedLayer, AgentObservedObject, AgentObservedView};
 use crate::presentation::{AgentPresentationTree, AgentPresentationTreeQuery};
 use crate::resource::{
     AgentBinaryEncoding, AgentBinaryResourceBody, AgentResource, AgentResourceBody,
@@ -27,7 +27,7 @@ pub struct AgentObservationReport {
     pub viewport: AgentViewport,
     pub images: Vec<AgentImageResource>,
     pub layers: Vec<AgentObservedLayer>,
-    pub components: Vec<AgentObservedComponent>,
+    pub views: Vec<AgentObservedView>,
     pub objects: Vec<AgentObservedObject>,
     pub presentation_tree: AgentPresentationTree,
     pub actions: Vec<AgentActionTarget>,
@@ -79,18 +79,18 @@ impl AgentObservationReport {
         })
     }
 
-    /// Builds the MCP-style observed components JSON resource.
-    pub fn components_resource(&self) -> Result<AgentResource, serde_json::Error> {
+    /// Builds the MCP-style observed views JSON resource.
+    pub fn views_resource(&self) -> Result<AgentResource, serde_json::Error> {
         Ok(AgentResource {
             uri: format!(
-                "arcweft://session/{}/frame/{}/components.json",
+                "arcweft://session/{}/frame/{}/views.json",
                 self.session_id, self.tick
             ),
-            kind: AgentResourceKind::Components,
+            kind: AgentResourceKind::Views,
             mime_type: "application/json".to_owned(),
             hash: self.render_hash.clone(),
             image: None,
-            body: AgentResourceBody::Json(serde_json::to_value(&self.components)?),
+            body: AgentResourceBody::Json(serde_json::to_value(&self.views)?),
         })
     }
 

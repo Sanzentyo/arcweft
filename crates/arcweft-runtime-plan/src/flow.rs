@@ -1444,11 +1444,17 @@ struct FlowRuntimeLowerer<'a> {
     line_display_catalog: LineDisplayCatalog,
     display_defaults: DialogueDisplayDefaults,
     speaker_preset_scopes: Vec<BTreeMap<String, DialogueSpeakerPreset>>,
-    presentation_handle_scopes: Vec<BTreeMap<String, String>>,
+    presentation_handle_scopes: Vec<BTreeMap<String, PresentationHandleBinding>>,
     errors: Vec<RuntimePlanLowerError>,
     pure_helpers: &'a BTreeMap<String, RuntimePureHelperId>,
     for_iteration_evidence: &'a [RuntimeIteratorEvidence],
     for_iteration_cursor: usize,
+}
+
+#[derive(Clone)]
+struct PresentationHandleBinding {
+    handle_id: String,
+    kind: &'static str,
 }
 
 impl FlowRuntimeLowerer<'_> {
@@ -1876,7 +1882,6 @@ impl FlowRuntimeLowerer<'_> {
                 pattern: lower_runtime_pattern(pattern),
                 body: self.lower_syntax_flow_items(flow_id, flow_index, block.body()),
             }],
-            Stmt::LetTextSubmit { pattern, target } => self.lower_text_submit_stmt(pattern, target),
             Stmt::LetActionReceive { pattern, action } => {
                 self.lower_action_receive_stmt(pattern, action)
             }
@@ -1963,20 +1968,6 @@ impl FlowRuntimeLowerer<'_> {
         }
     }
 
-    fn lower_text_submit_stmt(&mut self, pattern: &Pattern, target: &Expr) -> Vec<FlowOp> {
-        vec![FlowOp::HostCall {
-            binding: Some(lower_runtime_pattern(pattern)),
-            target: RuntimeHostCallTarget::new(
-                "ui.text_input.await_submit",
-                "ui.text_input",
-                "await_submit",
-                [self.lower_runtime_expr(target)],
-                RuntimeHostCallMode::Suspend,
-                true,
-            ),
-        }]
-    }
-
     fn lower_let_scope_stmt(
         &mut self,
         flow_id: &FlowRuntimeId,
@@ -2023,7 +2014,7 @@ impl FlowRuntimeLowerer<'_> {
             return Some(Vec::new());
         };
         let handle_id = presentation_handle_id(flow_id, binding);
-        self.register_presentation_handle_binding(binding, handle_id.clone());
+        self.register_presentation_handle_binding(binding, handle_id.clone(), mount.kind);
         let create = presentation_handle_call(
             "create",
             presentation_create_args(&handle_id, flow_id, mount.kind, mount.resource, mount.args),
@@ -2078,32 +2069,45 @@ impl FlowRuntimeLowerer<'_> {
         if !args.is_empty() {
             return None;
         }
-        let handle_id = self.presentation_handle_id_for_receiver(receiver)?;
+        let binding = self.presentation_handle_binding_for_receiver(receiver)?;
         let operation = match method.as_str() {
             "show" => "show",
             "hide" => "hide",
             "unmount" => "unmount",
             "release" => "release",
             "destroy" => "destroy",
-            "close" | "dispose" => "dispose",
+            "pop" if binding.kind == "overlay" => "dispose",
             _ => return None,
         };
         let mut ops = vec![FlowOp::Effect(LineEffectRequest::Call(
-            presentation_handle_call(operation, vec![format!("handle = @{handle_id}")]),
+            presentation_handle_call(operation, vec![format!("handle = @{}", binding.handle_id)]),
         ))];
         if matches!(operation, "dispose" | "release" | "destroy") {
-            ops.push(FlowOp::CancelCleanup { key: handle_id });
+            ops.push(FlowOp::CancelCleanup {
+                key: binding.handle_id,
+            });
         }
         Some(ops)
     }
 
-    fn register_presentation_handle_binding(&mut self, binding: &str, handle_id: String) {
+    fn register_presentation_handle_binding(
+        &mut self,
+        binding: &str,
+        handle_id: String,
+        kind: &'static str,
+    ) {
         if let Some(scope) = self.presentation_handle_scopes.last_mut() {
-            scope.insert(binding.to_owned(), handle_id);
+            scope.insert(
+                binding.to_owned(),
+                PresentationHandleBinding { handle_id, kind },
+            );
         }
     }
 
-    fn presentation_handle_id_for_receiver(&self, receiver: &Expr) -> Option<String> {
+    fn presentation_handle_binding_for_receiver(
+        &self,
+        receiver: &Expr,
+    ) -> Option<PresentationHandleBinding> {
         let Expr::Path(path) = receiver else {
             return None;
         };

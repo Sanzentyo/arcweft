@@ -1,14 +1,13 @@
 use crate::control_style::lower_control_style;
 use arcweft_bundle::resource_codec::ui::{
-    UiActionPayloadResource, UiRuntimeActionButton, UiRuntimeActionButtonAction,
-    UiRuntimeButtonBounds, UiTextSubmitImePolicy,
+    ViewActionPayloadResource, ViewRuntimeActionButton, ViewRuntimeActionButtonAction,
+    ViewRuntimeButtonBounds,
 };
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
-use arcweft_presentation::text_input::{TextControlValue, TextInputPrivacy, TextRevision};
 use arcweft_render_wgpu::geometry::{
-    RenderActionButton, RenderActionButtonAction, RenderTextInputControl, RenderTextSubmitImePolicy,
+    RenderActionButton, RenderActionButtonAction, RenderTextInputControl,
 };
 use num_traits::ToPrimitive;
 use thiserror::Error;
@@ -28,7 +27,7 @@ pub enum RuntimeActionButtonLoweringError {
 
 impl RuntimeActionButtonLowerer {
     pub fn lower_buttons(
-        buttons: &[UiRuntimeActionButton],
+        buttons: &[ViewRuntimeActionButton],
         text_inputs: &[RenderTextInputControl],
     ) -> Result<Vec<RenderActionButton>, RuntimeActionButtonLoweringError> {
         buttons
@@ -38,14 +37,16 @@ impl RuntimeActionButtonLowerer {
     }
 
     fn lower_button(
-        button: &UiRuntimeActionButton,
+        button: &ViewRuntimeActionButton,
         text_inputs: &[RenderTextInputControl],
     ) -> Result<RenderActionButton, RuntimeActionButtonLoweringError> {
         Ok(RenderActionButton {
             target: lower_target(&button.target)?,
             label: button.label.clone(),
             enabled: button.enabled,
+            containing_scroll_region: button.containing_scroll_region.clone(),
             bounds: lower_bounds(button.bounds),
+            viewport_clip: None,
             style: lower_control_style(&button.style),
             action: lower_action(button, text_inputs)?,
         })
@@ -53,39 +54,12 @@ impl RuntimeActionButtonLowerer {
 }
 
 fn lower_action(
-    button: &UiRuntimeActionButton,
+    button: &ViewRuntimeActionButton,
     text_inputs: &[RenderTextInputControl],
 ) -> Result<RenderActionButtonAction, RuntimeActionButtonLoweringError> {
     match &button.action {
-        UiRuntimeActionButtonAction::Noop => Ok(RenderActionButtonAction::Noop),
-        UiRuntimeActionButtonAction::TextInputSubmit {
-            input_target,
-            ime_policy,
-        } => {
-            let input = text_inputs
-                .iter()
-                .find(|input| input.target.id().as_str() == input_target)
-                .ok_or_else(
-                    || RuntimeActionButtonLoweringError::MissingTextControlTarget {
-                        button: button.public_id.clone(),
-                        target: input_target.clone(),
-                    },
-                )?;
-            let privacy = if input.options.is_secure() {
-                TextInputPrivacy::Sensitive
-            } else {
-                TextInputPrivacy::Plain
-            };
-            Ok(RenderActionButtonAction::TextInputSubmit {
-                input_target: input.target.clone(),
-                session: input.session,
-                value: TextControlValue::new(input.value.clone(), privacy),
-                selection: input.selection,
-                revision: TextRevision::default(),
-                ime_policy: lower_ime_policy(*ime_policy),
-            })
-        }
-        UiRuntimeActionButtonAction::ActionInvoke { action, payload } => {
+        ViewRuntimeActionButtonAction::Noop => Ok(RenderActionButtonAction::Noop),
+        ViewRuntimeActionButtonAction::ActionInvoke { action, payload } => {
             let action = PublicId::try_new(action).map_err(|_| {
                 RuntimeActionButtonLoweringError::InvalidAction {
                     button: button.public_id.clone(),
@@ -102,13 +76,13 @@ fn lower_action(
 
 fn lower_action_payload(
     button: &str,
-    payload: Option<&UiActionPayloadResource>,
+    payload: Option<&ViewActionPayloadResource>,
     text_inputs: &[RenderTextInputControl],
 ) -> Result<Option<String>, RuntimeActionButtonLoweringError> {
     payload
         .map(|payload| match payload {
-            UiActionPayloadResource::LiteralString { value } => Ok(value.clone()),
-            UiActionPayloadResource::TextControlProjection { input, .. } => text_inputs
+            ViewActionPayloadResource::LiteralString { value } => Ok(value.clone()),
+            ViewActionPayloadResource::TextControlProjection { input, .. } => text_inputs
                 .iter()
                 .find(|control| control.target.id().as_str() == input)
                 .map(|control| control.value.clone())
@@ -130,21 +104,13 @@ fn lower_target(target: &str) -> Result<InteractionTarget, RuntimeActionButtonLo
         })
 }
 
-fn lower_bounds(bounds: UiRuntimeButtonBounds) -> HitRect {
+fn lower_bounds(bounds: ViewRuntimeButtonBounds) -> HitRect {
     HitRect::new(
         milli_i32_to_f32(bounds.x_milli),
         milli_i32_to_f32(bounds.y_milli),
         milli_u32_to_f32(bounds.width_milli),
         milli_u32_to_f32(bounds.height_milli),
     )
-}
-
-fn lower_ime_policy(policy: UiTextSubmitImePolicy) -> RenderTextSubmitImePolicy {
-    match policy {
-        UiTextSubmitImePolicy::Commit => RenderTextSubmitImePolicy::Commit,
-        UiTextSubmitImePolicy::Cancel => RenderTextSubmitImePolicy::Cancel,
-        UiTextSubmitImePolicy::Reject => RenderTextSubmitImePolicy::Reject,
-    }
 }
 
 fn milli_i32_to_f32(value: i32) -> f32 {

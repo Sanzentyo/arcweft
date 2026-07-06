@@ -4,7 +4,7 @@ fn score_i16(base: i16, bonus: i16) -> i16 {
 }
 
 bench @bench.dense_i16_map_pure_batch {
-    measure iterations = 4 { start(@flow.dense_i16_map_pure_batch) }
+    measure iterations = 4 { goto @flow.dense_i16_map_pure_batch }
 }
 
 flow @flow.dense_i16_map_pure_batch dense_i16_map_pure_batch {

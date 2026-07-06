@@ -8,7 +8,7 @@ pub surface character @character.alice Alice as alice {
 }
 
 entry game {
-    start @flow.vertical_lr_ruby_text_combine_golden
+    goto @flow.vertical_lr_ruby_text_combine_golden
 }
 
 flow @flow.vertical_lr_ruby_text_combine_golden vertical_lr_ruby_text_combine_golden {

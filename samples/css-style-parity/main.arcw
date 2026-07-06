@@ -43,7 +43,7 @@ style css_style_parity {
 
   Panel {
     background-color = token(color.panel)
-    color = system_color(surface_text)
+    color = system_color(panel_text)
     font-family = token(font.display_stack)
   }
 

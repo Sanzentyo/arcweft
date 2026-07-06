@@ -9,6 +9,7 @@ pub mod display;
 pub mod generation_runtime;
 pub mod presentation_handles;
 pub mod session;
+pub mod session_save;
 pub mod swap;
 pub mod task;
 pub mod text_control_writeback;

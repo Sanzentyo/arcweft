@@ -74,11 +74,11 @@ pub struct CssCoverageMatrixRow {
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub enum CssCascadeLayer {
     ArcweftBase,
-    ArcweftComponent,
+    ArcweftView,
     CssReset,
     #[default]
     CssBase,
-    CssComponent,
+    CssView,
     CssInline,
 }
 
@@ -216,12 +216,12 @@ pub const CSS_COVERAGE_MATRIX: &[CssCoverageMatrixRow] = &[
     CssCoverageMatrixRow::new(
         CssCoverageFeature::ArcweftLayer,
         CssCoverageStatus::SupportedNow,
-        "Arcweft base/component style layers are ordered before CSS author layers.",
+        "Arcweft base/view style layers are ordered before CSS author layers.",
     ),
     CssCoverageMatrixRow::new(
         CssCoverageFeature::CssLayer,
         CssCoverageStatus::SupportedNow,
-        "CSS reset/base/component/inline layer order is represented in coverage evidence and tests.",
+        "CSS reset/base/view/inline layer order is represented in coverage evidence and tests.",
     ),
     CssCoverageMatrixRow::new(
         CssCoverageFeature::Specificity,
@@ -385,10 +385,10 @@ impl CssCascadeLayer {
     pub const fn order(self) -> u16 {
         match self {
             Self::ArcweftBase => 10,
-            Self::ArcweftComponent => 20,
+            Self::ArcweftView => 20,
             Self::CssReset => 30,
             Self::CssBase => 40,
-            Self::CssComponent => 50,
+            Self::CssView => 50,
             Self::CssInline => 60,
         }
     }

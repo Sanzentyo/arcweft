@@ -955,6 +955,7 @@ dependencies = [
  "arcweft-runtime-driver",
  "arcweft-runtime-host",
  "arcweft-runtime-plan",
+ "arcweft-save",
  "clap",
  "num-traits",
  "png",
@@ -982,6 +983,8 @@ dependencies = [
  "arcweft-render-wgpu",
  "arcweft-runtime-driver",
  "num-traits",
+ "serde",
+ "serde_json",
  "thiserror 2.0.18",
 ]
 
@@ -993,6 +996,8 @@ dependencies = [
  "arcweft-core",
  "arcweft-id",
  "arcweft-image",
+ "arcweft-lang-hir",
+ "arcweft-lang-syntax",
  "arcweft-layout",
  "arcweft-player-scene",
  "arcweft-presentation",
@@ -1001,6 +1006,7 @@ dependencies = [
  "arcweft-render-wgpu",
  "arcweft-runtime-driver",
  "arcweft-runtime-host",
+ "arcweft-runtime-plan",
  "futures-channel",
  "js-sys",
  "num-traits",
@@ -1181,6 +1187,7 @@ dependencies = [
  "arcweft-presentation",
  "arcweft-render-text",
  "arcweft-runtime-plan",
+ "arcweft-save",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1265,6 +1272,8 @@ version = "0.1.0"
 dependencies = [
  "arcweft-data",
  "blake3",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

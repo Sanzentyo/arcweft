@@ -146,11 +146,13 @@ impl Default for TextControlFontContext {
 pub struct RenderTextInputControl {
     pub target: InteractionTarget,
     pub session: TextInputSessionId,
+    pub containing_scroll_region: Option<String>,
     pub value: String,
     pub selection: TextRange<TextByteOffset>,
     pub options: TextInputOptions,
     pub role: SemanticRole,
     pub bounds: HitRect,
+    pub viewport_clip: Option<HitRect>,
     pub label: Option<String>,
     pub style: RenderControlStyle,
 }
@@ -168,11 +170,13 @@ impl RenderTextInputControl {
         Self {
             target,
             session,
+            containing_scroll_region: None,
             value: value.into(),
             selection,
             options,
             role,
             bounds,
+            viewport_clip: None,
             label: None,
             style: RenderControlStyle::default(),
         }
@@ -181,6 +185,21 @@ impl RenderTextInputControl {
     #[must_use]
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_containing_scroll_region(
+        mut self,
+        containing_scroll_region: impl Into<String>,
+    ) -> Self {
+        self.containing_scroll_region = Some(containing_scroll_region.into());
+        self
+    }
+
+    #[must_use]
+    pub const fn with_viewport_clip(mut self, viewport_clip: HitRect) -> Self {
+        self.viewport_clip = Some(viewport_clip);
         self
     }
 
@@ -250,10 +269,11 @@ pub(super) fn build_text_input(
     let visual = control.style.visual_for_state(state);
     let radii = visual.radii();
     let visual_layout = visual_layout_for_control(control, &options, &visual, font_context);
+    let visible_bounds = visible_control_bounds(control).unwrap_or(control.bounds);
     let backdrop_start = control_backdrops.len();
-    push_control_backdrop_plan(control_backdrops, &control.target, control.bounds, &visual);
+    push_control_backdrop_plan(control_backdrops, &control.target, visible_bounds, &visual);
     let shadow_start = control_shadows.len();
-    push_control_shadow_plan(control_shadows, &control.target, control.bounds, &visual);
+    push_control_shadow_plan(control_shadows, &control.target, visible_bounds, &visual);
     let rectangle_start = rectangles.len();
     rectangles.push(PaintRect::with_radii(
         control.bounds,
@@ -292,24 +312,27 @@ pub(super) fn build_text_input(
     }
 
     let text_start = text.len();
-    text.push(RenderTextBlock {
-        text: visual_layout.display_value.clone(),
-        bounds: visual_layout.text_bounds,
-        clip_bounds: Some(visual_layout.clip_bounds),
-        buffer_width: Some(visual_layout.buffer_size.width),
-        buffer_height: Some(visual_layout.buffer_size.height),
-        font_size: text_control_font_size(control),
-        line_height: text_control_line_height(control),
-        font_family: control_font_family(&visual),
-        weight: RenderTextWeight::Regular,
-        slant: RenderTextSlant::Upright,
-        rgba: visual.text.unwrap_or(palette.choice_text),
-    });
+    if let Some(clip_bounds) = clipped_viewport_bounds(visual_layout.clip_bounds, control) {
+        text.push(RenderTextBlock {
+            text: visual_layout.display_value.clone(),
+            bounds: visual_layout.text_bounds,
+            clip_bounds: Some(clip_bounds),
+            buffer_width: Some(visual_layout.buffer_size.width),
+            buffer_height: Some(visual_layout.buffer_size.height),
+            font_size: text_control_font_size(control),
+            line_height: text_control_line_height(control),
+            font_family: control_font_family(&visual),
+            weight: RenderTextWeight::Regular,
+            slant: RenderTextSlant::Upright,
+            rgba: visual.text.unwrap_or(palette.choice_text),
+        });
+    }
     let filter_start = control_filters.len();
-    push_control_filter_plan(control_filters, &control.target, control.bounds, &visual);
+    push_control_filter_plan(control_filters, &control.target, visible_bounds, &visual);
+    apply_viewport_clip_to_rectangles(&mut rectangles[rectangle_start..], control.viewport_clip);
     let paint = PreparedControlPaint {
         target: control.target.clone(),
-        bounds: control.bounds,
+        bounds: visible_bounds,
         rectangle_range: rectangle_start..rectangles.len(),
         text_range: text_start..text.len(),
         backdrop_range: backdrop_start..control_backdrops.len(),
@@ -321,7 +344,7 @@ pub(super) fn build_text_input(
         layer.clone(),
         control.target.clone(),
         control.role,
-        control.bounds,
+        visible_bounds,
     );
     if let Some(label) = &control.label {
         node = node.with_label(label.clone());
@@ -495,17 +518,49 @@ fn clip_text_local_rect_to_inner(
     control: &RenderTextInputControl,
     rect: HitRect,
 ) -> Option<HitRect> {
-    intersect_hit_rect(rect, text_local_inner_bounds(control))
+    super::intersect_hit_rect(rect, text_local_inner_bounds(control))
 }
 
-fn intersect_hit_rect(left: HitRect, right: HitRect) -> Option<HitRect> {
-    let x = left.x.max(right.x);
-    let y = left.y.max(right.y);
-    let right_edge = (left.x + left.width).min(right.x + right.width);
-    let bottom_edge = (left.y + left.height).min(right.y + right.height);
-    let width = right_edge - x;
-    let height = bottom_edge - y;
-    (width > 0.0 && height > 0.0).then(|| HitRect::new(x, y, width, height))
+fn visible_control_bounds(control: &RenderTextInputControl) -> Option<HitRect> {
+    control.viewport_clip.map_or(Some(control.bounds), |clip| {
+        super::intersect_hit_rect(control.bounds, clip)
+    })
+}
+
+fn clipped_viewport_bounds(bounds: HitRect, control: &RenderTextInputControl) -> Option<HitRect> {
+    control
+        .viewport_clip
+        .map_or(Some(bounds), |clip| super::intersect_hit_rect(bounds, clip))
+}
+
+fn apply_viewport_clip_to_rectangles(rectangles: &mut [PaintRect], viewport_clip: Option<HitRect>) {
+    let Some(viewport_clip) = viewport_clip else {
+        return;
+    };
+    for rectangle in rectangles {
+        let next_clip = rectangle.clip.map_or(
+            Some(super::PaintRectClip {
+                bounds: viewport_clip,
+                radii: super::PaintRectRadii::ZERO,
+            }),
+            |clip| {
+                super::intersect_hit_rect(clip.bounds, viewport_clip).map(|bounds| {
+                    super::PaintRectClip {
+                        bounds,
+                        radii: clip.radii,
+                    }
+                })
+            },
+        );
+        match next_clip {
+            Some(clip) => {
+                rectangle.clip = Some(clip);
+            }
+            None => {
+                rectangle.rgba[3] = 0.0;
+            }
+        }
+    }
 }
 
 fn text_control_font_size(control: &RenderTextInputControl) -> f32 {
@@ -1008,6 +1063,7 @@ mod tests {
             preferences: RenderPreferences::default(),
             interaction: InteractionVisualState::default(),
             choice_scroll: ChoiceScroll::default(),
+            scroll_regions: Vec::new(),
         }
     }
 

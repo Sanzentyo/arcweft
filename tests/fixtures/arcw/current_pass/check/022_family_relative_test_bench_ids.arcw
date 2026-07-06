@@ -3,7 +3,7 @@ flow @flow.opening opening {
 }
 
 test @test:.opening scenario {
-    start(@flow.opening)
+    goto @flow.opening
     expect.no_assertion_failures()
 }
 

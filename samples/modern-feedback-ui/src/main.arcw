@@ -22,6 +22,9 @@ pub image glass_bg {
   visible = true
 }
 
+pub action feedback.submit_name(value: String)
+pub action feedback.submit_brief(value: String)
+
 entry game @entry.modern_feedback_ui {
   goto @flow.modern_feedback_ui
 }
@@ -132,7 +135,10 @@ pub style modern_feedback_panel {
   environment text_scale_at_least_milli = 1000
 }
 
-pub component ModernFeedbackPanel() {
+pub view ModernFeedbackPanel() {
+  let visitor_name = input.text(@input:.visitor_name, initial = "")
+  let product_brief = input.text(@input:.product_brief, initial = "")
+
   Panel {
     Column {
       Text("Control deck")
@@ -142,41 +148,52 @@ pub component ModernFeedbackPanel() {
           font-weight = text("720")
         }
 
-      Text("A player-rendered component with Arcweft style tokens, input resources, and flow-backed submit actions.")
+      Text("A player-rendered view with Arcweft style tokens, input resources, and flow-backed submit actions.")
         .style {
           color = rgba(164, 176, 194, 255)
           font-size = milli(16000)
       }
 
       Row {
-        TextField(@input:.visitor_name, value: "", purpose: name, enter_key: next)
+        TextField(visitor_name)
           .label("Name")
           .placeholder("Your name")
+          .purpose(.name)
+          .enter_key(.next)
           .style(@style:.modern_feedback_panel)
+          .on_submit {
+            action.invoke(@action:.feedback.submit_name, value = visitor_name.text)
+          }
 
-        Button(@button:.continue)
-          .label("Continue")
+        Button(@button:.continue, label = "Continue")
           .style(@style:.modern_feedback_panel)
           .enabled(true)
           .focusable(true)
-          .on_click(|| text_submit @input:.visitor_name)
+          .on_click {
+            action.invoke(@action:.feedback.submit_name, value = visitor_name.text)
+          }
       }
 
-      TextArea(@input:.product_brief, value: "", purpose: text, enter_key: send)
+      TextArea(product_brief)
         .label("Product brief")
         .placeholder("Write one sharp product idea")
+        .purpose(.text)
+        .enter_key(.send)
         .style(@style:.modern_feedback_panel)
+        .on_submit {
+          action.invoke(@action:.feedback.submit_brief, value = product_brief.text)
+        }
 
       Row {
-        Button(@button:.send_brief)
-          .label("Send brief")
+        Button(@button:.send_brief, label = "Send brief")
           .style(@style:.modern_feedback_panel)
           .enabled(true)
           .focusable(true)
-          .on_click(|| text_submit @input:.product_brief)
+          .on_click {
+            action.invoke(@action:.feedback.submit_brief, value = product_brief.text)
+          }
 
-        Button(@button:.draft_status)
-          .label("Draft saved")
+        Button(@button:.draft_status, label = "Draft saved")
           .style(@style:.modern_feedback_panel)
           .enabled(false)
           .focusable(false)
@@ -188,13 +205,14 @@ pub component ModernFeedbackPanel() {
 flow modern_feedback_ui {
   player_viewport(width = 1280px, height = 720px, fit = contain)
   image(@image.glass_bg)
-  let panel = component(@component:.ModernFeedbackPanel, lifetime = .scope)
+  let panel = view(@view:.ModernFeedbackPanel)
 
   concierge:
-    This sample pairs a translucent component/View panel with a normal Arcweft flow.[p]
+    This sample pairs a translucent view panel with a normal Arcweft flow.[p]
     Fill the name field first, then submit the brief with Enter, IME send, or the Send brief button.
 
-  let visitor_name = text_submit @input.visitor_name
+  let name_event = receive action(@action:.feedback.submit_name)
+  let visitor_name = name_event.value
 
   if visitor_name == "" {
     concierge: We will keep the greeting anonymous for now.
@@ -204,16 +222,16 @@ flow modern_feedback_ui {
     concierge: Nice to meet you, #[visitor_name].
   }
 
-  let brief = text_submit @input.product_brief
+  let brief_event = receive action(@action:.feedback.submit_brief)
+  let brief = brief_event.value
 
   if brief == "" {
     concierge: No brief was submitted. The UI stays ready for another pass.
   }
 
   if brief != "" {
-    concierge: Captured the component-backed brief. The next runtime step can branch into a planning route.
+    concierge: Captured the view-backed brief. The next runtime step can branch into a planning route.
   }
 
-  panel.close()
   return brief
 }

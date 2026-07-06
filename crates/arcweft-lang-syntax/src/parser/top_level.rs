@@ -3,8 +3,8 @@
 use super::{
     Parser, TopLevelDispatch, TopLevelSinks,
     headers::{
-        DeclEntityId, parse_required_decl_entity_ref_or_marker, parse_required_entity_ref,
-        parse_visibility_prefix, simple_error, slice_offset,
+        DeclEntityId, parse_required_decl_entity_ref_or_marker, parse_visibility_prefix,
+        simple_error, slice_offset,
     },
     helpers::{
         is_relative_id_path, normalize_module_path, parse_inner_attribute, parse_outer_attribute,
@@ -18,7 +18,7 @@ use crate::ast::{
     items::{
         Item, RawItem, StyleItem, StyleItemInit, UiStyleAssignOpDecl, UiStyleDeclarationDecl,
         UiStyleEnvironmentPredicateDecl, UiStyleRuleDecl, UiStyleSelectorPartDecl,
-        UiStyleTokenDecl, UiStyleValueDecl, UiTextInputItem, UiTextInputKind,
+        UiStyleTokenDecl, UiStyleValueDecl,
     },
     style::StyleSyntax,
 };
@@ -151,27 +151,6 @@ impl Parser<'_> {
         rest.starts_with("asset set ")
     }
 
-    fn top_level_item_has_removed_ui_action_button(trimmed: &str) -> bool {
-        let (_, rest) = super::headers::parse_visibility_prefix(trimmed);
-        let rest = rest.trim_start();
-        let rest = rest.strip_prefix("surface ").unwrap_or(rest);
-        rest == "ui action_button"
-            || rest.starts_with("ui action_button ")
-            || rest.starts_with("ui action_button{")
-    }
-
-    fn top_level_item_has_removed_ui_text_input(trimmed: &str) -> bool {
-        let (_, rest) = super::headers::parse_visibility_prefix(trimmed);
-        let rest = rest.trim_start();
-        let rest = rest.strip_prefix("surface ").unwrap_or(rest);
-        ["ui text_input", "ui text_area", "ui secure_field"]
-            .iter()
-            .any(|prefix| {
-                rest.strip_prefix(prefix)
-                    .is_some_and(|tail| tail.is_empty() || tail.starts_with(char::is_whitespace))
-            })
-    }
-
     fn top_level_item_has_removed_hot_checkpoint(trimmed: &str) -> bool {
         let (_, rest) = super::headers::parse_visibility_prefix(trimmed);
         let rest = rest.trim_start();
@@ -191,14 +170,6 @@ impl Parser<'_> {
         *sinks.source_attrs_open = false;
         if Self::top_level_item_has_removed_asset_set(trimmed) {
             self.reject_removed_asset_set_decl(range);
-            return;
-        }
-        if Self::top_level_item_has_removed_ui_action_button(trimmed) {
-            self.reject_removed_ui_action_button_decl(range);
-            return;
-        }
-        if Self::top_level_item_has_removed_ui_text_input(trimmed) {
-            self.reject_removed_ui_text_input_decl(range);
             return;
         }
         if Self::top_level_item_has_removed_hot_checkpoint(trimmed) {
@@ -231,48 +202,6 @@ impl Parser<'_> {
             Some(line.text.trim()),
             [
                 "use direct typed entity references in source and manifest-backed finite sets for extern/reflection boundaries",
-            ],
-        );
-        self.reject_pending_doc(range);
-        self.reject_pending_attrs(range);
-        if line.text.contains('{') || self.next_nonblank_line_is_brace() {
-            let _ = self.take_flow_block_event();
-        } else {
-            self.index += 1;
-        }
-    }
-
-    fn reject_removed_ui_action_button_decl(&mut self, range: TextRange) {
-        let line = self.current().clone();
-        self.push_error(
-            range,
-            "`ui action_button` is not part of Arcweft component/View syntax",
-            ["Button(\"Send\", on_click: || text_submit @input:.target)"],
-            Some(line.text.trim()),
-            ["declare text controls and action buttons inside component/View"],
-        );
-        self.reject_pending_doc(range);
-        self.reject_pending_attrs(range);
-        if line.text.contains('{') || self.next_nonblank_line_is_brace() {
-            let _ = self.take_flow_block_event();
-        } else {
-            self.index += 1;
-        }
-    }
-
-    fn reject_removed_ui_text_input_decl(&mut self, range: TextRange) {
-        let line = self.current().clone();
-        self.push_error(
-            range,
-            "`ui text_input`, `ui text_area`, and `ui secure_field` were removed from top-level Arcweft syntax",
-            [
-                "TextField(id: @input:.target, value: \"\")",
-                "TextArea(id: @input:.target, value: \"\")",
-                "SecureField(id: @input:.target, value: \"\")",
-            ],
-            Some(line.text.trim()),
-            [
-                "move the text control resource shape into a component/View `TextField`, `TextArea`, or `SecureField`",
             ],
         );
         self.reject_pending_doc(range);
@@ -356,7 +285,6 @@ impl Parser<'_> {
                         | CstTopLevelItemKind::ExternCapability
                         | CstTopLevelItemKind::DialogueDefaults
                         | CstTopLevelItemKind::Source
-                        | CstTopLevelItemKind::UiTextInput
                         | CstTopLevelItemKind::Style
                 ) {
                     self.reject_pending_attrs(range);
@@ -399,7 +327,6 @@ impl Parser<'_> {
             CstTopLevelItemKind::Bench => self.parse_bench_item().map(Item::Bench),
             CstTopLevelItemKind::Parser => self.parse_parser_item().map(Item::Parser),
             CstTopLevelItemKind::Source => self.parse_source_item().map(Item::Source),
-            CstTopLevelItemKind::UiTextInput => self.parse_ui_text_input().map(Item::UiTextInput),
             CstTopLevelItemKind::Style => self.parse_style().map(Item::Style),
             CstTopLevelItemKind::Flow
             | CstTopLevelItemKind::Agent
@@ -433,55 +360,6 @@ impl Parser<'_> {
             items.push(Item::Raw(RawItem::new(trimmed.to_owned(), None, range)));
             self.index += 1;
         }
-    }
-
-    fn parse_ui_text_input(&mut self) -> Option<UiTextInputItem> {
-        let attrs = self.take_pending_attrs();
-        let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_flow_block();
-        if !ok {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.end),
-                "unclosed block while parsing UI text input declaration",
-                ["}"],
-                Some(start_line.text.trim()),
-                ["insert a closing `}` for the UI text input body"],
-            );
-            return None;
-        }
-        let head = head.trim();
-        let (visibility, rest) = parse_visibility_prefix(head);
-        let rest = rest.trim_start().strip_prefix("ui")?.trim_start();
-        let (kind, rest) = parse_ui_text_input_kind(rest)?;
-        let id_base = start_line.start + slice_offset(head, rest);
-        let (id, trailing) =
-            parse_required_entity_ref(rest.trim_start(), id_base, &mut self.errors)?;
-        if !trailing.trim().is_empty() {
-            self.push_error(
-                TextRange::new(id.range().end(), start_line.end),
-                "unexpected text after UI text input id",
-                ["{"],
-                Some(trailing.trim()),
-                ["move properties into the UI text input body"],
-            );
-        }
-        let fields = UiTextInputFields::parse(&body, start_line.start, &mut self.errors);
-        Some(
-            UiTextInputItem::new(
-                attrs,
-                visibility,
-                id,
-                kind,
-                TextRange::new(start_line.start, end),
-            )
-            .with_label(fields.label)
-            .with_value(fields.value)
-            .with_placeholder(fields.placeholder)
-            .with_purpose(fields.purpose)
-            .with_enter_key(fields.enter_key)
-            .with_submit(fields.submit)
-            .with_change(fields.change),
-        )
     }
 
     fn parse_style(&mut self) -> Option<StyleItem> {
@@ -673,99 +551,6 @@ fn parse_style_syntax_tail(
         ));
         None
     }
-}
-
-fn parse_ui_text_input_kind(input: &str) -> Option<(UiTextInputKind, &str)> {
-    [
-        ("text_input", UiTextInputKind::TextField),
-        ("text_area", UiTextInputKind::TextArea),
-        ("secure_field", UiTextInputKind::SecureField),
-    ]
-    .into_iter()
-    .find_map(|(keyword, kind)| {
-        input
-            .strip_prefix(keyword)
-            .filter(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
-            .map(|rest| (kind, rest.trim_start()))
-    })
-}
-
-#[derive(Default)]
-struct UiTextInputFields {
-    label: Option<String>,
-    value: Option<String>,
-    placeholder: Option<String>,
-    purpose: Option<String>,
-    enter_key: Option<String>,
-    submit: Option<EntityRef>,
-    change: Option<EntityRef>,
-}
-
-impl UiTextInputFields {
-    fn parse(body: &str, base: usize, errors: &mut Vec<super::ParseError>) -> Self {
-        let mut fields = Self::default();
-        for line in body.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///") {
-                continue;
-            }
-            let Some((name, value)) = split_top_level_binding(trimmed) else {
-                errors.push(simple_error(
-                    base,
-                    trimmed.len(),
-                    &format!("invalid UI text input field `{trimmed}`"),
-                    "name = value",
-                ));
-                continue;
-            };
-            fields.set(name.trim(), value.trim(), base, errors);
-        }
-        fields
-    }
-
-    fn set(&mut self, name: &str, value: &str, base: usize, errors: &mut Vec<super::ParseError>) {
-        match name {
-            "label" => self.label = ui_field_string(value),
-            "value" => self.value = ui_field_string(value),
-            "placeholder" => self.placeholder = ui_field_string(value),
-            "purpose" => self.purpose = ui_field_symbol(value),
-            "enter_key" => self.enter_key = ui_field_symbol(value),
-            "submit" => self.submit = ui_field_entity(value, base, errors),
-            "change" => self.change = ui_field_entity(value, base, errors),
-            _ => errors.push(simple_error(
-                base,
-                name.len(),
-                &format!("unknown UI text input field `{name}`"),
-                "label | value | placeholder | purpose | enter_key | submit | change",
-            )),
-        }
-    }
-}
-
-fn ui_field_string(value: &str) -> Option<String> {
-    match parse_expr_lossy(value) {
-        Expr::Literal(Literal::String(value)) => Some(value),
-        Expr::Path(value) => Some(value.as_label().to_owned()),
-        Expr::ShortVariant(value) => Some(format!(".{value}")),
-        _ => None,
-    }
-}
-
-fn ui_field_symbol(value: &str) -> Option<String> {
-    match parse_expr_lossy(value) {
-        Expr::Literal(Literal::String(value)) => Some(value),
-        Expr::Path(value) => Some(value.as_label().to_owned()),
-        Expr::ShortVariant(value) => Some(format!(".{value}")),
-        _ => None,
-    }
-}
-
-fn ui_field_entity(
-    value: &str,
-    base: usize,
-    errors: &mut Vec<super::ParseError>,
-) -> Option<EntityRef> {
-    parse_required_entity_ref(value, base, errors).map(|(entity, _)| entity)
 }
 
 #[derive(Default)]
@@ -1028,7 +813,7 @@ fn parse_ui_style_value(
     } else if let Some(value) = call_arg(source, "milli") {
         parse_i32_literal(value).map(UiStyleValueDecl::Milli)
     } else if let Some(value) = call_arg(source, "text") {
-        ui_field_string(value).map(UiStyleValueDecl::Text)
+        ui_style_text_value(value).map(UiStyleValueDecl::Text)
     } else if source.starts_with('[') && source.ends_with(']') {
         parse_ui_style_list_value(source, base, errors)
     } else if let Some(value) = call_arg(source, "resource") {
@@ -1059,6 +844,15 @@ fn parse_ui_style_list_value(
         .map(|value| parse_ui_style_list_item(value, base, errors))
         .collect::<Option<Vec<_>>>()?;
     Some(UiStyleValueDecl::List(values))
+}
+
+fn ui_style_text_value(value: &str) -> Option<String> {
+    match parse_expr_lossy(value) {
+        Expr::Literal(Literal::String(value)) => Some(value),
+        Expr::Path(value) => Some(value.as_label().to_owned()),
+        Expr::ShortVariant(value) => Some(format!(".{value}")),
+        _ => None,
+    }
 }
 
 fn parse_ui_style_list_item(

@@ -57,23 +57,26 @@ flow @flow.opening opening {
 }
 
 #[test]
-fn resolves_component_view_text_control_inputs() {
+fn resolves_view_text_control_inputs() {
     let tree = parse_ok(
         r#"
-component FeedbackForm() {
+view FeedbackForm() {
     TextField(id: @input:.feedback, value: "")
 }
 
+action feedback.submit(value: String)
+
 flow @flow.submit submit {
-    let submitted = text_submit @input.feedback
+    let event = receive action(@action.feedback.submit)
+    let submitted = event.value
     return submitted
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("component input fixture lowers");
+    let hir = lower_to_hir(&tree).expect("view input fixture lowers");
     let registry = registry_from_hir(&hir);
 
-    validate_hir_references(&hir, &registry).expect("component text input resolves");
+    validate_hir_references(&hir, &registry).expect("view text input resolves");
 }
 
 #[test]

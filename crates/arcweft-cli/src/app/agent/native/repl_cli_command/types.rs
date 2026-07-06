@@ -57,7 +57,7 @@ pub(super) struct CliCaptureCommand {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum CliCaptureTarget {
     Viewport,
-    Component { id: String },
+    View { id: String },
     Layer { id: String },
     Object { id: String },
 }
@@ -280,7 +280,7 @@ impl CliCaptureTarget {
     pub(super) fn to_repl_arg(&self) -> String {
         match self {
             Self::Viewport => String::new(),
-            Self::Component { id } => format!("component {id}"),
+            Self::View { id } => format!("view {id}"),
             Self::Layer { id } => format!("layer {id}"),
             Self::Object { id } => format!("object {id}"),
         }
@@ -290,7 +290,7 @@ impl CliCaptureTarget {
     pub(super) fn label(&self) -> String {
         match self {
             Self::Viewport => "viewport".to_owned(),
-            Self::Component { id } => format!("component:{id}"),
+            Self::View { id } => format!("view:{id}"),
             Self::Layer { id } => format!("layer:{id}"),
             Self::Object { id } => format!("object:{id}"),
         }

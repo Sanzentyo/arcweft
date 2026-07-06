@@ -90,7 +90,7 @@ impl DisplayList {
                     FragmentKind::RichText(source) => DisplayItemKind::RichText(source),
                     FragmentKind::Image(image) => DisplayItemKind::Image(image),
                     FragmentKind::Custom(custom) => DisplayItemKind::Custom(custom),
-                    FragmentKind::Container(_) | FragmentKind::Component(_) => return None,
+                    FragmentKind::Container(_) | FragmentKind::View(_) => return None,
                 };
                 Some(layouts.require(id).map(|layout| DisplayItem {
                     node: id,

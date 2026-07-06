@@ -4,7 +4,7 @@ fn branch_score(item: i64, bias: i64) -> i64 {
 }
 
 bench @bench.branching_iter_pure {
-    measure iterations = 6 { start(@flow.branching_iter_pure) }
+    measure iterations = 6 { goto @flow.branching_iter_pure }
 }
 
 flow @flow.branching_iter_pure branching_iter_pure {

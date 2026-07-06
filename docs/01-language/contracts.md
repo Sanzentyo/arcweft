@@ -1,6 +1,6 @@
 # 契約プログラミング
 
-契約は関数、flow、reducer、Activity、parser、shader、UI component、Rust extern に付けられる。
+契約は関数、flow、reducer、Activity、parser、shader、UI view、Rust extern に付けられる。
 
 ## requires / ensures
 

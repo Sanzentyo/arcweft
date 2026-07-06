@@ -155,7 +155,7 @@ fn agent_project_graph_snapshot_preserves_project_callables() {
     assert!(graph.symbols.iter().any(|symbol| {
         symbol.symbol_id == "project:callable:current_route"
             && symbol.qualified_name.as_deref() == Some("current_route")
-            && symbol.kind == "project_view"
+            && symbol.kind == "project_reducer"
     }));
     assert!(graph.edges.iter().any(|edge| {
         edge.from_symbol_id == "project:summary"
@@ -175,7 +175,7 @@ fn agent_project_graph_snapshot_preserves_project_callables() {
 fn agent_project_graph_snapshot_preserves_flow_control_summary() {
     let tree = parse_source(
         r#"
-pub view current_route() -> Ref<Flow> {
+pub reducer current_route() -> Ref<Flow> {
 return @flow.done
 }
 

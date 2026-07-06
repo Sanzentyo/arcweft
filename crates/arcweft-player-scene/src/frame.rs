@@ -4,10 +4,13 @@ use crate::images::{BundleImageCatalog, BundleImageCatalogError};
 use crate::input::InputController;
 use crate::text_controls::{RuntimeTextControlLowerer, RuntimeTextControlLoweringError};
 use arcweft_layout::{ContentRect, LayoutError, LayoutSize, ScalePolicy};
+use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::text_editor::TextEditorError;
 use arcweft_render_wgpu::geometry::{
-    FramePlanError, PreparedFrame, RenderChoiceItem, RenderDialogue, RenderPreferences,
-    RenderScene, RenderViewport, SharedFramePlanContext, SharedFramePlanStats,
+    FramePlanError, PreparedFrame, RenderChoiceItem, RenderDialogue, RenderFontFamily,
+    RenderPreferences, RenderScene, RenderScrollAxis, RenderScrollOverflow, RenderScrollRegion,
+    RenderTextBlock, RenderTextSlant, RenderTextWeight, RenderViewport, SharedFramePlanContext,
+    SharedFramePlanStats,
 };
 use arcweft_runtime_driver::display::{BundlePresentationSnapshot, BundleViewportFit};
 use num_traits::ToPrimitive;
@@ -181,6 +184,12 @@ impl PlayerFramePlanner {
             preferences: request.preferences,
             interaction: input.visual_state(),
             choice_scroll: input.choice_scroll(),
+            scroll_regions: request
+                .presentation
+                .scroll_regions
+                .iter()
+                .map(|region| render_scroll_region(input, region))
+                .collect(),
         })
     }
 
@@ -190,6 +199,128 @@ impl PlayerFramePlanner {
     ) -> Result<PlayerPreparedFrame, PlayerFrameError> {
         PlayerFramePlannerState::new().prepare(input, request)
     }
+}
+
+fn render_scroll_region(
+    input: &InputController,
+    region: &arcweft_bundle::resource_codec::ViewRuntimeScrollRegion,
+) -> RenderScrollRegion {
+    RenderScrollRegion {
+        id: region.public_id.clone(),
+        bounds: HitRect::new(
+            milli_i32_to_f32(region.bounds.x_milli),
+            milli_i32_to_f32(region.bounds.y_milli),
+            milli_u32_to_f32(region.bounds.width_milli),
+            milli_u32_to_f32(region.bounds.height_milli),
+        ),
+        content_width: milli_u32_to_f32(region.content_width_milli),
+        content_height: milli_u32_to_f32(region.content_height_milli),
+        offset_x: input.scroll_offset_x(&region.public_id),
+        offset_y: input.scroll_offset_y(&region.public_id),
+        axis: render_scroll_axis(region.axis),
+        overflow: render_scroll_overflow(region.overflow),
+    }
+}
+
+const fn render_scroll_axis(
+    axis: arcweft_bundle::resource_codec::ViewScrollAxis,
+) -> RenderScrollAxis {
+    match axis {
+        arcweft_bundle::resource_codec::ViewScrollAxis::Vertical => RenderScrollAxis::Vertical,
+        arcweft_bundle::resource_codec::ViewScrollAxis::Horizontal => RenderScrollAxis::Horizontal,
+    }
+}
+
+fn render_scroll_overflow(
+    overflow: arcweft_bundle::resource_codec::ViewScrollOverflowPolicy,
+) -> RenderScrollOverflow {
+    match overflow {
+        arcweft_bundle::resource_codec::ViewScrollOverflowPolicy::Auto => {
+            RenderScrollOverflow::Auto
+        }
+        arcweft_bundle::resource_codec::ViewScrollOverflowPolicy::Scroll => {
+            RenderScrollOverflow::Scroll
+        }
+        arcweft_bundle::resource_codec::ViewScrollOverflowPolicy::Hidden => {
+            RenderScrollOverflow::Hidden
+        }
+    }
+}
+
+fn milli_i32_to_f32(value: i32) -> f32 {
+    value.to_f32().unwrap_or(0.0) / 1_000.0
+}
+
+fn milli_u32_to_f32(value: u32) -> f32 {
+    value.to_f32().unwrap_or(f32::MAX) / 1_000.0
+}
+
+fn render_text_blocks(
+    scene: &RenderScene,
+    blocks: &[arcweft_bundle::resource_codec::ViewRuntimeTextBlock],
+) -> Vec<RenderTextBlock> {
+    let text_scale = f32::from(scene.preferences.text_scale_milli) / 1_000.0;
+    blocks
+        .iter()
+        .filter_map(|block| render_text_block(scene, block, text_scale))
+        .collect()
+}
+
+fn render_text_block(
+    scene: &RenderScene,
+    block: &arcweft_bundle::resource_codec::ViewRuntimeTextBlock,
+    text_scale: f32,
+) -> Option<RenderTextBlock> {
+    let bounds = HitRect::new(
+        milli_i32_to_f32(block.bounds.x_milli),
+        milli_i32_to_f32(block.bounds.y_milli),
+        milli_u32_to_f32(block.bounds.width_milli),
+        milli_u32_to_f32(block.bounds.height_milli),
+    );
+    let (bounds, clip_bounds) =
+        scroll_adjusted_text_bounds(scene, block.containing_scroll_region.as_deref(), bounds)?;
+    Some(RenderTextBlock {
+        text: block.text.clone(),
+        bounds,
+        clip_bounds,
+        buffer_width: Some(bounds.width),
+        buffer_height: Some(bounds.height),
+        font_size: 20.0 * text_scale,
+        line_height: 24.0 * text_scale,
+        font_family: RenderFontFamily::SansSerif,
+        weight: RenderTextWeight::Regular,
+        slant: RenderTextSlant::Upright,
+        rgba: [245, 245, 240, 255],
+    })
+}
+
+fn scroll_adjusted_text_bounds(
+    scene: &RenderScene,
+    containing_scroll_region: Option<&str>,
+    bounds: HitRect,
+) -> Option<(HitRect, Option<HitRect>)> {
+    let Some(scroll_region) = containing_scroll_region else {
+        return Some((bounds, None));
+    };
+    let region = scene
+        .scroll_regions
+        .iter()
+        .find(|region| region.id == scroll_region)?;
+    let shifted = HitRect::new(
+        bounds.x - region.clamped_offset_x(region.offset_x),
+        bounds.y - region.clamped_offset_y(region.offset_y),
+        bounds.width,
+        bounds.height,
+    );
+    hit_rects_intersect(shifted, region.bounds).then_some((shifted, Some(region.bounds)))
+}
+
+fn hit_rects_intersect(left: HitRect, right: HitRect) -> bool {
+    let left_max_x = left.x + left.width;
+    let left_max_y = left.y + left.height;
+    let right_max_x = right.x + right.width;
+    let right_max_y = right.y + right.height;
+    left.x < right_max_x && left_max_x > right.x && left.y < right_max_y && left_max_y > right.y
 }
 
 impl PlayerFramePlannerState {
@@ -221,17 +352,41 @@ impl PlayerFramePlannerState {
         };
         let content_rect = fit.content_rect(request.viewport)?;
         let mut scene = PlayerFramePlanner::render_scene(input, design_request)?;
-        let mut frame = map_prepared_frame(self.shared.prepare(&scene)?, request, content_rect);
+        let mut frame = map_prepared_frame(
+            self.prepare_frame_with_runtime_text(&scene, design_request.presentation)?,
+            request,
+            content_rect,
+        );
         if input.ensure_choice_focus(&frame) {
             scene = PlayerFramePlanner::render_scene(input, design_request)?;
-            frame = map_prepared_frame(self.shared.prepare(&scene)?, request, content_rect);
+            frame = map_prepared_frame(
+                self.prepare_frame_with_runtime_text(&scene, design_request.presentation)?,
+                request,
+                content_rect,
+            );
         }
         if input.apply_pending_text_pointer_selection(&frame)? {
             let scene = PlayerFramePlanner::render_scene(input, design_request)?;
-            let frame = map_prepared_frame(self.shared.prepare(&scene)?, request, content_rect);
+            let frame = map_prepared_frame(
+                self.prepare_frame_with_runtime_text(&scene, design_request.presentation)?,
+                request,
+                content_rect,
+            );
             return Ok(PlayerPreparedFrame { scene, frame });
         }
         Ok(PlayerPreparedFrame { scene, frame })
+    }
+
+    fn prepare_frame_with_runtime_text(
+        &mut self,
+        scene: &RenderScene,
+        presentation: &BundlePresentationSnapshot,
+    ) -> Result<PreparedFrame, PlayerFrameError> {
+        let mut frame = self.shared.prepare(scene)?;
+        frame
+            .text
+            .extend(render_text_blocks(scene, &presentation.text_blocks));
+        Ok(frame)
     }
 }
 

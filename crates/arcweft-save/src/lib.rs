@@ -4,9 +4,11 @@ use arcweft_data::{
     CodecRegistry, DataError, DataErrorKind, DecodeOptions, EncodeOptions, Result, TypeShape,
     Value, encode_with_shape,
 };
+use serde::{Serialize, de::DeserializeOwned};
 
 const MAGIC: &[u8; 8] = b"AWFS\0\0\0\x01";
 const HEADER_LEN: usize = MAGIC.len() + 4 + 4 + 4 + 32 + 4;
+pub const TYPED_JSON_CODEC_ID: &str = "json";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SaveDecodeOptions {
@@ -363,6 +365,78 @@ pub fn decode_save(
     Ok(value)
 }
 
+pub fn encode_typed_json_save<T>(
+    value: &T,
+    schema_id: SaveSchemaId,
+    schema_version: u32,
+) -> Result<Vec<u8>>
+where
+    T: Serialize,
+{
+    let payload = serde_json::to_vec(value).map_err(|error| {
+        DataError::new(
+            DataErrorKind::InvalidEncoding,
+            format!("failed to encode typed JSON save payload: {error}"),
+        )
+    })?;
+    SaveEnvelope::new(schema_id, schema_version, TYPED_JSON_CODEC_ID, payload).encode_bytes()
+}
+
+pub fn decode_typed_json_save<T>(
+    input: &[u8],
+    expected_schema_id: &SaveSchemaId,
+    current_schema_version: u32,
+    options: &SaveDecodeOptions,
+) -> Result<T>
+where
+    T: DeserializeOwned,
+{
+    let envelope = SaveEnvelope::decode_bytes(input, options)?;
+    if &envelope.schema_id != expected_schema_id {
+        return Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            format!(
+                "save schema id `{}` does not match expected `{}`",
+                envelope.schema_id.as_str(),
+                expected_schema_id.as_str()
+            ),
+        ));
+    }
+    if envelope.schema_version > current_schema_version {
+        return Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            format!(
+                "save schema version {} is newer than supported {}",
+                envelope.schema_version, current_schema_version
+            ),
+        ));
+    }
+    if envelope.schema_version < current_schema_version {
+        return Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            format!(
+                "typed JSON save schema version {} requires migration to {}; no typed migration supplied",
+                envelope.schema_version, current_schema_version
+            ),
+        ));
+    }
+    if envelope.codec_id != TYPED_JSON_CODEC_ID {
+        return Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            format!(
+                "save codec `{}` does not match typed JSON codec",
+                envelope.codec_id
+            ),
+        ));
+    }
+    serde_json::from_slice(&envelope.payload).map_err(|error| {
+        DataError::new(
+            DataErrorKind::InvalidEncoding,
+            format!("failed to decode typed JSON save payload: {error}"),
+        )
+    })
+}
+
 struct Cursor<'a> {
     input: &'a [u8],
     offset: usize,
@@ -436,5 +510,63 @@ impl<'a> Cursor<'a> {
                 "save envelope has trailing data",
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod typed_json_tests {
+    use super::*;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Deserialize, PartialEq, Serialize)]
+    struct TypedPayload {
+        value: u32,
+    }
+
+    fn schema() -> SaveSchemaId {
+        SaveSchemaId::new("arcweft.test.typed_json")
+    }
+
+    #[test]
+    fn typed_json_save_round_trips_strict_envelope() {
+        let bytes = encode_typed_json_save(&TypedPayload { value: 7 }, schema(), 1).unwrap();
+        let decoded = decode_typed_json_save::<TypedPayload>(
+            &bytes,
+            &schema(),
+            1,
+            &SaveDecodeOptions::default(),
+        )
+        .unwrap();
+
+        assert_eq!(decoded, TypedPayload { value: 7 });
+    }
+
+    #[test]
+    fn typed_json_save_rejects_future_schema_version() {
+        let bytes = encode_typed_json_save(&TypedPayload { value: 7 }, schema(), 2).unwrap();
+        let error = decode_typed_json_save::<TypedPayload>(
+            &bytes,
+            &schema(),
+            1,
+            &SaveDecodeOptions::default(),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("newer than supported"));
+    }
+
+    #[test]
+    fn typed_json_save_rejects_trailing_envelope_data() {
+        let mut bytes = encode_typed_json_save(&TypedPayload { value: 7 }, schema(), 1).unwrap();
+        bytes.push(0);
+        let error = decode_typed_json_save::<TypedPayload>(
+            &bytes,
+            &schema(),
+            1,
+            &SaveDecodeOptions::default(),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("trailing data"));
     }
 }

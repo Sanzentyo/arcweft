@@ -31,6 +31,7 @@ arcweft-render-wgpu = { path = "../arcweft-render-wgpu" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-runtime-driver = { path = "../arcweft-runtime-driver" }
 arcweft-runtime-host = { path = "../arcweft-runtime-host" }
+arcweft-save.workspace = true
 
 clap = { workspace = true, features = ["derive"] }
 png = { workspace = true, optional = true }

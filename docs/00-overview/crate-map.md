@@ -238,7 +238,7 @@ arcweft-launch
   `dev-source` feature 配下に閉じ込める。product player の正本は `.awfb` /
   bytecode bundle input とする。
 - UI は最初から細かい public crate family に分割せず、当面は
-  `arcweft-ui` が Component registry、generational Entity、retained
+  `arcweft-ui` が View registry、generational Entity、retained
   fragment、reactivity、style/layout integration、semantic UI nodes を所有する。
   Raw input routing、LayerTree、HitTree、focus、modal、pointer capture は
   `arcweft-presentation` 側の Sans I/O data/model とする。
@@ -256,7 +256,7 @@ arcweft-launch
 
 - USB / HID devices are permissioned DeviceProfiles; scripts consume typed ports and signals, not raw handles.
 - The Device Profile Generator emits parsers, writers, signal bindings, test fixtures, and backend stubs from `.arcw` manifests.
-- Touch virtual controllers are Game Native UI components attached to input layers and emit logical `ControllerEvent`s.
+- Touch virtual controllers are Game Native UI views attached to input layers and emit logical `ControllerEvent`s.
 
 - Device streams are `Source<T, E>` values with explicit backpressure, replay, privacy, and cancellation policy; do not expose backend callbacks directly to DSL code.
 - USB/HID/Gamepad/VirtualController input emits normalized `InputAction` values into the layer-based input router.

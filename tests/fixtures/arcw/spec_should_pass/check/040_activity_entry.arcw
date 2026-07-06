@@ -1,4 +1,4 @@
-entry activity @entry.minigame { run(@flow.activity_main) }
+entry activity @entry.minigame { goto @flow.activity_main }
 flow @flow.activity_main activity_main {
     return "mounted"
 }

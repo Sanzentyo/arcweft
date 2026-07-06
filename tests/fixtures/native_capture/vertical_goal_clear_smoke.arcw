@@ -8,7 +8,7 @@ pub surface character @character.audit Audit as audit {
 }
 
 entry game {
-    start @flow.vertical_goal_clear_smoke
+    goto @flow.vertical_goal_clear_smoke
 }
 
 flow @flow.vertical_goal_clear_smoke vertical_goal_clear_smoke {

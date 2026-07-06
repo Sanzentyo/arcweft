@@ -1,12 +1,16 @@
 use crate::aot::AotProgram;
-use crate::awbc::product_step::{AwbcProductStepBuildError, AwbcProductStepExecutor};
-use crate::awbc::schema::{AwbcEntryId, AwbcProgram};
+use crate::awbc::product_step::{
+    AwbcProductExecutorSnapshot, AwbcProductStepBuildError, AwbcProductStepExecutor,
+};
+use crate::awbc::schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram};
 use crate::bytecode::BytecodeProgram;
 use crate::engine::{Engine, FlowFiber};
 use crate::plan::{RuntimePlan, RuntimePlanError};
 use crate::pure::RuntimeCallBackend;
 use crate::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult};
 use crate::value::RuntimeBinding;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 /// Sans I/O execution boundary used by CLI, LSP, tests, and future adapters.
 ///
@@ -76,6 +80,25 @@ impl ArcweftExecutionTier {
     pub const fn is_vm_first(self) -> bool {
         matches!(self, Self::StructuredVm | Self::AwbcProduct)
     }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "tier", rename_all = "snake_case")]
+pub enum ArcweftRuntimeExecutorSnapshot {
+    AwbcProduct(AwbcProductExecutorSnapshot),
+}
+
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum ArcweftRuntimeExecutorSnapshotError {
+    #[error("runtime executor tier `{tier}` does not support session save/load snapshots")]
+    UnsupportedTier { tier: &'static str },
+    #[error("executor snapshot tier `{snapshot}` cannot be restored into `{actual}`")]
+    TierMismatch {
+        snapshot: &'static str,
+        actual: &'static str,
+    },
+    #[error("product AWBC snapshot error: {message}")]
+    ProductAwbc { message: String },
 }
 
 /// Shared runtime executor facade used by application-facing crates.
@@ -277,6 +300,20 @@ impl BytecodeVmExecutor {
     }
 }
 
+impl AwbcProductExecutor {
+    #[must_use]
+    pub fn snapshot(&self) -> AwbcProductExecutorSnapshot {
+        self.vm.snapshot()
+    }
+
+    pub fn restore_snapshot(
+        &mut self,
+        snapshot: AwbcProductExecutorSnapshot,
+    ) -> Result<(), AwbcProductStepBuildError> {
+        self.vm.restore_snapshot(snapshot)
+    }
+}
+
 impl ArcweftRuntimeExecutor {
     pub fn from_runtime_plan(plan: RuntimePlan, tier: ArcweftExecutionTier) -> Self {
         match tier {
@@ -296,6 +333,17 @@ impl ArcweftRuntimeExecutor {
         entry: AwbcEntryId,
     ) -> Result<Self, AwbcProductStepBuildError> {
         let vm = AwbcProductStepExecutor::for_entry(program, entry, 64)?;
+        Ok(Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(
+            Box::new(AwbcProductExecutor { vm }),
+        )))
+    }
+
+    pub fn from_awbc_product_function(
+        program: AwbcProgram,
+        entry: AwbcEntryId,
+        function: AwbcFunctionId,
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        let vm = AwbcProductStepExecutor::for_function(program, entry, function, 64)?;
         Ok(Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(
             Box::new(AwbcProductExecutor { vm }),
         )))
@@ -358,6 +406,44 @@ impl ArcweftRuntimeExecutor {
             ArcweftRuntimeExecutorInner::StructuredAot(executor) => executor.fast_path_ops(),
             ArcweftRuntimeExecutorInner::StructuredVm(_)
             | ArcweftRuntimeExecutorInner::AwbcProduct(_) => 0,
+        }
+    }
+
+    pub fn snapshot(
+        &self,
+    ) -> Result<ArcweftRuntimeExecutorSnapshot, ArcweftRuntimeExecutorSnapshotError> {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => Ok(
+                ArcweftRuntimeExecutorSnapshot::AwbcProduct(executor.snapshot()),
+            ),
+            ArcweftRuntimeExecutorInner::StructuredVm(_)
+            | ArcweftRuntimeExecutorInner::StructuredAot(_) => {
+                Err(ArcweftRuntimeExecutorSnapshotError::UnsupportedTier {
+                    tier: self.tier().as_str(),
+                })
+            }
+        }
+    }
+
+    pub fn restore_snapshot(
+        &mut self,
+        snapshot: ArcweftRuntimeExecutorSnapshot,
+    ) -> Result<(), ArcweftRuntimeExecutorSnapshotError> {
+        match (&mut self.inner, snapshot) {
+            (
+                ArcweftRuntimeExecutorInner::AwbcProduct(executor),
+                ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot),
+            ) => executor.restore_snapshot(snapshot).map_err(|error| {
+                ArcweftRuntimeExecutorSnapshotError::ProductAwbc {
+                    message: error.to_string(),
+                }
+            }),
+            (_, ArcweftRuntimeExecutorSnapshot::AwbcProduct(_)) => {
+                Err(ArcweftRuntimeExecutorSnapshotError::TierMismatch {
+                    snapshot: ArcweftExecutionTier::AwbcProduct.as_str(),
+                    actual: self.tier().as_str(),
+                })
+            }
         }
     }
 

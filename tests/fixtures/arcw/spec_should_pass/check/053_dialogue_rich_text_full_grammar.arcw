@@ -74,7 +74,7 @@ pub surface character @character.narrator Narrator as narrator {
 }
 
 entry game {
-    start @flow.rich_text_full_grammar
+    goto @flow.rich_text_full_grammar
 }
 
 flow @flow.rich_text_full_grammar rich_text_full_grammar {

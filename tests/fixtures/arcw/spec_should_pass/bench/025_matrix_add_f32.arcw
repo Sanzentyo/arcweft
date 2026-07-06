@@ -1,5 +1,5 @@
 bench @bench.matrix_add_f32 {
-    measure iterations = 4 { start(@flow.matrix_add_f32) }
+    measure iterations = 4 { goto @flow.matrix_add_f32 }
 }
 
 flow @flow.matrix_add_f32 matrix_add_f32(lhs: MatrixF32, rhs: MatrixF32) -> MatrixF32 {

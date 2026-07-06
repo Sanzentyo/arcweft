@@ -1,4 +1,4 @@
-pub component @ui.sample.settings SettingsPanel(config: Binding<Config>) {
+pub view @ui.sample.settings SettingsPanel(config: Binding<Config>) {
     Column(spacing = 16) {
         Text("Settings")
             .style {

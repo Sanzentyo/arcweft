@@ -2,12 +2,11 @@ use crate::ast::common::TextRange;
 use crate::ast::flow::Stmt;
 use crate::ast::ids::{EntityRef, EntityRefSyntax, IdRef};
 use crate::ast::view::{
-    ComponentViewBody, ViewAction, ViewActionInvokeAction, ViewActionPayload, ViewArg, ViewButton,
-    ViewButtonLabel, ViewElement, ViewExpr, ViewForEach, ViewIf, ViewImage, ViewLet, ViewMatch,
-    ViewMatchArm, ViewModifier, ViewNavigationDirection, ViewNavigationEdge,
-    ViewNavigationModifier, ViewNavigationTarget, ViewStyleModifier, ViewText,
-    ViewTextControlPayloadField, ViewTextField, ViewTextFieldMode, ViewTextSubmitAction,
-    ViewTextSubmitImePolicy,
+    ViewAction, ViewActionInvokeAction, ViewActionPayload, ViewArg, ViewAwait, ViewAwaitBranch,
+    ViewAwaitBranchKind, ViewBody, ViewButton, ViewButtonLabel, ViewElement, ViewExpr, ViewForEach,
+    ViewIf, ViewImage, ViewLet, ViewMatch, ViewMatchArm, ViewModifier, ViewNavigationDirection,
+    ViewNavigationEdge, ViewNavigationModifier, ViewNavigationTarget, ViewStyleModifier, ViewText,
+    ViewTextControlPayloadField, ViewTextField, ViewTextFieldMode,
 };
 use crate::cst::{
     split_top_level_keyword_once, split_top_level_punctuation, split_top_level_punctuation_once,
@@ -55,18 +54,18 @@ struct ParsedViewChain {
     modifiers: Vec<ViewModifier>,
 }
 
-pub(super) fn parse_component_view_body(
+pub(super) fn parse_view_body(
     body: &str,
     base: usize,
     module_path: Option<&str>,
     errors: &mut Vec<ParseError>,
-) -> Option<ComponentViewBody> {
+) -> Option<ViewBody> {
     let expanded_lines = body
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .filter(|line| !line.starts_with("//") && !line.starts_with("///"))
-        .flat_map(expand_component_view_line)
+        .flat_map(expand_view_line)
         .collect::<Vec<_>>();
     let lines = expanded_lines
         .iter()
@@ -77,7 +76,7 @@ pub(super) fn parse_component_view_body(
         errors.push(simple_error(
             base,
             body.len().max(1),
-            "component needs a retained View expression body",
+            "view needs a retained View expression body",
             "Panel { Button(\"Label\") }",
         ));
         return None;
@@ -85,10 +84,10 @@ pub(super) fn parse_component_view_body(
 
     let range = TextRange::new(base, base.saturating_add(body.len()));
     let value = parse_view_exprs(&lines, base, module_path, errors);
-    Some(ComponentViewBody::new(Vec::new(), Vec::new(), value, range))
+    Some(ViewBody::new(Vec::new(), Vec::new(), value, range))
 }
 
-fn expand_component_view_line(line: &str) -> Vec<String> {
+fn expand_view_line(line: &str) -> Vec<String> {
     expand_else_line(line)
         .into_iter()
         .flat_map(|line| expand_inline_view_chain_line(&line))
@@ -171,6 +170,13 @@ fn parse_view_exprs(
             index += consumed.max(1);
             continue;
         }
+        if line.starts_with("AwaitView(") && line.ends_with('{') {
+            let (nested, consumed) =
+                parse_view_await_block(&lines[index..], base, module_path, errors);
+            items.push(nested);
+            index += consumed.max(1);
+            continue;
+        }
         if line.ends_with('{') && !line.starts_with('.') {
             let (nested, consumed) = parse_view_block(&lines[index..], base, module_path, errors);
             items.push(nested);
@@ -205,6 +211,113 @@ fn parse_view_let_line(line: &str, base: usize, errors: &mut Vec<ParseError>) ->
         parse_expr_lossy(value.trim()),
         TextRange::new(base, base.saturating_add(line.len())),
     ))
+}
+
+fn parse_view_await_block(
+    lines: &[&str],
+    base: usize,
+    module_path: Option<&str>,
+    errors: &mut Vec<ParseError>,
+) -> (ViewExpr, usize) {
+    let head = lines[0].trim().trim_end_matches('{').trim();
+    let Some((callee, source)) = split_simple_call(head) else {
+        errors.push(simple_error(
+            base,
+            head.len(),
+            "View await needs `AwaitView(expr) { ... }`",
+            "AwaitView(load_avatar(user)) { pending _ => Text(\"Loading\") }",
+        ));
+        return (ViewExpr::Raw(head.to_owned()), 1);
+    };
+    if callee != "AwaitView" {
+        errors.push(simple_error(
+            base,
+            head.len(),
+            &format!("unsupported View await head `{callee}`"),
+            "AwaitView(expr) { ... }",
+        ));
+        return (ViewExpr::Raw(head.to_owned()), 1);
+    }
+    let Some(end) = find_view_block_end(lines) else {
+        errors.push(simple_error(
+            base,
+            head.len(),
+            "unclosed View await block",
+            "AwaitView(expr) { pending _ => Text(\"Loading\") }",
+        ));
+        return (ViewExpr::Raw(head.to_owned()), lines.len());
+    };
+    let branches = lines[1..end]
+        .iter()
+        .filter_map(|line| parse_view_await_branch(line.trim(), base, module_path, errors))
+        .collect::<Vec<_>>();
+    (
+        ViewExpr::Await(ViewAwait::new(
+            parse_expr_lossy(source.trim()),
+            branches,
+            TextRange::new(base, base.saturating_add(head.len())),
+        )),
+        end + 1,
+    )
+}
+
+fn parse_view_await_branch(
+    line: &str,
+    base: usize,
+    module_path: Option<&str>,
+    errors: &mut Vec<ParseError>,
+) -> Option<ViewAwaitBranch> {
+    if line.is_empty() {
+        return None;
+    }
+    let Some((head, value)) = split_top_level_punctuation_sequence_once(line, &["=", ">"]) else {
+        errors.push(simple_error(
+            base,
+            line.len(),
+            "View await branch needs `=>`",
+            "pending _ => Text(\"Loading\")",
+        ));
+        return None;
+    };
+    let mut parts = head.trim().splitn(2, char::is_whitespace);
+    let kind = parts.next().and_then(view_await_branch_kind);
+    let Some(kind) = kind else {
+        errors.push(simple_error(
+            base,
+            head.len(),
+            "View await branch needs `pending`, `ready`, `error`, or `denied`",
+            "ready value => Image(value)",
+        ));
+        return None;
+    };
+    let pattern = parts
+        .next()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let Some(pattern) = pattern else {
+        errors.push(simple_error(
+            base,
+            head.len(),
+            "View await branch needs a binding pattern",
+            "pending _ => Text(\"Loading\")",
+        ));
+        return None;
+    };
+    Some(ViewAwaitBranch::new(
+        kind,
+        parse_pattern(pattern),
+        parse_view_exprs(&[value.trim()], base, module_path, errors),
+    ))
+}
+
+fn view_await_branch_kind(value: &str) -> Option<ViewAwaitBranchKind> {
+    match value {
+        "pending" => Some(ViewAwaitBranchKind::Pending),
+        "ready" => Some(ViewAwaitBranchKind::Ready),
+        "error" => Some(ViewAwaitBranchKind::Error),
+        "denied" => Some(ViewAwaitBranchKind::Denied),
+        _ => None,
+    }
 }
 
 fn parse_view_if_block(
@@ -405,12 +518,12 @@ fn parse_view_block(
                 .map_or(head, |(callee, _)| callee)
                 .trim();
             let range = TextRange::new(base, base.saturating_add(head.len()));
-            if let Some(expected) = removed_view_element_replacement(callee) {
+            if !is_view_container_element(callee) {
                 errors.push(simple_error(
                     base,
                     head.len(),
-                    &format!("`{callee}` was removed from View authoring syntax"),
-                    expected,
+                    &format!("unsupported View element `{callee}`"),
+                    "Panel(...) | Box(...) | Scroll(...) | Row(...) | Column(...) | Stack(...)",
                 ));
                 return (ViewExpr::Raw(head.to_owned()), index + 1);
             }
@@ -494,7 +607,7 @@ fn parse_view_chain(
                 base,
                 line.len(),
                 &format!("unsupported View modifier `{line}`"),
-                ".label(\"Text\") | .on_click(|| text_submit @input:.name) | .style(@style:.name)",
+                ".label(\"Text\") | .on_click { action.invoke(@action:.name) } | .style(@style:.name)",
             ));
             index += 1;
         }
@@ -515,20 +628,10 @@ fn parse_view_head(line: &str, base: usize, errors: &mut Vec<ParseError>) -> Vie
             enabled: named_arg(&args, "enabled").cloned(),
             focusable: named_arg_bool(&args, "focusable").unwrap_or(true),
         },
-        "Panel" | "Box" | "Scroll" | "Row" | "Column" | "Stack" => ViewHead::Element {
+        other if is_view_container_element(other) => ViewHead::Element {
             callee: callee.to_owned(),
             args,
         },
-        "Surface" | "VStack" | "HStack" => {
-            let expected = removed_view_element_replacement(callee).expect("removed element");
-            errors.push(simple_error(
-                base,
-                line.len(),
-                &format!("`{callee}` was removed from View authoring syntax"),
-                expected,
-            ));
-            ViewHead::Raw(line.to_owned())
-        }
         "Text" => ViewHead::Text {
             source: first_arg_expr(args_source),
             rich: false,
@@ -558,10 +661,6 @@ fn parse_view_head(line: &str, base: usize, errors: &mut Vec<ParseError>) -> Vie
             input: text_field_input_arg(&args),
             args,
         },
-        other if other.chars().next().is_some_and(char::is_uppercase) => ViewHead::Element {
-            callee: other.to_owned(),
-            args,
-        },
         _ => {
             errors.push(simple_error(
                 base,
@@ -574,13 +673,11 @@ fn parse_view_head(line: &str, base: usize, errors: &mut Vec<ParseError>) -> Vie
     }
 }
 
-fn removed_view_element_replacement(callee: &str) -> Option<&'static str> {
-    match callee {
-        "Surface" => Some("Panel(...)"),
-        "VStack" => Some("Column(...)"),
-        "HStack" => Some("Row(...)"),
-        _ => None,
-    }
+fn is_view_container_element(callee: &str) -> bool {
+    matches!(
+        callee,
+        "Panel" | "Box" | "Scroll" | "Row" | "Column" | "Stack"
+    )
 }
 
 fn parse_view_modifier(
@@ -631,29 +728,14 @@ fn parse_view_modifier(
     if let Some(value) = call_arg(line, ".label") {
         return Some((ViewModifier::Label(parse_expr_lossy(value)), 1));
     }
-    if let Some(value) = call_arg(line, ".on_click") {
-        return Some((
-            ViewModifier::OnEvent {
-                name: "click".to_owned(),
-                body: parse_expr_lossy(value),
-                ime_policy: None,
-            },
-            1,
-        ));
+    if let Some(value) = call_arg(line, ".purpose") {
+        return Some((ViewModifier::Purpose(parse_expr_lossy(value)), 1));
     }
-    if line.starts_with(".on_click") && line.contains('{') {
-        let (source, consumed) = collect_inline_modifier_block(lines, ".on_click");
-        return Some((
-            ViewModifier::OnEvent {
-                name: "click".to_owned(),
-                body: crate::parser::parse_callback_block_expr_body(&source),
-                ime_policy: None,
-            },
-            consumed,
-        ));
+    if let Some(value) = call_arg(line, ".enter_key") {
+        return Some((ViewModifier::EnterKey(parse_expr_lossy(value)), 1));
     }
-    if let Some(value) = call_arg(line, ".submit_action") {
-        return Some((ViewModifier::SubmitAction(parse_expr_lossy(value)), 1));
+    if let Some(modifier) = view_event_modifier(lines, line) {
+        return Some(modifier);
     }
     if let Some(value) = call_arg(line, ".enabled") {
         return Some((ViewModifier::Enabled(parse_expr_lossy(value)), 1));
@@ -662,7 +744,75 @@ fn parse_view_modifier(
         let focusable = matches!(parse_expr_lossy(value), Expr::Literal(Literal::Bool(true)));
         return Some((ViewModifier::Focusable(focusable), 1));
     }
+    if let Some((name, value)) = view_property_modifier(line) {
+        return Some((
+            ViewModifier::Property {
+                name: name.to_owned(),
+                value: parse_expr_lossy(value),
+            },
+            1,
+        ));
+    }
     None
+}
+
+fn view_event_modifier(lines: &[&str], line: &str) -> Option<(ViewModifier, usize)> {
+    let (head, name, tail) = view_event_head(line)?;
+    if tail.starts_with('(') {
+        let value = call_arg(line, head)?;
+        return Some((view_on_event(name, parse_expr_lossy(value)), 1));
+    }
+    if tail.starts_with('{') {
+        let (source, consumed) = collect_inline_modifier_block(lines, head);
+        return Some((
+            view_on_event(name, crate::parser::parse_callback_block_expr_body(&source)),
+            consumed,
+        ));
+    }
+    None
+}
+
+fn view_event_head(line: &str) -> Option<(&str, &str, &str)> {
+    let rest = line.strip_prefix(".on_")?;
+    let name_len = rest
+        .char_indices()
+        .find_map(|(index, ch)| (!is_view_event_name_char(ch)).then_some(index))
+        .unwrap_or(rest.len());
+    if name_len == 0 {
+        return None;
+    }
+    let name = &rest[..name_len];
+    let head = &line[..".on_".len() + name_len];
+    let tail = rest[name_len..].trim_start();
+    (tail.starts_with('(') || tail.starts_with('{')).then_some((head, name, tail))
+}
+
+fn is_view_event_name_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_'
+}
+
+fn view_on_event(name: &str, body: Expr) -> ViewModifier {
+    ViewModifier::OnEvent {
+        name: name.to_owned(),
+        body,
+    }
+}
+
+fn view_property_modifier(line: &str) -> Option<(&'static str, &str)> {
+    [
+        (".width", "width"),
+        (".height", "height"),
+        (".w", "w"),
+        (".h", "h"),
+        (".overflow", "overflow"),
+        (".overflow_y", "overflow_y"),
+        (".clip", "clip"),
+        (".axis", "axis"),
+        (".overscroll", "overscroll"),
+        (".indicators", "indicators"),
+    ]
+    .into_iter()
+    .find_map(|(modifier, name)| call_arg(line, modifier).map(|value| (name, value)))
 }
 
 fn parse_view_style_ref<'a>(
@@ -768,7 +918,9 @@ fn build_view_expr(chain: ParsedViewChain, range: TextRange) -> ViewExpr {
             args,
             input,
         } => {
-            let field = ViewTextField::new(value, mode, args, chain.modifiers, range);
+            let submit_action = submit_action_modifier(&chain.modifiers, range);
+            let field = ViewTextField::new(value, mode, args, chain.modifiers, range)
+                .with_submit_action(submit_action);
             ViewExpr::TextField(if let Some(input) = input {
                 field.with_input(input)
             } else {
@@ -917,6 +1069,13 @@ fn button_activation_modifier(modifiers: &[ViewModifier], range: TextRange) -> O
     })
 }
 
+fn submit_action_modifier(modifiers: &[ViewModifier], range: TextRange) -> Option<ViewAction> {
+    modifiers.iter().find_map(|modifier| match modifier {
+        ViewModifier::OnEvent { name, body, .. } if name == "submit" => click_action(body, range),
+        _ => None,
+    })
+}
+
 fn click_action(expr: &Expr, range: TextRange) -> Option<ViewAction> {
     match expr {
         Expr::Closure { body, .. } => click_action(body, range),
@@ -931,16 +1090,12 @@ fn click_action(expr: &Expr, range: TextRange) -> Option<ViewAction> {
                 .or_else(|| strip_parameterized_closure_body(source.trim()))
                 .unwrap_or(source.trim());
             let parsed = parse_expr_lossy(body);
-            text_submit_action(&parsed, range)
-                .or_else(|| action_invoke_action(&parsed, range))
+            action_invoke_action(&parsed, range)
                 .or_else(|| noop_action(&parsed))
-                .or_else(|| text_submit_action(&Expr::Raw(body.to_owned()), range))
                 .or_else(|| action_invoke_action(&Expr::Raw(body.to_owned()), range))
                 .or_else(|| noop_action(&Expr::Raw(body.to_owned())))
         }
-        _ => text_submit_action(expr, range)
-            .or_else(|| action_invoke_action(expr, range))
-            .or_else(|| noop_action(expr)),
+        _ => action_invoke_action(expr, range).or_else(|| noop_action(expr)),
     }
 }
 
@@ -960,97 +1115,6 @@ fn noop_action(expr: &Expr) -> Option<ViewAction> {
         .or_else(|| strip_parameterized_closure_body(source))
         .unwrap_or(source);
     (source == "noop").then_some(ViewAction::Noop)
-}
-
-fn text_submit_action(expr: &Expr, range: TextRange) -> Option<ViewAction> {
-    if let Expr::Closure { body, .. } = expr {
-        return text_submit_action(body, range);
-    }
-    if let Expr::Block {
-        value: Some(value), ..
-    } = expr
-    {
-        return text_submit_action(value, range);
-    }
-    if let Expr::Call { callee, args } = expr {
-        return text_submit_call_action(callee, args, range);
-    }
-    let source = match expr {
-        Expr::Raw(source) => source.trim(),
-        Expr::Path(source) => source.as_label().trim(),
-        _ => return None,
-    };
-    let source = source
-        .strip_prefix("||")
-        .map(str::trim)
-        .or_else(|| strip_parameterized_closure_body(source))
-        .unwrap_or(source);
-    let input = source.strip_prefix("text_submit")?.trim();
-    if let Some(call_args) = input
-        .strip_prefix('(')
-        .and_then(|value| value.strip_suffix(')'))
-    {
-        return text_submit_source_call_action(call_args, range);
-    }
-    let input = parse_expr_lossy(input);
-    entity_ref_expr(&input).map(|input| {
-        ViewAction::TextSubmit(ViewTextSubmitAction::new(
-            input,
-            ViewTextSubmitImePolicy::Commit,
-            range,
-        ))
-    })
-}
-
-fn text_submit_call_action(
-    callee: &Expr,
-    args: &[CallArg],
-    range: TextRange,
-) -> Option<ViewAction> {
-    let callee = match callee {
-        Expr::Path(callee) => callee.as_label(),
-        Expr::Raw(callee) => callee.as_str(),
-        _ => return None,
-    };
-    if callee != "text_submit" {
-        return None;
-    }
-    let input = args.iter().find_map(|arg| match arg {
-        CallArg::Positional(expr) => entity_ref_expr(expr),
-        CallArg::Named { .. } | CallArg::Spread { .. } => None,
-    })?;
-    let ime_policy = args
-        .iter()
-        .find_map(|arg| match arg {
-            CallArg::Named { name, value } if name == "ime" || name == "ime_policy" => {
-                ime_policy_expr(value)
-            }
-            CallArg::Positional(_) | CallArg::Named { .. } | CallArg::Spread { .. } => None,
-        })
-        .unwrap_or_default();
-    Some(ViewAction::TextSubmit(ViewTextSubmitAction::new(
-        input, ime_policy, range,
-    )))
-}
-
-fn text_submit_source_call_action(call_args: &str, range: TextRange) -> Option<ViewAction> {
-    let args = parse_view_args(call_args);
-    let input = args.iter().find_map(|arg| match arg {
-        ViewArg::Positional(expr) => entity_ref_expr(expr),
-        ViewArg::Named { .. } => None,
-    })?;
-    let ime_policy = args
-        .iter()
-        .find_map(|arg| match arg {
-            ViewArg::Named { name, value } if name == "ime" || name == "ime_policy" => {
-                ime_policy_expr(value)
-            }
-            ViewArg::Positional(_) | ViewArg::Named { .. } => None,
-        })
-        .unwrap_or_default();
-    Some(ViewAction::TextSubmit(ViewTextSubmitAction::new(
-        input, ime_policy, range,
-    )))
 }
 
 fn action_invoke_action(expr: &Expr, range: TextRange) -> Option<ViewAction> {
@@ -1229,24 +1293,6 @@ fn strip_parameterized_closure_body(source: &str) -> Option<&str> {
     let rest = source.strip_prefix('|')?;
     let (_, body) = rest.split_once('|')?;
     Some(body.trim())
-}
-
-fn ime_policy_expr(expr: &Expr) -> Option<ViewTextSubmitImePolicy> {
-    match expr {
-        Expr::Path(value) => parse_ime_policy(value.as_label()),
-        Expr::ShortVariant(value) => parse_ime_policy(value.as_str()),
-        Expr::Raw(value) | Expr::Literal(Literal::String(value)) => parse_ime_policy(value),
-        _ => None,
-    }
-}
-
-fn parse_ime_policy(source: &str) -> Option<ViewTextSubmitImePolicy> {
-    match source.trim() {
-        ".commit" | "commit" => Some(ViewTextSubmitImePolicy::Commit),
-        ".cancel" | "cancel" => Some(ViewTextSubmitImePolicy::Cancel),
-        ".reject" | "reject" => Some(ViewTextSubmitImePolicy::Reject),
-        _ => None,
-    }
 }
 
 fn first_arg_expr(source: &str) -> Expr {

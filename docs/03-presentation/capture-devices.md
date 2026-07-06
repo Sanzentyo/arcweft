@@ -169,7 +169,7 @@ pub capture @capture.face_camera: Camera {
 }
 ```
 
-Starting capture returns a `Need` and therefore must define a pending UI in a player-visible `flow` or `component`.
+Starting capture returns a `Need` and therefore must define a pending UI in a player-visible `flow` or `view`.
 
 ```arcw
 let mic =

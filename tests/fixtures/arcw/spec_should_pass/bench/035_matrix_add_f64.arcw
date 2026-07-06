@@ -1,5 +1,5 @@
 bench @bench.matrix_add_f64 {
-    measure iterations = 4 { start(@flow.matrix_add_f64) }
+    measure iterations = 4 { goto @flow.matrix_add_f64 }
 }
 
 flow @flow.matrix_add_f64 matrix_add_f64(lhs: MatrixF64, rhs: MatrixF64) -> MatrixF64 {

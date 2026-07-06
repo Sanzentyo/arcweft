@@ -204,7 +204,6 @@ pub(crate) enum CstTopLevelItemKind {
     Bench,
     Parser,
     Source,
-    UiTextInput,
     Style,
     FlowBodyItemOrRaw,
 }

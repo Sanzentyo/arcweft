@@ -62,7 +62,7 @@ fn plan_with_line_task(effect: LineEffectRequest) -> RuntimePlan {
 }
 
 #[test]
-fn component_view_dsl_lowers_to_ui_sidecars() {
+fn view_dsl_lowers_to_ui_sidecars() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
 style primary_button {
@@ -71,7 +71,7 @@ style primary_button {
   }
 }
 
-component FeedbackForm() {
+view FeedbackForm() {
   TextField("Tokyo")
     .style(@style:.primary_button)
     .style(.Css) {
@@ -80,13 +80,13 @@ component FeedbackForm() {
 }
 
 flow test {
-  component(@component:.FeedbackForm)
+  view(@view:.FeedbackForm)
 }
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
     let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir, &[]).expect("sidecars lower");
 
     let program = sidecars.program.expect("program sidecar");
     assert!(!program.instructions.is_empty());
@@ -104,12 +104,12 @@ flow test {
 }
 
 #[test]
-fn component_view_local_let_input_handle_lowers_to_program_binding() {
-    use arcweft_bundle::resource_codec::ui::{UiProgramInstruction, UiTextSourceKind};
+fn view_local_let_input_handle_lowers_to_program_binding() {
+    use arcweft_bundle::resource_codec::ui::{UiTextSourceKind, ViewProgramInstruction};
 
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
-component FeedbackForm() {
+view FeedbackForm() {
   let visitor_name = input.text(@input:.visitor_name, initial = "")
   Column {
     TextField(visitor_name)
@@ -118,19 +118,19 @@ component FeedbackForm() {
 }
 
 flow test {
-  component(@component:.FeedbackForm)
+  view(@view:.FeedbackForm)
 }
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
     let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir, &[]).expect("sidecars lower");
 
     let program = sidecars.program.expect("program sidecar");
     assert!(program.instructions.iter().any(|instruction| {
         matches!(
             instruction,
-            UiProgramInstruction::BindLocal {
+            ViewProgramInstruction::BindLocal {
                 pattern_schema: _,
                 value_schema: _,
                 source: None
@@ -157,9 +157,9 @@ flow test {
 }
 
 #[test]
-fn component_view_box_and_scroll_lower_to_typed_ui_resources() {
+fn view_box_and_scroll_lower_to_typed_ui_resources() {
     use arcweft_bundle::resource_codec::ui::{
-        UiElementKind, UiProgramInstruction, UiStyleSelectorPart,
+        ViewElementKind, ViewProgramInstruction, ViewStyleSelectorPart,
     };
 
     let parsed = arcweft_lang_syntax::parser::parse_source(
@@ -170,63 +170,459 @@ style glass_shell {
   }
 
   Scroll {
+    width = milli(512000)
+    height = milli(96000)
+    axis = text("vertical")
+    overflow = text("scroll")
     opacity = milli(920)
   }
 }
 
-component FeedbackForm() {
+view FeedbackForm() {
   Box {
-    Scroll {
+    Scroll(id = @scroll:.feedback_body, axis = .vertical, width = 360px, height = 120px, overflow = .hidden) {
       Text("Message")
+      TextField(@input:.feedback)
+      Button(@button:.send, label = "Send")
     }
   }
 }
 
 flow test {
-  component(@component:.FeedbackForm)
+  view(@view:.FeedbackForm)
 }
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
     let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir, &[]).expect("sidecars lower");
 
     let program = sidecars.program.expect("program sidecar");
     assert!(program.instructions.iter().any(|instruction| matches!(
         instruction,
-        UiProgramInstruction::OpenElement {
-            element: UiElementKind::Box,
+        ViewProgramInstruction::OpenElement {
+            element: ViewElementKind::Box,
             ..
         }
     )));
     assert!(program.instructions.iter().any(|instruction| matches!(
         instruction,
-        UiProgramInstruction::OpenElement {
-            element: UiElementKind::Scroll,
+        ViewProgramInstruction::OpenElement {
+            element: ViewElementKind::Scroll,
             ..
         }
     )));
+    assert_eq!(program.scroll_regions.len(), 1);
+    assert_eq!(
+        program.scroll_regions[0].view.as_deref(),
+        Some("view.FeedbackForm")
+    );
+    assert_eq!(program.scroll_regions[0].public_id, "scroll.feedback_body");
+    assert_eq!(program.scroll_regions[0].bounds.width_milli, 360_000);
+    assert_eq!(program.scroll_regions[0].bounds.height_milli, 120_000);
+    assert_eq!(program.scroll_regions[0].content_height_milli, 148_000);
+    assert_eq!(
+        program.scroll_regions[0].axis,
+        arcweft_bundle::resource_codec::ViewScrollAxis::Vertical
+    );
+    assert_eq!(
+        program.scroll_regions[0].overflow,
+        arcweft_bundle::resource_codec::ViewScrollOverflowPolicy::Hidden
+    );
+    assert_eq!(program.action_buttons.len(), 1);
+    assert_eq!(
+        program.action_buttons[0]
+            .containing_scroll_region
+            .as_deref(),
+        Some(program.scroll_regions[0].public_id.as_str())
+    );
+    let input = sidecars.input.as_ref().expect("input sidecar");
+    assert_eq!(input.options.len(), 1);
+    assert_eq!(
+        input.options[0].containing_scroll_region.as_deref(),
+        Some(program.scroll_regions[0].public_id.as_str())
+    );
 
     let style = sidecars.style.expect("style sidecar");
     assert!(style.rules.iter().any(|rule| {
         rule.selector
             .parts
-            .contains(&UiStyleSelectorPart::Element(UiElementKind::Box))
+            .contains(&ViewStyleSelectorPart::Element(ViewElementKind::Box))
     }));
     assert!(style.rules.iter().any(|rule| {
         rule.selector
             .parts
-            .contains(&UiStyleSelectorPart::Element(UiElementKind::Scroll))
+            .contains(&ViewStyleSelectorPart::Element(ViewElementKind::Scroll))
     }));
 }
 
 #[test]
-fn component_view_reactive_if_match_for_lower_to_ui_program_instructions() {
-    use arcweft_bundle::resource_codec::ui::UiProgramInstruction;
+fn view_scroll_uses_style_rules_for_viewport_and_overflow_defaults() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+style scroll_defaults {
+  token layout.scroll_width = milli(512000)
+
+  Scroll {
+    width = token(layout.scroll_width)
+    height = milli(96000)
+    axis = text("vertical")
+    overflow = text("hidden")
+  }
+}
+
+view StyledScroll() {
+  Scroll {
+    Text("One")
+    Text("Two")
+  }
+}
+
+flow test {
+  view(@view:.StyledScroll)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir, &[]).expect("sidecars lower");
+
+    let program = sidecars.program.expect("program sidecar");
+    assert_eq!(program.scroll_regions.len(), 1);
+    assert_eq!(
+        program.scroll_regions[0].public_id,
+        "scroll.view.StyledScroll.0"
+    );
+    assert_eq!(program.scroll_regions[0].bounds.width_milli, 512_000);
+    assert_eq!(program.scroll_regions[0].bounds.height_milli, 96_000);
+    assert_eq!(
+        program.scroll_regions[0].overflow,
+        arcweft_bundle::resource_codec::ViewScrollOverflowPolicy::Hidden
+    );
+    assert_eq!(
+        program.scroll_regions[0].axis,
+        arcweft_bundle::resource_codec::ViewScrollAxis::Vertical
+    );
+}
+
+#[test]
+fn view_scroll_uses_overflow_x_style_as_horizontal_scroll() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+style horizontal_scroll {
+  Scroll {
+    width = milli(128000)
+    height = milli(72000)
+    overflow-x = text("scroll")
+  }
+}
+
+view Gallery() {
+  Scroll {
+    Row {
+      Button(@button:.one, label = "One")
+      Button(@button:.two, label = "Two")
+    }
+  }
+}
+
+flow test {
+  view(@view:.Gallery)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir, &[]).expect("sidecars lower");
+
+    let program = sidecars.program.expect("program sidecar");
+    assert_eq!(program.scroll_regions.len(), 1);
+    assert_eq!(program.scroll_regions[0].bounds.width_milli, 128_000);
+    assert_eq!(program.scroll_regions[0].bounds.height_milli, 72_000);
+    assert_eq!(
+        program.scroll_regions[0].axis,
+        arcweft_bundle::resource_codec::ViewScrollAxis::Horizontal
+    );
+    assert_eq!(
+        program.scroll_regions[0].overflow,
+        arcweft_bundle::resource_codec::ViewScrollOverflowPolicy::Scroll
+    );
+}
+
+#[test]
+fn view_style_rule_rejects_interactive_overflow_on_non_scroll_element() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+style invalid_button_scroll {
+  Button {
+    overflow-x = text("auto")
+  }
+}
+
+view Actions() {
+  Button(@button:.send, label = "Send")
+}
+
+flow test {
+  view(@view:.Actions)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+
+    assert!(collect_bundle_dsl_ui_resources(&hir, &[]).is_err());
+}
+
+#[test]
+fn view_inline_style_rejects_interactive_overflow_on_non_scroll_element() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+view Notes() {
+  Text("No implicit scroll")
+    .style {
+      overflow-y: scroll
+    }
+}
+
+flow test {
+  view(@view:.Notes)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+
+    assert!(collect_bundle_dsl_ui_resources(&hir, &[]).is_err());
+}
+
+#[test]
+fn view_scroll_without_axis_defaults_to_vertical_in_authoring() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+view DefaultScrollAxis() {
+  Scroll(width = 120px, height = 72px) {
+    Text("One")
+  }
+}
+
+flow test {
+  view(@view:.DefaultScrollAxis)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir, &[]).expect("sidecars lower");
+    let program = sidecars.program.expect("program sidecar");
+    assert_eq!(program.scroll_regions.len(), 1);
+    assert_eq!(
+        program.scroll_regions[0].axis,
+        arcweft_bundle::resource_codec::ViewScrollAxis::Vertical
+    );
+}
+
+#[test]
+fn view_scroll_axis_horizontal_lowers_to_typed_scroll_region() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+view Gallery() {
+  Scroll(id = @scroll:.gallery, axis = .horizontal, width = 120px, height = 72px) {
+    Row {
+      Button(@button:.one, label = "One")
+      Button(@button:.two, label = "Two")
+    }
+  }
+}
+
+flow test {
+  view(@view:.Gallery)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir, &[]).expect("sidecars lower");
+    let program = sidecars.program.expect("program sidecar");
+    assert_eq!(program.scroll_regions.len(), 1);
+    let region = &program.scroll_regions[0];
+    assert_eq!(region.public_id, "scroll.gallery");
+    assert_eq!(region.bounds.width_milli, 120_000);
+    assert_eq!(region.bounds.height_milli, 72_000);
+    assert_eq!(
+        region.axis,
+        arcweft_bundle::resource_codec::ViewScrollAxis::Horizontal
+    );
+    assert!(region.content_width_milli > region.bounds.width_milli);
+    assert_eq!(region.content_height_milli, region.bounds.height_milli);
+}
+
+#[test]
+fn view_scroll_contains_nested_image_element() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r"
+view Gallery() {
+  Scroll(id = @scroll:.gallery, width = 120px, height = 72px) {
+    Image(@image:.sample.pulse)
+      .width(56px)
+      .height(78px)
+  }
+}
+
+flow test {
+  view(@view:.Gallery)
+}
+",
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let source_images = vec![BundleImageObject {
+        id: "image.sample.pulse".to_owned(),
+        asset: "asset.bg.pulse".to_owned(),
+        target: Some("target.sample.pulse".to_owned()),
+        layer: Some("layer.foreground".to_owned()),
+        view: None,
+        containing_scroll_region: None,
+        bounds: BundleImageObjectBounds::from_px(12, 34, 320, 180),
+        placement: Some(StagePlacement::absolute(StageRect::new(
+            12_000, 34_000, 320_000, 180_000,
+        ))),
+        fit: BundleImageObjectFit::Cover,
+        alignment: BundleImageObjectAlignment::default(),
+        playback: BundleImageObjectPlayback::default(),
+        transform: BundleImageObjectTransform::default(),
+        depth_milli: 0,
+        opacity_milli: 1_000,
+        actions: Vec::new(),
+        params: BTreeMap::new(),
+        proxies: Vec::new(),
+        visible: true,
+    }];
+    let sidecars = collect_bundle_dsl_ui_resources(&hir, &source_images).expect("sidecars lower");
+
+    assert_eq!(sidecars.image_objects.len(), 1);
+    let image = &sidecars.image_objects[0];
+    assert_eq!(image.id, "image.view.Gallery.0");
+    assert_eq!(image.asset, "asset.bg.pulse");
+    assert_eq!(image.view.as_deref(), Some("view.Gallery"));
+    assert_eq!(
+        image.containing_scroll_region.as_deref(),
+        Some("scroll.gallery")
+    );
+    assert_eq!(
+        image.bounds,
+        BundleImageObjectBounds::from_px(48, 48, 56, 78)
+    );
+    assert_eq!(image.placement, None);
+    assert_eq!(image.fit, BundleImageObjectFit::Cover);
+}
+
+#[test]
+fn view_scroll_contains_nested_text_element() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+view NotesPanel() {
+  Scroll(id = @scroll:.notes, width = 280px, height = 64px) {
+    Text("Arcweft Concierge")
+  }
+}
+
+flow test {
+  view(@view:.NotesPanel)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir, &[]).expect("sidecars lower");
+    let program = sidecars.program.expect("program lowers");
+    let text = sidecars.text.expect("text resource lowers");
+
+    assert_eq!(program.scroll_regions.len(), 1);
+    assert_eq!(program.text_blocks.len(), 1);
+    let block = &program.text_blocks[0];
+    assert_eq!(block.public_id, "text.block.view.NotesPanel.0");
+    assert_eq!(block.view.as_deref(), Some("view.NotesPanel"));
+    assert_eq!(
+        block.containing_scroll_region.as_deref(),
+        Some("scroll.notes")
+    );
+    assert_eq!(
+        text.literal_text(&block.text_source),
+        Some("Arcweft Concierge")
+    );
+}
+
+#[test]
+fn view_await_lowers_to_ui_program_branch_spans() {
+    use arcweft_bundle::resource_codec::ui::ViewProgramInstruction;
 
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
-component ReactivePanel() {
+view AvatarPanel() {
+  Column {
+    AwaitView(load_avatar(user)) {
+      pending _ => Text("Loading")
+      ready img => Image(img)
+      error _ => Button(@button:.fallback, label = "Fallback")
+    }
+  }
+}
+
+flow test {
+  view(@view:.AvatarPanel)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir, &[]).expect("sidecars lower");
+
+    let program = sidecars.program.expect("program sidecar");
+    let await_instruction = program
+        .instructions
+        .iter()
+        .find_map(|instruction| match instruction {
+            ViewProgramInstruction::Await {
+                pending_branch,
+                ready_branch,
+                error_branch,
+                denied_branch,
+                ..
+            } => Some((
+                pending_branch.as_ref(),
+                ready_branch.as_ref(),
+                error_branch.as_ref(),
+                denied_branch.as_ref(),
+            )),
+            _ => None,
+        })
+        .expect("await instruction");
+    assert!(
+        await_instruction
+            .0
+            .is_some_and(|branch| branch.body_span > 0)
+    );
+    assert!(
+        await_instruction
+            .1
+            .is_some_and(|branch| branch.body_span > 0)
+    );
+    assert!(
+        await_instruction
+            .2
+            .is_some_and(|branch| branch.body_span > 0)
+    );
+    assert!(await_instruction.3.is_none());
+}
+
+#[test]
+fn view_reactive_if_match_for_lower_to_ui_program_instructions() {
+    use arcweft_bundle::resource_codec::ui::ViewProgramInstruction;
+
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+view ReactivePanel() {
   Column {
     if true {
       Text("Empty")
@@ -246,31 +642,31 @@ component ReactivePanel() {
 }
 
 flow test {
-  component(@component:.ReactivePanel)
+  view(@view:.ReactivePanel)
 }
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
     let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir, &[]).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
 
     let branch_count = program
         .instructions
         .iter()
-        .filter(|instruction| matches!(instruction, UiProgramInstruction::Branch { .. }))
+        .filter(|instruction| matches!(instruction, ViewProgramInstruction::Branch { .. }))
         .count();
     assert!(branch_count >= 3, "expected if plus match branches");
     assert!(program.instructions.iter().any(|instruction| matches!(
         instruction,
-        UiProgramInstruction::RepeatKeyed {
+        ViewProgramInstruction::RepeatKeyed {
             body_span,
             ..
         } if *body_span > 0
     )));
     assert!(program.instructions.iter().any(|instruction| matches!(
         instruction,
-        UiProgramInstruction::Branch {
+        ViewProgramInstruction::Branch {
             then_span,
             else_span: Some(else_span),
             ..
@@ -279,10 +675,10 @@ flow test {
 }
 
 #[test]
-fn component_view_declaration_is_not_mounted_implicitly() {
+fn view_declaration_is_not_mounted_implicitly() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
-component FeedbackForm() {
+view FeedbackForm() {
   TextField(@input:.feedback)
     .label("Message")
 }
@@ -290,7 +686,7 @@ component FeedbackForm() {
     );
     assert_eq!(parsed.errors(), &[]);
     let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir, &[]).expect("sidecars lower");
 
     assert!(sidecars.program.is_none());
     assert!(sidecars.text.is_none());
@@ -298,28 +694,38 @@ component FeedbackForm() {
 }
 
 #[test]
-fn component_view_button_lowers_to_action_button_sidecar() {
+fn view_button_lowers_to_action_button_sidecar() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
-component FeedbackForm() {
+pub action feedback.submit(value: String)
+
+view FeedbackForm() {
+  let feedback = input.text(@input:.feedback, initial = "")
+
   Column {
-    TextField(@input:.feedback, value: "", purpose: text, enter_key: send)
+    TextField(feedback)
       .label("Message")
       .placeholder("Type text")
-    Button(@button:.feedback_send)
-      .label("Send")
-      .on_click(|| text_submit(@input:.feedback, ime: .reject))
+      .purpose(.text)
+      .enter_key(.send)
+      .on_submit {
+        action.invoke(@action:.feedback.submit, value = feedback.text)
+      }
+    Button(@button:.feedback_send, label = "Send")
+      .on_click {
+        action.invoke(@action:.feedback.submit, value = feedback.text)
+      }
   }
 }
 
 flow test {
-  component(@component:.FeedbackForm)
+  view(@view:.FeedbackForm)
 }
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
     let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir, &[]).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     let text = sidecars.text.expect("text sidecar");
     let input = sidecars.input.expect("input sidecar");
@@ -339,18 +745,21 @@ flow test {
         .options
         .iter()
         .find(|option| option.public_id == "input.feedback")
-        .expect("component text field input option");
+        .expect("view text field input option");
     assert_eq!(
         option.placeholder_text_source.as_deref(),
         Some("text.placeholder.input.feedback")
     );
-    assert_eq!(option.submit_handler.as_deref(), Some("input.feedback"));
+    assert_eq!(
+        option.submit_handler.as_deref(),
+        Some("action.feedback.submit")
+    );
     assert_eq!(option.change_handler.as_deref(), Some("input.feedback"));
     let runtime_controls = input.runtime_text_controls(Some(&text), Some(&program));
     let feedback_control = runtime_controls
         .iter()
         .find(|control| control.public_id == "input.feedback")
-        .expect("component text field runtime control");
+        .expect("view text field runtime control");
     assert_eq!(
         feedback_control.bounds,
         arcweft_bundle::resource_codec::UiRuntimeTextControlBounds::new(
@@ -372,17 +781,15 @@ flow test {
     assert_eq!(text.literal_text(&button.label_text_source), Some("Send"));
     assert!(matches!(
         &button.action,
-        arcweft_bundle::resource_codec::ui::UiActionButtonActionResource::TextInputSubmit {
-            input,
-            ime_policy,
-        } if input == "input.feedback"
-            && *ime_policy
-                == arcweft_bundle::resource_codec::ui::UiTextSubmitImePolicy::Reject
+        arcweft_bundle::resource_codec::ui::ViewActionButtonActionResource::ActionInvoke {
+            action,
+            payload,
+        } if action == "action.feedback.submit" && payload.is_some()
     ));
     assert_eq!(
         button.bounds,
-        arcweft_bundle::resource_codec::UiRuntimeButtonBounds::new(
-            484_000, 50_000, 180_000, 44_000,
+        arcweft_bundle::resource_codec::ViewRuntimeButtonBounds::new(
+            48_000, 112_000, 180_000, 44_000,
         )
     );
     assert!(program.semantic_targets.iter().any(|target| {
@@ -392,10 +799,10 @@ flow test {
 }
 
 #[test]
-fn component_view_text_area_and_secure_field_emit_layout_bounds() {
+fn view_text_area_and_secure_field_emit_layout_bounds() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
-component Credentials() {
+view Credentials() {
   Column {
     TextArea(@input:.bio, value: "")
       .label("Bio")
@@ -407,13 +814,13 @@ component Credentials() {
 }
 
 flow test {
-  component(@component:.Credentials)
+  view(@view:.Credentials)
 }
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
     let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir, &[]).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     let input = sidecars.input.expect("input sidecar");
     let text = sidecars.text.expect("text sidecar");
@@ -451,38 +858,56 @@ flow test {
 }
 
 #[test]
-fn component_view_submit_buttons_follow_target_text_control_slots() {
+fn view_submit_buttons_follow_target_text_control_slots() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
-component FeedbackForm() {
+pub action feedback.submit_name(value: String)
+pub action feedback.submit_brief(value: String)
+
+view FeedbackForm() {
+  let name = input.text(@input:.name, initial = "")
+  let brief = input.text(@input:.brief, initial = "")
+
   Column {
     Row {
-      TextField(@input:.name, value: "", purpose: name, enter_key: next)
+      TextField(name)
         .label("Name")
         .placeholder("Name")
-      Button(@button:.continue)
-        .label("Continue")
-        .on_click(|| text_submit @input:.name)
+        .purpose(.name)
+        .enter_key(.next)
+        .on_submit {
+          action.invoke(@action:.feedback.submit_name, value = name.text)
+        }
+      Button(@button:.continue, label = "Continue")
+        .on_click {
+          action.invoke(@action:.feedback.submit_name, value = name.text)
+        }
     }
-    TextArea(@input:.brief, value: "", purpose: text, enter_key: send)
+    TextArea(brief)
       .label("Brief")
       .placeholder("Idea")
+      .purpose(.text)
+      .enter_key(.send)
+      .on_submit {
+        action.invoke(@action:.feedback.submit_brief, value = brief.text)
+      }
     Row {
-      Button(@button:.send)
-        .label("Send")
-        .on_click(|| text_submit @input:.brief)
+      Button(@button:.send, label = "Send")
+        .on_click {
+          action.invoke(@action:.feedback.submit_brief, value = brief.text)
+        }
     }
   }
 }
 
 flow test {
-  component(@component:.FeedbackForm)
+  view(@view:.FeedbackForm)
 }
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
     let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir, &[]).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
 
     let continue_button = program
@@ -498,25 +923,25 @@ flow test {
 
     assert_eq!(
         continue_button.bounds,
-        arcweft_bundle::resource_codec::UiRuntimeButtonBounds::new(
-            484_000, 50_000, 180_000, 44_000,
+        arcweft_bundle::resource_codec::ViewRuntimeButtonBounds::new(
+            484_000, 48_000, 180_000, 44_000,
         )
     );
     assert_eq!(
         send_button.bounds,
-        arcweft_bundle::resource_codec::UiRuntimeButtonBounds::new(
+        arcweft_bundle::resource_codec::ViewRuntimeButtonBounds::new(
             48_000, 264_000, 180_000, 44_000,
         )
     );
 }
 
 #[test]
-fn component_view_action_invoke_button_lowers_to_action_resource() {
+fn view_action_invoke_button_lowers_to_action_resource() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
 pub action feedback.submit(value: String)
 
-component FeedbackForm() {
+view FeedbackForm() {
   Button(@button:.continue, label = "Continue")
     .on_click {
       action.invoke(@action:.feedback.submit, value = visitor_name.text)
@@ -524,13 +949,13 @@ component FeedbackForm() {
 }
 
 flow test {
-  component(@component:.FeedbackForm)
+  view(@view:.FeedbackForm)
 }
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
     let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir, &[]).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
 
     let button = program
@@ -541,17 +966,51 @@ flow test {
 
     assert!(matches!(
         &button.action,
-        arcweft_bundle::resource_codec::ui::UiActionButtonActionResource::ActionInvoke {
+        arcweft_bundle::resource_codec::ui::ViewActionButtonActionResource::ActionInvoke {
             action,
             payload,
         } if action == "action.feedback.submit"
             && payload == &Some(
-                arcweft_bundle::resource_codec::ui::UiActionPayloadResource::TextControlProjection {
+                arcweft_bundle::resource_codec::ui::ViewActionPayloadResource::TextControlProjection {
                     input: "input.visitor_name".to_owned(),
-                    field: arcweft_bundle::resource_codec::ui::UiActionTextControlPayloadField::Text,
+                    field: arcweft_bundle::resource_codec::ui::ViewActionTextControlPayloadField::Text,
                 }
             )
     ));
+}
+
+#[test]
+fn view_generic_callback_block_lowers_to_handler_binding() {
+    use arcweft_bundle::resource_codec::ui::ViewProgramInstruction;
+
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+pub action feedback.focus(value: String)
+
+view FeedbackForm() {
+  Button(@button:.continue, label = "Continue")
+    .on_focus {
+      action.invoke(@action:.feedback.focus, value = "focused")
+    }
+}
+
+flow test {
+  view(@view:.FeedbackForm)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir, &[]).expect("sidecars lower");
+    let program = sidecars.program.expect("program sidecar");
+
+    assert!(program.instructions.iter().any(|instruction| {
+        matches!(
+            instruction,
+            ViewProgramInstruction::BindHandler { event, handler, .. }
+                if event == "focus" && handler.contains(".handler.focus.")
+        )
+    }));
 }
 
 fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
@@ -840,6 +1299,15 @@ image @image.sample.pulse {
     transform.ty = 12px
     depth = 2500
     opacity = 0.875
+    action = action.inspect.pulse
+    param.role = animated-hotspot
+    proxy.id = proxy.pulse.hotspot
+    proxy.type = PulseHotspot
+    proxy.role = inspect
+    proxy.layer = layer.hit
+    proxy.depth = 2600
+    proxy.hit_test = true
+    proxy.param.channel = preview
     visible = true
 }
 ",
@@ -854,6 +1322,8 @@ image @image.sample.pulse {
             asset: "asset.bg.pulse".to_owned(),
             target: Some("target.sample.pulse".to_owned()),
             layer: Some("layer.foreground".to_owned()),
+            view: None,
+            containing_scroll_region: None,
             bounds: BundleImageObjectBounds::from_px(12, 34, 56, 78),
             placement: Some(StagePlacement::absolute(StageRect::new(
                 12_000, 34_000, 56_000, 78_000,
@@ -879,6 +1349,29 @@ image @image.sample.pulse {
             },
             depth_milli: 2500,
             opacity_milli: 875,
+            actions: vec!["action.inspect.pulse".to_owned()],
+            params: [(
+                "param.role".to_owned(),
+                BundleImageObjectParam::Text {
+                    value: "animated-hotspot".to_owned(),
+                },
+            )]
+            .into(),
+            proxies: vec![BundleImageObjectProxy {
+                id: "proxy.pulse.hotspot".to_owned(),
+                type_name: Some("PulseHotspot".to_owned()),
+                role: Some("inspect".to_owned()),
+                layer: Some("layer.hit".to_owned()),
+                depth_milli: Some(2600),
+                hit_test: true,
+                params: [(
+                    "channel".to_owned(),
+                    BundleImageObjectParam::Text {
+                        value: "preview".to_owned(),
+                    },
+                )]
+                .into(),
+            }],
             visible: true,
         }]
     );

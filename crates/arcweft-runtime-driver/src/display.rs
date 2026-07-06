@@ -2,11 +2,13 @@ use crate::presentation_handles::{
     PresentationHandleDiagnostic, PresentationHandleRecord, apply_presentation_handle_operations,
     apply_presentation_image_handles, filter_presentation_action_buttons,
     filter_presentation_focus_groups, filter_presentation_focus_navigation,
+    filter_presentation_scroll_regions, filter_presentation_text_blocks,
     filter_presentation_text_inputs, hidden_focus_diagnostics,
     presentation_handle_operations_from_effects,
 };
 use arcweft_bundle::resource_codec::{
-    UiRuntimeActionButton, UiRuntimeFocusGroup, UiRuntimeFocusNavigation, UiRuntimeTextControl,
+    UiRuntimeTextControl, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
+    ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeTextBlock,
 };
 use arcweft_bundle::{
     BundleImageObject, BundleImageObjectAlignment, BundleImageObjectBounds, BundleImageObjectFit,
@@ -61,11 +63,15 @@ pub struct BundlePresentationSnapshot {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub text_inputs: Vec<UiRuntimeTextControl>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub action_buttons: Vec<UiRuntimeActionButton>,
+    pub action_buttons: Vec<ViewRuntimeActionButton>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub focus_groups: Vec<UiRuntimeFocusGroup>,
+    pub scroll_regions: Vec<ViewRuntimeScrollRegion>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub focus_navigation: Vec<UiRuntimeFocusNavigation>,
+    pub text_blocks: Vec<ViewRuntimeTextBlock>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub focus_groups: Vec<ViewRuntimeFocusGroup>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub focus_navigation: Vec<ViewRuntimeFocusNavigation>,
 }
 
 /// Runtime resources that affect portable presentation state.
@@ -73,9 +79,11 @@ pub struct BundlePresentationSnapshot {
 pub(crate) struct BundlePresentationResources<'a> {
     pub(crate) image_objects: &'a [BundleImageObject],
     pub(crate) text_inputs: &'a [UiRuntimeTextControl],
-    pub(crate) action_buttons: &'a [UiRuntimeActionButton],
-    pub(crate) focus_groups: &'a [UiRuntimeFocusGroup],
-    pub(crate) focus_navigation: &'a [UiRuntimeFocusNavigation],
+    pub(crate) action_buttons: &'a [ViewRuntimeActionButton],
+    pub(crate) scroll_regions: &'a [ViewRuntimeScrollRegion],
+    pub(crate) text_blocks: &'a [ViewRuntimeTextBlock],
+    pub(crate) focus_groups: &'a [ViewRuntimeFocusGroup],
+    pub(crate) focus_navigation: &'a [ViewRuntimeFocusNavigation],
 }
 
 /// Resolves dialogue flow events into host-renderable, Sans I/O display frames.
@@ -136,6 +144,14 @@ impl BundlePresentationSnapshot {
             resources.action_buttons.to_vec(),
             &next_presentation_handles,
         );
+        let next_scroll_regions = filter_presentation_scroll_regions(
+            resources.scroll_regions.to_vec(),
+            &next_presentation_handles,
+        );
+        let next_text_blocks = filter_presentation_text_blocks(
+            resources.text_blocks.to_vec(),
+            &next_presentation_handles,
+        );
         let next_focus_groups = filter_presentation_focus_groups(
             resources.focus_groups.to_vec(),
             &next_presentation_handles,
@@ -155,6 +171,8 @@ impl BundlePresentationSnapshot {
             || self.viewport_fit != next_viewport_fit
             || self.text_inputs != next_text_inputs
             || self.action_buttons != next_action_buttons
+            || self.scroll_regions != next_scroll_regions
+            || self.text_blocks != next_text_blocks
             || self.focus_groups != next_focus_groups
             || self.focus_navigation != next_focus_navigation
         {
@@ -167,6 +185,8 @@ impl BundlePresentationSnapshot {
             self.viewport_fit = next_viewport_fit;
             self.text_inputs = next_text_inputs;
             self.action_buttons = next_action_buttons;
+            self.scroll_regions = next_scroll_regions;
+            self.text_blocks = next_text_blocks;
             self.focus_groups = next_focus_groups;
             self.focus_navigation = next_focus_navigation;
         }
@@ -207,6 +227,8 @@ impl fmt::Debug for BundlePresentationSnapshot {
             .field("viewport_fit", &self.viewport_fit)
             .field("text_inputs", &self.redacted_for_observation().text_inputs)
             .field("action_buttons", &self.action_buttons)
+            .field("scroll_regions", &self.scroll_regions)
+            .field("text_blocks", &self.text_blocks)
             .field("focus_groups", &self.focus_groups)
             .field("focus_navigation", &self.focus_navigation)
             .finish()
@@ -458,6 +480,8 @@ fn inline_image_object(call: &RuntimeCall) -> Option<BundleImageObject> {
         asset,
         target: named_arg(&call.args, "target").and_then(public_id_arg),
         layer: named_arg(&call.args, "layer").and_then(public_id_arg),
+        view: None,
+        containing_scroll_region: None,
         bounds,
         placement: Some(placement),
         fit: image_fit_arg(call),
@@ -470,6 +494,9 @@ fn inline_image_object(call: &RuntimeCall) -> Option<BundleImageObject> {
         opacity_milli: named_arg(&call.args, "opacity")
             .and_then(parse_opacity_milli)
             .unwrap_or(1_000),
+        actions: Vec::new(),
+        params: std::collections::BTreeMap::default(),
+        proxies: Vec::new(),
         visible: named_arg(&call.args, "visible")
             .and_then(parse_bool_arg)
             .unwrap_or(true),
@@ -489,16 +516,16 @@ fn image_alignment_arg(call: &RuntimeCall) -> BundleImageObjectAlignment {
     BundleImageObjectAlignment {
         x_milli: named_arg(&call.args, "alignment.x")
             .or_else(|| named_arg(&call.args, "align.x"))
-            .and_then(|value| parse_alignment_component_milli(value, "x"))
+            .and_then(|value| parse_alignment_view_milli(value, "x"))
             .unwrap_or(500),
         y_milli: named_arg(&call.args, "alignment.y")
             .or_else(|| named_arg(&call.args, "align.y"))
-            .and_then(|value| parse_alignment_component_milli(value, "y"))
+            .and_then(|value| parse_alignment_view_milli(value, "y"))
             .unwrap_or(500),
     }
 }
 
-fn parse_alignment_component_milli(value: &str, axis: &str) -> Option<i32> {
+fn parse_alignment_view_milli(value: &str, axis: &str) -> Option<i32> {
     match (axis, unquote_arg(value)) {
         ("x", "left" | "start") | ("y", "top" | "start") => return Some(0),
         ("x" | "y", "center" | "middle") => return Some(500),
@@ -649,12 +676,15 @@ mod tests {
     use arcweft_bundle::resource_codec::ui::{
         CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
         UiInputPurpose, UiSecureInputPolicy, UiTextSelectionPolicy, UiTextShortcutPolicy,
-        UiTextTabPolicy, UiTextVerticalNavigationPolicy,
+        UiTextTabPolicy, UiTextVerticalNavigationPolicy, ViewFocusDirection, ViewFocusGroupPolicy,
+        ViewFocusInitialPolicy, ViewFocusSkipPolicy, ViewFocusTargetResolution,
+        ViewFocusWrapPolicy, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
+        ViewRuntimeFocusNavigationEdge,
     };
     use arcweft_bundle::resource_codec::{
-        UiRuntimeActionButtonAction, UiRuntimeButtonBounds, UiRuntimeControlStyle,
-        UiRuntimeTextControlBounds, UiRuntimeTextControlHandlers, UiRuntimeTextControlOptions,
-        UiRuntimeTextSelection,
+        UiRuntimeControlStyle, UiRuntimeTextControlBounds, UiRuntimeTextControlHandlers,
+        UiRuntimeTextControlOptions, UiRuntimeTextSelection, ViewRuntimeActionButtonAction,
+        ViewRuntimeButtonBounds, ViewRuntimeScrollRegionBounds,
     };
 
     #[test]
@@ -732,6 +762,8 @@ mod tests {
             image_objects: &[],
             text_inputs: &[],
             action_buttons: &[],
+            scroll_regions: &[],
+            text_blocks: &[],
             focus_groups: &[],
             focus_navigation: &[],
         };
@@ -739,8 +771,8 @@ mod tests {
             callee: "presentation.handle.create".to_owned(),
             args: vec![
                 "handle = @handle.flow.save.panel".to_owned(),
-                "kind = \"component\"".to_owned(),
-                "resource = @component.SavePanel".to_owned(),
+                "kind = \"view\"".to_owned(),
+                "resource = @view.SavePanel".to_owned(),
                 "owner = @flow.save".to_owned(),
             ],
         });
@@ -795,17 +827,17 @@ mod tests {
     }
 
     #[test]
-    fn component_handle_lifecycle_filters_runtime_controls() {
+    fn view_handle_lifecycle_filters_runtime_controls() {
         let mut snapshot = BundlePresentationSnapshot::default();
-        let text_input = component_text_input();
-        let action_button = component_action_button();
-        let resources = component_runtime_resources(&text_input, &action_button);
-        let create_visible = component_handle_create("@handle.flow.feedback.panel");
+        let text_input = view_text_input();
+        let action_button = view_action_button();
+        let resources = view_runtime_resources(&text_input, &action_button);
+        let create_visible = view_handle_create("@handle.flow.feedback.panel");
 
         let diagnostics = update_snapshot_with_effects(&mut snapshot, &[create_visible], resources);
 
         assert!(diagnostics.is_empty());
-        assert_component_controls_visible(&snapshot, &text_input, &action_button);
+        assert_view_controls_visible(&snapshot, &text_input, &action_button);
 
         update_snapshot_with_effects(
             &mut snapshot,
@@ -826,7 +858,7 @@ mod tests {
             )],
             resources,
         );
-        assert_component_controls_visible(&snapshot, &text_input, &action_button);
+        assert_view_controls_visible(&snapshot, &text_input, &action_button);
 
         update_snapshot_with_effects(
             &mut snapshot,
@@ -847,7 +879,7 @@ mod tests {
             )],
             resources,
         );
-        assert_component_controls_visible(&snapshot, &text_input, &action_button);
+        assert_view_controls_visible(&snapshot, &text_input, &action_button);
 
         update_snapshot_with_effects(
             &mut snapshot,
@@ -864,7 +896,7 @@ mod tests {
         update_snapshot_with_effects(
             &mut destroy_snapshot,
             &[
-                component_handle_create("@handle.flow.feedback.panel.destroy"),
+                view_handle_create("@handle.flow.feedback.panel.destroy"),
                 presentation_handle_call(
                     "presentation.handle.destroy",
                     "@handle.flow.feedback.panel.destroy",
@@ -874,6 +906,174 @@ mod tests {
         );
         assert!(destroy_snapshot.text_inputs.is_empty());
         assert!(destroy_snapshot.action_buttons.is_empty());
+    }
+
+    #[test]
+    fn view_handle_lifecycle_filters_scroll_regions() {
+        let mut snapshot = BundlePresentationSnapshot::default();
+        let scroll_region = view_scroll_region();
+        let resources = BundlePresentationResources {
+            image_objects: &[],
+            text_inputs: &[],
+            action_buttons: &[],
+            scroll_regions: std::slice::from_ref(&scroll_region),
+            text_blocks: &[],
+            focus_groups: &[],
+            focus_navigation: &[],
+        };
+        let create_visible = view_handle_create("@handle.flow.feedback.panel");
+
+        let diagnostics = update_snapshot_with_effects(&mut snapshot, &[create_visible], resources);
+
+        assert!(diagnostics.is_empty());
+        assert_eq!(snapshot.scroll_regions, vec![scroll_region.clone()]);
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[presentation_handle_call(
+                "presentation.handle.hide",
+                "@handle.flow.feedback.panel",
+            )],
+            resources,
+        );
+        assert!(snapshot.scroll_regions.is_empty());
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[presentation_handle_call(
+                "presentation.handle.show",
+                "@handle.flow.feedback.panel",
+            )],
+            resources,
+        );
+        assert_eq!(snapshot.scroll_regions, vec![scroll_region]);
+    }
+
+    #[test]
+    fn view_handle_lifecycle_filters_text_blocks() {
+        let mut snapshot = BundlePresentationSnapshot::default();
+        let text_block = view_text_block();
+        let resources = BundlePresentationResources {
+            image_objects: &[],
+            text_inputs: &[],
+            action_buttons: &[],
+            scroll_regions: &[],
+            text_blocks: std::slice::from_ref(&text_block),
+            focus_groups: &[],
+            focus_navigation: &[],
+        };
+        let create_visible = view_handle_create("@handle.flow.feedback.panel");
+
+        let diagnostics = update_snapshot_with_effects(&mut snapshot, &[create_visible], resources);
+
+        assert!(diagnostics.is_empty());
+        assert_eq!(snapshot.text_blocks, vec![text_block.clone()]);
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[presentation_handle_call(
+                "presentation.handle.hide",
+                "@handle.flow.feedback.panel",
+            )],
+            resources,
+        );
+        assert!(snapshot.text_blocks.is_empty());
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[presentation_handle_call(
+                "presentation.handle.show",
+                "@handle.flow.feedback.panel",
+            )],
+            resources,
+        );
+        assert_eq!(snapshot.text_blocks, vec![text_block]);
+    }
+
+    #[test]
+    fn view_handle_lifecycle_filters_focus_resources() {
+        let mut snapshot = BundlePresentationSnapshot::default();
+        let focus_group = view_focus_group();
+        let focus_navigation = view_focus_navigation();
+        let resources = BundlePresentationResources {
+            image_objects: &[],
+            text_inputs: &[],
+            action_buttons: &[],
+            scroll_regions: &[],
+            text_blocks: &[],
+            focus_groups: std::slice::from_ref(&focus_group),
+            focus_navigation: std::slice::from_ref(&focus_navigation),
+        };
+        let create_visible = view_handle_create("@handle.flow.feedback.panel");
+
+        let diagnostics = update_snapshot_with_effects(&mut snapshot, &[create_visible], resources);
+
+        assert!(diagnostics.is_empty());
+        assert_eq!(snapshot.focus_groups, vec![focus_group.clone()]);
+        assert_eq!(snapshot.focus_navigation, vec![focus_navigation.clone()]);
+
+        let diagnostics = update_snapshot_with_effects(
+            &mut snapshot,
+            &[presentation_handle_call(
+                "presentation.handle.hide",
+                "@handle.flow.feedback.panel",
+            )],
+            resources,
+        );
+        assert!(snapshot.focus_groups.is_empty());
+        assert!(snapshot.focus_navigation.is_empty());
+        assert_eq!(
+            diagnostics[0].code,
+            PresentationHandleDiagnosticCode::HiddenButFocusable
+        );
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[presentation_handle_call(
+                "presentation.handle.show",
+                "@handle.flow.feedback.panel",
+            )],
+            resources,
+        );
+        assert_eq!(snapshot.focus_groups, vec![focus_group.clone()]);
+        assert_eq!(snapshot.focus_navigation, vec![focus_navigation.clone()]);
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[presentation_handle_call(
+                "presentation.handle.unmount",
+                "@handle.flow.feedback.panel",
+            )],
+            resources,
+        );
+        assert!(snapshot.focus_groups.is_empty());
+        assert!(snapshot.focus_navigation.is_empty());
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[presentation_handle_call(
+                "presentation.handle.release",
+                "@handle.flow.feedback.panel",
+            )],
+            resources,
+        );
+        assert!(snapshot.focus_groups.is_empty());
+        assert!(snapshot.focus_navigation.is_empty());
+
+        let mut destroy_snapshot = BundlePresentationSnapshot::default();
+        update_snapshot_with_effects(
+            &mut destroy_snapshot,
+            &[
+                view_handle_create("@handle.flow.feedback.panel.destroy"),
+                presentation_handle_call(
+                    "presentation.handle.destroy",
+                    "@handle.flow.feedback.panel.destroy",
+                ),
+            ],
+            resources,
+        );
+        assert!(destroy_snapshot.focus_groups.is_empty());
+        assert!(destroy_snapshot.focus_navigation.is_empty());
     }
 
     #[test]
@@ -953,11 +1153,12 @@ mod tests {
         assert!(destroy_snapshot.images.is_empty());
     }
 
-    fn component_text_input() -> UiRuntimeTextControl {
+    fn view_text_input() -> UiRuntimeTextControl {
         UiRuntimeTextControl {
             public_id: "input.visitor_name".to_owned(),
             target: "input.visitor_name".to_owned(),
-            component: Some("component.ModernFeedbackPanel".to_owned()),
+            view: Some("view.ModernFeedbackPanel".to_owned()),
+            containing_scroll_region: None,
             session: 1,
             value: String::new(),
             selection: UiRuntimeTextSelection::new(0, 0),
@@ -983,39 +1184,97 @@ mod tests {
         }
     }
 
-    fn component_action_button() -> UiRuntimeActionButton {
-        UiRuntimeActionButton {
+    fn view_action_button() -> ViewRuntimeActionButton {
+        ViewRuntimeActionButton {
             public_id: "button.continue".to_owned(),
             target: "button.continue".to_owned(),
-            component: Some("component.ModernFeedbackPanel".to_owned()),
+            view: Some("view.ModernFeedbackPanel".to_owned()),
+            containing_scroll_region: None,
             label: "Continue".to_owned(),
             enabled: true,
-            bounds: UiRuntimeButtonBounds::new(484_000, 48_000, 180_000, 48_000),
-            action: UiRuntimeActionButtonAction::Noop,
+            bounds: ViewRuntimeButtonBounds::new(484_000, 48_000, 180_000, 48_000),
+            action: ViewRuntimeActionButtonAction::Noop,
             style: UiRuntimeControlStyle::default(),
         }
     }
 
-    fn component_runtime_resources<'a>(
+    fn view_scroll_region() -> ViewRuntimeScrollRegion {
+        ViewRuntimeScrollRegion {
+            public_id: "scroll.ModernFeedbackPanel.0".to_owned(),
+            target: "scroll.ModernFeedbackPanel.0".to_owned(),
+            view: Some("view.ModernFeedbackPanel".to_owned()),
+            bounds: ViewRuntimeScrollRegionBounds::new(48_000, 48_000, 420_000, 180_000),
+            content_width_milli: 420_000,
+            content_height_milli: 360_000,
+            axis: arcweft_bundle::resource_codec::ViewScrollAxis::Vertical,
+            overflow: arcweft_bundle::resource_codec::ViewScrollOverflowPolicy::Auto,
+        }
+    }
+
+    fn view_text_block() -> ViewRuntimeTextBlock {
+        ViewRuntimeTextBlock {
+            public_id: "text.block.ModernFeedbackPanel.0".to_owned(),
+            target: "text.block.ModernFeedbackPanel.0".to_owned(),
+            view: Some("view.ModernFeedbackPanel".to_owned()),
+            containing_scroll_region: None,
+            text: "Arcweft Concierge".to_owned(),
+            bounds: arcweft_bundle::resource_codec::ViewRuntimeTextBlockBounds::from_px(
+                80, 560, 360, 24,
+            ),
+        }
+    }
+
+    fn view_focus_group() -> ViewRuntimeFocusGroup {
+        ViewRuntimeFocusGroup {
+            public_id: "group.ModernFeedbackPanel.0".to_owned(),
+            view: Some("view.ModernFeedbackPanel".to_owned()),
+            parent: None,
+            policy: ViewFocusGroupPolicy::Normal,
+            initial: ViewFocusInitialPolicy::Explicit {
+                target: "button.continue".to_owned(),
+            },
+            wrap: ViewFocusWrapPolicy::Wrap,
+            disabled_skip: ViewFocusSkipPolicy::Skip,
+            hidden_skip: ViewFocusSkipPolicy::Skip,
+        }
+    }
+
+    fn view_focus_navigation() -> ViewRuntimeFocusNavigation {
+        ViewRuntimeFocusNavigation {
+            public_id: "button.continue".to_owned(),
+            view: Some("view.ModernFeedbackPanel".to_owned()),
+            group: Some("group.ModernFeedbackPanel.0".to_owned()),
+            edges: vec![ViewRuntimeFocusNavigationEdge {
+                direction: ViewFocusDirection::Left,
+                target: ViewFocusTargetResolution::Explicit {
+                    target: "input.visitor_name".to_owned(),
+                },
+            }],
+        }
+    }
+
+    fn view_runtime_resources<'a>(
         text_input: &'a UiRuntimeTextControl,
-        action_button: &'a UiRuntimeActionButton,
+        action_button: &'a ViewRuntimeActionButton,
     ) -> BundlePresentationResources<'a> {
         BundlePresentationResources {
             image_objects: &[],
             text_inputs: std::slice::from_ref(text_input),
             action_buttons: std::slice::from_ref(action_button),
+            scroll_regions: &[],
+            text_blocks: &[],
             focus_groups: &[],
             focus_navigation: &[],
         }
     }
 
-    fn component_handle_create(handle: &str) -> LineEffectRequest {
+    fn view_handle_create(handle: &str) -> LineEffectRequest {
         LineEffectRequest::Call(RuntimeCall {
             callee: "presentation.handle.create".to_owned(),
             args: vec![
                 format!("handle = {handle}"),
-                "kind = \"component\"".to_owned(),
-                "resource = @component:.ModernFeedbackPanel".to_owned(),
+                "kind = \"view\"".to_owned(),
+                "resource = @view:.ModernFeedbackPanel".to_owned(),
             ],
         })
     }
@@ -1033,6 +1292,8 @@ mod tests {
             asset: "asset.glass_bg".to_owned(),
             target: Some("target.glass_bg".to_owned()),
             layer: Some("layer.background".to_owned()),
+            view: None,
+            containing_scroll_region: None,
             bounds: BundleImageObjectBounds::from_px(0, 0, 1280, 720),
             placement: None,
             fit: BundleImageObjectFit::Cover,
@@ -1041,6 +1302,9 @@ mod tests {
             transform: BundleImageObjectTransform::default(),
             depth_milli: -10_000,
             opacity_milli: 1_000,
+            actions: Vec::new(),
+            params: std::collections::BTreeMap::default(),
+            proxies: Vec::new(),
             visible: true,
         }
     }
@@ -1050,6 +1314,8 @@ mod tests {
             image_objects: std::slice::from_ref(image),
             text_inputs: &[],
             action_buttons: &[],
+            scroll_regions: &[],
+            text_blocks: &[],
             focus_groups: &[],
             focus_navigation: &[],
         }
@@ -1079,10 +1345,10 @@ mod tests {
         )
     }
 
-    fn assert_component_controls_visible(
+    fn assert_view_controls_visible(
         snapshot: &BundlePresentationSnapshot,
         text_input: &UiRuntimeTextControl,
-        action_button: &UiRuntimeActionButton,
+        action_button: &ViewRuntimeActionButton,
     ) {
         assert_eq!(snapshot.text_inputs, vec![text_input.clone()]);
         assert_eq!(snapshot.action_buttons, vec![action_button.clone()]);

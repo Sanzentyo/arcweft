@@ -1,25 +1,26 @@
 # Modern Feedback UI
 
-This sample exercises the current component/View and style authoring path with a
-flow that waits for player-rendered text-control submissions.
+This sample exercises the current View and style authoring path with a flow that
+waits for typed semantic actions emitted by player-rendered text controls and
+buttons.
 
 It demonstrates:
 
-- a bundled, project-authored background image rendered behind the component
+- a bundled, project-authored background image rendered behind the view
   controls;
 - `pub style modern_feedback_panel` with tokens, element selectors, hover,
   active, disabled, focus-visible states, translucent fills, `box-shadow`, and
   style-authored control depth;
-- `pub component ModernFeedbackPanel()` with `Panel`, `Column`,
-  `Row`, `Text`, `TextField`, `TextArea`, and player-rendered `Button`
+- `pub view ModernFeedbackPanel()` with `Panel`, `Column`, `Row`, `Text`,
+  `TextField`, `TextArea`, and player-rendered `Button`
   actions;
-- component-owned `TextField` and `TextArea` resources referenced by the same
-  submit targets used by the buttons and flow;
-- explicit `let panel = component(@component:.ModernFeedbackPanel, lifetime = .scope)`
-  mounting from the flow, so the component declaration is reusable, scoped, and
+- view-owned `TextField` and `TextArea` resources referenced by typed
+  `pub action feedback.*` submit routes;
+- explicit `let panel = view(@view:.ModernFeedbackPanel)` scope-owned mounting
+  mounting from the flow, so the view declaration is reusable, scoped, and
   does not display by declaration alone;
-- a flow that waits on `text_submit`, branches on submitted text length, and
-  returns the submitted brief.
+- a flow that waits on `receive action(...)`, branches on submitted text
+  length, and returns the submitted brief.
 
 ## Check
 

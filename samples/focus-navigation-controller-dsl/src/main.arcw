@@ -3,25 +3,31 @@ pub character narrator {
   default_voice = auto
 }
 
+pub action settings.apply(value: String)
+
 entry game @entry.focus_navigation_controller_dsl {
   goto @flow.focus_navigation_controller_dsl
 }
 
-pub component FocusNavigationControllerSample() {
+pub view FocusNavigationControllerSample() {
+  let name = input.text(@input:.name, initial = "Aster")
+  let notes = input.text(@input:.notes, initial = "Notes")
+
   Column(nav: .vertical, group: @group:.settings, wrap: false, initial: @input:.name, trap: .modal) {
     Row(nav: .horizontal, group: @group:.settings.row_one, parent: @group:.settings, wrap: true) {
-      TextField(@input:.name, value: "Aster")
+      TextField(name)
         .label("Name")
         .nav(right: @button:.apply, down: @input:.notes, previous: boundary)
 
-      Button(@button:.apply)
-        .label("Apply")
+      Button(@button:.apply, label = "Apply")
         .nav(left: @input:.name, down: @button:.danger, next: @input:.notes)
-        .on_click(|| text_submit @input:.name)
+        .on_click {
+          action.invoke(@action:.settings.apply, value = name.text)
+        }
     }
 
     Row(nav: .horizontal, group: @group:.settings.row_two, parent: @group:.settings, wrap: true) {
-      TextArea(@input:.notes, value: "Notes")
+      TextArea(notes)
         .label("Notes")
         .nav(up: @input:.name, right: @button:.close)
 
@@ -38,7 +44,7 @@ pub component FocusNavigationControllerSample() {
 }
 
 flow focus_navigation_controller_dsl {
-  component(@component:.FocusNavigationControllerSample)
+  view(@view:.FocusNavigationControllerSample)
 
   narrator:
     Focus navigation controller sample.

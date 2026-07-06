@@ -4,7 +4,7 @@ fn score(base: i64, bonus: i64) -> i64 {
 }
 
 bench @bench.map_pure {
-    measure iterations = 8 { start(@flow.map_pure) }
+    measure iterations = 8 { goto @flow.map_pure }
 }
 
 flow @flow.map_pure map_pure {

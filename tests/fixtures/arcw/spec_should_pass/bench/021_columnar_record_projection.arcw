@@ -1,5 +1,5 @@
 bench @bench.columnar_record_projection {
-    measure iterations = 4 { start(@flow.columnar_record_projection) }
+    measure iterations = 4 { goto @flow.columnar_record_projection }
 }
 
 flow @flow.columnar_record_projection columnar_record_projection {

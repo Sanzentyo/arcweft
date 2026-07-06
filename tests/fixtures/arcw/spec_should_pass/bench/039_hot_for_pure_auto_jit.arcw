@@ -9,7 +9,7 @@ fn score_f32_auto(base: f32, bias: f32) -> f32 {
 }
 
 bench @bench.hot_for_pure_auto_jit {
-    measure iterations = 4 { start(@flow.hot_for_pure_auto_jit) }
+    measure iterations = 4 { goto @flow.hot_for_pure_auto_jit }
 }
 
 flow @flow.hot_for_pure_auto_jit hot_for_pure_auto_jit {

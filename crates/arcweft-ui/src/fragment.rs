@@ -1,4 +1,4 @@
-//! Flat retained UI fragments emitted by Rust and Arcweft components.
+//! Flat retained UI fragments emitted by Rust and Arcweft views.
 
 use crate::{NodeKey, RawEntity, UiError};
 use arcweft_presentation::input::{InputEventKind, PointerPhase};
@@ -39,7 +39,7 @@ pub struct CustomElementId(pub u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SemanticSpecId(pub u32);
 
-/// Stable identifier for an event handler lowered by the component runtime.
+/// Stable identifier for an event handler lowered by the view runtime.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HandlerId(pub u32);
 
@@ -69,11 +69,11 @@ pub enum FragmentKind {
     Text(TextSourceId),
     RichText(RichTextSourceId),
     Image(ImageId),
-    Component(RawEntity),
+    View(RawEntity),
     Custom(CustomElementId),
 }
 
-/// Component event binding stored as pure data.
+/// View event binding stored as pure data.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EventBinding {
     kind: EventKind,
