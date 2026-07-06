@@ -405,7 +405,7 @@ fn parse_view_modifier(
         return Some((
             ViewModifier::OnEvent {
                 name: "click".to_owned(),
-                body: parse_expr_lossy(&source),
+                body: crate::parser::parse_callback_block_expr_body(&source),
                 ime_policy: None,
             },
             consumed,
@@ -679,6 +679,9 @@ fn button_activation_modifier(modifiers: &[ViewModifier], range: TextRange) -> O
 fn click_action(expr: &Expr, range: TextRange) -> Option<ViewAction> {
     match expr {
         Expr::Closure { body, .. } => click_action(body, range),
+        Expr::Block {
+            value: Some(value), ..
+        } => click_action(value, range),
         Expr::Raw(source) => {
             let body = source
                 .trim()
@@ -705,6 +708,9 @@ fn noop_action(expr: &Expr) -> Option<ViewAction> {
         Expr::Raw(source) => source.trim(),
         Expr::Path(source) => source.as_label().trim(),
         Expr::Closure { body, .. } => return noop_action(body),
+        Expr::Block {
+            value: Some(value), ..
+        } => return noop_action(value),
         _ => return None,
     };
     let source = source
@@ -718,6 +724,12 @@ fn noop_action(expr: &Expr) -> Option<ViewAction> {
 fn text_submit_action(expr: &Expr, range: TextRange) -> Option<ViewAction> {
     if let Expr::Closure { body, .. } = expr {
         return text_submit_action(body, range);
+    }
+    if let Expr::Block {
+        value: Some(value), ..
+    } = expr
+    {
+        return text_submit_action(value, range);
     }
     if let Expr::Call { callee, args } = expr {
         return text_submit_call_action(callee, args, range);

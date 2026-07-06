@@ -145,6 +145,45 @@ pub component FeedbackForm() {
 }
 
 #[test]
+fn component_view_button_on_click_multi_statement_block_uses_final_action() {
+    let parsed = parse_source(
+        r#"
+pub action feedback.submit(value: String)
+
+pub component FeedbackForm() {
+  Button("Continue")
+    .on_click {
+      let value = visitor_name.text
+      action.invoke(@action:.feedback.submit, value = "ready")
+    }
+}
+"#,
+    );
+
+    assert_eq!(parsed.errors(), &[]);
+    let view = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(item) => item.component_body()?.view(),
+            _ => None,
+        })
+        .expect("component View body");
+
+    let button = find_button(view.value()).expect("button parsed");
+    let Some(ViewAction::ActionInvoke(action)) = button.activation() else {
+        panic!("expected action.invoke activation");
+    };
+    assert_eq!(action.action().canonical_body(), "action.feedback.submit");
+    assert_eq!(action.payload_name(), Some("value"));
+    assert_eq!(
+        action.payload(),
+        Some(&ViewActionPayload::LiteralString("ready".to_owned()))
+    );
+}
+
+#[test]
 fn component_view_box_and_scroll_parse_as_canonical_elements() {
     let parsed = parse_source(
         r#"

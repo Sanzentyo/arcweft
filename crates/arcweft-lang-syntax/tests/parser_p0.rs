@@ -370,7 +370,11 @@ fn postfix_callback_block_lowers_to_method_call_closure_arg() {
     assert!(params.is_empty());
     assert!(matches!(
         body.as_ref(),
-        Expr::MethodCall { method, .. } if method == "invoke"
+        Expr::Block {
+            statements,
+            value: Some(value),
+        } if statements.is_empty()
+            && matches!(value.as_ref(), Expr::MethodCall { method, .. } if method == "invoke")
     ));
 }
 
@@ -389,7 +393,43 @@ fn postfix_callback_block_supports_parameterized_closure() {
     assert_eq!(params, &["item".to_owned(), "index".to_owned()]);
     assert!(matches!(
         body.as_ref(),
-        Expr::MethodCall { method, .. } if method == "label"
+        Expr::Block {
+            statements,
+            value: Some(value),
+        } if statements.is_empty()
+            && matches!(value.as_ref(), Expr::MethodCall { method, .. } if method == "label")
+    ));
+}
+
+#[test]
+fn postfix_callback_block_preserves_multi_statement_body() {
+    let expr = parse_expr(
+        r#"Button("Send").on_click {
+  let label = name.text
+  action.invoke(@action:.feedback.submit, value = label)
+}"#,
+    )
+    .expect("multi-statement callback block parses");
+    let Expr::MethodCall { method, args, .. } = expr else {
+        panic!("expected method call");
+    };
+
+    assert_eq!(method, "on_click");
+    let [CallArg::Positional(Expr::Closure { params, body })] = args.as_slice() else {
+        panic!("expected single closure arg: {args:?}");
+    };
+    assert!(params.is_empty());
+    let Expr::Block {
+        statements,
+        value: Some(value),
+    } = body.as_ref()
+    else {
+        panic!("expected callback body block, got {body:?}");
+    };
+    assert!(matches!(statements.as_slice(), [Stmt::Let { .. }]));
+    assert!(matches!(
+        value.as_ref(),
+        Expr::MethodCall { method, .. } if method == "invoke"
     ));
 }
 

@@ -79,6 +79,15 @@ pub fn parse_source(source: impl Into<String>) -> ParsedSource {
     parse_document(source, ParseOptions::default())
 }
 
+/// Parses a callback block body as an expression block.
+///
+/// This is used by the expression parser for postfix callback sugar such as
+/// `button.on_click { let x = value; action.invoke(...) }`, where the braces
+/// are syntactic callback delimiters rather than ordinary expression grouping.
+pub(crate) fn parse_callback_block_expr_body(body: &str) -> Expr {
+    parse_block_expr(body)
+}
+
 /// Parses dialogue text content outside a full source document.
 ///
 /// This preserves the same token model used by speaker-line and content-call

@@ -761,6 +761,13 @@ enum Token {
     Eof,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LexedToken {
+    token: Token,
+    start: usize,
+    end: usize,
+}
+
 struct Lexer<'a> {
     source: &'a str,
     cursor: usize,
@@ -771,14 +778,15 @@ impl<'a> Lexer<'a> {
         Self { source, cursor: 0 }
     }
 
-    fn tokenize(mut self) -> Vec<Token> {
+    fn tokenize(mut self) -> Vec<LexedToken> {
         let mut tokens = Vec::with_capacity(self.source.len().saturating_div(3).saturating_add(1));
         while let Some(ch) = self.peek_char() {
             if ch.is_whitespace() {
                 self.bump_char();
                 continue;
             }
-            tokens.push(match ch {
+            let start = self.cursor;
+            let token = match ch {
                 '"' => self.lex_string_or_char(),
                 '@' => self.lex_entity(),
                 '\'' => self.lex_lifetime_path(),
@@ -830,9 +838,18 @@ impl<'a> Lexer<'a> {
                     self.bump_char();
                     Token::Ident(ch.to_string())
                 }
+            };
+            tokens.push(LexedToken {
+                token,
+                start,
+                end: self.cursor,
             });
         }
-        tokens.push(Token::Eof);
+        tokens.push(LexedToken {
+            token: Token::Eof,
+            start: self.cursor,
+            end: self.cursor,
+        });
         tokens
     }
 
@@ -1152,7 +1169,8 @@ impl<'a> Lexer<'a> {
 }
 
 struct ExprParser {
-    tokens: Vec<Token>,
+    source: String,
+    tokens: Vec<LexedToken>,
     cursor: usize,
     stats: ExprParseStats,
 }
@@ -1160,6 +1178,7 @@ struct ExprParser {
 impl ExprParser {
     fn new(source: &str) -> Self {
         Self {
+            source: source.to_owned(),
             tokens: Lexer::new(source).tokenize(),
             cursor: 0,
             stats: ExprParseStats::default(),
@@ -1608,19 +1627,19 @@ impl ExprParser {
 
     fn parse_named_arg_name(&mut self) -> Option<String> {
         let mut cursor = self.cursor;
-        let Token::Ident(first) = self.tokens.get(cursor)? else {
+        let Token::Ident(first) = self.token_at(cursor) else {
             return None;
         };
         let mut parts = vec![first.clone()];
         cursor += 1;
-        while matches!(self.tokens.get(cursor), Some(Token::Dot)) {
-            let Some(Token::Ident(part)) = self.tokens.get(cursor + 1) else {
+        while matches!(self.token_at(cursor), Token::Dot) {
+            let Token::Ident(part) = self.token_at(cursor + 1) else {
                 return None;
             };
             parts.push(part.clone());
             cursor += 2;
         }
-        if self.tokens.get(cursor) != Some(&Token::Op("=")) {
+        if self.token_at(cursor) != &Token::Op("=") {
             return None;
         }
         self.cursor = cursor + 1;
@@ -1648,11 +1667,9 @@ impl ExprParser {
     fn parse_callback_block_closure(&mut self) -> Result<Expr, ExprParseError> {
         let tokens = self.take_braced_tokens()?;
         let (params, body_tokens) = callback_block_parts(&tokens)?;
-        let body_source = body_tokens
-            .iter()
-            .map(token_source)
-            .collect::<Vec<_>>()
-            .join(" ");
+        let body_source = token_span_source(body_tokens, &self.source)
+            .unwrap_or_default()
+            .trim();
         if body_source.trim().is_empty() {
             return Err(ExprParseError::new(
                 "callback block requires a body expression",
@@ -1660,30 +1677,37 @@ impl ExprParser {
         }
         Ok(Expr::Closure {
             params,
-            body: Box::new(parse_expr(body_source.trim())?),
+            body: Box::new(crate::parser::parse_callback_block_expr_body(body_source)),
         })
     }
 
-    fn take_braced_tokens(&mut self) -> Result<Vec<Token>, ExprParseError> {
-        self.expect(&Token::LBrace)?;
+    fn take_braced_tokens(&mut self) -> Result<Vec<LexedToken>, ExprParseError> {
+        if self.peek() != &Token::LBrace {
+            return Err(ExprParseError::new(&format!(
+                "expected {:?}, found {:?}",
+                Token::LBrace,
+                self.peek()
+            )));
+        }
+        self.cursor += 1;
         let mut depth = 1_u32;
         let mut tokens = Vec::new();
         loop {
-            let token = self.bump();
-            match token {
+            let lexed = self.bump_lexed();
+            match lexed.token {
                 Token::LBrace => {
                     depth = depth.saturating_add(1);
-                    tokens.push(Token::LBrace);
+                    tokens.push(lexed);
                 }
                 Token::RBrace => {
                     depth = depth.saturating_sub(1);
                     if depth == 0 {
                         return Ok(tokens);
                     }
-                    tokens.push(Token::RBrace);
+                    tokens.push(lexed);
                 }
                 Token::Eof => return Err(ExprParseError::new("unclosed callback block")),
-                other => tokens.push(other),
+                _ => tokens.push(lexed),
             }
         }
     }
@@ -1767,7 +1791,13 @@ impl ExprParser {
     }
 
     fn peek(&self) -> &Token {
-        self.tokens.get(self.cursor).unwrap_or(&Token::Eof)
+        self.token_at(self.cursor)
+    }
+
+    fn token_at(&self, index: usize) -> &Token {
+        self.tokens
+            .get(index)
+            .map_or(&Token::Eof, |lexed| &lexed.token)
     }
 
     fn peek_ident(&self, expected: &str) -> bool {
@@ -1778,6 +1808,7 @@ impl ExprParser {
         self.cursor
             .checked_sub(1)
             .and_then(|index| self.tokens.get(index))
+            .map(|lexed| &lexed.token)
     }
 
     fn bump(&mut self) -> Token {
@@ -1786,6 +1817,21 @@ impl ExprParser {
             self.cursor += 1;
         }
         token
+    }
+
+    fn bump_lexed(&mut self) -> LexedToken {
+        let lexed = self.tokens.get(self.cursor).cloned().unwrap_or_else(|| {
+            let end = self.source.len();
+            LexedToken {
+                token: Token::Eof,
+                start: end,
+                end,
+            }
+        });
+        if !matches!(lexed.token, Token::Eof) {
+            self.cursor += 1;
+        }
+        lexed
     }
 }
 
@@ -1825,17 +1871,19 @@ fn flat_literal_bracket_seq_expr(
     }
 }
 
-fn literal_exprs_from_tokens(tokens: &[Token]) -> Vec<Expr> {
+fn literal_exprs_from_tokens(tokens: &[LexedToken]) -> Vec<Expr> {
     tokens
         .iter()
-        .filter_map(|token| match token {
+        .filter_map(|lexed| match &lexed.token {
             Token::Literal(literal) => Some(Expr::Literal(literal.clone())),
             _ => None,
         })
         .collect()
 }
 
-fn callback_block_parts(tokens: &[Token]) -> Result<(Vec<String>, &[Token]), ExprParseError> {
+fn callback_block_parts(
+    tokens: &[LexedToken],
+) -> Result<(Vec<String>, &[LexedToken]), ExprParseError> {
     let Some(arrow) = top_level_callback_arrow(tokens) else {
         return Ok((Vec::new(), tokens));
     };
@@ -1843,12 +1891,12 @@ fn callback_block_parts(tokens: &[Token]) -> Result<(Vec<String>, &[Token]), Exp
     Ok((params, &tokens[arrow + 1..]))
 }
 
-fn top_level_callback_arrow(tokens: &[Token]) -> Option<usize> {
+fn top_level_callback_arrow(tokens: &[LexedToken]) -> Option<usize> {
     let mut paren_depth = 0_u32;
     let mut bracket_depth = 0_u32;
     let mut brace_depth = 0_u32;
-    tokens.iter().enumerate().find_map(|(index, token)| {
-        match token {
+    tokens.iter().enumerate().find_map(|(index, lexed)| {
+        match &lexed.token {
             Token::LParen => paren_depth = paren_depth.saturating_add(1),
             Token::RParen => paren_depth = paren_depth.saturating_sub(1),
             Token::LBracket => bracket_depth = bracket_depth.saturating_add(1),
@@ -1864,11 +1912,11 @@ fn top_level_callback_arrow(tokens: &[Token]) -> Option<usize> {
     })
 }
 
-fn callback_block_params(tokens: &[Token]) -> Result<Vec<String>, ExprParseError> {
+fn callback_block_params(tokens: &[LexedToken]) -> Result<Vec<String>, ExprParseError> {
     let mut params = Vec::new();
     let mut expecting_param = true;
-    for token in tokens {
-        match token {
+    for lexed in tokens {
+        match &lexed.token {
             Token::Ident(name) if expecting_param => {
                 params.push(name.to_owned());
                 expecting_param = false;
@@ -1889,6 +1937,12 @@ fn callback_block_params(tokens: &[Token]) -> Result<Vec<String>, ExprParseError
         ));
     }
     Ok(params)
+}
+
+fn token_span_source<'a>(tokens: &[LexedToken], source: &'a str) -> Option<&'a str> {
+    let first = tokens.first()?;
+    let last = tokens.last()?;
+    source.get(first.start..last.end)
 }
 
 fn token_source(token: &Token) -> String {

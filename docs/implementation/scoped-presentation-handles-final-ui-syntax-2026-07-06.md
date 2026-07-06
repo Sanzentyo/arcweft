@@ -545,6 +545,48 @@ warnings. Relevant changed Rust files:
 | `crates/arcweft-lang-syntax/tests/style_component_view.rs` | 9,458 | 353 | test | false | Component/View parser coverage for action payload names |
 | `crates/arcweft-lang-syntax/tests/parser_p0.rs` | 19,196 | 599 | test | false | Parser regression formatting cleanup |
 
+## Multi-Statement Callback Blocks
+
+- Postfix callback block sugar now preserves the raw source inside `{ ... }`
+  before parsing the body. The expression parser attaches source spans to
+  tokens so callback bodies no longer collapse newlines into a single lossy
+  expression string.
+- Callback block bodies now lower to the existing `Expr::Block { statements,
+  value }` form. Single-expression callback blocks become an empty-statement
+  block with a final value; multi-statement blocks preserve leading statements
+  and the final expression value through the same parser path used by scope
+  expressions.
+- Parameterized callback blocks still use the same `item, index => body`
+  surface. The parameter list remains parsed from top-level tokens, while the
+  body is sliced from the original source and then parsed as an expression
+  block.
+- Component/View `.on_click { ... }` inline modifier blocks now parse through
+  the same callback body path. Button activation therefore recognizes a final
+  `action.invoke(...)`, `text_submit(...)`, or `noop` after earlier statements
+  such as `let value = visitor_name.text`.
+
+### Verification
+
+- `cargo test -p arcweft-lang-syntax --all-features postfix_callback_block`
+- `cargo test -p arcweft-lang-syntax --all-features component_view_button_on_click_multi_statement_block_uses_final_action`
+- `cargo test -p arcweft-lang-syntax --all-features`
+- `cargo test -p arcweft-lang-sema --all-features typechecks_component_action_invoke`
+- `cargo check --workspace --all-targets --all-features`
+- `cargo clippy --workspace --all-targets --all-features`
+- `cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit\current`
+
+The multi-statement callback block cut was measured at Jujutsu change
+`mxwqzyrw`. The structure audit reported 0 errors and 138 warnings. Relevant
+changed Rust files:
+
+| Path | Bytes | LOC | Classification | Embedded Tests | Responsibility |
+| --- | ---: | ---: | --- | --- | --- |
+| `crates/arcweft-lang-syntax/src/expr.rs` | 71,059 | 2,160 | production | true | Expression token spans and postfix callback block parsing |
+| `crates/arcweft-lang-syntax/src/parser.rs` | 19,242 | 504 | production | false | Parser-facing callback block body bridge |
+| `crates/arcweft-lang-syntax/src/parser/view.rs` | 36,625 | 1,006 | production | false | Component/View inline callback activation parsing |
+| `crates/arcweft-lang-syntax/tests/parser_p0.rs` | 20,451 | 637 | test | false | Postfix callback block expression coverage |
+| `crates/arcweft-lang-syntax/tests/style_component_view.rs` | 10,568 | 388 | test | false | Component/View multi-statement callback coverage |
+
 ## Remaining Work
 
 - End-to-end save subsystem wiring still needs to consume the runtime display
@@ -561,6 +603,5 @@ warnings. Relevant changed Rust files:
 - `Scroll` is now a typed resource and sidecar element, but scroll offsets,
   clipping, input routing, save/restore of scroll state, and native/web/observe
   parity tests still need the dedicated scroll runtime behavior slice.
-- The final UI syntax direction still needs multi-statement callback block
-  bodies and richer reactive branching surface from the broader input/scroll
-  syntax request.
+- The final UI syntax direction still needs richer reactive branching surface
+  from the broader input/scroll syntax request.
