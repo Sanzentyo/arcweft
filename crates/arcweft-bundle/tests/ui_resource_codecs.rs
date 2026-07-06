@@ -339,6 +339,7 @@ fn fixture_program() -> UiProgramResource {
         semantic_targets: vec![UiSemanticTarget {
             public_id: "semantic.dialogue.title".to_owned(),
             target: "heading".to_owned(),
+            component: None,
             label_text_source: Some("text.dialogue.title".to_owned()),
             source: None,
         }],
@@ -457,6 +458,7 @@ fn fixture_input(secure_policy: UiSecureInputPolicy) -> UiInputResource {
     UiInputResource {
         options: vec![UiInputOptions {
             public_id: "input.dialogue.name".to_owned(),
+            component: None,
             kind: UiInputKind::TextField,
             value_text_source: "text.dialogue.name".to_owned(),
             placeholder_text_source: Some("text.dialogue.placeholder".to_owned()),

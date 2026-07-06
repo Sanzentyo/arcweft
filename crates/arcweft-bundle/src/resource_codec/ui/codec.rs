@@ -372,6 +372,7 @@ impl UiProgramResource {
                     [
                         Some(target.public_id.clone()),
                         Some(target.target.clone()),
+                        target.component.clone(),
                         target.label_text_source.clone(),
                     ]
                     .into_iter()
@@ -398,6 +399,7 @@ impl UiProgramResource {
                     };
                     [
                         Some(button.public_id.clone()),
+                        button.component.clone(),
                         Some(button.label_text_source.clone()),
                     ]
                     .into_iter()

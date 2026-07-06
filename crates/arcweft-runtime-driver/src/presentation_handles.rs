@@ -576,11 +576,11 @@ pub(crate) fn filter_presentation_text_inputs(
     controls
         .into_iter()
         .filter(|control| {
-            resource_is_render_visible(
-                handles,
-                &RUNTIME_CONTROL_FAMILIES,
-                &[control.public_id.as_str(), control.target.as_str()],
-            )
+            let mut aliases = vec![control.public_id.as_str(), control.target.as_str()];
+            if let Some(component) = control.component.as_deref() {
+                aliases.push(component);
+            }
+            resource_is_render_visible(handles, &RUNTIME_CONTROL_FAMILIES, &aliases)
         })
         .collect()
 }
@@ -592,11 +592,11 @@ pub(crate) fn filter_presentation_action_buttons(
     controls
         .into_iter()
         .filter(|control| {
-            resource_is_render_visible(
-                handles,
-                &RUNTIME_CONTROL_FAMILIES,
-                &[control.public_id.as_str(), control.target.as_str()],
-            )
+            let mut aliases = vec![control.public_id.as_str(), control.target.as_str()];
+            if let Some(component) = control.component.as_deref() {
+                aliases.push(component);
+            }
+            resource_is_render_visible(handles, &RUNTIME_CONTROL_FAMILIES, &aliases)
         })
         .collect()
 }

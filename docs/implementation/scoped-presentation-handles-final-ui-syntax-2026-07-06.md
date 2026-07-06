@@ -233,15 +233,61 @@ audit reported 0 errors and 138 warnings. Current changed Rust file metrics:
 
 The typed-payload cut kept the structure audit at 0 errors and 138 warnings.
 
+## Component Scoped Capture And Handle Visibility
+
+- UI resource metadata now carries the owning component id from Component/View
+  lowering into `UiSemanticTarget`, `UiInputOptions`, `UiActionButtonResource`,
+  `UiRuntimeTextControl`, and `UiRuntimeActionButton`. The field is optional so
+  legacy/non-component resources keep the existing top-level behavior.
+- Runtime presentation-handle filtering now treats a live component handle id as
+  an alias for its owned runtime text controls and action buttons. Hiding,
+  unmounting, releasing, or destroying a component handle removes those child
+  controls from the presentation snapshot; showing the handle restores them.
+- Agent native observe now preserves component ownership for runtime semantic
+  objects by mapping prepared text-input and button targets back to their owning
+  component ids. Component grouping therefore reports the authored component
+  scope instead of falling back to each object id.
+- Agent observe now emits structured `AGENT_CAPTURE_MISSING_SCOPE` diagnostics
+  when a requested `--component`, `--object`, or `--layer` capture scope is not
+  present after presentation-handle filtering.
+
+### Verification
+
+- `cargo check -p arcweft-cli --all-targets --all-features`
+- `cargo test -p arcweft-runtime-driver --all-features component_handle_lifecycle_filters_runtime_controls`
+- `cargo test -p arcweft-cli --all-features player_semantic_objects_preserve_runtime_component_parent`
+- `cargo test -p arcweft-cli --all-features missing_requested_capture_scopes_report_structured_diagnostics`
+- `cargo check --workspace --all-targets --all-features`
+- `cargo clippy --workspace --all-targets --all-features`
+- `cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit\current`
+
+The component scoped-capture cut was measured at Jujutsu change `qunnupmk`.
+The structure audit reported 0 errors and 138 warnings. Relevant changed
+production files:
+
+| Path | Bytes | LOC | Classification | Embedded Tests | Responsibility |
+| --- | ---: | ---: | --- | --- | --- |
+| `crates/arcweft-bundle/src/resource_codec/ui/codec.rs` | 40,387 | 1,172 | production | false | UI codec public-id accounting |
+| `crates/arcweft-bundle/src/resource_codec/ui/model.rs` | 50,684 | 1,672 | production | true | UI resource/runtime model and runtime projection |
+| `crates/arcweft-cli/src/app/agent/native/player_observation.rs` | 37,097 | 1,051 | production | true | Native Agent observe object/component capture mapping |
+| `crates/arcweft-cli/src/app/bundle.rs` | 77,725 | 2,159 | production | false | Legacy bundle/UI resource construction |
+| `crates/arcweft-cli/src/app/bundle_view.rs` | 47,867 | 1,356 | production | false | Component/View sidecar lowering |
+| `crates/arcweft-runtime-driver/src/display.rs` | 36,396 | 974 | production | true | Bundle presentation snapshots and handle filtering |
+| `crates/arcweft-runtime-driver/src/presentation_handles.rs` | 30,629 | 922 | production | true | Presentation handle state table and resource filters |
+| `crates/arcweft-runtime-driver/src/session.rs` | 60,993 | 1,613 | production | false | Bundle session runtime bridge |
+
 ## Remaining Work
 
 - End-to-end save subsystem wiring still needs to consume the runtime display
   snapshot and AWBC fiber cleanup checkpoint evidence added here. This cut
   verifies serde roundtrip and rollback substrate, not a full player save/load
   scenario.
-- Component/image scoped capture still needs precise hidden, unmounted,
-  released, and destroyed handle diagnostics and native/web/observe parity
-  tests.
+- Image scoped capture still needs the same hidden, unmounted, released, and
+  destroyed handle absence/diagnostic contract added here for component-owned
+  runtime controls.
+- Native/web/observe parity tests still need a broader hidden/disposed-handle
+  suite covering component handles, image handles, hit-test/focus/writeback
+  rejection, and explicit mount regressions.
 - Lexical cleanup integration for overlay pop and scene transition needs the
   owning overlay/scene lifecycle operations to call the cleanup drain path.
 - `Scroll` is now a typed resource and sidecar element, but scroll offsets,

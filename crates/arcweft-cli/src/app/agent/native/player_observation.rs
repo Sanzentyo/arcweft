@@ -18,7 +18,10 @@ use arcweft_agent_protocol::{
     diagnostic::{AgentDiagnostic, AgentDiagnosticSeverity},
     geometry::{AgentBBox, AgentCoordinateSpace, AgentViewport},
     image::{AgentCaptureSourceIdentity, AgentImageAlignment, AgentImageFit, AgentImageTransform},
-    object::{AgentObservedImageContent, AgentObservedObject, AgentObservedObjectContent},
+    object::{
+        AgentObservedComponent, AgentObservedImageContent, AgentObservedLayer, AgentObservedObject,
+        AgentObservedObjectContent,
+    },
     observation::AgentObservationReport,
     presentation::AgentPresentationTree,
     session::{AgentAssignment, AgentAudioState},
@@ -338,7 +341,7 @@ fn player_observation_report(
     prepared: &PlayerPreparedFrame,
     step: &BundleSessionStep,
     objects: Vec<AgentObservedObject>,
-    diagnostics: Vec<AgentDiagnostic>,
+    mut diagnostics: Vec<AgentDiagnostic>,
     task_request_count: usize,
     options: &AgentObserveOptions,
 ) -> AgentObservationReport {
@@ -350,6 +353,14 @@ fn player_observation_report(
     actions.extend(agent_action_targets_for_runtime_status(&step.fiber_status));
     let layers = agent_observed_layers("cli", step.index, &objects);
     let components = agent_observed_components("cli", step.index, &objects);
+    push_missing_requested_scope_diagnostic(
+        &mut diagnostics,
+        step.index,
+        options,
+        &layers,
+        &components,
+        &objects,
+    );
     let presentation_tree = AgentPresentationTree::from_layers_and_objects(&layers, &objects);
     let state_hash = hash_hex(
         format!(
@@ -419,6 +430,112 @@ fn player_observation_report(
     }
 }
 
+fn push_missing_requested_scope_diagnostic(
+    diagnostics: &mut Vec<AgentDiagnostic>,
+    step: usize,
+    options: &AgentObserveOptions,
+    layers: &[AgentObservedLayer],
+    components: &[AgentObservedComponent],
+    objects: &[AgentObservedObject],
+) {
+    push_missing_capture_scope_diagnostics(
+        diagnostics,
+        step,
+        requested_capture_scopes(options),
+        layers,
+        components,
+        objects,
+    );
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RequestedCaptureScope<'a> {
+    kind: RequestedCaptureScopeKind,
+    id: &'a str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RequestedCaptureScopeKind {
+    Component,
+    Object,
+    Layer,
+}
+
+impl RequestedCaptureScopeKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Component => "component",
+            Self::Object => "object",
+            Self::Layer => "layer",
+        }
+    }
+}
+
+fn requested_capture_scopes(
+    options: &AgentObserveOptions,
+) -> [Option<RequestedCaptureScope<'_>>; 3] {
+    [
+        options
+            .component
+            .as_deref()
+            .map(|id| RequestedCaptureScope {
+                kind: RequestedCaptureScopeKind::Component,
+                id,
+            }),
+        options.object.as_deref().map(|id| RequestedCaptureScope {
+            kind: RequestedCaptureScopeKind::Object,
+            id,
+        }),
+        options.layer.as_deref().map(|id| RequestedCaptureScope {
+            kind: RequestedCaptureScopeKind::Layer,
+            id,
+        }),
+    ]
+}
+
+fn push_missing_capture_scope_diagnostics(
+    diagnostics: &mut Vec<AgentDiagnostic>,
+    step: usize,
+    requested_scopes: [Option<RequestedCaptureScope<'_>>; 3],
+    layers: &[AgentObservedLayer],
+    components: &[AgentObservedComponent],
+    objects: &[AgentObservedObject],
+) {
+    for scope in requested_scopes
+        .into_iter()
+        .flatten()
+        .filter(|scope| !capture_scope_is_observed(*scope, layers, components, objects))
+    {
+        diagnostics.push(AgentDiagnostic {
+            step,
+            severity: AgentDiagnosticSeverity::Error,
+            source: Some("agent.observe".to_owned()),
+            code: Some("AGENT_CAPTURE_MISSING_SCOPE".to_owned()),
+            effect_id: None,
+            message: format!(
+                "no observed {} matches requested capture scope `{}` after presentation handle filtering",
+                scope.kind.label(),
+                scope.id
+            ),
+        });
+    }
+}
+
+fn capture_scope_is_observed(
+    scope: RequestedCaptureScope<'_>,
+    layers: &[AgentObservedLayer],
+    components: &[AgentObservedComponent],
+    objects: &[AgentObservedObject],
+) -> bool {
+    match scope.kind {
+        RequestedCaptureScopeKind::Component => {
+            components.iter().any(|observed| observed.id == scope.id)
+        }
+        RequestedCaptureScopeKind::Object => objects.iter().any(|observed| observed.id == scope.id),
+        RequestedCaptureScopeKind::Layer => layers.iter().any(|observed| observed.id == scope.id),
+    }
+}
+
 fn player_observed_viewport(prepared: &PlayerPreparedFrame) -> AgentViewport {
     AgentViewport {
         width: prepared.scene.viewport.physical_width,
@@ -435,6 +552,7 @@ fn player_observed_objects(
     options: &AgentObserveOptions,
 ) -> Vec<AgentObservedObject> {
     let mut objects = Vec::new();
+    let component_by_target = player_runtime_component_by_target(presentation);
     if let Some(dialogue) = &presentation.dialogue {
         objects.push(agent_textbox_object(
             step,
@@ -456,10 +574,48 @@ fn player_observed_objects(
                     .text_inputs
                     .iter()
                     .find(|control| control.target == *node.target());
-                player_semantic_object(step, node, control)
+                player_semantic_object(step, node, control, &component_by_target)
             }),
     );
     objects
+}
+
+fn player_runtime_component_by_target(
+    presentation: &BundlePresentationSnapshot,
+) -> BTreeMap<String, String> {
+    presentation
+        .text_inputs
+        .iter()
+        .filter_map(|control| {
+            control
+                .component
+                .as_ref()
+                .map(|component| (control, component))
+        })
+        .flat_map(|(control, component)| {
+            [
+                (control.public_id.clone(), component.clone()),
+                (control.target.clone(), component.clone()),
+            ]
+        })
+        .chain(
+            presentation
+                .action_buttons
+                .iter()
+                .filter_map(|button| {
+                    button
+                        .component
+                        .as_ref()
+                        .map(|component| (button, component))
+                })
+                .flat_map(|(button, component)| {
+                    [
+                        (button.public_id.clone(), component.clone()),
+                        (button.target.clone(), component.clone()),
+                    ]
+                }),
+        )
+        .collect()
 }
 
 fn player_observed_image_objects(
@@ -627,6 +783,7 @@ fn player_semantic_object(
     step: usize,
     node: &arcweft_presentation::semantic::SemanticNode,
     control: Option<&RenderTextInputControl>,
+    component_by_target: &BTreeMap<String, String>,
 ) -> Option<AgentObservedObject> {
     if !node.visible() {
         return None;
@@ -636,7 +793,7 @@ fn player_semantic_object(
     let text = player_semantic_text(node.role(), node.label(), control);
     let mut object = AgentObservedObject {
         id: id.clone(),
-        parent_id: None,
+        parent_id: component_by_target.get(&id).cloned(),
         entity: Some(id.clone()),
         layer: node.layer().public_id().as_str().to_owned(),
         role: player_semantic_role(node.role()).to_owned(),
@@ -737,4 +894,158 @@ fn non_negative_f32_to_u32(value: f32) -> u32 {
 
 fn u32_to_f32(value: u32) -> f32 {
     value.to_string().parse().unwrap_or(f32::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcweft_bundle::resource_codec::ui::{
+        CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
+        UiInputPurpose, UiSecureInputPolicy, UiTextSelectionPolicy, UiTextShortcutPolicy,
+        UiTextTabPolicy, UiTextVerticalNavigationPolicy,
+    };
+    use arcweft_bundle::resource_codec::{
+        UiRuntimeActionButton, UiRuntimeActionButtonAction, UiRuntimeButtonBounds,
+        UiRuntimeControlStyle, UiRuntimeTextControl, UiRuntimeTextControlBounds,
+        UiRuntimeTextControlHandlers, UiRuntimeTextControlOptions, UiRuntimeTextSelection,
+    };
+    use arcweft_id::PublicId;
+    use arcweft_presentation::input::InteractionTarget;
+    use arcweft_presentation::layer::LayerId;
+    use arcweft_presentation::semantic::SemanticNode;
+
+    #[test]
+    fn player_semantic_objects_preserve_runtime_component_parent() {
+        let presentation = BundlePresentationSnapshot {
+            text_inputs: vec![runtime_text_control("input.visitor_name")],
+            action_buttons: vec![runtime_action_button("button.continue")],
+            ..BundlePresentationSnapshot::default()
+        };
+        let component_by_target = player_runtime_component_by_target(&presentation);
+        let input_target = interaction_target("input.visitor_name");
+        let input_node = SemanticNode::new(
+            layer_id("ui.text_input"),
+            input_target.clone(),
+            SemanticRole::TextField,
+            HitRect::new(48.0, 48.0, 420.0, 48.0),
+        );
+        let render_control = RenderTextInputControl::new(
+            input_target,
+            arcweft_presentation::text_input::TextInputSessionId(41),
+            "Ada",
+            arcweft_presentation::text_input::TextRange::new(
+                arcweft_presentation::text_input::TextByteOffset(3),
+                arcweft_presentation::text_input::TextByteOffset(3),
+            ),
+            arcweft_presentation::text_input::TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(48.0, 48.0, 420.0, 48.0),
+        );
+        let button_node = SemanticNode::new(
+            layer_id("ui.button"),
+            interaction_target("button.continue"),
+            SemanticRole::Button,
+            HitRect::new(484.0, 48.0, 180.0, 48.0),
+        );
+
+        let input =
+            player_semantic_object(7, &input_node, Some(&render_control), &component_by_target)
+                .expect("input object");
+        let button = player_semantic_object(7, &button_node, None, &component_by_target)
+            .expect("button object");
+
+        assert_eq!(
+            input.parent_id.as_deref(),
+            Some("component.ModernFeedbackPanel")
+        );
+        assert_eq!(
+            button.parent_id.as_deref(),
+            Some("component.ModernFeedbackPanel")
+        );
+    }
+
+    #[test]
+    fn missing_requested_capture_scopes_report_structured_diagnostics() {
+        let mut diagnostics = Vec::new();
+
+        push_missing_capture_scope_diagnostics(
+            &mut diagnostics,
+            9,
+            [
+                Some(RequestedCaptureScope {
+                    kind: RequestedCaptureScopeKind::Component,
+                    id: "component.HiddenPanel",
+                }),
+                Some(RequestedCaptureScope {
+                    kind: RequestedCaptureScopeKind::Object,
+                    id: "button.hidden",
+                }),
+                None,
+            ],
+            &[],
+            &[],
+            &[],
+        );
+
+        assert_eq!(diagnostics.len(), 2);
+        assert!(diagnostics.iter().all(|diagnostic| {
+            diagnostic.step == 9
+                && diagnostic.severity == AgentDiagnosticSeverity::Error
+                && diagnostic.source.as_deref() == Some("agent.observe")
+                && diagnostic.code.as_deref() == Some("AGENT_CAPTURE_MISSING_SCOPE")
+        }));
+        assert!(diagnostics[0].message.contains("component.HiddenPanel"));
+        assert!(diagnostics[1].message.contains("button.hidden"));
+    }
+
+    fn runtime_text_control(public_id: &str) -> UiRuntimeTextControl {
+        UiRuntimeTextControl {
+            public_id: public_id.to_owned(),
+            target: public_id.to_owned(),
+            component: Some("component.ModernFeedbackPanel".to_owned()),
+            session: 41,
+            value: String::new(),
+            selection: UiRuntimeTextSelection::new(0, 0),
+            options: UiRuntimeTextControlOptions {
+                purpose: UiInputPurpose::Text,
+                autocorrect: TextAssistPolicy::PlatformDefault,
+                spellcheck: TextAssistPolicy::PlatformDefault,
+                capitalization: TextCapitalization::None,
+                enter_key: EnterKeyHint::Default,
+                multiline: false,
+                selection_policy: UiTextSelectionPolicy::Enabled,
+                shortcut_policy: UiTextShortcutPolicy::Enabled,
+                tab_policy: UiTextTabPolicy::FocusNavigation,
+                vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
+                secure_policy: UiSecureInputPolicy::Plain,
+                composition_on_blur: CompositionOnBlurPolicy::Commit,
+            },
+            kind: UiInputKind::TextField,
+            bounds: UiRuntimeTextControlBounds::from_px(48, 48, 420, 48),
+            label: None,
+            handlers: UiRuntimeTextControlHandlers::default(),
+            style: UiRuntimeControlStyle::default(),
+        }
+    }
+
+    fn runtime_action_button(public_id: &str) -> UiRuntimeActionButton {
+        UiRuntimeActionButton {
+            public_id: public_id.to_owned(),
+            target: public_id.to_owned(),
+            component: Some("component.ModernFeedbackPanel".to_owned()),
+            label: "Continue".to_owned(),
+            enabled: true,
+            bounds: UiRuntimeButtonBounds::new(484_000, 48_000, 180_000, 48_000),
+            action: UiRuntimeActionButtonAction::Noop,
+            style: UiRuntimeControlStyle::default(),
+        }
+    }
+
+    fn interaction_target(public_id: &str) -> InteractionTarget {
+        InteractionTarget::new(PublicId::try_new(public_id).expect("valid test target id"))
+    }
+
+    fn layer_id(public_id: &str) -> LayerId {
+        LayerId::new(PublicId::try_new(public_id).expect("valid test layer id"))
+    }
 }

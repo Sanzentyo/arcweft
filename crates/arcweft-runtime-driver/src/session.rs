@@ -1251,6 +1251,7 @@ mod text_control_writeback_tests {
         UiRuntimeTextControl {
             public_id: target.to_owned(),
             target: target.to_owned(),
+            component: None,
             session,
             value: value.to_owned(),
             selection: UiRuntimeTextSelection::collapsed_at_end(value),

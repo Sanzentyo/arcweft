@@ -40,6 +40,7 @@ fn ui_input_resource_emits_runtime_text_control_shape() {
         semantic_targets: vec![UiSemanticTarget {
             public_id: "target.player_name".to_owned(),
             target: "input.player_name".to_owned(),
+            component: None,
             label_text_source: Some("text.label.name".to_owned()),
             source: None,
         }],
@@ -239,6 +240,7 @@ fn text_input_option(
 ) -> UiInputOptions {
     UiInputOptions {
         public_id: public_id.to_owned(),
+        component: None,
         kind,
         value_text_source: value_text_source.to_owned(),
         placeholder_text_source: placeholder_text_source.map(ToOwned::to_owned),

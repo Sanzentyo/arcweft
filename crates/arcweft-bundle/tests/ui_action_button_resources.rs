@@ -19,6 +19,7 @@ fn runtime_action_button_resolves_label_and_typed_submit_action() {
         layout_bounds: Vec::new(),
         action_buttons: vec![UiActionButtonResource {
             public_id: "button.submit_feedback".to_owned(),
+            component: None,
             label_text_source: "text.label.submit_feedback".to_owned(),
             enabled: true,
             action: UiActionButtonActionResource::TextInputSubmit {
@@ -70,6 +71,7 @@ fn runtime_action_button_resolves_action_invoke_action() {
         layout_bounds: Vec::new(),
         action_buttons: vec![UiActionButtonResource {
             public_id: "button.continue".to_owned(),
+            component: None,
             label_text_source: "text.label.continue".to_owned(),
             enabled: true,
             action: UiActionButtonActionResource::ActionInvoke {

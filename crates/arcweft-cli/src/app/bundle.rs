@@ -833,6 +833,7 @@ fn dsl_ui_input_options(input: &UiTextInputItem) -> UiInputOptions {
     let id = dsl_ui_input_public_id(input);
     UiInputOptions {
         public_id: id.clone(),
+        component: None,
         kind: dsl_ui_input_kind(input.kind()),
         value_text_source: dsl_ui_text_source_id("value", &id),
         placeholder_text_source: input
@@ -865,6 +866,7 @@ fn dsl_ui_semantic_target(input: &UiTextInputItem) -> UiSemanticTarget {
     UiSemanticTarget {
         public_id: id.clone(),
         target: id.clone(),
+        component: None,
         label_text_source: Some(dsl_ui_text_source_id("label", &id)),
         source: None,
     }

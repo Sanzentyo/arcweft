@@ -39,6 +39,7 @@ fn runtime_action_button_style_reaches_render_action_button() {
     let button = UiRuntimeActionButton {
         public_id: "button.submit_feedback".to_owned(),
         target: "button.submit_feedback".to_owned(),
+        component: None,
         label: "Send".to_owned(),
         enabled: true,
         bounds: UiRuntimeButtonBounds::new(484_000, 48_000, 128_000, 48_000),
@@ -182,6 +183,7 @@ fn text_control_with_style(public_id: &str, style: UiRuntimeControlStyle) -> UiR
     UiRuntimeTextControl {
         public_id: public_id.to_owned(),
         target: public_id.to_owned(),
+        component: None,
         session: 41,
         value: "hello".to_owned(),
         selection: UiRuntimeTextSelection::new(5, 5),

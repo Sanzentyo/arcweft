@@ -158,6 +158,7 @@ fn runtime_action_invoke_payload_reads_text_control_projection() {
         &[UiRuntimeActionButton {
             public_id: "button.continue".to_owned(),
             target: "button.continue".to_owned(),
+            component: None,
             label: "Continue".to_owned(),
             enabled: true,
             bounds: UiRuntimeButtonBounds::new(484_000, 48_000, 180_000, 48_000),
@@ -183,6 +184,7 @@ fn runtime_action_invoke_payload_reads_text_control_projection() {
         &[UiRuntimeActionButton {
             public_id: "button.literal".to_owned(),
             target: "button.literal".to_owned(),
+            component: None,
             label: "Literal".to_owned(),
             enabled: true,
             bounds: UiRuntimeButtonBounds::new(484_000, 112_000, 180_000, 48_000),

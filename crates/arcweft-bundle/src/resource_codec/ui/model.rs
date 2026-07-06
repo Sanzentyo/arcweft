@@ -164,6 +164,8 @@ pub struct UiExportedPart {
 pub struct UiSemanticTarget {
     pub public_id: String,
     pub target: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
     pub label_text_source: Option<String>,
     pub source: Option<SourceRangeRef>,
 }
@@ -200,6 +202,8 @@ pub struct UiLogicalRect {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct UiActionButtonResource {
     pub public_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
     pub label_text_source: String,
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -266,6 +270,8 @@ pub struct UiRuntimeButtonBounds {
 pub struct UiRuntimeActionButton {
     pub public_id: String,
     pub target: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
     pub label: String,
     pub enabled: bool,
     pub bounds: UiRuntimeButtonBounds,
@@ -692,6 +698,8 @@ pub struct UiInputResource {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct UiInputOptions {
     pub public_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
     pub kind: UiInputKind,
     pub value_text_source: String,
     pub placeholder_text_source: Option<String>,
@@ -830,6 +838,8 @@ pub enum CompositionOnBlurPolicy {
 pub struct UiRuntimeTextControl {
     pub public_id: String,
     pub target: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
     pub session: u64,
     pub value: String,
     pub selection: UiRuntimeTextSelection,
@@ -1027,6 +1037,7 @@ impl UiInputOptions {
         UiRuntimeTextControl {
             public_id: self.public_id.clone(),
             target: self.public_id.clone(),
+            component: self.component.clone(),
             session: self.runtime_text_session(),
             selection: UiRuntimeTextSelection::collapsed_at_end(&value),
             options: UiRuntimeTextControlOptions::from_input(self),
@@ -1077,6 +1088,7 @@ impl fmt::Debug for UiRuntimeTextControl {
             .debug_struct("UiRuntimeTextControl")
             .field("public_id", &self.public_id)
             .field("target", &self.target)
+            .field("component", &self.component)
             .field("session", &self.session)
             .field("value", &self.diagnostic_value())
             .field("selection", &self.selection)
@@ -1106,6 +1118,7 @@ impl UiProgramResource {
             .map(|button| UiRuntimeActionButton {
                 public_id: button.public_id.clone(),
                 target: button.public_id.clone(),
+                component: button.component.clone(),
                 label: text
                     .and_then(|resource| resource.literal_text(&button.label_text_source))
                     .unwrap_or(&button.public_id)
@@ -1624,6 +1637,7 @@ mod tests {
     fn runtime_text_control_carries_authored_change_and_submit_handlers() {
         let input = UiInputOptions {
             public_id: "field.name".to_owned(),
+            component: None,
             kind: UiInputKind::TextField,
             value_text_source: "text.name".to_owned(),
             placeholder_text_source: None,

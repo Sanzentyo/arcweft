@@ -261,6 +261,7 @@ fn runtime_control(public_id: &str, kind: UiInputKind, value: &str) -> UiRuntime
     UiRuntimeTextControl {
         public_id: public_id.to_owned(),
         target: public_id.to_owned(),
+        component: None,
         session: stable_test_session(public_id),
         value: value.to_owned(),
         selection: UiRuntimeTextSelection::new(end, end),

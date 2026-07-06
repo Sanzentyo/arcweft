@@ -646,6 +646,16 @@ mod tests {
     use crate::presentation_handles::{
         PresentationHandleDiagnosticCode, PresentationResourceState,
     };
+    use arcweft_bundle::resource_codec::ui::{
+        CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
+        UiInputPurpose, UiSecureInputPolicy, UiTextSelectionPolicy, UiTextShortcutPolicy,
+        UiTextTabPolicy, UiTextVerticalNavigationPolicy,
+    };
+    use arcweft_bundle::resource_codec::{
+        UiRuntimeActionButtonAction, UiRuntimeButtonBounds, UiRuntimeControlStyle,
+        UiRuntimeTextControlBounds, UiRuntimeTextControlHandlers, UiRuntimeTextControlOptions,
+        UiRuntimeTextSelection,
+    };
 
     #[test]
     fn inline_image_call_accepts_runtime_length_labels() {
@@ -782,5 +792,183 @@ mod tests {
             PresentationResourceState::Released
         );
         assert_eq!(restored.presentation_handles[0].updated_epoch, 2);
+    }
+
+    #[test]
+    fn component_handle_lifecycle_filters_runtime_controls() {
+        let mut snapshot = BundlePresentationSnapshot::default();
+        let text_input = component_text_input();
+        let action_button = component_action_button();
+        let resources = component_runtime_resources(&text_input, &action_button);
+        let create_visible = component_handle_create("@handle.flow.feedback.panel");
+
+        let diagnostics = update_snapshot_with_effects(&mut snapshot, &[create_visible], resources);
+
+        assert!(diagnostics.is_empty());
+        assert_component_controls_visible(&snapshot, &text_input, &action_button);
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[component_handle_call(
+                "presentation.handle.hide",
+                "@handle.flow.feedback.panel",
+            )],
+            resources,
+        );
+        assert!(snapshot.text_inputs.is_empty());
+        assert!(snapshot.action_buttons.is_empty());
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[component_handle_call(
+                "presentation.handle.show",
+                "@handle.flow.feedback.panel",
+            )],
+            resources,
+        );
+        assert_component_controls_visible(&snapshot, &text_input, &action_button);
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[component_handle_call(
+                "presentation.handle.unmount",
+                "@handle.flow.feedback.panel",
+            )],
+            resources,
+        );
+        assert!(snapshot.text_inputs.is_empty());
+        assert!(snapshot.action_buttons.is_empty());
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[component_handle_call(
+                "presentation.handle.show",
+                "@handle.flow.feedback.panel",
+            )],
+            resources,
+        );
+        assert_component_controls_visible(&snapshot, &text_input, &action_button);
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[component_handle_call(
+                "presentation.handle.release",
+                "@handle.flow.feedback.panel",
+            )],
+            resources,
+        );
+        assert!(snapshot.text_inputs.is_empty());
+        assert!(snapshot.action_buttons.is_empty());
+
+        let mut destroy_snapshot = BundlePresentationSnapshot::default();
+        update_snapshot_with_effects(
+            &mut destroy_snapshot,
+            &[
+                component_handle_create("@handle.flow.feedback.panel.destroy"),
+                component_handle_call(
+                    "presentation.handle.destroy",
+                    "@handle.flow.feedback.panel.destroy",
+                ),
+            ],
+            resources,
+        );
+        assert!(destroy_snapshot.text_inputs.is_empty());
+        assert!(destroy_snapshot.action_buttons.is_empty());
+    }
+
+    fn component_text_input() -> UiRuntimeTextControl {
+        UiRuntimeTextControl {
+            public_id: "input.visitor_name".to_owned(),
+            target: "input.visitor_name".to_owned(),
+            component: Some("component.ModernFeedbackPanel".to_owned()),
+            session: 1,
+            value: String::new(),
+            selection: UiRuntimeTextSelection::new(0, 0),
+            options: UiRuntimeTextControlOptions {
+                purpose: UiInputPurpose::Text,
+                autocorrect: TextAssistPolicy::PlatformDefault,
+                spellcheck: TextAssistPolicy::PlatformDefault,
+                capitalization: TextCapitalization::None,
+                enter_key: EnterKeyHint::Default,
+                multiline: false,
+                selection_policy: UiTextSelectionPolicy::Enabled,
+                shortcut_policy: UiTextShortcutPolicy::Enabled,
+                tab_policy: UiTextTabPolicy::FocusNavigation,
+                vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
+                secure_policy: UiSecureInputPolicy::Plain,
+                composition_on_blur: CompositionOnBlurPolicy::Commit,
+            },
+            kind: UiInputKind::TextField,
+            bounds: UiRuntimeTextControlBounds::from_px(48, 48, 420, 48),
+            label: None,
+            handlers: UiRuntimeTextControlHandlers::default(),
+            style: UiRuntimeControlStyle::default(),
+        }
+    }
+
+    fn component_action_button() -> UiRuntimeActionButton {
+        UiRuntimeActionButton {
+            public_id: "button.continue".to_owned(),
+            target: "button.continue".to_owned(),
+            component: Some("component.ModernFeedbackPanel".to_owned()),
+            label: "Continue".to_owned(),
+            enabled: true,
+            bounds: UiRuntimeButtonBounds::new(484_000, 48_000, 180_000, 48_000),
+            action: UiRuntimeActionButtonAction::Noop,
+            style: UiRuntimeControlStyle::default(),
+        }
+    }
+
+    fn component_runtime_resources<'a>(
+        text_input: &'a UiRuntimeTextControl,
+        action_button: &'a UiRuntimeActionButton,
+    ) -> BundlePresentationResources<'a> {
+        BundlePresentationResources {
+            image_objects: &[],
+            text_inputs: std::slice::from_ref(text_input),
+            action_buttons: std::slice::from_ref(action_button),
+            focus_groups: &[],
+            focus_navigation: &[],
+        }
+    }
+
+    fn component_handle_create(handle: &str) -> LineEffectRequest {
+        LineEffectRequest::Call(RuntimeCall {
+            callee: "presentation.handle.create".to_owned(),
+            args: vec![
+                format!("handle = {handle}"),
+                "kind = \"component\"".to_owned(),
+                "resource = @component:.ModernFeedbackPanel".to_owned(),
+            ],
+        })
+    }
+
+    fn component_handle_call(callee: &str, handle: &str) -> LineEffectRequest {
+        LineEffectRequest::Call(RuntimeCall {
+            callee: callee.to_owned(),
+            args: vec![format!("handle = {handle}")],
+        })
+    }
+
+    fn update_snapshot_with_effects(
+        snapshot: &mut BundlePresentationSnapshot,
+        effects: &[LineEffectRequest],
+        resources: BundlePresentationResources<'_>,
+    ) -> Vec<PresentationHandleDiagnostic> {
+        snapshot.update(
+            &DisplayResolution::default(),
+            &FlowFiberStatus::Running,
+            effects,
+            resources,
+        )
+    }
+
+    fn assert_component_controls_visible(
+        snapshot: &BundlePresentationSnapshot,
+        text_input: &UiRuntimeTextControl,
+        action_button: &UiRuntimeActionButton,
+    ) {
+        assert_eq!(snapshot.text_inputs, vec![text_input.clone()]);
+        assert_eq!(snapshot.action_buttons, vec![action_button.clone()]);
     }
 }

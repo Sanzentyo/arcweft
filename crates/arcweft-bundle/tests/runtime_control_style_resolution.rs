@@ -500,6 +500,7 @@ impl RuntimeControlStyleTestExt for UiStyleResource {
                 };
                 self.runtime_action_button_style(&UiActionButtonResource {
                     public_id: target.to_owned(),
+                    component: None,
                     label_text_source: "text.submit".to_owned(),
                     enabled: true,
                     action: UiActionButtonActionResource::TextInputSubmit {

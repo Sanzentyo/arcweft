@@ -231,6 +231,14 @@ fn lower_component_view(
     lower_view_expr(component_id.body(), body.value(), state, &mut layout);
 }
 
+fn component_resource_id(component_id: &str) -> String {
+    if component_id.starts_with("component.") {
+        component_id.to_owned()
+    } else {
+        format!("component.{component_id}")
+    }
+}
+
 fn lower_view_expr(
     component_id: &str,
     expr: &ViewExpr,
@@ -471,6 +479,7 @@ fn lower_text_field(
     });
     state.input_options.push(UiInputOptions {
         public_id: control.public_id.clone(),
+        component: Some(component_resource_id(component_id)),
         kind,
         value_text_source,
         placeholder_text_source,
@@ -505,6 +514,7 @@ fn lower_text_field(
     state.semantic_targets.push(UiSemanticTarget {
         public_id: public_id.clone(),
         target: public_id,
+        component: Some(component_resource_id(component_id)),
         label_text_source,
         source: None,
     });
@@ -569,6 +579,7 @@ fn lower_button(
     };
     state.action_buttons.push(UiActionButtonResource {
         public_id: button_id.clone(),
+        component: Some(component_resource_id(component_id)),
         label_text_source: label_text_source.clone(),
         enabled: button_enabled(button.enabled()),
         action,
@@ -579,6 +590,7 @@ fn lower_button(
     state.semantic_targets.push(UiSemanticTarget {
         public_id: button_id.clone(),
         target: button_id,
+        component: Some(component_resource_id(component_id)),
         label_text_source: Some(label_text_source),
         source: None,
     });
