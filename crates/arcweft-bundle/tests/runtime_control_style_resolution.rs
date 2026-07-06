@@ -521,6 +521,8 @@ impl RuntimeControlStyleTestExt for UiStyleResource {
                 self.runtime_text_control_style(target, UiInputKind::SecureField)
             }
             UiElementKind::Surface
+            | UiElementKind::Box
+            | UiElementKind::Scroll
             | UiElementKind::Row
             | UiElementKind::Column
             | UiElementKind::Stack => {

@@ -104,6 +104,70 @@ flow test {
 }
 
 #[test]
+fn component_view_box_and_scroll_lower_to_typed_ui_resources() {
+    use arcweft_bundle::resource_codec::ui::{
+        UiElementKind, UiProgramInstruction, UiStyleSelectorPart,
+    };
+
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+style glass_shell {
+  Box {
+    background-color = rgba(20, 24, 32, 180)
+  }
+
+  Scroll {
+    opacity = milli(920)
+  }
+}
+
+component FeedbackForm() {
+  Box {
+    Scroll {
+      Text("Message")
+    }
+  }
+}
+
+flow test {
+  component(@component:.FeedbackForm)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
+
+    let program = sidecars.program.expect("program sidecar");
+    assert!(program.instructions.iter().any(|instruction| matches!(
+        instruction,
+        UiProgramInstruction::OpenElement {
+            element: UiElementKind::Box,
+            ..
+        }
+    )));
+    assert!(program.instructions.iter().any(|instruction| matches!(
+        instruction,
+        UiProgramInstruction::OpenElement {
+            element: UiElementKind::Scroll,
+            ..
+        }
+    )));
+
+    let style = sidecars.style.expect("style sidecar");
+    assert!(style.rules.iter().any(|rule| {
+        rule.selector
+            .parts
+            .contains(&UiStyleSelectorPart::Element(UiElementKind::Box))
+    }));
+    assert!(style.rules.iter().any(|rule| {
+        rule.selector
+            .parts
+            .contains(&UiStyleSelectorPart::Element(UiElementKind::Scroll))
+    }));
+}
+
+#[test]
 fn component_view_declaration_is_not_mounted_implicitly() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"

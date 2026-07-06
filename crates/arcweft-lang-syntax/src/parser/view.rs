@@ -272,7 +272,7 @@ fn parse_view_head(line: &str, base: usize, errors: &mut Vec<ParseError>) -> Vie
             enabled: named_arg(&args, "enabled").cloned(),
             focusable: named_arg_bool(&args, "focusable").unwrap_or(true),
         },
-        "Panel" | "Row" | "Column" | "Stack" => ViewHead::Element {
+        "Panel" | "Box" | "Scroll" | "Row" | "Column" | "Stack" => ViewHead::Element {
             callee: callee.to_owned(),
             args,
         },
@@ -324,7 +324,7 @@ fn parse_view_head(line: &str, base: usize, errors: &mut Vec<ParseError>) -> Vie
                 base,
                 line.len(),
                 &format!("unsupported View expression head `{callee}`"),
-                "Panel(...) | Row(...) | Column(...) | Stack(...) | Button(...) | Text(...) | RichText(...) | TextField(...) | TextArea(...) | SecureField(...)",
+                "Panel(...) | Box(...) | Scroll(...) | Row(...) | Column(...) | Stack(...) | Button(...) | Text(...) | RichText(...) | TextField(...) | TextArea(...) | SecureField(...)",
             ));
             ViewHead::Raw(line.to_owned())
         }

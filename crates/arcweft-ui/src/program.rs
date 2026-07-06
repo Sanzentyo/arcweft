@@ -67,6 +67,8 @@ pub struct UiPartExport {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UiElementKind {
     Surface,
+    Box,
+    Scroll,
     Row,
     Column,
     Stack,

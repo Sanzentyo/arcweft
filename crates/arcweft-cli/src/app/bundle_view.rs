@@ -294,10 +294,10 @@ fn lower_element(
             UiElementKind::Row => {
                 lower_layout_row(component_id, element.children(), state, *layout)
             }
-            UiElementKind::Column => {
+            UiElementKind::Column | UiElementKind::Scroll => {
                 lower_layout_column(component_id, element.children(), state, *layout)
             }
-            UiElementKind::Surface | UiElementKind::Stack => {
+            UiElementKind::Surface | UiElementKind::Box | UiElementKind::Stack => {
                 lower_layout_stack(component_id, element.children(), state, *layout)
             }
             UiElementKind::Button => ViewLayoutFrame::action_button(),
@@ -854,6 +854,8 @@ fn normalize_entity_ref(reference: &EntityRefSyntax) -> String {
 fn ui_element_kind(value: &str) -> Option<UiElementKind> {
     Some(match value {
         "Panel" => UiElementKind::Surface,
+        "Box" => UiElementKind::Box,
+        "Scroll" => UiElementKind::Scroll,
         "Row" => UiElementKind::Row,
         "Column" => UiElementKind::Column,
         "Stack" => UiElementKind::Stack,

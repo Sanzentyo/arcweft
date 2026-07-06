@@ -97,6 +97,8 @@ pub enum UiProgramInstruction {
 #[serde(rename_all = "snake_case")]
 pub enum UiElementKind {
     Surface,
+    Box,
+    Scroll,
     Row,
     Column,
     Stack,
@@ -112,7 +114,13 @@ impl UiElementKind {
             Self::TextField => Some(UiInputKind::TextField),
             Self::TextArea => Some(UiInputKind::TextArea),
             Self::SecureField => Some(UiInputKind::SecureField),
-            Self::Surface | Self::Row | Self::Column | Self::Stack | Self::Button => None,
+            Self::Surface
+            | Self::Box
+            | Self::Scroll
+            | Self::Row
+            | Self::Column
+            | Self::Stack
+            | Self::Button => None,
         }
     }
 }

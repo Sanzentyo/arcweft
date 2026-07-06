@@ -735,6 +735,8 @@ fn dsl_ui_style_environment_predicate(
 fn dsl_ui_element_kind(value: &str) -> Result<UiElementKind, ExitCode> {
     match value {
         "panel" => Ok(UiElementKind::Surface),
+        "box" => Ok(UiElementKind::Box),
+        "scroll" => Ok(UiElementKind::Scroll),
         "row" => Ok(UiElementKind::Row),
         "column" => Ok(UiElementKind::Column),
         "stack" => Ok(UiElementKind::Stack),

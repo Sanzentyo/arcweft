@@ -995,6 +995,8 @@ fn push_style_selector_compound(token: &str, parts: &mut Vec<UiStyleSelectorPart
 fn canonical_style_element(source: &str) -> String {
     match source {
         "Panel" | "panel" => "panel".to_owned(),
+        "Box" | "box" => "box".to_owned(),
+        "Scroll" | "scroll" => "scroll".to_owned(),
         "Row" | "row" => "row".to_owned(),
         "Column" | "column" => "column".to_owned(),
         "Stack" | "stack" => "stack".to_owned(),

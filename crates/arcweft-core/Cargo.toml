@@ -17,6 +17,9 @@ arcweft-source = { path = "../arcweft-source" }
 serde = { workspace = true, features = ["derive", "rc"] }
 thiserror.workspace = true
 
+[dev-dependencies]
+serde_json.workspace = true
+
 [lib]
 path = "src/lib.rs"
 

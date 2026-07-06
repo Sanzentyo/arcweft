@@ -1,5 +1,7 @@
 use super::codec::{AwbcCodecError, AwbcDecodeBudget};
-use super::fiber::{FiberState, FiberStatus, FiberSuspension, FiberSuspensionReason};
+use super::fiber::{
+    FiberScope, FiberScopeCleanup, FiberState, FiberStatus, FiberSuspension, FiberSuspensionReason,
+};
 use super::schema::*;
 use super::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
 use crate::value::RuntimeValue;
@@ -70,6 +72,56 @@ fn canonical_codec_round_trips_typed_audio_payload_table() {
         .expect("decode AWBC audio payload");
 
     assert_eq!(decoded, program);
+}
+
+#[test]
+fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
+    let program = minimal_program();
+    let mut fiber =
+        FiberState::for_entry(&program, AwbcEntryId(0), 7, 64).expect("fiber initializes");
+    fiber
+        .active_frame_mut()
+        .expect("active frame")
+        .root_cleanups
+        .push(FiberScopeCleanup {
+            key: "handle.root".to_owned(),
+            effect: AwbcEffectPlanId(0),
+            args: vec![RuntimeValue::String("root".to_owned())],
+        });
+    fiber
+        .active_frame_mut()
+        .expect("active frame")
+        .scopes
+        .push(FiberScope {
+            id: AwbcScopeId(0),
+            depth: 1,
+            cleanups: vec![FiberScopeCleanup {
+                key: "handle.scope".to_owned(),
+                effect: AwbcEffectPlanId(0),
+                args: vec![RuntimeValue::String("scope".to_owned())],
+            }],
+        });
+
+    let checkpoint = fiber.checkpoint();
+    let encoded = serde_json::to_string(&fiber).expect("fiber state serializes");
+    let decoded: FiberState = serde_json::from_str(&encoded).expect("fiber state deserializes");
+    assert_eq!(decoded, fiber);
+
+    fiber
+        .active_frame_mut()
+        .expect("active frame")
+        .root_cleanups
+        .clear();
+    fiber
+        .active_frame_mut()
+        .expect("active frame")
+        .scopes
+        .clear();
+    fiber.restore(checkpoint);
+
+    let frame = fiber.active_frame().expect("active frame restored");
+    assert_eq!(frame.root_cleanups[0].key, "handle.root");
+    assert_eq!(frame.scopes[0].cleanups[0].key, "handle.scope");
 }
 
 #[test]

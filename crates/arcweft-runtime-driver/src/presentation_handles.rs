@@ -131,6 +131,10 @@ pub struct PresentationHandleRecord {
     pub layer: Option<String>,
     #[serde(default, skip_serializing_if = "is_default")]
     pub depth_milli: i32,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub created_epoch: u64,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub updated_epoch: u64,
 }
 
 impl PresentationHandleRecord {
@@ -152,7 +156,16 @@ impl PresentationHandleRecord {
             state,
             layer,
             depth_milli,
+            created_epoch: 0,
+            updated_epoch: 0,
         }
+    }
+
+    #[must_use]
+    pub fn with_epochs(mut self, created_epoch: u64, updated_epoch: u64) -> Self {
+        self.created_epoch = created_epoch;
+        self.updated_epoch = updated_epoch;
+        self
     }
 
     #[must_use]
@@ -380,16 +393,21 @@ pub(crate) fn presentation_handle_operations_from_effects(
 
 pub(crate) fn apply_presentation_handle_operations(
     handles: &mut Vec<PresentationHandleRecord>,
+    operation_epoch: &mut u64,
     operations: &[PresentationHandleOperation],
 ) -> Vec<PresentationHandleDiagnostic> {
     operations
         .iter()
-        .filter_map(|operation| apply_presentation_handle_operation(handles, operation))
+        .filter_map(|operation| {
+            *operation_epoch = operation_epoch.saturating_add(1);
+            apply_presentation_handle_operation(handles, *operation_epoch, operation)
+        })
         .collect()
 }
 
 fn apply_presentation_handle_operation(
     handles: &mut Vec<PresentationHandleRecord>,
+    operation_epoch: u64,
     operation: &PresentationHandleOperation,
 ) -> Option<PresentationHandleDiagnostic> {
     match operation {
@@ -426,48 +444,61 @@ fn apply_presentation_handle_operation(
             } else {
                 PresentationResourceState::Hidden
             };
-            handles.push(PresentationHandleRecord::new(
-                id.clone(),
-                *kind,
-                resource_id.clone(),
-                owner.clone(),
-                state,
-                layer.clone(),
-                *depth_milli,
-            ));
+            handles.push(
+                PresentationHandleRecord::new(
+                    id.clone(),
+                    *kind,
+                    resource_id.clone(),
+                    owner.clone(),
+                    state,
+                    layer.clone(),
+                    *depth_milli,
+                )
+                .with_epochs(operation_epoch, operation_epoch),
+            );
             None
         }
         PresentationHandleOperation::Show { id } => set_live_state(
             handles,
             id,
+            operation_epoch,
             PresentationResourceState::Mounted,
             "show terminal presentation handle",
         ),
         PresentationHandleOperation::Hide { id } => set_live_state(
             handles,
             id,
+            operation_epoch,
             PresentationResourceState::Hidden,
             "hide terminal presentation handle",
         ),
         PresentationHandleOperation::Unmount { id } => set_live_state(
             handles,
             id,
+            operation_epoch,
             PresentationResourceState::Unmounted,
             "unmount terminal presentation handle",
         ),
         PresentationHandleOperation::Release { id }
-        | PresentationHandleOperation::Dispose { id } => {
-            terminate_handle(handles, id, PresentationResourceState::Released)
-        }
-        PresentationHandleOperation::Destroy { id } => {
-            terminate_handle(handles, id, PresentationResourceState::Destroyed)
-        }
+        | PresentationHandleOperation::Dispose { id } => terminate_handle(
+            handles,
+            id,
+            operation_epoch,
+            PresentationResourceState::Released,
+        ),
+        PresentationHandleOperation::Destroy { id } => terminate_handle(
+            handles,
+            id,
+            operation_epoch,
+            PresentationResourceState::Destroyed,
+        ),
     }
 }
 
 fn set_live_state(
     handles: &mut [PresentationHandleRecord],
     id: &PresentationHandleId,
+    operation_epoch: u64,
     next_state: PresentationResourceState,
     terminal_message: &'static str,
 ) -> Option<PresentationHandleDiagnostic> {
@@ -482,12 +513,14 @@ fn set_live_state(
         ));
     }
     handle.state = next_state;
+    handle.updated_epoch = operation_epoch;
     None
 }
 
 fn terminate_handle(
     handles: &mut [PresentationHandleRecord],
     id: &PresentationHandleId,
+    operation_epoch: u64,
     next_state: PresentationResourceState,
 ) -> Option<PresentationHandleDiagnostic> {
     let Some(handle) = handles.iter_mut().find(|handle| handle.id == *id) else {
@@ -501,6 +534,7 @@ fn terminate_handle(
         ));
     }
     handle.state = next_state;
+    handle.updated_epoch = operation_epoch;
     None
 }
 
@@ -733,6 +767,7 @@ mod tests {
     #[test]
     fn create_hide_and_release_transitions_are_deterministic() {
         let mut handles = Vec::new();
+        let mut operation_epoch = 0;
         let operations = vec![
             PresentationHandleOperation::Create {
                 id: handle("handle.flow.menu.background"),
@@ -751,16 +786,21 @@ mod tests {
             },
         ];
 
-        let diagnostics = apply_presentation_handle_operations(&mut handles, &operations);
+        let diagnostics =
+            apply_presentation_handle_operations(&mut handles, &mut operation_epoch, &operations);
 
         assert!(diagnostics.is_empty());
+        assert_eq!(operation_epoch, 3);
         assert_eq!(handles.len(), 1);
         assert_eq!(handles[0].state, PresentationResourceState::Released);
+        assert_eq!(handles[0].created_epoch, 1);
+        assert_eq!(handles[0].updated_epoch, 3);
     }
 
     #[test]
     fn double_dispose_reports_structured_diagnostic_without_revival() {
         let mut handles = Vec::new();
+        let mut operation_epoch = 0;
         let id = handle("handle.flow.menu.overlay");
         let operations = vec![
             PresentationHandleOperation::Create {
@@ -777,9 +817,13 @@ mod tests {
             PresentationHandleOperation::Show { id },
         ];
 
-        let diagnostics = apply_presentation_handle_operations(&mut handles, &operations);
+        let diagnostics =
+            apply_presentation_handle_operations(&mut handles, &mut operation_epoch, &operations);
 
+        assert_eq!(operation_epoch, 4);
         assert_eq!(handles[0].state, PresentationResourceState::Released);
+        assert_eq!(handles[0].created_epoch, 1);
+        assert_eq!(handles[0].updated_epoch, 2);
         assert_eq!(diagnostics.len(), 2);
         assert_eq!(
             diagnostics[0].code,
@@ -794,6 +838,7 @@ mod tests {
     #[test]
     fn live_resource_cannot_have_two_owners() {
         let mut handles = Vec::new();
+        let mut operation_epoch = 0;
         let operations = vec![
             PresentationHandleOperation::Create {
                 id: handle("handle.flow.a.menu"),
@@ -815,12 +860,63 @@ mod tests {
             },
         ];
 
-        let diagnostics = apply_presentation_handle_operations(&mut handles, &operations);
+        let diagnostics =
+            apply_presentation_handle_operations(&mut handles, &mut operation_epoch, &operations);
 
+        assert_eq!(operation_epoch, 2);
         assert_eq!(handles.len(), 1);
         assert_eq!(
             diagnostics[0].code,
             PresentationHandleDiagnosticCode::ResourceAlreadyOwned
         );
+    }
+
+    #[test]
+    fn handle_table_epoch_survives_serde_roundtrip_and_rollback() {
+        let mut handles = Vec::new();
+        let mut operation_epoch = 0;
+        let id = handle("handle.flow.rollback.panel");
+        let operations = vec![
+            PresentationHandleOperation::Create {
+                id: id.clone(),
+                kind: PresentationHandleKind::Component,
+                resource_id: "component.RollbackPanel".to_owned(),
+                owner: Some("flow.rollback/block.0".to_owned()),
+                visible: true,
+                layer: None,
+                depth_milli: 0,
+            },
+            PresentationHandleOperation::Dispose { id: id.clone() },
+        ];
+        let diagnostics =
+            apply_presentation_handle_operations(&mut handles, &mut operation_epoch, &operations);
+        assert!(diagnostics.is_empty());
+        let rollback_handles = handles.clone();
+        let rollback_epoch = operation_epoch;
+        let encoded = serde_json::to_string(&handles).expect("handles serialize");
+        let decoded: Vec<PresentationHandleRecord> =
+            serde_json::from_str(&encoded).expect("handles deserialize");
+        assert_eq!(decoded, handles);
+
+        let stale_show = [PresentationHandleOperation::Show { id }];
+        let stale_diagnostics =
+            apply_presentation_handle_operations(&mut handles, &mut operation_epoch, &stale_show);
+        assert_eq!(
+            stale_diagnostics[0].code,
+            PresentationHandleDiagnosticCode::TerminalHandle
+        );
+        assert_eq!(handles[0].state, PresentationResourceState::Released);
+
+        handles = rollback_handles;
+        operation_epoch = rollback_epoch;
+        let stale_diagnostics =
+            apply_presentation_handle_operations(&mut handles, &mut operation_epoch, &stale_show);
+        assert_eq!(
+            stale_diagnostics[0].code,
+            PresentationHandleDiagnosticCode::TerminalHandle
+        );
+        assert_eq!(operation_epoch, rollback_epoch + 1);
+        assert_eq!(handles[0].state, PresentationResourceState::Released);
+        assert_eq!(handles[0].updated_epoch, rollback_epoch);
     }
 }

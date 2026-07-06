@@ -101,6 +101,45 @@ pub component FeedbackForm() {
 }
 
 #[test]
+fn component_view_box_and_scroll_parse_as_canonical_elements() {
+    let parsed = parse_source(
+        r#"
+pub style glass_shell {
+  Box {
+    background-color = rgba(20, 24, 32, 180)
+  }
+
+  Scroll {
+    opacity = milli(920)
+  }
+}
+
+pub component FeedbackForm() {
+  Box {
+    Scroll {
+      Text("Message")
+    }
+  }
+}
+"#,
+    );
+
+    assert_eq!(parsed.errors(), &[]);
+    let view = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(item) => item.component_body()?.view(),
+            _ => None,
+        })
+        .expect("component View body");
+
+    assert!(find_element(view.value(), "Box").is_some());
+    assert!(find_element(view.value(), "Scroll").is_some());
+}
+
+#[test]
 fn component_view_removed_return_annotation_is_rejected() {
     let parsed = parse_source(
         r#"
@@ -220,6 +259,23 @@ fn find_text_field(
         ViewExpr::TextField(field) => Some(field),
         ViewExpr::Fragment(children) => children.iter().find_map(find_text_field),
         ViewExpr::Element(element) => element.children().iter().find_map(find_text_field),
+        _ => None,
+    }
+}
+
+fn find_element<'a>(
+    expr: &'a arcweft_lang_syntax::ast::view::ViewExpr,
+    callee: &str,
+) -> Option<&'a arcweft_lang_syntax::ast::view::ViewElement> {
+    match expr {
+        ViewExpr::Element(element) if element.callee() == callee => Some(element),
+        ViewExpr::Fragment(children) => children
+            .iter()
+            .find_map(|child| find_element(child, callee)),
+        ViewExpr::Element(element) => element
+            .children()
+            .iter()
+            .find_map(|child| find_element(child, callee)),
         _ => None,
     }
 }

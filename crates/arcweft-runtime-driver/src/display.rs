@@ -52,6 +52,8 @@ pub struct BundlePresentationSnapshot {
     pub dialogue: Option<LineDisplayFrame>,
     pub choices: Vec<BundleChoice>,
     pub images: Vec<BundleImageObject>,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub presentation_handle_epoch: u64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub presentation_handles: Vec<PresentationHandleRecord>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -113,8 +115,10 @@ impl BundlePresentationSnapshot {
         let (handle_operations, mut handle_diagnostics) =
             presentation_handle_operations_from_effects(effects);
         let mut next_presentation_handles = self.presentation_handles.clone();
+        let mut next_presentation_handle_epoch = self.presentation_handle_epoch;
         handle_diagnostics.extend(apply_presentation_handle_operations(
             &mut next_presentation_handles,
+            &mut next_presentation_handle_epoch,
             &handle_operations,
         ));
         let mut next_images = images_from_effects(&self.images, effects, resources.image_objects);
@@ -146,6 +150,7 @@ impl BundlePresentationSnapshot {
         if self.dialogue != next_dialogue
             || self.choices != next_choices
             || self.images != next_images
+            || self.presentation_handle_epoch != next_presentation_handle_epoch
             || self.presentation_handles != next_presentation_handles
             || self.viewport_fit != next_viewport_fit
             || self.text_inputs != next_text_inputs
@@ -157,6 +162,7 @@ impl BundlePresentationSnapshot {
             self.dialogue = next_dialogue;
             self.choices = next_choices;
             self.images = next_images;
+            self.presentation_handle_epoch = next_presentation_handle_epoch;
             self.presentation_handles = next_presentation_handles;
             self.viewport_fit = next_viewport_fit;
             self.text_inputs = next_text_inputs;
@@ -196,6 +202,7 @@ impl fmt::Debug for BundlePresentationSnapshot {
             .field("dialogue", &self.dialogue)
             .field("choices", &self.choices)
             .field("images", &self.images)
+            .field("presentation_handle_epoch", &self.presentation_handle_epoch)
             .field("presentation_handles", &self.presentation_handles)
             .field("viewport_fit", &self.viewport_fit)
             .field("text_inputs", &self.redacted_for_observation().text_inputs)
@@ -626,9 +633,19 @@ fn unquote_arg(value: &str) -> &str {
     value.trim().trim_matches('"').trim_matches('\'')
 }
 
+fn is_default<T>(value: &T) -> bool
+where
+    T: Default + PartialEq,
+{
+    value == &T::default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::presentation_handles::{
+        PresentationHandleDiagnosticCode, PresentationResourceState,
+    };
 
     #[test]
     fn inline_image_call_accepts_runtime_length_labels() {
@@ -696,5 +713,74 @@ mod tests {
             viewport_fit_from_effects(Some(fit), &[LineEffectRequest::Call(reset)]),
             None
         );
+    }
+
+    #[test]
+    fn presentation_snapshot_serializes_handle_epoch_and_tombstones() {
+        let mut snapshot = BundlePresentationSnapshot::default();
+        let resources = BundlePresentationResources {
+            image_objects: &[],
+            text_inputs: &[],
+            action_buttons: &[],
+            focus_groups: &[],
+            focus_navigation: &[],
+        };
+        let create = LineEffectRequest::Call(RuntimeCall {
+            callee: "presentation.handle.create".to_owned(),
+            args: vec![
+                "handle = @handle.flow.save.panel".to_owned(),
+                "kind = \"component\"".to_owned(),
+                "resource = @component.SavePanel".to_owned(),
+                "owner = @flow.save".to_owned(),
+            ],
+        });
+        let dispose = LineEffectRequest::Call(RuntimeCall {
+            callee: "presentation.handle.dispose".to_owned(),
+            args: vec!["handle = @handle.flow.save.panel".to_owned()],
+        });
+
+        let diagnostics = snapshot.update(
+            &DisplayResolution::default(),
+            &FlowFiberStatus::Running,
+            &[create, dispose],
+            resources,
+        );
+
+        assert!(diagnostics.is_empty());
+        assert_eq!(snapshot.presentation_handle_epoch, 2);
+        assert_eq!(snapshot.presentation_handles.len(), 1);
+        assert_eq!(
+            snapshot.presentation_handles[0].state,
+            PresentationResourceState::Released
+        );
+        assert_eq!(snapshot.presentation_handles[0].created_epoch, 1);
+        assert_eq!(snapshot.presentation_handles[0].updated_epoch, 2);
+
+        let encoded = serde_json::to_string(&snapshot).expect("snapshot serializes");
+        let mut restored: BundlePresentationSnapshot =
+            serde_json::from_str(&encoded).expect("snapshot deserializes");
+        assert_eq!(restored, snapshot);
+
+        let stale_show = LineEffectRequest::Call(RuntimeCall {
+            callee: "presentation.handle.show".to_owned(),
+            args: vec!["handle = @handle.flow.save.panel".to_owned()],
+        });
+        let diagnostics = restored.update(
+            &DisplayResolution::default(),
+            &FlowFiberStatus::Running,
+            &[stale_show],
+            resources,
+        );
+
+        assert_eq!(
+            diagnostics[0].code,
+            PresentationHandleDiagnosticCode::TerminalHandle
+        );
+        assert_eq!(restored.presentation_handle_epoch, 3);
+        assert_eq!(
+            restored.presentation_handles[0].state,
+            PresentationResourceState::Released
+        );
+        assert_eq!(restored.presentation_handles[0].updated_epoch, 2);
     }
 }
