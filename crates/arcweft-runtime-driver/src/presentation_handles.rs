@@ -420,7 +420,23 @@ fn apply_presentation_handle_operation(
             layer,
             depth_milli,
         } => {
-            if handles.iter().any(|handle| handle.id == *id) {
+            let state = if *visible {
+                PresentationResourceState::Mounted
+            } else {
+                PresentationResourceState::Hidden
+            };
+            if let Some(existing) = handles.iter_mut().find(|handle| handle.id == *id) {
+                if existing.kind == *kind
+                    && existing.resource_id == *resource_id
+                    && !existing.is_terminal()
+                {
+                    existing.owner.clone_from(owner);
+                    existing.state = state;
+                    existing.layer.clone_from(layer);
+                    existing.depth_milli = *depth_milli;
+                    existing.updated_epoch = operation_epoch;
+                    return None;
+                }
                 return Some(PresentationHandleDiagnostic::new(
                     PresentationHandleDiagnosticCode::DuplicateHandle,
                     Some(id.clone()),
@@ -439,11 +455,6 @@ fn apply_presentation_handle_operation(
                     ),
                 ));
             }
-            let state = if *visible {
-                PresentationResourceState::Mounted
-            } else {
-                PresentationResourceState::Hidden
-            };
             handles.push(
                 PresentationHandleRecord::new(
                     id.clone(),
@@ -869,6 +880,46 @@ mod tests {
             diagnostics[0].code,
             PresentationHandleDiagnosticCode::ResourceAlreadyOwned
         );
+    }
+
+    #[test]
+    fn create_is_idempotent_for_same_live_handle() {
+        let mut handles = Vec::new();
+        let mut operation_epoch = 0;
+        let id = handle("handle.flow.main.mount.component.component.MainMenu");
+        let operations = vec![
+            PresentationHandleOperation::Create {
+                id: id.clone(),
+                kind: PresentationHandleKind::Component,
+                resource_id: "component.MainMenu".to_owned(),
+                owner: Some("flow.main".to_owned()),
+                visible: true,
+                layer: Some("layer.controls".to_owned()),
+                depth_milli: 100,
+            },
+            PresentationHandleOperation::Create {
+                id,
+                kind: PresentationHandleKind::Component,
+                resource_id: "component.MainMenu".to_owned(),
+                owner: Some("flow.main/reentry".to_owned()),
+                visible: false,
+                layer: Some("layer.overlay".to_owned()),
+                depth_milli: 250,
+            },
+        ];
+
+        let diagnostics =
+            apply_presentation_handle_operations(&mut handles, &mut operation_epoch, &operations);
+
+        assert!(diagnostics.is_empty());
+        assert_eq!(operation_epoch, 2);
+        assert_eq!(handles.len(), 1);
+        assert_eq!(handles[0].state, PresentationResourceState::Hidden);
+        assert_eq!(handles[0].owner.as_deref(), Some("flow.main/reentry"));
+        assert_eq!(handles[0].layer.as_deref(), Some("layer.overlay"));
+        assert_eq!(handles[0].depth_milli, 250);
+        assert_eq!(handles[0].created_epoch, 1);
+        assert_eq!(handles[0].updated_epoch, 2);
     }
 
     #[test]

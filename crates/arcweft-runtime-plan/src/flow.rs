@@ -44,8 +44,8 @@ use arcweft_lang_hir::syntax::expr::Expr;
 use arcweft_lang_hir::syntax::parser::parse_dialogue_content_lossy;
 use arcweft_render_text::LineDisplayCatalog;
 use presentation::{
-    presentation_create_args, presentation_handle_call, presentation_handle_id,
-    presentation_mount_call,
+    presentation_create_args, presentation_explicit_mount_handle_id, presentation_handle_call,
+    presentation_handle_id, presentation_mount_call,
 };
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -1908,6 +1908,7 @@ impl FlowRuntimeLowerer<'_> {
             }
             Stmt::Expr(expr) => self
                 .lower_presentation_handle_method(expr)
+                .or_else(|| Self::lower_explicit_presentation_mount(flow_id, expr))
                 .or_else(|| self.lower_agent_host_call_expr(expr))
                 .unwrap_or_else(|| vec![FlowOp::Effect(runtime_call_effect(expr))]),
             Stmt::Out { label, expr } => {
@@ -2041,6 +2042,29 @@ impl FlowRuntimeLowerer<'_> {
             pattern: lower_runtime_pattern(pattern),
             expr: RuntimeExpr::Value(RuntimeValue::String(handle_id)),
         });
+        Some(ops)
+    }
+
+    fn lower_explicit_presentation_mount(
+        flow_id: &FlowRuntimeId,
+        expr: &Expr,
+    ) -> Option<Vec<FlowOp>> {
+        let mount = presentation_mount_call(expr)?;
+        let handle_id = presentation_explicit_mount_handle_id(flow_id, mount.kind, mount.resource);
+        let create = presentation_handle_call(
+            "create",
+            presentation_create_args(&handle_id, flow_id, mount.kind, mount.resource, mount.args),
+        );
+        let mut ops = vec![FlowOp::Effect(LineEffectRequest::Call(create))];
+        if mount.register_scope_cleanup {
+            ops.push(FlowOp::RegisterCleanup {
+                key: handle_id.clone(),
+                effect: LineEffectRequest::Call(presentation_handle_call(
+                    "dispose",
+                    vec![format!("handle = @{handle_id}")],
+                )),
+            });
+        }
         Some(ops)
     }
 

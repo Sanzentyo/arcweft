@@ -2,7 +2,7 @@
 
 use arcweft_core::time::LogicalDuration;
 use arcweft_lang_hir::syntax::ast::{ids::EntityRefSyntax, pattern::Pattern};
-use arcweft_lang_hir::syntax::expr::{CallArg, DurationUnit, Expr, Literal};
+use arcweft_lang_hir::syntax::expr::{BinaryOp, CallArg, DurationUnit, Expr, Literal, UnaryOp};
 use arcweft_lang_hir::syntax::types::TypeRef;
 
 pub(crate) fn named_arg_label(value: &str) -> Option<String> {
@@ -76,10 +76,18 @@ pub(crate) fn expr_label(expr: &Expr) -> String {
                 .join(", ")
         ),
         Expr::Field { target, field } => format!("{}.{}", expr_label(target), field),
+        Expr::Index { target, index } => format!("{}[{}]", expr_label(target), expr_label(index)),
         Expr::Pipe { lhs, rhs } => format!("{} |> {}", expr_label(lhs), expr_label(rhs)),
         Expr::ArrayRepeat { value, len } => {
             format!("[{}; {}]", expr_label(value), expr_label(len))
         }
+        Expr::Binary { lhs, op, rhs } => format!(
+            "{} {} {}",
+            expr_label(lhs),
+            binary_op_label(*op),
+            expr_label(rhs)
+        ),
+        Expr::Unary { op, expr } => format!("{}{}", unary_op_label(*op), expr_label(expr)),
         Expr::NumericBracketSeq(seq) => {
             let suffix = seq.suffix().unwrap_or_default();
             let values = seq
@@ -91,6 +99,34 @@ pub(crate) fn expr_label(expr: &Expr) -> String {
             format!("[{values}]")
         }
         other => format!("{other:?}"),
+    }
+}
+
+const fn binary_op_label(op: BinaryOp) -> &'static str {
+    match op {
+        BinaryOp::Implies => "=>",
+        BinaryOp::Or => "||",
+        BinaryOp::And => "&&",
+        BinaryOp::In => "in",
+        BinaryOp::Eq => "==",
+        BinaryOp::NotEq => "!=",
+        BinaryOp::Gte => ">=",
+        BinaryOp::Lte => "<=",
+        BinaryOp::Gt => ">",
+        BinaryOp::Lt => "<",
+        BinaryOp::Merge => "&",
+        BinaryOp::Add => "+",
+        BinaryOp::Sub => "-",
+        BinaryOp::Mul => "*",
+        BinaryOp::Div => "/",
+        BinaryOp::Rem => "%",
+    }
+}
+
+const fn unary_op_label(op: UnaryOp) -> &'static str {
+    match op {
+        UnaryOp::Not => "!",
+        UnaryOp::Neg => "-",
     }
 }
 

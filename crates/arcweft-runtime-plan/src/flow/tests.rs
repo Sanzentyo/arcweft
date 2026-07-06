@@ -115,6 +115,87 @@ flow main {
 }
 
 #[test]
+fn explicit_component_and_image_mount_exprs_lower_to_scoped_handle_create() {
+    let parsed = parse_source(
+        r#"
+pub asset bg.card {
+  kind = image
+  file = "bg/card.png"
+}
+
+pub image card {
+  asset = @asset:.bg.card
+  target = @target.card
+  x = 0px
+  y = 0px
+  width = 10px
+  height = 10px
+  visible = true
+}
+
+component ModernPanel() {
+  Panel {
+    Text("Ready")
+  }
+}
+
+flow main {
+  image(@image.card, depth = -1000)
+  component(@component:.ModernPanel)
+  return "done"
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
+    let ops = &plan.flows[0].ops;
+
+    assert!(
+        matches!(
+            &ops[0],
+            FlowOp::Effect(LineEffectRequest::Call(call))
+                if call.callee == "presentation.handle.create"
+                    && call.args.iter().any(|arg| arg == "handle = @handle.flow.main.mount.image.image.card")
+                    && call.args.iter().any(|arg| arg == "kind = \"image\"")
+                    && call.args.iter().any(|arg| arg == "resource = @image.card")
+                    && call.args.iter().any(|arg| arg == "depth = -1000")
+        ),
+        "{ops:#?}"
+    );
+    assert!(
+        matches!(
+            &ops[1],
+            FlowOp::RegisterCleanup { key, effect: LineEffectRequest::Call(call) }
+                if key == "handle.flow.main.mount.image.image.card"
+                    && call.callee == "presentation.handle.dispose"
+        ),
+        "{ops:#?}"
+    );
+    assert!(
+        matches!(
+            &ops[2],
+            FlowOp::Effect(LineEffectRequest::Call(call))
+                if call.callee == "presentation.handle.create"
+                    && call.args.iter().any(|arg| arg == "handle = @handle.flow.main.mount.component.component.ModernPanel")
+                    && call.args.iter().any(|arg| arg == "kind = \"component\"")
+                    && call.args.iter().any(|arg| arg == "resource = @component.ModernPanel")
+        ),
+        "{ops:#?}"
+    );
+    assert!(
+        matches!(
+            &ops[3],
+            FlowOp::RegisterCleanup { key, effect: LineEffectRequest::Call(call) }
+                if key == "handle.flow.main.mount.component.component.ModernPanel"
+                    && call.callee == "presentation.handle.dispose"
+        ),
+        "{ops:#?}"
+    );
+    assert!(matches!(&ops[4], FlowOp::ReturnExpr(_)));
+}
+
+#[test]
 fn runtime_plan_options_select_dialogue_defaults_profile() {
     let parsed = parse_source(
         r##"

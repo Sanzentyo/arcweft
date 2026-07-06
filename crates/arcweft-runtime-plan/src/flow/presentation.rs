@@ -41,6 +41,19 @@ pub(super) fn presentation_handle_id(flow_id: &FlowRuntimeId, binding: &str) -> 
     )
 }
 
+pub(super) fn presentation_explicit_mount_handle_id(
+    flow_id: &FlowRuntimeId,
+    kind: &str,
+    resource: &Expr,
+) -> String {
+    format!(
+        "handle.{}.mount.{}.{}",
+        sanitize_presentation_handle_part(&flow_id.0),
+        sanitize_presentation_handle_part(kind),
+        presentation_resource_handle_part(resource)
+    )
+}
+
 pub(super) fn presentation_create_args(
     handle_id: &str,
     flow_id: &FlowRuntimeId,
@@ -84,6 +97,12 @@ fn presentation_lifetime_is_scoped(label: &str) -> bool {
         label.trim_matches('"'),
         ".detached" | "detached" | ".manual" | "manual" | ".global" | "global"
     )
+}
+
+fn presentation_resource_handle_part(resource: &Expr) -> String {
+    let label = expr_label(resource);
+    let label = label.strip_prefix('@').unwrap_or(&label);
+    sanitize_presentation_handle_part(&label.replace(":.", "."))
 }
 
 fn sanitize_presentation_handle_part(value: &str) -> String {

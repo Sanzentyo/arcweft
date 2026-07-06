@@ -341,6 +341,47 @@ The structure audit reported 0 errors and 138 warnings. Relevant changed files:
 | `crates/arcweft-player-scene/tests/action_button_submit.rs` | 11,047 | 287 | test | false | Action-button submit and action invoke input regressions |
 | `crates/arcweft-player-scene/tests/runtime_text_controls.rs` | 14,760 | 373 | test | false | Runtime text-control focus/editing regressions |
 
+## Explicit Mount Canonicalization
+
+- Expression-statement `image(...)` and `component(...)` calls now lower to the
+  same `presentation.handle.create` effect family as value-position handles.
+  The explicit form receives a deterministic lowering-owned handle id derived
+  from the owner flow, mount kind, and mounted resource id.
+- Explicit mounts default to lexical scope cleanup, matching value-position
+  `component(...)` / `image(...)` handles. Authors can still opt out with the
+  existing `lifetime = .manual`, `.detached`, or `.global` mount argument.
+- Runtime presentation-handle create is idempotent for the same live handle id,
+  kind, and resource. This keeps repeated explicit mount evaluation and flow
+  re-entry stable while preserving the existing duplicate-id diagnostic for
+  terminal handles or ids reused for a different resource.
+- Runtime-plan label lowering now preserves unary and binary expression source
+  labels for handle create arguments. This fixes `depth = -1000` and similar
+  signed numeric presentation arguments that previously arrived at runtime as
+  Rust AST debug text instead of executable argument text.
+
+### Verification
+
+- `cargo test -p arcweft-runtime-plan --all-features explicit_component_and_image_mount_exprs_lower_to_scoped_handle_create`
+- `cargo test -p arcweft-runtime-driver --all-features create_is_idempotent_for_same_live_handle`
+- `cargo test -p arcweft-runtime-plan --all-features value_position_component_handle_lowers_to_create_cleanup_and_close_cancel`
+- `cargo test -p arcweft-runtime-plan --all-features`
+- `cargo test -p arcweft-runtime-driver --all-features`
+- `cargo check --workspace --all-targets --all-features`
+- `cargo clippy --workspace --all-targets --all-features`
+- `cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit\current`
+
+The explicit-mount canonicalization cut was measured at Jujutsu change
+`ptwuyrsy`. The structure audit reported 0 errors and 138 warnings. Relevant
+changed Rust files:
+
+| Path | Bytes | LOC | Classification | Embedded Tests | Responsibility |
+| --- | ---: | ---: | --- | --- | --- |
+| `crates/arcweft-runtime-driver/src/presentation_handles.rs` | 32,807 | 973 | production | true | Presentation handle parsing, lifecycle transitions, and runtime filtering |
+| `crates/arcweft-runtime-plan/src/flow.rs` | 90,755 | 2,466 | production | false | Flow statement lowering and runtime operation planning |
+| `crates/arcweft-runtime-plan/src/flow/presentation.rs` | 3,767 | 124 | production | false | Presentation handle lowering helpers |
+| `crates/arcweft-runtime-plan/src/labels.rs` | 7,074 | 199 | production | false | Stable runtime-plan expression labels |
+| `crates/arcweft-runtime-plan/src/flow/tests.rs` | 15,607 | 511 | test | true | Flow lowering regression tests |
+
 ## Remaining Work
 
 - End-to-end save subsystem wiring still needs to consume the runtime display
@@ -349,7 +390,9 @@ The structure audit reported 0 errors and 138 warnings. Relevant changed files:
   scenario.
 - Native/web/observe parity tests still need a broader hidden/disposed-handle
   suite covering component handles, image handles, hit-test/focus/writeback
-  behavior across actual adapters and explicit mount regressions.
+  behavior across actual adapters. Runtime-plan explicit mount regressions are
+  covered by the canonicalization cut, but native/web adapter parity still
+  needs direct smoke coverage.
 - Lexical cleanup integration for overlay pop and scene transition needs the
   owning overlay/scene lifecycle operations to call the cleanup drain path.
 - `Scroll` is now a typed resource and sidecar element, but scroll offsets,
