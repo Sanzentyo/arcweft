@@ -649,6 +649,144 @@ impl ViewActionInvokeAction {
     }
 }
 
+impl ViewIf {
+    pub(crate) const fn new(
+        condition: Expr,
+        then_branch: Box<ViewExpr>,
+        else_branch: Option<Box<ViewExpr>>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            condition,
+            then_branch,
+            else_branch,
+            range,
+        }
+    }
+
+    pub const fn condition(&self) -> &Expr {
+        &self.condition
+    }
+
+    pub const fn then_branch(&self) -> &ViewExpr {
+        &self.then_branch
+    }
+
+    pub fn else_branch(&self) -> Option<&ViewExpr> {
+        self.else_branch.as_deref()
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl ViewMatch {
+    pub(crate) const fn new(scrutinee: Expr, arms: Vec<ViewMatchArm>, range: TextRange) -> Self {
+        Self {
+            scrutinee,
+            arms,
+            range,
+        }
+    }
+
+    pub const fn scrutinee(&self) -> &Expr {
+        &self.scrutinee
+    }
+
+    pub fn arms(&self) -> &[ViewMatchArm] {
+        &self.arms
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl ViewMatchArm {
+    pub(crate) const fn new(pattern: Pattern, guard: Option<Expr>, value: ViewExpr) -> Self {
+        Self {
+            pattern,
+            guard,
+            value,
+        }
+    }
+
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    pub const fn guard(&self) -> Option<&Expr> {
+        self.guard.as_ref()
+    }
+
+    pub const fn value(&self) -> &ViewExpr {
+        &self.value
+    }
+}
+
+impl ViewForEach {
+    pub(crate) const fn new(
+        pattern: Pattern,
+        source: Expr,
+        key: Option<Expr>,
+        body: Box<ViewExpr>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            pattern,
+            source,
+            key,
+            body,
+            range,
+        }
+    }
+
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    pub const fn source(&self) -> &Expr {
+        &self.source
+    }
+
+    pub const fn key(&self) -> Option<&Expr> {
+        self.key.as_ref()
+    }
+
+    pub const fn body(&self) -> &ViewExpr {
+        &self.body
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl ViewAwait {
+    pub const fn source(&self) -> &Expr {
+        &self.source
+    }
+
+    pub fn branches(&self) -> &[ViewAwaitBranch] {
+        &self.branches
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl ViewAwaitBranch {
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    pub const fn value(&self) -> &ViewExpr {
+        &self.value
+    }
+}
+
 impl ViewStyleModifier {
     pub fn named(name: EntityRefSyntax) -> Self {
         Self::Named(name)
@@ -851,14 +989,29 @@ fn collect_text_control_inputs<'a>(expr: &'a ViewExpr, inputs: &mut Vec<&'a Enti
                 inputs.push(input);
             }
         }
+        ViewExpr::If(view_if) => {
+            collect_text_control_inputs(view_if.then_branch(), inputs);
+            if let Some(else_branch) = view_if.else_branch() {
+                collect_text_control_inputs(else_branch, inputs);
+            }
+        }
+        ViewExpr::Match(view_match) => {
+            for arm in view_match.arms() {
+                collect_text_control_inputs(arm.value(), inputs);
+            }
+        }
+        ViewExpr::ForEach(view_for_each) => {
+            collect_text_control_inputs(view_for_each.body(), inputs);
+        }
+        ViewExpr::Await(view_await) => {
+            for branch in view_await.branches() {
+                collect_text_control_inputs(branch.value(), inputs);
+            }
+        }
         ViewExpr::ComponentCall(_)
         | ViewExpr::Text(_)
         | ViewExpr::Image(_)
         | ViewExpr::Button(_)
-        | ViewExpr::If(_)
-        | ViewExpr::Match(_)
-        | ViewExpr::ForEach(_)
-        | ViewExpr::Await(_)
         | ViewExpr::Expr(_)
         | ViewExpr::Raw(_) => {}
     }

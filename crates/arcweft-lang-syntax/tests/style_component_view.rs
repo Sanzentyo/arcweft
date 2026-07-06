@@ -184,6 +184,66 @@ pub component FeedbackForm() {
 }
 
 #[test]
+fn component_view_reactive_if_match_for_parse_to_structured_view_exprs() {
+    let parsed = parse_source(
+        r"
+pub component ReactivePanel() {
+  Column {
+    if true {
+      TextField(@input:.empty)
+    } else {
+      TextField(@input:.available)
+    }
+
+    for choice in [1, 2] key = choice {
+      TextField(@input:.choice)
+    }
+
+    match .Debug {
+      .Normal => TextField(@input:.normal)
+      .Debug => TextField(@input:.debug)
+    }
+  }
+}
+",
+    );
+
+    assert_eq!(parsed.errors(), &[]);
+    let view = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(item) => item.component_body()?.view(),
+            _ => None,
+        })
+        .expect("component View body");
+
+    let column = find_element(view.value(), "Column").expect("column parsed");
+    assert!(matches!(column.children().first(), Some(ViewExpr::If(_))));
+    assert!(matches!(
+        column.children().get(1),
+        Some(ViewExpr::ForEach(_))
+    ));
+    assert!(matches!(column.children().get(2), Some(ViewExpr::Match(_))));
+    let inputs = view
+        .text_control_inputs()
+        .into_iter()
+        .map(arcweft_lang_syntax::ast::ids::EntityRefSyntax::canonical_body)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        inputs,
+        vec![
+            "input.empty".to_owned(),
+            "input.available".to_owned(),
+            "input.choice".to_owned(),
+            "input.normal".to_owned(),
+            "input.debug".to_owned()
+        ]
+    );
+}
+
+#[test]
 fn component_view_box_and_scroll_parse_as_canonical_elements() {
     let parsed = parse_source(
         r#"

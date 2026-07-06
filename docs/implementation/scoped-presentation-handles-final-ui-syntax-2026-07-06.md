@@ -587,6 +587,44 @@ changed Rust files:
 | `crates/arcweft-lang-syntax/tests/parser_p0.rs` | 20,451 | 637 | test | false | Postfix callback block expression coverage |
 | `crates/arcweft-lang-syntax/tests/style_component_view.rs` | 10,568 | 388 | test | false | Component/View multi-statement callback coverage |
 
+## Reactive View Branching Surface
+
+- Added canonical View builder parsing for ordinary `if`, `match`, and
+  `for pattern in source key = expr` blocks. The parser now lowers those
+  authoring forms into the existing internal `ViewIf`, `ViewMatch`, and
+  `ViewForEach` AST nodes instead of introducing author-facing `ForEach`
+  syntax.
+- `} else {` and newline-separated `else {` forms are both normalized for
+  View `if` blocks. Standalone `else` still produces a structured parser
+  diagnostic.
+- Component/View text-control input discovery now recurses through
+  `if`/`match`/`for`/`await` View nodes, matching action-invoke traversal.
+- Bundle UI sidecar lowering now preserves `ViewIf` and `ViewMatch` as
+  `UiProgramInstruction::Branch` spans, and `ViewForEach` as
+  `UiProgramInstruction::RepeatKeyed` with deterministic digest references for
+  condition/source/key schemas.
+
+### Verification
+
+- `cargo test -p arcweft-lang-syntax --all-features component_view_reactive_if_match_for_parse_to_structured_view_exprs`
+- `cargo test -p arcweft-cli --all-features component_view_reactive_if_match_for_lower_to_ui_program_instructions`
+- `cargo test -p arcweft-lang-syntax --all-features`
+- `cargo check --workspace --all-targets --all-features`
+- `cargo clippy --workspace --all-targets --all-features`
+- `cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit\current`
+
+The reactive View branching cut was measured at Jujutsu change `zxypvxtw`.
+The structure audit reported 0 errors and 139 warnings. Relevant changed Rust
+files:
+
+| Path | Bytes | LOC | Classification | Embedded Tests | Responsibility |
+| --- | ---: | ---: | --- | --- | --- |
+| `crates/arcweft-lang-syntax/src/ast/view.rs` | 24,816 | 1,061 | production | false | Component/View AST branching accessors and traversal |
+| `crates/arcweft-lang-syntax/src/parser/view.rs` | 43,611 | 1,279 | production | false | Component/View element, modifier, and branching parser |
+| `crates/arcweft-cli/src/app/bundle_view.rs` | 56,649 | 1,614 | production | false | Component/View sidecar lowering and layout evidence |
+| `crates/arcweft-lang-syntax/tests/style_component_view.rs` | 12,106 | 490 | test | false | Component/View parser coverage |
+| `crates/arcweft-cli/src/app/bundle/tests.rs` | 28,488 | 920 | test | false | Bundle sidecar lowering coverage |
+
 ## Remaining Work
 
 - End-to-end save subsystem wiring still needs to consume the runtime display
@@ -603,5 +641,7 @@ changed Rust files:
 - `Scroll` is now a typed resource and sidecar element, but scroll offsets,
   clipping, input routing, save/restore of scroll state, and native/web/observe
   parity tests still need the dedicated scroll runtime behavior slice.
-- The final UI syntax direction still needs richer reactive branching surface
-  from the broader input/scroll syntax request.
+- The final UI syntax direction still needs View-local `let` binding and
+  await/pending builder integration from the broader input/scroll syntax
+  request. Ordinary `if`, `match`, and `for` View branching is covered by this
+  cut.

@@ -168,6 +168,64 @@ flow test {
 }
 
 #[test]
+fn component_view_reactive_if_match_for_lower_to_ui_program_instructions() {
+    use arcweft_bundle::resource_codec::ui::UiProgramInstruction;
+
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+component ReactivePanel() {
+  Column {
+    if true {
+      Text("Empty")
+    } else {
+      Text("Available")
+    }
+
+    for choice in [1, 2] key = choice {
+      Text("Choice")
+    }
+
+    match .Debug {
+      .Normal => Text("Normal")
+      .Debug => Text("Debug")
+    }
+  }
+}
+
+flow test {
+  component(@component:.ReactivePanel)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_ui_resources(&hir).expect("sidecars lower");
+    let program = sidecars.program.expect("program sidecar");
+
+    let branch_count = program
+        .instructions
+        .iter()
+        .filter(|instruction| matches!(instruction, UiProgramInstruction::Branch { .. }))
+        .count();
+    assert!(branch_count >= 3, "expected if plus match branches");
+    assert!(program.instructions.iter().any(|instruction| matches!(
+        instruction,
+        UiProgramInstruction::RepeatKeyed {
+            body_span,
+            ..
+        } if *body_span > 0
+    )));
+    assert!(program.instructions.iter().any(|instruction| matches!(
+        instruction,
+        UiProgramInstruction::Branch {
+            then_span,
+            else_span: Some(else_span),
+            ..
+        } if *then_span > 0 && *else_span > 0
+    )));
+}
+
+#[test]
 fn component_view_declaration_is_not_mounted_implicitly() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"

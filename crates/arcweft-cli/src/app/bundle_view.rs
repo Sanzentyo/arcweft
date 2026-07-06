@@ -7,6 +7,7 @@ use arcweft_bundle::{
         UiFocusNavigationResource, UiFocusSkipPolicy, UiFocusTargetResolution, UiFocusWrapPolicy,
         UiInputResource, UiLayoutBoundsResource, UiLogicalRect, UiProgramResource,
         UiRuntimeButtonBounds, UiRuntimeTextControlBounds, UiStyleResource, UiTextResource,
+        types::DigestRef,
         ui::{
             CompositionOnBlurPolicy, EnterKeyHint, StyleSourceIdentity, StyleSourceRef,
             StyleSyntax, TextAssistPolicy, TextCapitalization, UiElementKind, UiInputKind,
@@ -21,12 +22,13 @@ use arcweft_lang_syntax::{
     ast::{
         ids::{EntityRef, EntityRefSyntax},
         items::EntityDeclItem,
+        pattern::Pattern,
         view::{
             ComponentViewBody, ViewAction, ViewActionPayload, ViewArg, ViewButton, ViewButtonLabel,
-            ViewElement, ViewExpr, ViewImage, ViewModifier, ViewNavigationDirection,
-            ViewNavigationInitial, ViewNavigationTarget, ViewNavigationTrap, ViewStyleModifier,
-            ViewText, ViewTextControlPayloadField, ViewTextField, ViewTextFieldMode,
-            ViewTextSubmitImePolicy,
+            ViewElement, ViewExpr, ViewForEach, ViewIf, ViewImage, ViewMatch, ViewMatchArm,
+            ViewModifier, ViewNavigationDirection, ViewNavigationInitial, ViewNavigationTarget,
+            ViewNavigationTrap, ViewStyleModifier, ViewText, ViewTextControlPayloadField,
+            ViewTextField, ViewTextFieldMode, ViewTextSubmitImePolicy,
         },
     },
     expr::{Expr, Literal, UnitNumberSuffix},
@@ -276,12 +278,140 @@ fn lower_view_expr(
             });
             ViewLayoutFrame::zero()
         }
-        ViewExpr::If(_)
-        | ViewExpr::Match(_)
-        | ViewExpr::ForEach(_)
-        | ViewExpr::Await(_)
-        | ViewExpr::Expr(_) => ViewLayoutFrame::zero(),
+        ViewExpr::If(view_if) => lower_view_if(component_id, view_if, state, layout),
+        ViewExpr::Match(view_match) => lower_view_match(component_id, view_match, state, layout),
+        ViewExpr::ForEach(view_for_each) => {
+            lower_view_for_each(component_id, view_for_each, state, layout)
+        }
+        ViewExpr::Await(_) | ViewExpr::Expr(_) => ViewLayoutFrame::zero(),
     }
+}
+
+fn lower_view_if(
+    component_id: &str,
+    view_if: &ViewIf,
+    state: &mut ViewLoweringState,
+    layout: &mut ViewLayoutCursor,
+) -> ViewLayoutFrame {
+    let branch_index = state.instructions.len();
+    state.instructions.push(UiProgramInstruction::Branch {
+        condition_schema: expr_schema_ref(view_if.condition()),
+        then_span: 0,
+        else_span: None,
+        source: None,
+    });
+
+    let then_start = state.instructions.len();
+    let mut then_layout = *layout;
+    let then_frame = lower_view_expr(component_id, view_if.then_branch(), state, &mut then_layout);
+    let then_span = usize_to_u32_saturating(state.instructions.len().saturating_sub(then_start));
+
+    let (else_frame, else_span) =
+        view_if
+            .else_branch()
+            .map_or((ViewLayoutFrame::zero(), None), |branch| {
+                let else_start = state.instructions.len();
+                let mut else_layout = *layout;
+                let frame = lower_view_expr(component_id, branch, state, &mut else_layout);
+                let span =
+                    usize_to_u32_saturating(state.instructions.len().saturating_sub(else_start));
+                (frame, Some(span))
+            });
+
+    state.instructions[branch_index] = UiProgramInstruction::Branch {
+        condition_schema: expr_schema_ref(view_if.condition()),
+        then_span,
+        else_span,
+        source: None,
+    };
+    ViewLayoutFrame::new(
+        then_frame.width_milli.max(else_frame.width_milli),
+        then_frame.height_milli.max(else_frame.height_milli),
+    )
+}
+
+fn lower_view_match(
+    component_id: &str,
+    view_match: &ViewMatch,
+    state: &mut ViewLoweringState,
+    layout: &mut ViewLayoutCursor,
+) -> ViewLayoutFrame {
+    lower_view_match_arms(
+        component_id,
+        view_match.scrutinee(),
+        view_match.arms(),
+        state,
+        layout,
+    )
+}
+
+fn lower_view_match_arms(
+    component_id: &str,
+    scrutinee: &Expr,
+    arms: &[ViewMatchArm],
+    state: &mut ViewLoweringState,
+    layout: &mut ViewLayoutCursor,
+) -> ViewLayoutFrame {
+    let Some((arm, remaining)) = arms.split_first() else {
+        return ViewLayoutFrame::zero();
+    };
+    let branch_index = state.instructions.len();
+    state.instructions.push(UiProgramInstruction::Branch {
+        condition_schema: match_arm_schema_ref(scrutinee, arm),
+        then_span: 0,
+        else_span: None,
+        source: None,
+    });
+
+    let then_start = state.instructions.len();
+    let mut then_layout = *layout;
+    let then_frame = lower_view_expr(component_id, arm.value(), state, &mut then_layout);
+    let then_span = usize_to_u32_saturating(state.instructions.len().saturating_sub(then_start));
+
+    let (else_frame, else_span) = if remaining.is_empty() {
+        (ViewLayoutFrame::zero(), None)
+    } else {
+        let else_start = state.instructions.len();
+        let frame = lower_view_match_arms(component_id, scrutinee, remaining, state, layout);
+        let span = usize_to_u32_saturating(state.instructions.len().saturating_sub(else_start));
+        (frame, Some(span))
+    };
+
+    state.instructions[branch_index] = UiProgramInstruction::Branch {
+        condition_schema: match_arm_schema_ref(scrutinee, arm),
+        then_span,
+        else_span,
+        source: None,
+    };
+    ViewLayoutFrame::new(
+        then_frame.width_milli.max(else_frame.width_milli),
+        then_frame.height_milli.max(else_frame.height_milli),
+    )
+}
+
+fn lower_view_for_each(
+    component_id: &str,
+    view_for_each: &ViewForEach,
+    state: &mut ViewLoweringState,
+    layout: &mut ViewLayoutCursor,
+) -> ViewLayoutFrame {
+    let repeat_index = state.instructions.len();
+    state.instructions.push(UiProgramInstruction::RepeatKeyed {
+        source_schema: expr_schema_ref(view_for_each.source()),
+        key_schema: repeat_key_schema_ref(view_for_each),
+        body_span: 0,
+        source: None,
+    });
+    let body_start = state.instructions.len();
+    let body_frame = lower_view_expr(component_id, view_for_each.body(), state, layout);
+    let body_span = usize_to_u32_saturating(state.instructions.len().saturating_sub(body_start));
+    state.instructions[repeat_index] = UiProgramInstruction::RepeatKeyed {
+        source_schema: expr_schema_ref(view_for_each.source()),
+        key_schema: repeat_key_schema_ref(view_for_each),
+        body_span,
+        source: None,
+    };
+    body_frame
 }
 
 fn lower_element(
@@ -820,6 +950,134 @@ fn next_patch_id(
         StyleSyntax::Css => state.inline_css_sources.push(identity),
     }
     patch_id
+}
+
+fn expr_schema_ref(expr: &Expr) -> DigestRef {
+    schema_ref_for_source(&expr_source(expr))
+}
+
+fn match_arm_schema_ref(scrutinee: &Expr, arm: &ViewMatchArm) -> DigestRef {
+    let guard = arm.guard().map(expr_source).unwrap_or_default();
+    schema_ref_for_source(&format!(
+        "match:{}=>{} when {}",
+        expr_source(scrutinee),
+        pattern_schema_source(arm.pattern()),
+        guard
+    ))
+}
+
+fn repeat_key_schema_ref(view_for_each: &ViewForEach) -> DigestRef {
+    view_for_each.key().map_or_else(
+        || {
+            schema_ref_for_source(&format!(
+                "source_order:{} in {}",
+                pattern_schema_source(view_for_each.pattern()),
+                expr_source(view_for_each.source())
+            ))
+        },
+        expr_schema_ref,
+    )
+}
+
+fn schema_ref_for_source(source: &str) -> DigestRef {
+    DigestRef {
+        digest: BundleDigest::of(source.as_bytes()),
+    }
+}
+
+fn pattern_schema_source(pattern: &Pattern) -> String {
+    match pattern {
+        Pattern::Ident(name) => name.clone(),
+        Pattern::MutIdent(name) => format!("mut {name}"),
+        Pattern::Literal(expr) => expr_source(expr),
+        Pattern::Entity(entity) => entity.body().to_owned(),
+        Pattern::Variant {
+            path,
+            name,
+            payload,
+        } => format!(
+            "{}{}{}",
+            path.as_ref().map_or("", String::as_str),
+            name,
+            payload
+                .as_ref()
+                .map_or_else(String::new, variant_pattern_payload_source)
+        ),
+        Pattern::Discard => "_".to_owned(),
+        Pattern::Tuple(items) => format!(
+            "({})",
+            items
+                .iter()
+                .map(pattern_schema_source)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Pattern::Record { path, fields, rest } => {
+            let mut fields = fields
+                .iter()
+                .map(|field| {
+                    format!(
+                        "{}: {}",
+                        field.name(),
+                        pattern_schema_source(field.pattern())
+                    )
+                })
+                .collect::<Vec<_>>();
+            if *rest {
+                fields.push("..".to_owned());
+            }
+            format!(
+                "{}{{{}}}",
+                path.as_ref().map_or("", String::as_str),
+                fields.join(", ")
+            )
+        }
+        Pattern::BracketSeq { items, rest } => {
+            let mut items = items.iter().map(pattern_schema_source).collect::<Vec<_>>();
+            if let Some(rest) = rest {
+                items.push(format!("..{rest}"));
+            }
+            format!("[{}]", items.join(", "))
+        }
+        Pattern::Whole { name, pattern } => format!("{name} @ {}", pattern_schema_source(pattern)),
+        Pattern::Typed { name, ty } => format!("{name}: {ty:?}"),
+        Pattern::Raw(source) => source.clone(),
+    }
+}
+
+fn variant_pattern_payload_source(
+    payload: &arcweft_lang_syntax::ast::pattern::VariantPatternPayload,
+) -> String {
+    match payload {
+        arcweft_lang_syntax::ast::pattern::VariantPatternPayload::Tuple(items) => format!(
+            "({})",
+            items
+                .iter()
+                .map(pattern_schema_source)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        arcweft_lang_syntax::ast::pattern::VariantPatternPayload::Record { fields, rest } => {
+            let mut fields = fields
+                .iter()
+                .map(|field| {
+                    format!(
+                        "{}: {}",
+                        field.name(),
+                        pattern_schema_source(field.pattern())
+                    )
+                })
+                .collect::<Vec<_>>();
+            if *rest {
+                fields.push("..".to_owned());
+            }
+            format!("{{{}}}", fields.join(", "))
+        }
+    }
+}
+
+fn usize_to_u32_saturating(value: usize) -> u32 {
+    u32::try_from(value).unwrap_or(u32::MAX)
 }
 
 fn first_part(modifiers: &[ViewModifier]) -> Option<String> {

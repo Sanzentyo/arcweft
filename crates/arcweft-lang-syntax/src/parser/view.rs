@@ -3,13 +3,18 @@ use crate::ast::flow::Stmt;
 use crate::ast::ids::{EntityRef, EntityRefSyntax, IdRef};
 use crate::ast::view::{
     ComponentViewBody, ViewAction, ViewActionInvokeAction, ViewActionPayload, ViewArg, ViewButton,
-    ViewButtonLabel, ViewElement, ViewExpr, ViewImage, ViewModifier, ViewNavigationDirection,
-    ViewNavigationEdge, ViewNavigationModifier, ViewNavigationTarget, ViewStyleModifier, ViewText,
+    ViewButtonLabel, ViewElement, ViewExpr, ViewForEach, ViewIf, ViewImage, ViewMatch,
+    ViewMatchArm, ViewModifier, ViewNavigationDirection, ViewNavigationEdge,
+    ViewNavigationModifier, ViewNavigationTarget, ViewStyleModifier, ViewText,
     ViewTextControlPayloadField, ViewTextField, ViewTextFieldMode, ViewTextSubmitAction,
     ViewTextSubmitImePolicy,
 };
-use crate::cst::{split_top_level_punctuation, split_top_level_punctuation_once};
+use crate::cst::{
+    split_top_level_keyword_once, split_top_level_punctuation, split_top_level_punctuation_once,
+    split_top_level_punctuation_sequence_once,
+};
 use crate::expr::{CallArg, Expr, Literal};
+use crate::pattern::parse_pattern;
 
 use super::headers::{normalize_decl_id_ref, parse_required_id_ref, simple_error};
 use super::recovery::ParseError;
@@ -61,7 +66,7 @@ pub(super) fn parse_component_view_body(
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .filter(|line| !line.starts_with("//") && !line.starts_with("///"))
-        .flat_map(expand_inline_view_chain_line)
+        .flat_map(expand_component_view_line)
         .collect::<Vec<_>>();
     let lines = expanded_lines
         .iter()
@@ -81,6 +86,21 @@ pub(super) fn parse_component_view_body(
     let range = TextRange::new(base, base.saturating_add(body.len()));
     let value = parse_view_exprs(&lines, base, module_path, errors);
     Some(ComponentViewBody::new(Vec::new(), Vec::new(), value, range))
+}
+
+fn expand_component_view_line(line: &str) -> Vec<String> {
+    expand_else_line(line)
+        .into_iter()
+        .flat_map(|line| expand_inline_view_chain_line(&line))
+        .collect()
+}
+
+fn expand_else_line(line: &str) -> Vec<String> {
+    let trimmed = line.trim();
+    let Some(rest) = trimmed.strip_prefix("} else") else {
+        return vec![line.to_owned()];
+    };
+    vec!["}".to_owned(), format!("else{rest}").trim().to_owned()]
 }
 
 fn expand_inline_view_chain_line(line: &str) -> Vec<String> {
@@ -115,6 +135,37 @@ fn parse_view_exprs(
             index += 1;
             continue;
         }
+        if line.starts_with("else") {
+            errors.push(simple_error(
+                base,
+                line.len(),
+                "View `else` branch needs a preceding `if` block",
+                "if condition { ... } else { ... }",
+            ));
+            index += 1;
+            continue;
+        }
+        if line.starts_with("if ") && line.ends_with('{') {
+            let (nested, consumed) =
+                parse_view_if_block(&lines[index..], base, module_path, errors);
+            items.push(nested);
+            index += consumed.max(1);
+            continue;
+        }
+        if line.starts_with("match ") && line.ends_with('{') {
+            let (nested, consumed) =
+                parse_view_match_block(&lines[index..], base, module_path, errors);
+            items.push(nested);
+            index += consumed.max(1);
+            continue;
+        }
+        if line.starts_with("for ") && line.ends_with('{') {
+            let (nested, consumed) =
+                parse_view_for_block(&lines[index..], base, module_path, errors);
+            items.push(nested);
+            index += consumed.max(1);
+            continue;
+        }
         if line.ends_with('{') && !line.starts_with('.') {
             let (nested, consumed) = parse_view_block(&lines[index..], base, module_path, errors);
             items.push(nested);
@@ -131,6 +182,173 @@ fn parse_view_exprs(
         [single] => single.clone(),
         _ => ViewExpr::Fragment(items),
     }
+}
+
+fn parse_view_if_block(
+    lines: &[&str],
+    base: usize,
+    module_path: Option<&str>,
+    errors: &mut Vec<ParseError>,
+) -> (ViewExpr, usize) {
+    let head = lines[0].trim().trim_end_matches('{').trim();
+    let condition = head.strip_prefix("if").map(str::trim).unwrap_or_default();
+    let Some(then_end) = find_view_block_end(lines) else {
+        errors.push(simple_error(
+            base,
+            head.len(),
+            "unclosed View `if` block",
+            "if condition { ... }",
+        ));
+        return (ViewExpr::Raw(head.to_owned()), lines.len());
+    };
+    let then_branch = parse_view_exprs(&lines[1..then_end], base, module_path, errors);
+    let mut consumed = then_end + 1;
+    let else_branch = lines.get(consumed).and_then(|line| {
+        let line = line.trim();
+        if line == "else {" {
+            let else_end = find_view_block_end(&lines[consumed..])?;
+            let branch = parse_view_exprs(
+                &lines[consumed + 1..consumed + else_end],
+                base,
+                module_path,
+                errors,
+            );
+            consumed += else_end + 1;
+            Some(Box::new(branch))
+        } else {
+            None
+        }
+    });
+    (
+        ViewExpr::If(ViewIf::new(
+            parse_expr_lossy(condition),
+            Box::new(then_branch),
+            else_branch,
+            TextRange::new(base, base.saturating_add(head.len())),
+        )),
+        consumed,
+    )
+}
+
+fn parse_view_match_block(
+    lines: &[&str],
+    base: usize,
+    module_path: Option<&str>,
+    errors: &mut Vec<ParseError>,
+) -> (ViewExpr, usize) {
+    let head = lines[0].trim().trim_end_matches('{').trim();
+    let scrutinee = head
+        .strip_prefix("match")
+        .map(str::trim)
+        .unwrap_or_default();
+    let Some(end) = find_view_block_end(lines) else {
+        errors.push(simple_error(
+            base,
+            head.len(),
+            "unclosed View `match` block",
+            "match value { .Case => Text(\"...\") }",
+        ));
+        return (ViewExpr::Raw(head.to_owned()), lines.len());
+    };
+    let arms = lines[1..end]
+        .iter()
+        .filter_map(|line| parse_view_match_arm(line.trim(), base, module_path, errors))
+        .collect::<Vec<_>>();
+    (
+        ViewExpr::Match(ViewMatch::new(
+            parse_expr_lossy(scrutinee),
+            arms,
+            TextRange::new(base, base.saturating_add(head.len())),
+        )),
+        end + 1,
+    )
+}
+
+fn parse_view_match_arm(
+    line: &str,
+    base: usize,
+    module_path: Option<&str>,
+    errors: &mut Vec<ParseError>,
+) -> Option<ViewMatchArm> {
+    if line.is_empty() {
+        return None;
+    }
+    let Some((head, value)) = split_top_level_punctuation_sequence_once(line, &["=", ">"]) else {
+        errors.push(simple_error(
+            base,
+            line.len(),
+            "View `match` arm needs `=>`",
+            ".Case => Text(\"...\")",
+        ));
+        return None;
+    };
+    let (pattern, guard) = split_top_level_keyword_once(head, "when");
+    Some(ViewMatchArm::new(
+        parse_pattern(pattern.trim()),
+        guard.map(|guard| parse_expr_lossy(guard.trim())),
+        parse_view_exprs(&[value.trim()], base, module_path, errors),
+    ))
+}
+
+fn parse_view_for_block(
+    lines: &[&str],
+    base: usize,
+    module_path: Option<&str>,
+    errors: &mut Vec<ParseError>,
+) -> (ViewExpr, usize) {
+    let head = lines[0].trim().trim_end_matches('{').trim();
+    let rest = head.strip_prefix("for").map(str::trim).unwrap_or_default();
+    let Some(end) = find_view_block_end(lines) else {
+        errors.push(simple_error(
+            base,
+            head.len(),
+            "unclosed View `for` block",
+            "for item in items key = item.id { ... }",
+        ));
+        return (ViewExpr::Raw(head.to_owned()), lines.len());
+    };
+    let (pattern, Some(source_and_key)) = split_top_level_keyword_once(rest, "in") else {
+        errors.push(simple_error(
+            base,
+            head.len(),
+            "View `for` block needs `in`",
+            "for item in items key = item.id { ... }",
+        ));
+        return (ViewExpr::Raw(head.to_owned()), end + 1);
+    };
+    let (source, key) = split_top_level_keyword_once(source_and_key, "key");
+    let key = key.and_then(|key| {
+        split_top_level_punctuation_once(key.trim(), '=')
+            .map(|(_, value)| parse_expr_lossy(value.trim()))
+    });
+    let body = parse_view_exprs(&lines[1..end], base, module_path, errors);
+    (
+        ViewExpr::ForEach(ViewForEach::new(
+            parse_pattern(pattern.trim()),
+            parse_expr_lossy(source.trim()),
+            key,
+            Box::new(body),
+            TextRange::new(base, base.saturating_add(head.len())),
+        )),
+        end + 1,
+    )
+}
+
+fn find_view_block_end(lines: &[&str]) -> Option<usize> {
+    let mut depth = 0_i32;
+    for (index, line) in lines.iter().enumerate() {
+        for character in line.chars() {
+            match character {
+                '{' => depth += 1,
+                '}' => depth -= 1,
+                _ => {}
+            }
+        }
+        if index > 0 && depth <= 0 {
+            return Some(index);
+        }
+    }
+    None
 }
 
 fn parse_view_block(
