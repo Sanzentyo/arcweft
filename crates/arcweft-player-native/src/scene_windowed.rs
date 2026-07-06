@@ -855,17 +855,25 @@ impl NativeSceneState {
             Ime::Enabled => {
                 self.window_ime_supported = true;
                 self.window_ime_enabled = true;
-                if let Some(frame) = self.prepared.clone() {
+                if self.input.window_focused()
+                    && let Some(frame) = self.prepared.clone()
+                {
                     self.sync_window_ime(&frame);
                 }
                 Ok(())
             }
             Ime::Preedit(preedit, selection) => {
+                if !self.input.window_focused() {
+                    return Ok(());
+                }
                 let selection = window_ime_composition_selection(&preedit, selection);
                 let update = TextCompositionUpdate::new(preedit, selection);
                 self.apply_window_ime_operations(vec![TextInputOperation::SetComposition(update)])
             }
             Ime::Commit(text) => {
+                if !self.input.window_focused() {
+                    return Ok(());
+                }
                 self.apply_window_ime_operations(vec![TextInputOperation::Commit(TextCommit::new(
                     text,
                 ))])
@@ -873,13 +881,21 @@ impl NativeSceneState {
             Ime::DeleteSurrounding {
                 before_bytes,
                 after_bytes,
-            } => self.apply_window_ime_operations(vec![TextInputOperation::DeleteSurrounding {
-                before: u32::try_from(before_bytes).unwrap_or(u32::MAX),
-                after: u32::try_from(after_bytes).unwrap_or(u32::MAX),
-                unit: TextDeleteUnit::Utf8Byte,
-            }]),
+            } => {
+                if !self.input.window_focused() {
+                    return Ok(());
+                }
+                self.apply_window_ime_operations(vec![TextInputOperation::DeleteSurrounding {
+                    before: u32::try_from(before_bytes).unwrap_or(u32::MAX),
+                    after: u32::try_from(after_bytes).unwrap_or(u32::MAX),
+                    unit: TextDeleteUnit::Utf8Byte,
+                }])
+            }
             Ime::Disabled => {
                 self.window_ime_enabled = false;
+                if !self.input.window_focused() {
+                    return Ok(());
+                }
                 self.apply_window_ime_operations(vec![TextInputOperation::EndComposition {
                     reason: CompositionEndReason::PlatformDisabled,
                 }])
@@ -948,6 +964,9 @@ impl NativeSceneState {
 
     fn sync_window_ime(&mut self, frame: &PreparedFrame) {
         if !self.window_ime_supported {
+            return;
+        }
+        if !self.input.window_focused() {
             return;
         }
         let Some(PreparedTextInputTarget { snapshot, geometry }) =

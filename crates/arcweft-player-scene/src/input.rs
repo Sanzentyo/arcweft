@@ -14,8 +14,8 @@ use arcweft_presentation::text_editor::{
     TextEditorClipboard, TextEditorError, TextEditorLayout, TextEditorOutput, TextEditorState,
 };
 use arcweft_presentation::text_input::{
-    TextByteOffset, TextCharacterBounds, TextControlValue, TextControlWriteBack, TextInput,
-    TextInputKeyDisposition, TextInputOperation, TextInputPrivacy,
+    CompositionEndReason, TextByteOffset, TextCharacterBounds, TextControlValue,
+    TextControlWriteBack, TextInput, TextInputKeyDisposition, TextInputOperation, TextInputPrivacy,
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, FocusNavigationDirection, FramePlanError, InteractionVisualState, PreparedFrame,
@@ -641,7 +641,36 @@ impl InputController {
 
     pub fn focus_changed(&mut self, focused: bool) -> InputOutcome {
         self.window_focused = focused;
+        let mut text_control_write_backs = Vec::new();
         if !focused {
+            if self.ime_composing
+                && let Some(editor) = self.focused_text_editor.as_mut()
+            {
+                let had_composition = editor.composition_range().is_some();
+                if had_composition
+                    && editor
+                        .apply_operation(
+                            &TextInputOperation::EndComposition {
+                                reason: CompositionEndReason::Committed,
+                            },
+                            &mut self.text_editor_clipboard,
+                        )
+                        .is_ok()
+                {
+                    let privacy = if editor.options().is_secure() {
+                        TextInputPrivacy::Sensitive
+                    } else {
+                        TextInputPrivacy::Plain
+                    };
+                    text_control_write_backs.push(TextControlWriteBack::change(
+                        editor.target().clone(),
+                        editor.session(),
+                        TextControlValue::new(editor.text(), privacy),
+                        editor.selection(),
+                        editor.revision(),
+                    ));
+                }
+            }
             self.interaction.clear_focus();
             self.pointer_positions.clear();
             self.pressed.clear();
@@ -649,8 +678,16 @@ impl InputController {
             self.pending_text_pointer_selection = None;
             self.focused_text_editor = None;
             self.interaction.clear_pointer_state();
+            self.ime_composing = false;
         }
-        InputOutcome::redraw(true)
+        InputOutcome {
+            actions: Vec::new(),
+            text_control_write_backs,
+            diagnostics: Vec::new(),
+            dialogue_advance: false,
+            cancel: false,
+            redraw: true,
+        }
     }
 
     fn set_focus(
@@ -1117,6 +1154,64 @@ mod tests {
             .unwrap();
         assert_eq!(commit.text_control_write_backs().len(), 1);
         assert_eq!(commit.text_control_write_backs()[0].value().as_str(), "日");
+    }
+
+    #[test]
+    fn focus_loss_commits_active_ime_composition() {
+        let target = target("text_input.ime_focus_loss");
+        let session = TextInputSessionId(55);
+        let control = RenderTextInputControl::new(
+            target.clone(),
+            session,
+            "",
+            TextRange::new(TextByteOffset(0), TextByteOffset(0)),
+            TextInputOptions::default(),
+            SemanticRole::TextField,
+            HitRect::new(20.0, 30.0, 220.0, 32.0),
+        );
+        let frame = SharedFramePlanner::prepare(&RenderScene {
+            interaction: InteractionVisualState {
+                focused: Some(target),
+                hovered: None,
+                pressed: None,
+            },
+            ..scene(control.clone())
+        })
+        .unwrap();
+        let mut input = InputController::default();
+        input.activate_text_control(&control).unwrap();
+        let preedit = "ちょう";
+
+        let outcome = input
+            .text_input(
+                &frame,
+                TextInput::single(
+                    session,
+                    TextInputSerial(12),
+                    TextInputOperation::SetComposition(TextCompositionUpdate::new(
+                        preedit,
+                        TextRange::new(
+                            TextByteOffset(0),
+                            TextByteOffset(u32::try_from(preedit.len()).unwrap()),
+                        ),
+                    )),
+                ),
+            )
+            .unwrap();
+        assert!(outcome.redraw);
+        assert!(input.ime_composing());
+        assert!(input.focused_text_editor().is_some());
+
+        let outcome = input.focus_changed(false);
+
+        assert!(outcome.redraw);
+        assert!(!input.ime_composing());
+        assert!(input.focused_text_editor().is_none());
+        assert_eq!(outcome.text_control_write_backs().len(), 1);
+        assert_eq!(
+            outcome.text_control_write_backs()[0].value().as_str(),
+            preedit
+        );
     }
 
     #[test]
