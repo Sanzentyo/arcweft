@@ -48,12 +48,24 @@ composition/candidate popup at stale or top-left coordinates.
 ## Remaining Native Composition Popup
 
 The small white popup is not an Arcweft-rendered text-control element. The active
-native player backend is still `WinitWindowIme`. In winit 0.31.0-beta.2, the
-Win32 backend already avoids `DefWindowProc` for `WM_IME_COMPOSITION` and masks
-`ISC_SHOWUICOMPOSITIONWINDOW` during `WM_IME_SETCONTEXT`, but the public
-`ImeRequestData` surface only exposes hint/purpose, cursor area, and surrounding
-text. It does not expose a TSF UI-element sink or a separate "hide native
-composition window while keeping candidate UI" contract.
+native player backend is still `WinitWindowIme`.
+
+The follow-up upstream-handling investigation found that Arcweft's pinned
+`winit-win32 0.31.0-beta.2` masked `ISC_SHOWUICOMPOSITIONWINDOW` from
+`WM_IME_SETCONTEXT`'s `wparam`, while the Win32 visibility flags live in
+`lparam`. Arcweft now pins `winit` / `winit-win32` to a public
+`Sanzentyo/winit` fork at commit
+`fc9145a7b4054408d3aea5fb86c044e2ee35e2c9`, which is
+`v0.31.0-beta.2` plus only the `lparam` mask correction. This keeps the
+`request_ime_update` API and avoids downgrading to winit 0.30.13's older
+`set_ime_allowed` / `set_ime_cursor_area` API.
+
+When a fixed crates.io release becomes available, replace the fork pin with the
+released `winit` version and remove the `[patch.crates-io]` entries.
+
+The public `ImeRequestData` surface still only exposes hint/purpose, cursor
+area, and surrounding text. It does not expose a TSF UI-element sink or a
+separate "hide native composition window while keeping candidate UI" contract.
 
 Therefore the freeze fix is implemented in the current backend, while complete
 control over Windows native composition UI is split into:
@@ -69,3 +81,5 @@ control over Windows native composition UI is split into:
 - `cargo test -p arcweft-player-native --test native_text_input_seq06_4j1_source_gate --quiet`
 - `cargo run -p arcweft-cli -- check --manifest-path samples\modern-feedback-ui\arcw.toml`
 - `cargo clippy -p arcweft-player-native -p arcweft-player-scene --all-targets`
+- `cargo tree -p arcweft-player-native -i winit`
+- `cargo tree -p arcweft-player-native -i winit-core`

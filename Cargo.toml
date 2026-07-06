@@ -214,3 +214,5 @@ must_use_candidate = "allow"
 
 [patch.crates-io]
 glyphon = { path = "vendor/glyphon" }
+winit = { git = "https://github.com/Sanzentyo/winit", rev = "fc9145a7b4054408d3aea5fb86c044e2ee35e2c9", package = "winit" }
+winit-win32 = { git = "https://github.com/Sanzentyo/winit", rev = "fc9145a7b4054408d3aea5fb86c044e2ee35e2c9", package = "winit-win32" }
