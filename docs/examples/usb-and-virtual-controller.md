@@ -123,9 +123,9 @@ flow @flow.shooting_gallery_intro opening(state: GameState) -> Result<FlowExit, 
         }
 
     if result.score >= 1000 {
-        Ok(FlowExit::Goto(@flow.secret_route))
+        Ok(FlowExit.Goto(@flow.secret_route))
     } else {
-        Ok(FlowExit::Goto(@flow.normal_route))
+        Ok(FlowExit.Goto(@flow.normal_route))
     }
 }
 ```

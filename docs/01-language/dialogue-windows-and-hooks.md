@@ -191,8 +191,8 @@ on query DialogueLine
 phase before_text_style
 {
     match ctx.line.read_state {
-        .Unread => DialoguePatch::Style { color = ctx.character.text_style.unread_color }
-        .Read   => DialoguePatch::Style { color = ctx.character.text_style.read_color }
+        .Unread => DialoguePatch.Style { color = ctx.character.text_style.unread_color }
+        .Read   => DialoguePatch.Style { color = ctx.character.text_style.read_color }
     }
 }
 ```

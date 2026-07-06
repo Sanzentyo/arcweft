@@ -100,7 +100,8 @@ pub fn effect_id_from_expr(expression: &Expr) -> Result<EffectId, EffectContract
 
 fn effect_label(expression: &Expr) -> Result<String, EffectContractLowerError> {
     match expression {
-        Expr::Path(path) => Ok(path.clone()),
+        Expr::Path(path) => Ok(path.as_label().to_owned()),
+        Expr::ShortVariant(name) => Ok(format!(".{name}")),
         Expr::Field { target, field } => {
             effect_label(target).map(|target| format!("{target}.{field}"))
         }
@@ -147,7 +148,11 @@ fn effect_scope_arg(argument: &CallArg) -> Result<String, EffectContractLowerErr
         }
     };
     match expression {
-        Expr::Path(path) => Ok(path.strip_prefix('\'').unwrap_or(path).to_owned()),
+        Expr::Path(path) => Ok(path
+            .strip_prefix('\'')
+            .unwrap_or(path.as_label())
+            .to_owned()),
+        Expr::ShortVariant(name) => Ok(format!(".{name}")),
         Expr::LifetimePath { key, .. } => Ok(key.scope().as_str().to_owned()),
         Expr::EntityRef(entity) => Ok(entity.body().to_owned()),
         Expr::Literal(Literal::String(value)) => Ok(value.clone()),

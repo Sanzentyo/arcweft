@@ -1,4 +1,4 @@
-use super::super::helpers::{named_type_label, normalize_choice_type, type_ref_kind};
+use super::super::helpers::{named_type_label, type_ref_kind};
 use crate::diagnostics::TypeCheckError;
 use crate::env::{FunctionParam, FunctionSignature};
 use crate::types::{EntityKind, MapKind, TypeKind};
@@ -112,11 +112,7 @@ pub(super) fn spread_item_type(ty: &TypeKind) -> Option<&TypeKind> {
 }
 
 pub(super) fn join_branch_types(left: TypeKind, right: TypeKind) -> TypeKind {
-    if left == right {
-        left
-    } else {
-        normalize_choice_type(vec![left, right])
-    }
+    TypeKind::join_branch(left, right)
 }
 
 pub(super) fn rhs_expected_type_for_binary(
@@ -150,6 +146,7 @@ pub(super) fn expr_kind_name(expr: &Expr) -> &'static str {
         Expr::EntityRef(_) => "entity_ref",
         Expr::LifetimePath { .. } => "lifetime_path",
         Expr::Path(_) => "path",
+        Expr::ShortVariant(_) => "short_variant",
         Expr::Placeholder(_) => "placeholder",
         Expr::Tuple(_) => "tuple",
         Expr::BracketSeq(_) => "bracket_seq",
@@ -333,25 +330,40 @@ pub(super) fn is_unit_number_type(ty: &TypeKind) -> bool {
 }
 
 pub(super) fn std_float_constant_type(path: &str) -> Option<TypeKind> {
-    Some(match path {
-        "std.f32.nan"
-        | "std.f32.infinity"
-        | "std.f32.neg_infinity"
-        | "std.f32.epsilon"
-        | "std.f32.min"
-        | "std.f32.max"
-        | "std.f32.pi"
-        | "std.f32.tau" => TypeKind::F32,
-        "std.f64.nan"
-        | "std.f64.infinity"
-        | "std.f64.neg_infinity"
-        | "std.f64.epsilon"
-        | "std.f64.min"
-        | "std.f64.max"
-        | "std.f64.pi"
-        | "std.f64.tau" => TypeKind::F64,
-        _ => return None,
-    })
+    StdFloatConstant::resolve(path).map(StdFloatConstant::type_kind)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StdFloatConstant {
+    F32,
+    F64,
+}
+
+impl StdFloatConstant {
+    fn resolve(path: &str) -> Option<Self> {
+        let segments = path.split('.').collect::<Vec<_>>();
+        let ["std", width, name] = segments.as_slice() else {
+            return None;
+        };
+        if !matches!(
+            *name,
+            "nan" | "infinity" | "neg_infinity" | "epsilon" | "min" | "max" | "pi" | "tau"
+        ) {
+            return None;
+        }
+        match *width {
+            "f32" => Some(Self::F32),
+            "f64" => Some(Self::F64),
+            _ => None,
+        }
+    }
+
+    const fn type_kind(self) -> TypeKind {
+        match self {
+            Self::F32 => TypeKind::F32,
+            Self::F64 => TypeKind::F64,
+        }
+    }
 }
 
 pub(super) fn inline_failure_builtin_variant_type(path: &str) -> Option<TypeKind> {

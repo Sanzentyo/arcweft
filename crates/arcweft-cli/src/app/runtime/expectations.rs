@@ -250,7 +250,8 @@ fn entity_ref_label(expr: &Expr) -> Option<String> {
 fn expectation_value_label(expr: &Expr) -> Option<String> {
     match expr {
         Expr::EntityRef(entity) => Some(format!("@{}", entity.body())),
-        Expr::Path(path) => Some(path.clone()),
+        Expr::Path(path) => Some(path.as_label().to_owned()),
+        Expr::ShortVariant(name) => Some(format!(".{name}")),
         Expr::Literal(Literal::Bool(value)) => Some(value.to_string()),
         Expr::Literal(Literal::Int { value, .. }) => Some(value.to_string()),
         Expr::Literal(Literal::Float { raw, .. } | Literal::String(raw)) => Some(raw.clone()),

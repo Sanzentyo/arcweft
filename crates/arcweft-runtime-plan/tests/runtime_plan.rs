@@ -705,7 +705,7 @@ flow @flow.effects effects {
         log.info("selected {id:?}", id = selected.id)
         signal.set(@signal.current_flow, @flow.effects)
         metric.set(@metric.frame_time_ms, frame_time.ms())
-        event.emit(GameEvent::ChoiceSelected, id = @choice.opening.listen)
+        event.emit(GameEvent.ChoiceSelected, id = @choice.opening.listen)
 }
 "#,
     );
@@ -813,7 +813,7 @@ flow @flow.append append {
     with {
         together {
             log.info("left")
-            event.emit(GameEvent::Left)
+            event.emit(GameEvent.Left)
         }
     }
 }
@@ -837,7 +837,7 @@ flow @flow.opening opening {
 }
 
 flow @flow.next next {
-    return Ok(FlowExit::Done)
+    return Ok(FlowExit.Done)
 }
 ",
     );
@@ -932,7 +932,7 @@ pub source @source.player_mic_frames: Source<i64, String> {
 }
 
 flow @flow.opening opening {
-    return Ok(FlowExit::Done)
+    return Ok(FlowExit.Done)
 }
 ",
     );
@@ -1055,7 +1055,7 @@ flow @flow.loading loading {
 }
 
 flow @flow.alice_intro alice_intro {
-    return Ok(FlowExit::Done)
+    return Ok(FlowExit.Done)
 }
 "#,
     );
@@ -1209,7 +1209,7 @@ flow @flow.typed typed {
 }
 
 flow @flow.next next {
-    return Ok(FlowExit::Done)
+    return Ok(FlowExit.Done)
 }
 ",
     );

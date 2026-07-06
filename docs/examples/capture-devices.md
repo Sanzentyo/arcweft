@@ -46,7 +46,7 @@ pub flow @flow.capture_setup capture_setup(state: GameState) -> Result<FlowExit,
                 scene.show(@scene.permission_wait)
                 text.show("マイクの使用を許可してください")
             }
-            denied _ => return Ok(FlowExit::Goto(@flow.no_microphone))
+            denied _ => return Ok(FlowExit.Goto(@flow.no_microphone))
         }
 
     let cam =
@@ -55,7 +55,7 @@ pub flow @flow.capture_setup capture_setup(state: GameState) -> Result<FlowExit,
                 scene.show(@scene.permission_wait)
                 text.show("カメラの使用を許可してください")
             }
-            denied _ => return Ok(FlowExit::Goto(@flow.no_camera))
+            denied _ => return Ok(FlowExit.Goto(@flow.no_camera))
         }
 
     scene.show(@scene.capture_preview)
@@ -67,7 +67,7 @@ pub flow @flow.capture_setup capture_setup(state: GameState) -> Result<FlowExit,
     Meter(value = signal(@signal.microphone_level))
         .label("Mic")
 
-    Ok(FlowExit::Goto(@flow.next))
+    Ok(FlowExit.Goto(@flow.next))
 }
 ```
 

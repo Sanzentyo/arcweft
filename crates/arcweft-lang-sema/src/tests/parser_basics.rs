@@ -14,9 +14,9 @@ fn stub_is_now_real_source_parser() {
 fn parses_module_use_and_pub_flow() {
     let tree = parse_ok(
         r"
-mod game::routes::opening
+mod game.routes.opening
 
-use game::prelude::*
+use game.prelude.*
  pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     bg(@asset:.bg.room, fade = 300ms)
     include @frag.alice_enters
@@ -24,10 +24,7 @@ use game::prelude::*
 ",
     );
 
-    assert_eq!(
-        tree.module().expect("module").path(),
-        "game::routes::opening"
-    );
+    assert_eq!(tree.module().expect("module").path(), "game.routes.opening");
     assert_eq!(tree.uses().len(), 1);
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow item");
@@ -140,7 +137,7 @@ flow @flow.opening opening {
     assert!(matches!(&args[0], CallArg::Positional(Expr::EntityRef(_))));
     assert!(matches!(
         &args[2],
-        CallArg::Named { name, value } if name == "at" && matches!(value.as_ref(), Expr::Path(path) if path == ".right")
+        CallArg::Named { name, value } if name == "at" && matches!(value.as_ref(), Expr::ShortVariant(path) if path == "right")
     ));
     assert!(matches!(
         &args[3],
@@ -335,16 +332,13 @@ flow @flow.opening start {
 fn normalizes_parent_module_root_alias() {
     let tree = parse_ok(
         r"
-mod parent::shared
-use parent::common::{route_gate}
+mod parent.shared
+use parent.common.{route_gate}
 ",
     );
 
-    assert_eq!(tree.module().expect("module").path(), "super::shared");
-    assert_eq!(
-        tree.uses()[0].tree().source(),
-        "super::common::{route_gate}"
-    );
+    assert_eq!(tree.module().expect("module").path(), "super.shared");
+    assert_eq!(tree.uses()[0].tree().source(), "super.common.{route_gate}");
 }
 
 #[test]

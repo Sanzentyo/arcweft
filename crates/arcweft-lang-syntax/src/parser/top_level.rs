@@ -102,7 +102,7 @@ impl Parser<'_> {
                             self.push_error(
                                 range,
                                 &message,
-                                ["use self::path", "use super::path", "use crate::path"],
+                                ["use self.path", "use super.path", "use crate.path"],
                                 Some(trimmed),
                                 ["use a valid module path or grouped import tree"],
                             );
@@ -307,7 +307,7 @@ impl Parser<'_> {
             self.push_error(
                 range,
                 "use paths cannot use relative ID syntax",
-                ["use self::path", "use super::path", "use crate::path"],
+                ["use self.path", "use super.path", "use crate.path"],
                 Some(tree.trim()),
                 ["use `self::`, `super::`, or `crate::` for module-relative imports"],
             );
@@ -744,14 +744,18 @@ impl UiTextInputFields {
 
 fn ui_field_string(value: &str) -> Option<String> {
     match parse_expr_lossy(value) {
-        Expr::Literal(Literal::String(value)) | Expr::Path(value) => Some(value),
+        Expr::Literal(Literal::String(value)) => Some(value),
+        Expr::Path(value) => Some(value.as_label().to_owned()),
+        Expr::ShortVariant(value) => Some(format!(".{value}")),
         _ => None,
     }
 }
 
 fn ui_field_symbol(value: &str) -> Option<String> {
     match parse_expr_lossy(value) {
-        Expr::Literal(Literal::String(value)) | Expr::Path(value) => Some(value),
+        Expr::Literal(Literal::String(value)) => Some(value),
+        Expr::Path(value) => Some(value.as_label().to_owned()),
+        Expr::ShortVariant(value) => Some(format!(".{value}")),
         _ => None,
     }
 }
@@ -1061,9 +1065,9 @@ fn parse_ui_style_list_item(
     errors: &mut Vec<super::ParseError>,
 ) -> Option<UiStyleValueDecl> {
     match parse_expr_lossy(source) {
-        Expr::Literal(Literal::String(value)) | Expr::Path(value) => {
-            Some(UiStyleValueDecl::Text(value))
-        }
+        Expr::Literal(Literal::String(value)) => Some(UiStyleValueDecl::Text(value)),
+        Expr::Path(value) => Some(UiStyleValueDecl::Text(value.as_label().to_owned())),
+        Expr::ShortVariant(value) => Some(UiStyleValueDecl::Text(format!(".{value}"))),
         Expr::Raw(value) if !value.trim().is_empty() && !value.contains(char::is_whitespace) => {
             Some(UiStyleValueDecl::Text(value.trim().to_owned()))
         }

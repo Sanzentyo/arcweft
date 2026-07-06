@@ -48,7 +48,8 @@ impl<'a> AudioCall<'a> {
                     args.as_slice(),
                 )
             }
-            Expr::Path(path) => (path.clone(), &[][..]),
+            Expr::Path(path) => (path.as_label().to_owned(), &[][..]),
+            Expr::ShortVariant(name) => (format!(".{name}"), &[][..]),
             _ => return None,
         };
         if !callee.starts_with("audio.") {

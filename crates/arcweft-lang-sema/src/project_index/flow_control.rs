@@ -305,6 +305,7 @@ fn summarize_expr_control(expr: &Expr) -> ProjectFlowControlSummary {
         | Expr::EntityRef(_)
         | Expr::LifetimePath { .. }
         | Expr::Path(_)
+        | Expr::ShortVariant(_)
         | Expr::Placeholder(_)
         | Expr::NumericBracketSeq(_)
         | Expr::Raw(_) => {}

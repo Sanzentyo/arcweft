@@ -90,8 +90,8 @@ pub(super) fn parse_use_line(
 }
 
 pub(super) fn normalize_module_path(path: &str) -> String {
-    path.strip_prefix("parent::")
-        .map_or_else(|| path.to_owned(), |tail| format!("super::{tail}"))
+    path.strip_prefix("parent.")
+        .map_or_else(|| path.to_owned(), |tail| format!("super.{tail}"))
 }
 
 pub(super) fn is_relative_id_path(path: &str) -> bool {
@@ -580,7 +580,7 @@ fn parse_static_generic_call(source: &str) -> Option<crate::expr::Expr> {
         return None;
     }
     Some(crate::expr::Expr::Call {
-        callee: Box::new(crate::expr::Expr::Path(callee.to_owned())),
+        callee: Box::new(crate::expr::Expr::Path(callee.into())),
         args: split_comma_args(&source[open + '('.len_utf8()..close])
             .into_iter()
             .map(parse_expr_lossy)

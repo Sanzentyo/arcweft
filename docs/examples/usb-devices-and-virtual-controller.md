@@ -13,7 +13,7 @@ Related docs:
 ## Device declarations
 
 ```arcw
-mod game::devices
+mod game.devices
 
 pub device @device.motion_sensor: UsbRaw {
     permission = user_prompt
@@ -58,7 +58,7 @@ pub device @device.serial_knob: Serial {
 ## Virtual controller
 
 ```arcw
-mod game::ui::touch_controller
+mod game.ui.touch_controller
 
 pub virtual_controller @controller.default_touch {
     visible when platform.touch_available || settings.force_touch_controls
@@ -108,13 +108,13 @@ pub flow @flow.device_setup setup_devices(state: GameState) -> Result<FlowExit, 
 
             denied _ => {
                 log.warn("motion sensor denied")
-                return Ok(FlowExit::Goto(@flow.opening_without_sensor))
+                return Ok(FlowExit.Goto(@flow.opening_without_sensor))
             }
         }
 
     signal.set(@signal.device_ready, true)
 
-    Ok(FlowExit::Goto(@flow.opening))
+    Ok(FlowExit.Goto(@flow.opening))
 }
 ```
 

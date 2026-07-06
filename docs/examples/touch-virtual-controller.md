@@ -1,7 +1,7 @@
 # Example: Touch Virtual Controller
 
 ```arcw
-mod game::ui::touch_controller
+mod game.ui.touch_controller
 
 pub layer @layer.input.touch_controller {
     z = 900

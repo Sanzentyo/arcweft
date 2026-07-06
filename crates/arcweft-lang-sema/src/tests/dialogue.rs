@@ -54,10 +54,10 @@ fn parses_positional_look_and_extended_line_options() {
         panic!("expected speaker line");
     };
     assert!(matches!(line.options().look(), Some(Expr::Path(path)) if path == "smile"));
-    assert!(matches!(line.options().stage(), Some(Expr::Path(path)) if path == ".main"));
-    assert!(matches!(line.options().portrait(), Some(Expr::Path(path)) if path == ".bust"));
-    assert!(matches!(line.options().focus(), Some(Expr::Path(path)) if path == ".soft"));
-    assert!(matches!(line.options().cleanup(), Some(Expr::Path(path)) if path == ".line"));
+    assert!(matches!(line.options().stage(), Some(Expr::ShortVariant(path)) if path == "main"));
+    assert!(matches!(line.options().portrait(), Some(Expr::ShortVariant(path)) if path == "bust"));
+    assert!(matches!(line.options().focus(), Some(Expr::ShortVariant(path)) if path == "soft"));
+    assert!(matches!(line.options().cleanup(), Some(Expr::ShortVariant(path)) if path == "line"));
 }
 
 #[test]
@@ -626,7 +626,7 @@ fn parses_dialogue_and_stream_function_kinds() {
     let tree = parse_ok(
         r"
 pub dialogue fn flash(color: Color) -> Content {
-    Content::empty()
+    Content.empty()
 }
 
 stream fn camera_frames() -> Stream<VideoFrame, CameraError> {

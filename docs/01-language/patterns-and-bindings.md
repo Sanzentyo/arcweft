@@ -74,9 +74,9 @@ When the expected enum type is known, short `.Variant` syntax is preferred:
 Fully qualified variant names are allowed when needed:
 
 ```arcw
-Option::Some(x)
-Result::Err(e)
-GameEvent::ChoiceSelected { id }
+Option.Some(x)
+Result.Err(e)
+GameEvent.ChoiceSelected { id }
 ```
 
 ## Bracket sequence patterns

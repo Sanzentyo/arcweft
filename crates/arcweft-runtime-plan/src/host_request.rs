@@ -254,9 +254,7 @@ fn lower_agent_host_arg_expr(expr: &Expr) -> RuntimeExpr {
         Expr::Call { callee, args } if expr_label(callee) == "viewport_point" => {
             lower_agent_viewport_point_expr(args)
         }
-        Expr::Path(path) if path.starts_with('.') => {
-            RuntimeExpr::Value(RuntimeValue::String(path.to_owned()))
-        }
+        Expr::ShortVariant(name) => RuntimeExpr::Value(RuntimeValue::String(name.to_string())),
         _ => lower_host_arg_expr(expr),
     }
 }

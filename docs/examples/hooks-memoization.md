@@ -1,10 +1,10 @@
 # Example: Object Hooks and Memoization
 
 ```arcw
-mod game::routes::opening
+mod game.routes.opening
 
-use game::prelude::*
-use game::logic::affection::{has_affection_at_least}
+use game.prelude.*
+use game.logic.affection.{has_affection_at_least}
 
 memo fn alice_route_ready(state: GameState) -> Bool
 scope = state
@@ -24,7 +24,7 @@ effects { ui.enable, log.debug }
         alice_route_ready(state)
     }
     if condition {
-        event.emit(UiCommand::EnableTarget, target = @choice.opening.listen)
+        event.emit(UiCommand.EnableTarget, target = @choice.opening.listen)
         log.debug("listen choice enabled")
     }
 }
@@ -36,7 +36,7 @@ when input.pointer.hovered
 effects { ui.style }
 {
     event.emit(
-        UiCommand::SetClass,
+        UiCommand.SetClass,
         target = @choice.opening.listen,
         class = "hover",
         enabled = true,

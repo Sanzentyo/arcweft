@@ -200,7 +200,8 @@ pub(crate) fn capability_from_expr(expr: &Expr) -> Option<Capability> {
 
 fn expr_path_label(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Path(path) => Some(path.clone()),
+        Expr::Path(path) => Some(path.as_label().to_owned()),
+        Expr::ShortVariant(name) => Some(format!(".{name}")),
         Expr::Field { target, field } => {
             expr_path_label(target).map(|target| format!("{target}.{field}"))
         }
@@ -303,7 +304,8 @@ fn collect_resource_accesses_from_expr(expr: &Expr, accesses: &mut BTreeSet<Reso
 
 fn expr_label(expr: &Expr) -> String {
     match expr {
-        Expr::Path(path) => path.clone(),
+        Expr::Path(path) => path.as_label().to_owned(),
+        Expr::ShortVariant(name) => format!(".{name}"),
         Expr::EntityRef(entity) => entity.body().to_owned(),
         Expr::LifetimePath { key, .. } => key.as_dotted(),
         Expr::Field { target, field } => format!("{}.{}", expr_label(target), field),

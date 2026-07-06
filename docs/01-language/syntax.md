@@ -3,10 +3,10 @@
 ## 最小例
 
 ```arcw
-mod crate::game::routes::opening
+mod crate.game.routes.opening
 
-use crate::game::prelude::*
-use super::logic::affection::{has_affection_at_least}
+use crate.game.prelude.*
+use super.logic.affection.{has_affection_at_least}
 
 #[derive(StableHash)]
 pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
@@ -38,7 +38,7 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
   のような family-relative form を推奨し、`@asset.foo` は生成物や tooling
   出力向けの完全 public-id 形とする。複雑な参照やメンバアクセス前は `@<foo.bar>`。
 - `@.suffix` / `@..suffix` / `@...suffix` / `@super.suffix` は dialogue line / choice / option / text key のような ID 文脈だけで使う相対 ID。
-- module / import の相対指定は `self::` / `super::` / `crate::` を使う。
+- module / import の相対指定は `self.` / `super.` / `crate.` を使う。
 - コメントリンクは `[[foo.bar]]`。
 - 属性は Rust 風の `#[derive(...)]`, `#[link(...)]`。
 - `#` は `#[...]` attribute opener の一部であり、entity ref ではない。
@@ -57,7 +57,7 @@ Arcweft DSL type abstraction uses Rust-like `trait` and `impl` syntax:
 ```arcw
 pub trait SourceLike {
     type Item
-    fn current(self) -> Self::Item
+    fn current(self) -> self.Item
 }
 
 impl SourceLike for ChapterSource {
@@ -71,7 +71,7 @@ impl SourceLike for ChapterSource {
 Generic bounds can be written inline or in a `where` clause:
 
 ```arcw
-fn current_item<T: SourceLike>(source: T) -> T::Item {
+fn current_item<T: SourceLike>(source: T) -> T.Item {
     source.current()
 }
 
@@ -82,7 +82,7 @@ where T: SourceLike<Item = ChapterId>
 }
 ```
 
-`Self::Assoc` and `T::Assoc` are associated type projections. In seq08.1,
+`self.Assoc` and `T.Assoc` are associated type projections. In seq08.1,
 projections are compile-time type expressions; dynamic trait objects, fully
 qualified method syntax, default associated types, and GAT-like associated type
 constructors are deferred.

@@ -1162,6 +1162,7 @@ impl<'a> SemanticAnalyzer<'a> {
         match expr {
             Expr::Literal(_)
             | Expr::Path(_)
+            | Expr::ShortVariant(_)
             | Expr::Placeholder(_)
             | Expr::EntityRef(_)
             | Expr::NumericBracketSeq(_) => {}
@@ -2014,7 +2015,8 @@ fn named_entity_arg(args: &[CallArg], name: &str) -> Option<String> {
             value,
         } if arg_name == name => match value.as_ref() {
             Expr::EntityRef(entity) => entity_label(entity),
-            Expr::Path(path) => Some(path.clone()),
+            Expr::Path(path) => Some(path.as_label().to_owned()),
+            Expr::ShortVariant(name) => Some(format!(".{name}")),
             _ => None,
         },
         _ => None,
@@ -2030,7 +2032,7 @@ fn entity_label(entity: &EntityRefSyntax) -> Option<String> {
 
 fn lifetime_label_arg(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Path(path) if path.starts_with('\'') => Some(path.clone()),
+        Expr::Path(path) if path.starts_with('\'') => Some(path.as_label().to_owned()),
         Expr::LifetimePath { key, .. } => Some(format!("'{}", key.as_dotted())),
         _ => None,
     }

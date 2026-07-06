@@ -27,7 +27,7 @@ Conceptually:
 ```arcw
 let config = match load_config() {
     .Ok(v) => v
-    .Err(e) => return .Err(From::from(e))
+    .Err(e) => return .Err(From.from(e))
 }
 ```
 
@@ -59,7 +59,7 @@ fn selected_route(state: GameState) -> Option<Ref<Flow>> {
 }
 ```
 
-In an `ArcResult<T>` context, `Option<T>?` is allowed as convenience and converts `None` to `ArcError::missing_value()` with a default source trace.
+In an `ArcResult<T>` context, `Option<T>?` is allowed as convenience and converts `None` to `ArcError.missing_value()` with a default source trace.
 
 ```arcw
 fn selected_route(state: GameState) -> ArcResult<Ref<Flow>> {

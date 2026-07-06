@@ -6,7 +6,7 @@ This is a compact summary of the current Arcweft surface grammar. It is intentio
 
 ```text
 Ident        := /[A-Za-z_][A-Za-z0-9_]*/
-IdentPath    := Ident ('::' Ident)*
+IdentPath    := Ident ('.' Ident)*
 EntityRef    := '@' Ident ('.' Ident)* | '@<' EntityBody '>'
 EntityRefSyntax := EntityRef | FamilyRelativeEntityRef
 FamilyRelativeEntityRef := '@' Ident ':' DotRun Ident ('.' Ident)*
@@ -77,7 +77,7 @@ WherePredicate := Type ':' TraitBound ('+' TraitBound)*
 TraitBound := TypePath GenericTraitBoundArgs?
 GenericTraitBoundArgs := '<' TraitBoundArg (',' TraitBoundArg)* ','? '>'
 TraitBoundArg := Type | Ident '=' Type
-ProjectionType := TypePath '::' Ident
+ProjectionType := TypePath '.' Ident
 ```
 
 Associated type defaults, GAT-like associated type constructors, and default
@@ -124,9 +124,9 @@ signature. There is no default `i32`/`f64` fallback, and there are no concrete
 ```text
 Source       := ModuleDecl? UseDecl* Item*
 ModuleDecl   := 'mod' ModulePath
-UseDecl      := Visibility? 'use' ModulePath ('::' UseTree)?
+UseDecl      := Visibility? 'use' ModulePath ('.' UseTree)?
 Visibility   := 'pub'?
-ModulePath   := ('crate' '::' | 'self' '::' | 'super' '::' | 'parent' '::')? IdentPath
+ModulePath   := ('crate' '.' | 'self' '.' | 'super' '.' | 'parent' '.')? IdentPath
 
 Item         := OuterAttr* ItemDecl
 ItemDecl     :=
@@ -146,7 +146,7 @@ ItemDecl     :=
   | TypeDecl
 OuterAttr    := '#[' AttrPath AttrArgs? ']'
 InnerAttr    := '#![' AttrPath AttrArgs? ']'
-AttrPath     := Ident ('::' Ident)*
+AttrPath     := Ident ('.' Ident)*
 AttrArgs     := '(' AttrToken* ')'
 ```
 
@@ -232,10 +232,10 @@ Declaration identities have a hand-written canonical surface and a generated
 surface. Hand-written flows should use either `flow opening(...)` or
 `flow @flow.opening(...)`. The fully elaborated spelling
 `flow @flow.opening opening(...)` is accepted for generated source and
-roundtrips, but hand-written source reports `style::redundant_decl_identity`
-unless it is covered by `#[allow(style::redundant_decl_identity)]` or
+roundtrips, but hand-written source reports `style.redundant_decl_identity`
+unless it is covered by `#[allow(style.redundant_decl_identity)]` or
 `#[generated]`. A mismatch such as `flow @flow.opening start(...)` reports
-`identity::decl_binding_mismatch`; it is not a style warning.
+`identity.decl_binding_mismatch`; it is not a style warning.
 
 Source and entity declarations follow the same principle. In declaration
 headers, the keyword supplies the default entity family, so authored code should
@@ -629,7 +629,7 @@ NonBindingPattern  := Literal | EntityRef | TuplePattern | RecordPattern | Varia
 TuplePattern  := '(' Pattern (',' Pattern)* ')'
 RecordPattern := TypePath? '{' FieldPattern* '..'? '}'
 FieldPattern  := Ident | Ident ':' Pattern
-VariantPattern:= ('.' Ident | TypePath '::' Ident) VariantPayload?
+VariantPattern:= ('.' Ident | TypePath '.' Ident) VariantPayload?
 BracketSeqPattern := '[' Pattern* RestPattern? ']'
 RestPattern   := '..' Ident?
 ```
@@ -661,7 +661,8 @@ RangeExpr   := Expr? ('..' | '..=') Expr?
 ```
 
 Field access such as `state.affection` is structured as a field expression.
-Type and module paths use `::`; public IDs use the `@flow.opening` entity form.
+Type, module, and selector paths use dot-separated segments; public IDs use the
+`@flow.opening` entity form.
 
 ## Try operator and await
 

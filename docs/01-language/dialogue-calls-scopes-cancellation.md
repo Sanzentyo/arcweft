@@ -521,18 +521,18 @@ let outcome = alice.say(voice=auto)[
     今日は少しだけ、変な夢を見たんだ。[p]
 ]
 with {
-    cancel on input(.SkipLine) => LineCancel::Skipped
-    cancel on input(.BackToTitle) => LineCancel::Goto(@flow.title)
+    cancel on input(.SkipLine) => LineCancel.Skipped
+    cancel on input(.BackToTitle) => LineCancel.Goto(@flow.title)
 }
 
 match outcome {
     .Completed => continue
     .Cancelled(.Skipped) => continue
-    .Cancelled(.Goto(flow)) => return Ok(FlowExit::Goto(flow))
+    .Cancelled(.Goto(flow)) => return Ok(FlowExit.Goto(flow))
 }
 ```
 
-If the result is ignored, the default line policy is used. A `goto` cancellation terminates the current flow segment and produces a `FlowExit::Goto`.
+If the result is ignored, the default line policy is used. A `goto` cancellation terminates the current flow segment and produces a `FlowExit.Goto`.
 
 ---
 
@@ -626,7 +626,7 @@ pub dialogue fn flash(
 ) -> Result<DialogueCue, TagError>
 effects { stage.flash }
 {
-    Ok(DialogueCue::Flash { color, time })
+    Ok(DialogueCue.Flash { color, time })
 }
 ```
 
@@ -650,8 +650,8 @@ alice: まぶしい……[call flash(color=#ffffff, time=90ms)][p]
 The function must be in scope through `use dialogue` or `use tag`.
 
 ```arcw
-use dialogue game::fx::{flash}
-use tag game::fx::{flash as flash_tag}
+use dialogue game.fx.{flash}
+use tag game.fx.{flash as flash_tag}
 ```
 
 ---
@@ -669,7 +669,7 @@ pub dialogue tag @tag.shake shake(
 requires strength >= 0.0 && strength <= 1.0
 effects { stage.animate }
 {
-    Ok(DialogueCue::Shake { target, strength, time })
+    Ok(DialogueCue.Shake { target, strength, time })
 }
 ```
 

@@ -225,12 +225,12 @@ let result = try alice.say(voice=auto)[
 ]
 with:
     cancel on input(.SkipLine):
-        out Err(LineCancel::Skipped)
+        out Err(LineCancel.Skipped)
 
     out Ok(())
 ```
 
-For most visual-novel lines, cancel handlers use `continue`, `goto`, or `return Ok(FlowExit::...)`, so ordinary bindings remain ergonomic.
+For most visual-novel lines, cancel handlers use `continue`, `goto`, or `return Ok(FlowExit....)`, so ordinary bindings remain ergonomic.
 
 ---
 

@@ -10,8 +10,203 @@ use crate::cst::{
     split_leading_relative_entity_ref,
 };
 use arcweft_source::{SourceAnchor, SourceName};
-use std::{fmt, ops::Add};
+use std::{
+    fmt,
+    ops::{Add, Deref},
+};
 use thiserror::Error;
+
+/// Identifier segment used by expression paths and shorthand selectors.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Name(String);
+
+impl Name {
+    /// Creates a name segment from parser-owned source text.
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    /// Returns the source spelling for this name segment.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<str> for Name {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl Deref for Name {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl fmt::Display for Name {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl PartialEq<str> for Name {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl PartialEq<&str> for Name {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<Name> for str {
+    fn eq(&self, other: &Name) -> bool {
+        self == other.as_str()
+    }
+}
+
+impl From<Name> for String {
+    fn from(value: Name) -> Self {
+        value.0
+    }
+}
+
+/// Dotted expression path before semantic resolution.
+///
+/// Parser code keeps these paths structured so later phases can distinguish
+/// namespace, type, value, and capability selectors without reparsing strings.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct DottedPath {
+    segments: Vec<Name>,
+    label: String,
+}
+
+impl DottedPath {
+    /// Builds a path from one or more already-split segments.
+    pub fn new(segments: Vec<Name>) -> Self {
+        let label = segments
+            .iter()
+            .map(Name::as_str)
+            .collect::<Vec<_>>()
+            .join(".");
+        Self { segments, label }
+    }
+
+    /// Builds a single-segment path from parser-owned source text.
+    pub fn single(value: impl Into<String>) -> Self {
+        Self::new(vec![Name::new(value)])
+    }
+
+    /// Splits canonical dotted surface syntax into path segments.
+    pub fn parse_dotted(value: impl Into<String>) -> Self {
+        let value = value.into();
+        let segments = value
+            .split('.')
+            .filter(|segment| !segment.is_empty())
+            .map(|segment| Name::new(segment.to_owned()))
+            .collect::<Vec<_>>();
+        Self::new(segments)
+    }
+
+    /// Returns a copy with one member appended.
+    #[must_use]
+    pub fn with_member(&self, member: impl Into<String>) -> Self {
+        let mut segments = self.segments.clone();
+        segments.push(Name::new(member));
+        Self::new(segments)
+    }
+
+    /// Returns the canonical dotted source spelling.
+    pub fn as_label(&self) -> &str {
+        &self.label
+    }
+
+    /// Returns the canonical dotted source spelling.
+    pub fn as_str(&self) -> &str {
+        self.as_label()
+    }
+
+    /// Returns the path segments in source order.
+    pub fn segments(&self) -> &[Name] {
+        &self.segments
+    }
+
+    /// Returns true when the path contains exactly one segment with this name.
+    pub fn is_single(&self, value: &str) -> bool {
+        matches!(self.segments.as_slice(), [segment] if segment == value)
+    }
+
+    /// Returns true when the path segments exactly match `segments`.
+    pub fn matches_segments(&self, segments: &[&str]) -> bool {
+        self.segments.len() == segments.len()
+            && self
+                .segments
+                .iter()
+                .zip(segments.iter())
+                .all(|(actual, expected)| actual.as_str() == *expected)
+    }
+}
+
+impl AsRef<str> for DottedPath {
+    fn as_ref(&self) -> &str {
+        self.as_label()
+    }
+}
+
+impl Deref for DottedPath {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_label()
+    }
+}
+
+impl fmt::Display for DottedPath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_label())
+    }
+}
+
+impl PartialEq<str> for DottedPath {
+    fn eq(&self, other: &str) -> bool {
+        self.as_label() == other
+    }
+}
+
+impl PartialEq<&str> for DottedPath {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_label() == *other
+    }
+}
+
+impl PartialEq<DottedPath> for str {
+    fn eq(&self, other: &DottedPath) -> bool {
+        self == other.as_label()
+    }
+}
+
+impl From<DottedPath> for String {
+    fn from(value: DottedPath) -> Self {
+        value.label
+    }
+}
+
+impl From<String> for DottedPath {
+    fn from(value: String) -> Self {
+        Self::parse_dotted(value)
+    }
+}
+
+impl From<&str> for DottedPath {
+    fn from(value: &str) -> Self {
+        Self::parse_dotted(value)
+    }
+}
 
 /// Expression syntax preserved for type checking and HIR lowering.
 ///
@@ -26,7 +221,8 @@ pub enum Expr {
         key: LifetimeKey,
         optional: bool,
     },
-    Path(String),
+    Path(DottedPath),
+    ShortVariant(Name),
     Placeholder(Placeholder),
     Tuple(Vec<Expr>),
     /// Surface `[a, b, c]` sequence literal before expected-type resolution.
@@ -889,8 +1085,6 @@ impl<'a> Lexer<'a> {
         while let Some(ch) = self.peek_char() {
             if is_ident_continue(ch) {
                 self.bump_char();
-            } else if self.starts_with("::") {
-                self.cursor += 2;
             } else {
                 break;
             }
@@ -1140,9 +1334,11 @@ impl ExprParser {
                         fields: self.parse_record_fields()?,
                     });
                 }
-                Ok(Expr::Path(path))
+                Ok(Expr::Path(DottedPath::parse_dotted(path)))
             }
-            Token::RelativePath(path) => Ok(Expr::Path(path)),
+            Token::RelativePath(path) => Ok(Expr::ShortVariant(Name::new(
+                path.trim_start_matches('.').to_owned(),
+            ))),
             Token::Underscore => Ok(Expr::Placeholder(Placeholder::Partial)),
             Token::Caret => Ok(Expr::Placeholder(Placeholder::PipeLeft)),
             Token::LParen => self.parse_tuple_or_group(),
@@ -1455,7 +1651,7 @@ impl ExprParser {
                 self.bump();
                 self.parse_expr_bp(0)?
             } else {
-                Expr::Path(name.clone())
+                Expr::Path(DottedPath::single(name.clone()))
             };
             fields.push((name, value));
             match self.peek() {

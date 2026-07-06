@@ -22,7 +22,7 @@ scope = session
 }
 
 pub parser parse_player_command: Parser<PlayerCommand, ParseError> {
-    alt { "advance" => PlayerCommand::Advance }
+    alt { "advance" => PlayerCommand.Advance }
 }
 "#,
     );
@@ -1051,9 +1051,9 @@ source @source:. metrics() {
 fn typechecks_structured_function_body_for_hir_readiness() {
     let tree = parse_ok(
         r"
-fn load_score() -> i32 {
+fn load_score() -> Result<i32, ScoreError> {
     let score = read_score()?
-    score
+    return Ok(score)
 }
 ",
     );

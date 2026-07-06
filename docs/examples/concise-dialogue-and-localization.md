@@ -3,11 +3,11 @@
 This example shows Arcweft's flow-integrated dialogue surface. There is no separate `script` item: concise dialogue and typed logic coexist inside `flow`. Ordinary lines use `character:` sugar, while complex lines use the canonical `character.say()[...]` form.
 
 ```arcw
-mod game::routes::opening
+mod game.routes.opening
 
-use game::prelude::*
-use game::characters::{alice}
-use tag game::fx::{flash}
+use game.prelude.*
+use game.characters.{alice}
+use tag game.fx.{flash}
 
 dialogue defaults {
     window = @textbox.main
@@ -59,7 +59,7 @@ pub dialogue tag @tag.flash flash(
 ) -> Result<DialogueCue, TagError>
 effects { stage.flash }
 {
-    Ok(DialogueCue::Flash { color, time })
+    Ok(DialogueCue.Flash { color, time })
 }
 ```
 

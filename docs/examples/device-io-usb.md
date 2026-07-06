@@ -1,7 +1,7 @@
 # Example: USB Sensor and HID Dial
 
 ```arcw
-mod game::devices
+mod game.devices
 
 pub device @device.usb.sensor: UsbDevice {
     permission = user_prompt
@@ -51,7 +51,7 @@ flow @flow.device_demo device_demo(state: GameState) -> Result<FlowExit, FlowErr
     let dev =
         try await device.usb(@device.usb.sensor) with {
             pending _ => scene.show(@scene.device_wait); text.show("USBセンサーを接続してください")
-            denied _ => return Ok(FlowExit::Goto(@flow.device_optional))
+            denied _ => return Ok(FlowExit.Goto(@flow.device_optional))
         }
 
     let frames = sensor_frames(dev)
@@ -62,7 +62,7 @@ flow @flow.device_demo device_demo(state: GameState) -> Result<FlowExit, FlowErr
         }
 
         event .Back => {
-            return Ok(FlowExit::Goto(@flow.title))
+            return Ok(FlowExit.Goto(@flow.title))
         }
 
         frame _ => {

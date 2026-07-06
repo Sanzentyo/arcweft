@@ -316,6 +316,7 @@ fn collect_mounted_component_ids_from_expr(expr: &Expr, ids: &mut BTreeSet<Strin
         | Expr::EntityRef(_)
         | Expr::LifetimePath { .. }
         | Expr::Path(_)
+        | Expr::ShortVariant(_)
         | Expr::Placeholder(_)
         | Expr::NumericBracketSeq(_)
         | Expr::Raw(_) => {}
@@ -373,16 +374,31 @@ fn collect_mounted_component_ids_from_call_args(args: &[CallArg], ids: &mut BTre
 }
 
 fn mounted_component_id_from_expr(expr: &Expr) -> Option<String> {
-    if let Expr::Raw(source) | Expr::Path(source) = expr
-        && let Some(id) = mounted_component_id_from_source(source)
-    {
-        return Some(id);
+    match expr {
+        Expr::Raw(source) => {
+            if let Some(id) = mounted_component_id_from_source(source) {
+                return Some(id);
+            }
+        }
+        Expr::Path(source) => {
+            if let Some(id) = mounted_component_id_from_source(source.as_label()) {
+                return Some(id);
+            }
+        }
+        Expr::ShortVariant(source) => {
+            if let Some(id) = mounted_component_id_from_source(source.as_str()) {
+                return Some(id);
+            }
+        }
+        _ => {}
     }
     let Expr::Call { callee, args } = expr else {
         return None;
     };
-    let (Expr::Path(callee) | Expr::Raw(callee)) = callee.as_ref() else {
-        return None;
+    let callee = match callee.as_ref() {
+        Expr::Path(callee) => callee.as_label(),
+        Expr::Raw(callee) => callee.as_str(),
+        _ => return None,
     };
     (callee == "component").then(|| {
         args.iter().find_map(|arg| match arg {

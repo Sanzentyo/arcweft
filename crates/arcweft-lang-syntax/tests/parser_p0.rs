@@ -42,9 +42,9 @@ flow opening {
 fn removed_import_execution_modes_are_parse_diagnostics() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r"
-lazy use game::heavy::{shader}
-eager use game::generated::{RouteMap}
-use game::prelude::*
+lazy use game.heavy.{shader}
+eager use game.generated.{RouteMap}
+use game.prelude.*
 ",
     );
 
@@ -56,37 +56,34 @@ use game::prelude::*
     }));
     let tree = parsed.typed_tree();
     assert_eq!(tree.uses().len(), 1);
-    assert_eq!(tree.uses()[0].tree().source(), "game::prelude::*");
+    assert_eq!(tree.uses()[0].tree().source(), "game.prelude.*");
 }
 
 #[test]
 fn use_tree_exposes_typed_module_prefixes() {
     let tree = parse_ok(
         r"
-use parent::shared::{alpha, beta}
-pub use crate::game::routes::opening as opening_route
-use self::prelude::*
+use parent.shared.{alpha, beta}
+pub use crate.game.routes.opening as opening_route
+use self.prelude.*
 ",
     );
 
     assert_eq!(tree.uses().len(), 3);
-    assert_eq!(
-        tree.uses()[0].tree().source(),
-        "super::shared::{alpha, beta}"
-    );
+    assert_eq!(tree.uses()[0].tree().source(), "super.shared.{alpha, beta}");
     assert_eq!(
         tree.uses()[0].tree().module_path_prefix().to_string(),
-        "super::shared"
+        "super.shared"
     );
     assert!(tree.uses()[0].tree().module_path_is_exact());
     assert_eq!(
         tree.uses()[1].tree().module_path_prefix().to_string(),
-        "crate::game::routes::opening"
+        "crate.game.routes.opening"
     );
     assert!(!tree.uses()[1].tree().module_path_is_exact());
     assert_eq!(
         tree.uses()[2].tree().module_path_prefix().to_string(),
-        "self::prelude"
+        "self.prelude"
     );
     assert!(tree.uses()[2].tree().module_path_is_exact());
 }
@@ -170,7 +167,7 @@ use arcweft_lang_syntax::{
 
 fn field_path(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Path(path) => Some(path.clone()),
+        Expr::Path(path) => Some(path.as_label().to_owned()),
         Expr::Field { target, field } => Some(format!("{}.{}", field_path(target)?, field)),
         _ => None,
     }
@@ -288,7 +285,7 @@ fn speaker_preset_call_arguments_are_typed_expressions() {
     assert_eq!(args.len(), 3);
     assert!(args.iter().all(|arg| matches!(arg, CallArg::Named { .. })));
     assert!(
-        matches!(&args[0], CallArg::Named { value, .. } if matches!(value.as_ref(), Expr::Path(path) if path == ".smile"))
+        matches!(&args[0], CallArg::Named { value, .. } if matches!(value.as_ref(), Expr::ShortVariant(path) if path == "smile"))
     );
 }
 

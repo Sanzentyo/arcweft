@@ -283,7 +283,7 @@ fn parse_source_stmt(trimmed: &str) -> Option<Stmt> {
     }
     if let Some(rest) = trimmed.strip_prefix("from ") {
         return Some(Stmt::Expr(Expr::Call {
-            callee: Box::new(Expr::Path("from".to_owned())),
+            callee: Box::new(Expr::Path("from".into())),
             args: vec![CallArg::Positional(parse_expr_lossy(rest.trim()))],
         }));
     }

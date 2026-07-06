@@ -30,7 +30,8 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
     match expr {
         Expr::Literal(literal) => RuntimeExpr::Value(lower_runtime_literal(literal)),
         Expr::EntityRef(entity) => RuntimeExpr::EntityRef(entity_ref_label(entity)),
-        Expr::Path(path) => RuntimeExpr::Local(path.clone()),
+        Expr::Path(path) => RuntimeExpr::Local(path.as_label().to_owned()),
+        Expr::ShortVariant(name) => RuntimeExpr::Value(RuntimeValue::String(format!(".{name}"))),
         Expr::Tuple(items) if items.is_empty() => RuntimeExpr::Value(RuntimeValue::Unit),
         Expr::Tuple(items) => RuntimeExpr::Tuple(items.iter().map(lower_runtime_expr).collect()),
         Expr::BracketSeq(items) => lower_runtime_bracket_seq(items),
@@ -145,14 +146,19 @@ fn lower_runtime_expr_strict_with_helpers(
     match expr {
         Expr::Literal(literal) => Ok(RuntimeExpr::Value(lower_runtime_literal(literal))),
         Expr::EntityRef(entity) => Ok(RuntimeExpr::EntityRef(entity_ref_label(entity))),
-        Expr::Path(path) => Ok(constructor_path(path).map_or_else(
-            || RuntimeExpr::Local(path.clone()),
+        Expr::Path(path) => Ok(constructor_path(path.as_label()).map_or_else(
+            || RuntimeExpr::Local(path.as_label().to_owned()),
             |(path, name)| RuntimeExpr::Variant {
                 path,
                 name,
                 payload: None,
             },
         )),
+        Expr::ShortVariant(name) => Ok(RuntimeExpr::Variant {
+            path: None,
+            name: name.to_string(),
+            payload: None,
+        }),
         Expr::Tuple(items) if items.is_empty() => Ok(RuntimeExpr::Value(RuntimeValue::Unit)),
         Expr::Tuple(items) => items
             .iter()
@@ -432,11 +438,11 @@ fn lower_enum_variant_field(target: &Expr, field: &str) -> Option<RuntimeExpr> {
     let Expr::Path(path) = target else {
         return None;
     };
-    is_uppercase_path_segment(path)
+    is_uppercase_path_segment(path.as_label())
         .then_some(field)
         .filter(|field| is_uppercase_path_segment(field))
         .map(|field| RuntimeExpr::Variant {
-            path: Some(path.clone()),
+            path: Some(path.as_label().to_owned()),
             name: field.to_owned(),
             payload: None,
         })
@@ -1313,7 +1319,11 @@ fn runtime_call(expr: &Expr) -> RuntimeCall {
             args: args.iter().map(call_arg_label).collect(),
         },
         Expr::Path(path) => RuntimeCall {
-            callee: path.clone(),
+            callee: path.as_label().to_owned(),
+            args: Vec::new(),
+        },
+        Expr::ShortVariant(name) => RuntimeCall {
+            callee: format!(".{name}"),
             args: Vec::new(),
         },
         other => RuntimeCall {
@@ -1480,7 +1490,7 @@ mod tests {
     #[test]
     fn strict_runtime_value_lowering_preserves_calls() {
         let expr = Expr::Call {
-            callee: Box::new(Expr::Path("compute".to_owned())),
+            callee: Box::new(Expr::Path("compute".into())),
             args: Vec::new(),
         };
 
@@ -1494,7 +1504,7 @@ mod tests {
     #[test]
     fn strict_runtime_value_lowering_can_emit_pure_calls() {
         let expr = Expr::Call {
-            callee: Box::new(Expr::Path("compute".to_owned())),
+            callee: Box::new(Expr::Path("compute".into())),
             args: vec![CallArg::Positional(Expr::Literal(Literal::Int {
                 raw: "3i64".to_owned(),
                 value: 3,
@@ -1517,11 +1527,11 @@ mod tests {
     #[test]
     fn strict_runtime_lowers_f64_math_method_calls_to_intrinsics() {
         let expr = Expr::MethodCall {
-            receiver: Box::new(Expr::Path("math".to_owned())),
+            receiver: Box::new(Expr::Path("math".into())),
             method: "matmul_f64".to_owned(),
             args: vec![
-                CallArg::Positional(Expr::Path("lhs".to_owned())),
-                CallArg::Positional(Expr::Path("rhs".to_owned())),
+                CallArg::Positional(Expr::Path("lhs".into())),
+                CallArg::Positional(Expr::Path("rhs".into())),
             ],
         };
 
@@ -1538,12 +1548,12 @@ mod tests {
     #[test]
     fn strict_runtime_lowers_adapter_namespace_methods_to_external_calls() {
         let expr = Expr::MethodCall {
-            receiver: Box::new(Expr::Path("infer".to_owned())),
+            receiver: Box::new(Expr::Path("infer".into())),
             method: "matmul_bias_add_f32".to_owned(),
             args: vec![
-                CallArg::Positional(Expr::Path("lhs".to_owned())),
-                CallArg::Positional(Expr::Path("rhs".to_owned())),
-                CallArg::Positional(Expr::Path("bias".to_owned())),
+                CallArg::Positional(Expr::Path("lhs".into())),
+                CallArg::Positional(Expr::Path("rhs".into())),
+                CallArg::Positional(Expr::Path("bias".into())),
             ],
         };
 
@@ -1561,7 +1571,7 @@ mod tests {
         let expr = Expr::Try {
             expr: Box::new(Expr::MethodCall {
                 receiver: Box::new(Expr::Field {
-                    target: Box::new(Expr::Path("frame".to_owned())),
+                    target: Box::new(Expr::Path("frame".into())),
                     field: "objects".to_owned(),
                 }),
                 method: "require_role".to_owned(),
@@ -1777,7 +1787,7 @@ mod tests {
     fn strict_runtime_lowers_std_float_constants_and_intrinsic_calls() {
         let nan_expr = Expr::Field {
             target: Box::new(Expr::Field {
-                target: Box::new(Expr::Path("std".to_owned())),
+                target: Box::new(Expr::Path("std".into())),
                 field: "f32".to_owned(),
             }),
             field: "nan".to_owned(),
@@ -1791,7 +1801,7 @@ mod tests {
         let sqrt_expr = Expr::Call {
             callee: Box::new(Expr::Field {
                 target: Box::new(Expr::Field {
-                    target: Box::new(Expr::Path("std".to_owned())),
+                    target: Box::new(Expr::Path("std".into())),
                     field: "f64".to_owned(),
                 }),
                 field: "sqrt".to_owned(),

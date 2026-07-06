@@ -1,9 +1,9 @@
 # Example: Control Flow, Patterns, Await, and Loops
 
 ```arcw
-mod game::routes::control_flow_example
+mod game.routes.control_flow_example
 
-use game::prelude::*
+use game.prelude.*
 
 pub flow @flow.control_flow_example example(state: GameState) -> Result<FlowExit, FlowError> {
     let target = if state.affection[@character.alice] >= 3 {

@@ -222,6 +222,58 @@ impl TypeKind {
         matches!(self, Self::F32 | Self::F64)
     }
 
+    /// Joins two control-flow branch result types using Arcweft expression
+    /// branch rules.
+    #[must_use]
+    pub fn join_branch(left: Self, right: Self) -> Self {
+        match (left, right) {
+            (left, right) if left == right => left,
+            (Self::Never, right) => right,
+            (left, Self::Never) => left,
+            (left, right) => Self::normalized_choice([left, right]),
+        }
+    }
+
+    fn normalized_choice(alternatives: impl IntoIterator<Item = Self>) -> Self {
+        let mut flattened = alternatives
+            .into_iter()
+            .flat_map(|ty| match ty {
+                Self::Choice(alternatives) => alternatives,
+                ty => vec![ty],
+            })
+            .collect::<Vec<_>>();
+        flattened.sort_by_key(Self::choice_sort_label);
+        flattened.dedup();
+        match flattened.as_slice() {
+            [single] => single.clone(),
+            _ => Self::Choice(flattened),
+        }
+    }
+
+    fn choice_sort_label(ty: &Self) -> String {
+        match ty {
+            Self::Bool => "Bool".to_owned(),
+            Self::I8 => "i8".to_owned(),
+            Self::I16 => "i16".to_owned(),
+            Self::I32 => "i32".to_owned(),
+            Self::I64 => "i64".to_owned(),
+            Self::I128 => "i128".to_owned(),
+            Self::ISize => "isize".to_owned(),
+            Self::U8 => "u8".to_owned(),
+            Self::U16 => "u16".to_owned(),
+            Self::U32 => "u32".to_owned(),
+            Self::U64 => "u64".to_owned(),
+            Self::U128 => "u128".to_owned(),
+            Self::USize => "usize".to_owned(),
+            Self::F32 => "f32".to_owned(),
+            Self::F64 => "f64".to_owned(),
+            Self::String => "String".to_owned(),
+            Self::Char => "Char".to_owned(),
+            Self::Duration => "Duration".to_owned(),
+            other => format!("{other:?}"),
+        }
+    }
+
     /// Per-character enum type used for manifest-declared look values.
     #[must_use]
     pub fn character_look(character: impl AsRef<str>) -> Self {

@@ -38,7 +38,7 @@ flow @flow.voice_demo demo(state: GameState) -> Result<FlowExit, FlowError> {
 
     voice(speech.audio, speaker = alice)
     say alice "おはよう。"
-    Ok(FlowExit::Done)
+    Ok(FlowExit.Done)
 }
 ```
 

@@ -171,7 +171,8 @@ fn expr_is_failed_transfer(expr: &Expr) -> bool {
 
 fn expr_path_label(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Path(path) => Some(path.clone()),
+        Expr::Path(path) => Some(path.as_label().to_owned()),
+        Expr::ShortVariant(name) => Some(format!(".{name}")),
         Expr::Field { target, field } => Some(format!("{}.{}", expr_path_label(target)?, field)),
         _ => None,
     }

@@ -202,7 +202,7 @@ Arcweft accepts two relative-ID spellings:
 
 ```text
 @.suffix    current ID scope
-@..suffix   parent ID scope, analogous to `super::`
+@..suffix   parent ID scope, analogous to `super.`
 @...suffix  grandparent ID scope
 @super.suffix
             parent ID scope, explicit readable spelling
@@ -312,7 +312,7 @@ resource variants:
   assets/voice/{locale}/{speaker}/{module_path}/{flow}/{suffix}.ogg
 ```
 
-For example, `mod game::routes::opening`, `flow @flow.opening`, and
+For example, `mod game.routes.opening`, `flow @flow.opening`, and
 `alice(id=@.greeting, voice=auto)` derive:
 
 ```text
@@ -330,10 +330,10 @@ Relative ID lowering currently uses the enclosing flow ID plus named `scope`
 segments. For example, `flow @flow.opening` and `scope rain` produce
 `say.opening.alice.rain.greeting` for `alice(id=@.greeting)`.
 
-`mod game::routes::opening` is a source/module hierarchy, not automatically part
+`mod game.routes.opening` is a source/module hierarchy, not automatically part
 of public entity IDs today. This keeps public IDs stable when files move.
 However, projects may choose a policy that requires module paths and entity IDs
-to line up, such as `mod game::routes::opening` containing `@flow.opening`.
+to line up, such as `mod game.routes.opening` containing `@flow.opening`.
 
 Planned lint policy: add an ID policy lint pass that can compare module path,
 flow or fragment ID, named scopes, and generated relative IDs. It should report
@@ -452,28 +452,28 @@ choice @.first
 ```
 
 `@.suffix` / `@..suffix` / `@super.suffix` は module path には使わない。module / import の相対指定は
-`self::`、`super::`、`crate::` を使う。`parent::` は `super::` の予約
-alias で、formatter は `super::` に正規化する。
+`self.`、`super.`、`crate.` を使う。`parent.` は `super.` の予約
+alias で、formatter は `super.` に正規化する。
 
 ```arcw
 alice(id=@.greeting):       // ID context
-use self::characters::alice // module path context
+use self.characters.alice // module path context
 ```
 
 Module and import roots are deliberately separate from relative IDs:
 
 ```arcw
-mod crate::game::routes::opening
-mod self::routes::opening
-mod super::shared
+mod crate.game.routes.opening
+mod self.routes.opening
+mod super.shared
 
-use crate::game::prelude::*
-use self::characters::{alice, bob}
-use super::common::{route_gate, shared_flags}
+use crate.game.prelude.*
+use self.characters.{alice, bob}
+use super.common.{route_gate, shared_flags}
 ```
 
-If a source file uses `parent::`, canonical tooling should rewrite it to
-`super::`.
+If a source file uses `parent.`, canonical tooling should rewrite it to
+`super.`.
 
 ## Resource directory mapping
 

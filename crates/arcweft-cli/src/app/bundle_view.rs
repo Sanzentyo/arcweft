@@ -891,9 +891,9 @@ fn text_field_mode_label(mode: ViewTextFieldMode) -> &'static str {
 
 fn expr_source(expr: &Expr) -> String {
     match expr {
-        Expr::Literal(Literal::String(value)) | Expr::Path(value) | Expr::Raw(value) => {
-            value.clone()
-        }
+        Expr::Literal(Literal::String(value)) | Expr::Raw(value) => value.clone(),
+        Expr::Path(value) => value.as_label().to_owned(),
+        Expr::ShortVariant(value) => format!(".{value}"),
         Expr::EntityRef(reference) => normalize_style_ref(reference),
         other => format!("{other:?}"),
     }
@@ -982,7 +982,13 @@ fn expr_px_milli(expr: &Expr) -> Option<i32> {
         Expr::Literal(Literal::Int { value, .. }) => {
             i32::try_from(value.saturating_mul(1_000)).ok()
         }
-        Expr::Raw(value) | Expr::Path(value) => value
+        Expr::Raw(value) => value
+            .trim()
+            .strip_suffix("px")
+            .map(str::trim)
+            .and_then(parse_px_milli),
+        Expr::Path(value) => value
+            .as_label()
             .trim()
             .strip_suffix("px")
             .map(str::trim)

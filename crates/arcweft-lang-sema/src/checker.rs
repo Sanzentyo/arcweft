@@ -753,6 +753,21 @@ fn types_compatible(expected: &TypeKind, actual: &TypeKind) -> bool {
             types_compatible(expected, actual)
                 || matches!(actual.as_ref(), TypeKind::Named(name) if name == "_")
         }
+        (TypeKind::Vec(expected), TypeKind::Vec(actual))
+        | (TypeKind::Seq(expected), TypeKind::Seq(actual))
+        | (TypeKind::Slice(expected), TypeKind::Slice(actual)) => {
+            types_compatible(expected, actual)
+        }
+        (
+            TypeKind::Array {
+                item: expected_item,
+                len: expected_len,
+            },
+            TypeKind::Array {
+                item: actual_item,
+                len: actual_len,
+            },
+        ) => expected_len == actual_len && types_compatible(expected_item, actual_item),
         (TypeKind::Range(expected), TypeKind::Range(actual)) => types_compatible(expected, actual),
         _ => false,
     }

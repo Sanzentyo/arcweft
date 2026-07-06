@@ -38,7 +38,7 @@ when state.flags.contains(.input_enabled)
 priority 100
 effects { emit_event, log, input_disposition }
 {
-    event.emit(GameEvent::ChoiceSelected, id = @choice.opening.listen)
+    event.emit(GameEvent.ChoiceSelected, id = @choice.opening.listen)
     log.info("choice selected {id:?}", id = @choice.opening.listen)
     stop_propagation
 }
@@ -50,7 +50,7 @@ UI modifier 形式も許可するが、内部では hook に正規化する。
 Button("聞いてみる")
     .agent_target(@choice.opening.listen)
     .on_input(PointerClick) {
-        event.emit(GameEvent::ChoiceSelected, id = @choice.opening.listen)
+        event.emit(GameEvent.ChoiceSelected, id = @choice.opening.listen)
     }
 ```
 
@@ -219,7 +219,7 @@ phase InputTarget
 check on input KeyDown
 when event.key == .Enter && focus.target.is_choice
 {
-    event.emit(GameEvent::ChoiceSelected, id = focus.target.entity.as<ChoiceOption>()?)
+    event.emit(GameEvent.ChoiceSelected, id = focus.target.entity.as<ChoiceOption>()?)
     stop_propagation
 }
 ```
@@ -235,7 +235,7 @@ phase StateChanged
 when state.affection[@character.alice] >= 3
 once per save
 {
-    event.emit(GameEvent::AliceRouteUnlocked)
+    event.emit(GameEvent.AliceRouteUnlocked)
 }
 ```
 

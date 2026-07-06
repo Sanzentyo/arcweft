@@ -17,7 +17,7 @@ pub enum ModulePathRoot {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ModuleSegment(String);
 
-/// Parsed source spelling such as `crate::game::routes` or `super::shared`.
+/// Parsed source spelling such as `crate.game.routes` or `super.shared`.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ModulePath {
     root: ModulePathRoot,
@@ -208,7 +208,7 @@ impl FromStr for ModulePath {
         if source.is_empty() {
             return Err(ModulePathError::Empty);
         }
-        let raw = source.split("::").collect::<Vec<_>>();
+        let raw = source.split('.').collect::<Vec<_>>();
         if raw.iter().any(|segment| segment.is_empty()) {
             return Err(ModulePathError::EmptySegment {
                 path: source.to_owned(),
@@ -251,7 +251,7 @@ impl fmt::Display for ModulePath {
             ModulePathRoot::Super(levels) => {
                 for index in 0..levels {
                     if index > 0 {
-                        formatter.write_str("::")?;
+                        formatter.write_str(".")?;
                     }
                     formatter.write_str("super")?;
                 }
@@ -259,7 +259,7 @@ impl fmt::Display for ModulePath {
         }
         for (index, segment) in self.segments.iter().enumerate() {
             if index > 0 || !matches!(self.root, ModulePathRoot::ImplicitCrate) {
-                formatter.write_str("::")?;
+                formatter.write_str(".")?;
             }
             fmt::Display::fmt(segment, formatter)?;
         }
@@ -271,7 +271,7 @@ impl fmt::Display for CanonicalModulePath {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("crate")?;
         for segment in &self.segments {
-            formatter.write_str("::")?;
+            formatter.write_str(".")?;
             fmt::Display::fmt(segment, formatter)?;
         }
         Ok(())
@@ -289,31 +289,31 @@ mod tests {
             ModuleSegment::new("routes").unwrap(),
         ]);
         assert_eq!(
-            "crate::shared"
+            "crate.shared"
                 .parse::<ModulePath>()
                 .unwrap()
                 .resolve_from(&current)
                 .unwrap()
                 .to_string(),
-            "crate::shared"
+            "crate.shared"
         );
         assert_eq!(
-            "self::opening"
+            "self.opening"
                 .parse::<ModulePath>()
                 .unwrap()
                 .resolve_from(&current)
                 .unwrap()
                 .to_string(),
-            "crate::game::routes::opening"
+            "crate.game.routes.opening"
         );
         assert_eq!(
-            "super::logic"
+            "super.logic"
                 .parse::<ModulePath>()
                 .unwrap()
                 .resolve_from(&current)
                 .unwrap()
                 .to_string(),
-            "crate::game::logic"
+            "crate.game.logic"
         );
     }
 
@@ -321,7 +321,7 @@ mod tests {
     fn rejects_paths_that_escape_the_crate() {
         let current = CanonicalModulePath::crate_root();
         assert!(matches!(
-            "super::shared"
+            "super.shared"
                 .parse::<ModulePath>()
                 .unwrap()
                 .resolve_from(&current),

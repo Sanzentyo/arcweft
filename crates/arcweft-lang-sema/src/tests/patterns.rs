@@ -6,7 +6,7 @@ fn flow_typed_statements_keep_patterns_and_exprs() {
         r"
 flow @flow.opening opening {
     let (actor, (_, voice)) = alice.say()[聞いて。[p]]
-    return Ok(FlowExit::Done)
+    return Ok(FlowExit.Done)
     goto @flow.title
 }
 ",

@@ -128,10 +128,11 @@ impl TypeChecker<'_> {
                 ))),
             },
             Expr::Path(path)
-                if self.locals.get(path) == Some(&TypeKind::entity_ref(EntityKind::Asset)) => {}
+                if self.locals.get(path.as_label())
+                    == Some(&TypeKind::entity_ref(EntityKind::Asset)) => {}
             Expr::Path(path)
-                if self.env.symbol_type(path) == Some(&TypeKind::entity_ref(EntityKind::Asset)) => {
-            }
+                if self.env.symbol_type(path.as_label())
+                    == Some(&TypeKind::entity_ref(EntityKind::Asset)) => {}
             other => {
                 self.check_expr(other);
                 self.errors.push(TypeCheckError::new(format!(
@@ -169,9 +170,11 @@ impl TypeChecker<'_> {
                 ))),
             },
             Expr::Path(path)
-                if self.locals.get(path) == Some(&TypeKind::entity_ref(expected.clone())) => {}
+                if self.locals.get(path.as_label())
+                    == Some(&TypeKind::entity_ref(expected.clone())) => {}
             Expr::Path(path)
-                if self.env.symbol_type(path) == Some(&TypeKind::entity_ref(expected.clone())) => {}
+                if self.env.symbol_type(path.as_label())
+                    == Some(&TypeKind::entity_ref(expected.clone())) => {}
             other => {
                 self.check_expr(other);
                 self.errors.push(TypeCheckError::new(format!(

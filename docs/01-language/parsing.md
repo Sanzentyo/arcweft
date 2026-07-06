@@ -27,13 +27,13 @@ ensures result.is_err() => result.err().span.len() > 0
 {
     alt {
         "choose" ws id: ref_id<ChoiceOption>() =>
-            PlayerCommand::Choose { id },
+            PlayerCommand.Choose { id },
 
         "advance" =>
-            PlayerCommand::Advance,
+            PlayerCommand.Advance,
 
         "settings" =>
-            PlayerCommand::OpenSettings,
+            PlayerCommand.OpenSettings,
     }
 }
 ```

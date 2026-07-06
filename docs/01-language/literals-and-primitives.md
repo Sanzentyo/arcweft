@@ -254,8 +254,8 @@ constructors rather than prefix literals.
 
 ```arcw
 let c1: Color = "#7aa2ff"
-let c2 = Color::srgb("#7aa2ff")?
-let c3 = Color::linear_srgb(r = 0.2f32, g = 0.4f32, b = 0.8f32, a = 1.0f32)
+let c2 = Color.srgb("#7aa2ff")?
+let c3 = Color.linear_srgb(r = 0.2f32, g = 0.4f32, b = 0.8f32, a = 1.0f32)
 ```
 
 ## String Literals

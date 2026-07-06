@@ -53,7 +53,7 @@ Fully qualified entity references are allowed. Because `@character.alice.say` wo
 The short `alice` form is a speaker alias resolved from the module's character imports or prelude:
 
 ```arcw
-use game::characters::{alice, bob}
+use game.characters.{alice, bob}
 ```
 
 ---
@@ -784,7 +784,7 @@ pub dialogue hook @hook.dialogue.mark_keyword mark_keyword(
     color: Color = rgb("#ffcc00"),
 ) -> Result<DialogueCue, TagError>
 {
-    Ok(DialogueCue::StyleRange { word, color })
+    Ok(DialogueCue.StyleRange { word, color })
 }
 ```
 

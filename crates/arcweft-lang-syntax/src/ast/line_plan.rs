@@ -165,7 +165,8 @@ impl TriggerPattern {
 
 fn expr_label(expr: &Expr) -> String {
     match expr {
-        Expr::Path(path) => path.clone(),
+        Expr::Path(path) => path.as_label().to_owned(),
+        Expr::ShortVariant(name) => format!(".{name}"),
         Expr::EntityRef(entity) => entity.body().to_owned(),
         Expr::Literal(literal) => format!("{literal:?}"),
         _ => format!("{expr:?}"),

@@ -1,9 +1,9 @@
 # Example: layered scene and input
 
 ```arcw
-mod game::routes::opening
+mod game.routes.opening
 
-use game::prelude::*
+use game.prelude.*
 
 layer @layer.world: World {
     z = 0
@@ -78,11 +78,11 @@ test @test.layered_input_blocks_lower scenario {
     ui.open(@ui.settings)
 
     choose(@choice.opening.listen)
-    expect.no_event(GameEvent::ChoiceSelected)
+    expect.no_event(GameEvent.ChoiceSelected)
 
     invoke(@ui.settings.close, "click")
     choose(@choice.opening.listen)
-    expect.event(GameEvent::ChoiceSelected, id=@choice.opening.listen)
+    expect.event(GameEvent.ChoiceSelected, id=@choice.opening.listen)
 }
 ```
 

@@ -9,10 +9,10 @@ Arcweft separates five kinds of control transfer.
 ```arcw
 pub flow @flow.title title(state: GameState) -> Result<FlowExit, FlowError> {
     if state.config.skip_title {
-        return Ok(FlowExit::Goto(@flow.opening))
+        return Ok(FlowExit.Goto(@flow.opening))
     }
 
-    Ok(FlowExit::Done)
+    Ok(FlowExit.Done)
 }
 ```
 
@@ -172,7 +172,7 @@ with:
         out .Skipped
 
     cancel on input(.BackToTitle):
-        return Ok(FlowExit::Goto(@flow.title))
+        return Ok(FlowExit.Goto(@flow.title))
 ```
 
 `out` gives a line result. `return` leaves the flow. `goto` is flow-transition sugar.

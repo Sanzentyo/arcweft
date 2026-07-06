@@ -9,7 +9,7 @@ Related:
 ## USB HID profile
 
 ```arcw
-mod game::devices::rhythm_pad
+mod game.devices.rhythm_pad
 
 pub device @device.rhythm_pad: UsbHid {
     permission = user_prompt
@@ -51,7 +51,7 @@ pub device @device.rhythm_pad: UsbHid {
 ## Virtual controller
 
 ```arcw
-mod game::ui::mobile_controls
+mod game.ui.mobile_controls
 
 pub controller @controller.mobile_default: VirtualTouchController {
     layer = @layer.controls
@@ -120,7 +120,7 @@ pub flow @flow.enter_truck_game enter_truck_game(state: GameState) -> Result<Flo
             }
         }
 
-    Ok(FlowExit::Goto(result.next_flow))
+    Ok(FlowExit.Goto(result.next_flow))
 }
 ```
 

@@ -3,7 +3,7 @@
 関連: [Layer System](../03-presentation/layers.md)
 
 ```arcw
-mod game::presentation::layers
+mod game.presentation.layers
 
 pub layer @layer.world.background: World {
     z = -1000

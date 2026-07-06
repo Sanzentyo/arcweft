@@ -19,7 +19,7 @@ Implemented in seq08.1:
 - trait impl declarations;
 - inherent impl declarations;
 - associated type assignments;
-- `Self::Assoc` and `T::Assoc` projection syntax;
+- `self.Assoc` and `T.Assoc` projection syntax;
 - generic bounds and `where` predicates;
 - `Trait<Assoc = Type>` associated type equality constraints;
 - conservative impl coherence;
@@ -89,7 +89,7 @@ pub trait Mappable {
     type Item
     type Mapped<B>
 
-    fn map<B>(self, f: Self::Item -> B) -> Self::Mapped<B>
+    fn map<B>(self, f: self.Item -> B) -> self.Mapped<B>
 }
 ```
 
@@ -133,7 +133,7 @@ pub impl<T, E> Mappable for Result<T, E> {
 pub trait Bindable: Mappable {
     type Bound<B>
 
-    fn and_then<B>(self, f: Self::Item -> Self::Bound<B>) -> Self::Bound<B>
+    fn and_then<B>(self, f: self.Item -> self.Bound<B>) -> self.Bound<B>
 }
 ```
 
@@ -157,7 +157,7 @@ pub trait TryLike {
     type Output
     type Residual
 
-    fn branch(self) -> ControlFlow<Self::Residual, Self::Output>
+    fn branch(self) -> ControlFlow<self.Residual, self.Output>
 }
 ```
 
@@ -199,14 +199,14 @@ Arcweft の反復 API は Rust 風の `Iterator` / `IntoIterator` を使う。
 pub trait Iterator {
     type Item
 
-    fn next(&mut self) -> Option<Self::Item>
+    fn next(&mut self) -> Option<self.Item>
 }
 
 pub trait IntoIterator {
     type Item
     type IntoIter
 
-    fn into_iter(self) -> Self::IntoIter
+    fn into_iter(self) -> self.IntoIter
 }
 ```
 

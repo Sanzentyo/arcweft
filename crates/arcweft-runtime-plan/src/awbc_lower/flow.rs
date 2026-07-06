@@ -171,6 +171,10 @@ impl FlowBodyBuilder {
             has_dynamic_target: self.has_dynamic_target,
         }
     }
+
+    const fn needs_value_fallthrough(&self) -> bool {
+        self.returns_value && !self.terminated
+    }
 }
 
 struct FlowBody {
@@ -309,6 +313,9 @@ impl<'a> AwbcFlowLowerer<'a> {
         }
         let mut body = FlowBodyBuilder::new(self.inventory, owner);
         self.lower_ops(&mut frame, &mut body, &flow.ops, &flow.id.0);
+        if body.needs_value_fallthrough() {
+            self.terminate_value_fallthrough(&mut frame, &mut body);
+        }
         let body = body.finish(self.inventory);
         let layout = self
             .inventory
@@ -348,6 +355,26 @@ impl<'a> AwbcFlowLowerer<'a> {
         );
         debug_assert_eq!(function, owner);
         function
+    }
+
+    fn terminate_value_fallthrough(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+    ) {
+        let unit = self.inventory.constant_runtime_value(&RuntimeValue::Unit);
+        let fallback = frame.return_value(self.inventory.dynamic_ty());
+        self.inventory.push_instruction(AwbcInstruction::LoadConst {
+            dst: fallback,
+            constant: unit,
+        });
+        body.terminate(
+            self.inventory,
+            AwbcTerminator::Return {
+                value: Some(fallback),
+            },
+            AwbcSafePointKind::Return,
+        );
     }
 
     fn lower_ops(
@@ -964,7 +991,7 @@ impl<'a> AwbcFlowLowerer<'a> {
         self.lower_ops(frame, body, input.ops, &format!("{}.body", input.path));
         if body.terminated {
             frame.exit_scope();
-            self.reopen_loop_exit_after_terminated_body(frame, body, condition_block);
+            self.reopen_loop_exit_after_terminated_body(body, condition_block);
             return;
         }
         self.close_iterator_for_iteration(frame, body, scope, condition_block);
@@ -1086,7 +1113,7 @@ impl<'a> AwbcFlowLowerer<'a> {
         self.lower_ops(frame, body, input.ops, &format!("{}.body", input.path));
         if body.terminated {
             frame.exit_scope();
-            self.reopen_loop_exit_after_terminated_body(frame, body, condition_block);
+            self.reopen_loop_exit_after_terminated_body(body, condition_block);
             return;
         }
         self.close_iterator_for_iteration(frame, body, scope, condition_block);
@@ -1094,27 +1121,11 @@ impl<'a> AwbcFlowLowerer<'a> {
 
     fn reopen_loop_exit_after_terminated_body(
         &mut self,
-        frame: &mut FrameBuilder,
         body: &mut FlowBodyBuilder,
         condition_block: AwbcBlockId,
     ) {
         let after_block = body.reopen_after_terminated_branch(self.inventory);
         patch_branch_else_block(self.inventory, condition_block, after_block);
-        if body.returns_value {
-            let unit = self.inventory.constant_runtime_value(&RuntimeValue::Unit);
-            let fallback = frame.return_value(self.inventory.dynamic_ty());
-            self.inventory.push_instruction(AwbcInstruction::LoadConst {
-                dst: fallback,
-                constant: unit,
-            });
-            body.terminate(
-                self.inventory,
-                AwbcTerminator::Return {
-                    value: Some(fallback),
-                },
-                AwbcSafePointKind::Return,
-            );
-        }
     }
 
     fn close_active_scopes_for_terminator(&mut self, frame: &mut FrameBuilder) {
@@ -1130,7 +1141,7 @@ impl<'a> AwbcFlowLowerer<'a> {
         frame: &mut FrameBuilder,
         evidence: &str,
     ) -> AwbcRegisterId {
-        let value = arcweft_core::value::RuntimeValue::String(evidence.to_owned());
+        let value = RuntimeValue::String(evidence.to_owned());
         let constant = self.inventory.constant_runtime_value(&value);
         let dst = frame.temp(self.inventory.dynamic_ty());
         self.inventory

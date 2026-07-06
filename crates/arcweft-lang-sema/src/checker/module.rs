@@ -1110,6 +1110,7 @@ fn dialogue_has_default_inline_failure_policy(
 fn unknown_default_inline_failure_policy(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Path(path) => unknown_default_inline_failure_atom(path),
+        Expr::ShortVariant(name) => unknown_default_inline_failure_atom(&format!(".{name}")),
         Expr::Field { target, field } => match target.as_ref() {
             Expr::Path(namespace) => unknown_default_inline_failure_field(namespace, field),
             _ => None,
@@ -1180,6 +1181,7 @@ fn unknown_default_inline_failure_method_constructor(
 fn unknown_default_inline_fallback_value(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Path(path) => unknown_default_inline_fallback_atom(path),
+        Expr::ShortVariant(name) => unknown_default_inline_fallback_atom(&format!(".{name}")),
         Expr::Field { target, field } => match target.as_ref() {
             Expr::Path(namespace) => unknown_default_inline_fallback_field(namespace, field),
             _ => None,
@@ -1219,7 +1221,8 @@ fn is_removed_asset_set_ref_type(ty: &TypeRef) -> bool {
 
 fn default_inline_policy_label(expr: &Expr) -> String {
     match expr {
-        Expr::Path(path) => path.clone(),
+        Expr::Path(path) => path.as_label().to_owned(),
+        Expr::ShortVariant(name) => format!(".{name}"),
         Expr::Field { target, field } => format!("{}.{field}", default_inline_policy_label(target)),
         _ => format!("{expr:?}"),
     }

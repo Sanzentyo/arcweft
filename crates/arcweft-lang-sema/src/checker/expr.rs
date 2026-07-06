@@ -19,9 +19,11 @@ use arcweft_lang_syntax::expr::{
 };
 
 mod agent;
+mod builtin;
 mod range;
 mod support;
 
+use builtin::{BuiltinCallSpec, CapabilityFunctionSpec};
 use support::{
     ChoicePatternCoverage, TraitMethodCallOutcome, agent_action_result_field_type,
     agent_action_target_field_type, agent_bbox_field_type, agent_capture_ref_field_type,
@@ -33,6 +35,7 @@ use support::{
     rhs_expected_type_for_binary, signature_param_label, spread_item_type, std_float_constant_type,
     trait_method_call_signature, unique_numeric_choice_alternative,
 };
+
 impl TypeChecker<'_> {
     pub(super) fn expect_expr_type(&mut self, expr: &Expr, expected: &TypeKind, context: &str) {
         let actual = self.check_expr_with_expected(expr, Some(expected));
@@ -79,9 +82,12 @@ impl TypeChecker<'_> {
             Expr::Literal(literal) => Some(self.check_literal_expr(literal, expected)),
             Expr::EntityRef(entity) => self.check_entity_ref_expr(entity),
             Expr::LifetimePath { key, optional } => self.check_lifetime_path_expr(key, *optional),
-            Expr::Path(path) => self.check_path_expr_with_expected(path, expected),
+            Expr::Path(path) => self.check_path_expr_with_expected(path.as_label(), expected),
+            Expr::ShortVariant(name) => {
+                Some(self.check_short_variant_expr(name.as_str(), expected))
+            }
             Expr::Placeholder(_) => None,
-            Expr::Tuple(items) => Some(self.check_tuple_expr(items)),
+            Expr::Tuple(items) => Some(self.check_tuple_expr_with_expected(items, expected)),
             Expr::BracketSeq(items) => Some(self.check_bracket_seq_with_expected(items, expected)),
             Expr::NumericBracketSeq(seq) => {
                 Some(self.check_numeric_bracket_seq_summary(seq, expected))
@@ -125,7 +131,7 @@ impl TypeChecker<'_> {
             Expr::Closure { params, body } => self.check_closure_expr(params, body),
             Expr::Unary { op, expr } => Some(self.check_unary_expr(*op, expr, expected)),
             Expr::Block { statements, value } => {
-                self.check_block_expr(statements, value.as_deref())
+                self.check_block_expr_with_expected(statements, value.as_deref(), expected)
             }
             Expr::ComputationBlock {
                 kind,
@@ -134,12 +140,12 @@ impl TypeChecker<'_> {
             } => self.check_computation_block(*kind, statements, value.as_deref()),
             Expr::NamedBlock {
                 statements, value, ..
-            } => self.check_block_expr(statements, value.as_deref()),
+            } => self.check_block_expr_with_expected(statements, value.as_deref(), expected),
             Expr::MemoBlock {
                 options,
                 statements,
                 value,
-            } => self.check_memo_block_expr(options, statements, value.as_deref()),
+            } => self.check_memo_block_expr(options, statements, value.as_deref(), expected),
             Expr::If {
                 condition,
                 then_branch,
@@ -157,8 +163,9 @@ impl TypeChecker<'_> {
                 guard.as_deref(),
                 then_branch,
                 else_branch.as_deref(),
+                expected,
             ),
-            Expr::Match { scrutinee, arms } => self.check_match_expr(scrutinee, arms),
+            Expr::Match { scrutinee, arms } => self.check_match_expr(scrutinee, arms, expected),
             Expr::Raw(raw) => {
                 self.errors.push(TypeCheckError::new(format!(
                     "raw expression is not type-checkable: {raw}"
@@ -298,12 +305,23 @@ impl TypeChecker<'_> {
         self.check_path_expr(path)
     }
 
+    fn check_short_variant_expr(&mut self, variant: &str, expected: Option<&TypeKind>) -> TypeKind {
+        let label = format!(".{variant}");
+        if let Some(ty) = self.symbol_type(&label).cloned() {
+            return ty;
+        }
+        if let Some(ty) = self.expected_short_variant_type(variant, expected) {
+            return ty;
+        }
+        TypeKind::Named("Variant".to_owned())
+    }
+
     fn expected_short_variant_type(
         &self,
         path: &str,
         expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
-        let variant = path.strip_prefix('.')?;
+        let variant = path.strip_prefix('.').unwrap_or(path);
         match expected? {
             TypeKind::Choice(alternatives) => {
                 let mut matches = alternatives
@@ -423,14 +441,38 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_tuple_expr(&mut self, items: &[Expr]) -> TypeKind {
+    fn check_tuple_expr_with_expected(
+        &mut self,
+        items: &[Expr],
+        expected: Option<&TypeKind>,
+    ) -> TypeKind {
         if items.is_empty() {
             return TypeKind::Unit;
         }
+        let expected_items = match expected {
+            Some(TypeKind::Tuple(expected_items)) if expected_items.len() == items.len() => {
+                Some(expected_items.as_slice())
+            }
+            Some(TypeKind::Tuple(expected_items)) => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "tuple expression length mismatch: expected {}, found {}",
+                    expected_items.len(),
+                    items.len()
+                )));
+                None
+            }
+            _ => None,
+        };
         TypeKind::Tuple(
             items
                 .iter()
-                .filter_map(|item| self.check_expr(item))
+                .enumerate()
+                .filter_map(|(index, item)| {
+                    self.check_expr_with_expected(
+                        item,
+                        expected_items.and_then(|items| items.get(index)),
+                    )
+                })
                 .collect(),
         )
     }
@@ -507,10 +549,18 @@ impl TypeChecker<'_> {
             }
         } else if let Some(expected_item) = expected_item.filter(|ty| ty.is_integer()) {
             expected_item.clone()
-        } else if let Some(expected) = expected
-            && let Some(ty) = unique_numeric_choice_alternative(expected, TypeKind::is_integer)
+        } else if let Some(expected_item) = expected_item
+            && let Some(ty) = unique_numeric_choice_alternative(expected_item, TypeKind::is_integer)
         {
             ty
+        } else if expected_item.is_some_and(|expected_item| {
+            has_multiple_numeric_choice_alternatives(expected_item, TypeKind::is_integer)
+        }) {
+            self.errors.push(TypeCheckError::new(
+                "unsuffixed integer sequence literal requires an expected integer item type"
+                    .to_owned(),
+            ));
+            TypeKind::Named("_".to_owned())
         } else {
             TypeKind::I32
         };
@@ -629,7 +679,7 @@ impl TypeChecker<'_> {
                     "array literal length mismatch: expected {len}, found {items_len}"
                 )));
             }
-            if item.as_ref() != &item_type {
+            if !self.types_compatible(item.as_ref(), &item_type) {
                 self.errors.push(TypeCheckError::new(format!(
                     "array items must have type {:?}, found {item_type:?}",
                     item.as_ref()
@@ -639,6 +689,15 @@ impl TypeChecker<'_> {
                 item: item.clone(),
                 len: len.clone(),
             };
+        }
+        if let Some(TypeKind::Vec(item)) = expected {
+            if !self.types_compatible(item.as_ref(), &item_type) {
+                self.errors.push(TypeCheckError::new(format!(
+                    "vector items must have type {:?}, found {item_type:?}",
+                    item.as_ref()
+                )));
+            }
+            return TypeKind::Vec(item.clone());
         }
         TypeKind::Vec(Box::new(item_type))
     }
@@ -670,7 +729,7 @@ impl TypeChecker<'_> {
                     "array repeat length mismatch: expected {len}, found {len_label}"
                 )));
             }
-            if item.as_ref() != &item_type {
+            if !self.types_compatible(item.as_ref(), &item_type) {
                 self.errors.push(TypeCheckError::new(format!(
                     "array repeat value must have type {:?}, found {item_type:?}",
                     item.as_ref()
@@ -693,11 +752,12 @@ impl TypeChecker<'_> {
         options: &[(String, Expr)],
         statements: &[Stmt],
         value: Option<&Expr>,
+        expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
         for (_, option) in options {
             self.check_expr(option);
         }
-        self.check_block_expr(statements, value)
+        self.check_block_expr_with_expected(statements, value, expected)
     }
 
     fn check_record_fields(&mut self, fields: &[(String, Expr)]) {
@@ -764,21 +824,8 @@ impl TypeChecker<'_> {
                 }
                 return Some(TypeKind::SpeakerPreset(EntityKind::Character));
             }
-            let arg_types = args
-                .iter()
-                .map(|arg| self.check_expr(arg.value()))
-                .collect::<Vec<_>>();
-            if name == "Ok" {
-                return Some(TypeKind::Result {
-                    ok: Box::new(first_arg_type(&arg_types)),
-                    error: Box::new(TypeKind::Named("_".to_owned())),
-                });
-            }
-            if name == "Err" {
-                return Some(TypeKind::Result {
-                    ok: Box::new(TypeKind::Named("_".to_owned())),
-                    error: Box::new(first_arg_type(&arg_types)),
-                });
+            if let Some(ty) = self.check_result_constructor_call(name.as_str(), args, expected) {
+                return Some(ty);
             }
             if name == "Some" {
                 if let Some(expected @ TypeKind::Option(item)) = expected {
@@ -787,6 +834,10 @@ impl TypeChecker<'_> {
                     }
                     return Some(expected.clone());
                 }
+                let arg_types = args
+                    .iter()
+                    .map(|arg| self.check_expr(arg.value()))
+                    .collect::<Vec<_>>();
                 return Some(TypeKind::Option(Box::new(first_arg_type(&arg_types))));
             }
             return self.function_type(name).cloned().or_else(|| {
@@ -811,87 +862,111 @@ impl TypeChecker<'_> {
         }
     }
 
+    fn check_result_constructor_call(
+        &mut self,
+        constructor: &str,
+        args: &[CallArg],
+        expected: Option<&TypeKind>,
+    ) -> Option<TypeKind> {
+        match constructor {
+            "Ok" => {
+                if let Some(expected @ TypeKind::Result { ok, .. }) = expected {
+                    self.check_result_constructor_payload("Ok", args, ok);
+                    return Some(expected.clone());
+                }
+                let arg_types = args
+                    .iter()
+                    .map(|arg| self.check_expr(arg.value()))
+                    .collect::<Vec<_>>();
+                Some(TypeKind::Result {
+                    ok: Box::new(first_arg_type(&arg_types)),
+                    error: Box::new(TypeKind::Named("_".to_owned())),
+                })
+            }
+            "Err" => {
+                if let Some(expected @ TypeKind::Result { error, .. }) = expected {
+                    self.check_result_constructor_payload("Err", args, error);
+                    return Some(expected.clone());
+                }
+                let arg_types = args
+                    .iter()
+                    .map(|arg| self.check_expr(arg.value()))
+                    .collect::<Vec<_>>();
+                Some(TypeKind::Result {
+                    ok: Box::new(TypeKind::Named("_".to_owned())),
+                    error: Box::new(first_arg_type(&arg_types)),
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn check_result_constructor_payload(
+        &mut self,
+        constructor: &str,
+        args: &[CallArg],
+        expected: &TypeKind,
+    ) {
+        if args.len() != 1 {
+            self.errors.push(TypeCheckError::new(format!(
+                "`{constructor}` requires exactly one positional payload"
+            )));
+        }
+        for arg in args {
+            match arg {
+                CallArg::Positional(value) => {
+                    self.expect_expr_type(value, expected, &format!("{constructor} payload"));
+                }
+                CallArg::Named { name, value } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "`{constructor}` payload must be positional, got named `{name}`"
+                    )));
+                    self.check_expr(value);
+                }
+                CallArg::Spread { value } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "`{constructor}` payload cannot be spread"
+                    )));
+                    self.check_expr(value);
+                }
+            }
+        }
+    }
+
     fn check_builtin_call_expr(&mut self, callee: &Expr, args: &[CallArg]) -> Option<TypeKind> {
         let name = expr_path_label(callee)?;
         self.check_builtin_call_name(&name, args)
     }
 
     fn check_builtin_call_name(&mut self, name: &str, args: &[CallArg]) -> Option<TypeKind> {
-        if let Some(ty) = self.check_std_float_call_name(name, args) {
-            return Some(ty);
-        }
-        match name {
-            "fallback" | "InlineFailure.fallback" => {
+        match BuiltinCallSpec::resolve(name)? {
+            BuiltinCallSpec::InlineFailureFallback => {
                 Some(TypeKind::Named("InlineFailure".to_owned()))
             }
-            "panic" | "fail" | "bail" => {
+            BuiltinCallSpec::Never => {
                 for arg in args {
                     self.check_expr(arg.value());
                 }
                 Some(TypeKind::Never)
             }
-            "ensure" => {
+            BuiltinCallSpec::Ensure => {
                 self.check_assert_like_args(args, "ensure");
                 Some(TypeKind::Unit)
             }
-            "assert" | "debug_assert" => {
+            BuiltinCallSpec::AssertLike => {
                 self.check_assert_like_args(args, name);
                 Some(TypeKind::Unit)
             }
-            "math.matmul_f32" | "math.matrix_add_f32" => {
-                self.check_math_binary_args(args, "MatrixF32");
-                Some(TypeKind::Named("MatrixF32".to_owned()))
+            BuiltinCallSpec::Math(intrinsic) => {
+                self.check_math_binary_args(args, intrinsic.operand_type());
+                Some(intrinsic.return_type())
             }
-            "math.tensor_add_f32" => {
-                self.check_math_binary_args(args, "TensorF32");
-                Some(TypeKind::Named("TensorF32".to_owned()))
+            BuiltinCallSpec::StdFloat(intrinsic) => {
+                let input = intrinsic.input_type();
+                self.check_homogeneous_builtin_args(name, args, &input, intrinsic.arity());
+                Some(intrinsic.output_type())
             }
-            "math.matmul_f64" | "math.matrix_add_f64" => {
-                self.check_math_binary_args(args, "MatrixF64");
-                Some(TypeKind::Named("MatrixF64".to_owned()))
-            }
-            "math.tensor_add_f64" => {
-                self.check_math_binary_args(args, "TensorF64");
-                Some(TypeKind::Named("TensorF64".to_owned()))
-            }
-            _ => None,
         }
-    }
-
-    fn check_std_float_call_name(&mut self, name: &str, args: &[CallArg]) -> Option<TypeKind> {
-        let (input, output, arity) = match name {
-            "std.f32.abs" | "std.f32.floor" | "std.f32.ceil" | "std.f32.round"
-            | "std.f32.trunc" | "std.f32.fract" | "std.f32.sqrt" | "std.f32.sin"
-            | "std.f32.cos" | "std.f32.tan" | "std.f32.exp" | "std.f32.exp2" | "std.f32.ln"
-            | "std.f32.log2" | "std.f32.log10" => (TypeKind::F32, TypeKind::F32, 1),
-            "std.f32.powf" | "std.f32.atan2" => (TypeKind::F32, TypeKind::F32, 2),
-            "std.f32.mul_add" => (TypeKind::F32, TypeKind::F32, 3),
-            "std.f32.is_nan"
-            | "std.f32.is_infinite"
-            | "std.f32.is_finite"
-            | "std.f32.is_sign_positive"
-            | "std.f32.is_sign_negative" => (TypeKind::F32, TypeKind::Bool, 1),
-            "std.f32.to_bits" => (TypeKind::F32, TypeKind::U32, 1),
-            "std.f32.from_bits" => (TypeKind::U32, TypeKind::F32, 1),
-            "std.f32.to_f64" => (TypeKind::F32, TypeKind::F64, 1),
-            "std.f64.abs" | "std.f64.floor" | "std.f64.ceil" | "std.f64.round"
-            | "std.f64.trunc" | "std.f64.fract" | "std.f64.sqrt" | "std.f64.sin"
-            | "std.f64.cos" | "std.f64.tan" | "std.f64.exp" | "std.f64.exp2" | "std.f64.ln"
-            | "std.f64.log2" | "std.f64.log10" => (TypeKind::F64, TypeKind::F64, 1),
-            "std.f64.powf" | "std.f64.atan2" => (TypeKind::F64, TypeKind::F64, 2),
-            "std.f64.mul_add" => (TypeKind::F64, TypeKind::F64, 3),
-            "std.f64.is_nan"
-            | "std.f64.is_infinite"
-            | "std.f64.is_finite"
-            | "std.f64.is_sign_positive"
-            | "std.f64.is_sign_negative" => (TypeKind::F64, TypeKind::Bool, 1),
-            "std.f64.to_bits" => (TypeKind::F64, TypeKind::U64, 1),
-            "std.f64.from_bits" => (TypeKind::U64, TypeKind::F64, 1),
-            "std.f64.to_f32" => (TypeKind::F64, TypeKind::F32, 1),
-            _ => return None,
-        };
-        self.check_homogeneous_builtin_args(name, args, &input, arity);
-        Some(output)
     }
 
     fn check_homogeneous_builtin_args(
@@ -961,8 +1036,10 @@ impl TypeChecker<'_> {
     }
 
     fn check_untyped_function_args(&mut self, name: &str, args: &[CallArg]) {
-        let checked_args = if name == "event.emit" {
-            args.iter().skip(1).collect::<Vec<_>>()
+        let checked_args = if let Some(spec) = CapabilityFunctionSpec::resolve(name) {
+            args.iter()
+                .skip(spec.unchecked_prefix_args())
+                .collect::<Vec<_>>()
         } else {
             args.iter().collect::<Vec<_>>()
         };
@@ -1189,10 +1266,7 @@ impl TypeChecker<'_> {
         let method_name = method.split_once('<').map_or(method, |(name, _)| name);
         if let Some(receiver_path) = expr_path_label(receiver) {
             let dotted = format!("{receiver_path}.{method_name}");
-            if receiver_path == "math" {
-                return self.check_builtin_call_name(&dotted, args);
-            }
-            if matches!(receiver_path.as_str(), "std.f32" | "std.f64") {
+            if BuiltinCallSpec::resolve(&dotted).is_some() {
                 return self.check_builtin_call_name(&dotted, args);
             }
             if receiver_path == "InlineFailure" && method_name == "fallback" {
@@ -1916,8 +1990,12 @@ impl TypeChecker<'_> {
     fn check_try_expr(&mut self, expr: &Expr) -> Option<TypeKind> {
         match self.check_expr(expr) {
             Some(TypeKind::Result { ok, error }) => {
-                self.check_try_error(error.as_ref());
+                self.check_try_result_context(error.as_ref());
                 Some(*ok)
+            }
+            Some(TypeKind::Option(inner)) => {
+                self.check_try_option_context();
+                Some(*inner)
             }
             Some(TypeKind::Named(name)) => result_ok_type(&name).or_else(|| {
                 self.errors.push(TypeCheckError::new(format!(
@@ -1935,15 +2013,33 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_try_error(&mut self, actual_error: &TypeKind) {
-        let Some(TypeKind::Result { error, .. }) = self.expected_returns.last() else {
-            return;
-        };
-        let expected_error = error.as_ref().clone();
-        if !self.types_compatible(&expected_error, actual_error) {
-            self.errors.push(TypeCheckError::new(format!(
-                "`?` error type {actual_error:?} cannot be injected into return error type {expected_error:?}"
-            )));
+    fn check_try_result_context(&mut self, actual_error: &TypeKind) {
+        match self.expected_returns.last().cloned() {
+            Some(TypeKind::Result { error, .. }) => {
+                let expected_error = error.as_ref().clone();
+                if !self.types_compatible(&expected_error, actual_error) {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "`?` error type {actual_error:?} cannot be injected into return error type {expected_error:?}"
+                    )));
+                }
+            }
+            Some(return_ty) => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "`?` on Result<T, E> requires an enclosing Result return, found {return_ty:?}"
+                )));
+            }
+            None => {}
+        }
+    }
+
+    fn check_try_option_context(&mut self) {
+        match self.expected_returns.last() {
+            Some(TypeKind::Option(_)) | None => {}
+            Some(return_ty) => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "`?` on Option<T> requires an enclosing Option return, found {return_ty:?}"
+                )));
+            }
         }
     }
 
@@ -2035,8 +2131,9 @@ impl TypeChecker<'_> {
         let then_type = self.check_expr_with_expected(then_branch, expected);
         let then_borrow_state = self.capture_borrow_state_delta(base_borrow_checkpoint);
         self.restore_borrow_state(base_borrow_checkpoint);
-        let else_type =
-            else_branch.and_then(|branch| self.check_expr_with_expected(branch, expected));
+        let else_type = else_branch.map_or(Some(TypeKind::Unit), |branch| {
+            self.check_expr_with_expected(branch, expected)
+        });
         let else_borrow_state = self.capture_borrow_state_delta(base_borrow_checkpoint);
         if else_branch.is_some() {
             self.merge_borrow_state_from_deltas(
@@ -2071,14 +2168,17 @@ impl TypeChecker<'_> {
             }
         }
         match (then_type, else_type) {
-            (Some(TypeKind::Never), Some(else_type)) => Some(else_type),
-            (Some(then_type), Some(TypeKind::Never)) => Some(then_type),
             (Some(then_type), Some(else_type)) => Some(join_branch_types(then_type, else_type)),
             _ => None,
         }
     }
 
-    fn check_match_expr(&mut self, scrutinee: &Expr, arms: &[MatchExprArm]) -> Option<TypeKind> {
+    fn check_match_expr(
+        &mut self,
+        scrutinee: &Expr,
+        arms: &[MatchExprArm],
+        expected: Option<&TypeKind>,
+    ) -> Option<TypeKind> {
         let scrutinee_type = self.check_expr(scrutinee);
         if arms.is_empty() {
             self.errors.push(TypeCheckError::new(
@@ -2090,6 +2190,7 @@ impl TypeChecker<'_> {
         let base_borrow_checkpoint = self.checkpoint_borrow_state();
         let mut arm_states = Vec::new();
         let mut inferred = None;
+        let mut all_compatible_with_expected = expected.is_some();
         for arm in arms {
             self.restore_borrow_state(base_borrow_checkpoint);
             let local_snapshot = self
@@ -2097,17 +2198,20 @@ impl TypeChecker<'_> {
             if let Some(guard) = arm.guard() {
                 self.expect_expr_type(guard, &TypeKind::Bool, "match arm guard");
             }
-            let arm_type = self.check_expr_with_expected(arm.value(), inferred.as_ref());
+            let arm_expected = expected.or(inferred.as_ref());
+            let arm_type = self.check_expr_with_expected(arm.value(), arm_expected);
             self.restore_scoped_locals(local_snapshot);
+            if let (Some(expected), Some(arm_ty)) = (expected, arm_type.as_ref())
+                && !self.types_compatible(expected, arm_ty)
+            {
+                all_compatible_with_expected = false;
+                self.errors.push(TypeCheckError::new(format!(
+                    "match arm must have type {expected:?}, found {arm_ty:?}"
+                )));
+            }
             match (&inferred, arm_type) {
                 (None, Some(ty)) => inferred = Some(ty),
                 (Some(existing), Some(ty)) if existing == &ty => {}
-                (Some(existing), Some(TypeKind::Never)) => {
-                    inferred = Some(existing.clone());
-                }
-                (Some(TypeKind::Never), Some(ty)) => {
-                    inferred = Some(ty);
-                }
                 (Some(existing), Some(ty)) => {
                     inferred = Some(join_branch_types(existing.clone(), ty));
                 }
@@ -2122,6 +2226,12 @@ impl TypeChecker<'_> {
         );
         let arm_state_refs = arm_states.iter().collect::<Vec<_>>();
         self.merge_borrow_state_from_deltas(base_borrow_checkpoint, &arm_state_refs);
+        if let (Some(expected), Some(actual)) = (expected, inferred.as_ref())
+            && all_compatible_with_expected
+            && self.types_compatible(expected, actual)
+        {
+            return Some(expected.clone());
+        }
         inferred
     }
 
@@ -2132,6 +2242,7 @@ impl TypeChecker<'_> {
         guard: Option<&Expr>,
         then_branch: &Expr,
         else_branch: Option<&Expr>,
+        expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
         let expr_type = self.check_expr(expr);
         if let Some(guard) = guard {
@@ -2141,12 +2252,14 @@ impl TypeChecker<'_> {
         let base_borrow_checkpoint = self.checkpoint_borrow_state();
         let local_snapshot =
             self.insert_scoped_locals(let_else_bindings(pattern, expr_type.as_ref()));
-        let then_type = self.check_expr(then_branch);
+        let then_type = self.check_expr_with_expected(then_branch, expected);
         let then_borrow_state = self.capture_borrow_state_delta(base_borrow_checkpoint);
         self.restore_borrow_state(base_borrow_checkpoint);
         self.restore_scoped_locals(local_snapshot);
 
-        let else_type = else_branch.and_then(|branch| self.check_expr(branch));
+        let else_type = else_branch.map_or(Some(TypeKind::Unit), |branch| {
+            self.check_expr_with_expected(branch, expected)
+        });
         let else_borrow_state = self.capture_borrow_state_delta(base_borrow_checkpoint);
         if else_branch.is_some() {
             self.merge_borrow_state_from_deltas(
@@ -2159,6 +2272,26 @@ impl TypeChecker<'_> {
                 base_borrow_checkpoint,
                 &[&unchanged_state, &then_borrow_state],
             );
+        }
+        if let Some(expected) = expected {
+            for (label, ty) in [("then", then_type.as_ref()), ("else", else_type.as_ref())] {
+                if let Some(ty) = ty
+                    && !self.types_compatible(expected, ty)
+                {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "if-let expression {label} branch must have type {expected:?}, found {ty:?}"
+                    )));
+                }
+            }
+            if then_type
+                .as_ref()
+                .is_some_and(|ty| self.types_compatible(expected, ty))
+                && else_type
+                    .as_ref()
+                    .is_some_and(|ty| self.types_compatible(expected, ty))
+            {
+                return Some(expected.clone());
+            }
         }
         match (then_type, else_type) {
             (Some(then_type), Some(else_type)) => Some(join_branch_types(then_type, else_type)),
@@ -2204,12 +2337,37 @@ impl TypeChecker<'_> {
                 }
                 Some(TypeKind::Bool)
             }
-            BinaryOp::Eq
-            | BinaryOp::NotEq
-            | BinaryOp::Gte
-            | BinaryOp::Lte
-            | BinaryOp::Gt
-            | BinaryOp::Lt => Some(TypeKind::Bool),
+            BinaryOp::Eq | BinaryOp::NotEq => match (lhs_type.as_ref(), rhs_type.as_ref()) {
+                (Some(lhs), Some(rhs))
+                    if self.types_compatible(lhs, rhs) || self.types_compatible(rhs, lhs) =>
+                {
+                    Some(TypeKind::Bool)
+                }
+                _ => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "equality operands must be compatible, found {lhs_type:?} and {rhs_type:?}"
+                    )));
+                    None
+                }
+            },
+            BinaryOp::Gte | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Lt => {
+                match (lhs_type.as_ref(), rhs_type.as_ref()) {
+                    (Some(lhs), Some(rhs))
+                        if lhs == rhs
+                            && (lhs.is_integer()
+                                || lhs.is_float()
+                                || lhs == &TypeKind::Duration) =>
+                    {
+                        Some(TypeKind::Bool)
+                    }
+                    _ => {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "ordering operands must have the same ordered scalar type, found {lhs_type:?} and {rhs_type:?}"
+                        )));
+                        None
+                    }
+                }
+            }
             BinaryOp::Merge => match (lhs_type, rhs_type) {
                 (Some(TypeKind::CharacterPatch(lhs)), Some(TypeKind::CharacterPatch(rhs)))
                     if lhs == rhs =>

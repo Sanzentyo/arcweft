@@ -136,10 +136,10 @@ The long method form is preferred when the line has a custom window, timed cues,
 ## Minimal dialogue flow
 
 ```arcw
-mod crate::game::routes::opening
+mod crate.game.routes.opening
 
-use crate::game::prelude::*
-use self::characters::{alice}
+use crate.game.prelude.*
+use self.characters.{alice}
 
 pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     bg(@asset:.bg.room, fade = 300ms)
@@ -239,7 +239,7 @@ choice @choice.opening.first {
         }
 
         select {
-            event.emit(GameEvent::ChoiceSelected, id = @choice.opening.listen)
+            event.emit(GameEvent.ChoiceSelected, id = @choice.opening.listen)
             goto @flow.alice_intro
         }
     }
@@ -299,7 +299,7 @@ with {
     }
 
     cancel on input(.BackToTitle) {
-        return Ok(FlowExit::Goto(@flow.title))
+        return Ok(FlowExit.Goto(@flow.title))
     }
 
     on select selected {

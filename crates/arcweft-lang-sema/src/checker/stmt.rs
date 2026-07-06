@@ -570,7 +570,8 @@ fn direct_assignment_target(target: &Expr) -> Option<(&str, &str)> {
 fn assignment_target_label(target: &Expr) -> String {
     match target {
         Expr::Field { target, field } => format!("{}.{}", assignment_target_label(target), field),
-        Expr::Path(path) => path.clone(),
+        Expr::Path(path) => path.as_label().to_owned(),
+        Expr::ShortVariant(name) => format!(".{name}"),
         Expr::Index { target, .. } => format!("{}[]", assignment_target_label(target)),
         Expr::Call { .. } => "call(...)".to_owned(),
         Expr::MethodCall {

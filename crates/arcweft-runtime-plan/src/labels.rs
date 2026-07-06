@@ -50,7 +50,8 @@ pub(crate) fn expr_label(expr: &Expr) -> String {
         Expr::LifetimePath { key, optional } => {
             format!("'{}{}", key.as_dotted(), if *optional { "?" } else { "" })
         }
-        Expr::Path(path) => path.clone(),
+        Expr::Path(path) => path.as_label().to_owned(),
+        Expr::ShortVariant(name) => format!(".{name}"),
         Expr::EntityRef(entity) => format!("@{}", entity_ref_label(entity)),
         Expr::Literal(literal) => literal_label(literal),
         Expr::Call { callee, args } => format!(

@@ -89,7 +89,7 @@ flow @flow.loading loading {
         pending p => progress.set(p.ratio)
         ready img => Image(img)
         error _ => Icon(@asset:.avatar_fallback)
-        denied _ => return Ok(FlowExit::Goto(@flow.title))
+        denied _ => return Ok(FlowExit.Goto(@flow.title))
     }
 }
 ",
@@ -637,7 +637,7 @@ flow @flow.loading loading {
         pending p => progress.set(p.ratio)
         ready img => Image(img)
         error _ => Icon(@asset:.avatar_fallback)
-        denied _ => return Ok(FlowExit::Goto(@flow.title))
+        denied _ => return Ok(FlowExit.Goto(@flow.title))
     }
 }
 ",
@@ -654,7 +654,7 @@ flow @flow.loading loading {
         .with_function("Image", TypeKind::Named("View".to_owned()))
         .with_function("Icon", TypeKind::Named("View".to_owned()))
         .with_function("Ok", TypeKind::Named("Result".to_owned()))
-        .with_function("FlowExit::Goto", TypeKind::Named("FlowExit".to_owned()))
+        .with_function("FlowExit.Goto", TypeKind::Named("FlowExit".to_owned()))
         .with_symbol("img", TypeKind::Named("Image".to_owned()));
 
     typecheck_hir(&hir, &env).expect("await wait-view branches typecheck");

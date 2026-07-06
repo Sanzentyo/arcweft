@@ -438,7 +438,19 @@ fn parse_navigation_direction(value: &str) -> Option<ViewNavigationDirection> {
 fn parse_navigation_target(value: &Expr) -> Option<ViewNavigationTarget> {
     match value {
         Expr::EntityRef(reference) => Some(ViewNavigationTarget::Explicit(reference.clone())),
-        Expr::Raw(value) | Expr::Path(value) => match value.trim().trim_start_matches('.') {
+        Expr::Raw(value) => match value.trim().trim_start_matches('.') {
+            "auto" => Some(ViewNavigationTarget::Auto),
+            "none" => Some(ViewNavigationTarget::None),
+            "boundary" | "group_boundary" => Some(ViewNavigationTarget::GroupBoundary),
+            _ => None,
+        },
+        Expr::Path(value) => match value.as_label().trim().trim_start_matches('.') {
+            "auto" => Some(ViewNavigationTarget::Auto),
+            "none" => Some(ViewNavigationTarget::None),
+            "boundary" | "group_boundary" => Some(ViewNavigationTarget::GroupBoundary),
+            _ => None,
+        },
+        Expr::ShortVariant(value) => match value.as_str() {
             "auto" => Some(ViewNavigationTarget::Auto),
             "none" => Some(ViewNavigationTarget::None),
             "boundary" | "group_boundary" => Some(ViewNavigationTarget::GroupBoundary),
@@ -645,7 +657,8 @@ fn click_action(expr: &Expr, range: TextRange) -> Option<ViewAction> {
 
 fn noop_action(expr: &Expr) -> Option<ViewAction> {
     let source = match expr {
-        Expr::Raw(source) | Expr::Path(source) => source.trim(),
+        Expr::Raw(source) => source.trim(),
+        Expr::Path(source) => source.as_label().trim(),
         Expr::Closure { body, .. } => return noop_action(body),
         _ => return None,
     };
@@ -665,7 +678,8 @@ fn text_submit_action(expr: &Expr, range: TextRange) -> Option<ViewAction> {
         return text_submit_call_action(callee, args, range);
     }
     let source = match expr {
-        Expr::Raw(source) | Expr::Path(source) => source.trim(),
+        Expr::Raw(source) => source.trim(),
+        Expr::Path(source) => source.as_label().trim(),
         _ => return None,
     };
     let source = source
@@ -695,8 +709,10 @@ fn text_submit_call_action(
     args: &[CallArg],
     range: TextRange,
 ) -> Option<ViewAction> {
-    let (Expr::Path(callee) | Expr::Raw(callee)) = callee else {
-        return None;
+    let callee = match callee {
+        Expr::Path(callee) => callee.as_label(),
+        Expr::Raw(callee) => callee.as_str(),
+        _ => return None,
     };
     if callee != "text_submit" {
         return None;
@@ -747,9 +763,9 @@ fn strip_parameterized_closure_body(source: &str) -> Option<&str> {
 
 fn ime_policy_expr(expr: &Expr) -> Option<ViewTextSubmitImePolicy> {
     match expr {
-        Expr::Path(value) | Expr::Raw(value) | Expr::Literal(Literal::String(value)) => {
-            parse_ime_policy(value)
-        }
+        Expr::Path(value) => parse_ime_policy(value.as_label()),
+        Expr::ShortVariant(value) => parse_ime_policy(value.as_str()),
+        Expr::Raw(value) | Expr::Literal(Literal::String(value)) => parse_ime_policy(value),
         _ => None,
     }
 }

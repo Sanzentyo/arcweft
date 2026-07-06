@@ -247,7 +247,7 @@ with {
     layout = vertical
     default_focus = @choice.opening.listen
     timeout 10s { select @choice.opening.silent }
-    cancel on input(.BackToTitle) { return Ok(FlowExit::Goto(@flow.title)) }
+    cancel on input(.BackToTitle) { return Ok(FlowExit.Goto(@flow.title)) }
     on select selected { log.info("selected {id:?}", id = selected.id) }
 }
 "#,
@@ -404,7 +404,7 @@ flow @flow.opening opening {
     }
     with {
         timeout 10s { select @choice.opening.listen }
-        cancel on input(.BackToTitle) { return Ok(FlowExit::Goto(@flow.title)) }
+        cancel on input(.BackToTitle) { return Ok(FlowExit.Goto(@flow.title)) }
         on select selected { log.info("selected {id:?}", id = selected.id) }
     }
 }
@@ -414,7 +414,7 @@ flow @flow.opening opening {
     validate_typecheck_ready(&hir).expect("choice plan bodies have structured expressions");
     let env = TypeCheckEnv::new()
         .with_function("Ok", TypeKind::Named("Result".to_owned()))
-        .with_function("FlowExit::Goto", TypeKind::Named("FlowExit".to_owned()))
+        .with_function("FlowExit.Goto", TypeKind::Named("FlowExit".to_owned()))
         .with_function("log.info", TypeKind::Unit);
     typecheck_hir(&hir, &env).expect("choice plan bodies typecheck");
 }
@@ -429,7 +429,7 @@ flow @flow.opening opening {
             label = "聞いてみる"
             select {
                 if can_emit {
-                    event.emit(GameEvent::ChoiceSelected, id = @choice.opening.listen)
+                    event.emit(GameEvent.ChoiceSelected, id = @choice.opening.listen)
                 }
                 match selected_route {
                     .Some(route) => out route
@@ -462,7 +462,7 @@ flow @flow.opening opening {
         &hir,
         &TypeCheckEnv::new()
             .with_symbol(
-                "GameEvent::ChoiceSelected",
+                "GameEvent.ChoiceSelected",
                 TypeKind::Named("GameEvent".to_owned()),
             )
             .with_symbol("can_emit", TypeKind::Bool)
@@ -478,9 +478,9 @@ flow @flow.opening opening {
 fn lowers_named_scope_and_relative_choice_ids() {
     let tree = parse_ok(
         r#"
-mod crate::game::routes::opening
-use self::characters::{alice}
-use parent::common::{route_gate}
+mod crate.game.routes.opening
+use self.characters.{alice}
+use parent.common.{route_gate}
 
 flow @flow.opening opening {
     scope dream {
@@ -498,13 +498,10 @@ flow @flow.quiet_intro quiet_intro {}
 
     assert_eq!(
         tree.module().expect("module").path(),
-        "crate::game::routes::opening"
+        "crate.game.routes.opening"
     );
-    assert_eq!(tree.uses()[0].tree().source(), "self::characters::{alice}");
-    assert_eq!(
-        tree.uses()[1].tree().source(),
-        "super::common::{route_gate}"
-    );
+    assert_eq!(tree.uses()[0].tree().source(), "self.characters.{alice}");
+    assert_eq!(tree.uses()[1].tree().source(), "super.common.{route_gate}");
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");

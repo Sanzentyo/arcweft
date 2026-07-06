@@ -73,7 +73,7 @@ This applies to:
 
 ```arcw
 return expr      // exits current fn / flow / parser / task fn
-goto @flow.x     // exits current flow segment with FlowExit::Goto
+goto @flow.x     // exits current flow segment with FlowExit.Goto
 break expr       // exits nearest loop; if loop-valued, contributes expr type
 continue         // starts next loop iteration
 panic("msg")     // runtime failure; type !

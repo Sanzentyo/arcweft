@@ -120,13 +120,13 @@ means:
 ```arcw
 let image = match load_image() {
     .Ok(v) => v
-    .Err(e) => return Err(IntoError::into_error(e).at_current_site())
+    .Err(e) => return Err(IntoError.into_error(e).at_current_site())
 }
 ```
 
 The error branch has type `!`, so the expression has type `Image`.
 
-For `Option<T>` in an `ArcResult` context, `None` becomes `ArcError::missing_value()` with a trace frame. Use `.context(...)` for better messages.
+For `Option<T>` in an `ArcResult` context, `None` becomes `ArcError.missing_value()` with a trace frame. Use `.context(...)` for better messages.
 
 ```arcw
 let route = state.route_override

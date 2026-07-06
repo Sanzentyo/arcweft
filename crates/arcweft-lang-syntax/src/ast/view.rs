@@ -697,8 +697,12 @@ fn named_raw_arg<'a>(arg: &'a ViewArg, name: &str) -> Option<&'a str> {
     match arg {
         ViewArg::Named {
             name: actual,
-            value: Expr::Raw(value) | Expr::Path(value),
+            value: Expr::Raw(value),
         } if actual == name => Some(value.as_str()),
+        ViewArg::Named {
+            name: actual,
+            value: Expr::Path(value),
+        } if actual == name => Some(value.as_label()),
         _ => None,
     }
 }
@@ -730,7 +734,9 @@ fn named_initial_arg(arg: &ViewArg, name: &str) -> Option<ViewNavigationInitial>
             value,
         } if actual == name => match value {
             Expr::EntityRef(value) => Some(ViewNavigationInitial::Explicit(value.clone())),
-            Expr::Raw(value) | Expr::Path(value) => parse_initial(value),
+            Expr::Raw(value) => parse_initial(value),
+            Expr::Path(value) => parse_initial(value.as_label()),
+            Expr::ShortVariant(value) => parse_initial(value.as_str()),
             _ => None,
         },
         _ => None,

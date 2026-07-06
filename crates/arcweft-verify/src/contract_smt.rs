@@ -314,10 +314,9 @@ impl ProofExpr {
             Expr::Literal(Literal::Int { value, .. }) => Ok(LoweredExpr::int(Self::int(*value))),
             Expr::Path(path) => {
                 let id = SmtSymbolId::new(path.as_str());
-                let sort = symbols
-                    .get(&id)
-                    .copied()
-                    .ok_or_else(|| ContractLoweringError::UnknownSymbol(path.clone()))?;
+                let sort = symbols.get(&id).copied().ok_or_else(|| {
+                    ContractLoweringError::UnknownSymbol(path.as_label().to_owned())
+                })?;
                 Ok(LoweredExpr::new(Self::var(id), sort))
             }
             Expr::Unary { op, expr } => {

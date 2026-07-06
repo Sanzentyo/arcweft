@@ -577,6 +577,7 @@ fn collect_speaker_presets_from_expr(
         | Expr::EntityRef(_)
         | Expr::LifetimePath { .. }
         | Expr::Path(_)
+        | Expr::ShortVariant(_)
         | Expr::Placeholder(_)
         | Expr::NumericBracketSeq(_)
         | Expr::Raw(_) => {}
@@ -667,7 +668,11 @@ fn speaker_preset_callee(
     presets: &BTreeSet<String>,
 ) -> bool {
     match callee {
-        Expr::Path(path) if character_aliases.contains(path) || presets.contains(path) => true,
+        Expr::Path(path)
+            if character_aliases.contains(path.as_label()) || presets.contains(path.as_label()) =>
+        {
+            true
+        }
         Expr::Field { target, field } if field == "new" => {
             matches!(target.as_ref(), Expr::Path(path) if path == "SpeakerPreset")
         }

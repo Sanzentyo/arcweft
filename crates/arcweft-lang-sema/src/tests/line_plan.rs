@@ -101,7 +101,7 @@ flow @flow.opening opening {
     assert_eq!(plan.label(), Some("line"));
     assert!(matches!(
         plan.items(),
-        [LinePlanItem::Out(Expr::Path(path))] if path == ".Done"
+        [LinePlanItem::Out(Expr::ShortVariant(path))] if path == "Done"
     ));
     assert!(matches!(
         bound_plan.items(),
@@ -159,7 +159,7 @@ flow @flow.opening opening {
         Expr::DialogueCall {
             plan: Some(plan),
             ..
-        } if matches!(plan.items(), [LinePlanItem::Out(Expr::Path(path))] if path == ".Done")
+        } if matches!(plan.items(), [LinePlanItem::Out(Expr::ShortVariant(path))] if path == "Done")
     ));
 
     let hir = lower_to_hir(&tree).expect("multiline line result bindings lower");
@@ -179,7 +179,7 @@ flow @flow.opening opening {
     ]
     with:
         cancel on input(.SkipLine):
-            out Err(LineCancel::Skipped)
+            out Err(LineCancel.Skipped)
 
         out Ok(())
 }
@@ -191,7 +191,7 @@ flow @flow.opening opening {
         .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
         .with_symbol("auto", TypeKind::Named("VoicePolicy".to_owned()))
         .with_symbol(
-            "LineCancel::Skipped",
+            "LineCancel.Skipped",
             TypeKind::Named("LineCancel".to_owned()),
         )
         .with_method(
@@ -567,8 +567,8 @@ flow @flow.opening opening {
     };
     assert!(matches!(
         skip_rule.action(),
-        [Stmt::Out { label: Some(label), expr: Expr::Path(path) }]
-            if label == "line" && path == ".Skipped"
+        [Stmt::Out { label: Some(label), expr: Expr::ShortVariant(path) }]
+            if label == "line" && path == "Skipped"
     ));
     let LinePlanItem::CancelRule(back_rule) = &plan.items()[1] else {
         panic!("expected back-to-title cancel rule");
@@ -940,12 +940,14 @@ flow @flow.opening opening {
     };
     assert!(matches!(callee.as_ref(), Expr::Path(path) if path == "memo"));
     assert_eq!(args.len(), 3);
-    assert!(matches!(&args[0], CallArg::Positional(Expr::Path(path)) if path == ".rich_text"));
+    assert!(
+        matches!(&args[0], CallArg::Positional(Expr::ShortVariant(path)) if path == "rich_text")
+    );
     assert!(
         matches!(&args[1], CallArg::Named { name, value } if name == "key" && matches!(value.as_ref(), Expr::Tuple(items) if items.len() == 3))
     );
     assert!(
-        matches!(&args[2], CallArg::Named { name, value } if name == "cache" && matches!(value.as_ref(), Expr::Path(path) if path == ".flow"))
+        matches!(&args[2], CallArg::Named { name, value } if name == "cache" && matches!(value.as_ref(), Expr::ShortVariant(path) if path == "flow"))
     );
 
     let hir = lower_to_hir(&tree).expect("line plan memo lowers");

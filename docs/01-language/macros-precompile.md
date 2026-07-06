@@ -74,7 +74,7 @@ precompile 生成物も `ModuleItem` として扱う。利用側の構文は通�
 build cache が決める。
 
 ```arcw
-use generated::route_map::{RouteMap}
+use generated.route_map.{RouteMap}
 ```
 
 ## hygiene と source map

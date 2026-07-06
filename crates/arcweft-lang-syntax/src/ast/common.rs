@@ -8,7 +8,7 @@ pub struct TextRange {
     end: usize,
 }
 
-/// `mod game::routes::opening`.
+/// `mod game.routes.opening`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModuleDecl {
     path: String,
@@ -119,7 +119,7 @@ impl UseTree {
         let source = normalize_parent_module_root(&source.into());
         let module_prefix_source = use_tree_module_prefix_source(&source);
         let module_path_prefix = ModulePath::from_str(module_prefix_source)?;
-        let exact_module_prefix = source.contains("::{") || source.ends_with("::*");
+        let exact_module_prefix = source.contains(".{") || source.ends_with(".*");
         Ok(Self {
             source,
             module_path_prefix,
@@ -147,16 +147,16 @@ impl UseTree {
 }
 
 fn normalize_parent_module_root(path: &str) -> String {
-    path.strip_prefix("parent::")
-        .map_or_else(|| path.to_owned(), |tail| format!("super::{tail}"))
+    path.strip_prefix("parent.")
+        .map_or_else(|| path.to_owned(), |tail| format!("super.{tail}"))
 }
 
 fn use_tree_module_prefix_source(source: &str) -> &str {
     let without_alias = source.split_once(" as ").map_or(source, |(path, _)| path);
     let grouped = without_alias
-        .find("::{")
+        .find(".{")
         .map_or(without_alias, |index| &without_alias[..index]);
-    grouped.strip_suffix("::*").unwrap_or(grouped).trim()
+    grouped.strip_suffix(".*").unwrap_or(grouped).trim()
 }
 
 impl DocBlock {

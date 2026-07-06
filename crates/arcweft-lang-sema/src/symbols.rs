@@ -880,7 +880,13 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
         | Expr::LifetimePath { .. }
         | Expr::NumericBracketSeq(_) => {}
         Expr::EntityRef(entity) => push_entity_syntax(uses, entity),
-        Expr::Path(path) => uses.push(SymbolUse::new(SymbolUseKind::Path, path.clone())),
+        Expr::Path(path) => uses.push(SymbolUse::new(
+            SymbolUseKind::Path,
+            path.as_label().to_owned(),
+        )),
+        Expr::ShortVariant(name) => {
+            uses.push(SymbolUse::new(SymbolUseKind::Path, format!(".{name}")));
+        }
         Expr::Tuple(items) | Expr::BracketSeq(items) => {
             for item in items {
                 collect_expr(item, uses);
@@ -892,7 +898,10 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
         }
         Expr::Call { callee, args } => {
             if let Expr::Path(path) = callee.as_ref() {
-                uses.push(SymbolUse::new(SymbolUseKind::Call, path.clone()));
+                uses.push(SymbolUse::new(
+                    SymbolUseKind::Call,
+                    path.as_label().to_owned(),
+                ));
             }
             collect_expr(callee, uses);
             for arg in args {

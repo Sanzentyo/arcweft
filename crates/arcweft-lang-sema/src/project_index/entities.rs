@@ -329,6 +329,7 @@ fn index_expr_agent_actions(
         | Expr::EntityRef(_)
         | Expr::LifetimePath { .. }
         | Expr::Path(_)
+        | Expr::ShortVariant(_)
         | Expr::Placeholder(_)
         | Expr::NumericBracketSeq(_)
         | Expr::Raw(_) => Ok(index),
@@ -578,7 +579,8 @@ fn image_call_action_values(value: &Expr) -> Vec<Result<String, ProjectSemanticI
             .filter(|value| !value.is_empty())
             .map(|value| Ok(value.to_owned()))
             .collect(),
-        Expr::Path(path) => vec![Ok(path.trim_start_matches('.').to_owned())],
+        Expr::Path(path) => vec![Ok(path.as_label().to_owned())],
+        Expr::ShortVariant(name) => vec![Ok(name.to_string())],
         Expr::EntityRef(entity) => vec![Ok(entity.body().to_owned())],
         Expr::Tuple(items) | Expr::BracketSeq(items) => {
             items.iter().flat_map(image_call_action_values).collect()
@@ -591,7 +593,8 @@ fn image_call_id_value(value: &Expr) -> Option<String> {
     match value {
         Expr::Literal(Literal::String(value)) => Some(value.clone()),
         Expr::EntityRef(entity) => Some(entity.body().to_owned()),
-        Expr::Path(path) => Some(path.trim_start_matches('.').to_owned()),
+        Expr::Path(path) => Some(path.as_label().to_owned()),
+        Expr::ShortVariant(name) => Some(name.to_string()),
         _ => None,
     }
 }

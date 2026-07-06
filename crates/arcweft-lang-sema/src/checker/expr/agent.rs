@@ -1052,7 +1052,8 @@ impl TypeChecker<'_> {
 
     fn check_agent_action_name(&mut self, action: &Expr) -> Option<String> {
         match action {
-            Expr::Path(path) => Some(path.strip_prefix('.').unwrap_or(path).to_owned()),
+            Expr::Path(path) => Some(path.as_label().to_owned()),
+            Expr::ShortVariant(name) => Some(name.to_string()),
             Expr::Literal(Literal::String(value)) => Some(value.clone()),
             _ => {
                 self.errors.push(TypeCheckError::new(

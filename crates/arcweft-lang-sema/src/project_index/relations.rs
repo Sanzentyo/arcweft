@@ -406,6 +406,7 @@ fn index_expr_symbol_dependency_relations(
         | Expr::Literal(_)
         | Expr::LifetimePath { .. }
         | Expr::Path(_)
+        | Expr::ShortVariant(_)
         | Expr::Placeholder(_)
         | Expr::NumericBracketSeq(_)
         | Expr::Raw(_) => {}
@@ -435,7 +436,7 @@ fn project_callable_callee(callee: &Expr, index: &ProjectSemanticIndex) -> Optio
     let Expr::Path(path) = callee else {
         return None;
     };
-    let name = QualifiedName::new(path);
+    let name = QualifiedName::new(path.as_label());
     index
         .project_callables()
         .contains_key(&name)
@@ -832,6 +833,7 @@ fn index_expr_dependency_relations(
         | Expr::Literal(_)
         | Expr::LifetimePath { .. }
         | Expr::Path(_)
+        | Expr::ShortVariant(_)
         | Expr::Placeholder(_)
         | Expr::NumericBracketSeq(_)
         | Expr::Raw(_) => Ok(index),
@@ -850,6 +852,7 @@ fn index_compound_expr_dependency_relations(
         | Expr::Literal(_)
         | Expr::LifetimePath { .. }
         | Expr::Path(_)
+        | Expr::ShortVariant(_)
         | Expr::Placeholder(_)
         | Expr::NumericBracketSeq(_)
         | Expr::Raw(_) => {}

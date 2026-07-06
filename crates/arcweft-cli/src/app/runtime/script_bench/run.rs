@@ -395,7 +395,7 @@ fn bench_pure_helper_name(section: &BenchSection) -> Option<String> {
         return None;
     };
     match helper.value() {
-        Expr::Path(name) => Some(name.clone()),
+        Expr::Path(name) => Some(name.as_label().to_owned()),
         _ => None,
     }
 }

@@ -1148,7 +1148,7 @@ flow @flow.stream stream {
 
         event .Back => {
             close frames
-            return Ok(FlowExit::Goto(@flow.title))
+            return Ok(FlowExit.Goto(@flow.title))
         }
     }
 }

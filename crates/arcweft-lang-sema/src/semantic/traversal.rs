@@ -248,6 +248,7 @@ fn expr_contains_unchecked_promotion(expr: &Expr) -> bool {
         }
         Expr::Literal(_)
         | Expr::Path(_)
+        | Expr::ShortVariant(_)
         | Expr::Placeholder(_)
         | Expr::EntityRef(_)
         | Expr::LifetimePath { .. }
@@ -819,7 +820,8 @@ fn expr_type_label(expr: &Expr) -> String {
 
 fn expr_label(expr: &Expr) -> String {
     match expr {
-        Expr::Path(path) => path.clone(),
+        Expr::Path(path) => path.as_label().to_owned(),
+        Expr::ShortVariant(name) => format!(".{name}"),
         Expr::EntityRef(entity) => entity.body().to_owned(),
         Expr::LifetimePath { key, .. } => key.as_dotted(),
         Expr::Literal(literal) => format!("{literal:?}"),

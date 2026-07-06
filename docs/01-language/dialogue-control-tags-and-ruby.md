@@ -65,7 +65,7 @@ Double brackets are not dialogue tags:
 
 These names are reserved in tag position and scenario-command position. They cannot be used as unqualified custom tag names, unqualified scenario command names, character aliases, or local variables in dialogue tag scope.
 
-A module may still define a qualified function such as `my_tags::p`, but it cannot be imported unqualified as `p`.
+A module may still define a qualified function such as `my_tags.p`, but it cannot be imported unqualified as `p`.
 
 | Name | Meaning |
 |---|---|
@@ -272,7 +272,7 @@ alice.say()[
 ]
 ```
 
-All forms normalize into the same `Content::Ruby { base, ruby }` fragment.
+All forms normalize into the same `Content.Ruby { base, ruby }` fragment.
 
 Ruby typography is resolved from the active RichText cascade before layout:
 
@@ -437,7 +437,7 @@ pub dialogue fn flash(
 ) -> Result<DialogueCue, TagError>
 effects { stage.flash }
 {
-    Ok(DialogueCue::Flash { color, time })
+    Ok(DialogueCue.Flash { color, time })
 }
 ```
 
@@ -449,7 +449,7 @@ pub dialogue fn mark_keyword(
     color: Color,
 ) -> Result<DialogueCue, TagError>
 {
-    Ok(DialogueCue::StyleRange { word, color })
+    Ok(DialogueCue.StyleRange { word, color })
 }
 ```
 

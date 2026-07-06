@@ -197,7 +197,7 @@ fn cst_text_helpers_split_lines_and_doc_prefixes() {
 #[test]
 fn cst_line_events_classify_top_level_dispatch() {
     let root = crate::cst::parse_cst(
-        "@memo old\n#[build(tool)]\n#![generated(tool)]\nmod game::routes\npub use crate::prelude::*\npub source @source.frames: Source<T, E> {}\nalice: hello\n",
+        "@memo old\n#[build(tool)]\n#![generated(tool)]\nmod game.routes\npub use crate.prelude.*\npub source @source.frames: Source<T, E> {}\nalice: hello\n",
     );
     let lines = cst_lines(&root);
 

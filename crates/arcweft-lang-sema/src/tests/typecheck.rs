@@ -616,6 +616,150 @@ flow @flow.float_std float_std {
 }
 
 #[test]
+fn expected_type_reaches_nested_value_expressions() {
+    let tree = parse_ok(
+        r"
+flow @flow.expected_values expected_values {
+    let block_value: i64 = { 1 }
+    let if_value: i64 = if cond {
+        1
+    } else {
+        2
+    }
+    let if_let_value: i64 = if let .Some(value) = maybe {
+        value
+    } else {
+        2
+    }
+    let match_value: i64 = match cond {
+        true => 1
+        false => 2
+    }
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("expected propagation fixture lowers");
+    typecheck_hir(
+        &hir,
+        &TypeCheckEnv::new()
+            .with_symbol("cond", TypeKind::Bool)
+            .with_symbol("maybe", TypeKind::Option(Box::new(TypeKind::I64))),
+    )
+    .expect("expected types reach block, if-let, and match branches");
+}
+
+#[test]
+fn result_constructors_use_expected_payload_types() {
+    let tree = parse_ok(
+        r"
+fn result_constructors(cond: Bool) -> Result<i64, i64> {
+    let ok: Result<i64, i64> = Ok(1)
+    let err: Result<i64, i64> = Err(2)
+    if cond {
+        return ok
+    }
+    return err
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("result constructor fixture lowers");
+    typecheck_hir(&hir, &TypeCheckEnv::new())
+        .expect("Ok and Err payloads use expected Result component types");
+}
+
+#[test]
+fn option_try_requires_option_return_context() {
+    let tree = parse_ok(
+        r"
+fn bad_option_try(maybe: Option<i64>) -> Result<i64, i64> {
+    let value: i64 = maybe?
+    return Ok(value)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("bad option try fixture lowers");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
+        .expect_err("Option ? outside Option return is rejected");
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("`?` on Option<T> requires an enclosing Option return")
+    }));
+}
+
+#[test]
+fn option_try_returns_inner_type_in_option_context() {
+    let tree = parse_ok(
+        r"
+fn option_try(maybe: Option<i64>) -> Option<i64> {
+    let value: i64 = maybe?
+    return Some(value)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("option try fixture lowers");
+    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("Option ? typechecks in Option return");
+}
+
+#[test]
+fn numeric_bracket_sequence_uses_expected_choice_item_type() {
+    let tree = parse_ok(
+        r"
+fn numeric_choice_items() -> Unit {
+    let values: Vec<String | i64> = [1, 2, 3]
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("numeric choice sequence fixture lowers");
+    typecheck_hir(&hir, &TypeCheckEnv::new())
+        .expect("integer sequence uses the unique numeric expected item alternative");
+}
+
+#[test]
+fn numeric_bracket_sequence_rejects_ambiguous_choice_item_type() {
+    let tree = parse_ok(
+        r"
+fn ambiguous_numeric_choice_items() -> Unit {
+    let values: Vec<i64 | u64> = [1, 2, 3]
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("ambiguous numeric choice fixture lowers");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
+        .expect_err("ambiguous numeric choice item is rejected");
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("unsuffixed integer sequence literal requires an expected integer item type")
+    }));
+}
+
+#[test]
+fn comparison_operators_require_compatible_operands() {
+    let tree = parse_ok(
+        r#"
+fn bad_comparisons() -> Unit {
+    let bad_eq = "score" == 1i64
+    let bad_order = "score" < 1i64
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("bad comparison fixture lowers");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
+        .expect_err("incompatible comparison operands are rejected");
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("equality operands must be compatible")
+    }));
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("ordering operands must have the same ordered scalar type")
+    }));
+}
+
+#[test]
 fn borrow_branch_merge_records_delta_without_full_clone() {
     let tree = parse_ok(
         r#"

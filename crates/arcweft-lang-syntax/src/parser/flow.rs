@@ -11,7 +11,7 @@ use super::{
     is_with_brace_head, parse_await_with, parse_defer_outcome, parse_expr_lossy, parse_flat_fence,
     parse_line_options, parse_line_plan_attachment, parse_scope_head, parse_stmt, parse_stmt_lines,
     parse_stmt_with_stats_and_base, parse_thread_block, parse_unsafe_lifetime_block,
-    parse_with_brace_label, split_call_head, split_leading_ident,
+    parse_with_brace_label, split_call_head,
 };
 use std::borrow::Cow;
 use std::ops::Range;
@@ -178,6 +178,16 @@ impl<'a> Parser<'a> {
             )));
         }
 
+        if self
+            .reject_unparenthesized_presentation_call(trimmed, TextRange::new(line.start, line.end))
+        {
+            self.index += 1;
+            return Some(FlowItem::Raw(RawSyntax::flow_item(
+                trimmed,
+                Some(TextRange::new(line.start, line.end)),
+            )));
+        }
+
         match kind {
             CstFlowItemKind::StructuredBlock(kind) => {
                 return self.parse_structured_flow_block(kind);
@@ -309,15 +319,6 @@ impl<'a> Parser<'a> {
                 Some(trimmed),
                 ["use an ordinary statement or function-call style command"],
             );
-        }
-        if self
-            .reject_unparenthesized_presentation_call(trimmed, TextRange::new(line.start, line.end))
-        {
-            self.index += 1;
-            return Some(FlowItem::Raw(RawSyntax::flow_item(
-                trimmed,
-                Some(TextRange::new(line.start, line.end)),
-            )));
         }
         if is_expression_statement_call(trimmed) {
             self.index += 1;
@@ -588,7 +589,7 @@ impl<'a> Parser<'a> {
         trimmed: &str,
         range: TextRange,
     ) -> bool {
-        let Some((name, tail)) = split_leading_ident(trimmed) else {
+        let Some((name, tail)) = split_leading_command(trimmed) else {
             return false;
         };
         if !matches!(name, "bg" | "show") || tail.trim_start().starts_with('(') {
@@ -665,6 +666,27 @@ impl<'a> Parser<'a> {
             CstStructuredFlowBlockKind::Scope => self.parse_scope_block().map(FlowItem::Scope),
         }
     }
+}
+
+fn split_leading_command(source: &str) -> Option<(&str, &str)> {
+    let head_end = source
+        .char_indices()
+        .find_map(|(index, ch)| (ch.is_whitespace() || ch == '(').then_some(index))
+        .unwrap_or(source.len());
+    let head = &source[..head_end];
+    if head.is_empty()
+        || !head
+            .chars()
+            .next()
+            .is_some_and(|ch| ch == '_' || ch.is_alphabetic())
+        || !head
+            .chars()
+            .skip(1)
+            .all(|ch| ch == '_' || ch.is_alphanumeric())
+    {
+        return None;
+    }
+    Some((head, source[head_end..].trim_start()))
 }
 
 fn split_flat_line_content_and_plan(

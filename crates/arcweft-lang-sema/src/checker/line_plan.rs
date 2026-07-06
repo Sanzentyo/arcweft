@@ -419,6 +419,7 @@ fn inline_failure_policy_arg(arg: &CallArg) -> Option<&Expr> {
 fn unknown_inline_failure_policy(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Path(path) => unknown_inline_failure_atom(path),
+        Expr::ShortVariant(name) => unknown_inline_failure_atom(&format!(".{name}")),
         Expr::Field { target, field } => match target.as_ref() {
             Expr::Path(namespace) => unknown_inline_failure_field(namespace, field),
             _ => None,
@@ -480,6 +481,7 @@ fn inline_failure_constructor_name(expr: &Expr) -> Option<&str> {
 fn unknown_inline_fallback_value(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Path(path) => unknown_inline_fallback_atom(path),
+        Expr::ShortVariant(name) => unknown_inline_fallback_atom(&format!(".{name}")),
         Expr::Field { target, field } => match target.as_ref() {
             Expr::Path(namespace) => unknown_inline_fallback_field(namespace, field),
             _ => None,
@@ -530,7 +532,8 @@ fn parse_timed_cue_block_anchor(name: &str, errors: &mut Vec<TypeCheckError>) ->
 
 fn inline_callable_label(expr: &Expr) -> String {
     match expr {
-        Expr::Path(path) => path.clone(),
+        Expr::Path(path) => path.as_label().to_owned(),
+        Expr::ShortVariant(name) => format!(".{name}"),
         Expr::Field { target, field } => format!("{}.{field}", inline_callable_label(target)),
         Expr::MethodCall {
             receiver, method, ..
@@ -547,7 +550,8 @@ fn wait_mark_name(expr: &Expr) -> Option<String> {
         return None;
     }
     match args[0].value() {
-        Expr::Path(path) => Some(path.clone()),
+        Expr::Path(path) => Some(path.as_label().to_owned()),
+        Expr::ShortVariant(name) => Some(format!(".{name}")),
         Expr::EntityRef(entity) => Some(entity.body().to_owned()),
         _ => None,
     }

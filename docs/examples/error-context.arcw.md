@@ -1,9 +1,9 @@
 # Example: `?`, context, Option conversion, and error trace
 
 ```arcw
-mod game::routes::error_context_example
+mod game.routes.error_context_example
 
-use game::prelude::*
+use game.prelude.*
 
 pub flow @flow.error_context_example example(state: GameState) -> Result<FlowExit, FlowError> {
     let route = state.route_override
@@ -28,7 +28,7 @@ pub flow @flow.error_context_example example(state: GameState) -> Result<FlowExi
         読み込みが完了しました。[p]
     ]
 
-    Ok(FlowExit::Goto(route))
+    Ok(FlowExit.Goto(route))
 }
 ```
 
