@@ -909,10 +909,16 @@ mod tests {
         UiRuntimeControlStyle, UiRuntimeTextControl, UiRuntimeTextControlBounds,
         UiRuntimeTextControlHandlers, UiRuntimeTextControlOptions, UiRuntimeTextSelection,
     };
+    use arcweft_bundle::{
+        BundleImageObjectBounds, BundleImageObjectFit, BundleImageObjectPlayback,
+        BundleImageObjectTransform,
+    };
     use arcweft_id::PublicId;
+    use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectTransform};
     use arcweft_presentation::input::InteractionTarget;
     use arcweft_presentation::layer::LayerId;
     use arcweft_presentation::semantic::SemanticNode;
+    use arcweft_render_wgpu::geometry::RenderImageFrame;
 
     #[test]
     fn player_semantic_objects_preserve_runtime_component_parent() {
@@ -998,6 +1004,43 @@ mod tests {
         assert!(diagnostics[1].message.contains("button.hidden"));
     }
 
+    #[test]
+    fn player_image_object_observation_skips_hidden_source_and_frame() {
+        let viewport = AgentViewport {
+            width: 1280,
+            height: 720,
+            scale: 1.0,
+        };
+        let render_image = render_image("image.glass_bg");
+        let visible_source = bundle_image_object("image.glass_bg", true);
+        let hidden_source = bundle_image_object("image.glass_bg", false);
+        let mut visible_frames = AgentImageFrameStore::default();
+        let mut hidden_frames = AgentImageFrameStore::default();
+
+        let visible = player_observed_image_object(
+            3,
+            &viewport,
+            &render_image,
+            Some(&visible_source),
+            &mut visible_frames,
+            125,
+        )
+        .expect("visible image object");
+        let hidden = player_observed_image_object(
+            3,
+            &viewport,
+            &render_image,
+            Some(&hidden_source),
+            &mut hidden_frames,
+            125,
+        );
+
+        assert_eq!(visible.id, "object.image.image.glass_bg");
+        assert!(visible_frames.get(&visible.id).is_some());
+        assert!(hidden.is_none());
+        assert!(hidden_frames.get("object.image.image.glass_bg").is_none());
+    }
+
     fn runtime_text_control(public_id: &str) -> UiRuntimeTextControl {
         UiRuntimeTextControl {
             public_id: public_id.to_owned(),
@@ -1047,5 +1090,40 @@ mod tests {
 
     fn layer_id(public_id: &str) -> LayerId {
         LayerId::new(PublicId::try_new(public_id).expect("valid test layer id"))
+    }
+
+    fn render_image(id: &str) -> RenderImage {
+        RenderImage {
+            id: id.to_owned(),
+            frame: RenderImageFrame {
+                width: 2,
+                height: 1,
+                rgba: vec![10, 20, 30, 255, 40, 50, 60, 255],
+            },
+            bounds: HitRect::new(0.0, 0.0, 1280.0, 720.0),
+            placement: None,
+            fit: ImageObjectFit::Cover,
+            alignment: ImageObjectAlignment::top_left(),
+            transform: ImageObjectTransform::identity(),
+            opacity_milli: 1_000,
+        }
+    }
+
+    fn bundle_image_object(id: &str, visible: bool) -> BundleImageObject {
+        BundleImageObject {
+            id: id.to_owned(),
+            asset: "asset.glass_bg".to_owned(),
+            target: Some("target.glass_bg".to_owned()),
+            layer: Some("layer.background".to_owned()),
+            bounds: BundleImageObjectBounds::from_px(0, 0, 1280, 720),
+            placement: None,
+            fit: BundleImageObjectFit::Cover,
+            alignment: arcweft_bundle::BundleImageObjectAlignment::default(),
+            playback: BundleImageObjectPlayback::default(),
+            transform: BundleImageObjectTransform::default(),
+            depth_milli: -10_000,
+            opacity_milli: 1_000,
+            visible,
+        }
     }
 }

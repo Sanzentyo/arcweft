@@ -276,15 +276,43 @@ production files:
 | `crates/arcweft-runtime-driver/src/presentation_handles.rs` | 30,629 | 922 | production | true | Presentation handle state table and resource filters |
 | `crates/arcweft-runtime-driver/src/session.rs` | 60,993 | 1,613 | production | false | Bundle session runtime bridge |
 
+## Image Scoped Capture And Handle Visibility
+
+- Runtime presentation-handle filtering for image handles is now covered by a
+  lifecycle regression test. A live image handle mounts the matching
+  `BundleImageObject`; `hide`, `unmount`, `release`, and `destroy` remove it
+  from the presentation snapshot; `show` restores non-terminal hidden/unmounted
+  handles.
+- Agent player-backed image observation now has direct regression coverage for
+  hidden image sources. Hidden image resources do not produce observed image
+  objects and do not insert object frames into the Agent image frame store.
+- The existing structured `AGENT_CAPTURE_MISSING_SCOPE` diagnostic therefore
+  also covers requested image-object scopes after image handles filter the
+  presentation snapshot.
+
+### Verification
+
+- `cargo test -p arcweft-runtime-driver --all-features image_handle_lifecycle_filters_presentation_images`
+- `cargo test -p arcweft-cli --all-features player_image_object_observation_skips_hidden_source_and_frame`
+- `cargo check --workspace --all-targets --all-features`
+- `cargo clippy --workspace --all-targets --all-features`
+- `cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit\current`
+
+The image scoped-capture cut was measured at Jujutsu change `ommtlxkq`. The
+structure audit reported 0 errors and 138 warnings. Relevant changed production
+files:
+
+| Path | Bytes | LOC | Classification | Embedded Tests | Responsibility |
+| --- | ---: | ---: | --- | --- | --- |
+| `crates/arcweft-cli/src/app/agent/native/player_observation.rs` | 39,949 | 1,129 | production | true | Native Agent observe image object/frame mapping |
+| `crates/arcweft-runtime-driver/src/display.rs` | 40,435 | 1,090 | production | true | Bundle presentation snapshots and image handle filtering |
+
 ## Remaining Work
 
 - End-to-end save subsystem wiring still needs to consume the runtime display
   snapshot and AWBC fiber cleanup checkpoint evidence added here. This cut
   verifies serde roundtrip and rollback substrate, not a full player save/load
   scenario.
-- Image scoped capture still needs the same hidden, unmounted, released, and
-  destroyed handle absence/diagnostic contract added here for component-owned
-  runtime controls.
 - Native/web/observe parity tests still need a broader hidden/disposed-handle
   suite covering component handles, image handles, hit-test/focus/writeback
   rejection, and explicit mount regressions.

@@ -809,7 +809,7 @@ mod tests {
 
         update_snapshot_with_effects(
             &mut snapshot,
-            &[component_handle_call(
+            &[presentation_handle_call(
                 "presentation.handle.hide",
                 "@handle.flow.feedback.panel",
             )],
@@ -820,7 +820,7 @@ mod tests {
 
         update_snapshot_with_effects(
             &mut snapshot,
-            &[component_handle_call(
+            &[presentation_handle_call(
                 "presentation.handle.show",
                 "@handle.flow.feedback.panel",
             )],
@@ -830,7 +830,7 @@ mod tests {
 
         update_snapshot_with_effects(
             &mut snapshot,
-            &[component_handle_call(
+            &[presentation_handle_call(
                 "presentation.handle.unmount",
                 "@handle.flow.feedback.panel",
             )],
@@ -841,7 +841,7 @@ mod tests {
 
         update_snapshot_with_effects(
             &mut snapshot,
-            &[component_handle_call(
+            &[presentation_handle_call(
                 "presentation.handle.show",
                 "@handle.flow.feedback.panel",
             )],
@@ -851,7 +851,7 @@ mod tests {
 
         update_snapshot_with_effects(
             &mut snapshot,
-            &[component_handle_call(
+            &[presentation_handle_call(
                 "presentation.handle.release",
                 "@handle.flow.feedback.panel",
             )],
@@ -865,7 +865,7 @@ mod tests {
             &mut destroy_snapshot,
             &[
                 component_handle_create("@handle.flow.feedback.panel.destroy"),
-                component_handle_call(
+                presentation_handle_call(
                     "presentation.handle.destroy",
                     "@handle.flow.feedback.panel.destroy",
                 ),
@@ -874,6 +874,83 @@ mod tests {
         );
         assert!(destroy_snapshot.text_inputs.is_empty());
         assert!(destroy_snapshot.action_buttons.is_empty());
+    }
+
+    #[test]
+    fn image_handle_lifecycle_filters_presentation_images() {
+        let mut snapshot = BundlePresentationSnapshot::default();
+        let image = presentation_image_object("image.glass_bg");
+        let resources = image_runtime_resources(&image);
+        let create_visible = image_handle_create("@handle.flow.feedback.bg", "image.glass_bg");
+
+        let diagnostics = update_snapshot_with_effects(&mut snapshot, &[create_visible], resources);
+
+        assert!(diagnostics.is_empty());
+        assert_eq!(snapshot.images, vec![image.clone()]);
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[presentation_handle_call(
+                "presentation.handle.hide",
+                "@handle.flow.feedback.bg",
+            )],
+            resources,
+        );
+        assert!(snapshot.images.is_empty());
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[presentation_handle_call(
+                "presentation.handle.show",
+                "@handle.flow.feedback.bg",
+            )],
+            resources,
+        );
+        assert_eq!(snapshot.images, vec![image.clone()]);
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[presentation_handle_call(
+                "presentation.handle.unmount",
+                "@handle.flow.feedback.bg",
+            )],
+            resources,
+        );
+        assert!(snapshot.images.is_empty());
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[presentation_handle_call(
+                "presentation.handle.show",
+                "@handle.flow.feedback.bg",
+            )],
+            resources,
+        );
+        assert_eq!(snapshot.images, vec![image.clone()]);
+
+        update_snapshot_with_effects(
+            &mut snapshot,
+            &[presentation_handle_call(
+                "presentation.handle.release",
+                "@handle.flow.feedback.bg",
+            )],
+            resources,
+        );
+        assert!(snapshot.images.is_empty());
+
+        let mut destroy_snapshot = BundlePresentationSnapshot::default();
+        update_snapshot_with_effects(
+            &mut destroy_snapshot,
+            &[
+                image_handle_create("@handle.flow.feedback.bg.destroy", "image.glass_bg"),
+                presentation_handle_call(
+                    "presentation.handle.destroy",
+                    "@handle.flow.feedback.bg.destroy",
+                ),
+            ],
+            resources,
+        );
+        assert!(destroy_snapshot.images.is_empty());
     }
 
     fn component_text_input() -> UiRuntimeTextControl {
@@ -943,10 +1020,49 @@ mod tests {
         })
     }
 
-    fn component_handle_call(callee: &str, handle: &str) -> LineEffectRequest {
+    fn presentation_handle_call(callee: &str, handle: &str) -> LineEffectRequest {
         LineEffectRequest::Call(RuntimeCall {
             callee: callee.to_owned(),
             args: vec![format!("handle = {handle}")],
+        })
+    }
+
+    fn presentation_image_object(id: &str) -> BundleImageObject {
+        BundleImageObject {
+            id: id.to_owned(),
+            asset: "asset.glass_bg".to_owned(),
+            target: Some("target.glass_bg".to_owned()),
+            layer: Some("layer.background".to_owned()),
+            bounds: BundleImageObjectBounds::from_px(0, 0, 1280, 720),
+            placement: None,
+            fit: BundleImageObjectFit::Cover,
+            alignment: BundleImageObjectAlignment::default(),
+            playback: BundleImageObjectPlayback::default(),
+            transform: BundleImageObjectTransform::default(),
+            depth_milli: -10_000,
+            opacity_milli: 1_000,
+            visible: true,
+        }
+    }
+
+    fn image_runtime_resources(image: &BundleImageObject) -> BundlePresentationResources<'_> {
+        BundlePresentationResources {
+            image_objects: std::slice::from_ref(image),
+            text_inputs: &[],
+            action_buttons: &[],
+            focus_groups: &[],
+            focus_navigation: &[],
+        }
+    }
+
+    fn image_handle_create(handle: &str, resource: &str) -> LineEffectRequest {
+        LineEffectRequest::Call(RuntimeCall {
+            callee: "presentation.handle.create".to_owned(),
+            args: vec![
+                format!("handle = {handle}"),
+                "kind = \"image\"".to_owned(),
+                format!("resource = @{resource}"),
+            ],
         })
     }
 
