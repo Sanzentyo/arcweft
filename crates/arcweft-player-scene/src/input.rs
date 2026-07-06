@@ -194,6 +194,17 @@ impl InputController {
         Ok(true)
     }
 
+    pub(crate) fn retain_live_text_control_focus(&mut self, controls: &[RenderTextInputControl]) {
+        let stale = self.focused_text_editor.as_ref().is_some_and(|editor| {
+            !controls
+                .iter()
+                .any(|control| text_control_matches_editor(control, editor))
+        });
+        if stale {
+            self.deactivate_focused_text_editor();
+        }
+    }
+
     #[must_use]
     pub fn apply_live_text_control_state(
         &self,
@@ -557,6 +568,12 @@ impl InputController {
         input: TextInput,
     ) -> Result<InputOutcome, TextEditorError> {
         let mut text_control_write_backs = Vec::new();
+        let stale = self.focused_text_editor.as_ref().is_some_and(|editor| {
+            editor.session() == input.session() && !focused_editor_matches_frame(frame, editor)
+        });
+        if stale {
+            self.deactivate_focused_text_editor();
+        }
         if let Some(editor) = self
             .focused_text_editor
             .as_mut()
@@ -797,6 +814,12 @@ impl InputController {
             }
             return ActionButtonSubmitOutcome::default();
         };
+        if !frame
+            .text_input_targets()
+            .any(|target| &target == input_target)
+        {
+            return ActionButtonSubmitOutcome::default();
+        }
         if self.ime_composing {
             match ime_policy {
                 RenderTextSubmitImePolicy::Reject => {
@@ -849,6 +872,28 @@ impl InputController {
             diagnostic: None,
         }
     }
+
+    fn deactivate_focused_text_editor(&mut self) {
+        if let Some(editor) = &self.focused_text_editor
+            && self.interaction.focus().target() == Some(editor.target())
+        {
+            self.interaction.clear_focus();
+        }
+        self.focused_text_editor = None;
+        self.pending_text_pointer_selection = None;
+        self.ime_composing = false;
+    }
+}
+
+fn text_control_matches_editor(control: &RenderTextInputControl, editor: &TextEditorState) -> bool {
+    control.session == editor.session() && control.target == *editor.target()
+}
+
+fn focused_editor_matches_frame(frame: &PreparedFrame, editor: &TextEditorState) -> bool {
+    frame.focused_text_input_target().is_some_and(|focused| {
+        focused.snapshot.session() == editor.session()
+            && focused.snapshot.target() == editor.target()
+    })
 }
 
 fn viewport_text_hit_offset(

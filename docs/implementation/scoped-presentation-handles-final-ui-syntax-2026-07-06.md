@@ -307,6 +307,40 @@ files:
 | `crates/arcweft-cli/src/app/agent/native/player_observation.rs` | 39,949 | 1,129 | production | true | Native Agent observe image object/frame mapping |
 | `crates/arcweft-runtime-driver/src/display.rs` | 40,435 | 1,090 | production | true | Bundle presentation snapshots and image handle filtering |
 
+## Hidden Handle Input Rejection
+
+- Player-scene now drops a focused runtime text editor when the next lowered
+  runtime text-control set no longer contains that editor's session/target.
+  This covers hidden, unmounted, released, and destroyed component handles after
+  runtime-driver filtering removes their child text controls from the
+  presentation snapshot.
+- Direct platform text input and IME events are now accepted only while the
+  current prepared frame still exposes the same focused text-input session and
+  target. Stale events from a hidden/disposed control clear the local editor and
+  produce no text-control writeback.
+- Action-button `TextInputSubmit` activation now verifies that the submit
+  target is present as a text input in the current frame before emitting a
+  writeback. This prevents a stale render action from submitting a hidden input
+  if a button survives independently.
+
+### Verification
+
+- `cargo test -p arcweft-player-scene --all-features hidden_runtime_text_control_clears_focus_and_rejects_stale_writeback`
+- `cargo test -p arcweft-player-scene --all-features pointer_activation_rejects_submit_when_input_target_is_not_in_frame`
+- `cargo check --workspace --all-targets --all-features`
+- `cargo clippy --workspace --all-targets --all-features`
+- `cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit\current`
+
+The hidden-handle input rejection cut was measured at Jujutsu change `nrkzpzql`.
+The structure audit reported 0 errors and 138 warnings. Relevant changed files:
+
+| Path | Bytes | LOC | Classification | Embedded Tests | Responsibility |
+| --- | ---: | ---: | --- | --- | --- |
+| `crates/arcweft-player-scene/src/input.rs` | 48,342 | 1,368 | production | true | Shared native/web input routing, focus, text editing, and writebacks |
+| `crates/arcweft-player-scene/src/text_controls.rs` | 9,080 | 232 | production | false | Runtime text-control lowering and focus activation |
+| `crates/arcweft-player-scene/tests/action_button_submit.rs` | 11,047 | 287 | test | false | Action-button submit and action invoke input regressions |
+| `crates/arcweft-player-scene/tests/runtime_text_controls.rs` | 14,760 | 373 | test | false | Runtime text-control focus/editing regressions |
+
 ## Remaining Work
 
 - End-to-end save subsystem wiring still needs to consume the runtime display
@@ -315,7 +349,7 @@ files:
   scenario.
 - Native/web/observe parity tests still need a broader hidden/disposed-handle
   suite covering component handles, image handles, hit-test/focus/writeback
-  rejection, and explicit mount regressions.
+  behavior across actual adapters and explicit mount regressions.
 - Lexical cleanup integration for overlay pop and scene transition needs the
   owning overlay/scene lifecycle operations to call the cleanup drain path.
 - `Scroll` is now a typed resource and sidecar element, but scroll offsets,

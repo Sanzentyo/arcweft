@@ -38,6 +38,7 @@ impl RuntimeTextControlLowerer {
         controls: &[UiRuntimeTextControl],
     ) -> Result<Vec<RenderTextInputControl>, RuntimeTextControlLoweringError> {
         let controls = Self::lower_controls(controls)?;
+        input.retain_live_text_control_focus(&controls);
         Self::activate_focused(input, &controls)?;
         Ok(controls
             .into_iter()

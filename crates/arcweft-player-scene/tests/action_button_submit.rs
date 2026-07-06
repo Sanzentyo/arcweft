@@ -121,6 +121,24 @@ fn pointer_activation_on_action_button_emits_submit_write_back() {
 }
 
 #[test]
+fn pointer_activation_rejects_submit_when_input_target_is_not_in_frame() {
+    let mut scene = scene(RenderTextSubmitImePolicy::Commit);
+    let text_input = scene.text_inputs[0].clone();
+    scene.text_inputs.clear();
+    let frame = SharedFramePlanner::prepare(&scene).unwrap();
+    let mut input = InputController::default();
+    input.activate_text_control(&text_input).unwrap();
+    let position = ViewportPoint::new(500.0, 60.0);
+
+    input.pointer_down(&frame, PointerId(0), position);
+    let outcome = input.pointer_up(&frame, PointerId(0), position);
+
+    assert!(outcome.actions().is_empty());
+    assert!(outcome.text_control_write_backs().is_empty());
+    assert!(outcome.diagnostics.is_empty());
+}
+
+#[test]
 fn pointer_activation_on_action_invoke_button_emits_semantic_action() {
     let scene = action_invoke_scene();
     let frame = SharedFramePlanner::prepare(&scene).unwrap();

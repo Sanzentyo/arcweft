@@ -256,6 +256,47 @@ fn runtime_text_control_lowers_selection_shortcut_and_tab_policies() {
     );
 }
 
+#[test]
+fn hidden_runtime_text_control_clears_focus_and_rejects_stale_writeback() {
+    let runtime = runtime_control("input.name", UiInputKind::TextField, "Ada");
+    let mut input = InputController::default();
+    let controls =
+        RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
+            .expect("initial controls lower");
+    let target = controls[0].target.clone();
+    let frame = SharedFramePlanner::prepare(&scene_with_text_inputs(
+        controls.clone(),
+        Some(target.clone()),
+    ))
+    .expect("focused frame prepares");
+    input
+        .activate_text_control(&controls[0])
+        .expect("text editor activates");
+
+    let hidden_controls =
+        RuntimeTextControlLowerer::lower_for_frame(&mut input, &[]).expect("hidden controls lower");
+    let hidden_frame = SharedFramePlanner::prepare(&scene_with_text_inputs(hidden_controls, None))
+        .expect("hidden frame prepares");
+
+    assert!(input.focused_text_editor().is_none());
+    assert!(input.visual_state().focused.is_none());
+
+    let outcome = input
+        .text_input(
+            &hidden_frame,
+            TextInput::committed(
+                TextInputSessionId(runtime.session),
+                TextInputSerial(9),
+                " Lovelace",
+            ),
+        )
+        .expect("stale text input is ignored");
+
+    assert!(outcome.text_control_write_backs().is_empty());
+    assert!(input.focused_text_editor().is_none());
+    assert!(frame.focused_text_input_target().is_some());
+}
+
 fn runtime_control(public_id: &str, kind: UiInputKind, value: &str) -> UiRuntimeTextControl {
     let end = u32::try_from(value.len()).expect("test text length fits in u32");
     UiRuntimeTextControl {
