@@ -111,6 +111,21 @@ pub enum ViewAction {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ViewActionPayload {
+    LiteralString(String),
+    TextControlProjection {
+        input: String,
+        field: ViewTextControlPayloadField,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ViewTextControlPayloadField {
+    Text,
+    Value,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewTextSubmitAction {
     input: EntityRefSyntax,
     ime_policy: ViewTextSubmitImePolicy,
@@ -120,7 +135,7 @@ pub struct ViewTextSubmitAction {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewActionInvokeAction {
     action: EntityRefSyntax,
-    payload: Option<String>,
+    payload: Option<ViewActionPayload>,
     range: TextRange,
 }
 
@@ -596,7 +611,11 @@ impl ViewTextSubmitAction {
 }
 
 impl ViewActionInvokeAction {
-    pub fn new(action: EntityRefSyntax, payload: Option<String>, range: TextRange) -> Self {
+    pub fn new(
+        action: EntityRefSyntax,
+        payload: Option<ViewActionPayload>,
+        range: TextRange,
+    ) -> Self {
         Self {
             action,
             payload,
@@ -608,7 +627,7 @@ impl ViewActionInvokeAction {
         &self.action
     }
 
-    pub fn payload(&self) -> Option<&String> {
+    pub const fn payload(&self) -> Option<&ViewActionPayload> {
         self.payload.as_ref()
     }
 

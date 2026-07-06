@@ -1,7 +1,8 @@
 use arcweft_bundle::resource_codec::ui::{
-    UiActionButtonActionResource, UiActionButtonResource, UiProgramResource,
-    UiRuntimeActionButtonAction, UiRuntimeButtonBounds, UiTextResource, UiTextSourceKind,
-    UiTextSourceRecord, UiTextSubmitImePolicy,
+    UiActionButtonActionResource, UiActionButtonResource, UiActionPayloadResource,
+    UiActionTextControlPayloadField, UiProgramResource, UiRuntimeActionButtonAction,
+    UiRuntimeButtonBounds, UiTextResource, UiTextSourceKind, UiTextSourceRecord,
+    UiTextSubmitImePolicy,
 };
 
 #[test]
@@ -73,7 +74,10 @@ fn runtime_action_button_resolves_action_invoke_action() {
             enabled: true,
             action: UiActionButtonActionResource::ActionInvoke {
                 action: "action.feedback.submit_name".to_owned(),
-                payload: Some("visitor_name.text".to_owned()),
+                payload: Some(UiActionPayloadResource::TextControlProjection {
+                    input: "input.visitor_name".to_owned(),
+                    field: UiActionTextControlPayloadField::Text,
+                }),
             },
             bounds: UiRuntimeButtonBounds::new(484_000, 48_000, 128_000, 48_000),
             style: None,
@@ -101,6 +105,9 @@ fn runtime_action_button_resolves_action_invoke_action() {
         &buttons[0].action,
         UiRuntimeActionButtonAction::ActionInvoke { action, payload }
             if action == "action.feedback.submit_name"
-                && payload.as_deref() == Some("visitor_name.text")
+                && payload == &Some(UiActionPayloadResource::TextControlProjection {
+                    input: "input.visitor_name".to_owned(),
+                    field: UiActionTextControlPayloadField::Text,
+                })
     ));
 }

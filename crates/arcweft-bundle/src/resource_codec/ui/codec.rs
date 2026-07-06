@@ -390,8 +390,11 @@ impl UiProgramResource {
                             ..
                         } => vec![input.clone()],
                         super::model::UiActionButtonActionResource::ActionInvoke {
-                            action, ..
-                        } => vec![action.clone()],
+                            action,
+                            payload,
+                        } => std::iter::once(action.clone())
+                            .chain(action_payload_refs(payload.as_ref()))
+                            .collect(),
                     };
                     [
                         Some(button.public_id.clone()),
@@ -1106,6 +1109,17 @@ fn instruction_public_ids(instruction: &UiProgramInstruction) -> Vec<String> {
 
 fn option_ids<const N: usize>(values: [&Option<String>; N]) -> Vec<String> {
     values.iter().filter_map(|value| (*value).clone()).collect()
+}
+
+fn action_payload_refs(
+    payload: Option<&super::model::UiActionPayloadResource>,
+) -> impl Iterator<Item = String> + '_ {
+    payload.into_iter().filter_map(|payload| match payload {
+        super::model::UiActionPayloadResource::LiteralString { .. } => None,
+        super::model::UiActionPayloadResource::TextControlProjection { input, .. } => {
+            Some(input.clone())
+        }
+    })
 }
 
 fn style_rule_public_ids(rule: &UiStyleRule) -> Vec<String> {

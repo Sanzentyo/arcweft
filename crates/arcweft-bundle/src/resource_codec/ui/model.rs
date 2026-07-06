@@ -222,8 +222,27 @@ pub enum UiActionButtonActionResource {
     ActionInvoke {
         action: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        payload: Option<String>,
+        payload: Option<UiActionPayloadResource>,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UiActionPayloadResource {
+    LiteralString {
+        value: String,
+    },
+    TextControlProjection {
+        input: String,
+        field: UiActionTextControlPayloadField,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiActionTextControlPayloadField {
+    Text,
+    Value,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -266,7 +285,7 @@ pub enum UiRuntimeActionButtonAction {
     ActionInvoke {
         action: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        payload: Option<String>,
+        payload: Option<UiActionPayloadResource>,
     },
 }
 

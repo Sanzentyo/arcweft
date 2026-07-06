@@ -100,10 +100,10 @@ file sizes:
   semantic actions by queueing a deterministic `action.invoke` custom input
   targeted at the action id instead of rejecting anything except
   `action.choice.select`.
-- Payloads are currently stored as authored expression source strings. Literal
-  string payloads are stored as literal values, while values such as
-  `visitor_name.text` are preserved as source text until the typed input-handle
-  evaluator and payload expression evaluator are implemented.
+- Action payloads are typed at the syntax and UI resource boundary. Literal
+  strings lower as `LiteralString`, while text-control projections such as
+  `visitor_name.text` lower as `TextControlProjection` targeting the canonical
+  `input.visitor_name` runtime text control.
 
 ### Verification
 
@@ -197,39 +197,41 @@ audit reported 0 errors and 138 warnings. Current changed Rust file metrics:
 | `crates/arcweft-tooling/src/speaker_presets.rs` | 26758 | 684 | production | false |
 | `crates/arcweft-verify/src/lib.rs` | 67054 | 1938 | production | false |
 
-## Action Payload Input Handle Evaluation
+## Typed Action Payload Resource
 
-- Runtime-driver action dispatch now resolves action payloads shaped as text
-  control handle projections before queueing the deterministic `action.invoke`
-  input event or resuming a pending `receive action(...)` host call.
-- Supported projections are `.text` and `.value` on active runtime text-control
-  IDs. Both canonical `input.visitor_name.text` and component-local shorthand
-  `visitor_name.text` resolve to the matching active runtime text control. The
-  `@input:.visitor_name.text` spelling is also accepted after normalization.
-- Resolution is deliberately single-match only. If no active text control
-  matches, or more than one active control would match the shorthand, the
-  payload remains the authored source string rather than guessing the wrong
-  control.
-- The session-level receive-action regression now mounts a real
-  `input.visitor_name` UI resource with value `Ada` and verifies that
-  `action.invoke(..., value = visitor_name.text)` resumes `event.value` as
-  `Ada`, not the authored source string.
-- This is still a runtime bridge over the current `Option<String>` payload
-  resource. A later resource/schema cut should replace the string payload with
-  a typed action-payload expression enum so literal strings such as
-  `"visitor_name.text"` cannot be confused with handle projections.
+- Replaced the action-button UI resource payload string with
+  `UiActionPayloadResource`. `LiteralString` now represents authored string
+  literals, and `TextControlProjection { input, field }` represents `.text` or
+  `.value` projections from runtime text-control handles.
+- Component/View syntax records `ViewActionPayload` instead of raw source text.
+  The parser accepts literal strings and text-control projections for
+  `action.invoke(..., value = ...)`; unsupported expressions are not silently
+  preserved as payload source strings.
+- Component/View sidecar lowering normalizes shorthand projections such as
+  `visitor_name.text` to canonical `input.visitor_name` resource references.
+  The UI resource codec now includes the referenced input ID in the program
+  section public-id table, so action payload dependencies are visible to
+  tooling and patch compatibility.
+- Runtime action-button lowering resolves typed text-control projections while
+  it still has the current `RenderTextInputControl` snapshots. Player-scene
+  activation therefore emits a final semantic `Action` payload such as `Ada`;
+  the runtime-driver no longer guesses whether an arbitrary string payload is a
+  handle expression.
 
 ### Verification
 
-- `cargo test -p arcweft-runtime-driver --all-features action_payload_value`
+- `cargo test -p arcweft-lang-syntax --all-features component_view_button_on_click_action_invoke_block_parses`
+- `cargo test -p arcweft-bundle --all-features runtime_action_button_resolves_action_invoke_action`
+- `cargo test -p arcweft-cli --all-features component_view_action_invoke_button_lowers_to_action_resource`
+- `cargo test -p arcweft-player-scene --all-features runtime_action_invoke_payload_reads_text_control_projection`
+- `cargo test -p arcweft-player-scene --all-features pointer_activation_on_action_invoke_button_emits_semantic_action`
+- `cargo test -p arcweft-runtime-driver --all-features session_accepts_generic_semantic_action_invoke`
 - `cargo test -p arcweft-runtime-driver --all-features session_receive_action_host_call_resumes_with_event_value`
-- `cargo test -p arcweft-runtime-driver --all-features`
 - `cargo check --workspace --all-targets --all-features`
 - `cargo clippy --workspace --all-targets --all-features`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit\current`
 
-The action payload input-handle cut kept the structure audit at 0 errors and
-138 warnings.
+The typed-payload cut kept the structure audit at 0 errors and 138 warnings.
 
 ## Remaining Work
 
@@ -245,8 +247,7 @@ The action payload input-handle cut kept the structure audit at 0 errors and
 - `Scroll` is now a typed resource and sidecar element, but scroll offsets,
   clipping, input routing, save/restore of scroll state, and native/web/observe
   parity tests still need the dedicated scroll runtime behavior slice.
-- The final UI syntax direction still needs action payload sema/evaluation
-  contracts beyond the current string payload bridge, typed input-handle
-  expression evaluation for values such as `visitor_name.text`, generic
-  callback block sugar beyond the `on_click` `action.invoke` route, and richer
-  reactive branching surface from the broader input/scroll syntax request.
+- The final UI syntax direction still needs action payload signature checking,
+  generic callback block sugar beyond the `on_click` `action.invoke` route, and
+  richer reactive branching surface from the broader input/scroll syntax
+  request.

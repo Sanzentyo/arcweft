@@ -434,7 +434,12 @@ flow test {
             action,
             payload,
         } if action == "action.feedback.submit"
-            && payload.as_deref() == Some("visitor_name.text")
+            && payload == &Some(
+                arcweft_bundle::resource_codec::ui::UiActionPayloadResource::TextControlProjection {
+                    input: "input.visitor_name".to_owned(),
+                    field: arcweft_bundle::resource_codec::ui::UiActionTextControlPayloadField::Text,
+                }
+            )
     ));
 }
 

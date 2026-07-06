@@ -2,10 +2,11 @@ use crate::ast::common::TextRange;
 use crate::ast::flow::Stmt;
 use crate::ast::ids::{EntityRef, EntityRefSyntax, IdRef};
 use crate::ast::view::{
-    ComponentViewBody, ViewAction, ViewActionInvokeAction, ViewArg, ViewButton, ViewButtonLabel,
-    ViewElement, ViewExpr, ViewImage, ViewModifier, ViewNavigationDirection, ViewNavigationEdge,
-    ViewNavigationModifier, ViewNavigationTarget, ViewStyleModifier, ViewText, ViewTextField,
-    ViewTextFieldMode, ViewTextSubmitAction, ViewTextSubmitImePolicy,
+    ComponentViewBody, ViewAction, ViewActionInvokeAction, ViewActionPayload, ViewArg, ViewButton,
+    ViewButtonLabel, ViewElement, ViewExpr, ViewImage, ViewModifier, ViewNavigationDirection,
+    ViewNavigationEdge, ViewNavigationModifier, ViewNavigationTarget, ViewStyleModifier, ViewText,
+    ViewTextControlPayloadField, ViewTextField, ViewTextFieldMode, ViewTextSubmitAction,
+    ViewTextSubmitImePolicy,
 };
 use crate::cst::{split_top_level_punctuation, split_top_level_punctuation_once};
 use crate::expr::{CallArg, Expr, Literal};
@@ -863,7 +864,7 @@ fn action_invoke_call_action(args: &[CallArg], range: TextRange) -> Option<ViewA
     })?;
     let payload = args.iter().find_map(|arg| match arg {
         CallArg::Named { name, value } if name == "value" || name == "payload" => {
-            action_payload_source(value)
+            action_payload(value)
         }
         CallArg::Positional(_) | CallArg::Named { .. } | CallArg::Spread { .. } => None,
     });
@@ -888,7 +889,7 @@ fn action_invoke_source_call_action(source: &str, range: TextRange) -> Option<Vi
     })?;
     let payload = args.iter().find_map(|arg| match arg {
         ViewArg::Named { name, value } if name == "value" || name == "payload" => {
-            action_payload_source(value)
+            action_payload(value)
         }
         ViewArg::Positional(_) | ViewArg::Named { .. } => None,
     });
@@ -897,10 +898,32 @@ fn action_invoke_source_call_action(source: &str, range: TextRange) -> Option<Vi
     )))
 }
 
-fn action_payload_source(expr: &Expr) -> Option<String> {
+fn action_payload(expr: &Expr) -> Option<ViewActionPayload> {
     match expr {
-        Expr::Literal(Literal::String(value)) => Some(value.clone()),
-        _ => expr_source(expr),
+        Expr::Literal(Literal::String(value)) => {
+            Some(ViewActionPayload::LiteralString(value.clone()))
+        }
+        Expr::Field { target, field } => text_control_payload_target(target)
+            .zip(text_control_payload_field(field))
+            .map(|(input, field)| ViewActionPayload::TextControlProjection { input, field }),
+        _ => None,
+    }
+}
+
+fn text_control_payload_field(field: &str) -> Option<ViewTextControlPayloadField> {
+    match field {
+        "text" => Some(ViewTextControlPayloadField::Text),
+        "value" => Some(ViewTextControlPayloadField::Value),
+        _ => None,
+    }
+}
+
+fn text_control_payload_target(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::EntityRef(reference) => Some(reference.canonical_body()),
+        Expr::Path(path) => Some(path.as_label().to_owned()),
+        Expr::Raw(source) => Some(source.trim().to_owned()),
+        _ => None,
     }
 }
 

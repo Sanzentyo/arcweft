@@ -1,7 +1,8 @@
 use arcweft_bundle::{
     container::BundleDigest,
     resource_codec::{
-        UiActionButtonActionResource, UiActionButtonResource, UiFocusDirection, UiFocusGroupPolicy,
+        UiActionButtonActionResource, UiActionButtonResource, UiActionPayloadResource,
+        UiActionTextControlPayloadField, UiFocusDirection, UiFocusGroupPolicy,
         UiFocusGroupResource, UiFocusInitialPolicy, UiFocusNavigationEdge,
         UiFocusNavigationResource, UiFocusSkipPolicy, UiFocusTargetResolution, UiFocusWrapPolicy,
         UiInputResource, UiLayoutBoundsResource, UiLogicalRect, UiProgramResource,
@@ -21,10 +22,11 @@ use arcweft_lang_syntax::{
         ids::{EntityRef, EntityRefSyntax},
         items::EntityDeclItem,
         view::{
-            ComponentViewBody, ViewAction, ViewArg, ViewButton, ViewButtonLabel, ViewElement,
-            ViewExpr, ViewImage, ViewModifier, ViewNavigationDirection, ViewNavigationInitial,
-            ViewNavigationTarget, ViewNavigationTrap, ViewStyleModifier, ViewText, ViewTextField,
-            ViewTextFieldMode, ViewTextSubmitImePolicy,
+            ComponentViewBody, ViewAction, ViewActionPayload, ViewArg, ViewButton, ViewButtonLabel,
+            ViewElement, ViewExpr, ViewImage, ViewModifier, ViewNavigationDirection,
+            ViewNavigationInitial, ViewNavigationTarget, ViewNavigationTrap, ViewStyleModifier,
+            ViewText, ViewTextControlPayloadField, ViewTextField, ViewTextFieldMode,
+            ViewTextSubmitImePolicy,
         },
     },
     expr::{Expr, Literal, UnitNumberSuffix},
@@ -561,7 +563,7 @@ fn lower_button(
         },
         Some(ViewAction::ActionInvoke(action)) => UiActionButtonActionResource::ActionInvoke {
             action: normalize_entity_ref(action.action()),
-            payload: action.payload().cloned(),
+            payload: action.payload().map(lower_action_payload),
         },
         Some(ViewAction::Noop) | None => UiActionButtonActionResource::Noop,
     };
@@ -853,6 +855,39 @@ fn normalize_style_ref(reference: &EntityRefSyntax) -> String {
 
 fn normalize_entity_ref(reference: &EntityRefSyntax) -> String {
     reference.canonical_body()
+}
+
+fn lower_action_payload(payload: &ViewActionPayload) -> UiActionPayloadResource {
+    match payload {
+        ViewActionPayload::LiteralString(value) => UiActionPayloadResource::LiteralString {
+            value: value.clone(),
+        },
+        ViewActionPayload::TextControlProjection { input, field } => {
+            UiActionPayloadResource::TextControlProjection {
+                input: normalize_input_payload_ref(input),
+                field: lower_text_control_payload_field(*field),
+            }
+        }
+    }
+}
+
+fn normalize_input_payload_ref(input: &str) -> String {
+    let input = input.trim().strip_prefix('@').unwrap_or(input.trim());
+    let input = input.strip_prefix("input:.").unwrap_or(input);
+    if input.starts_with("input.") {
+        input.to_owned()
+    } else {
+        format!("input.{input}")
+    }
+}
+
+fn lower_text_control_payload_field(
+    field: ViewTextControlPayloadField,
+) -> UiActionTextControlPayloadField {
+    match field {
+        ViewTextControlPayloadField::Text => UiActionTextControlPayloadField::Text,
+        ViewTextControlPayloadField::Value => UiActionTextControlPayloadField::Value,
+    }
 }
 
 fn ui_element_kind(value: &str) -> Option<UiElementKind> {

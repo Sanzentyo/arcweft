@@ -6,12 +6,6 @@ use arcweft_bundle::patch::{
     PatchCompatibility, PatchMaterializationContract, RuntimeAbiRange, SectionChangeDerivation,
     SectionChangeOperation, SectionCompatibilityFingerprint, SectionOperation, encode_patch_bundle,
 };
-use arcweft_bundle::resource_codec::ui::{
-    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
-    UiInputOptions, UiInputPurpose, UiInputResource, UiSecureInputPolicy, UiTextResource,
-    UiTextSelectionPolicy, UiTextShortcutPolicy, UiTextSourceKind, UiTextSourceRecord,
-    UiTextTabPolicy, UiTextVerticalNavigationPolicy,
-};
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
 };
@@ -371,55 +365,6 @@ fn fixture_action_receive_bundle() -> ArcweftBundle {
     bundle.with_product_awbc(product_awbc)
 }
 
-fn with_visitor_name_text_control(bundle: ArcweftBundle, value: &str) -> ArcweftBundle {
-    bundle
-        .with_ui_input(UiInputResource {
-            options: vec![text_input_option(
-                "input.visitor_name",
-                "text.value.visitor_name",
-            )],
-            adapter_requirements: Vec::new(),
-        })
-        .with_ui_text(UiTextResource {
-            sources: vec![literal_source("text.value.visitor_name", value)],
-            ..UiTextResource::default()
-        })
-}
-
-fn text_input_option(public_id: &str, value_text_source: &str) -> UiInputOptions {
-    UiInputOptions {
-        public_id: public_id.to_owned(),
-        kind: UiInputKind::TextField,
-        value_text_source: value_text_source.to_owned(),
-        placeholder_text_source: None,
-        purpose: UiInputPurpose::Text,
-        autocorrect: TextAssistPolicy::PlatformDefault,
-        spellcheck: TextAssistPolicy::PlatformDefault,
-        capitalization: TextCapitalization::None,
-        enter_key: EnterKeyHint::Default,
-        multiline: false,
-        selection_policy: UiTextSelectionPolicy::Enabled,
-        shortcut_policy: UiTextShortcutPolicy::Enabled,
-        tab_policy: UiTextTabPolicy::FocusNavigation,
-        vertical_navigation_policy: UiTextVerticalNavigationPolicy::LogicalLine,
-        secure_policy: UiSecureInputPolicy::Plain,
-        composition_on_blur: CompositionOnBlurPolicy::Commit,
-        submit_handler: None,
-        change_handler: None,
-        adapter_requirements: Vec::new(),
-    }
-}
-
-fn literal_source(public_id: &str, value: &str) -> UiTextSourceRecord {
-    UiTextSourceRecord {
-        public_id: public_id.to_owned(),
-        kind: UiTextSourceKind::Literal {
-            value: value.to_owned(),
-        },
-        source: None,
-    }
-}
-
 fn fixture_await_replacement_bundle() -> ArcweftBundle {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.main".to_owned())),
@@ -562,7 +507,7 @@ fn session_accepts_generic_semantic_action_invoke() {
         ActionTarget::Runtime,
         PublicId::try_new("action.feedback.submit_name").expect("action id"),
     )
-    .with_payload("visitor_name.text");
+    .with_payload("literal payload");
 
     session
         .queue_semantic_action(&action)
@@ -571,7 +516,7 @@ fn session_accepts_generic_semantic_action_invoke() {
 
 #[test]
 fn session_receive_action_host_call_resumes_with_event_value() {
-    let bundle = with_visitor_name_text_control(fixture_action_receive_bundle(), "Ada");
+    let bundle = fixture_action_receive_bundle();
     let mut session =
         BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
     let waiting = session.step_with_clock(
@@ -584,7 +529,7 @@ fn session_receive_action_host_call_resumes_with_event_value() {
         ActionTarget::Runtime,
         PublicId::try_new("action.feedback.submit").expect("action id"),
     )
-    .with_payload("visitor_name.text");
+    .with_payload("Ada");
     session
         .queue_semantic_action(&action)
         .expect("generic semantic action is accepted");

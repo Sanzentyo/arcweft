@@ -1,7 +1,7 @@
 use crate::control_style::lower_control_style;
 use arcweft_bundle::resource_codec::ui::{
-    UiRuntimeActionButton, UiRuntimeActionButtonAction, UiRuntimeButtonBounds,
-    UiTextSubmitImePolicy,
+    UiActionPayloadResource, UiRuntimeActionButton, UiRuntimeActionButtonAction,
+    UiRuntimeButtonBounds, UiTextSubmitImePolicy,
 };
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::HitRect;
@@ -94,10 +94,32 @@ fn lower_action(
             })?;
             Ok(RenderActionButtonAction::ActionInvoke {
                 action,
-                payload: payload.clone(),
+                payload: lower_action_payload(&button.public_id, payload.as_ref(), text_inputs)?,
             })
         }
     }
+}
+
+fn lower_action_payload(
+    button: &str,
+    payload: Option<&UiActionPayloadResource>,
+    text_inputs: &[RenderTextInputControl],
+) -> Result<Option<String>, RuntimeActionButtonLoweringError> {
+    payload
+        .map(|payload| match payload {
+            UiActionPayloadResource::LiteralString { value } => Ok(value.clone()),
+            UiActionPayloadResource::TextControlProjection { input, .. } => text_inputs
+                .iter()
+                .find(|control| control.target.id().as_str() == input)
+                .map(|control| control.value.clone())
+                .ok_or_else(
+                    || RuntimeActionButtonLoweringError::MissingTextControlTarget {
+                        button: button.to_owned(),
+                        target: input.clone(),
+                    },
+                ),
+        })
+        .transpose()
 }
 
 fn lower_target(target: &str) -> Result<InteractionTarget, RuntimeActionButtonLoweringError> {

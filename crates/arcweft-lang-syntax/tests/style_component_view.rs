@@ -2,7 +2,10 @@ use arcweft_lang_syntax::{
     ast::{
         items::Item,
         style::StyleSyntax,
-        view::{ViewAction, ViewExpr, ViewModifier, ViewStyleModifier},
+        view::{
+            ViewAction, ViewActionPayload, ViewExpr, ViewModifier, ViewStyleModifier,
+            ViewTextControlPayloadField,
+        },
     },
     parser::parse_source,
 };
@@ -132,8 +135,11 @@ pub component FeedbackForm() {
     };
     assert_eq!(action.action().canonical_body(), "action.feedback.submit");
     assert_eq!(
-        action.payload().map(String::as_str),
-        Some("visitor_name.text")
+        action.payload(),
+        Some(&ViewActionPayload::TextControlProjection {
+            input: "visitor_name".to_owned(),
+            field: ViewTextControlPayloadField::Text,
+        })
     );
 }
 

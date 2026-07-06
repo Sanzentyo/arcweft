@@ -1,4 +1,9 @@
+use arcweft_bundle::resource_codec::ui::{
+    UiActionPayloadResource, UiActionTextControlPayloadField, UiRuntimeActionButton,
+    UiRuntimeActionButtonAction, UiRuntimeButtonBounds, UiRuntimeControlStyle,
+};
 use arcweft_id::PublicId;
+use arcweft_player_scene::action_buttons::RuntimeActionButtonLowerer;
 use arcweft_player_scene::input::{InputController, InputDiagnosticKind};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::{InteractionTarget, KeyPhase, PointerId, ViewportPoint};
@@ -78,7 +83,7 @@ fn action_invoke_scene() -> RenderScene {
             style: RenderControlStyle::default(),
             action: RenderActionButtonAction::ActionInvoke {
                 action: PublicId::try_new("action.feedback.submit_name").unwrap(),
-                payload: Some("visitor_name.text".to_owned()),
+                payload: Some("Ada".to_owned()),
             },
         }],
         focus_groups: Vec::new(),
@@ -133,8 +138,69 @@ fn pointer_activation_on_action_invoke_button_emits_semantic_action() {
     );
     assert_eq!(
         outcome.actions()[0].payload().map(String::as_str),
-        Some("visitor_name.text")
+        Some("Ada")
     );
+}
+
+#[test]
+fn runtime_action_invoke_payload_reads_text_control_projection() {
+    let input_target = target("input.visitor_name");
+    let text_inputs = vec![RenderTextInputControl::new(
+        input_target,
+        TextInputSessionId(41),
+        "Ada",
+        TextRange::new(TextByteOffset(3), TextByteOffset(3)),
+        TextInputOptions::default(),
+        SemanticRole::TextField,
+        HitRect::new(48.0, 48.0, 420.0, 48.0),
+    )];
+    let buttons = RuntimeActionButtonLowerer::lower_buttons(
+        &[UiRuntimeActionButton {
+            public_id: "button.continue".to_owned(),
+            target: "button.continue".to_owned(),
+            label: "Continue".to_owned(),
+            enabled: true,
+            bounds: UiRuntimeButtonBounds::new(484_000, 48_000, 180_000, 48_000),
+            action: UiRuntimeActionButtonAction::ActionInvoke {
+                action: "action.feedback.submit_name".to_owned(),
+                payload: Some(UiActionPayloadResource::TextControlProjection {
+                    input: "input.visitor_name".to_owned(),
+                    field: UiActionTextControlPayloadField::Text,
+                }),
+            },
+            style: UiRuntimeControlStyle::default(),
+        }],
+        &text_inputs,
+    )
+    .expect("runtime button lowers");
+
+    let RenderActionButtonAction::ActionInvoke { payload, .. } = &buttons[0].action else {
+        panic!("expected action invoke render action");
+    };
+    assert_eq!(payload.as_deref(), Some("Ada"));
+
+    let literal_buttons = RuntimeActionButtonLowerer::lower_buttons(
+        &[UiRuntimeActionButton {
+            public_id: "button.literal".to_owned(),
+            target: "button.literal".to_owned(),
+            label: "Literal".to_owned(),
+            enabled: true,
+            bounds: UiRuntimeButtonBounds::new(484_000, 112_000, 180_000, 48_000),
+            action: UiRuntimeActionButtonAction::ActionInvoke {
+                action: "action.feedback.submit_name".to_owned(),
+                payload: Some(UiActionPayloadResource::LiteralString {
+                    value: "input.visitor_name.text".to_owned(),
+                }),
+            },
+            style: UiRuntimeControlStyle::default(),
+        }],
+        &text_inputs,
+    )
+    .expect("literal payload button lowers");
+    let RenderActionButtonAction::ActionInvoke { payload, .. } = &literal_buttons[0].action else {
+        panic!("expected action invoke render action");
+    };
+    assert_eq!(payload.as_deref(), Some("input.visitor_name.text"));
 }
 
 #[test]
