@@ -29,7 +29,7 @@ Implemented boundaries:
 ## Non-Goals
 
 The package does not implement typed parsing, HIR lowering, semantic checking,
-bundle encoding, or runtime evaluation for arbitrary `component ... -> View`
+bundle encoding, or runtime evaluation for arbitrary component View
 bodies. The component-surface `.arcw` files are parser/design samples only.
 
 IME composition is also out of scope for this cut. Existing text input remains

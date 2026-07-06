@@ -39,7 +39,7 @@ fn seq06_16_3_native_text_input_sample_is_component_authored() {
     }
     for required in [
         "entry game @entry.native_text_input_sample",
-        "pub component NativeTextInputPanel() -> View",
+        "pub component NativeTextInputPanel()",
         "component(@component:.NativeTextInputPanel)",
         "TextField(@input:.jp_text_field",
         "TextArea(@input:.jp_text_area",
@@ -87,7 +87,7 @@ fn seq06_16_3_submit_samples_share_player_backed_text_submit_routes() {
 
     let modern = read(root.join("samples/modern-feedback-ui/src/main.arcw"));
     for required in [
-        "component(@component:.ModernFeedbackPanel)",
+        "let panel = component(@component:.ModernFeedbackPanel",
         "TextField(@input:.visitor_name",
         "TextArea(@input:.product_brief",
         "Button(@button:.continue)",
@@ -96,6 +96,7 @@ fn seq06_16_3_submit_samples_share_player_backed_text_submit_routes() {
         "text_submit @input:.product_brief",
         "let visitor_name = text_submit @input.visitor_name",
         "let brief = text_submit @input.product_brief",
+        "panel.close()",
     ] {
         assert!(
             modern.contains(required),

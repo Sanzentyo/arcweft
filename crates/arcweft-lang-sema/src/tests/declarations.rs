@@ -1265,7 +1265,7 @@ activity @activity.truck_game TruckGame {
     mode = embedded
 }
 
-component @ui.settings SettingsPanel(config: Binding<Config>) -> View {
+component @ui.settings SettingsPanel(config: Binding<Config>) {
     SettingsView(config)
 }
 ",

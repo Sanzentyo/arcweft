@@ -894,6 +894,35 @@ fn awbc_product_parity_effect() {
 }
 
 #[test]
+fn awbc_product_parity_scope_cleanup_and_cancel() {
+    let steps = run_parity(
+        flow(vec![
+            FlowOp::Scope(vec![
+                FlowOp::RegisterCleanup {
+                    key: "panel".to_owned(),
+                    effect: call("cleanup.panel"),
+                },
+                FlowOp::CancelCleanup {
+                    key: "panel".to_owned(),
+                },
+                FlowOp::RegisterCleanup {
+                    key: "toast".to_owned(),
+                    effect: call("cleanup.toast"),
+                },
+            ]),
+            FlowOp::Return("done".to_owned()),
+        ]),
+        vec![RuntimeStepInput::default()],
+    );
+
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].awbc.output.effects.line,
+        vec![call("cleanup.toast")]
+    );
+}
+
+#[test]
 fn awbc_product_parity_audio_stop_all() {
     let steps = run_parity(
         flow(vec![

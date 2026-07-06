@@ -422,6 +422,13 @@ pub enum FlowOp {
     Return(String),
     ReturnExpr(RuntimeExpr),
     Effect(LineEffectRequest),
+    RegisterCleanup {
+        key: String,
+        effect: LineEffectRequest,
+    },
+    CancelCleanup {
+        key: String,
+    },
     EnterScope,
     ExitScope,
     ExitScopeBind {

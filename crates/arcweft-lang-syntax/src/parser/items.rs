@@ -743,7 +743,15 @@ fn parse_structured_entity_decl_body(
         EntityDeclKind::Image => Some(EntityDeclBody::Image(ImageDeclBody::new(
             parse_image_decl_fields(body, base, errors),
         ))),
-        EntityDeclKind::Component if entity_signature_returns_view(signature_tail) => {
+        EntityDeclKind::Component => {
+            if entity_signature_has_return_type(signature_tail) {
+                errors.push(simple_error(
+                    base,
+                    signature_tail.len(),
+                    "`component` always builds View; remove the `-> View` return annotation",
+                    "component Name(...) { ... }",
+                ));
+            }
             Some(EntityDeclBody::Component(Box::new(ComponentDeclBody::new(
                 parse_component_view_body(body, base, module_path, errors),
             ))))
@@ -752,10 +760,8 @@ fn parse_structured_entity_decl_body(
     }
 }
 
-fn entity_signature_returns_view(signature_tail: &str) -> bool {
-    signature_tail
-        .split_once("->")
-        .is_some_and(|(_, ty)| ty.trim() == "View")
+fn entity_signature_has_return_type(signature_tail: &str) -> bool {
+    signature_tail.split_once("->").is_some()
 }
 
 fn parse_image_decl_fields(

@@ -57,6 +57,13 @@ pub(crate) enum AotLinearOp {
     Return(String),
     ReturnExpr(RuntimeExpr),
     Effect(LineEffectRequest),
+    RegisterCleanup {
+        key: String,
+        effect: LineEffectRequest,
+    },
+    CancelCleanup {
+        key: String,
+    },
     EnterScope,
     ExitScope,
     ExitScopeBind {
@@ -80,6 +87,11 @@ impl AotLinearOp {
             FlowOp::Return(value) => Some(Self::Return(value.clone())),
             FlowOp::ReturnExpr(expr) => Some(Self::ReturnExpr(expr.clone())),
             FlowOp::Effect(effect) => Some(Self::Effect(effect.clone())),
+            FlowOp::RegisterCleanup { key, effect } => Some(Self::RegisterCleanup {
+                key: key.clone(),
+                effect: effect.clone(),
+            }),
+            FlowOp::CancelCleanup { key } => Some(Self::CancelCleanup { key: key.clone() }),
             FlowOp::EnterScope => Some(Self::EnterScope),
             FlowOp::ExitScope => Some(Self::ExitScope),
             FlowOp::ExitScopeBind { pattern, expr } => Some(Self::ExitScopeBind {
@@ -206,6 +218,8 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::Let { .. }
         | FlowOp::Return(_)
         | FlowOp::ReturnExpr(_)
+        | FlowOp::RegisterCleanup { .. }
+        | FlowOp::CancelCleanup { .. }
         | FlowOp::EnterScope
         | FlowOp::ExitScope
         | FlowOp::ExitScopeBind { .. }
@@ -260,6 +274,8 @@ impl AotOpClass {
             | FlowOp::LetScope { .. }
             | FlowOp::Return(_)
             | FlowOp::ReturnExpr(_)
+            | FlowOp::RegisterCleanup { .. }
+            | FlowOp::CancelCleanup { .. }
             | FlowOp::EnterScope
             | FlowOp::ExitScope
             | FlowOp::ExitScopeBind { .. }
@@ -337,6 +353,8 @@ impl AotProgramStats {
                 | FlowOp::Return(_)
                 | FlowOp::ReturnExpr(_)
                 | FlowOp::Effect(_)
+                | FlowOp::RegisterCleanup { .. }
+                | FlowOp::CancelCleanup { .. }
                 | FlowOp::EnterScope
                 | FlowOp::ExitScope
                 | FlowOp::ExitScopeBind { .. }

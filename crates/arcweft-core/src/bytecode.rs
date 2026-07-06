@@ -440,6 +440,8 @@ fn verify_flow_op(
         | FlowOp::Return(_)
         | FlowOp::ReturnExpr(_)
         | FlowOp::Effect(_)
+        | FlowOp::RegisterCleanup { .. }
+        | FlowOp::CancelCleanup { .. }
         | FlowOp::EnterScope
         | FlowOp::ExitScope
         | FlowOp::ExitScopeBind { .. }

@@ -104,6 +104,7 @@ pub struct FlowFiber {
     pub cursor: Option<FlowCursor>,
     pub pending_ops: VecDeque<FlowOp>,
     pub control_stack: Vec<FlowControlStackEntry>,
+    pub root_cleanups: Vec<FlowScopeCleanup>,
     pub env: RuntimeEnv,
     pub observations: RuntimeObservationState,
     pub source_states: BTreeMap<SourceId, SourceRuntimeState>,
@@ -116,10 +117,28 @@ pub struct FlowControlStackEntry {
     pub kind: FlowControlStackEntryKind,
 }
 
+/// One deterministic cleanup effect registered against a lexical flow scope.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FlowScopeCleanup {
+    pub key: String,
+    pub effect: LineEffectRequest,
+}
+
+impl FlowScopeCleanup {
+    pub fn new(key: impl Into<String>, effect: LineEffectRequest) -> Self {
+        Self {
+            key: key.into(),
+            effect,
+        }
+    }
+}
+
 /// Structured frame kind for the minimal flow executor.
 #[derive(Clone, Debug, PartialEq)]
 pub enum FlowControlStackEntryKind {
-    Scope,
+    Scope {
+        cleanups: Vec<FlowScopeCleanup>,
+    },
     Loop {
         body: std::sync::Arc<[FlowOp]>,
         result: Option<RuntimePattern>,
@@ -314,6 +333,7 @@ impl Default for FlowFiber {
             cursor: None,
             pending_ops: VecDeque::new(),
             control_stack: Vec::new(),
+            root_cleanups: Vec::new(),
             env: RuntimeEnv::default(),
             observations: RuntimeObservationState::default(),
             source_states: BTreeMap::new(),
@@ -399,6 +419,7 @@ impl Engine {
                 cursor,
                 pending_ops: VecDeque::new(),
                 control_stack: Vec::new(),
+                root_cleanups: Vec::new(),
                 env: RuntimeEnv::default(),
                 observations: RuntimeObservationState::default(),
                 source_states,
@@ -600,6 +621,7 @@ impl Engine {
             cursor: None,
             pending_ops,
             control_stack: Vec::new(),
+            root_cleanups: Vec::new(),
             env: self.fiber.env.clone(),
             observations: RuntimeObservationState::default(),
             source_states: BTreeMap::new(),

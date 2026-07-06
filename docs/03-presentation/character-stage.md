@@ -258,7 +258,7 @@ Agent observation example:
 ## Contracts
 
 ```arcw
-component CharacterStageObject(character: Ref<Character>) -> View
+component CharacterStageObject(character: Ref<Character>)
 ensures result.has_bbox()
 ensures result.agent_observable == true
 {

@@ -77,9 +77,9 @@ stacked fallback whenever component layout bounds are available.
 No parser or AST syntax is added in this cut. Bounds are derived from existing
 component/View structure:
 
-- `VStack` / `Column`: children are placed vertically.
-- `HStack` / `Row`: children are placed horizontally.
-- `Stack` / `Surface`: children share an origin and the container extent is the
+- `Column`: children are placed vertically.
+- `Row`: children are placed horizontally.
+- `Stack` / `Panel`: children share an origin and the container extent is the
   maximum child extent.
 - `Fragment`: uses the same vertical flow rule as a column.
 - `TextField` and `SecureField`: default intrinsic size `420px x 48px`.

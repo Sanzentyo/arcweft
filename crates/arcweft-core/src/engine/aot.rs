@@ -33,7 +33,7 @@ impl Engine {
                 continue;
             }
             let Some(cursor) = self.fiber.cursor.as_ref() else {
-                self.finish(&mut output);
+                self.finish(&mut output, pure_backend);
                 executed_ops += 1;
                 if self.should_return_to_host(options.mode, &output, executed_ops) {
                     break;
@@ -49,7 +49,7 @@ impl Engine {
             };
             let Some(op) = flow.linear_op(cursor.op_index) else {
                 if cursor.op_index >= flow.ops {
-                    self.finish(&mut output);
+                    self.finish(&mut output, pure_backend);
                 } else {
                     self.step_runtime_op(&runtime_input, &[], &mut output, pure_backend);
                 }
@@ -129,10 +129,12 @@ impl Engine {
                 self.evaluate_let_with_backend(pattern, expr, output, pure_backend);
                 self.advance_aot_linear_cursor(next_op_index);
             }
-            AotLinearOp::Return(value) => self.return_value(value.clone(), output),
+            AotLinearOp::Return(value) => self.return_value(value.clone(), output, pure_backend),
             AotLinearOp::ReturnExpr(expr) => {
                 match self.evaluate_expr_with_backend(expr, pure_backend) {
-                    Ok(value) => self.return_value(super::runtime_value_label(&value), output),
+                    Ok(value) => {
+                        self.return_value(super::runtime_value_label(&value), output, pure_backend);
+                    }
                     Err(error) => self.fail_eval(error, output),
                 }
             }
@@ -140,21 +142,26 @@ impl Engine {
                 self.emit_line_effect(effect.clone(), output, pure_backend);
                 self.advance_aot_linear_cursor(next_op_index);
             }
+            AotLinearOp::RegisterCleanup { key, effect } => {
+                self.register_scope_cleanup(key.clone(), effect.clone());
+                self.advance_aot_linear_cursor(next_op_index);
+            }
+            AotLinearOp::CancelCleanup { key } => {
+                self.cancel_scope_cleanup(key);
+                self.advance_aot_linear_cursor(next_op_index);
+            }
             AotLinearOp::EnterScope => {
-                self.fiber.env.push_scope();
-                self.fiber.control_stack.push(super::FlowControlStackEntry {
-                    kind: super::FlowControlStackEntryKind::Scope,
-                });
+                self.push_scope_frame();
                 self.advance_aot_linear_cursor(next_op_index);
             }
             AotLinearOp::ExitScope => {
-                self.pop_scope_frame();
+                self.pop_scope_frame(output, pure_backend);
                 self.advance_aot_linear_cursor(next_op_index);
             }
             AotLinearOp::ExitScopeBind { pattern, expr } => {
                 match self.evaluate_expr_with_backend(expr, pure_backend) {
                     Ok(value) => {
-                        self.pop_scope_frame();
+                        self.pop_scope_frame(output, pure_backend);
                         self.bind_value(pattern, &value, output);
                         self.advance_aot_linear_cursor(next_op_index);
                     }

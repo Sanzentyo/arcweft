@@ -63,6 +63,58 @@ fn optimizer_rewrites_local_record_field_to_ordinal_projection() {
 }
 
 #[test]
+fn value_position_component_handle_lowers_to_create_cleanup_and_close_cancel() {
+    let parsed = parse_source(
+        r#"
+component ModernPanel() {
+  Panel {
+    Text("Ready")
+  }
+}
+
+flow main {
+  let panel = component(@component:.ModernPanel, lifetime = .scope)
+  panel.close()
+  return "done"
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
+    let ops = &plan.flows[0].ops;
+
+    assert!(matches!(
+        &ops[0],
+        FlowOp::Effect(LineEffectRequest::Call(call))
+            if call.callee == "presentation.handle.create"
+                && call.args.iter().any(|arg| arg == "handle = @handle.flow.main.panel")
+                && call.args.iter().any(|arg| arg == "kind = \"component\"")
+    ));
+    assert!(matches!(
+        &ops[1],
+        FlowOp::RegisterCleanup { key, effect: LineEffectRequest::Call(call) }
+            if key == "handle.flow.main.panel"
+                && call.callee == "presentation.handle.dispose"
+    ));
+    assert!(matches!(
+        &ops[2],
+        FlowOp::Let { pattern: RuntimePattern::Ident(name), expr: RuntimeExpr::Value(RuntimeValue::String(value)) }
+            if name == "panel" && value == "handle.flow.main.panel"
+    ));
+    assert!(matches!(
+        &ops[3],
+        FlowOp::Effect(LineEffectRequest::Call(call))
+            if call.callee == "presentation.handle.dispose"
+                && call.args == ["handle = @handle.flow.main.panel"]
+    ));
+    assert!(matches!(
+        &ops[4],
+        FlowOp::CancelCleanup { key } if key == "handle.flow.main.panel"
+    ));
+}
+
+#[test]
 fn runtime_plan_options_select_dialogue_defaults_profile() {
     let parsed = parse_source(
         r##"

@@ -51,7 +51,7 @@ pub style modern_feedback_panel {
   token metric.corner_frame_width = milli(3000)
   token metric.corner_frame_offset = milli(2000)
 
-  Surface {
+  Panel {
     background-color = token(color.canvas)
     color = token(color.text)
     font-family = token(font.ui_stack)
@@ -132,9 +132,9 @@ pub style modern_feedback_panel {
   environment text_scale_at_least_milli = 1000
 }
 
-pub component ModernFeedbackPanel() -> View {
-  Surface {
-    VStack {
+pub component ModernFeedbackPanel() {
+  Panel {
+    Column {
       Text("Control deck")
         .style {
           color = rgba(244, 247, 251, 255)
@@ -148,7 +148,7 @@ pub component ModernFeedbackPanel() -> View {
           font-size = milli(16000)
       }
 
-      HStack {
+      Row {
         TextField(@input:.visitor_name, value: "", purpose: name, enter_key: next)
           .label("Name")
           .placeholder("Your name")
@@ -167,7 +167,7 @@ pub component ModernFeedbackPanel() -> View {
         .placeholder("Write one sharp product idea")
         .style(@style:.modern_feedback_panel)
 
-      HStack {
+      Row {
         Button(@button:.send_brief)
           .label("Send brief")
           .style(@style:.modern_feedback_panel)
@@ -188,7 +188,7 @@ pub component ModernFeedbackPanel() -> View {
 flow modern_feedback_ui {
   player_viewport(width = 1280px, height = 720px, fit = contain)
   image(@image.glass_bg)
-  component(@component:.ModernFeedbackPanel)
+  let panel = component(@component:.ModernFeedbackPanel, lifetime = .scope)
 
   concierge:
     This sample pairs a translucent component/View panel with a normal Arcweft flow.[p]
@@ -214,5 +214,6 @@ flow modern_feedback_ui {
     concierge: Captured the component-backed brief. The next runtime step can branch into a planning route.
   }
 
+  panel.close()
   return brief
 }

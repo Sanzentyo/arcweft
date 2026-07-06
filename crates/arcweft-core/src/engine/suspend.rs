@@ -76,7 +76,7 @@ impl Engine {
         };
         if let Some(cancelled) = cancel_live_line_task_group(&group, input) {
             self.merge_step_output(cancelled, output, pure_backend);
-            if self.apply_control_effects(output) {
+            if self.apply_control_effects(output, pure_backend) {
                 return;
             }
             self.fiber.cursor = state.resume;
@@ -88,12 +88,12 @@ impl Engine {
             output,
             pure_backend,
         );
-        if self.apply_control_effects(output) {
+        if self.apply_control_effects(output, pure_backend) {
             return;
         }
         if input_advances_dialogue(input, &state.line.0) {
             self.merge_step_output(finish_live_line_task_group(&group), output, pure_backend);
-            if self.apply_control_effects(output) {
+            if self.apply_control_effects(output, pure_backend) {
                 return;
             }
             self.fiber.cursor = state.resume;
@@ -274,7 +274,7 @@ impl Engine {
             self.emit_line_effect(LineEffectRequest::Out(out), output, pure_backend);
         }
         if let Some(target) = option.target {
-            self.goto(&target, output);
+            self.goto(&target, output, pure_backend);
         } else {
             self.fiber.cursor = state.resume;
             self.fiber.status = FlowFiberStatus::Running;

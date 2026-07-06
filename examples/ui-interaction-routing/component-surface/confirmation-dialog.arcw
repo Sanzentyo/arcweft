@@ -1,10 +1,10 @@
-pub component @ui.sample.confirmation ConfirmationDialog(message: String) -> View {
-    VStack(spacing = 20) {
+pub component @ui.sample.confirmation ConfirmationDialog(message: String) {
+    Column(spacing = 20) {
         Text(message)
             .style {
                 font-size = milli(18000)
             }
-        HStack(spacing = 12) {
+        Row(spacing = 12) {
             Button(@button:.cancel)
                 .label("Cancel")
                 .agent_target(@ui.sample.confirmation.cancel)

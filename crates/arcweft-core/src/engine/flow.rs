@@ -1,10 +1,11 @@
 use super::{
     AwaitState, ChoiceState, DialogueState, Engine, FlowControlStackEntry,
     FlowControlStackEntryKind, FlowCursor, FlowEvent, FlowFiberStatus, FlowOp, FlowRuntimeId,
-    HostCallState, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr,
-    RuntimeIterator, RuntimePattern, RuntimeStepInput, RuntimeStepOutput, RuntimeValue,
-    runtime_value_label,
+    FlowScopeCleanup, HostCallState, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError,
+    RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepInput, RuntimeStepOutput,
+    RuntimeValue, runtime_value_label,
 };
+use crate::effect::LineEffectRequest;
 use crate::line_task::progress_live_line_task_group;
 use crate::pattern::pattern_binding_capacity;
 use crate::plan::{RuntimeIteratorEvidence, RuntimeIteratorWitnessExecutable, RuntimeReceiverMode};
@@ -36,7 +37,7 @@ impl Engine {
                 .and_then(|flow| flow.ops.get(cursor.op_index))
                 .cloned()
             else {
-                self.finish(output);
+                self.finish(output, pure_backend);
                 return;
             };
             (op, Some(cursor.op_index + 1))
@@ -89,7 +90,7 @@ impl Engine {
                     output,
                     pure_backend,
                 );
-                if !self.apply_control_effects(output) {
+                if !self.apply_control_effects(output, pure_backend) {
                     self.fiber.status = FlowFiberStatus::Dialogue(DialogueState {
                         line,
                         task_group,
@@ -274,7 +275,7 @@ impl Engine {
                         self.push_while_iteration(condition, &body);
                     }
                     Ok(false) => {
-                        self.pop_loop_frame();
+                        self.pop_loop_frame(output, pure_backend);
                     }
                     Err(error) => self.fail_eval(error, output),
                 }
@@ -321,7 +322,7 @@ impl Engine {
                     self.push_while_let_iteration(pattern, expr, guard, &body, bindings);
                 }
                 Ok(None) => {
-                    self.pop_loop_frame();
+                    self.pop_loop_frame(output, pure_backend);
                 }
                 Err(error) => self.fail_eval(error, output),
             },
@@ -398,22 +399,22 @@ impl Engine {
                     },
                     None => RuntimeValue::Unit,
                 };
-                if self.break_nearest_loop(&value, output) {
+                if self.break_nearest_loop(&value, output, pure_backend) {
                     self.advance_if_needed(next_op_index);
                 } else {
                     self.fail_eval(RuntimeEvalError::MisplacedLoopControl("break"), output);
                 }
             }
             FlowOp::Continue => {
-                if self.continue_nearest_loop(output) {
+                if self.continue_nearest_loop(output, pure_backend) {
                     self.advance_if_needed(next_op_index);
                 } else {
                     self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);
                 }
             }
-            FlowOp::Goto(target) => self.goto(&target, output),
+            FlowOp::Goto(target) => self.goto(&target, output, pure_backend),
             FlowOp::GotoExpr(expr) => match self.evaluate_entity_target(&expr) {
-                Ok(target) => self.goto(&FlowRuntimeId(target), output),
+                Ok(target) => self.goto(&FlowRuntimeId(target), output, pure_backend),
                 Err(error) => self.fail_eval(error, output),
             },
             FlowOp::Return(value) => {
@@ -421,7 +422,7 @@ impl Engine {
                     self.push_ops(vec![FlowOp::Return(value)]);
                     self.run_child_next = true;
                 } else {
-                    self.return_value(value, output);
+                    self.return_value(value, output, pure_backend);
                 }
             }
             FlowOp::ReturnExpr(expr) => {
@@ -430,26 +431,33 @@ impl Engine {
                     self.run_child_next = true;
                 } else {
                     match self.evaluate_expr_with_backend(&expr, pure_backend) {
-                        Ok(value) => self.return_value(runtime_value_label(&value), output),
+                        Ok(value) => {
+                            self.return_value(runtime_value_label(&value), output, pure_backend);
+                        }
                         Err(error) => self.fail_eval(error, output),
                     }
                 }
             }
             FlowOp::Effect(effect) => {
                 self.emit_line_effect(effect, output, pure_backend);
-                if !self.apply_control_effects(output) {
+                if !self.apply_control_effects(output, pure_backend) {
                     self.advance_if_needed(next_op_index);
                 }
             }
+            FlowOp::RegisterCleanup { key, effect } => {
+                self.register_scope_cleanup(key, effect);
+                self.advance_if_needed(next_op_index);
+            }
+            FlowOp::CancelCleanup { key } => {
+                self.cancel_scope_cleanup(&key);
+                self.advance_if_needed(next_op_index);
+            }
             FlowOp::EnterScope => {
-                self.fiber.env.push_scope();
-                self.fiber.control_stack.push(FlowControlStackEntry {
-                    kind: FlowControlStackEntryKind::Scope,
-                });
+                self.push_scope_frame();
                 self.advance_if_needed(next_op_index);
             }
             FlowOp::ExitScope => {
-                self.pop_scope_frame();
+                self.pop_scope_frame(output, pure_backend);
                 self.advance_if_needed(next_op_index);
             }
             FlowOp::ExitScopeBind { pattern, expr } => {
@@ -460,7 +468,7 @@ impl Engine {
                         return;
                     }
                 };
-                self.pop_scope_frame();
+                self.pop_scope_frame(output, pure_backend);
                 self.bind_value(&pattern, &value, output);
                 self.advance_if_needed(next_op_index);
             }
@@ -518,6 +526,47 @@ impl Engine {
         self.fiber.pending_ops.reserve(ops.len());
         for op in ops.into_iter().rev() {
             self.fiber.pending_ops.push_front(op);
+        }
+    }
+
+    pub(super) fn push_scope_frame(&mut self) {
+        self.fiber.env.push_scope();
+        self.fiber.control_stack.push(FlowControlStackEntry {
+            kind: FlowControlStackEntryKind::Scope {
+                cleanups: Vec::new(),
+            },
+        });
+    }
+
+    pub(super) fn register_scope_cleanup(
+        &mut self,
+        key: impl Into<String>,
+        effect: LineEffectRequest,
+    ) {
+        let cleanup = FlowScopeCleanup::new(key, effect);
+        if let Some(FlowControlStackEntry {
+            kind: FlowControlStackEntryKind::Scope { cleanups },
+        }) = self
+            .fiber
+            .control_stack
+            .iter_mut()
+            .rev()
+            .find(|entry| matches!(&entry.kind, FlowControlStackEntryKind::Scope { .. }))
+        {
+            cleanups.push(cleanup);
+        } else {
+            self.fiber.root_cleanups.push(cleanup);
+        }
+    }
+
+    pub(super) fn cancel_scope_cleanup(&mut self, key: &str) {
+        self.fiber
+            .root_cleanups
+            .retain(|cleanup| cleanup.key != key);
+        for entry in &mut self.fiber.control_stack {
+            if let FlowControlStackEntryKind::Scope { cleanups } = &mut entry.kind {
+                cleanups.retain(|cleanup| cleanup.key != key);
+            }
         }
     }
 
@@ -603,7 +652,9 @@ impl Engine {
             .env
             .push_scope_with_capacity(pattern_binding_capacity(&pattern));
         self.fiber.control_stack.push(FlowControlStackEntry {
-            kind: FlowControlStackEntryKind::Scope,
+            kind: FlowControlStackEntryKind::Scope {
+                cleanups: Vec::new(),
+            },
         });
         match bind_simple_for_pattern(&mut self.fiber.env, &pattern, item) {
             Some(Ok(())) => {}
@@ -752,31 +803,50 @@ impl Engine {
         }
     }
 
-    pub(super) fn pop_scope_frame(&mut self) {
-        if matches!(
+    pub(super) fn pop_scope_frame(
+        &mut self,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) {
+        if !matches!(
             self.fiber.control_stack.last(),
             Some(FlowControlStackEntry {
-                kind: FlowControlStackEntryKind::Scope
+                kind: FlowControlStackEntryKind::Scope { .. }
             })
         ) {
-            self.fiber.control_stack.pop();
-            self.fiber.env.pop_scope();
+            return;
         }
+        let Some(FlowControlStackEntry {
+            kind: FlowControlStackEntryKind::Scope { cleanups },
+        }) = self.fiber.control_stack.pop()
+        else {
+            return;
+        };
+        self.fiber.env.pop_scope();
+        self.emit_scope_cleanups(cleanups, output, pure_backend);
     }
 
-    pub(super) fn pop_scope_frames_until_loop(&mut self) {
+    pub(super) fn pop_scope_frames_until_loop(
+        &mut self,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) {
         while matches!(
             self.fiber.control_stack.last(),
             Some(FlowControlStackEntry {
-                kind: FlowControlStackEntryKind::Scope
+                kind: FlowControlStackEntryKind::Scope { .. }
             })
         ) {
-            self.pop_scope_frame();
+            self.pop_scope_frame(output, pure_backend);
         }
     }
 
-    pub(super) fn pop_loop_frame(&mut self) -> Option<FlowControlStackEntryKind> {
-        self.pop_scope_frames_until_loop();
+    pub(super) fn pop_loop_frame(
+        &mut self,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Option<FlowControlStackEntryKind> {
+        self.pop_scope_frames_until_loop(output, pure_backend);
         match self.fiber.control_stack.pop() {
             Some(FlowControlStackEntry {
                 kind:
@@ -803,9 +873,10 @@ impl Engine {
         &mut self,
         value: &RuntimeValue,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
         self.discard_pending_until_loop_next();
-        let Some(kind) = self.pop_loop_frame() else {
+        let Some(kind) = self.pop_loop_frame(output, pure_backend) else {
             return false;
         };
         match kind {
@@ -820,13 +891,17 @@ impl Engine {
                     self.fail_eval(RuntimeEvalError::BreakValueOutsideValueLoop, output);
                 }
             }
-            FlowControlStackEntryKind::Scope => return false,
+            FlowControlStackEntryKind::Scope { .. } => return false,
         }
         true
     }
 
-    pub(super) fn continue_nearest_loop(&mut self, output: &mut RuntimeStepOutput) -> bool {
-        self.pop_scope_frames_until_loop();
+    pub(super) fn continue_nearest_loop(
+        &mut self,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> bool {
+        self.pop_scope_frames_until_loop(output, pure_backend);
         self.discard_pending_until_loop_next();
         let Some(kind) = self
             .fiber
@@ -854,12 +929,32 @@ impl Engine {
                     body,
                 }]);
             }
-            FlowControlStackEntryKind::Scope => {
+            FlowControlStackEntryKind::Scope { .. } => {
                 self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);
                 return false;
             }
         }
         true
+    }
+
+    pub(super) fn drain_root_cleanups(
+        &mut self,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) {
+        let cleanups = std::mem::take(&mut self.fiber.root_cleanups);
+        self.emit_scope_cleanups(cleanups, output, pure_backend);
+    }
+
+    pub(super) fn emit_scope_cleanups(
+        &mut self,
+        mut cleanups: Vec<FlowScopeCleanup>,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) {
+        while let Some(cleanup) = cleanups.pop() {
+            self.emit_line_effect(cleanup.effect, output, pure_backend);
+        }
     }
 }
 

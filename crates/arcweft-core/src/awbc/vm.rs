@@ -5,8 +5,8 @@
 //! This module never falls back to the structured VM.
 
 use super::fiber::{
-    FiberAwaitManyState, FiberSafePoint, FiberState, FiberStateError, FiberStatus, FiberSuspension,
-    FiberSuspensionReason, FiberTerminalValue, FiberTrap,
+    FiberAwaitManyState, FiberSafePoint, FiberScopeCleanup, FiberState, FiberStateError,
+    FiberStatus, FiberSuspension, FiberSuspensionReason, FiberTerminalValue, FiberTrap,
 };
 use super::schema::{
     AwbcBinaryOp, AwbcBlockId, AwbcCodeLocation, AwbcConstant, AwbcConstantId, AwbcContentUnitId,
@@ -312,10 +312,16 @@ fn execute_instruction(
             fiber
                 .active_frame_mut()?
                 .scopes
-                .push(super::fiber::FiberScope { id: *scope, depth });
+                .push(super::fiber::FiberScope {
+                    id: *scope,
+                    depth,
+                    cleanups: Vec::new(),
+                });
         }
         AwbcInstruction::ExitScope { .. } => {
-            fiber.active_frame_mut()?.scopes.pop();
+            if let Some(scope) = fiber.active_frame_mut()?.scopes.pop() {
+                emit_cleanup_observations(scope.cleanups, observations);
+            }
         }
         AwbcInstruction::BindPattern { pattern, value, .. } => {
             let value = register(fiber, *value)?.clone();
@@ -611,6 +617,29 @@ fn execute_instruction(
                 args,
             });
         }
+        AwbcInstruction::RegisterCleanup { key, effect, args } => {
+            let key = string(program, *key)?.to_owned();
+            let args = register_values(fiber, args)?;
+            let cleanup = FiberScopeCleanup {
+                key,
+                effect: *effect,
+                args,
+            };
+            let frame = fiber.active_frame_mut()?;
+            if let Some(scope) = frame.scopes.last_mut() {
+                scope.cleanups.push(cleanup);
+            } else {
+                frame.root_cleanups.push(cleanup);
+            }
+        }
+        AwbcInstruction::CancelCleanup { key } => {
+            let key = string(program, *key)?;
+            let frame = fiber.active_frame_mut()?;
+            frame.root_cleanups.retain(|cleanup| cleanup.key != key);
+            for scope in &mut frame.scopes {
+                scope.cleanups.retain(|cleanup| cleanup.key != key);
+            }
+        }
         AwbcInstruction::StartTask { dst, plan, args } => {
             let args = register_values(fiber, args)?;
             let handle = RuntimeValue::String(
@@ -689,6 +718,27 @@ fn execute_instruction(
         }
     }
     Ok(())
+}
+
+fn drain_active_frame_root_cleanups(
+    fiber: &mut FiberState,
+    observations: &mut Vec<VmObservation>,
+) -> Result<(), VmError> {
+    let cleanups = std::mem::take(&mut fiber.active_frame_mut()?.root_cleanups);
+    emit_cleanup_observations(cleanups, observations);
+    Ok(())
+}
+
+fn emit_cleanup_observations(
+    mut cleanups: Vec<FiberScopeCleanup>,
+    observations: &mut Vec<VmObservation>,
+) {
+    while let Some(cleanup) = cleanups.pop() {
+        observations.push(VmObservation::Effect {
+            effect: cleanup.effect,
+            args: cleanup.args,
+        });
+    }
 }
 
 #[derive(Debug)]
@@ -865,6 +915,7 @@ fn execute_terminator(
         }
         AwbcTerminator::GotoStatic { function, args } => {
             let args = register_values(fiber, args)?;
+            drain_active_frame_root_cleanups(fiber, observations)?;
             fiber.replace_active_function(program, *function, &args)?;
             observations.push(VmObservation::Goto(*function));
             Ok(VmExit::Running)
@@ -893,6 +944,7 @@ fn execute_terminator(
                 ))
             })?;
             let args = register_values(fiber, args)?;
+            drain_active_frame_root_cleanups(fiber, observations)?;
             fiber.replace_active_function(program, target, &args)?;
             observations.push(VmObservation::Goto(target));
             Ok(VmExit::Running)
@@ -980,6 +1032,7 @@ fn execute_terminator(
             let value = value
                 .map(|value| register(fiber, value).cloned())
                 .transpose()?;
+            drain_active_frame_root_cleanups(fiber, observations)?;
             if fiber.finish_return(program, value.clone())? {
                 Ok(VmExit::Returned(value))
             } else {

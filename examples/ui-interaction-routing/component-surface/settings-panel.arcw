@@ -1,5 +1,5 @@
-pub component @ui.sample.settings SettingsPanel(config: Binding<Config>) -> View {
-    VStack(spacing = 16) {
+pub component @ui.sample.settings SettingsPanel(config: Binding<Config>) {
+    Column(spacing = 16) {
         Text("Settings")
             .style {
                 font-size = milli(24000)

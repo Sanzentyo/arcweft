@@ -58,8 +58,8 @@ pub style danger_button: .Css {
 fn component_view_button_on_click_text_submit_parses() {
     let parsed = parse_source(
         r#"
-pub component FeedbackForm() -> View {
-  VStack {
+pub component FeedbackForm() {
+  Column {
     TextField(@input:.feedback, value: "", enter_key: send)
       .label("Message")
       .placeholder("Type text")
@@ -97,6 +97,72 @@ pub component FeedbackForm() -> View {
             .input()
             .map(arcweft_lang_syntax::ast::ids::EntityRefSyntax::canonical_body),
         Some("input.feedback".to_owned())
+    );
+}
+
+#[test]
+fn component_view_removed_return_annotation_is_rejected() {
+    let parsed = parse_source(
+        r#"
+pub component FeedbackForm() -> View {
+  Panel {
+    Text("Message")
+  }
+}
+"#,
+    );
+
+    assert!(
+        parsed
+            .errors()
+            .iter()
+            .any(|error| error.message().contains("remove the `-> View`"))
+    );
+}
+
+#[test]
+fn removed_view_element_names_are_rejected() {
+    let parsed = parse_source(
+        r#"
+pub component FeedbackForm() {
+  Surface {
+    Text("Message")
+  }
+}
+
+pub component ListForm() {
+  VStack {
+    Text("Message")
+  }
+}
+
+pub component RowForm() {
+  HStack {
+    Text("Message")
+  }
+}
+"#,
+    );
+
+    let messages = parsed
+        .errors()
+        .iter()
+        .map(arcweft_lang_syntax::parser::recovery::ParseError::message)
+        .collect::<Vec<_>>();
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("`Surface` was removed"))
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("`VStack` was removed"))
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("`HStack` was removed"))
     );
 }
 
@@ -170,7 +236,7 @@ pub style primary_button {
     }
 }
 
-pub component ButtonRow() -> View {
+pub component ButtonRow() {
     Button(@button:.confirm)
         .label("Confirm")
         .style(@.primary_button)

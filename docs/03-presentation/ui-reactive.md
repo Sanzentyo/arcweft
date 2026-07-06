@@ -11,7 +11,7 @@ pub component @ui.settings SettingsPanel(
 ) -> View {
     local state tab: SettingsTab = .Audio
 
-    VStack(spacing = 16) {
+    Column(spacing = 16) {
         Text("Settings").font(.title)
 
         Picker(
@@ -120,7 +120,7 @@ pub struct UiNode {
 UI component は dependency tracking によって必要部分だけ再評価される。高価な派生値には `memo` を使う。
 
 ```arcw
-component @ui.choice_list ChoiceList(state: GameState) -> View {
+component @ui.choice_list ChoiceList(state: GameState) {
     let choices = memo(scope=frame, key=(state.route, state.affection)) {
         opening_choices()
             .filter(choice_available(state))
@@ -128,7 +128,7 @@ component @ui.choice_list ChoiceList(state: GameState) -> View {
             .collect<Vec<ChoiceView>>()
     }
 
-    VStack {
+    Column {
         ForEach(choices, id = _.id) |choice| { ChoiceButton(choice) }
     }
 }

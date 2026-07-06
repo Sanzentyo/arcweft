@@ -230,6 +230,7 @@ impl AwbcProductStepExecutor {
             cursor: None,
             pending_ops: VecDeque::new(),
             control_stack: Vec::new(),
+            root_cleanups: Vec::new(),
             env: RuntimeEnv::default(),
             observations: RuntimeObservationState::default(),
             source_states: BTreeMap::new(),

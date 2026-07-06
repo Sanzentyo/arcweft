@@ -71,7 +71,7 @@ style primary_button {
   }
 }
 
-component FeedbackForm() -> View {
+component FeedbackForm() {
   TextField("Tokyo")
     .style(@style:.primary_button)
     .style(.Css) {
@@ -107,7 +107,7 @@ flow test {
 fn component_view_declaration_is_not_mounted_implicitly() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
-component FeedbackForm() -> View {
+component FeedbackForm() {
   TextField(@input:.feedback)
     .label("Message")
 }
@@ -126,8 +126,8 @@ component FeedbackForm() -> View {
 fn component_view_button_lowers_to_action_button_sidecar() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
-component FeedbackForm() -> View {
-  VStack {
+component FeedbackForm() {
+  Column {
     TextField(@input:.feedback, value: "", purpose: text, enter_key: send)
       .label("Message")
       .placeholder("Type text")
@@ -220,8 +220,8 @@ flow test {
 fn component_view_text_area_and_secure_field_emit_layout_bounds() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
-component Credentials() -> View {
-  VStack {
+component Credentials() {
+  Column {
     TextArea(@input:.bio, value: "")
       .label("Bio")
       .placeholder("Bio")
@@ -279,9 +279,9 @@ flow test {
 fn component_view_submit_buttons_follow_target_text_control_slots() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
-component FeedbackForm() -> View {
-  VStack {
-    HStack {
+component FeedbackForm() {
+  Column {
+    Row {
       TextField(@input:.name, value: "", purpose: name, enter_key: next)
         .label("Name")
         .placeholder("Name")
@@ -292,7 +292,7 @@ component FeedbackForm() -> View {
     TextArea(@input:.brief, value: "", purpose: text, enter_key: send)
       .label("Brief")
       .placeholder("Idea")
-    HStack {
+    Row {
       Button(@button:.send)
         .label("Send")
         .on_click(|| text_submit @input:.brief)

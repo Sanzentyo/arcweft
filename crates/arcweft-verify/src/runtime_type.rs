@@ -279,6 +279,8 @@ impl<'a> RuntimeTypeValidator<'a> {
             FlowOp::Await { .. }
             | FlowOp::AwaitMany { .. }
             | FlowOp::Effect(_)
+            | FlowOp::RegisterCleanup { .. }
+            | FlowOp::CancelCleanup { .. }
             | FlowOp::EnterScope
             | FlowOp::ExitScope
             | FlowOp::Continue

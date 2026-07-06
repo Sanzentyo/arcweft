@@ -43,7 +43,13 @@ use arcweft_lang_hir::syntax::ast::{
 use arcweft_lang_hir::syntax::expr::Expr;
 use arcweft_lang_hir::syntax::parser::parse_dialogue_content_lossy;
 use arcweft_render_text::LineDisplayCatalog;
+use presentation::{
+    presentation_create_args, presentation_handle_call, presentation_handle_id,
+    presentation_mount_call,
+};
 use std::{collections::BTreeMap, sync::Arc};
+
+mod presentation;
 
 pub(crate) struct LoweredRuntimeFlows {
     pub(crate) flows: Vec<RuntimeFlow>,
@@ -362,6 +368,8 @@ fn optimize_nested_flow_ops(op: &mut FlowOp, stats: &mut RuntimePlanLowerStats) 
         | FlowOp::Return(_)
         | FlowOp::ReturnExpr(_)
         | FlowOp::Effect(_)
+        | FlowOp::RegisterCleanup { .. }
+        | FlowOp::CancelCleanup { .. }
         | FlowOp::EnterScope
         | FlowOp::ExitScope
         | FlowOp::ExitScopeBind { .. }
@@ -513,6 +521,8 @@ fn rewrite_known_record_projections_in_op(op: &mut FlowOp, env: &[(String, Vec<S
         | FlowOp::Choice { .. }
         | FlowOp::Await { .. }
         | FlowOp::Effect(_)
+        | FlowOp::RegisterCleanup { .. }
+        | FlowOp::CancelCleanup { .. }
         | FlowOp::EnterScope
         | FlowOp::ExitScope
         | FlowOp::Break(None)
@@ -949,6 +959,8 @@ fn count_flow_op_pure_calls(op: &FlowOp) -> usize {
         | FlowOp::Choice { .. }
         | FlowOp::Await { .. }
         | FlowOp::Effect(_)
+        | FlowOp::RegisterCleanup { .. }
+        | FlowOp::CancelCleanup { .. }
         | FlowOp::EnterScope
         | FlowOp::ExitScope
         | FlowOp::Break(None)
@@ -1084,13 +1096,7 @@ fn count_flow_op_local_uses_by_name(op: &FlowOp, name: &str) -> usize {
         }
         FlowOp::Match { scrutinee, arms } => {
             count_runtime_expr_local_uses_by_name(scrutinee, name)
-                + arms
-                    .iter()
-                    .map(|arm| {
-                        count_optional_runtime_expr_local_uses_by_name(arm.guard.as_ref(), name)
-                            + count_flow_ops_local_uses_by_name(&arm.ops, name)
-                    })
-                    .sum::<usize>()
+                + count_match_arms_local_uses_by_name(arms, name)
         }
         FlowOp::Loop { body }
         | FlowOp::LetLoop { body, .. }
@@ -1147,6 +1153,8 @@ fn count_flow_op_local_uses_by_name(op: &FlowOp, name: &str) -> usize {
         | FlowOp::Choice { .. }
         | FlowOp::Await { .. }
         | FlowOp::Effect(_)
+        | FlowOp::RegisterCleanup { .. }
+        | FlowOp::CancelCleanup { .. }
         | FlowOp::EnterScope
         | FlowOp::ExitScope
         | FlowOp::Break(None)
@@ -1155,6 +1163,15 @@ fn count_flow_op_local_uses_by_name(op: &FlowOp, name: &str) -> usize {
         | FlowOp::Return(_)
         | FlowOp::Noop => 0,
     }
+}
+
+fn count_match_arms_local_uses_by_name(arms: &[RuntimeMatchArm], name: &str) -> usize {
+    arms.iter()
+        .map(|arm| {
+            count_optional_runtime_expr_local_uses_by_name(arm.guard.as_ref(), name)
+                + count_flow_ops_local_uses_by_name(&arm.ops, name)
+        })
+        .sum()
 }
 
 fn count_runtime_expr_local_uses_by_name(expr: &RuntimeExpr, name: &str) -> usize {
@@ -1357,6 +1374,7 @@ pub(crate) fn lower_runtime_flows(
         line_display_catalog: LineDisplayCatalog::default(),
         display_defaults,
         speaker_preset_scopes: Vec::new(),
+        presentation_handle_scopes: Vec::new(),
         errors: Vec::new(),
         pure_helpers,
         for_iteration_evidence: options.for_iteration_evidence(),
@@ -1397,6 +1415,7 @@ fn lower_agent_controller_flow(
         line_display_catalog: LineDisplayCatalog::default(),
         display_defaults,
         speaker_preset_scopes: Vec::new(),
+        presentation_handle_scopes: Vec::new(),
         errors: Vec::new(),
         pure_helpers,
         for_iteration_evidence: &[],
@@ -1427,6 +1446,7 @@ struct FlowRuntimeLowerer<'a> {
     line_display_catalog: LineDisplayCatalog,
     display_defaults: DialogueDisplayDefaults,
     speaker_preset_scopes: Vec<BTreeMap<String, DialogueSpeakerPreset>>,
+    presentation_handle_scopes: Vec<BTreeMap<String, String>>,
     errors: Vec<RuntimePlanLowerError>,
     pure_helpers: &'a BTreeMap<String, RuntimePureHelperId>,
     for_iteration_evidence: &'a [RuntimeIteratorEvidence],
@@ -1473,7 +1493,9 @@ impl FlowRuntimeLowerer<'_> {
         flow_index: usize,
     ) -> Vec<FlowOp> {
         self.speaker_preset_scopes.push(BTreeMap::new());
+        self.presentation_handle_scopes.push(BTreeMap::new());
         let ops = self.lower_flow_items_in_scope(flow_id, items, flow_index);
+        self.presentation_handle_scopes.pop();
         self.speaker_preset_scopes.pop();
         ops
     }
@@ -1888,7 +1910,8 @@ impl FlowRuntimeLowerer<'_> {
                     })
             }
             Stmt::Expr(expr) => self
-                .lower_agent_host_call_expr(expr)
+                .lower_presentation_handle_method(expr)
+                .or_else(|| self.lower_agent_host_call_expr(expr))
                 .unwrap_or_else(|| vec![FlowOp::Effect(runtime_call_effect(expr))]),
             Stmt::Out { label, expr } => {
                 vec![FlowOp::Effect(LineEffectRequest::Out(LineOutRequest {
@@ -1956,6 +1979,91 @@ impl FlowRuntimeLowerer<'_> {
                 true,
             ),
         }]
+    }
+
+    fn lower_presentation_handle_let(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        pattern: &Pattern,
+        expr: &Expr,
+    ) -> Option<Vec<FlowOp>> {
+        let mount = presentation_mount_call(expr)?;
+        let Some(binding) = pattern.simple_binding_name() else {
+            self.errors.push(RuntimePlanLowerError::new(
+                "value-position presentation handles require a simple binding pattern",
+            ));
+            return Some(Vec::new());
+        };
+        let handle_id = presentation_handle_id(flow_id, binding);
+        self.register_presentation_handle_binding(binding, handle_id.clone());
+        let create = presentation_handle_call(
+            "create",
+            presentation_create_args(&handle_id, flow_id, mount.kind, mount.resource, mount.args),
+        );
+        let cleanup = presentation_handle_call("dispose", vec![format!("handle = @{handle_id}")]);
+        let mut ops = vec![FlowOp::Effect(LineEffectRequest::Call(create))];
+        if mount.register_scope_cleanup {
+            ops.push(FlowOp::RegisterCleanup {
+                key: handle_id.clone(),
+                effect: LineEffectRequest::Call(cleanup),
+            });
+        }
+        ops.push(FlowOp::Let {
+            pattern: lower_runtime_pattern(pattern),
+            expr: RuntimeExpr::Value(RuntimeValue::String(handle_id)),
+        });
+        Some(ops)
+    }
+
+    fn lower_presentation_handle_method(&mut self, expr: &Expr) -> Option<Vec<FlowOp>> {
+        let Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } = expr
+        else {
+            return None;
+        };
+        if !args.is_empty() {
+            return None;
+        }
+        let handle_id = self.presentation_handle_id_for_receiver(receiver)?;
+        let operation = match method.as_str() {
+            "show" => "show",
+            "hide" => "hide",
+            "unmount" => "unmount",
+            "release" => "release",
+            "destroy" => "destroy",
+            "close" | "dispose" => "dispose",
+            _ => return None,
+        };
+        let mut ops = vec![FlowOp::Effect(LineEffectRequest::Call(
+            presentation_handle_call(operation, vec![format!("handle = @{handle_id}")]),
+        ))];
+        if matches!(operation, "dispose" | "release" | "destroy") {
+            ops.push(FlowOp::CancelCleanup { key: handle_id });
+        }
+        Some(ops)
+    }
+
+    fn register_presentation_handle_binding(&mut self, binding: &str, handle_id: String) {
+        if let Some(scope) = self.presentation_handle_scopes.last_mut() {
+            scope.insert(binding.to_owned(), handle_id);
+        }
+    }
+
+    fn presentation_handle_id_for_receiver(&self, receiver: &Expr) -> Option<String> {
+        let Expr::Path(path) = receiver else {
+            return None;
+        };
+        let [segment] = path.segments() else {
+            return None;
+        };
+        let binding = segment.as_str();
+        self.presentation_handle_scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(binding).cloned())
     }
 
     fn lower_assignment_stmt(&mut self, target: &Expr, expr: &Expr) -> Option<RuntimeExpr> {
@@ -2042,6 +2150,8 @@ impl FlowRuntimeLowerer<'_> {
             ops
         } else if let Some(op) = self.lower_agent_host_call_let(pattern, expr) {
             vec![op]
+        } else if let Some(ops) = self.lower_presentation_handle_let(flow_id, pattern, expr) {
+            ops
         } else {
             vec![FlowOp::Let {
                 pattern: lower_runtime_pattern(pattern),
@@ -2111,10 +2221,13 @@ impl FlowRuntimeLowerer<'_> {
         flow_index: usize,
         statements: &[Stmt],
     ) -> Vec<FlowOp> {
-        statements
+        self.presentation_handle_scopes.push(BTreeMap::new());
+        let ops = statements
             .iter()
             .flat_map(|statement| self.lower_flow_stmt(flow_id, flow_index, statement))
-            .collect()
+            .collect();
+        self.presentation_handle_scopes.pop();
+        ops
     }
 
     fn lower_dialogue_result_let(
@@ -2179,7 +2292,8 @@ impl FlowRuntimeLowerer<'_> {
         flow_index: usize,
         items: &[FlowItem],
     ) -> Vec<FlowOp> {
-        items
+        self.presentation_handle_scopes.push(BTreeMap::new());
+        let ops = items
             .iter()
             .flat_map(|item| match item {
                 FlowItem::Stmt(statement) => self.lower_flow_stmt(flow_id, flow_index, statement),
@@ -2190,7 +2304,9 @@ impl FlowRuntimeLowerer<'_> {
                     Vec::new()
                 }
             })
-            .collect()
+            .collect();
+        self.presentation_handle_scopes.pop();
+        ops
     }
 
     fn lower_flow_statements(&mut self, statements: &[Stmt]) -> Vec<LineEffectRequest> {

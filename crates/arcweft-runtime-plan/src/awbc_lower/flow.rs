@@ -8,11 +8,11 @@ use crate::awbc_lower::pattern::lower_pattern;
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::audio::RuntimeAudioCommand;
 use arcweft_core::awbc::schema::{
-    AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption, AwbcEffectSetId,
-    AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
-    AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcLineTaskGroupId, AwbcPureHelper,
-    AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind,
-    AwbcScopeId, AwbcTableRange, AwbcTerminator, AwbcTraitMethodId,
+    AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption, AwbcEffectPlanId,
+    AwbcEffectSetId, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
+    AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcLineTaskGroupId,
+    AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
+    AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator, AwbcTraitMethodId,
 };
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::pattern::RuntimePattern;
@@ -764,17 +764,20 @@ impl<'a> AwbcFlowLowerer<'a> {
                 );
             }
             FlowOp::Effect(effect) => {
-                let (effect, args) = match effect {
-                    LineEffectRequest::Audio(command) => {
-                        let (command, args) =
-                            AwbcAudioLowerer::new(self.inventory, frame, path).lower(command);
-                        let effect = self.inventory.intern_audio_effect(command, args.len());
-                        (effect, args)
-                    }
-                    _ => (self.inventory.intern_effect(effect), Vec::new()),
-                };
+                let (effect, args) = self.lower_effect_plan(frame, path, effect);
                 self.inventory
                     .push_instruction(AwbcInstruction::EmitEffect { effect, args });
+            }
+            FlowOp::RegisterCleanup { key, effect } => {
+                let key = self.inventory.intern_string(key);
+                let (effect, args) = self.lower_effect_plan(frame, path, effect);
+                self.inventory
+                    .push_instruction(AwbcInstruction::RegisterCleanup { key, effect, args });
+            }
+            FlowOp::CancelCleanup { key } => {
+                let key = self.inventory.intern_string(key);
+                self.inventory
+                    .push_instruction(AwbcInstruction::CancelCleanup { key });
             }
             FlowOp::EnterScope => {
                 let scope = frame.enter_scope();
@@ -790,6 +793,23 @@ impl<'a> AwbcFlowLowerer<'a> {
             FlowOp::Noop => {
                 self.inventory.push_instruction(AwbcInstruction::Nop);
             }
+        }
+    }
+
+    fn lower_effect_plan(
+        &mut self,
+        frame: &mut FrameBuilder,
+        path: &str,
+        effect: &LineEffectRequest,
+    ) -> (AwbcEffectPlanId, Vec<AwbcRegisterId>) {
+        match effect {
+            LineEffectRequest::Audio(command) => {
+                let (command, args) =
+                    AwbcAudioLowerer::new(self.inventory, frame, path).lower(command);
+                let effect = self.inventory.intern_audio_effect(command, args.len());
+                (effect, args)
+            }
+            _ => (self.inventory.intern_effect(effect), Vec::new()),
         }
     }
 
@@ -1411,13 +1431,16 @@ impl EntryParameterCollector {
             FlowOp::Break(Some(value)) | FlowOp::GotoExpr(value) | FlowOp::ReturnExpr(value) => {
                 self.collect_expr(value);
             }
-            FlowOp::Effect(effect) => self.collect_effect(effect),
+            FlowOp::Effect(effect) | FlowOp::RegisterCleanup { effect, .. } => {
+                self.collect_effect(effect);
+            }
             FlowOp::Dialogue { .. }
             | FlowOp::Choice { .. }
             | FlowOp::Break(None)
             | FlowOp::Continue
             | FlowOp::Goto(_)
             | FlowOp::Return(_)
+            | FlowOp::CancelCleanup { .. }
             | FlowOp::EnterScope
             | FlowOp::ExitScope
             | FlowOp::Noop => {}

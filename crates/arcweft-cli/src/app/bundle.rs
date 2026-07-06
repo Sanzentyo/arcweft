@@ -734,7 +734,7 @@ fn dsl_ui_style_environment_predicate(
 
 fn dsl_ui_element_kind(value: &str) -> Result<UiElementKind, ExitCode> {
     match value {
-        "surface" => Ok(UiElementKind::Surface),
+        "panel" => Ok(UiElementKind::Surface),
         "row" => Ok(UiElementKind::Row),
         "column" => Ok(UiElementKind::Column),
         "stack" => Ok(UiElementKind::Stack),
@@ -1276,6 +1276,8 @@ fn collect_flow_op_host_calls(op: &FlowOp) -> Vec<String> {
         | FlowOp::Return(_)
         | FlowOp::ReturnExpr(_)
         | FlowOp::Effect(_)
+        | FlowOp::RegisterCleanup { .. }
+        | FlowOp::CancelCleanup { .. }
         | FlowOp::EnterScope
         | FlowOp::ExitScope
         | FlowOp::ExitScopeBind { .. }
@@ -1614,7 +1616,9 @@ fn collect_flow_op_static_image_asset_refs(op: &FlowOp) -> Vec<String> {
         FlowOp::Scope(ops) | FlowOp::LetScope { ops, .. } => {
             collect_flow_ops_static_image_asset_refs(ops)
         }
-        FlowOp::Effect(effect) => collect_line_effect_static_image_asset_refs(effect),
+        FlowOp::Effect(effect) | FlowOp::RegisterCleanup { effect, .. } => {
+            collect_line_effect_static_image_asset_refs(effect)
+        }
         FlowOp::Bind(_)
         | FlowOp::Let { .. }
         | FlowOp::Dialogue { .. }
@@ -1626,6 +1630,7 @@ fn collect_flow_op_static_image_asset_refs(op: &FlowOp) -> Vec<String> {
         | FlowOp::GotoExpr(_)
         | FlowOp::Return(_)
         | FlowOp::ReturnExpr(_)
+        | FlowOp::CancelCleanup { .. }
         | FlowOp::EnterScope
         | FlowOp::ExitScope
         | FlowOp::ExitScopeBind { .. }

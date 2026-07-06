@@ -1,4 +1,4 @@
-pub component @ui.sample.inventory InventoryGrid(items: Vec<InventoryItem>) -> View {
+pub component @ui.sample.inventory InventoryGrid(items: Vec<InventoryItem>) {
     Grid(columns = 4, spacing = 12) {
         ForEach(items, id = _.id) |item| {
             Button(@button:.inventory_slot)

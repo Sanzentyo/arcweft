@@ -82,6 +82,81 @@ fn engine_steps_flow_ops_and_applies_goto() {
 }
 
 #[test]
+fn scoped_cleanup_effects_emit_on_scope_exit_in_lifo_order() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.cleanup".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.cleanup".to_owned()),
+            ops: vec![
+                FlowOp::Scope(vec![
+                    FlowOp::RegisterCleanup {
+                        key: "panel.one".to_owned(),
+                        effect: super::call("cleanup.one"),
+                    },
+                    FlowOp::RegisterCleanup {
+                        key: "panel.two".to_owned(),
+                        effect: super::call("cleanup.two"),
+                    },
+                ]),
+                FlowOp::Return("done".to_owned()),
+            ],
+        }],
+        Vec::new(),
+    )
+    .expect("cleanup plan is valid");
+    let mut engine = Engine::new(plan);
+
+    let output = engine
+        .step(RuntimeStepInput::default(), drain_step_options(16))
+        .output;
+
+    assert_eq!(
+        output.effects.line,
+        vec![super::call("cleanup.two"), super::call("cleanup.one")]
+    );
+}
+
+#[test]
+fn root_cleanup_effects_drain_on_return_unless_cancelled() {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.cleanup".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.cleanup".to_owned()),
+            ops: vec![
+                FlowOp::RegisterCleanup {
+                    key: "panel".to_owned(),
+                    effect: super::call("cleanup.panel"),
+                },
+                FlowOp::CancelCleanup {
+                    key: "panel".to_owned(),
+                },
+                FlowOp::RegisterCleanup {
+                    key: "toast".to_owned(),
+                    effect: super::call("cleanup.toast"),
+                },
+                FlowOp::Return("done".to_owned()),
+            ],
+        }],
+        Vec::new(),
+    )
+    .expect("cleanup plan is valid");
+    let mut engine = Engine::new(plan);
+
+    let output = engine
+        .step(RuntimeStepInput::default(), drain_step_options(16))
+        .output;
+
+    assert_eq!(output.effects.line, vec![super::call("cleanup.toast")]);
+}
+
+fn drain_step_options(max_ops: usize) -> RuntimeStepOptions {
+    RuntimeStepOptions {
+        mode: RuntimeStepMode::Drain,
+        budget: RuntimeStepBudget { max_ops },
+    }
+}
+
+#[test]
 fn engine_executes_runtime_pure_call_from_flow() {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.main".to_owned())),

@@ -1,5 +1,5 @@
-pub component @ui.sample.toolbar ActionToolbar(actions: Vec<ToolbarAction>) -> View {
-    HStack(spacing = 10) {
+pub component @ui.sample.toolbar ActionToolbar(actions: Vec<ToolbarAction>) {
+    Row(spacing = 10) {
         ForEach(actions, id = _.id) |action_item| {
             Button(@button:.toolbar_item)
                 .label(action_item.label)

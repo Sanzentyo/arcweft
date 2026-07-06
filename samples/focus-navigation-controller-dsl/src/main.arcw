@@ -1,15 +1,15 @@
-pub surface character narrator {
+pub character narrator {
   display = "Arcweft Focus Navigation"
   default_voice = auto
 }
 
 entry game @entry.focus_navigation_controller_dsl {
-  start @flow.focus_navigation_controller_dsl
+  goto @flow.focus_navigation_controller_dsl
 }
 
-pub component FocusNavigationControllerSample() -> View {
-  VStack(nav: .vertical, group: @group:.settings, wrap: false, initial: @input:.name, trap: .modal) {
-    HStack(nav: .horizontal, group: @group:.settings.row_one, parent: @group:.settings, wrap: true) {
+pub component FocusNavigationControllerSample() {
+  Column(nav: .vertical, group: @group:.settings, wrap: false, initial: @input:.name, trap: .modal) {
+    Row(nav: .horizontal, group: @group:.settings.row_one, parent: @group:.settings, wrap: true) {
       TextField(@input:.name, value: "Aster")
         .label("Name")
         .nav(right: @button:.apply, down: @input:.notes, previous: boundary)
@@ -20,7 +20,7 @@ pub component FocusNavigationControllerSample() -> View {
         .on_click(|| text_submit @input:.name)
     }
 
-    HStack(nav: .horizontal, group: @group:.settings.row_two, parent: @group:.settings, wrap: true) {
+    Row(nav: .horizontal, group: @group:.settings.row_two, parent: @group:.settings, wrap: true) {
       TextArea(@input:.notes, value: "Notes")
         .label("Notes")
         .nav(up: @input:.name, right: @button:.close)

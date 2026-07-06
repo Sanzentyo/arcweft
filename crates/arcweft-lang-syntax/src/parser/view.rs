@@ -70,8 +70,8 @@ pub(super) fn parse_component_view_body(
         errors.push(simple_error(
             base,
             body.len().max(1),
-            "component returning View needs a View expression body",
-            "Button(\"Label\")",
+            "component needs a retained View expression body",
+            "Panel { Button(\"Label\") }",
         ));
         return None;
     }
@@ -162,6 +162,15 @@ fn parse_view_block(
                 .map_or(head, |(callee, _)| callee)
                 .trim();
             let range = TextRange::new(base, base.saturating_add(head.len()));
+            if let Some(expected) = removed_view_element_replacement(callee) {
+                errors.push(simple_error(
+                    base,
+                    head.len(),
+                    &format!("`{callee}` was removed from View authoring syntax"),
+                    expected,
+                ));
+                return (ViewExpr::Raw(head.to_owned()), index + 1);
+            }
             return (
                 ViewExpr::Element(ViewElement::new(
                     callee.to_owned(),
@@ -178,7 +187,7 @@ fn parse_view_block(
         base,
         head.len(),
         "unclosed View element block",
-        "VStack { ... }",
+        "Column { ... }",
     ));
     (ViewExpr::Raw(head.to_owned()), lines.len())
 }
@@ -263,10 +272,20 @@ fn parse_view_head(line: &str, base: usize, errors: &mut Vec<ParseError>) -> Vie
             enabled: named_arg(&args, "enabled").cloned(),
             focusable: named_arg_bool(&args, "focusable").unwrap_or(true),
         },
-        "Surface" | "Row" | "Column" | "Stack" | "VStack" | "HStack" => ViewHead::Element {
+        "Panel" | "Row" | "Column" | "Stack" => ViewHead::Element {
             callee: callee.to_owned(),
             args,
         },
+        "Surface" | "VStack" | "HStack" => {
+            let expected = removed_view_element_replacement(callee).expect("removed element");
+            errors.push(simple_error(
+                base,
+                line.len(),
+                &format!("`{callee}` was removed from View authoring syntax"),
+                expected,
+            ));
+            ViewHead::Raw(line.to_owned())
+        }
         "Text" => ViewHead::Text {
             source: first_arg_expr(args_source),
             rich: false,
@@ -305,10 +324,19 @@ fn parse_view_head(line: &str, base: usize, errors: &mut Vec<ParseError>) -> Vie
                 base,
                 line.len(),
                 &format!("unsupported View expression head `{callee}`"),
-                "Button(...) | Text(...) | RichText(...) | TextField(...) | TextArea(...) | SecureField(...)",
+                "Panel(...) | Row(...) | Column(...) | Stack(...) | Button(...) | Text(...) | RichText(...) | TextField(...) | TextArea(...) | SecureField(...)",
             ));
             ViewHead::Raw(line.to_owned())
         }
+    }
+}
+
+fn removed_view_element_replacement(callee: &str) -> Option<&'static str> {
+    match callee {
+        "Surface" => Some("Panel(...)"),
+        "VStack" => Some("Column(...)"),
+        "HStack" => Some("Row(...)"),
+        _ => None,
     }
 }
 

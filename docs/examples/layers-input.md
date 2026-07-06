@@ -64,8 +64,8 @@ flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
 Modal UI:
 
 ```arcw
-component @ui.settings SettingsPanel(config: Binding<Config>) -> View {
-    VStack {
+component @ui.settings SettingsPanel(config: Binding<Config>) {
+    Column {
         Text("Settings")
         Button("閉じる")
             .agent_target(@ui.settings.close)

@@ -494,8 +494,8 @@ hit_test = "layout_boxes"
 Game Native UI component は暗黙に `NativeUi` layer を生成してもよい。
 
 ```arcw
-component Hud(state: GameState) -> View {
-    HStack {
+component Hud(state: GameState) {
+    Row {
         Button("設定").agent_target(@ui.settings.open)
     }
     .layer(@layer.hud, order = ui(700))

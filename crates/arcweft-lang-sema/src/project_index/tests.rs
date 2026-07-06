@@ -245,7 +245,7 @@ flow @flow.opening opening {
 fn project_index_from_hir_preserves_component_view_text_control_inputs() {
     let tree = parse_source(
         r#"
-component FeedbackForm() -> View {
+component FeedbackForm() {
     TextField(id: @input:.feedback, value: "")
 }
 "#,

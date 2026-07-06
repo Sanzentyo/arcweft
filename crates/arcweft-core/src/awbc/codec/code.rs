@@ -258,6 +258,12 @@ impl Wire for AwbcInstruction {
                 args.write_wire(writer)?;
                 receiver_out.write_wire(writer)?;
             }
+            Self::RegisterCleanup { key, effect, args } => {
+                key.write_wire(writer)?;
+                effect.write_wire(writer)?;
+                args.write_wire(writer)?;
+            }
+            Self::CancelCleanup { key } => key.write_wire(writer)?,
         }
         Ok(())
     }
@@ -433,6 +439,14 @@ impl Wire for AwbcInstruction {
                 receiver: AwbcRegisterId::read_wire(reader)?,
                 args: Vec::<AwbcRegisterId>::read_wire(reader)?,
                 receiver_out: Option::<AwbcRegisterId>::read_wire(reader)?,
+            },
+            AwbcOpcode::RegisterCleanup => Self::RegisterCleanup {
+                key: AwbcStringId::read_wire(reader)?,
+                effect: AwbcEffectPlanId::read_wire(reader)?,
+                args: Vec::<AwbcRegisterId>::read_wire(reader)?,
+            },
+            AwbcOpcode::CancelCleanup => Self::CancelCleanup {
+                key: AwbcStringId::read_wire(reader)?,
             },
             AwbcOpcode::Jump
             | AwbcOpcode::Branch
@@ -672,7 +686,9 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::Drop
             | AwbcOpcode::SourceYield
             | AwbcOpcode::AssignField
-            | AwbcOpcode::CallTraitMethod => unreachable!("instruction opcode rejected above"),
+            | AwbcOpcode::CallTraitMethod
+            | AwbcOpcode::RegisterCleanup
+            | AwbcOpcode::CancelCleanup => unreachable!("instruction opcode rejected above"),
         })
     }
 }

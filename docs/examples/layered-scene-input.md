@@ -54,8 +54,8 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 ## Modal example
 
 ```arcw
-component @ui.settings SettingsPanel(config: Binding<Config>) -> View {
-    VStack {
+component @ui.settings SettingsPanel(config: Binding<Config>) {
+    Column {
         Text("Settings")
 
         Slider(value = bind state.config.master_volume, range = 0.0..1.0)

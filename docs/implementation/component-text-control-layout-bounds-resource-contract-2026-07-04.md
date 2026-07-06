@@ -16,7 +16,7 @@
 - Extended UI resource codec budget, canonicalization, public-id collection,
   record count, duplicate checking, and zero-size validation for layout bounds.
 - Changed component/View lowering to derive deterministic layout bounds from
-  existing `VStack`/`Column`, `HStack`/`Row`, `Stack`/`Surface`, `Fragment`,
+  current `Column`, `Row`, `Stack`/`Panel`, `Fragment`,
   text, and button structure without new parser syntax.
 - Changed action-button submit bounds to derive from the same component text
   control bounds table before falling back to legacy stacked bounds.

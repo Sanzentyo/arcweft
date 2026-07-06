@@ -1,7 +1,7 @@
 # Seq06.11c final style declaration and component/View DSL
 
-This cut applies the seq06.11c direction in production code: source authors use
-root `style` declarations and `component ... -> View` bodies. Product resources
+This cut applied the seq06.11c direction in production code: source authors use
+root `style` declarations and component View bodies. Product resources
 keep their existing compact names such as `UiStyleResource` and
 `UiProgramResource`.
 
@@ -18,7 +18,7 @@ keep their existing compact names such as `UiStyleResource` and
 - Made bare and relative style declaration IDs module-aware. In `mod hoge`,
   `style primary_button`, `style @.primary_button`, and
   `style @style:.primary_button` normalize to `style.hoge.primary_button`.
-- Added component View body parsing for `component ... -> View { ... }` using
+- Added component View body parsing, now authored as `component ... { ... }`, using
   the existing `arcweft-lang-syntax::ast::view` substrate.
 - Added View style modifiers:
   - `.style(@.name)` and `.style(@style:.name)` as module-local references;

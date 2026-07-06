@@ -831,7 +831,7 @@ pub character concierge {
 pub asset bg.glass_lights {
 }
 
-pub component ModernFeedbackPanel() -> View {
+pub component ModernFeedbackPanel() {
     Text("ok")
 }
 

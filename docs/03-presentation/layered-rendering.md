@@ -277,8 +277,8 @@ scope {
 Game Native UI component は内部的に layer subtree を生成する。
 
 ```arcw
-component ChoiceList(choices: Vec<ChoiceView>) -> View {
-    VStack {
+component ChoiceList(choices: Vec<ChoiceView>) {
+    Column {
         ForEach(choices, id = _.id) |choice| {
             ChoiceButton(choice)
                 .layer(@layer.choices)
@@ -351,7 +351,7 @@ ensures z > layer(@layer.dialogue).z
 UI component の contract と組み合わせる。
 
 ```arcw
-component ChoiceButton(choice: ChoiceView) -> View
+component ChoiceButton(choice: ChoiceView)
 ensures result.layer.input.accepts_click
 ensures result.has_action("select")
 {

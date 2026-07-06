@@ -1,10 +1,10 @@
-pub surface character narrator {
+pub character narrator {
   display = "Arcweft Text Submit"
   default_voice = auto
 }
 
 entry game @entry.text_submit_flow {
-  start @flow.text_submit_flow
+  goto @flow.text_submit_flow
 }
 
 pub style primary_button {
@@ -17,8 +17,8 @@ pub style primary_button {
   }
 }
 
-pub component FeedbackForm() -> View {
-  VStack {
+pub component FeedbackForm() {
+  Column {
     TextField(@input:.feedback, value: "", purpose: text, enter_key: send)
       .label("Message")
       .placeholder("Type text, then press Enter or click Send")

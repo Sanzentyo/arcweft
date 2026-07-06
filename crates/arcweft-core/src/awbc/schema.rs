@@ -393,6 +393,9 @@ fn remap_instruction_strings(instruction: &mut AwbcInstruction, remap: &[u32]) {
     match instruction {
         AwbcInstruction::ProjectField { field, .. }
         | AwbcInstruction::AssignField { field, .. } => remap_string_id(field, remap),
+        AwbcInstruction::RegisterCleanup { key, .. } | AwbcInstruction::CancelCleanup { key } => {
+            remap_string_id(key, remap);
+        }
         AwbcInstruction::MakeRecord { field_names, .. } => {
             for field_name in field_names {
                 remap_string_id(field_name, remap);
@@ -722,6 +725,8 @@ pub enum AwbcOpcode {
     SourceYield,
     AssignField,
     CallTraitMethod,
+    RegisterCleanup,
+    CancelCleanup,
     Jump,
     Branch,
     Match,
@@ -777,6 +782,8 @@ impl AwbcOpcode {
             Self::SourceYield => 0x20,
             Self::AssignField => 0x21,
             Self::CallTraitMethod => 0x22,
+            Self::RegisterCleanup => 0x23,
+            Self::CancelCleanup => 0x24,
             Self::Jump => 0x80,
             Self::Branch => 0x81,
             Self::Match => 0x82,
@@ -832,6 +839,8 @@ impl AwbcOpcode {
             0x20 => Self::SourceYield,
             0x21 => Self::AssignField,
             0x22 => Self::CallTraitMethod,
+            0x23 => Self::RegisterCleanup,
+            0x24 => Self::CancelCleanup,
             0x80 => Self::Jump,
             0x81 => Self::Branch,
             0x82 => Self::Match,
@@ -1012,6 +1021,14 @@ pub enum AwbcInstruction {
         args: Vec<AwbcRegisterId>,
         receiver_out: Option<AwbcRegisterId>,
     },
+    RegisterCleanup {
+        key: AwbcStringId,
+        effect: AwbcEffectPlanId,
+        args: Vec<AwbcRegisterId>,
+    },
+    CancelCleanup {
+        key: AwbcStringId,
+    },
 }
 
 impl AwbcInstruction {
@@ -1052,6 +1069,8 @@ impl AwbcInstruction {
             Self::SourceYield { .. } => AwbcOpcode::SourceYield,
             Self::AssignField { .. } => AwbcOpcode::AssignField,
             Self::CallTraitMethod { .. } => AwbcOpcode::CallTraitMethod,
+            Self::RegisterCleanup { .. } => AwbcOpcode::RegisterCleanup,
+            Self::CancelCleanup { .. } => AwbcOpcode::CancelCleanup,
         }
     }
 }

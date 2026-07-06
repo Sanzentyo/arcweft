@@ -1,10 +1,10 @@
-pub surface character narrator {
+pub character narrator {
   display = "Arcweft Native IME"
   default_voice = auto
 }
 
 entry game @entry.native_text_input_sample {
-  start @flow.native_text_input_sample
+  goto @flow.native_text_input_sample
 }
 
 style native_text_input_sample {
@@ -45,8 +45,8 @@ style native_text_input_sample {
   environment text_scale_at_least_milli = 1000
 }
 
-pub component NativeTextInputPanel() -> View {
-  VStack {
+pub component NativeTextInputPanel() {
+  Column {
     TextField(@input:.jp_text_field, value: "Tokyo", purpose: text, enter_key: done)
       .label("Japanese TextField / 日本語入力")
       .placeholder("日本語 IME text")

@@ -60,7 +60,7 @@ flow @flow.opening opening {
 fn resolves_component_view_text_control_inputs() {
     let tree = parse_ok(
         r#"
-component FeedbackForm() -> View {
+component FeedbackForm() {
     TextField(id: @input:.feedback, value: "")
 }
 

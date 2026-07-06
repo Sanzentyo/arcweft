@@ -691,6 +691,25 @@ fn apply_instruction(
                 &format!("effect plan {}", effect.kind as u8),
             )?;
         }
+        AwbcInstruction::RegisterCleanup { key, effect, args } => {
+            check_string(program, *key, &at)?;
+            check_index(program.effect_plans.len(), effect.0, "effect_plans", &at)?;
+            let effect = &program.effect_plans[effect.index()];
+            verify_callable(
+                verifier,
+                function,
+                block,
+                effect.signature,
+                args,
+                None,
+                state,
+                &at,
+                &format!("cleanup effect plan {}", effect.kind as u8),
+            )?;
+        }
+        AwbcInstruction::CancelCleanup { key } => {
+            check_string(program, *key, &at)?;
+        }
         AwbcInstruction::StartTask { dst, plan, args } => {
             check_index(program.task_plans.len(), plan.0, "task_plans", &at)?;
             let task = &program.task_plans[plan.index()];

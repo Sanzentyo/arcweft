@@ -409,7 +409,7 @@ task fn load_opening_assets() -> Result<OpeningAssets, AssetError> {
 ## UI / Render memoization
 
 ```arcw
-component SettingsPanel(props: SettingsProps) -> View {
+component SettingsPanel(props: SettingsProps) {
     memo(scope=frame, key=(props, state.config.theme, env.text_scale)) {
         SettingsPanelBody(props)
     }

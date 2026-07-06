@@ -853,9 +853,9 @@ fn normalize_entity_ref(reference: &EntityRefSyntax) -> String {
 
 fn ui_element_kind(value: &str) -> Option<UiElementKind> {
     Some(match value {
-        "Surface" => UiElementKind::Surface,
-        "Row" | "HStack" => UiElementKind::Row,
-        "Column" | "VStack" => UiElementKind::Column,
+        "Panel" => UiElementKind::Surface,
+        "Row" => UiElementKind::Row,
+        "Column" => UiElementKind::Column,
         "Stack" => UiElementKind::Stack,
         "Button" => UiElementKind::Button,
         "TextField" => UiElementKind::TextField,

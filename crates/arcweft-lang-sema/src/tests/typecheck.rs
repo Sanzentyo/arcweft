@@ -20,7 +20,7 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 fn typechecks_component_mount_builtin() {
     let tree = parse_ok(
         r#"
-component Panel() -> View {
+component Panel() {
   TextField(@input:.name)
     .label("Name")
 }

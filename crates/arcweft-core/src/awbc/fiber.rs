@@ -1,9 +1,9 @@
 //! Executor-neutral AWBC fiber and safe-point state.
 
 use super::schema::{
-    AwbcBlockId, AwbcChoiceId, AwbcContentUnitId, AwbcEntryId, AwbcEntryTarget, AwbcFrameLayoutId,
-    AwbcFrameSlotRole, AwbcFunctionId, AwbcHostCallId, AwbcLineTaskGroupId, AwbcPatternId,
-    AwbcProgram, AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType, AwbcScopeId,
+    AwbcBlockId, AwbcChoiceId, AwbcContentUnitId, AwbcEffectPlanId, AwbcEntryId, AwbcEntryTarget,
+    AwbcFrameLayoutId, AwbcFrameSlotRole, AwbcFunctionId, AwbcHostCallId, AwbcLineTaskGroupId,
+    AwbcPatternId, AwbcProgram, AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType, AwbcScopeId,
     AwbcSignedIntKind, AwbcSourceMapId, AwbcSourcePlanId, AwbcStreamPlanId, AwbcTaskPlanId,
     AwbcTrapCode, AwbcTypeId, AwbcUnsignedIntKind,
 };
@@ -41,6 +41,7 @@ pub struct FiberFrame {
     pub layout: AwbcFrameLayoutId,
     pub return_to: Option<FiberReturnPoint>,
     pub registers: Vec<Option<RuntimeValue>>,
+    pub root_cleanups: Vec<FiberScopeCleanup>,
     pub scopes: Vec<FiberScope>,
 }
 
@@ -50,10 +51,18 @@ pub struct FiberReturnPoint {
     pub destination: Option<AwbcRegisterId>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct FiberScope {
     pub id: AwbcScopeId,
     pub depth: u32,
+    pub cleanups: Vec<FiberScopeCleanup>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct FiberScopeCleanup {
+    pub key: String,
+    pub effect: AwbcEffectPlanId,
+    pub args: Vec<RuntimeValue>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -668,6 +677,7 @@ impl FiberFrame {
             layout: function_record.frame_layout,
             return_to,
             registers: vec![None; layout.slots.len()],
+            root_cleanups: Vec::new(),
             scopes: Vec::with_capacity(layout.max_scope_depth as usize),
         })
     }

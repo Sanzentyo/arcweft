@@ -740,7 +740,7 @@ pub enum EntityDeclBody {
     Component(Box<ComponentDeclBody>),
 }
 
-/// Structured body for `component ... -> View` declarations.
+/// Structured retained View body for `component ...` declarations.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ComponentDeclBody {
     view: Option<ComponentViewBody>,

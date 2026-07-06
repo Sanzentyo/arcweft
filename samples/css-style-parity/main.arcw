@@ -41,7 +41,7 @@ style css_style_parity {
   token motion.hover_lift = milli(-3000)
   token motion.pressed_scale = milli(970)
 
-  Surface {
+  Panel {
     background-color = token(color.panel)
     color = system_color(surface_text)
     font-family = token(font.display_stack)

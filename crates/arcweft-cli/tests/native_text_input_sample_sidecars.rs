@@ -11,7 +11,7 @@ fn native_text_input_sample_declares_required_controls_in_dsl() {
     assert!(!source.contains("ui text_input"));
     assert!(!source.contains("ui text_area"));
     assert!(!source.contains("ui secure_field"));
-    assert!(source.contains("pub component NativeTextInputPanel() -> View"));
+    assert!(source.contains("pub component NativeTextInputPanel()"));
     assert!(source.contains("component(@component:.NativeTextInputPanel)"));
     assert!(source.contains("TextField(@input:.jp_text_field"));
     assert!(source.contains("TextArea(@input:.jp_text_area"));
@@ -59,13 +59,14 @@ fn modern_feedback_ui_sample_uses_component_style_and_flow_submit() {
         .expect("modern feedback UI source");
 
     assert!(source.contains("pub style modern_feedback_panel"));
-    assert!(source.contains("pub component ModernFeedbackPanel() -> View"));
-    assert!(source.contains("component(@component:.ModernFeedbackPanel)"));
-    assert!(source.contains("Surface {"));
+    assert!(source.contains("pub component ModernFeedbackPanel()"));
+    assert!(source.contains("let panel = component(@component:.ModernFeedbackPanel"));
+    assert!(source.contains("Panel {"));
     assert!(source.contains("TextField(@input:.visitor_name"));
     assert!(source.contains("TextArea(@input:.product_brief"));
     assert!(source.contains("Button(@button:.send_brief)"));
     assert!(source.contains("let visitor_name = text_submit @input.visitor_name"));
     assert!(source.contains("let brief = text_submit @input.product_brief"));
+    assert!(source.contains("panel.close()"));
     assert!(source.contains("return brief"));
 }

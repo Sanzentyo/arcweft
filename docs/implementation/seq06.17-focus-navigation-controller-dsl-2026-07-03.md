@@ -12,8 +12,8 @@ This package makes focus navigation an Arcweft-owned product UI contract instead
 The final syntax stays inside the existing `component` / `View` DSL:
 
 ```arcw
-pub component SettingsPanel() -> View {
-  VStack(nav: .vertical, group: @group:.settings, wrap: false, initial: @button:.name, trap: .modal) {
+pub component SettingsPanel() {
+  Column(nav: .vertical, group: @group:.settings, wrap: false, initial: @button:.name, trap: .modal) {
     TextField(@input:.name, value: "Aster", label: "Name")
       .nav(right: @button:.apply, down: @input:.notes)
 

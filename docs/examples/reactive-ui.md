@@ -1,12 +1,12 @@
 # Reactive UI example
 
 ```arcw
-pub component @ui.choice_button ChoiceButton(choice: ChoiceView) -> View
+pub component @ui.choice_button ChoiceButton(choice: ChoiceView)
 requires choice.label.len() > 0
 ensures result.has_action("select")
 {
     Button {
-        HStack(spacing = 12) {
+        Row(spacing = 12) {
             Vector(@vector.icon.choice_arrow).size(18)
             RichText(choice.label).font(.body)
         }
