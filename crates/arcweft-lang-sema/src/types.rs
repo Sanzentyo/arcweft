@@ -11,6 +11,7 @@ pub enum EntityKind {
     ChoiceOption,
     Character,
     Component,
+    Action,
     Activity,
     Textbox,
     DialogueLine,

@@ -77,6 +77,24 @@ flow @flow.submit submit {
 }
 
 #[test]
+fn resolves_declared_action_entity_references() {
+    let tree = parse_ok(
+        r#"
+action feedback.submit(value: String)
+
+flow @flow.submit submit {
+    let target = @action.feedback.submit
+    return "done"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("action fixture lowers");
+    let registry = registry_from_hir(&hir);
+
+    validate_hir_references(&hir, &registry).expect("declared action entity resolves");
+}
+
+#[test]
 fn collects_hir_symbol_uses_for_type_checking_without_reparsing() {
     let tree = parse_ok(
         r#"

@@ -1265,6 +1265,8 @@ activity @activity.truck_game TruckGame {
     mode = embedded
 }
 
+action feedback.submit(value: String)
+
 component @ui.settings SettingsPanel(config: Binding<Config>) {
     SettingsView(config)
 }
@@ -1285,6 +1287,7 @@ component @ui.settings SettingsPanel(config: Binding<Config>) {
             EntityDeclKind::Character,
             EntityDeclKind::Layer,
             EntityDeclKind::Activity,
+            EntityDeclKind::Action,
             EntityDeclKind::Component,
         ]
     );

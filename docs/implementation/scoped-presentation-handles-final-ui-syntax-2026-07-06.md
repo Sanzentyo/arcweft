@@ -36,6 +36,11 @@ handles and final component/View authoring syntax.
 - Added AWBC fiber checkpoint coverage for root and lexical cleanup stacks so
   cleanup registrations survive serde save/load-style restoration in the core
   fiber state.
+- Added the first typed action declaration substrate: `action` is now a
+  canonical entity declaration family, parses as `EntityDeclKind::Action`,
+  lowers through HIR declarations, registers as `EntityKind::Action`, and
+  resolves `@action...` references. Payload signature checking and event
+  dispatch are intentionally left to the follow-up action/receive slice.
 - Updated current samples, parser fixtures, and stable docs/examples to use the
   canonical syntax. Historical review request markdown remains unchanged.
 
@@ -52,6 +57,9 @@ handles and final component/View authoring syntax.
 - `cargo test -p arcweft-core --all-features fiber_checkpoint_and_serde_preserve_cleanup_stacks`
 - `cargo test -p arcweft-runtime-driver --all-features presentation`
 - `cargo test -p arcweft-cli --all-features component_view_box_and_scroll_lower_to_typed_ui_resources`
+- `cargo test -p arcweft-lang-syntax --all-features action_declaration_parses_as_typed_entity`
+- `cargo test -p arcweft-lang-sema --all-features action_entity`
+- `cargo test -p arcweft-lang-sema --all-features parses_entity_declarations_used_by_presentation_docs`
 - `cargo test -p arcweft-cli --all-features --test native_text_input_sample_sidecars`
 - `cargo test -p arcweft-cli --all-features --test native_text_input_native_interactive_smoke`
 - `cargo test -p arcweft-cli --all-features --test css_style_parity_sample`
@@ -89,6 +97,7 @@ file sizes:
 - `Scroll` is now a typed resource and sidecar element, but scroll offsets,
   clipping, input routing, save/restore of scroll state, and native/web/observe
   parity tests still need the dedicated scroll runtime behavior slice.
-- The final UI syntax direction still needs the typed action/receive syntax and
-  richer reactive branching surface from the broader input/scroll syntax
-  request.
+- The final UI syntax direction still needs action payload sema/resource
+  contracts, `action.invoke`, `receive action(...)`, generic callback block
+  sugar, and richer reactive branching surface from the broader input/scroll
+  syntax request.

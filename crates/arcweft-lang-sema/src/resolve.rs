@@ -123,6 +123,7 @@ fn entity_decl_registry_kind(kind: EntityDeclKind) -> EntityKind {
         EntityDeclKind::Image => EntityKind::Image,
         EntityDeclKind::Character => EntityKind::Character,
         EntityDeclKind::Component => EntityKind::Component,
+        EntityDeclKind::Action => EntityKind::Action,
         EntityDeclKind::Activity => EntityKind::Activity,
         EntityDeclKind::Content => EntityKind::Content,
         EntityDeclKind::Signal => EntityKind::Signal,

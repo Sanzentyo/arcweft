@@ -117,6 +117,27 @@ content chapter_two {
 }
 
 #[test]
+fn action_declaration_parses_as_typed_entity() {
+    let tree = parse_ok(
+        r"
+pub action feedback.submit_name(value: String)
+",
+    );
+
+    let arcweft_lang_syntax::ast::items::Item::EntityDecl(action) = &tree.items()[0] else {
+        panic!("expected action entity declaration");
+    };
+    assert_eq!(
+        action.kind(),
+        arcweft_lang_syntax::ast::items::EntityDeclKind::Action
+    );
+    assert_eq!(action.id().body(), "action.feedback.submit_name");
+    assert_eq!(action.signature_tail(), "(value: String)");
+    assert!(action.body().is_none());
+    assert!(action.structured_body().is_none());
+}
+
+#[test]
 fn asset_set_is_not_v1_source_syntax() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r"
