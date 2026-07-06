@@ -1,5 +1,6 @@
 use super::{
     CallArg, ChoiceAction, Expr, HirFlowItem, MatchExprArm, ProjectFlowControlSummary, Stmt,
+    StmtMatchArm,
 };
 
 pub(super) fn summarize_flow_control_items(items: &[HirFlowItem]) -> ProjectFlowControlSummary {
@@ -157,7 +158,10 @@ fn summarize_stmt_control(stmt: &Stmt) -> ProjectFlowControlSummary {
             summary.merge(summarize_expr_control(expr));
             summary.merge(summarize_stmt_body_control(else_body));
         }
-        Stmt::LetTextSubmit { target, .. } => summary.merge(summarize_text_submit_control(target)),
+        Stmt::LetTextSubmit { target, .. } => summary.merge(summarize_await_expr_control(target)),
+        Stmt::LetActionReceive { action, .. } => {
+            summary.merge(summarize_await_expr_control(action));
+        }
         Stmt::DeferBlock { statements, .. } => {
             summary.merge(summarize_stmt_body_control(statements));
         }
@@ -200,12 +204,7 @@ fn summarize_stmt_control(stmt: &Stmt) -> ProjectFlowControlSummary {
         }
         Stmt::Match { arms, .. } => {
             summary.record_branch();
-            for arm in arms {
-                if let Some(guard) = arm.guard() {
-                    summary.merge(summarize_expr_control(guard));
-                }
-                summary.merge(summarize_stmt_body_control(arm.body()));
-            }
+            summary.merge(summarize_stmt_match_control(arms));
         }
         Stmt::Thread(_) => {
             summary.record_thread();
@@ -224,10 +223,21 @@ fn summarize_stmt_control(stmt: &Stmt) -> ProjectFlowControlSummary {
     summary
 }
 
-fn summarize_text_submit_control(target: &Expr) -> ProjectFlowControlSummary {
+fn summarize_await_expr_control(expr: &Expr) -> ProjectFlowControlSummary {
     let mut summary = ProjectFlowControlSummary::default();
     summary.record_await();
-    summary.merge(summarize_expr_control(target));
+    summary.merge(summarize_expr_control(expr));
+    summary
+}
+
+fn summarize_stmt_match_control(arms: &[StmtMatchArm]) -> ProjectFlowControlSummary {
+    let mut summary = ProjectFlowControlSummary::default();
+    for arm in arms {
+        if let Some(guard) = arm.guard() {
+            summary.merge(summarize_expr_control(guard));
+        }
+        summary.merge(summarize_stmt_body_control(arm.body()));
+    }
     summary
 }
 

@@ -567,6 +567,9 @@ impl TypeChecker<'_> {
 
     fn nominal_field_type(&self, receiver: &TypeKind, field: &str) -> Option<TypeKind> {
         match receiver {
+            TypeKind::Named(name) if name == TypeKind::ACTION_EVENT_TYPE_NAME => {
+                TypeKind::action_event_field(field)
+            }
             TypeKind::Named(name) => self
                 .nominal_fields
                 .get(name)

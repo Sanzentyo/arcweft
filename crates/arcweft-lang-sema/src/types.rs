@@ -184,6 +184,8 @@ impl EntityType {
 }
 
 impl TypeKind {
+    pub const ACTION_EVENT_TYPE_NAME: &'static str = "ActionEvent";
+
     #[must_use]
     pub fn entity_ref(kind: EntityKind) -> Self {
         Self::Ref(EntityType::new(kind, None))
@@ -192,6 +194,20 @@ impl TypeKind {
     #[must_use]
     pub fn entity_ref_with_value(kind: EntityKind, value: TypeKind) -> Self {
         Self::Ref(EntityType::new(kind, Some(value)))
+    }
+
+    #[must_use]
+    pub fn action_event() -> Self {
+        Self::Named(Self::ACTION_EVENT_TYPE_NAME.to_owned())
+    }
+
+    #[must_use]
+    pub fn action_event_field(field: &str) -> Option<Self> {
+        Some(match field {
+            "action" => Self::entity_ref(EntityKind::Action),
+            "value" => Self::String,
+            _ => return None,
+        })
     }
 
     #[must_use]

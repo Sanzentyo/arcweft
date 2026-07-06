@@ -43,7 +43,7 @@ use arcweft_core::step::{
     RuntimeStepOptions, RuntimeStepStats, RuntimeStepStopReason,
 };
 use arcweft_core::task::{CancelScopeId, LogicalEpoch, TaskEvent, TaskEventKind, TaskSequence};
-use arcweft_core::value::{RuntimeBinding, RuntimePayload, RuntimeValue};
+use arcweft_core::value::{RuntimeBinding, RuntimeFieldValue, RuntimePayload, RuntimeValue};
 use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioEvent};
 use arcweft_interaction_model::id::Identifier;
 use arcweft_interaction_model::input::{
@@ -167,6 +167,7 @@ pub struct BundleSession {
     pending_text_control_write_backs: Vec<RuntimeTextControlWriteBack>,
     pending_host_call_results: Vec<RuntimeHostCallResult>,
     waiting_text_submit_calls: Vec<PendingTextSubmitCall>,
+    waiting_action_receive_calls: Vec<PendingActionReceiveCall>,
     presentation: BundlePresentationSnapshot,
     next_step_index: usize,
     next_task_sequence: u64,
@@ -182,6 +183,12 @@ pub struct BundleSession {
 struct PendingTextSubmitCall {
     request: RuntimeHostCallId,
     control_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PendingActionReceiveCall {
+    request: RuntimeHostCallId,
+    action_id: String,
 }
 
 /// Error raised before a portable session can start.
@@ -435,6 +442,7 @@ impl BundleSession {
             pending_text_control_write_backs: Vec::new(),
             pending_host_call_results: Vec::new(),
             waiting_text_submit_calls: Vec::new(),
+            waiting_action_receive_calls: Vec::new(),
             presentation: BundlePresentationSnapshot::default(),
             next_step_index: 0,
             next_task_sequence: 0,
@@ -553,6 +561,7 @@ impl BundleSession {
             event
         };
         self.queue_input(event);
+        self.resolve_waiting_action_receive_calls(action);
         Ok(())
     }
 
@@ -626,6 +635,22 @@ impl BundleSession {
         }
     }
 
+    fn resolve_waiting_action_receive_calls(&mut self, action: &Action) {
+        let action_id = action.kind().as_str();
+        let mut index = 0;
+        while index < self.waiting_action_receive_calls.len() {
+            if self.waiting_action_receive_calls[index].action_id == action_id {
+                let call = self.waiting_action_receive_calls.remove(index);
+                self.pending_host_call_results.push(RuntimeHostCallResult {
+                    id: call.request,
+                    outcome: Ok(action_receive_payload(action)),
+                });
+            } else {
+                index += 1;
+            }
+        }
+    }
+
     pub fn hot_swap_bundle(
         &mut self,
         bundle: &ArcweftBundle,
@@ -673,6 +698,7 @@ impl BundleSession {
                 self.pending_input_events.clear();
                 self.pending_host_call_results.clear();
                 self.waiting_text_submit_calls.clear();
+                self.waiting_action_receive_calls.clear();
                 self.presentation = BundlePresentationSnapshot::default();
             }
             SwapCompatibility::CodeGenerational => {
@@ -748,6 +774,7 @@ impl BundleSession {
                 self.pending_input_events.clear();
                 self.pending_host_call_results.clear();
                 self.waiting_text_submit_calls.clear();
+                self.waiting_action_receive_calls.clear();
                 self.presentation = BundlePresentationSnapshot::default();
             }
             SwapCompatibility::CodeGenerational => {
@@ -919,7 +946,7 @@ impl BundleSession {
         let observations = self.executor.fiber().observations.clone();
 
         let requested_tasks = self.dispatch_requested_tasks(clock, output.requests.tasks);
-        self.capture_text_submit_host_calls(output.requests.host_calls, &mut diagnostics);
+        self.capture_ui_host_calls(output.requests.host_calls, &mut diagnostics);
         let cancel_scopes = output.requests.cancel_scopes;
         for scope in &cancel_scopes {
             self.tasks
@@ -1022,7 +1049,7 @@ impl BundleSession {
             .collect()
     }
 
-    fn capture_text_submit_host_calls(
+    fn capture_ui_host_calls(
         &mut self,
         requests: Vec<RuntimeHostCallRequest>,
         diagnostics: &mut Vec<String>,
@@ -1042,6 +1069,23 @@ impl BundleSession {
                             kind: RuntimeHostCallErrorKind::Rejected,
                             message: "ui.text_input.await_submit requires one text input target"
                                 .to_owned(),
+                        }),
+                    }),
+                }
+            } else if request.capability == "ui.action" && request.operation == "await" {
+                match action_receive_action_id(&request) {
+                    Some(action_id) => {
+                        self.waiting_action_receive_calls
+                            .push(PendingActionReceiveCall {
+                                request: request.id,
+                                action_id,
+                            });
+                    }
+                    None => self.pending_host_call_results.push(RuntimeHostCallResult {
+                        id: request.id,
+                        outcome: Err(RuntimeHostCallError {
+                            kind: RuntimeHostCallErrorKind::Rejected,
+                            message: "ui.action.await requires one action target".to_owned(),
                         }),
                     }),
                 }
@@ -1444,6 +1488,27 @@ fn text_submit_control_id(request: &RuntimeHostCallRequest) -> Option<String> {
         RuntimeValue::EntityRef(value) | RuntimeValue::String(value) => Some(value.to_owned()),
         _ => None,
     }
+}
+
+fn action_receive_action_id(request: &RuntimeHostCallRequest) -> Option<String> {
+    let value = request.args.first()?.value();
+    match value {
+        RuntimeValue::EntityRef(value) | RuntimeValue::String(value) => Some(value.to_owned()),
+        _ => None,
+    }
+}
+
+fn action_receive_payload(action: &Action) -> RuntimePayload {
+    RuntimePayload::from(RuntimeValue::Record(vec![
+        RuntimeFieldValue {
+            name: "action".to_owned(),
+            value: RuntimeValue::EntityRef(action.kind().as_str().to_owned()),
+        },
+        RuntimeFieldValue {
+            name: "value".to_owned(),
+            value: RuntimeValue::String(action.payload().cloned().unwrap_or_default()),
+        },
+    ]))
 }
 
 fn selected_awbc_entry(

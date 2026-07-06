@@ -58,6 +58,9 @@ impl TypeChecker<'_> {
             Stmt::LetTextSubmit { pattern, target } => {
                 self.check_text_submit_binding(pattern, target);
             }
+            Stmt::LetActionReceive { pattern, action } => {
+                self.check_action_receive_binding(pattern, action);
+            }
             Stmt::Return(expr) | Stmt::Close(expr) => self.check_return_stmt(expr),
             Stmt::Expr(expr) | Stmt::Select(expr) => {
                 self.check_expr(expr);
@@ -163,6 +166,7 @@ impl TypeChecker<'_> {
                 | Stmt::LifetimeSet { .. }
                 | Stmt::Wait(_)
                 | Stmt::LetTextSubmit { .. }
+                | Stmt::LetActionReceive { .. }
                 | Stmt::On { .. }
                 | Stmt::Select(_)
         ) {
@@ -193,6 +197,18 @@ impl TypeChecker<'_> {
         );
         if let Some(name) = ident_pattern_name(pattern) {
             self.bind_local(name.to_owned(), TypeKind::String);
+        }
+    }
+
+    fn check_action_receive_binding(&mut self, pattern: &Pattern, action: &Expr) {
+        self.expect_expr_type(
+            action,
+            &TypeKind::entity_ref(EntityKind::Action),
+            "action receive target",
+        );
+        let action_event = TypeKind::action_event();
+        for (name, binding_ty) in pattern_bindings_with_fallback(pattern, &action_event) {
+            self.bind_local(name, binding_ty);
         }
     }
 

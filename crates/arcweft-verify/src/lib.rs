@@ -1135,6 +1135,7 @@ impl ObligationCollector {
             Stmt::LetLoop { block, .. } => self.collect_flow_items_syntax(block.body()),
             Stmt::LetAwait { await_with, .. } => self.collect_await_syntax(await_with),
             Stmt::LetTextSubmit { target, .. } => self.collect_expr(target),
+            Stmt::LetActionReceive { action, .. } => self.collect_expr(action),
             Stmt::Let { expr, .. }
             | Stmt::Return(expr)
             | Stmt::Out { expr, .. }

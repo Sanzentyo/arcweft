@@ -185,30 +185,21 @@ fn collect_dialogue_content_ranges_from_stmt(
         }
         | Stmt::For {
             body: statements, ..
-        } => {
-            for stmt in statements {
-                collect_dialogue_content_ranges_from_stmt(source, stmt, ranges);
-            }
-        }
+        } => collect_dialogue_content_ranges_from_stmts(source, statements, ranges),
         Stmt::If {
             body, else_body, ..
         } => {
-            for stmt in body {
-                collect_dialogue_content_ranges_from_stmt(source, stmt, ranges);
-            }
-            for stmt in else_body {
-                collect_dialogue_content_ranges_from_stmt(source, stmt, ranges);
-            }
+            collect_dialogue_content_ranges_from_stmts(source, body, ranges);
+            collect_dialogue_content_ranges_from_stmts(source, else_body, ranges);
         }
         Stmt::Match { arms, .. } => {
             for arm in arms {
-                for stmt in arm.body() {
-                    collect_dialogue_content_ranges_from_stmt(source, stmt, ranges);
-                }
+                collect_dialogue_content_ranges_from_stmts(source, arm.body(), ranges);
             }
         }
         Stmt::LetChoice { .. }
         | Stmt::LetTextSubmit { .. }
+        | Stmt::LetActionReceive { .. }
         | Stmt::Return(_)
         | Stmt::Out { .. }
         | Stmt::Goto(_)
@@ -223,6 +214,16 @@ fn collect_dialogue_content_ranges_from_stmt(
         | Stmt::Continue { .. }
         | Stmt::Expr(_)
         | Stmt::Raw(_) => {}
+    }
+}
+
+fn collect_dialogue_content_ranges_from_stmts(
+    source: &str,
+    statements: &[Stmt],
+    ranges: &mut Vec<Range<usize>>,
+) {
+    for stmt in statements {
+        collect_dialogue_content_ranges_from_stmt(source, stmt, ranges);
     }
 }
 

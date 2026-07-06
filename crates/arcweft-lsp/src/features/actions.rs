@@ -1129,6 +1129,7 @@ fn speaker_preset_edit_from_stmt(
         | Stmt::Assign { .. }
         | Stmt::LetChoice { .. }
         | Stmt::LetTextSubmit { .. }
+        | Stmt::LetActionReceive { .. }
         | Stmt::Return(_)
         | Stmt::Out { .. }
         | Stmt::Goto(_)

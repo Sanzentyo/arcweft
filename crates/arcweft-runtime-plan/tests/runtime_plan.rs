@@ -91,6 +91,40 @@ fn direct_children(nodes: &[LineTaskNode]) -> Vec<&LineChildTask> {
 }
 
 #[test]
+fn receive_action_lowers_to_ui_action_host_call() {
+    let tree = parse_ok(
+        r"
+pub action feedback.submit(value: String)
+
+flow test {
+  let event = receive action(@action:.feedback.submit)
+  return event.value
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("HIR lowers");
+    let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
+    let flow = &plan.flows[0];
+
+    let FlowOp::HostCall {
+        binding: Some(RuntimePattern::Ident(binding)),
+        target,
+    } = &flow.ops[0]
+    else {
+        panic!("expected receive action host call");
+    };
+
+    assert_eq!(binding, "event");
+    assert_eq!(target.public_id, "ui.action.await");
+    assert_eq!(target.capability, "ui.action");
+    assert_eq!(target.operation, "await");
+    assert_eq!(
+        target.args,
+        vec![RuntimeExpr::EntityRef("action.feedback.submit".to_owned())]
+    );
+}
+
+#[test]
 fn canonical_log_signal_metric_are_ordinary_calls() {
     assert!(matches!(
         parse_expr(r#"log.info("selected {id:?}", id = selected.id)"#)

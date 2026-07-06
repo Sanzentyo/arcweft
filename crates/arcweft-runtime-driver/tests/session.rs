@@ -14,9 +14,12 @@ use arcweft_core::awbc::schema::{
 };
 use arcweft_core::bytecode::{BYTECODE_ABI_VERSION, BytecodeProgram, BytecodeVerificationError};
 use arcweft_core::line_task::LineTaskGroup;
+use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
-    ChoiceRuntimeOption, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId, RuntimePlan,
+    ChoiceRuntimeOption, FlowEvent, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeHostCallTarget,
+    RuntimeLineId, RuntimePlan,
 };
+use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::task::{
     AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
 };
@@ -269,7 +272,7 @@ fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
     )
     .expect("runtime plan is valid");
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
-    let display = LineDisplayCatalog::default();
+    let display = LineDisplayCatalog::new(Vec::new());
     let product_awbc = AwbcLowerer::new(&plan, &display, "await-demo.arcw")
         .lower()
         .expect("product AWBC lowers")
@@ -300,6 +303,66 @@ fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
         display,
     )
     .with_product_awbc(product_awbc)
+}
+
+fn fixture_action_receive_bundle() -> ArcweftBundle {
+    let plan = RuntimePlan::new(
+        Some(FlowRuntimeId("flow.main".to_owned())),
+        vec![RuntimeFlow {
+            id: FlowRuntimeId("flow.main".to_owned()),
+            ops: vec![
+                FlowOp::HostCall {
+                    binding: Some(RuntimePattern::Ident("event".to_owned())),
+                    target: RuntimeHostCallTarget::new(
+                        "ui.action.await",
+                        "ui.action",
+                        "await",
+                        [RuntimeExpr::EntityRef("action.feedback.submit".to_owned())],
+                        RuntimeHostCallMode::Suspend,
+                        true,
+                    ),
+                },
+                FlowOp::ReturnExpr(RuntimeExpr::Field {
+                    target: Box::new(RuntimeExpr::Local("event".to_owned())),
+                    field: "value".to_owned(),
+                }),
+            ],
+        }],
+        vec![LineTaskGroup::default()],
+    )
+    .expect("runtime plan is valid");
+    let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
+    let display = LineDisplayCatalog::default();
+    let bundle = ArcweftBundle::new(
+        BundleManifest {
+            source_label: "action-receive.arcw".to_owned(),
+            profile_id: None,
+            profile_kind: None,
+            entry: None,
+            adapter: None,
+            adapter_manifest_ids: Vec::new(),
+            required_host_calls: Vec::new(),
+            runtime: BundleRuntimeSummary {
+                entry_flow: Some("flow.main".to_owned()),
+                flows: stats.flows,
+                bytecode_instructions: stats.instructions,
+                line_task_groups: stats.line_task_groups,
+                stream_plans: 0,
+                source_plans: 0,
+            },
+        },
+        BundleSource {
+            label: "action-receive.arcw".to_owned(),
+            text: String::new(),
+        },
+        BytecodeProgram::from_runtime_plan(plan.clone()),
+        display.clone(),
+    );
+    let product_awbc = AwbcLowerer::new(&plan, &display, "action-receive.arcw")
+        .lower()
+        .expect("product AWBC lowers")
+        .program;
+    bundle.with_product_awbc(product_awbc)
 }
 
 fn fixture_await_replacement_bundle() -> ArcweftBundle {
@@ -449,6 +512,39 @@ fn session_accepts_generic_semantic_action_invoke() {
     session
         .queue_semantic_action(&action)
         .expect("generic semantic action is accepted");
+}
+
+#[test]
+fn session_receive_action_host_call_resumes_with_event_value() {
+    let bundle = fixture_action_receive_bundle();
+    let mut session =
+        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
+    let waiting = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    assert!(!waiting.finished);
+
+    let action = Action::new(
+        ActionTarget::Runtime,
+        PublicId::try_new("action.feedback.submit").expect("action id"),
+    )
+    .with_payload("visitor_name.text");
+    session
+        .queue_semantic_action(&action)
+        .expect("generic semantic action is accepted");
+    let resumed = session.step_with_clock(
+        RuntimeClockStep::from_millis(2, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+
+    assert!(resumed.finished);
+    assert!(resumed.flow_events.iter().any(|event| {
+        matches!(
+            event,
+            FlowEvent::Return { value } if value == "visitor_name.text"
+        )
+    }));
 }
 
 #[test]

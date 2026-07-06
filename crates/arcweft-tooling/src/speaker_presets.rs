@@ -407,6 +407,9 @@ fn collect_speaker_presets_from_stmt(
         Stmt::LetTextSubmit { target, .. } => {
             collect_speaker_presets_from_expr(target, character_aliases, presets);
         }
+        Stmt::LetActionReceive { action, .. } => {
+            collect_speaker_presets_from_expr(action, character_aliases, presets);
+        }
         Stmt::Wait(_) | Stmt::Continue { .. } | Stmt::Raw(_) => {}
     }
 }

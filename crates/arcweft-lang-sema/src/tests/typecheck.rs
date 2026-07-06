@@ -37,6 +37,27 @@ flow main {
 }
 
 #[test]
+fn typechecks_receive_action_event_value_projection() {
+    let tree = parse_ok(
+        r"
+pub action feedback.submit(value: String)
+
+flow action_wait {
+  let event = receive action(@action:.feedback.submit)
+  let value: String = event.value
+  return value
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("receive action fixture lowers");
+    validate_hir_references(&hir, &registry_from_hir(&hir))
+        .expect("receive action target resolves");
+    validate_typecheck_ready(&hir).expect("receive action fixture is typecheck-ready");
+    typecheck_hir(&hir, &TypeCheckEnv::standard())
+        .expect("receive action event value projects as String");
+}
+
+#[test]
 fn for_iteration_evidence_is_trait_resolved_for_runtime_flows() {
     let tree = parse_ok(
         r"

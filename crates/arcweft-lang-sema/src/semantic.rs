@@ -901,6 +901,7 @@ impl<'a> SemanticAnalyzer<'a> {
             Stmt::LetLoop { block, .. } => self.collect_loop_syntax(block),
             Stmt::LetAwait { await_with, .. } => self.collect_await_syntax(await_with),
             Stmt::LetTextSubmit { target, .. } => self.collect_expr(target, state),
+            Stmt::LetActionReceive { action, .. } => self.collect_expr(action, state),
             Stmt::Return(expr)
             | Stmt::Close(expr)
             | Stmt::Expr(expr)

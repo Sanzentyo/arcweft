@@ -15,8 +15,7 @@ use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::{
     ast::{
         choice::ChoiceAction,
-        flow::FlowKind,
-        flow::Stmt,
+        flow::{FlowKind, Stmt, StmtMatchArm},
         ids::EntityRef,
         items::{
             CallableItem, CallableKind, EntityDeclItem, EntityDeclKind, EntryItem, StyleItem,

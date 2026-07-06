@@ -141,6 +141,9 @@ fn collect_mounted_component_ids_from_stmt(stmt: &Stmt, ids: &mut BTreeSet<Strin
         Stmt::LetTextSubmit { target, .. } => {
             collect_mounted_component_ids_from_expr(target, ids);
         }
+        Stmt::LetActionReceive { action, .. } => {
+            collect_mounted_component_ids_from_expr(action, ids);
+        }
         Stmt::Thread(thread) => {
             collect_mounted_component_ids_from_syntax_flow_items(thread.body(), ids);
         }

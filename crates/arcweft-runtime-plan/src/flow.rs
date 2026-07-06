@@ -34,7 +34,7 @@ use arcweft_lang_hir::model::{
 };
 use arcweft_lang_hir::syntax::ast::{
     choice::ChoiceAction,
-    flow::{AwaitBranchKind, FlowItem, Stmt, StmtMatchArm, ThreadBlock},
+    flow::{AwaitBranchKind, FlowItem, ScopeExprBlock, Stmt, StmtMatchArm, ThreadBlock},
     ids::{EntityRef, EntityRefSyntax},
     items::{EntryItem, EntryKind, FunctionKind},
     line_plan::LinePlan,
@@ -1871,20 +1871,17 @@ impl FlowRuntimeLowerer<'_> {
             Stmt::Let { pattern, expr, .. } => {
                 self.lower_let_stmt(flow_id, flow_index, pattern, expr)
             }
-            Stmt::LetScope { pattern, scope } => vec![FlowOp::LetScope {
-                pattern: lower_runtime_pattern(pattern),
-                ops: self.lower_flow_stmt_list(flow_id, flow_index, scope.statements()),
-                value: scope
-                    .value()
-                    .map_or(RuntimeExpr::Value(RuntimeValue::Unit), |value| {
-                        self.lower_runtime_expr(value)
-                    }),
-            }],
+            Stmt::LetScope { pattern, scope } => {
+                self.lower_let_scope_stmt(flow_id, flow_index, pattern, scope)
+            }
             Stmt::LetLoop { pattern, block } => vec![FlowOp::LetLoop {
                 pattern: lower_runtime_pattern(pattern),
                 body: self.lower_syntax_flow_items(flow_id, flow_index, block.body()),
             }],
             Stmt::LetTextSubmit { pattern, target } => self.lower_text_submit_stmt(pattern, target),
+            Stmt::LetActionReceive { pattern, action } => {
+                self.lower_action_receive_stmt(pattern, action)
+            }
             Stmt::LetElse {
                 pattern,
                 expr,
@@ -1975,6 +1972,38 @@ impl FlowRuntimeLowerer<'_> {
                 "ui.text_input",
                 "await_submit",
                 [self.lower_runtime_expr(target)],
+                RuntimeHostCallMode::Suspend,
+                true,
+            ),
+        }]
+    }
+
+    fn lower_let_scope_stmt(
+        &mut self,
+        flow_id: &FlowRuntimeId,
+        flow_index: usize,
+        pattern: &Pattern,
+        scope: &ScopeExprBlock,
+    ) -> Vec<FlowOp> {
+        vec![FlowOp::LetScope {
+            pattern: lower_runtime_pattern(pattern),
+            ops: self.lower_flow_stmt_list(flow_id, flow_index, scope.statements()),
+            value: scope
+                .value()
+                .map_or(RuntimeExpr::Value(RuntimeValue::Unit), |value| {
+                    self.lower_runtime_expr(value)
+                }),
+        }]
+    }
+
+    fn lower_action_receive_stmt(&mut self, pattern: &Pattern, action: &Expr) -> Vec<FlowOp> {
+        vec![FlowOp::HostCall {
+            binding: Some(lower_runtime_pattern(pattern)),
+            target: RuntimeHostCallTarget::new(
+                "ui.action.await",
+                "ui.action",
+                "await",
+                [self.lower_runtime_expr(action)],
                 RuntimeHostCallMode::Suspend,
                 true,
             ),

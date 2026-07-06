@@ -334,6 +334,11 @@ pub enum Stmt {
         pattern: Pattern,
         target: Expr,
     },
+    /// `let PAT = receive action(@action.id)` waits for a typed semantic action.
+    LetActionReceive {
+        pattern: Pattern,
+        action: Expr,
+    },
     Return(Expr),
     /// `out expr` or `out 'label expr` from a line/cue/content continuation.
     Out {

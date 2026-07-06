@@ -296,7 +296,8 @@ fn stmt_binding_names(statement: &Stmt) -> Vec<String> {
         | Stmt::LetScope { pattern, .. }
         | Stmt::LetLoop { pattern, .. }
         | Stmt::LetAwait { pattern, .. }
-        | Stmt::LetTextSubmit { pattern, .. } => pattern_binding_names(pattern),
+        | Stmt::LetTextSubmit { pattern, .. }
+        | Stmt::LetActionReceive { pattern, .. } => pattern_binding_names(pattern),
         Stmt::WhileLet { pattern, .. } | Stmt::For { pattern, .. } => {
             pattern_binding_names(pattern)
         }

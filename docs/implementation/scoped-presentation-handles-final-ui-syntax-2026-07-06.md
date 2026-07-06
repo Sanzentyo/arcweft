@@ -103,7 +103,7 @@ file sizes:
 - Payloads are currently stored as authored expression source strings. Literal
   string payloads are stored as literal values, while values such as
   `visitor_name.text` are preserved as source text until the typed input-handle
-  evaluator and `receive action(...)` flow primitive are implemented.
+  evaluator and payload expression evaluator are implemented.
 
 ### Verification
 
@@ -142,6 +142,61 @@ Relevant changed test files:
 | `crates/arcweft-player-scene/tests/action_button_submit.rs` | 7,493 | 183 |
 | `crates/arcweft-runtime-driver/tests/session.rs` | 35,874 | 905 |
 
+## Receive Action Flow Primitive
+
+- Added structured flow syntax for `let event = receive action(@action:.name)`.
+  The parser records this as `Stmt::LetActionReceive` rather than a generic call
+  expression so runtime-plan lowering can preserve the suspension contract.
+- Type checking now requires the receive target to be `Ref<Action>` and binds
+  the result as the nominal `ActionEvent` type. `ActionEvent.action` projects as
+  `Ref<Action>` and `ActionEvent.value` projects as `String`, matching the
+  current runtime payload representation.
+- Runtime-plan lowering emits a suspending `ui.action.await` host call with the
+  action target as a typed argument. The runtime driver captures those host
+  calls, keeps pending action receives by action id, and resumes the fiber with
+  a record payload when a queued semantic action with the matching id arrives.
+
+### Verification
+
+- `cargo test -p arcweft-lang-syntax --all-features flow_receive_action_statement_is_structured`
+- `cargo test -p arcweft-lang-sema --all-features typechecks_receive_action_event_value_projection`
+- `cargo test -p arcweft-runtime-plan --all-features receive_action_lowers_to_ui_action_host_call`
+- `cargo test -p arcweft-runtime-driver --all-features session_receive_action_host_call_resumes_with_event_value`
+- `cargo check --workspace --all-targets --all-features`
+- `cargo clippy --workspace --all-targets --all-features`
+- `cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit\current`
+
+The receive-action cut was measured at Jujutsu change `mrqpuknq`. The structure
+audit reported 0 errors and 138 warnings. Current changed Rust file metrics:
+
+| Path | Bytes | LOC | Classification | Embedded Tests |
+| --- | ---: | ---: | --- | --- |
+| `crates/arcweft-agent-repl/src/binding.rs` | 11979 | 371 | production | false |
+| `crates/arcweft-cli/src/app/bundle/component_mounts.rs` | 16785 | 442 | production | false |
+| `crates/arcweft-lang-sema/src/checker.rs` | 29350 | 831 | production | false |
+| `crates/arcweft-lang-sema/src/checker/stmt.rs` | 23075 | 598 | production | false |
+| `crates/arcweft-lang-sema/src/project_index.rs` | 30873 | 1096 | production | false |
+| `crates/arcweft-lang-sema/src/project_index/entities.rs` | 32897 | 915 | production | false |
+| `crates/arcweft-lang-sema/src/project_index/flow_control.rs` | 16579 | 484 | production | false |
+| `crates/arcweft-lang-sema/src/project_index/relations.rs` | 42970 | 1186 | production | false |
+| `crates/arcweft-lang-sema/src/semantic.rs` | 76670 | 2054 | production | false |
+| `crates/arcweft-lang-sema/src/semantic/traversal.rs` | 30064 | 831 | production | false |
+| `crates/arcweft-lang-sema/src/symbols.rs` | 36623 | 1087 | production | false |
+| `crates/arcweft-lang-sema/src/tests/typecheck.rs` | 65821 | 2202 | test | false |
+| `crates/arcweft-lang-sema/src/types.rs` | 9572 | 384 | production | false |
+| `crates/arcweft-lang-syntax/src/ast/flow.rs` | 23407 | 1020 | production | false |
+| `crates/arcweft-lang-syntax/src/parser/statements.rs` | 18397 | 546 | production | false |
+| `crates/arcweft-lang-syntax/tests/parser_p1.rs` | 12346 | 431 | test | false |
+| `crates/arcweft-lsp/src/features/actions.rs` | 53403 | 1646 | production | true |
+| `crates/arcweft-lsp/src/features/cascade.rs` | 32171 | 888 | production | false |
+| `crates/arcweft-runtime-driver/src/session.rs` | 60885 | 1610 | production | false |
+| `crates/arcweft-runtime-driver/tests/session.rs` | 39338 | 1097 | test | false |
+| `crates/arcweft-runtime-plan/src/flow.rs` | 89732 | 2442 | production | false |
+| `crates/arcweft-runtime-plan/tests/runtime_plan.rs` | 49783 | 1618 | test | false |
+| `crates/arcweft-tooling/src/dialogue_content.rs` | 8406 | 263 | production | false |
+| `crates/arcweft-tooling/src/speaker_presets.rs` | 26758 | 684 | production | false |
+| `crates/arcweft-verify/src/lib.rs` | 67054 | 1938 | production | false |
+
 ## Remaining Work
 
 - End-to-end save subsystem wiring still needs to consume the runtime display
@@ -157,7 +212,7 @@ Relevant changed test files:
   clipping, input routing, save/restore of scroll state, and native/web/observe
   parity tests still need the dedicated scroll runtime behavior slice.
 - The final UI syntax direction still needs action payload sema/evaluation
-  contracts, `receive action(...)`, typed input-handle expression evaluation,
-  generic callback block sugar beyond the `on_click` `action.invoke` route, and
-  richer reactive branching surface from the broader input/scroll syntax
-  request.
+  contracts beyond the current string payload bridge, typed input-handle
+  expression evaluation for values such as `visitor_name.text`, generic
+  callback block sugar beyond the `on_click` `action.invoke` route, and richer
+  reactive branching surface from the broader input/scroll syntax request.

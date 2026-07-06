@@ -100,6 +100,7 @@ fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
             expr: value,
         } => expr_contains_unchecked_promotion(target) || expr_contains_unchecked_promotion(value),
         Stmt::LetTextSubmit { target, .. } => expr_contains_unchecked_promotion(target),
+        Stmt::LetActionReceive { action, .. } => expr_contains_unchecked_promotion(action),
         Stmt::LetChoice { .. }
         | Stmt::LetScope { .. }
         | Stmt::LetLoop { .. }

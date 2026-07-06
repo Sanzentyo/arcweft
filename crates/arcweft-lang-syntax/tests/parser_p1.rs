@@ -9,7 +9,7 @@ fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::Typed
 }
 
 use arcweft_lang_syntax::{
-    ast::{dialogue::DialogueToken, flow::FlowItem, items::Item},
+    ast::{dialogue::DialogueToken, flow::FlowItem, flow::Stmt, items::Item},
     expr::Expr,
     types::{FnParamKind, GenericParam, TypeRef, parse_fn_signature},
 };
@@ -72,6 +72,35 @@ fn function_signatures_reject_misplaced_rest_parameters() {
     assert!(in_middle.to_string().contains("last parameter"));
     assert!(curried.to_string().contains("final group"));
     assert!(defaulted.to_string().contains("default"));
+}
+
+#[test]
+fn flow_receive_action_statement_is_structured() {
+    let tree = parse_ok(
+        r"
+pub action feedback.submit(value: String)
+
+flow test {
+  let event = receive action(@action:.feedback.submit)
+  return event.value
+}
+",
+    );
+    let flow = tree
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::Flow(flow) => Some(flow),
+            _ => None,
+        })
+        .expect("flow parsed");
+
+    let FlowItem::Stmt(Stmt::LetActionReceive { action, .. }) = &flow.body()[0] else {
+        panic!("expected receive action statement");
+    };
+    assert!(
+        matches!(action, Expr::EntityRef(reference) if reference.canonical_body() == "action.feedback.submit")
+    );
 }
 
 #[test]

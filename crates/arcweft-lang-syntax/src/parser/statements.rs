@@ -230,6 +230,14 @@ fn parse_let_stmt(
                 target: parse_expr_lossy_with_stats(target.trim(), stats),
             };
         }
+        if ty.is_none()
+            && let Some(action) = receive_action_target(expr)
+        {
+            return Stmt::LetActionReceive {
+                pattern,
+                action: parse_expr_lossy_with_stats(action, stats),
+            };
+        }
         let expr_start = trimmed
             .len()
             .checked_sub(expr.len())
@@ -244,6 +252,17 @@ fn parse_let_stmt(
     } else {
         raw_stmt(trimmed)
     }
+}
+
+fn receive_action_target(expr: &str) -> Option<&str> {
+    expr.trim()
+        .strip_prefix("receive action")?
+        .trim_start()
+        .strip_prefix('(')?
+        .trim_end()
+        .strip_suffix(')')
+        .map(str::trim)
+        .filter(|target| !target.is_empty())
 }
 
 fn parse_assign_stmt(trimmed: &str, mut stats: Option<&mut SyntaxParseStats>) -> Option<Stmt> {

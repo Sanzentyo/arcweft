@@ -664,11 +664,12 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
             expr, else_body, ..
         } => {
             collect_expr(expr, uses);
-            for stmt in else_body {
-                collect_stmt(stmt, uses);
-            }
+            collect_stmt_block(else_body, uses);
         }
-        Stmt::LetTextSubmit { pattern, target } => collect_text_submit_stmt(pattern, target, uses),
+        Stmt::LetTextSubmit { pattern, target } => collect_binding_expr_stmt(pattern, target, uses),
+        Stmt::LetActionReceive { pattern, action } => {
+            collect_binding_expr_stmt(pattern, action, uses);
+        }
         Stmt::LetChoice { choice, .. } => collect_choice_stmt(choice, uses),
         Stmt::LetScope { scope, .. } => {
             for stmt in scope.statements() {
@@ -741,9 +742,9 @@ fn collect_stmt(stmt: &Stmt, uses: &mut Vec<SymbolUse>) {
     }
 }
 
-fn collect_text_submit_stmt(pattern: &Pattern, target: &Expr, uses: &mut Vec<SymbolUse>) {
+fn collect_binding_expr_stmt(pattern: &Pattern, expr: &Expr, uses: &mut Vec<SymbolUse>) {
     collect_pattern(pattern, uses);
-    collect_expr(target, uses);
+    collect_expr(expr, uses);
 }
 
 fn collect_raw_stmt(raw: &RawSyntax, uses: &mut Vec<SymbolUse>) {
