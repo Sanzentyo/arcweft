@@ -115,6 +115,88 @@ flow main {
 }
 
 #[test]
+fn value_position_image_handle_lowers_lifecycle_methods_and_cleanup_cancel() {
+    let parsed = parse_source(
+        r#"
+pub asset bg.card {
+  kind = image
+  file = "bg/card.png"
+}
+
+pub image card {
+  asset = @asset:.bg.card
+  target = @target.card
+  x = 0px
+  y = 0px
+  width = 10px
+  height = 10px
+  visible = true
+}
+
+flow main {
+  let sprite = image(@image.card, lifetime = .scope, visible = false, depth = 42)
+  sprite.show()
+  sprite.hide()
+  sprite.destroy()
+  return "done"
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
+    let ops = &plan.flows[0].ops;
+
+    assert!(
+        matches!(
+            &ops[0],
+            FlowOp::Effect(LineEffectRequest::Call(call))
+                if call.callee == "presentation.handle.create"
+                    && call.args.iter().any(|arg| arg == "handle = @handle.flow.main.sprite")
+                    && call.args.iter().any(|arg| arg == "kind = \"image\"")
+                    && call.args.iter().any(|arg| arg == "resource = @image.card")
+                    && call.args.iter().any(|arg| arg == "visible = false")
+                    && call.args.iter().any(|arg| arg == "depth = 42")
+        ),
+        "{ops:#?}"
+    );
+    assert!(
+        matches!(
+            &ops[1],
+            FlowOp::RegisterCleanup { key, effect: LineEffectRequest::Call(call) }
+                if key == "handle.flow.main.sprite"
+                    && call.callee == "presentation.handle.dispose"
+        ),
+        "{ops:#?}"
+    );
+    assert!(matches!(
+        &ops[2],
+        FlowOp::Let { pattern: RuntimePattern::Ident(name), expr: RuntimeExpr::Value(RuntimeValue::String(value)) }
+            if name == "sprite" && value == "handle.flow.main.sprite"
+    ));
+    for (index, callee) in [
+        (3, "presentation.handle.show"),
+        (4, "presentation.handle.hide"),
+        (5, "presentation.handle.destroy"),
+    ] {
+        assert!(
+            matches!(
+                &ops[index],
+                FlowOp::Effect(LineEffectRequest::Call(call))
+                    if call.callee == callee
+                        && call.args == ["handle = @handle.flow.main.sprite"]
+            ),
+            "{ops:#?}"
+        );
+    }
+    assert!(matches!(
+        &ops[6],
+        FlowOp::CancelCleanup { key } if key == "handle.flow.main.sprite"
+    ));
+    assert!(matches!(&ops[7], FlowOp::ReturnExpr(_)));
+}
+
+#[test]
 fn explicit_component_and_image_mount_exprs_lower_to_scoped_handle_create() {
     let parsed = parse_source(
         r#"

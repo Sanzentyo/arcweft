@@ -382,6 +382,37 @@ changed Rust files:
 | `crates/arcweft-runtime-plan/src/labels.rs` | 7,074 | 199 | production | false | Stable runtime-plan expression labels |
 | `crates/arcweft-runtime-plan/src/flow/tests.rs` | 15,607 | 511 | test | true | Flow lowering regression tests |
 
+## Image Handle Lifecycle And Agent Missing Scope Coverage
+
+- Added runtime-plan coverage for value-position `let sprite = image(...)`
+  handles. The regression now verifies that image handles lower to
+  `presentation.handle.create`, register scoped disposal cleanup, bind the
+  stable handle string, lower `show`, `hide`, and terminal `destroy` lifecycle
+  methods to `presentation.handle.*`, and cancel the registered cleanup on the
+  terminal operation.
+- Added native Agent observe unit coverage for hidden image-object capture
+  scopes. A hidden image source is not emitted as an observed object, its frame
+  cache is not populated, and requesting that object scope reports the existing
+  structured `AGENT_CAPTURE_MISSING_SCOPE` diagnostic.
+
+### Verification
+
+- `cargo test -p arcweft-runtime-plan --all-features value_position_image_handle_lowers_lifecycle_methods_and_cleanup_cancel`
+- `cargo test -p arcweft-cli --all-features hidden_image_object_capture_scope_reports_missing_scope_diagnostic`
+- `cargo test -p arcweft-runtime-plan --all-features`
+- `cargo check --workspace --all-targets --all-features`
+- `cargo clippy --workspace --all-targets --all-features`
+- `cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit\current`
+
+The image-handle lifecycle and Agent missing-scope cut was measured at Jujutsu
+change `ykzvqqzp`. The structure audit reported 0 errors and 138 warnings.
+Relevant changed Rust files:
+
+| Path | Bytes | LOC | Classification | Embedded Tests | Responsibility |
+| --- | ---: | ---: | --- | --- | --- |
+| `crates/arcweft-cli/src/app/agent/native/player_observation.rs` | 41,503 | 1,181 | production | true | Native Agent observe object/layer/component mapping and capture diagnostics |
+| `crates/arcweft-runtime-plan/src/flow/tests.rs` | 18,114 | 593 | test | true | Flow lowering regression tests |
+
 ## Remaining Work
 
 - End-to-end save subsystem wiring still needs to consume the runtime display

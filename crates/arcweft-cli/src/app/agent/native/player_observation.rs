@@ -1041,6 +1041,58 @@ mod tests {
         assert!(hidden_frames.get("object.image.image.glass_bg").is_none());
     }
 
+    #[test]
+    fn hidden_image_object_capture_scope_reports_missing_scope_diagnostic() {
+        let viewport = AgentViewport {
+            width: 1280,
+            height: 720,
+            scale: 1.0,
+        };
+        let render_image = render_image("image.glass_bg");
+        let hidden_source = bundle_image_object("image.glass_bg", false);
+        let mut hidden_frames = AgentImageFrameStore::default();
+
+        let objects = player_observed_image_object(
+            4,
+            &viewport,
+            &render_image,
+            Some(&hidden_source),
+            &mut hidden_frames,
+            125,
+        )
+        .into_iter()
+        .collect::<Vec<_>>();
+        let mut diagnostics = Vec::new();
+        push_missing_capture_scope_diagnostics(
+            &mut diagnostics,
+            4,
+            [
+                None,
+                Some(RequestedCaptureScope {
+                    kind: RequestedCaptureScopeKind::Object,
+                    id: "object.image.image.glass_bg",
+                }),
+                None,
+            ],
+            &[],
+            &[],
+            &objects,
+        );
+
+        assert!(objects.is_empty());
+        assert!(hidden_frames.get("object.image.image.glass_bg").is_none());
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].code.as_deref(),
+            Some("AGENT_CAPTURE_MISSING_SCOPE")
+        );
+        assert!(
+            diagnostics[0]
+                .message
+                .contains("object.image.image.glass_bg")
+        );
+    }
+
     fn runtime_text_control(public_id: &str) -> UiRuntimeTextControl {
         UiRuntimeTextControl {
             public_id: public_id.to_owned(),
