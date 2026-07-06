@@ -627,10 +627,10 @@ files:
 
 ## Remaining Work
 
-- End-to-end save subsystem wiring still needs to consume the runtime display
-  snapshot and AWBC fiber cleanup checkpoint evidence added here. This cut
-  verifies serde roundtrip and rollback substrate, not a full player save/load
-  scenario.
+- End-to-end save subsystem wiring is split to
+  `docs/reviews/requests/2026-07-06-seq-06.16.6.1-save-load-scoped-presentation-handles.md`.
+  This cut verifies serde roundtrip and rollback substrate, not a full player
+  save/load scenario.
 - Native/web/observe parity tests still need a broader hidden/disposed-handle
   suite covering component handles, image handles, hit-test/focus/writeback
   behavior across actual adapters. Runtime-plan explicit mount regressions are

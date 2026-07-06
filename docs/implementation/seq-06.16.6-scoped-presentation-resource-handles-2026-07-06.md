@@ -123,7 +123,8 @@ acceptance criteria in the design document:
   handle creation;
 - runtime-plan lowering of lexical cleanup stacks on block exit, flow return,
   cancellation, overlay pop, and scene transition;
-- save/load and rollback snapshot schema integration;
+- save/load and rollback snapshot schema integration, now split to
+  `docs/reviews/requests/2026-07-06-seq-06.16.6.1-save-load-scoped-presentation-handles.md`;
 - authored component identity propagation for component-scoped capture beyond the
   current conservative observation grouping;
 - native/web/Agent parity tests once the parser/runtime-plan surface emits the
@@ -178,5 +179,6 @@ warnings.
 
 The broader final syntax goal remains open. This slice does not implement
 value-position `image(...)` / `component(...)` handle creation, lexical cleanup
-stack lowering, save/load rollback integration, or native/web/Agent parity tests
-for scoped handles.
+stack lowering, native/web/Agent parity tests for scoped handles, or save/load
+rollback integration. The save/load work is now split to
+`docs/reviews/requests/2026-07-06-seq-06.16.6.1-save-load-scoped-presentation-handles.md`.
