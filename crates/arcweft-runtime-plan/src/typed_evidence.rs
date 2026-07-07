@@ -1,0 +1,79 @@
+//! Type-checker evidence consumed by runtime-plan lowering.
+
+/// Runtime-plan-local expression identifier aligned with type-check evidence.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeTypedExpressionId(usize);
+
+impl RuntimeTypedExpressionId {
+    #[must_use]
+    pub const fn from_index(index: usize) -> Self {
+        Self(index)
+    }
+
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
+
+/// One lowering-sensitive expression fact exported from type checking.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeTypedLoweringEvidence {
+    pub expression_id: RuntimeTypedExpressionId,
+    pub kind: RuntimeTypedLoweringEvidenceKind,
+}
+
+/// Runtime-plan decisions proven by type checking.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeTypedLoweringEvidenceKind {
+    /// A call expression's callee type checked as a function value.
+    FunctionValueCall {
+        callee: Option<String>,
+        arg_count: usize,
+    },
+    /// An expression was checked in a function-typed expected context.
+    ExpectedFunctionValue { arity: usize },
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RuntimeTypedLoweringEvidenceLookup<'a> {
+    evidence: &'a [RuntimeTypedLoweringEvidence],
+}
+
+impl<'a> RuntimeTypedLoweringEvidenceLookup<'a> {
+    pub(crate) const fn new(evidence: &'a [RuntimeTypedLoweringEvidence]) -> Self {
+        Self { evidence }
+    }
+
+    pub(crate) fn has_function_value_call(
+        self,
+        expression_id: RuntimeTypedExpressionId,
+        callee: Option<&str>,
+        arg_count: usize,
+    ) -> bool {
+        self.evidence.iter().any(|evidence| {
+            evidence.expression_id == expression_id
+                && matches!(
+                    &evidence.kind,
+                    RuntimeTypedLoweringEvidenceKind::FunctionValueCall {
+                        callee: expected_callee,
+                        arg_count: expected_arg_count,
+                    } if expected_arg_count == &arg_count
+                        && expected_callee.as_deref() == callee
+                )
+        })
+    }
+
+    pub(crate) fn has_expected_function_value(
+        self,
+        expression_id: RuntimeTypedExpressionId,
+    ) -> bool {
+        self.evidence.iter().any(|evidence| {
+            evidence.expression_id == expression_id
+                && matches!(
+                    evidence.kind,
+                    RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue { .. }
+                )
+        })
+    }
+}

@@ -5,6 +5,9 @@ use crate::labels::{
     named_arg_value,
 };
 use crate::pattern::lower_runtime_pattern;
+use crate::typed_evidence::{
+    RuntimeTypedExpressionId, RuntimeTypedLoweringEvidence, RuntimeTypedLoweringEvidenceLookup,
+};
 use arcweft_core::effect::{
     LineEffectRequest, RuntimeAssertion, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall,
     RuntimeEvent, RuntimeField, RuntimeLog,
@@ -26,13 +29,15 @@ use arcweft_lang_hir::syntax::{
     },
     types::TypeRef,
 };
-use std::collections::BTreeMap;
+use std::{cell::Cell, collections::BTreeMap};
 
 #[derive(Clone, Copy)]
 pub(crate) struct RuntimePureHelperLookup<'helpers, 'locals> {
     ids: &'helpers BTreeMap<String, RuntimePureHelperId>,
     helpers: &'helpers [RuntimePureHelper],
     function_locals: Option<&'locals BTreeMap<String, usize>>,
+    typed_lowering_evidence: Option<RuntimeTypedLoweringEvidenceLookup<'helpers>>,
+    expression_cursor: Option<&'helpers Cell<usize>>,
 }
 
 impl<'helpers> RuntimePureHelperLookup<'helpers, 'static> {
@@ -44,6 +49,8 @@ impl<'helpers> RuntimePureHelperLookup<'helpers, 'static> {
             ids,
             helpers,
             function_locals: None,
+            typed_lowering_evidence: None,
+            expression_cursor: None,
         }
     }
 }
@@ -57,6 +64,24 @@ impl<'helpers, 'locals> RuntimePureHelperLookup<'helpers, 'locals> {
             ids: self.ids,
             helpers: self.helpers,
             function_locals: Some(function_locals),
+            typed_lowering_evidence: self.typed_lowering_evidence,
+            expression_cursor: self.expression_cursor,
+        }
+    }
+
+    pub(crate) fn with_typed_lowering_evidence(
+        self,
+        typed_lowering_evidence: &'helpers [RuntimeTypedLoweringEvidence],
+        expression_cursor: &'helpers Cell<usize>,
+    ) -> RuntimePureHelperLookup<'helpers, 'locals> {
+        RuntimePureHelperLookup {
+            ids: self.ids,
+            helpers: self.helpers,
+            function_locals: self.function_locals,
+            typed_lowering_evidence: Some(RuntimeTypedLoweringEvidenceLookup::new(
+                typed_lowering_evidence,
+            )),
+            expression_cursor: Some(expression_cursor),
         }
     }
 
@@ -93,6 +118,37 @@ impl<'helpers, 'locals> RuntimePureHelperLookup<'helpers, 'locals> {
         } else {
             self.function_value(name)
         }
+    }
+
+    fn next_expression_id(self) -> Option<RuntimeTypedExpressionId> {
+        let cursor = self.expression_cursor?;
+        let index = cursor.get();
+        cursor.set(index + 1);
+        Some(RuntimeTypedExpressionId::from_index(index))
+    }
+
+    fn current_expression_id(self) -> Option<RuntimeTypedExpressionId> {
+        self.expression_cursor
+            .map(Cell::get)
+            .map(RuntimeTypedExpressionId::from_index)
+    }
+
+    fn has_function_value_call_evidence(
+        self,
+        expression_id: Option<RuntimeTypedExpressionId>,
+        callee: Option<&str>,
+        arg_count: usize,
+    ) -> bool {
+        expression_id.is_some_and(|expression_id| {
+            self.typed_lowering_evidence.is_some_and(|evidence| {
+                evidence.has_function_value_call(expression_id, callee, arg_count)
+            })
+        })
+    }
+
+    fn has_expected_function_value_evidence(self, expression_id: RuntimeTypedExpressionId) -> bool {
+        self.typed_lowering_evidence
+            .is_some_and(|evidence| evidence.has_expected_function_value(expression_id))
     }
 }
 
@@ -215,9 +271,13 @@ pub(crate) fn lower_runtime_expr_strict_with_expected_type(
     expected_ty: Option<&TypeRef>,
     helpers: RuntimePureHelperLookup<'_, '_>,
 ) -> Result<RuntimeExpr, String> {
-    if expected_ty.is_some_and(single_param_function_type)
+    let evidence_expression_id = helpers.current_expression_id();
+    if (expected_ty.is_some_and(single_param_function_type)
+        || evidence_expression_id
+            .is_some_and(|id| helpers.has_expected_function_value_evidence(id)))
         && expr_contains_partial_placeholder(expr)
     {
+        helpers.next_expression_id();
         lower_partial_placeholder_function_expr(expr, Some(helpers))
     } else {
         lower_runtime_expr_strict_with_helpers(expr, Some(helpers))
@@ -228,6 +288,13 @@ fn lower_runtime_expr_strict_with_helpers(
     expr: &Expr,
     helpers: Option<RuntimePureHelperLookup<'_, '_>>,
 ) -> Result<RuntimeExpr, String> {
+    let expression_id = helpers.and_then(RuntimePureHelperLookup::next_expression_id);
+    if expression_id.is_some_and(|id| {
+        helpers.is_some_and(|helpers| helpers.has_expected_function_value_evidence(id))
+    }) && expr_contains_partial_placeholder(expr)
+    {
+        return lower_partial_placeholder_function_expr(expr, helpers);
+    }
     match expr {
         Expr::Literal(literal) => Ok(RuntimeExpr::Value(lower_runtime_literal(literal))),
         Expr::EntityRef(entity) => Ok(RuntimeExpr::EntityRef(entity_ref_label(entity))),
@@ -304,7 +371,7 @@ fn lower_runtime_expr_strict_with_helpers(
             statements, value, ..
         } => lower_strict_block_expr(statements, value.as_deref(), helpers),
         Expr::Closure { params, body } => lower_strict_closure_expr(params, body, helpers),
-        Expr::Call { callee, args } => lower_strict_call_expr(callee, args, helpers),
+        Expr::Call { callee, args } => lower_strict_call_expr(callee, args, helpers, expression_id),
         Expr::MethodCall {
             receiver,
             method,
@@ -1317,6 +1384,7 @@ fn lower_strict_call_expr(
     callee: &Expr,
     args: &[CallArg],
     helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    expression_id: Option<RuntimeTypedExpressionId>,
 ) -> Result<RuntimeExpr, String> {
     if let Some(lowered) = lower_agent_path_constructor_call(callee, args, helpers) {
         return lowered;
@@ -1333,6 +1401,23 @@ fn lower_strict_call_expr(
                 .iter()
                 .map(|arg| lower_strict_call_arg(arg, helpers))
                 .collect::<Result<Vec<_>, _>>()?;
+            let path_callee = match callee {
+                Expr::Path(path) => Some(path.as_label()),
+                _ => None,
+            };
+            if helpers.is_some_and(|helpers| {
+                helpers.has_function_value_call_evidence(expression_id, path_callee, args.len())
+            }) {
+                let callee = if let Some(path) = path_callee {
+                    RuntimeExpr::Local(path.to_owned())
+                } else {
+                    lower_runtime_expr_strict_with_helpers(callee, helpers)?
+                };
+                return Ok(RuntimeExpr::Apply {
+                    callee: Box::new(callee),
+                    args,
+                });
+            }
             let Expr::Path(path) = callee else {
                 return lower_runtime_expr_strict_with_helpers(callee, helpers).map(|callee| {
                     RuntimeExpr::Apply {

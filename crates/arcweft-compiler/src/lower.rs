@@ -4,6 +4,7 @@ use arcweft_core::plan::{RuntimeIteratorEvidence, RuntimePlan, RuntimePureHelper
 use arcweft_lang_hir::model::{HirFunction, HirModule};
 use arcweft_lang_sema::check::{
     ForIterationEvidence, ForIterationEvidenceFamily, StandardIteratorFamily, TypeCheckReport,
+    TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
 use arcweft_runtime_plan::flow::{
     RuntimePlanLowerOptions, RuntimePlanLowerReport, lower_runtime_plan_with_options,
@@ -13,6 +14,9 @@ use arcweft_runtime_plan::line_task::{LoweredLineTaskGroup, lower_line_task_grou
 use arcweft_runtime_plan::pure::{
     PureHelperCandidate, PureHelperCandidateReport, PureHelperLowerError,
     lower_pure_helper_candidate, lower_pure_helper_candidates,
+};
+use arcweft_runtime_plan::typed_evidence::{
+    RuntimeTypedExpressionId, RuntimeTypedLoweringEvidence, RuntimeTypedLoweringEvidenceKind,
 };
 
 use crate::trait_methods::{
@@ -80,10 +84,35 @@ pub fn runtime_plan_options_with_typecheck_evidence(
         .iter()
         .map(|evidence| runtime_iterator_evidence(evidence, &trait_methods))
         .collect::<Result<Vec<_>, _>>()?;
+    let typed_lowering_evidence = typecheck
+        .typed_lowering_evidence
+        .iter()
+        .map(runtime_typed_lowering_evidence)
+        .collect::<Vec<_>>();
     Ok(options
         .clone()
         .with_for_iteration_evidence(evidence)
-        .with_trait_methods(trait_methods.methods))
+        .with_trait_methods(trait_methods.methods)
+        .with_typed_lowering_evidence(typed_lowering_evidence))
+}
+
+fn runtime_typed_lowering_evidence(
+    evidence: &TypedLoweringEvidence,
+) -> RuntimeTypedLoweringEvidence {
+    RuntimeTypedLoweringEvidence {
+        expression_id: RuntimeTypedExpressionId::from_index(evidence.expression_id.index()),
+        kind: match &evidence.kind {
+            TypedLoweringEvidenceKind::FunctionValueCall {
+                callee, arg_count, ..
+            } => RuntimeTypedLoweringEvidenceKind::FunctionValueCall {
+                callee: callee.clone(),
+                arg_count: *arg_count,
+            },
+            TypedLoweringEvidenceKind::ExpectedFunctionValue { arity, .. } => {
+                RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue { arity: *arity }
+            }
+        },
+    }
 }
 
 fn runtime_iterator_evidence(

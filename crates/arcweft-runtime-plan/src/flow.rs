@@ -19,6 +19,7 @@ use crate::render_text::{
 };
 use crate::source::lower_source_plan;
 use crate::stream::lower_stream_function;
+use crate::typed_evidence::RuntimeTypedLoweringEvidence;
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::line_task::{LineOutRequest, LineTaskGroup};
 use arcweft_core::pattern::RuntimePattern;
@@ -54,7 +55,7 @@ use presentation::{
     presentation_create_args, presentation_explicit_mount_handle_id, presentation_handle_call,
     presentation_handle_id, presentation_mount_call,
 };
-use std::{collections::BTreeMap, sync::Arc};
+use std::{cell::Cell, collections::BTreeMap, sync::Arc};
 
 mod presentation;
 
@@ -78,6 +79,7 @@ pub struct RuntimePlanLowerOptions {
     dialogue_defaults: Option<String>,
     for_iteration_evidence: Vec<RuntimeIteratorEvidence>,
     trait_methods: Vec<RuntimeTraitMethod>,
+    typed_lowering_evidence: Vec<RuntimeTypedLoweringEvidence>,
 }
 
 impl RuntimePlanLowerOptions {
@@ -88,6 +90,7 @@ impl RuntimePlanLowerOptions {
             dialogue_defaults: None,
             for_iteration_evidence: Vec::new(),
             trait_methods: Vec::new(),
+            typed_lowering_evidence: Vec::new(),
         }
     }
 
@@ -117,6 +120,15 @@ impl RuntimePlanLowerOptions {
         self
     }
 
+    #[must_use]
+    pub fn with_typed_lowering_evidence(
+        mut self,
+        evidence: impl IntoIterator<Item = RuntimeTypedLoweringEvidence>,
+    ) -> Self {
+        self.typed_lowering_evidence = evidence.into_iter().collect();
+        self
+    }
+
     /// Selected dialogue defaults profile ID, if supplied by a launch profile.
     #[must_use]
     pub fn dialogue_defaults(&self) -> Option<&str> {
@@ -129,6 +141,10 @@ impl RuntimePlanLowerOptions {
 
     pub fn trait_methods(&self) -> &[RuntimeTraitMethod] {
         &self.trait_methods
+    }
+
+    pub fn typed_lowering_evidence(&self) -> &[RuntimeTypedLoweringEvidence] {
+        &self.typed_lowering_evidence
     }
 }
 
@@ -1232,6 +1248,8 @@ pub(crate) fn lower_runtime_flows(
         pure_helpers,
         for_iteration_evidence: options.for_iteration_evidence(),
         for_iteration_cursor: 0,
+        typed_lowering_evidence: options.typed_lowering_evidence(),
+        typed_expression_cursor: Cell::new(0),
     };
     let flows = module
         .flows()
@@ -1274,6 +1292,8 @@ fn lower_agent_controller_flow(
         pure_helpers,
         for_iteration_evidence: &[],
         for_iteration_cursor: 0,
+        typed_lowering_evidence: &[],
+        typed_expression_cursor: Cell::new(0),
     };
     let id = agent.item().id().map_or_else(
         || FlowRuntimeId(format!("agent.{}", agent.item().name())),
@@ -1306,6 +1326,8 @@ struct FlowRuntimeLowerer<'a> {
     pure_helpers: RuntimePureHelperLookup<'a, 'static>,
     for_iteration_evidence: &'a [RuntimeIteratorEvidence],
     for_iteration_cursor: usize,
+    typed_lowering_evidence: &'a [RuntimeTypedLoweringEvidence],
+    typed_expression_cursor: Cell<usize>,
 }
 
 #[derive(Clone)]
@@ -1334,7 +1356,13 @@ fn runtime_expr_function_arity(
 impl FlowRuntimeLowerer<'_> {
     fn lower_runtime_expr_result(&self, expr: &Expr) -> Result<RuntimeExpr, String> {
         let function_locals = self.active_function_locals();
-        let context = self.pure_helpers.with_function_locals(&function_locals);
+        let context = self
+            .pure_helpers
+            .with_function_locals(&function_locals)
+            .with_typed_lowering_evidence(
+                self.typed_lowering_evidence,
+                &self.typed_expression_cursor,
+            );
         lower_runtime_expr_strict_with_pure(expr, context)
     }
 
@@ -1354,7 +1382,13 @@ impl FlowRuntimeLowerer<'_> {
         expr: &Expr,
     ) -> RuntimeExpr {
         let function_locals = self.active_function_locals();
-        let context = self.pure_helpers.with_function_locals(&function_locals);
+        let context = self
+            .pure_helpers
+            .with_function_locals(&function_locals)
+            .with_typed_lowering_evidence(
+                self.typed_lowering_evidence,
+                &self.typed_expression_cursor,
+            );
         match lower_runtime_expr_strict_with_expected_type(expr, expected_ty, context) {
             Ok(expr) => expr,
             Err(message) => {

@@ -7,6 +7,7 @@ use arcweft_core::{
         RuntimeIteratorWitnessExecutable,
     },
     step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
+    value::RuntimeExpr,
 };
 use arcweft_id::PublicId;
 use arcweft_lang_hir::lower::lower_to_hir;
@@ -102,7 +103,7 @@ fn agent_project_graph_snapshot_preserves_project_relations() {
     assert!(graph.edges.iter().any(|edge| {
         edge.from_symbol_id == "project:entity:entry.main"
             && edge.to_symbol_id == "project:entity:flow.opening"
-            && edge.edge_kind == "entry_start"
+            && edge.edge_kind == "entry_goto"
     }));
 }
 
@@ -155,7 +156,7 @@ fn agent_project_graph_snapshot_preserves_project_callables() {
     assert!(graph.symbols.iter().any(|symbol| {
         symbol.symbol_id == "project:callable:current_route"
             && symbol.qualified_name.as_deref() == Some("current_route")
-            && symbol.kind == "project_reducer"
+            && symbol.kind == "project_view"
     }));
     assert!(graph.edges.iter().any(|edge| {
         edge.from_symbol_id == "project:summary"
@@ -367,6 +368,123 @@ flow @flow.main main {
     };
     assert_eq!(calls.into_iter.0, 0);
     assert_eq!(calls.next.0, 1);
+}
+
+#[test]
+fn runtime_plan_uses_typecheck_evidence_for_function_value_calls() {
+    let parsed = parse_source_text(
+        r#"
+flow @flow.main main {
+    let ok: bool = f(1i64)
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(
+        &hir,
+        &TypeCheckEnv::standard().with_symbol(
+            "f",
+            TypeKind::Function {
+                params: vec![TypeKind::I64],
+                return_type: Box::new(TypeKind::Bool),
+            },
+        ),
+    );
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("runtime plan lowers with function-value evidence");
+    let FlowOp::Let { expr, .. } = &report.plan.flows[0].ops[0] else {
+        panic!("expected first op to bind the function value call");
+    };
+    assert!(matches!(
+        expr,
+        RuntimeExpr::Apply { callee, args }
+            if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "f")
+                && args.len() == 1
+    ));
+
+    let plain_report =
+        lower_source_runtime_plan_with_stats_and_options(&hir, &RuntimePlanLowerOptions::default())
+            .expect("runtime plan lowers without typecheck evidence");
+    let FlowOp::Let { expr, .. } = &plain_report.plan.flows[0].ops[0] else {
+        panic!("expected first plain op to bind the call");
+    };
+    assert!(matches!(
+        expr,
+        RuntimeExpr::Call { callee, args }
+            if callee.as_label() == "f" && args.len() == 1
+    ));
+}
+
+#[test]
+fn runtime_plan_uses_expected_function_evidence_for_placeholder_args() {
+    let parsed = parse_source_text(
+        r#"
+flow @flow.main main {
+    let accepted: bool = accept(_ > 80i64)
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let predicate = TypeKind::Function {
+        params: vec![TypeKind::I64],
+        return_type: Box::new(TypeKind::Bool),
+    };
+    let typecheck = arcweft_lang_sema::check::analyze_types(
+        &hir,
+        &TypeCheckEnv::standard().with_function_signature(
+            "accept",
+            FunctionSignature::new(
+                TypeKind::Bool,
+                [FunctionParam::required("predicate", predicate)],
+            ),
+        ),
+    );
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("runtime plan lowers with expected-function evidence");
+    let FlowOp::Let { expr, .. } = &report.plan.flows[0].ops[0] else {
+        panic!("expected first op to bind the call");
+    };
+    assert!(matches!(
+        expr,
+        RuntimeExpr::Call { callee, args }
+            if callee.as_label() == "accept"
+                && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Function { params, body }]
+                        if params.as_slice() == ["__arcweft_partial"]
+                            && matches!(
+                                body.as_ref(),
+                                RuntimeExpr::Binary { lhs, .. }
+                                    if matches!(
+                                        lhs.as_ref(),
+                                        RuntimeExpr::Local(name)
+                                            if name == "__arcweft_partial"
+                                    )
+                            )
+                )
+    ));
 }
 
 #[test]
@@ -842,7 +960,7 @@ state("route.phase").eq(1u64)
 
     assert!(error.to_string().contains("Probe.eq expected value"));
     assert!(error.to_string().contains("String"));
-    assert!(error.to_string().contains("U64"));
+    assert!(error.to_string().contains("u64"));
 }
 
 #[test]
