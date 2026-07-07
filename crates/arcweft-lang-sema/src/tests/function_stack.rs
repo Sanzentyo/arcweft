@@ -871,6 +871,79 @@ flow @flow.closure_borrow_capture_yield closure_borrow_capture_yield {
 }
 
 #[test]
+fn closure_body_effects_do_not_leak_on_function_value_creation() {
+    let tree = parse_ok(
+        r#"
+flow @flow.closure_effect_creation closure_effect_creation
+effects { }
+{
+    let later = || -> String {
+        adapter.read_text(path = "story.arcw")
+    }
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("closure effect fixture lowers");
+    validate_typecheck_ready(&hir).expect("closure effect fixture is structured");
+
+    let report = analyze_types(&hir, &read_text_env());
+    assert!(
+        report.diagnostics.is_empty(),
+        "closure creation should not perform the closure body effects: {:?}",
+        report.diagnostics
+    );
+    let flow_summary = report
+        .effects
+        .summary(&crate::effect_model::CallableId::new(
+            "flow.closure_effect_creation",
+        ))
+        .expect("flow summary");
+    assert!(
+        flow_summary.inferred().is_empty(),
+        "flow should not infer closure body effects at creation: {flow_summary:?}"
+    );
+    assert!(
+        report.effects.summaries().any(|(callable, summary)| {
+            callable.as_str().starts_with("closure.expr.")
+                && summary
+                    .inferred()
+                    .contains(&crate::effects::EffectId::parse("fs.read").expect("valid effect"))
+        }),
+        "closure body effect should be tracked on a synthetic closure callable: {:?}",
+        report.effects
+    );
+}
+
+#[test]
+fn local_closure_call_composes_body_effects_into_caller() {
+    let tree = parse_ok(
+        r#"
+flow @flow.closure_effect_call closure_effect_call
+effects { }
+{
+    let later = || -> String {
+        adapter.read_text(path = "story.arcw")
+    }
+    let body = later()
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("closure effect call fixture lowers");
+    validate_typecheck_ready(&hir).expect("closure effect call fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("calling the closure must compose body effects into the caller");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error.message().contains("flow.closure_effect_call")
+                && error.message().contains("fs.read")
+        }),
+        "expected closure call effect upper-bound diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn closure_return_type_annotation_rejects_body_mismatch() {
     let tree = parse_ok(
         r"
@@ -920,6 +993,18 @@ fn load_avatar_need_ty() -> TypeKind {
         ready: Box::new(TypeKind::Unit),
         error: Box::new(TypeKind::Named("AssetError".to_owned())),
     }
+}
+
+fn read_text_env() -> TypeCheckEnv {
+    TypeCheckEnv::new()
+        .with_function_signature(
+            "adapter.read_text",
+            FunctionSignature::new(
+                TypeKind::String,
+                [FunctionParam::required("path", TypeKind::String)],
+            ),
+        )
+        .with_function_effects("adapter.read_text", ["fs.read".to_owned()])
 }
 
 #[test]

@@ -92,6 +92,14 @@ impl EffectCollector {
             .record_call(CallEdge::dynamic(label, effects, site));
     }
 
+    pub fn record_local_call(&mut self, callee: CallableId, site: EffectSite) {
+        let Some(current) = self.current.clone() else {
+            return;
+        };
+        self.current_facts_mut(&current)
+            .record_call(CallEdge::local(callee, site));
+    }
+
     pub fn record_effect(&mut self, effect: EffectId, site: EffectSite) {
         let Some(current) = self.current.clone() else {
             return;

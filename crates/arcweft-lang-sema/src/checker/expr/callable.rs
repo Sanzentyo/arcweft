@@ -82,6 +82,11 @@ impl TypeChecker<'_> {
         else {
             unreachable!("function value call evidence must receive a function type");
         };
+        let positional_arg_count = args
+            .iter()
+            .filter(|arg| matches!(arg, CallArg::Positional(_)))
+            .count();
+        self.record_function_value_effect_call(callee, positional_arg_count, params.len());
         let result_ty = self.check_function_value_call(args, params, return_type);
         self.record_typed_lowering_evidence(TypedLoweringEvidence {
             expression_id,

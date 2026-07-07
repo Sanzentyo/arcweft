@@ -7,6 +7,7 @@ use crate::diagnostics::{
 };
 use crate::effect_analysis::EffectAnalysisReport;
 use crate::effect_collector::EffectCollector;
+use crate::effect_model::{CallableId, CallableKind, EffectContract, EffectSite, Visibility};
 use crate::effects::{EffectId, EffectSet};
 use crate::env::{
     AgentActionEnvParam, DebugPathKind, EffectCapability, FunctionParam, FunctionSignature,
@@ -147,6 +148,10 @@ impl TypeExpressionId {
     pub const fn index(self) -> usize {
         self.0
     }
+}
+
+fn closure_effect_callable_id(expression_id: TypeExpressionId) -> CallableId {
+    CallableId::new(format!("closure.expr.{}", expression_id.index()))
 }
 
 /// HIR subject proven by a type-check judgment.
@@ -390,6 +395,8 @@ struct TypeChecker<'a> {
     closure_capture_stack: Vec<ClosureCaptureFrame>,
     closure_inference_stack: Vec<ClosureInferenceContext>,
     closure_captures: Vec<ClosureCaptureInventory>,
+    local_function_effects: HashMap<String, CallableId>,
+    last_checked_closure_effect_callable: Option<CallableId>,
     for_iteration_evidence: Vec<ForIterationEvidence>,
     record_runtime_for_iteration_evidence: bool,
 }
@@ -454,7 +461,14 @@ impl ActionParam {
 }
 
 #[derive(Clone, Debug, Default)]
-struct LocalBindingSnapshot(Vec<(String, Option<TypeKind>)>);
+struct LocalBindingSnapshot(Vec<LocalBindingSnapshotEntry>);
+
+#[derive(Clone, Debug)]
+struct LocalBindingSnapshotEntry {
+    name: String,
+    previous_ty: Option<TypeKind>,
+    previous_function_effect: Option<CallableId>,
+}
 
 #[derive(Clone, Debug)]
 struct ClosureCaptureFrame {
@@ -564,6 +578,8 @@ impl TypeChecker<'_> {
             closure_capture_stack: Vec::new(),
             closure_inference_stack: Vec::new(),
             closure_captures: Vec::new(),
+            local_function_effects: HashMap::new(),
+            last_checked_closure_effect_callable: None,
             for_iteration_evidence: Vec::new(),
             record_runtime_for_iteration_evidence: false,
         }
@@ -577,8 +593,13 @@ impl TypeChecker<'_> {
             bindings
                 .into_iter()
                 .map(|(name, ty)| {
-                    let previous = self.bind_local(name.clone(), ty);
-                    (name, previous)
+                    let previous_function_effect = self.local_function_effects.get(&name).cloned();
+                    let previous_ty = self.bind_local(name.clone(), ty);
+                    LocalBindingSnapshotEntry {
+                        name,
+                        previous_ty,
+                        previous_function_effect,
+                    }
                 })
                 .collect(),
         )
@@ -586,21 +607,36 @@ impl TypeChecker<'_> {
 
     fn bind_local(&mut self, name: String, ty: TypeKind) -> Option<TypeKind> {
         let previous = self.locals.insert(name.clone(), ty);
+        let previous_function_effect = self.local_function_effects.remove(&name);
         if let Some(frame) = self.closure_capture_stack.last_mut() {
             frame.locals.insert(name.clone());
         }
         if let Some(scope) = self.local_scope_stack.last_mut() {
-            scope.0.push((name, previous.clone()));
+            scope.0.push(LocalBindingSnapshotEntry {
+                name,
+                previous_ty: previous.clone(),
+                previous_function_effect,
+            });
         }
         previous
     }
 
+    fn bind_local_function_effect(&mut self, name: &str, callable: CallableId) {
+        self.local_function_effects
+            .insert(name.to_owned(), callable);
+    }
+
     fn restore_scoped_locals(&mut self, snapshot: LocalBindingSnapshot) {
-        for (name, previous) in snapshot.0.into_iter().rev() {
-            if let Some(ty) = previous {
-                self.locals.insert(name, ty);
+        for entry in snapshot.0.into_iter().rev() {
+            if let Some(ty) = entry.previous_ty {
+                self.locals.insert(entry.name.clone(), ty);
             } else {
-                self.locals.remove(&name);
+                self.locals.remove(&entry.name);
+            }
+            if let Some(callable) = entry.previous_function_effect {
+                self.local_function_effects.insert(entry.name, callable);
+            } else {
+                self.local_function_effects.remove(&entry.name);
             }
         }
     }
@@ -663,6 +699,29 @@ impl TypeChecker<'_> {
             captures: BTreeMap::new(),
             suspension_boundaries: BTreeSet::new(),
         });
+    }
+
+    fn enter_closure_effect_callable(
+        &mut self,
+        expression_id: TypeExpressionId,
+    ) -> (CallableId, Option<CallableId>) {
+        let id = closure_effect_callable_id(expression_id);
+        let source_name = id.as_str().to_owned();
+        if let Err(error) = self.effect_collector.register_callable(
+            source_name,
+            id.clone(),
+            CallableKind::Function,
+            Visibility::Private,
+            EffectContract::inferred(),
+        ) {
+            self.errors.push(TypeCheckError::new(error.to_string()));
+        }
+        let previous = self.effect_collector.enter(id.clone());
+        (id, previous)
+    }
+
+    fn restore_effect_callable(&mut self, previous: Option<CallableId>) {
+        self.effect_collector.restore(previous);
     }
 
     fn pop_closure_capture_frame(&mut self) {
@@ -761,6 +820,27 @@ impl TypeChecker<'_> {
                 .entry(name.to_owned())
                 .or_insert_with(|| ty.clone());
         }
+    }
+
+    fn record_function_value_effect_call(
+        &mut self,
+        callee: Option<&str>,
+        arg_count: usize,
+        arity: usize,
+    ) {
+        if arg_count < arity {
+            return;
+        }
+        let Some(callee) = callee else {
+            return;
+        };
+        let Some(callable) = self.local_function_effects.get(callee).cloned() else {
+            return;
+        };
+        self.effect_collector.record_local_call(
+            callable,
+            EffectSite::new(format!("function value call `{callee}`")),
+        );
     }
 
     fn local_symbol_type_with_capture(&mut self, name: &str) -> Option<TypeKind> {

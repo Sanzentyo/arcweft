@@ -56,6 +56,8 @@ impl TypeChecker<'_> {
             expression_id,
             bindings.iter().map(|(name, _)| name.clone()),
         );
+        let (closure_effect_callable, previous_effect_callable) =
+            self.enter_closure_effect_callable(expression_id);
         let local_snapshot = self.insert_scoped_locals(bindings);
         let declared_return_type = declared_return_type.map(type_ref_kind);
         let inferred_return_type = declared_return_type.is_none()
@@ -80,7 +82,9 @@ impl TypeChecker<'_> {
         self.pop_closure_inference_context();
         self.expected_returns.pop();
         self.restore_scoped_locals(local_snapshot);
+        self.restore_effect_callable(previous_effect_callable);
         self.pop_closure_capture_frame();
+        self.last_checked_closure_effect_callable = Some(closure_effect_callable);
         if let (Some(expected_return), Some(body_type)) = (expected_return, body_type.as_ref())
             && !self.types_compatible(expected_return, body_type)
         {

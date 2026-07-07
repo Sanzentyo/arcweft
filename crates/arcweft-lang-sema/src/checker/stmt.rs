@@ -277,6 +277,7 @@ impl TypeChecker<'_> {
     }
 
     fn check_let_stmt(&mut self, pattern: &Pattern, annotation: Option<&TypeRef>, expr: &Expr) {
+        self.last_checked_closure_effect_callable = None;
         let annotated_ty = annotation.map(type_ref_kind);
         let ty = self
             .check_expr_with_expected(expr, annotated_ty.as_ref())
@@ -331,6 +332,15 @@ impl TypeChecker<'_> {
             for (name, binding_ty) in pattern_bindings_with_fallback(pattern, ty) {
                 self.bind_local(name, binding_ty);
             }
+            if matches!(expr, Expr::Closure { .. })
+                && let Some(name) = ident_pattern_name(pattern)
+                && let Some(callable) = self.last_checked_closure_effect_callable.clone()
+            {
+                self.bind_local_function_effect(name, callable);
+            }
+        }
+        if !matches!(expr, Expr::Closure { .. }) {
+            self.last_checked_closure_effect_callable = None;
         }
         if let Some(borrow_ty) = annotated_ty.as_ref().or(ty.as_ref()) {
             self.register_borrow_bindings(pattern, borrow_ty);

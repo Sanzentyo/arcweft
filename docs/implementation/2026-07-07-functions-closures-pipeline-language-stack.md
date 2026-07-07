@@ -204,6 +204,13 @@ Source briefs:
   `sema.typecheck.borrowed_closure_capture_crosses_boundary` and carries the
   capture name, borrowed type, lifetime labels, and owning boundary; tests cover
   `await`, `thread`, and `defer`, while non-borrow captures may cross `await`.
+- Sema effect collection now gives closure literals their own synthetic
+  private callable, so `let f = || { effectful_call() }` records the body
+  effects on `closure.expr.N` instead of treating function-value creation as an
+  immediate effect in the enclosing flow/function. Direct calls through the
+  local closure binding, such as `f()`, compose that synthetic callable back
+  into the caller's effect graph and therefore still respect explicit effect
+  bounds.
 - Sema now emits `sema.numeric.fallback_in_inferred_closure` warnings when an
   unsuffixed numeric literal or numeric sequence falls back to a stable default
   primitive type inside a closure body whose return type is inferred. Explicit
@@ -271,10 +278,13 @@ Source briefs:
   callable application and sema trait/impl method calls. AWBC closure/apply
   allocation remains open.
 - Closure capture lifetime diagnostics now cover borrowed local captures that
-  cross checked suspension boundaries. Effect-row composition for closure
-  captures remains open. Save/load currently has an explicit Product AWBC
-  policy: runtime function values are rejected as non-persistable until AWBC
-  closure allocation and snapshot versioning are designed. Numeric fallback lints
+  cross checked suspension boundaries. Closure body effect composition is
+  implemented for synthetic closure callables and direct calls through local
+  closure bindings. Full function-effect typing for partial closure aliases,
+  immediate closure calls, higher-order function arguments, and LSP-facing
+  closure effect evidence remains open. Save/load currently has an explicit
+  Product AWBC policy: runtime function values are rejected as non-persistable
+  until AWBC closure allocation and snapshot versioning are designed. Numeric fallback lints
   inside inferred closure bodies are implemented for scalar integer/float
   fallback and numeric sequence fallback. LSP inlays are implemented for
   inferred function-valued `let` bindings; broader expression inlays still need
@@ -330,6 +340,8 @@ cargo test -p arcweft-lang-sema --all-features method_chain
 cargo test -p arcweft-lang-sema --all-features data_last_pipe_through_local_function_value_records_call_evidence
 cargo test -p arcweft-lang-sema --all-features curried_function_declaration
 cargo test -p arcweft-lang-sema --all-features closure_return
+cargo test -p arcweft-lang-sema --all-features closure_body_effects_do_not_leak_on_function_value_creation
+cargo test -p arcweft-lang-sema --all-features local_closure_call_composes_body_effects_into_caller
 cargo test -p arcweft-lang-sema --all-features
 cargo test -p arcweft-lsp --all-features inlay_hint_request
 cargo test -p arcweft-lsp --all-features
@@ -442,6 +454,16 @@ boundaries. Suspension boundaries are now represented internally as typed
 the diagnostic boundary. Closure parameter pattern coverage confirms tuple
 destructuring and discard parameters typecheck without confusing pattern `_`
 with expression `_` placeholder abstraction.
+
+The closure effect-composition cut has passing sema coverage that closure body
+effects do not leak into the enclosing flow when the closure value is merely
+created, while a direct call through the local closure binding composes those
+body effects into the caller and triggers the existing explicit effect-bound
+diagnostic.
+The cut passed `cargo check --workspace --all-targets --all-features`,
+`cargo clippy --workspace --all-targets --all-features` with only the existing
+`TraitMember`/`ImplMember` large enum warnings, and structure audit with 0
+errors / 148 warnings.
 
 The curried trait method metadata cut has passing sema coverage for preserving
 the remaining call-group function type after a method call and rejecting
