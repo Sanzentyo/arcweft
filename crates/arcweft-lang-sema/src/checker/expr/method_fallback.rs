@@ -1,6 +1,6 @@
 use super::{
-    CallArg, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind, TypedLoweringEvidence,
-    TypedLoweringEvidenceKind,
+    CallArg, FunctionSignature, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
+    TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
 
 impl TypeChecker<'_> {
@@ -15,11 +15,18 @@ impl TypeChecker<'_> {
         if !signature.checks_args() {
             return None;
         }
-        if args
-            .iter()
-            .any(|arg| arg.name().is_some() || arg.is_spread())
+        if let Some(reason) = unsupported_fallback_arg_reason(args)
+            && self.is_data_last_fallback_candidate(receiver_type, &signature)
         {
-            return None;
+            for arg in args {
+                self.check_expr(arg.value());
+            }
+            self.errors
+                .push(TypeCheckError::unsupported_data_last_method_fallback(
+                    method_name,
+                    reason,
+                ));
+            return Some(TypeKind::Named("_".to_owned()));
         }
         let params = signature.params();
         if params.len() != args.len() + 1 {
@@ -57,5 +64,29 @@ impl TypeChecker<'_> {
             },
         });
         Some(signature.return_type().clone())
+    }
+
+    fn is_data_last_fallback_candidate(
+        &mut self,
+        receiver_type: &TypeKind,
+        signature: &FunctionSignature,
+    ) -> bool {
+        let Some(param) = signature.params().last() else {
+            return false;
+        };
+        self.types_compatible(param.ty(), receiver_type)
+    }
+}
+
+fn unsupported_fallback_arg_reason(args: &[CallArg]) -> Option<&'static str> {
+    let has_named = args.iter().any(|arg| arg.name().is_some());
+    let has_spread = args.iter().any(CallArg::is_spread);
+    match (has_named, has_spread) {
+        (true, true) => {
+            Some("named and spread arguments are not supported; use positional arguments")
+        }
+        (true, false) => Some("named arguments are not supported; use positional arguments"),
+        (false, true) => Some("spread arguments are not supported; use positional arguments"),
+        (false, false) => None,
     }
 }

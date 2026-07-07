@@ -704,6 +704,101 @@ flow @flow.method_fallback method_fallback {
 }
 
 #[test]
+fn method_chain_reports_named_data_last_fallback_as_unsupported() {
+    let tree = parse_ok(
+        r"
+flow @flow.method_fallback_named method_fallback_named {
+    let wrong = score.above(min = 80i64)
+    log.info(wrong)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("named method fallback fixture lowers");
+    validate_typecheck_ready(&hir).expect("named method fallback fixture is structured");
+    let env = TypeCheckEnv::new()
+        .with_symbol("score", TypeKind::I64)
+        .with_function_signature(
+            "above",
+            FunctionSignature::new(
+                TypeKind::Bool,
+                [
+                    FunctionParam::required("min", TypeKind::I64),
+                    FunctionParam::required("value", TypeKind::I64),
+                ],
+            ),
+        );
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::UnsupportedDataLastMethodFallback { method, reason }
+                    if method == "above" && reason.contains("named arguments")
+            )
+        }),
+        "expected named fallback diagnostic, got {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .all(|diagnostic| !diagnostic.message().contains("unknown method `above`")),
+        "fallback candidate should not degrade to unknown method: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn method_chain_reports_spread_data_last_fallback_as_unsupported() {
+    let tree = parse_ok(
+        r"
+flow @flow.method_fallback_spread method_fallback_spread {
+    let thresholds = [80i64]
+    let wrong = score.above(thresholds...)
+    log.info(wrong)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("spread method fallback fixture lowers");
+    validate_typecheck_ready(&hir).expect("spread method fallback fixture is structured");
+    let env = TypeCheckEnv::new()
+        .with_symbol("score", TypeKind::I64)
+        .with_function_signature(
+            "above",
+            FunctionSignature::new(
+                TypeKind::Bool,
+                [
+                    FunctionParam::required("min", TypeKind::I64),
+                    FunctionParam::required("value", TypeKind::I64),
+                ],
+            ),
+        );
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::UnsupportedDataLastMethodFallback { method, reason }
+                    if method == "above" && reason.contains("spread arguments")
+            )
+        }),
+        "expected spread fallback diagnostic, got {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .all(|diagnostic| !diagnostic.message().contains("unknown method `above`")),
+        "fallback candidate should not degrade to unknown method: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
 fn method_chain_prefers_real_method_over_data_last_callable_fallback() {
     let tree = parse_ok(
         r"

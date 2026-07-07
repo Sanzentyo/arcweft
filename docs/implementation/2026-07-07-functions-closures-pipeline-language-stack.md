@@ -135,6 +135,10 @@ Source briefs:
   `score.above(80i64)` can lower as `above(80i64, score)`. Sema records
   lowering evidence for this decision so real inherent/env/trait methods still
   win when they exist.
+- Data-last method fallback candidates that use named or spread arguments now
+  produce a structured unsupported-fallback diagnostic instead of degrading to
+  a generic `unknown method` error. Executable fallback lowering remains
+  positional-only.
 - Expression lexing now represents operators with a dedicated `ExprOp` enum
   instead of string tokens such as `Op("->")`, so parser branches for `->`,
   `=>`, `|>`, range operators, comparison operators, and closure pipes are
@@ -188,8 +192,10 @@ Source briefs:
   `function.apply` intrinsic for bytecode inventory purposes.
 - Pipe no-`^` runtime lowering is helper-aware for named pure helpers. Method
   syntax fallback now has typed lowering evidence for positional data-last
-  helper signatures, but named/spread fallback arguments, curried call-group
-  metadata, and non-helper callable runtime lowering remain open.
+  helper signatures. Named/spread fallback candidates are diagnosed as
+  unsupported rather than silently becoming unknown methods, but executable
+  named/spread fallback lowering, curried call-group runtime fallback metadata,
+  and non-helper callable runtime lowering remain open.
 - Curried declaration call-group metadata is now preserved for sema/runtime-plan
   callable application and sema trait/impl method calls. AWBC closure/apply
   allocation remains open.
@@ -300,6 +306,11 @@ typed positional data-last method fallback, and real method priority. Compiler
 coverage confirms the inferred placeholder forms lower to `RuntimeExpr::Function`
 and typed data-last method fallback lowers to a pure helper call with the
 receiver appended as the last argument.
+
+The data-last fallback diagnostic cut has passing sema coverage for named and
+spread method-call syntax that matches a data-last fallback candidate, ensuring
+it reports `UnsupportedDataLastMethodFallback` instead of a generic unknown
+method.
 
 The closure return type cut has passing parser coverage for `|params| -> Type
 { ... }`, `|| -> Type { ... }`, call-argument closures, and the required block

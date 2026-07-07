@@ -24,6 +24,10 @@ pub enum TypeCheckErrorKind {
     },
     /// An assignment target is not an executable lvalue in the current source grammar.
     UnsupportedAssignmentTarget { target: String, reason: String },
+    /// A method-call expression matched a data-last callable fallback shape,
+    /// but used argument syntax that is not representable by the fallback
+    /// lowering contract.
+    UnsupportedDataLastMethodFallback { method: String, reason: String },
     /// An `extern rust mod` declaration references a package without loaded ABI metadata.
     MissingRustPackageMetadata { package: String },
     /// An `extern rust mod` member is not present in loaded ABI metadata.
@@ -236,6 +240,18 @@ impl TypeCheckError {
         Self {
             message: format!("unsupported assignment target `{target}`: {reason}"),
             kind: TypeCheckErrorKind::UnsupportedAssignmentTarget { target, reason },
+        }
+    }
+
+    pub(crate) fn unsupported_data_last_method_fallback(
+        method: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        let method = method.into();
+        let reason = reason.into();
+        Self {
+            message: format!("data-last method fallback for `{method}` is not available: {reason}"),
+            kind: TypeCheckErrorKind::UnsupportedDataLastMethodFallback { method, reason },
         }
     }
 
@@ -703,6 +719,9 @@ fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
         }
         TypeCheckErrorKind::UnsupportedAssignmentTarget { .. } => {
             "sema.typecheck.unsupported_assignment_target".to_owned()
+        }
+        TypeCheckErrorKind::UnsupportedDataLastMethodFallback { .. } => {
+            "sema.typecheck.unsupported_data_last_method_fallback".to_owned()
         }
         TypeCheckErrorKind::MissingRustPackageMetadata { .. } => {
             "sema.extern_rust.missing_metadata".to_owned()
