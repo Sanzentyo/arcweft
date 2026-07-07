@@ -1211,6 +1211,43 @@ flow @flow.partial_call_named partial_call_named {
 }
 
 #[test]
+fn pure_function_named_missing_input_typechecks_as_partial_application() {
+    let tree = parse_ok(
+        r"
+#[pure]
+fn add(left: i64, right: i64) -> i64 {
+    return left + right
+}
+
+flow @flow.partial_named_missing partial_named_missing {
+    let add_to_one = add(right = 1i64)
+    let value: i64 = add_to_one(2i64)
+    log.info(value)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("named missing partial fixture lowers");
+    validate_typecheck_ready(&hir).expect("named missing partial fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(report.judgments.iter().any(|judgment| {
+        matches!(
+            &judgment.ty,
+            TypeKind::Function {
+                params,
+                return_type,
+            } if params.as_slice() == [TypeKind::I64]
+                && return_type.as_ref() == &TypeKind::I64
+        )
+    }));
+}
+
+#[test]
 fn method_chain_falls_back_to_data_last_callable_when_no_method_matches() {
     let tree = parse_ok(
         r"

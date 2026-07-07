@@ -1475,6 +1475,12 @@ fn lower_strict_call_expr(
                 Expr::Path(path) => Some(path.as_label()),
                 _ => None,
             };
+            if let Some(callee) = path_callee
+                && args.iter().any(|arg| matches!(arg, CallArg::Named { .. }))
+                && let Some(helper) = helpers.and_then(|helpers| helpers.helper(callee))
+            {
+                return lower_strict_pure_helper_named_call(callee, args, helper, helpers);
+            }
             let args = match path_callee {
                 Some(callee) => lower_strict_named_callee_args(callee, args, helpers)?,
                 None => args
@@ -1518,11 +1524,51 @@ fn lower_strict_named_callee_args(
     if args.iter().any(|arg| matches!(arg, CallArg::Named { .. }))
         && let Some(helper) = helpers.and_then(|helpers| helpers.helper(callee))
     {
-        return lower_strict_pure_helper_named_args(callee, args, helper, helpers);
+        return lower_strict_pure_helper_named_args(callee, args, helper, helpers).and_then(
+            |lowering| match lowering {
+                PureHelperNamedCallLowering::Exact(args) => Ok(args),
+                PureHelperNamedCallLowering::Partial(_) => Err(format!(
+                    "pure helper `{callee}` named partial call must lower as a function expression"
+                )),
+            },
+        );
     }
     args.iter()
         .map(|arg| lower_strict_call_arg(arg, helpers))
         .collect::<Result<Vec<_>, _>>()
+}
+
+fn lower_strict_pure_helper_named_call(
+    callee: &str,
+    args: &[CallArg],
+    helper: &RuntimePureHelper,
+    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+) -> Result<RuntimeExpr, String> {
+    match lower_strict_pure_helper_named_args(callee, args, helper, helpers)? {
+        PureHelperNamedCallLowering::Exact(args) => Ok(RuntimeExpr::PureCall {
+            helper: helper.id,
+            args,
+        }),
+        PureHelperNamedCallLowering::Partial(partial) => Ok(RuntimeExpr::Function {
+            params: partial.params,
+            body: Box::new(RuntimeExpr::PureCall {
+                helper: helper.id,
+                args: partial.args,
+            }),
+        }),
+    }
+}
+
+#[derive(Clone, Debug)]
+struct PureHelperNamedPartialCall {
+    params: Vec<String>,
+    args: Vec<RuntimeExpr>,
+}
+
+#[derive(Clone, Debug)]
+enum PureHelperNamedCallLowering {
+    Exact(Vec<RuntimeExpr>),
+    Partial(PureHelperNamedPartialCall),
 }
 
 fn lower_strict_pure_helper_named_args(
@@ -1530,7 +1576,7 @@ fn lower_strict_pure_helper_named_args(
     args: &[CallArg],
     helper: &RuntimePureHelper,
     helpers: Option<RuntimePureHelperLookup<'_, '_>>,
-) -> Result<Vec<RuntimeExpr>, String> {
+) -> Result<PureHelperNamedCallLowering, String> {
     let mut lowered = std::iter::repeat_with(|| None)
         .take(helper.input_names.len())
         .collect::<Vec<_>>();
@@ -1571,16 +1617,29 @@ fn lower_strict_pure_helper_named_args(
         }
     }
 
-    lowered
+    let mut missing = Vec::new();
+    let args = lowered
         .into_iter()
         .enumerate()
         .map(|(index, value)| {
-            value.ok_or_else(|| {
-                let name = &helper.input_names[index];
-                format!("pure helper `{callee}` missing required input `{name}`")
+            value.unwrap_or_else(|| {
+                let name = helper.input_names[index].clone();
+                missing.push(name.clone());
+                RuntimeExpr::Local(name)
             })
         })
-        .collect()
+        .collect::<Vec<_>>();
+
+    if missing.is_empty() {
+        Ok(PureHelperNamedCallLowering::Exact(args))
+    } else {
+        Ok(PureHelperNamedCallLowering::Partial(
+            PureHelperNamedPartialCall {
+                params: missing,
+                args,
+            },
+        ))
+    }
 }
 
 fn lower_strict_named_call(

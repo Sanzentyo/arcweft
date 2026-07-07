@@ -140,6 +140,11 @@ Source briefs:
   signatures, such as `let add_one = add(_, 1i64)`, without hard-coding the
   callable name. Runtime-plan lowering consumes the inferred evidence and
   lowers both forms to `RuntimeExpr::Function`.
+- Sema now accepts named missing-input partial application for top-level
+  `#[pure]` helper signatures, such as `let add_to_one = add(right = 1i64)`.
+  Runtime-plan lowering emits a `RuntimeExpr::Function` whose parameters are
+  the missing helper inputs and whose body calls the pure helper with provided
+  named arguments in helper input order.
 - Method-call syntax now has a typed data-last callable fallback for the
   positional case where no real method resolves and a function signature exists
   with the receiver as the last parameter. For example,
@@ -219,8 +224,9 @@ Source briefs:
   placeholders in one partial-call region use the same generated parameter when
   all placeholder positions infer the same parameter type. Runtime lowering
   reorders named pure-helper arguments by helper input name before emitting the
-  call body. Spread partial-call inference, named partial application with
-  missing leading inputs, and ambiguous multi-candidate callables remain open.
+  call body. Named missing-input partial application is implemented for
+  top-level `#[pure]` helper signatures. Spread partial-call inference and
+  ambiguous multi-candidate callables remain open.
 - `_` expected-type runtime lowering consumes explicit syntax-level function
   annotations and sema expected-function evidence threaded through compiler
   options.

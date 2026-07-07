@@ -100,30 +100,34 @@ impl TypeChecker<'_> {
             return None;
         }
         let params = signature.params();
-        if args.len() >= params.len()
-            || params
-                .iter()
-                .any(|param| param.is_rest() || param.has_default())
+        if params
+            .iter()
+            .any(|param| param.is_rest() || param.has_default())
         {
             return None;
         }
-        let positional = args
+        let provided = partial_signature_call_args(params, args)?;
+        let missing = provided
             .iter()
-            .map(|arg| match arg {
-                CallArg::Positional(value) => Some(value),
-                CallArg::Named { .. } | CallArg::Spread { .. } => None,
-            })
-            .collect::<Option<Vec<_>>>()?;
+            .enumerate()
+            .filter_map(|(index, value)| value.is_none().then_some(index))
+            .collect::<Vec<_>>();
+        if missing.is_empty() {
+            return None;
+        }
 
-        for (index, (value, param)) in positional.iter().zip(params).enumerate() {
+        for (index, (value, param)) in provided.iter().zip(params).enumerate() {
+            let Some(value) = value else {
+                continue;
+            };
             let label = signature_param_label(param, index);
             self.expect_signature_arg_type(name, &label, value, param.ty());
         }
 
         Some(TypeKind::Function {
-            params: params[positional.len()..]
+            params: missing
                 .iter()
-                .map(|param| param.ty().clone())
+                .map(|index| params[*index].ty().clone())
                 .collect(),
             return_type: Box::new(signature.return_type().clone()),
         })
@@ -228,4 +232,39 @@ impl TypeChecker<'_> {
             ));
         }
     }
+}
+
+fn partial_signature_call_args<'a>(
+    params: &[FunctionParam],
+    args: &'a [CallArg],
+) -> Option<Vec<Option<&'a Expr>>> {
+    let mut provided = std::iter::repeat_with(|| None)
+        .take(params.len())
+        .collect::<Vec<_>>();
+    let mut positional_index = 0usize;
+
+    for arg in args {
+        match arg {
+            CallArg::Positional(value) => {
+                while positional_index < provided.len() && provided[positional_index].is_some() {
+                    positional_index += 1;
+                }
+                let slot = provided.get_mut(positional_index)?;
+                *slot = Some(value);
+                positional_index += 1;
+            }
+            CallArg::Named { name, value } => {
+                let index = params
+                    .iter()
+                    .position(|param| param.name() == Some(name.as_str()))?;
+                if provided[index].is_some() {
+                    return None;
+                }
+                provided[index] = Some(value);
+            }
+            CallArg::Spread { .. } => return None,
+        }
+    }
+
+    Some(provided)
 }

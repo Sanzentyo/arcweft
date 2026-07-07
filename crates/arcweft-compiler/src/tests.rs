@@ -601,6 +601,54 @@ flow @flow.main main {
 }
 
 #[test]
+fn runtime_plan_lowers_named_missing_pure_helper_input() {
+    let parsed = parse_source_text(
+        r"
+#[pure]
+fn add(left: i64, right: i64) -> i64 {
+    return left + right
+}
+
+flow @flow.main main {
+    let named_missing = add(right = 1i64)
+    return named_missing(2i64)
+}
+",
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("runtime plan lowers named missing input");
+    let FlowOp::Let { expr, .. } = &report.plan.flows[0].ops[0] else {
+        panic!("expected named missing input binding");
+    };
+    assert!(matches!(
+        expr,
+        RuntimeExpr::Function { params, body }
+            if params.as_slice() == ["left"]
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::PureCall { args, .. }
+                        if matches!(
+                            args.as_slice(),
+                            [RuntimeExpr::Local(left), RuntimeExpr::Value(right)]
+                                if left == "left" && right == &RuntimeValue::i64(1)
+                        )
+                )
+    ));
+}
+
+#[test]
 fn runtime_plan_lowers_typed_data_last_method_fallback() {
     let parsed = parse_source_text(
         r#"
