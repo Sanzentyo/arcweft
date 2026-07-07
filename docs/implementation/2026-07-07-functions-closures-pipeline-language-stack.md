@@ -12,6 +12,9 @@ Source briefs:
   - right-associated function types
   - tuple call-group function parameters
 - Typed closure parameters in expression and callback-block syntax.
+- Closure parameter patterns are preserved through sema: tuple/destructuring
+  patterns bind body locals from the parameter type, and pattern `_` remains a
+  discard rather than becoming the expression partial placeholder.
 - Closure expressions now type-check as function values instead of returning an
   untyped `None`.
 - Curried top-level function/task/dialogue/stream signatures are accepted by
@@ -389,6 +392,14 @@ body diagnostic. Sema coverage confirms declared closure return types typecheck
 against body values, mismatch diagnostics are produced, curried closure return
 types preserve remaining function values, and multiline return-typed closure
 lets are consumed as one statement.
+
+The closure capture and pattern-parameter cuts have passing sema coverage for
+borrowed closure captures crossing `await`, `yield`, thread, and defer
+boundaries. Suspension boundaries are now represented internally as typed
+`SuspensionBoundary` values and converted to stable diagnostic labels only at
+the diagnostic boundary. Closure parameter pattern coverage confirms tuple
+destructuring and discard parameters typecheck without confusing pattern `_`
+with expression `_` placeholder abstraction.
 
 The curried trait method metadata cut has passing sema coverage for preserving
 the remaining call-group function type after a method call and rejecting
