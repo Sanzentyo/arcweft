@@ -333,7 +333,7 @@ impl TypeChecker<'_> {
                 self.bind_local(name, binding_ty);
             }
             if let Some(name) = ident_pattern_name(pattern)
-                && let Some(callable) = self.closure_effect_callable_for_binding_expr(expr, ty)
+                && let Some(callable) = self.closure_effect_callable_for_function_expr(expr, ty)
             {
                 self.bind_local_function_effect(name, callable);
             }

@@ -849,12 +849,25 @@ impl TypeChecker<'_> {
             .record_local_call(callable, EffectSite::new(site));
     }
 
-    fn closure_effect_callable_for_binding_expr(
+    fn record_higher_order_function_argument_effect_call(
+        &mut self,
+        expr: &Expr,
+        ty: &TypeKind,
+        site: impl Into<String>,
+    ) {
+        if let Some(callable) = self.closure_effect_callable_for_function_expr(expr, ty) {
+            self.effect_collector
+                .record_local_call(callable, EffectSite::new(site));
+        }
+        self.last_checked_closure_effect_callable = None;
+    }
+
+    fn closure_effect_callable_for_function_expr(
         &self,
         expr: &Expr,
-        binding_ty: &TypeKind,
+        ty: &TypeKind,
     ) -> Option<CallableId> {
-        if !matches!(binding_ty, TypeKind::Function { .. }) {
+        if !matches!(ty, TypeKind::Function { .. }) {
             return None;
         }
         match expr {

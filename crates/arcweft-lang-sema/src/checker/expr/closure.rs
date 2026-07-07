@@ -146,11 +146,11 @@ impl TypeChecker<'_> {
             ));
             return None;
         };
-        match actual {
+        let result = match &actual {
             TypeKind::Function {
                 params,
                 return_type,
-            } if params.as_slice() == [item.clone()] => Some(TypeKind::Vec(return_type)),
+            } if params.as_slice() == [item.clone()] => Some(TypeKind::Vec(return_type.clone())),
             TypeKind::Function { params, .. } => {
                 self.errors.push(TypeCheckError::new(format!(
                     "map function parameter must be {}, found ({})",
@@ -166,11 +166,19 @@ impl TypeChecker<'_> {
             other => {
                 self.errors.push(TypeCheckError::new(format!(
                     "map requires a function argument, found {}",
-                    type_kind_label(&other)
+                    type_kind_label(other)
                 )));
                 None
             }
+        };
+        if result.is_some() {
+            self.record_higher_order_function_argument_effect_call(
+                arg.value(),
+                &actual,
+                "map function argument",
+            );
         }
+        result
     }
 
     pub(super) fn check_vec_filter_method_call(
@@ -214,7 +222,7 @@ impl TypeChecker<'_> {
             ));
             return None;
         };
-        match actual {
+        let result = match &actual {
             TypeKind::Function {
                 params,
                 return_type,
@@ -240,11 +248,19 @@ impl TypeChecker<'_> {
             other => {
                 self.errors.push(TypeCheckError::new(format!(
                     "filter requires a function argument, found {}",
-                    type_kind_label(&other)
+                    type_kind_label(other)
                 )));
                 None
             }
+        };
+        if result.is_some() {
+            self.record_higher_order_function_argument_effect_call(
+                arg.value(),
+                &actual,
+                "filter function argument",
+            );
         }
+        result
     }
 }
 

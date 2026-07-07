@@ -223,6 +223,11 @@ Source briefs:
   immediate calls and carries the same synthetic closure callable to partial
   immediate aliases without performing the body effects until the alias is
   called.
+- Built-in collection higher-order methods now compose closure argument body
+  effects into the caller for `map` and `filter`. This covers direct closure
+  arguments, local closure aliases, and partial closure aliases, while still
+  leaving function-value creation and partial application themselves
+  effect-free.
 - Sema now emits `sema.numeric.fallback_in_inferred_closure` warnings when an
   unsuffixed numeric literal or numeric sequence falls back to a stable default
   primitive type inside a closure body whose return type is inferred. Explicit
@@ -292,9 +297,10 @@ Source briefs:
 - Closure capture lifetime diagnostics now cover borrowed local captures that
   cross checked suspension boundaries. Closure body effect composition is
   implemented for synthetic closure callables, direct calls through local
-  closure bindings, immediate closure calls, and partial application aliases.
-  Higher-order function arguments and LSP-facing closure effect evidence remain
-  open. Save/load
+  closure bindings, immediate closure calls, partial application aliases, and
+  built-in collection higher-order execution through `map`/`filter`.
+  General user-defined higher-order function argument effect typing and
+  LSP-facing closure effect evidence remain open. Save/load
   currently has an explicit Product AWBC policy: runtime function values are
   rejected as non-persistable until AWBC closure allocation and snapshot
   versioning are designed. Numeric fallback lints
@@ -479,6 +485,10 @@ The partial closure alias follow-up has passing sema coverage that partial
 application of a local closure binding does not compose the closure body
 effects at partial-value creation time, and that calling the partial alias
 composes the body effects into the caller.
+The collection higher-order effect cut has passing sema coverage that
+`map`/`filter` closure arguments compose body effects into the enclosing flow,
+including direct closure arguments, local closure aliases, and partial closure
+aliases.
 The closure effect-composition cut and partial-alias follow-up both passed
 `cargo check --workspace --all-targets --all-features`,
 `cargo clippy --workspace --all-targets --all-features` with only the existing

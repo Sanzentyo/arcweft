@@ -1105,6 +1105,129 @@ effects { }
 }
 
 #[test]
+fn map_closure_argument_composes_body_effects_into_caller() {
+    let tree = parse_ok(
+        r#"
+flow @flow.map_closure_effect_arg map_closure_effect_arg
+effects { }
+{
+    let paths: Vec<String> = ["story.arcw"]
+    let bodies: Vec<String> = paths.map(|path: String| -> String {
+        adapter.read_text(path = path)
+    })
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("map closure effect arg fixture lowers");
+    validate_typecheck_ready(&hir).expect("map closure effect arg fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("map must compose closure argument body effects into the caller");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error.message().contains("flow.map_closure_effect_arg")
+                && error.message().contains("fs.read")
+        }),
+        "expected map closure argument effect upper-bound diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
+fn map_local_closure_alias_composes_body_effects_into_caller() {
+    let tree = parse_ok(
+        r#"
+flow @flow.map_closure_alias_effect_arg map_closure_alias_effect_arg
+effects { }
+{
+    let paths: Vec<String> = ["story.arcw"]
+    let load = |path: String| -> String {
+        adapter.read_text(path = path)
+    }
+    let bodies: Vec<String> = paths.map(load)
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("map closure alias effect arg fixture lowers");
+    validate_typecheck_ready(&hir).expect("map closure alias effect arg fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("map must compose local closure alias body effects into the caller");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.map_closure_alias_effect_arg")
+                && error.message().contains("fs.read")
+        }),
+        "expected map closure alias effect upper-bound diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
+fn map_partial_closure_alias_composes_body_effects_into_caller() {
+    let tree = parse_ok(
+        r#"
+flow @flow.map_partial_closure_effect_arg map_partial_closure_effect_arg
+effects { }
+{
+    let suffixes: Vec<String> = [".bak"]
+    let load = |path: String, suffix: String| -> String {
+        adapter.read_text(path = path)
+    }
+    let suffixer = load("story.arcw")
+    let bodies: Vec<String> = suffixes.map(suffixer)
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("map partial closure effect arg fixture lowers");
+    validate_typecheck_ready(&hir).expect("map partial closure effect arg fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("map must compose partial closure alias body effects into the caller");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.map_partial_closure_effect_arg")
+                && error.message().contains("fs.read")
+        }),
+        "expected map partial closure alias effect upper-bound diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
+fn filter_closure_argument_composes_body_effects_into_caller() {
+    let tree = parse_ok(
+        r#"
+flow @flow.filter_closure_effect_arg filter_closure_effect_arg
+effects { }
+{
+    let paths: Vec<String> = ["story.arcw"]
+    let kept: Vec<String> = paths.filter(|path: String| -> bool {
+        adapter.read_text(path = path) == "ok"
+    })
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("filter closure effect arg fixture lowers");
+    validate_typecheck_ready(&hir).expect("filter closure effect arg fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("filter must compose closure argument body effects into the caller");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error.message().contains("flow.filter_closure_effect_arg")
+                && error.message().contains("fs.read")
+        }),
+        "expected filter closure argument effect upper-bound diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn closure_return_type_annotation_rejects_body_mismatch() {
     let tree = parse_ok(
         r"
