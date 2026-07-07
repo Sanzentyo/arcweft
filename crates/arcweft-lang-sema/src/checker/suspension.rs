@@ -1,6 +1,6 @@
 //! Suspension boundaries and runtime-scope helpers.
 
-use super::helpers::{let_else_bindings, pattern_bindings_with_fallback};
+use super::helpers::{let_else_bindings, pattern_bindings_with_fallback, type_kind_label};
 use super::{
     BorrowStateDelta, Expr, LifetimeScopeKind, LoopContext, TypeCheckError, TypeChecker,
     TypeCheckerScopeSnapshot, TypeKind, YieldContext, await_branch_pattern_type,
@@ -27,7 +27,9 @@ impl TypeChecker<'_> {
                     match item_ty {
                         Some(expected) if expected != &actual => {
                             self.errors.push(TypeCheckError::new(format!(
-                                "yielded item types do not match, found {expected:?} and {actual:?}"
+                                "yielded item types do not match, found {} and {}",
+                                type_kind_label(expected),
+                                type_kind_label(&actual)
                             )));
                         }
                         Some(_) => {}
@@ -50,7 +52,9 @@ impl TypeChecker<'_> {
                     && &actual != item_ty
                 {
                     self.errors.push(TypeCheckError::new(format!(
-                        "yielded item must have type {item_ty:?}, found {actual:?}"
+                        "yielded item must have type {}, found {}",
+                        type_kind_label(item_ty),
+                        type_kind_label(&actual)
                     )));
                 }
             }
@@ -64,7 +68,8 @@ impl TypeChecker<'_> {
             Some(TypeKind::Need { ready, error }) => Some(TypeKind::Result { ok: ready, error }),
             Some(other) => {
                 self.errors.push(TypeCheckError::new(format!(
-                    "await expression must have Need<T, E> type, found {other:?}"
+                    "await expression must have Need<T, E> type, found {}",
+                    type_kind_label(&other)
                 )));
                 None
             }

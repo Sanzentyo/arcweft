@@ -33,7 +33,8 @@ impl TypeChecker<'_> {
     ) -> Option<TypeKind> {
         let Some(item) = spread_item_type(receiver_type) else {
             self.errors.push(TypeCheckError::new(format!(
-                "map receiver must be an iterable sequence, found {receiver_type:?}"
+                "map receiver must be an iterable sequence, found {}",
+                type_kind_label(receiver_type)
             )));
             for arg in args {
                 self.check_expr(arg.value());

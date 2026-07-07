@@ -280,7 +280,7 @@ impl TypeKind {
 
     fn choice_sort_label(ty: &Self) -> String {
         match ty {
-            Self::Bool => "Bool".to_owned(),
+            Self::Bool => "bool".to_owned(),
             Self::I8 => "i8".to_owned(),
             Self::I16 => "i16".to_owned(),
             Self::I32 => "i32".to_owned(),
@@ -296,7 +296,7 @@ impl TypeKind {
             Self::F32 => "f32".to_owned(),
             Self::F64 => "f64".to_owned(),
             Self::String => "String".to_owned(),
-            Self::Char => "Char".to_owned(),
+            Self::Char => "char".to_owned(),
             Self::Duration => "Duration".to_owned(),
             other => format!("{other:?}"),
         }
@@ -335,7 +335,7 @@ impl TypeKind {
     #[must_use]
     pub fn primitive_name(name: &str) -> Option<Self> {
         Some(match name {
-            "bool" | "Bool" => Self::Bool,
+            "bool" => Self::Bool,
             "i8" => Self::I8,
             "i16" => Self::I16,
             "i32" => Self::I32,
@@ -351,7 +351,7 @@ impl TypeKind {
             "f32" => Self::F32,
             "f64" => Self::F64,
             "String" => Self::String,
-            "char" | "Char" => Self::Char,
+            "char" => Self::Char,
             "Bytes" => Self::Bytes,
             "DataFormat" => Self::DataFormat,
             "DataShape" => Self::DataShape,

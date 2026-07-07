@@ -788,7 +788,7 @@ fn collect_thread_result_type_labels(stmt: &Stmt, labels: &mut BTreeSet<String>)
 fn expr_type_label(expr: &Expr) -> String {
     match expr {
         Expr::Literal(Literal::String(_)) => "String".to_owned(),
-        Expr::Literal(Literal::Char { .. }) => "Char".to_owned(),
+        Expr::Literal(Literal::Char { .. }) => "char".to_owned(),
         Expr::Literal(Literal::Int { suffix, .. }) => {
             suffix.as_deref().unwrap_or("unsuffixed-int").to_owned()
         }
@@ -797,7 +797,7 @@ fn expr_type_label(expr: &Expr) -> String {
             .map_or("unsuffixed-float", |suffix| suffix.as_str())
             .to_owned(),
         Expr::Literal(Literal::UnitNumber { suffix, .. }) => suffix.as_str().to_owned(),
-        Expr::Literal(Literal::Bool(_)) => "Bool".to_owned(),
+        Expr::Literal(Literal::Bool(_)) => "bool".to_owned(),
         Expr::Literal(Literal::Duration { .. }) => "Duration".to_owned(),
         Expr::Tuple(items) => {
             let labels = items.iter().map(expr_type_label).collect::<Vec<_>>();

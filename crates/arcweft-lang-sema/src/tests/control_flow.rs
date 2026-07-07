@@ -750,7 +750,7 @@ flow @flow.branching branching {
     assert!(errors.iter().any(|error| {
         error
             .message()
-            .contains("if-let expression guard must have type Bool")
+            .contains("if-let expression guard must have type bool")
     }));
 }
 
@@ -917,7 +917,7 @@ flow @flow.branching branching {
     assert!(
         errors
             .iter()
-            .any(|error| error.message().contains("if-let guard must have type Bool"))
+            .any(|error| error.message().contains("if-let guard must have type bool"))
     );
 }
 
@@ -979,7 +979,7 @@ flow @flow.loading loading {
     assert!(errors.iter().any(|error| {
         error
             .message()
-            .contains("while condition must have type Bool")
+            .contains("while condition must have type bool")
     }));
 }
 
@@ -1401,6 +1401,6 @@ flow @flow.branching branching {
     assert!(errors.iter().any(|error| {
         error
             .message()
-            .contains("match arm guard must have type Bool")
+            .contains("match arm guard must have type bool")
     }));
 }

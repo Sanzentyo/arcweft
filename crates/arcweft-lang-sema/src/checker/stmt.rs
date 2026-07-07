@@ -1,6 +1,6 @@
 //! Statement-level type checking.
 
-use super::helpers::let_else_bindings;
+use super::helpers::{let_else_bindings, type_kind_label};
 use super::{
     BorrowStateDelta, EntityKind, Expr, LoopContext, Pattern, Stmt, TriggerPattern, TypeCheckError,
     TypeChecker, TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext,
@@ -233,7 +233,9 @@ impl TypeChecker<'_> {
             && !self.types_compatible(&target_ty, &expr_ty)
         {
             self.errors.push(TypeCheckError::new(format!(
-                "assignment expects {target_ty:?}, but expression has {expr_ty:?}"
+                "assignment expects {}, but expression has {}",
+                type_kind_label(&target_ty),
+                type_kind_label(&expr_ty)
             )));
         }
     }
@@ -276,7 +278,9 @@ impl TypeChecker<'_> {
                 .unwrap_or_else(|| type_ref_kind(annotation));
             if !self.types_compatible(&expected, actual) {
                 self.errors.push(TypeCheckError::new(format!(
-                    "let annotation expects {expected:?}, but expression has {actual:?}"
+                    "let annotation expects {}, but expression has {}",
+                    type_kind_label(&expected),
+                    type_kind_label(actual)
                 )));
             }
         }

@@ -109,8 +109,10 @@ impl TypeChecker<'_> {
                 && !self.types_compatible(&expected, &actual)
             {
                 self.errors.push(TypeCheckError::new(format!(
-                    "agent `{}` returns {expected:?}, but body has {actual:?}",
-                    item.name()
+                    "agent `{}` returns {}, but body has {}",
+                    item.name(),
+                    type_kind_label(&expected),
+                    type_kind_label(&actual)
                 )));
             }
         }
@@ -222,8 +224,10 @@ impl TypeChecker<'_> {
                 && !self.types_compatible(&expected, &actual)
             {
                 self.errors.push(TypeCheckError::new(format!(
-                    "function `{}` returns {expected:?}, but body has {actual:?}",
-                    function.name()
+                    "function `{}` returns {}, but body has {}",
+                    function.name(),
+                    type_kind_label(&expected),
+                    type_kind_label(&actual)
                 )));
             }
         }
@@ -749,8 +753,10 @@ impl TypeChecker<'_> {
                 && !self.types_compatible(&expected, &actual)
             {
                 self.errors.push(TypeCheckError::new(format!(
-                    "impl method `{}` returns {expected:?}, but body has {actual:?}",
-                    signature.name()
+                    "impl method `{}` returns {}, but body has {}",
+                    signature.name(),
+                    type_kind_label(&expected),
+                    type_kind_label(&actual)
                 )));
             }
         }
@@ -1652,11 +1658,14 @@ fn function_signature_label(signature: &FunctionSignature) -> String {
         .iter()
         .map(|param| {
             param.name().map_or_else(
-                || format!("{:?}", param.ty()),
-                |name| format!("{name}: {:?}", param.ty()),
+                || type_kind_label(param.ty()),
+                |name| format!("{name}: {}", type_kind_label(param.ty())),
             )
         })
         .collect::<Vec<_>>()
         .join(", ");
-    format!("fn({params}) -> {:?}", signature.return_type())
+    format!(
+        "fn({params}) -> {}",
+        type_kind_label(signature.return_type())
+    )
 }

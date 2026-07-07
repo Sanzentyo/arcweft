@@ -470,14 +470,14 @@ fn parses_anonymous_sum_type_refs_and_rejects_variant_rows() {
 fn anonymous_sum_typechecking_injects_joins_and_checks_exhaustiveness() {
     let tree = parse_ok(
         r#"
-fn payload(flag: Bool) -> String | Bytes {
+fn payload(flag: bool) -> String | Bytes {
     if flag { "text" } else { bytes }
 }
 
 fn log(message: String, fields: ...(String | i64 | Duration)) -> Unit {
 }
 
-flow @flow.ok ok(flag: Bool) {
+flow @flow.ok ok(flag: bool) {
     let body: String | Bytes = "hello"
     let joined = payload(flag)
     let fields: Vec<String | i64 | Duration> = ["asset", 3i64, 120ms]
@@ -647,7 +647,7 @@ requires state_is_valid
     }
 }
 
-pub fn current_scene(state: GameState) -> Bool {
+pub fn current_scene(state: GameState) -> bool {
     true
 }
 ",
@@ -1246,7 +1246,7 @@ stream fn camera_frames() -> Source<Frame, CaptureError> {
 #[test]
 fn parses_entity_declarations_used_by_presentation_docs() {
     let tree = parse_ok(
-        r"
+        r#"
 pub signal @signal.microphone_level: Watch<f32>
 
 pub character @character.alice Alice {
@@ -1266,9 +1266,11 @@ activity @activity.truck_game TruckGame {
 action feedback.submit(value: String)
 
 view @view.settings SettingsPanel(config: Binding<Config>) {
-    SettingsView(config)
+    Panel {
+        Text("Settings")
+    }
 }
-",
+"#,
     );
     let kinds = tree
         .items()

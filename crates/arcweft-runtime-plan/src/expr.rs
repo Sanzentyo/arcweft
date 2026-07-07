@@ -182,19 +182,7 @@ fn lower_runtime_expr_strict_with_helpers(
             op: lower_runtime_unary_op(*op),
             expr: Box::new(lower_runtime_expr_strict_with_helpers(expr, helpers)?),
         }),
-        Expr::Binary { lhs, op, rhs } => {
-            let Some(op) = lower_runtime_binary_op(*op) else {
-                return Err(format!(
-                    "unsupported runtime binary expression `{}`",
-                    expr_label(expr)
-                ));
-            };
-            Ok(RuntimeExpr::Binary {
-                lhs: Box::new(lower_runtime_expr_strict_with_helpers(lhs, helpers)?),
-                op,
-                rhs: Box::new(lower_runtime_expr_strict_with_helpers(rhs, helpers)?),
-            })
-        }
+        Expr::Binary { lhs, op, rhs } => lower_strict_binary_expr(expr, lhs, *op, rhs, helpers),
         Expr::If {
             condition,
             then_branch,
@@ -243,6 +231,26 @@ fn lower_runtime_expr_strict_with_helpers(
         | Expr::Placeholder(_)
         | Expr::Raw(_) => unsupported_strict_runtime_expr(expr),
     }
+}
+
+fn lower_strict_binary_expr(
+    source: &Expr,
+    lhs: &Expr,
+    op: BinaryOp,
+    rhs: &Expr,
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
+    let Some(op) = lower_runtime_binary_op(op) else {
+        return Err(format!(
+            "unsupported runtime binary expression `{}`",
+            expr_label(source)
+        ));
+    };
+    Ok(RuntimeExpr::Binary {
+        lhs: Box::new(lower_runtime_expr_strict_with_helpers(lhs, helpers)?),
+        op,
+        rhs: Box::new(lower_runtime_expr_strict_with_helpers(rhs, helpers)?),
+    })
 }
 
 fn lower_strict_method_call_dispatch(

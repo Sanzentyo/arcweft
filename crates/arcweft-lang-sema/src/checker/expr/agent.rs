@@ -1,4 +1,4 @@
-use super::super::helpers::expr_path_label;
+use super::super::helpers::{expr_path_label, optional_type_kind_label, type_kind_label};
 use super::super::{
     AgentActionEnvParam, DebugPathKind, EntityKind, Expr, MapKind, TypeCheckError, TypeChecker,
     TypeKind,
@@ -483,7 +483,8 @@ impl TypeChecker<'_> {
         match self.check_expr(arg) {
             Some(TypeKind::Ref(_)) | None => {}
             Some(actual) => self.errors.push(TypeCheckError::new(format!(
-                "entity_meta argument must be an entity reference, found {actual:?}"
+                "entity_meta argument must be an entity reference, found {}",
+                type_kind_label(&actual)
             ))),
         }
         agent_result(TypeKind::AgentEntityMetadata)
@@ -571,7 +572,8 @@ impl TypeChecker<'_> {
         match self.check_expr(value) {
             Some(TypeKind::Ref(_)) | None => {}
             Some(actual) => self.errors.push(TypeCheckError::new(format!(
-                "{label} must be an entity reference, found {actual:?}"
+                "{label} must be an entity reference, found {}",
+                type_kind_label(&actual)
             ))),
         }
     }
@@ -650,7 +652,8 @@ impl TypeChecker<'_> {
             }
             Some(actual) => {
                 self.errors.push(TypeCheckError::new(format!(
-                    "{context} probe argument must be a {expected_kind:?} reference, found {actual:?}"
+                    "{context} probe argument must be a {expected_kind:?} reference, found {}",
+                    type_kind_label(&actual)
                 )));
                 TypeKind::Probe(Box::new(TypeKind::Named("_".to_owned())))
             }
@@ -674,7 +677,9 @@ impl TypeChecker<'_> {
             Some(TypeKind::String) | None => {}
             Some(actual) if self.types_compatible(expected_path, &actual) => {}
             Some(actual) => self.errors.push(TypeCheckError::new(format!(
-                "{context} must have type String or {expected_path:?}, found {actual:?}"
+                "{context} must have type String or {}, found {}",
+                type_kind_label(expected_path),
+                type_kind_label(&actual)
             ))),
         }
         let value_type = Self::agent_debug_path_literal(arg)
@@ -734,7 +739,8 @@ impl TypeChecker<'_> {
         match self.check_expr(arg) {
             Some(TypeKind::Probe(_)) | None => {}
             Some(actual) => self.errors.push(TypeCheckError::new(format!(
-                "exists argument must be a Probe, found {actual:?}"
+                "exists argument must be a Probe, found {}",
+                type_kind_label(&actual)
             ))),
         }
         TypeKind::Predicate
@@ -1041,7 +1047,8 @@ impl TypeChecker<'_> {
             .is_some_and(|ty| matches!(ty, TypeKind::Ref(_)))
         {
             self.errors.push(TypeCheckError::new(format!(
-                "invoke target must be an entity reference, found {actual:?}"
+                "invoke target must be an entity reference, found {}",
+                optional_type_kind_label(actual.as_ref())
             )));
         }
         match target {
@@ -1215,13 +1222,15 @@ impl TypeChecker<'_> {
         };
         let Some(item) = spread_item_type(&actual) else {
             self.errors.push(TypeCheckError::new(format!(
-                "rag.query roots must be a sequence of entity references, found {actual:?}"
+                "rag.query roots must be a sequence of entity references, found {}",
+                type_kind_label(&actual)
             )));
             return;
         };
         if !matches!(item, TypeKind::Ref(_)) {
             self.errors.push(TypeCheckError::new(format!(
-                "rag.query roots items must be entity references, found {item:?}"
+                "rag.query roots items must be entity references, found {}",
+                type_kind_label(item)
             )));
         }
     }
@@ -1230,7 +1239,8 @@ impl TypeChecker<'_> {
         match self.check_expr(value) {
             Some(TypeKind::Ref(_)) | None => {}
             Some(actual) => self.errors.push(TypeCheckError::new(format!(
-                "rag.query roots items must be entity references, found {actual:?}"
+                "rag.query roots items must be entity references, found {}",
+                type_kind_label(&actual)
             ))),
         }
     }

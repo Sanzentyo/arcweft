@@ -141,7 +141,7 @@ fn collect_hir_thread_result_type_labels(item: &HirFlowItem, labels: &mut BTreeS
 fn expr_static_type_label(expr: &Expr) -> String {
     match expr {
         Expr::Literal(Literal::String(_)) => "String".to_owned(),
-        Expr::Literal(Literal::Char { .. }) => "Char".to_owned(),
+        Expr::Literal(Literal::Char { .. }) => "char".to_owned(),
         Expr::Literal(Literal::Int { suffix, .. }) => {
             suffix.as_deref().unwrap_or("unsuffixed-int").to_owned()
         }
@@ -150,7 +150,7 @@ fn expr_static_type_label(expr: &Expr) -> String {
             .map_or("unsuffixed-float", |suffix| suffix.as_str())
             .to_owned(),
         Expr::Literal(Literal::UnitNumber { suffix, .. }) => suffix.as_str().to_owned(),
-        Expr::Literal(Literal::Bool(_)) => "Bool".to_owned(),
+        Expr::Literal(Literal::Bool(_)) => "bool".to_owned(),
         Expr::Literal(Literal::Duration { .. }) => "Duration".to_owned(),
         _ => "Unknown".to_owned(),
     }

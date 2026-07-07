@@ -831,7 +831,7 @@ flow @flow.expected_values expected_values {
 fn result_constructors_use_expected_payload_types() {
     let tree = parse_ok(
         r"
-fn result_constructors(cond: Bool) -> Result<i64, i64> {
+fn result_constructors(cond: bool) -> Result<i64, i64> {
     let ok: Result<i64, i64> = Ok(1)
     let err: Result<i64, i64> = Err(2)
     if cond {
@@ -1025,6 +1025,8 @@ fn numeric_primitive_types_keep_explicit_widths() {
     assert_eq!(TypeKind::primitive_name("i64"), Some(TypeKind::I64));
     assert_eq!(TypeKind::primitive_name("usize"), Some(TypeKind::USize));
     assert_eq!(TypeKind::primitive_name("f32"), Some(TypeKind::F32));
+    assert_eq!(TypeKind::primitive_name("Bool"), None);
+    assert_eq!(TypeKind::primitive_name("Char"), None);
     assert_ne!(
         TypeKind::primitive_name("i32"),
         TypeKind::primitive_name("usize")
@@ -1173,7 +1175,7 @@ flow @flow.bad bad {
     assert!(errors.iter().any(|error| {
         error
             .message()
-            .contains("let annotation expects I32, but expression has U64")
+            .contains("let annotation expects i32, but expression has u64")
     }));
 }
 
@@ -1298,7 +1300,7 @@ flow @flow.trying trying {
 fn typecheck_rejects_function_return_type_mismatch() {
     let tree = parse_ok(
         r"
-fn bad_score() -> Bool {
+fn bad_score() -> bool {
     1
 }
 ",
@@ -2052,7 +2054,7 @@ fn typechecks_char_literal_and_rejects_string_annotation_mismatch() {
     let ok = parse_ok(
         r#"
 flow @flow.char_literal char_literal {
-    let ch: Char = "あ"c
+    let ch: char = "あ"c
 }
 "#,
     );
@@ -2062,16 +2064,16 @@ flow @flow.char_literal char_literal {
     let bad = parse_ok(
         r#"
 flow @flow.char_literal_bad char_literal_bad {
-    let ch: Char = "a"
+    let ch: char = "a"
 }
 "#,
     );
     let hir = lower_to_hir(&bad).expect("string literal fixture lowers");
-    let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("string is not Char");
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("string is not char");
     assert!(
         errors
             .iter()
-            .any(|error| error.message().contains("let annotation expects Char"))
+            .any(|error| error.message().contains("let annotation expects char"))
     );
 }
 
@@ -2102,7 +2104,7 @@ fn typechecks_vec_map_closure_result_and_sum() {
 flow @flow.map_types map_types {
     let nums: Vec<i64> = [1i64, 2i64, 3i64]
     let shifted: Vec<i64> = nums.map(|item| item + 1i64)
-    let flags: Vec<Bool> = nums.map(|item| item > 1i64)
+    let flags: Vec<bool> = nums.map(|item| item > 1i64)
     let total: i64 = shifted.sum()
     log.info(total)
     log.info(flags)
@@ -2141,8 +2143,8 @@ fn typechecks_sequence_len_as_usize() {
     let tree = parse_ok(
         r#"
 flow @flow.sequence_len sequence_len {
-    let flags: Vec<Bool> = [true, false, true]
-    let letters: Vec<Char> = ["a"c, "b"c]
+    let flags: Vec<bool> = [true, false, true]
+    let letters: Vec<char> = ["a"c, "b"c]
     let delays: Vec<Duration> = [1ms, 2ms]
     let total: usize = flags.len() + letters.len() + delays.len()
     return "done"
@@ -2161,7 +2163,7 @@ fn typecheck_rejects_sum_on_non_integer_vec() {
         r"
 flow @flow.bad_sum bad_sum {
     let nums: Vec<i64> = [1i64, 2i64, 3i64]
-    let flags: Vec<Bool> = nums.map(|item| item > 1i64)
+    let flags: Vec<bool> = nums.map(|item| item > 1i64)
     let total: i64 = flags.sum()
 }
 ",

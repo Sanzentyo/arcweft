@@ -393,7 +393,7 @@ pub(super) fn option_payload_type(expr_type: Option<&TypeKind>) -> Option<TypeKi
         Some(TypeKind::Named(name)) if name == "Option<Ref<Flow>>" => {
             Some(TypeKind::entity_ref(EntityKind::Flow))
         }
-        Some(TypeKind::Named(name)) if name == "Option<Bool>" => Some(TypeKind::Bool),
+        Some(TypeKind::Named(name)) if name == "Option<bool>" => Some(TypeKind::Bool),
         Some(TypeKind::Named(name)) if name == "Option<i64>" => Some(TypeKind::I64),
         Some(TypeKind::Named(name)) if name == "Option<String>" => Some(TypeKind::String),
         _ => None,
@@ -972,7 +972,7 @@ pub(super) fn normalize_choice_type(alternatives: Vec<TypeKind>) -> TypeKind {
 
 fn atomic_type_kind_label(ty: &TypeKind) -> Option<&'static str> {
     match ty {
-        TypeKind::Bool => Some("Bool"),
+        TypeKind::Bool => Some("bool"),
         TypeKind::I8 => Some("i8"),
         TypeKind::I16 => Some("i16"),
         TypeKind::I32 => Some("i32"),
@@ -988,7 +988,7 @@ fn atomic_type_kind_label(ty: &TypeKind) -> Option<&'static str> {
         TypeKind::F32 => Some("f32"),
         TypeKind::F64 => Some("f64"),
         TypeKind::String => Some("String"),
-        TypeKind::Char => Some("Char"),
+        TypeKind::Char => Some("char"),
         TypeKind::Bytes => Some("Bytes"),
         TypeKind::TextCluster => Some("TextCluster"),
         TypeKind::Duration => Some("Duration"),
@@ -1106,6 +1106,10 @@ pub(super) fn type_kind_label(ty: &TypeKind) -> String {
             .join(" | "),
         _ => unreachable!("atomic type labels are handled before structured labels"),
     }
+}
+
+pub(super) fn optional_type_kind_label(ty: Option<&TypeKind>) -> String {
+    ty.map_or_else(|| "unknown".to_owned(), type_kind_label)
 }
 
 fn function_type_kind_label(params: &[TypeKind], return_type: &TypeKind) -> String {

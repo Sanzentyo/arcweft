@@ -1,5 +1,5 @@
 use super::{Expr, TypeCheckError, TypeChecker, TypeKind};
-use crate::checker::helpers::numeric_literal_suffix_type;
+use crate::checker::helpers::{numeric_literal_suffix_type, type_kind_label};
 use arcweft_lang_syntax::expr::Literal;
 
 impl TypeChecker<'_> {
@@ -18,7 +18,8 @@ impl TypeChecker<'_> {
             || matches!(item_type, TypeKind::Named(ref name) if name == "_"))
         {
             self.errors.push(TypeCheckError::new(format!(
-                "range endpoints must have an integer type, found {item_type:?}"
+                "range endpoints must have an integer type, found {}",
+                type_kind_label(&item_type)
             )));
         }
         let start_type =
@@ -51,7 +52,9 @@ impl TypeChecker<'_> {
         };
         if !self.types_compatible(expected, actual) {
             self.errors.push(TypeCheckError::new(format!(
-                "range {bound} bound must have type {expected:?}, found {actual:?}"
+                "range {bound} bound must have type {}, found {}",
+                type_kind_label(expected),
+                type_kind_label(actual)
             )));
         }
     }

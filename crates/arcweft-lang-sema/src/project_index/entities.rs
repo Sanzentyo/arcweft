@@ -840,6 +840,8 @@ pub(super) fn entity_decl_kind_label(kind: EntityDeclKind) -> &'static str {
 
 fn type_kind_stable_label(ty: &TypeKind) -> String {
     match ty {
+        TypeKind::Bool => "bool".to_owned(),
+        TypeKind::Char => "char".to_owned(),
         TypeKind::Ref(entity) => entity.value().map_or_else(
             || format!("Ref<{:?}>", entity.kind()),
             |value| format!("Ref<{:?},{}>", entity.kind(), type_kind_stable_label(value)),

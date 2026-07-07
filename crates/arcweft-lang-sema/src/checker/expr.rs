@@ -2,9 +2,9 @@
 
 use super::helpers::{
     array_len_matches, array_repeat_len_label, collection_index_type, expr_path_label,
-    first_arg_type, is_drop_name, let_else_bindings, numeric_literal_suffix_type, result_ok_type,
-    stmts_diverge, type_kind_label, well_known_capacity_method_type, well_known_field_type,
-    well_known_runtime_method_type,
+    first_arg_type, is_drop_name, let_else_bindings, numeric_literal_suffix_type,
+    optional_type_kind_label, result_ok_type, stmts_diverge, type_kind_label,
+    well_known_capacity_method_type, well_known_field_type, well_known_runtime_method_type,
 };
 use super::{
     BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr, FunctionParam,
@@ -46,8 +46,10 @@ impl TypeChecker<'_> {
             .as_ref()
             .is_some_and(|actual| self.types_compatible(expected, actual))
         {
+            let actual = optional_type_kind_label(actual.as_ref());
             self.errors.push(TypeCheckError::new(format!(
-                "{context} must have type {expected:?}, found {actual:?}"
+                "{context} must have type {}, found {actual}",
+                type_kind_label(expected)
             )));
         }
     }
@@ -641,7 +643,8 @@ impl TypeChecker<'_> {
                     ty
                 } else {
                     self.errors.push(TypeCheckError::new(format!(
-                        "float literal suffix must be a float type, found {ty:?}"
+                        "float literal suffix must be a float type, found {}",
+                        type_kind_label(&ty)
                     )));
                     TypeKind::Named("_".to_owned())
                 }
@@ -668,8 +671,9 @@ impl TypeChecker<'_> {
             }
             if !self.types_compatible(item.as_ref(), &item_type) {
                 self.errors.push(TypeCheckError::new(format!(
-                    "array items must have type {:?}, found {item_type:?}",
-                    item.as_ref()
+                    "array items must have type {}, found {}",
+                    type_kind_label(item.as_ref()),
+                    type_kind_label(&item_type)
                 )));
             }
             return TypeKind::Array {
@@ -680,8 +684,9 @@ impl TypeChecker<'_> {
         if let Some(TypeKind::Vec(item)) = expected {
             if !self.types_compatible(item.as_ref(), &item_type) {
                 self.errors.push(TypeCheckError::new(format!(
-                    "vector items must have type {:?}, found {item_type:?}",
-                    item.as_ref()
+                    "vector items must have type {}, found {}",
+                    type_kind_label(item.as_ref()),
+                    type_kind_label(&item_type)
                 )));
             }
             return TypeKind::Vec(item.clone());
@@ -718,8 +723,9 @@ impl TypeChecker<'_> {
             }
             if !self.types_compatible(item.as_ref(), &item_type) {
                 self.errors.push(TypeCheckError::new(format!(
-                    "array repeat value must have type {:?}, found {item_type:?}",
-                    item.as_ref()
+                    "array repeat value must have type {}, found {}",
+                    type_kind_label(item.as_ref()),
+                    type_kind_label(&item_type)
                 )));
             }
             return TypeKind::Array {
@@ -1242,7 +1248,8 @@ impl TypeChecker<'_> {
                 Some(TypeKind::Duration) => TypeKind::Duration,
                 other => {
                     self.errors.push(TypeCheckError::new(format!(
-                        "negation operand must be numeric or Duration, found {other:?}"
+                        "negation operand must be numeric or Duration, found {}",
+                        optional_type_kind_label(other.as_ref())
                     )));
                     TypeKind::Named("_".to_owned())
                 }
@@ -1392,7 +1399,8 @@ impl TypeChecker<'_> {
             .or_else(|| well_known_capacity_method_type(&receiver_type, method_name, args.len()))
             .or_else(|| {
                 self.errors.push(TypeCheckError::new(format!(
-                    "unknown method `{method_name}` on {receiver_type:?}"
+                    "unknown method `{method_name}` on {}",
+                    type_kind_label(&receiver_type)
                 )));
                 None
             })
@@ -1625,7 +1633,8 @@ impl TypeChecker<'_> {
             | TypeKind::Array { .. } => Some(TypeKind::USize),
             other => {
                 self.errors.push(TypeCheckError::new(format!(
-                    "len receiver must be a string or iterable sequence, found {other:?}"
+                    "len receiver must be a string or iterable sequence, found {}",
+                    type_kind_label(other)
                 )));
                 None
             }
@@ -1666,7 +1675,8 @@ impl TypeChecker<'_> {
             }
             other => {
                 self.errors.push(TypeCheckError::new(format!(
-                    "sum receiver must be an iterable sequence, found {other:?}"
+                    "sum receiver must be an iterable sequence, found {}",
+                    type_kind_label(other)
                 )));
                 None
             }
@@ -1680,7 +1690,8 @@ impl TypeChecker<'_> {
     ) -> TypeKind {
         let Some(item) = spread_item_type(receiver_type) else {
             self.errors.push(TypeCheckError::new(format!(
-                "contains receiver must be an iterable sequence, found {receiver_type:?}"
+                "contains receiver must be an iterable sequence, found {}",
+                type_kind_label(receiver_type)
             )));
             for arg in args {
                 self.check_expr(arg.value());
@@ -1800,7 +1811,8 @@ impl TypeChecker<'_> {
     ) -> Option<TypeKind> {
         let TypeKind::Vec(item) = receiver_type else {
             self.errors.push(TypeCheckError::new(format!(
-                "traverse receiver must be Vec<T>, found {receiver_type:?}"
+                "traverse receiver must be Vec<T>, found {}",
+                type_kind_label(receiver_type)
             )));
             return None;
         };
@@ -1868,7 +1880,8 @@ impl TypeChecker<'_> {
             TypeKind::Need { .. } => Some(receiver_type.clone()),
             other => {
                 self.errors.push(TypeCheckError::new(format!(
-                    "parallel receiver must be Need<Vec<T>, E>, found {other:?}"
+                    "parallel receiver must be Need<Vec<T>, E>, found {}",
+                    type_kind_label(other)
                 )));
                 None
             }
@@ -1994,13 +2007,14 @@ impl TypeChecker<'_> {
             }
             Some(TypeKind::Named(name)) => result_ok_type(&name).or_else(|| {
                 self.errors.push(TypeCheckError::new(format!(
-                    "`?` requires Result<T, E> or Option<T>, found Named({name:?})"
+                    "`?` requires Result<T, E> or Option<T>, found {name}"
                 )));
                 None
             }),
             Some(other) => {
                 self.errors.push(TypeCheckError::new(format!(
-                    "`?` requires Result<T, E> or Option<T>, found {other:?}"
+                    "`?` requires Result<T, E> or Option<T>, found {}",
+                    type_kind_label(&other)
                 )));
                 None
             }
@@ -2069,7 +2083,9 @@ impl TypeChecker<'_> {
             && !self.types_compatible(expected, actual)
         {
             self.errors.push(TypeCheckError::new(format!(
-                "block final value must have type {expected:?}, found {actual:?}"
+                "block final value must have type {}, found {}",
+                type_kind_label(expected),
+                type_kind_label(actual)
             )));
         }
         self.reject_borrow_escape(ty.as_ref(), "block final value");
@@ -2148,7 +2164,9 @@ impl TypeChecker<'_> {
                     && !self.types_compatible(expected, ty)
                 {
                     self.errors.push(TypeCheckError::new(format!(
-                        "if expression {label} branch must have type {expected:?}, found {ty:?}"
+                        "if expression {label} branch must have type {}, found {}",
+                        type_kind_label(expected),
+                        type_kind_label(ty)
                     )));
                 }
             }
@@ -2201,7 +2219,9 @@ impl TypeChecker<'_> {
             {
                 all_compatible_with_expected = false;
                 self.errors.push(TypeCheckError::new(format!(
-                    "match arm must have type {expected:?}, found {arm_ty:?}"
+                    "match arm must have type {}, found {}",
+                    type_kind_label(expected),
+                    type_kind_label(arm_ty)
                 )));
             }
             match (&inferred, arm_type) {
@@ -2274,7 +2294,9 @@ impl TypeChecker<'_> {
                     && !self.types_compatible(expected, ty)
                 {
                     self.errors.push(TypeCheckError::new(format!(
-                        "if-let expression {label} branch must have type {expected:?}, found {ty:?}"
+                        "if-let expression {label} branch must have type {}, found {}",
+                        type_kind_label(expected),
+                        type_kind_label(ty)
                     )));
                 }
             }
@@ -2297,27 +2319,7 @@ impl TypeChecker<'_> {
     fn check_binary_expr(&mut self, lhs: &Expr, op: BinaryOp, rhs: &Expr) -> Option<TypeKind> {
         let lhs_type = self.check_expr(lhs);
         if op == BinaryOp::In {
-            let expected_range = lhs_type
-                .as_ref()
-                .filter(|ty| ty.is_integer())
-                .cloned()
-                .map(|ty| TypeKind::Range(Box::new(ty)));
-            let rhs_type = self.check_expr_with_expected(rhs, expected_range.as_ref());
-            let Some(TypeKind::Range(item_type)) = rhs_type.as_ref() else {
-                self.errors.push(TypeCheckError::new(format!(
-                    "`in` expression requires a range on the right, found {rhs_type:?}"
-                )));
-                return None;
-            };
-            if let Some(lhs_type) = lhs_type.as_ref()
-                && !self.types_compatible(item_type, lhs_type)
-            {
-                self.errors.push(TypeCheckError::new(format!(
-                    "`in` expression left operand must have range item type {item_type:?}, found {lhs_type:?}"
-                )));
-                return None;
-            }
-            return Some(TypeKind::Bool);
+            return self.check_in_binary_expr(lhs_type.as_ref(), rhs);
         }
         let rhs_expected = rhs_expected_type_for_binary(op, lhs_type.as_ref());
         let rhs_type = self.check_expr_with_expected(rhs, rhs_expected);
@@ -2326,7 +2328,9 @@ impl TypeChecker<'_> {
             BinaryOp::Implies | BinaryOp::Or | BinaryOp::And => {
                 if lhs_type != Some(TypeKind::Bool) || rhs_type != Some(TypeKind::Bool) {
                     self.errors.push(TypeCheckError::new(format!(
-                        "logical contract expression must use Bool operands, found {lhs_type:?} and {rhs_type:?}"
+                        "logical contract expression must use bool operands, found {} and {}",
+                        optional_type_kind_label(lhs_type.as_ref()),
+                        optional_type_kind_label(rhs_type.as_ref())
                     )));
                     return None;
                 }
@@ -2340,7 +2344,9 @@ impl TypeChecker<'_> {
                 }
                 _ => {
                     self.errors.push(TypeCheckError::new(format!(
-                        "equality operands must be compatible, found {lhs_type:?} and {rhs_type:?}"
+                        "equality operands must be compatible, found {} and {}",
+                        optional_type_kind_label(lhs_type.as_ref()),
+                        optional_type_kind_label(rhs_type.as_ref())
                     )));
                     None
                 }
@@ -2357,7 +2363,9 @@ impl TypeChecker<'_> {
                     }
                     _ => {
                         self.errors.push(TypeCheckError::new(format!(
-                            "ordering operands must have the same ordered scalar type, found {lhs_type:?} and {rhs_type:?}"
+                            "ordering operands must have the same ordered scalar type, found {} and {}",
+                            optional_type_kind_label(lhs_type.as_ref()),
+                            optional_type_kind_label(rhs_type.as_ref())
                         )));
                         None
                     }
@@ -2374,7 +2382,9 @@ impl TypeChecker<'_> {
                 }
                 (lhs, rhs) => {
                     self.errors.push(TypeCheckError::new(format!(
-                        "merge operator `&` requires compatible patch operands, found {lhs:?} and {rhs:?}"
+                        "merge operator `&` requires compatible patch operands, found {} and {}",
+                        optional_type_kind_label(lhs.as_ref()),
+                        optional_type_kind_label(rhs.as_ref())
                     )));
                     None
                 }
@@ -2389,12 +2399,44 @@ impl TypeChecker<'_> {
                     lhs_type
                 } else {
                     self.errors.push(TypeCheckError::new(format!(
-                        "arithmetic expression operands must have a supported numeric or Duration type, found {lhs_type:?} and {rhs_type:?}"
+                        "arithmetic expression operands must have a supported numeric or Duration type, found {} and {}",
+                        optional_type_kind_label(lhs_type.as_ref()),
+                        optional_type_kind_label(rhs_type.as_ref())
                     )));
                     None
                 }
             }
         }
+    }
+
+    fn check_in_binary_expr(
+        &mut self,
+        lhs_type: Option<&TypeKind>,
+        rhs: &Expr,
+    ) -> Option<TypeKind> {
+        let expected_range = lhs_type
+            .filter(|ty| ty.is_integer())
+            .cloned()
+            .map(|ty| TypeKind::Range(Box::new(ty)));
+        let rhs_type = self.check_expr_with_expected(rhs, expected_range.as_ref());
+        let Some(TypeKind::Range(item_type)) = rhs_type.as_ref() else {
+            self.errors.push(TypeCheckError::new(format!(
+                "`in` expression requires a range on the right, found {}",
+                optional_type_kind_label(rhs_type.as_ref())
+            )));
+            return None;
+        };
+        if let Some(lhs_type) = lhs_type
+            && !self.types_compatible(item_type, lhs_type)
+        {
+            self.errors.push(TypeCheckError::new(format!(
+                "`in` expression left operand must have range item type {}, found {}",
+                type_kind_label(item_type),
+                type_kind_label(lhs_type)
+            )));
+            return None;
+        }
+        Some(TypeKind::Bool)
     }
 
     pub(super) fn check_choice_match_exhaustive<'a>(
