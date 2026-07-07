@@ -63,8 +63,8 @@ use helpers::{
     entity_kind_for_decl, entity_syntax_kind, expr_path_label, ident_pattern_name,
     is_character_entity_literal, is_dialogue_callee_type, is_drop_callee, is_local_ident,
     iter_item_type, merge_line_output, normalize_choice_type, pattern_bindings_with_fallback,
-    source_return_types, stmts_diverge, stream_return_types, type_ref_kind, typed_pattern_binding,
-    unify_loop_break_types,
+    pattern_bindings_with_nominal_fields, source_return_types, stmts_diverge, stream_return_types,
+    type_ref_kind, typed_pattern_binding, unify_loop_break_types,
 };
 
 /// Verifies that lowered HIR no longer contains raw expression fragments.
@@ -1304,13 +1304,20 @@ fn available_effect_set(env: &TypeCheckEnv) -> Option<EffectSet> {
 }
 
 fn function_signature_type(signature: &FnSignature) -> FunctionSignature {
+    function_signature_type_with_nominal_fields(signature, None)
+}
+
+fn function_signature_type_with_nominal_fields(
+    signature: &FnSignature,
+    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
+) -> FunctionSignature {
     let return_type = curried_signature_return_type(signature);
     let params = signature
         .param_groups()
         .first()
         .into_iter()
         .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
-        .map(function_param_type)
+        .map(|param| function_param_type(param, nominal_fields))
         .collect::<Vec<_>>();
     let remaining_param_groups = signature
         .param_groups()
@@ -1320,7 +1327,7 @@ fn function_signature_type(signature: &FnSignature) -> FunctionSignature {
             group
                 .params()
                 .iter()
-                .map(function_param_type)
+                .map(|param| function_param_type(param, nominal_fields))
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
@@ -1346,26 +1353,31 @@ fn curried_signature_return_type(signature: &FnSignature) -> TypeKind {
         })
 }
 
-fn function_param_type(param: &FnParam) -> FunctionParam {
+fn function_param_type(
+    param: &FnParam,
+    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
+) -> FunctionParam {
     let ty = type_ref_kind(param.ty());
     FunctionParam::new(
         pattern_param_name(param.pattern()),
         ty.clone(),
         param.kind(),
         param.default().is_some(),
-        function_param_higher_order_bindings(param.pattern(), &ty),
+        function_param_higher_order_bindings(param.pattern(), &ty, nominal_fields),
     )
 }
 
 fn function_param_higher_order_bindings(
     pattern: &Pattern,
     ty: &TypeKind,
+    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
 ) -> Vec<FunctionParamHigherOrderBinding> {
     let mut bindings = Vec::new();
     collect_function_param_higher_order_bindings(
         pattern,
         ty,
         FunctionParamSelector::Root,
+        nominal_fields,
         &mut bindings,
     );
     bindings
@@ -1375,6 +1387,7 @@ fn collect_function_param_higher_order_bindings(
     pattern: &Pattern,
     ty: &TypeKind,
     selector: FunctionParamSelector,
+    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
     bindings: &mut Vec<FunctionParamHigherOrderBinding>,
 ) {
     match pattern {
@@ -1396,6 +1409,7 @@ fn collect_function_param_higher_order_bindings(
                     item,
                     item_ty,
                     selector_with_tuple_index(&selector, index),
+                    nominal_fields,
                     bindings,
                 );
             }
@@ -1408,17 +1422,26 @@ fn collect_function_param_higher_order_bindings(
                     selector.clone(),
                 ));
             }
-            collect_function_param_higher_order_bindings(pattern, ty, selector, bindings);
+            collect_function_param_higher_order_bindings(
+                pattern,
+                ty,
+                selector,
+                nominal_fields,
+                bindings,
+            );
         }
         Pattern::Record { fields, .. } => {
             for field in fields {
-                let Some(field_ty) = pattern_type_hint(field.pattern()) else {
+                let Some(field_ty) = pattern_type_hint(field.pattern()).or_else(|| {
+                    record_pattern_field_type(pattern, ty, field.name(), nominal_fields)
+                }) else {
                     continue;
                 };
                 collect_function_param_higher_order_bindings(
                     field.pattern(),
                     &field_ty,
                     selector_with_record_field(&selector, field.name()),
+                    nominal_fields,
                     bindings,
                 );
             }
@@ -1435,6 +1458,7 @@ fn collect_function_param_higher_order_bindings(
                     field.pattern(),
                     &field_ty,
                     selector.clone(),
+                    nominal_fields,
                     bindings,
                 );
             }
@@ -1449,6 +1473,7 @@ fn collect_function_param_higher_order_bindings(
                     item,
                     &TypeKind::Unit,
                     selector.clone(),
+                    nominal_fields,
                     bindings,
                 );
             }
@@ -1568,6 +1593,38 @@ fn pattern_type_hint(pattern: &Pattern) -> Option<TypeKind> {
             .collect::<Option<Vec<_>>>()
             .map(TypeKind::Tuple),
         Pattern::Whole { pattern, .. } => pattern_type_hint(pattern),
+        _ => None,
+    }
+}
+
+fn record_pattern_field_type(
+    pattern: &Pattern,
+    ty: &TypeKind,
+    field: &str,
+    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
+) -> Option<TypeKind> {
+    let Pattern::Record { path, .. } = pattern else {
+        return None;
+    };
+    let record_name = path.as_deref().or_else(|| match ty {
+        TypeKind::Named(name) => Some(name.as_str()),
+        TypeKind::BorrowRef { inner, .. } | TypeKind::Shared(inner) => {
+            nominal_record_type_name(inner)
+        }
+        _ => None,
+    })?;
+    nominal_fields?
+        .get(record_name)
+        .and_then(|fields| fields.get(field))
+        .cloned()
+}
+
+fn nominal_record_type_name(ty: &TypeKind) -> Option<&str> {
+    match ty {
+        TypeKind::Named(name) => Some(name),
+        TypeKind::BorrowRef { inner, .. } | TypeKind::Shared(inner) => {
+            nominal_record_type_name(inner)
+        }
         _ => None,
     }
 }

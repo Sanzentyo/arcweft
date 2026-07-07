@@ -321,10 +321,11 @@ Source briefs:
   invoked by the callee and stays effect-free when the binding is only kept.
   Record destructured callback parameters now also project explicitly typed
   function-valued field patterns such as `Spec { load: load: String -> String
-  }: Spec` from record/record-literal call arguments. Variant destructured
-  callback selectors, nominal record field type lookup for untyped field
-  bindings, callback invocations hidden inside returned/stored closures, and
-  LSP-facing closure effect evidence remain open. Save/load
+  }: Spec` from record/record-literal call arguments, and untyped field
+  bindings such as `Spec { load, path }: Spec` use nominal struct field types
+  when the struct is available in the checked module. Variant destructured
+  callback selectors, callback invocations hidden inside returned/stored
+  closures, and LSP-facing closure effect evidence remain open. Save/load
   currently has an explicit Product AWBC policy: runtime function values are
   rejected as non-persistable until AWBC closure allocation and snapshot
   versioning are designed. Numeric fallback lints

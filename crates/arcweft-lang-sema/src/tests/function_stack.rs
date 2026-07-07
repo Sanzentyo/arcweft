@@ -1451,6 +1451,48 @@ effects { }
 }
 
 #[test]
+fn untyped_destructured_record_callback_uses_nominal_field_type() {
+    let tree = parse_ok(
+        r#"
+struct LoaderSpec {
+    load: String -> String,
+    path: String,
+}
+
+fn use_loader(LoaderSpec { load, path }: LoaderSpec) -> String {
+    return load(path)
+}
+
+flow @flow.untyped_destructured_record_callback_effect untyped_destructured_record_callback_effect
+effects { }
+{
+    let body = use_loader(LoaderSpec {
+        load: |path: String| -> String {
+            adapter.read_text(path = path)
+        },
+        path: "story.arcw",
+    })
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("untyped record destructured fixture lowers");
+    validate_typecheck_ready(&hir).expect("untyped record destructured fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("untyped record destructured callback must compose body effects");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.untyped_destructured_record_callback_effect")
+                && error.message().contains("fs.read")
+        }),
+        "expected untyped record destructured callback effect diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn curried_higher_order_function_argument_composes_when_later_group_param_is_called() {
     let tree = parse_ok(
         r#"

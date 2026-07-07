@@ -5,8 +5,9 @@ use super::{
     FunctionSignature, HirModule, HirTopLevelDecl, LifetimeKey, LifetimeScopeKind, Pattern, Stmt,
     TypeCheckError, TypeChecker, TypeKind, YieldContext, choice_output_type, entity_kind_for_decl,
     entity_syntax_kind, function_param_local_type, function_param_local_type_with_generics,
-    function_signature_type, ident_pattern_name, normalize_choice_type, signature_generic_names,
-    stream_return_types, type_ref_kind, type_ref_kind_with_generics, validate_typecheck_ready,
+    function_signature_type, function_signature_type_with_nominal_fields, ident_pattern_name,
+    normalize_choice_type, signature_generic_names, stream_return_types, type_ref_kind,
+    type_ref_kind_with_generics, validate_typecheck_ready,
 };
 use crate::checker::helpers::{type_kind_label, type_ref_label};
 use crate::effect_model::{
@@ -189,9 +190,13 @@ impl TypeChecker<'_> {
                     .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
                     .flat_map(|param| {
                         let ty = function_param_local_type_with_generics(param, &generic_names);
-                        super::function_param_higher_order_bindings(param.pattern(), &ty)
-                            .into_iter()
-                            .map(|binding| binding.name().to_owned())
+                        super::function_param_higher_order_bindings(
+                            param.pattern(),
+                            &ty,
+                            Some(&self.nominal_fields),
+                        )
+                        .into_iter()
+                        .map(|binding| binding.name().to_owned())
                     })
                     .collect::<BTreeSet<_>>(),
             };
@@ -367,7 +372,10 @@ impl TypeChecker<'_> {
             };
             for function in item.functions() {
                 self.check_signature_type_refs(function.signature());
-                let signature_type = function_signature_type(function.signature());
+                let signature_type = function_signature_type_with_nominal_fields(
+                    function.signature(),
+                    Some(&self.nominal_fields),
+                );
                 let name = format!("{}.{}", item.id(), function.signature().name());
                 self.global_functions
                     .insert(name.clone(), signature_type.return_type().clone());
@@ -389,7 +397,10 @@ impl TypeChecker<'_> {
     fn bind_top_level_functions(&mut self, module: &HirModule) {
         for function in module.functions() {
             self.check_signature_type_refs(function.signature());
-            let signature_type = function_signature_type(function.signature());
+            let signature_type = function_signature_type_with_nominal_fields(
+                function.signature(),
+                Some(&self.nominal_fields),
+            );
             self.global_functions.insert(
                 function.name().to_owned(),
                 signature_type.return_type().clone(),

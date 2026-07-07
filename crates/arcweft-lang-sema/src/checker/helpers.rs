@@ -3,6 +3,7 @@ use super::{
     Expr, LifetimeScopeKind, Literal, MapKind, Pattern, Stmt, TypeCheckError, TypeKind, TypeRef,
     VariantPatternPayload,
 };
+use std::collections::HashMap;
 
 pub(super) fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
     let head = entity.body().split(['.', '@', ':']).next()?;
@@ -294,6 +295,94 @@ pub(super) fn pattern_bindings_with_fallback(
         }
     }
     bindings
+}
+
+pub(super) fn pattern_bindings_with_nominal_fields(
+    pattern: &Pattern,
+    fallback: &TypeKind,
+    nominal_fields: &HashMap<String, HashMap<String, TypeKind>>,
+) -> Vec<(String, TypeKind)> {
+    let mut bindings =
+        let_else_bindings_with_nominal_fields(pattern, Some(fallback), nominal_fields);
+    for name in collect_pattern_binding_names(pattern) {
+        if !bindings.iter().any(|(bound, _)| bound == &name) {
+            bindings.push((name, TypeKind::Unit));
+        }
+    }
+    bindings
+}
+
+fn let_else_bindings_with_nominal_fields(
+    pattern: &Pattern,
+    expr_type: Option<&TypeKind>,
+    nominal_fields: &HashMap<String, HashMap<String, TypeKind>>,
+) -> Vec<(String, TypeKind)> {
+    match pattern {
+        Pattern::Record { path, fields, .. } => fields
+            .iter()
+            .flat_map(|field| {
+                let field_ty = nominal_record_field_type(
+                    path.as_deref(),
+                    expr_type,
+                    field.name(),
+                    nominal_fields,
+                );
+                let_else_bindings_with_nominal_fields(
+                    field.pattern(),
+                    field_ty.as_ref(),
+                    nominal_fields,
+                )
+            })
+            .collect(),
+        Pattern::Tuple(items) => {
+            let tuple_items = match expr_type {
+                Some(TypeKind::Tuple(items)) => Some(items.as_slice()),
+                _ => None,
+            };
+            items
+                .iter()
+                .enumerate()
+                .flat_map(|(index, item)| {
+                    let item_type = tuple_items.and_then(|types| types.get(index));
+                    let_else_bindings_with_nominal_fields(item, item_type, nominal_fields)
+                })
+                .collect()
+        }
+        Pattern::Whole { name, pattern } => {
+            let mut bindings = expr_type
+                .cloned()
+                .map(|ty| vec![(name.to_owned(), ty)])
+                .unwrap_or_default();
+            bindings.extend(let_else_bindings_with_nominal_fields(
+                pattern,
+                expr_type,
+                nominal_fields,
+            ));
+            bindings
+        }
+        _ => let_else_bindings(pattern, expr_type),
+    }
+}
+
+fn nominal_record_field_type(
+    path: Option<&str>,
+    expr_type: Option<&TypeKind>,
+    field: &str,
+    nominal_fields: &HashMap<String, HashMap<String, TypeKind>>,
+) -> Option<TypeKind> {
+    let record_name = path.or_else(|| nominal_record_name(expr_type?))?;
+    nominal_fields
+        .get(record_name)
+        .and_then(|fields| fields.get(field))
+        .cloned()
+}
+
+fn nominal_record_name(expr_type: &TypeKind) -> Option<&str> {
+    match expr_type {
+        TypeKind::Named(name) => Some(name),
+        TypeKind::BorrowRef { inner, .. } | TypeKind::Shared(inner) => nominal_record_name(inner),
+        _ => None,
+    }
 }
 
 fn sequence_pattern_item_type(expr_type: Option<&TypeKind>) -> Option<&TypeKind> {
