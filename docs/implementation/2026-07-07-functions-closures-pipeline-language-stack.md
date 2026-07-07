@@ -446,7 +446,8 @@ Source briefs:
   `let` RHS expressions, but full arbitrary expression inlays remain open until
   expression AST/statement surfaces provide source ranges for every expression
   position and LSP policy decides which arbitrary expression judgments should
-  be rendered.
+  be rendered. This has been split to
+  `docs/reviews/requests/2026-07-07-seq-07.4.1-function-stack-expression-source-range-inlays.md`.
 
 ## Follow-up request
 
@@ -455,6 +456,7 @@ Source briefs:
 - `docs/reviews/requests/2026-07-07-seq-07.2-function-stack-placeholder-inference-and-method-fallback.md`
 - `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`
 - `docs/reviews/requests/2026-07-07-seq-07.4-function-stack-capture-effect-lsp.md`
+- `docs/reviews/requests/2026-07-07-seq-07.4.1-function-stack-expression-source-range-inlays.md`
 - `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`
 
 ## Validation
