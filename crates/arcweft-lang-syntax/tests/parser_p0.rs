@@ -512,6 +512,55 @@ fn call_arg_closure_keeps_explicit_return_type() {
 }
 
 #[test]
+fn parenthesized_closure_can_be_called_immediately() {
+    let expr = parse_expr(r#"(|name: String| -> String { name })("arc")"#)
+        .expect("parenthesized closure call parses");
+    let Expr::Call { callee, args } = expr else {
+        panic!("expected closure call");
+    };
+    assert!(matches!(
+        callee.as_ref(),
+        Expr::Closure {
+            params,
+            return_type,
+            body,
+        } if params.len() == 1
+            && matches!(return_type, Some(TypeRef::Path(path)) if path == "String")
+            && matches!(body.as_ref(), Expr::Block { .. })
+    ));
+    assert!(matches!(
+        args.as_slice(),
+        [CallArg::Positional(Expr::Literal(_))]
+    ));
+}
+
+#[test]
+fn parenthesized_zero_arg_closure_can_be_called_immediately() {
+    let expr = parse_expr(
+        r#"
+(|| -> String {
+    "arc"
+})()
+"#,
+    )
+    .expect("parenthesized zero-arg closure call parses");
+    let Expr::Call { callee, args } = expr else {
+        panic!("expected zero-arg closure call");
+    };
+    assert!(matches!(
+        callee.as_ref(),
+        Expr::Closure {
+            params,
+            return_type,
+            body,
+        } if params.is_empty()
+            && matches!(return_type, Some(TypeRef::Path(path)) if path == "String")
+            && matches!(body.as_ref(), Expr::Block { .. })
+    ));
+    assert!(args.is_empty());
+}
+
+#[test]
 fn closure_return_type_requires_block_body() {
     let error = parse_expr("|score: i32| -> bool score >= 80")
         .expect_err("return-typed closure without block is rejected");

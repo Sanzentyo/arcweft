@@ -826,22 +826,27 @@ impl TypeChecker<'_> {
     fn record_function_value_effect_call(
         &mut self,
         callee: Option<&str>,
+        effect_callable: Option<CallableId>,
         arg_count: usize,
         arity: usize,
     ) {
+        let callable = effect_callable
+            .or_else(|| callee.and_then(|callee| self.local_function_effects.get(callee).cloned()));
         if arg_count < arity {
+            if let Some(callable) = callable {
+                self.last_checked_closure_effect_callable = Some(callable);
+            }
             return;
         }
-        let Some(callee) = callee else {
+        let Some(callable) = callable else {
             return;
         };
-        let Some(callable) = self.local_function_effects.get(callee).cloned() else {
-            return;
-        };
-        self.effect_collector.record_local_call(
-            callable,
-            EffectSite::new(format!("function value call `{callee}`")),
+        let site = callee.map_or_else(
+            || "function value call on closure expression".to_owned(),
+            |callee| format!("function value call `{callee}`"),
         );
+        self.effect_collector
+            .record_local_call(callable, EffectSite::new(site));
     }
 
     fn closure_effect_callable_for_binding_expr(
@@ -856,6 +861,9 @@ impl TypeChecker<'_> {
             Expr::Closure { .. } => self.last_checked_closure_effect_callable.clone(),
             Expr::Path(path) => self.local_function_effects.get(path.as_label()).cloned(),
             Expr::Call { callee, args } => {
+                if let Some(callable) = self.last_checked_closure_effect_callable.clone() {
+                    return Some(callable);
+                }
                 let callee = expr_path_label(callee)?;
                 let callable = self.local_function_effects.get(&callee)?.clone();
                 let arity = self.locals.get(&callee)?.function_arity()?;

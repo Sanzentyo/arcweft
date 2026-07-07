@@ -3,6 +3,7 @@ use super::{
     TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
 use crate::checker::helpers::{first_arg_type, type_kind_label};
+use crate::effect_model::CallableId;
 
 impl TypeChecker<'_> {
     pub(super) fn check_path_call_expr(
@@ -57,6 +58,7 @@ impl TypeChecker<'_> {
             return Some(self.check_known_function_value_call(
                 expression_id,
                 Some(name),
+                None,
                 args,
                 callee_ty,
             ));
@@ -72,6 +74,7 @@ impl TypeChecker<'_> {
         &mut self,
         expression_id: TypeExpressionId,
         callee: Option<&str>,
+        effect_callable: Option<CallableId>,
         args: &[CallArg],
         callee_ty: TypeKind,
     ) -> TypeKind {
@@ -86,7 +89,12 @@ impl TypeChecker<'_> {
             .iter()
             .filter(|arg| matches!(arg, CallArg::Positional(_)))
             .count();
-        self.record_function_value_effect_call(callee, positional_arg_count, params.len());
+        self.record_function_value_effect_call(
+            callee,
+            effect_callable,
+            positional_arg_count,
+            params.len(),
+        );
         let result_ty = self.check_function_value_call(args, params, return_type);
         self.record_typed_lowering_evidence(TypedLoweringEvidence {
             expression_id,

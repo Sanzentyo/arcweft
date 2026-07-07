@@ -875,7 +875,11 @@ impl TypeChecker<'_> {
         if let Expr::Path(name) = callee {
             return self.check_path_call_expr(name, args, expected, expression_id);
         }
-        match self.check_expr(callee) {
+        let previous_closure_effect_callable = self.last_checked_closure_effect_callable.take();
+        let callee_ty = self.check_expr(callee);
+        let callee_effect_callable = self.last_checked_closure_effect_callable.take();
+        self.last_checked_closure_effect_callable = previous_closure_effect_callable;
+        match callee_ty {
             Some(TypeKind::Speaker(entity) | TypeKind::SpeakerPreset(entity)) => {
                 for arg in args {
                     self.check_expr(arg.value());
@@ -886,6 +890,7 @@ impl TypeChecker<'_> {
                 Some(self.check_known_function_value_call(
                     expression_id,
                     expr_path_label(callee).as_deref(),
+                    callee_effect_callable,
                     args,
                     callee_ty,
                 ))

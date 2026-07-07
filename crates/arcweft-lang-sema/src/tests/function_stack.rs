@@ -944,6 +944,36 @@ effects { }
 }
 
 #[test]
+fn immediate_closure_call_composes_body_effects_into_caller() {
+    let tree = parse_ok(
+        r#"
+flow @flow.immediate_closure_effect_call immediate_closure_effect_call
+effects { }
+{
+    let body = (|| -> String {
+        adapter.read_text(path = "story.arcw")
+    })()
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("immediate closure effect call fixture lowers");
+    validate_typecheck_ready(&hir).expect("immediate closure effect call fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("calling an immediate closure must compose body effects into the caller");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.immediate_closure_effect_call")
+                && error.message().contains("fs.read")
+        }),
+        "expected immediate closure call effect upper-bound diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn partial_local_closure_application_does_not_compose_until_called() {
     let tree = parse_ok(
         r#"
@@ -979,6 +1009,40 @@ effects { }
 }
 
 #[test]
+fn partial_immediate_closure_application_does_not_compose_until_called() {
+    let tree = parse_ok(
+        r#"
+flow @flow.partial_immediate_closure_effect_creation partial_immediate_closure_effect_creation
+effects { }
+{
+    let suffixer = (|path: String, suffix: String| -> String {
+        adapter.read_text(path = path)
+    })("story.arcw")
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("partial immediate closure effect fixture lowers");
+    validate_typecheck_ready(&hir).expect("partial immediate closure effect fixture is structured");
+
+    let report = analyze_types(&hir, &read_text_env());
+    assert!(
+        report.diagnostics.is_empty(),
+        "partial immediate closure application should not perform body effects: {:?}",
+        report.diagnostics
+    );
+    let flow_summary = report
+        .effects
+        .summary(&crate::effect_model::CallableId::new(
+            "flow.partial_immediate_closure_effect_creation",
+        ))
+        .expect("flow summary");
+    assert!(
+        flow_summary.inferred().is_empty(),
+        "flow should not infer partial immediate closure body effects at creation: {flow_summary:?}"
+    );
+}
+
+#[test]
 fn partial_local_closure_alias_composes_body_effects_when_called() {
     let tree = parse_ok(
         r#"
@@ -1005,6 +1069,38 @@ effects { }
                 && error.message().contains("fs.read")
         }),
         "expected partial closure call effect upper-bound diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
+fn partial_immediate_closure_alias_composes_body_effects_when_called() {
+    let tree = parse_ok(
+        r#"
+flow @flow.partial_immediate_closure_effect_call partial_immediate_closure_effect_call
+effects { }
+{
+    let suffixer = (|path: String, suffix: String| -> String {
+        adapter.read_text(path = path)
+    })("story.arcw")
+    let body = suffixer(".bak")
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("partial immediate closure effect call fixture lowers");
+    validate_typecheck_ready(&hir)
+        .expect("partial immediate closure effect call fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("calling the partial immediate closure alias must compose body effects");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.partial_immediate_closure_effect_call")
+                && error.message().contains("fs.read")
+        }),
+        "expected partial immediate closure call effect upper-bound diagnostic, got {errors:?}"
     );
 }
 

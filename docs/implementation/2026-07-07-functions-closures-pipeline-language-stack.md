@@ -166,7 +166,9 @@ Source briefs:
   rather than raw operator string payloads. Parser branches for `->`, `=>`,
   `|>`, range operators, comparison operators, and closure pipes are checked by
   Rust exhaustiveness/type checking; the spelling strings live only in the
-  enum-backed display/canonical spelling tables.
+  enum-backed display/canonical spelling tables. The expression token for
+  `->` is `ExprOp::ThinArrow`, matching the CST-level
+  `ArcweftPunctuation::ThinArrow` naming.
 - CST/parser multi-token punctuation now uses `ArcweftPunctuation` helpers for
   grammar-significant `->`, `<-`, `=>`, and `|>` splitting/prefix checks. The
   spelling strings are centralized in the CST punctuation layer rather than
@@ -213,6 +215,14 @@ Source briefs:
   bounds. Partial application of a local closure binding carries the same
   synthetic callable to the partial alias without composing effects until that
   alias is called.
+- Parenthesized closure literals are now parsed as normal prefix expressions,
+  so immediate closure calls such as `(|| -> String { ... })()` and partial
+  immediate closure application such as `(|path: String, suffix: String| ->
+  String { ... })("story.arcw")` lower to structured call expressions instead
+  of raw expression fallbacks. Sema composes closure body effects for exact
+  immediate calls and carries the same synthetic closure callable to partial
+  immediate aliases without performing the body effects until the alias is
+  called.
 - Sema now emits `sema.numeric.fallback_in_inferred_closure` warnings when an
   unsuffixed numeric literal or numeric sequence falls back to a stable default
   primitive type inside a closure body whose return type is inferred. Explicit
@@ -281,10 +291,10 @@ Source briefs:
   allocation remains open.
 - Closure capture lifetime diagnostics now cover borrowed local captures that
   cross checked suspension boundaries. Closure body effect composition is
-  implemented for synthetic closure callables and direct calls through local
-  closure bindings, including partial application aliases. Full
-  function-effect typing for immediate closure calls, higher-order function
-  arguments, and LSP-facing closure effect evidence remains open. Save/load
+  implemented for synthetic closure callables, direct calls through local
+  closure bindings, immediate closure calls, and partial application aliases.
+  Higher-order function arguments and LSP-facing closure effect evidence remain
+  open. Save/load
   currently has an explicit Product AWBC policy: runtime function values are
   rejected as non-persistable until AWBC closure allocation and snapshot
   versioning are designed. Numeric fallback lints
