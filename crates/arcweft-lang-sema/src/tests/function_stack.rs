@@ -1370,6 +1370,116 @@ effects { }
 }
 
 #[test]
+fn partial_curried_higher_order_callback_does_not_compose_until_final_call() {
+    let tree = parse_ok(
+        r#"
+fn use_loader(path: String)(load: String -> String, suffix: String) -> String {
+    return load(path)
+}
+
+flow @flow.partial_curried_higher_order_creation partial_curried_higher_order_creation
+effects { }
+{
+    let stage = use_loader("story.arcw")
+    let partial = stage(|path: String| -> String {
+        adapter.read_text(path = path)
+    })
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("partial curried creation fixture lowers");
+    validate_typecheck_ready(&hir).expect("partial curried creation fixture is structured");
+
+    let report = analyze_types(&hir, &read_text_env());
+    assert!(
+        report.diagnostics.is_empty(),
+        "partial curried callback creation should not compose effects: {:?}",
+        report.diagnostics
+    );
+    let summary = report
+        .effects
+        .summary(&crate::effect_model::CallableId::new(
+            "flow.partial_curried_higher_order_creation",
+        ))
+        .expect("flow summary");
+    assert!(
+        summary.inferred().is_empty(),
+        "flow should not infer partial curried callback effects at creation: {summary:?}"
+    );
+}
+
+#[test]
+fn partial_curried_higher_order_callback_composes_on_final_call() {
+    let tree = parse_ok(
+        r#"
+fn use_loader(path: String)(load: String -> String, suffix: String) -> String {
+    return load(path)
+}
+
+flow @flow.partial_curried_higher_order_call partial_curried_higher_order_call
+effects { }
+{
+    let stage = use_loader("story.arcw")
+    let partial = stage(|path: String| -> String {
+        adapter.read_text(path = path)
+    })
+    let body = partial(".bak")
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("partial curried call fixture lowers");
+    validate_typecheck_ready(&hir).expect("partial curried call fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("final partial curried call must compose callback body effects");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.partial_curried_higher_order_call")
+                && error.message().contains("fs.read")
+        }),
+        "expected partial curried callback effect diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
+fn partial_curried_higher_order_callback_composes_on_immediate_final_call() {
+    let tree = parse_ok(
+        r#"
+fn use_loader(path: String)(load: String -> String, suffix: String) -> String {
+    return load(path)
+}
+
+flow @flow.partial_curried_higher_order_immediate_call partial_curried_higher_order_immediate_call
+effects { }
+{
+    let stage = use_loader("story.arcw")
+    let body = stage(|path: String| -> String {
+        adapter.read_text(path = path)
+    })(".bak")
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("immediate partial curried call fixture lowers");
+    validate_typecheck_ready(&hir).expect("immediate partial curried call fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("immediate final partial curried call must compose callback body effects");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.partial_curried_higher_order_immediate_call")
+                && error.message().contains("fs.read")
+        }),
+        "expected immediate partial curried callback effect diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn closure_return_type_annotation_rejects_body_mismatch() {
     let tree = parse_ok(
         r"

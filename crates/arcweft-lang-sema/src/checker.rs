@@ -510,6 +510,14 @@ struct PendingHigherOrderEffectCall {
 struct CurriedSignatureCallValue {
     function_name: String,
     remaining_group_index: usize,
+    group_arg_offset: usize,
+    pending_higher_order_args: Vec<PendingCurriedHigherOrderArg>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PendingCurriedHigherOrderArg {
+    param_name: String,
+    effect_callable: CallableId,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -919,37 +927,51 @@ impl TypeChecker<'_> {
         value: &Expr,
         actual: Option<&TypeKind>,
     ) {
-        let Some(param_name) = param.name() else {
-            self.last_checked_closure_effect_callable = None;
-            return;
-        };
-        let Some(actual) = actual else {
-            self.last_checked_closure_effect_callable = None;
-            return;
-        };
-        if !matches!(param.ty(), TypeKind::Function { .. })
-            || !matches!(actual, TypeKind::Function { .. })
-        {
-            self.last_checked_closure_effect_callable = None;
-            return;
-        }
-        let Some(effect_callable) = self.closure_effect_callable_for_function_expr(value, actual)
-        else {
-            self.last_checked_closure_effect_callable = None;
+        let Some(arg) = self.higher_order_signature_arg_effect_call(param, value, actual) else {
             return;
         };
         let Some(caller) = self.effect_collector.current_callable() else {
-            self.last_checked_closure_effect_callable = None;
             return;
         };
         self.pending_higher_order_effect_calls
             .push(PendingHigherOrderEffectCall {
                 caller,
                 callee_function: function_name.to_owned(),
-                param_name: param_name.to_owned(),
-                effect_callable,
+                param_name: arg.param_name,
+                effect_callable: arg.effect_callable,
             });
+    }
+
+    fn higher_order_signature_arg_effect_call(
+        &mut self,
+        param: &FunctionParam,
+        value: &Expr,
+        actual: Option<&TypeKind>,
+    ) -> Option<PendingCurriedHigherOrderArg> {
+        let Some(param_name) = param.name() else {
+            self.last_checked_closure_effect_callable = None;
+            return None;
+        };
+        let Some(actual) = actual else {
+            self.last_checked_closure_effect_callable = None;
+            return None;
+        };
+        if !matches!(param.ty(), TypeKind::Function { .. })
+            || !matches!(actual, TypeKind::Function { .. })
+        {
+            self.last_checked_closure_effect_callable = None;
+            return None;
+        }
+        let Some(effect_callable) = self.closure_effect_callable_for_function_expr(value, actual)
+        else {
+            self.last_checked_closure_effect_callable = None;
+            return None;
+        };
         self.last_checked_closure_effect_callable = None;
+        Some(PendingCurriedHigherOrderArg {
+            param_name: param_name.to_owned(),
+            effect_callable,
+        })
     }
 
     fn record_curried_signature_result(
@@ -966,7 +988,30 @@ impl TypeChecker<'_> {
         .then(|| CurriedSignatureCallValue {
             function_name: function_name.to_owned(),
             remaining_group_index: next_group_index,
+            group_arg_offset: 0,
+            pending_higher_order_args: Vec::new(),
         });
+    }
+
+    fn record_pending_curried_higher_order_arg_effect_calls(
+        &mut self,
+        function_name: &str,
+        args: &[PendingCurriedHigherOrderArg],
+    ) {
+        let Some(caller) = self.effect_collector.current_callable() else {
+            return;
+        };
+        self.pending_higher_order_effect_calls
+            .extend(
+                args.iter()
+                    .cloned()
+                    .map(|arg| PendingHigherOrderEffectCall {
+                        caller: caller.clone(),
+                        callee_function: function_name.to_owned(),
+                        param_name: arg.param_name,
+                        effect_callable: arg.effect_callable,
+                    }),
+            );
     }
 
     fn record_higher_order_param_invocation(&mut self, callee: Option<&str>) {

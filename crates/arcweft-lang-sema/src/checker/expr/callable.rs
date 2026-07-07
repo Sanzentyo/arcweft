@@ -100,19 +100,23 @@ impl TypeChecker<'_> {
                 })
                 .map(<[_]>::to_vec)
         });
-        let exact_curried_group_call = curried_signature_call.is_some()
+        let all_positional_args = args.iter().all(|arg| matches!(arg, CallArg::Positional(_)));
+        let curried_group_arg_offset = curried_signature_call
+            .map(|curried| curried.group_arg_offset)
+            .unwrap_or_default();
+        let finishes_curried_group = curried_signature_call.is_some()
+            && all_positional_args
+            && args.len() == params.len()
             && curried_group_params
                 .as_ref()
-                .is_some_and(|group| group.len() == params.len())
-            && args.len() == params.len()
-            && args.iter().all(|arg| matches!(arg, CallArg::Positional(_)));
-        let result_ty = self.check_function_value_call(
+                .is_some_and(|group| curried_group_arg_offset + params.len() == group.len());
+        let (result_ty, supplied_higher_order_args) = self.check_function_value_call(
             args,
             params,
             return_type,
             curried_signature_call,
             curried_group_params.as_deref(),
-            exact_curried_group_call,
+            curried_group_arg_offset,
         );
         self.record_function_value_effect_call(
             callee,
@@ -127,13 +131,36 @@ impl TypeChecker<'_> {
                     signature.remaining_param_group(curried.remaining_group_index)
                 })
                 .is_some();
-            self.record_curried_signature_result(
-                &curried.function_name,
-                curried.remaining_group_index + 1,
-                &result_ty,
-                has_next_group_metadata,
-                exact_curried_group_call,
-            );
+            let mut pending_higher_order_args = curried.pending_higher_order_args.clone();
+            pending_higher_order_args.extend(supplied_higher_order_args);
+            if finishes_curried_group {
+                self.record_pending_curried_higher_order_arg_effect_calls(
+                    &curried.function_name,
+                    &pending_higher_order_args,
+                );
+                self.record_curried_signature_result(
+                    &curried.function_name,
+                    curried.remaining_group_index + 1,
+                    &result_ty,
+                    has_next_group_metadata,
+                    true,
+                );
+            } else if all_positional_args
+                && positional_arg_count < params.len()
+                && curried_group_params.as_ref().is_some_and(|group| {
+                    curried.group_arg_offset + positional_arg_count < group.len()
+                })
+                && matches!(result_ty, TypeKind::Function { .. })
+            {
+                self.last_checked_curried_signature_call = Some(CurriedSignatureCallValue {
+                    function_name: curried.function_name.clone(),
+                    remaining_group_index: curried.remaining_group_index,
+                    group_arg_offset: curried.group_arg_offset + positional_arg_count,
+                    pending_higher_order_args,
+                });
+            } else {
+                self.last_checked_curried_signature_call = None;
+            }
         } else {
             self.last_checked_curried_signature_call = None;
         }
@@ -156,8 +183,9 @@ impl TypeChecker<'_> {
         return_type: &TypeKind,
         curried_signature_call: Option<&CurriedSignatureCallValue>,
         curried_group_params: Option<&[crate::env::FunctionParam]>,
-        exact_curried_group_call: bool,
-    ) -> TypeKind {
+        curried_group_arg_offset: usize,
+    ) -> (TypeKind, Vec<crate::checker::PendingCurriedHigherOrderArg>) {
+        let mut supplied_higher_order_args = Vec::new();
         for arg in args {
             if let CallArg::Named { name, value } = arg {
                 self.errors.push(TypeCheckError::new(format!(
@@ -198,29 +226,27 @@ impl TypeChecker<'_> {
                     type_kind_label(actual.as_ref().expect("checked above"))
                 )));
             }
-            if let (Some(curried), Some(group_params), true) = (
-                curried_signature_call,
-                curried_group_params,
-                exact_curried_group_call,
-            ) && let Some(param) = group_params.get(index)
+            if curried_signature_call.is_some()
+                && let Some(group_params) = curried_group_params
+                && let Some(param) = group_params.get(curried_group_arg_offset + index)
             {
-                self.record_pending_higher_order_signature_arg_effect_call(
-                    &curried.function_name,
-                    param,
-                    value,
-                    actual.as_ref(),
-                );
+                if let Some(arg) =
+                    self.higher_order_signature_arg_effect_call(param, value, actual.as_ref())
+                {
+                    supplied_higher_order_args.push(arg);
+                }
             } else {
                 self.last_checked_closure_effect_callable = None;
             }
         }
-        if positional.len() >= params.len() {
+        let result_ty = if positional.len() >= params.len() {
             return_type.clone()
         } else {
             TypeKind::Function {
                 params: params[positional.len()..].to_vec(),
                 return_type: Box::new(return_type.clone()),
             }
-        }
+        };
+        (result_ty, supplied_higher_order_args)
     }
 }
