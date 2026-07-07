@@ -40,7 +40,7 @@ CSS-style font family propagation for Japanese input/display text.
   the frame planner and renderer. Native window, Web player, and player-backed
   Agent observe all register the same font bytes through that contract instead
   of relying on per-host ad hoc registration.
-- `UiCompositorTarget` now carries an explicit logical extent separate from its
+- `ViewCompositorTarget` now carries an explicit logical extent separate from its
   physical texture extent. Root and runtime-control targets map physical
   textures back to the design viewport, while offscreen group targets keep a
   target-local logical pixel domain for bucketed slack.
@@ -88,7 +88,7 @@ preserve the explicit logical extent contract.
 Validation for this coordinate-contract fix:
 
 ```bash
-cargo test -p arcweft-render-wgpu ui_compositor_uniform -- --nocapture
+cargo test -p arcweft-render-wgpu view_compositor_uniform -- --nocapture
 cargo test -p arcweft-render-wgpu --test geometry_runtime_control_styles -- --nocapture
 cargo check -p arcweft-render-wgpu -p arcweft-player-scene -p arcweft-player-native -p arcweft-player-web -p arcweft-cli --features native-player,native-capture --all-targets
 cargo clippy -p arcweft-render-wgpu -p arcweft-player-scene -p arcweft-player-native -p arcweft-player-web -p arcweft-cli --features native-player,native-capture --all-targets

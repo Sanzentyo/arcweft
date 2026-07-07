@@ -6,6 +6,10 @@
 //! composition replacement/cancel, clipboard policy, and deterministic geometry
 //! snapshots. Native object identity remains outside this module.
 
+use crate::clipboard::{
+    ClipboardText, TextClipboardIntent, TextClipboardOperation, TextClipboardOrigin,
+    TextClipboardReadIntent, TextClipboardWriteIntent,
+};
 use crate::hit::HitRect;
 use crate::input::InteractionTarget;
 use crate::text_index::{TextIndexError, TextIndexSnapshot};
@@ -94,11 +98,10 @@ pub struct TextEditorSnapshots {
     geometry: TextInputGeometrySnapshot,
 }
 
-/// Small clipboard value object used by `Copy`, `Cut`, and `Paste` command
-/// application. Secure editors reject clipboard commands before touching this
-/// value.
+/// In-app fallback clipboard used only after host clipboard access is denied,
+/// unavailable, or unsupported.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct TextEditorClipboard {
+pub struct TextEditorLocalClipboard {
     text: Option<String>,
 }
 
@@ -106,7 +109,7 @@ pub struct TextEditorClipboard {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TextEditorOutput {
     None,
-    ClipboardWrite(String),
+    Clipboard(TextClipboardIntent),
     Submitted(String),
     CancelledComposition,
 }
@@ -276,7 +279,7 @@ impl TextEditorState {
     pub fn apply_text_input(
         &mut self,
         input: &TextInput,
-        clipboard: &mut TextEditorClipboard,
+        clipboard: &mut TextEditorLocalClipboard,
     ) -> Result<Vec<TextEditorOutput>, TextEditorError> {
         self.apply_text_input_with_layout(input, clipboard, None)
     }
@@ -286,7 +289,7 @@ impl TextEditorState {
     pub fn apply_text_input_with_layout(
         &mut self,
         input: &TextInput,
-        clipboard: &mut TextEditorClipboard,
+        clipboard: &mut TextEditorLocalClipboard,
         layout: Option<&TextEditorLayout>,
     ) -> Result<Vec<TextEditorOutput>, TextEditorError> {
         if input.session() != self.session {
@@ -307,7 +310,7 @@ impl TextEditorState {
     pub fn apply_operation(
         &mut self,
         operation: &crate::text_input::TextInputOperation,
-        clipboard: &mut TextEditorClipboard,
+        clipboard: &mut TextEditorLocalClipboard,
     ) -> Result<TextEditorOutput, TextEditorError> {
         self.apply_operation_with_layout(operation, clipboard, None)
     }
@@ -315,7 +318,7 @@ impl TextEditorState {
     fn apply_operation_with_layout(
         &mut self,
         operation: &crate::text_input::TextInputOperation,
-        clipboard: &mut TextEditorClipboard,
+        clipboard: &mut TextEditorLocalClipboard,
         layout: Option<&TextEditorLayout>,
     ) -> Result<TextEditorOutput, TextEditorError> {
         match operation {
@@ -344,8 +347,16 @@ impl TextEditorState {
     /// Applies a paste payload provided by the host clipboard path.
     pub fn paste_text(&mut self, text: &str) -> Result<TextEditorOutput, TextEditorError> {
         self.reject_secure_clipboard(TextEditCommand::Paste)?;
-        self.replace_selection_or_composition(text)?;
+        self.replace_selection_or_composition(&ClipboardText::new(text).into_string())?;
         Ok(TextEditorOutput::None)
+    }
+
+    /// Applies text from the deterministic in-app fallback clipboard.
+    pub fn paste_local_clipboard(
+        &mut self,
+        clipboard: &TextEditorLocalClipboard,
+    ) -> Result<TextEditorOutput, TextEditorError> {
+        self.paste_from_clipboard(clipboard)
     }
 
     /// Moves pointer coordinates in text-local units to a canonical caret. This
@@ -617,7 +628,7 @@ impl TextEditorState {
     fn apply_command_with_layout(
         &mut self,
         command: TextEditCommand,
-        clipboard: &mut TextEditorClipboard,
+        clipboard: &mut TextEditorLocalClipboard,
         layout: Option<&TextEditorLayout>,
     ) -> Result<TextEditorOutput, TextEditorError> {
         if !self.options.shortcuts_enabled() && command_is_shortcut(command) {
@@ -655,7 +666,7 @@ impl TextEditorState {
             TextEditCommand::SelectAll => self.select_all(),
             TextEditCommand::Copy => self.copy_selection(clipboard),
             TextEditCommand::Cut => self.cut_selection(clipboard),
-            TextEditCommand::Paste => self.paste_from_clipboard(clipboard),
+            TextEditCommand::Paste => self.request_paste(),
             TextEditCommand::Submit => Ok(TextEditorOutput::Submitted(self.text.clone())),
             TextEditCommand::Cancel => self.end_composition(CompositionEndReason::Cancelled),
         }
@@ -936,24 +947,72 @@ impl TextEditorState {
 
     fn copy_selection(
         &self,
-        clipboard: &mut TextEditorClipboard,
+        clipboard: &mut TextEditorLocalClipboard,
     ) -> Result<TextEditorOutput, TextEditorError> {
         self.reject_secure_clipboard(TextEditCommand::Copy)?;
         if !self.options.selection_enabled() || self.selection_is_collapsed() {
             clipboard.clear();
-            return Ok(TextEditorOutput::ClipboardWrite(String::new()));
+            return Ok(TextEditorOutput::Clipboard(TextClipboardIntent::Write(
+                TextClipboardWriteIntent::new(
+                    self.target.clone(),
+                    self.session,
+                    self.revision,
+                    TextClipboardOperation::Copy,
+                    TextClipboardOrigin::UserKeyboardShortcut,
+                    ClipboardText::new(""),
+                ),
+            )));
         }
-        let selected = self.index()?.slice_byte_range(self.selection)?.to_owned();
+        let range = self
+            .index()?
+            .expand_byte_range_to_grapheme_boundaries(self.selection)?;
+        let selected = self.index()?.slice_byte_range(range)?.to_owned();
         clipboard.write(selected.clone());
-        Ok(TextEditorOutput::ClipboardWrite(selected))
+        Ok(TextEditorOutput::Clipboard(TextClipboardIntent::Write(
+            TextClipboardWriteIntent::new(
+                self.target.clone(),
+                self.session,
+                self.revision,
+                TextClipboardOperation::Copy,
+                TextClipboardOrigin::UserKeyboardShortcut,
+                ClipboardText::from_editor_selection(&selected),
+            ),
+        )))
     }
 
     fn cut_selection(
         &mut self,
-        clipboard: &mut TextEditorClipboard,
+        clipboard: &mut TextEditorLocalClipboard,
     ) -> Result<TextEditorOutput, TextEditorError> {
         self.reject_secure_clipboard(TextEditCommand::Cut)?;
-        let output = self.copy_selection(clipboard)?;
+        let output = if !self.options.selection_enabled() || self.selection_is_collapsed() {
+            clipboard.clear();
+            TextEditorOutput::Clipboard(TextClipboardIntent::Write(TextClipboardWriteIntent::new(
+                self.target.clone(),
+                self.session,
+                self.revision,
+                TextClipboardOperation::Cut,
+                TextClipboardOrigin::UserKeyboardShortcut,
+                ClipboardText::new(""),
+            )))
+        } else {
+            let range = self
+                .index()?
+                .expand_byte_range_to_grapheme_boundaries(self.selection)?;
+            self.selection = range;
+            self.selection_anchor = *range.start();
+            self.caret = *range.end();
+            let selected = self.index()?.slice_byte_range(range)?.to_owned();
+            clipboard.write(selected.clone());
+            TextEditorOutput::Clipboard(TextClipboardIntent::Write(TextClipboardWriteIntent::new(
+                self.target.clone(),
+                self.session,
+                self.revision,
+                TextClipboardOperation::Cut,
+                TextClipboardOrigin::UserKeyboardShortcut,
+                ClipboardText::from_editor_selection(&selected),
+            )))
+        };
         if !self.selection_is_collapsed() {
             self.delete_selection()?;
         }
@@ -962,14 +1021,26 @@ impl TextEditorState {
 
     fn paste_from_clipboard(
         &mut self,
-        clipboard: &TextEditorClipboard,
+        clipboard: &TextEditorLocalClipboard,
     ) -> Result<TextEditorOutput, TextEditorError> {
         self.reject_secure_clipboard(TextEditCommand::Paste)?;
         let Some(text) = clipboard.read() else {
             return Err(TextEditorError::ClipboardEmpty);
         };
-        self.replace_selection_or_composition(text)?;
+        self.replace_selection_or_composition(&ClipboardText::new(text).into_string())?;
         Ok(TextEditorOutput::None)
+    }
+
+    fn request_paste(&self) -> Result<TextEditorOutput, TextEditorError> {
+        self.reject_secure_clipboard(TextEditCommand::Paste)?;
+        Ok(TextEditorOutput::Clipboard(TextClipboardIntent::Read(
+            TextClipboardReadIntent::paste(
+                self.target.clone(),
+                self.session,
+                self.revision,
+                TextClipboardOrigin::UserKeyboardShortcut,
+            ),
+        )))
     }
 
     fn replace_selection_or_composition(&mut self, text: &str) -> Result<(), TextEditorError> {
@@ -1697,7 +1768,7 @@ impl TextEditorSnapshots {
     }
 }
 
-impl TextEditorClipboard {
+impl TextEditorLocalClipboard {
     pub fn write(&mut self, text: impl Into<String>) {
         self.text = Some(text.into());
     }
@@ -1852,7 +1923,7 @@ mod tests {
         );
 
         editor
-            .apply_text_input(&input, &mut TextEditorClipboard::default())
+            .apply_text_input(&input, &mut TextEditorLocalClipboard::default())
             .unwrap();
 
         assert_eq!(editor.text(), "a東b");
@@ -1885,7 +1956,7 @@ mod tests {
         );
 
         let error = editor
-            .apply_text_input(&input, &mut TextEditorClipboard::default())
+            .apply_text_input(&input, &mut TextEditorLocalClipboard::default())
             .unwrap_err();
 
         assert!(matches!(error, TextEditorError::TextIndex(_)));

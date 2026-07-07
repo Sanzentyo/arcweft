@@ -1,5 +1,10 @@
 use crate::geometry::RenderFontFamily;
 use glyphon::Family;
+use std::collections::HashSet;
+use std::fmt;
+use std::sync::{Mutex, OnceLock};
+
+const FONT_TRACE_ENV: &str = "ARCWEFT_FONT_TRACE";
 
 pub(crate) fn render_font_family(family: &RenderFontFamily) -> Family<'_> {
     match family {
@@ -14,9 +19,22 @@ pub(crate) fn render_font_family(family: &RenderFontFamily) -> Family<'_> {
 
 fn render_named_font_family(stack: &str) -> Family<'_> {
     let Some(family) = preferred_named_font_family(stack) else {
+        trace_font_once(format_args!(
+            "font-family stack={stack:?} selected=<none> glyphon_family=SansSerif"
+        ));
         return Family::SansSerif;
     };
-    generic_font_family(family).unwrap_or(Family::Name(family))
+    if let Some(generic) = generic_font_family(family) {
+        trace_font_once(format_args!(
+            "font-family stack={stack:?} selected={family:?} glyphon_family=generic"
+        ));
+        generic
+    } else {
+        trace_font_once(format_args!(
+            "font-family stack={stack:?} selected={family:?} glyphon_family=name"
+        ));
+        Family::Name(family)
+    }
 }
 
 fn preferred_named_font_family(stack: &str) -> Option<&str> {
@@ -87,6 +105,36 @@ fn generic_font_family(family: &str) -> Option<Family<'static>> {
         None
     }
 }
+
+pub(crate) fn font_trace_enabled() -> bool {
+    std::env::var_os(FONT_TRACE_ENV).is_some_and(|value| {
+        let value = value.to_string_lossy();
+        !value.is_empty() && value != "0" && !value.eq_ignore_ascii_case("false")
+    })
+}
+
+pub(crate) fn trace_font_debug(args: fmt::Arguments<'_>) {
+    if font_trace_enabled() {
+        eprintln!("[arcweft-font-trace] {args}");
+    }
+}
+
+fn trace_font_once(args: fmt::Arguments<'_>) {
+    if !font_trace_enabled() {
+        return;
+    }
+    let message = args.to_string();
+    let seen = FONT_TRACE_ONCE.get_or_init(Default::default);
+    let Ok(mut seen) = seen.lock() else {
+        eprintln!("[arcweft-font-trace] {message}");
+        return;
+    };
+    if seen.insert(message.clone()) {
+        eprintln!("[arcweft-font-trace] {message}");
+    }
+}
+
+static FONT_TRACE_ONCE: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
 #[cfg(test)]
 mod tests {

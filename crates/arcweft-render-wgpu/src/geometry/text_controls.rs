@@ -6,10 +6,10 @@ use super::control_style::{
     push_control_shadow_plan, state_from_interaction,
 };
 use super::{
-    FramePlanError, PaintRect, Palette, PreparedTextInputTarget, RenderTextBlock, RenderTextSlant,
-    RenderTextWeight, RenderViewport,
+    FramePlanError, PaintRect, Palette, PreparedSelectableTextBlock, PreparedTextInputTarget,
+    RenderTextBlock, RenderTextSelectionPolicy, RenderTextSlant, RenderTextWeight, RenderViewport,
 };
-use crate::font_family::render_font_family;
+use crate::font_family::{font_trace_enabled, render_font_family, trace_font_debug};
 use crate::text_editor_geometry::{TextEditorGeometryContext, TextEditorGeometryPump};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
@@ -17,23 +17,28 @@ use arcweft_presentation::layer::LayerId;
 use arcweft_presentation::semantic::{SemanticNode, SemanticRole, SemanticTree};
 use arcweft_presentation::text_editor::{TextEditorError, TextEditorState};
 use arcweft_presentation::text_input::{
-    TextByteOffset, TextGeometryTransform, TextInputOptions, TextInputSecurityPolicy,
-    TextInputSessionId, TextRange, TextWritingMode,
+    TextByteOffset, TextCharacterBounds, TextGeometryTransform, TextInputOptions,
+    TextInputSecurityPolicy, TextInputSessionId, TextRange, TextWritingMode,
 };
 use arcweft_render_text::{RichTextPresentation, RichTextRange, RichTextWritingMode};
 use arcweft_text_layout::{
     GlyphOrientation, GlyphVerticalForm, LaidOutGlyph, LaidOutText, LayoutPoint, LayoutRect,
     LayoutSize,
 };
-use glyphon::{Attrs, Buffer, FontSystem, Metrics, Shaping, Wrap};
+use glyphon::{Attrs, Buffer, FontSystem, Metrics, Shaping, Style, Weight, Wrap, fontdb};
 use num_traits::ToPrimitive;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 const TEXT_INSET_X: f32 = 8.0;
 const TEXT_INSET_Y: f32 = 4.0;
 const CARET_WIDTH: f32 = 2.0;
 const TEXT_CONTROL_LAYOUT_CACHE_LIMIT: usize = 128;
+const FONT_TRACE_FONT_SYSTEM_LIMIT: usize = 8;
+const FONT_TRACE_SHAPE_REQUEST_LIMIT: usize = 8;
+const FONT_TRACE_LAYOUT_LIMIT: usize = 8;
+const FONT_TRACE_GLYPH_SAMPLE_LIMIT: usize = 16;
+const FONT_TRACE_FACE_SAMPLE_LIMIT: usize = 24;
 
 #[derive(Clone, Debug, PartialEq)]
 struct TextControlVisualLayout {
@@ -51,6 +56,9 @@ pub(super) struct TextControlFontContext {
     layout_cache_hits: u64,
     layout_cache_misses: u64,
     registered_font_bytes: usize,
+    font_trace_font_system_keys: HashSet<String>,
+    font_trace_shape_requests: usize,
+    font_trace_layouts: usize,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -83,21 +91,34 @@ struct TextControlDisplayChar {
 
 impl TextControlFontContext {
     pub(super) fn new() -> Self {
-        Self {
+        let mut context = Self {
             font_system: FontSystem::new(),
             layout_cache: HashMap::new(),
             layout_cache_hits: 0,
             layout_cache_misses: 0,
             registered_font_bytes: 0,
-        }
+            font_trace_font_system_keys: HashSet::new(),
+            font_trace_shape_requests: 0,
+            font_trace_layouts: 0,
+        };
+        trace_text_control_font_system_once(&mut context, "init", None);
+        context
     }
 
     pub(super) fn register_font_bytes(&mut self, bytes: Vec<u8>) -> Result<(), FramePlanError> {
         if bytes.is_empty() {
             return Err(FramePlanError::EmptyFont);
         }
+        let before_faces = self.font_system.db().faces().count();
+        let byte_len = bytes.len();
         self.registered_font_bytes = self.registered_font_bytes.saturating_add(bytes.len());
         self.font_system.db_mut().load_font_data(bytes);
+        let after_faces = self.font_system.db().faces().count();
+        trace_font_debug(format_args!(
+            "text-control-font-register bytes={byte_len} faces_before={before_faces} faces_after={after_faces} registered_bytes={}",
+            self.registered_font_bytes
+        ));
+        trace_text_control_font_system_once(self, "after-register", None);
         self.layout_cache.clear();
         Ok(())
     }
@@ -314,6 +335,7 @@ pub(super) fn build_text_input(
     let text_start = text.len();
     if let Some(clip_bounds) = clipped_viewport_bounds(visual_layout.clip_bounds, control) {
         text.push(RenderTextBlock {
+            target: None,
             text: visual_layout.display_value.clone(),
             bounds: visual_layout.text_bounds,
             clip_bounds: Some(clip_bounds),
@@ -325,6 +347,9 @@ pub(super) fn build_text_input(
             weight: RenderTextWeight::Regular,
             slant: RenderTextSlant::Upright,
             rgba: visual.text.unwrap_or(palette.choice_text),
+            selection_policy: RenderTextSelectionPolicy::Disabled,
+            selection: None,
+            selection_rgba: visual.selection.unwrap_or(palette.choice_active),
         });
     }
     let filter_start = control_filters.len();
@@ -362,6 +387,162 @@ pub(super) fn build_text_input(
         None
     };
     Ok((focused_target, paint))
+}
+
+pub(super) fn build_selectable_text_block(
+    block: &RenderTextBlock,
+    font_context: &mut TextControlFontContext,
+) -> Option<(PreparedSelectableTextBlock, Vec<PaintRect>)> {
+    if !block.selection_policy.enabled() {
+        return None;
+    }
+    let target = block.target.clone()?;
+    let laid_out = laid_out_text_for_text_block(block, font_context);
+    let character_bounds = laid_out
+        .glyphs
+        .iter()
+        .map(|glyph| {
+            TextCharacterBounds::new(
+                text_range_from_rich(glyph.range),
+                layout_rect_to_hit_rect(glyph.bounds),
+            )
+        })
+        .collect();
+    let selection_rects = block.selection.map_or_else(Vec::new, |selection| {
+        text_range_rects(&laid_out, selection.start().get(), selection.end().get())
+            .into_iter()
+            .filter_map(|bounds| clip_text_block_rect(block, bounds))
+            .map(|bounds| PaintRect::new(bounds, block.selection_rgba))
+            .collect()
+    });
+    Some((
+        PreparedSelectableTextBlock {
+            target,
+            text: block.text.clone(),
+            bounds: block.bounds,
+            clip_bounds: block.clip_bounds,
+            character_bounds,
+        },
+        selection_rects,
+    ))
+}
+
+fn laid_out_text_for_text_block(
+    block: &RenderTextBlock,
+    font_context: &mut TextControlFontContext,
+) -> LaidOutText {
+    let line_height = block.line_height.max(1.0);
+    if block.text.is_empty() {
+        return LaidOutText {
+            glyphs: vec![text_control_caret_anchor(
+                RichTextRange::new(0, 0),
+                block.bounds.x,
+                block.bounds.y,
+                line_height,
+            )],
+            runs: Vec::new(),
+            ruby: Vec::new(),
+            bounds: None,
+        };
+    }
+
+    let buffer = text_block_buffer(block, font_context);
+    let line_offsets = display_line_start_offsets(&block.text);
+    let mut glyphs = Vec::new();
+    for (run_index, run) in buffer.layout_runs().enumerate() {
+        let line_start = line_offsets.get(run.line_i).copied().unwrap_or_default();
+        glyphs.extend(run.glyphs.iter().map(|glyph| {
+            let range = RichTextRange::new(line_start + glyph.start, line_start + glyph.end);
+            LaidOutGlyph {
+                run_index,
+                range,
+                text: block
+                    .text
+                    .get(range.start..range.end)
+                    .unwrap_or_default()
+                    .to_owned(),
+                origin: LayoutPoint::new(block.bounds.x + glyph.x, block.bounds.y + run.line_top),
+                advance: LayoutSize::new(glyph.w, 0.0),
+                bounds: LayoutRect::new(
+                    block.bounds.x + glyph.x,
+                    block.bounds.y + run.line_top,
+                    glyph.w,
+                    run.line_height,
+                ),
+                writing_mode: RichTextWritingMode::HorizontalTb,
+                orientation: GlyphOrientation::Upright,
+                vertical_form: GlyphVerticalForm::None,
+                presentation: RichTextPresentation::default(),
+            }
+        }));
+    }
+    let display_text = identity_display_text(&block.text);
+    push_newline_caret_anchors(
+        &mut glyphs,
+        &display_text,
+        &line_offsets,
+        block.bounds,
+        line_height,
+    );
+    glyphs.sort_by_key(|glyph| (glyph.range.start, glyph.range.end));
+    LaidOutText {
+        bounds: union_layout_bounds(glyphs.iter().map(|glyph| glyph.bounds)),
+        glyphs,
+        runs: Vec::new(),
+        ruby: Vec::new(),
+    }
+}
+
+fn text_block_buffer(block: &RenderTextBlock, font_context: &mut TextControlFontContext) -> Buffer {
+    let mut attrs = Attrs::new().family(render_font_family(&block.font_family));
+    if block.weight == RenderTextWeight::Bold {
+        attrs = attrs.weight(Weight::BOLD);
+    }
+    if block.slant == RenderTextSlant::Italic {
+        attrs = attrs.style(Style::Italic);
+    }
+    let font_system = &mut font_context.font_system;
+    let mut buffer = Buffer::new(
+        font_system,
+        Metrics::new(block.font_size.max(1.0), block.line_height.max(1.0)),
+    );
+    buffer.set_size(
+        font_system,
+        Some(block.buffer_width.unwrap_or(block.bounds.width).max(1.0)),
+        Some(block.buffer_height.unwrap_or(block.bounds.height).max(1.0)),
+    );
+    buffer.set_text(font_system, &block.text, &attrs, Shaping::Advanced, None);
+    buffer.shape_until_scroll(font_system, false);
+    buffer
+}
+
+fn identity_display_text(text: &str) -> TextControlDisplayText {
+    TextControlDisplayText {
+        value: text.to_owned(),
+        chars: text
+            .char_indices()
+            .map(|(start, ch)| {
+                let end = start.saturating_add(ch.len_utf8());
+                TextControlDisplayChar {
+                    display: start..end,
+                    source: start..end,
+                }
+            })
+            .collect(),
+    }
+}
+
+fn text_range_from_rich(range: RichTextRange) -> TextRange<TextByteOffset> {
+    TextRange::new(
+        TextByteOffset(u32::try_from(range.start).unwrap_or(u32::MAX)),
+        TextByteOffset(u32::try_from(range.end).unwrap_or(u32::MAX)),
+    )
+}
+
+fn clip_text_block_rect(block: &RenderTextBlock, rect: HitRect) -> Option<HitRect> {
+    block
+        .clip_bounds
+        .map_or(Some(rect), |clip| super::intersect_hit_rect(rect, clip))
 }
 
 fn visual_state_for_control(
@@ -754,25 +935,222 @@ fn text_control_buffer(
     let line_height = text_control_line_height(control);
     let inner = text_local_inner_bounds(control);
     let font_family = control_font_family(visual);
+    trace_text_control_shape_request(font_context, control, options, &font_family, display_text);
+    trace_text_control_font_system_once(font_context, "before-shape", Some(&font_family));
     let attrs = Attrs::new().family(render_font_family(&font_family));
-    let font_system = &mut font_context.font_system;
-    let mut buffer = Buffer::new(font_system, Metrics::new(font_size, line_height));
-    if options.is_multiline() {
-        buffer.set_wrap(font_system, Wrap::WordOrGlyph);
-        buffer.set_size(font_system, Some(inner.width.max(1.0)), None);
-    } else {
-        buffer.set_wrap(font_system, Wrap::None);
-        buffer.set_size(font_system, None, Some(inner.height.max(1.0)));
-    }
-    buffer.set_text(
-        font_system,
-        &display_text.value,
-        &attrs,
-        Shaping::Advanced,
-        None,
-    );
-    buffer.shape_until_scroll(font_system, false);
+    let buffer = {
+        let font_system = &mut font_context.font_system;
+        let mut buffer = Buffer::new(font_system, Metrics::new(font_size, line_height));
+        if options.is_multiline() {
+            buffer.set_wrap(font_system, Wrap::WordOrGlyph);
+            buffer.set_size(font_system, Some(inner.width.max(1.0)), None);
+        } else {
+            buffer.set_wrap(font_system, Wrap::None);
+            buffer.set_size(font_system, None, Some(inner.height.max(1.0)));
+        }
+        buffer.set_text(
+            font_system,
+            &display_text.value,
+            &attrs,
+            Shaping::Advanced,
+            None,
+        );
+        buffer.shape_until_scroll(font_system, false);
+        buffer
+    };
+    trace_text_control_layout_runs(font_context, &buffer);
     buffer
+}
+
+fn trace_text_control_shape_request(
+    font_context: &mut TextControlFontContext,
+    control: &RenderTextInputControl,
+    options: &TextInputOptions,
+    font_family: &super::RenderFontFamily,
+    display_text: &TextControlDisplayText,
+) {
+    if !font_trace_enabled() {
+        return;
+    }
+    if font_context.font_trace_shape_requests >= FONT_TRACE_SHAPE_REQUEST_LIMIT {
+        return;
+    }
+    font_context.font_trace_shape_requests += 1;
+    let text_probe = if options.is_secure() {
+        "<secure>".to_owned()
+    } else {
+        display_text
+            .value
+            .chars()
+            .take(16)
+            .map(|ch| format!("U+{:04X}", u32::from(ch)))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    trace_font_debug(format_args!(
+        "text-control-shape-request target={:?} multiline={} secure={} chars={} font_family={:?} codepoints={}",
+        control.target,
+        options.is_multiline(),
+        options.is_secure(),
+        display_text.value.chars().count(),
+        font_family,
+        text_probe
+    ));
+}
+
+fn trace_text_control_font_system_once(
+    font_context: &mut TextControlFontContext,
+    stage: &str,
+    selected_family: Option<&super::RenderFontFamily>,
+) {
+    if !font_trace_enabled() {
+        return;
+    }
+    let key = format!(
+        "{stage}|registered={}|selected={selected_family:?}",
+        font_context.registered_font_bytes
+    );
+    if !font_context.font_trace_font_system_keys.contains(&key)
+        && font_context.font_trace_font_system_keys.len() >= FONT_TRACE_FONT_SYSTEM_LIMIT
+    {
+        return;
+    }
+    if !font_context.font_trace_font_system_keys.insert(key) {
+        return;
+    }
+    let font_system = &font_context.font_system;
+    let total_faces = font_system.db().faces().count();
+    let interesting_faces = font_system
+        .db()
+        .faces()
+        .filter(|face| interesting_font_face(face))
+        .take(FONT_TRACE_FACE_SAMPLE_LIMIT)
+        .map(trace_face_label)
+        .collect::<Vec<_>>()
+        .join(" || ");
+    trace_font_debug(format_args!(
+        "text-control-font-system stage={stage} locale={} total_faces={total_faces} registered_bytes={} selected_family={selected_family:?} interesting_faces=[{interesting_faces}]",
+        font_system.locale(),
+        font_context.registered_font_bytes
+    ));
+}
+
+fn interesting_font_face(face: &fontdb::FaceInfo) -> bool {
+    face.families.iter().any(|(family, _)| {
+        [
+            "Arcweft Demo",
+            "Yu Gothic",
+            "Yu Gothic UI",
+            "Meiryo",
+            "Meiryo UI",
+            "MS Gothic",
+            "MS PGothic",
+            "Noto Sans JP",
+            "Noto Sans CJK JP",
+            "Microsoft YaHei",
+            "Microsoft YaHei UI",
+            "SimSun",
+            "NSimSun",
+            "MingLiU",
+        ]
+        .into_iter()
+        .any(|candidate| family.eq_ignore_ascii_case(candidate))
+    })
+}
+
+fn trace_face_label(face: &fontdb::FaceInfo) -> String {
+    let families = face
+        .families
+        .iter()
+        .take(3)
+        .map(|(name, language)| format!("{name}:{language:?}"))
+        .collect::<Vec<_>>()
+        .join("|");
+    format!(
+        "id={:?} index={} families={} postscript={} weight={} style={:?} source={}",
+        face.id,
+        face.index,
+        families,
+        face.post_script_name,
+        face.weight.0,
+        face.style,
+        trace_font_source(&face.source)
+    )
+}
+
+fn trace_font_source(source: &fontdb::Source) -> String {
+    match source {
+        fontdb::Source::Binary(bytes) => {
+            format!("binary:{} bytes", bytes.as_ref().as_ref().len())
+        }
+        fontdb::Source::File(path) => format!("file:{}", path.display()),
+        fontdb::Source::SharedFile(path, bytes) => {
+            format!(
+                "shared-file:{}:{} bytes",
+                path.display(),
+                bytes.as_ref().as_ref().len()
+            )
+        }
+    }
+}
+
+fn trace_text_control_layout_runs(font_context: &mut TextControlFontContext, buffer: &Buffer) {
+    if !font_trace_enabled() {
+        return;
+    }
+    if font_context.font_trace_layouts >= FONT_TRACE_LAYOUT_LIMIT {
+        return;
+    }
+    font_context.font_trace_layouts += 1;
+
+    let mut font_ids = Vec::new();
+    let mut glyph_samples = Vec::new();
+    let mut glyph_count = 0usize;
+    for run in buffer.layout_runs() {
+        for glyph in run.glyphs {
+            glyph_count = glyph_count.saturating_add(1);
+            let physical = glyph.physical((0.0, 0.0), 1.0);
+            let font_id = format!("{:?}", physical.cache_key.font_id);
+            if !font_ids.iter().any(|existing| existing == &font_id) {
+                font_ids.push(font_id.clone());
+            }
+            if glyph_samples.len() < FONT_TRACE_GLYPH_SAMPLE_LIMIT {
+                glyph_samples.push(format!(
+                    "line={} cluster={} x={} y={} w={} font={} glyph={}",
+                    run.line_i,
+                    glyph.start,
+                    physical.x,
+                    physical.y,
+                    glyph.w,
+                    font_id,
+                    physical.cache_key.glyph_id
+                ));
+            }
+        }
+    }
+    let used_faces = trace_faces_for_font_ids(&font_context.font_system, &font_ids);
+    trace_font_debug(format_args!(
+        "text-control-layout-runs glyph_count={glyph_count} font_ids=[{}] samples=[{}] used_faces=[{}]",
+        font_ids.join(", "),
+        glyph_samples.join(" | "),
+        used_faces
+    ));
+}
+
+fn trace_faces_for_font_ids(font_system: &FontSystem, font_ids: &[String]) -> String {
+    if font_ids.is_empty() {
+        return String::new();
+    }
+    font_system
+        .db()
+        .faces()
+        .filter(|face| {
+            let face_id = format!("{:?}", face.id);
+            font_ids.iter().any(|font_id| font_id == &face_id)
+        })
+        .map(trace_face_label)
+        .collect::<Vec<_>>()
+        .join(" || ")
 }
 
 fn display_line_start_offsets(value: &str) -> Vec<usize> {

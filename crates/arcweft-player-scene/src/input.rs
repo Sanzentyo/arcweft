@@ -2,6 +2,9 @@ use crate::controller::{
     ControllerInputChange, ControllerInputNormalizer, NormalizedControllerAction,
 };
 use arcweft_id::PublicId;
+use arcweft_presentation::clipboard::{
+    TextClipboardOutcome, TextClipboardRequest, TextClipboardRequestId,
+};
 use arcweft_presentation::input::{
     Action, InputEpoch, KeyPhase, PointerId, PointerInput, PointerPhase, RawInputEvent,
     RawInputKind, ViewportPoint,
@@ -11,15 +14,17 @@ use arcweft_presentation::interaction::{
 };
 use arcweft_presentation::router::{InputRouter, RouteDecision};
 use arcweft_presentation::text_editor::{
-    TextEditorClipboard, TextEditorError, TextEditorLayout, TextEditorOutput, TextEditorState,
+    TextEditorError, TextEditorLayout, TextEditorLocalClipboard, TextEditorOutput, TextEditorState,
 };
+use arcweft_presentation::text_index::TextIndexSnapshot;
 use arcweft_presentation::text_input::{
     CompositionEndReason, TextByteOffset, TextCharacterBounds, TextControlValue,
     TextControlWriteBack, TextInput, TextInputKeyDisposition, TextInputOperation, TextInputPrivacy,
+    TextRange,
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, FocusNavigationDirection, FramePlanError, InteractionVisualState, PreparedFrame,
-    RenderActionButtonAction, RenderTextInputControl,
+    PreparedSelectableTextBlock, RenderActionButtonAction, RenderTextInputControl,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -40,6 +45,7 @@ enum DragIntent {
     #[default]
     SelectOrActivate,
     MoveSelectedText,
+    SelectTextBlock,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -70,6 +76,14 @@ struct LastPointerActivation {
     position: ViewportPoint,
     click_count: u8,
     epoch: u64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct TextBlockSelectionState {
+    target: arcweft_presentation::input::InteractionTarget,
+    text: String,
+    anchor: TextByteOffset,
+    selection: TextRange<TextByteOffset>,
 }
 
 const MULTI_CLICK_DISTANCE_SQUARED: f32 = 64.0;
@@ -143,6 +157,7 @@ impl InputPointerModifiers {
 pub struct InputOutcome {
     pub actions: Vec<Action>,
     pub text_control_write_backs: Vec<TextControlWriteBack>,
+    pub clipboard_requests: Vec<TextClipboardRequest>,
     pub diagnostics: Vec<InputDiagnostic>,
     pub dialogue_advance: bool,
     pub cancel: bool,
@@ -190,6 +205,10 @@ impl InputOutcome {
         &self.text_control_write_backs
     }
 
+    pub fn clipboard_requests(&self) -> &[TextClipboardRequest] {
+        &self.clipboard_requests
+    }
+
     pub fn into_text_control_write_backs(self) -> Vec<TextControlWriteBack> {
         self.text_control_write_backs
     }
@@ -198,6 +217,7 @@ impl InputOutcome {
         Self {
             actions: Vec::new(),
             text_control_write_backs: Vec::new(),
+            clipboard_requests: Vec::new(),
             diagnostics: Vec::new(),
             dialogue_advance: false,
             cancel: false,
@@ -217,6 +237,7 @@ impl InputOutcome {
         self.actions.extend(other.actions);
         self.text_control_write_backs
             .extend(other.text_control_write_backs);
+        self.clipboard_requests.extend(other.clipboard_requests);
         self.diagnostics.extend(other.diagnostics);
         self.dialogue_advance |= other.dialogue_advance;
         self.cancel |= other.cancel;
@@ -232,13 +253,16 @@ pub struct InputController {
     pressed: BTreeMap<u64, arcweft_presentation::input::InteractionTarget>,
     drags: BTreeMap<u64, DragState>,
     pending_text_pointer_selection: Option<TextPointerSelectionState>,
+    text_block_selection: Option<TextBlockSelectionState>,
     choice_scroll: ChoiceScroll,
     scroll_offsets: BTreeMap<String, ScrollOffset>,
     controller: ControllerInputNormalizer,
     window_focused: bool,
     ime_composing: bool,
     focused_text_editor: Option<TextEditorState>,
-    text_editor_clipboard: TextEditorClipboard,
+    text_editor_clipboard: TextEditorLocalClipboard,
+    next_clipboard_request_id: TextClipboardRequestId,
+    pending_clipboard_requests: BTreeMap<TextClipboardRequestId, TextClipboardRequest>,
     last_pointer_activation: Option<LastPointerActivation>,
 }
 
@@ -339,6 +363,18 @@ impl InputController {
         self.focused_text_editor.as_ref()
     }
 
+    pub(crate) fn text_block_selection_for(
+        &self,
+        target: &arcweft_presentation::input::InteractionTarget,
+        text: &str,
+    ) -> Option<TextRange<TextByteOffset>> {
+        self.text_block_selection
+            .as_ref()
+            .filter(|selection| selection.target == *target && selection.text == text)
+            .map(|selection| selection.selection)
+            .filter(|selection| selection.start() != selection.end())
+    }
+
     pub fn pointer_position(&self, pointer: PointerId) -> Option<ViewportPoint> {
         self.pointer_positions.get(&pointer.0).copied()
     }
@@ -426,6 +462,9 @@ impl InputController {
         position: ViewportPoint,
     ) -> InputOutcome {
         self.pointer_positions.insert(pointer.0, position);
+        if self.update_text_block_drag_selection(frame, pointer, position) {
+            return InputOutcome::redraw(true);
+        }
         match InputRouter::hover_path(pointer, position, &frame.layers, &frame.hits) {
             Some(path) => {
                 let _ = self.interaction.set_hover_path(path);
@@ -458,6 +497,28 @@ impl InputController {
         modifiers: InputPointerModifiers,
     ) -> InputOutcome {
         self.pointer_positions.insert(pointer.0, position);
+        if let Some(block) = frame.selectable_text_block_at(position).cloned() {
+            self.pending_text_pointer_selection = None;
+            self.deactivate_focused_text_editor();
+            let _ = self.apply_text_block_pointer_selection(
+                &block,
+                position,
+                modifiers.shift(),
+                TextPointerSelectionKind::Caret,
+            );
+            self.drags.insert(
+                pointer.0,
+                DragState {
+                    pointer,
+                    target: block.target.clone(),
+                    start: position,
+                    current: position,
+                    modifiers,
+                    intent: DragIntent::SelectTextBlock,
+                },
+            );
+            return InputOutcome::redraw(true);
+        }
         let raw = self.raw(RawInputKind::Pointer(PointerInput {
             pointer,
             position,
@@ -532,6 +593,28 @@ impl InputController {
         let is_activation = drag
             .as_ref()
             .is_some_and(|drag| drag.distance_squared() <= 64.0);
+        if let Some(drag) = drag
+            .as_ref()
+            .filter(|drag| drag.intent == DragIntent::SelectTextBlock)
+        {
+            if let Some(block) = frame
+                .selectable_text_block_for_target(&drag.target)
+                .cloned()
+            {
+                let kind = if is_activation {
+                    self.next_text_click_kind(&drag.target, position)
+                } else {
+                    TextPointerSelectionKind::Caret
+                };
+                let _ = self.apply_text_block_pointer_selection(
+                    &block,
+                    position,
+                    drag.modifiers.shift() || modifiers.shift() || !is_activation,
+                    kind,
+                );
+            }
+            return InputOutcome::redraw(true);
+        }
         let mut pointer_text_write_backs = Vec::new();
         if let Some(drag) = drag
             .as_ref()
@@ -539,7 +622,7 @@ impl InputController {
         {
             if drag.intent == DragIntent::MoveSelectedText && !is_activation {
                 if let Some(write_back) =
-                    self.move_selected_text_to_pointer(frame, drag.target.clone(), position)
+                    self.move_selected_text_to_pointer(frame, &drag.target, position)
                 {
                     pointer_text_write_backs.push(write_back);
                 }
@@ -653,6 +736,80 @@ impl InputController {
         self.apply_or_defer_text_pointer_selection(frame, selection)
     }
 
+    fn update_text_block_drag_selection(
+        &mut self,
+        frame: &PreparedFrame,
+        pointer: PointerId,
+        position: ViewportPoint,
+    ) -> bool {
+        let Some(drag) = self
+            .drags
+            .get_mut(&pointer.0)
+            .filter(|drag| drag.intent == DragIntent::SelectTextBlock)
+        else {
+            return false;
+        };
+        drag.current = position;
+        frame
+            .selectable_text_block_for_target(&drag.target)
+            .cloned()
+            .is_some_and(|block| {
+                self.apply_text_block_pointer_selection(
+                    &block,
+                    position,
+                    true,
+                    TextPointerSelectionKind::Caret,
+                )
+            })
+    }
+
+    fn apply_text_block_pointer_selection(
+        &mut self,
+        block: &PreparedSelectableTextBlock,
+        position: ViewportPoint,
+        selecting: bool,
+        kind: TextPointerSelectionKind,
+    ) -> bool {
+        let offset = viewport_text_hit_offset(&block.character_bounds, position);
+        let existing_anchor = self
+            .text_block_selection
+            .as_ref()
+            .filter(|selection| selection.target == block.target && selection.text == block.text)
+            .map(|selection| selection.anchor);
+        let selection = match kind {
+            TextPointerSelectionKind::Word if !selecting => {
+                word_range_at_text_offset(&block.text, offset)
+            }
+            TextPointerSelectionKind::Line if !selecting => {
+                line_range_at_text_offset(&block.text, offset)
+            }
+            TextPointerSelectionKind::Caret
+            | TextPointerSelectionKind::Word
+            | TextPointerSelectionKind::Line => {
+                let anchor = if selecting {
+                    existing_anchor.unwrap_or(offset)
+                } else {
+                    offset
+                };
+                ordered_text_range(anchor, offset)
+            }
+        };
+        let anchor = if selecting {
+            existing_anchor.unwrap_or(*selection.start())
+        } else {
+            *selection.start()
+        };
+        let next = TextBlockSelectionState {
+            target: block.target.clone(),
+            text: block.text.clone(),
+            anchor,
+            selection,
+        };
+        let changed = self.text_block_selection.as_ref() != Some(&next);
+        self.text_block_selection = Some(next);
+        changed
+    }
+
     pub fn keyboard(&mut self, frame: &PreparedFrame, key: &str, phase: KeyPhase) -> InputOutcome {
         if phase == KeyPhase::Up {
             return InputOutcome::default();
@@ -704,6 +861,7 @@ impl InputController {
             return InputOutcome {
                 actions: Vec::new(),
                 text_control_write_backs: Vec::new(),
+                clipboard_requests: Vec::new(),
                 diagnostics: Vec::new(),
                 dialogue_advance: false,
                 cancel: false,
@@ -725,6 +883,7 @@ impl InputController {
             return InputOutcome {
                 actions: Vec::new(),
                 text_control_write_backs: Vec::new(),
+                clipboard_requests: Vec::new(),
                 diagnostics: Vec::new(),
                 dialogue_advance: false,
                 cancel: false,
@@ -811,6 +970,8 @@ impl InputController {
         input: TextInput,
     ) -> Result<InputOutcome, TextEditorError> {
         let mut text_control_write_backs = Vec::new();
+        let mut clipboard_requests = Vec::new();
+        let mut editor_outputs = Vec::new();
         let stale = self.focused_text_editor.as_ref().is_some_and(|editor| {
             editor.session() == input.session() && !focused_editor_matches_frame(frame, editor)
         });
@@ -875,7 +1036,9 @@ impl InputController {
                     ));
                 }
             }
+            editor_outputs = outputs;
         }
+        clipboard_requests.extend(self.clipboard_requests_from_editor_outputs(&editor_outputs));
         self.ime_composing = input.operations().iter().fold(
             self.ime_composing,
             |active, operation| match operation {
@@ -898,11 +1061,93 @@ impl InputController {
         Ok(InputOutcome {
             actions: Vec::new(),
             text_control_write_backs,
+            clipboard_requests,
             diagnostics: Vec::new(),
             dialogue_advance: false,
             cancel: false,
             redraw: true,
         })
+    }
+
+    pub fn apply_clipboard_outcome(
+        &mut self,
+        frame: &PreparedFrame,
+        outcome: TextClipboardOutcome,
+    ) -> Result<InputOutcome, TextEditorError> {
+        let Some(request) = self
+            .pending_clipboard_requests
+            .remove(&outcome.request_id())
+        else {
+            return Ok(InputOutcome::redraw(false));
+        };
+        let mut text_control_write_backs = Vec::new();
+        let mut redraw = false;
+
+        match outcome {
+            TextClipboardOutcome::ReadCommitted { text, .. } => {
+                if let Some(editor) = self.focused_text_editor.as_mut().filter(|editor| {
+                    editor.session() == request.session()
+                        && editor.target() == request.target()
+                        && focused_editor_matches_frame(frame, editor)
+                }) {
+                    editor.paste_text(text.as_str())?;
+                    text_control_write_backs.push(text_control_change_writeback(editor));
+                    redraw = true;
+                }
+            }
+            TextClipboardOutcome::Failed { error, .. }
+                if request.operation()
+                    == arcweft_presentation::clipboard::TextClipboardOperation::Paste
+                    && error.kind().may_use_local_fallback() =>
+            {
+                if let Some(editor) = self.focused_text_editor.as_mut().filter(|editor| {
+                    editor.session() == request.session()
+                        && editor.target() == request.target()
+                        && focused_editor_matches_frame(frame, editor)
+                }) && editor
+                    .paste_local_clipboard(&self.text_editor_clipboard)
+                    .is_ok()
+                {
+                    text_control_write_backs.push(text_control_change_writeback(editor));
+                    redraw = true;
+                }
+            }
+            TextClipboardOutcome::WriteCommitted { .. }
+            | TextClipboardOutcome::Cleared { .. }
+            | TextClipboardOutcome::Failed { .. } => {}
+        }
+
+        Ok(InputOutcome {
+            actions: Vec::new(),
+            text_control_write_backs,
+            clipboard_requests: Vec::new(),
+            diagnostics: Vec::new(),
+            dialogue_advance: false,
+            cancel: false,
+            redraw,
+        })
+    }
+
+    fn clipboard_requests_from_editor_outputs(
+        &mut self,
+        outputs: &[TextEditorOutput],
+    ) -> Vec<TextClipboardRequest> {
+        outputs
+            .iter()
+            .filter_map(|output| match output {
+                TextEditorOutput::Clipboard(intent) => {
+                    let request_id = self.next_clipboard_request_id.next();
+                    self.next_clipboard_request_id = request_id;
+                    let request = intent.clone().into_request(request_id);
+                    self.pending_clipboard_requests
+                        .insert(request_id, request.clone());
+                    Some(request)
+                }
+                TextEditorOutput::None
+                | TextEditorOutput::Submitted(_)
+                | TextEditorOutput::CancelledComposition => None,
+            })
+            .collect()
     }
 
     pub fn wheel(&mut self, frame: &PreparedFrame, delta_y: f32) -> InputOutcome {
@@ -983,6 +1228,7 @@ impl InputController {
         InputOutcome {
             actions: Vec::new(),
             text_control_write_backs,
+            clipboard_requests: Vec::new(),
             diagnostics: Vec::new(),
             dialogue_advance: false,
             cancel: false,
@@ -1211,12 +1457,12 @@ impl InputController {
     fn move_selected_text_to_pointer(
         &mut self,
         frame: &PreparedFrame,
-        target: arcweft_presentation::input::InteractionTarget,
+        target: &arcweft_presentation::input::InteractionTarget,
         position: ViewportPoint,
     ) -> Option<TextControlWriteBack> {
         let focused = frame.focused_text_input_target()?;
         let editor = self.focused_text_editor.as_mut()?;
-        if focused.snapshot.target() != &target || editor.target() != &target {
+        if focused.snapshot.target() != target || editor.target() != target {
             return None;
         }
         let offset =
@@ -1309,6 +1555,37 @@ fn viewport_text_hit_offset(
         .map_or(TextByteOffset(0), |bounds| *bounds.range.end())
 }
 
+fn ordered_text_range(left: TextByteOffset, right: TextByteOffset) -> TextRange<TextByteOffset> {
+    if left.0 <= right.0 {
+        TextRange::new(left, right)
+    } else {
+        TextRange::new(right, left)
+    }
+}
+
+fn word_range_at_text_offset(text: &str, offset: TextByteOffset) -> TextRange<TextByteOffset> {
+    TextIndexSnapshot::try_new(text.to_owned())
+        .and_then(|index| index.word_range_at(offset))
+        .unwrap_or_else(|_| TextRange::new(offset, offset))
+}
+
+fn line_range_at_text_offset(text: &str, offset: TextByteOffset) -> TextRange<TextByteOffset> {
+    let offset = TextIndexSnapshot::try_new(text.to_owned())
+        .and_then(|index| index.validate_byte_offset(offset))
+        .unwrap_or(TextByteOffset(0));
+    let byte = usize::try_from(offset.0)
+        .unwrap_or(usize::MAX)
+        .min(text.len());
+    let start = text[..byte].rfind('\n').map_or(0, |index| index + 1);
+    let end = text[byte..]
+        .find('\n')
+        .map_or(text.len(), |index| byte + index);
+    TextRange::new(
+        TextByteOffset(u32::try_from(start).unwrap_or(u32::MAX)),
+        TextByteOffset(u32::try_from(end).unwrap_or(u32::MAX)),
+    )
+}
+
 fn point_distance_squared(left: ViewportPoint, right: ViewportPoint) -> f32 {
     let dx = left.x - right.x;
     let dy = left.y - right.y;
@@ -1345,6 +1622,7 @@ fn activation_outcome(
     InputOutcome {
         actions,
         text_control_write_backs,
+        clipboard_requests: Vec::new(),
         diagnostics,
         dialogue_advance,
         cancel: false,

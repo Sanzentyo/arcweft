@@ -138,7 +138,7 @@ This cut applies the component/View text-control unification note from
 - `cargo test -p arcweft-bundle ui_input_resource_stacks_default_text_control_bounds_by_height -- --nocapture`
 - `cargo run -p arcweft-cli -- bundle samples/modern-feedback-ui/src/main.arcw --output target/arcweft/modern-feedback-ui-debug.awfb`
 - `cargo test -p arcweft-takumi-adapter --test css_box_shadow_lowering --all-features -- --nocapture`
-- `cargo test -p arcweft-render-wgpu --test ui_box_shadow_plan --all-features -- --nocapture`
+- `cargo test -p arcweft-render-wgpu --test view_box_shadow_plan --all-features -- --nocapture`
 - `cargo test -p arcweft-takumi-adapter --test adapter_contract transform_and_opacity_are_paint_only_invalidations -- --nocapture`
 
 Structure audit completed as a dry run and reported the current workspace

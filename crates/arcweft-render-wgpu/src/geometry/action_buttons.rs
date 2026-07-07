@@ -5,7 +5,10 @@ use super::control_style::{
     push_control_corner_frame, push_control_filter_plan, push_control_focus_ring,
     push_control_shadow_plan, state_from_interaction,
 };
-use super::{PaintRect, Palette, RenderScene, RenderTextBlock, RenderTextSlant, RenderTextWeight};
+use super::{
+    PaintRect, Palette, RenderScene, RenderTextBlock, RenderTextSelectionPolicy, RenderTextSlant,
+    RenderTextWeight,
+};
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
@@ -121,6 +124,7 @@ pub(super) fn build_action_button(
     );
     if let Some(clip_bounds) = clipped_viewport_bounds(button.bounds, button) {
         text.push(RenderTextBlock {
+            target: None,
             text: button.label.clone(),
             bounds: text_bounds,
             clip_bounds: Some(clip_bounds),
@@ -132,6 +136,9 @@ pub(super) fn build_action_button(
             weight: RenderTextWeight::Bold,
             slant: RenderTextSlant::Upright,
             rgba: visual.text.unwrap_or(palette.choice_text),
+            selection_policy: RenderTextSelectionPolicy::Disabled,
+            selection: None,
+            selection_rgba: palette.choice_active,
         });
     }
     let filter_start = control_filters.len();

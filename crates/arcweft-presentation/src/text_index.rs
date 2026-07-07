@@ -238,6 +238,37 @@ impl TextIndexSnapshot {
         Ok(range)
     }
 
+    /// Validates an editor byte range and expands non-collapsed selections to
+    /// the enclosing shared grapheme boundaries.
+    ///
+    /// Platform selections can arrive on scalar boundaries that are still
+    /// inside a user-visible grapheme cluster. Clipboard operations must not
+    /// copy/cut such partial clusters. This method is intentionally owned by
+    /// `TextIndexSnapshot` so editor, pointer, IME, web, and native paths do
+    /// not grow separate ad-hoc range expansion rules.
+    pub fn expand_byte_range_to_grapheme_boundaries(
+        &self,
+        range: TextRange<TextByteOffset>,
+    ) -> Result<TextRange<TextByteOffset>, TextIndexError> {
+        let range = self.validate_byte_range(range)?;
+        if self.range_is_collapsed(range) {
+            return Ok(range);
+        }
+        let boundaries = self.grapheme_boundaries();
+        let start = boundaries
+            .iter()
+            .copied()
+            .take_while(|candidate| candidate.0 <= range.start().0)
+            .last()
+            .unwrap_or(TextByteOffset(0));
+        let end = boundaries
+            .iter()
+            .copied()
+            .find(|candidate| candidate.0 >= range.end().0)
+            .unwrap_or_else(|| self.len_bytes());
+        Ok(TextRange::new(start, end))
+    }
+
     /// Returns true when the range is collapsed.
     pub fn range_is_collapsed(&self, range: TextRange<TextByteOffset>) -> bool {
         range.start() == range.end()

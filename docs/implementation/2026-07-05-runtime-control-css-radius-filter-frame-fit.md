@@ -56,7 +56,7 @@ readback baseline work.
 
 - No checked-in PNG baseline promotion.
 - No web exact readback baseline promotion.
-- Retained `PreparedUiScene` direct-compositor scene mapping is not included in
+- Retained `PreparedViewScene` direct-compositor scene mapping is not included in
   this slice. The modern feedback runtime controls and normal shared frame
   geometry are mapped; retained scene mapping needs its own dependency/resource
   contract if it becomes part of interactive player scaling.

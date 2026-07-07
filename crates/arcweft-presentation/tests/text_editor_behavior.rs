@@ -1,9 +1,10 @@
 use arcweft_id::PublicId;
+use arcweft_presentation::clipboard::{TextClipboardIntent, TextClipboardOperation};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::text_editor::{
-    TextEditorClipboard, TextEditorError, TextEditorGlyphGeometry, TextEditorLayout,
-    TextEditorLayoutParts, TextEditorLayoutSource, TextEditorOutput, TextEditorState,
+    TextEditorError, TextEditorGlyphGeometry, TextEditorLayout, TextEditorLayoutParts,
+    TextEditorLayoutSource, TextEditorLocalClipboard, TextEditorOutput, TextEditorState,
 };
 use arcweft_presentation::text_index::TextIndexSnapshot;
 use arcweft_presentation::text_input::{
@@ -35,7 +36,7 @@ fn input(operation: TextInputOperation) -> TextInput {
 #[test]
 fn backspace_uses_shared_grapheme_boundary_for_combining_sequence() {
     let mut editor = editor("e\u{301}x", false);
-    let mut clipboard = TextEditorClipboard::default();
+    let mut clipboard = TextEditorLocalClipboard::default();
     let accent_end = TextIndexSnapshot::new("e\u{301}x").grapheme_boundaries()[1];
     editor
         .apply_text_input(
@@ -64,7 +65,7 @@ fn backspace_uses_shared_grapheme_boundary_for_combining_sequence() {
 fn backspace_keeps_halfwidth_voicing_mark_with_base_grapheme() {
     let text = "Д\u{ff9f}x";
     let mut editor = editor(text, false);
-    let mut clipboard = TextEditorClipboard::default();
+    let mut clipboard = TextEditorLocalClipboard::default();
     let cluster_end = TextIndexSnapshot::new(text).grapheme_boundaries()[1];
     editor
         .apply_text_input(
@@ -92,7 +93,7 @@ fn backspace_keeps_halfwidth_voicing_mark_with_base_grapheme() {
 #[test]
 fn word_delete_commands_remove_word_runs_around_caret() {
     let mut left = editor("hello world", false);
-    let mut clipboard = TextEditorClipboard::default();
+    let mut clipboard = TextEditorLocalClipboard::default();
     let end = TextIndexSnapshot::new(left.text()).len_bytes();
     left.apply_text_input(
         &input(TextInputOperation::SetSelection(
@@ -136,7 +137,7 @@ fn word_delete_commands_remove_word_runs_around_caret() {
 #[test]
 fn document_edge_commands_move_or_extend_selection_to_text_bounds() {
     let mut editor = editor("alpha\nbeta", false);
-    let mut clipboard = TextEditorClipboard::default();
+    let mut clipboard = TextEditorLocalClipboard::default();
     let index = TextIndexSnapshot::new(editor.text());
     let middle = index
         .byte_offset_for_utf16(arcweft_presentation::text_input::TextUtf16Offset(7))
@@ -184,7 +185,7 @@ fn document_edge_commands_move_or_extend_selection_to_text_bounds() {
 fn word_and_line_selection_commands_use_shared_ranges() {
     let text = "alpha Д\u{ff9f}\nbeta";
     let mut editor = editor(text, false);
-    let mut clipboard = TextEditorClipboard::default();
+    let mut clipboard = TextEditorLocalClipboard::default();
     let index = TextIndexSnapshot::new(text);
     let mixed_start = index
         .byte_offset_for_utf16(arcweft_presentation::text_input::TextUtf16Offset(6))
@@ -228,7 +229,7 @@ fn word_and_line_selection_commands_use_shared_ranges() {
 fn page_commands_move_by_visual_page_when_renderer_layout_is_available() {
     let text = "abcdefghi";
     let mut editor = editor(text, false);
-    let mut clipboard = TextEditorClipboard::default();
+    let mut clipboard = TextEditorLocalClipboard::default();
     let layout = soft_wrap_layout(text);
 
     editor
@@ -260,7 +261,7 @@ fn page_commands_move_by_visual_page_when_renderer_layout_is_available() {
 #[test]
 fn selected_text_replacement_is_deterministic() {
     let mut editor = editor("abc日本語", false);
-    let mut clipboard = TextEditorClipboard::default();
+    let mut clipboard = TextEditorLocalClipboard::default();
     let index = TextIndexSnapshot::new("abc日本語");
     let replacement = TextRange::new(
         index
@@ -292,7 +293,7 @@ fn selected_text_replacement_is_deterministic() {
 #[test]
 fn composition_cancel_restores_original_replacement_text() {
     let mut editor = editor("かな", false);
-    let mut clipboard = TextEditorClipboard::default();
+    let mut clipboard = TextEditorLocalClipboard::default();
     let all = TextRange::new(
         TextByteOffset(0),
         TextByteOffset(u32::try_from("かな".len()).unwrap()),
@@ -336,7 +337,7 @@ fn composition_cancel_restores_original_replacement_text() {
 #[test]
 fn secure_clipboard_commands_are_rejected_before_text_leaks() {
     let mut editor = editor("secret", true);
-    let mut clipboard = TextEditorClipboard::default();
+    let mut clipboard = TextEditorLocalClipboard::default();
     editor
         .apply_text_input(
             &input(TextInputOperation::Command(TextEditCommand::SelectAll)),
@@ -360,6 +361,93 @@ fn secure_clipboard_commands_are_rejected_before_text_leaks() {
 }
 
 #[test]
+fn copy_emits_typed_clipboard_write_intent_and_updates_local_fallback() {
+    let mut editor = editor("copyable", false);
+    let mut clipboard = TextEditorLocalClipboard::default();
+    editor
+        .apply_text_input(
+            &input(TextInputOperation::Command(TextEditCommand::SelectAll)),
+            &mut clipboard,
+        )
+        .unwrap();
+
+    let outputs = editor
+        .apply_text_input(
+            &input(TextInputOperation::Command(TextEditCommand::Copy)),
+            &mut clipboard,
+        )
+        .unwrap();
+
+    assert_eq!(clipboard.read(), Some("copyable"));
+    let [TextEditorOutput::Clipboard(TextClipboardIntent::Write(intent))] = outputs.as_slice()
+    else {
+        panic!("copy should emit a typed clipboard write intent");
+    };
+    assert_eq!(intent.operation(), TextClipboardOperation::Copy);
+    assert_eq!(intent.text().as_str(), "copyable");
+    assert_eq!(intent.target(), &target());
+    assert_eq!(intent.session(), TextInputSessionId(42));
+}
+
+#[test]
+fn cut_emits_typed_clipboard_write_intent_after_grapheme_safe_selection() {
+    let mut editor = editor("aД\u{ff9f}z", false);
+    let mut clipboard = TextEditorLocalClipboard::default();
+    let index = TextIndexSnapshot::new(editor.text());
+    let cluster = TextRange::new(
+        index.grapheme_boundaries()[1],
+        index.grapheme_boundaries()[2],
+    );
+    editor
+        .apply_text_input(
+            &input(TextInputOperation::SetSelection(
+                PlatformTextSelection::new(cluster, TextSelectionAffinity::Downstream),
+            )),
+            &mut clipboard,
+        )
+        .unwrap();
+
+    let outputs = editor
+        .apply_text_input(
+            &input(TextInputOperation::Command(TextEditCommand::Cut)),
+            &mut clipboard,
+        )
+        .unwrap();
+
+    assert_eq!(editor.text(), "az");
+    assert_eq!(clipboard.read(), Some("Д\u{ff9f}"));
+    let [TextEditorOutput::Clipboard(TextClipboardIntent::Write(intent))] = outputs.as_slice()
+    else {
+        panic!("cut should emit a typed clipboard write intent");
+    };
+    assert_eq!(intent.operation(), TextClipboardOperation::Cut);
+    assert_eq!(intent.text().as_str(), "Д\u{ff9f}");
+}
+
+#[test]
+fn paste_requests_host_clipboard_read_before_using_local_fallback() {
+    let mut editor = editor("paste:", false);
+    let mut clipboard = TextEditorLocalClipboard::default();
+    clipboard.write("fallback");
+
+    let outputs = editor
+        .apply_text_input(
+            &input(TextInputOperation::Command(TextEditCommand::Paste)),
+            &mut clipboard,
+        )
+        .unwrap();
+
+    assert_eq!(editor.text(), "paste:");
+    let [TextEditorOutput::Clipboard(TextClipboardIntent::Read(intent))] = outputs.as_slice()
+    else {
+        panic!("paste should emit a typed clipboard read intent");
+    };
+    assert_eq!(intent.operation(), TextClipboardOperation::Paste);
+    assert_eq!(intent.target(), &target());
+    assert_eq!(intent.session(), TextInputSessionId(42));
+}
+
+#[test]
 fn selection_disabled_policy_collapses_platform_and_shift_selection() {
     let mut editor = TextEditorState::new(
         TextInputSessionId(42),
@@ -368,7 +456,7 @@ fn selection_disabled_policy_collapses_platform_and_shift_selection() {
         TextInputOptions::default().with_selection_policy(TextSelectionPolicy::Disabled),
     )
     .unwrap();
-    let mut clipboard = TextEditorClipboard::default();
+    let mut clipboard = TextEditorLocalClipboard::default();
 
     editor
         .apply_text_input(
@@ -408,7 +496,7 @@ fn shortcut_disabled_policy_blocks_select_all_and_clipboard_commands() {
         TextInputOptions::default().with_shortcut_policy(TextShortcutPolicy::Disabled),
     )
     .unwrap();
-    let mut clipboard = TextEditorClipboard::default();
+    let mut clipboard = TextEditorLocalClipboard::default();
 
     editor
         .apply_text_input(
@@ -464,7 +552,7 @@ fn secure_snapshot_redacts_text_and_character_bounds() {
 #[test]
 fn renderer_backed_geometry_reports_mixed_cluster_bounds_and_range_rects() {
     let mut editor = editor("A日本e\u{301}🦀", false);
-    let mut clipboard = TextEditorClipboard::default();
+    let mut clipboard = TextEditorLocalClipboard::default();
     editor
         .apply_text_input(
             &input(TextInputOperation::SetSelection(
@@ -549,7 +637,7 @@ fn renderer_backed_caret_at_soft_wrap_boundary_uses_previous_visual_line_end() {
                     TextSelectionAffinity::Downstream,
                 ),
             )),
-            &mut TextEditorClipboard::default(),
+            &mut TextEditorLocalClipboard::default(),
         )
         .unwrap();
     let layout = TextEditorLayout::from_renderer_parts_for_text(
@@ -597,7 +685,7 @@ fn visual_line_vertical_navigation_uses_soft_wrap_when_enabled() {
             .with_vertical_navigation_policy(TextVerticalNavigationPolicy::VisualLine),
     )
     .unwrap();
-    let mut clipboard = TextEditorClipboard::default();
+    let mut clipboard = TextEditorLocalClipboard::default();
     for editor in [&mut logical, &mut visual] {
         editor
             .apply_text_input(
@@ -654,7 +742,7 @@ fn visual_line_vertical_navigation_preserves_column_after_short_line_clamp() {
             .with_vertical_navigation_policy(TextVerticalNavigationPolicy::VisualLine),
     )
     .unwrap();
-    let mut clipboard = TextEditorClipboard::default();
+    let mut clipboard = TextEditorLocalClipboard::default();
     editor
         .apply_text_input(
             &input(TextInputOperation::SetSelection(

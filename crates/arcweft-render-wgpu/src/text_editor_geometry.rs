@@ -197,12 +197,7 @@ fn union_hit_rect(left: HitRect, right: HitRect) -> HitRect {
     let y = left.y.min(right.y);
     let right_edge = (left.x + left.width).max(right.x + right.width);
     let bottom_edge = (left.y + left.height).max(right.y + right.height);
-    HitRect::new(
-        x,
-        y,
-        (right_edge - x).max(0.0),
-        (bottom_edge - y).max(0.0),
-    )
+    HitRect::new(x, y, (right_edge - x).max(0.0), (bottom_edge - y).max(0.0))
 }
 
 fn layout_rect_to_hit_rect(rect: LayoutRect) -> HitRect {
@@ -343,10 +338,12 @@ mod tests {
         .unwrap();
 
         assert_eq!(layout.glyphs().len(), 2);
-        assert!(layout
-            .glyphs()
-            .iter()
-            .all(|glyph| glyph.range().start().0 != 1 || glyph.range().end().0 != 1));
+        assert!(
+            layout
+                .glyphs()
+                .iter()
+                .all(|glyph| glyph.range().start().0 != 1 || glyph.range().end().0 != 1)
+        );
     }
 
     #[test]
@@ -370,10 +367,12 @@ mod tests {
         )
         .unwrap();
 
-        assert!(layout
-            .glyphs()
-            .iter()
-            .any(|glyph| glyph.range().start().0 == 2 && glyph.range().end().0 == 2));
+        assert!(
+            layout
+                .glyphs()
+                .iter()
+                .any(|glyph| glyph.range().start().0 == 2 && glyph.range().end().0 == 2)
+        );
     }
 
     #[test]
