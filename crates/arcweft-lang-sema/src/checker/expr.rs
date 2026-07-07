@@ -890,9 +890,11 @@ impl TypeChecker<'_> {
                     signature.remaining_param_group(0).is_some(),
                     Self::signature_call_supplies_current_group(&signature, args),
                 );
+                self.record_function_return_effect_result(&name, &ty);
             } else {
                 self.check_untyped_function_args(&name, args);
                 self.last_checked_curried_signature_call = None;
+                self.record_function_return_effect_result(&name, &ty);
             }
             return Some(ty);
         }

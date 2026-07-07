@@ -238,6 +238,13 @@ Source briefs:
   called. The same pending-edge path is used by data-last method fallback
   calls. Functions that merely retain/pass a callback without invoking the
   parameter remain effect-free at the call site.
+- Returned function values now preserve callback effect timing when the
+  returned closure invokes a supplied higher-order parameter. Sema registers a
+  private `fn.name.return` proxy callable from the function signature before
+  flows are checked, connects that proxy to the direct returned closure or
+  stored local closure alias when the function body is checked, and then links
+  the proxy to the supplied callback only when the returned closure is called.
+  Creating the returned function value remains effect-free.
 - Sema now emits `sema.numeric.fallback_in_inferred_closure` warnings when an
   unsuffixed numeric literal or numeric sequence falls back to a stable default
   primitive type inside a closure body whose return type is inferred. Explicit
@@ -347,8 +354,9 @@ Source briefs:
   Module-local and `TypeCheckEnv`-provided user-defined enum tuple/newtype and
   record payload constructors now use the same callback-selector path for
   destructured function-valued payload bindings. Callback invocations hidden
-  inside returned/stored closures and LSP-facing closure effect evidence remain
-  open. Save/load
+  inside direct returned closures and stored local closure aliases returned
+  from the function now compose only when the returned closure is called.
+  LSP-facing closure effect evidence remains open. Save/load
   currently has an explicit Product
   AWBC policy: runtime function values are
   rejected as non-persistable until AWBC closure allocation and snapshot
@@ -622,3 +630,19 @@ registration API. Focused sema tests cover tuple/newtype and record payload
 callback selectors without a module-local enum declaration:
 `cargo test -p arcweft-lang-sema --all-features env_enum_ -- --nocapture`
 passed in the current all-features validation slice.
+
+The returned/stored closure callback effect cut adds focused sema coverage for
+effect-free returned closure creation, effect composition when the direct
+returned closure is called, and effect composition when a stored local closure
+alias is returned and then called. It passed
+`cargo test -p arcweft-lang-sema --all-features returned_closure_callback -- --nocapture`
+and full `cargo test -p arcweft-lang-sema --all-features --quiet` in the
+current all-features validation slice. It also passed
+`cargo clippy -p arcweft-lang-sema --all-targets --all-features --quiet` with
+only the existing `TraitMember` / `ImplMember` large enum warnings from
+`arcweft-lang-syntax`. Structure audit still reports the unrelated existing
+`crates/arcweft-cli/src/app/bundle_view.rs` 2500 LOC error. Workspace
+`cargo check --workspace --all-targets --all-features` was attempted in the
+same dirty worktree and is blocked by unrelated in-progress
+`crates/arcweft-player-scene/src/input.rs` edits: missing
+`text_control_write_back_from_editor` and a focused text-editor borrow conflict.

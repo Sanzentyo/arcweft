@@ -1301,6 +1301,115 @@ effects { }
 }
 
 #[test]
+fn returned_closure_callback_does_not_compose_until_closure_is_called() {
+    let tree = parse_ok(
+        r#"
+fn make_loader(load: String -> String) -> Unit -> String {
+    return |_unit: Unit| -> String { load("story.arcw") }
+}
+
+flow @flow.returned_closure_callback_creation returned_closure_callback_creation
+effects { }
+{
+    let loader = make_loader(|path: String| -> String {
+        adapter.read_text(path = path)
+    })
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("returned closure creation fixture lowers");
+    validate_typecheck_ready(&hir).expect("returned closure creation fixture is structured");
+
+    let report = analyze_types(&hir, &read_text_env());
+    assert!(
+        report.diagnostics.is_empty(),
+        "creating the returned closure should not compose callback body effects: {:?}",
+        report.diagnostics
+    );
+    let flow_summary = report
+        .effects
+        .summary(&crate::effect_model::CallableId::new(
+            "flow.returned_closure_callback_creation",
+        ))
+        .expect("flow summary");
+    assert!(
+        flow_summary.inferred().is_empty(),
+        "flow should not infer returned closure callback effects at creation: {flow_summary:?}"
+    );
+}
+
+#[test]
+fn returned_closure_callback_composes_when_returned_closure_is_called() {
+    let tree = parse_ok(
+        r#"
+fn make_loader(load: String -> String) -> Unit -> String {
+    return |_unit: Unit| -> String { load("story.arcw") }
+}
+
+flow @flow.returned_closure_callback_call returned_closure_callback_call
+effects { }
+{
+    let loader = make_loader(|path: String| -> String {
+        adapter.read_text(path = path)
+    })
+    let body = loader(())
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("returned closure call fixture lowers");
+    validate_typecheck_ready(&hir).expect("returned closure call fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("calling the returned closure must compose callback body effects");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.returned_closure_callback_call")
+                && error.message().contains("fs.read")
+        }),
+        "expected returned closure callback effect diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
+fn stored_returned_closure_callback_composes_when_returned_closure_is_called() {
+    let tree = parse_ok(
+        r#"
+fn make_loader(load: String -> String) -> Unit -> String {
+    let runner = |_unit: Unit| -> String { load("story.arcw") }
+    return runner
+}
+
+flow @flow.stored_returned_closure_callback_call stored_returned_closure_callback_call
+effects { }
+{
+    let loader = make_loader(|path: String| -> String {
+        adapter.read_text(path = path)
+    })
+    let body = loader(())
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("stored returned closure call fixture lowers");
+    validate_typecheck_ready(&hir).expect("stored returned closure call fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("calling the stored returned closure must compose callback body effects");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.stored_returned_closure_callback_call")
+                && error.message().contains("fs.read")
+        }),
+        "expected stored returned closure callback effect diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn destructured_higher_order_tuple_argument_composes_when_binding_is_called() {
     let tree = parse_ok(
         r#"

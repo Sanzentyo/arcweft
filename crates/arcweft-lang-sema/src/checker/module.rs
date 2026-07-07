@@ -248,6 +248,7 @@ impl TypeChecker<'_> {
                     expected_return.as_ref(),
                 )
             });
+            self.connect_function_return_effect_callable(function.name(), actual.as_ref());
             self.trait_predicate_stack.pop();
             self.higher_order_param_scope_stack.pop();
             self.effect_collector.restore(previous_callable);
@@ -431,6 +432,10 @@ impl TypeChecker<'_> {
             self.global_functions.insert(
                 function.name().to_owned(),
                 signature_type.return_type().clone(),
+            );
+            self.register_function_return_effect_callable(
+                function.name(),
+                signature_type.return_type(),
             );
             self.global_function_signatures
                 .insert(function.name().to_owned(), signature_type);

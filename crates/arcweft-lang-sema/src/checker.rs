@@ -165,6 +165,10 @@ fn closure_effect_callable_id(expression_id: TypeExpressionId) -> CallableId {
     CallableId::new(format!("closure.expr.{}", expression_id.index()))
 }
 
+fn function_return_effect_callable_id(function_name: &str) -> CallableId {
+    CallableId::new(format!("fn.{function_name}.return"))
+}
+
 /// HIR subject proven by a type-check judgment.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypeJudgmentSubject {
@@ -411,10 +415,13 @@ struct TypeChecker<'a> {
     local_function_effects: HashMap<String, CallableId>,
     closure_effect_callables_by_expr: HashMap<ExprNodeKey, CallableId>,
     last_checked_closure_effect_callable: Option<CallableId>,
+    function_return_effect_callables: HashMap<String, CallableId>,
     local_curried_signature_calls: HashMap<String, CurriedSignatureCallValue>,
     last_checked_curried_signature_call: Option<CurriedSignatureCallValue>,
     higher_order_param_scope_stack: Vec<HigherOrderParamScope>,
     higher_order_param_invocations: BTreeMap<String, BTreeSet<String>>,
+    higher_order_param_closure_invocations:
+        BTreeMap<String, BTreeMap<String, BTreeSet<CallableId>>>,
     pending_higher_order_effect_calls: Vec<PendingHigherOrderEffectCall>,
     for_iteration_evidence: Vec<ForIterationEvidence>,
     record_runtime_for_iteration_evidence: bool,
@@ -660,10 +667,12 @@ impl TypeChecker<'_> {
             local_function_effects: HashMap::new(),
             closure_effect_callables_by_expr: HashMap::new(),
             last_checked_closure_effect_callable: None,
+            function_return_effect_callables: HashMap::new(),
             local_curried_signature_calls: HashMap::new(),
             last_checked_curried_signature_call: None,
             higher_order_param_scope_stack: Vec::new(),
             higher_order_param_invocations: BTreeMap::new(),
+            higher_order_param_closure_invocations: BTreeMap::new(),
             pending_higher_order_effect_calls: Vec::new(),
             for_iteration_evidence: Vec::new(),
             record_runtime_for_iteration_evidence: false,
@@ -793,11 +802,16 @@ impl TypeChecker<'_> {
         if !matches!(ty, TypeKind::Function { .. }) {
             return;
         }
-        let Some(callable) = self.last_checked_closure_effect_callable.clone() else {
+        let Some(callable) = self
+            .last_checked_closure_effect_callable
+            .clone()
+            .or_else(|| self.closure_effect_callable_for_function_expr(expr, ty))
+        else {
             return;
         };
         self.closure_effect_callables_by_expr
-            .insert(ExprNodeKey::from_expr(expr), callable);
+            .insert(ExprNodeKey::from_expr(expr), callable.clone());
+        self.last_checked_closure_effect_callable = Some(callable);
     }
 
     fn push_closure_capture_frame(
@@ -1049,6 +1063,72 @@ impl TypeChecker<'_> {
         });
     }
 
+    fn register_function_return_effect_callable(&mut self, function_name: &str, ty: &TypeKind) {
+        if !matches!(ty, TypeKind::Function { .. }) {
+            return;
+        }
+        if self
+            .function_return_effect_callables
+            .contains_key(function_name)
+        {
+            return;
+        }
+        let id = function_return_effect_callable_id(function_name);
+        if let Err(error) = self.effect_collector.register_callable(
+            id.as_str().to_owned(),
+            id.clone(),
+            CallableKind::Function,
+            Visibility::Private,
+            EffectContract::inferred(),
+        ) {
+            self.errors.push(TypeCheckError::new(error.to_string()));
+        }
+        self.function_return_effect_callables
+            .insert(function_name.to_owned(), id);
+    }
+
+    fn connect_function_return_effect_callable(
+        &mut self,
+        function_name: &str,
+        ty: Option<&TypeKind>,
+    ) {
+        let Some(TypeKind::Function { .. }) = ty else {
+            self.last_checked_closure_effect_callable = None;
+            return;
+        };
+        let Some(return_callable) = self
+            .function_return_effect_callables
+            .get(function_name)
+            .cloned()
+        else {
+            return;
+        };
+        let Some(body_callable) = self.last_checked_closure_effect_callable.clone() else {
+            return;
+        };
+        if return_callable != body_callable {
+            self.effect_collector.record_local_call_from(
+                &return_callable,
+                body_callable,
+                EffectSite::new(format!("returned function value from `{function_name}`")),
+            );
+        }
+    }
+
+    fn record_function_return_effect_result(&mut self, function_name: &str, ty: &TypeKind) {
+        if !matches!(ty, TypeKind::Function { .. }) {
+            self.last_checked_closure_effect_callable = None;
+            return;
+        }
+        if let Some(callable) = self
+            .function_return_effect_callables
+            .get(function_name)
+            .cloned()
+        {
+            self.last_checked_closure_effect_callable = Some(callable);
+        }
+    }
+
     fn record_pending_curried_higher_order_arg_effect_calls(
         &mut self,
         function_name: &str,
@@ -1080,35 +1160,57 @@ impl TypeChecker<'_> {
         if !scope.param_names.contains(param_name) {
             return;
         }
-        if self.effect_collector.current_callable().as_ref() != Some(&scope.callable) {
+        let Some(current_callable) = self.effect_collector.current_callable() else {
             return;
+        };
+        if current_callable == scope.callable {
+            self.higher_order_param_invocations
+                .entry(scope.function_name.clone())
+                .or_default()
+                .insert(param_name.to_owned());
+        } else {
+            self.higher_order_param_closure_invocations
+                .entry(scope.function_name.clone())
+                .or_default()
+                .entry(param_name.to_owned())
+                .or_default()
+                .insert(current_callable);
         }
-        self.higher_order_param_invocations
-            .entry(scope.function_name.clone())
-            .or_default()
-            .insert(param_name.to_owned());
     }
 
     fn apply_pending_higher_order_effect_calls(&mut self) {
         let pending = std::mem::take(&mut self.pending_higher_order_effect_calls);
         for call in pending {
-            let Some(invoked_params) = self
+            if let Some(invoked_params) = self
                 .higher_order_param_invocations
                 .get(&call.callee_function)
-            else {
-                continue;
-            };
-            if !invoked_params.contains(&call.param_name) {
-                continue;
+                && invoked_params.contains(&call.param_name)
+            {
+                self.effect_collector.record_local_call_from(
+                    &call.caller,
+                    call.effect_callable.clone(),
+                    EffectSite::new(format!(
+                        "higher-order argument `{}` for `{}`",
+                        call.param_name, call.callee_function
+                    )),
+                );
             }
-            self.effect_collector.record_local_call_from(
-                &call.caller,
-                call.effect_callable,
-                EffectSite::new(format!(
-                    "higher-order argument `{}` for `{}`",
-                    call.param_name, call.callee_function
-                )),
-            );
+            if let Some(closure_invocations) = self
+                .higher_order_param_closure_invocations
+                .get(&call.callee_function)
+                .and_then(|params| params.get(&call.param_name))
+            {
+                for closure_callable in closure_invocations {
+                    self.effect_collector.record_local_call_from(
+                        closure_callable,
+                        call.effect_callable.clone(),
+                        EffectSite::new(format!(
+                            "higher-order argument `{}` captured by returned closure from `{}`",
+                            call.param_name, call.callee_function
+                        )),
+                    );
+                }
+            }
         }
     }
 
@@ -1135,6 +1237,10 @@ impl TypeChecker<'_> {
                     return Some(callable);
                 }
                 let callee = expr_path_label(callee)?;
+                if let Some(callable) = self.function_return_effect_callables.get(&callee).cloned()
+                {
+                    return Some(callable);
+                }
                 let callable = self.local_function_effects.get(&callee)?.clone();
                 let arity = self.locals.get(&callee)?.function_arity()?;
                 let positional_arg_count = args
