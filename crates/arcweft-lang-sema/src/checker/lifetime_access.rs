@@ -1,6 +1,5 @@
 //! Lifetime registry access and drop semantics.
 
-use super::helpers::is_drop_name;
 use super::{
     Expr, LifetimeAccessMode, LifetimeKey, LifetimeScopeKind, TypeCheckError, TypeChecker,
     TypeKind, is_drop_callee, lifetime_key, lifetime_value_type,
@@ -66,22 +65,20 @@ impl TypeChecker<'_> {
     pub(super) fn release_direct_drop_expr(&mut self, expr: &Expr) {
         match expr {
             Expr::Call { callee, args } if is_drop_callee(callee) => {
+                if let Expr::Select(select) = callee.as_ref()
+                    && let Expr::Path(name) = select.target()
+                {
+                    self.release_borrow_local(name.as_label());
+                }
                 for arg in args {
                     if let Expr::Path(name) = arg.value() {
-                        self.release_borrow_local(name);
+                        self.release_borrow_local(name.as_label());
                     }
-                }
-            }
-            Expr::MethodCall {
-                receiver, method, ..
-            } if is_drop_name(method) => {
-                if let Expr::Path(name) = receiver.as_ref() {
-                    self.release_borrow_local(name);
                 }
             }
             Expr::Pipe { lhs, rhs } if is_drop_callee(rhs) => {
                 if let Expr::Path(name) = lhs.as_ref() {
-                    self.release_borrow_local(name);
+                    self.release_borrow_local(name.as_label());
                 }
             }
             _ => {}

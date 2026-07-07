@@ -7,18 +7,15 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
     assert!(matches!(pipe, Expr::Pipe { .. }));
 
     let method = parse_expr("choices.filter(_.enabled).map(_.label)").expect("method chain parses");
-    assert!(matches!(method, Expr::MethodCall { .. }));
+    assert_eq!(selected_call_member(&method), Some("map"));
     let mutating_method = parse_expr("nums.reserve(4)").expect("mutating method call parses");
-    assert!(matches!(mutating_method, Expr::MethodCall { method, .. } if method == "reserve"));
-    let Expr::MethodCall { args, .. } = method else {
-        panic!("expected outer map call");
-    };
+    assert_eq!(selected_call_member(&mutating_method), Some("reserve"));
+    let args = selected_call_args(&method).expect("expected outer map call");
     assert!(matches!(
-        args.as_slice(),
-        [CallArg::Positional(Expr::Field {
-            target,
-            field
-        })] if matches!(target.as_ref(), Expr::Placeholder(Placeholder::Partial)) && field == "label"
+        args,
+        [CallArg::Positional(Expr::Select(select))]
+            if matches!(select.target(), Expr::Placeholder(Placeholder::Partial))
+                && select.member().as_str() == "label"
     ));
 
     let indexed = parse_expr("state.affection[@character.alice]").expect("index expr parses");
@@ -54,10 +51,10 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
 
     let generic_collect = parse_expr("visible_choices.collect<Vec<ChoiceView>>()")
         .expect("generic method call parses");
-    assert!(matches!(
-        generic_collect,
-        Expr::MethodCall { method, .. } if method == "collect<Vec<ChoiceView>>"
-    ));
+    assert_eq!(
+        selected_call_member(&generic_collect),
+        Some("collect<Vec<ChoiceView>>")
+    );
 
     let context_closure =
         parse_expr(r#"load_bg(id).with_context(|| "failed")?"#).expect("closure argument parses");

@@ -603,25 +603,26 @@ impl TypeChecker<'_> {
 }
 
 fn direct_assignment_target(target: &Expr) -> Option<(&str, &str)> {
-    let Expr::Field { target, field } = target else {
+    let Expr::Select(select) = target else {
         return None;
     };
-    let Expr::Path(receiver) = target.as_ref() else {
+    let Expr::Path(receiver) = select.target() else {
         return None;
     };
-    Some((receiver, field))
+    Some((receiver.as_label(), select.member().as_str()))
 }
 
 fn assignment_target_label(target: &Expr) -> String {
     match target {
-        Expr::Field { target, field } => format!("{}.{}", assignment_target_label(target), field),
+        Expr::Select(select) => format!(
+            "{}.{}",
+            assignment_target_label(select.target()),
+            select.member().as_str()
+        ),
         Expr::Path(path) => path.as_label().to_owned(),
         Expr::ShortVariant(name) => format!(".{name}"),
         Expr::Index { target, .. } => format!("{}[]", assignment_target_label(target)),
         Expr::Call { .. } => "call(...)".to_owned(),
-        Expr::MethodCall {
-            receiver, method, ..
-        } => format!("{}.{}(...)", assignment_target_label(receiver), method),
         _ => format!("{target:?}"),
     }
 }

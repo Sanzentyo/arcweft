@@ -468,7 +468,7 @@ flow @flow.curried_trait_method curried_trait_method {
         report.judgments.iter().any(|judgment| {
             matches!(
                 &judgment.subject,
-                TypeJudgmentSubject::Expr { kind: "method_call", .. }
+                TypeJudgmentSubject::Expr { kind: "call", .. }
                     if matches!(
                         &judgment.ty,
                         TypeKind::Function { params, return_type }

@@ -277,7 +277,7 @@ with {
     assert!(matches!(
         &plan.items()[5],
         ChoicePlanItem::OnSelect { body, .. }
-            if matches!(body.first(), Some(Stmt::Expr(Expr::MethodCall { .. })))
+            if matches!(body.first(), Some(Stmt::Expr(Expr::Call { .. })))
     ));
     assert!(matches!(&choice.items()[0], ChoiceItem::For { .. }));
     let option = &choice.options()[0];

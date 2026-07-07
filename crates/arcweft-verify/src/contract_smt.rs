@@ -342,17 +342,25 @@ impl ProofExpr {
                 };
                 Self::from_arcweft(arg.value(), symbols)
             }
-            Expr::MethodCall {
-                receiver,
-                method,
-                args,
-            } if method == "clamp" => Self::from_arcweft_clamp(receiver, args, symbols),
-            Expr::MethodCall {
-                receiver,
-                method,
-                args,
-            } if matches!(method.as_str(), "min" | "max") => {
-                Self::from_arcweft_min_max(receiver, method, args, symbols)
+            Expr::Call { callee, args }
+                if matches!(selected_callee_method(callee), Some("clamp")) =>
+            {
+                Self::from_arcweft_clamp(
+                    selected_callee_receiver(callee).expect("selected callee has receiver"),
+                    args,
+                    symbols,
+                )
+            }
+            Expr::Call { callee, args }
+                if matches!(selected_callee_method(callee), Some("min" | "max")) =>
+            {
+                let method = selected_callee_method(callee).expect("selected callee has method");
+                Self::from_arcweft_min_max(
+                    selected_callee_receiver(callee).expect("selected callee has receiver"),
+                    method,
+                    args,
+                    symbols,
+                )
             }
             Expr::If {
                 condition,
@@ -512,6 +520,20 @@ fn require_same_sort(
             actual: rhs,
         })
     }
+}
+
+fn selected_callee_receiver(expr: &Expr) -> Option<&Expr> {
+    let Expr::Select(select) = expr else {
+        return None;
+    };
+    Some(select.target())
+}
+
+fn selected_callee_method(expr: &Expr) -> Option<&str> {
+    let Expr::Select(select) = expr else {
+        return None;
+    };
+    Some(select.member().as_str())
 }
 
 fn require_sort(

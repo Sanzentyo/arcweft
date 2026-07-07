@@ -217,13 +217,6 @@ fn snapshot_expr_kind(expr: &Expr) -> Option<ReplBindingSnapshotKind> {
         Expr::Call { callee, args } if snapshot_call_args_are_self_contained(args) => {
             call_snapshot_kind(callee.as_ref())
         }
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } if snapshot_call_args_are_self_contained(args) => {
-            method_snapshot_kind(receiver.as_ref(), method)
-        }
         _ => None,
     }
 }
@@ -232,8 +225,8 @@ fn call_snapshot_kind(callee: &Expr) -> Option<ReplBindingSnapshotKind> {
     match callee {
         Expr::Path(name) if name == "observe" => Some(ReplBindingSnapshotKind::Observation),
         Expr::Path(name) if name == "read_resource" => Some(ReplBindingSnapshotKind::Resource),
-        Expr::Field { target, field } if field == "query" => {
-            method_snapshot_kind(target.as_ref(), field)
+        Expr::Select(select) if select.member().as_str() == "query" => {
+            method_snapshot_kind(select.target(), select.member().as_str())
         }
         _ => None,
     }

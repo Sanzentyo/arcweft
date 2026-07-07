@@ -890,24 +890,18 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
                     SymbolUseKind::Call,
                     path.as_label().to_owned(),
                 ));
+            } else if let Expr::Select(select) = callee.as_ref() {
+                uses.push(SymbolUse::new(
+                    SymbolUseKind::Method,
+                    select.member().as_str().to_owned(),
+                ));
             }
             collect_expr(callee, uses);
             for arg in args {
                 collect_expr(arg.value(), uses);
             }
         }
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } => {
-            uses.push(SymbolUse::new(SymbolUseKind::Method, method.clone()));
-            collect_expr(receiver, uses);
-            for arg in args {
-                collect_expr(arg.value(), uses);
-            }
-        }
-        Expr::Field { target, .. } => collect_expr(target, uses),
+        Expr::Select(select) => collect_expr(select.target(), uses),
         Expr::DialogueCall { callee, plan, .. } => {
             collect_dialogue_call_expr(callee, plan.as_ref(), uses);
         }

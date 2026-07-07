@@ -67,10 +67,8 @@ pub(super) fn entity_syntax_kind(entity: &EntityRefSyntax) -> Option<EntityKind>
 
 pub(super) fn expr_path_label(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Path(path) => Some(path.as_label().to_owned()),
         Expr::ShortVariant(name) => Some(format!(".{name}")),
-        Expr::Field { target, field } => Some(format!("{}.{}", expr_path_label(target)?, field)),
-        _ => None,
+        _ => expr.dotted_selector_label(),
     }
 }
 
@@ -547,6 +545,7 @@ pub(super) fn variant_payload_type_for_name(
 
 pub(super) fn is_drop_callee(expr: &Expr) -> bool {
     matches!(expr, Expr::Path(name) if is_drop_name(name))
+        || matches!(expr, Expr::Select(select) if is_drop_name(select.member().as_str()))
         || matches!(expr, Expr::Call { callee, .. } if is_drop_callee(callee))
 }
 

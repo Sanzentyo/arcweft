@@ -1767,22 +1767,13 @@ impl FlowRuntimeLowerer<'_> {
         expr: &Expr,
         task_name: &str,
     ) -> Result<Option<AwaitManyTarget>, String> {
-        let Expr::MethodCall {
-            receiver: parallel_receiver,
-            method,
-            args: parallel_args,
-        } = expr
-        else {
+        let Some((parallel_receiver, method, parallel_args)) = selected_call_parts(expr) else {
             return Ok(None);
         };
         if method_name(method) != "parallel" {
             return Ok(None);
         }
-        let Expr::MethodCall {
-            receiver: source,
-            method: traverse_method,
-            args: traverse_args,
-        } = parallel_receiver.as_ref()
+        let Some((source, traverse_method, traverse_args)) = selected_call_parts(parallel_receiver)
         else {
             return Err(
                 "parallel await requires `source.traverse(call).parallel(limit = N)`".to_owned(),
@@ -2020,19 +2011,12 @@ impl FlowRuntimeLowerer<'_> {
     }
 
     fn lower_presentation_handle_method(&mut self, expr: &Expr) -> Option<Vec<FlowOp>> {
-        let Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } = expr
-        else {
-            return None;
-        };
+        let (receiver, method, args) = selected_call_parts(expr)?;
         if !args.is_empty() {
             return None;
         }
         let binding = self.presentation_handle_binding_for_receiver(receiver)?;
-        let operation = match method.as_str() {
+        let operation = match method {
             "show" => "show",
             "hide" => "hide",
             "unmount" => "unmount",
@@ -2084,14 +2068,14 @@ impl FlowRuntimeLowerer<'_> {
     }
 
     fn lower_assignment_stmt(&mut self, target: &Expr, expr: &Expr) -> Option<RuntimeExpr> {
-        let Expr::Field { target, field } = target else {
+        let Expr::Select(select) = target else {
             self.errors.push(RuntimePlanLowerError::new(format!(
                 "unsupported flow assignment target `{}`: only direct record fields are executable",
                 expr_label(target)
             )));
             return None;
         };
-        let receiver = match self.lower_runtime_expr_result(target) {
+        let receiver = match self.lower_runtime_expr_result(select.target()) {
             Ok(RuntimeExpr::Local(name)) => RuntimeExpr::Local(name),
             Ok(other) => {
                 self.errors.push(RuntimePlanLowerError::new(format!(
@@ -2113,7 +2097,7 @@ impl FlowRuntimeLowerer<'_> {
         };
         Some(RuntimeExpr::AssignField {
             target: Box::new(receiver),
-            field: field.clone(),
+            field: select.member().as_str().to_owned(),
             expr: Box::new(expr),
             body: Box::new(RuntimeExpr::Value(RuntimeValue::Unit)),
         })
@@ -2397,6 +2381,18 @@ fn flow_runtime_id(id: &EntityRef) -> FlowRuntimeId {
 
 fn method_name(method: &str) -> &str {
     method.split_once('<').map_or(method, |(name, _)| name)
+}
+
+fn selected_call_parts(
+    expr: &Expr,
+) -> Option<(&Expr, &str, &[arcweft_lang_hir::syntax::expr::CallArg])> {
+    let Expr::Call { callee, args } = expr else {
+        return None;
+    };
+    let Expr::Select(select) = callee.as_ref() else {
+        return None;
+    };
+    Some((select.target(), select.member().as_str(), args.as_slice()))
 }
 
 fn traverse_callee(args: &[arcweft_lang_hir::syntax::expr::CallArg]) -> Result<&Expr, String> {

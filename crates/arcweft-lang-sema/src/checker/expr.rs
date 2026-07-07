@@ -17,7 +17,8 @@ use crate::traits::TraitMethodResolution;
 use arcweft_lang_syntax::ast::flow::ThreadBlock;
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
 use arcweft_lang_syntax::expr::{
-    BinaryOp, CallArg, ComputationBlockKind, Literal, MatchExprArm, Placeholder, UnaryOp,
+    BinaryOp, CallArg, ComputationBlockKind, Literal, MatchExprArm, Placeholder, SelectExpr,
+    UnaryOp,
 };
 
 mod agent;
@@ -155,12 +156,7 @@ impl TypeChecker<'_> {
             Expr::Call { callee, args } => {
                 self.check_call_expr(callee, args, expected, expression_id)
             }
-            Expr::MethodCall {
-                receiver,
-                method,
-                args,
-            } => self.check_method_call_expr(receiver, method, args, expected, expression_id),
-            Expr::Field { target, field } => self.check_field_expr(expr, target, field),
+            Expr::Select(select) => self.check_select_expr(expr, select),
             Expr::DialogueCall { callee, plan, .. } => {
                 Some(self.check_dialogue_call_expr(callee, plan.as_ref()))
             }
@@ -864,8 +860,8 @@ impl TypeChecker<'_> {
         {
             return Some(ty);
         }
-        if let Expr::Path(name) = callee
-            && let Some(ty) = self.check_presentation_call(name, args)
+        if let Some(name) = expr_path_label(callee)
+            && let Some(ty) = self.check_presentation_call(&name, args)
         {
             return Some(ty);
         }
@@ -902,6 +898,11 @@ impl TypeChecker<'_> {
         }
         if let Expr::Path(name) = callee {
             return self.check_path_call_expr(name, args, expected, expression_id);
+        }
+        if let Expr::Select(select) = callee
+            && let Some(ty) = self.check_selected_callee_call(select, args, expression_id)
+        {
+            return Some(ty);
         }
         let previous_closure_effect_callable = self.last_checked_closure_effect_callable.take();
         let previous_curried_signature_call = self.last_checked_curried_signature_call.take();
@@ -1151,46 +1152,15 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_method_call_expr(
+    fn check_selected_callee_call(
         &mut self,
-        receiver: &Expr,
-        method: &str,
+        select: &SelectExpr,
         args: &[CallArg],
-        expected: Option<&TypeKind>,
         expression_id: TypeExpressionId,
     ) -> Option<TypeKind> {
+        let method = select.member().as_str();
         let method_name = method.split_once('<').map_or(method, |(name, _)| name);
-        if let Some(receiver_path) = expr_path_label(receiver) {
-            let dotted = format!("{receiver_path}.{method_name}");
-            if let Some(ty) = self.check_enum_variant_call_path(&dotted, args, expected) {
-                return Some(ty);
-            }
-            if BuiltinCallSpec::resolve(&dotted).is_some() {
-                return self.check_builtin_call_name(&dotted, args);
-            }
-            if receiver_path == "InlineFailure" && method_name == "fallback" {
-                return Some(TypeKind::Named("InlineFailure".to_owned()));
-            }
-            if let Some(ty) = self.check_agent_intrinsic_call_name(&dotted, args) {
-                return Some(ty);
-            }
-            if let Some(ty) = self
-                .function_type(&dotted)
-                .cloned()
-                .or_else(|| well_known_runtime_method_type(&dotted))
-            {
-                let signature = self.function_signature(&dotted).cloned();
-                self.check_virtual_path_call(&dotted, args);
-                self.check_function_effects(&dotted);
-                if let Some(signature) = signature.filter(FunctionSignature::checks_args) {
-                    self.check_signature_call_args(&dotted, &signature, args);
-                } else {
-                    self.check_untyped_function_args(&dotted, args);
-                }
-                return Some(ty);
-            }
-        }
-        let receiver_type = self.check_expr(receiver);
+        let receiver_type = self.check_expr(select.target());
         if is_drop_name(method_name) {
             for arg in args {
                 self.check_expr(arg.value());
@@ -1887,7 +1857,9 @@ impl TypeChecker<'_> {
             .or_else(|| self.env.symbol_type(target).cloned())
     }
 
-    fn check_field_expr(&mut self, expr: &Expr, target: &Expr, field: &str) -> Option<TypeKind> {
+    fn check_select_expr(&mut self, expr: &Expr, select: &SelectExpr) -> Option<TypeKind> {
+        let target = select.target();
+        let field = select.member().as_str();
         if let Some(path) = expr_path_label(expr) {
             if let Some(ty) = self.locals.get(&path).cloned() {
                 return Some(ty);

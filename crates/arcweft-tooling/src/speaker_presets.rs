@@ -506,13 +506,10 @@ fn collect_speaker_presets_from_expr(
                 collect_speaker_presets_from_expr(arg.value(), character_aliases, presets);
             }
         }
-        Expr::MethodCall { receiver, args, .. } => {
-            collect_speaker_presets_from_expr(receiver, character_aliases, presets);
-            for arg in args {
-                collect_speaker_presets_from_expr(arg.value(), character_aliases, presets);
-            }
+        Expr::Select(select) => {
+            collect_speaker_presets_from_expr(select.target(), character_aliases, presets);
         }
-        Expr::Field { target, .. } | Expr::Try { expr: target } => {
+        Expr::Try { expr: target } => {
             collect_speaker_presets_from_expr(target, character_aliases, presets);
         }
         Expr::DialogueCall { callee, plan, .. } => {
@@ -648,10 +645,13 @@ fn is_speaker_preset_expr(
     presets: &BTreeSet<String>,
 ) -> bool {
     match expr {
-        Expr::Call { callee, .. } => speaker_preset_callee(callee, character_aliases, presets),
-        Expr::MethodCall { receiver, .. } => {
-            is_speaker_preset_expr(receiver, character_aliases, presets)
-        }
+        Expr::Call { callee, .. } => match callee.as_ref() {
+            Expr::Select(select) => {
+                speaker_preset_callee(callee, character_aliases, presets)
+                    || is_speaker_preset_expr(select.target(), character_aliases, presets)
+            }
+            _ => speaker_preset_callee(callee, character_aliases, presets),
+        },
         Expr::Block { value, .. }
         | Expr::ComputationBlock { value, .. }
         | Expr::MemoBlock { value, .. }
@@ -673,8 +673,8 @@ fn speaker_preset_callee(
         {
             true
         }
-        Expr::Field { target, field } if field == "new" => {
-            matches!(target.as_ref(), Expr::Path(path) if path == "SpeakerPreset")
+        Expr::Select(select) if select.member().as_str() == "new" => {
+            matches!(select.target(), Expr::Path(path) if path == "SpeakerPreset")
         }
         _ => false,
     }

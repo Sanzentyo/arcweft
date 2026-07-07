@@ -324,11 +324,10 @@ fn index_expr_symbol_dependency_relations(
         Expr::Call { callee, args } => {
             index = index_call_expr_symbol_dependency_relations(parent, callee, args, index)?;
         }
-        Expr::MethodCall { receiver, args, .. } => {
-            index = index_call_expr_symbol_dependency_relations(parent, receiver, args, index)?;
+        Expr::Select(select) => {
+            index = index_expr_symbol_dependency_relations(parent, select.target(), index)?;
         }
-        Expr::Field { target, .. }
-        | Expr::Try { expr: target }
+        Expr::Try { expr: target }
         | Expr::Await { expr: target, .. }
         | Expr::Unary { expr: target, .. }
         | Expr::DialogueCall { callee: target, .. }
@@ -851,11 +850,10 @@ fn index_compound_expr_dependency_relations(
         Expr::Call { callee, args } => {
             index = index_call_expr_dependency_relations(parent, callee, args, index)?;
         }
-        Expr::MethodCall { receiver, args, .. } => {
-            index = index_call_expr_dependency_relations(parent, receiver, args, index)?;
+        Expr::Select(select) => {
+            index = index_expr_dependency_relations(parent, select.target(), index)?;
         }
-        Expr::Field { target, .. }
-        | Expr::Try { expr: target }
+        Expr::Try { expr: target }
         | Expr::Await { expr: target, .. }
         | Expr::Unary { expr: target, .. } => {
             index = index_expr_dependency_relations(parent, target, index)?;

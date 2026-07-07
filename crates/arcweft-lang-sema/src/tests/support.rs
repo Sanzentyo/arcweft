@@ -84,13 +84,31 @@ pub(super) fn ident_pattern(pattern: &Pattern, expected: &str) -> bool {
 pub(super) fn expr_path_eq(expr: &Expr, expected: &str) -> bool {
     match expr {
         Expr::Path(path) => path == expected,
-        Expr::Field { target, field } => {
+        Expr::Select(select) => {
             expected
                 .rsplit_once('.')
-                .is_some_and(|(prefix, expected_field)| {
-                    expected_field == field && expr_path_eq(target, prefix)
+                .is_some_and(|(prefix, expected_member)| {
+                    expected_member == select.member().as_str()
+                        && expr_path_eq(select.target(), prefix)
                 })
         }
         _ => false,
     }
+}
+
+pub(super) fn selected_call_member(expr: &Expr) -> Option<&str> {
+    let Expr::Call { callee, .. } = expr else {
+        return None;
+    };
+    let Expr::Select(select) = callee.as_ref() else {
+        return None;
+    };
+    Some(select.member().as_str())
+}
+
+pub(super) fn selected_call_args(expr: &Expr) -> Option<&[CallArg]> {
+    let Expr::Call { callee, args } = expr else {
+        return None;
+    };
+    matches!(callee.as_ref(), Expr::Select(_)).then_some(args.as_slice())
 }

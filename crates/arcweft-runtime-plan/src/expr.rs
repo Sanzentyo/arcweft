@@ -193,7 +193,9 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
                 })
                 .collect(),
         ),
-        Expr::Field { target, field } => {
+        Expr::Select(select) => {
+            let target = select.target();
+            let field = select.member().as_str();
             lower_enum_variant_field(target, field).unwrap_or_else(|| {
                 lower_std_float_constant(expr).map_or_else(
                     || lower_runtime_field_expr(target, field),
@@ -240,23 +242,10 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
                 })
                 .collect(),
         },
-        Expr::Call { callee, args } => {
-            lower_choice_action_call(callee, args).unwrap_or_else(|| RuntimeExpr::Call {
+        Expr::Call { callee, args } => lower_runtime_selected_call(callee, args)
+            .or_else(|| lower_choice_action_call(callee, args))
+            .unwrap_or_else(|| RuntimeExpr::Call {
                 callee: RuntimeCallTarget::from_label(expr_label(callee)),
-                args: args.iter().map(lower_runtime_call_arg).collect(),
-            })
-        }
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } => lower_runtime_math_method_call(receiver, method, args)
-            .or_else(|| lower_runtime_std_float_method_call(receiver, method, args))
-            .or_else(|| lower_runtime_path_method_call(receiver, method, args))
-            .or_else(|| lower_runtime_external_namespace_method_call(receiver, method, args))
-            .unwrap_or_else(|| RuntimeExpr::MethodCall {
-                receiver: Box::new(lower_runtime_expr(receiver)),
-                method: runtime_method_name(method).to_owned(),
                 args: args.iter().map(lower_runtime_call_arg).collect(),
             }),
         Expr::Index { target, index } => {
@@ -346,8 +335,8 @@ fn lower_runtime_expr_strict_with_helpers(
         Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => {
             lower_runtime_record_expr_strict(fields, helpers)
         }
-        Expr::Field { target, field } => {
-            lower_strict_field_or_constant(expr, target, field, helpers)
+        Expr::Select(select) => {
+            lower_strict_field_or_constant(expr, select.target(), select.member().as_str(), helpers)
         }
         Expr::Unary { op, expr } => Ok(RuntimeExpr::Unary {
             op: lower_runtime_unary_op(*op),
@@ -386,11 +375,6 @@ fn lower_runtime_expr_strict_with_helpers(
         } => lower_strict_block_expr(statements, value.as_deref(), helpers),
         Expr::Closure { params, body, .. } => lower_strict_closure_expr(params, body, helpers),
         Expr::Call { callee, args } => lower_strict_call_expr(callee, args, helpers, expression_id),
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } => lower_strict_method_call_dispatch(receiver, method, args, helpers, expression_id),
         Expr::DialogueCall { plan, .. } => Ok(lower_dialogue_call_value(plan.as_ref())),
         Expr::Index { target, index } => lower_strict_index_expr(target, index, helpers),
         Expr::Try { expr } | Expr::Await { expr, .. } => {
@@ -645,22 +629,10 @@ fn substitute_pipe_left(expr: &Expr, lhs: &Expr) -> Expr {
                 .map(|arg| substitute_pipe_left_arg(arg, lhs))
                 .collect(),
         },
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } => Expr::MethodCall {
-            receiver: Box::new(substitute_pipe_left(receiver, lhs)),
-            method: method.clone(),
-            args: args
-                .iter()
-                .map(|arg| substitute_pipe_left_arg(arg, lhs))
-                .collect(),
-        },
-        Expr::Field { target, field } => Expr::Field {
-            target: Box::new(substitute_pipe_left(target, lhs)),
-            field: field.clone(),
-        },
+        Expr::Select(select) => Expr::select(
+            substitute_pipe_left(select.target(), lhs),
+            select.member().as_str().to_owned(),
+        ),
         Expr::Index { target, index } => Expr::Index {
             target: Box::new(substitute_pipe_left(target, lhs)),
             index: Box::new(substitute_pipe_left(index, lhs)),
@@ -744,10 +716,8 @@ fn expr_contains_pipe_left(expr: &Expr) -> bool {
         Expr::Call { callee, args } => {
             expr_contains_pipe_left(callee) || args.iter().any(call_arg_contains_pipe_left)
         }
-        Expr::MethodCall { receiver, args, .. } => {
-            expr_contains_pipe_left(receiver) || args.iter().any(call_arg_contains_pipe_left)
-        }
-        Expr::Field { target, .. } | Expr::Try { expr: target } => expr_contains_pipe_left(target),
+        Expr::Select(select) => expr_contains_pipe_left(select.target()),
+        Expr::Try { expr: target } => expr_contains_pipe_left(target),
         Expr::Index { target, index } => {
             expr_contains_pipe_left(target) || expr_contains_pipe_left(index)
         }
@@ -803,22 +773,10 @@ fn substitute_partial_placeholder(expr: &Expr, param_name: &str) -> Expr {
                 .map(|arg| substitute_partial_placeholder_arg(arg, param_name))
                 .collect(),
         },
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } => Expr::MethodCall {
-            receiver: Box::new(substitute_partial_placeholder(receiver, param_name)),
-            method: method.clone(),
-            args: args
-                .iter()
-                .map(|arg| substitute_partial_placeholder_arg(arg, param_name))
-                .collect(),
-        },
-        Expr::Field { target, field } => Expr::Field {
-            target: Box::new(substitute_partial_placeholder(target, param_name)),
-            field: field.clone(),
-        },
+        Expr::Select(select) => Expr::select(
+            substitute_partial_placeholder(select.target(), param_name),
+            select.member().as_str().to_owned(),
+        ),
         Expr::Index { target, index } => Expr::Index {
             target: Box::new(substitute_partial_placeholder(target, param_name)),
             index: Box::new(substitute_partial_placeholder(index, param_name)),
@@ -908,13 +866,8 @@ fn expr_contains_partial_placeholder(expr: &Expr) -> bool {
             expr_contains_partial_placeholder(callee)
                 || args.iter().any(call_arg_contains_partial_placeholder)
         }
-        Expr::MethodCall { receiver, args, .. } => {
-            expr_contains_partial_placeholder(receiver)
-                || args.iter().any(call_arg_contains_partial_placeholder)
-        }
-        Expr::Field { target, .. } | Expr::Try { expr: target } => {
-            expr_contains_partial_placeholder(target)
-        }
+        Expr::Select(select) => expr_contains_partial_placeholder(select.target()),
+        Expr::Try { expr: target } => expr_contains_partial_placeholder(target),
         Expr::Index { target, index } => {
             expr_contains_partial_placeholder(target) || expr_contains_partial_placeholder(index)
         }
@@ -1122,14 +1075,12 @@ fn lower_runtime_field_expr(target: &Expr, field: &str) -> RuntimeExpr {
 }
 
 fn lower_enum_variant_field(target: &Expr, field: &str) -> Option<RuntimeExpr> {
-    let Expr::Path(path) = target else {
-        return None;
-    };
-    is_uppercase_path_segment(path.as_label())
+    let path = target.dotted_selector_label()?;
+    is_uppercase_path_segment(&path)
         .then_some(field)
         .filter(|field| is_uppercase_path_segment(field))
         .map(|field| RuntimeExpr::Variant {
-            path: Some(path.as_label().to_owned()),
+            path: Some(path),
             name: field.to_owned(),
             payload: None,
         })
@@ -1297,6 +1248,25 @@ fn lower_runtime_path_method_call(
         callee: RuntimeCallTarget::from_label(format!("path.{method}")),
         args: vec![lower_runtime_expr(arg.value())],
     })
+}
+
+fn lower_runtime_selected_call(callee: &Expr, args: &[CallArg]) -> Option<RuntimeExpr> {
+    let Expr::Select(select) = callee else {
+        return None;
+    };
+    let receiver = select.target();
+    let method = select.member().as_str();
+    lower_runtime_math_method_call(receiver, method, args)
+        .or_else(|| lower_runtime_std_float_method_call(receiver, method, args))
+        .or_else(|| lower_runtime_path_method_call(receiver, method, args))
+        .or_else(|| lower_runtime_external_namespace_method_call(receiver, method, args))
+        .or_else(|| {
+            Some(RuntimeExpr::MethodCall {
+                receiver: Box::new(lower_runtime_expr(receiver)),
+                method: runtime_method_name(method).to_owned(),
+                args: args.iter().map(lower_runtime_call_arg).collect(),
+            })
+        })
 }
 
 fn lower_runtime_math_method_call(
@@ -1469,51 +1439,58 @@ fn lower_strict_call_expr(
     if let Some(lowered) = lower_strict_intrinsic_function_call(callee, args, helpers) {
         return lowered;
     }
-    lower_constructor_call(callee, args, helpers).map_or_else(
-        || {
-            let path_callee = match callee {
-                Expr::Path(path) => Some(path.as_label()),
-                _ => None,
-            };
-            if let Some(callee) = path_callee
-                && args.iter().any(|arg| matches!(arg, CallArg::Named { .. }))
-                && let Some(helper) = helpers.and_then(|helpers| helpers.helper(callee))
-            {
-                return lower_strict_pure_helper_named_call(callee, args, helper, helpers);
+    if let Some(lowered) = lower_constructor_call(callee, args, helpers) {
+        return Ok(lowered);
+    }
+    if let Expr::Select(select) = callee {
+        return lower_strict_method_call_dispatch(
+            select.target(),
+            select.member().as_str(),
+            args,
+            helpers,
+            expression_id,
+        );
+    }
+    let path_callee = match callee {
+        Expr::Path(path) => Some(path.as_label()),
+        _ => None,
+    };
+    if let Some(callee) = path_callee
+        && args.iter().any(|arg| matches!(arg, CallArg::Named { .. }))
+        && let Some(helper) = helpers.and_then(|helpers| helpers.helper(callee))
+    {
+        return lower_strict_pure_helper_named_call(callee, args, helper, helpers);
+    }
+    let args = match path_callee {
+        Some(callee) => lower_strict_named_callee_args(callee, args, helpers)?,
+        None => args
+            .iter()
+            .map(|arg| lower_strict_call_arg(arg, helpers))
+            .collect::<Result<Vec<_>, _>>()?,
+    };
+    if helpers.is_some_and(|helpers| {
+        helpers.has_function_value_call_evidence(expression_id, path_callee, args.len())
+    }) {
+        let callee = if let Some(path) = path_callee {
+            RuntimeExpr::Local(path.to_owned())
+        } else {
+            lower_runtime_expr_strict_with_helpers(callee, helpers)?
+        };
+        return Ok(RuntimeExpr::Apply {
+            callee: Box::new(callee),
+            args,
+        });
+    }
+    let Expr::Path(path) = callee else {
+        return lower_runtime_expr_strict_with_helpers(callee, helpers).map(|callee| {
+            RuntimeExpr::Apply {
+                callee: Box::new(callee),
+                args,
             }
-            let args = match path_callee {
-                Some(callee) => lower_strict_named_callee_args(callee, args, helpers)?,
-                None => args
-                    .iter()
-                    .map(|arg| lower_strict_call_arg(arg, helpers))
-                    .collect::<Result<Vec<_>, _>>()?,
-            };
-            if helpers.is_some_and(|helpers| {
-                helpers.has_function_value_call_evidence(expression_id, path_callee, args.len())
-            }) {
-                let callee = if let Some(path) = path_callee {
-                    RuntimeExpr::Local(path.to_owned())
-                } else {
-                    lower_runtime_expr_strict_with_helpers(callee, helpers)?
-                };
-                return Ok(RuntimeExpr::Apply {
-                    callee: Box::new(callee),
-                    args,
-                });
-            }
-            let Expr::Path(path) = callee else {
-                return lower_runtime_expr_strict_with_helpers(callee, helpers).map(|callee| {
-                    RuntimeExpr::Apply {
-                        callee: Box::new(callee),
-                        args,
-                    }
-                });
-            };
-            let callee = path.as_label();
-            Ok(lower_strict_named_call(callee, args, helpers))
-        },
-        Ok,
-    )
+        });
+    };
+    let callee = path.as_label();
+    Ok(lower_strict_named_call(callee, args, helpers))
 }
 
 fn lower_strict_named_callee_args(
@@ -1984,15 +1961,16 @@ fn lower_direct_assignment_target(
     target: &Expr,
     helpers: Option<RuntimePureHelperLookup<'_, '_>>,
 ) -> Result<(RuntimeExpr, String), String> {
-    let Expr::Field { target, field } = target else {
+    let Expr::Select(select) = target else {
         return Err(format!(
             "unsupported runtime assignment target `{}`: only direct record fields are executable",
             expr_label(target)
         ));
     };
-    let receiver = lower_runtime_expr_strict_with_helpers(target, helpers)?;
+    let receiver = lower_runtime_expr_strict_with_helpers(select.target(), helpers)?;
+    let field = select.member().as_str().to_owned();
     match receiver {
-        RuntimeExpr::Local(_) => Ok((receiver, field.clone())),
+        RuntimeExpr::Local(_) => Ok((receiver, field)),
         RuntimeExpr::Field { .. }
         | RuntimeExpr::ProjectTuple { .. }
         | RuntimeExpr::ProjectRecord { .. } => Err(format!(
@@ -2080,10 +2058,8 @@ fn lower_constructor_call(
     args: &[CallArg],
     helpers: Option<RuntimePureHelperLookup<'_, '_>>,
 ) -> Option<RuntimeExpr> {
-    let Expr::Path(callee) = callee else {
-        return None;
-    };
-    let (path, name) = constructor_path(callee)?;
+    let callee = callee.dotted_selector_label()?;
+    let (path, name) = constructor_path(&callee)?;
     if args.len() > 1 {
         return None;
     }
@@ -2297,14 +2273,6 @@ fn runtime_call(expr: &Expr) -> RuntimeCall {
     match expr {
         Expr::Call { callee, args } => RuntimeCall {
             callee: expr_label(callee),
-            args: args.iter().map(call_arg_label).collect(),
-        },
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } => RuntimeCall {
-            callee: format!("{}.{}", expr_label(receiver), method),
             args: args.iter().map(call_arg_label).collect(),
         },
         Expr::Path(path) => RuntimeCall {

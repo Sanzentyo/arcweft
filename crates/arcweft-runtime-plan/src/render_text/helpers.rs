@@ -6,7 +6,7 @@ pub(crate) fn style_call_name(expr: &Expr) -> Option<&str> {
     match expr {
         Expr::Path(path) => Some(path.as_str()),
         Expr::ShortVariant(name) => Some(name.as_str()),
-        Expr::Field { field, .. } => Some(field.as_str()),
+        Expr::Select(select) => Some(select.member().as_str()),
         _ => None,
     }
 }

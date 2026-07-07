@@ -133,15 +133,6 @@ fn call_parts(expr: &Expr) -> Option<CallParts<'_>> {
                 args,
             })
         }
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } => Some(CallParts {
-            capability: expr_label(receiver),
-            operation: method_name(method).to_owned(),
-            args,
-        }),
         Expr::Await { expr, .. } | Expr::Try { expr } => call_parts(expr),
         _ => None,
     }
@@ -163,6 +154,8 @@ fn agent_call_parts(expr: &Expr) -> Option<CallParts<'_>> {
                 "attach" => "attach",
                 "expect" => "expect",
                 "deny" => "deny",
+                "pointer.click" => "pointer.click",
+                "rag.query" => "rag.query",
                 _ => return None,
             };
             Some(CallParts {
@@ -171,26 +164,6 @@ fn agent_call_parts(expr: &Expr) -> Option<CallParts<'_>> {
                 args,
             })
         }
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } if expr_label(receiver) == "pointer" && method_name(method) == "click" => {
-            Some(CallParts {
-                capability: "agent".to_owned(),
-                operation: "pointer.click".to_owned(),
-                args,
-            })
-        }
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } if expr_label(receiver) == "rag" && method_name(method) == "query" => Some(CallParts {
-            capability: "agent".to_owned(),
-            operation: "rag.query".to_owned(),
-            args,
-        }),
         Expr::Await { expr, .. } | Expr::Try { expr } => agent_call_parts(expr),
         _ => None,
     }
@@ -231,16 +204,14 @@ fn lower_arg_template(arg: &CallArg) -> HostTaskArgTemplate {
 
 fn lower_host_arg_expr(expr: &Expr) -> RuntimeExpr {
     match expr {
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } if matches!(receiver.as_ref(), Expr::Path(path) if path == "path")
-            && matches!(method.as_str(), "save" | "asset" | "temp" | "export")
-            && args.len() == 1 =>
+        Expr::Call { callee, args }
+            if matches!(
+                expr_label(callee).as_str(),
+                "path.save" | "path.asset" | "path.temp" | "path.export"
+            ) && args.len() == 1 =>
         {
             RuntimeExpr::Call {
-                callee: RuntimeCallTarget::from_label(format!("path.{method}")),
+                callee: RuntimeCallTarget::from_label(expr_label(callee)),
                 args: vec![lower_host_arg_expr(args[0].value())],
             }
         }
@@ -299,21 +270,20 @@ fn agent_named_args_expr(fields: Vec<RuntimeFieldExpr>) -> RuntimeExpr {
 
 fn lower_agent_predicate_expr(expr: &Expr) -> Option<RuntimeExpr> {
     match expr {
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } if agent_compare_op(method_name(method)).is_some() => {
+        Expr::Call { callee, args }
+            if selected_callee_method(callee)
+                .and_then(agent_compare_op)
+                .is_some() =>
+        {
+            let receiver = selected_callee_receiver(callee)?;
+            let method = selected_callee_method(callee)?;
             let [CallArg::Positional(value)] = args.as_slice() else {
                 return None;
             };
             Some(runtime_record_expr([
                 runtime_field_expr("kind", runtime_string_expr("compare")),
                 runtime_field_expr("probe", lower_agent_probe_expr(receiver)?),
-                runtime_field_expr(
-                    "op",
-                    runtime_string_expr(agent_compare_op(method_name(method))?),
-                ),
+                runtime_field_expr("op", runtime_string_expr(agent_compare_op(method)?)),
                 runtime_field_expr("value", lower_agent_host_arg_expr(value)),
             ]))
         }
@@ -358,13 +328,10 @@ fn lower_agent_predicate_expr(expr: &Expr) -> Option<RuntimeExpr> {
                 runtime_field_expr("predicate", lower_agent_predicate_expr(predicate)?),
             ]))
         }
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } if is_agent_diagnostics_call(receiver)
-            && method_name(method) == "has_error"
-            && args.is_empty() =>
+        Expr::Call { callee, args }
+            if selected_callee_method(callee) == Some("has_error")
+                && selected_callee_receiver(callee).is_some_and(is_agent_diagnostics_call)
+                && args.is_empty() =>
         {
             Some(runtime_record_expr([runtime_field_expr(
                 "kind",
@@ -373,6 +340,20 @@ fn lower_agent_predicate_expr(expr: &Expr) -> Option<RuntimeExpr> {
         }
         _ => None,
     }
+}
+
+fn selected_callee_receiver(expr: &Expr) -> Option<&Expr> {
+    let Expr::Select(select) = expr else {
+        return None;
+    };
+    Some(select.target())
+}
+
+fn selected_callee_method(expr: &Expr) -> Option<&str> {
+    let Expr::Select(select) = expr else {
+        return None;
+    };
+    Some(method_name(select.member().as_str()))
 }
 
 fn is_agent_diagnostics_call(expr: &Expr) -> bool {

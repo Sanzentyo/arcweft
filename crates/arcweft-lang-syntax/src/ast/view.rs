@@ -1149,10 +1149,6 @@ fn collect_expr_action_invokes(
             collect_expr_action_invokes(callee, range, invokes);
             collect_call_arg_action_invokes(args, range, invokes);
         }
-        Expr::MethodCall { receiver, args, .. } => {
-            collect_expr_action_invokes(receiver, range, invokes);
-            collect_call_arg_action_invokes(args, range, invokes);
-        }
         Expr::Closure { body, .. } => collect_expr_action_invokes(body, range, invokes),
         Expr::Block { statements, value }
         | Expr::ComputationBlock {
@@ -1204,8 +1200,8 @@ fn collect_expr_action_invokes(
         Expr::ArrayRepeat { value, len } => {
             collect_two_expr_action_invokes(value, len, range, invokes);
         }
-        Expr::Field { target, .. }
-        | Expr::Try { expr: target }
+        Expr::Select(select) => collect_expr_action_invokes(select.target(), range, invokes),
+        Expr::Try { expr: target }
         | Expr::Await { expr: target, .. }
         | Expr::Unary { expr: target, .. } => {
             collect_expr_action_invokes(target, range, invokes);
@@ -1244,13 +1240,6 @@ fn collect_expr_action_invokes(
 fn direct_action_invoke(expr: &Expr, range: TextRange) -> Option<ViewActionInvokeAction> {
     match expr {
         Expr::Call { callee, args } if is_action_invoke_callee(callee) => {
-            action_invoke_call_action(args, range)
-        }
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } if method == "invoke" && expression_path_is(receiver, &["action"]) => {
             action_invoke_call_action(args, range)
         }
         _ => None,
@@ -1471,8 +1460,8 @@ fn collect_stmt_list_action_invokes(
 fn is_action_invoke_callee(callee: &Expr) -> bool {
     match callee {
         Expr::Path(path) => path.matches_segments(&["action", "invoke"]),
-        Expr::Field { target, field } => {
-            field == "invoke" && expression_path_is(target, &["action"])
+        Expr::Select(select) => {
+            select.member() == "invoke" && expression_path_is(select.target(), &["action"])
         }
         _ => false,
     }
@@ -1503,8 +1492,8 @@ fn action_payload(expr: &Expr) -> Option<ViewActionPayload> {
         Expr::Literal(Literal::String(value)) => {
             Some(ViewActionPayload::LiteralString(value.clone()))
         }
-        Expr::Field { target, field } => text_control_payload_target(target)
-            .zip(text_control_payload_field(field))
+        Expr::Select(select) => text_control_payload_target(select.target())
+            .zip(text_control_payload_field(select.member().as_str()))
             .map(|(input, field)| ViewActionPayload::TextControlProjection { input, field }),
         _ => None,
     }
@@ -1535,15 +1524,6 @@ fn entity_ref_expr(expr: &Expr) -> Option<&EntityRefSyntax> {
 
 fn input_handle_entity(expr: &Expr) -> Option<&EntityRefSyntax> {
     match expr {
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } if expression_path_is(receiver, &["input"])
-            && matches!(method.as_str(), "text" | "secure") =>
-        {
-            first_positional_entity_arg(args)
-        }
         Expr::Call { callee, args } if expression_path_is(callee, &["input", "text"]) => {
             first_positional_entity_arg(args)
         }
@@ -1555,7 +1535,10 @@ fn input_handle_entity(expr: &Expr) -> Option<&EntityRefSyntax> {
 }
 
 fn expression_path_is(expr: &Expr, segments: &[&str]) -> bool {
-    matches!(expr, Expr::Path(path) if path.matches_segments(segments))
+    expr.dotted_selector_label().is_some_and(|label| {
+        let actual = label.split('.').collect::<Vec<_>>();
+        actual == segments
+    })
 }
 
 fn first_positional_entity_arg(args: &[CallArg]) -> Option<&EntityRefSyntax> {

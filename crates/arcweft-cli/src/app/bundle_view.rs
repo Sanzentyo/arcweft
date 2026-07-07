@@ -2299,15 +2299,6 @@ fn register_input_handle_binding(view_let: &ViewLet, state: &mut ViewLoweringSta
 
 fn input_handle_binding(name: &str, value: &Expr) -> Option<InputHandleBinding> {
     let args = match value {
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } if expr_path_matches(receiver, &["input"])
-            && matches!(method.as_str(), "text" | "secure") =>
-        {
-            args
-        }
         Expr::Call { callee, args }
             if expr_path_matches(callee, &["input", "text"])
                 || expr_path_matches(callee, &["input", "secure"]) =>
@@ -2350,7 +2341,8 @@ fn simple_path_name(expr: &Expr) -> Option<&str> {
 }
 
 fn expr_path_matches(expr: &Expr, segments: &[&str]) -> bool {
-    matches!(expr, Expr::Path(path) if path.matches_segments(segments))
+    expr.dotted_selector_label()
+        .is_some_and(|label| label.split('.').eq(segments.iter().copied()))
 }
 
 fn first_positional_entity_arg(args: &[CallArg]) -> Option<&EntityRefSyntax> {

@@ -148,10 +148,7 @@ pub(super) fn is_expression_statement_call(trimmed: &str) -> bool {
     if find_top_level_punctuation(trimmed, '[').is_some() {
         return false;
     }
-    matches!(
-        crate::expr::parse_expr(trimmed),
-        Ok(Expr::Call { .. } | Expr::MethodCall { .. })
-    )
+    matches!(crate::expr::parse_expr(trimmed), Ok(Expr::Call { .. }))
 }
 
 pub(super) fn parse_line_options(

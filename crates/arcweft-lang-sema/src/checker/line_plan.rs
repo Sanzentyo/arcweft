@@ -353,24 +353,13 @@ fn reject_fallible_inline_value_without_failure_policy(
     if !matches!(expr_ty, Some(TypeKind::DisplayText)) {
         return;
     }
-    match expr {
-        Expr::Call { callee, args } => validate_inline_call_failure_policy(
+    if let Expr::Call { callee, args } = expr {
+        validate_inline_call_failure_policy(
             inline_callable_label(callee),
             args,
             has_default_inline_failure_policy,
             errors,
-        ),
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } => validate_inline_call_failure_policy(
-            format!("{}.{method}", inline_callable_label(receiver)),
-            args,
-            has_default_inline_failure_policy,
-            errors,
-        ),
-        _ => {}
+        );
     }
 }
 
@@ -420,16 +409,13 @@ fn unknown_inline_failure_policy(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Path(path) => unknown_inline_failure_atom(path),
         Expr::ShortVariant(name) => unknown_inline_failure_atom(&format!(".{name}")),
-        Expr::Field { target, field } => match target.as_ref() {
-            Expr::Path(namespace) => unknown_inline_failure_field(namespace, field),
+        Expr::Select(select) => match select.target() {
+            Expr::Path(namespace) => {
+                unknown_inline_failure_field(namespace.as_label(), select.member().as_str())
+            }
             _ => None,
         },
         Expr::Call { callee, args } => unknown_inline_failure_constructor(callee, args),
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } => unknown_inline_failure_method_constructor(receiver, method, args),
         _ => None,
     }
 }
@@ -448,31 +434,11 @@ fn unknown_inline_failure_constructor(callee: &Expr, args: &[CallArg]) -> Option
     })
 }
 
-fn unknown_inline_failure_method_constructor(
-    receiver: &Expr,
-    method: &str,
-    args: &[CallArg],
-) -> Option<String> {
-    if !matches!(receiver, Expr::Path(namespace) if namespace == "InlineFailure") {
-        return None;
-    }
-    if method != "fallback" {
-        return Some(format!("InlineFailure.{method}"));
-    }
-    args.iter().find_map(|arg| match arg {
-        CallArg::Positional(value) => unknown_inline_fallback_value(value),
-        CallArg::Named { name, value } if name == "value" || name == "text" => {
-            unknown_inline_fallback_value(value)
-        }
-        CallArg::Named { .. } | CallArg::Spread { .. } => None,
-    })
-}
-
 fn inline_failure_constructor_name(expr: &Expr) -> Option<&str> {
     match expr {
         Expr::Path(path) if path == "fallback" => Some("fallback"),
-        Expr::Field { target, field } if matches!(target.as_ref(), Expr::Path(namespace) if namespace == "InlineFailure") => {
-            Some(field)
+        Expr::Select(select) if matches!(select.target(), Expr::Path(namespace) if namespace == "InlineFailure") => {
+            Some(select.member().as_str())
         }
         _ => None,
     }
@@ -482,8 +448,10 @@ fn unknown_inline_fallback_value(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Path(path) => unknown_inline_fallback_atom(path),
         Expr::ShortVariant(name) => unknown_inline_fallback_atom(&format!(".{name}")),
-        Expr::Field { target, field } => match target.as_ref() {
-            Expr::Path(namespace) => unknown_inline_fallback_field(namespace, field),
+        Expr::Select(select) => match select.target() {
+            Expr::Path(namespace) => {
+                unknown_inline_fallback_field(namespace.as_label(), select.member().as_str())
+            }
             _ => None,
         },
         _ => None,
@@ -534,10 +502,11 @@ fn inline_callable_label(expr: &Expr) -> String {
     match expr {
         Expr::Path(path) => path.as_label().to_owned(),
         Expr::ShortVariant(name) => format!(".{name}"),
-        Expr::Field { target, field } => format!("{}.{field}", inline_callable_label(target)),
-        Expr::MethodCall {
-            receiver, method, ..
-        } => format!("{}.{method}", inline_callable_label(receiver)),
+        Expr::Select(select) => format!(
+            "{}.{}",
+            inline_callable_label(select.target()),
+            select.member().as_str()
+        ),
         _ => format!("{expr:?}"),
     }
 }

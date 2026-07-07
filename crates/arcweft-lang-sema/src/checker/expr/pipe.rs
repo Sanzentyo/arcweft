@@ -31,11 +31,7 @@ impl TypeChecker<'_> {
 
 fn data_last_pipe_call(lhs: &Expr, rhs: &Expr) -> Expr {
     if let Some((method, args)) = data_last_collection_method(rhs) {
-        return Expr::MethodCall {
-            receiver: Box::new(lhs.clone()),
-            method: method.to_owned(),
-            args: args.to_vec(),
-        };
+        return Expr::selected_call(lhs.clone(), method, args.to_vec());
     }
     if let Expr::Call { callee, args } = rhs {
         return Expr::Call {
@@ -90,22 +86,13 @@ fn substitute_pipe_left(expr: &Expr, lhs: &Expr) -> Expr {
                 .map(|arg| substitute_pipe_left_arg(arg, lhs))
                 .collect(),
         },
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } => Expr::MethodCall {
-            receiver: Box::new(substitute_pipe_left(receiver, lhs)),
-            method: method.clone(),
-            args: args
-                .iter()
-                .map(|arg| substitute_pipe_left_arg(arg, lhs))
-                .collect(),
-        },
-        Expr::Field { target, field } => Expr::Field {
-            target: Box::new(substitute_pipe_left(target, lhs)),
-            field: field.clone(),
-        },
+        Expr::Select(select) => {
+            let (target, member) = select.clone().into_parts();
+            Expr::Select(arcweft_lang_syntax::expr::SelectExpr::new(
+                substitute_pipe_left(&target, lhs),
+                member,
+            ))
+        }
         Expr::Index { target, index } => Expr::Index {
             target: Box::new(substitute_pipe_left(target, lhs)),
             index: Box::new(substitute_pipe_left(index, lhs)),
@@ -189,10 +176,8 @@ fn expr_contains_pipe_left(expr: &Expr) -> bool {
         Expr::Call { callee, args } => {
             expr_contains_pipe_left(callee) || args.iter().any(call_arg_contains_pipe_left)
         }
-        Expr::MethodCall { receiver, args, .. } => {
-            expr_contains_pipe_left(receiver) || args.iter().any(call_arg_contains_pipe_left)
-        }
-        Expr::Field { target, .. } | Expr::Try { expr: target } => expr_contains_pipe_left(target),
+        Expr::Select(select) => expr_contains_pipe_left(select.target()),
+        Expr::Try { expr: target } => expr_contains_pipe_left(target),
         Expr::Index { target, index } => {
             expr_contains_pipe_left(target) || expr_contains_pipe_left(index)
         }

@@ -62,20 +62,7 @@ pub(crate) fn expr_label(expr: &Expr) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } => format!(
-            "{}.{}({})",
-            expr_label(receiver),
-            method,
-            args.iter()
-                .map(call_arg_label)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        Expr::Field { target, field } => format!("{}.{}", expr_label(target), field),
+        Expr::Select(select) => format!("{}.{}", expr_label(select.target()), select.member()),
         Expr::Index { target, index } => format!("{}[{}]", expr_label(target), expr_label(index)),
         Expr::Pipe { lhs, rhs } => format!("{} |> {}", expr_label(lhs), expr_label(rhs)),
         Expr::ArrayRepeat { value, len } => {

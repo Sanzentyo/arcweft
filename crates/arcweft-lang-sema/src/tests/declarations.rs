@@ -36,14 +36,14 @@ pub parser parse_player_command: Parser<PlayerCommand, ParseError> {
     assert_eq!(hook.effects().len(), 1);
     assert!(matches!(
         hook.body_statements(),
-        [Stmt::Expr(Expr::MethodCall { .. })]
+        [Stmt::Expr(Expr::Call { .. })]
     ));
 
     let Item::MemoFn(memo) = &tree.items()[1] else {
         panic!("expected memo item");
     };
     assert!(memo.body_statements().is_empty());
-    assert!(matches!(memo.body_value(), Some(Expr::Field { .. })));
+    assert!(matches!(memo.body_value(), Some(Expr::Select(_))));
 
     let Item::Parser(parser) = &tree.items()[2] else {
         panic!("expected parser item");

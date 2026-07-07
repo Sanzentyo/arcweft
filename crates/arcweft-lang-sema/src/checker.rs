@@ -1945,25 +1945,6 @@ fn selected_higher_order_argument<'a>(
                             value = payload;
                             actual = None;
                         }
-                        Expr::MethodCall {
-                            receiver,
-                            method,
-                            args,
-                        } => {
-                            let receiver = expr_path_label(receiver)?;
-                            let method = method
-                                .split_once('<')
-                                .map_or(method.as_str(), |(name, _)| name);
-                            let callee = format!("{receiver}.{method}");
-                            if !variant_constructor_matches(&callee, variant) {
-                                return None;
-                            }
-                            let [CallArg::Positional(payload)] = args.as_slice() else {
-                                return None;
-                            };
-                            value = payload;
-                            actual = None;
-                        }
                         Expr::Record { path, .. } if variant_constructor_matches(path, variant) => {
                             actual = None;
                         }

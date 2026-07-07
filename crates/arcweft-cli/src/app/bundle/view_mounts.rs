@@ -239,11 +239,7 @@ fn collect_mounted_view_ids_from_expr(expr: &Expr, ids: &mut BTreeSet<String>) {
             collect_mounted_view_ids_from_expr(callee, ids);
             collect_mounted_view_ids_from_call_args(args, ids);
         }
-        Expr::MethodCall { receiver, args, .. } => {
-            collect_mounted_view_ids_from_expr(receiver, ids);
-            collect_mounted_view_ids_from_call_args(args, ids);
-        }
-        Expr::Field { target, .. } => collect_mounted_view_ids_from_expr(target, ids),
+        Expr::Select(select) => collect_mounted_view_ids_from_expr(select.target(), ids),
         Expr::Index { target, index } => {
             collect_mounted_view_ids_from_expr(target, ids);
             collect_mounted_view_ids_from_expr(index, ids);

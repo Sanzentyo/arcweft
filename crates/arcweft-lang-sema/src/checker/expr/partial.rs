@@ -321,8 +321,8 @@ pub(super) fn expr_contains_partial_placeholder(expr: &Expr) -> bool {
         Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => fields
             .iter()
             .any(|(_, value)| expr_contains_partial_placeholder(value)),
-        Expr::Field { target, .. }
-        | Expr::Try { expr: target }
+        Expr::Select(select) => expr_contains_partial_placeholder(select.target()),
+        Expr::Try { expr: target }
         | Expr::Await { expr: target, .. }
         | Expr::Unary { expr: target, .. } => expr_contains_partial_placeholder(target),
         Expr::Index { target, index } => {
@@ -330,10 +330,6 @@ pub(super) fn expr_contains_partial_placeholder(expr: &Expr) -> bool {
         }
         Expr::Call { callee, args } => {
             expr_contains_partial_placeholder(callee) || args.iter().any(call_arg_contains_partial)
-        }
-        Expr::MethodCall { receiver, args, .. } => {
-            expr_contains_partial_placeholder(receiver)
-                || args.iter().any(call_arg_contains_partial)
         }
         Expr::DialogueCall { callee, .. } => expr_contains_partial_placeholder(callee),
         Expr::Pipe { lhs, rhs } | Expr::Binary { lhs, rhs, .. } => {

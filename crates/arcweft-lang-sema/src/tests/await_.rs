@@ -68,15 +68,12 @@ flow @flow.loading loading {
         panic!("expected await with");
     };
     assert!(await_with.applies_try());
-    assert!(matches!(
-        await_with.expr(),
-        Expr::Call { .. } | Expr::MethodCall { .. }
-    ));
+    assert!(matches!(await_with.expr(), Expr::Call { .. }));
     let pending = await_with.pending().expect("pending branch");
     assert_eq!(pending.kind(), AwaitBranchKind::Pending);
     assert!(matches!(
         pending.body()[0],
-        FlowItem::Stmt(Stmt::Expr(Expr::MethodCall { .. }))
+        FlowItem::Stmt(Stmt::Expr(Expr::Call { .. }))
     ));
 }
 
@@ -137,15 +134,12 @@ flow @flow.loading loading {
         panic!("expected await with");
     };
     assert!(await_with.applies_try());
-    assert!(matches!(
-        await_with.expr(),
-        Expr::Call { .. } | Expr::MethodCall { .. }
-    ));
+    assert!(matches!(await_with.expr(), Expr::Call { .. }));
     let pending = await_with.pending().expect("pending branch");
     assert_eq!(pending.body().len(), 1);
     assert!(matches!(
         pending.body()[0],
-        FlowItem::Stmt(Stmt::Expr(Expr::MethodCall { .. }))
+        FlowItem::Stmt(Stmt::Expr(Expr::Call { .. }))
     ));
 }
 
@@ -166,10 +160,7 @@ flow @flow.loading loading {
         panic!("expected await with");
     };
     assert!(await_with.applies_try());
-    assert!(matches!(
-        await_with.expr(),
-        Expr::Call { .. } | Expr::MethodCall { .. }
-    ));
+    assert!(matches!(await_with.expr(), Expr::Call { .. }));
 }
 
 #[test]
@@ -281,7 +272,7 @@ flow @flow.loading loading {
     assert!(matches!(
         &hir.flows()[0].body()[0],
         HirFlowItem::LetAwait { await_with, .. }
-            if matches!(await_with.expr(), Expr::MethodCall { method, .. } if method == "context")
+            if selected_call_member(await_with.expr()) == Some("context")
     ));
     validate_typecheck_ready(&hir).expect("multiline contextual try-await is typecheck-ready");
 
@@ -348,7 +339,7 @@ flow @flow.loading loading {
         &hir.flows()[0].body()[0],
         HirFlowItem::LetAwait { await_with, .. }
             if await_with.applies_try()
-                && matches!(await_with.expr(), Expr::MethodCall { method, .. } if method == "context")
+                && selected_call_member(await_with.expr()) == Some("context")
     ));
     let need_type = TypeKind::Need {
         ready: Box::new(TypeKind::Named("Image".to_owned())),

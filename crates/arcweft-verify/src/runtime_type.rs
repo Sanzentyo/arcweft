@@ -881,6 +881,7 @@ mod tests {
                 ty: TypeKind::Bool,
                 rule: TypeJudgmentRule::Expr,
                 expected: None,
+                source_range: None,
             },
             TypeJudgment {
                 id: TypeJudgmentId::from_index(1),
@@ -891,6 +892,7 @@ mod tests {
                 ty: TypeKind::Bool,
                 rule: TypeJudgmentRule::Expected,
                 expected: Some(TypeJudgmentExpected::SameAsJudgment),
+                source_range: None,
             },
             TypeJudgment {
                 id: TypeJudgmentId::from_index(2),
@@ -900,6 +902,7 @@ mod tests {
                 ty: TypeKind::String,
                 rule: TypeJudgmentRule::Return,
                 expected: Some(TypeJudgmentExpected::SameAsJudgment),
+                source_range: None,
             },
         ];
         TypeCheckReport {

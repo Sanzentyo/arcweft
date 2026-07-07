@@ -508,10 +508,7 @@ impl LinePlanGraphLowerer {
                 key: expr_label(lhs),
             }];
         }
-        if matches!(
-            expr,
-            Expr::Call { .. } | Expr::MethodCall { .. } | Expr::Path(_)
-        ) {
+        if matches!(expr, Expr::Call { .. } | Expr::Path(_)) {
             return vec![runtime_call_effect(expr)];
         }
         self.errors.push(LinePlanLowerError::new(format!(

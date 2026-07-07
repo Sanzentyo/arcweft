@@ -173,8 +173,8 @@ fn parse_expect_log_call(text: &str) -> Option<(String, String)> {
     };
     let level = match level.value() {
         Expr::Path(path) => path.trim_start_matches('.').to_owned(),
-        Expr::Field { target, field } if matches!(target.as_ref(), Expr::Path(path) if path == "log") => {
-            field.clone()
+        Expr::Select(select) if matches!(select.target(), Expr::Path(path) if path == "log") => {
+            select.member().as_str().to_owned()
         }
         _ => return None,
     };
@@ -208,30 +208,28 @@ fn parse_expect_file_call(text: &str) -> Option<(String, String)> {
 }
 
 fn parse_expect_method_call(text: &str) -> Option<(String, Vec<CallArg>)> {
-    let Expr::MethodCall {
-        receiver,
-        method,
-        args,
-    } = parse_expr(text).ok()?
-    else {
+    let Expr::Call { callee, args } = parse_expr(text).ok()? else {
         return None;
     };
-    matches!(receiver.as_ref(), Expr::Path(path) if path == "expect").then_some((method, args))
+    let Expr::Select(select) = callee.as_ref() else {
+        return None;
+    };
+    matches!(select.target(), Expr::Path(path) if path == "expect")
+        .then_some((select.member().as_str().to_owned(), args))
 }
 
 fn virtual_path_label(expr: &Expr) -> Option<String> {
-    let Expr::MethodCall {
-        receiver,
-        method,
-        args,
-    } = expr
-    else {
+    let Expr::Call { callee, args } = expr else {
         return None;
     };
-    if !matches!(receiver.as_ref(), Expr::Path(path) if path == "path") {
+    let Expr::Select(select) = callee.as_ref() else {
+        return None;
+    };
+    if !matches!(select.target(), Expr::Path(path) if path == "path") {
         return None;
     }
-    if !matches!(method.as_str(), "save" | "asset" | "temp" | "export") {
+    let method = select.member().as_str();
+    if !matches!(method, "save" | "asset" | "temp" | "export") {
         return None;
     }
     let [relative] = args.as_slice() else {

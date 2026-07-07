@@ -35,19 +35,6 @@ impl<'a> AudioCall<'a> {
     fn from_expr(expr: &'a Expr) -> Option<Self> {
         let (callee, args) = match expr {
             Expr::Call { callee, args } => (expr_label(callee), args.as_slice()),
-            Expr::MethodCall {
-                receiver,
-                method,
-                args,
-            } => {
-                let method = method
-                    .split_once('<')
-                    .map_or(method.as_str(), |(name, _)| name);
-                (
-                    format!("{}.{method}", expr_label(receiver)),
-                    args.as_slice(),
-                )
-            }
             Expr::Path(path) => (path.as_label().to_owned(), &[][..]),
             Expr::ShortVariant(name) => (format!(".{name}"), &[][..]),
             _ => return None,
@@ -64,9 +51,9 @@ impl<'a> AudioCall<'a> {
         };
         for arg in args {
             match arg {
-                CallArg::Positional(value) => call.positional.push(value),
+                CallArg::Positional(_) => call.positional.push(arg.value()),
                 CallArg::Named { name, value } => {
-                    if call.named.insert(name.clone(), value).is_some() {
+                    if call.named.insert(name.clone(), value.as_ref()).is_some() {
                         call.malformed = Some(format!("duplicate audio argument `{name}`"));
                     }
                 }

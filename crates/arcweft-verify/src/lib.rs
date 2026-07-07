@@ -1331,12 +1331,7 @@ impl ObligationCollector {
             Expr::Call { callee, args } => {
                 self.collect_call(callee, args);
             }
-            Expr::MethodCall {
-                receiver,
-                method,
-                args,
-            } => self.collect_method_call(receiver, method, args),
-            Expr::Field { target, .. } => self.collect_expr(target),
+            Expr::Select(select) => self.collect_expr(select.target()),
             Expr::DialogueCall { callee, plan, .. } => {
                 self.collect_expr(callee);
                 if let Some(plan) = plan {
@@ -1448,24 +1443,19 @@ impl ObligationCollector {
                 _ => {}
             }
         }
-        self.collect_expr(callee);
-        for arg in args {
-            self.collect_expr(arg.value());
-        }
-    }
-
-    fn collect_method_call(&mut self, receiver: &Expr, method: &str, args: &[CallArg]) {
-        match method {
-            "promote" => self.add_promote_obligation(args, false),
-            "promote_unchecked" => self.add_promote_obligation(args, true),
-            "drop" | "drop_optional" | "on_drop" => {
-                if let Expr::LifetimePath { key, .. } = receiver {
-                    self.lifetime_drops.insert(key.clone());
+        if let Expr::Select(select) = callee {
+            match select.member().as_str() {
+                "promote" => self.add_promote_obligation(args, false),
+                "promote_unchecked" => self.add_promote_obligation(args, true),
+                "drop" | "drop_optional" | "on_drop" => {
+                    if let Expr::LifetimePath { key, .. } = select.target() {
+                        self.lifetime_drops.insert(key.clone());
+                    }
                 }
+                _ => {}
             }
-            _ => {}
         }
-        self.collect_expr(receiver);
+        self.collect_expr(callee);
         for arg in args {
             self.collect_expr(arg.value());
         }

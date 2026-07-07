@@ -3,7 +3,6 @@ pub mod facts;
 mod traversal;
 use crate::fact_layer::{
     Capability, EffectScope, ProofFacts, ResourceAccess, write_capability_for_call,
-    write_capability_for_method,
 };
 use arcweft_lang_hir::model::{
     HirAwait, HirBorrow, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf, HirIfLet, HirLoop,
@@ -1182,12 +1181,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.collect_expr(len, state);
             }
             Expr::Call { callee, args } => self.collect_call(callee, args, state),
-            Expr::MethodCall {
-                receiver,
-                method,
-                args,
-            } => self.collect_method_call(receiver, method, args, state),
-            Expr::Field { target, .. } => self.collect_expr(target, state),
+            Expr::Select(select) => self.collect_expr(select.target(), state),
             Expr::DialogueCall { callee, plan, .. } => {
                 self.collect_expr(callee, state);
                 if let Some(plan) = plan {
@@ -1323,39 +1317,23 @@ impl<'a> SemanticAnalyzer<'a> {
                 _ => {}
             }
         }
-        self.collect_expr(callee, state);
-        for arg in args {
-            self.collect_expr(arg.value(), state);
-        }
-    }
-
-    fn collect_method_call(
-        &mut self,
-        receiver: &Expr,
-        method: &str,
-        args: &[CallArg],
-        state: &mut FlowState,
-    ) {
-        match method {
-            "set" => {
-                if let Some(capability) = write_capability_for_method(receiver, method) {
-                    self.add_effect_capability_obligation(&capability);
-                }
-            }
-            "promote" => self.add_promote_obligation(args, false),
-            "promote_unchecked" => self.add_promote_obligation(args, true),
-            "drop" | "drop_optional" | "on_drop" => {
-                if let Expr::LifetimePath { key, .. } = receiver {
-                    state.remove_must_drop(key);
-                    for arg in args {
-                        self.collect_expr(arg.value(), state);
+        if let Expr::Select(select) = callee {
+            match select.member().as_str() {
+                "promote" => self.add_promote_obligation(args, false),
+                "promote_unchecked" => self.add_promote_obligation(args, true),
+                "drop" | "drop_optional" | "on_drop" => {
+                    if let Expr::LifetimePath { key, .. } = select.target() {
+                        state.remove_must_drop(key);
+                        for arg in args {
+                            self.collect_expr(arg.value(), state);
+                        }
+                        return;
                     }
-                    return;
                 }
+                _ => {}
             }
-            _ => {}
         }
-        self.collect_expr(receiver, state);
+        self.collect_expr(callee, state);
         for arg in args {
             self.collect_expr(arg.value(), state);
         }

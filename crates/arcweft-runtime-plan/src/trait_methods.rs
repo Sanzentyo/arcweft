@@ -165,7 +165,7 @@ fn lower_direct_assignment_target(
     method: &str,
     target: &Expr,
 ) -> Result<(RuntimeExpr, String), TraitMethodLowerDiagnostic> {
-    let Expr::Field { target, field } = target else {
+    let Expr::Select(select) = target else {
         return Err(TraitMethodLowerDiagnostic::UnsupportedBody {
             method: method.to_owned(),
             reason: format!(
@@ -174,14 +174,15 @@ fn lower_direct_assignment_target(
             ),
         });
     };
-    let receiver = lower_runtime_expr_strict(target).map_err(|reason| {
+    let receiver = lower_runtime_expr_strict(select.target()).map_err(|reason| {
         TraitMethodLowerDiagnostic::UnsupportedBody {
             method: method.to_owned(),
             reason,
         }
     })?;
+    let field = select.member().as_str().to_owned();
     match receiver {
-        RuntimeExpr::Local(_) => Ok((receiver, field.clone())),
+        RuntimeExpr::Local(_) => Ok((receiver, field)),
         RuntimeExpr::Field { .. }
         | RuntimeExpr::ProjectTuple { .. }
         | RuntimeExpr::ProjectRecord { .. } => Err(TraitMethodLowerDiagnostic::UnsupportedBody {

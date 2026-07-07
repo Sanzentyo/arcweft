@@ -147,18 +147,6 @@ impl ProofIssue {
     }
 }
 
-pub(crate) fn write_capability_for_method(receiver: &Expr, method: &str) -> Option<Capability> {
-    if method != "set" {
-        return None;
-    }
-    match receiver {
-        Expr::Path(path) if matches!(path.as_str(), "signal" | "metric") => {
-            Some(Capability::new(format!("{path}.write")))
-        }
-        _ => None,
-    }
-}
-
 pub(crate) fn write_capability_for_call(callee: &Expr) -> Option<Capability> {
     match expr_path_label(callee).as_deref() {
         Some("signal.set") => Some(Capability::new("signal.write")),
@@ -173,23 +161,6 @@ pub(crate) fn capability_from_expr(expr: &Expr) -> Option<Capability> {
     {
         return state_write_capability(args);
     }
-    if let Expr::MethodCall {
-        receiver,
-        method,
-        args,
-    } = expr
-        && method == "write"
-        && expr_path_label(receiver).as_deref() == Some("state")
-    {
-        return state_write_capability(args);
-    }
-    if let Expr::MethodCall {
-        receiver, method, ..
-    } = expr
-        && let Some(receiver) = expr_path_label(receiver)
-    {
-        return Some(Capability::new(format!("{receiver}.{method}")));
-    }
     if let Expr::Call { callee, .. } = expr
         && let Some(callee) = expr_path_label(callee)
     {
@@ -200,12 +171,8 @@ pub(crate) fn capability_from_expr(expr: &Expr) -> Option<Capability> {
 
 fn expr_path_label(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Path(path) => Some(path.as_label().to_owned()),
         Expr::ShortVariant(name) => Some(format!(".{name}")),
-        Expr::Field { target, field } => {
-            expr_path_label(target).map(|target| format!("{target}.{field}"))
-        }
-        _ => None,
+        _ => expr.dotted_selector_label(),
     }
 }
 
@@ -239,19 +206,20 @@ pub(crate) fn resource_accesses_from_expr(expr: &Expr) -> BTreeSet<ResourceAcces
 
 fn collect_resource_accesses_from_expr(expr: &Expr, accesses: &mut BTreeSet<ResourceAccess>) {
     match expr {
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } if method == "set" => {
+        Expr::Call { callee, args }
+            if matches!(
+                expr_path_label(callee).as_deref(),
+                Some("signal.set" | "metric.set")
+            ) =>
+        {
             if let Some(target) = args.first() {
-                match expr_path_label(receiver).as_deref() {
-                    Some("signal") => {
+                match expr_path_label(callee).as_deref() {
+                    Some("signal.set") => {
                         accesses.insert(ResourceAccess::write(EffectResource::Signal(expr_label(
                             target.value(),
                         ))));
                     }
-                    Some("metric") => {
+                    Some("metric.set") => {
                         accesses.insert(ResourceAccess::write(EffectResource::Metric(expr_label(
                             target.value(),
                         ))));
@@ -259,7 +227,7 @@ fn collect_resource_accesses_from_expr(expr: &Expr, accesses: &mut BTreeSet<Reso
                     _ => {}
                 }
             }
-            collect_resource_accesses_from_expr(receiver, accesses);
+            collect_resource_accesses_from_expr(callee, accesses);
             for arg in args {
                 collect_resource_accesses_from_expr(arg.value(), accesses);
             }
@@ -279,16 +247,10 @@ fn collect_resource_accesses_from_expr(expr: &Expr, accesses: &mut BTreeSet<Reso
             collect_resource_accesses_from_expr(value, accesses);
             collect_resource_accesses_from_expr(len, accesses);
         }
-        Expr::Field { target: value, .. }
-        | Expr::Try { expr: value }
+        Expr::Select(select) => collect_resource_accesses_from_expr(select.target(), accesses),
+        Expr::Try { expr: value }
         | Expr::Await { expr: value, .. }
         | Expr::Unary { expr: value, .. } => collect_resource_accesses_from_expr(value, accesses),
-        Expr::MethodCall { receiver, args, .. } => {
-            collect_resource_accesses_from_expr(receiver, accesses);
-            for arg in args {
-                collect_resource_accesses_from_expr(arg.value(), accesses);
-            }
-        }
         Expr::Binary { lhs, rhs, .. }
         | Expr::Pipe { lhs, rhs }
         | Expr::Index {
@@ -308,7 +270,7 @@ fn expr_label(expr: &Expr) -> String {
         Expr::ShortVariant(name) => format!(".{name}"),
         Expr::EntityRef(entity) => entity.body().to_owned(),
         Expr::LifetimePath { key, .. } => key.as_dotted(),
-        Expr::Field { target, field } => format!("{}.{}", expr_label(target), field),
+        Expr::Select(select) => format!("{}.{}", expr_label(select.target()), select.member()),
         Expr::Literal(literal) => format!("{literal:?}"),
         _ => format!("{expr:?}"),
     }

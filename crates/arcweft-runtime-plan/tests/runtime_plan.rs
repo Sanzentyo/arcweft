@@ -129,17 +129,17 @@ fn canonical_log_signal_metric_are_ordinary_calls() {
     assert!(matches!(
         parse_expr(r#"log.info("selected {id:?}", id = selected.id)"#)
             .expect("log.info parses as ordinary expression"),
-        Expr::MethodCall { .. }
+        Expr::Call { .. }
     ));
     assert!(matches!(
         parse_expr("signal.set(@signal.current_flow, @flow.opening)")
             .expect("signal.set parses as ordinary expression"),
-        Expr::MethodCall { .. }
+        Expr::Call { .. }
     ));
     assert!(matches!(
         parse_expr("metric.set(@metric.frame_time_ms, frame_time.ms())")
             .expect("metric.set parses as ordinary expression"),
-        Expr::MethodCall { .. }
+        Expr::Call { .. }
     ));
 }
 

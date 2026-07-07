@@ -251,11 +251,8 @@ fn index_expr_agent_actions(
         Expr::Call { callee, args } => {
             index_call_expr_agent_actions(callee, args, index, source_name)
         }
-        Expr::MethodCall { receiver, args, .. } => {
-            index_method_call_expr_agent_actions(receiver, args, index, source_name)
-        }
-        Expr::Field { target, .. }
-        | Expr::Try { expr: target }
+        Expr::Select(select) => index_expr_agent_actions(select.target(), index, source_name),
+        Expr::Try { expr: target }
         | Expr::Await { expr: target, .. }
         | Expr::Unary { expr: target, .. } => index_expr_agent_actions(target, index, source_name),
         Expr::DialogueCall { callee, .. } | Expr::Closure { body: callee, .. } => {
@@ -393,16 +390,6 @@ fn index_call_expr_agent_actions(
         index = index_image_call_agent_actions(args, index, source_name)?;
     }
     index = index_expr_agent_actions(callee, index, source_name)?;
-    index_call_arg_agent_actions(args, index, source_name)
-}
-
-fn index_method_call_expr_agent_actions(
-    receiver: &Expr,
-    args: &[CallArg],
-    mut index: ProjectSemanticIndex,
-    source_name: &SourceName,
-) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
-    index = index_expr_agent_actions(receiver, index, source_name)?;
     index_call_arg_agent_actions(args, index, source_name)
 }
 

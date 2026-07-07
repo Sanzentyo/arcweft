@@ -1133,13 +1133,6 @@ fn action_invoke_action(expr: &Expr, range: TextRange) -> Option<ViewAction> {
                     _ => None,
                 })
             }),
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } if method == "invoke" && expr_source(receiver).as_deref() == Some("action") => {
-            action_invoke_call_action(args, range)
-        }
         Expr::Call { callee, args } if is_action_invoke_callee(callee) => {
             action_invoke_call_action(args, range)
         }
@@ -1170,8 +1163,8 @@ fn is_action_invoke_callee(callee: &Expr) -> bool {
     match callee {
         Expr::Path(path) => path.matches_segments(&["action", "invoke"]),
         Expr::Raw(source) => source.trim() == "action.invoke",
-        Expr::Field { target, field } => {
-            field == "invoke" && expr_source(target).as_deref() == Some("action")
+        Expr::Select(select) => {
+            select.member() == "invoke" && expr_source(select.target()).as_deref() == Some("action")
         }
         _ => false,
     }
@@ -1230,8 +1223,8 @@ fn action_payload(expr: &Expr) -> Option<ViewActionPayload> {
         Expr::Literal(Literal::String(value)) => {
             Some(ViewActionPayload::LiteralString(value.clone()))
         }
-        Expr::Field { target, field } => text_control_payload_target(target)
-            .zip(text_control_payload_field(field))
+        Expr::Select(select) => text_control_payload_target(select.target())
+            .zip(text_control_payload_field(select.member().as_str()))
             .map(|(input, field)| ViewActionPayload::TextControlProjection { input, field }),
         _ => None,
     }
@@ -1262,16 +1255,10 @@ fn expr_source(expr: &Expr) -> Option<String> {
         Expr::Path(path) => Some(path.as_label().to_owned()),
         Expr::ShortVariant(value) => Some(format!(".{}", value.as_str())),
         Expr::Raw(source) => Some(source.trim().to_owned()),
-        Expr::Field { target, field } => Some(format!("{}.{}", expr_source(target)?, field)),
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } => Some(format!(
-            "{}.{}({})",
-            expr_source(receiver)?,
-            method,
-            call_args_source(args)?
+        Expr::Select(select) => Some(format!(
+            "{}.{}",
+            expr_source(select.target())?,
+            select.member().as_str()
         )),
         Expr::Call { callee, args } => Some(format!(
             "{}({})",

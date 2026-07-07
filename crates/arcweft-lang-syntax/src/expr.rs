@@ -216,6 +216,43 @@ impl From<&str> for DottedPath {
     }
 }
 
+/// Dot selector in source syntax before name and type resolution.
+///
+/// `target.member` can later resolve to a module path, field access, associated
+/// namespace item, enum constructor, trait/inherent method, environment method,
+/// or callable value projection. The syntax layer does not call `target` a
+/// receiver.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectExpr {
+    target: Box<Expr>,
+    member: Name,
+}
+
+impl SelectExpr {
+    /// Builds a source-level dot selector.
+    pub fn new(target: Expr, member: Name) -> Self {
+        Self {
+            target: Box::new(target),
+            member,
+        }
+    }
+
+    /// Returns the selected target expression.
+    pub const fn target(&self) -> &Expr {
+        &self.target
+    }
+
+    /// Returns the selected member name.
+    pub const fn member(&self) -> &Name {
+        &self.member
+    }
+
+    /// Splits this selector into owned parts.
+    pub fn into_parts(self) -> (Expr, Name) {
+        (*self.target, self.member)
+    }
+}
+
 /// Expression syntax preserved for type checking and HIR lowering.
 ///
 /// This parser records expression shape without name resolution, generic
@@ -245,15 +282,7 @@ pub enum Expr {
         callee: Box<Expr>,
         args: Vec<CallArg>,
     },
-    MethodCall {
-        receiver: Box<Expr>,
-        method: String,
-        args: Vec<CallArg>,
-    },
-    Field {
-        target: Box<Expr>,
-        field: String,
-    },
+    Select(SelectExpr),
     DialogueCall {
         callee: Box<Expr>,
         content: String,
@@ -337,6 +366,48 @@ pub enum Expr {
         arms: Vec<MatchExprArm>,
     },
     Raw(String),
+}
+
+impl Expr {
+    /// Builds a source-level dot selector.
+    pub fn select(target: Expr, member: impl Into<String>) -> Self {
+        Self::Select(SelectExpr::new(target, Name::new(member.into())))
+    }
+
+    /// Builds a source-level call expression.
+    pub fn call(callee: Expr, args: Vec<CallArg>) -> Self {
+        Self::Call {
+            callee: Box::new(callee),
+            args,
+        }
+    }
+
+    /// Builds a call whose callee is a source-level dot selector.
+    pub fn selected_call(target: Expr, member: impl Into<String>, args: Vec<CallArg>) -> Self {
+        Self::call(Self::select(target, member), args)
+    }
+
+    /// Returns the selector payload when this expression is a dot selector.
+    pub fn as_select(&self) -> Option<&SelectExpr> {
+        match self {
+            Self::Select(select) => Some(select),
+            _ => None,
+        }
+    }
+
+    /// Returns a dotted syntax label when this expression is only path/select nodes.
+    pub fn dotted_selector_label(&self) -> Option<String> {
+        match self {
+            Self::Path(path) => Some(path.as_label().to_owned()),
+            Self::Select(select) => {
+                let mut label = select.target().dotted_selector_label()?;
+                label.push('.');
+                label.push_str(select.member().as_str());
+                Some(label)
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Compact representation for integer-only bracket sequence literals.
@@ -1334,10 +1405,7 @@ impl ExprParser {
                 }
                 Token::LParen if min_bp <= 100 => {
                     let args = self.parse_call_args()?;
-                    Expr::Call {
-                        callee: Box::new(lhs),
-                        args,
-                    }
+                    Expr::call(lhs, args)
                 }
                 Token::LBracket if min_bp <= 100 => {
                     self.bump();
@@ -1354,26 +1422,19 @@ impl ExprParser {
                 }
                 Token::Dot if min_bp <= 100 => {
                     self.bump();
-                    let field = self.take_ident("expected field name after `.`")?;
-                    self.skip_method_turbofish_before_call();
+                    let member = self.take_ident("expected selector name after `.`")?;
+                    self.skip_selector_turbofish_before_call();
+                    let selected = Expr::select(lhs, member);
                     if self.peek() == &Token::LParen {
                         let args = self.parse_call_args()?;
-                        Expr::MethodCall {
-                            receiver: Box::new(lhs),
-                            method: field,
-                            args,
-                        }
+                        Expr::call(selected, args)
                     } else if self.peek() == &Token::LBrace {
-                        Expr::MethodCall {
-                            receiver: Box::new(lhs),
-                            method: field,
-                            args: vec![CallArg::Positional(self.parse_callback_block_closure()?)],
-                        }
+                        Expr::call(
+                            selected,
+                            vec![CallArg::Positional(self.parse_callback_block_closure()?)],
+                        )
                     } else {
-                        Expr::Field {
-                            target: Box::new(lhs),
-                            field,
-                        }
+                        selected
                     }
                 }
                 Token::Op(ExprOp::Range | ExprOp::RangeInclusive) if min_bp <= 5 => {
@@ -1807,7 +1868,7 @@ impl ExprParser {
         }
     }
 
-    fn skip_method_turbofish_before_call(&mut self) -> bool {
+    fn skip_selector_turbofish_before_call(&mut self) -> bool {
         if self.peek() != &Token::Op(ExprOp::Lt) {
             return false;
         }
@@ -2242,7 +2303,7 @@ mod tests {
             panic!("expected binary expression");
         };
         assert_eq!(op, BinaryOp::Lt);
-        assert!(matches!(*lhs, Expr::Field { .. }));
-        assert!(matches!(*rhs, Expr::Field { .. }));
+        assert!(matches!(*lhs, Expr::Select(_)));
+        assert!(matches!(*rhs, Expr::Select(_)));
     }
 }

@@ -57,7 +57,7 @@ with:
         &plan.items()[0],
         LinePlanItem::TimedCue {
             anchor: Expr::Literal(_),
-            body: Expr::MethodCall { .. }
+            body: Expr::Call { .. }
         }
     ));
 }
@@ -342,7 +342,7 @@ with:
     assert!(matches!(
         &plan.items()[1],
         LinePlanItem::Let {
-            expr: Expr::MethodCall { .. },
+            expr: Expr::Call { .. },
             ..
         }
     ));
@@ -621,10 +621,10 @@ flow @flow.opening opening {
     assert!(matches!(
         rule.action(),
         [
-            Stmt::Expr(Expr::MethodCall { method: stop, .. }),
-            Stmt::Expr(Expr::MethodCall { method: flush, .. }),
+            Stmt::Expr(stop),
+            Stmt::Expr(flush),
             Stmt::Continue { label: None }
-        ] if stop == "stop" && flush == "flush"
+        ] if selected_call_member(stop) == Some("stop") && selected_call_member(flush) == Some("flush")
     ));
 
     let hir = lower_to_hir(&tree).expect("line plan cancel commands lower");
@@ -989,7 +989,7 @@ with:
         &plan.items()[0],
         LinePlanItem::TimedCue {
             anchor: Expr::Literal(_),
-            body: Expr::MethodCall { .. }
+            body: Expr::Call { .. }
         }
     ));
 }

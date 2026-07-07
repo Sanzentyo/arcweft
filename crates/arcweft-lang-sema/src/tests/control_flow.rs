@@ -1213,7 +1213,7 @@ flow @flow.borrow borrow {
     let FlowItem::BorrowBlock(block) = &flow.body()[0] else {
         panic!("expected borrow block");
     };
-    assert!(matches!(block.source(), Expr::MethodCall { .. }));
+    assert!(matches!(block.source(), Expr::Call { .. }));
     assert!(matches!(
         block.binding(),
         Pattern::Typed {
@@ -1224,7 +1224,7 @@ flow @flow.borrow borrow {
     assert!(matches!(
         &block.body()[0],
         FlowItem::Stmt(Stmt::Let {
-            expr: Expr::MethodCall { .. },
+            expr: Expr::Call { .. },
             ..
         })
     ));

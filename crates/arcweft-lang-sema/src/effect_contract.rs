@@ -102,18 +102,9 @@ fn effect_label(expression: &Expr) -> Result<String, EffectContractLowerError> {
     match expression {
         Expr::Path(path) => Ok(path.as_label().to_owned()),
         Expr::ShortVariant(name) => Ok(format!(".{name}")),
-        Expr::Field { target, field } => {
-            effect_label(target).map(|target| format!("{target}.{field}"))
-        }
+        Expr::Select(select) => effect_label(select.target())
+            .map(|target| format!("{target}.{}", select.member().as_str())),
         Expr::Call { callee, args } => scoped_effect_label(callee, args),
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } => {
-            let base = effect_label(receiver).map(|receiver| format!("{receiver}.{method}"))?;
-            append_scope(base, args)
-        }
         _ => Err(EffectContractLowerError::UnsupportedSelector {
             expr: expression.clone(),
         }),

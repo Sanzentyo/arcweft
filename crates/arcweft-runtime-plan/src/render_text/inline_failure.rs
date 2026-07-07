@@ -11,18 +11,16 @@ pub(crate) fn inline_failure_policy(
     default: Option<&InlineFailurePolicy>,
 ) -> InlineFailurePolicy {
     match expr {
-        Expr::Call { args, .. } | Expr::MethodCall { args, .. } => {
-            inline_failure_policy_from_args(args)
-                .or_else(|| default.cloned())
-                .unwrap_or(InlineFailurePolicy::FailLine)
-        }
+        Expr::Call { args, .. } => inline_failure_policy_from_args(args)
+            .or_else(|| default.cloned())
+            .unwrap_or(InlineFailurePolicy::FailLine),
         _ => default.cloned().unwrap_or(InlineFailurePolicy::FailLine),
     }
 }
 
 pub(crate) fn inline_fallback_source_label(expr: &Expr) -> String {
     match expr {
-        Expr::Call { args, .. } | Expr::MethodCall { args, .. } => args
+        Expr::Call { args, .. } => args
             .iter()
             .find_map(|arg| match arg {
                 CallArg::Positional(value) => Some(expr_label(value)),
@@ -67,15 +65,6 @@ fn inline_failure_policy_from_expr(expr: &Expr) -> InlineFailurePolicy {
 fn inline_failure_constructor(expr: &Expr) -> Option<InlineFailurePolicy> {
     let args = match expr {
         Expr::Call { callee, args } if constructor_name(callee)? == "fallback" => args,
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } if matches!(receiver.as_ref(), Expr::Path(namespace) if namespace == "InlineFailure")
-            && method == "fallback" =>
-        {
-            args
-        }
         _ => return None,
     };
     let fallback = args
@@ -119,8 +108,8 @@ fn inline_fallback_value(expr: &Expr) -> InlineFallback {
 fn constructor_name(expr: &Expr) -> Option<&str> {
     match expr {
         Expr::Path(name) if name == "fallback" => Some("fallback"),
-        Expr::Field { target, field } if matches!(target.as_ref(), Expr::Path(namespace) if namespace == "InlineFailure") => {
-            Some(field)
+        Expr::Select(select) if matches!(select.target(), Expr::Path(namespace) if namespace == "InlineFailure") => {
+            Some(select.member().as_str())
         }
         _ => None,
     }
@@ -129,16 +118,15 @@ fn constructor_name(expr: &Expr) -> Option<&str> {
 fn enum_variant_name(expr: &Expr) -> Option<(&str, &str)> {
     match expr {
         Expr::Path(value) => value.strip_prefix('.').map(|variant| ("", variant)),
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } if args.is_empty() => match receiver.as_ref() {
-            Expr::Path(namespace) => Some((namespace.as_str(), method.as_str())),
+        Expr::Call { callee, args } if args.is_empty() => match callee.as_ref() {
+            Expr::Select(select) => match select.target() {
+                Expr::Path(namespace) => Some((namespace.as_str(), select.member().as_str())),
+                _ => None,
+            },
             _ => None,
         },
-        Expr::Field { target, field } => match target.as_ref() {
-            Expr::Path(namespace) => Some((namespace.as_str(), field.as_str())),
+        Expr::Select(select) => match select.target() {
+            Expr::Path(namespace) => Some((namespace.as_str(), select.member().as_str())),
             _ => None,
         },
         _ => None,

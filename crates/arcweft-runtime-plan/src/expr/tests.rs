@@ -304,14 +304,14 @@ fn strict_runtime_lowers_expression_callee_call_to_apply() {
 
 #[test]
 fn strict_runtime_lowers_f64_math_method_calls_to_intrinsics() {
-    let expr = Expr::MethodCall {
-        receiver: Box::new(Expr::Path("math".into())),
-        method: "matmul_f64".to_owned(),
-        args: vec![
+    let expr = Expr::selected_call(
+        Expr::Path("math".into()),
+        "matmul_f64",
+        vec![
             CallArg::Positional(Expr::Path("lhs".into())),
             CallArg::Positional(Expr::Path("rhs".into())),
         ],
-    };
+    );
 
     let lowered = lower_runtime_expr_strict(&expr).expect("math intrinsic lowers");
 
@@ -325,15 +325,15 @@ fn strict_runtime_lowers_f64_math_method_calls_to_intrinsics() {
 
 #[test]
 fn strict_runtime_lowers_adapter_namespace_methods_to_external_calls() {
-    let expr = Expr::MethodCall {
-        receiver: Box::new(Expr::Path("infer".into())),
-        method: "matmul_bias_add_f32".to_owned(),
-        args: vec![
+    let expr = Expr::selected_call(
+        Expr::Path("infer".into()),
+        "matmul_bias_add_f32",
+        vec![
             CallArg::Positional(Expr::Path("lhs".into())),
             CallArg::Positional(Expr::Path("rhs".into())),
             CallArg::Positional(Expr::Path("bias".into())),
         ],
-    };
+    );
 
     let lowered = lower_runtime_expr_strict(&expr).expect("adapter method lowers");
 
@@ -475,10 +475,10 @@ fn strict_runtime_lowers_data_last_pipe_call_to_exact_helper_call() {
 
 #[test]
 fn strict_runtime_lowers_partial_placeholder_map_body() {
-    let expr = Expr::MethodCall {
-        receiver: Box::new(Expr::Path("values".into())),
-        method: "map".to_owned(),
-        args: vec![CallArg::Positional(Expr::Binary {
+    let expr = Expr::selected_call(
+        Expr::Path("values".into()),
+        "map",
+        vec![CallArg::Positional(Expr::Binary {
             lhs: Box::new(Expr::Placeholder(Placeholder::Partial)),
             op: BinaryOp::Add,
             rhs: Box::new(Expr::Literal(Literal::Int {
@@ -487,7 +487,7 @@ fn strict_runtime_lowers_partial_placeholder_map_body() {
                 suffix: Some("i64".to_owned()),
             })),
         })],
-    };
+    );
 
     let lowered = lower_runtime_expr_strict(&expr).expect("partial map lowers");
 
@@ -505,14 +505,14 @@ fn strict_runtime_lowers_partial_placeholder_map_body() {
 
 #[test]
 fn strict_runtime_lowers_partial_placeholder_filter_body() {
-    let expr = Expr::MethodCall {
-        receiver: Box::new(Expr::Path("choices".into())),
-        method: "filter".to_owned(),
-        args: vec![CallArg::Positional(Expr::Field {
-            target: Box::new(Expr::Placeholder(Placeholder::Partial)),
-            field: "enabled".to_owned(),
-        })],
-    };
+    let expr = Expr::selected_call(
+        Expr::Path("choices".into()),
+        "filter",
+        vec![CallArg::Positional(Expr::select(
+            Expr::Placeholder(Placeholder::Partial),
+            "enabled",
+        ))],
+    );
 
     let lowered = lower_runtime_expr_strict(&expr).expect("partial filter lowers");
 
@@ -539,18 +539,18 @@ fn strict_runtime_lowers_data_last_filter_map_pipeline() {
             lhs: Box::new(Expr::Path("choices".into())),
             rhs: Box::new(Expr::Call {
                 callee: Box::new(Expr::Path("filter".into())),
-                args: vec![CallArg::Positional(Expr::Field {
-                    target: Box::new(Expr::Placeholder(Placeholder::Partial)),
-                    field: "enabled".to_owned(),
-                })],
+                args: vec![CallArg::Positional(Expr::select(
+                    Expr::Placeholder(Placeholder::Partial),
+                    "enabled",
+                ))],
             }),
         }),
         rhs: Box::new(Expr::Call {
             callee: Box::new(Expr::Path("map".into())),
-            args: vec![CallArg::Positional(Expr::Field {
-                target: Box::new(Expr::Placeholder(Placeholder::Partial)),
-                field: "label".to_owned(),
-            })],
+            args: vec![CallArg::Positional(Expr::select(
+                Expr::Placeholder(Placeholder::Partial),
+                "label",
+            ))],
         }),
     };
 
@@ -588,16 +588,13 @@ fn strict_runtime_lowers_data_last_filter_map_pipeline() {
 #[test]
 fn strict_runtime_unwraps_try_around_runtime_method_calls() {
     let expr = Expr::Try {
-        expr: Box::new(Expr::MethodCall {
-            receiver: Box::new(Expr::Field {
-                target: Box::new(Expr::Path("frame".into())),
-                field: "objects".to_owned(),
-            }),
-            method: "require_role".to_owned(),
-            args: vec![CallArg::Positional(Expr::Literal(Literal::String(
+        expr: Box::new(Expr::selected_call(
+            Expr::select(Expr::Path("frame".into()), "objects"),
+            "require_role",
+            vec![CallArg::Positional(Expr::Literal(Literal::String(
                 "dialogue_textbox".to_owned(),
             )))],
-        }),
+        )),
     };
 
     let lowered = lower_runtime_expr_strict(&expr).expect("try method call lowers");
@@ -802,13 +799,7 @@ fn strict_runtime_bracket_seq_folds_typed_float_literals_to_dense_storage() {
 
 #[test]
 fn strict_runtime_lowers_std_float_constants_and_intrinsic_calls() {
-    let nan_expr = Expr::Field {
-        target: Box::new(Expr::Field {
-            target: Box::new(Expr::Path("std".into())),
-            field: "f32".to_owned(),
-        }),
-        field: "nan".to_owned(),
-    };
+    let nan_expr = Expr::select(Expr::select(Expr::Path("std".into()), "f32"), "nan");
     let nan_lowered = lower_runtime_expr_strict(&nan_expr).expect("std f32 nan lowers");
     assert!(matches!(
         nan_lowered,
@@ -816,13 +807,10 @@ fn strict_runtime_lowers_std_float_constants_and_intrinsic_calls() {
     ));
 
     let sqrt_expr = Expr::Call {
-        callee: Box::new(Expr::Field {
-            target: Box::new(Expr::Field {
-                target: Box::new(Expr::Path("std".into())),
-                field: "f64".to_owned(),
-            }),
-            field: "sqrt".to_owned(),
-        }),
+        callee: Box::new(Expr::select(
+            Expr::select(Expr::Path("std".into()), "f64"),
+            "sqrt",
+        )),
         args: vec![CallArg::Positional(Expr::Literal(Literal::Float {
             raw: "4.0f64".to_owned(),
             suffix: Some(FloatSuffix::F64),
@@ -837,8 +825,8 @@ fn strict_runtime_lowers_std_float_constants_and_intrinsic_calls() {
 
 #[test]
 fn strict_runtime_field_lowering_uses_record_projection_when_ordinal_is_known() {
-    let expr = Expr::Field {
-        target: Box::new(Expr::RecordLiteral(vec![
+    let expr = Expr::select(
+        Expr::RecordLiteral(vec![
             (
                 "score".to_owned(),
                 Expr::Literal(Literal::Int {
@@ -851,9 +839,9 @@ fn strict_runtime_field_lowering_uses_record_projection_when_ordinal_is_known() 
                 "label".to_owned(),
                 Expr::Literal(Literal::String("ok".to_owned())),
             ),
-        ])),
-        field: "label".to_owned(),
-    };
+        ]),
+        "label",
+    );
 
     let lowered = lower_runtime_expr_strict(&expr).expect("record field lowers");
 

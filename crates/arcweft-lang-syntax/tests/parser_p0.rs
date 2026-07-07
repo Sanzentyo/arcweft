@@ -187,12 +187,24 @@ use arcweft_lang_syntax::{
     types::{TypeRef, parse_type_ref},
 };
 
-fn field_path(expr: &Expr) -> Option<String> {
+fn select_path(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Path(path) => Some(path.as_label().to_owned()),
-        Expr::Field { target, field } => Some(format!("{}.{}", field_path(target)?, field)),
+        Expr::Select(select) => Some(format!(
+            "{}.{}",
+            select_path(select.target())?,
+            select.member().as_str()
+        )),
         _ => None,
     }
+}
+
+fn assert_selected_call<'a>(expr: &'a Expr, path: &str) -> &'a [CallArg] {
+    let Expr::Call { callee, args } = expr else {
+        panic!("expected call expression: {expr:?}");
+    };
+    assert_eq!(select_path(callee), Some(path.to_owned()));
+    args
 }
 
 #[test]
@@ -314,7 +326,7 @@ flow @flow.opening opening {
     assert!(matches!(&statements[0], Stmt::Let { .. }));
     assert!(matches!(
         &statements[1],
-        Stmt::Expr(Expr::MethodCall { method, .. }) if method == "record"
+        Stmt::Expr(Expr::Call { callee, .. }) if select_path(callee) == Some("metrics.record".to_owned())
     ));
 }
 
@@ -349,22 +361,19 @@ fn call_arguments_keep_positional_spread_nodes() {
 }
 
 #[test]
-fn postfix_callback_block_lowers_to_method_call_closure_arg() {
+fn postfix_callback_block_lowers_to_selected_call_closure_arg() {
     let expr = parse_expr(
         r#"Button("Send").on_click { action.invoke(@action:.feedback.submit, value = name.text) }"#,
     )
     .expect("callback block parses");
-    let Expr::MethodCall {
-        receiver,
-        method,
-        args,
-    } = expr
-    else {
-        panic!("expected method call");
+    let Expr::Call { callee, args } = expr else {
+        panic!("expected selected callback call");
     };
-
-    assert_eq!(method, "on_click");
-    assert!(matches!(receiver.as_ref(), Expr::Call { .. }));
+    let Expr::Select(select) = callee.as_ref() else {
+        panic!("expected selected callee");
+    };
+    assert_eq!(select.member().as_str(), "on_click");
+    assert!(matches!(select.target(), Expr::Call { .. }));
     let [CallArg::Positional(Expr::Closure { params, body, .. })] = args.as_slice() else {
         panic!("expected single closure arg: {args:?}");
     };
@@ -375,20 +384,18 @@ fn postfix_callback_block_lowers_to_method_call_closure_arg() {
             statements,
             value: Some(value),
         } if statements.is_empty()
-            && matches!(value.as_ref(), Expr::MethodCall { method, .. } if method == "invoke")
+            && matches!(value.as_ref(), Expr::Call { callee, .. }
+                if select_path(callee) == Some("action.invoke".to_owned()))
     ));
 }
 
 #[test]
-fn postfix_callback_block_supports_parameterized_closure() {
+fn postfix_callback_block_supports_parameterized_closure_after_call_select_unification() {
     let expr = parse_expr("items.map { item, index => item.label(index) }")
         .expect("parameterized callback block parses");
-    let Expr::MethodCall { method, args, .. } = expr else {
-        panic!("expected method call");
-    };
+    let args = assert_selected_call(&expr, "items.map");
 
-    assert_eq!(method, "map");
-    let [CallArg::Positional(Expr::Closure { params, body, .. })] = args.as_slice() else {
+    let [CallArg::Positional(Expr::Closure { params, body, .. })] = args else {
         panic!("expected single closure arg: {args:?}");
     };
     assert_eq!(
@@ -404,7 +411,8 @@ fn postfix_callback_block_supports_parameterized_closure() {
             statements,
             value: Some(value),
         } if statements.is_empty()
-            && matches!(value.as_ref(), Expr::MethodCall { method, .. } if method == "label")
+            && matches!(value.as_ref(), Expr::Call { callee, .. }
+                if select_path(callee) == Some("item.label".to_owned()))
     ));
 }
 
@@ -427,7 +435,7 @@ fn closures_keep_pattern_and_type_ascription_parameters() {
     ));
     assert!(matches!(
         body.as_ref(),
-        Expr::MethodCall { method, .. } if method == "label"
+        Expr::Call { callee, .. } if select_path(callee) == Some("item.label".to_owned())
     ));
 }
 
@@ -489,16 +497,14 @@ fn zero_arg_closure_keeps_explicit_return_type() {
 fn call_arg_closure_keeps_explicit_return_type() {
     let expr = parse_expr("items.filter(|choice: Choice| -> bool { choice.enabled })")
         .expect("return-typed closure arg parses");
-    let Expr::MethodCall { args, .. } = expr else {
-        panic!("expected method call");
-    };
+    let args = assert_selected_call(&expr, "items.filter");
     let [
         CallArg::Positional(Expr::Closure {
             params,
             return_type,
             body,
         }),
-    ] = args.as_slice()
+    ] = args
     else {
         panic!("expected closure arg: {args:?}");
     };
@@ -576,10 +582,8 @@ fn closure_return_type_requires_block_body() {
 fn callback_block_closure_keeps_typed_parameters() {
     let expr =
         parse_expr("items.map { item: Label => item.text }").expect("typed callback block parses");
-    let Expr::MethodCall { args, .. } = expr else {
-        panic!("expected method call");
-    };
-    let [CallArg::Positional(Expr::Closure { params, body, .. })] = args.as_slice() else {
+    let args = assert_selected_call(&expr, "items.map");
+    let [CallArg::Positional(Expr::Closure { params, body, .. })] = args else {
         panic!("expected closure arg: {args:?}");
     };
 
@@ -600,11 +604,14 @@ fn postfix_callback_block_preserves_multi_statement_body() {
 }"#,
     )
     .expect("multi-statement callback block parses");
-    let Expr::MethodCall { method, args, .. } = expr else {
-        panic!("expected method call");
+    let Expr::Call { callee, args } = expr else {
+        panic!("expected selected callback call");
+    };
+    let Expr::Select(select) = callee.as_ref() else {
+        panic!("expected selected callee");
     };
 
-    assert_eq!(method, "on_click");
+    assert_eq!(select.member().as_str(), "on_click");
     let [CallArg::Positional(Expr::Closure { params, body, .. })] = args.as_slice() else {
         panic!("expected single closure arg: {args:?}");
     };
@@ -619,7 +626,7 @@ fn postfix_callback_block_preserves_multi_statement_body() {
     assert!(matches!(statements.as_slice(), [Stmt::Let { .. }]));
     assert!(matches!(
         value.as_ref(),
-        Expr::MethodCall { method, .. } if method == "invoke"
+        Expr::Call { callee, .. } if select_path(callee) == Some("action.invoke".to_owned())
     ));
 }
 
@@ -694,12 +701,12 @@ pub fn open_route(
 }
 
 #[test]
-fn field_and_index_are_structured_for_later_typechecking() {
-    let expr = parse_expr("state.affection[@character.alice]").expect("field index parses");
+fn select_and_index_are_structured_for_later_typechecking() {
+    let expr = parse_expr("state.affection[@character.alice]").expect("select index parses");
     let Expr::Index { target, index } = expr else {
         panic!("expected index");
     };
-    assert_eq!(field_path(&target), Some("state.affection".to_owned()));
+    assert_eq!(select_path(&target), Some("state.affection".to_owned()));
     assert!(matches!(index.as_ref(), Expr::EntityRef(_)));
 
     assert!(matches!(

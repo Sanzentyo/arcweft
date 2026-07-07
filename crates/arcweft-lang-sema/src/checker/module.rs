@@ -1281,16 +1281,13 @@ fn unknown_default_inline_failure_policy(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Path(path) => unknown_default_inline_failure_atom(path),
         Expr::ShortVariant(name) => unknown_default_inline_failure_atom(&format!(".{name}")),
-        Expr::Field { target, field } => match target.as_ref() {
-            Expr::Path(namespace) => unknown_default_inline_failure_field(namespace, field),
+        Expr::Select(select) => match select.target() {
+            Expr::Path(namespace) => {
+                unknown_default_inline_failure_field(namespace.as_label(), select.member().as_str())
+            }
             _ => None,
         },
         Expr::Call { callee, args } => unknown_default_inline_failure_constructor(callee, args),
-        Expr::MethodCall {
-            receiver,
-            method,
-            args,
-        } => unknown_default_inline_failure_method_constructor(receiver, method, args),
         _ => None,
     }
 }
@@ -1301,8 +1298,8 @@ fn unknown_default_inline_failure_constructor(
 ) -> Option<String> {
     let constructor = match callee {
         Expr::Path(path) if path == "fallback" => "fallback",
-        Expr::Field { target, field } if matches!(target.as_ref(), Expr::Path(namespace) if namespace == "InlineFailure") => {
-            field
+        Expr::Select(select) if matches!(select.target(), Expr::Path(namespace) if namespace == "InlineFailure") => {
+            select.member().as_str()
         }
         _ => return None,
     };
@@ -1323,37 +1320,15 @@ fn unknown_default_inline_failure_constructor(
     })
 }
 
-fn unknown_default_inline_failure_method_constructor(
-    receiver: &Expr,
-    method: &str,
-    args: &[arcweft_lang_syntax::expr::CallArg],
-) -> Option<String> {
-    if !matches!(receiver, Expr::Path(namespace) if namespace == "InlineFailure") {
-        return None;
-    }
-    if method != "fallback" {
-        return Some(format!("InlineFailure.{method}"));
-    }
-    args.iter().find_map(|arg| match arg {
-        arcweft_lang_syntax::expr::CallArg::Positional(value) => {
-            unknown_default_inline_fallback_value(value)
-        }
-        arcweft_lang_syntax::expr::CallArg::Named { name, value }
-            if name == "value" || name == "text" =>
-        {
-            unknown_default_inline_fallback_value(value)
-        }
-        arcweft_lang_syntax::expr::CallArg::Named { .. }
-        | arcweft_lang_syntax::expr::CallArg::Spread { .. } => None,
-    })
-}
-
 fn unknown_default_inline_fallback_value(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Path(path) => unknown_default_inline_fallback_atom(path),
         Expr::ShortVariant(name) => unknown_default_inline_fallback_atom(&format!(".{name}")),
-        Expr::Field { target, field } => match target.as_ref() {
-            Expr::Path(namespace) => unknown_default_inline_fallback_field(namespace, field),
+        Expr::Select(select) => match select.target() {
+            Expr::Path(namespace) => unknown_default_inline_fallback_field(
+                namespace.as_label(),
+                select.member().as_str(),
+            ),
             _ => None,
         },
         _ => None,
@@ -1393,7 +1368,11 @@ fn default_inline_policy_label(expr: &Expr) -> String {
     match expr {
         Expr::Path(path) => path.as_label().to_owned(),
         Expr::ShortVariant(name) => format!(".{name}"),
-        Expr::Field { target, field } => format!("{}.{field}", default_inline_policy_label(target)),
+        Expr::Select(select) => format!(
+            "{}.{}",
+            default_inline_policy_label(select.target()),
+            select.member().as_str()
+        ),
         _ => format!("{expr:?}"),
     }
 }

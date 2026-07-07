@@ -246,11 +246,8 @@ fn summarize_expr_control(expr: &Expr) -> ProjectFlowControlSummary {
         Expr::Call { callee, args } => {
             summary.merge(summarize_expr_call_control(callee, args));
         }
-        Expr::MethodCall { receiver, args, .. } => {
-            summary.merge(summarize_expr_call_control(receiver, args));
-        }
-        Expr::Field { target, .. }
-        | Expr::Try { expr: target }
+        Expr::Select(select) => summary.merge(summarize_expr_control(select.target())),
+        Expr::Try { expr: target }
         | Expr::Await { expr: target, .. }
         | Expr::Unary { expr: target, .. }
         | Expr::DialogueCall { callee: target, .. }
