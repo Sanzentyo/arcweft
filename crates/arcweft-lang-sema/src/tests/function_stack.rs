@@ -111,6 +111,57 @@ flow @flow.partial_call partial_call {
 }
 
 #[test]
+fn top_level_function_path_typechecks_as_function_value() {
+    let tree = parse_ok(
+        r"
+fn add(lhs: i64, rhs: i64) -> i64 {
+    return lhs + rhs
+}
+
+flow @flow.local_function_alias local_function_alias {
+    let f = add
+    let add_two = f(2i64)
+    let seven: i64 = add_two(5i64)
+    log.info(seven)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("top-level function value fixture lowers");
+    validate_typecheck_ready(&hir).expect("top-level function value fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(report.judgments.iter().any(|judgment| {
+        matches!(
+            &judgment.ty,
+            TypeKind::Function {
+                params,
+                return_type,
+            } if params.as_slice() == [TypeKind::I64, TypeKind::I64]
+                && return_type.as_ref() == &TypeKind::I64
+        )
+    }));
+    assert!(
+        report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::FunctionValueCall {
+                    callee: Some(callee),
+                    result_ty,
+                    arg_count: 1,
+                    ..
+                } if callee == "f" && result_ty.function_arity() == Some(1)
+            )
+        }),
+        "expected call through top-level function alias to record function-value evidence"
+    );
+}
+
+#[test]
 fn curried_function_declaration_preserves_call_group_semantics() {
     let tree = parse_ok(
         r"

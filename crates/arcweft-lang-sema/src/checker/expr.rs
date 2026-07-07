@@ -404,42 +404,47 @@ impl TypeChecker<'_> {
                 BorrowLocalState::Live(_) => {}
             }
         }
-        self.symbol_type(path).cloned().or_else(|| {
-            self.check_dotted_path_target(path).or_else(|| {
-                if path == "None" {
-                    return Some(TypeKind::Option(Box::new(TypeKind::Named("_".to_owned()))));
-                }
-                if path == "asset" {
-                    return Some(TypeKind::Named("AssetApi".to_owned()));
-                }
-                if path == "voice" {
-                    return Some(TypeKind::Named("VoiceApi".to_owned()));
-                }
-                if path == "state" {
-                    return Some(TypeKind::Named("GameState".to_owned()));
-                }
-                if path == "line" {
-                    return Some(TypeKind::Named("LineContext".to_owned()));
-                }
-                if path == "auto" {
-                    return Some(TypeKind::Named("Auto".to_owned()));
-                }
-                if matches!(path, "InlineFailure" | "InlineFallback" | "FallbackStyle") {
-                    return Some(TypeKind::Named(format!("{path}Namespace")));
-                }
-                // Short enum-variant expressions such as `.Instant` rely
-                // on expected type resolution in the full checker. The
-                // Phase 1 checker preserves unknown short variants as
-                // variant values after registered symbols and patch names
-                // had a chance to resolve.
-                if path.starts_with('.') {
-                    return Some(TypeKind::Named("Variant".to_owned()));
-                }
-                self.errors
-                    .push(TypeCheckError::new(format!("unknown symbol `{path}`")));
-                None
-            })
-        })
+        if let Some(ty) = self.symbol_type(path).cloned() {
+            return Some(ty);
+        }
+        if let Some(ty) = self.function_value_type(path) {
+            return Some(ty);
+        }
+        if let Some(ty) = self.check_dotted_path_target(path) {
+            return Some(ty);
+        }
+        if path == "None" {
+            return Some(TypeKind::Option(Box::new(TypeKind::Named("_".to_owned()))));
+        }
+        if path == "asset" {
+            return Some(TypeKind::Named("AssetApi".to_owned()));
+        }
+        if path == "voice" {
+            return Some(TypeKind::Named("VoiceApi".to_owned()));
+        }
+        if path == "state" {
+            return Some(TypeKind::Named("GameState".to_owned()));
+        }
+        if path == "line" {
+            return Some(TypeKind::Named("LineContext".to_owned()));
+        }
+        if path == "auto" {
+            return Some(TypeKind::Named("Auto".to_owned()));
+        }
+        if matches!(path, "InlineFailure" | "InlineFallback" | "FallbackStyle") {
+            return Some(TypeKind::Named(format!("{path}Namespace")));
+        }
+        // Short enum-variant expressions such as `.Instant` rely
+        // on expected type resolution in the full checker. The
+        // Phase 1 checker preserves unknown short variants as
+        // variant values after registered symbols and patch names
+        // had a chance to resolve.
+        if path.starts_with('.') {
+            return Some(TypeKind::Named("Variant".to_owned()));
+        }
+        self.errors
+            .push(TypeCheckError::new(format!("unknown symbol `{path}`")));
+        None
     }
 
     fn check_record_expr(&mut self, path: &str, fields: &[(String, Expr)]) -> TypeKind {

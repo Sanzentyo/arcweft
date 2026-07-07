@@ -673,6 +673,11 @@ impl TypeChecker<'_> {
             .or_else(|| self.env.function_signature(name))
     }
 
+    fn function_value_type(&self, name: &str) -> Option<TypeKind> {
+        self.function_signature(name)
+            .and_then(FunctionSignature::function_value_type)
+    }
+
     fn nominal_field_type(&self, receiver: &TypeKind, field: &str) -> Option<TypeKind> {
         match receiver {
             TypeKind::Named(name) if name == TypeKind::ACTION_EVENT_TYPE_NAME => {

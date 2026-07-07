@@ -90,6 +90,10 @@ Source briefs:
   treating those path callees as unknown named functions.
 - Function value calls in sema now support partial application by returning a
   remaining `TypeKind::Function` when fewer positional arguments are supplied.
+- Bare top-level function names now type-check as first-class function values
+  in value position when their `FunctionSignature` has parameter metadata. For
+  example, `let f = add; let add_two = f(2i64)` records function-value call
+  evidence for `f`.
 - Sema now preserves curried declaration call-group boundaries for top-level
   and extern capability function signatures. For example,
   `tuple_tail(a, b)(c) -> (i64, i64, i64)` is modeled as a first call group
@@ -181,9 +185,8 @@ Source briefs:
   helper signatures, but named/spread fallback arguments, curried call-group
   metadata, and non-helper callable runtime lowering remain open.
 - Curried declaration call-group metadata is now preserved for sema/runtime-plan
-  callable application. Bare top-level function names in sema value position,
-  trait method curried group metadata, and AWBC closure/apply allocation remain
-  open.
+  callable application. Trait method curried group metadata and AWBC
+  closure/apply allocation remain open.
 - Closure `return expr` now binds to the nearest closure/function-like sema
   boundary for type checking. Strict runtime block lowering already preserves
   simple early-return shape by discarding later block statements after a
@@ -273,9 +276,9 @@ aliases a pure helper, partially applies that local function value, and applies
 the resulting local function value again.
 
 The sema typed-lowering evidence cut has passing coverage for function-valued
-symbol calls, local function-value calls after partial application,
-expected-function evidence for `_` placeholder abstraction, and full
-`arcweft-lang-sema` tests.
+symbol calls, bare top-level function names in value position, local
+function-value calls after partial application, expected-function evidence for
+`_` placeholder abstraction, and full `arcweft-lang-sema` tests.
 
 The compiler/runtime-plan typed evidence cut has passing coverage for
 function-valued path calls lowering to `RuntimeExpr::Apply` only when typecheck

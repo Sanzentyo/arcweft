@@ -139,6 +139,14 @@ impl FunctionSignature {
     pub const fn remaining_call_groups(&self) -> usize {
         self.remaining_call_groups
     }
+
+    /// Type of this callable when referenced as a first-class function value.
+    pub fn function_value_type(&self) -> Option<TypeKind> {
+        self.checks_args.then(|| TypeKind::Function {
+            params: self.params.iter().map(|param| param.ty.clone()).collect(),
+            return_type: Box::new(self.return_type.clone()),
+        })
+    }
 }
 
 impl FunctionParam {
