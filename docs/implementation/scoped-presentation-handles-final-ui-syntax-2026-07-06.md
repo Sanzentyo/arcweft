@@ -1664,6 +1664,28 @@ The structure audit reported 0 errors and 144 warnings after this slice.
 
 The structure audit reported 0 errors and 146 warnings after this slice.
 
+## 2026-07-07 Scoped Lifecycle Parity Evidence Refresh
+
+After the retained View program substrate rename, the representative non-pinned
+scoped-handle lifecycle and parity tests were rerun against current `main`.
+They confirm that save/load, rollback, lexical cleanup stacks, Native Agent
+capture filtering, Web prepared-frame filtering, and authored `image(...)` /
+`view(...)` lifecycle cleanup still agree after the final View terminology
+renames.
+
+Validation:
+
+- `cargo test -p arcweft-runtime-driver --all-features --test awbc_product_session -- --nocapture`
+- `cargo test -p arcweft-cli --all-features --test check agent_observe_reports_authored_scroll_view_capture_and_release_filtering -- --nocapture`
+- `cargo test -p arcweft-player-web --all-features --test parity web_runner_ -- --nocapture`
+- `cargo test -p arcweft-player-web --all-features web_hidden -- --nocapture`
+- `cargo test -p arcweft-cli --all-features --lib image_object_capture_scope_reports_missing_scope_diagnostic -- --nocapture`
+- `cargo test -p arcweft-cli --all-features --test check agent_observe_reports_missing_scope_for_released_image_handle_object -- --nocapture`
+
+No implementation drift was found in this refresh. Remaining non-goals are the
+pinned exact PNG baseline promotion lane and the split scroll virtualization /
+broader retained-content policy request.
+
 ## Remaining Work
 
 - Product AWBC session save/load now persists the presentation handle table,
