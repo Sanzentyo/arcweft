@@ -72,7 +72,9 @@ impl TypeChecker<'_> {
         let expected_return = declared_return_type
             .as_ref()
             .or_else(|| expected_function.map(|(_, return_type)| return_type));
+        self.expected_returns.push(expected_return.cloned());
         let body_type = self.check_expr_with_expected(body, expected_return);
+        self.expected_returns.pop();
         self.restore_scoped_locals(local_snapshot);
         if let (Some(expected_return), Some(body_type)) = (expected_return, body_type.as_ref())
             && !self.types_compatible(expected_return, body_type)

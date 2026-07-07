@@ -1871,7 +1871,7 @@ impl TypeChecker<'_> {
     }
 
     fn check_try_result_context(&mut self, actual_error: &TypeKind) {
-        match self.expected_returns.last().cloned() {
+        match self.expected_returns.last().cloned().flatten() {
             Some(TypeKind::Result { error, .. }) => {
                 let expected_error = error.as_ref().clone();
                 if !self.types_compatible(&expected_error, actual_error) {
@@ -1890,7 +1890,7 @@ impl TypeChecker<'_> {
     }
 
     fn check_try_option_context(&mut self) {
-        match self.expected_returns.last() {
+        match self.expected_returns.last().and_then(Option::as_ref) {
             Some(TypeKind::Option(_)) | None => {}
             Some(return_ty) => {
                 self.errors.push(TypeCheckError::new(format!(

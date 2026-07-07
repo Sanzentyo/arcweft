@@ -351,7 +351,7 @@ struct TypeChecker<'a> {
     available_lifetimes: Vec<LifetimeScopeKind>,
     effect_capabilities: HashSet<String>,
     effect_collector: EffectCollector,
-    expected_returns: Vec<TypeKind>,
+    expected_returns: Vec<Option<TypeKind>>,
     partial_placeholder_stack: Vec<TypeKind>,
     yield_stack: Vec<YieldContext>,
     stats: TypeCheckStats,

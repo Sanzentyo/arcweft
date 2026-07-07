@@ -313,6 +313,54 @@ flow @flow.closure_return_mismatch closure_return_mismatch {
 }
 
 #[test]
+fn closure_return_statement_uses_nearest_closure_boundary() {
+    let tree = parse_ok(
+        r"
+fn closure_boundary() -> i64 {
+    let returns_bool = || -> bool {
+        return true
+    }
+    return 1i64
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("closure boundary fixture lowers");
+    validate_typecheck_ready(&hir).expect("closure boundary fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn closure_return_statement_checks_declared_return_type() {
+    let tree = parse_ok(
+        r"
+flow @flow.closure_return_statement_mismatch closure_return_statement_mismatch {
+    let bad = || -> bool {
+        return 1i64
+    }
+    log.info(bad())
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("closure return statement fixture lowers");
+    validate_typecheck_ready(&hir).expect("closure return statement fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| diagnostic
+            .message()
+            .contains("return value must have type bool, found i64")),
+        "expected closure return statement mismatch diagnostic, got {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
 fn curried_closure_return_type_annotation_preserves_remaining_function() {
     let tree = parse_ok(
         r"

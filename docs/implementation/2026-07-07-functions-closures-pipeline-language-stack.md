@@ -137,6 +137,13 @@ Source briefs:
   types and the block body result. Curried closures such as
   `|min: i64| |value: i64| -> bool { value >= min }` typecheck as
   `i64 -> (i64 -> bool)`.
+- Sema now treats closure bodies as their own return boundary. `return expr`
+  inside `|| -> Type { ... }` checks against the closure return type rather
+  than an outer function/flow return type, and unannotated closures still block
+  outer return expectations from leaking inward.
+- Return statements now compare their value type against the active
+  function-like return boundary instead of relying only on tail-expression body
+  checking. This catches mismatches such as `|| -> bool { return 1i64 }`.
 - Flow statement parsing now keeps multiline return-typed closure literals
   together as a single `let` statement by tracking existing CST punctuation
   depth while consuming statement continuations.
@@ -177,9 +184,12 @@ Source briefs:
   callable application. Bare top-level function names in sema value position,
   trait method curried group metadata, and AWBC closure/apply allocation remain
   open.
-- Closure return type annotation is implemented, but `return expr` inside a
-  closure is not yet re-bound to the nearest closure/function-like boundary in
-  this cut. The currently validated path is final block expression typing.
+- Closure `return expr` now binds to the nearest closure/function-like sema
+  boundary for type checking. Strict runtime block lowering already preserves
+  simple early-return shape by discarding later block statements after a
+  lowered `return`, but structured closure control-flow lowering beyond the
+  current `RuntimeExpr::Function` subset remains tied to the AWBC closure/apply
+  work.
 - Method-chain fallback sugar resolves after existing env/builtin/integer/
   handle/trait method checks, preserving real methods before data-last fallback.
   Ambiguity diagnostics that compare real method and fallback candidates remain

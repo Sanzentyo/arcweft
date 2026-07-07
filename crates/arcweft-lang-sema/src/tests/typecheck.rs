@@ -1484,7 +1484,7 @@ fn typecheck_accepts_diverging_if_else_function_body_for_declared_return() {
         r#"
 character @character.alice Alice as alice {}
 
-fn i_to_string(i: i32) -> string {
+fn i_to_string(i: i32) -> String {
     if i == 0 {
         return "first"
     } else if i == 1 {

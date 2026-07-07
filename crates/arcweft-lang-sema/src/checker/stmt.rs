@@ -131,7 +131,7 @@ impl TypeChecker<'_> {
     }
 
     fn check_return_stmt(&mut self, expr: &Expr) {
-        let expected = self.expected_returns.last().cloned();
+        let expected = self.expected_returns.last().cloned().flatten();
         let ty = self.check_expr_with_expected(expr, expected.as_ref());
         if let Some(ty) = ty.as_ref() {
             self.record_type_judgment(
@@ -142,6 +142,15 @@ impl TypeChecker<'_> {
                 ty.clone(),
                 expected.as_ref(),
             );
+        }
+        if let (Some(expected), Some(actual)) = (expected.as_ref(), ty.as_ref())
+            && !self.types_compatible(expected, actual)
+        {
+            self.errors.push(TypeCheckError::new(format!(
+                "return value must have type {}, found {}",
+                type_kind_label(expected),
+                type_kind_label(actual)
+            )));
         }
         self.reject_borrow_escape(ty.as_ref(), "function or flow return");
     }

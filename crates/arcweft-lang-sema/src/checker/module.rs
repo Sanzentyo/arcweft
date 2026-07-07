@@ -291,14 +291,10 @@ impl TypeChecker<'_> {
         expected: Option<&TypeKind>,
         check: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        if let Some(expected) = expected {
-            self.expected_returns.push(expected.clone());
-            let result = check(self);
-            self.expected_returns.pop();
-            result
-        } else {
-            check(self)
-        }
+        self.expected_returns.push(expected.cloned());
+        let result = check(self);
+        self.expected_returns.pop();
+        result
     }
 
     fn with_runtime_for_iteration_evidence<R>(&mut self, check: impl FnOnce(&mut Self) -> R) -> R {
