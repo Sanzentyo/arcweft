@@ -490,6 +490,177 @@ fn call_arg_contains_pipe_left(arg: &CallArg) -> bool {
     }
 }
 
+fn substitute_partial_placeholder(expr: &Expr, param_name: &str) -> Expr {
+    match expr {
+        Expr::Placeholder(Placeholder::Partial) => Expr::Path(param_name.into()),
+        Expr::Tuple(items) => Expr::Tuple(
+            items
+                .iter()
+                .map(|item| substitute_partial_placeholder(item, param_name))
+                .collect(),
+        ),
+        Expr::BracketSeq(items) => Expr::BracketSeq(
+            items
+                .iter()
+                .map(|item| substitute_partial_placeholder(item, param_name))
+                .collect(),
+        ),
+        Expr::ArrayRepeat { value, len } => Expr::ArrayRepeat {
+            value: Box::new(substitute_partial_placeholder(value, param_name)),
+            len: Box::new(substitute_partial_placeholder(len, param_name)),
+        },
+        Expr::Call { callee, args } => Expr::Call {
+            callee: Box::new(substitute_partial_placeholder(callee, param_name)),
+            args: args
+                .iter()
+                .map(|arg| substitute_partial_placeholder_arg(arg, param_name))
+                .collect(),
+        },
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } => Expr::MethodCall {
+            receiver: Box::new(substitute_partial_placeholder(receiver, param_name)),
+            method: method.clone(),
+            args: args
+                .iter()
+                .map(|arg| substitute_partial_placeholder_arg(arg, param_name))
+                .collect(),
+        },
+        Expr::Field { target, field } => Expr::Field {
+            target: Box::new(substitute_partial_placeholder(target, param_name)),
+            field: field.clone(),
+        },
+        Expr::Index { target, index } => Expr::Index {
+            target: Box::new(substitute_partial_placeholder(target, param_name)),
+            index: Box::new(substitute_partial_placeholder(index, param_name)),
+        },
+        Expr::Unary { op, expr } => Expr::Unary {
+            op: *op,
+            expr: Box::new(substitute_partial_placeholder(expr, param_name)),
+        },
+        Expr::Binary { lhs, op, rhs } => Expr::Binary {
+            lhs: Box::new(substitute_partial_placeholder(lhs, param_name)),
+            op: *op,
+            rhs: Box::new(substitute_partial_placeholder(rhs, param_name)),
+        },
+        Expr::Record { path, fields } => Expr::Record {
+            path: path.clone(),
+            fields: fields
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        name.clone(),
+                        substitute_partial_placeholder(value, param_name),
+                    )
+                })
+                .collect(),
+        },
+        Expr::RecordLiteral(fields) => Expr::RecordLiteral(
+            fields
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        name.clone(),
+                        substitute_partial_placeholder(value, param_name),
+                    )
+                })
+                .collect(),
+        ),
+        Expr::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => Expr::If {
+            condition: Box::new(substitute_partial_placeholder(condition, param_name)),
+            then_branch: Box::new(substitute_partial_placeholder(then_branch, param_name)),
+            else_branch: else_branch.as_deref().map(|else_branch| {
+                Box::new(substitute_partial_placeholder(else_branch, param_name))
+            }),
+        },
+        Expr::Try { expr } => Expr::Try {
+            expr: Box::new(substitute_partial_placeholder(expr, param_name)),
+        },
+        Expr::Await { expr, applies_try } => Expr::Await {
+            expr: Box::new(substitute_partial_placeholder(expr, param_name)),
+            applies_try: *applies_try,
+        },
+        _ => expr.clone(),
+    }
+}
+
+fn substitute_partial_placeholder_arg(arg: &CallArg, param_name: &str) -> CallArg {
+    match arg {
+        CallArg::Positional(value) => {
+            CallArg::Positional(substitute_partial_placeholder(value, param_name))
+        }
+        CallArg::Named { name, value } => CallArg::Named {
+            name: name.clone(),
+            value: Box::new(substitute_partial_placeholder(value, param_name)),
+        },
+        CallArg::Spread { value } => CallArg::Spread {
+            value: Box::new(substitute_partial_placeholder(value, param_name)),
+        },
+    }
+}
+
+fn expr_contains_partial_placeholder(expr: &Expr) -> bool {
+    match expr {
+        Expr::Placeholder(Placeholder::Partial) => true,
+        Expr::Tuple(items) | Expr::BracketSeq(items) => {
+            items.iter().any(expr_contains_partial_placeholder)
+        }
+        Expr::ArrayRepeat { value, len }
+        | Expr::Binary {
+            lhs: value,
+            rhs: len,
+            ..
+        } => expr_contains_partial_placeholder(value) || expr_contains_partial_placeholder(len),
+        Expr::Call { callee, args } => {
+            expr_contains_partial_placeholder(callee)
+                || args.iter().any(call_arg_contains_partial_placeholder)
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            expr_contains_partial_placeholder(receiver)
+                || args.iter().any(call_arg_contains_partial_placeholder)
+        }
+        Expr::Field { target, .. } | Expr::Try { expr: target } => {
+            expr_contains_partial_placeholder(target)
+        }
+        Expr::Index { target, index } => {
+            expr_contains_partial_placeholder(target) || expr_contains_partial_placeholder(index)
+        }
+        Expr::Unary { expr, .. } | Expr::Await { expr, .. } => {
+            expr_contains_partial_placeholder(expr)
+        }
+        Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => fields
+            .iter()
+            .any(|(_, value)| expr_contains_partial_placeholder(value)),
+        Expr::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            expr_contains_partial_placeholder(condition)
+                || expr_contains_partial_placeholder(then_branch)
+                || else_branch
+                    .as_deref()
+                    .is_some_and(expr_contains_partial_placeholder)
+        }
+        _ => false,
+    }
+}
+
+fn call_arg_contains_partial_placeholder(arg: &CallArg) -> bool {
+    match arg {
+        CallArg::Positional(value) => expr_contains_partial_placeholder(value),
+        CallArg::Named { value, .. } | CallArg::Spread { value } => {
+            expr_contains_partial_placeholder(value)
+        }
+    }
+}
+
 fn lower_runtime_bracket_seq(items: &[Expr]) -> RuntimeExpr {
     let lowered = items.iter().map(lower_runtime_expr).collect::<Vec<_>>();
     fold_value_sequence(lowered)
@@ -1099,6 +1270,21 @@ fn lower_strict_map_method_call(
     };
     if arg.name().is_some() || arg.is_spread() {
         return None;
+    }
+    if expr_contains_partial_placeholder(arg.value()) {
+        let param_name = "_item";
+        let body = substitute_partial_placeholder(arg.value(), param_name);
+        return Some(
+            lower_runtime_expr_strict_with_helpers(receiver, helpers).and_then(|source| {
+                lower_runtime_expr_strict_with_helpers(&body, helpers).map(|body| {
+                    RuntimeExpr::Map {
+                        source: Box::new(source),
+                        param: param_name.to_owned(),
+                        body: Box::new(body),
+                    }
+                })
+            }),
+        );
     }
     let Expr::Closure { params, body } = arg.value() else {
         return None;
@@ -1860,6 +2046,36 @@ mod tests {
                         RuntimeExpr::Value(_),
                         RuntimeExpr::Local(name),
                     ] if name == "value")
+        ));
+    }
+
+    #[test]
+    fn strict_runtime_lowers_partial_placeholder_map_body() {
+        let expr = Expr::MethodCall {
+            receiver: Box::new(Expr::Path("values".into())),
+            method: "map".to_owned(),
+            args: vec![CallArg::Positional(Expr::Binary {
+                lhs: Box::new(Expr::Placeholder(Placeholder::Partial)),
+                op: BinaryOp::Add,
+                rhs: Box::new(Expr::Literal(Literal::Int {
+                    raw: "1i64".to_owned(),
+                    value: 1,
+                    suffix: Some("i64".to_owned()),
+                })),
+            })],
+        };
+
+        let lowered = lower_runtime_expr_strict(&expr).expect("partial map lowers");
+
+        assert!(matches!(
+            lowered,
+            RuntimeExpr::Map { param, body, .. }
+                if param == "_item"
+                    && matches!(
+                        body.as_ref(),
+                        RuntimeExpr::Binary { lhs, .. }
+                            if matches!(lhs.as_ref(), RuntimeExpr::Local(name) if name == "_item")
+                    )
         ));
     }
 

@@ -2116,6 +2116,36 @@ flow @flow.map_types map_types {
 }
 
 #[test]
+fn typechecks_partial_placeholder_function_and_vec_map() {
+    let tree = parse_ok(
+        r"
+struct Choice {
+    label: String,
+    score: i64,
+    enabled: bool,
+}
+
+flow @flow.partial partial {
+    let high: i64 -> bool = _ > 80i64
+    let labels: Vec<String> = choices.map(_.label)
+    let flags: Vec<bool> = choices.map(_.enabled)
+    log.info(high)
+    log.info(labels)
+    log.info(flags)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("partial placeholder fixture lowers");
+    validate_typecheck_ready(&hir).expect("partial placeholder fixture is structured");
+    let env = TypeCheckEnv::new().with_symbol(
+        "choices",
+        TypeKind::Vec(Box::new(TypeKind::Named("Choice".to_owned()))),
+    );
+
+    typecheck_hir(&hir, &env).expect("partial placeholder functions typecheck");
+}
+
+#[test]
 fn typechecks_array_map_closure_result_and_sum() {
     let tree = parse_ok(
         r"

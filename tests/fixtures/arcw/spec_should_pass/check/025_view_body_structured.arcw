@@ -1,4 +1,4 @@
-pub fn current_scene(state: GameState) -> Bool {
+pub fn current_scene(state: GameState) -> bool {
     true
 }
 

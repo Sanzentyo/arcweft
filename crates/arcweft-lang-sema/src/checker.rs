@@ -304,6 +304,7 @@ struct TypeChecker<'a> {
     effect_capabilities: HashSet<String>,
     effect_collector: EffectCollector,
     expected_returns: Vec<TypeKind>,
+    partial_placeholder_stack: Vec<TypeKind>,
     yield_stack: Vec<YieldContext>,
     stats: TypeCheckStats,
     judgments: Vec<TypeJudgment>,
@@ -436,6 +437,7 @@ impl TypeChecker<'_> {
                 .collect(),
             effect_collector: EffectCollector::new(available_effect_set(env)),
             expected_returns: Vec::new(),
+            partial_placeholder_stack: Vec::new(),
             yield_stack: Vec::new(),
             stats: TypeCheckStats::default(),
             judgments: Vec::new(),
@@ -824,6 +826,23 @@ fn types_compatible(expected: &TypeKind, actual: &TypeKind) -> bool {
             },
         ) => expected_len == actual_len && types_compatible(expected_item, actual_item),
         (TypeKind::Range(expected), TypeKind::Range(actual)) => types_compatible(expected, actual),
+        (
+            TypeKind::Function {
+                params: expected_params,
+                return_type: expected_return,
+            },
+            TypeKind::Function {
+                params: actual_params,
+                return_type: actual_return,
+            },
+        ) => {
+            expected_params.len() == actual_params.len()
+                && expected_params
+                    .iter()
+                    .zip(actual_params.iter())
+                    .all(|(expected, actual)| types_compatible(expected, actual))
+                && types_compatible(expected_return, actual_return)
+        }
         _ => false,
     }
 }

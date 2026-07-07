@@ -10,7 +10,9 @@ impl TypeChecker<'_> {
                 ));
                 None
             }
-            Placeholder::Partial => None,
+            Placeholder::Partial => self
+                .current_partial_placeholder_type()
+                .or_else(|| self.reject_partial_placeholder_without_expected_type()),
         }
     }
 

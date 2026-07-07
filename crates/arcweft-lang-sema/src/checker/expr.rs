@@ -22,11 +22,13 @@ mod agent;
 mod builtin;
 mod callable;
 mod closure;
+mod partial;
 mod pipe;
 mod range;
 mod support;
 
 use builtin::{BuiltinCallSpec, CapabilityFunctionSpec};
+use partial::expr_contains_partial_placeholder;
 use support::{
     BuiltinCollectionMethodCallOutcome, ChoicePatternCoverage, TraitMethodCallOutcome,
     agent_action_result_field_type, agent_action_target_field_type, agent_bbox_field_type,
@@ -64,7 +66,14 @@ impl TypeChecker<'_> {
         expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
         self.stats.expressions += 1;
-        let ty = self.check_expr_kind_with_expected(expr, expected);
+        let ty = if let Some(expected @ TypeKind::Function { .. }) = expected
+            && !matches!(expr, Expr::Closure { .. })
+            && expr_contains_partial_placeholder(expr)
+        {
+            self.check_partial_placeholder_abstraction_expr(expr, expected)
+        } else {
+            self.check_expr_kind_with_expected(expr, expected)
+        };
         if let Some(ty) = ty.as_ref() {
             self.record_type_judgment(
                 TypeJudgmentSubject::Expr {
@@ -133,7 +142,7 @@ impl TypeChecker<'_> {
             Expr::Record { path, fields } => Some(self.check_record_expr(path, fields)),
             Expr::RecordLiteral(fields) => Some(self.check_record_literal_expr(fields)),
             Expr::Binary { lhs, op, rhs } => self.check_binary_expr(lhs, *op, rhs),
-            Expr::Closure { params, body } => self.check_closure_expr(params, body),
+            Expr::Closure { params, body } => Some(self.check_closure_expr(params, body, expected)),
             Expr::Unary { op, expr } => Some(self.check_unary_expr(*op, expr, expected)),
             Expr::Block { statements, value } => {
                 self.check_block_expr_with_expected(statements, value.as_deref(), expected)
