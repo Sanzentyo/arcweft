@@ -32,7 +32,7 @@ use arcweft_lang_syntax::{
         ids::{EntityRef, EntityRefSyntax, IdRef},
         items::{EntityDeclKind, FunctionKind},
         line_plan::{CancelRuleSyntax, LinePlanItem, TriggerPattern},
-        pattern::{Pattern, VariantPatternPayload},
+        pattern::{Pattern, RecordPatternField, VariantPatternPayload},
         source::{
             SourceBackpressurePolicy, SourceEventPattern, SourceHeader, SourcePrivacyPolicy,
             SourceReplayPolicy,
@@ -64,7 +64,7 @@ use helpers::{
     is_character_entity_literal, is_dialogue_callee_type, is_drop_callee, is_local_ident,
     iter_item_type, merge_line_output, normalize_choice_type, pattern_bindings_with_fallback,
     pattern_bindings_with_nominal_fields, source_return_types, stmts_diverge, stream_return_types,
-    type_ref_kind, typed_pattern_binding, unify_loop_break_types,
+    type_ref_kind, typed_pattern_binding, unify_loop_break_types, variant_payload_type_for_name,
 };
 
 /// Verifies that lowered HIR no longer contains raw expression fragments.
@@ -1404,15 +1404,13 @@ fn collect_function_param_higher_order_bindings(
             let TypeKind::Tuple(item_types) = ty else {
                 return;
             };
-            for (index, (item, item_ty)) in items.iter().zip(item_types).enumerate() {
-                collect_function_param_higher_order_bindings(
-                    item,
-                    item_ty,
-                    selector_with_tuple_index(&selector, index),
-                    nominal_fields,
-                    bindings,
-                );
-            }
+            collect_tuple_function_param_higher_order_bindings(
+                items,
+                item_types,
+                &selector,
+                nominal_fields,
+                bindings,
+            );
         }
         Pattern::Whole { name, pattern } => {
             if is_local_ident(name) && matches!(ty, TypeKind::Function { .. }) {
@@ -1431,48 +1429,49 @@ fn collect_function_param_higher_order_bindings(
             );
         }
         Pattern::Record { fields, .. } => {
-            for field in fields {
-                let Some(field_ty) = pattern_type_hint(field.pattern()).or_else(|| {
-                    record_pattern_field_type(pattern, ty, field.name(), nominal_fields)
-                }) else {
-                    continue;
-                };
-                collect_function_param_higher_order_bindings(
-                    field.pattern(),
-                    &field_ty,
-                    selector_with_record_field(&selector, field.name()),
-                    nominal_fields,
-                    bindings,
-                );
-            }
+            collect_record_function_param_higher_order_bindings(
+                pattern,
+                fields,
+                ty,
+                &selector,
+                nominal_fields,
+                bindings,
+            );
         }
         Pattern::Variant {
             payload: Some(VariantPatternPayload::Record { fields, rest: _ }),
+            name,
             ..
         } => {
-            for field in fields {
-                let Some(field_ty) = pattern_type_hint(field.pattern()) else {
-                    continue;
-                };
-                collect_function_param_higher_order_bindings(
-                    field.pattern(),
-                    &field_ty,
-                    selector.clone(),
-                    nominal_fields,
-                    bindings,
-                );
-            }
+            collect_variant_record_function_param_higher_order_bindings(
+                name,
+                fields,
+                pattern,
+                ty,
+                &selector,
+                nominal_fields,
+                bindings,
+            );
         }
         Pattern::BracketSeq { items, .. }
         | Pattern::Variant {
             payload: Some(VariantPatternPayload::Tuple(items)),
+            name: _,
             ..
         } => {
-            for item in items {
-                collect_function_param_higher_order_bindings(
-                    item,
-                    &TypeKind::Unit,
-                    selector.clone(),
+            if let Pattern::Variant { name, .. } = pattern {
+                collect_variant_tuple_function_param_higher_order_bindings(
+                    name,
+                    items,
+                    ty,
+                    &selector,
+                    nominal_fields,
+                    bindings,
+                );
+            } else {
+                collect_bracket_seq_function_param_higher_order_bindings(
+                    items,
+                    &selector,
                     nominal_fields,
                     bindings,
                 );
@@ -1486,6 +1485,128 @@ fn collect_function_param_higher_order_bindings(
         | Pattern::Discard
         | Pattern::Raw(_)
         | Pattern::Variant { payload: None, .. } => {}
+    }
+}
+
+fn collect_tuple_function_param_higher_order_bindings(
+    items: &[Pattern],
+    item_types: &[TypeKind],
+    selector: &FunctionParamSelector,
+    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
+    bindings: &mut Vec<FunctionParamHigherOrderBinding>,
+) {
+    for (index, (item, item_ty)) in items.iter().zip(item_types).enumerate() {
+        collect_function_param_higher_order_bindings(
+            item,
+            item_ty,
+            selector_with_tuple_index(selector, index),
+            nominal_fields,
+            bindings,
+        );
+    }
+}
+
+fn collect_record_function_param_higher_order_bindings(
+    pattern: &Pattern,
+    fields: &[RecordPatternField],
+    ty: &TypeKind,
+    selector: &FunctionParamSelector,
+    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
+    bindings: &mut Vec<FunctionParamHigherOrderBinding>,
+) {
+    for field in fields {
+        let Some(field_ty) = pattern_type_hint(field.pattern())
+            .or_else(|| record_pattern_field_type(pattern, ty, field.name(), nominal_fields))
+        else {
+            continue;
+        };
+        collect_function_param_higher_order_bindings(
+            field.pattern(),
+            &field_ty,
+            selector_with_record_field(selector, field.name()),
+            nominal_fields,
+            bindings,
+        );
+    }
+}
+
+fn collect_variant_record_function_param_higher_order_bindings(
+    variant: &str,
+    fields: &[RecordPatternField],
+    pattern: &Pattern,
+    ty: &TypeKind,
+    selector: &FunctionParamSelector,
+    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
+    bindings: &mut Vec<FunctionParamHigherOrderBinding>,
+) {
+    let payload_ty = variant_payload_type_for_name(variant, Some(ty));
+    let payload_selector = selector_with_variant_payload(selector, variant);
+    for field in fields {
+        let Some(field_ty) = pattern_type_hint(field.pattern()).or_else(|| {
+            payload_ty.as_ref().and_then(|payload_ty| {
+                record_pattern_field_type(pattern, payload_ty, field.name(), nominal_fields)
+            })
+        }) else {
+            continue;
+        };
+        collect_function_param_higher_order_bindings(
+            field.pattern(),
+            &field_ty,
+            selector_with_record_field(&payload_selector, field.name()),
+            nominal_fields,
+            bindings,
+        );
+    }
+}
+
+fn collect_variant_tuple_function_param_higher_order_bindings(
+    variant: &str,
+    items: &[Pattern],
+    ty: &TypeKind,
+    selector: &FunctionParamSelector,
+    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
+    bindings: &mut Vec<FunctionParamHigherOrderBinding>,
+) {
+    let Some(payload_ty) = variant_payload_type_for_name(variant, Some(ty)) else {
+        return;
+    };
+    let payload_selector = selector_with_variant_payload(selector, variant);
+    if items.len() == 1 {
+        collect_function_param_higher_order_bindings(
+            &items[0],
+            &payload_ty,
+            payload_selector,
+            nominal_fields,
+            bindings,
+        );
+        return;
+    }
+    let TypeKind::Tuple(item_types) = payload_ty else {
+        return;
+    };
+    collect_tuple_function_param_higher_order_bindings(
+        items,
+        &item_types,
+        &payload_selector,
+        nominal_fields,
+        bindings,
+    );
+}
+
+fn collect_bracket_seq_function_param_higher_order_bindings(
+    items: &[Pattern],
+    selector: &FunctionParamSelector,
+    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
+    bindings: &mut Vec<FunctionParamHigherOrderBinding>,
+) {
+    for item in items {
+        collect_function_param_higher_order_bindings(
+            item,
+            &TypeKind::Unit,
+            selector.clone(),
+            nominal_fields,
+            bindings,
+        );
     }
 }
 
@@ -1513,6 +1634,30 @@ fn selector_with_record_field(
     field: &str,
 ) -> FunctionParamSelector {
     let segment = FunctionParamSelectorSegment::RecordField(field.to_owned());
+    match selector {
+        FunctionParamSelector::Root => FunctionParamSelector::Path(vec![segment]),
+        FunctionParamSelector::TupleIndex(path) => {
+            let mut path = path
+                .iter()
+                .copied()
+                .map(FunctionParamSelectorSegment::TupleIndex)
+                .collect::<Vec<_>>();
+            path.push(segment);
+            FunctionParamSelector::Path(path)
+        }
+        FunctionParamSelector::Path(path) => {
+            let mut path = path.clone();
+            path.push(segment);
+            FunctionParamSelector::Path(path)
+        }
+    }
+}
+
+fn selector_with_variant_payload(
+    selector: &FunctionParamSelector,
+    variant: &str,
+) -> FunctionParamSelector {
+    let segment = FunctionParamSelectorSegment::VariantPayload(normalize_variant_name(variant));
     match selector {
         FunctionParamSelector::Root => FunctionParamSelector::Path(vec![segment]),
         FunctionParamSelector::TupleIndex(path) => {
@@ -1577,11 +1722,29 @@ fn selected_higher_order_argument<'a>(
                             .find_map(|(name, value)| (name == field).then_some(value))?;
                         actual = None;
                     }
+                    FunctionParamSelectorSegment::VariantPayload(variant) => {
+                        let Expr::Call { callee, args } = value else {
+                            return None;
+                        };
+                        let callee = expr_path_label(callee)?;
+                        if normalize_variant_name(&callee) != *variant {
+                            return None;
+                        }
+                        let [CallArg::Positional(payload)] = args.as_slice() else {
+                            return None;
+                        };
+                        value = payload;
+                        actual = None;
+                    }
                 }
             }
             Some((value, actual.unwrap_or(fallback_ty)))
         }
     }
+}
+
+fn normalize_variant_name(name: &str) -> String {
+    name.strip_prefix('.').unwrap_or(name).to_owned()
 }
 
 fn pattern_type_hint(pattern: &Pattern) -> Option<TypeKind> {

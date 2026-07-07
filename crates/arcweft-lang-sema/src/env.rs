@@ -53,6 +53,7 @@ pub enum FunctionParamSelector {
 pub enum FunctionParamSelectorSegment {
     TupleIndex(usize),
     RecordField(String),
+    VariantPayload(String),
 }
 
 /// Method signature tracked by the lightweight semantic environment.

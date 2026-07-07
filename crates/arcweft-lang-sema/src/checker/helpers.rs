@@ -497,7 +497,7 @@ pub(super) fn variant_payload_type_for_name(
     variant: &str,
     expr_type: Option<&TypeKind>,
 ) -> Option<TypeKind> {
-    match (variant, expr_type) {
+    match (variant.strip_prefix('.').unwrap_or(variant), expr_type) {
         ("Ok", Some(TypeKind::Result { ok, .. })) => Some(ok.as_ref().clone()),
         ("Err", Some(TypeKind::Result { error, .. })) => Some(error.as_ref().clone()),
         ("Some", _) => option_payload_type(expr_type),

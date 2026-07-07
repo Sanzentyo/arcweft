@@ -1493,6 +1493,74 @@ effects { }
 }
 
 #[test]
+fn option_variant_destructured_callback_composes_when_payload_is_called() {
+    let tree = parse_ok(
+        r#"
+fn use_loader(.Some(load): Option<String -> String>) -> String {
+    return load("story.arcw")
+}
+
+flow @flow.option_variant_destructured_callback_effect option_variant_destructured_callback_effect
+effects { }
+{
+    let body = use_loader(Some(|path: String| -> String {
+        adapter.read_text(path = path)
+    }))
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("option variant destructured fixture lowers");
+    validate_typecheck_ready(&hir).expect("option variant destructured fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("option variant destructured callback must compose body effects");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.option_variant_destructured_callback_effect")
+                && error.message().contains("fs.read")
+        }),
+        "expected option variant destructured callback effect diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
+fn result_err_variant_destructured_callback_composes_when_payload_is_called() {
+    let tree = parse_ok(
+        r#"
+fn use_loader(.Err(load): Result<String, String -> String>) -> String {
+    return load("story.arcw")
+}
+
+flow @flow.result_err_variant_destructured_callback_effect result_err_variant_destructured_callback_effect
+effects { }
+{
+    let body = use_loader(Err(|path: String| -> String {
+        adapter.read_text(path = path)
+    }))
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("result variant destructured fixture lowers");
+    validate_typecheck_ready(&hir).expect("result variant destructured fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("result variant destructured callback must compose body effects");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.result_err_variant_destructured_callback_effect")
+                && error.message().contains("fs.read")
+        }),
+        "expected result variant destructured callback effect diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn curried_higher_order_function_argument_composes_when_later_group_param_is_called() {
     let tree = parse_ok(
         r#"

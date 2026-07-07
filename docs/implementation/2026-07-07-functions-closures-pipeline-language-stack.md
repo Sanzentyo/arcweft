@@ -324,9 +324,14 @@ Source briefs:
   }: Spec` from record/record-literal call arguments, and untyped field
   bindings such as `Spec { load, path }: Spec` use nominal struct field types
   when the struct is available in the checked module. Variant destructured
-  callback selectors, callback invocations hidden inside returned/stored
-  closures, and LSP-facing closure effect evidence remain open. Save/load
-  currently has an explicit Product AWBC policy: runtime function values are
+  callback parameters now project the single payload of the built-in
+  `Option`/`Result` constructors used in expression calls, so `.Some(load):
+  Option<String -> String>` and `.Err(load): Result<String, String -> String>`
+  compose a caller-supplied closure when the callee invokes `load(...)`.
+  General user-defined enum constructor payload projection, callback
+  invocations hidden inside returned/stored closures, and LSP-facing closure
+  effect evidence remain open. Save/load currently has an explicit Product
+  AWBC policy: runtime function values are
   rejected as non-persistable until AWBC closure allocation and snapshot
   versioning are designed. Numeric fallback lints
   inside inferred closure bodies are implemented for scalar integer/float
@@ -553,3 +558,21 @@ audit 0 errors / 147 warnings. `cargo clippy --workspace --all-targets
 --all-features` still reports the existing `TraitMember` and `ImplMember`
 `large_enum_variant` warnings in `arcweft-lang-syntax/src/ast/items.rs`; no
 new clippy warning remains from the function/closure changes.
+
+The built-in variant payload callback selector cut has focused sema coverage
+for `.Some(load): Option<String -> String>` and `.Err(load): Result<String,
+String -> String>` destructured callback parameters. These compose a
+caller-supplied closure argument when the callee directly invokes the
+destructured payload binding, while the broader user-defined enum constructor
+payload contract remains open. This cut passed `cargo check -p
+arcweft-lang-sema --all-features`, focused `variant_destructured_callback`
+coverage, full `cargo test -p arcweft-lang-sema --all-features --quiet`,
+`cargo clippy -p arcweft-lang-sema --all-targets --all-features --quiet`,
+`cargo check --workspace --all-targets --all-features --quiet`, and
+`cargo clippy --workspace --all-targets --all-features --quiet`. Workspace
+clippy still reports unrelated warnings from the in-progress view/style dirty
+worktree and existing `arcweft-lang-syntax` large enum warnings. Structure
+audit still reports one unrelated error for
+`crates/arcweft-cli/src/app/bundle_view.rs` exceeding 2500 physical LOC in the
+current dirty worktree; no structure-audit error is introduced by the sema
+function-stack slice.
