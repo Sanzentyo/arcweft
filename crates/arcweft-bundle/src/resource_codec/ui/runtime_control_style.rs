@@ -4,10 +4,10 @@ use serde::{Deserialize, Serialize};
 
 use super::model::{
     RgbaColor, StyleAssignOp, SystemColor, UiInputKind, UiInputResource, UiTextResource,
-    ViewActionButtonResource, ViewElementKind, ViewElementState, ViewInteractionState,
-    ViewPartStyleRule, ViewProgramInstruction, ViewProgramResource, ViewRuntimeActionButton,
-    ViewRuntimeTextBlock, ViewRuntimeTextControl, ViewStyleApplyRef, ViewStyleDeclaration,
-    ViewStyleResource, ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue,
+    ViewElementKind, ViewElementState, ViewInteractionState, ViewPartStyleRule,
+    ViewProgramInstruction, ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeTextBlock,
+    ViewRuntimeTextControl, ViewStyleApplyRef, ViewStyleDeclaration, ViewStyleResource,
+    ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue,
 };
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -449,25 +449,6 @@ impl SystemColor {
 }
 
 impl ViewStyleResource {
-    pub fn runtime_text_control_style(
-        &self,
-        public_id: &str,
-        kind: UiInputKind,
-    ) -> ViewRuntimeControlStyleResolution {
-        self.resolve_runtime_control_style(public_id, kind.runtime_control_element(), None)
-    }
-
-    pub fn runtime_action_button_style(
-        &self,
-        button: &ViewActionButtonResource,
-    ) -> ViewRuntimeControlStyleResolution {
-        self.resolve_runtime_control_style(
-            &button.public_id,
-            ViewElementKind::Button,
-            button.style.as_deref(),
-        )
-    }
-
     pub fn runtime_surface_style(&self, public_id: &str) -> ViewRuntimeControlStyleResolution {
         self.resolve_runtime_control_style(public_id, ViewElementKind::Panel, None)
     }
@@ -479,9 +460,6 @@ impl ViewStyleResource {
         explicit_style: Option<&str>,
     ) -> ViewRuntimeControlStyleResolution {
         let mut resolution = ViewRuntimeControlStyleResolution::default();
-        if let Some(font_family) = self.inherited_runtime_control_font_family(element) {
-            resolution.style.normal.font_family = Some(font_family);
-        }
         for rule in &self.rules {
             if let Some(state) = matching_state(
                 &rule.selector,
@@ -510,41 +488,6 @@ impl ViewStyleResource {
         }
         resolution
     }
-
-    fn inherited_runtime_control_font_family(&self, element: ViewElementKind) -> Option<String> {
-        if !accepts_inherited_font_family(element) {
-            return None;
-        }
-        let mut inherited = None;
-        for rule in &self.rules {
-            if !selector_is_surface_inheritance_context(&rule.selector) {
-                continue;
-            }
-            for declaration in &rule.declarations {
-                if normalize_property(&declaration.property) == "font-family" {
-                    inherited = font_family_value(self, &declaration.value);
-                }
-            }
-        }
-        inherited
-    }
-}
-
-fn accepts_inherited_font_family(element: ViewElementKind) -> bool {
-    matches!(
-        element,
-        ViewElementKind::Button
-            | ViewElementKind::TextField
-            | ViewElementKind::TextArea
-            | ViewElementKind::SecureField
-    )
-}
-
-fn selector_is_surface_inheritance_context(selector: &ViewStyleSelector) -> bool {
-    matches!(
-        selector.parts.as_slice(),
-        [ViewStyleSelectorPart::Element(ViewElementKind::Panel)]
-    )
 }
 
 impl UiInputResource {
@@ -566,13 +509,6 @@ impl UiInputResource {
                     &mut action_buttons,
                     &mut text_blocks,
                 ));
-            } else {
-                for control in &mut controls {
-                    let resolved =
-                        style.runtime_text_control_style(&control.public_id, control.kind);
-                    control.style = resolved.style;
-                    diagnostics.extend(resolved.diagnostics);
-                }
             }
         }
         ViewRuntimeStyledControls {
@@ -2110,46 +2046,4 @@ fn parse_alpha_channel(raw: &str) -> Option<u8> {
     }
     let value = raw.trim().parse::<f64>().ok()?;
     rounded_clamped_i32(value * 255.0, 0.0, 255.0).and_then(|value| u8::try_from(value).ok())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::super::model::{ViewStyleRule, ViewStyleToken};
-    use super::*;
-
-    #[test]
-    fn font_family_token_resolves_for_runtime_text_controls() {
-        let style = ViewStyleResource {
-            tokens: vec![ViewStyleToken {
-                public_id: "font.ui_stack".to_owned(),
-                value: ViewStyleValue::List(vec![
-                    ViewStyleValue::Text("Arcweft Demo".to_owned()),
-                    ViewStyleValue::Text("Yu Gothic".to_owned()),
-                    ViewStyleValue::Text("Hiragino Sans".to_owned()),
-                    ViewStyleValue::Text("Noto Sans JP".to_owned()),
-                    ViewStyleValue::Text("system-ui".to_owned()),
-                ]),
-            }],
-            rules: vec![ViewStyleRule {
-                selector: ViewStyleSelector {
-                    parts: vec![ViewStyleSelectorPart::Element(ViewElementKind::TextField)],
-                },
-                declarations: vec![ViewStyleDeclaration {
-                    property: "font-family".to_owned(),
-                    value: ViewStyleValue::Token("font.ui_stack".to_owned()),
-                    op: StyleAssignOp::Replace,
-                }],
-                source: None,
-            }],
-            ..ViewStyleResource::default()
-        };
-
-        let resolution = style.runtime_text_control_style("input.feedback", UiInputKind::TextField);
-
-        assert_eq!(
-            resolution.style.normal.font_family.as_deref(),
-            Some("Arcweft Demo, Yu Gothic, Hiragino Sans, Noto Sans JP, system-ui")
-        );
-        assert!(resolution.diagnostics.is_empty());
-    }
 }
