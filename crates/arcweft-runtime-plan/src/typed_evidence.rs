@@ -33,6 +33,8 @@ pub enum RuntimeTypedLoweringEvidenceKind {
     },
     /// An expression was checked in a function-typed expected context.
     ExpectedFunctionValue { arity: usize },
+    /// A direct named function signature call returned a partial function.
+    SignaturePartialCall { callee: String, arg_count: usize },
     /// A method-call expression resolved as data-last callable fallback.
     DataLastMethodFallback {
         method: String,
@@ -88,6 +90,24 @@ impl<'a> RuntimeTypedLoweringEvidenceLookup<'a> {
                 && matches!(
                     evidence.kind,
                     RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue { .. }
+                )
+        })
+    }
+
+    pub(crate) fn has_signature_partial_call(
+        self,
+        expression_id: RuntimeTypedExpressionId,
+        callee: &str,
+        arg_count: usize,
+    ) -> bool {
+        self.evidence.iter().any(|evidence| {
+            evidence.expression_id == expression_id
+                && matches!(
+                    &evidence.kind,
+                    RuntimeTypedLoweringEvidenceKind::SignaturePartialCall {
+                        callee: expected_callee,
+                        arg_count: expected_arg_count,
+                    } if expected_callee == callee && expected_arg_count == &arg_count
                 )
         })
     }

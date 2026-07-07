@@ -880,6 +880,46 @@ flow @flow.main main {
 }
 
 #[test]
+fn checked_runtime_plan_rejects_non_helper_signature_partial_call() {
+    let parsed = parse_source_text(
+        r#"
+fn choose(left: String, right: String) -> String {
+    return right
+}
+
+flow @flow.main main {
+    let choose_right = choose(right = "tail")
+    let value: String = choose_right("head")
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect_err("checked runtime plan rejects non-helper signature partials");
+
+    assert!(
+        errors.iter().any(|error| {
+            error.message().contains(
+                "function `choose` partial application requires executable helper lowering",
+            )
+        }),
+        "expected non-helper partial diagnostic, got {errors:#?}"
+    );
+}
+
+#[test]
 fn runtime_plan_lowers_local_function_data_last_pipe_to_apply() {
     let parsed = parse_source_text(
         r#"

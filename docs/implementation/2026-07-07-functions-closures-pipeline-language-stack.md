@@ -82,6 +82,12 @@ Source briefs:
   signatures, such as `add(2i64)` and `2i64 |> add`, returning the remaining
   function type. This includes non-annotated top-level `fn` declarations whose
   bodies are lowerable through the existing inferred helper path.
+- Direct top-level signature partial calls now record typed lowering evidence.
+  Checked runtime-plan lowering consumes that evidence so helper-backed
+  partials lower to runtime functions, while non-helper signatures such as
+  unsupported ABI or effectful/suspending top-level functions fail with a
+  structured `runtime.plan.lower` diagnostic instead of silently becoming
+  adapter-facing incomplete calls.
 - Exact-arity known pure helper calls continue to lower to
   `RuntimeExpr::PureCall`, so the existing accelerator/runtime pure call path
   remains available as an optimization.
@@ -323,8 +329,9 @@ Source briefs:
   lowering tracks local aliases/partial applies that are known function values.
   Sema function-valued path call evidence is now threaded into flow, stream,
   source, and Agent bundle runtime-plan lowering. Prefix partial calls to
-  checked top-level function signatures are accepted in sema; runtime execution
-  currently follows the helper-backed path.
+  checked top-level function signatures are accepted in sema; checked runtime
+  execution follows the helper-backed path and rejects non-helper partials
+  until general top-level callable allocation is implemented.
 - AWBC now has first-class closure allocation/apply instructions for
   expression-local function values that complete without suspension.
   `RuntimeExpr::Function` reserves a synthetic AWBC function and emits
@@ -792,3 +799,31 @@ the unrelated `crates/arcweft-cli/src/app/bundle_view.rs` 2500 LOC error and
 `tests/function_stack.rs` 91,844 bytes / 2,652 LOC and
 `arcweft-compiler/src/tests.rs` 81,270 bytes / 2,575 LOC; neither crosses a
 new error threshold in this slice.
+
+The signature-partial typed-evidence cut adds
+`TypedLoweringEvidenceKind::SignaturePartialCall` and the runtime-plan-local
+equivalent. Sema records the evidence when a direct top-level signature call
+returns a partial function; checked runtime-plan lowering now rejects such
+calls when no annotated/inferred helper exists, preventing unsupported
+top-level partial callables from lowering as incomplete adapter calls. Focused
+validation passed with
+`cargo test -p arcweft-lang-sema --all-features non_annotated_function_prefix_call_typechecks_as_partial_application`,
+`cargo test -p arcweft-compiler --all-features runtime_plan_lowers_non_annotated_function_prefix_partial_with_typecheck`,
+and
+`cargo test -p arcweft-compiler --all-features checked_runtime_plan_rejects_non_helper_signature_partial_call`;
+the compiler tests were rerun serially after an initial parallel target-lock
+timeout. The same slice passed
+`cargo check -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features`
+and
+`cargo clippy -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features`;
+clippy still reports only the existing `TraitMember` / `ImplMember`
+large-enum warnings from `arcweft-lang-syntax`. Structure audit still reports
+the unrelated `crates/arcweft-cli/src/app/bundle_view.rs` 2500 LOC error and
+148 warnings. The changed Rust files measured for this cut are
+`checker.rs` 77,429 bytes / 2,117 LOC, `checker/expr.rs` 93,373 bytes / 2,320
+LOC, `checker/expr/signature_call.rs` 12,724 bytes / 338 LOC,
+`typed_evidence.rs` 4,655 bytes / 125 LOC, `runtime-plan/src/expr.rs` 87,074
+bytes / 2,341 LOC, `compiler/src/lower.rs` 11,798 bytes / 278 LOC,
+`tests/function_stack.rs` 92,643 bytes / 2,673 LOC, and
+`compiler/src/tests.rs` 82,443 bytes / 2,611 LOC; none crosses a new error
+threshold in this slice.

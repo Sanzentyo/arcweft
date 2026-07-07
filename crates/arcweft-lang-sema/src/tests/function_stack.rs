@@ -333,6 +333,27 @@ flow @flow.partial_non_pure partial_non_pure {
         "add(2i64) should typecheck as a function awaiting the missing rhs argument: {:?}",
         report.judgments
     );
+    assert!(
+        report
+            .typed_lowering_evidence
+            .iter()
+            .any(|evidence| matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::SignaturePartialCall {
+                    callee,
+                    result_ty,
+                    arg_count: 1,
+                } if callee == "add"
+                    && matches!(
+                        result_ty,
+                        TypeKind::Function { params, return_type }
+                            if params.as_slice() == [TypeKind::I64]
+                                && return_type.as_ref() == &TypeKind::I64
+                    )
+            )),
+        "direct top-level partial call should record runtime lowering evidence: {:?}",
+        report.typed_lowering_evidence
+    );
 }
 
 #[test]

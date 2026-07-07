@@ -114,6 +114,12 @@ fn runtime_typed_lowering_evidence(
             TypedLoweringEvidenceKind::ExpectedFunctionValue { arity, .. } => {
                 RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue { arity: *arity }
             }
+            TypedLoweringEvidenceKind::SignaturePartialCall {
+                callee, arg_count, ..
+            } => RuntimeTypedLoweringEvidenceKind::SignaturePartialCall {
+                callee: callee.clone(),
+                arg_count: *arg_count,
+            },
             TypedLoweringEvidenceKind::DataLastMethodFallback {
                 method,
                 arg_count,

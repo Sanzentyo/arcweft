@@ -251,6 +251,12 @@ pub enum TypedLoweringEvidenceKind {
         actual_ty: TypeKind,
         arity: usize,
     },
+    /// A direct named function signature call returned a partial function.
+    SignaturePartialCall {
+        callee: String,
+        result_ty: TypeKind,
+        arg_count: usize,
+    },
     /// A method-call expression resolved through data-last callable fallback.
     DataLastMethodFallback {
         method: String,

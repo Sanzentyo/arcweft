@@ -1,6 +1,9 @@
 use super::builtin::CapabilityFunctionSpec;
 use super::support::{signature_param_label, spread_item_type};
-use super::{CallArg, Expr, FunctionSignature, TypeCheckError, TypeChecker, TypeKind};
+use super::{
+    CallArg, Expr, FunctionSignature, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
+    TypedLoweringEvidence, TypedLoweringEvidenceKind,
+};
 use crate::env::FunctionParam;
 
 impl TypeChecker<'_> {
@@ -106,6 +109,7 @@ impl TypeChecker<'_> {
 
     pub(super) fn check_partial_signature_call(
         &mut self,
+        expression_id: TypeExpressionId,
         name: &str,
         signature: &FunctionSignature,
         args: &[CallArg],
@@ -138,13 +142,22 @@ impl TypeChecker<'_> {
             let _ = self.expect_signature_arg_type(name, &label, value, param.ty());
         }
 
-        Some(TypeKind::Function {
+        let result_ty = TypeKind::Function {
             params: missing
                 .iter()
                 .map(|index| params[*index].ty().clone())
                 .collect(),
             return_type: Box::new(signature.return_type().clone()),
-        })
+        };
+        self.record_typed_lowering_evidence(TypedLoweringEvidence {
+            expression_id,
+            kind: TypedLoweringEvidenceKind::SignaturePartialCall {
+                callee: name.to_owned(),
+                result_ty: result_ty.clone(),
+                arg_count: args.len(),
+            },
+        });
+        Some(result_ty)
     }
 
     pub(super) fn signature_call_supplies_current_group(

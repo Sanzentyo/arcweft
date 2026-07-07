@@ -152,6 +152,19 @@ impl<'helpers, 'locals> RuntimePureHelperLookup<'helpers, 'locals> {
             .is_some_and(|evidence| evidence.has_expected_function_value(expression_id))
     }
 
+    fn has_signature_partial_call_evidence(
+        self,
+        expression_id: Option<RuntimeTypedExpressionId>,
+        callee: &str,
+        arg_count: usize,
+    ) -> bool {
+        expression_id.is_some_and(|expression_id| {
+            self.typed_lowering_evidence.is_some_and(|evidence| {
+                evidence.has_signature_partial_call(expression_id, callee, arg_count)
+            })
+        })
+    }
+
     fn data_last_method_fallback_arg_order(
         self,
         expression_id: Option<RuntimeTypedExpressionId>,
@@ -1455,6 +1468,16 @@ fn lower_strict_call_expr(
         Expr::Path(path) => Some(path.as_label()),
         _ => None,
     };
+    if let Some(callee) = path_callee
+        && helpers.is_some_and(|helpers| {
+            helpers.has_signature_partial_call_evidence(expression_id, callee, args.len())
+                && helpers.helper(callee).is_none()
+        })
+    {
+        return Err(format!(
+            "function `{callee}` partial application requires executable helper lowering; effectful or suspending top-level callable allocation is not implemented"
+        ));
+    }
     if let Some(callee) = path_callee
         && args.iter().any(|arg| matches!(arg, CallArg::Named { .. }))
         && let Some(helper) = helpers.and_then(|helpers| helpers.helper(callee))
