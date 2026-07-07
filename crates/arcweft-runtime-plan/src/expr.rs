@@ -414,11 +414,18 @@ fn lower_partial_placeholder_function_expr(
     helpers: Option<RuntimePureHelperLookup<'_, '_>>,
 ) -> Result<RuntimeExpr, String> {
     let param_name = "__arcweft_partial";
-    let body = substitute_partial_placeholder(expr, param_name);
+    let body = substitute_partial_placeholder(partial_placeholder_body_expr(expr), param_name);
     lower_runtime_expr_strict_with_helpers(&body, helpers).map(|body| RuntimeExpr::Function {
         params: vec![param_name.to_owned()],
         body: Box::new(body),
     })
+}
+
+fn partial_placeholder_body_expr(expr: &Expr) -> &Expr {
+    match expr {
+        Expr::Tuple(items) if items.len() == 1 => &items[0],
+        _ => expr,
+    }
 }
 
 fn single_param_function_type(ty: &TypeRef) -> bool {

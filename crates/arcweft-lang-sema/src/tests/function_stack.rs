@@ -109,3 +109,89 @@ flow @flow.partial_call partial_call {
         "expected local function value call to return the final result type"
     );
 }
+
+#[test]
+fn infers_partial_placeholder_function_without_expected_type() {
+    let tree = parse_ok(
+        r"
+flow @flow.partial_infer partial_infer {
+    let high = _ > 80i64
+    log.info(high)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("inferred partial placeholder fixture lowers");
+    validate_typecheck_ready(&hir).expect("inferred partial placeholder fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(report.judgments.iter().any(|judgment| {
+        matches!(
+            &judgment.ty,
+            TypeKind::Function {
+                params,
+                return_type,
+            } if params.as_slice() == [TypeKind::I64]
+                && return_type.as_ref() == &TypeKind::Bool
+        )
+    }));
+    assert!(
+        report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::ExpectedFunctionValue {
+                    expected_ty,
+                    actual_ty,
+                    arity: 1
+                } if expected_ty == actual_ty
+                    && matches!(
+                        expected_ty,
+                        TypeKind::Function { params, return_type }
+                            if params.as_slice() == [TypeKind::I64]
+                                && return_type.as_ref() == &TypeKind::Bool
+                    )
+            )
+        }),
+        "expected inferred partial placeholder to record function lowering evidence"
+    );
+}
+
+#[test]
+fn infers_partial_call_abstraction_without_expected_type() {
+    let tree = parse_ok(
+        r"
+#[pure]
+fn add(left: i64, right: i64) -> i64 {
+    return left + right
+}
+
+flow @flow.partial_call partial_call {
+    let add_one = add(_, 1i64)
+    log.info(add_one)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("partial call fixture lowers");
+    validate_typecheck_ready(&hir).expect("partial call fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(report.judgments.iter().any(|judgment| {
+        matches!(
+            &judgment.ty,
+            TypeKind::Function {
+                params,
+                return_type,
+            } if params.as_slice() == [TypeKind::I64]
+                && return_type.as_ref() == &TypeKind::I64
+        )
+    }));
+}

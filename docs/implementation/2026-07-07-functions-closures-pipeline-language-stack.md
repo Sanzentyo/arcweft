@@ -100,14 +100,24 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   placeholder abstractions in function-argument positions, such as
   `accept(_ > 80i64)` where `accept` expects `i64 -> bool`, lower the argument
   to `RuntimeExpr::Function`.
+- Sema now infers `_` placeholder function values without an explicit expected
+  function type for unambiguous binary expressions whose non-placeholder side
+  has a local/static type, such as `let high = _ > 80i64`.
+- Sema now infers partial-call abstraction for known positional callable
+  signatures, such as `let add_one = add(_, 1i64)`, without hard-coding the
+  callable name. Runtime-plan lowering consumes the inferred evidence and
+  lowers both forms to `RuntimeExpr::Function`.
 
 ## Current boundaries
 
-- `_` without an expected function type is intentionally not inferred yet.
-  Examples such as `let is_high = (_ >= 80)` still need the first-class
-  function-value inference/apply design below.
-- Partial call abstraction such as `add(_, 1)` type-checks only where a matching
-  expected function type is supplied. It is not yet a general inference source.
+- `_` without an expected function type is inferred only when the parameter type
+  is available without speculative expression checking. The current cut covers
+  unambiguous binary expressions and positional calls to known function
+  signatures. Parenthesized grouping such as `let is_high = (_ >= 80i64)` still
+  needs parser/HIR grouping support before it can use the same inference path.
+- Partial call abstraction such as `add(_, 1)` is inferred for known positional
+  signatures. Named/spread partial-call inference and ambiguous multi-candidate
+  callables remain open.
 - `_` expected-type runtime lowering consumes explicit syntax-level function
   annotations and sema expected-function evidence threaded through compiler
   options.
@@ -155,10 +165,13 @@ cargo test -p arcweft-runtime-plan --all-features runtime_plan_lowers_local_func
 cargo test -p arcweft-lang-sema --all-features records_function_value_call_lowering_evidence
 cargo test -p arcweft-lang-sema --all-features typechecks_partial_function_value_application
 cargo test -p arcweft-lang-sema --all-features typechecks_partial_placeholder_function_and_vec_map
+cargo test -p arcweft-lang-sema --all-features infers_partial_placeholder_function_without_expected_type
+cargo test -p arcweft-lang-sema --all-features infers_partial_call_abstraction_without_expected_type
 cargo test -p arcweft-lang-sema --all-features
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_typecheck_evidence_for_function_value_calls
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_expected_function_evidence_for_placeholder_args
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_typecheck_evidence_across_stream_and_source_exprs
+cargo test -p arcweft-compiler --all-features runtime_plan_lowers_inferred_partial_placeholder_functions
 cargo test -p arcweft-compiler --all-features
 cargo test -p arcweft-runtime-plan --all-features
 cargo check --workspace --all-targets --all-features
@@ -204,3 +217,8 @@ evidence is supplied, and for expected-function placeholder arguments lowering
 to `RuntimeExpr::Function`. The shared-cursor follow-up has passing coverage
 for function-valued calls inside stream and source lowering after earlier flow
 expressions have consumed typed expression IDs.
+
+The inferred partial-placeholder cut has passing sema coverage for unannotated
+binary placeholder inference and partial-call abstraction from known function
+signatures, plus compiler/runtime-plan coverage that both inferred forms lower
+to `RuntimeExpr::Function`.

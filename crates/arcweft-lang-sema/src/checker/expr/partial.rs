@@ -1,7 +1,20 @@
-use super::{CallArg, Expr, Placeholder, TypeCheckError, TypeChecker, TypeKind};
-use crate::checker::helpers::{optional_type_kind_label, type_kind_label};
+use super::{BinaryOp, CallArg, Expr, Literal, Placeholder, TypeCheckError, TypeChecker, TypeKind};
+use crate::checker::helpers::{
+    numeric_literal_suffix_type, optional_type_kind_label, type_kind_label,
+};
 
 impl TypeChecker<'_> {
+    pub(super) fn check_inferred_partial_placeholder_abstraction_expr(
+        &mut self,
+        expr: &Expr,
+    ) -> Option<TypeKind> {
+        if let Some(expected) = self.infer_partial_placeholder_function_type(expr) {
+            self.check_partial_placeholder_abstraction_expr(expr, &expected)
+        } else {
+            None
+        }
+    }
+
     pub(super) fn check_partial_placeholder_abstraction_expr(
         &mut self,
         expr: &Expr,
@@ -26,7 +39,8 @@ impl TypeChecker<'_> {
         };
 
         self.partial_placeholder_stack.push(param.clone());
-        let body_type = self.check_expr_with_expected(expr, Some(return_type));
+        let body_type =
+            self.check_expr_with_expected(partial_placeholder_body_expr(expr), Some(return_type));
         self.partial_placeholder_stack.pop();
 
         if let Some(body_type) = body_type.as_ref()
@@ -61,6 +75,165 @@ impl TypeChecker<'_> {
             optional_type_kind_label(None)
         )));
         None
+    }
+
+    fn infer_partial_placeholder_function_type(&self, expr: &Expr) -> Option<TypeKind> {
+        match partial_placeholder_body_expr(expr) {
+            Expr::Binary { lhs, op, rhs } => {
+                self.infer_partial_placeholder_binary_function_type(lhs, *op, rhs)
+            }
+            Expr::Call { callee, args } => {
+                self.infer_partial_placeholder_call_function_type(callee, args)
+            }
+            _ => None,
+        }
+    }
+
+    fn infer_partial_placeholder_binary_function_type(
+        &self,
+        lhs: &Expr,
+        op: BinaryOp,
+        rhs: &Expr,
+    ) -> Option<TypeKind> {
+        let lhs_has_placeholder = expr_contains_partial_placeholder(lhs);
+        let rhs_has_placeholder = expr_contains_partial_placeholder(rhs);
+        let operand_ty = match (lhs_has_placeholder, rhs_has_placeholder) {
+            (true, false) => self.partial_inference_static_expr_type(rhs)?,
+            (false, true) => self.partial_inference_static_expr_type(lhs)?,
+            _ => return None,
+        };
+        let return_ty = inferred_binary_return_type(op, &operand_ty)?;
+        Some(TypeKind::Function {
+            params: vec![operand_ty],
+            return_type: Box::new(return_ty),
+        })
+    }
+
+    fn infer_partial_placeholder_call_function_type(
+        &self,
+        callee: &Expr,
+        args: &[CallArg],
+    ) -> Option<TypeKind> {
+        if let Expr::Path(name) = callee
+            && let Some(TypeKind::Function {
+                params,
+                return_type,
+            }) = self.symbol_type(name)
+        {
+            return partial_call_function_type_from_positional_args(
+                args,
+                params.iter(),
+                return_type.as_ref(),
+            );
+        }
+        let Expr::Path(name) = callee else {
+            return None;
+        };
+        let signature = self.function_signature(name)?;
+        if !signature.checks_args() {
+            return None;
+        }
+        partial_call_function_type_from_positional_args(
+            args,
+            signature.params().iter().map(crate::env::FunctionParam::ty),
+            signature.return_type(),
+        )
+    }
+
+    fn partial_inference_static_expr_type(&self, expr: &Expr) -> Option<TypeKind> {
+        match expr {
+            Expr::Literal(literal) => literal_type_for_partial_inference(literal),
+            Expr::Path(path) => self.symbol_type(path.as_label()).cloned(),
+            Expr::Tuple(items) if items.is_empty() => Some(TypeKind::Unit),
+            _ => None,
+        }
+    }
+}
+
+fn partial_placeholder_body_expr(expr: &Expr) -> &Expr {
+    match expr {
+        Expr::Tuple(items) if items.len() == 1 => &items[0],
+        _ => expr,
+    }
+}
+
+fn partial_call_function_type_from_positional_args<'a>(
+    args: &[CallArg],
+    params: impl IntoIterator<Item = &'a TypeKind>,
+    return_type: &TypeKind,
+) -> Option<TypeKind> {
+    let params = params.into_iter().collect::<Vec<_>>();
+    let mut inferred_param = None;
+    for (index, arg) in args.iter().enumerate() {
+        if !expr_contains_partial_placeholder(arg.value()) {
+            continue;
+        }
+        let CallArg::Positional(_) = arg else {
+            return None;
+        };
+        let param = params.get(index)?;
+        match &inferred_param {
+            Some(existing) if existing != *param => return None,
+            Some(_) => {}
+            None => inferred_param = Some((*param).clone()),
+        }
+    }
+    inferred_param.map(|param| TypeKind::Function {
+        params: vec![param],
+        return_type: Box::new(return_type.clone()),
+    })
+}
+
+fn literal_type_for_partial_inference(literal: &Literal) -> Option<TypeKind> {
+    match literal {
+        Literal::String(_) => Some(TypeKind::String),
+        Literal::Char { .. } => Some(TypeKind::Char),
+        Literal::Bool(_) => Some(TypeKind::Bool),
+        Literal::Duration { .. } => Some(TypeKind::Duration),
+        Literal::Int { suffix, .. } => suffix.as_deref().map_or(Some(TypeKind::I32), |suffix| {
+            numeric_literal_suffix_type(Some(suffix))
+        }),
+        Literal::Float { suffix, .. } => suffix.map_or(Some(TypeKind::F64), |suffix| {
+            numeric_literal_suffix_type(Some(suffix.as_str()))
+        }),
+        Literal::UnitNumber { suffix, .. } => numeric_literal_suffix_type(Some(suffix.as_str())),
+    }
+}
+
+fn inferred_binary_return_type(op: BinaryOp, operand_ty: &TypeKind) -> Option<TypeKind> {
+    match op {
+        BinaryOp::Implies | BinaryOp::Or | BinaryOp::And if operand_ty == &TypeKind::Bool => {
+            Some(TypeKind::Bool)
+        }
+        BinaryOp::Eq | BinaryOp::NotEq => Some(TypeKind::Bool),
+        BinaryOp::Gte | BinaryOp::Lte | BinaryOp::Gt | BinaryOp::Lt
+            if operand_ty.is_integer()
+                || operand_ty.is_float()
+                || operand_ty == &TypeKind::Duration =>
+        {
+            Some(TypeKind::Bool)
+        }
+        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem
+            if operand_ty.is_integer()
+                || operand_ty.is_float()
+                || operand_ty == &TypeKind::Duration =>
+        {
+            Some(operand_ty.clone())
+        }
+        BinaryOp::Merge
+        | BinaryOp::In
+        | BinaryOp::Implies
+        | BinaryOp::Or
+        | BinaryOp::And
+        | BinaryOp::Gte
+        | BinaryOp::Lte
+        | BinaryOp::Gt
+        | BinaryOp::Lt
+        | BinaryOp::Add
+        | BinaryOp::Sub
+        | BinaryOp::Mul
+        | BinaryOp::Div
+        | BinaryOp::Rem => None,
     }
 }
 

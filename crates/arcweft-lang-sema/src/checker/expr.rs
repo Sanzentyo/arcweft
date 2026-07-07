@@ -73,6 +73,13 @@ impl TypeChecker<'_> {
             && expr_contains_partial_placeholder(expr)
         {
             self.check_partial_placeholder_abstraction_expr(expr, expected)
+        } else if expected.is_none()
+            && self.current_partial_placeholder_type().is_none()
+            && !matches!(expr, Expr::Closure { .. })
+            && expr_contains_partial_placeholder(expr)
+        {
+            self.check_inferred_partial_placeholder_abstraction_expr(expr)
+                .or_else(|| self.check_expr_kind_with_expected(expr, expected, expression_id))
         } else {
             self.check_expr_kind_with_expected(expr, expected, expression_id)
         };
@@ -94,6 +101,18 @@ impl TypeChecker<'_> {
                     expression_id,
                     kind: TypedLoweringEvidenceKind::ExpectedFunctionValue {
                         expected_ty: expected.clone(),
+                        actual_ty: ty.clone(),
+                        arity,
+                    },
+                });
+            } else if expected.is_none()
+                && expr_contains_partial_placeholder(expr)
+                && let Some(arity) = ty.function_arity()
+            {
+                self.record_typed_lowering_evidence(TypedLoweringEvidence {
+                    expression_id,
+                    kind: TypedLoweringEvidenceKind::ExpectedFunctionValue {
+                        expected_ty: ty.clone(),
                         actual_ty: ty.clone(),
                         arity,
                     },
