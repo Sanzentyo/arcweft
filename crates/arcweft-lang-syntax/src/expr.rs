@@ -7,8 +7,11 @@ use crate::ast::line_plan::LinePlan;
 use crate::ast::pattern::Pattern;
 use crate::cst::{
     find_last_top_level_punctuation, find_top_level_punctuation, split_leading_entity_ref_parts,
-    split_leading_relative_entity_ref,
+    split_leading_relative_entity_ref, split_top_level_punctuation,
+    split_top_level_punctuation_once,
 };
+use crate::pattern::parse_pattern;
+use crate::types::{TypeRef, parse_type_ref};
 use arcweft_source::{SourceAnchor, SourceName};
 use std::{
     fmt,
@@ -285,7 +288,7 @@ pub enum Expr {
         rhs: Box<Expr>,
     },
     Closure {
-        params: Vec<String>,
+        params: Vec<ClosureParam>,
         body: Box<Expr>,
     },
     Unary {
@@ -508,6 +511,40 @@ pub enum Placeholder {
     PipeLeft,
 }
 
+/// One closure parameter before semantic capture and lifetime analysis.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClosureParam {
+    pattern: Pattern,
+    ty: Option<TypeRef>,
+}
+
+impl ClosureParam {
+    /// Creates a parsed closure parameter from a pattern and optional type ascription.
+    pub fn new(pattern: Pattern, ty: Option<TypeRef>) -> Self {
+        Self { pattern, ty }
+    }
+
+    /// Source pattern bound by this parameter.
+    pub const fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+
+    /// Optional type ascription written after the parameter pattern.
+    pub const fn ty(&self) -> Option<&TypeRef> {
+        self.ty.as_ref()
+    }
+
+    /// Returns the parameter name when the pattern is a simple local binding.
+    pub fn simple_ident(&self) -> Option<&str> {
+        match &self.pattern {
+            Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. } => {
+                Some(name)
+            }
+            _ => None,
+        }
+    }
+}
+
 /// Built-in lifetime registry scopes used by script-visible lifetime paths.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum LifetimeScopeKind {
@@ -700,6 +737,7 @@ pub fn parse_expr_with_stats(source: &str) -> Result<ParsedExpr, ExprParseError>
         return Err(ExprParseError::new("expected expression"));
     }
     if let Some((params, body)) = split_closure(trimmed) {
+        let params = parse_closure_params(params)?;
         let parsed_body = parse_expr_with_stats(body)?;
         return Ok(ParsedExpr {
             expr: Expr::Closure {
@@ -1648,16 +1686,9 @@ impl ExprParser {
 
     fn parse_closure_arg(&mut self) -> Result<Expr, ExprParseError> {
         self.expect(&Token::Op("|"))?;
-        let mut params = Vec::new();
-        loop {
-            match self.bump() {
-                Token::Ident(name) | Token::RelativePath(name) => params.push(name),
-                Token::Comma => {}
-                Token::Op("|") => break,
-                Token::Eof => return Err(ExprParseError::new("unclosed closure parameter list")),
-                _ => return Err(ExprParseError::new("expected closure parameter or `|`")),
-            }
-        }
+        let param_tokens = self.take_closure_param_tokens()?;
+        let params_source = token_span_source(&param_tokens, &self.source).unwrap_or_default();
+        let params = parse_closure_params(params_source)?;
         Ok(Expr::Closure {
             params,
             body: Box::new(self.parse_expr_bp(0)?),
@@ -1666,7 +1697,7 @@ impl ExprParser {
 
     fn parse_callback_block_closure(&mut self) -> Result<Expr, ExprParseError> {
         let tokens = self.take_braced_tokens()?;
-        let (params, body_tokens) = callback_block_parts(&tokens)?;
+        let (params, body_tokens) = callback_block_parts(&tokens, &self.source)?;
         let body_source = token_span_source(body_tokens, &self.source)
             .unwrap_or_default()
             .trim();
@@ -1679,6 +1710,30 @@ impl ExprParser {
             params,
             body: Box::new(crate::parser::parse_callback_block_expr_body(body_source)),
         })
+    }
+
+    fn take_closure_param_tokens(&mut self) -> Result<Vec<LexedToken>, ExprParseError> {
+        let mut paren_depth = 0_u32;
+        let mut bracket_depth = 0_u32;
+        let mut brace_depth = 0_u32;
+        let mut tokens = Vec::new();
+        loop {
+            let lexed = self.bump_lexed();
+            match &lexed.token {
+                Token::Op("|") if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 => {
+                    return Ok(tokens);
+                }
+                Token::LParen => paren_depth = paren_depth.saturating_add(1),
+                Token::RParen => paren_depth = paren_depth.saturating_sub(1),
+                Token::LBracket => bracket_depth = bracket_depth.saturating_add(1),
+                Token::RBracket => bracket_depth = bracket_depth.saturating_sub(1),
+                Token::LBrace => brace_depth = brace_depth.saturating_add(1),
+                Token::RBrace => brace_depth = brace_depth.saturating_sub(1),
+                Token::Eof => return Err(ExprParseError::new("unclosed closure parameter list")),
+                _ => {}
+            }
+            tokens.push(lexed);
+        }
     }
 
     fn take_braced_tokens(&mut self) -> Result<Vec<LexedToken>, ExprParseError> {
@@ -1881,13 +1936,14 @@ fn literal_exprs_from_tokens(tokens: &[LexedToken]) -> Vec<Expr> {
         .collect()
 }
 
-fn callback_block_parts(
-    tokens: &[LexedToken],
-) -> Result<(Vec<String>, &[LexedToken]), ExprParseError> {
+fn callback_block_parts<'a>(
+    tokens: &'a [LexedToken],
+    source: &str,
+) -> Result<(Vec<ClosureParam>, &'a [LexedToken]), ExprParseError> {
     let Some(arrow) = top_level_callback_arrow(tokens) else {
         return Ok((Vec::new(), tokens));
     };
-    let params = callback_block_params(&tokens[..arrow])?;
+    let params = callback_block_params(&tokens[..arrow], source)?;
     Ok((params, &tokens[arrow + 1..]))
 }
 
@@ -1912,31 +1968,47 @@ fn top_level_callback_arrow(tokens: &[LexedToken]) -> Option<usize> {
     })
 }
 
-fn callback_block_params(tokens: &[LexedToken]) -> Result<Vec<String>, ExprParseError> {
-    let mut params = Vec::new();
-    let mut expecting_param = true;
-    for lexed in tokens {
-        match &lexed.token {
-            Token::Ident(name) if expecting_param => {
-                params.push(name.to_owned());
-                expecting_param = false;
-            }
-            Token::Comma if !expecting_param => {
-                expecting_param = true;
-            }
-            _ => {
-                return Err(ExprParseError::new(
-                    "callback block parameters must be identifiers separated by `,`",
-                ));
-            }
-        }
-    }
-    if params.is_empty() || expecting_param {
+fn callback_block_params(
+    tokens: &[LexedToken],
+    source: &str,
+) -> Result<Vec<ClosureParam>, ExprParseError> {
+    let params_source = token_span_source(tokens, source).unwrap_or_default().trim();
+    if params_source.is_empty() {
         return Err(ExprParseError::new(
             "callback block parameter list must appear before `=>`",
         ));
     }
-    Ok(params)
+    parse_closure_params(params_source)
+}
+
+fn parse_closure_params(source: &str) -> Result<Vec<ClosureParam>, ExprParseError> {
+    let source = source.trim();
+    if source.is_empty() {
+        return Ok(Vec::new());
+    }
+    split_top_level_punctuation(source, ',')
+        .into_iter()
+        .map(parse_closure_param)
+        .collect()
+}
+
+fn parse_closure_param(source: &str) -> Result<ClosureParam, ExprParseError> {
+    let source = source.trim();
+    if source.is_empty() {
+        return Err(ExprParseError::new("expected closure parameter"));
+    }
+    let (pattern, ty) = split_top_level_punctuation_once(source, ':')
+        .map_or((source, None), |(pattern, ty)| {
+            (pattern.trim(), Some(ty.trim()))
+        });
+    let ty = ty
+        .filter(|ty| !ty.is_empty())
+        .map(parse_type_ref)
+        .transpose()
+        .map_err(|error| {
+            ExprParseError::new(&format!("invalid closure parameter type: {error}"))
+        })?;
+    Ok(ClosureParam::new(parse_pattern(pattern), ty))
 }
 
 fn token_span_source<'a>(tokens: &[LexedToken], source: &'a str) -> Option<&'a str> {
@@ -2153,17 +2225,11 @@ fn parse_entity_expr(source: &str) -> Option<EntityRefSyntax> {
     )))
 }
 
-fn split_closure(source: &str) -> Option<(Vec<String>, &str)> {
+fn split_closure(source: &str) -> Option<(&str, &str)> {
     let rest = source.strip_prefix('|')?;
     let close = find_top_level_punctuation(rest, '|')?;
-    let params = rest[..close]
-        .split(',')
-        .map(str::trim)
-        .filter(|param| !param.is_empty())
-        .map(str::to_owned)
-        .collect();
     let body = rest[close + 1..].trim();
-    (!body.is_empty()).then_some((params, body))
+    (!body.is_empty()).then_some((rest[..close].trim(), body))
 }
 
 fn split_bracket_postfix(source: &str) -> Option<(&str, &str)> {

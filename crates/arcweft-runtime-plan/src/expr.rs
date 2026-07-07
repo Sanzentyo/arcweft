@@ -879,11 +879,16 @@ fn lower_strict_map_method_call(
             "runtime `map` closures must bind exactly one parameter".to_owned(),
         ));
     };
+    let Some(param_name) = param.simple_ident() else {
+        return Some(Err(
+            "runtime `map` closure parameter must bind a simple identifier".to_owned(),
+        ));
+    };
     Some(
         lower_runtime_expr_strict_with_helpers(receiver, helpers).and_then(|source| {
             lower_runtime_expr_strict_with_helpers(body, helpers).map(|body| RuntimeExpr::Map {
                 source: Box::new(source),
-                param: param.clone(),
+                param: param_name.to_owned(),
                 body: Box::new(body),
             })
         }),

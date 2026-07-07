@@ -181,6 +181,7 @@ use arcweft_lang_syntax::{
     ast::{
         flow::{FlowItem, Stmt},
         items::{Item, RawSyntaxFamily},
+        pattern::Pattern,
     },
     expr::{BinaryOp, CallArg, DurationUnit, Expr, Literal, UnaryOp, UnitNumberSuffix, parse_expr},
     types::{TypeRef, parse_type_ref},
@@ -390,7 +391,13 @@ fn postfix_callback_block_supports_parameterized_closure() {
     let [CallArg::Positional(Expr::Closure { params, body })] = args.as_slice() else {
         panic!("expected single closure arg: {args:?}");
     };
-    assert_eq!(params, &["item".to_owned(), "index".to_owned()]);
+    assert_eq!(
+        params
+            .iter()
+            .map(|param| param.simple_ident())
+            .collect::<Vec<_>>(),
+        vec![Some("item"), Some("index")]
+    );
     assert!(matches!(
         body.as_ref(),
         Expr::Block {
@@ -399,6 +406,48 @@ fn postfix_callback_block_supports_parameterized_closure() {
         } if statements.is_empty()
             && matches!(value.as_ref(), Expr::MethodCall { method, .. } if method == "label")
     ));
+}
+
+#[test]
+fn closures_keep_pattern_and_type_ascription_parameters() {
+    let expr = parse_expr("|(item, index): Pair| item.label(index)")
+        .expect("typed pattern closure parses");
+    let Expr::Closure { params, body } = expr else {
+        panic!("expected closure");
+    };
+
+    assert_eq!(params.len(), 1);
+    assert!(matches!(
+        params[0].pattern(),
+        Pattern::Tuple(items) if items.len() == 2
+    ));
+    assert!(matches!(
+        params[0].ty(),
+        Some(TypeRef::Path(path)) if path == "Pair"
+    ));
+    assert!(matches!(
+        body.as_ref(),
+        Expr::MethodCall { method, .. } if method == "label"
+    ));
+}
+
+#[test]
+fn callback_block_closure_keeps_typed_parameters() {
+    let expr =
+        parse_expr("items.map { item: Label => item.text }").expect("typed callback block parses");
+    let Expr::MethodCall { args, .. } = expr else {
+        panic!("expected method call");
+    };
+    let [CallArg::Positional(Expr::Closure { params, body })] = args.as_slice() else {
+        panic!("expected closure arg: {args:?}");
+    };
+
+    assert_eq!(params[0].simple_ident(), Some("item"));
+    assert!(matches!(
+        params[0].ty(),
+        Some(TypeRef::Path(path)) if path == "Label"
+    ));
+    assert!(matches!(body.as_ref(), Expr::Block { .. }));
 }
 
 #[test]

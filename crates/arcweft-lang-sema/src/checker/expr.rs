@@ -20,6 +20,7 @@ use arcweft_lang_syntax::expr::{
 
 mod agent;
 mod builtin;
+mod closure;
 mod range;
 mod support;
 
@@ -173,14 +174,6 @@ impl TypeChecker<'_> {
                 None
             }
         }
-    }
-
-    fn check_closure_expr(&mut self, params: &[String], body: &Expr) -> Option<TypeKind> {
-        let local_snapshot =
-            self.insert_scoped_locals(params.iter().map(|param| (param.clone(), TypeKind::I64)));
-        self.check_expr(body);
-        self.restore_scoped_locals(local_snapshot);
-        None
     }
 
     fn in_seq_context(&self) -> bool {
@@ -1610,55 +1603,6 @@ impl TypeChecker<'_> {
         for arg in args {
             self.check_expr(arg.value());
         }
-    }
-
-    fn check_vec_map_method_call(
-        &mut self,
-        receiver_type: &TypeKind,
-        args: &[CallArg],
-    ) -> Option<TypeKind> {
-        let Some(item) = spread_item_type(receiver_type) else {
-            self.errors.push(TypeCheckError::new(format!(
-                "map receiver must be an iterable sequence, found {receiver_type:?}"
-            )));
-            for arg in args {
-                self.check_expr(arg.value());
-            }
-            return None;
-        };
-        let [arg] = args else {
-            self.errors.push(TypeCheckError::new(
-                "map requires exactly one closure".to_owned(),
-            ));
-            for arg in args {
-                self.check_expr(arg.value());
-            }
-            return None;
-        };
-        if arg.name().is_some() || arg.is_spread() {
-            self.errors.push(TypeCheckError::new(
-                "map requires one positional closure argument".to_owned(),
-            ));
-            self.check_expr(arg.value());
-            return None;
-        }
-        let Expr::Closure { params, body } = arg.value() else {
-            self.errors.push(TypeCheckError::new(
-                "map requires a closure argument".to_owned(),
-            ));
-            self.check_expr(arg.value());
-            return None;
-        };
-        let [param] = params.as_slice() else {
-            self.errors.push(TypeCheckError::new(
-                "map closures must bind exactly one parameter".to_owned(),
-            ));
-            return None;
-        };
-        let snapshot = self.insert_scoped_locals([(param.clone(), item.clone())]);
-        let body_type = self.check_expr(body);
-        self.restore_scoped_locals(snapshot);
-        body_type.map(|ty| TypeKind::Vec(Box::new(ty)))
     }
 
     fn check_sequence_len_method_call(
