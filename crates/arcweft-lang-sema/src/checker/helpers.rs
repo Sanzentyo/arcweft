@@ -1,6 +1,6 @@
 use super::{
     AwaitBranchKind, CallArg, ChoiceAction, EntityDeclKind, EntityKind, EntityRef, EntityRefSyntax,
-    EnumVariantPayloadType, Expr, LifetimeScopeKind, Literal, MapKind, NominalTypeContext, Pattern,
+    EnumVariantPayload, Expr, LifetimeScopeKind, Literal, MapKind, NominalTypeContext, Pattern,
     Stmt, TypeCheckError, TypeKind, TypeRef, VariantPatternPayload,
 };
 use std::collections::HashMap;
@@ -337,12 +337,17 @@ fn let_else_bindings_with_nominal_types(
             .collect(),
         Pattern::Variant { name, payload, .. } => {
             let nominal_payload = expr_type.and_then(|ty| {
-                super::enum_variant_payload_type_for_name(name, ty, nominal_types.variant_payloads)
+                super::enum_variant_payload_type_for_name(
+                    name,
+                    ty,
+                    nominal_types.variant_payloads,
+                    nominal_types.env,
+                )
             });
             match (payload, nominal_payload) {
                 (
                     Some(VariantPatternPayload::Tuple(items)),
-                    Some(EnumVariantPayloadType::Tuple(types)),
+                    Some(EnumVariantPayload::Tuple(types)),
                 ) => items
                     .iter()
                     .enumerate()
@@ -353,7 +358,7 @@ fn let_else_bindings_with_nominal_types(
                     .collect(),
                 (
                     Some(VariantPatternPayload::Record { fields, .. }),
-                    Some(EnumVariantPayloadType::Record(types)),
+                    Some(EnumVariantPayload::Record(types)),
                 ) => fields
                     .iter()
                     .flat_map(|field| {
@@ -365,7 +370,7 @@ fn let_else_bindings_with_nominal_types(
                         )
                     })
                     .collect(),
-                (None, _) | (_, Some(EnumVariantPayloadType::Unit)) => Vec::new(),
+                (None, _) | (_, Some(EnumVariantPayload::Unit)) => Vec::new(),
                 _ => let_else_bindings(pattern, expr_type),
             }
         }

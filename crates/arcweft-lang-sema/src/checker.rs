@@ -10,7 +10,7 @@ use crate::effect_collector::EffectCollector;
 use crate::effect_model::{CallableId, CallableKind, EffectContract, EffectSite, Visibility};
 use crate::effects::{EffectId, EffectSet};
 use crate::env::{
-    AgentActionEnvParam, DebugPathKind, EffectCapability, FunctionParam,
+    AgentActionEnvParam, DebugPathKind, EffectCapability, EnumVariantPayload, FunctionParam,
     FunctionParamHigherOrderBinding, FunctionParamSelector, FunctionParamSelectorSegment,
     FunctionSignature, TypeCheckEnv,
 };
@@ -382,7 +382,7 @@ struct TypeChecker<'a> {
     global_type_aliases: HashMap<String, TypeKind>,
     action_signatures: HashMap<String, ActionSignature>,
     nominal_fields: HashMap<String, HashMap<String, TypeKind>>,
-    nominal_variant_payloads: HashMap<String, HashMap<String, EnumVariantPayloadType>>,
+    nominal_variant_payloads: HashMap<String, HashMap<String, EnumVariantPayload>>,
     trait_catalog: TraitCatalog,
     trait_predicate_stack: Vec<Vec<TraitPredicate>>,
     flow_params: HashMap<String, HashSet<String>>,
@@ -441,17 +441,11 @@ struct ActionParam {
     has_default: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum EnumVariantPayloadType {
-    Unit,
-    Tuple(Vec<TypeKind>),
-    Record(BTreeMap<String, TypeKind>),
-}
-
 #[derive(Clone, Copy)]
 struct NominalTypeContext<'a> {
     fields: Option<&'a HashMap<String, HashMap<String, TypeKind>>>,
-    variant_payloads: Option<&'a HashMap<String, HashMap<String, EnumVariantPayloadType>>>,
+    variant_payloads: Option<&'a HashMap<String, HashMap<String, EnumVariantPayload>>>,
+    env: Option<&'a TypeCheckEnv>,
 }
 
 impl ActionSignature {
@@ -497,43 +491,19 @@ impl<'a> NominalTypeContext<'a> {
         Self {
             fields: None,
             variant_payloads: None,
+            env: None,
         }
     }
 
     const fn new(
         fields: &'a HashMap<String, HashMap<String, TypeKind>>,
-        variant_payloads: &'a HashMap<String, HashMap<String, EnumVariantPayloadType>>,
+        variant_payloads: &'a HashMap<String, HashMap<String, EnumVariantPayload>>,
+        env: &'a TypeCheckEnv,
     ) -> Self {
         Self {
             fields: Some(fields),
             variant_payloads: Some(variant_payloads),
-        }
-    }
-}
-
-impl EnumVariantPayloadType {
-    fn single_type(&self) -> Option<TypeKind> {
-        match self {
-            Self::Tuple(items) => match items.as_slice() {
-                [item] => Some(item.clone()),
-                items if !items.is_empty() => Some(TypeKind::Tuple(items.to_vec())),
-                _ => None,
-            },
-            Self::Unit | Self::Record(_) => None,
-        }
-    }
-
-    fn tuple_items(&self) -> Option<Vec<TypeKind>> {
-        match self {
-            Self::Tuple(items) => Some(items.clone()),
-            Self::Unit | Self::Record(_) => None,
-        }
-    }
-
-    fn record_field_type(&self, field: &str) -> Option<TypeKind> {
-        match self {
-            Self::Record(fields) => fields.get(field).cloned(),
-            Self::Unit | Self::Tuple(_) => None,
+            env: Some(env),
         }
     }
 }
@@ -1598,8 +1568,12 @@ fn collect_variant_record_function_param_higher_order_bindings(
     bindings: &mut Vec<FunctionParamHigherOrderBinding>,
 ) {
     let payload_ty = variant_payload_type_for_name(variant, Some(ty));
-    let nominal_payload =
-        enum_variant_payload_type_for_name(variant, ty, nominal_types.variant_payloads);
+    let nominal_payload = enum_variant_payload_type_for_name(
+        variant,
+        ty,
+        nominal_types.variant_payloads,
+        nominal_types.env,
+    );
     let payload_selector = selector_with_variant_payload(selector, variant);
     for field in fields {
         let Some(field_ty) = pattern_type_hint(field.pattern()).or_else(|| {
@@ -1637,11 +1611,15 @@ fn collect_variant_tuple_function_param_higher_order_bindings(
     nominal_types: NominalTypeContext<'_>,
     bindings: &mut Vec<FunctionParamHigherOrderBinding>,
 ) {
-    let nominal_payload =
-        enum_variant_payload_type_for_name(variant, ty, nominal_types.variant_payloads);
+    let nominal_payload = enum_variant_payload_type_for_name(
+        variant,
+        ty,
+        nominal_types.variant_payloads,
+        nominal_types.env,
+    );
     let Some(payload_ty) = nominal_payload
         .as_ref()
-        .and_then(EnumVariantPayloadType::single_type)
+        .and_then(EnumVariantPayload::single_type)
         .or_else(|| {
             nominal_payload
                 .is_none()
@@ -1666,7 +1644,7 @@ fn collect_variant_tuple_function_param_higher_order_bindings(
         TypeKind::Tuple(item_types) => item_types,
         _ => nominal_payload
             .as_ref()
-            .and_then(EnumVariantPayloadType::tuple_items)
+            .and_then(EnumVariantPayload::tuple_items)
             .unwrap_or_default(),
     };
     if item_types.is_empty() {
@@ -1903,17 +1881,34 @@ fn record_pattern_field_type(
 fn enum_variant_payload_type_for_name(
     variant: &str,
     ty: &TypeKind,
-    nominal_variant_payloads: Option<&HashMap<String, HashMap<String, EnumVariantPayloadType>>>,
-) -> Option<EnumVariantPayloadType> {
-    let enum_name = nominal_record_type_name(ty)?;
+    nominal_variant_payloads: Option<&HashMap<String, HashMap<String, EnumVariantPayload>>>,
+    env: Option<&TypeCheckEnv>,
+) -> Option<EnumVariantPayload> {
     let variant = normalize_variant_name(variant);
     let variant = variant
         .rsplit_once('.')
         .map_or(variant.as_str(), |(_, name)| name);
-    nominal_variant_payloads?
-        .get(enum_name)?
-        .get(variant)
-        .cloned()
+    nominal_record_type_name(ty)
+        .and_then(|enum_name| {
+            nominal_variant_payloads?
+                .get(enum_name)?
+                .get(variant)
+                .cloned()
+        })
+        .or_else(|| env_variant_payload_type_for_name(ty, variant, env))
+}
+
+fn env_variant_payload_type_for_name(
+    ty: &TypeKind,
+    variant: &str,
+    env: Option<&TypeCheckEnv>,
+) -> Option<EnumVariantPayload> {
+    match ty {
+        TypeKind::BorrowRef { inner, .. } | TypeKind::Shared(inner) => {
+            env_variant_payload_type_for_name(inner, variant, env)
+        }
+        ty => env?.enum_variant_payload(ty, variant).cloned(),
+    }
 }
 
 fn nominal_record_type_name(ty: &TypeKind) -> Option<&str> {

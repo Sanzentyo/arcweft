@@ -1,7 +1,7 @@
 //! Module, top-level declaration, and dialogue entry checks.
 
 use super::{
-    ActionParam, ActionSignature, EffectScope, EntityKind, EnumVariantPayloadType, FlowKind,
+    ActionParam, ActionSignature, EffectScope, EntityKind, EnumVariantPayload, FlowKind,
     FunctionKind, FunctionSignature, HirModule, HirTopLevelDecl, LifetimeKey, LifetimeScopeKind,
     NominalTypeContext, Pattern, Stmt, TypeCheckError, TypeChecker, TypeKind, YieldContext,
     choice_output_type, entity_kind_for_decl, entity_syntax_kind, function_param_local_type,
@@ -199,6 +199,7 @@ impl TypeChecker<'_> {
                             NominalTypeContext::new(
                                 &self.nominal_fields,
                                 &self.nominal_variant_payloads,
+                                self.env,
                             ),
                         )
                         .into_iter()
@@ -392,7 +393,11 @@ impl TypeChecker<'_> {
                 self.check_signature_type_refs(function.signature());
                 let signature_type = function_signature_type_with_nominal_types(
                     function.signature(),
-                    NominalTypeContext::new(&self.nominal_fields, &self.nominal_variant_payloads),
+                    NominalTypeContext::new(
+                        &self.nominal_fields,
+                        &self.nominal_variant_payloads,
+                        self.env,
+                    ),
                 );
                 let name = format!("{}.{}", item.id(), function.signature().name());
                 self.global_functions
@@ -417,7 +422,11 @@ impl TypeChecker<'_> {
             self.check_signature_type_refs(function.signature());
             let signature_type = function_signature_type_with_nominal_types(
                 function.signature(),
-                NominalTypeContext::new(&self.nominal_fields, &self.nominal_variant_payloads),
+                NominalTypeContext::new(
+                    &self.nominal_fields,
+                    &self.nominal_variant_payloads,
+                    self.env,
+                ),
             );
             self.global_functions.insert(
                 function.name().to_owned(),
@@ -1655,7 +1664,7 @@ fn struct_field_types(item: &StructItem) -> HashMap<String, TypeKind> {
 fn enum_variant_payload_types(
     item: &EnumItem,
     errors: &mut Vec<TypeCheckError>,
-) -> HashMap<String, EnumVariantPayloadType> {
+) -> HashMap<String, EnumVariantPayload> {
     item.variants()
         .iter()
         .map(|variant| {
@@ -1669,23 +1678,23 @@ fn enum_variant_payload_type(
     enum_name: &str,
     variant: &EnumVariant,
     errors: &mut Vec<TypeCheckError>,
-) -> EnumVariantPayloadType {
+) -> EnumVariantPayload {
     let Some(payload) = variant.payload() else {
-        return EnumVariantPayloadType::Unit;
+        return EnumVariantPayload::Unit;
     };
     parse_enum_variant_payload(payload).unwrap_or_else(|message| {
         errors.push(TypeCheckError::new(format!(
             "enum `{enum_name}` variant `{}` has invalid payload type: {message}",
             variant.name()
         )));
-        EnumVariantPayloadType::Unit
+        EnumVariantPayload::Unit
     })
 }
 
-fn parse_enum_variant_payload(payload: &str) -> Result<EnumVariantPayloadType, String> {
+fn parse_enum_variant_payload(payload: &str) -> Result<EnumVariantPayload, String> {
     let payload = payload.trim();
     if payload.is_empty() {
-        return Ok(EnumVariantPayloadType::Unit);
+        return Ok(EnumVariantPayload::Unit);
     }
     if let Some(record) = payload
         .strip_prefix('{')
@@ -1698,16 +1707,16 @@ fn parse_enum_variant_payload(payload: &str) -> Result<EnumVariantPayloadType, S
         .map_err(|error| error.to_string())
 }
 
-fn enum_variant_tuple_payload_from_type_ref(ty: TypeRef) -> EnumVariantPayloadType {
+fn enum_variant_tuple_payload_from_type_ref(ty: TypeRef) -> EnumVariantPayload {
     match ty {
         TypeRef::Tuple(items) => {
-            EnumVariantPayloadType::Tuple(items.iter().map(type_ref_kind).collect())
+            EnumVariantPayload::Tuple(items.iter().map(type_ref_kind).collect())
         }
-        ty => EnumVariantPayloadType::Tuple(vec![type_ref_kind(&ty)]),
+        ty => EnumVariantPayload::Tuple(vec![type_ref_kind(&ty)]),
     }
 }
 
-fn parse_enum_variant_record_payload(record: &str) -> Result<EnumVariantPayloadType, String> {
+fn parse_enum_variant_record_payload(record: &str) -> Result<EnumVariantPayload, String> {
     let mut fields = BTreeMap::new();
     for field in split_top_level_commas(record) {
         let field = field.trim();
@@ -1719,7 +1728,7 @@ fn parse_enum_variant_record_payload(record: &str) -> Result<EnumVariantPayloadT
         let ty = parse_type_ref(ty.trim()).map_err(|error| error.to_string())?;
         fields.insert(name.trim().to_owned(), type_ref_kind(&ty));
     }
-    Ok(EnumVariantPayloadType::Record(fields))
+    Ok(EnumVariantPayload::Record(fields))
 }
 
 fn split_top_level_commas(source: &str) -> Vec<&str> {

@@ -1635,6 +1635,91 @@ effects { }
 }
 
 #[test]
+fn env_enum_tuple_variant_destructured_callback_composes_when_payload_is_called() {
+    let tree = parse_ok(
+        r#"
+fn use_loader(.WithLoad(load): ExternalLoaderSpec) -> String {
+    return load("story.arcw")
+}
+
+flow @flow.env_enum_tuple_variant_destructured_callback_effect env_enum_tuple_variant_destructured_callback_effect
+effects { }
+{
+    let body = use_loader(ExternalLoaderSpec.WithLoad(|path: String| -> String {
+        adapter.read_text(path = path)
+    }))
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("env enum tuple variant fixture lowers");
+    validate_typecheck_ready(&hir).expect("env enum tuple variant fixture is structured");
+    let env = read_text_env().with_enum_variant_payload(
+        TypeKind::Named("ExternalLoaderSpec".to_owned()),
+        "WithLoad",
+        EnumVariantPayload::tuple([TypeKind::Function {
+            params: vec![TypeKind::String],
+            return_type: Box::new(TypeKind::String),
+        }]),
+    );
+
+    let errors = typecheck_hir(&hir, &env)
+        .expect_err("env enum tuple variant destructured callback must compose body effects");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.env_enum_tuple_variant_destructured_callback_effect")
+                && error.message().contains("fs.read")
+        }),
+        "expected env enum tuple variant callback effect diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
+fn env_enum_record_variant_destructured_callback_composes_when_payload_is_called() {
+    let tree = parse_ok(
+        r#"
+fn use_loader(.WithLoad { load }: ExternalLoaderRecordSpec) -> String {
+    return load("story.arcw")
+}
+
+flow @flow.env_enum_record_variant_destructured_callback_effect env_enum_record_variant_destructured_callback_effect
+effects { }
+{
+    let body = use_loader(WithLoad { load: |path: String| -> String { adapter.read_text(path = path) } })
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("env enum record variant fixture lowers");
+    validate_typecheck_ready(&hir).expect("env enum record variant fixture is structured");
+    let env = read_text_env().with_enum_variant_payload(
+        TypeKind::Named("ExternalLoaderRecordSpec".to_owned()),
+        "WithLoad",
+        EnumVariantPayload::record([(
+            "load",
+            TypeKind::Function {
+                params: vec![TypeKind::String],
+                return_type: Box::new(TypeKind::String),
+            },
+        )]),
+    );
+
+    let errors = typecheck_hir(&hir, &env)
+        .expect_err("env enum record variant destructured callback must compose body effects");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.env_enum_record_variant_destructured_callback_effect")
+                && error.message().contains("fs.read")
+        }),
+        "expected env enum record variant callback effect diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn curried_higher_order_function_argument_composes_when_later_group_param_is_called() {
     let tree = parse_ok(
         r#"

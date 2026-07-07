@@ -13,7 +13,11 @@ impl TypeChecker<'_> {
         for (name, binding_ty) in pattern_bindings_with_nominal_types(
             pattern,
             ty,
-            NominalTypeContext::new(&self.nominal_fields, &self.nominal_variant_payloads),
+            NominalTypeContext::new(
+                &self.nominal_fields,
+                &self.nominal_variant_payloads,
+                self.env,
+            ),
         ) {
             self.bind_local(name, binding_ty);
         }

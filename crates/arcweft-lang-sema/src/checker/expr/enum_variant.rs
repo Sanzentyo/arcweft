@@ -1,6 +1,6 @@
 use super::{CallArg, Expr, TypeCheckError, TypeChecker, TypeKind};
-use crate::checker::EnumVariantPayloadType;
 use crate::checker::helpers::expr_path_label;
+use crate::env::EnumVariantPayload;
 
 impl TypeChecker<'_> {
     pub(super) fn check_enum_variant_call_expr(
@@ -29,10 +29,10 @@ impl TypeChecker<'_> {
         &mut self,
         path: &str,
         args: &[CallArg],
-        payload: &EnumVariantPayloadType,
+        payload: &EnumVariantPayload,
     ) {
         match payload {
-            EnumVariantPayloadType::Unit => {
+            EnumVariantPayload::Unit => {
                 if !args.is_empty() {
                     self.errors.push(TypeCheckError::new(format!(
                         "enum variant `{path}` does not accept a payload"
@@ -42,7 +42,7 @@ impl TypeChecker<'_> {
                     self.check_expr(arg.value());
                 }
             }
-            EnumVariantPayloadType::Tuple(items) => {
+            EnumVariantPayload::Tuple(items) => {
                 if args.len() != items.len() {
                     self.errors.push(TypeCheckError::new(format!(
                         "enum variant `{path}` expects {} positional payload item(s), got {}",
@@ -78,7 +78,7 @@ impl TypeChecker<'_> {
                     }
                 }
             }
-            EnumVariantPayloadType::Record(_) => {
+            EnumVariantPayload::Record(_) => {
                 self.errors.push(TypeCheckError::new(format!(
                     "enum variant `{path}` record payload must use record constructor syntax"
                 )));
@@ -93,9 +93,9 @@ impl TypeChecker<'_> {
         &mut self,
         path: &str,
         fields: &[(String, Expr)],
-        payload: &EnumVariantPayloadType,
+        payload: &EnumVariantPayload,
     ) {
-        let EnumVariantPayloadType::Record(expected_fields) = payload else {
+        let EnumVariantPayload::Record(expected_fields) = payload else {
             self.errors.push(TypeCheckError::new(format!(
                 "enum variant `{path}` tuple payload must use call constructor syntax"
             )));
@@ -134,30 +134,36 @@ impl TypeChecker<'_> {
         &self,
         ty: &TypeKind,
         path: &str,
-    ) -> Option<EnumVariantPayloadType> {
-        let enum_name = nominal_type_name(ty)?;
+    ) -> Option<EnumVariantPayload> {
         let (prefix, variant) = enum_constructor_path_parts(path);
-        if prefix.is_some_and(|prefix| prefix != enum_name) {
+        if prefix.is_some_and(|prefix| nominal_type_name(ty) != Some(prefix)) {
             return None;
         }
-        self.nominal_variant_payloads
-            .get(enum_name)?
-            .get(variant)
-            .cloned()
+        nominal_type_name(ty)
+            .and_then(|enum_name| {
+                self.nominal_variant_payloads
+                    .get(enum_name)?
+                    .get(variant)
+                    .cloned()
+            })
+            .or_else(|| env_variant_payload_for_type(self, ty, variant))
     }
 
     fn enum_variant_payload_for_name(
         &self,
         ty: &TypeKind,
         variant: &str,
-    ) -> Option<EnumVariantPayloadType> {
-        let enum_name = nominal_type_name(ty)?;
+    ) -> Option<EnumVariantPayload> {
         let variant = variant.strip_prefix('.').unwrap_or(variant);
         let variant = variant.rsplit_once('.').map_or(variant, |(_, name)| name);
-        self.nominal_variant_payloads
-            .get(enum_name)?
-            .get(variant)
-            .cloned()
+        nominal_type_name(ty)
+            .and_then(|enum_name| {
+                self.nominal_variant_payloads
+                    .get(enum_name)?
+                    .get(variant)
+                    .cloned()
+            })
+            .or_else(|| env_variant_payload_for_type(self, ty, variant))
     }
 }
 
@@ -173,4 +179,17 @@ fn enum_constructor_path_parts(path: &str) -> (Option<&str>, &str) {
     let path = path.strip_prefix('.').unwrap_or(path);
     path.rsplit_once('.')
         .map_or((None, path), |(prefix, variant)| (Some(prefix), variant))
+}
+
+fn env_variant_payload_for_type(
+    checker: &TypeChecker<'_>,
+    ty: &TypeKind,
+    variant: &str,
+) -> Option<EnumVariantPayload> {
+    match ty {
+        TypeKind::BorrowRef { inner, .. } | TypeKind::Shared(inner) => {
+            env_variant_payload_for_type(checker, inner, variant)
+        }
+        ty => checker.env.enum_variant_payload(ty, variant).cloned(),
+    }
 }

@@ -1,7 +1,7 @@
 use crate::types::{EntityKind, EntityType, TypeKind};
 use arcweft_character::manifest::CharacterManifest;
 use arcweft_lang_syntax::types::FnParamKind;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Agent debug path family used to type `state(...)` and `observation(...)`
 /// probes from a project semantic index.
@@ -56,6 +56,14 @@ pub enum FunctionParamSelectorSegment {
     VariantPayload(String),
 }
 
+/// Payload contract for one enum variant known to the semantic environment.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EnumVariantPayload {
+    Unit,
+    Tuple(Vec<TypeKind>),
+    Record(BTreeMap<String, TypeKind>),
+}
+
 /// Method signature tracked by the lightweight semantic environment.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MethodSignature {
@@ -104,6 +112,7 @@ pub struct EffectCapabilityParts {
 pub struct TypeCheckEnv {
     pub(crate) symbols: HashMap<String, TypeKind>,
     pub(crate) enum_variants: HashMap<TypeKind, HashSet<String>>,
+    pub(crate) enum_variant_payloads: HashMap<TypeKind, HashMap<String, EnumVariantPayload>>,
     pub(crate) functions: HashMap<String, TypeKind>,
     pub(crate) function_signatures: HashMap<String, FunctionSignature>,
     pub(crate) function_effects: HashMap<String, Vec<EffectCapability>>,
@@ -296,6 +305,53 @@ impl FunctionParamHigherOrderBinding {
     /// Argument selector that yields this binding's source value.
     pub const fn selector(&self) -> &FunctionParamSelector {
         &self.selector
+    }
+}
+
+impl EnumVariantPayload {
+    /// Creates a unit variant payload contract.
+    pub const fn unit() -> Self {
+        Self::Unit
+    }
+
+    /// Creates a tuple/newtype variant payload contract.
+    pub fn tuple(items: impl IntoIterator<Item = TypeKind>) -> Self {
+        Self::Tuple(items.into_iter().map(normalize_type_kind).collect())
+    }
+
+    /// Creates a record variant payload contract.
+    pub fn record(fields: impl IntoIterator<Item = (impl Into<String>, TypeKind)>) -> Self {
+        Self::Record(
+            fields
+                .into_iter()
+                .map(|(name, ty)| (name.into(), normalize_type_kind(ty)))
+                .collect(),
+        )
+    }
+
+    pub(crate) fn single_type(&self) -> Option<TypeKind> {
+        match self {
+            Self::Tuple(items) => match items.as_slice() {
+                [item] => Some(item.clone()),
+                items if !items.is_empty() => Some(TypeKind::Tuple(items.to_vec())),
+                _ => None,
+            },
+            Self::Unit | Self::Record(_) => None,
+        }
+    }
+
+    pub(crate) fn tuple_items(&self) -> Option<Vec<TypeKind>> {
+        match self {
+            Self::Tuple(items) => Some(items.clone()),
+            Self::Unit | Self::Record(_) => None,
+        }
+    }
+
+    pub(crate) fn record_field_type(&self, field: &str) -> Option<TypeKind> {
+        match self {
+            Self::Record(fields) => fields.get(field).cloned(),
+            Self::Unit | Self::Tuple(_) => None,
+        }
     }
 }
 
@@ -523,10 +579,40 @@ impl TypeCheckEnv {
         ty: TypeKind,
         variants: impl IntoIterator<Item = impl Into<String>>,
     ) -> Self {
+        let ty = normalize_type_kind(ty);
         self.enum_variants
-            .entry(normalize_type_kind(ty))
+            .entry(ty.clone())
             .or_default()
-            .extend(variants.into_iter().map(Into::into));
+            .extend(variants.into_iter().map(|variant| {
+                let variant = variant.into();
+                self.enum_variant_payloads
+                    .entry(ty.clone())
+                    .or_default()
+                    .entry(variant.clone())
+                    .or_insert(EnumVariantPayload::Unit);
+                variant
+            }));
+        self
+    }
+
+    /// Registers one enum-like variant with its payload contract.
+    #[must_use]
+    pub fn with_enum_variant_payload(
+        mut self,
+        ty: TypeKind,
+        variant: impl Into<String>,
+        payload: EnumVariantPayload,
+    ) -> Self {
+        let ty = normalize_type_kind(ty);
+        let variant = variant.into();
+        self.enum_variants
+            .entry(ty.clone())
+            .or_default()
+            .insert(variant.clone());
+        self.enum_variant_payloads
+            .entry(ty)
+            .or_default()
+            .insert(variant, normalize_enum_variant_payload(payload));
         self
     }
 
@@ -799,6 +885,16 @@ impl TypeCheckEnv {
             .is_some_and(|variants| variants.contains(variant))
     }
 
+    pub(crate) fn enum_variant_payload(
+        &self,
+        ty: &TypeKind,
+        variant: &str,
+    ) -> Option<&EnumVariantPayload> {
+        self.enum_variant_payloads
+            .get(ty)
+            .and_then(|variants| variants.get(variant))
+    }
+
     pub(crate) fn function_type(&self, name: &str) -> Option<&TypeKind> {
         self.functions.get(name)
     }
@@ -905,6 +1001,21 @@ fn normalize_function_param_higher_order_binding(
 ) -> FunctionParamHigherOrderBinding {
     binding.ty = normalize_type_kind(binding.ty);
     binding
+}
+
+fn normalize_enum_variant_payload(payload: EnumVariantPayload) -> EnumVariantPayload {
+    match payload {
+        EnumVariantPayload::Unit => EnumVariantPayload::Unit,
+        EnumVariantPayload::Tuple(items) => {
+            EnumVariantPayload::Tuple(items.into_iter().map(normalize_type_kind).collect())
+        }
+        EnumVariantPayload::Record(fields) => EnumVariantPayload::Record(
+            fields
+                .into_iter()
+                .map(|(name, ty)| (name, normalize_type_kind(ty)))
+                .collect(),
+        ),
+    }
 }
 
 fn root_higher_order_bindings(

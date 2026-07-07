@@ -3,7 +3,7 @@ pub(super) use crate::check::{
     TypedLoweringEvidenceKind, analyze_types, typecheck_hir, validate_typecheck_ready,
 };
 pub(super) use crate::diagnostics::{TypeCheckErrorKind, TypeCheckWarningKind};
-pub(super) use crate::env::{FunctionParam, FunctionSignature, TypeCheckEnv};
+pub(super) use crate::env::{EnumVariantPayload, FunctionParam, FunctionSignature, TypeCheckEnv};
 pub(super) use crate::resolve::{
     NameRegistry, registry_from_hir, registry_from_hir_and_env, validate_hir_references,
 };
