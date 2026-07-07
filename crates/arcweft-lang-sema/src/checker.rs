@@ -11,7 +11,8 @@ use crate::effect_model::{CallableId, CallableKind, EffectContract, EffectSite, 
 use crate::effects::{EffectId, EffectSet};
 use crate::env::{
     AgentActionEnvParam, DebugPathKind, EffectCapability, FunctionParam,
-    FunctionParamHigherOrderBinding, FunctionParamSelector, FunctionSignature, TypeCheckEnv,
+    FunctionParamHigherOrderBinding, FunctionParamSelector, FunctionParamSelectorSegment,
+    FunctionSignature, TypeCheckEnv,
 };
 use crate::fact_layer::{EffectScope, capability_from_expr};
 use crate::lifetime::{
@@ -976,8 +977,12 @@ impl TypeChecker<'_> {
             .higher_order_bindings()
             .iter()
             .filter_map(|binding| {
-                let (value, actual) =
-                    selected_higher_order_argument(binding.selector(), value, actual)?;
+                let (value, actual) = selected_higher_order_argument(
+                    binding.selector(),
+                    value,
+                    actual,
+                    binding.ty(),
+                )?;
                 if !matches!(binding.ty(), TypeKind::Function { .. })
                     || !matches!(actual, TypeKind::Function { .. })
                 {
@@ -1405,15 +1410,30 @@ fn collect_function_param_higher_order_bindings(
             }
             collect_function_param_higher_order_bindings(pattern, ty, selector, bindings);
         }
-        Pattern::Record { fields, .. }
-        | Pattern::Variant {
+        Pattern::Record { fields, .. } => {
+            for field in fields {
+                let Some(field_ty) = pattern_type_hint(field.pattern()) else {
+                    continue;
+                };
+                collect_function_param_higher_order_bindings(
+                    field.pattern(),
+                    &field_ty,
+                    selector_with_record_field(&selector, field.name()),
+                    bindings,
+                );
+            }
+        }
+        Pattern::Variant {
             payload: Some(VariantPatternPayload::Record { fields, rest: _ }),
             ..
         } => {
             for field in fields {
+                let Some(field_ty) = pattern_type_hint(field.pattern()) else {
+                    continue;
+                };
                 collect_function_param_higher_order_bindings(
                     field.pattern(),
-                    &TypeKind::Unit,
+                    &field_ty,
                     selector.clone(),
                     bindings,
                 );
@@ -1455,6 +1475,35 @@ fn selector_with_tuple_index(
             path.push(index);
             FunctionParamSelector::TupleIndex(path)
         }
+        FunctionParamSelector::Path(path) => {
+            let mut path = path.clone();
+            path.push(FunctionParamSelectorSegment::TupleIndex(index));
+            FunctionParamSelector::Path(path)
+        }
+    }
+}
+
+fn selector_with_record_field(
+    selector: &FunctionParamSelector,
+    field: &str,
+) -> FunctionParamSelector {
+    let segment = FunctionParamSelectorSegment::RecordField(field.to_owned());
+    match selector {
+        FunctionParamSelector::Root => FunctionParamSelector::Path(vec![segment]),
+        FunctionParamSelector::TupleIndex(path) => {
+            let mut path = path
+                .iter()
+                .copied()
+                .map(FunctionParamSelectorSegment::TupleIndex)
+                .collect::<Vec<_>>();
+            path.push(segment);
+            FunctionParamSelector::Path(path)
+        }
+        FunctionParamSelector::Path(path) => {
+            let mut path = path.clone();
+            path.push(segment);
+            FunctionParamSelector::Path(path)
+        }
     }
 }
 
@@ -1462,6 +1511,7 @@ fn selected_higher_order_argument<'a>(
     selector: &FunctionParamSelector,
     value: &'a Expr,
     actual: &'a TypeKind,
+    fallback_ty: &'a TypeKind,
 ) -> Option<(&'a Expr, &'a TypeKind)> {
     match selector {
         FunctionParamSelector::Root => Some((value, actual)),
@@ -1477,6 +1527,48 @@ fn selected_higher_order_argument<'a>(
             }
             Some((value, actual))
         }
+        FunctionParamSelector::Path(path) => {
+            let mut value = value;
+            let mut actual = Some(actual);
+            for segment in path {
+                match segment {
+                    FunctionParamSelectorSegment::TupleIndex(index) => {
+                        let Expr::Tuple(values) = value else {
+                            return None;
+                        };
+                        value = values.get(*index)?;
+                        actual = match actual {
+                            Some(TypeKind::Tuple(types)) => types.get(*index),
+                            _ => None,
+                        };
+                    }
+                    FunctionParamSelectorSegment::RecordField(field) => {
+                        let (Expr::Record { fields, .. } | Expr::RecordLiteral(fields)) = value
+                        else {
+                            return None;
+                        };
+                        value = fields
+                            .iter()
+                            .find_map(|(name, value)| (name == field).then_some(value))?;
+                        actual = None;
+                    }
+                }
+            }
+            Some((value, actual.unwrap_or(fallback_ty)))
+        }
+    }
+}
+
+fn pattern_type_hint(pattern: &Pattern) -> Option<TypeKind> {
+    match pattern {
+        Pattern::Typed { ty, .. } => Some(type_ref_kind(ty)),
+        Pattern::Tuple(items) => items
+            .iter()
+            .map(pattern_type_hint)
+            .collect::<Option<Vec<_>>>()
+            .map(TypeKind::Tuple),
+        Pattern::Whole { pattern, .. } => pattern_type_hint(pattern),
+        _ => None,
     }
 }
 

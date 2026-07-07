@@ -1409,6 +1409,48 @@ effects { }
 }
 
 #[test]
+fn destructured_record_inline_closure_composes_when_binding_is_called() {
+    let tree = parse_ok(
+        r#"
+struct LoaderSpec {
+    load: String -> String,
+    path: String,
+}
+
+fn use_loader(LoaderSpec { load: load: String -> String, path }: LoaderSpec) -> String {
+    return load(path)
+}
+
+flow @flow.destructured_record_inline_closure_effect destructured_record_inline_closure_effect
+effects { }
+{
+    let body = use_loader(LoaderSpec {
+        load: |path: String| -> String {
+            adapter.read_text(path = path)
+        },
+        path: "story.arcw",
+    })
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("record destructured higher-order fixture lowers");
+    validate_typecheck_ready(&hir).expect("record destructured higher-order fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("record destructured inline callback must compose body effects");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.destructured_record_inline_closure_effect")
+                && error.message().contains("fs.read")
+        }),
+        "expected record destructured inline callback effect diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn curried_higher_order_function_argument_composes_when_later_group_param_is_called() {
     let tree = parse_ok(
         r#"

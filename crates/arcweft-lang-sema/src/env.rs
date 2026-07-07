@@ -45,6 +45,14 @@ pub struct FunctionParamHigherOrderBinding {
 pub enum FunctionParamSelector {
     Root,
     TupleIndex(Vec<usize>),
+    Path(Vec<FunctionParamSelectorSegment>),
+}
+
+/// One segment inside a parameter argument selector path.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FunctionParamSelectorSegment {
+    TupleIndex(usize),
+    RecordField(String),
 }
 
 /// Method signature tracked by the lightweight semantic environment.

@@ -319,9 +319,12 @@ Source briefs:
   caller-supplied local closure alias or inline closure expression inside a
   nested tuple argument composes when the destructured binding is directly
   invoked by the callee and stays effect-free when the binding is only kept.
-  Record/variant destructured callback selectors, callback invocations hidden
-  inside returned/stored closures, and LSP-facing closure effect evidence
-  remain open. Save/load
+  Record destructured callback parameters now also project explicitly typed
+  function-valued field patterns such as `Spec { load: load: String -> String
+  }: Spec` from record/record-literal call arguments. Variant destructured
+  callback selectors, nominal record field type lookup for untyped field
+  bindings, callback invocations hidden inside returned/stored closures, and
+  LSP-facing closure effect evidence remain open. Save/load
   currently has an explicit Product AWBC policy: runtime function values are
   rejected as non-persistable until AWBC closure allocation and snapshot
   versioning are designed. Numeric fallback lints
