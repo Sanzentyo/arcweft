@@ -259,6 +259,17 @@ Source briefs:
   `ForEach(...) |item| { ... }` / unsupported `Grid(...)` authoring to the
   current `for item in items key = item.id { ... }` View DSL and supported
   container elements.
+- Module-local user-defined enum variant payload selectors now compose
+  function-valued payload callbacks for both tuple/newtype payload
+  constructors and record payload constructors. Type-qualified tuple
+  constructors such as `LoaderSpec.WithLoad(|path: String| -> String { ... })`
+  are recognized from the parser's method-call AST when an expected enum type
+  is available, while record constructors such as
+  `WithLoad { load: |path: String| -> String { ... } }` project through the
+  same nominal enum payload catalog. Destructured callee parameters such as
+  `.WithLoad(load): LoaderSpec` and `.WithLoad { load }: LoaderRecordSpec`
+  bind the callback with the declared payload function type and compose the
+  caller-supplied closure body effects when the callee invokes that binding.
 
 ## Current boundaries
 
@@ -328,9 +339,12 @@ Source briefs:
   `Option`/`Result` constructors used in expression calls, so `.Some(load):
   Option<String -> String>` and `.Err(load): Result<String, String -> String>`
   compose a caller-supplied closure when the callee invokes `load(...)`.
-  General user-defined enum constructor payload projection, callback
-  invocations hidden inside returned/stored closures, and LSP-facing closure
-  effect evidence remain open. Save/load currently has an explicit Product
+  Module-local user-defined enum tuple/newtype and record payload constructors
+  now use the same callback-selector path for destructured function-valued
+  payload bindings. Callback invocations hidden inside returned/stored
+  closures, enum payload metadata beyond the current module-local syntax
+  catalog, and LSP-facing closure effect evidence remain open. Save/load
+  currently has an explicit Product
   AWBC policy: runtime function values are
   rejected as non-persistable until AWBC closure allocation and snapshot
   versioning are designed. Numeric fallback lints
@@ -563,8 +577,9 @@ The built-in variant payload callback selector cut has focused sema coverage
 for `.Some(load): Option<String -> String>` and `.Err(load): Result<String,
 String -> String>` destructured callback parameters. These compose a
 caller-supplied closure argument when the callee directly invokes the
-destructured payload binding, while the broader user-defined enum constructor
-payload contract remains open. This cut passed `cargo check -p
+destructured payload binding. The follow-up user-defined enum payload selector
+cut extends the same selector model to module-local tuple/newtype and record
+enum payload constructors. The built-in cut passed `cargo check -p
 arcweft-lang-sema --all-features`, focused `variant_destructured_callback`
 coverage, full `cargo test -p arcweft-lang-sema --all-features --quiet`,
 `cargo clippy -p arcweft-lang-sema --all-targets --all-features --quiet`,
@@ -576,3 +591,22 @@ audit still reports one unrelated error for
 `crates/arcweft-cli/src/app/bundle_view.rs` exceeding 2500 physical LOC in the
 current dirty worktree; no structure-audit error is introduced by the sema
 function-stack slice.
+
+The user-defined enum variant payload callback selector cut has focused sema
+coverage for tuple/newtype payload constructors and record payload constructors
+with destructured function-valued payload parameters. It passed
+`cargo test -p arcweft-lang-sema --all-features user_enum_ -- --nocapture`
+and full `cargo test -p arcweft-lang-sema --all-features --quiet` in the
+current all-features validation slice. It also passed
+`cargo check -p arcweft-lang-sema --all-features` and
+`cargo clippy -p arcweft-lang-sema --all-targets --all-features --quiet`
+with only the existing `TraitMember` / `ImplMember` large enum warnings from
+`arcweft-lang-syntax`. The same slice split enum-constructor expression checks
+into `checker/expr/enum_variant.rs`; after that split, structure audit no
+longer reports `checker/expr.rs` above the 2500 LOC error threshold. Current
+workspace check/clippy is blocked by unrelated dirty view/style work in
+`arcweft-bundle` tests:
+`ViewStyleResource::runtime_surface_style` is referenced by
+`runtime_control_style_resolution.rs` but is not present in the current
+worktree. Structure audit still reports the unrelated existing
+`crates/arcweft-cli/src/app/bundle_view.rs` 2500 LOC error.

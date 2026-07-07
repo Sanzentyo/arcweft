@@ -63,7 +63,7 @@ use helpers::{
     entity_kind_for_decl, entity_syntax_kind, expr_path_label, ident_pattern_name,
     is_character_entity_literal, is_dialogue_callee_type, is_drop_callee, is_local_ident,
     iter_item_type, merge_line_output, normalize_choice_type, pattern_bindings_with_fallback,
-    pattern_bindings_with_nominal_fields, source_return_types, stmts_diverge, stream_return_types,
+    pattern_bindings_with_nominal_types, source_return_types, stmts_diverge, stream_return_types,
     type_ref_kind, typed_pattern_binding, unify_loop_break_types, variant_payload_type_for_name,
 };
 
@@ -382,6 +382,7 @@ struct TypeChecker<'a> {
     global_type_aliases: HashMap<String, TypeKind>,
     action_signatures: HashMap<String, ActionSignature>,
     nominal_fields: HashMap<String, HashMap<String, TypeKind>>,
+    nominal_variant_payloads: HashMap<String, HashMap<String, EnumVariantPayloadType>>,
     trait_catalog: TraitCatalog,
     trait_predicate_stack: Vec<Vec<TraitPredicate>>,
     flow_params: HashMap<String, HashSet<String>>,
@@ -440,6 +441,19 @@ struct ActionParam {
     has_default: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum EnumVariantPayloadType {
+    Unit,
+    Tuple(Vec<TypeKind>),
+    Record(BTreeMap<String, TypeKind>),
+}
+
+#[derive(Clone, Copy)]
+struct NominalTypeContext<'a> {
+    fields: Option<&'a HashMap<String, HashMap<String, TypeKind>>>,
+    variant_payloads: Option<&'a HashMap<String, HashMap<String, EnumVariantPayloadType>>>,
+}
+
 impl ActionSignature {
     fn new(params: impl IntoIterator<Item = ActionParam>) -> Self {
         Self {
@@ -475,6 +489,52 @@ impl ActionParam {
 
     const fn has_default(&self) -> bool {
         self.has_default
+    }
+}
+
+impl<'a> NominalTypeContext<'a> {
+    const fn empty() -> Self {
+        Self {
+            fields: None,
+            variant_payloads: None,
+        }
+    }
+
+    const fn new(
+        fields: &'a HashMap<String, HashMap<String, TypeKind>>,
+        variant_payloads: &'a HashMap<String, HashMap<String, EnumVariantPayloadType>>,
+    ) -> Self {
+        Self {
+            fields: Some(fields),
+            variant_payloads: Some(variant_payloads),
+        }
+    }
+}
+
+impl EnumVariantPayloadType {
+    fn single_type(&self) -> Option<TypeKind> {
+        match self {
+            Self::Tuple(items) => match items.as_slice() {
+                [item] => Some(item.clone()),
+                items if !items.is_empty() => Some(TypeKind::Tuple(items.to_vec())),
+                _ => None,
+            },
+            Self::Unit | Self::Record(_) => None,
+        }
+    }
+
+    fn tuple_items(&self) -> Option<Vec<TypeKind>> {
+        match self {
+            Self::Tuple(items) => Some(items.clone()),
+            Self::Unit | Self::Record(_) => None,
+        }
+    }
+
+    fn record_field_type(&self, field: &str) -> Option<TypeKind> {
+        match self {
+            Self::Record(fields) => fields.get(field).cloned(),
+            Self::Unit | Self::Tuple(_) => None,
+        }
     }
 }
 
@@ -597,6 +657,7 @@ impl TypeChecker<'_> {
             global_type_aliases: HashMap::new(),
             action_signatures: HashMap::new(),
             nominal_fields: HashMap::new(),
+            nominal_variant_payloads: HashMap::new(),
             trait_catalog: TraitCatalog::default(),
             trait_predicate_stack: Vec::new(),
             flow_params: HashMap::new(),
@@ -1304,12 +1365,12 @@ fn available_effect_set(env: &TypeCheckEnv) -> Option<EffectSet> {
 }
 
 fn function_signature_type(signature: &FnSignature) -> FunctionSignature {
-    function_signature_type_with_nominal_fields(signature, None)
+    function_signature_type_with_nominal_types(signature, NominalTypeContext::empty())
 }
 
-fn function_signature_type_with_nominal_fields(
+fn function_signature_type_with_nominal_types(
     signature: &FnSignature,
-    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
+    nominal_types: NominalTypeContext<'_>,
 ) -> FunctionSignature {
     let return_type = curried_signature_return_type(signature);
     let params = signature
@@ -1317,7 +1378,7 @@ fn function_signature_type_with_nominal_fields(
         .first()
         .into_iter()
         .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
-        .map(|param| function_param_type(param, nominal_fields))
+        .map(|param| function_param_type(param, nominal_types))
         .collect::<Vec<_>>();
     let remaining_param_groups = signature
         .param_groups()
@@ -1327,7 +1388,7 @@ fn function_signature_type_with_nominal_fields(
             group
                 .params()
                 .iter()
-                .map(|param| function_param_type(param, nominal_fields))
+                .map(|param| function_param_type(param, nominal_types))
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
@@ -1353,31 +1414,28 @@ fn curried_signature_return_type(signature: &FnSignature) -> TypeKind {
         })
 }
 
-fn function_param_type(
-    param: &FnParam,
-    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
-) -> FunctionParam {
+fn function_param_type(param: &FnParam, nominal_types: NominalTypeContext<'_>) -> FunctionParam {
     let ty = type_ref_kind(param.ty());
     FunctionParam::new(
         pattern_param_name(param.pattern()),
         ty.clone(),
         param.kind(),
         param.default().is_some(),
-        function_param_higher_order_bindings(param.pattern(), &ty, nominal_fields),
+        function_param_higher_order_bindings(param.pattern(), &ty, nominal_types),
     )
 }
 
 fn function_param_higher_order_bindings(
     pattern: &Pattern,
     ty: &TypeKind,
-    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
+    nominal_types: NominalTypeContext<'_>,
 ) -> Vec<FunctionParamHigherOrderBinding> {
     let mut bindings = Vec::new();
     collect_function_param_higher_order_bindings(
         pattern,
         ty,
         FunctionParamSelector::Root,
-        nominal_fields,
+        nominal_types,
         &mut bindings,
     );
     bindings
@@ -1387,7 +1445,7 @@ fn collect_function_param_higher_order_bindings(
     pattern: &Pattern,
     ty: &TypeKind,
     selector: FunctionParamSelector,
-    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
+    nominal_types: NominalTypeContext<'_>,
     bindings: &mut Vec<FunctionParamHigherOrderBinding>,
 ) {
     match pattern {
@@ -1408,7 +1466,7 @@ fn collect_function_param_higher_order_bindings(
                 items,
                 item_types,
                 &selector,
-                nominal_fields,
+                nominal_types,
                 bindings,
             );
         }
@@ -1424,7 +1482,7 @@ fn collect_function_param_higher_order_bindings(
                 pattern,
                 ty,
                 selector,
-                nominal_fields,
+                nominal_types,
                 bindings,
             );
         }
@@ -1434,7 +1492,7 @@ fn collect_function_param_higher_order_bindings(
                 fields,
                 ty,
                 &selector,
-                nominal_fields,
+                nominal_types,
                 bindings,
             );
         }
@@ -1449,7 +1507,7 @@ fn collect_function_param_higher_order_bindings(
                 pattern,
                 ty,
                 &selector,
-                nominal_fields,
+                nominal_types,
                 bindings,
             );
         }
@@ -1465,14 +1523,14 @@ fn collect_function_param_higher_order_bindings(
                     items,
                     ty,
                     &selector,
-                    nominal_fields,
+                    nominal_types,
                     bindings,
                 );
             } else {
                 collect_bracket_seq_function_param_higher_order_bindings(
                     items,
                     &selector,
-                    nominal_fields,
+                    nominal_types,
                     bindings,
                 );
             }
@@ -1492,7 +1550,7 @@ fn collect_tuple_function_param_higher_order_bindings(
     items: &[Pattern],
     item_types: &[TypeKind],
     selector: &FunctionParamSelector,
-    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
+    nominal_types: NominalTypeContext<'_>,
     bindings: &mut Vec<FunctionParamHigherOrderBinding>,
 ) {
     for (index, (item, item_ty)) in items.iter().zip(item_types).enumerate() {
@@ -1500,7 +1558,7 @@ fn collect_tuple_function_param_higher_order_bindings(
             item,
             item_ty,
             selector_with_tuple_index(selector, index),
-            nominal_fields,
+            nominal_types,
             bindings,
         );
     }
@@ -1511,12 +1569,12 @@ fn collect_record_function_param_higher_order_bindings(
     fields: &[RecordPatternField],
     ty: &TypeKind,
     selector: &FunctionParamSelector,
-    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
+    nominal_types: NominalTypeContext<'_>,
     bindings: &mut Vec<FunctionParamHigherOrderBinding>,
 ) {
     for field in fields {
         let Some(field_ty) = pattern_type_hint(field.pattern())
-            .or_else(|| record_pattern_field_type(pattern, ty, field.name(), nominal_fields))
+            .or_else(|| record_pattern_field_type(pattern, ty, field.name(), nominal_types.fields))
         else {
             continue;
         };
@@ -1524,7 +1582,7 @@ fn collect_record_function_param_higher_order_bindings(
             field.pattern(),
             &field_ty,
             selector_with_record_field(selector, field.name()),
-            nominal_fields,
+            nominal_types,
             bindings,
         );
     }
@@ -1536,16 +1594,28 @@ fn collect_variant_record_function_param_higher_order_bindings(
     pattern: &Pattern,
     ty: &TypeKind,
     selector: &FunctionParamSelector,
-    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
+    nominal_types: NominalTypeContext<'_>,
     bindings: &mut Vec<FunctionParamHigherOrderBinding>,
 ) {
     let payload_ty = variant_payload_type_for_name(variant, Some(ty));
+    let nominal_payload =
+        enum_variant_payload_type_for_name(variant, ty, nominal_types.variant_payloads);
     let payload_selector = selector_with_variant_payload(selector, variant);
     for field in fields {
         let Some(field_ty) = pattern_type_hint(field.pattern()).or_else(|| {
-            payload_ty.as_ref().and_then(|payload_ty| {
-                record_pattern_field_type(pattern, payload_ty, field.name(), nominal_fields)
-            })
+            nominal_payload
+                .as_ref()
+                .and_then(|payload| payload.record_field_type(field.name()))
+                .or_else(|| {
+                    payload_ty.as_ref().and_then(|payload_ty| {
+                        record_pattern_field_type(
+                            pattern,
+                            payload_ty,
+                            field.name(),
+                            nominal_types.fields,
+                        )
+                    })
+                })
         }) else {
             continue;
         };
@@ -1553,7 +1623,7 @@ fn collect_variant_record_function_param_higher_order_bindings(
             field.pattern(),
             &field_ty,
             selector_with_record_field(&payload_selector, field.name()),
-            nominal_fields,
+            nominal_types,
             bindings,
         );
     }
@@ -1564,10 +1634,21 @@ fn collect_variant_tuple_function_param_higher_order_bindings(
     items: &[Pattern],
     ty: &TypeKind,
     selector: &FunctionParamSelector,
-    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
+    nominal_types: NominalTypeContext<'_>,
     bindings: &mut Vec<FunctionParamHigherOrderBinding>,
 ) {
-    let Some(payload_ty) = variant_payload_type_for_name(variant, Some(ty)) else {
+    let nominal_payload =
+        enum_variant_payload_type_for_name(variant, ty, nominal_types.variant_payloads);
+    let Some(payload_ty) = nominal_payload
+        .as_ref()
+        .and_then(EnumVariantPayloadType::single_type)
+        .or_else(|| {
+            nominal_payload
+                .is_none()
+                .then(|| variant_payload_type_for_name(variant, Some(ty)))
+                .flatten()
+        })
+    else {
         return;
     };
     let payload_selector = selector_with_variant_payload(selector, variant);
@@ -1576,19 +1657,26 @@ fn collect_variant_tuple_function_param_higher_order_bindings(
             &items[0],
             &payload_ty,
             payload_selector,
-            nominal_fields,
+            nominal_types,
             bindings,
         );
         return;
     }
-    let TypeKind::Tuple(item_types) = payload_ty else {
-        return;
+    let item_types = match payload_ty {
+        TypeKind::Tuple(item_types) => item_types,
+        _ => nominal_payload
+            .as_ref()
+            .and_then(EnumVariantPayloadType::tuple_items)
+            .unwrap_or_default(),
     };
+    if item_types.is_empty() {
+        return;
+    }
     collect_tuple_function_param_higher_order_bindings(
         items,
         &item_types,
         &payload_selector,
-        nominal_fields,
+        nominal_types,
         bindings,
     );
 }
@@ -1596,7 +1684,7 @@ fn collect_variant_tuple_function_param_higher_order_bindings(
 fn collect_bracket_seq_function_param_higher_order_bindings(
     items: &[Pattern],
     selector: &FunctionParamSelector,
-    nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
+    nominal_types: NominalTypeContext<'_>,
     bindings: &mut Vec<FunctionParamHigherOrderBinding>,
 ) {
     for item in items {
@@ -1604,7 +1692,7 @@ fn collect_bracket_seq_function_param_higher_order_bindings(
             item,
             &TypeKind::Unit,
             selector.clone(),
-            nominal_fields,
+            nominal_types,
             bindings,
         );
     }
@@ -1722,20 +1810,42 @@ fn selected_higher_order_argument<'a>(
                             .find_map(|(name, value)| (name == field).then_some(value))?;
                         actual = None;
                     }
-                    FunctionParamSelectorSegment::VariantPayload(variant) => {
-                        let Expr::Call { callee, args } = value else {
-                            return None;
-                        };
-                        let callee = expr_path_label(callee)?;
-                        if normalize_variant_name(&callee) != *variant {
-                            return None;
+                    FunctionParamSelectorSegment::VariantPayload(variant) => match value {
+                        Expr::Call { callee, args } => {
+                            let callee = expr_path_label(callee)?;
+                            if !variant_constructor_matches(&callee, variant) {
+                                return None;
+                            }
+                            let [CallArg::Positional(payload)] = args.as_slice() else {
+                                return None;
+                            };
+                            value = payload;
+                            actual = None;
                         }
-                        let [CallArg::Positional(payload)] = args.as_slice() else {
-                            return None;
-                        };
-                        value = payload;
-                        actual = None;
-                    }
+                        Expr::MethodCall {
+                            receiver,
+                            method,
+                            args,
+                        } => {
+                            let receiver = expr_path_label(receiver)?;
+                            let method = method
+                                .split_once('<')
+                                .map_or(method.as_str(), |(name, _)| name);
+                            let callee = format!("{receiver}.{method}");
+                            if !variant_constructor_matches(&callee, variant) {
+                                return None;
+                            }
+                            let [CallArg::Positional(payload)] = args.as_slice() else {
+                                return None;
+                            };
+                            value = payload;
+                            actual = None;
+                        }
+                        Expr::Record { path, .. } if variant_constructor_matches(path, variant) => {
+                            actual = None;
+                        }
+                        _ => return None,
+                    },
                 }
             }
             Some((value, actual.unwrap_or(fallback_ty)))
@@ -1745,6 +1855,14 @@ fn selected_higher_order_argument<'a>(
 
 fn normalize_variant_name(name: &str) -> String {
     name.strip_prefix('.').unwrap_or(name).to_owned()
+}
+
+fn variant_constructor_matches(path: &str, variant: &str) -> bool {
+    let path = normalize_variant_name(path);
+    path == variant
+        || path
+            .rsplit_once('.')
+            .is_some_and(|(_, name)| name == variant)
 }
 
 fn pattern_type_hint(pattern: &Pattern) -> Option<TypeKind> {
@@ -1779,6 +1897,22 @@ fn record_pattern_field_type(
     nominal_fields?
         .get(record_name)
         .and_then(|fields| fields.get(field))
+        .cloned()
+}
+
+fn enum_variant_payload_type_for_name(
+    variant: &str,
+    ty: &TypeKind,
+    nominal_variant_payloads: Option<&HashMap<String, HashMap<String, EnumVariantPayloadType>>>,
+) -> Option<EnumVariantPayloadType> {
+    let enum_name = nominal_record_type_name(ty)?;
+    let variant = normalize_variant_name(variant);
+    let variant = variant
+        .rsplit_once('.')
+        .map_or(variant.as_str(), |(_, name)| name);
+    nominal_variant_payloads?
+        .get(enum_name)?
+        .get(variant)
         .cloned()
 }
 

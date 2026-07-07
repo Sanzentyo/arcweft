@@ -1,7 +1,7 @@
 use super::{
     AwaitBranchKind, CallArg, ChoiceAction, EntityDeclKind, EntityKind, EntityRef, EntityRefSyntax,
-    Expr, LifetimeScopeKind, Literal, MapKind, Pattern, Stmt, TypeCheckError, TypeKind, TypeRef,
-    VariantPatternPayload,
+    EnumVariantPayloadType, Expr, LifetimeScopeKind, Literal, MapKind, NominalTypeContext, Pattern,
+    Stmt, TypeCheckError, TypeKind, TypeRef, VariantPatternPayload,
 };
 use std::collections::HashMap;
 
@@ -297,13 +297,12 @@ pub(super) fn pattern_bindings_with_fallback(
     bindings
 }
 
-pub(super) fn pattern_bindings_with_nominal_fields(
+pub(super) fn pattern_bindings_with_nominal_types(
     pattern: &Pattern,
     fallback: &TypeKind,
-    nominal_fields: &HashMap<String, HashMap<String, TypeKind>>,
+    nominal_types: NominalTypeContext<'_>,
 ) -> Vec<(String, TypeKind)> {
-    let mut bindings =
-        let_else_bindings_with_nominal_fields(pattern, Some(fallback), nominal_fields);
+    let mut bindings = let_else_bindings_with_nominal_types(pattern, Some(fallback), nominal_types);
     for name in collect_pattern_binding_names(pattern) {
         if !bindings.iter().any(|(bound, _)| bound == &name) {
             bindings.push((name, TypeKind::Unit));
@@ -312,28 +311,64 @@ pub(super) fn pattern_bindings_with_nominal_fields(
     bindings
 }
 
-fn let_else_bindings_with_nominal_fields(
+fn let_else_bindings_with_nominal_types(
     pattern: &Pattern,
     expr_type: Option<&TypeKind>,
-    nominal_fields: &HashMap<String, HashMap<String, TypeKind>>,
+    nominal_types: NominalTypeContext<'_>,
 ) -> Vec<(String, TypeKind)> {
     match pattern {
         Pattern::Record { path, fields, .. } => fields
             .iter()
             .flat_map(|field| {
-                let field_ty = nominal_record_field_type(
-                    path.as_deref(),
-                    expr_type,
-                    field.name(),
-                    nominal_fields,
-                );
-                let_else_bindings_with_nominal_fields(
+                let field_ty = nominal_types.fields.and_then(|nominal_fields| {
+                    nominal_record_field_type(
+                        path.as_deref(),
+                        expr_type,
+                        field.name(),
+                        nominal_fields,
+                    )
+                });
+                let_else_bindings_with_nominal_types(
                     field.pattern(),
                     field_ty.as_ref(),
-                    nominal_fields,
+                    nominal_types,
                 )
             })
             .collect(),
+        Pattern::Variant { name, payload, .. } => {
+            let nominal_payload = expr_type.and_then(|ty| {
+                super::enum_variant_payload_type_for_name(name, ty, nominal_types.variant_payloads)
+            });
+            match (payload, nominal_payload) {
+                (
+                    Some(VariantPatternPayload::Tuple(items)),
+                    Some(EnumVariantPayloadType::Tuple(types)),
+                ) => items
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(index, item)| {
+                        let item_type = types.get(index);
+                        let_else_bindings_with_nominal_types(item, item_type, nominal_types)
+                    })
+                    .collect(),
+                (
+                    Some(VariantPatternPayload::Record { fields, .. }),
+                    Some(EnumVariantPayloadType::Record(types)),
+                ) => fields
+                    .iter()
+                    .flat_map(|field| {
+                        let field_ty = types.get(field.name());
+                        let_else_bindings_with_nominal_types(
+                            field.pattern(),
+                            field_ty,
+                            nominal_types,
+                        )
+                    })
+                    .collect(),
+                (None, _) | (_, Some(EnumVariantPayloadType::Unit)) => Vec::new(),
+                _ => let_else_bindings(pattern, expr_type),
+            }
+        }
         Pattern::Tuple(items) => {
             let tuple_items = match expr_type {
                 Some(TypeKind::Tuple(items)) => Some(items.as_slice()),
@@ -344,7 +379,7 @@ fn let_else_bindings_with_nominal_fields(
                 .enumerate()
                 .flat_map(|(index, item)| {
                     let item_type = tuple_items.and_then(|types| types.get(index));
-                    let_else_bindings_with_nominal_fields(item, item_type, nominal_fields)
+                    let_else_bindings_with_nominal_types(item, item_type, nominal_types)
                 })
                 .collect()
         }
@@ -353,10 +388,10 @@ fn let_else_bindings_with_nominal_fields(
                 .cloned()
                 .map(|ty| vec![(name.to_owned(), ty)])
                 .unwrap_or_default();
-            bindings.extend(let_else_bindings_with_nominal_fields(
+            bindings.extend(let_else_bindings_with_nominal_types(
                 pattern,
                 expr_type,
-                nominal_fields,
+                nominal_types,
             ));
             bindings
         }

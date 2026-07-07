@@ -24,6 +24,7 @@ mod agent;
 mod builtin;
 mod callable;
 mod closure;
+mod enum_variant;
 mod method_fallback;
 mod partial;
 mod pipe;
@@ -156,7 +157,7 @@ impl TypeChecker<'_> {
                 receiver,
                 method,
                 args,
-            } => self.check_method_call_expr(receiver, method, args, expression_id),
+            } => self.check_method_call_expr(receiver, method, args, expected, expression_id),
             Expr::Field { target, field } => self.check_field_expr(expr, target, field),
             Expr::DialogueCall { callee, plan, .. } => {
                 Some(self.check_dialogue_call_expr(callee, plan.as_ref()))
@@ -169,7 +170,7 @@ impl TypeChecker<'_> {
             Expr::Range { start, end, .. } => {
                 Some(self.check_range_expr(start.as_deref(), end.as_deref(), expected))
             }
-            Expr::Record { path, fields } => Some(self.check_record_expr(path, fields)),
+            Expr::Record { path, fields } => Some(self.check_record_expr(path, fields, expected)),
             Expr::RecordLiteral(fields) => Some(self.check_record_literal_expr(fields)),
             Expr::Binary { lhs, op, rhs } => self.check_binary_expr(lhs, *op, rhs),
             Expr::Closure {
@@ -390,11 +391,11 @@ impl TypeChecker<'_> {
             TypeKind::Choice(alternatives) => {
                 let mut matches = alternatives
                     .iter()
-                    .filter(|ty| self.env.enum_has_variant(ty, variant));
+                    .filter(|ty| self.enum_has_variant(ty, variant));
                 let selected = matches.next()?;
                 matches.next().is_none().then(|| selected.clone())
             }
-            ty if self.env.enum_has_variant(ty, variant) => Some(ty.clone()),
+            ty if self.enum_has_variant(ty, variant) => Some(ty.clone()),
             _ => None,
         }
     }
@@ -456,7 +457,18 @@ impl TypeChecker<'_> {
         None
     }
 
-    fn check_record_expr(&mut self, path: &str, fields: &[(String, Expr)]) -> TypeKind {
+    fn check_record_expr(
+        &mut self,
+        path: &str,
+        fields: &[(String, Expr)],
+        expected: Option<&TypeKind>,
+    ) -> TypeKind {
+        if let Some(expected) = expected
+            && let Some(payload) = self.enum_variant_payload_for_path(expected, path)
+        {
+            self.check_enum_record_constructor_payload(path, fields, &payload);
+            return expected.clone();
+        }
         if let Some(expected_fields) = self.nominal_fields.get(path).cloned() {
             for (name, value) in fields {
                 if let Some(expected) = expected_fields.get(name) {
@@ -839,6 +851,9 @@ impl TypeChecker<'_> {
         expected: Option<&TypeKind>,
         expression_id: TypeExpressionId,
     ) -> Option<TypeKind> {
+        if let Some(ty) = self.check_enum_variant_call_expr(callee, args, expected) {
+            return Some(ty);
+        }
         if let Some(ty) = self.check_builtin_call_expr(callee, args) {
             return Some(ty);
         }
@@ -1137,11 +1152,15 @@ impl TypeChecker<'_> {
         receiver: &Expr,
         method: &str,
         args: &[CallArg],
+        expected: Option<&TypeKind>,
         expression_id: TypeExpressionId,
     ) -> Option<TypeKind> {
         let method_name = method.split_once('<').map_or(method, |(name, _)| name);
         if let Some(receiver_path) = expr_path_label(receiver) {
             let dotted = format!("{receiver_path}.{method_name}");
+            if let Some(ty) = self.check_enum_variant_call_path(&dotted, args, expected) {
+                return Some(ty);
+            }
             if BuiltinCallSpec::resolve(&dotted).is_some() {
                 return self.check_builtin_call_name(&dotted, args);
             }

@@ -1,18 +1,20 @@
 //! Borrow binding and branch-merge helpers used by the type checker.
 
 use super::{
-    BorrowLocalState, BorrowStateCheckpoint, BorrowStateDelta, BorrowStateJournalEntry, Pattern,
-    TypeChecker, TypeKind, collect_type_kind_lifetimes, merge_borrow_local_states,
-    pattern_bindings_with_fallback, pattern_bindings_with_nominal_fields,
+    BorrowLocalState, BorrowStateCheckpoint, BorrowStateDelta, BorrowStateJournalEntry,
+    NominalTypeContext, Pattern, TypeChecker, TypeKind, collect_type_kind_lifetimes,
+    merge_borrow_local_states, pattern_bindings_with_fallback, pattern_bindings_with_nominal_types,
 };
 use crate::diagnostics::TypeCheckError;
 use std::collections::BTreeSet;
 
 impl TypeChecker<'_> {
     pub(super) fn bind_function_param(&mut self, pattern: &Pattern, ty: &TypeKind) {
-        for (name, binding_ty) in
-            pattern_bindings_with_nominal_fields(pattern, ty, &self.nominal_fields)
-        {
+        for (name, binding_ty) in pattern_bindings_with_nominal_types(
+            pattern,
+            ty,
+            NominalTypeContext::new(&self.nominal_fields, &self.nominal_variant_payloads),
+        ) {
             self.bind_local(name, binding_ty);
         }
     }

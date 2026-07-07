@@ -1,13 +1,14 @@
 //! Module, top-level declaration, and dialogue entry checks.
 
 use super::{
-    ActionParam, ActionSignature, EffectScope, EntityKind, FlowKind, FunctionKind,
-    FunctionSignature, HirModule, HirTopLevelDecl, LifetimeKey, LifetimeScopeKind, Pattern, Stmt,
-    TypeCheckError, TypeChecker, TypeKind, YieldContext, choice_output_type, entity_kind_for_decl,
-    entity_syntax_kind, function_param_local_type, function_param_local_type_with_generics,
-    function_signature_type, function_signature_type_with_nominal_fields, ident_pattern_name,
-    normalize_choice_type, signature_generic_names, stream_return_types, type_ref_kind,
-    type_ref_kind_with_generics, validate_typecheck_ready,
+    ActionParam, ActionSignature, EffectScope, EntityKind, EnumVariantPayloadType, FlowKind,
+    FunctionKind, FunctionSignature, HirModule, HirTopLevelDecl, LifetimeKey, LifetimeScopeKind,
+    NominalTypeContext, Pattern, Stmt, TypeCheckError, TypeChecker, TypeKind, YieldContext,
+    choice_output_type, entity_kind_for_decl, entity_syntax_kind, function_param_local_type,
+    function_param_local_type_with_generics, function_signature_type,
+    function_signature_type_with_nominal_types, ident_pattern_name, normalize_choice_type,
+    signature_generic_names, stream_return_types, type_ref_kind, type_ref_kind_with_generics,
+    validate_typecheck_ready,
 };
 use crate::checker::helpers::{type_kind_label, type_ref_label};
 use crate::effect_model::{
@@ -18,14 +19,15 @@ use arcweft_lang_hir::model::{HirAgent, HirFlow, HirFunction};
 use arcweft_lang_syntax::ast::common::Visibility;
 use arcweft_lang_syntax::ast::items::{
     EntityDeclItem, EntityDeclKind, EntryItem, EntryRouteBinding, EntryRouteBindingSource,
-    ExternModItem, ExternModMember, ImplItem, ImplMember, StructItem, StyleItem, TypeAliasItem,
+    EnumItem, EnumVariant, ExternModItem, ExternModMember, ImplItem, ImplMember, StructItem,
+    StyleItem, TypeAliasItem,
 };
 use arcweft_lang_syntax::ast::view::{ViewActionInvokeAction, ViewActionPayload};
 use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
 use arcweft_lang_syntax::types::{
     FnParam, FnSignature, TypeRef, parse_fn_signature, parse_type_ref,
 };
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 impl TypeChecker<'_> {
     pub(super) fn check_module(&mut self, module: &HirModule) {
@@ -47,6 +49,7 @@ impl TypeChecker<'_> {
         self.bind_top_level_entity_aliases(module);
         self.bind_top_level_type_aliases(module);
         self.bind_top_level_nominal_fields(module);
+        self.bind_top_level_nominal_variant_payloads(module);
         self.bind_top_level_functions(module);
         self.bind_extern_capability_functions(module);
         self.register_effect_callables(module);
@@ -193,7 +196,10 @@ impl TypeChecker<'_> {
                         super::function_param_higher_order_bindings(
                             param.pattern(),
                             &ty,
-                            Some(&self.nominal_fields),
+                            NominalTypeContext::new(
+                                &self.nominal_fields,
+                                &self.nominal_variant_payloads,
+                            ),
                         )
                         .into_iter()
                         .map(|binding| binding.name().to_owned())
@@ -365,6 +371,18 @@ impl TypeChecker<'_> {
         }
     }
 
+    fn bind_top_level_nominal_variant_payloads(&mut self, module: &HirModule) {
+        self.nominal_variant_payloads.clear();
+        for declaration in module.declarations() {
+            let HirTopLevelDecl::Enum(item) = declaration else {
+                continue;
+            };
+            let payloads = enum_variant_payload_types(item, &mut self.errors);
+            self.nominal_variant_payloads
+                .insert(item.name().to_owned(), payloads);
+        }
+    }
+
     fn bind_extern_capability_functions(&mut self, module: &HirModule) {
         for declaration in module.declarations() {
             let HirTopLevelDecl::ExternCapability(item) = declaration else {
@@ -372,9 +390,9 @@ impl TypeChecker<'_> {
             };
             for function in item.functions() {
                 self.check_signature_type_refs(function.signature());
-                let signature_type = function_signature_type_with_nominal_fields(
+                let signature_type = function_signature_type_with_nominal_types(
                     function.signature(),
-                    Some(&self.nominal_fields),
+                    NominalTypeContext::new(&self.nominal_fields, &self.nominal_variant_payloads),
                 );
                 let name = format!("{}.{}", item.id(), function.signature().name());
                 self.global_functions
@@ -397,9 +415,9 @@ impl TypeChecker<'_> {
     fn bind_top_level_functions(&mut self, module: &HirModule) {
         for function in module.functions() {
             self.check_signature_type_refs(function.signature());
-            let signature_type = function_signature_type_with_nominal_fields(
+            let signature_type = function_signature_type_with_nominal_types(
                 function.signature(),
-                Some(&self.nominal_fields),
+                NominalTypeContext::new(&self.nominal_fields, &self.nominal_variant_payloads),
             );
             self.global_functions.insert(
                 function.name().to_owned(),
@@ -1632,6 +1650,140 @@ fn struct_field_types(item: &StructItem) -> HashMap<String, TypeKind> {
         .iter()
         .map(|field| (field.name().to_owned(), type_ref_kind(field.ty())))
         .collect()
+}
+
+fn enum_variant_payload_types(
+    item: &EnumItem,
+    errors: &mut Vec<TypeCheckError>,
+) -> HashMap<String, EnumVariantPayloadType> {
+    item.variants()
+        .iter()
+        .map(|variant| {
+            let payload = enum_variant_payload_type(item.name(), variant, errors);
+            (variant.name().to_owned(), payload)
+        })
+        .collect()
+}
+
+fn enum_variant_payload_type(
+    enum_name: &str,
+    variant: &EnumVariant,
+    errors: &mut Vec<TypeCheckError>,
+) -> EnumVariantPayloadType {
+    let Some(payload) = variant.payload() else {
+        return EnumVariantPayloadType::Unit;
+    };
+    parse_enum_variant_payload(payload).unwrap_or_else(|message| {
+        errors.push(TypeCheckError::new(format!(
+            "enum `{enum_name}` variant `{}` has invalid payload type: {message}",
+            variant.name()
+        )));
+        EnumVariantPayloadType::Unit
+    })
+}
+
+fn parse_enum_variant_payload(payload: &str) -> Result<EnumVariantPayloadType, String> {
+    let payload = payload.trim();
+    if payload.is_empty() {
+        return Ok(EnumVariantPayloadType::Unit);
+    }
+    if let Some(record) = payload
+        .strip_prefix('{')
+        .and_then(|inner| inner.strip_suffix('}'))
+    {
+        return parse_enum_variant_record_payload(record);
+    }
+    parse_type_ref(payload)
+        .map(enum_variant_tuple_payload_from_type_ref)
+        .map_err(|error| error.to_string())
+}
+
+fn enum_variant_tuple_payload_from_type_ref(ty: TypeRef) -> EnumVariantPayloadType {
+    match ty {
+        TypeRef::Tuple(items) => {
+            EnumVariantPayloadType::Tuple(items.iter().map(type_ref_kind).collect())
+        }
+        ty => EnumVariantPayloadType::Tuple(vec![type_ref_kind(&ty)]),
+    }
+}
+
+fn parse_enum_variant_record_payload(record: &str) -> Result<EnumVariantPayloadType, String> {
+    let mut fields = BTreeMap::new();
+    for field in split_top_level_commas(record) {
+        let field = field.trim();
+        if field.is_empty() {
+            continue;
+        }
+        let (name, ty) = split_top_level_colon(field)
+            .ok_or_else(|| format!("record payload field `{field}` must use `name: Type`"))?;
+        let ty = parse_type_ref(ty.trim()).map_err(|error| error.to_string())?;
+        fields.insert(name.trim().to_owned(), type_ref_kind(&ty));
+    }
+    Ok(EnumVariantPayloadType::Record(fields))
+}
+
+fn split_top_level_commas(source: &str) -> Vec<&str> {
+    split_top_level_char(source, ',')
+}
+
+fn split_top_level_colon(source: &str) -> Option<(&str, &str)> {
+    let index = top_level_char_index(source, ':')?;
+    Some((&source[..index], &source[index + ':'.len_utf8()..]))
+}
+
+fn split_top_level_char(source: &str, delimiter: char) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut depth = DelimiterDepth::default();
+    for (index, ch) in source.char_indices() {
+        if ch == delimiter && depth.is_top_level() {
+            parts.push(&source[start..index]);
+            start = index + ch.len_utf8();
+            continue;
+        }
+        depth.update(ch);
+    }
+    parts.push(&source[start..]);
+    parts
+}
+
+fn top_level_char_index(source: &str, delimiter: char) -> Option<usize> {
+    let mut depth = DelimiterDepth::default();
+    source.char_indices().find_map(|(index, ch)| {
+        if ch == delimiter && depth.is_top_level() {
+            return Some(index);
+        }
+        depth.update(ch);
+        None
+    })
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct DelimiterDepth {
+    paren: i32,
+    brace: i32,
+    bracket: i32,
+    angle: i32,
+}
+
+impl DelimiterDepth {
+    fn update(&mut self, ch: char) {
+        match ch {
+            '(' => self.paren += 1,
+            ')' => self.paren -= 1,
+            '{' => self.brace += 1,
+            '}' => self.brace -= 1,
+            '[' => self.bracket += 1,
+            ']' => self.bracket -= 1,
+            '<' => self.angle += 1,
+            '>' if self.angle > 0 => self.angle -= 1,
+            _ => {}
+        }
+    }
+
+    const fn is_top_level(self) -> bool {
+        self.paren == 0 && self.brace == 0 && self.bracket == 0 && self.angle == 0
+    }
 }
 
 fn impl_target_type(item: &ImplItem) -> TypeKind {
