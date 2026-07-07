@@ -11,6 +11,7 @@ pub mod observation;
 pub mod pattern;
 pub mod plan;
 pub mod pure;
+pub mod runtime_id;
 pub mod source;
 pub mod step;
 pub mod stream;
