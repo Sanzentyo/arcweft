@@ -57,6 +57,10 @@ impl EffectCollector {
         self.current = previous;
     }
 
+    pub fn current_callable(&self) -> Option<CallableId> {
+        self.current.clone()
+    }
+
     pub fn record_named_call(
         &mut self,
         source_name: &str,
@@ -98,6 +102,16 @@ impl EffectCollector {
         };
         self.current_facts_mut(&current)
             .record_call(CallEdge::local(callee, site));
+    }
+
+    pub fn record_local_call_from(
+        &mut self,
+        caller_id: &CallableId,
+        target: CallableId,
+        site: EffectSite,
+    ) {
+        self.current_facts_mut(caller_id)
+            .record_call(CallEdge::local(target, site));
     }
 
     pub fn record_effect(&mut self, effect: EffectId, site: EffectSite) {

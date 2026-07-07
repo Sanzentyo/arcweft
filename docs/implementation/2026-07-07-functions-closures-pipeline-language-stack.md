@@ -228,6 +228,13 @@ Source briefs:
   arguments, local closure aliases, and partial closure aliases, while still
   leaving function-value creation and partial application themselves
   effect-free.
+- User-defined top-level higher-order function calls now compose callback
+  closure body effects into the caller when sema proves the callee function
+  directly invokes the corresponding function-typed parameter. The checker
+  records pending call-site edges so this works even though flows are checked
+  before top-level function bodies. It covers direct closure arguments and
+  local closure aliases, while functions that merely retain/pass a callback
+  without invoking the parameter remain effect-free at the call site.
 - Sema now emits `sema.numeric.fallback_in_inferred_closure` warnings when an
   unsuffixed numeric literal or numeric sequence falls back to a stable default
   primitive type inside a closure body whose return type is inferred. Explicit
@@ -298,8 +305,11 @@ Source briefs:
   cross checked suspension boundaries. Closure body effect composition is
   implemented for synthetic closure callables, direct calls through local
   closure bindings, immediate closure calls, partial application aliases, and
-  built-in collection higher-order execution through `map`/`filter`.
-  General user-defined higher-order function argument effect typing and
+  built-in collection higher-order execution through `map`/`filter`. Direct
+  calls to user-defined top-level higher-order functions also compose closure
+  body effects for first-call-group, function-typed parameters that the callee
+  body directly invokes. Curried later call groups, destructured callback
+  parameters, callback invocations hidden inside returned/stored closures, and
   LSP-facing closure effect evidence remain open. Save/load
   currently has an explicit Product AWBC policy: runtime function values are
   rejected as non-persistable until AWBC closure allocation and snapshot
@@ -363,6 +373,7 @@ cargo test -p arcweft-lang-sema --all-features closure_body_effects_do_not_leak_
 cargo test -p arcweft-lang-sema --all-features local_closure_call_composes_body_effects_into_caller
 cargo test -p arcweft-lang-sema --all-features partial_local_closure_application_does_not_compose_until_called
 cargo test -p arcweft-lang-sema --all-features partial_local_closure_alias_composes_body_effects_when_called
+cargo test -p arcweft-lang-sema --all-features user_higher_order_function_argument
 cargo test -p arcweft-lang-sema --all-features
 cargo test -p arcweft-lsp --all-features inlay_hint_request
 cargo test -p arcweft-lsp --all-features
@@ -386,7 +397,12 @@ All listed validation passed after updating the lingering
 `spec_should_pass/check/025_view_body_structured.arcw` fixture from `Bool` to
 canonical `bool`. The structure audit reported 0 errors and 147 existing
 warnings for the first cut. After the executable `filter` cut and structural
-split, the structure audit reports 0 errors and 146 warnings.
+split, the structure audit reports 0 errors and 146 warnings. After the
+user-defined higher-order function argument effect cut, focused sema tests,
+full `arcweft-lang-sema` tests, workspace clippy, and structure audit passed;
+the structure audit reports 0 errors and 148 warnings. Workspace clippy still
+reports the existing `TraitMember` / `ImplMember` large enum warnings in
+`arcweft-lang-syntax`.
 
 The runtime function/apply cut has focused passing coverage for captured
 function application, partial application, curried application, closure strict

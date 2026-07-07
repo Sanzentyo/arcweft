@@ -58,10 +58,24 @@ impl TypeChecker<'_> {
                         provided_fixed[positional_index] = true;
                         let label = signature_param_label(param, positional_index);
                         positional_index += 1;
-                        self.expect_signature_arg_type(name, &label, positional, &param.ty);
+                        let actual =
+                            self.expect_signature_arg_type(name, &label, positional, &param.ty);
+                        self.record_pending_higher_order_signature_arg_effect_call(
+                            name,
+                            param,
+                            positional,
+                            actual.as_ref(),
+                        );
                     } else if let Some(param) = rest {
                         let label = param.name.as_deref().unwrap_or("#rest");
-                        self.expect_signature_arg_type(name, label, positional, &param.ty);
+                        let actual =
+                            self.expect_signature_arg_type(name, label, positional, &param.ty);
+                        self.record_pending_higher_order_signature_arg_effect_call(
+                            name,
+                            param,
+                            positional,
+                            actual.as_ref(),
+                        );
                     } else {
                         let message = if signature.remaining_call_groups() > 0 {
                             format!(
@@ -210,7 +224,14 @@ impl TypeChecker<'_> {
             )));
         }
         provided_fixed[index] = true;
-        self.expect_signature_arg_type(function_name, arg_name, value, &fixed[index].ty);
+        let actual =
+            self.expect_signature_arg_type(function_name, arg_name, value, &fixed[index].ty);
+        self.record_pending_higher_order_signature_arg_effect_call(
+            function_name,
+            fixed[index],
+            value,
+            actual.as_ref(),
+        );
     }
 
     pub(super) fn expect_signature_arg_type(
@@ -219,7 +240,7 @@ impl TypeChecker<'_> {
         arg_label: &str,
         arg: &Expr,
         expected: &TypeKind,
-    ) {
+    ) -> Option<TypeKind> {
         let actual = self.check_expr_with_expected(arg, Some(expected));
         if let Some(actual) = actual.as_ref()
             && !self.types_compatible(expected, actual)
@@ -231,6 +252,7 @@ impl TypeChecker<'_> {
                 actual.clone(),
             ));
         }
+        actual
     }
 }
 

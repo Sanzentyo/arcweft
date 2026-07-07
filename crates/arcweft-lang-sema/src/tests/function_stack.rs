@@ -1228,6 +1228,79 @@ effects { }
 }
 
 #[test]
+fn user_higher_order_function_argument_composes_when_param_is_called() {
+    let tree = parse_ok(
+        r#"
+fn use_loader(path: String, load: String -> String) -> String {
+    return load(path)
+}
+
+flow @flow.user_higher_order_closure_effect user_higher_order_closure_effect
+effects { }
+{
+    let body = use_loader("story.arcw", |path: String| -> String {
+        adapter.read_text(path = path)
+    })
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("user higher-order effect fixture lowers");
+    validate_typecheck_ready(&hir).expect("user higher-order effect fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("helper callback invocation must compose body effects into the caller");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.user_higher_order_closure_effect")
+                && error.message().contains("fs.read")
+        }),
+        "expected user higher-order callback effect diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
+fn user_higher_order_function_argument_does_not_compose_when_param_is_not_called() {
+    let tree = parse_ok(
+        r"
+fn keep_loader(load: String -> String) -> Unit {
+    let _ = load
+}
+
+flow @flow.user_higher_order_kept_closure user_higher_order_kept_closure
+effects { }
+{
+    let load = |path: String| -> String {
+        adapter.read_text(path = path)
+    }
+    let kept = keep_loader(load)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("kept higher-order effect fixture lowers");
+    validate_typecheck_ready(&hir).expect("kept higher-order effect fixture is structured");
+
+    let report = analyze_types(&hir, &read_text_env());
+    assert!(
+        report.diagnostics.is_empty(),
+        "kept callback should not compose body effects into the caller: {:?}",
+        report.diagnostics
+    );
+    let summary = report
+        .effects
+        .summary(&crate::effect_model::CallableId::new(
+            "flow.user_higher_order_kept_closure",
+        ))
+        .expect("flow summary");
+    assert!(
+        summary.inferred().is_empty(),
+        "flow should not infer kept callback effects: {summary:?}"
+    );
+}
+
+#[test]
 fn closure_return_type_annotation_rejects_body_mismatch() {
     let tree = parse_ok(
         r"

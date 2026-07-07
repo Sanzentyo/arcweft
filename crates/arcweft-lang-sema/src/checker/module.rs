@@ -24,7 +24,7 @@ use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
 use arcweft_lang_syntax::types::{
     FnParam, FnSignature, TypeRef, parse_fn_signature, parse_type_ref,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 impl TypeChecker<'_> {
     pub(super) fn check_module(&mut self, module: &HirModule) {
@@ -179,6 +179,24 @@ impl TypeChecker<'_> {
             self.warn_public_signature_anonymous_sum(function);
             self.check_signature_type_refs(function.signature());
             let generic_names = signature_generic_names(function.signature());
+            let higher_order_param_scope = super::HigherOrderParamScope {
+                function_name: function.name().to_owned(),
+                callable: function_callable_id(function.name()),
+                param_names: function
+                    .signature()
+                    .param_groups()
+                    .iter()
+                    .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
+                    .filter_map(|param| {
+                        matches!(
+                            function_param_local_type_with_generics(param, &generic_names),
+                            TypeKind::Function { .. }
+                        )
+                        .then(|| ident_pattern_name(param.pattern()).map(ToOwned::to_owned))
+                        .flatten()
+                    })
+                    .collect::<BTreeSet<_>>(),
+            };
             for group in function.signature().param_groups() {
                 for param in group.params() {
                     self.bind_function_param(
@@ -199,6 +217,8 @@ impl TypeChecker<'_> {
             let previous_callable = self
                 .effect_collector
                 .enter(function_callable_id(function.name()));
+            self.higher_order_param_scope_stack
+                .push(higher_order_param_scope);
             let predicates = self
                 .trait_catalog
                 .predicates_for_signature(function.signature());
@@ -206,6 +226,7 @@ impl TypeChecker<'_> {
             if function.kind() == FunctionKind::Stream {
                 self.check_stream_function(function);
                 self.trait_predicate_stack.pop();
+                self.higher_order_param_scope_stack.pop();
                 self.effect_collector.restore(previous_callable);
                 self.effect_capabilities = effect_snapshot;
                 continue;
@@ -218,6 +239,7 @@ impl TypeChecker<'_> {
                 )
             });
             self.trait_predicate_stack.pop();
+            self.higher_order_param_scope_stack.pop();
             self.effect_collector.restore(previous_callable);
             self.effect_capabilities = effect_snapshot;
             if let (Some(expected), Some(actual)) = (expected_return, actual)
