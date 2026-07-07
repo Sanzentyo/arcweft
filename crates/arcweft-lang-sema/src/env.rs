@@ -18,6 +18,7 @@ pub struct FunctionSignature {
     pub(crate) params: Vec<FunctionParam>,
     pub(crate) checks_args: bool,
     pub(crate) remaining_call_groups: usize,
+    pub(crate) remaining_param_groups: Vec<Vec<FunctionParam>>,
 }
 
 /// One function or method parameter in a semantic environment signature.
@@ -97,6 +98,7 @@ impl FunctionSignature {
             params: params.into_iter().map(normalize_function_param).collect(),
             checks_args: true,
             remaining_call_groups: 0,
+            remaining_param_groups: Vec::new(),
         }
     }
 
@@ -108,6 +110,7 @@ impl FunctionSignature {
             params: Vec::new(),
             checks_args: false,
             remaining_call_groups: 0,
+            remaining_param_groups: Vec::new(),
         }
     }
 
@@ -116,6 +119,20 @@ impl FunctionSignature {
     #[must_use]
     pub fn with_remaining_call_groups(mut self, count: usize) -> Self {
         self.remaining_call_groups = count;
+        self
+    }
+
+    /// Stores parameter metadata for declaration call groups after the first.
+    #[must_use]
+    pub fn with_remaining_param_groups(
+        mut self,
+        groups: impl IntoIterator<Item = impl IntoIterator<Item = FunctionParam>>,
+    ) -> Self {
+        self.remaining_param_groups = groups
+            .into_iter()
+            .map(|group| group.into_iter().map(normalize_function_param).collect())
+            .collect();
+        self.remaining_call_groups = self.remaining_param_groups.len();
         self
     }
 
@@ -138,6 +155,12 @@ impl FunctionSignature {
     /// return function type.
     pub const fn remaining_call_groups(&self) -> usize {
         self.remaining_call_groups
+    }
+
+    /// Parameter metadata for a remaining declaration call group, where index
+    /// 0 is the group immediately after the first source call group.
+    pub fn remaining_param_group(&self, index: usize) -> Option<&[FunctionParam]> {
+        self.remaining_param_groups.get(index).map(Vec::as_slice)
     }
 
     /// Type of this callable when referenced as a first-class function value.
@@ -784,6 +807,11 @@ fn normalize_function_signature(mut signature: FunctionSignature) -> FunctionSig
         .params
         .into_iter()
         .map(normalize_function_param)
+        .collect();
+    signature.remaining_param_groups = signature
+        .remaining_param_groups
+        .into_iter()
+        .map(|group| group.into_iter().map(normalize_function_param).collect())
         .collect();
     signature
 }

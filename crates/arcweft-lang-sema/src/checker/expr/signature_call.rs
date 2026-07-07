@@ -135,7 +135,7 @@ impl TypeChecker<'_> {
                 continue;
             };
             let label = signature_param_label(param, index);
-            self.expect_signature_arg_type(name, &label, value, param.ty());
+            let _ = self.expect_signature_arg_type(name, &label, value, param.ty());
         }
 
         Some(TypeKind::Function {
@@ -145,6 +145,55 @@ impl TypeChecker<'_> {
                 .collect(),
             return_type: Box::new(signature.return_type().clone()),
         })
+    }
+
+    pub(super) fn signature_call_supplies_current_group(
+        signature: &FunctionSignature,
+        args: &[CallArg],
+    ) -> bool {
+        let fixed = signature
+            .params()
+            .iter()
+            .filter(|param| !param.is_rest())
+            .collect::<Vec<_>>();
+        if signature.params().iter().any(FunctionParam::is_rest) {
+            return false;
+        }
+
+        let mut provided_fixed = vec![false; fixed.len()];
+        let mut positional_index = 0usize;
+        for arg in args {
+            match arg {
+                CallArg::Positional(_) => {
+                    while positional_index < fixed.len() && provided_fixed[positional_index] {
+                        positional_index += 1;
+                    }
+                    let Some(provided) = provided_fixed.get_mut(positional_index) else {
+                        return false;
+                    };
+                    *provided = true;
+                    positional_index += 1;
+                }
+                CallArg::Named { name, .. } => {
+                    let Some(index) = fixed
+                        .iter()
+                        .position(|param| param.name() == Some(name.as_str()))
+                    else {
+                        return false;
+                    };
+                    if provided_fixed[index] {
+                        return false;
+                    }
+                    provided_fixed[index] = true;
+                }
+                CallArg::Spread { .. } => return false,
+            }
+        }
+
+        fixed
+            .iter()
+            .zip(provided_fixed)
+            .all(|(param, provided)| provided || param.has_default())
     }
 
     fn check_signature_spread_arg(

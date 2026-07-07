@@ -21,7 +21,10 @@ use arcweft_lang_syntax::{
         pattern::Pattern,
     },
     expr::{CallArg, Expr, Literal, MatchExprArm},
-    types::{FnSignature as SyntaxFnSignature, TypeRef, parse_fn_signature, parse_type_ref},
+    types::{
+        FnParam as SyntaxFnParam, FnSignature as SyntaxFnSignature, TypeRef, parse_fn_signature,
+        parse_type_ref,
+    },
 };
 use arcweft_source::{SourceAnchor, SourceName};
 use std::collections::BTreeMap;

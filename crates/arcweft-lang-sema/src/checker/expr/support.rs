@@ -85,24 +85,38 @@ pub(super) fn trait_method_call_signature(
         .into_iter()
         .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
         .filter(|param| !is_trait_receiver_param(param))
-        .map(|param| {
-            let name = match param.pattern() {
-                Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. } => {
-                    name.as_str()
-                }
-                _ => "_",
-            };
-            if param.is_rest() {
-                FunctionParam::rest(name, type_ref_kind(param.ty()))
-            } else if param.default().is_some() {
-                FunctionParam::defaulted(name, type_ref_kind(param.ty()))
-            } else {
-                FunctionParam::required(name, type_ref_kind(param.ty()))
-            }
+        .map(trait_method_param)
+        .collect::<Vec<_>>();
+    let remaining_param_groups = signature
+        .param_groups()
+        .iter()
+        .skip(1)
+        .map(|group| {
+            group
+                .params()
+                .iter()
+                .filter(|param| !is_trait_receiver_param(param))
+                .map(trait_method_param)
+                .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    FunctionSignature::new(return_type, params)
-        .with_remaining_call_groups(signature.param_groups().len().saturating_sub(1))
+    FunctionSignature::new(return_type, params).with_remaining_param_groups(remaining_param_groups)
+}
+
+fn trait_method_param(param: &FnParam) -> FunctionParam {
+    let name = match param.pattern() {
+        Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. } => {
+            name.as_str()
+        }
+        _ => "_",
+    };
+    if param.is_rest() {
+        FunctionParam::rest(name, type_ref_kind(param.ty()))
+    } else if param.default().is_some() {
+        FunctionParam::defaulted(name, type_ref_kind(param.ty()))
+    } else {
+        FunctionParam::required(name, type_ref_kind(param.ty()))
+    }
 }
 
 fn curried_trait_method_return_type(

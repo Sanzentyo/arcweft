@@ -867,8 +867,16 @@ impl TypeChecker<'_> {
                     return Some(partial_ty);
                 }
                 self.check_signature_call_args(&name, &signature, args);
+                self.record_curried_signature_result(
+                    &name,
+                    1,
+                    &ty,
+                    signature.remaining_param_group(0).is_some(),
+                    Self::signature_call_supplies_current_group(&signature, args),
+                );
             } else {
                 self.check_untyped_function_args(&name, args);
+                self.last_checked_curried_signature_call = None;
             }
             return Some(ty);
         }
@@ -876,9 +884,12 @@ impl TypeChecker<'_> {
             return self.check_path_call_expr(name, args, expected, expression_id);
         }
         let previous_closure_effect_callable = self.last_checked_closure_effect_callable.take();
+        let previous_curried_signature_call = self.last_checked_curried_signature_call.take();
         let callee_ty = self.check_expr(callee);
         let callee_effect_callable = self.last_checked_closure_effect_callable.take();
+        let callee_curried_signature_call = self.last_checked_curried_signature_call.take();
         self.last_checked_closure_effect_callable = previous_closure_effect_callable;
+        self.last_checked_curried_signature_call = previous_curried_signature_call;
         match callee_ty {
             Some(TypeKind::Speaker(entity) | TypeKind::SpeakerPreset(entity)) => {
                 for arg in args {
@@ -891,6 +902,7 @@ impl TypeChecker<'_> {
                     expression_id,
                     expr_path_label(callee).as_deref(),
                     callee_effect_callable,
+                    callee_curried_signature_call.as_ref(),
                     args,
                     callee_ty,
                 ))

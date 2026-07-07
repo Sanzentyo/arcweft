@@ -1301,6 +1301,75 @@ effects { }
 }
 
 #[test]
+fn curried_higher_order_function_argument_composes_when_later_group_param_is_called() {
+    let tree = parse_ok(
+        r#"
+fn use_loader(path: String)(load: String -> String) -> String {
+    return load(path)
+}
+
+flow @flow.curried_higher_order_closure_effect curried_higher_order_closure_effect
+effects { }
+{
+    let body = use_loader("story.arcw")(|path: String| -> String {
+        adapter.read_text(path = path)
+    })
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("curried higher-order effect fixture lowers");
+    validate_typecheck_ready(&hir).expect("curried higher-order effect fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("curried callback invocation must compose body effects into the caller");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.curried_higher_order_closure_effect")
+                && error.message().contains("fs.read")
+        }),
+        "expected curried higher-order callback effect diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
+fn curried_higher_order_function_alias_composes_when_later_group_param_is_called() {
+    let tree = parse_ok(
+        r#"
+fn use_loader(path: String)(load: String -> String) -> String {
+    return load(path)
+}
+
+flow @flow.curried_higher_order_alias_effect curried_higher_order_alias_effect
+effects { }
+{
+    let stage = use_loader("story.arcw")
+    let body = stage(|path: String| -> String {
+        adapter.read_text(path = path)
+    })
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("curried alias higher-order fixture lowers");
+    validate_typecheck_ready(&hir).expect("curried alias higher-order fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("curried callback alias invocation must compose body effects");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.curried_higher_order_alias_effect")
+                && error.message().contains("fs.read")
+        }),
+        "expected curried alias callback effect diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn closure_return_type_annotation_rejects_body_mismatch() {
     let tree = parse_ok(
         r"

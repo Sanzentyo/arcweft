@@ -233,9 +233,10 @@ Source briefs:
   directly invokes the corresponding function-typed parameter. The checker
   records pending call-site edges so this works even though flows are checked
   before top-level function bodies. It covers direct closure arguments and
-  local closure aliases, and the same pending-edge path is used by data-last
-  method fallback calls. Functions that merely retain/pass a callback without
-  invoking the parameter remain effect-free at the call site.
+  local closure aliases, exact later curried call groups, and the same
+  pending-edge path is used by data-last method fallback calls. Functions that
+  merely retain/pass a callback without invoking the parameter remain
+  effect-free at the call site.
 - Sema now emits `sema.numeric.fallback_in_inferred_closure` warnings when an
   unsuffixed numeric literal or numeric sequence falls back to a stable default
   primitive type inside a closure body whose return type is inferred. Explicit
@@ -308,11 +309,12 @@ Source briefs:
   closure bindings, immediate closure calls, partial application aliases, and
   built-in collection higher-order execution through `map`/`filter`. Direct
   calls and data-last method fallback calls to user-defined top-level
-  higher-order functions also compose closure body effects for
-  first-call-group, function-typed parameters that the callee body directly
-  invokes. Curried later call groups, destructured callback
-  parameters, callback invocations hidden inside returned/stored closures, and
-  LSP-facing closure effect evidence remain open. Save/load
+  higher-order functions also compose closure body effects for function-typed
+  parameters that the callee body directly invokes, including exact later
+  curried call groups and local aliases to those staged function values.
+  Partial later-group callback application, destructured callback parameters,
+  callback invocations hidden inside returned/stored closures, and LSP-facing
+  closure effect evidence remain open. Save/load
   currently has an explicit Product AWBC policy: runtime function values are
   rejected as non-persistable until AWBC closure allocation and snapshot
   versioning are designed. Numeric fallback lints
@@ -376,6 +378,7 @@ cargo test -p arcweft-lang-sema --all-features local_closure_call_composes_body_
 cargo test -p arcweft-lang-sema --all-features partial_local_closure_application_does_not_compose_until_called
 cargo test -p arcweft-lang-sema --all-features partial_local_closure_alias_composes_body_effects_when_called
 cargo test -p arcweft-lang-sema --all-features user_higher_order_function_argument
+cargo test -p arcweft-lang-sema --all-features curried_higher_order
 cargo test -p arcweft-lang-sema --all-features method_chain_data_last_fallback_composes_higher_order_callback_effects
 cargo test -p arcweft-lang-sema --all-features
 cargo test -p arcweft-lsp --all-features inlay_hint_request
@@ -405,7 +408,11 @@ user-defined higher-order function argument effect cut, focused sema tests,
 full `arcweft-lang-sema` tests, workspace clippy, and structure audit passed;
 the structure audit reports 0 errors and 148 warnings. Workspace clippy still
 reports the existing `TraitMember` / `ImplMember` large enum warnings in
-`arcweft-lang-syntax`.
+`arcweft-lang-syntax`. After the exact curried later-call-group callback
+effect cut, focused `curried_higher_order` tests, full `arcweft-lang-sema`
+tests, workspace check, workspace clippy, and structure audit passed; the
+structure audit still reports 0 errors and 148 warnings, and clippy still only
+reports the same existing large enum warnings.
 
 The runtime function/apply cut has focused passing coverage for captured
 function application, partial application, curried application, closure strict

@@ -3,8 +3,8 @@ use super::{
     EntityRef, EntitySymbol, EntityType, Expr, FunctionParam, FunctionSignature, HirFlowItem,
     Literal, MatchExprArm, Pattern, ProjectCallableKind, ProjectCallableSymbol,
     ProjectSemanticIndex, ProjectSemanticIndexError, PublicId, QualifiedName, SemanticHash,
-    SourceAnchor, SourceName, Stmt, SyntaxFnSignature, TypeKind, TypeRef, parse_fn_signature,
-    parse_type_ref, type_ref_kind,
+    SourceAnchor, SourceName, Stmt, SyntaxFnParam, SyntaxFnSignature, TypeKind, TypeRef,
+    parse_fn_signature, parse_type_ref, type_ref_kind,
 };
 
 pub(super) fn index_flow_items(
@@ -677,19 +677,32 @@ fn function_signature_from_syntax(signature: &SyntaxFnSignature) -> FunctionSign
         .first()
         .into_iter()
         .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
-        .map(|param| {
-            let name = callable_param_name(param.pattern()).unwrap_or("_");
-            let ty = project_type_ref_kind(param.ty());
-            if param.is_rest() {
-                FunctionParam::rest(name, ty)
-            } else if param.default().is_some() {
-                FunctionParam::defaulted(name, ty)
-            } else {
-                FunctionParam::required(name, ty)
-            }
-        });
-    FunctionSignature::new(return_type, params)
-        .with_remaining_call_groups(signature.param_groups().len().saturating_sub(1))
+        .map(project_function_param);
+    let remaining_param_groups = signature
+        .param_groups()
+        .iter()
+        .skip(1)
+        .map(|group| {
+            group
+                .params()
+                .iter()
+                .map(project_function_param)
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    FunctionSignature::new(return_type, params).with_remaining_param_groups(remaining_param_groups)
+}
+
+fn project_function_param(param: &SyntaxFnParam) -> FunctionParam {
+    let name = callable_param_name(param.pattern()).unwrap_or("_");
+    let ty = project_type_ref_kind(param.ty());
+    if param.is_rest() {
+        FunctionParam::rest(name, ty)
+    } else if param.default().is_some() {
+        FunctionParam::defaulted(name, ty)
+    } else {
+        FunctionParam::required(name, ty)
+    }
 }
 
 fn curried_project_signature_return_type(signature: &SyntaxFnSignature) -> TypeKind {

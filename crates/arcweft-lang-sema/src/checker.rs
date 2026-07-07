@@ -399,6 +399,8 @@ struct TypeChecker<'a> {
     closure_captures: Vec<ClosureCaptureInventory>,
     local_function_effects: HashMap<String, CallableId>,
     last_checked_closure_effect_callable: Option<CallableId>,
+    local_curried_signature_calls: HashMap<String, CurriedSignatureCallValue>,
+    last_checked_curried_signature_call: Option<CurriedSignatureCallValue>,
     higher_order_param_scope_stack: Vec<HigherOrderParamScope>,
     higher_order_param_invocations: BTreeMap<String, BTreeSet<String>>,
     pending_higher_order_effect_calls: Vec<PendingHigherOrderEffectCall>,
@@ -473,6 +475,7 @@ struct LocalBindingSnapshotEntry {
     name: String,
     previous_ty: Option<TypeKind>,
     previous_function_effect: Option<CallableId>,
+    previous_curried_signature_call: Option<CurriedSignatureCallValue>,
 }
 
 #[derive(Clone, Debug)]
@@ -501,6 +504,12 @@ struct PendingHigherOrderEffectCall {
     callee_function: String,
     param_name: String,
     effect_callable: CallableId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CurriedSignatureCallValue {
+    function_name: String,
+    remaining_group_index: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -600,6 +609,8 @@ impl TypeChecker<'_> {
             closure_captures: Vec::new(),
             local_function_effects: HashMap::new(),
             last_checked_closure_effect_callable: None,
+            local_curried_signature_calls: HashMap::new(),
+            last_checked_curried_signature_call: None,
             higher_order_param_scope_stack: Vec::new(),
             higher_order_param_invocations: BTreeMap::new(),
             pending_higher_order_effect_calls: Vec::new(),
@@ -617,11 +628,14 @@ impl TypeChecker<'_> {
                 .into_iter()
                 .map(|(name, ty)| {
                     let previous_function_effect = self.local_function_effects.get(&name).cloned();
+                    let previous_curried_signature_call =
+                        self.local_curried_signature_calls.get(&name).cloned();
                     let previous_ty = self.bind_local(name.clone(), ty);
                     LocalBindingSnapshotEntry {
                         name,
                         previous_ty,
                         previous_function_effect,
+                        previous_curried_signature_call,
                     }
                 })
                 .collect(),
@@ -631,6 +645,7 @@ impl TypeChecker<'_> {
     fn bind_local(&mut self, name: String, ty: TypeKind) -> Option<TypeKind> {
         let previous = self.locals.insert(name.clone(), ty);
         let previous_function_effect = self.local_function_effects.remove(&name);
+        let previous_curried_signature_call = self.local_curried_signature_calls.remove(&name);
         if let Some(frame) = self.closure_capture_stack.last_mut() {
             frame.locals.insert(name.clone());
         }
@@ -639,6 +654,7 @@ impl TypeChecker<'_> {
                 name,
                 previous_ty: previous.clone(),
                 previous_function_effect,
+                previous_curried_signature_call,
             });
         }
         previous
@@ -649,6 +665,11 @@ impl TypeChecker<'_> {
             .insert(name.to_owned(), callable);
     }
 
+    fn bind_local_curried_signature_call(&mut self, name: &str, value: CurriedSignatureCallValue) {
+        self.local_curried_signature_calls
+            .insert(name.to_owned(), value);
+    }
+
     fn restore_scoped_locals(&mut self, snapshot: LocalBindingSnapshot) {
         for entry in snapshot.0.into_iter().rev() {
             if let Some(ty) = entry.previous_ty {
@@ -657,9 +678,15 @@ impl TypeChecker<'_> {
                 self.locals.remove(&entry.name);
             }
             if let Some(callable) = entry.previous_function_effect {
-                self.local_function_effects.insert(entry.name, callable);
+                self.local_function_effects
+                    .insert(entry.name.clone(), callable);
             } else {
                 self.local_function_effects.remove(&entry.name);
+            }
+            if let Some(value) = entry.previous_curried_signature_call {
+                self.local_curried_signature_calls.insert(entry.name, value);
+            } else {
+                self.local_curried_signature_calls.remove(&entry.name);
             }
         }
     }
@@ -925,6 +952,23 @@ impl TypeChecker<'_> {
         self.last_checked_closure_effect_callable = None;
     }
 
+    fn record_curried_signature_result(
+        &mut self,
+        function_name: &str,
+        next_group_index: usize,
+        result_ty: &TypeKind,
+        has_next_group_metadata: bool,
+        exact_group_call: bool,
+    ) {
+        self.last_checked_curried_signature_call = (has_next_group_metadata
+            && exact_group_call
+            && matches!(result_ty, TypeKind::Function { .. }))
+        .then(|| CurriedSignatureCallValue {
+            function_name: function_name.to_owned(),
+            remaining_group_index: next_group_index,
+        });
+    }
+
     fn record_higher_order_param_invocation(&mut self, callee: Option<&str>) {
         let Some(param_name) = callee else {
             return;
@@ -992,6 +1036,24 @@ impl TypeChecker<'_> {
                 let all_positional = args.iter().all(|arg| matches!(arg, CallArg::Positional(_)));
                 (all_positional && positional_arg_count < arity).then_some(callable)
             }
+            _ => None,
+        }
+    }
+
+    fn curried_signature_call_for_function_expr(
+        &self,
+        expr: &Expr,
+        ty: &TypeKind,
+    ) -> Option<CurriedSignatureCallValue> {
+        if !matches!(ty, TypeKind::Function { .. }) {
+            return None;
+        }
+        match expr {
+            Expr::Call { .. } => self.last_checked_curried_signature_call.clone(),
+            Expr::Path(path) => self
+                .local_curried_signature_calls
+                .get(path.as_label())
+                .cloned(),
             _ => None,
         }
     }
@@ -1173,8 +1235,19 @@ fn function_signature_type(signature: &FnSignature) -> FunctionSignature {
         .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
         .map(function_param_type)
         .collect::<Vec<_>>();
-    FunctionSignature::new(return_type, params)
-        .with_remaining_call_groups(signature.param_groups().len().saturating_sub(1))
+    let remaining_param_groups = signature
+        .param_groups()
+        .iter()
+        .skip(1)
+        .map(|group| {
+            group
+                .params()
+                .iter()
+                .map(function_param_type)
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    FunctionSignature::new(return_type, params).with_remaining_param_groups(remaining_param_groups)
 }
 
 fn curried_signature_return_type(signature: &FnSignature) -> TypeKind {
