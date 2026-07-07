@@ -2,11 +2,15 @@
 
 ## Context
 
-The 2026-07-07 implementation cut added function type syntax, typed closure
+The 2026-07-07 implementation cuts added function type syntax, typed closure
 function values, expected-type `_` placeholder abstraction, scoped `^` pipe
-substitution, canonical primitive labels, and strict runtime lowering for
-`map(_ body)`, `filter(_ predicate)`, and the standard
-`choices |> filter(_.enabled) |> map(_.label)` data-last collection pipeline.
+substitution, canonical primitive labels, strict runtime lowering for
+`map(_ body)`, `filter(_ predicate)`, the standard
+`choices |> filter(_.enabled) |> map(_.label)` data-last collection pipeline,
+and the first executable runtime function/apply substrate:
+`RuntimeValue::Function`, `RuntimeExpr::Function`, `RuntimeExpr::Apply`,
+deterministic capture snapshots, partial application, and curried runtime
+application when the callee expression evaluates to a function value.
 
 This request covers the remaining work needed to finish the revised Arcweft
 function/closure/currying/pipeline specification without adding compatibility
@@ -14,14 +18,17 @@ shims or preserving removed syntax.
 
 ## Required decisions
 
-1. Define the final runtime representation for first-class function values and
-   expression callee application.
-   - It must represent closure values, named function values, partial-call
-     abstractions such as `add(_, 1)`, and true curried application `f(a)(x)`.
-   - It must specify how captures are stored and restored in deterministic
-     runtime state.
-   - It must decide whether the current direct data-last pipe lowering remains
-     only an optimization or is replaced by function apply lowering.
+1. Complete first-class function value integration beyond the implemented
+   runtime substrate.
+   - Specify and implement how bare named top-level functions materialize as
+     function values when used as expressions.
+   - Specify and implement AWBC closure allocation and bytecode apply semantics
+     instead of the current `RuntimeExpr::Function` lowering diagnostic.
+   - Decide whether the current direct data-last pipe lowering remains only an
+     optimization or is replaced by function apply lowering.
+   - Do not redesign the implemented `RuntimeValue::Function` /
+     `RuntimeExpr::Function` / `RuntimeExpr::Apply` substrate unless concrete
+     evidence shows a flaw.
 
 2. Define inference boundaries for `_`.
    - `_` with an expected function type is already implemented and should not
@@ -50,14 +57,15 @@ shims or preserving removed syntax.
 
 ## Implementation order
 
-1. Add typed runtime function/apply representation and strict lowering tests.
-2. Lower explicit closures and expected-type `_` abstractions into that runtime
-   representation while keeping existing `RuntimeExpr::Map` as an optimization
-   if the design chooses to.
-3. Add inference for `_` without an expected function type.
-4. Add method-chain fallback sugar and ambiguity diagnostics.
-5. Add capture/effect/lifetime diagnostics.
-6. Add LSP/inlay/lint evidence.
+1. Add named top-level function-as-value materialization and tests.
+2. Add AWBC closure allocation / apply semantics or explicitly split that work
+   into an AWBC-focused request with instruction/table design.
+3. Lower expected-type `_` abstractions into the runtime function/apply
+   representation when they escape collection `map`/`filter` optimizations.
+4. Add inference for `_` without an expected function type.
+5. Add method-chain fallback sugar and ambiguity diagnostics.
+6. Add capture/effect/lifetime diagnostics.
+7. Add LSP/inlay/lint evidence.
 
 ## Tests to specify
 

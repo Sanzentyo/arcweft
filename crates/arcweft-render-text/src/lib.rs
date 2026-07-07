@@ -1207,6 +1207,7 @@ fn display_runtime_value(value: &RuntimeValue) -> String {
         RuntimeValue::Seq(_) => "[...]".to_owned(),
         RuntimeValue::Tuple(_) => "(...)".to_owned(),
         RuntimeValue::Record(_) => "{...}".to_owned(),
+        RuntimeValue::Function(function) => format!("<function/{}>", function.arity()),
         RuntimeValue::Variant { name, .. } => format!(".{name}"),
     }
 }
@@ -1225,6 +1226,7 @@ fn runtime_value_is_truthy(value: &RuntimeValue) -> bool {
         | RuntimeValue::TensorF64(_)
         | RuntimeValue::Range(_)
         | RuntimeValue::Iterator(_)
+        | RuntimeValue::Function(_)
         | RuntimeValue::Variant { .. } => true,
         RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => !value.is_empty(),
         RuntimeValue::Char(value) => *value != '\0',

@@ -409,6 +409,9 @@ impl AwbcInventory {
             RuntimeValue::Iterator(_) => {
                 panic!("runtime iterator state cannot be encoded as an AWBC constant")
             }
+            RuntimeValue::Function(_) => {
+                panic!("runtime function state cannot be encoded as an AWBC constant")
+            }
             RuntimeValue::MatrixF32(matrix) => AwbcConstant::TensorF32 {
                 shape: vec![table_index(matrix.rows()), table_index(matrix.cols())],
                 values: matrix

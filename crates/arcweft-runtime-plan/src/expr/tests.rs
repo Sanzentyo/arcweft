@@ -36,6 +36,69 @@ fn strict_runtime_value_lowering_can_emit_pure_calls() {
 }
 
 #[test]
+fn strict_runtime_lowers_closure_to_function_expr() {
+    let expr = Expr::Closure {
+        params: vec![ClosureParam::new(Pattern::Ident("score".to_owned()), None)],
+        body: Box::new(Expr::Binary {
+            lhs: Box::new(Expr::Path("score".into())),
+            op: BinaryOp::Gt,
+            rhs: Box::new(Expr::Literal(Literal::Int {
+                raw: "80i64".to_owned(),
+                value: 80,
+                suffix: Some("i64".to_owned()),
+            })),
+        }),
+    };
+
+    let lowered = lower_runtime_expr_strict(&expr).expect("closure lowers");
+
+    assert!(matches!(
+        lowered,
+        RuntimeExpr::Function { params, body }
+            if params == ["score"]
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::Binary { lhs, .. }
+                        if matches!(lhs.as_ref(), RuntimeExpr::Local(name) if name == "score")
+                )
+    ));
+}
+
+#[test]
+fn strict_runtime_lowers_expression_callee_call_to_apply() {
+    let expr = Expr::Call {
+        callee: Box::new(Expr::Call {
+            callee: Box::new(Expr::Path("make_adder".into())),
+            args: vec![CallArg::Positional(Expr::Literal(Literal::Int {
+                raw: "2i64".to_owned(),
+                value: 2,
+                suffix: Some("i64".to_owned()),
+            }))],
+        }),
+        args: vec![CallArg::Positional(Expr::Literal(Literal::Int {
+            raw: "5i64".to_owned(),
+            value: 5,
+            suffix: Some("i64".to_owned()),
+        }))],
+    };
+
+    let lowered = lower_runtime_expr_strict(&expr).expect("expression callee lowers");
+
+    assert!(matches!(
+        lowered,
+        RuntimeExpr::Apply { callee, args }
+            if matches!(
+                callee.as_ref(),
+                RuntimeExpr::Call { callee, args }
+                    if callee.as_label() == "make_adder" && args.len() == 1
+            ) && matches!(
+                args.as_slice(),
+                [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(5)
+            )
+    ));
+}
+
+#[test]
 fn strict_runtime_lowers_f64_math_method_calls_to_intrinsics() {
     let expr = Expr::MethodCall {
         receiver: Box::new(Expr::Path("math".into())),

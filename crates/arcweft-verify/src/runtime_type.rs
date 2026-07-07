@@ -83,6 +83,7 @@ enum RuntimeShape {
     Range,
     Record,
     Variant,
+    Function,
     Iterator,
     Unknown,
 }
@@ -411,6 +412,17 @@ impl<'a> RuntimeTypeValidator<'a> {
             | RuntimeExpr::Call { .. }
             | RuntimeExpr::PureCall { .. }
             | RuntimeExpr::SpreadArg(_) => RuntimeShape::Unknown,
+            RuntimeExpr::Function { body, .. } => {
+                self.validate_expr(&format!("{path}.body"), body);
+                RuntimeShape::Function
+            }
+            RuntimeExpr::Apply { callee, args } => {
+                self.validate_expr(&format!("{path}.callee"), callee);
+                for (index, arg) in args.iter().enumerate() {
+                    self.validate_expr(&format!("{path}.arg.{index}"), arg);
+                }
+                RuntimeShape::Unknown
+            }
             RuntimeExpr::EntityRef(_) => RuntimeShape::EntityRef,
             RuntimeExpr::Let { expr, body, .. } => self.validate_let_expr(path, expr, body),
             RuntimeExpr::AssignField {
@@ -715,6 +727,7 @@ fn runtime_value_shape(value: &RuntimeValue) -> RuntimeShape {
         RuntimeValue::Seq(_) => RuntimeShape::BracketSeq,
         RuntimeValue::Range(_) => RuntimeShape::Range,
         RuntimeValue::Record(_) => RuntimeShape::Record,
+        RuntimeValue::Function(_) => RuntimeShape::Function,
         RuntimeValue::Variant { .. } => RuntimeShape::Variant,
         RuntimeValue::Iterator(_) => RuntimeShape::Iterator,
     }

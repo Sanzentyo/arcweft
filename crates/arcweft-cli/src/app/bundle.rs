@@ -1783,6 +1783,8 @@ fn static_image_asset_ref_expr(expr: &RuntimeExpr) -> Option<String> {
         | RuntimeExpr::ProjectRecord { .. }
         | RuntimeExpr::AssignField { .. }
         | RuntimeExpr::Call { .. }
+        | RuntimeExpr::Function { .. }
+        | RuntimeExpr::Apply { .. }
         | RuntimeExpr::TraitCall { .. }
         | RuntimeExpr::PureCall { .. }
         | RuntimeExpr::SpreadArg(_)

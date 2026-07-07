@@ -320,6 +320,7 @@ fn runtime_value_to_data_value(value: &RuntimeValue) -> Result<Value, RuntimeEva
                 payload: payload.map(Box::new),
             }),
         RuntimeValue::Duration(_)
+        | RuntimeValue::Function(_)
         | RuntimeValue::Iterator(_)
         | RuntimeValue::Range(_)
         | RuntimeValue::MatrixF32(_)
@@ -773,6 +774,7 @@ fn runtime_value_label_for_data(value: &RuntimeValue) -> String {
             .map_or_else(|| format!(".{name}"), |path| format!("{path}.{name}")),
         RuntimeValue::Duration(_)
         | RuntimeValue::EntityRef(_)
+        | RuntimeValue::Function(_)
         | RuntimeValue::Iterator(_)
         | RuntimeValue::MatrixF32(_)
         | RuntimeValue::MatrixF64(_)

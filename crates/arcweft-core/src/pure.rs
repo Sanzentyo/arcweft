@@ -3,14 +3,14 @@ use crate::plan::{RuntimePureHelper, RuntimePureInputType, RuntimePureOutputType
 use crate::step::RuntimePureCallStats;
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEnv, RuntimeEvalError,
-    RuntimeExactInteger, RuntimeExpr, RuntimeFieldExpr, RuntimeFieldValue, RuntimeISizeValue,
-    RuntimeIntrinsic, RuntimeIterator, RuntimeSeq, RuntimeUInt, RuntimeUSizeValue, RuntimeUnaryOp,
-    RuntimeValue, evaluate_binary, evaluate_core_iter_collect_intrinsic,
-    evaluate_core_iter_into_iter_intrinsic, evaluate_core_iter_next_intrinsic,
-    evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
-    evaluate_core_range_intrinsic, evaluate_numeric_op, evaluate_std_float_intrinsic,
-    evaluate_unary, runtime_sequence_values, runtime_value_into_sequence_values,
-    runtime_value_label, sum_i64_sequence_ref,
+    RuntimeExactInteger, RuntimeExpr, RuntimeFieldExpr, RuntimeFieldValue, RuntimeFunctionValue,
+    RuntimeISizeValue, RuntimeIntrinsic, RuntimeIterator, RuntimeSeq, RuntimeUInt,
+    RuntimeUSizeValue, RuntimeUnaryOp, RuntimeValue, evaluate_binary,
+    evaluate_core_iter_collect_intrinsic, evaluate_core_iter_into_iter_intrinsic,
+    evaluate_core_iter_next_intrinsic, evaluate_core_option_is_some_intrinsic,
+    evaluate_core_option_unwrap_intrinsic, evaluate_core_range_intrinsic, evaluate_numeric_op,
+    evaluate_std_float_intrinsic, evaluate_unary, runtime_sequence_values,
+    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
 };
 
 mod aot;
@@ -1341,6 +1341,8 @@ impl PureEvaluator {
                 self.evaluate_project_record_expr(target, *ordinal)
             }
             RuntimeExpr::Call { callee, args } => self.evaluate_call_expr(callee, args),
+            RuntimeExpr::Function { params, body } => Ok(self.evaluate_function_expr(params, body)),
+            RuntimeExpr::Apply { callee, args } => self.evaluate_apply_expr(callee, args),
             RuntimeExpr::AssignField { .. } | RuntimeExpr::TraitCall { .. } => {
                 Self::unsupported_flow_runtime_expr()
             }
@@ -1848,6 +1850,68 @@ impl PureEvaluator {
                 value: runtime_value_label(&value),
             }),
         }
+    }
+
+    fn evaluate_function_expr(&self, params: &[String], body: &RuntimeExpr) -> RuntimeValue {
+        RuntimeValue::Function(RuntimeFunctionValue::new(
+            params.to_vec(),
+            body.clone(),
+            self.env.bindings_snapshot(),
+        ))
+    }
+
+    fn evaluate_apply_expr(
+        &mut self,
+        callee: &RuntimeExpr,
+        args: &[RuntimeExpr],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let callee = self.evaluate_expr(callee)?;
+        let args = self.evaluate_call_args(args)?;
+        match callee {
+            RuntimeValue::Function(function) => self.apply_runtime_function(&function, &args),
+            value => Err(RuntimeEvalError::ExpectedFunction(runtime_value_label(
+                &value,
+            ))),
+        }
+    }
+
+    fn apply_runtime_function(
+        &mut self,
+        function: &RuntimeFunctionValue,
+        args: &[RuntimeValue],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if args.len() < function.arity() {
+            return Ok(RuntimeValue::Function(function.partially_apply(args)));
+        }
+
+        let (call_args, remaining_args) = args.split_at(function.arity());
+        let value = self.call_runtime_function(function, call_args)?;
+        if remaining_args.is_empty() {
+            return Ok(value);
+        }
+        match value {
+            RuntimeValue::Function(next) => self.apply_runtime_function(&next, remaining_args),
+            _ => Err(RuntimeEvalError::FunctionArgumentCount {
+                expected: function.arity(),
+                found: args.len(),
+            }),
+        }
+    }
+
+    fn call_runtime_function(
+        &mut self,
+        function: &RuntimeFunctionValue,
+        args: &[RuntimeValue],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        self.env
+            .push_scope_with_capacity(function.captures.len() + args.len());
+        self.env.bind_all_ref(&function.captures);
+        for (param, value) in function.params.iter().zip(args) {
+            self.env.set_ref(param, value);
+        }
+        let result = self.evaluate_expr(&function.body);
+        self.env.pop_scope();
+        result
     }
 
     fn evaluate_method_call_expr(

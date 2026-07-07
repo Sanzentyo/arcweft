@@ -229,6 +229,10 @@ fn contains_host_or_source_call(expr: &RuntimeExpr) -> bool {
                 || label.starts_with("source.")
                 || label.starts_with("stream.")
         }
+        RuntimeExpr::Function { body, .. } => contains_host_or_source_call(body),
+        RuntimeExpr::Apply { callee, args } => {
+            contains_host_or_source_call(callee) || args.iter().any(contains_host_or_source_call)
+        }
         RuntimeExpr::Let { expr, body, .. } | RuntimeExpr::AssignField { expr, body, .. } => {
             contains_host_or_source_call(expr) || contains_host_or_source_call(body)
         }

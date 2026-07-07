@@ -1,5 +1,8 @@
 //! Flow-runtime lowering.
 
+mod record_projection;
+
+use self::record_projection::rewrite_known_record_projections_in_op;
 use crate::errors::{LinePlanLowerError, RuntimePlanLowerError};
 use crate::expr::{lower_runtime_expr, lower_runtime_expr_strict_with_pure, runtime_call_effect};
 use crate::host_request::{lower_agent_host_task_request, lower_host_task_request};
@@ -27,7 +30,7 @@ use arcweft_core::task::{
     AWAIT_MANY_ITEM_BINDING, AwaitManyTarget, AwaitTarget, HostTaskArgTemplate,
     HostTaskRequestTemplate, NeedId, TaskId,
 };
-use arcweft_core::value::{RuntimeExpr, RuntimeSeq, RuntimeValue};
+use arcweft_core::value::{RuntimeExpr, RuntimeExprMatchArm, RuntimeSeq, RuntimeValue};
 use arcweft_lang_hir::model::{
     HirAgent, HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirLoop,
     HirMatch, HirModule, HirScopeExpr, HirThread, HirTopLevelDecl,
@@ -432,252 +435,6 @@ fn record_projection_fields(expr: &RuntimeExpr) -> Option<Vec<String>> {
     )
 }
 
-fn rewrite_known_record_projections_in_op(op: &mut FlowOp, env: &[(String, Vec<String>)]) {
-    match op {
-        FlowOp::LetElse { expr, else_ops, .. } => {
-            rewrite_known_record_projections_in_expr(expr, env);
-            rewrite_known_record_projections_in_ops(else_ops, env);
-        }
-        FlowOp::If {
-            condition,
-            then_ops,
-            else_ops,
-        } => {
-            rewrite_known_record_projections_in_expr(condition, env);
-            rewrite_known_record_projections_in_ops(then_ops, env);
-            rewrite_known_record_projections_in_ops(else_ops, env);
-        }
-        FlowOp::IfLet {
-            expr,
-            guard,
-            then_ops,
-            else_ops,
-            ..
-        } => {
-            rewrite_known_record_projections_in_expr(expr, env);
-            rewrite_known_record_projections_in_optional_expr(guard.as_mut(), env);
-            rewrite_known_record_projections_in_ops(then_ops, env);
-            rewrite_known_record_projections_in_ops(else_ops, env);
-        }
-        FlowOp::Match { scrutinee, arms } => {
-            rewrite_known_record_projections_in_expr(scrutinee, env);
-            for arm in arms {
-                if let Some(guard) = &mut arm.guard {
-                    rewrite_known_record_projections_in_expr(guard, env);
-                }
-                rewrite_known_record_projections_in_ops(&mut arm.ops, env);
-            }
-        }
-        FlowOp::Loop { body }
-        | FlowOp::LetLoop { body, .. }
-        | FlowOp::Thread { body, .. }
-        | FlowOp::Scope(body) => rewrite_known_record_projections_in_ops(body, env),
-        FlowOp::LoopNext { body } | FlowOp::ForNext { body, .. } => {
-            rewrite_known_record_projections_in_ops(Arc::make_mut(body), env);
-        }
-        FlowOp::While { condition, body } => {
-            rewrite_known_record_projections_in_expr(condition, env);
-            rewrite_known_record_projections_in_ops(body, env);
-        }
-        FlowOp::WhileNext { condition, body } => {
-            rewrite_known_record_projections_in_expr(condition, env);
-            rewrite_known_record_projections_in_ops(Arc::make_mut(body), env);
-        }
-        FlowOp::WhileLet {
-            expr, guard, body, ..
-        } => {
-            rewrite_known_record_projections_in_expr(expr, env);
-            rewrite_known_record_projections_in_optional_expr(guard.as_mut(), env);
-            rewrite_known_record_projections_in_ops(body, env);
-        }
-        FlowOp::WhileLetNext {
-            expr, guard, body, ..
-        } => {
-            rewrite_known_record_projections_in_expr(expr, env);
-            rewrite_known_record_projections_in_optional_expr(guard.as_mut(), env);
-            rewrite_known_record_projections_in_ops(Arc::make_mut(body), env);
-        }
-        FlowOp::For { source, body, .. } => {
-            rewrite_known_record_projections_in_expr(source, env);
-            rewrite_known_record_projections_in_ops(body, env);
-        }
-        FlowOp::AwaitMany { target, .. } => {
-            rewrite_known_record_projections_in_expr(&mut target.source, env);
-        }
-        FlowOp::HostCall { target, .. } => {
-            rewrite_known_record_projections_in_exprs(&mut target.args, env);
-        }
-        FlowOp::LetScope { ops, value, .. } => {
-            rewrite_known_record_projections_in_ops(ops, env);
-            rewrite_known_record_projections_in_expr(value, env);
-        }
-        FlowOp::Let { expr, .. }
-        | FlowOp::Break(Some(expr))
-        | FlowOp::GotoExpr(expr)
-        | FlowOp::ReturnExpr(expr)
-        | FlowOp::ExitScopeBind { expr, .. } => rewrite_known_record_projections_in_expr(expr, env),
-        FlowOp::Bind(_)
-        | FlowOp::Dialogue { .. }
-        | FlowOp::Choice { .. }
-        | FlowOp::Await { .. }
-        | FlowOp::Effect(_)
-        | FlowOp::RegisterCleanup { .. }
-        | FlowOp::CancelCleanup { .. }
-        | FlowOp::EnterScope
-        | FlowOp::ExitScope
-        | FlowOp::Break(None)
-        | FlowOp::Continue
-        | FlowOp::Goto(_)
-        | FlowOp::Return(_)
-        | FlowOp::Noop => {}
-    }
-}
-
-fn rewrite_known_record_projections_in_ops(ops: &mut [FlowOp], env: &[(String, Vec<String>)]) {
-    for op in ops {
-        rewrite_known_record_projections_in_op(op, env);
-    }
-}
-
-fn rewrite_known_record_projections_in_exprs(
-    exprs: &mut [RuntimeExpr],
-    env: &[(String, Vec<String>)],
-) {
-    for expr in exprs {
-        rewrite_known_record_projections_in_expr(expr, env);
-    }
-}
-
-fn rewrite_known_record_projections_in_optional_expr(
-    expr: Option<&mut RuntimeExpr>,
-    env: &[(String, Vec<String>)],
-) {
-    if let Some(expr) = expr {
-        rewrite_known_record_projections_in_expr(expr, env);
-    }
-}
-
-fn rewrite_known_record_projections_in_expr(expr: &mut RuntimeExpr, env: &[(String, Vec<String>)]) {
-    match expr {
-        RuntimeExpr::Field { target, field } => {
-            rewrite_known_record_projections_in_expr(target, env);
-            if let RuntimeExpr::Local(name) = target.as_ref()
-                && let Some(ordinal) = record_field_ordinal(env, name, field)
-            {
-                let target =
-                    std::mem::replace(target, Box::new(RuntimeExpr::Value(RuntimeValue::Unit)));
-                *expr = RuntimeExpr::ProjectRecord { target, ordinal };
-            }
-        }
-        RuntimeExpr::Let { expr, body, .. } => {
-            rewrite_known_record_projections_in_expr(expr, env);
-            rewrite_known_record_projections_in_expr(body, env);
-        }
-        RuntimeExpr::AssignField {
-            target, expr, body, ..
-        } => {
-            rewrite_known_record_projections_in_expr(target, env);
-            rewrite_known_record_projections_in_expr(expr, env);
-            rewrite_known_record_projections_in_expr(body, env);
-        }
-        RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => {
-            for item in items {
-                rewrite_known_record_projections_in_expr(item, env);
-            }
-        }
-        RuntimeExpr::RepeatSeq { value, .. }
-        | RuntimeExpr::ProjectTuple { target: value, .. }
-        | RuntimeExpr::ProjectRecord { target: value, .. }
-        | RuntimeExpr::SpreadArg(value)
-        | RuntimeExpr::Sum { source: value }
-        | RuntimeExpr::Unary { expr: value, .. } => {
-            rewrite_known_record_projections_in_expr(value, env);
-        }
-        RuntimeExpr::Range { start, end, .. } => {
-            rewrite_known_record_projections_in_optional_expr(start.as_deref_mut(), env);
-            rewrite_known_record_projections_in_optional_expr(end.as_deref_mut(), env);
-        }
-        RuntimeExpr::Record(fields) => {
-            for field in fields {
-                rewrite_known_record_projections_in_expr(&mut field.value, env);
-            }
-        }
-        RuntimeExpr::Variant { payload, .. } => {
-            if let Some(payload) = payload {
-                rewrite_known_record_projections_in_expr(payload, env);
-            }
-        }
-        RuntimeExpr::Call { args, .. } | RuntimeExpr::PureCall { args, .. } => {
-            for arg in args {
-                rewrite_known_record_projections_in_expr(arg, env);
-            }
-        }
-        RuntimeExpr::MethodCall { receiver, args, .. }
-        | RuntimeExpr::TraitCall { receiver, args, .. } => {
-            rewrite_known_record_projections_in_receiver_args(receiver, args, env);
-        }
-        RuntimeExpr::Map { source, body, .. } | RuntimeExpr::Filter { source, body, .. } => {
-            rewrite_known_record_projections_in_expr(source, env);
-            rewrite_known_record_projections_in_expr(body, env);
-        }
-        RuntimeExpr::Binary { lhs, rhs, .. } => {
-            rewrite_known_record_projections_in_expr(lhs, env);
-            rewrite_known_record_projections_in_expr(rhs, env);
-        }
-        RuntimeExpr::If {
-            condition,
-            then_expr,
-            else_expr,
-        } => {
-            rewrite_known_record_projections_in_expr(condition, env);
-            rewrite_known_record_projections_in_expr(then_expr, env);
-            rewrite_known_record_projections_in_expr(else_expr, env);
-        }
-        RuntimeExpr::IfLet {
-            expr,
-            guard,
-            then_expr,
-            else_expr,
-            ..
-        } => {
-            rewrite_known_record_projections_in_expr(expr, env);
-            if let Some(guard) = guard {
-                rewrite_known_record_projections_in_expr(guard, env);
-            }
-            rewrite_known_record_projections_in_expr(then_expr, env);
-            rewrite_known_record_projections_in_expr(else_expr, env);
-        }
-        RuntimeExpr::Match { scrutinee, arms } => {
-            rewrite_known_record_projections_in_expr(scrutinee, env);
-            for arm in arms {
-                if let Some(guard) = &mut arm.guard {
-                    rewrite_known_record_projections_in_expr(guard, env);
-                }
-                rewrite_known_record_projections_in_expr(&mut arm.value, env);
-            }
-        }
-        RuntimeExpr::Value(_) | RuntimeExpr::Local(_) | RuntimeExpr::EntityRef(_) => {}
-    }
-}
-
-fn rewrite_known_record_projections_in_receiver_args(
-    receiver: &mut RuntimeExpr,
-    args: &mut [RuntimeExpr],
-    env: &[(String, Vec<String>)],
-) {
-    rewrite_known_record_projections_in_expr(receiver, env);
-    for arg in args {
-        rewrite_known_record_projections_in_expr(arg, env);
-    }
-}
-
-fn record_field_ordinal(env: &[(String, Vec<String>)], name: &str, field: &str) -> Option<usize> {
-    env.iter()
-        .rev()
-        .find(|(candidate, _)| candidate == name)
-        .and_then(|(_, fields)| fields.iter().position(|candidate| candidate == field))
-}
-
 fn fuse_sequence_map_sum_window(
     ops: &[FlowOp],
     index: usize,
@@ -1009,6 +766,14 @@ fn count_runtime_expr_pure_calls(expr: &RuntimeExpr) -> usize {
         | RuntimeExpr::ProjectRecord { target, .. }
         | RuntimeExpr::SpreadArg(target) => count_runtime_expr_pure_calls(target),
         RuntimeExpr::Call { args, .. } => args.iter().map(count_runtime_expr_pure_calls).sum(),
+        RuntimeExpr::Function { body, .. } => count_runtime_expr_pure_calls(body),
+        RuntimeExpr::Apply { callee, args } => {
+            count_runtime_expr_pure_calls(callee)
+                + args
+                    .iter()
+                    .map(count_runtime_expr_pure_calls)
+                    .sum::<usize>()
+        }
         RuntimeExpr::MethodCall { receiver, args, .. }
         | RuntimeExpr::TraitCall { receiver, args, .. } => {
             count_runtime_expr_pure_calls(receiver)
@@ -1212,6 +977,12 @@ fn count_runtime_expr_local_uses_by_name(expr: &RuntimeExpr, name: &str) -> usiz
             .iter()
             .map(|arg| count_runtime_expr_local_uses_by_name(arg, name))
             .sum(),
+        RuntimeExpr::Function { params, body } => {
+            count_runtime_function_local_uses_by_name(params, body, name)
+        }
+        RuntimeExpr::Apply { callee, args } => {
+            count_runtime_apply_local_uses_by_name(callee, args, name)
+        }
         RuntimeExpr::MethodCall { receiver, args, .. }
         | RuntimeExpr::TraitCall { receiver, args, .. } => {
             count_runtime_expr_local_uses_by_name(receiver, name)
@@ -1220,10 +991,16 @@ fn count_runtime_expr_local_uses_by_name(expr: &RuntimeExpr, name: &str) -> usiz
                     .map(|arg| count_runtime_expr_local_uses_by_name(arg, name))
                     .sum::<usize>()
         }
-        RuntimeExpr::Map { source, body, .. } | RuntimeExpr::Filter { source, body, .. } => {
-            count_runtime_expr_local_uses_by_name(source, name)
-                + count_runtime_expr_local_uses_by_name(body, name)
+        RuntimeExpr::Map {
+            source,
+            param,
+            body,
         }
+        | RuntimeExpr::Filter {
+            source,
+            param,
+            body,
+        } => count_runtime_scoped_body_local_uses_by_name(source, param, body, name),
         RuntimeExpr::Sum { source } | RuntimeExpr::Unary { expr: source, .. } => {
             count_runtime_expr_local_uses_by_name(source, name)
         }
@@ -1246,24 +1023,84 @@ fn count_runtime_expr_local_uses_by_name(expr: &RuntimeExpr, name: &str) -> usiz
             then_expr,
             else_expr,
             ..
-        } => {
-            count_runtime_expr_local_uses_by_name(expr, name)
-                + count_optional_runtime_expr_local_uses_by_name(guard.as_deref(), name)
-                + count_runtime_expr_local_uses_by_name(then_expr, name)
-                + count_runtime_expr_local_uses_by_name(else_expr, name)
-        }
+        } => count_runtime_if_let_local_uses_by_name(
+            expr,
+            guard.as_deref(),
+            then_expr,
+            else_expr,
+            name,
+        ),
         RuntimeExpr::Match { scrutinee, arms } => {
-            count_runtime_expr_local_uses_by_name(scrutinee, name)
-                + arms
-                    .iter()
-                    .map(|arm| {
-                        count_optional_runtime_expr_local_uses_by_name(arm.guard.as_ref(), name)
-                            + count_runtime_expr_local_uses_by_name(&arm.value, name)
-                    })
-                    .sum::<usize>()
+            count_runtime_match_local_uses_by_name(scrutinee, arms, name)
         }
         RuntimeExpr::Value(_) | RuntimeExpr::EntityRef(_) => 0,
     }
+}
+
+fn count_runtime_function_local_uses_by_name(
+    params: &[String],
+    body: &RuntimeExpr,
+    name: &str,
+) -> usize {
+    if params.iter().any(|param| param == name) {
+        0
+    } else {
+        count_runtime_expr_local_uses_by_name(body, name)
+    }
+}
+
+fn count_runtime_apply_local_uses_by_name(
+    callee: &RuntimeExpr,
+    args: &[RuntimeExpr],
+    name: &str,
+) -> usize {
+    count_runtime_expr_local_uses_by_name(callee, name)
+        + args
+            .iter()
+            .map(|arg| count_runtime_expr_local_uses_by_name(arg, name))
+            .sum::<usize>()
+}
+
+fn count_runtime_scoped_body_local_uses_by_name(
+    source: &RuntimeExpr,
+    param: &str,
+    body: &RuntimeExpr,
+    name: &str,
+) -> usize {
+    count_runtime_expr_local_uses_by_name(source, name)
+        + if param == name {
+            0
+        } else {
+            count_runtime_expr_local_uses_by_name(body, name)
+        }
+}
+
+fn count_runtime_if_let_local_uses_by_name(
+    expr: &RuntimeExpr,
+    guard: Option<&RuntimeExpr>,
+    then_expr: &RuntimeExpr,
+    else_expr: &RuntimeExpr,
+    name: &str,
+) -> usize {
+    count_runtime_expr_local_uses_by_name(expr, name)
+        + count_optional_runtime_expr_local_uses_by_name(guard, name)
+        + count_runtime_expr_local_uses_by_name(then_expr, name)
+        + count_runtime_expr_local_uses_by_name(else_expr, name)
+}
+
+fn count_runtime_match_local_uses_by_name(
+    scrutinee: &RuntimeExpr,
+    arms: &[RuntimeExprMatchArm],
+    name: &str,
+) -> usize {
+    count_runtime_expr_local_uses_by_name(scrutinee, name)
+        + arms
+            .iter()
+            .map(|arm| {
+                count_optional_runtime_expr_local_uses_by_name(arm.guard.as_ref(), name)
+                    + count_runtime_expr_local_uses_by_name(&arm.value, name)
+            })
+            .sum::<usize>()
 }
 
 fn count_optional_runtime_expr_local_uses_by_name(expr: Option<&RuntimeExpr>, name: &str) -> usize {

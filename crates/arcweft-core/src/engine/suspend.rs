@@ -913,6 +913,7 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
         | RuntimeValue::Tuple(_)
         | RuntimeValue::Seq(_)
         | RuntimeValue::Record(_)
+        | RuntimeValue::Function(_)
         | RuntimeValue::Variant { .. } => super::runtime_value_label(value),
     }
 }

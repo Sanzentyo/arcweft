@@ -41,6 +41,81 @@ fn value_helper(expr: RuntimeExpr) -> RuntimePureHelper {
 }
 
 #[test]
+fn vm_pure_backend_applies_runtime_function_with_capture() {
+    let helper = value_helper(RuntimeExpr::Let {
+        name: "adder".to_owned(),
+        expr: Box::new(RuntimeExpr::Function {
+            params: vec!["value".to_owned()],
+            body: Box::new(RuntimeExpr::Binary {
+                lhs: Box::new(RuntimeExpr::Local("value".to_owned())),
+                op: RuntimeBinaryOp::Add,
+                rhs: Box::new(RuntimeExpr::Local("row".to_owned())),
+            }),
+        }),
+        body: Box::new(RuntimeExpr::Apply {
+            callee: Box::new(RuntimeExpr::Local("adder".to_owned())),
+            args: vec![RuntimeExpr::Value(RuntimeValue::i64(3))],
+        }),
+    });
+    let mut backend = VmRuntimePureCallBackend::default();
+
+    let value = backend
+        .call_values(&helper, &[RuntimeValue::i64(4)])
+        .expect("captured function evaluates");
+
+    assert_eq!(value, RuntimeValue::i64(7));
+}
+
+#[test]
+fn vm_pure_backend_partially_applies_runtime_function() {
+    let helper = value_helper(RuntimeExpr::Apply {
+        callee: Box::new(RuntimeExpr::Apply {
+            callee: Box::new(RuntimeExpr::Function {
+                params: vec!["lhs".to_owned(), "rhs".to_owned()],
+                body: Box::new(RuntimeExpr::Binary {
+                    lhs: Box::new(RuntimeExpr::Local("lhs".to_owned())),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(RuntimeExpr::Local("rhs".to_owned())),
+                }),
+            }),
+            args: vec![RuntimeExpr::Value(RuntimeValue::i64(2))],
+        }),
+        args: vec![RuntimeExpr::Value(RuntimeValue::i64(5))],
+    });
+    let mut backend = VmRuntimePureCallBackend::default();
+
+    let value = backend.call_values(&helper, &[RuntimeValue::Unit]).unwrap();
+
+    assert_eq!(value, RuntimeValue::i64(7));
+}
+
+#[test]
+fn vm_pure_backend_applies_curried_runtime_function() {
+    let helper = value_helper(RuntimeExpr::Apply {
+        callee: Box::new(RuntimeExpr::Apply {
+            callee: Box::new(RuntimeExpr::Function {
+                params: vec!["lhs".to_owned()],
+                body: Box::new(RuntimeExpr::Function {
+                    params: vec!["rhs".to_owned()],
+                    body: Box::new(RuntimeExpr::Binary {
+                        lhs: Box::new(RuntimeExpr::Local("lhs".to_owned())),
+                        op: RuntimeBinaryOp::Add,
+                        rhs: Box::new(RuntimeExpr::Local("rhs".to_owned())),
+                    }),
+                }),
+            }),
+            args: vec![RuntimeExpr::Value(RuntimeValue::i64(2))],
+        }),
+        args: vec![RuntimeExpr::Value(RuntimeValue::i64(5))],
+    });
+    let mut backend = VmRuntimePureCallBackend::default();
+
+    let value = backend.call_values(&helper, &[RuntimeValue::Unit]).unwrap();
+
+    assert_eq!(value, RuntimeValue::i64(7));
+}
+
+#[test]
 fn vm_pure_backend_projects_record_columns_by_ordinal() {
     let helper = value_helper(RuntimeExpr::ProjectRecord {
         target: Box::new(RuntimeExpr::Local("row".to_owned())),

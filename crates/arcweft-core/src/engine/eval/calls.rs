@@ -2461,7 +2461,7 @@ impl Engine {
         }
     }
 
-    fn evaluate_call_args(
+    pub(super) fn evaluate_call_args(
         &mut self,
         args: &[RuntimeExpr],
         pure_backend: &mut impl RuntimeCallBackend,

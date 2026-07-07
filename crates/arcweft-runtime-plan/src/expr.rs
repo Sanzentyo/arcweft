@@ -20,7 +20,10 @@ use arcweft_core::value::{
 };
 use arcweft_lang_hir::syntax::{
     ast::{flow::Stmt, line_plan::LinePlanItem, pattern::Pattern},
-    expr::{BinaryOp, CallArg, Expr, FloatSuffix, Literal, MatchExprArm, Placeholder, UnaryOp},
+    expr::{
+        BinaryOp, CallArg, ClosureParam, Expr, FloatSuffix, Literal, MatchExprArm, Placeholder,
+        UnaryOp,
+    },
 };
 use std::collections::BTreeMap;
 
@@ -213,6 +216,7 @@ fn lower_runtime_expr_strict_with_helpers(
         | Expr::NamedBlock {
             statements, value, ..
         } => lower_strict_block_expr(statements, value.as_deref(), helpers),
+        Expr::Closure { params, body } => lower_strict_closure_expr(params, body, helpers),
         Expr::Call { callee, args } => lower_strict_call_expr(callee, args, helpers),
         Expr::MethodCall {
             receiver,
@@ -225,12 +229,30 @@ fn lower_runtime_expr_strict_with_helpers(
             lower_runtime_expr_strict_with_helpers(expr, helpers)
         }
         Expr::Pipe { lhs, rhs } => lower_runtime_pipe_expr_strict(lhs, rhs, helpers),
-        Expr::Thread { .. }
-        | Expr::Closure { .. }
-        | Expr::LifetimePath { .. }
-        | Expr::Placeholder(_)
-        | Expr::Raw(_) => unsupported_strict_runtime_expr(expr),
+        Expr::Thread { .. } | Expr::LifetimePath { .. } | Expr::Placeholder(_) | Expr::Raw(_) => {
+            unsupported_strict_runtime_expr(expr)
+        }
     }
+}
+
+fn lower_strict_closure_expr(
+    params: &[ClosureParam],
+    body: &Expr,
+    helpers: Option<&BTreeMap<String, RuntimePureHelperId>>,
+) -> Result<RuntimeExpr, String> {
+    let params = params
+        .iter()
+        .map(|param| {
+            param
+                .simple_ident()
+                .map(str::to_owned)
+                .ok_or_else(|| "runtime closures must bind simple identifier parameters".to_owned())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    lower_runtime_expr_strict_with_helpers(body, helpers).map(|body| RuntimeExpr::Function {
+        params,
+        body: Box::new(body),
+    })
 }
 
 fn lower_strict_binary_expr(
@@ -1201,13 +1223,21 @@ fn lower_strict_call_expr(
     }
     lower_constructor_call(callee, args, helpers).map_or_else(
         || {
-            let callee = expr_label(callee);
             let args = args
                 .iter()
                 .map(|arg| lower_strict_call_arg(arg, helpers))
                 .collect::<Result<Vec<_>, _>>()?;
+            let Expr::Path(path) = callee else {
+                return lower_runtime_expr_strict_with_helpers(callee, helpers).map(|callee| {
+                    RuntimeExpr::Apply {
+                        callee: Box::new(callee),
+                        args,
+                    }
+                });
+            };
+            let callee = path.as_label();
             Ok(
-                if let Some(helper) = helpers.and_then(|helpers| helpers.get(&callee).copied()) {
+                if let Some(helper) = helpers.and_then(|helpers| helpers.get(callee).copied()) {
                     RuntimeExpr::PureCall { helper, args }
                 } else {
                     RuntimeExpr::Call {

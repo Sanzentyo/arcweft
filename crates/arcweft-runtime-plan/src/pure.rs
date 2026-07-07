@@ -275,6 +275,16 @@ fn summarize_runtime_expr(expr: &RuntimeExpr) -> PureHelperShape {
             shape.contains_call = true;
             shape
         }
+        RuntimeExpr::Function { body, .. } => summarize_runtime_expr(body),
+        RuntimeExpr::Apply { callee, args } => {
+            let mut shape = merge_shape_summaries(
+                std::iter::once(callee.as_ref())
+                    .chain(args.iter())
+                    .map(summarize_runtime_expr),
+            );
+            shape.contains_call = true;
+            shape
+        }
         RuntimeExpr::MethodCall { receiver, args, .. }
         | RuntimeExpr::TraitCall { receiver, args, .. } => {
             let mut shape = merge_shape_summaries(

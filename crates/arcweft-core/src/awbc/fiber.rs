@@ -1171,6 +1171,7 @@ fn runtime_value_type_label(value: &RuntimeValue) -> String {
         RuntimeValue::Tuple(_) => "tuple",
         RuntimeValue::Seq(_) => "sequence",
         RuntimeValue::Record(_) => "record",
+        RuntimeValue::Function(_) => "function",
         RuntimeValue::Variant { .. } => "variant",
     }
     .to_owned()

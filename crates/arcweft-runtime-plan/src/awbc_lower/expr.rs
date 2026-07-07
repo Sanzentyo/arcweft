@@ -227,6 +227,27 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                 self.lower(body)
             }
             RuntimeExpr::Call { callee, args } => self.lower_call(callee, args),
+            RuntimeExpr::Function { .. } => {
+                self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                    self.path.clone(),
+                    "runtime function values require AWBC closure allocation support",
+                ));
+                self.load_runtime_const(&arcweft_core::value::RuntimeValue::Unit)
+            }
+            RuntimeExpr::Apply { callee, args } => {
+                let callee = self.lower(callee);
+                let mut args = args.iter().map(|arg| self.lower(arg)).collect::<Vec<_>>();
+                args.insert(0, callee);
+                let dst = self.frame.temp(self.inventory.dynamic_ty());
+                let intrinsic = self.intern_intrinsic("function.apply", args.len());
+                self.inventory
+                    .push_instruction(AwbcInstruction::CallIntrinsic {
+                        dst: Some(dst),
+                        intrinsic,
+                        args,
+                    });
+                dst
+            }
             RuntimeExpr::TraitCall {
                 callable,
                 receiver,

@@ -54,6 +54,7 @@ pub(super) fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::Seq(RuntimeSeq::TupleColumns(_)) => "seq_tuple_columns",
         RuntimeValue::Seq(RuntimeSeq::RecordColumns(_)) => "seq_record_columns",
         RuntimeValue::Record(_) => "record",
+        RuntimeValue::Function(_) => "function",
         RuntimeValue::Variant { .. } => "variant",
         RuntimeValue::Iterator(_) => "iterator",
     }
@@ -828,6 +829,11 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
         | RuntimeExpr::ProjectRecord { target, .. } => 1 + runtime_expr_work_units(target),
         RuntimeExpr::Call { args, .. } | RuntimeExpr::PureCall { args, .. } => {
             8 + args.iter().map(runtime_expr_work_units).sum::<usize>()
+        }
+        RuntimeExpr::Function { body, .. } => 2 + runtime_expr_work_units(body),
+        RuntimeExpr::Apply { callee, args } => {
+            8 + runtime_expr_work_units(callee)
+                + args.iter().map(runtime_expr_work_units).sum::<usize>()
         }
         RuntimeExpr::MethodCall { receiver, args, .. }
         | RuntimeExpr::TraitCall { receiver, args, .. } => {

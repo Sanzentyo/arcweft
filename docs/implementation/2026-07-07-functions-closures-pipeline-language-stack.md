@@ -40,6 +40,23 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
 - Standard prelude-shaped data-last collection pipeline now recognizes
   `choices |> filter(_.enabled) |> map(_.label)` and lowers it through the same
   executable `RuntimeExpr::Filter`/`RuntimeExpr::Map` path.
+- Runtime function/apply substrate is now typed in the executable runtime:
+  - `RuntimeValue::Function` stores parameters, body, and deterministic capture
+    bindings.
+  - `RuntimeExpr::Function` evaluates explicit runtime closures into captured
+    function values.
+  - `RuntimeExpr::Apply` applies expression callee values, supports partial
+    application when fewer arguments are supplied, and supports curried
+    application when an application returns another function value.
+- Strict runtime lowering now converts explicit closures into
+  `RuntimeExpr::Function`.
+- Strict runtime lowering now converts non-path expression callee calls such as
+  `make_adder(2i64)(5i64)` into `RuntimeExpr::Apply`.
+- Core VM/pure evaluation now executes captured runtime functions, partial
+  application, and curried function application.
+- Runtime-plan, verify, accelerator, CLI, agent-runner, render-text, and host
+  value labels now understand runtime function values instead of relying on
+  wildcard handling.
 
 ## Current boundaries
 
@@ -48,9 +65,14 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   function-value inference/apply design below.
 - Partial call abstraction such as `add(_, 1)` type-checks only where a matching
   expected function type is supplied. It is not yet a general inference source.
-- Strict runtime does not yet have a first-class expression callee/apply form,
-  so true curried runtime application `f(a)(x)` is not represented end to end.
-  Pipe no-`^` runtime lowering still uses the direct data-last call shape
+- Named top-level functions are not yet materialized as function values when a
+  bare function path is used as an expression. Expression-callee application is
+  available once the callee expression evaluates to `RuntimeValue::Function`.
+- AWBC does not yet allocate runtime closure values. `RuntimeExpr::Function`
+  currently emits an AWBC lowering diagnostic, and function state is not encoded
+  as an AWBC constant. `RuntimeExpr::Apply` is represented as a
+  `function.apply` intrinsic for bytecode inventory purposes.
+- Pipe no-`^` runtime lowering still uses the direct data-last call shape
   outside the standard executable `filter`/`map` collection pipeline subset.
 - Method-chain fallback sugar that resolves inherent/trait methods first and
   then data-last callable methods is not implemented.
@@ -69,6 +91,9 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
 cargo test -p arcweft-core --lib --all-features
 cargo test -p arcweft-lang-sema --lib --all-features
 cargo test -p arcweft-runtime-plan --lib --all-features
+cargo test -p arcweft-core --all-features runtime_function
+cargo test -p arcweft-runtime-plan --all-features closure_to_function_expr
+cargo test -p arcweft-runtime-plan --all-features expression_callee_call_to_apply
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features
 cargo +nightly -Zscript tools/structure-audit.rs --root .
@@ -79,3 +104,8 @@ All listed validation passed after updating the lingering
 canonical `bool`. The structure audit reported 0 errors and 147 existing
 warnings for the first cut. After the executable `filter` cut and structural
 split, the structure audit reports 0 errors and 146 warnings.
+
+The runtime function/apply cut has focused passing coverage for captured
+function application, partial application, curried application, closure strict
+lowering, and expression-callee call lowering. Workspace validation for this cut
+is recorded in the commit/final response.

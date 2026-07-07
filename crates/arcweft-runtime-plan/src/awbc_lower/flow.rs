@@ -1607,6 +1607,15 @@ impl EntryParameterCollector {
                     self.collect_expr(arg);
                 }
             }
+            RuntimeExpr::Function { params, body } => {
+                self.collect_with_declared(params, |this| this.collect_expr(body));
+            }
+            RuntimeExpr::Apply { callee, args } => {
+                self.collect_expr(callee);
+                for arg in args {
+                    self.collect_expr(arg);
+                }
+            }
             RuntimeExpr::MethodCall { receiver, args, .. }
             | RuntimeExpr::TraitCall { receiver, args, .. } => {
                 self.collect_receiver_args(receiver, args);
@@ -1640,23 +1649,38 @@ impl EntryParameterCollector {
                 guard,
                 then_expr,
                 else_expr,
-            } => {
-                self.collect_expr(expr);
-                self.collect_optional_expr(guard.as_deref());
-                let names = pattern_names(pattern);
-                self.collect_with_declared(&names, |this| this.collect_expr(then_expr));
-                self.collect_expr(else_expr);
-            }
-            RuntimeExpr::Match { scrutinee, arms } => {
-                self.collect_expr(scrutinee);
-                for arm in arms {
-                    let names = pattern_names(&arm.pattern);
-                    self.collect_with_declared(&names, |this| {
-                        this.collect_optional_expr(arm.guard.as_ref());
-                        this.collect_expr(&arm.value);
-                    });
-                }
-            }
+            } => self.collect_if_let_expr(pattern, expr, guard.as_deref(), then_expr, else_expr),
+            RuntimeExpr::Match { scrutinee, arms } => self.collect_match_expr(scrutinee, arms),
+        }
+    }
+
+    fn collect_if_let_expr(
+        &mut self,
+        pattern: &RuntimePattern,
+        expr: &RuntimeExpr,
+        guard: Option<&RuntimeExpr>,
+        then_expr: &RuntimeExpr,
+        else_expr: &RuntimeExpr,
+    ) {
+        self.collect_expr(expr);
+        self.collect_optional_expr(guard);
+        let names = pattern_names(pattern);
+        self.collect_with_declared(&names, |this| this.collect_expr(then_expr));
+        self.collect_expr(else_expr);
+    }
+
+    fn collect_match_expr(
+        &mut self,
+        scrutinee: &RuntimeExpr,
+        arms: &[arcweft_core::value::RuntimeExprMatchArm],
+    ) {
+        self.collect_expr(scrutinee);
+        for arm in arms {
+            let names = pattern_names(&arm.pattern);
+            self.collect_with_declared(&names, |this| {
+                this.collect_optional_expr(arm.guard.as_ref());
+                this.collect_expr(&arm.value);
+            });
         }
     }
 

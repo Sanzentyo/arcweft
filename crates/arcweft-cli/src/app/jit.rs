@@ -377,6 +377,7 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
             format!("seq/record_columns/{}", values.len())
         }
         RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
+        RuntimeValue::Function(function) => format!("function/{}", function.arity()),
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {
                 format!(".{name}(...)")

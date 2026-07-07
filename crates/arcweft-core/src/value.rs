@@ -34,6 +34,52 @@ pub struct RuntimeBinding {
     pub value: RuntimeValue,
 }
 
+/// Captured runtime function value.
+///
+/// Captures are deterministic runtime bindings collected when a function
+/// expression is evaluated. They are rebound before call arguments when the
+/// function is applied.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct RuntimeFunctionValue {
+    pub params: Vec<String>,
+    pub body: Box<RuntimeExpr>,
+    pub captures: Vec<RuntimeBinding>,
+}
+
+impl RuntimeFunctionValue {
+    pub fn new(params: Vec<String>, body: RuntimeExpr, captures: Vec<RuntimeBinding>) -> Self {
+        Self {
+            params,
+            body: Box::new(body),
+            captures,
+        }
+    }
+
+    pub fn arity(&self) -> usize {
+        self.params.len()
+    }
+
+    #[must_use]
+    pub fn partially_apply(&self, args: &[RuntimeValue]) -> Self {
+        let mut captures = self.captures.clone();
+        captures.extend(
+            self.params
+                .iter()
+                .take(args.len())
+                .zip(args)
+                .map(|(name, value)| RuntimeBinding {
+                    name: name.clone(),
+                    value: value.clone(),
+                }),
+        );
+        Self::new(
+            self.params[args.len()..].to_vec(),
+            self.body.as_ref().clone(),
+            captures,
+        )
+    }
+}
+
 /// Structured payload exchanged at the host/runtime boundary.
 ///
 /// Payloads intentionally retain `RuntimeValue` shape instead of collapsing
@@ -67,6 +113,7 @@ pub enum RuntimeValue {
     Tuple(Vec<RuntimeValue>),
     Seq(RuntimeSeq),
     Record(Vec<RuntimeFieldValue>),
+    Function(RuntimeFunctionValue),
     Variant {
         path: Option<String>,
         name: String,
@@ -770,6 +817,14 @@ pub enum RuntimeExpr {
         callee: RuntimeCallTarget,
         args: Vec<RuntimeExpr>,
     },
+    Function {
+        params: Vec<String>,
+        body: Box<RuntimeExpr>,
+    },
+    Apply {
+        callee: Box<RuntimeExpr>,
+        args: Vec<RuntimeExpr>,
+    },
     TraitCall {
         callable: RuntimeTraitMethodId,
         receiver: Box<RuntimeExpr>,
@@ -867,6 +922,8 @@ impl RuntimeExpr {
             | Self::ProjectRecord { .. }
             | Self::AssignField { .. }
             | Self::Call { .. }
+            | Self::Function { .. }
+            | Self::Apply { .. }
             | Self::TraitCall { .. }
             | Self::PureCall { .. }
             | Self::SpreadArg(_)
@@ -902,6 +959,8 @@ impl fmt::Display for RuntimeExpr {
             Self::ProjectRecord { ordinal, .. } => write!(f, ".#{ordinal}"),
             Self::AssignField { field, .. } => write!(f, "assign .{field}"),
             Self::Call { callee, .. } => write!(f, "{callee}()"),
+            Self::Function { params, .. } => write!(f, "fn/{}", params.len()),
+            Self::Apply { .. } => f.write_str("apply"),
             Self::TraitCall { callable, .. } => write!(f, "trait#{}()", callable.0),
             Self::PureCall { helper, .. } => write!(f, "pure#{}()", helper.0),
             Self::SpreadArg(expr) => write!(f, "{expr}..."),
@@ -1040,6 +1099,10 @@ pub enum RuntimeEvalError {
     InvalidSpread(String),
     #[error("spread argument cannot be evaluated outside a call argument list")]
     SpreadOutsideCall,
+    #[error("expected runtime function expression, found {0}")]
+    ExpectedFunction(String),
+    #[error("runtime function expected {expected} argument(s), found {found}")]
+    FunctionArgumentCount { expected: usize, found: usize },
     #[error(
         "runtime pure helper `{helper}` expected at most {max} fast-path argument(s), found {found}"
     )]
@@ -2395,6 +2458,7 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
             RuntimeSeq::RecordColumns(values) => format!("seq/record_columns/{}", values.len()),
         },
         RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
+        RuntimeValue::Function(function) => format!("function/{}", function.arity()),
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {
                 format!(".{name}(...)")

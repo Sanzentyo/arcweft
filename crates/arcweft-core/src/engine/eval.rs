@@ -1,12 +1,12 @@
 use super::{
     Engine, FlowFiberStatus, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr,
-    RuntimeExprMatchArm, RuntimeFieldValue, RuntimeMatchArm, RuntimeMatchSelection, RuntimePattern,
-    RuntimeSeq, RuntimeStepOutput, RuntimeValue, evaluate_binary, evaluate_unary,
-    match_runtime_pattern, runtime_sequence_dense_f32, runtime_sequence_dense_f64,
-    runtime_sequence_dense_i8, runtime_sequence_dense_i16, runtime_sequence_dense_i32,
-    runtime_sequence_dense_i64, runtime_sequence_dense_i128, runtime_sequence_dense_u8,
-    runtime_sequence_dense_u16, runtime_sequence_dense_u32, runtime_sequence_dense_u64,
-    runtime_sequence_dense_u128, runtime_sequence_from_literal_values,
+    RuntimeExprMatchArm, RuntimeFieldValue, RuntimeFunctionValue, RuntimeMatchArm,
+    RuntimeMatchSelection, RuntimePattern, RuntimeSeq, RuntimeStepOutput, RuntimeValue,
+    evaluate_binary, evaluate_unary, match_runtime_pattern, runtime_sequence_dense_f32,
+    runtime_sequence_dense_f64, runtime_sequence_dense_i8, runtime_sequence_dense_i16,
+    runtime_sequence_dense_i32, runtime_sequence_dense_i64, runtime_sequence_dense_i128,
+    runtime_sequence_dense_u8, runtime_sequence_dense_u16, runtime_sequence_dense_u32,
+    runtime_sequence_dense_u64, runtime_sequence_dense_u128, runtime_sequence_from_literal_values,
     runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
     runtime_value_label, sum_i64_sequence_ref,
 };
@@ -28,6 +28,7 @@ use crate::value::{
 };
 
 mod calls;
+mod function;
 mod sequence;
 
 impl Engine {
@@ -138,6 +139,10 @@ impl Engine {
             RuntimeExpr::SpreadArg(_) => Err(RuntimeEvalError::SpreadOutsideCall),
             RuntimeExpr::Call { callee, args } => {
                 self.evaluate_call_expr(callee, args, pure_backend)
+            }
+            RuntimeExpr::Function { params, body } => Ok(self.evaluate_function_expr(params, body)),
+            RuntimeExpr::Apply { callee, args } => {
+                self.evaluate_apply_expr(callee, args, pure_backend)
             }
             RuntimeExpr::TraitCall {
                 callable,
