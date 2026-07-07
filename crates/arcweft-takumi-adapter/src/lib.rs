@@ -22,7 +22,8 @@ pub mod text;
 pub use adapter::{TakumiAdapter, TakumiAdapterInput, TakumiAdapterOutput};
 pub use cache::{
     ImageRevision, RendererResourceRevision, StyleRevision, TakumiPaintCacheKey,
-    TakumiSceneCacheKey, TextLayoutRevision, UiProgramRevision, ViewFragmentRevision, ViewportKey,
+    TakumiSceneCacheKey, TextLayoutRevision, ViewFragmentRevision, ViewProgramRevision,
+    ViewportKey,
 };
 pub use capture::{
     TakumiCaptureFrame, TakumiCaptureRecord, TakumiCompositingCaptureRecord,

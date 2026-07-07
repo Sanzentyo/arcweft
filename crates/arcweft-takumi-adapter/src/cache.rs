@@ -1,7 +1,7 @@
 use num_traits::ToPrimitive;
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct UiProgramRevision(pub u64);
+pub struct ViewProgramRevision(pub u64);
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ViewFragmentRevision(pub u64);
@@ -28,7 +28,7 @@ pub struct ViewportKey {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TakumiSceneCacheKey {
-    program: UiProgramRevision,
+    program: ViewProgramRevision,
     fragment: ViewFragmentRevision,
     style: StyleRevision,
     text: TextLayoutRevision,
@@ -71,7 +71,7 @@ impl ViewportKey {
 
 impl TakumiSceneCacheKey {
     pub const fn new(
-        program: UiProgramRevision,
+        program: ViewProgramRevision,
         fragment: ViewFragmentRevision,
         style: StyleRevision,
         text: TextLayoutRevision,
@@ -141,7 +141,7 @@ mod tests {
     fn cache_keys_split_layout_scene_from_renderer_resource_revisions() {
         let viewport = ViewportKey::new(1280, 720, 1.25, 16.0);
         let scene = TakumiSceneCacheKey::new(
-            UiProgramRevision(1),
+            ViewProgramRevision(1),
             ViewFragmentRevision(2),
             StyleRevision(3),
             TextLayoutRevision(4),
@@ -160,7 +160,7 @@ mod tests {
     fn mask_image_url_resource_revision_changes_scene_cache_key() {
         let viewport = ViewportKey::new(1280, 720, 1.0, 16.0);
         let before_mask_url = TakumiSceneCacheKey::new(
-            UiProgramRevision(1),
+            ViewProgramRevision(1),
             ViewFragmentRevision(2),
             StyleRevision(3),
             TextLayoutRevision(4),
@@ -168,7 +168,7 @@ mod tests {
             viewport,
         );
         let after_mask_url = TakumiSceneCacheKey::new(
-            UiProgramRevision(1),
+            ViewProgramRevision(1),
             ViewFragmentRevision(2),
             StyleRevision(3),
             TextLayoutRevision(4),

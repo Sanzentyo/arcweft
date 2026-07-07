@@ -291,7 +291,8 @@ symbols were removed rather than aliased:
 - `UiPartId`, `UiPartExport`, `UiStableKey`, `UiExpressionId`,
   `UiStyleApply`, `UiStylePatchId`, `UiEventBindingSpec`,
   `UiSemanticSpec`, and `UiHandlerProgram` became `View*` records;
-- Takumi adapter metadata now records `ViewProgramId` and `ViewPartId`.
+- Takumi adapter metadata now records `ViewProgramId` and `ViewPartId`, and
+  its scene cache key uses `ViewProgramRevision`.
 
 This slice intentionally leaves broader product-level UI concepts such as
 `UiError`, `UiStyle`, `UiTextSource`, `UiImageSource`, retained semantic
@@ -307,7 +308,7 @@ Current validation for this slice:
 - `cargo check -p arcweft-ui -p arcweft-takumi-adapter --all-targets --all-features`
 - `cargo clippy -p arcweft-ui -p arcweft-takumi-adapter --all-targets --all-features`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`
-- `rg -n "\\bUi(Program|ProgramBuilder|Instruction|InstructionRange|ElementSpec|TextSpec|ImageSpec|CustomSpec|ViewCall|Branch|Repeat|StyleApply|StylePatchId|EventBindingSpec|SemanticSpec|HandlerProgram|PartId|PartExport|StableKey|ExpressionId)\\b|\\bUiProgramId\\b" crates\\arcweft-ui crates\\arcweft-takumi-adapter -g "*.rs"`
+- `rg -n "\\bUi(Program|ProgramBuilder|ProgramRevision|Instruction|InstructionRange|ElementSpec|TextSpec|ImageSpec|CustomSpec|ViewCall|Branch|Repeat|StyleApply|StylePatchId|EventBindingSpec|SemanticSpec|HandlerProgram|PartId|PartExport|StableKey|ExpressionId)\\b|\\bUiProgramId\\b" crates\\arcweft-ui crates\\arcweft-takumi-adapter -g "*.rs"`
 
 The structure audit reported 0 errors and 147 warnings after this slice.
 
