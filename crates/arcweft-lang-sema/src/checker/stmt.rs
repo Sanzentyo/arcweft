@@ -321,13 +321,14 @@ impl TypeChecker<'_> {
             .cloned()
             .or_else(|| ty.clone());
         if let Some(ty) = binding_ty.as_ref() {
-            self.record_type_judgment(
+            self.record_type_judgment_with_source_range(
                 TypeJudgmentSubject::LetBinding {
                     pattern: format!("{pattern:?}"),
                 },
                 TypeJudgmentRule::LetBinding,
                 ty.clone(),
                 annotated_ty.as_ref(),
+                expr_range,
             );
             if let Some(name) = ident_pattern_name(pattern)
                 && name == "RuntimeFrame"

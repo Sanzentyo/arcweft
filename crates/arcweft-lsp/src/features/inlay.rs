@@ -7,6 +7,7 @@ use arcweft_lang_sema::check::{
 use arcweft_lang_sema::resolve::{registry_from_hir, validate_hir_references};
 use arcweft_lang_sema::types::TypeKind;
 use arcweft_lang_syntax::ast::choice::ChoicePlanItem;
+use arcweft_lang_syntax::ast::common::TextRange;
 use arcweft_lang_syntax::ast::flow::{FlowItem, Stmt};
 use arcweft_lang_syntax::ast::items::{Item, TypedSyntaxTree};
 use arcweft_lang_syntax::parser::parse_source;
@@ -49,6 +50,7 @@ fn function_type_inlay_hints(profile: &LspProfile, document: &DocumentSnapshot) 
                 &judgments,
                 &mut judgment_cursor,
                 site.pattern_debug.as_str(),
+                site.expr_range,
             )?;
             if !site.emit {
                 return None;
@@ -72,6 +74,7 @@ fn let_type_judgments(report: &TypeCheckReport) -> Vec<LetTypeJudgment<'_>> {
             Some(LetTypeJudgment {
                 pattern: pattern.as_str(),
                 ty: &judgment.ty,
+                source_range: judgment.source_range,
             })
         })
         .collect()
@@ -81,11 +84,14 @@ fn next_matching_let_judgment<'a>(
     judgments: &'a [LetTypeJudgment<'a>],
     cursor: &mut usize,
     pattern_debug: &str,
+    expr_range: TextRange,
 ) -> Option<LetTypeJudgment<'a>> {
-    let index = judgments
-        .get(*cursor..)?
-        .iter()
-        .position(|judgment| judgment.pattern == pattern_debug)?;
+    let index = judgments.get(*cursor..)?.iter().position(|judgment| {
+        judgment.pattern == pattern_debug
+            && judgment
+                .source_range
+                .is_none_or(|source_range| source_range == expr_range)
+    })?;
     let absolute = cursor.saturating_add(index);
     *cursor = absolute.saturating_add(1);
     judgments.get(absolute).copied()
@@ -114,6 +120,7 @@ fn inlay_for_site(
 struct LetTypeInlaySite {
     pattern_debug: String,
     position: usize,
+    expr_range: TextRange,
     emit: bool,
 }
 
@@ -121,6 +128,7 @@ struct LetTypeInlaySite {
 struct LetTypeJudgment<'a> {
     pattern: &'a str,
     ty: &'a TypeKind,
+    source_range: Option<TextRange>,
 }
 
 fn function_let_sites(tree: &TypedSyntaxTree, source: &str) -> Vec<LetTypeInlaySite> {
@@ -230,6 +238,7 @@ fn collect_stmt_site(stmt: &Stmt, source: &str, sites: &mut Vec<LetTypeInlaySite
                 sites.push(LetTypeInlaySite {
                     pattern_debug: format!("{pattern:?}"),
                     position,
+                    expr_range: *expr_range,
                     emit: ty.is_none(),
                 });
             }

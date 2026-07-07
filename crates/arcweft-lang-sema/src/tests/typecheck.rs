@@ -1143,6 +1143,24 @@ flow @flow.source_ranges source_ranges {
         .source_range
         .expect("let RHS expression judgment should retain its source range");
     assert_eq!(&source[range.as_range()], "1i32 + 2i32");
+    let binding_judgment = report
+        .judgments
+        .iter()
+        .find(|judgment| {
+            matches!(
+                (&judgment.subject, judgment.rule, &judgment.ty),
+                (
+                    TypeJudgmentSubject::LetBinding { pattern },
+                    TypeJudgmentRule::LetBinding,
+                    TypeKind::I32
+                ) if pattern == "Ident(\"total\")"
+            )
+        })
+        .expect("let binding should be judged");
+    let binding_range = binding_judgment
+        .source_range
+        .expect("let binding judgment should retain its RHS source range");
+    assert_eq!(&source[binding_range.as_range()], "1i32 + 2i32");
     assert!(
         report.judgments.iter().any(|judgment| {
             matches!(

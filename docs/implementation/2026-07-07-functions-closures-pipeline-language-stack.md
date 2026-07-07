@@ -103,6 +103,9 @@ Source briefs:
   substrate wires parser-provided `let` RHS expression ranges into the root
   expression judgment, giving LSP/tooling a typed expression-to-source bridge
   without inventing traversal-index heuristics.
+- Let-binding type judgments now retain the same RHS source range, and LSP
+  function-type inlays match `let` sites against sema evidence by pattern and
+  RHS range instead of pattern/traversal order alone.
 - Sema now accepts calls through function-valued symbols and locals instead of
   treating those path callees as unknown named functions.
 - Function value calls in sema now support partial application by returning a
@@ -444,6 +447,7 @@ cargo test -p arcweft-lang-sema --all-features typechecks_partial_placeholder_fu
 cargo test -p arcweft-lang-sema --all-features infers_partial_placeholder_function_without_expected_type
 cargo test -p arcweft-lang-sema --all-features infers_parenthesized_partial_placeholder_function_without_expected_type
 cargo test -p arcweft-lang-sema --all-features infers_partial_call_abstraction_without_expected_type
+cargo test -p arcweft-lang-sema --all-features let_rhs_type_judgments_carry_source_ranges
 cargo test -p arcweft-lang-sema --all-features method_chain
 cargo test -p arcweft-lang-sema --all-features data_last_pipe_through_local_function_value_records_call_evidence
 cargo test -p arcweft-lang-sema --all-features curried_function_declaration
@@ -458,6 +462,7 @@ cargo test -p arcweft-lang-sema --all-features partial_curried_higher_order
 cargo test -p arcweft-lang-sema --all-features method_chain_data_last_fallback_composes_higher_order_callback_effects
 cargo test -p arcweft-lang-sema --all-features
 cargo test -p arcweft-lsp --all-features inlay_hint_request
+cargo test -p arcweft-lsp --all-features inlay_hint_request_reports_inferred_function_types
 cargo test -p arcweft-lsp --all-features
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_typecheck_evidence_for_function_value_calls
 cargo test -p arcweft-compiler --all-features checked_runtime_plan_reports_missing_typed_lowering_evidence
