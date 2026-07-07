@@ -2,136 +2,113 @@
 
 ## Status
 
-This cut implements the first owned Rust boundary for the relative-runtime-ID
-split in `arcweft-core` and records the migration contract for the remaining
-HIR/runtime-plan/AWBC wiring.
+This cut applies the seq-07.6 final-shape intent without keeping
+`FlowRuntimeId(String)`, `EntryRuntimeId(String)`, or `RuntimeLineId(String)` as
+tuple string newtypes.
 
-Implemented in this cut:
+Implemented:
 
-- `arcweft_core::runtime_id::RuntimeIdFamily` describes source/display families
-  without storing those families inside canonical runtime lookup strings.
-- `arcweft_core::runtime_id::RuntimePublicLabel` makes public/debug strings an
-  explicit value domain. Dots inside the label are label text, not namespace
-  selectors.
-- Inherent APIs on the existing owned runtime ID types define the canonical
-  boundary:
-  - `FlowRuntimeId::canonical(...)`
+- `FlowRuntimeId`, `EntryRuntimeId`, and `RuntimeLineId` now store a typed
+  `RuntimeIdPath`.
+- `RuntimeIdPath` stores validated `RuntimeIdSegment` values. It does not store
+  source-family prefixes such as `flow`, `entry`, or `say`.
+- Source-side absolute/current/parent-relative references are represented by
+  `RuntimeIdReference` and `RuntimeIdReferenceAnchor`; execution-facing runtime
+  IDs are already resolved paths.
+- `RuntimePublicLabel` is the explicit public/debug string domain for AWBC,
+  manifests, logs, diagnostics, and reports.
+- Tuple constructors, `.0` field access, `From<&str>` conveniences, and hidden
+  `flow.*` runtime aliases were removed from the migrated call sites.
+- Source-boundary conversions are explicit through:
   - `FlowRuntimeId::from_source_entity_body(...)`
-  - `FlowRuntimeId::public_label()`
-  - `EntryRuntimeId::canonical(...)`
+  - `FlowRuntimeId::from_runtime_target_value(...)`
   - `EntryRuntimeId::from_source_entity_body(...)`
-  - `EntryRuntimeId::public_label()`
-  - `RuntimeLineId::public_label()`
-- `RuntimeIdError` gives structured diagnostics for malformed source IDs and for
-  accidentally passing source-qualified strings as canonical runtime IDs.
-- `crates/arcweft-core/tests/runtime_id_boundaries.rs` covers the implemented
-  boundary behavior.
+  - `RuntimeLineId::from_source_entity_body(...)`
+  - `RuntimeLineId::from_runtime_line_value(...)`
 
-The current executable lowering still contains legacy stringly call sites. Those
-are intentionally not given compatibility aliases in this cut; they must migrate
-to the new inherent APIs instead of adding formatter or lookup shims.
+## Deviation From The Zip
 
-## Boundary design
+The supplied seq-07.6 package proposed `RuntimeIdTable` and numeric
+`RuntimeIdAtom` storage as the immediate final representation. I intentionally
+did not apply that atom-table shape in this cut.
+
+Reason:
+
+- The current engine has not shown runtime-ID equality or hashing as a measured
+  bottleneck.
+- Adding `RuntimePlan::runtime_ids` now would force every lowering, bundle,
+  save/load, AWBC, and report boundary to carry table context before the
+  performance need is demonstrated.
+- The public API is still opaque: callers interact with typed ID wrappers,
+  `RuntimeIdPath`, and label methods. If profiling later shows ID comparison or
+  storage cost matters, `RuntimeIdPath` can be changed internally to interned
+  atoms without reintroducing source-family strings or public-label splitting.
+
+This is a design deviation, not a compatibility shim. The important final-shape
+constraint from the package is preserved: runtime lookup IDs are typed paths,
+not raw `flow.*`/`say.*`/`entry.*` strings.
+
+## Boundary Design
 
 Arcweft now treats three ID domains as separate values:
 
-1. **Source-relative IDs** are syntax/HIR authoring values. They include
-   `IdRef::Relative`, `RelativeId`, and family-relative syntax such as
-   `@flow:.next`. Their family information belongs to syntax/HIR resolution.
-2. **Canonical runtime IDs** are lookup keys. The family belongs to the owning
-   Rust type or declaration table, not to the stored string. A lowered flow
-   target is `FlowRuntimeId("main")`, not `FlowRuntimeId("flow.main")`.
-3. **Public/debug labels** are strings emitted to AWBC tables, display/source
-   maps, logs, and diagnostics. They are represented by `RuntimePublicLabel` and
-   may intentionally contain dots, for example `flow.chapter.one.main`.
+1. **Source references** live in parser/HIR/lowering while relative syntax is
+   still meaningful. They may include family syntax such as `@flow.main` or
+   parent/current-relative addressing.
+2. **Canonical runtime IDs** are lookup keys. The owning Rust type carries the
+   family, so source `@flow.main` lowers to a `FlowRuntimeId` whose canonical
+   label is `main`.
+3. **Public/debug labels** are deliberate strings. `flow.chapter.one.main` is a
+   label, not a namespace selector and not a lookup key.
 
-Namespace family placement:
-
-- `flow` / `fragment`: source declaration or reference family. Runtime lookup is
-  owned by `FlowRuntimeId`; the stored canonical string is the resolved suffix.
-- `entry`: source declaration family. Runtime lookup is owned by
-  `EntryRuntimeId`; AWBC public labels use `entry.<canonical>` deliberately.
-- `view`, `asset`, `pure`: source/display declaration families until their
-  runtime tables own dedicated typed IDs. They must not be parsed out of public
-  labels.
-- `line` / `say`: currently content/public line IDs; `RuntimeLineId` preserves
-  the stored content key and exposes it as a label without splitting on dots.
-
-## Source resolution contract
-
-The intended lowering path is:
-
-- Parser keeps authored relative syntax typed as `RelativeId` / `IdRef` / family
-  relative references.
-- HIR resolves relative declarations against the current module, current flow
-  slug, and named `scope` stack. Nested scopes resolve by applying
-  `parent_depth` before appending the suffix. Walking above the available ID
-  scope is a structured diagnostic, not a best-effort fallback.
-- Imported modules contribute module path only during source/HIR resolution.
-  Runtime plans receive canonical runtime IDs, not module-prefixed source
-  labels, unless a runtime table explicitly owns a module-aware key.
-- Request-generated samples should author declarations with bare names such as
-  `flow main { ... }`; source references may still use source syntax like
-  `@flow.main`, but runtime lowering must convert them once to `main`.
-- Runtime-plan lowering may not add lookup aliases for old `flow.*` runtime
-  strings. A flow target either resolves to the one canonical `FlowRuntimeId` or
-  reports a structured diagnostic.
-
-## AWBC emission contract
-
-AWBC must keep lookup keys and public/debug strings separate:
-
-- Function reservation and entry-target lookup use canonical runtime IDs.
-- Function `public_id`, entry `public_id`, display-map keys, and diagnostic paths
-  use `RuntimePublicLabel` or an equivalent deliberate label field.
-- String-table canonicalization may deduplicate identical text bytes, but code
-  may not infer a runtime lookup key by splitting a public/debug label.
-- A public/debug label containing a dot is valid label text. It is not a
-  namespace selector and must not make a hidden `flow.*` runtime alias.
+Runtime code must not recover a lookup ID by splitting a public/debug label.
 
 ## Diagnostics
 
-The implemented `RuntimeIdError` variants are the boundary diagnostics used by
-subsequent lowering migration:
+`RuntimeIdError` is the structured boundary diagnostic type:
 
-- `Empty { family }`: source stripping or canonical construction produced an
-  empty lookup key.
-- `CanonicalContainsFamilyPrefix { family, value, prefix }`: a source-qualified
-  string was passed to a canonical runtime-ID constructor.
-- `WrongSourceFamily { expected, found, value }`: a source reference belongs to a
-  different family, such as `view.main` used as a flow target.
-- `MissingSourceFamily { expected, value }`: source-boundary conversion expected
-  a family-qualified source entity but got a bare value.
+- `Empty { family }`
+- `EmptySegment { family }`
+- `ReservedFamilySegment { family, segment }`
+- `WrongSourceFamily { expected, found, value }`
+- `MissingSourceFamily { expected, value }`
 
-These diagnostics are intentionally not compatibility aliases. The fix is to use
-source-boundary conversion at the owner boundary or pass a true canonical runtime
-ID.
+Passing `flow.main` to `FlowRuntimeId::canonical(...)` fails because `flow` is a
+reserved source-family segment. The correct boundary is
+`FlowRuntimeId::from_source_entity_body("flow.main")` or
+`FlowRuntimeId::from_runtime_target_value("flow.main")`, depending on whether
+the call site owns source syntax or a runtime/debug string boundary.
 
-## Migration order for remaining call sites
+## Remaining Follow-Up
 
-1. Replace runtime-plan entry/route/choice/flow target construction with
-   `FlowRuntimeId::from_source_entity_body(...)` at the HIR-to-runtime boundary.
-2. Replace entry ID lowering with `EntryRuntimeId::from_source_entity_body(...)`
-   and emit `EntryRuntimeId::public_label()` only at AWBC/debug boundaries.
-3. Update AWBC flow lowering so `entry_functions` is keyed by
-   `FlowRuntimeId::as_str()` while `AwbcFunction.public_id` interns
-   `FlowRuntimeId::public_label()`.
-4. Update AWBC entry lowering so target resolution uses canonical flow IDs and
-   entry/public strings are emitted deliberately.
-5. Update samples/tests so runtime-plan assertions expect `main` for canonical
-   flow targets. Keep `@flow.main` only where the source syntax contract is under
-   test.
+- AWBC lowering still emits and sometimes indexes public strings at some
+  boundaries for product-function names and external debug/report surfaces. This
+  is no longer because `FlowRuntimeId` is a string newtype, but further cleanup
+  should continue moving internal maps toward typed keys where the AWBC schema
+  allows it.
+- A true atom table should only be introduced after profiling shows ID
+  comparison, hashing, serialization size, or allocation cost matters enough to
+  justify carrying table context through runtime-plan/data-format boundaries.
+- Source/HIR relative selector resolution should continue to use
+  `RuntimeIdReference`-style typed anchors instead of smuggling relative
+  selectors into execution-facing runtime IDs.
 
-## Tests added
+## Validation
 
-`crates/arcweft-core/tests/runtime_id_boundaries.rs` specifies:
+Passed in this cut:
 
-- `flow.main` source body lowers to canonical flow runtime ID `main`.
-- `frag.intro` lowers into the same flow runtime domain without a runtime
-  `frag.*` alias.
-- a public label with multiple dots remains one label string.
-- canonical flow runtime IDs reject a `flow.` source prefix.
-- wrong source family (`view.main` as a flow target) yields a structured
-  diagnostic.
-- entry runtime IDs lower through their own boundary.
-- line IDs preserve existing content/public IDs without dot splitting.
+```bash
+cargo test -p arcweft-core --test runtime_id_boundaries --all-features
+cargo check --workspace --all-targets --all-features
+cargo clippy -p arcweft-core --all-targets --all-features
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write target\structure-audit-runtime-id-owned-path
+```
+
+`cargo check --workspace --all-targets --all-features` reports one unrelated
+existing warning for `ViewLayoutFrame::text_line` in
+`crates/arcweft-cli/src/app/bundle_view.rs`.
+
+The structure audit reports the existing `crates/arcweft-cli/src/app/bundle_view.rs`
+size error and 148 warnings. The temporary `product_step.rs` size error created
+while migrating AWBC runtime-ID boundaries was removed by splitting
+`product_step/runtime_id.rs`.

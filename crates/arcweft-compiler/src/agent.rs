@@ -98,7 +98,10 @@ pub fn compile_agent_bundle_with_project(
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
-                entry_flow: bytecode.entry_flow.as_ref().map(|flow| flow.0.clone()),
+                entry_flow: bytecode
+                    .entry_flow
+                    .as_ref()
+                    .map(|flow| flow.public_label().into_string()),
                 flows: bytecode_stats.flows,
                 bytecode_instructions: bytecode_stats.instructions,
                 line_task_groups: bytecode_stats.line_task_groups,

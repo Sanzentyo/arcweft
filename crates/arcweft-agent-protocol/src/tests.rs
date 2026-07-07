@@ -88,9 +88,13 @@ fn test_view_capture_refs() -> AgentViewCaptureRefs {
     }
 }
 
+fn line_id(value: &str) -> RuntimeLineId {
+    RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
+}
+
 fn test_line_display_frame() -> LineDisplayFrame {
     LineDisplayFrame {
-        line: RuntimeLineId("say.test.001".to_owned()),
+        line: line_id("say.test.001"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text: "Hello".to_owned(),

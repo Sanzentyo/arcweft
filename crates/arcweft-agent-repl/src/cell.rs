@@ -219,7 +219,7 @@ impl ReplCellRecord {
             generation,
             commit_hash,
             overlay_hash: String::new(),
-            entry_flow: entry_flow.map(|flow| flow.0),
+            entry_flow: entry_flow.map(|flow| flow.public_label().into_string()),
             bytecode_stats,
             verified_effects,
             bindings,

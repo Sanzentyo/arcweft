@@ -18,6 +18,10 @@ use arcweft_core::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeFieldValue, Runti
 use arcweft_render_text::LineDisplayCatalog;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 
+fn flow_id(value: &str) -> FlowRuntimeId {
+    FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+}
+
 #[test]
 fn awbc_program_carries_trait_method_table_entries() {
     let plan = counter_witness_plan();
@@ -206,9 +210,9 @@ fn counter_trait_methods() -> Vec<RuntimeTraitMethod> {
 
 fn counter_witness_plan() -> RuntimePlan {
     RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: flow_id("flow.main"),
             ops: vec![FlowOp::For {
                 pattern: RuntimePattern::Ident("item".to_owned()),
                 source: RuntimeExpr::Value(counter_state()),
@@ -245,9 +249,9 @@ fn counter_identity_trait_methods() -> Vec<RuntimeTraitMethod> {
 
 fn counter_identity_witness_plan() -> RuntimePlan {
     RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: flow_id("flow.main"),
             ops: vec![FlowOp::For {
                 pattern: RuntimePattern::Ident("item".to_owned()),
                 source: RuntimeExpr::Value(counter_state()),

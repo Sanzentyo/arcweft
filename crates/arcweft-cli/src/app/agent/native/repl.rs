@@ -967,7 +967,7 @@ pub(super) fn agent_repl_bytecode(
         serde_json::json!({
             "parse": agent_repl_fragment_report(&fragment),
             "agent_id": compiled.manifest.agent_id.as_str(),
-            "entry_flow": compiled.bundle.bytecode.program.entry_flow.as_ref().map(|flow| flow.0.as_str()),
+            "entry_flow": compiled.bundle.bytecode.program.entry_flow.as_ref().map(|flow| flow.public_label().into_string()),
             "stats": {
                 "flows": stats.flows,
                 "instructions": stats.instructions,

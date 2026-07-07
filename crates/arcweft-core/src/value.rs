@@ -1113,6 +1113,8 @@ pub enum RuntimeEvalError {
     ExpectedInt(String),
     #[error("expected entity reference expression, found {0}")]
     ExpectedEntityRef(String),
+    #[error("invalid entity target `{target}`: {reason}")]
+    InvalidEntityTarget { target: String, reason: String },
     #[error("expected bracket sequence expression, found {0}")]
     ExpectedBracketSeq(String),
     #[error("runtime range is invalid: {reason}")]

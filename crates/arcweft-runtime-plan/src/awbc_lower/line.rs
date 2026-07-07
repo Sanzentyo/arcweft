@@ -17,9 +17,10 @@ impl<'a> AwbcLineLowerer<'a> {
         line: &RuntimeLineId,
         line_task_group: AwbcLineTaskGroupId,
     ) -> AwbcContentUnitId {
+        let line = line.public_label().into_string();
         let id = self
             .inventory
-            .intern_content_unit(line.0.as_str(), Some(line_task_group));
+            .intern_content_unit(line.as_str(), Some(line_task_group));
         if let Some(unit) = self.inventory.program.content_units.get_mut(id.index()) {
             unit.line_task_group = Some(line_task_group);
         }

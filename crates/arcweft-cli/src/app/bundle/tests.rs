@@ -41,7 +41,7 @@ fn image_effect_call(callee: &str, arg: &str) -> FlowOp {
 fn plan_with_ops(ops: Vec<FlowOp>) -> RuntimePlan {
     RuntimePlan {
         flows: vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.test".to_owned()),
+            id: FlowRuntimeId::from_runtime_target_value("flow.test").expect("flow runtime id"),
             ops,
         }],
         ..RuntimePlan::default()
@@ -1015,9 +1015,9 @@ flow test {
 
 fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.test".to_owned())),
+        Some(FlowRuntimeId::from_runtime_target_value("flow.test").expect("flow runtime id")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.test".to_owned()),
+            id: FlowRuntimeId::from_runtime_target_value("flow.test").expect("flow runtime id"),
             ops: vec![FlowOp::Return(return_value.to_owned())],
         }],
         Vec::new(),

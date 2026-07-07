@@ -184,6 +184,7 @@ impl NativeOffscreenCaptureSession {
         let Some(page) = page_from_display_map_range(frame, page_range) else {
             return Err(NativeWindowError::EmptyPages);
         };
+        let line_label = frame.line.public_label().into_string();
         self.capture_rich_text_rgba(
             &page.rich_text,
             NativeRenderLayout::glyph_area(&page_layout.layout),
@@ -197,7 +198,7 @@ impl NativeOffscreenCaptureSession {
                 time_seconds: viewport.time_seconds,
                 force_alpha_mask: false,
             },
-            frame.line.0.as_str(),
+            line_label.as_str(),
             &post_process_effects,
             &post_process_shaders,
         )
@@ -294,8 +295,9 @@ impl NativeOffscreenCaptureSession {
         let page_range = display_map_non_empty_page_range_at(frame, viewport.page_index)?;
         let post_process_effects = post_process_effects_for_regions(frame, &page_range, regions);
         let post_process_shaders = post_process_shaders_for_regions(frame, &page_range, regions);
+        let line_label = frame.line.public_label().into_string();
         self.apply_post_process_effects(
-            frame.line.0.as_str(),
+            line_label.as_str(),
             &mut readback,
             width,
             height,

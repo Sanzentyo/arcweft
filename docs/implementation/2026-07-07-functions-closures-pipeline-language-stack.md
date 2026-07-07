@@ -351,11 +351,15 @@ Source briefs:
   callable application and sema trait/impl method calls. AWBC closure/apply now
   covers non-suspending expression closures; suspension-aware dynamic function
   calls and persisted closure state remain open.
-- Runtime identifiers such as `FlowRuntimeId(String)` still conflate source
-  relative IDs, canonical runtime IDs, and debug/public labels in some call
-  sites and tests. New tests avoid adding `flow.*` qualified-looking strings,
-  but the typed ID boundary needs a dedicated design/implementation pass:
-  `docs/reviews/requests/2026-07-07-seq-07.6-relative-runtime-id-boundaries.md`.
+- Runtime identifiers no longer use `FlowRuntimeId(String)`,
+  `EntryRuntimeId(String)`, or `RuntimeLineId(String)` tuple string newtypes in
+  the migrated runtime-plan/core/player/CLI call sites. The seq-07.6 cut uses
+  typed owned `RuntimeIdPath` values, explicit source-boundary conversion, and
+  `RuntimePublicLabel` for debug/AWBC/report strings. The supplied atom-table
+  variant remains deliberately deferred until profiling shows ID equality,
+  hashing, serialization size, or allocation cost is worth carrying
+  `RuntimeIdTable` context through the data-format boundaries. See
+  `docs/implementation/relative-runtime-id-boundaries-2026-07-07.md`.
 - Closure capture lifetime diagnostics now cover borrowed local captures that
   cross checked suspension boundaries. Closure body effect composition is
   implemented for synthetic closure callables, direct calls through local

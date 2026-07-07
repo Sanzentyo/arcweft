@@ -22,9 +22,9 @@ fn runtime_records_log_signal_metric_and_event_observations() {
         }),
     ];
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.opening".to_owned())),
+        Some(super::flow_id("flow.opening")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.opening".to_owned()),
+            id: super::flow_id("flow.opening"),
             ops: effects.into_iter().map(FlowOp::Effect).collect(),
         }],
         Vec::new(),

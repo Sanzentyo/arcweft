@@ -7,9 +7,11 @@
 mod audio;
 mod control;
 mod mapping;
+mod runtime_id;
 mod snapshot;
 
 use self::mapping::{MappedEffect, content_request, source_diagnostic, task_spec};
+use self::runtime_id::{flow_id_from_awbc_public_id, line_id_from_awbc_public_id};
 pub use self::snapshot::{
     AwbcProductActiveChoiceSnapshot, AwbcProductActiveDialogueSnapshot,
     AwbcProductExecutorSnapshot, AwbcProductPendingHostCallSnapshot,
@@ -32,9 +34,7 @@ use crate::engine::{
     FlowFiberStatus, HostCallState,
 };
 use crate::observation::RuntimeObservationState;
-use crate::plan::{
-    ChoiceRuntimeOption, FlowEvent, FlowRuntimeId, RuntimeHostCallTarget, RuntimeLineId,
-};
+use crate::plan::{ChoiceRuntimeOption, FlowEvent, RuntimeHostCallTarget};
 use crate::pure::{RuntimeCallBackend, RuntimeCompactPureHelper, VmRuntimePureCallBackend};
 use crate::source::{
     BackpressurePolicy, OverflowPolicy, PrivacyPolicy, ReplayPolicy, RuntimeSourceEvent,
@@ -763,8 +763,15 @@ impl AwbcProductStepExecutor {
             return;
         }
         let line = self.content_public_id(content);
+        let line_id = match line_id_from_awbc_public_id(&line) {
+            Ok(line_id) => line_id,
+            Err(error) => {
+                self.record_error(error, output);
+                return;
+            }
+        };
         output.flow_events.push(FlowEvent::DialogueLine {
-            line: RuntimeLineId(line),
+            line: line_id,
             bindings: self.facade_fiber.env.bindings_snapshot(),
         });
         self.emitted_content.insert(content);
@@ -1104,9 +1111,15 @@ impl AwbcProductStepExecutor {
                 self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
                 return false;
             }
-            output.flow_events.push(FlowEvent::Goto {
-                target: FlowRuntimeId(self.function_public_id(target)),
-            });
+            let public_id = self.function_public_id(target);
+            let target = match flow_id_from_awbc_public_id(&public_id) {
+                Ok(target) => target,
+                Err(error) => {
+                    self.fail_with_error(error, output);
+                    return false;
+                }
+            };
+            output.flow_events.push(FlowEvent::Goto { target });
         }
         true
     }
@@ -1535,9 +1548,11 @@ impl AwbcProductStepExecutor {
                     }
                 }
                 VmObservation::Goto(target) => {
-                    output.flow_events.push(FlowEvent::Goto {
-                        target: FlowRuntimeId(self.function_public_id(target)),
-                    });
+                    let public_id = self.function_public_id(target);
+                    match flow_id_from_awbc_public_id(&public_id) {
+                        Ok(target) => output.flow_events.push(FlowEvent::Goto { target }),
+                        Err(error) => self.record_error(error, output),
+                    }
                 }
                 VmObservation::FiberSpawned { function, args, .. } => {
                     self.spawn_child(function, &args, output);
@@ -2039,7 +2054,8 @@ impl AwbcProductStepExecutor {
                 content,
                 line_task_group,
             } => FlowFiberStatus::Dialogue(DialogueState {
-                line: RuntimeLineId(self.content_public_id(*content)),
+                line: line_id_from_awbc_public_id(&self.content_public_id(*content))
+                    .expect("AWBC content public ID should be a valid runtime line ID"),
                 task_group: line_task_group.index(),
                 resume: None,
                 started_nodes: self
@@ -2184,9 +2200,11 @@ impl AwbcProductStepExecutor {
                 .get(option.label.index())
                 .cloned()
                 .unwrap_or_else(|| "choice".to_owned()),
-            target: option
-                .target
-                .map(|target| FlowRuntimeId(self.function_public_id(target))),
+            target: option.target.map(|target| {
+                let public_id = self.function_public_id(target);
+                flow_id_from_awbc_public_id(&public_id)
+                    .expect("AWBC function public ID should be a valid runtime flow ID")
+            }),
             out,
             effects,
         }

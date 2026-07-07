@@ -208,7 +208,8 @@ fn agent_observe_layout_scene_graph_records_raw_content_rect() {
 
 fn test_line_display_frame() -> LineDisplayFrame {
     LineDisplayFrame {
-        line: arcweft_core::plan::RuntimeLineId("line.test".to_owned()),
+        line: arcweft_core::plan::RuntimeLineId::from_runtime_line_value("line.test")
+            .expect("runtime line id"),
         callee: "test".to_owned(),
         speaker_label: None,
         text: String::new(),
@@ -225,7 +226,8 @@ fn test_line_display_frame() -> LineDisplayFrame {
 
 fn test_resolved_line_display_frame() -> LineDisplayFrame {
     let spec = arcweft_render_text::LineDisplaySpec {
-        line: arcweft_core::plan::RuntimeLineId("line.test".to_owned()),
+        line: arcweft_core::plan::RuntimeLineId::from_runtime_line_value("line.test")
+            .expect("runtime line id"),
         callee: "test".to_owned(),
         speaker_label: None,
         text_key: None,

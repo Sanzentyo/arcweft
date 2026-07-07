@@ -767,7 +767,7 @@ mod tests {
     }
 
     fn fixture_bundle_with(display_text: &str, changed_main_code: bool) -> ArcweftBundle {
-        let line = RuntimeLineId("line.opening".to_owned());
+        let line = RuntimeLineId::from_runtime_line_value("line.opening").expect("runtime line id");
         let main_ops = if changed_main_code {
             vec![FlowOp::Return("changed".to_owned())]
         } else {
@@ -780,9 +780,9 @@ mod tests {
             ]
         };
         let plan = RuntimePlan::new(
-            Some(FlowRuntimeId("flow.main".to_owned())),
+            Some(FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id")),
             vec![RuntimeFlow {
-                id: FlowRuntimeId("flow.main".to_owned()),
+                id: FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
                 ops: main_ops,
             }],
             vec![LineTaskGroup::default()],

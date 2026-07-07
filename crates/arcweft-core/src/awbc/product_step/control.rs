@@ -50,14 +50,21 @@ impl AwbcProductStepExecutor {
     }
 
     fn goto_effect_target(&mut self, target: &str, output: &mut RuntimeStepOutput) {
-        let target_id = FlowRuntimeId(target.to_owned());
+        let Ok(target_id) = FlowRuntimeId::from_runtime_target_value(target) else {
+            self.fiber.mark_trapped(FiberTrap {
+                code: AwbcTrapCode::MissingDynamicTarget,
+                message: Some(format!("invalid goto target {target}")),
+                source_map: None,
+            });
+            return;
+        };
         output.flow_events.push(FlowEvent::Goto {
             target: target_id.clone(),
         });
         let Some(function) = self.function_for_public_id(target) else {
             self.fiber.mark_trapped(FiberTrap {
                 code: AwbcTrapCode::MissingDynamicTarget,
-                message: Some(format!("missing goto target {}", target_id.0)),
+                message: Some(format!("missing goto target {target_id}")),
                 source_map: None,
             });
             return;

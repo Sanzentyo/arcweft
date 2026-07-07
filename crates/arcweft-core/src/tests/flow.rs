@@ -13,20 +13,20 @@ fn engine_steps_flow_ops_and_applies_goto() {
         ..LineTaskGroup::default()
     };
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.opening".to_owned())),
+        Some(super::flow_id("flow.opening")),
         vec![
             RuntimeFlow {
-                id: FlowRuntimeId("flow.opening".to_owned()),
+                id: super::flow_id("flow.opening"),
                 ops: vec![
                     FlowOp::Dialogue {
-                        line: RuntimeLineId("say.opening.001".to_owned()),
+                        line: super::line_id("say.opening.001"),
                         task_group: 0,
                     },
-                    FlowOp::Goto(FlowRuntimeId("flow.next".to_owned())),
+                    FlowOp::Goto(super::flow_id("flow.next")),
                 ],
             },
             RuntimeFlow {
-                id: FlowRuntimeId("flow.next".to_owned()),
+                id: super::flow_id("flow.next"),
                 ops: vec![FlowOp::Return("Ok(FlowExit::Done)".to_owned())],
             },
         ],
@@ -64,7 +64,7 @@ fn engine_steps_flow_ops_and_applies_goto() {
     assert_eq!(
         goto.flow_events,
         vec![FlowEvent::Goto {
-            target: FlowRuntimeId("flow.next".to_owned())
+            target: super::flow_id("flow.next")
         }]
     );
 
@@ -84,9 +84,9 @@ fn engine_steps_flow_ops_and_applies_goto() {
 #[test]
 fn scoped_cleanup_effects_emit_on_scope_exit_in_lifo_order() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.cleanup".to_owned())),
+        Some(super::flow_id("flow.cleanup")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.cleanup".to_owned()),
+            id: super::flow_id("flow.cleanup"),
             ops: vec![
                 FlowOp::Scope(vec![
                     FlowOp::RegisterCleanup {
@@ -119,9 +119,9 @@ fn scoped_cleanup_effects_emit_on_scope_exit_in_lifo_order() {
 #[test]
 fn root_cleanup_effects_drain_on_return_unless_cancelled() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.cleanup".to_owned())),
+        Some(super::flow_id("flow.cleanup")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.cleanup".to_owned()),
+            id: super::flow_id("flow.cleanup"),
             ops: vec![
                 FlowOp::RegisterCleanup {
                     key: "panel".to_owned(),
@@ -152,20 +152,20 @@ fn root_cleanup_effects_drain_on_return_unless_cancelled() {
 #[test]
 fn scoped_overlay_cleanup_drains_on_goto_scene_transition() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.scene_a".to_owned())),
+        Some(super::flow_id("flow.scene_a")),
         vec![
             RuntimeFlow {
-                id: FlowRuntimeId("flow.scene_a".to_owned()),
+                id: super::flow_id("flow.scene_a"),
                 ops: vec![FlowOp::Scope(vec![
                     FlowOp::RegisterCleanup {
                         key: "handle.flow.scene_a.overlay".to_owned(),
                         effect: super::call("presentation.handle.dispose.overlay"),
                     },
-                    FlowOp::Goto(FlowRuntimeId("flow.scene_b".to_owned())),
+                    FlowOp::Goto(super::flow_id("flow.scene_b")),
                 ])],
             },
             RuntimeFlow {
-                id: FlowRuntimeId("flow.scene_b".to_owned()),
+                id: super::flow_id("flow.scene_b"),
                 ops: vec![FlowOp::Return("done".to_owned())],
             },
         ],
@@ -182,7 +182,7 @@ fn scoped_overlay_cleanup_drains_on_goto_scene_transition() {
         output.effects.line,
         vec![super::call("presentation.handle.dispose.overlay")]
     );
-    let expected_target = FlowRuntimeId("flow.scene_b".to_owned());
+    let expected_target = super::flow_id("flow.scene_b");
     assert!(
         output
             .flow_events
@@ -203,9 +203,9 @@ fn drain_step_options(max_ops: usize) -> RuntimeStepOptions {
 #[test]
 fn engine_executes_runtime_pure_call_from_flow() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::PureCall {
                 helper: RuntimePureHelperId(0),
                 args: vec![
@@ -360,9 +360,9 @@ fn counter_trait_methods() -> Vec<RuntimeTraitMethod> {
 
 fn counter_witness_plan() -> RuntimePlan {
     RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![FlowOp::For {
                 pattern: RuntimePattern::Ident("item".to_owned()),
                 source: RuntimeExpr::Value(counter_state()),
@@ -399,9 +399,9 @@ fn counter_identity_trait_methods() -> Vec<RuntimeTraitMethod> {
 
 fn counter_identity_witness_plan() -> RuntimePlan {
     RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![FlowOp::For {
                 pattern: RuntimePattern::Ident("item".to_owned()),
                 source: RuntimeExpr::Value(counter_state()),
@@ -468,9 +468,9 @@ fn engine_executes_for_loop_through_iterator_identity_witness() {
 #[test]
 fn engine_routes_non_i64_pure_call_to_value_backend() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::PureCall {
                 helper: RuntimePureHelperId(0),
                 args: vec![RuntimeExpr::Value(RuntimeValue::String("ready".to_owned()))],
@@ -518,9 +518,9 @@ fn engine_batches_bracket_sequence_pure_calls() {
         ],
     };
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::BracketSeq(vec![
                 pure_call(3, 4),
                 pure_call(5, 6),
@@ -578,9 +578,9 @@ fn engine_fuses_bracket_sequence_pure_batch_sum() {
         ],
     };
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Sum {
                 source: Box::new(RuntimeExpr::BracketSeq(vec![
                     pure_call(3, 4),
@@ -625,9 +625,9 @@ fn engine_fuses_bracket_sequence_pure_batch_sum() {
 #[test]
 fn engine_batches_map_closure_pure_calls() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Map {
                 source: Box::new(RuntimeExpr::BracketSeq(vec![
                     RuntimeExpr::Value(RuntimeValue::i64(3)),
@@ -688,9 +688,9 @@ fn engine_batches_map_closure_pure_calls() {
 #[test]
 fn engine_fuses_map_closure_pure_batch_sum() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Sum {
                 source: Box::new(RuntimeExpr::Map {
                     source: Box::new(RuntimeExpr::BracketSeq(vec![
@@ -750,9 +750,9 @@ fn engine_fuses_map_closure_pure_batch_sum() {
 #[test]
 fn engine_fuses_local_map_closure_pure_batch_sum() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![
                 FlowOp::Let {
                     pattern: RuntimePattern::Ident("values".to_owned()),
@@ -820,9 +820,9 @@ fn engine_fuses_local_map_closure_pure_batch_sum() {
 
 fn assert_dense_i64_map_sum_uses_flat_batch(source: RuntimeValue, expected: &str) {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Sum {
                 source: Box::new(RuntimeExpr::Map {
                     source: Box::new(RuntimeExpr::Value(source)),
@@ -880,9 +880,9 @@ fn engine_batches_dense_i64_map_without_value_materialization() {
 #[test]
 fn engine_batches_dense_i32_map_without_widening_flat_inputs() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Sum {
                 source: Box::new(RuntimeExpr::Map {
                     source: Box::new(RuntimeExpr::Value(runtime_sequence_dense_i32(vec![
@@ -937,9 +937,9 @@ fn engine_batches_dense_i32_map_without_widening_flat_inputs() {
 #[test]
 fn engine_batches_dense_u32_map_without_widening_flat_inputs() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Sum {
                 source: Box::new(RuntimeExpr::Map {
                     source: Box::new(RuntimeExpr::Value(runtime_sequence_dense_u32(vec![
@@ -1034,9 +1034,9 @@ fn engine_batches_dense_exact_int_map_outputs_without_widening() {
 #[test]
 fn engine_calls_exact_int_pure_helpers_without_value_fallback() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::PureCall {
                 helper: RuntimePureHelperId(0),
                 args: vec![
@@ -1083,9 +1083,9 @@ fn engine_calls_exact_int_pure_helpers_without_value_fallback() {
 #[test]
 fn engine_calls_typed_float_pure_helpers_without_arg_vec_allocation() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::PureCall {
                 helper: RuntimePureHelperId(0),
                 args: vec![
@@ -1227,9 +1227,9 @@ fn assert_dense_exact_int_map_sum_uses_flat_batch(
     expected_borrowed_bytes: usize,
 ) {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Sum {
                 source: Box::new(RuntimeExpr::Map {
                     source: Box::new(RuntimeExpr::Value(source)),
@@ -1289,9 +1289,9 @@ fn assert_dense_exact_int_map_output_uses_flat_batch(
     expected_result_bytes: usize,
 ) {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Map {
                 source: Box::new(RuntimeExpr::Value(source)),
                 param: "base".to_owned(),
@@ -1349,9 +1349,9 @@ fn assert_dense_float_map_output_uses_flat_batch(
     expected_result_bytes: usize,
 ) {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Map {
                 source: Box::new(RuntimeExpr::Value(source)),
                 param: "base".to_owned(),
@@ -1402,9 +1402,9 @@ fn assert_dense_float_map_output_uses_flat_batch(
 #[test]
 fn engine_keeps_dynamic_homogeneous_textual_sequences_dense() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![
                 FlowOp::Let {
                     pattern: RuntimePattern::Ident("label".to_owned()),
@@ -1475,9 +1475,9 @@ fn engine_keeps_dynamic_homogeneous_textual_sequences_dense() {
 #[test]
 fn engine_sums_local_i64_sequence_by_borrow() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![
                 FlowOp::Let {
                     pattern: RuntimePattern::Ident("scores".to_owned()),
@@ -1515,9 +1515,9 @@ fn engine_sums_local_i64_sequence_by_borrow() {
 #[test]
 fn engine_runs_flow_thread_body_as_child_fiber() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![
                 FlowOp::Thread {
                     name: Some("worker".to_owned()),
@@ -1560,22 +1560,22 @@ fn engine_waits_for_choice_input() {
     let option = ChoiceRuntimeOption {
         id: Some("choice.listen".to_owned()),
         label: "Listen".to_owned(),
-        target: Some(FlowRuntimeId("flow.listen".to_owned())),
+        target: Some(super::flow_id("flow.listen")),
         out: None,
         effects: Vec::new(),
     };
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.opening".to_owned())),
+        Some(super::flow_id("flow.opening")),
         vec![
             RuntimeFlow {
-                id: FlowRuntimeId("flow.opening".to_owned()),
+                id: super::flow_id("flow.opening"),
                 ops: vec![FlowOp::Choice {
                     id: Some("choice.opening".to_owned()),
                     options: vec![option.clone()],
                 }],
             },
             RuntimeFlow {
-                id: FlowRuntimeId("flow.listen".to_owned()),
+                id: super::flow_id("flow.listen"),
                 ops: vec![FlowOp::Return("listen".to_owned())],
             },
         ],
@@ -1609,7 +1609,7 @@ fn engine_waits_for_choice_input() {
                 option: "choice.listen".to_owned()
             },
             FlowEvent::Goto {
-                target: FlowRuntimeId("flow.listen".to_owned())
+                target: super::flow_id("flow.listen")
             }
         ]
     );
@@ -1629,9 +1629,9 @@ fn engine_waits_for_await_task_event() {
         ),
     };
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.opening".to_owned())),
+        Some(super::flow_id("flow.opening")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.opening".to_owned()),
+            id: super::flow_id("flow.opening"),
             ops: vec![
                 FlowOp::Await {
                     binding: None,
@@ -1746,9 +1746,9 @@ fn engine_runs_bounded_await_many_tasks_in_source_order() {
 
 fn await_many_read_plan() -> RuntimePlan {
     RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![
                 FlowOp::AwaitMany {
                     binding: Some(RuntimePattern::Ident("values".to_owned())),
@@ -1796,10 +1796,10 @@ fn ready_event(task_id: &str, sequence: u64, value: &str) -> TaskEvent {
 #[test]
 fn engine_binds_runtime_values_and_gotos_entity_refs() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.opening".to_owned())),
+        Some(super::flow_id("flow.opening")),
         vec![
             RuntimeFlow {
-                id: FlowRuntimeId("flow.opening".to_owned()),
+                id: super::flow_id("flow.opening"),
                 ops: vec![
                     FlowOp::Let {
                         pattern: RuntimePattern::Ident("route".to_owned()),
@@ -1809,7 +1809,7 @@ fn engine_binds_runtime_values_and_gotos_entity_refs() {
                 ],
             },
             RuntimeFlow {
-                id: FlowRuntimeId("flow.next".to_owned()),
+                id: super::flow_id("flow.next"),
                 ops: vec![FlowOp::Return("done".to_owned())],
             },
         ],
@@ -1828,7 +1828,7 @@ fn engine_binds_runtime_values_and_gotos_entity_refs() {
     assert_eq!(
         goto.flow_events,
         vec![FlowEvent::Goto {
-            target: FlowRuntimeId("flow.next".to_owned())
+            target: super::flow_id("flow.next")
         }]
     );
 }
@@ -1836,18 +1836,18 @@ fn engine_binds_runtime_values_and_gotos_entity_refs() {
 #[test]
 fn engine_runs_if_and_match_blocks_from_runtime_values() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.opening".to_owned())),
+        Some(super::flow_id("flow.opening")),
         vec![
             RuntimeFlow {
-                id: FlowRuntimeId("flow.opening".to_owned()),
+                id: super::flow_id("flow.opening"),
                 ops: vec![FlowOp::If {
                     condition: RuntimeExpr::Local("ready".to_owned()),
-                    then_ops: vec![FlowOp::Goto(FlowRuntimeId("flow.match".to_owned()))],
+                    then_ops: vec![FlowOp::Goto(super::flow_id("flow.match"))],
                     else_ops: vec![FlowOp::Return("wait".to_owned())],
                 }],
             },
             RuntimeFlow {
-                id: FlowRuntimeId("flow.match".to_owned()),
+                id: super::flow_id("flow.match"),
                 ops: vec![FlowOp::Match {
                     scrutinee: RuntimeExpr::Local("route".to_owned()),
                     arms: vec![
@@ -1895,7 +1895,7 @@ fn engine_runs_if_and_match_blocks_from_runtime_values() {
     assert_eq!(
         super::runtime_step(&mut engine, RuntimeStepInput::default()).flow_events,
         vec![FlowEvent::Goto {
-            target: FlowRuntimeId("flow.match".to_owned())
+            target: super::flow_id("flow.match")
         }]
     );
     let mut matched = RuntimeStepOutput::default();
@@ -1921,9 +1921,9 @@ fn engine_runs_if_and_match_blocks_from_runtime_values() {
 #[test]
 fn loop_break_exits_to_next_flow_op_without_running_remaining_body() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.loop".to_owned())),
+        Some(super::flow_id("flow.loop")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.loop".to_owned()),
+            id: super::flow_id("flow.loop"),
             ops: vec![
                 FlowOp::Loop {
                     body: vec![
@@ -1955,9 +1955,9 @@ fn loop_break_exits_to_next_flow_op_without_running_remaining_body() {
 #[test]
 fn while_continue_reruns_condition_and_skips_remaining_body() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.while".to_owned())),
+        Some(super::flow_id("flow.while")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.while".to_owned()),
+            id: super::flow_id("flow.while"),
             ops: vec![
                 FlowOp::While {
                     condition: RuntimeExpr::Local("keep".to_owned()),
@@ -2017,9 +2017,9 @@ fn while_continue_reruns_condition_and_skips_remaining_body() {
 #[test]
 fn for_loop_expands_one_iteration_at_a_time() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.for".to_owned())),
+        Some(super::flow_id("flow.for")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.for".to_owned()),
+            id: super::flow_id("flow.for"),
             ops: vec![FlowOp::For {
                 pattern: RuntimePattern::Ident("item".to_owned()),
                 source: RuntimeExpr::BracketSeq(vec![
@@ -2046,9 +2046,9 @@ fn for_loop_expands_one_iteration_at_a_time() {
 #[test]
 fn branch_pattern_bindings_do_not_leak_after_branch_scope() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.branch".to_owned())),
+        Some(super::flow_id("flow.branch")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.branch".to_owned()),
+            id: super::flow_id("flow.branch"),
             ops: vec![
                 FlowOp::IfLet {
                     pattern: RuntimePattern::Variant {
@@ -2098,9 +2098,9 @@ fn branch_pattern_bindings_do_not_leak_after_branch_scope() {
 #[test]
 fn duplicate_pattern_bindings_fail_before_env_mutation() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.dup".to_owned())),
+        Some(super::flow_id("flow.dup")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.dup".to_owned()),
+            id: super::flow_id("flow.dup"),
             ops: vec![FlowOp::Let {
                 pattern: RuntimePattern::Tuple(vec![
                     RuntimePattern::Ident("x".to_owned()),
@@ -2157,9 +2157,9 @@ fn runtime_pattern_binding_capacity_counts_nested_bindings() {
 #[test]
 fn typed_runtime_patterns_match_value_shape() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.typed".to_owned())),
+        Some(super::flow_id("flow.typed")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.typed".to_owned()),
+            id: super::flow_id("flow.typed"),
             ops: vec![FlowOp::Match {
                 scrutinee: RuntimeExpr::Local("payload".to_owned()),
                 arms: vec![
@@ -2261,9 +2261,9 @@ fn typed_runtime_patterns_use_canonical_primitive_labels() {
 #[test]
 fn fs_write_dispatches_string_and_bytes_payloads() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.write".to_owned())),
+        Some(super::flow_id("flow.write")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.write".to_owned()),
+            id: super::flow_id("flow.write"),
             ops: vec![
                 FlowOp::Await {
                     binding: None,
@@ -2344,9 +2344,9 @@ fn fs_write_dispatches_string_and_bytes_payloads() {
 #[test]
 fn runtime_call_spread_expands_sequence_arguments() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.spread".to_owned())),
+        Some(super::flow_id("flow.spread")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.spread".to_owned()),
+            id: super::flow_id("flow.spread"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Call {
                 callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::Add),
                 args: vec![RuntimeExpr::SpreadArg(Box::new(RuntimeExpr::BracketSeq(
@@ -2374,9 +2374,9 @@ fn runtime_call_spread_expands_sequence_arguments() {
 #[test]
 fn custom_host_request_spread_preserves_concrete_payload_values() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.log".to_owned())),
+        Some(super::flow_id("flow.log")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.log".to_owned()),
+            id: super::flow_id("flow.log"),
             ops: vec![FlowOp::Await {
                 binding: None,
                 target: AwaitTarget {
@@ -2465,9 +2465,9 @@ fn custom_host_request_preserves_nested_record_variant_and_refs() {
     ]);
     let expected = RuntimePayload::new(nested_payload.clone());
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.inspect".to_owned())),
+        Some(super::flow_id("flow.inspect")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.inspect".to_owned()),
+            id: super::flow_id("flow.inspect"),
             ops: vec![FlowOp::Await {
                 binding: None,
                 target: AwaitTarget {
@@ -2500,9 +2500,9 @@ fn custom_host_request_preserves_nested_record_variant_and_refs() {
 #[test]
 fn if_let_expression_binds_only_success_branch() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.if_let".to_owned())),
+        Some(super::flow_id("flow.if_let")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.if_let".to_owned()),
+            id: super::flow_id("flow.if_let"),
             ops: vec![
                 FlowOp::Let {
                     pattern: RuntimePattern::Ident("target".to_owned()),
@@ -2545,7 +2545,7 @@ fn if_let_expression_binds_only_success_branch() {
     assert_eq!(
         output.flow_events,
         vec![FlowEvent::Goto {
-            target: FlowRuntimeId("flow.next".to_owned())
+            target: super::flow_id("flow.next")
         }]
     );
     assert!(engine.fiber().env.get("route").is_none());

@@ -1202,7 +1202,8 @@ mod tests {
     #[test]
     fn missing_cache_key_always_errors() {
         let frame = arcweft_render_text::LineDisplayFrame {
-            line: arcweft_core::plan::RuntimeLineId("say.test.001".to_owned()),
+            line: arcweft_core::plan::RuntimeLineId::from_runtime_line_value("say.test.001")
+                .expect("test line ID is valid"),
             callee: "alice.say".to_owned(),
             speaker_label: None,
             text: "A".to_owned(),

@@ -28,9 +28,13 @@ use arcweft_view::{
     NodeKey, StyleId, UiImageSource, UiImageSourceTable, ViewFragmentBuilder,
 };
 
+fn line_id(value: &str) -> RuntimeLineId {
+    RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
+}
+
 fn styled_ruby_test_frame() -> LineDisplayFrame {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.001".to_owned()),
+        line: line_id("say.test.001"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -283,7 +287,7 @@ fn pixel_at(capture: &NativeFrameCapture, x: u32, y: u32) -> [u8; 4] {
 
 fn vertical_ruby_text_combine_frame(writing_mode: RichTextWritingMode) -> LineDisplayFrame {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId(format!(
+        line: line_id(&format!(
             "say.test.vertical.{}.window.ruby.combine",
             match writing_mode {
                 RichTextWritingMode::VerticalRl => "rl",
@@ -633,7 +637,7 @@ fn native_capture_uses_custom_post_process_shader_registry() {
 #[test]
 fn native_measure_reports_text_object_proxy_element_bounds() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.text.object.proxy".to_owned()),
+        line: line_id("say.test.text.object.proxy"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -702,7 +706,7 @@ fn native_measure_reports_text_object_proxy_element_bounds() {
 
 fn shader_test_frame(id: &str, phase: RichTextEffectPhase) -> LineDisplayFrame {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.shader.soft_glow".to_owned()),
+        line: line_id("say.test.shader.soft_glow"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -755,7 +759,7 @@ fn shader_test_frame(id: &str, phase: RichTextEffectPhase) -> LineDisplayFrame {
 
 fn shader_selection_test_frame() -> LineDisplayFrame {
     LineDisplayFrame {
-        line: RuntimeLineId("say.test.shader.selection".to_owned()),
+        line: line_id("say.test.shader.selection"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text: "glow plain".to_owned(),
@@ -818,7 +822,7 @@ fn content_pixels_in_bbox(capture: &NativeFrameCapture, bbox: NativeFrameContent
 
 fn motion_test_frame(function: &str) -> LineDisplayFrame {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.motion.registry".to_owned()),
+        line: line_id("say.test.motion.registry"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -916,7 +920,7 @@ fn text_motion_context(
 #[test]
 fn shaped_horizontal_origins_compact_latin_submission_spacing() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.shaped.latin".to_owned()),
+        line: line_id("say.test.shaped.latin"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -988,7 +992,7 @@ fn shaped_horizontal_origins_compact_latin_submission_spacing() {
 #[test]
 fn native_measurement_uses_shaped_horizontal_latin_spacing() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.shaped.latin.measure".to_owned()),
+        line: line_id("say.test.shaped.latin.measure"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -1057,7 +1061,7 @@ fn native_measurement_uses_shaped_horizontal_latin_spacing() {
 #[allow(clippy::too_many_lines)]
 fn native_glyph_area_applies_transform_affine_and_builtin_translation() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.transform.glyph-area".to_owned()),
+        line: line_id("say.test.transform.glyph-area"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -1923,7 +1927,7 @@ fn assert_ruby_glyph_areas_use_absolute_glypharea(
 #[test]
 fn window_pages_keep_vertical_layout_source_for_glyph_area_rendering() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.vertical.window".to_owned()),
+        line: line_id("say.test.vertical.window"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -2165,7 +2169,7 @@ fn assert_overheight_vertical_ruby_glyph_areas(
     continuation_moves_right: bool,
 ) {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId(format!("say.test.vertical.ruby.split.{writing_mode:?}")),
+        line: line_id(&format!("say.test.vertical.ruby.split.{writing_mode:?}")),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -2292,7 +2296,7 @@ fn assert_split_ruby_glyph_area_geometry(
 #[allow(clippy::too_many_lines)]
 fn ruby_glyph_areas_apply_typewriter_visibility_alpha() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.vertical.ruby.typewriter.alpha".to_owned()),
+        line: line_id("say.test.vertical.ruby.typewriter.alpha"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -2403,7 +2407,7 @@ fn ruby_glyph_areas_apply_typewriter_visibility_alpha() {
 #[allow(clippy::too_many_lines)]
 fn ruby_glyph_areas_apply_transform_affine_and_builtin_translation() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.ruby.transform.glyph-area".to_owned()),
+        line: line_id("say.test.ruby.transform.glyph-area"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -2554,7 +2558,7 @@ fn ruby_glyph_areas_apply_transform_affine_and_builtin_translation() {
 #[allow(clippy::too_many_lines)]
 fn native_ruby_element_bounds_follow_transform_and_builtin_translation() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.ruby.transform.bounds".to_owned()),
+        line: line_id("say.test.ruby.transform.bounds"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -2642,7 +2646,7 @@ fn native_ruby_element_bounds_follow_transform_and_builtin_translation() {
 #[test]
 fn measure_frame_elements_with_time_follows_glyph_transform_effects() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.measure.time.wave".to_owned()),
+        line: line_id("say.test.measure.time.wave"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -2717,7 +2721,7 @@ fn native_bounds_union_overheight_ruby_segments_by_object_index() {
         RichTextWritingMode::VerticalLr,
     ] {
         let spec = LineDisplaySpec {
-            line: RuntimeLineId(format!(
+            line: line_id(&format!(
                 "say.test.vertical.ruby.bounds.split.{writing_mode:?}"
             )),
             callee: "alice".to_owned(),
@@ -2781,7 +2785,7 @@ fn native_bounds_union_overheight_ruby_segments_by_object_index() {
 #[test]
 fn native_debug_capture_unions_overheight_ruby_segments_by_object_index() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.vertical.ruby.debug.split".to_owned()),
+        line: line_id("say.test.vertical.ruby.debug.split"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -2901,7 +2905,7 @@ fn native_ruby_style_uses_tight_line_height() {
 #[test]
 fn vertical_alternate_glyphs_use_feature_shaped_cache_keys() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.vertical.features".to_owned()),
+        line: line_id("say.test.vertical.features"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -2992,7 +2996,7 @@ fn vertical_alternate_glyphs_use_feature_shaped_cache_keys() {
 #[test]
 fn native_layout_reports_text_run_and_ruby_element_bounds() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.bounds".to_owned()),
+        line: line_id("say.test.bounds"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -3061,7 +3065,7 @@ fn native_layout_reports_text_run_and_ruby_element_bounds() {
 #[test]
 fn native_layout_reports_vertical_typewriter_ruby_element_bounds() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.vertical.typewriter.ruby.bounds".to_owned()),
+        line: line_id("say.test.vertical.typewriter.ruby.bounds"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -3130,7 +3134,7 @@ fn native_layout_reports_vertical_typewriter_ruby_element_bounds() {
 #[test]
 fn native_layout_reports_short_vertical_rl_ruby_at_viewport_edge() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.vertical.short.ruby.edge".to_owned()),
+        line: line_id("say.test.vertical.short.ruby.edge"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -3181,7 +3185,7 @@ fn native_layout_reports_short_vertical_rl_ruby_at_viewport_edge() {
 #[test]
 fn native_debug_capture_uses_layout_bounds_for_text_elements() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.debug".to_owned()),
+        line: line_id("say.test.debug"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -3240,7 +3244,7 @@ fn native_debug_capture_uses_layout_bounds_for_text_elements() {
 #[test]
 fn native_debug_capture_uses_glyph_area_for_vertical_clusters() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.vertical.cluster.debug".to_owned()),
+        line: line_id("say.test.vertical.cluster.debug"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -3323,7 +3327,7 @@ fn native_debug_capture_uses_glyph_area_for_vertical_clusters() {
 #[test]
 fn native_color_region_capture_preserves_selected_text_style() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.color.region".to_owned()),
+        line: line_id("say.test.color.region"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -3384,7 +3388,7 @@ fn native_color_region_capture_preserves_selected_text_style() {
 #[test]
 fn native_offscreen_capture_session_reuses_renderer_for_multiple_capture_modes() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.session".to_owned()),
+        line: line_id("say.test.session"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -3447,7 +3451,7 @@ fn native_offscreen_capture_session_reuses_renderer_for_multiple_capture_modes()
 #[test]
 fn native_typewriter_capture_changes_visibility_without_relayout() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.typewriter.vertical".to_owned()),
+        line: line_id("say.test.typewriter.vertical"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -3545,7 +3549,7 @@ fn native_typewriter_capture_changes_visibility_without_relayout() {
 #[test]
 fn native_typewriter_delay_offsets_visibility_time() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.typewriter.delay".to_owned()),
+        line: line_id("say.test.typewriter.delay"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -3627,7 +3631,7 @@ fn native_typewriter_delay_offsets_visibility_time() {
 #[test]
 fn native_typewriter_cursor_previews_next_glyph_without_relayout() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.typewriter.cursor".to_owned()),
+        line: line_id("say.test.typewriter.cursor"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -3709,7 +3713,7 @@ fn native_typewriter_cursor_previews_next_glyph_without_relayout() {
 #[allow(clippy::too_many_lines)]
 fn native_debug_ruby_capture_applies_typewriter_visibility() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.typewriter.vertical.ruby.debug".to_owned()),
+        line: line_id("say.test.typewriter.vertical.ruby.debug"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -3818,7 +3822,7 @@ fn native_debug_ruby_capture_applies_typewriter_visibility() {
 #[test]
 fn window_pages_split_on_display_map_page_line_wait_and_clear_controls() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.002".to_owned()),
+        line: line_id("say.test.002"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -3877,7 +3881,7 @@ fn window_pages_split_on_display_map_page_line_wait_and_clear_controls() {
 #[test]
 fn display_map_page_ranges_do_not_split_ruby_base_ranges() {
     let frame = LineDisplayFrame {
-        line: RuntimeLineId("say.test.page.ruby.atomic".to_owned()),
+        line: line_id("say.test.page.ruby.atomic"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text: "ABCDE".to_owned(),
@@ -3967,7 +3971,7 @@ fn native_capture_row_padding_uses_wgpu_alignment() {
 #[test]
 fn native_visual_plan_reads_raw_effect_params_at_builtin_boundary() {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.raw.effect".to_owned()),
+        line: line_id("say.test.raw.effect"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -4337,7 +4341,7 @@ fn custom_effect_test_frame(id: &str) -> LineDisplayFrame {
 
 fn plain_effect_test_frame() -> LineDisplayFrame {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.custom.effect".to_owned()),
+        line: line_id("say.test.custom.effect"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -4374,7 +4378,7 @@ fn custom_effect_test_frame_with_params_and_phase(
     phase: RichTextEffectPhase,
 ) -> LineDisplayFrame {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.custom.effect".to_owned()),
+        line: line_id("say.test.custom.effect"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
@@ -4412,7 +4416,7 @@ fn custom_effect_test_frame_with_params_and_phase(
 
 fn custom_effect_ruby_test_frame(id: &str) -> LineDisplayFrame {
     let spec = LineDisplaySpec {
-        line: RuntimeLineId("say.test.custom.ruby.effect".to_owned()),
+        line: line_id("say.test.custom.ruby.effect"),
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,

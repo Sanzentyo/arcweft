@@ -17,8 +17,8 @@ use arcweft_core::awbc::schema::{
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
-    ChoiceRuntimeOption, FlowOp, RuntimeEntryTarget, RuntimeFlow, RuntimeIteratorEvidence,
-    RuntimeIteratorIdentityWitnessCalls, RuntimeIteratorWitnessCalls,
+    ChoiceRuntimeOption, FlowOp, FlowRuntimeId, RuntimeEntryTarget, RuntimeFlow,
+    RuntimeIteratorEvidence, RuntimeIteratorIdentityWitnessCalls, RuntimeIteratorWitnessCalls,
     RuntimeIteratorWitnessExecutable, RuntimeMatchArm, RuntimePlan, RuntimePureHelper,
     RuntimePureHelperOrigin,
 };
@@ -212,12 +212,14 @@ impl<'a> AwbcFlowLowerer<'a> {
         }
 
         for flow in &plan.flows {
+            let public_id = flow_public_id(&flow.id);
             self.inventory
-                .reserve_function_slot(Some(flow.id.0.as_str()));
+                .reserve_function_slot(Some(public_id.as_str()));
         }
         let entry_targets = entry_target_flow_names(plan);
         for flow in &plan.flows {
-            let entry_parameters = if entry_targets.contains(flow.id.0.as_str()) {
+            let public_id = flow_public_id(&flow.id);
+            let entry_parameters = if entry_targets.contains(public_id.as_str()) {
                 infer_entry_parameter_names(&flow.ops)
             } else {
                 Vec::new()
@@ -299,27 +301,26 @@ impl<'a> AwbcFlowLowerer<'a> {
 
     fn lower_flow(&mut self, flow: &RuntimeFlow, entry_parameters: &[String]) -> AwbcFunctionId {
         let mut frame = FrameBuilder::new();
+        let public_name = flow_public_id(&flow.id);
+        let canonical_name = flow.id.canonical_label();
         let owner = self
             .inventory
-            .function_by_name(&flow.id.0)
-            .unwrap_or_else(|| {
-                self.inventory
-                    .reserve_function_slot(Some(flow.id.0.as_str()))
-            });
+            .function_by_name(&public_name)
+            .unwrap_or_else(|| self.inventory.reserve_function_slot(Some(&public_name)));
         let dynamic_ty = self.inventory.dynamic_ty();
         for parameter in entry_parameters {
             let name = self.inventory.intern_string(parameter);
             frame.parameter(parameter, name, dynamic_ty);
         }
         let mut body = FlowBodyBuilder::new(self.inventory, owner);
-        self.lower_ops(&mut frame, &mut body, &flow.ops, &flow.id.0);
+        self.lower_ops(&mut frame, &mut body, &flow.ops, &public_name);
         if body.needs_value_fallthrough() {
             self.terminate_value_fallthrough(&mut frame, &mut body);
         }
         let body = body.finish(self.inventory);
         let layout = self
             .inventory
-            .intern_frame_layout(format!("flow:{}", flow.id.0), frame.finish());
+            .intern_frame_layout(format!("flow:{canonical_name}"), frame.finish());
         for resume in body.resume_points {
             if let Some(point) = self.inventory.program.resume_points.get_mut(resume.index()) {
                 point.frame_layout = layout;
@@ -336,14 +337,14 @@ impl<'a> AwbcFlowLowerer<'a> {
             self.inventory
                 .intern_signature(params, None, AwbcEffectSetId(0))
         };
-        let public_id = self.inventory.intern_string(&flow.id.0);
+        let public_id = self.inventory.intern_string(&public_name);
         let mut flags = AwbcFunctionFlags::MAY_SUSPEND | AwbcFunctionFlags::DETERMINISTIC;
         if body.has_dynamic_target {
             flags |= AwbcFunctionFlags::HAS_DYNAMIC_TARGET;
         }
         let function = self.inventory.replace_function(
             owner,
-            Some(flow.id.0.as_str()),
+            Some(&public_name),
             AwbcFunction {
                 public_id: Some(public_id),
                 kind: AwbcFunctionKind::Flow,
@@ -719,7 +720,8 @@ impl<'a> AwbcFlowLowerer<'a> {
                 self.push_intrinsic_call("flow.continue", Vec::new());
             }
             FlowOp::Goto(target) => {
-                if let Some(function) = self.inventory.function_by_name(&target.0) {
+                let target_name = flow_public_id(target);
+                if let Some(function) = self.inventory.function_by_name(&target_name) {
                     self.close_active_scopes_for_terminator(frame);
                     body.terminate(
                         self.inventory,
@@ -730,7 +732,7 @@ impl<'a> AwbcFlowLowerer<'a> {
                         AwbcSafePointKind::CallableBoundary,
                     );
                 } else {
-                    self.push_intrinsic_call(&format!("goto.static:{}", target.0), Vec::new());
+                    self.push_intrinsic_call(&format!("goto.static:{target_name}"), Vec::new());
                 }
             }
             FlowOp::GotoExpr(expr) => {
@@ -839,7 +841,7 @@ impl<'a> AwbcFlowLowerer<'a> {
                 target: option
                     .target
                     .as_ref()
-                    .and_then(|target| self.inventory.function_by_name(&target.0)),
+                    .and_then(|target| self.inventory.function_by_name(&flow_public_id(target))),
                 out_effect: option.out.as_ref().map(|out| {
                     self.inventory
                         .intern_effect(&arcweft_core::effect::LineEffectRequest::Out(out.clone()))
@@ -1261,22 +1263,26 @@ fn patch_branch_else_block(
     *target = else_block;
 }
 
-fn entry_target_flow_names(plan: &RuntimePlan) -> BTreeSet<&str> {
+fn entry_target_flow_names(plan: &RuntimePlan) -> BTreeSet<String> {
     let mut targets = BTreeSet::new();
     if let Some(entry_flow) = plan.entry_flow.as_ref() {
-        targets.insert(entry_flow.0.as_str());
+        targets.insert(flow_public_id(entry_flow));
     }
     for entry in &plan.entries {
         match &entry.target {
             RuntimeEntryTarget::Flow(flow) => {
-                targets.insert(flow.0.as_str());
+                targets.insert(flow_public_id(flow));
             }
             RuntimeEntryTarget::Routes(routes) => {
-                targets.extend(routes.iter().map(|route| route.target.0.as_str()));
+                targets.extend(routes.iter().map(|route| flow_public_id(&route.target)));
             }
         }
     }
     targets
+}
+
+fn flow_public_id(flow: &FlowRuntimeId) -> String {
+    flow.public_label().into_string()
 }
 
 fn infer_entry_parameter_names(ops: &[FlowOp]) -> Vec<String> {

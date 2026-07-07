@@ -10,7 +10,7 @@ use super::{
     runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
     runtime_value_label, sum_i64_sequence_ref,
 };
-use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
+use crate::plan::{FlowRuntimeId, RuntimePureInputType, RuntimePureOutputType};
 use crate::pure::{
     RuntimeCallBackend, RuntimeFixedArgs, RuntimeFloat32Args, RuntimeFloat64Args, RuntimeI32Args,
     RuntimeI64Args, RuntimePureCallBackend, RuntimePureScalarInteger, VmRuntimePureCallBackend,
@@ -974,9 +974,16 @@ impl Engine {
     pub(super) fn evaluate_entity_target(
         &mut self,
         expr: &RuntimeExpr,
-    ) -> Result<String, RuntimeEvalError> {
+    ) -> Result<FlowRuntimeId, RuntimeEvalError> {
         match self.evaluate_expr(expr)? {
-            RuntimeValue::EntityRef(target) | RuntimeValue::String(target) => Ok(target),
+            RuntimeValue::EntityRef(target) | RuntimeValue::String(target) => {
+                FlowRuntimeId::from_runtime_target_value(&target).map_err(|error| {
+                    RuntimeEvalError::InvalidEntityTarget {
+                        target,
+                        reason: error.to_string(),
+                    }
+                })
+            }
             value => Err(RuntimeEvalError::ExpectedEntityRef(runtime_value_label(
                 &value,
             ))),

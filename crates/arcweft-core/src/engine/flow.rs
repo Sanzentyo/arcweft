@@ -1,9 +1,9 @@
 use super::{
     AwaitState, ChoiceState, DialogueState, Engine, FlowControlStackEntry,
-    FlowControlStackEntryKind, FlowCursor, FlowEvent, FlowFiberStatus, FlowOp, FlowRuntimeId,
-    FlowScopeCleanup, HostCallState, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError,
-    RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepInput, RuntimeStepOutput,
-    RuntimeValue, runtime_value_label,
+    FlowControlStackEntryKind, FlowCursor, FlowEvent, FlowFiberStatus, FlowOp, FlowScopeCleanup,
+    HostCallState, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr,
+    RuntimeIterator, RuntimePattern, RuntimeStepInput, RuntimeStepOutput, RuntimeValue,
+    runtime_value_label,
 };
 use crate::effect::LineEffectRequest;
 use crate::line_task::progress_live_line_task_group;
@@ -414,7 +414,7 @@ impl Engine {
             }
             FlowOp::Goto(target) => self.goto(&target, output, pure_backend),
             FlowOp::GotoExpr(expr) => match self.evaluate_entity_target(&expr) {
-                Ok(target) => self.goto(&FlowRuntimeId(target), output, pure_backend),
+                Ok(target) => self.goto(&target, output, pure_backend),
                 Err(error) => self.fail_eval(error, output),
             },
             FlowOp::Return(value) => {

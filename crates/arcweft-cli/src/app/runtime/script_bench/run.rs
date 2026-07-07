@@ -129,8 +129,13 @@ fn bench_expectation_failures(
             "bench assertions require a runnable `measure { goto @flow.id }` section".to_owned(),
         ];
     };
+    let Ok(flow) = FlowRuntimeId::from_runtime_target_value(&flow) else {
+        return vec![format!(
+            "bench assertion `goto` target `{flow}` is not a valid flow runtime ID"
+        )];
+    };
     let mut assertion_plan = plan.clone();
-    assertion_plan.entry_flow = Some(FlowRuntimeId(flow));
+    assertion_plan.entry_flow = Some(flow);
     let frames = run_runtime_steps(
         assertion_plan,
         Some(source_path),
@@ -450,9 +455,17 @@ fn run_bench_flow_section(
     runtime: BenchRuntimeContext<'_>,
     validated: ScriptBenchSectionRunSummary,
 ) -> ScriptBenchSectionRunSummary {
+    let Ok(flow) = FlowRuntimeId::from_runtime_target_value(flow) else {
+        let mut summary = validated;
+        "failed".clone_into(&mut summary.status);
+        summary.diagnostics.push(format!(
+            "bench measure `goto` target `{flow}` is not a valid flow runtime ID"
+        ));
+        return summary;
+    };
     let mut samples = RuntimeBenchSamples::with_capacity(options.iterations);
     let mut selected_plan = plan.clone();
-    selected_plan.entry_flow = Some(FlowRuntimeId(flow.to_owned()));
+    selected_plan.entry_flow = Some(flow);
     let executor_template = RuntimeExecutorTemplate::new(&selected_plan, options.executor);
     let mut pure =
         RuntimePureAccelerator::with_config(runtime.pure_config, &selected_plan.pure_helpers);

@@ -8,6 +8,10 @@ use arcweft_core::plan::{
 };
 use arcweft_core::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeValue};
 
+fn flow_id(value: &str) -> FlowRuntimeId {
+    FlowRuntimeId::canonical(value).expect("test flow ID is valid")
+}
+
 fn lower_plan(plan: &RuntimePlan) -> AwbcLowerReport {
     AwbcLowerer::new(
         plan,
@@ -105,9 +109,9 @@ fn run_function(
 #[test]
 fn lowers_constant_return_plan_to_awbc_tables() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("main".to_owned())),
+        Some(flow_id("main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("main".to_owned()),
+            id: flow_id("main"),
             ops: vec![FlowOp::Let {
                 pattern: arcweft_core::pattern::RuntimePattern::Ident("x".to_owned()),
                 expr: RuntimeExpr::Value(RuntimeValue::i64(7)),
@@ -137,9 +141,9 @@ fn lowers_constant_return_plan_to_awbc_tables() {
 #[test]
 fn lowers_runtime_function_apply_to_awbc_closure_instructions() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("main".to_owned())),
+        Some(flow_id("main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("main".to_owned()),
+            id: flow_id("main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Apply {
                 callee: Box::new(RuntimeExpr::Function {
                     params: vec!["x".to_owned()],
@@ -189,9 +193,9 @@ fn lowers_runtime_function_apply_to_awbc_closure_instructions() {
 #[test]
 fn generated_awbc_partial_apply_returns_function_value() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("main".to_owned())),
+        Some(flow_id("main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("main".to_owned()),
+            id: flow_id("main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Apply {
                 callee: Box::new(RuntimeExpr::Function {
                     params: vec!["x".to_owned(), "y".to_owned()],
@@ -229,9 +233,9 @@ fn generated_awbc_curried_closure_apply_executes_returned_function() {
         }),
     };
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("main".to_owned())),
+        Some(flow_id("main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("main".to_owned()),
+            id: flow_id("main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Apply {
                 callee: Box::new(RuntimeExpr::Apply {
                     callee: Box::new(make_adder),
@@ -279,9 +283,9 @@ fn generated_awbc_function_value_apply_can_call_pure_helper_body() {
         }),
     };
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("main".to_owned())),
+        Some(flow_id("main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("main".to_owned()),
+            id: flow_id("main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Apply {
                 callee: Box::new(helper_value),
                 args: vec![

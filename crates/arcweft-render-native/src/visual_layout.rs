@@ -324,8 +324,9 @@ pub(super) fn native_glyph_placements_from_layout(
             let run = runs
                 .iter()
                 .find(|run| run.source_run_index == source_run_index)?;
+            let line_label = page_layout.frame.line.public_label().into_string();
             apply_presentation_to_placement_with_effects(
-                &page_layout.frame.line.0,
+                &line_label,
                 run,
                 *run_counts.get(&glyph.run_index).unwrap_or(&1),
                 time_seconds,
@@ -493,10 +494,11 @@ pub(super) fn native_ruby_bounds_from_layout(
         .iter()
         .filter_map(|ruby| {
             let index = *page_layout.ruby_indices.get(ruby.ruby_index)?;
+            let line_label = page_layout.frame.line.public_label().into_string();
             Some((
                 index,
                 transformed_ruby_geometry(
-                    &page_layout.frame.line.0,
+                    &line_label,
                     &page_layout.frame.text,
                     index,
                     ruby,
@@ -547,8 +549,9 @@ pub(super) fn native_transformed_glyph_bounds(
     time_seconds: f32,
     effects: Option<&mut NativeEffectExecution<'_>>,
 ) -> NativeTransformedGlyphBounds {
+    let line_label = page_layout.frame.line.public_label().into_string();
     let mut placements = native_glyph_placements_for_layout_with_effects(
-        &page_layout.frame.line.0,
+        &line_label,
         &page_layout.layout,
         time_seconds,
         effects,

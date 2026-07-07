@@ -38,7 +38,7 @@ pub(super) fn presentation_mount_call(expr: &Expr) -> Option<PresentationMountCa
 pub(super) fn presentation_handle_id(flow_id: &FlowRuntimeId, binding: &str) -> String {
     format!(
         "handle.{}.{}",
-        sanitize_presentation_handle_part(&flow_id.0),
+        sanitize_presentation_handle_part(&flow_id.canonical_label()),
         sanitize_presentation_handle_part(binding)
     )
 }
@@ -50,7 +50,7 @@ pub(super) fn presentation_explicit_mount_handle_id(
 ) -> String {
     format!(
         "handle.{}.mount.{}.{}",
-        sanitize_presentation_handle_part(&flow_id.0),
+        sanitize_presentation_handle_part(&flow_id.canonical_label()),
         sanitize_presentation_handle_part(kind),
         presentation_resource_handle_part(resource)
     )
@@ -67,7 +67,7 @@ pub(super) fn presentation_create_args(
         format!("handle = @{handle_id}"),
         format!("kind = \"{kind}\""),
         format!("resource = {}", expr_label(resource)),
-        format!("owner = @{}", flow_id.0),
+        format!("owner = @{}", flow_id.public_label()),
     ];
     for name in ["visible", "layer", "depth"] {
         if let Some(value) = named_call_arg(source_args, name) {

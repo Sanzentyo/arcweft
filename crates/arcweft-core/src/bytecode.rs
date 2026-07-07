@@ -49,7 +49,7 @@ pub struct BytecodeEntry {
 }
 
 /// One flow's bytecode instruction stream.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct BytecodeFlow {
     pub id: FlowRuntimeId,
     pub instructions: Vec<BytecodeInstruction>,
@@ -237,7 +237,9 @@ impl BytecodeProgram {
         let mut flow_ids = BTreeSet::new();
         for flow in &self.flows {
             if !flow_ids.insert(flow.id.clone()) {
-                return Err(BytecodeVerificationError::DuplicateFlow(flow.id.0.clone()));
+                return Err(BytecodeVerificationError::DuplicateFlow(
+                    flow.id.canonical_label(),
+                ));
             }
         }
         let Some(entry_flow) = self.entry_flow.as_ref() else {
@@ -245,7 +247,7 @@ impl BytecodeProgram {
         };
         if !flow_ids.contains(entry_flow) {
             return Err(BytecodeVerificationError::MissingEntryFlow(
-                entry_flow.0.clone(),
+                entry_flow.canonical_label(),
             ));
         }
 
@@ -253,7 +255,7 @@ impl BytecodeProgram {
         for entry in &self.entries {
             if !entry_ids.insert(entry.id.clone()) {
                 return Err(BytecodeVerificationError::DuplicateEntry(
-                    entry.id.0.clone(),
+                    entry.id.canonical_label(),
                 ));
             }
             verify_entry_target(entry, &flow_ids)?;
@@ -298,8 +300,8 @@ fn verify_entry_target(
         RuntimeEntryTarget::Flow(flow) => {
             if !flow_ids.contains(flow) {
                 return Err(BytecodeVerificationError::MissingEntryTarget {
-                    entry: entry.id.0.clone(),
-                    flow: flow.0.clone(),
+                    entry: entry.id.canonical_label(),
+                    flow: flow.canonical_label(),
                 });
             }
         }
@@ -307,8 +309,8 @@ fn verify_entry_target(
             for route in routes {
                 if !flow_ids.contains(&route.target) {
                     return Err(BytecodeVerificationError::MissingRouteTarget {
-                        entry: entry.id.0.clone(),
-                        flow: route.target.0.clone(),
+                        entry: entry.id.canonical_label(),
+                        flow: route.target.canonical_label(),
                     });
                 }
             }
@@ -457,7 +459,7 @@ fn verify_line_task_group(
 ) -> Result<(), BytecodeVerificationError> {
     if task_group >= line_task_groups {
         Err(BytecodeVerificationError::MissingLineTaskGroup {
-            flow: flow.0.clone(),
+            flow: flow.canonical_label(),
             task_group,
         })
     } else {
@@ -475,8 +477,8 @@ fn verify_choice_targets(
             && !flow_ids.contains(target)
         {
             return Err(BytecodeVerificationError::MissingChoiceTarget {
-                flow: flow.0.clone(),
-                target: target.0.clone(),
+                flow: flow.canonical_label(),
+                target: target.canonical_label(),
             });
         }
     }
@@ -492,8 +494,8 @@ fn verify_goto_target(
         Ok(())
     } else {
         Err(BytecodeVerificationError::MissingGotoTarget {
-            flow: flow.0.clone(),
-            target: target.0.clone(),
+            flow: flow.canonical_label(),
+            target: target.canonical_label(),
         })
     }
 }
@@ -632,6 +634,7 @@ mod tests {
     use crate::line_task::LineTaskGroup;
     use crate::plan::{
         ChoiceRuntimeOption, EntryRuntimeId, FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget,
+        RuntimeLineId,
     };
 
     #[test]
@@ -687,7 +690,7 @@ mod tests {
         assert!(matches!(
             program.verify(BytecodeVerificationBudget::default()),
             Err(BytecodeVerificationError::MissingLineTaskGroup { flow, task_group })
-                if flow == "flow.main" && task_group == 0
+                if flow == "main" && task_group == 0
         ));
     }
 
@@ -701,7 +704,7 @@ mod tests {
                 options: vec![ChoiceRuntimeOption {
                     id: Some("choice.missing".to_owned()),
                     label: "Missing".to_owned(),
-                    target: Some(FlowRuntimeId("flow.missing".to_owned())),
+                    target: Some(flow_id("flow.missing")),
                     out: None,
                     effects: Vec::new(),
                 }],
@@ -710,7 +713,7 @@ mod tests {
         assert!(matches!(
             program.verify(BytecodeVerificationBudget::default()),
             Err(BytecodeVerificationError::MissingChoiceTarget { flow, target })
-                if flow == "flow.main" && target == "flow.missing"
+                if flow == "main" && target == "missing"
         ));
     }
 
@@ -736,27 +739,25 @@ mod tests {
         BytecodeProgram {
             abi_version: BYTECODE_ABI_VERSION,
             runtime_layout: BytecodeRuntimeLayout::current(),
-            entry_flow: Some(FlowRuntimeId("flow.main".to_owned())),
+            entry_flow: Some(flow_id("flow.main")),
             entries: vec![BytecodeEntry {
-                id: EntryRuntimeId("entry.main".to_owned()),
+                id: entry_id("entry.main"),
                 kind: RuntimeEntryKind::Game,
-                target: RuntimeEntryTarget::Flow(FlowRuntimeId("flow.main".to_owned())),
+                target: RuntimeEntryTarget::Flow(flow_id("flow.main")),
             }],
             flows: vec![
                 BytecodeFlow {
-                    id: FlowRuntimeId("flow.main".to_owned()),
+                    id: flow_id("flow.main"),
                     instructions: vec![
                         BytecodeInstruction::Flow(FlowOp::Dialogue {
-                            line: "line.opening".into(),
+                            line: line_id("line.opening"),
                             task_group: 0,
                         }),
-                        BytecodeInstruction::Flow(FlowOp::Goto(FlowRuntimeId(
-                            "flow.done".to_owned(),
-                        ))),
+                        BytecodeInstruction::Flow(FlowOp::Goto(flow_id("flow.done"))),
                     ],
                 },
                 BytecodeFlow {
-                    id: FlowRuntimeId("flow.done".to_owned()),
+                    id: flow_id("flow.done"),
                     instructions: vec![BytecodeInstruction::Flow(FlowOp::Return(
                         "done".to_owned(),
                     ))],
@@ -767,5 +768,17 @@ mod tests {
             stream_plans: Vec::new(),
             source_plans: Vec::new(),
         }
+    }
+
+    fn flow_id(value: &str) -> FlowRuntimeId {
+        FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+    }
+
+    fn entry_id(value: &str) -> EntryRuntimeId {
+        EntryRuntimeId::from_source_entity_body(value).expect("test entry ID is valid")
+    }
+
+    fn line_id(value: &str) -> RuntimeLineId {
+        RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
     }
 }

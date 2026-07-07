@@ -341,12 +341,14 @@ pub fn lower_agent_controller_plan_with_stats_and_options(
         lower_agent_controller_flow(module, agent, pure_lookup)?
     };
     let entry_flow = lowered.id.clone();
+    let entry_id = EntryRuntimeId::canonical(&entry_flow.canonical_label())
+        .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     stats.pure_helpers = pure_helpers.len();
     RuntimePlan::new(Some(entry_flow.clone()), vec![lowered], Vec::new())
         .map(|plan| {
             let plan = finalize_runtime_plan(
                 plan.with_entries(vec![RuntimeEntrySpec {
-                    id: EntryRuntimeId(format!("entry.{}", entry_flow.0)),
+                    id: entry_id,
                     kind: RuntimeEntryKind::Custom("agent_controller".to_owned()),
                     target: RuntimeEntryTarget::Flow(entry_flow),
                 }])
@@ -1197,7 +1199,8 @@ fn lower_runtime_entries(module: &HirModule) -> Vec<RuntimeEntrySpec> {
         .iter()
         .filter_map(|decl| match decl {
             HirTopLevelDecl::Entry(entry) => Some(RuntimeEntrySpec {
-                id: EntryRuntimeId(entry.id().body().to_owned()),
+                id: EntryRuntimeId::from_source_entity_body(entry.id().body())
+                    .expect("HIR entry ID should be a valid runtime entry ID"),
                 kind: lower_entry_kind(entry.kind()),
                 target: lower_entry_target(entry.items()),
             }),
@@ -1343,7 +1346,10 @@ fn lower_agent_controller_flow(
         for_iteration_cursor: 0,
     };
     let id = agent.item().id().map_or_else(
-        || FlowRuntimeId(format!("agent.{}", agent.item().name())),
+        || {
+            FlowRuntimeId::canonical(&format!("agent.{}", agent.item().name()))
+                .expect("generated agent flow ID is valid")
+        },
         flow_runtime_id,
     );
     let mut ops = lowerer.lower_flow_stmt_list(&id, 0, agent.item().body_statements());
@@ -1472,7 +1478,10 @@ impl FlowRuntimeLowerer<'_> {
 
     fn lower_flow(&mut self, index: usize, flow: &HirFlow) -> RuntimeFlow {
         let id = flow.id().map_or_else(
-            || FlowRuntimeId(format!("flow.{}", flow.name().unwrap_or("anonymous"))),
+            || {
+                FlowRuntimeId::canonical(flow.name().unwrap_or("anonymous"))
+                    .expect("generated flow ID is valid")
+            },
             flow_runtime_id,
         );
         let ops = self.lower_flow_items(&id, flow.body(), index);
@@ -1701,8 +1710,17 @@ impl FlowRuntimeLowerer<'_> {
         let task_group = self.line_task_groups.len();
         self.line_task_groups.push(group);
         let line = dialogue.id().map_or_else(
-            || RuntimeLineId(format!("{}.line.{task_group}", flow_id.0)),
-            |id| RuntimeLineId(id.body().to_owned()),
+            || {
+                RuntimeLineId::canonical(&format!(
+                    "{}.line.{task_group}",
+                    flow_id.canonical_label()
+                ))
+                .expect("generated dialogue line ID is valid")
+            },
+            |id| {
+                RuntimeLineId::from_runtime_line_value(id.body())
+                    .expect("HIR dialogue line ID should be valid")
+            },
         );
         let active_speaker_presets = self.active_speaker_presets();
         self.line_display_catalog
@@ -2405,7 +2423,7 @@ fn agent_task_name(expr: &Expr) -> String {
 }
 
 fn flow_runtime_id(id: &EntityRef) -> FlowRuntimeId {
-    FlowRuntimeId(id.body().to_owned())
+    FlowRuntimeId::from_runtime_target_value(id.body()).expect("HIR flow ID should be valid")
 }
 
 fn method_name(method: &str) -> &str {

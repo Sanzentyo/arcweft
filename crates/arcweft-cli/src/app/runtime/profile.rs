@@ -192,7 +192,14 @@ fn apply_script_manifest_entry_fallback(
         return;
     }
     if let Some(flow) = script_manifest_goto_flow(hir) {
-        plan.entry_flow = Some(FlowRuntimeId(flow));
+        match FlowRuntimeId::from_runtime_target_value(&flow) {
+            Ok(flow) => plan.entry_flow = Some(flow),
+            Err(error) => {
+                eprintln!(
+                    "warning: script manifest fallback ignored invalid goto target `{flow}`: {error}"
+                );
+            }
+        }
     }
 }
 

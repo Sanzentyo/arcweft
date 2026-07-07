@@ -160,11 +160,11 @@ fn temp_dir(label: &str) -> PathBuf {
 }
 
 fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
-    let line = RuntimeLineId("line.opening".to_owned());
+    let line = RuntimeLineId::from_runtime_line_value("line.opening").expect("runtime line id");
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
             ops: vec![
                 FlowOp::Dialogue {
                     line: line.clone(),

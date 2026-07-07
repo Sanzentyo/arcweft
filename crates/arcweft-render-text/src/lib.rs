@@ -1242,10 +1242,14 @@ mod tests {
     use super::*;
     use arcweft_core::value::RuntimeValue;
 
+    fn line_id(value: &str) -> RuntimeLineId {
+        RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
+    }
+
     #[test]
     fn resolves_text_ruby_controls_and_interpolation() {
         let spec = LineDisplaySpec {
-            line: RuntimeLineId("say.opening.001".to_owned()),
+            line: line_id("say.opening.001"),
             callee: "alice".to_owned(),
             speaker_label: None,
             text_key: None,
@@ -1348,7 +1352,7 @@ mod tests {
     #[test]
     fn interpolation_failure_policy_can_discard_or_fallback() {
         let spec = LineDisplaySpec {
-            line: RuntimeLineId("say.opening.002".to_owned()),
+            line: line_id("say.opening.002"),
             callee: "alice".to_owned(),
             speaker_label: None,
             text_key: None,
@@ -1405,7 +1409,7 @@ mod tests {
     #[test]
     fn interpolation_failure_policy_can_fail_line() {
         let spec = LineDisplaySpec {
-            line: RuntimeLineId("say.opening.003".to_owned()),
+            line: line_id("say.opening.003"),
             callee: "alice".to_owned(),
             speaker_label: None,
             text_key: None,
@@ -1428,14 +1432,14 @@ mod tests {
             .resolve_frame(&RuntimeLineContext::default())
             .expect_err("line fails");
 
-        assert_eq!(error.line, RuntimeLineId("say.opening.003".to_owned()));
+        assert_eq!(error.line, line_id("say.opening.003"));
         assert_eq!(error.expr, "missing");
     }
 
     #[test]
     fn interpolation_fallback_can_render_expr_or_call_source() {
         let spec = LineDisplaySpec {
-            line: RuntimeLineId("say.opening.004".to_owned()),
+            line: line_id("say.opening.004"),
             callee: "alice".to_owned(),
             speaker_label: None,
             text_key: None,
@@ -1474,7 +1478,7 @@ mod tests {
     #[test]
     fn local_text_conditionals_render_only_selected_branch() {
         let spec = LineDisplaySpec {
-            line: RuntimeLineId("say.opening.conditional".to_owned()),
+            line: line_id("say.opening.conditional"),
             callee: "alice".to_owned(),
             speaker_label: None,
             text_key: None,
@@ -1546,7 +1550,7 @@ mod tests {
     #[test]
     fn inactive_conditional_branch_suppresses_styles_interpolation_and_host_events() {
         let spec = LineDisplaySpec {
-            line: RuntimeLineId("say.opening.conditional_gated".to_owned()),
+            line: line_id("say.opening.conditional_gated"),
             callee: "alice".to_owned(),
             speaker_label: None,
             text_key: None,
@@ -1643,7 +1647,7 @@ mod tests {
     #[test]
     fn reset_control_clears_active_inline_styles_for_following_runs() {
         let spec = LineDisplaySpec {
-            line: RuntimeLineId("say.opening.005".to_owned()),
+            line: line_id("say.opening.005"),
             callee: "alice".to_owned(),
             speaker_label: None,
             text_key: None,

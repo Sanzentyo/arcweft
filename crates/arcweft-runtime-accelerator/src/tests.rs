@@ -14,6 +14,10 @@ use arcweft_core::{
     },
 };
 
+fn flow_id(value: &str) -> FlowRuntimeId {
+    FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+}
+
 #[test]
 fn data_external_call_encodes_and_decodes_json_with_format_enum() {
     let mut accelerator =
@@ -191,9 +195,9 @@ fn runtime_flow_external_inference_call_sequence_uses_adapter_boundary() {
     let conv_target = RuntimeCallTarget::from_label("conv2d.valid_f32");
     assert!(matches!(conv_target, RuntimeCallTarget::Named(_)));
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.infer".to_owned())),
+        Some(flow_id("flow.infer")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.infer".to_owned()),
+            id: flow_id("flow.infer"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Let {
                 name: "conv".to_owned(),
                 expr: Box::new(RuntimeExpr::Call {
@@ -293,9 +297,9 @@ fn runtime_flow_math_intrinsic_uses_adapter_math_accelerator() {
     )
     .expect("matrix shape is valid");
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.math".to_owned())),
+        Some(flow_id("flow.math")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.math".to_owned()),
+            id: flow_id("flow.math"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Call {
                 callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::MathMatmulF32),
                 args: vec![
@@ -334,9 +338,9 @@ fn runtime_flow_f64_math_intrinsic_uses_width_preserving_adapter_backend() {
     let lhs = DenseMatrixF64::new(2, 2, vec![1.5, 2.0, 3.25, 4.5]).expect("matrix shape is valid");
     let rhs = DenseMatrixF64::new(2, 2, vec![5.0, 6.5, 7.0, 8.25]).expect("matrix shape is valid");
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.math_f64".to_owned())),
+        Some(flow_id("flow.math_f64")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.math_f64".to_owned()),
+            id: flow_id("flow.math_f64"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Call {
                 callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::MathMatmulF64),
                 args: vec![
@@ -1820,9 +1824,9 @@ fn runtime_flow_dense_u32_map_sum_uses_native_jit_batch() {
         origin: RuntimePureHelperOrigin::Annotated,
     };
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.u32".to_owned())),
+        Some(flow_id("flow.u32")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.u32".to_owned()),
+            id: flow_id("flow.u32"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Sum {
                 source: Box::new(RuntimeExpr::Map {
                     source: Box::new(RuntimeExpr::Value(runtime_sequence_dense_u32(

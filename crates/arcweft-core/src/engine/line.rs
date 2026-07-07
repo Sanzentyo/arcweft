@@ -36,7 +36,13 @@ impl Engine {
             return false;
         };
         match control {
-            FlowControl::Goto(target) => self.goto(&FlowRuntimeId(target), output, pure_backend),
+            FlowControl::Goto(target) => match FlowRuntimeId::from_runtime_target_value(&target) {
+                Ok(target) => self.goto(&target, output, pure_backend),
+                Err(error) => {
+                    self.fiber.status =
+                        FlowFiberStatus::Failed(format!("invalid goto target {target}: {error}"));
+                }
+            },
             FlowControl::Return(value) => self.return_value(value, output, pure_backend),
             FlowControl::Failed(message) => self.fiber.status = FlowFiberStatus::Failed(message),
         }
@@ -62,8 +68,7 @@ impl Engine {
             self.fiber.status = FlowFiberStatus::Running;
         } else {
             self.fiber.cursor = None;
-            self.fiber.status =
-                FlowFiberStatus::Failed(format!("missing goto target {}", target.0));
+            self.fiber.status = FlowFiberStatus::Failed(format!("missing goto target {target}"));
         }
     }
 

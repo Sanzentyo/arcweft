@@ -963,7 +963,11 @@ fn bundle_manifest(
         adapter_manifest_ids,
         required_host_calls,
         runtime: BundleRuntimeSummary {
-            entry_flow: compiled.plan.entry_flow.as_ref().map(|flow| flow.0.clone()),
+            entry_flow: compiled
+                .plan
+                .entry_flow
+                .as_ref()
+                .map(|flow| flow.public_label().into_string()),
             flows: compiled.bytecode_stats.flows,
             bytecode_instructions: compiled.bytecode_stats.instructions,
             line_task_groups: compiled.bytecode_stats.line_task_groups,

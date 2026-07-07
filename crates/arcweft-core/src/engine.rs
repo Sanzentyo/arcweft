@@ -259,7 +259,7 @@ impl FlowFiberStatus {
     fn runtime_status_label(&self) -> String {
         match self {
             Self::Running => "running".to_owned(),
-            Self::Dialogue(state) => format!("dialogue {}", state.line.0),
+            Self::Dialogue(state) => format!("dialogue {}", state.line),
             Self::Waiting(state) => format!("waiting {}", state.target.task.0),
             Self::WaitingMany(state) => format!(
                 "waiting_many {} {}/{}",
@@ -279,7 +279,7 @@ impl FlowFiberStatus {
     fn debug_status_label(&self) -> String {
         match self {
             Self::Running => "running".to_owned(),
-            Self::Dialogue(state) => format!("dialogue {}", state.line.0),
+            Self::Dialogue(state) => format!("dialogue {}", state.line),
             Self::Waiting(state) => format!("waiting {}", state.target.task.0),
             Self::WaitingMany(state) => format!(
                 "waiting_many {} {}/{}",

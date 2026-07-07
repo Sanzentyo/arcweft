@@ -57,6 +57,10 @@ use arcweft_debug_model::{
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 
+fn flow_id(value: &str) -> FlowRuntimeId {
+    FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+}
+
 #[derive(Default)]
 struct TestSession {
     observations: Vec<ObservationEnvelope>,
@@ -421,9 +425,9 @@ fn replay_trace_record(
 fn observe_checkpoint_program() -> BytecodeProgram {
     BytecodeProgram::from_runtime_plan(
         RuntimePlan::new(
-            Some(FlowRuntimeId("agent.observe_smoke".to_owned())),
+            Some(flow_id("agent.observe_smoke")),
             vec![RuntimeFlow {
-                id: FlowRuntimeId("agent.observe_smoke".to_owned()),
+                id: flow_id("agent.observe_smoke"),
                 ops: vec![
                     FlowOp::Effect(LineEffectRequest::Call(RuntimeCall {
                         callee: "observe".to_owned(),
@@ -496,7 +500,10 @@ fn agent_controller_test_bundle(
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
-                entry_flow: program.entry_flow.as_ref().map(|flow| flow.0.clone()),
+                entry_flow: program
+                    .entry_flow
+                    .as_ref()
+                    .map(|flow| flow.public_label().into_string()),
                 flows: stats.flows,
                 bytecode_instructions: stats.instructions,
                 line_task_groups: stats.line_task_groups,
@@ -532,9 +539,9 @@ fn agent_controller_test_bundle(
 fn capture_binding_program() -> BytecodeProgram {
     BytecodeProgram::from_runtime_plan(
         RuntimePlan::new(
-            Some(FlowRuntimeId("agent.capture_binding".to_owned())),
+            Some(flow_id("agent.capture_binding")),
             vec![RuntimeFlow {
-                id: FlowRuntimeId("agent.capture_binding".to_owned()),
+                id: flow_id("agent.capture_binding"),
                 ops: vec![
                     FlowOp::Await {
                         binding: Some(RuntimePattern::Ident("shot".to_owned())),
@@ -582,9 +589,9 @@ fn capture_binding_program() -> BytecodeProgram {
 fn read_resource_binding_program() -> BytecodeProgram {
     BytecodeProgram::from_runtime_plan(
         RuntimePlan::new(
-            Some(FlowRuntimeId("agent.read_resource_binding".to_owned())),
+            Some(flow_id("agent.read_resource_binding")),
             vec![RuntimeFlow {
-                id: FlowRuntimeId("agent.read_resource_binding".to_owned()),
+                id: flow_id("agent.read_resource_binding"),
                 ops: vec![
                     FlowOp::Await {
                         binding: Some(RuntimePattern::Ident("resource".to_owned())),
@@ -619,9 +626,9 @@ fn read_resource_binding_program() -> BytecodeProgram {
 fn entity_metadata_binding_program() -> BytecodeProgram {
     BytecodeProgram::from_runtime_plan(
         RuntimePlan::new(
-            Some(FlowRuntimeId("agent.entity_metadata_binding".to_owned())),
+            Some(flow_id("agent.entity_metadata_binding")),
             vec![RuntimeFlow {
-                id: FlowRuntimeId("agent.entity_metadata_binding".to_owned()),
+                id: flow_id("agent.entity_metadata_binding"),
                 ops: vec![
                     FlowOp::Await {
                         binding: Some(RuntimePattern::Ident("meta".to_owned())),
@@ -653,9 +660,9 @@ fn entity_metadata_binding_program() -> BytecodeProgram {
 fn project_neighbors_binding_program() -> BytecodeProgram {
     BytecodeProgram::from_runtime_plan(
         RuntimePlan::new(
-            Some(FlowRuntimeId("agent.project_neighbors_binding".to_owned())),
+            Some(flow_id("agent.project_neighbors_binding")),
             vec![RuntimeFlow {
-                id: FlowRuntimeId("agent.project_neighbors_binding".to_owned()),
+                id: flow_id("agent.project_neighbors_binding"),
                 ops: vec![
                     FlowOp::Await {
                         binding: Some(RuntimePattern::Ident("graph".to_owned())),
@@ -699,9 +706,9 @@ fn project_neighbors_binding_program() -> BytecodeProgram {
 fn wait_binding_program() -> BytecodeProgram {
     BytecodeProgram::from_runtime_plan(
         RuntimePlan::new(
-            Some(FlowRuntimeId("agent.wait_binding".to_owned())),
+            Some(flow_id("agent.wait_binding")),
             vec![RuntimeFlow {
-                id: FlowRuntimeId("agent.wait_binding".to_owned()),
+                id: flow_id("agent.wait_binding"),
                 ops: vec![
                     FlowOp::Await {
                         binding: Some(RuntimePattern::Ident("obs".to_owned())),

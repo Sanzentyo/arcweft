@@ -91,7 +91,7 @@ impl Engine {
         if self.apply_control_effects(output, pure_backend) {
             return;
         }
-        if input_advances_dialogue(input, &state.line.0) {
+        if input_advances_dialogue(input, &state.line.canonical_label()) {
             self.merge_step_output(finish_live_line_task_group(&group), output, pure_backend);
             if self.apply_control_effects(output, pure_backend) {
                 return;

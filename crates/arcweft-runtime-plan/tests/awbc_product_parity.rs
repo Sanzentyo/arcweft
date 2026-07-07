@@ -9,7 +9,7 @@ use arcweft_core::line_task::{LineOutRequest, LineTaskGroup, LineTaskNode, LineT
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
     ChoiceRuntimeOption, FlowEvent, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeHostCallTarget,
-    RuntimeIteratorEvidence, RuntimePlan, RuntimePureHelper, RuntimePureHelperId,
+    RuntimeIteratorEvidence, RuntimeLineId, RuntimePlan, RuntimePureHelper, RuntimePureHelperId,
     RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType,
 };
 use arcweft_core::source::{
@@ -46,6 +46,14 @@ struct ParityStep {
     awbc: RuntimeStepResult,
     structured_fiber: FlowFiber,
     awbc_fiber: FlowFiber,
+}
+
+fn flow_id(value: &str) -> FlowRuntimeId {
+    FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+}
+
+fn line_id(value: &str) -> RuntimeLineId {
+    RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
 }
 
 fn run_parity(plan: RuntimePlan, inputs: Vec<RuntimeStepInput>) -> Vec<ParityStep> {
@@ -245,15 +253,14 @@ fn flow(ops: Vec<FlowOp>) -> RuntimePlan {
     flows(
         "flow.main",
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: flow_id("flow.main"),
             ops,
         }],
     )
 }
 
 fn flows(entry: &str, flows: Vec<RuntimeFlow>) -> RuntimePlan {
-    RuntimePlan::new(Some(FlowRuntimeId(entry.to_owned())), flows, Vec::new())
-        .expect("runtime plan builds")
+    RuntimePlan::new(Some(flow_id(entry)), flows, Vec::new()).expect("runtime plan builds")
 }
 
 fn input_event(kind: &str, payload: Option<&str>) -> RoutedInputEvent {
@@ -527,16 +534,16 @@ fn awbc_product_parity_for_range_dialogue_body_outputs() {
         ..LineTaskGroup::default()
     };
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: flow_id("flow.main"),
             ops: vec![
                 FlowOp::For {
                     pattern: RuntimePattern::Ident("i".to_owned()),
                     source: i32_range_expr(0, 2),
                     evidence: RuntimeIteratorEvidence::builtin_range(),
                     body: vec![FlowOp::Dialogue {
-                        line: "line.loop.001".into(),
+                        line: line_id("line.loop.001"),
                         task_group: 0,
                     }],
                 },
@@ -599,12 +606,12 @@ fn awbc_product_parity_dialogue() {
         ..LineTaskGroup::default()
     };
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: flow_id("flow.main"),
             ops: vec![
                 FlowOp::Dialogue {
-                    line: "line.opening.001".into(),
+                    line: line_id("line.opening.001"),
                     task_group: 0,
                 },
                 FlowOp::Return("done".to_owned()),
@@ -1035,14 +1042,14 @@ fn awbc_product_parity_control_effect_goto() {
             "flow.main",
             vec![
                 RuntimeFlow {
-                    id: FlowRuntimeId("flow.main".to_owned()),
+                    id: flow_id("flow.main"),
                     ops: vec![
                         FlowOp::Effect(effect.clone()),
                         FlowOp::Return("unreachable".to_owned()),
                     ],
                 },
                 RuntimeFlow {
-                    id: FlowRuntimeId("flow.next".to_owned()),
+                    id: flow_id("flow.next"),
                     ops: vec![FlowOp::Return("next-done".to_owned())],
                 },
             ],
@@ -1059,7 +1066,7 @@ fn awbc_product_parity_control_effect_goto() {
         steps[0].structured.output.flow_events,
         vec![
             FlowEvent::Goto {
-                target: FlowRuntimeId("flow.next".to_owned()),
+                target: flow_id("flow.next"),
             },
             FlowEvent::Return {
                 value: "next-done".to_owned(),
@@ -1075,7 +1082,7 @@ fn awbc_product_parity_dynamic_goto() {
             "flow.main",
             vec![
                 RuntimeFlow {
-                    id: FlowRuntimeId("flow.main".to_owned()),
+                    id: flow_id("flow.main"),
                     ops: vec![
                         FlowOp::GotoExpr(RuntimeExpr::Value(RuntimeValue::String(
                             "flow.next".to_owned(),
@@ -1084,7 +1091,7 @@ fn awbc_product_parity_dynamic_goto() {
                     ],
                 },
                 RuntimeFlow {
-                    id: FlowRuntimeId("flow.next".to_owned()),
+                    id: flow_id("flow.next"),
                     ops: vec![FlowOp::Return("next-done".to_owned())],
                 },
             ],
@@ -1097,7 +1104,7 @@ fn awbc_product_parity_dynamic_goto() {
         steps[0].structured.output.flow_events,
         vec![
             FlowEvent::Goto {
-                target: FlowRuntimeId("flow.next".to_owned()),
+                target: flow_id("flow.next"),
             },
             FlowEvent::Return {
                 value: "next-done".to_owned(),

@@ -146,7 +146,7 @@ fn write_headless_report(
         println!();
     } else {
         for frame in &report.frames {
-            println!("{} {}", frame.line.0, frame.text);
+            println!("{} {}", frame.line.public_label(), frame.text);
         }
     }
     Ok(())
@@ -316,9 +316,9 @@ mod tests {
 
     fn minimal_bundle() -> ArcweftBundle {
         let plan = RuntimePlan::new(
-            Some(FlowRuntimeId("flow.main".to_owned())),
+            Some(FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id")),
             vec![RuntimeFlow {
-                id: FlowRuntimeId("flow.main".to_owned()),
+                id: FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
                 ops: vec![FlowOp::Return("done".to_owned())],
             }],
             Vec::new(),

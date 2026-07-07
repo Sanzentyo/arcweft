@@ -20,6 +20,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+fn flow_id(value: &str) -> FlowRuntimeId {
+    FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+}
+
 #[test]
 fn bundle_runner_executes_custom_adapter_without_cli() {
     let bundle = custom_echo_bundle();
@@ -206,9 +210,9 @@ fn structured_custom_echo_bundle() -> ArcweftBundle {
 
 fn custom_echo_bundle_with_product_awbc(include_product_awbc: bool) -> ArcweftBundle {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.custom".to_owned())),
+        Some(flow_id("flow.custom")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.custom".to_owned()),
+            id: flow_id("flow.custom"),
             ops: vec![
                 FlowOp::Await {
                     binding: None,

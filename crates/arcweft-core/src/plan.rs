@@ -1,12 +1,14 @@
 use crate::effect::LineEffectRequest;
 use crate::line_task::{LineOutRequest, LineTaskGroup};
 use crate::pattern::RuntimePattern;
+use crate::runtime_id::{RuntimeIdError, RuntimeIdFamily, RuntimeIdPath, RuntimePublicLabel};
 use crate::source::SourcePlan;
 use crate::step::RuntimeHostCallMode;
 use crate::stream::StreamPlan;
 use crate::task::{AwaitManyTarget, AwaitTarget, NeedId, TaskId};
 use crate::value::{RuntimeBinding, RuntimeExpr, RuntimeIterator, RuntimePayload};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -23,12 +25,16 @@ pub struct RuntimePlan {
 }
 
 /// Runtime identifier for a lowered flow.
-#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-pub struct FlowRuntimeId(pub String);
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct FlowRuntimeId {
+    path: RuntimeIdPath,
+}
 
 /// Runtime identifier for a source-declared entry.
-#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-pub struct EntryRuntimeId(pub String);
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct EntryRuntimeId {
+    path: RuntimeIdPath,
+}
 
 /// Adapter family of a source-declared entry.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -80,14 +86,146 @@ pub struct RuntimeEntrySpec {
 }
 
 /// Runtime identifier for a lowered dialogue line.
-#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-pub struct RuntimeLineId(pub String);
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct RuntimeLineId {
+    path: RuntimeIdPath,
+}
 
 /// Lowered flow program.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeFlow {
     pub id: FlowRuntimeId,
     pub ops: Vec<FlowOp>,
+}
+
+impl FlowRuntimeId {
+    pub fn canonical(value: &str) -> Result<Self, RuntimeIdError> {
+        RuntimeIdPath::from_canonical_str(RuntimeIdFamily::Flow, value).map(|path| Self { path })
+    }
+
+    pub fn from_source_entity_body(value: &str) -> Result<Self, RuntimeIdError> {
+        RuntimeIdPath::from_source_entity_body(
+            RuntimeIdFamily::Flow,
+            value,
+            RuntimeIdFamily::flow_source_families(),
+        )
+        .map(|path| Self { path })
+    }
+
+    pub fn from_runtime_target_value(value: &str) -> Result<Self, RuntimeIdError> {
+        let Some((family, _)) = value.split_once('.') else {
+            return Self::canonical(value);
+        };
+        if RuntimeIdFamily::flow_source_families().contains(&family) {
+            Self::from_source_entity_body(value)
+        } else {
+            Self::canonical(value)
+        }
+    }
+
+    #[must_use]
+    pub const fn path(&self) -> &RuntimeIdPath {
+        &self.path
+    }
+
+    #[must_use]
+    pub fn canonical_label(&self) -> String {
+        self.path.label()
+    }
+
+    #[must_use]
+    pub fn public_label(&self) -> RuntimePublicLabel {
+        RuntimePublicLabel::for_family(RuntimeIdFamily::Flow, &self.path)
+    }
+}
+
+impl fmt::Display for FlowRuntimeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.path.fmt(f)
+    }
+}
+
+impl EntryRuntimeId {
+    pub fn canonical(value: &str) -> Result<Self, RuntimeIdError> {
+        RuntimeIdPath::from_canonical_str(RuntimeIdFamily::Entry, value).map(|path| Self { path })
+    }
+
+    pub fn from_source_entity_body(value: &str) -> Result<Self, RuntimeIdError> {
+        RuntimeIdPath::from_source_entity_body(
+            RuntimeIdFamily::Entry,
+            value,
+            RuntimeIdFamily::Entry.source_families(),
+        )
+        .map(|path| Self { path })
+    }
+
+    #[must_use]
+    pub const fn path(&self) -> &RuntimeIdPath {
+        &self.path
+    }
+
+    #[must_use]
+    pub fn canonical_label(&self) -> String {
+        self.path.label()
+    }
+
+    #[must_use]
+    pub fn public_label(&self) -> RuntimePublicLabel {
+        RuntimePublicLabel::for_family(RuntimeIdFamily::Entry, &self.path)
+    }
+}
+
+impl fmt::Display for EntryRuntimeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.path.fmt(f)
+    }
+}
+
+impl RuntimeLineId {
+    pub fn canonical(value: &str) -> Result<Self, RuntimeIdError> {
+        RuntimeIdPath::from_canonical_str(RuntimeIdFamily::Line, value).map(|path| Self { path })
+    }
+
+    pub fn from_source_entity_body(value: &str) -> Result<Self, RuntimeIdError> {
+        RuntimeIdPath::from_source_entity_body(
+            RuntimeIdFamily::Line,
+            value,
+            RuntimeIdFamily::Line.source_families(),
+        )
+        .map(|path| Self { path })
+    }
+
+    pub fn from_runtime_line_value(value: &str) -> Result<Self, RuntimeIdError> {
+        let Some((family, _)) = value.split_once('.') else {
+            return Self::canonical(value);
+        };
+        if RuntimeIdFamily::Line.source_families().contains(&family) {
+            Self::from_source_entity_body(value)
+        } else {
+            Self::canonical(value)
+        }
+    }
+
+    #[must_use]
+    pub const fn path(&self) -> &RuntimeIdPath {
+        &self.path
+    }
+
+    #[must_use]
+    pub fn canonical_label(&self) -> String {
+        self.path.label()
+    }
+
+    #[must_use]
+    pub fn public_label(&self) -> RuntimePublicLabel {
+        RuntimePublicLabel::for_family(RuntimeIdFamily::Line, &self.path)
+    }
+}
+
+impl fmt::Display for RuntimeLineId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.path.fmt(f)
+    }
 }
 
 /// Runtime identifier for a lowered deterministic pure helper.
@@ -543,7 +681,7 @@ impl RuntimePlan {
         if let Some(entry) = entry_flow.as_ref()
             && !flows.iter().any(|flow| flow.id == *entry)
         {
-            return Err(RuntimePlanError::MissingEntryFlow(entry.0.clone()));
+            return Err(RuntimePlanError::MissingEntryFlow(entry.canonical_label()));
         }
         Ok(Self {
             entry_flow,
@@ -604,23 +742,5 @@ impl RuntimePlan {
             && self.line_task_groups.is_empty()
             && self.stream_plans.is_empty()
             && self.source_plans.is_empty()
-    }
-}
-
-impl From<&str> for FlowRuntimeId {
-    fn from(value: &str) -> Self {
-        Self(value.to_owned())
-    }
-}
-
-impl From<&str> for EntryRuntimeId {
-    fn from(value: &str) -> Self {
-        Self(value.to_owned())
-    }
-}
-
-impl From<&str> for RuntimeLineId {
-    fn from(value: &str) -> Self {
-        Self(value.to_owned())
     }
 }

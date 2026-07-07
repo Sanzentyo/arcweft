@@ -14,9 +14,15 @@ pub(in crate::app) fn apply_runtime_entry_selection(
         return Err(ExitCode::from(2));
     }
     if let Some(flow) = flow {
-        let flow = FlowRuntimeId(normalize_flow_id(flow));
+        let flow = match FlowRuntimeId::from_runtime_target_value(&normalize_flow_id(flow)) {
+            Ok(flow) => flow,
+            Err(error) => {
+                eprintln!("error: invalid flow selector: {error}");
+                return Err(ExitCode::FAILURE);
+            }
+        };
         if !plan.flows.iter().any(|candidate| candidate.id == flow) {
-            eprintln!("error: unknown flow `{}`", flow.0);
+            eprintln!("error: unknown flow `{}`", flow.public_label());
             return Err(ExitCode::FAILURE);
         }
         plan.entry_flow = Some(flow);
@@ -27,7 +33,7 @@ pub(in crate::app) fn apply_runtime_entry_selection(
         let Some(spec) = plan
             .entries
             .iter()
-            .find(|candidate| candidate.id.0 == entry)
+            .find(|candidate| candidate.id.public_label().as_str() == entry)
         else {
             eprintln!("error: unknown entry `{entry}`");
             return Err(ExitCode::FAILURE);
@@ -51,7 +57,7 @@ pub(in crate::app) fn select_server_entry<'a>(
         let Some(spec) = plan
             .entries
             .iter()
-            .find(|candidate| candidate.id.0 == entry)
+            .find(|candidate| candidate.id.public_label().as_str() == entry)
         else {
             eprintln!("error: unknown entry `{entry}`");
             return Err(ExitCode::FAILURE);
@@ -103,7 +109,7 @@ pub(in crate::app) fn apply_runtime_cli_entry_selection(
     let RuntimeEntryTarget::Flow(flow) = &spec.target else {
         eprintln!(
             "error: cli entry `{}` does not select a single runnable flow",
-            spec.id.0
+            spec.id.public_label()
         );
         return Err(ExitCode::FAILURE);
     };

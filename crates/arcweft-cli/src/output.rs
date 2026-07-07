@@ -1287,7 +1287,7 @@ impl From<RuntimePureCallStats> for RuntimePureCallStatsSummary {
 
 fn flow_event_label(event: &FlowEvent) -> String {
     match event {
-        FlowEvent::DialogueLine { line, .. } => format!("dialogue {}", line.0),
+        FlowEvent::DialogueLine { line, .. } => format!("dialogue {}", line.public_label()),
         FlowEvent::LineCancelled { trigger } => format!("line_cancelled {trigger}"),
         FlowEvent::ChoicePresented { id, .. } => {
             format!("choice_presented {}", id.as_deref().unwrap_or("-"))
@@ -1302,7 +1302,7 @@ fn flow_event_label(event: &FlowEvent) -> String {
         FlowEvent::AwaitProgress { need, progress } => {
             format!("await_progress {} {}", need.0, progress.label())
         }
-        FlowEvent::Goto { target } => format!("goto {}", target.0),
+        FlowEvent::Goto { target } => format!("goto {}", target.public_label()),
         FlowEvent::Return { value } => format!("return {value}"),
         FlowEvent::Done => "done".to_owned(),
     }

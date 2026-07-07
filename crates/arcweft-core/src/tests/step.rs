@@ -2,7 +2,7 @@ use super::call;
 use crate::effect::{LineEffectRequest, RuntimeLog};
 use crate::engine::{Engine, FlowFiberStatus};
 use crate::line_task::{LineTaskGroup, LineTaskNode, LineTaskScope};
-use crate::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
+use crate::plan::{FlowOp, RuntimeFlow, RuntimePlan};
 use crate::step::{
     RuntimeDiagnostic, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
     RuntimeStepOutput, RuntimeStepStopReason,
@@ -101,12 +101,12 @@ fn game_mode_stops_on_visible_output_but_server_mode_drains() {
         ..LineTaskGroup::default()
     };
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.opening".to_owned())),
+        Some(super::flow_id("flow.opening")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.opening".to_owned()),
+            id: super::flow_id("flow.opening"),
             ops: vec![
                 FlowOp::Dialogue {
-                    line: crate::plan::RuntimeLineId("say.opening.001".to_owned()),
+                    line: super::line_id("say.opening.001"),
                     task_group: 0,
                 },
                 FlowOp::Return("done".to_owned()),
@@ -182,9 +182,9 @@ fn game_mode_does_not_stop_for_pure_observations() {
 
 fn linear_plan(ops: Vec<FlowOp>) -> RuntimePlan {
     RuntimePlan::new(
-        Some(FlowRuntimeId("flow.opening".to_owned())),
+        Some(super::flow_id("flow.opening")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.opening".to_owned()),
+            id: super::flow_id("flow.opening"),
             ops,
         }],
         Vec::new(),

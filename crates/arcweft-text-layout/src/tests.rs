@@ -10,9 +10,14 @@ mod ruby;
 mod vertical_class_mix;
 mod vertical_sequences;
 
+fn line_id(value: &str) -> arcweft_core::plan::RuntimeLineId {
+    arcweft_core::plan::RuntimeLineId::from_runtime_line_value(value)
+        .expect("test line ID is valid")
+}
+
 fn frame_with_run(text: &str, presentation: RichTextPresentation) -> LineDisplayFrame {
     LineDisplayFrame {
-        line: arcweft_core::plan::RuntimeLineId("say.test.001".to_owned()),
+        line: line_id("say.test.001"),
         callee: "alice.say".to_owned(),
         speaker_label: None,
         text: text.to_owned(),
@@ -54,7 +59,7 @@ fn frame_with_split_runs(
     presentation: RichTextPresentation,
 ) -> LineDisplayFrame {
     LineDisplayFrame {
-        line: arcweft_core::plan::RuntimeLineId("say.test.001".to_owned()),
+        line: line_id("say.test.001"),
         callee: "alice.say".to_owned(),
         speaker_label: None,
         text: text.to_owned(),

@@ -11,6 +11,10 @@ use arcweft_render_text::{
     RuntimeLineContext,
 };
 
+fn line_id(value: &str) -> RuntimeLineId {
+    RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
+}
+
 #[test]
 fn lowers_full_tag_families_to_render_text_nodes() {
     let parsed = parse_source(
@@ -34,11 +38,7 @@ flow @flow.main main {
         .expect("dialogue item");
 
     let defaults = DialogueDisplayDefaults::from_module(&hir);
-    let spec = lower_dialogue_display(
-        RuntimeLineId("say.opening.001".to_owned()),
-        dialogue,
-        &defaults,
-    );
+    let spec = lower_dialogue_display(line_id("say.opening.001"), dialogue, &defaults);
 
     assert_eq!(spec.window.as_deref(), Some("textbox.main"));
     assert_eq!(
@@ -137,7 +137,7 @@ flow @flow.main main {
         .expect("dialogue item");
 
     let spec = lower_dialogue_display(
-        RuntimeLineId("say.rich_text.001".to_owned()),
+        line_id("say.rich_text.001"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
     );
@@ -228,7 +228,7 @@ flow @flow.main main {
         .expect("dialogue item");
 
     let spec = lower_dialogue_display(
-        RuntimeLineId("say.rich_text.host_event.effect".to_owned()),
+        line_id("say.rich_text.host_event.effect"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
     );
@@ -289,7 +289,7 @@ flow @flow.main main {
         .expect("dialogue item");
 
     let spec = lower_dialogue_display(
-        RuntimeLineId("say.rich_text.object.proxy".to_owned()),
+        line_id("say.rich_text.object.proxy"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
     );
@@ -371,7 +371,7 @@ flow @flow.main main {
         .expect("dialogue item");
 
     let spec = lower_dialogue_display(
-        RuntimeLineId("say.rich_text.object.proxy.defaults".to_owned()),
+        line_id("say.rich_text.object.proxy.defaults"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
     );
@@ -444,7 +444,7 @@ flow @flow.main main {
         .expect("dialogue item");
 
     let spec = lower_dialogue_display(
-        RuntimeLineId("say.rich_text.object.proxy.nested".to_owned()),
+        line_id("say.rich_text.object.proxy.nested"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
     );
@@ -546,7 +546,7 @@ flow @flow.main main {
         .expect("dialogue item");
 
     let spec = lower_dialogue_display(
-        RuntimeLineId("say.rich_text.object.proxy.inferred".to_owned()),
+        line_id("say.rich_text.object.proxy.inferred"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
     );
@@ -665,7 +665,7 @@ flow @flow.main main {
         .expect("dialogue item");
 
     let spec = lower_dialogue_display(
-        RuntimeLineId("say.rich_text.object.proxy.rich_text_attribute".to_owned()),
+        line_id("say.rich_text.object.proxy.rich_text_attribute"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
     );
@@ -735,7 +735,7 @@ flow @flow.main main {
         .expect("dialogue item");
 
     let spec = lower_dialogue_display(
-        RuntimeLineId("say.rich_text.presentation.scalar".to_owned()),
+        line_id("say.rich_text.presentation.scalar"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
     );
@@ -800,7 +800,7 @@ flow @flow.main main {
         .collect::<Vec<_>>();
 
     let inferred = lower_dialogue_display(
-        RuntimeLineId("say.rich_text.host.inferred".to_owned()),
+        line_id("say.rich_text.host.inferred"),
         dialogues[0],
         &defaults,
     )
@@ -828,7 +828,7 @@ flow @flow.main main {
     assert!(!inferred_effect.params.contains_key("id"));
 
     let explicit = lower_dialogue_display(
-        RuntimeLineId("say.rich_text.host.explicit".to_owned()),
+        line_id("say.rich_text.host.explicit"),
         dialogues[1],
         &defaults,
     )
@@ -877,7 +877,7 @@ flow @flow.main main {
         })
         .expect("dialogue item");
     let spec = lower_dialogue_display(
-        RuntimeLineId("say.rich_text.effect.end".to_owned()),
+        line_id("say.rich_text.effect.end"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
     );
@@ -921,7 +921,7 @@ flow @flow.main main {
         })
         .expect("dialogue item");
     let spec = lower_dialogue_display(
-        RuntimeLineId("say.rich_text.transform.rotate".to_owned()),
+        line_id("say.rich_text.transform.rotate"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
     );
@@ -1008,7 +1008,7 @@ flow @flow.main main {
         })
         .expect("dialogue item");
     let spec = lower_dialogue_display(
-        RuntimeLineId("say.rich_text.defaults".to_owned()),
+        line_id("say.rich_text.defaults"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
     );
@@ -1116,7 +1116,7 @@ flow @flow.main main {
         })
         .expect("dialogue item");
     let spec = lower_dialogue_display(
-        RuntimeLineId("say.rich_text.defaults.profile".to_owned()),
+        line_id("say.rich_text.defaults.profile"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
     );
@@ -1165,7 +1165,7 @@ flow @flow.main main {
         .expect("dialogue item");
 
     let spec = lower_dialogue_display(
-        RuntimeLineId("say.rich_text.002".to_owned()),
+        line_id("say.rich_text.002"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
     );
@@ -1202,7 +1202,7 @@ flow @flow.main main {
         .expect("dialogue item");
 
     let spec = lower_dialogue_display(
-        RuntimeLineId("say.rich_text.003".to_owned()),
+        line_id("say.rich_text.003"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
     );
@@ -1243,7 +1243,7 @@ flow @flow.main main {
         .expect("dialogue item");
 
     let spec = lower_dialogue_display(
-        RuntimeLineId("say.rich_text.004".to_owned()),
+        line_id("say.rich_text.004"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
     );
@@ -1296,7 +1296,7 @@ flow @flow.main main {
         .expect("dialogue item");
 
     let spec = lower_dialogue_display(
-        RuntimeLineId("say.rich_text.inline".to_owned()),
+        line_id("say.rich_text.inline"),
         dialogue,
         &DialogueDisplayDefaults::from_module(&hir),
     );
@@ -1351,11 +1351,7 @@ flow @flow.main main {
         })
         .expect("dialogue item");
 
-    let spec = lower_dialogue_display(
-        RuntimeLineId("say.opening.002".to_owned()),
-        dialogue,
-        &defaults,
-    );
+    let spec = lower_dialogue_display(line_id("say.opening.002"), dialogue, &defaults);
 
     assert_eq!(
         spec.base_styles,
@@ -1442,11 +1438,7 @@ flow @flow.main main {
         })
         .expect("dialogue item");
 
-    let spec = lower_dialogue_display(
-        RuntimeLineId("say.opening.display_label".to_owned()),
-        dialogue,
-        &defaults,
-    );
+    let spec = lower_dialogue_display(line_id("say.opening.display_label"), dialogue, &defaults);
     let frame = spec
         .resolve_frame(&RuntimeLineContext::default())
         .expect("frame resolves");

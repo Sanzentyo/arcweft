@@ -258,7 +258,7 @@ fn code_slots(
         .map(|flow| {
             let digest = digest_serde(flow)?;
             Ok((
-                CodeSlotId(flow.id.0.clone()),
+                CodeSlotId(flow.id.public_label().into_string()),
                 CodeSlot {
                     signature: conservative_signature(digest),
                     code_digest: digest,
@@ -824,7 +824,10 @@ mod tests {
                 adapter_manifest_ids: Vec::new(),
                 required_host_calls: Vec::new(),
                 runtime: BundleRuntimeSummary {
-                    entry_flow: bytecode.entry_flow.as_ref().map(|flow| flow.0.clone()),
+                    entry_flow: bytecode
+                        .entry_flow
+                        .as_ref()
+                        .map(|flow| flow.public_label().into_string()),
                     flows: stats.flows,
                     bytecode_instructions: stats.instructions,
                     line_task_groups: stats.line_task_groups,
@@ -896,14 +899,14 @@ mod tests {
         BytecodeProgram {
             abi_version: BYTECODE_ABI_VERSION,
             runtime_layout: arcweft_core::bytecode::BytecodeRuntimeLayout::current(),
-            entry_flow: Some(FlowRuntimeId("flow.main".to_owned())),
+            entry_flow: Some(flow_id("flow.main")),
             entries: vec![BytecodeEntry {
-                id: EntryRuntimeId("entry.main".to_owned()),
+                id: entry_id("entry.main"),
                 kind: RuntimeEntryKind::Game,
-                target: RuntimeEntryTarget::Flow(FlowRuntimeId("flow.main".to_owned())),
+                target: RuntimeEntryTarget::Flow(flow_id("flow.main")),
             }],
             flows: vec![BytecodeFlow {
-                id: FlowRuntimeId("flow.main".to_owned()),
+                id: flow_id("flow.main"),
                 instructions,
             }],
             pure_helpers: Vec::new(),
@@ -911,5 +914,13 @@ mod tests {
             stream_plans: Vec::new(),
             source_plans: Vec::new(),
         }
+    }
+
+    fn flow_id(value: &str) -> FlowRuntimeId {
+        FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+    }
+
+    fn entry_id(value: &str) -> EntryRuntimeId {
+        EntryRuntimeId::from_source_entity_body(value).expect("test entry ID is valid")
     }
 }

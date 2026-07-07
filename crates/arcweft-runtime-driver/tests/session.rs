@@ -46,6 +46,14 @@ use arcweft_runtime_driver::session::{
 use arcweft_runtime_driver::swap::SwapCompatibility;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 
+fn flow_id(value: &str) -> FlowRuntimeId {
+    FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+}
+
+fn line_id(value: &str) -> RuntimeLineId {
+    RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
+}
+
 fn fixture_bundle() -> ArcweftBundle {
     fixture_bundle_with("WebGPU dialogue", false, false)
 }
@@ -151,7 +159,7 @@ fn fixture_bundle_from_parts(
     changed_main_code: bool,
     include_product_awbc: bool,
 ) -> ArcweftBundle {
-    let line = RuntimeLineId("line.opening".to_owned());
+    let line = line_id("line.opening");
     let main_ops = if changed_main_code {
         vec![FlowOp::Return("changed".to_owned())]
     } else {
@@ -165,7 +173,7 @@ fn fixture_bundle_from_parts(
                 options: vec![ChoiceRuntimeOption {
                     id: Some("choice.opening.next".to_owned()),
                     label: "Next".to_owned(),
-                    target: Some(FlowRuntimeId("flow.done".to_owned())),
+                    target: Some(flow_id("flow.done")),
                     out: None,
                     effects: Vec::new(),
                 }],
@@ -174,22 +182,22 @@ fn fixture_bundle_from_parts(
     };
     let mut flows = vec![
         RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: flow_id("flow.main"),
             ops: main_ops,
         },
         RuntimeFlow {
-            id: FlowRuntimeId("flow.done".to_owned()),
+            id: flow_id("flow.done"),
             ops: vec![FlowOp::Return("done".to_owned())],
         },
     ];
     if extra_flow {
         flows.push(RuntimeFlow {
-            id: FlowRuntimeId("flow.extra".to_owned()),
+            id: flow_id("flow.extra"),
             ops: vec![FlowOp::Return("extra".to_owned())],
         });
     }
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(flow_id("flow.main")),
         flows,
         vec![LineTaskGroup::default()],
     )
@@ -250,7 +258,7 @@ fn fixture_bundle_from_parts(
 
 fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
     let mut flows = vec![RuntimeFlow {
-        id: FlowRuntimeId("flow.main".to_owned()),
+        id: flow_id("flow.main"),
         ops: vec![
             FlowOp::Await {
                 binding: None,
@@ -272,16 +280,12 @@ fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
     }];
     if extra_flow {
         flows.push(RuntimeFlow {
-            id: FlowRuntimeId("flow.extra".to_owned()),
+            id: flow_id("flow.extra"),
             ops: vec![FlowOp::Return("extra".to_owned())],
         });
     }
-    let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
-        flows,
-        Vec::new(),
-    )
-    .expect("runtime plan is valid");
+    let plan = RuntimePlan::new(Some(flow_id("flow.main")), flows, Vec::new())
+        .expect("runtime plan is valid");
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
     let display = LineDisplayCatalog::new(Vec::new());
     let product_awbc = AwbcLowerer::new(&plan, &display, "await-demo.arcw")
@@ -318,9 +322,9 @@ fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
 
 fn fixture_action_receive_bundle() -> ArcweftBundle {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: flow_id("flow.main"),
             ops: vec![
                 FlowOp::HostCall {
                     binding: Some(RuntimePattern::Ident("event".to_owned())),
@@ -407,9 +411,9 @@ fn fixture_action_receive_bundle_with_submit_input() -> ArcweftBundle {
 
 fn fixture_await_replacement_bundle() -> ArcweftBundle {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: flow_id("flow.main"),
             ops: vec![FlowOp::Return("changed".to_owned())],
         }],
         Vec::new(),

@@ -146,8 +146,19 @@ fn run_script_test(
             Vec::new(),
         );
     };
+    let Ok(start) = FlowRuntimeId::from_runtime_target_value(&start) else {
+        return ScriptTestRunSummary::completed(
+            test,
+            false,
+            ScriptTestFinalStatus::NotStarted,
+            vec![format!(
+                "scenario test `goto` target `{start}` is not a valid flow runtime ID"
+            )],
+            Vec::new(),
+        );
+    };
     let mut plan = plan.clone();
-    plan.entry_flow = Some(FlowRuntimeId(start));
+    plan.entry_flow = Some(start);
     let Ok(trace) = run_runtime_steps(
         plan,
         Some(source_path),

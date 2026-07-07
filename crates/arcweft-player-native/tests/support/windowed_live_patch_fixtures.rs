@@ -978,7 +978,7 @@ fn dialogue_bundle(
     changed_main_code: bool,
     extra_flow: bool,
 ) -> ArcweftBundle {
-    let line = RuntimeLineId("line.opening".to_owned());
+    let line = RuntimeLineId::from_runtime_line_value("line.opening").expect("runtime line id");
     let plan = dialogue_runtime_plan(&line, changed_main_code, extra_flow);
     let display = dialogue_display_catalog(line, display_text);
     with_optional_fixture_image(
@@ -994,22 +994,22 @@ fn dialogue_runtime_plan(
 ) -> RuntimePlan {
     let mut flows = vec![
         RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
             ops: dialogue_main_ops(line, changed_main_code),
         },
         RuntimeFlow {
-            id: FlowRuntimeId("flow.done".to_owned()),
+            id: FlowRuntimeId::from_runtime_target_value("flow.done").expect("flow runtime id"),
             ops: vec![FlowOp::Return("done".to_owned())],
         },
     ];
     if extra_flow {
         flows.push(RuntimeFlow {
-            id: FlowRuntimeId("flow.extra".to_owned()),
+            id: FlowRuntimeId::from_runtime_target_value("flow.extra").expect("flow runtime id"),
             ops: vec![FlowOp::Return("extra".to_owned())],
         });
     }
     RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id")),
         flows,
         vec![LineTaskGroup::default()],
     )
@@ -1030,7 +1030,9 @@ fn dialogue_main_ops(line: &RuntimeLineId, changed_main_code: bool) -> Vec<FlowO
             options: vec![ChoiceRuntimeOption {
                 id: Some("choice.opening.next".to_owned()),
                 label: "Next".to_owned(),
-                target: Some(FlowRuntimeId("flow.done".to_owned())),
+                target: Some(
+                    FlowRuntimeId::from_runtime_target_value("flow.done").expect("flow runtime id"),
+                ),
                 out: None,
                 effects: Vec::new(),
             }],
@@ -1127,9 +1129,9 @@ fn with_optional_fixture_image(bundle: ArcweftBundle, image_bytes: Option<&[u8]>
 
 fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
             ops: vec![
                 FlowOp::Await {
                     binding: None,
@@ -1189,9 +1191,9 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
 
 fn await_replacement_bundle(source_label: &str, source: &str) -> ArcweftBundle {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
             ops: vec![FlowOp::Return("changed".to_owned())],
         }],
         Vec::new(),

@@ -336,7 +336,8 @@ mod tests {
         let routes = vec![RuntimeRouteSpec {
             method: "GET".to_owned(),
             path: "/health".to_owned(),
-            target: FlowRuntimeId("flow.health".to_owned()),
+            target: FlowRuntimeId::from_runtime_target_value("flow.health")
+                .expect("flow runtime id"),
             bindings: Vec::new(),
         }];
 
@@ -365,7 +366,8 @@ mod tests {
         let routes = vec![RuntimeRouteSpec {
             method: "GET".to_owned(),
             path: "/hello/:name".to_owned(),
-            target: FlowRuntimeId("flow.hello".to_owned()),
+            target: FlowRuntimeId::from_runtime_target_value("flow.hello")
+                .expect("flow runtime id"),
             bindings: vec![arcweft_core::plan::RuntimeRouteBinding {
                 name: "name".to_owned(),
                 source: RuntimeRouteBindingSource::PathParam("name".to_owned()),
@@ -392,7 +394,8 @@ mod tests {
         let routes = vec![RuntimeRouteSpec {
             method: "GET".to_owned(),
             path: "/health".to_owned(),
-            target: FlowRuntimeId("flow.health".to_owned()),
+            target: FlowRuntimeId::from_runtime_target_value("flow.health")
+                .expect("flow runtime id"),
             bindings: Vec::new(),
         }];
 
@@ -417,14 +420,8 @@ mod tests {
     }
 
     fn plan_with_flow(id: &str, ops: Vec<FlowOp>) -> RuntimePlan {
-        RuntimePlan::new(
-            Some(FlowRuntimeId(id.to_owned())),
-            vec![RuntimeFlow {
-                id: FlowRuntimeId(id.to_owned()),
-                ops,
-            }],
-            Vec::new(),
-        )
-        .expect("plan is valid")
+        let id = FlowRuntimeId::from_runtime_target_value(id).expect("flow runtime id");
+        RuntimePlan::new(Some(id.clone()), vec![RuntimeFlow { id, ops }], Vec::new())
+            .expect("plan is valid")
     }
 }

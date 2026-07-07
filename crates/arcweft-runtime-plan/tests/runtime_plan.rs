@@ -63,6 +63,10 @@ fn call(callee: &str, args: &[&str]) -> LineEffectRequest {
     })
 }
 
+fn flow_id(value: &str) -> FlowRuntimeId {
+    FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+}
+
 fn seq(node: &LineTaskNode) -> &[LineTaskNode] {
     match node {
         LineTaskNode::Seq(nodes) => nodes,
@@ -176,7 +180,7 @@ flow @flow.second second { return "right" }
     assert!(
         plan.entry_flow
             .as_ref()
-            .is_some_and(|id| id.0 == "flow.second")
+            .is_some_and(|id| id.public_label().as_str() == "flow.second")
     );
 }
 
@@ -197,7 +201,7 @@ flow @flow.second second { return "right" }
     assert!(
         plan.entry_flow
             .as_ref()
-            .is_some_and(|id| id.0 == "flow.second")
+            .is_some_and(|id| id.public_label().as_str() == "flow.second")
     );
 }
 
@@ -218,7 +222,7 @@ flow @flow.second second { return "right" }
     assert!(
         plan.entry_flow
             .as_ref()
-            .is_some_and(|id| id.0 == "flow.second")
+            .is_some_and(|id| id.public_label().as_str() == "flow.second")
     );
 }
 
@@ -241,21 +245,31 @@ effects { agent.observe }
         lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
 
     assert_eq!(
-        report.plan.entry_flow.as_ref().map(|id| id.0.as_str()),
-        Some("agent.observe_smoke")
+        report
+            .plan
+            .entry_flow
+            .as_ref()
+            .map(FlowRuntimeId::canonical_label),
+        Some("agent.observe_smoke".to_owned())
     );
     assert_eq!(report.plan.flows.len(), 1);
-    assert_eq!(report.plan.flows[0].id.0, "agent.observe_smoke");
+    assert_eq!(
+        report.plan.flows[0].id.canonical_label(),
+        "agent.observe_smoke"
+    );
     assert!(!report.plan.flows[0].ops.is_empty());
     assert_eq!(report.plan.entries.len(), 1);
-    assert_eq!(report.plan.entries[0].id.0, "entry.agent.observe_smoke");
+    assert_eq!(
+        report.plan.entries[0].id.public_label().as_str(),
+        "entry.agent.observe_smoke"
+    );
     assert_eq!(
         report.plan.entries[0].kind,
         RuntimeEntryKind::Custom("agent_controller".to_owned())
     );
     assert_eq!(
         report.plan.entries[0].target,
-        RuntimeEntryTarget::Flow(FlowRuntimeId("agent.observe_smoke".to_owned()))
+        RuntimeEntryTarget::Flow(flow_id("agent.observe_smoke"))
     );
 }
 
@@ -900,10 +914,7 @@ flow @flow.next next {
 
     let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
 
-    assert_eq!(
-        plan.entry_flow,
-        Some(FlowRuntimeId("flow.opening".to_owned()))
-    );
+    assert_eq!(plan.entry_flow, Some(flow_id("flow.opening")));
     assert_eq!(plan.line_task_groups.len(), 1);
     assert_eq!(plan.flows.len(), 2);
     assert!(matches!(
@@ -1124,10 +1135,7 @@ flow @flow.alice_intro alice_intro {
     };
     assert_eq!(id.as_deref(), Some("choice.opening.first"));
     assert_eq!(options[0].id.as_deref(), Some("choice.opening.listen"));
-    assert_eq!(
-        options[0].target,
-        Some(FlowRuntimeId("flow.alice_intro".to_owned()))
-    );
+    assert_eq!(options[0].target, Some(flow_id("flow.alice_intro")));
 }
 
 #[test]

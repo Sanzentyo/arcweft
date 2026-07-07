@@ -130,7 +130,7 @@ impl ParityTrace {
 fn flow_event(event: &FlowEvent) -> ParityEvent {
     match event {
         FlowEvent::DialogueLine { line, .. } => ParityEvent::Dialogue {
-            line: line.0.clone(),
+            line: line.canonical_label(),
         },
         FlowEvent::LineCancelled { trigger } => ParityEvent::Effect {
             id: format!("line_cancelled:{trigger}"),
@@ -157,7 +157,7 @@ fn flow_event(event: &FlowEvent) -> ParityEvent {
             need: need.0.clone(),
         },
         FlowEvent::Goto { target } => ParityEvent::Effect {
-            id: format!("goto:{}", target.0),
+            id: format!("goto:{target}"),
         },
         FlowEvent::Return { value } => ParityEvent::Stop {
             reason: format!("return:{value}"),

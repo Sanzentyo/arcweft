@@ -104,7 +104,7 @@ pub(in crate::app) fn runtime_serve_selection(
     if routes.is_empty() {
         eprintln!(
             "error: server entry `{}` has no runnable routes",
-            entry.id.0
+            entry.id.public_label()
         );
         return Err(ExitCode::FAILURE);
     }
@@ -112,21 +112,23 @@ pub(in crate::app) fn runtime_serve_selection(
         if !plan.flows.iter().any(|flow| flow.id == route.target) {
             eprintln!(
                 "error: server route {} {} targets unknown flow `{}`",
-                route.method, route.path, route.target.0
+                route.method,
+                route.path,
+                route.target.public_label()
             );
             return Err(ExitCode::FAILURE);
         }
     }
     let report = ServePlanReport {
         status: "planned".to_owned(),
-        entry: entry.id.0.clone(),
+        entry: entry.id.public_label().into_string(),
         adapter: adapter.to_owned(),
         routes: routes
             .iter()
             .map(|route| ServeRouteReport {
                 method: route.method.clone(),
                 path: route.path.clone(),
-                target: route.target.0.clone(),
+                target: route.target.public_label().into_string(),
             })
             .collect(),
     };

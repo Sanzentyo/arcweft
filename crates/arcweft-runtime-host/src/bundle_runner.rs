@@ -497,9 +497,15 @@ fn apply_bundle_runner_entry_selection(
         return Err(BundleRunnerError::ConflictingEntrySelection);
     }
     if let Some(flow) = flow {
-        let flow = FlowRuntimeId(normalize_flow_id(flow));
+        let flow = FlowRuntimeId::from_runtime_target_value(&normalize_flow_id(flow)).map_err(
+            |error| BundleRunnerError::UnknownFlow {
+                flow: error.to_string(),
+            },
+        )?;
         if !plan.flows.iter().any(|candidate| candidate.id == flow) {
-            return Err(BundleRunnerError::UnknownFlow { flow: flow.0 });
+            return Err(BundleRunnerError::UnknownFlow {
+                flow: flow.public_label().into_string(),
+            });
         }
         plan.entry_flow = Some(flow);
         return Ok(());
@@ -509,7 +515,7 @@ fn apply_bundle_runner_entry_selection(
         let Some(spec) = plan
             .entries
             .iter()
-            .find(|candidate| candidate.id.0 == entry)
+            .find(|candidate| candidate.id.public_label().as_str() == entry)
         else {
             return Err(BundleRunnerError::UnknownEntry { entry });
         };
@@ -891,7 +897,7 @@ mod tests {
     };
     use arcweft_core::bytecode::BytecodeProgram;
     use arcweft_core::line_task::LineTaskGroup;
-    use arcweft_core::plan::{FlowOp, RuntimeFlow, RuntimeLineId};
+    use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId};
     use arcweft_render_text::LineDisplayCatalog;
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 
@@ -944,7 +950,8 @@ mod tests {
             step.flow_events.iter().any(|event| {
                 matches!(
                     event,
-                    FlowEvent::DialogueLine { line, .. } if line.0 == "line.opening"
+                    FlowEvent::DialogueLine { line, .. }
+                        if line.public_label().as_str() == "say.opening"
                 )
             })
         }));
@@ -1099,12 +1106,12 @@ mod tests {
 
     fn dialogue_bundle() -> ArcweftBundle {
         let plan = RuntimePlan::new(
-            Some(FlowRuntimeId("flow.main".to_owned())),
+            Some(flow_id("flow.main")),
             vec![RuntimeFlow {
-                id: FlowRuntimeId("flow.main".to_owned()),
+                id: flow_id("flow.main"),
                 ops: vec![
                     FlowOp::Dialogue {
-                        line: RuntimeLineId("line.opening".to_owned()),
+                        line: line_id("line.opening"),
                         task_group: 0,
                     },
                     FlowOp::Return("done".to_owned()),
@@ -1145,5 +1152,13 @@ mod tests {
             display,
         )
         .with_product_awbc(product_awbc)
+    }
+
+    fn flow_id(value: &str) -> FlowRuntimeId {
+        FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+    }
+
+    fn line_id(value: &str) -> RuntimeLineId {
+        RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
     }
 }

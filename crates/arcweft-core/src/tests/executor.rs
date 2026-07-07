@@ -6,7 +6,7 @@ use crate::executor::{
     VmExecutor,
 };
 use crate::plan::{
-    FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan, RuntimePureHelper, RuntimePureHelperId,
+    FlowOp, RuntimeFlow, RuntimePlan, RuntimePureHelper, RuntimePureHelperId,
     RuntimePureHelperOrigin, RuntimePureOutputType,
 };
 use crate::step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions};
@@ -16,9 +16,9 @@ use crate::value::{RuntimeExpr, RuntimeValue};
 #[test]
 fn aot_executor_matches_vm_executor_at_runtime_boundary() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![FlowOp::Return("done".to_owned())],
         }],
         Vec::new(),
@@ -43,9 +43,9 @@ fn aot_executor_matches_vm_executor_at_runtime_boundary() {
 #[test]
 fn aot_program_records_nested_dispatch_shape() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![
                 FlowOp::Noop,
                 FlowOp::If {
@@ -99,9 +99,9 @@ fn aot_program_records_nested_dispatch_shape() {
 #[test]
 fn aot_executor_uses_fast_path_for_supported_linear_flow() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![
                 FlowOp::Noop,
                 FlowOp::Effect(LineEffectRequest::Log(RuntimeLog {
@@ -133,17 +133,17 @@ fn aot_executor_uses_fast_path_for_supported_linear_flow() {
 #[test]
 fn aot_executor_falls_back_for_control_effect_flow() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![
             RuntimeFlow {
-                id: FlowRuntimeId("flow.main".to_owned()),
+                id: super::flow_id("flow.main"),
                 ops: vec![
                     FlowOp::Effect(LineEffectRequest::Goto("flow.next".to_owned())),
                     FlowOp::Return("unreachable".to_owned()),
                 ],
             },
             RuntimeFlow {
-                id: FlowRuntimeId("flow.next".to_owned()),
+                id: super::flow_id("flow.next"),
                 ops: vec![FlowOp::Return("done".to_owned())],
             },
         ],
@@ -169,9 +169,9 @@ fn aot_executor_falls_back_for_control_effect_flow() {
 #[test]
 fn aot_executor_falls_back_for_branching_flow() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![FlowOp::If {
                 condition: crate::value::RuntimeExpr::Value(crate::value::RuntimeValue::Bool(true)),
                 then_ops: vec![FlowOp::Return("then".to_owned())],
@@ -198,9 +198,9 @@ fn aot_executor_falls_back_for_branching_flow() {
 #[test]
 fn aot_executor_runs_mixed_flow_linear_prefix_before_vm_compatible_dispatch() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![
                 FlowOp::Noop,
                 FlowOp::If {
@@ -237,9 +237,9 @@ fn aot_executor_runs_mixed_flow_linear_prefix_before_vm_compatible_dispatch() {
 #[test]
 fn bytecode_program_roundtrips_runtime_plan_and_matches_vm_executor() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![
                 FlowOp::Noop,
                 FlowOp::Bind(Vec::new()),
@@ -275,9 +275,9 @@ fn bytecode_program_roundtrips_runtime_plan_and_matches_vm_executor() {
 #[test]
 fn runtime_executor_facade_matches_structured_vm_and_aot_boundaries() {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId("flow.main".to_owned())),
+        Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
-            id: FlowRuntimeId("flow.main".to_owned()),
+            id: super::flow_id("flow.main"),
             ops: vec![
                 FlowOp::Noop,
                 FlowOp::Effect(LineEffectRequest::Log(RuntimeLog {

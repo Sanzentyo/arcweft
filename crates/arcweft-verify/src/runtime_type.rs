@@ -91,7 +91,7 @@ enum RuntimeShape {
 struct RuntimeTypeValidator<'a> {
     plan: &'a RuntimePlan,
     types: &'a TypeCheckReport,
-    flow_ids: BTreeSet<&'a str>,
+    flow_ids: BTreeSet<String>,
     report: RuntimeTypeValidationReport,
 }
 
@@ -100,7 +100,11 @@ impl<'a> RuntimeTypeValidator<'a> {
         Self {
             plan,
             types,
-            flow_ids: plan.flows.iter().map(|flow| flow.id.0.as_str()).collect(),
+            flow_ids: plan
+                .flows
+                .iter()
+                .map(|flow| flow.id.canonical_label())
+                .collect(),
             report: RuntimeTypeValidationReport {
                 stats: RuntimeTypeValidationStats {
                     flows: plan.flows.len(),
@@ -162,13 +166,13 @@ impl<'a> RuntimeTypeValidator<'a> {
             match &entry.target {
                 RuntimeEntryTarget::Flow(flow) => {
                     self.report.stats.route_targets += 1;
-                    self.validate_flow_target(&format!("entry.{}", entry.id.0), flow);
+                    self.validate_flow_target(&entry.id.public_label().into_string(), flow);
                 }
                 RuntimeEntryTarget::Routes(routes) => {
                     for route in routes {
                         self.report.stats.route_targets += 1;
                         self.validate_flow_target(
-                            &format!("entry.{}.route.{}", entry.id.0, route.path),
+                            &format!("{}.route.{}", entry.id.public_label(), route.path),
                             &route.target,
                         );
                     }
@@ -178,7 +182,7 @@ impl<'a> RuntimeTypeValidator<'a> {
     }
 
     fn validate_flow(&mut self, flow: &RuntimeFlow) {
-        self.validate_ops(&format!("flow.{}", flow.id.0), &flow.ops);
+        self.validate_ops(flow.id.public_label().as_str(), &flow.ops);
     }
 
     fn validate_ops(&mut self, path: &str, ops: &[FlowOp]) {
@@ -686,10 +690,13 @@ impl<'a> RuntimeTypeValidator<'a> {
     }
 
     fn validate_flow_target(&mut self, path: &str, target: &FlowRuntimeId) {
-        if !self.flow_ids.contains(target.0.as_str()) {
+        if !self.flow_ids.contains(&target.canonical_label()) {
             self.error(
                 path,
-                format!("runtime flow target `{}` does not exist", target.0),
+                format!(
+                    "runtime flow target `{}` does not exist",
+                    target.public_label()
+                ),
             );
         }
     }
@@ -780,12 +787,16 @@ mod tests {
     };
     use arcweft_lang_sema::types::TypeKind;
 
+    fn flow_id(value: &str) -> FlowRuntimeId {
+        FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+    }
+
     #[test]
     fn runtime_type_validation_accepts_bool_conditions_and_existing_targets() {
         let plan = RuntimePlan {
-            entry_flow: Some(FlowRuntimeId("flow.main".to_owned())),
+            entry_flow: Some(flow_id("flow.main")),
             flows: vec![RuntimeFlow {
-                id: FlowRuntimeId("flow.main".to_owned()),
+                id: flow_id("flow.main"),
                 ops: vec![FlowOp::If {
                     condition: RuntimeExpr::Value(RuntimeValue::Bool(true)),
                     then_ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Value(
@@ -812,9 +823,9 @@ mod tests {
     #[test]
     fn runtime_type_validation_rejects_structural_type_conflicts() {
         let plan = RuntimePlan {
-            entry_flow: Some(FlowRuntimeId("flow.missing".to_owned())),
+            entry_flow: Some(flow_id("flow.missing")),
             flows: vec![RuntimeFlow {
-                id: FlowRuntimeId("flow.main".to_owned()),
+                id: flow_id("flow.main"),
                 ops: vec![
                     FlowOp::If {
                         condition: RuntimeExpr::Value(RuntimeValue::i64(1)),

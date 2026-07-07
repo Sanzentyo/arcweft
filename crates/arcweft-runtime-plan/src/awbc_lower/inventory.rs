@@ -207,8 +207,9 @@ impl AwbcInventory {
             return;
         }
         for spec in display.lines() {
-            let key = self.intern_string(spec.line.0.as_str());
-            let content = self.intern_content_unit(spec.line.0.as_str(), None);
+            let line = spec.line.public_label().into_string();
+            let key = self.intern_string(&line);
+            let content = self.intern_content_unit(&line, None);
             self.program.display_map.push(AwbcDisplayMapEntry {
                 content,
                 display_key: key,
@@ -957,7 +958,8 @@ impl AwbcInventory {
 
     pub fn lower_entries(&mut self, plan: &RuntimePlan) {
         for entry in &plan.entries {
-            let public_id = self.intern_string(&entry.id.0);
+            let entry_public_id = entry.id.public_label().into_string();
+            let public_id = self.intern_string(&entry_public_id);
             let kind = match &entry.kind {
                 RuntimeEntryKind::Game => AwbcEntryKind::Game,
                 RuntimeEntryKind::Cli => AwbcEntryKind::Cli,
@@ -970,13 +972,14 @@ impl AwbcInventory {
             let mut signature = self.intern_unit_signature();
             let target = match &entry.target {
                 RuntimeEntryTarget::Flow(flow) => {
-                    if let Some(function) = self.function_by_name(&flow.0) {
+                    let flow_public_id = flow.public_label().into_string();
+                    if let Some(function) = self.function_by_name(&flow_public_id) {
                         signature = self.program.functions[function.index()].signature;
                         AwbcEntryTarget::Function(function)
                     } else {
                         self.diagnostic(AwbcLowerDiagnostic::error(
-                            format!("entry.{}", entry.id.0),
-                            format!("entry targets missing flow {}", flow.0),
+                            entry_public_id.clone(),
+                            format!("entry targets missing flow {flow_public_id}"),
                         ));
                         AwbcEntryTarget::Function(AwbcFunctionId(0))
                     }
@@ -985,8 +988,9 @@ impl AwbcInventory {
                     let routes = routes
                         .iter()
                         .map(|route| {
+                            let target_public_id = route.target.public_label().into_string();
                             let target = self
-                                .function_by_name(&route.target.0)
+                                .function_by_name(&target_public_id)
                                 .unwrap_or(AwbcFunctionId(0));
                             signature = self.program.functions[target.index()].signature;
                             AwbcRoute {
@@ -1021,7 +1025,7 @@ impl AwbcInventory {
         }
         if self.program.entries.is_empty()
             && let Some(entry_flow) = plan.entry_flow.as_ref()
-            && let Some(function) = self.function_by_name(&entry_flow.0)
+            && let Some(function) = self.function_by_name(&entry_flow.public_label().into_string())
         {
             let public_id = self.intern_string("entry.main");
             let signature = self.program.functions[function.index()].signature;

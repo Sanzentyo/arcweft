@@ -1,5 +1,6 @@
 use crate::effect::{LineEffectRequest, RuntimeCall};
 use crate::engine::Engine;
+use crate::plan::{FlowRuntimeId, RuntimeLineId};
 use crate::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepOutput};
 use arcweft_interaction_model::{
     id::Identifier,
@@ -24,6 +25,14 @@ fn call(name: &str) -> LineEffectRequest {
         callee: name.to_owned(),
         args: Vec::new(),
     })
+}
+
+fn flow_id(value: &str) -> FlowRuntimeId {
+    FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+}
+
+fn line_id(value: &str) -> RuntimeLineId {
+    RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
 }
 
 fn runtime_step(engine: &mut Engine, input: RuntimeStepInput) -> RuntimeStepOutput {
