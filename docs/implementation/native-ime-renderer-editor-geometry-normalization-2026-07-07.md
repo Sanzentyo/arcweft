@@ -61,9 +61,20 @@ That record should be emitted from the native/player trace path after focused te
 
 ## Validation
 
-The code change was committed through the GitHub connector. Local validation could not be executed in this environment because `cargo`, `rustc`, and `rustfmt` are not available on `PATH`.
+The code change was committed through the GitHub connector. Local validation was attempted in this environment but failed before build/test execution because `cargo`, `rustc`, and `rustfmt` are not available on `PATH`.
 
-Intended focused validation commands:
+Attempted commands and blocker:
+
+```bash
+cargo test -p arcweft-render-wgpu text_editor_geometry --all-features
+# bash: cargo: command not found
+rustfmt --version
+# bash: rustfmt: command not found
+cargo fmt --all -- --check
+# bash: cargo: command not found
+```
+
+Intended focused validation commands for a Rust-equipped checkout:
 
 ```bash
 cargo test -p arcweft-render-wgpu text_editor_geometry --all-features
