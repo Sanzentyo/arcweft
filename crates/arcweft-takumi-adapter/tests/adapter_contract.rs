@@ -4,7 +4,7 @@ use arcweft_takumi_adapter::{
     ArcweftNodeMetadata, CssInvalidationClass, CssPropertyClass, TakumiCaptureFrame,
     TakumiCaptureRecord, TakumiDiagnosticCode, TakumiPath,
 };
-use arcweft_ui::{ContainerKind, FragmentKind, HandlerId, NodeId, NodeKey, StyleId};
+use arcweft_view::{ContainerKind, FragmentKind, HandlerId, NodeId, NodeKey, StyleId};
 
 #[test]
 fn capture_record_keeps_same_range_and_bounds_as_rendered_primitive() {

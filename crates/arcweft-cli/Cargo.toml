@@ -52,7 +52,7 @@ arcweft-rust-abi = { path = "../arcweft-rust-abi" }
 arcweft-source = { path = "../arcweft-source" }
 arcweft-test = { path = "../arcweft-test" }
 arcweft-tooling = { path = "../arcweft-tooling" }
-arcweft-ui = { path = "../arcweft-ui" }
+arcweft-view = { path = "../arcweft-view" }
 arcweft-verify = { path = "../arcweft-verify" }
 arcweft-verify-oxiz = { path = "../arcweft-verify-oxiz" }
 arcweft-verify-z3 = { path = "../arcweft-verify-z3" }

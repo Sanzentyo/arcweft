@@ -12,7 +12,7 @@ arcweft-layout.workspace = true
 arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-text-layout = { path = "../arcweft-text-layout" }
-arcweft-ui = { path = "../arcweft-ui" }
+arcweft-view = { path = "../arcweft-view" }
 bytemuck.workspace = true
 glyphon.workspace = true
 num-traits = "0.2.19"

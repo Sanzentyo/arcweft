@@ -1,9 +1,9 @@
 use arcweft_bundle::resource_codec::ui::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
-    UiInputOptions, UiInputPurpose, UiInputResource, UiLogicalRect, UiRuntimeTextControlBounds,
-    UiRuntimeTextSelection, UiSecureInputPolicy, UiTextResource, UiTextSelectionPolicy,
-    UiTextShortcutPolicy, UiTextSourceKind, UiTextSourceRecord, UiTextTabPolicy,
-    UiTextVerticalNavigationPolicy, ViewLayoutBoundsResource, ViewProgramResource,
+    UiInputOptions, UiInputPurpose, UiInputResource, UiLogicalRect, UiSecureInputPolicy,
+    UiTextResource, UiTextSelectionPolicy, UiTextShortcutPolicy, UiTextSourceKind,
+    UiTextSourceRecord, UiTextTabPolicy, UiTextVerticalNavigationPolicy, ViewLayoutBoundsResource,
+    ViewProgramResource, ViewRuntimeTextControlBounds, ViewRuntimeTextSelection,
     ViewSemanticTarget,
 };
 
@@ -62,12 +62,12 @@ fn ui_input_resource_emits_runtime_text_control_shape() {
     assert_eq!(control.target, "input.player_name");
     assert_ne!(control.session, 0);
     assert_eq!(control.value, "Ada");
-    assert_eq!(control.selection, UiRuntimeTextSelection::new(3, 3));
+    assert_eq!(control.selection, ViewRuntimeTextSelection::new(3, 3));
     assert_eq!(control.kind, UiInputKind::TextField);
     assert_eq!(control.label.as_deref(), Some("Player name"));
     assert_eq!(
         control.bounds,
-        UiRuntimeTextControlBounds::from_px(48, 48, 420, 48)
+        ViewRuntimeTextControlBounds::from_px(48, 48, 420, 48)
     );
 }
 
@@ -154,15 +154,15 @@ fn ui_input_resource_stacks_default_text_control_bounds_by_height() {
     assert_eq!(controls.len(), 3);
     assert_eq!(
         controls[0].bounds,
-        UiRuntimeTextControlBounds::from_px(48, 48, 420, 48)
+        ViewRuntimeTextControlBounds::from_px(48, 48, 420, 48)
     );
     assert_eq!(
         controls[1].bounds,
-        UiRuntimeTextControlBounds::from_px(48, 112, 420, 136)
+        ViewRuntimeTextControlBounds::from_px(48, 112, 420, 136)
     );
     assert_eq!(
         controls[2].bounds,
-        UiRuntimeTextControlBounds::from_px(48, 264, 420, 48)
+        ViewRuntimeTextControlBounds::from_px(48, 264, 420, 48)
     );
 }
 
@@ -225,15 +225,15 @@ fn ui_program_layout_bounds_override_stacked_runtime_text_control_fallback() {
 
     assert_eq!(
         controls[0].bounds,
-        UiRuntimeTextControlBounds::from_px(80, 64, 360, 48)
+        ViewRuntimeTextControlBounds::from_px(80, 64, 360, 48)
     );
     assert_eq!(
         controls[1].bounds,
-        UiRuntimeTextControlBounds::from_px(80, 128, 480, 136)
+        ViewRuntimeTextControlBounds::from_px(80, 128, 480, 136)
     );
     assert_eq!(
         program.semantic_target_bounds_for("input.body"),
-        Some(UiRuntimeTextControlBounds::from_px(80, 128, 480, 136))
+        Some(ViewRuntimeTextControlBounds::from_px(80, 128, 480, 136))
     );
 }
 

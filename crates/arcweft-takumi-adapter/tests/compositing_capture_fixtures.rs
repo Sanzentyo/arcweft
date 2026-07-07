@@ -4,7 +4,7 @@ use arcweft_takumi_adapter::{
     ArcweftNodeMetadata, TakumiCaptureFrame, TakumiCompositingCaptureRecord,
     TakumiCompositingGroupId, TakumiEffectOutsets, TakumiPaintNodeId,
 };
-use arcweft_ui::{ContainerKind, FragmentKind, HandlerId, NodeId, NodeKey, StyleId};
+use arcweft_view::{ContainerKind, FragmentKind, HandlerId, NodeId, NodeKey, StyleId};
 
 const EXPECTED_EVIDENCE: &str = include_str!("fixtures/compositing-capture/expected-evidence.json");
 const SCENE_CSS: &str = include_str!("fixtures/compositing-capture/scene.css");

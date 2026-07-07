@@ -8,7 +8,7 @@ use arcweft_presentation::layer::{
 };
 use arcweft_presentation::semantic::SemanticRole;
 use arcweft_runtime_host::UiFrameCommitBuilder;
-use arcweft_ui::{
+use arcweft_view::{
     EventBinding, EventKind, FragmentKind, HandlerId, LayoutBox, LayoutLength, LayoutPoint,
     LayoutResults, LayoutSize, LayoutTree, NodeKey, Rgba8, RichTextSourceId, SemanticSpecId,
     StyleId, UiInteractionSelector, UiLayerOutput, UiPropertyKind, UiPropertyValue,

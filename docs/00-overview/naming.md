@@ -95,7 +95,7 @@ crate は `arcweft-` prefix を使う。
 arcweft-core
 arcweft-lang-syntax
 arcweft-render
-arcweft-ui-core
+arcweft-view-core
 arcweft-shader-core
 arcweft-audio-core
 arcweft-agent-mcp

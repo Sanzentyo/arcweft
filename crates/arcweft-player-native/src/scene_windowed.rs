@@ -498,7 +498,8 @@ impl ApplicationHandler for NativeSceneApp {
             WindowEvent::PointerButton {
                 state: element_state,
                 button:
-                    button @ (ButtonSource::Mouse(MouseButton::Left) | ButtonSource::Touch { .. }),
+                    button @ (ButtonSource::Mouse(MouseButton::Left | MouseButton::Right)
+                    | ButtonSource::Touch { .. }),
                 position,
                 ..
             } => state.pointer_button(&button, element_state, position),
@@ -831,9 +832,18 @@ impl NativeSceneState {
         };
         let pointer = pointer_id(button);
         let position = self.logical_position(position);
+        let modifiers = arcweft_player_scene::input::InputPointerModifiers::new(
+            self.keyboard_modifiers.shift_key(),
+        );
         let outcome = match element_state {
-            ElementState::Pressed => self.input.pointer_down(&frame, pointer, position),
-            ElementState::Released => self.input.pointer_up(&frame, pointer, position),
+            ElementState::Pressed if button.clone().mouse_button() == Some(MouseButton::Right) => {
+                self.input
+                    .pointer_context_menu(&frame, pointer, position, modifiers)
+            }
+            ElementState::Pressed => self
+                .input
+                .pointer_down(&frame, pointer, position, modifiers),
+            ElementState::Released => self.input.pointer_up(&frame, pointer, position, modifiers),
         };
         self.apply_outcome(outcome)?;
         let prepared = self.prepare_frame()?;
@@ -912,9 +922,15 @@ impl NativeSceneState {
             return Some(TextInputOperation::Command(command));
         }
         match &event.logical_key {
+            Key::Named(NamedKey::Backspace) if modifiers.control_key() || modifiers.alt_key() => {
+                Some(TextInputOperation::Command(TextEditCommand::DeleteWordLeft))
+            }
             Key::Named(NamedKey::Backspace) => {
                 Some(TextInputOperation::Command(TextEditCommand::Backspace))
             }
+            Key::Named(NamedKey::Delete) if modifiers.control_key() || modifiers.alt_key() => Some(
+                TextInputOperation::Command(TextEditCommand::DeleteWordRight),
+            ),
             Key::Named(NamedKey::Delete) => {
                 Some(TextInputOperation::Command(TextEditCommand::Delete))
             }
@@ -934,13 +950,31 @@ impl NativeSceneState {
                     selecting,
                 }))
             }
-            Key::Named(NamedKey::Home) => Some(TextInputOperation::Command(
-                TextEditCommand::MoveLineStart { selecting },
-            )),
-            Key::Named(NamedKey::End) => {
-                Some(TextInputOperation::Command(TextEditCommand::MoveLineEnd {
+            Key::Named(NamedKey::PageUp) => {
+                Some(TextInputOperation::Command(TextEditCommand::MovePageUp {
                     selecting,
                 }))
+            }
+            Key::Named(NamedKey::PageDown) => {
+                Some(TextInputOperation::Command(TextEditCommand::MovePageDown {
+                    selecting,
+                }))
+            }
+            Key::Named(NamedKey::Home) => {
+                let command = if modifiers.control_key() || modifiers.meta_key() {
+                    TextEditCommand::MoveDocumentStart { selecting }
+                } else {
+                    TextEditCommand::MoveLineStart { selecting }
+                };
+                Some(TextInputOperation::Command(command))
+            }
+            Key::Named(NamedKey::End) => {
+                let command = if modifiers.control_key() || modifiers.meta_key() {
+                    TextEditCommand::MoveDocumentEnd { selecting }
+                } else {
+                    TextEditCommand::MoveLineEnd { selecting }
+                };
+                Some(TextInputOperation::Command(command))
             }
             Key::Named(NamedKey::Tab) if editor.options().tab_inserts_text() => {
                 Some(TextInputOperation::Commit(TextCommit::new("\t")))

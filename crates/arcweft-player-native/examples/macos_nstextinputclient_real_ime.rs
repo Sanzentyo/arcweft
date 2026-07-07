@@ -433,6 +433,8 @@ mod app {
             "moveWordRight:" => Some(TextEditCommand::MoveWordRight { selecting: false }),
             "moveToBeginningOfLine:" => Some(TextEditCommand::MoveLineStart { selecting: false }),
             "moveToEndOfLine:" => Some(TextEditCommand::MoveLineEnd { selecting: false }),
+            "pageUp:" => Some(TextEditCommand::MovePageUp { selecting: false }),
+            "pageDown:" => Some(TextEditCommand::MovePageDown { selecting: false }),
             "moveLeftAndModifySelection:" => Some(TextEditCommand::MoveLeft { selecting: true }),
             "moveRightAndModifySelection:" => Some(TextEditCommand::MoveRight { selecting: true }),
             "moveWordLeftAndModifySelection:" => {
@@ -446,6 +448,10 @@ mod app {
             }
             "moveToEndOfLineAndModifySelection:" => {
                 Some(TextEditCommand::MoveLineEnd { selecting: true })
+            }
+            "pageUpAndModifySelection:" => Some(TextEditCommand::MovePageUp { selecting: true }),
+            "pageDownAndModifySelection:" => {
+                Some(TextEditCommand::MovePageDown { selecting: true })
             }
             "selectAll:" => Some(TextEditCommand::SelectAll),
             "insertNewline:" => Some(TextEditCommand::Submit),

@@ -17,7 +17,7 @@ arcweft-interaction-model = { path = "../arcweft-interaction-model" }
 arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-runtime-accelerator = { path = "../arcweft-runtime-accelerator" }
 arcweft-runtime-scheduler = { path = "../arcweft-runtime-scheduler" }
-arcweft-ui = { path = "../arcweft-ui" }
+arcweft-view = { path = "../arcweft-view" }
 num_cpus.workspace = true
 rayon.workspace = true
 serde.workspace = true

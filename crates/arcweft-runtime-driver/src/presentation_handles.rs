@@ -1,7 +1,7 @@
 use arcweft_bundle::BundleImageObject;
 use arcweft_bundle::resource_codec::{
-    UiRuntimeTextControl, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
-    ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeTextBlock,
+    ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
+    ViewRuntimeScrollRegion, ViewRuntimeTextBlock, ViewRuntimeTextControl,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use serde::{Deserialize, Serialize};
@@ -582,9 +582,9 @@ pub(crate) fn apply_presentation_image_handles(
 }
 
 pub(crate) fn filter_presentation_text_inputs(
-    controls: Vec<UiRuntimeTextControl>,
+    controls: Vec<ViewRuntimeTextControl>,
     handles: &[PresentationHandleRecord],
-) -> Vec<UiRuntimeTextControl> {
+) -> Vec<ViewRuntimeTextControl> {
     controls
         .into_iter()
         .filter(|control| {

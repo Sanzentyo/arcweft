@@ -5,7 +5,7 @@ use arcweft_presentation::interaction::{FocusState, InteractionState};
 use arcweft_presentation::layer::LayerId;
 use arcweft_presentation::semantic::SemanticRole;
 use arcweft_render_wgpu::ui::UiPaintPlan;
-use arcweft_ui::{
+use arcweft_view::{
     FragmentKind, LayoutBox, LayoutLength, LayoutPoint, LayoutResults, LayoutSize, LayoutTree,
     Milli, NodeKey, Rgba8, RichTextSourceId, SemanticSpecId, StyleId, UiInteractionSelector,
     UiPropertyKind, UiPropertyValue, UiSemanticFragmentBuilder, UiSemanticNode, UiStyle,
@@ -43,7 +43,7 @@ fn resolved_focus_style_lowers_to_background_and_outline_rectangles() {
             ),
         )
         .unwrap();
-    let display = arcweft_ui::DisplayList::from_fragment(&fragment, &layouts).unwrap();
+    let display = arcweft_view::DisplayList::from_fragment(&fragment, &layouts).unwrap();
     let mut semantics = UiSemanticFragmentBuilder::default();
     semantics
         .push(UiSemanticNode::new(

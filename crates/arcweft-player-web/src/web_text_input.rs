@@ -53,6 +53,14 @@ pub enum WebTextInputApiSupportLabel {
     UnsupportedNoFallback,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebTextInputCommandIntent {
+    name: &'static str,
+    selecting: bool,
+    suppressed_during_composition: bool,
+}
+
 #[cfg_attr(test, derive(Debug, PartialEq))]
 #[cfg(target_arch = "wasm32")]
 struct TextUpdatePayload {
@@ -118,6 +126,96 @@ impl From<WebTextInputApiSupport> for WebTextInputApiSupportLabel {
             WebTextInputApiSupport::UnsupportedNoFallback => Self::UnsupportedNoFallback,
         }
     }
+}
+
+impl WebTextInputCommandIntent {
+    pub const fn new(name: &'static str) -> Self {
+        Self {
+            name,
+            selecting: false,
+            suppressed_during_composition: false,
+        }
+    }
+
+    pub const fn selecting(mut self, selecting: bool) -> Self {
+        self.selecting = selecting;
+        self
+    }
+
+    pub const fn suppressed_during_composition(mut self) -> Self {
+        self.suppressed_during_composition = true;
+        self
+    }
+
+    pub const fn name(&self) -> &'static str {
+        self.name
+    }
+
+    pub const fn is_selecting(&self) -> bool {
+        self.selecting
+    }
+
+    pub const fn suppressed(&self) -> bool {
+        self.suppressed_during_composition
+    }
+}
+
+pub fn command_intent_for_key_event(
+    key: &str,
+    ctrl_key: bool,
+    meta_key: bool,
+    alt_key: bool,
+    shift_key: bool,
+) -> Option<WebTextInputCommandIntent> {
+    let shortcut = meta_key || ctrl_key;
+    if shortcut && !alt_key {
+        match key.to_ascii_lowercase().as_str() {
+            "a" => {
+                return Some(
+                    WebTextInputCommandIntent::new("select_all").suppressed_during_composition(),
+                );
+            }
+            "c" => {
+                return Some(
+                    WebTextInputCommandIntent::new("copy").suppressed_during_composition(),
+                );
+            }
+            "x" => {
+                return Some(WebTextInputCommandIntent::new("cut").suppressed_during_composition());
+            }
+            "v" => {
+                return Some(
+                    WebTextInputCommandIntent::new("paste").suppressed_during_composition(),
+                );
+            }
+            _ => {}
+        }
+    }
+    let selecting = shift_key;
+    let name = match key {
+        "ArrowLeft" if alt_key || ctrl_key => "move_word_left",
+        "ArrowLeft" => "move_left",
+        "ArrowRight" if alt_key || ctrl_key => "move_word_right",
+        "ArrowRight" => "move_right",
+        "ArrowUp" => "move_up",
+        "ArrowDown" => "move_down",
+        "Home" if shortcut => "move_document_start",
+        "Home" => "move_line_start",
+        "End" if shortcut => "move_document_end",
+        "End" => "move_line_end",
+        "PageUp" => "move_page_up",
+        "PageDown" => "move_page_down",
+        "Backspace" if alt_key || ctrl_key => "delete_word_left",
+        "Backspace" => "backspace",
+        "Delete" if alt_key || ctrl_key => "delete_word_right",
+        "Delete" => "delete",
+        "Enter" => "submit",
+        "Escape" => {
+            return Some(WebTextInputCommandIntent::new("cancel").suppressed_during_composition());
+        }
+        _ => return None,
+    };
+    Some(WebTextInputCommandIntent::new(name).selecting(selecting))
 }
 
 /// Returns the player-owned status for a feature-detection result.
@@ -200,6 +298,47 @@ pub fn arcweft_web_text_input_runtime_dispatch_command(
 }
 
 #[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn arcweft_web_text_input_create_edit_context(
+    initial_text: String,
+    secure: bool,
+) -> Result<JsValue, JsValue> {
+    let window = web_sys::window()
+        .ok_or_else(|| JsValue::from_str("Web EditContext is unavailable: window missing"))?;
+    let constructor = js_sys::Reflect::get(&window, &JsValue::from_str("EditContext"))?;
+    if !constructor.is_function() {
+        return Err(JsValue::from_str(
+            "Web EditContext is unavailable: constructor missing",
+        ));
+    }
+    let options = js_sys::Object::new();
+    set_str(
+        &options,
+        "text",
+        if secure { "" } else { initial_text.as_str() },
+    );
+    let args = js_sys::Array::new();
+    args.push(&options);
+    let constructor: js_sys::Function = constructor.unchecked_into();
+    js_sys::Reflect::construct(&constructor, &args)
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn arcweft_web_text_input_command_for_key_event(
+    key: String,
+    ctrl_key: bool,
+    meta_key: bool,
+    alt_key: bool,
+    shift_key: bool,
+) -> Result<JsValue, JsValue> {
+    Ok(
+        command_intent_for_key_event(&key, ctrl_key, meta_key, alt_key, shift_key)
+            .map_or(JsValue::NULL, command_intent_to_js),
+    )
+}
+
+#[cfg(target_arch = "wasm32")]
 fn element_by_id(host_id: &str) -> Result<web_sys::Element, JsValue> {
     web_sys::window()
         .and_then(|window| window.document())
@@ -279,6 +418,15 @@ fn dispatch_status_to_js(status: WebRuntimeTextInputDispatchStatus) -> Result<Js
 }
 
 #[cfg(target_arch = "wasm32")]
+fn command_intent_to_js(intent: WebTextInputCommandIntent) -> JsValue {
+    let object = js_sys::Object::new();
+    set_str(&object, "name", intent.name());
+    set_bool(&object, "selecting", intent.is_selecting());
+    set_bool(&object, "suppressedDuringComposition", intent.suppressed());
+    object.into()
+}
+
+#[cfg(target_arch = "wasm32")]
 fn status_kind_label(kind: PlayerTextInputStatusKind) -> &'static str {
     match kind {
         PlayerTextInputStatusKind::Disabled => "disabled",
@@ -347,5 +495,23 @@ mod tests {
 
         assert_eq!(status.state(), PlayerTextInputStatusKind::Disabled);
         assert!(!status.fallback_installed());
+    }
+
+    #[test]
+    fn key_event_command_intent_is_owned_by_rust() {
+        assert_eq!(
+            command_intent_for_key_event("ArrowLeft", true, false, false, true).unwrap(),
+            WebTextInputCommandIntent::new("move_word_left").selecting(true)
+        );
+        assert_eq!(
+            command_intent_for_key_event("PageDown", false, false, false, false).unwrap(),
+            WebTextInputCommandIntent::new("move_page_down")
+        );
+        assert!(
+            command_intent_for_key_event("c", true, false, false, false)
+                .unwrap()
+                .suppressed()
+        );
+        assert!(command_intent_for_key_event("z", false, false, false, false).is_none());
     }
 }

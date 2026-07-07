@@ -656,7 +656,7 @@ test @test.layer_order_opening visual {
 1. `arcweft-layer-core`: `LayerId`, `LayerTree`, `LayerNode`, `LayerOrder`, `LayerInputPolicy`。
 2. `arcweft-layer-render`: `RenderSpec` を `LayerTree + LayerContent` に更新し、render ordering を実装。
 3. `arcweft-layer-input`: hit-test、InputRoutingTable、LayerInputEvent、focus、modal trap。
-4. `arcweft-ui-render`: UI layout から HitRegion を生成。
+4. `arcweft-view-render`: View layout から HitRegion を生成。
 5. `arcweft-agent-observe`: Observation に layers と hit-test endpoint を追加。
 6. `arcweft-test`: layer assertion / hit-test assertion を追加。
 7. `arcweft-replay`: routed input + routing_hash を記録。

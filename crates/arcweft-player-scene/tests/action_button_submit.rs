@@ -1,10 +1,10 @@
 use arcweft_bundle::resource_codec::ui::{
-    UiRuntimeControlStyle, ViewActionPayloadResource, ViewActionTextControlPayloadField,
-    ViewRuntimeActionButton, ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds,
+    ViewActionPayloadResource, ViewActionTextControlPayloadField, ViewRuntimeActionButton,
+    ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds, ViewRuntimeControlStyle,
 };
 use arcweft_id::PublicId;
 use arcweft_player_scene::action_buttons::RuntimeActionButtonLowerer;
-use arcweft_player_scene::input::InputController;
+use arcweft_player_scene::input::{InputController, InputPointerModifiers};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::{InteractionTarget, KeyPhase, PointerId, ViewportPoint};
 use arcweft_presentation::semantic::SemanticRole;
@@ -112,8 +112,8 @@ fn pointer_activation_on_action_button_emits_semantic_action() {
     input.activate_text_control(&scene.text_inputs[0]).unwrap();
     let position = ViewportPoint::new(500.0, 60.0);
 
-    input.pointer_down(&frame, PointerId(0), position);
-    let outcome = input.pointer_up(&frame, PointerId(0), position);
+    input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+    let outcome = input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
 
     assert!(outcome.text_control_write_backs().is_empty());
     assert_eq!(outcome.actions().len(), 1);
@@ -136,8 +136,8 @@ fn pointer_activation_on_noop_button_does_not_emit_action_or_write_back() {
     input.activate_text_control(&scene.text_inputs[0]).unwrap();
     let position = ViewportPoint::new(500.0, 60.0);
 
-    input.pointer_down(&frame, PointerId(0), position);
-    let outcome = input.pointer_up(&frame, PointerId(0), position);
+    input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+    let outcome = input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
 
     assert!(outcome.actions().is_empty());
     assert!(outcome.text_control_write_backs().is_empty());
@@ -151,8 +151,8 @@ fn pointer_activation_on_action_invoke_button_emits_semantic_action() {
     let mut input = InputController::default();
     let position = ViewportPoint::new(64.0, 64.0);
 
-    input.pointer_down(&frame, PointerId(0), position);
-    let outcome = input.pointer_up(&frame, PointerId(0), position);
+    input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+    let outcome = input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
 
     assert!(outcome.text_control_write_backs().is_empty());
     assert_eq!(outcome.actions().len(), 1);
@@ -194,7 +194,7 @@ fn runtime_action_invoke_payload_reads_text_control_projection() {
                     field: ViewActionTextControlPayloadField::Text,
                 }),
             },
-            style: UiRuntimeControlStyle::default(),
+            style: ViewRuntimeControlStyle::default(),
         }],
         &text_inputs,
     )
@@ -220,7 +220,7 @@ fn runtime_action_invoke_payload_reads_text_control_projection() {
                     value: "input.visitor_name.text".to_owned(),
                 }),
             },
-            style: UiRuntimeControlStyle::default(),
+            style: ViewRuntimeControlStyle::default(),
         }],
         &text_inputs,
     )

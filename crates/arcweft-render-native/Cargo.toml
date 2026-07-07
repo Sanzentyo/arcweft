@@ -11,7 +11,7 @@ arcweft-core = { path = "../arcweft-core" }
 arcweft-glyphon = { path = "../arcweft-glyphon" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-text-layout = { path = "../arcweft-text-layout" }
-arcweft-ui = { path = "../arcweft-ui" }
+arcweft-view = { path = "../arcweft-view" }
 
 bytemuck.workspace = true
 glyphon.workspace = true

@@ -5,7 +5,7 @@ use crate::resource_codec::kind::ProductSectionCodecKind;
 use serde::{Deserialize, Serialize};
 
 use super::model::{
-    UiInputResource, UiStyleResource, UiTextResource, UiThemeResource, ViewProgramResource,
+    UiInputResource, UiTextResource, UiThemeResource, ViewProgramResource, ViewStyleResource,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -61,8 +61,8 @@ pub fn migrated_ui_section_compatibility(
             Ok(Some(old.compatibility_with(&new).patch_compatibility()))
         }
         ProductSectionCodecKind::UiStyle => {
-            let old = UiStyleResource::decode_canonical_section(old_bytes)?;
-            let new = UiStyleResource::decode_canonical_section(new_bytes)?;
+            let old = ViewStyleResource::decode_canonical_section(old_bytes)?;
+            let new = ViewStyleResource::decode_canonical_section(new_bytes)?;
             Ok(Some(old.compatibility_with(&new).patch_compatibility()))
         }
         ProductSectionCodecKind::UiText => {

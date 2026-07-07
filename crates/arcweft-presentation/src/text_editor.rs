@@ -139,6 +139,8 @@ enum TextEditorVerticalDirection {
     Down,
 }
 
+const LOGICAL_PAGE_LINE_STEP: usize = 10;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct TextEditorVisualLine {
     start: usize,
@@ -396,6 +398,55 @@ impl TextEditorState {
         self.move_caret_to(caret, selecting)
     }
 
+    /// Selects the shared word-like run at a renderer/platform hit-test offset.
+    pub fn select_word_at_text_offset(
+        &mut self,
+        offset: TextByteOffset,
+        selecting: bool,
+    ) -> Result<(), TextEditorError> {
+        let range = self.index()?.word_range_at(offset)?;
+        self.select_text_range(range, selecting)
+    }
+
+    /// Selects the logical line containing a renderer/platform hit-test offset.
+    pub fn select_line_at_text_offset(
+        &mut self,
+        offset: TextByteOffset,
+        selecting: bool,
+    ) -> Result<(), TextEditorError> {
+        let offset = self.index()?.validate_byte_offset(offset)?;
+        let range = TextRange::new(self.line_start_for(offset)?, self.line_end_for(offset)?);
+        self.select_text_range(range, selecting)
+    }
+
+    /// Moves selected text to a renderer/platform hit-test offset.
+    pub fn move_selection_to_text_offset(
+        &mut self,
+        offset: TextByteOffset,
+    ) -> Result<bool, TextEditorError> {
+        let index = self.index()?;
+        let offset = index.validate_byte_offset(offset)?;
+        if !self.options.selection_enabled() || self.selection_is_collapsed() {
+            self.move_caret_to(offset, false)?;
+            return Ok(false);
+        }
+        let selection = self.selection;
+        if offset.0 >= selection.start().0 && offset.0 <= selection.end().0 {
+            return Ok(false);
+        }
+        let selected = index.slice_byte_range(selection)?.to_owned();
+        let selected_len = selection.end().0.saturating_sub(selection.start().0);
+        self.replace_range(selection, "")?;
+        let adjusted = if offset.0 > selection.end().0 {
+            TextByteOffset(offset.0.saturating_sub(selected_len))
+        } else {
+            offset
+        };
+        let inserted = self.replace_range(TextRange::new(adjusted, adjusted), &selected)?;
+        self.select_text_range(inserted, false)?;
+        Ok(true)
+    }
+
     /// Builds fresh client and geometry snapshots from the current state and
     /// renderer layout data.
     pub fn snapshots(
@@ -583,8 +634,24 @@ impl TextEditorState {
             TextEditCommand::MoveWordRight { selecting } => self.move_word_right(selecting),
             TextEditCommand::MoveLineStart { selecting } => self.move_line_start(selecting),
             TextEditCommand::MoveLineEnd { selecting } => self.move_line_end(selecting),
+            TextEditCommand::MoveDocumentStart { selecting } => self.move_document_start(selecting),
+            TextEditCommand::MoveDocumentEnd { selecting } => self.move_document_end(selecting),
+            TextEditCommand::MovePageUp { selecting } => {
+                self.move_page_up_with_layout(selecting, layout)
+            }
+            TextEditCommand::MovePageDown { selecting } => {
+                self.move_page_down_with_layout(selecting, layout)
+            }
             TextEditCommand::Backspace => self.backspace(),
             TextEditCommand::Delete => self.delete_forward(),
+            TextEditCommand::DeleteWordLeft => self.delete_word_left(),
+            TextEditCommand::DeleteWordRight => self.delete_word_right(),
+            TextEditCommand::SelectWord => self
+                .select_word_at_text_offset(self.caret, false)
+                .map(|()| TextEditorOutput::None),
+            TextEditCommand::SelectLine => self
+                .select_line_at_text_offset(self.caret, false)
+                .map(|()| TextEditorOutput::None),
             TextEditCommand::SelectAll => self.select_all(),
             TextEditCommand::Copy => self.copy_selection(clipboard),
             TextEditCommand::Cut => self.cut_selection(clipboard),
@@ -726,6 +793,86 @@ impl TextEditorState {
         Ok(TextEditorOutput::None)
     }
 
+    fn move_document_start(
+        &mut self,
+        selecting: bool,
+    ) -> Result<TextEditorOutput, TextEditorError> {
+        self.move_caret_to(TextByteOffset(0), selecting)?;
+        Ok(TextEditorOutput::None)
+    }
+
+    fn move_document_end(&mut self, selecting: bool) -> Result<TextEditorOutput, TextEditorError> {
+        let caret = self.index()?.len_bytes();
+        self.move_caret_to(caret, selecting)?;
+        Ok(TextEditorOutput::None)
+    }
+
+    fn move_page_up_with_layout(
+        &mut self,
+        selecting: bool,
+        layout: Option<&TextEditorLayout>,
+    ) -> Result<TextEditorOutput, TextEditorError> {
+        if let Some(layout) = layout
+            && self.options.visual_line_vertical_navigation_enabled()
+            && self.move_visual_page(layout, selecting, TextEditorVerticalDirection::Up)?
+        {
+            return Ok(TextEditorOutput::None);
+        }
+        self.move_logical_page(selecting, TextEditorVerticalDirection::Up)
+    }
+
+    fn move_page_down_with_layout(
+        &mut self,
+        selecting: bool,
+        layout: Option<&TextEditorLayout>,
+    ) -> Result<TextEditorOutput, TextEditorError> {
+        if let Some(layout) = layout
+            && self.options.visual_line_vertical_navigation_enabled()
+            && self.move_visual_page(layout, selecting, TextEditorVerticalDirection::Down)?
+        {
+            return Ok(TextEditorOutput::None);
+        }
+        self.move_logical_page(selecting, TextEditorVerticalDirection::Down)
+    }
+
+    fn move_visual_page(
+        &mut self,
+        layout: &TextEditorLayout,
+        selecting: bool,
+        direction: TextEditorVerticalDirection,
+    ) -> Result<bool, TextEditorError> {
+        if !layout.supports_visual_vertical_navigation() {
+            return Ok(false);
+        }
+        let index = self.index()?;
+        let preferred_x = self.preferred_visual_x.unwrap_or_else(|| {
+            layout
+                .caret_rect_for_offset(self.caret, &index)
+                .map_or(layout.text_local_control_rect.x, |rect| rect.x)
+        });
+        let Some(target) = layout.visual_page_target(self.caret, preferred_x, direction, &index)?
+        else {
+            return Ok(false);
+        };
+        self.move_caret_to(target, selecting)?;
+        self.preferred_visual_x = Some(preferred_x);
+        Ok(true)
+    }
+
+    fn move_logical_page(
+        &mut self,
+        selecting: bool,
+        direction: TextEditorVerticalDirection,
+    ) -> Result<TextEditorOutput, TextEditorError> {
+        for _ in 0..LOGICAL_PAGE_LINE_STEP {
+            match direction {
+                TextEditorVerticalDirection::Up => self.move_up(selecting)?,
+                TextEditorVerticalDirection::Down => self.move_down(selecting)?,
+            };
+        }
+        Ok(TextEditorOutput::None)
+    }
+
     fn backspace(&mut self) -> Result<TextEditorOutput, TextEditorError> {
         if !self.selection_is_collapsed() {
             self.delete_selection()?;
@@ -748,6 +895,28 @@ impl TextEditorState {
         let end = index.next_grapheme_boundary(self.caret)?;
         let range = TextRange::new(self.caret, end);
         self.replace_range(range, "")?;
+        self.move_caret_to(self.caret, false)?;
+        Ok(TextEditorOutput::None)
+    }
+
+    fn delete_word_left(&mut self) -> Result<TextEditorOutput, TextEditorError> {
+        if !self.selection_is_collapsed() {
+            self.delete_selection()?;
+            return Ok(TextEditorOutput::None);
+        }
+        let start = self.index()?.previous_word_boundary(self.caret)?;
+        self.replace_range(TextRange::new(start, self.caret), "")?;
+        self.move_caret_to(start, false)?;
+        Ok(TextEditorOutput::None)
+    }
+
+    fn delete_word_right(&mut self) -> Result<TextEditorOutput, TextEditorError> {
+        if !self.selection_is_collapsed() {
+            self.delete_selection()?;
+            return Ok(TextEditorOutput::None);
+        }
+        let end = self.index()?.next_word_boundary(self.caret)?;
+        self.replace_range(TextRange::new(self.caret, end), "")?;
         self.move_caret_to(self.caret, false)?;
         Ok(TextEditorOutput::None)
     }
@@ -878,6 +1047,36 @@ impl TextEditorState {
             self.selection = TextRange::new(caret, caret);
             self.selection_anchor = caret;
             self.caret = caret;
+        }
+        self.preferred_visual_x = None;
+        self.revision = self.revision.next();
+        Ok(())
+    }
+
+    fn select_text_range(
+        &mut self,
+        range: TextRange<TextByteOffset>,
+        selecting: bool,
+    ) -> Result<(), TextEditorError> {
+        let range = self.index()?.validate_byte_range(range)?;
+        if !self.options.selection_enabled() {
+            let caret = *range.end();
+            self.selection = TextRange::new(caret, caret);
+            self.selection_anchor = caret;
+            self.caret = caret;
+        } else if selecting {
+            let anchor = self.selection_anchor;
+            if anchor.0 <= range.start().0 {
+                self.selection = TextRange::new(anchor, *range.end());
+                self.caret = *range.end();
+            } else {
+                self.selection = TextRange::new(*range.start(), anchor);
+                self.caret = *range.start();
+            }
+        } else {
+            self.selection = range;
+            self.selection_anchor = *range.start();
+            self.caret = *range.end();
         }
         self.preferred_visual_x = None;
         self.revision = self.revision.next();
@@ -1187,6 +1386,47 @@ impl TextEditorLayout {
             TextEditorVerticalDirection::Down => {
                 self.horizontal_line_offset_for_x(lines[current + 1], preferred_x, index)?
             }
+        };
+        Ok(Some(target))
+    }
+
+    fn visual_page_target(
+        &self,
+        caret: TextByteOffset,
+        preferred_x: f32,
+        direction: TextEditorVerticalDirection,
+        index: &TextIndexSnapshot,
+    ) -> Result<Option<TextByteOffset>, TextEditorLayoutError> {
+        let lines = self.horizontal_visual_lines();
+        if lines.is_empty() {
+            return Ok(None);
+        }
+        let caret_rect = self.caret_rect_for_offset(caret, index)?;
+        let current = current_horizontal_visual_line(&lines, caret_rect);
+        let line_height = lines
+            .iter()
+            .map(|line| line.bottom - line.top)
+            .filter(|height| height.is_finite() && *height > 0.0)
+            .fold(self.line_height.max(1.0), f32::max);
+        let page_lines = visual_page_line_count(
+            self.text_local_control_rect.height,
+            line_height,
+            lines.len(),
+        );
+        let step = page_lines.saturating_sub(1).max(1);
+        let target_line = match direction {
+            TextEditorVerticalDirection::Up => current.saturating_sub(step),
+            TextEditorVerticalDirection::Down => current
+                .saturating_add(step)
+                .min(lines.len().saturating_sub(1)),
+        };
+        let target = if target_line == current {
+            match direction {
+                TextEditorVerticalDirection::Up => TextByteOffset(0),
+                TextEditorVerticalDirection::Down => index.len_bytes(),
+            }
+        } else {
+            self.horizontal_line_offset_for_x(lines[target_line], preferred_x, index)?
         };
         Ok(Some(target))
     }
@@ -1534,6 +1774,19 @@ fn current_horizontal_visual_line(lines: &[TextEditorVisualLine], caret_rect: Hi
                 })
                 .map_or(0, |(index, _)| index)
         })
+}
+
+fn visual_page_line_count(control_height: f32, line_height: f32, line_count: usize) -> usize {
+    if !control_height.is_finite() || !line_height.is_finite() || line_height <= 0.0 {
+        return 1;
+    }
+    let mut covered = line_height;
+    let mut count = 1_usize;
+    while count < line_count && covered + line_height <= control_height {
+        covered += line_height;
+        count = count.saturating_add(1);
+    }
+    count
 }
 
 fn vertical_distance_to_line(y: f32, line: &TextEditorVisualLine) -> f32 {

@@ -1,4 +1,4 @@
-use arcweft_ui::{
+use arcweft_view::{
     Milli, Rgba8, UiEasingFunction, UiKeyframe, UiKeyframeTrack, UiPropertyKind, UiPropertyValue,
     UiReducedMotionPolicy, UiTimelineMillis, UiTransition, UiTransitionSpec,
 };

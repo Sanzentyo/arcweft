@@ -5,7 +5,7 @@ use arcweft_takumi_adapter::{
     TakumiCaptureRecord, TakumiCompositingCaptureRecord, TakumiCompositingGroupId,
     TakumiEffectOutsets, TakumiPaintNodeId,
 };
-use arcweft_ui::{ContainerKind, FragmentKind, HandlerId, NodeId, NodeKey, StyleId};
+use arcweft_view::{ContainerKind, FragmentKind, HandlerId, NodeId, NodeKey, StyleId};
 
 fn metadata(node: u32, key: u64) -> ArcweftNodeMetadata {
     ArcweftNodeMetadata::new(

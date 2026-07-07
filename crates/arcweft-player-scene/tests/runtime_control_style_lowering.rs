@@ -1,11 +1,11 @@
 use arcweft_bundle::resource_codec::ui::{
     CompositionOnBlurPolicy, EnterKeyHint, RgbaColor, TextAssistPolicy, TextCapitalization,
-    UiInputKind, UiInputPurpose, UiRuntimeControlCornerFrameStyle, UiRuntimeControlFilter,
-    UiRuntimeControlFilterList, UiRuntimeControlStyle, UiRuntimeControlVisualStyle,
-    UiRuntimeTextControl, UiRuntimeTextControlBounds, UiRuntimeTextControlHandlers,
-    UiRuntimeTextControlOptions, UiRuntimeTextSelection, UiSecureInputPolicy,
-    UiTextSelectionPolicy, UiTextShortcutPolicy, UiTextTabPolicy, UiTextVerticalNavigationPolicy,
-    ViewRuntimeActionButton, ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds,
+    UiInputKind, UiInputPurpose, UiSecureInputPolicy, UiTextSelectionPolicy, UiTextShortcutPolicy,
+    UiTextTabPolicy, UiTextVerticalNavigationPolicy, ViewRuntimeActionButton,
+    ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds, ViewRuntimeControlCornerFrameStyle,
+    ViewRuntimeControlFilter, ViewRuntimeControlFilterList, ViewRuntimeControlStyle,
+    ViewRuntimeControlVisualStyle, ViewRuntimeTextControl, ViewRuntimeTextControlBounds,
+    ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
 };
 use arcweft_player_scene::action_buttons::RuntimeActionButtonLowerer;
 use arcweft_player_scene::input::InputController;
@@ -32,7 +32,7 @@ fn runtime_text_control_style_reaches_render_text_input_control() {
 fn runtime_action_button_style_reaches_render_action_button() {
     let input = RuntimeTextControlLowerer::lower_controls(&[text_control_with_style(
         "input.feedback",
-        UiRuntimeControlStyle::default(),
+        ViewRuntimeControlStyle::default(),
     )])
     .expect("text input lowers");
     let button = ViewRuntimeActionButton {
@@ -62,16 +62,16 @@ fn runtime_control_backdrop_filter_reaches_render_style() {
     let mut input = InputController::default();
     let runtime = text_control_with_style(
         "input.feedback",
-        UiRuntimeControlStyle {
-            normal: UiRuntimeControlVisualStyle {
-                backdrop_filters: Some(UiRuntimeControlFilterList {
-                    filters: vec![UiRuntimeControlFilter::Blur {
+        ViewRuntimeControlStyle {
+            normal: ViewRuntimeControlVisualStyle {
+                backdrop_filters: Some(ViewRuntimeControlFilterList {
+                    filters: vec![ViewRuntimeControlFilter::Blur {
                         radius_milli: 12_000,
                     }],
                 }),
-                ..UiRuntimeControlVisualStyle::default()
+                ..ViewRuntimeControlVisualStyle::default()
             },
-            ..UiRuntimeControlStyle::default()
+            ..ViewRuntimeControlStyle::default()
         },
     );
 
@@ -91,12 +91,12 @@ fn runtime_control_font_family_reaches_render_style() {
     let mut input = InputController::default();
     let runtime = text_control_with_style(
         "input.feedback",
-        UiRuntimeControlStyle {
-            normal: UiRuntimeControlVisualStyle {
+        ViewRuntimeControlStyle {
+            normal: ViewRuntimeControlVisualStyle {
                 font_family: Some("Arcweft Demo, Yu Gothic, system-ui".to_owned()),
-                ..UiRuntimeControlVisualStyle::default()
+                ..ViewRuntimeControlVisualStyle::default()
             },
-            ..UiRuntimeControlStyle::default()
+            ..ViewRuntimeControlStyle::default()
         },
     );
 
@@ -114,17 +114,17 @@ fn runtime_control_corner_frame_reaches_render_style() {
     let mut input = InputController::default();
     let runtime = text_control_with_style(
         "input.feedback",
-        UiRuntimeControlStyle {
-            normal: UiRuntimeControlVisualStyle {
-                corner_frame: Some(UiRuntimeControlCornerFrameStyle {
+        ViewRuntimeControlStyle {
+            normal: ViewRuntimeControlVisualStyle {
+                corner_frame: Some(ViewRuntimeControlCornerFrameStyle {
                     color: RgbaColor::rgba(94, 234, 212, 220),
                     width_milli: 3_000,
                     length_milli: 24_000,
                     offset_milli: 2_000,
                 }),
-                ..UiRuntimeControlVisualStyle::default()
+                ..ViewRuntimeControlVisualStyle::default()
             },
-            ..UiRuntimeControlStyle::default()
+            ..ViewRuntimeControlStyle::default()
         },
     );
 
@@ -165,27 +165,30 @@ fn styled_fill_depth(
     blue: u8,
     alpha: u8,
     depth_milli: i32,
-) -> UiRuntimeControlStyle {
-    UiRuntimeControlStyle {
-        normal: UiRuntimeControlVisualStyle {
+) -> ViewRuntimeControlStyle {
+    ViewRuntimeControlStyle {
+        normal: ViewRuntimeControlVisualStyle {
             fill: Some(RgbaColor::rgba(red, green, blue, alpha)),
             depth_milli: Some(depth_milli),
-            ..UiRuntimeControlVisualStyle::default()
+            ..ViewRuntimeControlVisualStyle::default()
         },
-        ..UiRuntimeControlStyle::default()
+        ..ViewRuntimeControlStyle::default()
     }
 }
 
-fn text_control_with_style(public_id: &str, style: UiRuntimeControlStyle) -> UiRuntimeTextControl {
-    UiRuntimeTextControl {
+fn text_control_with_style(
+    public_id: &str,
+    style: ViewRuntimeControlStyle,
+) -> ViewRuntimeTextControl {
+    ViewRuntimeTextControl {
         public_id: public_id.to_owned(),
         target: public_id.to_owned(),
         view: None,
         containing_scroll_region: None,
         session: 41,
         value: "hello".to_owned(),
-        selection: UiRuntimeTextSelection::new(5, 5),
-        options: UiRuntimeTextControlOptions {
+        selection: ViewRuntimeTextSelection::new(5, 5),
+        options: ViewRuntimeTextControlOptions {
             purpose: UiInputPurpose::Text,
             autocorrect: TextAssistPolicy::PlatformDefault,
             spellcheck: TextAssistPolicy::PlatformDefault,
@@ -200,9 +203,9 @@ fn text_control_with_style(public_id: &str, style: UiRuntimeControlStyle) -> UiR
             composition_on_blur: CompositionOnBlurPolicy::Commit,
         },
         kind: UiInputKind::TextField,
-        bounds: UiRuntimeTextControlBounds::from_px(48, 48, 420, 48),
+        bounds: ViewRuntimeTextControlBounds::from_px(48, 48, 420, 48),
         label: Some("Feedback".to_owned()),
-        handlers: UiRuntimeTextControlHandlers::default(),
+        handlers: ViewRuntimeTextControlHandlers::default(),
         style,
     }
 }

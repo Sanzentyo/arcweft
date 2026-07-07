@@ -12,8 +12,8 @@ use crate::resource_codec::{
     CompactDisplayCatalogSection, CompactSourceMapSection,
 };
 use crate::resource_codec::{
-    CompactUiInputResource, CompactUiStyleResource, CompactUiTextResource, CompactUiThemeResource,
-    CompactViewProgramResource,
+    CompactUiInputResource, CompactUiTextResource, CompactUiThemeResource,
+    CompactViewProgramResource, CompactViewStyleResource,
 };
 use crate::{
     ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleAwbcProgram, BundleBytecodeEncoding,
@@ -290,7 +290,7 @@ fn optional_ui_style_section(
         bundle
             .ui_style
             .as_ref()
-            .map(CompactUiStyleResource::encode_canonical_section),
+            .map(CompactViewStyleResource::encode_canonical_section),
     )
 }
 
@@ -415,12 +415,12 @@ fn optional_ui_program(
 fn optional_ui_style(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
-) -> Result<Option<CompactUiStyleResource>, BundleCodecError> {
+) -> Result<Option<CompactViewStyleResource>, BundleCodecError> {
     optional_compact_payload(
         view,
         external_sections,
         BundleSectionKind::UiStyle,
-        CompactUiStyleResource::decode_canonical_section,
+        CompactViewStyleResource::decode_canonical_section,
     )
 }
 

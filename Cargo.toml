@@ -39,7 +39,7 @@ members = [
     "crates/arcweft-layout",
     "crates/arcweft-need",
     "crates/arcweft-presentation",
-    "crates/arcweft-ui",
+    "crates/arcweft-view",
     "crates/arcweft-takumi-adapter",
     "crates/arcweft-render-native",
     "crates/arcweft-render-text",

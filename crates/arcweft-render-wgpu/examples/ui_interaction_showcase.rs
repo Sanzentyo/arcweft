@@ -11,7 +11,7 @@ use arcweft_presentation::layer::{
 use arcweft_presentation::router::InputRouter;
 use arcweft_presentation::semantic::{SemanticRole, SemanticTree};
 use arcweft_render_wgpu::ui::UiPaintPlan;
-use arcweft_ui::{
+use arcweft_view::{
     EventBinding, EventKind, FragmentKind, HandlerId, LayoutBox, LayoutLength, LayoutPoint,
     LayoutResults, LayoutSize, LayoutTree, Milli, NodeKey, Rgba8, RichTextSourceId, SemanticSpecId,
     StyleId, UiInteractionSelector, UiLayerOutput, UiPropertyKind, UiPropertyValue,
@@ -25,11 +25,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 type VisualStates = Vec<(&'static str, InteractionState)>;
-type Activation = arcweft_ui::UiHandlerInvocation;
+type Activation = arcweft_view::UiHandlerInvocation;
 type ShowcaseFragment = (
-    arcweft_ui::ViewFragment,
+    arcweft_view::ViewFragment,
     LayoutResults,
-    arcweft_ui::UiSemanticFragment,
+    arcweft_view::UiSemanticFragment,
     Vec<InteractionTarget>,
 );
 

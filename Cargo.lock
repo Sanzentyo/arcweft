@@ -482,7 +482,7 @@ dependencies = [
  "arcweft-character",
  "arcweft-image",
  "arcweft-presentation",
- "arcweft-ui",
+ "arcweft-view",
  "thiserror 2.0.18",
 ]
 
@@ -536,10 +536,10 @@ dependencies = [
  "arcweft-source",
  "arcweft-test",
  "arcweft-tooling",
- "arcweft-ui",
  "arcweft-verify",
  "arcweft-verify-oxiz",
  "arcweft-verify-z3",
+ "arcweft-view",
  "base64",
  "blake3",
  "clap",
@@ -1085,7 +1085,7 @@ dependencies = [
  "arcweft-render-text",
  "arcweft-runtime-plan",
  "arcweft-text-layout",
- "arcweft-ui",
+ "arcweft-view",
  "bytemuck",
  "glyphon",
  "pollster",
@@ -1125,7 +1125,7 @@ dependencies = [
  "arcweft-presentation",
  "arcweft-render-text",
  "arcweft-text-layout",
- "arcweft-ui",
+ "arcweft-view",
  "bytemuck",
  "glyphon",
  "num-traits",
@@ -1209,7 +1209,7 @@ dependencies = [
  "arcweft-runtime-accelerator",
  "arcweft-runtime-plan",
  "arcweft-runtime-scheduler",
- "arcweft-ui",
+ "arcweft-view",
  "num_cpus",
  "rayon",
  "serde",
@@ -1299,7 +1299,7 @@ dependencies = [
  "arcweft-id",
  "arcweft-presentation",
  "arcweft-render-wgpu",
- "arcweft-ui",
+ "arcweft-view",
  "num-traits",
  "taffy",
  "takumi",
@@ -1339,17 +1339,6 @@ dependencies = [
  "arcweft-lang-syntax",
  "serde",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "arcweft-ui"
-version = "0.1.0"
-dependencies = [
- "arcweft-id",
- "arcweft-image",
- "arcweft-presentation",
- "thiserror 2.0.18",
- "unicode-segmentation",
 ]
 
 [[package]]
@@ -1395,6 +1384,17 @@ version = "0.1.0"
 dependencies = [
  "arcweft-verify",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "arcweft-view"
+version = "0.1.0"
+dependencies = [
+ "arcweft-id",
+ "arcweft-image",
+ "arcweft-presentation",
+ "thiserror 2.0.18",
+ "unicode-segmentation",
 ]
 
 [[package]]

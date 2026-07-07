@@ -1,11 +1,11 @@
 use arcweft_bundle::resource_codec::ui::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
-    UiInputPurpose, UiRuntimeControlStyle, UiRuntimeTextControl, UiRuntimeTextControlBounds,
-    UiRuntimeTextControlHandlers, UiRuntimeTextControlOptions, UiRuntimeTextSelection,
-    UiSecureInputPolicy, UiTextSelectionPolicy, UiTextShortcutPolicy, UiTextTabPolicy,
-    UiTextVerticalNavigationPolicy,
+    UiInputPurpose, UiSecureInputPolicy, UiTextSelectionPolicy, UiTextShortcutPolicy,
+    UiTextTabPolicy, UiTextVerticalNavigationPolicy, ViewRuntimeControlStyle,
+    ViewRuntimeTextControl, ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers,
+    ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
 };
-use arcweft_player_scene::input::InputController;
+use arcweft_player_scene::input::{InputController, InputPointerModifiers};
 use arcweft_player_scene::text_controls::RuntimeTextControlLowerer;
 use arcweft_presentation::input::{InteractionTarget, PointerId};
 use arcweft_presentation::text_input::{
@@ -14,8 +14,9 @@ use arcweft_presentation::text_input::{
     TextTabPolicy, TextVerticalNavigationPolicy,
 };
 use arcweft_render_wgpu::geometry::{
-    ChoiceScroll, InteractionVisualState, RenderPreferences, RenderScene, RenderTextInputControl,
-    RenderViewport, SharedFramePlanner,
+    ChoiceScroll, InteractionVisualState, RenderPreferences, RenderScene, RenderScrollAxis,
+    RenderScrollOverflow, RenderScrollRegion, RenderTextInputControl, RenderViewport,
+    SharedFramePlanner,
 };
 
 #[test]
@@ -156,8 +157,18 @@ fn pointer_focus_uses_lower_for_frame_activation_path() {
     let frame = SharedFramePlanner::prepare(&scene_with_text_inputs(controls, None))
         .expect("hit frame prepares");
 
-    input.pointer_down(&frame, PointerId(0), viewport_point(60.0, 60.0));
-    input.pointer_up(&frame, PointerId(0), viewport_point(60.0, 60.0));
+    input.pointer_down(
+        &frame,
+        PointerId(0),
+        viewport_point(60.0, 60.0),
+        InputPointerModifiers::NONE,
+    );
+    input.pointer_up(
+        &frame,
+        PointerId(0),
+        viewport_point(60.0, 60.0),
+        InputPointerModifiers::NONE,
+    );
 
     let controls = RuntimeTextControlLowerer::lower_for_frame(&mut input, &[runtime])
         .expect("focused controls lower through shared path");
@@ -177,7 +188,12 @@ fn pointer_click_places_caret_after_focused_geometry_is_available() {
     let initial = SharedFramePlanner::prepare(&scene_with_text_inputs(controls, None))
         .expect("hit frame prepares");
 
-    input.pointer_down(&initial, PointerId(0), viewport_point(58.0, 60.0));
+    input.pointer_down(
+        &initial,
+        PointerId(0),
+        viewport_point(58.0, 60.0),
+        InputPointerModifiers::NONE,
+    );
 
     let focused_controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
@@ -200,6 +216,30 @@ fn pointer_click_places_caret_after_focused_geometry_is_available() {
 }
 
 #[test]
+fn shift_pointer_click_extends_focused_text_selection() {
+    let mut runtime = runtime_control("input.name", UiInputKind::TextField, "Ada");
+    runtime.selection = ViewRuntimeTextSelection::new(1, 1);
+    let mut input = InputController::default();
+    let controls =
+        RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
+            .expect("focused controls lower");
+    let target = controls[0].target.clone();
+    input
+        .activate_text_control(&controls[0])
+        .expect("text editor activates");
+    let focused = SharedFramePlanner::prepare(&scene_with_text_inputs(controls, Some(target)))
+        .expect("focused frame prepares");
+    let shift = InputPointerModifiers::new(true);
+
+    input.pointer_down(&focused, PointerId(0), viewport_point(150.0, 60.0), shift);
+    input.pointer_up(&focused, PointerId(0), viewport_point(150.0, 60.0), shift);
+
+    let selection = input.focused_text_editor().unwrap().selection();
+    assert_eq!(*selection.start(), TextByteOffset(1));
+    assert!(selection.end().0 > 1);
+}
+
+#[test]
 fn pointer_drag_extends_focused_text_selection() {
     let runtime = runtime_control("input.name", UiInputKind::TextField, "Ada");
     let mut input = InputController::default();
@@ -209,7 +249,12 @@ fn pointer_drag_extends_focused_text_selection() {
     let initial = SharedFramePlanner::prepare(&scene_with_text_inputs(controls, None))
         .expect("hit frame prepares");
 
-    input.pointer_down(&initial, PointerId(0), viewport_point(58.0, 60.0));
+    input.pointer_down(
+        &initial,
+        PointerId(0),
+        viewport_point(58.0, 60.0),
+        InputPointerModifiers::NONE,
+    );
     let focused_controls =
         RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
             .expect("focused controls lower");
@@ -227,6 +272,113 @@ fn pointer_drag_extends_focused_text_selection() {
     let selection = input.focused_text_editor().unwrap().selection();
     assert_eq!(*selection.start(), TextByteOffset(0));
     assert!(selection.end().0 > 0);
+}
+
+#[test]
+fn repeated_pointer_clicks_select_word_then_line() {
+    let runtime = runtime_control("input.name", UiInputKind::TextField, "alpha beta");
+    let mut input = InputController::default();
+    let controls =
+        RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
+            .expect("controls lower");
+    let target = controls[0].target.clone();
+    input
+        .activate_text_control(&controls[0])
+        .expect("text editor activates");
+    let frame = SharedFramePlanner::prepare(&scene_with_text_inputs(controls, Some(target)))
+        .expect("focused frame prepares");
+    let position = viewport_point(70.0, 60.0);
+
+    for _ in 0..2 {
+        input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+        input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+    }
+    let word_selection = input.focused_text_editor().unwrap().selection();
+    assert_eq!(
+        word_selection,
+        TextRange::new(TextByteOffset(0), TextByteOffset(5))
+    );
+
+    input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+    input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+    let line_selection = input.focused_text_editor().unwrap().selection();
+    assert_eq!(
+        line_selection,
+        TextRange::new(TextByteOffset(0), TextByteOffset(10))
+    );
+}
+
+#[test]
+fn selected_text_drag_moves_text_and_emits_writeback() {
+    let mut runtime = runtime_control("input.name", UiInputKind::TextField, "alpha beta");
+    runtime.selection = ViewRuntimeTextSelection::new(0, 5);
+    let mut input = InputController::default();
+    let controls =
+        RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
+            .expect("controls lower");
+    let target = controls[0].target.clone();
+    input
+        .activate_text_control(&controls[0])
+        .expect("text editor activates");
+    let frame = SharedFramePlanner::prepare(&scene_with_text_inputs(controls, Some(target)))
+        .expect("focused frame prepares");
+
+    input.pointer_down(
+        &frame,
+        PointerId(0),
+        viewport_point(70.0, 60.0),
+        InputPointerModifiers::NONE,
+    );
+    input.pointer_move(&frame, PointerId(0), viewport_point(190.0, 60.0));
+    let outcome = input.pointer_up(
+        &frame,
+        PointerId(0),
+        viewport_point(190.0, 60.0),
+        InputPointerModifiers::NONE,
+    );
+
+    assert_eq!(input.focused_text_editor().unwrap().text(), " betaalpha");
+    assert_eq!(outcome.text_control_write_backs().len(), 1);
+    assert_eq!(
+        outcome.text_control_write_backs()[0].value().as_str(),
+        " betaalpha"
+    );
+}
+
+#[test]
+fn pointer_drag_selection_autoscrolls_containing_scroll_region() {
+    let runtime = runtime_control("input.notes", UiInputKind::TextArea, "alpha\nbeta\ngamma");
+    let mut input = InputController::default();
+    let mut controls =
+        RuntimeTextControlLowerer::lower_for_frame(&mut input, std::slice::from_ref(&runtime))
+            .expect("controls lower");
+    controls[0].containing_scroll_region = Some("scroll.notes".to_owned());
+    let target = controls[0].target.clone();
+    input
+        .activate_text_control(&controls[0])
+        .expect("text editor activates");
+    let mut scene = scene_with_text_inputs(controls, Some(target));
+    scene.scroll_regions.push(RenderScrollRegion {
+        id: "scroll.notes".to_owned(),
+        bounds: arcweft_presentation::hit::HitRect::new(40.0, 40.0, 300.0, 70.0),
+        content_width: 300.0,
+        content_height: 220.0,
+        offset_x: 0.0,
+        offset_y: 0.0,
+        axis: RenderScrollAxis::Vertical,
+        overflow: RenderScrollOverflow::Auto,
+    });
+    let frame = SharedFramePlanner::prepare(&scene).expect("focused frame prepares");
+
+    input.pointer_down(
+        &frame,
+        PointerId(0),
+        viewport_point(70.0, 60.0),
+        InputPointerModifiers::NONE,
+    );
+    input.pointer_move(&frame, PointerId(0), viewport_point(70.0, 106.0));
+
+    assert!(input.scroll_offset_y("scroll.notes") > 0.0);
 }
 
 #[test]
@@ -297,17 +449,17 @@ fn hidden_runtime_text_control_clears_focus_and_rejects_stale_writeback() {
     assert!(frame.focused_text_input_target().is_some());
 }
 
-fn runtime_control(public_id: &str, kind: UiInputKind, value: &str) -> UiRuntimeTextControl {
+fn runtime_control(public_id: &str, kind: UiInputKind, value: &str) -> ViewRuntimeTextControl {
     let end = u32::try_from(value.len()).expect("test text length fits in u32");
-    UiRuntimeTextControl {
+    ViewRuntimeTextControl {
         public_id: public_id.to_owned(),
         target: public_id.to_owned(),
         view: None,
         containing_scroll_region: None,
         session: stable_test_session(public_id),
         value: value.to_owned(),
-        selection: UiRuntimeTextSelection::new(end, end),
-        options: UiRuntimeTextControlOptions {
+        selection: ViewRuntimeTextSelection::new(end, end),
+        options: ViewRuntimeTextControlOptions {
             purpose: UiInputPurpose::Text,
             autocorrect: TextAssistPolicy::PlatformDefault,
             spellcheck: TextAssistPolicy::PlatformDefault,
@@ -326,10 +478,10 @@ fn runtime_control(public_id: &str, kind: UiInputKind, value: &str) -> UiRuntime
             composition_on_blur: CompositionOnBlurPolicy::Commit,
         },
         kind,
-        bounds: UiRuntimeTextControlBounds::from_px(48, 48, 260, 48),
+        bounds: ViewRuntimeTextControlBounds::from_px(48, 48, 260, 48),
         label: Some("Name".to_owned()),
-        handlers: UiRuntimeTextControlHandlers::default(),
-        style: UiRuntimeControlStyle::default(),
+        handlers: ViewRuntimeTextControlHandlers::default(),
+        style: ViewRuntimeControlStyle::default(),
     }
 }
 

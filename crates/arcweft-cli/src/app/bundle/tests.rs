@@ -762,7 +762,7 @@ flow test {
         .expect("view text field runtime control");
     assert_eq!(
         feedback_control.bounds,
-        arcweft_bundle::resource_codec::UiRuntimeTextControlBounds::new(
+        arcweft_bundle::resource_codec::ViewRuntimeTextControlBounds::new(
             48_000, 48_000, 420_000, 48_000,
         )
     );
@@ -837,13 +837,13 @@ flow test {
 
     assert_eq!(
         bio.bounds,
-        arcweft_bundle::resource_codec::UiRuntimeTextControlBounds::new(
+        arcweft_bundle::resource_codec::ViewRuntimeTextControlBounds::new(
             48_000, 48_000, 420_000, 136_000,
         )
     );
     assert_eq!(
         password.bounds,
-        arcweft_bundle::resource_codec::UiRuntimeTextControlBounds::new(
+        arcweft_bundle::resource_codec::ViewRuntimeTextControlBounds::new(
             48_000, 200_000, 420_000, 48_000,
         )
     );

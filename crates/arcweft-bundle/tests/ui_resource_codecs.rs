@@ -6,14 +6,14 @@ use arcweft_bundle::resource_codec::ui::{
     StyleSourceRef, StyleSyntax, SystemColor, SystemColorOverride, TextAssistPolicy,
     TextCapitalization, UiInputKind, UiInputOptions, UiInputPurpose, UiInputResource,
     UiLogicalRect, UiObserveClassification, UiResourceBudget, UiResourceCompatibility,
-    UiSecureInputPolicy, UiSecureRedactionMetadata, UiStyleResource, UiTextResource,
-    UiTextSelectionPolicy, UiTextShortcutPolicy, UiTextSourceKind, UiTextSourceRecord,
-    UiTextTabPolicy, UiTextVerticalNavigationPolicy, UiThemeEnvironmentDefaults, UiThemeResource,
+    UiSecureInputPolicy, UiSecureRedactionMetadata, UiTextResource, UiTextSelectionPolicy,
+    UiTextShortcutPolicy, UiTextSourceKind, UiTextSourceRecord, UiTextTabPolicy,
+    UiTextVerticalNavigationPolicy, UiThemeEnvironmentDefaults, UiThemeResource,
     ViewAwaitBranchSpan, ViewChildSpan, ViewElementKind, ViewElementState, ViewHandlerRef,
     ViewLayoutBoundsResource, ViewProgramInstruction, ViewProgramResource,
     ViewRuntimeTextBlockBounds, ViewScrollAxis, ViewScrollOverflowPolicy, ViewScrollRegionResource,
-    ViewSemanticTarget, ViewStateSchemaHashRef, ViewStyleDeclaration, ViewStyleRule,
-    ViewStyleSelector, ViewStyleSelectorPart, ViewStyleToken, ViewStyleValue,
+    ViewSemanticTarget, ViewStateSchemaHashRef, ViewStyleDeclaration, ViewStyleResource,
+    ViewStyleRule, ViewStyleSelector, ViewStyleSelectorPart, ViewStyleToken, ViewStyleValue,
     ViewTextBlockResource, migrated_ui_section_compatibility,
 };
 use arcweft_bundle::resource_codec::{
@@ -36,7 +36,7 @@ fn ui_resource_compact_sections_round_trip_with_deterministic_bytes() {
     assert_round_trip(
         ProductSectionCodecKind::UiStyle,
         &style.encode_canonical_section().expect("style encodes"),
-        UiStyleResource::decode_canonical_section,
+        ViewStyleResource::decode_canonical_section,
         &style,
     );
 
@@ -81,7 +81,7 @@ fn ui_resource_unknown_optional_fields_skip_and_unknown_required_reject() {
         ResourceField::optional(FieldId(30_000), ResourceWireType::Bytes, b"future-ui-style"),
     );
     assert_eq!(
-        UiStyleResource::decode_canonical_section(&optional_bytes)
+        ViewStyleResource::decode_canonical_section(&optional_bytes)
             .expect("unknown optional field skips"),
         style,
     );
@@ -91,7 +91,7 @@ fn ui_resource_unknown_optional_fields_skip_and_unknown_required_reject() {
         ResourceField::required(FieldId(30_001), ResourceWireType::Bytes, b"future-ui-style"),
     );
     assert!(
-        UiStyleResource::decode_canonical_section(&required_bytes).is_err(),
+        ViewStyleResource::decode_canonical_section(&required_bytes).is_err(),
         "unknown required fields must reject for migrated UI resources",
     );
 }
@@ -126,7 +126,7 @@ fn ui_resource_budget_failures_are_reported() {
         .encode_canonical_section()
         .expect("style encodes");
     assert!(
-        UiStyleResource::decode_canonical_section_with_budget(
+        ViewStyleResource::decode_canonical_section_with_budget(
             &style_bytes,
             UiResourceBudget {
                 selector_depth: 0,
@@ -136,7 +136,7 @@ fn ui_resource_budget_failures_are_reported() {
         .is_err()
     );
     assert!(
-        UiStyleResource::decode_canonical_section_with_budget(
+        ViewStyleResource::decode_canonical_section_with_budget(
             &style_bytes,
             UiResourceBudget {
                 style_tokens: 0,
@@ -192,7 +192,7 @@ fn ui_program_scroll_regions_reject_pre_axis_payload_shape() {
 fn ui_style_external_css_descriptor_refs_preserve_file_vs_embed_identity() {
     let style = fixture_style();
     let bytes = style.encode_canonical_section().expect("style encodes");
-    let decoded = UiStyleResource::decode_canonical_section(&bytes).expect("style decodes");
+    let decoded = ViewStyleResource::decode_canonical_section(&bytes).expect("style decodes");
 
     assert!(decoded.external_css_descriptors.iter().any(|descriptor| {
         matches!(descriptor.identity, ExternalCssIdentity::File { ref path } if path == "ui/dialogue.css")
@@ -247,7 +247,7 @@ fn ui_resource_source_gate_rejects_json_fallback() {
     let json = br#"{"style_program_id":"style.dialogue","tokens":[]}"#;
 
     assert!(
-        UiStyleResource::decode_canonical_section(json).is_err(),
+        ViewStyleResource::decode_canonical_section(json).is_err(),
         "migrated UI resource decode must require compact AWFB section magic",
     );
 }
@@ -282,7 +282,7 @@ impl EncodeAgain for ViewProgramResource {
     }
 }
 
-impl EncodeAgain for UiStyleResource {
+impl EncodeAgain for ViewStyleResource {
     fn encode_again(&self, codec: ProductSectionCodecKind) -> Vec<u8> {
         assert_eq!(codec, ProductSectionCodecKind::UiStyle);
         self.encode_canonical_section().expect("style re-encodes")
@@ -474,8 +474,8 @@ fn fixture_program() -> ViewProgramResource {
     }
 }
 
-fn fixture_style() -> UiStyleResource {
-    UiStyleResource {
+fn fixture_style() -> ViewStyleResource {
+    ViewStyleResource {
         style_program_id: "style.dialogue".to_owned(),
         arcweft_sources: vec![StyleSourceIdentity {
             public_id: "style.dialogue.arcw".to_owned(),

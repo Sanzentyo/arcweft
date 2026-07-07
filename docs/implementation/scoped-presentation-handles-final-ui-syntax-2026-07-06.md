@@ -277,7 +277,7 @@ The structure audit reported 0 errors and 147 warnings after this slice.
 
 ## 2026-07-07 Retained View Program Substrate Rename
 
-The next View resource taxonomy slice renamed the retained `arcweft-ui`
+The next View resource taxonomy slice renamed the retained `arcweft-view`
 program substrate that directly represents Arcweft View DSL lowering output.
 These names are not persisted compatibility surfaces, so the old `Ui*` Rust
 symbols were removed rather than aliased:
@@ -303,12 +303,12 @@ crate split.
 Current validation for this slice:
 
 - `cargo fmt --all`
-- `cargo test -p arcweft-ui --all-features`
+- `cargo test -p arcweft-view --all-features`
 - `cargo test -p arcweft-takumi-adapter --all-features`
-- `cargo check -p arcweft-ui -p arcweft-takumi-adapter --all-targets --all-features`
-- `cargo clippy -p arcweft-ui -p arcweft-takumi-adapter --all-targets --all-features`
+- `cargo check -p arcweft-view -p arcweft-takumi-adapter --all-targets --all-features`
+- `cargo clippy -p arcweft-view -p arcweft-takumi-adapter --all-targets --all-features`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`
-- `rg -n "\\bUi(Program|ProgramBuilder|ProgramRevision|Instruction|InstructionRange|ElementSpec|TextSpec|ImageSpec|CustomSpec|ViewCall|Branch|Repeat|StyleApply|StylePatchId|EventBindingSpec|SemanticSpec|HandlerProgram|PartId|PartExport|StableKey|ExpressionId)\\b|\\bUiProgramId\\b" crates\\arcweft-ui crates\\arcweft-takumi-adapter -g "*.rs"`
+- `rg -n "\\bUi(Program|ProgramBuilder|ProgramRevision|Instruction|InstructionRange|ElementSpec|TextSpec|ImageSpec|CustomSpec|ViewCall|Branch|Repeat|StyleApply|StylePatchId|EventBindingSpec|SemanticSpec|HandlerProgram|PartId|PartExport|StableKey|ExpressionId)\\b|\\bUiProgramId\\b" crates\\arcweft-view crates\\arcweft-takumi-adapter -g "*.rs"`
 
 The structure audit reported 0 errors and 147 warnings after this slice.
 
@@ -670,7 +670,7 @@ Validation:
 
 ## 2026-07-07 Retained UI View Boundary Rename
 
-The retained `arcweft-ui` substrate now uses View terminology for its owned
+The retained `arcweft-view` substrate now uses View terminology for its owned
 boundary types instead of retaining Component names behind the final View
 syntax:
 
@@ -693,13 +693,13 @@ search in code are unrelated path-component or graph-component terminology.
 
 Validation:
 
-- `cargo test -p arcweft-ui --all-features`
+- `cargo test -p arcweft-view --all-features`
 - `cargo test -p arcweft-takumi-adapter --all-features`
 - `cargo check -p arcweft-character-ui -p arcweft-render-wgpu -p arcweft-render-native -p arcweft-runtime-host -p arcweft-cli --all-targets --all-features`
-- `cargo clippy -p arcweft-ui -p arcweft-takumi-adapter -p arcweft-character-ui -p arcweft-render-wgpu -p arcweft-render-native -p arcweft-runtime-host -p arcweft-cli --all-targets --all-features`
+- `cargo clippy -p arcweft-view -p arcweft-takumi-adapter -p arcweft-character-ui -p arcweft-render-wgpu -p arcweft-render-native -p arcweft-runtime-host -p arcweft-cli --all-targets --all-features`
 - `cargo +nightly -Zscript tools/structure-audit.rs --root .`
 - `rg -n "ComponentId|ComponentRegistry|ComponentDescriptor|ComponentImplementation|RustComponentId|ComponentSchemaId|UiComponentCall|CallComponent|FragmentKind::Component|ComponentStyleOverride|DuplicateComponentPublicId|with_component|\\.component\\(|component:|data-aw-component|aw-component" crates -g "*.rs"`
-- `rg -n "\\bcomponent\\b|\\bcomponents\\b|\\bComponent\\b|\\bComponents\\b" crates\\arcweft-ui crates\\arcweft-takumi-adapter -g "*.rs"`
+- `rg -n "\\bcomponent\\b|\\bcomponents\\b|\\bComponent\\b|\\bComponents\\b" crates\\arcweft-view crates\\arcweft-takumi-adapter -g "*.rs"`
 
 ## 2026-07-07 AwaitView Builder Instruction
 
@@ -1736,7 +1736,7 @@ broader retained-content policy request.
   with branch spans. View-local input handle `let` bindings and ordinary `if`,
   `match`, and `for` View branching are covered by this cut.
 - The active authoring, Agent observe/capture, layout capture scope paths, and
-  retained `arcweft-ui` / Takumi substrate now use `view` terminology for owned
+  retained `arcweft-view` / Takumi substrate now use `view` terminology for owned
   scoped UI boundaries.
 - Checked-in PNG visual baseline promotion remains outside this goal and is
   already covered by the pinned visual-golden requests such as

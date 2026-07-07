@@ -1,5 +1,5 @@
 use arcweft_id::PublicId;
-use arcweft_ui::{
+use arcweft_view::{
     EventBinding, FragmentKind, FragmentNode, HandlerId, NodeId, NodeKey, SemanticSpecId, StyleId,
     ViewId, ViewPartId, ViewProgramId,
 };
@@ -291,7 +291,7 @@ fn insert_attr(attributes: &mut BTreeMap<Box<str>, Box<str>>, name: &str, value:
 mod tests {
     use super::*;
     use arcweft_id::PublicId;
-    use arcweft_ui::{ContainerKind, FragmentKind, HandlerId, NodeKey, StyleId};
+    use arcweft_view::{ContainerKind, FragmentKind, HandlerId, NodeKey, StyleId};
 
     #[test]
     fn metadata_attributes_preserve_arcweft_identity() {

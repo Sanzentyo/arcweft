@@ -109,7 +109,7 @@ fn seq06_13e1_inset_shadow_policy_pins_typed_compositor_route() {
         fs::read_to_string(root.join("crates/arcweft-player-web/src/seq06_13e1_exact.rs"))
             .expect("read Web exact wasm export source");
     assert!(web_export.contains("capture_seq06_13e1_inset_box_shadow_exact_png"));
-    assert!(web_export.contains("UiStyleResource"));
+    assert!(web_export.contains("ViewStyleResource"));
     assert!(web_export.contains("runtime_surface_style"));
     assert!(web_export.contains("UiRoundedRect"));
     assert!(web_export.contains("UiCompositor::render_group"));
@@ -222,7 +222,7 @@ fn assert_exact_png_packet(target: Target) {
             "PASS_BOX_SHADOW",
             "box_shadow",
             "inset",
-            "UiStyleResource::runtime_surface_style",
+            "ViewStyleResource::runtime_surface_style",
             "UiRoundedRect",
             "UiCompositor::render_group",
             "copy_texture_to_buffer",

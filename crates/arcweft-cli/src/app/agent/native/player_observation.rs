@@ -964,9 +964,9 @@ mod tests {
         UiTextTabPolicy, UiTextVerticalNavigationPolicy,
     };
     use arcweft_bundle::resource_codec::{
-        UiRuntimeControlStyle, UiRuntimeTextControl, UiRuntimeTextControlBounds,
-        UiRuntimeTextControlHandlers, UiRuntimeTextControlOptions, UiRuntimeTextSelection,
         ViewRuntimeActionButton, ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds,
+        ViewRuntimeControlStyle, ViewRuntimeTextControl, ViewRuntimeTextControlBounds,
+        ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
     };
     use arcweft_bundle::{
         BundleImageObjectBounds, BundleImageObjectFit, BundleImageObjectPlayback,
@@ -1220,16 +1220,16 @@ mod tests {
         );
     }
 
-    fn runtime_text_control(public_id: &str) -> UiRuntimeTextControl {
-        UiRuntimeTextControl {
+    fn runtime_text_control(public_id: &str) -> ViewRuntimeTextControl {
+        ViewRuntimeTextControl {
             public_id: public_id.to_owned(),
             target: public_id.to_owned(),
             view: Some("view.ModernFeedbackPanel".to_owned()),
             containing_scroll_region: None,
             session: 41,
             value: String::new(),
-            selection: UiRuntimeTextSelection::new(0, 0),
-            options: UiRuntimeTextControlOptions {
+            selection: ViewRuntimeTextSelection::new(0, 0),
+            options: ViewRuntimeTextControlOptions {
                 purpose: UiInputPurpose::Text,
                 autocorrect: TextAssistPolicy::PlatformDefault,
                 spellcheck: TextAssistPolicy::PlatformDefault,
@@ -1244,10 +1244,10 @@ mod tests {
                 composition_on_blur: CompositionOnBlurPolicy::Commit,
             },
             kind: UiInputKind::TextField,
-            bounds: UiRuntimeTextControlBounds::from_px(48, 48, 420, 48),
+            bounds: ViewRuntimeTextControlBounds::from_px(48, 48, 420, 48),
             label: None,
-            handlers: UiRuntimeTextControlHandlers::default(),
-            style: UiRuntimeControlStyle::default(),
+            handlers: ViewRuntimeTextControlHandlers::default(),
+            style: ViewRuntimeControlStyle::default(),
         }
     }
 
@@ -1261,7 +1261,7 @@ mod tests {
             enabled: true,
             bounds: ViewRuntimeButtonBounds::new(484_000, 48_000, 180_000, 48_000),
             action: ViewRuntimeActionButtonAction::Noop,
-            style: UiRuntimeControlStyle::default(),
+            style: ViewRuntimeControlStyle::default(),
         }
     }
 

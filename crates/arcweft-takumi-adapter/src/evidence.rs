@@ -416,7 +416,7 @@ mod tests {
     use super::*;
     use crate::capture::{TakumiCompositingGroupId, TakumiEffectOutsets, TakumiPaintNodeId};
     use crate::metadata::ArcweftNodeMetadata;
-    use arcweft_ui::{ContainerKind, FragmentKind, HandlerId, NodeId, NodeKey, StyleId};
+    use arcweft_view::{ContainerKind, FragmentKind, HandlerId, NodeId, NodeKey, StyleId};
 
     fn metadata() -> ArcweftNodeMetadata {
         ArcweftNodeMetadata::new(

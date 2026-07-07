@@ -1,6 +1,6 @@
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::ui_scene::{UiColorRgba8, UiGlyphRun, UiPrimitive, UiScene};
-use arcweft_ui::{NodeId, TextFieldId};
+use arcweft_view::{NodeId, TextFieldId};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct InlineMeasuredSize {

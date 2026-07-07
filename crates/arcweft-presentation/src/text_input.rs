@@ -168,8 +168,16 @@ pub enum TextEditCommand {
     MoveWordRight { selecting: bool },
     MoveLineStart { selecting: bool },
     MoveLineEnd { selecting: bool },
+    MoveDocumentStart { selecting: bool },
+    MoveDocumentEnd { selecting: bool },
+    MovePageUp { selecting: bool },
+    MovePageDown { selecting: bool },
     Backspace,
     Delete,
+    DeleteWordLeft,
+    DeleteWordRight,
+    SelectWord,
+    SelectLine,
     SelectAll,
     Copy,
     Cut,
@@ -476,6 +484,8 @@ impl TextInputOperation {
                 | Self::Command(
                     TextEditCommand::Backspace
                         | TextEditCommand::Delete
+                        | TextEditCommand::DeleteWordLeft
+                        | TextEditCommand::DeleteWordRight
                         | TextEditCommand::Cut
                         | TextEditCommand::Paste,
                 )

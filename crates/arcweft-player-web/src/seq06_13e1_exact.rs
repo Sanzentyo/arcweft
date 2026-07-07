@@ -1,8 +1,8 @@
 use arcweft_bundle::resource_codec::ui::{
-    RgbaColor, StyleAssignOp, StyleSourceIdentity, StyleSourceRef, StyleSyntax,
-    UiRuntimeControlState, UiRuntimeControlVisualStyle, UiRuntimeShadow, UiRuntimeShadowKind,
-    UiStyleResource, ViewElementKind, ViewStyleDeclaration, ViewStyleRule, ViewStyleSelector,
-    ViewStyleSelectorPart, ViewStyleValue,
+    RgbaColor, StyleAssignOp, StyleSourceIdentity, StyleSourceRef, StyleSyntax, ViewElementKind,
+    ViewRuntimeControlState, ViewRuntimeControlVisualStyle, ViewRuntimeShadow,
+    ViewRuntimeShadowKind, ViewStyleDeclaration, ViewStyleResource, ViewStyleRule,
+    ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue,
 };
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::geometry::PreparedUiSceneResources;
@@ -199,8 +199,8 @@ fn smoke_scene() -> Result<UiScene, String> {
     Ok(scene)
 }
 
-fn exact_style_resource() -> UiStyleResource {
-    UiStyleResource {
+fn exact_style_resource() -> ViewStyleResource {
+    ViewStyleResource {
         style_program_id: "style.seq06_13e1_inset_box_shadow_exact".to_owned(),
         css_sources: vec![StyleSourceIdentity {
             public_id: "style.source.seq06_13e_inset_box_shadow_card_css".to_owned(),
@@ -239,7 +239,7 @@ fn exact_style_resource() -> UiStyleResource {
                 ],
             ),
         ],
-        ..UiStyleResource::default()
+        ..ViewStyleResource::default()
     }
 }
 
@@ -273,7 +273,7 @@ fn style_rgba(red: u8, green: u8, blue: u8, alpha: u8) -> ViewStyleValue {
 
 fn push_styled_card(
     scene: &mut UiScene,
-    style: &UiStyleResource,
+    style: &ViewStyleResource,
     public_id: &str,
     bounds: HitRect,
 ) -> Result<(), String> {
@@ -293,7 +293,7 @@ fn push_styled_card(
 
     let visual = resolved
         .style
-        .visual_for_state(UiRuntimeControlState::Normal);
+        .visual_for_state(ViewRuntimeControlState::Normal);
     let range = push_style_fill(scene, bounds, &visual, public_id)?;
     scene.push_paint_node(UiPaintNode::Group(
         UiCompositingGroup::new(bounds, compositing_effects_from_style(&visual))
@@ -305,7 +305,7 @@ fn push_styled_card(
 fn push_style_fill(
     scene: &mut UiScene,
     bounds: HitRect,
-    visual: &UiRuntimeControlVisualStyle,
+    visual: &ViewRuntimeControlVisualStyle,
     public_id: &str,
 ) -> Result<UiPrimitiveRange, String> {
     let fill = visual
@@ -325,7 +325,7 @@ fn push_style_fill(
     Ok(UiPrimitiveRange { start, end })
 }
 
-fn compositing_effects_from_style(visual: &UiRuntimeControlVisualStyle) -> UiCompositingEffects {
+fn compositing_effects_from_style(visual: &ViewRuntimeControlVisualStyle) -> UiCompositingEffects {
     UiCompositingEffects {
         box_shadows: UiBoxShadowList::new(
             visual
@@ -338,7 +338,7 @@ fn compositing_effects_from_style(visual: &UiRuntimeControlVisualStyle) -> UiCom
     }
 }
 
-fn ui_box_shadow_from_runtime(shadow: UiRuntimeShadow) -> UiBoxShadow {
+fn ui_box_shadow_from_runtime(shadow: ViewRuntimeShadow) -> UiBoxShadow {
     let offset_x = milli_i32_to_f32(shadow.offset_x_milli);
     let offset_y = milli_i32_to_f32(shadow.offset_y_milli);
     let blur = milli_u32_to_f32(shadow.blur_milli);
@@ -346,10 +346,10 @@ fn ui_box_shadow_from_runtime(shadow: UiRuntimeShadow) -> UiBoxShadow {
     let radius = milli_u32_to_f32(shadow.radius_milli);
     let color = ui_rgba(shadow.color);
     match shadow.kind {
-        UiRuntimeShadowKind::Outer => {
+        ViewRuntimeShadowKind::Outer => {
             UiBoxShadow::outer(offset_x, offset_y, blur, spread, radius, color)
         }
-        UiRuntimeShadowKind::Inset => {
+        ViewRuntimeShadowKind::Inset => {
             UiBoxShadow::inset(offset_x, offset_y, blur, spread, radius, color)
         }
     }
@@ -521,8 +521,8 @@ fn observe_json(capture: &CaptureOutput) -> String {
     writeln!(&mut json, "  }},").unwrap();
     writeln!(&mut json, "  \"route\": [").unwrap();
     let route_entries = [
-        "UiStyleResource::runtime_surface_style",
-        "UiRuntimeControlVisualStyle fill/radius/shadows",
+        "ViewStyleResource::runtime_surface_style",
+        "ViewRuntimeControlVisualStyle fill/radius/shadows",
         "UiRoundedRect direct primitive from style fill and border-radius",
         "UiCompositingEffects::box_shadows",
         "UiBoxShadowPassPlan unified outer/inset pass list",
@@ -547,7 +547,7 @@ fn observe_json(capture: &CaptureOutput) -> String {
     .unwrap();
     writeln!(
         &mut json,
-        "    \"style_source\": \"UiStyleResource typed CSS-lowered surface rules\","
+        "    \"style_source\": \"ViewStyleResource typed CSS-lowered surface rules\","
     )
     .unwrap();
     writeln!(&mut json, "    \"rounded_rect_fill\": true,").unwrap();

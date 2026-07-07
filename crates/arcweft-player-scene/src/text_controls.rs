@@ -2,9 +2,9 @@ use crate::control_style::lower_control_style;
 use crate::input::InputController;
 use arcweft_bundle::resource_codec::ui::{
     EnterKeyHint as UiEnterKeyHint, TextAssistPolicy as UiTextAssistPolicy,
-    TextCapitalization as UiTextCapitalization, UiInputKind, UiInputPurpose, UiRuntimeTextControl,
-    UiRuntimeTextControlBounds, UiRuntimeTextSelection, UiTextSelectionPolicy,
-    UiTextShortcutPolicy, UiTextTabPolicy, UiTextVerticalNavigationPolicy,
+    TextCapitalization as UiTextCapitalization, UiInputKind, UiInputPurpose, UiTextSelectionPolicy,
+    UiTextShortcutPolicy, UiTextTabPolicy, UiTextVerticalNavigationPolicy, ViewRuntimeTextControl,
+    ViewRuntimeTextControlBounds, ViewRuntimeTextSelection,
 };
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::HitRect;
@@ -35,7 +35,7 @@ impl RuntimeTextControlLowerer {
     /// editor path before renderer frame preparation.
     pub fn lower_for_frame(
         input: &mut InputController,
-        controls: &[UiRuntimeTextControl],
+        controls: &[ViewRuntimeTextControl],
     ) -> Result<Vec<RenderTextInputControl>, RuntimeTextControlLoweringError> {
         let controls = Self::lower_controls(controls)?;
         input.retain_live_text_control_focus(&controls);
@@ -47,13 +47,13 @@ impl RuntimeTextControlLowerer {
     }
 
     pub fn lower_controls(
-        controls: &[UiRuntimeTextControl],
+        controls: &[ViewRuntimeTextControl],
     ) -> Result<Vec<RenderTextInputControl>, RuntimeTextControlLoweringError> {
         controls.iter().map(Self::lower_control).collect()
     }
 
     pub fn lower_control(
-        control: &UiRuntimeTextControl,
+        control: &ViewRuntimeTextControl,
     ) -> Result<RenderTextInputControl, RuntimeTextControlLoweringError> {
         let target = lower_target(&control.target)?;
         let selection = lower_selection(control.selection.clamped_to_text(&control.value));
@@ -104,14 +104,14 @@ fn lower_target(target: &str) -> Result<InteractionTarget, RuntimeTextControlLow
         })
 }
 
-fn lower_selection(selection: UiRuntimeTextSelection) -> TextRange<TextByteOffset> {
+fn lower_selection(selection: ViewRuntimeTextSelection) -> TextRange<TextByteOffset> {
     TextRange::new(
         TextByteOffset(selection.start),
         TextByteOffset(selection.end),
     )
 }
 
-fn lower_bounds(bounds: UiRuntimeTextControlBounds) -> HitRect {
+fn lower_bounds(bounds: ViewRuntimeTextControlBounds) -> HitRect {
     HitRect::new(
         milli_i32_to_f32(bounds.x_milli),
         milli_i32_to_f32(bounds.y_milli),
@@ -128,7 +128,7 @@ fn lower_role(kind: UiInputKind) -> SemanticRole {
     }
 }
 
-fn lower_options(control: &UiRuntimeTextControl) -> TextInputOptions {
+fn lower_options(control: &ViewRuntimeTextControl) -> TextInputOptions {
     TextInputOptions::default()
         .with_purpose(lower_purpose(control.options.purpose))
         .with_autocorrect(lower_assist(control.options.autocorrect))

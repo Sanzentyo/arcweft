@@ -35,7 +35,7 @@ fn shared_crates_do_not_receive_windows_com_identity() {
         "crates/arcweft-presentation/src/text_input.rs",
         "crates/arcweft-presentation/src/text_editor.rs",
         "crates/arcweft-runtime-host/src/text_input_dispatch.rs",
-        "crates/arcweft-ui/src/text_field.rs",
+        "crates/arcweft-view/src/text_field.rs",
     ] {
         let source = std::fs::read_to_string(workspace.join(rel)).expect("source is readable");
         for forbidden in [

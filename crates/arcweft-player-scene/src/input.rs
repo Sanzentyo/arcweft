@@ -31,6 +31,20 @@ pub struct DragState {
     pub target: arcweft_presentation::input::InteractionTarget,
     pub start: ViewportPoint,
     pub current: ViewportPoint,
+    pub modifiers: InputPointerModifiers,
+    intent: DragIntent,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum DragIntent {
+    #[default]
+    SelectOrActivate,
+    MoveSelectedText,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct InputPointerModifiers {
+    shift: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -39,7 +53,29 @@ struct TextPointerSelectionState {
     target: arcweft_presentation::input::InteractionTarget,
     position: ViewportPoint,
     selecting: bool,
+    kind: TextPointerSelectionKind,
 }
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum TextPointerSelectionKind {
+    #[default]
+    Caret,
+    Word,
+    Line,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct LastPointerActivation {
+    target: arcweft_presentation::input::InteractionTarget,
+    position: ViewportPoint,
+    click_count: u8,
+    epoch: u64,
+}
+
+const MULTI_CLICK_DISTANCE_SQUARED: f32 = 64.0;
+const MULTI_CLICK_EPOCH_WINDOW: u64 = 8;
+const TEXT_DRAG_AUTOSCROLL_EDGE: f32 = 24.0;
+const TEXT_DRAG_AUTOSCROLL_STEP: f32 = 32.0;
 
 /// Portable player-input state that can be stored alongside a runtime save.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -88,6 +124,18 @@ impl DragState {
         let dx = self.current.x - self.start.x;
         let dy = self.current.y - self.start.y;
         dx.mul_add(dx, dy * dy)
+    }
+}
+
+impl InputPointerModifiers {
+    pub const NONE: Self = Self { shift: false };
+
+    pub const fn new(shift: bool) -> Self {
+        Self { shift }
+    }
+
+    pub const fn shift(self) -> bool {
+        self.shift
     }
 }
 
@@ -191,6 +239,7 @@ pub struct InputController {
     ime_composing: bool,
     focused_text_editor: Option<TextEditorState>,
     text_editor_clipboard: TextEditorClipboard,
+    last_pointer_activation: Option<LastPointerActivation>,
 }
 
 impl InputController {
@@ -388,6 +437,7 @@ impl InputController {
         if let Some(drag) = self.drags.get_mut(&pointer.0) {
             drag.current = position;
         }
+        let _ = self.auto_scroll_text_drag(frame, pointer, position);
         if let Some(selection) = self.text_drag_selection(frame, pointer, position, true) {
             let _ = self.apply_or_defer_text_pointer_selection(frame, selection);
         }
@@ -405,6 +455,7 @@ impl InputController {
         frame: &PreparedFrame,
         pointer: PointerId,
         position: ViewportPoint,
+        modifiers: InputPointerModifiers,
     ) -> InputOutcome {
         self.pointer_positions.insert(pointer.0, position);
         let raw = self.raw(RawInputKind::Pointer(PointerInput {
@@ -416,16 +467,21 @@ impl InputController {
         if let RouteDecision::Routed(event) = routed.decision() {
             let target = event.target().clone();
             if let Some(node) = frame.semantics.find(&target) {
-                if frame_target_is_text_input(frame, &target) {
-                    self.pending_text_pointer_selection = Some(TextPointerSelectionState {
-                        pointer,
-                        target: target.clone(),
-                        position,
-                        selecting: false,
-                    });
+                let intent = if frame_target_is_text_input(frame, &target) {
+                    let intent = self.text_drag_intent(frame, &target, position, modifiers);
+                    self.pending_text_pointer_selection = (intent == DragIntent::SelectOrActivate)
+                        .then(|| TextPointerSelectionState {
+                            pointer,
+                            target: target.clone(),
+                            position,
+                            selecting: modifiers.shift(),
+                            kind: TextPointerSelectionKind::Caret,
+                        });
+                    intent
                 } else {
                     self.pending_text_pointer_selection = None;
-                }
+                    DragIntent::SelectOrActivate
+                };
                 self.interaction
                     .set_focus(FocusState::new(node.layer().clone(), target.clone()));
                 self.interaction.capture_pointer(PointerCapture::new(
@@ -446,6 +502,8 @@ impl InputController {
                         target,
                         start: position,
                         current: position,
+                        modifiers,
+                        intent,
                     },
                 );
             }
@@ -458,6 +516,7 @@ impl InputController {
         frame: &PreparedFrame,
         pointer: PointerId,
         position: ViewportPoint,
+        modifiers: InputPointerModifiers,
     ) -> InputOutcome {
         self.pointer_positions.insert(pointer.0, position);
         let raw = self.raw(RawInputKind::Pointer(PointerInput {
@@ -473,21 +532,36 @@ impl InputController {
         let is_activation = drag
             .as_ref()
             .is_some_and(|drag| drag.distance_squared() <= 64.0);
+        let mut pointer_text_write_backs = Vec::new();
         if let Some(drag) = drag
             .as_ref()
             .filter(|drag| frame_target_is_text_input(frame, &drag.target))
         {
-            let _ = self.apply_or_defer_text_pointer_selection(
-                frame,
-                TextPointerSelectionState {
-                    pointer,
-                    target: drag.target.clone(),
-                    position,
-                    selecting: !is_activation,
-                },
-            );
+            if drag.intent == DragIntent::MoveSelectedText && !is_activation {
+                if let Some(write_back) =
+                    self.move_selected_text_to_pointer(frame, drag.target.clone(), position)
+                {
+                    pointer_text_write_backs.push(write_back);
+                }
+            } else {
+                let kind = if is_activation {
+                    self.next_text_click_kind(&drag.target, position)
+                } else {
+                    TextPointerSelectionKind::Caret
+                };
+                let _ = self.apply_or_defer_text_pointer_selection(
+                    frame,
+                    TextPointerSelectionState {
+                        pointer,
+                        target: drag.target.clone(),
+                        position,
+                        selecting: drag.modifiers.shift() || modifiers.shift() || !is_activation,
+                        kind,
+                    },
+                );
+            }
         }
-        let (actions, text_control_write_backs, diagnostics, action_button_activation) =
+        let (actions, mut text_control_write_backs, diagnostics, action_button_activation) =
             match (released, routed.decision(), is_activation) {
                 (Some(pressed), RouteDecision::Routed(event), true)
                     if &pressed == event.target() =>
@@ -508,6 +582,7 @@ impl InputController {
                 }
                 _ => (Vec::new(), Vec::new(), Vec::new(), false),
             };
+        text_control_write_backs.extend(pointer_text_write_backs);
         let text_input_activation = routed
             .event()
             .is_some_and(|event| frame_target_is_text_input(frame, event.target()));
@@ -518,6 +593,39 @@ impl InputController {
             diagnostics,
             is_activation && !text_input_activation && !action_button_activation,
         )
+    }
+
+    pub fn pointer_context_menu(
+        &mut self,
+        frame: &PreparedFrame,
+        pointer: PointerId,
+        position: ViewportPoint,
+        modifiers: InputPointerModifiers,
+    ) -> InputOutcome {
+        self.pointer_positions.insert(pointer.0, position);
+        let raw = self.raw(RawInputKind::Pointer(PointerInput {
+            pointer,
+            position,
+            phase: PointerPhase::Down,
+        }));
+        let routed = InputRouter::route(&raw, &frame.layers, &frame.hits, &self.interaction);
+        if let RouteDecision::Routed(event) = routed.decision() {
+            let target = event.target().clone();
+            if frame_target_is_text_input(frame, &target) {
+                self.set_focus(frame, target.clone());
+                let _ = self.apply_or_defer_text_pointer_selection(
+                    frame,
+                    TextPointerSelectionState {
+                        pointer,
+                        target,
+                        position,
+                        selecting: modifiers.shift(),
+                        kind: TextPointerSelectionKind::Caret,
+                    },
+                );
+            }
+        }
+        InputOutcome::redraw(true)
     }
 
     pub fn pointer_cancel(&mut self, pointer: PointerId) -> InputOutcome {
@@ -907,12 +1015,131 @@ impl InputController {
         selecting: bool,
     ) -> Option<TextPointerSelectionState> {
         let drag = self.drags.get(&pointer.0)?;
-        frame_target_is_text_input(frame, &drag.target).then(|| TextPointerSelectionState {
+        (drag.intent == DragIntent::SelectOrActivate
+            && frame_target_is_text_input(frame, &drag.target))
+        .then(|| TextPointerSelectionState {
             pointer,
             target: drag.target.clone(),
             position,
             selecting,
+            kind: TextPointerSelectionKind::Caret,
         })
+    }
+
+    fn text_drag_intent(
+        &self,
+        frame: &PreparedFrame,
+        target: &arcweft_presentation::input::InteractionTarget,
+        position: ViewportPoint,
+        modifiers: InputPointerModifiers,
+    ) -> DragIntent {
+        if modifiers.shift() {
+            return DragIntent::SelectOrActivate;
+        }
+        let Some(focused) = frame.focused_text_input_target() else {
+            return DragIntent::SelectOrActivate;
+        };
+        let Some(editor) = self.focused_text_editor.as_ref() else {
+            return DragIntent::SelectOrActivate;
+        };
+        if focused.snapshot.target() != target || editor.target() != target {
+            return DragIntent::SelectOrActivate;
+        }
+        let selection = editor.selection();
+        if selection.start() == selection.end() {
+            return DragIntent::SelectOrActivate;
+        }
+        let offset =
+            viewport_text_hit_offset(focused.geometry.viewport_character_bounds(), position);
+        if offset.0 > selection.start().0 && offset.0 < selection.end().0 {
+            DragIntent::MoveSelectedText
+        } else {
+            DragIntent::SelectOrActivate
+        }
+    }
+
+    fn auto_scroll_text_drag(
+        &mut self,
+        frame: &PreparedFrame,
+        pointer: PointerId,
+        position: ViewportPoint,
+    ) -> bool {
+        let Some(drag) = self.drags.get(&pointer.0) else {
+            return false;
+        };
+        if drag.intent != DragIntent::SelectOrActivate
+            || !frame_target_is_text_input(frame, &drag.target)
+        {
+            return false;
+        }
+        let Some(focused) = frame.focused_text_input_target() else {
+            return false;
+        };
+        if focused.snapshot.target() != &drag.target {
+            return false;
+        }
+        let control = focused.geometry.viewport_control_rect();
+        let control_center = ViewportPoint::new(
+            control.x + control.width * 0.5,
+            control.y + control.height * 0.5,
+        );
+        let Some(region) = frame
+            .scroll_regions
+            .iter()
+            .find(|region| region.contains(control_center))
+        else {
+            return false;
+        };
+        let current = self
+            .scroll_offsets
+            .get(&region.id)
+            .copied()
+            .unwrap_or_else(|| ScrollOffset::new(region.offset_x, region.offset_y));
+        let next = match region.axis {
+            arcweft_render_wgpu::geometry::RenderScrollAxis::Vertical => {
+                if position.y < region.bounds.y + TEXT_DRAG_AUTOSCROLL_EDGE {
+                    ScrollOffset::new(
+                        current.x,
+                        region.clamped_offset_y(current.y - TEXT_DRAG_AUTOSCROLL_STEP),
+                    )
+                } else if position.y
+                    > region.bounds.y + region.bounds.height - TEXT_DRAG_AUTOSCROLL_EDGE
+                {
+                    ScrollOffset::new(
+                        current.x,
+                        region.clamped_offset_y(current.y + TEXT_DRAG_AUTOSCROLL_STEP),
+                    )
+                } else {
+                    current
+                }
+            }
+            arcweft_render_wgpu::geometry::RenderScrollAxis::Horizontal => {
+                if position.x < region.bounds.x + TEXT_DRAG_AUTOSCROLL_EDGE {
+                    ScrollOffset::new(
+                        region.clamped_offset_x(current.x - TEXT_DRAG_AUTOSCROLL_STEP),
+                        current.y,
+                    )
+                } else if position.x
+                    > region.bounds.x + region.bounds.width - TEXT_DRAG_AUTOSCROLL_EDGE
+                {
+                    ScrollOffset::new(
+                        region.clamped_offset_x(current.x + TEXT_DRAG_AUTOSCROLL_STEP),
+                        current.y,
+                    )
+                } else {
+                    current
+                }
+            }
+        };
+        if next == current {
+            return false;
+        }
+        if next.is_zero() {
+            self.scroll_offsets.remove(&region.id);
+        } else {
+            self.scroll_offsets.insert(region.id.clone(), next);
+        }
+        true
     }
 
     fn apply_or_defer_text_pointer_selection(
@@ -938,8 +1165,66 @@ impl InputController {
             focused.geometry.viewport_character_bounds(),
             selection.position,
         );
-        editor.set_caret_to_text_offset(caret, selection.selecting)?;
+        match selection.kind {
+            TextPointerSelectionKind::Caret => {
+                editor.set_caret_to_text_offset(caret, selection.selecting)?;
+            }
+            TextPointerSelectionKind::Word => {
+                editor.select_word_at_text_offset(caret, selection.selecting)?;
+            }
+            TextPointerSelectionKind::Line => {
+                editor.select_line_at_text_offset(caret, selection.selecting)?;
+            }
+        }
         Ok(editor.selection() != before_selection || editor.caret() != before_caret)
+    }
+
+    fn next_text_click_kind(
+        &mut self,
+        target: &arcweft_presentation::input::InteractionTarget,
+        position: ViewportPoint,
+    ) -> TextPointerSelectionKind {
+        let epoch = self.next_epoch;
+        let click_count = self
+            .last_pointer_activation
+            .as_ref()
+            .filter(|last| {
+                &last.target == target
+                    && epoch.saturating_sub(last.epoch) <= MULTI_CLICK_EPOCH_WINDOW
+                    && point_distance_squared(last.position, position)
+                        <= MULTI_CLICK_DISTANCE_SQUARED
+            })
+            .map_or(1, |last| last.click_count.saturating_add(1).min(3));
+        self.last_pointer_activation = Some(LastPointerActivation {
+            target: target.clone(),
+            position,
+            click_count,
+            epoch,
+        });
+        match click_count {
+            2 => TextPointerSelectionKind::Word,
+            3.. => TextPointerSelectionKind::Line,
+            _ => TextPointerSelectionKind::Caret,
+        }
+    }
+
+    fn move_selected_text_to_pointer(
+        &mut self,
+        frame: &PreparedFrame,
+        target: arcweft_presentation::input::InteractionTarget,
+        position: ViewportPoint,
+    ) -> Option<TextControlWriteBack> {
+        let focused = frame.focused_text_input_target()?;
+        let editor = self.focused_text_editor.as_mut()?;
+        if focused.snapshot.target() != &target || editor.target() != &target {
+            return None;
+        }
+        let offset =
+            viewport_text_hit_offset(focused.geometry.viewport_character_bounds(), position);
+        editor
+            .move_selection_to_text_offset(offset)
+            .ok()
+            .and_then(|changed| changed.then(|| text_control_change_writeback(editor)))
     }
 
     fn action_button_submit(
@@ -1022,6 +1307,27 @@ fn viewport_text_hit_offset(
     candidates
         .last()
         .map_or(TextByteOffset(0), |bounds| *bounds.range.end())
+}
+
+fn point_distance_squared(left: ViewportPoint, right: ViewportPoint) -> f32 {
+    let dx = left.x - right.x;
+    let dy = left.y - right.y;
+    dx.mul_add(dx, dy * dy)
+}
+
+fn text_control_change_writeback(editor: &TextEditorState) -> TextControlWriteBack {
+    let privacy = if editor.options().is_secure() {
+        TextInputPrivacy::Sensitive
+    } else {
+        TextInputPrivacy::Plain
+    };
+    TextControlWriteBack::change(
+        editor.target().clone(),
+        editor.session(),
+        TextControlValue::new(editor.text(), privacy),
+        editor.selection(),
+        editor.revision(),
+    )
 }
 
 fn activation_outcome(
@@ -1241,8 +1547,8 @@ mod tests {
         let mut input = InputController::default();
         let position = ViewportPoint::new(30.0, 40.0);
 
-        let down = input.pointer_down(&frame, PointerId(0), position);
-        let up = input.pointer_up(&frame, PointerId(0), position);
+        let down = input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+        let up = input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
 
         assert!(!down.dialogue_advance);
         assert!(!up.dialogue_advance);

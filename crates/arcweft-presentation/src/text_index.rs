@@ -352,6 +352,49 @@ impl TextIndexSnapshot {
         Ok(self.len_bytes())
     }
 
+    /// Returns the contiguous word-like or separator run at a caret/click
+    /// offset. This is used for double-click selection and deliberately runs on
+    /// shared grapheme clusters so fallback-heavy text such as `Дﾟ` is not split
+    /// by adapter-specific code.
+    pub fn word_range_at(
+        &self,
+        offset: TextByteOffset,
+    ) -> Result<TextRange<TextByteOffset>, TextIndexError> {
+        self.validate_byte_offset(offset)?;
+        let clusters = self.grapheme_clusters();
+        if clusters.is_empty() {
+            return Ok(TextRange::new(TextByteOffset(0), TextByteOffset(0)));
+        }
+        let index = clusters
+            .iter()
+            .position(|cluster| offset.0 >= cluster.start.0 && offset.0 < cluster.end.0)
+            .or_else(|| {
+                clusters
+                    .iter()
+                    .position(|cluster| offset.0 == cluster.start.0)
+            })
+            .unwrap_or_else(|| clusters.len().saturating_sub(1));
+        if clusters[index].line_break {
+            return Ok(TextRange::new(clusters[index].start, clusters[index].start));
+        }
+        let word_like = clusters[index].word_like;
+        let mut start = index;
+        while start > 0
+            && !clusters[start - 1].line_break
+            && clusters[start - 1].word_like == word_like
+        {
+            start -= 1;
+        }
+        let mut end = index + 1;
+        while end < clusters.len()
+            && !clusters[end].line_break
+            && clusters[end].word_like == word_like
+        {
+            end += 1;
+        }
+        Ok(TextRange::new(clusters[start].start, clusters[end - 1].end))
+    }
+
     /// Returns the closest valid byte offset for a horizontal hit-test character
     /// slot. This is a presentation/editor rule, not a native range conversion:
     /// invalid native offsets still use the fallible conversion APIs above.
@@ -395,6 +438,32 @@ impl TextIndexSnapshot {
         }
         boundaries
     }
+
+    fn grapheme_clusters(&self) -> Vec<TextGraphemeCluster> {
+        let boundaries = self.grapheme_boundaries();
+        boundaries
+            .windows(2)
+            .filter_map(|pair| {
+                let start = pair[0];
+                let end = pair[1];
+                let text = self.slice_byte_range(TextRange::new(start, end)).ok()?;
+                Some(TextGraphemeCluster {
+                    start,
+                    end,
+                    word_like: text.chars().any(is_word_char),
+                    line_break: text.chars().any(|ch| ch == '\n' || ch == '\r'),
+                })
+            })
+            .collect()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TextGraphemeCluster {
+    start: TextByteOffset,
+    end: TextByteOffset,
+    word_like: bool,
+    line_break: bool,
 }
 
 const fn char_utf8_len_u32(ch: char) -> u32 {
@@ -448,6 +517,7 @@ fn is_grapheme_extend(ch: char) -> bool {
             | '\u{1dc0}'..='\u{1dff}'
             | '\u{20d0}'..='\u{20ff}'
             | '\u{fe20}'..='\u{fe2f}'
+            | '\u{ff9e}'..='\u{ff9f}'
     )
 }
 

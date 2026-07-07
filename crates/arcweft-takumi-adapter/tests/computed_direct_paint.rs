@@ -2,7 +2,7 @@ use arcweft_takumi_adapter::{
     ComputedDirectPaintExtractor, ComputedDirectPaintInput, DirectPaintResourceTable,
     TakumiAdapter, TakumiAdapterInput, TakumiCssBundle,
 };
-use arcweft_ui::{ContainerKind, FragmentKind, NodeKey, StyleId, ViewFragmentBuilder};
+use arcweft_view::{ContainerKind, FragmentKind, NodeKey, StyleId, ViewFragmentBuilder};
 use takumi::prelude::{Fonts, Viewport};
 use takumi::unstable::base::{
     context::RenderContext,

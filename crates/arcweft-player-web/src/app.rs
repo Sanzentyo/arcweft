@@ -364,17 +364,32 @@ impl ApplicationHandler for BrowserApp {
                 position,
                 ..
             } if button.clone().mouse_button() == Some(MouseButton::Left)
+                || button.clone().mouse_button() == Some(MouseButton::Right)
                 || matches!(button, ButtonSource::Touch { .. }) =>
             {
                 if let Some(frame) = state.prepared.clone() {
                     let pointer = pointer_id(&button);
                     let position = logical_position(position, window.scale_factor());
+                    let modifiers = arcweft_player_scene::input::InputPointerModifiers::new(
+                        state.keyboard_modifiers.shift_key(),
+                    );
                     let outcome = match element_state {
+                        ElementState::Pressed
+                            if button.mouse_button() == Some(MouseButton::Right) =>
+                        {
+                            state
+                                .input
+                                .pointer_context_menu(&frame, pointer, position, modifiers)
+                        }
                         ElementState::Pressed => {
                             let _ = state.canvas.focus();
-                            state.input.pointer_down(&frame, pointer, position)
+                            state
+                                .input
+                                .pointer_down(&frame, pointer, position, modifiers)
                         }
-                        ElementState::Released => state.input.pointer_up(&frame, pointer, position),
+                        ElementState::Released => {
+                            state.input.pointer_up(&frame, pointer, position, modifiers)
+                        }
                     };
                     apply_outcome(&mut state, outcome);
                 }

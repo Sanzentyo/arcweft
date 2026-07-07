@@ -12,7 +12,7 @@ use arcweft_image::{
     DecodedImage, ImageDecodeOptions, ImageError, ImageFormat, decode_image_bytes,
 };
 use arcweft_presentation::character::{CharacterRenderLayer, CharacterRenderSpec};
-use arcweft_ui::{
+use arcweft_view::{
     ContainerKind, FragmentKind, ImageAlignment, ImageFit, ImageId, LayoutBox, LayoutLength,
     LayoutPoint, LayoutResults, LayoutSize, LayoutTree, NodeId, NodeKey, StyleId, UiError,
     UiImageSource, UiImageSourceTable, UiLayerOutput, UiResolvedImageFrame, UiSemanticFragment,

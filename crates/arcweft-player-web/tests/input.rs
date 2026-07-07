@@ -1,12 +1,15 @@
 use arcweft_bundle::resource_codec::ui::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
-    UiInputPurpose, UiRuntimeControlStyle, UiRuntimeTextControl, UiRuntimeTextControlBounds,
-    UiRuntimeTextControlHandlers, UiRuntimeTextControlOptions, UiRuntimeTextSelection,
-    UiSecureInputPolicy, UiTextSelectionPolicy, UiTextShortcutPolicy, UiTextTabPolicy,
-    UiTextVerticalNavigationPolicy,
+    UiInputPurpose, UiSecureInputPolicy, UiTextSelectionPolicy, UiTextShortcutPolicy,
+    UiTextTabPolicy, UiTextVerticalNavigationPolicy, ViewRuntimeControlStyle,
+    ViewRuntimeTextControl, ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers,
+    ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
 };
 use arcweft_id::PublicId;
-use arcweft_player_scene::{input::InputController, text_controls::RuntimeTextControlLowerer};
+use arcweft_player_scene::{
+    input::{InputController, InputPointerModifiers},
+    text_controls::RuntimeTextControlLowerer,
+};
 use arcweft_presentation::{
     hit::HitRect,
     input::{InteractionTarget, KeyPhase, PointerId, ViewportPoint},
@@ -167,8 +170,8 @@ fn pointer_activation_emits_a_typed_semantic_choice_action() {
         bounds.y + bounds.height * 0.5,
     );
     let mut input = InputController::default();
-    input.pointer_down(&frame, PointerId(0), point);
-    let outcome = input.pointer_up(&frame, PointerId(0), point);
+    input.pointer_down(&frame, PointerId(0), point, InputPointerModifiers::NONE);
+    let outcome = input.pointer_up(&frame, PointerId(0), point, InputPointerModifiers::NONE);
 
     assert_eq!(outcome.actions.len(), 1);
     assert_eq!(outcome.actions[0].kind().as_str(), "action.choice.select");
@@ -190,9 +193,9 @@ fn drag_beyond_the_activation_threshold_does_not_select() {
     let start = ViewportPoint::new(bounds.x + 10.0, bounds.y + 10.0);
     let moved = ViewportPoint::new(bounds.x + 30.0, bounds.y + 10.0);
     let mut input = InputController::default();
-    input.pointer_down(&frame, PointerId(0), start);
+    input.pointer_down(&frame, PointerId(0), start, InputPointerModifiers::NONE);
     input.pointer_move(&frame, PointerId(0), moved);
-    let outcome = input.pointer_up(&frame, PointerId(0), moved);
+    let outcome = input.pointer_up(&frame, PointerId(0), moved, InputPointerModifiers::NONE);
 
     assert!(outcome.actions.is_empty());
 }
@@ -304,7 +307,12 @@ fn web_hidden_view_action_button_rejects_stale_hit_and_focus() {
     );
 
     let mut input = InputController::default();
-    input.pointer_down(&live_frame, PointerId(0), position);
+    input.pointer_down(
+        &live_frame,
+        PointerId(0),
+        position,
+        InputPointerModifiers::NONE,
+    );
     assert_eq!(input.visual_state().pressed, Some(target.clone()));
 
     let hidden_frame = frame_with_action_button(Vec::new(), None);
@@ -312,7 +320,12 @@ fn web_hidden_view_action_button_rejects_stale_hit_and_focus() {
     assert!(hidden_frame.action_button_for_target(&target).is_none());
     assert!(!hidden_frame.keyboard_focus_targets().contains(&target));
 
-    let outcome = input.pointer_up(&hidden_frame, PointerId(0), position);
+    let outcome = input.pointer_up(
+        &hidden_frame,
+        PointerId(0),
+        position,
+        InputPointerModifiers::NONE,
+    );
     assert!(outcome.actions().is_empty());
     assert!(outcome.text_control_write_backs().is_empty());
     assert!(input.visual_state().pressed.is_none());
@@ -360,17 +373,17 @@ fn render_action_button(target: &str, action: &str) -> RenderActionButton {
     }
 }
 
-fn runtime_control(public_id: &str, kind: UiInputKind, value: &str) -> UiRuntimeTextControl {
+fn runtime_control(public_id: &str, kind: UiInputKind, value: &str) -> ViewRuntimeTextControl {
     let end = u32::try_from(value.len()).expect("test text length fits in u32");
-    UiRuntimeTextControl {
+    ViewRuntimeTextControl {
         public_id: public_id.to_owned(),
         target: public_id.to_owned(),
         view: Some("view.WebPanel".to_owned()),
         containing_scroll_region: None,
         session: stable_test_session(public_id),
         value: value.to_owned(),
-        selection: UiRuntimeTextSelection::new(end, end),
-        options: UiRuntimeTextControlOptions {
+        selection: ViewRuntimeTextSelection::new(end, end),
+        options: ViewRuntimeTextControlOptions {
             purpose: UiInputPurpose::Text,
             autocorrect: TextAssistPolicy::PlatformDefault,
             spellcheck: TextAssistPolicy::PlatformDefault,
@@ -385,10 +398,10 @@ fn runtime_control(public_id: &str, kind: UiInputKind, value: &str) -> UiRuntime
             composition_on_blur: CompositionOnBlurPolicy::Commit,
         },
         kind,
-        bounds: UiRuntimeTextControlBounds::from_px(48, 48, 260, 48),
+        bounds: ViewRuntimeTextControlBounds::from_px(48, 48, 260, 48),
         label: Some("Name".to_owned()),
-        handlers: UiRuntimeTextControlHandlers::default(),
-        style: UiRuntimeControlStyle::default(),
+        handlers: ViewRuntimeTextControlHandlers::default(),
+        style: ViewRuntimeControlStyle::default(),
     }
 }
 

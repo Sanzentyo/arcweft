@@ -1,7 +1,7 @@
 use super::compositing::UiPaintNode;
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
-use arcweft_ui::{TextEditorPart, TextFieldVisualBuffer};
+use arcweft_view::{TextEditorPart, TextFieldVisualBuffer};
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct UiScene {
@@ -310,7 +310,7 @@ mod tests {
     };
     use crate::ui_scene::UiPaintNode;
     use arcweft_presentation::hit::HitRect;
-    use arcweft_ui::{TextEditState, TextEditorPart, TextFieldMetrics};
+    use arcweft_view::{TextEditState, TextEditorPart, TextFieldMetrics};
 
     #[test]
     fn ui_scene_preserves_context_primitive_and_paint_node_order() {

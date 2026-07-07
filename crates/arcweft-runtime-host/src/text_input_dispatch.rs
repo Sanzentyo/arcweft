@@ -431,7 +431,7 @@ mod tests {
         PlatformTextSelection, TextByteOffset, TextCompositionUpdate, TextInputAdapterKind,
         TextInputOperation, TextInputPrivacy, TextRange, TextSelectionAffinity,
     };
-    use arcweft_ui::text_field::{TextEditState, TextFieldEditPolicy};
+    use arcweft_view::text_field::{TextEditState, TextFieldEditPolicy};
 
     fn target(name: &str) -> InteractionTarget {
         InteractionTarget::new(PublicId::try_new(format!("target.{name}")).unwrap())
@@ -504,7 +504,7 @@ mod tests {
         assert_eq!(editor.document(), "");
         assert_eq!(
             editor.visual_source(),
-            arcweft_ui::UiTextSource::plain("にほんご")
+            arcweft_view::UiTextSource::plain("にほんご")
         );
 
         let commit = PlatformTextInputEvent::Commit {

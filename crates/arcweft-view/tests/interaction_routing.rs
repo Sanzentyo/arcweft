@@ -5,7 +5,7 @@ use arcweft_presentation::input::{InputEpoch, InputEvent, InteractionTarget, Poi
 use arcweft_presentation::interaction::{FocusState, InteractionState, PressedTarget};
 use arcweft_presentation::layer::LayerId;
 use arcweft_presentation::semantic::SemanticRole;
-use arcweft_ui::{
+use arcweft_view::{
     EventBinding, EventKind, FragmentKind, HandlerId, LayoutBox, LayoutLength, LayoutPoint,
     LayoutResults, LayoutSize, LayoutTree, Milli, NodeKey, Rgba8, RichTextSourceId, SemanticSpecId,
     StyleId, UiInteractionSelector, UiLayerOutput, UiPropertyKind, UiPropertyValue,
@@ -24,7 +24,7 @@ fn target(value: &str) -> InteractionTarget {
     InteractionTarget::new(public_id(&format!("target.{value}")))
 }
 
-fn fragment_and_layout() -> (arcweft_ui::ViewFragment, LayoutResults) {
+fn fragment_and_layout() -> (arcweft_view::ViewFragment, LayoutResults) {
     let mut fragment = ViewFragmentBuilder::default();
     let node = fragment
         .push_node(
@@ -55,7 +55,7 @@ fn semantic_fragment(
     ui: &LayerId,
     button: &InteractionTarget,
     enabled: bool,
-) -> arcweft_ui::UiSemanticFragment {
+) -> arcweft_view::UiSemanticFragment {
     let mut semantics = UiSemanticFragmentBuilder::default();
     semantics
         .push(

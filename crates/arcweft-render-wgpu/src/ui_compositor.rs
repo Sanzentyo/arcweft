@@ -334,7 +334,7 @@ impl UiCompositor {
         let root_extent = frame.target_extent.clamped(self.max_extent);
         let root = self
             .pool
-            .acquire(frame.device, self.format, root_extent, "arcweft-ui-root");
+            .acquire(frame.device, self.format, root_extent, "arcweft-view-root");
         let mut state = UiCompositorRenderState {
             device: frame.device,
             queue: frame.queue,
@@ -617,7 +617,7 @@ impl UiCompositor {
             state.device,
             self.format,
             group_extent,
-            "arcweft-ui-compositing-group",
+            "arcweft-view-compositing-group",
         );
         state.stats.offscreen_targets = state.stats.offscreen_targets.saturating_add(1);
         clear_target(state.encoder, &group_target.view);
@@ -665,7 +665,7 @@ impl UiCompositor {
                 state.device,
                 self.format,
                 parent_target.extent,
-                "arcweft-ui-backdrop-copy",
+                "arcweft-view-backdrop-copy",
             );
             state.stats.offscreen_targets = state.stats.offscreen_targets.saturating_add(1);
             state.encoder.copy_texture_to_texture(
@@ -796,7 +796,7 @@ impl UiCompositor {
                 device,
                 self.format,
                 output_extent.bucketed(self.max_extent),
-                "arcweft-ui-effect-pass",
+                "arcweft-view-effect-pass",
             );
             stats.offscreen_targets = stats.offscreen_targets.saturating_add(1);
             let uniform = match pass {
@@ -848,7 +848,7 @@ impl UiCompositor {
             state.device,
             self.format,
             source.extent,
-            "arcweft-ui-clip-pass",
+            "arcweft-view-clip-pass",
         );
         let visual_bounds = group.visual_bounds();
         self.run_shader_pass(
@@ -887,7 +887,7 @@ impl UiCompositor {
                 state.device,
                 self.format,
                 source.extent,
-                "arcweft-ui-mask-pass",
+                "arcweft-view-mask-pass",
             );
             let (mask_view, mask_channel, mask_extent) = match &pass.image {
                 UiMaskImagePlan::None => (
@@ -944,12 +944,12 @@ impl UiCompositor {
         inputs: &ShaderPassInputs<'_>,
     ) {
         let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("arcweft-ui-compositor-uniform"),
+            label: Some("arcweft-view-compositor-uniform"),
             contents: bytemuck::bytes_of(&inputs.uniform),
             usage: wgpu::BufferUsages::UNIFORM,
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("arcweft-ui-compositor-bind-group"),
+            label: Some("arcweft-view-compositor-bind-group"),
             layout: &self.pipelines.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -984,7 +984,7 @@ impl UiCompositor {
             &self.pipelines.replace_pipeline
         };
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("arcweft-ui-compositor-pass"),
+            label: Some("arcweft-view-compositor-pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: inputs.output,
                 resolve_target: None,
@@ -1092,11 +1092,11 @@ impl UiOffscreenTarget {
 impl UiCompositorPipelines {
     fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("arcweft-ui-compositor-shader"),
+            label: Some("arcweft-view-compositor-shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("ui_shaders/compositor.wgsl").into()),
         });
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("arcweft-ui-compositor-bind-group-layout"),
+            label: Some("arcweft-view-compositor-bind-group-layout"),
             entries: &[
                 texture_binding(0),
                 texture_binding(1),
@@ -1125,7 +1125,7 @@ impl UiCompositorPipelines {
             &shader,
             &bind_group_layout,
             None,
-            "arcweft-ui-compositor-replace-pipeline",
+            "arcweft-view-compositor-replace-pipeline",
         );
         let over_pipeline = compositor_pipeline(
             device,
@@ -1133,10 +1133,10 @@ impl UiCompositorPipelines {
             &shader,
             &bind_group_layout,
             Some(wgpu::BlendState::ALPHA_BLENDING),
-            "arcweft-ui-compositor-over-pipeline",
+            "arcweft-view-compositor-over-pipeline",
         );
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("arcweft-ui-compositor-sampler"),
+            label: Some("arcweft-view-compositor-sampler"),
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
@@ -1157,13 +1157,13 @@ impl UiDefaultTextures {
                 device,
                 queue,
                 [255, 255, 255, 255],
-                "arcweft-ui-white-mask",
+                "arcweft-view-white-mask",
             ),
             transparent: UiStaticTexture::new(
                 device,
                 queue,
                 [0, 0, 0, 0],
-                "arcweft-ui-transparent-backdrop",
+                "arcweft-view-transparent-backdrop",
             ),
         }
     }
@@ -1359,7 +1359,7 @@ fn compositor_pipeline(
 
 fn clear_target(encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView) {
     let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("arcweft-ui-compositor-clear"),
+        label: Some("arcweft-view-compositor-clear"),
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
             view: target,
             resolve_target: None,

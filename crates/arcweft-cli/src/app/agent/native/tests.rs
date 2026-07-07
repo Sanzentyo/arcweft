@@ -3196,7 +3196,7 @@ fn agent_ui_image_items_become_typed_image_objects_with_active_frame() {
         LayerId, LayerKind, LayerNode, LayerOrder, LayerTree, RenderPhase,
     };
     use arcweft_runtime_host::UiFrameCommitBuilder;
-    use arcweft_ui::{
+    use arcweft_view::{
         DisplayList, FragmentKind, ImageId, ImagePlayback, LayoutBox, LayoutLength, LayoutPoint,
         LayoutResults, LayoutSize, LayoutTree, NodeKey, StyleId, UiImageSource, UiImageSourceTable,
         UiLayerOutput, UiSemanticFragment, ViewFragmentBuilder,
@@ -3386,7 +3386,7 @@ fn agent_captures_presentation_image_objects_lowered_through_ui_frame() {
         LayerId, LayerKind, LayerNode, LayerOrder, LayerTree, RenderPhase,
     };
     use arcweft_runtime_host::UiFrameCommitBuilder;
-    use arcweft_ui::{UiImagePresentationFrame, UiImagePresentationInput};
+    use arcweft_view::{UiImagePresentationFrame, UiImagePresentationInput};
 
     fn public_id(value: &str) -> PublicId {
         PublicId::try_new(value).unwrap()

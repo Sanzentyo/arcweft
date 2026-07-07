@@ -90,9 +90,9 @@ arcweft-shader-validate
 arcweft-shader-reflect
 arcweft-shader-precompile
 arcweft-shader-hot-reload
-arcweft-ui
-arcweft-ui-servo
-arcweft-ui-dom
+arcweft-view
+arcweft-view-servo
+arcweft-view-dom
 arcweft-vector
 arcweft-svg
 arcweft-text-core
@@ -237,8 +237,8 @@ arcweft-launch
   orchestration を所有する。source direct execution は developer mode であり、
   `dev-source` feature 配下に閉じ込める。product player の正本は `.awfb` /
   bytecode bundle input とする。
-- UI は最初から細かい public crate family に分割せず、当面は
-  `arcweft-ui` が View registry、generational Entity、retained
+- View は最初から細かい public crate family に分割せず、当面は
+  `arcweft-view` が View registry、generational Entity、retained
   fragment、reactivity、style/layout integration、semantic UI nodes を所有する。
   Raw input routing、LayerTree、HitTree、focus、modal、pointer capture は
   `arcweft-presentation` 側の Sans I/O data/model とする。

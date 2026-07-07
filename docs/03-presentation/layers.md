@@ -472,7 +472,7 @@ ensures result.actions.all(_.layer == @layer.ui.game)
 
 1. `arcweft-layer-core`: `LayerTree`, `LayerNode`, `LayerRenderPolicy`, `LayerInputPolicy`。
 2. `arcweft-render`: `RenderSpec.layers` を `LayerTree` に移行。
-3. `arcweft-ui-layout`: UI node に layer を付与。
+3. `arcweft-view-layout`: View node に layer を付与。
 4. `arcweft-agent-observe`: observation に layer / object / action の対応を追加。
 5. `arcweft-agent-action`: input routing を layer stack 化。
 6. `arcweft-test`: layer assertion と input blocked expectation。

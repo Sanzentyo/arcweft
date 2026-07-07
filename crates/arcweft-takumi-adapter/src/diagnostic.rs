@@ -1,5 +1,5 @@
 use crate::metadata::TakumiPath;
-use arcweft_ui::NodeId;
+use arcweft_view::NodeId;
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

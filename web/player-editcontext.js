@@ -59,7 +59,15 @@ export class ArcweftEditContextPlayerGlue {
       this.#host.tabIndex = 0;
     }
 
-    this.#editContext = new window.EditContext({ text: this.#state.secure ? "" : this.#state.text });
+    this.#editContext = await this.#delegateCall(
+      "createEditContext",
+      this.#state.hostId,
+      this.#state.text,
+      this.#state.secure,
+    );
+    if (!this.#editContext) {
+      throw new Error("Arcweft wasm text-input delegate did not create EditContext");
+    }
     this.#host.editContext = this.#editContext;
     this.#state.installed = true;
 
@@ -283,7 +291,13 @@ export class ArcweftEditContextPlayerGlue {
   }
 
   async #handleKeyDown(event) {
-    const command = commandForKeyEvent(event);
+    const command = await this.#delegateCall("commandForKeyEvent", this.#state.hostId, {
+      key: event.key,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      altKey: event.altKey,
+      shiftKey: event.shiftKey,
+    });
     if (!command) {
       return;
     }
@@ -294,49 +308,17 @@ export class ArcweftEditContextPlayerGlue {
     }
     event.preventDefault();
     await this.#delegateCall("dispatchCommand", this.#state.hostId, command.name, Boolean(command.selecting));
-    await this.#applyLocalCommand(command, event);
-    this.#syncEditContextText();
-    this.#syncEditContextGeometry();
-    this.#renderMirror();
+    if (localClipboardCommand(command.name)) {
+      await this.#applyLocalCommand(command, event);
+      this.#syncEditContextText();
+      this.#syncEditContextGeometry();
+      this.#renderMirror();
+    }
     this.#emitStatus("command", { command: command.name, selecting: Boolean(command.selecting) });
   }
 
   async #applyLocalCommand(command, event) {
     switch (command.name) {
-      case "move_left":
-        this.#moveCaret(previousGraphemeOffset(this.#state.text, caretPosition(this.#state)), command.selecting);
-        await this.#dispatchSelectionUpdate();
-        break;
-      case "move_right":
-        this.#moveCaret(nextGraphemeOffset(this.#state.text, caretPosition(this.#state)), command.selecting);
-        await this.#dispatchSelectionUpdate();
-        break;
-      case "move_word_left":
-        this.#moveCaret(previousWordOffset(this.#state.text, caretPosition(this.#state)), command.selecting);
-        await this.#dispatchSelectionUpdate();
-        break;
-      case "move_word_right":
-        this.#moveCaret(nextWordOffset(this.#state.text, caretPosition(this.#state)), command.selecting);
-        await this.#dispatchSelectionUpdate();
-        break;
-      case "move_line_start":
-        this.#moveCaret(lineStartOffset(this.#state.text, caretPosition(this.#state)), command.selecting);
-        await this.#dispatchSelectionUpdate();
-        break;
-      case "move_line_end":
-        this.#moveCaret(lineEndOffset(this.#state.text, caretPosition(this.#state)), command.selecting);
-        await this.#dispatchSelectionUpdate();
-        break;
-      case "backspace":
-        await this.#deleteBackward();
-        break;
-      case "delete":
-        await this.#deleteForward();
-        break;
-      case "select_all":
-        this.#setSelection(0, utf16Length(this.#state.text), 0);
-        await this.#dispatchSelectionUpdate();
-        break;
       case "copy":
         this.#writeClipboard(event);
         break;
@@ -346,9 +328,6 @@ export class ArcweftEditContextPlayerGlue {
         break;
       case "paste":
         await this.#pasteFromEvent(event);
-        break;
-      case "submit":
-      case "cancel":
         break;
       default:
         break;
@@ -459,26 +438,6 @@ export class ArcweftEditContextPlayerGlue {
     this.#emitStatus("paste", { textLength: utf16Length(text) });
   }
 
-  async #deleteBackward() {
-    if (!selectionCollapsed(this.#state)) {
-      await this.#replaceSelection("");
-      return;
-    }
-    const caret = caretPosition(this.#state);
-    const start = previousGraphemeOffset(this.#state.text, caret);
-    await this.#replaceRange(start, caret, "");
-  }
-
-  async #deleteForward() {
-    if (!selectionCollapsed(this.#state)) {
-      await this.#replaceSelection("");
-      return;
-    }
-    const caret = caretPosition(this.#state);
-    const end = nextGraphemeOffset(this.#state.text, caret);
-    await this.#replaceRange(caret, end, "");
-  }
-
   async #replaceSelection(replacement) {
     const start = Math.min(this.#state.selectionStart, this.#state.selectionEnd);
     const end = Math.max(this.#state.selectionStart, this.#state.selectionEnd);
@@ -517,19 +476,6 @@ export class ArcweftEditContextPlayerGlue {
       observedTextBefore: this.#state.text,
       composing: this.#state.composing,
     });
-  }
-
-  #moveCaret(offset, selecting) {
-    const bounded = clampOffset(this.#state.text, offset);
-    if (selecting) {
-      this.#setSelection(
-        Math.min(this.#state.selectionAnchor, bounded),
-        Math.max(this.#state.selectionAnchor, bounded),
-        this.#state.selectionAnchor,
-      );
-    } else {
-      this.#setSelection(bounded, bounded, bounded);
-    }
   }
 
   #setSelection(start, end, anchor = start) {
@@ -795,43 +741,8 @@ function runtimeOffsetForPoint(geometry, x, y) {
   return last?.end ?? null;
 }
 
-function commandForKeyEvent(event) {
-  const selecting = Boolean(event.shiftKey);
-  const shortcut = event.metaKey || event.ctrlKey;
-  if (shortcut && !event.altKey) {
-    switch (event.key.toLowerCase()) {
-      case "a":
-        return { name: "select_all", suppressedDuringComposition: true };
-      case "c":
-        return { name: "copy", suppressedDuringComposition: true };
-      case "x":
-        return { name: "cut", suppressedDuringComposition: true };
-      case "v":
-        return { name: "paste", suppressedDuringComposition: true };
-      default:
-        break;
-    }
-  }
-  switch (event.key) {
-    case "ArrowLeft":
-      return { name: event.altKey || event.ctrlKey ? "move_word_left" : "move_left", selecting };
-    case "ArrowRight":
-      return { name: event.altKey || event.ctrlKey ? "move_word_right" : "move_right", selecting };
-    case "Home":
-      return { name: "move_line_start", selecting };
-    case "End":
-      return { name: "move_line_end", selecting };
-    case "Backspace":
-      return { name: "backspace" };
-    case "Delete":
-      return { name: "delete" };
-    case "Enter":
-      return { name: "submit" };
-    case "Escape":
-      return { name: "cancel", suppressedDuringComposition: true };
-    default:
-      return null;
-  }
+function localClipboardCommand(command) {
+  return command === "copy" || command === "cut" || command === "paste";
 }
 
 function replaceUtf16Range(text, start, end, replacement) {
@@ -845,14 +756,6 @@ function selectedText(state) {
   const start = Math.min(state.selectionStart, state.selectionEnd);
   const end = Math.max(state.selectionStart, state.selectionEnd);
   return state.text.slice(start, end);
-}
-
-function selectionCollapsed(state) {
-  return state.selectionStart === state.selectionEnd;
-}
-
-function caretPosition(state) {
-  return state.selectionEnd;
 }
 
 function utf16Length(text) {
@@ -911,33 +814,6 @@ function nearestGraphemeOffset(text, offset) {
 function graphemeSlotForOffset(text, offset) {
   const nearest = nearestGraphemeOffset(text, offset);
   return graphemeOffsets(text).findIndex((candidate) => candidate === nearest);
-}
-
-function previousWordOffset(text, offset) {
-  const source = String(text).slice(0, clampOffset(text, offset));
-  const match = source.match(/[\p{Letter}\p{Number}_]+\W*$/u);
-  return match ? source.length - match[0].length : 0;
-}
-
-function nextWordOffset(text, offset) {
-  const source = String(text);
-  const tail = source.slice(clampOffset(text, offset));
-  const match = tail.match(/^\W*[\p{Letter}\p{Number}_]+/u);
-  return match ? clampOffset(text, offset) + match[0].length : utf16Length(source);
-}
-
-function lineStartOffset(text, offset) {
-  const source = String(text);
-  const bounded = clampOffset(source, offset);
-  const lineBreak = source.lastIndexOf("\n", bounded - 1);
-  return lineBreak < 0 ? 0 : lineBreak + 1;
-}
-
-function lineEndOffset(text, offset) {
-  const source = String(text);
-  const bounded = clampOffset(source, offset);
-  const lineBreak = source.indexOf("\n", bounded);
-  return lineBreak < 0 ? utf16Length(source) : lineBreak;
 }
 
 function isCombiningMark(codePoint) {

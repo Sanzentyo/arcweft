@@ -11,7 +11,7 @@ publish = false
 arcweft-character = { path = "../arcweft-character" }
 arcweft-image = { path = "../arcweft-image" }
 arcweft-presentation = { path = "../arcweft-presentation" }
-arcweft-ui = { path = "../arcweft-ui" }
+arcweft-view = { path = "../arcweft-view" }
 thiserror.workspace = true
 
 [lib]

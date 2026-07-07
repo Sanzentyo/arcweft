@@ -10,7 +10,7 @@ pub mod resource_codec;
 
 use crate::character_package::BundleCharacterPackage;
 use crate::resource_codec::{
-    UiInputResource, UiStyleResource, UiTextResource, UiThemeResource, ViewProgramResource,
+    UiInputResource, UiTextResource, UiThemeResource, ViewProgramResource, ViewStyleResource,
 };
 #[cfg(feature = "format-avro")]
 use apache_avro::types::Value as AvroValue;
@@ -65,7 +65,7 @@ pub struct ArcweftBundle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ui_program: Option<ViewProgramResource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ui_style: Option<UiStyleResource>,
+    pub ui_style: Option<ViewStyleResource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ui_text: Option<UiTextResource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -624,7 +624,7 @@ impl ArcweftBundle {
     }
 
     #[must_use]
-    pub fn with_ui_style(mut self, resource: UiStyleResource) -> Self {
+    pub fn with_ui_style(mut self, resource: ViewStyleResource) -> Self {
         self.ui_style = Some(resource);
         self
     }

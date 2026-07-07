@@ -561,5 +561,13 @@ const fn text_edit_command_code(command: TextEditCommand) -> u32 {
         TextEditCommand::Cancel => 19,
         TextEditCommand::MoveUp { selecting } => 20 + selecting_code(selecting),
         TextEditCommand::MoveDown { selecting } => 22 + selecting_code(selecting),
+        TextEditCommand::MoveDocumentStart { selecting } => 24 + selecting_code(selecting),
+        TextEditCommand::MoveDocumentEnd { selecting } => 26 + selecting_code(selecting),
+        TextEditCommand::DeleteWordLeft => 28,
+        TextEditCommand::DeleteWordRight => 29,
+        TextEditCommand::MovePageUp { selecting } => 30 + selecting_code(selecting),
+        TextEditCommand::MovePageDown { selecting } => 32 + selecting_code(selecting),
+        TextEditCommand::SelectWord => 34,
+        TextEditCommand::SelectLine => 35,
     }
 }

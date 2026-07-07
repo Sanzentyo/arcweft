@@ -18,7 +18,7 @@ use arcweft_render_text::{
 use arcweft_text_layout::{
     GlyphOrientation, GlyphVerticalForm, LaidOutGlyph, LaidOutText, LayoutRect, TextLayoutConfig,
 };
-use arcweft_ui::{
+use arcweft_view::{
     DisplayItemKind, DisplayList, ImageAlignment, ImageFit, LayoutBox, UiImageSourceTable,
     UiResolvedImageFrame,
 };

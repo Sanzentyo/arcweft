@@ -61,6 +61,203 @@ fn backspace_uses_shared_grapheme_boundary_for_combining_sequence() {
 }
 
 #[test]
+fn backspace_keeps_halfwidth_voicing_mark_with_base_grapheme() {
+    let text = "Д\u{ff9f}x";
+    let mut editor = editor(text, false);
+    let mut clipboard = TextEditorClipboard::default();
+    let cluster_end = TextIndexSnapshot::new(text).grapheme_boundaries()[1];
+    editor
+        .apply_text_input(
+            &input(TextInputOperation::SetSelection(
+                PlatformTextSelection::new(
+                    TextRange::new(cluster_end, cluster_end),
+                    TextSelectionAffinity::Downstream,
+                ),
+            )),
+            &mut clipboard,
+        )
+        .unwrap();
+
+    editor
+        .apply_text_input(
+            &input(TextInputOperation::Command(TextEditCommand::Backspace)),
+            &mut clipboard,
+        )
+        .unwrap();
+
+    assert_eq!(editor.text(), "x");
+    assert_eq!(editor.caret(), TextByteOffset(0));
+}
+
+#[test]
+fn word_delete_commands_remove_word_runs_around_caret() {
+    let mut left = editor("hello world", false);
+    let mut clipboard = TextEditorClipboard::default();
+    let end = TextIndexSnapshot::new(left.text()).len_bytes();
+    left.apply_text_input(
+        &input(TextInputOperation::SetSelection(
+            PlatformTextSelection::new(TextRange::new(end, end), TextSelectionAffinity::Downstream),
+        )),
+        &mut clipboard,
+    )
+    .unwrap();
+    left.apply_text_input(
+        &input(TextInputOperation::Command(TextEditCommand::DeleteWordLeft)),
+        &mut clipboard,
+    )
+    .unwrap();
+
+    assert_eq!(left.text(), "hello ");
+
+    let mut right = editor("hello world", false);
+    right
+        .apply_text_input(
+            &input(TextInputOperation::SetSelection(
+                PlatformTextSelection::new(
+                    TextRange::new(TextByteOffset(0), TextByteOffset(0)),
+                    TextSelectionAffinity::Downstream,
+                ),
+            )),
+            &mut clipboard,
+        )
+        .unwrap();
+    right
+        .apply_text_input(
+            &input(TextInputOperation::Command(
+                TextEditCommand::DeleteWordRight,
+            )),
+            &mut clipboard,
+        )
+        .unwrap();
+
+    assert_eq!(right.text(), "world");
+}
+
+#[test]
+fn document_edge_commands_move_or_extend_selection_to_text_bounds() {
+    let mut editor = editor("alpha\nbeta", false);
+    let mut clipboard = TextEditorClipboard::default();
+    let index = TextIndexSnapshot::new(editor.text());
+    let middle = index
+        .byte_offset_for_utf16(arcweft_presentation::text_input::TextUtf16Offset(7))
+        .unwrap();
+    editor
+        .apply_text_input(
+            &input(TextInputOperation::SetSelection(
+                PlatformTextSelection::new(
+                    TextRange::new(middle, middle),
+                    TextSelectionAffinity::Downstream,
+                ),
+            )),
+            &mut clipboard,
+        )
+        .unwrap();
+
+    editor
+        .apply_text_input(
+            &input(TextInputOperation::Command(
+                TextEditCommand::MoveDocumentStart { selecting: true },
+            )),
+            &mut clipboard,
+        )
+        .unwrap();
+    assert_eq!(
+        editor.selection(),
+        TextRange::new(TextByteOffset(0), middle)
+    );
+
+    editor
+        .apply_text_input(
+            &input(TextInputOperation::Command(
+                TextEditCommand::MoveDocumentEnd { selecting: false },
+            )),
+            &mut clipboard,
+        )
+        .unwrap();
+    assert_eq!(
+        editor.selection(),
+        TextRange::new(index.len_bytes(), index.len_bytes())
+    );
+}
+
+#[test]
+fn word_and_line_selection_commands_use_shared_ranges() {
+    let text = "alpha Д\u{ff9f}\nbeta";
+    let mut editor = editor(text, false);
+    let mut clipboard = TextEditorClipboard::default();
+    let index = TextIndexSnapshot::new(text);
+    let mixed_start = index
+        .byte_offset_for_utf16(arcweft_presentation::text_input::TextUtf16Offset(6))
+        .unwrap();
+
+    editor
+        .apply_text_input(
+            &input(TextInputOperation::SetSelection(
+                PlatformTextSelection::new(
+                    TextRange::new(mixed_start, mixed_start),
+                    TextSelectionAffinity::Downstream,
+                ),
+            )),
+            &mut clipboard,
+        )
+        .unwrap();
+    editor
+        .apply_text_input(
+            &input(TextInputOperation::Command(TextEditCommand::SelectWord)),
+            &mut clipboard,
+        )
+        .unwrap();
+    assert_eq!(
+        index.slice_byte_range(editor.selection()).unwrap(),
+        "Д\u{ff9f}"
+    );
+
+    editor
+        .apply_text_input(
+            &input(TextInputOperation::Command(TextEditCommand::SelectLine)),
+            &mut clipboard,
+        )
+        .unwrap();
+    assert_eq!(
+        index.slice_byte_range(editor.selection()).unwrap(),
+        "alpha Д\u{ff9f}"
+    );
+}
+
+#[test]
+fn page_commands_move_by_visual_page_when_renderer_layout_is_available() {
+    let text = "abcdefghi";
+    let mut editor = editor(text, false);
+    let mut clipboard = TextEditorClipboard::default();
+    let layout = soft_wrap_layout(text);
+
+    editor
+        .apply_text_input_with_layout(
+            &input(TextInputOperation::Command(TextEditCommand::MovePageUp {
+                selecting: false,
+            })),
+            &mut clipboard,
+            Some(&layout),
+        )
+        .unwrap();
+    assert_eq!(editor.caret(), TextByteOffset(0));
+
+    editor
+        .apply_text_input_with_layout(
+            &input(TextInputOperation::Command(TextEditCommand::MovePageDown {
+                selecting: true,
+            })),
+            &mut clipboard,
+            Some(&layout),
+        )
+        .unwrap();
+    assert_eq!(
+        editor.selection(),
+        TextRange::new(TextByteOffset(0), TextByteOffset(9))
+    );
+}
+
+#[test]
 fn selected_text_replacement_is_deterministic() {
     let mut editor = editor("abc日本語", false);
     let mut clipboard = TextEditorClipboard::default();

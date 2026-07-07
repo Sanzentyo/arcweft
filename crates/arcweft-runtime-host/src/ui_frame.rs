@@ -2,7 +2,7 @@ use arcweft_presentation::input::InputEvent;
 use arcweft_presentation::interaction::InteractionState;
 use arcweft_presentation::layer::{LayerId, LayerTree};
 use arcweft_presentation::semantic::SemanticTree;
-use arcweft_ui::{
+use arcweft_view::{
     DisplayItemKind, DisplayList, ImageId, LayoutBox, NodeId, ResolvedDisplayList, UiError,
     UiHandlerInvocation, UiHandlerRouteTable, UiLayerOutput, UiSemanticFragment, UiSemanticNode,
     UiStyleTable,
@@ -295,7 +295,7 @@ mod tests {
     use arcweft_presentation::input::{ActionTarget, InteractionTarget};
     use arcweft_presentation::layer::{LayerKind, LayerNode, LayerOrder, RenderPhase};
     use arcweft_presentation::semantic::SemanticRole;
-    use arcweft_ui::{
+    use arcweft_view::{
         FragmentKind, ImageId, LayoutLength, LayoutPoint, LayoutResults, LayoutSize, LayoutTree,
         NodeKey, StyleId, UiSemanticFragment, UiSemanticFragmentBuilder, UiSemanticNode,
         ViewFragmentBuilder,

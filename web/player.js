@@ -149,6 +149,21 @@ function wasmDelegate(wasm) {
         Boolean(selecting),
       );
     },
+    commandForKeyEvent(_hostId, event) {
+      return wasm.arcweft_web_text_input_command_for_key_event?.(
+        String(event?.key ?? ""),
+        Boolean(event?.ctrlKey),
+        Boolean(event?.metaKey),
+        Boolean(event?.altKey),
+        Boolean(event?.shiftKey),
+      );
+    },
+    createEditContext(_hostId, initialText, secure) {
+      return wasm.arcweft_web_text_input_create_edit_context?.(
+        String(initialText ?? ""),
+        Boolean(secure),
+      );
+    },
   };
 }
 

@@ -41,7 +41,7 @@ html panel @ui.settings_html from "ui/settings.html" {
 
 ## Native Servo
 
-- `arcweft-ui-servo` に隔離。
+- `arcweft-view-servo` に隔離。
 - Core は Servo に依存しない。
 - wgpu pass へ無理に合成しない。
 - 初期は overlay / panel window / separate layer。

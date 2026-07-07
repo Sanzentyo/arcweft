@@ -10,7 +10,7 @@ repository.workspace = true
 arcweft-id = { path = "../arcweft-id" }
 arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-render-wgpu.workspace = true
-arcweft-ui = { path = "../arcweft-ui" }
+arcweft-view = { path = "../arcweft-view" }
 num-traits = "0.2.19"
 taffy = { version = "0.11", default-features = false, features = ["alloc", "block_layout", "calc", "flexbox", "float_layout", "grid", "strict_provenance", "taffy_tree"] }
 takumi.workspace = true

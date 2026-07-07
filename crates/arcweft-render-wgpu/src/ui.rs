@@ -2,7 +2,7 @@
 
 use crate::geometry::PaintRect;
 use arcweft_presentation::hit::HitRect;
-use arcweft_ui::{Milli, ResolvedDisplayList, ResolvedUiStyle, Rgba8, UiPropertyKind};
+use arcweft_view::{Milli, ResolvedDisplayList, ResolvedUiStyle, Rgba8, UiPropertyKind};
 use num_traits::ToPrimitive;
 
 /// Paint rectangles generated from one resolved retained UI display list.
@@ -34,7 +34,7 @@ impl UiPaintPlan {
     }
 }
 
-fn paint_item(layout: arcweft_ui::LayoutBox, style: &ResolvedUiStyle) -> Vec<PaintRect> {
+fn paint_item(layout: arcweft_view::LayoutBox, style: &ResolvedUiStyle) -> Vec<PaintRect> {
     if !style.is_visible() {
         return Vec::new();
     }

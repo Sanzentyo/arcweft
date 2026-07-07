@@ -944,7 +944,7 @@ mod rules {
                 "arcweft-desktop",
                 "arcweft-agent-mcp",
                 "arcweft-runtime-host",
-                "arcweft-ui",
+                "arcweft-view",
             ]
             .iter()
             .any(|prefix| dependency.starts_with(prefix))

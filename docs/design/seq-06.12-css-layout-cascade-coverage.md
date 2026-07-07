@@ -81,7 +81,7 @@ For this cut:
   the analyzed CSS text;
 - `var(--missing, fallback)` is accepted because it has a fallback;
 - `var(--missing)` emits `UnresolvedCssVariable`;
-- Arcweft style tokens remain owned by `arcweft-ui::style_authoring`; CSS
+- Arcweft style tokens remain owned by `arcweft-view::style_authoring`; CSS
   variables do not override them yet.
 
 ## Layout subset

@@ -1,4 +1,4 @@
-use arcweft_player_scene::input::InputController;
+use arcweft_player_scene::input::{InputController, InputPointerModifiers};
 use arcweft_presentation::input::{PointerId, ViewportPoint};
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderChoiceItem, RenderPreferences, RenderScene,
@@ -58,9 +58,19 @@ fn web_choice_visuals_are_derived_from_shared_interaction_state() {
     input.pointer_move(&frame, PointerId(0), second_point);
     assert_eq!(input.visual_state().hovered, Some(second));
 
-    input.pointer_down(&frame, PointerId(0), first_point);
+    input.pointer_down(
+        &frame,
+        PointerId(0),
+        first_point,
+        InputPointerModifiers::NONE,
+    );
     assert_eq!(input.visual_state().pressed, Some(first));
 
-    input.pointer_up(&frame, PointerId(0), first_point);
+    input.pointer_up(
+        &frame,
+        PointerId(0),
+        first_point,
+        InputPointerModifiers::NONE,
+    );
     assert!(input.visual_state().pressed.is_none());
 }

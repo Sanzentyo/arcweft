@@ -68,7 +68,7 @@ fn gpu_context() -> Option<(wgpu::Device, wgpu::Queue)> {
     .ok()?;
 
     pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("arcweft-ui-box-shadow-gpu-smoke"),
+        label: Some("arcweft-view-box-shadow-gpu-smoke"),
         required_features: wgpu::Features::empty(),
         required_limits: wgpu::Limits::downlevel_defaults(),
         experimental_features: wgpu::ExperimentalFeatures::disabled(),
@@ -134,7 +134,7 @@ fn per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_pat
     let format = wgpu::TextureFormat::Rgba8Unorm;
     let extent = UiTextureExtent::new(320, 180);
     let final_texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("arcweft-ui-box-shadow-smoke-target"),
+        label: Some("arcweft-view-box-shadow-smoke-target"),
         size: wgpu::Extent3d {
             width: extent.width,
             height: extent.height,
@@ -151,7 +151,7 @@ fn per_corner_outer_and_elliptical_inset_shadow_cards_execute_gpu_compositor_pat
     });
     let final_view = final_texture.create_view(&wgpu::TextureViewDescriptor::default());
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("arcweft-ui-box-shadow-smoke-encoder"),
+        label: Some("arcweft-view-box-shadow-smoke-encoder"),
     });
     let scene = smoke_scene();
     let mut direct_renderer = NoopDirectRenderer;

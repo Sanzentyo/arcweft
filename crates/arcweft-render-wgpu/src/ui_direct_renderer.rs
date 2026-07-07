@@ -149,14 +149,14 @@ impl WgpuUiDirectPrimitiveRenderFrame<'_> {
         let buffer = frame
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("arcweft-ui-direct-color-vertices"),
+                label: Some("arcweft-view-direct-color-vertices"),
                 contents: bytemuck::cast_slice(vertices),
                 usage: wgpu::BufferUsages::VERTEX,
             });
         let mut pass = frame
             .encoder
             .begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("arcweft-ui-direct-color-pass"),
+                label: Some("arcweft-view-direct-color-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: frame.target.view,
                     resolve_target: None,
@@ -195,11 +195,11 @@ impl WgpuUiDirectPrimitiveRenderFrame<'_> {
             frame.device,
             frame.queue,
             image_frame,
-            "arcweft-ui-image-resource",
+            "arcweft-view-image-resource",
         );
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let bind_group = frame.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("arcweft-ui-direct-image-bind-group"),
+            label: Some("arcweft-view-direct-image-bind-group"),
             layout: self.image_bind_group_layout(),
             entries: &[
                 wgpu::BindGroupEntry {
@@ -216,14 +216,14 @@ impl WgpuUiDirectPrimitiveRenderFrame<'_> {
         let vertex_buffer = frame
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("arcweft-ui-direct-image-vertices"),
+                label: Some("arcweft-view-direct-image-vertices"),
                 contents: bytemuck::cast_slice(&vertices),
                 usage: wgpu::BufferUsages::VERTEX,
             });
         let mut pass = frame
             .encoder
             .begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("arcweft-ui-direct-image-pass"),
+                label: Some("arcweft-view-direct-image-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: frame.target.view,
                     resolve_target: None,
@@ -348,7 +348,7 @@ fn upload_mask_resource(
     queue: &wgpu::Queue,
     resource: &PreparedUiMaskResource,
 ) -> WgpuPreparedUiMaskTexture {
-    let texture = upload_rgba_texture(device, queue, &resource.frame, "arcweft-ui-mask-resource");
+    let texture = upload_rgba_texture(device, queue, &resource.frame, "arcweft-view-mask-resource");
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
     WgpuPreparedUiMaskTexture {
         image: resource.image.clone(),
@@ -905,16 +905,16 @@ fn upload_rgba_texture(
 
 fn color_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("arcweft-ui-direct-color-shader"),
+        label: Some("arcweft-view-direct-color-shader"),
         source: wgpu::ShaderSource::Wgsl(COLOR_SHADER.into()),
     });
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("arcweft-ui-direct-color-layout"),
+        label: Some("arcweft-view-direct-color-layout"),
         bind_group_layouts: &[],
         immediate_size: 0,
     });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("arcweft-ui-direct-color-pipeline"),
+        label: Some("arcweft-view-direct-color-pipeline"),
         layout: Some(&layout),
         vertex: wgpu::VertexState {
             module: &shader,
@@ -960,11 +960,11 @@ fn image_pipeline(
     format: wgpu::TextureFormat,
 ) -> (wgpu::BindGroupLayout, wgpu::RenderPipeline, wgpu::Sampler) {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("arcweft-ui-direct-image-shader"),
+        label: Some("arcweft-view-direct-image-shader"),
         source: wgpu::ShaderSource::Wgsl(IMAGE_SHADER.into()),
     });
     let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("arcweft-ui-direct-image-bind-group-layout"),
+        label: Some("arcweft-view-direct-image-bind-group-layout"),
         entries: &[
             wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -985,18 +985,18 @@ fn image_pipeline(
         ],
     });
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        label: Some("arcweft-ui-direct-image-sampler"),
+        label: Some("arcweft-view-direct-image-sampler"),
         mag_filter: wgpu::FilterMode::Linear,
         min_filter: wgpu::FilterMode::Linear,
         ..Default::default()
     });
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("arcweft-ui-direct-image-layout"),
+        label: Some("arcweft-view-direct-image-layout"),
         bind_group_layouts: &[Some(&bind_group_layout)],
         immediate_size: 0,
     });
     let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("arcweft-ui-direct-image-pipeline"),
+        label: Some("arcweft-view-direct-image-pipeline"),
         layout: Some(&layout),
         vertex: wgpu::VertexState {
             module: &shader,

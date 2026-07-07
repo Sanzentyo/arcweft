@@ -46,7 +46,7 @@ use arcweft_bundle::{
         BundlePatchArtifact, PatchCompatibility, apply_patch_bundle_bytes, encode_patch_bundle,
     },
     resource_codec::{
-        UiInputResource, UiStyleResource, UiTextResource, UiThemeResource, ViewProgramResource,
+        UiInputResource, UiTextResource, UiThemeResource, ViewProgramResource, ViewStyleResource,
         ui::{
             RgbaColor, StyleAssignOp, StyleSourceIdentity, StyleSourceRef,
             StyleSyntax as ProductStyleSyntax, SystemColor, ViewElementKind, ViewElementState,
@@ -361,7 +361,7 @@ fn emit_bundle_verification_diagnostics(selection: &SourceSelection, report: &Ve
 #[derive(Clone, Debug, Default)]
 struct BundleUiSidecars {
     program: Option<ViewProgramResource>,
-    style: Option<UiStyleResource>,
+    style: Option<ViewStyleResource>,
     text: Option<UiTextResource>,
     input: Option<UiInputResource>,
     theme: Option<UiThemeResource>,
@@ -429,7 +429,7 @@ fn merge_ui_input(mut left: UiInputResource, right: UiInputResource) -> UiInputR
     left
 }
 
-fn merge_ui_style(mut left: UiStyleResource, right: UiStyleResource) -> UiStyleResource {
+fn merge_ui_style(mut left: ViewStyleResource, right: ViewStyleResource) -> ViewStyleResource {
     left.arcweft_sources.extend(right.arcweft_sources);
     left.css_sources.extend(right.css_sources);
     left.tokens.extend(right.tokens);
@@ -540,7 +540,7 @@ fn collect_bundle_dsl_ui_resources(
     Ok(sidecars)
 }
 
-fn dsl_ui_style_resource(styles: &[&StyleItem]) -> Result<Option<UiStyleResource>, ExitCode> {
+fn dsl_ui_style_resource(styles: &[&StyleItem]) -> Result<Option<ViewStyleResource>, ExitCode> {
     let mut style_program_id = None;
     let mut arcweft_sources = Vec::new();
     let mut css_sources = Vec::new();
@@ -573,7 +573,7 @@ fn dsl_ui_style_resource(styles: &[&StyleItem]) -> Result<Option<UiStyleResource
     let Some(style_program_id) = style_program_id else {
         return Ok(None);
     };
-    let resource = UiStyleResource {
+    let resource = ViewStyleResource {
         style_program_id,
         arcweft_sources,
         css_sources,
@@ -589,7 +589,9 @@ fn dsl_ui_style_resource(styles: &[&StyleItem]) -> Result<Option<UiStyleResource
     Ok(Some(resource))
 }
 
-fn validate_view_interactive_overflow_style_rules(style: &UiStyleResource) -> Result<(), ExitCode> {
+fn validate_view_interactive_overflow_style_rules(
+    style: &ViewStyleResource,
+) -> Result<(), ExitCode> {
     for rule in &style.rules {
         let Some(element) = view_style_rule_element(rule) else {
             continue;
@@ -631,7 +633,7 @@ fn view_style_rule_element(rule: &ViewStyleRule) -> Option<ViewElementKind> {
 }
 
 fn view_style_overflow_property_is_interactive(
-    style: &UiStyleResource,
+    style: &ViewStyleResource,
     property: &str,
     value: &ViewStyleValue,
 ) -> bool {
@@ -643,7 +645,7 @@ fn view_style_overflow_property_is_interactive(
 }
 
 fn view_style_interactive_overflow_value(
-    style: &UiStyleResource,
+    style: &ViewStyleResource,
     value: &ViewStyleValue,
     depth: u8,
 ) -> bool {

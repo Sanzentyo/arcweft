@@ -134,7 +134,7 @@ fn agent_is_dialogue_textbox(object: &AgentObservedObject) -> bool {
     object.role == AGENT_ROLE_DIALOGUE_TEXTBOX
 }
 use arcweft_runtime_host::{UiFrameCommit, UiFrameImageItem};
-use arcweft_ui::UiImageSourceTable;
+use arcweft_view::UiImageSourceTable;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use clap::ValueEnum;
 use std::collections::{BTreeMap, BTreeSet};

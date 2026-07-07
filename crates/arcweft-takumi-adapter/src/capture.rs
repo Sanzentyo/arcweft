@@ -388,7 +388,7 @@ fn positive_px(value: f32) -> f32 {
 mod tests {
     use super::*;
     use arcweft_render_wgpu::ui_scene::UiColorRgba8;
-    use arcweft_ui::{ContainerKind, FragmentKind, HandlerId, NodeId, NodeKey, StyleId};
+    use arcweft_view::{ContainerKind, FragmentKind, HandlerId, NodeId, NodeKey, StyleId};
 
     fn metadata() -> ArcweftNodeMetadata {
         ArcweftNodeMetadata::new(

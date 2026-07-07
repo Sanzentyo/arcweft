@@ -22,7 +22,7 @@ use arcweft_render_text::{
     RuntimeLineContext,
 };
 use arcweft_text_layout::{LayoutPoint, LayoutSize, layout_frame};
-use arcweft_ui::{
+use arcweft_view::{
     FragmentKind, ImageId, LayoutLength as UiLayoutLength, LayoutPoint as UiLayoutPoint,
     LayoutResults as UiLayoutResults, LayoutSize as UiLayoutSize, LayoutTree as UiLayoutTree,
     NodeKey, StyleId, UiImageSource, UiImageSourceTable, ViewFragmentBuilder,

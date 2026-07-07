@@ -1,5 +1,5 @@
 use arcweft_bundle::resource_codec::ui::{
-    UiRuntimeTextControl, UiRuntimeTextControlHandler, UiRuntimeTextSelection,
+    ViewRuntimeTextControl, ViewRuntimeTextControlHandler, ViewRuntimeTextSelection,
 };
 use arcweft_presentation::text_input::{
     TextControlValue, TextControlWriteBack, TextControlWriteBackKind,
@@ -18,8 +18,8 @@ pub struct RuntimeTextControlWriteBack {
     session: u64,
     kind: RuntimeTextControlWriteBackKind,
     value: TextControlValue,
-    selection: UiRuntimeTextSelection,
-    handler: Option<UiRuntimeTextControlHandler>,
+    selection: ViewRuntimeTextSelection,
+    handler: Option<ViewRuntimeTextControlHandler>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -29,7 +29,10 @@ pub enum RuntimeTextControlWriteBackKind {
 }
 
 impl RuntimeTextControlWriteBack {
-    pub fn from_control(write_back: &TextControlWriteBack, control: &UiRuntimeTextControl) -> Self {
+    pub fn from_control(
+        write_back: &TextControlWriteBack,
+        control: &ViewRuntimeTextControl,
+    ) -> Self {
         let handler = match write_back.kind() {
             TextControlWriteBackKind::Change => control.handlers.change.clone(),
             TextControlWriteBackKind::Submit => control.handlers.submit.clone(),
@@ -40,7 +43,7 @@ impl RuntimeTextControlWriteBack {
             session: control.session,
             kind: write_back.kind().into(),
             value: write_back.value().clone(),
-            selection: UiRuntimeTextSelection::new(
+            selection: ViewRuntimeTextSelection::new(
                 write_back.selection().start().get(),
                 write_back.selection().end().get(),
             ),
@@ -79,11 +82,11 @@ impl RuntimeTextControlWriteBack {
         &self.value
     }
 
-    pub const fn selection(&self) -> UiRuntimeTextSelection {
+    pub const fn selection(&self) -> ViewRuntimeTextSelection {
         self.selection
     }
 
-    pub const fn handler(&self) -> Option<&UiRuntimeTextControlHandler> {
+    pub const fn handler(&self) -> Option<&ViewRuntimeTextControlHandler> {
         self.handler.as_ref()
     }
 }

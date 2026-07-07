@@ -18,7 +18,7 @@ use arcweft_lang_syntax::parser::parse_source;
 use arcweft_player_scene::{
     frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest},
     images::BundleImageCatalog,
-    input::InputController,
+    input::{InputController, InputPointerModifiers},
 };
 use arcweft_player_web::parity::{WebGpuParityFrameOptions, prepare_bundle_parity_frame};
 use arcweft_player_web::report::{WebFrameBounds, WebFrameObservationReport, WebFrameViewport};
@@ -299,7 +299,12 @@ fn web_runner_filters_authored_view_owned_controls_and_scroll_regions() {
     live_input
         .activate_text_control(&live.scene.text_inputs[0])
         .expect("live text control activates");
-    live_input.pointer_down(&live.frame, PointerId(0), button_point);
+    live_input.pointer_down(
+        &live.frame,
+        PointerId(0),
+        button_point,
+        InputPointerModifiers::NONE,
+    );
 
     let hidden = authored_view_flow_player_frame(&bundle, "view_manual_released", &mut live_input);
     assert_view_controls_absent(&hidden, &text_target, &button_target);
@@ -316,7 +321,12 @@ fn web_runner_filters_authored_view_owned_controls_and_scroll_regions() {
         .expect("stale text input is ignored");
     assert!(stale_text.text_control_write_backs().is_empty());
 
-    let stale_click = live_input.pointer_up(&hidden.frame, PointerId(0), button_point);
+    let stale_click = live_input.pointer_up(
+        &hidden.frame,
+        PointerId(0),
+        button_point,
+        InputPointerModifiers::NONE,
+    );
     assert!(stale_click.actions().is_empty());
     assert!(stale_click.text_control_write_backs().is_empty());
 

@@ -14,9 +14,9 @@ use crate::resource_codec::wire::ProductResourceEnvelope;
 
 use super::compat::UiResourceCompatibility;
 use super::model::{
-    UiInputOptions, UiInputResource, UiStyleResource, UiTextResource, UiTextSourceKind,
-    UiThemeResource, ViewProgramInstruction, ViewProgramResource, ViewStyleApplyRef, ViewStyleRule,
-    ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue,
+    UiInputOptions, UiInputResource, UiTextResource, UiTextSourceKind, UiThemeResource,
+    ViewProgramInstruction, ViewProgramResource, ViewStyleApplyRef, ViewStyleResource,
+    ViewStyleRule, ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue,
 };
 
 const FIELD_UI_TRANSCRIPT: FieldId = FieldId(1);
@@ -506,7 +506,7 @@ impl ViewProgramResource {
     }
 }
 
-impl UiStyleResource {
+impl ViewStyleResource {
     pub fn encode_canonical_section(&self) -> Result<Vec<u8>, SectionCodecError> {
         let mut section = self.clone();
         section.canonicalize();

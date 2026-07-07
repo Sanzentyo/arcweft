@@ -448,12 +448,14 @@ impl TextEditState {
         command: TextEditCommand,
     ) -> Result<TextEditOutcome, TextEditError> {
         match command {
-            TextEditCommand::Backspace => Ok(TextEditOutcome::new(
-                self.delete_surrounding(1, 0, TextDeleteUnit::Utf16CodeUnit)?,
-                false,
-                self.revision,
-            )),
-            TextEditCommand::Delete => Ok(TextEditOutcome::new(
+            TextEditCommand::Backspace | TextEditCommand::DeleteWordLeft => {
+                Ok(TextEditOutcome::new(
+                    self.delete_surrounding(1, 0, TextDeleteUnit::Utf16CodeUnit)?,
+                    false,
+                    self.revision,
+                ))
+            }
+            TextEditCommand::Delete | TextEditCommand::DeleteWordRight => Ok(TextEditOutcome::new(
                 self.delete_surrounding(0, 1, TextDeleteUnit::Utf16CodeUnit)?,
                 false,
                 self.revision,
@@ -471,16 +473,25 @@ impl TextEditState {
             TextEditCommand::MoveLeft { selecting: _ }
             | TextEditCommand::MoveUp { selecting: _ }
             | TextEditCommand::MoveWordLeft { selecting: _ }
-            | TextEditCommand::MoveLineStart { selecting: _ } => {
+            | TextEditCommand::MoveLineStart { selecting: _ }
+            | TextEditCommand::MoveDocumentStart { selecting: _ }
+            | TextEditCommand::MovePageUp { selecting: _ } => {
                 self.selection = UiTextByteRange::new(0, 0);
                 Ok(TextEditOutcome::new(false, false, self.revision))
             }
             TextEditCommand::MoveRight { selecting: _ }
             | TextEditCommand::MoveDown { selecting: _ }
             | TextEditCommand::MoveWordRight { selecting: _ }
-            | TextEditCommand::MoveLineEnd { selecting: _ } => {
+            | TextEditCommand::MoveLineEnd { selecting: _ }
+            | TextEditCommand::MoveDocumentEnd { selecting: _ }
+            | TextEditCommand::MovePageDown { selecting: _ } => {
                 let end = u32::try_from(self.document.len()).unwrap_or(u32::MAX);
                 self.selection = UiTextByteRange::new(end, end);
+                Ok(TextEditOutcome::new(false, false, self.revision))
+            }
+            TextEditCommand::SelectWord | TextEditCommand::SelectLine => {
+                let end = u32::try_from(self.document.len()).unwrap_or(u32::MAX);
+                self.selection = UiTextByteRange::new(0, end);
                 Ok(TextEditOutcome::new(false, false, self.revision))
             }
             TextEditCommand::Copy | TextEditCommand::Cut | TextEditCommand::Paste => {
@@ -1003,12 +1014,14 @@ impl TextEditState {
             return Err(TextFieldPolicyEditError::SecureClipboardCommand(command));
         }
         match command {
-            TextEditCommand::Backspace => Ok(TextEditOutcome::new(
-                self.delete_surrounding_by_unit(1, 0, TextDeleteUnit::GraphemeCluster)?,
-                false,
-                self.revision,
-            )),
-            TextEditCommand::Delete => Ok(TextEditOutcome::new(
+            TextEditCommand::Backspace | TextEditCommand::DeleteWordLeft => {
+                Ok(TextEditOutcome::new(
+                    self.delete_surrounding_by_unit(1, 0, TextDeleteUnit::GraphemeCluster)?,
+                    false,
+                    self.revision,
+                ))
+            }
+            TextEditCommand::Delete | TextEditCommand::DeleteWordRight => Ok(TextEditOutcome::new(
                 self.delete_surrounding_by_unit(0, 1, TextDeleteUnit::GraphemeCluster)?,
                 false,
                 self.revision,
@@ -1026,7 +1039,13 @@ impl TextEditState {
             | TextEditCommand::MoveWordLeft { .. }
             | TextEditCommand::MoveWordRight { .. }
             | TextEditCommand::MoveLineStart { .. }
-            | TextEditCommand::MoveLineEnd { .. } => Ok(self.apply_command(command)?),
+            | TextEditCommand::MoveLineEnd { .. }
+            | TextEditCommand::MoveDocumentStart { .. }
+            | TextEditCommand::MoveDocumentEnd { .. }
+            | TextEditCommand::MovePageUp { .. }
+            | TextEditCommand::MovePageDown { .. }
+            | TextEditCommand::SelectWord
+            | TextEditCommand::SelectLine => Ok(self.apply_command(command)?),
         }
     }
 }

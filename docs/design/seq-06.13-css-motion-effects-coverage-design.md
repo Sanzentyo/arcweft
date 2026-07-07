@@ -15,7 +15,7 @@ CPU-rasterized Takumi output, or screenshot-derived layout input.
 | Responsibility | Owner in this cut | Reason |
 | --- | --- | --- |
 | CSS syntax/cascade parsing | `arcweft-takumi-adapter` boundary | Takumi remains the CSS/layout source for adapter input. Unsupported CSS values must be lowered as typed unsupported diagnostics, not silently ignored. |
-| Motion evaluation | `arcweft-ui::motion` plus player/runtime timeline input | Motion is style/value semantics and must be deterministic/Sans I/O. The player provides sampled timestamps. |
+| Motion evaluation | `arcweft-view::motion` plus player/runtime timeline input | Motion is style/value semantics and must be deterministic/Sans I/O. The player provides sampled timestamps. |
 | Effect pass planning | `arcweft-render-wgpu` pure planning modules | Filter, clip, mask, and blend pass graphs are renderer data. |
 | GPU execution | `arcweft-render-wgpu` compositor shader path | Native and web share wgpu/WGSL behavior. |
 | Resource acquisition | native/web player adapter/resource tables | Data-format crates and renderer planning do not perform file or network I/O. |

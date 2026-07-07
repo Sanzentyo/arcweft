@@ -727,7 +727,7 @@ arcweft-layer-lsp
   layer preview, z-order diagnostics, input routing diagnostics
 ```
 
-`arcweft-render`、`arcweft-ui-core`、`arcweft-agent-observe` は `arcweft-layer-core` に依存する。
+`arcweft-render`、`arcweft-view-core`、`arcweft-agent-observe` は `arcweft-layer-core` に依存する。
 
 ---
 

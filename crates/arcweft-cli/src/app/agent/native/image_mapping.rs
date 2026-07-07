@@ -299,8 +299,8 @@ pub(super) fn agent_image_observation_from_ui_item(
             entity: Some(metadata.entity.clone()),
             layer: item.layer().public_id().as_str().to_owned(),
             role: "image".to_owned(),
-            visible: semantic.is_none_or(arcweft_ui::UiSemanticNode::visible),
-            enabled: semantic.is_none_or(arcweft_ui::UiSemanticNode::enabled),
+            visible: semantic.is_none_or(arcweft_view::UiSemanticNode::visible),
+            enabled: semantic.is_none_or(arcweft_view::UiSemanticNode::enabled),
             bbox: bbox.clone(),
             polygon,
             capture_refs: agent_object_capture_refs_with_source(
@@ -370,8 +370,8 @@ pub(super) struct AgentImageObservationMetadata {
 pub(super) fn agent_image_observation_metadata(
     item: &UiFrameImageItem,
     source_id: &str,
-    presentation: Option<&arcweft_ui::UiImagePresentationMetadata>,
-    semantic: Option<&arcweft_ui::UiSemanticNode>,
+    presentation: Option<&arcweft_view::UiImagePresentationMetadata>,
+    semantic: Option<&arcweft_view::UiSemanticNode>,
 ) -> AgentImageObservationMetadata {
     AgentImageObservationMetadata {
         entity: presentation.map_or_else(
@@ -382,7 +382,7 @@ pub(super) fn agent_image_observation_metadata(
             || item.layer().public_id().as_str().to_owned(),
             |presentation| presentation.layer().as_str().to_owned(),
         ),
-        object_depth: presentation.map(arcweft_ui::UiImagePresentationMetadata::depth_milli),
+        object_depth: presentation.map(arcweft_view::UiImagePresentationMetadata::depth_milli),
         target: presentation
             .map(|presentation| presentation.target().as_str().to_owned())
             .or_else(|| semantic.map(|semantic| semantic.target().id().as_str().to_owned())),
@@ -414,8 +414,8 @@ pub(super) fn agent_image_observation_metadata(
 }
 
 pub(super) fn agent_image_observation_actions(
-    presentation: Option<&arcweft_ui::UiImagePresentationMetadata>,
-    semantic: Option<&arcweft_ui::UiSemanticNode>,
+    presentation: Option<&arcweft_view::UiImagePresentationMetadata>,
+    semantic: Option<&arcweft_view::UiSemanticNode>,
 ) -> Vec<String> {
     presentation.map_or_else(
         || {
@@ -595,16 +595,18 @@ pub(super) fn agent_clamp_viewport_f32(value: f32, viewport_extent: u32) -> u32 
     value.clamp(0.0, max).to_string().parse().unwrap_or(0)
 }
 
-pub(super) fn agent_image_fit(fit: arcweft_ui::ImageFit) -> AgentImageFit {
+pub(super) fn agent_image_fit(fit: arcweft_view::ImageFit) -> AgentImageFit {
     match fit {
-        arcweft_ui::ImageFit::Contain => AgentImageFit::Contain,
-        arcweft_ui::ImageFit::Cover => AgentImageFit::Cover,
-        arcweft_ui::ImageFit::Stretch => AgentImageFit::Stretch,
-        arcweft_ui::ImageFit::Intrinsic => AgentImageFit::Intrinsic,
+        arcweft_view::ImageFit::Contain => AgentImageFit::Contain,
+        arcweft_view::ImageFit::Cover => AgentImageFit::Cover,
+        arcweft_view::ImageFit::Stretch => AgentImageFit::Stretch,
+        arcweft_view::ImageFit::Intrinsic => AgentImageFit::Intrinsic,
     }
 }
 
-pub(super) fn agent_image_alignment(alignment: arcweft_ui::ImageAlignment) -> AgentImageAlignment {
+pub(super) fn agent_image_alignment(
+    alignment: arcweft_view::ImageAlignment,
+) -> AgentImageAlignment {
     AgentImageAlignment {
         x_milli: alignment.x_milli(),
         y_milli: alignment.y_milli(),

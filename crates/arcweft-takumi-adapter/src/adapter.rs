@@ -5,7 +5,7 @@ use crate::{
     text::ArcweftTextLayoutBridge,
 };
 use arcweft_id::PublicId;
-use arcweft_ui::{
+use arcweft_view::{
     ContainerKind, FragmentKind, ImageId, NodeId, ViewFragment, ViewId, ViewPartId, ViewProgram,
 };
 use takumi::prelude::{Node, StyleSheet};
@@ -145,7 +145,7 @@ fn tag_name(kind: FragmentKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_ui::{
+    use arcweft_view::{
         EventBinding, EventKind, HandlerId, NodeKey, SemanticSpecId, StyleId, ViewFragmentBuilder,
     };
 
@@ -155,7 +155,7 @@ mod tests {
         let text = builder
             .push_node(
                 NodeKey(1),
-                FragmentKind::Text(arcweft_ui::TextSourceId(1)),
+                FragmentKind::Text(arcweft_view::TextSourceId(1)),
                 StyleId(2),
                 &[],
                 &[EventBinding::new(EventKind::Activate, HandlerId(3))],
