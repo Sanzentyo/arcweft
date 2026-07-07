@@ -9,8 +9,8 @@ use arcweft_render_wgpu::geometry::{PreparedFrame, PreparedViewScene, RenderScen
 use arcweft_render_wgpu::view_scene::{
     ViewAffine2D, ViewBoxShadow, ViewBoxShadowCornerRadius, ViewBoxShadowList, ViewBoxShadowRadii,
     ViewClip, ViewColorRgba8, ViewCompositingEffects, ViewCompositingGroup, ViewCornerRadii,
-    ViewCornerRadius, ViewFilter, ViewFilterList, ViewPaintNode, ViewPrimitive, ViewPrimitiveRange,
-    ViewRoundedRect, ViewScene, ViewSceneContext,
+    ViewCornerRadius, ViewFilter, ViewFilterList, ViewPaintNode, ViewPrimitiveRange, ViewScene,
+    ViewSceneContext, ViewSurfaceBackground, ViewSurfacePaint,
 };
 
 pub(super) fn push_runtime_surfaces(
@@ -87,14 +87,11 @@ fn surface_fill_range(
 ) -> Option<ViewPrimitiveRange> {
     let fill = visual.fill.filter(|color| color.alpha > 0)?;
     let radii = surface_fill_radii(visual);
-    let start = u32::try_from(scene.primitives().len()).unwrap_or(u32::MAX);
-    scene.push_primitive(ViewPrimitive::RoundedRect(ViewRoundedRect {
-        bounds,
-        radii,
+    let paint = ViewSurfacePaint::new().with_background(ViewSurfaceBackground::Solid {
         color: ui_rgba(fill),
-    }));
-    let end = u32::try_from(scene.primitives().len()).unwrap_or(u32::MAX);
-    Some(ViewPrimitiveRange { start, end })
+        radii,
+    });
+    scene.push_surface_primitives(bounds, &paint)
 }
 
 fn compositing_effects_from_style(

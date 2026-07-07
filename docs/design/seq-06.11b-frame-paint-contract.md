@@ -69,15 +69,17 @@ validation, Agent capture, diagnostics, and resource provisioning.
 
 ```rust
 pub struct DirectBoxPaint {
-    pub backgrounds: Vec<DirectBackground>,
-    pub border: Option<DirectBorder>,
-    pub clip: Option<DirectClip>,
+    pub surface: ViewSurfacePaint,
+    pub clip: Option<ViewSurfaceClip>,
     pub opacity: f32,
 }
 ```
 
-`backgrounds` is stored in painter order. This is the stable handoff that avoids
-both a CSS renderer and a temporary rectangle bridge.
+`ViewSurfacePaint` is the renderer-owned primitive-construction contract. Its
+backgrounds are stored in painter order and are lowered through
+`ViewSurfacePaint::append_primitives` / `ViewScene::push_surface_primitives`.
+This keeps Takumi as a CSS/layout frontend instead of a separate renderer and
+avoids both a CSS renderer and a temporary rectangle bridge.
 
 ## Resource contract
 
@@ -88,7 +90,7 @@ pub struct DirectPaintResourceTable { ... }
 ```
 
 A URL in the table produces a stable `resource_index` in
-`DirectBackground::Image`. A URL outside the table produces
+`ViewSurfaceBackground::Image`. A URL outside the table produces
 `DirectPaintResourceRequirement` and a diagnostic. The adapter crate does not
 read files, fetch URLs, decode images, or allocate GPU textures.
 

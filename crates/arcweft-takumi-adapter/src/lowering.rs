@@ -9,13 +9,12 @@ use crate::{
 };
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::view_scene::{
-    ViewAffine2D, ViewBlendMode, ViewBorder, ViewBoxShadow, ViewBoxShadowCornerRadius,
-    ViewBoxShadowList, ViewBoxShadowRadii, ViewClip, ViewClipPath, ViewColorRgba8,
-    ViewCompositingEffects, ViewCompositingGroup, ViewCornerRadii, ViewFillRule, ViewFilter,
-    ViewFilterList, ViewGradientStop, ViewImagePrimitive, ViewIsolation, ViewLength,
-    ViewLinearGradient, ViewMask, ViewMaskGradient, ViewMaskImage, ViewPaintNode, ViewPoint,
-    ViewPrimitive, ViewPrimitiveRange, ViewRoundedRect, ViewScene, ViewSceneContext,
-    ViewShapeRadius, ViewSolidRect,
+    ViewAffine2D, ViewBlendMode, ViewBoxShadow, ViewBoxShadowCornerRadius, ViewBoxShadowList,
+    ViewBoxShadowRadii, ViewClipPath, ViewColorRgba8, ViewCompositingEffects, ViewCompositingGroup,
+    ViewFillRule, ViewFilter, ViewFilterList, ViewGradientStop, ViewIsolation, ViewLength,
+    ViewMask, ViewMaskGradient, ViewMaskImage, ViewPaintNode, ViewPoint, ViewPrimitive,
+    ViewPrimitiveRange, ViewScene, ViewSceneContext, ViewShapeRadius, ViewSurfaceBackground,
+    ViewSurfaceBorder, ViewSurfaceClip, ViewSurfacePaint,
 };
 use num_traits::ToPrimitive;
 use std::{collections::HashMap, rc::Rc, sync::Arc};
@@ -54,39 +53,9 @@ pub struct TakumiCompositingStyle {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DirectBoxPaint {
-    pub backgrounds: Vec<DirectBackground>,
-    pub border: Option<DirectBorder>,
-    pub clip: Option<DirectClip>,
+    pub surface: ViewSurfacePaint,
+    pub clip: Option<ViewSurfaceClip>,
     pub opacity: f32,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum DirectBackground {
-    Solid {
-        color: ViewColorRgba8,
-        radii: ViewCornerRadii,
-    },
-    LinearGradient {
-        angle_degrees: f32,
-        stops: Vec<ViewGradientStop>,
-    },
-    Image {
-        resource_index: u32,
-        opacity: f32,
-    },
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct DirectBorder {
-    pub width: f32,
-    pub radius: f32,
-    pub color: ViewColorRgba8,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum DirectClip {
-    Rect,
-    RoundedRect { radius: f32 },
 }
 
 pub struct TakumiSceneInput<'a> {
@@ -191,36 +160,35 @@ impl TakumiCompositingStyle {
 impl DirectBoxPaint {
     pub fn new() -> Self {
         Self {
-            backgrounds: Vec::new(),
-            border: None,
+            surface: ViewSurfacePaint::new(),
             clip: None,
             opacity: 1.0,
         }
     }
 
     #[must_use]
-    pub fn with_background(mut self, background: DirectBackground) -> Self {
-        self.backgrounds.push(background);
+    pub fn with_background(mut self, background: ViewSurfaceBackground) -> Self {
+        self.surface.backgrounds.push(background);
         self
     }
 
     #[must_use]
     pub fn with_backgrounds(
         mut self,
-        backgrounds: impl IntoIterator<Item = DirectBackground>,
+        backgrounds: impl IntoIterator<Item = ViewSurfaceBackground>,
     ) -> Self {
-        self.backgrounds.extend(backgrounds);
+        self.surface.backgrounds.extend(backgrounds);
         self
     }
 
     #[must_use]
-    pub fn with_border(mut self, border: DirectBorder) -> Self {
-        self.border = Some(border);
+    pub fn with_border(mut self, border: ViewSurfaceBorder) -> Self {
+        self.surface.border = Some(border);
         self
     }
 
     #[must_use]
-    pub fn with_clip(mut self, clip: DirectClip) -> Self {
+    pub fn with_clip(mut self, clip: ViewSurfaceClip) -> Self {
         self.clip = Some(clip);
         self
     }
@@ -232,10 +200,7 @@ impl DirectBoxPaint {
     }
 
     pub fn has_visible_direct_paint(&self) -> bool {
-        !self.backgrounds.is_empty()
-            || self.border.is_some()
-            || self.clip.is_some()
-            || self.opacity < 1.0
+        self.surface.has_visible_primitives() || self.clip.is_some() || self.opacity < 1.0
     }
 }
 
@@ -320,6 +285,10 @@ impl ViewSceneBuild {
 
     fn push_primitive(&mut self, primitive: ViewPrimitive) {
         self.primitives.push(primitive);
+    }
+
+    fn push_surface_primitives(&mut self, bounds: HitRect, paint: &ViewSurfacePaint) {
+        paint.append_primitives(bounds, |primitive| self.push_primitive(primitive));
     }
 
     fn push_context(&mut self, context: ViewSceneContext) {
@@ -451,17 +420,7 @@ fn lower_node(
     let start = build.primitive_start()?;
 
     if let Some(paint) = paint {
-        for background in &paint.backgrounds {
-            lower_background(background, bounds, build);
-        }
-        if let Some(border) = paint.border {
-            build.push_primitive(ViewPrimitive::Border(ViewBorder {
-                bounds,
-                radius: border.radius,
-                width: border.width,
-                color: border.color,
-            }));
-        }
+        build.push_surface_primitives(bounds, &paint.surface);
     }
 
     if let Some(metadata) = refs.metadata.get_by_path(&path)
@@ -477,7 +436,7 @@ fn lower_node(
         return Ok(None);
     }
 
-    let clip = paint.and_then(|paint| paint.clip.map(|clip| clip.to_ui_clip(bounds)));
+    let clip = paint.and_then(|paint| paint.clip.map(|clip| clip.to_view_clip(bounds)));
     let opacity = paint.map_or(1.0, |paint| paint.opacity);
     let primitive_range = ViewPrimitiveRange { start, end };
     let scene_context = ViewSceneContext {
@@ -520,53 +479,6 @@ fn bounds_for_node(
         layout.size.width,
         layout.size.height,
     ))
-}
-
-fn lower_background(background: &DirectBackground, bounds: HitRect, build: &mut ViewSceneBuild) {
-    match background {
-        DirectBackground::Solid { color, radii } if radii.has_rounded_corner() => {
-            build.push_primitive(ViewPrimitive::RoundedRect(ViewRoundedRect {
-                bounds,
-                radii: *radii,
-                color: *color,
-            }));
-        }
-        DirectBackground::Solid { color, .. } => {
-            build.push_primitive(ViewPrimitive::SolidRect(ViewSolidRect {
-                bounds,
-                color: *color,
-            }));
-        }
-        DirectBackground::LinearGradient {
-            angle_degrees,
-            stops,
-        } => {
-            build.push_primitive(ViewPrimitive::LinearGradient(ViewLinearGradient {
-                bounds,
-                angle_degrees: *angle_degrees,
-                stops: stops.clone(),
-            }));
-        }
-        DirectBackground::Image {
-            resource_index,
-            opacity,
-        } => {
-            build.push_primitive(ViewPrimitive::Image(ViewImagePrimitive {
-                resource_index: *resource_index,
-                bounds,
-                opacity: *opacity,
-            }));
-        }
-    }
-}
-
-impl DirectClip {
-    fn to_ui_clip(self, bounds: HitRect) -> ViewClip {
-        match self {
-            Self::Rect => ViewClip::Rect(bounds),
-            Self::RoundedRect { radius } => ViewClip::RoundedRect { bounds, radius },
-        }
-    }
 }
 
 fn primitive_range_for_group(group: &ViewCompositingGroup) -> Option<ViewPrimitiveRange> {
@@ -1040,7 +952,7 @@ fn affine_to_ui(values: [f32; 6]) -> ViewAffine2D {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_render_wgpu::view_scene::ViewCornerRadius;
+    use arcweft_render_wgpu::view_scene::{ViewCornerRadii, ViewCornerRadius};
 
     fn color(alpha: u8) -> ViewColorRgba8 {
         ViewColorRgba8 {
@@ -1057,7 +969,7 @@ mod tests {
         let mut catalog = DirectPaintCatalog::default();
         catalog.insert(
             path.clone(),
-            DirectBoxPaint::new().with_background(DirectBackground::Solid {
+            DirectBoxPaint::new().with_background(ViewSurfaceBackground::Solid {
                 color: color(255),
                 radii: ViewCornerRadii::uniform(4.0),
             }),
@@ -1068,7 +980,7 @@ mod tests {
     }
 
     #[test]
-    fn lower_background_preserves_direct_solid_corner_radii() {
+    fn shared_surface_builder_preserves_direct_solid_corner_radii() {
         let radii = ViewCornerRadii::from_corners(
             ViewCornerRadius::new(18.0, 12.0),
             ViewCornerRadius::new(10.0, 6.0),
@@ -1077,14 +989,14 @@ mod tests {
         );
         let mut build = ViewSceneBuild::new(100.0, 50.0);
 
-        lower_background(
-            &DirectBackground::Solid {
+        ViewSurfacePaint::new()
+            .with_background(ViewSurfaceBackground::Solid {
                 color: color(255),
                 radii,
-            },
-            HitRect::new(0.0, 0.0, 80.0, 40.0),
-            &mut build,
-        );
+            })
+            .append_primitives(HitRect::new(0.0, 0.0, 80.0, 40.0), |primitive| {
+                build.push_primitive(primitive);
+            });
 
         let ViewPrimitive::RoundedRect(rect) = &build.primitives[0] else {
             panic!("rounded direct background lowers to ViewRoundedRect");

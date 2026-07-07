@@ -28,6 +28,7 @@ pub use core::{
     ViewAffine2D, ViewBorder, ViewCaretPrimitive, ViewClip, ViewColorRgba8,
     ViewCompositionUnderline, ViewCornerRadii, ViewCornerRadius, ViewGlyphRun, ViewGradientStop,
     ViewImagePrimitive, ViewLinearGradient, ViewPrimitive, ViewPrimitiveRange, ViewRoundedRect,
-    ViewScene, ViewSceneContext, ViewSelectionPrimitive, ViewSolidRect, ViewTextFieldSceneStyle,
+    ViewScene, ViewSceneContext, ViewSelectionPrimitive, ViewSolidRect, ViewSurfaceBackground,
+    ViewSurfaceBorder, ViewSurfaceClip, ViewSurfacePaint, ViewTextFieldSceneStyle,
     ViewUnderlineStyle,
 };

@@ -1,6 +1,7 @@
+use arcweft_render_wgpu::view_scene::ViewSurfaceBackground;
 use arcweft_takumi_adapter::{
-    ComputedDirectPaintExtractor, ComputedDirectPaintInput, DirectBackground,
-    DirectPaintResourceTable, TakumiAdapter, TakumiAdapterInput, TakumiCssBundle,
+    ComputedDirectPaintExtractor, ComputedDirectPaintInput, DirectPaintResourceTable,
+    TakumiAdapter, TakumiAdapterInput, TakumiCssBundle,
 };
 use arcweft_view::{ContainerKind, FragmentKind, NodeKey, StyleId, ViewFragmentBuilder};
 use takumi::prelude::{Fonts, Viewport};
@@ -77,7 +78,7 @@ fn computed_direct_paint_background_color_extracts_solid_rect_layer() {
 
     assert!(output.diagnostics.is_empty());
     assert_eq!(output.catalog.entries().len(), 1);
-    assert_eq!(output.catalog.entries()[0].1.backgrounds.len(), 1);
+    assert_eq!(output.catalog.entries()[0].1.surface.backgrounds.len(), 1);
     assert_eq!(output.evidence.records()[0].layers().len(), 1);
 }
 
@@ -127,7 +128,8 @@ fn computed_direct_paint_preserves_per_corner_elliptical_background_radii() {
     });
 
     assert!(output.diagnostics.is_empty());
-    let DirectBackground::Solid { radii, .. } = &output.catalog.entries()[0].1.backgrounds[0]
+    let ViewSurfaceBackground::Solid { radii, .. } =
+        &output.catalog.entries()[0].1.surface.backgrounds[0]
     else {
         panic!("background-color extracts as a solid background");
     };
@@ -153,7 +155,7 @@ fn computed_direct_paint_linear_gradient_extracts_gradient_layer() {
     });
 
     assert!(output.diagnostics.is_empty());
-    assert_eq!(output.catalog.entries()[0].1.backgrounds.len(), 1);
+    assert_eq!(output.catalog.entries()[0].1.surface.backgrounds.len(), 1);
 }
 
 #[test]
@@ -184,5 +186,5 @@ fn computed_direct_paint_supported_layer_survives_unsupported_layer() {
     });
 
     assert!(!output.diagnostics.is_empty());
-    assert_eq!(output.catalog.entries()[0].1.backgrounds.len(), 1);
+    assert_eq!(output.catalog.entries()[0].1.surface.backgrounds.len(), 1);
 }

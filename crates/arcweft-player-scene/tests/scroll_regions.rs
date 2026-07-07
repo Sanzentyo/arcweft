@@ -21,6 +21,13 @@ use arcweft_render_wgpu::geometry::{RenderPreferences, RenderViewport};
 use arcweft_render_wgpu::view_scene::{ViewPaintNode, ViewPrimitive};
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 
+fn assert_px(actual: f32, expected: f32) {
+    assert!(
+        (actual - expected).abs() <= 0.001,
+        "expected {expected}px, got {actual}px"
+    );
+}
+
 #[test]
 fn player_frame_lowers_runtime_surfaces_to_view_scene() {
     let mut presentation = BundlePresentationSnapshot::default();
@@ -83,27 +90,27 @@ fn player_frame_lowers_runtime_surfaces_to_view_scene() {
     let ViewPrimitive::RoundedRect(rect) = &view_scene.scene.primitives()[0] else {
         panic!("surface fill lowers to a rounded rect primitive");
     };
-    assert_eq!(rect.radii.top_left.x_px, 18.0);
-    assert_eq!(rect.radii.top_left.y_px, 12.0);
-    assert_eq!(rect.radii.top_right.x_px, 10.0);
-    assert_eq!(rect.radii.bottom_right.y_px, 8.0);
+    assert_px(rect.radii.top_left.x_px, 18.0);
+    assert_px(rect.radii.top_left.y_px, 12.0);
+    assert_px(rect.radii.top_right.x_px, 10.0);
+    assert_px(rect.radii.bottom_right.y_px, 8.0);
     let ViewPaintNode::Group(group) = &view_scene.scene.paint_nodes()[0] else {
         panic!("surface with shadow lowers to a compositing group");
     };
     assert_eq!(group.effects.box_shadows.shadows().len(), 1);
-    assert_eq!(
+    assert_px(
         group.effects.box_shadows.shadows()[0]
             .border_radii
             .top_left
             .x_px,
-        18.0
+        18.0,
     );
-    assert_eq!(
+    assert_px(
         group.effects.box_shadows.shadows()[0]
             .border_radii
             .bottom_left
             .y_px,
-        4.0
+        4.0,
     );
     assert_eq!(group.children.len(), 1);
 }

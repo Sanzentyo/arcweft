@@ -42,9 +42,9 @@ It does not own:
 ### Existing lowerer contract
 
 `TakumiSceneLowerer` remains the only path that turns `DirectPaintCatalog` into
-`ViewScene` primitives. Seq06.11a extends `DirectBoxPaint` from a single optional
-background to ordered `backgrounds: Vec<DirectBackground>` so CSS layered
-backgrounds can remain deterministic and renderer-independent.
+`ViewScene` primitives. `DirectBoxPaint` carries renderer-owned
+`ViewSurfacePaint` so CSS layered backgrounds remain deterministic while
+primitive construction is shared with non-Takumi runtime surfaces.
 
 No private renderer path is introduced. No rectangle-only bridge is introduced.
 
@@ -92,18 +92,18 @@ adapter/player requirements and never trigger file or network I/O inside
 
 - `background-color` is resolved through Takumi `ColorInput::resolve`.
 - Transparent colors do not create a paint layer.
-- Non-transparent colors create a `DirectBackground::Solid` layer.
-- If a supported uniform radius exists, the solid layer carries that radius so
-  the lowerer emits a rounded rect.
+- Non-transparent colors create a `ViewSurfaceBackground::Solid` layer.
+- The solid layer carries computed `ViewCornerRadii`, including per-corner and
+  elliptical radii, so the shared surface primitive builder emits the same
+  rounded fill as non-Takumi runtime surfaces.
 
 ### Border radius
 
-- The first cut supports a uniform circular radius across all four corners.
-- Uniform means every corner has equal horizontal and vertical radii after
-  Takumi computation.
-- A supported uniform radius also creates `DirectClip::RoundedRect` metadata.
-- Elliptical or per-corner-mixed radii produce structured diagnostics instead of
-  approximation.
+- Solid background fill supports computed per-corner and elliptical radii.
+- A supported uniform circular radius also creates `ViewSurfaceClip::RoundedRect`
+  metadata for the current scalar clip path.
+- Per-corner/elliptical clipping for gradient/image backgrounds remains a
+  separate clip/mask primitive expansion.
 
 ### Borders
 
@@ -127,7 +127,7 @@ adapter/player requirements and never trigger file or network I/O inside
 
 ### Image backgrounds
 
-- `url(...)` backgrounds become `DirectBackground::Image` only when the URL exists
+- `url(...)` backgrounds become `ViewSurfaceBackground::Image` only when the URL exists
   in `DirectPaintResourceTable`.
 - Unknown URLs produce `DirectPaintResourceRequirement` entries; no file/network
   access occurs in the adapter crate.
@@ -141,7 +141,7 @@ adapter/player requirements and never trigger file or network I/O inside
 
 ## Layer order
 
-The `DirectBoxPaint.backgrounds` vector is stored in painter order:
+The `DirectBoxPaint.surface.backgrounds` vector is stored in painter order:
 
 1. `background-color` behind everything;
 2. supported `background-image` layers from bottom to top, reversing the CSS

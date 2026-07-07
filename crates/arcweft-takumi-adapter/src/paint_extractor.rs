@@ -7,11 +7,12 @@
 
 use crate::{
     diagnostic::{TakumiDiagnostic, TakumiDiagnosticCode},
-    lowering::{DirectBackground, DirectBorder, DirectBoxPaint, DirectClip, DirectPaintCatalog},
+    lowering::{DirectBoxPaint, DirectPaintCatalog},
     metadata::{ArcweftNodeMetadata, TakumiMetadataMap, TakumiPath},
 };
 use arcweft_render_wgpu::view_scene::{
     ViewColorRgba8, ViewCornerRadii, ViewCornerRadius, ViewGradientStop, ViewPrimitiveRange,
+    ViewSurfaceBackground, ViewSurfaceBorder, ViewSurfaceClip,
 };
 use num_traits::ToPrimitive;
 use std::{collections::BTreeMap, sync::Arc};
@@ -152,7 +153,7 @@ impl ComputedDirectPaintExtractor {
         let radii = direct_corner_radii(style, sizing);
         let uniform_radius = radii.uniform_circular_radius();
         if let Some(radius) = uniform_radius.filter(|value| *value > 0.0) {
-            paint = paint.with_clip(DirectClip::RoundedRect { radius });
+            paint = paint.with_clip(ViewSurfaceClip::RoundedRect { radius });
             evidence.push_layer(
                 DirectPaintLayerKind::RoundedClip,
                 DirectPaintSource::CssComputedStyle,
@@ -171,11 +172,11 @@ impl ComputedDirectPaintExtractor {
             supported_background_images(style, sizing, current_color, path, resources, frame)
         {
             let layer_kind = match background {
-                DirectBackground::LinearGradient { .. } => {
+                ViewSurfaceBackground::LinearGradient { .. } => {
                     DirectPaintLayerKind::LinearGradientBackground
                 }
-                DirectBackground::Image { .. } => DirectPaintLayerKind::ImageBackground,
-                DirectBackground::Solid { .. } => DirectPaintLayerKind::BackgroundColor,
+                ViewSurfaceBackground::Image { .. } => DirectPaintLayerKind::ImageBackground,
+                ViewSurfaceBackground::Solid { .. } => DirectPaintLayerKind::BackgroundColor,
             };
             paint = paint.with_background(background);
             evidence.push_layer(layer_kind, DirectPaintSource::CssComputedStyle);
@@ -318,9 +319,9 @@ fn solid_background(
     style: &ComputedStyle,
     current_color: TakumiColor,
     radii: ViewCornerRadii,
-) -> Option<DirectBackground> {
+) -> Option<ViewSurfaceBackground> {
     let color = ui_color(style.background_color.resolve(current_color));
-    (color.alpha > 0).then_some(DirectBackground::Solid { color, radii })
+    (color.alpha > 0).then_some(ViewSurfaceBackground::Solid { color, radii })
 }
 
 fn supported_background_images(
@@ -330,7 +331,7 @@ fn supported_background_images(
     path: &TakumiPath,
     resources: &DirectPaintResourceTable,
     frame: &mut ComputedDirectPaintFrame,
-) -> Vec<DirectBackground> {
+) -> Vec<ViewSurfaceBackground> {
     let Some(images) = style.background_image.as_deref() else {
         return Vec::new();
     };
@@ -351,7 +352,7 @@ fn supported_background_image(
     path: &TakumiPath,
     resources: &DirectPaintResourceTable,
     frame: &mut ComputedDirectPaintFrame,
-) -> Option<DirectBackground> {
+) -> Option<ViewSurfaceBackground> {
     match image {
         BackgroundImage::None => None,
         BackgroundImage::Linear(gradient) => {
@@ -359,7 +360,7 @@ fn supported_background_image(
         }
         BackgroundImage::Url(url) => {
             if let Some(resource_index) = resources.get(url) {
-                return Some(DirectBackground::Image {
+                return Some(ViewSurfaceBackground::Image {
                     resource_index,
                     opacity: 1.0,
                 });
@@ -397,7 +398,7 @@ fn linear_gradient_background(
     current_color: TakumiColor,
     path: &TakumiPath,
     frame: &mut ComputedDirectPaintFrame,
-) -> Option<DirectBackground> {
+) -> Option<ViewSurfaceBackground> {
     if gradient.repeating {
         frame.diagnostics.push(unsupported(
             path,
@@ -407,7 +408,7 @@ fn linear_gradient_background(
     }
 
     let stops = gradient_stops(&gradient.stops, sizing, current_color, path, frame)?;
-    Some(DirectBackground::LinearGradient {
+    Some(ViewSurfaceBackground::LinearGradient {
         angle_degrees: gradient_angle_degrees(gradient.direction),
         stops,
     })
@@ -530,7 +531,7 @@ fn supported_border(
     radius: f32,
     path: &TakumiPath,
     frame: &mut ComputedDirectPaintFrame,
-) -> (BorderExtractionState, Option<DirectBorder>) {
+) -> (BorderExtractionState, Option<ViewSurfaceBorder>) {
     let widths = [
         line_width_px(style.border_top_width, sizing),
         line_width_px(style.border_right_width, sizing),
@@ -592,7 +593,7 @@ fn supported_border(
 
     (
         BorderExtractionState::Supported,
-        Some(DirectBorder {
+        Some(ViewSurfaceBorder {
             width: first_width,
             radius,
             color: first_color,

@@ -22,8 +22,8 @@ Takumi computed style
 - Added focused tests in `crates/arcweft-takumi-adapter/tests/computed_direct_paint.rs`.
 - Added fixture CSS at `crates/arcweft-takumi-adapter/tests/fixtures/seq06_11a_direct_paint.css`.
 - Exported the extractor and evidence/resource types from `arcweft-takumi-adapter`.
-- Replaced `DirectBoxPaint::background: Option<DirectBackground>` with `DirectBoxPaint::backgrounds: Vec<DirectBackground>`.
-- Updated `TakumiSceneLowerer` to lower every direct background in deterministic painter order before borders.
+- Replaced Takumi-owned direct background/border payloads with renderer-owned `ViewSurfacePaint`.
+- Updated `TakumiSceneLowerer` and runtime surface lowering to share `ViewSurfacePaint::append_primitives` / `ViewScene::push_surface_primitives` for deterministic painter order before borders.
 
 ## Supported first cut
 

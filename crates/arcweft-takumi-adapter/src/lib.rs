@@ -39,9 +39,8 @@ pub use coverage::{
 pub use diagnostic::{TakumiAdapterError, TakumiDiagnostic, TakumiDiagnosticCode};
 pub use evidence::{COMPOSITING_EVIDENCE_SCHEMA_VERSION, capture_frame_to_json};
 pub use lowering::{
-    DirectBackground, DirectBorder, DirectBoxPaint, DirectClip, DirectPaintCatalog,
-    TakumiCompositingStyle, TakumiCompositingStyleCatalog, TakumiSceneInput, TakumiSceneLowerer,
-    TakumiSceneOutput,
+    DirectBoxPaint, DirectPaintCatalog, TakumiCompositingStyle, TakumiCompositingStyleCatalog,
+    TakumiSceneInput, TakumiSceneLowerer, TakumiSceneOutput,
 };
 pub use metadata::{ArcweftNodeMetadata, TakumiMetadataEntry, TakumiMetadataMap, TakumiPath};
 pub use paint_extractor::{

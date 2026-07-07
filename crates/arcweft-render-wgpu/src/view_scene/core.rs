@@ -85,6 +85,41 @@ pub struct ViewRoundedRect {
     pub color: ViewColorRgba8,
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ViewSurfacePaint {
+    pub backgrounds: Vec<ViewSurfaceBackground>,
+    pub border: Option<ViewSurfaceBorder>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ViewSurfaceBackground {
+    Solid {
+        color: ViewColorRgba8,
+        radii: ViewCornerRadii,
+    },
+    LinearGradient {
+        angle_degrees: f32,
+        stops: Vec<ViewGradientStop>,
+    },
+    Image {
+        resource_index: u32,
+        opacity: f32,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ViewSurfaceBorder {
+    pub width: f32,
+    pub radius: f32,
+    pub color: ViewColorRgba8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ViewSurfaceClip {
+    Rect,
+    RoundedRect { radius: f32 },
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ViewCornerRadii {
     pub top_left: ViewCornerRadius,
@@ -342,6 +377,102 @@ impl ViewCornerRadii {
     }
 }
 
+impl ViewSurfacePaint {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[must_use]
+    pub fn with_background(mut self, background: ViewSurfaceBackground) -> Self {
+        self.backgrounds.push(background);
+        self
+    }
+
+    #[must_use]
+    pub fn with_backgrounds(
+        mut self,
+        backgrounds: impl IntoIterator<Item = ViewSurfaceBackground>,
+    ) -> Self {
+        self.backgrounds.extend(backgrounds);
+        self
+    }
+
+    #[must_use]
+    pub fn with_border(mut self, border: ViewSurfaceBorder) -> Self {
+        self.border = Some(border);
+        self
+    }
+
+    #[must_use]
+    pub fn has_visible_primitives(&self) -> bool {
+        !self.backgrounds.is_empty() || self.border.is_some()
+    }
+
+    pub fn append_primitives(&self, bounds: HitRect, mut push: impl FnMut(ViewPrimitive)) -> bool {
+        let mut pushed = false;
+        for background in &self.backgrounds {
+            push(background.to_primitive(bounds));
+            pushed = true;
+        }
+        if let Some(border) = self.border {
+            push(ViewPrimitive::Border(ViewBorder {
+                bounds,
+                radius: border.radius,
+                width: border.width,
+                color: border.color,
+            }));
+            pushed = true;
+        }
+        pushed
+    }
+}
+
+impl ViewSurfaceBackground {
+    #[must_use]
+    pub fn to_primitive(&self, bounds: HitRect) -> ViewPrimitive {
+        match self {
+            Self::Solid { color, radii } if radii.has_rounded_corner() => {
+                ViewPrimitive::RoundedRect(ViewRoundedRect {
+                    bounds,
+                    radii: *radii,
+                    color: *color,
+                })
+            }
+            Self::Solid { color, .. } => ViewPrimitive::SolidRect(ViewSolidRect {
+                bounds,
+                color: *color,
+            }),
+            Self::LinearGradient {
+                angle_degrees,
+                stops,
+            } => ViewPrimitive::LinearGradient(ViewLinearGradient {
+                bounds,
+                angle_degrees: *angle_degrees,
+                stops: stops.clone(),
+            }),
+            Self::Image {
+                resource_index,
+                opacity,
+            } => ViewPrimitive::Image(ViewImagePrimitive {
+                resource_index: *resource_index,
+                bounds,
+                opacity: *opacity,
+            }),
+        }
+    }
+}
+
+impl ViewSurfaceClip {
+    #[must_use]
+    pub const fn to_view_clip(self, bounds: HitRect) -> ViewClip {
+        match self {
+            Self::Rect => ViewClip::Rect(bounds),
+            Self::RoundedRect { radius } => ViewClip::RoundedRect { bounds, radius },
+        }
+    }
+}
+
 fn radius_scale_limit(current: f32, side: f32, radii_sum: f32) -> f32 {
     if side <= 0.0 || radii_sum <= side || radii_sum <= f32::EPSILON {
         current
@@ -373,6 +504,17 @@ impl ViewScene {
 
     pub fn push_primitive(&mut self, primitive: ViewPrimitive) {
         self.primitives.push(primitive);
+    }
+
+    pub fn push_surface_primitives(
+        &mut self,
+        bounds: HitRect,
+        paint: &ViewSurfacePaint,
+    ) -> Option<ViewPrimitiveRange> {
+        let start = u32::try_from(self.primitives.len()).unwrap_or(u32::MAX);
+        paint.append_primitives(bounds, |primitive| self.push_primitive(primitive));
+        let end = u32::try_from(self.primitives.len()).unwrap_or(u32::MAX);
+        (start != end).then_some(ViewPrimitiveRange { start, end })
     }
 
     pub fn push_paint_node(&mut self, node: ViewPaintNode) {
@@ -466,7 +608,8 @@ impl ViewScene {
 mod tests {
     use super::{
         ViewAffine2D, ViewColorRgba8, ViewCornerRadii, ViewCornerRadius, ViewPrimitive,
-        ViewPrimitiveRange, ViewScene, ViewSceneContext, ViewSolidRect, ViewTextFieldSceneStyle,
+        ViewPrimitiveRange, ViewScene, ViewSceneContext, ViewSolidRect, ViewSurfaceBackground,
+        ViewSurfaceBorder, ViewSurfacePaint, ViewTextFieldSceneStyle,
     };
     use crate::view_scene::ViewPaintNode;
     use arcweft_presentation::hit::HitRect;
@@ -515,6 +658,48 @@ mod tests {
         assert!((radii.top_left.y_px - 25.0).abs() < f32::EPSILON);
         assert!((radii.top_right.x_px - 50.0).abs() < f32::EPSILON);
         assert!((radii.bottom_left.y_px - 25.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn surface_paint_pushes_shared_rounded_fill_and_border_primitives() {
+        let mut scene = ViewScene::new(320.0, 180.0);
+        let radii = ViewCornerRadii::from_corners(
+            ViewCornerRadius::new(18.0, 12.0),
+            ViewCornerRadius::new(10.0, 6.0),
+            ViewCornerRadius::new(14.0, 8.0),
+            ViewCornerRadius::new(6.0, 4.0),
+        );
+        let paint = ViewSurfacePaint::new()
+            .with_background(ViewSurfaceBackground::Solid {
+                color: ViewColorRgba8 {
+                    red: 1,
+                    green: 2,
+                    blue: 3,
+                    alpha: 255,
+                },
+                radii,
+            })
+            .with_border(ViewSurfaceBorder {
+                width: 2.0,
+                radius: 9.0,
+                color: ViewColorRgba8 {
+                    red: 4,
+                    green: 5,
+                    blue: 6,
+                    alpha: 255,
+                },
+            });
+
+        let range = scene
+            .push_surface_primitives(HitRect::new(0.0, 0.0, 80.0, 40.0), &paint)
+            .expect("surface paint emits primitives");
+
+        assert_eq!(range, ViewPrimitiveRange { start: 0, end: 2 });
+        let ViewPrimitive::RoundedRect(rect) = &scene.primitives()[0] else {
+            panic!("solid surface background lowers to rounded fill");
+        };
+        assert_eq!(rect.radii, radii);
+        assert!(matches!(scene.primitives()[1], ViewPrimitive::Border(_)));
     }
 
     #[test]
