@@ -110,6 +110,10 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
 ## Follow-up request
 
 - `docs/reviews/requests/2026-07-07-function-closure-runtime-apply-capture-and-method-sugar.md`
+- `docs/reviews/requests/2026-07-07-function-stack-typed-expression-lowering-evidence.md`
+- `docs/reviews/requests/2026-07-07-function-stack-awbc-closure-apply.md`
+- `docs/reviews/requests/2026-07-07-function-stack-placeholder-inference-and-method-fallback.md`
+- `docs/reviews/requests/2026-07-07-function-stack-capture-effect-lsp.md`
 
 ## Validation
 
