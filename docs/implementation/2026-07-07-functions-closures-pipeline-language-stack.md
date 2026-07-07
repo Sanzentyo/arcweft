@@ -536,6 +536,13 @@ and runtime-plan-generated closure application
 plan test verifies the lowered program, confirms `MakeFunction` and
 `ApplyFunction` are emitted instead of a `function.apply` intrinsic, and runs
 the produced AWBC in the VM to return `"ok"`.
+Follow-up focused runtime-plan tests also cover generated AWBC partial
+application returning a function value
+(`generated_awbc_partial_apply_returns_function_value`), nested curried closure
+application in the shape `make_adder(2i64)(5i64)`
+(`generated_awbc_curried_closure_apply_executes_returned_function`), and a
+function value whose body calls a lowered pure helper
+(`generated_awbc_function_value_apply_can_call_pure_helper_body`).
 
 The local function-valued call cut has focused passing coverage for a flow that
 aliases a pure helper, partially applies that local function value, and applies
