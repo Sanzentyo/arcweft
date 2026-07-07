@@ -14,9 +14,9 @@ use crate::view_effects::ViewTextureExtent;
 use crate::view_mask::ViewMaskChannel;
 use crate::view_scene::{
     ViewAffine2D, ViewBorder, ViewCaretPrimitive, ViewClip, ViewColorRgba8,
-    ViewCompositionUnderline, ViewGlyphRun, ViewImagePrimitive, ViewLinearGradient, ViewMaskImage,
-    ViewPrimitive, ViewRoundedRect, ViewScene, ViewSceneContext, ViewSelectionPrimitive,
-    ViewSolidRect, ViewUnderlineStyle,
+    ViewCompositionUnderline, ViewCornerRadii, ViewCornerRadius, ViewGlyphRun, ViewImagePrimitive,
+    ViewLinearGradient, ViewMaskImage, ViewPrimitive, ViewRoundedRect, ViewScene, ViewSceneContext,
+    ViewSelectionPrimitive, ViewSolidRect, ViewUnderlineStyle,
 };
 use arcweft_presentation::hit::HitRect;
 use bytemuck::{Pod, Zeroable};
@@ -414,7 +414,7 @@ fn push_rounded_rect(
     output: &mut Vec<ViewColorVertex>,
 ) {
     let color = color_to_f32(rect.color, context.opacity);
-    let points = rounded_rect_points(rect.bounds, rect.radius);
+    let points = rounded_rect_points(rect.bounds, rect.radii);
     push_polygon_fan(
         scene,
         context,
@@ -437,7 +437,7 @@ fn push_border(
         return;
     }
     let color = color_to_f32(border.color, context.opacity);
-    let outer = rounded_rect_points(border.bounds, border.radius);
+    let outer = rounded_rect_points(border.bounds, ViewCornerRadii::uniform(border.radius));
     let inner_bounds = inset_rect(border.bounds, border.width);
     if inner_bounds.width <= 0.0 || inner_bounds.height <= 0.0 {
         push_polygon_fan(
@@ -451,7 +451,10 @@ fn push_border(
         );
         return;
     }
-    let inner = rounded_rect_points(inner_bounds, (border.radius - border.width).max(0.0));
+    let inner = rounded_rect_points(
+        inner_bounds,
+        ViewCornerRadii::uniform((border.radius - border.width).max(0.0)),
+    );
     for index in 0..outer.len() {
         let next = (index + 1) % outer.len();
         push_quad(
@@ -768,50 +771,65 @@ fn rect_corners(bounds: HitRect) -> [LogicalPoint; 4] {
     ]
 }
 
-fn rounded_rect_points(bounds: HitRect, radius: f32) -> Vec<LogicalPoint> {
-    let radius = radius.max(0.0).min(bounds.width.min(bounds.height) * 0.5);
-    if radius <= EPSILON {
+fn rounded_rect_points(bounds: HitRect, radii: ViewCornerRadii) -> Vec<LogicalPoint> {
+    let radii = radii.clamped_to_rect(bounds);
+    if rounded_radii_are_empty(radii) {
         return rect_corners(bounds).to_vec();
     }
-    let centers = [
+    let corners = [
         (
-            bounds.x + radius,
-            bounds.y + radius,
+            bounds.x + radii.top_left.x_px,
+            bounds.y + radii.top_left.y_px,
+            radii.top_left,
             std::f32::consts::PI,
             1.5 * std::f32::consts::PI,
         ),
         (
-            bounds.x + bounds.width - radius,
-            bounds.y + radius,
+            bounds.x + bounds.width - radii.top_right.x_px,
+            bounds.y + radii.top_right.y_px,
+            radii.top_right,
             1.5 * std::f32::consts::PI,
             2.0 * std::f32::consts::PI,
         ),
         (
-            bounds.x + bounds.width - radius,
-            bounds.y + bounds.height - radius,
+            bounds.x + bounds.width - radii.bottom_right.x_px,
+            bounds.y + bounds.height - radii.bottom_right.y_px,
+            radii.bottom_right,
             0.0,
             0.5 * std::f32::consts::PI,
         ),
         (
-            bounds.x + radius,
-            bounds.y + bounds.height - radius,
+            bounds.x + radii.bottom_left.x_px,
+            bounds.y + bounds.height - radii.bottom_left.y_px,
+            radii.bottom_left,
             0.5 * std::f32::consts::PI,
             std::f32::consts::PI,
         ),
     ];
-    centers
+    corners
         .into_iter()
-        .flat_map(|(cx, cy, start, end)| {
+        .flat_map(|(cx, cy, radius, start, end)| {
             (0..=ROUNDED_CORNER_SEGMENTS).map(move |step| {
                 let t = usize_to_f32(step) / usize_to_f32(ROUNDED_CORNER_SEGMENTS);
                 let angle = start + (end - start) * t;
                 LogicalPoint {
-                    x: cx + radius * angle.cos(),
-                    y: cy + radius * angle.sin(),
+                    x: cx + radius.x_px * angle.cos(),
+                    y: cy + radius.y_px * angle.sin(),
                 }
             })
         })
         .collect()
+}
+
+fn rounded_radii_are_empty(radii: ViewCornerRadii) -> bool {
+    corner_radius_is_empty(radii.top_left)
+        && corner_radius_is_empty(radii.top_right)
+        && corner_radius_is_empty(radii.bottom_right)
+        && corner_radius_is_empty(radii.bottom_left)
+}
+
+fn corner_radius_is_empty(radius: ViewCornerRadius) -> bool {
+    radius.x_px <= EPSILON || radius.y_px <= EPSILON
 }
 
 fn inset_rect(bounds: HitRect, inset: f32) -> HitRect {

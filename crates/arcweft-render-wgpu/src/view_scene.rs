@@ -26,8 +26,8 @@ pub use compositing::{
 };
 pub use core::{
     ViewAffine2D, ViewBorder, ViewCaretPrimitive, ViewClip, ViewColorRgba8,
-    ViewCompositionUnderline, ViewGlyphRun, ViewGradientStop, ViewImagePrimitive,
-    ViewLinearGradient, ViewPrimitive, ViewPrimitiveRange, ViewRoundedRect, ViewScene,
-    ViewSceneContext, ViewSelectionPrimitive, ViewSolidRect, ViewTextFieldSceneStyle,
+    ViewCompositionUnderline, ViewCornerRadii, ViewCornerRadius, ViewGlyphRun, ViewGradientStop,
+    ViewImagePrimitive, ViewLinearGradient, ViewPrimitive, ViewPrimitiveRange, ViewRoundedRect,
+    ViewScene, ViewSceneContext, ViewSelectionPrimitive, ViewSolidRect, ViewTextFieldSceneStyle,
     ViewUnderlineStyle,
 };

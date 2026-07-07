@@ -81,8 +81,22 @@ pub struct ViewSolidRect {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ViewRoundedRect {
     pub bounds: HitRect,
-    pub radius: f32,
+    pub radii: ViewCornerRadii,
     pub color: ViewColorRgba8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ViewCornerRadii {
+    pub top_left: ViewCornerRadius,
+    pub top_right: ViewCornerRadius,
+    pub bottom_right: ViewCornerRadius,
+    pub bottom_left: ViewCornerRadius,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ViewCornerRadius {
+    pub x_px: f32,
+    pub y_px: f32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -193,6 +207,139 @@ impl Default for ViewTextFieldSceneStyle {
             composition_thickness: 2.0,
         }
     }
+}
+
+impl ViewCornerRadius {
+    pub const ZERO: Self = Self {
+        x_px: 0.0,
+        y_px: 0.0,
+    };
+
+    pub const fn new(x_px: f32, y_px: f32) -> Self {
+        Self { x_px, y_px }
+    }
+
+    pub const fn circular(radius_px: f32) -> Self {
+        Self {
+            x_px: radius_px,
+            y_px: radius_px,
+        }
+    }
+
+    #[must_use]
+    pub fn non_negative(self) -> Self {
+        Self {
+            x_px: self.x_px.max(0.0),
+            y_px: self.y_px.max(0.0),
+        }
+    }
+
+    fn scaled(self, scale: f32) -> Self {
+        Self {
+            x_px: self.x_px * scale,
+            y_px: self.y_px * scale,
+        }
+    }
+}
+
+impl ViewCornerRadii {
+    pub const ZERO: Self = Self {
+        top_left: ViewCornerRadius::ZERO,
+        top_right: ViewCornerRadius::ZERO,
+        bottom_right: ViewCornerRadius::ZERO,
+        bottom_left: ViewCornerRadius::ZERO,
+    };
+
+    pub const fn uniform(radius_px: f32) -> Self {
+        Self {
+            top_left: ViewCornerRadius::circular(radius_px),
+            top_right: ViewCornerRadius::circular(radius_px),
+            bottom_right: ViewCornerRadius::circular(radius_px),
+            bottom_left: ViewCornerRadius::circular(radius_px),
+        }
+    }
+
+    pub const fn from_corners(
+        top_left: ViewCornerRadius,
+        top_right: ViewCornerRadius,
+        bottom_right: ViewCornerRadius,
+        bottom_left: ViewCornerRadius,
+    ) -> Self {
+        Self {
+            top_left,
+            top_right,
+            bottom_right,
+            bottom_left,
+        }
+    }
+
+    #[must_use]
+    pub fn non_negative(self) -> Self {
+        Self {
+            top_left: self.top_left.non_negative(),
+            top_right: self.top_right.non_negative(),
+            bottom_right: self.bottom_right.non_negative(),
+            bottom_left: self.bottom_left.non_negative(),
+        }
+    }
+
+    #[must_use]
+    pub fn clamped_to_rect(self, rect: HitRect) -> Self {
+        let radii = self.non_negative();
+        let width = rect.width.max(0.0);
+        let height = rect.height.max(0.0);
+        let scale = radius_scale_limit(
+            radius_scale_limit(
+                radius_scale_limit(
+                    radius_scale_limit(1.0, width, radii.top_left.x_px + radii.top_right.x_px),
+                    width,
+                    radii.bottom_left.x_px + radii.bottom_right.x_px,
+                ),
+                height,
+                radii.top_left.y_px + radii.bottom_left.y_px,
+            ),
+            height,
+            radii.top_right.y_px + radii.bottom_right.y_px,
+        );
+        if scale < 1.0 {
+            radii.scaled(scale)
+        } else {
+            radii
+        }
+    }
+
+    pub fn uniform_circular_radius(self) -> Option<f32> {
+        let radius = self.top_left.x_px;
+        (same_f32(radius, self.top_left.y_px)
+            && same_f32(radius, self.top_right.x_px)
+            && same_f32(radius, self.top_right.y_px)
+            && same_f32(radius, self.bottom_right.x_px)
+            && same_f32(radius, self.bottom_right.y_px)
+            && same_f32(radius, self.bottom_left.x_px)
+            && same_f32(radius, self.bottom_left.y_px))
+        .then_some(radius)
+    }
+
+    fn scaled(self, scale: f32) -> Self {
+        Self {
+            top_left: self.top_left.scaled(scale),
+            top_right: self.top_right.scaled(scale),
+            bottom_right: self.bottom_right.scaled(scale),
+            bottom_left: self.bottom_left.scaled(scale),
+        }
+    }
+}
+
+fn radius_scale_limit(current: f32, side: f32, radii_sum: f32) -> f32 {
+    if side <= 0.0 || radii_sum <= side || radii_sum <= f32::EPSILON {
+        current
+    } else {
+        current.min(side / radii_sum)
+    }
+}
+
+fn same_f32(left: f32, right: f32) -> bool {
+    (left - right).abs() <= f32::EPSILON
 }
 
 impl ViewScene {
@@ -306,8 +453,8 @@ impl ViewScene {
 #[cfg(test)]
 mod tests {
     use super::{
-        ViewAffine2D, ViewColorRgba8, ViewPrimitive, ViewPrimitiveRange, ViewScene,
-        ViewSceneContext, ViewSolidRect, ViewTextFieldSceneStyle,
+        ViewAffine2D, ViewColorRgba8, ViewCornerRadii, ViewCornerRadius, ViewPrimitive,
+        ViewPrimitiveRange, ViewScene, ViewSceneContext, ViewSolidRect, ViewTextFieldSceneStyle,
     };
     use crate::view_scene::ViewPaintNode;
     use arcweft_presentation::hit::HitRect;
@@ -340,6 +487,22 @@ mod tests {
             ViewPrimitiveRange { start: 0, end: 1 }
         );
         assert!(matches!(scene.paint_nodes()[0], ViewPaintNode::Direct(_)));
+    }
+
+    #[test]
+    fn corner_radii_clamp_to_rect_like_css_border_radius() {
+        let radii = ViewCornerRadii::from_corners(
+            ViewCornerRadius::new(80.0, 40.0),
+            ViewCornerRadius::new(80.0, 20.0),
+            ViewCornerRadius::new(20.0, 20.0),
+            ViewCornerRadius::new(20.0, 40.0),
+        )
+        .clamped_to_rect(HitRect::new(0.0, 0.0, 100.0, 50.0));
+
+        assert!((radii.top_left.x_px - 50.0).abs() < f32::EPSILON);
+        assert!((radii.top_left.y_px - 25.0).abs() < f32::EPSILON);
+        assert!((radii.top_right.x_px - 50.0).abs() < f32::EPSILON);
+        assert!((radii.bottom_left.y_px - 25.0).abs() < f32::EPSILON);
     }
 
     #[test]

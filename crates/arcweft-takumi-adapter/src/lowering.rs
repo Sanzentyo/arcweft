@@ -11,10 +11,11 @@ use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::view_scene::{
     ViewAffine2D, ViewBlendMode, ViewBorder, ViewBoxShadow, ViewBoxShadowCornerRadius,
     ViewBoxShadowList, ViewBoxShadowRadii, ViewClip, ViewClipPath, ViewColorRgba8,
-    ViewCompositingEffects, ViewCompositingGroup, ViewFillRule, ViewFilter, ViewFilterList,
-    ViewGradientStop, ViewImagePrimitive, ViewIsolation, ViewLength, ViewLinearGradient, ViewMask,
-    ViewMaskGradient, ViewMaskImage, ViewPaintNode, ViewPoint, ViewPrimitive, ViewPrimitiveRange,
-    ViewRoundedRect, ViewScene, ViewSceneContext, ViewShapeRadius, ViewSolidRect,
+    ViewCompositingEffects, ViewCompositingGroup, ViewCornerRadii, ViewFillRule, ViewFilter,
+    ViewFilterList, ViewGradientStop, ViewImagePrimitive, ViewIsolation, ViewLength,
+    ViewLinearGradient, ViewMask, ViewMaskGradient, ViewMaskImage, ViewPaintNode, ViewPoint,
+    ViewPrimitive, ViewPrimitiveRange, ViewRoundedRect, ViewScene, ViewSceneContext,
+    ViewShapeRadius, ViewSolidRect,
 };
 use num_traits::ToPrimitive;
 use std::{collections::HashMap, rc::Rc, sync::Arc};
@@ -526,7 +527,7 @@ fn lower_background(background: &DirectBackground, bounds: HitRect, build: &mut 
         DirectBackground::Solid { color, radius } if *radius > 0.0 => {
             build.push_primitive(ViewPrimitive::RoundedRect(ViewRoundedRect {
                 bounds,
-                radius: *radius,
+                radii: ViewCornerRadii::uniform(*radius),
                 color: *color,
             }));
         }

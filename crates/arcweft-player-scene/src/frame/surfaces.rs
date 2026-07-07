@@ -8,9 +8,9 @@ use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::geometry::{PreparedFrame, PreparedViewScene, RenderScene};
 use arcweft_render_wgpu::view_scene::{
     ViewAffine2D, ViewBoxShadow, ViewBoxShadowCornerRadius, ViewBoxShadowList, ViewBoxShadowRadii,
-    ViewClip, ViewColorRgba8, ViewCompositingEffects, ViewCompositingGroup, ViewFilter,
-    ViewFilterList, ViewPaintNode, ViewPrimitive, ViewPrimitiveRange, ViewRoundedRect, ViewScene,
-    ViewSceneContext,
+    ViewClip, ViewColorRgba8, ViewCompositingEffects, ViewCompositingGroup, ViewCornerRadii,
+    ViewCornerRadius, ViewFilter, ViewFilterList, ViewPaintNode, ViewPrimitive, ViewPrimitiveRange,
+    ViewRoundedRect, ViewScene, ViewSceneContext,
 };
 
 pub(super) fn push_runtime_surfaces(
@@ -86,11 +86,11 @@ fn surface_fill_range(
     visual: &ViewRuntimeControlVisualStyle,
 ) -> Option<ViewPrimitiveRange> {
     let fill = visual.fill.filter(|color| color.alpha > 0)?;
-    let radius = surface_fill_radius(visual);
+    let radii = surface_fill_radii(visual);
     let start = u32::try_from(scene.primitives().len()).unwrap_or(u32::MAX);
     scene.push_primitive(ViewPrimitive::RoundedRect(ViewRoundedRect {
         bounds,
-        radius,
+        radii,
         color: ui_rgba(fill),
     }));
     let end = u32::try_from(scene.primitives().len()).unwrap_or(u32::MAX);
@@ -197,20 +197,33 @@ fn view_box_shadow_corner_radius(
     )
 }
 
-fn surface_fill_radius(visual: &ViewRuntimeControlVisualStyle) -> f32 {
-    visual
-        .radii_milli
-        .and_then(uniform_circular_radius_milli)
-        .or(visual.radius_milli)
-        .map_or(0.0, milli_u32_to_f32)
+fn surface_fill_radii(visual: &ViewRuntimeControlVisualStyle) -> ViewCornerRadii {
+    visual.radii_milli.map_or_else(
+        || {
+            visual
+                .radius_milli
+                .map_or(ViewCornerRadii::ZERO, |radius_milli| {
+                    ViewCornerRadii::uniform(milli_u32_to_f32(radius_milli))
+                })
+        },
+        view_corner_radii_from_runtime,
+    )
 }
 
-fn uniform_circular_radius_milli(radii: ViewRuntimeControlRadii) -> Option<u32> {
-    (radii.top_left.x_milli == radii.top_left.y_milli
-        && radii.top_left == radii.top_right
-        && radii.top_left == radii.bottom_right
-        && radii.top_left == radii.bottom_left)
-        .then_some(radii.top_left.x_milli)
+fn view_corner_radii_from_runtime(radii: ViewRuntimeControlRadii) -> ViewCornerRadii {
+    ViewCornerRadii::from_corners(
+        view_corner_radius(radii.top_left),
+        view_corner_radius(radii.top_right),
+        view_corner_radius(radii.bottom_right),
+        view_corner_radius(radii.bottom_left),
+    )
+}
+
+fn view_corner_radius(radius: ViewRuntimeControlCornerRadius) -> ViewCornerRadius {
+    ViewCornerRadius::new(
+        milli_u32_to_f32(radius.x_milli),
+        milli_u32_to_f32(radius.y_milli),
+    )
 }
 
 fn surface_depth_milli(surface: &ViewRuntimeSurface) -> i32 {

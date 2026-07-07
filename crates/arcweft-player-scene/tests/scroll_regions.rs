@@ -1,4 +1,7 @@
-use arcweft_bundle::resource_codec::ui::{RgbaColor, UiTextSelectionPolicy, ViewElementKind};
+use arcweft_bundle::resource_codec::ui::{
+    RgbaColor, UiTextSelectionPolicy, ViewElementKind, ViewRuntimeControlCornerRadius,
+    ViewRuntimeControlRadii,
+};
 use arcweft_bundle::resource_codec::{
     ViewRuntimeControlStyle, ViewRuntimeControlVisualStyle, ViewRuntimeScrollRegion,
     ViewRuntimeScrollRegionBounds, ViewRuntimeShadow, ViewRuntimeShadowKind, ViewRuntimeSurface,
@@ -31,7 +34,12 @@ fn player_frame_lowers_runtime_surfaces_to_view_scene() {
         style: ViewRuntimeControlStyle {
             normal: ViewRuntimeControlVisualStyle {
                 fill: Some(RgbaColor::rgb(36, 42, 54)),
-                radius_milli: Some(14_000),
+                radii_milli: Some(ViewRuntimeControlRadii::new(
+                    ViewRuntimeControlCornerRadius::new(18_000, 12_000),
+                    ViewRuntimeControlCornerRadius::new(10_000, 6_000),
+                    ViewRuntimeControlCornerRadius::new(14_000, 8_000),
+                    ViewRuntimeControlCornerRadius::new(6_000, 4_000),
+                )),
                 shadows: vec![ViewRuntimeShadow {
                     offset_x_milli: 0,
                     offset_y_milli: 3_000,
@@ -72,14 +80,31 @@ fn player_frame_lowers_runtime_surfaces_to_view_scene() {
     let view_scene = prepared.frame.view_scenes().first().expect("surface scene");
     assert_eq!(view_scene.scene.primitives().len(), 1);
     assert_eq!(view_scene.scene.paint_nodes().len(), 1);
-    assert!(matches!(
-        view_scene.scene.primitives()[0],
-        ViewPrimitive::RoundedRect(_)
-    ));
+    let ViewPrimitive::RoundedRect(rect) = &view_scene.scene.primitives()[0] else {
+        panic!("surface fill lowers to a rounded rect primitive");
+    };
+    assert_eq!(rect.radii.top_left.x_px, 18.0);
+    assert_eq!(rect.radii.top_left.y_px, 12.0);
+    assert_eq!(rect.radii.top_right.x_px, 10.0);
+    assert_eq!(rect.radii.bottom_right.y_px, 8.0);
     let ViewPaintNode::Group(group) = &view_scene.scene.paint_nodes()[0] else {
         panic!("surface with shadow lowers to a compositing group");
     };
     assert_eq!(group.effects.box_shadows.shadows().len(), 1);
+    assert_eq!(
+        group.effects.box_shadows.shadows()[0]
+            .border_radii
+            .top_left
+            .x_px,
+        18.0
+    );
+    assert_eq!(
+        group.effects.box_shadows.shadows()[0]
+            .border_radii
+            .bottom_left
+            .y_px,
+        4.0
+    );
     assert_eq!(group.children.len(), 1);
 }
 

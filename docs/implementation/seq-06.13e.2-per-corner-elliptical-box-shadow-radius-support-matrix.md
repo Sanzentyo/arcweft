@@ -3,6 +3,7 @@
 | Area | Status | Evidence in package | Notes |
 | --- | --- | --- | --- |
 | Public renderer radius model | Implemented | `ViewBoxShadowRadii`, `ViewBoxShadowCornerRadius` | Owned by `arcweft-render-wgpu::view_scene`. |
+| Retained rounded fill radius model | Implemented | `ViewCornerRadii`, `ViewCornerRadius`, `ViewRoundedRect` | Surface fill preserves per-corner/elliptical radii instead of collapsing to one circular radius. |
 | Scalar constructor migration | Implemented | `ViewBoxShadow::outer` / `inset` | Constructors map to uniform circular radii; no duplicate scalar pass fields. |
 | Per-corner CSS lowering | Implemented | `box_shadow_border_radii` | Lowers four Takumi computed `SpacePair<Length>` fields. |
 | Elliptical CSS lowering | Implemented | `box_shadow_corner_radius_from_takumi` | Preserves independent `x_px` and `y_px`. |

@@ -34,14 +34,15 @@ Native, web, and Agent observation stay on the same `BundlePresentationSnapshot`
 - `focus_visible`
 - `disabled`
 
-Each slot is a `UiRuntimeControlVisualStyle` carrying:
+Each slot is a `ViewRuntimeControlVisualStyle` carrying:
 
 - optional fill color (`RgbaColor`), including alpha;
 - optional text color;
 - optional border color and width;
 - optional focus-ring color, width, and offset;
 - optional opacity in milli-units (`0..=1000`);
-- optional radius in milli-pixels;
+- optional uniform radius in milli-pixels;
+- optional four-corner elliptical radii in milli-pixels;
 - a list of runtime shadows.
 
 The renderer-facing mirror type is `RenderControlStyle`; conversion happens in `arcweft-player-scene`, so `arcweft-render-wgpu` does not depend on `arcweft-bundle`.
@@ -76,23 +77,23 @@ The bridge deliberately follows the compiled resource order instead of adding a 
 3. state rules write into their specific state slot;
 4. later declarations replace earlier declarations, except `box-shadow` with `Append`, which appends to the shadow list.
 
-Inline Arcweft/CSS patches must be lowered into `UiStyleResource.rules` / `part_rules` by the compiler. Because this bridge consumes only the typed resource section, it cannot recover text from `UiStyleApplyRef::InlineCss { patch_id }` by itself. If a stored declaration cannot affect runtime controls yet, a diagnostic is emitted.
+Inline Arcweft/CSS patches must be lowered into `ViewStyleResource.rules` / `part_rules` by the compiler. Because this bridge consumes only the typed resource section, it cannot recover text from `ViewStyleApplyRef::InlineCss { patch_id }` by itself. If a stored declaration cannot affect runtime controls yet, a diagnostic is emitted.
 
 ## Renderer behavior
 
 The renderer uses normal prepared-frame primitives for visible supported properties:
 
-- fill/background and opacity: `PaintRect` fill color;
+- fill/background and opacity: retained `ViewRoundedRect` fill primitive;
 - text color: `RenderTextBlock.rgba`;
 - border: four deterministic `PaintRect` strips;
 - focus ring: configurable four-strip ring around the bounds;
 - box-shadow: converted into `ViewBoxShadowList` and planned by `ViewBoxShadowPassPlan` from the existing seq06.13e substrate.
 
-Radius is carried and used as the shadow border-radius input. Rounded fill clipping of player-owned controls remains a non-goal of this focused bridge because current `PreparedFrame.rectangles` do not carry rounded-rect primitives. The broader retained UI path can render rounded fills later without changing the runtime style payload.
+Uniform radius and four-corner elliptical radii are carried into both the retained fill primitive and the shadow border-radii input. `ViewRoundedRect` uses `ViewCornerRadii` and applies CSS border-radius overlap normalization before tessellating the fill, so player-owned surfaces no longer collapse fill radii to a single circular radius.
 
 ## Diagnostics
 
-`UiRuntimeControlStyleDiagnostic` contains:
+`ViewRuntimeControlStyleDiagnostic` contains:
 
 - target public id;
 - property or selector fragment;
@@ -105,4 +106,4 @@ Runtime session construction preserves these as display diagnostics so unsupport
 - Restoring top-level `ui text_input`, `ui text_area`, or `ui secure_field` declarations.
 - CSS parsing, external CSS loading, DOM overlays, canvas/image fallback, browser-native controls, or sample-specific geometry.
 - Duplicating Takumi or seq06.13e box-shadow rendering.
-- Full CSS specificity, cascade layers, inheritance, media queries, pseudo-element support, or rounded fill rasterization.
+- Full CSS specificity, cascade layers, inheritance, media queries, or pseudo-element support.
