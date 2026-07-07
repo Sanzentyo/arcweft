@@ -717,6 +717,46 @@ flow @flow.closure_borrow_capture_boundaries closure_borrow_capture_boundaries {
 }
 
 #[test]
+fn closure_borrow_capture_reports_yield_boundary() {
+    let tree = parse_ok(
+        r"
+flow @flow.closure_borrow_capture_yield closure_borrow_capture_yield {
+    let pixels: &'asset [Rgba8] = bg.pixels()
+    let bad = || -> Seq<Frame> {
+        seq {
+            yield frame
+            log.info(pixels)
+        }
+    }
+    log.info(bad)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("closure borrowed yield fixture lowers");
+    validate_typecheck_ready(&hir).expect("closure borrowed yield fixture is structured");
+
+    let report = analyze_types(
+        &hir,
+        &borrow_capture_env().with_symbol("frame", TypeKind::Named("Frame".to_owned())),
+    );
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::BorrowedClosureCaptureCrossesBoundary {
+                    capture,
+                    boundary,
+                    ..
+                } if capture == "pixels" && boundary == "yield suspension boundary"
+            ) && diagnostic.stable_code()
+                == "sema.typecheck.borrowed_closure_capture_crosses_boundary"
+        }),
+        "expected borrowed closure capture diagnostic for yield, got {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
 fn closure_return_type_annotation_rejects_body_mismatch() {
     let tree = parse_ok(
         r"

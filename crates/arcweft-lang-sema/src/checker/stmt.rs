@@ -2,9 +2,9 @@
 
 use super::helpers::{let_else_bindings, type_kind_label};
 use super::{
-    BorrowStateDelta, EntityKind, Expr, LoopContext, Pattern, Stmt, TriggerPattern, TypeCheckError,
-    TypeChecker, TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext,
-    default_presentation_slot_family, ident_pattern_name, is_local_ident,
+    BorrowStateDelta, EntityKind, Expr, LoopContext, Pattern, Stmt, SuspensionBoundary,
+    TriggerPattern, TypeCheckError, TypeChecker, TypeJudgmentRule, TypeJudgmentSubject, TypeKind,
+    YieldContext, default_presentation_slot_family, ident_pattern_name, is_local_ident,
     pattern_bindings_with_fallback, stmts_diverge, type_ref_kind,
 };
 use arcweft_lang_syntax::{ast::flow::StmtMatchArm, types::TypeRef};
@@ -84,13 +84,13 @@ impl TypeChecker<'_> {
                 self.check_thread_body(thread.body());
             }
             Stmt::DeferBlock { statements, .. } => {
-                self.reject_active_borrows("defer cleanup boundary");
+                self.reject_active_borrows(SuspensionBoundary::DeferCleanup);
                 for stmt in statements {
                     self.check_stmt(stmt);
                 }
             }
             Stmt::Defer { expr, .. } => {
-                self.reject_active_borrows("suspension boundary");
+                self.reject_active_borrows(SuspensionBoundary::Defer);
                 self.check_expr(expr);
             }
             Stmt::Yield(expr) => self.check_yield_stmt(expr),

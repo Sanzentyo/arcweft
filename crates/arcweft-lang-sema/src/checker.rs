@@ -461,7 +461,7 @@ struct ClosureCaptureFrame {
     expression_id: TypeExpressionId,
     locals: HashSet<String>,
     captures: BTreeMap<String, TypeKind>,
-    suspension_boundaries: BTreeSet<String>,
+    suspension_boundaries: BTreeSet<SuspensionBoundary>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -485,6 +485,29 @@ enum YieldContext {
         error_ty: TypeKind,
         yield_count: usize,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum SuspensionBoundary {
+    Await,
+    Defer,
+    DeferCleanup,
+    Thread,
+    ThreadSuspension,
+    Yield,
+}
+
+impl SuspensionBoundary {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Await => "await suspension boundary",
+            Self::Defer => "suspension boundary",
+            Self::DeferCleanup => "defer cleanup boundary",
+            Self::Thread => "thread boundary",
+            Self::ThreadSuspension => "thread suspension boundary",
+            Self::Yield => "yield suspension boundary",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -664,9 +687,9 @@ impl TypeChecker<'_> {
         });
     }
 
-    fn record_closure_suspension_boundary(&mut self, boundary: &str) {
+    fn record_closure_suspension_boundary(&mut self, boundary: SuspensionBoundary) {
         if let Some(frame) = self.closure_capture_stack.last_mut() {
-            frame.suspension_boundaries.insert(boundary.to_owned());
+            frame.suspension_boundaries.insert(boundary);
         }
     }
 
@@ -703,7 +726,7 @@ impl TypeChecker<'_> {
     fn reject_borrowed_closure_captures(
         &mut self,
         captures: &[ClosureCapture],
-        boundaries: &BTreeSet<String>,
+        boundaries: &BTreeSet<SuspensionBoundary>,
     ) {
         if boundaries.is_empty() {
             return;
@@ -722,7 +745,7 @@ impl TypeChecker<'_> {
                         capture.name.clone(),
                         capture.ty.clone(),
                         lifetimes.clone(),
-                        boundary.clone(),
+                        boundary.label(),
                     ));
             }
         }

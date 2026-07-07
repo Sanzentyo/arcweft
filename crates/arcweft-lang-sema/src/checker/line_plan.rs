@@ -3,8 +3,8 @@
 use super::helpers::let_else_bindings;
 use super::{
     CallArg, CancelRuleSyntax, DialogueToken, Expr, LifetimeAccessMode, LifetimeScopeKind,
-    LinePlanItem, Pattern, Stmt, TriggerPattern, TypeCheckError, TypeChecker, TypeKind,
-    lifetime_key, merge_line_output,
+    LinePlanItem, Pattern, Stmt, SuspensionBoundary, TriggerPattern, TypeCheckError, TypeChecker,
+    TypeKind, lifetime_key, merge_line_output,
 };
 use arcweft_lang_syntax::ast::{
     flow::{FlowItem, WaitTarget},
@@ -173,7 +173,7 @@ impl TypeChecker<'_> {
     }
 
     pub(super) fn check_thread_body(&mut self, statements: &[FlowItem]) -> Option<TypeKind> {
-        self.reject_active_borrows("thread boundary");
+        self.reject_active_borrows(SuspensionBoundary::Thread);
         self.with_child_task_scope(true, |checker| {
             for item in statements {
                 match item {

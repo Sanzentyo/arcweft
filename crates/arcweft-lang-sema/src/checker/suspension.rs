@@ -2,14 +2,14 @@
 
 use super::helpers::{let_else_bindings, pattern_bindings_with_fallback, type_kind_label};
 use super::{
-    BorrowStateDelta, Expr, LifetimeScopeKind, LoopContext, TypeCheckError, TypeChecker,
-    TypeCheckerScopeSnapshot, TypeKind, YieldContext, await_branch_pattern_type,
+    BorrowStateDelta, Expr, LifetimeScopeKind, LoopContext, SuspensionBoundary, TypeCheckError,
+    TypeChecker, TypeCheckerScopeSnapshot, TypeKind, YieldContext, await_branch_pattern_type,
     type_contains_borrow_ref, unify_loop_break_types,
 };
 
 impl TypeChecker<'_> {
     pub(super) fn check_yield_stmt(&mut self, expr: &Expr) {
-        self.reject_active_borrows("yield suspension boundary");
+        self.reject_active_borrows(SuspensionBoundary::Yield);
         let actual = self.check_expr(expr);
         let Some(context) = self.yield_stack.last_mut() else {
             self.errors.push(TypeCheckError::new(
@@ -62,7 +62,7 @@ impl TypeChecker<'_> {
     }
 
     pub(super) fn check_await_expr(&mut self, expr: &Expr, applies_try: bool) -> Option<TypeKind> {
-        self.reject_active_borrows("await suspension boundary");
+        self.reject_active_borrows(SuspensionBoundary::Await);
         match self.check_expr(expr) {
             Some(TypeKind::Need { ready, .. }) if applies_try => Some(*ready),
             Some(TypeKind::Need { ready, error }) => Some(TypeKind::Result { ok: ready, error }),
@@ -81,7 +81,7 @@ impl TypeChecker<'_> {
         &mut self,
         await_with: &arcweft_lang_hir::model::HirAwait,
     ) -> Option<TypeKind> {
-        self.reject_active_borrows("await suspension boundary");
+        self.reject_active_borrows(SuspensionBoundary::Await);
         let ty = self.check_expr(await_with.expr());
         let Some(TypeKind::Need { ready, error }) = ty else {
             self.errors.push(TypeCheckError::new(
@@ -193,13 +193,14 @@ impl TypeChecker<'_> {
         self.restore_borrow_state(borrow_checkpoint);
     }
 
-    pub(super) fn reject_active_borrows(&mut self, boundary: &str) {
+    pub(super) fn reject_active_borrows(&mut self, boundary: SuspensionBoundary) {
         self.stats.borrow_boundary_checks += 1;
         self.record_closure_suspension_boundary(boundary);
         if self.active_borrow_total > 0 {
             let labels = self.active_borrow_labels();
             self.errors.push(TypeCheckError::new(format!(
-                "borrowed values with lifetimes {labels:?} cannot cross {boundary}"
+                "borrowed values with lifetimes {labels:?} cannot cross {}",
+                boundary.label()
             )));
         }
     }

@@ -2,8 +2,9 @@
 
 use super::helpers::let_else_bindings;
 use super::{
-    BorrowStateDelta, EntityKind, HirFlowItem, Pattern, SelectBranchHead, TypeCheckError,
-    TypeChecker, TypeKind, entity_kind, ident_pattern_name, type_ref_kind, typed_pattern_binding,
+    BorrowStateDelta, EntityKind, HirFlowItem, Pattern, SelectBranchHead, SuspensionBoundary,
+    TypeCheckError, TypeChecker, TypeKind, entity_kind, ident_pattern_name, type_ref_kind,
+    typed_pattern_binding,
 };
 
 impl TypeChecker<'_> {
@@ -38,7 +39,7 @@ impl TypeChecker<'_> {
                 self.check_await_binding(pattern, await_with);
             }
             HirFlowItem::Thread(thread) => {
-                self.reject_active_borrows("thread suspension boundary");
+                self.reject_active_borrows(SuspensionBoundary::ThreadSuspension);
                 self.check_flow_items(thread.body());
             }
             HirFlowItem::If(block) => {
