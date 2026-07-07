@@ -31,8 +31,8 @@ mod app {
     use arcweft_presentation::hit::HitRect;
     use arcweft_presentation::input::{InputEpoch, InteractionTarget, RawInputKind};
     use arcweft_presentation::text_editor::{
-        TextEditorClipboard, TextEditorGlyphGeometry, TextEditorLayout, TextEditorLayoutParts,
-        TextEditorLayoutSource, TextEditorState,
+        TextEditorGlyphGeometry, TextEditorLayout, TextEditorLayoutParts, TextEditorLayoutSource,
+        TextEditorLocalClipboard, TextEditorState,
     };
     use arcweft_presentation::text_index::TextIndexSnapshot;
     use arcweft_presentation::text_input::{
@@ -75,7 +75,7 @@ mod app {
             args.mode.options(),
         )
         .map_err(|error| error.to_string())?;
-        let mut clipboard = TextEditorClipboard::default();
+        let mut clipboard = TextEditorLocalClipboard::default();
         let mut dispatcher = TextInputDispatchState::default();
         let mut generation = activate_dispatcher(&mut dispatcher, &editor, &target, geometry)?;
         let mut adapter = activate_adapter(&editor, &target, generation, geometry)?;
@@ -258,7 +258,7 @@ mod app {
     fn dispatch_event(
         dispatcher: &mut TextInputDispatchState,
         editor: &mut TextEditorState,
-        clipboard: &mut TextEditorClipboard,
+        clipboard: &mut TextEditorLocalClipboard,
         epoch: &mut u64,
         event: PlatformTextInputEvent,
     ) -> Result<(), String> {

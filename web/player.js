@@ -164,6 +164,9 @@ function wasmDelegate(wasm) {
         Boolean(secure),
       );
     },
+    dispatchClipboardOutcome(hostId, outcome) {
+      return wasm.arcweft_web_text_input_runtime_dispatch_clipboard_outcome?.(hostId, outcome);
+    },
   };
 }
 

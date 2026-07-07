@@ -3,6 +3,7 @@
 pub mod activity_host;
 pub mod bundle_runner;
 pub mod capabilities;
+pub mod clipboard_host;
 pub mod native_system;
 pub mod native_task;
 pub mod player_text_input_bridge;

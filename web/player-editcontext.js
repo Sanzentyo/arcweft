@@ -1,3 +1,5 @@
+import { ArcweftClipboardAdapter } from "./player-clipboard.js";
+
 const STATUS_EVENT = "arcweft-text-input-status";
 const RENDER_EVENT = "arcweft-text-input-render";
 const HOST_CLASS = "arcweft-editcontext-host";
@@ -16,6 +18,7 @@ export class ArcweftEditContextPlayerGlue {
   #listeners = [];
   #statusTarget;
   #delegate;
+  #clipboard;
   #mirror;
   #state;
 
@@ -25,6 +28,7 @@ export class ArcweftEditContextPlayerGlue {
     this.#host = host;
     this.#statusTarget = options.statusTarget ?? document;
     this.#delegate = options.delegate ?? null;
+    this.#clipboard = options.clipboard ?? new ArcweftClipboardAdapter({ statusTarget: this.#statusTarget });
     this.#mirror = resolveMirror(options.mirror ?? null, host);
     this.#state = {
       hostId: host.id || options.hostId || "arcweft-editcontext-host",
@@ -42,6 +46,7 @@ export class ArcweftEditContextPlayerGlue {
       pointerSelection: null,
       lastGeometry: null,
       lastCharacterBounds: [],
+      nextClipboardRequestId: 0,
     };
   }
 
@@ -320,10 +325,10 @@ export class ArcweftEditContextPlayerGlue {
   async #applyLocalCommand(command, event) {
     switch (command.name) {
       case "copy":
-        this.#writeClipboard(event);
+        await this.#writeClipboard(event);
         break;
       case "cut":
-        this.#writeClipboard(event);
+        await this.#writeClipboard(event);
         await this.#replaceSelection("");
         break;
       case "paste":
@@ -392,7 +397,7 @@ export class ArcweftEditContextPlayerGlue {
       this.#emitStatus("clipboard_redacted");
       return;
     }
-    this.#writeClipboard(event);
+    this.#writeClipboard(event).catch((error) => this.#emitError(error));
   }
 
   async #handleCut(event) {
@@ -401,7 +406,7 @@ export class ArcweftEditContextPlayerGlue {
       this.#emitStatus("clipboard_redacted");
       return;
     }
-    this.#writeClipboard(event);
+    await this.#writeClipboard(event);
     await this.#replaceSelection("");
     this.#syncEditContextText();
     this.#syncEditContextGeometry();
@@ -420,22 +425,40 @@ export class ArcweftEditContextPlayerGlue {
     this.#renderMirror();
   }
 
-  #writeClipboard(event) {
+  async #writeClipboard(event) {
     if (this.#state.secure) {
       event.preventDefault();
       return;
     }
     const text = selectedText(this.#state);
-    event.clipboardData?.setData?.("text/plain", text);
-    event.preventDefault();
-    this.#emitStatus("clipboard_write", { textLength: utf16Length(text) });
+    const request = this.#clipboardRequest(event?.type === "cut" ? "cut" : "copy", { text });
+    const outcome = await this.#clipboard.apply(request, event);
+    await this.#delegateCall("dispatchClipboardOutcome", this.#state.hostId, outcome);
+    this.#emitStatus("clipboard_write", { requestId: request.requestId });
   }
 
   async #pasteFromEvent(event) {
-    event.preventDefault();
-    const text = event.clipboardData?.getData?.("text/plain") ?? "";
+    const request = this.#clipboardRequest("paste");
+    const outcome = await this.#clipboard.apply(request, event);
+    await this.#delegateCall("dispatchClipboardOutcome", this.#state.hostId, outcome);
+    if (outcome.kind !== "read_committed") {
+      this.#emitStatus("paste_failed", { requestId: request.requestId, kind: outcome.error?.kind });
+      return;
+    }
+    const text = outcome.text ?? "";
     await this.#replaceSelection(text);
-    this.#emitStatus("paste", { textLength: utf16Length(text) });
+    this.#emitStatus("paste", { requestId: request.requestId });
+  }
+
+  #clipboardRequest(operation, extra = {}) {
+    this.#state.nextClipboardRequestId += 1;
+    return {
+      requestId: this.#state.nextClipboardRequestId,
+      operation,
+      origin: "user_platform_clipboard_event",
+      secure: Boolean(this.#state.secure),
+      ...extra,
+    };
   }
 
   async #replaceSelection(replacement) {

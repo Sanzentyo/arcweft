@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 pub mod appearance;
 pub mod character;
+pub mod clipboard;
 pub mod focus;
 pub mod gesture;
 pub mod hit;

@@ -621,6 +621,7 @@ fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) {
     let InputOutcome {
         actions,
         text_control_write_backs,
+        clipboard_requests: _,
         diagnostics: _,
         dialogue_advance,
         cancel: _,

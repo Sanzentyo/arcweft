@@ -28,7 +28,7 @@ mod windows_sample {
     use arcweft_presentation::hit::HitRect;
     use arcweft_presentation::input::{InputEpoch, InteractionTarget};
     use arcweft_presentation::text_editor::{
-        TextEditorClipboard, TextEditorLayout, TextEditorState,
+        TextEditorLayout, TextEditorLocalClipboard, TextEditorState,
     };
     use arcweft_presentation::text_input::{
         TextInputBlurPolicy, TextInputFocusGeneration, TextInputKeyDisposition, TextInputOptions,
@@ -115,7 +115,7 @@ mod windows_sample {
         active: usize,
         generation: TextInputFocusGeneration,
         trace: Vec<TraceEvent>,
-        clipboard: TextEditorClipboard,
+        clipboard: TextEditorLocalClipboard,
     }
 
     struct SampleControl {
@@ -278,7 +278,7 @@ mod windows_sample {
                 active: 0,
                 generation: TextInputFocusGeneration::default(),
                 trace: Vec::new(),
-                clipboard: TextEditorClipboard::default(),
+                clipboard: TextEditorLocalClipboard::default(),
             })
         }
 

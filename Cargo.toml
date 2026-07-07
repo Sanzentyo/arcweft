@@ -131,6 +131,7 @@ arcweft-audio-mixer = { path = "crates/arcweft-audio-mixer" }
 arcweft-content-policy = { path = "crates/arcweft-content-policy" }
 arcweft-agent-policy = { path = "crates/arcweft-agent-policy" }
 annotate-snippets = "0.12.16"
+arboard = "3.6.1"
 cpal = { version = "0.18.1", default-features = false }
 rtrb = "0.3.4"
 symphonia = { version = "0.6.0", default-features = false, features = ["wav", "flac", "ogg", "vorbis", "mp3", "pcm"] }

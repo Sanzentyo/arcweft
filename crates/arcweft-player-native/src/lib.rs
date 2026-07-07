@@ -1,5 +1,6 @@
 //! Native/headless rich-text player host for Arcweft.
 
+mod clipboard;
 mod native_audio;
 mod patch_endpoint;
 mod scene_windowed;

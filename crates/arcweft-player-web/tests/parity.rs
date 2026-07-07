@@ -723,6 +723,7 @@ fn authored_view_program_resource() -> ViewProgramResource {
             420_000,
             ViewScrollAxis::Vertical,
         )],
+        surfaces: Vec::new(),
         text_blocks: Vec::new(),
         action_buttons: vec![ViewActionButtonResource {
             public_id: "button.send".to_owned(),

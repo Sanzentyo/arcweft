@@ -1,4 +1,5 @@
 use crate::NativePlayerError;
+use crate::clipboard::NativeClipboardAdapter;
 use crate::native_audio::{NativeAudioRuntime, NativePlayerAudioError};
 use crate::text_input_bridge::{
     NativeTextInputBridge, NativeTextInputBridgeError, NativeTextInputBridgeOptions,
@@ -38,6 +39,7 @@ use arcweft_render_wgpu::renderer::{SharedRenderer, SharedRendererError};
 use arcweft_runtime_driver::clock::{RuntimeClockError, RuntimeClockStep};
 use arcweft_runtime_driver::session::{BundleSessionError, BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_driver::session_save::BundleSessionSaveError;
+use arcweft_runtime_host::clipboard_host::SyncTextClipboardHostAdapter;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -261,6 +263,7 @@ struct NativeSceneState {
     audio: Option<NativeAudioRuntime>,
     ingress_completion: WindowedPatchIngressCompletion,
     input: InputController,
+    clipboard: NativeClipboardAdapter,
     keyboard_modifiers: ModifiersState,
     text_input: NativeTextInputBridge,
     window_ime_supported: bool,
@@ -629,6 +632,7 @@ impl NativeSceneState {
             audio,
             ingress_completion,
             input,
+            clipboard: NativeClipboardAdapter::default(),
             keyboard_modifiers: ModifiersState::default(),
             text_input,
             window_ime_supported: true,
@@ -1184,6 +1188,7 @@ impl NativeSceneState {
         let InputOutcome {
             actions,
             text_control_write_backs,
+            clipboard_requests,
             diagnostics: _,
             dialogue_advance,
             cancel: _,
@@ -1200,6 +1205,44 @@ impl NativeSceneState {
         self.runtime
             .session_mut()
             .queue_text_control_write_backs(text_control_write_backs)?;
+        self.apply_clipboard_requests(clipboard_requests)?;
+        Ok(())
+    }
+
+    fn apply_clipboard_requests(
+        &mut self,
+        clipboard_requests: Vec<arcweft_presentation::clipboard::TextClipboardRequest>,
+    ) -> Result<(), NativeSceneWindowError> {
+        let Some(frame) = self.prepared.clone() else {
+            return Ok(());
+        };
+        for request in clipboard_requests {
+            let host_outcome = self.clipboard.apply_clipboard_request_sync(request);
+            let outcome = self.input.apply_clipboard_outcome(&frame, host_outcome)?;
+            let InputOutcome {
+                actions,
+                text_control_write_backs,
+                clipboard_requests,
+                diagnostics: _,
+                dialogue_advance,
+                cancel: _,
+                redraw: _,
+            } = outcome;
+            if dialogue_advance {
+                self.runtime.session_mut().queue_dialogue_advance();
+            }
+            for action in actions {
+                self.runtime.session_mut().queue_semantic_action(&action)?;
+            }
+            self.text_input
+                .record_runtime_write_backs(&text_control_write_backs);
+            self.runtime
+                .session_mut()
+                .queue_text_control_write_backs(text_control_write_backs)?;
+            if !clipboard_requests.is_empty() {
+                self.apply_clipboard_requests(clipboard_requests)?;
+            }
+        }
         Ok(())
     }
 
