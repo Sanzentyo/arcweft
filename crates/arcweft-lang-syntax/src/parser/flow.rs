@@ -54,7 +54,20 @@ impl<'a> Parser<'a> {
         let has_explicit_name = explicit_name.is_some();
         let name = explicit_name.or_else(|| implicit_flow_name_from_id(id.as_ref()));
         let (signature_tail, inline_contracts) = split_inline_flow_contracts(&signature_tail);
-        let signature = parse_flow_signature(name.as_deref(), &signature_tail);
+        let mut signature = parse_flow_signature(name.as_deref(), &signature_tail);
+        if signature
+            .as_ref()
+            .is_some_and(|signature| signature.param_groups().len() > 1)
+        {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "`flow` parameters cannot be curried; use one parameter group",
+                ["flow name(param: Type)"],
+                Some(header),
+                ["move all flow parameters into a single `(...)` group"],
+            );
+            signature = None;
+        }
         let mut contracts = inline_contracts;
         contracts.extend(parse_contract_clauses(&header_lines[1..]));
         let body_items = self.parse_flow_body_from_block(&block, start_line.start + head.len());

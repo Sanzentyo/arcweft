@@ -96,6 +96,24 @@ fn function_signatures_keep_function_typed_parameters() {
 }
 
 #[test]
+fn flow_signatures_reject_curried_parameter_groups() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r"
+flow opening(x: Int)(y: Int) {
+  return x
+}
+",
+    );
+
+    assert_eq!(parsed.errors().len(), 1);
+    assert!(parsed.errors()[0].message().contains("cannot be curried"));
+    let Item::Flow(flow) = &parsed.typed_tree().items()[0] else {
+        panic!("expected flow");
+    };
+    assert!(flow.signature().is_none());
+}
+
+#[test]
 fn function_signatures_reject_trailing_garbage() {
     let error = parse_fn_signature("fn f(x: i32) -> i32 unexpected")
         .expect_err("trailing tokens after return type are rejected");
