@@ -7,7 +7,10 @@ use super::{
     YieldContext, default_presentation_slot_family, ident_pattern_name, is_local_ident,
     pattern_bindings_with_fallback, stmts_diverge, type_ref_kind,
 };
-use arcweft_lang_syntax::{ast::flow::StmtMatchArm, types::TypeRef};
+use arcweft_lang_syntax::{
+    ast::{common::TextRange, flow::StmtMatchArm},
+    types::TypeRef,
+};
 
 impl TypeChecker<'_> {
     pub(super) fn check_tail_return_block_expr_with_expected(
@@ -42,8 +45,12 @@ impl TypeChecker<'_> {
         self.check_seq_stmt_policy(stmt);
         match stmt {
             Stmt::Let {
-                pattern, ty, expr, ..
-            } => self.check_let_stmt(pattern, ty.as_ref(), expr),
+                pattern,
+                ty,
+                expr,
+                expr_range,
+                ..
+            } => self.check_let_stmt(pattern, ty.as_ref(), expr, *expr_range),
             Stmt::Assign { target, expr } => self.check_assign_stmt(target, expr),
             Stmt::LetElse {
                 pattern,
@@ -276,13 +283,23 @@ impl TypeChecker<'_> {
         });
     }
 
-    fn check_let_stmt(&mut self, pattern: &Pattern, annotation: Option<&TypeRef>, expr: &Expr) {
+    fn check_let_stmt(
+        &mut self,
+        pattern: &Pattern,
+        annotation: Option<&TypeRef>,
+        expr: &Expr,
+        expr_range: Option<TextRange>,
+    ) {
         self.last_checked_closure_effect_callable = None;
         self.last_checked_curried_signature_call = None;
         let annotated_ty = annotation.map(type_ref_kind);
-        let ty = self
-            .check_expr_with_expected(expr, annotated_ty.as_ref())
-            .or_else(|| annotated_ty.clone());
+        let ty = match expr_range {
+            Some(range) => {
+                self.check_expr_with_expected_at_range(expr, annotated_ty.as_ref(), range)
+            }
+            None => self.check_expr_with_expected(expr, annotated_ty.as_ref()),
+        }
+        .or_else(|| annotated_ty.clone());
         if let (Some(annotation), Some(actual)) = (annotation, ty.as_ref()) {
             let expected = annotated_ty
                 .clone()

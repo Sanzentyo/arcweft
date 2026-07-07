@@ -99,6 +99,10 @@ Source briefs:
   when a callee path/expression has `TypeKind::Function`, and records
   expected-function evidence when an expression is checked in a function-typed
   context.
+- Type-check judgments now optionally retain source byte ranges. The current
+  substrate wires parser-provided `let` RHS expression ranges into the root
+  expression judgment, giving LSP/tooling a typed expression-to-source bridge
+  without inventing traversal-index heuristics.
 - Sema now accepts calls through function-valued symbols and locals instead of
   treating those path callees as unknown named functions.
 - Function value calls in sema now support partial application by returning a
@@ -383,9 +387,12 @@ Source briefs:
 - Closure capture inventory collection and borrowed-capture suspension-boundary
   lifetime diagnostics exist in sema. Effect-row integration for closure
   captures and runtime-plan capture metadata policy remain open.
-- LSP inlays currently cover inferred function-valued `let` bindings. Full
-  arbitrary expression inlays remain open until sema expression evidence has
-  source spans rather than traversal-only expression IDs.
+- LSP inlays currently cover inferred function-valued `let` bindings. Sema
+  expression judgments now carry optional source ranges for parser-provided
+  `let` RHS expressions, but full arbitrary expression inlays remain open until
+  expression AST/statement surfaces provide source ranges for every expression
+  position and LSP policy decides which arbitrary expression judgments should
+  be rendered.
 
 ## Follow-up request
 
@@ -672,5 +679,19 @@ workspace. A current full workspace check,
 unrelated dirty presentation test unused-import warning. Structure audit still
 reports the unrelated existing
 `crates/arcweft-cli/src/app/bundle_view.rs` 2500 LOC error. Full arbitrary
-expression inlays remain open until sema expression evidence carries source
-spans rather than traversal-only expression IDs.
+expression inlays remain open until source ranges are available for all
+expression positions and LSP rendering policy is specified.
+
+The expression source-range substrate cut adds `TypeJudgment::source_range` and
+threads parser-provided `let` RHS ranges into root expression judgments. Focused
+coverage passed with
+`cargo test -p arcweft-lang-sema --all-features let_rhs_type_judgments_carry_source_ranges -- --nocapture`,
+followed by full
+`cargo test -p arcweft-lang-sema --all-features --quiet` and
+`cargo clippy -p arcweft-lang-sema --all-targets --all-features --quiet`.
+Clippy still reports only the existing `TraitMember` / `ImplMember`
+large-enum warnings from `arcweft-lang-syntax`. Current workspace check is
+blocked by unrelated dirty `arcweft-bundle` view-renaming work:
+`ViewSemanticTargetResource` is referenced after the model was renamed to
+`ViewSemanticTarget`. Structure audit still reports the unrelated existing
+`crates/arcweft-cli/src/app/bundle_view.rs` 2500 LOC error.

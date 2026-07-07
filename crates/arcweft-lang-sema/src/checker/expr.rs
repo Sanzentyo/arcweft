@@ -89,7 +89,8 @@ impl TypeChecker<'_> {
         };
         if let Some(ty) = ty.as_ref() {
             self.record_function_expr_effect_callable(expr, ty);
-            self.record_type_judgment(
+            let source_range = self.source_range_for_expr(expr);
+            self.record_type_judgment_with_source_range(
                 TypeJudgmentSubject::Expr {
                     id: expression_id,
                     kind: expr_kind_name(expr),
@@ -97,6 +98,7 @@ impl TypeChecker<'_> {
                 expected.map_or(TypeJudgmentRule::Expr, |_| TypeJudgmentRule::Expected),
                 ty.clone(),
                 expected,
+                source_range,
             );
             if let Some(expected) = expected
                 && let Some(arity) = expected.function_arity()

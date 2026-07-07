@@ -27,6 +27,7 @@ use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::{
     ast::{
         choice::ChoiceAction,
+        common::TextRange,
         dialogue::DialogueToken,
         flow::{AwaitBranchKind, ContractClause, FlowKind, SelectBranchHead, Stmt},
         ids::{EntityRef, EntityRefSyntax, IdRef},
@@ -213,6 +214,7 @@ pub struct TypeJudgment {
     pub ty: TypeKind,
     pub rule: TypeJudgmentRule,
     pub expected: Option<TypeJudgmentExpected>,
+    pub source_range: Option<TextRange>,
 }
 
 impl TypeJudgment {
@@ -409,6 +411,7 @@ struct TypeChecker<'a> {
     stats: TypeCheckStats,
     judgments: Vec<TypeJudgment>,
     typed_lowering_evidence: Vec<TypedLoweringEvidence>,
+    expression_source_ranges: HashMap<ExprNodeKey, TextRange>,
     closure_capture_stack: Vec<ClosureCaptureFrame>,
     closure_inference_stack: Vec<ClosureInferenceContext>,
     closure_captures: Vec<ClosureCaptureInventory>,
@@ -661,6 +664,7 @@ impl TypeChecker<'_> {
             stats: TypeCheckStats::default(),
             judgments: Vec::new(),
             typed_lowering_evidence: Vec::new(),
+            expression_source_ranges: HashMap::new(),
             closure_capture_stack: Vec::new(),
             closure_inference_stack: Vec::new(),
             closure_captures: Vec::new(),
@@ -769,6 +773,17 @@ impl TypeChecker<'_> {
         ty: TypeKind,
         expected: Option<&TypeKind>,
     ) -> TypeJudgmentId {
+        self.record_type_judgment_with_source_range(subject, rule, ty, expected, None)
+    }
+
+    fn record_type_judgment_with_source_range(
+        &mut self,
+        subject: TypeJudgmentSubject,
+        rule: TypeJudgmentRule,
+        ty: TypeKind,
+        expected: Option<&TypeKind>,
+        source_range: Option<TextRange>,
+    ) -> TypeJudgmentId {
         let id = TypeJudgmentId(self.judgments.len());
         let stored_expected = expected.map(|expected| {
             if expected == &ty {
@@ -783,6 +798,7 @@ impl TypeChecker<'_> {
             ty,
             rule,
             expected: stored_expected,
+            source_range,
         });
         self.stats.judgments += 1;
         match rule {
@@ -792,6 +808,29 @@ impl TypeChecker<'_> {
             TypeJudgmentRule::Return => self.stats.return_judgments += 1,
         }
         id
+    }
+
+    fn check_expr_with_expected_at_range(
+        &mut self,
+        expr: &Expr,
+        expected: Option<&TypeKind>,
+        source_range: TextRange,
+    ) -> Option<TypeKind> {
+        let key = ExprNodeKey::from_expr(expr);
+        let previous = self.expression_source_ranges.insert(key, source_range);
+        let ty = self.check_expr_with_expected(expr, expected);
+        if let Some(previous) = previous {
+            self.expression_source_ranges.insert(key, previous);
+        } else {
+            self.expression_source_ranges.remove(&key);
+        }
+        ty
+    }
+
+    fn source_range_for_expr(&self, expr: &Expr) -> Option<TextRange> {
+        self.expression_source_ranges
+            .get(&ExprNodeKey::from_expr(expr))
+            .copied()
     }
 
     fn record_typed_lowering_evidence(&mut self, evidence: TypedLoweringEvidence) {

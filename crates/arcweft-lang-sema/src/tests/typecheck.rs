@@ -1110,6 +1110,55 @@ flow @flow.good good {
 }
 
 #[test]
+fn let_rhs_type_judgments_carry_source_ranges() {
+    let source = r"
+flow @flow.source_ranges source_ranges {
+    let total = 1i32 + 2i32
+}
+";
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("source range fixture lowers");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+
+    let judgment = report
+        .judgments
+        .iter()
+        .find(|judgment| {
+            matches!(
+                (&judgment.subject, judgment.rule, &judgment.ty),
+                (
+                    TypeJudgmentSubject::Expr { kind, .. },
+                    TypeJudgmentRule::Expr,
+                    TypeKind::I32
+                ) if *kind == "binary"
+            )
+        })
+        .expect("binary let RHS should be judged");
+    let range = judgment
+        .source_range
+        .expect("let RHS expression judgment should retain its source range");
+    assert_eq!(&source[range.as_range()], "1i32 + 2i32");
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                (&judgment.subject, judgment.rule, &judgment.ty),
+                (
+                    TypeJudgmentSubject::Expr { kind, .. },
+                    TypeJudgmentRule::Expr,
+                    TypeKind::I32
+                ) if *kind == "literal" && judgment.source_range.is_none()
+            )
+        }),
+        "child literal judgments should not inherit the root let RHS range"
+    );
+}
+
+#[test]
 fn range_expression_infers_item_type_from_bound() {
     let tree = parse_ok(
         r"
