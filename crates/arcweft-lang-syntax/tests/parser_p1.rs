@@ -78,6 +78,31 @@ fn function_types_are_right_associative_and_preserve_call_groups() {
         parse_type_ref("(A, B)").expect("tuple type parses"),
         TypeRef::Tuple(items) if items.len() == 2
     ));
+
+    let TypeRef::Function {
+        params,
+        return_type,
+    } = parse_type_ref("Pair<A -> B, C -> D> -> E")
+        .expect("outer function arrow ignores generic argument function arrows")
+    else {
+        panic!("expected outer function type");
+    };
+    assert!(matches!(
+        params.as_slice(),
+        [TypeRef::Generic { base, args }]
+            if base == "Pair"
+                && matches!(
+                    args.as_slice(),
+                    [
+                        TypeRef::Function { params: first_params, return_type: first_return },
+                        TypeRef::Function { params: second_params, return_type: second_return },
+                    ] if first_params == &[TypeRef::Path("A".to_owned())]
+                        && first_return.as_ref() == &TypeRef::Path("B".to_owned())
+                        && second_params == &[TypeRef::Path("C".to_owned())]
+                        && second_return.as_ref() == &TypeRef::Path("D".to_owned())
+                )
+    ));
+    assert_eq!(return_type.as_ref(), &TypeRef::Path("E".to_owned()));
 }
 
 #[test]

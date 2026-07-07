@@ -6,9 +6,10 @@ use super::{
     is_typed_stmt, parse_binding_pattern, parse_expr_lossy, parse_pattern, parse_stmt,
     parse_stmt_for_dialect, raw_stmt, split_brace_item, split_optional_block_label,
     split_top_level_binding, split_top_level_keyword_once, split_top_level_punctuation_once,
-    split_top_level_punctuation_sequence_once,
 };
-use crate::cst::CstPunctuationScan;
+use crate::cst::{
+    ArcweftPunctuation, CstPunctuationScan, split_top_level_arcweft_punctuation_once,
+};
 use std::ops::Range;
 
 impl Parser<'_> {
@@ -665,7 +666,8 @@ fn parse_match_arms(body: &str, base: usize, errors: &mut Vec<ParseError>) -> Ve
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .filter_map(|line| {
-            let (head, item) = split_top_level_punctuation_sequence_once(line, &["=", ">"])?;
+            let (head, item) =
+                split_top_level_arcweft_punctuation_once(line, ArcweftPunctuation::FatArrow)?;
             let (pattern, guard) = split_pattern_guard(head);
             let mut nested = Parser::new(item.trim());
             let parsed = nested.parse_flow_item_until_indent(0).map_or_else(
@@ -687,7 +689,8 @@ fn parse_match_expr_arms(body: &str) -> Vec<crate::expr::MatchExprArm> {
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .filter_map(|line| {
-            let (head, value) = split_top_level_punctuation_sequence_once(line, &["=", ">"])?;
+            let (head, value) =
+                split_top_level_arcweft_punctuation_once(line, ArcweftPunctuation::FatArrow)?;
             let (pattern, guard) = split_pattern_guard(head);
             Some(crate::expr::MatchExprArm::new(
                 parse_pattern(pattern.trim()),
@@ -955,8 +958,10 @@ pub(super) fn parse_stmt_match_arms(body: &str) -> Vec<StmtMatchArm> {
     collect_logical_block_items(body)
         .into_iter()
         .filter_map(|line| {
-            let (head, value) =
-                split_top_level_punctuation_sequence_once(line.trim(), &["=", ">"])?;
+            let (head, value) = split_top_level_arcweft_punctuation_once(
+                line.trim(),
+                ArcweftPunctuation::FatArrow,
+            )?;
             let (pattern, guard) = split_pattern_guard(head.trim());
             let body = value
                 .trim()

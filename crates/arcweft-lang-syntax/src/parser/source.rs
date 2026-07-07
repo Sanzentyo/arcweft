@@ -5,7 +5,10 @@ use crate::ast::source::{
     SourceBackpressurePolicy, SourceEventPattern, SourceHandler, SourceHeader, SourceItem,
     SourceItemParts, SourceOverflowPolicy, SourcePrivacyPolicy, SourceReplayPolicy,
 };
-use crate::cst::{find_top_level_matching_punctuation, split_top_level_punctuation_sequence_once};
+use crate::cst::{
+    ArcweftPunctuation, find_top_level_matching_punctuation,
+    split_top_level_arcweft_punctuation_once, strip_prefix_arcweft_punctuation,
+};
 use crate::expr::{CallArg, Expr};
 use crate::pattern::parse_pattern;
 use crate::types::parse_type_ref;
@@ -135,10 +138,9 @@ pub(super) fn parse_source_stmt_lines(body: &str) -> Vec<Stmt> {
 
 pub(super) fn parse_source_type_from_tail(tail: &str) -> Option<crate::types::TypeRef> {
     let tail = tail.trim();
-    let type_source = tail
-        .strip_prefix(':')
-        .map(str::trim)
-        .or_else(|| tail.strip_prefix("->").map(str::trim))?;
+    let type_source = tail.strip_prefix(':').map(str::trim).or_else(|| {
+        strip_prefix_arcweft_punctuation(tail, ArcweftPunctuation::ThinArrow).map(str::trim)
+    })?;
     parse_type_ref(type_source).ok()
 }
 
@@ -244,7 +246,8 @@ pub(super) fn parse_source_handlers(body: &str) -> Vec<SourceHandler> {
 
 fn parse_source_handler(line: &str) -> Option<SourceHandler> {
     let rest = line.strip_prefix("on ")?;
-    let (head, action) = split_top_level_punctuation_sequence_once(rest, &["=", ">"])?;
+    let (head, action) =
+        split_top_level_arcweft_punctuation_once(rest, ArcweftPunctuation::FatArrow)?;
     let action = action.trim();
     let body = action
         .strip_prefix('{')

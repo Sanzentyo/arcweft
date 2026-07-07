@@ -3,6 +3,27 @@
 use super::lexer::{CstToken, lex_cst, token_text_is};
 use super::{CstPunctuationDeltas, SyntaxKind};
 
+/// Arcweft punctuation sequences that carry grammar meaning beyond a single
+/// ASCII character.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ArcweftPunctuation {
+    ThinArrow,
+    LeftArrow,
+    FatArrow,
+    Pipe,
+}
+
+impl ArcweftPunctuation {
+    const fn sequence(self) -> &'static [&'static str] {
+        match self {
+            Self::ThinArrow => &["-", ">"],
+            Self::LeftArrow => &["<", "-"],
+            Self::FatArrow => &["=", ">"],
+            Self::Pipe => &["|", ">"],
+        }
+    }
+}
+
 /// Reusable punctuation token scan for source fragments that are not CST lines.
 ///
 /// `CstLine` already stores punctuation summaries built during rowan line
@@ -471,11 +492,21 @@ pub(crate) fn split_top_level_punctuation_sequence_once<'a>(
             "{" => brace += 1,
             "}" => brace = brace.saturating_sub(1),
             "<" => angle += 1,
-            ">" => angle = angle.saturating_sub(1),
+            ">" if !is_multi_token_punctuation_tail(&tokens, index) => {
+                angle = angle.saturating_sub(1);
+            }
             _ => {}
         }
     }
     None
+}
+
+/// Splits once at a top-level Arcweft punctuation token sequence.
+pub(crate) fn split_top_level_arcweft_punctuation_once(
+    source: &str,
+    punctuation: ArcweftPunctuation,
+) -> Option<(&str, &str)> {
+    split_top_level_punctuation_sequence_once(source, punctuation.sequence())
 }
 
 /// Splits once at the last top-level contiguous punctuation token sequence.
@@ -513,12 +544,37 @@ pub(crate) fn split_last_top_level_punctuation_sequence_once<'a>(
             "{" => brace += 1,
             "}" => brace = brace.saturating_sub(1),
             "<" => angle += 1,
-            ">" => angle = angle.saturating_sub(1),
+            ">" if !is_multi_token_punctuation_tail(&tokens, index) => {
+                angle = angle.saturating_sub(1);
+            }
             _ => {}
         }
     }
 
     found.map(|(start, end)| (source[..start].trim(), source[end..].trim()))
+}
+
+/// Strips a leading Arcweft punctuation token sequence from already-trimmed source.
+pub(crate) fn strip_prefix_arcweft_punctuation(
+    source: &str,
+    punctuation: ArcweftPunctuation,
+) -> Option<&str> {
+    let tokens = lex_cst(source);
+    if punctuation_sequence_matches(&tokens, 0, punctuation.sequence()) {
+        let end = tokens[punctuation.sequence().len() - 1].end();
+        Some(&source[end..])
+    } else {
+        None
+    }
+}
+
+/// Returns whether the source contains the punctuation sequence outside token text.
+pub(crate) fn contains_arcweft_punctuation(source: &str, punctuation: ArcweftPunctuation) -> bool {
+    let tokens = lex_cst(source);
+    tokens
+        .iter()
+        .enumerate()
+        .any(|(index, _)| punctuation_sequence_matches(&tokens, index, punctuation.sequence()))
 }
 
 fn punctuation_sequence_matches(tokens: &[CstToken<'_>], index: usize, sequence: &[&str]) -> bool {
@@ -532,6 +588,21 @@ fn punctuation_sequence_matches(tokens: &[CstToken<'_>], index: usize, sequence:
             && token.text() == *expected
             && (offset == 0 || tokens[index + offset - 1].end() == token.start())
     })
+}
+
+fn is_multi_token_punctuation_tail(tokens: &[CstToken<'_>], index: usize) -> bool {
+    let Some(token) = tokens.get(index) else {
+        return false;
+    };
+    if token.kind() != SyntaxKind::Punctuation || token.text() != ">" {
+        return false;
+    }
+    let Some(previous) = index.checked_sub(1).and_then(|index| tokens.get(index)) else {
+        return false;
+    };
+    previous.kind() == SyntaxKind::Punctuation
+        && previous.end() == token.start()
+        && matches!(previous.text(), "-" | "=" | "|")
 }
 
 /// Splits once before a top-level identifier keyword.

@@ -2,8 +2,9 @@
 
 use super::CstLine;
 use super::punctuation::{
-    find_matching_punctuation, find_top_level_punctuation, split_top_level_punctuation_once,
-    split_top_level_punctuation_sequence_once,
+    ArcweftPunctuation, contains_arcweft_punctuation, find_matching_punctuation,
+    find_top_level_punctuation, split_top_level_arcweft_punctuation_once,
+    split_top_level_punctuation_once,
 };
 use super::{
     CstFlowItemKind, CstLetFlowItemKind, CstLineKind, CstStmtKind, CstStructuredFlowBlockKind,
@@ -36,7 +37,9 @@ pub(crate) fn classify_stmt(trimmed: &str) -> CstStmtKind {
     }
 }
 fn looks_like_lifetime_set(trimmed: &str) -> bool {
-    let Some((target, _)) = split_top_level_punctuation_sequence_once(trimmed, &["<", "-"]) else {
+    let Some((target, _)) =
+        split_top_level_arcweft_punctuation_once(trimmed, ArcweftPunctuation::LeftArrow)
+    else {
         return false;
     };
     target.trim_start().starts_with('\'')
@@ -453,7 +456,10 @@ fn find_content_bracket(text: &str) -> Option<usize> {
 }
 
 fn is_typed_stmt(trimmed: &str) -> bool {
-    if trimmed.starts_with('\'') && (trimmed.contains("<-") || trimmed.contains("|>")) {
+    if trimmed.starts_with('\'')
+        && (contains_arcweft_punctuation(trimmed, ArcweftPunctuation::LeftArrow)
+            || contains_arcweft_punctuation(trimmed, ArcweftPunctuation::Pipe))
+    {
         return true;
     }
     matches!(

@@ -8,10 +8,11 @@ use super::{
     parse_memo_block_options, parse_named_block_expr, parse_pattern, parse_scope_expr_body,
     parse_stmt_lines, parse_stmt_match_arms, parse_thread_block, parse_trigger_pattern,
     split_top_level_binding, split_top_level_keyword_once,
-    split_top_level_punctuation_sequence_once,
 };
-use crate::cst::CstPunctuationScan;
-use crate::cst::SyntaxParseStats;
+use crate::cst::{
+    ArcweftPunctuation, CstPunctuationScan, SyntaxParseStats,
+    split_top_level_arcweft_punctuation_once,
+};
 
 impl Parser<'_> {
     pub(super) fn parse_let_scope(&mut self) -> Option<Stmt> {
@@ -166,7 +167,7 @@ fn parse_stmt_inner(
     match classify_stmt(trimmed) {
         CstStmtKind::LifetimeSet => {
             let Some((target, expr)) =
-                split_top_level_punctuation_sequence_once(trimmed, &["<", "-"])
+                split_top_level_arcweft_punctuation_once(trimmed, ArcweftPunctuation::LeftArrow)
             else {
                 return raw_stmt(trimmed);
             };
@@ -275,7 +276,9 @@ fn parse_on_stmt(trimmed: &str) -> Stmt {
     let Some(rest) = trimmed.strip_prefix("on ") else {
         return raw_stmt(trimmed);
     };
-    if let Some((head, action)) = split_top_level_punctuation_sequence_once(rest, &["=", ">"]) {
+    if let Some((head, action)) =
+        split_top_level_arcweft_punctuation_once(rest, ArcweftPunctuation::FatArrow)
+    {
         Stmt::On {
             trigger: parse_trigger_pattern(head.trim()),
             body: vec![parse_stmt(action.trim())],

@@ -15,7 +15,6 @@ use crate::cst::{
     CstTopLevelLineKind, SyntaxNode, SyntaxParseStats, classify_stmt, cst_lines_for_source,
     find_matching_punctuation, find_top_level_punctuation, source_line_iter, split_leading_ident,
     split_top_level_keyword_once, split_top_level_punctuation_once,
-    split_top_level_punctuation_sequence_once,
 };
 use crate::expr::Expr;
 use crate::pattern::parse_pattern;

@@ -16,10 +16,10 @@ use crate::ast::{
     line_plan::{BlockStyle, LinePlan},
     pattern::Pattern,
 };
-use crate::cst::SyntaxParseStats;
+use crate::cst::{ArcweftPunctuation, SyntaxParseStats};
 use crate::cst::{
-    CstPunctuationScan, collect_wiki_link_ranges, split_top_level_keyword_once,
-    split_top_level_punctuation, split_top_level_punctuation_once,
+    CstPunctuationScan, collect_wiki_link_ranges, contains_arcweft_punctuation,
+    split_top_level_keyword_once, split_top_level_punctuation, split_top_level_punctuation_once,
 };
 use crate::cst::{
     find_matching_punctuation, find_top_level_matching_punctuation, find_top_level_punctuation,
@@ -363,7 +363,9 @@ type SpeakerLineParts<'a> = (String, Option<(String, usize)>, &'a str, usize);
 
 pub(super) fn split_speaker_line(trimmed: &str) -> Option<SpeakerLineParts<'_>> {
     let colon = find_top_level_colon(trimmed)?;
-    if has_top_level_square(&trimmed[..colon]) || trimmed[..colon].contains("->") {
+    if has_top_level_square(&trimmed[..colon])
+        || contains_arcweft_punctuation(&trimmed[..colon], ArcweftPunctuation::ThinArrow)
+    {
         return None;
     }
     let head = trimmed[..colon].trim();

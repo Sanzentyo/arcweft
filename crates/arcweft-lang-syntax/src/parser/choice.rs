@@ -7,8 +7,9 @@ use crate::ast::flow::Stmt;
 use crate::ast::items::RawSyntax;
 use crate::ast::line_plan::BlockStyle;
 use crate::cst::{
-    find_top_level_matching_punctuation, split_first_string_literal, split_top_level_keyword_once,
-    split_top_level_punctuation_sequence_once,
+    ArcweftPunctuation, find_top_level_matching_punctuation, split_first_string_literal,
+    split_top_level_arcweft_punctuation_once, split_top_level_keyword_once,
+    strip_prefix_arcweft_punctuation,
 };
 use crate::expr::parse_expr;
 use crate::pattern::parse_pattern;
@@ -21,6 +22,12 @@ use super::{
     parse_stmt_lines, parse_trigger_pattern, recovery::ParseError, split_brace_item,
     split_pattern_guard, split_top_level_binding,
 };
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ChoiceActionPrefix {
+    Goto,
+    Out,
+}
 
 impl Parser<'_> {
     pub(super) fn parse_choice(&mut self) -> Option<ChoiceBlock> {
@@ -211,8 +218,10 @@ fn parse_choice_match_arms(
     collect_logical_block_items(body)
         .into_iter()
         .filter_map(|line| {
-            let (head, value) =
-                split_top_level_punctuation_sequence_once(line.trim(), &["=", ">"])?;
+            let (head, value) = split_top_level_arcweft_punctuation_once(
+                line.trim(),
+                ArcweftPunctuation::FatArrow,
+            )?;
             let (pattern, guard) = split_pattern_guard(head.trim());
             let value = value.trim();
             let items = if let Some(block) = value
@@ -309,15 +318,8 @@ fn parse_choice_arm_sugar(
             action,
         )
     } else {
-        let action = after_label
-            .strip_prefix("->")
-            .map(|target| format!("->{}", target.trim()))
-            .or_else(|| {
-                after_label
-                    .strip_prefix("=>")
-                    .map(|expr| format!("=>{}", expr.trim()))
-            })?;
-        (None, parse_choice_action(&action, base, errors)?)
+        let (prefix, body) = parse_choice_action_prefix(after_label)?;
+        (None, parse_choice_action(prefix, body, base, errors)?)
     };
     let mut option = ChoiceOption::new(
         Some(id),
@@ -337,27 +339,35 @@ fn split_choice_condition_action<'a>(
     errors: &mut Vec<ParseError>,
 ) -> Option<(&'a str, ChoiceAction)> {
     if let Some((condition, target)) =
-        split_top_level_punctuation_sequence_once(source, &["-", ">"])
+        split_top_level_arcweft_punctuation_once(source, ArcweftPunctuation::ThinArrow)
     {
         let target = parse_required_entity_ref_syntax(target.trim(), base, errors)?.0;
         return Some((condition, ChoiceAction::Goto(target)));
     }
-    split_top_level_punctuation_sequence_once(source, &["=", ">"])
+    split_top_level_arcweft_punctuation_once(source, ArcweftPunctuation::FatArrow)
         .map(|(condition, expr)| (condition, ChoiceAction::Out(parse_expr_lossy(expr.trim()))))
 }
 
+fn parse_choice_action_prefix(source: &str) -> Option<(ChoiceActionPrefix, &str)> {
+    strip_prefix_arcweft_punctuation(source, ArcweftPunctuation::ThinArrow)
+        .map(|target| (ChoiceActionPrefix::Goto, target.trim()))
+        .or_else(|| {
+            strip_prefix_arcweft_punctuation(source, ArcweftPunctuation::FatArrow)
+                .map(|expr| (ChoiceActionPrefix::Out, expr.trim()))
+        })
+}
+
 fn parse_choice_action(
-    source: &str,
+    prefix: ChoiceActionPrefix,
+    body: &str,
     base: usize,
     errors: &mut Vec<ParseError>,
 ) -> Option<ChoiceAction> {
-    if let Some(target) = source.strip_prefix("->") {
-        return parse_required_entity_ref_syntax(target.trim(), base, errors)
-            .map(|(entity, _)| ChoiceAction::Goto(entity));
+    match prefix {
+        ChoiceActionPrefix::Goto => parse_required_entity_ref_syntax(body.trim(), base, errors)
+            .map(|(entity, _)| ChoiceAction::Goto(entity)),
+        ChoiceActionPrefix::Out => Some(ChoiceAction::Out(parse_expr_lossy(body.trim()))),
     }
-    source
-        .strip_prefix("=>")
-        .map(|expr| ChoiceAction::Out(parse_expr_lossy(expr.trim())))
 }
 
 fn parse_choice_option_block(

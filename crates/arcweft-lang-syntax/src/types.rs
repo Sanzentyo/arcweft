@@ -3,10 +3,11 @@ use thiserror::Error;
 use crate::ast::common::{DocBlock, TextRange};
 use crate::ast::pattern::Pattern;
 use crate::cst::{
-    find_matching_angle_group, find_matching_punctuation, find_top_level_matching_punctuation,
-    find_top_level_punctuation, split_leading_ident, split_leading_lifetime,
-    split_top_level_keyword_once, split_top_level_punctuation, split_top_level_punctuation_once,
-    take_doc_comment_prefix,
+    ArcweftPunctuation, find_matching_angle_group, find_matching_punctuation,
+    find_top_level_matching_punctuation, find_top_level_punctuation, split_leading_ident,
+    split_leading_lifetime, split_top_level_arcweft_punctuation_once, split_top_level_keyword_once,
+    split_top_level_punctuation, split_top_level_punctuation_once,
+    strip_prefix_arcweft_punctuation, take_doc_comment_prefix,
 };
 use crate::expr::{Expr, parse_expr};
 use crate::pattern::parse_pattern;
@@ -159,23 +160,24 @@ pub fn parse_fn_signature(source: &str) -> Result<FnSignature, TypeParseError> {
     let (param_groups, mut rest) = parse_fn_param_groups(rest)?;
     let (before_where, where_part) = split_top_level_keyword_once(rest.trim_start(), "where");
     rest = before_where.trim_start();
-    let return_type = if let Some(tail) = rest.strip_prefix("->") {
-        let ty = tail.trim();
-        if ty.is_empty() {
-            return Err(TypeParseError::new("expected return type after `->`"));
-        }
-        let ty = parse_type_ref(ty)?;
-        if type_ref_has_whitespace_path(&ty) {
-            return Err(TypeParseError::new("unexpected tokens after return type"));
-        }
-        Some(ty)
-    } else if rest.is_empty() {
-        None
-    } else {
-        return Err(TypeParseError::new(
-            "unexpected tokens after parameter list",
-        ));
-    };
+    let return_type =
+        if let Some(tail) = strip_prefix_arcweft_punctuation(rest, ArcweftPunctuation::ThinArrow) {
+            let ty = tail.trim();
+            if ty.is_empty() {
+                return Err(TypeParseError::new("expected return type after `->`"));
+            }
+            let ty = parse_type_ref(ty)?;
+            if type_ref_has_whitespace_path(&ty) {
+                return Err(TypeParseError::new("unexpected tokens after return type"));
+            }
+            Some(ty)
+        } else if rest.is_empty() {
+            None
+        } else {
+            return Err(TypeParseError::new(
+                "unexpected tokens after parameter list",
+            ));
+        };
     let where_clauses = where_part.map_or_else(|| Ok(Vec::new()), parse_where_clauses)?;
     Ok(FnSignature {
         name,
@@ -525,27 +527,7 @@ fn split_type_projection(source: &str) -> Option<(&str, &str)> {
 }
 
 fn split_top_level_arrow(source: &str) -> Option<(&str, &str)> {
-    let bytes = source.as_bytes();
-    let mut angle = 0usize;
-    let mut paren = 0usize;
-    let mut bracket = 0usize;
-    let mut index = 0usize;
-    while index + 1 < bytes.len() {
-        match bytes[index] as char {
-            '<' if paren == 0 && bracket == 0 => angle += 1,
-            '>' if angle > 0 && paren == 0 && bracket == 0 => angle -= 1,
-            '(' if angle == 0 && bracket == 0 => paren += 1,
-            ')' if paren > 0 && angle == 0 && bracket == 0 => paren -= 1,
-            '[' if angle == 0 && paren == 0 => bracket += 1,
-            ']' if bracket > 0 && angle == 0 && paren == 0 => bracket -= 1,
-            '-' if bytes[index + 1] == b'>' && angle == 0 && paren == 0 && bracket == 0 => {
-                return Some((&source[..index], &source[index + 2..]));
-            }
-            _ => {}
-        }
-        index += 1;
-    }
-    None
+    split_top_level_arcweft_punctuation_once(source, ArcweftPunctuation::ThinArrow)
 }
 
 fn take_angle_group(source: &str) -> Option<(&str, &str)> {

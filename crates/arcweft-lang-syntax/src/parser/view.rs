@@ -9,8 +9,8 @@ use crate::ast::view::{
     ViewTextControlPayloadField, ViewTextField, ViewTextFieldMode,
 };
 use crate::cst::{
-    split_top_level_keyword_once, split_top_level_punctuation, split_top_level_punctuation_once,
-    split_top_level_punctuation_sequence_once,
+    ArcweftPunctuation, split_top_level_arcweft_punctuation_once, split_top_level_keyword_once,
+    split_top_level_punctuation, split_top_level_punctuation_once,
 };
 use crate::expr::{CallArg, Expr, Literal};
 use crate::pattern::parse_pattern;
@@ -270,7 +270,9 @@ fn parse_view_await_branch(
     if line.is_empty() {
         return None;
     }
-    let Some((head, value)) = split_top_level_punctuation_sequence_once(line, &["=", ">"]) else {
+    let Some((head, value)) =
+        split_top_level_arcweft_punctuation_once(line, ArcweftPunctuation::FatArrow)
+    else {
         errors.push(simple_error(
             base,
             line.len(),
@@ -409,7 +411,9 @@ fn parse_view_match_arm(
     if line.is_empty() {
         return None;
     }
-    let Some((head, value)) = split_top_level_punctuation_sequence_once(line, &["=", ">"]) else {
+    let Some((head, value)) =
+        split_top_level_arcweft_punctuation_once(line, ArcweftPunctuation::FatArrow)
+    else {
         errors.push(simple_error(
             base,
             line.len(),

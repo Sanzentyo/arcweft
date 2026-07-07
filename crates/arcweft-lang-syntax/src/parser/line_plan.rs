@@ -8,8 +8,9 @@ use crate::ast::line_plan::{
 };
 use crate::cst::text::parse_flat_fence;
 use crate::cst::{
-    find_top_level_matching_punctuation, split_top_level_punctuation,
-    split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
+    ArcweftPunctuation, find_top_level_matching_punctuation,
+    split_top_level_arcweft_punctuation_once, split_top_level_punctuation,
+    split_top_level_punctuation_once,
 };
 use crate::expr::{Expr, parse_expr};
 use crate::pattern::parse_pattern;
@@ -369,14 +370,16 @@ fn parse_line_plan_item(line: &str) -> LinePlanItem {
             ));
         }
         let (trigger, action) =
-            split_top_level_punctuation_sequence_once(rest, &["=", ">"]).unwrap_or((rest, ""));
+            split_top_level_arcweft_punctuation_once(rest, ArcweftPunctuation::FatArrow)
+                .unwrap_or((rest, ""));
         return LinePlanItem::CancelRule(CancelRuleSyntax::new(
             parse_trigger_pattern(trigger.trim()),
             parse_line_plan_cancel_action(action.trim()),
         ));
     }
     if let Some(rest) = line.strip_prefix("on ")
-        && let Some((trigger, body)) = rest.split_once("=>")
+        && let Some((trigger, body)) =
+            split_top_level_arcweft_punctuation_once(rest, ArcweftPunctuation::FatArrow)
     {
         return LinePlanItem::On {
             trigger: parse_trigger_pattern(trigger.trim()),

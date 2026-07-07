@@ -2,10 +2,13 @@ use super::{
     CstLine, FlowItem, ParseError, Parser, RecoverySuggestion, SourceAnchor, SourceName, Stmt,
     SyntaxParseStats, TextRange, find_matching_punctuation, indentation, parse_expr_lossy,
     parse_pattern, parse_stmt, source_line_iter, split_top_level_binding,
-    split_top_level_keyword_once, split_top_level_punctuation_sequence_once,
+    split_top_level_keyword_once,
 };
 use crate::ast::flow::{AwaitBranch, AwaitBranchKind, AwaitWith};
-use crate::cst::{nonempty_trimmed_source_lines, source_line_count};
+use crate::cst::{
+    ArcweftPunctuation, nonempty_trimmed_source_lines, source_line_count,
+    split_top_level_arcweft_punctuation_once,
+};
 use std::ops::Range;
 
 enum AwaitBody {
@@ -491,7 +494,8 @@ fn split_await_branch_lines(source: &str) -> Vec<&str> {
 }
 
 fn parse_await_branch(line: &str) -> Option<AwaitBranch> {
-    let (head, body) = split_top_level_punctuation_sequence_once(line, &["=", ">"])?;
+    let (head, body) =
+        split_top_level_arcweft_punctuation_once(line, ArcweftPunctuation::FatArrow)?;
     let mut parts = head.split_whitespace();
     let kind = await_branch_kind(parts.next()?)?;
     let pattern = parse_pattern(parts.collect::<Vec<_>>().join(" ").trim());

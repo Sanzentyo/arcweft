@@ -143,6 +143,11 @@ Source briefs:
   instead of string tokens such as `Op("->")`, so parser branches for `->`,
   `=>`, `|>`, range operators, comparison operators, and closure pipes are
   checked by Rust exhaustiveness/type checking rather than string literals.
+- CST/parser multi-token punctuation now uses `ArcweftPunctuation` helpers for
+  grammar-significant `->`, `<-`, `=>`, and `|>` splitting/prefix checks. The
+  spelling strings are centralized in the CST punctuation layer rather than
+  repeated across type, closure, choice, source, line-plan, view, and statement
+  parsers.
 - Closure return type annotation is accepted as `|params| -> Type { ... }`
   and `|| -> Type { ... }`. Return-typed closures require block bodies.
   Parser tests cover top-level, zero-arg, call-argument, and missing-block

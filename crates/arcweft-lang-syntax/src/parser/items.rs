@@ -10,9 +10,10 @@ use crate::ast::items::{
     TraitItem, TraitMember, TypeAliasItem, ViewDeclBody,
 };
 use crate::cst::{
-    find_matching_angle_group, find_matching_punctuation, find_top_level_punctuation,
-    split_first_string_literal, split_leading_ident, split_top_level_punctuation,
-    split_top_level_punctuation_once, split_top_level_punctuation_sequence_once,
+    ArcweftPunctuation, find_matching_angle_group, find_matching_punctuation,
+    find_top_level_punctuation, split_first_string_literal, split_leading_ident,
+    split_top_level_arcweft_punctuation_once, split_top_level_punctuation,
+    split_top_level_punctuation_once,
 };
 use crate::types::{parse_fn_signature, parse_type_ref, parse_where_clause_list};
 
@@ -761,7 +762,8 @@ fn parse_structured_entity_decl_body(
 }
 
 fn entity_signature_has_return_type(signature_tail: &str) -> bool {
-    signature_tail.split_once("->").is_some()
+    split_top_level_arcweft_punctuation_once(signature_tail, ArcweftPunctuation::ThinArrow)
+        .is_some()
 }
 
 fn parse_image_decl_fields(
@@ -1032,7 +1034,8 @@ fn parse_entry_route(
     base: usize,
     errors: &mut Vec<super::recovery::ParseError>,
 ) -> Option<EntryItem> {
-    let (left, target_source) = split_top_level_punctuation_sequence_once(source, &["-", ">"])?;
+    let (left, target_source) =
+        split_top_level_arcweft_punctuation_once(source, ArcweftPunctuation::ThinArrow)?;
     let (method, rest) = split_leading_ident(left.trim())?;
     let (path, _) = split_first_string_literal(rest.trim())?;
     let (target, bindings) = parse_entry_route_target(target_source.trim(), base, errors)?;

@@ -1,5 +1,8 @@
 use super::ExprParseError;
-use crate::cst::{find_matching_punctuation, find_top_level_punctuation};
+use crate::cst::{
+    ArcweftPunctuation, find_matching_punctuation, find_top_level_punctuation,
+    strip_prefix_arcweft_punctuation,
+};
 
 pub(super) struct ClosureSource<'a> {
     pub(super) params: &'a str,
@@ -24,7 +27,8 @@ pub(super) fn split(source: &str) -> Result<Option<ClosureSource<'_>>, ExprParse
     if body.is_empty() {
         return Ok(None);
     }
-    let Some(after_arrow) = body.strip_prefix("->") else {
+    let Some(after_arrow) = strip_prefix_arcweft_punctuation(body, ArcweftPunctuation::ThinArrow)
+    else {
         return Ok(Some(ClosureSource {
             params,
             return_type: None,
