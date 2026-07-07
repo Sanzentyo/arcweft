@@ -11,6 +11,7 @@ use crate::session_save::{
     BundleSessionExecutorSnapshot, BundleSessionGenerationSnapshot, BundleSessionPendingBlocker,
     BundleSessionPendingSnapshot, BundleSessionRuntimeSnapshot, BundleSessionSaveError,
     BundleSessionSaveSchema, BundleSessionSnapshot, digest_label, validate_presentation_snapshot,
+    validate_product_awbc_runtime_values,
 };
 use crate::swap::{
     GenerationBuildError, GenerationId, ProgramGeneration, SwapCompatibility, SwapError,
@@ -1135,6 +1136,7 @@ impl BundleSession {
         let active = self.active_generation();
         let executor = match self.executor.snapshot()? {
             ArcweftRuntimeExecutorSnapshot::AwbcProduct(state) => {
+                validate_product_awbc_runtime_values(&state)?;
                 BundleSessionExecutorSnapshot::ProductAwbc {
                     generation: active.id,
                     state: Box::new(state),
@@ -1214,6 +1216,7 @@ impl BundleSession {
                         actual: format!("{active_generation:?}"),
                     });
                 }
+                validate_product_awbc_runtime_values(&state)?;
                 ArcweftRuntimeExecutorSnapshot::AwbcProduct(*state)
             }
             BundleSessionExecutorSnapshot::StructuredVm => {

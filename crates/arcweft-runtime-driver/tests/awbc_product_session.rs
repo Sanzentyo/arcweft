@@ -13,7 +13,7 @@ use arcweft_core::{
         },
     },
     bytecode::BytecodeProgram,
-    value::RuntimeValue,
+    value::{RuntimeExpr, RuntimeFunctionValue, RuntimeValue},
 };
 use arcweft_interaction_model::input::{
     InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent,
@@ -193,6 +193,44 @@ fn awbc_save_load_preserves_cleanup_stacks() {
             .executor,
         snapshot.executor
     );
+}
+
+#[test]
+fn session_save_rejects_runtime_function_values() {
+    let bytes = product_awfb_bytes("entry.main");
+    let mut session = product_session_from_bytes(&bytes);
+    let mut snapshot = session.snapshot_session().expect("snapshot exports");
+    let BundleSessionExecutorSnapshot::ProductAwbc { state, .. } = &mut snapshot.executor else {
+        panic!("test bundle uses Product AWBC")
+    };
+    let frame = state.fiber.active_frame_mut().expect("active frame");
+    frame.root_cleanups.push(FiberScopeCleanup {
+        key: "handle.function".to_owned(),
+        effect: AwbcEffectPlanId(0),
+        args: vec![runtime_function_value()],
+    });
+
+    let error = session
+        .restore_session_snapshot(snapshot.clone())
+        .expect_err("function values are not valid session-save payloads");
+    assert!(matches!(
+        error,
+        BundleSessionSaveError::UnsupportedRuntimeValue { path, kind }
+            if kind == "function"
+                && path == "executor.product_awbc.fiber.frames[0].root_cleanups[0].args[0]"
+    ));
+
+    let save = encode_session_snapshot(&snapshot, BUNDLE_SESSION_SAVE_SCHEMA_VERSION);
+    let mut restored = product_session_from_bytes(&bytes);
+    let error = restored
+        .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
+        .expect_err("encoded function values are rejected on import");
+    assert!(matches!(
+        error,
+        BundleSessionSaveError::UnsupportedRuntimeValue { path, kind }
+            if kind == "function"
+                && path == "executor.product_awbc.fiber.frames[0].root_cleanups[0].args[0]"
+    ));
 }
 
 #[test]
@@ -379,6 +417,14 @@ fn cleanup(key: &str, value: &str) -> FiberScopeCleanup {
         effect: AwbcEffectPlanId(0),
         args: vec![RuntimeValue::String(value.to_owned())],
     }
+}
+
+fn runtime_function_value() -> RuntimeValue {
+    RuntimeValue::Function(RuntimeFunctionValue::new(
+        vec!["value".to_owned()],
+        RuntimeExpr::Local("value".to_owned()),
+        Vec::new(),
+    ))
 }
 
 fn minimal_awbc_program(entry: &str) -> AwbcProgram {

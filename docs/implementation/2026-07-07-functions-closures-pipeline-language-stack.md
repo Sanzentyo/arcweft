@@ -172,6 +172,13 @@ Source briefs:
   spelling strings are centralized in the CST punctuation layer rather than
   repeated across type, closure, choice, source, line-plan, view, and statement
   parsers.
+- Product AWBC session save/load now rejects `RuntimeValue::Function` payloads
+  with structured `BundleSessionSaveError::UnsupportedRuntimeValue` diagnostics
+  before export or restore accepts the snapshot. The validator walks fiber
+  frames, cleanup stacks, suspension args, await-many state, source/stream
+  queues, terminal values, and nested tuple/sequence/record/variant/iterator
+  values so captured closures cannot be persisted accidentally before AWBC
+  closure allocation has a versioned representation.
 - Closure return type annotation is accepted as `|params| -> Type { ... }`
   and `|| -> Type { ... }`. Return-typed closures require block bodies.
   Parser tests cover top-level, zero-arg, call-argument, and missing-block
@@ -265,7 +272,9 @@ Source briefs:
   allocation remains open.
 - Closure capture lifetime diagnostics now cover borrowed local captures that
   cross checked suspension boundaries. Effect-row composition for closure
-  captures and save/load policy evidence remain open. Numeric fallback lints
+  captures remains open. Save/load currently has an explicit Product AWBC
+  policy: runtime function values are rejected as non-persistable until AWBC
+  closure allocation and snapshot versioning are designed. Numeric fallback lints
   inside inferred closure bodies are implemented for scalar integer/float
   fallback and numeric sequence fallback. LSP inlays are implemented for
   inferred function-valued `let` bindings; broader expression inlays still need
@@ -332,6 +341,7 @@ cargo test -p arcweft-compiler --all-features runtime_plan_lowers_typed_data_las
 cargo test -p arcweft-compiler --all-features runtime_plan_lowers_local_function_data_last_pipe_to_apply
 cargo test -p arcweft-compiler --all-features runtime_plan_preserves_curried_call_group_application_samples
 cargo test -p arcweft-compiler --all-features
+cargo test -p arcweft-runtime-driver --all-features --test awbc_product_session
 cargo test -p arcweft-lang-syntax --all-features closure
 cargo test -p arcweft-runtime-plan --all-features
 cargo check --workspace --all-targets --all-features
@@ -369,6 +379,16 @@ function-value call evidence on both bare and call RHS pipe forms through a
 local function alias, and compiler/runtime-plan coverage that those forms lower
 to `RuntimeExpr::Apply` with `Local("f")` as the callee rather than a helper or
 adapter call.
+
+The Product AWBC save/load policy cut has passing `awbc_product_session`
+coverage that a snapshot containing a runtime function value inside a cleanup
+argument is rejected on both direct restore and encoded import with
+`BundleSessionSaveError::UnsupportedRuntimeValue`, preserving the current
+non-persistable closure boundary explicitly.
+The cut also passed `cargo check --workspace --all-targets --all-features`,
+`cargo clippy --workspace --all-targets --all-features` with only the existing
+`TraitMember`/`ImplMember` large enum warnings, and structure audit with 0
+errors / 147 warnings.
 
 The local function-valued call cut has focused passing coverage for a flow that
 aliases a pure helper, partially applies that local function value, and applies
