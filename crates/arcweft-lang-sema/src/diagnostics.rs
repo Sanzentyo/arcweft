@@ -182,6 +182,12 @@ pub enum TypeCheckWarningKind {
         /// Source-level type expression for the anonymous sum.
         type_ref: String,
     },
+    /// An unsuffixed numeric literal inside an inferred closure body fell back
+    /// to a stable default primitive type.
+    NumericFallbackInInferredClosure {
+        literal_kind: String,
+        fallback: TypeKind,
+    },
     /// A structured warning from transitive effect analysis.
     Effect { diagnostic: EffectDiagnostic },
 }
@@ -716,6 +722,22 @@ impl TypeCheckWarning {
         }
     }
 
+    pub(crate) fn numeric_fallback_in_inferred_closure(
+        literal_kind: impl Into<String>,
+        fallback: TypeKind,
+    ) -> Self {
+        let literal_kind = literal_kind.into();
+        Self {
+            message: format!(
+                "unsuffixed {literal_kind} literal inside inferred closure body defaults to {fallback:?}; add a suffix or closure return type to make the contract explicit"
+            ),
+            kind: TypeCheckWarningKind::NumericFallbackInInferredClosure {
+                literal_kind,
+                fallback,
+            },
+        }
+    }
+
     pub(crate) fn effect(diagnostic: EffectDiagnostic) -> Self {
         Self {
             message: diagnostic.message().to_owned(),
@@ -831,6 +853,9 @@ fn typecheck_warning_code(kind: &TypeCheckWarningKind) -> String {
     match kind {
         TypeCheckWarningKind::PublicAbiAnonymousSum { .. } => {
             "sema.public_abi.anonymous_sum".to_owned()
+        }
+        TypeCheckWarningKind::NumericFallbackInInferredClosure { .. } => {
+            "sema.numeric.fallback_in_inferred_closure".to_owned()
         }
         TypeCheckWarningKind::Effect { diagnostic } => diagnostic.code().as_str().to_owned(),
     }

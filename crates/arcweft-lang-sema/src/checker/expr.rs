@@ -306,6 +306,7 @@ impl TypeChecker<'_> {
                     ));
                     TypeKind::Named("_".to_owned())
                 } else {
+                    self.record_numeric_fallback_in_inferred_closure("integer", TypeKind::I32);
                     TypeKind::I32
                 }
             }
@@ -340,6 +341,7 @@ impl TypeChecker<'_> {
                     ));
                     TypeKind::Named("_".to_owned())
                 } else {
+                    self.record_numeric_fallback_in_inferred_closure("float", TypeKind::F64);
                     TypeKind::F64
                 }
             }
@@ -620,6 +622,7 @@ impl TypeChecker<'_> {
             ));
             TypeKind::Named("_".to_owned())
         } else {
+            self.record_numeric_fallback_in_inferred_closure("integer sequence", TypeKind::I32);
             TypeKind::I32
         };
         self.finish_bracket_seq_type(seq.len(), item_type, expected)

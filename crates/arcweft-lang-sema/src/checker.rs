@@ -374,6 +374,7 @@ struct TypeChecker<'a> {
     judgments: Vec<TypeJudgment>,
     typed_lowering_evidence: Vec<TypedLoweringEvidence>,
     closure_capture_stack: Vec<ClosureCaptureFrame>,
+    closure_inference_stack: Vec<ClosureInferenceContext>,
     closure_captures: Vec<ClosureCaptureInventory>,
     for_iteration_evidence: Vec<ForIterationEvidence>,
     record_runtime_for_iteration_evidence: bool,
@@ -449,6 +450,11 @@ struct ClosureCaptureFrame {
     suspension_boundaries: BTreeSet<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ClosureInferenceContext {
+    inferred_return_type: bool,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum YieldContext {
     Seq {
@@ -518,6 +524,7 @@ impl TypeChecker<'_> {
             judgments: Vec::new(),
             typed_lowering_evidence: Vec::new(),
             closure_capture_stack: Vec::new(),
+            closure_inference_stack: Vec::new(),
             closure_captures: Vec::new(),
             for_iteration_evidence: Vec::new(),
             record_runtime_for_iteration_evidence: false,
@@ -645,6 +652,36 @@ impl TypeChecker<'_> {
     fn record_closure_suspension_boundary(&mut self, boundary: &str) {
         if let Some(frame) = self.closure_capture_stack.last_mut() {
             frame.suspension_boundaries.insert(boundary.to_owned());
+        }
+    }
+
+    fn push_closure_inference_context(&mut self, inferred_return_type: bool) {
+        self.closure_inference_stack.push(ClosureInferenceContext {
+            inferred_return_type,
+        });
+    }
+
+    fn pop_closure_inference_context(&mut self) {
+        self.closure_inference_stack
+            .pop()
+            .expect("closure inference context stack must stay balanced");
+    }
+
+    fn record_numeric_fallback_in_inferred_closure(
+        &mut self,
+        literal_kind: &'static str,
+        fallback: TypeKind,
+    ) {
+        if self
+            .closure_inference_stack
+            .last()
+            .is_some_and(|context| context.inferred_return_type)
+        {
+            self.warnings
+                .push(TypeCheckWarning::numeric_fallback_in_inferred_closure(
+                    literal_kind,
+                    fallback,
+                ));
         }
     }
 

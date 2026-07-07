@@ -139,10 +139,11 @@ Source briefs:
   produce a structured unsupported-fallback diagnostic instead of degrading to
   a generic `unknown method` error. Executable fallback lowering remains
   positional-only.
-- Expression lexing now represents operators with a dedicated `ExprOp` enum
-  instead of string tokens such as `Op("->")`, so parser branches for `->`,
-  `=>`, `|>`, range operators, comparison operators, and closure pipes are
-  checked by Rust exhaustiveness/type checking rather than string literals.
+- Expression lexing now represents operators as `Token::Op(ExprOp::...)`
+  rather than raw operator string payloads. Parser branches for `->`, `=>`,
+  `|>`, range operators, comparison operators, and closure pipes are checked by
+  Rust exhaustiveness/type checking; the spelling strings live only in the
+  enum-backed display/canonical spelling tables.
 - CST/parser multi-token punctuation now uses `ArcweftPunctuation` helpers for
   grammar-significant `->`, `<-`, `=>`, and `|>` splitting/prefix checks. The
   spelling strings are centralized in the CST punctuation layer rather than
@@ -173,6 +174,11 @@ Source briefs:
   `sema.typecheck.borrowed_closure_capture_crosses_boundary` and carries the
   capture name, borrowed type, lifetime labels, and owning boundary; tests cover
   `await`, `thread`, and `defer`, while non-borrow captures may cross `await`.
+- Sema now emits `sema.numeric.fallback_in_inferred_closure` warnings when an
+  unsuffixed numeric literal or numeric sequence falls back to a stable default
+  primitive type inside a closure body whose return type is inferred. Explicit
+  closure return annotations and concrete expected function return types
+  suppress the warning because they provide the numeric contract.
 - Flow statement parsing now keeps multiline return-typed closure literals
   together as a single `let` statement by tracking existing CST punctuation
   depth while consuming statement continuations.
@@ -216,8 +222,9 @@ Source briefs:
   allocation remains open.
 - Closure capture lifetime diagnostics now cover borrowed local captures that
   cross checked suspension boundaries. Effect-row composition for closure
-  captures, LSP inlays, numeric fallback lints inside inferred closure bodies,
-  and save/load policy evidence remain open.
+  captures, LSP inlays, and save/load policy evidence remain open. Numeric
+  fallback lints inside inferred closure bodies are implemented for scalar
+  integer/float fallback and numeric sequence fallback.
 - Closure `return expr` now binds to the nearest closure/function-like sema
   boundary for type checking. Strict runtime block lowering already preserves
   simple early-return shape by discarding later block statements after a
@@ -228,11 +235,12 @@ Source briefs:
   handle/trait method checks, preserving real methods before data-last fallback.
   Ambiguity diagnostics that compare real method and fallback candidates remain
   open.
-- Closure capture inventory collection exists in sema. Suspension-boundary
-  lifetime diagnostics, effect-row integration for closure captures,
-  runtime-plan capture metadata policy, and LSP/tooling surfaces remain open.
-- LSP inlays and lints for inferred closure/function types and numeric fallback
-  are not implemented in this cut.
+- Closure capture inventory collection and borrowed-capture suspension-boundary
+  lifetime diagnostics exist in sema. Effect-row integration for closure
+  captures, runtime-plan capture metadata policy, and LSP/tooling surfaces
+  remain open.
+- LSP inlays for inferred closure/function types are not implemented in this
+  cut.
 
 ## Follow-up request
 

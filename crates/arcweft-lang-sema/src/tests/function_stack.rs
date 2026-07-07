@@ -479,6 +479,71 @@ flow @flow.closure_capture_inventory closure_capture_inventory {
 }
 
 #[test]
+fn inferred_closure_body_reports_numeric_fallback_warning() {
+    let tree = parse_ok(
+        r"
+flow @flow.closure_numeric_fallback closure_numeric_fallback {
+    let fallback = || 1
+    log.info(fallback)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("closure numeric fallback fixture lowers");
+    validate_typecheck_ready(&hir).expect("closure numeric fallback fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.warnings.iter().any(|warning| {
+            matches!(
+                warning.kind(),
+                TypeCheckWarningKind::NumericFallbackInInferredClosure {
+                    literal_kind,
+                    fallback: TypeKind::I32
+                } if literal_kind == "integer"
+            ) && warning.stable_code() == "sema.numeric.fallback_in_inferred_closure"
+        }),
+        "expected inferred closure numeric fallback warning, got {:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn explicit_closure_return_type_suppresses_numeric_fallback_warning() {
+    let tree = parse_ok(
+        r"
+flow @flow.closure_numeric_explicit closure_numeric_explicit {
+    let explicit = || -> i64 {
+        1
+    }
+    log.info(explicit)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("explicit closure numeric fixture lowers");
+    validate_typecheck_ready(&hir).expect("explicit closure numeric fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.warnings.iter().all(|warning| !matches!(
+            warning.kind(),
+            TypeCheckWarningKind::NumericFallbackInInferredClosure { .. }
+        )),
+        "explicit closure return type should suppress fallback warning: {:?}",
+        report.warnings
+    );
+}
+
+#[test]
 fn closure_borrow_capture_rejects_await_boundary_crossing() {
     let tree = parse_ok(
         r"

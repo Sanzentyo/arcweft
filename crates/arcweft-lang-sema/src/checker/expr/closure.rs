@@ -63,6 +63,8 @@ impl TypeChecker<'_> {
         );
         let local_snapshot = self.insert_scoped_locals(bindings);
         let declared_return_type = declared_return_type.map(type_ref_kind);
+        let inferred_return_type = declared_return_type.is_none()
+            && expected_function.is_none_or(|(_, return_type)| is_unknown_type(return_type));
         if let (Some(expected_return), Some(declared_return_type)) = (
             expected_function.map(|(_, return_type)| return_type),
             declared_return_type.as_ref(),
@@ -78,7 +80,9 @@ impl TypeChecker<'_> {
             .as_ref()
             .or_else(|| expected_function.map(|(_, return_type)| return_type));
         self.expected_returns.push(expected_return.cloned());
+        self.push_closure_inference_context(inferred_return_type);
         let body_type = self.check_expr_with_expected(body, expected_return);
+        self.pop_closure_inference_context();
         self.expected_returns.pop();
         self.restore_scoped_locals(local_snapshot);
         self.pop_closure_capture_frame();
