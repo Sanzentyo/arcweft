@@ -30,6 +30,9 @@ run with `arcw`.
 - [text-submit-flow](text-submit-flow/README.md) - DSL-authored text input
   submit sample that waits for Enter/IME send and branches on submitted text
   length.
+- [function-curried-call-groups](function-curried-call-groups/README.md) -
+  pure function sample showing `f(a, b)(c)` and `f(a)(b)(c, d)` call groups
+  without flattening.
 - [rich-text-windows-fonts.arcw](rich-text-windows-fonts.arcw) - Windows
   default font comparison sample using nested character `dialogue_style`
   typography for horizontal, mixed, and vertical text.

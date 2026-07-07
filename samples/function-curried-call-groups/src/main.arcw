@@ -1,0 +1,20 @@
+#[pure]
+fn tuple_tail(a: i64, b: i64)(c: i64) -> (i64, i64, i64) {
+  return (a, b, c)
+}
+
+#[pure]
+fn chain(a: i64)(b: i64)(c: i64, d: i64) -> i64 {
+  return a + b + c + d
+}
+
+entry cli @entry.main {
+  goto @flow.curried_call_groups
+}
+
+flow curried_call_groups {
+  let tupled: (i64, i64, i64) = tuple_tail(1i64, 2i64)(3i64)
+  let sum: i64 = chain(1i64)(2i64)(3i64, 4i64)
+
+  return sum
+}

@@ -1,0 +1,7 @@
+[package]
+name = "function-curried-call-groups"
+version = "0.1.0"
+
+[launch.main]
+kind = "cli"
+source = "src/main.arcw"

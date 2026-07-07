@@ -137,6 +137,9 @@ Source briefs:
 - Runtime-plan lowering preserves curried pure-helper application as staged
   `RuntimeExpr::Apply`, including `tuple_tail(1i64, 2i64)(3i64)` as `[2, 1]`
   argument groups and `chain(1i64)(2i64)(3i64, 4i64)` as `[1, 1, 2]`.
+- `samples/function-curried-call-groups` is now a project-shaped sample for
+  those two call-group shapes, so the behavior is visible outside unit tests
+  without adding new `flow @flow.*` declaration spelling.
 - Strict runtime expression lowering consumes expected-function evidence so
   placeholder abstractions in function-argument positions, such as
   `accept(_ > 80i64)` where `accept` expects `i64 -> bool`, lower the argument
@@ -464,6 +467,7 @@ cargo test -p arcweft-compiler --all-features runtime_plan_lowers_inferred_parti
 cargo test -p arcweft-compiler --all-features runtime_plan_lowers_typed_data_last_method_fallback
 cargo test -p arcweft-compiler --all-features runtime_plan_lowers_local_function_data_last_pipe_to_apply
 cargo test -p arcweft-compiler --all-features runtime_plan_preserves_curried_call_group_application_samples
+cargo run -p arcweft-cli --all-features -- check samples/function-curried-call-groups/src/main.arcw
 cargo test -p arcweft-compiler --all-features
 cargo test -p arcweft-runtime-driver --all-features --test awbc_product_session
 cargo test -p arcweft-lang-syntax --all-features closure
