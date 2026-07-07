@@ -2424,10 +2424,9 @@ flow @flow.partial_call_named partial_call_named {
 }
 
 #[test]
-fn pure_function_named_missing_input_typechecks_as_partial_application() {
+fn non_annotated_function_named_missing_input_typechecks_as_partial_application() {
     let tree = parse_ok(
         r"
-#[pure]
 fn add(left: i64, right: i64) -> i64 {
     return left + right
 }

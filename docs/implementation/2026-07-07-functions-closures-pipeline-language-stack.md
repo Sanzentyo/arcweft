@@ -156,11 +156,12 @@ Source briefs:
   signatures, such as `let add_one = add(_, 1i64)`, without hard-coding the
   callable name. Runtime-plan lowering consumes the inferred evidence and
   lowers both forms to `RuntimeExpr::Function`.
-- Sema now accepts named missing-input partial application for top-level
-  `#[pure]` helper signatures, such as `let add_to_one = add(right = 1i64)`.
-  Runtime-plan lowering emits a `RuntimeExpr::Function` whose parameters are
-  the missing helper inputs and whose body calls the pure helper with provided
-  named arguments in helper input order.
+- Sema now accepts named missing-input partial application for checked
+  top-level function signatures, such as
+  `let add_to_one = add(right = 1i64)`. Runtime-plan lowering emits a
+  `RuntimeExpr::Function` whose parameters are the missing helper inputs and
+  whose body calls the annotated or inferred helper with provided named
+  arguments in helper input order.
 - Method-call syntax now has a typed data-last callable fallback for the
   positional case where no real method resolves and a function signature exists
   with the receiver as the last parameter. For example,
@@ -309,10 +310,11 @@ Source briefs:
   with positional arguments and fixed named arguments. Repeated `_`
   placeholders in one partial-call region use the same generated parameter when
   all placeholder positions infer the same parameter type. Runtime lowering
-  reorders named pure-helper arguments by helper input name before emitting the
-  call body. Named missing-input partial application is implemented for
-  top-level `#[pure]` helper signatures. Spread partial-call inference and
-  ambiguous multi-candidate callables remain open.
+  reorders named helper arguments by helper input name before emitting the call
+  body. Named missing-input partial application is implemented for checked
+  top-level function signatures that lower through the annotated or inferred
+  helper path. Spread partial-call inference and ambiguous multi-candidate
+  callables remain open.
 - `_` expected-type runtime lowering consumes explicit syntax-level function
   annotations and sema expected-function evidence threaded through compiler
   options.
@@ -582,8 +584,8 @@ repeated positional partial-call placeholders, named partial-call placeholders,
 typed data-last method fallback, and real method priority. Compiler
 coverage confirms the inferred placeholder forms lower to `RuntimeExpr::Function`,
 repeated and named partial-call placeholders reuse one generated runtime local
-at each placeholder site, named pure-helper arguments are reordered by helper
-input name, and typed data-last method fallback lowers to a pure helper call
+at each placeholder site, named helper arguments are reordered by helper
+input name, and typed data-last method fallback lowers to a helper-backed call
 using sema-proven argument order with the receiver appended as the last argument.
 
 The data-last fallback diagnostic/order cut has passing sema coverage for named
@@ -771,3 +773,22 @@ LOC, `checker/expr/signature_call.rs` 12,253 bytes / 325 LOC,
 `tests/function_stack.rs` 91,843 bytes / 2,653 LOC, and
 `arcweft-compiler/src/tests.rs` 81,282 bytes / 2,577 LOC; none crossed a new
 error threshold in this slice.
+
+The named missing-input/local-alias follow-up fixture cut removes lingering
+`#[pure]` annotations from named missing-input and local function data-last
+fixtures. Focused validation passed with
+`cargo test -p arcweft-lang-sema --all-features non_annotated_function_named_missing_input_typechecks_as_partial_application`,
+`cargo test -p arcweft-compiler --all-features runtime_plan_lowers_named_missing_inferred_helper_input`,
+and
+`cargo test -p arcweft-compiler --all-features runtime_plan_lowers_local_function_data_last_pipe_to_apply`.
+The same slice passed
+`cargo check -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features`
+and
+`cargo clippy -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features`;
+clippy still reports only the existing `TraitMember` / `ImplMember`
+large-enum warnings from `arcweft-lang-syntax`. Structure audit still reports
+the unrelated `crates/arcweft-cli/src/app/bundle_view.rs` 2500 LOC error and
+148 warnings. The changed Rust files measured for this follow-up are
+`tests/function_stack.rs` 91,844 bytes / 2,652 LOC and
+`arcweft-compiler/src/tests.rs` 81,270 bytes / 2,575 LOC; neither crosses a
+new error threshold in this slice.

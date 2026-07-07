@@ -642,10 +642,9 @@ flow @flow.main main {
 }
 
 #[test]
-fn runtime_plan_lowers_named_missing_pure_helper_input() {
+fn runtime_plan_lowers_named_missing_inferred_helper_input() {
     let parsed = parse_source_text(
         r"
-#[pure]
 fn add(left: i64, right: i64) -> i64 {
     return left + right
 }
@@ -884,7 +883,6 @@ flow @flow.main main {
 fn runtime_plan_lowers_local_function_data_last_pipe_to_apply() {
     let parsed = parse_source_text(
         r#"
-#[pure]
 fn add(lhs: i64, rhs: i64) -> i64 {
     return lhs + rhs
 }
