@@ -48,8 +48,9 @@ Source briefs:
   `choices |> filter(_.enabled) |> map(_.label)` and lowers it through the same
   executable `RuntimeExpr::Filter`/`RuntimeExpr::Map` path.
 - No-`^` data-last pipe lowering is helper-aware for named pure helpers:
-  `2i64 |> add` lowers to function apply when the helper arity is not exact,
-  while `2i64 |> add(1i64)` and `2i64 |> add(lhs = 1i64)` can remain exact
+  `2i64 |> add` typechecks as a pure prefix partial application and lowers to
+  function apply when the helper arity is not exact, while
+  `2i64 |> add(1i64)` and `2i64 |> add(lhs = 1i64)` can remain exact
   `RuntimeExpr::PureCall` values.
 - Runtime function/apply substrate is now typed in the executable runtime:
   - `RuntimeValue::Function` stores parameters, body, and deterministic capture
@@ -73,6 +74,10 @@ Source briefs:
   materialize as `RuntimeExpr::Function`, and known helper calls with fewer or
   more than the declared helper arity lower through `RuntimeExpr::Apply` rather
   than an invalid exact-arity pure call.
+- Sema now accepts prefix partial calls to top-level `#[pure]` functions, such
+  as `add(2i64)` and `2i64 |> add`, returning the remaining function type. The
+  same syntax remains rejected for non-pure top-level functions until their
+  runtime/AWBC function-value allocation is designed.
 - Exact-arity known pure helper calls continue to lower to
   `RuntimeExpr::PureCall`, so the existing accelerator/runtime pure call path
   remains available as an optimization.
@@ -220,7 +225,8 @@ Source briefs:
   expression lowering, and flow lowering tracks local aliases/partial applies
   that are known function values. Sema function-valued path call evidence is
   now threaded into flow, stream, source, and Agent bundle runtime-plan
-  lowering.
+  lowering. Prefix partial calls to top-level `#[pure]` functions are accepted
+  in sema and remain scoped to the pure helper runtime path.
 - AWBC does not yet allocate runtime closure values. `RuntimeExpr::Function`
   currently emits an AWBC lowering diagnostic, and function state is not encoded
   as an AWBC constant. `RuntimeExpr::Apply` is represented as a
@@ -335,9 +341,9 @@ coverage for expression lowering and whole-flow runtime-plan lowering of
 explicit single-parameter function annotations.
 
 The helper-aware data-last pipe cut has focused passing coverage for direct
-fallback calls, partial helper apply, exact helper pure calls, and sema/runtime
-alignment for call RHS forms such as `2i64 |> add(1i64)` and
-`2i64 |> add(lhs = 1i64)`.
+fallback calls, pure prefix partial helper apply, exact helper pure calls, and
+sema/runtime alignment for call RHS forms including bare, positional, and named
+helper calls.
 
 The local function-valued call cut has focused passing coverage for a flow that
 aliases a pure helper, partially applies that local function value, and applies

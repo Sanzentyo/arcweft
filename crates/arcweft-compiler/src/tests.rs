@@ -674,6 +674,7 @@ fn add(lhs: i64, rhs: i64) -> i64 {
 }
 
 flow @flow.main main {
+    let partial = 2i64 |> add
     let positional = 2i64 |> add(1i64)
     let named = 2i64 |> add(lhs = 1i64)
     return "done"
@@ -695,6 +696,7 @@ flow @flow.main main {
     )
     .expect("runtime plan lowers data-last pipe calls");
     let [
+        FlowOp::Let { expr: partial, .. },
         FlowOp::Let {
             expr: positional, ..
         },
@@ -702,8 +704,19 @@ flow @flow.main main {
         ..,
     ] = report.plan.flows[0].ops.as_slice()
     else {
-        panic!("expected positional and named pipe lets");
+        panic!("expected partial, positional, and named pipe lets");
     };
+    assert!(matches!(
+        partial,
+        RuntimeExpr::Apply { callee, args }
+            if matches!(
+                callee.as_ref(),
+                RuntimeExpr::Function { params, .. } if params.as_slice() == ["lhs", "rhs"]
+            ) && matches!(
+                args.as_slice(),
+                [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(2)
+            )
+    ));
     for expr in [positional, named] {
         assert!(matches!(
             expr,

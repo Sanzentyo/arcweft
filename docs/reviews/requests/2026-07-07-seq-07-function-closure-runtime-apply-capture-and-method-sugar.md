@@ -15,8 +15,9 @@ application when the callee expression evaluates to a function value.
 The next runtime-plan cut also materialized top-level pure helper names as
 function values in value position, preserved exact-arity helper calls as
 `RuntimeExpr::PureCall`, and lowered non-exact helper calls through
-`RuntimeExpr::Apply`. This does not yet finish typed call disambiguation for
-local function-valued path callees such as `f(1i64)`.
+`RuntimeExpr::Apply`. Typed call disambiguation for local function-valued path
+callees such as `f(1i64)` is now threaded through compiler runtime-plan
+lowering evidence.
 
 The runtime-plan cut after that lowered explicit single-parameter function type
 annotations with `_` bodies, such as `let high: i64 -> bool = _ > 80i64`, into
@@ -28,7 +29,9 @@ non-exact helper arity lowers through function apply, while exact helper arity
 continues to use `RuntimeExpr::PureCall`. Sema and runtime-plan now agree that
 call RHS forms append the pipe LHS to the RHS call arguments, so
 `2i64 |> add(1i64)` and `2i64 |> add(lhs = 1i64)` typecheck and lower as
-data-last calls rather than as calls on the result of `add(...)`.
+data-last calls rather than as calls on the result of `add(...)`. Bare
+`2i64 |> add` now typechecks as a top-level `#[pure]` function prefix partial
+application and lowers through the same pure helper apply path.
 
 Curried top-level function declarations now preserve source call-group
 boundaries in sema and runtime-plan callable application. `f(a, b)(c)` and
@@ -63,8 +66,11 @@ shims or preserving removed syntax.
      `RuntimeExpr::Function` / `RuntimeExpr::Apply` substrate unless concrete
      evidence shows a flaw.
    - Top-level curried declaration calls are implemented for staged call
-     syntax. Bare top-level function names in sema value position, trait method
-     curried group metadata, and AWBC closure/apply allocation remain open.
+     syntax. Bare top-level function names in sema value position and prefix
+     partial calls to top-level `#[pure]` functions are implemented for the
+     pure helper runtime path. Non-pure callable function-value allocation,
+     trait method curried group metadata, and AWBC closure/apply allocation
+     remain open.
 
 2. Define inference boundaries for `_`.
    - `_` with an expected function type is already implemented and should not
@@ -98,9 +104,10 @@ shims or preserving removed syntax.
 
 ## Implementation order
 
-1. Complete typed function-valued path call disambiguation and tests. The pure
-   helper subset now materializes bare helper paths and non-exact helper calls;
-   local function-valued path callees still need typed lowering evidence.
+1. Complete typed function-valued path call disambiguation and tests. Done for
+   pure helper bare paths, non-exact helper calls, top-level `#[pure]` prefix
+   partial calls, and local function-valued path callees through typed lowering
+   evidence. Non-pure callable allocation remains tied to AWBC/runtime design.
 2. Add AWBC closure allocation / apply semantics or explicitly split that work
    into an AWBC-focused request with instruction/table design.
 3. Extend expected-type `_` runtime lowering beyond explicit syntax-level

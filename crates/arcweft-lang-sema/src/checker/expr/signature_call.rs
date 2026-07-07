@@ -90,6 +90,45 @@ impl TypeChecker<'_> {
         }
     }
 
+    pub(super) fn check_partial_pure_signature_call(
+        &mut self,
+        name: &str,
+        signature: &FunctionSignature,
+        args: &[CallArg],
+    ) -> Option<TypeKind> {
+        if !self.is_global_pure_function(name) || !signature.checks_args() || args.is_empty() {
+            return None;
+        }
+        let params = signature.params();
+        if args.len() >= params.len()
+            || params
+                .iter()
+                .any(|param| param.is_rest() || param.has_default())
+        {
+            return None;
+        }
+        let positional = args
+            .iter()
+            .map(|arg| match arg {
+                CallArg::Positional(value) => Some(value),
+                CallArg::Named { .. } | CallArg::Spread { .. } => None,
+            })
+            .collect::<Option<Vec<_>>>()?;
+
+        for (index, (value, param)) in positional.iter().zip(params).enumerate() {
+            let label = signature_param_label(param, index);
+            self.expect_signature_arg_type(name, &label, value, param.ty());
+        }
+
+        Some(TypeKind::Function {
+            params: params[positional.len()..]
+                .iter()
+                .map(|param| param.ty().clone())
+                .collect(),
+            return_type: Box::new(signature.return_type().clone()),
+        })
+    }
+
     fn check_signature_spread_arg(
         &mut self,
         function_name: &str,

@@ -360,6 +360,7 @@ struct TypeChecker<'a> {
     global_symbols: HashMap<String, TypeKind>,
     global_functions: HashMap<String, TypeKind>,
     global_function_signatures: HashMap<String, FunctionSignature>,
+    global_pure_functions: HashSet<String>,
     global_function_effects: HashMap<String, Vec<String>>,
     global_type_aliases: HashMap<String, TypeKind>,
     action_signatures: HashMap<String, ActionSignature>,
@@ -506,6 +507,7 @@ impl TypeChecker<'_> {
             global_symbols: HashMap::new(),
             global_functions: HashMap::new(),
             global_function_signatures: HashMap::new(),
+            global_pure_functions: HashSet::new(),
             global_function_effects: HashMap::new(),
             global_type_aliases: HashMap::new(),
             action_signatures: HashMap::new(),
@@ -845,6 +847,10 @@ impl TypeChecker<'_> {
         self.global_function_signatures
             .get(name)
             .or_else(|| self.env.function_signature(name))
+    }
+
+    fn is_global_pure_function(&self, name: &str) -> bool {
+        self.global_pure_functions.contains(name)
     }
 
     fn function_value_type(&self, name: &str) -> Option<TypeKind> {

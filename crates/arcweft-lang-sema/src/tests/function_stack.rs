@@ -203,6 +203,75 @@ flow @flow.curried curried {
 }
 
 #[test]
+fn pure_function_prefix_call_typechecks_as_partial_application() {
+    let tree = parse_ok(
+        r"
+#[pure]
+fn add(lhs: i64, rhs: i64) -> i64 {
+    return lhs + rhs
+}
+
+flow @flow.partial_pure partial_pure {
+    let add_two: i64 -> i64 = add(2i64)
+    let via_pipe: i64 -> i64 = 2i64 |> add
+    log.info(add_two)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("pure partial fixture lowers");
+    validate_typecheck_ready(&hir).expect("pure partial fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    let function_judgments = report
+        .judgments
+        .iter()
+        .filter(|judgment| {
+            matches!(
+                &judgment.ty,
+                TypeKind::Function { params, return_type }
+                    if params == &[TypeKind::I64] && return_type.as_ref() == &TypeKind::I64
+            )
+        })
+        .count();
+    assert!(
+        function_judgments >= 2,
+        "expected add(2i64) and 2i64 |> add to typecheck as partial applications: {:?}",
+        report.judgments
+    );
+}
+
+#[test]
+fn non_pure_function_prefix_call_still_requires_full_signature() {
+    let tree = parse_ok(
+        r"
+fn add(lhs: i64, rhs: i64) -> i64 {
+    return lhs + rhs
+}
+
+flow @flow.partial_non_pure partial_non_pure {
+    let add_two = add(2i64)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("non-pure partial fixture lowers");
+    validate_typecheck_ready(&hir).expect("non-pure partial fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| diagnostic
+            .message()
+            .contains("function `add` missing required argument `rhs`")),
+        "non-pure partial calls should remain rejected until runtime lowering is designed: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
 fn curried_function_declaration_handles_multi_param_groups_and_tuple_return_samples() {
     let tree = parse_ok(
         r"
