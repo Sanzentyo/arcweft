@@ -319,8 +319,11 @@ Source briefs:
   reorders named helper arguments by helper input name before emitting the call
   body. Named missing-input partial application is implemented for checked
   top-level function signatures that lower through the annotated or inferred
-  helper path. Spread partial-call inference and ambiguous multi-candidate
-  callables remain open.
+  helper path. Spread partial-call inference is split to
+  `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`
+  because runtime spread expansion, rest parameters, and fixed missing-input
+  function construction need a shared evidence contract. Ambiguous
+  multi-candidate callables remain open.
 - `_` expected-type runtime lowering consumes explicit syntax-level function
   annotations and sema expected-function evidence threaded through compiler
   options.
@@ -344,9 +347,9 @@ Source briefs:
   closure body suspends or yields budget during expression apply, the VM reports
   a runtime error; suspension-aware dynamic apply still needs a terminator and
   resume-point lowering design.
-- Pipe no-`^` runtime lowering is helper-aware for named pure helpers. Method
-  syntax fallback now has typed lowering evidence for data-last helper
-  signatures, including named method arguments. No-`^` pipe lowering also
+- Pipe no-`^` runtime lowering is helper-aware for named annotated/inferred
+  helpers. Method syntax fallback now has typed lowering evidence for
+  data-last helper signatures, including named method arguments. No-`^` pipe lowering also
   preserves local function-valued aliases as `RuntimeExpr::Apply` targets for
   both bare and call RHS forms. Spread fallback candidates are diagnosed as
   unsupported rather than silently becoming unknown methods. Multiple viable
@@ -439,6 +442,7 @@ Source briefs:
 - `docs/reviews/requests/2026-07-07-seq-07-function-closure-runtime-apply-capture-and-method-sugar.md`
 - `docs/reviews/requests/2026-07-07-seq-07.1-function-stack-typed-expression-lowering-evidence.md`
 - `docs/reviews/requests/2026-07-07-seq-07.2-function-stack-placeholder-inference-and-method-fallback.md`
+- `docs/reviews/requests/2026-07-07-seq-07.2.1-function-stack-spread-partial-and-fallback-contract.md`
 - `docs/reviews/requests/2026-07-07-seq-07.4-function-stack-capture-effect-lsp.md`
 - `docs/reviews/requests/2026-07-07-seq-07.5-function-stack-awbc-closure-apply.md`
 
