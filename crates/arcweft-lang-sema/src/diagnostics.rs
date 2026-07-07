@@ -28,6 +28,14 @@ pub enum TypeCheckErrorKind {
     /// but used argument syntax that is not representable by the fallback
     /// lowering contract.
     UnsupportedDataLastMethodFallback { method: String, reason: String },
+    /// A method-call expression has more than one viable data-last callable
+    /// fallback candidate, so lowering would depend on source ordering or
+    /// environment merge order instead of a typed rule.
+    AmbiguousDataLastMethodFallback {
+        method: String,
+        receiver: TypeKind,
+        candidates: Vec<String>,
+    },
     /// A closure captured a borrowed value and its body contains a suspension
     /// boundary that may outlive the borrowed lifetime.
     BorrowedClosureCaptureCrossesBoundary {
@@ -266,6 +274,27 @@ impl TypeCheckError {
         Self {
             message: format!("data-last method fallback for `{method}` is not available: {reason}"),
             kind: TypeCheckErrorKind::UnsupportedDataLastMethodFallback { method, reason },
+        }
+    }
+
+    pub(crate) fn ambiguous_data_last_method_fallback(
+        method: impl Into<String>,
+        receiver: TypeKind,
+        candidates: impl IntoIterator<Item = String>,
+    ) -> Self {
+        let method = method.into();
+        let candidates = candidates.into_iter().collect::<Vec<_>>();
+        Self {
+            message: format!(
+                "data-last method fallback for `{method}` is ambiguous on {}: candidates are {}",
+                receiver.source_label(),
+                candidates.join(", ")
+            ),
+            kind: TypeCheckErrorKind::AmbiguousDataLastMethodFallback {
+                method,
+                receiver,
+                candidates,
+            },
         }
     }
 
@@ -778,6 +807,9 @@ fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
         }
         TypeCheckErrorKind::UnsupportedDataLastMethodFallback { .. } => {
             "sema.typecheck.unsupported_data_last_method_fallback".to_owned()
+        }
+        TypeCheckErrorKind::AmbiguousDataLastMethodFallback { .. } => {
+            "sema.typecheck.ambiguous_data_last_method_fallback".to_owned()
         }
         TypeCheckErrorKind::BorrowedClosureCaptureCrossesBoundary { .. } => {
             "sema.typecheck.borrowed_closure_capture_crosses_boundary".to_owned()

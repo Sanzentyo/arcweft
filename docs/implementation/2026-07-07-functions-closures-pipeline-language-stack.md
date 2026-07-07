@@ -220,7 +220,10 @@ Source briefs:
 - Pipe no-`^` runtime lowering is helper-aware for named pure helpers. Method
   syntax fallback now has typed lowering evidence for positional data-last
   helper signatures. Named/spread fallback candidates are diagnosed as
-  unsupported rather than silently becoming unknown methods, but executable
+  unsupported rather than silently becoming unknown methods. Multiple viable
+  data-last fallback candidates from the module and external type-check
+  environment now report `sema.typecheck.ambiguous_data_last_method_fallback`
+  with all candidate labels instead of selecting one by merge order. Executable
   named/spread fallback lowering, curried call-group runtime fallback metadata,
   and non-helper callable runtime lowering remain open.
 - Curried declaration call-group metadata is now preserved for sema/runtime-plan
@@ -241,8 +244,9 @@ Source briefs:
   work.
 - Method-chain fallback sugar resolves after existing env/builtin/integer/
   handle/trait method checks, preserving real methods before data-last fallback.
-  Ambiguity diagnostics that compare real method and fallback candidates remain
-  open.
+  Ambiguity diagnostics for multiple viable data-last fallback candidates are
+  implemented for module/environment callable overlap. Diagnostics that compare
+  real method candidates against fallback candidates remain open.
 - Closure capture inventory collection and borrowed-capture suspension-boundary
   lifetime diagnostics exist in sema. Effect-row integration for closure
   captures and runtime-plan capture metadata policy remain open.
@@ -348,7 +352,10 @@ receiver appended as the last argument.
 The data-last fallback diagnostic cut has passing sema coverage for named and
 spread method-call syntax that matches a data-last fallback candidate, ensuring
 it reports `UnsupportedDataLastMethodFallback` instead of a generic unknown
-method.
+method. It also covers module/environment data-last fallback ambiguity with
+`method_chain_reports_ambiguous_data_last_fallback_candidates`, which verifies
+both candidate labels are reported and no arbitrary fallback lowering evidence
+is recorded.
 
 The closure return type cut has passing parser coverage for `|params| -> Type
 { ... }`, `|| -> Type { ... }`, call-argument closures, and the required block

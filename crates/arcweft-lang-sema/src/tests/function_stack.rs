@@ -1072,6 +1072,67 @@ flow @flow.method_fallback_spread method_fallback_spread {
 }
 
 #[test]
+fn method_chain_reports_ambiguous_data_last_fallback_candidates() {
+    let tree = parse_ok(
+        r"
+#[pure]
+fn above(min: i64, value: i64) -> bool {
+    return value > min
+}
+
+flow @flow.method_fallback_ambiguous method_fallback_ambiguous {
+    let wrong = score.above(80i64)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("ambiguous method fallback fixture lowers");
+    validate_typecheck_ready(&hir).expect("ambiguous method fallback fixture is structured");
+    let env = TypeCheckEnv::new()
+        .with_symbol("score", TypeKind::I64)
+        .with_function_signature(
+            "above",
+            FunctionSignature::new(
+                TypeKind::String,
+                [
+                    FunctionParam::required("threshold", TypeKind::I64),
+                    FunctionParam::required("subject", TypeKind::I64),
+                ],
+            ),
+        );
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.kind(),
+                TypeCheckErrorKind::AmbiguousDataLastMethodFallback {
+                    method,
+                    receiver: TypeKind::I64,
+                    candidates
+                } if method == "above"
+                    && candidates.len() == 2
+                    && candidates.iter().any(|candidate| candidate.contains("module fn `above`"))
+                    && candidates
+                        .iter()
+                        .any(|candidate| candidate.contains("environment fn `above`"))
+            )
+        }),
+        "expected ambiguous fallback diagnostic, got {:?}",
+        report.diagnostics
+    );
+    assert!(
+        !report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::DataLastMethodFallback { method, .. }
+                    if method == "above"
+            )
+        }),
+        "ambiguous fallback must not record a selected lowering"
+    );
+}
+
+#[test]
 fn method_chain_prefers_real_method_over_data_last_callable_fallback() {
     let tree = parse_ok(
         r"
