@@ -1,7 +1,8 @@
 //! Stream-function lowering into core stream runtime data.
 
 use crate::expr::{
-    RuntimePureHelperLookup, lower_runtime_expr, lower_runtime_expr_strict_with_pure,
+    RuntimePureHelperLookup, lower_runtime_expr, lower_runtime_expr_strict_with_expected_type,
+    lower_runtime_expr_strict_with_pure,
 };
 use crate::pattern::lower_runtime_pattern;
 use arcweft_core::stream::{StreamMatchArm, StreamOp, StreamPlan, StreamRuntimeId};
@@ -38,9 +39,11 @@ fn lower_stream_stmt_list(
 
 fn lower_stream_stmt(stmt: &Stmt, pure_helpers: RuntimePureHelperLookup<'_>) -> Vec<StreamOp> {
     match stmt {
-        Stmt::Let { pattern, expr, .. } => vec![StreamOp::Let {
+        Stmt::Let {
+            pattern, ty, expr, ..
+        } => vec![StreamOp::Let {
             pattern: lower_runtime_pattern(pattern),
-            expr: lower_runtime_expr_with_pure(expr, pure_helpers),
+            expr: lower_runtime_expr_with_expected_type(expr, ty.as_ref(), pure_helpers),
         }],
         Stmt::For {
             pattern,
@@ -89,6 +92,15 @@ fn lower_runtime_expr_with_pure(
     pure_helpers: RuntimePureHelperLookup<'_>,
 ) -> RuntimeExpr {
     lower_runtime_expr_strict_with_pure(expr, pure_helpers)
+        .unwrap_or_else(|_| lower_runtime_expr(expr))
+}
+
+fn lower_runtime_expr_with_expected_type(
+    expr: &arcweft_lang_hir::syntax::expr::Expr,
+    expected_ty: Option<&TypeRef>,
+    pure_helpers: RuntimePureHelperLookup<'_>,
+) -> RuntimeExpr {
+    lower_runtime_expr_strict_with_expected_type(expr, expected_ty, pure_helpers)
         .unwrap_or_else(|_| lower_runtime_expr(expr))
 }
 

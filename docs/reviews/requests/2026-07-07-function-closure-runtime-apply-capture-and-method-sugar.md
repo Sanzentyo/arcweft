@@ -18,6 +18,11 @@ function values in value position, preserved exact-arity helper calls as
 `RuntimeExpr::Apply`. This does not yet finish typed call disambiguation for
 local function-valued path callees such as `f(1i64)`.
 
+The runtime-plan cut after that lowered explicit single-parameter function type
+annotations with `_` bodies, such as `let high: i64 -> bool = _ > 80i64`, into
+`RuntimeExpr::Function`. Contextual expected types that are not present in the
+syntax still need typed lowering evidence.
+
 This request covers the remaining work needed to finish the revised Arcweft
 function/closure/currying/pipeline specification without adding compatibility
 shims or preserving removed syntax.
@@ -40,6 +45,8 @@ shims or preserving removed syntax.
 2. Define inference boundaries for `_`.
    - `_` with an expected function type is already implemented and should not
      be redesigned unless evidence shows a concrete flaw.
+   - Preserve the implemented runtime lowering for explicit single-parameter
+     function annotations with `_` bodies.
    - Specify how `let is_high = (_ >= 80)` and `let add_one = add(_, 1)` infer
      function types without an explicit annotation.
    - Specify diagnostics for ambiguous or multi-parameter placeholder regions.
@@ -69,8 +76,8 @@ shims or preserving removed syntax.
    local function-valued path callees still need typed lowering evidence.
 2. Add AWBC closure allocation / apply semantics or explicitly split that work
    into an AWBC-focused request with instruction/table design.
-3. Lower expected-type `_` abstractions into the runtime function/apply
-   representation when they escape collection `map`/`filter` optimizations.
+3. Extend expected-type `_` runtime lowering beyond explicit syntax-level
+   annotations by adding expression-level typed lowering evidence from sema.
 4. Add inference for `_` without an expected function type.
 5. Add method-chain fallback sugar and ambiguity diagnostics.
 6. Add capture/effect/lifetime diagnostics.

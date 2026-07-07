@@ -102,6 +102,46 @@ fn strict_runtime_lowers_partial_pure_helper_call_to_apply() {
     ));
 }
 
+#[test]
+fn strict_runtime_lowers_expected_partial_placeholder_to_function_expr() {
+    let expr = Expr::Binary {
+        lhs: Box::new(Expr::Placeholder(Placeholder::Partial)),
+        op: BinaryOp::Gt,
+        rhs: Box::new(Expr::Literal(Literal::Int {
+            raw: "80i64".to_owned(),
+            value: 80,
+            suffix: Some("i64".to_owned()),
+        })),
+    };
+    let expected = TypeRef::Function {
+        params: vec![TypeRef::Path("i64".to_owned())],
+        return_type: Box::new(TypeRef::Path("bool".to_owned())),
+    };
+    let ids = BTreeMap::new();
+    let helpers = Vec::new();
+
+    let lowered = lower_runtime_expr_strict_with_expected_type(
+        &expr,
+        Some(&expected),
+        RuntimePureHelperLookup::new(&ids, &helpers),
+    )
+    .expect("expected placeholder function lowers");
+
+    assert!(matches!(
+        lowered,
+        RuntimeExpr::Function { params, body }
+            if params == ["__arcweft_partial"]
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::Binary { lhs, .. }
+                        if matches!(
+                            lhs.as_ref(),
+                            RuntimeExpr::Local(name) if name == "__arcweft_partial"
+                        )
+                )
+    ));
+}
+
 fn add_i64_helper() -> RuntimePureHelper {
     RuntimePureHelper {
         id: RuntimePureHelperId(0),

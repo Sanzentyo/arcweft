@@ -24,6 +24,7 @@ use arcweft_lang_hir::syntax::{
         BinaryOp, CallArg, ClosureParam, Expr, FloatSuffix, Literal, MatchExprArm, Placeholder,
         UnaryOp,
     },
+    types::TypeRef,
 };
 use std::collections::BTreeMap;
 
@@ -178,6 +179,20 @@ pub(crate) fn lower_runtime_expr_strict_with_pure(
     lower_runtime_expr_strict_with_helpers(expr, Some(helpers))
 }
 
+pub(crate) fn lower_runtime_expr_strict_with_expected_type(
+    expr: &Expr,
+    expected_ty: Option<&TypeRef>,
+    helpers: RuntimePureHelperLookup<'_>,
+) -> Result<RuntimeExpr, String> {
+    if expected_ty.is_some_and(single_param_function_type)
+        && expr_contains_partial_placeholder(expr)
+    {
+        lower_partial_placeholder_function_expr(expr, Some(helpers))
+    } else {
+        lower_runtime_expr_strict_with_helpers(expr, Some(helpers))
+    }
+}
+
 fn lower_runtime_expr_strict_with_helpers(
     expr: &Expr,
     helpers: Option<RuntimePureHelperLookup<'_>>,
@@ -294,6 +309,22 @@ fn lower_strict_closure_expr(
         params,
         body: Box::new(body),
     })
+}
+
+fn lower_partial_placeholder_function_expr(
+    expr: &Expr,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
+) -> Result<RuntimeExpr, String> {
+    let param_name = "__arcweft_partial";
+    let body = substitute_partial_placeholder(expr, param_name);
+    lower_runtime_expr_strict_with_helpers(&body, helpers).map(|body| RuntimeExpr::Function {
+        params: vec![param_name.to_owned()],
+        body: Box::new(body),
+    })
+}
+
+fn single_param_function_type(ty: &TypeRef) -> bool {
+    matches!(ty, TypeRef::Function { params, .. } if params.len() == 1)
 }
 
 fn lower_strict_binary_expr(
@@ -1572,14 +1603,23 @@ fn lower_strict_block_statement(
     helpers: Option<RuntimePureHelperLookup<'_>>,
 ) -> Result<RuntimeExpr, String> {
     match statement {
-        Stmt::Let { pattern, expr, .. } => {
+        Stmt::Let {
+            pattern, ty, expr, ..
+        } => {
             let name = pattern
                 .simple_binding_name()
                 .ok_or_else(|| format!("unsupported runtime let pattern `{pattern:?}`"))?
                 .to_owned();
+            let expr = if ty.as_ref().is_some_and(single_param_function_type)
+                && expr_contains_partial_placeholder(expr)
+            {
+                lower_partial_placeholder_function_expr(expr, helpers)?
+            } else {
+                lower_runtime_expr_strict_with_helpers(expr, helpers)?
+            };
             Ok(RuntimeExpr::Let {
                 name,
-                expr: Box::new(lower_runtime_expr_strict_with_helpers(expr, helpers)?),
+                expr: Box::new(expr),
                 body: Box::new(body),
             })
         }

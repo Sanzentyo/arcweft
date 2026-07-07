@@ -1312,6 +1312,38 @@ flow @flow.main main {
 }
 
 #[test]
+fn runtime_plan_lowers_expected_partial_placeholder_function_let() {
+    let tree = parse_ok(
+        r#"
+flow @flow.main main {
+    let high: i64 -> bool = _ > 80i64
+    return "done"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("partial function fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("partial function runtime plan lowers");
+
+    let FlowOp::Let { expr, .. } = &plan.flows[0].ops[0] else {
+        panic!("expected partial function let");
+    };
+    assert!(matches!(
+        expr,
+        RuntimeExpr::Function { params, body }
+            if params.as_slice() == ["__arcweft_partial"]
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::Binary { lhs, .. }
+                        if matches!(
+                            lhs.as_ref(),
+                            RuntimeExpr::Local(name) if name == "__arcweft_partial"
+                        )
+                )
+    ));
+}
+
+#[test]
 fn runtime_plan_lowers_data_format_path_to_enum_variant() {
     let tree = parse_ok(
         r#"

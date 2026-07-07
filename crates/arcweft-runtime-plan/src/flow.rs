@@ -5,8 +5,8 @@ mod record_projection;
 use self::record_projection::rewrite_known_record_projections_in_op;
 use crate::errors::{LinePlanLowerError, RuntimePlanLowerError};
 use crate::expr::{
-    RuntimePureHelperLookup, lower_runtime_expr, lower_runtime_expr_strict_with_pure,
-    runtime_call_effect,
+    RuntimePureHelperLookup, lower_runtime_expr, lower_runtime_expr_strict_with_expected_type,
+    lower_runtime_expr_strict_with_pure, runtime_call_effect,
 };
 use crate::host_request::{lower_agent_host_task_request, lower_host_task_request};
 use crate::labels::expr_label;
@@ -48,6 +48,7 @@ use arcweft_lang_hir::syntax::ast::{
 };
 use arcweft_lang_hir::syntax::expr::Expr;
 use arcweft_lang_hir::syntax::parser::parse_dialogue_content_lossy;
+use arcweft_lang_hir::syntax::types::TypeRef;
 use arcweft_render_text::LineDisplayCatalog;
 use presentation::{
     presentation_create_args, presentation_explicit_mount_handle_id, presentation_handle_call,
@@ -1321,6 +1322,20 @@ impl FlowRuntimeLowerer<'_> {
         }
     }
 
+    fn lower_runtime_expr_with_expected_type(
+        &mut self,
+        expected_ty: Option<&TypeRef>,
+        expr: &Expr,
+    ) -> RuntimeExpr {
+        match lower_runtime_expr_strict_with_expected_type(expr, expected_ty, self.pure_helpers) {
+            Ok(expr) => expr,
+            Err(message) => {
+                self.errors.push(RuntimePlanLowerError::new(message));
+                RuntimeExpr::Value(RuntimeValue::Unit)
+            }
+        }
+    }
+
     fn lower_optional_runtime_expr(&mut self, expr: Option<&Expr>) -> Option<RuntimeExpr> {
         expr.map(|expr| self.lower_runtime_expr(expr))
     }
@@ -1725,9 +1740,9 @@ impl FlowRuntimeLowerer<'_> {
         stmt: &Stmt,
     ) -> Vec<FlowOp> {
         match stmt {
-            Stmt::Let { pattern, expr, .. } => {
-                self.lower_let_stmt(flow_id, flow_index, pattern, expr)
-            }
+            Stmt::Let {
+                pattern, ty, expr, ..
+            } => self.lower_let_stmt(flow_id, flow_index, pattern, ty.as_ref(), expr),
             Stmt::LetScope { pattern, scope } => {
                 self.lower_let_scope_stmt(flow_id, flow_index, pattern, scope)
             }
@@ -1740,12 +1755,12 @@ impl FlowRuntimeLowerer<'_> {
             }
             Stmt::LetElse {
                 pattern,
+                ty,
                 expr,
                 else_body,
-                ..
             } => vec![FlowOp::LetElse {
                 pattern: lower_runtime_pattern(pattern),
-                expr: self.lower_runtime_expr(expr),
+                expr: self.lower_runtime_expr_with_expected_type(ty.as_ref(), expr),
                 else_ops: self.lower_flow_stmt_list(flow_id, flow_index, else_body),
             }],
             Stmt::Goto(expr) => vec![FlowOp::GotoExpr(self.lower_runtime_expr(expr))],
@@ -2052,6 +2067,7 @@ impl FlowRuntimeLowerer<'_> {
         flow_id: &FlowRuntimeId,
         flow_index: usize,
         pattern: &Pattern,
+        ty: Option<&TypeRef>,
         expr: &Expr,
     ) -> Vec<FlowOp> {
         if let Some(ops) = self.lower_dialogue_result_let(flow_id, flow_index, pattern, expr) {
@@ -2063,7 +2079,7 @@ impl FlowRuntimeLowerer<'_> {
         } else {
             vec![FlowOp::Let {
                 pattern: lower_runtime_pattern(pattern),
-                expr: self.lower_runtime_expr(expr),
+                expr: self.lower_runtime_expr_with_expected_type(ty, expr),
             }]
         }
     }

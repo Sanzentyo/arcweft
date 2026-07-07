@@ -67,6 +67,10 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   remains available as an optimization.
 - Intrinsic non-path callees such as `std.f64.sqrt(...)` are kept as runtime
   calls instead of being mistaken for expression-callee function apply.
+- Runtime-plan lowering now turns `_` placeholder abstractions with an explicit
+  single-parameter function type annotation into `RuntimeExpr::Function`, for
+  example `let high: i64 -> bool = _ > 80i64`. This works for flow lets,
+  stream lets, and strict runtime block lets.
 
 ## Current boundaries
 
@@ -75,6 +79,10 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   function-value inference/apply design below.
 - Partial call abstraction such as `add(_, 1)` type-checks only where a matching
   expected function type is supplied. It is not yet a general inference source.
+- `_` expected-type runtime lowering currently consumes explicit syntax-level
+  function annotations. Other expected-type sources that are known only to sema,
+  such as function arguments or contextual returns, still need expression-level
+  typed lowering evidence before they can escape into runtime function values.
 - Top-level pure helper functions now materialize as function values in runtime
   expression lowering. Full typed call disambiguation for local variables that
   hold function values remains open: an unknown path callee such as `f(1i64)`
@@ -110,6 +118,7 @@ cargo test -p arcweft-runtime-plan --all-features closure_to_function_expr
 cargo test -p arcweft-runtime-plan --all-features expression_callee_call_to_apply
 cargo test -p arcweft-runtime-plan --all-features strict_runtime_lowers
 cargo test -p arcweft-runtime-plan --all-features strict_runtime_value_lowering_can_emit_pure_calls
+cargo test -p arcweft-runtime-plan --all-features expected_partial_placeholder
 cargo test -p arcweft-runtime-plan --all-features
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features
@@ -131,3 +140,7 @@ The named pure helper function-value cut has focused passing coverage for bare
 helper path materialization, partial helper call lowering through
 `RuntimeExpr::Apply`, exact helper calls that remain `RuntimeExpr::PureCall`,
 and intrinsic non-path call preservation.
+
+The expected partial-placeholder runtime lowering cut has focused passing
+coverage for expression lowering and whole-flow runtime-plan lowering of
+explicit single-parameter function annotations.
