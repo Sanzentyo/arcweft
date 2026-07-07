@@ -355,8 +355,11 @@ Source briefs:
   record payload constructors now use the same callback-selector path for
   destructured function-valued payload bindings. Callback invocations hidden
   inside direct returned closures and stored local closure aliases returned
-  from the function now compose only when the returned closure is called.
-  LSP-facing closure effect evidence remains open. Save/load
+  from the function now compose only when the returned closure is called. LSP
+  diagnostics now surface the same effect trace evidence through related
+  information notes, including returned-closure callback paths through
+  `fn.name.return` proxy callables and higher-order arguments captured by the
+  returned closure. Save/load
   currently has an explicit Product
   AWBC policy: runtime function values are
   rejected as non-persistable until AWBC closure allocation and snapshot
@@ -646,3 +649,28 @@ only the existing `TraitMember` / `ImplMember` large enum warnings from
 same dirty worktree and is blocked by unrelated in-progress
 `crates/arcweft-player-scene/src/input.rs` edits: missing
 `text_control_write_back_from_editor` and a focused text-editor borrow conflict.
+
+The LSP-facing closure effect evidence cut keeps the trace contract in the
+shared sema diagnostic representation: `TypeCheckError::diagnostic()` and
+`TypeCheckWarning::diagnostic()` now preserve `EffectTrace` as diagnostic notes,
+which LSP maps into `Diagnostic.relatedInformation`. Focused LSP coverage
+checks that an explicit empty flow effect bound reports a returned-closure
+callback trace through the `flow -> fn.make_loader.return -> closure -> captured
+higher-order argument -> fs.read_text` path:
+`cargo test -p arcweft-lsp --all-features diagnostics_surface_returned_closure_effect_trace -- --nocapture`
+and the existing direct effect diagnostic test
+`cargo test -p arcweft-lsp --all-features diagnostics_surface_upper_bound_exceeded_effect_error -- --nocapture`
+passed in the current all-features validation slice, followed by full
+`cargo test -p arcweft-lsp --all-features --quiet` and
+`cargo test -p arcweft-lang-sema --all-features --quiet`. Focused clippy for
+the modified crates,
+`cargo clippy -p arcweft-lang-sema -p arcweft-lsp --all-targets --all-features --quiet`,
+exited successfully; it still reported existing `TraitMember` / `ImplMember`
+large enum warnings and unrelated dirty view/clipboard warnings from the shared
+workspace. A current full workspace check,
+`cargo check --workspace --all-targets --all-features`, also passed with one
+unrelated dirty presentation test unused-import warning. Structure audit still
+reports the unrelated existing
+`crates/arcweft-cli/src/app/bundle_view.rs` 2500 LOC error. Full arbitrary
+expression inlays remain open until sema expression evidence carries source
+spans rather than traversal-only expression IDs.

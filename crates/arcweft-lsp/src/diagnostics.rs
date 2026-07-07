@@ -555,6 +555,75 @@ effects {}
     }
 
     #[test]
+    fn diagnostics_surface_returned_closure_effect_trace() {
+        let source = r#"
+extern capability fs {
+    fn read_text(path: String) -> String effects { fs.read }
+}
+
+fn make_loader(load: String -> String) -> Unit -> String {
+    return |_unit: Unit| -> String { load("story.arcw") }
+}
+
+flow @flow.returned_closure_callback_call returned_closure_callback_call
+effects { }
+{
+    let loader = make_loader(|path: String| -> String {
+        fs.read_text(path = path)
+    })
+    let body = loader(())
+}
+"#;
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+
+        let diagnostic = analysis
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| {
+                diagnostic.code == Some(NumberOrString::String("AWF-EFX-001".to_owned()))
+            })
+            .expect("returned closure effect error is surfaced");
+        assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::ERROR));
+        assert!(
+            diagnostic
+                .message
+                .contains("flow.returned_closure_callback_call")
+        );
+        assert!(diagnostic.message.contains("fs.read"));
+
+        let related = diagnostic
+            .related_information
+            .as_ref()
+            .expect("effect trace is surfaced as related information");
+        let rendered = related
+            .iter()
+            .map(|item| item.message.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            rendered.contains("effect trace for `fs.read`"),
+            "trace related information was:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("function value call `loader`"),
+            "trace related information was:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("returned function value from `make_loader`"),
+            "trace related information was:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("higher-order argument `load` captured by returned closure"),
+            "trace related information was:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("call `fs.read_text`"),
+            "trace related information was:\n{rendered}"
+        );
+    }
+
+    #[test]
     fn diagnostics_include_machine_applicable_suggestions_in_lsp_data() {
         let source = r"
 flow @flow.opening {
