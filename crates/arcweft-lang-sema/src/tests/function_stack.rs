@@ -305,6 +305,95 @@ flow @flow.curried_flattened curried_flattened {
 }
 
 #[test]
+fn curried_trait_method_preserves_call_group_semantics() {
+    let tree = parse_ok(
+        r"
+struct Score {}
+
+trait Threshold {
+    fn above(self, min: i64)(value: i64) -> bool
+}
+
+impl Threshold for Score {
+    fn above(self, min: i64)(value: i64) -> bool {
+        value >= min
+    }
+}
+
+flow @flow.curried_trait_method curried_trait_method {
+    let predicate: i64 -> bool = score.above(80i64)
+    let ok: bool = predicate(81i64)
+    let direct: bool = score.above(80i64)(82i64)
+    log.info(ok)
+    log.info(direct)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("curried trait method fixture lowers");
+    validate_typecheck_ready(&hir).expect("curried trait method fixture is structured");
+    let env = TypeCheckEnv::new().with_symbol("score", TypeKind::Named("Score".to_owned()));
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.judgments.iter().any(|judgment| {
+            matches!(
+                &judgment.subject,
+                TypeJudgmentSubject::Expr { kind: "method_call", .. }
+                    if matches!(
+                        &judgment.ty,
+                        TypeKind::Function { params, return_type }
+                            if params == &[TypeKind::I64]
+                                && return_type.as_ref() == &TypeKind::Bool
+                    )
+            )
+        }),
+        "score.above(80i64) should typecheck as the remaining call group function"
+    );
+}
+
+#[test]
+fn curried_trait_method_rejects_flattened_call_group() {
+    let tree = parse_ok(
+        r"
+struct Score {}
+
+trait Threshold {
+    fn above(self, min: i64)(value: i64) -> bool
+}
+
+impl Threshold for Score {
+    fn above(self, min: i64)(value: i64) -> bool {
+        value >= min
+    }
+}
+
+flow @flow.curried_trait_flattened curried_trait_flattened {
+    let wrong = score.above(80i64, 81i64)
+    log.info(wrong)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("curried trait flattened fixture lowers");
+    validate_typecheck_ready(&hir).expect("curried trait flattened fixture is structured");
+    let env = TypeCheckEnv::new().with_symbol("score", TypeKind::Named("Score".to_owned()));
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message().contains("curried parameter groups")),
+        "expected flattened trait method call-group diagnostic, got {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
 fn closure_return_type_annotation_checks_body() {
     let tree = parse_ok(
         r"

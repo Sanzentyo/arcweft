@@ -101,6 +101,10 @@ Source briefs:
   `tuple_tail(a, b)(c) -> (i64, i64, i64)` is modeled as a first call group
   returning `c -> (i64, i64, i64)`, and `chain(a)(b)(c, d) -> i64` retains the
   two remaining groups after `chain(a)`.
+- Sema now preserves curried trait/impl method call-group boundaries during
+  method-call checking. For example, `fn above(self, min: i64)(value: i64)
+  -> bool` makes `score.above(80i64)` typecheck as `i64 -> bool`, while
+  `score.above(80i64, 81i64)` is rejected as a flattened curried call group.
 - Compiler lowering now converts sema typed-lowering evidence into
   runtime-plan-local evidence and threads it through `RuntimePlanLowerOptions`.
 - Runtime-plan lowering shares one typed expression cursor across flow, stream,
@@ -187,8 +191,8 @@ Source briefs:
   helper signatures, but named/spread fallback arguments, curried call-group
   metadata, and non-helper callable runtime lowering remain open.
 - Curried declaration call-group metadata is now preserved for sema/runtime-plan
-  callable application. Trait method curried group metadata and AWBC
-  closure/apply allocation remain open.
+  callable application and sema trait/impl method calls. AWBC closure/apply
+  allocation remains open.
 - Closure `return expr` now binds to the nearest closure/function-like sema
   boundary for type checking. Strict runtime block lowering already preserves
   simple early-return shape by discarding later block statements after a
@@ -303,6 +307,10 @@ body diagnostic. Sema coverage confirms declared closure return types typecheck
 against body values, mismatch diagnostics are produced, curried closure return
 types preserve remaining function values, and multiline return-typed closure
 lets are consumed as one statement.
+
+The curried trait method metadata cut has passing sema coverage for preserving
+the remaining call-group function type after a method call and rejecting
+flattened curried trait method arguments.
 
 The canonical primitive spelling cut has passing coverage for rejecting
 `Bool`, `Char`, and `string` in type annotations/signatures with direct

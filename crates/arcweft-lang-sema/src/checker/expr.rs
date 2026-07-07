@@ -1328,12 +1328,9 @@ impl TypeChecker<'_> {
             TraitMethodResolution::Inherent(method)
             | TraitMethodResolution::Unique { method, .. } => {
                 let return_type = self.resolve_type_projection(method.return_type().clone());
-                self.check_signature_call_args(
-                    method_name,
-                    &trait_method_call_signature(method.signature(), return_type.clone()),
-                    args,
-                );
-                TraitMethodCallOutcome::Typed(return_type)
+                let signature = trait_method_call_signature(method.signature(), return_type);
+                self.check_signature_call_args(method_name, &signature, args);
+                TraitMethodCallOutcome::Typed(signature.return_type().clone())
             }
             TraitMethodResolution::Ambiguous(candidates) => {
                 self.errors.push(TypeCheckError::trait_diagnostic(
