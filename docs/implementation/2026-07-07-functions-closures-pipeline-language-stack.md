@@ -203,8 +203,10 @@ Source briefs:
   unambiguous binary expressions and positional calls to known function
   signatures, including parenthesized binary placeholder expressions.
 - Partial call abstraction such as `add(_, 1)` is inferred for known positional
-  signatures. Named/spread partial-call inference and ambiguous multi-candidate
-  callables remain open.
+  signatures. Repeated `_` placeholders in one positional partial-call region
+  use the same generated parameter when all placeholder positions infer the
+  same parameter type. Named/spread partial-call inference and ambiguous
+  multi-candidate callables remain open.
 - `_` expected-type runtime lowering consumes explicit syntax-level function
   annotations and sema expected-function evidence threaded through compiler
   options.
@@ -348,10 +350,12 @@ expressions have consumed typed expression IDs.
 The inferred partial-placeholder and method-fallback cuts have passing sema
 coverage for unannotated binary placeholder inference, parenthesized binary
 placeholder inference, partial-call abstraction from known function signatures,
-typed positional data-last method fallback, and real method priority. Compiler
-coverage confirms the inferred placeholder forms lower to `RuntimeExpr::Function`
-and typed data-last method fallback lowers to a pure helper call with the
-receiver appended as the last argument.
+repeated positional partial-call placeholders, typed positional data-last method
+fallback, and real method priority. Compiler coverage confirms the inferred
+placeholder forms lower to `RuntimeExpr::Function`, repeated partial-call
+placeholders reuse one generated runtime local at each placeholder site, and
+typed data-last method fallback lowers to a pure helper call with the receiver
+appended as the last argument.
 
 The data-last fallback diagnostic cut has passing sema coverage for named and
 spread method-call syntax that matches a data-last fallback candidate, ensuring

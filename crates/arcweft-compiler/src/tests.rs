@@ -515,6 +515,7 @@ flow @flow.main main {
     let high = _ > 80i64
     let high_grouped = (_ > 80i64)
     let add_one = add(_, 1i64)
+    let double = add(_, _)
     return "done"
 }
 "#,
@@ -539,6 +540,7 @@ flow @flow.main main {
             expr: high_grouped, ..
         },
         FlowOp::Let { expr: add_one, .. },
+        FlowOp::Let { expr: double, .. },
         ..,
     ] = report.plan.flows[0].ops.as_slice()
     else {
@@ -561,6 +563,21 @@ flow @flow.main main {
         RuntimeExpr::Function { params, body }
             if params.as_slice() == ["__arcweft_partial"]
                 && matches!(body.as_ref(), RuntimeExpr::PureCall { .. })
+    ));
+    assert!(matches!(
+        double,
+        RuntimeExpr::Function { params, body }
+            if params.as_slice() == ["__arcweft_partial"]
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::PureCall { args, .. }
+                        if matches!(
+                            args.as_slice(),
+                            [RuntimeExpr::Local(left), RuntimeExpr::Local(right)]
+                                if left == "__arcweft_partial"
+                                    && right == "__arcweft_partial"
+                        )
+                )
     ));
 }
 

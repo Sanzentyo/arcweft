@@ -934,6 +934,61 @@ flow @flow.partial_call partial_call {
 }
 
 #[test]
+fn infers_repeated_partial_call_placeholders_as_one_parameter() {
+    let tree = parse_ok(
+        r"
+#[pure]
+fn add(left: i64, right: i64) -> i64 {
+    return left + right
+}
+
+flow @flow.partial_call_repeated partial_call_repeated {
+    let double = add(_, _)
+    log.info(double)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("repeated partial call fixture lowers");
+    validate_typecheck_ready(&hir).expect("repeated partial call fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(report.judgments.iter().any(|judgment| {
+        matches!(
+            &judgment.ty,
+            TypeKind::Function {
+                params,
+                return_type,
+            } if params.as_slice() == [TypeKind::I64]
+                && return_type.as_ref() == &TypeKind::I64
+        )
+    }));
+    assert!(
+        report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::ExpectedFunctionValue {
+                    expected_ty,
+                    actual_ty,
+                    arity: 1
+                } if expected_ty == actual_ty
+                    && matches!(
+                        expected_ty,
+                        TypeKind::Function { params, return_type }
+                            if params.as_slice() == [TypeKind::I64]
+                                && return_type.as_ref() == &TypeKind::I64
+                    )
+            )
+        }),
+        "expected repeated partial placeholders to record one generated parameter"
+    );
+}
+
+#[test]
 fn method_chain_falls_back_to_data_last_callable_when_no_method_matches() {
     let tree = parse_ok(
         r"
