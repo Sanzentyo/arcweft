@@ -336,7 +336,7 @@ selected dependencies
 明示 key:
 
 ```arcw
-memo fn choice_enabled(state: GameState)(choice: ChoiceDef) -> Bool
+memo fn choice_enabled(state: GameState)(choice: ChoiceDef) -> bool
 scope = scene
 key = (choice.id, state.affection[@character.alice])
 {

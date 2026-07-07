@@ -103,7 +103,7 @@ pub trait TextboxObject {
     fn append(self: Ref<Textbox>) -> TextboxContentCall
     fn clear(self: Ref<Textbox>) -> Command
     fn set_theme(self: Ref<Textbox>, theme: Ref<TextboxTheme>) -> Command
-    fn set_visible(self: Ref<Textbox>, visible: Bool) -> Command
+    fn set_visible(self: Ref<Textbox>, visible: bool) -> Command
 }
 ```
 

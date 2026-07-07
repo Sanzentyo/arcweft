@@ -1567,10 +1567,10 @@ Current high-confidence state:
   syntax, and simple runtime write conflicts. Solver dependencies are isolated in
   `arcweft-verify-z3` and `arcweft-verify-oxiz`; CLI/LSP consume verifier
   reports rather than reimplementing validation.
-- `Char` / `TextCluster` are now part of the accepted primitive model. `Char`
+- `char` / `TextCluster` are now part of the accepted primitive model. `char`
   is a Unicode scalar value and is not a visual character; `TextCluster` is the
   display/reveal/ruby/effect unit. The syntax crate parses `"x"c` char
-  literals and typechecks `Char` separately from `String`.
+  literals and typechecks `char` separately from `String`.
 - Capacity traits are accepted for owning collections: `WithCapacity` and
   `Reservable` expose `with_capacity`, `reserve`, `shrink`, and `shrink_to`.
   Capacity is non-observable and may be a no-op on constrained/Wasm targets.
@@ -1851,4 +1851,3 @@ The stable specification locations for the `pro_review4.md` decisions are:
 - `docs/05-build-and-security/native-web-build.md`: native/web runtime target model.
 - `docs/05-build-and-security/packaging.md`: Sans I/O bundle format boundary.
 - `docs/schemas/README.md`: schemas as data formats rather than I/O APIs.
-

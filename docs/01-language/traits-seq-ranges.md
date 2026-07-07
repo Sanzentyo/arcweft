@@ -349,7 +349,7 @@ pub trait Step: Ord + Clone {
 }
 
 pub trait Contains<T> {
-    fn contains(self, value: T) -> Bool
+    fn contains(self, value: T) -> bool
 }
 ```
 
@@ -437,7 +437,7 @@ let visible_choices = seq {
 Memoization には stable key が必要。
 
 ```arcw
-memo fn route_available(state: GameState, route: Ref<Flow>) -> Bool
+memo fn route_available(state: GameState, route: Ref<Flow>) -> bool
 scope = scene
 where
     GameState: StableHash,

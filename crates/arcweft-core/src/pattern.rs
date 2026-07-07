@@ -270,7 +270,7 @@ fn runtime_value_matches_type_label(value: &RuntimeValue, ty: &str) -> bool {
     if matches!(
         (value, ty),
         (RuntimeValue::Unit, "()" | "Unit")
-            | (RuntimeValue::Bool(_), "Bool" | "bool")
+            | (RuntimeValue::Bool(_), "bool")
             | (
                 RuntimeValue::Int(_),
                 "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
@@ -282,7 +282,7 @@ fn runtime_value_matches_type_label(value: &RuntimeValue, ty: &str) -> bool {
             | (RuntimeValue::F32(_), "f32")
             | (RuntimeValue::F64(_), "f64")
             | (RuntimeValue::String(_), "String")
-            | (RuntimeValue::Char(_), "Char" | "char")
+            | (RuntimeValue::Char(_), "char")
             | (RuntimeValue::Duration(_), "Duration")
             | (RuntimeValue::Record(_), "Record")
     ) {

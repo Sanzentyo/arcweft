@@ -108,9 +108,9 @@ fn record_field(
 
 fn type_label(inventory: &mut AwbcInventory, ty: &str) -> AwbcTypeId {
     match ty {
-        "bool" | "Bool" => inventory.bool_ty(),
-        "i64" | "Int" | "int" => inventory.i64_ty(),
-        "string" | "String" => inventory.string_ty(),
+        "bool" => inventory.bool_ty(),
+        "i64" => inventory.i64_ty(),
+        "String" => inventory.string_ty(),
         _ => inventory.dynamic_ty(),
     }
 }

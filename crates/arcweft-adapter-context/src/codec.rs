@@ -188,26 +188,7 @@ fn parse_adapter_type_kind_label(label: &str) -> AdapterTypeKind {
     if let Some(ty) = AdapterTypeKind::primitive_name(label) {
         return ty;
     }
-    match label {
-        "unit" => AdapterTypeKind::Unit,
-        "I8" => AdapterTypeKind::I8,
-        "I16" => AdapterTypeKind::I16,
-        "I32" => AdapterTypeKind::I32,
-        "I64" => AdapterTypeKind::I64,
-        "I128" => AdapterTypeKind::I128,
-        "ISize" => AdapterTypeKind::ISize,
-        "U8" => AdapterTypeKind::U8,
-        "U16" => AdapterTypeKind::U16,
-        "U32" => AdapterTypeKind::U32,
-        "U64" => AdapterTypeKind::U64,
-        "U128" => AdapterTypeKind::U128,
-        "USize" => AdapterTypeKind::USize,
-        "F32" => AdapterTypeKind::F32,
-        "F64" => AdapterTypeKind::F64,
-        "string" => AdapterTypeKind::String,
-        other => parse_generic_type_label(other)
-            .unwrap_or_else(|| AdapterTypeKind::Named(other.trim().to_owned())),
-    }
+    parse_generic_type_label(label).unwrap_or_else(|| AdapterTypeKind::Named(label.to_owned()))
 }
 
 fn parse_generic_type_label(label: &str) -> Option<AdapterTypeKind> {
@@ -347,6 +328,14 @@ display_name = "Custom File"
         assert_eq!(
             parse_adapter_type_kind_label("Widget"),
             AdapterTypeKind::Named("Widget".to_owned())
+        );
+        assert_eq!(
+            parse_adapter_type_kind_label("Bool"),
+            AdapterTypeKind::Named("Bool".to_owned())
+        );
+        assert_eq!(
+            parse_adapter_type_kind_label("string"),
+            AdapterTypeKind::Named("string".to_owned())
         );
         assert_eq!(
             parse_adapter_type_kind_label("Seq<String>"),

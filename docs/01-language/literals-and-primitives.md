@@ -10,9 +10,9 @@ Concrete numeric primitives always spell out their width.
 
 ```text
 Unit:
-  ()
+  Unit
 
-Bool:
+Boolean:
   bool
 
 Signed integers:
@@ -29,7 +29,7 @@ Floats:
 
 Engine primitives:
   String
-  Char
+  char
   TextCluster
   Duration
   Color
@@ -122,7 +122,7 @@ let f = 2.0f32        // OK
 Function signatures also provide expected types.
 
 ```arcw
-fn add_affection(delta: i32) -> () { ... }
+fn add_affection(delta: i32) -> Unit { ... }
 
 add_affection(3)      // OK: expected i32
 add_affection(3u32)   // error: no implicit numeric conversion
@@ -131,13 +131,13 @@ add_affection(3u32)   // error: no implicit numeric conversion
 Arcweft does not perform implicit widening, narrowing, or integer-to-float
 conversion.
 
-## Char and TextCluster
+## char and TextCluster
 
-`Char` is the low-level Unicode scalar value type. It is intentionally close to
+`char` is the low-level Unicode scalar value type. It is intentionally close to
 Rust's `char` and is useful for parser, tokenizer, normalization, and low-level
 text processing.
 
-`Char` is not a visual character.
+`char` is not a visual character.
 
 `TextCluster` is the Arcweft text unit used for display, reveal, ruby, and text
 effects. It can be based on Unicode grapheme clusters, but it is not specified
@@ -146,7 +146,7 @@ units for variation selectors, combining marks, emoji sequences, vertical text,
 ruby bases, localization, and presentation effects.
 
 ```text
-Char:
+char:
   Unicode scalar value
 
 TextCluster:
@@ -157,22 +157,22 @@ Single-character literals use a Rust-like string body with a `c` suffix. The
 body must decode to exactly one Unicode scalar value.
 
 ```arcw
-let a: Char = "a"c
-let newline: Char = "\n"c
-let light: Char = "💡"c
-let hiragana: Char = "\u{3042}"c
+let a: char = "a"c
+let newline: char = "\n"c
+let light: char = "💡"c
+let hiragana: char = "\u{3042}"c
 ```
 
 Rejected forms:
 
 ```arcw
-let empty: Char = ""c
-let two_scalars: Char = "ab"c
-let combining_sequence: Char = "e\u{301}"c
-let flag_sequence: Char = "🇯🇵"c
+let empty: char = ""c
+let two_scalars: char = "ab"c
+let combining_sequence: char = "e\u{301}"c
+let flag_sequence: char = "🇯🇵"c
 ```
 
-Use `String` or `TextCluster` APIs for display text units. A one-scalar `Char`
+Use `String` or `TextCluster` APIs for display text units. A one-scalar `char`
 literal does not imply that the value occupies one player-visible glyph cell.
 
 ## Unit-Number Literals

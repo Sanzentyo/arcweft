@@ -4,7 +4,7 @@
 
 ```arcw
 fn map<A, B>(f: A -> B)(xs: Vec<A>) -> Vec<B>
-fn filter<A>(pred: A -> Bool)(xs: Vec<A>) -> Vec<A>
+fn filter<A>(pred: A -> bool)(xs: Vec<A>) -> Vec<A>
 fn fold<A, B>(init: B, step: (B, A) -> B)(xs: Vec<A>) -> B
 ```
 
@@ -62,7 +62,7 @@ choices.filter(|choice| choice.score >= threshold)
 ## カリー化
 
 ```arcw
-fn has_affection_at_least(character: Ref<Character>, min: i32)(state: GameState) -> Bool {
+fn has_affection_at_least(character: Ref<Character>, min: i32)(state: GameState) -> bool {
     state.affection.get(character).unwrap_or(0) >= min
 }
 

@@ -2218,6 +2218,47 @@ fn typed_runtime_patterns_match_value_shape() {
 }
 
 #[test]
+fn typed_runtime_patterns_use_canonical_primitive_labels() {
+    let bool_pattern = RuntimePattern::Typed {
+        name: "ok".to_owned(),
+        ty: "bool".to_owned(),
+    };
+    let old_bool_pattern = RuntimePattern::Typed {
+        name: "ok".to_owned(),
+        ty: "Bool".to_owned(),
+    };
+    let char_pattern = RuntimePattern::Typed {
+        name: "ch".to_owned(),
+        ty: "char".to_owned(),
+    };
+    let old_char_pattern = RuntimePattern::Typed {
+        name: "ch".to_owned(),
+        ty: "Char".to_owned(),
+    };
+
+    assert!(
+        match_runtime_pattern(&bool_pattern, &RuntimeValue::Bool(true))
+            .expect("canonical bool typed pattern matches")
+            .is_some()
+    );
+    assert!(
+        match_runtime_pattern(&old_bool_pattern, &RuntimeValue::Bool(true))
+            .expect("old Bool label is still a valid typed pattern")
+            .is_none()
+    );
+    assert!(
+        match_runtime_pattern(&char_pattern, &RuntimeValue::Char('a'))
+            .expect("canonical char typed pattern matches")
+            .is_some()
+    );
+    assert!(
+        match_runtime_pattern(&old_char_pattern, &RuntimeValue::Char('a'))
+            .expect("old Char label is still a valid typed pattern")
+            .is_none()
+    );
+}
+
+#[test]
 fn fs_write_dispatches_string_and_bytes_payloads() {
     let plan = RuntimePlan::new(
         Some(FlowRuntimeId("flow.write".to_owned())),

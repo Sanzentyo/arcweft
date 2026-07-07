@@ -6,7 +6,7 @@ mod game.routes.opening
 use game.prelude.*
 use game.logic.affection.{has_affection_at_least}
 
-memo fn alice_route_ready(state: GameState) -> Bool
+memo fn alice_route_ready(state: GameState) -> bool
 scope = state
 key = [state.affection[@character.alice]]
 {
