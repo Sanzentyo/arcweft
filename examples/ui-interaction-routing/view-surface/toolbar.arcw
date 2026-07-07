@@ -1,6 +1,6 @@
 pub view @ui.sample.toolbar ActionToolbar(actions: Vec<ToolbarAction>) {
     Row(spacing = 10) {
-        ForEach(actions, id = _.id) |action_item| {
+        for action_item in actions key = action_item.id {
             Button(@button:.toolbar_item)
                 .label(action_item.label)
                 .agent_target(@ui.sample.toolbar.item)

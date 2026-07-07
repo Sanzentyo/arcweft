@@ -129,7 +129,7 @@ view ChoiceList(state: GameState) {
     }
 
     Column {
-        ForEach(choices, id = _.id) |choice| { ChoiceButton(choice) }
+        for choice in choices key = choice.id { ChoiceButton(choice) }
     }
 }
 ```

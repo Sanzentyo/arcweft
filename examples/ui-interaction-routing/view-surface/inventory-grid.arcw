@@ -1,15 +1,17 @@
 pub view @ui.sample.inventory InventoryGrid(items: Vec<InventoryItem>) {
-    Grid(columns = 4, spacing = 12) {
-        ForEach(items, id = _.id) |item| {
-            Button(@button:.inventory_slot)
-            .label(item.label)
-            .agent_target(@ui.sample.inventory.slot)
-            .enabled(item.enabled)
-            .style {
-                background-color = rgba(42, 52, 68, 255)
-                focus-ring-width = milli(3000)
+    Scroll(axis = .vertical) {
+        Column(spacing = 12) {
+            for item in items key = item.id {
+                Button(@button:.inventory_slot)
+                    .label(item.label)
+                    .agent_target(@ui.sample.inventory.slot)
+                    .enabled(item.enabled)
+                    .style {
+                        background-color = rgba(42, 52, 68, 255)
+                        focus-ring-width = milli(3000)
+                    }
+                    .on_click(|| action.invoke(@action.inventory.select, payload = item.id))
             }
-            .on_click(|| action.invoke(@action.inventory.select, payload = item.id))
         }
     }
 }
