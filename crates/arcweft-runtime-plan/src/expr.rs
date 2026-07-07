@@ -150,6 +150,19 @@ impl<'helpers, 'locals> RuntimePureHelperLookup<'helpers, 'locals> {
         self.typed_lowering_evidence
             .is_some_and(|evidence| evidence.has_expected_function_value(expression_id))
     }
+
+    fn has_data_last_method_fallback_evidence(
+        self,
+        expression_id: Option<RuntimeTypedExpressionId>,
+        method: &str,
+        arg_count: usize,
+    ) -> bool {
+        expression_id.is_some_and(|expression_id| {
+            self.typed_lowering_evidence.is_some_and(|evidence| {
+                evidence.has_data_last_method_fallback(expression_id, method, arg_count)
+            })
+        })
+    }
 }
 
 /// Lowers an expression into a runtime value expression, preserving a lossy
@@ -376,7 +389,7 @@ fn lower_runtime_expr_strict_with_helpers(
             receiver,
             method,
             args,
-        } => lower_strict_method_call_dispatch(receiver, method, args, helpers),
+        } => lower_strict_method_call_dispatch(receiver, method, args, helpers, expression_id),
         Expr::DialogueCall { plan, .. } => Ok(lower_dialogue_call_value(plan.as_ref())),
         Expr::Index { target, index } => lower_strict_index_expr(target, index, helpers),
         Expr::Try { expr } | Expr::Await { expr, .. } => {
@@ -457,7 +470,17 @@ fn lower_strict_method_call_dispatch(
     method: &str,
     args: &[CallArg],
     helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+    expression_id: Option<RuntimeTypedExpressionId>,
 ) -> Result<RuntimeExpr, String> {
+    if helpers.is_some_and(|helpers| {
+        helpers.has_data_last_method_fallback_evidence(
+            expression_id,
+            runtime_method_name(method),
+            args.len(),
+        )
+    }) {
+        return lower_strict_data_last_method_fallback(receiver, method, args, helpers);
+    }
     match lower_strict_math_method_call(receiver, method, args, helpers)
         .or_else(|| lower_strict_std_float_method_call(receiver, method, args, helpers))
         .or_else(|| lower_strict_path_method_call(receiver, method, args, helpers))
@@ -466,6 +489,24 @@ fn lower_strict_method_call_dispatch(
         Some(lowered) => lowered,
         None => lower_strict_method_call_expr(receiver, method, args, helpers),
     }
+}
+
+fn lower_strict_data_last_method_fallback(
+    receiver: &Expr,
+    method: &str,
+    args: &[CallArg],
+    helpers: Option<RuntimePureHelperLookup<'_, '_>>,
+) -> Result<RuntimeExpr, String> {
+    let mut lowered_args = args
+        .iter()
+        .map(|arg| lower_strict_call_arg(arg, helpers))
+        .collect::<Result<Vec<_>, _>>()?;
+    lowered_args.push(lower_runtime_expr_strict_with_helpers(receiver, helpers)?);
+    Ok(lower_strict_named_call(
+        runtime_method_name(method),
+        lowered_args,
+        helpers,
+    ))
 }
 
 fn lower_runtime_pipe_expr(lhs: &Expr, rhs: &Expr) -> RuntimeExpr {

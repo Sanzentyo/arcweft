@@ -111,6 +111,12 @@ fn runtime_typed_lowering_evidence(
             TypedLoweringEvidenceKind::ExpectedFunctionValue { arity, .. } => {
                 RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue { arity: *arity }
             }
+            TypedLoweringEvidenceKind::DataLastMethodFallback { method, arg_count } => {
+                RuntimeTypedLoweringEvidenceKind::DataLastMethodFallback {
+                    method: method.clone(),
+                    arg_count: *arg_count,
+                }
+            }
         },
     }
 }

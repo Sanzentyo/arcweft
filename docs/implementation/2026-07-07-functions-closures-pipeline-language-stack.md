@@ -108,6 +108,12 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   signatures, such as `let add_one = add(_, 1i64)`, without hard-coding the
   callable name. Runtime-plan lowering consumes the inferred evidence and
   lowers both forms to `RuntimeExpr::Function`.
+- Method-call syntax now has a typed data-last callable fallback for the
+  positional case where no real method resolves and a function signature exists
+  with the receiver as the last parameter. For example,
+  `score.above(80i64)` can lower as `above(80i64, score)`. Sema records
+  lowering evidence for this decision so real inherent/env/trait methods still
+  win when they exist.
 
 ## Current boundaries
 
@@ -130,11 +136,14 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   currently emits an AWBC lowering diagnostic, and function state is not encoded
   as an AWBC constant. `RuntimeExpr::Apply` is represented as a
   `function.apply` intrinsic for bytecode inventory purposes.
-- Pipe no-`^` runtime lowering is helper-aware for named pure helpers, but
-  method-chain fallback and non-helper callable resolution still need the
-  final typed callable evidence path.
-- Method-chain fallback sugar that resolves inherent/trait methods first and
-  then data-last callable methods is not implemented.
+- Pipe no-`^` runtime lowering is helper-aware for named pure helpers. Method
+  syntax fallback now has typed lowering evidence for positional data-last
+  helper signatures, but named/spread fallback arguments, curried call-group
+  metadata, and non-helper callable runtime lowering remain open.
+- Method-chain fallback sugar resolves after existing env/builtin/integer/
+  handle/trait method checks, preserving real methods before data-last fallback.
+  Ambiguity diagnostics that compare real method and fallback candidates remain
+  open.
 - Closure capture analysis, suspension-boundary lifetime diagnostics, and
   effect-row integration for closure captures remain future work.
 - LSP inlays and lints for inferred closure/function types and numeric fallback
@@ -168,11 +177,13 @@ cargo test -p arcweft-lang-sema --all-features typechecks_partial_placeholder_fu
 cargo test -p arcweft-lang-sema --all-features infers_partial_placeholder_function_without_expected_type
 cargo test -p arcweft-lang-sema --all-features infers_parenthesized_partial_placeholder_function_without_expected_type
 cargo test -p arcweft-lang-sema --all-features infers_partial_call_abstraction_without_expected_type
+cargo test -p arcweft-lang-sema --all-features method_chain
 cargo test -p arcweft-lang-sema --all-features
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_typecheck_evidence_for_function_value_calls
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_expected_function_evidence_for_placeholder_args
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_typecheck_evidence_across_stream_and_source_exprs
 cargo test -p arcweft-compiler --all-features runtime_plan_lowers_inferred_partial_placeholder_functions
+cargo test -p arcweft-compiler --all-features runtime_plan_lowers_typed_data_last_method_fallback
 cargo test -p arcweft-compiler --all-features
 cargo test -p arcweft-runtime-plan --all-features
 cargo check --workspace --all-targets --all-features
@@ -219,7 +230,10 @@ to `RuntimeExpr::Function`. The shared-cursor follow-up has passing coverage
 for function-valued calls inside stream and source lowering after earlier flow
 expressions have consumed typed expression IDs.
 
-The inferred partial-placeholder cut has passing sema coverage for unannotated
-binary placeholder inference and partial-call abstraction from known function
-signatures, plus compiler/runtime-plan coverage that both inferred forms lower
-to `RuntimeExpr::Function`.
+The inferred partial-placeholder and method-fallback cuts have passing sema
+coverage for unannotated binary placeholder inference, parenthesized binary
+placeholder inference, partial-call abstraction from known function signatures,
+typed positional data-last method fallback, and real method priority. Compiler
+coverage confirms the inferred placeholder forms lower to `RuntimeExpr::Function`
+and typed data-last method fallback lowers to a pure helper call with the
+receiver appended as the last argument.

@@ -23,6 +23,7 @@ mod agent;
 mod builtin;
 mod callable;
 mod closure;
+mod method_fallback;
 mod partial;
 mod pipe;
 mod range;
@@ -152,7 +153,7 @@ impl TypeChecker<'_> {
                 receiver,
                 method,
                 args,
-            } => self.check_method_call_expr(receiver, method, args),
+            } => self.check_method_call_expr(receiver, method, args, expression_id),
             Expr::Field { target, field } => self.check_field_expr(expr, target, field),
             Expr::DialogueCall { callee, plan, .. } => {
                 Some(self.check_dialogue_call_expr(callee, plan.as_ref()))
@@ -1270,6 +1271,7 @@ impl TypeChecker<'_> {
         receiver: &Expr,
         method: &str,
         args: &[CallArg],
+        expression_id: TypeExpressionId,
     ) -> Option<TypeKind> {
         let method_name = method.split_once('<').map_or(method, |(name, _)| name);
         if let Some(receiver_path) = expr_path_label(receiver) {
@@ -1307,7 +1309,7 @@ impl TypeChecker<'_> {
             return Some(TypeKind::Unit);
         }
         receiver_type.and_then(|receiver_type| {
-            self.check_typed_method_call(receiver_type, method_name, args)
+            self.check_typed_method_call(receiver_type, method_name, args, expression_id)
         })
     }
 
@@ -1316,6 +1318,7 @@ impl TypeChecker<'_> {
         receiver_type: TypeKind,
         method_name: &str,
         args: &[CallArg],
+        expression_id: TypeExpressionId,
     ) -> Option<TypeKind> {
         if method_name == "traverse" {
             return self.check_traverse_method_call(&receiver_type, args);
@@ -1399,6 +1402,11 @@ impl TypeChecker<'_> {
             TraitMethodCallOutcome::Missing => {}
             TraitMethodCallOutcome::Typed(return_type) => return Some(return_type),
             TraitMethodCallOutcome::Rejected => return None,
+        }
+        if let Some(return_type) =
+            self.check_data_last_method_fallback(&receiver_type, method_name, args, expression_id)
+        {
+            return Some(return_type);
         }
         self.check_untyped_method_args(args);
         self.env

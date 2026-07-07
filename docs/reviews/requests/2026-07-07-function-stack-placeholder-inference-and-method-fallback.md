@@ -7,9 +7,9 @@ collection `map`/`filter` optimization paths. No-expected-type inference and
 partial-call abstraction now exist for the constrained cases recorded below,
 but broader inference and method-chain fallback remain open.
 
-Method-chain fallback is also not implemented: real inherent/trait methods
-should win first, and only unresolved method syntax should fall back to
-data-last callable application.
+Method-chain fallback is partially implemented for typed positional data-last
+callables: real methods win first, and unresolved method syntax can fall back
+when a callable signature takes the receiver as its last parameter.
 
 Implementation progress on 2026-07-07:
 
@@ -20,6 +20,12 @@ Implementation progress on 2026-07-07:
   signatures, such as `let add_one = add(_, 1i64)`.
 - Runtime-plan lowering consumes the inferred function evidence and lowers both
   forms to `RuntimeExpr::Function`.
+- Sema now resolves positional data-last method fallback when no real method
+  matches and a callable signature exists with the receiver as its last
+  parameter, such as `score.above(80i64)` lowering as `above(80i64, score)`.
+  The decision is exported as typed lowering evidence, and runtime-plan lowering
+  consumes that evidence before emitting a helper call. Real env/inherent/trait
+  methods keep priority and do not emit fallback evidence.
 
 ## Required Decisions
 
@@ -30,7 +36,8 @@ Implementation progress on 2026-07-07:
   the same generated parameter when all inferred parameter types agree" rule.
 - Extend partial call abstraction lowering beyond known positional signatures,
   including named/spread arguments if they are accepted.
-- Define method-chain resolution order:
+- Extend method-chain resolution beyond the implemented typed positional
+  fallback:
   1. inherent method;
   2. trait method;
   3. data-last callable fallback.
@@ -45,8 +52,10 @@ Implementation progress on 2026-07-07:
    positional callable signatures.
 3. Parenthesized partial expressions now use the same inferred body expression
    path as unparenthesized partial expressions.
-4. Implement method-chain fallback using typed callable evidence, not string
-   labels alone.
+4. Method-chain fallback uses typed callable evidence for positional data-last
+   signatures whose receiver is the final parameter. Named/spread fallback
+   arguments, curried call-group metadata, and explicit ambiguity diagnostics
+   remain open.
 5. Add diagnostics for ambiguous or unsupported fallback cases.
 
 ## Tests To Specify
@@ -64,6 +73,11 @@ Implementation progress on 2026-07-07:
 - Inherent method wins over data-last fallback.
 - Trait method wins over data-last fallback.
 - Ambiguous fallback reports all candidates.
+- `score.above(80i64)` where `above(min: i64, value: i64) -> bool`. Covered by
+  `method_chain_falls_back_to_data_last_callable_when_no_method_matches` and
+  `runtime_plan_lowers_typed_data_last_method_fallback`.
+- Real method priority over fallback. Covered by
+  `method_chain_prefers_real_method_over_data_last_callable_fallback`.
 
 ## Constraints
 

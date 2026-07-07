@@ -9,7 +9,7 @@ use arcweft_core::{
     source::{SourceHandlerPlan, SourceOp},
     step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
     stream::StreamOp,
-    value::RuntimeExpr,
+    value::{RuntimeExpr, RuntimeValue},
 };
 use arcweft_id::PublicId;
 use arcweft_lang_hir::lower::lower_to_hir;
@@ -548,6 +548,54 @@ flow @flow.main main {
         RuntimeExpr::Function { params, body }
             if params.as_slice() == ["__arcweft_partial"]
                 && matches!(body.as_ref(), RuntimeExpr::PureCall { .. })
+    ));
+}
+
+#[test]
+fn runtime_plan_lowers_typed_data_last_method_fallback() {
+    let parsed = parse_source_text(
+        r#"
+#[pure]
+fn above(min: i64, value: i64) -> bool {
+    return value > min
+}
+
+flow @flow.main main {
+    let score = 90i64
+    let ok = score.above(80i64)
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("runtime plan lowers data-last method fallback");
+    let [FlowOp::Let { .. }, FlowOp::Let { expr: ok, .. }, ..] =
+        report.plan.flows[0].ops.as_slice()
+    else {
+        panic!("expected score and ok lets");
+    };
+    assert!(matches!(
+        ok,
+        RuntimeExpr::PureCall { args, .. }
+            if matches!(
+                args.as_slice(),
+                [
+                    RuntimeExpr::Value(value),
+                    RuntimeExpr::Local(name),
+                ] if value == &RuntimeValue::i64(80) && name == "score"
+            )
     ));
 }
 

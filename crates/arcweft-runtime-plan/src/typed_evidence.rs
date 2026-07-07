@@ -33,6 +33,8 @@ pub enum RuntimeTypedLoweringEvidenceKind {
     },
     /// An expression was checked in a function-typed expected context.
     ExpectedFunctionValue { arity: usize },
+    /// A method-call expression resolved as data-last callable fallback.
+    DataLastMethodFallback { method: String, arg_count: usize },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -73,6 +75,24 @@ impl<'a> RuntimeTypedLoweringEvidenceLookup<'a> {
                 && matches!(
                     evidence.kind,
                     RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue { .. }
+                )
+        })
+    }
+
+    pub(crate) fn has_data_last_method_fallback(
+        self,
+        expression_id: RuntimeTypedExpressionId,
+        method: &str,
+        arg_count: usize,
+    ) -> bool {
+        self.evidence.iter().any(|evidence| {
+            evidence.expression_id == expression_id
+                && matches!(
+                    &evidence.kind,
+                    RuntimeTypedLoweringEvidenceKind::DataLastMethodFallback {
+                        method: expected_method,
+                        arg_count: expected_arg_count,
+                    } if expected_method == method && expected_arg_count == &arg_count
                 )
         })
     }

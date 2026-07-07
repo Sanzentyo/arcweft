@@ -226,3 +226,97 @@ flow @flow.partial_call partial_call {
         )
     }));
 }
+
+#[test]
+fn method_chain_falls_back_to_data_last_callable_when_no_method_matches() {
+    let tree = parse_ok(
+        r"
+flow @flow.method_fallback method_fallback {
+    let ok: bool = score.above(80i64)
+    log.info(ok)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("method fallback fixture lowers");
+    validate_typecheck_ready(&hir).expect("method fallback fixture is structured");
+    let env = TypeCheckEnv::new()
+        .with_symbol("score", TypeKind::I64)
+        .with_function_signature(
+            "above",
+            FunctionSignature::new(
+                TypeKind::Bool,
+                [
+                    FunctionParam::required("min", TypeKind::I64),
+                    FunctionParam::required("value", TypeKind::I64),
+                ],
+            ),
+        );
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::DataLastMethodFallback { method, arg_count }
+                    if method == "above" && *arg_count == 1
+            )
+        }),
+        "expected method fallback evidence"
+    );
+}
+
+#[test]
+fn method_chain_prefers_real_method_over_data_last_callable_fallback() {
+    let tree = parse_ok(
+        r"
+flow @flow.method_priority method_priority {
+    let text: String = score.above(80i64)
+    log.info(text)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("method priority fixture lowers");
+    validate_typecheck_ready(&hir).expect("method priority fixture is structured");
+    let env = TypeCheckEnv::new()
+        .with_symbol("score", TypeKind::I64)
+        .with_method_signature(
+            TypeKind::I64,
+            "above",
+            FunctionSignature::new(
+                TypeKind::String,
+                [FunctionParam::required("min", TypeKind::I64)],
+            ),
+        )
+        .with_function_signature(
+            "above",
+            FunctionSignature::new(
+                TypeKind::Bool,
+                [
+                    FunctionParam::required("min", TypeKind::I64),
+                    FunctionParam::required("value", TypeKind::I64),
+                ],
+            ),
+        );
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        !report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::DataLastMethodFallback { method, .. }
+                    if method == "above"
+            )
+        }),
+        "real method calls must not record data-last fallback evidence"
+    );
+}
