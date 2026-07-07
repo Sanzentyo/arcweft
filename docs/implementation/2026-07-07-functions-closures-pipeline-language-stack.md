@@ -223,6 +223,12 @@ Source briefs:
   expression IDs. Sema records deterministic local captures for closure bodies,
   including captures of outer closure parameters by nested closures, while
   excluding locals declared inside the closure itself.
+- Compiler checked runtime-plan lowering now projects sema closure capture
+  inventories into `RuntimePlanLowerOptions`, and `RuntimePlanLowerReport`
+  exposes runtime-plan-local closure capture metadata keyed by the same typed
+  expression IDs. Runtime-plan metadata stores deterministic capture names and
+  source-style type labels without making runtime-plan depend on sema
+  `TypeKind`.
 - Sema now records suspension boundaries seen inside each closure capture
   frame and rejects borrowed closure captures that cross those boundaries. The
   diagnostic is structured as
@@ -427,9 +433,9 @@ Source briefs:
   implemented for module/environment callable overlap. Real method versus
   fallback overlap is surfaced as a non-fatal shadowing warning while preserving
   real method priority.
-- Closure capture inventory collection and borrowed-capture suspension-boundary
-  lifetime diagnostics exist in sema. Effect-row integration for closure
-  captures and runtime-plan capture metadata policy remain open.
+- Closure capture inventory collection, borrowed-capture suspension-boundary
+  lifetime diagnostics, and runtime-plan capture metadata projection exist.
+  Effect-row integration for closure captures remains open.
 - LSP inlays currently cover inferred function-valued `let` bindings. Sema
   expression judgments now carry optional source ranges for parser-provided
   `let` RHS expressions, but full arbitrary expression inlays remain open until
@@ -831,3 +837,26 @@ bytes / 2,341 LOC, `compiler/src/lower.rs` 11,798 bytes / 278 LOC,
 `tests/function_stack.rs` 92,643 bytes / 2,673 LOC, and
 `compiler/src/tests.rs` 82,443 bytes / 2,611 LOC; none crosses a new error
 threshold in this slice.
+
+The runtime-plan closure capture metadata cut adds
+`RuntimeClosureCaptureInventory` / `RuntimeClosureCapture` under the
+runtime-plan flow API and threads sema `TypeCheckReport::closure_captures`
+through compiler checked lowering into `RuntimePlanLowerReport`. The metadata
+keeps runtime-plan independent from sema `TypeKind` by storing source-style type
+labels. Focused validation passed with
+`cargo test -p arcweft-compiler --all-features runtime_plan_report_carries_closure_capture_metadata`,
+followed by
+`cargo check -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features`
+and
+`cargo clippy -p arcweft-runtime-plan -p arcweft-compiler --all-targets --all-features`;
+clippy still reports only the existing `TraitMember` / `ImplMember`
+large-enum warnings from `arcweft-lang-syntax`. Structure audit was run after
+splitting closure capture metadata out of `runtime-plan/src/flow.rs` into
+`runtime-plan/src/flow/closure_metadata.rs`; it returned to the unrelated
+single `crates/arcweft-cli/src/app/bundle_view.rs` 2500 LOC error and 148
+warnings. The changed Rust files measured by the structure-audit CSV for this
+cut are `runtime-plan/src/flow.rs` 90,518 bytes / 2,492 physical LOC,
+`runtime-plan/src/flow/closure_metadata.rs` 1,018 bytes / 34 physical LOC,
+`compiler/src/lower.rs` 12,613 bytes / 317 physical LOC, and
+`compiler/src/tests.rs` 84,104 bytes / 2,871 physical LOC; no new
+structure-audit error remains from this slice.

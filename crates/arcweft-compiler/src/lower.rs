@@ -7,7 +7,8 @@ use arcweft_lang_sema::check::{
     TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
 use arcweft_runtime_plan::flow::{
-    RuntimePlanLowerOptions, RuntimePlanLowerReport, lower_runtime_plan_with_options,
+    RuntimeClosureCapture, RuntimeClosureCaptureInventory, RuntimePlanLowerOptions,
+    RuntimePlanLowerReport, lower_runtime_plan_with_options,
     lower_runtime_plan_with_stats_and_options,
 };
 use arcweft_runtime_plan::line_task::{LoweredLineTaskGroup, lower_line_task_groups};
@@ -90,13 +91,35 @@ pub fn runtime_plan_options_with_typecheck_evidence(
         .iter()
         .map(runtime_typed_lowering_evidence)
         .collect::<Vec<_>>();
+    let closure_captures = typecheck
+        .closure_captures
+        .iter()
+        .map(runtime_closure_capture_inventory)
+        .collect::<Vec<_>>();
     let required_typed_lowering_evidence_len = typed_lowering_evidence.len();
     Ok(options
         .clone()
         .with_for_iteration_evidence(evidence)
         .with_trait_methods(trait_methods.methods)
         .with_typed_lowering_evidence(typed_lowering_evidence)
+        .with_closure_capture_metadata(closure_captures)
         .with_required_typed_lowering_evidence_len(required_typed_lowering_evidence_len))
+}
+
+fn runtime_closure_capture_inventory(
+    inventory: &arcweft_lang_sema::check::ClosureCaptureInventory,
+) -> RuntimeClosureCaptureInventory {
+    RuntimeClosureCaptureInventory {
+        expression_id: RuntimeTypedExpressionId::from_index(inventory.expression_id.index()),
+        captures: inventory
+            .captures
+            .iter()
+            .map(|capture| RuntimeClosureCapture {
+                name: capture.name.clone(),
+                type_label: capture.ty.source_label(),
+            })
+            .collect(),
+    }
 }
 
 fn runtime_typed_lowering_evidence(

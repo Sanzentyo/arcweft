@@ -1,6 +1,9 @@
 //! Flow-runtime lowering.
 
+mod closure_metadata;
 mod record_projection;
+
+pub use closure_metadata::{RuntimeClosureCapture, RuntimeClosureCaptureInventory};
 
 use self::record_projection::rewrite_known_record_projections_in_op;
 use crate::errors::{LinePlanLowerError, RuntimePlanLowerError};
@@ -71,6 +74,7 @@ pub struct RuntimePlanLowerReport {
     pub plan: RuntimePlan,
     pub stats: RuntimePlanLowerStats,
     pub line_display_catalog: LineDisplayCatalog,
+    pub closure_captures: Vec<RuntimeClosureCaptureInventory>,
 }
 
 /// Options that select profile/build-context inputs for runtime-plan lowering.
@@ -80,6 +84,7 @@ pub struct RuntimePlanLowerOptions {
     for_iteration_evidence: Vec<RuntimeIteratorEvidence>,
     trait_methods: Vec<RuntimeTraitMethod>,
     typed_lowering_evidence: Vec<RuntimeTypedLoweringEvidence>,
+    closure_captures: Vec<RuntimeClosureCaptureInventory>,
     required_typed_lowering_evidence_len: Option<usize>,
 }
 
@@ -92,6 +97,7 @@ impl RuntimePlanLowerOptions {
             for_iteration_evidence: Vec::new(),
             trait_methods: Vec::new(),
             typed_lowering_evidence: Vec::new(),
+            closure_captures: Vec::new(),
             required_typed_lowering_evidence_len: None,
         }
     }
@@ -290,6 +296,7 @@ pub fn lower_runtime_plan_with_stats_and_options(
                 plan,
                 stats,
                 line_display_catalog,
+                closure_captures: options.closure_captures.clone(),
             }
         })
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])
@@ -359,6 +366,7 @@ pub fn lower_agent_controller_plan_with_stats_and_options(
                 plan,
                 stats,
                 line_display_catalog: LineDisplayCatalog::default(),
+                closure_captures: options.closure_captures.clone(),
             }
         })
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])

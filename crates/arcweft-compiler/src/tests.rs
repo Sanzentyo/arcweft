@@ -544,6 +544,61 @@ flow @flow.main main {
 }
 
 #[test]
+fn runtime_plan_report_carries_closure_capture_metadata() {
+    let parsed = parse_source_text(
+        r#"
+flow @flow.main main {
+    let limit: i64 = 80i64
+    let is_high = |score: i64| -> bool {
+        score >= limit
+    }
+    let ok: bool = is_high(81i64)
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+    assert!(
+        typecheck.closure_captures.iter().any(|inventory| inventory
+            .captures
+            .iter()
+            .any(|capture| capture.name == "limit")),
+        "fixture must produce sema closure capture metadata"
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("runtime plan lowers with capture metadata");
+    let capture_inventory = report
+        .closure_captures
+        .iter()
+        .find(|inventory| {
+            inventory
+                .captures
+                .iter()
+                .any(|capture| capture.name == "limit")
+        })
+        .expect("runtime-plan report carries closure capture inventory");
+    assert!(
+        capture_inventory
+            .captures
+            .iter()
+            .any(|capture| capture.name == "limit" && capture.type_label == "i64"),
+        "expected `limit: i64` capture metadata, got {:?}",
+        capture_inventory.captures
+    );
+}
+
+#[test]
 fn runtime_plan_lowers_inferred_partial_placeholder_functions() {
     let parsed = parse_source_text(
         r#"
