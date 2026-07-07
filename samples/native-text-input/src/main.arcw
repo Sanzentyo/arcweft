@@ -74,7 +74,7 @@ pub view NativeTextInputPanel() {
   }
 }
 
-fn i_to_string(i: i32) -> string {
+fn i_to_string(i: i32) -> String {
     if i == 0 {
         return "first"
     } else {
@@ -82,7 +82,7 @@ fn i_to_string(i: i32) -> string {
     }
 }
 
-fn i_to_string_2(i: i32) -> string {
+fn i_to_string_2(i: i32) -> String {
     if i == 0 {
         return "first"
     } else if i == 1 {

@@ -24,6 +24,8 @@ Source briefs:
   path for general strict runtime expressions.
 - Canonical primitive labels are enforced across sema/runtime-facing surfaces:
   `bool` and `char` are accepted; legacy `Bool`/`Char` aliases are rejected.
+  Non-canonical primitive spellings such as `string` now produce diagnostics
+  pointing to `String` instead of silently becoming user-defined nominal types.
 - `_` partial placeholder now works when an expected one-parameter function
   type is available:
   - `let high: i64 -> bool = _ > 80i64`
@@ -301,6 +303,11 @@ body diagnostic. Sema coverage confirms declared closure return types typecheck
 against body values, mismatch diagnostics are produced, curried closure return
 types preserve remaining function values, and multiline return-typed closure
 lets are consumed as one statement.
+
+The canonical primitive spelling cut has passing coverage for rejecting
+`Bool`, `Char`, and `string` in type annotations/signatures with direct
+canonical replacement diagnostics. The native text input sample now uses
+`String` return annotations.
 
 The final validation cut reports structure audit 0 errors / 146 warnings after
 the expression parser module split. `cargo clippy --workspace --all-targets

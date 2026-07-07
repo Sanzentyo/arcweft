@@ -1038,6 +1038,37 @@ fn numeric_primitive_types_keep_explicit_widths() {
 }
 
 #[test]
+fn typecheck_rejects_noncanonical_primitive_type_spellings() {
+    let tree = parse_ok(
+        r#"
+fn bad(value: Bool, letter: Char) -> string {
+    return "bad"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("noncanonical primitive fixture lowers");
+    validate_typecheck_ready(&hir).expect("noncanonical primitive fixture is structured");
+
+    let errors =
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("noncanonical primitives reject");
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("`Bool` is not a canonical primitive type spelling; use `bool`")
+    }));
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("`Char` is not a canonical primitive type spelling; use `char`")
+    }));
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("`string` is not a canonical primitive type spelling; use `String`")
+    }));
+}
+
+#[test]
 fn unsuffixed_numeric_literals_default_to_stable_widths() {
     let tree = parse_ok(
         r"

@@ -1004,6 +1004,13 @@ impl TypeChecker<'_> {
                 type_ref_label(ty)
             )));
         }
+        if let TypeRef::Path(path) = ty
+            && let Some(canonical) = canonical_primitive_spelling(path)
+        {
+            self.errors.push(TypeCheckError::new(format!(
+                "`{path}` is not a canonical primitive type spelling; use `{canonical}`"
+            )));
+        }
         match ty {
             TypeRef::Choice(alternatives) => {
                 let mut erased = HashMap::<String, String>::new();
@@ -1321,6 +1328,15 @@ fn default_inline_policy_label(expr: &Expr) -> String {
         Expr::ShortVariant(name) => format!(".{name}"),
         Expr::Field { target, field } => format!("{}.{field}", default_inline_policy_label(target)),
         _ => format!("{expr:?}"),
+    }
+}
+
+fn canonical_primitive_spelling(name: &str) -> Option<&'static str> {
+    match name {
+        "Bool" => Some("bool"),
+        "Char" => Some("char"),
+        "string" => Some("String"),
+        _ => None,
     }
 }
 
