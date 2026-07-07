@@ -23,6 +23,11 @@ pub enum TypeRef {
     Never,
     ConstInt(usize),
     Path(String),
+    Tuple(Vec<TypeRef>),
+    Function {
+        params: Vec<TypeRef>,
+        return_type: Box<TypeRef>,
+    },
     Choice(Vec<TypeRef>),
     Generic {
         base: String,
@@ -133,7 +138,7 @@ pub fn parse_type_ref(source: &str) -> Result<TypeRef, TypeParseError> {
     if source.is_empty() {
         return Err(TypeParseError::new("expected type"));
     }
-    parse_type_choice(source)
+    parse_function_type(source)
 }
 
 /// Parses the head of a function signature, including generics and curried parameter groups.
@@ -294,6 +299,46 @@ fn take_param_doc(source: &str) -> (Option<DocBlock>, &str) {
     )
 }
 
+fn parse_function_type(source: &str) -> Result<TypeRef, TypeParseError> {
+    if let Some((params, return_type)) = split_top_level_arrow(source) {
+        let params = parse_function_type_params(params.trim())?;
+        if return_type.trim().is_empty() {
+            return Err(TypeParseError::new("expected return type after `->`"));
+        }
+        return Ok(TypeRef::Function {
+            params,
+            return_type: Box::new(parse_function_type(return_type.trim())?),
+        });
+    }
+    parse_type_choice(source)
+}
+
+fn parse_function_type_params(source: &str) -> Result<Vec<TypeRef>, TypeParseError> {
+    let params = if let Some(inner) = parenthesized_type(source) {
+        let parts = split_top_level_punctuation(inner, ',');
+        if parts.len() > 1 {
+            parts
+                .into_iter()
+                .map(str::trim)
+                .map(parse_type_ref)
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            vec![parse_type_ref(inner)?]
+        }
+    } else {
+        vec![parse_type_choice(source)?]
+    };
+    if params
+        .iter()
+        .any(|param| matches!(param, TypeRef::Tuple(_)))
+    {
+        return Err(TypeParseError::new(
+            "function parameter group cannot contain an anonymous tuple type; use `(A, B) -> C` for one call group",
+        ));
+    }
+    Ok(params)
+}
+
 fn parse_type_choice(source: &str) -> Result<TypeRef, TypeParseError> {
     let alternatives = split_top_level_punctuation(source, '|');
     if alternatives.len() <= 1 {
@@ -324,6 +369,15 @@ fn parse_type_choice(source: &str) -> Result<TypeRef, TypeParseError> {
 
 fn parse_type_atom(source: &str) -> Result<TypeRef, TypeParseError> {
     if let Some(inner) = parenthesized_type(source) {
+        let parts = split_top_level_punctuation(inner, ',');
+        if parts.len() > 1 {
+            return parts
+                .into_iter()
+                .map(str::trim)
+                .map(parse_type_ref)
+                .collect::<Result<Vec<_>, _>>()
+                .map(TypeRef::Tuple);
+        }
         return parse_type_ref(inner);
     }
     if let Ok(value) = source.parse::<usize>() {
@@ -470,6 +524,30 @@ fn split_type_projection(source: &str) -> Option<(&str, &str)> {
     Some((&source[..split], &source[split + 2..]))
 }
 
+fn split_top_level_arrow(source: &str) -> Option<(&str, &str)> {
+    let bytes = source.as_bytes();
+    let mut angle = 0usize;
+    let mut paren = 0usize;
+    let mut bracket = 0usize;
+    let mut index = 0usize;
+    while index + 1 < bytes.len() {
+        match bytes[index] as char {
+            '<' if paren == 0 && bracket == 0 => angle += 1,
+            '>' if angle > 0 && paren == 0 && bracket == 0 => angle -= 1,
+            '(' if angle == 0 && bracket == 0 => paren += 1,
+            ')' if paren > 0 && angle == 0 && bracket == 0 => paren -= 1,
+            '[' if angle == 0 && paren == 0 => bracket += 1,
+            ']' if bracket > 0 && angle == 0 && paren == 0 => bracket -= 1,
+            '-' if bytes[index + 1] == b'>' && angle == 0 && paren == 0 && bracket == 0 => {
+                return Some((&source[..index], &source[index + 2..]));
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    None
+}
+
 fn take_angle_group(source: &str) -> Option<(&str, &str)> {
     source.strip_prefix('<')?;
     let close = find_matching_angle_group(source, 0)?;
@@ -542,6 +620,14 @@ fn type_ref_has_whitespace_path(ty: &TypeRef) -> bool {
     match ty {
         TypeRef::Never | TypeRef::ConstInt(_) => false,
         TypeRef::Path(path) => path.chars().any(char::is_whitespace),
+        TypeRef::Tuple(items) => items.iter().any(type_ref_has_whitespace_path),
+        TypeRef::Function {
+            params,
+            return_type,
+        } => {
+            params.iter().any(type_ref_has_whitespace_path)
+                || type_ref_has_whitespace_path(return_type)
+        }
         TypeRef::Choice(alternatives) => alternatives.iter().any(type_ref_has_whitespace_path),
         TypeRef::Generic { base, args } => {
             base.chars().any(char::is_whitespace) || args.iter().any(type_ref_has_whitespace_path)
@@ -566,6 +652,32 @@ fn type_ref_parse_label(ty: &TypeRef) -> String {
         TypeRef::Never => "Never".to_owned(),
         TypeRef::ConstInt(value) => value.to_string(),
         TypeRef::Path(path) => path.clone(),
+        TypeRef::Tuple(items) => format!(
+            "({})",
+            items
+                .iter()
+                .map(type_ref_parse_label)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        TypeRef::Function {
+            params,
+            return_type,
+        } => {
+            let params = if params.len() == 1 {
+                type_ref_parse_label(&params[0])
+            } else {
+                format!(
+                    "({})",
+                    params
+                        .iter()
+                        .map(type_ref_parse_label)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            };
+            format!("{params} -> {}", type_ref_parse_label(return_type))
+        }
         TypeRef::Choice(alternatives) => alternatives
             .iter()
             .map(type_ref_parse_label)

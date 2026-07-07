@@ -1797,6 +1797,22 @@ fn trait_type_ref_kind(ty: &TypeRef, generic_params: &HashSet<String>) -> TypeKi
             TypeKind::GenericParam(path.clone())
         }
         TypeRef::Path(path) => primitive_or_named(path),
+        TypeRef::Tuple(items) => TypeKind::Tuple(
+            items
+                .iter()
+                .map(|item| trait_type_ref_kind(item, generic_params))
+                .collect(),
+        ),
+        TypeRef::Function {
+            params,
+            return_type,
+        } => TypeKind::Function {
+            params: params
+                .iter()
+                .map(|param| trait_type_ref_kind(param, generic_params))
+                .collect(),
+            return_type: Box::new(trait_type_ref_kind(return_type, generic_params)),
+        },
         TypeRef::Projection { subject, assoc } => TypeKind::Projection {
             subject: Box::new(trait_type_ref_kind(subject, generic_params)),
             trait_name: None,

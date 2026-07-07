@@ -884,9 +884,18 @@ fn type_kind_stable_label(ty: &TypeKind) -> String {
         TypeKind::Handle { name, .. } => format!("Handle<{name}>"),
         TypeKind::ThreadHandle(inner) => format!("ThreadHandle<{}>", type_kind_stable_label(inner)),
         TypeKind::Shared(inner) => format!("Shared<{}>", type_kind_stable_label(inner)),
-        TypeKind::Function { return_type } => {
-            format!("Function<{}>", type_kind_stable_label(return_type))
-        }
+        TypeKind::Function {
+            params,
+            return_type,
+        } => format!(
+            "Function<({}),{}>",
+            params
+                .iter()
+                .map(type_kind_stable_label)
+                .collect::<Vec<_>>()
+                .join(","),
+            type_kind_stable_label(return_type)
+        ),
         TypeKind::Speaker(kind) => format!("Speaker<{kind:?}>"),
         TypeKind::SpeakerPreset(kind) => format!("SpeakerPreset<{kind:?}>"),
         TypeKind::CharacterPatch(kind) => format!("CharacterPatch<{kind:?}>"),

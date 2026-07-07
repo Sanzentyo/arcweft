@@ -839,7 +839,11 @@ fn normalize_type_kind(ty: TypeKind) -> TypeKind {
             TypeKind::ThreadHandle(Box::new(normalize_type_kind(*inner)))
         }
         TypeKind::Shared(inner) => TypeKind::Shared(Box::new(normalize_type_kind(*inner))),
-        TypeKind::Function { return_type } => TypeKind::Function {
+        TypeKind::Function {
+            params,
+            return_type,
+        } => TypeKind::Function {
+            params: params.into_iter().map(normalize_type_kind).collect(),
             return_type: Box::new(normalize_type_kind(*return_type)),
         },
         TypeKind::Projection {

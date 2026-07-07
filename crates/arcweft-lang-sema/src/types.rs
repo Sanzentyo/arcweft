@@ -147,6 +147,7 @@ pub enum TypeKind {
     ThreadHandle(Box<TypeKind>),
     Shared(Box<TypeKind>),
     Function {
+        params: Vec<TypeKind>,
         return_type: Box<TypeKind>,
     },
     GenericParam(String),

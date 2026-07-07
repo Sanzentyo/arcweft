@@ -11,7 +11,7 @@ fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::Typed
 use arcweft_lang_syntax::{
     ast::{dialogue::DialogueToken, flow::FlowItem, flow::Stmt, items::Item},
     expr::Expr,
-    types::{FnParamKind, GenericParam, TypeRef, parse_fn_signature},
+    types::{FnParamKind, GenericParam, TypeRef, parse_fn_signature, parse_type_ref},
 };
 
 #[test]
@@ -39,6 +39,60 @@ fn function_signatures_keep_generics_curried_groups_and_where_clauses() {
     ));
     assert_eq!(signature.where_clauses().len(), 1);
     assert_eq!(signature.where_clauses()[0].bounds().len(), 2);
+}
+
+#[test]
+fn function_types_are_right_associative_and_preserve_call_groups() {
+    let TypeRef::Function {
+        params,
+        return_type,
+    } = parse_type_ref("A -> B -> C").expect("function type parses")
+    else {
+        panic!("expected function type");
+    };
+    assert_eq!(params, vec![TypeRef::Path("A".to_owned())]);
+    let TypeRef::Function {
+        params,
+        return_type,
+    } = return_type.as_ref()
+    else {
+        panic!("expected right-associative return function");
+    };
+    assert_eq!(params, &[TypeRef::Path("B".to_owned())]);
+    assert_eq!(return_type.as_ref(), &TypeRef::Path("C".to_owned()));
+
+    let TypeRef::Function {
+        params,
+        return_type,
+    } = parse_type_ref("(A, B) -> C").expect("call-group function type parses")
+    else {
+        panic!("expected function type");
+    };
+    assert_eq!(
+        params,
+        vec![TypeRef::Path("A".to_owned()), TypeRef::Path("B".to_owned())]
+    );
+    assert_eq!(return_type.as_ref(), &TypeRef::Path("C".to_owned()));
+
+    assert!(matches!(
+        parse_type_ref("(A, B)").expect("tuple type parses"),
+        TypeRef::Tuple(items) if items.len() == 2
+    ));
+}
+
+#[test]
+fn function_signatures_keep_function_typed_parameters() {
+    let signature = parse_fn_signature("fn map<A, B>(f: A -> B)(xs: Vec<A>) -> Vec<B>")
+        .expect("function-typed curried signature parses");
+
+    assert_eq!(signature.param_groups().len(), 2);
+    assert!(matches!(
+        signature.param_groups()[0].params()[0].ty(),
+        TypeRef::Function { params, return_type }
+            if params.len() == 1
+                && matches!(&params[0], TypeRef::Path(path) if path == "A")
+                && matches!(return_type.as_ref(), TypeRef::Path(path) if path == "B")
+    ));
 }
 
 #[test]

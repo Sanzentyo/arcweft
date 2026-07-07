@@ -783,6 +783,14 @@ pub(crate) fn type_ref_kind(ty: &TypeRef) -> TypeKind {
         TypeRef::Never => TypeKind::Never,
         TypeRef::ConstInt(value) => TypeKind::Named(value.to_string()),
         TypeRef::Path(path) => named_type_label(path),
+        TypeRef::Tuple(items) => TypeKind::Tuple(items.iter().map(type_ref_kind).collect()),
+        TypeRef::Function {
+            params,
+            return_type,
+        } => TypeKind::Function {
+            params: params.iter().map(type_ref_kind).collect(),
+            return_type: Box::new(type_ref_kind(return_type)),
+        },
         TypeRef::Choice(alternatives) => {
             normalize_choice_type(alternatives.iter().map(type_ref_kind).collect::<Vec<_>>())
         }
@@ -887,6 +895,32 @@ pub(super) fn type_ref_label(ty: &TypeRef) -> String {
         TypeRef::Never => "Never".to_owned(),
         TypeRef::ConstInt(value) => value.to_string(),
         TypeRef::Path(path) => path.clone(),
+        TypeRef::Tuple(items) => format!(
+            "({})",
+            items
+                .iter()
+                .map(type_ref_label)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        TypeRef::Function {
+            params,
+            return_type,
+        } => {
+            let params = if params.len() == 1 {
+                type_ref_label(&params[0])
+            } else {
+                format!(
+                    "({})",
+                    params
+                        .iter()
+                        .map(type_ref_label)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            };
+            format!("{params} -> {}", type_ref_label(return_type))
+        }
         TypeRef::Choice(alternatives) => alternatives
             .iter()
             .map(type_ref_label)
@@ -1041,7 +1075,10 @@ pub(super) fn type_kind_label(ty: &TypeKind) -> String {
         } => format!("Handle<{name}, {lifetime:?}, {state:?}, {must_drop}>"),
         TypeKind::ThreadHandle(inner) => format!("ThreadHandle<{}>", type_kind_label(inner)),
         TypeKind::Shared(inner) => format!("Shared<{}>", type_kind_label(inner)),
-        TypeKind::Function { return_type } => format!("fn -> {}", type_kind_label(return_type)),
+        TypeKind::Function {
+            params,
+            return_type,
+        } => function_type_kind_label(params, return_type),
         TypeKind::GenericParam(name) | TypeKind::Named(name) => name.clone(),
         TypeKind::Projection {
             subject,
@@ -1069,6 +1106,22 @@ pub(super) fn type_kind_label(ty: &TypeKind) -> String {
             .join(" | "),
         _ => unreachable!("atomic type labels are handled before structured labels"),
     }
+}
+
+fn function_type_kind_label(params: &[TypeKind], return_type: &TypeKind) -> String {
+    let params = if params.len() == 1 {
+        type_kind_label(&params[0])
+    } else {
+        format!(
+            "({})",
+            params
+                .iter()
+                .map(type_kind_label)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+    format!("{params} -> {}", type_kind_label(return_type))
 }
 
 fn entity_type_label(entity: &crate::types::EntityType) -> String {

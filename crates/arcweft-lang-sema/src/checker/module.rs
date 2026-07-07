@@ -1024,6 +1024,20 @@ impl TypeChecker<'_> {
                     }
                 }
             }
+            TypeRef::Tuple(items) => {
+                for item in items {
+                    self.check_type_ref_shape(item);
+                }
+            }
+            TypeRef::Function {
+                params,
+                return_type,
+            } => {
+                for param in params {
+                    self.check_type_ref_shape(param);
+                }
+                self.check_type_ref_shape(return_type);
+            }
             TypeRef::Generic { args, .. } => {
                 for arg in args {
                     self.check_type_ref_shape(arg);
@@ -1139,7 +1153,14 @@ impl TypeChecker<'_> {
             TypeKind::Shared(inner) => {
                 TypeKind::Shared(Box::new(self.erase_aliases_with_seen(inner, seen)))
             }
-            TypeKind::Function { return_type } => TypeKind::Function {
+            TypeKind::Function {
+                params,
+                return_type,
+            } => TypeKind::Function {
+                params: params
+                    .iter()
+                    .map(|param| self.erase_aliases_with_seen(param, seen))
+                    .collect(),
                 return_type: Box::new(self.erase_aliases_with_seen(return_type, seen)),
             },
             TypeKind::Tuple(items) => TypeKind::Tuple(
@@ -1309,6 +1330,11 @@ fn default_inline_policy_label(expr: &Expr) -> String {
 fn type_ref_contains_choice(ty: &TypeRef) -> bool {
     match ty {
         TypeRef::Choice(_) => true,
+        TypeRef::Tuple(items) => items.iter().any(type_ref_contains_choice),
+        TypeRef::Function {
+            params,
+            return_type,
+        } => params.iter().any(type_ref_contains_choice) || type_ref_contains_choice(return_type),
         TypeRef::Generic { args, .. } => args.iter().any(type_ref_contains_choice),
         TypeRef::TraitBound(bound) => {
             bound.args().iter().any(type_ref_contains_choice)

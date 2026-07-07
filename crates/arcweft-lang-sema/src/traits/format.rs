@@ -52,6 +52,24 @@ pub(super) fn type_kind_label(ty: &TypeKind) -> String {
         }
         TypeKind::Slice(inner) => format!("[{}]", type_kind_label(inner)),
         TypeKind::Option(inner) => format!("Option<{}>", type_kind_label(inner)),
+        TypeKind::Function {
+            params,
+            return_type,
+        } => {
+            let params = if params.len() == 1 {
+                type_kind_label(&params[0])
+            } else {
+                format!(
+                    "({})",
+                    params
+                        .iter()
+                        .map(type_kind_label)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            };
+            format!("{params} -> {}", type_kind_label(return_type))
+        }
         TypeKind::Result { ok, error } => {
             format!(
                 "Result<{}, {}>",

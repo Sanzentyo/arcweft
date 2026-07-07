@@ -155,6 +155,24 @@ pub(crate) fn type_label(ty: &TypeRef) -> String {
         TypeRef::Never => "Never".to_owned(),
         TypeRef::ConstInt(value) => value.to_string(),
         TypeRef::Path(path) => path.clone(),
+        TypeRef::Tuple(items) => format!(
+            "({})",
+            items.iter().map(type_label).collect::<Vec<_>>().join(", ")
+        ),
+        TypeRef::Function {
+            params,
+            return_type,
+        } => {
+            let params = if params.len() == 1 {
+                type_label(&params[0])
+            } else {
+                format!(
+                    "({})",
+                    params.iter().map(type_label).collect::<Vec<_>>().join(", ")
+                )
+            };
+            format!("{params} -> {}", type_label(return_type))
+        }
         TypeRef::Choice(alternatives) => alternatives
             .iter()
             .map(type_label)

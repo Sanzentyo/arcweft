@@ -841,6 +841,24 @@ fn record_type_ref(ty: &TypeRef, bytes: &mut Vec<u8>) -> Result<(), PersistentFa
             put_str(bytes, "path")?;
             put_str(bytes, path)?;
         }
+        TypeRef::Tuple(items) => {
+            put_str(bytes, "tuple")?;
+            put_len(bytes, "tuple items", items.len())?;
+            for item in items {
+                record_type_ref(item, bytes)?;
+            }
+        }
+        TypeRef::Function {
+            params,
+            return_type,
+        } => {
+            put_str(bytes, "function")?;
+            put_len(bytes, "function params", params.len())?;
+            for param in params {
+                record_type_ref(param, bytes)?;
+            }
+            record_type_ref(return_type, bytes)?;
+        }
         TypeRef::Choice(alternatives) => {
             put_str(bytes, "choice")?;
             put_len(bytes, "choice alternatives", alternatives.len())?;
