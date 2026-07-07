@@ -131,7 +131,7 @@ fn normalize_renderer_glyphs_for_editor(
             continue;
         }
         match normalized.last_mut() {
-            Some(previous) if previous.range() == range => {
+            Some(previous) if previous.range() == range && !range_is_collapsed(range) => {
                 let bounds = union_hit_rect(previous.bounds(), glyph.bounds());
                 *previous = TextEditorGlyphGeometry::new(range, bounds);
             }
