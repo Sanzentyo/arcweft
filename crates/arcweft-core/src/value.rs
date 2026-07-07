@@ -1,3 +1,4 @@
+use crate::awbc::schema::AwbcFunctionId;
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use crate::pattern::RuntimePattern;
 use crate::plan::{
@@ -34,6 +35,12 @@ pub struct RuntimeBinding {
     pub value: RuntimeValue,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub enum RuntimeFunctionBody {
+    Expr(Box<RuntimeExpr>),
+    Awbc(AwbcFunctionId),
+}
+
 /// Captured runtime function value.
 ///
 /// Captures are deterministic runtime bindings collected when a function
@@ -42,7 +49,7 @@ pub struct RuntimeBinding {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeFunctionValue {
     pub params: Vec<String>,
-    pub body: Box<RuntimeExpr>,
+    pub body: RuntimeFunctionBody,
     pub captures: Vec<RuntimeBinding>,
 }
 
@@ -50,8 +57,27 @@ impl RuntimeFunctionValue {
     pub fn new(params: Vec<String>, body: RuntimeExpr, captures: Vec<RuntimeBinding>) -> Self {
         Self {
             params,
-            body: Box::new(body),
+            body: RuntimeFunctionBody::Expr(Box::new(body)),
             captures,
+        }
+    }
+
+    pub fn new_awbc(
+        params: Vec<String>,
+        function: AwbcFunctionId,
+        captures: Vec<RuntimeBinding>,
+    ) -> Self {
+        Self {
+            params,
+            body: RuntimeFunctionBody::Awbc(function),
+            captures,
+        }
+    }
+
+    pub const fn expr_body(&self) -> Option<&RuntimeExpr> {
+        match &self.body {
+            RuntimeFunctionBody::Expr(body) => Some(body),
+            RuntimeFunctionBody::Awbc(_) => None,
         }
     }
 
@@ -72,11 +98,11 @@ impl RuntimeFunctionValue {
                     value: value.clone(),
                 }),
         );
-        Self::new(
-            self.params[args.len()..].to_vec(),
-            self.body.as_ref().clone(),
+        Self {
+            params: self.params[args.len()..].to_vec(),
+            body: self.body.clone(),
             captures,
-        )
+        }
     }
 }
 

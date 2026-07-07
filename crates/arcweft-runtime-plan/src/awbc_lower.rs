@@ -119,6 +119,7 @@ impl<'a> AwbcLowerer<'a> {
             flow_lowerer.into_diagnostics()
         };
         AwbcSourceStreamLowerer::new(&mut inventory).lower_plan(plan);
+        expr::lower_pending_closures(&mut inventory);
 
         diagnostics.extend(inventory.take_diagnostics());
         let mut program = inventory.finish();

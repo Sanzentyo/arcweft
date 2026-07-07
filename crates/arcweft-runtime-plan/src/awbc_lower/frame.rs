@@ -17,6 +17,13 @@ pub enum FrameSlotKey {
     RuntimeState(String),
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FrameCaptureSlot {
+    pub name: String,
+    pub name_id: AwbcStringId,
+    pub register: AwbcRegisterId,
+}
+
 /// Function-local frame allocator.
 #[derive(Clone, Debug)]
 pub struct FrameBuilder {
@@ -156,6 +163,23 @@ impl FrameBuilder {
         self.by_key
             .get(&FrameSlotKey::Local(name.to_owned()))
             .copied()
+    }
+
+    pub fn capture_slots(&self) -> Vec<FrameCaptureSlot> {
+        self.by_key
+            .iter()
+            .filter_map(|(key, register)| {
+                let FrameSlotKey::Local(name) = key else {
+                    return None;
+                };
+                let name_id = self.slots.get(register.index())?.name?;
+                Some(FrameCaptureSlot {
+                    name: name.clone(),
+                    name_id,
+                    register: *register,
+                })
+            })
+            .collect()
     }
 
     pub fn finish(self) -> AwbcFrameLayout {

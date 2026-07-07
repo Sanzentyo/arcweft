@@ -264,6 +264,24 @@ impl Wire for AwbcInstruction {
                 args.write_wire(writer)?;
             }
             Self::CancelCleanup { key } => key.write_wire(writer)?,
+            Self::MakeFunction {
+                dst,
+                function,
+                params,
+                capture_names,
+                captures,
+            } => {
+                dst.write_wire(writer)?;
+                function.write_wire(writer)?;
+                params.write_wire(writer)?;
+                capture_names.write_wire(writer)?;
+                captures.write_wire(writer)?;
+            }
+            Self::ApplyFunction { dst, callee, args } => {
+                dst.write_wire(writer)?;
+                callee.write_wire(writer)?;
+                args.write_wire(writer)?;
+            }
         }
         Ok(())
     }
@@ -447,6 +465,18 @@ impl Wire for AwbcInstruction {
             },
             AwbcOpcode::CancelCleanup => Self::CancelCleanup {
                 key: AwbcStringId::read_wire(reader)?,
+            },
+            AwbcOpcode::MakeFunction => Self::MakeFunction {
+                dst: AwbcRegisterId::read_wire(reader)?,
+                function: AwbcFunctionId::read_wire(reader)?,
+                params: Vec::<AwbcStringId>::read_wire(reader)?,
+                capture_names: Vec::<AwbcStringId>::read_wire(reader)?,
+                captures: Vec::<AwbcRegisterId>::read_wire(reader)?,
+            },
+            AwbcOpcode::ApplyFunction => Self::ApplyFunction {
+                dst: AwbcRegisterId::read_wire(reader)?,
+                callee: AwbcRegisterId::read_wire(reader)?,
+                args: Vec::<AwbcRegisterId>::read_wire(reader)?,
             },
             AwbcOpcode::Jump
             | AwbcOpcode::Branch
@@ -688,7 +718,9 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::AssignField
             | AwbcOpcode::CallTraitMethod
             | AwbcOpcode::RegisterCleanup
-            | AwbcOpcode::CancelCleanup => unreachable!("instruction opcode rejected above"),
+            | AwbcOpcode::CancelCleanup
+            | AwbcOpcode::MakeFunction
+            | AwbcOpcode::ApplyFunction => unreachable!("instruction opcode rejected above"),
         })
     }
 }

@@ -211,13 +211,9 @@ impl<'a> AwbcFlowLowerer<'a> {
                 .intern_content_unit(&public_id, Some(group_id));
         }
 
-        let function_start = table_index(self.inventory.program.functions.len());
-        for (index, flow) in plan.flows.iter().enumerate() {
-            let offset = u32::try_from(index).unwrap_or(u32::MAX);
-            self.inventory.reserve_function_name(
-                &flow.id.0,
-                AwbcFunctionId(function_start.saturating_add(offset)),
-            );
+        for flow in &plan.flows {
+            self.inventory
+                .reserve_function_slot(Some(flow.id.0.as_str()));
         }
         let entry_targets = entry_target_flow_names(plan);
         for flow in &plan.flows {
@@ -244,7 +240,7 @@ impl<'a> AwbcFlowLowerer<'a> {
             return;
         }
 
-        let owner = AwbcFunctionId(table_index(self.inventory.program.functions.len()));
+        let owner = self.inventory.reserve_function_slot(Some(&helper.name));
         let mut frame = FrameBuilder::new();
         let dynamic_ty = self.inventory.dynamic_ty();
         for input in &helper.input_names {
@@ -271,7 +267,8 @@ impl<'a> AwbcFlowLowerer<'a> {
         let signature = self
             .inventory
             .intern_dynamic_value_signature(helper.input_names.len());
-        let function = self.inventory.push_function(
+        let function = self.inventory.replace_function(
+            owner,
             Some(&helper.name),
             AwbcFunction {
                 public_id: Some(public_id),
@@ -305,7 +302,10 @@ impl<'a> AwbcFlowLowerer<'a> {
         let owner = self
             .inventory
             .function_by_name(&flow.id.0)
-            .unwrap_or_else(|| AwbcFunctionId(table_index(self.inventory.program.functions.len())));
+            .unwrap_or_else(|| {
+                self.inventory
+                    .reserve_function_slot(Some(flow.id.0.as_str()))
+            });
         let dynamic_ty = self.inventory.dynamic_ty();
         for parameter in entry_parameters {
             let name = self.inventory.intern_string(parameter);
@@ -341,7 +341,8 @@ impl<'a> AwbcFlowLowerer<'a> {
         if body.has_dynamic_target {
             flags |= AwbcFunctionFlags::HAS_DYNAMIC_TARGET;
         }
-        let function = self.inventory.push_function(
+        let function = self.inventory.replace_function(
+            owner,
             Some(flow.id.0.as_str()),
             AwbcFunction {
                 public_id: Some(public_id),

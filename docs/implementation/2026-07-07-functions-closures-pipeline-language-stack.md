@@ -315,10 +315,18 @@ Source briefs:
   now threaded into flow, stream, source, and Agent bundle runtime-plan
   lowering. Prefix partial calls to top-level `#[pure]` functions are accepted
   in sema and remain scoped to the pure helper runtime path.
-- AWBC does not yet allocate runtime closure values. `RuntimeExpr::Function`
-  currently emits an AWBC lowering diagnostic, and function state is not encoded
-  as an AWBC constant. `RuntimeExpr::Apply` is represented as a
-  `function.apply` intrinsic for bytecode inventory purposes.
+- AWBC now has first-class closure allocation/apply instructions for
+  expression-local function values that complete without suspension.
+  `RuntimeExpr::Function` reserves a synthetic AWBC function and emits
+  `MakeFunction` with deterministic captures; pending synthetic closure bodies
+  are lowered after the enclosing function body so AWBC function/block ranges
+  stay contiguous and owned by one function. `RuntimeExpr::Apply` now emits
+  `ApplyFunction` instead of the former `function.apply` inventory intrinsic.
+  The compact VM supports exact application, partial application, and chained
+  application of AWBC-backed `RuntimeValue::Function` values. If the synthetic
+  closure body suspends or yields budget during expression apply, the VM reports
+  a runtime error; suspension-aware dynamic apply still needs a terminator and
+  resume-point lowering design.
 - Pipe no-`^` runtime lowering is helper-aware for named pure helpers. Method
   syntax fallback now has typed lowering evidence for data-last helper
   signatures, including named method arguments. No-`^` pipe lowering also
@@ -334,8 +342,14 @@ Source briefs:
   spread fallback lowering, curried call-group runtime fallback metadata, and
   non-pure top-level callable runtime allocation remain open.
 - Curried declaration call-group metadata is now preserved for sema/runtime-plan
-  callable application and sema trait/impl method calls. AWBC closure/apply
-  allocation remains open.
+  callable application and sema trait/impl method calls. AWBC closure/apply now
+  covers non-suspending expression closures; suspension-aware dynamic function
+  calls and persisted closure state remain open.
+- Runtime identifiers such as `FlowRuntimeId(String)` still conflate source
+  relative IDs, canonical runtime IDs, and debug/public labels in some call
+  sites and tests. New tests avoid adding `flow.*` qualified-looking strings,
+  but the typed ID boundary needs a dedicated design/implementation pass:
+  `docs/reviews/requests/2026-07-07-seq-07.6-relative-runtime-id-boundaries.md`.
 - Closure capture lifetime diagnostics now cover borrowed local captures that
   cross checked suspension boundaries. Closure body effect composition is
   implemented for synthetic closure callables, direct calls through local
@@ -514,6 +528,14 @@ The cut also passed `cargo check --workspace --all-targets --all-features`,
 `cargo clippy --workspace --all-targets --all-features` with only the existing
 `TraitMember`/`ImplMember` large enum warnings, and structure audit with 0
 errors / 147 warnings.
+
+The AWBC non-suspending closure/apply cut has passing focused coverage for
+hand-built closure bytecode (`closure_instructions_capture_and_apply_awbc_function_value`)
+and runtime-plan-generated closure application
+(`lowers_runtime_function_apply_to_awbc_closure_instructions`). The generated
+plan test verifies the lowered program, confirms `MakeFunction` and
+`ApplyFunction` are emitted instead of a `function.apply` intrinsic, and runs
+the produced AWBC in the VM to return `"ok"`.
 
 The local function-valued call cut has focused passing coverage for a flow that
 aliases a pure helper, partially applies that local function value, and applies

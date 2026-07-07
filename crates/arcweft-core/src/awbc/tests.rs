@@ -222,6 +222,151 @@ fn verifier_reports_uninitialized_register() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "The AWBC closure fixture is intentionally inline so opcode, verifier, codec, and VM expectations stay in one place."
+)]
+fn closure_instructions_capture_and_apply_awbc_function_value() {
+    let program = AwbcProgram {
+        strings: vec!["captured".to_owned(), "main".to_owned(), "x".to_owned()],
+        constants: vec![AwbcConstant::String(AwbcStringId(0))],
+        signatures: vec![
+            AwbcSignature {
+                params: Vec::new(),
+                result: Some(AwbcTypeId(1)),
+                effects: AwbcEffectSetId(0),
+            },
+            AwbcSignature {
+                params: vec![AwbcTypeId(1)],
+                result: Some(AwbcTypeId(1)),
+                effects: AwbcEffectSetId(0),
+            },
+        ],
+        frame_layouts: vec![
+            AwbcFrameLayout {
+                slots: vec![
+                    AwbcFrameSlot {
+                        name: Some(AwbcStringId(2)),
+                        ty: AwbcTypeId(1),
+                        role: AwbcFrameSlotRole::Local,
+                        scope_depth: 0,
+                    },
+                    AwbcFrameSlot {
+                        name: None,
+                        ty: AwbcTypeId(1),
+                        role: AwbcFrameSlotRole::Temporary,
+                        scope_depth: 0,
+                    },
+                    AwbcFrameSlot {
+                        name: None,
+                        ty: AwbcTypeId(1),
+                        role: AwbcFrameSlotRole::Temporary,
+                        scope_depth: 0,
+                    },
+                ],
+                max_scope_depth: 0,
+            },
+            AwbcFrameLayout {
+                slots: vec![AwbcFrameSlot {
+                    name: Some(AwbcStringId(2)),
+                    ty: AwbcTypeId(1),
+                    role: AwbcFrameSlotRole::Parameter,
+                    scope_depth: 0,
+                }],
+                max_scope_depth: 0,
+            },
+        ],
+        functions: vec![
+            AwbcFunction {
+                public_id: Some(AwbcStringId(1)),
+                kind: AwbcFunctionKind::Flow,
+                signature: AwbcSignatureId(0),
+                frame_layout: AwbcFrameLayoutId(0),
+                blocks: AwbcTableRange::new(0, 1),
+                entry_block: AwbcBlockId(0),
+                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            },
+            AwbcFunction {
+                public_id: None,
+                kind: AwbcFunctionKind::Synthetic,
+                signature: AwbcSignatureId(1),
+                frame_layout: AwbcFrameLayoutId(1),
+                blocks: AwbcTableRange::new(1, 1),
+                entry_block: AwbcBlockId(1),
+                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            },
+        ],
+        blocks: vec![
+            AwbcBlock {
+                owner: AwbcFunctionId(0),
+                instructions: AwbcTableRange::new(0, 3),
+                terminator: AwbcTerminator::Return {
+                    value: Some(AwbcRegisterId(2)),
+                },
+                safe_point: AwbcSafePointKind::FlowEntry,
+                source_map: None,
+            },
+            AwbcBlock {
+                owner: AwbcFunctionId(1),
+                instructions: AwbcTableRange::new(3, 0),
+                terminator: AwbcTerminator::Return {
+                    value: Some(AwbcRegisterId(0)),
+                },
+                safe_point: AwbcSafePointKind::CallableBoundary,
+                source_map: None,
+            },
+        ],
+        instructions: vec![
+            AwbcInstruction::LoadConst {
+                dst: AwbcRegisterId(0),
+                constant: AwbcConstantId(0),
+            },
+            AwbcInstruction::MakeFunction {
+                dst: AwbcRegisterId(1),
+                function: AwbcFunctionId(1),
+                params: Vec::new(),
+                capture_names: vec![AwbcStringId(2)],
+                captures: vec![AwbcRegisterId(0)],
+            },
+            AwbcInstruction::ApplyFunction {
+                dst: AwbcRegisterId(2),
+                callee: AwbcRegisterId(1),
+                args: Vec::new(),
+            },
+        ],
+        entries: vec![AwbcEntry {
+            public_id: AwbcStringId(1),
+            kind: AwbcEntryKind::Game,
+            signature: AwbcSignatureId(0),
+            target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+        }],
+        ..AwbcProgram::default()
+    };
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("closure program verifies");
+
+    let encoded = program.encode_canonical().expect("encode closure program");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode closure program");
+    assert_eq!(decoded, program);
+
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).expect("create fiber");
+    let output = super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 16,
+        },
+    )
+    .expect("step closure program");
+    assert_eq!(
+        output.exit,
+        super::vm::VmExit::Returned(Some(RuntimeValue::String("captured".to_owned())))
+    );
+}
+
+#[test]
 fn verifier_rejects_branch_outside_function() {
     let mut program = minimal_program();
     program.blocks[0].terminator = AwbcTerminator::Jump {

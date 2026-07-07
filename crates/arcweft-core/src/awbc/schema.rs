@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 pub const AWBC_ABI_VERSION: u32 = 1;
 /// Canonical binary codec version used inside an `AWBC` product section.
 ///
-/// Version 6 adds the trait-method callable table plus `AssignField` and
-/// `CallTraitMethod` opcodes. V5 readers cannot skip the new canonical table.
-pub const AWBC_CODEC_VERSION: u16 = 6;
+/// Version 7 adds first-class closure allocation/application opcodes.
+/// V6 readers cannot skip the new canonical instruction payloads.
+pub const AWBC_CODEC_VERSION: u16 = 7;
 /// Magic at the beginning of a standalone canonical AWBC payload.
 pub const AWBC_MAGIC: [u8; 8] = *b"AWBC\r\n\x1a\n";
 
@@ -396,6 +396,18 @@ fn remap_instruction_strings(instruction: &mut AwbcInstruction, remap: &[u32]) {
         AwbcInstruction::RegisterCleanup { key, .. } | AwbcInstruction::CancelCleanup { key } => {
             remap_string_id(key, remap);
         }
+        AwbcInstruction::MakeFunction {
+            params,
+            capture_names,
+            ..
+        } => {
+            for param in params {
+                remap_string_id(param, remap);
+            }
+            for capture_name in capture_names {
+                remap_string_id(capture_name, remap);
+            }
+        }
         AwbcInstruction::MakeRecord { field_names, .. } => {
             for field_name in field_names {
                 remap_string_id(field_name, remap);
@@ -727,6 +739,8 @@ pub enum AwbcOpcode {
     CallTraitMethod,
     RegisterCleanup,
     CancelCleanup,
+    MakeFunction,
+    ApplyFunction,
     Jump,
     Branch,
     Match,
@@ -784,6 +798,8 @@ impl AwbcOpcode {
             Self::CallTraitMethod => 0x22,
             Self::RegisterCleanup => 0x23,
             Self::CancelCleanup => 0x24,
+            Self::MakeFunction => 0x25,
+            Self::ApplyFunction => 0x26,
             Self::Jump => 0x80,
             Self::Branch => 0x81,
             Self::Match => 0x82,
@@ -841,6 +857,8 @@ impl AwbcOpcode {
             0x22 => Self::CallTraitMethod,
             0x23 => Self::RegisterCleanup,
             0x24 => Self::CancelCleanup,
+            0x25 => Self::MakeFunction,
+            0x26 => Self::ApplyFunction,
             0x80 => Self::Jump,
             0x81 => Self::Branch,
             0x82 => Self::Match,
@@ -1029,6 +1047,18 @@ pub enum AwbcInstruction {
     CancelCleanup {
         key: AwbcStringId,
     },
+    MakeFunction {
+        dst: AwbcRegisterId,
+        function: AwbcFunctionId,
+        params: Vec<AwbcStringId>,
+        capture_names: Vec<AwbcStringId>,
+        captures: Vec<AwbcRegisterId>,
+    },
+    ApplyFunction {
+        dst: AwbcRegisterId,
+        callee: AwbcRegisterId,
+        args: Vec<AwbcRegisterId>,
+    },
 }
 
 impl AwbcInstruction {
@@ -1071,6 +1101,8 @@ impl AwbcInstruction {
             Self::CallTraitMethod { .. } => AwbcOpcode::CallTraitMethod,
             Self::RegisterCleanup { .. } => AwbcOpcode::RegisterCleanup,
             Self::CancelCleanup { .. } => AwbcOpcode::CancelCleanup,
+            Self::MakeFunction { .. } => AwbcOpcode::MakeFunction,
+            Self::ApplyFunction { .. } => AwbcOpcode::ApplyFunction,
         }
     }
 }

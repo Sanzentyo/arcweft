@@ -18,8 +18,9 @@ use super::schema::{
 };
 use crate::time::LogicalDuration;
 use crate::value::{
-    RuntimeSeq, RuntimeValue, evaluate_binary, evaluate_unary,
-    runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_value_label,
+    RuntimeBinding, RuntimeFunctionBody, RuntimeFunctionValue, RuntimeSeq, RuntimeValue,
+    evaluate_binary, evaluate_unary, runtime_sequence_from_literal_values,
+    runtime_sequence_repeat_value, runtime_value_label,
 };
 use thiserror::Error;
 
@@ -640,6 +641,43 @@ fn execute_instruction(
                 scope.cleanups.retain(|cleanup| cleanup.key != key);
             }
         }
+        AwbcInstruction::MakeFunction {
+            dst,
+            function,
+            params,
+            capture_names,
+            captures,
+        } => {
+            let params = params
+                .iter()
+                .map(|param| string(program, *param).map(str::to_owned))
+                .collect::<Result<Vec<_>, _>>()?;
+            let captures = capture_names
+                .iter()
+                .zip(captures)
+                .map(|(name, value)| {
+                    Ok(RuntimeBinding {
+                        name: string(program, *name)?.to_owned(),
+                        value: register(fiber, *value)?.clone(),
+                    })
+                })
+                .collect::<Result<Vec<_>, VmError>>()?;
+            let value =
+                RuntimeValue::Function(RuntimeFunctionValue::new_awbc(params, *function, captures));
+            fiber.active_frame_mut()?.set_register(*dst, value)?;
+        }
+        AwbcInstruction::ApplyFunction { dst, callee, args } => {
+            let callee = register(fiber, *callee)?.clone();
+            let args = register_values(fiber, args)?;
+            let RuntimeValue::Function(function) = callee else {
+                return Err(VmError::Runtime(format!(
+                    "function application expected function, found {}",
+                    runtime_value_label(&callee)
+                )));
+            };
+            let value = apply_runtime_function(program, fiber.entry, host, &function, &args)?;
+            fiber.active_frame_mut()?.set_register(*dst, value)?;
+        }
         AwbcInstruction::StartTask { dst, plan, args } => {
             let args = register_values(fiber, args)?;
             let handle = RuntimeValue::String(
@@ -738,6 +776,99 @@ fn emit_cleanup_observations(
             effect: cleanup.effect,
             args: cleanup.args,
         });
+    }
+}
+
+fn apply_runtime_function(
+    program: &AwbcProgram,
+    entry: super::schema::AwbcEntryId,
+    host: &mut impl VmHost,
+    function: &RuntimeFunctionValue,
+    args: &[RuntimeValue],
+) -> Result<RuntimeValue, VmError> {
+    if args.len() < function.arity() {
+        return Ok(RuntimeValue::Function(function.partially_apply(args)));
+    }
+
+    let (call_args, remaining_args) = args.split_at(function.arity());
+    let value = call_awbc_function(program, entry, host, function, call_args)?;
+    if remaining_args.is_empty() {
+        return Ok(value);
+    }
+    match value {
+        RuntimeValue::Function(next) => {
+            apply_runtime_function(program, entry, host, &next, remaining_args)
+        }
+        _ => Err(VmError::Runtime(format!(
+            "function returned {} before consuming {} remaining arguments",
+            runtime_value_label(&value),
+            remaining_args.len()
+        ))),
+    }
+}
+
+fn call_awbc_function(
+    program: &AwbcProgram,
+    entry: super::schema::AwbcEntryId,
+    host: &mut impl VmHost,
+    function: &RuntimeFunctionValue,
+    args: &[RuntimeValue],
+) -> Result<RuntimeValue, VmError> {
+    let RuntimeFunctionBody::Awbc(function_id) = &function.body else {
+        return Err(VmError::Runtime(
+            "AWBC VM cannot apply structured expression function bodies".to_owned(),
+        ));
+    };
+    let mut values = function
+        .captures
+        .iter()
+        .map(|capture| capture.value.clone())
+        .collect::<Vec<_>>();
+    values.extend(args.iter().cloned());
+    execute_awbc_function_sync(program, entry, host, *function_id, &values)
+}
+
+fn execute_awbc_function_sync(
+    program: &AwbcProgram,
+    entry: super::schema::AwbcEntryId,
+    host: &mut impl VmHost,
+    function: AwbcFunctionId,
+    args: &[RuntimeValue],
+) -> Result<RuntimeValue, VmError> {
+    const FUNCTION_APPLY_BUDGET: u64 = 4_096;
+
+    let mut fiber = FiberState::for_function(program, entry, function, 0, FUNCTION_APPLY_BUDGET)?;
+    fiber
+        .active_frame_mut()?
+        .bind_positional_arguments(program, args)?;
+    loop {
+        let output = step_with_host(
+            program,
+            &mut fiber,
+            VmStepOptions {
+                max_instructions: FUNCTION_APPLY_BUDGET,
+            },
+            host,
+        )?;
+        match output.exit {
+            VmExit::Running => {}
+            VmExit::Returned(value) => return Ok(value.unwrap_or(RuntimeValue::Unit)),
+            VmExit::Trapped(trap) => {
+                return Err(VmError::Runtime(format!(
+                    "function application trapped: {trap:?}"
+                )));
+            }
+            VmExit::Suspended(reason) => {
+                return Err(VmError::Runtime(format!(
+                    "function application cannot suspend from expression lowering: {reason:?}"
+                )));
+            }
+            VmExit::BudgetYield(_) => {
+                return Err(VmError::Runtime(
+                    "function application exhausted expression budget".to_owned(),
+                ));
+            }
+        }
     }
 }
 

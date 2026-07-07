@@ -1909,7 +1909,14 @@ impl PureEvaluator {
         for (param, value) in function.params.iter().zip(args) {
             self.env.set_ref(param, value);
         }
-        let result = self.evaluate_expr(&function.body);
+        let Some(body) = function.expr_body() else {
+            self.env.pop_scope();
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: "awbc.function".to_owned(),
+                reason: "pure evaluator cannot evaluate an AWBC function body".to_owned(),
+            });
+        };
+        let result = self.evaluate_expr(body);
         self.env.pop_scope();
         result
     }

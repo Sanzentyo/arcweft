@@ -34,7 +34,7 @@ use arcweft_core::source::{
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::stream::StreamRuntimeId;
 use arcweft_core::task::{HostTaskArgTemplate, HostTaskRequestTemplate};
-use arcweft_core::value::{RuntimeInt, RuntimeRange, RuntimeUInt, RuntimeValue};
+use arcweft_core::value::{RuntimeExpr, RuntimeInt, RuntimeRange, RuntimeUInt, RuntimeValue};
 use arcweft_render_text::LineDisplayCatalog;
 use std::collections::BTreeMap;
 
@@ -129,6 +129,16 @@ pub struct AwbcInventory {
     streams: BTreeMap<StreamRuntimeId, AwbcStreamPlanId>,
     choices: BTreeMap<String, AwbcChoiceId>,
     entry_functions: BTreeMap<String, AwbcFunctionId>,
+    pending_closures: Vec<PendingAwbcClosure>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PendingAwbcClosure {
+    pub function: AwbcFunctionId,
+    pub params: Vec<(String, AwbcStringId)>,
+    pub captures: Vec<(String, AwbcStringId)>,
+    pub body: RuntimeExpr,
+    pub path: String,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -162,6 +172,7 @@ impl AwbcInventory {
             streams: BTreeMap::new(),
             choices: BTreeMap::new(),
             entry_functions: BTreeMap::new(),
+            pending_closures: Vec::new(),
         };
         this.intern_string(source_label);
         this
@@ -517,6 +528,41 @@ impl AwbcInventory {
         id
     }
 
+    pub fn reserve_function_slot(&mut self, public_id: Option<&str>) -> AwbcFunctionId {
+        let id = AwbcFunctionId(table_index(self.program.functions.len()));
+        if let Some(name) = public_id {
+            self.entry_functions.insert(name.to_owned(), id);
+        }
+        self.program.functions.push(AwbcFunction {
+            public_id: None,
+            kind: AwbcFunctionKind::Synthetic,
+            signature: AwbcSignatureId::default(),
+            frame_layout: AwbcFrameLayoutId::default(),
+            blocks: AwbcTableRange::new(0, 0),
+            entry_block: AwbcBlockId::default(),
+            flags: AwbcFunctionFlags(0),
+        });
+        id
+    }
+
+    pub fn replace_function(
+        &mut self,
+        id: AwbcFunctionId,
+        public_id: Option<&str>,
+        function: AwbcFunction,
+    ) -> AwbcFunctionId {
+        if let Some(name) = public_id {
+            self.entry_functions.insert(name.to_owned(), id);
+        }
+        if let Some(slot) = self.program.functions.get_mut(id.index()) {
+            *slot = function;
+        } else {
+            debug_assert_eq!(id.index(), self.program.functions.len());
+            self.program.functions.push(function);
+        }
+        id
+    }
+
     pub fn function_by_name(&self, name: &str) -> Option<AwbcFunctionId> {
         self.entry_functions.get(name).copied()
     }
@@ -525,6 +571,14 @@ impl AwbcInventory {
     /// forward flow/choice targets resolve without a stringly post-pass.
     pub fn reserve_function_name(&mut self, name: &str, function: AwbcFunctionId) {
         self.entry_functions.insert(name.to_owned(), function);
+    }
+
+    pub(crate) fn push_pending_closure(&mut self, closure: PendingAwbcClosure) {
+        self.pending_closures.push(closure);
+    }
+
+    pub(crate) fn pop_pending_closure(&mut self) -> Option<PendingAwbcClosure> {
+        self.pending_closures.pop()
     }
 
     /// Attaches bounded fan-out semantics to an owned task plan.

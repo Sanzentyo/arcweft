@@ -710,6 +710,43 @@ fn apply_instruction(
         AwbcInstruction::CancelCleanup { key } => {
             check_string(program, *key, &at)?;
         }
+        AwbcInstruction::MakeFunction {
+            dst,
+            function: target,
+            params,
+            capture_names,
+            captures,
+        } => {
+            check_args_budget(verifier, params.len().saturating_add(captures.len()))?;
+            check_index(program.functions.len(), target.0, "functions", &at)?;
+            if capture_names.len() != captures.len() {
+                return argument_count(&at, capture_names.len(), captures.len());
+            }
+            for param in params {
+                check_string(program, *param, &at)?;
+            }
+            for capture_name in capture_names {
+                check_string(program, *capture_name, &at)?;
+            }
+            for capture in captures {
+                read_register(verifier, function, block, *capture, state)?;
+            }
+            let signature =
+                &program.signatures[program.functions[target.index()].signature.index()];
+            let expected = params.len().saturating_add(captures.len());
+            if signature.params.len() != expected {
+                return argument_count(&at, signature.params.len(), expected);
+            }
+            write_register(verifier, function, block, *dst, state)?;
+        }
+        AwbcInstruction::ApplyFunction { dst, callee, args } => {
+            check_args_budget(verifier, args.len())?;
+            read_register(verifier, function, block, *callee, state)?;
+            for arg in args {
+                read_register(verifier, function, block, *arg, state)?;
+            }
+            write_register(verifier, function, block, *dst, state)?;
+        }
         AwbcInstruction::StartTask { dst, plan, args } => {
             check_index(program.task_plans.len(), plan.0, "task_plans", &at)?;
             let task = &program.task_plans[plan.index()];

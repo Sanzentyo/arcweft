@@ -38,7 +38,10 @@ impl<'a> AwbcTraitMethodLowerer<'a> {
             return;
         }
 
-        let owner = AwbcFunctionId(table_index(self.inventory.program.functions.len()));
+        let public_label = trait_method_label(method);
+        let owner = self
+            .inventory
+            .reserve_function_slot(Some(public_label.as_str()));
         let mut frame = FrameBuilder::new();
         let dynamic_ty = self.inventory.dynamic_ty();
         for input in &method.input_names {
@@ -58,12 +61,12 @@ impl<'a> AwbcTraitMethodLowerer<'a> {
             format!("trait_method.{}:frame", method.id.0),
             frame.finish(),
         );
-        let public_label = trait_method_label(method);
         let public_id = self.inventory.intern_string(&public_label);
         let signature = self
             .inventory
             .intern_dynamic_value_signature(method.input_names.len());
-        let function = self.inventory.push_function(
+        let function = self.inventory.replace_function(
+            owner,
             Some(&public_label),
             AwbcFunction {
                 public_id: Some(public_id),

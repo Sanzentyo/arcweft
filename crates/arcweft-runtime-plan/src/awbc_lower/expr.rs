@@ -1,13 +1,15 @@
 use crate::awbc_lower::frame::FrameBuilder;
-use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic};
+use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic, PendingAwbcClosure};
 use crate::awbc_lower::pattern::lower_pattern;
-use crate::awbc_lower::table_index;
+use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
-    AwbcBinaryOp, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcPureHelperId,
-    AwbcRegisterId, AwbcTraitMethodId, AwbcUnaryOp,
+    AwbcBinaryOp, AwbcBlock, AwbcEffectSetId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionKind,
+    AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcPureHelperId, AwbcRegisterId,
+    AwbcSafePointKind, AwbcTableRange, AwbcTerminator, AwbcTraitMethodId, AwbcUnaryOp,
 };
 use arcweft_core::plan::RuntimeReceiverMode;
 use arcweft_core::value::{RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeUnaryOp};
+use std::collections::BTreeSet;
 
 /// Expression lowerer used by flow/source/stream builders.
 pub struct AwbcExprLowerer<'a, 'b> {
@@ -227,25 +229,13 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                 self.lower(body)
             }
             RuntimeExpr::Call { callee, args } => self.lower_call(callee, args),
-            RuntimeExpr::Function { .. } => {
-                self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                    self.path.clone(),
-                    "runtime function values require AWBC closure allocation support",
-                ));
-                self.load_runtime_const(&arcweft_core::value::RuntimeValue::Unit)
-            }
+            RuntimeExpr::Function { params, body } => self.lower_function(params, body),
             RuntimeExpr::Apply { callee, args } => {
                 let callee = self.lower(callee);
-                let mut args = args.iter().map(|arg| self.lower(arg)).collect::<Vec<_>>();
-                args.insert(0, callee);
+                let args = args.iter().map(|arg| self.lower(arg)).collect::<Vec<_>>();
                 let dst = self.frame.temp(self.inventory.dynamic_ty());
-                let intrinsic = self.intern_intrinsic("function.apply", args.len());
                 self.inventory
-                    .push_instruction(AwbcInstruction::CallIntrinsic {
-                        dst: Some(dst),
-                        intrinsic,
-                        args,
-                    });
+                    .push_instruction(AwbcInstruction::ApplyFunction { dst, callee, args });
                 dst
             }
             RuntimeExpr::TraitCall {
@@ -483,6 +473,45 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
         }
     }
 
+    fn lower_function(&mut self, params: &[String], body: &RuntimeExpr) -> AwbcRegisterId {
+        let param_names = params.iter().map(String::as_str).collect::<BTreeSet<_>>();
+        let captures = self
+            .frame
+            .capture_slots()
+            .into_iter()
+            .filter(|capture| !param_names.contains(capture.name.as_str()))
+            .collect::<Vec<_>>();
+        let function = self.inventory.reserve_function_slot(None);
+        let params = params
+            .iter()
+            .map(|param| {
+                let name = self.inventory.intern_string(param);
+                (param.clone(), name)
+            })
+            .collect::<Vec<_>>();
+        self.inventory.push_pending_closure(PendingAwbcClosure {
+            function,
+            params: params.clone(),
+            captures: captures
+                .iter()
+                .map(|capture| (capture.name.clone(), capture.name_id))
+                .collect(),
+            body: body.clone(),
+            path: format!("{}.closure.{}", self.path, function.0),
+        });
+
+        let dst = self.frame.temp(self.inventory.dynamic_ty());
+        self.inventory
+            .push_instruction(AwbcInstruction::MakeFunction {
+                dst,
+                function,
+                params: params.into_iter().map(|(_, name)| name).collect(),
+                capture_names: captures.iter().map(|capture| capture.name_id).collect(),
+                captures: captures.iter().map(|capture| capture.register).collect(),
+            });
+        dst
+    }
+
     fn load_runtime_const(&mut self, value: &arcweft_core::value::RuntimeValue) -> AwbcRegisterId {
         let dst = self.frame.temp(self.inventory.dynamic_ty());
         let constant = self.inventory.constant_runtime_value(value);
@@ -520,6 +549,52 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
             revision: 1,
         });
         id
+    }
+}
+
+pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory) {
+    while let Some(closure) = inventory.pop_pending_closure() {
+        let dynamic_ty = inventory.dynamic_ty();
+        let mut frame = FrameBuilder::new();
+        for (name, name_id) in &closure.captures {
+            frame.parameter(name, *name_id, dynamic_ty);
+        }
+        for (name, name_id) in &closure.params {
+            frame.parameter(name, *name_id, dynamic_ty);
+        }
+
+        let instruction_start = table_index(inventory.program.instructions.len());
+        let value =
+            AwbcExprLowerer::new(inventory, &mut frame, closure.path.clone()).lower(&closure.body);
+        let instruction_len =
+            table_range_len(instruction_start, inventory.program.instructions.len());
+        let layout =
+            inventory.intern_frame_layout(format!("{}:frame", closure.path), frame.finish());
+        let block = inventory.push_block(AwbcBlock {
+            owner: closure.function,
+            instructions: AwbcTableRange::new(instruction_start, instruction_len),
+            terminator: AwbcTerminator::Return { value: Some(value) },
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        });
+        let signature = inventory.intern_signature(
+            vec![dynamic_ty; closure.captures.len().saturating_add(closure.params.len())],
+            Some(dynamic_ty),
+            AwbcEffectSetId(0),
+        );
+        inventory.replace_function(
+            closure.function,
+            None,
+            AwbcFunction {
+                public_id: None,
+                kind: AwbcFunctionKind::Synthetic,
+                signature,
+                frame_layout: layout,
+                blocks: AwbcTableRange::new(block.0, 1),
+                entry_block: block,
+                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            },
+        );
     }
 }
 
