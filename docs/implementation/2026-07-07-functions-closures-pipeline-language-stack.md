@@ -89,6 +89,9 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   remaining `TypeKind::Function` when fewer positional arguments are supplied.
 - Compiler lowering now converts sema typed-lowering evidence into
   runtime-plan-local evidence and threads it through `RuntimePlanLowerOptions`.
+- Runtime-plan lowering shares one typed expression cursor across flow, stream,
+  and source lowering, and Agent bundle compilation now passes typecheck
+  evidence into the Agent controller runtime-plan entrypoint.
 - Strict runtime expression lowering consumes function-valued call evidence so
   path calls such as `f(1i64)` lower to `RuntimeExpr::Apply` when sema proved
   `f` is a function value. Without that evidence, the same unknown path call
@@ -111,9 +114,8 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
 - Top-level pure helper functions now materialize as function values in runtime
   expression lowering, and flow lowering tracks local aliases/partial applies
   that are known function values. Sema function-valued path call evidence is
-  now threaded into flow runtime-plan lowering, but non-flow stream/source
-  expression contexts still need the same evidence cursor before the
-  disambiguation is fully uniform.
+  now threaded into flow, stream, source, and Agent bundle runtime-plan
+  lowering.
 - AWBC does not yet allocate runtime closure values. `RuntimeExpr::Function`
   currently emits an AWBC lowering diagnostic, and function state is not encoded
   as an AWBC constant. `RuntimeExpr::Apply` is represented as a
@@ -156,6 +158,7 @@ cargo test -p arcweft-lang-sema --all-features typechecks_partial_placeholder_fu
 cargo test -p arcweft-lang-sema --all-features
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_typecheck_evidence_for_function_value_calls
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_expected_function_evidence_for_placeholder_args
+cargo test -p arcweft-compiler --all-features runtime_plan_uses_typecheck_evidence_across_stream_and_source_exprs
 cargo test -p arcweft-compiler --all-features
 cargo test -p arcweft-runtime-plan --all-features
 cargo check --workspace --all-targets --all-features
@@ -198,4 +201,6 @@ expected-function evidence for `_` placeholder abstraction, and full
 The compiler/runtime-plan typed evidence cut has passing coverage for
 function-valued path calls lowering to `RuntimeExpr::Apply` only when typecheck
 evidence is supplied, and for expected-function placeholder arguments lowering
-to `RuntimeExpr::Function`.
+to `RuntimeExpr::Function`. The shared-cursor follow-up has passing coverage
+for function-valued calls inside stream and source lowering after earlier flow
+expressions have consumed typed expression IDs.

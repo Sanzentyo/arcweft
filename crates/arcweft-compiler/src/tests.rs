@@ -6,7 +6,9 @@ use arcweft_core::{
         FlowOp, RuntimeBuiltinIteratorEvidence, RuntimeIteratorEvidence,
         RuntimeIteratorWitnessExecutable,
     },
+    source::{SourceHandlerPlan, SourceOp},
     step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
+    stream::StreamOp,
     value::RuntimeExpr,
 };
 use arcweft_id::PublicId;
@@ -484,6 +486,83 @@ flow @flow.main main {
                                     )
                             )
                 )
+    ));
+}
+
+#[test]
+fn runtime_plan_uses_typecheck_evidence_across_stream_and_source_exprs() {
+    let parsed = parse_source_text(
+        r"
+flow @flow.main main {
+    let warmup = 1i64
+    return warmup
+}
+
+stream fn relay(values: Stream<i64, String>) -> Stream<i64, String> {
+    for value in values {
+        yield f(value)
+    }
+}
+
+pub source @source.values: Source<i64, String> {
+    from input
+    backpressure = latest
+    replay = none
+    privacy = transient
+
+    on item value => yield f(value)
+}
+",
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let function_ty = TypeKind::Function {
+        params: vec![TypeKind::I64],
+        return_type: Box::new(TypeKind::I64),
+    };
+    let source_ty = TypeKind::Source {
+        item: Box::new(TypeKind::I64),
+        error: Box::new(TypeKind::String),
+    };
+    let typecheck = arcweft_lang_sema::check::analyze_types(
+        &hir,
+        &TypeCheckEnv::standard()
+            .with_symbol("f", function_ty)
+            .with_symbol("input", source_ty),
+    );
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "unexpected type errors: {:#?}",
+        typecheck.diagnostics
+    );
+
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("runtime plan lowers with shared typed evidence cursor");
+
+    assert!(matches!(
+        report.plan.stream_plans[0].ops.as_slice(),
+        [StreamOp::ForNext { body, .. }]
+            if matches!(body.as_slice(), [StreamOp::Yield { expr }]
+                if matches!(
+                    expr,
+                    RuntimeExpr::Apply { callee, args }
+                        if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "f")
+                            && args.len() == 1
+                ))
+    ));
+    assert!(matches!(
+        report.plan.source_plans[0].handlers.as_slice(),
+        [SourceHandlerPlan::Item { ops, .. }]
+            if matches!(ops.as_slice(), [SourceOp::Yield(expr)]
+                if matches!(
+                    expr,
+                    RuntimeExpr::Apply { callee, args }
+                        if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "f")
+                            && args.len() == 1
+                ))
     ));
 }
 

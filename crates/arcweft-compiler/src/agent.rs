@@ -9,12 +9,15 @@ use arcweft_lang_sema::check::{TypeCheckReport, analyze_types};
 use arcweft_lang_sema::project_index::ProjectSemanticIndex;
 use arcweft_lang_sema::resolve::{registry_from_hir_and_project, validate_hir_references};
 use arcweft_lang_syntax::ast::items::Attribute;
-use arcweft_runtime_plan::flow::lower_agent_controller_plan_with_stats;
+use arcweft_runtime_plan::flow::{
+    RuntimePlanLowerOptions, lower_agent_controller_plan_with_stats_and_options,
+};
 
 use crate::agent_project::agent_required_entities_from_project;
 use crate::effect_manifest;
 use crate::error::CompileAgentError;
 use crate::hir::{lower_source_tree, validate_hir_typecheck_ready};
+use crate::lower::runtime_plan_options_with_typecheck_evidence;
 use crate::parse::parse_agent_source_text;
 use crate::types::{CompiledAgent, CompiledAgentBundle, TypecheckedAgent};
 
@@ -73,8 +76,14 @@ pub fn compile_agent_bundle_with_project(
         .clone()
         .into_result()
         .map_err(CompileAgentError::Type)?;
-    let runtime_report = lower_agent_controller_plan_with_stats(&hir, agent)
-        .map_err(CompileAgentError::RuntimePlan)?;
+    let runtime_options = runtime_plan_options_with_typecheck_evidence(
+        &RuntimePlanLowerOptions::default(),
+        &typecheck_report,
+    )
+    .map_err(CompileAgentError::RuntimePlan)?;
+    let runtime_report =
+        lower_agent_controller_plan_with_stats_and_options(&hir, agent, &runtime_options)
+            .map_err(CompileAgentError::RuntimePlan)?;
     let bytecode = BytecodeProgram::from_runtime_plan(runtime_report.plan);
     let bytecode_stats = bytecode.stats();
     let manifest = agent_artifact_manifest(agent, source_hash, project, &typecheck_report)?;

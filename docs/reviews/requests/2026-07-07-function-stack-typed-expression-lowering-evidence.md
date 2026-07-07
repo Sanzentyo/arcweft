@@ -29,10 +29,13 @@ Implementation progress on 2026-07-07:
   runtime-plan-local evidence and threads it through `RuntimePlanLowerOptions`.
 - Flow strict runtime expression lowering consumes function-valued call evidence
   and expected-function placeholder evidence.
+- Runtime-plan lowering now shares the same typed expression cursor across
+  flow, stream, and source lowering, and Agent bundle compilation now passes
+  typecheck evidence into Agent controller lowering.
 
 The request remains open for method-resolution/fallback evidence, checked-build
-missing-evidence diagnostics, and applying the same evidence cursor uniformly
-outside flow expression lowering.
+missing-evidence diagnostics, and any expression-lowering entrypoints that are
+later proven to require typed evidence outside the checked runtime-plan paths.
 
 ## Required Decisions
 
@@ -60,10 +63,11 @@ outside flow expression lowering.
    evidence.
 3. Update runtime-plan strict call lowering for function-valued path callees
    whose type is known only through sema evidence. Done for flow strict
-   expression lowering.
+   expression lowering and the checked stream/source runtime-plan path.
 4. Extend expected `_` runtime lowering beyond explicit syntax-level type
    annotations by consuming sema expected-type evidence. Done for flow strict
-   expression lowering.
+   expression lowering and checked runtime-plan paths that share the typed
+   expression cursor.
 5. Add diagnostics when evidence is missing for a checked build path. Open.
 
 ## Tests To Specify
@@ -79,6 +83,9 @@ outside flow expression lowering.
 - Unknown adapter calls remain `RuntimeExpr::Call` rather than being mistaken
   for apply. Covered by the no-typecheck branch of
   `runtime_plan_uses_typecheck_evidence_for_function_value_calls`.
+- Stream/source expression lowering uses the same typed expression cursor after
+  earlier flow expressions consume IDs. Covered by
+  `runtime_plan_uses_typecheck_evidence_across_stream_and_source_exprs`.
 
 ## Constraints
 

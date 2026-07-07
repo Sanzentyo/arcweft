@@ -215,7 +215,12 @@ pub fn lower_runtime_plan_with_stats_and_options(
     let pure_map = pure_helper_map(&pure_helpers);
     let entries = lower_runtime_entries(module);
     let (flows, line_task_groups, line_display_catalog, stream_plans, source_plans) = {
-        let pure_lookup = RuntimePureHelperLookup::new(&pure_map, &pure_helpers);
+        let typed_expression_cursor = Cell::new(0);
+        let pure_lookup = RuntimePureHelperLookup::new(&pure_map, &pure_helpers)
+            .with_typed_lowering_evidence(
+                options.typed_lowering_evidence(),
+                &typed_expression_cursor,
+            );
         let lowered_flows = lower_runtime_flows(module, pure_lookup, options)?;
         let LoweredRuntimeFlows {
             flows,
@@ -270,6 +275,18 @@ pub fn lower_agent_controller_plan_with_stats(
     module: &HirModule,
     agent: &HirAgent,
 ) -> Result<RuntimePlanLowerReport, Vec<RuntimePlanLowerError>> {
+    lower_agent_controller_plan_with_stats_and_options(
+        module,
+        agent,
+        &RuntimePlanLowerOptions::default(),
+    )
+}
+
+pub fn lower_agent_controller_plan_with_stats_and_options(
+    module: &HirModule,
+    agent: &HirAgent,
+    options: &RuntimePlanLowerOptions,
+) -> Result<RuntimePlanLowerReport, Vec<RuntimePlanLowerError>> {
     let pure_candidate_report = lower_pure_helper_candidates(module).map_err(|errors| {
         errors
             .into_iter()
@@ -286,7 +303,12 @@ pub fn lower_agent_controller_plan_with_stats(
     let pure_helpers = runtime_pure_helpers(&pure_candidate_report.candidates, &mut stats);
     let pure_map = pure_helper_map(&pure_helpers);
     let lowered = {
-        let pure_lookup = RuntimePureHelperLookup::new(&pure_map, &pure_helpers);
+        let typed_expression_cursor = Cell::new(0);
+        let pure_lookup = RuntimePureHelperLookup::new(&pure_map, &pure_helpers)
+            .with_typed_lowering_evidence(
+                options.typed_lowering_evidence(),
+                &typed_expression_cursor,
+            );
         lower_agent_controller_flow(module, agent, pure_lookup)?
     };
     let entry_flow = lowered.id.clone();
@@ -1248,8 +1270,6 @@ pub(crate) fn lower_runtime_flows(
         pure_helpers,
         for_iteration_evidence: options.for_iteration_evidence(),
         for_iteration_cursor: 0,
-        typed_lowering_evidence: options.typed_lowering_evidence(),
-        typed_expression_cursor: Cell::new(0),
     };
     let flows = module
         .flows()
@@ -1292,8 +1312,6 @@ fn lower_agent_controller_flow(
         pure_helpers,
         for_iteration_evidence: &[],
         for_iteration_cursor: 0,
-        typed_lowering_evidence: &[],
-        typed_expression_cursor: Cell::new(0),
     };
     let id = agent.item().id().map_or_else(
         || FlowRuntimeId(format!("agent.{}", agent.item().name())),
@@ -1326,8 +1344,6 @@ struct FlowRuntimeLowerer<'a> {
     pure_helpers: RuntimePureHelperLookup<'a, 'static>,
     for_iteration_evidence: &'a [RuntimeIteratorEvidence],
     for_iteration_cursor: usize,
-    typed_lowering_evidence: &'a [RuntimeTypedLoweringEvidence],
-    typed_expression_cursor: Cell<usize>,
 }
 
 #[derive(Clone)]
@@ -1356,13 +1372,7 @@ fn runtime_expr_function_arity(
 impl FlowRuntimeLowerer<'_> {
     fn lower_runtime_expr_result(&self, expr: &Expr) -> Result<RuntimeExpr, String> {
         let function_locals = self.active_function_locals();
-        let context = self
-            .pure_helpers
-            .with_function_locals(&function_locals)
-            .with_typed_lowering_evidence(
-                self.typed_lowering_evidence,
-                &self.typed_expression_cursor,
-            );
+        let context = self.pure_helpers.with_function_locals(&function_locals);
         lower_runtime_expr_strict_with_pure(expr, context)
     }
 
@@ -1382,13 +1392,7 @@ impl FlowRuntimeLowerer<'_> {
         expr: &Expr,
     ) -> RuntimeExpr {
         let function_locals = self.active_function_locals();
-        let context = self
-            .pure_helpers
-            .with_function_locals(&function_locals)
-            .with_typed_lowering_evidence(
-                self.typed_lowering_evidence,
-                &self.typed_expression_cursor,
-            );
+        let context = self.pure_helpers.with_function_locals(&function_locals);
         match lower_runtime_expr_strict_with_expected_type(expr, expected_ty, context) {
             Ok(expr) => expr,
             Err(message) => {
