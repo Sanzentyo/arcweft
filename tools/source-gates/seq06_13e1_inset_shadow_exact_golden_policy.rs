@@ -58,7 +58,7 @@ fn run() -> Result<(), String> {
     )?;
     let web_capture = read_required(
         &root,
-        "crates/arcweft-player-web/src/seq06_13e1_exact.rs",
+        "crates/arcweft-player-web/src/inset_shadow_exact_capture.rs",
     )?;
     let web_script = read_required(
         &root,
@@ -74,9 +74,12 @@ fn run() -> Result<(), String> {
     for required in [
         "UiCompositor::render_group",
         "PASS_BOX_SHADOW",
-        "UiStyleResource::runtime_surface_style",
-        "UiRuntimeControlVisualStyle fill/radius/shadows",
-        "UiRoundedRect direct primitive from style fill and border-radius",
+        "ViewProgramResource::runtime_element_styles_with_style",
+        "ViewRuntimeControlVisualStyle fill/radius/shadows",
+        "UiRoundedRect primitive from tree-aware Panel part style",
+        "PlayerFramePlanner::prepare",
+        "PreparedFrame::with_ui_scenes",
+        "SharedRenderer::render_to_view",
         "UiBoxShadowPassPlan",
         "box_shadow_list_from_takumi",
         "browser DOM CSS box-shadow screenshots",
@@ -100,15 +103,26 @@ fn run() -> Result<(), String> {
 
     require_contains(&note, "Web exact readback harness", "implementation note")?;
     require_contains(&note, "no-promotion", "implementation note")?;
-    require_contains(&note, "UiStyleResource::runtime_surface_style", "implementation note")?;
+    require_contains(
+        &note,
+        "ViewProgramResource::runtime_element_styles_with_style",
+        "implementation note",
+    )?;
+    require_contains(&note, "SharedRenderer::render_to_view", "implementation note")?;
     require_contains(&note, "WebAssembly-exported renderer readback", "implementation note")?;
     require_contains(&native_capture, "UiCompositor::render_group", "native capture")?;
     require_contains(&native_capture, "PASS_BOX_SHADOW WGSL kind flag", "native capture")?;
     require_contains(&native_capture, "seq06_13e1_inset_box_shadow.candidate.png", "native capture")?;
     require_contains(&native_capture, "seq06_13e1_inset_box_shadow.observe.json", "native capture")?;
     require_contains(&web_capture, "capture_seq06_13e1_inset_box_shadow_exact_png", "web wasm capture")?;
-    require_contains(&web_capture, "UiStyleResource", "web wasm capture")?;
-    require_contains(&web_capture, "runtime_surface_style", "web wasm capture")?;
+    require_contains(&web_capture, "ViewStyleResource", "web wasm capture")?;
+    require_contains(
+        &web_capture,
+        "runtime_element_styles_with_style",
+        "web wasm capture",
+    )?;
+    require_contains(&web_capture, "PlayerFramePlanner::prepare", "web wasm capture")?;
+    require_contains(&web_capture, "SharedRenderer::render_to_view", "web wasm capture")?;
     require_contains(&web_capture, "UiRoundedRect", "web wasm capture")?;
     require_contains(&web_capture, "UiCompositor::render_group", "web wasm capture")?;
     require_contains(&web_capture, "copy_texture_to_buffer", "web wasm capture")?;

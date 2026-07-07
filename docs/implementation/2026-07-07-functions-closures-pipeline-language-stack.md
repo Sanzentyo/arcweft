@@ -270,6 +270,11 @@ Source briefs:
   `.WithLoad(load): LoaderSpec` and `.WithLoad { load }: LoaderRecordSpec`
   bind the callback with the declared payload function type and compose the
   caller-supplied closure body effects when the callee invokes that binding.
+- `TypeCheckEnv` now carries typed enum variant payload metadata through
+  `EnumVariantPayload`. External checker environments can register tuple or
+  record payload contracts with `with_enum_variant_payload`, and sema uses the
+  same selector path for destructured function-valued payload bindings even
+  when the enum declaration is not present in the checked module.
 
 ## Current boundaries
 
@@ -339,11 +344,11 @@ Source briefs:
   `Option`/`Result` constructors used in expression calls, so `.Some(load):
   Option<String -> String>` and `.Err(load): Result<String, String -> String>`
   compose a caller-supplied closure when the callee invokes `load(...)`.
-  Module-local user-defined enum tuple/newtype and record payload constructors
-  now use the same callback-selector path for destructured function-valued
-  payload bindings. Callback invocations hidden inside returned/stored
-  closures, enum payload metadata beyond the current module-local syntax
-  catalog, and LSP-facing closure effect evidence remain open. Save/load
+  Module-local and `TypeCheckEnv`-provided user-defined enum tuple/newtype and
+  record payload constructors now use the same callback-selector path for
+  destructured function-valued payload bindings. Callback invocations hidden
+  inside returned/stored closures and LSP-facing closure effect evidence remain
+  open. Save/load
   currently has an explicit Product
   AWBC policy: runtime function values are
   rejected as non-persistable until AWBC closure allocation and snapshot
@@ -604,9 +609,16 @@ with only the existing `TraitMember` / `ImplMember` large enum warnings from
 `arcweft-lang-syntax`. The same slice split enum-constructor expression checks
 into `checker/expr/enum_variant.rs`; after that split, structure audit no
 longer reports `checker/expr.rs` above the 2500 LOC error threshold. Current
-workspace check/clippy is blocked by unrelated dirty view/style work in
-`arcweft-bundle` tests:
-`ViewStyleResource::runtime_surface_style` is referenced by
-`runtime_control_style_resolution.rs` but is not present in the current
-worktree. Structure audit still reports the unrelated existing
+workspace check/clippy is no longer blocked by the previous tree-aware
+view/style cut; the old surface-style fallback reference was removed from
+`runtime_control_style_resolution.rs` and replaced with
+`ViewProgramResource::runtime_element_styles_with_style`. Structure audit still
+reports the unrelated existing
 `crates/arcweft-cli/src/app/bundle_view.rs` 2500 LOC error.
+
+The `TypeCheckEnv` enum payload metadata cut adds the public
+`EnumVariantPayload` boundary type and `with_enum_variant_payload`
+registration API. Focused sema tests cover tuple/newtype and record payload
+callback selectors without a module-local enum declaration:
+`cargo test -p arcweft-lang-sema --all-features env_enum_ -- --nocapture`
+passed in the current all-features validation slice.

@@ -20,16 +20,18 @@ The native PNG baseline from seq06.13e.1 is left unchanged.
   match the existing browser smoke runner convention.
 - Fixture source: the Web fixture mirrors the already accepted 320x180
   seq06.13e.1 compositor scene: `rounded_inset_shadow_card` and
-  `mixed_outer_inset_shadow_card`. The fixture now builds those cards through
-  typed `UiStyleResource` surface rules: `background-color` becomes the
-  `UiRoundedRect` fill, `border-radius` becomes the rounded-rect radius and
-  shadow fallback radius, and `box-shadow` becomes `UiCompositingEffects`.
-  It does not introduce a second renderer contract.
+  `mixed_outer_inset_shadow_card`. The fixture now declares those cards as
+  Panel parts in a typed `ViewProgramResource`, resolves their computed style
+  through `ViewProgramResource::runtime_element_styles_with_style`, then lowers
+  `background-color`, `border-radius`, and `box-shadow` into the retained
+  `UiScene`.
 - Readback path: WebAssembly-exported renderer readback. The wasm export
-  `capture_seq06_13e1_inset_box_shadow_exact_png` renders an Arcweft-owned
-  `rgba8unorm` WebGPU texture through `UiCompositor::render_group`, then reads it
-  with `copy_texture_to_buffer`. Node only encodes the returned raw RGBA bytes as
-  PNG and writes packet JSON.
+  `capture_seq06_13e1_inset_box_shadow_exact_png` prepares a normal
+  `PreparedFrame` with `PlayerFramePlanner::prepare`, attaches the exact
+  `UiScene` with `PreparedFrame::with_ui_scenes`, renders the Arcweft-owned
+  `rgba8unorm` WebGPU texture through `SharedRenderer::render_to_view`, then
+  reads it with `copy_texture_to_buffer`. Node only encodes the returned raw RGBA
+  bytes as PNG and writes packet JSON.
 - Forbidden paths: no browser DOM/CSS box-shadow screenshots, no SVG filters, no
   Canvas 2D fallback, no CPU raster fallback, no bitmap mask replacement.
 - Web reference rule: Web has a separate Web-specific reference PNG. It must not
@@ -37,11 +39,12 @@ The native PNG baseline from seq06.13e.1 is left unchanged.
 
 ## Added and changed files
 
-- `crates/arcweft-player-web/src/seq06_13e1_exact.rs`
+- `crates/arcweft-player-web/src/inset_shadow_exact_capture.rs`
   - wasm-only exact capture export for the 320x180 compositor fixture.
   - returns raw RGBA bytes, observe JSON, and WebGPU adapter info.
-  - resolves the exact fixture's surface styles through `UiStyleResource` before
-    building `UiRoundedRect` primitives and compositor box-shadow effects.
+  - resolves the exact fixture's Panel part styles through
+    `ViewProgramResource::runtime_element_styles_with_style` before building
+    `UiRoundedRect` primitives and compositor box-shadow effects.
 - `crates/arcweft-player-web/src/lib.rs`
   - exposes the wasm exact capture export behind the existing wasm cfg boundary.
 - `crates/arcweft-player-web/Cargo.toml`
@@ -197,14 +200,16 @@ nightly toolchain that lacks the `wasm32-unknown-unknown` target.
 After review feedback on 2026-07-04, the Web exact fixture was changed so
 corner radius, card fill, and box shadows no longer originate as hard-coded
 `UiCompositingEffects` in the wasm export. The export now owns a typed
-`UiStyleResource` with CSS source identity for
-`docs/fixtures/css/seq06.13e-inset-box-shadow-card.css`, resolves each card via
-`UiStyleResource::runtime_surface_style`, then lowers the resolved visual style
-to:
+`ViewStyleResource` with CSS source identity for
+`docs/fixtures/css/seq06.13e-inset-box-shadow-card.css`, declares each card as a
+Panel part in a fixture `ViewProgramResource`, resolves the cards via
+`ViewProgramResource::runtime_element_styles_with_style`, then lowers the
+resolved visual style to:
 
 - `UiRoundedRect` direct primitives for the style fill and border radius;
 - `UiCompositingEffects::box_shadows` for the style shadow list;
-- observe JSON route evidence for the style resolver and rounded-rect child.
+- observe JSON route evidence for the tree-aware style resolver, player renderer
+  path, and rounded-rect child.
 
 This also addresses the previous transparent-candidate failure mode where the
 Web exact scene had shadow groups with no rendered child content because the

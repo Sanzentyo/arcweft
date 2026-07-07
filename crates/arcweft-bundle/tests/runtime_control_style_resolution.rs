@@ -7,7 +7,7 @@ use arcweft_bundle::resource_codec::ui::{
     ViewPartStyleRule, ViewProgramInstruction, ViewProgramResource, ViewRuntimeActionButton,
     ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds, ViewRuntimeControlCornerFrameStyle,
     ViewRuntimeControlCornerRadius, ViewRuntimeControlFilter, ViewRuntimeControlRadii,
-    ViewRuntimeControlState, ViewRuntimeControlStyleDiagnosticReason,
+    ViewRuntimeControlState, ViewRuntimeControlStyle, ViewRuntimeControlStyleDiagnosticReason,
     ViewRuntimeControlStyleResolution, ViewRuntimeTextBlockBounds, ViewRuntimeTextControl,
     ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions,
     ViewRuntimeTextSelection, ViewStyleApplyRef, ViewStyleDeclaration, ViewStyleResource,
@@ -459,8 +459,27 @@ fn surface_style_resolves_radius_fill_and_box_shadow() {
         ..ViewStyleResource::default()
     };
 
-    let resolved = style.runtime_surface_style("card.feedback");
-    let visual = resolved
+    let program = ViewProgramResource {
+        instructions: vec![
+            ViewProgramInstruction::OpenElement {
+                element: ViewElementKind::Panel,
+                style: None,
+                part: Some("card.feedback".to_owned()),
+                key: None,
+                source: None,
+            },
+            ViewProgramInstruction::CloseElement,
+        ],
+        ..ViewProgramResource::default()
+    };
+
+    let resolved = program.runtime_element_styles_with_style(&style);
+    let panel = resolved
+        .controls
+        .iter()
+        .find(|element| element.part.as_deref() == Some("card.feedback"))
+        .expect("panel part style");
+    let visual = panel
         .style
         .visual_for_state(ViewRuntimeControlState::Normal);
 
@@ -469,6 +488,7 @@ fn surface_style_resolves_radius_fill_and_box_shadow() {
     assert_eq!(visual.shadows.len(), 1);
     assert_eq!(visual.shadows[0].radius_milli, 16_000);
     assert!(resolved.diagnostics.is_empty());
+    assert_eq!(panel.element, ViewElementKind::Panel);
 }
 
 #[test]
@@ -730,7 +750,7 @@ fn resolve_text_control_style_for_test(
         bounds: ViewRuntimeTextControlBounds::new(0, 0, 100_000, 40_000),
         label: None,
         handlers: ViewRuntimeTextControlHandlers::default(),
-        style: Default::default(),
+        style: ViewRuntimeControlStyle::default(),
     }];
     let mut buttons = Vec::new();
     let mut text_blocks = Vec::new();
@@ -757,7 +777,7 @@ fn resolve_button_style_for_test(
         enabled: true,
         bounds: ViewRuntimeButtonBounds::new(0, 0, 100_000, 40_000),
         action: ViewRuntimeActionButtonAction::Noop,
-        style: Default::default(),
+        style: ViewRuntimeControlStyle::default(),
     }];
     let mut text_blocks = Vec::new();
     let diagnostics =

@@ -105,15 +105,19 @@ fn seq06_13e1_inset_shadow_policy_pins_typed_compositor_route() {
     assert!(smoke.contains("UiBoxShadow::inset"));
     assert!(smoke.contains("stats.box_shadow_passes, 3"));
 
-    let web_export =
-        fs::read_to_string(root.join("crates/arcweft-player-web/src/seq06_13e1_exact.rs"))
-            .expect("read Web exact wasm export source");
+    let web_export = fs::read_to_string(
+        root.join("crates/arcweft-player-web/src/inset_shadow_exact_capture.rs"),
+    )
+    .expect("read Web exact wasm export source");
     assert!(web_export.contains("capture_seq06_13e1_inset_box_shadow_exact_png"));
     assert!(web_export.contains("ViewStyleResource"));
-    assert!(web_export.contains("runtime_surface_style"));
+    assert!(web_export.contains("runtime_element_styles_with_style"));
+    assert!(web_export.contains("PlayerFramePlanner::prepare"));
+    assert!(web_export.contains("SharedRenderer::render_to_view"));
     assert!(web_export.contains("UiRoundedRect"));
     assert!(web_export.contains("UiCompositor::render_group"));
     assert!(web_export.contains("copy_texture_to_buffer"));
+    assert!(!web_export.contains("runtime_surface_style"));
     assert!(!web_export.contains("getContext"));
 
     let web_script =
@@ -222,7 +226,8 @@ fn assert_exact_png_packet(target: Target) {
             "PASS_BOX_SHADOW",
             "box_shadow",
             "inset",
-            "ViewStyleResource::runtime_surface_style",
+            "ViewProgramResource::runtime_element_styles_with_style",
+            "SharedRenderer::render_to_view",
             "UiRoundedRect",
             "UiCompositor::render_group",
             "copy_texture_to_buffer",

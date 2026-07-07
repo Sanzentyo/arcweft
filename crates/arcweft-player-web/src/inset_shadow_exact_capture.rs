@@ -1,19 +1,25 @@
 use arcweft_bundle::resource_codec::ui::{
     RgbaColor, StyleAssignOp, StyleSourceIdentity, StyleSourceRef, StyleSyntax, ViewElementKind,
-    ViewRuntimeControlState, ViewRuntimeControlVisualStyle, ViewRuntimeShadow,
+    ViewProgramInstruction, ViewProgramResource, ViewRuntimeControlState,
+    ViewRuntimeControlVisualStyle, ViewRuntimeElementStyle, ViewRuntimeShadow,
     ViewRuntimeShadowKind, ViewStyleDeclaration, ViewStyleResource, ViewStyleRule,
     ViewStyleSelector, ViewStyleSelectorPart, ViewStyleValue,
 };
+use arcweft_player_scene::frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest};
+use arcweft_player_scene::images::BundleImageCatalog;
+use arcweft_player_scene::input::InputController;
 use arcweft_presentation::hit::HitRect;
-use arcweft_render_wgpu::geometry::PreparedUiSceneResources;
-use arcweft_render_wgpu::ui_compositor::{UiCompositor, UiCompositorFrame, UiNoMaskTextures};
-use arcweft_render_wgpu::ui_direct_renderer::WgpuUiDirectPrimitiveRenderer;
+use arcweft_render_wgpu::geometry::{
+    PreparedFrame, PreparedUiScene, RenderPreferences, RenderViewport,
+};
+use arcweft_render_wgpu::renderer::SharedRenderer;
 use arcweft_render_wgpu::ui_effects::UiTextureExtent;
 use arcweft_render_wgpu::ui_scene::{
     UiAffine2D, UiBoxShadow, UiBoxShadowList, UiColorRgba8, UiCompositingEffects,
     UiCompositingGroup, UiPaintNode, UiPrimitive, UiPrimitiveRange, UiRoundedRect, UiScene,
     UiSceneContext,
 };
+use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use js_sys::{Object, Reflect, Uint8Array};
 use std::fmt::Write as _;
 use wasm_bindgen::prelude::*;
@@ -23,7 +29,7 @@ const HEIGHT: u32 = 180;
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
 /// Captures the seq06.13e.1 inset box-shadow exact fixture through the portable
-/// Arcweft WGPU compositor in a browser WebGPU runtime.
+/// Arcweft player renderer in a browser WebGPU runtime.
 ///
 /// The returned object contains raw RGBA pixels, observe JSON, and adapter
 /// evidence. JavaScript owns PNG encoding and filesystem writes so the browser
@@ -62,9 +68,16 @@ async fn capture_js_value() -> Result<JsValue, String> {
 
 struct CaptureOutput {
     rgba: Vec<u8>,
-    stats: arcweft_render_wgpu::ui_compositor::UiCompositorStats,
+    stats: ExactPlayerCaptureStats,
     adapter: wgpu::AdapterInfo,
     content: ContentStats,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct ExactPlayerCaptureStats {
+    ui_scenes: u32,
+    primitives: u32,
+    paint_nodes: u32,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -113,34 +126,19 @@ async fn render_capture() -> Result<CaptureOutput, String> {
         view_formats: &[],
     });
     let final_view = final_texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("arcweft-seq06-13e1-web-exact-render-encoder"),
-    });
     let validation_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
-    clear_target(&mut encoder, &final_view);
 
-    let scene = smoke_scene()?;
-    let direct_renderer_backend = WgpuUiDirectPrimitiveRenderer::new(&device, FORMAT);
-    let resources = PreparedUiSceneResources::default();
-    let mut direct_renderer = direct_renderer_backend.for_resources(&resources);
-    let mut mask_textures = UiNoMaskTextures;
-    let mut compositor = UiCompositor::new(&device, &queue, FORMAT);
-    let mut frame = UiCompositorFrame {
-        device: &device,
-        queue: &queue,
-        encoder: &mut encoder,
-        final_target: &final_view,
-        scene: &scene,
-        target_extent: extent,
-        direct_renderer: &mut direct_renderer,
-        mask_textures: &mut mask_textures,
-    };
+    let (frame, stats) = exact_player_frame()?;
+    let mut renderer = SharedRenderer::new(&device, &queue, FORMAT);
+    renderer
+        .render_to_view(&device, &queue, &final_view, &frame)
+        .map_err(|error| format!("render seq06.13e.1 browser player frame: {error}"))?;
 
-    let stats = compositor
-        .render_scene(&mut frame)
-        .map_err(|error| format!("render seq06.13e.1 browser compositor scene: {error}"))?;
     let padded_row_bytes = padded_rgba_row_bytes(WIDTH);
     let readback = create_readback_buffer(&device, HEIGHT, padded_row_bytes);
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("arcweft-seq06-13e1-web-exact-readback-encoder"),
+    });
     copy_texture_to_readback(
         &mut encoder,
         &final_texture,
@@ -160,14 +158,13 @@ async fn render_capture() -> Result<CaptureOutput, String> {
     let content = content_stats(&rgba);
     if content.non_transparent_pixels == 0 {
         return Err(format!(
-            "browser WebGPU readback produced a fully transparent seq06.13e.1 candidate; adapter={} backend={:?} driver={}; direct_ranges={}; offscreen_targets={}; shader_passes={}; box_shadow_passes={}; max_channel={}",
+            "browser WebGPU readback produced a fully transparent seq06.13e.1 candidate; adapter={} backend={:?} driver={}; player_ui_scenes={}; primitives={}; paint_nodes={}; max_channel={}",
             adapter_info.name,
             adapter_info.backend,
             adapter_info.driver,
-            stats.direct_ranges,
-            stats.offscreen_targets,
-            stats.shader_passes,
-            stats.box_shadow_passes,
+            stats.ui_scenes,
+            stats.primitives,
+            stats.paint_nodes,
             content.max_channel,
         ));
     }
@@ -179,24 +176,98 @@ async fn render_capture() -> Result<CaptureOutput, String> {
     })
 }
 
+fn exact_player_frame() -> Result<(PreparedFrame, ExactPlayerCaptureStats), String> {
+    let scene = smoke_scene()?;
+    let stats = ExactPlayerCaptureStats {
+        ui_scenes: 1,
+        primitives: u32::try_from(scene.primitives().len()).unwrap_or(u32::MAX),
+        paint_nodes: u32::try_from(scene.paint_nodes().len()).unwrap_or(u32::MAX),
+    };
+    let viewport = RenderViewport {
+        logical_width: WIDTH as f32,
+        logical_height: HEIGHT as f32,
+        physical_width: WIDTH,
+        physical_height: HEIGHT,
+        scale_factor: 1.0,
+    };
+    let presentation = BundlePresentationSnapshot::default();
+    let images = BundleImageCatalog::empty();
+    let mut input = InputController::default();
+    let prepared = PlayerFramePlanner::prepare(
+        &mut input,
+        PlayerFrameRequest {
+            presentation: &presentation,
+            images: &images,
+            viewport,
+            fit: PlayerFrameFit::raw(),
+            image_time_millis: 0,
+            visual_time_millis: 0,
+            preferences: RenderPreferences::default(),
+        },
+    )
+    .map_err(|error| format!("prepare seq06.13e.1 browser player frame: {error}"))?;
+    Ok((
+        prepared.frame.with_ui_scenes([PreparedUiScene::new(scene)]),
+        stats,
+    ))
+}
+
 fn smoke_scene() -> Result<UiScene, String> {
     let mut scene = UiScene::new(WIDTH as f32, HEIGHT as f32);
     let style = exact_style_resource();
+    let program = exact_view_program();
+    let styled_elements = program.runtime_element_styles_with_style(&style);
+    if !styled_elements.diagnostics.is_empty() {
+        let diagnostics = styled_elements
+            .diagnostics
+            .diagnostics
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(format!(
+            "resolve seq06.13e.1 exact ViewProgram element styles: {diagnostics}"
+        ));
+    }
 
     push_styled_card(
         &mut scene,
-        &style,
+        &styled_elements.controls,
         "rounded_inset_shadow_card",
         HitRect::new(24.0, 24.0, 112.0, 72.0),
     )?;
     push_styled_card(
         &mut scene,
-        &style,
+        &styled_elements.controls,
         "mixed_outer_inset_shadow_card",
         HitRect::new(176.0, 40.0, 112.0, 72.0),
     )?;
 
     Ok(scene)
+}
+
+fn exact_view_program() -> ViewProgramResource {
+    ViewProgramResource {
+        program_id: "view.seq06_13e1_inset_box_shadow_exact".to_owned(),
+        root_view: "InsetShadowExactFixture".to_owned(),
+        instructions: vec![
+            panel_part("rounded_inset_shadow_card"),
+            ViewProgramInstruction::CloseElement,
+            panel_part("mixed_outer_inset_shadow_card"),
+            ViewProgramInstruction::CloseElement,
+        ],
+        ..ViewProgramResource::default()
+    }
+}
+
+fn panel_part(public_id: &str) -> ViewProgramInstruction {
+    ViewProgramInstruction::OpenElement {
+        element: ViewElementKind::Panel,
+        style: None,
+        part: Some(public_id.to_owned()),
+        key: None,
+        source: None,
+    }
 }
 
 fn exact_style_resource() -> ViewStyleResource {
@@ -273,25 +344,19 @@ fn style_rgba(red: u8, green: u8, blue: u8, alpha: u8) -> ViewStyleValue {
 
 fn push_styled_card(
     scene: &mut UiScene,
-    style: &ViewStyleResource,
+    styles: &[ViewRuntimeElementStyle],
     public_id: &str,
     bounds: HitRect,
 ) -> Result<(), String> {
-    let resolved = style.runtime_surface_style(public_id);
-    if !resolved.diagnostics.is_empty() {
-        let diagnostics = resolved
-            .diagnostics
-            .diagnostics
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("; ");
-        return Err(format!(
-            "resolve seq06.13e.1 exact surface style `{public_id}`: {diagnostics}"
-        ));
-    }
-
-    let visual = resolved
+    let visual = styles
+        .iter()
+        .find(|style| {
+            style.element == ViewElementKind::Panel
+                && style.part.as_deref().is_some_and(|part| part == public_id)
+        })
+        .ok_or_else(|| {
+            format!("seq06.13e.1 exact ViewProgram element style `{public_id}` was not resolved")
+        })?
         .style
         .visual_for_state(ViewRuntimeControlState::Normal);
     let range = push_style_fill(scene, bounds, &visual, public_id)?;
@@ -379,25 +444,6 @@ fn direct(start: u32, end: u32) -> UiPaintNode {
         clip: None,
         primitive_range: UiPrimitiveRange { start, end },
     })
-}
-
-fn clear_target(encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView) {
-    let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("arcweft-seq06-13e1-web-exact-clear"),
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: target,
-            resolve_target: None,
-            depth_slice: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                store: wgpu::StoreOp::Store,
-            },
-        })],
-        depth_stencil_attachment: None,
-        timestamp_writes: None,
-        occlusion_query_set: None,
-        multiview_mask: None,
-    });
 }
 
 fn create_readback_buffer(
@@ -521,10 +567,13 @@ fn observe_json(capture: &CaptureOutput) -> String {
     writeln!(&mut json, "  }},").unwrap();
     writeln!(&mut json, "  \"route\": [").unwrap();
     let route_entries = [
-        "ViewStyleResource::runtime_surface_style",
+        "ViewProgramResource::runtime_element_styles_with_style",
         "ViewRuntimeControlVisualStyle fill/radius/shadows",
-        "UiRoundedRect direct primitive from style fill and border-radius",
+        "UiRoundedRect primitive from tree-aware Panel part style",
         "UiCompositingEffects::box_shadows",
+        "PlayerFramePlanner::prepare",
+        "PreparedFrame::with_ui_scenes",
+        "SharedRenderer::render_to_view",
         "UiBoxShadowPassPlan unified outer/inset pass list",
         "UiCompositor::render_group",
         "PASS_BOX_SHADOW WGSL kind flag",
@@ -566,44 +615,20 @@ fn observe_json(capture: &CaptureOutput) -> String {
     writeln!(&mut json, "  \"stats\": {{").unwrap();
     writeln!(
         &mut json,
-        "    \"direct_ranges\": {},",
-        capture.stats.direct_ranges
+        "    \"player_ui_scenes\": {},",
+        capture.stats.ui_scenes
     )
     .unwrap();
     writeln!(
         &mut json,
-        "    \"offscreen_targets\": {},",
-        capture.stats.offscreen_targets
+        "    \"primitives\": {},",
+        capture.stats.primitives
     )
     .unwrap();
     writeln!(
         &mut json,
-        "    \"shader_passes\": {},",
-        capture.stats.shader_passes
-    )
-    .unwrap();
-    writeln!(
-        &mut json,
-        "    \"backdrop_copies\": {},",
-        capture.stats.backdrop_copies
-    )
-    .unwrap();
-    writeln!(
-        &mut json,
-        "    \"pool_reuses\": {},",
-        capture.stats.pool_reuses
-    )
-    .unwrap();
-    writeln!(
-        &mut json,
-        "    \"clip_passes\": {},",
-        capture.stats.clip_passes
-    )
-    .unwrap();
-    writeln!(
-        &mut json,
-        "    \"box_shadow_passes\": {}",
-        capture.stats.box_shadow_passes
+        "    \"paint_nodes\": {}",
+        capture.stats.paint_nodes
     )
     .unwrap();
     writeln!(&mut json, "  }},").unwrap();
