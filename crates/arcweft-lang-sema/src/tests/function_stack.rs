@@ -161,6 +161,37 @@ flow @flow.partial_infer partial_infer {
 }
 
 #[test]
+fn infers_parenthesized_partial_placeholder_function_without_expected_type() {
+    let tree = parse_ok(
+        r"
+flow @flow.partial_infer_grouped partial_infer_grouped {
+    let high = (_ > 80i64)
+    log.info(high)
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("grouped inferred partial placeholder fixture lowers");
+    validate_typecheck_ready(&hir).expect("grouped partial placeholder fixture is structured");
+
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(report.judgments.iter().any(|judgment| {
+        matches!(
+            &judgment.ty,
+            TypeKind::Function {
+                params,
+                return_type,
+            } if params.as_slice() == [TypeKind::I64]
+                && return_type.as_ref() == &TypeKind::Bool
+        )
+    }));
+}
+
+#[test]
 fn infers_partial_call_abstraction_without_expected_type() {
     let tree = parse_ok(
         r"

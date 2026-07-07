@@ -102,7 +102,8 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   to `RuntimeExpr::Function`.
 - Sema now infers `_` placeholder function values without an explicit expected
   function type for unambiguous binary expressions whose non-placeholder side
-  has a local/static type, such as `let high = _ > 80i64`.
+  has a local/static type, such as `let high = _ > 80i64` and
+  `let high = (_ > 80i64)`.
 - Sema now infers partial-call abstraction for known positional callable
   signatures, such as `let add_one = add(_, 1i64)`, without hard-coding the
   callable name. Runtime-plan lowering consumes the inferred evidence and
@@ -113,8 +114,7 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
 - `_` without an expected function type is inferred only when the parameter type
   is available without speculative expression checking. The current cut covers
   unambiguous binary expressions and positional calls to known function
-  signatures. Parenthesized grouping such as `let is_high = (_ >= 80i64)` still
-  needs parser/HIR grouping support before it can use the same inference path.
+  signatures, including parenthesized binary placeholder expressions.
 - Partial call abstraction such as `add(_, 1)` is inferred for known positional
   signatures. Named/spread partial-call inference and ambiguous multi-candidate
   callables remain open.
@@ -166,6 +166,7 @@ cargo test -p arcweft-lang-sema --all-features records_function_value_call_lower
 cargo test -p arcweft-lang-sema --all-features typechecks_partial_function_value_application
 cargo test -p arcweft-lang-sema --all-features typechecks_partial_placeholder_function_and_vec_map
 cargo test -p arcweft-lang-sema --all-features infers_partial_placeholder_function_without_expected_type
+cargo test -p arcweft-lang-sema --all-features infers_parenthesized_partial_placeholder_function_without_expected_type
 cargo test -p arcweft-lang-sema --all-features infers_partial_call_abstraction_without_expected_type
 cargo test -p arcweft-lang-sema --all-features
 cargo test -p arcweft-compiler --all-features runtime_plan_uses_typecheck_evidence_for_function_value_calls

@@ -35,6 +35,9 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
     assert!(matches!(placeholder, Expr::Call { .. }));
     let partial = parse_expr("_.score >= ^").expect("partial comparison expression parses");
     assert!(matches!(partial, Expr::Binary { .. }));
+    let grouped_partial =
+        parse_expr("(_ > 80i64)").expect("parenthesized partial comparison expression parses");
+    assert!(matches!(grouped_partial, Expr::Binary { .. }));
 
     let list = parse_expr("[normal, smile, worried]").expect("bracket sequence parses");
     assert!(matches!(list, Expr::BracketSeq(items) if items.len() == 3));

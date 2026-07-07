@@ -500,6 +500,7 @@ fn add(left: i64, right: i64) -> i64 {
 
 flow @flow.main main {
     let high = _ > 80i64
+    let high_grouped = (_ > 80i64)
     let add_one = add(_, 1i64)
     return "done"
 }
@@ -521,6 +522,9 @@ flow @flow.main main {
     .expect("runtime plan lowers inferred partial functions");
     let [
         FlowOp::Let { expr: high, .. },
+        FlowOp::Let {
+            expr: high_grouped, ..
+        },
         FlowOp::Let { expr: add_one, .. },
         ..,
     ] = report.plan.flows[0].ops.as_slice()
@@ -529,6 +533,12 @@ flow @flow.main main {
     };
     assert!(matches!(
         high,
+        RuntimeExpr::Function { params, body }
+            if params.as_slice() == ["__arcweft_partial"]
+                && matches!(body.as_ref(), RuntimeExpr::Binary { .. })
+    ));
+    assert!(matches!(
+        high_grouped,
         RuntimeExpr::Function { params, body }
             if params.as_slice() == ["__arcweft_partial"]
                 && matches!(body.as_ref(), RuntimeExpr::Binary { .. })

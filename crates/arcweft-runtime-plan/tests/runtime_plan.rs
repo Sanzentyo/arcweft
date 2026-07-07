@@ -1317,6 +1317,7 @@ fn runtime_plan_lowers_expected_partial_placeholder_function_let() {
         r#"
 flow @flow.main main {
     let high: i64 -> bool = _ > 80i64
+    let high_grouped: i64 -> bool = (_ > 80i64)
     return "done"
 }
 "#,
@@ -1327,6 +1328,22 @@ flow @flow.main main {
 
     let FlowOp::Let { expr, .. } = &plan.flows[0].ops[0] else {
         panic!("expected partial function let");
+    };
+    assert!(matches!(
+        expr,
+        RuntimeExpr::Function { params, body }
+            if params.as_slice() == ["__arcweft_partial"]
+                && matches!(
+                    body.as_ref(),
+                    RuntimeExpr::Binary { lhs, .. }
+                        if matches!(
+                            lhs.as_ref(),
+                            RuntimeExpr::Local(name) if name == "__arcweft_partial"
+                        )
+                )
+    ));
+    let FlowOp::Let { expr, .. } = &plan.flows[0].ops[1] else {
+        panic!("expected grouped partial function let");
     };
     assert!(matches!(
         expr,

@@ -5,8 +5,7 @@
 Expected-type `_` is implemented for explicit function annotations and the
 collection `map`/`filter` optimization paths. No-expected-type inference and
 partial-call abstraction now exist for the constrained cases recorded below,
-but parenthesized grouping, broader inference, and method-chain fallback remain
-open.
+but broader inference and method-chain fallback remain open.
 
 Method-chain fallback is also not implemented: real inherent/trait methods
 should win first, and only unresolved method syntax should fall back to
@@ -16,14 +15,11 @@ Implementation progress on 2026-07-07:
 
 - Sema now infers no-expected `_` abstraction for unambiguous binary expressions
   where the non-placeholder operand has a static/local type, such as
-  `let high = _ > 80i64`.
+  `let high = _ > 80i64` and `let high = (_ > 80i64)`.
 - Sema now infers partial-call abstraction for known positional function
   signatures, such as `let add_one = add(_, 1i64)`.
 - Runtime-plan lowering consumes the inferred function evidence and lowers both
   forms to `RuntimeExpr::Function`.
-- Parenthesized grouping such as `let is_high = (_ > 80i64)` is still open
-  because the current parser/HIR expression shape does not preserve that group
-  as the binary expression for type checking.
 
 ## Required Decisions
 
@@ -47,8 +43,8 @@ Implementation progress on 2026-07-07:
    binary expressions with a static/local non-placeholder operand.
 2. Implement partial call abstraction as function values. Done for known
    positional callable signatures.
-3. Add parser/HIR grouping support so parenthesized partial expressions preserve
-   the inferred body expression.
+3. Parenthesized partial expressions now use the same inferred body expression
+   path as unparenthesized partial expressions.
 4. Implement method-chain fallback using typed callable evidence, not string
    labels alone.
 5. Add diagnostics for ambiguous or unsupported fallback cases.
@@ -57,7 +53,9 @@ Implementation progress on 2026-07-07:
 
 - `let is_high = _ > 80i64`. Covered by
   `infers_partial_placeholder_function_without_expected_type`.
-- `let is_high = (_ > 80i64)`. Open until parser/HIR grouping is implemented.
+- `let is_high = (_ > 80i64)`. Covered by
+  `infers_parenthesized_partial_placeholder_function_without_expected_type` and
+  `runtime_plan_lowers_inferred_partial_placeholder_functions`.
 - `let add_one = add(_, 1i64)`. Covered by
   `infers_partial_call_abstraction_without_expected_type` and
   `runtime_plan_lowers_inferred_partial_placeholder_functions`.
