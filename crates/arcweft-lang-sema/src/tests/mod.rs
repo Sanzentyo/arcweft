@@ -10,6 +10,7 @@ mod declarations;
 mod diagnostics;
 mod dialogue;
 mod expressions;
+mod function_stack;
 mod line_plan;
 mod lower_hir;
 mod parser_basics;

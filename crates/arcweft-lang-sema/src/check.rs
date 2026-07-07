@@ -6,8 +6,9 @@
 pub use crate::{
     checker::{
         ForIterationEvidence, ForIterationEvidenceFamily, StandardIteratorFamily, TypeCheckReport,
-        TypeCheckStats, TypeJudgment, TypeJudgmentExpected, TypeJudgmentId, TypeJudgmentRule,
-        TypeJudgmentSubject, analyze_types, typecheck_hir, validate_typecheck_ready,
+        TypeCheckStats, TypeExpressionId, TypeJudgment, TypeJudgmentExpected, TypeJudgmentId,
+        TypeJudgmentRule, TypeJudgmentSubject, TypedLoweringEvidence, TypedLoweringEvidenceKind,
+        analyze_types, typecheck_hir, validate_typecheck_ready,
     },
     diagnostics::TypeCheckWarning,
 };

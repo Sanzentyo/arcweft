@@ -17,6 +17,18 @@ to sema. Runtime-plan currently receives HIR syntax plus coarse options;
 can disambiguate opaque `f(1i64)` call sites as function apply versus
 adapter-facing named calls.
 
+Implementation progress on 2026-07-07:
+
+- `TypeCheckReport` now exposes per-report `TypeExpressionId` keys on
+  expression judgments.
+- `TypeCheckReport::typed_lowering_evidence` records function-valued call
+  evidence and expected-function value evidence.
+- Sema now type-checks calls through function-valued symbols/locals and supports
+  function-value partial application by returning a remaining function type.
+
+The request remains open for compiler/runtime-plan evidence threading and for
+method-resolution/fallback evidence.
+
 ## Required Decisions
 
 - Define a stable expression identity/evidence model shared by sema and
@@ -36,7 +48,8 @@ adapter-facing named calls.
 
 ## Implementation Order
 
-1. Extend sema output with expression-level typed lowering evidence.
+1. Extend sema output with expression-level typed lowering evidence. Done for
+   function-valued calls and expected-function values.
 2. Thread that evidence through `arcweft-compiler` into
    `RuntimePlanLowerOptions`.
 3. Update runtime-plan strict call lowering for function-valued path callees

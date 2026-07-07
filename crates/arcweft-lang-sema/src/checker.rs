@@ -133,11 +133,30 @@ impl TypeJudgmentId {
     }
 }
 
+/// Stable identifier for an expression visited by the type checker.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TypeExpressionId(usize);
+
+impl TypeExpressionId {
+    /// Creates an identifier from a zero-based expression traversal index.
+    pub const fn from_index(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// Returns the zero-based expression traversal index in this report.
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
+
 /// HIR subject proven by a type-check judgment.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypeJudgmentSubject {
     /// An expression was assigned a type.
-    Expr { kind: &'static str },
+    Expr {
+        id: TypeExpressionId,
+        kind: &'static str,
+    },
     /// A let binding pattern was assigned a type.
     LetBinding { pattern: String },
     /// A function or flow return expression was assigned a type.
@@ -187,6 +206,31 @@ impl TypeJudgment {
     }
 }
 
+/// Machine-readable evidence that affects runtime-plan lowering choices.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypedLoweringEvidence {
+    pub expression_id: TypeExpressionId,
+    pub kind: TypedLoweringEvidenceKind,
+}
+
+/// Lowering-sensitive semantic facts proven during type checking.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TypedLoweringEvidenceKind {
+    /// A call expression's callee evaluated to a function value.
+    FunctionValueCall {
+        callee: Option<String>,
+        callee_ty: TypeKind,
+        result_ty: TypeKind,
+        arg_count: usize,
+    },
+    /// An expression was checked in a function-typed context.
+    ExpectedFunctionValue {
+        expected_ty: TypeKind,
+        actual_ty: TypeKind,
+        arity: usize,
+    },
+}
+
 /// Machine-readable type-check result used by tooling and profiling.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypeCheckReport {
@@ -194,6 +238,7 @@ pub struct TypeCheckReport {
     pub warnings: Vec<TypeCheckWarning>,
     pub stats: TypeCheckStats,
     pub judgments: Vec<TypeJudgment>,
+    pub typed_lowering_evidence: Vec<TypedLoweringEvidence>,
     pub effects: EffectAnalysisReport,
     pub for_iteration_evidence: Vec<ForIterationEvidence>,
     pub trait_catalog: TraitCatalog,
@@ -225,6 +270,7 @@ pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport 
         warnings: checker.warnings,
         stats: checker.stats,
         judgments: checker.judgments,
+        typed_lowering_evidence: checker.typed_lowering_evidence,
         effects,
         for_iteration_evidence: checker.for_iteration_evidence,
         trait_catalog: checker.trait_catalog,
@@ -308,6 +354,7 @@ struct TypeChecker<'a> {
     yield_stack: Vec<YieldContext>,
     stats: TypeCheckStats,
     judgments: Vec<TypeJudgment>,
+    typed_lowering_evidence: Vec<TypedLoweringEvidence>,
     for_iteration_evidence: Vec<ForIterationEvidence>,
     record_runtime_for_iteration_evidence: bool,
 }
@@ -441,6 +488,7 @@ impl TypeChecker<'_> {
             yield_stack: Vec::new(),
             stats: TypeCheckStats::default(),
             judgments: Vec::new(),
+            typed_lowering_evidence: Vec::new(),
             for_iteration_evidence: Vec::new(),
             record_runtime_for_iteration_evidence: false,
         }
@@ -520,6 +568,10 @@ impl TypeChecker<'_> {
             TypeJudgmentRule::Return => self.stats.return_judgments += 1,
         }
         id
+    }
+
+    fn record_typed_lowering_evidence(&mut self, evidence: TypedLoweringEvidence) {
+        self.typed_lowering_evidence.push(evidence);
     }
 
     fn record_active_borrow_depth(&mut self) {

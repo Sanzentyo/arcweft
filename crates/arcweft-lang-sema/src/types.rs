@@ -203,6 +203,14 @@ impl TypeKind {
     }
 
     #[must_use]
+    pub fn function_arity(&self) -> Option<usize> {
+        match self {
+            Self::Function { params, .. } => Some(params.len()),
+            _ => None,
+        }
+    }
+
+    #[must_use]
     pub fn action_event_field(field: &str) -> Option<Self> {
         Some(match field {
             "action" => Self::entity_ref(EntityKind::Action),

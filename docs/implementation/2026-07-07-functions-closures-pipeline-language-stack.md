@@ -78,6 +78,15 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   function values. Calls through those locals, such as
   `let f = add; let add_two = f(2i64); let seven = add_two(5i64)`, lower to
   `RuntimeExpr::Apply` instead of adapter-facing named calls.
+- Type-check reports now include stable per-report expression IDs and
+  `typed_lowering_evidence` records. Sema records function-valued call evidence
+  when a callee path/expression has `TypeKind::Function`, and records
+  expected-function evidence when an expression is checked in a function-typed
+  context.
+- Sema now accepts calls through function-valued symbols and locals instead of
+  treating those path callees as unknown named functions.
+- Function value calls in sema now support partial application by returning a
+  remaining `TypeKind::Function` when fewer positional arguments are supplied.
 
 ## Current boundaries
 
@@ -87,14 +96,15 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
 - Partial call abstraction such as `add(_, 1)` type-checks only where a matching
   expected function type is supplied. It is not yet a general inference source.
 - `_` expected-type runtime lowering currently consumes explicit syntax-level
-  function annotations. Other expected-type sources that are known only to sema,
-  such as function arguments or contextual returns, still need expression-level
-  typed lowering evidence before they can escape into runtime function values.
+  function annotations. Sema now records expected-function evidence for other
+  expected-type sources, but runtime-plan still needs to consume that evidence
+  before those sources can escape into runtime function values.
 - Top-level pure helper functions now materialize as function values in runtime
   expression lowering, and flow lowering tracks local aliases/partial applies
-  that are known function values. Full typed call disambiguation remains open
-  for function-valued paths known only through sema evidence, such as function
-  arguments, opaque returns, or contextual expected types.
+  that are known function values. Sema now records function-valued path call
+  evidence, but full typed call disambiguation remains open until that evidence
+  is threaded into runtime-plan lowering for function arguments, opaque returns,
+  or contextual expected types.
 - AWBC does not yet allocate runtime closure values. `RuntimeExpr::Function`
   currently emits an AWBC lowering diagnostic, and function state is not encoded
   as an AWBC constant. `RuntimeExpr::Apply` is represented as a
@@ -131,6 +141,10 @@ cargo test -p arcweft-runtime-plan --all-features strict_runtime_value_lowering_
 cargo test -p arcweft-runtime-plan --all-features expected_partial_placeholder
 cargo test -p arcweft-runtime-plan --all-features data_last_pipe
 cargo test -p arcweft-runtime-plan --all-features runtime_plan_lowers_local_function_value_calls_to_apply
+cargo test -p arcweft-lang-sema --all-features records_function_value_call_lowering_evidence
+cargo test -p arcweft-lang-sema --all-features typechecks_partial_function_value_application
+cargo test -p arcweft-lang-sema --all-features typechecks_partial_placeholder_function_and_vec_map
+cargo test -p arcweft-lang-sema --all-features
 cargo test -p arcweft-runtime-plan --all-features
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features
@@ -163,3 +177,8 @@ fallback calls, partial helper apply, and exact helper pure calls.
 The local function-valued call cut has focused passing coverage for a flow that
 aliases a pure helper, partially applies that local function value, and applies
 the resulting local function value again.
+
+The sema typed-lowering evidence cut has passing coverage for function-valued
+symbol calls, local function-value calls after partial application,
+expected-function evidence for `_` placeholder abstraction, and full
+`arcweft-lang-sema` tests.

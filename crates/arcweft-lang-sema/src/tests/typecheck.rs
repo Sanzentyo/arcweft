@@ -1057,14 +1057,22 @@ flow @flow.good good {
     assert!(report.judgments.iter().any(|judgment| {
         matches!(
             (&judgment.subject, judgment.rule, &judgment.ty),
-            (TypeJudgmentSubject::Expr { kind }, TypeJudgmentRule::Expr, TypeKind::I32)
+            (
+                TypeJudgmentSubject::Expr { kind, .. },
+                TypeJudgmentRule::Expr,
+                TypeKind::I32
+            )
                 if *kind == "literal"
         )
     }));
     assert!(report.judgments.iter().any(|judgment| {
         matches!(
             (&judgment.subject, judgment.rule, &judgment.ty),
-            (TypeJudgmentSubject::Expr { kind }, TypeJudgmentRule::Expr, TypeKind::F64)
+            (
+                TypeJudgmentSubject::Expr { kind, .. },
+                TypeJudgmentRule::Expr,
+                TypeKind::F64
+            )
                 if *kind == "literal"
         )
     }));
@@ -1092,7 +1100,7 @@ flow @flow.range range {
     assert!(report.judgments.iter().any(|judgment| {
         matches!(
             (&judgment.subject, &judgment.ty),
-            (TypeJudgmentSubject::Expr { kind }, TypeKind::Range(item))
+            (TypeJudgmentSubject::Expr { kind, .. }, TypeKind::Range(item))
                 if *kind == "range" && item.as_ref() == &TypeKind::I32
         )
     }));
@@ -1127,7 +1135,7 @@ flow @flow.good good(input: i32) -> i32 {
         matches!(
             (&judgment.subject, judgment.rule, judgment.expected_type()),
             (
-                TypeJudgmentSubject::Expr { kind },
+                TypeJudgmentSubject::Expr { kind, .. },
                 TypeJudgmentRule::Expected,
                 Some(TypeKind::I32)
             ) if *kind == "literal"
@@ -1137,7 +1145,7 @@ flow @flow.good good(input: i32) -> i32 {
         matches!(
             (&judgment.subject, judgment.rule, &judgment.expected),
             (
-                TypeJudgmentSubject::Expr { kind },
+                TypeJudgmentSubject::Expr { kind, .. },
                 TypeJudgmentRule::Expected,
                 Some(TypeJudgmentExpected::SameAsJudgment)
             ) if *kind == "literal"
@@ -2144,7 +2152,26 @@ flow @flow.partial partial {
         TypeKind::Vec(Box::new(TypeKind::Named("Choice".to_owned()))),
     );
 
-    typecheck_hir(&hir, &env).expect("partial placeholder functions typecheck");
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::ExpectedFunctionValue {
+                    expected_ty,
+                    actual_ty,
+                    arity: 1
+                } if expected_ty == actual_ty
+                    && expected_ty.function_arity() == Some(1)
+            )
+        }),
+        "expected partial placeholder to record expected-function lowering evidence"
+    );
 }
 
 #[test]

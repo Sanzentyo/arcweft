@@ -776,7 +776,7 @@ mod tests {
     use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow};
     use arcweft_core::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeValue};
     use arcweft_lang_sema::check::{
-        TypeCheckStats, TypeJudgment, TypeJudgmentExpected, TypeJudgmentId,
+        TypeCheckStats, TypeExpressionId, TypeJudgment, TypeJudgmentExpected, TypeJudgmentId,
     };
     use arcweft_lang_sema::types::TypeKind;
 
@@ -862,6 +862,7 @@ mod tests {
             warnings: Vec::new(),
             stats: TypeCheckStats::default(),
             judgments: Vec::new(),
+            typed_lowering_evidence: Vec::new(),
             effects: EffectAnalysisReport::default(),
             for_iteration_evidence: Vec::new(),
             trait_catalog: TraitCatalog::default(),
@@ -872,14 +873,20 @@ mod tests {
         let judgments = vec![
             TypeJudgment {
                 id: TypeJudgmentId::from_index(0),
-                subject: TypeJudgmentSubject::Expr { kind: "literal" },
+                subject: TypeJudgmentSubject::Expr {
+                    id: TypeExpressionId::from_index(0),
+                    kind: "literal",
+                },
                 ty: TypeKind::Bool,
                 rule: TypeJudgmentRule::Expr,
                 expected: None,
             },
             TypeJudgment {
                 id: TypeJudgmentId::from_index(1),
-                subject: TypeJudgmentSubject::Expr { kind: "literal" },
+                subject: TypeJudgmentSubject::Expr {
+                    id: TypeExpressionId::from_index(1),
+                    kind: "literal",
+                },
                 ty: TypeKind::Bool,
                 rule: TypeJudgmentRule::Expected,
                 expected: Some(TypeJudgmentExpected::SameAsJudgment),
@@ -902,6 +909,7 @@ mod tests {
                 ..TypeCheckStats::default()
             },
             judgments,
+            typed_lowering_evidence: Vec::new(),
             effects: EffectAnalysisReport::default(),
             for_iteration_evidence: Vec::new(),
             trait_catalog: TraitCatalog::default(),

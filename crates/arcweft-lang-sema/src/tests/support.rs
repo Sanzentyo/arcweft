@@ -1,6 +1,6 @@
 pub(super) use crate::check::{
-    TypeJudgmentExpected, TypeJudgmentRule, TypeJudgmentSubject, analyze_types, typecheck_hir,
-    validate_typecheck_ready,
+    TypeJudgmentExpected, TypeJudgmentRule, TypeJudgmentSubject, TypedLoweringEvidenceKind,
+    analyze_types, typecheck_hir, validate_typecheck_ready,
 };
 pub(super) use crate::diagnostics::TypeCheckErrorKind;
 pub(super) use crate::env::{FunctionParam, FunctionSignature, TypeCheckEnv};

@@ -549,7 +549,7 @@ impl From<&TypeJudgment> for TypeCheckJudgmentSample {
 
 fn type_judgment_subject_label(subject: &TypeJudgmentSubject) -> String {
     match subject {
-        TypeJudgmentSubject::Expr { kind } => format!("expr:{kind}"),
+        TypeJudgmentSubject::Expr { id, kind } => format!("expr#{}:{kind}", id.index()),
         TypeJudgmentSubject::LetBinding { pattern } => format!("let:{pattern}"),
         TypeJudgmentSubject::Return { context } => format!("return:{context}"),
     }

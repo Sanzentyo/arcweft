@@ -9,7 +9,8 @@ use super::helpers::{
 use super::{
     BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr, FunctionParam,
     FunctionSignature, LifetimeScopeKind, Pattern, Stmt, TypeCheckError, TypeChecker,
-    TypeJudgmentRule, TypeJudgmentSubject, TypeKind, YieldContext, entity_syntax_kind,
+    TypeExpressionId, TypeJudgmentRule, TypeJudgmentSubject, TypeKind, TypedLoweringEvidence,
+    TypedLoweringEvidenceKind, YieldContext, entity_syntax_kind,
 };
 use crate::diagnostics::TraitDiagnostic;
 use crate::traits::TraitMethodResolution;
@@ -65,6 +66,7 @@ impl TypeChecker<'_> {
         expr: &Expr,
         expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
+        let expression_id = TypeExpressionId::from_index(self.stats.expressions);
         self.stats.expressions += 1;
         let ty = if let Some(expected @ TypeKind::Function { .. }) = expected
             && !matches!(expr, Expr::Closure { .. })
@@ -72,17 +74,31 @@ impl TypeChecker<'_> {
         {
             self.check_partial_placeholder_abstraction_expr(expr, expected)
         } else {
-            self.check_expr_kind_with_expected(expr, expected)
+            self.check_expr_kind_with_expected(expr, expected, expression_id)
         };
         if let Some(ty) = ty.as_ref() {
             self.record_type_judgment(
                 TypeJudgmentSubject::Expr {
+                    id: expression_id,
                     kind: expr_kind_name(expr),
                 },
                 expected.map_or(TypeJudgmentRule::Expr, |_| TypeJudgmentRule::Expected),
                 ty.clone(),
                 expected,
             );
+            if let Some(expected) = expected
+                && let Some(arity) = expected.function_arity()
+                && ty.function_arity().is_some()
+            {
+                self.record_typed_lowering_evidence(TypedLoweringEvidence {
+                    expression_id,
+                    kind: TypedLoweringEvidenceKind::ExpectedFunctionValue {
+                        expected_ty: expected.clone(),
+                        actual_ty: ty.clone(),
+                        arity,
+                    },
+                });
+            }
         }
         ty
     }
@@ -91,6 +107,7 @@ impl TypeChecker<'_> {
         &mut self,
         expr: &Expr,
         expected: Option<&TypeKind>,
+        expression_id: TypeExpressionId,
     ) -> Option<TypeKind> {
         match expr {
             Expr::Literal(literal) => Some(self.check_literal_expr(literal, expected)),
@@ -109,7 +126,9 @@ impl TypeChecker<'_> {
             Expr::ArrayRepeat { value, len } => {
                 Some(self.check_array_repeat_expr(value, len, expected))
             }
-            Expr::Call { callee, args } => self.check_call_expr(callee, args, expected),
+            Expr::Call { callee, args } => {
+                self.check_call_expr(callee, args, expected, expression_id)
+            }
             Expr::MethodCall {
                 receiver,
                 method,
@@ -773,6 +792,7 @@ impl TypeChecker<'_> {
         callee: &Expr,
         args: &[CallArg],
         expected: Option<&TypeKind>,
+        expression_id: TypeExpressionId,
     ) -> Option<TypeKind> {
         if let Some(ty) = self.check_builtin_call_expr(callee, args) {
             return Some(ty);
@@ -804,51 +824,7 @@ impl TypeChecker<'_> {
             return Some(ty);
         }
         if let Expr::Path(name) = callee {
-            if matches!(name.as_str(), "promote" | "promote_unchecked") {
-                for arg in args.iter().filter_map(|arg| match arg {
-                    CallArg::Named { value, .. } => Some(value.as_ref()),
-                    CallArg::Positional(_) | CallArg::Spread { .. } => None,
-                }) {
-                    self.check_expr(arg);
-                }
-                return Some(TypeKind::Named("Promoted".to_owned()));
-            }
-            if name == "assume" {
-                return Some(TypeKind::Unit);
-            }
-            if self.symbol_type(name) == Some(&TypeKind::entity_ref(EntityKind::Character)) {
-                for arg in args {
-                    self.check_expr(arg.value());
-                }
-                return Some(TypeKind::SpeakerPreset(EntityKind::Character));
-            }
-            if self.symbol_type(name) == Some(&TypeKind::SpeakerPreset(EntityKind::Character)) {
-                for arg in args {
-                    self.check_expr(arg.value());
-                }
-                return Some(TypeKind::SpeakerPreset(EntityKind::Character));
-            }
-            if let Some(ty) = self.check_result_constructor_call(name.as_str(), args, expected) {
-                return Some(ty);
-            }
-            if name == "Some" {
-                if let Some(expected @ TypeKind::Option(item)) = expected {
-                    for arg in args {
-                        self.expect_expr_type(arg.value(), item, "Some payload");
-                    }
-                    return Some(expected.clone());
-                }
-                let arg_types = args
-                    .iter()
-                    .map(|arg| self.check_expr(arg.value()))
-                    .collect::<Vec<_>>();
-                return Some(TypeKind::Option(Box::new(first_arg_type(&arg_types))));
-            }
-            return self.function_type(name).cloned().or_else(|| {
-                self.errors
-                    .push(TypeCheckError::new(format!("unknown function `{name}`")));
-                None
-            });
+            return self.check_path_call_expr(name, args, expected, expression_id);
         }
         match self.check_expr(callee) {
             Some(TypeKind::Speaker(entity) | TypeKind::SpeakerPreset(entity)) => {
@@ -857,10 +833,14 @@ impl TypeChecker<'_> {
                 }
                 Some(TypeKind::SpeakerPreset(entity))
             }
-            Some(TypeKind::Function {
-                params,
-                return_type,
-            }) => Some(self.check_function_value_call(args, &params, &return_type)),
+            Some(callee_ty @ TypeKind::Function { .. }) => {
+                Some(self.check_known_function_value_call(
+                    expression_id,
+                    expr_path_label(callee).as_deref(),
+                    args,
+                    callee_ty,
+                ))
+            }
             other => {
                 for arg in args {
                     self.check_expr(arg.value());
