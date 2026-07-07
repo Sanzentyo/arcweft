@@ -59,10 +59,11 @@ pub mod suspension;
 
 use helpers::{
     await_branch_pattern_type, choice_output_type, default_presentation_slot_family, entity_kind,
-    entity_kind_for_decl, entity_syntax_kind, ident_pattern_name, is_character_entity_literal,
-    is_dialogue_callee_type, is_drop_callee, is_local_ident, iter_item_type, merge_line_output,
-    normalize_choice_type, pattern_bindings_with_fallback, source_return_types, stmts_diverge,
-    stream_return_types, type_ref_kind, typed_pattern_binding, unify_loop_break_types,
+    entity_kind_for_decl, entity_syntax_kind, expr_path_label, ident_pattern_name,
+    is_character_entity_literal, is_dialogue_callee_type, is_drop_callee, is_local_ident,
+    iter_item_type, merge_line_output, normalize_choice_type, pattern_bindings_with_fallback,
+    source_return_types, stmts_diverge, stream_return_types, type_ref_kind, typed_pattern_binding,
+    unify_loop_break_types,
 };
 
 /// Verifies that lowered HIR no longer contains raw expression fragments.
@@ -841,6 +842,32 @@ impl TypeChecker<'_> {
             callable,
             EffectSite::new(format!("function value call `{callee}`")),
         );
+    }
+
+    fn closure_effect_callable_for_binding_expr(
+        &self,
+        expr: &Expr,
+        binding_ty: &TypeKind,
+    ) -> Option<CallableId> {
+        if !matches!(binding_ty, TypeKind::Function { .. }) {
+            return None;
+        }
+        match expr {
+            Expr::Closure { .. } => self.last_checked_closure_effect_callable.clone(),
+            Expr::Path(path) => self.local_function_effects.get(path.as_label()).cloned(),
+            Expr::Call { callee, args } => {
+                let callee = expr_path_label(callee)?;
+                let callable = self.local_function_effects.get(&callee)?.clone();
+                let arity = self.locals.get(&callee)?.function_arity()?;
+                let positional_arg_count = args
+                    .iter()
+                    .filter(|arg| matches!(arg, CallArg::Positional(_)))
+                    .count();
+                let all_positional = args.iter().all(|arg| matches!(arg, CallArg::Positional(_)));
+                (all_positional && positional_arg_count < arity).then_some(callable)
+            }
+            _ => None,
+        }
     }
 
     fn local_symbol_type_with_capture(&mut self, name: &str) -> Option<TypeKind> {

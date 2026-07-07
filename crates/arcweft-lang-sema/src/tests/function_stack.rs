@@ -944,6 +944,71 @@ effects { }
 }
 
 #[test]
+fn partial_local_closure_application_does_not_compose_until_called() {
+    let tree = parse_ok(
+        r#"
+flow @flow.partial_closure_effect_creation partial_closure_effect_creation
+effects { }
+{
+    let later = |path: String, suffix: String| -> String {
+        adapter.read_text(path = path)
+    }
+    let suffixer = later("story.arcw")
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("partial closure effect fixture lowers");
+    validate_typecheck_ready(&hir).expect("partial closure effect fixture is structured");
+
+    let report = analyze_types(&hir, &read_text_env());
+    assert!(
+        report.diagnostics.is_empty(),
+        "partial closure application should not perform the closure body effects: {:?}",
+        report.diagnostics
+    );
+    let flow_summary = report
+        .effects
+        .summary(&crate::effect_model::CallableId::new(
+            "flow.partial_closure_effect_creation",
+        ))
+        .expect("flow summary");
+    assert!(
+        flow_summary.inferred().is_empty(),
+        "flow should not infer partial closure body effects at creation: {flow_summary:?}"
+    );
+}
+
+#[test]
+fn partial_local_closure_alias_composes_body_effects_when_called() {
+    let tree = parse_ok(
+        r#"
+flow @flow.partial_closure_effect_call partial_closure_effect_call
+effects { }
+{
+    let later = |path: String, suffix: String| -> String {
+        adapter.read_text(path = path)
+    }
+    let suffixer = later("story.arcw")
+    let body = suffixer(".bak")
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("partial closure effect call fixture lowers");
+    validate_typecheck_ready(&hir).expect("partial closure effect call fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("calling the partial closure alias must compose body effects");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error.message().contains("flow.partial_closure_effect_call")
+                && error.message().contains("fs.read")
+        }),
+        "expected partial closure call effect upper-bound diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn closure_return_type_annotation_rejects_body_mismatch() {
     let tree = parse_ok(
         r"

@@ -210,7 +210,9 @@ Source briefs:
   immediate effect in the enclosing flow/function. Direct calls through the
   local closure binding, such as `f()`, compose that synthetic callable back
   into the caller's effect graph and therefore still respect explicit effect
-  bounds.
+  bounds. Partial application of a local closure binding carries the same
+  synthetic callable to the partial alias without composing effects until that
+  alias is called.
 - Sema now emits `sema.numeric.fallback_in_inferred_closure` warnings when an
   unsuffixed numeric literal or numeric sequence falls back to a stable default
   primitive type inside a closure body whose return type is inferred. Explicit
@@ -280,11 +282,12 @@ Source briefs:
 - Closure capture lifetime diagnostics now cover borrowed local captures that
   cross checked suspension boundaries. Closure body effect composition is
   implemented for synthetic closure callables and direct calls through local
-  closure bindings. Full function-effect typing for partial closure aliases,
-  immediate closure calls, higher-order function arguments, and LSP-facing
-  closure effect evidence remains open. Save/load currently has an explicit
-  Product AWBC policy: runtime function values are rejected as non-persistable
-  until AWBC closure allocation and snapshot versioning are designed. Numeric fallback lints
+  closure bindings, including partial application aliases. Full
+  function-effect typing for immediate closure calls, higher-order function
+  arguments, and LSP-facing closure effect evidence remains open. Save/load
+  currently has an explicit Product AWBC policy: runtime function values are
+  rejected as non-persistable until AWBC closure allocation and snapshot
+  versioning are designed. Numeric fallback lints
   inside inferred closure bodies are implemented for scalar integer/float
   fallback and numeric sequence fallback. LSP inlays are implemented for
   inferred function-valued `let` bindings; broader expression inlays still need
@@ -342,6 +345,8 @@ cargo test -p arcweft-lang-sema --all-features curried_function_declaration
 cargo test -p arcweft-lang-sema --all-features closure_return
 cargo test -p arcweft-lang-sema --all-features closure_body_effects_do_not_leak_on_function_value_creation
 cargo test -p arcweft-lang-sema --all-features local_closure_call_composes_body_effects_into_caller
+cargo test -p arcweft-lang-sema --all-features partial_local_closure_application_does_not_compose_until_called
+cargo test -p arcweft-lang-sema --all-features partial_local_closure_alias_composes_body_effects_when_called
 cargo test -p arcweft-lang-sema --all-features
 cargo test -p arcweft-lsp --all-features inlay_hint_request
 cargo test -p arcweft-lsp --all-features
@@ -460,7 +465,12 @@ effects do not leak into the enclosing flow when the closure value is merely
 created, while a direct call through the local closure binding composes those
 body effects into the caller and triggers the existing explicit effect-bound
 diagnostic.
-The cut passed `cargo check --workspace --all-targets --all-features`,
+The partial closure alias follow-up has passing sema coverage that partial
+application of a local closure binding does not compose the closure body
+effects at partial-value creation time, and that calling the partial alias
+composes the body effects into the caller.
+The closure effect-composition cut and partial-alias follow-up both passed
+`cargo check --workspace --all-targets --all-features`,
 `cargo clippy --workspace --all-targets --all-features` with only the existing
 `TraitMember`/`ImplMember` large enum warnings, and structure audit with 0
 errors / 148 warnings.
