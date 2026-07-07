@@ -2,14 +2,14 @@ use arcweft_bundle::{
     BundleImageObject, BundleImageObjectBounds,
     container::BundleDigest,
     resource_codec::{
-        UiInputResource, UiLogicalRect, UiStyleResource, UiTextResource,
-        ViewActionButtonActionResource, ViewActionButtonResource, ViewActionPayloadResource,
-        ViewActionTextControlPayloadField, ViewAwaitBranchSpan, ViewFocusDirection,
-        ViewFocusGroupPolicy, ViewFocusGroupResource, ViewFocusInitialPolicy,
-        ViewFocusNavigationEdge, ViewFocusNavigationResource, ViewFocusSkipPolicy,
-        ViewFocusTargetResolution, ViewFocusWrapPolicy, ViewLayoutBoundsResource,
-        ViewProgramResource, ViewRuntimeButtonBounds, ViewRuntimeTextBlockBounds, ViewScrollAxis,
-        ViewScrollOverflowPolicy, ViewScrollRegionResource, ViewTextBlockResource,
+        UiInputResource, UiLogicalRect, UiTextResource, ViewActionButtonActionResource,
+        ViewActionButtonResource, ViewActionPayloadResource, ViewActionTextControlPayloadField,
+        ViewAwaitBranchSpan, ViewFocusDirection, ViewFocusGroupPolicy, ViewFocusGroupResource,
+        ViewFocusInitialPolicy, ViewFocusNavigationEdge, ViewFocusNavigationResource,
+        ViewFocusSkipPolicy, ViewFocusTargetResolution, ViewFocusWrapPolicy,
+        ViewLayoutBoundsResource, ViewPartStyleRule, ViewProgramResource, ViewRuntimeButtonBounds,
+        ViewRuntimeTextBlockBounds, ViewScrollAxis, ViewScrollOverflowPolicy,
+        ViewScrollRegionResource, ViewStyleResource, ViewTextBlockResource,
         types::DigestRef,
         ui::{
             CompositionOnBlurPolicy, EnterKeyHint, StyleAssignOp, StyleSourceIdentity,
@@ -17,8 +17,8 @@ use arcweft_bundle::{
             UiInputOptions, UiInputPurpose, UiSecureInputPolicy, UiTextSelectionPolicy,
             UiTextShortcutPolicy, UiTextSourceKind, UiTextSourceRecord, UiTextTabPolicy,
             UiTextVerticalNavigationPolicy, ViewElementKind, ViewProgramInstruction,
-            ViewSemanticTarget, ViewStyleApplyRef, ViewStyleDeclaration, ViewStyleSelectorPart,
-            ViewStyleValue,
+            ViewSemanticTarget, ViewStyleApplyRef, ViewStyleDeclaration, ViewStyleSelector,
+            ViewStyleSelectorPart, ViewStyleValue,
         },
     },
 };
@@ -44,7 +44,7 @@ use super::bundle_view_overflow::validate_interactive_overflow_modifiers;
 #[derive(Clone, Debug, Default)]
 pub(in crate::app) struct ViewBundleSidecars {
     pub(in crate::app) program: Option<ViewProgramResource>,
-    pub(in crate::app) style: Option<UiStyleResource>,
+    pub(in crate::app) style: Option<ViewStyleResource>,
     pub(in crate::app) text: Option<UiTextResource>,
     pub(in crate::app) input: Option<UiInputResource>,
     pub(in crate::app) image_objects: Vec<BundleImageObject>,
@@ -76,9 +76,10 @@ struct ViewLoweringState {
     focus_groups: Vec<ViewFocusGroupResource>,
     focus_navigation: Vec<ViewFocusNavigationResource>,
     focus_group_stack: Vec<String>,
-    style_resource: Option<UiStyleResource>,
+    style_resource: Option<ViewStyleResource>,
     inline_arcweft_sources: Vec<StyleSourceIdentity>,
     inline_css_sources: Vec<StyleSourceIdentity>,
+    inline_part_rules: Vec<ViewPartStyleRule>,
     input_handle_bindings: Vec<InputHandleBinding>,
     source_image_objects: Vec<BundleImageObject>,
     image_objects: Vec<BundleImageObject>,
@@ -199,7 +200,7 @@ impl ViewLayoutFrame {
 
 pub(in crate::app) fn view_sidecars(
     views: &[&EntityDeclItem],
-    style_resource: Option<&UiStyleResource>,
+    style_resource: Option<&ViewStyleResource>,
     source_image_objects: &[BundleImageObject],
 ) -> Result<ViewBundleSidecars, ViewSidecarError> {
     let mut state = ViewLoweringState {
@@ -227,6 +228,7 @@ pub(in crate::app) fn view_sidecars(
         && state.focus_navigation.is_empty()
         && state.inline_arcweft_sources.is_empty()
         && state.inline_css_sources.is_empty()
+        && state.inline_part_rules.is_empty()
         && state.image_objects.is_empty()
     {
         return Ok(ViewBundleSidecars::default());
@@ -250,13 +252,13 @@ pub(in crate::app) fn view_sidecars(
             adapter_requirements: Vec::new(),
         }),
         style: (!state.inline_arcweft_sources.is_empty() || !state.inline_css_sources.is_empty())
-            .then(|| UiStyleResource {
+            .then(|| ViewStyleResource {
                 style_program_id: "ui.style.inline.view".to_owned(),
                 arcweft_sources: state.inline_arcweft_sources,
                 css_sources: state.inline_css_sources,
                 tokens: Vec::new(),
                 rules: Vec::new(),
-                part_rules: Vec::new(),
+                part_rules: state.inline_part_rules,
                 environment_predicates: Vec::new(),
                 source_map_refs: Vec::new(),
                 external_css_descriptors: Vec::new(),
@@ -681,7 +683,7 @@ fn scroll_region_options(
     view_id: &str,
     element: &ViewElement,
     fallback_index: u32,
-    style_resource: Option<&UiStyleResource>,
+    style_resource: Option<&ViewStyleResource>,
 ) -> ScrollRegionOptions {
     let mut options = ScrollRegionOptions {
         public_id: scroll_region_public_id(view_id, element, fallback_index),
@@ -711,7 +713,7 @@ fn scroll_region_options(
 
 fn apply_scroll_style_rules(
     options: &mut ScrollRegionOptions,
-    style_resource: &UiStyleResource,
+    style_resource: &ViewStyleResource,
     element: &ViewElement,
 ) {
     let explicit_styles = explicit_style_refs(element.modifiers());
@@ -814,7 +816,7 @@ fn explicit_style_refs(modifiers: &[ViewModifier]) -> Vec<String> {
 
 fn apply_scroll_style_declarations(
     options: &mut ScrollRegionOptions,
-    style_resource: &UiStyleResource,
+    style_resource: &ViewStyleResource,
     declarations: &[ViewStyleDeclaration],
 ) {
     for declaration in declarations {
@@ -864,14 +866,14 @@ fn apply_scroll_style_declarations(
 }
 
 fn scroll_style_length_milli(
-    style_resource: &UiStyleResource,
+    style_resource: &ViewStyleResource,
     value: &ViewStyleValue,
 ) -> Option<u32> {
     scroll_style_length_milli_inner(style_resource, value, 0)
 }
 
 fn scroll_style_length_milli_inner(
-    style_resource: &UiStyleResource,
+    style_resource: &ViewStyleResource,
     value: &ViewStyleValue,
     depth: u8,
 ) -> Option<u32> {
@@ -893,14 +895,14 @@ fn scroll_style_length_milli_inner(
 }
 
 fn scroll_style_overflow(
-    style_resource: &UiStyleResource,
+    style_resource: &ViewStyleResource,
     value: &ViewStyleValue,
 ) -> Option<ViewScrollOverflowPolicy> {
     scroll_style_overflow_inner(style_resource, value, 0)
 }
 
 fn scroll_style_overflow_inner(
-    style_resource: &UiStyleResource,
+    style_resource: &ViewStyleResource,
     value: &ViewStyleValue,
     depth: u8,
 ) -> Option<ViewScrollOverflowPolicy> {
@@ -922,14 +924,14 @@ fn scroll_style_overflow_inner(
 }
 
 fn scroll_style_axis(
-    style_resource: &UiStyleResource,
+    style_resource: &ViewStyleResource,
     value: &ViewStyleValue,
 ) -> Option<ViewScrollAxis> {
     scroll_style_axis_inner(style_resource, value, 0)
 }
 
 fn scroll_style_axis_inner(
-    style_resource: &UiStyleResource,
+    style_resource: &ViewStyleResource,
     value: &ViewStyleValue,
     depth: u8,
 ) -> Option<ViewScrollAxis> {
@@ -948,12 +950,12 @@ fn scroll_style_axis_inner(
     }
 }
 
-fn scroll_style_bool(style_resource: &UiStyleResource, value: &ViewStyleValue) -> Option<bool> {
+fn scroll_style_bool(style_resource: &ViewStyleResource, value: &ViewStyleValue) -> Option<bool> {
     scroll_style_bool_inner(style_resource, value, 0)
 }
 
 fn scroll_style_bool_inner(
-    style_resource: &UiStyleResource,
+    style_resource: &ViewStyleResource,
     value: &ViewStyleValue,
     depth: u8,
 ) -> Option<bool> {
@@ -973,7 +975,7 @@ fn scroll_style_bool_inner(
 }
 
 fn style_token_value<'a>(
-    style_resource: &'a UiStyleResource,
+    style_resource: &'a ViewStyleResource,
     token: &str,
 ) -> Option<&'a ViewStyleValue> {
     let token = token.trim();
@@ -1699,7 +1701,73 @@ fn next_patch_id(
         StyleSyntax::Arcweft => state.inline_arcweft_sources.push(identity),
         StyleSyntax::Css => state.inline_css_sources.push(identity),
     }
+    let declarations = inline_style_declarations(source);
+    if !declarations.is_empty() {
+        state.inline_part_rules.push(ViewPartStyleRule {
+            part: ViewStyleApplyRef::inline_patch_part(patch_id),
+            selector: ViewStyleSelector::default(),
+            declarations,
+            source: None,
+        });
+    }
     patch_id
+}
+
+fn inline_style_declarations(source: &str) -> Vec<ViewStyleDeclaration> {
+    inline_style_properties(source)
+        .map(|(property, value)| ViewStyleDeclaration {
+            property,
+            value: inline_style_value(&value),
+            op: StyleAssignOp::Replace,
+        })
+        .collect()
+}
+
+fn inline_style_value(raw: &str) -> ViewStyleValue {
+    let value = raw.trim().trim_end_matches(';').trim();
+    if let Some(argument) = style_function_argument(value, "text") {
+        return ViewStyleValue::Text(unquote_style_argument(argument));
+    }
+    if let Some(argument) = style_function_argument(value, "token") {
+        return ViewStyleValue::Token(unquote_style_argument(argument));
+    }
+    if let Some(argument) = style_function_argument(value, "resource") {
+        return ViewStyleValue::Resource(unquote_style_argument(argument));
+    }
+    if let Some(argument) = style_function_argument(value, "milli") {
+        if let Ok(milli) = argument.trim().parse::<i32>() {
+            return ViewStyleValue::Milli(milli);
+        }
+    }
+    if let Some(raw_milli) = value.strip_suffix("milli") {
+        if let Ok(milli) = raw_milli.trim().parse::<i32>() {
+            return ViewStyleValue::Milli(milli);
+        }
+    }
+    ViewStyleValue::Text(unquote_style_argument(value))
+}
+
+fn style_function_argument<'a>(value: &'a str, name: &str) -> Option<&'a str> {
+    value
+        .strip_prefix(name)?
+        .trim_start()
+        .strip_prefix('(')?
+        .strip_suffix(')')
+        .map(str::trim)
+}
+
+fn unquote_style_argument(value: &str) -> String {
+    let value = value.trim();
+    value
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .or_else(|| {
+            value
+                .strip_prefix('\'')
+                .and_then(|value| value.strip_suffix('\''))
+        })
+        .unwrap_or(value)
+        .to_owned()
 }
 
 fn expr_schema_ref(expr: &Expr) -> DigestRef {
@@ -2088,6 +2156,15 @@ fn expr_px_milli(expr: &Expr) -> Option<i32> {
             let raw = raw.trim();
             let raw = raw.strip_suffix("px").map_or(raw, str::trim);
             parse_px_milli(raw)
+        }
+        Expr::Literal(Literal::UnitNumber {
+            raw,
+            suffix: UnitNumberSuffix::Milli,
+        }) => {
+            let raw = raw.trim();
+            raw.strip_suffix("milli")
+                .map(str::trim)
+                .and_then(|raw| raw.parse::<i32>().ok())
         }
         Expr::Literal(Literal::Int { value, .. }) => {
             i32::try_from(value.saturating_mul(1_000)).ok()

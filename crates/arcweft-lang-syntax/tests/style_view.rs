@@ -1,6 +1,6 @@
 use arcweft_lang_syntax::{
     ast::{
-        items::Item,
+        items::{Item, UiStyleValueDecl},
         style::StyleSyntax,
         view::{
             ViewAction, ViewActionPayload, ViewAwaitBranchKind, ViewExpr, ViewModifier,
@@ -24,7 +24,9 @@ pub style primary_button {
 
 pub style @style:.secondary_button {
     Button:active {
-        opacity = milli(920)
+        opacity = 920milli
+        z-index = milli(920)
+        border-radius = 12px
     }
 }
 
@@ -50,6 +52,19 @@ pub style danger_button: .Css {
     assert_eq!(styles[1].id().body(), "style.hoge.secondary_button");
     assert_eq!(styles[2].id().body(), "style.hoge.danger_button");
     assert_eq!(styles[2].syntax(), StyleSyntax::Css);
+    let active_declarations = styles[1].rules()[0].declarations();
+    assert_eq!(
+        active_declarations[0].value(),
+        active_declarations[1].value()
+    );
+    assert_eq!(
+        active_declarations[0].value(),
+        &UiStyleValueDecl::Milli(920)
+    );
+    assert_eq!(
+        active_declarations[2].value(),
+        &UiStyleValueDecl::Text("12px".to_owned())
+    );
     assert!(
         styles[2]
             .inline_source()

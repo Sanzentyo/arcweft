@@ -1,4 +1,5 @@
 use crate::action_buttons::{RuntimeActionButtonLowerer, RuntimeActionButtonLoweringError};
+use crate::control_style::lower_control_style;
 use crate::frame::focus_navigation::{render_focus_groups, render_focus_navigation};
 use crate::images::{BundleImageCatalog, BundleImageCatalogError};
 use crate::input::InputController;
@@ -7,10 +8,10 @@ use arcweft_layout::{ContentRect, LayoutError, LayoutSize, ScalePolicy};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::text_editor::TextEditorError;
 use arcweft_render_wgpu::geometry::{
-    FramePlanError, PreparedFrame, RenderChoiceItem, RenderDialogue, RenderFontFamily,
-    RenderPreferences, RenderScene, RenderScrollAxis, RenderScrollOverflow, RenderScrollRegion,
-    RenderTextBlock, RenderTextSlant, RenderTextWeight, RenderViewport, SharedFramePlanContext,
-    SharedFramePlanStats,
+    FramePlanError, PreparedFrame, RenderChoiceItem, RenderControlVisualState, RenderDialogue,
+    RenderFontFamily, RenderPreferences, RenderScene, RenderScrollAxis, RenderScrollOverflow,
+    RenderScrollRegion, RenderTextBlock, RenderTextSlant, RenderTextWeight, RenderViewport,
+    SharedFramePlanContext, SharedFramePlanStats,
 };
 use arcweft_runtime_driver::display::{BundlePresentationSnapshot, BundleViewportFit};
 use num_traits::ToPrimitive;
@@ -279,19 +280,35 @@ fn render_text_block(
     );
     let (bounds, clip_bounds) =
         scroll_adjusted_text_bounds(scene, block.containing_scroll_region.as_deref(), bounds)?;
+    let visual =
+        lower_control_style(&block.style).visual_for_state(RenderControlVisualState::Normal);
+    let font_size = visual.font_size_px.unwrap_or(20.0) * text_scale;
+    let line_height = visual
+        .line_height_px
+        .map_or(font_size * 1.2, |line_height| line_height * text_scale);
     Some(RenderTextBlock {
         text: block.text.clone(),
         bounds,
         clip_bounds,
         buffer_width: Some(bounds.width),
         buffer_height: Some(bounds.height),
-        font_size: 20.0 * text_scale,
-        line_height: 24.0 * text_scale,
-        font_family: RenderFontFamily::SansSerif,
-        weight: RenderTextWeight::Regular,
+        font_size,
+        line_height,
+        font_family: visual
+            .font_family
+            .map_or(RenderFontFamily::SansSerif, RenderFontFamily::Named),
+        weight: render_text_weight(visual.font_weight),
         slant: RenderTextSlant::Upright,
-        rgba: [245, 245, 240, 255],
+        rgba: visual.text.unwrap_or([245, 245, 240, 255]),
     })
+}
+
+fn render_text_weight(weight: Option<u16>) -> RenderTextWeight {
+    if weight.unwrap_or(400) >= 600 {
+        RenderTextWeight::Bold
+    } else {
+        RenderTextWeight::Regular
+    }
 }
 
 fn scroll_adjusted_text_bounds(

@@ -812,6 +812,10 @@ fn parse_ui_style_value(
         Some(UiStyleValueDecl::SystemColor(value.to_owned()))
     } else if let Some(value) = call_arg(source, "milli") {
         parse_i32_literal(value).map(UiStyleValueDecl::Milli)
+    } else if let Some(value) = source.trim().strip_suffix("milli") {
+        parse_i32_literal(value.trim()).map(UiStyleValueDecl::Milli)
+    } else if source.trim().ends_with("px") {
+        Some(UiStyleValueDecl::Text(source.trim().to_owned()))
     } else if let Some(value) = call_arg(source, "text") {
         ui_style_text_value(value).map(UiStyleValueDecl::Text)
     } else if source.starts_with('[') && source.ends_with(']') {
@@ -825,7 +829,7 @@ fn parse_ui_style_value(
             base,
             source.len(),
             &format!("unknown UI style value `{source}`"),
-            "token(id) | system_color(name) | milli(1000) | text(\"value\") | [\"value\", ...] | resource(id) | rgba(r, g, b, a)",
+            "token(id) | system_color(name) | milli(1000) | 1000milli | 1px | text(\"value\") | [\"value\", ...] | resource(id) | rgba(r, g, b, a)",
         ));
         None
     }

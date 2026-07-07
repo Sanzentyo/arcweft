@@ -1,6 +1,6 @@
 use arcweft_bundle::resource_codec::{
-    ViewRuntimeScrollRegion, ViewRuntimeScrollRegionBounds, ViewRuntimeTextBlock,
-    ViewRuntimeTextBlockBounds,
+    ViewRuntimeControlStyle, ViewRuntimeScrollRegion, ViewRuntimeScrollRegionBounds,
+    ViewRuntimeTextBlock, ViewRuntimeTextBlockBounds,
 };
 use arcweft_bundle::resource_codec::{ViewScrollAxis, ViewScrollOverflowPolicy};
 use arcweft_player_scene::{
@@ -230,6 +230,7 @@ fn player_frame_offsets_and_clips_scroll_contained_text_blocks() {
         containing_scroll_region: Some("scroll.notes".to_owned()),
         text: "Arcweft Concierge".to_owned(),
         bounds: ViewRuntimeTextBlockBounds::from_px(56, 112, 220, 24),
+        style: ViewRuntimeControlStyle::default(),
     });
     let images = BundleImageCatalog::empty();
     let mut input = InputController::default();

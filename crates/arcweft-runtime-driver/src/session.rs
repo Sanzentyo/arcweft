@@ -28,9 +28,9 @@ use arcweft_bundle::patch::{
     apply_patch_bundle, decode_patch_bundle,
 };
 use arcweft_bundle::resource_codec::{
-    UiRuntimeControlStyleDiagnostics, UiRuntimeTextControl, UiRuntimeTextSelection,
-    ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
-    ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeTextBlock,
+    ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeControlStyleDiagnostics,
+    ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion,
+    ViewRuntimeTextBlock, ViewRuntimeTextControl, ViewRuntimeTextSelection,
 };
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleImageObject, BundleKind};
 use arcweft_core::awbc::{
@@ -167,11 +167,11 @@ pub struct BundleSession {
     runtime_images: GenerationRuntimeTable<SessionRuntime>,
     display: LineDisplayCatalog,
     image_objects: Vec<BundleImageObject>,
-    text_inputs: Vec<UiRuntimeTextControl>,
+    text_inputs: Vec<ViewRuntimeTextControl>,
     action_buttons: Vec<ViewRuntimeActionButton>,
     scroll_regions: Vec<ViewRuntimeScrollRegion>,
     text_blocks: Vec<ViewRuntimeTextBlock>,
-    runtime_control_style_diagnostics: UiRuntimeControlStyleDiagnostics,
+    runtime_control_style_diagnostics: ViewRuntimeControlStyleDiagnostics,
     focus_groups: Vec<ViewRuntimeFocusGroup>,
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
     options: BundleSessionOptions,
@@ -1393,7 +1393,7 @@ impl RuntimeTaskOwner for BundleSession {
 }
 
 fn apply_text_control_write_back_to_controls(
-    text_inputs: &mut [UiRuntimeTextControl],
+    text_inputs: &mut [ViewRuntimeTextControl],
     write_back: &TextControlWriteBack,
 ) -> Result<RuntimeTextControlWriteBack, BundleSessionError> {
     let target = write_back.target().id().as_str().to_owned();
@@ -1405,7 +1405,7 @@ fn apply_text_control_write_back_to_controls(
         return Err(BundleSessionError::UnknownTextControlWriteBackTarget { target, session });
     };
     write_back.value().as_str().clone_into(&mut control.value);
-    control.selection = UiRuntimeTextSelection::new(
+    control.selection = ViewRuntimeTextSelection::new(
         write_back.selection().start().get(),
         write_back.selection().end().get(),
     );
@@ -1415,8 +1415,8 @@ fn apply_text_control_write_back_to_controls(
 }
 
 fn preserve_runtime_text_control_values(
-    current: &[UiRuntimeTextControl],
-    next: &mut [UiRuntimeTextControl],
+    current: &[ViewRuntimeTextControl],
+    next: &mut [ViewRuntimeTextControl],
 ) {
     for next_control in next.iter_mut() {
         if let Some(current_control) = current.iter().find(|current_control| {
@@ -1429,8 +1429,8 @@ fn preserve_runtime_text_control_values(
 }
 
 fn same_runtime_text_control_identity(
-    left: &UiRuntimeTextControl,
-    right: &UiRuntimeTextControl,
+    left: &ViewRuntimeTextControl,
+    right: &ViewRuntimeTextControl,
 ) -> bool {
     left.public_id == right.public_id
         && left.target == right.target
@@ -1442,10 +1442,10 @@ mod text_control_writeback_tests {
     use super::*;
     use arcweft_bundle::resource_codec::ui::{
         CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, UiInputKind,
-        UiInputPurpose, UiRuntimeControlStyle, UiRuntimeTextControlBounds,
-        UiRuntimeTextControlHandlers, UiRuntimeTextControlOptions, UiSecureInputPolicy,
-        UiTextSelectionPolicy, UiTextShortcutPolicy, UiTextTabPolicy,
-        UiTextVerticalNavigationPolicy,
+        UiInputPurpose, UiSecureInputPolicy, UiTextSelectionPolicy, UiTextShortcutPolicy,
+        UiTextTabPolicy, UiTextVerticalNavigationPolicy, ViewRuntimeControlStyle,
+        ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers,
+        ViewRuntimeTextControlOptions,
     };
     use arcweft_id::PublicId;
     use arcweft_presentation::input::InteractionTarget as PresentationTarget;
@@ -1453,16 +1453,16 @@ mod text_control_writeback_tests {
         TextByteOffset, TextControlValue, TextInputSessionId, TextRange, TextRevision,
     };
 
-    fn runtime_control(target: &str, session: u64, value: &str) -> UiRuntimeTextControl {
-        UiRuntimeTextControl {
+    fn runtime_control(target: &str, session: u64, value: &str) -> ViewRuntimeTextControl {
+        ViewRuntimeTextControl {
             public_id: target.to_owned(),
             target: target.to_owned(),
             view: None,
             containing_scroll_region: None,
             session,
             value: value.to_owned(),
-            selection: UiRuntimeTextSelection::collapsed_at_end(value),
-            options: UiRuntimeTextControlOptions {
+            selection: ViewRuntimeTextSelection::collapsed_at_end(value),
+            options: ViewRuntimeTextControlOptions {
                 purpose: UiInputPurpose::Text,
                 autocorrect: TextAssistPolicy::PlatformDefault,
                 spellcheck: TextAssistPolicy::PlatformDefault,
@@ -1477,10 +1477,10 @@ mod text_control_writeback_tests {
                 composition_on_blur: CompositionOnBlurPolicy::Commit,
             },
             kind: UiInputKind::TextField,
-            bounds: UiRuntimeTextControlBounds::from_px(0, 0, 100, 24),
+            bounds: ViewRuntimeTextControlBounds::from_px(0, 0, 100, 24),
             label: None,
-            handlers: UiRuntimeTextControlHandlers::default(),
-            style: UiRuntimeControlStyle::default(),
+            handlers: ViewRuntimeTextControlHandlers::default(),
+            style: ViewRuntimeControlStyle::default(),
         }
     }
 
@@ -1524,11 +1524,11 @@ struct SessionRuntime {
     executor: ArcweftRuntimeExecutor,
     display: LineDisplayCatalog,
     image_objects: Vec<BundleImageObject>,
-    text_inputs: Vec<UiRuntimeTextControl>,
+    text_inputs: Vec<ViewRuntimeTextControl>,
     action_buttons: Vec<ViewRuntimeActionButton>,
     scroll_regions: Vec<ViewRuntimeScrollRegion>,
     text_blocks: Vec<ViewRuntimeTextBlock>,
-    runtime_control_style_diagnostics: UiRuntimeControlStyleDiagnostics,
+    runtime_control_style_diagnostics: ViewRuntimeControlStyleDiagnostics,
     focus_groups: Vec<ViewRuntimeFocusGroup>,
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
 }
@@ -1554,11 +1554,11 @@ impl SessionLaunchTarget {
 struct SessionRuntimeResources {
     display: LineDisplayCatalog,
     image_objects: Vec<BundleImageObject>,
-    text_inputs: Vec<UiRuntimeTextControl>,
+    text_inputs: Vec<ViewRuntimeTextControl>,
     action_buttons: Vec<ViewRuntimeActionButton>,
     scroll_regions: Vec<ViewRuntimeScrollRegion>,
     text_blocks: Vec<ViewRuntimeTextBlock>,
-    runtime_control_style_diagnostics: UiRuntimeControlStyleDiagnostics,
+    runtime_control_style_diagnostics: ViewRuntimeControlStyleDiagnostics,
     focus_groups: Vec<ViewRuntimeFocusGroup>,
     focus_navigation: Vec<ViewRuntimeFocusNavigation>,
 }
@@ -1667,37 +1667,31 @@ fn build_session_runtime(
     if let SessionLaunchTarget::Entry(entry) = launch_target {
         ensure_session_awbc_entry_selects_flow(&program, entry)?;
     }
-    let text_controls = bundle
-        .ui_input
-        .as_ref()
-        .map_or_else(Default::default, |input| {
-            input.runtime_text_controls_with_style(
-                bundle.ui_text.as_ref(),
-                bundle.ui_program.as_ref(),
-                bundle.ui_style.as_ref(),
-            )
-        });
-    let action_button_controls =
-        bundle
-            .ui_program
-            .as_ref()
-            .map_or_else(Default::default, |program| {
-                program.runtime_action_buttons_with_style(
-                    bundle.ui_text.as_ref(),
-                    bundle.ui_style.as_ref(),
-                )
-            });
-    let text_inputs = text_controls.controls;
-    let action_buttons = action_button_controls.controls;
+    let mut text_inputs = bundle.ui_input.as_ref().map_or_else(Vec::new, |input| {
+        input.runtime_text_controls(bundle.ui_text.as_ref(), bundle.ui_program.as_ref())
+    });
+    let mut action_buttons = bundle.ui_program.as_ref().map_or_else(Vec::new, |program| {
+        program.runtime_action_buttons(bundle.ui_text.as_ref())
+    });
     let scroll_regions = bundle
         .ui_program
         .as_ref()
         .map_or_else(Vec::new, ViewProgramResource::runtime_scroll_regions);
-    let text_blocks = bundle.ui_program.as_ref().map_or_else(Vec::new, |program| {
+    let mut text_blocks = bundle.ui_program.as_ref().map_or_else(Vec::new, |program| {
         program.runtime_text_blocks(bundle.ui_text.as_ref())
     });
-    let mut runtime_control_style_diagnostics = text_controls.diagnostics;
-    runtime_control_style_diagnostics.extend(action_button_controls.diagnostics);
+    let runtime_control_style_diagnostics = bundle
+        .ui_program
+        .as_ref()
+        .zip(bundle.ui_style.as_ref())
+        .map_or_else(Default::default, |(program, style)| {
+            program.apply_runtime_styles(
+                style,
+                &mut text_inputs,
+                &mut action_buttons,
+                &mut text_blocks,
+            )
+        });
     let focus_groups = bundle
         .ui_program
         .as_ref()

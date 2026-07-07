@@ -1,8 +1,8 @@
 use arcweft_bundle::resource_codec::ui::{
-    RgbaColor, UiRuntimeControlBorderStyle, UiRuntimeControlCornerFrameStyle,
-    UiRuntimeControlCornerRadius, UiRuntimeControlFilter, UiRuntimeControlFilterList,
-    UiRuntimeControlFocusRingStyle, UiRuntimeControlRadii, UiRuntimeControlStyle,
-    UiRuntimeControlVisualStyle, UiRuntimeShadow, UiRuntimeShadowKind,
+    RgbaColor, ViewRuntimeControlBorderStyle, ViewRuntimeControlCornerFrameStyle,
+    ViewRuntimeControlCornerRadius, ViewRuntimeControlFilter, ViewRuntimeControlFilterList,
+    ViewRuntimeControlFocusRingStyle, ViewRuntimeControlRadii, ViewRuntimeControlStyle,
+    ViewRuntimeControlVisualStyle, ViewRuntimeShadow, ViewRuntimeShadowKind,
 };
 use arcweft_render_wgpu::geometry::{
     PaintRectCornerRadius, PaintRectRadii, RenderControlBorderStyle, RenderControlCornerFrameStyle,
@@ -11,7 +11,7 @@ use arcweft_render_wgpu::geometry::{
 };
 use num_traits::ToPrimitive;
 
-pub(crate) fn lower_control_style(style: &UiRuntimeControlStyle) -> RenderControlStyle {
+pub(crate) fn lower_control_style(style: &ViewRuntimeControlStyle) -> RenderControlStyle {
     RenderControlStyle {
         normal: lower_visual_style(&style.normal),
         hover: style.hover.as_ref().map(lower_visual_style),
@@ -21,11 +21,14 @@ pub(crate) fn lower_control_style(style: &UiRuntimeControlStyle) -> RenderContro
     }
 }
 
-fn lower_visual_style(style: &UiRuntimeControlVisualStyle) -> RenderControlVisualStyle {
+fn lower_visual_style(style: &ViewRuntimeControlVisualStyle) -> RenderControlVisualStyle {
     RenderControlVisualStyle {
         fill: style.fill.map(rgba_f32),
         text: style.text.map(rgba_u8),
         font_family: style.font_family.clone(),
+        font_size_px: style.font_size_milli.map(milli_u32_to_f32),
+        line_height_px: style.line_height_milli.map(milli_u32_to_f32),
+        font_weight: style.font_weight,
         selection: style.selection.map(rgba_f32),
         caret: style.caret.map(rgba_f32),
         border: style.border.map(lower_border),
@@ -41,14 +44,14 @@ fn lower_visual_style(style: &UiRuntimeControlVisualStyle) -> RenderControlVisua
     }
 }
 
-fn lower_border(border: UiRuntimeControlBorderStyle) -> RenderControlBorderStyle {
+fn lower_border(border: ViewRuntimeControlBorderStyle) -> RenderControlBorderStyle {
     RenderControlBorderStyle {
         color: rgba_f32(border.color),
         width_px: milli_u32_to_f32(border.width_milli),
     }
 }
 
-fn lower_corner_frame(frame: UiRuntimeControlCornerFrameStyle) -> RenderControlCornerFrameStyle {
+fn lower_corner_frame(frame: ViewRuntimeControlCornerFrameStyle) -> RenderControlCornerFrameStyle {
     RenderControlCornerFrameStyle {
         color: rgba_f32(frame.color),
         width_px: milli_u32_to_f32(frame.width_milli),
@@ -57,7 +60,7 @@ fn lower_corner_frame(frame: UiRuntimeControlCornerFrameStyle) -> RenderControlC
     }
 }
 
-fn lower_focus_ring(ring: UiRuntimeControlFocusRingStyle) -> RenderControlFocusRingStyle {
+fn lower_focus_ring(ring: ViewRuntimeControlFocusRingStyle) -> RenderControlFocusRingStyle {
     RenderControlFocusRingStyle {
         color: rgba_f32(ring.color),
         width_px: milli_u32_to_f32(ring.width_milli),
@@ -65,7 +68,7 @@ fn lower_focus_ring(ring: UiRuntimeControlFocusRingStyle) -> RenderControlFocusR
     }
 }
 
-fn lower_radii(radii: UiRuntimeControlRadii) -> PaintRectRadii {
+fn lower_radii(radii: ViewRuntimeControlRadii) -> PaintRectRadii {
     PaintRectRadii::new(
         lower_corner_radius(radii.top_left),
         lower_corner_radius(radii.top_right),
@@ -74,54 +77,54 @@ fn lower_radii(radii: UiRuntimeControlRadii) -> PaintRectRadii {
     )
 }
 
-fn lower_corner_radius(radius: UiRuntimeControlCornerRadius) -> PaintRectCornerRadius {
+fn lower_corner_radius(radius: ViewRuntimeControlCornerRadius) -> PaintRectCornerRadius {
     PaintRectCornerRadius::new(
         milli_u32_to_f32(radius.x_milli),
         milli_u32_to_f32(radius.y_milli),
     )
 }
 
-fn lower_filter_list(list: &UiRuntimeControlFilterList) -> RenderControlFilterList {
+fn lower_filter_list(list: &ViewRuntimeControlFilterList) -> RenderControlFilterList {
     RenderControlFilterList {
         filters: list.filters.iter().copied().map(lower_filter).collect(),
     }
 }
 
-fn lower_filter(filter: UiRuntimeControlFilter) -> RenderControlFilter {
+fn lower_filter(filter: ViewRuntimeControlFilter) -> RenderControlFilter {
     match filter {
-        UiRuntimeControlFilter::Brightness { factor_milli } => RenderControlFilter::Brightness {
+        ViewRuntimeControlFilter::Brightness { factor_milli } => RenderControlFilter::Brightness {
             factor: milli_u32_to_f32(factor_milli),
         },
-        UiRuntimeControlFilter::Contrast { factor_milli } => RenderControlFilter::Contrast {
+        ViewRuntimeControlFilter::Contrast { factor_milli } => RenderControlFilter::Contrast {
             factor: milli_u32_to_f32(factor_milli),
         },
-        UiRuntimeControlFilter::Grayscale { amount_milli } => RenderControlFilter::Grayscale {
+        ViewRuntimeControlFilter::Grayscale { amount_milli } => RenderControlFilter::Grayscale {
             amount: f32::from(amount_milli) / 1_000.0,
         },
-        UiRuntimeControlFilter::Saturate { factor_milli } => RenderControlFilter::Saturate {
+        ViewRuntimeControlFilter::Saturate { factor_milli } => RenderControlFilter::Saturate {
             factor: milli_u32_to_f32(factor_milli),
         },
-        UiRuntimeControlFilter::HueRotate { degrees_milli } => {
+        ViewRuntimeControlFilter::HueRotate { degrees_milli } => {
             RenderControlFilter::HueRotateDegrees {
                 degrees: milli_i32_to_f32(degrees_milli),
             }
         }
-        UiRuntimeControlFilter::Invert { amount_milli } => RenderControlFilter::Invert {
+        ViewRuntimeControlFilter::Invert { amount_milli } => RenderControlFilter::Invert {
             amount: f32::from(amount_milli) / 1_000.0,
         },
-        UiRuntimeControlFilter::Sepia { amount_milli } => RenderControlFilter::Sepia {
+        ViewRuntimeControlFilter::Sepia { amount_milli } => RenderControlFilter::Sepia {
             amount: f32::from(amount_milli) / 1_000.0,
         },
-        UiRuntimeControlFilter::Opacity { amount_milli } => RenderControlFilter::Opacity {
+        ViewRuntimeControlFilter::Opacity { amount_milli } => RenderControlFilter::Opacity {
             amount: f32::from(amount_milli) / 1_000.0,
         },
-        UiRuntimeControlFilter::Blur { radius_milli } => RenderControlFilter::Blur {
+        ViewRuntimeControlFilter::Blur { radius_milli } => RenderControlFilter::Blur {
             radius_px: milli_u32_to_f32(radius_milli),
         },
     }
 }
 
-fn lower_shadow(shadow: UiRuntimeShadow) -> RenderControlShadow {
+fn lower_shadow(shadow: ViewRuntimeShadow) -> RenderControlShadow {
     RenderControlShadow {
         offset_x_px: milli_i32_to_f32(shadow.offset_x_milli),
         offset_y_px: milli_i32_to_f32(shadow.offset_y_milli),
@@ -130,8 +133,8 @@ fn lower_shadow(shadow: UiRuntimeShadow) -> RenderControlShadow {
         border_radius_px: milli_u32_to_f32(shadow.radius_milli),
         color: rgba_u8(shadow.color),
         kind: match shadow.kind {
-            UiRuntimeShadowKind::Outer => RenderControlShadowKind::Outer,
-            UiRuntimeShadowKind::Inset => RenderControlShadowKind::Inset,
+            ViewRuntimeShadowKind::Outer => RenderControlShadowKind::Outer,
+            ViewRuntimeShadowKind::Inset => RenderControlShadowKind::Inset,
         },
     }
 }

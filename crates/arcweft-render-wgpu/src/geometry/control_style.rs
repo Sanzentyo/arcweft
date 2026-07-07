@@ -22,6 +22,9 @@ pub struct RenderControlVisualStyle {
     pub fill: Option<[f32; 4]>,
     pub text: Option<[u8; 4]>,
     pub font_family: Option<String>,
+    pub font_size_px: Option<f32>,
+    pub line_height_px: Option<f32>,
+    pub font_weight: Option<u16>,
     pub selection: Option<[f32; 4]>,
     pub caret: Option<[f32; 4]>,
     pub border: Option<RenderControlBorderStyle>,
@@ -199,6 +202,15 @@ impl RenderControlVisualStyle {
         }
         if patch.font_family.is_some() {
             self.font_family.clone_from(&patch.font_family);
+        }
+        if patch.font_size_px.is_some() {
+            self.font_size_px = patch.font_size_px;
+        }
+        if patch.line_height_px.is_some() {
+            self.line_height_px = patch.line_height_px;
+        }
+        if patch.font_weight.is_some() {
+            self.font_weight = patch.font_weight;
         }
         if patch.selection.is_some() {
             self.selection = patch.selection;

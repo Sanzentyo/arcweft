@@ -1,14 +1,17 @@
+use arcweft_bundle::resource_codec::UiTextResource;
 use arcweft_bundle::resource_codec::ui::{
-    RgbaColor, StyleAssignOp, UiInputKind, UiRuntimeControlCornerFrameStyle,
-    UiRuntimeControlCornerRadius, UiRuntimeControlFilter, UiRuntimeControlRadii,
-    UiRuntimeControlState, UiRuntimeControlStyleDiagnosticReason, UiStyleResource, ViewElementKind,
-    ViewElementState, ViewInteractionState, ViewStyleDeclaration, ViewStyleRule, ViewStyleSelector,
-    ViewStyleSelectorPart, ViewStyleValue,
+    RgbaColor, StyleAssignOp, UiInputKind, UiTextSourceKind, UiTextSourceRecord, ViewElementKind,
+    ViewElementState, ViewInteractionState, ViewPartStyleRule, ViewProgramInstruction,
+    ViewProgramResource, ViewRuntimeControlCornerFrameStyle, ViewRuntimeControlCornerRadius,
+    ViewRuntimeControlFilter, ViewRuntimeControlRadii, ViewRuntimeControlState,
+    ViewRuntimeControlStyleDiagnosticReason, ViewRuntimeTextBlockBounds, ViewStyleApplyRef,
+    ViewStyleDeclaration, ViewStyleResource, ViewStyleRule, ViewStyleSelector,
+    ViewStyleSelectorPart, ViewStyleValue, ViewTextBlockResource,
 };
 
 #[test]
 fn text_control_resolves_authored_background_alpha_and_border_color() {
-    let style = UiStyleResource {
+    let style = ViewStyleResource {
         rules: vec![rule(
             ViewStyleSelectorPart::Element(ViewElementKind::TextField),
             vec![
@@ -19,13 +22,13 @@ fn text_control_resolves_authored_background_alpha_and_border_color() {
                 decl("z-index", ViewStyleValue::Milli(2_500)),
             ],
         )],
-        ..UiStyleResource::default()
+        ..ViewStyleResource::default()
     };
 
     let resolved = style.runtime_text_control_style("input.feedback", UiInputKind::TextField);
     let normal = resolved
         .style
-        .visual_for_state(UiRuntimeControlState::Normal);
+        .visual_for_state(ViewRuntimeControlState::Normal);
 
     assert_eq!(normal.fill, Some(RgbaColor::rgba(16, 24, 32, 180)));
     assert_eq!(normal.opacity_milli, Some(720));
@@ -39,7 +42,7 @@ fn text_control_resolves_authored_background_alpha_and_border_color() {
 
 #[test]
 fn runtime_control_depth_overlays_for_interaction_state() {
-    let style = UiStyleResource {
+    let style = ViewStyleResource {
         rules: vec![
             rule(
                 ViewStyleSelectorPart::Element(ViewElementKind::Button),
@@ -50,7 +53,7 @@ fn runtime_control_depth_overlays_for_interaction_state() {
                 decl("z-index", ViewStyleValue::Text("3000".to_owned())),
             ),
         ],
-        ..UiStyleResource::default()
+        ..ViewStyleResource::default()
     };
 
     let resolved = style
@@ -59,14 +62,14 @@ fn runtime_control_depth_overlays_for_interaction_state() {
     assert_eq!(
         resolved
             .style
-            .visual_for_state(UiRuntimeControlState::Normal)
+            .visual_for_state(ViewRuntimeControlState::Normal)
             .depth_milli,
         Some(1_000)
     );
     assert_eq!(
         resolved
             .style
-            .visual_for_state(UiRuntimeControlState::Hover)
+            .visual_for_state(ViewRuntimeControlState::Hover)
             .depth_milli,
         Some(3_000)
     );
@@ -75,7 +78,7 @@ fn runtime_control_depth_overlays_for_interaction_state() {
 
 #[test]
 fn text_control_resolves_selection_and_caret_colors() {
-    let style = UiStyleResource {
+    let style = ViewStyleResource {
         rules: vec![rule(
             ViewStyleSelectorPart::Element(ViewElementKind::TextArea),
             vec![
@@ -83,13 +86,13 @@ fn text_control_resolves_selection_and_caret_colors() {
                 decl("caret-color", rgba(240, 220, 90, 255)),
             ],
         )],
-        ..UiStyleResource::default()
+        ..ViewStyleResource::default()
     };
 
     let resolved = style.runtime_text_control_style("input.message", UiInputKind::TextArea);
     let normal = resolved
         .style
-        .visual_for_state(UiRuntimeControlState::Normal);
+        .visual_for_state(ViewRuntimeControlState::Normal);
 
     assert_eq!(normal.selection, Some(RgbaColor::rgba(64, 128, 200, 160)));
     assert_eq!(normal.caret, Some(RgbaColor::rgb(240, 220, 90)));
@@ -97,8 +100,198 @@ fn text_control_resolves_selection_and_caret_colors() {
 }
 
 #[test]
+fn text_control_inherits_panel_font_family() {
+    let style = ViewStyleResource {
+        rules: vec![rule(
+            ViewStyleSelectorPart::Element(ViewElementKind::Panel),
+            vec![decl(
+                "font-family",
+                ViewStyleValue::List(vec![
+                    ViewStyleValue::Text("Arcweft Demo".to_owned()),
+                    ViewStyleValue::Text("Yu Gothic UI".to_owned()),
+                    ViewStyleValue::Text("Yu Gothic".to_owned()),
+                    ViewStyleValue::Text("Meiryo".to_owned()),
+                    ViewStyleValue::Text("Noto Sans JP".to_owned()),
+                    ViewStyleValue::Text("system-ui".to_owned()),
+                ]),
+            )],
+        )],
+        ..ViewStyleResource::default()
+    };
+
+    let resolved = style.runtime_text_control_style("input.message", UiInputKind::TextArea);
+    let normal = resolved
+        .style
+        .visual_for_state(ViewRuntimeControlState::Normal);
+
+    assert_eq!(
+        normal.font_family.as_deref(),
+        Some("Arcweft Demo, Yu Gothic UI, Yu Gothic, Meiryo, Noto Sans JP, system-ui")
+    );
+    assert!(resolved.diagnostics.is_empty());
+}
+
+#[test]
+fn text_control_font_family_overrides_panel_inheritance() {
+    let style = ViewStyleResource {
+        rules: vec![
+            rule(
+                ViewStyleSelectorPart::Element(ViewElementKind::Panel),
+                vec![decl(
+                    "font-family",
+                    ViewStyleValue::Text("Yu Gothic".to_owned()),
+                )],
+            ),
+            rule(
+                ViewStyleSelectorPart::Element(ViewElementKind::TextArea),
+                vec![decl(
+                    "font-family",
+                    ViewStyleValue::Text("Noto Sans JP".to_owned()),
+                )],
+            ),
+        ],
+        ..ViewStyleResource::default()
+    };
+
+    let resolved = style.runtime_text_control_style("input.message", UiInputKind::TextArea);
+    let normal = resolved
+        .style
+        .visual_for_state(ViewRuntimeControlState::Normal);
+
+    assert_eq!(normal.font_family.as_deref(), Some("Noto Sans JP"));
+    assert!(resolved.diagnostics.is_empty());
+}
+
+#[test]
+fn view_program_cascade_styles_text_blocks_with_child_and_inline_rules() {
+    let text = UiTextResource {
+        sources: vec![UiTextSourceRecord {
+            public_id: "text.title".to_owned(),
+            kind: UiTextSourceKind::Literal {
+                value: "Control deck".to_owned(),
+            },
+            source: None,
+        }],
+        ..UiTextResource::default()
+    };
+    let program = ViewProgramResource {
+        instructions: vec![
+            ViewProgramInstruction::OpenElement {
+                element: ViewElementKind::Panel,
+                style: None,
+                part: None,
+                key: None,
+                source: None,
+            },
+            ViewProgramInstruction::EmitText {
+                text_source: "text.title".to_owned(),
+                style: None,
+                part: Some("headline".to_owned()),
+                source: None,
+            },
+            ViewProgramInstruction::ApplyStyle {
+                style: ViewStyleApplyRef::InlineArcweft { patch_id: 0 },
+                source: None,
+            },
+            ViewProgramInstruction::CloseElement,
+        ],
+        text_blocks: vec![ViewTextBlockResource::new(
+            "text.block.title",
+            None,
+            None,
+            "text.title",
+            ViewRuntimeTextBlockBounds::from_px(0, 0, 320, 48),
+        )],
+        ..ViewProgramResource::default()
+    };
+    let style = ViewStyleResource {
+        rules: vec![
+            rule(
+                ViewStyleSelectorPart::Element(ViewElementKind::Panel),
+                vec![decl(
+                    "font-family",
+                    ViewStyleValue::Text("Yu Gothic UI".to_owned()),
+                )],
+            ),
+            ViewStyleRule {
+                selector: ViewStyleSelector {
+                    parts: vec![
+                        ViewStyleSelectorPart::Element(ViewElementKind::Panel),
+                        ViewStyleSelectorPart::Child,
+                        ViewStyleSelectorPart::Part("headline".to_owned()),
+                    ],
+                },
+                declarations: vec![decl("color", rgba(244, 247, 251, 255))],
+                source: None,
+            },
+        ],
+        part_rules: vec![ViewPartStyleRule {
+            part: ViewStyleApplyRef::inline_patch_part(0),
+            selector: ViewStyleSelector::default(),
+            declarations: vec![
+                decl("font-size", ViewStyleValue::Milli(36_000)),
+                decl("font-weight", ViewStyleValue::Text("720".to_owned())),
+            ],
+            source: None,
+        }],
+        ..ViewStyleResource::default()
+    };
+
+    let blocks = program.runtime_text_blocks_with_style(Some(&text), Some(&style));
+    let normal = blocks.controls[0]
+        .style
+        .visual_for_state(ViewRuntimeControlState::Normal);
+
+    assert_eq!(blocks.controls[0].text, "Control deck");
+    assert_eq!(normal.font_family.as_deref(), Some("Yu Gothic UI"));
+    assert_eq!(normal.text, Some(RgbaColor::rgb(244, 247, 251)));
+    assert_eq!(normal.font_size_milli, Some(36_000));
+    assert_eq!(normal.font_weight, Some(720));
+    assert!(blocks.diagnostics.is_empty());
+}
+
+#[test]
+fn milli_function_and_suffix_lengths_resolve_equally() {
+    let function_style = ViewStyleResource {
+        rules: vec![rule(
+            ViewStyleSelectorPart::Element(ViewElementKind::TextField),
+            vec![decl(
+                "font-size",
+                ViewStyleValue::Text("milli(36000)".to_owned()),
+            )],
+        )],
+        ..ViewStyleResource::default()
+    };
+    let suffix_style = ViewStyleResource {
+        rules: vec![rule(
+            ViewStyleSelectorPart::Element(ViewElementKind::TextField),
+            vec![decl(
+                "font-size",
+                ViewStyleValue::Text("36000milli".to_owned()),
+            )],
+        )],
+        ..ViewStyleResource::default()
+    };
+
+    let function_visual = function_style
+        .runtime_text_control_style("input.feedback", UiInputKind::TextField)
+        .style
+        .visual_for_state(ViewRuntimeControlState::Normal);
+    let suffix_visual = suffix_style
+        .runtime_text_control_style("input.feedback", UiInputKind::TextField)
+        .style
+        .visual_for_state(ViewRuntimeControlState::Normal);
+
+    assert_eq!(function_visual.font_size_milli, Some(36_000));
+    assert_eq!(
+        function_visual.font_size_milli,
+        suffix_visual.font_size_milli
+    );
+}
+
+#[test]
 fn text_control_resolves_corner_frame_decoration() {
-    let style = UiStyleResource {
+    let style = ViewStyleResource {
         rules: vec![rule(
             ViewStyleSelectorPart::Element(ViewElementKind::TextArea),
             vec![
@@ -108,17 +301,17 @@ fn text_control_resolves_corner_frame_decoration() {
                 decl("corner-frame-offset", ViewStyleValue::Milli(2_000)),
             ],
         )],
-        ..UiStyleResource::default()
+        ..ViewStyleResource::default()
     };
 
     let resolved = style.runtime_text_control_style("input.message", UiInputKind::TextArea);
     let normal = resolved
         .style
-        .visual_for_state(UiRuntimeControlState::Normal);
+        .visual_for_state(ViewRuntimeControlState::Normal);
 
     assert_eq!(
         normal.corner_frame,
-        Some(UiRuntimeControlCornerFrameStyle {
+        Some(ViewRuntimeControlCornerFrameStyle {
             color: RgbaColor::rgba(94, 234, 212, 220),
             width_milli: 3_000,
             length_milli: 24_000,
@@ -130,7 +323,7 @@ fn text_control_resolves_corner_frame_decoration() {
 
 #[test]
 fn button_hover_pressed_and_disabled_selectors_resolve_deterministically() {
-    let style = UiStyleResource {
+    let style = ViewStyleResource {
         rules: vec![
             rule(
                 ViewStyleSelectorPart::Element(ViewElementKind::Button),
@@ -149,7 +342,7 @@ fn button_hover_pressed_and_disabled_selectors_resolve_deterministically() {
                 decl("background-color", rgba(12, 12, 12, 160)),
             ),
         ],
-        ..UiStyleResource::default()
+        ..ViewStyleResource::default()
     };
 
     let resolved = style
@@ -158,21 +351,21 @@ fn button_hover_pressed_and_disabled_selectors_resolve_deterministically() {
     assert_eq!(
         resolved
             .style
-            .visual_for_state(UiRuntimeControlState::Hover)
+            .visual_for_state(ViewRuntimeControlState::Hover)
             .fill,
         Some(RgbaColor::rgb(40, 60, 80))
     );
     assert_eq!(
         resolved
             .style
-            .visual_for_state(UiRuntimeControlState::Pressed)
+            .visual_for_state(ViewRuntimeControlState::Pressed)
             .fill,
         Some(RgbaColor::rgb(70, 90, 110))
     );
     assert_eq!(
         resolved
             .style
-            .visual_for_state(UiRuntimeControlState::Disabled)
+            .visual_for_state(ViewRuntimeControlState::Disabled)
             .fill,
         Some(RgbaColor::rgba(12, 12, 12, 160))
     );
@@ -180,7 +373,7 @@ fn button_hover_pressed_and_disabled_selectors_resolve_deterministically() {
 
 #[test]
 fn focus_visible_ring_and_supported_box_shadow_are_typed() {
-    let style = UiStyleResource {
+    let style = ViewStyleResource {
         rules: vec![
             rule(
                 ViewStyleSelectorPart::Element(ViewElementKind::TextArea),
@@ -206,16 +399,16 @@ fn focus_visible_ring_and_supported_box_shadow_are_typed() {
                 source: None,
             },
         ],
-        ..UiStyleResource::default()
+        ..ViewStyleResource::default()
     };
 
     let resolved = style.runtime_text_control_style("input.message", UiInputKind::TextArea);
     let normal = resolved
         .style
-        .visual_for_state(UiRuntimeControlState::Normal);
+        .visual_for_state(ViewRuntimeControlState::Normal);
     let focused = resolved
         .style
-        .visual_for_state(UiRuntimeControlState::FocusVisible);
+        .visual_for_state(ViewRuntimeControlState::FocusVisible);
 
     assert_eq!(normal.radius_milli, Some(12_000));
     assert_eq!(normal.shadows.len(), 1);
@@ -225,7 +418,7 @@ fn focus_visible_ring_and_supported_box_shadow_are_typed() {
 
 #[test]
 fn surface_style_resolves_radius_fill_and_box_shadow() {
-    let style = UiStyleResource {
+    let style = ViewStyleResource {
         rules: vec![ViewStyleRule {
             selector: ViewStyleSelector {
                 parts: vec![
@@ -243,13 +436,13 @@ fn surface_style_resolves_radius_fill_and_box_shadow() {
             ],
             source: None,
         }],
-        ..UiStyleResource::default()
+        ..ViewStyleResource::default()
     };
 
     let resolved = style.runtime_surface_style("card.feedback");
     let visual = resolved
         .style
-        .visual_for_state(UiRuntimeControlState::Normal);
+        .visual_for_state(ViewRuntimeControlState::Normal);
 
     assert_eq!(visual.fill, Some(RgbaColor::rgb(36, 42, 54)));
     assert_eq!(visual.radius_milli, Some(16_000));
@@ -260,7 +453,7 @@ fn surface_style_resolves_radius_fill_and_box_shadow() {
 
 #[test]
 fn border_radius_shorthand_resolves_four_corners_and_elliptical_axes() {
-    let style = UiStyleResource {
+    let style = ViewStyleResource {
         rules: vec![rule(
             ViewStyleSelectorPart::Element(ViewElementKind::TextArea),
             vec![decl(
@@ -268,22 +461,22 @@ fn border_radius_shorthand_resolves_four_corners_and_elliptical_axes() {
                 ViewStyleValue::Text("12px 10px 8px 6px / 5px 4px 3px 2px".to_owned()),
             )],
         )],
-        ..UiStyleResource::default()
+        ..ViewStyleResource::default()
     };
 
     let resolved = style.runtime_text_control_style("input.message", UiInputKind::TextArea);
     let normal = resolved
         .style
-        .visual_for_state(UiRuntimeControlState::Normal);
+        .visual_for_state(ViewRuntimeControlState::Normal);
 
     assert_eq!(normal.radius_milli, None);
     assert_eq!(
         normal.radii_milli,
-        Some(UiRuntimeControlRadii::new(
-            UiRuntimeControlCornerRadius::new(12_000, 5_000),
-            UiRuntimeControlCornerRadius::new(10_000, 4_000),
-            UiRuntimeControlCornerRadius::new(8_000, 3_000),
-            UiRuntimeControlCornerRadius::new(6_000, 2_000),
+        Some(ViewRuntimeControlRadii::new(
+            ViewRuntimeControlCornerRadius::new(12_000, 5_000),
+            ViewRuntimeControlCornerRadius::new(10_000, 4_000),
+            ViewRuntimeControlCornerRadius::new(8_000, 3_000),
+            ViewRuntimeControlCornerRadius::new(6_000, 2_000),
         ))
     );
     assert!(resolved.diagnostics.is_empty());
@@ -291,7 +484,7 @@ fn border_radius_shorthand_resolves_four_corners_and_elliptical_axes() {
 
 #[test]
 fn backdrop_filter_blur_resolves_to_typed_runtime_control_effect() {
-    let style = UiStyleResource {
+    let style = ViewStyleResource {
         rules: vec![rule(
             ViewStyleSelectorPart::Element(ViewElementKind::TextField),
             vec![decl(
@@ -299,13 +492,13 @@ fn backdrop_filter_blur_resolves_to_typed_runtime_control_effect() {
                 ViewStyleValue::Text("blur(12px)".to_owned()),
             )],
         )],
-        ..UiStyleResource::default()
+        ..ViewStyleResource::default()
     };
 
     let resolved = style.runtime_text_control_style("input.feedback", UiInputKind::TextField);
     let normal = resolved
         .style
-        .visual_for_state(UiRuntimeControlState::Normal);
+        .visual_for_state(ViewRuntimeControlState::Normal);
 
     assert_eq!(
         normal
@@ -314,7 +507,7 @@ fn backdrop_filter_blur_resolves_to_typed_runtime_control_effect() {
             .expect("backdrop filter")
             .filters
             .as_slice(),
-        &[UiRuntimeControlFilter::Blur {
+        &[ViewRuntimeControlFilter::Blur {
             radius_milli: 12_000,
         }]
     );
@@ -323,7 +516,7 @@ fn backdrop_filter_blur_resolves_to_typed_runtime_control_effect() {
 
 #[test]
 fn backdrop_filter_color_matrix_functions_resolve_to_typed_runtime_control_effects() {
-    let style = UiStyleResource {
+    let style = ViewStyleResource {
         rules: vec![rule(
             ViewStyleSelectorPart::Element(ViewElementKind::TextField),
             vec![decl(
@@ -334,13 +527,13 @@ fn backdrop_filter_color_matrix_functions_resolve_to_typed_runtime_control_effec
                 ),
             )],
         )],
-        ..UiStyleResource::default()
+        ..ViewStyleResource::default()
     };
 
     let resolved = style.runtime_text_control_style("input.feedback", UiInputKind::TextField);
     let normal = resolved
         .style
-        .visual_for_state(UiRuntimeControlState::Normal);
+        .visual_for_state(ViewRuntimeControlState::Normal);
 
     assert_eq!(
         normal
@@ -350,17 +543,17 @@ fn backdrop_filter_color_matrix_functions_resolve_to_typed_runtime_control_effec
             .filters
             .as_slice(),
         &[
-            UiRuntimeControlFilter::Brightness {
+            ViewRuntimeControlFilter::Brightness {
                 factor_milli: 1_200,
             },
-            UiRuntimeControlFilter::Contrast { factor_milli: 900 },
-            UiRuntimeControlFilter::Saturate {
+            ViewRuntimeControlFilter::Contrast { factor_milli: 900 },
+            ViewRuntimeControlFilter::Saturate {
                 factor_milli: 1_400,
             },
-            UiRuntimeControlFilter::HueRotate {
+            ViewRuntimeControlFilter::HueRotate {
                 degrees_milli: 12_000,
             },
-            UiRuntimeControlFilter::Opacity { amount_milli: 850 },
+            ViewRuntimeControlFilter::Opacity { amount_milli: 850 },
         ]
     );
     assert!(resolved.diagnostics.is_empty());
@@ -368,7 +561,7 @@ fn backdrop_filter_color_matrix_functions_resolve_to_typed_runtime_control_effec
 
 #[test]
 fn foreground_filter_blur_resolves_to_typed_runtime_control_effect() {
-    let style = UiStyleResource {
+    let style = ViewStyleResource {
         rules: vec![rule(
             ViewStyleSelectorPart::Element(ViewElementKind::Button),
             vec![decl(
@@ -376,14 +569,14 @@ fn foreground_filter_blur_resolves_to_typed_runtime_control_effect() {
                 ViewStyleValue::Text("blur(2.5px)".to_owned()),
             )],
         )],
-        ..UiStyleResource::default()
+        ..ViewStyleResource::default()
     };
 
     let resolved = style
         .resolve_runtime_control_style_for_test("button.submit_feedback", ViewElementKind::Button);
     let normal = resolved
         .style
-        .visual_for_state(UiRuntimeControlState::Normal);
+        .visual_for_state(ViewRuntimeControlState::Normal);
 
     assert_eq!(
         normal
@@ -392,7 +585,7 @@ fn foreground_filter_blur_resolves_to_typed_runtime_control_effect() {
             .expect("foreground filter")
             .filters
             .as_slice(),
-        &[UiRuntimeControlFilter::Blur {
+        &[ViewRuntimeControlFilter::Blur {
             radius_milli: 2_500,
         }]
     );
@@ -401,7 +594,7 @@ fn foreground_filter_blur_resolves_to_typed_runtime_control_effect() {
 
 #[test]
 fn unsupported_filter_function_produces_structured_diagnostic() {
-    let style = UiStyleResource {
+    let style = ViewStyleResource {
         rules: vec![rule(
             ViewStyleSelectorPart::Element(ViewElementKind::TextField),
             vec![decl(
@@ -409,7 +602,7 @@ fn unsupported_filter_function_produces_structured_diagnostic() {
                 ViewStyleValue::Text("drop-shadow(0px 4px 8px rgba(0,0,0,0.4))".to_owned()),
             )],
         )],
-        ..UiStyleResource::default()
+        ..ViewStyleResource::default()
     };
 
     let resolved = style.runtime_text_control_style("input.feedback", UiInputKind::TextField);
@@ -417,7 +610,7 @@ fn unsupported_filter_function_produces_structured_diagnostic() {
     assert_eq!(resolved.diagnostics.diagnostics.len(), 1);
     assert_eq!(
         resolved.diagnostics.diagnostics[0].reason,
-        UiRuntimeControlStyleDiagnosticReason::UnsupportedValue
+        ViewRuntimeControlStyleDiagnosticReason::UnsupportedValue
     );
     assert_eq!(
         resolved.diagnostics.diagnostics[0].property,
@@ -427,7 +620,7 @@ fn unsupported_filter_function_produces_structured_diagnostic() {
 
 #[test]
 fn unsupported_style_property_produces_structured_diagnostic() {
-    let style = UiStyleResource {
+    let style = ViewStyleResource {
         rules: vec![rule(
             ViewStyleSelectorPart::Element(ViewElementKind::TextField),
             vec![decl(
@@ -435,7 +628,7 @@ fn unsupported_style_property_produces_structured_diagnostic() {
                 ViewStyleValue::Text("translateX(8px)".to_owned()),
             )],
         )],
-        ..UiStyleResource::default()
+        ..ViewStyleResource::default()
     };
 
     let resolved = style.runtime_text_control_style("input.feedback", UiInputKind::TextField);
@@ -443,7 +636,7 @@ fn unsupported_style_property_produces_structured_diagnostic() {
     assert_eq!(resolved.diagnostics.diagnostics.len(), 1);
     assert_eq!(
         resolved.diagnostics.diagnostics[0].reason,
-        UiRuntimeControlStyleDiagnosticReason::UnsupportedProperty
+        ViewRuntimeControlStyleDiagnosticReason::UnsupportedProperty
     );
     assert_eq!(resolved.diagnostics.diagnostics[0].property, "transform");
 }
@@ -486,15 +679,15 @@ trait RuntimeControlStyleTestExt {
         &self,
         target: &str,
         element: ViewElementKind,
-    ) -> arcweft_bundle::resource_codec::ui::UiRuntimeControlStyleResolution;
+    ) -> arcweft_bundle::resource_codec::ui::ViewRuntimeControlStyleResolution;
 }
 
-impl RuntimeControlStyleTestExt for UiStyleResource {
+impl RuntimeControlStyleTestExt for ViewStyleResource {
     fn resolve_runtime_control_style_for_test(
         &self,
         target: &str,
         element: ViewElementKind,
-    ) -> arcweft_bundle::resource_codec::ui::UiRuntimeControlStyleResolution {
+    ) -> arcweft_bundle::resource_codec::ui::ViewRuntimeControlStyleResolution {
         match element {
             ViewElementKind::Button => {
                 use arcweft_bundle::resource_codec::ui::{

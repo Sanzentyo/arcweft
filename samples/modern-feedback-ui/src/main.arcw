@@ -30,7 +30,7 @@ entry game @entry.modern_feedback_ui {
 }
 
 pub style modern_feedback_panel {
-  token font.ui_stack = ["Arcweft Demo", "Yu Gothic", "Hiragino Sans", "Noto Sans JP", "system-ui"]
+  token font.ui_stack = ["Arcweft Demo", "Yu Gothic UI", "Yu Gothic", "Meiryo", "MS PGothic", "MS Gothic", "Hiragino Sans", "Noto Sans JP", "system-ui"]
   token color.canvas = rgba(11, 16, 22, 210)
   token color.panel = rgba(28, 41, 56, 178)
   token color.panel_hover = rgba(50, 70, 88, 214)
@@ -44,15 +44,15 @@ pub style modern_feedback_panel {
   token shadow.glass_control = text("0px 18px 42px 0px rgba(0,0,0,0.42), inset 0px 1px 0px 0px rgba(255,255,255,0.18)")
   token shadow.glass_button = text("0px 14px 30px 0px rgba(0,0,0,0.36), inset 0px 1px 0px 0px rgba(255,255,255,0.14)")
   token filter.glass_blur = text("blur(10px)")
-  token depth.field = milli(1200)
-  token depth.button = milli(1600)
-  token depth.button_hover = milli(2200)
-  token metric.corner_lg = milli(14000)
-  token metric.corner_md = milli(9000)
-  token metric.focus_ring = milli(2000)
-  token metric.corner_frame = milli(26000)
-  token metric.corner_frame_width = milli(3000)
-  token metric.corner_frame_offset = milli(2000)
+  token depth.field = 1200milli
+  token depth.button = 1600milli
+  token depth.button_hover = 2200milli
+  token metric.corner_lg = 14000milli
+  token metric.corner_md = 9000milli
+  token metric.focus_ring = 2000milli
+  token metric.corner_frame = 26000milli
+  token metric.corner_frame_width = 3000milli
+  token metric.corner_frame_offset = 2000milli
 
   Panel {
     background-color = token(color.canvas)
@@ -61,11 +61,11 @@ pub style modern_feedback_panel {
   }
 
   Column {
-    gap = milli(14000)
+    gap = 14000milli
   }
 
   Row {
-    gap = milli(10000)
+    gap = 10000milli
   }
 
   TextField {
@@ -75,7 +75,7 @@ pub style modern_feedback_panel {
     selection-color = token(color.selection)
     border-color = token(color.glass_border)
     border-radius = token(metric.corner_md)
-    opacity = milli(940)
+    opacity = 940milli
     box-shadow = token(shadow.glass_control)
     backdrop-filter = token(filter.glass_blur)
     z-index = token(depth.field)
@@ -92,7 +92,7 @@ pub style modern_feedback_panel {
     corner-frame-width = token(metric.corner_frame_width)
     corner-frame-length = token(metric.corner_frame)
     corner-frame-offset = token(metric.corner_frame_offset)
-    opacity = milli(920)
+    opacity = 920milli
     box-shadow = token(shadow.glass_control)
     backdrop-filter = token(filter.glass_blur)
     z-index = token(depth.field)
@@ -113,7 +113,7 @@ pub style modern_feedback_panel {
     color = token(color.text)
     border-radius = token(metric.corner_lg)
     border-color = rgba(255, 255, 255, 44)
-    opacity = milli(960)
+    opacity = 960milli
     box-shadow = token(shadow.glass_button)
     z-index = token(depth.button)
   }
@@ -129,7 +129,7 @@ pub style modern_feedback_panel {
   }
 
   Button:disabled {
-    opacity = milli(460)
+    opacity = 460milli
   }
 
   environment text_scale_at_least_milli = 1000
@@ -144,14 +144,14 @@ pub view ModernFeedbackPanel() {
       Text("Control deck")
         .style {
           color = rgba(244, 247, 251, 255)
-          font-size = milli(36000)
+          font-size = 36000milli
           font-weight = text("720")
         }
 
       Text("A player-rendered view with Arcweft style tokens, input resources, and flow-backed submit actions.")
         .style {
           color = rgba(164, 176, 194, 255)
-          font-size = milli(16000)
+          font-size = 16000milli
       }
 
       Row {

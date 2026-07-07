@@ -1,4 +1,4 @@
-use super::runtime_control_style::UiRuntimeControlStyle;
+use super::runtime_control_style::ViewRuntimeControlStyle;
 use crate::BundleVirtualFileRef;
 use crate::container::BundleDigest;
 use crate::resource_codec::types::{CrossSectionRef, DigestRef, SourceRangeRef};
@@ -156,6 +156,21 @@ pub enum ViewStyleApplyRef {
     InlineCss { patch_id: u32 },
 }
 
+impl ViewStyleApplyRef {
+    pub fn runtime_style_part(&self) -> String {
+        match self {
+            Self::Named(style) => style.clone(),
+            Self::InlineArcweft { patch_id } | Self::InlineCss { patch_id } => {
+                Self::inline_patch_part(*patch_id)
+            }
+        }
+    }
+
+    pub fn inline_patch_part(patch_id: u32) -> String {
+        format!("style.inline.patch.{patch_id}")
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViewChildSpan {
     pub start_instruction: u32,
@@ -267,6 +282,8 @@ pub struct ViewRuntimeTextBlock {
     pub containing_scroll_region: Option<String>,
     pub text: String,
     pub bounds: ViewRuntimeTextBlockBounds,
+    #[serde(default, skip_serializing_if = "ViewRuntimeControlStyle::is_default")]
+    pub style: ViewRuntimeControlStyle,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -382,8 +399,8 @@ pub struct ViewRuntimeActionButton {
     pub enabled: bool,
     pub bounds: ViewRuntimeButtonBounds,
     pub action: ViewRuntimeActionButtonAction,
-    #[serde(default, skip_serializing_if = "UiRuntimeControlStyle::is_default")]
-    pub style: UiRuntimeControlStyle,
+    #[serde(default, skip_serializing_if = "ViewRuntimeControlStyle::is_default")]
+    pub style: ViewRuntimeControlStyle,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -534,7 +551,7 @@ pub enum ViewFocusSkipPolicy {
 
 /// Product style section decoded from `UiStyle`.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiStyleResource {
+pub struct ViewStyleResource {
     pub style_program_id: String,
     pub arcweft_sources: Vec<StyleSourceIdentity>,
     pub css_sources: Vec<StyleSourceIdentity>,
@@ -947,7 +964,7 @@ pub enum CompositionOnBlurPolicy {
 
 /// Runtime-facing text-control emission produced from typed product UI resources.
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiRuntimeTextControl {
+pub struct ViewRuntimeTextControl {
     pub public_id: String,
     pub target: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -956,38 +973,38 @@ pub struct UiRuntimeTextControl {
     pub containing_scroll_region: Option<String>,
     pub session: u64,
     pub value: String,
-    pub selection: UiRuntimeTextSelection,
-    pub options: UiRuntimeTextControlOptions,
+    pub selection: ViewRuntimeTextSelection,
+    pub options: ViewRuntimeTextControlOptions,
     pub kind: UiInputKind,
-    pub bounds: UiRuntimeTextControlBounds,
+    pub bounds: ViewRuntimeTextControlBounds,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     #[serde(
         default,
-        skip_serializing_if = "UiRuntimeTextControlHandlers::is_empty"
+        skip_serializing_if = "ViewRuntimeTextControlHandlers::is_empty"
     )]
-    pub handlers: UiRuntimeTextControlHandlers,
-    #[serde(default, skip_serializing_if = "UiRuntimeControlStyle::is_default")]
-    pub style: UiRuntimeControlStyle,
+    pub handlers: ViewRuntimeTextControlHandlers,
+    #[serde(default, skip_serializing_if = "ViewRuntimeControlStyle::is_default")]
+    pub style: ViewRuntimeControlStyle,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiRuntimeTextControlHandlers {
+pub struct ViewRuntimeTextControlHandlers {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub change: Option<UiRuntimeTextControlHandler>,
+    pub change: Option<ViewRuntimeTextControlHandler>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub submit: Option<UiRuntimeTextControlHandler>,
+    pub submit: Option<ViewRuntimeTextControlHandler>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiRuntimeTextControlHandler {
+pub struct ViewRuntimeTextControlHandler {
     pub handler_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub runtime: Option<UiRuntimeTextControlHandlerRuntime>,
+    pub runtime: Option<ViewRuntimeTextControlHandlerRuntime>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiRuntimeTextControlHandlerRuntime {
+pub struct ViewRuntimeTextControlHandlerRuntime {
     pub awbc_function_index: u32,
     pub handler_abi: BundleDigest,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -995,13 +1012,13 @@ pub struct UiRuntimeTextControlHandlerRuntime {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiRuntimeTextSelection {
+pub struct ViewRuntimeTextSelection {
     pub start: u32,
     pub end: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiRuntimeTextControlBounds {
+pub struct ViewRuntimeTextControlBounds {
     pub x_milli: i32,
     pub y_milli: i32,
     pub width_milli: u32,
@@ -1009,7 +1026,7 @@ pub struct UiRuntimeTextControlBounds {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct UiRuntimeTextControlOptions {
+pub struct ViewRuntimeTextControlOptions {
     pub purpose: UiInputPurpose,
     pub autocorrect: TextAssistPolicy,
     pub spellcheck: TextAssistPolicy,
@@ -1104,8 +1121,8 @@ impl UiInputResource {
         &self,
         text: Option<&UiTextResource>,
         program: Option<&ViewProgramResource>,
-    ) -> Vec<UiRuntimeTextControl> {
-        let fallback_bounds = UiRuntimeTextControlBounds::default_stacked_slots(
+    ) -> Vec<ViewRuntimeTextControl> {
+        let fallback_bounds = ViewRuntimeTextControlBounds::default_stacked_slots(
             self.options.iter().map(|option| option.kind),
         );
         self.options
@@ -1127,9 +1144,9 @@ impl UiInputOptions {
         index: usize,
         text: Option<&UiTextResource>,
         program: Option<&ViewProgramResource>,
-    ) -> UiRuntimeTextControl {
+    ) -> ViewRuntimeTextControl {
         self.runtime_text_control_with_bounds(
-            UiRuntimeTextControlBounds::default_slot(index, self.kind),
+            ViewRuntimeTextControlBounds::default_slot(index, self.kind),
             text,
             program,
         )
@@ -1137,10 +1154,10 @@ impl UiInputOptions {
 
     fn runtime_text_control_with_bounds(
         &self,
-        bounds: UiRuntimeTextControlBounds,
+        bounds: ViewRuntimeTextControlBounds,
         text: Option<&UiTextResource>,
         program: Option<&ViewProgramResource>,
-    ) -> UiRuntimeTextControl {
+    ) -> ViewRuntimeTextControl {
         let value = text
             .and_then(|resource| resource.literal_text(&self.value_text_source))
             .unwrap_or_default()
@@ -1148,20 +1165,20 @@ impl UiInputOptions {
         let label = runtime_label_source(program, self)
             .and_then(|source| text.and_then(|resource| resource.literal_text(source)))
             .map(ToOwned::to_owned);
-        UiRuntimeTextControl {
+        ViewRuntimeTextControl {
             public_id: self.public_id.clone(),
             target: self.public_id.clone(),
             view: self.view.clone(),
             containing_scroll_region: self.containing_scroll_region.clone(),
             session: self.runtime_text_session(),
-            selection: UiRuntimeTextSelection::collapsed_at_end(&value),
-            options: UiRuntimeTextControlOptions::from_input(self),
+            selection: ViewRuntimeTextSelection::collapsed_at_end(&value),
+            options: ViewRuntimeTextControlOptions::from_input(self),
             kind: self.kind,
             bounds,
             value,
             label,
-            handlers: UiRuntimeTextControlHandlers::from_input(self, program),
-            style: UiRuntimeControlStyle::default(),
+            handlers: ViewRuntimeTextControlHandlers::from_input(self, program),
+            style: ViewRuntimeControlStyle::default(),
         }
     }
 
@@ -1197,10 +1214,10 @@ impl UiSecureInputPolicy {
     }
 }
 
-impl fmt::Debug for UiRuntimeTextControl {
+impl fmt::Debug for ViewRuntimeTextControl {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("UiRuntimeTextControl")
+            .debug_struct("ViewRuntimeTextControl")
             .field("public_id", &self.public_id)
             .field("target", &self.target)
             .field("view", &self.view)
@@ -1251,7 +1268,7 @@ impl ViewProgramResource {
                         }
                     }
                 },
-                style: UiRuntimeControlStyle::default(),
+                style: ViewRuntimeControlStyle::default(),
             })
             .collect()
     }
@@ -1269,6 +1286,7 @@ impl ViewProgramResource {
                     .unwrap_or_default()
                     .to_owned(),
                 bounds: block.bounds,
+                style: ViewRuntimeControlStyle::default(),
             })
             .collect()
     }
@@ -1315,7 +1333,7 @@ impl ViewProgramResource {
             .collect()
     }
 
-    pub fn text_control_bounds_for(&self, public_id: &str) -> Option<UiRuntimeTextControlBounds> {
+    pub fn text_control_bounds_for(&self, public_id: &str) -> Option<ViewRuntimeTextControlBounds> {
         self.layout_bounds
             .iter()
             .find(|bounds| bounds.is_text_control_for(public_id))
@@ -1325,7 +1343,7 @@ impl ViewProgramResource {
     pub fn semantic_target_bounds_for(
         &self,
         public_id: &str,
-    ) -> Option<UiRuntimeTextControlBounds> {
+    ) -> Option<ViewRuntimeTextControlBounds> {
         self.layout_bounds
             .iter()
             .find(|bounds| bounds.is_semantic_target_for(public_id))
@@ -1382,7 +1400,7 @@ impl ViewLayoutBoundsResource {
             }
     }
 
-    pub fn runtime_text_control_bounds(&self) -> UiRuntimeTextControlBounds {
+    pub fn runtime_text_control_bounds(&self) -> ViewRuntimeTextControlBounds {
         self.hit_rect
             .unwrap_or(self.rect)
             .runtime_text_control_bounds()
@@ -1500,8 +1518,8 @@ impl UiLogicalRect {
         self.width_milli > 0 && self.height_milli > 0
     }
 
-    pub const fn runtime_text_control_bounds(self) -> UiRuntimeTextControlBounds {
-        UiRuntimeTextControlBounds::new(
+    pub const fn runtime_text_control_bounds(self) -> ViewRuntimeTextControlBounds {
+        ViewRuntimeTextControlBounds::new(
             self.x_milli,
             self.y_milli,
             self.width_milli,
@@ -1566,7 +1584,7 @@ impl ViewFocusWrapPolicy {
     }
 }
 
-impl UiRuntimeTextControl {
+impl ViewRuntimeTextControl {
     pub const fn is_secure(&self) -> bool {
         self.options.secure_policy.is_secure() || self.kind.is_secure()
     }
@@ -1592,17 +1610,17 @@ impl UiRuntimeTextControl {
     }
 }
 
-impl UiRuntimeTextControlHandlers {
+impl ViewRuntimeTextControlHandlers {
     pub fn from_input(input: &UiInputOptions, program: Option<&ViewProgramResource>) -> Self {
         Self {
             change: input
                 .change_handler
                 .as_deref()
-                .map(|handler| UiRuntimeTextControlHandler::from_program(program, handler)),
+                .map(|handler| ViewRuntimeTextControlHandler::from_program(program, handler)),
             submit: input
                 .submit_handler
                 .as_deref()
-                .map(|handler| UiRuntimeTextControlHandler::from_program(program, handler)),
+                .map(|handler| ViewRuntimeTextControlHandler::from_program(program, handler)),
         }
     }
 
@@ -1611,7 +1629,7 @@ impl UiRuntimeTextControlHandlers {
     }
 }
 
-impl UiRuntimeTextControlHandler {
+impl ViewRuntimeTextControlHandler {
     pub fn unresolved(handler_id: impl Into<String>) -> Self {
         Self {
             handler_id: handler_id.into(),
@@ -1628,7 +1646,7 @@ impl UiRuntimeTextControlHandler {
     pub fn from_handler_ref(handler: &ViewHandlerRef) -> Self {
         Self {
             handler_id: handler.handler_id.clone(),
-            runtime: Some(UiRuntimeTextControlHandlerRuntime {
+            runtime: Some(ViewRuntimeTextControlHandlerRuntime {
                 awbc_function_index: handler.awbc_function_index,
                 handler_abi: handler.handler_abi,
                 function_binding: handler.function_binding,
@@ -1637,7 +1655,7 @@ impl UiRuntimeTextControlHandler {
     }
 }
 
-impl UiRuntimeTextSelection {
+impl ViewRuntimeTextSelection {
     pub const fn new(start: u32, end: u32) -> Self {
         Self { start, end }
     }
@@ -1656,7 +1674,7 @@ impl UiRuntimeTextSelection {
     }
 }
 
-impl UiRuntimeTextControlBounds {
+impl ViewRuntimeTextControlBounds {
     const DEFAULT_STACK_X_MILLI: i32 = 48_000;
     const DEFAULT_STACK_Y_MILLI: i32 = 48_000;
     const DEFAULT_STACK_WIDTH_MILLI: u32 = 420_000;
@@ -1750,7 +1768,7 @@ impl ViewRuntimeButtonBounds {
     }
 
     pub fn default_submit_slot(
-        input_bounds: UiRuntimeTextControlBounds,
+        input_bounds: ViewRuntimeTextControlBounds,
         input_kind: UiInputKind,
         ordinal_for_input: usize,
     ) -> Self {
@@ -1822,7 +1840,7 @@ impl ViewRuntimeScrollRegionBounds {
     }
 }
 
-impl UiRuntimeTextControlOptions {
+impl ViewRuntimeTextControlOptions {
     pub const fn from_input(input: &UiInputOptions) -> Self {
         Self {
             purpose: input.purpose,
@@ -1870,7 +1888,7 @@ fn stable_text_session(public_id: &str) -> u64 {
 }
 
 pub type CompactViewProgramResource = ViewProgramResource;
-pub type CompactUiStyleResource = UiStyleResource;
+pub type CompactViewStyleResource = ViewStyleResource;
 pub type CompactUiTextResource = UiTextResource;
 pub type CompactUiInputResource = UiInputResource;
 pub type CompactUiThemeResource = UiThemeResource;

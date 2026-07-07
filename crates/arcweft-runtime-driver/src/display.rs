@@ -7,8 +7,8 @@ use crate::presentation_handles::{
     presentation_handle_operations_from_effects,
 };
 use arcweft_bundle::resource_codec::{
-    UiRuntimeTextControl, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
-    ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeTextBlock,
+    ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
+    ViewRuntimeScrollRegion, ViewRuntimeTextBlock, ViewRuntimeTextControl,
 };
 use arcweft_bundle::{
     BundleImageObject, BundleImageObjectAlignment, BundleImageObjectBounds, BundleImageObjectFit,
@@ -61,7 +61,7 @@ pub struct BundlePresentationSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub viewport_fit: Option<BundleViewportFit>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub text_inputs: Vec<UiRuntimeTextControl>,
+    pub text_inputs: Vec<ViewRuntimeTextControl>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub action_buttons: Vec<ViewRuntimeActionButton>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -78,7 +78,7 @@ pub struct BundlePresentationSnapshot {
 #[derive(Clone, Copy)]
 pub(crate) struct BundlePresentationResources<'a> {
     pub(crate) image_objects: &'a [BundleImageObject],
-    pub(crate) text_inputs: &'a [UiRuntimeTextControl],
+    pub(crate) text_inputs: &'a [ViewRuntimeTextControl],
     pub(crate) action_buttons: &'a [ViewRuntimeActionButton],
     pub(crate) scroll_regions: &'a [ViewRuntimeScrollRegion],
     pub(crate) text_blocks: &'a [ViewRuntimeTextBlock],
@@ -193,7 +193,7 @@ impl BundlePresentationSnapshot {
         handle_diagnostics
     }
 
-    pub(crate) fn replace_text_inputs(&mut self, text_inputs: &[UiRuntimeTextControl]) {
+    pub(crate) fn replace_text_inputs(&mut self, text_inputs: &[ViewRuntimeTextControl]) {
         let next_text_inputs = text_inputs.to_vec();
         if self.text_inputs != next_text_inputs {
             self.revision = self.revision.saturating_add(1);
@@ -207,7 +207,7 @@ impl BundlePresentationSnapshot {
             text_inputs: self
                 .text_inputs
                 .iter()
-                .map(UiRuntimeTextControl::redacted_for_observation)
+                .map(ViewRuntimeTextControl::redacted_for_observation)
                 .collect(),
             ..self.clone()
         }
@@ -682,9 +682,9 @@ mod tests {
         ViewRuntimeFocusNavigationEdge,
     };
     use arcweft_bundle::resource_codec::{
-        UiRuntimeControlStyle, UiRuntimeTextControlBounds, UiRuntimeTextControlHandlers,
-        UiRuntimeTextControlOptions, UiRuntimeTextSelection, ViewRuntimeActionButtonAction,
-        ViewRuntimeButtonBounds, ViewRuntimeScrollRegionBounds,
+        ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds, ViewRuntimeControlStyle,
+        ViewRuntimeScrollRegionBounds, ViewRuntimeTextControlBounds,
+        ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
     };
 
     #[test]
@@ -1153,16 +1153,16 @@ mod tests {
         assert!(destroy_snapshot.images.is_empty());
     }
 
-    fn view_text_input() -> UiRuntimeTextControl {
-        UiRuntimeTextControl {
+    fn view_text_input() -> ViewRuntimeTextControl {
+        ViewRuntimeTextControl {
             public_id: "input.visitor_name".to_owned(),
             target: "input.visitor_name".to_owned(),
             view: Some("view.ModernFeedbackPanel".to_owned()),
             containing_scroll_region: None,
             session: 1,
             value: String::new(),
-            selection: UiRuntimeTextSelection::new(0, 0),
-            options: UiRuntimeTextControlOptions {
+            selection: ViewRuntimeTextSelection::new(0, 0),
+            options: ViewRuntimeTextControlOptions {
                 purpose: UiInputPurpose::Text,
                 autocorrect: TextAssistPolicy::PlatformDefault,
                 spellcheck: TextAssistPolicy::PlatformDefault,
@@ -1177,10 +1177,10 @@ mod tests {
                 composition_on_blur: CompositionOnBlurPolicy::Commit,
             },
             kind: UiInputKind::TextField,
-            bounds: UiRuntimeTextControlBounds::from_px(48, 48, 420, 48),
+            bounds: ViewRuntimeTextControlBounds::from_px(48, 48, 420, 48),
             label: None,
-            handlers: UiRuntimeTextControlHandlers::default(),
-            style: UiRuntimeControlStyle::default(),
+            handlers: ViewRuntimeTextControlHandlers::default(),
+            style: ViewRuntimeControlStyle::default(),
         }
     }
 
@@ -1194,7 +1194,7 @@ mod tests {
             enabled: true,
             bounds: ViewRuntimeButtonBounds::new(484_000, 48_000, 180_000, 48_000),
             action: ViewRuntimeActionButtonAction::Noop,
-            style: UiRuntimeControlStyle::default(),
+            style: ViewRuntimeControlStyle::default(),
         }
     }
 
@@ -1221,6 +1221,7 @@ mod tests {
             bounds: arcweft_bundle::resource_codec::ViewRuntimeTextBlockBounds::from_px(
                 80, 560, 360, 24,
             ),
+            style: ViewRuntimeControlStyle::default(),
         }
     }
 
@@ -1254,7 +1255,7 @@ mod tests {
     }
 
     fn view_runtime_resources<'a>(
-        text_input: &'a UiRuntimeTextControl,
+        text_input: &'a ViewRuntimeTextControl,
         action_button: &'a ViewRuntimeActionButton,
     ) -> BundlePresentationResources<'a> {
         BundlePresentationResources {
@@ -1347,7 +1348,7 @@ mod tests {
 
     fn assert_view_controls_visible(
         snapshot: &BundlePresentationSnapshot,
-        text_input: &UiRuntimeTextControl,
+        text_input: &ViewRuntimeTextControl,
         action_button: &ViewRuntimeActionButton,
     ) {
         assert_eq!(snapshot.text_inputs, vec![text_input.clone()]);
