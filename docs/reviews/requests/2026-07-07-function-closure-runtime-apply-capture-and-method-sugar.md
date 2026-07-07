@@ -23,6 +23,10 @@ annotations with `_` bodies, such as `let high: i64 -> bool = _ > 80i64`, into
 `RuntimeExpr::Function`. Contextual expected types that are not present in the
 syntax still need typed lowering evidence.
 
+No-`^` data-last pipe lowering is now helper-aware for named pure helpers:
+non-exact helper arity lowers through function apply, while exact helper arity
+continues to use `RuntimeExpr::PureCall`.
+
 This request covers the remaining work needed to finish the revised Arcweft
 function/closure/currying/pipeline specification without adding compatibility
 shims or preserving removed syntax.
@@ -36,8 +40,8 @@ shims or preserving removed syntax.
      function value and non-pure callable declarations where applicable.
    - Specify and implement AWBC closure allocation and bytecode apply semantics
      instead of the current `RuntimeExpr::Function` lowering diagnostic.
-   - Decide whether the current direct data-last pipe lowering remains only an
-     optimization or is replaced by function apply lowering.
+   - Extend the implemented helper-aware data-last pipe path to typed
+     non-helper callables and method-chain fallback.
    - Do not redesign the implemented `RuntimeValue::Function` /
      `RuntimeExpr::Function` / `RuntimeExpr::Apply` substrate unless concrete
      evidence shows a flaw.

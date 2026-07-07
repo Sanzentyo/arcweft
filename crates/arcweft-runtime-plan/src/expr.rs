@@ -419,20 +419,20 @@ fn lower_runtime_data_last_pipe_strict(
     }
     let lhs = lower_runtime_expr_strict_with_helpers(lhs, helpers)?;
     match rhs {
-        Expr::Path(path) => Ok(RuntimeExpr::Call {
-            callee: RuntimeCallTarget::from_label(path.as_label()),
-            args: vec![lhs],
-        }),
+        Expr::Path(path) => Ok(lower_strict_named_call(path.as_label(), vec![lhs], helpers)),
         Expr::Call { callee, args } => {
             let mut args = args
                 .iter()
                 .map(|arg| lower_strict_call_arg(arg, helpers))
                 .collect::<Result<Vec<_>, _>>()?;
             args.push(lhs);
-            Ok(RuntimeExpr::Call {
-                callee: RuntimeCallTarget::from_label(expr_label(callee)),
-                args,
-            })
+            let Expr::Path(path) = callee.as_ref() else {
+                return Ok(RuntimeExpr::Apply {
+                    callee: Box::new(lower_runtime_expr_strict_with_helpers(callee, helpers)?),
+                    args,
+                });
+            };
+            Ok(lower_strict_named_call(path.as_label(), args, helpers))
         }
         _ => Ok(RuntimeExpr::Call {
             callee: RuntimeCallTarget::from_label(expr_label(rhs)),
@@ -1311,31 +1311,36 @@ fn lower_strict_call_expr(
                 });
             };
             let callee = path.as_label();
-            Ok(
-                if let Some(helper) = helpers.and_then(|helpers| helpers.id(callee)) {
-                    if helpers
-                        .and_then(|helpers| helpers.arity(callee))
-                        .is_some_and(|arity| arity != args.len())
-                        && let Some(function) =
-                            helpers.and_then(|helpers| helpers.function_value(callee))
-                    {
-                        RuntimeExpr::Apply {
-                            callee: Box::new(function),
-                            args,
-                        }
-                    } else {
-                        RuntimeExpr::PureCall { helper, args }
-                    }
-                } else {
-                    RuntimeExpr::Call {
-                        callee: RuntimeCallTarget::from_label(callee),
-                        args,
-                    }
-                },
-            )
+            Ok(lower_strict_named_call(callee, args, helpers))
         },
         Ok,
     )
+}
+
+fn lower_strict_named_call(
+    callee: &str,
+    args: Vec<RuntimeExpr>,
+    helpers: Option<RuntimePureHelperLookup<'_>>,
+) -> RuntimeExpr {
+    if let Some(helper) = helpers.and_then(|helpers| helpers.id(callee)) {
+        if helpers
+            .and_then(|helpers| helpers.arity(callee))
+            .is_some_and(|arity| arity != args.len())
+            && let Some(function) = helpers.and_then(|helpers| helpers.function_value(callee))
+        {
+            RuntimeExpr::Apply {
+                callee: Box::new(function),
+                args,
+            }
+        } else {
+            RuntimeExpr::PureCall { helper, args }
+        }
+    } else {
+        RuntimeExpr::Call {
+            callee: RuntimeCallTarget::from_label(callee),
+            args,
+        }
+    }
 }
 
 fn lower_strict_intrinsic_function_call(

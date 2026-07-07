@@ -40,6 +40,9 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
 - Standard prelude-shaped data-last collection pipeline now recognizes
   `choices |> filter(_.enabled) |> map(_.label)` and lowers it through the same
   executable `RuntimeExpr::Filter`/`RuntimeExpr::Map` path.
+- No-`^` data-last pipe lowering is helper-aware for named pure helpers:
+  `2i64 |> add` lowers to function apply when the helper arity is not exact,
+  while `2i64 |> add(1i64)` can remain an exact `RuntimeExpr::PureCall`.
 - Runtime function/apply substrate is now typed in the executable runtime:
   - `RuntimeValue::Function` stores parameters, body, and deterministic capture
     bindings.
@@ -94,8 +97,9 @@ Source brief: `C:\Users\sanze\.codex\attachments\d352da6f-4ba7-4807-a050-504287f
   currently emits an AWBC lowering diagnostic, and function state is not encoded
   as an AWBC constant. `RuntimeExpr::Apply` is represented as a
   `function.apply` intrinsic for bytecode inventory purposes.
-- Pipe no-`^` runtime lowering still uses the direct data-last call shape
-  outside the standard executable `filter`/`map` collection pipeline subset.
+- Pipe no-`^` runtime lowering is helper-aware for named pure helpers, but
+  method-chain fallback and non-helper callable resolution still need the
+  final typed callable evidence path.
 - Method-chain fallback sugar that resolves inherent/trait methods first and
   then data-last callable methods is not implemented.
 - Closure capture analysis, suspension-boundary lifetime diagnostics, and
@@ -119,6 +123,7 @@ cargo test -p arcweft-runtime-plan --all-features expression_callee_call_to_appl
 cargo test -p arcweft-runtime-plan --all-features strict_runtime_lowers
 cargo test -p arcweft-runtime-plan --all-features strict_runtime_value_lowering_can_emit_pure_calls
 cargo test -p arcweft-runtime-plan --all-features expected_partial_placeholder
+cargo test -p arcweft-runtime-plan --all-features data_last_pipe
 cargo test -p arcweft-runtime-plan --all-features
 cargo check --workspace --all-targets --all-features
 cargo clippy --workspace --all-targets --all-features
@@ -144,3 +149,6 @@ and intrinsic non-path call preservation.
 The expected partial-placeholder runtime lowering cut has focused passing
 coverage for expression lowering and whole-flow runtime-plan lowering of
 explicit single-parameter function annotations.
+
+The helper-aware data-last pipe cut has focused passing coverage for direct
+fallback calls, partial helper apply, and exact helper pure calls.

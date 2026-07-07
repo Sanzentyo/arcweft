@@ -328,6 +328,72 @@ fn strict_runtime_lowers_data_last_pipe_to_direct_call() {
 }
 
 #[test]
+fn strict_runtime_lowers_data_last_pipe_to_partial_helper_apply() {
+    let expr = Expr::Pipe {
+        lhs: Box::new(Expr::Literal(Literal::Int {
+            raw: "2i64".to_owned(),
+            value: 2,
+            suffix: Some("i64".to_owned()),
+        })),
+        rhs: Box::new(Expr::Path("add".into())),
+    };
+    let helpers = vec![add_i64_helper()];
+    let ids = BTreeMap::from([("add".to_owned(), helpers[0].id)]);
+
+    let lowered =
+        lower_runtime_expr_strict_with_pure(&expr, RuntimePureHelperLookup::new(&ids, &helpers))
+            .expect("data-last helper pipe lowers");
+
+    assert!(matches!(
+        lowered,
+        RuntimeExpr::Apply { callee, args }
+            if matches!(
+                callee.as_ref(),
+                RuntimeExpr::Function { params, .. } if params.as_slice() == ["lhs", "rhs"]
+            ) && matches!(
+                args.as_slice(),
+                [RuntimeExpr::Value(value)] if value == &RuntimeValue::i64(2)
+            )
+    ));
+}
+
+#[test]
+fn strict_runtime_lowers_data_last_pipe_call_to_exact_helper_call() {
+    let expr = Expr::Pipe {
+        lhs: Box::new(Expr::Literal(Literal::Int {
+            raw: "2i64".to_owned(),
+            value: 2,
+            suffix: Some("i64".to_owned()),
+        })),
+        rhs: Box::new(Expr::Call {
+            callee: Box::new(Expr::Path("add".into())),
+            args: vec![CallArg::Positional(Expr::Literal(Literal::Int {
+                raw: "1i64".to_owned(),
+                value: 1,
+                suffix: Some("i64".to_owned()),
+            }))],
+        }),
+    };
+    let helpers = vec![add_i64_helper()];
+    let ids = BTreeMap::from([("add".to_owned(), helpers[0].id)]);
+
+    let lowered =
+        lower_runtime_expr_strict_with_pure(&expr, RuntimePureHelperLookup::new(&ids, &helpers))
+            .expect("data-last exact helper pipe lowers");
+
+    assert!(matches!(
+        lowered,
+        RuntimeExpr::PureCall { helper, args }
+            if helper == RuntimePureHelperId(0)
+                && matches!(
+                    args.as_slice(),
+                    [RuntimeExpr::Value(lhs), RuntimeExpr::Value(rhs)]
+                        if lhs == &RuntimeValue::i64(1) && rhs == &RuntimeValue::i64(2)
+                )
+    ));
+}
+
+#[test]
 fn strict_runtime_lowers_partial_placeholder_map_body() {
     let expr = Expr::MethodCall {
         receiver: Box::new(Expr::Path("values".into())),
