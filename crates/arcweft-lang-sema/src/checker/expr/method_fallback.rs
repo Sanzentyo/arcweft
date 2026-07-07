@@ -184,7 +184,14 @@ impl TypeChecker<'_> {
                         .name()
                         .map_or_else(|| format!("#{positional_index}"), ToOwned::to_owned);
                     positional_index += 1;
-                    self.expect_signature_arg_type(method_name, &label, value, param.ty());
+                    let actual =
+                        self.expect_signature_arg_type(method_name, &label, value, param.ty());
+                    self.record_pending_higher_order_signature_arg_effect_call(
+                        method_name,
+                        param,
+                        value,
+                        actual.as_ref(),
+                    );
                 }
                 CallArg::Named { name, value } => {
                     let Some(index) = call_params
@@ -203,11 +210,17 @@ impl TypeChecker<'_> {
                         )));
                     }
                     provided[index] = Some(arg_index);
-                    self.expect_signature_arg_type(
+                    let actual = self.expect_signature_arg_type(
                         method_name,
                         name,
                         value,
                         call_params[index].ty(),
+                    );
+                    self.record_pending_higher_order_signature_arg_effect_call(
+                        method_name,
+                        &call_params[index],
+                        value,
+                        actual.as_ref(),
                     );
                 }
                 CallArg::Spread { value } => {

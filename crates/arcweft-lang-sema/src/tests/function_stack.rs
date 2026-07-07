@@ -1793,6 +1793,40 @@ flow @flow.method_fallback method_fallback {
 }
 
 #[test]
+fn method_chain_data_last_fallback_composes_higher_order_callback_effects() {
+    let tree = parse_ok(
+        r#"
+fn use_loader(load: String -> String, path: String) -> String {
+    return load(path)
+}
+
+flow @flow.method_fallback_callback_effect method_fallback_callback_effect
+effects { }
+{
+    let body = "story.arcw".use_loader(|path: String| -> String {
+        adapter.read_text(path = path)
+    })
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("method fallback callback fixture lowers");
+    validate_typecheck_ready(&hir).expect("method fallback callback fixture is structured");
+
+    let errors = typecheck_hir(&hir, &read_text_env())
+        .expect_err("data-last fallback callback invocation must compose body effects");
+    assert!(
+        errors.iter().any(|error| {
+            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
+                && error
+                    .message()
+                    .contains("flow.method_fallback_callback_effect")
+                && error.message().contains("fs.read")
+        }),
+        "expected data-last fallback callback effect diagnostic, got {errors:?}"
+    );
+}
+
+#[test]
 fn method_chain_accepts_named_data_last_fallback_and_records_arg_order() {
     let tree = parse_ok(
         r"
