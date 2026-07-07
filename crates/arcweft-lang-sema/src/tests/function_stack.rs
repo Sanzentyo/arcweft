@@ -1172,6 +1172,24 @@ flow @flow.method_priority method_priority {
         report.diagnostics
     );
     assert!(
+        report.warnings.iter().any(|warning| {
+            matches!(
+                warning.kind(),
+                TypeCheckWarningKind::ShadowedDataLastMethodFallback {
+                    method,
+                    receiver: TypeKind::I64,
+                    selected,
+                    fallbacks
+                } if method == "above"
+                    && selected.contains("environment method `i64.above`")
+                    && fallbacks.len() == 1
+                    && fallbacks[0].contains("environment fn `above`")
+            ) && warning.stable_code() == "sema.typecheck.shadowed_data_last_method_fallback"
+        }),
+        "expected shadowed fallback warning, got {:?}",
+        report.warnings
+    );
+    assert!(
         !report.typed_lowering_evidence.iter().any(|evidence| {
             matches!(
                 &evidence.kind,
@@ -1180,5 +1198,79 @@ flow @flow.method_priority method_priority {
             )
         }),
         "real method calls must not record data-last fallback evidence"
+    );
+}
+
+#[test]
+fn method_chain_prefers_trait_method_over_data_last_callable_fallback() {
+    let tree = parse_ok(
+        r#"
+struct Score {}
+
+trait Threshold {
+    fn above(self, min: i64) -> String
+}
+
+impl Threshold for Score {
+    fn above(self, min: i64) -> String {
+        return "trait"
+    }
+}
+
+flow @flow.method_trait_priority method_trait_priority {
+    let text: String = score.above(80i64)
+    log.info(text)
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("trait method priority fixture lowers");
+    validate_typecheck_ready(&hir).expect("trait method priority fixture is structured");
+    let env = TypeCheckEnv::new()
+        .with_symbol("score", TypeKind::Named("Score".to_owned()))
+        .with_function_signature(
+            "above",
+            FunctionSignature::new(
+                TypeKind::Bool,
+                [
+                    FunctionParam::required("min", TypeKind::I64),
+                    FunctionParam::required("value", TypeKind::Named("Score".to_owned())),
+                ],
+            ),
+        );
+
+    let report = analyze_types(&hir, &env);
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.warnings.iter().any(|warning| {
+            matches!(
+                warning.kind(),
+                TypeCheckWarningKind::ShadowedDataLastMethodFallback {
+                    method,
+                    receiver: TypeKind::Named(receiver),
+                    selected,
+                    fallbacks
+                } if method == "above"
+                    && receiver == "Score"
+                    && selected.contains("trait `Threshold` method `Score.above`")
+                    && fallbacks.len() == 1
+                    && fallbacks[0].contains("environment fn `above`")
+            )
+        }),
+        "expected trait-method shadowed fallback warning, got {:?}",
+        report.warnings
+    );
+    assert!(
+        !report.typed_lowering_evidence.iter().any(|evidence| {
+            matches!(
+                &evidence.kind,
+                TypedLoweringEvidenceKind::DataLastMethodFallback { method, .. }
+                    if method == "above"
+            )
+        }),
+        "trait method calls must not record data-last fallback evidence"
     );
 }

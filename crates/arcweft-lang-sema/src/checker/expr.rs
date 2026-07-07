@@ -1169,17 +1169,8 @@ impl TypeChecker<'_> {
         if method_name == "parallel" {
             return self.check_parallel_method_call(&receiver_type, args);
         }
-        if let Some(signature) = self
-            .env
-            .method_signature(&receiver_type, method_name)
-            .cloned()
-        {
-            if signature.checks_args() {
-                self.check_signature_call_args(method_name, &signature, args);
-            } else {
-                self.check_untyped_method_args(args);
-            }
-            return Some(signature.return_type().clone());
+        if let Some(return_type) = self.check_env_method_call(&receiver_type, method_name, args) {
+            return Some(return_type);
         }
         match self.check_builtin_collection_method_call(&receiver_type, method_name, args) {
             BuiltinCollectionMethodCallOutcome::Missing => {}
@@ -1265,6 +1256,31 @@ impl TypeChecker<'_> {
             })
     }
 
+    fn check_env_method_call(
+        &mut self,
+        receiver_type: &TypeKind,
+        method_name: &str,
+        args: &[CallArg],
+    ) -> Option<TypeKind> {
+        let signature = self
+            .env
+            .method_signature(receiver_type, method_name)
+            .cloned()?;
+        self.warn_if_data_last_method_fallback_shadowed(
+            receiver_type,
+            method_name,
+            args,
+            "environment",
+            &signature,
+        );
+        if signature.checks_args() {
+            self.check_signature_call_args(method_name, &signature, args);
+        } else {
+            self.check_untyped_method_args(args);
+        }
+        Some(signature.return_type().clone())
+    }
+
     fn check_presentation_handle_lifecycle_method(
         &mut self,
         receiver_type: &TypeKind,
@@ -1334,10 +1350,35 @@ impl TypeChecker<'_> {
             &self.active_trait_predicates(),
         ) {
             TraitMethodResolution::Missing => TraitMethodCallOutcome::Missing,
-            TraitMethodResolution::Inherent(method)
-            | TraitMethodResolution::Unique { method, .. } => {
+            TraitMethodResolution::Inherent(method) => {
                 let return_type = self.resolve_type_projection(method.return_type().clone());
                 let signature = trait_method_call_signature(method.signature(), return_type);
+                self.warn_if_data_last_method_fallback_shadowed(
+                    receiver_type,
+                    method_name,
+                    args,
+                    "inherent",
+                    &signature,
+                );
+                self.check_signature_call_args(method_name, &signature, args);
+                TraitMethodCallOutcome::Typed(signature.return_type().clone())
+            }
+            TraitMethodResolution::Unique {
+                trait_id, method, ..
+            } => {
+                let return_type = self.resolve_type_projection(method.return_type().clone());
+                let signature = trait_method_call_signature(method.signature(), return_type);
+                let source = self.trait_catalog.trait_name(trait_id).map_or_else(
+                    || "trait `<unknown-trait>`".to_owned(),
+                    |name| format!("trait `{name}`"),
+                );
+                self.warn_if_data_last_method_fallback_shadowed(
+                    receiver_type,
+                    method_name,
+                    args,
+                    &source,
+                    &signature,
+                );
                 self.check_signature_call_args(method_name, &signature, args);
                 TraitMethodCallOutcome::Typed(signature.return_type().clone())
             }

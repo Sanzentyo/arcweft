@@ -2,6 +2,7 @@ use super::{
     CallArg, FunctionSignature, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
     TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
+use crate::diagnostics::TypeCheckWarning;
 
 impl TypeChecker<'_> {
     pub(super) fn check_data_last_method_fallback(
@@ -78,6 +79,36 @@ impl TypeChecker<'_> {
             },
         });
         Some(signature.return_type().clone())
+    }
+
+    pub(super) fn warn_if_data_last_method_fallback_shadowed(
+        &mut self,
+        receiver_type: &TypeKind,
+        method_name: &str,
+        args: &[CallArg],
+        selected_source: &str,
+        selected_signature: &FunctionSignature,
+    ) {
+        if unsupported_fallback_arg_reason(args).is_some() {
+            return;
+        }
+        let candidates =
+            self.data_last_method_fallback_candidates(receiver_type, method_name, args);
+        if candidates.is_empty() {
+            return;
+        }
+        self.warnings
+            .push(TypeCheckWarning::shadowed_data_last_method_fallback(
+                method_name,
+                receiver_type.clone(),
+                selected_method_label(
+                    selected_source,
+                    receiver_type,
+                    method_name,
+                    selected_signature,
+                ),
+                candidates.iter().map(|candidate| candidate.label.clone()),
+            ));
     }
 
     fn data_last_method_fallback_candidates(
@@ -176,4 +207,17 @@ fn function_signature_label(signature: &FunctionSignature) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!("fn({params}) -> {}", signature.return_type().source_label())
+}
+
+fn selected_method_label(
+    source: &str,
+    receiver_type: &TypeKind,
+    method_name: &str,
+    signature: &FunctionSignature,
+) -> String {
+    format!(
+        "{source} method `{}.{method_name}` {}",
+        receiver_type.source_label(),
+        function_signature_label(signature)
+    )
 }

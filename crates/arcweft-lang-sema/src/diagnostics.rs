@@ -196,6 +196,15 @@ pub enum TypeCheckWarningKind {
         literal_kind: String,
         fallback: TypeKind,
     },
+    /// A real method was selected, but data-last callable fallback candidates
+    /// with the same spelling were also viable. The selected method remains
+    /// authoritative, but the API shape is worth surfacing to authors.
+    ShadowedDataLastMethodFallback {
+        method: String,
+        receiver: TypeKind,
+        selected: String,
+        fallbacks: Vec<String>,
+    },
     /// A structured warning from transitive effect analysis.
     Effect { diagnostic: EffectDiagnostic },
 }
@@ -767,6 +776,30 @@ impl TypeCheckWarning {
         }
     }
 
+    pub(crate) fn shadowed_data_last_method_fallback(
+        method: impl Into<String>,
+        receiver: TypeKind,
+        selected: impl Into<String>,
+        fallbacks: impl IntoIterator<Item = String>,
+    ) -> Self {
+        let method = method.into();
+        let selected = selected.into();
+        let fallbacks = fallbacks.into_iter().collect::<Vec<_>>();
+        Self {
+            message: format!(
+                "method `{method}` on {} selects {selected}, shadowing data-last fallback candidate(s): {}",
+                receiver.source_label(),
+                fallbacks.join(", ")
+            ),
+            kind: TypeCheckWarningKind::ShadowedDataLastMethodFallback {
+                method,
+                receiver,
+                selected,
+                fallbacks,
+            },
+        }
+    }
+
     pub(crate) fn effect(diagnostic: EffectDiagnostic) -> Self {
         Self {
             message: diagnostic.message().to_owned(),
@@ -888,6 +921,9 @@ fn typecheck_warning_code(kind: &TypeCheckWarningKind) -> String {
         }
         TypeCheckWarningKind::NumericFallbackInInferredClosure { .. } => {
             "sema.numeric.fallback_in_inferred_closure".to_owned()
+        }
+        TypeCheckWarningKind::ShadowedDataLastMethodFallback { .. } => {
+            "sema.typecheck.shadowed_data_last_method_fallback".to_owned()
         }
         TypeCheckWarningKind::Effect { diagnostic } => diagnostic.code().as_str().to_owned(),
     }

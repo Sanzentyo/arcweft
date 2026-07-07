@@ -223,7 +223,10 @@ Source briefs:
   unsupported rather than silently becoming unknown methods. Multiple viable
   data-last fallback candidates from the module and external type-check
   environment now report `sema.typecheck.ambiguous_data_last_method_fallback`
-  with all candidate labels instead of selecting one by merge order. Executable
+  with all candidate labels instead of selecting one by merge order. Real
+  env/inherent/trait methods still win, and viable data-last fallback
+  candidates hidden by that real method now produce
+  `sema.typecheck.shadowed_data_last_method_fallback` warnings. Executable
   named/spread fallback lowering, curried call-group runtime fallback metadata,
   and non-helper callable runtime lowering remain open.
 - Curried declaration call-group metadata is now preserved for sema/runtime-plan
@@ -245,8 +248,9 @@ Source briefs:
 - Method-chain fallback sugar resolves after existing env/builtin/integer/
   handle/trait method checks, preserving real methods before data-last fallback.
   Ambiguity diagnostics for multiple viable data-last fallback candidates are
-  implemented for module/environment callable overlap. Diagnostics that compare
-  real method candidates against fallback candidates remain open.
+  implemented for module/environment callable overlap. Real method versus
+  fallback overlap is surfaced as a non-fatal shadowing warning while preserving
+  real method priority.
 - Closure capture inventory collection and borrowed-capture suspension-boundary
   lifetime diagnostics exist in sema. Effect-row integration for closure
   captures and runtime-plan capture metadata policy remain open.
@@ -355,7 +359,9 @@ it reports `UnsupportedDataLastMethodFallback` instead of a generic unknown
 method. It also covers module/environment data-last fallback ambiguity with
 `method_chain_reports_ambiguous_data_last_fallback_candidates`, which verifies
 both candidate labels are reported and no arbitrary fallback lowering evidence
-is recorded.
+is recorded. The shadowed-fallback warning cut covers real env-method and trait
+method priority with `method_chain_prefers_real_method_over_data_last_callable_fallback`
+and `method_chain_prefers_trait_method_over_data_last_callable_fallback`.
 
 The closure return type cut has passing parser coverage for `|params| -> Type
 { ... }`, `|| -> Type { ... }`, call-argument closures, and the required block
