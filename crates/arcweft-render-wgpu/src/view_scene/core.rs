@@ -320,6 +320,18 @@ impl ViewCornerRadii {
         .then_some(radius)
     }
 
+    #[must_use]
+    pub fn has_rounded_corner(self) -> bool {
+        [
+            self.top_left,
+            self.top_right,
+            self.bottom_right,
+            self.bottom_left,
+        ]
+        .into_iter()
+        .any(|radius| radius.x_px > f32::EPSILON && radius.y_px > f32::EPSILON)
+    }
+
     fn scaled(self, scale: f32) -> Self {
         Self {
             top_left: self.top_left.scaled(scale),

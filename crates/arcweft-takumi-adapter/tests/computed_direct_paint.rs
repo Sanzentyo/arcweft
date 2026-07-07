@@ -1,6 +1,6 @@
 use arcweft_takumi_adapter::{
-    ComputedDirectPaintExtractor, ComputedDirectPaintInput, DirectPaintResourceTable,
-    TakumiAdapter, TakumiAdapterInput, TakumiCssBundle,
+    ComputedDirectPaintExtractor, ComputedDirectPaintInput, DirectBackground,
+    DirectPaintResourceTable, TakumiAdapter, TakumiAdapterInput, TakumiCssBundle,
 };
 use arcweft_view::{ContainerKind, FragmentKind, NodeKey, StyleId, ViewFragmentBuilder};
 use takumi::prelude::{Fonts, Viewport};
@@ -57,6 +57,13 @@ fn render_tree_for(css: &str) -> (RenderNode, arcweft_takumi_adapter::TakumiMeta
     )
 }
 
+fn assert_px(actual: f32, expected: f32) {
+    assert!(
+        (actual - expected).abs() <= 0.001,
+        "expected {expected}px, got {actual}px"
+    );
+}
+
 #[test]
 fn computed_direct_paint_background_color_extracts_solid_rect_layer() {
     let (root, metadata) =
@@ -97,6 +104,41 @@ fn computed_direct_paint_border_radius_adds_rounded_clip_metadata() {
                 arcweft_takumi_adapter::DirectPaintLayerKind::RoundedClip
             ))
     );
+}
+
+#[test]
+fn computed_direct_paint_preserves_per_corner_elliptical_background_radii() {
+    let (root, metadata) = render_tree_for(
+        ".aw-block {
+            width: 64px;
+            height: 32px;
+            background-color: red;
+            border-top-left-radius: 18px 12px;
+            border-top-right-radius: 10px 6px;
+            border-bottom-right-radius: 14px 8px;
+            border-bottom-left-radius: 6px 4px;
+        }",
+    );
+
+    let output = ComputedDirectPaintExtractor::extract(ComputedDirectPaintInput {
+        root: &root,
+        metadata: &metadata,
+        resources: &DirectPaintResourceTable::default(),
+    });
+
+    assert!(output.diagnostics.is_empty());
+    let DirectBackground::Solid { radii, .. } = &output.catalog.entries()[0].1.backgrounds[0]
+    else {
+        panic!("background-color extracts as a solid background");
+    };
+    assert_px(radii.top_left.x_px, 18.0);
+    assert_px(radii.top_left.y_px, 12.0);
+    assert_px(radii.top_right.x_px, 10.0);
+    assert_px(radii.top_right.y_px, 6.0);
+    assert_px(radii.bottom_right.x_px, 14.0);
+    assert_px(radii.bottom_right.y_px, 8.0);
+    assert_px(radii.bottom_left.x_px, 6.0);
+    assert_px(radii.bottom_left.y_px, 4.0);
 }
 
 #[test]

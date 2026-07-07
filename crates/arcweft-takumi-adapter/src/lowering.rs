@@ -64,7 +64,7 @@ pub struct DirectBoxPaint {
 pub enum DirectBackground {
     Solid {
         color: ViewColorRgba8,
-        radius: f32,
+        radii: ViewCornerRadii,
     },
     LinearGradient {
         angle_degrees: f32,
@@ -524,10 +524,10 @@ fn bounds_for_node(
 
 fn lower_background(background: &DirectBackground, bounds: HitRect, build: &mut ViewSceneBuild) {
     match background {
-        DirectBackground::Solid { color, radius } if *radius > 0.0 => {
+        DirectBackground::Solid { color, radii } if radii.has_rounded_corner() => {
             build.push_primitive(ViewPrimitive::RoundedRect(ViewRoundedRect {
                 bounds,
-                radii: ViewCornerRadii::uniform(*radius),
+                radii: *radii,
                 color: *color,
             }));
         }
@@ -1040,6 +1040,7 @@ fn affine_to_ui(values: [f32; 6]) -> ViewAffine2D {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_render_wgpu::view_scene::ViewCornerRadius;
 
     fn color(alpha: u8) -> ViewColorRgba8 {
         ViewColorRgba8 {
@@ -1058,12 +1059,37 @@ mod tests {
             path.clone(),
             DirectBoxPaint::new().with_background(DirectBackground::Solid {
                 color: color(255),
-                radius: 4.0,
+                radii: ViewCornerRadii::uniform(4.0),
             }),
         );
 
         assert!(catalog.get(&path).is_some());
         assert!(catalog.get(&TakumiPath::root()).is_none());
+    }
+
+    #[test]
+    fn lower_background_preserves_direct_solid_corner_radii() {
+        let radii = ViewCornerRadii::from_corners(
+            ViewCornerRadius::new(18.0, 12.0),
+            ViewCornerRadius::new(10.0, 6.0),
+            ViewCornerRadius::new(14.0, 8.0),
+            ViewCornerRadius::new(6.0, 4.0),
+        );
+        let mut build = ViewSceneBuild::new(100.0, 50.0);
+
+        lower_background(
+            &DirectBackground::Solid {
+                color: color(255),
+                radii,
+            },
+            HitRect::new(0.0, 0.0, 80.0, 40.0),
+            &mut build,
+        );
+
+        let ViewPrimitive::RoundedRect(rect) = &build.primitives[0] else {
+            panic!("rounded direct background lowers to ViewRoundedRect");
+        };
+        assert_eq!(rect.radii, radii);
     }
 
     #[test]

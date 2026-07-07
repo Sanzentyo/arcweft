@@ -10,7 +10,9 @@ use crate::{
     lowering::{DirectBackground, DirectBorder, DirectBoxPaint, DirectClip, DirectPaintCatalog},
     metadata::{ArcweftNodeMetadata, TakumiMetadataMap, TakumiPath},
 };
-use arcweft_render_wgpu::view_scene::{ViewColorRgba8, ViewGradientStop, ViewPrimitiveRange};
+use arcweft_render_wgpu::view_scene::{
+    ViewColorRgba8, ViewCornerRadii, ViewCornerRadius, ViewGradientStop, ViewPrimitiveRange,
+};
 use num_traits::ToPrimitive;
 use std::{collections::BTreeMap, sync::Arc};
 use takumi::unstable::base::layout::{
@@ -147,8 +149,9 @@ impl ComputedDirectPaintExtractor {
             );
         }
 
-        let radius = supported_uniform_radius(style, sizing, path, frame);
-        if let Some(radius) = radius.filter(|value| *value > 0.0) {
+        let radii = direct_corner_radii(style, sizing);
+        let uniform_radius = radii.uniform_circular_radius();
+        if let Some(radius) = uniform_radius.filter(|value| *value > 0.0) {
             paint = paint.with_clip(DirectClip::RoundedRect { radius });
             evidence.push_layer(
                 DirectPaintLayerKind::RoundedClip,
@@ -156,7 +159,7 @@ impl ComputedDirectPaintExtractor {
             );
         }
 
-        if let Some(background) = solid_background(style, current_color, radius) {
+        if let Some(background) = solid_background(style, current_color, radii) {
             paint = paint.with_background(background);
             evidence.push_layer(
                 DirectPaintLayerKind::BackgroundColor,
@@ -182,7 +185,7 @@ impl ComputedDirectPaintExtractor {
             style,
             sizing,
             current_color,
-            radius.unwrap_or_default(),
+            uniform_radius.unwrap_or_default(),
             path,
             frame,
         ) {
@@ -314,13 +317,10 @@ impl DirectPaintLayerEvidence {
 fn solid_background(
     style: &ComputedStyle,
     current_color: TakumiColor,
-    radius: Option<f32>,
+    radii: ViewCornerRadii,
 ) -> Option<DirectBackground> {
     let color = ui_color(style.background_color.resolve(current_color));
-    (color.alpha > 0).then_some(DirectBackground::Solid {
-        color,
-        radius: radius.unwrap_or_default(),
-    })
+    (color.alpha > 0).then_some(DirectBackground::Solid { color, radii })
 }
 
 fn supported_background_images(
@@ -507,46 +507,20 @@ fn gradient_angle_degrees(direction: LinearGradientDirection) -> f32 {
     }
 }
 
-fn supported_uniform_radius(
-    style: &ComputedStyle,
-    sizing: &SizingContext,
-    path: &TakumiPath,
-    frame: &mut ComputedDirectPaintFrame,
-) -> Option<f32> {
-    let corners = [
-        style.border_top_left_radius,
-        style.border_top_right_radius,
-        style.border_bottom_right_radius,
-        style.border_bottom_left_radius,
-    ];
-    let Some(first) = circular_radius(corners[0], sizing) else {
-        frame
-            .diagnostics
-            .push(unsupported(path, "border-radius: elliptical corner"));
-        return None;
-    };
-
-    for corner in corners.into_iter().skip(1) {
-        let Some(candidate) = circular_radius(corner, sizing) else {
-            frame
-                .diagnostics
-                .push(unsupported(path, "border-radius: elliptical corner"));
-            return None;
-        };
-        if !same_px(first, candidate) {
-            frame
-                .diagnostics
-                .push(unsupported(path, "border-radius: mixed corner radii"));
-            return None;
-        }
-    }
-    Some(first)
+fn direct_corner_radii(style: &ComputedStyle, sizing: &SizingContext) -> ViewCornerRadii {
+    ViewCornerRadii::from_corners(
+        direct_corner_radius(style.border_top_left_radius, sizing),
+        direct_corner_radius(style.border_top_right_radius, sizing),
+        direct_corner_radius(style.border_bottom_right_radius, sizing),
+        direct_corner_radius(style.border_bottom_left_radius, sizing),
+    )
 }
 
-fn circular_radius(radius: SpacePair<Length>, sizing: &SizingContext) -> Option<f32> {
-    let x = radius.x.to_px(sizing, 0.0);
-    let y = radius.y.to_px(sizing, 0.0);
-    same_px(x, y).then_some(x)
+fn direct_corner_radius(radius: SpacePair<Length>, sizing: &SizingContext) -> ViewCornerRadius {
+    ViewCornerRadius::new(
+        radius.x.to_px(sizing, 0.0).max(0.0),
+        radius.y.to_px(sizing, 0.0).max(0.0),
+    )
 }
 
 fn supported_border(
